@@ -6,7 +6,7 @@ import type { SummaryJob } from "../summary/model";
 import type { RecordingRecord, RecordingSource } from "../recordings/model";
 import type { FileRecord, MeetingAttachmentRecord } from "../files/model";
 import type { Identity } from "../auth/identity";
-import type { ImageAnalysisClaim, ImageAnalysisInput, ScreenshotAssessment } from "../image-analysis/model";
+import type { ImageAnalysisClaim, ImageAnalysisInput } from "../image-analysis/model";
 
 export interface SyncTranscriptSegment {
   segmentId: string;
@@ -269,8 +269,9 @@ export interface IdentitySyncStore {
   completeSummaryTranscript(job: SummaryJob, transaction: SyncTransaction, transcriptId: string): Promise<TranscriptVersion | null>;
   completeSummaryJob(job: SummaryJob, transaction: SyncTransaction): Promise<boolean>;
   loadImageAnalysis(claim: ImageAnalysisClaim): Promise<ImageAnalysisInput | null>;
-  completeImageAnalysis(input: ImageAnalysisInput, transaction: SyncTransaction | null, assessment: ScreenshotAssessment): Promise<boolean>;
-  listScreenshotAssessments(workspaceId: string, meetingId: string): Promise<ScreenshotAssessment[]>;
+  completeImageAnalysis(input: ImageAnalysisInput, transaction: SyncTransaction): Promise<boolean>;
+  /** Image-analysis usefulness of the meeting's analyzed attachments, from file metadata. */
+  listScreenshotInformative(workspaceId: string, meetingId: string): Promise<{ fileId: string; informative: boolean }[]>;
   reserveRecording(workspaceId: string, meetingId: string, sessionId: string, source: RecordingSource): Promise<RecordingRecord>;
   getRecording(meetingId: string, number: number, ownerOnly?: boolean): Promise<RecordingRecord | null>;
   markRecordingUploaded(sessionId: string, source: RecordingSource, generation: string, size: number, checksum: string): Promise<RecordingRecord | null>;

@@ -1197,7 +1197,7 @@ describe("SQLite canonical sync", () => {
     await store.close?.();
   });
 
-  it("stores screenshot usefulness outside file sync and backfills it without a new file revision", async () => {
+  it("stores screenshot usefulness in file metadata and backfills it while keeping OCR and captions", async () => {
     const { store, service, databasePath } = await fileSetup("model");
     const files = await attachScreenshots(service, 2);
     let calls = 0;
@@ -1212,35 +1212,22 @@ describe("SQLite canonical sync", () => {
     expect(await worker.processOne()).toBe(true);
     expect(await worker.processOne()).toBe(true);
     expect(await worker.processOne()).toBe(false);
-    expect(await store.sync.withIdentity(owner, (scoped) => scoped.listScreenshotAssessments(workspaceId, meetingId))).toEqual([
-      { fileId: files[0]!.id, informative: true, reason: "A slide" },
-      { fileId: files[1]!.id, informative: false, reason: "A camera view" },
+    expect(await service.getFile(owner, files[1]!.id)).toMatchObject({ metadata: { informative: false, informativeReason: "A camera view" } });
+    expect(await store.sync.withIdentity(owner, (scoped) => scoped.listScreenshotInformative(workspaceId, meetingId))).toEqual([
+      { fileId: files[0]!.id, informative: true }, { fileId: files[1]!.id, informative: false },
     ].sort((left, right) => left.fileId.localeCompare(right.fileId)));
-    expect(await store.sync.withIdentity(other, (scoped) => scoped.listScreenshotAssessments(workspaceId, meetingId))).toEqual([]);
-    // Existing OCR/captions are preserved and no file revision or delta is published for the hint alone.
-    const before = await service.getFile(owner, files[0]!.id);
-    const cursor = await service.latestCursor(owner);
+    expect(await store.sync.withIdentity(other, (scoped) => scoped.listScreenshotInformative(workspaceId, meetingId))).toEqual([]);
+    // A screenshot analyzed before usefulness existed is analyzed once more without replacing its OCR/caption.
     const database = new DatabaseSync(databasePath);
-    database.prepare("DELETE FROM screenshot_assessments WHERE file_id = ?").run(files[0]!.id);
+    database.prepare("UPDATE files SET metadata = json_remove(metadata, '$.informative', '$.informative_reason') WHERE file_id = ?").run(files[0]!.id);
+    database.close();
     await store.imageAnalysis!.reconcile("model");
     expect(await worker.processOne()).toBe(true);
     expect(calls).toBe(3);
-    expect(await service.getFile(owner, files[0]!.id)).toMatchObject({ revision: before.revision, metadata: { caption: "A roadmap slide" } });
-    expect(await service.latestCursor(owner)).toBe(cursor);
-    expect(database.prepare("SELECT count(*) AS n FROM screenshot_assessments").get()).toEqual({ n: 2 });
-    // The setup's unpublished upload and pending embeddings would otherwise block the transfer.
-    database.prepare("DELETE FROM files WHERE active = 0").run();
-    database.prepare("DELETE FROM jobs_search_index").run();
-    database.close();
-    // Hints follow their files when the Workspace content moves.
-    const destinationWorkspaceId = freshId();
-    await commit(store, owner, { ...transaction(freshId(), [{ id: freshId(), entity: "workspace", action: "create", entityId: destinationWorkspaceId,
-      baseRevision: null, data: { organizationId: testOrganizationID, name: "Destination", createdAt: now } }]), workspaceId: destinationWorkspaceId });
-    await store.sync.withIdentity(owner, async (sync) => sync.transferWorkspace({ sourceWorkspaceId: workspaceId, destinationWorkspaceId,
-      audienceHash: (await sync.workspaceTransferAudience(workspaceId, destinationWorkspaceId)).audienceHash,
-      sourceRevision: 1, destinationRevision: 1, idempotencyKey: freshId(), requestHash: freshId() }));
-    expect(await store.sync.withIdentity(owner, (scoped) => scoped.listScreenshotAssessments(destinationWorkspaceId, meetingId))).toHaveLength(2);
-    expect(await store.sync.withIdentity(owner, (scoped) => scoped.listScreenshotAssessments(workspaceId, meetingId))).toEqual([]);
+    expect(await service.getFile(owner, files[0]!.id)).toMatchObject({
+      metadata: { ocrText: "Roadmap", caption: "A roadmap slide", informative: true, informativeReason: "A slide" },
+    });
+    expect(await worker.processOne()).toBe(false);
     await store.close?.();
   });
 

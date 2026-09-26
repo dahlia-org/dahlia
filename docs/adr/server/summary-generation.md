@@ -107,9 +107,9 @@ Workersの生成capabilityは従来どおり無効とする。
 
 自動撮影は30秒ごとに画面変化20%以上で撮るため、同じ画面や顔・カメラ映像が24枚の枠を占め、共有資料が漏れていた。
 画像1枚で決まる有用性は Server の画像解析で判定し、OCR / caption と同じ応答で有用性と1文の理由を返させる。
-判定は file metadata の同期契約に入れず、Server 専用で再作成可能な `app.screenshot_assessments` に保存する（FORCE RLS、
-Workspace 移動に追随）。暗号化 Workspace では画像内容を表す理由を保存しない。判定のない既存画像は `fill_missing` で解析し、
-file revision は変えない。
+画像解析は単一ファイルの判定に限り、他の画像との比較はしない。判定は OCR / caption と同じく file metadata の
+`informative` / `informative_reason`（wire では `informativeReason`）に保存し、専用テーブルは作らない。
+判定のない既存のスクリーンショットは `fill_missing` で解析し、OCR / caption は上書きしない。
 
 重複と要約に使う画像は会議全体を見ないと決まらないため、要約 job の前処理で選ぶ。有用でない画像と同一 hash の画像を除いた候補を
 `thumb_480` の低解像度画像だけで画像解析モデルに渡し、同じ内容の画面は1枚（段階表示は最も完成した版）に絞って最大24枚を選ばせる。

@@ -152,7 +152,7 @@ describe("server summary jobs", () => {
     const select = vi.fn(async (inputs: readonly unknown[]) => { expect(inputs).toHaveLength(3); return [2]; });
     const { content, imageIds } = await summaryImageContent({
       meeting: { name: "Meeting", description: "", createdAt: date, recordingStartedAt: null, icalUid: null, recurrenceId: null, calendarEvent: null },
-      project: null, images, assessments: [{ fileId: "file-0", informative: false, reason: "A camera view" }],
+      project: null, images, assessments: [{ fileId: "file-0", informative: false }],
     }, sync as unknown as MeetingSyncService, owner, new AbortController().signal, [], { select });
     expect([...imageIds]).toEqual(["shot-3"]);
     expect(variants).toEqual(["file-1:thumb_480", "file-2:thumb_480", "file-3:thumb_480", "file-3:thumb_1280"]);

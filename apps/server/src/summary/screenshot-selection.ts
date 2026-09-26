@@ -2,7 +2,6 @@ import { Buffer } from "node:buffer";
 import { z } from "zod";
 import type { AppConfig } from "../config";
 import { createJobProvider } from "../ai-gateway/job-provider";
-import type { ScreenshotAssessment } from "../image-analysis/model";
 import type { SyncScreenshotRecord } from "../sync/types";
 
 export const SUMMARY_IMAGE_LIMIT = 24;
@@ -19,7 +18,7 @@ export interface ScreenshotSelector {
 }
 
 /** Drops screenshots image analysis marked as uninformative and identical images. Unassessed screenshots stay. */
-export function summaryScreenshotCandidates(images: readonly SyncScreenshotRecord[], assessments: readonly ScreenshotAssessment[]) {
+export function summaryScreenshotCandidates(images: readonly SyncScreenshotRecord[], assessments: readonly { fileId: string; informative: boolean }[]) {
   const uninformative = new Set(assessments.filter((assessment) => !assessment.informative).map((assessment) => assessment.fileId));
   const hashes = new Set<string>();
   return images.filter((image) => {

@@ -71,7 +71,7 @@ export async function collectSummaryInput(store: IdentitySyncStore, workspaceId:
     images.push(...page);
     if (page.length < 200) break;
   }
-  const assessments = images.length ? await store.listScreenshotAssessments(workspaceId, meetingId) : [];
+  const assessments = images.length ? await store.listScreenshotInformative(workspaceId, meetingId) : [];
   const input = { meeting: { name: meeting.name, description: meeting.description, createdAt: meeting.createdAt,
     icalUid: meeting.icalUid ?? null, recurrenceId: meeting.recurrenceId ?? null, calendarEvent: meeting.calendarEvent ?? null,
     recordingStartedAt: meeting.recordingStartedAt, ...(includeTranscript && !reference ? { revision: meeting.revision, transcriptRevision: meeting.transcriptRevision } : {}) },

@@ -190,7 +190,7 @@ export class MeetingSyncService {
   async completeImageAnalysis(identity: Identity, input: ImageAnalysisInput, output: ImageAnalysis): Promise<boolean> {
     const analysis = imageAnalysisSchema.parse(output);
     const metadata = { ...input.file.metadata };
-    const generatedMetadata: { ocrText?: string; caption?: string } = {};
+    const generatedMetadata: { ocrText?: string; caption?: string; informative?: boolean; informativeReason?: string } = {};
     if (input.mode === "replace" || metadata.ocr_text == null) {
       metadata.ocr_text = analysis.ocr_text;
       generatedMetadata.ocrText = analysis.ocr_text;
@@ -199,10 +199,11 @@ export class MeetingSyncService {
       metadata.caption = analysis.caption;
       generatedMetadata.caption = analysis.caption;
     }
-    const assessment = { fileId: input.fileId, informative: analysis.informative, reason: analysis.reason };
-    // Backfilling only selection hints must not publish an unchanged file revision.
-    if (!Object.keys(generatedMetadata).length) {
-      return this.store.withIdentity(identity, (scoped) => scoped.completeImageAnalysis(input, null, assessment));
+    if (metadata.source === "screenshot" && (input.mode === "replace" || metadata.informative == null)) {
+      metadata.informative = analysis.informative;
+      metadata.informative_reason = analysis.reason;
+      generatedMetadata.informative = analysis.informative;
+      generatedMetadata.informativeReason = analysis.reason;
     }
     const transaction = await normalizeTransaction({
       schemaVersion: 3, id: uuidV7(), workspaceId: input.workspaceId, createdAt: new Date().toISOString(),
@@ -212,7 +213,7 @@ export class MeetingSyncService {
       }],
     });
     Object.assign(transaction.operations[0]!.data!, await this.fileSearchData(metadata));
-    return this.store.withIdentity(identity, (scoped) => scoped.completeImageAnalysis(input, transaction, assessment));
+    return this.store.withIdentity(identity, (scoped) => scoped.completeImageAnalysis(input, transaction));
   }
 
   private async fileSearchData(metadata: Partial<FileRecord["metadata"]>) {

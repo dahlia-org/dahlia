@@ -406,21 +406,6 @@ export const syncedFile = appSchema.table("files", {
 ]).enableRLS();
 
 
-// Server-only, rebuildable screenshot selection hints from image analysis. Not part of file sync.
-export const screenshotAssessment = appSchema.table("screenshot_assessments", {
-  fileId: uuid("file_id").primaryKey().references(() => syncedFile.fileId, { onDelete: "cascade" }),
-  workspaceId: uuid("workspace_id").notNull().references(() => syncedWorkspace.workspaceId, { onDelete: "cascade" }),
-  model: text("model").notNull(),
-  informative: boolean("informative").notNull(),
-  // Omitted for encrypted Workspaces because it describes image content.
-  reason: text("reason"),
-  createdAt: timestamp("created_at").defaultNow().notNull(),
-}, (table) => [
-  index("screenshot_assessments_workspace_idx").on(table.workspaceId),
-  pgPolicy("screenshot_assessment_read", { for: "select", using: sql`"app"."current_identity_can_read_workspace"(${table.workspaceId})` }),
-  pgPolicy("screenshot_assessment_write", { for: "all", using: sql`"app"."current_identity_can_write_workspace"(${table.workspaceId})`, withCheck: sql`"app"."current_identity_can_write_workspace"(${table.workspaceId})` }),
-]).enableRLS();
-
 export const syncedRecording = appSchema.table("recordings", {
   sessionId: uuid("session_id").primaryKey(),
   meetingId: uuid("meeting_id").notNull(),

@@ -525,7 +525,7 @@ integration("PostgreSQL application store", () => {
     expect(await store.removeAdminUser(suffix)).toBe("removed");
   });
 
-  it("claims ready screenshot jobs under forced RLS and hides usefulness hints from outsiders", async () => {
+  it("claims ready screenshot jobs under forced RLS and hides usefulness from outsiders", async () => {
     const store = createPostgresAuthStore(connection!.db, "postgres");
     const owner: Identity = { userId: crypto.randomUUID(), source: "header" };
     const outsider: Identity = { userId: crypto.randomUUID(), source: "header" };
@@ -553,12 +553,11 @@ integration("PostgreSQL application store", () => {
       .where(eq(schema.imageAnalysisJob.fileId, hiddenFileId));
     const claim = (await jobs.claim(model))!;
     expect(claim).toMatchObject({ fileId, ownerUserId: owner.userId });
-    const input = (await store.sync.withIdentity(owner, (sync) => sync.loadImageAnalysis(claim)))!;
-    expect(await store.sync.withIdentity(owner, (sync) => sync.completeImageAnalysis(input, null,
-      { fileId, informative: false, reason: "A camera view" }))).toBe(true);
-    expect(await store.sync.withIdentity(owner, (sync) => sync.listScreenshotAssessments(workspaceId, meetingId)))
-      .toEqual([{ fileId, informative: false, reason: "A camera view" }]);
-    expect(await store.sync.withIdentity(outsider, (sync) => sync.listScreenshotAssessments(workspaceId, meetingId))).toEqual([]);
+    await store.sync.withIdentity(owner, (sync) => commit(sync, workspaceId, [{ id: crypto.randomUUID(), entity: "file", action: "upsert",
+      entityId: fileId, baseRevision: 1, data: { checksum: `SHA-256:${"1".repeat(64)}`, metadata: { informative: false, informative_reason: "A camera view" } } }]));
+    expect(await store.sync.withIdentity(owner, (sync) => sync.listScreenshotInformative(workspaceId, meetingId)))
+      .toEqual([{ fileId, informative: false }]);
+    expect(await store.sync.withIdentity(outsider, (sync) => sync.listScreenshotInformative(workspaceId, meetingId))).toEqual([]);
   });
 
   it("grants read-only Workspace access through an explicit organization share", async () => {

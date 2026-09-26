@@ -1,6 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
 import { loadConfig } from "../src/config";
-import type { ScreenshotAssessment } from "../src/image-analysis/model";
 import { createScreenshotSelector, sampleEvenly, selectSummaryScreenshots, summaryScreenshotCandidates, type ScreenshotSelector } from "../src/summary/screenshot-selection";
 import type { SyncScreenshotRecord } from "../src/sync/types";
 
@@ -9,7 +8,7 @@ const screenshot = (index: number, hash = String(index)): SyncScreenshotRecord =
   capturedAt: new Date(index * 30_000), contentType: "image/webp", storageKey: "unused", contentLength: 1,
   contentHash: hash.padStart(64, "0"), ocrText: "never sent", caption: "never sent",
 });
-const assessment = (index: number, informative: boolean): ScreenshotAssessment => ({ fileId: `file-${index}`, informative, reason: null });
+const assessment = (index: number, informative: boolean) => ({ fileId: `file-${index}`, informative });
 const ids = (images: SyncScreenshotRecord[]) => images.map((image) => image.fileId);
 const signal = () => new AbortController().signal;
 const environment = { DAHLIA_AUTH_SECRET: "test-better-auth-secret-at-least-32-characters",

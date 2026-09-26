@@ -41,7 +41,7 @@ it.runIf(process.env.TEST_MIGRATION_DATABASE_URL)("creates the complete PostgreS
       WHERE relnamespace IN ('app'::regnamespace, 'jobs'::regnamespace) AND relrowsecurity ORDER BY relname`);
     expect(protectedTables.rows.map((row) => row.relname)).toEqual([
       "files", "meeting_attachments", "meeting_events", "meetings", "personal_memories", "projects",
-      "recordings", "screenshot_assessments", "shared_memories", "summaries", "summary", "transaction_receipts",
+      "recordings", "shared_memories", "summaries", "summary", "transaction_receipts",
       "transcript_patch_chunks", "transcript_segments", "transcripts", "workspace_transfers", "workspaces",
     ]);
     expect(protectedTables.rows.every((row) => row.relforcerowsecurity === true)).toBe(true);

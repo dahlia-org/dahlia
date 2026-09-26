@@ -28,7 +28,6 @@ export function createImageAnalysisStore(database: PostgresDatabase | SQLiteData
   const schema = (isPostgres ? postgresSchema : sqliteSchema) as typeof postgresSchema;
   const jobs = schema.imageAnalysisJob;
   const files = schema.syncedFile;
-  const assessments = schema.screenshotAssessment;
   const withOwner = <T>(userId: string, action: (transaction: NodePgDatabase) => Promise<T>) =>
     db.transaction(async (transaction) => {
       if (isPostgres) await transaction.execute(sql`select set_config('app.user_id', ${userId}, true)`);
@@ -37,8 +36,8 @@ export function createImageAnalysisStore(database: PostgresDatabase | SQLiteData
   async function reconcilePage(model: string, userId: string, after?: string, batchSize = 100): Promise<string | undefined> {
     const rows = await withOwner(userId, async (transaction) => {
       const content = createContentEncryption(transaction, schema, userId, encryption);
-      const page = await content.read(files, await transaction.select({ encryptedPayload: files.encryptedPayload, fileId: files.fileId, workspaceId: files.workspaceId, metadata: files.metadata, mode: jobs.mode, assessed: assessments.fileId })
-        .from(files).leftJoin(jobs, eq(jobs.fileId, files.fileId)).leftJoin(assessments, eq(assessments.fileId, files.fileId))
+      const page = await content.read(files, await transaction.select({ encryptedPayload: files.encryptedPayload, fileId: files.fileId, workspaceId: files.workspaceId, metadata: files.metadata, mode: jobs.mode })
+        .from(files).leftJoin(jobs, eq(jobs.fileId, files.fileId))
         .where(and(
           eq(files.active, true), isNotNull(files.uploadedAt), inArray(files.contentType, [...imageContentTypes]),
           after ? gt(files.fileId, after) : undefined,
@@ -53,7 +52,7 @@ export function createImageAnalysisStore(database: PostgresDatabase | SQLiteData
               eq(schema.syncedMeeting.meetingId, schema.meetingAttachment.meetingId),
             )).where(and(eq(schema.meetingAttachment.fileId, files.fileId), isNull(schema.syncedMeeting.deletingAt), isNull(schema.syncedMeeting.deletedAt)))),
         )).orderBy(asc(files.fileId)).limit(batchSize));
-      const missing = page.filter((row) => needsImageAnalysis(row.metadata, row.mode ?? "fill_missing", row.assessed !== null));
+      const missing = page.filter((row) => needsImageAnalysis(row.metadata, row.mode ?? "fill_missing"));
       if (missing.length) {
         await transaction.insert(jobs).values(missing.map(({ fileId, workspaceId, mode }) => ({
           fileId, workspaceId, ownerUserId: userId, model, mode: mode ?? "fill_missing",

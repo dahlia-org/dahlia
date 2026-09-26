@@ -442,16 +442,6 @@ export const storageDeleteJob = sqliteTable("jobs_storage_delete", {
   index("storage_delete_job_claim_idx").on(table.status, table.availableAt, table.leaseExpiresAt),
 ]);
 
-// Server-only, rebuildable screenshot selection hints from image analysis. Not part of file sync.
-export const screenshotAssessment = sqliteTable("screenshot_assessments", {
-  fileId: text("file_id").primaryKey().references(() => syncedFile.fileId, { onDelete: "cascade" }),
-  workspaceId: text("workspace_id").notNull().references(() => syncedWorkspace.workspaceId, { onDelete: "cascade" }),
-  model: text("model").notNull(),
-  informative: integer("informative", { mode: "boolean" }).notNull(),
-  reason: text("reason"),
-  createdAt: sqliteTimestamp("created_at").default(sql`(cast(unixepoch('subsecond') * 1000 as integer))`).notNull(),
-}, (table) => [index("screenshot_assessments_workspace_idx").on(table.workspaceId)]);
-
 // Operational queue metadata only; canonical image/text access remains owner-scoped.
 export const imageAnalysisJob = sqliteTable("jobs_image_analysis", {
   fileId: text("file_id").primaryKey().references(() => syncedFile.fileId, { onDelete: "cascade" }),

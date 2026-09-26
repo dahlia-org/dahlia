@@ -3,7 +3,7 @@ import { screenshotVariantKey, type ScreenshotVariant } from "../sync/screenshot
 
 const fileDimensionSchema = z.number().int().positive().max(33_554_432);
 export const fileMetadataLimits = {
-  api: { ocrText: 32_768, caption: 1_024 },
+  api: { ocrText: 32_768, caption: 1_024, informativeReason: 200 },
   postgres: { ocrText: 65_536, caption: 2_048 },
 } as const;
 
@@ -24,6 +24,9 @@ function metadataSchema(ocrTextLimit: number, captionLimit: number) {
     height: fileDimensionSchema.optional(),
     ocr_text: codePointLimitedString(z.string(), ocrTextLimit).nullable().optional(),
     caption: codePointLimitedString(z.string(), captionLimit).nullable().optional(),
+    // Image-analysis hint for summary screenshot selection; absent until analyzed.
+    informative: z.boolean().nullable().optional(),
+    informative_reason: codePointLimitedString(z.string(), fileMetadataLimits.api.informativeReason).nullable().optional(),
   }).strict();
 }
 
@@ -32,15 +35,18 @@ const persistedFileMetadataSchema = metadataSchema(fileMetadataLimits.postgres.o
 export type FileMetadata = z.infer<typeof persistedFileMetadataSchema>;
 
 // The database metadata stays unchanged; the HTTP contract uses camelCase.
-export const fileWireMetadataSchema = fileMetadataSchema.omit({ ocr_text: true }).extend({
+export const fileWireMetadataSchema = fileMetadataSchema.omit({ ocr_text: true, informative_reason: true }).extend({
   ocrText: fileMetadataSchema.shape.ocr_text,
+  informativeReason: fileMetadataSchema.shape.informative_reason,
 }).strict().openapi("FileWriteMetadata");
-export const fileWireResponseMetadataSchema = persistedFileMetadataSchema.omit({ ocr_text: true }).extend({
+export const fileWireResponseMetadataSchema = persistedFileMetadataSchema.omit({ ocr_text: true, informative_reason: true }).extend({
   ocrText: persistedFileMetadataSchema.shape.ocr_text,
+  informativeReason: persistedFileMetadataSchema.shape.informative_reason,
 }).strict().openapi("FileMetadata");
 export function fileMetadataFromWire(value: Partial<z.infer<typeof fileWireMetadataSchema>>): Partial<FileMetadata> {
-  const { ocrText, ...metadata } = value;
-  return { ...metadata, ...(ocrText !== undefined ? { ocr_text: ocrText } : {}) };
+  const { ocrText, informativeReason, ...metadata } = value;
+  return { ...metadata, ...(ocrText !== undefined ? { ocr_text: ocrText } : {}),
+    ...(informativeReason !== undefined ? { informative_reason: informativeReason } : {}) };
 }
 export const fileUploadSchema = z.object({
   id: z.uuidv7().meta({ format: "uuidv7" }).transform((id) => id.toLowerCase()), workspaceId: z.uuid().transform((id) => id.toLowerCase()), name: z.string().min(1).max(255),
@@ -86,11 +92,12 @@ export const fileVariantKey = (id: string, variant: ScreenshotVariant) => screen
 export const imageContentTypes = new Set(["image/png", "image/jpeg", "image/webp", "image/gif", "image/tiff"]);
 
 export function fileResponse(file: FileRecord) {
-  const { ocr_text, ...metadata } = file.metadata;
+  const { ocr_text, informative_reason, ...metadata } = file.metadata;
   return {
     id: file.fileId, workspaceId: file.workspaceId, size: file.size,
     contentType: file.contentType, checksum: file.checksum, name: file.name,
-    metadata: { ...metadata, ...(ocr_text !== undefined ? { ocrText: ocr_text } : {}) },
+    metadata: { ...metadata, ...(ocr_text !== undefined ? { ocrText: ocr_text } : {}),
+      ...(informative_reason !== undefined ? { informativeReason: informative_reason } : {}) },
     revision: file.revision, createdAt: file.createdAt, updatedAt: file.updatedAt,
   };
 }

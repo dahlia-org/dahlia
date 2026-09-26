@@ -1697,7 +1697,9 @@ export interface components {
             width?: number;
             height?: number;
             caption?: string | null;
+            informative?: boolean | null;
             ocrText?: string | null;
+            informativeReason?: string | null;
         };
         Transcript: {
             id: string;
@@ -1828,7 +1830,9 @@ export interface components {
             width?: number;
             height?: number;
             caption?: string | null;
+            informative?: boolean | null;
             ocrText?: string | null;
+            informativeReason?: string | null;
         };
         CurrentSession: {
             capabilities: {
@@ -2932,7 +2936,9 @@ export interface components {
                         width?: number;
                         height?: number;
                         caption?: string | null;
+                        informative?: boolean | null;
                         ocrText?: string | null;
+                        informativeReason?: string | null;
                     };
                     /** @enum {string} */
                     imageAnalysis?: "replace";
@@ -5509,7 +5515,9 @@ export interface operations {
                         width?: number;
                         height?: number;
                         caption?: string | null;
+                        informative?: boolean | null;
                         ocrText?: string | null;
+                        informativeReason?: string | null;
                     };
                 };
             };

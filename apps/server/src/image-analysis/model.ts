@@ -16,25 +16,19 @@ export interface ImageAnalysisInput extends ImageAnalysisClaim {
   file: FileRecord;
 }
 
-export const IMAGE_ANALYSIS_REASON_LIMIT = 200;
+export const IMAGE_ANALYSIS_REASON_LIMIT = fileMetadataLimits.api.informativeReason;
 export const imageAnalysisSchema = z.object({
   ocr_text: codePointLimitedString(z.string(), fileMetadataLimits.api.ocrText),
   caption: codePointLimitedString(z.string().trim().min(1), fileMetadataLimits.api.caption),
-  // Selection hints for summaries; stored outside synced file metadata.
+  // Summary selection hint, stored in file metadata.
   informative: z.boolean(),
   reason: codePointLimitedString(z.string().trim().min(1), IMAGE_ANALYSIS_REASON_LIMIT),
 }).strict();
 export type ImageAnalysis = z.infer<typeof imageAnalysisSchema>;
 
-export interface ScreenshotAssessment {
-  fileId: string;
-  informative: boolean;
-  reason: string | null;
-}
-
-export function needsImageAnalysis(metadata: FileRecord["metadata"], mode: ImageAnalysisClaim["mode"] = "fill_missing", assessed = true): boolean {
+export function needsImageAnalysis(metadata: FileRecord["metadata"], mode: ImageAnalysisClaim["mode"] = "fill_missing"): boolean {
   return mode === "replace" || metadata.ocr_text == null || !metadata.caption?.trim()
-    || (metadata.source === "screenshot" && !assessed);
+    || (metadata.source === "screenshot" && metadata.informative == null);
 }
 
 export class ImageAnalysisError extends Error {

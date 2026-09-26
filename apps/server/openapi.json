@@ -661,12 +661,25 @@
             ],
             "maxLength": 2048
           },
+          "informative": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
           "ocrText": {
             "type": [
               "string",
               "null"
             ],
             "maxLength": 65536
+          },
+          "informativeReason": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 200
           }
         },
         "required": [
@@ -1293,12 +1306,25 @@
             ],
             "maxLength": 1024
           },
+          "informative": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
           "ocrText": {
             "type": [
               "string",
               "null"
             ],
             "maxLength": 32768
+          },
+          "informativeReason": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 200
           }
         },
         "required": [
@@ -6626,12 +6652,25 @@
                               ],
                               "maxLength": 1024
                             },
+                            "informative": {
+                              "type": [
+                                "boolean",
+                                "null"
+                              ]
+                            },
                             "ocrText": {
                               "type": [
                                 "string",
                                 "null"
                               ],
                               "maxLength": 32768
+                            },
+                            "informativeReason": {
+                              "type": [
+                                "string",
+                                "null"
+                              ],
+                              "maxLength": 200
                             }
                           },
                           "additionalProperties": false
@@ -13317,12 +13356,25 @@
                         ],
                         "maxLength": 1024
                       },
+                      "informative": {
+                        "type": [
+                          "boolean",
+                          "null"
+                        ]
+                      },
                       "ocrText": {
                         "type": [
                           "string",
                           "null"
                         ],
                         "maxLength": 32768
+                      },
+                      "informativeReason": {
+                        "type": [
+                          "string",
+                          "null"
+                        ],
+                        "maxLength": 200
                       }
                     },
                     "additionalProperties": false
