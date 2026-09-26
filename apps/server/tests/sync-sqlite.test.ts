@@ -1003,7 +1003,7 @@ describe("SQLite canonical sync", () => {
     const jobs = store.imageAnalysis!;
     const analyze = vi.fn(async (_bytes: Uint8Array, settings: { outputLanguage: string }) => {
       expect(settings.outputLanguage).toBe("en");
-      return { ocr_text: "", caption: "Architecture diagram" };
+      return { ocr_text: "", caption: "Architecture diagram", informative: true, reason: "Shared material" };
     });
     const captioner: ImageCaptioner = { model: "catalog.ai.gpt-5-6-luna", analyze };
     await updateGenerationSettings(store, owner, file.workspaceId, { outputLanguage: "en" });
@@ -1048,8 +1048,8 @@ describe("SQLite canonical sync", () => {
     const claim = (await store.imageAnalysis!.claim("model"))!;
     expect(await store.sync.withIdentity(other, (scoped) => scoped.loadImageAnalysis(claim))).toBeNull();
     const input = (await store.sync.withIdentity(owner, (scoped) => scoped.loadImageAnalysis(claim)))!;
-    expect(await service.completeImageAnalysis(other, input, { ocr_text: "OCR", caption: "Replacement" })).toBe(false);
-    expect(await service.completeImageAnalysis(owner, input, { ocr_text: "OCR", caption: "Replacement" })).toBe(true);
+    expect(await service.completeImageAnalysis(other, input, { ocr_text: "OCR", caption: "Replacement", informative: true, reason: "Shared material" })).toBe(false);
+    expect(await service.completeImageAnalysis(owner, input, { ocr_text: "OCR", caption: "Replacement", informative: true, reason: "Shared material" })).toBe(true);
     expect(await service.getFile(owner, file.id)).toMatchObject({ metadata: { caption: "Existing caption", ocrText: "OCR" } });
     await store.close?.();
   });
@@ -1059,7 +1059,7 @@ describe("SQLite canonical sync", () => {
     await service.commitTransaction(owner, wire([{ entity: "file", action: "upsert", entityId: file.id, baseRevision: null,
       data: { checksum: file.checksum, metadata: { ocrText: "Imported OCR", caption: "Imported caption" }, imageAnalysis: "replace" } }]));
     const captioner: ImageCaptioner = { model: "model", analyze: vi.fn(async () => ({
-      ocr_text: "Server OCR", caption: "Server caption",
+      ocr_text: "Server OCR", caption: "Server caption", informative: true, reason: "Shared material",
     })) };
     const worker = new ImageAnalysisWorker(store.imageAnalysis!, captioner, store.sync, service);
     expect(await worker.processOne()).toBe(false);
@@ -1140,7 +1140,7 @@ describe("SQLite canonical sync", () => {
     await store.imageAnalysis!.reconcile("model");
     const claim = (await store.imageAnalysis!.claim("model"))!;
     const input = (await store.sync.withIdentity(owner, (scoped) => scoped.loadImageAnalysis(claim)))!;
-    expect(await service.completeImageAnalysis(owner, input, { ocr_text: "Replacement", caption: "Generated caption" })).toBe(true);
+    expect(await service.completeImageAnalysis(owner, input, { ocr_text: "Replacement", caption: "Generated caption", informative: true, reason: "Shared material" })).toBe(true);
     expect(await service.getFile(owner, file.id)).toMatchObject({
       metadata: { ocrText: legacyOCR, caption: "Generated caption" },
     });
@@ -1158,7 +1158,7 @@ describe("SQLite canonical sync", () => {
         let calls = 0;
         const captioner: ImageCaptioner = { model: "model", analyze: async () => {
           calls++; if (boundary === "during") await changeRole();
-          return { ocr_text: "Authorized OCR", caption: "Authorized caption" };
+          return { ocr_text: "Authorized OCR", caption: "Authorized caption", informative: true, reason: "Shared material" };
         } };
         if (boundary === "before") await changeRole();
         await new ImageAnalysisWorker(store.imageAnalysis!, captioner, store.sync, service).processOne();
@@ -1192,8 +1192,37 @@ describe("SQLite canonical sync", () => {
       await service.commitTransaction(owner, wire([{ entity: "meeting_attachment", action: "delete", entityId: file.id, baseRevision: 1, data: {} }]));
       if (change === "delete") await service.commitTransaction(owner, wire([{ entity: "file", action: "delete", entityId: file.id, baseRevision: 1, data: {} }]));
     }
-    expect(await service.completeImageAnalysis(owner, input, { ocr_text: "stale", caption: "stale" })).toBe(false);
+    expect(await service.completeImageAnalysis(owner, input, { ocr_text: "stale", caption: "stale", informative: true, reason: "Shared material" })).toBe(false);
     if (change !== "delete" && change !== "permission") expect((await service.getFile(owner, file.id)).metadata).not.toHaveProperty("ocrText", "stale");
+    await store.close?.();
+  });
+
+  it("records why a screenshot is not informative in file metadata without reanalyzing existing screenshots", async () => {
+    const { store, service, databasePath } = await fileSetup("model");
+    const files = await attachScreenshots(service, 2);
+    let calls = 0;
+    const captioner: ImageCaptioner = { model: "model", analyze: async () => {
+      calls++;
+      return calls === 2
+        ? { ocr_text: "", caption: "Two people talking", informative: false, reason: "A camera view" }
+        : { ocr_text: "Roadmap", caption: "A roadmap slide", informative: true, reason: "" };
+    } };
+    await store.imageAnalysis!.reconcile("model");
+    const worker = new ImageAnalysisWorker(store.imageAnalysis!, captioner, store.sync, service);
+    expect(await worker.processOne()).toBe(true);
+    expect(await worker.processOne()).toBe(true);
+    expect(await worker.processOne()).toBe(false);
+    expect(await service.getFile(owner, files[0]!.id)).toMatchObject({ metadata: { caption: "A roadmap slide", informativeReason: null } });
+    expect(await service.getFile(owner, files[1]!.id)).toMatchObject({ metadata: { informativeReason: "A camera view" } });
+    expect(await store.sync.withIdentity(owner, (scoped) => scoped.listUninformativeScreenshots(workspaceId, meetingId))).toEqual([files[1]!.id]);
+    expect(await store.sync.withIdentity(other, (scoped) => scoped.listUninformativeScreenshots(workspaceId, meetingId))).toEqual([]);
+    // Screenshots analyzed before this field existed are left as they are and stay usable for summaries.
+    const database = new DatabaseSync(databasePath);
+    database.prepare("UPDATE files SET metadata = json_remove(metadata, '$.informative_reason')").run();
+    database.close();
+    await store.imageAnalysis!.reconcile("model");
+    expect(await worker.processOne()).toBe(false);
+    expect(calls).toBe(2);
     await store.close?.();
   });
 
@@ -3214,6 +3243,26 @@ async function fileSetup(captioningModel?: string) {
   const attach = () => service.commitTransaction(owner, wire([{ entity: "meeting_attachment", action: "upsert", entityId: file.id,
     baseRevision: null, data: { fileId: file.id, meetingId, capturedAt: now.toISOString(), sessionId: null, createdAt: now.toISOString() } }]));
   return { ...setupValue, service, storage, transformer, file, bytes, publish, attach };
+}
+
+async function attachScreenshots(service: MeetingSyncService, count: number) {
+  const files: { id: string; checksum: string }[] = [];
+  // Desktop screenshot IDs are UUIDv7, so capture order matches job claim order.
+  const ids = Array.from({ length: count }, freshId).sort();
+  for (let index = 0; index < count; index++) {
+    const bytes = new Uint8Array(await sharp({ create: { width: 640, height: 360, channels: 3, background: { r: index * 40, g: 0, b: 0 } } }).png().toBuffer());
+    const file = { id: ids[index]!, workspaceId, name: `capture-${index}.png`, offset: 0, size: bytes.length, content_type: "image/png",
+      checksum: `SHA-256:${Buffer.from(await crypto.subtle.digest("SHA-256", bytes)).toString("hex")}`, metadata: { source: "screenshot", width: 640, height: 360 } };
+    await uploadFile(service, owner, fileUploadRequest(file, bytes));
+    const capturedAt = new Date(now.getTime() + index * 30_000).toISOString();
+    await service.commitTransaction(owner, wire([
+      { entity: "file", action: "upsert", entityId: file.id, baseRevision: null, data: { checksum: file.checksum, metadata: {} } },
+      { entity: "meeting_attachment", action: "upsert", entityId: file.id, baseRevision: null,
+        data: { fileId: file.id, meetingId, capturedAt, sessionId: null, createdAt: capturedAt } },
+    ]));
+    files.push(file);
+  }
+  return files;
 }
 
 function fileUploadRequest(file: { id: string; workspaceId: string; name: string; content_type: string; metadata: { source: string; width?: number; height?: number } }, bytes: Uint8Array<ArrayBuffer>, size = bytes.length) {

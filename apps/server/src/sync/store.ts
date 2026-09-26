@@ -2223,6 +2223,17 @@ function createIdentityStore(
     return true;
   }
 
+  async function listUninformativeScreenshots(workspaceId: string, meetingId: string) {
+    const rows = await content.read(schema.syncedFile, await db.select({ encryptedPayload: schema.syncedFile.encryptedPayload,
+      fileId: schema.syncedFile.fileId, workspaceId: schema.syncedFile.workspaceId, metadata: schema.syncedFile.metadata })
+      .from(schema.syncedFile).innerJoin(schema.meetingAttachment, and(
+        eq(schema.meetingAttachment.fileId, schema.syncedFile.fileId), eq(schema.meetingAttachment.workspaceId, schema.syncedFile.workspaceId)))
+      .where(and(eq(schema.syncedFile.workspaceId, workspaceId), eq(schema.meetingAttachment.meetingId, meetingId),
+        readable(schema.syncedFile.workspaceId)))
+      .orderBy(asc(schema.syncedFile.fileId)), workspaceId);
+    return rows.flatMap((row) => row.metadata.informative_reason ? [row.fileId] : []);
+  }
+
   async function listChanges(
     workspaceId: string,
     after: number,
@@ -2471,6 +2482,7 @@ function createIdentityStore(
     },
     lockWorkspace,
     loadImageAnalysis,
+    listUninformativeScreenshots,
     completeImageAnalysis,
     commitTransaction,
     resolveTransaction,

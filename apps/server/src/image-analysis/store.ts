@@ -89,32 +89,41 @@ export function createImageAnalysisStore(database: PostgresDatabase | SQLiteData
     claim(model, reference) {
       return db.transaction(async (transaction) => {
         const now = new Date();
-        const ready = exists(transaction.select({ id: files.fileId }).from(files).where(and(
-          eq(files.fileId, jobs.fileId), eq(files.workspaceId, jobs.workspaceId), eq(files.active, true),
-          isNotNull(files.uploadedAt), inArray(files.contentType, [...imageContentTypes]),
-          exists(transaction.select({ id: schema.meetingAttachment.id }).from(schema.meetingAttachment)
-            .innerJoin(schema.syncedMeeting, and(
-              eq(schema.syncedMeeting.workspaceId, schema.meetingAttachment.workspaceId),
-              eq(schema.syncedMeeting.meetingId, schema.meetingAttachment.meetingId),
-            )).where(and(eq(schema.meetingAttachment.fileId, jobs.fileId),
-              isNull(schema.syncedMeeting.deletingAt), isNull(schema.syncedMeeting.deletedAt)))),
-        )));
-        const query = transaction.select().from(jobs).where(and(
+        const due = and(
           reference ? and(eq(jobs.fileId, reference.fileId), eq(jobs.ownerUserId, reference.ownerUserId), eq(jobs.model, reference.model)) : undefined,
-          eq(jobs.model, model), lte(jobs.availableAt, now), ready,
+          eq(jobs.model, model), lte(jobs.availableAt, now),
           or(eq(jobs.status, "pending"), and(eq(jobs.status, "processing"), lte(jobs.leaseExpiresAt, now))),
-        )).orderBy(asc(jobs.availableAt), asc(jobs.fileId)).limit(1);
-        const [row] = isPostgres ? await query.for("update", { skipLocked: true }) : await query;
-        if (!row) return null;
-        if (isPostgres) await transaction.execute(sql`select set_config('app.user_id', ${row.ownerUserId}, true)`);
-        const [workspace] = await transaction.select({ settings: schema.syncedWorkspace.generationSettings })
-          .from(schema.syncedWorkspace).where(eq(schema.syncedWorkspace.workspaceId, row.workspaceId));
-        if (!workspace) { await transaction.delete(jobs).where(eq(jobs.fileId, row.fileId)); return null; }
-        const outputLanguage = row.outputLanguage ?? workspace.settings.outputLanguage;
-        await transaction.update(jobs).set({
-          outputLanguage, status: "processing", claimedAt: now, leaseExpiresAt: new Date(now.getTime() + 300_000),
-        }).where(eq(jobs.fileId, row.fileId));
-        return { ...row, outputLanguage, claimedAt: now };
+        );
+        const owners = reference ? [reference.ownerUserId] : (await transaction.select({ ownerUserId: jobs.ownerUserId }).from(jobs).where(due)
+          .groupBy(jobs.ownerUserId).orderBy(sql`min(${jobs.availableAt})`, asc(jobs.ownerUserId))).map((row) => row.ownerUserId);
+        // Readiness is evaluated per owner, so owners with only unready jobs cannot hide others' ready jobs.
+        for (const ownerUserId of owners) {
+          // Forced RLS hides files and attachments until the job owner's identity is set.
+          if (isPostgres) await transaction.execute(sql`select set_config('app.user_id', ${ownerUserId}, true)`);
+          const ready = exists(transaction.select({ id: files.fileId }).from(files).where(and(
+            eq(files.fileId, jobs.fileId), eq(files.workspaceId, jobs.workspaceId), eq(files.active, true),
+            isNotNull(files.uploadedAt), inArray(files.contentType, [...imageContentTypes]),
+            exists(transaction.select({ id: schema.meetingAttachment.id }).from(schema.meetingAttachment)
+              .innerJoin(schema.syncedMeeting, and(
+                eq(schema.syncedMeeting.workspaceId, schema.meetingAttachment.workspaceId),
+                eq(schema.syncedMeeting.meetingId, schema.meetingAttachment.meetingId),
+              )).where(and(eq(schema.meetingAttachment.fileId, jobs.fileId),
+                isNull(schema.syncedMeeting.deletingAt), isNull(schema.syncedMeeting.deletedAt)))),
+          )));
+          const query = transaction.select().from(jobs).where(and(due, eq(jobs.ownerUserId, ownerUserId), ready))
+            .orderBy(asc(jobs.availableAt), asc(jobs.fileId)).limit(1);
+          const [row] = isPostgres ? await query.for("update", { skipLocked: true }) : await query;
+          if (!row) continue;
+          const [workspace] = await transaction.select({ settings: schema.syncedWorkspace.generationSettings })
+            .from(schema.syncedWorkspace).where(eq(schema.syncedWorkspace.workspaceId, row.workspaceId));
+          if (!workspace) { await transaction.delete(jobs).where(eq(jobs.fileId, row.fileId)); continue; }
+          const outputLanguage = row.outputLanguage ?? workspace.settings.outputLanguage;
+          await transaction.update(jobs).set({
+            outputLanguage, status: "processing", claimedAt: now, leaseExpiresAt: new Date(now.getTime() + 300_000),
+          }).where(eq(jobs.fileId, row.fileId));
+          return { ...row, outputLanguage, claimedAt: now };
+        }
+        return null;
       });
     },
     async finish(claim, error) {

@@ -12,6 +12,8 @@ import type { AppConfig } from "../src/config";
 import { connectAuthDatabase } from "../src/db/client";
 import * as schema from "../src/db/auth-schema";
 import { createPostgresMeetingSyncStore, SyncTransactionError } from "../src/sync/store";
+import { createImageAnalysisStore } from "../src/image-analysis/store";
+import { uuidV7 } from "../src/id";
 import type { IdentitySyncStore, SyncTransaction, SyncTransactionOperation } from "../src/sync/types";
 
 const databaseUrl = process.env.TEST_DATABASE_URL;
@@ -521,6 +523,40 @@ integration("PostgreSQL application store", () => {
     await seedPostgresIdentity(store, databaseUrl!, replacement);
     await store.addAdminUser(replacement.email);
     expect(await store.removeAdminUser(suffix)).toBe("removed");
+  });
+
+  it("claims ready screenshot jobs under forced RLS and hides usefulness from outsiders", async () => {
+    const store = createPostgresAuthStore(connection!.db, "postgres");
+    const owner: Identity = { userId: crypto.randomUUID(), source: "header" };
+    const outsider: Identity = { userId: crypto.randomUUID(), source: "header" };
+    await seedPostgresIdentity(store, databaseUrl!, owner);
+    await seedPostgresIdentity(store, databaseUrl!, outsider);
+    const workspaceId = crypto.randomUUID(), meetingId = crypto.randomUUID(), hiddenFileId = uuidV7(), fileId = uuidV7(), now = new Date();
+    await store.sync.withIdentity(owner, (sync) => createWorkspace(sync, workspaceId, [{ id: crypto.randomUUID(), entity: "meeting",
+      action: "create", entityId: meetingId, baseRevision: null, data: meetingData(null, now, "Meeting", "") }]));
+    await store.sync.withIdentity(owner, async (sync) => {
+      for (const [index, id] of [hiddenFileId, fileId].entries()) {
+        const checksum = `SHA-256:${String(index).repeat(64)}`;
+        await sync.reserveFile({ fileId: id, workspaceId, uri: `/Volumes/test/app/files/files/${id}/original`, offset: 0, size: 1,
+          contentType: "image/png", checksum, name: "capture.png", metadata: { source: "screenshot" }, active: false,
+          uploadedAt: now, revision: 0, createdAt: now, updatedAt: now });
+        await commit(sync, workspaceId, [{ id: crypto.randomUUID(), entity: "file", action: "upsert", entityId: id, baseRevision: null,
+          data: { checksum, metadata: {} } }, { id: crypto.randomUUID(), entity: "meeting_attachment", action: "upsert", entityId: id,
+          baseRevision: null, data: { meetingId, fileId: id, capturedAt: now, sessionId: null, createdAt: now, searchText: "", embeddingContentHash: "hash" } }]);
+      }
+    });
+    const jobs = createImageAnalysisStore(connection!.db, true);
+    const model = `model-${crypto.randomUUID()}`;
+    await jobs.reconcilePage(model, owner.userId);
+    // An older job whose owner cannot read its file must not hide the ready job behind it.
+    await connection!.db.update(schema.imageAnalysisJob).set({ ownerUserId: outsider.userId, availableAt: new Date(0) })
+      .where(eq(schema.imageAnalysisJob.fileId, hiddenFileId));
+    const claim = (await jobs.claim(model))!;
+    expect(claim).toMatchObject({ fileId, ownerUserId: owner.userId });
+    await store.sync.withIdentity(owner, (sync) => commit(sync, workspaceId, [{ id: crypto.randomUUID(), entity: "file", action: "upsert",
+      entityId: fileId, baseRevision: 1, data: { checksum: `SHA-256:${"1".repeat(64)}`, metadata: { informative_reason: "A camera view" } } }]));
+    expect(await store.sync.withIdentity(owner, (sync) => sync.listUninformativeScreenshots(workspaceId, meetingId))).toEqual([fileId]);
+    expect(await store.sync.withIdentity(outsider, (sync) => sync.listUninformativeScreenshots(workspaceId, meetingId))).toEqual([]);
   });
 
   it("grants read-only Workspace access through an explicit organization share", async () => {

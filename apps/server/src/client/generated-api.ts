@@ -1698,6 +1698,7 @@ export interface components {
             height?: number;
             caption?: string | null;
             ocrText?: string | null;
+            informativeReason?: string | null;
         };
         Transcript: {
             id: string;
@@ -1781,6 +1782,8 @@ export interface components {
             /** @enum {string} */
             generatedBy: "server" | "local_codex";
             inputTypes: ("transcript" | "image" | "audio" | "note" | "context")[];
+            /** @enum {string} */
+            imageSelection?: "model" | "even";
             detailLevel?: string | null;
             outputLanguage?: string | null;
             request: {
@@ -1829,6 +1832,7 @@ export interface components {
             height?: number;
             caption?: string | null;
             ocrText?: string | null;
+            informativeReason?: string | null;
         };
         CurrentSession: {
             capabilities: {
@@ -2933,6 +2937,7 @@ export interface components {
                         height?: number;
                         caption?: string | null;
                         ocrText?: string | null;
+                        informativeReason?: string | null;
                     };
                     /** @enum {string} */
                     imageAnalysis?: "replace";
@@ -5510,6 +5515,7 @@ export interface operations {
                         height?: number;
                         caption?: string | null;
                         ocrText?: string | null;
+                        informativeReason?: string | null;
                     };
                 };
             };

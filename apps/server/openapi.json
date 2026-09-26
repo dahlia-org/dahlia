@@ -667,6 +667,13 @@
               "null"
             ],
             "maxLength": 65536
+          },
+          "informativeReason": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 200
           }
         },
         "required": [
@@ -1085,6 +1092,13 @@
             },
             "maxItems": 5
           },
+          "imageSelection": {
+            "type": "string",
+            "enum": [
+              "model",
+              "even"
+            ]
+          },
           "detailLevel": {
             "type": [
               "string",
@@ -1299,6 +1313,13 @@
               "null"
             ],
             "maxLength": 32768
+          },
+          "informativeReason": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 200
           }
         },
         "required": [
@@ -6632,6 +6653,13 @@
                                 "null"
                               ],
                               "maxLength": 32768
+                            },
+                            "informativeReason": {
+                              "type": [
+                                "string",
+                                "null"
+                              ],
+                              "maxLength": 200
                             }
                           },
                           "additionalProperties": false
@@ -13323,6 +13351,13 @@
                           "null"
                         ],
                         "maxLength": 32768
+                      },
+                      "informativeReason": {
+                        "type": [
+                          "string",
+                          "null"
+                        ],
+                        "maxLength": 200
                       }
                     },
                     "additionalProperties": false

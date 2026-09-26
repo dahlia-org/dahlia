@@ -169,7 +169,8 @@ it("preserves protected file metadata and job input across partial updates and c
     data: { projectId: null, name: "Meeting", description: "", status: "READY", createdAt: now, updatedAt: now } }]));
   const pending = await f.store.sync.withIdentity(owner, (sync) => sync.reserveFile({ fileId, workspaceId: f.workspaceId,
     name: "PRIVATE_FILENAME_MARKER", uri: "PRIVATE_URI_MARKER", offset: 0, size: 0, checksum: "", contentType: "image/png",
-    metadata: { source: "screenshot", width: 10, height: 10, ocr_text: "PRIVATE_OCR_MARKER", caption: "PRIVATE_CAPTION_MARKER" },
+    metadata: { source: "screenshot", width: 10, height: 10, ocr_text: "PRIVATE_OCR_MARKER", caption: "PRIVATE_CAPTION_MARKER",
+      informative_reason: "PRIVATE_REASON_MARKER" },
     active: false, uploadedAt: null, revision: 0, createdAt: now, updatedAt: now }));
   const checksum = `SHA-256:${"a".repeat(64)}`;
   const uploaded = await f.store.sync.withIdentity(owner, (sync) => sync.markFileUploaded(pending!, 100, checksum));
@@ -183,6 +184,7 @@ it("preserves protected file metadata and job input across partial updates and c
     .toMatchObject({ ocrText: "PRIVATE_OCR_MARKER", caption: "PRIVATE_CAPTION_MARKER", contentHash: "a".repeat(64) });
   expect((await f.store.sync.withIdentity(owner, (sync) => sync.listMeetingAttachments(f.workspaceId, meetingId, undefined, 10)))[0]?.file.name)
     .toBe("PRIVATE_FILENAME_MARKER");
+  expect(await f.store.sync.withIdentity(owner, (sync) => sync.listUninformativeScreenshots(f.workspaceId, meetingId))).toEqual([fileId]);
   const job: SummaryJob = { id: uuidV7(), workspaceId: f.workspaceId, meetingId, ownerUserId: owner.userId, method: "transcript",
     settings: { detail: "medium", model: "PRIVATE_MODEL_MARKER", reasoningEffort: "low" }, input: { type: "transcript", version: "PRIVATE_INPUT_MARKER" },
     inputVersion: "PRIVATE_VERSION_MARKER", requestHash: "PRIVATE_REQUEST_MARKER", outputLanguage: "ja", status: "pending", attempts: 0,

@@ -16,6 +16,7 @@ import { summaryResponseMetadataSchema } from "./metadata";
 import { resolveSummaryPreferences } from "./preferences";
 import { isAudioSummaryModel, isSummaryModel } from "./audio-model";
 import { assertSummaryAccess, boundedBytes, collectSummaryInput, fingerprint, summaryImageContent, summaryInstructions, summaryXMLText } from "./transcript";
+import { createScreenshotSelector } from "./screenshot-selection";
 
 interface AudioInput {
   recordingIndex: number; number: number; source: RecordingSource; startedAt: Date; endedAt: Date;
@@ -119,6 +120,7 @@ export function createAudioSummaryMethod(config: AppConfig, store: MeetingSyncSt
   if (!execution) return undefined;
   const { provider: audioProvider, backend, normalizeModel, resolveModel, headers: executionHeaders } = execution;
   const cloudflare = audioProvider.backend === "cloudflare";
+  const selector = createScreenshotSelector(config, transport);
   return {
     id: "audio",
     async captureSettings(settings, detail, input) {
@@ -184,7 +186,7 @@ export function createAudioSummaryMethod(config: AppConfig, store: MeetingSyncSt
           : job.settings.reasoningEffort;
         if (!levels.some(({ effort }) => effort === reasoningEffort)) throw new SummaryError("summary_invalid_reasoning_effort");
         const model = resolveModel(configuredModel);
-        const { content, imageIds, images } = await summaryImageContent(input, sync, identity, signal);
+        const { content, imageIds, images, imageSelection } = await summaryImageContent(input, sync, identity, signal, [], selector);
         const chatContent = content.map((item) => item.type === "input_text"
           ? { type: "text", text: item.text } : { type: "image_url", image_url: { url: item.image_url } });
         const parameters = { model, stream: false, reasoning_effort: reasoningEffort,
@@ -322,7 +324,7 @@ export function createAudioSummaryMethod(config: AppConfig, store: MeetingSyncSt
         if (transcriptionOnly) return { transcription: transcript };
         return { document: { ...summaryDocument(combined ? combined.summary : value, imageIds),
           ...(transcript ? { transcript } : {}), metadata: {
-          generatedBy: "server", inputTypes: ["context", "audio", ...(images.length ? ["image" as const] : [])],
+          generatedBy: "server", inputTypes: ["context", "audio", ...(images.length ? ["image" as const] : [])], ...(imageSelection ? { imageSelection } : {}),
           detailLevel: job.settings.detail, outputLanguage: job.outputLanguage,
           request: { model, reasoning: { effort: reasoningEffort } }, response: responseMetadata,
         } } };

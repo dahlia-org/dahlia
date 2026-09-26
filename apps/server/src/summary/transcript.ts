@@ -12,6 +12,7 @@ import { GatewayRequestError } from "../ai-gateway/errors";
 import { sendOpenAIResponses } from "../ai-gateway/adapters";
 import { isSummaryModel } from "./audio-model";
 import { SummaryError, summaryDocument, summaryResponseSchema, type SummaryMethod, type SummaryInput } from "./model";
+import { createScreenshotSelector, selectSummaryScreenshots, summaryScreenshotCandidates, type ScreenshotSelector } from "./screenshot-selection";
 
 export async function fingerprint(value: unknown): Promise<string> {
   const hash = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(JSON.stringify(value)));
@@ -70,10 +71,11 @@ export async function collectSummaryInput(store: IdentitySyncStore, workspaceId:
     images.push(...page);
     if (page.length < 200) break;
   }
+  const uninformative = images.length ? await store.listUninformativeScreenshots(workspaceId, meetingId) : [];
   const input = { meeting: { name: meeting.name, description: meeting.description, createdAt: meeting.createdAt,
     icalUid: meeting.icalUid ?? null, recurrenceId: meeting.recurrenceId ?? null, calendarEvent: meeting.calendarEvent ?? null,
     recordingStartedAt: meeting.recordingStartedAt, ...(includeTranscript && !reference ? { revision: meeting.revision, transcriptRevision: meeting.transcriptRevision } : {}) },
-  project: project ? { name: project.name, description: project.description, path: project.path, revision: project.revision } : null, ...(includeTranscript ? { transcript } : {}), images };
+  project: project ? { name: project.name, description: project.description, path: project.path, revision: project.revision } : null, ...(includeTranscript ? { transcript } : {}), images, uninformative };
   if (JSON.stringify(input).length > 2_000_000) throw new SummaryError("summary_input_too_large");
   return input;
 }
@@ -82,6 +84,7 @@ export function createTranscriptSummaryMethod(config: AppConfig, store: MeetingS
   const execution = createJobProvider(config, transport);
   if (!execution) return undefined;
   const { provider, backend } = execution;
+  const selector = createScreenshotSelector(config, transport);
   return {
     id: "transcript",
     async captureSettings(settings, detail, input) {
@@ -118,7 +121,7 @@ export function createTranscriptSummaryMethod(config: AppConfig, store: MeetingS
       }));
       if (!job.transcriptResult && await fingerprint(input) !== job.inputVersion) throw new SummaryError("summary_input_changed");
       if (!input.transcript?.some((segment) => segment.text.trim())) throw new SummaryError("summary_transcript_empty");
-      const { content, images, imageIds } = await summaryImageContent(input, sync, identity, signal, recordingSessions);
+      const { content, images, imageIds, imageSelection } = await summaryImageContent(input, sync, identity, signal, recordingSessions, selector);
       const model = execution.resolveModel(job.settings.model);
       if (provider.backend === "cloudflare" && (model !== "openai/gpt-4.1" || job.settings.reasoningEffort !== "none")) {
         throw new SummaryError("summary_invalid_model");
@@ -145,7 +148,7 @@ export function createTranscriptSummaryMethod(config: AppConfig, store: MeetingS
         .filter((item) => item.type === "output_text").map((item) => item.text ?? "").join("");
       return { ...summaryDocument(JSON.parse(text), imageIds), metadata: {
         generatedBy: "server",
-        inputTypes: ["context", "transcript", ...(images.length ? ["image" as const] : [])],
+        inputTypes: ["context", "transcript", ...(images.length ? ["image" as const] : [])], ...(imageSelection ? { imageSelection } : {}),
         detailLevel: job.settings.detail, outputLanguage: job.outputLanguage,
         request: { model, reasoning: { effort: job.settings.reasoningEffort } },
         response: summaryResponseMetadataSchema.parse(parsed),
@@ -199,10 +202,14 @@ function summaryElapsedTime(startedAt: Date, timeBase: Date, sessions: readonly 
 }
 
 export async function summaryImageContent(input: Awaited<ReturnType<typeof collectSummaryInput>>, sync: MeetingSyncService,
-  identity: import("../auth/identity").Identity, signal: AbortSignal, recordingSessions: readonly SummaryRecordingSession[] = []) {
-  // ponytail: sample at most 24 images; add content-aware selection when representative coverage is insufficient.
-  const imageInterval = Math.max(1, Math.ceil(input.images.length / 24));
-  const images = input.images.filter((_, index) => index % imageInterval === 0).slice(0, 24);
+  identity: import("../auth/identity").Identity, signal: AbortSignal, recordingSessions: readonly SummaryRecordingSession[] = [],
+  selector?: ScreenshotSelector) {
+  const candidates = summaryScreenshotCandidates(input.images, input.uninformative);
+  const { images, method } = await selectSummaryScreenshots(candidates, signal, selector, async (image, deadline) => {
+    const { upstream } = await sync.readFileContent(identity, image.fileId, "thumb_480", "GET", new Request("https://dahlia.invalid/", { signal: deadline }));
+    if (!upstream.ok) { await upstream.body?.cancel(); throw new SummaryError("summary_image_unavailable", upstream.status >= 500); }
+    return new Uint8Array(await boundedBytes(upstream, 1024 * 1024));
+  });
   const imageIds = new Set(images.map((image) => image.screenshotId));
   const { meeting, project } = input;
   const content: Record<string, unknown>[] = [{ type: "input_text", text: `<context>
@@ -245,5 +252,5 @@ ${transcript}
     content.push({ type: "input_text", text: `<image><image_id>${summaryXMLText(image.screenshotId)}</image_id><captured_at>${image.capturedAt.toISOString()}</captured_at></image>` },
       { type: "input_image", image_url: `data:image/webp;base64,${Buffer.from(bytes).toString("base64")}` });
   }
-  return { content, images, imageIds };
+  return { content, images, imageIds, imageSelection: candidates.length ? method : undefined };
 }

@@ -19,6 +19,8 @@ export const summaryResponseMetadataSchema = z.object({
 export const summaryMetadataSchema = z.object({
   generatedBy: z.enum(["server", "local_codex"]),
   inputTypes: z.array(z.enum(["transcript", "image", "audio", "note", "context"])).max(5),
+  // How screenshots were chosen: by the preselection model, or evenly as the fallback.
+  imageSelection: z.enum(["model", "even"]).optional(),
   detailLevel: z.string().max(100).transform(normalizeSummaryDetail).nullish(),
   outputLanguage: z.string().max(100).nullish(),
   request: z.object({ model: z.string().max(500).nullish(), reasoning: reasoning.optional() }),

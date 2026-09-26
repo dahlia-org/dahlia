@@ -25,17 +25,21 @@ export class ImageAnalysisWorker {
 
   private async run(): Promise<void> {
     let nextReconcile = 0;
+    let idleDelay = 1_000;
     while (!this.abort.signal.aborted) {
       try {
         if (Date.now() >= nextReconcile) {
           nextReconcile = Date.now() + 60_000;
+          idleDelay = 1_000;
           await this.jobs.reconcile(this.captioner.model);
         }
-        if (await this.processOne()) continue;
+        if (await this.processOne()) { idleDelay = 1_000; continue; }
       } catch {
         console.warn(JSON.stringify({ level: "warn", event: "image_analysis_worker_failed" }));
       }
-      await delay(1_000, undefined, { ref: false });
+      // Each idle claim checks every owner with due jobs, so back off until work or the next reconcile appears.
+      await delay(Math.min(idleDelay, Math.max(0, nextReconcile - Date.now())), undefined, { ref: false });
+      idleDelay = Math.min(idleDelay * 2, 30_000);
     }
   }
 

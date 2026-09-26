@@ -190,7 +190,7 @@ export class MeetingSyncService {
   async completeImageAnalysis(identity: Identity, input: ImageAnalysisInput, output: ImageAnalysis): Promise<boolean> {
     const analysis = imageAnalysisSchema.parse(output);
     const metadata = { ...input.file.metadata };
-    const generatedMetadata: { ocrText?: string; caption?: string } = {};
+    const generatedMetadata: { ocrText?: string; caption?: string; informativeReason?: string | null } = {};
     if (input.mode === "replace" || metadata.ocr_text == null) {
       metadata.ocr_text = analysis.ocr_text;
       generatedMetadata.ocrText = analysis.ocr_text;
@@ -198,6 +198,11 @@ export class MeetingSyncService {
     if (input.mode === "replace" || !metadata.caption?.trim()) {
       metadata.caption = analysis.caption;
       generatedMetadata.caption = analysis.caption;
+    }
+    // Only a fresh analysis records usefulness; existing screenshots are not reanalyzed for it.
+    if (metadata.source === "screenshot" && (input.mode === "replace" || Object.keys(generatedMetadata).length)) {
+      metadata.informative_reason = analysis.informative ? null : analysis.reason;
+      generatedMetadata.informativeReason = metadata.informative_reason;
     }
     const transaction = await normalizeTransaction({
       schemaVersion: 3, id: uuidV7(), workspaceId: input.workspaceId, createdAt: new Date().toISOString(),

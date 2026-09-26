@@ -16,10 +16,14 @@ export interface ImageAnalysisInput extends ImageAnalysisClaim {
   file: FileRecord;
 }
 
+export const IMAGE_ANALYSIS_REASON_LIMIT = fileMetadataLimits.api.informativeReason;
 export const imageAnalysisSchema = z.object({
   ocr_text: codePointLimitedString(z.string(), fileMetadataLimits.api.ocrText),
   caption: codePointLimitedString(z.string().trim().min(1), fileMetadataLimits.api.caption),
-}).strict();
+  informative: z.boolean(),
+  // Why the screenshot is not informative; empty when it is.
+  reason: codePointLimitedString(z.string().trim(), IMAGE_ANALYSIS_REASON_LIMIT),
+}).strict().refine((analysis) => analysis.informative || analysis.reason !== "", { path: ["reason"] });
 export type ImageAnalysis = z.infer<typeof imageAnalysisSchema>;
 
 export function needsImageAnalysis(metadata: FileRecord["metadata"], mode: ImageAnalysisClaim["mode"] = "fill_missing"): boolean {

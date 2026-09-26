@@ -270,6 +270,8 @@ export interface IdentitySyncStore {
   completeSummaryJob(job: SummaryJob, transaction: SyncTransaction): Promise<boolean>;
   loadImageAnalysis(claim: ImageAnalysisClaim): Promise<ImageAnalysisInput | null>;
   completeImageAnalysis(input: ImageAnalysisInput, transaction: SyncTransaction): Promise<boolean>;
+  /** File IDs of the meeting's screenshots that image analysis found to have no shared material. */
+  listUninformativeScreenshots(workspaceId: string, meetingId: string): Promise<string[]>;
   reserveRecording(workspaceId: string, meetingId: string, sessionId: string, source: RecordingSource): Promise<RecordingRecord>;
   getRecording(meetingId: string, number: number, ownerOnly?: boolean): Promise<RecordingRecord | null>;
   markRecordingUploaded(sessionId: string, source: RecordingSource, generation: string, size: number, checksum: string): Promise<RecordingRecord | null>;

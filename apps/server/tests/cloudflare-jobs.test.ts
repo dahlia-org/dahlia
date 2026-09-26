@@ -79,9 +79,9 @@ describe("Cloudflare background provider contracts", () => {
       const body: unknown = JSON.parse(String(init?.body));
       expect(body).toMatchObject({ model: "openai/gpt-4.1", store: false, stream: false });
       expect(body).not.toHaveProperty("reasoning");
-      return Promise.resolve(Response.json({ status: "completed", output: [{ type: "message", content: [{ type: "output_text", text: '{"ocr_text":"hello","caption":"A slide"}' }] }] }));
+      return Promise.resolve(Response.json({ status: "completed", output: [{ type: "message", content: [{ type: "output_text", text: '{"ocr_text":"hello","caption":"A slide","informative":true,"reason":"A slide"}' }] }] }));
     };
-    expect(await createImageCaptioner(config, transport)!.analyze(new Uint8Array([1]), { outputLanguage: "ja" })).toEqual({ ocr_text: "hello", caption: "A slide" });
+    expect(await createImageCaptioner(config, transport)!.analyze(new Uint8Array([1]), { outputLanguage: "ja" })).toEqual({ ocr_text: "hello", caption: "A slide", informative: true, reason: "A slide" });
   });
   it.each([429, 503, 400])("persists the existing transient/permanent distinction for HTTP %i", async (status) => {
     const transport: typeof fetch = () => Promise.resolve(new Response("private", { status }));

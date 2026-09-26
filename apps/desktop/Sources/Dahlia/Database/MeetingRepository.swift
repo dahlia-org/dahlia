@@ -1071,6 +1071,18 @@ final class MeetingRepository {
         }
     }
 
+    /// Summary input excludes screenshots that Server image analysis found to have no shared material.
+    nonisolated func fetchSummaryScreenshots(forMeetingId meetingId: UUID) throws -> [MeetingScreenshotRecord] {
+        try dbQueue.read { db in
+            try MeetingScreenshotRecord
+                .select(sql: MeetingScreenshotRecord.metadataSelection)
+                .filter(Column("meetingId") == meetingId)
+                .filter(sql: "fileId NOT IN (SELECT id FROM files WHERE json_extract(metadata, '$.informativeReason') IS NOT NULL)")
+                .order(Column("capturedAt").asc)
+                .fetchAll(db)
+        }
+    }
+
     func deleteScreenshots(ids: Set<UUID>, meetingId: UUID) async throws -> [MeetingScreenshotRecord] {
         guard !ids.isEmpty else { return [] }
         return try await dbQueue.write { db in

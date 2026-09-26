@@ -102,6 +102,24 @@
             }
         }
 
+        @Test
+        func fileMetadataKeepsInformativeReasonFromTheChangeFeed() async throws {
+            let fixture = try textFixture()
+            let file = try await fileMetadataFixture(fixture)
+            for reason in ["Only a camera view.", nil] {
+                var json = file.record(revision: 2)
+                json["metadata"] = ["source": "screenshot", "informativeReason": reason.map { $0 as Any } ?? NSNull()]
+                json["contentOmitted"] = true
+                json["contentPresent"] = true
+                let payload = try SyncJSON.decoder.decode(SyncCanonicalPayload.self, from: JSONSerialization.data(withJSONObject: json))
+                try await fixture.queue.write { db in
+                    try SyncTransactionQueue.applyCanonical(.file, id: file.id, workspaceId: fixture.workspaceId, value: payload, in: db)
+                    #expect(try FileRecord.fetchOne(db, key: file.id)?.metadata.informativeReason == reason)
+                    #expect(try TextContentAccess.cachedFileText(fileId: file.id, in: db)?.caption == "old")
+                }
+            }
+        }
+
         @Test(arguments: ["edit", "missing-field", "wrong-id", "wrong-workspace", "checksum"])
         func fileMetadataRejectsInvalidOrLocallySupersededBodies(scenario: String) async throws {
             let fixture = try textFixture()
