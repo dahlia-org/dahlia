@@ -13,7 +13,7 @@ import { createSearchSettingsStore } from "../search/settings";
 import { transcriptStatus, sameTranscriptModel, type TranscriptVersion } from "./transcript";
 import { summaryMetadata, summaryMetadataSchema } from "../summary/metadata";
 import { fileResponse, fileStorageKey, imageContentTypes, type FileMetadata } from "../files/model";
-import { needsImageAnalysis, type ImageAnalysisClaim, type ImageAnalysisInput } from "../image-analysis/model";
+import { needsImageAnalysis, type ImageAnalysisClaim, type ImageAnalysisInput, type ScreenshotAssessment } from "../image-analysis/model";
 import { recordingCanonical, recordingStorageKey, type RecordingRecord, type RecordingSource, type RecordingManifest } from "../recordings/model";
 import { normalizedCharacterCount } from "../conversation-analytics";
 import {
@@ -424,6 +424,7 @@ async function roleSupportsRls(db: PostgresDatabase): Promise<boolean> {
       "jobs.summary",
       "app.summaries",
       "app.shared_memories",
+      "app.screenshot_assessments",
     ];
     const secured = (await client.query<{ count: number }>(`
       select count(*)::integer as count
@@ -2192,8 +2193,9 @@ function createIdentityStore(
 
   async function loadImageAnalysis(claim: ImageAnalysisClaim): Promise<ImageAnalysisInput | null> {
     if (claim.ownerUserId !== userPrincipalId) return null;
-    const [file] = await db.select({ file: schema.syncedFile }).from(schema.syncedFile)
+    const [file] = await db.select({ file: schema.syncedFile, assessed: schema.screenshotAssessment.fileId }).from(schema.syncedFile)
       .innerJoin(schema.imageAnalysisJob, eq(schema.imageAnalysisJob.fileId, schema.syncedFile.fileId))
+      .leftJoin(schema.screenshotAssessment, eq(schema.screenshotAssessment.fileId, schema.syncedFile.fileId))
       .where(and(
         imageClaimKey(claim), eq(schema.syncedFile.workspaceId, claim.workspaceId),
         eq(schema.syncedFile.active, true), isNotNull(schema.syncedFile.uploadedAt),
@@ -2206,11 +2208,11 @@ function createIdentityStore(
           )).where(and(eq(schema.meetingAttachment.fileId, claim.fileId), isNull(schema.syncedMeeting.deletingAt), isNull(schema.syncedMeeting.deletedAt)))),
       )).limit(1);
     if (file) file.file = (await content.read(schema.syncedFile, [file.file]))[0]!;
-    return file && imageContentTypes.has(file.file.contentType) && needsImageAnalysis(file.file.metadata, claim.mode)
+    return file && imageContentTypes.has(file.file.contentType) && needsImageAnalysis(file.file.metadata, claim.mode, file.assessed !== null)
       ? { ...claim, file: file.file } : null;
   }
 
-  async function completeImageAnalysis(input: ImageAnalysisInput, transaction: SyncTransaction): Promise<boolean> {
+  async function completeImageAnalysis(input: ImageAnalysisInput, transaction: SyncTransaction | null, assessment: ScreenshotAssessment): Promise<boolean> {
     await lockWorkspace(input.workspaceId);
     const claimQuery = db.select({ id: schema.imageAnalysisJob.fileId }).from(schema.imageAnalysisJob)
       .where(imageClaimKey(input));
@@ -2219,8 +2221,34 @@ function createIdentityStore(
     const current = await loadImageAnalysis(input);
     if (!current || current.file.checksum !== input.file.checksum || current.file.revision !== input.file.revision) return false;
     await db.delete(schema.imageAnalysisJob).where(imageClaimKey(input));
-    await commitTransaction(transaction);
+    if (input.file.metadata.source === "screenshot") {
+      const [workspace] = await db.select({ encryption: schema.syncedWorkspace.encryption }).from(schema.syncedWorkspace)
+        .where(eq(schema.syncedWorkspace.workspaceId, input.workspaceId)).limit(1);
+      const values = {
+        workspaceId: input.workspaceId, model: input.model, informative: assessment.informative,
+        // The reason describes image content, which an encrypted Workspace must not store in plaintext.
+        reason: workspace?.encryption === "none" ? assessment.reason : null,
+        duplicateOfFileId: assessment.duplicateOfFileId, createdAt: new Date(),
+      };
+      await db.insert(schema.screenshotAssessment).values({ fileId: input.fileId, ...values })
+        .onConflictDoUpdate({ target: schema.screenshotAssessment.fileId, set: values });
+    }
+    if (transaction) await commitTransaction(transaction);
     return true;
+  }
+
+  async function listScreenshotAssessments(workspaceId: string, meetingId: string): Promise<ScreenshotAssessment[]> {
+    return db.select({
+      fileId: schema.screenshotAssessment.fileId, informative: schema.screenshotAssessment.informative,
+      reason: schema.screenshotAssessment.reason, duplicateOfFileId: schema.screenshotAssessment.duplicateOfFileId,
+    }).from(schema.screenshotAssessment)
+      .innerJoin(schema.meetingAttachment, and(
+        eq(schema.meetingAttachment.fileId, schema.screenshotAssessment.fileId),
+        eq(schema.meetingAttachment.workspaceId, schema.screenshotAssessment.workspaceId),
+      ))
+      .where(and(eq(schema.screenshotAssessment.workspaceId, workspaceId), eq(schema.meetingAttachment.meetingId, meetingId),
+        readable(schema.screenshotAssessment.workspaceId)))
+      .orderBy(asc(schema.screenshotAssessment.fileId));
   }
 
   async function listChanges(
@@ -2471,6 +2499,7 @@ function createIdentityStore(
     },
     lockWorkspace,
     loadImageAnalysis,
+    listScreenshotAssessments,
     completeImageAnalysis,
     commitTransaction,
     resolveTransaction,

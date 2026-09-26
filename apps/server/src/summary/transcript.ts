@@ -12,6 +12,7 @@ import { GatewayRequestError } from "../ai-gateway/errors";
 import { sendOpenAIResponses } from "../ai-gateway/adapters";
 import { isSummaryModel } from "./audio-model";
 import { SummaryError, summaryDocument, summaryResponseSchema, type SummaryMethod, type SummaryInput } from "./model";
+import { selectSummaryScreenshots } from "./screenshot-selection";
 
 export async function fingerprint(value: unknown): Promise<string> {
   const hash = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(JSON.stringify(value)));
@@ -70,10 +71,11 @@ export async function collectSummaryInput(store: IdentitySyncStore, workspaceId:
     images.push(...page);
     if (page.length < 200) break;
   }
+  const assessments = images.length ? await store.listScreenshotAssessments(workspaceId, meetingId) : [];
   const input = { meeting: { name: meeting.name, description: meeting.description, createdAt: meeting.createdAt,
     icalUid: meeting.icalUid ?? null, recurrenceId: meeting.recurrenceId ?? null, calendarEvent: meeting.calendarEvent ?? null,
     recordingStartedAt: meeting.recordingStartedAt, ...(includeTranscript && !reference ? { revision: meeting.revision, transcriptRevision: meeting.transcriptRevision } : {}) },
-  project: project ? { name: project.name, description: project.description, path: project.path, revision: project.revision } : null, ...(includeTranscript ? { transcript } : {}), images };
+  project: project ? { name: project.name, description: project.description, path: project.path, revision: project.revision } : null, ...(includeTranscript ? { transcript } : {}), images, assessments };
   if (JSON.stringify(input).length > 2_000_000) throw new SummaryError("summary_input_too_large");
   return input;
 }
@@ -200,9 +202,7 @@ function summaryElapsedTime(startedAt: Date, timeBase: Date, sessions: readonly 
 
 export async function summaryImageContent(input: Awaited<ReturnType<typeof collectSummaryInput>>, sync: MeetingSyncService,
   identity: import("../auth/identity").Identity, signal: AbortSignal, recordingSessions: readonly SummaryRecordingSession[] = []) {
-  // ponytail: sample at most 24 images; add content-aware selection when representative coverage is insufficient.
-  const imageInterval = Math.max(1, Math.ceil(input.images.length / 24));
-  const images = input.images.filter((_, index) => index % imageInterval === 0).slice(0, 24);
+  const images = selectSummaryScreenshots(input.images, input.assessments);
   const imageIds = new Set(images.map((image) => image.screenshotId));
   const { meeting, project } = input;
   const content: Record<string, unknown>[] = [{ type: "input_text", text: `<context>

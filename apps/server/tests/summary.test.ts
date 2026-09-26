@@ -139,12 +139,30 @@ describe("server summary jobs", () => {
     } finally { release(); await pending?.catch(() => {}); await store.close?.(); }
   });
 
+  it("sends only screenshots that survive image-analysis selection", async () => {
+    const date = new Date(0);
+    const images = [0, 1, 2].map((index) => ({ fileId: `file-${index}`, screenshotId: `shot-${index}`, workspaceId: "workspace", meetingId: "meeting",
+      capturedAt: new Date(index * 30_000), contentType: "image/webp", storageKey: "unused", contentLength: 1,
+      contentHash: String(index).padStart(64, "0"), ocrText: null, caption: null }));
+    const sync = { readFileContent: vi.fn(async () => ({ file: {} as never, upstream: new Response(new Uint8Array([1])), contentType: "image/webp" })) };
+    const { content, imageIds } = await summaryImageContent({
+      meeting: { name: "Meeting", description: "", createdAt: date, recordingStartedAt: null, icalUid: null, recurrenceId: null, calendarEvent: null },
+      project: null, images, assessments: [
+        { fileId: "file-0", informative: false, reason: "A camera view", duplicateOfFileId: null },
+        { fileId: "file-2", informative: true, reason: "A slide", duplicateOfFileId: "file-1" },
+      ],
+    }, sync as unknown as MeetingSyncService, owner, new AbortController().signal);
+    expect([...imageIds]).toEqual(["shot-1"]);
+    expect(sync.readFileContent).toHaveBeenCalledTimes(1);
+    expect(JSON.stringify(content)).not.toContain("A camera view");
+  });
+
   it("escapes meeting and project XML without serializing internal input fields", async () => {
     const date = new Date(0);
     const { content } = await summaryImageContent({
       meeting: { name: '<Meeting & "team">', description: "</context>'", createdAt: date, recordingStartedAt: null,
         icalUid: null, recurrenceId: null, calendarEvent: null },
-      project: { name: "<Project>", description: "A&B", path: "parent/<child>", revision: 42 }, images: [],
+      project: { name: "<Project>", description: "A&B", path: "parent/<child>", revision: 42 }, images: [], assessments: [],
     }, {} as MeetingSyncService, owner, new AbortController().signal);
     expect(content).toEqual([{ type: "input_text", text: `<context>
   <meeting>
@@ -165,7 +183,7 @@ describe("server summary jobs", () => {
     const { content } = await summaryImageContent({
       meeting: { name: "Meeting", description: "", createdAt: recordedAt, recordingStartedAt: recordedAt,
         icalUid: null, recurrenceId: null, calendarEvent: null },
-      project: null, images: [], transcript: [
+      project: null, images: [], assessments: [], transcript: [
         { segmentId: uuidV7(), startedAt: new Date("2026-04-16T00:00:05.000Z"), endedAt: null,
           text: "First <topic> & follow-up", createdAt: null, audioSource: "mic", speakerLabel: "Speaker & Guest" },
         { segmentId: uuidV7(), startedAt: new Date("2026-04-16T02:00:03.000Z"), endedAt: null,
@@ -628,8 +646,8 @@ describe("server summary jobs", () => {
         id: patchId, entity: "transcript", action: "patch", entityId: meetingId, baseRevision: 0,
         data: { transcript: { id: patchId, startedAt: null, endedAt: null, metadata: null }, mode: "replace", patchId, segmentCount: 1, deletionCount: 0, chunks: [{ index: 0, sha256: hash, segmentCount: 1, deletionCount: 0 }] },
       }] });
-      const screenshots = Array.from({ length: withImages ? 25 : 0 }, () => ({ fileId: uuidV7(), screenshotId: uuidV7(), workspaceId, meetingId,
-        capturedAt: new Date(), contentType: "image/webp", storageKey: "unused", contentLength: 1, contentHash: "a".repeat(64),
+      const screenshots = Array.from({ length: withImages ? 25 : 0 }, (_, index) => ({ fileId: uuidV7(), screenshotId: uuidV7(), workspaceId, meetingId,
+        capturedAt: new Date(), contentType: "image/webp", storageKey: "unused", contentLength: 1, contentHash: index.toString(16).padStart(64, "0"),
         ocrText: "Important unsampled evidence", caption: "Excluded image description" }));
       const originalWithIdentity = store.sync.withIdentity.bind(store.sync);
       store.sync.withIdentity = (identity, action) => originalWithIdentity(identity, (scoped) => action({

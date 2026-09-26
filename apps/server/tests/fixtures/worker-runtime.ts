@@ -36,9 +36,9 @@ export default {
       const transport: typeof fetch = (url) => Promise.resolve(String(url).endsWith("/token")
         ? Response.json({ access_token: "synthetic", expires_in: 3600 })
         : String(url).endsWith("/responses")
-          ? Response.json({ status: "completed", output: [{ type: "message", content: [{ type: "output_text", text: '{"ocr_text":"Test","caption":"A synthetic slide"}' }] }] })
+          ? Response.json({ status: "completed", output: [{ type: "message", content: [{ type: "output_text", text: '{"images":[{"ocr_text":"Test","caption":"A synthetic slide","informative":true,"reason":"A slide","same_as_previous":false}]}' }] }] })
           : Response.json(backend === "cloudflare" ? { success: true, result: { data: [Array(1024).fill(0.5)] } } : { data: [{ index: 0, embedding: Array(1024).fill(0.5) }] }));
-      const caption = await createImageCaptioner(config, transport)!.analyze(new Uint8Array([1]), { outputLanguage: "ja" }, request.signal);
+      const caption = await createImageCaptioner(config, transport)!.analyze([{ data: new Uint8Array([1]) }], { outputLanguage: "ja" }, request.signal);
       const vector = await createSearchEmbedder(config, transport)!.embedQuery("synthetic", request.signal);
       return Response.json({ caption, dimensions: vector.length });
     }

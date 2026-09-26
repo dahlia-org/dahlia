@@ -85,6 +85,15 @@ describe("configuration", () => {
     }
   });
 
+  it("bounds the image analysis batch size", () => {
+    expect(loadConfig({ ...accounts }).imageAnalysisBatchSize).toBe(12);
+    expect(loadConfig({ ...accounts, DAHLIA_IMAGE_ANALYSIS_BATCH_SIZE: "1" }).imageAnalysisBatchSize).toBe(1);
+    expect(loadConfig({ ...accounts, DAHLIA_IMAGE_ANALYSIS_BATCH_SIZE: "24" }).imageAnalysisBatchSize).toBe(24);
+    for (const value of ["0", "25", "1.5", "many"]) {
+      expect(() => loadConfig({ ...accounts, DAHLIA_IMAGE_ANALYSIS_BATCH_SIZE: value })).toThrow();
+    }
+  });
+
   it("selects PostgreSQL independently from the AI Gateway", () => {
     const config = loadConfig({ ...accounts,
       DAHLIA_DATABASE_TYPE: "postgres",
