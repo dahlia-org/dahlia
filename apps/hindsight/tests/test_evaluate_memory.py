@@ -9,10 +9,11 @@ SECRET = "非公開の本文"
 
 
 class Hindsight:
-    def __init__(self, clone_status="completed", documents=()):
+    def __init__(self, clone_status="completed", documents=(), reprocess_status=None):
         self.calls = []
         self.clone_status = clone_status
         self.documents = list(documents)
+        self.reprocess_status = reprocess_status or {}
         self.polls = 0
 
     def __call__(self, method, path, body=None, query=None):
@@ -24,6 +25,10 @@ class Hindsight:
             return {"status": "processing" if self.polls == 1 else self.clone_status}
         if path.endswith("/operations"):
             return {"total": 0, "operations": []}
+        if "/operations/reprocess-" in path:
+            return {"status": self.reprocess_status.get(path.rsplit("/", 1)[-1], "completed")}
+        if path.endswith("/reprocess"):
+            return {"operation_id": f"reprocess-{path.split('/')[-2]}"}
         if path.endswith("/documents"):
             page = self.documents[query["offset"] : query["offset"] + 2]
             return {"items": [{"id": document} for document in page], "total": len(self.documents)}
@@ -36,8 +41,10 @@ class Hindsight:
             results = [{"document_id": "meeting-x", "text": SECRET}, {"document_id": "meeting-a", "text": SECRET}]
             return {"results": results}
         if body["query"] == "q2" and "observation" in body["types"]:
-            observation = {"type": "observation", "text": SECRET, "source_fact_ids": ["f1"]}
-            return {"results": [observation], "source_facts": {"f1": {"document_id": "meeting-b", "text": SECRET}}}
+            # The expected document is the second source of the top observation.
+            observation = {"type": "observation", "text": SECRET, "source_fact_ids": ["f0", "f1"]}
+            sources = {"f0": {"document_id": "meeting-z"}, "f1": {"document_id": "meeting-b", "text": SECRET}}
+            return {"results": [observation], "source_facts": sources}
         if body["query"] == "q3":
             raise evaluate_memory.EvaluationError("POST request failed with HTTP 500")
         return {"results": []}
@@ -65,6 +72,24 @@ def test_reports_only_numbers_and_deletes_the_clone():
     assert all(path.startswith(clone) for _, path, _, _ in hindsight.calls[1:] if not path.startswith("source/"))
     assert recalls[0] == {**evaluate_memory.DAHLIA_RECALL, "query": "q1", "include": {"entities": None}}
     assert recalls[3]["prefer_observations"] and recalls[3]["include"]["source_facts"] == {}
+
+
+def test_observation_sources_share_the_rank_of_their_result():
+    response = {
+        "results": [
+            {"type": "observation", "source_fact_ids": ["f1", "f2", "missing"]},
+            {"type": "world", "document_id": "meeting-c"},
+            {"type": "experience", "document_id": "meeting-a"},
+            {"type": "observation", "source_fact_ids": ["f3"]},
+        ],
+        "source_facts": {
+            "f1": {"document_id": "meeting-a"},
+            "f2": {"document_id": "meeting-b"},
+            "f3": {"document_id": "meeting-d"},
+        },
+    }
+    ranks = evaluate_memory.document_ranks(response)
+    assert ranks == {"meeting-a": 1, "meeting-b": 1, "meeting-c": 3, "meeting-d": 4}
 
 
 def test_a_failed_clone_is_still_deleted():
@@ -97,6 +122,20 @@ def test_extraction_and_reranking_variants_change_only_the_clone():
         {"updates": {"enable_reranking": False}},
     ]
     assert [variant["rerank"] for variant in result["variants"]] == ["on", "off"]
+
+
+def test_a_failed_reprocess_stops_before_scoring():
+    hindsight = Hindsight(documents=["meeting-a", "meeting-b"], reprocess_status={"reprocess-meeting-b": "failed"})
+    with pytest.raises(evaluate_memory.EvaluationError, match="failed"):
+        evaluate_memory.evaluate(
+            hindsight,
+            "source",
+            [("q1", {"meeting-a"})],
+            extraction={"retain_extraction_mode": "verbose"},
+            sleep=lambda seconds: None,
+        )
+    assert hindsight.calls[-1][0] == "DELETE"
+    assert not any(path.endswith("/memories/recall") for _, path, _, _ in hindsight.calls)
 
 
 def test_questions_are_validated_without_echoing_them(tmp_path):

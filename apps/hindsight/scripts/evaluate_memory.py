@@ -73,17 +73,23 @@ def load_questions(path):
     return questions
 
 
-def ranked_documents(response):
-    """Documents in recall order; observations count for the documents their source facts came from."""
+def document_ranks(response):
+    """Rank of each recalled document by its first result.
+
+    An observation counts for the documents its source facts came from, and they all share
+    that result's rank; later documents rank after every document already listed.
+    """
     sources = response.get("source_facts") or {}
-    ranked = []
+    ranks, listed = {}, 0
     for result in response.get("results", []):
         if result.get("type") == "observation":
             documents = [(sources.get(fact) or {}).get("document_id") for fact in result.get("source_fact_ids") or []]
         else:
             documents = [result.get("document_id")]
-        ranked.extend(document for document in documents if document and document not in ranked)
-    return ranked
+        new = [document for document in dict.fromkeys(documents) if document and document not in ranks]
+        ranks.update((document, listed + 1) for document in new)
+        listed += len(new)
+    return ranks
 
 
 def recall_body(query, observations):
@@ -138,15 +144,21 @@ def reprocess(send, bank, updates, *, timeout, sleep):
     """Re-extract every document of the clone with a different extraction setting (calls the LLM)."""
     path = quote(bank, safe="")
     send("PATCH", f"{path}/config", {"updates": updates})
-    offset = 0
+    operations, offset = [], 0
     while True:
         page = send("GET", f"{path}/documents", query={"limit": 100, "offset": offset})
         for document in page["items"]:
-            send("POST", f"{path}/documents/{quote(document['id'], safe='')}/reprocess")
+            operations.append(
+                send("POST", f"{path}/documents/{quote(document['id'], safe='')}/reprocess")["operation_id"]
+            )
         offset += len(page["items"])
         if not page["items"] or offset >= page["total"]:
             break
-    wait_idle(send, bank, timeout=timeout, sleep=sleep)
+    # A failed re-extraction would leave stale documents under the requested setting's label.
+    deadline = time.monotonic() + timeout
+    for operation_id in operations:
+        wait_operation(send, bank, operation_id, timeout=max(0, deadline - time.monotonic()), sleep=sleep)
+    wait_idle(send, bank, timeout=max(0, deadline - time.monotonic()), sleep=sleep)
 
 
 def evaluate(
@@ -189,8 +201,8 @@ def evaluate(
                     ranks.append(None)
                     continue
                 latencies.append((clock() - started) * 1000)
-                ranked = ranked_documents(response)
-                ranks.append(next((i for i, document in enumerate(ranked, 1) if document in expected), None))
+                ranked = document_ranks(response)
+                ranks.append(min((ranked[document] for document in expected if document in ranked), default=None))
             variants.append({"rerank": reranking, "observations": observed, **summarize(ranks, latencies, errors, ks)})
         return {"questions": len(questions), "extraction": extraction, "variants": variants}
     finally:
