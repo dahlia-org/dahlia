@@ -116,3 +116,10 @@ def test_publication_failure_restores_checkout_before_readonly_metadata(project,
     upstream.sync(root, check=True)
     upstream.sync(root, version="1.1.0")
     assert json.loads((root / "UPSTREAM.json").read_text())["version"] == "1.1.0"
+
+
+def test_release_update_keeps_the_local_reranker_extra(tmp_path, monkeypatch):
+    commands = []
+    monkeypatch.setattr(upstream.subprocess, "run", lambda command, **kwargs: commands.append(command))
+    upstream.resolve(tmp_path, locked=False, version="1.1.0")
+    assert commands == [["uv", "add", "--project", str(tmp_path), "--no-sync", "hindsight-api-slim[local-ml]==1.1.0"]]

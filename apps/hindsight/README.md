@@ -33,13 +33,29 @@ CREATE EXTENSION IF NOT EXISTS lakebase_vector WITH SCHEMA public CASCADE;
 
 `hindsight-api`、`hindsight-worker`、`hindsight-admin` は取り込んだ本体のエントリーポイントです。
 分離 worker の構成は upstream の環境変数を使い、API と worker に同じ検索・トークナイザー設定を渡します。
-`slim` 構成なので、例では外部 embedding プロバイダーを使い、ローカル機械学習モデルの依存は追加していません。
-reranker は `rrf` を指定し、ニューラル reranker を使わずに検索結果の融合順位をそのまま使います。
+embedding は外部プロバイダーを使います。reranker だけは、上流の `local-ml` extra（sentence-transformers と PyTorch）を入れ、
+App の中で cross-encoder を CPU で動かします。Databricks Apps では `local` と
+`cross-encoder/mmarco-mMiniLMv2-L12-H384-v1`（多言語、日本語を含む）を使います。
+モデルの重み（約 470 MB）は、`MemoryEngine.initialize` の起動時に Hugging Face から取得します。
+`.env.example` はローカル開発向けで、モデルを取得しない `rrf`（検索結果の融合順位をそのまま使う）にしています。
 Hindsight に `none` という reranker はなく、指定すると起動時にエラーになります。
+`local-ml` extra は、使わない flashrank と、darwin arm64 だけの mlx も引き込みます。
 HTTP API・認証設定は [upstream のドキュメント](https://hindsight.vectorize.io/)を参照してください。
 
-`pyproject.toml` で公開 PyPI を既定のレジストリに指定しています。
-`uv.lock` の参照先も公開 PyPI に統一し、固定済みのバージョンと配布ファイルのハッシュは維持しています。
+App から Hugging Face に出られない環境では、起動が止まります。その場合は、事前に取得した重みを UC Volume に置き、
+起動時に App のローカルディスクへコピーしてから、そのパスを `HINDSIGHT_API_RERANKER_LOCAL_MODEL` に渡す方法を取ります（未実装）。
+
+`pyproject.toml` で公開 PyPI を既定のレジストリに指定しています。torch だけは、上流の `tool.uv.sources` によって
+PyTorch の CPU 専用 index（`https://download.pytorch.org/whl/cpu`）から解決します。`uv.lock` には、linux の `2.14.0+cpu` と
+darwin の `2.14.0` が入ります。固定済みのバージョンと配布ファイルのハッシュは維持しています。
+
+Databricks Apps は `requirements.txt` から pip で入れます。uv 0.8 の `uv export` は index URL を出力しないため、
+先頭に CPU 専用 index を足して作ります。`uv.lock` を変えたら、次のコマンドで作り直します。
+`scripts/check.sh` は、同じ手順の出力と `requirements.txt` が一致することを確かめます。
+
+```sh
+{ echo "--extra-index-url https://download.pytorch.org/whl/cpu"; uv export --locked --no-dev --no-hashes --quiet; } > requirements.txt
+```
 
 ## バックエンドの選択
 
@@ -130,14 +146,14 @@ GitHubへ専用forkを公開する必要はありません。通常の起動で�
 - `uv.lock`: Python依存パッケージを固定します。ローカル依存のGitリビジョンは保持しないため、上記と併せて管理します。
 - 引数なしの同期では固定済みコミットを再取得し、タグや最新版を追い直しません。
 - 新規取得時は別ディレクトリでパッチ適用と `uv lock --check` を確認してから配置します。
-- `--version` での更新時だけタグを解決し、`uv add --no-sync hindsight-api-slim==X.Y.Z` で依存指定と lockfile を更新します。
+- `--version` での更新時だけタグを解決し、`uv add --no-sync "hindsight-api-slim[local-ml]==X.Y.Z"` で依存指定と lockfile を更新します。
   成功後にソース・固定情報・`pyproject.toml`・lockfileを切り替えます。前のチェックアウトは `.upstream-backup-*` に残します。
 - パッチ競合・依存解決失敗では現行のソース・固定情報・`pyproject.toml`・lockfileを変更しません。
   作業用チェックアウトに未保存の変更や未追跡ファイルがある場合も停止します。
 
 現在の基準は正式リリース **v0.10.1**、コミット
 `f8950b0c07d9e34c76493dba802bb309f0ce60fd` です。
-`pyproject.toml` の `hindsight-api-slim==0.10.1` と `uv.lock` で依存を固定しています。
+`pyproject.toml` の `hindsight-api-slim[local-ml]==0.10.1` と `uv.lock` で依存を固定しています。
 
 ### バージョンを更新する
 
@@ -145,6 +161,7 @@ GitHubへ専用forkを公開する必要はありません。通常の起動で�
 # X.Y.Z を対象の正式リリースに置き換える
 uv run --no-project scripts/sync_upstream.py --version X.Y.Z
 uv sync --locked
+# requirements.txt を上の手順で作り直す
 ./scripts/check.sh
 ```
 
@@ -219,8 +236,9 @@ uv run --locked python scripts/evaluate_memory.py \
 ```
 
 - 出力は JSON の数値だけです。質問数と、組み合わせごとの hit@k（`--k`、既定は 1,3,5,10）、MRR、recall の応答時間（クライアントで計測した p50、p95、max のミリ秒）、エラー数を出します。質問、想起した文、本文は出力しません。
-- 基準の recall は Dahlia Server と同じ `types: world, experience`、`budget: mid`、`max_tokens: 4096` です。
+- 基準の recall は `types: world, experience`、`budget: mid`、`max_tokens: 4096` です。
   `--observations on|both` で observation を加え（`prefer_observations` を指定し、`source_facts` から元の文書に展開します）、
+  Dahlia Server の既定（depth `normal`）は `--observations on` に当たります。
   `--rerank on|off|both` で複製先の `enable_reranking` を切り替えます。
   reranker の実装（`HINDSIGHT_API_RERANKER_PROVIDER`）はサーバーの設定なので、実装どうしを比べるときは、それぞれの設定の App に対して実行します。
 - `--extraction-mode` または `--strategy` を指定すると、複製先の設定を変えて全文書を再抽出します。LLM を呼ぶので費用がかかります。

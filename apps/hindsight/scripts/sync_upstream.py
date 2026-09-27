@@ -48,7 +48,7 @@ def verify_checkout(checkout):
 def resolve(stage, *, locked, version=None):
     if version is not None and not locked:
         subprocess.run(
-            ["uv", "add", "--project", str(stage), "--no-sync", f"hindsight-api-slim=={version}"], check=True
+            ["uv", "add", "--project", str(stage), "--no-sync", f"hindsight-api-slim[local-ml]=={version}"], check=True
         )
         return
     command = ["uv", "lock", "--project", str(stage)]

@@ -3,6 +3,8 @@ resources:
     hindsight:
       name: dahlia-hindsight-${bundle.target}
       description: Hindsight backed by the shared Dahlia Lakebase database.
+      # The local cross-encoder reranker needs 4 vCPUs to rerank 300 candidates in about 3.4 seconds.
+      compute_size: LARGE
       source_code_path: ../../../apps/hindsight
       config:
         command: ["python", "scripts/start_databricks.py"]
@@ -28,7 +30,17 @@ resources:
           - name: HINDSIGHT_API_EMBEDDINGS_OPENAI_DIMENSIONS
             value: ${var.search_embedding_dimensions}
           - name: HINDSIGHT_API_RERANKER_PROVIDER
-            value: rrf
+            value: local
+          - name: HINDSIGHT_API_RERANKER_LOCAL_MODEL
+            value: cross-encoder/mmarco-mMiniLMv2-L12-H384-v1
+          - name: HINDSIGHT_API_RERANKER_LOCAL_FORCE_CPU
+            value: "true"
+          - name: HINDSIGHT_API_RERANKER_MAX_CANDIDATES_LOW
+            value: ${var.reranker_max_candidates_low}
+          - name: HINDSIGHT_API_RERANKER_MAX_CANDIDATES_MID
+            value: ${var.reranker_max_candidates_mid}
+          - name: HINDSIGHT_API_RERANKER_MAX_CANDIDATES_HIGH
+            value: ${var.reranker_max_candidates_high}
           - name: LAKEBASE_ENDPOINT
             value_from: postgres
       resources:

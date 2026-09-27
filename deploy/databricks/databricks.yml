@@ -34,6 +34,15 @@ variables:
   hindsight_schema:
     description: PostgreSQL schema containing Hindsight data.
     default: hindsight
+  reranker_max_candidates_low:
+    description: Hindsight reranker candidate cap for low-budget recall (Dahlia depth quick).
+    default: "50"
+  reranker_max_candidates_mid:
+    description: Hindsight reranker candidate cap for mid-budget recall (Dahlia depth normal).
+    default: "100"
+  reranker_max_candidates_high:
+    description: Hindsight reranker candidate cap for high-budget recall (Dahlia depth deep).
+    default: "300"
   ops_schema:
     description: Unity Catalog schema containing OTel tables.
     default: ops

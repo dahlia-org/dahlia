@@ -1,6 +1,9 @@
 #!/bin/sh
 set -eu
 cd "$(dirname "$0")/.."
+# uv export omits the PyTorch CPU index that uv.lock resolves torch from; pip needs it to find +cpu wheels.
+{ echo "--extra-index-url https://download.pytorch.org/whl/cpu"; uv export --locked --no-dev --no-hashes --quiet; } |
+  diff -u requirements.txt - || { echo "requirements.txt is stale; regenerate it as described in README.md" >&2; exit 1; }
 uv run --locked ruff check --config pyproject.toml src tests conftest.py scripts
 uv run --locked ruff format --check --config pyproject.toml src tests conftest.py scripts
 uv run --locked pytest -q

@@ -38,11 +38,13 @@ async def test_databricks_providers_use_app_oauth_without_api_keys(monkeypatch):
 def test_bundled_app_environment_starts_the_pinned_server():
     root = Path(__file__).resolve().parents[3]
     app = yaml.safe_load((root / "deploy/databricks/resources/hindsight.app.yml").read_text())
-    bundle = {"${var.hindsight_schema}": "hindsight", "${var.search_embedding_dimensions}": "1024"}
+    variables = yaml.safe_load((root / "deploy/databricks/databricks.yml").read_text())["variables"]
+    bundle = {f"${{var.{name}}}": str(spec["default"]) for name, spec in variables.items() if "default" in spec}
     env = {name: value for name, value in os.environ.items() if not name.startswith("HINDSIGHT_API_")}
     for item in app["resources"]["apps"]["hindsight"]["config"]["env"]:
         if "value" in item:
             env[item["name"]] = bundle.get(item["value"], item["value"])
+    assert env["HINDSIGHT_API_RERANKER_PROVIDER"] == "local"
     # Injected by Databricks Apps; start_databricks.py derives the database URL at startup.
     env |= {
         "DATABRICKS_HOST": "https://workspace.cloud.databricks.com",
