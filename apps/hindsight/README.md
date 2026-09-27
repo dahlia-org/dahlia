@@ -281,3 +281,31 @@ uv run --locked pytest -m lakebase -q
 接続先未設定の統合テストは skip と表示します。通常 PostgreSQL では Lakebase の索引・順位付けを検証できません。
 仕様参照: [Lakebase text](https://docs.databricks.com/aws/en/oltp/projects/lakebase-text)、
 [Lakebase vector](https://docs.databricks.com/aws/en/oltp/projects/lakebase-vector)、[SudachiPy](https://github.com/WorksApplications/SudachiPy)。
+
+## Phase 2: 処理設定・ログ・モデル固定
+
+Dahlia Appの既定LLMは引き続き `HINDSIGHT_API_LLM_PROVIDER=databricks`、
+`HINDSIGHT_API_LLM_MODEL=system.ai.gpt-6-luna`。処理を個別に変更する場合は標準の
+`HINDSIGHT_API_{RETAIN,REFLECT,CONSOLIDATION,MENTAL_MODEL_REFRESH}_LLM_{PROVIDER,MODEL}` を使う。
+providerを明示すると上流のprovider別既定モデルが選ばれるため、個別設定ではMODELも明示する。
+未設定のRETAIN／REFLECT／CONSOLIDATIONは共通設定を、MENTAL_MODEL_REFRESHはREFLECTを継承する。
+独自routingやモデル名変換はない。OAuthは既存App service principal経路を使う。
+保守パッチはmental model refresh後の追加構造化呼び出しにもrefresh専用設定を適用する。
+
+rerankerは `cross-encoder/mmarco-mMiniLMv2-L12-H384-v1` の重みrevision
+`1427fd652930e4ba29e8149678df786c240d8825` に固定した。起動時に既存の `huggingface_hub`
+で必要なtokenizer／safetensorsのsnapshotを取得し、上流のローカルモデル設定へ渡す。
+CPU／Databricks Apps LARGEは維持する。初回起動にはHugging Faceへの通信が必要で、取得失敗時に
+moving revisionへフォールバックしない。UC Volume対応は含めない。
+
+通常のreflect完了ログ、構造化エラー、OAuth例外、Uvicorn例外はAppのallowlist formatterを通す。
+起動処理の例外も本文や資格情報を含むtracebackを出さず、固定の失敗メッセージで終了する。
+`tests/test_processing.py`は合成マーカーを使って実上流reflectループと構造化処理を実行し、
+stdout／stderrへの漏出を検査する。4処理のLLM設定とOAuth transportの検証は合成HTTP応答によるもので、
+Databricks実起動や実データ品質評価の代替ではない。
+
+従来の `scripts/evaluate_memory.py` はHindsight候補順位だけの比較。正本の認可・revision・最終抜粋・
+主張を含む評価にはServerの `scripts/evaluate-memory.ts` を使う。dispositionを比較する場合は、
+評価環境のbankに対して `/config` の `disposition_skepticism`、`disposition_literalism`、
+`disposition_empathy` を変更し、同じ質問集合で比較する。`/profile` は410で廃止済み。
+未評価の値を本番bankへ適用しない。派生データの旧entity削除には別途許可を必要とし、正本を変更しない。

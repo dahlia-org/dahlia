@@ -43,3 +43,15 @@ MCP と HTTP から、Project、期間、検索の深さを指定できる。Pro
 期間付き reflect は、上流が temporal window を受け付けない間、recall の出典だけを返して仮説を生成しない。Project 指定は分析が未設定・失敗した場合も維持し、Project に属さない共有メモを fallback で返さない。期間の検証は分析の有無にかかわらず入口で行う。
 
 T2 のため、worker は新規・既存 bank の free-form entity、entity labels、graph retrieval を無効にしてから読み取りを許可する。reflect と model refresh の observation entity 添付も無効にする。上流の内部 recall が entity 添付を強制する経路には、entity を使わない bank では過去の entity も返さない最小のパッチを置く。過去に保存済みの派生データは設定変更だけでは消えないため、削除には明示的な purge・正本からの再構築を使う。配備順は Hindsight App、Server とする。App のログは上流の JSON allowlist で severity・timestamp・logger だけを出し、Uvicorn にも同じ設定を適用する。
+
+## 主張ごとの出典と処理設定（Phase 2）
+
+reflect は上流の `response_schema` で主張と fact ID を取得する。構造化は回答文への追加 LLM 呼び出しであり、出典や内容の正しさを保証しない。Server は各 ID が同じ応答の `based_on.memories` に存在すること、同じ bank の有効な fact／observation の系譜を持つこと、現在の認可・Project 所属・正本 revision/hash に対応することを確かめる。主張ごとの全出典を返せない場合は主張全体を除外する。最大10主張・参照10 fact・observationあたり20元fact、候補30文書・返却5文書の上限を超える参照は検証済みにしない。fact の chunk は正本抜粋の位置の手がかりにのみ使い、引用本文には使わない。
+
+結果の `claims[].citations` は fact ID と、その結果の `sources` への0始まりの `sourceIndexes` を持つ。互換用 `hypothesis` は採用した主張だけから組み立てる。構造化出力の欠落、処理エラー、不正形式、空の主張、参照不成立、一部除外、期間制約、取り込み更新中は `reflectionStatus` で区別し、上流の非構造化回答やエラー本文は公開しない。Web・内蔵AI・MCPは同じ結果を使う。系譜が正本に一致しても、主張の意味的な裏付けや真実性を証明したことにはならない。
+
+対話reflectは `exclude_mental_models: true` とし、生成ページを独立した証拠にしない。既存の retain／observations／reflect mission を再利用し、独立directiveや利用者向け設定を追加しない。worker が `reflectionPolicy` を記録して新規・既存bankへ固定missionを適用し、適用前には読み取りを許可しない。dispositionは既定のままにする。比較時の変更は評価用bankの `/config` の `disposition_skepticism`、`disposition_literalism`、`disposition_empathy` を使い、`/profile` は使用しない。
+
+処理別LLMは上流標準の RETAIN／REFLECT／CONSOLIDATION／MENTAL_MODEL_REFRESH 設定を使う。既定は `databricks`／`system.ai.gpt-6-luna`。refreshの追加構造化呼び出しも専用refresh設定を使う最小パッチを置く。期間付きreflectの仮説抑止、reflect budget `low`、全体30秒の期限、利用者キャンセルは維持する。`reflectionUsage` は上流が報告した構造化呼び出し込みのreflect token数だけで、recallやembeddingの費用を含む総額ではない。
+
+rerankerの重みは `1427fd652930e4ba29e8149678df786c240d8825` に固定し、既存のHugging Face依存で取得したsnapshotを上流のローカルモデル設定に渡す。新しい依存やUC Volume経路は追加しない。過去entityや既存派生物は設定変更では削除しない。原文の人物名と構造化entityは別物であり、正本の人物名は保持する。必要な旧データの削除・正本からの再構築は別途明示的な許可を得て実施する。

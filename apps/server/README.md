@@ -907,3 +907,23 @@ Set `DAHLIA_CHAT_MEMORY_MODEL` to a model already in `DAHLIA_FOUNDATION_MODELS` 
 - **Long-term Workspace knowledge:** the existing Hindsight retain/recall/reflect pipeline remains unchanged. Neither the private profile nor the live notes are automatically retained into a Workspace bank. Shared chat knowledge still requires the existing explicit Workspace save action.
 
 The Working Memory editor shows both Markdown sections. Schema validation bounds length; the isolated extraction model classifies meaning, and Dahlia additionally requires exact direct evidence and persistent wording. This semantic classification cannot prove that arbitrary user text contains no sensitive information. The extraction path has no tools or Workspace data access. Unknown or ambiguous statements stay in their original thread.
+
+#### Source-backed hypotheses (Phase 2)
+
+Memory `reflect` returns `claims: [{ text, citations: [{ factId, sourceIndexes }] }]`.
+`sourceIndexes` are zero-based indexes into the same result's canonical `sources`, not global document IDs.
+Each claim is published only when every referenced fact belongs to that response's `based_on`, resolves within the server-derived bank, and maps to currently authorized, revision/hash-checked canonical documents. A claim requiring more than the five returned documents is omitted as a whole. These checks establish lineage, not truth or semantic entailment. The compatible `hypothesis` string contains only the accepted claims.
+
+`reflectionStatus` distinguishes `ready`, `partial` (some claims omitted), `invalid_references`, `missing_output`, `structured_error`, `invalid_output`, `empty`, `temporal_unavailable`, `updating`, and `not_requested` (recall). Raw upstream answers and structured error messages are never fallback hypotheses. Analysis/provider unavailability retains the existing canonical fallback contract. `reflectionUsage`, when available, reports reflect input/output tokens including the additional structured call; it excludes recall/embedding usage and is not a monetary charge.
+
+Existing enabled banks receive the revised fixed mission through the normal worker. Reads remain unavailable until `reflectionPolicy` is applied; no bank is erased or re-ingested by this configuration change. Existing entity policy remains required. Hindsight App must be updated before Server. Use the existing re-enable/rescan path to retry failures; do not purge banks merely to apply configuration.
+
+For operator evaluation, run from `apps/server` using existing authentication in `DAHLIA_MEMORY_EVAL_TOKEN`:
+
+```sh
+node --import tsx scripts/evaluate-memory.ts --url https://<server> --workspace <workspace-TypeID> --questions /private/path/questions.jsonl --reflect
+# Use --personal instead of --workspace for the authenticated user's bank. Omit --reflect to evaluate recall.
+```
+
+Keep questions outside the repository. Each JSONL row is `{ "query": "...", "expected": [{ "id": "<canonical-TypeID>", "excerpts": ["required canonical passage"] }] }`.
+The tool evaluates production deduplication, candidate and return limits, canonical authorization, and the **final** excerpts and claim citations. Output contains only aggregate hit@5, MRR, excerpt-evidence recall, returned claim counts, coverage/status counts, errors, latency p50/p95, and reported reflect token totals. Required passages are literal checks; they do not automatically judge whether the hypothesis follows from the evidence. Compare the same private question set before adopting observation/disposition changes. An unavailable scope counts as an error, not an empty successful search. No production bank/configuration is mutated by this evaluator.

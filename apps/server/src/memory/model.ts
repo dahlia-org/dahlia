@@ -7,6 +7,7 @@ export const sharedMemorySchema = z.object({
 }).strict();
 export interface MemoryProgress {
   entityPolicy?: 1;
+  reflectionPolicy?: 1;
   after?: string;
   phase: "meetings" | "notes" | "cleanup" | "delta";
   operationId?: string;

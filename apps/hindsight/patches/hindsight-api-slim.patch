@@ -318,7 +318,7 @@ index 20d4598c9..51be5eee0 100644
      # are retain-time extraction output that nothing recreates, so an edit preserves them (#2864).
      # In lock order, like every other link delete (see delete_unit_links).
 diff --git a/hindsight_api/engine/memory_engine.py b/hindsight_api/engine/memory_engine.py
-index 100357a9a..b88742f80 100644
+index 100357a9a..c83df97f2 100644
 --- a/hindsight_api/engine/memory_engine.py
 +++ b/hindsight_api/engine/memory_engine.py
 @@ -29,6 +29,7 @@ from datetime import UTC, datetime, timedelta, timezone
@@ -348,6 +348,15 @@ index 100357a9a..b88742f80 100644
          assert row is not None
          return row
 
+@@ -18062,7 +18068,7 @@ class MemoryEngine(MemoryEngineInterface):
+                 return await _generate_structured_output(
+                     content_text,
+                     response_schema,
+-                    self._reflect_llm_config,
++                    self._mental_model_refresh_llm_config,
+                     f"mm-{mental_model_id[:8]}",
+                     mental_model.get("max_tokens"),
+                 )
 @@ -18403,7 +18409,7 @@ class MemoryEngine(MemoryEngineInterface):
 
          # The exit stack carries the row lock a trigger patch takes below; it stays

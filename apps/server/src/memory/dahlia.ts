@@ -8,6 +8,7 @@ import { publicIdSchema } from "../agent/tools";
 import type { MemoryStore } from "./store";
 import { temporalWindow, type WorkspaceMemoryService } from "./service";
 import { HindsightError } from "./hindsight";
+import { reflectionStatusSchema } from "./reflection";
 import { routeMemory } from "./router";
 
 const scope = z.enum(["personal", "workspace"]);
@@ -46,6 +47,11 @@ export const memoryResultSchema = z.object({
   results: z.array(z.object({ scope, workspaceId, result: z.object({
     sources: z.array(z.object({ kind: z.string(), id: z.string(), revision: z.string(), meeting_id: z.string().nullable(), workspace_id: z.string().nullable(), scope, canonicalExcerpt: z.string(), truncated: z.boolean() })).optional(),
     hypothesis: z.string().nullable().optional(), coverage: z.string().optional(), skippedCount: z.number().optional(),
+    claims: z.array(z.object({ text: z.string(), citations: z.array(z.object({ factId: z.string(),
+      sourceIndexes: z.array(z.number().int().nonnegative()).describe("Zero-based indexes into this result's sources; lineage does not prove the claim is true."),
+    })) })).optional(),
+    reflectionStatus: reflectionStatusSchema.optional(),
+    reflectionUsage: z.object({ inputTokens: z.number().int().nonnegative(), outputTokens: z.number().int().nonnegative() }).nullable().optional(),
     unavailable: z.boolean().optional(), code: z.string().optional(), instruction: z.string().optional(),
     canonical: z.object({ scope, workspaceId, items: z.array(noteSchema), nextCursor: z.string().nullable() }).optional(),
   }) })).optional(),

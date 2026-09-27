@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import type { MemoryClaim, ReflectionStatus } from "../memory/reflection";
 import { uuidV7 } from "../id";
 import { encodeId } from "../typeid";
 import { json, uiText } from "./api";
@@ -12,7 +13,7 @@ type Scope = { scope: "personal" | "workspace"; workspaceId?: string; name: stri
 type Note = { id: string; content: string; revision: number; updatedAt: string; protected: boolean };
 type Status = { enabled: boolean; status: string; skippedCount: number };
 type Result = { sources?: Array<{ id: string; canonicalExcerpt: string; meeting_id?: string | null; truncated: boolean }>;
-  hypothesis?: string | null; unavailable?: boolean; coverage?: string; canonical?: { items: Note[] } };
+  hypothesis?: string | null; claims?: MemoryClaim[]; reflectionStatus?: ReflectionStatus; unavailable?: boolean; coverage?: string; canonical?: { items: Note[] } };
 const memoryRequest = <T,>(scope: Scope, operation: "list" | "status" | "save" | "delete" | "configure" | "recall" | "reflect", input: Record<string, unknown>, signal?: AbortSignal) => {
   const owner = scope.workspaceId ? `/api/v1/workspaces/${scope.workspaceId}` : "/api/v1/user";
   const { id, ...edit } = input;
@@ -141,8 +142,15 @@ function MemoryPanel({ scope, scopes }: { scope: Scope; scopes: Scope[] }) {
     {results.map((result, i) => <section key={i} className="panel">
       {result.unavailable && <p role="status">{uiText("Analysis is unavailable. Literal matches are shown; these are not complete semantic results.", "分析を利用できません。本文の一致だけを表示しています。関連する記憶の全件ではありません。")}</p>}
       {result.coverage && result.coverage !== "ready" && <p role="status">{uiText("Memory coverage is incomplete or updating.", "記憶は一部のみ、または更新中です。")}</p>}
-      {result.hypothesis && <><h3>{uiText("Interpretation · verify sources", "解釈 · 出典で確認してください")}</h3><p className="whitespace-pre-wrap">{result.hypothesis}</p></>}
-      {result.sources?.map((source) => <article key={source.id}><h3>{source.meeting_id ? <a href={`/meetings/${source.meeting_id}`}>{uiText("Source meeting", "出典の会議")}</a> : uiText("Saved memory", "保存された記憶")}</h3><p className="whitespace-pre-wrap">{source.canonicalExcerpt}</p>{source.truncated && <p>{uiText("Excerpt only", "抜粋のみ")}</p>}</article>)}
+      {result.reflectionStatus && result.reflectionStatus !== "not_requested" && <p role="status">{reflectionLabel(result.reflectionStatus)}</p>}
+      {!!result.claims?.length && <><h3>{uiText("Source-backed hypotheses · verify claims", "出典付きの仮説 · 内容を確認してください")}</h3>
+        <p>{uiText("Sources establish provenance, not whether a claim is true.", "出典との対応は、主張の正しさを保証するものではありません。")}</p>
+        {result.claims.map((claim, index) => <article key={index}><p className="whitespace-pre-wrap">{claim.text}</p>
+          <ul>{[...new Set(claim.citations.flatMap((citation) => citation.sourceIndexes))].map((sourceIndex) =>
+            <li key={sourceIndex}><a href={`#memory-source-${i}-${sourceIndex}`}>{uiText(`Source ${sourceIndex + 1}`, `出典 ${sourceIndex + 1}`)}</a></li>)}</ul>
+        </article>)}
+      </>}
+      {result.sources?.map((source, index) => <article key={source.id} id={`memory-source-${i}-${index}`}><h3>{source.meeting_id ? <a href={`/meetings/${source.meeting_id}`}>{uiText("Source meeting", "出典の会議")}</a> : uiText("Saved memory", "保存された記憶")}</h3><p className="whitespace-pre-wrap">{source.canonicalExcerpt}</p>{source.truncated && <p>{uiText("Excerpt only", "抜粋のみ")}</p>}</article>)}
       {result.canonical?.items.map((note) => <p key={note.id} className="whitespace-pre-wrap">{note.content}</p>)}
     </section>)}
     {!notes.length && <p>{uiText("No saved memories in this list.", "この一覧に記憶はありません。")}</p>}
@@ -158,4 +166,20 @@ function MemoryPanel({ scope, scopes }: { scope: Scope; scopes: Scope[] }) {
     {next && <Button variant="outline" disabled={busy} onClick={() => void search("list", next)}>{uiText("Load more", "続きを表示")}</Button>}
     {dialog}
   </section>;
+}
+
+function reflectionLabel(status: ReflectionStatus) {
+  const labels: Record<ReflectionStatus, string> = {
+    not_requested: "",
+    ready: uiText("Hypotheses with source references", "出典を参照できる仮説"),
+    partial: uiText("Some claims were omitted because their sources could not be verified.", "出典を検証できなかった主張を省いています。"),
+    invalid_references: uiText("No claims had verifiable sources.", "出典を検証できる主張がありませんでした。"),
+    missing_output: uiText("No structured answer was returned.", "構造化された回答が返されませんでした。"),
+    structured_error: uiText("The answer could not be structured. Try again.", "回答の構造化に失敗しました。再試行してください。"),
+    invalid_output: uiText("The structured answer was invalid.", "構造化された回答の形式が不正でした。"),
+    empty: uiText("No hypotheses were generated.", "仮説は生成されませんでした。"),
+    temporal_unavailable: uiText("Period-ranked sources only; temporal reflection is unavailable.", "期間内を優先した出典のみです。期間を考慮した仮説生成には未対応です。"),
+    updating: uiText("Sources are updating; hypotheses are unavailable.", "出典を更新中のため、仮説を表示できません。"),
+  };
+  return labels[status];
 }
