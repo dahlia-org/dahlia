@@ -144,16 +144,17 @@ def reprocess(send, bank, updates, *, timeout, sleep):
     """Re-extract every document of the clone with a different extraction setting (calls the LLM)."""
     path = quote(bank, safe="")
     send("PATCH", f"{path}/config", {"updates": updates})
-    operations, offset = [], 0
+    # The listing is ordered by updated_at, which re-extraction changes: finish paging first.
+    documents, offset = {}, 0
     while True:
         page = send("GET", f"{path}/documents", query={"limit": 100, "offset": offset})
-        for document in page["items"]:
-            operations.append(
-                send("POST", f"{path}/documents/{quote(document['id'], safe='')}/reprocess")["operation_id"]
-            )
+        documents.update((document["id"], None) for document in page["items"])
         offset += len(page["items"])
         if not page["items"] or offset >= page["total"]:
             break
+    operations = [
+        send("POST", f"{path}/documents/{quote(document, safe='')}/reprocess")["operation_id"] for document in documents
+    ]
     # A failed re-extraction would leave stale documents under the requested setting's label.
     deadline = time.monotonic() + timeout
     for operation_id in operations:

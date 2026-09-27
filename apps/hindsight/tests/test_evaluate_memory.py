@@ -28,7 +28,11 @@ class Hindsight:
         if "/operations/reprocess-" in path:
             return {"status": self.reprocess_status.get(path.rsplit("/", 1)[-1], "completed")}
         if path.endswith("/reprocess"):
-            return {"operation_id": f"reprocess-{path.split('/')[-2]}"}
+            # Re-extraction rewrites the document, which moves it in the updated_at-ordered listing.
+            document = path.split("/")[-2]
+            self.documents.remove(document)
+            self.documents.append(document)
+            return {"operation_id": f"reprocess-{document}"}
         if path.endswith("/documents"):
             page = self.documents[query["offset"] : query["offset"] + 2]
             return {"items": [{"id": document} for document in page], "total": len(self.documents)}
@@ -101,7 +105,8 @@ def test_a_failed_clone_is_still_deleted():
 
 
 def test_extraction_and_reranking_variants_change_only_the_clone():
-    hindsight = Hindsight(documents=["meeting-a", "meeting-b", "shared-c"])
+    documents = ["meeting-a", "meeting-b", "shared-c", "meeting-d", "meeting-e"]
+    hindsight = Hindsight(documents=documents)
     result = evaluate_memory.evaluate(
         hindsight,
         "source",
@@ -113,7 +118,8 @@ def test_extraction_and_reranking_variants_change_only_the_clone():
     )
     clone = hindsight.calls[0][3]["target_bank_id"]
     reprocessed = [path for method, path, _, _ in hindsight.calls if path.endswith("/reprocess")]
-    assert reprocessed == [f"{clone}/documents/{document}/reprocess" for document in hindsight.documents]
+    # Every document exactly once, although the listing reorders while pages are read.
+    assert reprocessed == [f"{clone}/documents/{document}/reprocess" for document in documents]
     patches = [body for method, path, body, _ in hindsight.calls if method == "PATCH"]
     assert all(path.startswith(clone) for method, path, _, _ in hindsight.calls if method in ("PATCH", "DELETE"))
     assert patches == [

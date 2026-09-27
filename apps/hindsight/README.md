@@ -225,7 +225,8 @@ uv run --locked python scripts/evaluate_memory.py \
   reranker の実装（`HINDSIGHT_API_RERANKER_PROVIDER`）はサーバーの設定なので、実装どうしを比べるときは、それぞれの設定の App に対して実行します。
 - `--extraction-mode` または `--strategy` を指定すると、複製先の設定を変えて全文書を再抽出します。LLM を呼ぶので費用がかかります。
 - bank の複製には `HINDSIGHT_API_ENABLE_DOCUMENT_EXPORT_API` と `HINDSIGHT_API_ENABLE_DOCUMENT_IMPORT_API`（どちらも既定で有効）が必要です。
-  token は環境変数から読み、redirect には従いません。
+- `--rerank` と `--extraction-mode` / `--strategy` は複製先の設定を `PATCH .../config` で変えるため、`HINDSIGHT_API_ENABLE_BANK_CONFIG_API`（既定で有効）も必要です。
+- token は環境変数から読み、redirect には従いません。
 
 ## 検証
 
