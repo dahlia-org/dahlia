@@ -6,7 +6,7 @@ import { RequestError } from "../storage/upload";
 import { decodeId, encodeId } from "../typeid";
 import { publicIdSchema } from "../agent/tools";
 import type { MemoryStore } from "./store";
-import type { WorkspaceMemoryService } from "./service";
+import { temporalWindow, type WorkspaceMemoryService } from "./service";
 import { HindsightError } from "./hindsight";
 import { routeMemory } from "./router";
 
@@ -132,6 +132,7 @@ export class DahliaMemory {
     return this.status(identity, input);
   }
   async search(identity: Identity, input: z.infer<typeof memorySearchSchema>, reflect: boolean, signal: AbortSignal) {
+    temporalWindow(input);
     if (input.projectId && input.scope === "personal") throw new RequestError(400, "memory_project_scope_invalid");
     if (input.projectId && !input.workspaceId) throw new RequestError(400, "memory_workspace_required");
     const options = { projectId: input.projectId ? decodeId("project", input.projectId) : undefined, after: input.after, before: input.before, depth: input.depth };
@@ -173,11 +174,15 @@ export class DahliaMemory {
       const current = await store.status(identity.userId, id);
       const unchanged = state && current && current.generation === state.generation
         && current.bankId === state.bankId && current.enabled && !current.purge;
-      results.push({ ...target, result: result && unchanged ? result : {
+      if (result && unchanged) {
+        results.push({ ...target, result });
+        continue;
+      }
+      results.push({ ...target, result: {
         unavailable: true, code: code ?? "memory_source_changed",
         // Read canonical fallback only after all external searches have finished.
-        canonical: await this.list(identity, { ...target, query: input.query }),
-        instruction: "Analysis is unavailable. These are literal text matches only, not complete semantic recall.",
+        canonical: input.projectId ? { ...target, items: [], nextCursor: null } : await this.list(identity, { ...target, query: input.query }),
+        instruction: input.projectId ? "Analysis is unavailable. Shared notes do not belong to a Project, so none are included. Use canonical meeting tools filtered by this Project; an empty fallback does not mean no matching meetings exist." : "Analysis is unavailable. These are literal text matches only, not complete semantic recall.",
       } });
     }
     return { searchedScopes: targets, results };

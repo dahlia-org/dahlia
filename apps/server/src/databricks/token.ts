@@ -9,6 +9,20 @@ interface CachedToken {
 
 const TOKEN_TIMEOUT_MS = 30_000;
 
+// Cancel only this caller's wait; a concurrent caller may share the token refresh.
+export function tokenUntilAborted(tokens: DatabricksTokenProvider, signal: AbortSignal): Promise<string> {
+  signal.throwIfAborted();
+  return new Promise((resolve, reject) => {
+    const abort = () => reject(new DOMException("Request was cancelled", "AbortError"));
+    signal.addEventListener("abort", abort, { once: true });
+    const settle = <T>(callback: (value: T) => void, value: T) => {
+      signal.removeEventListener("abort", abort);
+      callback(value);
+    };
+    tokens.getToken().then((token) => settle(resolve, token), (error: unknown) => settle(reject, error));
+  });
+}
+
 export class DatabricksTokenError extends Error {
   constructor(message: string, readonly retryable = false) {
     super(message);

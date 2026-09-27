@@ -116,4 +116,4 @@ Contracts: [AI REST API](https://developers.cloudflare.com/ai-gateway/usage/rest
 
 ### Optional Workspace memory
 
-When `DAHLIA_HINDSIGHT_URL` is configured, bind `DAHLIA_MEMORY_QUEUE` to a queue producer and consumer as shown in `wrangler.example.jsonc`; keep the scheduled trigger enabled for recovery/backfill. Set `DAHLIA_HINDSIGHT_BANK_PREFIX` and explicit `DAHLIA_HINDSIGHT_AUTH`; keep API keys or Databricks credentials in Worker secrets. Workspace admins opt in separately. See [Server memory configuration](../../apps/server/README.md#workspace-memory-hindsight).
+When `DAHLIA_HINDSIGHT_URL` is configured, bind `DAHLIA_MEMORY_QUEUE` to a queue producer and consumer as shown in `wrangler.example.jsonc`; keep the scheduled trigger enabled for recovery/backfill. Set `DAHLIA_HINDSIGHT_BANK_PREFIX` and explicit `DAHLIA_HINDSIGHT_AUTH`; keep API keys or Databricks credentials in Worker secrets. Workspace admins opt in separately. See [Server memory configuration](../../apps/server/README.md#workspace-analysis-hindsight).

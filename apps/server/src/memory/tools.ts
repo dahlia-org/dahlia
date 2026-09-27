@@ -15,7 +15,7 @@ export function createMemoryTools(memory: WorkspaceMemoryService) {
   const mcpSchema = z.object({ ...base, project_id: project.optional(), after: after.optional(), before: before.optional(), depth: depth.optional() }).strict();
   const tool = (reflect: boolean) => withMcpInputSchema(createTool({
     id: reflect ? "reflect_workspace_memory" : "recall_workspace_memory", strict: true,
-    description: reflect ? "Find cross-meeting insights in the selected Workspace. Only returned canonical Dahlia sources are evidence; hypotheses need verification."
+    description: reflect ? "Find cross-meeting insights in the selected Workspace. Only returned canonical Dahlia sources are evidence; hypotheses need verification. With after/before, returns period-ranked recall sources only and no hypothesis."
       : "Find relevant past meetings and shared notes in the selected Workspace, with verified canonical Dahlia excerpts.",
     inputSchema: schema,
     mcp: { annotations: { readOnlyHint: true } },

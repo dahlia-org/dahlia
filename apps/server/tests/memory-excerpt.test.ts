@@ -2,9 +2,17 @@ import { describe, expect, it } from "vitest";
 import { canonicalExcerpt, markerIds } from "../src/memory/excerpt";
 
 const segment = (id: number, text = "x".repeat(900)) => `[Transcript segment s${id}; 2026-01-01T00:00:00.000Z; speaker unknown; microphone] ${text}`;
-const meeting = (count: number) => ["Meeting m; date 2026-01-01T00:00:00.000Z", "Title: Planning\nUser description: ",
+const document = (parts: string[]) => {
+  let start = 0;
+  return { content: parts.join("\n\n"), blocks: parts.map((part) => {
+    const block = { start, end: start + part.length, marker: markerIds(part)[0] };
+    start = block.end + 2;
+    return block;
+  }) };
+};
+const meeting = (count: number) => document(["Meeting m; date 2026-01-01T00:00:00.000Z", "Title: Planning\nUser description: ",
   ...Array.from({ length: count }, (_, id) => segment(id)),
-  "[Screenshot shot; file f; 2026-01-01T00:00:00.000Z]\nOCR (screen text, not speech): Budget\nAI caption (interpretation): Chart"].join("\n\n");
+  "[Screenshot shot; file f; 2026-01-01T00:00:00.000Z]\nOCR (screen text, not speech): Budget\nAI caption (interpretation): Chart"]);
 
 describe("canonical excerpts", () => {
   it("extracts only segment and screenshot IDs from chunk text", () => {
@@ -14,7 +22,7 @@ describe("canonical excerpts", () => {
 
   it("returns a document that fits the limit whole, whatever the markers", () => {
     const content = meeting(3);
-    expect(canonicalExcerpt(content, ["Transcript segment s1"])).toEqual({ text: content, truncated: false });
+    expect(canonicalExcerpt(content, ["Transcript segment s1"])).toEqual({ text: content.content, truncated: false });
   });
 
   it("cuts each marked paragraph with one neighbour on each side and joins distant windows with an ellipsis", () => {
@@ -36,9 +44,17 @@ describe("canonical excerpts", () => {
     expect(text).toContain("[Transcript segment s59;");
     expect(text).not.toContain("[Transcript segment s0;");
     for (const unknown of [[], ["Transcript segment missing"]]) {
-      expect(canonicalExcerpt(content, unknown)).toEqual({ text: content.slice(0, 16_000), truncated: true });
+      expect(canonicalExcerpt(content, unknown)).toEqual({ text: content.content.slice(0, 16_000), truncated: true });
     }
-    const huge = `${"y".repeat(20_000)}\n\n${segment(1)}`;
-    expect(canonicalExcerpt(huge, ["Transcript segment s1"]).text).toHaveLength(16_000);
+    const huge = document(["AI-generated summary (not independent corroboration): " + "y".repeat(20_000), segment(1, "TARGET")]);
+    const excerpt = canonicalExcerpt(huge, ["Transcript segment s1"]).text;
+    expect(excerpt.length).toBeLessThanOrEqual(16_000);
+    expect(excerpt).toBe(segment(1, "TARGET"));
+  });
+  it("preserves blank lines inside the matched screenshot block", () => {
+    const content = document(["x".repeat(20_000), "[Screenshot shot; file f]\nOCR: first\n\nsecond\n\nthird\nAI caption: last"]);
+    const excerpt = canonicalExcerpt(content, ["Screenshot shot"]).text;
+    expect(excerpt).toContain("OCR: first\n\nsecond\n\nthird\nAI caption: last");
+    expect(excerpt.length).toBeLessThanOrEqual(16_000);
   });
 });

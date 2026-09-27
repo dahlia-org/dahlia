@@ -50,12 +50,17 @@ PyTorch の CPU 専用 index（`https://download.pytorch.org/whl/cpu`）から�
 darwin の `2.14.0` が入ります。固定済みのバージョンと配布ファイルのハッシュは維持しています。
 
 Databricks Apps は `requirements.txt` から pip で入れます。uv 0.8 の `uv export` は index URL を出力しないため、
-先頭に CPU 専用 index を足して作ります。`uv.lock` を変えたら、次のコマンドで作り直します。
+先頭に torch だけの wheel 一覧を `--find-links` で足して作ります。`--extra-index-url` は Jinja2 や MarkupSafe まで PyTorch 側から解決するため使いません。
+この export はバージョンを固定しますが、pip での配布ファイルのハッシュ検証は行いません。`uv.lock` を変えたら、次のコマンドで作り直します。
 `scripts/check.sh` は、同じ手順の出力と `requirements.txt` が一致することを確かめます。
 
 ```sh
-{ echo "--extra-index-url https://download.pytorch.org/whl/cpu"; uv export --locked --no-dev --no-hashes --quiet; } > requirements.txt
+{ echo "--find-links https://download.pytorch.org/whl/cpu/torch/"; uv export --locked --no-dev --no-hashes --quiet; } > requirements.txt
 ```
+
+Databricks Apps は `python -m hindsight_lakebase.server` 経由で起動します。Hindsight と Uvicorn のログは
+上流の JSON allowlist を使い、`severity`、`timestamp`、`logger` だけを出力します。本文・質問・回答・例外本文・tenant は出力しません。
+HTTP access log も無効です。ローカルで `hindsight-api` を直接起動する場合には、この制限は適用されません。
 
 ## バックエンドの選択
 
@@ -235,12 +240,13 @@ uv run --locked python scripts/evaluate_memory.py \
   --url https://<hindsight-app-url>/api --bank <bank ID> --questions ~/memory.eval.jsonl
 ```
 
-- 出力は JSON の数値だけです。質問数と、組み合わせごとの hit@k（`--k`、既定は 1,3,5,10）、MRR、recall の応答時間（クライアントで計測した p50、p95、max のミリ秒）、エラー数を出します。質問、想起した文、本文は出力しません。
+- 出力は JSON の数値だけです。質問数と、組み合わせごとの hit@k（`--k`、既定は 1,3,5）、MRR、recall の応答時間（クライアントで計測した p50、p95、max のミリ秒）、エラー数を出します。質問、想起した文、本文は出力しません。
 - 基準の recall は `types: world, experience`、`budget: mid`、`max_tokens: 4096` です。
   `--observations on|both` で observation を加え（`prefer_observations` を指定し、`source_facts` から元の文書に展開します）、
-  Dahlia Server の既定（depth `normal`）は `--observations on` に当たります。
+  Dahlia Server の既定（depth `normal`）は `--observations off` に当たります。常時利用は実データで品質と応答時間を比較してから判断します。
   `--rerank on|off|both` で複製先の `enable_reranking` を切り替えます。
   reranker の実装（`HINDSIGHT_API_RERANKER_PROVIDER`）はサーバーの設定なので、実装どうしを比べるときは、それぞれの設定の App に対して実行します。
+- 順位は observation の出典を展開した後の、重複を除いた文書の順番です。Server と同じ 5 文書の枠で採点し、同じ observation の全出典を同順位にはしません。このハーネスは候補の評価だけで、正本の hash 検証・抜粋品質・Server 全体の応答時間は別途評価します。
 - `--extraction-mode` または `--strategy` を指定すると、複製先の設定を変えて全文書を再抽出します。LLM を呼ぶので費用がかかります。
 - bank の複製には `HINDSIGHT_API_ENABLE_DOCUMENT_EXPORT_API` と `HINDSIGHT_API_ENABLE_DOCUMENT_IMPORT_API`（どちらも既定で有効）が必要です。
 - `--rerank` と `--extraction-mode` / `--strategy` は複製先の設定を `PATCH .../config` で変えるため、`HINDSIGHT_API_ENABLE_BANK_CONFIG_API`（既定で有効）も必要です。

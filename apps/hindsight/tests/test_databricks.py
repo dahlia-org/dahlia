@@ -1,6 +1,7 @@
 import asyncio
 import json
 import os
+import sys
 import unittest
 from datetime import UTC, datetime
 from unittest.mock import Mock, patch
@@ -184,8 +185,8 @@ class DatabricksStartTests(unittest.TestCase):
         self.assertEqual(
             executed,
             {
-                "file": "hindsight-api",
-                "args": ["hindsight-api", "--host", "0.0.0.0", "--port", "9000"],
+                "file": sys.executable,
+                "args": [sys.executable, "-m", "hindsight_lakebase.server", "--host", "0.0.0.0", "--port", "9000"],
                 "url": _postgres_url("//app:secret@db.example.com:5432/databricks-postgres?sslmode=require"),
                 "llm_base_url": "https://custom.example/llm/v1",
                 "embeddings_base_url": "https://custom.example/embeddings/v1",

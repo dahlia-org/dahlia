@@ -1,6 +1,7 @@
 """Start Hindsight with the Lakebase resource injected by Databricks Apps."""
 
 import os
+import sys
 from contextlib import closing
 from urllib.parse import quote, urlencode, urlunsplit
 
@@ -61,7 +62,7 @@ def main():
     os.environ["HINDSIGHT_API_DATABASE_URL"] = url
     os.environ["HINDSIGHT_API_MIGRATION_DATABASE_URL"] = url
     port = os.environ.get("DATABRICKS_APP_PORT", "8000")
-    os.execvp("hindsight-api", ["hindsight-api", "--host", "0.0.0.0", "--port", port])
+    os.execvp(sys.executable, [sys.executable, "-m", "hindsight_lakebase.server", "--host", "0.0.0.0", "--port", port])
 
 
 if __name__ == "__main__":

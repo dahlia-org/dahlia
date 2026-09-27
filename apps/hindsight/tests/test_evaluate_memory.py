@@ -62,7 +62,7 @@ def test_reports_only_numbers_and_deletes_the_clone():
     baseline, observed = result["variants"]
     assert (baseline["observations"], observed["observations"]) == (False, True)
     assert baseline["hit_at"] == {"1": 0.0, "2": 0.3333} and baseline["mrr"] == 0.1667
-    assert observed["hit_at"] == {"1": 0.3333, "2": 0.3333} and observed["mrr"] == 0.3333
+    assert observed["hit_at"] == {"1": 0.0, "2": 0.3333} and observed["mrr"] == 0.1667
     assert baseline["errors"] == observed["errors"] == 1
     output = json.dumps(result, ensure_ascii=False)
     assert SECRET not in output and "q1" not in output and "meeting-" not in output
@@ -74,11 +74,15 @@ def test_reports_only_numbers_and_deletes_the_clone():
     assert hindsight.calls[-1][:2] == ("DELETE", clone)
     recalls = [body for _, path, body, _ in hindsight.calls if path.endswith("/memories/recall")]
     assert all(path.startswith(clone) for _, path, _, _ in hindsight.calls[1:] if not path.startswith("source/"))
-    assert recalls[0] == {**evaluate_memory.DAHLIA_RECALL, "query": "q1", "include": {"entities": None}}
+    assert recalls[0] == {
+        **evaluate_memory.DAHLIA_RECALL,
+        "query": "q1",
+        "include": {"entities": None, "chunks": {"max_tokens": 8192}},
+    }
     assert recalls[3]["prefer_observations"] and recalls[3]["include"]["source_facts"] == {}
 
 
-def test_observation_sources_share_the_rank_of_their_result():
+def test_observation_sources_have_distinct_ranks_within_the_five_document_limit():
     response = {
         "results": [
             {"type": "observation", "source_fact_ids": ["f1", "f2", "missing"]},
@@ -93,7 +97,12 @@ def test_observation_sources_share_the_rank_of_their_result():
         },
     }
     ranks = evaluate_memory.document_ranks(response)
-    assert ranks == {"meeting-a": 1, "meeting-b": 1, "meeting-c": 3, "meeting-d": 4}
+    assert ranks == {"meeting-a": 1, "meeting-b": 2, "meeting-c": 3, "meeting-d": 4}
+    response = {
+        "results": [{"type": "observation", "source_fact_ids": [str(i) for i in range(10)]}],
+        "source_facts": {str(i): {"document_id": f"meeting-{i}"} for i in range(10)},
+    }
+    assert evaluate_memory.document_ranks(response) == {f"meeting-{i}": i + 1 for i in range(5)}
 
 
 def test_a_failed_clone_is_still_deleted():

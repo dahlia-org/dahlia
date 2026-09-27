@@ -318,7 +318,7 @@ index 20d4598c9..51be5eee0 100644
      # are retain-time extraction output that nothing recreates, so an edit preserves them (#2864).
      # In lock order, like every other link delete (see delete_unit_links).
 diff --git a/hindsight_api/engine/memory_engine.py b/hindsight_api/engine/memory_engine.py
-index 100357a9a..f1d7b2d94 100644
+index 100357a9a..b88742f80 100644
 --- a/hindsight_api/engine/memory_engine.py
 +++ b/hindsight_api/engine/memory_engine.py
 @@ -29,6 +29,7 @@ from datetime import UTC, datetime, timedelta, timezone
@@ -329,7 +329,18 @@ index 100357a9a..f1d7b2d94 100644
  from pydantic import ValidationError
 
  from .._vector_index import (
-@@ -16916,6 +16917,7 @@ class MemoryEngine(MemoryEngineInterface):
+@@ -8093,6 +8094,10 @@ class MemoryEngine(MemoryEngineInterface):
+         # derives from max_tokens and clamps to [recall_budget_min, recall_budget_max].
+         _t0 = time.time()
+         budget_config_dict = await self._config_resolver.get_bank_config(bank_id, request_context)
++        # Labels-only banks with no labels must not expose legacy entities, including
++        # internal reflect calls that otherwise force include_entities=True.
++        if not budget_config_dict.get("entities_allow_free_form", True) and not budget_config_dict.get("entity_labels"):
++            include_entities = False
+         _d = time.time() - _t0
+         get_metrics_collector().record_recall_phase("bank_config", _d)
+         if _d > 0.100:
+@@ -16916,6 +16921,7 @@ class MemoryEngine(MemoryEngineInterface):
              json.dumps(trigger) if trigger else None,
              json.dumps(document.structure.model_dump()),
          )
@@ -337,7 +348,7 @@ index 100357a9a..f1d7b2d94 100644
          assert row is not None
          return row
 
-@@ -18403,7 +18405,7 @@ class MemoryEngine(MemoryEngineInterface):
+@@ -18403,7 +18409,7 @@ class MemoryEngine(MemoryEngineInterface):
 
          # The exit stack carries the row lock a trigger patch takes below; it stays
          # empty (and free) on every other update.
@@ -346,7 +357,7 @@ index 100357a9a..f1d7b2d94 100644
              # A supplied trigger PATCHES the stored one (see _merge_trigger): callers
              # send only the fields they set, so the rest have to be read back rather
              # than defaulted. Only paid for when a trigger is actually being changed.
-@@ -18565,6 +18567,8 @@ class MemoryEngine(MemoryEngineInterface):
+@@ -18565,6 +18571,8 @@ class MemoryEngine(MemoryEngineInterface):
              """
 
              row = await conn.fetchrow(query, *params)
@@ -355,7 +366,7 @@ index 100357a9a..f1d7b2d94 100644
 
              # Persist the previous-version snapshot in the dedicated history table
              # (one row per refresh), then trim to the configured cap. Replaces the
-@@ -18770,7 +18774,7 @@ class MemoryEngine(MemoryEngineInterface):
+@@ -18770,7 +18778,7 @@ class MemoryEngine(MemoryEngineInterface):
              else None
          )
          sv_clause = f", search_vector = {sv_expr}" if sv_expr else ""
@@ -364,7 +375,7 @@ index 100357a9a..f1d7b2d94 100644
              row = await conn.fetchrow(
                  f"""
                  UPDATE {fq_table("mental_models")}
-@@ -18791,6 +18795,7 @@ class MemoryEngine(MemoryEngineInterface):
+@@ -18791,6 +18799,7 @@ class MemoryEngine(MemoryEngineInterface):
              # findable by title, rather than leaving the index describing content that no longer
              # exists.
              if row is not None:
@@ -372,7 +383,7 @@ index 100357a9a..f1d7b2d94 100644
                  vec = None
                  if self._knowledge_index_store(bank_id) is not None:
                      vec = await self._mental_model_embedding_vector(row["name"] or "", "")
-@@ -19442,7 +19447,7 @@ class MemoryEngine(MemoryEngineInterface):
+@@ -19442,7 +19451,7 @@ class MemoryEngine(MemoryEngineInterface):
              return []
 
          backend = await self._get_backend()

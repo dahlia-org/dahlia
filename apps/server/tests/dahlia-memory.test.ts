@@ -146,6 +146,13 @@ describe("Dahlia Memory", () => {
         id: uuidV7(), entity: "project", action: "create", entityId: projectId, baseRevision: null,
         data: { name: "Launch", parentProjectId: null, projectType: null, description: "", createdAt: now } }] });
       const project = encodeId("project", projectId);
+      await f.memory.save(f.owner, { ...f.note("x unrelated shared note"), scope: "workspace", workspaceId: f.workspaceId, explicit: true });
+      for (const memory of [f.memory, new DahliaMemory(f.memory.stores, f.sync, {})]) {
+        const fallback = await memory.search(f.owner, { scope: "auto", workspaceId: f.workspaceId, projectId: project, query: "x" }, true, signal);
+        expect(fallback.results[0]!.result).toMatchObject({ unavailable: true, canonical: { items: [], nextCursor: null } });
+        expect(fallback.results[0]!.result.instruction).toContain("canonical meeting tools");
+      }
+      expect(f.generate).not.toHaveBeenCalled();
       await expect(f.memory.search(f.owner, { scope: "auto", projectId: project, query: "x" }, false, signal))
         .rejects.toMatchObject({ status: 400, code: "memory_workspace_required" });
       await expect(f.memory.search(f.owner, { scope: "personal", workspaceId: f.workspaceId, projectId: project, query: "x" }, false, signal))
@@ -450,6 +457,11 @@ describe("Dahlia Memory", () => {
       expect((await request("/reflect", "POST", { query: "memory", depth: "deep", after: "2026-01-01T00:00:00Z" })).status).toBe(200);
       expect((await request("/recall", "POST", { query: "memory", projectId }, f.owner.email, f.workspaceId)).status).toBe(404);
       expect((await request("/recall", "POST", { query: "memory", before: "yesterday" }, f.owner.email, f.workspaceId)).status).toBe(400);
+      for (const workspace of [undefined, f.workspaceId]) {
+        const invalid = await request("/reflect", "POST", { query: "memory", after: "2026-02-01T00:00:00Z", before: "2026-01-01T00:00:00Z" }, f.owner.email, workspace);
+        expect(invalid.status).toBe(400);
+        expect(await invalid.json()).toMatchObject({ code: "memory_time_range_invalid" });
+      }
       expect(await (await request("/notes", "GET", undefined, f.stranger.email)).json()).toMatchObject({ items: [] });
       expect((await request("/notes", "GET", undefined, f.stranger.email, f.workspaceId)).status).toBe(404);
       expect((await app.request("/api/v1/memory/auto/save", { method: "POST", headers: { "Content-Type": "application/json", "X-Forwarded-Email": f.owner.email }, body: JSON.stringify(input) })).status).toBe(404);
