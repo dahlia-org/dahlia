@@ -8,9 +8,22 @@ export class HindsightError extends Error {
   constructor(readonly code: string, readonly status?: number) { super(code); }
 }
 const operationSchema = z.object({ operation_id: z.string() });
-const factSchema = z.object({ id: z.string(), text: z.string(), document_id: z.string().nullish(),
-  metadata: z.record(z.string(), z.unknown()).nullish() }).passthrough();
+const factSchema = z.object({ id: z.string(), text: z.string(), type: z.string().nullish(), document_id: z.string().nullish(),
+  chunk_id: z.string().nullish(), source_fact_ids: z.array(z.string()).nullish(), metadata: z.record(z.string(), z.unknown()).nullish() }).passthrough();
+const recallSchema = z.object({ results: z.array(factSchema),
+  source_facts: z.record(z.string(), z.object({ document_id: z.string().nullish(), chunk_id: z.string().nullish() }).passthrough()).nullish(),
+  chunks: z.record(z.string(), z.object({ text: z.string(), truncated: z.boolean().optional() }).passthrough()).nullish() });
 export type HindsightFact = z.infer<typeof factSchema>;
+export type HindsightRecall = z.infer<typeof recallSchema>;
+export type HindsightBudget = "low" | "mid" | "high";
+export interface HindsightTags { tags: string[]; tagsMatch: "any" | "all" | "any_strict" | "all_strict" | "exact" }
+export interface RecallOptions extends Partial<HindsightTags> {
+  types?: Array<"world" | "experience">;
+  budget?: HindsightBudget;
+  temporalWindow?: { start: string; end: string };
+  // Adds consolidated observations; their lineage arrives in source_facts.
+  observations?: boolean;
+}
 export class HindsightClient {
   private readonly tokens?: DatabricksTokenProvider;
   constructor(private readonly config: NonNullable<AppConfig["hindsight"]>, workspace: AppConfig["databricksWorkspace"], private readonly transport: typeof fetch = fetch) {
@@ -20,11 +33,14 @@ export class HindsightClient {
     }
   }
   bank(scopeId: string, personal = false) { return `${this.config.bankPrefix}-${personal ? "user" : "workspace"}-${scopeId}`; }
-  private async request(bank: string, path: string, method: string, signal: AbortSignal, body?: unknown, missingOkay = false): Promise<unknown> {
+  private request(bank: string, path: string, method: string, signal: AbortSignal, body?: unknown, missingOkay = false) {
+    return this.send(`/banks/${encodeURIComponent(bank)}${path}`, method, signal, body, missingOkay);
+  }
+  private async send(path: string, method: string, signal: AbortSignal, body?: unknown, missingOkay = false): Promise<unknown> {
     const token = this.tokens ? await this.tokens.getToken() : this.config.apiKey;
     let response: Response;
     try {
-      response = await this.transport(`${this.config.url}/v1/default/banks/${encodeURIComponent(bank)}${path}`, {
+      response = await this.transport(`${this.config.url}/v1/default${path}`, {
         method, redirect: "error", signal: AbortSignal.any([signal, AbortSignal.timeout(60_000)]),
         headers: { ...(token ? { authorization: `Bearer ${token}` } : {}), ...(body ? { "content-type": "application/json" } : {}) },
         body: body === undefined ? undefined : JSON.stringify(body),
@@ -99,10 +115,24 @@ export class HindsightClient {
       trigger: { refresh_after_consolidation: true, min_refresh_interval_seconds: 3600, exclude_mental_models: true, tags_match: "all_strict" },
     })).operation_id;
   }
-  async recall(bank: string, query: string, signal: AbortSignal) {
-    return z.object({ results: z.array(factSchema) }).parse(await this.request(bank, "/memories/recall", "POST", signal, {
-      query, types: ["world", "experience"], budget: "mid", max_tokens: 4096, query_timestamp: new Date().toISOString(),
-    })).results;
+  async recall(bank: string, query: string, signal: AbortSignal, options: RecallOptions = {}) {
+    const types = options.types ?? ["world", "experience"];
+    return recallSchema.parse(await this.request(bank, "/memories/recall", "POST", signal, {
+      query, types: options.observations ? [...types, "observation"] : types, budget: options.budget ?? "mid", max_tokens: 4096,
+      query_timestamp: new Date().toISOString(),
+      // Entities stay off: Dahlia never asks Hindsight for person-level aggregation.
+      include: { entities: null, chunks: { max_tokens: 8192 }, ...(options.observations ? { source_facts: {} } : {}) },
+      ...(options.observations ? { prefer_observations: true } : {}),
+      ...(options.tags ? { tags: options.tags, tags_match: options.tagsMatch ?? "any" } : {}),
+      ...(options.temporalWindow ? { temporal_window: options.temporalWindow } : {}),
+    }));
+  }
+  // The chunk route is not bank-scoped, so only a chunk from the expected bank is usable.
+  async chunk(bank: string, id: string, signal: AbortSignal) {
+    const raw = await this.send(`/chunks/${encodeURIComponent(id)}`, "GET", signal, undefined, true);
+    if (raw === null) return null;
+    const chunk = z.object({ bank_id: z.string(), document_id: z.string(), chunk_text: z.string() }).parse(raw);
+    return chunk.bank_id === bank ? { documentId: chunk.document_id, text: chunk.chunk_text } : null;
   }
   async factDocuments(bank: string, id: string, signal: AbortSignal): Promise<string[]> {
     const schema = z.object({ document_id: z.string().nullish(), state: z.string(), source_memory_ids: z.array(z.string()).optional() });
@@ -142,8 +172,9 @@ export class HindsightClient {
     }
     return [...new Set(ids)];
   }
-  async reflect(bank: string, query: string, signal: AbortSignal) {
+  async reflect(bank: string, query: string, signal: AbortSignal, scope?: HindsightTags) {
     return z.object({ text: z.string(), based_on: z.object({ memories: z.array(z.object({ id: z.string().nullable(), text: z.string() })).default([]), mental_models: z.array(z.object({ id: z.string() })).default([]) }).nullish() })
-      .parse(await this.request(bank, "/reflect", "POST", signal, { query, budget: "low", max_tokens: 2048, include: { facts: {} } }));
+      .parse(await this.request(bank, "/reflect", "POST", signal, { query, budget: "low", max_tokens: 2048, include: { facts: {} },
+        ...(scope ? { tags: scope.tags, tags_match: scope.tagsMatch } : {}) }));
   }
 }

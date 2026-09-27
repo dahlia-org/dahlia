@@ -3806,6 +3806,21 @@ export interface operations {
             content: {
                 "application/json": {
                     query: string;
+                    /**
+                     * Format: date-time
+                     * @description ISO datetime. Ranks memories dated at or after it higher; memories outside the period are still returned.
+                     */
+                    after?: string;
+                    /**
+                     * Format: date-time
+                     * @description ISO datetime. Ranks memories dated at or before it higher; memories outside the period are still returned.
+                     */
+                    before?: string;
+                    /**
+                     * @description Retrieval effort; normal by default. deep is slower but considers more candidates.
+                     * @enum {string}
+                     */
+                    depth?: "quick" | "normal" | "deep";
                 };
             };
         };
@@ -3833,6 +3848,21 @@ export interface operations {
             content: {
                 "application/json": {
                     query: string;
+                    /**
+                     * Format: date-time
+                     * @description ISO datetime. Ranks memories dated at or after it higher; memories outside the period are still returned.
+                     */
+                    after?: string;
+                    /**
+                     * Format: date-time
+                     * @description ISO datetime. Ranks memories dated at or before it higher; memories outside the period are still returned.
+                     */
+                    before?: string;
+                    /**
+                     * @description Retrieval effort; normal by default. deep is slower but considers more candidates.
+                     * @enum {string}
+                     */
+                    depth?: "quick" | "normal" | "deep";
                 };
             };
         };
@@ -4054,6 +4084,23 @@ export interface operations {
             content: {
                 "application/json": {
                     query: string;
+                    /** @description An existing Project TypeID; searches only that Project's Workspace memory. Never invent a value. */
+                    projectId?: string;
+                    /**
+                     * Format: date-time
+                     * @description ISO datetime. Ranks memories dated at or after it higher; memories outside the period are still returned.
+                     */
+                    after?: string;
+                    /**
+                     * Format: date-time
+                     * @description ISO datetime. Ranks memories dated at or before it higher; memories outside the period are still returned.
+                     */
+                    before?: string;
+                    /**
+                     * @description Retrieval effort; normal by default. deep is slower but considers more candidates.
+                     * @enum {string}
+                     */
+                    depth?: "quick" | "normal" | "deep";
                 };
             };
         };
@@ -4083,6 +4130,23 @@ export interface operations {
             content: {
                 "application/json": {
                     query: string;
+                    /** @description An existing Project TypeID; searches only that Project's Workspace memory. Never invent a value. */
+                    projectId?: string;
+                    /**
+                     * Format: date-time
+                     * @description ISO datetime. Ranks memories dated at or after it higher; memories outside the period are still returned.
+                     */
+                    after?: string;
+                    /**
+                     * Format: date-time
+                     * @description ISO datetime. Ranks memories dated at or before it higher; memories outside the period are still returned.
+                     */
+                    before?: string;
+                    /**
+                     * @description Retrieval effort; normal by default. deep is slower but considers more candidates.
+                     * @enum {string}
+                     */
+                    depth?: "quick" | "normal" | "deep";
                 };
             };
         };

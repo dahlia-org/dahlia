@@ -29,3 +29,13 @@ Working Memory の編集中セクションは読込時の revision を維持し�
 2026-09-26: 分析先を Hindsight 0.10.1（`f8950b0c`）に固定した。observation、directive、Knowledge Pages などの機能を段階的に使うための前提であり、この更新では Dahlia が送る retain、recall、reflect、mental model の要求の形を変えない。Lakebase 向けの保守パッチは、上流が名称変更を更新処理に統合した分だけ縮めた。0.10 系では、reflect の取得ツールが失敗すると reflect 全体が HTTP 500 になる。この場合は既存の `memory_upstream_failed` として、その scope を利用不可にし、正本の文字列一致による候補を返す。recall だけの結果に切り替えて仮説を省く縮退は採らない。
 
 検索設定の比較は、運用者がローカルで実行する評価ハーネスで行う。対象の bank を Hindsight の clone で複製し、複製先だけで hit@k、MRR、応答時間を測り、終了時に複製先を削除する。質問と期待する文書の組は運用者が用意し、リポジトリに置かない。出力は数値だけで、質問、想起した文、本文は出さない。reranker の実装はサーバーの設定なので、実装どうしの比較はそれぞれの設定の App に対して行う。
+
+## 検索の精度と系譜（Phase 1）
+
+2026-09-27: recall の並べ替えに、Hindsight App の中で動かす cross-encoder を使う。モデルは多言語の `cross-encoder/mmarco-mMiniLMv2-L12-H384-v1` で、CPU に固定する。Model Serving に分けると、App の外に呼び出しと認証がもう一つ増えるため、分けない。App の compute は Large（4 vCPU）とする。4 CPU での計測では、並べ替えに 50 件で 0.64 秒、100 件で 1.25 秒、200 件で 2.2 秒、300 件で 3.4 秒かかり、RSS は約 1.4 GB だった。合成データで作った日本語 12 問では hit@1 が 1.00 だった。比較した flashrank の MultiBERT は、300 件で 10.7 秒、hit@1 は 0.33 だったので採らない。候補数の上限は recall の budget ごとに DAB 変数で持ち、既定は low 50、mid 100、high 300 とする。モデルの重みは起動時に Hugging Face から取得する。App が外部に出られない場合は、UC Volume に置いた重みを起動時にコピーする案があるが、今は実装しない。
+
+reranker のために上流の `local-ml` extra を入れる。torch は、上流の `tool.uv.sources` によって PyTorch の CPU 専用 index から解決され、GPU 用の大きな wheel を入れない。uv 0.8 の `uv export` は index URL を出力しないので、Databricks Apps が pip で読む `requirements.txt` の先頭には CPU 専用 index を足す。その手順と `uv.lock` の一致は `scripts/check.sh` で確かめる。
+
+証拠として返すのは、今までどおり hash を検証した正本の抜粋だけとする。長い会議では、recall で関係した事実の chunk から `[Transcript segment <id>` と `[Screenshot <id>` の ID だけを取り出し、正本の中のその段落と前後 1 段落を切り出す。chunk の本文、observation の本文、抽出された事実は返さない。chunk の取得 API は bank をパスに含まないため、応答の bank と文書が期待どおりのときだけ使う。16,000 文字に収まる文書は全文を返し、マーカーが見つからなければ冒頭を返す。observation は、元になった事実の文書をたどって候補にする。recall には `include.entities: null` を付け、人物の集約を Hindsight に求めない。
+
+MCP と HTTP から、Project、期間、検索の深さを指定できる。Project は現在の Workspace に属するものだけを受け付け、正本での所属も確かめる。個人の領域では受け付けない。`auto` と一緒に指定されたときは、Router を使わずにその Workspace だけを検索する。期間は Hindsight の temporal window として、期間内を優先するだけで、期間外を除外しない。深さは recall の budget にだけ対応させ、reflect の budget は `low` のまま変えない。

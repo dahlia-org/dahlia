@@ -44,6 +44,8 @@ async function setup() {
   const operations = new Map<string, string>();
   const models = new Map<string, boolean>();
   const failingItems = new Set<string>();
+  const chunks = new Map<string, { bank_id: string; document_id: string; chunk_text: string }>();
+  let recall: (() => unknown) | undefined;
   let loseAcknowledgement = false;
   const transport = vi.fn<typeof fetch>(async (url, init) => {
     expect(new Headers(init?.headers).get("authorization")).toBe("Bearer test-secret");
@@ -52,6 +54,11 @@ async function setup() {
     const body = (init?.body ? JSON.parse(String(init.body)) : {}) as Record<string, unknown>;
     requests.push({ path, method: init?.method ?? "GET", body });
     if (path.endsWith("/config")) return Response.json({});
+    if (path.startsWith("/api/v1/default/chunks/")) {
+      const chunk = chunks.get(decodeURIComponent(path.split("/").at(-1)!));
+      return chunk ? Response.json({ chunk_id: path.split("/").at(-1), chunk_index: 0, created_at: "", ...chunk }) : new Response(null, { status: 404 });
+    }
+    if (path.endsWith("/reflect")) return Response.json({ text: "Hypothesis", based_on: { memories: [], mental_models: [] } });
     if (path.endsWith("/memories") && init?.method === "POST") {
       const item = (body.items as Array<{ document_id: string; content: string }>)[0]!;
       retained.set(item.document_id, item.content); operations.set(String(body.operation_id), failingItems.has(item.document_id) ? "failed" : "completed");
@@ -75,7 +82,7 @@ async function setup() {
     if (path.includes("/mental-models/") && init?.method === "GET") return models.has(path.split("/").at(-1)!) ? Response.json({}) : new Response(null, { status: 404 });
     if (path.includes("/mental-models/") && init?.method === "DELETE") { models.delete(path.split("/").at(-1)!); return Response.json({}); }
     if (path.includes("/documents/") && init?.method === "DELETE") { retained.delete(path.split("/").at(-1)!); return Response.json({}); }
-    if (path.endsWith("/memories/recall")) return Response.json({ results: [...retained.keys()].map((document_id) => ({ id: uuidV7(), document_id, text: "UNTRUSTED EXTRACTED CLAIM" })) });
+    if (path.endsWith("/memories/recall")) return Response.json(recall?.() ?? { results: [...retained.keys()].map((document_id) => ({ id: uuidV7(), document_id, text: "UNTRUSTED EXTRACTED CLAIM" })) });
     if (init?.method === "DELETE") { retained.clear(); models.clear(); return Response.json({}); }
     throw new Error(`Unexpected mock route ${path}`);
   });
@@ -88,7 +95,9 @@ async function setup() {
     throw new Error(JSON.stringify(await memory.status(owner, workspaceId)));
   };
   const close = async () => { db.close(); await app.close?.(); };
-  return { app, config, db, sync, memory, commit, tick, ready, close, requests, retained, operations, models, failingItems,
+  return { app, config, db, sync, memory, commit, tick, ready, close, requests, retained, operations, models, failingItems, chunks,
+    setRecall: (response: (() => unknown) | undefined) => { recall = response; },
+    recallBodies: () => requests.filter((r) => r.path.endsWith("/memories/recall")).map((r) => r.body),
     loseNextAcknowledgement: () => { loseAcknowledgement = true; } };
 }
 
@@ -539,6 +548,130 @@ describe("Workspace memory", () => {
   });
 });
 
+describe("Workspace memory recall", () => {
+  const signal = new AbortController().signal;
+  const long = async (f: Awaited<ReturnType<typeof setup>>, projectId: string | null = null) => {
+    const meetingId = uuidV7(), now = new Date().toISOString();
+    await f.commit([{ entity: "meeting", action: "create", entityId: meetingId, baseRevision: null,
+      data: { projectId, name: "Long meeting", description: "Evidence", status: "READY", duration: 60, recordingStartedAt: now, createdAt: now, updatedAt: now } }]);
+    return meetingId;
+  };
+  const segments = (count: number) => Array.from({ length: count }, (_, i) => ({ segmentId: `seg-${i}`, startedAt: new Date("2026-01-01T00:00:00Z"),
+    speakerLabel: null, audioSource: "microphone", text: `Statement ${i} ${"x".repeat(900)}` }));
+
+  it("follows observations to their source documents in recall order within the 30-candidate limit", async () => {
+    const f = await setup();
+    try {
+      await f.memory.configure(owner, workspaceId, true);
+      const [a, b] = [uuidV7(), uuidV7()];
+      for (const id of [a, b]) await f.app.memory!.saveNote(owner.userId, workspaceId, { id, revision: 0, content: `Note ${id}` });
+      await f.ready();
+      const response = (unknown: number) => () => ({ results: [
+        ...Array.from({ length: unknown }, (_, i) => ({ id: `w${i}`, text: "UNTRUSTED", type: "world", document_id: `shared-${uuidV7()}` })),
+        { id: "o1", text: "UNTRUSTED OBSERVATION", type: "observation", source_fact_ids: ["cut", "f1", "f2"] },
+        { id: "late", text: "UNTRUSTED", type: "experience", document_id: `shared-${a}` },
+      ], source_facts: { f1: { id: "f1", text: "UNTRUSTED", document_id: `shared-${b}` }, f2: { id: "f2", text: "UNTRUSTED", document_id: `shared-${a}` } } });
+      f.setRecall(response(28));
+      const found = await f.memory.search(owner, workspaceId, "notes", false, signal);
+      expect(found.sources.map((source) => source.id)).toEqual([b, a]);
+      expect(JSON.stringify(found)).not.toContain("UNTRUSTED");
+      const { query_timestamp: timestamp, ...body } = f.recallBodies().at(-1)!;
+      expect(typeof timestamp).toBe("string");
+      expect(body).toEqual({ query: "notes", types: ["world", "experience", "observation"], budget: "mid", max_tokens: 4096,
+        prefer_observations: true, include: { entities: null, chunks: { max_tokens: 8192 }, source_facts: {} } });
+      f.setRecall(response(29));
+      expect((await f.memory.search(owner, workspaceId, "notes", false, signal)).sources.map((source) => source.id)).toEqual([b]);
+    } finally { await f.close(); }
+  });
+
+  it("cuts long canonical meetings around recalled markers and reads back missing chunks from the expected bank only", async () => {
+    const f = await setup();
+    try {
+      const meetingId = await long(f);
+      vi.spyOn(f.sync, "listTranscript").mockResolvedValue({ items: segments(40) } as never);
+      await f.memory.configure(owner, workspaceId, true); await f.ready();
+      const document = `meeting-${meetingId}`, bank = `test-workspace-${workspaceId}`;
+      const marker = (i: number) => `claim [Transcript segment seg-${i}; 2026-01-01T00:00:00.000Z; speaker unknown; microphone] UNTRUSTED CHUNK`;
+      f.chunks.set("missing", { bank_id: bank, document_id: document, chunk_text: marker(10) });
+      f.chunks.set("cut", { bank_id: bank, document_id: document, chunk_text: marker(35) });
+      f.chunks.set("foreign-bank", { bank_id: "test-workspace-other", document_id: document, chunk_text: marker(20) });
+      f.chunks.set("foreign-document", { bank_id: bank, document_id: "meeting-other", chunk_text: marker(25) });
+      const fact = (chunk_id: string) => ({ id: chunk_id, text: "UNTRUSTED", type: "world", document_id: document, chunk_id });
+      f.setRecall(() => ({ results: ["recalled", "missing", "cut", "foreign-document", "foreign-bank"].map(fact),
+        chunks: { recalled: { id: "recalled", text: marker(30), chunk_index: 0 }, cut: { id: "cut", text: "[Transcript segment seg-", chunk_index: 1, truncated: true } } }));
+      const before = f.requests.length;
+      const [source] = (await f.memory.search(owner, workspaceId, "statement", false, signal)).sources;
+      expect(source!.truncated).toBe(true);
+      for (const i of [9, 10, 11, 29, 30, 31, 34, 35]) expect(source!.canonicalExcerpt).toContain(`Statement ${i} `);
+      for (const i of [0, 20, 25]) expect(source!.canonicalExcerpt).not.toContain(`Statement ${i} `);
+      expect(source!.canonicalExcerpt).toContain("\n\n…\n\n");
+      expect(source!.canonicalExcerpt).not.toContain("UNTRUSTED");
+      // The chunk route is not bank-scoped; at most three are read back per document.
+      expect(f.requests.slice(before).filter((r) => r.path.includes("/chunks/")).map((r) => r.path))
+        .toEqual(["missing", "cut", "foreign-document"].map((id) => `/api/v1/default/chunks/${id}`));
+      f.setRecall(() => ({ results: [{ id: "plain", text: "UNTRUSTED", type: "world", document_id: document }] }));
+      const [head] = (await f.memory.search(owner, workspaceId, "statement", false, signal)).sources;
+      expect(head!.canonicalExcerpt).toMatch(new RegExp(`^Meeting ${meetingId}; date`));
+      expect(head).toMatchObject({ truncated: true });
+      expect(head!.canonicalExcerpt).toHaveLength(16_000);
+    } finally { await f.close(); }
+  });
+
+  it("limits a Project search to its Workspace and canonical Project membership", async () => {
+    const f = await setup();
+    try {
+      const projectId = uuidV7(), now = new Date().toISOString();
+      await f.commit([{ entity: "project", action: "create", entityId: projectId, baseRevision: null,
+        data: { name: "Launch", parentProjectId: null, projectType: null, description: "Context", createdAt: now } }]);
+      const inside = await long(f, projectId), outside = await long(f);
+      await f.memory.configure(owner, workspaceId, true); await f.ready();
+      const found = await f.memory.search(viewer, workspaceId, "evidence", true, signal, { projectId });
+      expect(found.sources.map((source) => source.id)).toEqual([inside]);
+      expect(found.sources.map((source) => source.id)).not.toContain(outside);
+      const scope = { tags: [`project:${projectId}`], tags_match: "all_strict" };
+      expect(f.recallBodies().at(-1)).toMatchObject(scope);
+      expect(f.requests.filter((r) => r.path.endsWith("/reflect")).at(-1)!.body).toMatchObject({ ...scope, budget: "low" });
+      const otherWorkspace = uuidV7(), foreign = uuidV7();
+      await f.sync.commitTransaction(owner, { schemaVersion: 3, workspaceId: otherWorkspace, id: uuidV7(), createdAt: now, operations: [
+        { id: uuidV7(), entity: "workspace", action: "create", entityId: otherWorkspace, baseRevision: null, data: { organizationId: testOrganizationID, name: "Other", createdAt: now } },
+        { id: uuidV7(), entity: "project", action: "create", entityId: foreign, baseRevision: null, data: { name: "Foreign", parentProjectId: null, projectType: null, description: "", createdAt: now } }] });
+      const before = f.requests.length;
+      for (const id of [foreign, uuidV7()]) {
+        await expect(f.memory.search(owner, workspaceId, "evidence", false, signal, { projectId: id })).rejects.toMatchObject({ status: 404, code: "project_not_found" });
+      }
+      expect(f.requests).toHaveLength(before);
+    } finally { await f.close(); }
+  });
+
+  it("maps periods to a ranking window and depth to the recall budget", async () => {
+    const f = await setup();
+    try {
+      await f.memory.configure(owner, workspaceId, true);
+      await f.app.memory!.saveNote(owner.userId, workspaceId, { id: uuidV7(), revision: 0, content: "Dated note" });
+      await f.ready();
+      const search = (input: Parameters<typeof f.memory.search>[5]) => f.memory.search(owner, workspaceId, "note", false, signal, input);
+      await search({ after: "2026-01-01T09:00:00+09:00", before: "2026-02-01T00:00:00Z", depth: "deep" });
+      expect(f.recallBodies().at(-1)).toMatchObject({ budget: "high", temporal_window: { start: "2026-01-01T00:00:00.000Z", end: "2026-02-01T00:00:00.000Z" } });
+      const started = Date.now();
+      await search({ after: "2026-01-01T00:00:00Z", depth: "quick" });
+      const window = f.recallBodies().at(-1)!.temporal_window as { start: string; end: string };
+      expect(window.start).toBe("2026-01-01T00:00:00.000Z");
+      expect(Date.parse(window.end)).toBeGreaterThanOrEqual(started);
+      expect(f.recallBodies().at(-1)).toMatchObject({ budget: "low" });
+      await search({ before: "2026-02-01T00:00:00Z", depth: "normal" });
+      expect(f.recallBodies().at(-1)).toMatchObject({ budget: "mid", temporal_window: { start: "1970-01-01T00:00:00.000Z", end: "2026-02-01T00:00:00.000Z" } });
+      await search({});
+      expect(f.recallBodies().at(-1)).toMatchObject({ budget: "mid" });
+      expect(f.recallBodies().at(-1)).not.toHaveProperty("temporal_window");
+      const before = f.requests.length;
+      for (const input of [{ after: "2026-02-01T00:00:00Z", before: "2026-01-01T00:00:00Z" }, { after: "2999-01-01T00:00:00Z" }]) {
+        await expect(search(input)).rejects.toMatchObject({ status: 400, code: "memory_time_range_invalid" });
+      }
+      expect(f.requests).toHaveLength(before);
+    } finally { await f.close(); }
+  });
+});
+
 describe("Hindsight authentication", () => {
   const env = { DAHLIA_AUTH_TYPE: "header", DAHLIA_AUTH_SECRET: "test-only-better-auth-secret-value", DAHLIA_HINDSIGHT_URL: "https://memory.example/api", DAHLIA_HINDSIGHT_BANK_PREFIX: "test" };
   it("validates independent authentication settings", () => {
@@ -580,6 +713,18 @@ describe("Pinned Hindsight response contracts", () => {
     expect(await client.modelDocuments("bank", "model", new AbortController().signal)).toEqual(["meeting-canonical"]);
     invalidated = true;
     expect(await client.modelDocuments("bank", "model", new AbortController().signal)).toEqual([]);
+  });
+  it("reads chunks outside the bank path and accepts only the expected bank", async () => {
+    const paths: string[] = [];
+    const client = new HindsightClient({ url: "http://localhost:8888", auth: "none", bankPrefix: "test" }, undefined, async (url) => {
+      const path = new URL(String(url)).pathname; paths.push(path);
+      if (path.endsWith("gone")) return new Response(null, { status: 404 });
+      return Response.json({ chunk_id: "c", bank_id: path.endsWith("mine") ? "bank" : "other", document_id: "meeting-1", chunk_index: 0, chunk_text: "text", created_at: "" });
+    });
+    expect(await client.chunk("bank", "bank_meeting-1_mine", new AbortController().signal)).toEqual({ documentId: "meeting-1", text: "text" });
+    expect(await client.chunk("bank", "other_meeting-1_theirs", new AbortController().signal)).toBeNull();
+    expect(await client.chunk("bank", "gone", new AbortController().signal)).toBeNull();
+    expect(paths).toEqual(["/v1/default/chunks/bank_meeting-1_mine", "/v1/default/chunks/other_meeting-1_theirs", "/v1/default/chunks/gone"]);
   });
   it("recovers a mental-model creation whose acknowledgement was lost", async () => {
     let created = false; const methods: string[] = [];
