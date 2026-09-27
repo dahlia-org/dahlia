@@ -7,7 +7,7 @@ name = "hindsight-lakebase"
 version = "0.1.0"
 requires-python = ">=3.11,<3.15"
 dependencies = [
-  "hindsight-api-slim==0.9.2",
+  "hindsight-api-slim==0.10.1",
   "SudachiPy>=0.6.10,<0.7",
   "sudachidict_core>=20250515",
 ]

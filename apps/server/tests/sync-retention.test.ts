@@ -375,7 +375,8 @@ describe("partial text content", () => {
     } while (cursor);
     expect(meetings).toBe(10000);
     expect(transcripts).toBe(10000);
-  }, 60000);
+    // Pages through and hashes 30000 canonical records; shared CI runners need more than 60 seconds.
+  }, 120_000);
 
   it("pins every content page to its revision and reauthorizes deleted or revoked content", async () => {
     const { raw, service, workspaceId } = await setup();

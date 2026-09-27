@@ -65,7 +65,7 @@ async function fixture() {
   const tick = async () => { db.exec("UPDATE personal_memory_state SET available_at = 0"); await personal.step(owner.userId, signal); };
   const ready = async () => { for (let i = 0; i < 60; i++) { await tick(); if ((await personal.status(owner, owner.userId)).status === "ready") return; } throw new Error("Memory did not settle"); };
   const note = (content: string) => ({ ...memorySaveSchema.parse({ scope: "personal", id: encodeId("sharedMemory", uuidV7()), revision: 0, content }), scope: "personal" as const });
-  return { app, config, owner, stranger, workspaceId: encodeId("workspace", workspace), sync, memory, personal, generate, note, db, ready, tick, documents,
+  return { app, config, owner, stranger, workspaceId: encodeId("workspace", workspace), sync, memory, personal, generate, note, db, ready, tick, documents, transport,
     close: () => { db.close(); void app.close?.(); } };
 }
 
@@ -206,6 +206,25 @@ describe("Dahlia Memory", () => {
       expect((await f.personal.search(f.owner, f.owner.userId, "lesson", true, signal)).sources).toEqual([]);
       await f.ready(); expect(f.documents.get(bank)?.size).toBe(0);
       await expect(f.personal.search(f.stranger, f.owner.userId, "lesson", false, signal)).rejects.toMatchObject({ status: 404 });
+    } finally { f.close(); }
+  });
+  it("reports a failed Hindsight reflection as unavailable and falls back to canonical notes", async () => {
+    const f = await fixture();
+    try {
+      await f.memory.save(f.owner, f.note("Private lesson about reviews"));
+      await f.memory.configure(f.owner, { scope: "personal", enabled: true });
+      await f.ready();
+      // Hindsight 0.10 fails the whole reflection with HTTP 500 when one of its retrieval tools fails.
+      const hindsight = f.transport.getMockImplementation()!;
+      f.transport.mockImplementation(async (input, init) => new URL(String(input)).pathname.endsWith("/reflect")
+        ? Response.json({ detail: "reflect tool failed" }, { status: 500 }) : hindsight(input, init));
+      await expect(f.personal.search(f.owner, f.owner.userId, "lesson", true, signal)).rejects.toMatchObject({ code: "memory_upstream_failed", status: 500 });
+      const found = await f.memory.search(f.owner, { scope: "personal", query: "lesson" }, true, signal);
+      expect(found.results[0]!.result).toMatchObject({ unavailable: true, code: "memory_upstream_failed",
+        canonical: { scope: "personal", items: [{ content: "Private lesson about reviews" }] } });
+      expect(found.results[0]!.result).not.toHaveProperty("hypothesis");
+      const recalled = await f.memory.search(f.owner, { scope: "personal", query: "lesson" }, false, signal);
+      expect(recalled.results[0]!.result).toMatchObject({ sources: [{ scope: "personal" }], hypothesis: null });
     } finally { f.close(); }
   });
   it("keeps personal cleanup work after account deletion", async () => {

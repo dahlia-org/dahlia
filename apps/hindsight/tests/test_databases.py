@@ -75,6 +75,7 @@ async def insert_fact(conn, bank, sentence, embedding="[1,0,0]"):
             tags_list=['["visible"]'],
             observation_scopes_list=[None],
             text_signals_list=[""],
+            attachment_ids_list=["[]"],
         )
     )[0]
 
