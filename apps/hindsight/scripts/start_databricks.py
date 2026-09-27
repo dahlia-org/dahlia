@@ -66,4 +66,9 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except Exception:
+        # Connection/provider exceptions can contain credentials or response bodies.
+        print("Hindsight database startup failed", file=sys.stderr)
+        raise SystemExit(1) from None

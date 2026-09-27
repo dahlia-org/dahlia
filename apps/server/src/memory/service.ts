@@ -8,6 +8,7 @@ import { uuidV7 } from "../id";
 import { encodeId } from "../typeid";
 import { HindsightClient, HindsightError, type HindsightBudget, type HindsightRecall, type HindsightTags } from "./hindsight";
 import { canonicalExcerpt, markerIds } from "./excerpt";
+import { parseReflection, type MemoryClaim, type ReflectionStatus } from "./reflection";
 import type { MemoryDocument, MemoryProgress } from "./model";
 import { contentHash, meetingDocument, noteDocument } from "./sources";
 import type { MemoryState, MemoryStore, MemorySourceJob } from "./store";
@@ -38,7 +39,7 @@ export class WorkspaceMemoryService {
     let status = "paused";
     if (state?.purge) status = "deleting";
     else if (state?.enabled) {
-      if (state.progress?.entityPolicy !== 1) status = state.status === "error" ? "error" : "indexing";
+      if (state.progress?.entityPolicy !== 1 || state.progress?.reflectionPolicy !== 1) status = state.status === "error" ? "error" : "indexing";
       else if (state.reconcile || state.indexedGeneration !== state.generation) status = state.status;
       else status = failures.length ? "partial" : "ready";
     }
@@ -51,7 +52,7 @@ export class WorkspaceMemoryService {
   }
   private async readable(identity: Identity, scopeId: string) {
     const state = await this.store.status(identity.userId, scopeId);
-    if (!state?.enabled || state.purge || state.progress?.entityPolicy !== 1 || state.bankId !== this.client.bank(scopeId, this.store.personal)) {
+    if (!state?.enabled || state.purge || (state.progress?.entityPolicy !== 1 || state.progress?.reflectionPolicy !== 1) || state.bankId !== this.client.bank(scopeId, this.store.personal)) {
       throw new HindsightError("memory_not_ready");
     }
     return state;
@@ -75,16 +76,22 @@ export class WorkspaceMemoryService {
     const recall = await this.client.recall(state.bankId, query, signal,
       { ...scope, temporalWindow: window, budget: budgets[input.depth ?? "normal"] });
     const chunks = recallChunks(recall);
-    const reflectionSources: string[][] = [];
-    const reflectionFacts = reflection?.based_on?.memories ?? [];
-    if (reflectionFacts.length <= 10) {
-      for (const fact of reflectionFacts) reflectionSources.push(fact.id ? await this.client.factDocuments(state.bankId, fact.id, signal) : []);
+    const parsed = reflection ? parseReflection(reflection) : undefined;
+    let reflectionStatus: ReflectionStatus = !reflect ? "not_requested" : window ? "temporal_unavailable"
+      : !reflection ? "updating" : parsed!.status;
+    const basedOn = new Set(reflection?.based_on?.memories.map((fact) => fact.id).filter((id): id is string => !!id));
+    const reflectionSources = new Map<string, string[]>();
+    const candidates = parsed?.claims ?? [];
+    for (const claim of candidates) {
+      // Validate membership before any lookup; never let a generated ID select unrelated facts.
+      if (!claim.factIds.every((id) => basedOn.has(id))) continue;
+      for (const id of new Set(claim.factIds)) {
+        if (!reflectionSources.has(id) && reflectionSources.size < 10) {
+          reflectionSources.set(id, await this.client.factDocuments(state.bankId, id, signal, chunks));
+        }
+      }
     }
-    const reflectionModels = reflection?.based_on?.mental_models ?? [];
-    if (reflectionModels.length <= 3) {
-      for (const model of reflectionModels) reflectionSources.push(await this.client.modelDocuments(state.bankId, model.id, signal));
-    }
-    const ids = [...new Set([...reflectionSources.flat(), ...chunks.keys()])].slice(0, 30);
+    const ids = [...new Set([...reflectionSources.values()].flat().concat([...chunks.keys()]))].slice(0, 30);
     const documents: MemoryDocument[] = [];
     for (const id of ids) {
       const document = await this.source(identity, scopeId, id, signal);
@@ -112,12 +119,22 @@ export class WorkspaceMemoryService {
       if (attempt === 2) throw new HindsightError("memory_source_changed");
     }
 
-    const verified = new Set(documents.map((document) => document.id));
-    const referenceCount = reflectionFacts.length + reflectionModels.length;
-    const allReferencesVerified = referenceCount > 0
-      && reflectionSources.length === referenceCount
-      && reflectionSources.every((ids) => ids.length > 0 && ids.every((id) => verified.has(id)));
-    const hypothesis = allReferencesVerified && current.generation === state.generation && !current.reconcile ? reflection?.text : undefined;
+    signal.throwIfAborted();
+    const indexes = new Map(documents.map((document, index) => [document.id, index]));
+    const claims: MemoryClaim[] = [];
+    if (candidates.length && current.generation === state.generation && !current.reconcile) {
+      for (const claim of candidates) {
+        const citations: MemoryClaim["citations"] = [];
+        for (const factId of new Set(claim.factIds)) {
+          const ids = reflectionSources.get(factId);
+          if (!basedOn.has(factId) || !ids?.length || ids.some((id) => !indexes.has(id))) break;
+          citations.push({ factId, sourceIndexes: ids.map((id) => indexes.get(id)!) });
+        }
+        if (citations.length === new Set(claim.factIds).size) claims.push({ text: claim.text, citations });
+      }
+      reflectionStatus = claims.length === parsed?.totalClaims ? "ready" : claims.length ? "partial" : "invalid_references";
+    } else if (reflect && !window && current.generation !== state.generation) reflectionStatus = "updating";
+    const hypothesis = claims.length ? claims.map((claim) => claim.text).join("\n\n") : null;
     const skippedCount = Object.keys(current.progress?.failures ?? {}).length;
     let coverage = skippedCount ? "partial" : "ready";
     if (current.reconcile || current.generation !== current.indexedGeneration) coverage = "updating";
@@ -129,7 +146,8 @@ export class WorkspaceMemoryService {
         workspace_id: this.store.personal ? null : encodeId("workspace", scopeId),
         scope: this.store.personal ? "personal" : "workspace",
         canonicalExcerpt: excerpt.text, truncated: excerpt.truncated };
-    }), hypothesis: hypothesis ?? null,
+    }), hypothesis, claims, reflectionStatus,
+    reflectionUsage: reflection?.usage ? { inputTokens: reflection.usage.input_tokens, outputTokens: reflection.usage.output_tokens } : null,
     coverage,
     skippedCount,
     instruction: (reflect && window ? "Temporal reflection is unavailable: this response contains recall sources only, with no hypothesis. The period affects ranking, not exclusion. " : "") + "Cite these Dahlia sources. A transcript proves that a statement was recorded, not that it is objectively true. The hypothesis is an unverified interpretation: check claims against the canonical excerpts and meeting tools. If coverage is not ready, disclose incomplete memory coverage and use canonical tools for the omitted sources. Do not infer counts or trends from retrieval hits." };
@@ -185,9 +203,9 @@ export class WorkspaceMemoryService {
         if (!workspace || workspace.role !== "admin" || workspace.encryption === "server") throw new HindsightError("memory_authorization_changed");
       }
       let progress = job.progress;
-      if (progress && progress.entityPolicy !== 1) {
+      if (progress && (progress.entityPolicy !== 1 || progress.reflectionPolicy !== 1)) {
         await this.client.initialize(job.bankId, signal, this.store.personal);
-        progress = { ...progress, entityPolicy: 1 };
+        progress = { ...progress, entityPolicy: 1, reflectionPolicy: 1 };
         await this.store.setProgress(job, progress);
       }
       if (!job.reconcile && job.indexedGeneration === job.generation) {
@@ -195,7 +213,7 @@ export class WorkspaceMemoryService {
       }
       if (!progress) {
         await this.client.initialize(job.bankId, signal, this.store.personal);
-        progress = { entityPolicy: 1, phase: this.store.personal ? "notes" : "meetings", dirtyModels: ["workspace"] };
+        progress = { entityPolicy: 1, reflectionPolicy: 1, phase: this.store.personal ? "notes" : "meetings", dirtyModels: ["workspace"] };
         await this.store.startScan(job, progress);
       }
       if (progress.operationId) {

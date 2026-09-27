@@ -1,6 +1,8 @@
 """Dahlia's API entrypoint: content-free logging for Hindsight and Uvicorn."""
 
+import logging
 import os
+import sys
 
 # Upstream supports an allowlist; omit message, tenant and exception on every level.
 LOG_FIELDS = ["severity", "timestamp", "logger"]
@@ -20,9 +22,22 @@ def main():
             "allowed_fields": LOG_FIELDS,
         }
 
-    from hindsight_api.main import main as serve
+    from hindsight_api.config import JsonFormatter
 
-    serve()
+    handler = logging.StreamHandler()
+    handler.setFormatter(JsonFormatter(allowed_fields=frozenset(LOG_FIELDS)))
+    logging.basicConfig(handlers=[handler], level=logging.INFO, force=True)
+    try:
+        from hindsight_lakebase.reranker import prepare_reranker
+
+        prepare_reranker()
+        from hindsight_api.main import main as serve
+
+        serve()
+    except Exception:
+        # Startup failures can include provider credentials or response bodies in tracebacks.
+        print("Hindsight startup failed", file=sys.stderr)
+        raise SystemExit(1) from None
 
 
 if __name__ == "__main__":

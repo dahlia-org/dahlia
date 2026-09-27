@@ -2232,6 +2232,20 @@ export interface components {
                     hypothesis?: string | null;
                     coverage?: string;
                     skippedCount?: number;
+                    claims?: {
+                        text: string;
+                        citations: {
+                            factId: string;
+                            /** @description Zero-based indexes into this result's sources; lineage does not prove the claim is true. */
+                            sourceIndexes: number[];
+                        }[];
+                    }[];
+                    /** @enum {string} */
+                    reflectionStatus?: "not_requested" | "ready" | "partial" | "invalid_references" | "missing_output" | "structured_error" | "invalid_output" | "empty" | "temporal_unavailable" | "updating";
+                    reflectionUsage?: {
+                        inputTokens: number;
+                        outputTokens: number;
+                    } | null;
                     unavailable?: boolean;
                     code?: string;
                     instruction?: string;

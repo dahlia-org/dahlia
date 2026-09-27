@@ -27,7 +27,7 @@ window.fetch = async (input, init) => {
     return Response.json({ saved: true });
   }
   if (request.method === "DELETE") { writes.push({ ...body, scope: key === "personal" ? "personal" : "workspace", workspaceId: key }); rows[key] = rows[key]!.filter((n) => n.id !== body.id); return Response.json({ deleted: true }); }
-  if (path.endsWith("/reflect")) return Response.json({ results: [{ result: { hypothesis: "Possible lesson", coverage: "partial", sources: [{ id: "test", canonicalExcerpt: "Verified source", truncated: false }] } }] });
+  if (path.endsWith("/reflect")) return Response.json({ results: [{ result: { hypothesis: "Possible lesson", claims: [{ text: "Possible lesson", citations: [{ factId: "fact", sourceIndexes: [0] }] }], reflectionStatus: "partial", coverage: "partial", sources: [{ id: "test", canonicalExcerpt: "Verified source", truncated: false }] } }] });
   throw new Error(`Unexpected test path ${path}`);
 };
 const button = (label: string) => [...document.querySelectorAll<HTMLButtonElement>("button")].find((b) => b.textContent === label)!;
@@ -64,7 +64,9 @@ async function run() {
   const query = document.querySelector<HTMLInputElement>("section form input")!; text(query, "lesson");
   await until(() => !button("Insights").disabled); button("Insights").click();
   await until(() => document.body.textContent.includes("Verified source"));
-  assert(document.body.textContent.includes("Interpretation · verify sources"), "Hypothesis not labelled");
+  assert(document.body.textContent.includes("Source-backed hypotheses · verify claims"), "Hypothesis not labelled");
+  assert(document.querySelector('a[href="#memory-source-0-0"]') && document.getElementById("memory-source-0-0"), "Claim source link missing");
+  if (new URLSearchParams(location.search).has("preview")) { document.getElementById("result")!.textContent = "PASS: claim-to-source link"; return; }
   button("Delete").click(); await until(() => document.querySelector("[data-confirm]"));
   (document.querySelector("[data-confirm]") as HTMLButtonElement).click();
   await until(() => !document.querySelector("[role=dialog]") && rows.team!.length === 0);

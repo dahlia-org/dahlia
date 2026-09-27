@@ -48,7 +48,7 @@ async function fixture() {
     if (path.endsWith("/memories") && init?.method === "POST") { for (const item of body.items) docs.set(item.document_id, item.content); return Response.json({ operation_id: body.operation_id }); }
     if (path.includes("/operations/")) return Response.json({ status: "completed" });
     if (path.endsWith("/memories/recall")) return Response.json({ results: [...docs].map(([id, text]) => ({ id, text, document_id: id })) });
-    if (path.endsWith("/reflect")) return Response.json({ text: "Hypothesis", based_on: { memories: [...docs.keys()].map((id) => ({ id, text: "claim" })), mental_models: [] } });
+    if (path.endsWith("/reflect")) return Response.json({ text: "UNVERIFIED RAW ANSWER", structured_output: { claims: [{ text: "Hypothesis", factIds: [...docs.keys()] }] }, based_on: { memories: [...docs.keys()].map((id) => ({ id, text: "claim" })), mental_models: [] } });
     if (path.includes("/memories/")) return Response.json({ document_id: path.split("/").at(-1), state: "valid" });
     if (path.endsWith("/mental-models") && init?.method === "POST") return Response.json({ operation_id: uuidV7() });
     if (path.endsWith("/mental-models")) return Response.json({ items: [] });

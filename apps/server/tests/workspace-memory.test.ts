@@ -47,6 +47,8 @@ async function setup() {
   const failingItems = new Set<string>();
   const chunks = new Map<string, { bank_id: string; document_id: string; chunk_text: string }>();
   let recall: (() => unknown) | undefined;
+  let reflection: (() => unknown) | undefined;
+  const facts = new Map<string, unknown>();
   let loseAcknowledgement = false;
   const transport = vi.fn<typeof fetch>(async (url, init) => {
     expect(new Headers(init?.headers).get("authorization")).toBe("Bearer test-secret");
@@ -59,7 +61,7 @@ async function setup() {
       const chunk = chunks.get(decodeURIComponent(path.split("/").at(-1)!));
       return chunk ? Response.json({ chunk_id: path.split("/").at(-1), chunk_index: 0, created_at: "", ...chunk }) : new Response(null, { status: 404 });
     }
-    if (path.endsWith("/reflect")) return Response.json({ text: "Hypothesis", based_on: { memories: [], mental_models: [] } });
+    if (path.endsWith("/reflect")) return Response.json(reflection?.() ?? { text: "Hypothesis", based_on: { memories: [], mental_models: [] } });
     if (path.endsWith("/memories") && init?.method === "POST") {
       const item = (body.items as Array<{ document_id: string; content: string }>)[0]!;
       retained.set(item.document_id, item.content); operations.set(String(body.operation_id), failingItems.has(item.document_id) ? "failed" : "completed");
@@ -84,6 +86,10 @@ async function setup() {
     if (path.includes("/mental-models/") && init?.method === "DELETE") { models.delete(path.split("/").at(-1)!); return Response.json({}); }
     if (path.includes("/documents/") && init?.method === "DELETE") { retained.delete(path.split("/").at(-1)!); return Response.json({}); }
     if (path.endsWith("/memories/recall")) return Response.json(recall?.() ?? { results: [...retained.keys()].map((document_id) => ({ id: uuidV7(), document_id, text: "UNTRUSTED EXTRACTED CLAIM" })) });
+    if (path.includes("/memories/")) {
+      const fact = facts.get(decodeURIComponent(path.split("/").at(-1)!));
+      return fact ? Response.json(fact) : new Response(null, { status: 404 });
+    }
     if (init?.method === "DELETE") { retained.clear(); models.clear(); return Response.json({}); }
     throw new Error(`Unexpected mock route ${path}`);
   });
@@ -97,6 +103,7 @@ async function setup() {
   };
   const close = async () => { db.close(); await app.close?.(); };
   return { app, config, db, sync, memory, commit, tick, ready, close, requests, retained, operations, models, failingItems, chunks,
+    facts, setReflection: (response: () => unknown) => { reflection = response; },
     setRecall: (response: (() => unknown) | undefined) => { recall = response; },
     recallBodies: () => requests.filter((r) => r.path.endsWith("/memories/recall")).map((r) => r.body),
     loseNextAcknowledgement: () => { loseAcknowledgement = true; } };
@@ -640,6 +647,15 @@ describe("Workspace memory recall", () => {
       // The chunk route is not bank-scoped; at most three are read back per document.
       expect(f.requests.slice(before).filter((r) => r.path.includes("/chunks/")).map((r) => r.path))
         .toEqual(["missing", "cut", "foreign-document"].map((id) => `/api/v1/default/chunks/${id}`));
+      // Reflect may cite a fact that the separate recall did not return.
+      f.facts.set("reflection-fact", { state: "valid", document_id: document, chunk_id: "cut" });
+      f.setReflection(() => ({ structured_output: { claims: [{ text: "Source-backed hypothesis", factIds: ["reflection-fact"] }] },
+        based_on: { memories: [{ id: "reflection-fact" }] } }));
+      f.setRecall(() => ({ results: [] }));
+      const reflected = await f.memory.search(owner, workspaceId, "statement", true, signal);
+      expect(reflected.reflectionStatus).toBe("ready");
+      expect(reflected.sources[0]!.canonicalExcerpt).toContain("Statement 35 ");
+      expect(reflected.sources[0]!.canonicalExcerpt).not.toContain("UNTRUSTED CHUNK");
       f.setRecall(() => ({ results: [{ id: "plain", text: "UNTRUSTED", type: "world", document_id: document }] }));
       const [head] = (await f.memory.search(owner, workspaceId, "statement", false, signal)).sources;
       expect(head!.canonicalExcerpt).toMatch(new RegExp(`^Meeting ${meetingId}; date`));
@@ -820,5 +836,119 @@ describe("Pinned Hindsight response contracts", () => {
     await expect(client.createModel("bank", null, new AbortController().signal)).rejects.toThrow("memory_transport_failed");
     expect(await client.createModel("bank", null, new AbortController().signal)).toBe("refresh-operation");
     expect(methods).toEqual(["GET workspace-insights", "POST mental-models", "GET workspace-insights", "POST refresh"]);
+  });
+});
+
+describe("Structured reflection publication", () => {
+  async function indexed() {
+    const f = await setup();
+    await f.memory.configure(owner, workspaceId, true);
+    const note = await f.app.memory!.saveNote(owner.userId, workspaceId, { id: uuidV7(), revision: 0, content: "Canonical evidence" });
+    await f.ready();
+    // Derive the actual document identity from ingestion, including its source-kind prefix.
+    f.facts.set("fact", { state: "valid", document_id: [...f.retained.keys()][0] });
+    const response = (claims: Array<{ text: string; factIds: string[] }>, ids = ["fact"]) => ({
+      text: "RAW ANSWER MUST NEVER BE PUBLISHED", structured_output: { claims },
+      based_on: { memories: ids.map((id) => ({ id, text: "LLM QUOTE MUST NEVER BE PUBLISHED" })) },
+    });
+    const search = (identity = owner) => f.memory.search(identity, workspaceId, "evidence", true, new AbortController().signal);
+    return { ...f, note, response, search };
+  }
+  it("publishes only independently verified claims and keeps canonical citations across the public API", async () => {
+    const f = await indexed();
+    try {
+      f.setReflection(() => f.response([{ text: "Supported hypothesis", factIds: ["fact", "fact"] }, { text: "Fabricated", factIds: ["invented"] }, { text: "Missing refs", factIds: [] }]));
+      const result = await f.search();
+      expect(result).toMatchObject({ hypothesis: "Supported hypothesis", reflectionStatus: "partial",
+        claims: [{ text: "Supported hypothesis", citations: [{ factId: "fact", sourceIndexes: [0] }] }],
+      });
+      expect(result.sources[0]?.canonicalExcerpt).toContain("Canonical evidence");
+      expect(JSON.stringify(result)).not.toMatch(/RAW ANSWER|LLM QUOTE|Fabricated/);
+      expect(f.requests.some((r) => r.path.endsWith("/invented"))).toBe(false);
+      expect(f.requests.find((r) => r.path.endsWith("/reflect"))!.body).toMatchObject({
+        exclude_mental_models: true, response_schema: { properties: { claims: { type: "array" } } },
+      });
+      const app = createApp({ config: f.config, authStore: f.app, syncService: f.sync, workspaceMemory: f.memory });
+      const response = await app.request(`/api/v1/workspaces/${encodeId("workspace", workspaceId)}/memory/reflect`, {
+        method: "POST", headers: { "x-forwarded-email": `${owner.userId}@example.com`, "content-type": "application/json" }, body: JSON.stringify({ query: "evidence" }),
+      });
+      expect(response.status).toBe(200);
+      expect(await response.json()).toMatchObject({ results: [{ result: { claims: result.claims, reflectionStatus: "partial" } }] });
+    } finally { await f.close(); }
+  });
+  it.each([
+    [{}, "missing_output"],
+    [{ structured_output_error: "SECRET provider failure" }, "structured_error"],
+    [{ structured_output: { claims: [] } }, "empty"],
+    [{ structured_output: { claims: [{ text: "missing references" }] } }, "invalid_output"],
+  ])("distinguishes structured failures without publishing raw output: %j", async (fields, status) => {
+    const f = await indexed();
+    try {
+      f.setReflection(() => ({ text: "SECRET raw answer", based_on: { memories: [{ id: "fact" }] }, ...fields }));
+      const result = await f.search();
+      expect(result).toMatchObject({ hypothesis: null, claims: [], reflectionStatus: status });
+      expect(JSON.stringify(result)).not.toContain("SECRET");
+      expect(result.sources).toHaveLength(1);
+    } finally { await f.close(); }
+  });
+  it("rejects missing, invalidated, cross-bank and incomplete observation lineage", async () => {
+    const f = await indexed();
+    try {
+      f.setReflection(() => f.response([{ text: "Unsafe", factIds: ["observation"] }], ["observation"]));
+      for (const fact of [
+        { state: "invalidated", document_id: [...f.retained.keys()][0] },
+        { state: "valid", source_memory_ids: ["fact", "other-bank-fact"] },
+        { state: "valid", source_memory_ids: [] },
+        { state: "valid", source_memory_ids: Array.from({ length: 21 }, () => "fact") },
+      ]) {
+        f.facts.set("observation", fact);
+        expect(await f.search()).toMatchObject({ hypothesis: null, claims: [], reflectionStatus: "invalid_references" });
+      }
+      expect(f.requests.filter((r) => r.path.includes("/memories/") && r.method === "GET").every((r) => r.path.includes(`/banks/test-workspace-${workspaceId}/`))).toBe(true);
+    } finally { await f.close(); }
+  });
+  it("drops an entire claim when all its documents cannot fit in the five-source result", async () => {
+    const f = await indexed();
+    try {
+      for (let i = 0; i < 5; i++) await f.app.memory!.saveNote(owner.userId, workspaceId, { id: uuidV7(), revision: 0, content: `Evidence ${i}` });
+      await f.ready();
+      const ids = [...f.retained.keys()].map((document_id, i) => { const id = `source-${i}`; f.facts.set(id, { document_id, state: "valid" }); return id; });
+      f.facts.set("observation", { state: "valid", source_memory_ids: ids });
+      f.setReflection(() => f.response([{ text: "Needs six sources", factIds: ["observation"] }], ["observation"]));
+      expect(await f.search()).toMatchObject({ hypothesis: null, claims: [], reflectionStatus: "invalid_references" });
+    } finally { await f.close(); }
+  });
+  it.each(["update", "delete", "revoke", "pause", "cancel"])("rechecks canonical state after external work: %s", async (change) => {
+    const f = await indexed();
+    const controller = new AbortController();
+    try {
+      f.setReflection(() => f.response([{ text: "Old hypothesis", factIds: ["fact"] }]));
+      const read = f.memory.client.factDocuments.bind(f.memory.client);
+      vi.spyOn(f.memory.client, "factDocuments").mockImplementationOnce(async (...args) => {
+        const result = await read(...args);
+        if (change === "update") await f.app.memory!.saveNote(owner.userId, workspaceId, { id: f.note.id, revision: 1, content: "Changed" });
+        if (change === "delete") await f.app.memory!.deleteNote(owner.userId, workspaceId, f.note.id, 1);
+        if (change === "revoke") f.db.prepare("DELETE FROM workspace_permissions WHERE principal_id = ?").run(viewer.userId);
+        if (change === "pause") await f.memory.configure(owner, workspaceId, false);
+        if (change === "cancel") controller.abort();
+        return result;
+      });
+      const result = f.memory.search(viewer, workspaceId, "evidence", true, controller.signal);
+      if (["revoke", "pause", "cancel"].includes(change)) await expect(result).rejects.toBeDefined();
+      else expect(await result).toMatchObject({ claims: [], hypothesis: null, reflectionStatus: "updating", sources: [] });
+    } finally { await f.close(); }
+  });
+  it("applies the new mission to an existing bank without a destructive rebuild", async () => {
+    const f = await indexed();
+    try {
+      f.db.exec("UPDATE workspace_memory_state SET progress = json_remove(progress, '$.reflectionPolicy')");
+      await expect(f.search()).rejects.toThrow("memory_not_ready");
+      f.requests.length = 0;
+      await f.tick(); await f.tick();
+      expect(f.requests).toHaveLength(1);
+      expect(f.requests[0]?.method).toBe("PATCH");
+      expect((f.requests[0]?.body.updates as { reflect_mission: string }).reflect_mission).toContain("exact supporting memory or observation fact IDs");
+      expect(f.retained.size).toBe(1);
+    } finally { await f.close(); }
   });
 });
