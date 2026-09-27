@@ -3,12 +3,28 @@ import type { Identity } from "../auth/identity";
 import type { MeetingSyncService } from "../sync/service";
 import type { MeetingSyncStore } from "../sync/types";
 import { RequestError } from "../storage/upload";
+import { DatabricksTokenError } from "../databricks/token";
 import { uuidV7 } from "../id";
 import { encodeId } from "../typeid";
-import { HindsightClient, HindsightError } from "./hindsight";
+import { HindsightClient, HindsightError, type HindsightBudget, type HindsightRecall, type HindsightTags } from "./hindsight";
+import { canonicalExcerpt, markerIds } from "./excerpt";
 import type { MemoryDocument, MemoryProgress } from "./model";
 import { contentHash, meetingDocument, noteDocument } from "./sources";
 import type { MemoryState, MemoryStore, MemorySourceJob } from "./store";
+
+export type MemoryDepth = "quick" | "normal" | "deep";
+// projectId is a Project UUID; after/before are ISO datetimes that only rank the period higher.
+export interface MemorySearchInput { projectId?: string; after?: string; before?: string; depth?: MemoryDepth }
+const budgets: Record<MemoryDepth, HindsightBudget> = { quick: "low", normal: "mid", deep: "high" };
+
+export function temporalWindow(input: MemorySearchInput, now = new Date()) {
+  if (input.after === undefined && input.before === undefined) return undefined;
+  const start = new Date(input.after ?? 0), end = input.before === undefined ? now : new Date(input.before);
+  if (!Number.isFinite(start.getTime()) || !Number.isFinite(end.getTime()) || start > end) {
+    throw new RequestError(400, "memory_time_range_invalid");
+  }
+  return { start: start.toISOString(), end: end.toISOString() };
+}
 
 export class WorkspaceMemoryService {
   readonly client: HindsightClient;
@@ -22,7 +38,8 @@ export class WorkspaceMemoryService {
     let status = "paused";
     if (state?.purge) status = "deleting";
     else if (state?.enabled) {
-      if (state.reconcile || state.indexedGeneration !== state.generation) status = state.status;
+      if (state.progress?.entityPolicy !== 1) status = state.status === "error" ? "error" : "indexing";
+      else if (state.reconcile || state.indexedGeneration !== state.generation) status = state.status;
       else status = failures.length ? "partial" : "ready";
     }
     return { enabled: state?.enabled ?? false, status,
@@ -34,7 +51,7 @@ export class WorkspaceMemoryService {
   }
   private async readable(identity: Identity, scopeId: string) {
     const state = await this.store.status(identity.userId, scopeId);
-    if (!state?.enabled || state.purge || state.bankId !== this.client.bank(scopeId, this.store.personal)) {
+    if (!state?.enabled || state.purge || state.progress?.entityPolicy !== 1 || state.bankId !== this.client.bank(scopeId, this.store.personal)) {
       throw new HindsightError("memory_not_ready");
     }
     return state;
@@ -48,11 +65,16 @@ export class WorkspaceMemoryService {
     if (!document || document.source.revision !== saved.source.revision) return null;
     return await contentHash(document.content) === saved.contentHash ? document : null;
   }
-  async search(identity: Identity, scopeId: string, query: string, reflect: boolean, signal: AbortSignal) {
+  async search(identity: Identity, scopeId: string, query: string, reflect: boolean, signal: AbortSignal, input: MemorySearchInput = {}) {
     signal = AbortSignal.any([signal, AbortSignal.timeout(30_000)]);
+    const window = temporalWindow(input);
+    if (input.projectId && !await this.sync.getProject(identity, scopeId, input.projectId)) throw new RequestError(404, "project_not_found");
+    const scope: HindsightTags | undefined = input.projectId ? { tags: [`project:${input.projectId}`], tagsMatch: "all_strict" } : undefined;
     const state = await this.readable(identity, scopeId);
-    const reflection = reflect && !state.reconcile && state.generation === state.indexedGeneration ? await this.client.reflect(state.bankId, query, signal) : undefined;
-    const facts = await this.client.recall(state.bankId, query, signal);
+    const reflection = reflect && !window && !state.reconcile && state.generation === state.indexedGeneration ? await this.client.reflect(state.bankId, query, signal, scope) : undefined;
+    const recall = await this.client.recall(state.bankId, query, signal,
+      { ...scope, temporalWindow: window, budget: budgets[input.depth ?? "normal"] });
+    const chunks = recallChunks(recall);
     const reflectionSources: string[][] = [];
     const reflectionFacts = reflection?.based_on?.memories ?? [];
     if (reflectionFacts.length <= 10) {
@@ -62,12 +84,20 @@ export class WorkspaceMemoryService {
     if (reflectionModels.length <= 3) {
       for (const model of reflectionModels) reflectionSources.push(await this.client.modelDocuments(state.bankId, model.id, signal));
     }
-    const ids = [...new Set([...reflectionSources.flat(), ...facts.flatMap((fact) => fact.document_id ? [fact.document_id] : [])])].slice(0, 30);
+    const ids = [...new Set([...reflectionSources.flat(), ...chunks.keys()])].slice(0, 30);
     const documents: MemoryDocument[] = [];
     for (const id of ids) {
       const document = await this.source(identity, scopeId, id, signal);
-      if (document) documents.push(document);
+      // Canonical data, not the analysis copy, decides Project membership.
+      if (document && (!input.projectId || document.source.projectId === input.projectId)) documents.push(document);
       if (documents.length === 5) break;
+    }
+    const markers = new Map<string, string[]>();
+    // Chunk retrieval improves excerpts, but must leave time for canonical revalidation.
+    const excerptSignal = AbortSignal.any([signal, AbortSignal.timeout(3_000)]);
+    for (const document of documents) {
+      if (document.content.length > 16_000) markers.set(document.id,
+        await this.markers(state.bankId, document.id, chunks.get(document.id) ?? [], recall, excerptSignal, signal));
     }
     let current = await this.readable(identity, scopeId);
     // A later source read can race with an earlier one. Publish only a stable validation pass.
@@ -91,17 +121,42 @@ export class WorkspaceMemoryService {
     const skippedCount = Object.keys(current.progress?.failures ?? {}).length;
     let coverage = skippedCount ? "partial" : "ready";
     if (current.reconcile || current.generation !== current.indexedGeneration) coverage = "updating";
-    return { sources: documents.map((document) => ({
-      kind: document.source.kind, id: document.source.id, revision: document.source.revision,
-      meeting_id: document.source.kind === "meeting" ? encodeId("meeting", document.source.id) : null,
-      workspace_id: this.store.personal ? null : encodeId("workspace", scopeId),
-      scope: this.store.personal ? "personal" : "workspace",
+    return { sources: documents.map((document) => {
       // Only canonical Dahlia content is evidence. Memory extraction is never returned as a fact.
-      canonicalExcerpt: document.content.slice(0, 16_000), truncated: document.content.length > 16_000,
-    })), hypothesis: hypothesis ?? null,
+      const excerpt = canonicalExcerpt(document, markers.get(document.id) ?? []);
+      return { kind: document.source.kind, id: document.source.id, revision: document.source.revision,
+        meeting_id: document.source.kind === "meeting" ? encodeId("meeting", document.source.id) : null,
+        workspace_id: this.store.personal ? null : encodeId("workspace", scopeId),
+        scope: this.store.personal ? "personal" : "workspace",
+        canonicalExcerpt: excerpt.text, truncated: excerpt.truncated };
+    }), hypothesis: hypothesis ?? null,
     coverage,
     skippedCount,
-    instruction: "Cite these Dahlia sources. A transcript proves that a statement was recorded, not that it is objectively true. The hypothesis is an unverified interpretation: check claims against the canonical excerpts and meeting tools. If coverage is not ready, disclose incomplete memory coverage and use canonical tools for the omitted sources. Do not infer counts or trends from retrieval hits." };
+    instruction: (reflect && window ? "Temporal reflection is unavailable: this response contains recall sources only, with no hypothesis. The period affects ranking, not exclusion. " : "") + "Cite these Dahlia sources. A transcript proves that a statement was recorded, not that it is objectively true. The hypothesis is an unverified interpretation: check claims against the canonical excerpts and meeting tools. If coverage is not ready, disclose incomplete memory coverage and use canonical tools for the omitted sources. Do not infer counts or trends from retrieval hits." };
+  }
+
+  // Chunk text only yields segment and screenshot IDs; missing or cut-off chunks are read back, at most three per document.
+  private async markers(bank: string, documentId: string, chunkIds: string[], recall: HindsightRecall, signal: AbortSignal, parentSignal: AbortSignal) {
+    const ids: string[] = [];
+    let reads = 0;
+    for (const chunkId of chunkIds) {
+      const recalled = recall.chunks?.[chunkId];
+      let text = recalled && !recalled.truncated ? recalled.text : undefined;
+      if (text === undefined && reads < 3 && !signal.aborted) {
+        reads++;
+        try {
+          const chunk = await this.client.chunk(bank, chunkId, signal);
+          if (chunk?.documentId === documentId) text = chunk.text;
+        } catch (error) {
+          parentSignal.throwIfAborted();
+          if (error instanceof DatabricksTokenError && !error.retryable) throw error;
+          if (error instanceof HindsightError && (error.status === 401 || error.status === 403)) throw error;
+          // Optional hints can fail; the evidence still comes from the verified canonical document.
+        }
+      }
+      if (text !== undefined) ids.push(...markerIds(text));
+    }
+    return [...new Set(ids)];
   }
 
   async step(scopeId: string, signal: AbortSignal) {
@@ -129,13 +184,18 @@ export class WorkspaceMemoryService {
         const workspace = await this.sync.getWorkspace(identity, scopeId);
         if (!workspace || workspace.role !== "admin" || workspace.encryption === "server") throw new HindsightError("memory_authorization_changed");
       }
-      if (!job.reconcile && job.indexedGeneration === job.generation) {
-        await this.store.release(job, { availableAt: new Date(Date.now() + 60_000) }); return;
-      }
       let progress = job.progress;
+      if (progress && progress.entityPolicy !== 1) {
+        await this.client.initialize(job.bankId, signal, this.store.personal);
+        progress = { ...progress, entityPolicy: 1 };
+        await this.store.setProgress(job, progress);
+      }
+      if (!job.reconcile && job.indexedGeneration === job.generation) {
+        await this.store.release(job, { status: "ready", attempts: 0, errorCode: null, availableAt: new Date(Date.now() + 60_000) }); return;
+      }
       if (!progress) {
         await this.client.initialize(job.bankId, signal, this.store.personal);
-        progress = { phase: this.store.personal ? "notes" : "meetings", dirtyModels: ["workspace"] };
+        progress = { entityPolicy: 1, phase: this.store.personal ? "notes" : "meetings", dirtyModels: ["workspace"] };
         await this.store.startScan(job, progress);
       }
       if (progress.operationId) {
@@ -282,4 +342,19 @@ export class WorkspaceMemoryService {
     // Keep every failure identity for recovery; only public diagnostics are capped.
     (progress.failures ??= {})[source] = code;
   }
+}
+// Candidate documents in recall order with the chunks their facts came from. An observation stands for its source facts.
+function recallChunks(recall: HindsightRecall) {
+  const documents = new Map<string, string[]>();
+  const add = (documentId: string | null | undefined, chunkId: string | null | undefined) => {
+    if (!documentId) return;
+    const chunks = documents.get(documentId) ?? [];
+    if (chunkId && !chunks.includes(chunkId)) chunks.push(chunkId);
+    documents.set(documentId, chunks);
+  };
+  for (const fact of recall.results) {
+    if (fact.type !== "observation") add(fact.document_id, fact.chunk_id);
+    else for (const id of fact.source_fact_ids ?? []) add(recall.source_facts?.[id]?.document_id, recall.source_facts?.[id]?.chunk_id);
+  }
+  return documents;
 }

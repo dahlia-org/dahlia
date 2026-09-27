@@ -74,26 +74,27 @@ def load_questions(path):
 
 
 def document_ranks(response):
-    """Rank of each recalled document by its first result.
+    """First five distinct candidate documents, in Server recall order.
 
-    An observation counts for the documents its source facts came from, and they all share
-    that result's rank; later documents rank after every document already listed.
+    Canonical validity and excerpt quality require a separate end-to-end evaluation.
     """
     sources = response.get("source_facts") or {}
-    ranks, listed = {}, 0
+    ranks = {}
     for result in response.get("results", []):
         if result.get("type") == "observation":
             documents = [(sources.get(fact) or {}).get("document_id") for fact in result.get("source_fact_ids") or []]
         else:
             documents = [result.get("document_id")]
         new = [document for document in dict.fromkeys(documents) if document and document not in ranks]
-        ranks.update((document, listed + 1) for document in new)
-        listed += len(new)
+        for document in new:
+            ranks[document] = len(ranks) + 1
+            if len(ranks) == 5:
+                return ranks
     return ranks
 
 
 def recall_body(query, observations):
-    body = {**DAHLIA_RECALL, "query": query, "include": {"entities": None}}
+    body = {**DAHLIA_RECALL, "query": query, "include": {"entities": None, "chunks": {"max_tokens": 8192}}}
     if observations:
         body["types"] = [*DAHLIA_RECALL["types"], "observation"]
         body["prefer_observations"] = True
@@ -167,7 +168,7 @@ def evaluate(
     bank,
     questions,
     *,
-    ks=(1, 3, 5, 10),
+    ks=(1, 3, 5),
     rerank=("inherit",),
     observations=(False, True),
     extraction=None,
@@ -219,7 +220,7 @@ def main(argv=None):
     parser.add_argument("--url", required=True, help="Hindsight API base URL, e.g. https://<app>/api")
     parser.add_argument("--bank", required=True, help="Source bank ID; it is cloned, never modified")
     parser.add_argument("--questions", required=True, help="JSONL of {query, expected}; keep it out of the repository")
-    parser.add_argument("--k", default="1,3,5,10", help="Comma-separated cutoffs for hit@k")
+    parser.add_argument("--k", default="1,3,5", help="Comma-separated cutoffs for hit@k")
     parser.add_argument("--rerank", choices=["inherit", "on", "off", "both"], default="inherit")
     parser.add_argument("--observations", choices=["off", "on", "both"], default="both")
     extraction = parser.add_mutually_exclusive_group()

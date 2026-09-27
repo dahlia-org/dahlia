@@ -65,7 +65,7 @@ async function fixture() {
   const tick = async () => { db.exec("UPDATE personal_memory_state SET available_at = 0"); await personal.step(owner.userId, signal); };
   const ready = async () => { for (let i = 0; i < 60; i++) { await tick(); if ((await personal.status(owner, owner.userId)).status === "ready") return; } throw new Error("Memory did not settle"); };
   const note = (content: string) => ({ ...memorySaveSchema.parse({ scope: "personal", id: encodeId("sharedMemory", uuidV7()), revision: 0, content }), scope: "personal" as const });
-  return { app, config, owner, stranger, workspaceId: encodeId("workspace", workspace), sync, memory, personal, generate, note, db, ready, tick, documents, transport,
+  return { app, config, owner, stranger, workspaceId: encodeId("workspace", workspace), sync, memory, personal, shared, generate, note, db, ready, tick, documents, transport,
     close: () => { db.close(); void app.close?.(); } };
 }
 
@@ -136,6 +136,40 @@ describe("Dahlia Memory", () => {
       await f.memory.save(f.owner, f.note("Explicit personal"));
       expect(f.generate.mock.calls).toHaveLength(calls);
       await expect(f.memory.save(f.owner, { ...input, revision: 1 })).rejects.toMatchObject({ code: "memory_update_scope_required" });
+    } finally { f.close(); }
+  });
+  it("searches a Project only in its explicitly supplied Workspace", async () => {
+    const f = await fixture();
+    try {
+      const projectId = uuidV7(), now = new Date().toISOString();
+      await f.sync.commitTransaction(f.owner, { schemaVersion: 3, workspaceId: decodeId("workspace", f.workspaceId), id: uuidV7(), createdAt: now, operations: [{
+        id: uuidV7(), entity: "project", action: "create", entityId: projectId, baseRevision: null,
+        data: { name: "Launch", parentProjectId: null, projectType: null, description: "", createdAt: now } }] });
+      const project = encodeId("project", projectId);
+      await f.memory.save(f.owner, { ...f.note("x unrelated shared note"), scope: "workspace", workspaceId: f.workspaceId, explicit: true });
+      for (const memory of [f.memory, new DahliaMemory(f.memory.stores, f.sync, {})]) {
+        const fallback = await memory.search(f.owner, { scope: "auto", workspaceId: f.workspaceId, projectId: project, query: "x" }, true, signal);
+        expect(fallback.results[0]!.result).toMatchObject({ unavailable: true, canonical: { items: [], nextCursor: null } });
+        expect(fallback.results[0]!.result.instruction).toContain("canonical meeting tools");
+      }
+      expect(f.generate).not.toHaveBeenCalled();
+      await expect(f.memory.search(f.owner, { scope: "auto", projectId: project, query: "x" }, false, signal))
+        .rejects.toMatchObject({ status: 400, code: "memory_workspace_required" });
+      await expect(f.memory.search(f.owner, { scope: "personal", workspaceId: f.workspaceId, projectId: project, query: "x" }, false, signal))
+        .rejects.toMatchObject({ status: 400, code: "memory_project_scope_invalid" });
+      const search = vi.spyOn(f.shared, "search");
+      const calls = f.generate.mock.calls.length;
+      const found = await f.memory.search(f.owner, { scope: "auto", workspaceId: f.workspaceId, projectId: project, query: "x", depth: "deep" }, false, signal);
+      expect(found.searchedScopes).toEqual([{ scope: "workspace", workspaceId: f.workspaceId }]);
+      expect(f.generate.mock.calls).toHaveLength(calls);
+      expect(search).toHaveBeenCalledWith(f.owner, decodeId("workspace", f.workspaceId), "x", false, signal, { projectId, depth: "deep" });
+      // The answer does not depend on whether analysis is configured.
+      for (const memory of [f.memory, new DahliaMemory(f.memory.stores, f.sync, {})]) {
+        await expect(memory.search(f.owner, { scope: "workspace", workspaceId: f.workspaceId, projectId: encodeId("project", uuidV7()), query: "x" }, false, signal))
+          .rejects.toMatchObject({ status: 404, code: "project_not_found" });
+      }
+      await expect(f.memory.search(f.stranger, { scope: "workspace", workspaceId: f.workspaceId, projectId: project, query: "x" }, false, signal))
+        .rejects.toMatchObject({ status: 404, code: "workspace_not_found" });
     } finally { f.close(); }
   });
   it("rechecks Workspace permission after a multi-bank search completes", async () => {
@@ -373,6 +407,9 @@ describe("Dahlia Memory", () => {
   it("accepts only UUIDv7 memory IDs at the shared save boundary", () => {
     const input = { scope: "personal", content: "x", revision: 0 };
     expect(memorySaveSchema.safeParse({ ...input, id: encodeId("sharedMemory", uuidV7()) }).success).toBe(true);
+    for (const extra of [{ projectId: encodeId("project", uuidV7()) }, { depth: "deep" }, { after: "2026-01-01T00:00:00Z" }]) {
+      expect(memorySaveSchema.safeParse({ ...input, id: encodeId("sharedMemory", uuidV7()), ...extra }).success).toBe(false);
+    }
     for (const id of ["smem_invalid", encodeId("meeting", uuidV7()),
       encodeId("sharedMemory", "00000000-0000-4000-8000-000000000000"),
       encodeId("sharedMemory", "00000000-0000-7000-0000-000000000000")]) {
@@ -414,6 +451,16 @@ describe("Dahlia Memory", () => {
         expect((await request("/analysis/status", "GET", undefined, f.owner.email, workspaceId)).status).toBe(200);
         expect((await request("/save", "POST", save, f.owner.email, workspaceId)).status).toBe(404);
         expect((await request("/notes", "PUT", save, f.owner.email, workspaceId)).status).toBe(405);
+      }
+      const projectId = encodeId("project", uuidV7());
+      expect((await request("/recall", "POST", { query: "memory", projectId })).status).toBe(400);
+      expect((await request("/reflect", "POST", { query: "memory", depth: "deep", after: "2026-01-01T00:00:00Z" })).status).toBe(200);
+      expect((await request("/recall", "POST", { query: "memory", projectId }, f.owner.email, f.workspaceId)).status).toBe(404);
+      expect((await request("/recall", "POST", { query: "memory", before: "yesterday" }, f.owner.email, f.workspaceId)).status).toBe(400);
+      for (const workspace of [undefined, f.workspaceId]) {
+        const invalid = await request("/reflect", "POST", { query: "memory", after: "2026-02-01T00:00:00Z", before: "2026-01-01T00:00:00Z" }, f.owner.email, workspace);
+        expect(invalid.status).toBe(400);
+        expect(await invalid.json()).toMatchObject({ code: "memory_time_range_invalid" });
       }
       expect(await (await request("/notes", "GET", undefined, f.stranger.email)).json()).toMatchObject({ items: [] });
       expect((await request("/notes", "GET", undefined, f.stranger.email, f.workspaceId)).status).toBe(404);

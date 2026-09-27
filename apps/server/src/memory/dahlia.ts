@@ -6,7 +6,7 @@ import { RequestError } from "../storage/upload";
 import { decodeId, encodeId } from "../typeid";
 import { publicIdSchema } from "../agent/tools";
 import type { MemoryStore } from "./store";
-import type { WorkspaceMemoryService } from "./service";
+import { temporalWindow, type WorkspaceMemoryService } from "./service";
 import { HindsightError } from "./hindsight";
 import { routeMemory } from "./router";
 
@@ -15,12 +15,23 @@ const workspaceId = publicIdSchema("workspace").optional();
 export const memoryScopeSchema = z.object({ scope, workspaceId }).strict();
 export const memoryListSchema = memoryScopeSchema.extend({ after: publicIdSchema("sharedMemory").optional(), query: z.string().trim().max(4000).optional() });
 export const memoryGetSchema = memoryScopeSchema.extend({ id: publicIdSchema("sharedMemory") });
-export const memorySearchSchema = z.object({ scope: z.enum(["personal", "workspace", "auto"]).default("auto"), workspaceId,
-  query: z.string().trim().min(1).max(4000) }).strict();
+const memoryTargetSchema = z.object({ scope: z.enum(["personal", "workspace", "auto"]).default("auto"), workspaceId }).strict();
+// Shared by the Dahlia Memory tools and the Workspace memory tools.
+export const memorySearchOptions = {
+  project: publicIdSchema("project").describe("An existing Project TypeID; searches only that Project's Workspace memory. Never invent a value."),
+  after: z.iso.datetime({ offset: true }).describe("ISO datetime. Ranks memories dated at or after it higher; memories outside the period are still returned."),
+  before: z.iso.datetime({ offset: true }).describe("ISO datetime. Ranks memories dated at or before it higher; memories outside the period are still returned."),
+  depth: z.enum(["quick", "normal", "deep"]).describe("Retrieval effort; normal by default. deep is slower but considers more candidates."),
+};
+export const memorySearchSchema = memoryTargetSchema.extend({ query: z.string().trim().min(1).max(4000),
+  projectId: memorySearchOptions.project.optional(), after: memorySearchOptions.after.optional(),
+  before: memorySearchOptions.before.optional(), depth: memorySearchOptions.depth.optional() });
+export const personalMemorySearchSchema = memorySearchSchema.omit({ scope: true, workspaceId: true, projectId: true });
+export const workspaceMemorySearchSchema = memorySearchSchema.omit({ scope: true, workspaceId: true });
 const newMemoryId = publicIdSchema("sharedMemory").refine((id) => {
   try { return z.uuidv7().safeParse(decodeId("sharedMemory", id)).success; } catch { return false; }
 }, "Memory IDs must contain a UUIDv7");
-export const memorySaveSchema = memorySearchSchema.omit({ query: true }).extend({ id: newMemoryId,
+export const memorySaveSchema = memoryTargetSchema.extend({ id: newMemoryId,
   content: z.string().trim().min(1).max(16_000), revision: z.number().int().nonnegative(), explicit: z.boolean().default(false) });
 export const memoryDeleteSchema = memoryGetSchema.extend({ revision: z.number().int().positive(), explicit: z.literal(true) });
 export const memoryConfigureSchema = memoryScopeSchema.extend({ enabled: z.boolean() });
@@ -121,8 +132,18 @@ export class DahliaMemory {
     return this.status(identity, input);
   }
   async search(identity: Identity, input: z.infer<typeof memorySearchSchema>, reflect: boolean, signal: AbortSignal) {
+    temporalWindow(input);
+    if (input.projectId && input.scope === "personal") throw new RequestError(400, "memory_project_scope_invalid");
+    if (input.projectId && !input.workspaceId) throw new RequestError(400, "memory_workspace_required");
+    const options = { projectId: input.projectId ? decodeId("project", input.projectId) : undefined, after: input.after, before: input.before, depth: input.depth };
+    // Checked here as well as by the engine so the answer does not depend on whether analysis is configured.
+    if (options.projectId && !await this.sync.getProject(identity, (await this.workspace(identity, input.workspaceId!)).workspaceId, options.projectId)) {
+      throw new RequestError(404, "project_not_found");
+    }
     let targets: MemoryScope[];
     if (input.scope !== "auto") targets = [resultScope({ scope: input.scope, workspaceId: input.workspaceId })];
+    // A Project belongs to one Workspace, so the Router has nothing to choose.
+    else if (input.projectId) targets = [{ scope: "workspace", workspaceId: input.workspaceId }];
     else {
       const workspace = input.workspaceId ? await this.workspace(identity, input.workspaceId) : undefined;
       const route = await routeMemory(this.generate, identity, "read", input.query,
@@ -136,7 +157,7 @@ export class DahliaMemory {
       const state = await store.status(identity.userId, id);
       try {
         if (!engine) throw new HindsightError("memory_analysis_unconfigured");
-        const result = await engine.search(identity, id, input.query, reflect, signal);
+        const result = await engine.search(identity, id, input.query, reflect, signal, options);
         return { target, state, code: undefined, result: { ...result, sources: result.sources.map((source) => ({ ...source,
           id: encodeId(source.kind === "meeting" ? "meeting" : "sharedMemory", source.id) })) } };
       } catch (error) {
@@ -153,11 +174,15 @@ export class DahliaMemory {
       const current = await store.status(identity.userId, id);
       const unchanged = state && current && current.generation === state.generation
         && current.bankId === state.bankId && current.enabled && !current.purge;
-      results.push({ ...target, result: result && unchanged ? result : {
+      if (result && unchanged) {
+        results.push({ ...target, result });
+        continue;
+      }
+      results.push({ ...target, result: {
         unavailable: true, code: code ?? "memory_source_changed",
         // Read canonical fallback only after all external searches have finished.
-        canonical: await this.list(identity, { ...target, query: input.query }),
-        instruction: "Analysis is unavailable. These are literal text matches only, not complete semantic recall.",
+        canonical: input.projectId ? { ...target, items: [], nextCursor: null } : await this.list(identity, { ...target, query: input.query }),
+        instruction: input.projectId ? "Analysis is unavailable. Shared notes do not belong to a Project, so none are included. Use canonical meeting tools filtered by this Project; an empty fallback does not mean no matching meetings exist." : "Analysis is unavailable. These are literal text matches only, not complete semantic recall.",
       } });
     }
     return { searchedScopes: targets, results };

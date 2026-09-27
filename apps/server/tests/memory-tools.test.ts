@@ -12,6 +12,8 @@ import { uuidV7 } from "../src/id";
 
 const identity = { userId: uuidV7(), source: "header" as const }, workspaceId = uuidV7();
 const input = { workspace_id: encodeId("workspace", workspaceId), query: "Decisions" };
+// Strict agent tools receive every property; MCP callers may omit the options.
+const agentInput = { ...input, project_id: null, after: null, before: null, depth: null };
 const signal = new AbortController().signal;
 function fixture() {
   const search = vi.fn().mockResolvedValue({ sources: [], hypothesis: null, coverage: "ready" });
@@ -23,9 +25,9 @@ describe("shared memory tools", () => {
     const { search, tools } = fixture();
     for (const [name, tool] of Object.entries(tools)) {
       expect(tool.mcp?.annotations?.readOnlyHint).toBe(true);
-      await tool.execute!(input, { requestContext: meetingRequestContext(identity, workspaceId), abortSignal: signal } as never);
-      expect(search).toHaveBeenLastCalledWith(identity, workspaceId, input.query, name.startsWith("reflect"), signal);
-      await expect(tool.execute!({ ...input, workspace_id: encodeId("workspace", uuidV7()) }, {
+      await tool.execute!(agentInput, { requestContext: meetingRequestContext(identity, workspaceId), abortSignal: signal } as never);
+      expect(search).toHaveBeenLastCalledWith(identity, workspaceId, input.query, name.startsWith("reflect"), signal, {});
+      await expect(tool.execute!({ ...agentInput, workspace_id: encodeId("workspace", uuidV7()) }, {
         requestContext: meetingRequestContext(identity, workspaceId), abortSignal: signal,
       } as never)).rejects.toMatchObject({ code: "workspace_scope_mismatch" });
       let handler!: (input: unknown, context: unknown) => Promise<unknown>;
@@ -42,15 +44,30 @@ describe("shared memory tools", () => {
       expect(search).toHaveBeenCalledTimes(calls);
     }
   });
+  it("converts Project, period and depth options for Mastra and MCP callers", async () => {
+    const { search, tools } = fixture();
+    const projectId = uuidV7();
+    const options = { project_id: encodeId("project", projectId), after: "2026-01-01T00:00:00+09:00", before: "2026-03-31T23:59:59Z", depth: "deep" as const };
+    await tools.reflect_workspace_memory.execute!({ ...agentInput, ...options }, { requestContext: meetingRequestContext(identity, workspaceId), abortSignal: signal } as never);
+    expect(search).toHaveBeenLastCalledWith(identity, workspaceId, input.query, true, signal,
+      { projectId, after: options.after, before: options.before, depth: "deep" });
+    let handler!: (input: unknown, context: unknown) => Promise<unknown>;
+    registerMastraTool({ registerTool(_name: string, _options: unknown, callback: typeof handler) { handler = callback; } } as never,
+      tools.recall_workspace_memory, identity);
+    expect(await handler({ ...input, depth: "quick" }, { mcpReq: { signal } })).not.toHaveProperty("isError");
+    expect(search).toHaveBeenLastCalledWith(identity, workspaceId, input.query, false, signal, { depth: "quick" });
+    expect(tools.recall_workspace_memory.mcpInputSchema.safeParse({ ...input, after: "last week" }).success).toBe(false);
+    expect(tools.recall_workspace_memory.mcpInputSchema.safeParse({ ...input, project_id: encodeId("meeting", projectId) }).success).toBe(false);
+  });
   it("preserves unavailability and abort semantics", async () => {
     const { search, tools } = fixture();
     search.mockRejectedValueOnce(new HindsightError("memory_not_ready"));
-    expect(await tools.recall_workspace_memory.execute!(input, {
+    expect(await tools.recall_workspace_memory.execute!(agentInput, {
       requestContext: meetingRequestContext(identity), abortSignal: signal,
     } as never)).toMatchObject({ unavailable: true, code: "memory_not_ready" });
     const controller = new AbortController(); controller.abort();
     search.mockRejectedValueOnce(controller.signal.reason);
-    await expect(tools.recall_workspace_memory.execute!(input, {
+    await expect(tools.recall_workspace_memory.execute!(agentInput, {
       requestContext: meetingRequestContext(identity), abortSignal: controller.signal,
     } as never)).rejects.toThrow();
   });
@@ -58,7 +75,7 @@ describe("shared memory tools", () => {
     const { search, tools } = fixture();
     search.mockRejectedValue(new RequestError(409, "memory_encrypted_workspace_unsupported"));
     for (const tool of Object.values(tools)) {
-      expect(await tool.execute!(input, { requestContext: meetingRequestContext(identity), abortSignal: signal } as never))
+      expect(await tool.execute!(agentInput, { requestContext: meetingRequestContext(identity), abortSignal: signal } as never))
         .toMatchObject({ unavailable: true, code: "memory_encrypted_workspace_unsupported" });
       let handler!: (input: unknown, context: unknown) => Promise<unknown>;
       registerMastraTool({ registerTool(_name: string, _options: unknown, callback: typeof handler) { handler = callback; } } as never, tool, identity);

@@ -24,15 +24,17 @@ export async function meetingDocument(sync: MeetingSyncService, identity: Identi
   }
   let cursor: string | undefined;
   let bytes = 0;
-  const append = (text: string) => {
+  const markers = new Map<number, string>();
+  const append = (text: string, marker?: string) => {
     bytes += new TextEncoder().encode(text).byteLength;
     if (bytes > 4 * 1024 * 1024) throw new HindsightError("memory_source_too_large");
+    if (marker) markers.set(parts.length, marker);
     parts.push(text);
   };
   do {
     signal.throwIfAborted();
     const page = await sync.listTranscript(identity, workspaceId, meetingId, cursor);
-    for (const segment of page.items) append(`[Transcript segment ${segment.segmentId}; ${segment.startedAt.toISOString()}; speaker ${segment.speakerLabel ?? "unknown"}; ${segment.audioSource ?? "unknown source"}] ${segment.text}`);
+    for (const segment of page.items) append(`[Transcript segment ${segment.segmentId}; ${segment.startedAt.toISOString()}; speaker ${segment.speakerLabel ?? "unknown"}; ${segment.audioSource ?? "unknown source"}] ${segment.text}`, `Transcript segment ${segment.segmentId}`);
     cursor = page.nextCursor;
   } while (cursor);
   if (meeting.summaryDocument) append(`AI-generated summary (same meeting evidence, not independent corroboration):\n${meeting.summaryDocument}`);
@@ -40,11 +42,17 @@ export async function meetingDocument(sync: MeetingSyncService, identity: Identi
     signal.throwIfAborted();
     const page = await sync.listScreenshots(identity, workspaceId, meetingId, undefined, signal, cursor);
     for (const shot of page.items) {
-      if (shot.ocrText || shot.caption) append(`[Screenshot ${shot.screenshotId}; file ${shot.fileId}; ${shot.capturedAt.toISOString()}]\nOCR (screen text, not speech): ${shot.ocrText ?? ""}\nAI caption (interpretation): ${shot.caption ?? ""}`);
+      if (shot.ocrText || shot.caption) append(`[Screenshot ${shot.screenshotId}; file ${shot.fileId}; ${shot.capturedAt.toISOString()}]\nOCR (screen text, not speech): ${shot.ocrText ?? ""}\nAI caption (interpretation): ${shot.caption ?? ""}`, `Screenshot ${shot.screenshotId}`);
     }
     cursor = page.nextCursor;
   } while (cursor);
   const content = parts.join("\n\n");
+  let offset = 0;
+  const blocks = parts.map((part, index) => {
+    const start = offset;
+    offset += part.length + 2;
+    return { start, end: start + part.length, marker: markers.get(index) };
+  });
   return { id: `meeting-${meetingId}`, source: { kind: "meeting", id: meetingId, projectId: meeting.projectId,
-    revision: await contentHash(content) }, content, timestamp: (meeting.recordingStartedAt ?? meeting.createdAt).toISOString() };
+    revision: await contentHash(content) }, content, blocks, timestamp: (meeting.recordingStartedAt ?? meeting.createdAt).toISOString() };
 }

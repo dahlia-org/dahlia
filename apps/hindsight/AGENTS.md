@@ -15,7 +15,7 @@ These rules apply to every change under `apps/hindsight`, not only provider inte
 1. Run `uv run --no-project scripts/sync_upstream.py --check` before editing to verify that the materialized checkout matches its pin and patch.
 2. Implement Dahlia-owned code first. If upstream files must change, use `.upstream/hindsight-api-slim` only as a temporary patch worktree and export the complete diff to `patches/hindsight-api-slim.patch` before finishing.
 3. Run `uv run --no-project scripts/sync_upstream.py --check` again. It must verify the revision, patch hash, and materialized diff.
-4. Run the focused regression tests plus `scripts/check.sh`. If `uv.lock` changes, regenerate `requirements.txt` from the locked project as well.
+4. Run the focused regression tests plus `scripts/check.sh`. If `uv.lock` changes, regenerate `requirements.txt` with the command in `README.md`; `scripts/check.sh` rejects a stale one.
 
 ## Updating Hindsight
 

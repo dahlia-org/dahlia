@@ -1,4 +1,4 @@
-import { DahliaMemory, memoryConfigureSchema, memoryListSchema, memoryGetSchema, memorySearchSchema, memorySaveSchema } from "./memory/dahlia";
+import { DahliaMemory, memoryConfigureSchema, memoryListSchema, memoryGetSchema, memorySaveSchema, personalMemorySearchSchema, workspaceMemorySearchSchema } from "./memory/dahlia";
 import { createMemoryGenerator, type MemoryGenerator, type ChatMemoryService } from "./agent/context-service";
 import { createMemoryTools } from "./memory/tools";
 import { workingMemoryEditSchema, liveSelectionSchema } from "./agent/context-model";
@@ -371,8 +371,8 @@ export function createApp(dependencies: AppDependencies): DahliaServerApp & { ru
     const query = memoryDeleteQuery.parse(c.req.query());
     return c.json(await memory().delete(await identities.fromBrowser(c.req.raw), { scope: "personal" as const, id: memoryGetSchema.shape.id.parse(c.req.param("noteId")), revision: Number(query.revision), explicit: true }));
   });
-  registerApi(app, "personalMemoryRecall", aiChatBodyLimit, async (c) => c.json(await memory().search(await identities.fromBrowser(c.req.raw), { scope: "personal" as const, ...memorySearchSchema.omit({ scope: true, workspaceId: true }).parse(await c.req.json()) }, false, c.req.raw.signal)));
-  registerApi(app, "personalMemoryReflect", aiChatBodyLimit, async (c) => c.json(await memory().search(await identities.fromBrowser(c.req.raw), { scope: "personal" as const, ...memorySearchSchema.omit({ scope: true, workspaceId: true }).parse(await c.req.json()) }, true, c.req.raw.signal)));
+  registerApi(app, "personalMemoryRecall", aiChatBodyLimit, async (c) => c.json(await memory().search(await identities.fromBrowser(c.req.raw), { scope: "personal" as const, ...personalMemorySearchSchema.parse(await c.req.json()) }, false, c.req.raw.signal)));
+  registerApi(app, "personalMemoryReflect", aiChatBodyLimit, async (c) => c.json(await memory().search(await identities.fromBrowser(c.req.raw), { scope: "personal" as const, ...personalMemorySearchSchema.parse(await c.req.json()) }, true, c.req.raw.signal)));
   registerApi(app, "personalMemoryStatus", async (c) => c.json(await memory().status(await identities.fromBrowser(c.req.raw), { scope: "personal" as const })));
   registerApi(app, "personalMemoryConfigure", aiChatBodyLimit, async (c) => c.json(await memory().configure(await identities.fromBrowser(c.req.raw), { scope: "personal" as const, ...memoryConfigureSchema.omit({ scope: true, workspaceId: true }).parse(await c.req.json()) })));
   registerApi(app, "workspaceMemoryList", async (c) => c.json(await memory().list(await identities.fromBrowser(c.req.raw), { scope: "workspace" as const, workspaceId: c.req.param("workspaceId")!, ...memoryListSchema.omit({ scope: true, workspaceId: true }).parse(c.req.query()) })));
@@ -383,8 +383,8 @@ export function createApp(dependencies: AppDependencies): DahliaServerApp & { ru
     const query = memoryDeleteQuery.parse(c.req.query());
     return c.json(await memory().delete(await identities.fromBrowser(c.req.raw), { scope: "workspace" as const, workspaceId: c.req.param("workspaceId")!, id: memoryGetSchema.shape.id.parse(c.req.param("noteId")), revision: Number(query.revision), explicit: true }));
   });
-  registerApi(app, "workspaceMemoryRecall", aiChatBodyLimit, async (c) => c.json(await memory().search(await identities.fromBrowser(c.req.raw), { scope: "workspace" as const, workspaceId: c.req.param("workspaceId")!, ...memorySearchSchema.omit({ scope: true, workspaceId: true }).parse(await c.req.json()) }, false, c.req.raw.signal)));
-  registerApi(app, "workspaceMemoryReflect", aiChatBodyLimit, async (c) => c.json(await memory().search(await identities.fromBrowser(c.req.raw), { scope: "workspace" as const, workspaceId: c.req.param("workspaceId")!, ...memorySearchSchema.omit({ scope: true, workspaceId: true }).parse(await c.req.json()) }, true, c.req.raw.signal)));
+  registerApi(app, "workspaceMemoryRecall", aiChatBodyLimit, async (c) => c.json(await memory().search(await identities.fromBrowser(c.req.raw), { scope: "workspace" as const, workspaceId: c.req.param("workspaceId")!, ...workspaceMemorySearchSchema.parse(await c.req.json()) }, false, c.req.raw.signal)));
+  registerApi(app, "workspaceMemoryReflect", aiChatBodyLimit, async (c) => c.json(await memory().search(await identities.fromBrowser(c.req.raw), { scope: "workspace" as const, workspaceId: c.req.param("workspaceId")!, ...workspaceMemorySearchSchema.parse(await c.req.json()) }, true, c.req.raw.signal)));
   registerApi(app, "workspaceMemoryStatus", async (c) => c.json(await memory().status(await identities.fromBrowser(c.req.raw), { scope: "workspace" as const, workspaceId: c.req.param("workspaceId")! })));
   registerApi(app, "workspaceMemoryConfigure", aiChatBodyLimit, async (c) => c.json(await memory().configure(await identities.fromBrowser(c.req.raw), { scope: "workspace" as const, workspaceId: c.req.param("workspaceId")!, ...memoryConfigureSchema.omit({ scope: true, workspaceId: true }).parse(await c.req.json()) })));
   registerApi(app, "purgeWorkspaceMemory", async (context) => {

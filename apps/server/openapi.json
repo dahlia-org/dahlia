@@ -9240,6 +9240,25 @@
                     "type": "string",
                     "minLength": 1,
                     "maxLength": 4000
+                  },
+                  "after": {
+                    "type": "string",
+                    "format": "date-time",
+                    "description": "ISO datetime. Ranks memories dated at or after it higher; memories outside the period are still returned."
+                  },
+                  "before": {
+                    "type": "string",
+                    "format": "date-time",
+                    "description": "ISO datetime. Ranks memories dated at or before it higher; memories outside the period are still returned."
+                  },
+                  "depth": {
+                    "type": "string",
+                    "enum": [
+                      "quick",
+                      "normal",
+                      "deep"
+                    ],
+                    "description": "Retrieval effort; normal by default. deep is slower but considers more candidates."
                   }
                 },
                 "required": [
@@ -9293,6 +9312,25 @@
                     "type": "string",
                     "minLength": 1,
                     "maxLength": 4000
+                  },
+                  "after": {
+                    "type": "string",
+                    "format": "date-time",
+                    "description": "ISO datetime. Ranks memories dated at or after it higher; memories outside the period are still returned."
+                  },
+                  "before": {
+                    "type": "string",
+                    "format": "date-time",
+                    "description": "ISO datetime. Ranks memories dated at or before it higher; memories outside the period are still returned."
+                  },
+                  "depth": {
+                    "type": "string",
+                    "enum": [
+                      "quick",
+                      "normal",
+                      "deep"
+                    ],
+                    "description": "Retrieval effort; normal by default. deep is slower but considers more candidates."
                   }
                 },
                 "required": [
@@ -9787,6 +9825,30 @@
                     "type": "string",
                     "minLength": 1,
                     "maxLength": 4000
+                  },
+                  "projectId": {
+                    "type": "string",
+                    "pattern": "^proj_[0-7][0-9abcdefghjkmnpqrstvwxyz]{25}$",
+                    "description": "An existing Project TypeID; searches only that Project's Workspace memory. Never invent a value."
+                  },
+                  "after": {
+                    "type": "string",
+                    "format": "date-time",
+                    "description": "ISO datetime. Ranks memories dated at or after it higher; memories outside the period are still returned."
+                  },
+                  "before": {
+                    "type": "string",
+                    "format": "date-time",
+                    "description": "ISO datetime. Ranks memories dated at or before it higher; memories outside the period are still returned."
+                  },
+                  "depth": {
+                    "type": "string",
+                    "enum": [
+                      "quick",
+                      "normal",
+                      "deep"
+                    ],
+                    "description": "Retrieval effort; normal by default. deep is slower but considers more candidates."
                   }
                 },
                 "required": [
@@ -9851,6 +9913,30 @@
                     "type": "string",
                     "minLength": 1,
                     "maxLength": 4000
+                  },
+                  "projectId": {
+                    "type": "string",
+                    "pattern": "^proj_[0-7][0-9abcdefghjkmnpqrstvwxyz]{25}$",
+                    "description": "An existing Project TypeID; searches only that Project's Workspace memory. Never invent a value."
+                  },
+                  "after": {
+                    "type": "string",
+                    "format": "date-time",
+                    "description": "ISO datetime. Ranks memories dated at or after it higher; memories outside the period are still returned."
+                  },
+                  "before": {
+                    "type": "string",
+                    "format": "date-time",
+                    "description": "ISO datetime. Ranks memories dated at or before it higher; memories outside the period are still returned."
+                  },
+                  "depth": {
+                    "type": "string",
+                    "enum": [
+                      "quick",
+                      "normal",
+                      "deep"
+                    ],
+                    "description": "Retrieval effort; normal by default. deep is slower but considers more candidates."
                   }
                 },
                 "required": [

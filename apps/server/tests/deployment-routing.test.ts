@@ -364,6 +364,16 @@ describe("deployment routing", () => {
     expect(hindsight).toContain("name: HINDSIGHT_API_LLM_MODEL\n            value: system.ai.gpt-6-luna");
     expect(hindsight).toContain("system.ai.qwen3-embedding-0-6b");
     expect(hindsight).toContain("name: HINDSIGHT_API_EMBEDDINGS_OPENAI_DIMENSIONS\n            value: ${var.search_embedding_dimensions}");
+    // Local cross-encoder reranking runs inside the Hindsight App on CPU, not on Model Serving.
+    expect(hindsight).toContain("      compute_size: LARGE\n");
+    expect(hindsight).toContain("name: HINDSIGHT_API_RERANKER_PROVIDER\n            value: local");
+    expect(hindsight).toContain("name: HINDSIGHT_API_RERANKER_LOCAL_MODEL\n            value: cross-encoder/mmarco-mMiniLMv2-L12-H384-v1");
+    expect(hindsight).toContain('name: HINDSIGHT_API_RERANKER_LOCAL_FORCE_CPU\n            value: "true"');
+    expect(hindsight).not.toContain("flashrank");
+    for (const [level, candidates] of [["low", 50], ["mid", 100], ["high", 300]] as const) {
+      expect(hindsight).toContain(`name: HINDSIGHT_API_RERANKER_MAX_CANDIDATES_${level.toUpperCase()}\n            value: \${var.reranker_max_candidates_${level}}`);
+      expect(bundle).toMatch(new RegExp(`reranker_max_candidates_${level}:[\\s\\S]*?default: "${candidates}"`));
+    }
     expect(hindsight).not.toMatch(/API_KEY|secret:|value_from: openai-api-key|user_api_scopes/);
     expect(bundle).not.toContain("hindsight_openai_secret");
     expect(hindsight).toContain("${resources.postgres_projects.dahlia_database_project.id}/branches/production/databases/databricks-postgres");
