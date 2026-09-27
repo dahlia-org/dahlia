@@ -801,17 +801,16 @@ describe("Hindsight authentication", () => {
 });
 
 describe("Pinned Hindsight response contracts", () => {
-  it("resolves mental-model and observation lineage to documents and rejects invalidated evidence", async () => {
+  it("resolves observation lineage to documents and rejects invalidated evidence", async () => {
     let invalidated = false;
     const client = new HindsightClient({ url: "http://localhost:8888", auth: "none", bankPrefix: "test" }, undefined, async (url) => {
       const path = new URL(String(url)).pathname;
-      if (path.includes("mental-models")) return Response.json({ reflect_response: { based_on: { world: [{ id: "source" }], observation: [{ id: "observation" }] } } });
       if (path.endsWith("observation")) return Response.json({ state: "valid", document_id: null, source_memory_ids: ["source"] });
       return Response.json({ state: invalidated ? "invalidated" : "valid", document_id: "meeting-canonical" });
     });
-    expect(await client.modelDocuments("bank", "model", new AbortController().signal)).toEqual(["meeting-canonical"]);
+    expect(await client.factDocuments("bank", "observation", new AbortController().signal)).toEqual(["meeting-canonical"]);
     invalidated = true;
-    expect(await client.modelDocuments("bank", "model", new AbortController().signal)).toEqual([]);
+    expect(await client.factDocuments("bank", "observation", new AbortController().signal)).toEqual([]);
   });
   it("reads chunks outside the bank path and accepts only the expected bank", async () => {
     const paths: string[] = [];

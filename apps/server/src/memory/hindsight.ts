@@ -161,26 +161,6 @@ export class HindsightClient {
     }
     return [...new Set(sources.map((source) => source.document_id!))];
   }
-  async modelDocuments(bank: string, id: string, signal: AbortSignal): Promise<string[]> {
-    const response = await this.request(bank, `/mental-models/${encodeURIComponent(id)}`, "GET", signal, undefined, true);
-    if (!response) return [];
-    // Pinned Hindsight stores model lineage by fact type, unlike HTTP reflect's memories array.
-    const model = z.object({ reflect_response: z.object({ based_on:
-      z.record(z.string(), z.array(z.object({ id: z.string().nullable() }))).nullish(),
-    }).nullish() }).parse(response);
-    const based = model.reflect_response?.based_on;
-    if (!based || Object.entries(based).some(([kind, facts]) => facts.length && !["world", "experience", "observation"].includes(kind))) return [];
-    const facts = Object.values(based).flat();
-    if (!facts.length || facts.length > 10) return [];
-    const ids: string[] = [];
-    for (const fact of facts) {
-      if (!fact.id) return [];
-      const documents = await this.factDocuments(bank, fact.id, signal);
-      if (!documents.length) return [];
-      ids.push(...documents);
-    }
-    return [...new Set(ids)];
-  }
   async reflect(bank: string, query: string, signal: AbortSignal, scope?: HindsightTags) {
     return z.object({ structured_output: z.unknown().optional(), structured_output_error: z.string().nullish(),
       usage: z.object({ input_tokens: z.number().int().nonnegative(), output_tokens: z.number().int().nonnegative() }).nullish(),

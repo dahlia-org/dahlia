@@ -34,8 +34,7 @@ def test_reranker_uses_immutable_snapshot(monkeypatch):
     monkeypatch.setenv("HINDSIGHT_API_RERANKER_PROVIDER", "local")
     monkeypatch.setenv("HINDSIGHT_API_RERANKER_LOCAL_MODEL", reranker.MODEL)
     reranker.prepare_reranker()
-    assert len(reranker.REVISION) == 40
-    assert download.call_args.kwargs["revision"] == reranker.REVISION
+    assert download.call_args.kwargs["revision"] == "1427fd652930e4ba29e8149678df786c240d8825"
     assert download.call_args.kwargs["repo_id"] == reranker.MODEL
     assert os.environ["HINDSIGHT_API_RERANKER_LOCAL_MODEL"] == "/cache/pinned-model"
     reranker.prepare_reranker()
