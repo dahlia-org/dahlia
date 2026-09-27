@@ -91,13 +91,36 @@ export class WorkspaceMemoryService {
         }
       }
     }
-    const ids = [...new Set([...reflectionSources.values()].flat().concat([...chunks.keys()]))].slice(0, 30);
     const documents: MemoryDocument[] = [];
-    for (const id of ids) {
+    const checked = new Map<string, MemoryDocument | null>();
+    const source = async (id: string) => {
+      if (checked.has(id)) return checked.get(id);
+      if (checked.size === 30) return null;
       const document = await this.source(identity, scopeId, id, signal);
       // Canonical data, not the analysis copy, decides Project membership.
-      if (document && (!input.projectId || document.source.projectId === input.projectId)) documents.push(document);
+      const valid = document && (!input.projectId || document.source.projectId === input.projectId) ? document : null;
+      checked.set(id, valid);
+      return valid;
+    };
+    for (const claim of candidates) {
+      const lineages = claim.factIds.map((id) => reflectionSources.get(id));
+      if (lineages.some((ids) => !ids?.length)) continue;
+      const ids = [...new Set(lineages.flatMap((ids) => ids!))].filter((id) => !documents.some((document) => document.id === id));
+      if (documents.length + ids.length > 5) continue;
+      const group: MemoryDocument[] = [];
+      for (const id of ids) {
+        const document = await source(id);
+        if (!document) break;
+        group.push(document);
+      }
+      // Reserve slots only when the whole claim has current canonical evidence.
+      if (group.length === ids.length) documents.push(...group);
+    }
+    for (const id of chunks.keys()) {
       if (documents.length === 5) break;
+      if (documents.some((document) => document.id === id)) continue;
+      const document = await source(id);
+      if (document) documents.push(document);
     }
     const markers = new Map<string, string[]>();
     // Chunk retrieval improves excerpts, but must leave time for canonical revalidation.

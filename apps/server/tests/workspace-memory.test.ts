@@ -916,6 +916,25 @@ describe("Structured reflection publication", () => {
       f.facts.set("observation", { state: "valid", source_memory_ids: ids });
       f.setReflection(() => f.response([{ text: "Needs six sources", factIds: ["observation"] }], ["observation"]));
       expect(await f.search()).toMatchObject({ hypothesis: null, claims: [], reflectionStatus: "invalid_references" });
+      f.setReflection(() => f.response([
+        { text: "Needs six sources", factIds: ["observation"] },
+        { text: "Fits independently", factIds: [ids[5]!] },
+      ], ["observation", ids[5]!]));
+      const result = await f.search();
+      expect(result).toMatchObject({ hypothesis: "Fits independently", reflectionStatus: "partial",
+        claims: [{ text: "Fits independently", citations: [{ factId: ids[5], sourceIndexes: [0] }] }],
+      });
+      expect(result.sources).toHaveLength(5);
+      expect(`shared-${result.sources[0]!.id}`).toBe([...f.retained.keys()][5]);
+      f.setReflection(() => f.response([
+        { text: "First four", factIds: ids.slice(0, 4) },
+        { text: "Two cannot fit", factIds: ids.slice(4) },
+        { text: "Last one fits", factIds: [ids[5]!] },
+      ], ids));
+      const packed = await f.search();
+      expect(packed.claims.map((claim) => claim.text)).toEqual(["First four", "Last one fits"]);
+      expect(packed.reflectionStatus).toBe("partial");
+      expect(packed.sources).toHaveLength(5);
     } finally { await f.close(); }
   });
   it.each(["update", "delete", "revoke", "pause", "cancel"])("rechecks canonical state after external work: %s", async (change) => {
