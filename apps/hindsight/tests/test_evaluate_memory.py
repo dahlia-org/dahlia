@@ -15,10 +15,17 @@ class Hindsight:
         self.documents = list(documents)
         self.reprocess_status = reprocess_status or {}
         self.polls = 0
+        self.banks = set()
 
     def __call__(self, method, path, body=None, query=None):
         self.calls.append((method, path, body, query))
+        if path.endswith("/config") and method == "GET":
+            bank = path.removesuffix("/config")
+            if bank not in self.banks:
+                raise evaluate_memory.EvaluationError("GET request failed with HTTP 404", 404)
+            return {"bank_id": bank}
         if path == "source/clone":
+            self.banks.add(query["target_bank_id"])
             return {"operation_id": "clone-op"}
         if path == "source/operations/clone-op":
             self.polls += 1
@@ -42,12 +49,18 @@ class Hindsight:
 
     def recall(self, body):
         if body["query"] == "q1" and "observation" not in body["types"]:
-            results = [{"document_id": "meeting-x", "text": SECRET}, {"document_id": "meeting-a", "text": SECRET}]
+            results = [
+                {"document_id": "mtg_00000000000000000000000001", "text": SECRET},
+                {"document_id": "mtg_00000000000000000000000002", "text": SECRET},
+            ]
             return {"results": results}
         if body["query"] == "q2" and "observation" in body["types"]:
             # The expected document is the second source of the top observation.
             observation = {"type": "observation", "text": SECRET, "source_fact_ids": ["f0", "f1"]}
-            sources = {"f0": {"document_id": "meeting-z"}, "f1": {"document_id": "meeting-b", "text": SECRET}}
+            sources = {
+                "f0": {"document_id": "mtg_00000000000000000000000007"},
+                "f1": {"document_id": "mtg_00000000000000000000000003", "text": SECRET},
+            }
             return {"results": [observation], "source_facts": sources}
         if body["query"] == "q3":
             raise evaluate_memory.EvaluationError("POST request failed with HTTP 500")
@@ -56,7 +69,11 @@ class Hindsight:
 
 def test_reports_only_numbers_and_deletes_the_clone():
     hindsight = Hindsight()
-    questions = [("q1", {"meeting-a"}), ("q2", {"meeting-b"}), ("q3", {"meeting-c"})]
+    questions = [
+        ("q1", {"mtg_00000000000000000000000002"}),
+        ("q2", {"mtg_00000000000000000000000003"}),
+        ("q3", {"mtg_00000000000000000000000004"}),
+    ]
     result = evaluate_memory.evaluate(hindsight, "source", questions, ks=(1, 2), sleep=lambda seconds: None)
 
     baseline, observed = result["variants"]
@@ -65,11 +82,11 @@ def test_reports_only_numbers_and_deletes_the_clone():
     assert observed["hit_at"] == {"1": 0.0, "2": 0.3333} and observed["mrr"] == 0.1667
     assert baseline["errors"] == observed["errors"] == 1
     output = json.dumps(result, ensure_ascii=False)
-    assert SECRET not in output and "q1" not in output and "meeting-" not in output
+    assert SECRET not in output and "q1" not in output and "mtg_" not in output
 
-    method, path, _, query = hindsight.calls[0]
+    method, path, _, query = next(call for call in hindsight.calls if call[1] == "source/clone")
     clone = query["target_bank_id"]
-    assert (method, path) == ("POST", "source/clone") and clone.startswith("eval-")
+    assert (method, path) == ("POST", "source/clone") and clone.startswith("dahlia_eval_")
     assert query["include_history"] == "false"
     assert hindsight.calls[-1][:2] == ("DELETE", clone)
     recalls = [body for _, path, body, _ in hindsight.calls if path.endswith("/memories/recall")]
@@ -86,46 +103,99 @@ def test_observation_sources_have_distinct_ranks_within_the_five_document_limit(
     response = {
         "results": [
             {"type": "observation", "source_fact_ids": ["f1", "f2", "missing"]},
-            {"type": "world", "document_id": "meeting-c"},
-            {"type": "experience", "document_id": "meeting-a"},
+            {"type": "world", "document_id": "mtg_00000000000000000000000004"},
+            {"type": "experience", "document_id": "mtg_00000000000000000000000002"},
             {"type": "observation", "source_fact_ids": ["f3"]},
         ],
         "source_facts": {
-            "f1": {"document_id": "meeting-a"},
-            "f2": {"document_id": "meeting-b"},
-            "f3": {"document_id": "meeting-d"},
+            "f1": {"document_id": "mtg_00000000000000000000000002"},
+            "f2": {"document_id": "mtg_00000000000000000000000003"},
+            "f3": {"document_id": "mtg_00000000000000000000000005"},
         },
     }
     ranks = evaluate_memory.document_ranks(response)
-    assert ranks == {"meeting-a": 1, "meeting-b": 2, "meeting-c": 3, "meeting-d": 4}
+    assert ranks == {
+        "mtg_00000000000000000000000002": 1,
+        "mtg_00000000000000000000000003": 2,
+        "mtg_00000000000000000000000004": 3,
+        "mtg_00000000000000000000000005": 4,
+    }
     response = {
         "results": [{"type": "observation", "source_fact_ids": [str(i) for i in range(10)]}],
-        "source_facts": {str(i): {"document_id": f"meeting-{i}"} for i in range(10)},
+        "source_facts": {str(i): {"document_id": f"mtg_0000000000000000000000000{i}"} for i in range(10)},
     }
-    assert evaluate_memory.document_ranks(response) == {f"meeting-{i}": i + 1 for i in range(5)}
+    assert evaluate_memory.document_ranks(response) == {f"mtg_0000000000000000000000000{i}": i + 1 for i in range(5)}
 
 
 def test_a_failed_clone_is_still_deleted():
     hindsight = Hindsight(clone_status="failed")
     with pytest.raises(evaluate_memory.EvaluationError, match="failed"):
-        evaluate_memory.evaluate(hindsight, "source", [("q1", {"meeting-a"})], sleep=lambda seconds: None)
+        evaluate_memory.evaluate(
+            hindsight, "source", [("q1", {"mtg_00000000000000000000000002"})], sleep=lambda seconds: None
+        )
     assert hindsight.calls[-1][0] == "DELETE"
     assert not any(path.endswith("/memories/recall") for _, path, _, _ in hindsight.calls)
 
 
+def test_existing_evaluation_bank_is_never_modified_or_deleted():
+    calls = []
+
+    def send(method, path, body=None, query=None):
+        calls.append((method, path))
+        assert method == "GET" and path.endswith("/config")
+        return {"bank_id": path.removesuffix("/config")}
+
+    with pytest.raises(evaluate_memory.EvaluationError, match="^memory_evaluation_bank_exists$"):
+        evaluate_memory.evaluate(send, "source", [], sleep=lambda seconds: None)
+    assert len(calls) == 1
+
+
+@pytest.mark.parametrize("status", [401, 403, 503])
+def test_failed_existence_check_never_creates_or_deletes_a_bank(status):
+    calls = []
+
+    def send(method, path, body=None, query=None):
+        calls.append(method)
+        raise evaluate_memory.EvaluationError("Synthetic failure", status)
+
+    with pytest.raises(evaluate_memory.EvaluationError):
+        evaluate_memory.evaluate(send, "source", [], sleep=lambda seconds: None)
+    assert calls == ["GET"]
+
+
+def test_unacknowledged_clone_is_not_deleted():
+    calls = []
+
+    def send(method, path, body=None, query=None):
+        calls.append(method)
+        if method == "GET":
+            raise evaluate_memory.EvaluationError("Not found", 404)
+        raise evaluate_memory.EvaluationError("Synthetic acknowledgement loss")
+
+    with pytest.raises(evaluate_memory.EvaluationError):
+        evaluate_memory.evaluate(send, "source", [], sleep=lambda seconds: None)
+    assert calls == ["GET", "POST"]
+
+
 def test_extraction_and_reranking_variants_change_only_the_clone():
-    documents = ["meeting-a", "meeting-b", "shared-c", "meeting-d", "meeting-e"]
+    documents = [
+        "mtg_00000000000000000000000002",
+        "mtg_00000000000000000000000003",
+        "smem_00000000000000000000000004",
+        "mtg_00000000000000000000000005",
+        "mtg_00000000000000000000000006",
+    ]
     hindsight = Hindsight(documents=documents)
     result = evaluate_memory.evaluate(
         hindsight,
         "source",
-        [("q1", {"meeting-a"})],
+        [("q1", {"mtg_00000000000000000000000002"})],
         rerank=("on", "off"),
         observations=(False,),
         extraction={"retain_default_strategy": "meeting"},
         sleep=lambda seconds: None,
     )
-    clone = hindsight.calls[0][3]["target_bank_id"]
+    clone = next(call[3]["target_bank_id"] for call in hindsight.calls if call[1] == "source/clone")
     reprocessed = [path for method, path, _, _ in hindsight.calls if path.endswith("/reprocess")]
     # Every document exactly once, although the listing reorders while pages are read.
     assert reprocessed == [f"{clone}/documents/{document}/reprocess" for document in documents]
@@ -140,12 +210,15 @@ def test_extraction_and_reranking_variants_change_only_the_clone():
 
 
 def test_a_failed_reprocess_stops_before_scoring():
-    hindsight = Hindsight(documents=["meeting-a", "meeting-b"], reprocess_status={"reprocess-meeting-b": "failed"})
+    hindsight = Hindsight(
+        documents=["mtg_00000000000000000000000002", "mtg_00000000000000000000000003"],
+        reprocess_status={"reprocess-mtg_00000000000000000000000003": "failed"},
+    )
     with pytest.raises(evaluate_memory.EvaluationError, match="failed"):
         evaluate_memory.evaluate(
             hindsight,
             "source",
-            [("q1", {"meeting-a"})],
+            [("q1", {"mtg_00000000000000000000000002"})],
             extraction={"retain_extraction_mode": "verbose"},
             sleep=lambda seconds: None,
         )
@@ -155,12 +228,14 @@ def test_a_failed_reprocess_stops_before_scoring():
 
 def test_questions_are_validated_without_echoing_them(tmp_path):
     path = tmp_path / "questions.jsonl"
-    path.write_text(json.dumps({"query": SECRET, "expected": "meeting-a"}, ensure_ascii=False) + "\n")
+    path.write_text(
+        json.dumps({"query": SECRET, "expected": "mtg_00000000000000000000000002"}, ensure_ascii=False) + "\n"
+    )
     with pytest.raises(evaluate_memory.EvaluationError) as error:
         evaluate_memory.load_questions(path)
     assert SECRET not in str(error.value) and "line 1" in str(error.value)
-    path.write_text(json.dumps({"query": SECRET, "expected": ["meeting-a"]}) + "\n\n")
-    assert evaluate_memory.load_questions(path) == [(SECRET, {"meeting-a"})]
+    path.write_text(json.dumps({"query": SECRET, "expected": ["mtg_00000000000000000000000002"]}) + "\n\n")
+    assert evaluate_memory.load_questions(path) == [(SECRET, {"mtg_00000000000000000000000002"})]
 
 
 def test_http_client_sends_the_token_but_never_follows_redirects():

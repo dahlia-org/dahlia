@@ -1,15 +1,117 @@
 """Opt-in tests: only use dedicated, disposable databases, never application DBs."""
 
+import json
 import os
 import uuid
+from pathlib import Path
 
 import asyncpg
+import httpx
 import pytest
 from sqlalchemy import create_engine
 from sqlalchemy import text as sql
 from sqlalchemy.pool import NullPool
 
 from hindsight_lakebase.text import quoted
+
+
+@pytest.mark.postgres
+async def test_dahlia_typeids_retain_get_replace_and_delete(monkeypatch):
+    """Real pinned HTTP/engine/SQL with synthetic inference in a fresh disposable schema."""
+    from hindsight_api import MemoryEngine
+    from hindsight_api.api.http import create_app
+    from hindsight_api.config import clear_config_cache
+    from hindsight_api.engine.cross_encoder import RRFPassthroughCrossEncoder
+    from hindsight_api.engine.embeddings import Embeddings
+    from hindsight_api.engine.task_backend import SyncTaskBackend
+
+    class SyntheticEmbeddings(Embeddings):
+        provider_name = "synthetic"
+        dimension = 3
+
+        async def initialize(self):
+            pass
+
+        async def encode(self, texts):
+            return [[1.0, 0.0, 0.0] for _ in texts]
+
+    url, schema = configure(monkeypatch, "postgres")
+    monkeypatch.setenv("HINDSIGHT_API_ENABLE_OBSERVATIONS", "false")
+    clear_config_cache()
+    engine = None
+    try:
+        migrate(url, schema, "postgres")
+        engine = MemoryEngine(
+            db_url=url,
+            memory_llm_provider="mock",
+            memory_llm_model="mock",
+            memory_llm_api_key="",
+            embeddings=SyntheticEmbeddings(),
+            cross_encoder=RRFPassthroughCrossEncoder(),
+            task_backend=SyncTaskBackend(),
+            pool_min_size=1,
+            pool_max_size=5,
+            run_migrations=False,
+        )
+        await engine.initialize()
+        vectors = json.loads((Path(__file__).resolve().parents[3] / "test-fixtures/typeid.json").read_text())
+        vector = vectors[2]
+        workspace = f"dahlia_ws_{vector['suffix']}"
+        personal = f"dahlia_user_{vector['suffix']}"
+        meeting = f"mtg_{vector['suffix']}"
+        note = f"smem_{vector['suffix']}"
+        scopes = [(workspace, meeting, "meeting"), (workspace, note, "shared"), (personal, note, "shared")]
+        app = create_app(engine, initialize_memory=False)
+        async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://synthetic") as client:
+            for revision in ("1", "2"):
+                for bank, document, kind in scopes:
+                    metadata = {"source_id": vector["uuid"], "source_kind": kind, "source_revision": revision}
+                    content = f"Synthetic {kind} evidence revision {revision}."
+                    response = await client.post(
+                        f"/v1/default/banks/{bank}/memories",
+                        json={
+                            "async": False,
+                            "items": [
+                                {
+                                    "document_id": document,
+                                    "content": content,
+                                    "metadata": metadata,
+                                    "update_mode": "replace",
+                                }
+                            ],
+                        },
+                    )
+                    assert response.status_code == 200, response.text
+                    response = await client.get(f"/v1/default/banks/{bank}/documents/{document}")
+                    assert response.status_code == 200, response.text
+                    saved = response.json()
+                    assert (saved["bank_id"], saved["id"], saved["original_text"]) == (bank, document, content)
+                    assert {key: saved["document_metadata"][key] for key in metadata} == metadata
+                    assert saved["document_metadata"]["dahlia_ingestion_policy"]
+                    assert saved["memory_unit_count"] > 0
+            raw = await asyncpg.connect(url)
+            try:
+                assert await raw.fetchval(f"SELECT count(*) FROM {schema}.documents") == 3
+                rows = await raw.fetch(f"SELECT id, bank_id, document_id, metadata FROM {schema}.memory_units")
+                assert rows
+                for row in rows:
+                    assert isinstance(row["id"], uuid.UUID)
+                    assert (row["bank_id"], row["document_id"]) in {(bank, doc) for bank, doc, _ in scopes}
+                    assert json.loads(row["metadata"])["source_id"] == vector["uuid"]
+            finally:
+                await raw.close()
+            for index, (bank, document, _) in enumerate(scopes):
+                path = f"/v1/default/banks/{bank}/documents/{document}"
+                assert (await client.delete(path)).status_code == 200
+                assert (await client.get(path)).status_code == 404
+                for other_bank, other_document, _ in scopes[index + 1 :]:
+                    assert (
+                        await client.get(f"/v1/default/banks/{other_bank}/documents/{other_document}")
+                    ).status_code == 200
+    finally:
+        if engine is not None:
+            await engine.close()
+        drop_test_schema(url, schema)
 
 
 def configure(monkeypatch, backend):

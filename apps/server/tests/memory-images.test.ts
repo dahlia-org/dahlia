@@ -23,7 +23,7 @@ async function fixture(count = 2) {
   let offset = 0;
   const blocks = parts.map((text, i) => { const start = offset; offset += text.length + 2;
     return { start, end: start + text.length, ...(i ? { marker: `Screenshot ${shots[i - 1]!.screenshotId}` } : {}) }; });
-  const document: MemoryDocument = { id: `meeting-${meetingId}`, source: { id: meetingId, kind: "meeting", projectId: null, revision: "canonical" },
+  const document: MemoryDocument = { id: encodeId("meeting", meetingId), source: { id: meetingId, kind: "meeting", projectId: null, revision: "canonical" },
     screenshotPositions: Object.fromEntries(shots.map((shot, i) => [shot.screenshotId, { blockIndex: i + 1, textBlock: true }])),
     content: parts.join("\n\n"), timestamp: new Date(0).toISOString(), blocks, screenshots: shots };
   const files = new Map(shots.map((shot) => [shot.fileId, { fileId: shot.fileId, workspaceId, checksum: `SHA-256:${shot.contentHash}`, metadata: { source: "screenshot" } }]));
@@ -53,12 +53,27 @@ describe("Memory inline screenshots", () => {
     expect(sent.source.images).toMatchObject({ eligible: 2, omitted: 1 });
     expect(imageReferences(sent)[0]!.href).toBe(`/api/v1/files/${encodeId("file", f.shots[0]!.fileId)}/content`);
     const wire = vi.fn<typeof fetch>().mockResolvedValue(Response.json({ operation_id: "operation" }));
-    const client = new HindsightClient({ url: "https://memory.invalid", auth: "none", bankPrefix: "test" }, undefined, wire);
+    const client = new HindsightClient({ url: "https://memory.invalid", auth: "none" }, undefined, wire);
     await client.retain("server-derived-bank", sent, "operation", signal);
     const body = JSON.parse(String(wire.mock.calls[0]![1]!.body)) as { items: Array<{ document_id: string; metadata: { dahlia_image_manifest: string } }> };
     expect(body.items).toHaveLength(1);
     expect(body.items[0]!.document_id).toBe(sent.id);
     expect(body.items[0]!.metadata.dahlia_image_manifest).toBe(canonicalJson(sent.source.images));
+    expect(sent.source.images!.entries.every((entry) => entry.documentId === encodeId("meeting", sent.source.id))).toBe(true);
+  });
+  it.each(["legacy", "other-meeting", "wrong-kind"])("does not reuse or publish a manifest for %s document", async (kind) => {
+    const f = await fixture(1), sent = await f.prepare();
+    const images = sent.source.images!;
+    const wrongId = kind === "legacy" ? `meeting-${sent.source.id}` : kind === "other-meeting"
+      ? encodeId("meeting", uuidV7()) : encodeId("sharedMemory", sent.source.id);
+    const stale = { ...images, entries: images.entries.map((entry) => ({ ...entry, documentId: wrongId })) };
+    expect(validImageLineage({ ...sent, source: { ...sent.source, images: stale } }, [],
+      { dahlia_image_manifest: canonicalJson(stale), dahlia_image_context: [] })).toBe(false);
+    const current = await f.prepare(settings, stale, false);
+    expect(f.readFileContent).toHaveBeenCalledTimes(2);
+    expect(current.source.images).toEqual(images);
+    expect(await ingestionFingerprint("same-text", current.source, "policy"))
+      .not.toBe(await ingestionFingerprint("same-text", { ...sent.source, images: stale }, "policy"));
   });
   it("reuses current immutable manifests for publication and invalidates changed selection or bytes", async () => {
     const f = await fixture(10), sent = await f.prepare();

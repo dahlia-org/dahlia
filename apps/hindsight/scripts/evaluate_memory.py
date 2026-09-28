@@ -24,7 +24,9 @@ BUSY = ("pending", "processing")
 
 
 class EvaluationError(RuntimeError):
-    pass
+    def __init__(self, message, status=None):
+        super().__init__(message)
+        self.status = status
 
 
 class _RejectRedirect(HTTPRedirectHandler):
@@ -46,10 +48,22 @@ def http_client(url, token, opener=None):
             with opener.open(Request(target, data=data, method=method, headers=headers), timeout=120) as response:
                 payload = response.read()
         except HTTPError as error:
-            raise EvaluationError(f"{method} request failed with HTTP {error.code}") from None
+            raise EvaluationError(f"{method} request failed with HTTP {error.code}", error.code) from None
         return json.loads(payload) if payload else None
 
     return send
+
+
+def bank_exists(send, bank):
+    try:
+        result = send("GET", f"{quote(bank, safe='')}/config")
+    except EvaluationError as error:
+        if error.status == 404:
+            return False
+        raise
+    if result.get("bank_id") != bank:
+        raise EvaluationError("memory_evaluation_bank_mismatch")
+    return True
 
 
 def load_questions(path):
@@ -177,7 +191,9 @@ def evaluate(
     sleep=time.sleep,
     clock=time.perf_counter,
 ):
-    clone = f"eval-{uuid.uuid4().hex}"
+    clone = f"dahlia_eval_{uuid.uuid4()}"
+    if clone == bank or bank_exists(send, clone):
+        raise EvaluationError("memory_evaluation_bank_exists")
     clone_path = quote(clone, safe="")
     submitted = send(
         "POST",
@@ -210,9 +226,10 @@ def evaluate(
     finally:
         if not keep_clone:
             try:
-                send("DELETE", clone_path)
-            except EvaluationError as error:
-                print(f"Clone {clone} was not deleted: {error}", file=sys.stderr)
+                if bank_exists(send, clone):
+                    send("DELETE", clone_path)
+            except EvaluationError:
+                print("memory_evaluation_cleanup_failed", file=sys.stderr)
 
 
 def main(argv=None):

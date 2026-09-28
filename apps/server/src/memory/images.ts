@@ -31,6 +31,7 @@ export function imageReferences(document: MemoryDocument) {
 export function validImageLineage(document: MemoryDocument, attachments: z.infer<typeof attachmentSchema>[] | null | undefined,
   metadata?: Record<string, unknown> | null) {
   const images = document.source.images;
+  if (images?.entries.some((entry) => entry.documentId !== document.id)) return false;
   if (images && metadata?.dahlia_image_manifest !== canonicalJson(images)) return false;
   const context = metadata?.dahlia_image_context;
   // A multimodal extraction without an explicit fact edge cannot establish image provenance.
@@ -92,7 +93,7 @@ export async function imageDocument(document: MemoryDocument, sync: MeetingSyncS
     if (!file || file.workspaceId !== workspaceId || file.metadata.source !== "screenshot"
       || file.checksum !== `SHA-256:${shot.contentHash}`) throw new HindsightError("memory_image_changed");
     const variant = `thumb_${settings.longEdge}` as const;
-    const prior = saved?.selectionHash === selectionHash ? saved.entries.find((entry) => entry.screenshotId === shot.screenshotId
+    const prior = saved?.selectionHash === selectionHash ? saved.entries.find((entry) => entry.documentId === document.id && entry.screenshotId === shot.screenshotId
       && entry.fileId === shot.fileId && entry.checksum === file.checksum && entry.variant === variant) : undefined;
     let entry = prior;
     if (!entry || materialize) {

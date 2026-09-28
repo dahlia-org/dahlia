@@ -28,7 +28,7 @@ async function fixture(count = 6) {
   const file = join(directory, "app.sqlite");
   const config: AppConfig = { authProvider: "header", authHeader: "X-Forwarded-Email", databaseType: "sqlite", databaseUrl: `file:${file}`,
     baseUrl: "http://localhost:5173", oauthRedirectUris: [], maxRequestBytes: 1024 * 1024,
-    hindsight: { url: "https://memory.example", auth: "none", bankPrefix: "test" } };
+    hindsight: { url: "https://memory.example", auth: "none" } };
   const app = createNodeApplicationStore(config); await app.migrate();
   const owner = { userId: uuidV7(), email: "pages-owner@example.com", source: "header" as const };
   const viewer = { userId: uuidV7(), email: "pages-viewer@example.com", source: "header" as const };
@@ -48,7 +48,7 @@ async function fixture(count = 6) {
   const generate = (definition: ReturnType<typeof standardModel>) => {
     const evidence = [...facts.values()].filter((fact) => fact.state === "valid" && definition.tags.every((tag) => fact.tags?.includes(tag)));
     const cutoff = new Date().toISOString();
-    const model: Model = { ...definition, bank_id: `test-workspace-${workspace}`, content: "Synthetic generated hypothesis", last_refreshed_at: cutoff, is_stale: false,
+    const model: Model = { ...definition, bank_id: `dahlia_${encodeId("workspace", workspace)}`, content: "Synthetic generated hypothesis", last_refreshed_at: cutoff, is_stale: false,
       reflect_response: { based_on: { world: evidence.filter((f) => f.type === "world").map(({ id, text }) => ({ id, text })) },
         dahlia_generation: { cutoff, source_query: definition.source_query, tags: definition.tags, trigger: definition.trigger, max_tokens: definition.max_tokens } } };
     models.set(definition.id, model); return model;
@@ -58,7 +58,7 @@ async function fixture(count = 6) {
     const path = new URL(String(url)).pathname, method = init?.method ?? "GET";
     calls.push({ path, method }); await intercept?.(path, method);
     const body = init?.body ? JSON.parse(String(init.body)) as Record<string, unknown> : {};
-    if (path.endsWith("/config")) return Response.json({ bank_id: `test-workspace-${workspace}`, dahlia_ingestion_policy: policy });
+    if (path.endsWith("/config")) return Response.json({ bank_id: `dahlia_${encodeId("workspace", workspace)}`, dahlia_ingestion_policy: policy });
     if (path.endsWith("/memories") && method === "POST") {
       const item = (body.items as Array<{ content: string; document_id: string; metadata: Record<string, string>; tags: string[] }>)[0]!;
       item.metadata = { ...item.metadata, dahlia_ingestion_policy: policy };
@@ -88,7 +88,7 @@ async function fixture(count = 6) {
     }
     if (path.includes("/documents/") && method === "GET") {
       const id = path.split("/").at(-1)!, document = documents.get(id);
-      return document ? Response.json({ id, bank_id: `test-workspace-${workspace}`, original_text: document.content, memory_unit_count: 1,
+      return document ? Response.json({ id, bank_id: `dahlia_${encodeId("workspace", workspace)}`, original_text: document.content, memory_unit_count: 1,
         retain_params: { metadata: document.metadata } }) : new Response(null, { status: 404 });
     }
     if (path.includes("/documents/") && method === "DELETE") { for (const [id, fact] of facts) if (fact.document_id === path.split("/").at(-1)) facts.delete(id); return Response.json({}); }

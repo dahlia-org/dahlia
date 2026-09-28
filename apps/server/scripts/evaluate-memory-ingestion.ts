@@ -10,7 +10,8 @@ import type { MeetingSyncService } from "../src/sync/service";
 import type { MeetingSyncStore } from "../src/sync/types";
 import type { MemoryStore } from "../src/memory/store";
 import { WorkspaceMemoryService } from "../src/memory/service";
-import { HindsightError } from "../src/memory/hindsight";
+import { HindsightClient, HindsightError } from "../src/memory/hindsight";
+import { memoryDocumentId } from "../src/memory/ids";
 import { imageDocument } from "../src/memory/images";
 import { canonicalJson } from "../src/sync/service";
 import { ingestionFingerprint, ingestionPolicy } from "../src/memory/ingestion";
@@ -44,7 +45,7 @@ export async function compareMemoryIngestion(input: {
     catch (error) {
       signal.throwIfAborted();
       if (!(error instanceof HindsightError) || !["memory_source_too_large", "memory_image_unavailable", "memory_image_changed", "memory_image_too_large"].includes(error.code)) throw error;
-      failures[`meeting-${id}`] = error.code;
+      failures[memoryDocumentId("meeting", id)] = error.code;
       return null;
     }
   };
@@ -80,7 +81,7 @@ export async function compareMemoryIngestion(input: {
   const results = [];
   for (const variant of variants) {
     signal.throwIfAborted();
-    const evaluationConfig = { ...config, hindsight: { ...config.hindsight!, bankPrefix: `eval-${uuidV7()}` } };
+    const bank = `dahlia_eval_${uuidV7()}`;
     const ledger = new Map<string, NonNullable<Awaited<ReturnType<MemoryStore["document"]>>>>();
     const failures: Record<string, string> = { ...assemblyFailures, ...(variant.images ? imageFailures : {}) };
     let policy = "", upstream = "";
@@ -89,12 +90,18 @@ export async function compareMemoryIngestion(input: {
       status: async (user, scope) => {
         const current = await store.status(user, scope);
         if (!current) return null;
-        return { ...current, imagesEnabled: variant.images, bankId: engine.client.bank(scopeId, store.personal), indexedGeneration: initial.generation,
+        return { ...current, imagesEnabled: variant.images, bankId: bank, indexedGeneration: initial.generation,
           reconcile: current.generation !== initial.generation, progress: { ...current.progress!, ingestionPolicy: policy,
             upstreamPolicy: upstream, failures } };
       } };
-    const engine = new WorkspaceMemoryService(evaluationConfig, readStore, sync, syncStore, input.transport);
-    const bank = engine.client.bank(scopeId, store.personal);
+    // The bank override exists only in this operator script, never in runtime config or API inputs.
+    const engine = new class extends WorkspaceMemoryService {
+      override readonly client = new class extends HindsightClient {
+        override bank() { return bank; }
+      }(config.hindsight!, config.databricksWorkspace, input.transport);
+    }(config, readStore, sync, syncStore, input.transport);
+    if (await engine.client.bankExists(bank, signal)) throw new HindsightError("memory_evaluation_bank_exists");
+    let created = false;
     const wait = async (bankId: string, operation: string) => {
       for (;;) {
         signal.throwIfAborted();
@@ -107,6 +114,7 @@ export async function compareMemoryIngestion(input: {
     try {
       // Copy settings only: upstream bank clone also copies webhooks/directives and queues work on the source.
       await engine.client.configure(bank, settings, signal);
+      created = true;
       await engine.client.extractionSettings(bank, variant.mode, variant.strategy, signal);
       if (variant.images) await engine.client.imageConfiguration(bank, imageSettings, signal);
       upstream = await engine.client.ingestionPolicy(bank, signal); policy = await ingestionPolicy(upstream, variant.images ? imageSettings : undefined);
@@ -150,8 +158,8 @@ export async function compareMemoryIngestion(input: {
       // No names of custom strategies or individual failures leave the harness.
       results.push({ variant: results.length, mode: variant.mode, strategy: variant.strategy !== null, images: variant.images, ...aggregate });
     } finally {
-      // Only the locally generated disposable bank is ever deleted, including after cancellation.
-      await engine.client.deleteBank(bank, AbortSignal.timeout(30_000));
+      // An existing bank or an unacknowledged creation is never ours to delete.
+      if (created) await engine.client.deleteBank(bank, AbortSignal.timeout(30_000));
     }
   }
   return { documents: documents.length, variants: results };

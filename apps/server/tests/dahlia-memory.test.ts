@@ -28,7 +28,7 @@ async function fixture() {
   const file = join(directory, "test.sqlite");
   const config: AppConfig = { authProvider: "header", authHeader: "X-Forwarded-Email", databaseType: "sqlite", databaseUrl: `file:${file}`,
     baseUrl: "http://localhost:5173", oauthRedirectUris: [], maxRequestBytes: 1024 * 1024,
-    hindsight: { url: "https://memory.example", auth: "bearer", apiKey: "test", bankPrefix: "test" } };
+    hindsight: { url: "https://memory.example", auth: "bearer", apiKey: "test" } };
   const app = createNodeApplicationStore(config); await app.migrate();
   const owner = { userId: uuidV7(), email: "memory-owner@example.com", source: "header" as const };
   const stranger = { userId: uuidV7(), email: "memory-stranger@example.com", source: "header" as const };
@@ -77,6 +77,36 @@ async function fixture() {
 }
 
 describe("Dahlia Memory", () => {
+  it("keeps personal and shared notes with the same UUID in their authenticated banks", async () => {
+    const f = await fixture();
+    try {
+      const input = f.note("Private evidence"), workspace = decodeId("workspace", f.workspaceId);
+      await f.memory.save(f.owner, input);
+      await f.memory.save(f.owner, { ...input, scope: "workspace", workspaceId: f.workspaceId, content: "Shared evidence", explicit: true });
+      await f.memory.configure(f.owner, { scope: "personal", enabled: true });
+      await f.memory.configure(f.owner, { scope: "workspace", workspaceId: f.workspaceId, enabled: true });
+      await f.ready();
+      for (let i = 0; i < 60; i++) {
+        f.db.exec("UPDATE workspace_memory_state SET available_at = 0");
+        await f.shared.step(workspace, signal);
+        if ((await f.shared.status(f.owner, workspace)).status === "ready") break;
+      }
+      expect((await f.shared.status(f.owner, workspace)).status).toBe("ready");
+      const personalBank = `dahlia_${encodeId("user", f.owner.userId)}`, sharedBank = `dahlia_${f.workspaceId}`;
+      expect([...f.documents.get(personalBank)!.keys()]).toEqual([input.id]);
+      expect([...f.documents.get(sharedBank)!.keys()]).toEqual([input.id]);
+      expect(f.documents.get(personalBank)!.get(input.id)).toContain("Private evidence");
+      expect(f.documents.get(sharedBank)!.get(input.id)).toContain("Shared evidence");
+      const personalResult = (await f.memory.search(f.owner, { scope: "personal", query: "evidence" }, false, signal)).results[0]!.result;
+      if (!("sources" in personalResult)) throw new Error("Expected canonical personal sources");
+      const personalSource = personalResult.sources[0]!;
+      expect(personalSource.id).toBe(input.id);
+      expect(personalSource.canonicalExcerpt).toContain("Private evidence");
+      await expect(f.memory.get(f.stranger, input)).rejects.toMatchObject({ code: "memory_not_found" });
+      await expect(f.memory.get(f.stranger, { ...input, scope: "workspace", workspaceId: f.workspaceId })).rejects.toMatchObject({ status: 404 });
+    } finally { f.close(); }
+  });
+
   it("shares canonical personal notes across clients, enforces revisions and protects human edits without Hindsight", async () => {
     const f = await fixture();
     try {
@@ -230,7 +260,7 @@ describe("Dahlia Memory", () => {
       await f.memory.save(f.owner, input);
       await f.memory.configure(f.owner, { scope: "personal", enabled: true });
       await f.ready();
-      const bank = `test-user-${f.owner.userId}`;
+      const bank = `dahlia_${encodeId("user", f.owner.userId)}`;
       expect([...f.documents.keys()]).toEqual([bank]);
       for (const reflect of [false, true]) {
         const found = await f.memory.search(f.owner, { scope: "personal", workspaceId: f.workspaceId, query: "lesson" }, reflect, signal);
@@ -275,7 +305,7 @@ describe("Dahlia Memory", () => {
       await f.personal.configure(f.stranger, f.stranger.userId, true); for (let i = 0; i < 30; i++) { f.db.exec("UPDATE personal_memory_state SET available_at = 0"); await f.personal.step(f.stranger.userId, signal); }
       f.db.prepare('DELETE FROM "user" WHERE id = ?').run(f.stranger.userId);
       f.db.exec("UPDATE personal_memory_state SET available_at = 0"); await f.personal.step(f.stranger.userId, signal);
-      expect(f.documents.get(`test-user-${f.stranger.userId}`)?.size).toBe(0);
+      expect(f.documents.get(`dahlia_${encodeId("user", f.stranger.userId)}`)?.size).toBe(0);
       expect(f.db.prepare("SELECT * FROM personal_memory_state").all()).toEqual([]);
     } finally { f.close(); }
   });

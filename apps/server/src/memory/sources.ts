@@ -3,13 +3,14 @@ import type { MeetingSyncService } from "../sync/service";
 import { HindsightError } from "./errors";
 import type { MemoryDocument } from "./model";
 import type { SharedMemory } from "./store";
+import { memoryDocumentId } from "./ids";
 
 export async function contentHash(content: string) {
   const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(content));
   return Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, "0")).join("");
 }
 export function noteDocument(note: SharedMemory, personal = false): MemoryDocument {
-  return { id: `shared-${note.id}`, source: { kind: "shared", id: note.id, revision: String(note.revision), projectId: null },
+  return { id: memoryDocumentId("shared", note.id), source: { kind: "shared", id: note.id, revision: String(note.revision), projectId: null },
     content: `${personal ? "Private user memory" : "User-registered shared information"} (not independently verified):\n${note.content}`, timestamp: note.updatedAt.toISOString() };
 }
 export async function meetingDocument(sync: MeetingSyncService, identity: Identity, workspaceId: string, meetingId: string,
@@ -57,6 +58,6 @@ export async function meetingDocument(sync: MeetingSyncService, identity: Identi
     offset += part.length + 2;
     return { start, end: start + part.length, marker: markers.get(index) };
   });
-  return { id: `meeting-${meetingId}`, source: { kind: "meeting", id: meetingId, projectId: meeting.projectId,
+  return { id: memoryDocumentId("meeting", meetingId), source: { kind: "meeting", id: meetingId, projectId: meeting.projectId,
     revision: await contentHash(content) }, content, blocks, screenshots, screenshotPositions, timestamp: (meeting.recordingStartedAt ?? meeting.createdAt).toISOString() };
 }

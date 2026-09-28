@@ -1,4 +1,5 @@
 import { enqueueMemorySource } from "../memory/enqueue";
+import { memoryDocumentId } from "../memory/ids";
 import { DEFAULT_WORKSPACE_GENERATION_SETTINGS, type WorkspaceGenerationSettings } from "../workspace-generation-settings";
 import type { CalendarEventSnapshot } from "./schemas";
 import { createContentEncryption } from "../encryption/store";
@@ -1213,7 +1214,7 @@ function createIdentityStore(
       deletingAt: m.deletingAt, isRecording: meetingSelection(schema, false).isRecording }).from(m)
       .where(and(eq(m.workspaceId, workspaceId), eq(m.meetingId, meetingId)));
     const d = schema.memoryDocument, j = schema.memorySourceJob;
-    const documentId = `meeting-${meetingId}`;
+    const documentId = memoryDocumentId("meeting", meetingId);
     const indexed = await db.select({ id: d.documentId }).from(d).where(and(eq(d.scopeId, workspaceId), eq(d.documentId, documentId))).limit(1);
     const pending = await db.select({ id: j.documentId }).from(j).where(and(eq(j.scopeId, workspaceId), eq(j.documentId, documentId))).limit(1);
     const eligible = meeting?.active && !meeting.deletedAt && !meeting.deletingAt && meeting.status === "READY" && !meeting.isRecording;

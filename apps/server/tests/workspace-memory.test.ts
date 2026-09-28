@@ -15,7 +15,7 @@ import { DatabricksTokenError } from "../src/databricks/token";
 import { sharedMemorySchema } from "../src/memory/model";
 import { createQueueJobs } from "../src/jobs/queues";
 import { createApp } from "../src/app";
-import { encodeId } from "../src/typeid";
+import { decodeId, encodeId } from "../src/typeid";
 import { compareMemoryIngestion } from "../scripts/evaluate-memory-ingestion";
 import { contentHash, meetingDocument } from "../src/memory/sources";
 
@@ -29,7 +29,7 @@ async function setup(images = false) {
   const databasePath = join(directory, "test.sqlite");
   const config: AppConfig = { authProvider: "header", authHeader: "X-Forwarded-Email", databaseType: "sqlite", databaseUrl: `file:${databasePath}`,
     baseUrl: "http://localhost:5173", oauthRedirectUris: [], maxRequestBytes: 1024 * 1024,
-    hindsight: { url: "https://memory.example/api", auth: "bearer", apiKey: "test-secret", bankPrefix: "test", ...(images ? { images: { model: "system.ai.gpt-6-luna", maxCount: 8, maxBytes: 8 * 1024 * 1024, longEdge: 1568 as const } } : {}) } };
+    hindsight: { url: "https://memory.example/api", auth: "bearer", apiKey: "test-secret", ...(images ? { images: { model: "system.ai.gpt-6-luna", maxCount: 8, maxBytes: 8 * 1024 * 1024, longEdge: 1568 as const } } : {}) } };
   const app = createNodeApplicationStore(config); await app.migrate();
   await seedHeaderIdentity(app, databasePath, owner); await seedHeaderIdentity(app, databasePath, viewer);
   const sync = new MeetingSyncService(app.sync);
@@ -164,6 +164,67 @@ async function screenshotFixture(f: Awaited<ReturnType<typeof setup>>) {
 }
 
 describe("Workspace memory", () => {
+  it.each(["existing", "probe-failed", "creation-unacknowledged"])("does not delete an evaluation bank when %s", async (mode) => {
+    const f = await setup(), requests: Array<{ bank: string; method: string }> = [];
+    try {
+      await f.memory.configure(owner, workspaceId, true);
+      await f.app.memory!.saveNote(owner.userId, workspaceId, { id: uuidV7(), revision: 0, content: "Synthetic evidence" });
+      await f.ready();
+      const transport: typeof fetch = async (url, init) => {
+        const bank = new URL(String(url)).pathname.split("/banks/")[1]!.split("/")[0]!, method = init?.method ?? "GET";
+        requests.push({ bank, method });
+        if (!bank.startsWith("dahlia_eval_")) {
+          expect(bank).toBe(f.memory.client.bank(workspaceId));
+          expect(method).toBe("GET");
+          return Response.json({ bank_id: bank, dahlia_ingestion_policy: "a".repeat(64), config: {} });
+        }
+        if (method === "GET") return mode === "existing" ? Response.json({ bank_id: bank })
+          : new Response(null, { status: mode === "probe-failed" ? 503 : 404 });
+        throw new Error("Synthetic acknowledgement loss");
+      };
+      await expect(compareMemoryIngestion({ config: f.config, store: f.app.memory!, sync: f.sync, syncStore: f.app.sync,
+        identity: owner, scopeId: workspaceId, transport, signal: new AbortController().signal, questions: [] }))
+        .rejects.toMatchObject({ code: mode === "existing" ? "memory_evaluation_bank_exists" : mode === "probe-failed" ? "memory_upstream_failed" : "memory_transport_failed" });
+      expect(requests.filter((request) => request.method === "DELETE")).toEqual([]);
+      expect(requests.filter((request) => request.method !== "GET")).toHaveLength(mode === "creation-unacknowledged" ? 1 : 0);
+    } finally { await f.close(); }
+  });
+
+  it.each(["wrong-kind", "wrong-source", "raw-uuid", "malformed"])("rejects %s document references even with a matching saved content hash", async (variant) => {
+    const f = await setup(), signal = new AbortController().signal;
+    try {
+      await f.memory.configure(owner, workspaceId, true);
+      const note = await f.app.memory!.saveNote(owner.userId, workspaceId, { id: uuidV7(), revision: 0, content: "Canonical evidence" });
+      await f.ready();
+      const documentId = encodeId("sharedMemory", note.id);
+      const alias = variant === "wrong-kind" ? encodeId("meeting", note.id) : variant === "wrong-source"
+        ? encodeId("sharedMemory", uuidV7()) : variant === "raw-uuid" ? note.id : "smem_invalid";
+      f.db.prepare("INSERT INTO memory_documents (workspace_id, document_id, source, content_hash, ingestion_fingerprint, generation) SELECT workspace_id, ?, source, content_hash, ingestion_fingerprint, generation FROM memory_documents WHERE workspace_id = ? AND document_id = ?")
+        .run(alias, workspaceId, documentId);
+      f.setRecall(() => ({ results: [{ id: "fact", document_id: alias, text: "Untrusted" }] }));
+      f.facts.set("fact", { state: "valid", document_id: alias });
+      f.setReflection(() => ({ structured_output: { claims: [{ text: "Do not publish", factIds: ["fact"] }] }, based_on: { memories: [{ id: "fact", text: "Untrusted" }] } }));
+      expect(await f.memory.search(owner, workspaceId, "evidence", true, signal)).toMatchObject({ sources: [], hypothesis: null, claims: [] });
+      expect(await f.memory.canonicalSource(owner, workspaceId, documentId, signal)).toMatchObject({ id: documentId, source: { id: note.id } });
+    } finally { await f.close(); }
+  });
+
+  it("does not send or retry a source job whose document TypeID names another source", async () => {
+    const f = await setup();
+    try {
+      await f.memory.configure(owner, workspaceId, true);
+      await f.ready();
+      const note = await f.app.memory!.saveNote(owner.userId, workspaceId, { id: uuidV7(), revision: 0, content: "Canonical evidence" });
+      f.db.prepare("UPDATE memory_source_jobs SET document_id = ? WHERE workspace_id = ? AND source_id = ?")
+        .run(encodeId("meeting", note.id), workspaceId, note.id);
+      const before = f.requests.length;
+      await f.tick();
+      expect((await f.app.memory!.status(owner.userId, workspaceId))?.errorCode).toBe("memory_document_mismatch");
+      expect(f.requests.slice(before).every((request) => request.method === "GET" && request.path.endsWith("/config"))).toBe(true);
+      expect(f.retained.size).toBe(0);
+    } finally { await f.close(); }
+  });
+
   it("defaults images off, restricts enabling to admins, and preserves omitted image settings", async () => {
     const f = await setup(true);
     try {
@@ -192,7 +253,7 @@ describe("Workspace memory", () => {
       await f.memory.configure(owner, workspaceId, true, true); await f.ready();
       const original = f.transport.getMockImplementation()!;
       f.transport.mockImplementation(async (url, init) => String(url).endsWith("/config") && init?.method === "GET"
-        ? Response.json({ bank_id: `test-workspace-${workspaceId}`, dahlia_ingestion_policy: "a".repeat(64), dahlia_images: { enabled: false } })
+        ? Response.json({ bank_id: `dahlia_${encodeId("workspace", workspaceId)}`, dahlia_ingestion_policy: "a".repeat(64), dahlia_images: { enabled: false } })
         : original(url, init));
       await f.tick();
       expect(await f.memory.status(owner, workspaceId)).toMatchObject({ status: "error", errorCode: "memory_images_unconfigured" });
@@ -205,7 +266,7 @@ describe("Workspace memory", () => {
     try {
       const { meetingId, hash, shot } = await screenshotFixture(f);
       await f.memory.configure(owner, workspaceId, true, true); await f.ready();
-      const documentId = `meeting-${meetingId}`, stored = await f.app.memory!.document(workspaceId, documentId);
+      const documentId = encodeId("meeting", meetingId), stored = await f.app.memory!.document(workspaceId, documentId);
       expect(stored!.source.images!.entries).toHaveLength(1);
       expect(f.retained.get(documentId)).not.toContain("OCR-MARKER");
       expect(f.retained.get(documentId)).not.toContain("CAPTION-MARKER");
@@ -251,7 +312,7 @@ describe("Workspace memory", () => {
       const { meetingId, shot } = await screenshotFixture(f);
       shot.ocrText = ""; shot.caption = "";
       await f.memory.configure(owner, workspaceId, true, true); await f.ready();
-      const id = `meeting-${meetingId}`, before = (await f.app.memory!.document(workspaceId, id))!;
+      const id = encodeId("meeting", meetingId), before = (await f.app.memory!.document(workspaceId, id))!;
       const text = f.retained.get(id), retains = f.requests.filter((request) => request.path.endsWith("/memories")).length;
       shot.capturedAt = new Date(shot.capturedAt.getTime() + 60_000);
       await f.app.memory!.enqueue(workspaceId, "meeting", meetingId);
@@ -278,7 +339,7 @@ describe("Workspace memory", () => {
       for (let i = 0; i < 7; i++) notes.push(await f.app.memory!.saveNote(owner.userId, workspaceId, { id: uuidV7(), revision: 0, content: `Synthetic evidence ${i}` }));
       await f.ready();
       // Failed extraction has no successful ledger; pending production ingestion must not limit the evaluation corpus either.
-      await f.app.memory!.forgetDocument(workspaceId, `shared-${notes[6]!.id}`);
+      await f.app.memory!.forgetDocument(workspaceId, encodeId("sharedMemory", notes[6]!.id));
       notes.push(await f.app.memory!.saveNote(owner.userId, workspaceId, { id: uuidV7(), revision: 0, content: "Synthetic evidence 7" }));
       type Attachment = { id: string; hash: string; kind: string; media_type: string; byte_size: number };
       const before = await f.app.memory!.documents(workspaceId), banks = new Map<string, Map<string, { content: string; metadata: Record<string, unknown>; attachments: Attachment[] }>>();
@@ -288,13 +349,14 @@ describe("Workspace memory", () => {
       const transport: typeof fetch = async (url, init) => {
         const parsed = new URL(String(url)), bank = parsed.pathname.split("/banks/")[1]!.split("/")[0]!, path = parsed.pathname;
         expect(path).not.toMatch(/\/(clone|webhooks|directives)$/);
-        if (!bank.startsWith("eval-")) {
+        if (!bank.startsWith("dahlia_eval_")) {
           expect(init?.method).toBe("GET");
           return path.endsWith("/config")
             ? Response.json({ bank_id: bank, dahlia_ingestion_policy: "a".repeat(64), config: { retain_extraction_mode: "concise" }, dahlia_images: capabilities })
             : f.transport(url, init);
         }
         if (path.includes("/operations/")) return Response.json({ status: "completed" });
+        if (path.endsWith("/config") && init?.method === "GET" && !banks.has(bank)) return new Response(null, { status: 404 });
         if (path.endsWith("/config") && init?.method === "PATCH" && !banks.has(bank)) banks.set(bank, new Map());
         const docs = banks.get(bank)!, body = (init?.body ? JSON.parse(String(init.body)) : {}) as { updates: { retain_extraction_mode: string }; operation_id: string; items: Array<{ document_id: string; content: string | import("../src/memory/images").ImageContentBlock[]; metadata: Record<string, string> }> };
         const policy = (modes.get(bank) === "verbose" ? "c" : "b").repeat(64);
@@ -349,6 +411,8 @@ describe("Workspace memory", () => {
       }
       expect(await f.app.memory!.documents(workspaceId)).toEqual(before);
       expect(deleted).toHaveLength(cancel ? images ? 2 : 1 : images ? 6 : 3); expect(banks.size).toBe(0);
+      expect(new Set(deleted).size).toBe(deleted.length);
+      expect(deleted.every((bank) => /^dahlia_eval_[0-9a-f-]{36}$/.test(bank) && bank !== f.memory.client.bank(workspaceId))).toBe(true);
     } finally { await f.close(); }
   });
 
@@ -358,7 +422,7 @@ describe("Workspace memory", () => {
       await f.memory.configure(owner, workspaceId, true);
       const note = await f.app.memory!.saveNote(owner.userId, workspaceId, { id: uuidV7(), revision: 0, content: "Canonical unchanged" });
       await f.ready();
-      const id = `shared-${note.id}`, before = (await f.app.memory!.document(workspaceId, id))!;
+      const id = encodeId("sharedMemory", note.id), before = (await f.app.memory!.document(workspaceId, id))!;
       const retained = f.requests.filter((r) => r.path.endsWith("/memories")).length;
       await f.memory.configure(owner, workspaceId, true); await f.ready();
       expect(f.requests.filter((r) => r.path.endsWith("/memories"))).toHaveLength(retained);
@@ -413,7 +477,7 @@ describe("Workspace memory", () => {
       f.db.prepare("UPDATE memory_documents SET ingestion_fingerprint = NULL").run();
       expect((await f.memory.search(owner, workspaceId, "query", false, new AbortController().signal)).sources).toEqual([]);
       await f.memory.configure(owner, workspaceId, true); await f.ready();
-      expect((await f.app.memory!.document(workspaceId, `shared-${note.id}`))?.ingestionFingerprint).toMatch(/^[0-9a-f]{64}$/);
+      expect((await f.app.memory!.document(workspaceId, encodeId("sharedMemory", note.id)))?.ingestionFingerprint).toMatch(/^[0-9a-f]{64}$/);
       expect(f.requests.filter((r) => r.path.endsWith("/reprocess"))).toHaveLength(2);
     } finally { await f.close(); }
   });
@@ -422,7 +486,7 @@ describe("Workspace memory", () => {
     try {
       await f.memory.configure(owner, workspaceId, true);
       const note = await f.app.memory!.saveNote(owner.userId, workspaceId, { id: uuidV7(), revision: 0, content: "Canonical source is preserved" });
-      const id = `shared-${note.id}`;
+      const id = encodeId("sharedMemory", note.id);
       if (code === "memory_no_facts") f.counts.set(id, 0);
       const readDocument = f.memory.client.document.bind(f.memory.client);
       const missingText = code === "memory_document_mismatch" ? vi.spyOn(f.memory.client, "document").mockImplementation(async (...args) => {
@@ -498,7 +562,7 @@ describe("Workspace memory", () => {
       expect(f.requests).toHaveLength(count);
       await f.memory.configure(owner, workspaceId, true);
       await f.ready();
-      expect(f.retained.get(`shared-${note.id}`)).toContain(input.content);
+      expect(f.retained.get(encodeId("sharedMemory", note.id))).toContain(input.content);
       await f.app.memory!.purge(owner.userId, workspaceId);
       await expect(f.app.memory!.saveNote(owner.userId, workspaceId, { ...input, revision: 2 })).rejects.toMatchObject({ status: 409 });
     } finally { await f.close(); }
@@ -518,13 +582,13 @@ describe("Workspace memory", () => {
       await f.memory.configure(owner, workspaceId, true);
       await f.ready();
       expect(await f.memory.status(owner, workspaceId)).toMatchObject({ status: "partial", skippedCount: 1,
-        skippedSources: [{ source: `meeting-${bad}`, code: "memory_source_too_large" }] });
-      expect(f.retained.has(`meeting-${good}`)).toBe(true);
+        skippedSources: [{ source: encodeId("meeting", bad), code: "memory_source_too_large" }] });
+      expect(f.retained.has(encodeId("meeting", good))).toBe(true);
       expect((await f.memory.search(owner, workspaceId, "evidence", false, new AbortController().signal)).skippedCount).toBe(1);
       transcript.mockRestore();
       await f.memory.configure(owner, workspaceId, true); await f.ready();
       expect(await f.memory.status(owner, workspaceId)).toMatchObject({ status: "ready", skippedCount: 0 });
-      expect(f.retained.has(`meeting-${bad}`)).toBe(true);
+      expect(f.retained.has(encodeId("meeting", bad))).toBe(true);
     } finally { await f.close(); }
   });
 
@@ -534,7 +598,7 @@ describe("Workspace memory", () => {
       await f.memory.configure(owner, workspaceId, true);
       const bad = uuidV7(), good = uuidV7();
       for (const id of [bad, good]) await f.app.memory!.saveNote(owner.userId, workspaceId, { id, revision: 0, content: `Note ${id}` });
-      f.failingItems.add(`shared-${bad}`); f.failingItems.add("workspace-insights");
+      f.failingItems.add(encodeId("sharedMemory", bad)); f.failingItems.add("workspace-insights");
       const remove = vi.spyOn(f.memory.client, "deleteDocument");
       remove.mockRejectedValueOnce(new HindsightError("memory_unavailable"));
       for (let i = 0; i < 80 && !remove.mock.calls.length; i++) await f.tick();
@@ -545,14 +609,14 @@ describe("Workspace memory", () => {
       await f.ready();
       expect(await f.memory.status(owner, workspaceId)).toMatchObject({ status: "partial", skippedCount: 2 });
       expect(f.requests.filter((r) => r.path.endsWith("/retry"))).toHaveLength(6);
-      expect(f.retained.has(`shared-${bad}`)).toBe(false);
-      expect(f.retained.has(`shared-${good}`)).toBe(true);
-      expect(await f.app.memory!.document(workspaceId, `shared-${bad}`)).toBeUndefined();
+      expect(f.retained.has(encodeId("sharedMemory", bad))).toBe(false);
+      expect(f.retained.has(encodeId("sharedMemory", good))).toBe(true);
+      expect(await f.app.memory!.document(workspaceId, encodeId("sharedMemory", bad))).toBeUndefined();
       expect((await f.memory.search(owner, workspaceId, "note", false, new AbortController().signal)).sources).toHaveLength(1);
       f.failingItems.clear();
       await f.memory.configure(owner, workspaceId, true); await f.ready();
       expect(await f.memory.status(owner, workspaceId)).toMatchObject({ status: "ready", skippedCount: 0 });
-      expect(f.retained.has(`shared-${bad}`)).toBe(true);
+      expect(f.retained.has(encodeId("sharedMemory", bad))).toBe(true);
     } finally { await f.close(); }
   });
 
@@ -586,7 +650,7 @@ describe("Workspace memory", () => {
       const ids = Array.from({ length: 21 }, () => uuidV7());
       for (const id of ids) {
         await f.app.memory!.saveNote(owner.userId, workspaceId, { id, revision: 0, content: "Original" });
-        f.failingItems.add(`shared-${id}`);
+        f.failingItems.add(encodeId("sharedMemory", id));
       }
       await f.ready(300);
       const partial = await f.memory.status(owner, workspaceId);
@@ -604,7 +668,7 @@ describe("Workspace memory", () => {
       await f.memory.configure(owner, workspaceId, true);
       const id = uuidV7();
       await f.app.memory!.saveNote(owner.userId, workspaceId, { id, revision: 0, content: "Failed" });
-      f.failingItems.add(`shared-${id}`);
+      f.failingItems.add(encodeId("sharedMemory", id));
       await f.ready();
       expect((await f.memory.status(owner, workspaceId)).skippedCount).toBe(1);
       await f.app.memory!.deleteNote(owner.userId, workspaceId, id, 1); await f.ready();
@@ -625,7 +689,7 @@ describe("Workspace memory", () => {
       const revision = (await f.sync.getMeeting(owner, workspaceId, id))!.revision!;
       await f.commit([{ entity: "meeting", action: action === "delete" ? "delete" : "update", entityId: id, baseRevision: revision,
         data: action === "delete" ? {} : { ...data, status: "PROCESSING_TRANSCRIPT" } }]);
-      expect(await f.app.memory!.pending(workspaceId, `meeting-${id}`)).toBeDefined();
+      expect(await f.app.memory!.pending(workspaceId, encodeId("meeting", id))).toBeDefined();
       await f.ready();
       expect(await f.memory.status(owner, workspaceId)).toMatchObject({ status: "ready", skippedCount: 0 });
     } finally { await f.close(); }
@@ -637,7 +701,7 @@ describe("Workspace memory", () => {
       const ids = [uuidV7(), uuidV7(), uuidV7()];
       for (const id of ids) await f.app.memory!.saveNote(owner.userId, workspaceId, { id, revision: 0, content: `Original ${id}` });
       await f.ready();
-      const [a, b, c] = [...f.retained.keys()].map((id) => id.slice("shared-".length));
+      const [a, b, c] = [...f.retained.keys()].map((id) => decodeId("sharedMemory", id));
       const getNote = f.app.memory!.getNote.bind(f.app.memory!);
       let reads = 0, revision = 1;
       vi.spyOn(f.app.memory!, "getNote").mockImplementation(async (user, workspace, id) => {
@@ -665,7 +729,7 @@ describe("Workspace memory", () => {
       await f.memory.configure(owner, workspaceId, true);
       const id = uuidV7();
       await f.app.memory!.saveNote(owner.userId, workspaceId, { id, revision: 0, content: "Original" });
-      f.failingItems.add(`shared-${id}`);
+      f.failingItems.add(encodeId("sharedMemory", id));
       await f.ready();
       expect((await f.memory.status(owner, workspaceId)).skippedCount).toBe(1);
       f.failingItems.clear();
@@ -679,7 +743,7 @@ describe("Workspace memory", () => {
       await f.tick();
       if (action === "retain") await f.tick();
       expect(interrupted).toHaveBeenCalledTimes(1);
-      expect(await f.app.memory!.pending(workspaceId, `shared-${id}`)).toBeUndefined();
+      expect(await f.app.memory!.pending(workspaceId, encodeId("sharedMemory", id))).toBeUndefined();
       await f.ready();
       expect(await f.memory.status(owner, workspaceId)).toMatchObject({ status: "ready", skippedCount: 0, skippedSources: [] });
     } finally { await f.close(); }
@@ -760,13 +824,15 @@ describe("Workspace memory", () => {
       const data = { projectId: null, name: "Customer meeting", description: "Original constraint", status: "READY", duration: 60, recordingStartedAt: now, createdAt: now, updatedAt: now };
       await f.commit([{ entity: "meeting", action: "create", entityId: meetingId, baseRevision: null, data }]);
       await f.memory.configure(owner, workspaceId, true); await f.ready();
-      expect(f.retained.get(`meeting-${meetingId}`)).toContain("Original constraint");
+      expect(f.retained.get(encodeId("meeting", meetingId))).toContain("Original constraint");
       const meeting = await f.sync.getMeeting(owner, workspaceId, meetingId);
       const { createdAt: _createdAt, ...updated } = data;
       expect(_createdAt).toBe(now);
       await f.commit([{ entity: "meeting", action: "update", entityId: meetingId, baseRevision: meeting!.revision!, data: { ...updated, description: "Corrected constraint" } }]);
       expect(await f.memory.search(owner, workspaceId, "constraint", false, new AbortController().signal)).toMatchObject({ coverage: "updating", sources: [] });
-      await f.ready(); expect(f.retained.get(`meeting-${meetingId}`)).toContain("Corrected constraint");
+      await f.ready(); expect(f.retained.get(encodeId("meeting", meetingId))).toContain("Corrected constraint");
+      expect([...f.retained.keys()]).toEqual([encodeId("meeting", meetingId)]);
+      expect(f.metadata.get(encodeId("meeting", meetingId))).toMatchObject({ source_kind: "meeting", source_id: meetingId });
       f.db.prepare("DELETE FROM workspace_permissions WHERE workspace_id = ? AND principal_id = ?").run(workspaceId, viewer.userId);
       await expect(f.memory.search(viewer, workspaceId, "constraint", false, new AbortController().signal)).rejects.toMatchObject({ status: 404 });
       await f.app.memory!.purge(owner.userId, workspaceId); await f.tick();
@@ -803,7 +869,7 @@ describe("Workspace memory", () => {
       await f.ready();
       const writes = f.requests.slice(before).filter((request) => request.path.endsWith("/memories") && request.method === "POST");
       expect(writes).toHaveLength(1);
-      expect(writes[0]!.body).toMatchObject({ items: [{ document_id: `shared-${a.id}` }] });
+      expect(writes[0]!.body).toMatchObject({ items: [{ document_id: encodeId("sharedMemory", a.id) }] });
       expect(JSON.stringify(writes[0]!.body)).toContain("New A");
       expect(f.requests.slice(before).filter((request) => request.method === "DELETE" && request.path.includes("mental-models"))).toEqual([]);
       expect((await f.memory.search(owner, workspaceId, "evidence", false, new AbortController().signal)).coverage).toBe("ready");
@@ -834,7 +900,7 @@ describe("Workspace memory", () => {
       expect((await f.app.memory!.pending(workspaceId))!.generation).toBeGreaterThan(operation.generation);
       expect((await f.memory.search(owner, workspaceId, "q", false, new AbortController().signal)).sources).toEqual([]);
       await f.ready();
-      expect(f.retained.get(`shared-${note.id}`)).toContain("Third");
+      expect(f.retained.get(encodeId("sharedMemory", note.id))).toContain("Third");
       expect(await f.app.memory!.pending(workspaceId)).toBeUndefined();
     } finally { await f.close(); }
   });
@@ -848,18 +914,18 @@ describe("Workspace memory", () => {
       f.operations.set(operation.id, "processing");
       await f.app.memory!.deleteNote(owner.userId, workspaceId, note.id, 1);
       await f.tick();
-      expect(f.retained.has(`shared-${note.id}`)).toBe(true);
+      expect(f.retained.has(encodeId("sharedMemory", note.id))).toBe(true);
       expect((await f.memory.search(owner, workspaceId, "q", false, new AbortController().signal)).sources).toEqual([]);
       f.operations.set(operation.id, "completed");
       await f.ready();
-      expect(f.retained.has(`shared-${note.id}`)).toBe(false);
+      expect(f.retained.has(encodeId("sharedMemory", note.id))).toBe(false);
       const next = await f.app.memory!.saveNote(owner.userId, workspaceId, { id: uuidV7(), revision: 0, content: "Erase during retain" });
       await f.tick();
       const erasing = (await f.app.memory!.pending(workspaceId))!.operation!;
       f.operations.set(erasing.id, "processing");
       await f.app.memory!.purge(owner.userId, workspaceId);
       await f.tick();
-      expect(f.retained.has(`shared-${next.id}`)).toBe(true);
+      expect(f.retained.has(encodeId("sharedMemory", next.id))).toBe(true);
       f.operations.set(erasing.id, "completed");
       await f.tick();
       expect(f.retained.size).toBe(0);
@@ -888,7 +954,7 @@ describe("Workspace memory", () => {
       await f.commit([{ entity: "meeting_event", action: "create", entityId: uuidV7(), baseRevision: null,
         data: { meetingId: id, sessionId, kind: "recording_ended", occurredAt: now } }]);
       await f.ready();
-      expect(f.retained.get(`meeting-${id}`)).toContain("update 2");
+      expect(f.retained.get(encodeId("meeting", id))).toContain("update 2");
     } finally { await f.close(); }
   });
   it("updates only affected Project models and reindexes project context without touching unrelated meetings", async () => {
@@ -916,7 +982,7 @@ describe("Workspace memory", () => {
       await f.commit([{ entity: "project", action: "update", entityId: b, baseRevision: project!.revision,
         data: { name: "Renamed", parentProjectId: null, projectType: null, description: "New project context" } }]);
       await f.ready();
-      expect(f.retained.get(`meeting-${moving}`)).toContain("New project context");
+      expect(f.retained.get(encodeId("meeting", moving))).toContain("New project context");
       expect(f.requests.slice(beforeRename).filter((r) => r.path.endsWith("/memories") && r.method === "POST")).toHaveLength(1);
     } finally { await f.close(); }
   });
@@ -951,10 +1017,10 @@ describe("Workspace memory recall", () => {
       for (const id of [a, b]) await f.app.memory!.saveNote(owner.userId, workspaceId, { id, revision: 0, content: `Note ${id}` });
       await f.ready();
       const response = (unknown: number) => () => ({ results: [
-        ...Array.from({ length: unknown }, (_, i) => ({ id: `w${i}`, text: "UNTRUSTED", type: "world", document_id: `shared-${uuidV7()}` })),
+        ...Array.from({ length: unknown }, (_, i) => ({ id: `w${i}`, text: "UNTRUSTED", type: "world", document_id: encodeId("sharedMemory", uuidV7()) })),
         { id: "o1", text: "UNTRUSTED OBSERVATION", type: "observation", source_fact_ids: ["cut", "f1", "f2"] },
-        { id: "late", text: "UNTRUSTED", type: "experience", document_id: `shared-${a}` },
-      ], source_facts: { f1: { id: "f1", text: "UNTRUSTED", document_id: `shared-${b}`, chunk_id: "unneeded-short-document-chunk" }, f2: { id: "f2", text: "UNTRUSTED", document_id: `shared-${a}` } } });
+        { id: "late", text: "UNTRUSTED", type: "experience", document_id: encodeId("sharedMemory", a) },
+      ], source_facts: { f1: { id: "f1", text: "UNTRUSTED", document_id: encodeId("sharedMemory", b), chunk_id: "unneeded-short-document-chunk" }, f2: { id: "f2", text: "UNTRUSTED", document_id: encodeId("sharedMemory", a) } } });
       f.setRecall(response(28));
       const found = await f.memory.search(owner, workspaceId, "notes", false, signal);
       expect(found.sources.map((source) => source.id)).toEqual([b, a]);
@@ -975,12 +1041,12 @@ describe("Workspace memory recall", () => {
       const meetingId = await long(f);
       vi.spyOn(f.sync, "listTranscript").mockResolvedValue({ items: segments(40) } as never);
       await f.memory.configure(owner, workspaceId, true); await f.ready();
-      const document = `meeting-${meetingId}`, bank = `test-workspace-${workspaceId}`;
+      const document = encodeId("meeting", meetingId), bank = `dahlia_${encodeId("workspace", workspaceId)}`;
       const marker = (i: number) => `claim [Transcript segment seg-${i}; 2026-01-01T00:00:00.000Z; speaker unknown; microphone] UNTRUSTED CHUNK`;
       f.chunks.set("missing", { bank_id: bank, document_id: document, chunk_text: marker(10) });
       f.chunks.set("cut", { bank_id: bank, document_id: document, chunk_text: marker(35) });
-      f.chunks.set("foreign-bank", { bank_id: "test-workspace-other", document_id: document, chunk_text: marker(20) });
-      f.chunks.set("foreign-document", { bank_id: bank, document_id: "meeting-other", chunk_text: marker(25) });
+      f.chunks.set("foreign-bank", { bank_id: `dahlia_${encodeId("workspace", uuidV7())}`, document_id: document, chunk_text: marker(20) });
+      f.chunks.set("foreign-document", { bank_id: bank, document_id: encodeId("meeting", uuidV7()), chunk_text: marker(25) });
       const fact = (chunk_id: string) => ({ id: chunk_id, text: "UNTRUSTED", type: "world", document_id: document, chunk_id });
       f.setRecall(() => ({ results: ["recalled", "missing", "cut", "foreign-document", "foreign-bank"].map(fact),
         chunks: { recalled: { id: "recalled", text: marker(30), chunk_index: 0 }, cut: { id: "cut", text: "[Transcript segment seg-", chunk_index: 1, truncated: true } } }));
@@ -1094,13 +1160,13 @@ describe("Workspace memory recall", () => {
 });
 
 describe("Hindsight authentication", () => {
-  const env = { DAHLIA_AUTH_TYPE: "header", DAHLIA_AUTH_SECRET: "test-only-better-auth-secret-value", DAHLIA_HINDSIGHT_URL: "https://memory.example/api", DAHLIA_HINDSIGHT_BANK_PREFIX: "test" };
+  const env = { DAHLIA_AUTH_TYPE: "header", DAHLIA_AUTH_SECRET: "test-only-better-auth-secret-value", DAHLIA_HINDSIGHT_URL: "https://memory.example/api" };
   it("cancels a chunk's token wait without cancelling another request sharing the refresh", async () => {
     let respond!: (response: Response) => void;
     const fetcher = vi.fn<typeof fetch>(async (url) => String(url).endsWith("/oidc/v1/token")
       ? new Promise<Response>((resolve) => { respond = resolve; })
       : Response.json({ bank_id: "bank", document_id: "meeting", chunk_text: "hint" }));
-    const client = new HindsightClient({ url: "https://memory.example/api", auth: "databricks", bankPrefix: "test" },
+    const client = new HindsightClient({ url: "https://memory.example/api", auth: "databricks" },
       { host: "https://workspace.example", tokenUrl: "https://workspace.example/oidc/v1/token", clientId: "app", clientSecret: "secret" }, fetcher);
     const controller = new AbortController();
     let cancelled: unknown;
@@ -1142,11 +1208,11 @@ describe("Hindsight authentication", () => {
     const fetcher = vi.fn<typeof fetch>(async (url, init) => {
       if (String(url).endsWith("/oidc/v1/token")) { count++; return Response.json({ access_token: `token-${count}`, expires_in: 120 }); }
       expect(new Headers(init?.headers).get("authorization")).toBe(`Bearer token-${count}`);
-      expect(String(url)).toContain("/api/v1/default/banks/test-workspace-");
+      expect(String(url)).toContain("/api/v1/default/banks/dahlia_ws_");
       expect(init?.redirect).toBe("error");
       return new Response(null, { status: 403 });
     });
-    const client = new HindsightClient({ url: "https://memory.example/api", auth: "databricks", bankPrefix: "test" },
+    const client = new HindsightClient({ url: "https://memory.example/api", auth: "databricks" },
       { host: "https://workspace.example", tokenUrl: "https://workspace.example/oidc/v1/token", clientId: "app", clientSecret: "secret" }, fetcher);
     await Promise.all([1, 2].map(() => expect(client.recall(client.bank(workspaceId), "q", new AbortController().signal)).rejects.toMatchObject({ status: 403 })));
     expect(count).toBe(1);
@@ -1159,30 +1225,31 @@ describe("Hindsight authentication", () => {
 describe("Pinned Hindsight response contracts", () => {
   it("resolves observation lineage to documents and rejects invalidated evidence", async () => {
     let invalidated = false;
-    const client = new HindsightClient({ url: "http://localhost:8888", auth: "none", bankPrefix: "test" }, undefined, async (url) => {
+    const client = new HindsightClient({ url: "http://localhost:8888", auth: "none" }, undefined, async (url) => {
       const path = new URL(String(url)).pathname;
       if (path.endsWith("observation")) return Response.json({ state: "valid", document_id: null, source_memory_ids: ["source"] });
-      return Response.json({ state: invalidated ? "invalidated" : "valid", document_id: "meeting-canonical" });
+      return Response.json({ state: invalidated ? "invalidated" : "valid", document_id: encodeId("meeting", workspaceId) });
     });
-    expect(await client.factDocuments("bank", "observation", new AbortController().signal)).toEqual(["meeting-canonical"]);
+    expect(await client.factDocuments("bank", "observation", new AbortController().signal)).toEqual([encodeId("meeting", workspaceId)]);
     invalidated = true;
     expect(await client.factDocuments("bank", "observation", new AbortController().signal)).toEqual([]);
   });
   it("reads chunks outside the bank path and accepts only the expected bank", async () => {
     const paths: string[] = [];
-    const client = new HindsightClient({ url: "http://localhost:8888", auth: "none", bankPrefix: "test" }, undefined, async (url) => {
+    const client = new HindsightClient({ url: "http://localhost:8888", auth: "none" }, undefined, async (url) => {
       const path = new URL(String(url)).pathname; paths.push(path);
       if (path.endsWith("gone")) return new Response(null, { status: 404 });
-      return Response.json({ chunk_id: "c", bank_id: path.endsWith("mine") ? "bank" : "other", document_id: "meeting-1", chunk_index: 0, chunk_text: "text", created_at: "" });
+      return Response.json({ chunk_id: "c", bank_id: path.endsWith("mine") ? "bank" : "other", document_id: encodeId("meeting", workspaceId), chunk_index: 0, chunk_text: "text", created_at: "" });
     });
-    expect(await client.chunk("bank", "bank_meeting-1_mine", new AbortController().signal)).toEqual({ documentId: "meeting-1", text: "text" });
+    // Upstream chunk IDs remain opaque, even when they resemble older document names.
+    expect(await client.chunk("bank", "bank_meeting-1_mine", new AbortController().signal)).toEqual({ documentId: encodeId("meeting", workspaceId), text: "text" });
     expect(await client.chunk("bank", "other_meeting-1_theirs", new AbortController().signal)).toBeNull();
     expect(await client.chunk("bank", "gone", new AbortController().signal)).toBeNull();
     expect(paths).toEqual(["/v1/default/chunks/bank_meeting-1_mine", "/v1/default/chunks/other_meeting-1_theirs", "/v1/default/chunks/gone"]);
   });
   it("recovers a mental-model creation whose acknowledgement was lost", async () => {
     let created = false; const methods: string[] = [];
-    const client = new HindsightClient({ url: "http://localhost:8888", auth: "none", bankPrefix: "test" }, undefined, async (url, init) => {
+    const client = new HindsightClient({ url: "http://localhost:8888", auth: "none" }, undefined, async (url, init) => {
       methods.push(`${init?.method} ${new URL(String(url)).pathname.split("/").at(-1)}`);
       if (init?.method === "GET") return created ? Response.json({ id: "workspace-insights" }) : new Response(null, { status: 404 });
       if (!created) { created = true; throw new Error("lost response"); }
@@ -1259,7 +1326,7 @@ describe("Structured reflection publication", () => {
         f.facts.set("observation", fact);
         expect(await f.search()).toMatchObject({ hypothesis: null, claims: [], reflectionStatus: "invalid_references" });
       }
-      expect(f.requests.filter((r) => r.path.includes("/memories/") && r.method === "GET").every((r) => r.path.includes(`/banks/test-workspace-${workspaceId}/`))).toBe(true);
+      expect(f.requests.filter((r) => r.path.includes("/memories/") && r.method === "GET").every((r) => r.path.includes(`/banks/dahlia_${encodeId("workspace", workspaceId)}/`))).toBe(true);
     } finally { await f.close(); }
   });
   it("drops an entire claim when all its documents cannot fit in the five-source result", async () => {
@@ -1280,7 +1347,7 @@ describe("Structured reflection publication", () => {
         claims: [{ text: "Fits independently", citations: [{ factId: ids[5], sourceIndexes: [0] }] }],
       });
       expect(result.sources).toHaveLength(5);
-      expect(`shared-${result.sources[0]!.id}`).toBe([...f.retained.keys()][5]);
+      expect(encodeId("sharedMemory", result.sources[0]!.id)).toBe([...f.retained.keys()][5]);
       f.setReflection(() => f.response([
         { text: "First four", factIds: ids.slice(0, 4) },
         { text: "Two cannot fit", factIds: ids.slice(4) },
