@@ -42,7 +42,9 @@ Databricks Apps runs `pnpm build`, which generates the Web and Server runtime as
 
 ## Validate and deploy
 
-Enable Lakebase Search manually before starting either App. In the target Lakebase project (`dahlia-db-dev` or `dahlia-db`), open **Settings → Lakebase Search → Enable Lakebase Search**. This is a one-time project setting; enabling it restarts the project's computes and drops active connections. Wait for the restart to finish and verify that both extensions are available in the target database:
+For a target with existing Terraform deployment state, complete the [one-time migration to the direct engine](https://docs.databricks.com/aws/en/dev-tools/bundles/direct#migrate-an-existing-bundle) using its previously deployed bundle configuration before adopting this deployment sequence. The migration includes `databricks bundle deployment migrate -t dev`; use the target's existing profile and variable overrides, and repeat for `prod` if applicable. On CLI 1.4.x, migration requires a plan without pending actions, as described in the migration guide. Setting `bundle.engine: direct` alone does not guarantee that an existing Terraform state uses the direct engine on every supported CLI version.
+
+The following deployment sequence assumes the target Lakebase project already exists. Enable Lakebase Search manually before starting either App. In the target Lakebase project (`dahlia-db-dev` or `dahlia-db`), open **Settings → Lakebase Search → Enable Lakebase Search**. This is a one-time project setting; enabling it restarts the project's computes and drops active connections. Wait for the restart to finish and verify that both extensions are available in the target database:
 
 ```sql
 SELECT name FROM pg_available_extensions
@@ -60,7 +62,7 @@ databricks bundle deploy -t dev
 databricks bundle summary -t dev
 ```
 
-Use `-t prod` for production and pass its catalog explicitly when it differs from `dahlia`, for example `--var catalog=dahlia_prod`. The production Lakebase project, storage Volume, and schema have `lifecycle.prevent_destroy: true`; destructive changes fail until an operator deliberately removes that protection. Development uses separate disposable resources.
+Use `-t prod` for production and pass its catalog explicitly when it differs from `dahlia`, for example `--var catalog=dahlia_prod`. The production Lakebase project, storage Volume, and schema have `lifecycle.prevent_destroy: true`; destructive changes fail until an operator deliberately removes that protection. Development uses separate disposable resources. Recreating a development Lakebase project also resets its Search setting; enable Search again before starting either App.
 
 The bundle explicitly uses the direct deployment engine and sets `lifecycle.started: true` for both Apps. `bundle deploy` uploads source code and deploys/starts the Apps, waiting for their deployments to succeed. Do not follow it with `bundle run dahlia_server` or `bundle run hindsight`: the CLI's App URL resolution during `bundle run` can overwrite `DAHLIA_HINDSIGHT_URL` with `/api`. Deployment success does not establish application health; check both Apps' runtime status and startup logs. The bundle's `prebuild` step materializes the pinned Hindsight v0.10.1 source and maintained Lakebase patch before upload; it does not follow newer upstream tags. Hindsight runs its database migrations when the App starts. Upgrading from v0.9.2 adds the inline-attachment tables and drops the unused `memory_units_bm25` materialized view, so allow extra startup time on a large database and confirm the completed migrations in the `hindsight` App log.
 

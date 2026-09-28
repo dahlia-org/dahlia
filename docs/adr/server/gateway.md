@@ -20,7 +20,7 @@ accounts は Google sign-in と public-client OAuth、header は値を除去・�
 
 `DAHLIA_CODEX_AUTO_REVIEW_MODEL` は backend の機能に依存しない Server 共通機能として維持する。設定時は予約 ID codex-auto-review の一覧と実行先を上書きし、環境変数の上流 ID を無加工で転送する。未設定・空の場合は backend の同名モデルを通常どおり一覧・推論に使用する。Databricks DAB は 2026-09-25 に指定を `system.ai.gpt-5-6-luna` から `system.ai.gpt-6-luna` へ変更し、Model Service alias は登録しない。
 
-Databricks DAB は `system.ai.*` モデルを直接設定し、postdeploy は Model Service を登録しない。既存の bundle 管理 AI schema は削除計画を避けるため維持する。設定の詳細は [デプロイ手順](../../../deploy/databricks/README.md#ai-models) を参照する。
+Databricks DAB は `system.ai.*` モデルを直接設定し、bundle は Model Service を登録しない。既存の bundle 管理 AI schema は削除計画を避けるため維持する。設定の詳細は [デプロイ手順](../../../deploy/databricks/README.md#ai-models) を参照する。
 
 ### 理由と制約
 
