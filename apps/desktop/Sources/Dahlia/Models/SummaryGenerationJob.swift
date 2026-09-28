@@ -9,6 +9,7 @@ final class SummaryGenerationJob: Identifiable {
     var task: Task<Void, Never>?
     var cancel: (() -> Void)?
     var retry: (() -> Void)?
+    var persistFailureDismissal: (() async throws -> Void)?
     var serverRequest: ServerSummaryService.Request?
     var isCancelled = false
     let meetingId: UUID

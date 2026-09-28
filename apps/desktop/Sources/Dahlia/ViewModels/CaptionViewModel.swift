@@ -998,7 +998,7 @@ final class CaptionViewModel: ObservableObject {
         retryBatchTranscriptionRecovery()
     }
 
-    private func restoreRecordingProcessing(dbQueue: DatabaseQueue) async throws {
+    private func restoreRecordingProcessing(dbQueue: DatabaseQueue, includingDismissedSessionID: UUID? = nil) async throws {
         let sessions = try await dbQueue.read { db in
             try RecordingSessionRecord.filter(sql: "processingJSON IS NOT NULL AND endedAt IS NOT NULL AND batchDiscardedAt IS NULL")
                 .order(Column("startedAt").asc).fetchAll(db)
@@ -1006,7 +1006,8 @@ final class CaptionViewModel: ObservableObject {
         for session in sessions {
             guard let json = session.processingJSON else { continue }
             let processing = try JSONDecoder().decode(RecordingProcessing.self, from: Data(json.utf8))
-            guard processing.stage != .succeeded,
+            guard !(processing.stage == .failed && processing.failureDismissed == true) || session.id == includingDismissedSessionID,
+                  processing.stage != .succeeded,
                   processing.automatic || processing.stage != .recorded,
                   !summaryGenerationJobs.contains(where: { $0.id == processing.id }) else { continue }
             let workspaceURL = try await dbQueue.read { db in
@@ -1486,7 +1487,7 @@ final class CaptionViewModel: ObservableObject {
             if let json = snapshot.session?.processingJSON,
                let processing = try? JSONDecoder().decode(RecordingProcessing.self, from: Data(json.utf8)),
                processing.stage == .failed || processing.stage == .cancelled {
-                try await restoreRecordingProcessing(dbQueue: dbQueue)
+                try await restoreRecordingProcessing(dbQueue: dbQueue, includingDismissedSessionID: sessionId)
                 summaryGenerationJobs.first { $0.id == processing.id }?.retry?()
                 return
             }
@@ -1725,17 +1726,17 @@ final class CaptionViewModel: ObservableObject {
                 )
             }
         } catch {
-            restoreBatchTranscriptionConfirmation(execution, error: error)
+            await restoreBatchTranscriptionConfirmation(execution, error: error)
         }
     }
 
     private func restoreBatchTranscriptionConfirmation(
         _ execution: BatchTranscriptionConfirmationExecution,
         error: Error
-    ) {
+    ) async {
         let confirmation = execution.confirmation
-        if let job = pendingBatchSummaryRequestsBySessionId[confirmation.sessionId]?.job {
-            failBatchTranscription(in: job, message: error.localizedDescription)
+        if let pending = pendingBatchSummaryRequestsBySessionId[confirmation.sessionId] {
+            await failBatchTranscription(in: pending.job, message: error.localizedDescription, dbQueue: pending.dbQueue)
         }
         if let batchSummaryContext = execution.batchSummaryContext {
             batchSummaryContextsBySessionId[confirmation.sessionId] = batchSummaryContext
@@ -1822,7 +1823,8 @@ final class CaptionViewModel: ObservableObject {
         return job
     }
 
-    private func failBatchTranscription(in job: SummaryGenerationJob, message: String) {
+    private func failBatchTranscription(in job: SummaryGenerationJob, message: String, dbQueue: DatabaseQueue) async {
+        try? await updateRecordingProcessing(job: job, dbQueue: dbQueue, stage: .failed, error: message)
         job.progress.transcription = .failed(message)
         job.progress.transcriptionProgress = nil
         job.progress.summaryGeneration = .skipped
@@ -1927,15 +1929,7 @@ final class CaptionViewModel: ObservableObject {
                 break
             }
         }
-        updatePendingBatchSummaryProgress(for: update)
-        if let pending = pendingBatchSummaryRequestsBySessionId[update.state.sessionId], pending.job.hasFailure {
-            try? await updateRecordingProcessing(
-                job: pending.job,
-                dbQueue: pending.dbQueue,
-                stage: .failed,
-                error: pending.job.progress.transcription.failureMessage
-            )
-        }
+        await updatePendingBatchSummaryProgress(for: update)
         guard case .completed = update.state else { return }
         conversationMetricsStore.invalidate(meetingId: update.meetingId)
         if isVisibleMeeting, canReloadMeetingAfterBatchCompletion(update.meetingId) {
@@ -1961,7 +1955,7 @@ final class CaptionViewModel: ObservableObject {
         }
     }
 
-    private func updatePendingBatchSummaryProgress(for update: BatchTranscriptionUpdate) {
+    private func updatePendingBatchSummaryProgress(for update: BatchTranscriptionUpdate) async {
         let sessionID = update.state.sessionId
         guard let request = pendingBatchSummaryRequestsBySessionId[sessionID],
               !request.job.progress.transcription.isFailed else { return }
@@ -1978,10 +1972,10 @@ final class CaptionViewModel: ObservableObject {
             request.completedSessionIDs.insert(sessionID)
             progress = 1
         case .interrupted:
-            failBatchTranscription(in: request.job, message: L10n.batchTranscriptionInterrupted)
+            await failBatchTranscription(in: request.job, message: L10n.batchTranscriptionInterrupted, dbQueue: request.dbQueue)
             return
         case let .failed(_, message), let .retranscriptionFailed(_, message):
-            failBatchTranscription(in: request.job, message: message)
+            await failBatchTranscription(in: request.job, message: message, dbQueue: request.dbQueue)
             return
         }
         request.transcriptionProgressBySessionID[sessionID] = progress
@@ -4759,7 +4753,21 @@ final class CaptionViewModel: ObservableObject {
         guard let job = summaryGenerationJobs.first(where: { $0.id == jobID }),
               job.hasFailure,
               job.isFinished else { return }
-        summaryGenerationJobs.removeAll { $0.id == jobID }
+        if let persistFailureDismissal = job.persistFailureDismissal {
+            Task {
+                do {
+                    await job.task?.value
+                    try await persistFailureDismissal()
+                    removeDismissedSummaryGenerationJob(job)
+                } catch { errorMessage = error.localizedDescription }
+            }
+        } else {
+            removeDismissedSummaryGenerationJob(job)
+        }
+    }
+
+    private func removeDismissedSummaryGenerationJob(_ job: SummaryGenerationJob) {
+        summaryGenerationJobs.removeAll { $0 === job }
         guard !job.transcriptionOnly else { return }
         let hasRemainingFailure = summaryGenerationJobs.contains { $0.meetingId == job.meetingId && $0.hasFailure }
         if !hasRemainingFailure, !isSummaryGenerating(meetingId: job.meetingId) {
@@ -5043,7 +5051,7 @@ final class CaptionViewModel: ObservableObject {
             let target = try await serverSummaryService.target(meetingID: request.meetingId, dbQueue: request.dbQueue)
             preparedRequest = try await prepareWorkspaceSummaryRequest(request, target: target)
         } catch {
-            failSummaryGeneration(error.localizedDescription, request: request, job: job)
+            await failSummaryGeneration(error.localizedDescription, request: request, job: job)
             finishSummaryGeneration(request, job: job)
             return
         }
@@ -5062,7 +5070,7 @@ final class CaptionViewModel: ObservableObject {
 
         if request.retriesFailedPersistence {
             if let message = await recoverFailedPersistenceForSummary() {
-                failSummaryGeneration(message, request: request, job: job)
+                await failSummaryGeneration(message, request: request, job: job)
                 return
             }
         }
@@ -5177,13 +5185,10 @@ final class CaptionViewModel: ObservableObject {
                 error: job.progress.workspaceExport.failureMessage ?? job.progress.googleDocsExport.failureMessage
             )
         } catch {
-            try? await updateRecordingProcessing(
-                job: job,
-                dbQueue: request.dbQueue,
-                stage: error is CancellationError ? .cancelled : .failed,
-                error: error.localizedDescription
+            await failSummaryGeneration(
+                error.localizedDescription, request: request, job: job,
+                stage: error is CancellationError ? .cancelled : .failed
             )
-            failSummaryGeneration(error.localizedDescription, request: request, job: job)
             if isTranscriptionOnly { job.progress.summaryGeneration = .skipped }
             if Self.shouldCaptureSummaryGenerationError(error) {
                 ErrorReportingService.capture(error, context: ["source": job.transcriptionOnly ? "batchTranscription" : "summaryGeneration"])
@@ -5226,6 +5231,15 @@ final class CaptionViewModel: ObservableObject {
 
     private func configureRecordingProcessingActions(job: SummaryGenerationJob, dbQueue: DatabaseQueue, workspaceURL _: URL?) {
         guard let sessionID = job.recordingSessionID else { return }
+        let jobID = job.id
+        job.persistFailureDismissal = {
+            try await dbQueue.write { db in
+                guard var processing = try RecordingProcessing.load(sessionID: sessionID, in: db),
+                      processing.id == jobID, processing.stage == .failed else { return }
+                processing.failureDismissed = true
+                try processing.save(sessionID: sessionID, in: db)
+            }
+        }
         job.cancel = { [weak self, weak job] in
             guard let self, let job else { return }
             Task {
@@ -5510,8 +5524,10 @@ final class CaptionViewModel: ObservableObject {
     private func failSummaryGeneration(
         _ message: String,
         request: SummaryGenerationRequest,
-        job: SummaryGenerationJob
-    ) {
+        job: SummaryGenerationJob,
+        stage: RecordingProcessing.Stage = .failed
+    ) async {
+        try? await updateRecordingProcessing(job: job, dbQueue: request.dbQueue, stage: stage, error: message)
         if job.transcriptionOnly {
             if !job.isCancelled { job.progress.transcription = .failed(message) }
             job.progress.summaryGeneration = .skipped
