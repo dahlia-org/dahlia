@@ -604,7 +604,7 @@ This runs lint, TypeScript checks, unit and adapter contract tests, Node/SPA bui
 
 ## Package consumers
 
-`@dahlia-ai/server` is versioned independently from the macOS app and published to npm from `server-v<version>` tags. Consumers should pin an exact version. Build it from `apps/server` with `pnpm build`. For active sibling-repository development, run `pnpm link ../dahlia/apps/server` from the consumer repository. To verify the exact published artifact shape, run `pnpm pack` from `apps/server` and install the resulting tarball; the `prepack` lifecycle builds the artifact automatically.
+`@dahlia-ai/server` is versioned independently from the macOS app and published to npm from `server-v<version>` tags. Consumers should pin an exact version. Build the complete package from `apps/server` with `pnpm build:package`. For active sibling-repository development, run `pnpm link ../dahlia/apps/server` from the consumer repository. To verify the exact published artifact shape, run `pnpm pack` from `apps/server` and install the resulting tarball; the `prepack` lifecycle runs `build:package` automatically. `pnpm build` builds only the Web and Server runtime assets for deployment; it skips TypeScript declaration generation and the embeddable client library, which are only needed by package consumers.
 
 The tag workflow requires an `NPM_TOKEN` repository secret with publish access to the `@dahlia-ai/server` package.
 
