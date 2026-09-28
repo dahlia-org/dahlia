@@ -74,6 +74,10 @@ resources:
           - name: LAKEBASE_ENDPOINT
             value_from: postgres
       resources:
+        - name: hindsight
+          app:
+            name: ${resources.apps.hindsight.name}
+            permission: CAN_USE
         - name: postgres
           postgres:
             branch: ${resources.postgres_projects.dahlia_database_project.id}/branches/production
