@@ -134,6 +134,27 @@ The bundle exposes its Responses-compatible `system.ai.*` models through the ord
 
 Search embeddings, image analysis, and Hindsight also use their `system.ai.*` models directly. Postdeploy only activates Lakebase Search extensions. Manage App service principal permissions separately, including granting the Dahlia Server App service principal `CAN_USE` on the Hindsight App.
 
+
+### Manual Hindsight App permission
+
+Before enabling Workspace memory on a fresh deployment, grant the Server App service principal `CAN_USE` on the Hindsight App. Run the following with an identity allowed to manage Hindsight App permissions. Set `deploy_target=prod` and the matching profile for production. Re-run it if the grant is lost or the Server App is recreated.
+
+```bash
+(
+  set -euo pipefail
+  deploy_profile=fevm-dahlia
+  deploy_target=dev
+  permissions_file=$(mktemp)
+  trap 'rm -f "$permissions_file"' EXIT
+  databricks apps get "mcp-dahlia-server-${deploy_target}" --profile "$deploy_profile" --output json |
+    python3 -c 'import json,sys; app=json.load(sys.stdin); print(json.dumps({"access_control_list":[{"service_principal_name":app["service_principal_client_id"],"permission_level":"CAN_USE"}]}))' > "$permissions_file"
+  databricks apps update-permissions "dahlia-hindsight-${deploy_target}" \
+    --json "@$permissions_file" --profile "$deploy_profile"
+)
+```
+
+This manual step requires Python 3 and updates the Server principal's grant while preserving other principals' permissions.
+
 ## Smoke test
 
 Wait for the App to reach `RUNNING`, then retrieve its URL from `bundle summary` and use a workspace access token:
