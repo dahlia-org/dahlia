@@ -1,6 +1,8 @@
 import DahliaMeetingAccess
 import Foundation
 import GRDB
+import Observation
+import Synchronization
 @testable import Dahlia
 @testable import DahliaRuntimeSupport
 
@@ -10,6 +12,257 @@ import GRDB
     @MainActor
     // swiftlint:disable:next type_body_length
     struct CaptionViewModelSummaryGenerationTests {
+        @Test(arguments: [false, true], [false, true])
+        func dismissedFailureStaysHiddenAfterRestart(transcriptionOnly: Bool, confirmsTranscription: Bool) async throws {
+            let fixture = try SummaryGenerationFixture()
+            defer { fixture.removeFiles() }
+            let sessionID = try fixture.insertRecordingSession(for: fixture.first, offset: 0)
+            let processing = RecordingProcessing(
+                id: .v7(), automatic: true, liveDraft: false, localeIdentifier: "en_US", method: .transcript,
+                options: .manual, generationSettings: .current(), workspaceSettings: nil,
+                sessionIDs: [sessionID], stage: .failed, error: "Original failure",
+                transcriptionOnly: transcriptionOnly
+            )
+            try await fixture.database.dbQueue.write { db in try processing.save(sessionID: sessionID, in: db) }
+            let viewModel = CaptionViewModel()
+            try await viewModel.restoreRecordingProcessingForTesting(dbQueue: fixture.database.dbQueue)
+            let job = try #require(viewModel.summaryGenerationJobs.first)
+            #expect(job.hasFailure)
+            viewModel.dismissSummaryGenerationJob(job.id)
+            try #require(await waitUntil { viewModel.summaryGenerationJobs.isEmpty })
+
+            let restarted = CaptionViewModel()
+            try await restarted.restoreRecordingProcessingForTesting(dbQueue: fixture.database.dbQueue)
+            #expect(restarted.summaryGenerationJobs.isEmpty)
+            var saved = try #require(try await fixture.database.dbQueue.read { db in
+                try RecordingProcessing.load(sessionID: sessionID, in: db)
+            })
+            #expect(saved.stage == .failed)
+            #expect(saved.error == "Original failure")
+            #expect(saved.failureDismissed == true)
+            if confirmsTranscription {
+                saved.stage = .transcribing
+            } else {
+                saved.prepareRetry(serverJob: nil)
+            }
+            #expect(saved.failureDismissed == nil)
+            saved.stage = .failed
+            saved.error = "Retry failure"
+            let retried = saved
+            try await fixture.database.dbQueue.write { db in try retried.save(sessionID: sessionID, in: db) }
+            try await restarted.restoreRecordingProcessingForTesting(dbQueue: fixture.database.dbQueue)
+            #expect(restarted.summaryGenerationJobs.count == 1)
+            #expect(restarted.summaryGenerationJobs.first?.hasFailure == true)
+        }
+
+        @Test
+        func manualRetryRestoresOnlyTheSelectedDismissedFailure() async throws {
+            let fixture = try SummaryGenerationFixture()
+            defer { fixture.removeFiles() }
+            let firstSessionID = try fixture.insertRecordingSession(for: fixture.first, offset: 0)
+            let secondSessionID = try fixture.insertRecordingSession(for: fixture.second, offset: 0)
+            for sessionID in [firstSessionID, secondSessionID] {
+                let processing = RecordingProcessing(
+                    id: .v7(), automatic: true, liveDraft: false, localeIdentifier: "en_US", method: .transcript,
+                    options: .init(exportOptions: .init(exportsToWorkspace: false, exportsToGoogleDocs: false)),
+                    generationSettings: .current(), workspaceSettings: nil,
+                    sessionIDs: [sessionID], stage: .failed, error: "Original failure", failureDismissed: true
+                )
+                try await fixture.database.dbQueue.write { db in try processing.save(sessionID: sessionID, in: db) }
+            }
+            let runner = BlockingSummaryRunner()
+            let viewModel = CaptionViewModel(summaryGenerationRunner: runner.run)
+            await viewModel.presentManualBatchTranscription(
+                sessionId: firstSessionID, meetingId: fixture.first.id, dbQueue: fixture.database.dbQueue
+            )
+            try await runner.waitForCallCount(1)
+            #expect(viewModel.summaryGenerationJobs.count == 1)
+            #expect(viewModel.summaryGenerationJobs.first?.meetingId == fixture.first.id)
+            runner.fail(meetingID: fixture.first.id)
+            try #require(await waitUntil { !viewModel.isSummaryGenerating(meetingId: fixture.first.id) })
+            let restarted = CaptionViewModel()
+            try await restarted.restoreRecordingProcessingForTesting(dbQueue: fixture.database.dbQueue)
+            #expect(restarted.summaryGenerationJobs.count == 1)
+            #expect(restarted.summaryGenerationJobs.first?.meetingId == fixture.first.id)
+            #expect(restarted.summaryGenerationJobs.first?.hasFailure == true)
+        }
+
+        @Test
+        func preparationFailureIsPersistedBeforeItCanBeDismissed() async throws {
+            let fixture = try SummaryGenerationFixture()
+            defer { fixture.removeFiles() }
+            let sessionID = try fixture.insertRecordingSession(for: fixture.first, offset: 0)
+            var settings = SummaryGenerationSettings.current()
+            settings.workspaceID = .v7()
+            let processing = RecordingProcessing(
+                id: .v7(), automatic: true, liveDraft: false, localeIdentifier: "en_US", method: .transcript,
+                options: .manual, generationSettings: settings, workspaceSettings: nil,
+                sessionIDs: [sessionID], stage: .transcribing
+            )
+            try await fixture.database.dbQueue.write { db in try processing.save(sessionID: sessionID, in: db) }
+            let viewModel = CaptionViewModel(summaryGenerationRunner: { _ in
+                Issue.record("Preparation failure must not start generation")
+                throw CancellationError()
+            })
+            try await viewModel.restoreRecordingProcessingForTesting(dbQueue: fixture.database.dbQueue)
+            try #require(await waitUntil { viewModel.summaryGenerationJobs.first?.hasFailure == true })
+            #expect(try await fixture.database.dbQueue.read { db in
+                try RecordingProcessing.load(sessionID: sessionID, in: db)?.stage
+            } == .failed)
+            viewModel.dismissSummaryGenerationJob(processing.id)
+            try #require(await waitUntil { viewModel.summaryGenerationJobs.isEmpty })
+            let restarted = CaptionViewModel()
+            try await restarted.restoreRecordingProcessingForTesting(dbQueue: fixture.database.dbQueue)
+            #expect(restarted.summaryGenerationJobs.isEmpty)
+        }
+
+        @Test(arguments: [false, true])
+        func batchFailureIsPersistedBeforeNotificationChanges(interrupted: Bool) async throws {
+            let fixture = try SummaryGenerationFixture()
+            defer { fixture.removeFiles() }
+            let sessionID = try fixture.insertRecordingSession(for: fixture.first, offset: 0)
+            let processing = RecordingProcessing(
+                id: .v7(), automatic: true, liveDraft: false, localeIdentifier: "en_US", method: .transcript,
+                options: .manual, generationSettings: .current(), workspaceSettings: nil,
+                sessionIDs: [sessionID], stage: .transcribing
+            )
+            let dbQueue = fixture.database.dbQueue
+            try await dbQueue.write { db in try processing.save(sessionID: sessionID, in: db) }
+            let viewModel = CaptionViewModel()
+            viewModel.registerPendingBatchSummaryForTesting(
+                sessionID: sessionID, meetingID: fixture.first.id, options: .manual,
+                dbQueue: dbQueue, workspaceURL: fixture.workspaceURL, processing: processing
+            )
+            let job = try #require(viewModel.summaryGenerationJobs.first)
+            let persistedStageAtPublication = Mutex<RecordingProcessing.Stage?>(nil)
+            withObservationTracking {
+                _ = job.progress.transcription
+            } onChange: {
+                let stage = try? dbQueue.read { db in try RecordingProcessing.load(sessionID: sessionID, in: db)?.stage }
+                persistedStageAtPublication.withLock { $0 = stage }
+            }
+            await viewModel.handleBatchTranscriptionUpdate(.init(
+                meetingId: fixture.first.id,
+                state: interrupted ? .interrupted(sessionId: sessionID, isRetranscription: false)
+                    : .failed(sessionId: sessionID, message: "Batch failed")
+            ))
+            #expect(persistedStageAtPublication.withLock { $0 } == .failed)
+            viewModel.dismissSummaryGenerationJob(job.id)
+            try #require(await waitUntil { viewModel.summaryGenerationJobs.isEmpty })
+            let restarted = CaptionViewModel()
+            try await restarted.restoreRecordingProcessingForTesting(dbQueue: dbQueue)
+            #expect(restarted.summaryGenerationJobs.isEmpty)
+        }
+
+        @Test(arguments: ["active", "missing", "replaced", "writeFailure"])
+        func rejectedDismissalKeepsFailureVisible(reason: String) async throws {
+            let fixture = try SummaryGenerationFixture()
+            defer { fixture.removeFiles() }
+            let sessionID = try fixture.insertRecordingSession(for: fixture.first, offset: 0)
+            let processing = RecordingProcessing(
+                id: .v7(), automatic: true, liveDraft: false, localeIdentifier: "en_US", method: .transcript,
+                options: .manual, generationSettings: .current(), workspaceSettings: nil,
+                sessionIDs: [sessionID], stage: .failed, error: "Original failure"
+            )
+            let dbQueue = fixture.database.dbQueue
+            try await dbQueue.write { db in try processing.save(sessionID: sessionID, in: db) }
+            let viewModel = CaptionViewModel()
+            try await viewModel.restoreRecordingProcessingForTesting(dbQueue: dbQueue)
+            try await dbQueue.write { db in
+                var changed = processing
+                switch reason {
+                case "active":
+                    changed.stage = .transcribing
+                    try changed.save(sessionID: sessionID, in: db)
+                case "missing":
+                    try db.execute(sql: "UPDATE recording_sessions SET processingJSON = NULL WHERE id = ?", arguments: [sessionID])
+                case "replaced":
+                    changed.id = .v7()
+                    try changed.save(sessionID: sessionID, in: db)
+                default:
+                    try db.execute(sql: """
+                    CREATE TEMP TRIGGER reject_processing_update BEFORE UPDATE OF processingJSON ON recording_sessions
+                    BEGIN SELECT RAISE(FAIL, 'simulated write failure'); END
+                    """)
+                }
+            }
+            viewModel.dismissSummaryGenerationJob(processing.id)
+            try #require(await waitUntil { viewModel.errorMessage != nil })
+            #expect(viewModel.errorMessage == L10n.processingFailureDismissalFailed)
+            #expect(viewModel.summaryGenerationJobs.count == 1)
+            #expect(viewModel.summaryGenerationJobs.first?.hasFailure == true)
+            #expect(try await dbQueue.read { db in
+                try RecordingProcessing.load(sessionID: sessionID, in: db)?.failureDismissed
+            } != true)
+        }
+
+        @Test
+        func pendingSummaryPreparationFailureIsPersistedBeforeDismissal() async throws {
+            let fixture = try SummaryGenerationFixture()
+            defer { fixture.removeFiles() }
+            let sessionID = try fixture.insertRecordingSession(for: fixture.first, offset: 0)
+            let processing = RecordingProcessing(
+                id: .v7(), automatic: true, liveDraft: false, localeIdentifier: "en_US", method: .transcript,
+                options: .manual, generationSettings: .current(), workspaceSettings: nil,
+                sessionIDs: [sessionID], stage: .transcribing
+            )
+            let dbQueue = fixture.database.dbQueue
+            try await dbQueue.write { db in try processing.save(sessionID: sessionID, in: db) }
+            let viewModel = CaptionViewModel()
+            viewModel.registerPendingBatchSummaryForTesting(
+                sessionID: sessionID, meetingID: fixture.first.id, options: .manual,
+                dbQueue: dbQueue, workspaceURL: fixture.workspaceURL, processing: processing
+            )
+            let meetingID = fixture.first.id
+            try await dbQueue.write { db in
+                try db.execute(sql: "UPDATE meetings SET createdAt = 'invalid-date' WHERE id = ?", arguments: [meetingID])
+            }
+            await viewModel.handleBatchTranscriptionUpdate(.init(meetingId: meetingID, state: .completed(sessionId: sessionID)))
+            let job = try #require(viewModel.summaryGenerationJobs.first)
+            await job.task?.value
+            #expect(job.hasFailure)
+            #expect(try await dbQueue.read { db in try RecordingProcessing.load(sessionID: sessionID, in: db)?.stage } == .failed)
+            let createdAt = fixture.first.createdAt
+            try await dbQueue.write { db in
+                try db.execute(sql: "UPDATE meetings SET createdAt = ? WHERE id = ?", arguments: [createdAt, meetingID])
+            }
+            viewModel.dismissSummaryGenerationJob(job.id)
+            try #require(await waitUntil { viewModel.summaryGenerationJobs.isEmpty })
+            let restarted = CaptionViewModel()
+            try await restarted.restoreRecordingProcessingForTesting(dbQueue: dbQueue)
+            #expect(restarted.summaryGenerationJobs.isEmpty)
+        }
+
+        @Test
+        func dismissedRetranscriptionToastKeepsMeetingFailureAndRetryStatus() async throws {
+            let fixture = try SummaryGenerationFixture()
+            defer { fixture.removeFiles() }
+            let sessionID = try fixture.insertRecordingSession(for: fixture.first, offset: 0)
+            let processing = RecordingProcessing(
+                id: .v7(), automatic: true, liveDraft: false, localeIdentifier: "en_US", method: .transcript,
+                options: .manual, generationSettings: .current(), workspaceSettings: nil,
+                sessionIDs: [sessionID], stage: .failed, error: "Retranscription failed", transcriptionOnly: true
+            )
+            let dbQueue = fixture.database.dbQueue
+            try await dbQueue.write { db in
+                try processing.save(sessionID: sessionID, in: db)
+                try db.execute(
+                    sql: "UPDATE recording_sessions SET batchLastError = ?, batchLastAttemptAt = ? WHERE id = ?",
+                    arguments: ["Retranscription failed", Date.now, sessionID]
+                )
+            }
+            let viewModel = CaptionViewModel()
+            try await viewModel.restoreRecordingProcessingForTesting(dbQueue: dbQueue)
+            viewModel.dismissSummaryGenerationJob(processing.id)
+            try #require(await waitUntil { viewModel.summaryGenerationJobs.isEmpty })
+            let restarted = CaptionViewModel()
+            try await restarted.restoreRecordingProcessingForTesting(dbQueue: dbQueue)
+            await fixture.select(fixture.first, in: restarted, note: "")
+            #expect(restarted.summaryGenerationJobs.isEmpty)
+            #expect(restarted.batchTranscriptionState == .retranscriptionFailed(sessionId: sessionID, message: "Retranscription failed"))
+            #expect(restarted.batchTranscriptionState?.blocksSummaryGeneration == true)
+        }
+
         @Test
         func retryWithSameIDWaitsForCancelledTaskCleanup() async throws {
             let fixture = try SummaryGenerationFixture()
@@ -1084,6 +1337,7 @@ import GRDB
             ))
 
             let failedJob = try #require(viewModel.summaryGenerationJobs.first)
+            await failedJob.task?.value
             #expect(failedJob.meetingId == missingMeetingID)
             #expect(failedJob.hasFailure)
             #expect(failedJob.isFinished)

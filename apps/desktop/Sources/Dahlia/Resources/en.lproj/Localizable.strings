@@ -1617,6 +1617,7 @@
 "processingSummarizing" = "Summarizing";
 "processingGenerating" = "Generating transcription and summary";
 "processingSaving" = "Saving results";
+"processingFailureDismissalFailed" = "The notification was kept because its dismissal could not be saved. Please try again.";
 "processingCancelled" = "Cancelled";
 
 "transcriptionModel" = "Transcription model";

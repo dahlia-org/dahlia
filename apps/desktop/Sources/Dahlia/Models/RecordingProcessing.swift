@@ -29,7 +29,12 @@ struct RecordingProcessing: Codable, Sendable {
     let workspaceSettings: WorkspaceGenerationSettings?
     var summaryMode: WorkspaceGenerationSettings.SummaryMode?
     var sessionIDs: [UUID] = []
-    var stage: Stage = .recorded
+    var stage: Stage = .recorded {
+        didSet {
+            if stage != .failed { failureDismissed = nil }
+        }
+    }
+
     var error: String?
     var failedStage: Stage?
     var serverRequest: ServerSummaryService.Request?
@@ -38,6 +43,7 @@ struct RecordingProcessing: Codable, Sendable {
     var generatedSummary: SummaryService.GeneratedSummary?
     var summaryApplied: Bool?
     var transcriptionOnly: Bool?
+    var failureDismissed: Bool?
 
     var usesServerSummary: Bool? {
         if let summaryMode { return summaryMode == .remote }

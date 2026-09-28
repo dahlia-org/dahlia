@@ -3226,6 +3226,7 @@ enum L10n { // swiftlint:disable:this type_body_length
     static var processingSummarizing: String { String(localized: "processingSummarizing", bundle: bundle) }
     static var processingGenerating: String { String(localized: "processingGenerating", bundle: bundle) }
     static var processingSaving: String { String(localized: "processingSaving", bundle: bundle) }
+    static var processingFailureDismissalFailed: String { String(localized: "processingFailureDismissalFailed", bundle: bundle) }
     static var processingCancelled: String { String(localized: "processingCancelled", bundle: bundle) }
     static var transcriptionModel: String { String(localized: "transcriptionModel", bundle: bundle) }
 }

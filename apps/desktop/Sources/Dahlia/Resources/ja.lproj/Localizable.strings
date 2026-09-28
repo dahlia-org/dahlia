@@ -1617,6 +1617,7 @@
 "processingSummarizing" = "要約中";
 "processingGenerating" = "文字起こし・要約を生成中";
 "processingSaving" = "結果を保存中";
+"processingFailureDismissalFailed" = "通知を閉じた状態を保存できなかったため、通知を残しました。もう一度お試しください。";
 "processingCancelled" = "キャンセル済み";
 
 "transcriptionModel" = "文字起こしモデル";
