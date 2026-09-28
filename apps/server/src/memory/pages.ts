@@ -60,6 +60,14 @@ export class KnowledgePages {
     return state!;
   }
 
+  private async currentFacts(bankId: string, facts: PageSnapshot["facts"], signal: AbortSignal) {
+    for (const entry of facts) {
+      signal.throwIfAborted();
+      const fact = await this.engine!.client.pageFact(bankId, entry.id, signal);
+      if (!fact || await factHash(fact) !== entry.hash) reject("source_invalid");
+    }
+  }
+
   // Walk every cited fact, including every observation source. Retrieval's five-document cap does not apply.
   private async validate(identity: Identity, state: MemoryState, projectId: string | null, model: Model, signal: AbortSignal) {
     const client = this.engine!.client;
@@ -125,10 +133,7 @@ export class KnowledgePages {
     for (const document of documents.values()) snapshot.sources.push({ documentId: document.id, source: document.source, contentHash: await contentHash(document.content) });
     for (const [id, fact] of facts) snapshot.facts.push({ id, hash: await factHash(fact), sourceIds: [...fact.source_memory_ids].sort() });
     // A later remote lookup may race an earlier one. Recheck the complete lineage before publishing.
-    for (const entry of snapshot.facts) {
-      const fact = await client.pageFact(state.bankId, entry.id, signal);
-      if (!fact || await factHash(fact) !== entry.hash) reject("source_invalid");
-    }
+    await this.currentFacts(state.bankId, snapshot.facts, signal);
     for (const source of snapshot.sources) {
       const document = await this.engine!.canonicalSource(identity, state.scopeId, source.documentId, signal);
       if (!document || !same(document.source, source.source) || await contentHash(document.content) !== source.contentHash) reject("source_invalid");
@@ -204,19 +209,20 @@ export class KnowledgePages {
       if (input.query && (page.status !== "ready" || !`${page.title}\n${page.body}`.toLocaleLowerCase().includes(input.query.toLocaleLowerCase()))) continue;
       items.push({ ...page, body: null, sources: [] });
     }
-    // Recheck upstream versions after the last external validation, then every local source.
+    // Recheck every fact and model after all page reads, then every local source.
     for (const page of items) {
       const snapshot = publications.get(page.id);
       if (!snapshot) continue;
       let status: PageStatus | undefined;
       try {
+        await this.currentFacts(initial.state!.bankId, snapshot.facts, signal);
         const model = await this.engine!.client.model(initial.state!.bankId, page.id, signal);
         if (!model || model.is_stale || await modelFingerprint(model) !== snapshot.fingerprint) status = "stale";
       } catch (error) {
         signal.throwIfAborted();
         if (error instanceof HindsightError && (error.status === 401 || error.status === 403)) throw error;
         if (error instanceof DatabricksTokenError && !error.retryable) throw error;
-        status = "error";
+        status = error instanceof Unpublishable ? error.status : "error";
       }
       if (status) Object.assign(page, { status, snippet: null, generatedAt: null });
     }

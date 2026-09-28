@@ -235,6 +235,39 @@ describe("Knowledge Pages publication", () => {
       await expect(f.memory.pages.list(f.owner, { workspaceId: f.workspaceId, projectId: encodeId("project", uuidV7()) }, signal)).rejects.toMatchObject({ status: 404 });
     } finally { await f.close(); }
   });
+  it.each(["invalidated", "edited", "deleted"])("withholds list and search snippets when an earlier page's fact is %s during later validation", async (mode) => {
+    const f = await fixture(0);
+    try {
+      const projectId = uuidV7(), meetingId = uuidV7(), now = new Date().toISOString();
+      await f.commit([{ entity: "project", action: "create", entityId: projectId, baseRevision: null,
+        data: { name: "Project", parentProjectId: null, projectType: null, createdAt: now } },
+      { entity: "meeting", action: "create", entityId: meetingId, baseRevision: null,
+        data: { projectId, name: "Meeting", description: "Evidence", status: "READY", duration: 60, recordingStartedAt: now, createdAt: now, updatedAt: now } }]);
+      await f.ready();
+      for (let i = 0; i < 5; i++) await f.tick();
+      const fact = structuredClone([...f.facts.values()][0]!);
+      const tools = createDahliaMemoryTools(f.memory, true);
+      for (const surface of ["api-list", "tool-search"]) {
+        expect((await f.memory.pages.list(f.owner, { workspaceId: f.workspaceId }, signal)).items.every((page) => page.status === "ready")).toBe(true);
+        f.intercept((path) => {
+          if (!path.endsWith("/mental-models/workspace-insights")) return;
+          if (mode === "deleted") f.facts.delete(fact.id);
+          else if (mode === "invalidated") f.facts.get(fact.id)!.state = "invalidated";
+          else f.facts.get(fact.id)!.text = "Changed fact";
+        });
+        const result = surface === "api-list" ? await (await f.request("")).json() : await tools.list_knowledge_pages.execute!(
+          { workspaceId: f.workspaceId, query: "Synthetic" }, { requestContext: meetingRequestContext(f.owner), abortSignal: signal } as never);
+        expect(JSON.stringify(result)).not.toContain("Synthetic generated hypothesis");
+        if (surface === "api-list") expect(result).toMatchObject({ items: [
+          { id: `project-${projectId}`, status: "source_invalid", snippet: null },
+          { id: "workspace-insights", status: "source_invalid", snippet: null },
+        ] });
+        else expect(result).toEqual({ items: [], nextCursor: null });
+        f.intercept(); f.facts.set(fact.id, structuredClone(fact));
+        expect((await f.memory.pages.list(f.owner, { workspaceId: f.workspaceId }, signal)).items.every((page) => page.status === "ready")).toBe(true);
+      }
+    } finally { await f.close(); }
+  });
   it("adopts automatic refresh through the Node worker and rejects sub-millisecond fact mutations", async () => {
     const f = await fixture();
     const worker = new MemoryWorker(f.engine);

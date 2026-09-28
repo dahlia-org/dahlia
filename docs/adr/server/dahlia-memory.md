@@ -64,7 +64,7 @@ Dahlia の `search.knowledge_pages`（SQLite は `knowledge_pages`）は再構�
 
 上流が既に検索の上限時刻として使う DB cutoff と実際の生成条件を `reflect_response.dahlia_generation` に保存し、fact detail に `updated_at` を添付する最小パッチを置く。生成後に変わった fact はマイクロ秒精度で拒否する。保守パッチ適用前のモデル、出典なし、途中の処理結果は公開しない。worker は generation・lease・再生成要求の版を照合し、古い cutoff の完了が新しい公開記録を上書きしないようにする。同じ本文でも正本 revision が変われば Workspace retain を送って系譜 metadata を更新する（上流の差分 retain を再利用）。
 
-一覧・文字列検索・詳細・Markdown export・内蔵 AI・MCP は一つの公開判定を通る。型別 `based_on` の world/experience/observation を同じ bank の現在有効な fact から全正本まで辿り、全 observation source も検証する。モデル・directive・循環した系譜を証拠として受け付けない。対話検索の5文書返却・30候補制限を流用しない。30秒の期限、キャンセル、上流応答と詳細返却の2 MiB制限で全検証を完了できなければ公開しない。外部処理の後に現在の認可、正本、generation、上流モデルと公開記録を再確認する。`is_stale` だけでは公開を許可しない。
+一覧・文字列検索・詳細・Markdown export・内蔵 AI・MCP は一つの公開判定を通る。型別 `based_on` の world/experience/observation を同じ bank の現在有効な fact から全正本まで辿り、全 observation source も検証する。モデル・directive・循環した系譜を証拠として受け付けない。対話検索の5文書返却・30候補制限を流用しない。30秒の期限、キャンセル、上流応答と詳細返却の2 MiB制限で全検証を完了できなければ公開しない。外部処理の後に現在の認可、正本、generation、全 fact、上流モデルと公開記録を再確認する。一覧では後続ページの検証完了後にも先行ページを含む全 fact を再確認し、失効した snippet を検索結果へ返さない。`is_stale` だけでは公開を許可しない。
 
 公開状態は ready / generating / stale / source_invalid / paused / unavailable / error / no_sources、取り込み coverage は ready / partial / updating と分ける。非公開状態では生成本文・snippet・説明文・exportを出さない。検索結果には検証済みページだけを載せる。Web は本文を文字列で表示し、HTMLや外部画像を読み込まない。ページは独立した証拠ではなくAI要約・仮説であり、出典リンクは正本の確認・訂正へ戻る導線である。
 
