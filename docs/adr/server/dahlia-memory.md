@@ -55,3 +55,17 @@ reflect は上流の `response_schema` で主張と fact ID を取得する。�
 処理別LLMは上流標準の RETAIN／REFLECT／CONSOLIDATION／MENTAL_MODEL_REFRESH 設定を使う。既定は `databricks`／`system.ai.gpt-6-luna`。refreshの追加構造化呼び出しも専用refresh設定を使う最小パッチを置く。期間付きreflectの仮説抑止、reflect budget `low`、全体30秒の期限、利用者キャンセルは維持する。`reflectionUsage` は上流が報告した構造化呼び出し込みのreflect token数だけで、recallやembeddingの費用を含む総額ではない。
 
 rerankerの重みは `1427fd652930e4ba29e8149678df786c240d8825` に固定し、既存のHugging Face依存で取得したsnapshotを上流のローカルモデル設定に渡す。新しい依存やUC Volume経路は追加しない。過去entityや既存派生物は設定変更では削除しない。原文の人物名と構造化entityは別物であり、正本の人物名は保持する。必要な旧データの削除・正本からの再構築は別途明示的な許可を得て実施する。
+
+## 標準 Knowledge Pages（Phase 3）
+
+Workspace の `workspace-insights` と既存 Project の `project-{UUID}` をそのまま公開対象にする。別のページ用モデル、任意プロンプト、生成本文の編集機能は作らない。生成と更新は既存 worker と上流の full refresh / 自動更新が所有する。標準生成条件は Server の `standardModel` に集約し、既存モデルの trigger に残る任意設定も明示的に解除する。
+
+Dahlia の `search.knowledge_pages`（SQLite は `knowledge_pages`）は再構築可能な公開記録である。本文、モデル fingerprint、生成条件と時刻、全正本の ID・revision/hash、全 fact の系譜を一体で保存する。Workspace の現在の権限を使い、PostgreSQL は FORCE RLS を適用する。追加 migration のみで既存 DB と bank を維持する。
+
+上流が既に検索の上限時刻として使う DB cutoff と実際の生成条件を `reflect_response.dahlia_generation` に保存し、fact detail に `updated_at` を添付する最小パッチを置く。生成後に変わった fact はマイクロ秒精度で拒否する。保守パッチ適用前のモデル、出典なし、途中の処理結果は公開しない。worker は generation・lease・再生成要求の版を照合し、古い cutoff の完了が新しい公開記録を上書きしないようにする。同じ本文でも正本 revision が変われば Workspace retain を送って系譜 metadata を更新する（上流の差分 retain を再利用）。
+
+一覧・文字列検索・詳細・Markdown export・内蔵 AI・MCP は一つの公開判定を通る。型別 `based_on` の world/experience/observation を同じ bank の現在有効な fact から全正本まで辿り、全 observation source も検証する。モデル・directive・循環した系譜を証拠として受け付けない。対話検索の5文書返却・30候補制限を流用しない。30秒の期限、キャンセル、上流応答と詳細返却の2 MiB制限で全検証を完了できなければ公開しない。外部処理の後に現在の認可、正本、generation、全 fact、上流モデルと公開記録を再確認する。一覧では後続ページの検証完了後にも先行ページを含む全 fact を再確認し、失効した snippet を検索結果へ返さない。`is_stale` だけでは公開を許可しない。
+
+公開状態は ready / generating / stale / source_invalid / paused / unavailable / error / no_sources、取り込み coverage は ready / partial / updating と分ける。非公開状態では生成本文・snippet・説明文・exportを出さない。検索結果には検証済みページだけを載せる。Web は本文を文字列で表示し、HTMLや外部画像を読み込まない。ページは独立した証拠ではなくAI要約・仮説であり、出典リンクは正本の確認・訂正へ戻る導線である。
+
+再生成は Workspace 管理者の Web 操作のみで、要求を保存して直ちに返す。閲覧は生成を起動しない。MCP と内蔵 AI に公開するのは `list_knowledge_pages` と `get_knowledge_page` だけで、MCP は `mcp:memory:read` を使う。write scope があってもページの書き込み tool は存在しない。既存の正本メモ CRUD は維持する。

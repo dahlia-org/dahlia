@@ -82,6 +82,7 @@ async function setup() {
     if (path.endsWith("/refresh") && init?.method === "POST") {
       const id = uuidV7(); operations.set(id, failingItems.has(path.split("/").at(-2)!) ? "failed" : "completed"); return Response.json({ operation_id: id });
     }
+    if (path.includes("/mental-models/") && init?.method === "PATCH") return Response.json({});
     if (path.includes("/mental-models/") && init?.method === "GET") return models.has(path.split("/").at(-1)!) ? Response.json({}) : new Response(null, { status: 404 });
     if (path.includes("/mental-models/") && init?.method === "DELETE") { models.delete(path.split("/").at(-1)!); return Response.json({}); }
     if (path.includes("/documents/") && init?.method === "DELETE") { retained.delete(path.split("/").at(-1)!); return Response.json({}); }
@@ -375,7 +376,7 @@ describe("Workspace memory", () => {
       const result = await f.memory.search(viewer, workspaceId, "budget", false, new AbortController().signal);
       expect(result.sources[0]?.canonicalExcerpt).toContain(input.content);
       expect(JSON.stringify(result)).not.toContain("UNTRUSTED EXTRACTED CLAIM");
-      const before = f.requests.length; await f.tick(); expect(f.requests).toHaveLength(before);
+      const before = f.requests.length; await f.tick(); expect(f.requests.slice(before).map((r) => r.method)).toEqual(["GET"]); expect(f.requests.at(-1)!.path).toContain("/mental-models/");
       await f.app.memory!.deleteNote(owner.userId, workspaceId, input.id, 1);
       expect(await f.memory.search(owner, workspaceId, "budget", false, new AbortController().signal)).toMatchObject({ coverage: "updating", sources: [] });
       await f.ready(); expect(f.retained.size).toBe(0);
@@ -466,7 +467,8 @@ describe("Workspace memory", () => {
       await f.ready();
       const unchanged = await f.memory.search(owner, workspaceId, "evidence", false, new AbortController().signal);
       expect(unchanged.sources.find((source) => source.id === a.id)?.revision).toBe("3");
-      expect(f.requests.slice(unchangedStart).filter((request) => request.method === "POST" && request.path.endsWith("/memories"))).toEqual([]);
+      // The Workspace publication contract needs the revised provenance on retained facts, even for unchanged text.
+      expect(f.requests.slice(unchangedStart).filter((request) => request.method === "POST" && request.path.endsWith("/memories"))).toHaveLength(1);
 
     } finally { await f.close(); }
   });
@@ -834,7 +836,7 @@ describe("Pinned Hindsight response contracts", () => {
     });
     await expect(client.createModel("bank", null, new AbortController().signal)).rejects.toThrow("memory_transport_failed");
     expect(await client.createModel("bank", null, new AbortController().signal)).toBe("refresh-operation");
-    expect(methods).toEqual(["GET workspace-insights", "POST mental-models", "GET workspace-insights", "POST refresh"]);
+    expect(methods).toEqual(["GET workspace-insights", "POST mental-models", "GET workspace-insights", "PATCH workspace-insights", "POST refresh"]);
   });
 });
 
@@ -963,7 +965,7 @@ describe("Structured reflection publication", () => {
       await expect(f.search()).rejects.toThrow("memory_not_ready");
       f.requests.length = 0;
       await f.tick(); await f.tick();
-      expect(f.requests).toHaveLength(1);
+      expect(f.requests.filter((request) => request.method !== "GET")).toHaveLength(1);
       expect(f.requests[0]?.method).toBe("PATCH");
       expect((f.requests[0]?.body.updates as { reflect_mission: string }).reflect_mission).toContain("exact supporting memory or observation fact IDs");
       expect(f.retained.size).toBe(1);

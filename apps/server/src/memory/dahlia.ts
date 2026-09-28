@@ -9,6 +9,7 @@ import type { MemoryStore } from "./store";
 import { temporalWindow, type WorkspaceMemoryService } from "./service";
 import { HindsightError } from "./hindsight";
 import { reflectionStatusSchema } from "./reflection";
+import { KnowledgePages } from "./pages";
 import { routeMemory } from "./router";
 
 const scope = z.enum(["personal", "workspace"]);
@@ -60,8 +61,11 @@ export const memoryResultSchema = z.object({
 }).openapi("DahliaMemoryResult");
 
 export class DahliaMemory {
+  readonly pages: KnowledgePages;
   constructor(readonly stores: { personal: MemoryStore; workspace: MemoryStore }, readonly sync: MeetingSyncService,
-    readonly engines: { personal?: WorkspaceMemoryService; workspace?: WorkspaceMemoryService }, readonly generate?: MemoryGenerator) {}
+    readonly engines: { personal?: WorkspaceMemoryService; workspace?: WorkspaceMemoryService }, readonly generate?: MemoryGenerator) {
+    this.pages = new KnowledgePages(engines.workspace, stores.workspace, sync);
+  }
   private async resolve(identity: Identity, input: MemoryScope) {
     if (input.scope === "personal") {
       // A workspace can be supplied as topic context, but never changes personal ownership.

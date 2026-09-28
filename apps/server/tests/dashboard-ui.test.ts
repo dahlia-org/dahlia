@@ -45,7 +45,7 @@ describe("desktop-style meeting layout", () => {
       { workspaceId: "w1", name: "Workspace" } as SyncedWorkspaceInfo,
       { workspaceId: "w2", name: "Team Workspace" } as SyncedWorkspaceInfo,
     ] });
-    const ready = { error: undefined, loading: false, reload: vi.fn(), replace: vi.fn() };
+    const ready = { error: undefined, loading: false, refreshing: false, reload: vi.fn(), replace: vi.fn() };
     const query = vi.spyOn(liveData, "useLiveJSON").mockImplementation((input) => {
       const key = typeof input === "object" ? input.key : "";
       if (key.startsWith('["getMeeting"')) return { ...ready, data: {
@@ -99,7 +99,7 @@ describe("desktop-style meeting layout", () => {
       metadata: { generatedBy: "server", inputTypes: ["transcript"], detailLevel: "low", outputLanguage: "ja",
         request: { model: "first-model", reasoning: { effort: "low" } }, response: { usage: { input_tokens: 10 } } } });
     const latest = JSON.stringify({ title: "New", sections: [{ heading: "", blocks: [{ type: "paragraph", content: { text: "Current result" } }] }] });
-    const ready = { error: undefined, loading: false, reload: vi.fn(), replace: vi.fn() };
+    const ready = { error: undefined, loading: false, refreshing: false, reload: vi.fn(), replace: vi.fn() };
     query.mockReturnValue({ ...ready, data: { version: 1, title: "Old", document: old } });
     page.mockReturnValue({ ...ready, data: { items: [{ version: 1, savedAt: "2026-09-08T00:00:00Z" }] }, loadingMore: false, loadMore: vi.fn() });
     try {
@@ -129,7 +129,7 @@ describe("desktop-style meeting layout", () => {
     const scope = vi.spyOn(sidebar, "useSidebar").mockReturnValue({ userId: "user", reload: vi.fn() });
     const query = vi.spyOn(liveData, "useLiveJSON");
     const page = vi.spyOn(liveData, "useLivePage");
-    const empty = { data: undefined, error: undefined, loading: true, reload: vi.fn(), replace: vi.fn() };
+    const empty = { data: undefined, error: undefined, loading: true, refreshing: true, reload: vi.fn(), replace: vi.fn() };
     const meeting = { meetingId: "m1", name: "Planning", description: "Description available to read-only members", createdAt: "2026-09-07T00:00:00Z" };
     const render = () => renderToStaticMarkup(createElement(SyncedMeeting, { workspaceId: "v1", meetingId: "m1" }));
     page.mockReturnValue({ ...empty, loadingMore: false, loadMore: vi.fn() });
@@ -155,7 +155,7 @@ describe("desktop-style meeting layout", () => {
         expect(html).not.toContain("ミーティングを読み込み中");
         expect(page.mock.calls.some(([input]) => typeof input === "object" && input.key.includes("listMeetingFiles"))).toBe(false);
       }
-      query.mockReturnValue({ ...empty, loading: false, error: new Error("meeting_not_found") });
+      query.mockReturnValue({ ...empty, loading: false, refreshing: false, error: new Error("meeting_not_found") });
       const html = render();
       expect(html).toContain('role="alert"');
       expect(html).not.toContain("<h1>");
@@ -166,9 +166,9 @@ describe("desktop-style meeting layout", () => {
     const scope = vi.spyOn(sidebar, "useSidebar").mockReturnValue({ userId: "user", reload: vi.fn() });
     const query = vi.spyOn(liveData, "useLiveJSON").mockImplementation((input) => ({
       data: typeof input === "object" && input.key.startsWith('["getWorkspace"') ? { role: "member" } : undefined,
-      error: undefined, loading: false, reload: vi.fn(), replace: vi.fn(),
+      error: undefined, loading: false, refreshing: false, reload: vi.fn(), replace: vi.fn(),
     }));
-    const page = vi.spyOn(liveData, "useLivePage").mockReturnValue({ data: undefined, error: undefined, loading: false,
+    const page = vi.spyOn(liveData, "useLivePage").mockReturnValue({ data: undefined, error: undefined, loading: false, refreshing: false,
       reload: vi.fn(), replace: vi.fn(), loadingMore: false, loadMore: vi.fn() });
     try {
       renderToStaticMarkup(createElement(SyncedMeeting, { workspaceId: "v1", meetingId: "m1",
@@ -186,9 +186,9 @@ describe("desktop-style meeting layout", () => {
       data: typeof input === "object" && input.key.startsWith('["listWorkspaces"') ? { items: [workspace] }
         : typeof input === "object" && input.key.startsWith('["listProjects"') ? { items: [] }
           : undefined,
-      error: undefined, loading: false, reload: vi.fn(), replace: vi.fn(),
+      error: undefined, loading: false, refreshing: false, reload: vi.fn(), replace: vi.fn(),
     }));
-    const page = vi.spyOn(liveData, "useLivePage").mockReturnValue({ data: undefined, error: undefined, loading: false,
+    const page = vi.spyOn(liveData, "useLivePage").mockReturnValue({ data: undefined, error: undefined, loading: false, refreshing: false,
       reload: vi.fn(), replace: vi.fn(), loadingMore: false, loadMore: vi.fn() });
     const session = { user: { id: "user" }, capabilities: { sync: true, sharing: false, sessions: false, admin: false } };
     try {
@@ -201,7 +201,7 @@ describe("desktop-style meeting layout", () => {
 
   it("waits for Workspace and Organization names without flashing generic detail headings", () => {
     vi.stubGlobal("navigator", { language: "ja-JP" });
-    const empty = { data: undefined, error: undefined, loading: true, reload: vi.fn(), replace: vi.fn() };
+    const empty = { data: undefined, error: undefined, loading: true, refreshing: true, reload: vi.fn(), replace: vi.fn() };
     const query = vi.spyOn(liveData, "useLiveJSON").mockReturnValue(empty);
     const page = vi.spyOn(liveData, "useLivePage").mockReturnValue({ ...empty, loadingMore: false, loadMore: vi.fn() });
     const scope = vi.spyOn(sidebar, "useSidebar").mockReturnValue({ userId: "user", reload: vi.fn() });
@@ -319,7 +319,7 @@ describe("desktop-style meeting layout", () => {
   it("lists only the selected organization's Workspaces and defers collapsed contents", () => {
     vi.stubGlobal("navigator", { language: "en" });
     const session = { user: { id: "user" }, capabilities: { sync: true, sharing: true, sessions: true, admin: false } };
-    const ready = { loading: false, error: undefined, reload: vi.fn(), replace: vi.fn() };
+    const ready = { loading: false, refreshing: false, error: undefined, reload: vi.fn(), replace: vi.fn() };
     const query = vi.spyOn(liveData, "useLiveJSON").mockImplementation((input) => {
       const key = typeof input === "object" ? input.key : input;
       if (key === "/api/auth/organization/list") return { ...ready, data: [{ id: "org1", name: "First Org", slug: "first" }, { id: "org2", name: "Second Org", slug: "second" }] };
@@ -405,7 +405,7 @@ describe("desktop-style meeting layout", () => {
   });
 
   it("requests every accessible Workspace without an Organization filter", () => {
-    const query = vi.spyOn(liveData, "useLiveJSON").mockReturnValue({ data: undefined, loading: true, error: undefined, reload: vi.fn(), replace: vi.fn() });
+    const query = vi.spyOn(liveData, "useLiveJSON").mockReturnValue({ data: undefined, loading: true, refreshing: true, error: undefined, reload: vi.fn(), replace: vi.fn() });
     const session = { user: { id: "user" }, capabilities: { sync: true, sharing: false, sessions: false, admin: false } };
     try {
       renderToStaticMarkup(createElement(SidebarProvider, { session, children: createElement("div") }));
@@ -480,7 +480,7 @@ describe("dashboard navigation", () => {
     const query = vi.spyOn(liveData, "useLiveJSON");
     try {
       for (const contentType of ["image/png", "image/tiff", "text/html", "image/svg+xml"]) {
-        query.mockReturnValue({ data: { id: "f1", revision: 2, name: "Example", contentType, metadata: { ocrText: "Detected text", caption: "Image caption" }, variants: { thumb_1568: "/preview" } }, error: undefined, loading: false, reload: vi.fn(), replace: vi.fn() });
+        query.mockReturnValue({ data: { id: "f1", revision: 2, name: "Example", contentType, metadata: { ocrText: "Detected text", caption: "Image caption" }, variants: { thumb_1568: "/preview" } }, error: undefined, loading: false, refreshing: false, reload: vi.fn(), replace: vi.fn() });
         const html = renderToStaticMarkup(createElement(FileViewer, { fileId: "f1", separateTab: true, onPrevious: vi.fn(), onNext: vi.fn() }));
         expect(query).toHaveBeenCalledWith(expect.objectContaining({ key: "[\"getFile\",{\"params\":{\"path\":{\"fileId\":\"f1\"}}}]" }));
         expect(html).toContain('aria-label="Image information" aria-expanded="false"');
@@ -495,7 +495,7 @@ describe("dashboard navigation", () => {
         expect(html.includes('<img')).toBe(contentType === "image/png" || contentType === "image/tiff");
         expect(html).not.toMatch(/<(iframe|object|embed)/);
       }
-      query.mockReturnValue({ data: undefined, error: new Error("file_not_found"), loading: false, reload: vi.fn(), replace: vi.fn() });
+      query.mockReturnValue({ data: undefined, error: new Error("file_not_found"), loading: false, refreshing: false, reload: vi.fn(), replace: vi.fn() });
       const inaccessible = renderToStaticMarkup(createElement(FileViewer, { fileId: "f1" }));
       expect(inaccessible).toContain('role="alert"');
       expect(inaccessible).not.toContain('<img');
@@ -763,7 +763,7 @@ it("routes administrator organization details independently of sharing membershi
 it("keeps Workspace creation available while showing every accessible Workspace", () => {
   vi.stubGlobal("navigator", { language: "en-US" });
   const scope = vi.spyOn(sidebar, "useSidebar").mockReturnValue({ userId: "user", organizations: [{ id: "team", name: "Team", slug: "team" }], workspaces: [], reload: vi.fn() });
-  const query = vi.spyOn(liveData, "useLiveJSON").mockReturnValue({ data: undefined, loading: false, error: undefined, reload: vi.fn(), replace: vi.fn() });
+  const query = vi.spyOn(liveData, "useLiveJSON").mockReturnValue({ data: undefined, loading: false, refreshing: false, error: undefined, reload: vi.fn(), replace: vi.fn() });
   try {
     const html = renderToStaticMarkup(createElement(Workspaces));
     expect(html).toContain("New Workspace</button>");
@@ -777,7 +777,7 @@ it("labels each Workspace with its owning Organization", () => {
     createdAt: "2026-09-16T00:00:00Z" } as SyncedWorkspaceInfo;
   const scope = vi.spyOn(sidebar, "useSidebar").mockReturnValue({ userId: "user",
     organizations: [{ id: "alpha", name: "Alpha", slug: "alpha" }], workspaces: [workspace], reload: vi.fn() });
-  const query = vi.spyOn(liveData, "useLiveJSON").mockReturnValue({ data: undefined, loading: false, error: undefined, reload: vi.fn(), replace: vi.fn() });
+  const query = vi.spyOn(liveData, "useLiveJSON").mockReturnValue({ data: undefined, loading: false, refreshing: false, error: undefined, reload: vi.fn(), replace: vi.fn() });
   try {
     const html = renderToStaticMarkup(createElement(Workspaces));
     expect(html).toContain('class="workspace-organization-badge" role="img" aria-label="組織: Alpha"');

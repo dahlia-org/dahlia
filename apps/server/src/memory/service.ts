@@ -1,3 +1,4 @@
+import { KnowledgePages } from "./pages";
 import type { AppConfig } from "../config";
 import type { Identity } from "../auth/identity";
 import type { MeetingSyncService } from "../sync/service";
@@ -29,9 +30,11 @@ export function temporalWindow(input: MemorySearchInput, now = new Date()) {
 
 export class WorkspaceMemoryService {
   readonly client: HindsightClient;
+  readonly pages: KnowledgePages;
   constructor(config: AppConfig, readonly store: MemoryStore, private readonly sync: MeetingSyncService,
     private readonly syncStore: MeetingSyncStore, transport: typeof fetch = fetch) {
     this.client = new HindsightClient(config.hindsight!, config.databricksWorkspace, transport);
+    this.pages = new KnowledgePages(this, store, sync);
   }
   async status(identity: Identity, scopeId: string) {
     const state = await this.store.status(identity.userId, scopeId);
@@ -57,7 +60,7 @@ export class WorkspaceMemoryService {
     }
     return state;
   }
-  private async source(identity: Identity, scopeId: string, documentId: string, signal: AbortSignal) {
+  async canonicalSource(identity: Identity, scopeId: string, documentId: string, signal: AbortSignal) {
     const saved = await this.store.document(scopeId, documentId);
     if (!saved || saved.generation <= 0 || await this.store.pending(scopeId, documentId)) return null;
     const document = saved.source.kind === "meeting"
@@ -96,7 +99,7 @@ export class WorkspaceMemoryService {
     const source = async (id: string) => {
       if (checked.has(id)) return checked.get(id);
       if (checked.size === 30) return null;
-      const document = await this.source(identity, scopeId, id, signal);
+      const document = await this.canonicalSource(identity, scopeId, id, signal);
       // Canonical data, not the analysis copy, decides Project membership.
       const valid = document && (!input.projectId || document.source.projectId === input.projectId) ? document : null;
       checked.set(id, valid);
@@ -134,7 +137,7 @@ export class WorkspaceMemoryService {
     for (let attempt = 0; attempt < 3; attempt++) {
       const generation = current.generation;
       for (let i = documents.length - 1; i >= 0; i--) {
-        const verified = await this.source(identity, scopeId, documents[i]!.id, signal);
+        const verified = await this.canonicalSource(identity, scopeId, documents[i]!.id, signal);
         if (!verified || verified.source.revision !== documents[i]!.source.revision) documents.splice(i, 1);
       }
       current = await this.readable(identity, scopeId);
@@ -232,7 +235,12 @@ export class WorkspaceMemoryService {
         await this.store.setProgress(job, progress);
       }
       if (!job.reconcile && job.indexedGeneration === job.generation) {
-        await this.store.release(job, { status: "ready", attempts: 0, errorCode: null, availableAt: new Date(Date.now() + 60_000) }); return;
+        if (!this.store.personal) {
+          const pageAfter = await this.pages.step(identity, { ...job, progress }, signal);
+          progress = { ...progress!, pageAfter };
+        }
+        await this.store.release(job, { progress, status: "ready", attempts: 0, errorCode: null,
+          availableAt: new Date(Date.now() + (progress?.pageAfter ? 5_000 : 60_000)) }); return;
       }
       if (!progress) {
         await this.client.initialize(job.bankId, signal, this.store.personal);
@@ -354,7 +362,8 @@ export class WorkspaceMemoryService {
       document = null;
     }
     const hash = document ? await contentHash(document.content) : null;
-    if (!operation && document && previous && previous.generation > 0 && previous.contentHash === hash) {
+    if (!operation && document && previous && previous.generation > 0 && previous.contentHash === hash
+      && (this.store.personal || previous.source.revision === document.source.revision)) {
       this.unskip(progress, pending.documentId);
       await this.store.saveDocument(job, pending.documentId, document.source, hash);
       // Persist recovery before removing the only durable retry entry.

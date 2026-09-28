@@ -309,3 +309,9 @@ Databricks実起動や実データ品質評価の代替ではない。
 評価環境のbankに対して `/config` の `disposition_skepticism`、`disposition_literalism`、
 `disposition_empathy` を変更し、同じ質問集合で比較する。`/profile` は410で廃止済み。
 未評価の値を本番bankへ適用しない。派生データの旧entity削除には別途許可を必要とし、正本を変更しない。
+
+## Phase 3: Knowledge Pages の公開記録
+
+Server は既存の Workspace / Project mental model を利用する。上流の別ページ作成APIを呼ばず、full refresh・自動更新・削除検出を再利用する。保守パッチは refresh が既に使う DB cutoff と生成条件を `reflect_response.dahlia_generation` に保存し、bank-scoped fact detail に `updated_at` を添付する。Server は全根拠の変更時刻・系譜と Dahlia 正本を検証してから公開記録を作る。旧版にこの記録はないため、更新・検証までは非公開になる。bank削除や既存データの破壊的な作り直しは不要。
+
+`uv run --locked pytest -q tests/test_knowledge_pages.py` は固定上流の実際の refresh 処理と fact detail serializer を合成データで検証する。Databricks App の実起動や実データによる品質評価の代わりにはならない。

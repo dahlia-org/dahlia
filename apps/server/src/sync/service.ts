@@ -1342,7 +1342,7 @@ async function embeddingContentHash(text: string | null): Promise<string | null>
   return [...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, "0")).join("");
 }
 
-function canonicalJson(value: unknown): string {
+export function canonicalJson(value: unknown): string {
   if (Array.isArray(value)) return `[${value.map(canonicalJson).join(",")}]`;
   if (value instanceof Date) return JSON.stringify(value.toISOString());
   if (value && typeof value === "object") {

@@ -1,8 +1,9 @@
+import { KnowledgePages } from "./KnowledgePages";
 import { useEffect, useRef, useState } from "react";
 import type { MemoryClaim, ReflectionStatus } from "../memory/reflection";
 import { uuidV7 } from "../id";
 import { encodeId } from "../typeid";
-import { json, uiText } from "./api";
+import { json, RequestError, uiText } from "./api";
 import { useActionDialog } from "./ActionDialog";
 import { WorkingMemoryEditor } from "./ChatMemory";
 import { Button } from "./components/ui/button";
@@ -42,7 +43,7 @@ const memoryRequest = <T,>(scope: Scope, operation: "list" | "status" | "save" |
 const scopeKey = (scope: Scope) => scope.workspaceId ?? "personal";
 export function DahliaMemoryPage() {
   const [connection, setConnection] = useState(false);
-  const [scopes, setScopes] = useState<Scope[]>([]), [selected, setSelected] = useState("personal"), [error, setError] = useState(false);
+  const [scopes, setScopes] = useState<Scope[]>([]), [selected, setSelected] = useState(() => new URLSearchParams(location.search).get("workspaceId") ?? "personal"), [error, setError] = useState(false);
   useEffect(() => {
     const controller = new AbortController();
     void json<{ scopes: Scope[] }>("/api/v1/user/memory/scopes", { signal: controller.signal }).then((value) => setScopes(value.scopes))
@@ -58,6 +59,7 @@ export function DahliaMemoryPage() {
       {scopes.map((s) => <option key={scopeKey(s)} value={scopeKey(s)}>{s.scope === "personal" ? uiText("Personal (only you)", "個人（自分のみ）") : s.name}</option>)}
     </select></label>
     {current && <MemoryPanel key={selected} scope={current} scopes={scopes} />}
+    {current?.workspaceId && <KnowledgePages key={`pages:${current.workspaceId}`} workspaceId={current.workspaceId} />}
     <WorkingMemoryEditor />
     <p>{uiText("Configure your MCP client to recall related memories before work and save useful personal lessons. Shared saves and deletion require your explicit instruction.", "MCP クライアントには、作業前の関連記憶の検索と有用な個人の記憶の保存を指示してください。共有への保存と削除には明示的な依頼が必要です。")}</p>
     <Button variant="outline" onClick={() => setConnection(true)}>{uiText("Connect an AI tool", "AI ツールを接続")}</Button>
@@ -77,8 +79,21 @@ function MemoryPanel({ scope, scopes }: { scope: Scope; scopes: Scope[] }) {
     const loadStatus = () => memoryRequest<Status>(scope, "status", {}, controller.signal).then(setStatus).catch(() => {
       if (!controller.signal.aborted) setError(uiText("Could not read analysis status.", "分析の状態を取得できません。"));
     });
-    void memoryRequest<{ items: Note[]; nextCursor: string | null }>(scope, "list", {}, read.signal).then((v) => { if (!read.signal.aborted) { setNotes(v.items); setNext(v.nextCursor); setListedQuery(""); } })
-      .catch(() => { if (!read.signal.aborted) setError(uiText("Could not read memories.", "記憶を取得できません。")); });
+    void memoryRequest<{ items: Note[]; nextCursor: string | null }>(scope, "list", {}, read.signal).then(async (value) => {
+      const link = new URLSearchParams(location.search);
+      const noteId = link.get("workspaceId") === scope.workspaceId ? link.get("noteId") : null;
+      if (scope.workspaceId && noteId) {
+        try {
+          const { memory } = await json<{ memory: Note }>(`/api/v1/workspaces/${scope.workspaceId}/memory/notes/${encodeURIComponent(noteId)}`, { signal: read.signal });
+          value.items = [memory, ...value.items.filter((item) => item.id !== memory.id)];
+        } catch (error) {
+          if (!(error instanceof RequestError) || error.status !== 404) throw error;
+          // The optional note may be gone; recheck the list and its current authorization before displaying it.
+          value = await memoryRequest<{ items: Note[]; nextCursor: string | null }>(scope, "list", {}, read.signal);
+        }
+      }
+      if (!read.signal.aborted) { setNotes(value.items); setNext(value.nextCursor); setListedQuery(""); }
+    }).catch(() => { if (!read.signal.aborted) setError(uiText("Could not read memories.", "記憶を取得できません。")); });
     void loadStatus();
     const timer = setInterval(() => void loadStatus(), 10_000);
     return () => { controller.abort(); activeRead.current?.abort(); clearInterval(timer); };
@@ -154,7 +169,7 @@ function MemoryPanel({ scope, scopes }: { scope: Scope; scopes: Scope[] }) {
       {result.canonical?.items.map((note) => <p key={note.id} className="whitespace-pre-wrap">{note.content}</p>)}
     </section>)}
     {!notes.length && <p>{uiText("No saved memories in this list.", "この一覧に記憶はありません。")}</p>}
-    {notes.map((note) => <article key={note.id} className="panel grid gap-2">
+    {notes.map((note) => <article key={note.id} id={`note-${note.id}`} className="panel grid gap-2">
       <p className="whitespace-pre-wrap">{note.content}</p>
       <small>{new Date(note.updatedAt).toLocaleString()} · {note.protected ? uiText("Human edited", "ユーザーが編集") : uiText("AI saved", "AI が保存")}</small>
       {scope.writable && <div className="flex flex-wrap items-end gap-2"><Button variant="outline" onClick={() => edit(note)}>{uiText("Edit", "編集")}</Button><Button variant="outline" onClick={() => remove(note)}>{uiText("Delete", "削除")}</Button>

@@ -1,3 +1,4 @@
+import { pageGetSchema, pageListSchema } from "./memory/pages-model";
 import { DahliaMemory, memoryConfigureSchema, memoryListSchema, memoryGetSchema, memorySaveSchema, personalMemorySearchSchema, workspaceMemorySearchSchema } from "./memory/dahlia";
 import { createMemoryGenerator, type MemoryGenerator, type ChatMemoryService } from "./agent/context-service";
 import { createMemoryTools } from "./memory/tools";
@@ -362,6 +363,28 @@ export function createApp(dependencies: AppDependencies): DahliaServerApp & { ru
     if (!dahliaMemory) throw new RequestError(404, "memory_unavailable");
     return dahliaMemory;
   };
+  registerApi(app, "listKnowledgePages", async (c) => {
+    c.header("Cache-Control", "no-store");
+    return c.json(await memory().pages.list(await identities.fromBrowser(c.req.raw), pageListSchema.parse({ ...c.req.query(), workspaceId: c.req.param("workspaceId") }), c.req.raw.signal));
+  });
+  registerApi(app, "getKnowledgePage", async (c) => {
+    c.header("Cache-Control", "no-store");
+    return c.json(await memory().pages.get(await identities.fromBrowser(c.req.raw), pageGetSchema.parse(c.req.param()), c.req.raw.signal));
+  });
+  registerApi(app, "exportKnowledgePage", async (c) => {
+    c.header("Cache-Control", "no-store");
+    const page = await memory().pages.get(await identities.fromBrowser(c.req.raw), pageGetSchema.parse(c.req.param()), c.req.raw.signal);
+    if (page.status !== "ready") throw new RequestError(409, "knowledge_page_unavailable");
+    c.header("Content-Type", "text/markdown; charset=utf-8");
+    c.header("Content-Disposition", `attachment; filename="${page.id}.md"`);
+    // Generated Markdown is a download, never rendered as trusted HTML by Dahlia.
+    return c.body(`# ${page.title}\n\n${page.instruction}\n\nCoverage: ${page.coverage}\nUpdated: ${page.generatedAt}\n\n${page.body}\n\nSources:\n${page.sources.map((source) => `- ${source.href} (revision ${source.revision})`).join("\n")}\n`);
+  });
+  registerApi(app, "refreshKnowledgePage", aiChatBodyLimit, async (c) => {
+    if ((await c.req.text()).trim()) throw new RequestError(400, "knowledge_page_body_not_allowed");
+    c.header("Cache-Control", "no-store");
+    return c.json(await memory().pages.refresh(await identities.fromBrowser(c.req.raw), pageGetSchema.parse(c.req.param())), 202);
+  });
   registerApi(app, "memoryScopes", async (c) => c.json(await memory().scopes(await identities.fromBrowser(c.req.raw))));
   registerApi(app, "personalMemoryList", async (c) => c.json(await memory().list(await identities.fromBrowser(c.req.raw), { scope: "personal" as const, ...memoryListSchema.omit({ scope: true, workspaceId: true }).parse(c.req.query()) })));
   registerApi(app, "personalMemoryGet", async (c) => c.json(await memory().get(await identities.fromBrowser(c.req.raw), { scope: "personal" as const, id: memoryGetSchema.shape.id.parse(c.req.param("noteId")) })));
