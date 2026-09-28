@@ -1,3 +1,4 @@
+import DahliaRuntimeSupport
 import Foundation
 @testable import Dahlia
 
@@ -181,7 +182,7 @@ import Foundation
 
             let inputs = await service.sentInputs[0]
             #expect(inputs.count == 3)
-            #expect(inputs[0] == .text("meeting:\(meetingID.uuidString.lowercased()) Explain these"))
+            #expect(inputs[0] == .text("meeting:\(TypeID.encode(meetingID, as: .meeting)) Explain these"))
             #expect(inputs[1].isImage)
             #expect(inputs[2].isImage)
         }

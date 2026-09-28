@@ -501,7 +501,7 @@ public final class DahliaMCPServer {
 
     func requiredUUID(_ arguments: [String: Any], key: String) throws -> UUID {
         guard let value = try string(arguments, key: key), let uuid = UUID(uuidString: value) else {
-            throw ParameterError("\(key) must be a UUID string")
+            throw ParameterError("\(key) must be a TypeID string")
         }
         return uuid
     }
@@ -574,11 +574,11 @@ public final class DahliaMCPServer {
         guard let value = arguments[key] else { return nil }
         let maximumCount = ScreenshotImageSize.preview.maximumScreenshotCount
         guard let values = value as? [Any], (1 ... maximumCount).contains(values.count) else {
-            throw ParameterError("\(key) must be an array containing 1 to \(maximumCount) UUID strings")
+            throw ParameterError("\(key) must be an array containing 1 to \(maximumCount) screenshot TypeID strings")
         }
         let ids = try values.map { value -> UUID in
             guard let value = value as? String, let id = UUID(uuidString: value) else {
-                throw ParameterError("\(key) must contain only UUID strings")
+                throw ParameterError("\(key) must contain only screenshot TypeID strings")
             }
             return id
         }

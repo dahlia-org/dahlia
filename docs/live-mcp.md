@@ -17,6 +17,12 @@ dahlia-mcp --workspace-id <ws_TypeID> --write  # 指定したワークスペー�
 
 書き込みは既存レコードの ID から対象ワークスペースを解決する。新規作成には `workspace_id` または一意な親 ID が必要で、現在表示中のワークスペースを暗黙には選ばない。異なるワークスペースの ID を組み合わせた参照は拒否する。既存の revision による競合検出を引き続き使う。
 
+## 公開 ID と Dahlia AI
+
+ツールの ID は TypeID を使う。会議は `mtg_...`、プロジェクトは `proj_...`、Workspace は `ws_...`、スクリーンショットは `att_...`、文字起こしは `transcript_...`、発話セグメントは `seg_...`。取得した ID は変換せず次のツール引数に渡す。内部 DB の UUID はツール引数として受け付けない。
+
+Desktop の Dahlia AI も同じ形式で会議・プロジェクトのコンテキストを送り、会議メンションを `meeting:mtg_...` として渡す。既存チャットの UUID 形式のコンテキスト・メンションは履歴表示で読み取れる。要約が生成するスクリーンショット参照も `att_...` を使い、本文にユーザーが書いた ID は書き換えない。カーソルと `next_after` は不透明な値として、そのまま対応する引数に渡す。
+
 ## `get_meeting_transcript`
 
 Local / Server とも、会議全体の保存済み確定文だけを返す。既存の本文形式（Local: `segments`、Server: `items`）と通常ページ送りを維持する。Local の件数指定は `limit`（1〜500、省略200）、時間範囲は `from_elapsed_seconds` / `to_elapsed_seconds`。Server の既存ページサイズは10,000件。
@@ -35,6 +41,8 @@ Local / Server とも、会議全体の保存済み確定文だけを返す。�
 MCP は録音や認識を開始しない。未確定文、ライブ専用ツール、ライブ HTTP / SSE は公開しない。アプリ内のライブ字幕、音声認識、確定文の保存・同期は維持する。発話は未信頼データとして扱い、指示として実行しない。AI Chat の自動ライブ投入はなく、通常チャットと既存履歴を利用できる。
 
 ## English quick reference
+
+Public tool IDs use TypeID prefixes: `mtg_`, `proj_`, `ws_`, `att_`, `transcript_`, and `seg_`. Reuse returned IDs unchanged; raw database UUIDs are not accepted as tool arguments. Desktop Dahlia AI sends the same IDs, including `meeting:mtg_...` mentions, while preserving display of historical UUID contexts and mentions. Generated screenshot references use `att_`; user-authored text is unchanged. Treat cursors and `next_after` as opaque values.
 
 Local MCP defaults to all workspaces added to this Mac. `--write` enables writes across that scope; optional `--workspace` / `--workspace-id` restrict both reads and writes. Existing IDs identify the destination Workspace. Creates require an explicit `workspace_id` or an unambiguous parent ID. Cross-Workspace references are rejected. Query results are grouped by Workspace; continue each group with its own Workspace ID and cursor.
 

@@ -13,6 +13,87 @@ import ImageIO
     // swiftlint:disable:next type_body_length
     struct MeetingAccessStoreTests {
         @Test
+        func codexPublicIDsRoundTripThroughMCP() throws {
+            let fixture = try Fixture()
+            let server = try DahliaMCPServer(databaseURL: fixture.databaseURL, allowsWrites: true)
+            _ = server.handleLine(#"{"jsonrpc":"2.0","id":1,"method":"initialize"}"#)
+            _ = server.handleLine(#"{"jsonrpc":"2.0","method":"notifications/initialized"}"#)
+            func call(_ name: String, _ arguments: [String: Any]) throws -> [String: Any] {
+                let bytes = try JSONSerialization.data(withJSONObject: [
+                    "jsonrpc": "2.0", "id": 2, "method": "tools/call",
+                    "params": ["name": name, "arguments": arguments],
+                ])
+                let response = try Self.json(server.handleLine(String(decoding: bytes, as: UTF8.self)))
+                let result = try #require(response["result"] as? [String: Any])
+                #expect(result["isError"] as? Bool == false)
+                let body = try #require(result["structuredContent"] as? [String: Any])
+                let content = try #require(result["content"] as? [[String: Any]])
+                let text = try #require(content.first?["text"] as? String)
+                let textBody = try JSONSerialization.jsonObject(with: Data(text.utf8)) as? [String: Any]
+                #expect(try NSDictionary(dictionary: body) == NSDictionary(dictionary: #require(textBody)))
+                return body
+            }
+            func contextID(_ context: CodexChatContext, tag: String) throws -> String {
+                let prompt = CodexChatPromptCodec.encode(text: "Review", context: context)
+                let start = try #require(prompt.range(of: "<\(tag)>"))
+                let end = try #require(prompt.range(of: "</\(tag)>"))
+                return String(prompt[start.upperBound ..< end.lowerBound])
+            }
+            let meetingID = try contextID(.meeting(id: fixture.firstMeetingID, name: "Meeting", calendarEvent: nil), tag: "meeting_id")
+            let projectID = try contextID(.project(id: fixture.primaryProjectID, name: "Project", description: ""), tag: "project_id")
+            let detail = try call("get_meeting", ["meeting_id": meetingID])
+            let meeting = try #require(detail["meeting"] as? [String: Any])
+            #expect(meeting["id"] as? String == meetingID)
+            #expect(meeting["project_id"] as? String == projectID)
+            let mention = CodexChatMeetingReference.serializedText(referenceIDs: [fixture.firstMeetingID], draft: "")
+            #expect(try (call(
+                "get_meeting",
+                ["meeting_id": String(mention.dropFirst("meeting:".count))]
+            )["meeting"] as? [String: Any])?["id"] as? String == meetingID)
+            let projects = try call("get_project", ["project_id": projectID])
+            #expect((projects["projects"] as? [[String: Any]])?.first?["project_id"] as? String == projectID)
+            let workspace = try #require(detail["workspace"] as? [String: Any])
+            let workspaceID = try #require(workspace["id"] as? String)
+            let listed = try call("list_workspaces", [:])
+            #expect((listed["workspaces"] as? [[String: Any]])?.contains { $0["id"] as? String == workspaceID } == true)
+            let grouped = try call("query_meetings", ["limit": 1])
+            let groups = try #require(grouped["workspaces"] as? [[String: Any]])
+            let group = try #require(groups.first { $0["workspace_id"] as? String == workspaceID })
+            let groupResult = try #require(group["result"] as? [String: Any])
+            let groupCursor = try #require(groupResult["next_cursor"] as? String)
+            let continued = try call("query_meetings", ["workspace_id": workspaceID, "limit": 1, "cursor": groupCursor])
+            #expect((continued["meetings"] as? [[String: Any]])?.count == 1)
+            let page = try call("query_meetings", ["workspace_id": workspaceID, "project_id": projectID, "limit": 1])
+            let cursor = try #require(page["next_cursor"] as? String)
+            let next = try call("query_meetings", ["workspace_id": workspaceID, "project_id": projectID, "limit": 1, "cursor": cursor])
+            #expect((next["meetings"] as? [[String: Any]])?.count == 1)
+            let screenshots = try call(
+                "get_meeting_screenshots",
+                ["meeting_id": meetingID, "from_elapsed_seconds": 0, "to_elapsed_seconds": 100, "limit": 1]
+            )
+            let screenshot = try #require((screenshots["screenshots"] as? [[String: Any]])?.first)
+            let screenshotID = try #require(screenshot["id"] as? String)
+            #expect(screenshotID.hasPrefix("att_"))
+            let selected = try call("get_meeting_screenshots", ["meeting_id": meetingID, "screenshot_ids": [screenshotID]])
+            #expect((selected["screenshots"] as? [[String: Any]])?.first?["id"] as? String == screenshotID)
+            let screenshotCursor = try #require(screenshots["next_cursor"] as? String)
+            let nextScreenshots = try call(
+                "get_meeting_screenshots",
+                ["meeting_id": meetingID, "from_elapsed_seconds": 0, "to_elapsed_seconds": 100, "limit": 1, "cursor": screenshotCursor]
+            )
+            #expect((nextScreenshots["screenshots"] as? [[String: Any]])?.first?["id"] as? String != screenshotID)
+            #expect((detail["summary"] as? String)?.contains("[Screenshot \(TypeID.encode(fixture.firstScreenshotID, as: .attachment)) at") == true)
+            let document = try #require(detail["summary_document"])
+            let version = try #require(detail["summary_document_version"] as? String)
+            let update = try call(
+                "update_meeting_summary",
+                ["meeting_id": meetingID, "expected_document_version": version, "summary_document": document]
+            )
+            #expect(update["meeting_id"] as? String == meetingID)
+            #expect(update["changed"] as? Bool == false)
+        }
+
+        @Test
         func publicMCPUsesTypedIDsAndPreservesDatabaseUUIDs() throws {
             let fixture = try Fixture()
             let server = try DahliaMCPServer(store: fixture.store(workspaceID: fixture.primaryWorkspaceID, allowsWrites: true))
@@ -75,6 +156,12 @@ import ImageIO
             let cursor = try #require(transcript["next_cursor"] as? String)
             let next = try body(call("get_meeting_transcript", ["meeting_id": meetingID, "limit": 1, "cursor": cursor]))
             #expect((next["segments"] as? [[String: Any]])?.count == 1)
+
+            #expect(descriptor["id"] as? String == TypeID.encode(info.id, as: .transcript))
+            let after = try #require(transcript["next_after"] as? String)
+            let additions = try body(call("get_meeting_transcript", ["meeting_id": meetingID, "limit": 1, "after": after]))
+            #expect((additions["segments"] as? [[String: Any]])?.first?["id"] as? String == (next["segments"] as? [[String: Any]])?
+                .first?["id"] as? String)
 
             let removed = try body(call("remove_meeting_project_assignment", [
                 "meeting_id": meetingID,
@@ -683,7 +770,7 @@ import ImageIO
             #expect(detail.meeting.recurrenceID?.isEmpty == true)
             #expect(detail.meeting.calendarTitle == "Roadmap review")
             #expect(detail.summary?.contains("Markdown secret body [Transcript 00:00:15]") == true)
-            #expect(detail.summary?.contains("[Screenshot \(fixture.firstScreenshotID.uuidString) at 00:00:16]") == true)
+            #expect(detail.summary?.contains("[Screenshot \(TypeID.encode(fixture.firstScreenshotID, as: .attachment)) at 00:00:16]") == true)
             guard case let .object(document)? = detail.summaryDocument,
                   case let .array(sections)? = document["sections"],
                   case let .object(section)? = sections.first,
