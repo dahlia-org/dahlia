@@ -33,6 +33,18 @@ try {
   }
   // Build only shipped source. Reuse installed dependencies, never sibling app files or existing dist output.
   await symlink(fileURLToPath(new URL("../node_modules", import.meta.url)), join(source, "node_modules"));
+  const built = spawnSync("pnpm", ["run", "build"], { cwd: source, encoding: "utf8" });
+  if (built.status !== 0) throw new Error(built.stderr || built.stdout || "deployment build failed");
+  for (const path of ["dist/client/index.html", "dist/server/node.js", "dist/server/db/migrate.js"]) {
+    await readFile(join(source, path));
+  }
+  const deploymentFiles = await readdir(join(source, "dist"), { recursive: true });
+  if (deploymentFiles.some((file) => file.endsWith(".d.ts") || file === "client-library")) {
+    throw new Error("Deployment build generated package-only artifacts");
+  }
+  console.log("Deployment build verified: Web and Server runtime assets, no package declarations or client library");
+  // Verify prepack independently from the deployment output.
+  await rm(join(source, "dist"), { recursive: true });
   const packed = spawnSync("pnpm", ["pack", "--pack-destination", directory], {
     cwd: source,
     encoding: "utf8",
@@ -240,6 +252,7 @@ try {
       throw new Error(`Node-only module leaked into the package root entry: ${file}`);
     }
   }
+  console.log("Packed artifact verified: runtime exports, declarations, client assets, and migrations");
 } finally {
   await rm(directory, { force: true, recursive: true });
 }
