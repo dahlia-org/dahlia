@@ -817,3 +817,19 @@ export const personalMemory = appSchema.table("personal_memories", {
   pgPolicy("personal_memory_owner", { for: "all", using: sql`${table.scopeId} = nullif(current_setting('app.user_id', true), '')::uuid`,
     withCheck: sql`${table.scopeId} = nullif(current_setting('app.user_id', true), '')::uuid` }),
 ]).enableRLS();
+
+// Rebuildable publication snapshots; all reads still validate current canonical evidence.
+export const knowledgePage = searchSchema.table("knowledge_pages", {
+  scopeId: uuid("workspace_id").notNull().references(() => syncedWorkspace.workspaceId, { onDelete: "cascade" }),
+  id: text("id").notNull(),
+  projectId: uuid("project_id"),
+  generation: integer("generation").default(0).notNull(),
+  snapshot: jsonb("snapshot").$type<import("../memory/pages-model").PageSnapshot>(),
+  status: text("status").$type<import("../memory/pages-model").PageStatus>().default("generating").notNull(),
+  requestVersion: integer("request_version").default(0).notNull(),
+  completedVersion: integer("completed_version").default(0).notNull(),
+  operation: jsonb("operation").$type<import("../memory/pages-model").PageOperation>(),
+}, (table) => [primaryKey({ columns: [table.scopeId, table.id] }),
+  pgPolicy("knowledge_page_read", { for: "select", using: sql`"app"."current_identity_can_read_workspace"(${table.scopeId})` }),
+  pgPolicy("knowledge_page_write", { for: "all", using: sql`"app"."current_identity_can_admin_workspace"(${table.scopeId})`, withCheck: sql`"app"."current_identity_can_admin_workspace"(${table.scopeId})` }),
+]).enableRLS();

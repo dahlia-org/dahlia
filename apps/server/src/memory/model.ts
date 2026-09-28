@@ -15,6 +15,7 @@ export interface MemoryProgress {
   modelId?: string;
   operationAttempts?: number;
   failures?: Record<string, string>;
+  pageAfter?: string;
 }
 export interface MemorySource {
   kind: "meeting" | "shared";

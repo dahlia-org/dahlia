@@ -1321,6 +1321,50 @@
       "consumers": [
         "Private Web"
       ]
+    },
+    {
+      "operationId": "listKnowledgePages",
+      "method": "GET",
+      "path": "/api/v1/workspaces/{workspaceId}/memory/pages",
+      "classification": "modified",
+      "previous": "new public contract",
+      "reason": "Standard generated pages with complete current canonical provenance validation; regeneration is admin-only",
+      "consumers": [
+        "apps/server/src/client/KnowledgePages.tsx"
+      ]
+    },
+    {
+      "operationId": "getKnowledgePage",
+      "method": "GET",
+      "path": "/api/v1/workspaces/{workspaceId}/memory/pages/{pageId}",
+      "classification": "modified",
+      "previous": "new public contract",
+      "reason": "Standard generated pages with complete current canonical provenance validation; regeneration is admin-only",
+      "consumers": [
+        "apps/server/src/client/KnowledgePages.tsx"
+      ]
+    },
+    {
+      "operationId": "exportKnowledgePage",
+      "method": "GET",
+      "path": "/api/v1/workspaces/{workspaceId}/memory/pages/{pageId}/export",
+      "classification": "modified",
+      "previous": "new public contract",
+      "reason": "Standard generated pages with complete current canonical provenance validation; regeneration is admin-only",
+      "consumers": [
+        "apps/server/src/client/KnowledgePages.tsx"
+      ]
+    },
+    {
+      "operationId": "refreshKnowledgePage",
+      "method": "POST",
+      "path": "/api/v1/workspaces/{workspaceId}/memory/pages/{pageId}/refresh",
+      "classification": "modified",
+      "previous": "new public contract",
+      "reason": "Standard generated pages with complete current canonical provenance validation; regeneration is admin-only",
+      "consumers": [
+        "apps/server/src/client/KnowledgePages.tsx"
+      ]
     }
   ],
   "delegated": [
@@ -2229,7 +2273,9 @@
       "get_working_memory",
       "update_working_memory",
       "save_memory",
-      "delete_memory"
+      "delete_memory",
+      "list_knowledge_pages",
+      "get_knowledge_page"
     ],
     "authorization": "Each call checks its capability scope and current Workspace access. Dahlia Memory reads require mcp:memory:read; writes require mcp:memory:write and current scope authorization."
   },

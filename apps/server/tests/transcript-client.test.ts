@@ -15,7 +15,7 @@ it.each([
   vi.stubGlobal("navigator", { language: "en" });
   vi.spyOn(Date, "now").mockReturnValue(Date.parse("2026-09-09T00:00:00Z"));
   const query = { data: { transcript: { endedAt, latestSegmentCreatedAt }, items: [{ segmentId: "sample", startedAt: "2026-09-09T00:00:00Z", speakerLabel: "Participant A", text: "Preview transcript" }] },
-    error: undefined, loading: false, reload: vi.fn(), replace: vi.fn() };
+    error: undefined, loading: false, refreshing: false, reload: vi.fn(), replace: vi.fn() };
   vi.spyOn(liveData, "useLiveQuery").mockReturnValue(query);
   vi.spyOn(liveData, "useLivePage").mockReturnValue({ ...query, loadingMore: false, loadMore: vi.fn() });
   const html = renderToStaticMarkup(createElement(TranscriptHistory, { meetingId: "meeting", timeBase: "2026-09-09T00:00:00Z" }));

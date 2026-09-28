@@ -289,6 +289,11 @@ describe("Dahlia Memory", () => {
       expect(read).not.toContain('"save_memory"'); expect(read).not.toContain('"update_working_memory"');
       const write = await list([MEMORY_WRITE_SCOPE]);
       expect(write).toContain('"save_memory"');
+      for (const value of [read, write]) {
+        expect(value).toContain('"list_knowledge_pages"'); expect(value).toContain('"get_knowledge_page"');
+        expect(value).not.toContain('"refresh_knowledge_page"'); expect(value).not.toContain('"update_knowledge_page"');
+      }
+      expect(await list(["mcp"])).not.toContain('"get_knowledge_page"');
       expect(write).toContain('"update_working_memory"');
       const listed = JSON.parse(write) as { result: { tools: Array<{ name: string; inputSchema: { type: string; oneOf: Array<{ properties: Record<string, unknown> }> } }> } };
       const editSchema = listed.result.tools.find((tool) => tool.name === "update_working_memory")!.inputSchema;
@@ -307,6 +312,8 @@ describe("Dahlia Memory", () => {
         const value: { result?: { isError?: boolean; content: Array<{ text: string }> }; error?: unknown } = await response.json();
         return value;
       };
+      expect((await call([MEMORY_READ_SCOPE], "get_knowledge_page", { workspaceId: f.workspaceId, pageId: "workspace-insights" })).result?.content[0]?.text).toContain('"body":null');
+      expect((await call([MEMORY_WRITE_SCOPE], "refresh_knowledge_page", { workspaceId: f.workspaceId, pageId: "workspace-insights" })).error).toBeDefined();
       const wireNote = f.note("From remote MCP");
       expect((await call([MEMORY_READ_SCOPE], "get_working_memory", {})).result?.content[0]?.text).toContain("A private note");
       expect((await call([MEMORY_READ_SCOPE], "update_working_memory", { section: "manual", content: "changed", revision: 0, explicit: true })).error).toBeDefined();

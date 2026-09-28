@@ -121,6 +121,10 @@ All listed operations use the generated Web and Desktop clients where a bundled 
 | workspaceMemoryConfigure | modified | PATCH `/api/v1/workspaces/{workspaceId}/memory/analysis/settings` | `none` | Workspace canonical memory configure in an owner-scoped URL | Private Web |
 | personalMemoryUpdate | modified | PATCH `/api/v1/user/memory/notes/{noteId}` | `none` | Edit a saved note with revision checking | Private Web |
 | workspaceMemoryUpdate | modified | PATCH `/api/v1/workspaces/{workspaceId}/memory/notes/{noteId}` | `none` | Edit a saved note with revision checking | Private Web |
+| listKnowledgePages | modified | GET `/api/v1/workspaces/{workspaceId}/memory/pages` | `new public contract` | Standard generated pages with complete current canonical provenance validation; regeneration is admin-only | apps/server/src/client/KnowledgePages.tsx |
+| getKnowledgePage | modified | GET `/api/v1/workspaces/{workspaceId}/memory/pages/{pageId}` | `new public contract` | Standard generated pages with complete current canonical provenance validation; regeneration is admin-only | apps/server/src/client/KnowledgePages.tsx |
+| exportKnowledgePage | modified | GET `/api/v1/workspaces/{workspaceId}/memory/pages/{pageId}/export` | `new public contract` | Standard generated pages with complete current canonical provenance validation; regeneration is admin-only | apps/server/src/client/KnowledgePages.tsx |
+| refreshKnowledgePage | modified | POST `/api/v1/workspaces/{workspaceId}/memory/pages/{pageId}/refresh` | `new public contract` | Standard generated pages with complete current canonical provenance validation; regeneration is admin-only | apps/server/src/client/KnowledgePages.tsx |
 
 ## Delegated protocols
 
@@ -255,7 +259,7 @@ These concrete endpoints preserve Better Auth/OAuth/OIDC, OpenAI and MCP formats
 | headMcpScreenshot | HEAD `/mcp/resources/workspaces/{workspaceId}/meetings/{meetingId}/screenshots/{screenshotId}/content` | MCP resource HTTP bytes | current Workspace read permission and MCP read scope |
 | signInHeader | POST `/api/auth/header/sign-in` | Better Auth | header |
 
-MCP methods: tools/list, tools/call. Tools: search, query_meetings, query_projects, get_project, get_meeting, get_meeting_transcript, query_screenshots, get_meeting_screenshots, list_memory_scopes, list_memories, get_memory, recall_memory, reflect_memory, get_working_memory, update_working_memory, save_memory, delete_memory. Each call checks its capability scope and current Workspace access. Dahlia Memory reads require mcp:memory:read; writes require mcp:memory:write and current scope authorization.
+MCP methods: tools/list, tools/call. Tools: search, query_meetings, query_projects, get_project, get_meeting, get_meeting_transcript, query_screenshots, get_meeting_screenshots, list_memory_scopes, list_memories, get_memory, recall_memory, reflect_memory, get_working_memory, update_working_memory, save_memory, delete_memory, list_knowledge_pages, get_knowledge_page. Each call checks its capability scope and current Workspace access. Dahlia Memory reads require mcp:memory:read; writes require mcp:memory:write and current scope authorization.
 
 ## Dispatch and fallbacks
 

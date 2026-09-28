@@ -623,3 +623,16 @@ export const personalMemory = sqliteTable("personal_memories", {
   updatedAt: sqliteTimestamp("updated_at").notNull(),
 }, (table) => [index("personal_memories_user_idx").on(table.scopeId),
 ]);
+
+// Rebuildable publication snapshots; all reads still validate current canonical evidence.
+export const knowledgePage = sqliteTable("knowledge_pages", {
+  scopeId: text("workspace_id").notNull().references(() => syncedWorkspace.workspaceId, { onDelete: "cascade" }),
+  id: text("id").notNull(),
+  projectId: text("project_id"),
+  generation: integer("generation").default(0).notNull(),
+  snapshot: text("snapshot", { mode: "json" }).$type<import("../memory/pages-model").PageSnapshot>(),
+  status: text("status").$type<import("../memory/pages-model").PageStatus>().default("generating").notNull(),
+  requestVersion: integer("request_version").default(0).notNull(),
+  completedVersion: integer("completed_version").default(0).notNull(),
+  operation: text("operation", { mode: "json" }).$type<import("../memory/pages-model").PageOperation>(),
+}, (table) => [primaryKey({ columns: [table.scopeId, table.id] })]);

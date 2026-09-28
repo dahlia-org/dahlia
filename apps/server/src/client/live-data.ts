@@ -99,6 +99,7 @@ export function useLiveQuery<T>(key: string | undefined, load: (signal: AbortSig
     data: isCurrent ? state.data : undefined,
     error: isCurrent ? state.error : undefined,
     loading: key !== undefined && (!isCurrent || (state.loading && state.data === undefined)),
+    refreshing: key !== undefined && (!isCurrent || state.loading),
     reload: () => { void queue.current?.refresh(); },
     replace: (next: T) => apply.current?.(next),
   };

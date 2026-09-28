@@ -206,6 +206,74 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/workspaces/{workspaceId}/memory/pages": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List validated standard Knowledge Pages; literal search, 20 per page */
+        get: operations["listKnowledgePages"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/workspaces/{workspaceId}/memory/pages/{pageId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Read a generated summary and canonical sources; unavailable pages omit all generated content */
+        get: operations["getKnowledgePage"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/workspaces/{workspaceId}/memory/pages/{pageId}/export": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Export currently validated generated text and canonical source links as Markdown */
+        get: operations["exportKnowledgePage"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/workspaces/{workspaceId}/memory/pages/{pageId}/refresh": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Queue standard page regeneration; Workspace admin only; no custom content or prompt */
+        post: operations["refreshKnowledgePage"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/user/memory/scopes": {
         parameters: {
             query?: never;
@@ -2189,6 +2257,35 @@ export interface components {
                 };
             };
         };
+        KnowledgePageList: {
+            items: components["schemas"]["KnowledgePage"][];
+            nextCursor: string | null;
+        };
+        KnowledgePage: {
+            id: string;
+            workspaceId: string;
+            projectId: string | null;
+            title: string;
+            /** @enum {string} */
+            status: "ready" | "generating" | "stale" | "source_invalid" | "paused" | "unavailable" | "error" | "no_sources";
+            /** @enum {string} */
+            coverage: "ready" | "partial" | "updating";
+            skippedCount: number;
+            canRefresh: boolean;
+            generatedAt: string | null;
+            body: string | null;
+            snippet: string | null;
+            sources: {
+                /** @enum {string} */
+                kind: "meeting" | "shared";
+                id: string;
+                revision: string;
+                href: string;
+                canonicalExcerpt: string;
+                truncated: boolean;
+            }[];
+            instruction: string;
+        };
         DahliaMemoryResult: {
             items?: components["schemas"]["DahliaMemoryNote"][];
             nextCursor?: string | null;
@@ -3646,6 +3743,108 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Capabilities"];
+                };
+            };
+            default: components["responses"]["Problem"];
+        };
+    };
+    listKnowledgePages: {
+        parameters: {
+            query?: {
+                projectId?: string;
+                query?: string;
+                after?: string;
+            };
+            header?: never;
+            path: {
+                workspaceId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["KnowledgePageList"];
+                };
+            };
+            default: components["responses"]["Problem"];
+        };
+    };
+    getKnowledgePage: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: string;
+                pageId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["KnowledgePage"];
+                };
+            };
+            default: components["responses"]["Problem"];
+        };
+    };
+    exportKnowledgePage: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: string;
+                pageId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Validated Markdown download */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "text/markdown": string;
+                };
+            };
+            default: components["responses"]["Problem"];
+        };
+    };
+    refreshKnowledgePage: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: string;
+                pageId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @enum {string} */
+                        status: "generating";
+                    };
                 };
             };
             default: components["responses"]["Problem"];

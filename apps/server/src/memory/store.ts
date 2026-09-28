@@ -1,4 +1,4 @@
-import { and, asc, eq, gt, isNull, lt, lte, or, sql } from "drizzle-orm";
+import { and, asc, eq, gt, inArray, isNull, lt, lte, or, sql } from "drizzle-orm";
 import type { NodePgDatabase } from "drizzle-orm/node-postgres";
 import type { PostgresDatabase, SQLiteDatabase } from "../db/client";
 import * as pg from "../db/auth-schema";
@@ -9,7 +9,9 @@ import { RequestError } from "../storage/upload";
 import { uuidV7 } from "../id";
 import { enqueueMemorySource } from "./enqueue";
 import type { MemoryOperation, MemorySource } from "./model";
+import type { PageSnapshot, PageStatus, PageOperation } from "./pages-model";
 
+export type KnowledgePageRecord = typeof pg.knowledgePage.$inferSelect;
 export type MemoryState = typeof pg.workspaceMemoryState.$inferSelect;
 export type MemorySourceJob = typeof pg.memorySourceJob.$inferSelect;
 export type SharedMemory = typeof pg.sharedMemory.$inferSelect;
@@ -44,6 +46,56 @@ export function createMemoryStore(database: PostgresDatabase | SQLiteDatabase | 
     });
   return {
     personal,
+    async ensurePages(userId: string, scopeId: string) {
+      return scoped(userId, scopeId, "admin", async (tx) => {
+        const projects = await tx.select({ id: base.syncedProject.projectId }).from(base.syncedProject).where(eq(base.syncedProject.workspaceId, scopeId));
+        const values = [{ scopeId, id: "workspace-insights", projectId: null as string | null },
+          ...projects.map(({ id }) => ({ scopeId, id: `project-${id}`, projectId: id }))];
+        for (const value of values) await tx.insert(base.knowledgePage).values(value).onConflictDoNothing();
+      });
+    },
+    async pages(userId: string, scopeId: string, after?: string, projectId?: string, limit = 20) {
+      const p = base.knowledgePage;
+      return scoped(userId, scopeId, "read", (tx) => tx.select().from(p).where(and(eq(p.scopeId, scopeId),
+        after ? gt(p.id, after) : undefined, projectId ? eq(p.projectId, projectId) : undefined)).orderBy(asc(p.id)).limit(limit));
+    },
+    async page(userId: string, scopeId: string, id: string) {
+      const p = base.knowledgePage;
+      return scoped(userId, scopeId, "read", async (tx) => (await tx.select().from(p).where(and(eq(p.scopeId, scopeId), eq(p.id, id))))[0]);
+    },
+    async publications(userId: string, scopeId: string, generation: number, ids: string[]) {
+      if (!ids.length) return [];
+      const p = base.knowledgePage, w = base.syncedWorkspace;
+      // One final statement fences the response against canonical mutations and regeneration requests.
+      return scoped(userId, scopeId, "read", (tx) => tx.select({ id: p.id, snapshot: p.snapshot }).from(p)
+        .innerJoin(state, eq(state.scopeId, p.scopeId)).innerJoin(w, eq(w.workspaceId, p.scopeId))
+        .where(and(eq(p.scopeId, scopeId), inArray(p.id, ids), eq(p.status, "ready"), isNull(p.operation),
+          eq(p.requestVersion, p.completedVersion), eq(p.generation, generation), eq(state.generation, generation),
+          eq(state.indexedGeneration, generation), eq(state.reconcile, false), eq(state.enabled, true), eq(state.purge, false),
+          isNull(w.deletingAt), eq(w.encryption, "none"), workspacePermissions(tx, base, userId).read(w.workspaceId))));
+    },
+    async requestPage(userId: string, scopeId: string, id: string) {
+      const p = base.knowledgePage;
+      return scoped(userId, scopeId, "admin", async (tx) => {
+        const [current] = await tx.select().from(state).where(eq(state.scopeId, scopeId));
+        if (!current?.enabled || current.purge) throw new RequestError(409, "memory_disabled");
+        const rows = await tx.update(p).set({ requestVersion: sql`CASE WHEN ${p.requestVersion} = ${p.completedVersion} THEN ${p.requestVersion} + 1 ELSE ${p.requestVersion} END`, operation: sql`CASE WHEN ${p.status} = 'error' AND ${p.requestVersion} = ${p.completedVersion} THEN NULL ELSE ${p.operation} END`, status: "generating" })
+          .where(and(eq(p.scopeId, scopeId), eq(p.id, id))).returning();
+        if (!rows.length) throw new RequestError(404, "knowledge_page_not_found");
+        await tx.update(state).set({ availableAt: new Date() }).where(eq(state.scopeId, scopeId));
+      });
+    },
+    async savePage(userId: string, job: MemoryState, page: KnowledgePageRecord,
+      patch: { snapshot?: PageSnapshot | null; status?: PageStatus; operation?: PageOperation | null; completedVersion?: number }) {
+      const p = base.knowledgePage;
+      return scoped(userId, job.scopeId, "admin", async (tx) => {
+        const [current] = await tx.select().from(state).where(and(eq(state.scopeId, job.scopeId), eq(state.lease, job.lease!),
+          eq(state.generation, job.generation), eq(state.enabled, true), eq(state.purge, false), gt(state.leaseUntil, new Date())));
+        if (!current) return false;
+        return (await tx.update(p).set({ ...patch, generation: job.generation })
+          .where(and(eq(p.scopeId, job.scopeId), eq(p.id, page.id), eq(p.requestVersion, page.requestVersion))).returning()).length > 0;
+      });
+    },
     async status(userId: string, scopeId: string) {
       return scoped(userId, scopeId, "read", async (tx) => {
         const [row] = await tx.select().from(state).where(eq(state.scopeId, scopeId));
@@ -62,6 +114,7 @@ export function createMemoryStore(database: PostgresDatabase | SQLiteDatabase | 
     async purge(userId: string, scopeId: string) {
       await scoped(userId, scopeId, "admin", async (tx) => {
         await tx.delete(notes).where(eq(notes.scopeId, scopeId));
+        if (!personal) await tx.delete(base.knowledgePage).where(eq(base.knowledgePage.scopeId, scopeId));
         await tx.update(state).set({ enabled: false, purge: true, status: "deleting", availableAt: new Date(),
           generation: sql`${state.generation} + 1` }).where(eq(state.scopeId, scopeId));
       });
@@ -106,7 +159,7 @@ export function createMemoryStore(database: PostgresDatabase | SQLiteDatabase | 
     },
     async nextDelay(scopeId: string) {
       const [row] = await db.select().from(state).where(eq(state.scopeId, scopeId));
-      return row && (row.purge || (row.enabled && (row.reconcile || row.generation !== row.indexedGeneration)))
+      return row && (row.purge || (row.enabled && (row.reconcile || row.generation !== row.indexedGeneration || (!personal && row.progress?.pageAfter !== undefined))))
         ? Math.max(5, Math.ceil((row.availableAt.getTime() - Date.now()) / 1000)) : undefined;
     },
     async due(after?: string) {

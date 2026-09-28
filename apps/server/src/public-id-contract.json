@@ -2295,6 +2295,37 @@
         "DELETE"
       ],
       "response": "pass"
+    },
+    {
+      "path": "/api/v1/workspaces/:workspaceId/memory/pages",
+      "methods": [
+        "GET",
+        "HEAD"
+      ],
+      "response": "pass"
+    },
+    {
+      "path": "/api/v1/workspaces/:workspaceId/memory/pages/:pageId",
+      "methods": [
+        "GET",
+        "HEAD"
+      ],
+      "response": "pass"
+    },
+    {
+      "path": "/api/v1/workspaces/:workspaceId/memory/pages/:pageId/export",
+      "methods": [
+        "GET",
+        "HEAD"
+      ],
+      "response": "pass"
+    },
+    {
+      "path": "/api/v1/workspaces/:workspaceId/memory/pages/:pageId/refresh",
+      "methods": [
+        "POST"
+      ],
+      "response": "pass"
     }
   ]
 }

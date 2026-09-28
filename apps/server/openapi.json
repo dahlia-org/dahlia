@@ -2970,6 +2970,153 @@
           }
         }
       },
+      "KnowledgePageList": {
+        "type": "object",
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/KnowledgePage"
+            }
+          },
+          "nextCursor": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "pattern": "^(workspace-insights|project-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$"
+          }
+        },
+        "required": [
+          "items",
+          "nextCursor"
+        ]
+      },
+      "KnowledgePage": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^(workspace-insights|project-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$"
+          },
+          "workspaceId": {
+            "type": "string",
+            "pattern": "^ws_[0-7][0-9abcdefghjkmnpqrstvwxyz]{25}$"
+          },
+          "projectId": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "pattern": "^proj_[0-7][0-9abcdefghjkmnpqrstvwxyz]{25}$"
+          },
+          "title": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "ready",
+              "generating",
+              "stale",
+              "source_invalid",
+              "paused",
+              "unavailable",
+              "error",
+              "no_sources"
+            ]
+          },
+          "coverage": {
+            "type": "string",
+            "enum": [
+              "ready",
+              "partial",
+              "updating"
+            ]
+          },
+          "skippedCount": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "canRefresh": {
+            "type": "boolean"
+          },
+          "generatedAt": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "body": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "snippet": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "sources": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "kind": {
+                  "type": "string",
+                  "enum": [
+                    "meeting",
+                    "shared"
+                  ]
+                },
+                "id": {
+                  "type": "string"
+                },
+                "revision": {
+                  "type": "string"
+                },
+                "href": {
+                  "type": "string"
+                },
+                "canonicalExcerpt": {
+                  "type": "string"
+                },
+                "truncated": {
+                  "type": "boolean"
+                }
+              },
+              "required": [
+                "kind",
+                "id",
+                "revision",
+                "href",
+                "canonicalExcerpt",
+                "truncated"
+              ]
+            }
+          },
+          "instruction": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "workspaceId",
+          "projectId",
+          "title",
+          "status",
+          "coverage",
+          "skippedCount",
+          "canRefresh",
+          "generatedAt",
+          "body",
+          "snippet",
+          "sources",
+          "instruction"
+        ]
+      },
       "DahliaMemoryResult": {
         "type": "object",
         "properties": {
@@ -8945,6 +9092,243 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/Capabilities"
+                }
+              }
+            }
+          },
+          "default": {
+            "$ref": "#/components/responses/Problem"
+          }
+        }
+      }
+    },
+    "/api/v1/workspaces/{workspaceId}/memory/pages": {
+      "get": {
+        "operationId": "listKnowledgePages",
+        "summary": "List validated standard Knowledge Pages; literal search, 20 per page",
+        "tags": [
+          "workspaces"
+        ],
+        "security": [
+          {
+            "browserSession": []
+          },
+          {
+            "trustedProxy": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "pattern": "^ws_[0-7][0-9abcdefghjkmnpqrstvwxyz]{25}$"
+            },
+            "required": true,
+            "name": "workspaceId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "pattern": "^proj_[0-7][0-9abcdefghjkmnpqrstvwxyz]{25}$"
+            },
+            "required": false,
+            "name": "projectId",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "maxLength": 4000
+            },
+            "required": false,
+            "name": "query",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "pattern": "^(workspace-insights|project-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$"
+            },
+            "required": false,
+            "name": "after",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KnowledgePageList"
+                }
+              }
+            }
+          },
+          "default": {
+            "$ref": "#/components/responses/Problem"
+          }
+        }
+      }
+    },
+    "/api/v1/workspaces/{workspaceId}/memory/pages/{pageId}": {
+      "get": {
+        "operationId": "getKnowledgePage",
+        "summary": "Read a generated summary and canonical sources; unavailable pages omit all generated content",
+        "tags": [
+          "workspaces"
+        ],
+        "security": [
+          {
+            "browserSession": []
+          },
+          {
+            "trustedProxy": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "pattern": "^ws_[0-7][0-9abcdefghjkmnpqrstvwxyz]{25}$"
+            },
+            "required": true,
+            "name": "workspaceId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "pattern": "^(workspace-insights|project-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$"
+            },
+            "required": true,
+            "name": "pageId",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KnowledgePage"
+                }
+              }
+            }
+          },
+          "default": {
+            "$ref": "#/components/responses/Problem"
+          }
+        }
+      }
+    },
+    "/api/v1/workspaces/{workspaceId}/memory/pages/{pageId}/export": {
+      "get": {
+        "operationId": "exportKnowledgePage",
+        "summary": "Export currently validated generated text and canonical source links as Markdown",
+        "tags": [
+          "workspaces"
+        ],
+        "security": [
+          {
+            "browserSession": []
+          },
+          {
+            "trustedProxy": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "pattern": "^ws_[0-7][0-9abcdefghjkmnpqrstvwxyz]{25}$"
+            },
+            "required": true,
+            "name": "workspaceId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "pattern": "^(workspace-insights|project-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$"
+            },
+            "required": true,
+            "name": "pageId",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Validated Markdown download",
+            "content": {
+              "text/markdown": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "default": {
+            "$ref": "#/components/responses/Problem"
+          }
+        }
+      }
+    },
+    "/api/v1/workspaces/{workspaceId}/memory/pages/{pageId}/refresh": {
+      "post": {
+        "operationId": "refreshKnowledgePage",
+        "summary": "Queue standard page regeneration; Workspace admin only; no custom content or prompt",
+        "tags": [
+          "workspaces"
+        ],
+        "security": [
+          {
+            "browserSession": []
+          },
+          {
+            "trustedProxy": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "pattern": "^ws_[0-7][0-9abcdefghjkmnpqrstvwxyz]{25}$"
+            },
+            "required": true,
+            "name": "workspaceId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "pattern": "^(workspace-insights|project-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$"
+            },
+            "required": true,
+            "name": "pageId",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "202": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "string",
+                      "enum": [
+                        "generating"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "status"
+                  ]
                 }
               }
             }

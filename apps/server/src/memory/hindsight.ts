@@ -4,6 +4,7 @@ import { DatabricksTokenProvider, tokenUntilAborted } from "../databricks/token"
 import type { MemoryDocument } from "./model";
 import { MEMORY_MISSION, PERSONAL_MEMORY_MISSION } from "./model";
 import { reflectionResponseSchema } from "./reflection";
+import { standardModel } from "./pages-model";
 
 export class HindsightError extends Error {
   constructor(readonly code: string, readonly status?: number) { super(code); }
@@ -105,19 +106,35 @@ export class HindsightClient {
     await this.request(bank, `/mental-models/${encodeURIComponent(id)}`, "DELETE", signal, undefined, true);
   }
   async createModel(bank: string, projectId: string | null, signal: AbortSignal, personal = false) {
-    const id = projectId ? `project-${projectId}` : "workspace-insights";
-    // A prior create may have succeeded even when its response was lost.
+    const definition = standardModel(projectId, personal);
+    const { id, ...settings } = definition;
+    // Reconcile existing settings too; a lost acknowledgement is recovered by GET + refresh.
     const existing = await this.request(bank, `/mental-models/${encodeURIComponent(id)}`, "GET", signal, undefined, true);
-    if (existing) return operationSchema.parse(await this.request(bank, `/mental-models/${encodeURIComponent(id)}/refresh`, "POST", signal)).operation_id;
-    return operationSchema.parse(await this.request(bank, "/mental-models", "POST", signal, {
-      id,
-      name: projectId ? "Project decisions and open questions" : "Cross-meeting insights",
-      source_query: personal ? "Find useful preferences, recurring lessons, decisions, changes and unresolved questions in this private memory. Cite source documents and preserve uncertainty." : projectId ? "What was decided, why, what changed, and what remains unresolved? Cite meeting evidence and dates."
-        : "Across meetings, what recurring needs, obstacles, effective responses and exceptions appear? Cite distinct source meetings; do not count summaries as independent evidence or infer population statistics.",
-      tags: projectId ? [`project:${projectId}`] : [], max_tokens: 2048,
-      trigger: { refresh_after_consolidation: true, min_refresh_interval_seconds: 3600, exclude_mental_models: true, tags_match: "all_strict" },
-    })).operation_id;
+    if (existing) {
+      await this.request(bank, `/mental-models/${encodeURIComponent(id)}`, "PATCH", signal, settings);
+      return operationSchema.parse(await this.request(bank, `/mental-models/${encodeURIComponent(id)}/refresh`, "POST", signal)).operation_id;
+    }
+    return operationSchema.parse(await this.request(bank, "/mental-models", "POST", signal, definition)).operation_id;
   }
+  async model(bank: string, id: string, signal: AbortSignal) {
+    const raw = await this.request(bank, `/mental-models/${encodeURIComponent(id)}`, "GET", signal, undefined, true);
+    if (raw === null) return null;
+    return z.object({ id: z.string(), bank_id: z.string(), name: z.string(), source_query: z.string().nullable(),
+      content: z.string().nullable(), tags: z.array(z.string()), max_tokens: z.number().nullable(),
+      trigger: z.record(z.string(), z.unknown()).nullable(), last_refreshed_at: z.string().nullable(), is_stale: z.boolean().nullish(),
+      reflect_response: z.object({ based_on: z.record(z.string(), z.array(z.object({ id: z.string(), text: z.string() }))),
+        outcome: z.string().optional(), dahlia_generation: z.object({ cutoff: z.iso.datetime({ offset: true }), source_query: z.string(),
+          tags: z.array(z.string()).nullable(), trigger: z.record(z.string(), z.unknown()), max_tokens: z.number().nullable() }).optional() }).nullable(),
+    }).parse(raw);
+  }
+  async pageFact(bank: string, id: string, signal: AbortSignal) {
+    const raw = await this.request(bank, `/memories/${encodeURIComponent(id)}`, "GET", signal, undefined, true);
+    const parsed = z.object({ id: z.string(), text: z.string(), state: z.string(), type: z.string(), updated_at: z.iso.datetime({ offset: true }),
+      document_id: z.string().nullish(), source_memory_ids: z.array(z.string()).default([]), metadata: z.record(z.string(), z.unknown()),
+    }).safeParse(raw);
+    return parsed.success && parsed.data.id === id && parsed.data.state === "valid" ? parsed.data : null;
+  }
+
   async recall(bank: string, query: string, signal: AbortSignal, options: RecallOptions = {}) {
     const types = options.types ?? ["world", "experience"];
     return recallSchema.parse(await this.request(bank, "/memories/recall", "POST", signal, {

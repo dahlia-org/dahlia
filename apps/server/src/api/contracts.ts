@@ -1,3 +1,4 @@
+import { pageGetSchema, pageListSchema, pageSchema, pageListResultSchema } from "../memory/pages-model";
 import { memoryResultSchema, memoryScopeSchema, memoryConfigureSchema, memoryListSchema, memoryGetSchema, memorySaveSchema, personalMemorySearchSchema, workspaceMemorySearchSchema } from "../memory/dahlia";
 import { workingMemorySettingsSchema, workingMemoryEditSchema, liveSelectionSchema, liveStatusSchema } from "../agent/context-model";
 import { organizationDomainsSchema } from "../auth/organization-domains";
@@ -90,6 +91,7 @@ export const memoryUpdateBody = memoryCreateBody.omit({ id: true }).extend({ rev
 export const memoryDeleteQuery = z.object({ revision: z.string().regex(/^[1-9][0-9]*$/).refine((value) => Number.isSafeInteger(Number(value)), "Invalid revision"), explicit: z.literal("true") }).strict();
 
 export type OperationId =
+  "listKnowledgePages" | "getKnowledgePage" | "exportKnowledgePage" | "refreshKnowledgePage" |
   "memoryScopes" |
   "personalMemoryList" | "personalMemoryGet" | "personalMemorySave" | "personalMemoryUpdate" | "personalMemoryDelete" | "personalMemoryRecall" | "personalMemoryReflect" | "personalMemoryStatus" | "personalMemoryConfigure" |
   "workspaceMemoryList" | "workspaceMemoryGet" | "workspaceMemorySave" | "workspaceMemoryUpdate" | "workspaceMemoryDelete" | "workspaceMemoryRecall" | "workspaceMemoryReflect" | "workspaceMemoryStatus" | "workspaceMemoryConfigure" |
@@ -133,6 +135,10 @@ export const contracts: Record<OperationId, RouteConfig & { operationId: string 
     teams: z.array(z.object({ id: S.principalId, name: z.string() })), hasMoreMembers: z.boolean(), hasMoreTeams: z.boolean(),
   })) }, { query: z.object({ membersOffset: z.string().regex(/^\d+$/).optional(), teamsOffset: z.string().regex(/^\d+$/).optional() }).strict() }, browser),
   getCapabilities: route("get", "/api/v1/capabilities", "getCapabilities", "Discover feature versions; unsupported features are omitted", { 200: json(S.capabilities) }),
+  listKnowledgePages: route("get", "/api/v1/workspaces/{workspaceId}/memory/pages", "listKnowledgePages", "List validated standard Knowledge Pages; literal search, 20 per page", { 200: json(pageListResultSchema) }, { params: pageListSchema.pick({ workspaceId: true }), query: pageListSchema.omit({ workspaceId: true }) }, browser),
+  getKnowledgePage: route("get", "/api/v1/workspaces/{workspaceId}/memory/pages/{pageId}", "getKnowledgePage", "Read a generated summary and canonical sources; unavailable pages omit all generated content", { 200: json(pageSchema) }, { params: pageGetSchema }, browser),
+  exportKnowledgePage: route("get", "/api/v1/workspaces/{workspaceId}/memory/pages/{pageId}/export", "exportKnowledgePage", "Export currently validated generated text and canonical source links as Markdown", { 200: { description: "Validated Markdown download", content: { "text/markdown": { schema: z.string() } } } }, { params: pageGetSchema }, browser),
+  refreshKnowledgePage: route("post", "/api/v1/workspaces/{workspaceId}/memory/pages/{pageId}/refresh", "refreshKnowledgePage", "Queue standard page regeneration; Workspace admin only; no custom content or prompt", { 202: json(z.object({ status: z.literal("generating") })) }, { params: pageGetSchema }, browser),
   memoryScopes: route("get", "/api/v1/user/memory/scopes", "memoryScopes", "List authorized Dahlia Memory scopes", { 200: json(memoryResultSchema) }, {}, browser),
   personalMemoryList: route("get", "/api/v1/user/memory/notes", "personalMemoryList", "List saved notes; independent of analysis", { 200: json(memoryResultSchema) }, { query: memoryListSchema.omit({ scope: true, workspaceId: true }) }, browser),
   personalMemoryGet: route("get", "/api/v1/user/memory/notes/{noteId}", "personalMemoryGet", "Read a saved note", { 200: json(memoryResultSchema) }, { params: z.object({ noteId: memoryGetSchema.shape.id }) }, browser),

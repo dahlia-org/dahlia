@@ -6,6 +6,11 @@ import { MeetingSyncService } from "../src/sync/service";
 import { uuidV7 } from "../src/id";
 import { seedPostgresIdentity, testOrganizationID } from "./public-test-client";
 import type { Identity } from "../src/auth/identity";
+import type { AppConfig } from "../src/config";
+import { WorkspaceMemoryService } from "../src/memory/service";
+import { standardModel } from "../src/memory/pages-model";
+import { noteDocument } from "../src/memory/sources";
+import { encodeId } from "../src/typeid";
 
 const url = process.env.TEST_DATABASE_URL;
 const connection = url ? connectPostgresUrl(url, 1) : undefined;
@@ -68,6 +73,50 @@ describe.runIf(url)("Workspace memory PostgreSQL RLS", () => {
       expect((await tx.execute(sql`select id from app.shared_memories where id = ${note.id}`)).rows).toHaveLength(1);
     });
     expect((await pool.query("SELECT * FROM app.shared_memories WHERE id = $1", [note.id])).rows).toEqual([]);
+    await memory.ensurePages(owner.userId, workspaceId);
+    expect((await memory.pages(owner.userId, workspaceId)).map((page) => page.id)).toEqual(["workspace-insights"]);
+    await expect(memory.pages(stranger.userId, workspaceId)).rejects.toMatchObject({ status: 404 });
+    const pageRls = await pool.query("SELECT relrowsecurity, relforcerowsecurity FROM pg_class WHERE oid = 'search.knowledge_pages'::regclass");
+    expect(pageRls.rows[0]).toEqual({ relrowsecurity: true, relforcerowsecurity: true });
+    expect((await pool.query("SELECT * FROM search.knowledge_pages")).rows).toEqual([]);
+    await db.transaction(async (tx) => {
+      await tx.execute(sql`select set_config('app.user_id', ${stranger.userId}, true)`);
+      expect((await tx.execute(sql`select * from search.knowledge_pages where workspace_id = ${workspaceId}`)).rows).toEqual([]);
+      expect((await tx.execute(sql`update search.knowledge_pages set status = 'ready' where workspace_id = ${workspaceId} returning id`)).rows).toEqual([]);
+    });
+    await db.transaction(async (tx) => {
+      await tx.execute(sql`select set_config('app.user_id', ${owner.userId}, true)`);
+      expect((await tx.execute(sql`select id from search.knowledge_pages where workspace_id = ${workspaceId}`)).rows).toHaveLength(1);
+      await tx.execute(sql`update jobs.workspace_memory_state set reconcile = false, indexed_generation = generation where workspace_id = ${workspaceId}`);
+      await tx.execute(sql`update search.knowledge_pages set status = 'ready', generation = (select generation from jobs.workspace_memory_state where workspace_id = ${workspaceId}) where workspace_id = ${workspaceId}`);
+    });
+    const publicationGeneration = (await memory.status(owner.userId, workspaceId))!.generation;
+    expect(await memory.publications(owner.userId, workspaceId, publicationGeneration, ["workspace-insights"])).toHaveLength(1);
+    await expect(memory.publications(stranger.userId, workspaceId, publicationGeneration, ["workspace-insights"])).rejects.toMatchObject({ status: 404 });
+    await memory.requestPage(owner.userId, workspaceId, "workspace-insights");
+    expect(await memory.publications(owner.userId, workspaceId, publicationGeneration, ["workspace-insights"])).toEqual([]);
+    // Exercise a real JSONB publication round trip; PostgreSQL reorders object keys.
+    await db.transaction(async (tx) => {
+      await tx.execute(sql`select set_config('app.user_id', ${owner.userId}, true)`);
+      await tx.execute(sql`update jobs.workspace_memory_state set progress = '{"entityPolicy":1,"reflectionPolicy":1}'::jsonb where workspace_id = ${workspaceId}`);
+      await tx.execute(sql`update search.knowledge_pages set completed_version = request_version where workspace_id = ${workspaceId}`);
+    });
+    const engine = new WorkspaceMemoryService({ hindsight: { url: "https://synthetic.example", auth: "none", bankPrefix: "pg-test" } } as AppConfig, memory, sync, app.sync);
+    const definition = standardModel(null), cutoff = new Date().toISOString(), factId = uuidV7(), document = noteDocument(note);
+    const current = (await memory.status(owner.userId, workspaceId))!;
+    const model = { ...definition, bank_id: current.bankId, content: "Synthetic page", last_refreshed_at: cutoff, is_stale: false,
+      reflect_response: { based_on: { world: [{ id: factId, text: "Synthetic fact" }] }, dahlia_generation: {
+        cutoff, source_query: definition.source_query, tags: definition.tags, trigger: definition.trigger, max_tokens: definition.max_tokens } } };
+    vi.spyOn(engine.client, "bank").mockReturnValue(current.bankId);
+    vi.spyOn(engine.client, "model").mockResolvedValue(model);
+    vi.spyOn(engine.client, "pageFact").mockResolvedValue({ id: factId, text: "Synthetic fact", type: "world", state: "valid",
+      updated_at: cutoff, document_id: document.id, source_memory_ids: [], metadata: { source_kind: "shared", source_id: note.id, source_revision: "1" } });
+    vi.spyOn(engine, "canonicalSource").mockResolvedValue(document);
+    const job = (await memory.claim(workspaceId))!, signal = new AbortController().signal;
+    await engine.pages.step(owner, job, signal);
+    await memory.release(job);
+    expect((await memory.page(owner.userId, workspaceId, definition.id))!.snapshot).toBeTruthy();
+    expect(await engine.pages.get(owner, { workspaceId: encodeId("workspace", workspaceId), pageId: definition.id }, signal)).toMatchObject({ status: "ready", body: "Synthetic page" });
     const pending = (await memory.pending(workspaceId))!;
     await memory.setOperation(pending, { id: uuidV7(), generation: pending.generation,
       source: { kind: "shared", id: note.id, revision: "1", projectId: null }, contentHash: "hash", attempts: 0 });

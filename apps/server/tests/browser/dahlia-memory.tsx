@@ -5,7 +5,8 @@ import { DahliaMemoryPage } from "../../src/client/DahliaMemory";
 import "../../src/client/styles.css";
 Object.defineProperty(navigator, "language", { value: "en-US", configurable: true });
 type Note = { id: string; content: string; revision: number; protected: boolean; updatedAt: string };
-const rows: Record<string, Note[]> = { personal: [{ id: "test", content: "Private lesson", revision: 1, protected: true, updatedAt: new Date().toISOString() }], team: [] };
+const rows: Record<string, Note[]> = { personal: [{ id: "test", content: "Private lesson", revision: 1, protected: true, updatedAt: new Date().toISOString() }], team: [], other: [] };
+const linkedReads: string[] = [];
 const writes: Array<{ scope: string; workspaceId?: string; explicit: boolean }> = [];
 let failSave = false;
 let purges = 0;
@@ -13,11 +14,18 @@ window.fetch = async (input, init) => {
   const request = input instanceof Request ? input : new Request(new URL(input, location.origin), init);
   const path = new URL(request.url).pathname;
   if (path === "/api/v1/user/memory/working") return Response.json({ revision: 0, automatic: true, capacityReached: false, manual: "", learned: "" });
-  if (path.endsWith("/scopes")) return Response.json({ scopes: [{ scope: "personal", name: "Personal", writable: true }, { scope: "workspace", workspaceId: "team", name: "Team", writable: true }] });
+  if (path.endsWith("/projects")) return Response.json({ items: [] });
+  if (path.endsWith("/pages")) return Response.json({ items: [], nextCursor: null });
+  if (path.endsWith("/scopes")) return Response.json({ scopes: [{ scope: "personal", name: "Personal", writable: true }, { scope: "workspace", workspaceId: "team", name: "Team", writable: true }, { scope: "workspace", workspaceId: "other", name: "Other team", writable: true }] });
   const body: { content: string; id: string; revision: number; explicit: boolean } = ["POST", "PATCH"].includes(request.method) ? await request.json() : { content: "", id: "", revision: Number(new URL(request.url).searchParams.get("revision")), explicit: false };
   if (request.method === "PATCH" || request.method === "DELETE") body.id = path.split("/").at(-1)!;
   if (request.method === "DELETE") body.explicit = new URL(request.url).searchParams.get("explicit") === "true";
   const key = path.startsWith("/api/v1/user/") ? "personal" : path.split("/")[4]!;
+  if (path.includes("/notes/") && request.method === "GET") {
+    linkedReads.push(key);
+    const memory = rows[key]?.find((note) => note.id === path.split("/").at(-1));
+    return memory ? Response.json({ memory }) : Response.json({ error: "memory_not_found" }, { status: 404 });
+  }
   if (path.endsWith("/notes") && request.method === "GET") return Response.json({ items: rows[key], nextCursor: null });
   if (path.endsWith("/status")) return Response.json({ enabled: false, status: "unavailable", skippedCount: 0 });
   if (path.endsWith("/memory") && request.method === "DELETE") { purges++; rows[key] = []; return Response.json({ status: "deleting" }); }
@@ -77,6 +85,16 @@ async function run() {
   button("Erase memories").click(); await until(() => document.querySelector("[data-confirm]"));
   (document.querySelector("[data-confirm]") as HTMLButtonElement).click();
   await until(() => purges === 1);
-  document.getElementById("result")!.textContent = "PASS: scope, conflict preservation, explicit sharing copy, sources, deletion and purge without analysis";
+  rows.team = [{ id: "linked", content: "Linked canonical note", revision: 1, protected: true, updatedAt: new Date().toISOString() }];
+  rows.other = [{ id: "other", content: "Other Workspace note", revision: 1, protected: true, updatedAt: new Date().toISOString() }];
+  history.replaceState({}, "", `${location.pathname}?workspaceId=team&noteId=linked`);
+  root.render(<DahliaMemoryPage />);
+  await until(() => document.body.textContent.includes("Linked canonical note"));
+  const nextScope = document.querySelector("select")!; nextScope.value = "other"; nextScope.dispatchEvent(new Event("change", { bubbles: true }));
+  await until(() => document.body.textContent.includes("Other Workspace note"));
+  assert(!document.body.textContent.includes("Linked canonical note"), "Scope switch kept the previous Workspace content");
+  assert(linkedReads.length === 1 && linkedReads[0] === "team", "Deep link crossed Workspace boundary");
+  history.replaceState({}, "", location.pathname);
+  document.getElementById("result")!.textContent = "PASS: scope, conflict preservation, explicit sharing copy, sources, deletion, purge without analysis and canonical deep-link scope switch";
 }
 void run().catch((error: unknown) => { document.getElementById("result")!.textContent = `FAIL: ${String(error)}`; });
