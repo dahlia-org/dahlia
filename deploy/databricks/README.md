@@ -132,28 +132,25 @@ Collector, or enable telemetry emission.
 
 The bundle exposes its Responses-compatible `system.ai.*` models through the ordered `DAHLIA_FOUNDATION_MODELS` value. GPT 6 Sol and Luna precede the retained GPT 5.6 IDs, which remain available for saved model selections and Desktop image analysis. `/api/v1/models` reads this value without calling a discovery API, and Responses forwards the selected fully qualified model ID unchanged. `DAHLIA_CODEX_AUTO_REVIEW_MODEL=system.ai.gpt-6-luna` preserves the reserved `codex-auto-review` route without registering an alias service.
 
-Search embeddings, image analysis, and Hindsight also use their `system.ai.*` models directly. Postdeploy only activates Lakebase Search extensions. Manage App service principal permissions separately, including granting the Dahlia Server App service principal `CAN_USE` on the Hindsight App.
+Search embeddings, image analysis, and Hindsight also use their `system.ai.*` models directly. Postdeploy only activates Lakebase Search extensions. Manage model access for the App service principals separately; the bundle manages the Server-to-Hindsight App permission described below.
 
 
-### Manual Hindsight App permission
+### Hindsight App permission
 
-Before enabling Workspace memory on a fresh deployment, grant the Server App service principal `CAN_USE` on the Hindsight App. Run the following with an identity allowed to manage Hindsight App permissions. Set `deploy_target=prod` and the matching profile for production. Re-run it if the grant is lost or the Server App is recreated.
+The Server App declares Hindsight as an App resource in `resources/dahlia_server.yml`. During `bundle deploy`, Databricks grants the Server App's service principal `CAN_USE` on the Hindsight App for the same target:
 
-```bash
-(
-  set -euo pipefail
-  deploy_profile=fevm-dahlia
-  deploy_target=dev
-  permissions_file=$(mktemp)
-  trap 'rm -f "$permissions_file"' EXIT
-  databricks apps get "mcp-dahlia-server-${deploy_target}" --profile "$deploy_profile" --output json |
-    python3 -c 'import json,sys; app=json.load(sys.stdin); print(json.dumps({"access_control_list":[{"service_principal_name":app["service_principal_client_id"],"permission_level":"CAN_USE"}]}))' > "$permissions_file"
-  databricks apps update-permissions "dahlia-hindsight-${deploy_target}" \
-    --json "@$permissions_file" --profile "$deploy_profile"
-)
+```yaml
+resources:
+  apps:
+    dahlia_server:
+      resources:
+        - name: hindsight
+          app:
+            name: ${resources.apps.hindsight.name}
+            permission: CAN_USE
 ```
 
-This manual step requires Python 3 and updates the Server principal's grant while preserving other principals' permissions.
+The deployment identity must be allowed to manage both Apps. No service principal ID or separate manual grant is needed. After deployment, verify the Server principal's `CAN_USE` grant with `databricks apps get-permissions dahlia-hindsight-dev --profile <profile>` (use `dahlia-hindsight-prod` for production). See [App resources](https://docs.databricks.com/aws/en/dev-tools/bundles/resources#appresources).
 
 ## Smoke test
 
