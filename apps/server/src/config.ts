@@ -49,7 +49,7 @@ export interface S3StorageConfig {
 export interface AppConfig {
   chatMemoryModel?: string;
   memoryMcpAccess?: "off" | "read" | "write";
-  hindsight?: { url: string; auth: "none" | "bearer" | "databricks"; apiKey?: string; bankPrefix: string; images?: import("./memory/images").ImageSettings };
+  hindsight?: { url: string; auth: "none" | "bearer" | "databricks"; apiKey?: string; images?: import("./memory/images").ImageSettings };
   encryption?: EncryptionConfig;
   authProvider: AuthProvider;
   authHeader: string;
@@ -225,6 +225,9 @@ function providerConfig(
 }
 
 export function loadConfig(env: Record<string, string | undefined>): AppConfig {
+  if (env.DAHLIA_HINDSIGHT_BANK_PREFIX !== undefined) {
+    throw new Error("DAHLIA_HINDSIGHT_BANK_PREFIX is no longer supported; remove it and use a dedicated Hindsight endpoint and storage for each environment");
+  }
   if (env.DAHLIA_ADMIN_EMAIL?.trim()) {
     throw new Error("DAHLIA_ADMIN_EMAIL is no longer supported; the first user becomes administrator");
   }
@@ -365,7 +368,7 @@ export function mcpResource(config: Pick<AppConfig, "baseUrl">): string {
 
 function hindsightConfig(env: Record<string, string | undefined>): AppConfig["hindsight"] {
   if (!env.DAHLIA_HINDSIGHT_URL?.trim()) {
-    if (env.DAHLIA_HINDSIGHT_AUTH || env.DAHLIA_HINDSIGHT_API_KEY || env.DAHLIA_HINDSIGHT_BANK_PREFIX) throw new Error("DAHLIA_HINDSIGHT_URL is required");
+    if (env.DAHLIA_HINDSIGHT_AUTH || env.DAHLIA_HINDSIGHT_API_KEY) throw new Error("DAHLIA_HINDSIGHT_URL is required");
     return undefined;
   }
   const auth = z.enum(["none", "bearer", "databricks"]).parse(required(env, "DAHLIA_HINDSIGHT_AUTH"));
@@ -375,7 +378,6 @@ function hindsightConfig(env: Record<string, string | undefined>): AppConfig["hi
   if (auth !== "bearer" && env.DAHLIA_HINDSIGHT_API_KEY) throw new Error("Hindsight API key requires bearer authentication");
   return { url: url.replace(/\/$/, ""), auth,
     apiKey: auth === "bearer" ? required(env, "DAHLIA_HINDSIGHT_API_KEY") : undefined,
-    bankPrefix: z.string().regex(/^[a-z][a-z0-9-]{0,39}$/).parse(required(env, "DAHLIA_HINDSIGHT_BANK_PREFIX")),
     images: env.DAHLIA_MEMORY_IMAGE_MODEL?.trim() ? {
       model: env.DAHLIA_MEMORY_IMAGE_MODEL.trim(),
       maxCount: z.coerce.number().int().min(1).max(32).parse(env.DAHLIA_MEMORY_IMAGE_MAX_COUNT ?? 8),

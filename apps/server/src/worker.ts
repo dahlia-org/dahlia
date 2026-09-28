@@ -43,7 +43,6 @@ export interface RuntimeSecrets {
 
   DAHLIA_HINDSIGHT_AUTH?: string;
   DAHLIA_HINDSIGHT_API_KEY?: string;
-  DAHLIA_HINDSIGHT_BANK_PREFIX?: string;
   [key: `DAHLIA_ENCRYPTION_MASTER_KEY_${string}`]: string | undefined;
   DAHLIA_ENCRYPTION_ACTIVE_KEY_ID?: string;
   DAHLIA_AUTH_SECRET?: string;
@@ -138,7 +137,8 @@ export async function initializeWorkerApp(env: WorkerEnv): Promise<WorkerApp> {
 
     DAHLIA_HINDSIGHT_AUTH: env.DAHLIA_HINDSIGHT_AUTH,
     DAHLIA_HINDSIGHT_API_KEY: env.DAHLIA_HINDSIGHT_API_KEY,
-    DAHLIA_HINDSIGHT_BANK_PREFIX: env.DAHLIA_HINDSIGHT_BANK_PREFIX,
+    // Forward a removed binding only for loadConfig's rejection; it is not a supported setting.
+    ...Object.fromEntries(Object.entries(env).filter(([name]) => name === "DAHLIA_HINDSIGHT_BANK_PREFIX")) as Record<string, string | undefined>,
     ...Object.fromEntries(Object.entries(env).filter(([name]) => name.startsWith("DAHLIA_ENCRYPTION_MASTER_KEY_"))) as Record<string, string | undefined>,
     DAHLIA_ENCRYPTION_ACTIVE_KEY_ID: env.DAHLIA_ENCRYPTION_ACTIVE_KEY_ID,
     DAHLIA_AUTH_SECRET: env.DAHLIA_AUTH_SECRET,

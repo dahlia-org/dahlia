@@ -16,6 +16,7 @@ import { parseReflection, type MemoryClaim, type ReflectionStatus } from "./refl
 import type { MemoryDocument, MemoryProgress } from "./model";
 import { contentHash, meetingDocument, noteDocument } from "./sources";
 import type { MemoryState, MemoryStore, MemorySourceJob } from "./store";
+import { memoryDocumentId, memoryDocumentSource } from "./ids";
 
 export type MemoryDepth = "quick" | "normal" | "deep";
 // projectId is a Project UUID; after/before are ISO datetimes that only rank the period higher.
@@ -98,14 +99,17 @@ export class WorkspaceMemoryService {
       instruction: "Memory settings are being reprocessed. Disclose incomplete coverage; use canonical tools. No old analysis is published." };
   }
   async canonicalSource(identity: Identity, scopeId: string, documentId: string, signal: AbortSignal) {
+    const source = memoryDocumentSource(documentId);
+    if (!source || (this.store.personal && source.kind !== "shared")) return null;
     const saved = await this.store.document(scopeId, documentId);
-    if (!saved || saved.generation <= 0 || await this.store.pending(scopeId, documentId)) return null;
+    if (!saved || saved.source.kind !== source.kind || saved.source.id !== source.id
+      || saved.generation <= 0 || await this.store.pending(scopeId, documentId)) return null;
     const state = await this.store.status(identity.userId, scopeId);
-    if (!state?.enabled || state.purge || !state.progress?.ingestionPolicy) return null;
+    if (!state?.enabled || state.purge || state.bankId !== this.client.bank(scopeId, this.store.personal) || !state.progress?.ingestionPolicy) return null;
     const document = saved.source.kind === "meeting"
       ? await this.document(identity, state, saved.source.id, signal, saved.source.images)
       : await this.store.getNote(identity.userId, scopeId, saved.source.id).then((note) => note ? noteDocument(note, this.store.personal) : null);
-    if (!document || document.source.revision !== saved.source.revision) return null;
+    if (!document || document.id !== documentId || document.source.revision !== saved.source.revision) return null;
     const hash = await contentHash(document.content);
     return hash === saved.contentHash && saved.ingestionFingerprint === await ingestionFingerprint(hash, document.source, state.progress.ingestionPolicy)
       ? document : null;
@@ -269,6 +273,7 @@ export class WorkspaceMemoryService {
     let job = await this.store.claim(scopeId);
     if (!job) return;
     try {
+      if (job.bankId !== this.client.bank(scopeId, this.store.personal)) throw new HindsightError("memory_bank_config_changed");
       if (job.purge || !await this.store.exists(scopeId)) {
         const source = await this.store.pending(scopeId);
         for (const id of [job.progress?.operationId, source?.operation?.id]) {
@@ -281,7 +286,6 @@ export class WorkspaceMemoryService {
         return;
       }
       if (!job.enabled) { await this.store.release(job, { availableAt: new Date(Date.now() + 60_000) }); return; }
-      if (job.bankId !== this.client.bank(scopeId, this.store.personal)) throw new HindsightError("memory_bank_config_changed");
       const workerUser = await this.store.workerUser(scopeId);
       if (!workerUser) throw new HindsightError("memory_authorization_changed");
       const identity: Identity = { userId: workerUser, source: "accounts" };
@@ -402,6 +406,10 @@ export class WorkspaceMemoryService {
   }
   private modelId(id: string) { return id === "workspace" ? "workspace-insights" : `project-${id}`; }
   private async processSource(job: MemoryState, progress: MemoryProgress, pending: MemorySourceJob, identity: Identity, signal: AbortSignal) {
+    if (pending.documentId !== memoryDocumentId(pending.kind, pending.sourceId) || (this.store.personal && pending.kind !== "shared")
+      || (pending.operation && (pending.operation.source.kind !== pending.kind || pending.operation.source.id !== pending.sourceId))) {
+      throw new HindsightError("memory_document_mismatch");
+    }
     const previous = await this.store.document(job.scopeId, pending.documentId);
     const markModelsDirty = async (projectId?: string | null) => {
       progress.dirtyModels = [...new Set([...(progress.dirtyModels ?? []), "workspace",
@@ -479,7 +487,7 @@ export class WorkspaceMemoryService {
           if (!await this.policyCurrent(job, signal)) return;
           const latest = await read(), current = await this.store.status(identity.userId, job.scopeId);
           const sourceJob = await this.store.pending(job.scopeId, pending.documentId);
-          if (!current?.enabled || current.purge || current.generation !== job.generation || sourceJob?.generation !== operation.generation
+          if (!current?.enabled || current.purge || current.bankId !== job.bankId || current.generation !== job.generation || sourceJob?.generation !== operation.generation
             || !latest || await ingestionFingerprint(await contentHash(latest.content), latest.source, progress.ingestionPolicy!) !== fingerprint) return;
           this.unskip(progress, pending.documentId);
           await markModelsDirty(document.source.projectId);

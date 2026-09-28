@@ -1,6 +1,7 @@
 import { and, eq, sql } from "drizzle-orm";
 import type { NodePgDatabase } from "drizzle-orm/node-postgres";
 import type * as Schema from "../db/auth-schema";
+import { memoryDocumentId } from "./ids";
 
 // Called inside the canonical mutation transaction; no content or external I/O.
 export async function enqueueMemorySource(db: NodePgDatabase, schema: typeof Schema, scopeId: string,
@@ -9,7 +10,7 @@ export async function enqueueMemorySource(db: NodePgDatabase, schema: typeof Sch
   const [workspace] = await db.select({ purge: state.purge }).from(state).where(eq(state.scopeId, scopeId));
   if (!workspace || workspace.purge) return;
   const jobs = schema.memorySourceJob;
-  const values = { scopeId, kind, sourceId, documentId: `${kind}-${sourceId}` };
+  const values = { scopeId, kind, sourceId, documentId: memoryDocumentId(kind, sourceId) };
   const insert = db.insert(jobs).values(values);
   const rows = await (reconcile ? insert.onConflictDoNothing() : insert.onConflictDoUpdate({
     target: [jobs.scopeId, jobs.documentId], set: { generation: sql`${jobs.generation} + 1` },

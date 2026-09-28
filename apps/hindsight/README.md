@@ -225,13 +225,13 @@ uv sync --locked
 `scripts/evaluate_memory.py` は、運用者がローカルから実行する評価ハーネスです。
 指定した bank を `POST /banks/{id}/clone` で複製し、複製先だけで recall を測ります。元の bank は変更しません。
 終了時に複製先を削除します（`--keep-clone` を付けたときは残します）。
-Dahlia の bank ID は `<DAHLIA_HINDSIGHT_BANK_PREFIX>-workspace-<Workspace UUID>` または `-user-<user UUID>` です。
+Dahlia の bank ID は `dahlia_ws_<26文字のTypeID suffix>` または `dahlia_user_<26文字のTypeID suffix>` です。固定の `dahlia_` は設定可能にせず、環境は接続先・認証・保存先で分離します。評価用 bank は各実行で生成する `dahlia_eval_<run UUID>` で、作成前に同名 bank が存在しないことを確認し、今回作成したものだけを削除します。
 
 質問と期待する文書 ID の組は JSONL で渡します。リポジトリには置かないでください（`eval/` と `*.eval.jsonl` は Git の管理外です）。
-文書 ID は Hindsight の `meeting-<meeting UUID>` または `shared-<note UUID>` です。
+文書 ID は Dahlia の公開 TypeID と同じ `mtg_<26文字のID>` または `smem_<26文字のID>` です。bank 内の ID に `dahlia_` は重ねません。
 
 ```jsonl
-{"query": "...", "expected": ["meeting-<meeting UUID>"]}
+{"query": "...", "expected": ["mtg_01k45b0000e008000000000001"]}
 ```
 
 ```sh

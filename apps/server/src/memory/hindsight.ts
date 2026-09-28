@@ -7,6 +7,7 @@ import type { MemoryDocument } from "./model";
 import { MEMORY_MISSION, PERSONAL_MEMORY_MISSION } from "./model";
 import { reflectionResponseSchema } from "./reflection";
 import { standardModel } from "./pages-model";
+import { memoryBankId } from "./ids";
 
 import { HindsightError } from "./errors";
 export { HindsightError };
@@ -35,7 +36,7 @@ export class HindsightClient {
       this.tokens = new DatabricksTokenProvider(workspace, transport);
     }
   }
-  bank(scopeId: string, personal = false) { return `${this.config.bankPrefix}-${personal ? "user" : "workspace"}-${scopeId}`; }
+  bank(scopeId: string, personal = false) { return memoryBankId(scopeId, personal); }
   private request(bank: string, path: string, method: string, signal: AbortSignal, body?: unknown, missingOkay = false) {
     return this.send(`/banks/${encodeURIComponent(bank)}${path}`, method, signal, body, missingOkay);
   }
@@ -93,6 +94,12 @@ export class HindsightClient {
       .parse(await this.request(bank, "/config", "GET", signal));
     if (result.bank_id !== bank) throw new HindsightError("memory_ingestion_config_unavailable");
     return result.config;
+  }
+  async bankExists(bank: string, signal: AbortSignal) {
+    const result = await this.request(bank, "/config", "GET", signal, undefined, true);
+    if (result === null) return false;
+    if (z.object({ bank_id: z.string() }).parse(result).bank_id !== bank) throw new HindsightError("memory_bank_mismatch");
+    return true;
   }
   async configure(bank: string, updates: Record<string, unknown>, signal: AbortSignal) {
     await this.request(bank, "/config", "PATCH", signal, { updates });

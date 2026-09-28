@@ -12,7 +12,7 @@
 
 個人の簡潔な学習はエージェントが保存できる。共有、削除、ユーザー編集済みメモリーの変更は、利用者の明示的な指示を必要とする。`explicit` はその指示を伝えるクライアントの申告であり、自然言語の同意をサーバーが検証した証拠ではない。共有には現在の editor/admin 権限も必須。Web は内容と宛先を提示して確定する。私的な会話全体を自動取り込みせず、個人メモリーを共有へ自動移動・複製しない。
 
-個人と Workspace は別 Hindsight bank とし、既存 Workspace bank 名を保持する。canonical revision と hash を再検証して更新・削除済みの出典を除外する。分析が停止・未設定でも正本の CRUD と本文検索は使える。Node の既存 worker、Workers の既存 queue と cron を両領域で再利用する。
+個人と Workspace は別 Hindsight bank とする。bank／document の命名は後述の「識別子の統一」に従う。canonical revision と hash を再検証して更新・削除済みの出典を除外する。分析が停止・未設定でも正本の CRUD と本文検索は使える。Node の既存 worker、Workers の既存 queue と cron を両領域で再利用する。
 
 ## 移行と制限
 
@@ -83,3 +83,13 @@ recall / reflect と Knowledge Pages の本文・snippet・export は同じ現�
 秘密情報・PII の検出と伏せ字は Gateway の設定に委ねる。Dahlia 独自の regex / redact と上流 Memory Defense の有効化は追加しない。Memory Defense は秘密情報等の regex 検出であり、一般的なプロンプト注入防御とは別物である。Gateway を通らない Hindsight の正本文保存、Dahlia 正本抜粋、直接の MCP 出力が秘匿されるとは保証しない。正本と通常の正本閲覧は変更しない。Databricks の HTTP 200 に含まれる `databricks_service_policy` は provider 境界で恒久拒否に変換し、生成された回答として扱わず、自由文の拒否理由を保存・ログ・公開しない。
 
 取り込み品質の比較は `apps/server/scripts/evaluate-memory-ingestion.ts` の運用者用ハーネスを使う。公開 API やモデル入力に評価 bank を選ぶ引数はない。本番で抽出ゼロ・拒否・未取り込みの文書も含む現在認可された正本を列挙し、標準 `/config` の設定だけを写した隔離 bank に取り込み、短命な取り込み記録を使って本番の `WorkspaceMemoryService.search` を実行する。bank clone は使わず、directive・webhook・本番の非同期 operation を複製・作成しない。本番の記録・正本は変更しない。concise / verbose / 明示指定した既存 strategy を比較し、終了時は今回作成した評価 bank だけを削除する。最終文書の hit@5 / MRR、抜粋内の必要証拠、引用欠落、期待・禁止主張、会議重複、partial / 拒否 / 抽出ゼロ / エラー、応答時間を集計する。主張の期待・禁止判定は入力文字列との包含比較で、意味的正しさの自動判定ではない。出力は集計のみ。質問・個別結果・本文は commit しない。今回は合成データでハーネスを検証し、実データ比較は未実施。既定の concise、strategy 未指定を維持する。
+
+## 識別子の統一
+
+Hindsight の bank は Server が認証済み user／現在認可された Workspace の内部 UUID から導出する。既存の `encodeId`／`decodeId` を再利用し、Workspace は `dahlia_${encodeId("workspace", workspaceUUID)}`、個人は `dahlia_${encodeId("user", userUUID)}` とする。固定の `dahlia_` は設定可能にしない。環境分離は専用の Hindsight App／接続先・認証・保存先が担い、`DAHLIA_HINDSIGHT_BANK_PREFIX` と `AppConfig.hindsight.bankPrefix` は廃止する。旧環境変数が残っていれば、空文字でも Node／Worker 共通の固定エラーで起動を拒否する。
+
+会議 document は `encodeId("meeting", meetingUUID)`、個人・共有の保存メモ document は `encodeId("sharedMemory", noteUUID)` とする。個人と共有は bank で分離し、document にアプリケーション prefix を重ねない。要約更新でも同じ会議 document を更新する。文書の種類・復号した UUID と保存記録・現在の正本の対応を確認し、形式や prefix だけで認可しない。画像 manifest の documentId も同じ ID を使う。
+
+内部 UUID、`workspace-insights`／`project-{Project UUID}`、`project:{Project UUID}`、metadata の source_kind／source_id／source_revision、画像の内部 UUID と公開 att_／file_ は維持する。上流 fact／chunk／attachment の ID と hash、および operation／transaction／generation／revision／lease の意味は変更しない。ID 統一のために正本文を変更せず、取り込み契約の版は ingestion policy／fingerprint に含める。
+
+既存データがないことを前提とし、データ移行・二重読み書き・移行専用の状態管理は追加しない。評価用 bank は運用者専用ハーネス内の `dahlia_eval_<run UUID>` とし、製品設定や公開 API に bank を選ぶ入口を追加しない。ハーネスは同名 bank の不存在を確認し、今回作成した評価用 bank のみを削除する。

@@ -9,5 +9,5 @@ export function ingestionFingerprint(hash: string, source: MemorySource, policy:
 
 // Bump assemblyVersion when the source assembly/extraction contract changes.
 export function ingestionPolicy(upstream: string, images?: import("./images").ImageSettings) {
-  return contentHash(canonicalJson({ assemblyVersion: 2, upstream, images: images ?? null, mission: MEMORY_MISSION, personalMission: PERSONAL_MEMORY_MISSION }));
+  return contentHash(canonicalJson({ assemblyVersion: 2, identifierVersion: 1, upstream, images: images ?? null, mission: MEMORY_MISSION, personalMission: PERSONAL_MEMORY_MISSION }));
 }

@@ -59,15 +59,15 @@ describe.runIf(url)("Workspace memory PostgreSQL RLS", () => {
       data: { organizationId: testOrganizationID, name: "Memory RLS", createdAt: new Date().toISOString() },
     }] });
     const memory = app.memory!;
-    await memory.configure(owner.userId, workspaceId, `test-workspace-${workspaceId}`, true);
+    await memory.configure(owner.userId, workspaceId, `dahlia_${encodeId("workspace", workspaceId)}`, true);
     expect((await memory.status(owner.userId, workspaceId))?.imagesEnabled).toBe(false);
-    await memory.configure(owner.userId, workspaceId, `test-workspace-${workspaceId}`, true, true);
+    await memory.configure(owner.userId, workspaceId, `dahlia_${encodeId("workspace", workspaceId)}`, true, true);
     const imageState = await memory.status(owner.userId, workspaceId);
     expect(imageState).toMatchObject({ imagesEnabled: true, reconcile: true });
-    await memory.configure(owner.userId, workspaceId, `test-workspace-${workspaceId}`, true);
+    await memory.configure(owner.userId, workspaceId, `dahlia_${encodeId("workspace", workspaceId)}`, true);
     expect((await memory.status(owner.userId, workspaceId))?.imagesEnabled).toBe(true);
-    await expect(memory.configure(stranger.userId, workspaceId, `test-workspace-${workspaceId}`, true, false)).rejects.toMatchObject({ status: 404 });
-    await memory.configure(owner.userId, workspaceId, `test-workspace-${workspaceId}`, true, false);
+    await expect(memory.configure(stranger.userId, workspaceId, `dahlia_${encodeId("workspace", workspaceId)}`, true, false)).rejects.toMatchObject({ status: 404 });
+    await memory.configure(owner.userId, workspaceId, `dahlia_${encodeId("workspace", workspaceId)}`, true, false);
     const note = await memory.saveNote(owner.userId, workspaceId, { id: uuidV7(), content: "Private Workspace evidence", revision: 0 });
     expect(await memory.exists(workspaceId)).toBe(true);
     expect(await memory.workerUser(workspaceId)).toBe(owner.userId);
@@ -110,7 +110,7 @@ describe.runIf(url)("Workspace memory PostgreSQL RLS", () => {
       await tx.execute(sql`update jobs.workspace_memory_state set progress = ${JSON.stringify({ entityPolicy: 1, reflectionPolicy: 1, phase: "delta", upstreamPolicy: "a".repeat(64), ingestionPolicy: await ingestionPolicy("a".repeat(64)) })}::jsonb where workspace_id = ${workspaceId}`);
       await tx.execute(sql`update search.knowledge_pages set completed_version = request_version where workspace_id = ${workspaceId}`);
     });
-    const engine = new WorkspaceMemoryService({ hindsight: { url: "https://synthetic.example", auth: "none", bankPrefix: "pg-test" } } as AppConfig, memory, sync, app.sync);
+    const engine = new WorkspaceMemoryService({ hindsight: { url: "https://synthetic.example", auth: "none" } } as AppConfig, memory, sync, app.sync);
     const definition = standardModel(null), cutoff = new Date().toISOString(), factId = uuidV7(), document = noteDocument(note);
     const current = (await memory.status(owner.userId, workspaceId))!;
     const model = { ...definition, bank_id: current.bankId, content: "Synthetic page", last_refreshed_at: cutoff, is_stale: false,
@@ -151,7 +151,7 @@ describe.runIf(url)("Workspace memory PostgreSQL RLS", () => {
       id: uuidV7(), createdAt: new Date().toISOString(), operations: [{ id: uuidV7(), entity: "workspace",
         action: "create", entityId: workspaceId, baseRevision: null,
         data: { organizationId: testOrganizationID, name: "Concurrent memory", createdAt: new Date().toISOString() } }] });
-    const memory = app.memory!, bankId = `test-workspace-${workspaceId}`;
+    const memory = app.memory!, bankId = `dahlia_${encodeId("workspace", workspaceId)}`;
     await memory.configure(owner.userId, workspaceId, bankId, true);
     const blocker = await pool.connect();
     const input = { id: noteId, revision: 0, content: "Confirmed shared note" };
