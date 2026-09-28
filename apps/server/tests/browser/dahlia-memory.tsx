@@ -9,6 +9,7 @@ const rows: Record<string, Note[]> = { personal: [{ id: "test", content: "Privat
 const linkedReads: string[] = [];
 const writes: Array<{ scope: string; workspaceId?: string; explicit: boolean }> = [];
 let failSave = false;
+let linkedFailure: number | undefined, workspaceRevoked = false;
 let purges = 0;
 window.fetch = async (input, init) => {
   const request = input instanceof Request ? input : new Request(new URL(input, location.origin), init);
@@ -21,8 +22,13 @@ window.fetch = async (input, init) => {
   if (request.method === "PATCH" || request.method === "DELETE") body.id = path.split("/").at(-1)!;
   if (request.method === "DELETE") body.explicit = new URL(request.url).searchParams.get("explicit") === "true";
   const key = path.startsWith("/api/v1/user/") ? "personal" : path.split("/")[4]!;
+  if (key === "team" && workspaceRevoked && path.includes("/notes")) return Response.json({ error: "workspace_not_found" }, { status: 404 });
   if (path.includes("/notes/") && request.method === "GET") {
     linkedReads.push(key);
+    if (linkedFailure) {
+      if (linkedFailure === 404) workspaceRevoked = true;
+      return Response.json({ error: "linked_read_failed" }, { status: linkedFailure });
+    }
     const memory = rows[key]?.find((note) => note.id === path.split("/").at(-1));
     return memory ? Response.json({ memory }) : Response.json({ error: "memory_not_found" }, { status: 404 });
   }
@@ -94,7 +100,20 @@ async function run() {
   await until(() => document.body.textContent.includes("Other Workspace note"));
   assert(!document.body.textContent.includes("Linked canonical note"), "Scope switch kept the previous Workspace content");
   assert(linkedReads.length === 1 && linkedReads[0] === "team", "Deep link crossed Workspace boundary");
+  rows.team = [{ id: "remaining", content: "Surviving canonical note", revision: 1, protected: true, updatedAt: new Date().toISOString() }];
+  nextScope.value = "team"; nextScope.dispatchEvent(new Event("change", { bubbles: true }));
+  await until(() => document.body.textContent.includes("Surviving canonical note"));
+  assert(!document.body.textContent.includes("Could not read memories."), "Missing optional note suppressed the list");
+  for (const failure of [401, 403, 404, 500]) {
+    linkedFailure = failure; workspaceRevoked = false;
+    root.render(<DahliaMemoryPage key={failure} />);
+    await until(() => document.body.textContent.includes("Could not read memories."));
+    assert(!document.body.textContent.includes("Surviving canonical note"), "Failed authorization or upstream read exposed prior list");
+  }
+  linkedFailure = undefined; workspaceRevoked = false;
+  root.render(<DahliaMemoryPage key="recovery" />);
+  await until(() => document.body.textContent.includes("Surviving canonical note"));
   history.replaceState({}, "", location.pathname);
-  document.getElementById("result")!.textContent = "PASS: scope, conflict preservation, explicit sharing copy, sources, deletion, purge without analysis and canonical deep-link scope switch";
+  document.getElementById("result")!.textContent = "PASS: scope, conflict preservation, sharing, sources, deletion, purge, canonical deep links, missing note, authorization failures and recovery";
 }
 void run().catch((error: unknown) => { document.getElementById("result")!.textContent = `FAIL: ${String(error)}`; });

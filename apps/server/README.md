@@ -930,7 +930,7 @@ The tool evaluates production deduplication, candidate and return limits, canoni
 
 ### Standard Knowledge Pages
 
-Select a Workspace in `/memory` to browse Knowledge Pages: the existing cross-meeting mental model and each Project's standard model. These are AI-generated summaries/hypotheses, not independent evidence. Open the canonical meeting/note links to verify or correct them; Workspace admins can queue regeneration. Generated text is not editable, and the Web view does not render HTML or load external images.
+Select a Workspace in `/memory` to browse Knowledge Pages: the existing cross-meeting mental model and each Project's standard model. These are AI-generated summaries/hypotheses, not independent evidence. Open the canonical meeting/note links to verify or correct them; Workspace admins can queue regeneration. Generated text is not editable, and the Web view does not render HTML or load external images. A deleted note link falls back to the current authorized note list; authorization and other read failures remain errors.
 
 Browser-session routes under `/api/v1/workspaces/{workspaceId}/memory/pages` provide `GET` list (`query`, `projectId`, `after`; 20 per page), `GET /{pageId}`, `GET /{pageId}/export`, and admin-only `POST /{pageId}/refresh` (empty body, `202` queued). Page IDs are `workspace-insights` or `project-{UUID}`; clients never supply bank IDs or custom prompts. All reads revalidate the entire same-bank fact lineage, current source revisions/hashes, Project membership, Workspace access and publication version. Search contains only validated pages; non-ready pages omit all generated content. Export downloads Markdown only after the same validation. Responses are not cached.
 

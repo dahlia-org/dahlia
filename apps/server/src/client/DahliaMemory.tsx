@@ -3,7 +3,7 @@ import { useEffect, useRef, useState } from "react";
 import type { MemoryClaim, ReflectionStatus } from "../memory/reflection";
 import { uuidV7 } from "../id";
 import { encodeId } from "../typeid";
-import { json, uiText } from "./api";
+import { json, RequestError, uiText } from "./api";
 import { useActionDialog } from "./ActionDialog";
 import { WorkingMemoryEditor } from "./ChatMemory";
 import { Button } from "./components/ui/button";
@@ -83,8 +83,14 @@ function MemoryPanel({ scope, scopes }: { scope: Scope; scopes: Scope[] }) {
       const link = new URLSearchParams(location.search);
       const noteId = link.get("workspaceId") === scope.workspaceId ? link.get("noteId") : null;
       if (scope.workspaceId && noteId) {
-        const { memory } = await json<{ memory: Note }>(`/api/v1/workspaces/${scope.workspaceId}/memory/notes/${encodeURIComponent(noteId)}`, { signal: read.signal });
-        value.items = [memory, ...value.items.filter((item) => item.id !== memory.id)];
+        try {
+          const { memory } = await json<{ memory: Note }>(`/api/v1/workspaces/${scope.workspaceId}/memory/notes/${encodeURIComponent(noteId)}`, { signal: read.signal });
+          value.items = [memory, ...value.items.filter((item) => item.id !== memory.id)];
+        } catch (error) {
+          if (!(error instanceof RequestError) || error.status !== 404) throw error;
+          // The optional note may be gone; recheck the list and its current authorization before displaying it.
+          value = await memoryRequest<{ items: Note[]; nextCursor: string | null }>(scope, "list", {}, read.signal);
+        }
       }
       if (!read.signal.aborted) { setNotes(value.items); setNext(value.nextCursor); setListedQuery(""); }
     }).catch(() => { if (!read.signal.aborted) setError(uiText("Could not read memories.", "記憶を取得できません。")); });
