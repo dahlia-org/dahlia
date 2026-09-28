@@ -1,5 +1,6 @@
 bundle:
   name: dahlia-server
+  engine: direct
   databricks_cli_version: ">= 1.4.0"
 
 include:
@@ -17,7 +18,6 @@ experimental:
   skip_name_prefix_for_schema: true
   scripts:
     prebuild: "cd ../../apps/hindsight && uv run --no-project scripts/sync_upstream.py"
-    postdeploy: "bash scripts/postdeploy.sh '${workspace.profile}' '${var.database_project_id}'"
 
 variables:
   database_project_id:

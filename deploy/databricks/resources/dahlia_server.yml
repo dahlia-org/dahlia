@@ -31,6 +31,8 @@ resources:
     dahlia_server:
       name: mcp-dahlia-server-${bundle.target}
       description: Dahlia Server backed by Lakebase.
+      lifecycle:
+        started: true
       compute_size: LARGE
       source_code_path: ../../../apps/server
       user_api_scopes:

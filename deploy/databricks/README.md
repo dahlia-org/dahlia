@@ -23,7 +23,6 @@ Hindsight App ─────┬─ app service principal ── same Lakebase d
 - A Databricks workspace with Databricks Apps, Lakebase Autoscaling, and access to the Lakebase Search preview.
 - Permission to create Apps and Lakebase projects and query the configured Responses and embedding models.
 - Databricks CLI 1.4.0 or newer, authenticated with a CLI profile or environment variables.
-- Bash for postdeploy.
 - Node.js 22.13 or newer, Corepack, and pnpm for local validation.
 - Python 3.11 or newer and uv for preparing the pinned Hindsight source before upload.
 
@@ -35,7 +34,7 @@ Dahlia Desktop requests `all-apis` when authorizing against a deployed Databrick
 
 The bundle temporarily sets `DAHLIA_AUTH_SECRET` directly to the fixed value `test-only-better-auth-secret-value`. It does not define a Secret resource, retrieve a Unity Catalog Secret, or grant secret permissions. This is a shared test value; replace it with a unique signing secret before production use. Header authentication uses `DAHLIA_AUTH_HEADER` (default `X-Forwarded-Email`) as the email identity and stores its normalized value in `account.account_id`. New users join their email-domain Organization; the first is owner and later users are members. Departed or removed users are not automatically added again. `DAHLIA_SIGNOUT_URL=/.auth/logout` sends the browser through the Databricks Apps proxy logout endpoint after Dahlia clears its local session.
 
-The App name is `mcp-dahlia-server-{target}`, for example `mcp-dahlia-server-dev` or `mcp-dahlia-server-prod`. The Hindsight App name is `dahlia-hindsight-{target}`. The corresponding Lakebase project IDs are `dahlia-db-dev` and `dahlia-db`. By default, both targets use the managed Volume `dahlia.app.storage`. Choose the deployment environment by overriding `catalog`; override `app_schema` only when a catalog needs more than one Dahlia Server installation. Explicit Vault sharing is available in every target; Vault Admins can grant Admin, Editor, or Viewer access to a user, Organization, or Team. Organization membership alone does not grant Vault access. The bundle lists public Gateway models in `DAHLIA_FOUNDATION_MODELS`, routes automatic reviews to `system.ai.gpt-6-luna`, and uses `system.ai.qwen3-embedding-0-6b` for search embeddings. All AI models are used directly; postdeploy does not register Model Services. To disable a worker, remove its model environment value from the App resource.
+The App name is `mcp-dahlia-server-{target}`, for example `mcp-dahlia-server-dev` or `mcp-dahlia-server-prod`. The Hindsight App name is `dahlia-hindsight-{target}`. The corresponding Lakebase project IDs are `dahlia-db-dev` and `dahlia-db`. By default, both targets use the managed Volume `dahlia.app.storage`. Choose the deployment environment by overriding `catalog`; override `app_schema` only when a catalog needs more than one Dahlia Server installation. Explicit Vault sharing is available in every target; Vault Admins can grant Admin, Editor, or Viewer access to a user, Organization, or Team. Organization membership alone does not grant Vault access. The bundle lists public Gateway models in `DAHLIA_FOUNDATION_MODELS`, routes automatic reviews to `system.ai.gpt-6-luna`, and uses `system.ai.qwen3-embedding-0-6b` for search embeddings. All AI models are used directly; the bundle does not register Model Services. To disable a worker, remove its model environment value from the App resource.
 
 The bundle syncs the self-contained `apps/server` package and the setup notebooks in `deploy/databricks/notebooks`. The Server package manifest, pnpm lockfile, runtime configuration, and source are deployed without repository-root pnpm files. `pnpm test:package` builds and packs an isolated Server source directory without sibling Desktop files or existing build output, then checks the resulting package. The Server ships its own transcript activity policy JSON; a cross-platform test keeps it equal to the Desktop resource.
 
@@ -43,17 +42,29 @@ Databricks Apps runs `pnpm build`, which generates the Web and Server runtime as
 
 ## Validate and deploy
 
+For a target with existing Terraform deployment state, complete the [one-time migration to the direct engine](https://docs.databricks.com/aws/en/dev-tools/bundles/direct#migrate-an-existing-bundle) using its previously deployed bundle configuration before adopting this deployment sequence. The migration includes `databricks bundle deployment migrate -t dev`; use the target's existing profile and variable overrides, and repeat for `prod` if applicable. On CLI 1.4.x, migration requires a plan without pending actions, as described in the migration guide. Setting `bundle.engine: direct` alone does not guarantee that an existing Terraform state uses the direct engine on every supported CLI version.
+
+The following deployment sequence assumes the target Lakebase project already exists. Enable Lakebase Search manually before starting either App. In the target Lakebase project (`dahlia-db-dev` or `dahlia-db`), open **Settings → Lakebase Search → Enable Lakebase Search**. This is a one-time project setting; enabling it restarts the project's computes and drops active connections. Wait for the restart to finish and verify that both extensions are available in the target database:
+
+```sql
+SELECT name FROM pg_available_extensions
+WHERE name IN ('lakebase_text', 'lakebase_vector');
+```
+
+Both rows must be present. The App migrations install the extensions when they start. See [Enable Lakebase Search](https://docs.databricks.com/aws/en/oltp/projects/lakebase-search#enable-lakebase-search).
+
+Run from `deploy/databricks`, using the same profile and variable overrides for every command. Prepare the pinned Hindsight checkout before strict validation on a fresh checkout:
+
 ```bash
+uv run --no-project ../../apps/hindsight/scripts/sync_upstream.py
 databricks bundle validate --strict -t dev
 databricks bundle deploy -t dev
-databricks bundle run dahlia_server -t dev
-databricks bundle run hindsight -t dev
 databricks bundle summary -t dev
 ```
 
-Use `-t prod` for production and pass its catalog explicitly when it differs from `dahlia`, for example `--var catalog=dahlia_prod`. The production Lakebase project, storage Volume, and schema have `lifecycle.prevent_destroy: true`; destructive changes fail until an operator deliberately removes that protection. Development uses separate disposable resources.
+Use `-t prod` for production and pass its catalog explicitly when it differs from `dahlia`, for example `--var catalog=dahlia_prod`. The production Lakebase project, storage Volume, and schema have `lifecycle.prevent_destroy: true`; destructive changes fail until an operator deliberately removes that protection. Development uses separate disposable resources. Recreating a development Lakebase project also resets its Search setting; enable Search again before starting either App.
 
-`bundle deploy` creates or updates the resources and uploads source code, but it does not restart an already-running App. Always run both `dahlia_server` and `hindsight` after deployment. The bundle's `prebuild` step materializes the pinned Hindsight v0.10.1 source and maintained Lakebase patch before upload; it does not follow newer upstream tags. Hindsight runs its database migrations when the App starts. Upgrading from v0.9.2 adds the inline-attachment tables and drops the unused `memory_units_bm25` materialized view, so allow extra startup time on a large database and confirm the completed migrations in the `hindsight` App log.
+The bundle explicitly uses the direct deployment engine and sets `lifecycle.started: true` for both Apps. `bundle deploy` uploads source code and deploys/starts the Apps, waiting for their deployments to succeed. Do not follow it with `bundle run dahlia_server` or `bundle run hindsight`: the CLI's App URL resolution during `bundle run` can overwrite `DAHLIA_HINDSIGHT_URL` with `/api`. Deployment success does not establish application health; check both Apps' runtime status and startup logs. The bundle's `prebuild` step materializes the pinned Hindsight v0.10.1 source and maintained Lakebase patch before upload; it does not follow newer upstream tags. Hindsight runs its database migrations when the App starts. Upgrading from v0.9.2 adds the inline-attachment tables and drops the unused `memory_units_bm25` materialized view, so allow extra startup time on a large database and confirm the completed migrations in the `hindsight` App log.
 
 Hindsight's `databricks` model provider derives the OpenAI-compatible base URL from the App-injected `DATABRICKS_HOST`. It uses `system.ai.gpt-6-luna` for LLM calls and `system.ai.qwen3-embedding-0-6b` at `${search_embedding_dimensions}` dimensions for embeddings. The provider obtains and refreshes OAuth tokens with the App-injected `DATABRICKS_CLIENT_ID` and `DATABRICKS_CLIENT_SECRET`; it never reads a user's forwarded OBO token or a Databricks secret resource. The reranker is Hindsight's `local` cross-encoder with `cross-encoder/mmarco-mMiniLMv2-L12-H384-v1`, forced onto the CPU inside the Hindsight App; it does not use Model Serving. The App therefore uses `compute_size: LARGE` (4 vCPUs). In measurements on 4 CPUs, reranking 50, 100, 200 and 300 candidates took 0.64, 1.25, 2.2 and 3.4 seconds, and the process used about 1.4 GB RSS. The bundle variables `reranker_max_candidates_low`, `reranker_max_candidates_mid` and `reranker_max_candidates_high` (defaults 50, 100 and 300) cap the candidates per recall budget; Dahlia's `depth` values `quick`, `normal` and `deep` select those budgets. Hindsight downloads the model weights (about 470 MB) from Hugging Face during startup, so the App needs outbound access to Hugging Face. Where it has none, the planned alternative is to stage the weights in a UC Volume and copy them to local disk at startup; that alternative is not implemented. `apps/hindsight/requirements.txt` adds the PyTorch CPU-only index so that the App build installs CPU wheels.
 
@@ -61,7 +72,7 @@ To compare retrieval settings on real data without changing it, run the operator
 
 Lakebase requires each `lakebase_bm25` index to be created after its table contains data. After Hindsight first writes `memory_units` or `mental_models`, create that table's index with the SQL in [`apps/hindsight/README.md`](../../apps/hindsight/README.md) before using full-text recall.
 
-After each deployment, the bundle requests Lakebase Search enablement through the Search Extensions API using the same resolved CLI profile as the bundle deployment. The deployment fails if that request fails; it does not wait, retry, or poll the returned operation. The separate App build/start step provides the expected propagation interval.
+Lakebase Search enablement is managed manually. The bundle has no `postdeploy` hook: with `lifecycle.started: true`, that hook would run after App deployment and would be too late to establish the startup prerequisite.
 
 The App resource grants its service principal `CAN_CONNECT_AND_CREATE` on the project's default `databricks_postgres` database and `WRITE_VOLUME` on the target managed Volume. Databricks injects `PGHOST`, `PGDATABASE`, `PGPORT`, `PGSSLMODE`, and `PGUSER`; the `postgres` resource key supplies `LAKEBASE_ENDPOINT`. Dahlia creates the generated Better Auth `auth` schema in every authentication mode, then creates `app`, `search`, `crypto`, `jobs`, and the independently migrated `agent` schema under the same advisory lock before starting the Node server. Header mode projects each proxy-verified identity into `auth.user` and a linked `auth.account`, and uses Better Auth browser sessions for Web operations. Stored bytes are uploaded and streamed through `/api/2.0/fs/files/Volumes/...`; no Volume credential is issued to clients.
 
@@ -75,12 +86,6 @@ SELECT to_regnamespace('auth') AS auth_schema,
 Both columns must be non-null. A successful authenticated header request also proves the table is usable because Dahlia projects that identity into `auth.user` before handling the request.
 
 Dahlia installs `lakebase_text` and creates the unified BM25 index during migration. When an embedding model is configured it also installs `lakebase_vector` and creates a dimension- and model-specific `lakebase_ann` index. Failure to load either configured capability stops migration instead of silently changing search semantics. Grant the App service principal query permission on the embedding model. After the Desktop completes the first full Vault synchronization, run `VACUUM search.documents;` against the application database so BM25 corpus statistics include the uploaded rows.
-
-The postdeploy regression check uses a fake CLI and does not access a workspace:
-
-```bash
-node --test scripts/postdeploy.test.mjs
-```
 
 ## OTel tables
 
@@ -110,7 +115,7 @@ The sync check uses an authenticated CLI dry-run to confirm the SQL notebook is
 included in uploads; it does not modify workspace files.
 
 Use `-t prod` and the production catalog for production. Deployment only creates
-the schema and job; postdeploy does not run this job. The job creates managed
+the schema and job; it does not run this job. The job creates managed
 Delta tables `dahlia_otel_spans`, `dahlia_otel_logs`, and `dahlia_otel_metrics` using
 the [official Zerobus OTLP v2 definitions](https://docs.databricks.com/aws/en/ingestion/opentelemetry/configure),
 including clustering, `otel.schemaVersion=v2` and `delta.checkpointPolicy=classic`.
@@ -134,7 +139,7 @@ Collector, or enable telemetry emission.
 
 The bundle exposes its Responses-compatible `system.ai.*` models through the ordered `DAHLIA_FOUNDATION_MODELS` value. GPT 6 Sol and Luna precede the retained GPT 5.6 IDs, which remain available for saved model selections and Desktop image analysis. `/api/v1/models` reads this value without calling a discovery API, and Responses forwards the selected fully qualified model ID unchanged. `DAHLIA_CODEX_AUTO_REVIEW_MODEL=system.ai.gpt-6-luna` preserves the reserved `codex-auto-review` route without registering an alias service.
 
-Search embeddings, image analysis, and Hindsight also use their `system.ai.*` models directly. Postdeploy only activates Lakebase Search extensions. Manage model access for the App service principals separately; the bundle manages the Server-to-Hindsight App permission described below.
+Search embeddings, image analysis, and Hindsight also use their `system.ai.*` models directly. Manage model access for the App service principals separately; the bundle manages the Server-to-Hindsight App permission described below.
 
 
 ### Hindsight App permission
@@ -184,6 +189,6 @@ Confirm `/api/v1/models` includes `system.ai.gpt-6-sol` and `system.ai.gpt-6-lun
 - Responses request and response content is streamed without being persisted or logged. Synchronized summary, OCR, caption text, and search query text may be sent to the configured embedding model; only the resulting rebuildable vectors are persisted, and request content is not logged.
 - `/healthz` is process liveness only; anonymous external access is not guaranteed.
 
-The Server calls Hindsight at `${resources.apps.hindsight.url}/api` using short-lived App service-principal OAuth (`DAHLIA_HINDSIGHT_AUTH=databricks`). Hindsight's API base path is `/api`, keeping the authenticated API route separate from its UI. Environment isolation uses the separate `dahlia-hindsight-dev` / `dahlia-hindsight-prod` Apps, their service principals and the `dahlia-db-dev` / `dahlia-db` Lakebase projects. Bank IDs have the same fixed `dahlia_` application prefix in every environment; do not point development and production at the same Hindsight storage. Deployment configures connectivity; a Workspace admin must still enable memory in Dahlia settings. Existing completed meetings are then backfilled. See [Server Workspace memory](../../apps/server/README.md#workspace-analysis-hindsight) for evidence, deletion, and future user-bank boundaries.
+The Server calls Hindsight at `${resources.apps.hindsight.url}/api`, resolved during `bundle deploy`, using short-lived App service-principal OAuth (`DAHLIA_HINDSIGHT_AUTH=databricks`). No workspace ID or hostname construction is needed. Hindsight's API base path is `/api`, keeping the authenticated API route separate from its UI. Environment isolation uses the separate `dahlia-hindsight-dev` / `dahlia-hindsight-prod` Apps, their service principals and the `dahlia-db-dev` / `dahlia-db` Lakebase projects. Bank IDs have the same fixed `dahlia_` application prefix in every environment; do not point development and production at the same Hindsight storage. Deployment configures connectivity; a Workspace admin must still enable memory in Dahlia settings. Existing completed meetings are then backfilled. See [Server Workspace memory](../../apps/server/README.md#workspace-analysis-hindsight) for evidence, deletion, and future user-bank boundaries.
 
 Screenshot ingestion remains off for every Workspace until an admin enables it. The bundle explicitly pairs Server `DAHLIA_MEMORY_IMAGE_MODEL` and Hindsight standard VLM settings through `memory_image_model` (initially `system.ai.gpt-6-luna`). The image recipe uses one image per chunk, at most eight images / 8 MiB per meeting, 1568px Server variants, and standard retain temperature omission (`HINDSIGHT_API_LLM_TEMPERATURE_RETAIN=none`), verified with synthetic image inference. See [the image contract](../../apps/hindsight/README.md#phase-5-明示的な画像取り込み) before changing limits or models. Deployment alone does not opt a Workspace in.

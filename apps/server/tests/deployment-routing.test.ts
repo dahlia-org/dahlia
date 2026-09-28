@@ -275,6 +275,9 @@ describe("deployment routing", () => {
     expect(packageConfig).toContain("esbuild: true");
     expect(packageConfig).toContain("workerd: true");
     expect(bundle).toContain('databricks_cli_version: ">= 1.4.0"');
+    expect(bundle).toContain("engine: direct");
+    expect(resource).toContain("lifecycle:\n        started: true");
+    expect(hindsight).toContain("lifecycle:\n        started: true");
     expect(bundle).toContain("- ../../apps/server");
     expect(bundle).toContain("- ../../apps/hindsight");
     expect(bundle).toContain("../../apps/hindsight/.upstream/hindsight-api-slim/**");
@@ -294,7 +297,7 @@ describe("deployment routing", () => {
     expect(bundle).not.toContain("ai_schema");
     expect(resource).toContain("name: ${var.app_schema}");
     expect(resource).not.toContain("${var.schema}");
-    expect(bundle).toContain("postdeploy: \"bash scripts/postdeploy.sh '${workspace.profile}' '${var.database_project_id}'\"");
+    expect(bundle).not.toContain("postdeploy:");
     expect(bundle).toContain("volume_name:");
     expect(bundle).toContain("default: storage");
     expect(bundle).not.toContain("legacy_artifact_catalog:");
@@ -303,7 +306,6 @@ describe("deployment routing", () => {
       catalog_name: \${var.catalog}
       schema_name: \${resources.schemas.app_schema.name}
       name: \${var.volume_name}`);
-    expect(bundle).toContain("scripts/postdeploy.sh");
     expect(resource).toContain("name: DAHLIA_FOUNDATION_MODELS");
     expect(resource).toContain("name: DAHLIA_FOUNDATION_MODELS\n            value: system.ai.gpt-6-astra,system.ai.gpt-6-sol,system.ai.gpt-6-luna,");
     expect(resource).toContain("system.ai.gpt-5-6-luna");
