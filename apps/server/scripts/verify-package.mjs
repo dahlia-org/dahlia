@@ -171,7 +171,7 @@ try {
     const personalColumns = database.prepare("PRAGMA table_info(personal_memories)").all().map((column) => column.name);
     if (!["user_id", "content", "revision", "protected"].every((column) => personalColumns.includes(column))) throw new Error("Missing canonical personal memory schema");
     const memoryStateColumns = database.prepare("PRAGMA table_info(workspace_memory_state)").all().map((column) => column.name);
-    if (!memoryStateColumns.includes("reconcile")) {
+    if (!["reconcile", "images_enabled"].every((column) => memoryStateColumns.includes(column))) {
       throw new Error("Memory reconciliation schema is missing from the package");
     }
     database.close();

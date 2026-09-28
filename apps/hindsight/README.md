@@ -323,3 +323,25 @@ The Dahlia adapter adds a digest of allowlisted effective extraction settings to
 Databricks service-policy blocks can arrive with HTTP 200 and a `databricks_service_policy` envelope. Text, structured and tool-call responses reject that envelope before interpreting its assistant content. Only `memory_policy_blocked` is retained as the error discriminator; block reasons are never copied. See [Databricks service policies](https://docs.databricks.com/aws/en/data-governance/unity-catalog/service-policies/). This does not enable Gateway policies, Memory Defense, PII redaction or general prompt-injection detection. In particular, the Gateway's model boundary does not guarantee redaction of original documents stored in Hindsight or canonical excerpts served by Dahlia/MCP.
 
 The Server's operator-only `scripts/evaluate-memory-ingestion.ts` evaluates isolated extraction variants through final canonical publication. The older Python harness measures upstream candidate ranking only. Default concise extraction and no selected strategy remain unchanged; real-data selection is deferred.
+
+### Phase 5: 明示的な画像取り込み
+
+画像は既定無効です。Server の Workspace 管理者による opt-in と、以下の上流標準設定の両方が必要です。
+
+```text
+HINDSIGHT_API_VLM_PROVIDER=databricks
+HINDSIGHT_API_VLM_MODEL=system.ai.gpt-6-luna
+HINDSIGHT_API_LLM_VISION=true
+HINDSIGHT_API_LLM_TEMPERATURE_RETAIN=none
+HINDSIGHT_API_RETAIN_MAX_ATTACHMENTS_PER_CHUNK=1
+HINDSIGHT_API_RETAIN_ATTACHMENT_MAX_COUNT=8
+HINDSIGHT_API_RETAIN_ATTACHMENT_MAX_SIZE_MB=8
+```
+
+`system.ai.gpt-6-luna` の実呼び出しで既定temperatureの拒否を確認したため、画像処理は標準設定でtemperatureを省略します。モデル名からの推測や別providerへの切り替えは行いません。
+
+`concise` / `verbose` の抽出だけを許可し、`chunks` や Provider Batch は拒否します。能力をモデル名から推定しません。実際のモデルが画像に対応することは、既存 OAuth 経路による合成画像の実呼び出しで別途検証してください。ペイロードは Databricks の [Chat completion API](https://docs.databricks.com/aws/en/machine-learning/foundation-model-apis/api-reference) の `image_url` / base64 data URI を使い、モデル名変換や別 routing は行いません。
+
+inline attachment を含む chunk のみ VLM に渡し、出力 4,096 token、60 秒、呼び出し内 retry 0 に制限します。外側の Dahlia operation の最大 3 回の retry に集約します。画像欠落・破損は固定エラーで失敗し、`[attachment unavailable]` によるテキストのみの成功にはしません。画像chunk由来のfactには構造化された画像contextを残し、上流のfact/attachment関係とServerのmanifestを公開前に照合します。内容や画像byteはログへ出しません。
+
+設定APIは秘密情報を含まない `dahlia_images` 能力を返します。VLM、画像上限、抽出設定、固定処理予算のバージョンは ingestion policy に含まれ、変更時には派生文書・Knowledge Pagesを再検証します。bank を消す必要はありません。

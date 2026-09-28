@@ -722,6 +722,7 @@ export const workspaceKey = cryptoSchema.table("workspace_keys", {
 export const workspaceMemoryState = jobsSchema.table("workspace_memory_state", {
   scopeId: uuid("workspace_id").primaryKey(),
   enabled: boolean("enabled").default(false).notNull(),
+  imagesEnabled: boolean("images_enabled").default(false).notNull(),
   requestedBy: uuid("requested_by").notNull(),
   bankId: text("bank_id").notNull(),
   generation: integer("generation").default(1).notNull(),

@@ -1,3 +1,4 @@
+import { imageCoverage, imageReferences, validImageLineage } from "./images";
 import type { z } from "zod";
 import type { Identity } from "../auth/identity";
 import { canonicalJson, type MeetingSyncService } from "../sync/service";
@@ -24,7 +25,7 @@ const same = (a: unknown, b: unknown) => canonicalJson(a) === canonicalJson(b);
 const timestamp = (value: string) => BigInt(Date.parse(value)) * 1_000_000n
   + BigInt((value.match(/\.(\d+)/)?.[1] ?? "").padEnd(9, "0").slice(3, 9));
 const factHash = (fact: Fact) => contentHash(canonicalJson([fact.text, fact.type, fact.document_id,
-  fact.updated_at, fact.metadata, [...fact.source_memory_ids].sort()]));
+  fact.updated_at, fact.metadata, fact.attachments, [...fact.source_memory_ids].sort()]));
 const modelFingerprint = (model: Model) => contentHash(canonicalJson([model.id, model.bank_id, model.name, model.content,
   model.source_query, model.tags, model.max_tokens, model.trigger, model.last_refreshed_at, model.reflect_response]));
 const configured = (model: Model, projectId: string | null) => {
@@ -128,6 +129,7 @@ export class KnowledgePages {
       }
       // Retain stamps the source revision on each fact; current document rows alone cannot date a generated page.
       const document = documents.get(id)!;
+      if (!validImageLineage(document, fact.attachments, fact.metadata)) reject("source_invalid");
       if (fact.metadata.source_revision !== document.source.revision || fact.metadata.source_id !== document.source.id
         || fact.metadata.source_kind !== document.source.kind || fact.metadata.dahlia_ingestion_policy !== state.progress?.upstreamPolicy) reject("source_invalid");
     }
@@ -175,7 +177,7 @@ export class KnowledgePages {
       const sources = [...verified.documents.values()].map((document) => {
         const source = document.source, id = encodeId(source.kind === "meeting" ? "meeting" : "sharedMemory", source.id);
         const excerpt = canonicalExcerpt(document, [], 1000);
-        return { kind: source.kind, id, revision: source.revision, canonicalExcerpt: excerpt.text, truncated: excerpt.truncated,
+        return { kind: source.kind, id, images: imageReferences(document), imageCoverage: imageCoverage(document), revision: source.revision, canonicalExcerpt: excerpt.text, truncated: excerpt.truncated,
           href: source.kind === "meeting" ? `/meetings/${id}` : `/memory?workspaceId=${encodeId("workspace", scopeId)}&noteId=${id}` };
       });
       if (new TextEncoder().encode(JSON.stringify([verified.snapshot.body, sources])).byteLength > 2 * 1024 * 1024) reject("error");

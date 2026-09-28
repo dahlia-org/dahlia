@@ -1,3 +1,4 @@
+import { imageCoverageSchema, imageReferenceSchema } from "./images";
 import { z } from "@hono/zod-openapi";
 import type { Identity } from "../auth/identity";
 import type { MemoryGenerator } from "../agent/context-service";
@@ -36,7 +37,7 @@ const newMemoryId = publicIdSchema("sharedMemory").refine((id) => {
 export const memorySaveSchema = memoryTargetSchema.extend({ id: newMemoryId,
   content: z.string().trim().min(1).max(16_000), revision: z.number().int().nonnegative(), explicit: z.boolean().default(false) });
 export const memoryDeleteSchema = memoryGetSchema.extend({ revision: z.number().int().positive(), explicit: z.literal(true) });
-export const memoryConfigureSchema = memoryScopeSchema.extend({ enabled: z.boolean() });
+export const memoryConfigureSchema = memoryScopeSchema.extend({ enabled: z.boolean(), imagesEnabled: z.boolean().optional() });
 export type MemoryScope = z.infer<typeof memoryScopeSchema>;
 const noteSchema = z.object({ id: publicIdSchema("sharedMemory"), content: z.string(), revision: z.number(), updatedAt: z.iso.datetime(), protected: z.boolean() }).openapi("DahliaMemoryNote");
 const scopeResult = memoryScopeSchema.extend({ name: z.string(), writable: z.boolean() });
@@ -46,7 +47,7 @@ export const memoryResultSchema = z.object({
   suggestedScope: z.enum(["personal", "workspace", "both", "uncertain"]).optional(), reason: z.string().optional(),
   scopes: z.array(scopeResult).optional(), searchedScopes: z.array(memoryScopeSchema).optional(),
   results: z.array(z.object({ scope, workspaceId, result: z.object({
-    sources: z.array(z.object({ kind: z.string(), id: z.string(), revision: z.string(), meeting_id: z.string().nullable(), workspace_id: z.string().nullable(), scope, canonicalExcerpt: z.string(), truncated: z.boolean() })).optional(),
+    sources: z.array(z.object({ kind: z.string(), id: z.string(), revision: z.string(), meeting_id: z.string().nullable(), workspace_id: z.string().nullable(), scope, canonicalExcerpt: z.string(), truncated: z.boolean(), images: z.array(imageReferenceSchema).optional(), imageCoverage: imageCoverageSchema.optional() })).optional(),
     hypothesis: z.string().nullable().optional(), coverage: z.string().optional(), skippedCount: z.number().optional(),
     skippedSources: z.array(z.object({ source: z.string(), code: z.string() })).optional(),
     claims: z.array(z.object({ text: z.string(), citations: z.array(z.object({ factId: z.string(),
@@ -57,6 +58,7 @@ export const memoryResultSchema = z.object({
     unavailable: z.boolean().optional(), code: z.string().optional(), instruction: z.string().optional(),
     canonical: z.object({ scope, workspaceId, items: z.array(noteSchema), nextCursor: z.string().nullable() }).optional(),
   }) })).optional(),
+  imagesEnabled: z.boolean().optional(), imagesAvailable: z.boolean().optional(),
   enabled: z.boolean().optional(), status: z.string().optional(), errorCode: z.string().nullable().optional(),
   attempts: z.number().optional(), skippedCount: z.number().optional(), skippedSources: z.array(z.object({ source: z.string(), code: z.string() })).optional(),
 }).openapi("DahliaMemoryResult");
@@ -139,7 +141,7 @@ export class DahliaMemory {
     if (identity.impersonated) throw new RequestError(403, "impersonation_read_only");
     const { id, engine } = await this.resolve(identity, input);
     if (!engine) throw new RequestError(409, "memory_analysis_unconfigured");
-    await engine.configure(identity, id, input.enabled);
+    await engine.configure(identity, id, input.enabled, input.imagesEnabled);
     return this.status(identity, input);
   }
   async search(identity: Identity, input: z.infer<typeof memorySearchSchema>, reflect: boolean, signal: AbortSignal) {

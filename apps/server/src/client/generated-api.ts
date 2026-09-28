@@ -2281,6 +2281,17 @@ export interface components {
                 id: string;
                 revision: string;
                 href: string;
+                images?: {
+                    screenshotId: string;
+                    fileId: string;
+                    checksum: string;
+                    href: string;
+                }[];
+                imageCoverage?: {
+                    selected: number;
+                    eligible: number;
+                    omitted: number;
+                };
                 canonicalExcerpt: string;
                 truncated: boolean;
             }[];
@@ -2325,6 +2336,17 @@ export interface components {
                         scope: "personal" | "workspace";
                         canonicalExcerpt: string;
                         truncated: boolean;
+                        images?: {
+                            screenshotId: string;
+                            fileId: string;
+                            checksum: string;
+                            href: string;
+                        }[];
+                        imageCoverage?: {
+                            selected: number;
+                            eligible: number;
+                            omitted: number;
+                        };
                     }[];
                     hypothesis?: string | null;
                     coverage?: string;
@@ -2359,6 +2381,8 @@ export interface components {
                     };
                 };
             }[];
+            imagesEnabled?: boolean;
+            imagesAvailable?: boolean;
             enabled?: boolean;
             status?: string;
             errorCode?: string | null;
@@ -4416,6 +4440,7 @@ export interface operations {
             content: {
                 "application/json": {
                     enabled: boolean;
+                    imagesEnabled?: boolean;
                 };
             };
         };

@@ -4252,6 +4252,19 @@
       "table": "workspace_memory_state"
     },
     {
+      "type": "boolean",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": "false",
+      "generated": null,
+      "identity": null,
+      "name": "images_enabled",
+      "entityType": "columns",
+      "schema": "jobs",
+      "table": "workspace_memory_state"
+    },
+    {
       "type": "uuid",
       "typeSchema": null,
       "notNull": true,

@@ -729,6 +729,7 @@ CREATE TABLE `workspace_keys` (
 );
 --> statement-breakpoint
 CREATE TABLE `workspace_memory_state` (
+	`images_enabled` integer DEFAULT false NOT NULL,
 	`workspace_id` text PRIMARY KEY,
 	`enabled` integer DEFAULT false NOT NULL,
 	`requested_by` text NOT NULL,

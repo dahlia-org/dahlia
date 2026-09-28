@@ -13,7 +13,7 @@ import { MCPConnectionDialog } from "./MCPConnectionDialog";
 type Scope = { scope: "personal" | "workspace"; workspaceId?: string; name: string; writable: boolean };
 type Note = { id: string; content: string; revision: number; updatedAt: string; protected: boolean };
 type Status = { enabled: boolean; status: string; skippedCount: number };
-type Result = { sources?: Array<{ id: string; canonicalExcerpt: string; meeting_id?: string | null; truncated: boolean }>;
+type Result = { sources?: Array<{ id: string; canonicalExcerpt: string; imageCoverage?: { selected: number; omitted: number }; images?: Array<{ href: string; screenshotId: string }>; meeting_id?: string | null; truncated: boolean }>;
   hypothesis?: string | null; claims?: MemoryClaim[]; reflectionStatus?: ReflectionStatus; unavailable?: boolean; coverage?: string; canonical?: { items: Note[] } };
 const memoryRequest = <T,>(scope: Scope, operation: "list" | "status" | "save" | "delete" | "configure" | "recall" | "reflect", input: Record<string, unknown>, signal?: AbortSignal) => {
   const owner = scope.workspaceId ? `/api/v1/workspaces/${scope.workspaceId}` : "/api/v1/user";
@@ -165,7 +165,7 @@ function MemoryPanel({ scope, scopes }: { scope: Scope; scopes: Scope[] }) {
             <li key={sourceIndex}><a href={`#memory-source-${i}-${sourceIndex}`}>{uiText(`Source ${sourceIndex + 1}`, `出典 ${sourceIndex + 1}`)}</a></li>)}</ul>
         </article>)}
       </>}
-      {result.sources?.map((source, index) => <article key={source.id} id={`memory-source-${i}-${index}`}><h3>{source.meeting_id ? <a href={`/meetings/${source.meeting_id}`}>{uiText("Source meeting", "出典の会議")}</a> : uiText("Saved memory", "保存された記憶")}</h3><p className="whitespace-pre-wrap">{source.canonicalExcerpt}</p>{source.truncated && <p>{uiText("Excerpt only", "抜粋のみ")}</p>}</article>)}
+      {result.sources?.map((source, index) => <article key={source.id} id={`memory-source-${i}-${index}`}><h3>{source.meeting_id ? <a href={`/meetings/${source.meeting_id}`}>{uiText("Source meeting", "出典の会議")}</a> : uiText("Saved memory", "保存された記憶")}</h3><p className="whitespace-pre-wrap">{source.canonicalExcerpt}</p>{source.images?.map((image) => <a key={image.screenshotId} href={image.href} target="_blank" rel="noreferrer">{uiText("Source screenshot", "正本画像")}</a>)}{!!source.imageCoverage?.omitted && <p>{uiText(`${source.imageCoverage.selected} screenshots selected; ${source.imageCoverage.omitted} omitted by selection.`, `画像 ${source.imageCoverage.selected} 枚を選択し、${source.imageCoverage.omitted} 枚を選別で省略しました。`)}</p>}{source.truncated && <p>{uiText("Excerpt only", "抜粋のみ")}</p>}</article>)}
       {result.canonical?.items.map((note) => <p key={note.id} className="whitespace-pre-wrap">{note.content}</p>)}
     </section>)}
     {!notes.length && <p>{uiText("No saved memories in this list.", "この一覧に記憶はありません。")}</p>}

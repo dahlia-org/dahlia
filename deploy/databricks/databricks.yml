@@ -43,6 +43,9 @@ variables:
   reranker_max_candidates_high:
     description: Hindsight reranker candidate cap for high-budget recall (Dahlia depth deep).
     default: "300"
+  memory_image_model:
+    description: Explicit Databricks VLM for opt-in Workspace screenshots.
+    default: system.ai.gpt-6-luna
   ops_schema:
     description: Unity Catalog schema containing OTel tables.
     default: ops

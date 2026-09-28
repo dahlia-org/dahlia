@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { json, RequestError, uiText } from "./api";
 import { useActionDialog } from "./ActionDialog";
 
-type MemoryStatus = { enabled: boolean; status: string; errorCode: string | null; attempts: number; skippedCount: number; skippedSources: Array<{ source: string; code: string }> };
+type MemoryStatus = { imagesEnabled?: boolean; imagesAvailable?: boolean; enabled: boolean; status: string; errorCode: string | null; attempts: number; skippedCount: number; skippedSources: Array<{ source: string; code: string }> };
 type Note = { id: string; content: string; revision: number; updatedAt: string };
 const statusLabel = (status: string) => ({
   unavailable: uiText("Analysis is not configured", "分析は未設定です"),
@@ -54,10 +54,18 @@ export function WorkspaceMemory({ workspaceId, role, compact = false, onEnabledW
     confirmLabel: enabled ? uiText("Enable / retry", "有効化・再試行") : uiText("Pause", "停止"),
     onSubmit: async () => { setStatus(await json<MemoryStatus>(`${url}/analysis/settings`, { method: "PATCH", body: JSON.stringify({ enabled }) })); },
   });
+  const configureImages = () => openDialog({
+    title: status?.imagesEnabled ? uiText("Disable screenshot analysis", "画像の取り込みを無効化") : uiText("Enable screenshot analysis", "画像の取り込みを有効化"),
+    description: uiText("Selected screenshots are sent to the configured vision model. Existing meetings are reprocessed; canonical images, OCR and captions are preserved.", "選別したスクリーンショットを設定済みの画像対応モデルへ送信します。既存会議も再処理し、正本画像・OCR・caption は保持します。"),
+    confirmLabel: uiText("Save", "保存"), onSubmit: async () => { setStatus(await json<MemoryStatus>(`${url}/analysis/settings`, {
+      method: "PATCH", body: JSON.stringify({ enabled: status?.enabled ?? false, imagesEnabled: !status?.imagesEnabled }),
+    })); },
+  });
   if (unavailable) return compact ? null : <p>{uiText("Workspace memory is unavailable on this server.", "このサーバーでは Workspace メモリーを利用できません。")}</p>;
   return <section className="workspace-settings" aria-label={uiText("Workspace memory", "Workspace メモリー")}>
     {!compact && <h2>{uiText("Workspace memory", "Workspace メモリー")}</h2>}
     <p role="status">{status ? statusLabel(status.status) : uiText("Loading memory status…", "メモリー状態を確認中…")}</p>
+    {!compact && <p>{uiText("Screenshot analysis", "画像の取り込み")}: {status?.imagesEnabled ? uiText("Enabled", "有効") : uiText("Disabled", "無効")}</p>}
     {error && <p role="alert">{error}</p>}
     {!!status?.skippedCount && <div role="alert">
       <p>{uiText(`${status.skippedCount} memory items were skipped. Correct the source or connection, then retry.`, `${status.skippedCount} 件を取り込めませんでした。元データや接続を修正し、再試行してください。`)}</p>
@@ -71,6 +79,7 @@ export function WorkspaceMemory({ workspaceId, role, compact = false, onEnabledW
       <p>{uiText("Facts are verified against saved Dahlia data. Shared notes are user-provided information, not verified meeting facts.", "事実は Dahlia の保存データで確認します。共有メモはユーザーが登録した情報であり、会議で確認された事実とは区別します。")}</p>
       {status?.errorCode && <p role="alert">{uiText("Processing failed. Retry or check the server connection and Workspace administrator access.", "処理に失敗しました。再試行するか、サーバーの接続設定とWorkspace 管理者の権限を確認してください。")}</p>}
       {role === "admin" && <div className="actions">
+        {(status?.imagesAvailable || status?.imagesEnabled) && <button className="secondary" onClick={configureImages}>{status?.imagesEnabled ? uiText("Disable screenshots", "画像を無効化") : uiText("Enable screenshots", "画像を有効化")}</button>}
         {status?.status !== "unavailable" && <button className="secondary" onClick={() => configure(!status?.enabled)}>{status?.enabled ? uiText("Pause", "停止") : uiText("Enable", "有効化")}</button>}
         {status?.status !== "unavailable" && status?.enabled && <button className="secondary" onClick={() => configure(true)}>{uiText("Retry", "再試行")}</button>}
         <button className="secondary" onClick={() => openDialog({ title: uiText("Erase Workspace memory", "Workspace メモリーを全削除"),

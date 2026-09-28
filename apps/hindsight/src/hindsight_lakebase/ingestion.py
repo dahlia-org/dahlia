@@ -13,6 +13,14 @@ from hindsight_api.engine.llm_interface import ProviderContentPolicyError
 
 # Explicit allowlist: never serialize a resolved HindsightConfig (it contains keys).
 _FIELDS = (
+    "vlm_provider",
+    "vlm_model",
+    "llm_vision",
+    "llm_temperature_retain",
+    "llm_strict_schema_retain",
+    "retain_batch_enabled",
+    "retain_attachment_max_count",
+    "retain_attachment_max_size_mb",
     "retain_extraction_mode",
     "retain_chunk_size",
     "retain_structured_chunk_size",
@@ -66,7 +74,7 @@ def ingestion_policy(config, *, strategy=None, applied=False):
             {name: getattr(member, name, None) for name in ("provider", "model", "reasoning_effort")}
             for member in getattr(effective, f"{operation}llm_members", [])
         ]
-    recipe.update(version=1, upstream="f8950b0c07d9e34c76493dba802bb309f0ce60fd", strategy=selected)
+    recipe.update(version=2, image_policy=2, upstream="f8950b0c07d9e34c76493dba802bb309f0ce60fd", strategy=selected)
     return hashlib.sha256(json.dumps(recipe, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
 
 
@@ -90,6 +98,9 @@ class IngestionConfigChangedError(RuntimeError):
 
 
 def stamp_ingestion(contents, config, strategy):
+    from hindsight_lakebase.images import validate_image_settings
+
+    validate_image_settings(contents, config)
     policy = ingestion_policy(config, strategy=strategy, applied=True)
     for item in contents:
         expected = (item.get("metadata") or {}).get("dahlia_expected_ingestion_policy")

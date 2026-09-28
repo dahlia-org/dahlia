@@ -69,7 +69,8 @@ export function KnowledgePages({ workspaceId }: { workspaceId: string }) {
         <h4>{uiText("Canonical sources · open to verify or correct", "正本の出典 · 開いて確認・訂正")}</h4>
         <ul className="grid gap-2">{page.sources.map((source) => <li key={source.id}>
           <a href={source.href}>{source.kind === "meeting" ? uiText("Open meeting", "会議を開く") : uiText("Open saved memory", "共有メモを開く")}</a>
-          <p className="whitespace-pre-wrap">{source.canonicalExcerpt}</p>
+          {!!source.imageCoverage?.omitted && <p>{uiText(`${source.imageCoverage.selected} screenshots selected; ${source.imageCoverage.omitted} omitted by selection.`, `画像 ${source.imageCoverage.selected} 枚を選択し、${source.imageCoverage.omitted} 枚を選別で省略しました。`)}</p>}
+          <p className="whitespace-pre-wrap">{source.canonicalExcerpt}</p>{source.images?.map((image) => <a key={image.screenshotId} href={image.href} target="_blank" rel="noreferrer">{uiText("Source screenshot", "正本画像")}</a>)}
           {source.truncated && <small>{uiText("Excerpt only", "抜粋のみ")}</small>}
         </li>)}</ul>
       </>}

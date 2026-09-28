@@ -1,3 +1,5 @@
+import { imageCoverage, imageDocument, imageReferences, validImageLineage, type ImageSettings } from "./images";
+import { canonicalJson } from "../sync/service";
 import { ingestionFingerprint, ingestionPolicy } from "./ingestion";
 import { KnowledgePages } from "./pages";
 import type { AppConfig } from "../config";
@@ -31,9 +33,11 @@ export function temporalWindow(input: MemorySearchInput, now = new Date()) {
 
 export class WorkspaceMemoryService {
   readonly client: HindsightClient;
+  private readonly imageSettings?: ImageSettings;
   readonly pages: KnowledgePages;
   constructor(config: AppConfig, readonly store: MemoryStore, private readonly sync: MeetingSyncService,
     private readonly syncStore: MeetingSyncStore, transport: typeof fetch = fetch) {
+    this.imageSettings = config.hindsight?.images;
     this.client = new HindsightClient(config.hindsight!, config.databricksWorkspace, transport);
     this.pages = new KnowledgePages(this, store, sync);
   }
@@ -44,15 +48,37 @@ export class WorkspaceMemoryService {
     if (state?.purge) status = "deleting";
     else if (state?.enabled) {
       if (state.progress?.entityPolicy !== 1 || state.progress?.reflectionPolicy !== 1 || !state.progress?.ingestionPolicy) status = state.status === "error" ? "error" : "indexing";
-      else if (state.reconcile || state.indexedGeneration !== state.generation) status = state.status;
+      else if (state.status === "error" || state.reconcile || state.indexedGeneration !== state.generation) status = state.status;
       else status = failures.length ? "partial" : "ready";
     }
-    return { enabled: state?.enabled ?? false, status,
+    return { enabled: state?.enabled ?? false, ...(!this.store.personal ? { imagesEnabled: state?.imagesEnabled ?? false, imagesAvailable: !!this.imageSettings } : {}), status,
       errorCode: state?.errorCode ?? null, attempts: state?.attempts ?? 0,
       skippedCount: failures.length, skippedSources: failures.slice(-20).map(([source, code]) => ({ source, code })) };
   }
-  configure(identity: Identity, scopeId: string, enabled: boolean) {
-    return this.store.configure(identity.userId, scopeId, this.client.bank(scopeId, this.store.personal), enabled);
+  async configure(identity: Identity, scopeId: string, enabled: boolean, imagesEnabled?: boolean) {
+    if (imagesEnabled !== undefined) {
+      if (this.store.personal) throw new RequestError(400, "memory_images_workspace_only");
+      const workspace = await this.sync.getWorkspace(identity, scopeId);
+      if (!workspace || workspace.role !== "admin") throw new RequestError(404, "workspace_not_found");
+      if (imagesEnabled) {
+        const bank = this.client.bank(scopeId), signal = AbortSignal.timeout(30_000);
+        try { await this.client.imageConfiguration(bank, this.imageSettings, signal); }
+        catch (error) {
+          if (!(error instanceof HindsightError) || error.status !== 404) throw error;
+          // The first opt-in can precede the worker's initial bank creation.
+          await this.client.initialize(bank, signal);
+          await this.client.imageConfiguration(bank, this.imageSettings, signal);
+        }
+      }
+    }
+    return this.store.configure(identity.userId, scopeId, this.client.bank(scopeId, this.store.personal), enabled, imagesEnabled);
+  }
+  private images(state: MemoryState) { return !this.store.personal && state.imagesEnabled ? this.imageSettings : undefined; }
+  private async document(identity: Identity, state: MemoryState, id: string, signal: AbortSignal, saved?: MemoryDocument["source"]["images"], materialize = false) {
+    const document = await meetingDocument(this.sync, identity, state.scopeId, id, signal);
+    if (!document || !state.imagesEnabled || this.store.personal) return document;
+    if (!this.imageSettings) throw new HindsightError("memory_images_unconfigured");
+    return imageDocument(document, this.sync, this.syncStore, identity, state.scopeId, this.imageSettings, signal, saved, materialize);
   }
   private async readable(identity: Identity, scopeId: string) {
     const state = await this.store.status(identity.userId, scopeId);
@@ -62,8 +88,9 @@ export class WorkspaceMemoryService {
     return state;
   }
   async policyCurrent(state: MemoryState, signal: AbortSignal) {
+    if (state.imagesEnabled && !this.store.personal) await this.client.imageConfiguration(state.bankId, this.imageSettings, signal);
     const upstream = await this.client.ingestionPolicy(state.bankId, signal);
-    return state.progress?.upstreamPolicy === upstream && state.progress.ingestionPolicy === await ingestionPolicy(upstream);
+    return state.progress?.upstreamPolicy === upstream && state.progress.ingestionPolicy === await ingestionPolicy(upstream, this.images(state));
   }
   private updating() {
     return { sources: [], hypothesis: null, claims: [], reflectionStatus: "updating" as const, reflectionUsage: null,
@@ -73,12 +100,12 @@ export class WorkspaceMemoryService {
   async canonicalSource(identity: Identity, scopeId: string, documentId: string, signal: AbortSignal) {
     const saved = await this.store.document(scopeId, documentId);
     if (!saved || saved.generation <= 0 || await this.store.pending(scopeId, documentId)) return null;
-    const document = saved.source.kind === "meeting"
-      ? await meetingDocument(this.sync, identity, scopeId, saved.source.id, signal)
-      : await this.store.getNote(identity.userId, scopeId, saved.source.id).then((note) => note ? noteDocument(note, this.store.personal) : null);
-    if (!document || document.source.revision !== saved.source.revision) return null;
     const state = await this.store.status(identity.userId, scopeId);
     if (!state?.enabled || state.purge || !state.progress?.ingestionPolicy) return null;
+    const document = saved.source.kind === "meeting"
+      ? await this.document(identity, state, saved.source.id, signal, saved.source.images)
+      : await this.store.getNote(identity.userId, scopeId, saved.source.id).then((note) => note ? noteDocument(note, this.store.personal) : null);
+    if (!document || document.source.revision !== saved.source.revision) return null;
     const hash = await contentHash(document.content);
     return hash === saved.contentHash && saved.ingestionFingerprint === await ingestionFingerprint(hash, document.source, state.progress.ingestionPolicy)
       ? document : null;
@@ -98,6 +125,10 @@ export class WorkspaceMemoryService {
     let reflectionStatus: ReflectionStatus = !reflect ? "not_requested" : window ? "temporal_unavailable"
       : !reflection ? "updating" : parsed!.status;
     const basedOn = new Set(reflection?.based_on?.memories.map((fact) => fact.id).filter((id): id is string => !!id));
+    const validate = async (id: string, fact: { attachments?: Parameters<typeof validImageLineage>[1]; metadata?: Record<string, unknown> | null }) => {
+      const document = await this.canonicalSource(identity, scopeId, id, signal);
+      return !!document && validImageLineage(document, fact.attachments, fact.metadata);
+    };
     const reflectionSources = new Map<string, string[]>();
     const candidates = parsed?.claims ?? [];
     for (const claim of candidates) {
@@ -105,7 +136,7 @@ export class WorkspaceMemoryService {
       if (!claim.factIds.every((id) => basedOn.has(id))) continue;
       for (const id of new Set(claim.factIds)) {
         if (!reflectionSources.has(id) && reflectionSources.size < 10) {
-          reflectionSources.set(id, await this.client.factDocuments(state.bankId, id, signal, chunks));
+          reflectionSources.set(id, await this.client.factDocuments(state.bankId, id, signal, chunks, validate));
         }
       }
     }
@@ -116,7 +147,17 @@ export class WorkspaceMemoryService {
       if (checked.size === 30) return null;
       const document = await this.canonicalSource(identity, scopeId, id, signal);
       // Canonical data, not the analysis copy, decides Project membership.
-      const valid = document && (!input.projectId || document.source.projectId === input.projectId) ? document : null;
+      let imageValid = true;
+      if (document?.source.images?.entries.length) {
+        imageValid = false;
+        for (const fact of recall.results.slice(0, 30)) {
+          if (fact.document_id && fact.document_id !== id) continue;
+          const ids = await this.client.factDocuments(state.bankId, fact.id, signal, undefined, validate);
+          if (ids.includes(id)) { imageValid = true; break; }
+        }
+        if ([...reflectionSources.values()].some((ids) => ids.includes(id))) imageValid = true;
+      }
+      const valid = imageValid && document && (!input.projectId || document.source.projectId === input.projectId) ? document : null;
       checked.set(id, valid);
       return valid;
     };
@@ -153,7 +194,7 @@ export class WorkspaceMemoryService {
       const generation = current.generation;
       for (let i = documents.length - 1; i >= 0; i--) {
         const verified = await this.canonicalSource(identity, scopeId, documents[i]!.id, signal);
-        if (!verified || verified.source.revision !== documents[i]!.source.revision) documents.splice(i, 1);
+        if (!verified || canonicalJson(verified.source) !== canonicalJson(documents[i]!.source)) documents.splice(i, 1);
       }
       current = await this.readable(identity, scopeId);
       if (current.generation === generation) break;
@@ -189,7 +230,7 @@ export class WorkspaceMemoryService {
       return { kind: document.source.kind, id: document.source.id, revision: document.source.revision,
         meeting_id: document.source.kind === "meeting" ? encodeId("meeting", document.source.id) : null,
         workspace_id: this.store.personal ? null : encodeId("workspace", scopeId),
-        scope: this.store.personal ? "personal" : "workspace",
+        scope: this.store.personal ? "personal" : "workspace", images: imageReferences(document), imageCoverage: imageCoverage(document),
         canonicalExcerpt: excerpt.text, truncated: excerpt.truncated };
     }), hypothesis, claims, reflectionStatus,
     reflectionUsage: reflection?.usage ? { inputTokens: reflection.usage.input_tokens, outputTokens: reflection.usage.output_tokens } : null,
@@ -259,7 +300,8 @@ export class WorkspaceMemoryService {
         progress = { entityPolicy: 1, reflectionPolicy: 1, phase: this.store.personal ? "notes" : "meetings", dirtyModels: ["workspace"] };
       }
       const upstreamPolicy = await this.client.ingestionPolicy(job.bankId, signal);
-      const policy = await ingestionPolicy(upstreamPolicy);
+      if (job.imagesEnabled && !this.store.personal) await this.client.imageConfiguration(job.bankId, this.imageSettings, signal);
+      const policy = await ingestionPolicy(upstreamPolicy, this.images(job));
       if (progress.ingestionPolicy !== policy) {
         progress = { ...progress, ingestionPolicy: policy, upstreamPolicy, phase: "delta", after: undefined, pageAfter: undefined };
         job = await this.store.changeIngestionPolicy(job, progress);
@@ -319,7 +361,23 @@ export class WorkspaceMemoryService {
         progress = rows.length === 100 ? { ...progress, after: rows.at(-1)!.documentId } : { ...progress, phase: "delta", after: undefined };
       } else {
         const source = await this.store.pending(scopeId);
-        if (source) await this.processSource(job, progress, source, identity, signal);
+        if (source) {
+          try { await this.processSource(job, progress, source, identity, signal); }
+          catch (error) {
+            signal.throwIfAborted();
+            if (!(error instanceof HindsightError) || !["memory_image_unavailable", "memory_image_changed", "memory_image_too_large"].includes(error.code)
+              || (error.code !== "memory_image_too_large" && job.attempts < 3)) throw error;
+            const operation = source.operation && await this.client.operation(job.bankId, source.operation.id, signal);
+            if (operation === "pending" || operation === "processing") throw error;
+            const old = await this.store.document(job.scopeId, source.documentId);
+            await this.client.deleteDocument(job.bankId, source.documentId, signal);
+            await this.store.forgetDocument(job.scopeId, source.documentId);
+            this.skip(progress, source.documentId, error.code);
+            progress.dirtyModels = [...new Set([...(progress.dirtyModels ?? []), "workspace", ...(old?.source.projectId ? [old.source.projectId] : [])])];
+            await this.store.setProgress(job, progress);
+            await this.store.finishSource(source);
+          }
+        }
         else if (progress.dirtyModels?.length) {
           const id = progress.dirtyModels[0]!;
           const modelId = this.modelId(id);
@@ -351,7 +409,7 @@ export class WorkspaceMemoryService {
       await this.store.setProgress(job, progress);
     };
     const read = async () => pending.kind === "meeting"
-      ? meetingDocument(this.sync, identity, job.scopeId, pending.sourceId, signal)
+      ? this.document(identity, job, pending.sourceId, signal, previous?.source.images)
       : this.store.getNote(identity.userId, job.scopeId, pending.sourceId).then((note) => note ? noteDocument(note, this.store.personal) : null);
     let document: MemoryDocument | null;
     try {
@@ -385,7 +443,10 @@ export class WorkspaceMemoryService {
         operation = { ...operation, id: uuidV7(), stage: "retain", reprocess: false, attempts: 0 };
         await this.store.setOperation(pending, operation);
       }
-      await this.client.retain(job.bankId, document!, operation.id, signal, this.store.personal, progress.upstreamPolicy);
+      const sent = document!.source.kind === "meeting" && job.imagesEnabled
+        ? await this.document(identity, job, pending.sourceId, signal, document!.source.images, true) : document;
+      if (!sent || canonicalJson(sent.source) !== canonicalJson(document!.source)) throw new HindsightError("memory_image_changed");
+      await this.client.retain(job.bankId, sent, operation.id, signal, this.store.personal, progress.upstreamPolicy);
     };
     const operation = pending.operation;
     if (operation) {
@@ -404,7 +465,8 @@ export class WorkspaceMemoryService {
       if (same && document && status === "completed") {
         const stored = await this.client.document(job.bankId, pending.documentId, signal);
         const metadata = stored?.retain_params?.metadata;
-        if (stored?.original_text !== document.content || metadata?.source_revision !== document.source.revision
+        if ((document.source.images ? metadata?.dahlia_image_manifest !== canonicalJson(document.source.images)
+          || !this.client.matchesImages(stored, document) : stored?.original_text !== document.content) || metadata?.source_revision !== document.source.revision
           || metadata?.source_id !== document.source.id || metadata?.source_kind !== document.source.kind) {
           await fail("memory_document_mismatch"); return;
         }
@@ -412,7 +474,7 @@ export class WorkspaceMemoryService {
           await submit({ ...operation, id: uuidV7(), stage: "reprocess", attempts: 0 }); return;
         }
         if (metadata?.dahlia_ingestion_policy === progress.upstreamPolicy) {
-          if (!stored.memory_unit_count) { await fail("memory_no_facts"); return; }
+          if (!stored?.memory_unit_count) { await fail("memory_no_facts"); return; }
           // Validate again after all upstream work. A new source/settings generation cannot adopt this operation.
           if (!await this.policyCurrent(job, signal)) return;
           const latest = await read(), current = await this.store.status(identity.userId, job.scopeId);

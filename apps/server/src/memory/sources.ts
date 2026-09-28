@@ -1,6 +1,6 @@
 import type { Identity } from "../auth/identity";
 import type { MeetingSyncService } from "../sync/service";
-import { HindsightError } from "./hindsight";
+import { HindsightError } from "./errors";
 import type { MemoryDocument } from "./model";
 import type { SharedMemory } from "./store";
 
@@ -22,6 +22,8 @@ export async function meetingDocument(sync: MeetingSyncService, identity: Identi
     const project = await sync.getProject(identity, workspaceId, meeting.projectId);
     if (project) parts.push(`Project ${project.projectId}: ${project.name}\n${project.description}`);
   }
+  const screenshots: import("../sync/types").SyncScreenshotRecord[] = [];
+  const screenshotPositions: NonNullable<MemoryDocument["screenshotPositions"]> = {};
   let cursor: string | undefined;
   let bytes = 0;
   const markers = new Map<number, string>();
@@ -41,7 +43,9 @@ export async function meetingDocument(sync: MeetingSyncService, identity: Identi
   do {
     signal.throwIfAborted();
     const page = await sync.listScreenshots(identity, workspaceId, meetingId, undefined, signal, cursor);
+    screenshots.push(...page.items);
     for (const shot of page.items) {
+      screenshotPositions[shot.screenshotId] = { blockIndex: parts.length, textBlock: !!(shot.ocrText || shot.caption) };
       if (shot.ocrText || shot.caption) append(`[Screenshot ${shot.screenshotId}; file ${shot.fileId}; ${shot.capturedAt.toISOString()}]\nOCR (screen text, not speech): ${shot.ocrText ?? ""}\nAI caption (interpretation): ${shot.caption ?? ""}`, `Screenshot ${shot.screenshotId}`);
     }
     cursor = page.nextCursor;
@@ -54,5 +58,5 @@ export async function meetingDocument(sync: MeetingSyncService, identity: Identi
     return { start, end: start + part.length, marker: markers.get(index) };
   });
   return { id: `meeting-${meetingId}`, source: { kind: "meeting", id: meetingId, projectId: meeting.projectId,
-    revision: await contentHash(content) }, content, blocks, timestamp: (meeting.recordingStartedAt ?? meeting.createdAt).toISOString() };
+    revision: await contentHash(content) }, content, blocks, screenshots, screenshotPositions, timestamp: (meeting.recordingStartedAt ?? meeting.createdAt).toISOString() };
 }

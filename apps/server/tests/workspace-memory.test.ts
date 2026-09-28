@@ -17,19 +17,19 @@ import { createQueueJobs } from "../src/jobs/queues";
 import { createApp } from "../src/app";
 import { encodeId } from "../src/typeid";
 import { compareMemoryIngestion } from "../scripts/evaluate-memory-ingestion";
-import { meetingDocument } from "../src/memory/sources";
+import { contentHash, meetingDocument } from "../src/memory/sources";
 
 const owner: Identity = { userId: testUserID("memory-owner"), source: "header" };
 const viewer: Identity = { userId: testUserID("memory-viewer"), source: "header" };
 const workspaceId = "019d4a00-0000-7000-8000-000000000100";
 const directories: string[] = [];
 afterEach(() => { vi.useRealTimers(); directories.splice(0).forEach((path) => rmSync(path, { recursive: true, force: true })); });
-async function setup() {
+async function setup(images = false) {
   const directory = mkdtempSync(join(tmpdir(), "dahlia-memory-")); directories.push(directory);
   const databasePath = join(directory, "test.sqlite");
   const config: AppConfig = { authProvider: "header", authHeader: "X-Forwarded-Email", databaseType: "sqlite", databaseUrl: `file:${databasePath}`,
     baseUrl: "http://localhost:5173", oauthRedirectUris: [], maxRequestBytes: 1024 * 1024,
-    hindsight: { url: "https://memory.example/api", auth: "bearer", apiKey: "test-secret", bankPrefix: "test" } };
+    hindsight: { url: "https://memory.example/api", auth: "bearer", apiKey: "test-secret", bankPrefix: "test", ...(images ? { images: { model: "system.ai.gpt-6-luna", maxCount: 8, maxBytes: 8 * 1024 * 1024, longEdge: 1568 as const } } : {}) } };
   const app = createNodeApplicationStore(config); await app.migrate();
   await seedHeaderIdentity(app, databasePath, owner); await seedHeaderIdentity(app, databasePath, viewer);
   const sync = new MeetingSyncService(app.sync);
@@ -45,6 +45,7 @@ async function setup() {
   const retained = new Map<string, string>();
   const operations = new Map<string, string>();
   const metadata = new Map<string, Record<string, string>>();
+  const attachments = new Map<string, Array<{ id: string; hash: string; kind: string; media_type: string; byte_size: number }>>();
   const counts = new Map<string, number>();
   const policyBlocked = new Set<string>();
   let policy = "a".repeat(64);
@@ -61,7 +62,7 @@ async function setup() {
     const path = new URL(String(url)).pathname;
     const body = (init?.body ? JSON.parse(String(init.body)) : {}) as Record<string, unknown>;
     requests.push({ path, method: init?.method ?? "GET", body });
-    if (path.endsWith("/config")) return Response.json({ bank_id: path.split("/banks/")[1]!.split("/")[0], dahlia_ingestion_policy: policy });
+    if (path.endsWith("/config")) return Response.json({ bank_id: path.split("/banks/")[1]!.split("/")[0], dahlia_ingestion_policy: policy, dahlia_images: images ? { enabled: true, provider: "databricks", model: "system.ai.gpt-6-luna", max_count: 8, max_bytes: 8 * 1024 * 1024, max_per_chunk: 1, max_completion_tokens: 4096, timeout: 60, retries: 0 } : null });
     if (path.startsWith("/api/v1/default/chunks/")) {
       const chunk = chunks.get(decodeURIComponent(path.split("/").at(-1)!));
       return chunk ? Response.json({ chunk_id: path.split("/").at(-1), chunk_index: 0, created_at: "", ...chunk }) : new Response(null, { status: 404 });
@@ -70,7 +71,20 @@ async function setup() {
     if (path.endsWith("/memories") && init?.method === "POST") {
       const item = (body.items as Array<{ document_id: string; content: string; metadata: Record<string, string> }>)[0]!;
       metadata.set(item.document_id, { ...item.metadata, dahlia_ingestion_policy: policy });
-      retained.set(item.document_id, item.content); operations.set(String(body.operation_id), failingItems.has(item.document_id) ? "failed" : "completed");
+      if (Array.isArray(item.content)) {
+        let text = "", afterImage = false;
+        const stored = [];
+        for (const block of item.content as import("../src/memory/images").ImageContentBlock[]) {
+          if (block.type === "text") { if (afterImage) text = `${text.replace(/\n+$/u, "")}\n\n`; text += block.text; afterImage = false; }
+          else {
+            const bytes = atob(block.source.data), hash = await contentHash(bytes);
+            if (text) text = `${text.replace(/\n+$/u, "")}\n\n`;
+            text += `⟦hs-att:${hash.slice(0, 12)}⟧`; afterImage = true;
+            stored.push({ id: hash.slice(0, 12), hash, kind: "image", media_type: block.source.media_type, byte_size: bytes.length });
+          }
+        }
+        attachments.set(item.document_id, stored); retained.set(item.document_id, text);
+      } else { attachments.delete(item.document_id); retained.set(item.document_id, item.content); } operations.set(String(body.operation_id), failingItems.has(item.document_id) ? "failed" : "completed");
       if (loseAcknowledgement) { loseAcknowledgement = false; throw new Error("lost acknowledgement"); }
       return Response.json({ operation_id: body.operation_id });
     }
@@ -101,7 +115,7 @@ async function setup() {
     if (path.includes("/documents/") && init?.method === "GET") {
       const id = path.split("/").at(-1)!;
       return retained.has(id) ? Response.json({ id, bank_id: path.split("/banks/")[1]!.split("/")[0], original_text: retained.get(id),
-        memory_unit_count: counts.get(id) ?? 1, retain_params: { metadata: metadata.get(id) } }) : new Response(null, { status: 404 });
+        attachments: attachments.get(id), memory_unit_count: counts.get(id) ?? 1, retain_params: { metadata: metadata.get(id) } }) : new Response(null, { status: 404 });
     }
     if (path.includes("/documents/") && init?.method === "DELETE") { retained.delete(path.split("/").at(-1)!); return Response.json({}); }
     if (path.endsWith("/memories/recall")) return Response.json(recall?.() ?? { results: [...retained.keys()].map((document_id) => ({ id: uuidV7(), document_id, text: "UNTRUSTED EXTRACTED CLAIM" })) });
@@ -122,73 +136,219 @@ async function setup() {
   };
   const close = async () => { db.close(); await app.close?.(); };
   return { app, config, db, sync, memory, commit, tick, ready, close, requests, retained, operations, models, failingItems, chunks,
-    metadata, counts, policyBlocked, setPolicy: (value: string) => { policy = value; },
+    metadata, attachments, counts, policyBlocked, setPolicy: (value: string) => { policy = value; },
     transport, facts, setReflection: (response: () => unknown) => { reflection = response; },
     setRecall: (response: (() => unknown) | undefined) => { recall = response; },
     recallBodies: () => requests.filter((r) => r.path.endsWith("/memories/recall")).map((r) => r.body),
     loseNextAcknowledgement: () => { loseAcknowledgement = true; } };
 }
 
+async function screenshotFixture(f: Awaited<ReturnType<typeof setup>>) {
+  const meetingId = uuidV7(), fileId = uuidV7(), screenshotId = uuidV7(), now = new Date();
+  await f.commit([{ entity: "meeting", action: "create", entityId: meetingId, baseRevision: null,
+    data: { projectId: null, name: "Synthetic", description: "", status: "READY", duration: 60,
+      recordingStartedAt: now.toISOString(), createdAt: now.toISOString(), updatedAt: now.toISOString() } }]);
+  const hash = await contentHash("synthetic-pixels");
+  const shot = { screenshotId, fileId, meetingId, workspaceId, capturedAt: now, contentType: "image/webp", storageKey: "unused",
+    contentLength: 16, contentHash: hash, ocrText: "OCR-MARKER", caption: "CAPTION-MARKER" };
+  vi.spyOn(f.sync, "listScreenshots").mockResolvedValue({ items: [shot] });
+  vi.spyOn(f.sync, "readFileContent").mockResolvedValue({ upstream: new Response("synthetic-pixels") } as never);
+  // A new stream for every bounded worker read.
+  f.sync.readFileContent = vi.fn().mockImplementation(async () => ({ upstream: new Response("synthetic-pixels") }));
+  const withIdentity = f.app.sync.withIdentity.bind(f.app.sync);
+  vi.spyOn(f.app.sync, "withIdentity").mockImplementation((identity, fn) => withIdentity(identity, (scoped) => fn({ ...scoped,
+    listUninformativeScreenshots: async () => [], getScreenshot: async () => shot,
+    getFile: async () => ({ fileId, workspaceId, checksum: `SHA-256:${hash}`, metadata: { source: "screenshot" } }) as never,
+  })));
+  return { meetingId, hash, shot };
+}
+
 describe("Workspace memory", () => {
-  it.each([false, true])("compares canonical sources in isolated banks and cleans up without production writes (cancel: %s)", async (cancel) => {
-    const f = await setup();
+  it("defaults images off, restricts enabling to admins, and preserves omitted image settings", async () => {
+    const f = await setup(true);
+    try {
+      expect(await f.memory.status(owner, workspaceId)).toMatchObject({ imagesEnabled: false });
+      await expect(f.memory.configure(viewer, workspaceId, true, true)).rejects.toMatchObject({ status: 404 });
+      f.transport.mockResolvedValueOnce(new Response(null, { status: 404 }));
+      await f.memory.configure(owner, workspaceId, true, true);
+      expect(f.requests.some((request) => request.path.endsWith("/config") && request.method === "PATCH")).toBe(true);
+      const enabled = await f.app.memory!.status(owner.userId, workspaceId);
+      expect(enabled!.imagesEnabled).toBe(true);
+      await f.memory.configure(owner, workspaceId, false);
+      const paused = await f.app.memory!.status(owner.userId, workspaceId);
+      expect(paused!.imagesEnabled).toBe(true);
+      expect(paused!.generation).toBeGreaterThan(enabled!.generation);
+      await f.memory.configure(owner, workspaceId, false, false);
+      expect((await f.app.memory!.status(owner.userId, workspaceId))!.imagesEnabled).toBe(false);
+    } finally { await f.close(); }
+    const off = await setup();
+    try { await expect(off.memory.configure(owner, workspaceId, true, true)).rejects.toMatchObject({ code: "memory_images_unconfigured" }); }
+    finally { await off.close(); }
+  });
+
+  it("withdraws ready image results and reports an incompatible live VLM configuration", async () => {
+    const f = await setup(true);
+    try {
+      await f.memory.configure(owner, workspaceId, true, true); await f.ready();
+      const original = f.transport.getMockImplementation()!;
+      f.transport.mockImplementation(async (url, init) => String(url).endsWith("/config") && init?.method === "GET"
+        ? Response.json({ bank_id: `test-workspace-${workspaceId}`, dahlia_ingestion_policy: "a".repeat(64), dahlia_images: { enabled: false } })
+        : original(url, init));
+      await f.tick();
+      expect(await f.memory.status(owner, workspaceId)).toMatchObject({ status: "error", errorCode: "memory_images_unconfigured" });
+      await expect(f.memory.search(owner, workspaceId, "synthetic", false, new AbortController().signal)).rejects.toMatchObject({ code: "memory_images_unconfigured" });
+    } finally { await f.close(); }
+  });
+
+  it.each(["checksum", "stream"])("recovers %s failures and publishes only completed current image manifests", async (failure) => {
+    const f = await setup(true);
+    try {
+      const { meetingId, hash, shot } = await screenshotFixture(f);
+      await f.memory.configure(owner, workspaceId, true, true); await f.ready();
+      const documentId = `meeting-${meetingId}`, stored = await f.app.memory!.document(workspaceId, documentId);
+      expect(stored!.source.images!.entries).toHaveLength(1);
+      expect(f.retained.get(documentId)).not.toContain("OCR-MARKER");
+      expect(f.retained.get(documentId)).not.toContain("CAPTION-MARKER");
+      const fact = { id: "image-fact", state: "valid", text: "Generated image claim", document_id: documentId,
+        attachments: f.attachments.get(documentId), metadata: { ...f.metadata.get(documentId), dahlia_image_context: [hash.slice(0, 12)] } };
+      f.facts.set(fact.id, fact); f.setRecall(() => ({ results: [fact] }));
+      const result = await f.memory.search(owner, workspaceId, "diagram", false, new AbortController().signal);
+      expect(result.sources[0]!.images).toHaveLength(1);
+      expect(result.sources[0]!.canonicalExcerpt).toContain("OCR-MARKER");
+      f.facts.set(fact.id, { ...fact, attachments: [] });
+      expect((await f.memory.search(owner, workspaceId, "diagram", false, new AbortController().signal)).sources).toEqual([]);
+      const readFileContent = f.sync.readFileContent.bind(f.sync);
+      if (failure === "checksum") shot.contentHash = "0".repeat(64);
+      else {
+        shot.caption = "Updated canonical caption"; // A changed source requires image materialization again.
+        f.sync.readFileContent = vi.fn().mockImplementation(async () => ({ upstream: new Response(new ReadableStream({
+          pull(controller) { controller.error(new Error("SYNTHETIC_PRIVATE_STREAM_FAILURE")); },
+        })) }));
+      }
+      await f.app.memory!.enqueue(workspaceId, "meeting", meetingId);
+      await f.tick();
+      expect(await f.memory.canonicalSource(owner, workspaceId, documentId, new AbortController().signal)).toBeNull();
+      await f.ready();
+      expect(await f.memory.status(owner, workspaceId)).toMatchObject({ status: "partial",
+        skippedSources: [{ source: documentId, code: failure === "checksum" ? "memory_image_changed" : "memory_image_unavailable" }] });
+      expect(await f.app.memory!.document(workspaceId, documentId)).toBeUndefined();
+      expect(f.retained.has(documentId)).toBe(false);
+      shot.contentHash = hash;
+      f.sync.readFileContent = readFileContent;
+      await f.app.memory!.enqueue(workspaceId, "meeting", meetingId); await f.ready();
+      expect((await f.app.memory!.document(workspaceId, documentId))!.source.images!.entries).toHaveLength(1);
+      await f.memory.configure(owner, workspaceId, true, false);
+      expect(await f.memory.canonicalSource(owner, workspaceId, documentId, new AbortController().signal)).toBeNull();
+      await f.ready();
+      expect((await f.app.memory!.document(workspaceId, documentId))!.source.images).toBeUndefined();
+      expect(f.retained.get(documentId)).toContain("OCR-MARKER");
+    } finally { await f.close(); }
+  });
+
+  it("reingests an image-only screenshot after its canonical capture time changes", async () => {
+    const f = await setup(true);
+    try {
+      const { meetingId, shot } = await screenshotFixture(f);
+      shot.ocrText = ""; shot.caption = "";
+      await f.memory.configure(owner, workspaceId, true, true); await f.ready();
+      const id = `meeting-${meetingId}`, before = (await f.app.memory!.document(workspaceId, id))!;
+      const text = f.retained.get(id), retains = f.requests.filter((request) => request.path.endsWith("/memories")).length;
+      shot.capturedAt = new Date(shot.capturedAt.getTime() + 60_000);
+      await f.app.memory!.enqueue(workspaceId, "meeting", meetingId);
+      expect(await f.memory.canonicalSource(owner, workspaceId, id, new AbortController().signal)).toBeNull();
+      await f.ready();
+      const after = (await f.app.memory!.document(workspaceId, id))!;
+      expect(after.contentHash).toBe(before.contentHash);
+      expect(after.source.revision).toBe(before.source.revision);
+      expect(after.ingestionFingerprint).not.toBe(before.ingestionFingerprint);
+      expect(f.requests.filter((request) => request.path.endsWith("/memories"))).toHaveLength(retains + 1);
+      expect(f.retained.get(id)).not.toBe(text);
+      expect(f.retained.get(id)).toContain(shot.capturedAt.toISOString());
+      expect((await f.memory.canonicalSource(owner, workspaceId, id, new AbortController().signal))?.source).toEqual(after.source);
+    } finally { await f.close(); }
+  });
+
+  it.each([{ cancel: false, images: false }, { cancel: true, images: false }, { cancel: false, images: true }, { cancel: true, images: true }])("compares isolated image/text recipes without production writes (%o)", async ({ cancel, images }) => {
+    const f = await setup(images);
     const controller = new AbortController();
     try {
-      await f.memory.configure(owner, workspaceId, true);
+      const scene = images ? await screenshotFixture(f) : undefined;
+      await f.memory.configure(owner, workspaceId, true, images);
       const notes = [];
       for (let i = 0; i < 7; i++) notes.push(await f.app.memory!.saveNote(owner.userId, workspaceId, { id: uuidV7(), revision: 0, content: `Synthetic evidence ${i}` }));
       await f.ready();
       // Failed extraction has no successful ledger; pending production ingestion must not limit the evaluation corpus either.
       await f.app.memory!.forgetDocument(workspaceId, `shared-${notes[6]!.id}`);
       notes.push(await f.app.memory!.saveNote(owner.userId, workspaceId, { id: uuidV7(), revision: 0, content: "Synthetic evidence 7" }));
-      const before = await f.app.memory!.documents(workspaceId), banks = new Map<string, Map<string, { content: string; metadata: Record<string, string> }>>();
+      type Attachment = { id: string; hash: string; kind: string; media_type: string; byte_size: number };
+      const before = await f.app.memory!.documents(workspaceId), banks = new Map<string, Map<string, { content: string; metadata: Record<string, unknown>; attachments: Attachment[] }>>();
       const modes = new Map<string, string>(), deleted: string[] = [];
+      const capabilities = images ? { enabled: true, provider: "databricks", model: "system.ai.gpt-6-luna", max_count: 8, max_bytes: 8388608,
+        max_per_chunk: 1, max_completion_tokens: 4096, timeout: 60, retries: 0 } : null;
       const transport: typeof fetch = async (url, init) => {
         const parsed = new URL(String(url)), bank = parsed.pathname.split("/banks/")[1]!.split("/")[0]!, path = parsed.pathname;
         expect(path).not.toMatch(/\/(clone|webhooks|directives)$/);
         if (!bank.startsWith("eval-")) {
           expect(init?.method).toBe("GET");
           return path.endsWith("/config")
-            ? Response.json({ bank_id: bank, dahlia_ingestion_policy: "a".repeat(64), config: { retain_extraction_mode: "concise" } })
+            ? Response.json({ bank_id: bank, dahlia_ingestion_policy: "a".repeat(64), config: { retain_extraction_mode: "concise" }, dahlia_images: capabilities })
             : f.transport(url, init);
         }
         if (path.includes("/operations/")) return Response.json({ status: "completed" });
         if (path.endsWith("/config") && init?.method === "PATCH" && !banks.has(bank)) banks.set(bank, new Map());
-        const docs = banks.get(bank)!, body = (init?.body ? JSON.parse(String(init.body)) : {}) as { updates: { retain_extraction_mode: string }; operation_id: string; items: Array<{ document_id: string; content: string; metadata: Record<string, string> }> };
+        const docs = banks.get(bank)!, body = (init?.body ? JSON.parse(String(init.body)) : {}) as { updates: { retain_extraction_mode: string }; operation_id: string; items: Array<{ document_id: string; content: string | import("../src/memory/images").ImageContentBlock[]; metadata: Record<string, string> }> };
         const policy = (modes.get(bank) === "verbose" ? "c" : "b").repeat(64);
         if (path.endsWith("/config")) {
           if (init?.method === "PATCH") modes.set(bank, body.updates.retain_extraction_mode);
-          return Response.json({ bank_id: bank, dahlia_ingestion_policy: policy });
+          return Response.json({ bank_id: bank, dahlia_ingestion_policy: policy, dahlia_images: capabilities });
         }
         if (path.endsWith("/operations")) return Response.json({ total: 0 });
         if (path.endsWith("/memories")) {
-          const item = body.items[0]!; docs.set(item.document_id, { content: item.content, metadata: { ...item.metadata, dahlia_ingestion_policy: policy } });
-          if (cancel) controller.abort();
+          const item = body.items[0]!, attachments: Attachment[] = [];
+          let content = "", afterImage = false;
+          for (const block of typeof item.content === "string" ? [{ type: "text" as const, text: item.content }] : item.content) {
+            if (block.type === "text") { if (afterImage) content = `${content.replace(/\n+$/u, "")}\n\n`; content += block.text; afterImage = false; }
+            else {
+              const bytes = atob(block.source.data), hash = await contentHash(bytes);
+              if (content) content = `${content.replace(/\n+$/u, "")}\n\n`;
+              content += `⟦hs-att:${hash.slice(0, 12)}⟧`; afterImage = true;
+              attachments.push({ id: hash.slice(0, 12), hash, kind: "image", media_type: "image/webp", byte_size: bytes.length });
+            }
+          }
+          docs.set(item.document_id, { content, attachments, metadata: { ...item.metadata, dahlia_ingestion_policy: policy,
+            ...(item.metadata.dahlia_images ? { dahlia_image_context: attachments.map((item) => item.id) } : {}) } });
+          if (cancel && (!images || Array.isArray(item.content))) controller.abort();
           return Response.json({ operation_id: body.operation_id });
         }
         if (path.includes("/documents/")) {
           const id = path.split("/").at(-1)!, doc = docs.get(id)!;
-          return Response.json({ id, bank_id: bank, original_text: doc.content, memory_unit_count: 1, retain_params: { metadata: doc.metadata } });
+          return Response.json({ id, bank_id: bank, original_text: doc.content, attachments: doc.attachments, memory_unit_count: 1, retain_params: { metadata: doc.metadata } });
         }
         if (path.endsWith("/memories/recall")) return Response.json({ results: [...docs.keys()].flatMap((id) => [{ id, document_id: id, text: "Synthetic" }, { id, document_id: id, text: "Duplicate" }]) });
         if (path.endsWith("/reflect")) return Response.json({ text: "Never publish this raw text", structured_output: { claims: [{ text: "Synthetic hypothesis", factIds: [[...docs.keys()][0]] }] }, based_on: { memories: [{ id: [...docs.keys()][0], text: "Synthetic" }], mental_models: [] } });
-        if (path.includes("/memories/")) return Response.json({ document_id: path.split("/").at(-1), state: "valid" });
+        if (path.includes("/memories/")) {
+          const id = path.split("/").at(-1)!, doc = docs.get(id)!;
+          return Response.json({ document_id: id, state: "valid", attachments: doc.attachments, metadata: doc.metadata });
+        }
         if (init?.method === "DELETE") { deleted.push(bank); banks.delete(bank); return Response.json({}); }
         throw new Error("Unexpected evaluation request");
       };
       const evaluated = compareMemoryIngestion({ config: f.config, store: f.app.memory!, sync: f.sync, syncStore: f.app.sync,
         identity: owner, scopeId: workspaceId, transport, signal: controller.signal, reflect: true, strategies: ["synthetic-standard"],
-        questions: [{ query: "PRIVATE SYNTHETIC QUERY", expected: [{ id: encodeId("sharedMemory", notes[0]!.id), excerpts: ["Synthetic evidence 0"] }], requiredClaims: ["Synthetic hypothesis"], forbiddenClaims: ["Never publish this raw text"] }] });
+        questions: [{ query: "PRIVATE SYNTHETIC QUERY", expected: [{ id: encodeId("sharedMemory", notes[0]!.id), excerpts: ["Synthetic evidence 0"] },
+          ...(scene ? [{ id: encodeId("meeting", scene.meetingId), excerpts: [], screenshotIds: [encodeId("attachment", scene.shot.screenshotId)] }] : [])],
+          requiredClaims: ["Synthetic hypothesis"], forbiddenClaims: ["Never publish this raw text"] }] });
       if (cancel) await expect(evaluated).rejects.toMatchObject({ name: "AbortError" });
       else {
         const result = await evaluated;
-        expect(result.variants).toHaveLength(3);
-        expect(result.documents).toBe(8);
+        expect(result.variants).toHaveLength(images ? 6 : 3);
+        expect(result.documents).toBe(images ? 9 : 8);
         expect(result.variants.every((v) => v.errors === 0 && v.hitAt5 === 1 && v.claimExpectations.found === 1 && v.claimExpectations.forbidden === 0)).toBe(true);
+        if (images) expect(result.variants.map((v) => v.imageReferenceRecall)).toEqual([0, 1, 0, 1, 0, 1]);
         expect(JSON.stringify(result)).not.toMatch(/PRIVATE|Synthetic evidence|synthetic-standard|Never publish/);
       }
       expect(await f.app.memory!.documents(workspaceId)).toEqual(before);
-      expect(deleted).toHaveLength(cancel ? 1 : 3); expect(banks.size).toBe(0);
+      expect(deleted).toHaveLength(cancel ? images ? 2 : 1 : images ? 6 : 3); expect(banks.size).toBe(0);
     } finally { await f.close(); }
   });
 
@@ -959,6 +1119,15 @@ describe("Hindsight authentication", () => {
     expect(fetcher).toHaveBeenCalledTimes(2);
     await expect(client.chunk("bank", "cancelled", AbortSignal.abort())).rejects.toMatchObject({ name: "AbortError" });
     expect(fetcher).toHaveBeenCalledTimes(2);
+  });
+  it("keeps image processing opt-in with bounded server settings", () => {
+    const base = { ...env, DAHLIA_HINDSIGHT_AUTH: "none" };
+    expect(loadConfig(base).hindsight?.images).toBeUndefined();
+    const configured = { ...base, DAHLIA_MEMORY_IMAGE_MODEL: "system.ai.gpt-6-luna" };
+    expect(loadConfig(configured).hindsight?.images).toEqual({ model: "system.ai.gpt-6-luna", maxCount: 8, maxBytes: 8388608, longEdge: 1568 });
+    expect(() => loadConfig({ ...configured, DAHLIA_MEMORY_IMAGE_MAX_COUNT: "0" })).toThrow();
+    expect(() => loadConfig({ ...configured, DAHLIA_MEMORY_IMAGE_MAX_BYTES: "33554433" })).toThrow();
+    expect(() => loadConfig({ ...configured, DAHLIA_MEMORY_IMAGE_LONG_EDGE: "4096" })).toThrow();
   });
   it("validates independent authentication settings", () => {
     expect(() => loadConfig(env)).toThrow();

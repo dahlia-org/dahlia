@@ -13,10 +13,25 @@ vi.mock("../src/auth/better-auth", async (importOriginal) => ({
 }));
 
 import { initializeDahliaAuth } from "../src/auth/better-auth";
+import { connectPostgresUrl } from "../src/db/postgres";
 import { initializeWorkerApp } from "../src/worker";
 
 describe("Worker initialization", () => {
-  beforeEach(() => close.mockClear());
+  beforeEach(() => { close.mockClear(); vi.mocked(connectPostgresUrl).mockClear(); });
+
+  it.each([false, true])("requires an image transformer only for configured Memory images (binding: %s)", async (binding) => {
+    const env = {
+      DAHLIA_AUTH_TYPE: "header", DAHLIA_STORAGE_BACKEND: "r2", DAHLIA_DATABASE_TYPE: "postgres",
+      DAHLIA_DATABASE_URL: "postgresql://dahlia.example/dahlia", DAHLIA_HINDSIGHT_URL: "https://memory.example/api",
+      DAHLIA_HINDSIGHT_AUTH: "none", DAHLIA_HINDSIGHT_BANK_PREFIX: "test",
+      DAHLIA_MEMORY_QUEUE: { send: vi.fn(), sendBatch: vi.fn() },
+      ...(binding ? { IMAGES: { input: vi.fn() } } : {}),
+    };
+    await expect(initializeWorkerApp({ ...env, DAHLIA_MEMORY_IMAGE_MODEL: "system.ai.gpt-6-luna" }))
+      .rejects.toThrow(binding ? "seed failed" : "Memory image ingestion requires the IMAGES binding");
+    expect(vi.mocked(connectPostgresUrl)).toHaveBeenCalledTimes(binding ? 1 : 0);
+    await expect(initializeWorkerApp(env)).rejects.toThrow("seed failed");
+  });
 
   it.each([undefined, "0", "1"])("forwards signup policy %s and closes PostgreSQL when authentication initialization fails", async (signupPolicy) => {
     await expect(initializeWorkerApp({

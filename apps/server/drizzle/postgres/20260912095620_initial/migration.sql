@@ -442,6 +442,7 @@ CREATE TABLE "crypto"."workspace_keys" (
 );--> statement-breakpoint
 ALTER TABLE "crypto"."workspace_keys" ENABLE ROW LEVEL SECURITY;--> statement-breakpoint
 CREATE TABLE "jobs"."workspace_memory_state" (
+	"images_enabled" boolean DEFAULT false NOT NULL,
 	"workspace_id" uuid PRIMARY KEY,
 	"enabled" boolean DEFAULT false NOT NULL,
 	"requested_by" uuid NOT NULL,
