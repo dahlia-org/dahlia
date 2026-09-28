@@ -294,7 +294,7 @@ describe("deployment routing", () => {
     expect(bundle).not.toContain("ai_schema");
     expect(resource).toContain("name: ${var.app_schema}");
     expect(resource).not.toContain("${var.schema}");
-    expect(bundle).toContain("postdeploy: \"bash scripts/postdeploy.sh '${workspace.profile}' '${var.database_project_id}' '${resources.apps.dahlia_server.name}' '${resources.apps.hindsight.name}'\"");
+    expect(bundle).toContain("postdeploy: \"bash scripts/postdeploy.sh '${workspace.profile}' '${var.database_project_id}'\"");
     expect(bundle).toContain("volume_name:");
     expect(bundle).toContain("default: storage");
     expect(bundle).not.toContain("legacy_artifact_catalog:");
