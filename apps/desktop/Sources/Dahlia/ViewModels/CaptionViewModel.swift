@@ -4903,11 +4903,11 @@ final class CaptionViewModel: ObservableObject {
         } catch {
             removePendingBatchSummaryRequests(pendingRequests)
             summaryGenerationJobs.removeAll { redundantJobIDs.contains($0.id) }
-            job.progress.summaryGeneration = .failed(error.localizedDescription)
-            job.progress.workspaceExport = .skipped
-            job.progress.googleDocsExport = .skipped
-            summaryErrorsByMeetingId[meetingId] = error.localizedDescription
-            generatePendingBatchSummaryIfReady(meetingId: meetingId)
+            job.task = Task {
+                await failSummaryGeneration(error.localizedDescription, dbQueue: first.dbQueue, job: job)
+                job.task = nil
+                generatePendingBatchSummaryIfReady(meetingId: meetingId)
+            }
         }
     }
 
@@ -5051,7 +5051,7 @@ final class CaptionViewModel: ObservableObject {
             let target = try await serverSummaryService.target(meetingID: request.meetingId, dbQueue: request.dbQueue)
             preparedRequest = try await prepareWorkspaceSummaryRequest(request, target: target)
         } catch {
-            await failSummaryGeneration(error.localizedDescription, request: request, job: job)
+            await failSummaryGeneration(error.localizedDescription, dbQueue: request.dbQueue, job: job)
             finishSummaryGeneration(request, job: job)
             return
         }
@@ -5070,7 +5070,7 @@ final class CaptionViewModel: ObservableObject {
 
         if request.retriesFailedPersistence {
             if let message = await recoverFailedPersistenceForSummary() {
-                await failSummaryGeneration(message, request: request, job: job)
+                await failSummaryGeneration(message, dbQueue: request.dbQueue, job: job)
                 return
             }
         }
@@ -5186,7 +5186,7 @@ final class CaptionViewModel: ObservableObject {
             )
         } catch {
             await failSummaryGeneration(
-                error.localizedDescription, request: request, job: job,
+                error.localizedDescription, dbQueue: request.dbQueue, job: job,
                 stage: error is CancellationError ? .cancelled : .failed
             )
             if isTranscriptionOnly { job.progress.summaryGeneration = .skipped }
@@ -5235,7 +5235,7 @@ final class CaptionViewModel: ObservableObject {
         job.persistFailureDismissal = {
             try await dbQueue.write { db in
                 guard var processing = try RecordingProcessing.load(sessionID: sessionID, in: db),
-                      processing.id == jobID, processing.stage == .failed else { return }
+                      processing.id == jobID, processing.stage == .failed else { throw CancellationError() }
                 processing.failureDismissed = true
                 try processing.save(sessionID: sessionID, in: db)
             }
@@ -5523,18 +5523,18 @@ final class CaptionViewModel: ObservableObject {
 
     private func failSummaryGeneration(
         _ message: String,
-        request: SummaryGenerationRequest,
+        dbQueue: DatabaseQueue,
         job: SummaryGenerationJob,
         stage: RecordingProcessing.Stage = .failed
     ) async {
-        try? await updateRecordingProcessing(job: job, dbQueue: request.dbQueue, stage: stage, error: message)
+        try? await updateRecordingProcessing(job: job, dbQueue: dbQueue, stage: stage, error: message)
         if job.transcriptionOnly {
             if !job.isCancelled { job.progress.transcription = .failed(message) }
             job.progress.summaryGeneration = .skipped
         } else {
             if !job.progress.transcription.isTerminal { job.progress.transcription = .failed(message) }
-            summaryErrorsByMeetingId[request.meetingId] = message
-            if currentMeetingId == request.meetingId { requestShowSummaryTab = false }
+            summaryErrorsByMeetingId[job.meetingId] = message
+            if currentMeetingId == job.meetingId { requestShowSummaryTab = false }
             job.progress.summaryGeneration = .failed(message)
         }
         job.progress.workspaceExport = .skipped
