@@ -188,6 +188,7 @@ import Synchronization
             }
             viewModel.dismissSummaryGenerationJob(processing.id)
             try #require(await waitUntil { viewModel.errorMessage != nil })
+            #expect(viewModel.errorMessage == L10n.processingFailureDismissalFailed)
             #expect(viewModel.summaryGenerationJobs.count == 1)
             #expect(viewModel.summaryGenerationJobs.first?.hasFailure == true)
             #expect(try await dbQueue.read { db in

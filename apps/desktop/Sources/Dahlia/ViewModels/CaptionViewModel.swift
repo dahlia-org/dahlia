@@ -4759,7 +4759,7 @@ final class CaptionViewModel: ObservableObject {
                     await job.task?.value
                     try await persistFailureDismissal()
                     removeDismissedSummaryGenerationJob(job)
-                } catch { errorMessage = error.localizedDescription }
+                } catch { errorMessage = L10n.processingFailureDismissalFailed }
             }
         } else {
             removeDismissedSummaryGenerationJob(job)
