@@ -49,7 +49,7 @@ export class HindsightClient {
       });
     } catch { throw new HindsightError(signal.aborted ? "memory_cancelled" : "memory_transport_failed"); }
     if (missingOkay && response.status === 404) return null;
-    if (!response.ok) { await response.body?.cancel(); throw new HindsightError("memory_upstream_failed", response.status); }
+    if (!response.ok) { await response.body?.cancel(); throw new HindsightError(response.headers.get("x-dahlia-memory-error") === "memory_policy_blocked" ? "memory_policy_blocked" : "memory_upstream_failed", response.status); }
     if (response.status === 204) return null;
     // Bound an untrusted upstream response before parsing it.
     const reader = response.body?.getReader();
@@ -79,18 +79,63 @@ export class HindsightClient {
       reflect_mission: `${personal ? PERSONAL_MEMORY_MISSION : MEMORY_MISSION} Find evidence and counterexamples. Each hypothesis must cite the exact supporting memory or observation fact IDs inline in the answer. Use only IDs retrieved in this response. Omit claims without references. Directives and missions are generation settings, not evidence.`,
     } });
   }
-  async retain(bank: string, document: MemoryDocument, operationId: string, signal: AbortSignal, personal = false) {
+  async busy(bank: string, signal: AbortSignal) {
+    for (const status of ["pending", "processing"]) {
+      const result = z.object({ total: z.number().int().nonnegative() }).parse(await this.request(bank, `/operations?status=${status}&limit=1`, "GET", signal));
+      if (result.total) return true;
+    }
+    return false;
+  }
+  async configuration(bank: string, signal: AbortSignal) {
+    // Standard /config exposes configurable settings only, never credentials or bank resources.
+    const result = z.object({ bank_id: z.string(), config: z.record(z.string(), z.unknown()) })
+      .parse(await this.request(bank, "/config", "GET", signal));
+    if (result.bank_id !== bank) throw new HindsightError("memory_ingestion_config_unavailable");
+    return result.config;
+  }
+  async configure(bank: string, updates: Record<string, unknown>, signal: AbortSignal) {
+    await this.request(bank, "/config", "PATCH", signal, { updates });
+  }
+  async extractionSettings(bank: string, mode: "concise" | "verbose", strategy: string | null, signal: AbortSignal) {
+    await this.request(bank, "/config", "PATCH", signal, { updates: { retain_extraction_mode: mode, retain_default_strategy: strategy } });
+  }
+  async ingestionPolicy(bank: string, signal: AbortSignal) {
+    const result = z.object({ bank_id: z.string(), dahlia_ingestion_policy: z.string().regex(/^[0-9a-f]{64}$/) })
+      .safeParse(await this.request(bank, "/config", "GET", signal));
+    if (!result.success || result.data.bank_id !== bank) throw new HindsightError("memory_ingestion_config_unavailable");
+    return result.data.dahlia_ingestion_policy;
+  }
+  async document(bank: string, id: string, signal: AbortSignal) {
+    const raw = await this.request(bank, `/documents/${encodeURIComponent(id)}`, "GET", signal, undefined, true);
+    if (raw === null) return null;
+    const result = z.object({ id: z.string(), bank_id: z.string(), original_text: z.string().nullable(),
+      memory_unit_count: z.number().int().nonnegative(), retain_params: z.object({ metadata: z.record(z.string(), z.unknown()).optional() }).nullish() }).parse(raw);
+    if (result.id !== id || result.bank_id !== bank) throw new HindsightError("memory_document_mismatch");
+    return result;
+  }
+  async reprocess(bank: string, id: string, operationId: string, signal: AbortSignal) {
+    const result = operationSchema.parse(await this.request(bank,
+      `/documents/${encodeURIComponent(id)}/reprocess?operation_id=${encodeURIComponent(operationId)}`, "POST", signal));
+    if (result.operation_id !== operationId) throw new HindsightError("memory_operation_mismatch");
+  }
+  async retain(bank: string, document: MemoryDocument, operationId: string, signal: AbortSignal, personal = false, policy?: string) {
     const tags = document.source.projectId ? [`project:${document.source.projectId}`] : [];
     const result = await this.request(bank, "/memories", "POST", signal, { async: true, operation_id: operationId,
       items: [{ content: document.content, document_id: document.id, timestamp: document.timestamp,
         context: `${personal ? PERSONAL_MEMORY_MISSION : MEMORY_MISSION} Source kind: ${document.source.kind}.`,
-        metadata: { source_kind: document.source.kind, source_id: document.source.id, source_revision: document.source.revision },
+        metadata: { ...(policy ? { dahlia_expected_ingestion_policy: policy } : {}), source_kind: document.source.kind, source_id: document.source.id, source_revision: document.source.revision },
         tags, observation_scopes: [[], ...(tags.length ? [tags] : [])], update_mode: "replace" }] });
     return operationSchema.parse(result).operation_id;
   }
   async operation(bank: string, id: string, signal: AbortSignal) {
+    return (await this.operationDetail(bank, id, signal)).status;
+  }
+  async operationDetail(bank: string, id: string, signal: AbortSignal) {
     const result = await this.request(bank, `/operations/${encodeURIComponent(id)}`, "GET", signal, undefined, true);
-    return result === null ? "not_found" : z.object({ status: z.enum(["pending", "processing", "completed", "failed", "cancelled", "not_found"]) }).parse(result).status;
+    return result === null ? { status: "not_found" as const } : z.object({
+      status: z.enum(["pending", "processing", "completed", "failed", "cancelled", "not_found"]),
+      dahlia_error_code: z.literal("memory_policy_blocked").nullish(),
+    }).parse(result);
   }
   async retryOperation(bank: string, id: string, signal: AbortSignal) {
     await this.request(bank, `/operations/${encodeURIComponent(id)}/retry`, "POST", signal);

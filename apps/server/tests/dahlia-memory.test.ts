@@ -39,13 +39,14 @@ async function fixture() {
     data: { organizationId: testOrganizationID, name: "Team", createdAt: new Date().toISOString() },
   }] });
   const documents = new Map<string, Map<string, string>>();
+  const metadata = new Map<string, Record<string, string>>();
   const transport = vi.fn<typeof fetch>(async (input, init) => {
     const path = new URL(String(input)).pathname;
     const bank = path.split("/banks/")[1]!.split("/")[0]!;
     const docs = documents.get(bank) ?? new Map<string, string>(); documents.set(bank, docs);
-    const body = (init?.body ? JSON.parse(String(init.body)) : {}) as { items: Array<{ document_id: string; content: string }>; operation_id: string };
-    if (path.endsWith("/config")) return Response.json({});
-    if (path.endsWith("/memories") && init?.method === "POST") { for (const item of body.items) docs.set(item.document_id, item.content); return Response.json({ operation_id: body.operation_id }); }
+    const body = (init?.body ? JSON.parse(String(init.body)) : {}) as { items: Array<{ document_id: string; content: string; metadata: Record<string, string> }>; operation_id: string };
+    if (path.endsWith("/config")) return Response.json({ bank_id: bank, dahlia_ingestion_policy: "a".repeat(64) });
+    if (path.endsWith("/memories") && init?.method === "POST") { for (const item of body.items) { docs.set(item.document_id, item.content); metadata.set(`${bank}/${item.document_id}`, { ...item.metadata, dahlia_ingestion_policy: "a".repeat(64) }); } return Response.json({ operation_id: body.operation_id }); }
     if (path.includes("/operations/")) return Response.json({ status: "completed" });
     if (path.endsWith("/memories/recall")) return Response.json({ results: [...docs].map(([id, text]) => ({ id, text, document_id: id })) });
     if (path.endsWith("/reflect")) return Response.json({ text: "UNVERIFIED RAW ANSWER", structured_output: { claims: [{ text: "Hypothesis", factIds: [...docs.keys()] }] }, based_on: { memories: [...docs.keys()].map((id) => ({ id, text: "claim" })), mental_models: [] } });
@@ -53,6 +54,12 @@ async function fixture() {
     if (path.endsWith("/mental-models") && init?.method === "POST") return Response.json({ operation_id: uuidV7() });
     if (path.endsWith("/mental-models")) return Response.json({ items: [] });
     if (path.includes("/mental-models/")) return Response.json({}, { status: 404 });
+    if (path.includes("/documents/") && init?.method === "GET") {
+      const id = path.split("/").at(-1)!;
+      return docs.has(id) ? Response.json({ id, bank_id: bank, original_text: docs.get(id), memory_unit_count: 1,
+        retain_params: { metadata: metadata.get(`${bank}/${id}`) } }) : new Response(null, { status: 404 });
+    }
+    if (path.endsWith("/reprocess")) return Response.json({ operation_id: new URL(String(input)).searchParams.get("operation_id") });
     if (path.includes("/documents/") && init?.method === "DELETE") { docs.delete(path.split("/").at(-1)!); return new Response(null, { status: 204 }); }
     if (init?.method === "DELETE") { docs.clear(); return new Response(null, { status: 204 }); }
     throw new Error("Unexpected mock operation");

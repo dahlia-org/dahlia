@@ -18,6 +18,7 @@ export const pageListResultSchema = z.object({ items: z.array(pageSchema), nextC
 export type KnowledgePage = z.infer<typeof pageSchema>;
 export interface PageSnapshot {
   fingerprint: string;
+  ingestionPolicy?: string;
   body: string;
   generatedAt: string;
   generationCutoff: string;
@@ -25,7 +26,7 @@ export interface PageSnapshot {
   sources: Array<{ documentId: string; source: MemorySource; contentHash: string }>;
   facts: Array<{ id: string; hash: string; sourceIds: string[] }>;
 }
-export interface PageOperation { id: string; version: number; attempts: number }
+export interface PageOperation { id: string; version: number; attempts: number; failedModelFingerprint?: string | null }
 
 // These are the existing models, not a second set of Knowledge Page generators.
 export function standardModel(projectId: string | null, personal = false) {

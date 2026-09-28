@@ -63,6 +63,83 @@ index b850eafe6..e339bb1aa 100644
      "pgvector": "CREATE EXTENSION vector;",
      "pgvectorscale": "CREATE EXTENSION vector; then CREATE EXTENSION vectorscale CASCADE; (or pg_diskann on Azure)",
      "vchord": "CREATE EXTENSION vchord CASCADE;",
+diff --git a/hindsight_api/api/http.py b/hindsight_api/api/http.py
+index 1cb787d6f..3dc103378 100644
+--- a/hindsight_api/api/http.py
++++ b/hindsight_api/api/http.py
+@@ -284,6 +284,12 @@ def _internal_error(exc: Exception, where: str) -> HTTPException:
+     ``raise _internal_error(e, ...)`` and keep the ``raise`` visible at the
+     handler instead of hidden behind a call.
+     """
++    from hindsight_api.engine.llm_interface import ProviderContentPolicyError
++
++    if isinstance(exc, ProviderContentPolicyError) and str(exc) == "memory_policy_blocked":
++        return HTTPException(
++            status_code=422, detail="memory_policy_blocked", headers={"x-dahlia-memory-error": "memory_policy_blocked"}
++        )
+     logger.error(f"Error in {where}: {exc}\n\nTraceback:\n{traceback.format_exc()}")
+     return HTTPException(status_code=500, detail=str(exc))
+
+@@ -2110,6 +2116,7 @@ class BankConfigResponse(BaseModel):
+         }
+     )
+
++    dahlia_ingestion_policy: str | None = None
+     bank_id: str = Field(description="Bank identifier")
+     config: dict[str, Any] = Field(
+         description="Fully resolved configuration with all hierarchical overrides applied (Python field names)"
+@@ -4470,6 +4477,7 @@ class ChildOperationStatus(BaseModel):
+
+
+ class OperationStatusResponse(BaseModel):
++    dahlia_error_code: Literal["memory_policy_blocked"] | None = None
+     """Response model for getting a single operation status."""
+
+     model_config = ConfigDict(
+@@ -7557,6 +7565,7 @@ def _register_routes(app: FastAPI):
+     async def api_reprocess_document(
+         bank_id: str,
+         document_id: str,
++        operation_id: uuid.UUID | None = Query(default=None),
+         request_context: RequestContext = Depends(get_request_context),
+     ):
+         """
+@@ -7568,6 +7577,7 @@ def _register_routes(app: FastAPI):
+         """
+         try:
+             result = await app.state.memory.reprocess_document(
++                operation_id=str(operation_id) if operation_id else None,
+                 bank_id=bank_id,
+                 document_id=document_id,
+                 request_context=request_context,
+@@ -7902,7 +7912,9 @@ def _register_routes(app: FastAPI):
+             result = await app.state.memory.get_operation_status(
+                 bank_id, operation_id, request_context=request_context, include_payload=include_payload
+             )
+-            return OperationStatusResponse(**result)
++            from hindsight_lakebase.ingestion import operation_error_code
++
++            return OperationStatusResponse(**result, dahlia_error_code=operation_error_code(result))
+         except OperationValidationError as e:
+             raise HTTPException(status_code=e.status_code, detail=e.reason)
+         except (AuthenticationError, HTTPException):
+@@ -9082,7 +9094,15 @@ def _register_routes(app: FastAPI):
+         """
+         try:
+             state = await app.state.memory.get_bank_config(bank_id, request_context=request_context)
+-            return BankConfigResponse(bank_id=bank_id, config=state.config, overrides=state.overrides)
++            from hindsight_lakebase.ingestion import ingestion_policy
++
++            config = await app.state.memory._config_resolver.resolve_full_config(bank_id, request_context, cached=False)
++            return BankConfigResponse(
++                bank_id=bank_id,
++                config=state.config,
++                overrides=state.overrides,
++                dahlia_ingestion_policy=ingestion_policy(config),
++            )
+         except OperationValidationError as e:
+             raise HTTPException(status_code=e.status_code, detail=e.reason)
+         except (AuthenticationError, HTTPException):
 diff --git a/hindsight_api/config.py b/hindsight_api/config.py
 index 20436ec76..3e6c4663e 100644
 --- a/hindsight_api/config.py
@@ -207,10 +284,36 @@ index 8c1657774..9a0aa2c2c 100644
          logger.info(
              f"PostgreSQL pool created (min={min_size}, max={max_size}, "
 diff --git a/hindsight_api/engine/embeddings.py b/hindsight_api/engine/embeddings.py
-index c98bab910..b9f7a1a1e 100644
+index c98bab910..282cf6fd3 100644
 --- a/hindsight_api/engine/embeddings.py
 +++ b/hindsight_api/engine/embeddings.py
-@@ -975,6 +975,30 @@ class OpenAIEmbeddings(Embeddings):
+@@ -935,7 +935,11 @@ class OpenAIEmbeddings(Embeddings):
+             response = await self._loop_client().embeddings.create(
+                 model=self.model,
+                 input=["test"],
++                **({"encoding_format": "float"} if self.provider_name == "databricks" else {}),
+             )
++            from hindsight_lakebase.ingestion import reject_service_policy
++
++            reject_service_policy(response, self.provider_name)
+             if response.data:
+                 self._dimension = len(response.data[0].embedding)
+
+@@ -967,14 +971,44 @@ class OpenAIEmbeddings(Embeddings):
+         }
+         if self.dimensions is not None:
+             request["dimensions"] = self.dimensions
++        if self.provider_name == "databricks":
++            # Disable the SDK post-parser so policy envelopes reach the rejection boundary.
++            request["encoding_format"] = "float"
+         apply_bank_attribution(request)
+
+         response = await self._loop_client().embeddings.create(**request)
+
++        from hindsight_lakebase.ingestion import reject_service_policy
++
++        reject_service_policy(response, self.provider_name)
+         # Sort by index to ensure correct order
          return [e.embedding for e in sorted(response.data, key=lambda x: x.index)]
 
 
@@ -241,7 +344,7 @@ index c98bab910..b9f7a1a1e 100644
  class CodexOAuthEmbeddings(OpenAIEmbeddings):
      """
      OpenAI embeddings using the Codex/ChatGPT OAuth token from the Codex
-@@ -2149,6 +2173,18 @@ def create_embeddings_from_env() -> Embeddings:
+@@ -2149,6 +2183,18 @@ def create_embeddings_from_env() -> Embeddings:
              batch_size=config.embeddings_onnx_batch_size,
              cpu_mem_arena=config.embeddings_onnx_cpu_mem_arena,
          )
@@ -260,7 +363,7 @@ index c98bab910..b9f7a1a1e 100644
      elif provider == "openai":
          # Use dedicated embeddings API key, or fall back to LLM API key
          api_key = config.embeddings_openai_api_key
-@@ -2311,6 +2347,6 @@ def create_embeddings_from_env() -> Embeddings:
+@@ -2311,6 +2357,6 @@ def create_embeddings_from_env() -> Embeddings:
      else:
          raise ValueError(
              f"Unknown embeddings provider: {provider}. "
@@ -339,7 +442,7 @@ index 20d4598c9..51be5eee0 100644
      # are retain-time extraction output that nothing recreates, so an edit preserves them (#2864).
      # In lock order, like every other link delete (see delete_unit_links).
 diff --git a/hindsight_api/engine/memory_engine.py b/hindsight_api/engine/memory_engine.py
-index 100357a9a..851816764 100644
+index 100357a9a..d28dadd4f 100644
 --- a/hindsight_api/engine/memory_engine.py
 +++ b/hindsight_api/engine/memory_engine.py
 @@ -29,6 +29,7 @@ from datetime import UTC, datetime, timedelta, timezone
@@ -350,7 +453,44 @@ index 100357a9a..851816764 100644
  from pydantic import ValidationError
 
  from .._vector_index import (
-@@ -8093,6 +8094,10 @@ class MemoryEngine(MemoryEngineInterface):
+@@ -1428,6 +1429,8 @@ def _is_non_retryable_task_error(e: Exception) -> bool:
+     # database and succeeds. Classifying it with its deterministic
+     # IntegrityConstraintViolationError siblings sent those retains terminal at
+     # retry_count=0 and dropped the content silently (issue #4453).
++    from hindsight_lakebase.ingestion import IngestionConfigChangedError
++
+     if _is_foreign_key_violation(e):
+         return False
+     return (
+@@ -1438,6 +1441,7 @@ def _is_non_retryable_task_error(e: Exception) -> bool:
+         # the moment: re-running the task feeds the same chunk to the same model
+         # and earns the same refusal (issue #3690).
+         or isinstance(e, ProviderContentPolicyError)
++        or isinstance(e, IngestionConfigChangedError)
+     )
+
+
+@@ -6694,7 +6698,7 @@ class MemoryEngine(MemoryEngineInterface):
+         await self._get_backend()
+
+         # Resolve bank-specific config for this operation
+-        resolved_config = await self._config_resolver.resolve_full_config(bank_id, request_context)
++        resolved_config = await self._config_resolver.resolve_full_config(bank_id, request_context, cached=False)
+
+         # Force chunks mode when LLM provider is "none" (no LLM available for fact extraction)
+         if self._llm_config.provider == "none":
+@@ -6710,6 +6714,10 @@ class MemoryEngine(MemoryEngineInterface):
+         if effective_strategy:
+             resolved_config = apply_strategy(resolved_config, effective_strategy)
+
++        from hindsight_lakebase.ingestion import stamp_ingestion
++
++        contents = stamp_ingestion(contents, resolved_config, effective_strategy)
++
+         # Create parent span for retain operation
+         with create_operation_span("retain", bank_id):
+             retain_llm = self._retain_llm_config.with_config(resolved_config, bank_id=bank_id, operation="retain")
+@@ -8093,6 +8101,10 @@ class MemoryEngine(MemoryEngineInterface):
          # derives from max_tokens and clamps to [recall_budget_min, recall_budget_max].
          _t0 = time.time()
          budget_config_dict = await self._config_resolver.get_bank_config(bank_id, request_context)
@@ -361,7 +501,23 @@ index 100357a9a..851816764 100644
          _d = time.time() - _t0
          get_metrics_collector().record_recall_phase("bank_config", _d)
          if _d > 0.100:
-@@ -16916,6 +16921,7 @@ class MemoryEngine(MemoryEngineInterface):
+@@ -13517,6 +13529,7 @@ class MemoryEngine(MemoryEngineInterface):
+         document_id: str,
+         *,
+         request_context: "RequestContext",
++        operation_id: str | None = None,
+     ) -> dict[str, Any]:
+         """
+         Reprocess a document by re-running retain with its existing content and parameters.
+@@ -13597,6 +13610,7 @@ class MemoryEngine(MemoryEngineInterface):
+             bank_id,
+             [content_dict],
+             strategy=strategy,
++            operation_id=operation_id,
+             request_context=request_context,
+         )
+
+@@ -16916,6 +16930,7 @@ class MemoryEngine(MemoryEngineInterface):
              json.dumps(trigger) if trigger else None,
              json.dumps(document.structure.model_dump()),
          )
@@ -369,7 +525,7 @@ index 100357a9a..851816764 100644
          assert row is not None
          return row
 
-@@ -17444,6 +17450,14 @@ class MemoryEngine(MemoryEngineInterface):
+@@ -17444,6 +17459,14 @@ class MemoryEngine(MemoryEngineInterface):
                      based_on_serialized_payload.setdefault(ftype, []).extend(carried)
 
          reflect_response_payload: dict[str, Any] = {
@@ -384,7 +540,7 @@ index 100357a9a..851816764 100644
              "text": reflect_result.text,
              "based_on": based_on_serialized_payload,
              "mental_models": [],  # Mental models are included in based_on["mental-models"]
-@@ -18062,7 +18076,7 @@ class MemoryEngine(MemoryEngineInterface):
+@@ -18062,7 +18085,7 @@ class MemoryEngine(MemoryEngineInterface):
                  return await _generate_structured_output(
                      content_text,
                      response_schema,
@@ -393,7 +549,7 @@ index 100357a9a..851816764 100644
                      f"mm-{mental_model_id[:8]}",
                      mental_model.get("max_tokens"),
                  )
-@@ -18403,7 +18417,7 @@ class MemoryEngine(MemoryEngineInterface):
+@@ -18403,7 +18426,7 @@ class MemoryEngine(MemoryEngineInterface):
 
          # The exit stack carries the row lock a trigger patch takes below; it stays
          # empty (and free) on every other update.
@@ -402,7 +558,7 @@ index 100357a9a..851816764 100644
              # A supplied trigger PATCHES the stored one (see _merge_trigger): callers
              # send only the fields they set, so the rest have to be read back rather
              # than defaulted. Only paid for when a trigger is actually being changed.
-@@ -18565,6 +18579,8 @@ class MemoryEngine(MemoryEngineInterface):
+@@ -18565,6 +18588,8 @@ class MemoryEngine(MemoryEngineInterface):
              """
 
              row = await conn.fetchrow(query, *params)
@@ -411,7 +567,7 @@ index 100357a9a..851816764 100644
 
              # Persist the previous-version snapshot in the dedicated history table
              # (one row per refresh), then trim to the configured cap. Replaces the
-@@ -18770,7 +18786,7 @@ class MemoryEngine(MemoryEngineInterface):
+@@ -18770,7 +18795,7 @@ class MemoryEngine(MemoryEngineInterface):
              else None
          )
          sv_clause = f", search_vector = {sv_expr}" if sv_expr else ""
@@ -420,7 +576,7 @@ index 100357a9a..851816764 100644
              row = await conn.fetchrow(
                  f"""
                  UPDATE {fq_table("mental_models")}
-@@ -18791,6 +18807,7 @@ class MemoryEngine(MemoryEngineInterface):
+@@ -18791,6 +18816,7 @@ class MemoryEngine(MemoryEngineInterface):
              # findable by title, rather than leaving the index describing content that no longer
              # exists.
              if row is not None:
@@ -428,7 +584,7 @@ index 100357a9a..851816764 100644
                  vec = None
                  if self._knowledge_index_store(bank_id) is not None:
                      vec = await self._mental_model_embedding_vector(row["name"] or "", "")
-@@ -19442,7 +19459,7 @@ class MemoryEngine(MemoryEngineInterface):
+@@ -19442,7 +19468,7 @@ class MemoryEngine(MemoryEngineInterface):
              return []
 
          backend = await self._get_backend()
@@ -450,10 +606,20 @@ index 9b077bab0..f1b117772 100644
          "xai-oauth",
      }
 diff --git a/hindsight_api/engine/providers/openai_compatible_llm.py b/hindsight_api/engine/providers/openai_compatible_llm.py
-index ae5952f21..e1ca4d5d0 100644
+index ae5952f21..5da21cec7 100644
 --- a/hindsight_api/engine/providers/openai_compatible_llm.py
 +++ b/hindsight_api/engine/providers/openai_compatible_llm.py
-@@ -792,6 +792,7 @@ class OpenAICompatibleLLM(LLMInterface):
+@@ -320,6 +320,9 @@ def _message_refusal(message: Any) -> Any:
+ def _first_choice_or_error(response: Any, *, provider: str, model: str, scope: str) -> Any:
+     """Return the first choice or raise a clear error for malformed success responses."""
+
++    from hindsight_lakebase.ingestion import reject_service_policy
++
++    reject_service_policy(response, provider)
+     data = _response_to_dict(response)
+     error_payload = _response_get(response, "error") or data.get("error")
+     if error_payload:
+@@ -792,6 +795,7 @@ class OpenAICompatibleLLM(LLMInterface):
 
          # Validate provider
          valid_providers = [
@@ -461,7 +627,7 @@ index ae5952f21..e1ca4d5d0 100644
              "openai",
              "groq",
              "ollama",
-@@ -812,6 +813,13 @@ class OpenAICompatibleLLM(LLMInterface):
+@@ -812,6 +816,13 @@ class OpenAICompatibleLLM(LLMInterface):
          if self.provider not in valid_providers:
              raise ValueError(f"OpenAICompatibleLLM only supports: {', '.join(valid_providers)}. Got: {self.provider}")
 
@@ -475,7 +641,7 @@ index ae5952f21..e1ca4d5d0 100644
          # Set default base URLs
          if not self.base_url:
              if self.provider == "groq":
-@@ -892,7 +900,7 @@ class OpenAICompatibleLLM(LLMInterface):
+@@ -892,7 +903,7 @@ class OpenAICompatibleLLM(LLMInterface):
 
          # Create OpenAI client — extract query params from base_url (e.g. Azure api-version)
          client_kwargs: dict[str, Any] = {
@@ -484,6 +650,34 @@ index ae5952f21..e1ca4d5d0 100644
              "max_retries": 0,
              "default_headers": with_openai_compatible_user_agent(default_headers),
          }
+@@ -1665,6 +1676,9 @@ class OpenAICompatibleLLM(LLMInterface):
+                     set_stage(f"llm.{self.provider}.tools.attempt={attempt + 1}/{max_retries + 1}")
+                     response = await self._client.chat.completions.create(**call_params)
+
++                from hindsight_lakebase.ingestion import reject_service_policy
++
++                reject_service_policy(response, self.provider)
+                 message = response.choices[0].message
+                 finish_reason = response.choices[0].finish_reason
+
+diff --git a/hindsight_api/engine/retain/fact_extraction.py b/hindsight_api/engine/retain/fact_extraction.py
+index 4bcc2f068..5acbfdb5c 100644
+--- a/hindsight_api/engine/retain/fact_extraction.py
++++ b/hindsight_api/engine/retain/fact_extraction.py
+@@ -2662,11 +2662,8 @@ async def extract_facts_from_text(
+         # batch, whatever the other failures were.
+         policy_errors = [err for _, err in failed_chunks if isinstance(err, ProviderContentPolicyError)]
+         if policy_errors:
+-            raise ProviderContentPolicyError(
+-                f"Fact extraction refused by provider content policy: {len(policy_errors)} of "
+-                f"{len(failed_chunks)} failed chunks ({len(chunks)} total) were refused; retrying cannot "
+-                f"succeed. First failures: {failed_summary}"
+-            ) from policy_errors[0]
++            # Preserve the permanent type and fixed code without copying provider output.
++            raise policy_errors[0]
+
+         # Fail the entire retain — partial extraction is not acceptable.
+         # All successfully extracted facts are discarded because the transaction
 diff --git a/hindsight_api/engine/search/retrieval.py b/hindsight_api/engine/search/retrieval.py
 index 373ecc9bf..1dcd33eed 100644
 --- a/hindsight_api/engine/search/retrieval.py

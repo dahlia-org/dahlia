@@ -41,6 +41,8 @@ async function fixture(count = 6) {
   const db = new DatabaseSync(file);
   db.prepare("INSERT INTO workspace_permissions (workspace_id, principal_type, principal_id, role, granted_by_user_id, created_at) VALUES (?, 'user', ?, 'viewer', ?, ?)").run(workspace, viewer.userId, owner.userId, Date.now());
   const facts = new Map<string, Fact>(), models = new Map<string, Model>(), operations = new Map<string, string>();
+  const documents = new Map<string, { content: string; metadata: Record<string, string> }>();
+  let policy = "a".repeat(64);
   const calls: Array<{ path: string; method: string }> = [];
   let intercept: ((path: string, method: string) => void | Promise<void>) | undefined;
   const generate = (definition: ReturnType<typeof standardModel>) => {
@@ -56,9 +58,11 @@ async function fixture(count = 6) {
     const path = new URL(String(url)).pathname, method = init?.method ?? "GET";
     calls.push({ path, method }); await intercept?.(path, method);
     const body = init?.body ? JSON.parse(String(init.body)) as Record<string, unknown> : {};
-    if (path.endsWith("/config")) return Response.json({});
+    if (path.endsWith("/config")) return Response.json({ bank_id: `test-workspace-${workspace}`, dahlia_ingestion_policy: policy });
     if (path.endsWith("/memories") && method === "POST") {
       const item = (body.items as Array<{ content: string; document_id: string; metadata: Record<string, string>; tags: string[] }>)[0]!;
+      item.metadata = { ...item.metadata, dahlia_ingestion_policy: policy };
+      documents.set(item.document_id, item);
       for (const [id, fact] of facts) if (fact.document_id === item.document_id) facts.delete(id);
       const id = uuidV7(); facts.set(id, { id, text: item.content, document_id: item.document_id, metadata: item.metadata, tags: item.tags, updated_at: new Date().toISOString(), state: "valid", type: "world" });
       operations.set(String(body.operation_id), "completed"); return Response.json({ operation_id: body.operation_id });
@@ -79,6 +83,14 @@ async function fixture(count = 6) {
       return model ? Response.json(model) : new Response(null, { status: 404 });
     }
     if (path.includes("/memories/")) { const fact = facts.get(path.split("/").at(-1)!); return fact ? Response.json(fact) : new Response(null, { status: 404 }); }
+    if (path.endsWith("/reprocess")) {
+      const id = new URL(String(url)).searchParams.get("operation_id")!; operations.set(id, "completed"); return Response.json({ operation_id: id });
+    }
+    if (path.includes("/documents/") && method === "GET") {
+      const id = path.split("/").at(-1)!, document = documents.get(id);
+      return document ? Response.json({ id, bank_id: `test-workspace-${workspace}`, original_text: document.content, memory_unit_count: 1,
+        retain_params: { metadata: document.metadata } }) : new Response(null, { status: 404 });
+    }
     if (path.includes("/documents/") && method === "DELETE") { for (const [id, fact] of facts) if (fact.document_id === path.split("/").at(-1)) facts.delete(id); return Response.json({}); }
     throw new Error("Unexpected synthetic upstream route");
   });
@@ -103,10 +115,26 @@ async function fixture(count = 6) {
   const request = (suffix = "/workspace-insights", method = "GET", identity = owner) => http.request(`/api/v1/workspaces/${workspaceId}/memory/pages${suffix}`, { method,
     headers: { "x-forwarded-email": identity.email, "x-dahlia-workspace-transfers": "1" } });
   return { app, db, sync, config, engine, memory, owner, viewer, workspace, workspaceId, input, get, request, notes, facts, models, calls, operations, tick, ready, commit, generate,
+    setPolicy: (value: string) => { policy = value; },
     intercept: (callback?: typeof intercept) => { intercept = callback; }, close: async () => { db.close(); await app.close?.(); } };
 }
 
 describe("Knowledge Pages publication", () => {
+  it("withholds body, snippet, export and tool output during ingestion settings migration", async () => {
+    const f = await fixture(2);
+    try {
+      f.setPolicy("b".repeat(64));
+      expect(await f.get()).toMatchObject({ status: "stale", body: null, snippet: null });
+      expect((await f.request("/workspace-insights/export")).status).toBe(409);
+      expect(await f.memory.pages.list(f.owner, { workspaceId: f.workspaceId }, signal)).toMatchObject({ items: [{ status: "stale", snippet: null }] });
+      const tools = createDahliaMemoryTools(f.memory, true);
+      expect(await tools.get_knowledge_page.execute!(f.input, { requestContext: meetingRequestContext(f.owner), abortSignal: signal } as never))
+        .toMatchObject({ body: null, snippet: null });
+      await f.ready();
+      expect(await f.get()).toMatchObject({ status: "ready", body: "Synthetic generated hypothesis" });
+    } finally { await f.close(); }
+  });
+
   it("publishes all six sources through Web API, export and AI; invalidates the sixth everywhere", async () => {
     const f = await fixture();
     try {
@@ -297,6 +325,31 @@ describe("Knowledge Pages publication", () => {
       f.operations.set(operation.id, "failed");
       for (let i = 0; i < 6; i++) await f.tick();
       expect(f.calls.some((call) => call.path.endsWith(`/operations/${operation.id}/retry`))).toBe(true);
+      expect((await f.get()).status).toBe("ready");
+    } finally { await f.close(); }
+  });
+
+  it.each(["policy", "exhausted"])("does not restart a first page's terminal %s failure without a change", async (mode) => {
+    const f = await fixture(1);
+    try {
+      const model = f.models.get("workspace-insights")!;
+      model.content = ""; delete model.reflect_response.dahlia_generation;
+      const id = uuidV7(); f.operations.set(id, "failed");
+      f.db.prepare("UPDATE knowledge_pages SET snapshot = NULL, status = 'generating', operation = ?")
+        .run(JSON.stringify({ id, version: 0, attempts: 0 }));
+      const detail = vi.spyOn(f.engine.client, "operationDetail").mockResolvedValue({ status: "failed",
+        ...(mode === "policy" ? { dahlia_error_code: "memory_policy_blocked" as const } : {}) });
+      const before = f.calls.length;
+      for (let i = 0; i < 24; i++) await f.tick();
+      expect(f.calls.slice(before).filter((call) => call.path.endsWith("/refresh"))).toHaveLength(0);
+      expect(f.calls.slice(before).filter((call) => call.path.endsWith("/retry"))).toHaveLength(mode === "policy" ? 0 : 3);
+      expect(await f.app.memory!.page(f.owner.userId, f.workspace, f.input.pageId))
+        .toMatchObject({ status: "error", snapshot: null, operation: { id, attempts: 3 } });
+      expect((await f.get()).body).toBeNull();
+      detail.mockRestore();
+      if (mode === "policy") await f.memory.pages.refresh(f.owner, f.input);
+      else f.generate(standardModel(null));
+      await f.ready();
       expect((await f.get()).status).toBe("ready");
     } finally { await f.close(); }
   });

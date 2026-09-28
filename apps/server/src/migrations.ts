@@ -33,21 +33,15 @@ const postgresAuthBaseline = "20260912095619_initial/migration.sql";
 const postgresFiles = [
   "20260912095620_initial/migration.sql",
   "20260912180000_runtime_support/migration.sql",
-  "20260922080249_cloudy_praxagora/migration.sql",
-  "20260922080251_memory_force_rls/migration.sql",
-  "20260928001008_bitter_marvel_zombies/migration.sql",
-  "20260928001749_knowledge_pages_force_rls/migration.sql",
 ];
 const postgresAgentFiles = [
   "20260919104547_dear_strong_guy/migration.sql",
   "20260919104548_force_rls/migration.sql",
-  "20260922184559_moaning_valkyrie/migration.sql",
-  "20260922184838_cute_wind_dancer/migration.sql",
-  "20260922185639_orange_lester/migration.sql",
-  "20260922190000_chat_memory_constraints/migration.sql",
-  "20260922190443_calm_mach_iv/migration.sql",
 ];
-const sqliteFiles = ["20260912095621_initial/migration.sql", "20260912180000_runtime_support/migration.sql", "20260922080250_handy_longshot/migration.sql", "20260928001010_classy_barracuda/migration.sql"];
+const sqliteFiles = [
+  "20260912095621_initial/migration.sql",
+  "20260912180000_runtime_support/migration.sql",
+];
 
 export const serverMigrationManifest: MigrationManifest = {
   postgres: {

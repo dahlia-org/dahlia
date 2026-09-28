@@ -8,7 +8,7 @@ import { lockAuthorization } from "../auth/authorization";
 import { RequestError } from "../storage/upload";
 import { uuidV7 } from "../id";
 import { enqueueMemorySource } from "./enqueue";
-import type { MemoryOperation, MemorySource } from "./model";
+import type { MemoryProgress, MemoryOperation, MemorySource } from "./model";
 import type { PageSnapshot, PageStatus, PageOperation } from "./pages-model";
 
 export type KnowledgePageRecord = typeof pg.knowledgePage.$inferSelect;
@@ -203,6 +203,13 @@ export function createMemoryStore(database: PostgresDatabase | SQLiteDatabase | 
         eq(state.lease, job.lease!))).returning();
       if (!rows.length) throw new RequestError(409, "memory_lease_changed");
     },
+    async changeIngestionPolicy(job: MemoryState, progress: MemoryProgress) {
+      // Advance the publication fence without dropping durable in-flight source operations.
+      const [updated] = await db.update(state).set({ progress, generation: sql`${state.generation} + 1`,
+        reconcile: true, status: "indexing" }).where(and(eq(state.scopeId, job.scopeId), eq(state.lease, job.lease!))).returning();
+      if (!updated) throw new RequestError(409, "memory_lease_changed");
+      return updated;
+    },
     async startScan(job: MemoryState, progress: NonNullable<MemoryState["progress"]>) {
       await db.update(state).set({ reconcile: false, progress }).where(and(eq(state.scopeId, job.scopeId),
         eq(state.lease, job.lease!), eq(state.generation, job.generation)));
@@ -228,9 +235,9 @@ export function createMemoryStore(database: PostgresDatabase | SQLiteDatabase | 
     async document(scopeId: string, id: string) {
       return (await db.select().from(docs).where(and(eq(docs.scopeId, scopeId), eq(docs.documentId, id))))[0];
     },
-    async saveDocument(job: MemoryState, id: string, source: MemorySource, contentHash: string) {
-      await db.insert(docs).values({ scopeId: job.scopeId, documentId: id, source, contentHash, generation: job.generation })
-        .onConflictDoUpdate({ target: [docs.scopeId, docs.documentId], set: { source, contentHash, generation: job.generation } });
+    async saveDocument(job: MemoryState, id: string, source: MemorySource, contentHash: string, ingestionFingerprint: string) {
+      await db.insert(docs).values({ scopeId: job.scopeId, documentId: id, source, contentHash, ingestionFingerprint, generation: job.generation })
+        .onConflictDoUpdate({ target: [docs.scopeId, docs.documentId], set: { source, contentHash, ingestionFingerprint, generation: job.generation } });
     },
     async forgetDocument(scopeId: string, id: string) {
       await db.delete(docs).where(and(eq(docs.scopeId, scopeId), eq(docs.documentId, id)));

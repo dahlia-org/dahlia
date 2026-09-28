@@ -61,7 +61,10 @@ export function WorkspaceMemory({ workspaceId, role, compact = false, onEnabledW
     {error && <p role="alert">{error}</p>}
     {!!status?.skippedCount && <div role="alert">
       <p>{uiText(`${status.skippedCount} memory items were skipped. Correct the source or connection, then retry.`, `${status.skippedCount} 件を取り込めませんでした。元データや接続を修正し、再試行してください。`)}</p>
-      {!compact && <ul>{status.skippedSources.map((item) => <li key={item.source}>{item.source}: {item.code === "memory_source_too_large" ? uiText("Source exceeds 4 MiB", "元データが 4 MiB を超えています") : uiText("Processing failed after retries", "再試行後も処理に失敗しました")}</li>)}</ul>}
+      {!compact && <ul>{status.skippedSources.map((item) => <li key={item.source}>{item.source}: {item.code === "memory_source_too_large" ? uiText("Source exceeds 4 MiB", "元データが 4 MiB を超えています")
+        : item.code === "memory_policy_blocked" ? uiText("Blocked by Gateway policy", "Gateway ポリシーにより拒否されました")
+        : item.code === "memory_no_facts" ? uiText("No facts were extracted", "情報を抽出できませんでした")
+        : uiText("Processing failed after retries", "再試行後も処理に失敗しました")}</li>)}</ul>}
       {!compact && status.skippedCount > status.skippedSources.length && <p>{uiText("Showing the first 20 items.", "最初の 20 件を表示しています。")}</p>}
     </div>}
     {!compact && <>

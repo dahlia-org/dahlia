@@ -315,3 +315,11 @@ Databricks実起動や実データ品質評価の代替ではない。
 Server は既存の Workspace / Project mental model を利用する。上流の別ページ作成APIを呼ばず、full refresh・自動更新・削除検出を再利用する。保守パッチは refresh が既に使う DB cutoff と生成条件を `reflect_response.dahlia_generation` に保存し、bank-scoped fact detail に `updated_at` を添付する。Server は全根拠の変更時刻・系譜と Dahlia 正本を検証してから公開記録を作る。旧版にこの記録はないため、更新・検証までは非公開になる。bank削除や既存データの破壊的な作り直しは不要。
 
 `uv run --locked pytest -q tests/test_knowledge_pages.py` は固定上流の実際の refresh 処理と fact detail serializer を合成データで検証する。Databricks App の実起動や実データによる品質評価の代わりにはならない。
+
+### Ingestion recipe and Gateway policy boundary
+
+The Dahlia adapter adds a digest of allowlisted effective extraction settings to `GET /banks/{bank}/config`. It includes the selected standard strategy, missions, processing model identities and entity policy, never credentials. Each retain subbatch checks the expected digest and stamps the actual recipe on document/fact metadata. Standard document reprocess accepts an optional `operation_id` and forwards it to upstream's existing idempotent retain submission; no new reprocessing engine is introduced.
+
+Databricks service-policy blocks can arrive with HTTP 200 and a `databricks_service_policy` envelope. Text, structured and tool-call responses reject that envelope before interpreting its assistant content. Only `memory_policy_blocked` is retained as the error discriminator; block reasons are never copied. See [Databricks service policies](https://docs.databricks.com/aws/en/data-governance/unity-catalog/service-policies/). This does not enable Gateway policies, Memory Defense, PII redaction or general prompt-injection detection. In particular, the Gateway's model boundary does not guarantee redaction of original documents stored in Hindsight or canonical excerpts served by Dahlia/MCP.
+
+The Server's operator-only `scripts/evaluate-memory-ingestion.ts` evaluates isolated extraction variants through final canonical publication. The older Python harness measures upstream candidate ranking only. Default concise extraction and no selected strategy remain unchanged; real-data selection is deferred.

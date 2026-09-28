@@ -56,6 +56,9 @@ export class KnowledgePages {
     const { state } = await this.context(identity, scopeId, projectId);
     const status = this.availability(state);
     if (status) reject(status);
+    if (!await this.engine!.policyCurrent(state!, signal)) reject("stale");
+    const latest = await this.context(identity, scopeId, projectId);
+    if (latest.state?.generation !== generation || !latest.state.enabled || latest.state.purge) reject("stale");
     if (state!.generation !== generation || state!.reconcile) reject("stale");
     return state!;
   }
@@ -126,9 +129,9 @@ export class KnowledgePages {
       // Retain stamps the source revision on each fact; current document rows alone cannot date a generated page.
       const document = documents.get(id)!;
       if (fact.metadata.source_revision !== document.source.revision || fact.metadata.source_id !== document.source.id
-        || fact.metadata.source_kind !== document.source.kind) reject("source_invalid");
+        || fact.metadata.source_kind !== document.source.kind || fact.metadata.dahlia_ingestion_policy !== state.progress?.upstreamPolicy) reject("source_invalid");
     }
-    const snapshot: PageSnapshot = { fingerprint: await modelFingerprint(model), body: model.content!, generatedAt: model.last_refreshed_at!,
+    const snapshot: PageSnapshot = { ingestionPolicy: state.progress?.ingestionPolicy, fingerprint: await modelFingerprint(model), body: model.content!, generatedAt: model.last_refreshed_at!,
       generationCutoff: generation!.cutoff, conditions: standardModel(projectId), sources: [], facts: [] };
     for (const document of documents.values()) snapshot.sources.push({ documentId: document.id, source: document.source, contentHash: await contentHash(document.content) });
     for (const [id, fact] of facts) snapshot.facts.push({ id, hash: await factHash(fact), sourceIds: [...fact.source_memory_ids].sort() });
@@ -162,6 +165,7 @@ export class KnowledgePages {
         || state!.progress?.dirtyModels?.includes(projectId ?? "workspace")) reject("generating");
       if (row!.status !== "ready") reject(row!.status);
       if (!row!.snapshot) reject(row!.status);
+      if (row!.snapshot!.ingestionPolicy !== state!.progress?.ingestionPolicy || !state!.progress?.ingestionPolicy) reject("stale");
       if (row!.generation !== state!.generation || state!.reconcile || state!.indexedGeneration !== state!.generation) reject("stale");
       const model = await this.engine!.client.model(state!.bankId, id, signal);
       if (!model) reject("generating");
@@ -236,6 +240,11 @@ export class KnowledgePages {
       }
       if (!valid) Object.assign(page, { status: "source_invalid", snippet: null, generatedAt: null });
     }
+    if (initial.state && this.engine && items.some((page) => page.status === "ready")) {
+      if (!await this.engine.policyCurrent(initial.state, signal)) {
+        for (const page of items) Object.assign(page, { status: "stale", snippet: null, generatedAt: null });
+      }
+    }
     // The last page read must not extend the first page's authorization or generation lifetime.
     const current = await this.context(identity, scopeId, projectId);
     signal.throwIfAborted();
@@ -276,18 +285,24 @@ export class KnowledgePages {
       if (page.status === "error" && (page.operation?.attempts ?? 0) >= 3) {
         // A terminal attempt must not shadow a later automatic refresh or model deletion.
         const model = await this.engine.client.model(job.bankId, page.id, signal);
-        if (!model || !page.snapshot || await modelFingerprint(model) !== page.snapshot.fingerprint) await save({ operation: null, status: "stale" });
+        const fingerprint = model ? await modelFingerprint(model) : null;
+        const failed = page.operation!.failedModelFingerprint;
+        const previous = failed === undefined ? page.snapshot?.fingerprint : failed;
+        if (previous !== undefined && fingerprint !== previous) await save({ operation: null, status: "stale" });
+        else if (failed === undefined) await save({ operation: { ...page.operation!, failedModelFingerprint: fingerprint } });
         return page.id;
       }
       if (page.operation) {
-        const operation = page.operation, status = await this.engine.client.operation(job.bankId, operation.id, signal);
+        const operation = page.operation, detail = await this.engine.client.operationDetail(job.bankId, operation.id, signal), status = detail.status;
         if (status === "pending" || status === "processing") return page.id;
         if (status === "failed" || status === "cancelled") {
-          if (operation.attempts < 3) {
+          if (!detail.dahlia_error_code && operation.attempts < 3) {
             if (await save({ operation: { ...operation, attempts: operation.attempts + 1 } })) await this.engine.client.retryOperation(job.bankId, operation.id, signal);
             return page.id;
           }
-          await save({ status: "error", completedVersion: operation.version });
+          const model = await this.engine.client.model(job.bankId, page.id, signal);
+          await save({ status: "error", operation: { ...operation, attempts: 3,
+            failedModelFingerprint: model ? await modelFingerprint(model) : null }, completedVersion: operation.version });
           return page.id;
         }
         await save({ operation: null, status: "stale", completedVersion: status === "completed" ? operation.version : page.completedVersion });

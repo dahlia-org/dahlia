@@ -60,7 +60,7 @@ rerankerの重みは `1427fd652930e4ba29e8149678df786c240d8825` に固定し、�
 
 Workspace の `workspace-insights` と既存 Project の `project-{UUID}` をそのまま公開対象にする。別のページ用モデル、任意プロンプト、生成本文の編集機能は作らない。生成と更新は既存 worker と上流の full refresh / 自動更新が所有する。標準生成条件は Server の `standardModel` に集約し、既存モデルの trigger に残る任意設定も明示的に解除する。
 
-Dahlia の `search.knowledge_pages`（SQLite は `knowledge_pages`）は再構築可能な公開記録である。本文、モデル fingerprint、生成条件と時刻、全正本の ID・revision/hash、全 fact の系譜を一体で保存する。Workspace の現在の権限を使い、PostgreSQL は FORCE RLS を適用する。追加 migration のみで既存 DB と bank を維持する。
+Dahlia の `search.knowledge_pages`（SQLite は `knowledge_pages`）は再構築可能な公開記録である。本文、モデル fingerprint、生成条件と時刻、全正本の ID・revision/hash、全 fact の系譜を一体で保存する。Workspace の現在の権限を使い、PostgreSQL は FORCE RLS を適用する。Phase 3 では追加 migration とした。2026-09-28 のユーザー承認により、Server の未リリース baseline に統合した（[詳細](database-and-identity.md#リリース前-baseline-統合2026-09-092026-09-28更新)）。既存 DB と bank の変更は実行しない。
 
 上流が既に検索の上限時刻として使う DB cutoff と実際の生成条件を `reflect_response.dahlia_generation` に保存し、fact detail に `updated_at` を添付する最小パッチを置く。生成後に変わった fact はマイクロ秒精度で拒否する。保守パッチ適用前のモデル、出典なし、途中の処理結果は公開しない。worker は generation・lease・再生成要求の版を照合し、古い cutoff の完了が新しい公開記録を上書きしないようにする。同じ本文でも正本 revision が変われば Workspace retain を送って系譜 metadata を更新する（上流の差分 retain を再利用）。
 
@@ -69,3 +69,17 @@ Dahlia の `search.knowledge_pages`（SQLite は `knowledge_pages`）は再構�
 公開状態は ready / generating / stale / source_invalid / paused / unavailable / error / no_sources、取り込み coverage は ready / partial / updating と分ける。非公開状態では生成本文・snippet・説明文・exportを出さない。検索結果には検証済みページだけを載せる。Web は本文を文字列で表示し、HTMLや外部画像を読み込まない。ページは独立した証拠ではなくAI要約・仮説であり、出典リンクは正本の確認・訂正へ戻る導線である。
 
 再生成は Workspace 管理者の Web 操作のみで、要求を保存して直ちに返す。閲覧は生成を起動しない。MCP と内蔵 AI に公開するのは `list_knowledge_pages` と `get_knowledge_page` だけで、MCP は `mcp:memory:read` を使う。write scope があってもページの書き込み tool は存在しない。既存の正本メモ CRUD は維持する。
+
+## Phase 4: 取り込み設定と品質
+
+正本の `contentHash` は従来どおり本文の一致だけを表す。別の `ingestionFingerprint` に正本の revision/hash、文書組み立ての版、固定 mission、上流の有効な抽出設定・選択 strategy・処理別モデル・entity 方針を含める。資格情報を含む resolved config 全体は保存・公開しない。上流 `/config` の Dahlia adapter は明示した非機密設定から digest のみを付加する。原文や主張の真実性、独立した裏付けの数を保証する値ではない。
+
+worker は既存 bank も `/config` で確認し、設定が変われば generation を進めて既存の再走査を使う。旧行の fingerprint 未設定は移行未完了とする。本文が変わった場合は retain、設定による再抽出は正本本文・metadata の同期後に標準 document reprocess を使う。同じ本文の retain は抽出を省くことがあるため、代用しない。段階、開始設定、operation ID は永続化する。reprocess の ID を既存の retain 冪等性に渡す最小パッチにより、応答喪失後も同じ operation を確認・再送する。
+
+上流の各抽出 batch は開始時の期待設定と有効設定を照合する。完了時には現在の認可、正本 revision/hash、generation、設定、保存文書・metadata・抽出件数を確認する。抽出ゼロは `memory_no_facts`、Gateway 拒否は `memory_policy_blocked`、一時的な処理障害は有界再試行後に `memory_operation_failed` とする。拒否・抽出ゼロを ready や検索結果なしとして隠さず、coverage / skippedCount / skippedSources に反映する。決定的な失敗は自動で繰り返さず、正本・設定変更または管理者の既存「再試行」で再評価する。
+
+recall / reflect と Knowledge Pages の本文・snippet・export は同じ現在設定と正本の境界を通す。設定移行中の旧結果は公開せず updating / generating / stale を返す。ページは全ての参照 fact の設定 stamp も確認する。会議の transcript、AI 要約、OCR、caption は同じ `meeting_id` の一つの証拠群で、fact の数を独立した裏付け数に換算しない。
+
+秘密情報・PII の検出と伏せ字は Gateway の設定に委ねる。Dahlia 独自の regex / redact と上流 Memory Defense の有効化は追加しない。Memory Defense は秘密情報等の regex 検出であり、一般的なプロンプト注入防御とは別物である。Gateway を通らない Hindsight の正本文保存、Dahlia 正本抜粋、直接の MCP 出力が秘匿されるとは保証しない。正本と通常の正本閲覧は変更しない。Databricks の HTTP 200 に含まれる `databricks_service_policy` は provider 境界で恒久拒否に変換し、生成された回答として扱わず、自由文の拒否理由を保存・ログ・公開しない。
+
+取り込み品質の比較は `apps/server/scripts/evaluate-memory-ingestion.ts` の運用者用ハーネスを使う。公開 API やモデル入力に評価 bank を選ぶ引数はない。本番で抽出ゼロ・拒否・未取り込みの文書も含む現在認可された正本を列挙し、標準 `/config` の設定だけを写した隔離 bank に取り込み、短命な取り込み記録を使って本番の `WorkspaceMemoryService.search` を実行する。bank clone は使わず、directive・webhook・本番の非同期 operation を複製・作成しない。本番の記録・正本は変更しない。concise / verbose / 明示指定した既存 strategy を比較し、終了時は今回作成した評価 bank だけを削除する。最終文書の hit@5 / MRR、抜粋内の必要証拠、引用欠落、期待・禁止主張、会議重複、partial / 拒否 / 抽出ゼロ / エラー、応答時間を集計する。主張の期待・禁止判定は入力文字列との包含比較で、意味的正しさの自動判定ではない。出力は集計のみ。質問・個別結果・本文は commit しない。今回は合成データでハーネスを検証し、実データ比較は未実施。既定の concise、strategy 未指定を維持する。
