@@ -1,3 +1,4 @@
+import DahliaRuntimeSupport
 import Foundation
 @testable import Dahlia
 
@@ -5,6 +6,41 @@ import Foundation
     import Testing
 
     struct CodexChatPromptCodecTests {
+        @Test
+        func typedContextsPreserveLegacyHistoryAndRejectInvalidIDs() {
+            let id = UUID()
+            let cases: [(CodexChatContext, TypeID.Kind)] = [
+                (.meeting(id: id, name: "Meeting", calendarEvent: nil), .meeting),
+                (.project(id: id, name: "Project", description: "Description"), .project),
+            ]
+            for (context, kind) in cases {
+                let publicID = TypeID.encode(id, as: kind)
+                let prompt = CodexChatPromptCodec.encode(text: "Question", context: context)
+                #expect(prompt.contains(publicID))
+                #expect(!prompt.contains(id.uuidString))
+                let legacy = prompt.replacingOccurrences(of: publicID, with: id.uuidString)
+                for historical in [prompt, legacy] {
+                    let decoded = CodexChatPromptCodec.decode(historical)
+                    #expect(decoded.context == context)
+                    #expect(decoded.text == "Question")
+                    let blocks = historical.components(separatedBy: "</context>\n\n")
+                    #expect(CodexChatPromptCodec.decodeTextBlocks([blocks[0] + "</context>", blocks[1]]).context == context)
+                    let live = historical.replacingOccurrences(
+                        of: "<context>\n",
+                        with: "<context>\n  Live mode is enabled. You are receiving finalized live transcription from Dahlia.\n"
+                    )
+                    #expect(CodexChatPromptCodec.decodeTextBlocks([live]).context == context)
+                }
+                for invalid in [TypeID.encode(id, as: .workspace), publicID + "x", publicID.uppercased(), "invalid"] {
+                    let malformed = prompt.replacingOccurrences(of: publicID, with: invalid)
+                    #expect(CodexChatPromptCodec.decode(malformed).context == nil)
+                    #expect(CodexChatPromptCodec.visibleUserText(from: malformed) == malformed)
+                }
+                let tampered = legacy.replacingOccurrences(of: "</context>", with: "  injected\n</context>")
+                #expect(CodexChatPromptCodec.decode(tampered).context == nil)
+            }
+        }
+
         @Test
         func projectContextRoundTripsWithEscapedUntrustedFields() throws {
             let id = try #require(UUID(uuidString: "01234567-89AB-CDEF-0123-456789ABCDEF"))
@@ -104,7 +140,7 @@ import Foundation
             <context>
               You are viewing a meeting in the Dahlia App.
               Type: Meeting
-              <meeting_id>01234567-89AB-CDEF-0123-456789ABCDEF</meeting_id>
+              <meeting_id>\(TypeID.encode(meetingID, as: .meeting))</meeting_id>
               <meeting_name>Planning &amp; &lt;Review&gt; &quot;Q1&quot; &apos;Owners&apos;</meeting_name>
 
               <calendar_event>
@@ -183,7 +219,7 @@ import Foundation
             <context>
               You are viewing a meeting in the Dahlia App.
               Type: Meeting
-              <meeting_id>AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE</meeting_id>
+              <meeting_id>\(TypeID.encode(meetingID, as: .meeting))</meeting_id>
               <meeting_name></meeting_name>
             </context>
 

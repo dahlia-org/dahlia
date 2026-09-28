@@ -1,3 +1,4 @@
+import DahliaRuntimeSupport
 import Foundation
 @testable import Dahlia
 
@@ -531,8 +532,8 @@ import Foundation
             session.sendDraft()
             await waitUntil { !session.isGenerating }
 
-            let expected = "meeting:\(first.id.uuidString.lowercased()) "
-                + "meeting:\(second.id.uuidString.lowercased()) Compare them"
+            let expected = "meeting:\(TypeID.encode(first.id, as: .meeting)) "
+                + "meeting:\(TypeID.encode(second.id, as: .meeting)) Compare them"
             #expect(await service.sentTextBlocks == [[expected]])
             #expect(session.selectedMeetingReferenceIDs.isEmpty)
             #expect(session.draft.isEmpty)
@@ -563,7 +564,7 @@ import Foundation
             session.sendDraft()
             await waitUntil { !session.isGenerating }
 
-            #expect(await service.sentTextBlocks == [["meeting:\(meeting.id.uuidString.lowercased())"]])
+            #expect(await service.sentTextBlocks == [["meeting:\(TypeID.encode(meeting.id, as: .meeting))"]])
         }
 
         @Test
@@ -656,13 +657,13 @@ import Foundation
             #expect(session.selectedMeetingReferenceIDs == [reference.id])
         }
 
-        @Test
-        func restoredRawReferencesUseCachedNamesAcrossTitleAndMessages() {
+        @Test(arguments: [false, true])
+        func restoredRawReferencesUseCachedNamesAcrossTitleAndMessages(legacy: Bool) {
             let settings = AppSettings()
             let workspace = Self.testWorkspace()
             settings.currentWorkspace = workspace
             let meeting = Self.meetingReference(name: "Weekly Sync", offset: 0)
-            let token = "meeting:\(meeting.id.uuidString)"
+            let token = "meeting:\(legacy ? meeting.id.uuidString : TypeID.encode(meeting.id, as: .meeting))"
             let session = CodexChatSessionModel(
                 workspaceID: workspace.id,
                 title: "\(token) Review",

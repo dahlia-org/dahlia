@@ -198,8 +198,8 @@ enum StoredSummaryDocumentMarkdownRenderer {
 
     private static func renderScreenshot(id: UUID, caption: SummaryText) -> String {
         let marker = normalized(caption.transcriptRef?.time ?? "").map {
-            "[Screenshot \(id.uuidString) at \($0)]"
-        } ?? "[Screenshot \(id.uuidString)]"
+            "[Screenshot \(TypeID.encode(id, as: .attachment)) at \($0)]"
+        } ?? "[Screenshot \(TypeID.encode(id, as: .attachment))]"
         guard let caption = normalized(caption.text) else { return marker }
         return "\(marker) \(caption)"
     }

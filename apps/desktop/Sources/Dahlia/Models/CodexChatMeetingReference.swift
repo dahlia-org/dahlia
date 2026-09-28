@@ -1,3 +1,4 @@
+import DahliaRuntimeSupport
 import Foundation
 
 struct CodexChatMeetingReference: Identifiable, Equatable {
@@ -26,7 +27,7 @@ struct CodexChatMeetingReference: Identifiable, Equatable {
     }
 
     static func serializedText(referenceIDs: [UUID], draft: String) -> String {
-        let references = referenceIDs.map { "meeting:\($0.uuidString.lowercased())" }
+        let references = referenceIDs.map { "meeting:\(TypeID.encode($0, as: .meeting))" }
         let components = references + [draft.nilIfBlank].compactMap(\.self)
         return components.joined(separator: " ")
     }
@@ -88,14 +89,14 @@ struct CodexChatMeetingReference: Identifiable, Equatable {
             range: searchStart ..< text.endIndex
         ) {
             result.append(contentsOf: text[searchStart ..< prefixRange.lowerBound])
-            guard let uuidEnd = text.index(
+            let idLength = text[prefixRange.upperBound...].hasPrefix("mtg_") ? 30 : 36
+            guard let idEnd = text.index(
                 prefixRange.upperBound,
-                offsetBy: uuidStringLength,
+                offsetBy: idLength,
                 limitedBy: text.endIndex
             ),
-                let meetingID = UUID(
-                    uuidString: String(text[prefixRange.upperBound ..< uuidEnd])
-                )
+                let meetingID = decodeID(String(text[prefixRange.upperBound ..< idEnd])),
+                idEnd == text.endIndex || !(text[idEnd].isLetter || text[idEnd].isNumber || text[idEnd] == "_" || text[idEnd] == "-")
             else {
                 result.append(contentsOf: text[prefixRange.lowerBound ..< prefixRange.upperBound])
                 searchStart = prefixRange.upperBound
@@ -103,7 +104,7 @@ struct CodexChatMeetingReference: Identifiable, Equatable {
             }
 
             result.append(namesByID[meetingID] ?? unavailableName)
-            searchStart = uuidEnd
+            searchStart = idEnd
         }
         result.append(contentsOf: text[searchStart...])
         return result
@@ -135,9 +136,12 @@ struct CodexChatMeetingReference: Identifiable, Equatable {
 
     private static func meetingID(from token: String) -> UUID? {
         guard token.hasPrefix(meetingTokenPrefix), token.count > meetingTokenPrefix.count else { return nil }
-        return UUID(uuidString: String(token.dropFirst(meetingTokenPrefix.count)))
+        return decodeID(String(token.dropFirst(meetingTokenPrefix.count)))
     }
 
     private static let meetingTokenPrefix = "meeting:"
-    private static let uuidStringLength = 36
+
+    private static func decodeID(_ value: String) -> UUID? {
+        (try? TypeID.decode(value, as: .meeting)) ?? UUID(uuidString: value)
+    }
 }

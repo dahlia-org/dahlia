@@ -163,9 +163,9 @@ import GRDB
 
             [Transcript 00:00:02]
 
-            [Screenshot \(captionedScreenshotID.uuidString)] Screenshot
+            [Screenshot \(TypeID.encode(captionedScreenshotID, as: .attachment))] Screenshot
 
-            [Screenshot \(emptyScreenshotID.uuidString)]
+            [Screenshot \(TypeID.encode(emptyScreenshotID, as: .attachment))]
 
             #### Details
 

@@ -1,3 +1,4 @@
+import DahliaRuntimeSupport
 import Foundation
 @testable import Dahlia
 
@@ -15,39 +16,39 @@ import Foundation
                 draft: "Compare these meetings"
             )
 
-            #expect(text == "meeting:019b6f79-18c5-7000-8000-000000000001 "
-                + "meeting:019b6f79-18c5-7000-8000-000000000002 Compare these meetings")
+            #expect(text == "meeting:\(TypeID.encode(firstID, as: .meeting)) "
+                + "meeting:\(TypeID.encode(secondID, as: .meeting)) Compare these meetings")
             #expect(CodexChatMeetingReference.serializedText(referenceIDs: [firstID], draft: "  ")
-                == "meeting:019b6f79-18c5-7000-8000-000000000001")
+                == "meeting:\(TypeID.encode(firstID, as: .meeting))")
         }
 
-        @Test
-        func recognizesOnlyStandaloneValidMeetingTokens() throws {
+        @Test(arguments: [false, true])
+        func recognizesOnlyStandaloneValidMeetingTokens(legacy: Bool) throws {
             let firstID = try #require(UUID(uuidString: "019b6f79-18c5-7000-8000-000000000001"))
             let secondID = try #require(UUID(uuidString: "019b6f79-18c5-7000-8000-000000000002"))
-            let text = "meeting:\(firstID.uuidString) compare meeting:\(secondID.uuidString) "
-                + "suffixmeeting:\(firstID.uuidString) meeting:not-a-uuid meeting:\(firstID.uuidString)."
+            let text = "meeting:\(legacy ? firstID.uuidString : TypeID.encode(firstID, as: .meeting)) compare meeting:\(legacy ? secondID.uuidString : TypeID.encode(secondID, as: .meeting)) "
+                + "suffixmeeting:\(legacy ? firstID.uuidString : TypeID.encode(firstID, as: .meeting)) meeting:not-a-uuid meeting:\(legacy ? firstID.uuidString : TypeID.encode(firstID, as: .meeting))."
 
             #expect(CodexChatMeetingReference.meetingIDs(in: text) == [firstID, secondID])
         }
 
-        @Test
-        func separatesStandaloneReferencesFromMessagePreview() throws {
+        @Test(arguments: [false, true])
+        func separatesStandaloneReferencesFromMessagePreview(legacy: Bool) throws {
             let firstID = try #require(UUID(uuidString: "019b6f79-18c5-7000-8000-000000000001"))
             let secondID = try #require(UUID(uuidString: "019b6f79-18c5-7000-8000-000000000002"))
-            let text = "meeting:\(firstID.uuidString) meeting:\(secondID.uuidString) Compare these\nmeetings"
+            let text = "meeting:\(legacy ? firstID.uuidString : TypeID.encode(firstID, as: .meeting)) meeting:\(legacy ? secondID.uuidString : TypeID.encode(secondID, as: .meeting)) Compare these\nmeetings"
 
             let content = CodexChatMeetingReference.previewContent(in: text)
 
             #expect(content.referenceIDs == [firstID, secondID])
             #expect(content.instruction == "Compare these\nmeetings")
             let embedded = CodexChatMeetingReference.previewContent(
-                in: "Compare meeting:\(firstID.uuidString)"
+                in: "Compare meeting:\(legacy ? firstID.uuidString : TypeID.encode(firstID, as: .meeting))"
             )
             #expect(embedded.referenceIDs == [firstID])
             #expect(embedded.instruction == "Compare")
             let duplicate = CodexChatMeetingReference.previewContent(
-                in: "meeting:\(firstID.uuidString) Repeat meeting:\(firstID.uuidString)  "
+                in: "meeting:\(legacy ? firstID.uuidString : TypeID.encode(firstID, as: .meeting)) Repeat meeting:\(legacy ? firstID.uuidString : TypeID.encode(firstID, as: .meeting))  "
             )
             #expect(duplicate.referenceIDs == [firstID, firstID])
             #expect(duplicate.instruction == "Repeat")
@@ -55,16 +56,16 @@ import Foundation
             #expect(invalid.referenceIDs.isEmpty)
             #expect(invalid.instruction == "Keep meeting:not-a-uuid")
             let indented = CodexChatMeetingReference.previewContent(
-                in: "meeting:\(firstID.uuidString) \n  Keep indentation"
+                in: "meeting:\(legacy ? firstID.uuidString : TypeID.encode(firstID, as: .meeting)) \n  Keep indentation"
             )
             #expect(indented.instruction == "\n  Keep indentation")
         }
 
-        @Test
-        func resolvesDisplayNamesWithoutExposingUnknownIDs() throws {
+        @Test(arguments: [false, true])
+        func resolvesDisplayNamesWithoutExposingUnknownIDs(legacy: Bool) throws {
             let knownID = try #require(UUID(uuidString: "019b6f79-18c5-7000-8000-000000000001"))
             let unknownID = try #require(UUID(uuidString: "019b6f79-18c5-7000-8000-000000000002"))
-            let text = "Review meeting:\(knownID.uuidString) and meeting:\(unknownID.uuidString)"
+            let text = "Review meeting:\(legacy ? knownID.uuidString : TypeID.encode(knownID, as: .meeting)) and meeting:\(legacy ? unknownID.uuidString : TypeID.encode(unknownID, as: .meeting))"
 
             let display = CodexChatMeetingReference.displayText(
                 for: text,
@@ -77,11 +78,11 @@ import Foundation
             #expect(!display.contains(unknownID.uuidString))
         }
 
-        @Test
-        func resolvesDisplayNamesInsidePunctuationAndMarkdown() throws {
+        @Test(arguments: [false, true])
+        func resolvesDisplayNamesInsidePunctuationAndMarkdown(legacy: Bool) throws {
             let knownID = try #require(UUID(uuidString: "019b6f79-18c5-7000-8000-000000000001"))
             let unknownID = try #require(UUID(uuidString: "019b6f79-18c5-7000-8000-000000000002"))
-            let text = "Review (Meeting:\(knownID.uuidString)), `MEETING:\(unknownID.uuidString)`."
+            let text = "Review (Meeting:\(legacy ? knownID.uuidString : TypeID.encode(knownID, as: .meeting))), `MEETING:\(legacy ? unknownID.uuidString : TypeID.encode(unknownID, as: .meeting))`."
 
             let display = CodexChatMeetingReference.displayText(
                 for: text,
@@ -93,6 +94,17 @@ import Foundation
             #expect(!display.contains(knownID.uuidString))
             #expect(!display.contains(unknownID.uuidString))
             #expect(CodexChatMeetingReference.meetingIDs(in: text).isEmpty)
+        }
+
+        @Test
+        func rejectsWrongKindAndMalformedTypeIDReferences() {
+            let id = UUID()
+            for value in [TypeID.encode(id, as: .project), TypeID.encode(id, as: .meeting) + "x", "mtg_" + String(repeating: "8", count: 26)] {
+                let text = "meeting:" + value
+                #expect(CodexChatMeetingReference.meetingIDs(in: text).isEmpty)
+                #expect(CodexChatMeetingReference.previewContent(in: text).instruction == text)
+                #expect(CodexChatMeetingReference.displayText(for: text, namesByID: [id: "Meeting"]) == text)
+            }
         }
 
         @Test
