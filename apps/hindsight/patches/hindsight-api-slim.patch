@@ -610,7 +610,7 @@ index 9b077bab0..f1b117772 100644
          "xai-oauth",
      }
 diff --git a/hindsight_api/engine/providers/openai_compatible_llm.py b/hindsight_api/engine/providers/openai_compatible_llm.py
-index ae5952f21..b5e3d68bf 100644
+index ae5952f21..503663b32 100644
 --- a/hindsight_api/engine/providers/openai_compatible_llm.py
 +++ b/hindsight_api/engine/providers/openai_compatible_llm.py
 @@ -320,6 +320,9 @@ def _message_refusal(message: Any) -> Any:
@@ -659,7 +659,7 @@ index ae5952f21..b5e3d68bf 100644
                  max_completion_tokens = max_tokens_cap
              # For reasoning models, enforce minimum to ensure space for reasoning + output
 -            if is_reasoning_model and max_completion_tokens < 16000:
-+            if is_reasoning_model and max_completion_tokens < 16000 and scope != "dahlia_image_retain":
++            if is_reasoning_model and max_completion_tokens < 16000 and scope != "retain_dahlia_image":
                  max_completion_tokens = 16000
              call_params[self._max_tokens_param_name()] = max_completion_tokens
          if temperature is not None and not is_reasoning_model:
@@ -667,7 +667,7 @@ index ae5952f21..b5e3d68bf 100644
                      call_params["messages"] = _ensure_json_word_in_user_message(call_params["messages"])
                      call_params["response_format"] = {"type": "json_object"}
 
-+        if scope == "dahlia_image_retain":
++        if scope == "retain_dahlia_image":
 +            # An image extraction's explicit budget must survive provider defaults
 +            # and extra_body merging. This does not alter model selection/routing.
 +            from hindsight_lakebase.images import bound_image_request

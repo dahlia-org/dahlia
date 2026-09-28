@@ -51,10 +51,10 @@ def image_fact_metadata(metadata, chunk_text):
 
 
 async def image_call(llm, kwargs):
-    # Explicit per-call overrides cover both provider transport retries and output budget.
+    # Keep retain admission control while bounding transport retries and output budget.
     async with asyncio.timeout(60):
         return await llm.call(
-            **{**kwargs, "max_completion_tokens": 4096, "max_retries": 0, "scope": "dahlia_image_retain"}
+            **{**kwargs, "max_completion_tokens": 4096, "max_retries": 0, "scope": "retain_dahlia_image"}
         )
 
 

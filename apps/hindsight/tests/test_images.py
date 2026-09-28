@@ -1,5 +1,6 @@
 """Image contracts use synthetic pixels and mocked provider transport only."""
 
+import asyncio
 import hashlib
 import json
 import logging
@@ -11,13 +12,14 @@ from unittest.mock import AsyncMock
 import httpx
 import pytest
 from hindsight_api.config import HindsightConfig, JsonFormatter
-from hindsight_api.engine.providers.openai_compatible_llm import OpenAICompatibleLLM
+from hindsight_api.engine import llm_wrapper
+from hindsight_api.engine.llm_wrapper import LLMProvider
 from hindsight_api.engine.response_models import LLMCallResult, TokenUsage
 from hindsight_api.engine.retain.attachment_content import LoadedAttachment, attachment_placeholder
 from hindsight_api.engine.retain.fact_extraction import _extract_facts_from_chunk
 
 from hindsight_lakebase.databricks import DatabricksOAuthTokenProvider
-from hindsight_lakebase.images import image_capabilities, image_fact_metadata, require_images
+from hindsight_lakebase.images import image_call, image_capabilities, image_fact_metadata, require_images
 from hindsight_lakebase.ingestion import ingestion_policy, stamp_ingestion
 from hindsight_lakebase.server import LOG_FIELDS
 
@@ -117,7 +119,7 @@ async def test_databricks_preserves_multimodal_parts_and_uses_oauth(monkeypatch,
     monkeypatch.setenv("DATABRICKS_CLIENT_SECRET", "synthetic")
     token = AsyncMock(return_value="synthetic-token")
     monkeypatch.setattr(DatabricksOAuthTokenProvider, "get_token_async", token)
-    provider = OpenAICompatibleLLM(
+    provider = LLMProvider(
         provider="databricks", model=model, api_key=None, base_url=None, extra_body={"max_tokens": 16000}
     )
     requests = []
@@ -142,16 +144,56 @@ async def test_databricks_preserves_multimodal_parts_and_uses_oauth(monkeypatch,
         {"type": "image_url", "image_url": {"url": "data:image/webp;base64,c3ludGhldGlj"}},
     ]
     async with httpx.AsyncClient(transport=httpx.MockTransport(respond)) as client:
-        monkeypatch.setattr(provider._client, "_client", client)
-        await provider.call(
-            messages=[{"role": "user", "content": parts}],
-            max_retries=0,
-            max_completion_tokens=4096,
-            scope="dahlia_image_retain",
-        )
+        monkeypatch.setattr(provider._provider_impl._client, "_client", client)
+        await image_call(provider, {"messages": [{"role": "user", "content": parts}]})
     assert requests[0].headers["authorization"] == "Bearer synthetic-token"
     assert json.loads(requests[0].content)["messages"][0]["content"] == parts
     payload = json.loads(requests[0].content)
     assert payload.get("max_completion_tokens", payload.get("max_tokens")) == 4096
     assert payload.get("max_tokens", 4096) <= 4096
     token.assert_awaited()
+
+
+async def test_image_retain_shares_text_admission_and_releases_permits_on_cancel(monkeypatch):
+    provider = LLMProvider(provider="mock", api_key="", base_url="", model="synthetic")
+    retain = asyncio.Semaphore(1)
+    monkeypatch.setattr(llm_wrapper, "_per_op_llm_semaphores", {"retain": retain})
+    monkeypatch.setattr(llm_wrapper, "_global_llm_semaphore", asyncio.Semaphore(2))
+    entered = asyncio.Event()
+    release = asyncio.Event()
+    calls = []
+
+    async def respond(**kwargs):
+        calls.append(kwargs["scope"])
+        if kwargs["scope"] == "retain_extract_facts":
+            entered.set()
+            await release.wait()
+        return LLMCallResult(content="synthetic", usage=TokenUsage())
+
+    monkeypatch.setattr(provider._provider_impl, "call", respond)
+    messages = [{"role": "user", "content": "synthetic"}]
+    text = asyncio.create_task(provider.call(messages=messages, scope="retain_extract_facts"))
+    image = None
+    try:
+        async with asyncio.timeout(2):
+            await entered.wait()
+            image = asyncio.create_task(image_call(provider, {"messages": messages}))
+            await asyncio.sleep(0)  # Let the image reach the occupied retain permit.
+            assert calls == ["retain_extract_facts"] and not image.done()
+            await provider.call(messages=messages, scope="reflect")
+            assert calls == ["retain_extract_facts", "reflect"]
+            image.cancel()
+            with pytest.raises(asyncio.CancelledError):
+                await image
+            assert retain.locked()  # Cancelling queued work must not release text's permit.
+            release.set()
+            await text
+            await image_call(provider, {"messages": messages})
+            await provider.call(messages=messages, scope="retain_extract_facts")
+            assert calls[-2:] == ["retain_dahlia_image", "retain_extract_facts"]
+            assert not retain.locked()
+    finally:
+        for task in (text, image):
+            if task is not None:
+                task.cancel()
+        await asyncio.gather(*(task for task in (text, image) if task is not None), return_exceptions=True)
