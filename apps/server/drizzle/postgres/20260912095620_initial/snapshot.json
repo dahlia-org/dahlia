@@ -1,7 +1,7 @@
 {
   "version": "8",
   "dialect": "postgres",
-  "id": "d7ca718c-633f-4dd3-9e02-4f7385aeabdf",
+  "id": "48a10aec-0a13-4978-9903-6a75610cd4fe",
   "prevIds": [
     "00000000-0000-0000-0000-000000000000"
   ],
@@ -30,6 +30,12 @@
     },
     {
       "isRlsEnabled": true,
+      "name": "knowledge_pages",
+      "entityType": "tables",
+      "schema": "search"
+    },
+    {
+      "isRlsEnabled": true,
       "name": "meeting_attachments",
       "entityType": "tables",
       "schema": "app"
@@ -42,6 +48,18 @@
     },
     {
       "isRlsEnabled": false,
+      "name": "memory_documents",
+      "entityType": "tables",
+      "schema": "jobs"
+    },
+    {
+      "isRlsEnabled": false,
+      "name": "memory_source_jobs",
+      "entityType": "tables",
+      "schema": "jobs"
+    },
+    {
+      "isRlsEnabled": false,
       "name": "organization_domains",
       "entityType": "tables",
       "schema": "app"
@@ -51,6 +69,30 @@
       "name": "organization_join_requests",
       "entityType": "tables",
       "schema": "app"
+    },
+    {
+      "isRlsEnabled": true,
+      "name": "personal_memories",
+      "entityType": "tables",
+      "schema": "app"
+    },
+    {
+      "isRlsEnabled": false,
+      "name": "personal_memory_documents",
+      "entityType": "tables",
+      "schema": "jobs"
+    },
+    {
+      "isRlsEnabled": false,
+      "name": "personal_memory_source_jobs",
+      "entityType": "tables",
+      "schema": "jobs"
+    },
+    {
+      "isRlsEnabled": false,
+      "name": "personal_memory_state",
+      "entityType": "tables",
+      "schema": "jobs"
     },
     {
       "isRlsEnabled": true,
@@ -67,6 +109,12 @@
     {
       "isRlsEnabled": false,
       "name": "server_settings",
+      "entityType": "tables",
+      "schema": "app"
+    },
+    {
+      "isRlsEnabled": true,
+      "name": "shared_memories",
       "entityType": "tables",
       "schema": "app"
     },
@@ -165,6 +213,12 @@
       "name": "workspace_keys",
       "entityType": "tables",
       "schema": "crypto"
+    },
+    {
+      "isRlsEnabled": false,
+      "name": "workspace_memory_state",
+      "entityType": "tables",
+      "schema": "jobs"
     },
     {
       "isRlsEnabled": true,
@@ -327,6 +381,123 @@
       "entityType": "columns",
       "schema": "jobs",
       "table": "image_analysis"
+    },
+    {
+      "type": "uuid",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "workspace_id",
+      "entityType": "columns",
+      "schema": "search",
+      "table": "knowledge_pages"
+    },
+    {
+      "type": "text",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "id",
+      "entityType": "columns",
+      "schema": "search",
+      "table": "knowledge_pages"
+    },
+    {
+      "type": "uuid",
+      "typeSchema": null,
+      "notNull": false,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "project_id",
+      "entityType": "columns",
+      "schema": "search",
+      "table": "knowledge_pages"
+    },
+    {
+      "type": "integer",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": "0",
+      "generated": null,
+      "identity": null,
+      "name": "generation",
+      "entityType": "columns",
+      "schema": "search",
+      "table": "knowledge_pages"
+    },
+    {
+      "type": "jsonb",
+      "typeSchema": null,
+      "notNull": false,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "snapshot",
+      "entityType": "columns",
+      "schema": "search",
+      "table": "knowledge_pages"
+    },
+    {
+      "type": "text",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": "'generating'",
+      "generated": null,
+      "identity": null,
+      "name": "status",
+      "entityType": "columns",
+      "schema": "search",
+      "table": "knowledge_pages"
+    },
+    {
+      "type": "integer",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": "0",
+      "generated": null,
+      "identity": null,
+      "name": "request_version",
+      "entityType": "columns",
+      "schema": "search",
+      "table": "knowledge_pages"
+    },
+    {
+      "type": "integer",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": "0",
+      "generated": null,
+      "identity": null,
+      "name": "completed_version",
+      "entityType": "columns",
+      "schema": "search",
+      "table": "knowledge_pages"
+    },
+    {
+      "type": "jsonb",
+      "typeSchema": null,
+      "notNull": false,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "operation",
+      "entityType": "columns",
+      "schema": "search",
+      "table": "knowledge_pages"
     },
     {
       "type": "uuid",
@@ -596,6 +767,162 @@
       "default": null,
       "generated": null,
       "identity": null,
+      "name": "workspace_id",
+      "entityType": "columns",
+      "schema": "jobs",
+      "table": "memory_documents"
+    },
+    {
+      "type": "text",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "document_id",
+      "entityType": "columns",
+      "schema": "jobs",
+      "table": "memory_documents"
+    },
+    {
+      "type": "jsonb",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "source",
+      "entityType": "columns",
+      "schema": "jobs",
+      "table": "memory_documents"
+    },
+    {
+      "type": "text",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "content_hash",
+      "entityType": "columns",
+      "schema": "jobs",
+      "table": "memory_documents"
+    },
+    {
+      "type": "text",
+      "typeSchema": null,
+      "notNull": false,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "ingestion_fingerprint",
+      "entityType": "columns",
+      "schema": "jobs",
+      "table": "memory_documents"
+    },
+    {
+      "type": "integer",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "generation",
+      "entityType": "columns",
+      "schema": "jobs",
+      "table": "memory_documents"
+    },
+    {
+      "type": "uuid",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "workspace_id",
+      "entityType": "columns",
+      "schema": "jobs",
+      "table": "memory_source_jobs"
+    },
+    {
+      "type": "text",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "document_id",
+      "entityType": "columns",
+      "schema": "jobs",
+      "table": "memory_source_jobs"
+    },
+    {
+      "type": "text",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "kind",
+      "entityType": "columns",
+      "schema": "jobs",
+      "table": "memory_source_jobs"
+    },
+    {
+      "type": "uuid",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "source_id",
+      "entityType": "columns",
+      "schema": "jobs",
+      "table": "memory_source_jobs"
+    },
+    {
+      "type": "integer",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": "1",
+      "generated": null,
+      "identity": null,
+      "name": "generation",
+      "entityType": "columns",
+      "schema": "jobs",
+      "table": "memory_source_jobs"
+    },
+    {
+      "type": "jsonb",
+      "typeSchema": null,
+      "notNull": false,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "operation",
+      "entityType": "columns",
+      "schema": "jobs",
+      "table": "memory_source_jobs"
+    },
+    {
+      "type": "uuid",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
       "name": "organization_id",
       "entityType": "columns",
       "schema": "app",
@@ -717,6 +1044,448 @@
       "entityType": "columns",
       "schema": "app",
       "table": "organization_join_requests"
+    },
+    {
+      "type": "uuid",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "id",
+      "entityType": "columns",
+      "schema": "app",
+      "table": "personal_memories"
+    },
+    {
+      "type": "uuid",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "user_id",
+      "entityType": "columns",
+      "schema": "app",
+      "table": "personal_memories"
+    },
+    {
+      "type": "uuid",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "created_by",
+      "entityType": "columns",
+      "schema": "app",
+      "table": "personal_memories"
+    },
+    {
+      "type": "text",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "content",
+      "entityType": "columns",
+      "schema": "app",
+      "table": "personal_memories"
+    },
+    {
+      "type": "boolean",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": "true",
+      "generated": null,
+      "identity": null,
+      "name": "protected",
+      "entityType": "columns",
+      "schema": "app",
+      "table": "personal_memories"
+    },
+    {
+      "type": "integer",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": "1",
+      "generated": null,
+      "identity": null,
+      "name": "revision",
+      "entityType": "columns",
+      "schema": "app",
+      "table": "personal_memories"
+    },
+    {
+      "type": "timestamp",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "updated_at",
+      "entityType": "columns",
+      "schema": "app",
+      "table": "personal_memories"
+    },
+    {
+      "type": "uuid",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "user_id",
+      "entityType": "columns",
+      "schema": "jobs",
+      "table": "personal_memory_documents"
+    },
+    {
+      "type": "text",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "document_id",
+      "entityType": "columns",
+      "schema": "jobs",
+      "table": "personal_memory_documents"
+    },
+    {
+      "type": "jsonb",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "source",
+      "entityType": "columns",
+      "schema": "jobs",
+      "table": "personal_memory_documents"
+    },
+    {
+      "type": "text",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "content_hash",
+      "entityType": "columns",
+      "schema": "jobs",
+      "table": "personal_memory_documents"
+    },
+    {
+      "type": "text",
+      "typeSchema": null,
+      "notNull": false,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "ingestion_fingerprint",
+      "entityType": "columns",
+      "schema": "jobs",
+      "table": "personal_memory_documents"
+    },
+    {
+      "type": "integer",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "generation",
+      "entityType": "columns",
+      "schema": "jobs",
+      "table": "personal_memory_documents"
+    },
+    {
+      "type": "uuid",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "user_id",
+      "entityType": "columns",
+      "schema": "jobs",
+      "table": "personal_memory_source_jobs"
+    },
+    {
+      "type": "text",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "document_id",
+      "entityType": "columns",
+      "schema": "jobs",
+      "table": "personal_memory_source_jobs"
+    },
+    {
+      "type": "text",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "kind",
+      "entityType": "columns",
+      "schema": "jobs",
+      "table": "personal_memory_source_jobs"
+    },
+    {
+      "type": "uuid",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "source_id",
+      "entityType": "columns",
+      "schema": "jobs",
+      "table": "personal_memory_source_jobs"
+    },
+    {
+      "type": "integer",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": "1",
+      "generated": null,
+      "identity": null,
+      "name": "generation",
+      "entityType": "columns",
+      "schema": "jobs",
+      "table": "personal_memory_source_jobs"
+    },
+    {
+      "type": "jsonb",
+      "typeSchema": null,
+      "notNull": false,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "operation",
+      "entityType": "columns",
+      "schema": "jobs",
+      "table": "personal_memory_source_jobs"
+    },
+    {
+      "type": "uuid",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "user_id",
+      "entityType": "columns",
+      "schema": "jobs",
+      "table": "personal_memory_state"
+    },
+    {
+      "type": "boolean",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": "false",
+      "generated": null,
+      "identity": null,
+      "name": "enabled",
+      "entityType": "columns",
+      "schema": "jobs",
+      "table": "personal_memory_state"
+    },
+    {
+      "type": "uuid",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "requested_by",
+      "entityType": "columns",
+      "schema": "jobs",
+      "table": "personal_memory_state"
+    },
+    {
+      "type": "text",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "bank_id",
+      "entityType": "columns",
+      "schema": "jobs",
+      "table": "personal_memory_state"
+    },
+    {
+      "type": "integer",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": "1",
+      "generated": null,
+      "identity": null,
+      "name": "generation",
+      "entityType": "columns",
+      "schema": "jobs",
+      "table": "personal_memory_state"
+    },
+    {
+      "type": "integer",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": "0",
+      "generated": null,
+      "identity": null,
+      "name": "indexed_generation",
+      "entityType": "columns",
+      "schema": "jobs",
+      "table": "personal_memory_state"
+    },
+    {
+      "type": "text",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": "'pending'",
+      "generated": null,
+      "identity": null,
+      "name": "status",
+      "entityType": "columns",
+      "schema": "jobs",
+      "table": "personal_memory_state"
+    },
+    {
+      "type": "boolean",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": "false",
+      "generated": null,
+      "identity": null,
+      "name": "purge",
+      "entityType": "columns",
+      "schema": "jobs",
+      "table": "personal_memory_state"
+    },
+    {
+      "type": "boolean",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": "true",
+      "generated": null,
+      "identity": null,
+      "name": "reconcile",
+      "entityType": "columns",
+      "schema": "jobs",
+      "table": "personal_memory_state"
+    },
+    {
+      "type": "jsonb",
+      "typeSchema": null,
+      "notNull": false,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "progress",
+      "entityType": "columns",
+      "schema": "jobs",
+      "table": "personal_memory_state"
+    },
+    {
+      "type": "uuid",
+      "typeSchema": null,
+      "notNull": false,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "lease",
+      "entityType": "columns",
+      "schema": "jobs",
+      "table": "personal_memory_state"
+    },
+    {
+      "type": "timestamp",
+      "typeSchema": null,
+      "notNull": false,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "lease_until",
+      "entityType": "columns",
+      "schema": "jobs",
+      "table": "personal_memory_state"
+    },
+    {
+      "type": "timestamp",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "available_at",
+      "entityType": "columns",
+      "schema": "jobs",
+      "table": "personal_memory_state"
+    },
+    {
+      "type": "integer",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": "0",
+      "generated": null,
+      "identity": null,
+      "name": "attempts",
+      "entityType": "columns",
+      "schema": "jobs",
+      "table": "personal_memory_state"
+    },
+    {
+      "type": "text",
+      "typeSchema": null,
+      "notNull": false,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "error_code",
+      "entityType": "columns",
+      "schema": "jobs",
+      "table": "personal_memory_state"
     },
     {
       "type": "uuid",
@@ -1206,6 +1975,97 @@
       "entityType": "columns",
       "schema": "app",
       "table": "server_settings"
+    },
+    {
+      "type": "uuid",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "id",
+      "entityType": "columns",
+      "schema": "app",
+      "table": "shared_memories"
+    },
+    {
+      "type": "uuid",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "workspace_id",
+      "entityType": "columns",
+      "schema": "app",
+      "table": "shared_memories"
+    },
+    {
+      "type": "uuid",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "created_by",
+      "entityType": "columns",
+      "schema": "app",
+      "table": "shared_memories"
+    },
+    {
+      "type": "text",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "content",
+      "entityType": "columns",
+      "schema": "app",
+      "table": "shared_memories"
+    },
+    {
+      "type": "boolean",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": "true",
+      "generated": null,
+      "identity": null,
+      "name": "protected",
+      "entityType": "columns",
+      "schema": "app",
+      "table": "shared_memories"
+    },
+    {
+      "type": "integer",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": "1",
+      "generated": null,
+      "identity": null,
+      "name": "revision",
+      "entityType": "columns",
+      "schema": "app",
+      "table": "shared_memories"
+    },
+    {
+      "type": "timestamp",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "updated_at",
+      "entityType": "columns",
+      "schema": "app",
+      "table": "shared_memories"
     },
     {
       "type": "text",
@@ -3366,6 +4226,201 @@
       "table": "workspace_keys"
     },
     {
+      "type": "uuid",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "workspace_id",
+      "entityType": "columns",
+      "schema": "jobs",
+      "table": "workspace_memory_state"
+    },
+    {
+      "type": "boolean",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": "false",
+      "generated": null,
+      "identity": null,
+      "name": "enabled",
+      "entityType": "columns",
+      "schema": "jobs",
+      "table": "workspace_memory_state"
+    },
+    {
+      "type": "uuid",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "requested_by",
+      "entityType": "columns",
+      "schema": "jobs",
+      "table": "workspace_memory_state"
+    },
+    {
+      "type": "text",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "bank_id",
+      "entityType": "columns",
+      "schema": "jobs",
+      "table": "workspace_memory_state"
+    },
+    {
+      "type": "integer",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": "1",
+      "generated": null,
+      "identity": null,
+      "name": "generation",
+      "entityType": "columns",
+      "schema": "jobs",
+      "table": "workspace_memory_state"
+    },
+    {
+      "type": "integer",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": "0",
+      "generated": null,
+      "identity": null,
+      "name": "indexed_generation",
+      "entityType": "columns",
+      "schema": "jobs",
+      "table": "workspace_memory_state"
+    },
+    {
+      "type": "text",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": "'pending'",
+      "generated": null,
+      "identity": null,
+      "name": "status",
+      "entityType": "columns",
+      "schema": "jobs",
+      "table": "workspace_memory_state"
+    },
+    {
+      "type": "boolean",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": "false",
+      "generated": null,
+      "identity": null,
+      "name": "purge",
+      "entityType": "columns",
+      "schema": "jobs",
+      "table": "workspace_memory_state"
+    },
+    {
+      "type": "boolean",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": "true",
+      "generated": null,
+      "identity": null,
+      "name": "reconcile",
+      "entityType": "columns",
+      "schema": "jobs",
+      "table": "workspace_memory_state"
+    },
+    {
+      "type": "jsonb",
+      "typeSchema": null,
+      "notNull": false,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "progress",
+      "entityType": "columns",
+      "schema": "jobs",
+      "table": "workspace_memory_state"
+    },
+    {
+      "type": "uuid",
+      "typeSchema": null,
+      "notNull": false,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "lease",
+      "entityType": "columns",
+      "schema": "jobs",
+      "table": "workspace_memory_state"
+    },
+    {
+      "type": "timestamp",
+      "typeSchema": null,
+      "notNull": false,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "lease_until",
+      "entityType": "columns",
+      "schema": "jobs",
+      "table": "workspace_memory_state"
+    },
+    {
+      "type": "timestamp",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "available_at",
+      "entityType": "columns",
+      "schema": "jobs",
+      "table": "workspace_memory_state"
+    },
+    {
+      "type": "integer",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": "0",
+      "generated": null,
+      "identity": null,
+      "name": "attempts",
+      "entityType": "columns",
+      "schema": "jobs",
+      "table": "workspace_memory_state"
+    },
+    {
+      "type": "text",
+      "typeSchema": null,
+      "notNull": false,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "error_code",
+      "entityType": "columns",
+      "schema": "jobs",
+      "table": "workspace_memory_state"
+    },
+    {
       "type": "bigserial",
       "typeSchema": null,
       "notNull": true,
@@ -3704,6 +4759,48 @@
       "nameExplicit": true,
       "columns": [
         {
+          "value": "user_id",
+          "isExpression": false,
+          "asc": true,
+          "nullsFirst": false,
+          "opclass": null
+        }
+      ],
+      "isUnique": false,
+      "where": null,
+      "with": "",
+      "method": "btree",
+      "concurrently": false,
+      "name": "personal_memories_user_idx",
+      "entityType": "indexes",
+      "schema": "app",
+      "table": "personal_memories"
+    },
+    {
+      "nameExplicit": true,
+      "columns": [
+        {
+          "value": "available_at",
+          "isExpression": false,
+          "asc": true,
+          "nullsFirst": false,
+          "opclass": null
+        }
+      ],
+      "isUnique": false,
+      "where": null,
+      "with": "",
+      "method": "btree",
+      "concurrently": false,
+      "name": "personal_memory_due_idx",
+      "entityType": "indexes",
+      "schema": "jobs",
+      "table": "personal_memory_state"
+    },
+    {
+      "nameExplicit": true,
+      "columns": [
+        {
           "value": "workspace_id",
           "isExpression": false,
           "asc": true,
@@ -3776,6 +4873,27 @@
       "entityType": "indexes",
       "schema": "jobs",
       "table": "search_index"
+    },
+    {
+      "nameExplicit": true,
+      "columns": [
+        {
+          "value": "workspace_id",
+          "isExpression": false,
+          "asc": true,
+          "nullsFirst": false,
+          "opclass": null
+        }
+      ],
+      "isUnique": false,
+      "where": null,
+      "with": "",
+      "method": "btree",
+      "concurrently": false,
+      "name": "shared_memories_workspace_idx",
+      "entityType": "indexes",
+      "schema": "app",
+      "table": "shared_memories"
     },
     {
       "nameExplicit": true,
@@ -4306,6 +5424,27 @@
       "nameExplicit": true,
       "columns": [
         {
+          "value": "available_at",
+          "isExpression": false,
+          "asc": true,
+          "nullsFirst": false,
+          "opclass": null
+        }
+      ],
+      "isUnique": false,
+      "where": null,
+      "with": "",
+      "method": "btree",
+      "concurrently": false,
+      "name": "workspace_memory_due_idx",
+      "entityType": "indexes",
+      "schema": "jobs",
+      "table": "workspace_memory_state"
+    },
+    {
+      "nameExplicit": true,
+      "columns": [
+        {
           "value": "owner_user_id",
           "isExpression": false,
           "asc": true,
@@ -4380,6 +5519,23 @@
       "entityType": "fks",
       "schema": "jobs",
       "table": "image_analysis"
+    },
+    {
+      "nameExplicit": false,
+      "columns": [
+        "workspace_id"
+      ],
+      "schemaTo": "app",
+      "tableTo": "workspaces",
+      "columnsTo": [
+        "workspace_id"
+      ],
+      "onUpdate": "NO ACTION",
+      "onDelete": "CASCADE",
+      "name": "knowledge_pages_workspace_id_workspaces_workspace_id_fkey",
+      "entityType": "fks",
+      "schema": "search",
+      "table": "knowledge_pages"
     },
     {
       "nameExplicit": false,
@@ -4522,6 +5678,23 @@
       "table": "organization_join_requests"
     },
     {
+      "nameExplicit": false,
+      "columns": [
+        "user_id"
+      ],
+      "schemaTo": "auth",
+      "tableTo": "user",
+      "columnsTo": [
+        "id"
+      ],
+      "onUpdate": "NO ACTION",
+      "onDelete": "CASCADE",
+      "name": "personal_memories_user_id_user_id_fkey",
+      "entityType": "fks",
+      "schema": "app",
+      "table": "personal_memories"
+    },
+    {
       "nameExplicit": true,
       "columns": [
         "workspace_id",
@@ -4556,6 +5729,23 @@
       "entityType": "fks",
       "schema": "jobs",
       "table": "search_index"
+    },
+    {
+      "nameExplicit": false,
+      "columns": [
+        "workspace_id"
+      ],
+      "schemaTo": "app",
+      "tableTo": "workspaces",
+      "columnsTo": [
+        "workspace_id"
+      ],
+      "onUpdate": "NO ACTION",
+      "onDelete": "CASCADE",
+      "name": "shared_memories_workspace_id_workspaces_workspace_id_fkey",
+      "entityType": "fks",
+      "schema": "app",
+      "table": "shared_memories"
     },
     {
       "nameExplicit": false,
@@ -4888,6 +6078,39 @@
     },
     {
       "columns": [
+        "workspace_id",
+        "id"
+      ],
+      "nameExplicit": false,
+      "name": "knowledge_pages_pkey",
+      "entityType": "pks",
+      "schema": "search",
+      "table": "knowledge_pages"
+    },
+    {
+      "columns": [
+        "workspace_id",
+        "document_id"
+      ],
+      "nameExplicit": false,
+      "name": "memory_documents_pkey",
+      "entityType": "pks",
+      "schema": "jobs",
+      "table": "memory_documents"
+    },
+    {
+      "columns": [
+        "workspace_id",
+        "document_id"
+      ],
+      "nameExplicit": false,
+      "name": "memory_source_jobs_pkey",
+      "entityType": "pks",
+      "schema": "jobs",
+      "table": "memory_source_jobs"
+    },
+    {
+      "columns": [
         "organization_id",
         "domain"
       ],
@@ -4896,6 +6119,28 @@
       "entityType": "pks",
       "schema": "app",
       "table": "organization_domains"
+    },
+    {
+      "columns": [
+        "user_id",
+        "document_id"
+      ],
+      "nameExplicit": false,
+      "name": "personal_memory_documents_pkey",
+      "entityType": "pks",
+      "schema": "jobs",
+      "table": "personal_memory_documents"
+    },
+    {
+      "columns": [
+        "user_id",
+        "document_id"
+      ],
+      "nameExplicit": false,
+      "name": "personal_memory_source_jobs_pkey",
+      "entityType": "pks",
+      "schema": "jobs",
+      "table": "personal_memory_source_jobs"
     },
     {
       "columns": [
@@ -5010,9 +6255,39 @@
         "id"
       ],
       "nameExplicit": false,
+      "name": "personal_memories_pkey",
+      "schema": "app",
+      "table": "personal_memories",
+      "entityType": "pks"
+    },
+    {
+      "columns": [
+        "user_id"
+      ],
+      "nameExplicit": false,
+      "name": "personal_memory_state_pkey",
+      "schema": "jobs",
+      "table": "personal_memory_state",
+      "entityType": "pks"
+    },
+    {
+      "columns": [
+        "id"
+      ],
+      "nameExplicit": false,
       "name": "server_settings_pkey",
       "schema": "app",
       "table": "server_settings",
+      "entityType": "pks"
+    },
+    {
+      "columns": [
+        "id"
+      ],
+      "nameExplicit": false,
+      "name": "shared_memories_pkey",
+      "schema": "app",
+      "table": "shared_memories",
       "entityType": "pks"
     },
     {
@@ -5133,6 +6408,16 @@
       "name": "workspace_keys_pkey",
       "schema": "crypto",
       "table": "workspace_keys",
+      "entityType": "pks"
+    },
+    {
+      "columns": [
+        "workspace_id"
+      ],
+      "nameExplicit": false,
+      "name": "workspace_memory_state_pkey",
+      "schema": "jobs",
+      "table": "workspace_memory_state",
       "entityType": "pks"
     },
     {
@@ -5468,6 +6753,32 @@
       "roles": [
         "public"
       ],
+      "using": "\"app\".\"current_identity_can_read_workspace\"(\"search\".\"knowledge_pages\".\"workspace_id\")",
+      "withCheck": null,
+      "name": "knowledge_page_read",
+      "entityType": "policies",
+      "schema": "search",
+      "table": "knowledge_pages"
+    },
+    {
+      "as": "PERMISSIVE",
+      "for": "ALL",
+      "roles": [
+        "public"
+      ],
+      "using": "\"app\".\"current_identity_can_admin_workspace\"(\"search\".\"knowledge_pages\".\"workspace_id\")",
+      "withCheck": "\"app\".\"current_identity_can_admin_workspace\"(\"search\".\"knowledge_pages\".\"workspace_id\")",
+      "name": "knowledge_page_write",
+      "entityType": "policies",
+      "schema": "search",
+      "table": "knowledge_pages"
+    },
+    {
+      "as": "PERMISSIVE",
+      "for": "SELECT",
+      "roles": [
+        "public"
+      ],
       "using": "(current_setting('app.maintenance', true) = 'meeting-retention' AND \"app\".\"meeting_attachments\".\"workspace_id\" = nullif(current_setting('app.maintenance_workspace_id', true), '')::uuid) OR \"app\".\"current_identity_can_read_workspace\"(\"app\".\"meeting_attachments\".\"workspace_id\") OR (current_setting('app.maintenance', true) = 'search' AND \"app\".\"meeting_attachments\".\"workspace_id\" = nullif(current_setting('app.maintenance_workspace_id', true), '')::uuid) OR current_setting('app.maintenance', true) IN ('retention', 'rotation') OR EXISTS (SELECT 1 FROM \"app\".\"transaction_receipts\" r WHERE r.workspace_id = \"app\".\"meeting_attachments\".\"workspace_id\" AND r.owner_user_id = nullif(current_setting('app.user_id', true), '')::uuid)",
       "withCheck": null,
       "name": "meeting_attachment_select",
@@ -5529,6 +6840,19 @@
     },
     {
       "as": "PERMISSIVE",
+      "for": "ALL",
+      "roles": [
+        "public"
+      ],
+      "using": "\"app\".\"personal_memories\".\"user_id\" = nullif(current_setting('app.user_id', true), '')::uuid",
+      "withCheck": "\"app\".\"personal_memories\".\"user_id\" = nullif(current_setting('app.user_id', true), '')::uuid",
+      "name": "personal_memory_owner",
+      "entityType": "policies",
+      "schema": "app",
+      "table": "personal_memories"
+    },
+    {
+      "as": "PERMISSIVE",
       "for": "SELECT",
       "roles": [
         "public"
@@ -5552,6 +6876,32 @@
       "entityType": "policies",
       "schema": "search",
       "table": "documents"
+    },
+    {
+      "as": "PERMISSIVE",
+      "for": "SELECT",
+      "roles": [
+        "public"
+      ],
+      "using": "\"app\".\"current_identity_can_read_workspace\"(\"app\".\"shared_memories\".\"workspace_id\")",
+      "withCheck": null,
+      "name": "shared_memory_read",
+      "entityType": "policies",
+      "schema": "app",
+      "table": "shared_memories"
+    },
+    {
+      "as": "PERMISSIVE",
+      "for": "ALL",
+      "roles": [
+        "public"
+      ],
+      "using": "\"app\".\"current_identity_can_write_workspace\"(\"app\".\"shared_memories\".\"workspace_id\")",
+      "withCheck": "\"app\".\"current_identity_can_write_workspace\"(\"app\".\"shared_memories\".\"workspace_id\")",
+      "name": "shared_memory_write",
+      "entityType": "policies",
+      "schema": "app",
+      "table": "shared_memories"
     },
     {
       "as": "PERMISSIVE",

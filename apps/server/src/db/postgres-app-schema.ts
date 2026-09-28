@@ -752,6 +752,7 @@ export const memoryDocument = jobsSchema.table("memory_documents", {
   documentId: text("document_id").notNull(),
   source: jsonb("source").$type<import("../memory/model").MemorySource>().notNull(),
   contentHash: text("content_hash").notNull(),
+  ingestionFingerprint: text("ingestion_fingerprint"),
   generation: integer("generation").notNull(),
 }, (table) => [primaryKey({ columns: [table.scopeId, table.documentId] })]);
 
@@ -802,6 +803,7 @@ export const personalMemoryDocument = jobsSchema.table("personal_memory_document
   documentId: text("document_id").notNull(),
   source: jsonb("source").$type<import("../memory/model").MemorySource>().notNull(),
   contentHash: text("content_hash").notNull(),
+  ingestionFingerprint: text("ingestion_fingerprint"),
   generation: integer("generation").notNull(),
 }, (table) => [primaryKey({ columns: [table.scopeId, table.documentId] })]);
 

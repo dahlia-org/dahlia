@@ -48,6 +48,7 @@ export const memoryResultSchema = z.object({
   results: z.array(z.object({ scope, workspaceId, result: z.object({
     sources: z.array(z.object({ kind: z.string(), id: z.string(), revision: z.string(), meeting_id: z.string().nullable(), workspace_id: z.string().nullable(), scope, canonicalExcerpt: z.string(), truncated: z.boolean() })).optional(),
     hypothesis: z.string().nullable().optional(), coverage: z.string().optional(), skippedCount: z.number().optional(),
+    skippedSources: z.array(z.object({ source: z.string(), code: z.string() })).optional(),
     claims: z.array(z.object({ text: z.string(), citations: z.array(z.object({ factId: z.string(),
       sourceIndexes: z.array(z.number().int().nonnegative()).describe("Zero-based indexes into this result's sources; lineage does not prove the claim is true."),
     })) })).optional(),
@@ -180,11 +181,16 @@ export class DahliaMemory {
     // A slower bank must not extend another bank's source validity or authorization lifetime.
     for (const { target, state, result, code } of completed) {
       signal.throwIfAborted();
-      const { store, id } = await this.resolve(identity, target);
+      const { store, id, engine } = await this.resolve(identity, target);
+      let policyMatches = false;
+      if (result && state && engine) {
+        try { policyMatches = await engine.policyCurrent(state, signal); }
+        catch { signal.throwIfAborted(); }
+      }
       const current = await store.status(identity.userId, id);
       const unchanged = state && current && current.generation === state.generation
         && current.bankId === state.bankId && current.enabled && !current.purge;
-      if (result && unchanged) {
+      if (result && unchanged && policyMatches) {
         results.push({ ...target, result });
         continue;
       }

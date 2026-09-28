@@ -78,11 +78,10 @@ try {
 
     if ([SummaryService, SummaryWorker, createTranscriptSummaryMethod, createAudioSummaryMethod].some((value) => typeof value !== "function")) throw new Error("Missing Node summary API");
     if (typeof server.createApp !== "function" || typeof App !== "function") throw new Error("Package API is incomplete");
-    if (!serverMigrationManifest.postgres.files.some((name) => name.includes("memory_force_rls"))) throw new Error("Missing memory RLS migration");
-    const memoryRls = await readFile(new URL("./drizzle/postgres/20260922080251_memory_force_rls/migration.sql", new URL(import.meta.resolve("@dahlia-ai/server/package.json"))), "utf8");
-    if (!memoryRls.includes('"app"."personal_memories" FORCE ROW LEVEL SECURITY')) throw new Error("Missing personal memory RLS enforcement");
-    const pagesRls = await readFile(new URL("./drizzle/postgres/20260928001749_knowledge_pages_force_rls/migration.sql", new URL(import.meta.resolve("@dahlia-ai/server/package.json"))), "utf8");
-    if (!pagesRls.includes('"search"."knowledge_pages" FORCE ROW LEVEL SECURITY')) throw new Error("Missing Knowledge Pages RLS enforcement");
+    const runtimeRls = await readFile(new URL("./drizzle/postgres/20260912180000_runtime_support/migration.sql", new URL(import.meta.resolve("@dahlia-ai/server/package.json"))), "utf8");
+    for (const table of ['"app"."shared_memories"', '"app"."personal_memories"', '"search"."knowledge_pages"']) {
+      if (!runtimeRls.includes(table + " FORCE ROW LEVEL SECURITY")) throw new Error("Missing memory RLS enforcement: " + table);
+    }
     for (const name of ["DatabricksBackend", "OpenAIBackend", "CloudflareBackend"]) {
       if (typeof server[name] !== "function") throw new Error("Missing AI backend export: " + name);
     }

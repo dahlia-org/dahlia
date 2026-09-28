@@ -1,3 +1,4 @@
+import { ingestionFingerprint, ingestionPolicy } from "./ingestion";
 import { KnowledgePages } from "./pages";
 import type { AppConfig } from "../config";
 import type { Identity } from "../auth/identity";
@@ -42,7 +43,7 @@ export class WorkspaceMemoryService {
     let status = "paused";
     if (state?.purge) status = "deleting";
     else if (state?.enabled) {
-      if (state.progress?.entityPolicy !== 1 || state.progress?.reflectionPolicy !== 1) status = state.status === "error" ? "error" : "indexing";
+      if (state.progress?.entityPolicy !== 1 || state.progress?.reflectionPolicy !== 1 || !state.progress?.ingestionPolicy) status = state.status === "error" ? "error" : "indexing";
       else if (state.reconcile || state.indexedGeneration !== state.generation) status = state.status;
       else status = failures.length ? "partial" : "ready";
     }
@@ -60,6 +61,15 @@ export class WorkspaceMemoryService {
     }
     return state;
   }
+  async policyCurrent(state: MemoryState, signal: AbortSignal) {
+    const upstream = await this.client.ingestionPolicy(state.bankId, signal);
+    return state.progress?.upstreamPolicy === upstream && state.progress.ingestionPolicy === await ingestionPolicy(upstream);
+  }
+  private updating() {
+    return { sources: [], hypothesis: null, claims: [], reflectionStatus: "updating" as const, reflectionUsage: null,
+      coverage: "updating", skippedCount: 0, skippedSources: [],
+      instruction: "Memory settings are being reprocessed. Disclose incomplete coverage; use canonical tools. No old analysis is published." };
+  }
   async canonicalSource(identity: Identity, scopeId: string, documentId: string, signal: AbortSignal) {
     const saved = await this.store.document(scopeId, documentId);
     if (!saved || saved.generation <= 0 || await this.store.pending(scopeId, documentId)) return null;
@@ -67,7 +77,11 @@ export class WorkspaceMemoryService {
       ? await meetingDocument(this.sync, identity, scopeId, saved.source.id, signal)
       : await this.store.getNote(identity.userId, scopeId, saved.source.id).then((note) => note ? noteDocument(note, this.store.personal) : null);
     if (!document || document.source.revision !== saved.source.revision) return null;
-    return await contentHash(document.content) === saved.contentHash ? document : null;
+    const state = await this.store.status(identity.userId, scopeId);
+    if (!state?.enabled || state.purge || !state.progress?.ingestionPolicy) return null;
+    const hash = await contentHash(document.content);
+    return hash === saved.contentHash && saved.ingestionFingerprint === await ingestionFingerprint(hash, document.source, state.progress.ingestionPolicy)
+      ? document : null;
   }
   async search(identity: Identity, scopeId: string, query: string, reflect: boolean, signal: AbortSignal, input: MemorySearchInput = {}) {
     signal = AbortSignal.any([signal, AbortSignal.timeout(30_000)]);
@@ -75,6 +89,7 @@ export class WorkspaceMemoryService {
     if (input.projectId && !await this.sync.getProject(identity, scopeId, input.projectId)) throw new RequestError(404, "project_not_found");
     const scope: HindsightTags | undefined = input.projectId ? { tags: [`project:${input.projectId}`], tagsMatch: "all_strict" } : undefined;
     const state = await this.readable(identity, scopeId);
+    if (!await this.policyCurrent(state, signal)) return this.updating();
     const reflection = reflect && !window && !state.reconcile && state.generation === state.indexedGeneration ? await this.client.reflect(state.bankId, query, signal, scope) : undefined;
     const recall = await this.client.recall(state.bankId, query, signal,
       { ...scope, temporalWindow: window, budget: budgets[input.depth ?? "normal"] });
@@ -145,6 +160,10 @@ export class WorkspaceMemoryService {
       if (attempt === 2) throw new HindsightError("memory_source_changed");
     }
 
+    if (!await this.policyCurrent(current, signal)) return this.updating();
+    // The last config request is also an external boundary: recheck authorization and generation.
+    const published = await this.readable(identity, scopeId);
+    if (published.generation !== current.generation || published.progress?.ingestionPolicy !== state.progress?.ingestionPolicy) return this.updating();
     signal.throwIfAborted();
     const indexes = new Map(documents.map((document, index) => [document.id, index]));
     const claims: MemoryClaim[] = [];
@@ -176,7 +195,8 @@ export class WorkspaceMemoryService {
     reflectionUsage: reflection?.usage ? { inputTokens: reflection.usage.input_tokens, outputTokens: reflection.usage.output_tokens } : null,
     coverage,
     skippedCount,
-    instruction: (reflect && window ? "Temporal reflection is unavailable: this response contains recall sources only, with no hypothesis. The period affects ranking, not exclusion. " : "") + "Cite these Dahlia sources. A transcript proves that a statement was recorded, not that it is objectively true. The hypothesis is an unverified interpretation: check claims against the canonical excerpts and meeting tools. If coverage is not ready, disclose incomplete memory coverage and use canonical tools for the omitted sources. Do not infer counts or trends from retrieval hits." };
+    skippedSources: Object.entries(current.progress?.failures ?? {}).slice(-20).map(([source, code]) => ({ source, code })),
+    instruction: (reflect && window ? "Temporal reflection is unavailable: this response contains recall sources only, with no hypothesis. The period affects ranking, not exclusion. " : "") + "Cite these Dahlia sources. A transcript proves that a statement was recorded, not that it is objectively true. The hypothesis is an unverified interpretation: check claims against the canonical excerpts and meeting tools. If coverage is not ready, disclose incomplete memory coverage and use canonical tools for the omitted sources. All references sharing meeting_id are one evidence group, including transcript, summary, OCR and caption; fact counts are not independent corroboration. Do not infer counts or trends from retrieval hits." };
   }
 
   // Chunk text only yields segment and screenshot IDs; missing or cut-off chunks are read back, at most three per document.
@@ -205,7 +225,7 @@ export class WorkspaceMemoryService {
 
   async step(scopeId: string, signal: AbortSignal) {
     signal = AbortSignal.any([signal, AbortSignal.timeout(90_000)]);
-    const job = await this.store.claim(scopeId);
+    let job = await this.store.claim(scopeId);
     if (!job) return;
     try {
       if (job.purge || !await this.store.exists(scopeId)) {
@@ -234,32 +254,38 @@ export class WorkspaceMemoryService {
         progress = { ...progress, entityPolicy: 1, reflectionPolicy: 1 };
         await this.store.setProgress(job, progress);
       }
-      if (!job.reconcile && job.indexedGeneration === job.generation) {
-        if (!this.store.personal) {
-          const pageAfter = await this.pages.step(identity, { ...job, progress }, signal);
-          progress = { ...progress!, pageAfter };
-        }
-        await this.store.release(job, { progress, status: "ready", attempts: 0, errorCode: null,
-          availableAt: new Date(Date.now() + (progress?.pageAfter ? 5_000 : 60_000)) }); return;
-      }
       if (!progress) {
         await this.client.initialize(job.bankId, signal, this.store.personal);
         progress = { entityPolicy: 1, reflectionPolicy: 1, phase: this.store.personal ? "notes" : "meetings", dirtyModels: ["workspace"] };
-        await this.store.startScan(job, progress);
+      }
+      const upstreamPolicy = await this.client.ingestionPolicy(job.bankId, signal);
+      const policy = await ingestionPolicy(upstreamPolicy);
+      if (progress.ingestionPolicy !== policy) {
+        progress = { ...progress, ingestionPolicy: policy, upstreamPolicy, phase: "delta", after: undefined, pageAfter: undefined };
+        job = await this.store.changeIngestionPolicy(job, progress);
+      }
+      if (!job.reconcile && job.indexedGeneration === job.generation) {
+        if (!this.store.personal) {
+          const pageAfter = await this.pages.step(identity, { ...job, progress }, signal);
+          progress = { ...progress, pageAfter };
+        }
+        await this.store.release(job, { progress, status: "ready", attempts: 0, errorCode: null,
+          availableAt: new Date(Date.now() + (progress.pageAfter ? 5_000 : 60_000)) }); return;
       }
       if (progress.operationId) {
         const modelId = progress.modelId!;
-        const status = await this.client.operation(job.bankId, progress.operationId, signal);
+        const detail = await this.client.operationDetail(job.bankId, progress.operationId, signal);
+        const status = detail.status;
         if (status === "pending" || status === "processing") { await this.store.release(job); return; }
         if (status === "failed" || status === "cancelled") {
-          if ((progress.operationAttempts ?? 0) < 3) {
+          if (!detail.dahlia_error_code && (progress.operationAttempts ?? 0) < 3) {
             progress.operationAttempts = (progress.operationAttempts ?? 0) + 1;
             await this.store.setProgress(job, progress);
             await this.client.retryOperation(job.bankId, progress.operationId, signal);
             await this.store.release(job); return;
           }
           await this.client.deleteModel(job.bankId, modelId, signal);
-          this.skip(progress, modelId, "memory_operation_failed");
+          this.skip(progress, modelId, detail.dahlia_error_code ?? "memory_operation_failed");
         }
         if (status === "completed") this.unskip(progress, modelId);
         if (status !== "not_found") progress.dirtyModels = progress.dirtyModels?.filter((id) => this.modelId(id) !== modelId);
@@ -324,37 +350,12 @@ export class WorkspaceMemoryService {
         ...[previous?.source.projectId, projectId].filter((id): id is string => !!id)])];
       await this.store.setProgress(job, progress);
     };
-    const operation = pending.operation;
-    if (operation) {
-      const status = await this.client.operation(job.bankId, operation.id, signal);
-      if (status === "pending" || status === "processing") return;
-      if (status === "completed") {
-        this.unskip(progress, pending.documentId);
-        await markModelsDirty(operation.source.projectId);
-        await this.store.saveDocument({ ...job, generation: operation.generation }, pending.documentId, operation.source, operation.contentHash);
-        await this.store.finishSource({ ...pending, generation: operation.generation });
-        return;
-      }
-      if (status === "failed" || status === "cancelled") {
-        if (operation.generation === pending.generation && operation.attempts < 3) {
-          await this.store.setOperation(pending, { ...operation, attempts: operation.attempts + 1 });
-          await this.client.retryOperation(job.bankId, operation.id, signal);
-          return;
-        }
-        await markModelsDirty(operation.source.projectId);
-        await this.client.deleteDocument(job.bankId, pending.documentId, signal);
-        await this.store.forgetDocument(job.scopeId, pending.documentId);
-        if (operation.generation === pending.generation) this.skip(progress, pending.documentId, "memory_operation_failed");
-        await this.store.setProgress(job, progress);
-        await this.store.finishSource({ ...pending, generation: operation.generation });
-        return;
-      }
-    }
+    const read = async () => pending.kind === "meeting"
+      ? meetingDocument(this.sync, identity, job.scopeId, pending.sourceId, signal)
+      : this.store.getNote(identity.userId, job.scopeId, pending.sourceId).then((note) => note ? noteDocument(note, this.store.personal) : null);
     let document: MemoryDocument | null;
     try {
-      document = pending.kind === "meeting"
-        ? await meetingDocument(this.sync, identity, job.scopeId, pending.sourceId, signal)
-        : await this.store.getNote(identity.userId, job.scopeId, pending.sourceId).then((note) => note ? noteDocument(note, this.store.personal) : null);
+      document = await read();
       if (!document) this.unskip(progress, pending.documentId);
     } catch (error) {
       if (!(error instanceof HindsightError) || error.code !== "memory_source_too_large") throw error;
@@ -362,11 +363,74 @@ export class WorkspaceMemoryService {
       document = null;
     }
     const hash = document ? await contentHash(document.content) : null;
-    if (!operation && document && previous && previous.generation > 0 && previous.contentHash === hash
-      && (this.store.personal || previous.source.revision === document.source.revision)) {
+    const fingerprint = document ? await ingestionFingerprint(hash!, document.source, progress.ingestionPolicy!) : null;
+    const fail = async (code: string) => {
+      await markModelsDirty(document?.source.projectId);
+      await this.client.deleteDocument(job.bankId, pending.documentId, signal);
+      await this.store.forgetDocument(job.scopeId, pending.documentId);
+      this.skip(progress, pending.documentId, code);
+      await this.store.setProgress(job, progress);
+      await this.store.finishSource(pending);
+    };
+    const submit = async (operation: NonNullable<MemorySourceJob["operation"]>) => {
+      await this.store.setOperation(pending, operation);
+      if (operation.stage === "reprocess") {
+        try { await this.client.reprocess(job.bankId, pending.documentId, operation.id, signal); return; }
+        catch (error) {
+          signal.throwIfAborted();
+          if (!(error instanceof HindsightError) || error.status !== 404) throw error;
+        }
+        // The disposable upstream document disappeared. Recreate from the current canonical
+        // input; a different operation kind must never reuse the reprocess idempotency key.
+        operation = { ...operation, id: uuidV7(), stage: "retain", reprocess: false, attempts: 0 };
+        await this.store.setOperation(pending, operation);
+      }
+      await this.client.retain(job.bankId, document!, operation.id, signal, this.store.personal, progress.upstreamPolicy);
+    };
+    const operation = pending.operation;
+    if (operation) {
+      const detail = await this.client.operationDetail(job.bankId, operation.id, signal), status = detail.status;
+      if (status === "pending" || status === "processing") return;
+      const same = document && operation.generation === pending.generation && operation.ingestionFingerprint === fingerprint
+        && operation.policy === progress.ingestionPolicy;
+      if (same && status === "not_found") { await submit(operation); return; }
+      if (same && (status === "failed" || status === "cancelled")) {
+        if (!detail.dahlia_error_code && operation.attempts < 3) {
+          await this.store.setOperation(pending, { ...operation, attempts: operation.attempts + 1 });
+          await this.client.retryOperation(job.bankId, operation.id, signal);
+        } else await fail(detail.dahlia_error_code ?? "memory_operation_failed");
+        return;
+      }
+      if (same && document && status === "completed") {
+        const stored = await this.client.document(job.bankId, pending.documentId, signal);
+        const metadata = stored?.retain_params?.metadata;
+        if (stored?.original_text !== document.content || metadata?.source_revision !== document.source.revision
+          || metadata?.source_id !== document.source.id || metadata?.source_kind !== document.source.kind) {
+          await fail("memory_document_mismatch"); return;
+        }
+        if (operation.stage === "retain" && operation.reprocess) {
+          await submit({ ...operation, id: uuidV7(), stage: "reprocess", attempts: 0 }); return;
+        }
+        if (metadata?.dahlia_ingestion_policy === progress.upstreamPolicy) {
+          if (!stored.memory_unit_count) { await fail("memory_no_facts"); return; }
+          // Validate again after all upstream work. A new source/settings generation cannot adopt this operation.
+          if (!await this.policyCurrent(job, signal)) return;
+          const latest = await read(), current = await this.store.status(identity.userId, job.scopeId);
+          const sourceJob = await this.store.pending(job.scopeId, pending.documentId);
+          if (!current?.enabled || current.purge || current.generation !== job.generation || sourceJob?.generation !== operation.generation
+            || !latest || await ingestionFingerprint(await contentHash(latest.content), latest.source, progress.ingestionPolicy!) !== fingerprint) return;
+          this.unskip(progress, pending.documentId);
+          await markModelsDirty(document.source.projectId);
+          await this.store.saveDocument(job, pending.documentId, document.source, hash!, fingerprint);
+          await this.store.finishSource(pending);
+          return;
+        }
+        // Extraction used a different live configuration. Never relabel it as this recipe.
+      }
+      await this.store.setOperation(pending, null);
+    }
+    if (!operation && document && previous?.generation && previous.ingestionFingerprint === fingerprint) {
       this.unskip(progress, pending.documentId);
-      await this.store.saveDocument(job, pending.documentId, document.source, hash);
-      // Persist recovery before removing the only durable retry entry.
       await this.store.setProgress(job, progress);
       await this.store.finishSource(pending);
       return;
@@ -379,10 +443,11 @@ export class WorkspaceMemoryService {
       await this.store.finishSource(pending);
       return;
     }
-    // Only replay a lost operation when its exact canonical input still exists.
-    const id = operation?.generation === pending.generation && operation.contentHash === hash ? operation.id : uuidV7();
-    await this.store.setOperation(pending, { id, generation: pending.generation, source: document.source, contentHash: hash!, attempts: 0 });
-    await this.client.retain(job.bankId, document, id, signal, this.store.personal);
+    const stored = await this.client.document(job.bankId, pending.documentId, signal);
+    const reprocess = !!stored && (!!operation || stored.retain_params?.metadata?.dahlia_ingestion_policy !== progress.upstreamPolicy || !previous || previous.ingestionFingerprint !==
+      await ingestionFingerprint(previous.contentHash, previous.source, progress.ingestionPolicy!));
+    await submit({ id: uuidV7(), generation: pending.generation, source: document.source, contentHash: hash!,
+      ingestionFingerprint: fingerprint!, policy: progress.ingestionPolicy, stage: "retain", reprocess, attempts: 0 });
   }
   private unskip(progress: MemoryProgress, source: string) {
     delete progress.failures?.[source];

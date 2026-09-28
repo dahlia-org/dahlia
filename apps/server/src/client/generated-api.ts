@@ -2329,6 +2329,10 @@ export interface components {
                     hypothesis?: string | null;
                     coverage?: string;
                     skippedCount?: number;
+                    skippedSources?: {
+                        source: string;
+                        code: string;
+                    }[];
                     claims?: {
                         text: string;
                         citations: {

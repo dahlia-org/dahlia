@@ -8,6 +8,7 @@ import { seedPostgresIdentity, testOrganizationID } from "./public-test-client";
 import type { Identity } from "../src/auth/identity";
 import type { AppConfig } from "../src/config";
 import { WorkspaceMemoryService } from "../src/memory/service";
+import { ingestionPolicy } from "../src/memory/ingestion";
 import { standardModel } from "../src/memory/pages-model";
 import { noteDocument } from "../src/memory/sources";
 import { encodeId } from "../src/typeid";
@@ -98,7 +99,7 @@ describe.runIf(url)("Workspace memory PostgreSQL RLS", () => {
     // Exercise a real JSONB publication round trip; PostgreSQL reorders object keys.
     await db.transaction(async (tx) => {
       await tx.execute(sql`select set_config('app.user_id', ${owner.userId}, true)`);
-      await tx.execute(sql`update jobs.workspace_memory_state set progress = '{"entityPolicy":1,"reflectionPolicy":1}'::jsonb where workspace_id = ${workspaceId}`);
+      await tx.execute(sql`update jobs.workspace_memory_state set progress = ${JSON.stringify({ entityPolicy: 1, reflectionPolicy: 1, phase: "delta", upstreamPolicy: "a".repeat(64), ingestionPolicy: await ingestionPolicy("a".repeat(64)) })}::jsonb where workspace_id = ${workspaceId}`);
       await tx.execute(sql`update search.knowledge_pages set completed_version = request_version where workspace_id = ${workspaceId}`);
     });
     const engine = new WorkspaceMemoryService({ hindsight: { url: "https://synthetic.example", auth: "none", bankPrefix: "pg-test" } } as AppConfig, memory, sync, app.sync);
@@ -107,10 +108,11 @@ describe.runIf(url)("Workspace memory PostgreSQL RLS", () => {
     const model = { ...definition, bank_id: current.bankId, content: "Synthetic page", last_refreshed_at: cutoff, is_stale: false,
       reflect_response: { based_on: { world: [{ id: factId, text: "Synthetic fact" }] }, dahlia_generation: {
         cutoff, source_query: definition.source_query, tags: definition.tags, trigger: definition.trigger, max_tokens: definition.max_tokens } } };
+    vi.spyOn(engine.client, "ingestionPolicy").mockResolvedValue("a".repeat(64));
     vi.spyOn(engine.client, "bank").mockReturnValue(current.bankId);
     vi.spyOn(engine.client, "model").mockResolvedValue(model);
     vi.spyOn(engine.client, "pageFact").mockResolvedValue({ id: factId, text: "Synthetic fact", type: "world", state: "valid",
-      updated_at: cutoff, document_id: document.id, source_memory_ids: [], metadata: { source_kind: "shared", source_id: note.id, source_revision: "1" } });
+      updated_at: cutoff, document_id: document.id, source_memory_ids: [], metadata: { source_kind: "shared", source_id: note.id, source_revision: "1", dahlia_ingestion_policy: "a".repeat(64) } });
     vi.spyOn(engine, "canonicalSource").mockResolvedValue(document);
     const job = (await memory.claim(workspaceId))!, signal = new AbortController().signal;
     await engine.pages.step(owner, job, signal);

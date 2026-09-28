@@ -38,11 +38,13 @@ it.runIf(process.env.TEST_MIGRATION_DATABASE_URL)("creates the complete PostgreS
     expect((await client.query("SELECT generation_settings FROM app.workspaces")).rows).toEqual([{ generation_settings: DEFAULT_WORKSPACE_GENERATION_SETTINGS }]);
     expect((await client.query("SELECT id FROM app.server_settings")).rows).toEqual([]);
     const protectedTables = await client.query<{ relname: string; relforcerowsecurity: boolean }>(`SELECT relname, relforcerowsecurity FROM pg_class
-      WHERE relnamespace IN ('app'::regnamespace, 'jobs'::regnamespace) AND relrowsecurity ORDER BY relname`);
+      WHERE relnamespace IN ('app'::regnamespace, 'jobs'::regnamespace, 'search'::regnamespace, 'crypto'::regnamespace, 'agent'::regnamespace) AND relrowsecurity ORDER BY relname`);
     expect(protectedTables.rows.map((row) => row.relname)).toEqual([
-      "files", "meeting_attachments", "meeting_events", "meetings", "personal_memories", "projects",
+      "ai_thread_runs", "documents", "files", "knowledge_pages", "live_contexts", "mastra_messages",
+      "mastra_observational_memory", "mastra_resources", "mastra_threads", "meeting_attachments",
+      "meeting_events", "meetings", "memory_jobs", "personal_memories", "projects",
       "recordings", "shared_memories", "summaries", "summary", "transaction_receipts",
-      "transcript_patch_chunks", "transcript_segments", "transcripts", "workspace_transfers", "workspaces",
+      "transcript_patch_chunks", "transcript_segments", "transcripts", "workspace_keys", "workspace_transfers", "workspaces",
     ]);
     expect(protectedTables.rows.every((row) => row.relforcerowsecurity === true)).toBe(true);
     const membership = await client.query<{ condeferrable: boolean; condeferred: boolean }>(`SELECT condeferrable, condeferred FROM pg_constraint
@@ -120,16 +122,16 @@ it.runIf(process.env.TEST_MIGRATION_DATABASE_URL)("moves existing job rows and s
   const names = ["summary", "image_analysis", "search_index", "storage_delete"];
   try {
     await client.query("BEGIN");
-    // Reconstruct only the historical layout; later migrations require the moved jobs schema.
+    // Reconstruct the four historical tables; keep later Memory jobs in a separate fixture schema.
     const historicalFiles = [
       "drizzle/postgres-auth/20260912095619_initial/migration.sql",
       "drizzle/postgres/20260912095620_initial/migration.sql",
       "drizzle/postgres/20260912180000_runtime_support/migration.sql",
     ];
     for (const file of historicalFiles) {
-      let sql = readFileSync(new URL(`../${file}`, import.meta.url), "utf8")
-        .replace('CREATE SCHEMA "jobs";', "");
+      let sql = readFileSync(new URL(`../${file}`, import.meta.url), "utf8");
       for (const name of names) sql = sql.replaceAll(`"jobs"."${name}"`, `"app"."jobs_${name}"`);
+      sql = sql.replace('CREATE SCHEMA "jobs";', 'CREATE SCHEMA "fixture_jobs";').replaceAll('"jobs".', '"fixture_jobs".');
       await client.query(sql);
     }
     const owner = testUserID("move-owner"), workspace = testUserID("move-workspace"), meeting = testUserID("move-meeting");

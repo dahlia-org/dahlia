@@ -562,6 +562,7 @@ export const memoryDocument = sqliteTable("memory_documents", {
   documentId: text("document_id").notNull(),
   source: text("source", { mode: "json" }).$type<import("../memory/model").MemorySource>().notNull(),
   contentHash: text("content_hash").notNull(),
+  ingestionFingerprint: text("ingestion_fingerprint"),
   generation: integer("generation").notNull(),
 }, (table) => [primaryKey({ columns: [table.scopeId, table.documentId] })]);
 
@@ -610,6 +611,7 @@ export const personalMemoryDocument = sqliteTable("personal_memory_documents", {
   documentId: text("document_id").notNull(),
   source: text("source", { mode: "json" }).$type<import("../memory/model").MemorySource>().notNull(),
   contentHash: text("content_hash").notNull(),
+  ingestionFingerprint: text("ingestion_fingerprint"),
   generation: integer("generation").notNull(),
 }, (table) => [primaryKey({ columns: [table.scopeId, table.documentId] })]);
 
