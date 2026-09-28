@@ -100,7 +100,7 @@ The template configures a once-per-minute Cron Trigger for recording staging exp
 
 ## PostgreSQL background jobs
 
-The template enables independent summary, image-analysis and search Queues, each with a DLQ, batch size 1 and concurrency 1. Create `dahlia-summary`, `dahlia-image`, `dahlia-search` and their `-dlq` queues before deploying (for example, `pnpm exec wrangler queues create dahlia-summary`). The `IMAGES` binding transforms private R2 screenshot streams to WebP without public URLs.
+The template enables independent summary, image-analysis and search Queues, each with a DLQ, batch size 1 and concurrency 1. Create `dahlia-summary`, `dahlia-image`, `dahlia-search` and their `-dlq` queues before deploying (for example, `pnpm exec wrangler queues create dahlia-summary`). The `IMAGES` binding transforms private R2 screenshot streams to WebP without public URLs. Configuring opt-in Memory screenshots with `DAHLIA_MEMORY_IMAGE_MODEL` also requires `IMAGES`; missing it fails initialization, while text-only Memory does not require this binding.
 
 Disable Hyperdrive query caching before using the binding: `pnpm exec wrangler hyperdrive update <id> --caching-disabled true`. This is Hyperdrive resource configuration, not a Wrangler binding field. Stale authorization and job reads are unsafe. Apply the registered PostgreSQL migrations using `DAHLIA_DATABASE_TYPE=postgres DAHLIA_DATABASE_URL=<migration-url> pnpm db:migrate`. Supply the same provider/embedding environment values used by the Worker when migrating. Semantic search requires the existing pgvector extension and its model/dimension-specific HNSW index; the migration command creates that index when embeddings are configured (the underlying column remains `real[]`).
 

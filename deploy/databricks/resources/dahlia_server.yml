@@ -45,6 +45,8 @@ resources:
             value: databricks
           - name: DAHLIA_HINDSIGHT_BANK_PREFIX
             value: dahlia-${bundle.target}
+          - name: DAHLIA_MEMORY_IMAGE_MODEL
+            value: ${var.memory_image_model}
           - name: DAHLIA_AUTH_TYPE
             value: header
           - name: DAHLIA_AUTH_PROVIDER_ID

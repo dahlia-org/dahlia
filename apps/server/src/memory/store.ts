@@ -102,12 +102,12 @@ export function createMemoryStore(database: PostgresDatabase | SQLiteDatabase | 
         return row ?? null;
       });
     },
-    async configure(userId: string, scopeId: string, bankId: string, enabled: boolean) {
+    async configure(userId: string, scopeId: string, bankId: string, enabled: boolean, imagesEnabled?: boolean) {
       return scoped(userId, scopeId, "admin", async (tx) => {
         const [current] = await tx.select().from(state).where(eq(state.scopeId, scopeId));
         if (current && (current.bankId !== bankId || current.purge)) throw new RequestError(409, "memory_cleanup_required");
-        await tx.insert(state).values({ scopeId, requestedBy: userId, bankId, enabled, availableAt: new Date() })
-          .onConflictDoUpdate({ target: state.scopeId, set: { enabled, reconcile: true, requestedBy: userId, availableAt: new Date(),
+        await tx.insert(state).values({ scopeId, requestedBy: userId, bankId, enabled, ...(!personal ? { imagesEnabled: imagesEnabled ?? false } : {}), availableAt: new Date() })
+          .onConflictDoUpdate({ target: state.scopeId, set: { enabled, ...(!personal && imagesEnabled !== undefined ? { imagesEnabled } : {}), reconcile: true, requestedBy: userId, availableAt: new Date(),
             generation: sql`${state.generation} + 1`, status: enabled ? "pending" : "paused", attempts: 0, errorCode: null } });
       });
     },

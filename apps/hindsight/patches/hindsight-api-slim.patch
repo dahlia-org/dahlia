@@ -64,7 +64,7 @@ index b850eafe6..e339bb1aa 100644
      "pgvectorscale": "CREATE EXTENSION vector; then CREATE EXTENSION vectorscale CASCADE; (or pg_diskann on Azure)",
      "vchord": "CREATE EXTENSION vchord CASCADE;",
 diff --git a/hindsight_api/api/http.py b/hindsight_api/api/http.py
-index 1cb787d6f..3dc103378 100644
+index 1cb787d6f..ca298127e 100644
 --- a/hindsight_api/api/http.py
 +++ b/hindsight_api/api/http.py
 @@ -284,6 +284,12 @@ def _internal_error(exc: Exception, where: str) -> HTTPException:
@@ -80,15 +80,16 @@ index 1cb787d6f..3dc103378 100644
      logger.error(f"Error in {where}: {exc}\n\nTraceback:\n{traceback.format_exc()}")
      return HTTPException(status_code=500, detail=str(exc))
 
-@@ -2110,6 +2116,7 @@ class BankConfigResponse(BaseModel):
+@@ -2110,6 +2116,8 @@ class BankConfigResponse(BaseModel):
          }
      )
 
++    dahlia_images: dict[str, Any] | None = None
 +    dahlia_ingestion_policy: str | None = None
      bank_id: str = Field(description="Bank identifier")
      config: dict[str, Any] = Field(
          description="Fully resolved configuration with all hierarchical overrides applied (Python field names)"
-@@ -4470,6 +4477,7 @@ class ChildOperationStatus(BaseModel):
+@@ -4470,6 +4478,7 @@ class ChildOperationStatus(BaseModel):
 
 
  class OperationStatusResponse(BaseModel):
@@ -96,7 +97,7 @@ index 1cb787d6f..3dc103378 100644
      """Response model for getting a single operation status."""
 
      model_config = ConfigDict(
-@@ -7557,6 +7565,7 @@ def _register_routes(app: FastAPI):
+@@ -7557,6 +7566,7 @@ def _register_routes(app: FastAPI):
      async def api_reprocess_document(
          bank_id: str,
          document_id: str,
@@ -104,7 +105,7 @@ index 1cb787d6f..3dc103378 100644
          request_context: RequestContext = Depends(get_request_context),
      ):
          """
-@@ -7568,6 +7577,7 @@ def _register_routes(app: FastAPI):
+@@ -7568,6 +7578,7 @@ def _register_routes(app: FastAPI):
          """
          try:
              result = await app.state.memory.reprocess_document(
@@ -112,7 +113,7 @@ index 1cb787d6f..3dc103378 100644
                  bank_id=bank_id,
                  document_id=document_id,
                  request_context=request_context,
-@@ -7902,7 +7912,9 @@ def _register_routes(app: FastAPI):
+@@ -7902,7 +7913,9 @@ def _register_routes(app: FastAPI):
              result = await app.state.memory.get_operation_status(
                  bank_id, operation_id, request_context=request_context, include_payload=include_payload
              )
@@ -123,7 +124,7 @@ index 1cb787d6f..3dc103378 100644
          except OperationValidationError as e:
              raise HTTPException(status_code=e.status_code, detail=e.reason)
          except (AuthenticationError, HTTPException):
-@@ -9082,7 +9094,15 @@ def _register_routes(app: FastAPI):
+@@ -9082,7 +9095,18 @@ def _register_routes(app: FastAPI):
          """
          try:
              state = await app.state.memory.get_bank_config(bank_id, request_context=request_context)
@@ -131,7 +132,10 @@ index 1cb787d6f..3dc103378 100644
 +            from hindsight_lakebase.ingestion import ingestion_policy
 +
 +            config = await app.state.memory._config_resolver.resolve_full_config(bank_id, request_context, cached=False)
++            from hindsight_lakebase.images import image_capabilities
++
 +            return BankConfigResponse(
++                dahlia_images=image_capabilities(config),
 +                bank_id=bank_id,
 +                config=state.config,
 +                overrides=state.overrides,
@@ -606,7 +610,7 @@ index 9b077bab0..f1b117772 100644
          "xai-oauth",
      }
 diff --git a/hindsight_api/engine/providers/openai_compatible_llm.py b/hindsight_api/engine/providers/openai_compatible_llm.py
-index ae5952f21..5da21cec7 100644
+index ae5952f21..b5e3d68bf 100644
 --- a/hindsight_api/engine/providers/openai_compatible_llm.py
 +++ b/hindsight_api/engine/providers/openai_compatible_llm.py
 @@ -320,6 +320,9 @@ def _message_refusal(message: Any) -> Any:
@@ -650,7 +654,29 @@ index ae5952f21..5da21cec7 100644
              "max_retries": 0,
              "default_headers": with_openai_compatible_user_agent(default_headers),
          }
-@@ -1665,6 +1676,9 @@ class OpenAICompatibleLLM(LLMInterface):
+@@ -1167,7 +1178,7 @@ class OpenAICompatibleLLM(LLMInterface):
+             if max_tokens_cap and max_completion_tokens > max_tokens_cap:
+                 max_completion_tokens = max_tokens_cap
+             # For reasoning models, enforce minimum to ensure space for reasoning + output
+-            if is_reasoning_model and max_completion_tokens < 16000:
++            if is_reasoning_model and max_completion_tokens < 16000 and scope != "dahlia_image_retain":
+                 max_completion_tokens = 16000
+             call_params[self._max_tokens_param_name()] = max_completion_tokens
+         if temperature is not None and not is_reasoning_model:
+@@ -1233,6 +1244,12 @@ class OpenAICompatibleLLM(LLMInterface):
+                     call_params["messages"] = _ensure_json_word_in_user_message(call_params["messages"])
+                     call_params["response_format"] = {"type": "json_object"}
+
++        if scope == "dahlia_image_retain":
++            # An image extraction's explicit budget must survive provider defaults
++            # and extra_body merging. This does not alter model selection/routing.
++            from hindsight_lakebase.images import bound_image_request
++
++            bound_image_request(call_params, self._max_tokens_param_name())
+         apply_bank_attribution(call_params)
+         # Cache pinning, alongside the other identity injection above and, like
+         # call_params itself, built ONCE before the retry loop so every attempt
+@@ -1665,6 +1682,9 @@ class OpenAICompatibleLLM(LLMInterface):
                      set_stage(f"llm.{self.provider}.tools.attempt={attempt + 1}/{max_retries + 1}")
                      response = await self._client.chat.completions.create(**call_params)
 
@@ -661,10 +687,59 @@ index ae5952f21..5da21cec7 100644
                  finish_reason = response.choices[0].finish_reason
 
 diff --git a/hindsight_api/engine/retain/fact_extraction.py b/hindsight_api/engine/retain/fact_extraction.py
-index 4bcc2f068..5acbfdb5c 100644
+index 4bcc2f068..234a39751 100644
 --- a/hindsight_api/engine/retain/fact_extraction.py
 +++ b/hindsight_api/engine/retain/fact_extraction.py
-@@ -2662,11 +2662,8 @@ async def extract_facts_from_text(
+@@ -2007,9 +2007,16 @@ async def _extract_facts_from_chunk(
+     # fully assembled message rather than on the chunk so the surrounding prompt
+     # scaffolding is byte-identical to the text-only path, and a chunk with no
+     # images comes back as the same plain string it always was.
++    dahlia_image_chunk = (metadata or {}).get("dahlia_images") == "1" and attachment_content.contains_attachment(user_message)
++    if dahlia_image_chunk and (attachment_loader is None or vlm_config is None):
++        raise RuntimeError("memory_images_unconfigured")
+     user_content: Any = user_message
+     if attachment_loader is not None and attachment_content.contains_attachment(user_message):
+         loaded = await attachment_loader.load(list(attachment_content.iter_placeholder_ids(user_message)))
++        if dahlia_image_chunk:
++            from hindsight_lakebase.images import require_images
++
++            require_images(user_message, loaded)
+         user_content = attachment_content.build_prompt_parts(user_message, loaded)
+         # This is the only kind of chunk that needs to *see*, so it is the only
+         # one that pays for a vision model. Every text-only chunk stays on the
+@@ -2053,7 +2060,7 @@ async def _extract_facts_from_chunk(
+     # same budget as its default, and in a multi-LLM chain each member may override
+     # it (``HINDSIGHT_API_LLM_<n>_MAX_RETRIES``). A per-call value would win over the
+     # member's own and hand every member the same budget.
+-    outer_attempts = llm_max_retries + 1
++    outer_attempts = 1 if dahlia_image_chunk else llm_max_retries + 1
+     last_error: Exception | None = None
+
+     usage = TokenUsage()  # Track cumulative usage across retries
+@@ -2082,7 +2089,12 @@ async def _extract_facts_from_chunk(
+             if cached_prefix_name is not None:
+                 call_kwargs["cached_prefix"] = cached_prefix_name
+
+-            extraction_call = await llm_config.call(**call_kwargs)
++            if dahlia_image_chunk:
++                from hindsight_lakebase.images import image_call
++
++                extraction_call = await image_call(llm_config, call_kwargs)
++            else:
++                extraction_call = await llm_config.call(**call_kwargs)
+             extraction_response_json = extraction_call.content
+             call_usage = extraction_call.usage
+             usage = usage + call_usage  # Aggregate usage across retries
+@@ -2449,6 +2461,8 @@ async def _extract_facts_with_auto_split(
+             extraction_prompt=extraction_prompt,
+         )
+     except OutputTooLongError:
++        if (metadata or {}).get("dahlia_images") == "1" and attachment_content.contains_attachment(chunk):
++            raise
+         # Output exceeded token limits - split the chunk and retry. Conversation
+         # chunks are JSON arrays, so preserve array/turn boundaries when possible.
+         logger.warning(
+@@ -2662,11 +2676,8 @@ async def extract_facts_from_text(
          # batch, whatever the other failures were.
          policy_errors = [err for _, err in failed_chunks if isinstance(err, ProviderContentPolicyError)]
          if policy_errors:
@@ -678,6 +753,24 @@ index 4bcc2f068..5acbfdb5c 100644
 
          # Fail the entire retain — partial extraction is not acceptable.
          # All successfully extracted facts are discarded because the transaction
+@@ -3420,6 +3431,8 @@ async def extract_facts_from_contents(
+     # them all, then propagate.
+     all_fact_results = await asyncio.gather(*fact_extraction_tasks, return_exceptions=True)
+
++    from hindsight_lakebase.images import image_fact_metadata
++
+     # Step 3: Flatten and convert to typed objects
+     extracted_facts: list[ExtractedFactType] = []
+     chunks_metadata: list[ChunkMetadata] = []
+@@ -3484,7 +3497,7 @@ async def extract_facts_from_contents(
+                     context=content.context,
+                     # mentioned_at: always the event_date (when the conversation/document occurred)
+                     mentioned_at=content.event_date,
+-                    metadata=content.metadata,
++                    metadata=image_fact_metadata(content.metadata, chunk_text),
+                     tags=content.tags,
+                     observation_scopes=content.observation_scopes,
+                 )
 diff --git a/hindsight_api/engine/search/retrieval.py b/hindsight_api/engine/search/retrieval.py
 index 373ecc9bf..1dcd33eed 100644
 --- a/hindsight_api/engine/search/retrieval.py

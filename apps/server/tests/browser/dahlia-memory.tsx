@@ -11,6 +11,7 @@ const writes: Array<{ scope: string; workspaceId?: string; explicit: boolean }> 
 let failSave = false;
 let linkedFailure: number | undefined, workspaceRevoked = false;
 let purges = 0;
+let imageSettings: { enabled: boolean; imagesEnabled: boolean } | undefined;
 window.fetch = async (input, init) => {
   const request = input instanceof Request ? input : new Request(new URL(input, location.origin), init);
   const path = new URL(request.url).pathname;
@@ -18,7 +19,7 @@ window.fetch = async (input, init) => {
   if (path.endsWith("/projects")) return Response.json({ items: [] });
   if (path.endsWith("/pages")) return Response.json({ items: [], nextCursor: null });
   if (path.endsWith("/scopes")) return Response.json({ scopes: [{ scope: "personal", name: "Personal", writable: true }, { scope: "workspace", workspaceId: "team", name: "Team", writable: true }, { scope: "workspace", workspaceId: "other", name: "Other team", writable: true }] });
-  const body: { content: string; id: string; revision: number; explicit: boolean } = ["POST", "PATCH"].includes(request.method) ? await request.json() : { content: "", id: "", revision: Number(new URL(request.url).searchParams.get("revision")), explicit: false };
+  const body: { content: string; id: string; revision: number; explicit: boolean; enabled?: boolean; imagesEnabled?: boolean } = ["POST", "PATCH"].includes(request.method) ? await request.json() : { content: "", id: "", revision: Number(new URL(request.url).searchParams.get("revision")), explicit: false };
   if (request.method === "PATCH" || request.method === "DELETE") body.id = path.split("/").at(-1)!;
   if (request.method === "DELETE") body.explicit = new URL(request.url).searchParams.get("explicit") === "true";
   const key = path.startsWith("/api/v1/user/") ? "personal" : path.split("/")[4]!;
@@ -33,7 +34,8 @@ window.fetch = async (input, init) => {
     return memory ? Response.json({ memory }) : Response.json({ error: "memory_not_found" }, { status: 404 });
   }
   if (path.endsWith("/notes") && request.method === "GET") return Response.json({ items: rows[key], nextCursor: null });
-  if (path.endsWith("/status")) return Response.json({ enabled: false, status: "unavailable", skippedCount: 0 });
+  if (path.endsWith("/analysis/settings")) { imageSettings = { enabled: body.enabled ?? false, imagesEnabled: body.imagesEnabled ?? false }; return Response.json({ ...imageSettings, imagesAvailable: true, status: "indexing", skippedCount: 0 }); }
+  if (path.endsWith("/status")) return Response.json(imageSettings ? { ...imageSettings, imagesAvailable: true, status: "ready", skippedCount: 0 } : { enabled: false, status: "unavailable", skippedCount: 0 });
   if (path.endsWith("/memory") && request.method === "DELETE") { purges++; rows[key] = []; return Response.json({ status: "deleting" }); }
   if (path.includes("/notes") && ["POST", "PATCH"].includes(request.method)) {
     if (failSave) return Response.json({ error: "memory_revision_conflict" }, { status: 409 });
@@ -113,7 +115,17 @@ async function run() {
   linkedFailure = undefined; workspaceRevoked = false;
   root.render(<DahliaMemoryPage key="recovery" />);
   await until(() => document.body.textContent.includes("Surviving canonical note"));
+  imageSettings = { enabled: true, imagesEnabled: false };
+  root.render(<WorkspaceMemory workspaceId="team" role="admin" />);
+  await until(() => button("Enable screenshots"));
+  button("Enable screenshots").click(); await until(() => document.querySelector("[data-confirm]"));
+  (document.querySelector("[data-confirm]") as HTMLButtonElement).click();
+  await until(() => button("Disable screenshots"));
+  assert(imageSettings.imagesEnabled, "Admin opt-in was not sent");
+  root.render(<WorkspaceMemory workspaceId="team" role="viewer" />);
+  await until(() => !button("Disable screenshots"));
+  assert(!button("Enable screenshots"), "Viewer can change image settings");
   history.replaceState({}, "", location.pathname);
-  document.getElementById("result")!.textContent = "PASS: scope, conflict preservation, sharing, sources, deletion, purge, canonical deep links, missing note, authorization failures and recovery";
+  document.getElementById("result")!.textContent = "PASS: image admin opt-in/viewer boundary, scope, conflict preservation, sharing, sources, deletion, purge, canonical deep links, missing note, authorization failures and recovery";
 }
 void run().catch((error: unknown) => { document.getElementById("result")!.textContent = `FAIL: ${String(error)}`; });

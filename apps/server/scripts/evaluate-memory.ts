@@ -8,16 +8,19 @@ import { memoryResultSchema } from "../src/memory/dahlia";
 export const questionsSchema = z.array(z.object({
   query: z.string().trim().min(1).max(4000),
   requiredClaims: z.array(z.string().min(1)).optional(), forbiddenClaims: z.array(z.string().min(1)).optional(),
-  expected: z.array(z.object({ id: z.string().min(1), excerpts: z.array(z.string().min(1)).min(1) })).min(1),
+  expected: z.array(z.object({ id: z.string().min(1), excerpts: z.array(z.string().min(1)),
+    screenshotIds: z.array(z.string().min(1)).optional() }).refine((item) => item.excerpts.length > 0 || !!item.screenshotIds?.length)).min(1),
 })).min(1);
 export async function evaluateMemory(questions: z.infer<typeof questionsSchema>, send: (query: string) => Promise<unknown>) {
   let hits = 0, reciprocalRank = 0, evidence = 0, expected = 0, errors = 0, claims = 0, incomplete = 0;
   let missingCitations = 0, requiredClaims = 0, foundClaims = 0, forbiddenClaims = 0, duplicateMeetings = 0, refused = 0, noFacts = 0;
   let inputTokens = 0, outputTokens = 0, usageSamples = 0;
+  let expectedImages = 0, imageEvidence = 0;
   const times: number[] = [];
   const statuses: Record<string, number> = {};
   for (const question of questionsSchema.parse(questions)) {
     expected += question.expected.reduce((n, source) => n + source.excerpts.length, 0);
+    expectedImages += question.expected.reduce((n, source) => n + new Set(source.screenshotIds).size, 0);
     requiredClaims += question.requiredClaims?.length ?? 0;
     const start = performance.now();
     try {
@@ -43,6 +46,7 @@ export async function evaluateMemory(questions: z.infer<typeof questionsSchema>,
       for (const item of question.expected) {
         const source = sources.find((source) => source.id === item.id);
         evidence += item.excerpts.filter((excerpt) => source?.canonicalExcerpt.includes(excerpt)).length;
+        imageEvidence += [...new Set(item.screenshotIds)].filter((id) => source?.images?.some((image) => image.screenshotId === id)).length;
       }
       claims += result.claims?.length ?? 0;
       if (result.coverage !== "ready") incomplete++;
@@ -55,7 +59,8 @@ export async function evaluateMemory(questions: z.infer<typeof questionsSchema>,
   }
   times.sort((a, b) => a - b);
   return { questions: questions.length, errors, hitAt5: hits / questions.length, mrr: reciprocalRank / questions.length,
-    excerptEvidenceRecall: evidence / expected, claims, incomplete, missingCitations, duplicateMeetings, refused, noFacts,
+    excerptEvidenceRecall: expected ? evidence / expected : null, imageReferenceRecall: expectedImages ? imageEvidence / expectedImages : null,
+    claims, incomplete, missingCitations, duplicateMeetings, refused, noFacts,
     claimExpectations: { required: requiredClaims, found: foundClaims, forbidden: forbiddenClaims }, reflectionStatuses: statuses,
     latencyMs: { p50: times[Math.ceil(times.length * 0.5) - 1], p95: times[Math.ceil(times.length * 0.95) - 1] },
     reflectionUsage: { samples: usageSamples, inputTokens, outputTokens } };

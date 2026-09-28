@@ -1,3 +1,5 @@
+import { sampleEvenly, summaryScreenshotCandidates } from "../sync/screenshot-selection";
+export { sampleEvenly, summaryScreenshotCandidates };
 import { Buffer } from "node:buffer";
 import { z } from "zod";
 import type { AppConfig } from "../config";
@@ -24,22 +26,6 @@ export interface ScreenshotSelector {
 /** Bounded, content-free failure codes for diagnostics. */
 export class PreselectionError extends Error {
   constructor(readonly code: string) { super(code); }
-}
-
-/** Drops screenshots image analysis found to have no shared material, and identical images. */
-export function summaryScreenshotCandidates(images: readonly SyncScreenshotRecord[], uninformative: readonly string[]) {
-  const excluded = new Set(uninformative);
-  const hashes = new Set<string>();
-  return images.filter((image) => {
-    if (excluded.has(image.fileId) || hashes.has(image.contentHash)) return false;
-    hashes.add(image.contentHash);
-    return true;
-  });
-}
-
-export function sampleEvenly<T>(items: readonly T[], limit: number): T[] {
-  const interval = Math.max(1, Math.ceil(items.length / limit));
-  return items.filter((_, index) => index % interval === 0).slice(0, limit);
 }
 
 /** Keeps exactly `min(items.length, limit)` items spread across the whole list, including the first and last. */

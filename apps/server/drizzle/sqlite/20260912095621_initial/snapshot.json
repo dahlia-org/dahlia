@@ -5031,6 +5031,16 @@
       "table": "workspace_memory_state"
     },
     {
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": "false",
+      "generated": null,
+      "name": "images_enabled",
+      "entityType": "columns",
+      "table": "workspace_memory_state"
+    },
+    {
       "type": "text",
       "notNull": true,
       "autoincrement": false,

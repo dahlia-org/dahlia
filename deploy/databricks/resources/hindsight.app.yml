@@ -23,6 +23,20 @@ resources:
             value: databricks
           - name: HINDSIGHT_API_LLM_MODEL
             value: system.ai.gpt-6-luna
+          - name: HINDSIGHT_API_VLM_PROVIDER
+            value: databricks
+          - name: HINDSIGHT_API_VLM_MODEL
+            value: ${var.memory_image_model}
+          - name: HINDSIGHT_API_LLM_VISION
+            value: "true"
+          - name: HINDSIGHT_API_LLM_TEMPERATURE_RETAIN
+            value: "none"
+          - name: HINDSIGHT_API_RETAIN_MAX_ATTACHMENTS_PER_CHUNK
+            value: "1"
+          - name: HINDSIGHT_API_RETAIN_ATTACHMENT_MAX_COUNT
+            value: "8"
+          - name: HINDSIGHT_API_RETAIN_ATTACHMENT_MAX_SIZE_MB
+            value: "8"
           - name: HINDSIGHT_API_EMBEDDINGS_PROVIDER
             value: databricks
           - name: HINDSIGHT_API_EMBEDDINGS_OPENAI_MODEL

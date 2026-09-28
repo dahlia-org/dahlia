@@ -60,6 +60,14 @@ describe.runIf(url)("Workspace memory PostgreSQL RLS", () => {
     }] });
     const memory = app.memory!;
     await memory.configure(owner.userId, workspaceId, `test-workspace-${workspaceId}`, true);
+    expect((await memory.status(owner.userId, workspaceId))?.imagesEnabled).toBe(false);
+    await memory.configure(owner.userId, workspaceId, `test-workspace-${workspaceId}`, true, true);
+    const imageState = await memory.status(owner.userId, workspaceId);
+    expect(imageState).toMatchObject({ imagesEnabled: true, reconcile: true });
+    await memory.configure(owner.userId, workspaceId, `test-workspace-${workspaceId}`, true);
+    expect((await memory.status(owner.userId, workspaceId))?.imagesEnabled).toBe(true);
+    await expect(memory.configure(stranger.userId, workspaceId, `test-workspace-${workspaceId}`, true, false)).rejects.toMatchObject({ status: 404 });
+    await memory.configure(owner.userId, workspaceId, `test-workspace-${workspaceId}`, true, false);
     const note = await memory.saveNote(owner.userId, workspaceId, { id: uuidV7(), content: "Private Workspace evidence", revision: 0 });
     expect(await memory.exists(workspaceId)).toBe(true);
     expect(await memory.workerUser(workspaceId)).toBe(owner.userId);

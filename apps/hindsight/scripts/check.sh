@@ -16,4 +16,8 @@ uv run --locked pytest -c pyproject.toml -q --confcutdir=.upstream/hindsight-api
   .upstream/hindsight-api-slim/tests/test_enable_text_search_flag.py \
   .upstream/hindsight-api-slim/tests/test_knowledge_bm25_dispatch.py \
   .upstream/hindsight-api-slim/tests/test_pg_extensions.py \
-  .upstream/hindsight-api-slim/tests/test_vector_index.py
+  .upstream/hindsight-api-slim/tests/test_vector_index.py \
+  .upstream/hindsight-api-slim/tests/test_attachment_canonicalization.py \
+  .upstream/hindsight-api-slim/tests/test_vlm_slot.py \
+  .upstream/hindsight-api-slim/tests/test_attachment_aware_chunking.py \
+  .upstream/hindsight-api-slim/tests/test_attachment_attribution.py

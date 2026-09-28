@@ -532,6 +532,7 @@ export const workspaceKey = sqliteTable("workspace_keys", {
 export const workspaceMemoryState = sqliteTable("workspace_memory_state", {
   scopeId: text("workspace_id").primaryKey(),
   enabled: integer("enabled", { mode: "boolean" }).default(false).notNull(),
+  imagesEnabled: integer("images_enabled", { mode: "boolean" }).default(false).notNull(),
   requestedBy: text("requested_by").notNull(),
   bankId: text("bank_id").notNull(),
   generation: integer("generation").default(1).notNull(),

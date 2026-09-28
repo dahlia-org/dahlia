@@ -36,6 +36,11 @@ export interface RuntimeSecrets {
   DAHLIA_CHAT_MEMORY_MODEL?: string;
   DAHLIA_MEMORY_MCP_ACCESS?: string;
   DAHLIA_HINDSIGHT_URL?: string;
+  DAHLIA_MEMORY_IMAGE_MODEL?: string;
+  DAHLIA_MEMORY_IMAGE_MAX_COUNT?: string;
+  DAHLIA_MEMORY_IMAGE_MAX_BYTES?: string;
+  DAHLIA_MEMORY_IMAGE_LONG_EDGE?: string;
+
   DAHLIA_HINDSIGHT_AUTH?: string;
   DAHLIA_HINDSIGHT_API_KEY?: string;
   DAHLIA_HINDSIGHT_BANK_PREFIX?: string;
@@ -126,6 +131,11 @@ function createWorkerApplicationStore(config: AppConfig, env: WorkerEnv): Applic
 export async function initializeWorkerApp(env: WorkerEnv): Promise<WorkerApp> {
   const config = loadConfig({
     DAHLIA_HINDSIGHT_URL: env.DAHLIA_HINDSIGHT_URL,
+    DAHLIA_MEMORY_IMAGE_MODEL: env.DAHLIA_MEMORY_IMAGE_MODEL,
+    DAHLIA_MEMORY_IMAGE_MAX_COUNT: env.DAHLIA_MEMORY_IMAGE_MAX_COUNT,
+    DAHLIA_MEMORY_IMAGE_MAX_BYTES: env.DAHLIA_MEMORY_IMAGE_MAX_BYTES,
+    DAHLIA_MEMORY_IMAGE_LONG_EDGE: env.DAHLIA_MEMORY_IMAGE_LONG_EDGE,
+
     DAHLIA_HINDSIGHT_AUTH: env.DAHLIA_HINDSIGHT_AUTH,
     DAHLIA_HINDSIGHT_API_KEY: env.DAHLIA_HINDSIGHT_API_KEY,
     DAHLIA_HINDSIGHT_BANK_PREFIX: env.DAHLIA_HINDSIGHT_BANK_PREFIX,
@@ -171,6 +181,7 @@ export async function initializeWorkerApp(env: WorkerEnv): Promise<WorkerApp> {
     OPENAI_API_KEY: env.OPENAI_API_KEY,
     OPENAI_BASE_URL: env.OPENAI_BASE_URL,
   });
+  if (config.hindsight?.images && !env.IMAGES) throw new Error("Memory image ingestion requires the IMAGES binding");
   const applicationStore = createWorkerApplicationStore(config, env);
   try {
     if (config.storageBackend === "local" || config.storageBackend === "databricks") {

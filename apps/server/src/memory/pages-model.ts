@@ -1,3 +1,4 @@
+import { imageCoverageSchema, imageReferenceSchema } from "./images";
 import { z } from "@hono/zod-openapi";
 import { publicIdSchema } from "../agent/tools";
 import type { MemorySource } from "./model";
@@ -9,7 +10,7 @@ export const pageGetSchema = z.object({ workspaceId: publicIdSchema("workspace")
 export const pageStatusSchema = z.enum(["ready", "generating", "stale", "source_invalid", "paused", "unavailable", "error", "no_sources"]);
 export type PageStatus = z.infer<typeof pageStatusSchema>;
 export const pageSourceSchema = z.object({ kind: z.enum(["meeting", "shared"]), id: z.string(), revision: z.string(),
-  href: z.string(), canonicalExcerpt: z.string(), truncated: z.boolean() });
+  href: z.string(), images: z.array(imageReferenceSchema).optional(), imageCoverage: imageCoverageSchema.optional(), canonicalExcerpt: z.string(), truncated: z.boolean() });
 export const pageSchema = z.object({ id: pageIdSchema, workspaceId: publicIdSchema("workspace"), projectId: publicIdSchema("project").nullable(),
   title: z.string(), status: pageStatusSchema, coverage: z.enum(["ready", "partial", "updating"]), skippedCount: z.number().int().nonnegative(),
   canRefresh: z.boolean(), generatedAt: z.string().nullable(), body: z.string().nullable(), snippet: z.string().nullable(),

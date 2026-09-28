@@ -3080,6 +3080,54 @@
                 "href": {
                   "type": "string"
                 },
+                "images": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "screenshotId": {
+                        "type": "string"
+                      },
+                      "fileId": {
+                        "type": "string"
+                      },
+                      "checksum": {
+                        "type": "string"
+                      },
+                      "href": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "screenshotId",
+                      "fileId",
+                      "checksum",
+                      "href"
+                    ]
+                  }
+                },
+                "imageCoverage": {
+                  "type": "object",
+                  "properties": {
+                    "selected": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "eligible": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "omitted": {
+                      "type": "integer",
+                      "minimum": 0
+                    }
+                  },
+                  "required": [
+                    "selected",
+                    "eligible",
+                    "omitted"
+                  ]
+                },
                 "canonicalExcerpt": {
                   "type": "string"
                 },
@@ -3276,6 +3324,54 @@
                           },
                           "truncated": {
                             "type": "boolean"
+                          },
+                          "images": {
+                            "type": "array",
+                            "items": {
+                              "type": "object",
+                              "properties": {
+                                "screenshotId": {
+                                  "type": "string"
+                                },
+                                "fileId": {
+                                  "type": "string"
+                                },
+                                "checksum": {
+                                  "type": "string"
+                                },
+                                "href": {
+                                  "type": "string"
+                                }
+                              },
+                              "required": [
+                                "screenshotId",
+                                "fileId",
+                                "checksum",
+                                "href"
+                              ]
+                            }
+                          },
+                          "imageCoverage": {
+                            "type": "object",
+                            "properties": {
+                              "selected": {
+                                "type": "integer",
+                                "minimum": 0
+                              },
+                              "eligible": {
+                                "type": "integer",
+                                "minimum": 0
+                              },
+                              "omitted": {
+                                "type": "integer",
+                                "minimum": 0
+                              }
+                            },
+                            "required": [
+                              "selected",
+                              "eligible",
+                              "omitted"
+                            ]
                           }
                         },
                         "required": [
@@ -3443,6 +3539,12 @@
                 "result"
               ]
             }
+          },
+          "imagesEnabled": {
+            "type": "boolean"
+          },
+          "imagesAvailable": {
+            "type": "boolean"
           },
           "enabled": {
             "type": "boolean"
@@ -10516,6 +10618,9 @@
                 "type": "object",
                 "properties": {
                   "enabled": {
+                    "type": "boolean"
+                  },
+                  "imagesEnabled": {
                     "type": "boolean"
                   }
                 },

@@ -378,7 +378,7 @@ export function createApp(dependencies: AppDependencies): DahliaServerApp & { ru
     c.header("Content-Type", "text/markdown; charset=utf-8");
     c.header("Content-Disposition", `attachment; filename="${page.id}.md"`);
     // Generated Markdown is a download, never rendered as trusted HTML by Dahlia.
-    return c.body(`# ${page.title}\n\n${page.instruction}\n\nCoverage: ${page.coverage}\nUpdated: ${page.generatedAt}\n\n${page.body}\n\nSources:\n${page.sources.map((source) => `- ${source.href} (revision ${source.revision})`).join("\n")}\n`);
+    return c.body(`# ${page.title}\n\n${page.instruction}\n\nCoverage: ${page.coverage}\nUpdated: ${page.generatedAt}\n\n${page.body}\n\nSources:\n${page.sources.map((source) => `- ${source.href} (revision ${source.revision})${(source.images ?? []).map((image) => `\n  - ${image.href} (${image.checksum})`).join("")}`).join("\n")}\n`);
   });
   registerApi(app, "refreshKnowledgePage", aiChatBodyLimit, async (c) => {
     if ((await c.req.text()).trim()) throw new RequestError(400, "knowledge_page_body_not_allowed");
@@ -397,7 +397,7 @@ export function createApp(dependencies: AppDependencies): DahliaServerApp & { ru
   registerApi(app, "personalMemoryRecall", aiChatBodyLimit, async (c) => c.json(await memory().search(await identities.fromBrowser(c.req.raw), { scope: "personal" as const, ...personalMemorySearchSchema.parse(await c.req.json()) }, false, c.req.raw.signal)));
   registerApi(app, "personalMemoryReflect", aiChatBodyLimit, async (c) => c.json(await memory().search(await identities.fromBrowser(c.req.raw), { scope: "personal" as const, ...personalMemorySearchSchema.parse(await c.req.json()) }, true, c.req.raw.signal)));
   registerApi(app, "personalMemoryStatus", async (c) => c.json(await memory().status(await identities.fromBrowser(c.req.raw), { scope: "personal" as const })));
-  registerApi(app, "personalMemoryConfigure", aiChatBodyLimit, async (c) => c.json(await memory().configure(await identities.fromBrowser(c.req.raw), { scope: "personal" as const, ...memoryConfigureSchema.omit({ scope: true, workspaceId: true }).parse(await c.req.json()) })));
+  registerApi(app, "personalMemoryConfigure", aiChatBodyLimit, async (c) => c.json(await memory().configure(await identities.fromBrowser(c.req.raw), { scope: "personal" as const, ...memoryConfigureSchema.omit({ scope: true, workspaceId: true, imagesEnabled: true }).parse(await c.req.json()) })));
   registerApi(app, "workspaceMemoryList", async (c) => c.json(await memory().list(await identities.fromBrowser(c.req.raw), { scope: "workspace" as const, workspaceId: c.req.param("workspaceId")!, ...memoryListSchema.omit({ scope: true, workspaceId: true }).parse(c.req.query()) })));
   registerApi(app, "workspaceMemoryGet", async (c) => c.json(await memory().get(await identities.fromBrowser(c.req.raw), { scope: "workspace" as const, workspaceId: c.req.param("workspaceId")!, id: memoryGetSchema.shape.id.parse(c.req.param("noteId")) })));
   registerApi(app, "workspaceMemorySave", aiChatBodyLimit, async (c) => c.json(await memory().save(await identities.fromBrowser(c.req.raw), { scope: "workspace" as const, workspaceId: c.req.param("workspaceId")!, ...memoryCreateBody.parse(await c.req.json()) }, "human", c.req.raw.signal)));

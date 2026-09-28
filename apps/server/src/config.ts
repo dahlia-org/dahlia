@@ -49,7 +49,7 @@ export interface S3StorageConfig {
 export interface AppConfig {
   chatMemoryModel?: string;
   memoryMcpAccess?: "off" | "read" | "write";
-  hindsight?: { url: string; auth: "none" | "bearer" | "databricks"; apiKey?: string; bankPrefix: string };
+  hindsight?: { url: string; auth: "none" | "bearer" | "databricks"; apiKey?: string; bankPrefix: string; images?: import("./memory/images").ImageSettings };
   encryption?: EncryptionConfig;
   authProvider: AuthProvider;
   authHeader: string;
@@ -375,5 +375,11 @@ function hindsightConfig(env: Record<string, string | undefined>): AppConfig["hi
   if (auth !== "bearer" && env.DAHLIA_HINDSIGHT_API_KEY) throw new Error("Hindsight API key requires bearer authentication");
   return { url: url.replace(/\/$/, ""), auth,
     apiKey: auth === "bearer" ? required(env, "DAHLIA_HINDSIGHT_API_KEY") : undefined,
-    bankPrefix: z.string().regex(/^[a-z][a-z0-9-]{0,39}$/).parse(required(env, "DAHLIA_HINDSIGHT_BANK_PREFIX")) };
+    bankPrefix: z.string().regex(/^[a-z][a-z0-9-]{0,39}$/).parse(required(env, "DAHLIA_HINDSIGHT_BANK_PREFIX")),
+    images: env.DAHLIA_MEMORY_IMAGE_MODEL?.trim() ? {
+      model: env.DAHLIA_MEMORY_IMAGE_MODEL.trim(),
+      maxCount: z.coerce.number().int().min(1).max(32).parse(env.DAHLIA_MEMORY_IMAGE_MAX_COUNT ?? 8),
+      maxBytes: z.coerce.number().int().min(1).max(32 * 1024 * 1024).parse(env.DAHLIA_MEMORY_IMAGE_MAX_BYTES ?? 8 * 1024 * 1024),
+      longEdge: z.enum(["480", "1280", "1568", "1920"]).transform(Number).parse(env.DAHLIA_MEMORY_IMAGE_LONG_EDGE ?? "1568") as 480 | 1280 | 1568 | 1920,
+    } : undefined };
 }

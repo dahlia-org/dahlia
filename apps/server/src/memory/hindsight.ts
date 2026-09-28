@@ -1,3 +1,5 @@
+import { attachmentSchema, type ImageSettings } from "./images";
+import { canonicalJson } from "../sync/service";
 import { z } from "zod";
 import type { AppConfig } from "../config";
 import { DatabricksTokenProvider, tokenUntilAborted } from "../databricks/token";
@@ -6,11 +8,10 @@ import { MEMORY_MISSION, PERSONAL_MEMORY_MISSION } from "./model";
 import { reflectionResponseSchema } from "./reflection";
 import { standardModel } from "./pages-model";
 
-export class HindsightError extends Error {
-  constructor(readonly code: string, readonly status?: number) { super(code); }
-}
+import { HindsightError } from "./errors";
+export { HindsightError };
 const operationSchema = z.object({ operation_id: z.string() });
-const factSchema = z.object({ id: z.string(), text: z.string(), type: z.string().nullish(), document_id: z.string().nullish(),
+const factSchema = z.object({ attachments: z.array(attachmentSchema).nullish(), id: z.string(), text: z.string(), type: z.string().nullish(), document_id: z.string().nullish(),
   chunk_id: z.string().nullish(), source_fact_ids: z.array(z.string()).nullish(), metadata: z.record(z.string(), z.unknown()).nullish() }).passthrough();
 const recallSchema = z.object({ results: z.array(factSchema),
   source_facts: z.record(z.string(), z.object({ document_id: z.string().nullish(), chunk_id: z.string().nullish() }).passthrough()).nullish(),
@@ -99,6 +100,23 @@ export class HindsightClient {
   async extractionSettings(bank: string, mode: "concise" | "verbose", strategy: string | null, signal: AbortSignal) {
     await this.request(bank, "/config", "PATCH", signal, { updates: { retain_extraction_mode: mode, retain_default_strategy: strategy } });
   }
+  async imageConfiguration(bank: string, settings: ImageSettings | undefined, signal: AbortSignal) {
+    if (!settings) throw new HindsightError("memory_images_unconfigured");
+    const raw = await this.request(bank, "/config", "GET", signal);
+    const parsed = z.object({ bank_id: z.string(), dahlia_images: z.object({ provider: z.literal("databricks"), model: z.string(),
+      enabled: z.literal(true), max_count: z.number(), max_bytes: z.number(), max_per_chunk: z.literal(1),
+      max_completion_tokens: z.literal(4096), timeout: z.literal(60), retries: z.literal(0) }) }).safeParse(raw);
+    if (!parsed.success || parsed.data.bank_id !== bank || parsed.data.dahlia_images.model !== settings.model
+      || parsed.data.dahlia_images.max_count < settings.maxCount || parsed.data.dahlia_images.max_bytes < settings.maxBytes) {
+      throw new HindsightError("memory_images_unconfigured");
+    }
+  }
+  matchesImages(stored: Awaited<ReturnType<HindsightClient["document"]>>, document: MemoryDocument) {
+    const images = document.source.images!;
+    return !!stored && stored.original_text === document.retainedText && (stored.attachments?.length ?? 0) === new Set(images.entries.map((entry) => entry.hash)).size
+      && images.entries.every((entry) => stored.attachments?.some((attachment) => attachment.id === entry.attachmentId
+        && attachment.hash === entry.hash && attachment.byte_size === entry.bytes));
+  }
   async ingestionPolicy(bank: string, signal: AbortSignal) {
     const result = z.object({ bank_id: z.string(), dahlia_ingestion_policy: z.string().regex(/^[0-9a-f]{64}$/) })
       .safeParse(await this.request(bank, "/config", "GET", signal));
@@ -109,7 +127,7 @@ export class HindsightClient {
     const raw = await this.request(bank, `/documents/${encodeURIComponent(id)}`, "GET", signal, undefined, true);
     if (raw === null) return null;
     const result = z.object({ id: z.string(), bank_id: z.string(), original_text: z.string().nullable(),
-      memory_unit_count: z.number().int().nonnegative(), retain_params: z.object({ metadata: z.record(z.string(), z.unknown()).optional() }).nullish() }).parse(raw);
+      attachments: z.array(attachmentSchema).nullish(), memory_unit_count: z.number().int().nonnegative(), retain_params: z.object({ metadata: z.record(z.string(), z.unknown()).optional() }).nullish() }).parse(raw);
     if (result.id !== id || result.bank_id !== bank) throw new HindsightError("memory_document_mismatch");
     return result;
   }
@@ -121,9 +139,9 @@ export class HindsightClient {
   async retain(bank: string, document: MemoryDocument, operationId: string, signal: AbortSignal, personal = false, policy?: string) {
     const tags = document.source.projectId ? [`project:${document.source.projectId}`] : [];
     const result = await this.request(bank, "/memories", "POST", signal, { async: true, operation_id: operationId,
-      items: [{ content: document.content, document_id: document.id, timestamp: document.timestamp,
+      items: [{ content: document.retainContent ?? document.content, document_id: document.id, timestamp: document.timestamp,
         context: `${personal ? PERSONAL_MEMORY_MISSION : MEMORY_MISSION} Source kind: ${document.source.kind}.`,
-        metadata: { ...(policy ? { dahlia_expected_ingestion_policy: policy } : {}), source_kind: document.source.kind, source_id: document.source.id, source_revision: document.source.revision },
+        metadata: { ...(document.source.images ? { dahlia_image_manifest: canonicalJson(document.source.images), dahlia_images: "1" } : {}), ...(policy ? { dahlia_expected_ingestion_policy: policy } : {}), source_kind: document.source.kind, source_id: document.source.id, source_revision: document.source.revision },
         tags, observation_scopes: [[], ...(tags.length ? [tags] : [])], update_mode: "replace" }] });
     return operationSchema.parse(result).operation_id;
   }
@@ -175,7 +193,7 @@ export class HindsightClient {
   async pageFact(bank: string, id: string, signal: AbortSignal) {
     const raw = await this.request(bank, `/memories/${encodeURIComponent(id)}`, "GET", signal, undefined, true);
     const parsed = z.object({ id: z.string(), text: z.string(), state: z.string(), type: z.string(), updated_at: z.iso.datetime({ offset: true }),
-      document_id: z.string().nullish(), source_memory_ids: z.array(z.string()).default([]), metadata: z.record(z.string(), z.unknown()),
+      document_id: z.string().nullish(), chunk_id: z.string().nullish(), attachments: z.array(attachmentSchema).nullish(), source_memory_ids: z.array(z.string()).default([]), metadata: z.record(z.string(), z.unknown()),
     }).safeParse(raw);
     return parsed.success && parsed.data.id === id && parsed.data.state === "valid" ? parsed.data : null;
   }
@@ -199,8 +217,8 @@ export class HindsightClient {
     const chunk = z.object({ bank_id: z.string(), document_id: z.string(), chunk_text: z.string() }).parse(raw);
     return chunk.bank_id === bank ? { documentId: chunk.document_id, text: chunk.chunk_text } : null;
   }
-  async factDocuments(bank: string, id: string, signal: AbortSignal, chunks?: Map<string, string[]>): Promise<string[]> {
-    const schema = z.object({ document_id: z.string().nullish(), chunk_id: z.string().nullish(), state: z.string(), source_memory_ids: z.array(z.string()).optional() });
+  async factDocuments(bank: string, id: string, signal: AbortSignal, chunks?: Map<string, string[]>, validate?: (id: string, fact: { attachments?: z.infer<typeof attachmentSchema>[] | null; metadata?: Record<string, unknown> | null }) => Promise<boolean>): Promise<string[]> {
+    const schema = z.object({ attachments: z.array(attachmentSchema).nullish(), metadata: z.record(z.string(), z.unknown()).nullish(), document_id: z.string().nullish(), chunk_id: z.string().nullish(), state: z.string(), source_memory_ids: z.array(z.string()).optional() });
     const raw = await this.request(bank, `/memories/${encodeURIComponent(id)}`, "GET", signal, undefined, true);
     if (raw === null) return [];
     const parsedFact = schema.safeParse(raw);
@@ -219,6 +237,7 @@ export class HindsightClient {
       }
     }
     for (const source of sources) {
+      if (validate && !await validate(source.document_id!, source)) return [];
       if (chunks && source.chunk_id) chunks.set(source.document_id!, [...new Set([source.chunk_id, ...(chunks.get(source.document_id!) ?? [])])]);
     }
     return [...new Set(sources.map((source) => source.document_id!))];
