@@ -40,7 +40,9 @@
             }
         }
 
-        @Test(arguments: ["v41_vaultAISettingsBackfill", "v45_workspaceLiveTranscriptDraft", "v46_workspacePersonalUser"])
+        @Test(arguments: [
+            "v41_vaultAISettingsBackfill", "v45_workspaceLiveTranscriptDraft", "v46_workspacePersonalUser", "v47_orphanedRecordingRecoveryState",
+        ])
         func releasedSchemaUpgradePreservesLiteralNotes(migration: String) async throws {
             let queue = try DatabaseQueue(configuration: AppDatabaseManager.configuration())
             try AppDatabaseManager.migrator.migrate(queue, upTo: migration)
@@ -408,9 +410,17 @@
             #expect(try await persistence.archives(workspaceID: workspaceID).first?.2.contains("private before move\nlate input") == true)
         }
 
-        @Test func v47UpgradePreservesDocumentRelationshipsAndBytes() throws {
+        @Test(arguments: [false, true])
+        func v47UpgradePreservesDocumentRelationshipsAndBytes(predatesRecordingRecovery: Bool) throws {
             let queue = try DatabaseQueue(configuration: AppDatabaseManager.configuration())
             try AppDatabaseManager.migrator.migrate(queue, upTo: "v47_documents")
+            if predatesRecordingRecovery {
+                // Disposable fixture for a Documents build made before the independent main migration.
+                try queue.write { db in
+                    try db.execute(sql: "DROP TABLE orphaned_recording_recoveries")
+                    try db.execute(sql: "DELETE FROM grdb_migrations WHERE identifier = 'v47_orphanedRecordingRecoveryState'")
+                }
+            }
             let workspaceID = UUID.v7(), meetingID = UUID.v7(), recoveryID = UUID.v7(), copyID = UUID.v7(), date = Date()
             try queue.write { db in
                 try WorkspaceRecord(id: workspaceID, name: "Old", createdAt: date, lastOpenedAt: date).insert(db)
@@ -440,6 +450,8 @@
                 #expect(try DocumentUpdateRecord.fetchOne(db)?.documentId == document.id)
                 #expect(try DocumentRecoveryRecord.fetchOne(db, key: recoveryID)?.documentId == document.id)
                 #expect(try DocumentPrivateCopyRecord.fetchOne(db, key: copyID)?.workspaceId == workspaceID)
+                #expect(try db.tableExists("orphaned_recording_recoveries"))
+                #expect(try AppDatabaseManager.migrator.hasCompletedMigrations(db))
                 #expect(try Row.fetchAll(db, sql: "PRAGMA foreign_key_check").isEmpty)
             }
         }

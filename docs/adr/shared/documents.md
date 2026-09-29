@@ -38,6 +38,8 @@ Desktop / Web の開始と明示的な `/retry` は編集を送り切ってか�
 
 Desktop v0.22.0 は v45、v0.23.0〜v0.24.1 は v46 まで配布済み。v1〜v46 の登録名・順序・処理と呼び出し先を保持し、新しい forward migration だけを追加する。旧文書の未配布という記述は過去の統合時点の記録である。Server は未リリースのため Drizzle baseline / snapshot / manifest を整合させて統合できるが、既存 DB の自動消去・履歴書換えはしない。
 
+main との統合時に、独立して登録された `v47_orphanedRecordingRecoveryState` と `v47_documents` の完全な識別子・処理を双方保持する。録音復旧、Documents、`v48_independentDocuments`、`v49_workspaceImportDestinations` の順で登録し、既存識別子を番号だけの理由で変更しない。録音復旧 v47 適用済み DB と、その migration がまだ存在しなかった Documents 開発 DB の双方から、未適用 migration だけを追加して更新する。
+
 Server / Web / Desktop を `sync.version = 7` へ一括更新し、`documents: { version: 1 }` を追加する。Node / Workers 共通で Documents を提供し、要約の runtime 対応範囲は維持する。TypeScript は当面 `apps/server` が所有し、既存 Vite / tsup で Desktop 同梱資材を生成する。root workspace は追加しない。
 
 依存追加は `yjs`、`@tiptap/core`、`@tiptap/react`、`@tiptap/pm`、`@tiptap/starter-kit`、`@tiptap/extension-collaboration`、`@tiptap/extension-unique-id`、`@tiptap/y-tiptap`。バージョンを固定し、同梱ライセンスと生成物の再現性を検査する。

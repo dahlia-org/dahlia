@@ -354,6 +354,7 @@ final class AppDatabaseManager: Sendable {
             try OrphanedRecordingRecoveryRecord.createTableIfNeeded(in: db)
         }
 
+        // Both v47 identifiers were registered independently. Keep their complete names and bodies unchanged.
         migrator.registerMigration("v47_documents") { db in
             try DocumentsMigration.migrate(in: db)
         }
