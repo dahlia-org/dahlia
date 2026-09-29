@@ -556,3 +556,89 @@ CREATE VIEW "app"."meeting_images" WITH (security_invoker = true) AS (
   FROM app.meeting_attachments m JOIN app.files f ON f.file_id = m.file_id AND f.workspace_id = m.workspace_id
   WHERE f.metadata ->> 'source' = 'screenshot'
 );
+--> statement-breakpoint
+CREATE TABLE "app"."documents" (
+	"id" uuid PRIMARY KEY,
+	"workspace_id" uuid NOT NULL,
+	"meeting_id" uuid NOT NULL UNIQUE,
+	"schema_version" integer DEFAULT 1 NOT NULL,
+	"generation" uuid NOT NULL,
+	"revision" integer DEFAULT 0 NOT NULL,
+	"checkpoint_revision" integer DEFAULT 0 NOT NULL,
+	"checkpoint" text NOT NULL,
+	"text" text NOT NULL,
+	"projection_revision" integer DEFAULT 0 NOT NULL,
+	"encrypted_payload" text,
+	"created_at" timestamp NOT NULL,
+	"updated_at" timestamp NOT NULL,
+	CONSTRAINT "document_meeting_id" CHECK ("id" = "meeting_id"),
+	CONSTRAINT "document_watermarks" CHECK ("projection_revision" = "revision" AND "checkpoint_revision" <= "revision")
+);
+--> statement-breakpoint
+ALTER TABLE "app"."documents" ENABLE ROW LEVEL SECURITY;--> statement-breakpoint
+CREATE TABLE "app"."document_presence" (
+	"id" uuid PRIMARY KEY,
+	"document_id" uuid NOT NULL,
+	"workspace_id" uuid NOT NULL,
+	"user_id" uuid NOT NULL,
+	"expires_at" timestamp NOT NULL
+);
+--> statement-breakpoint
+ALTER TABLE "app"."document_presence" ENABLE ROW LEVEL SECURITY;--> statement-breakpoint
+CREATE TABLE "app"."document_recoveries" (
+	"id" uuid PRIMARY KEY,
+	"document_id" uuid NOT NULL,
+	"workspace_id" uuid NOT NULL,
+	"blocks" jsonb NOT NULL,
+	"reason" text NOT NULL,
+	"encrypted_payload" text,
+	"created_at" timestamp NOT NULL
+);
+--> statement-breakpoint
+ALTER TABLE "app"."document_recoveries" ENABLE ROW LEVEL SECURITY;--> statement-breakpoint
+CREATE TABLE "app"."document_updates" (
+	"document_id" uuid,
+	"workspace_id" uuid NOT NULL,
+	"revision" integer,
+	"update" text NOT NULL,
+	"encrypted_payload" text,
+	"created_at" timestamp NOT NULL,
+	CONSTRAINT "document_updates_pkey" PRIMARY KEY("document_id","revision")
+);
+--> statement-breakpoint
+ALTER TABLE "app"."document_updates" ENABLE ROW LEVEL SECURITY;--> statement-breakpoint
+ALTER TABLE "jobs"."summary" ADD COLUMN "notes_snapshot" jsonb;--> statement-breakpoint
+CREATE INDEX "documents_workspace_id" ON "app"."documents" ("workspace_id","id");--> statement-breakpoint
+CREATE INDEX "document_presence_expiry" ON "app"."document_presence" ("expires_at");--> statement-breakpoint
+CREATE INDEX "document_recoveries_document_id" ON "app"."document_recoveries" ("document_id");--> statement-breakpoint
+ALTER TABLE "app"."documents" ADD CONSTRAINT "documents_workspace_id_workspaces_workspace_id_fkey" FOREIGN KEY ("workspace_id") REFERENCES "app"."workspaces"("workspace_id") ON DELETE CASCADE;--> statement-breakpoint
+ALTER TABLE "app"."documents" ADD CONSTRAINT "documents_meeting_id_meetings_meeting_id_fkey" FOREIGN KEY ("meeting_id") REFERENCES "app"."meetings"("meeting_id") ON DELETE CASCADE;--> statement-breakpoint
+ALTER TABLE "app"."document_presence" ADD CONSTRAINT "document_presence_document_id_documents_id_fkey" FOREIGN KEY ("document_id") REFERENCES "app"."documents"("id") ON DELETE CASCADE;--> statement-breakpoint
+ALTER TABLE "app"."document_presence" ADD CONSTRAINT "document_presence_workspace_id_workspaces_workspace_id_fkey" FOREIGN KEY ("workspace_id") REFERENCES "app"."workspaces"("workspace_id") ON DELETE CASCADE;--> statement-breakpoint
+ALTER TABLE "app"."document_presence" ADD CONSTRAINT "document_presence_user_id_user_id_fkey" FOREIGN KEY ("user_id") REFERENCES "auth"."user"("id") ON DELETE CASCADE;--> statement-breakpoint
+ALTER TABLE "app"."document_recoveries" ADD CONSTRAINT "document_recoveries_document_id_documents_id_fkey" FOREIGN KEY ("document_id") REFERENCES "app"."documents"("id") ON DELETE CASCADE;--> statement-breakpoint
+ALTER TABLE "app"."document_recoveries" ADD CONSTRAINT "document_recoveries_workspace_id_workspaces_workspace_id_fkey" FOREIGN KEY ("workspace_id") REFERENCES "app"."workspaces"("workspace_id") ON DELETE CASCADE;--> statement-breakpoint
+ALTER TABLE "app"."document_updates" ADD CONSTRAINT "document_updates_document_id_documents_id_fkey" FOREIGN KEY ("document_id") REFERENCES "app"."documents"("id") ON DELETE CASCADE;--> statement-breakpoint
+ALTER TABLE "app"."document_updates" ADD CONSTRAINT "document_updates_workspace_id_workspaces_workspace_id_fkey" FOREIGN KEY ("workspace_id") REFERENCES "app"."workspaces"("workspace_id") ON DELETE CASCADE;--> statement-breakpoint
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+--> statement-breakpoint
+ALTER TABLE "app"."documents" ADD CONSTRAINT "document_workspace_id_unique" UNIQUE("workspace_id","id");--> statement-breakpoint
+ALTER TABLE "app"."documents" ADD CONSTRAINT "document_parent_workspace_fk" FOREIGN KEY ("workspace_id","meeting_id") REFERENCES "app"."meetings"("workspace_id","meeting_id") ON DELETE CASCADE ON UPDATE CASCADE;--> statement-breakpoint
+ALTER TABLE "app"."document_presence" ADD CONSTRAINT "documentPresence_workspace_fk" FOREIGN KEY ("workspace_id","document_id") REFERENCES "app"."documents"("workspace_id","id") ON DELETE CASCADE ON UPDATE CASCADE;--> statement-breakpoint
+ALTER TABLE "app"."document_recoveries" ADD CONSTRAINT "documentRecovery_workspace_fk" FOREIGN KEY ("workspace_id","document_id") REFERENCES "app"."documents"("workspace_id","id") ON DELETE CASCADE ON UPDATE CASCADE;--> statement-breakpoint
+ALTER TABLE "app"."document_updates" ADD CONSTRAINT "documentUpdate_workspace_fk" FOREIGN KEY ("workspace_id","document_id") REFERENCES "app"."documents"("workspace_id","id") ON DELETE CASCADE ON UPDATE CASCADE;

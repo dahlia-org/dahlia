@@ -52,7 +52,7 @@ struct SummaryPromptContext {
         """
     }
 
-    private static func xmlEscaped(_ value: String) -> String {
+    static func xmlEscaped(_ value: String) -> String {
         value
             .replacing("&", with: "&amp;")
             .replacing("<", with: "&lt;")

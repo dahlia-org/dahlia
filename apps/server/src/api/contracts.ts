@@ -1,3 +1,4 @@
+import * as D from "../documents/model";
 import { pageGetSchema, pageListSchema, pageSchema, pageListResultSchema } from "../memory/pages-model";
 import { memoryResultSchema, memoryScopeSchema, memoryConfigureSchema, memoryListSchema, memoryGetSchema, memorySaveSchema, personalMemorySearchSchema, workspaceMemorySearchSchema } from "../memory/dahlia";
 import { workingMemorySettingsSchema, workingMemoryEditSchema, liveSelectionSchema, liveStatusSchema } from "../agent/context-model";
@@ -91,6 +92,7 @@ export const memoryUpdateBody = memoryCreateBody.omit({ id: true }).extend({ rev
 export const memoryDeleteQuery = z.object({ revision: z.string().regex(/^[1-9][0-9]*$/).refine((value) => Number.isSafeInteger(Number(value)), "Invalid revision"), explicit: z.literal("true") }).strict();
 
 export type OperationId =
+  "getDocumentEvents" | "getDocument" | "listDocuments" | "initializeDocument" | "exchangeDocument" | "listDocumentRecoveries" | "saveDocumentRecovery" | "getDocumentPresence" | "updateDocumentPresence" |
   "listKnowledgePages" | "getKnowledgePage" | "exportKnowledgePage" | "refreshKnowledgePage" |
   "memoryScopes" |
   "personalMemoryList" | "personalMemoryGet" | "personalMemorySave" | "personalMemoryUpdate" | "personalMemoryDelete" | "personalMemoryRecall" | "personalMemoryReflect" | "personalMemoryStatus" | "personalMemoryConfigure" |
@@ -134,6 +136,15 @@ export const contracts: Record<OperationId, RouteConfig & { operationId: string 
     members: z.array(z.object({ id: S.principalId, userId: S.principalId, role: z.string(), name: z.string(), email: z.string() })),
     teams: z.array(z.object({ id: S.principalId, name: z.string() })), hasMoreMembers: z.boolean(), hasMoreTeams: z.boolean(),
   })) }, { query: z.object({ membersOffset: z.string().regex(/^\d+$/).optional(), teamsOffset: z.string().regex(/^\d+$/).optional() }).strict() }, browser),
+  getDocument: route("get", "/api/v1/workspaces/{workspaceId}/documents/{documentId}", "getDocument", "Read the canonical document without creating it", { 200: json(D.documentEnvelopeSchema) }),
+  getDocumentEvents: route("get", "/api/v1/workspaces/{workspaceId}/documents/{documentId}/events", "getDocumentEvents", "Document revision invalidations; recover state over HTTP", { 200: { description: "Revision notifications without content", content: { "text/event-stream": { schema: z.string() } } } }),
+  listDocuments: route("get", "/api/v1/workspaces/{workspaceId}/documents", "listDocuments", "List document revisions independently of domain sync", { 200: json(D.documentListSchema) }, { query: z.object({ after: z.uuid().optional() }) }),
+  initializeDocument: route("post", "/api/v1/workspaces/{workspaceId}/documents/{documentId}", "initializeDocument", "Initialize on first edit; explicit legacy import only into an unedited document", { 200: json(D.documentEnvelopeSchema) }, body(D.documentInitializeSchema)),
+  exchangeDocument: route("post", "/api/v1/workspaces/{workspaceId}/documents/{documentId}/sync", "exchangeDocument", "Merge Yjs updates despite pending local edits; replay is idempotent", { 200: json(D.documentExchangeResultSchema) }, body(D.documentExchangeSchema)),
+  listDocumentRecoveries: route("get", "/api/v1/workspaces/{workspaceId}/documents/{documentId}/recoveries", "listDocumentRecoveries", "Read preserved deleted blocks", { 200: json(D.documentRecoveryListSchema) }, { query: z.object({ after: z.uuid().optional() }) }),
+  saveDocumentRecovery: route("post", "/api/v1/workspaces/{workspaceId}/documents/{documentId}/recoveries", "saveDocumentRecovery", "Preserve shared content lost to concurrent deletion", { 200: json(z.object({})) }, body(D.documentRecoverySchema)),
+  getDocumentPresence: route("get", "/api/v1/workspaces/{workspaceId}/documents/{documentId}/presence", "getDocumentPresence", "List current editors", { 200: json(D.documentPresenceSchema) }),
+  updateDocumentPresence: route("post", "/api/v1/workspaces/{workspaceId}/documents/{documentId}/presence", "updateDocumentPresence", "Renew an editing session for fifteen seconds", { 200: json(D.documentPresenceSchema) }, body(D.documentPresenceRequestSchema)),
   getCapabilities: route("get", "/api/v1/capabilities", "getCapabilities", "Discover feature versions; unsupported features are omitted", { 200: json(S.capabilities) }),
   listKnowledgePages: route("get", "/api/v1/workspaces/{workspaceId}/memory/pages", "listKnowledgePages", "List validated standard Knowledge Pages; literal search, 20 per page", { 200: json(pageListResultSchema) }, { params: pageListSchema.pick({ workspaceId: true }), query: pageListSchema.omit({ workspaceId: true }) }, browser),
   getKnowledgePage: route("get", "/api/v1/workspaces/{workspaceId}/memory/pages/{pageId}", "getKnowledgePage", "Read a generated summary and canonical sources; unavailable pages omit all generated content", { 200: json(pageSchema) }, { params: pageGetSchema }, browser),

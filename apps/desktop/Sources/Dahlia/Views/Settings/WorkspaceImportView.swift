@@ -28,6 +28,7 @@ struct WorkspaceImportView: View {
             VStack(alignment: .leading, spacing: 16) {
                 Text(L10n.workspaceImportDestination).font(.title2)
                 Text(pending.workspace.name).font(.headline)
+                Text(L10n.documentMigrationPrivate).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
                 Text(L10n.workspaceImportDescription).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
                 Picker(L10n.workspaceImportDestination, selection: $useExisting) {
                     Text(L10n.workspaceImportExisting).tag(true)

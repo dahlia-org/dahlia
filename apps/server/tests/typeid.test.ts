@@ -87,4 +87,30 @@ describe("public TypeIDs", () => {
     expect(readFileSync(new URL("../src/public-id-contract.json", import.meta.url), "utf8"))
       .toBe(readFileSync(new URL("../../desktop/Sources/DahliaRuntimeSupport/Resources/PublicIDContract.json", import.meta.url), "utf8"));
   });
+  it.each(["declared", "streamed"])("rejects %s oversized presence bodies before dispatch", async (size) => {
+    const app = new Hono();
+    let dispatched = false, reads = 0, cancelled = false;
+    app.post("/api/v1/workspaces/:workspace/documents/:document/presence", (context) => {
+      dispatched = true; return context.json({ items: [] });
+    });
+    installPublicIDs(app);
+    const chunk = new Uint8Array(1024 * 1024).fill(32);
+    const body = new ReadableStream<Uint8Array>({
+      pull(controller) {
+        if (++reads <= 10) controller.enqueue(chunk);
+        else { controller.enqueue(new TextEncoder().encode("{}")); controller.close(); }
+      },
+      cancel() { cancelled = true; },
+    }, { highWaterMark: 0 });
+    const url = `http://localhost/api/v1/workspaces/${encodeId("workspace", uuid)}/documents/${encodeId("document", uuid)}/presence`;
+    const response = await app.request(new Request(url, { method: "POST", body, ...{ duplex: "half" },
+      headers: size === "declared" ? { "content-length": String(8 * 1024 * 1024 + 1) } : {},
+    }));
+    expect(response.status).toBe(413);
+    expect(await response.json()).toMatchObject({ code: "request_too_large" });
+    expect(dispatched).toBe(false);
+    expect(reads).toBe(size === "declared" ? 0 : 9);
+    if (size === "streamed") expect(cancelled).toBe(true);
+    else await body.cancel();
+  });
 });

@@ -538,3 +538,11 @@ New Server Workspace batch sessions enqueue a durable `recording_archives` job a
 ## Organization-owned Server Workspaces
 
 [Organization ownership ADR](docs/adr/shared/organization-vaults.md) supersedes personal Server Workspace ownership and read-only sharing. Organization membership and Workspace access are separate; admin manages the Workspace and permissions, admin/editor writes content, and viewer reads. Header/accounts share Better Auth browser sessions while retaining their identity-entry and machine-client boundaries. The sync ledger, search projection work, and encryption keys are Workspace-scoped. Local migration reuses relocation and the durable sync queue, preserving recordings and newer edits.
+
+## Collaborative meeting Documents
+
+[Documents ADR](docs/adr/shared/documents.md) defines meeting Notes as Yjs checkpoint plus update logs. `apps/server/src/documents` owns portable operations, batching, and recovery detection. Web retains pending changes in memory; Desktop commits deltas to SQLite before acknowledging local persistence, then processes projections in a dedicated JavaScriptCore thread. Document synchronization runs independently of domain transactions and recording stop. Server Node and Workers use the same authorized store and encryption layer.
+
+Legacy Server Notes stay private until explicit Workspace publication. Local Account conversion preserves literal text and dates. Protected pending, private, and recovery data cannot be evicted; refetchable shared state participates in the 128 MiB cache. Remote deletion archives protected local state before removing the parent. Local-to-Server moves preserve documents privately by default. Server summaries capture an internal encrypted `notesSnapshot` at acceptance. Presence is a DB-backed expiring session list; there are no block locks.
+
+Desktop migration v47 adds the document tables without changing released v1–v46. The prerelease Server baseline includes the new schema. Generated assets and license notices are verified by `pnpm documents:check` from `apps/server`; ordinary Swift builds use committed resources.

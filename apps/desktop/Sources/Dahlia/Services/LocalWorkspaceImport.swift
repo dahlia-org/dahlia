@@ -29,6 +29,7 @@ enum LocalWorkspaceImport {
             return try DahliaAccountConnectionRecord.fetchOne(db, key: destination.connectionId)
         }
         guard let connection, let origin = URL(string: connection.origin) else { throw LocalWorkspaceImportError.unavailable }
+        try await DocumentPersistence(dbQueue: dbQueue).prepareAccountTransfer(workspaceID: sourceId)
         let worker = SyncWorker(dbQueue: dbQueue, apiClient: api)
         try await worker.synchronizeForTransfer(workspaceId: destination.workspaceId, connectionId: destination.connectionId)
         screenshots.retainOriginals(workspaceIds: [sourceId], dbQueue: dbQueue)
@@ -106,6 +107,7 @@ enum LocalWorkspaceImport {
         in db: Database
     ) throws -> WorkspaceRecord {
         try validate(sourceId: sourceId, destination: destination, in: db)
+        try DocumentPersistence.preservePrivateCopies(workspaceID: sourceId, in: db)
         guard let target = try WorkspaceRecord.fetchOne(db, key: destination.workspaceId), target.syncPullCursor != nil else {
             throw LocalWorkspaceImportError.unavailable
         }
@@ -141,6 +143,7 @@ enum LocalWorkspaceImport {
         try record.insert(db)
         try ScreenshotContentProvider.installTransfers(files, workspaceId: sourceId, in: db)
         try WorkspaceRelocation.move(moves, in: db)
+        try db.execute(sql: "UPDATE document_local_archives SET workspace_id = ? WHERE workspace_id = ?", arguments: [target.id, sourceId])
         // A Local revision is not a Server base revision. Only the imported entities are new.
         for (item, _) in moves {
             try db.execute(sql: "DELETE FROM sync_entity_state WHERE workspace_id = ? AND entityId = ?", arguments: [target.id, item.id])

@@ -45,9 +45,38 @@ enum RemoteChangeApplier {
         dbQueue: DatabaseQueue,
         expectedMutationGeneration: Int64? = nil,
         incrementalContext: RemoteChangePolicy.Context? = nil,
+        removesWorkspace: Bool = false,
         _ body: () async throws -> Bool
     ) async throws -> Bool {
-        guard !meetingIds.isEmpty else { return try await body() }
+        guard !meetingIds.isEmpty || removesWorkspace else { return try await body() }
+        guard let lease = await DocumentEditorModel.reserveRemoval(
+            meetingIDs: meetingIds,
+            dbQueue: dbQueue,
+            workspaceID: removesWorkspace ? workspaceId : nil
+        ) else { return false }
+        do {
+            let result = try await stageAudioDeletion(
+                meetingIds: meetingIds, workspaceId: workspaceId, expectedConnectionId: expectedConnectionId,
+                dbQueue: dbQueue, expectedMutationGeneration: expectedMutationGeneration,
+                incrementalContext: incrementalContext, body
+            )
+            await DocumentEditorModel.releaseRemoval(lease)
+            return result
+        } catch {
+            await DocumentEditorModel.releaseRemoval(lease)
+            throw error
+        }
+    }
+
+    private static func stageAudioDeletion(
+        meetingIds: Set<UUID>,
+        workspaceId: UUID,
+        expectedConnectionId: UUID,
+        dbQueue: DatabaseQueue,
+        expectedMutationGeneration: Int64?,
+        incrementalContext: RemoteChangePolicy.Context?,
+        _ body: () async throws -> Bool
+    ) async throws -> Bool {
         let preflight = try await withCurrentAssociation(
             workspaceId: workspaceId,
             expectedConnectionId: expectedConnectionId,
@@ -707,6 +736,10 @@ enum RemoteChangeApplier {
                               try !RecordingSessionRecord.hasActiveRecording(workspaceId: workspaceId, in: db)
                         else { return false }
                         for id in batch {
+                            if deletion.sql.hasPrefix("DELETE FROM meetings") { try DocumentRetention.archiveBeforeRemoteDeletion(
+                                meetingID: id,
+                                in: db
+                            ) }
                             let arguments: StatementArguments = deletion.workspaceScoped ? [id, workspaceId] : [id]
                             try db.execute(sql: deletion.sql, arguments: arguments)
                         }
@@ -824,7 +857,8 @@ enum RemoteChangeApplier {
             workspaceId: workspaceId,
             expectedConnectionId: expectedConnectionId,
             dbQueue: dbQueue,
-            expectedMutationGeneration: expectedMutationGeneration
+            expectedMutationGeneration: expectedMutationGeneration,
+            removesWorkspace: true
         ) {
             try await withCurrentAssociation(
                 workspaceId: workspaceId,
@@ -835,6 +869,7 @@ enum RemoteChangeApplier {
                 guard try !SyncTransactionQueue.hasPending(workspaceId: workspaceId, in: db),
                       try !RecordingSessionRecord.hasActiveRecording(workspaceId: workspaceId, in: db)
                 else { return false }
+                guard try !DocumentRetention.hasPrivateData(workspaceID: workspaceId, in: db) else { return false }
                 try db.execute(
                     sql: "DELETE FROM workspaces WHERE id = ? AND syncRole = 'viewer'",
                     arguments: [workspaceId]
@@ -849,6 +884,7 @@ enum RemoteChangeApplier {
         case .project:
             try db.execute(sql: "DELETE FROM projects WHERE id = ? AND workspace_id = ?", arguments: [id, workspaceId])
         case .meeting:
+            try DocumentRetention.archiveBeforeRemoteDeletion(meetingID: id, in: db)
             try db.execute(sql: "DELETE FROM meetings WHERE id = ? AND workspace_id = ?", arguments: [id, workspaceId])
         case .summary:
             try db.execute(sql: "DELETE FROM summaries WHERE meetingId = ?", arguments: [id])

@@ -6,11 +6,11 @@ import GRDB
 /// Copies only portable workspace content into a trusted current-schema database.
 /// Keep this list explicit: adding a table must not silently export accounts or runtime state.
 enum WorkspaceBackupTransfer {
-    static let workspaceTables = ["files", "projects", "instructions"]
+    static let workspaceTables = ["files", "projects", "instructions", "document_local_archives"]
     static let meetingTables = [
         "recording_sessions", "transcript_segments", "notes", "meeting_attachments", "summaries", "action_items",
         "summary_exports", "meeting_conversation_metrics", "meeting_conversation_source_metrics", "meeting_tags",
-        "summary_bodies",
+        "summary_bodies", "documents", "document_updates", "document_recoveries", "document_private_copies", "document_legacy_imports",
     ]
     static let referenceTables = [
         "transcript_segment_bodies": ("segmentId", "transcript_segments"),
@@ -22,6 +22,14 @@ enum WorkspaceBackupTransfer {
         "meetingId": "meetings", "sessionId": "recording_sessions", "recordingSessionId": "recording_sessions",
         "tagId": "tags",
     ]
+
+    private static func restoredDocumentValue(column: String) -> DatabaseValue? {
+        switch column {
+        case "checkpointSequence", "projectionSequence": 0.databaseValue
+        case "generation": .null
+        default: nil
+        }
+    }
 
     static func copy(
         workspaceId: UUID,
@@ -42,6 +50,9 @@ enum WorkspaceBackupTransfer {
         if remapIDs {
             for table in tables where try db.columns(in: table).contains(where: { $0.name == "id" && $0.type == "BLOB" }) {
                 let ids = try UUID.fetchAll(db, sql: "SELECT id FROM backup_source.\(table) WHERE \(predicate(table))", arguments: [workspaceId])
+                if table == "documents" { mappings[table] = mappings["meetings"]
+                    continue
+                }
                 mappings[table] = Dictionary(uniqueKeysWithValues: ids.map { ($0.databaseValue, UUID.v7().databaseValue) })
             }
         }
@@ -65,8 +76,9 @@ enum WorkspaceBackupTransfer {
             while let row = try rows.next() {
                 // New workspaces do not inherit export destinations; local output files are never included.
                 if table == "summary_exports", remapIDs || row["type"] as String == SummaryExportType.workspace.rawValue { continue }
-                let columns = Array(row.columnNames)
+                let columns = Array(row.columnNames).filter { !(table == "document_updates" && $0 == "id") }
                 let values = try columns.map { column -> DatabaseValue in
+                    if table == "documents", let value = restoredDocumentValue(column: column) { return value }
                     if table == "files" {
                         if column == "uri" || column == "remoteReference" { return .null }
                         if column == "localReference" {
@@ -85,6 +97,7 @@ enum WorkspaceBackupTransfer {
                     } else {
                         references[column]
                     }
+                    if table == "document_local_archives", column == "meetingId" { return mappings["meetings"]?[value] ?? value }
                     if let referencedTable, let mapping = mappings[referencedTable] {
                         guard let mapped = mapping[value] else { throw BackupServiceError.invalidBackup }
                         return mapped
@@ -191,7 +204,7 @@ enum WorkspaceBackupTransfer {
     static func restoreRetainedAudio(_ retained: [(table: String, rows: [Row])], in db: Database) throws {
         for (table, rows) in retained {
             for row in rows {
-                let columns = Array(row.columnNames)
+                let columns = Array(row.columnNames).filter { !(table == "document_updates" && $0 == "id") }
                 try insert(columns: columns, values: columns.map { row[$0] as DatabaseValue }, table: table, into: db)
             }
         }

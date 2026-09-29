@@ -1,4 +1,5 @@
 import { objectPath, parseObjectPath } from "../object-url";
+import { MeetingNotes, PendingDocumentNotice } from "./Documents";
 import { DahliaMemoryPage } from "./DahliaMemory";
 import { WorkspaceMemory } from "./WorkspaceMemory";
 import { WorkspaceSharing } from "./WorkspaceSharing";
@@ -1123,6 +1124,7 @@ export function SyncedMeeting({ workspaceId, meetingId, resolvedMeeting }: { wor
       <DataError error={workspaceQuery.error} retry={workspaceQuery.reload} />
       <DataError error={projectsQuery.error} retry={projectsQuery.reload} />
       {meeting && <MeetingTabs
+        notes={<MeetingNotes key={meetingId} workspaceId={workspaceId} meetingId={meetingId} editable={workspace?.role === "admin" || workspace?.role === "editor"} />}
         summary={<>
           <DataError error={latestSummary.error} retry={latestSummary.reload} />
           <SummaryHistory key={meetingId} meetingId={meetingId} latest={latestSummary.data} selected={selectedSummary} onSelect={setSelectedSummary} />
@@ -2148,6 +2150,7 @@ export function App({ brand = defaultBrand, extensions = [] }: AppProps) {
       <DataError error={detailQuery.error} retry={detailQuery.reload} />
       {!detailQuery.error && <p className="content-empty">{uiText("Loading…", "読み込み中…")}</p>}
     </>}
+    <PendingDocumentNotice userId={session.user.id} />
     {page}
   </AppShell>;
 }

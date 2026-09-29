@@ -1732,3 +1732,25 @@
 
 "recovery.recordings" = "復旧した録音";
 "recovery.recording" = "復旧した録音";
+
+"documentSavedLocally" = "端末に保存済み";
+"documentSynced" = "同期済み";
+"documentSaving" = "保存中…";
+"documentSyncFailed" = "未同期です。編集内容はこの Mac に保持されています。";
+"documentSaveFailed" = "保存できませんでした。この画面を開いたまま編集内容をコピーしてください。";
+"documentPrivateLegacy" = "この Mac の旧 Notes（未公開）";
+
+"documentPublishTitle" = "この Mac の Notes を公開";
+"documentPublishAudience" = "以下の Notes を、この Workspace の閲覧者を含む全メンバーが Desktop と Web から読めるようにします。非公開コピーはこの Mac に残ります。";
+"documentPublishConflict" = "以下の会議には共有 Notes があるため取り込みませんでした。非公開コピーは保持しています。";
+"documentMigrationPrivate" = "Notes はこの Mac の非公開コピーとして保持します。共有や Server 要約への利用には、移行後に Workspace 設定から公開してください。";
+"document.recovery.title" = "削除された段落の復元用コピー";
+"document.restore" = "新しい段落として挿入";
+"document.editing" = "編集中: ";
+"document.keepLocal" = "未送信の編集や非公開の Notes が残っています。Local Account へ移動して保全してください。";
+"document.bold" = "太字";
+"document.heading" = "見出し";
+"document.list" = "箇条書き";
+"document.undo" = "元に戻す";
+"document.redo" = "やり直す";
+"document.privateRecoverySaved" = "入力はこの Mac の復元用コピーに保存しました。Workspace 設定からコピーできます。";

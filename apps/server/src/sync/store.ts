@@ -1,3 +1,4 @@
+import { createDocumentStore } from "../documents/store";
 import { enqueueMemorySource } from "../memory/enqueue";
 import { memoryDocumentId } from "../memory/ids";
 import { DEFAULT_WORKSPACE_GENERATION_SETTINGS, type WorkspaceGenerationSettings } from "../workspace-generation-settings";
@@ -415,6 +416,10 @@ async function roleSupportsRls(db: PostgresDatabase): Promise<boolean> {
       "app.workspace_transfers",
       "app.meetings",
       "app.meeting_events",
+      "app.documents",
+      "app.document_updates",
+      "app.document_recoveries",
+      "app.document_presence",
       "app.transcripts",
       "app.transcript_segments",
       "app.transcript_patch_chunks",
@@ -666,7 +671,7 @@ function createIdentityStore(
     }
     for (const table of [schema.syncedProject, schema.syncedMeeting, schema.syncedFile,
       schema.meetingAttachment, schema.meetingEvent, schema.transcriptPatchChunk, schema.searchDocument,
-      schema.searchIndexJob, schema.imageAnalysisJob, schema.summaryJob]) {
+      schema.searchIndexJob, schema.imageAnalysisJob, schema.summaryJob, schema.document, schema.documentUpdate, schema.documentRecovery, schema.documentPresence]) {
       await db.update(table).set({ workspaceId: destinationWorkspaceId }).where(eq(table.workspaceId, sourceWorkspaceId));
     }
     for (const meeting of meetings) await enqueueMemoryMeeting(sourceWorkspaceId, meeting.id);
@@ -1823,6 +1828,8 @@ function createIdentityStore(
           await assertRevision(transaction, "meeting", operation.entityId, operation.baseRevision);
           await db.update(schema.syncedMeeting).set({ deletedAt: now, revision: sql`${schema.syncedMeeting.revision} + 1`, updatedAt: now })
             .where(writableMeeting(transaction.workspaceId, operation.entityId));
+          await db.update(schema.document).set({ generation: uuidV7() }).where(and(eq(schema.document.workspaceId, transaction.workspaceId), eq(schema.document.meetingId, operation.entityId)));
+          await db.delete(schema.documentPresence).where(eq(schema.documentPresence.documentId, operation.entityId));
           await insertMeetingEvent({ id: operation.id, workspaceId: transaction.workspaceId, meetingId: operation.entityId, kind: "meeting_deleted", occurredAt: now, receivedAt: now });
           // Cancel leases from every requester so restoring does not revive work started before deletion.
           if (searchBackend !== "sqlite") await db.execute(sql`select set_config('app.maintenance', 'meeting-retention', true), set_config('app.maintenance_workspace_id', ${transaction.workspaceId}, true)`);
@@ -2418,6 +2425,7 @@ function createIdentityStore(
   }
 
   return {
+    ...createDocumentStore(db, schema, identity, content, lockWorkspace, { read: readable, write: writeAccess }),
     workspaceTransferAudience,
     transferWorkspace,
     getWorkspaceRelocations,

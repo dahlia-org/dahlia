@@ -236,13 +236,13 @@ integration("PostgreSQL application store", () => {
     }
   });
 
-  it("fails readiness when meeting event FORCE RLS is missing", async () => {
+  it.each(["meeting_events", "documents", "document_updates", "document_recoveries", "document_presence"])("fails readiness when %s FORCE RLS is missing", async (table) => {
     expect(await createPostgresMeetingSyncStore(connection!.db).isAvailable()).toBe(true);
     try {
-      await connection!.db.execute(sql`ALTER TABLE app.meeting_events NO FORCE ROW LEVEL SECURITY`);
+      await connection!.db.execute(sql`ALTER TABLE app.${sql.identifier(table)} NO FORCE ROW LEVEL SECURITY`);
       expect(await createPostgresMeetingSyncStore(connection!.db).isAvailable()).toBe(false);
     } finally {
-      await connection!.db.execute(sql`ALTER TABLE app.meeting_events FORCE ROW LEVEL SECURITY`);
+      await connection!.db.execute(sql`ALTER TABLE app.${sql.identifier(table)} FORCE ROW LEVEL SECURITY`);
     }
     expect(await createPostgresMeetingSyncStore(connection!.db).isAvailable()).toBe(true);
   });

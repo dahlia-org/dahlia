@@ -1,3 +1,4 @@
+import type { DocumentStore as importDocumentStore } from "../documents/store";
 import type { WorkspaceGenerationSettings } from "../workspace-generation-settings";
 import type { CalendarEventSnapshot } from "./schemas";
 import type { TranscriptVersion } from "./transcript";
@@ -252,7 +253,7 @@ export interface WorkspaceTransferRecord {
 
 export interface GovernanceWorkspace { workspaceId: string; name: string; icon?: string | null; color?: string | null; revision: number; creatorId: string }
 
-export interface IdentitySyncStore {
+export interface IdentitySyncStore extends importDocumentStore {
   listGovernanceWorkspaces(organizationId: string, after?: string): Promise<{ items: GovernanceWorkspace[]; nextCursor: string | null }>;
   confirmWorkspaceDeletion(organizationId: string, workspaceId: string): Promise<GovernanceWorkspace & { changeCursor: string }>;
   forceDeleteWorkspace(organizationId: string, transaction: SyncTransaction, revision: number, changeCursor: string): Promise<SyncTransactionResponse>;

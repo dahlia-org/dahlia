@@ -1732,3 +1732,25 @@
 
 "recovery.recordings" = "Recovered Recordings";
 "recovery.recording" = "Recovered Recording";
+
+"documentSavedLocally" = "Saved on this Mac";
+"documentSynced" = "Synced";
+"documentSaving" = "Saving…";
+"documentSyncFailed" = "Not synced. Your edits remain on this Mac.";
+"documentSaveFailed" = "Could not save. Keep this view open and copy your edits.";
+"documentPrivateLegacy" = "Legacy Notes on this Mac (not shared)";
+
+"documentPublishTitle" = "Publish Notes from this Mac";
+"documentPublishAudience" = "The Notes listed below will be visible to every member of this Workspace, including viewers, on Desktop and Web. Private copies remain on this Mac.";
+"documentPublishConflict" = "These meetings already have shared Notes. Their private copies were retained.";
+"documentMigrationPrivate" = "Notes remain private on this Mac. After the move, publish them explicitly from Workspace settings to share them or include them in Server summaries.";
+"document.recovery.title" = "Preserved deleted paragraphs";
+"document.restore" = "Insert as new paragraphs";
+"document.editing" = "Editing: ";
+"document.keepLocal" = "Unsynced edits or private notes remain. Move this workspace to the Local Account to keep them.";
+"document.bold" = "Bold";
+"document.heading" = "Heading";
+"document.list" = "List";
+"document.undo" = "Undo";
+"document.redo" = "Redo";
+"document.privateRecoverySaved" = "Your input was saved in a recovery copy on this Mac, available in Workspace settings.";

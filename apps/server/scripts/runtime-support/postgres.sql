@@ -27,7 +27,8 @@ BEGIN
       AND connamespace IN ('app'::regnamespace, 'search'::regnamespace)
       AND conrelid IN ('app.projects'::regclass, 'app.meetings'::regclass,
         'app.transcript_patch_chunks'::regclass, 'app.recordings'::regclass,
-        'app.meeting_attachments'::regclass, 'search.documents'::regclass)
+        'app.meeting_attachments'::regclass, 'search.documents'::regclass, 'app.documents'::regclass,
+        'app.document_updates'::regclass, 'app.document_recoveries'::regclass, 'app.document_presence'::regclass)
   LOOP
     EXECUTE format('ALTER TABLE %s ALTER CONSTRAINT %I DEFERRABLE INITIALLY IMMEDIATE', membership.relation, membership.conname);
   END LOOP;
@@ -36,3 +37,8 @@ ALTER TABLE "crypto"."workspace_keys" FORCE ROW LEVEL SECURITY;--> statement-bre
 ALTER TABLE "app"."shared_memories" FORCE ROW LEVEL SECURITY;--> statement-breakpoint
 ALTER TABLE "app"."personal_memories" FORCE ROW LEVEL SECURITY;--> statement-breakpoint
 ALTER TABLE "search"."knowledge_pages" FORCE ROW LEVEL SECURITY;--> statement-breakpoint
+
+ALTER TABLE "app"."documents" FORCE ROW LEVEL SECURITY;--> statement-breakpoint
+ALTER TABLE "app"."document_updates" FORCE ROW LEVEL SECURITY;--> statement-breakpoint
+ALTER TABLE "app"."document_recoveries" FORCE ROW LEVEL SECURITY;--> statement-breakpoint
+ALTER TABLE "app"."document_presence" FORCE ROW LEVEL SECURITY;--> statement-breakpoint

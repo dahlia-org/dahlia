@@ -535,6 +535,7 @@ actor ServerSummaryService {
             if ready {
                 do {
                     try await synchronize(target, dbQueue)
+                    try await DocumentSyncService(dbQueue: dbQueue, api: client).flush(meetingID: target.meetingID)
                     return
                 } catch TextContentError.changed {
                     // Another pull or local mutation may own the Workspace; recheck its connection before retrying.

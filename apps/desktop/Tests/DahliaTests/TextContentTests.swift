@@ -1274,7 +1274,8 @@
             ])
             let provider = provider(fixture) { request in
                 let path = request.url!.path
-                if path.hasSuffix("/capabilities") { return (200, [:], Data("{\"sync\":{\"version\":6}}".utf8)) }
+                if path.contains("/documents/") { return (200, [:], Data(#"{"document":null}"#.utf8)) }
+                if path.hasSuffix("/capabilities") { return (200, [:], Data("{\"documents\":{\"version\":1},\"sync\":{\"version\":7}}".utf8)) }
                 if path.hasSuffix("/changes") {
                     let count = changeRequests.withLock { $0 += 1
                         return $0
@@ -1333,7 +1334,8 @@
                 try await repository.resolveWorkspacesForSignOut(connectionID: connectionId, disposition: .moveToLocalAccount, textContent: provider)
                 #expect(changeRequests.withLock { $0 } == 4)
                 #expect(try await fixture.queue.read { try WorkspaceRecord.fetchOne($0, key: fixture.workspaceId)?.accountConnectionId } == nil)
-                #expect(try await fixture.queue.read { try WorkspaceRecord.fetchOne($0, key: fixture.workspaceId)?.generationSettings.processing.location } == .local)
+                #expect(try await fixture.queue
+                    .read { try WorkspaceRecord.fetchOne($0, key: fixture.workspaceId)?.generationSettings.processing.location } == .local)
             }
         }
 
@@ -1345,7 +1347,8 @@
             #"{"sync":{"version":3}}"#,
             #"{"sync":{"version":4}}"#,
             #"{"sync":{"version":5}}"#,
-            #"{"sync":{"version":7}}"#,
+            #"{"sync":{"version":6}}"#,
+            #"{"sync":{"version":8}}"#,
         ])
         func incompatibleServerStopsMetadataSyncWithoutDiscardingExistingText(capabilities: String?) async throws {
             let fixture = try textFixture()
@@ -1412,7 +1415,7 @@
             let provider = provider(fixture) { request in
                 calls.withLock { $0.append(request.url!.path) }
                 if request.url!.path.hasSuffix("/capabilities") {
-                    return (200, [:], Data(#"{"sync":{"version":6},"futureFeature":{"enabled":true}}"#.utf8))
+                    return (200, [:], Data(#"{"documents":{"version":1},"sync":{"version":7},"futureFeature":{"enabled":true}}"#.utf8))
                 }
                 return (200, [:], payload)
             }

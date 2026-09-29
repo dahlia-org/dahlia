@@ -23,6 +23,30 @@
       "entityType": "schemas"
     },
     {
+      "isRlsEnabled": true,
+      "name": "documents",
+      "entityType": "tables",
+      "schema": "app"
+    },
+    {
+      "isRlsEnabled": true,
+      "name": "document_presence",
+      "entityType": "tables",
+      "schema": "app"
+    },
+    {
+      "isRlsEnabled": true,
+      "name": "document_recoveries",
+      "entityType": "tables",
+      "schema": "app"
+    },
+    {
+      "isRlsEnabled": true,
+      "name": "document_updates",
+      "entityType": "tables",
+      "schema": "app"
+    },
+    {
       "isRlsEnabled": false,
       "name": "image_analysis",
       "entityType": "tables",
@@ -225,6 +249,409 @@
       "name": "workspace_transfers",
       "entityType": "tables",
       "schema": "app"
+    },
+    {
+      "type": "uuid",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "id",
+      "entityType": "columns",
+      "schema": "app",
+      "table": "documents"
+    },
+    {
+      "type": "uuid",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "workspace_id",
+      "entityType": "columns",
+      "schema": "app",
+      "table": "documents"
+    },
+    {
+      "type": "uuid",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "meeting_id",
+      "entityType": "columns",
+      "schema": "app",
+      "table": "documents"
+    },
+    {
+      "type": "integer",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": "1",
+      "generated": null,
+      "identity": null,
+      "name": "schema_version",
+      "entityType": "columns",
+      "schema": "app",
+      "table": "documents"
+    },
+    {
+      "type": "uuid",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "generation",
+      "entityType": "columns",
+      "schema": "app",
+      "table": "documents"
+    },
+    {
+      "type": "integer",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": "0",
+      "generated": null,
+      "identity": null,
+      "name": "revision",
+      "entityType": "columns",
+      "schema": "app",
+      "table": "documents"
+    },
+    {
+      "type": "integer",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": "0",
+      "generated": null,
+      "identity": null,
+      "name": "checkpoint_revision",
+      "entityType": "columns",
+      "schema": "app",
+      "table": "documents"
+    },
+    {
+      "type": "text",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "checkpoint",
+      "entityType": "columns",
+      "schema": "app",
+      "table": "documents"
+    },
+    {
+      "type": "text",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "text",
+      "entityType": "columns",
+      "schema": "app",
+      "table": "documents"
+    },
+    {
+      "type": "integer",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": "0",
+      "generated": null,
+      "identity": null,
+      "name": "projection_revision",
+      "entityType": "columns",
+      "schema": "app",
+      "table": "documents"
+    },
+    {
+      "type": "text",
+      "typeSchema": null,
+      "notNull": false,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "encrypted_payload",
+      "entityType": "columns",
+      "schema": "app",
+      "table": "documents"
+    },
+    {
+      "type": "timestamp",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "created_at",
+      "entityType": "columns",
+      "schema": "app",
+      "table": "documents"
+    },
+    {
+      "type": "timestamp",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "updated_at",
+      "entityType": "columns",
+      "schema": "app",
+      "table": "documents"
+    },
+    {
+      "type": "uuid",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "id",
+      "entityType": "columns",
+      "schema": "app",
+      "table": "document_presence"
+    },
+    {
+      "type": "uuid",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "document_id",
+      "entityType": "columns",
+      "schema": "app",
+      "table": "document_presence"
+    },
+    {
+      "type": "uuid",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "workspace_id",
+      "entityType": "columns",
+      "schema": "app",
+      "table": "document_presence"
+    },
+    {
+      "type": "uuid",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "user_id",
+      "entityType": "columns",
+      "schema": "app",
+      "table": "document_presence"
+    },
+    {
+      "type": "timestamp",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "expires_at",
+      "entityType": "columns",
+      "schema": "app",
+      "table": "document_presence"
+    },
+    {
+      "type": "uuid",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "id",
+      "entityType": "columns",
+      "schema": "app",
+      "table": "document_recoveries"
+    },
+    {
+      "type": "uuid",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "document_id",
+      "entityType": "columns",
+      "schema": "app",
+      "table": "document_recoveries"
+    },
+    {
+      "type": "uuid",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "workspace_id",
+      "entityType": "columns",
+      "schema": "app",
+      "table": "document_recoveries"
+    },
+    {
+      "type": "jsonb",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "blocks",
+      "entityType": "columns",
+      "schema": "app",
+      "table": "document_recoveries"
+    },
+    {
+      "type": "text",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "reason",
+      "entityType": "columns",
+      "schema": "app",
+      "table": "document_recoveries"
+    },
+    {
+      "type": "text",
+      "typeSchema": null,
+      "notNull": false,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "encrypted_payload",
+      "entityType": "columns",
+      "schema": "app",
+      "table": "document_recoveries"
+    },
+    {
+      "type": "timestamp",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "created_at",
+      "entityType": "columns",
+      "schema": "app",
+      "table": "document_recoveries"
+    },
+    {
+      "type": "uuid",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "document_id",
+      "entityType": "columns",
+      "schema": "app",
+      "table": "document_updates"
+    },
+    {
+      "type": "uuid",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "workspace_id",
+      "entityType": "columns",
+      "schema": "app",
+      "table": "document_updates"
+    },
+    {
+      "type": "integer",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "revision",
+      "entityType": "columns",
+      "schema": "app",
+      "table": "document_updates"
+    },
+    {
+      "type": "text",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "update",
+      "entityType": "columns",
+      "schema": "app",
+      "table": "document_updates"
+    },
+    {
+      "type": "text",
+      "typeSchema": null,
+      "notNull": false,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "encrypted_payload",
+      "entityType": "columns",
+      "schema": "app",
+      "table": "document_updates"
+    },
+    {
+      "type": "timestamp",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "created_at",
+      "entityType": "columns",
+      "schema": "app",
+      "table": "document_updates"
     },
     {
       "type": "uuid",
@@ -2297,6 +2724,19 @@
       "generated": null,
       "identity": null,
       "name": "encrypted_payload",
+      "entityType": "columns",
+      "schema": "jobs",
+      "table": "summary"
+    },
+    {
+      "type": "jsonb",
+      "typeSchema": null,
+      "notNull": false,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "notes_snapshot",
       "entityType": "columns",
       "schema": "jobs",
       "table": "summary"
@@ -4541,6 +4981,76 @@
       "nameExplicit": true,
       "columns": [
         {
+          "value": "workspace_id",
+          "isExpression": false,
+          "asc": true,
+          "nullsFirst": false,
+          "opclass": null
+        },
+        {
+          "value": "id",
+          "isExpression": false,
+          "asc": true,
+          "nullsFirst": false,
+          "opclass": null
+        }
+      ],
+      "isUnique": false,
+      "where": null,
+      "with": "",
+      "method": "btree",
+      "concurrently": false,
+      "name": "documents_workspace_id",
+      "entityType": "indexes",
+      "schema": "app",
+      "table": "documents"
+    },
+    {
+      "nameExplicit": true,
+      "columns": [
+        {
+          "value": "expires_at",
+          "isExpression": false,
+          "asc": true,
+          "nullsFirst": false,
+          "opclass": null
+        }
+      ],
+      "isUnique": false,
+      "where": null,
+      "with": "",
+      "method": "btree",
+      "concurrently": false,
+      "name": "document_presence_expiry",
+      "entityType": "indexes",
+      "schema": "app",
+      "table": "document_presence"
+    },
+    {
+      "nameExplicit": true,
+      "columns": [
+        {
+          "value": "document_id",
+          "isExpression": false,
+          "asc": true,
+          "nullsFirst": false,
+          "opclass": null
+        }
+      ],
+      "isUnique": false,
+      "where": null,
+      "with": "",
+      "method": "btree",
+      "concurrently": false,
+      "name": "document_recoveries_document_id",
+      "entityType": "indexes",
+      "schema": "app",
+      "table": "document_recoveries"
+    },
+    {
+      "nameExplicit": true,
+      "columns": [
+        {
           "value": "status",
           "isExpression": false,
           "asc": true,
@@ -5483,6 +5993,235 @@
       "table": "workspace_transfers"
     },
     {
+      "nameExplicit": false,
+      "columns": [
+        "workspace_id"
+      ],
+      "schemaTo": "app",
+      "tableTo": "workspaces",
+      "columnsTo": [
+        "workspace_id"
+      ],
+      "onUpdate": "NO ACTION",
+      "onDelete": "CASCADE",
+      "name": "documents_workspace_id_workspaces_workspace_id_fkey",
+      "entityType": "fks",
+      "schema": "app",
+      "table": "documents"
+    },
+    {
+      "nameExplicit": false,
+      "columns": [
+        "meeting_id"
+      ],
+      "schemaTo": "app",
+      "tableTo": "meetings",
+      "columnsTo": [
+        "meeting_id"
+      ],
+      "onUpdate": "NO ACTION",
+      "onDelete": "CASCADE",
+      "name": "documents_meeting_id_meetings_meeting_id_fkey",
+      "entityType": "fks",
+      "schema": "app",
+      "table": "documents"
+    },
+    {
+      "nameExplicit": true,
+      "columns": [
+        "workspace_id",
+        "meeting_id"
+      ],
+      "schemaTo": "app",
+      "tableTo": "meetings",
+      "columnsTo": [
+        "workspace_id",
+        "meeting_id"
+      ],
+      "onUpdate": "CASCADE",
+      "onDelete": "CASCADE",
+      "name": "document_parent_workspace_fk",
+      "entityType": "fks",
+      "schema": "app",
+      "table": "documents"
+    },
+    {
+      "nameExplicit": false,
+      "columns": [
+        "document_id"
+      ],
+      "schemaTo": "app",
+      "tableTo": "documents",
+      "columnsTo": [
+        "id"
+      ],
+      "onUpdate": "NO ACTION",
+      "onDelete": "CASCADE",
+      "name": "document_presence_document_id_documents_id_fkey",
+      "entityType": "fks",
+      "schema": "app",
+      "table": "document_presence"
+    },
+    {
+      "nameExplicit": false,
+      "columns": [
+        "workspace_id"
+      ],
+      "schemaTo": "app",
+      "tableTo": "workspaces",
+      "columnsTo": [
+        "workspace_id"
+      ],
+      "onUpdate": "NO ACTION",
+      "onDelete": "CASCADE",
+      "name": "document_presence_workspace_id_workspaces_workspace_id_fkey",
+      "entityType": "fks",
+      "schema": "app",
+      "table": "document_presence"
+    },
+    {
+      "nameExplicit": false,
+      "columns": [
+        "user_id"
+      ],
+      "schemaTo": "auth",
+      "tableTo": "user",
+      "columnsTo": [
+        "id"
+      ],
+      "onUpdate": "NO ACTION",
+      "onDelete": "CASCADE",
+      "name": "document_presence_user_id_user_id_fkey",
+      "entityType": "fks",
+      "schema": "app",
+      "table": "document_presence"
+    },
+    {
+      "nameExplicit": true,
+      "columns": [
+        "workspace_id",
+        "document_id"
+      ],
+      "schemaTo": "app",
+      "tableTo": "documents",
+      "columnsTo": [
+        "workspace_id",
+        "id"
+      ],
+      "onUpdate": "CASCADE",
+      "onDelete": "CASCADE",
+      "name": "documentPresence_workspace_fk",
+      "entityType": "fks",
+      "schema": "app",
+      "table": "document_presence"
+    },
+    {
+      "nameExplicit": false,
+      "columns": [
+        "document_id"
+      ],
+      "schemaTo": "app",
+      "tableTo": "documents",
+      "columnsTo": [
+        "id"
+      ],
+      "onUpdate": "NO ACTION",
+      "onDelete": "CASCADE",
+      "name": "document_recoveries_document_id_documents_id_fkey",
+      "entityType": "fks",
+      "schema": "app",
+      "table": "document_recoveries"
+    },
+    {
+      "nameExplicit": false,
+      "columns": [
+        "workspace_id"
+      ],
+      "schemaTo": "app",
+      "tableTo": "workspaces",
+      "columnsTo": [
+        "workspace_id"
+      ],
+      "onUpdate": "NO ACTION",
+      "onDelete": "CASCADE",
+      "name": "document_recoveries_workspace_id_workspaces_workspace_id_fkey",
+      "entityType": "fks",
+      "schema": "app",
+      "table": "document_recoveries"
+    },
+    {
+      "nameExplicit": true,
+      "columns": [
+        "workspace_id",
+        "document_id"
+      ],
+      "schemaTo": "app",
+      "tableTo": "documents",
+      "columnsTo": [
+        "workspace_id",
+        "id"
+      ],
+      "onUpdate": "CASCADE",
+      "onDelete": "CASCADE",
+      "name": "documentRecovery_workspace_fk",
+      "entityType": "fks",
+      "schema": "app",
+      "table": "document_recoveries"
+    },
+    {
+      "nameExplicit": false,
+      "columns": [
+        "document_id"
+      ],
+      "schemaTo": "app",
+      "tableTo": "documents",
+      "columnsTo": [
+        "id"
+      ],
+      "onUpdate": "NO ACTION",
+      "onDelete": "CASCADE",
+      "name": "document_updates_document_id_documents_id_fkey",
+      "entityType": "fks",
+      "schema": "app",
+      "table": "document_updates"
+    },
+    {
+      "nameExplicit": false,
+      "columns": [
+        "workspace_id"
+      ],
+      "schemaTo": "app",
+      "tableTo": "workspaces",
+      "columnsTo": [
+        "workspace_id"
+      ],
+      "onUpdate": "NO ACTION",
+      "onDelete": "CASCADE",
+      "name": "document_updates_workspace_id_workspaces_workspace_id_fkey",
+      "entityType": "fks",
+      "schema": "app",
+      "table": "document_updates"
+    },
+    {
+      "nameExplicit": true,
+      "columns": [
+        "workspace_id",
+        "document_id"
+      ],
+      "schemaTo": "app",
+      "tableTo": "documents",
+      "columnsTo": [
+        "workspace_id",
+        "id"
+      ],
+      "onUpdate": "CASCADE",
+      "onDelete": "CASCADE",
+      "name": "documentUpdate_workspace_fk",
+      "entityType": "fks",
+      "schema": "app",
+      "table": "document_updates"
+    },
+    {
       "nameExplicit": true,
       "columns": [
         "file_id"
@@ -6091,6 +6830,17 @@
     },
     {
       "columns": [
+        "document_id",
+        "revision"
+      ],
+      "nameExplicit": false,
+      "name": "document_updates_pkey",
+      "entityType": "pks",
+      "schema": "app",
+      "table": "document_updates"
+    },
+    {
+      "columns": [
         "workspace_id",
         "id"
       ],
@@ -6222,6 +6972,36 @@
       "entityType": "pks",
       "schema": "app",
       "table": "transcript_patch_chunks"
+    },
+    {
+      "columns": [
+        "id"
+      ],
+      "nameExplicit": false,
+      "name": "documents_pkey",
+      "schema": "app",
+      "table": "documents",
+      "entityType": "pks"
+    },
+    {
+      "columns": [
+        "id"
+      ],
+      "nameExplicit": false,
+      "name": "document_presence_pkey",
+      "schema": "app",
+      "table": "document_presence",
+      "entityType": "pks"
+    },
+    {
+      "columns": [
+        "id"
+      ],
+      "nameExplicit": false,
+      "name": "document_recoveries_pkey",
+      "schema": "app",
+      "table": "document_recoveries",
+      "entityType": "pks"
     },
     {
       "columns": [
@@ -6446,6 +7226,18 @@
     {
       "nameExplicit": true,
       "columns": [
+        "workspace_id",
+        "id"
+      ],
+      "nullsNotDistinct": false,
+      "name": "document_workspace_id_unique",
+      "entityType": "uniques",
+      "schema": "app",
+      "table": "documents"
+    },
+    {
+      "nameExplicit": true,
+      "columns": [
         "meeting_id",
         "file_id"
       ],
@@ -6542,6 +7334,17 @@
     {
       "nameExplicit": false,
       "columns": [
+        "meeting_id"
+      ],
+      "nullsNotDistinct": false,
+      "name": "documents_meeting_id_key",
+      "schema": "app",
+      "table": "documents",
+      "entityType": "uniques"
+    },
+    {
+      "nameExplicit": false,
+      "columns": [
         "id"
       ],
       "nullsNotDistinct": false,
@@ -6549,6 +7352,20 @@
       "schema": "app",
       "table": "workspace_transfers",
       "entityType": "uniques"
+    },
+    {
+      "value": "\"id\" = \"meeting_id\"",
+      "name": "document_meeting_id",
+      "entityType": "checks",
+      "schema": "app",
+      "table": "documents"
+    },
+    {
+      "value": "\"projection_revision\" = \"revision\" AND \"checkpoint_revision\" <= \"revision\"",
+      "name": "document_watermarks",
+      "entityType": "checks",
+      "schema": "app",
+      "table": "documents"
     },
     {
       "value": "\"status\" IN ('pending', 'processing', 'failed')",
@@ -6759,6 +7576,214 @@
       "entityType": "checks",
       "schema": "app",
       "table": "transcripts"
+    },
+    {
+      "as": "PERMISSIVE",
+      "for": "SELECT",
+      "roles": [
+        "public"
+      ],
+      "using": "\"app\".\"current_identity_can_read_workspace\"(\"app\".\"documents\".\"workspace_id\")",
+      "withCheck": null,
+      "name": "document_read",
+      "entityType": "policies",
+      "schema": "app",
+      "table": "documents"
+    },
+    {
+      "as": "PERMISSIVE",
+      "for": "INSERT",
+      "roles": [
+        "public"
+      ],
+      "using": null,
+      "withCheck": "\"app\".\"current_identity_can_write_workspace\"(\"app\".\"documents\".\"workspace_id\")",
+      "name": "document_insert",
+      "entityType": "policies",
+      "schema": "app",
+      "table": "documents"
+    },
+    {
+      "as": "PERMISSIVE",
+      "for": "UPDATE",
+      "roles": [
+        "public"
+      ],
+      "using": "\"app\".\"current_identity_can_write_workspace\"(\"app\".\"documents\".\"workspace_id\")",
+      "withCheck": "\"app\".\"current_identity_can_write_workspace\"(\"app\".\"documents\".\"workspace_id\")",
+      "name": "document_update",
+      "entityType": "policies",
+      "schema": "app",
+      "table": "documents"
+    },
+    {
+      "as": "PERMISSIVE",
+      "for": "DELETE",
+      "roles": [
+        "public"
+      ],
+      "using": "\"app\".\"current_identity_can_write_workspace\"(\"app\".\"documents\".\"workspace_id\") OR (current_setting('app.maintenance', true) = 'governance-delete' AND \"app\".\"documents\".\"workspace_id\" = nullif(current_setting('app.maintenance_workspace_id', true), '')::uuid) OR (current_setting('app.maintenance', true) = 'meeting-retention' AND \"app\".\"documents\".\"workspace_id\" = nullif(current_setting('app.maintenance_workspace_id', true), '')::uuid)",
+      "withCheck": null,
+      "name": "document_delete",
+      "entityType": "policies",
+      "schema": "app",
+      "table": "documents"
+    },
+    {
+      "as": "PERMISSIVE",
+      "for": "SELECT",
+      "roles": [
+        "public"
+      ],
+      "using": "\"app\".\"current_identity_can_read_workspace\"(\"app\".\"document_presence\".\"workspace_id\")",
+      "withCheck": null,
+      "name": "document_presence_read",
+      "entityType": "policies",
+      "schema": "app",
+      "table": "document_presence"
+    },
+    {
+      "as": "PERMISSIVE",
+      "for": "INSERT",
+      "roles": [
+        "public"
+      ],
+      "using": null,
+      "withCheck": "\"app\".\"current_identity_can_write_workspace\"(\"app\".\"document_presence\".\"workspace_id\")",
+      "name": "document_presence_insert",
+      "entityType": "policies",
+      "schema": "app",
+      "table": "document_presence"
+    },
+    {
+      "as": "PERMISSIVE",
+      "for": "UPDATE",
+      "roles": [
+        "public"
+      ],
+      "using": "\"app\".\"current_identity_can_write_workspace\"(\"app\".\"document_presence\".\"workspace_id\")",
+      "withCheck": "\"app\".\"current_identity_can_write_workspace\"(\"app\".\"document_presence\".\"workspace_id\")",
+      "name": "document_presence_update",
+      "entityType": "policies",
+      "schema": "app",
+      "table": "document_presence"
+    },
+    {
+      "as": "PERMISSIVE",
+      "for": "DELETE",
+      "roles": [
+        "public"
+      ],
+      "using": "\"app\".\"current_identity_can_write_workspace\"(\"app\".\"document_presence\".\"workspace_id\") OR (current_setting('app.maintenance', true) = 'governance-delete' AND \"app\".\"document_presence\".\"workspace_id\" = nullif(current_setting('app.maintenance_workspace_id', true), '')::uuid) OR (current_setting('app.maintenance', true) = 'meeting-retention' AND \"app\".\"document_presence\".\"workspace_id\" = nullif(current_setting('app.maintenance_workspace_id', true), '')::uuid)",
+      "withCheck": null,
+      "name": "document_presence_delete",
+      "entityType": "policies",
+      "schema": "app",
+      "table": "document_presence"
+    },
+    {
+      "as": "PERMISSIVE",
+      "for": "SELECT",
+      "roles": [
+        "public"
+      ],
+      "using": "\"app\".\"current_identity_can_read_workspace\"(\"app\".\"document_recoveries\".\"workspace_id\")",
+      "withCheck": null,
+      "name": "document_recovery_read",
+      "entityType": "policies",
+      "schema": "app",
+      "table": "document_recoveries"
+    },
+    {
+      "as": "PERMISSIVE",
+      "for": "INSERT",
+      "roles": [
+        "public"
+      ],
+      "using": null,
+      "withCheck": "\"app\".\"current_identity_can_write_workspace\"(\"app\".\"document_recoveries\".\"workspace_id\")",
+      "name": "document_recovery_insert",
+      "entityType": "policies",
+      "schema": "app",
+      "table": "document_recoveries"
+    },
+    {
+      "as": "PERMISSIVE",
+      "for": "UPDATE",
+      "roles": [
+        "public"
+      ],
+      "using": "\"app\".\"current_identity_can_write_workspace\"(\"app\".\"document_recoveries\".\"workspace_id\")",
+      "withCheck": "\"app\".\"current_identity_can_write_workspace\"(\"app\".\"document_recoveries\".\"workspace_id\")",
+      "name": "document_recovery_update",
+      "entityType": "policies",
+      "schema": "app",
+      "table": "document_recoveries"
+    },
+    {
+      "as": "PERMISSIVE",
+      "for": "DELETE",
+      "roles": [
+        "public"
+      ],
+      "using": "\"app\".\"current_identity_can_write_workspace\"(\"app\".\"document_recoveries\".\"workspace_id\") OR (current_setting('app.maintenance', true) = 'governance-delete' AND \"app\".\"document_recoveries\".\"workspace_id\" = nullif(current_setting('app.maintenance_workspace_id', true), '')::uuid) OR (current_setting('app.maintenance', true) = 'meeting-retention' AND \"app\".\"document_recoveries\".\"workspace_id\" = nullif(current_setting('app.maintenance_workspace_id', true), '')::uuid)",
+      "withCheck": null,
+      "name": "document_recovery_delete",
+      "entityType": "policies",
+      "schema": "app",
+      "table": "document_recoveries"
+    },
+    {
+      "as": "PERMISSIVE",
+      "for": "SELECT",
+      "roles": [
+        "public"
+      ],
+      "using": "\"app\".\"current_identity_can_read_workspace\"(\"app\".\"document_updates\".\"workspace_id\")",
+      "withCheck": null,
+      "name": "document_update_read",
+      "entityType": "policies",
+      "schema": "app",
+      "table": "document_updates"
+    },
+    {
+      "as": "PERMISSIVE",
+      "for": "INSERT",
+      "roles": [
+        "public"
+      ],
+      "using": null,
+      "withCheck": "\"app\".\"current_identity_can_write_workspace\"(\"app\".\"document_updates\".\"workspace_id\")",
+      "name": "document_update_insert",
+      "entityType": "policies",
+      "schema": "app",
+      "table": "document_updates"
+    },
+    {
+      "as": "PERMISSIVE",
+      "for": "UPDATE",
+      "roles": [
+        "public"
+      ],
+      "using": "\"app\".\"current_identity_can_write_workspace\"(\"app\".\"document_updates\".\"workspace_id\")",
+      "withCheck": "\"app\".\"current_identity_can_write_workspace\"(\"app\".\"document_updates\".\"workspace_id\")",
+      "name": "document_update_update",
+      "entityType": "policies",
+      "schema": "app",
+      "table": "document_updates"
+    },
+    {
+      "as": "PERMISSIVE",
+      "for": "DELETE",
+      "roles": [
+        "public"
+      ],
+      "using": "\"app\".\"current_identity_can_write_workspace\"(\"app\".\"document_updates\".\"workspace_id\") OR (current_setting('app.maintenance', true) = 'governance-delete' AND \"app\".\"document_updates\".\"workspace_id\" = nullif(current_setting('app.maintenance_workspace_id', true), '')::uuid) OR (current_setting('app.maintenance', true) = 'meeting-retention' AND \"app\".\"document_updates\".\"workspace_id\" = nullif(current_setting('app.maintenance_workspace_id', true), '')::uuid)",
+      "withCheck": null,
+      "name": "document_update_delete",
+      "entityType": "policies",
+      "schema": "app",
+      "table": "document_updates"
     },
     {
       "as": "PERMISSIVE",

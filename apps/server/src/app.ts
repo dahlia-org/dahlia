@@ -1,3 +1,4 @@
+import * as DocumentContracts from "./documents/model";
 import { pageGetSchema, pageListSchema } from "./memory/pages-model";
 import { DahliaMemory, memoryConfigureSchema, memoryListSchema, memoryGetSchema, memorySaveSchema, personalMemorySearchSchema, workspaceMemorySearchSchema } from "./memory/dahlia";
 import { createMemoryGenerator, type MemoryGenerator, type ChatMemoryService } from "./agent/context-service";
@@ -75,6 +76,10 @@ const mcpBodyLimit = bodyLimit({
 });
 const syncBodyLimit = bodyLimit({
   maxSize: SYNC_JSON_MAX_REQUEST_BYTES,
+  onError: (context) => context.json({ error: "request_too_large" }, 413),
+});
+const documentBodyLimit = bodyLimit({
+  maxSize: DocumentContracts.documentRequestLimit,
   onError: (context) => context.json({ error: "request_too_large" }, 413),
 });
 const accountSettingsBodyLimit = bodyLimit({
@@ -779,12 +784,96 @@ export function createApp(dependencies: AppDependencies): DahliaServerApp & { ru
       context.req.query("startCursor"),
     ));
   });
+  const documentParameters = (workspaceId: string, documentId: string) => [sync.parseId(workspaceId), sync.parseId(documentId)] as const;
+  registerApi(app, "getDocument", async (context) => {
+    const identity = await syncIdentity(context.req.raw);
+    const ids = documentParameters(context.req.param("workspaceId")!, context.req.param("documentId")!);
+    context.header("Cache-Control", "no-store");
+    return context.json({ document: await store.sync.withIdentity(identity, (scoped) => scoped.getDocument(...ids)) });
+  });
+  registerApi(app, "getDocumentEvents", async (context) => {
+    const identity = await syncIdentity(context.req.raw);
+    const ids = documentParameters(context.req.param("workspaceId")!, context.req.param("documentId")!);
+    // Authorize before entering the stream and on every subsequent database read.
+    await store.sync.withIdentity(identity, (scoped) => scoped.documentHead(...ids));
+    return streamSSE(context, async (stream) => {
+      let previous = "";
+      while (!stream.aborted) {
+        const head = await store.sync.withIdentity(identity, (scoped) => scoped.documentHead(...ids));
+        const cursor = head ? `${head.generation}:${head.revision}` : "absent";
+        if (cursor !== previous) {
+          await stream.writeSSE({ event: "invalidation", id: cursor, data: JSON.stringify({ cursor, revision: head?.revision ?? 0 }) });
+          previous = cursor;
+        }
+        await stream.sleep(2_000);
+      }
+    });
+  });
+  registerApi(app, "listDocuments", async (context) => {
+    const identity = await syncIdentity(context.req.raw);
+    return context.json(await store.sync.withIdentity(identity, (scoped) => scoped.listDocuments(sync.parseId(context.req.param("workspaceId")!), context.req.query("after"))));
+  });
+  registerApi(app, "listDocumentRecoveries", async (context) => {
+    const identity = await syncIdentity(context.req.raw);
+    const ids = documentParameters(context.req.param("workspaceId")!, context.req.param("documentId")!);
+    return context.json(await store.sync.withIdentity(identity, (scoped) => scoped.documentRecoveries(...ids, context.req.query("after"))));
+  });
+  registerApi(app, "getDocumentPresence", async (context) => {
+    const identity = await syncIdentity(context.req.raw);
+    const ids = documentParameters(context.req.param("workspaceId")!, context.req.param("documentId")!);
+    return context.json({ items: await store.sync.withIdentity(identity, (scoped) => scoped.documentPresence(...ids)) });
+  });
+  registerApi(app, "initializeDocument", documentBodyLimit, async (context) => {
+    const requiresBrowserOrigin = config.authProvider === "accounts" && !context.req.header("authorization");
+    if ((requiresBrowserOrigin || context.req.header("origin")) && !mutationOriginAllowed(context.req.raw, config.baseUrl)) return context.json({ error: "invalid_origin" }, 403);
+    const identity = await syncIdentity(context.req.raw);
+    const ids = documentParameters(context.req.param("workspaceId")!, context.req.param("documentId")!);
+    const parsed = DocumentContracts.documentInitializeSchema.safeParse(await context.req.json().catch(() => null));
+    if (!parsed.success) throw new RequestError(400, "invalid_document_request");
+    const body = parsed.data;
+    const result = await store.sync.withIdentity(identity, (scoped) => scoped.initializeDocument(...ids, body.legacyUpdate));
+    return context.json({ document: result });
+  });
+  registerApi(app, "exchangeDocument", documentBodyLimit, async (context) => {
+    const requiresBrowserOrigin = config.authProvider === "accounts" && !context.req.header("authorization");
+    if ((requiresBrowserOrigin || context.req.header("origin")) && !mutationOriginAllowed(context.req.raw, config.baseUrl)) return context.json({ error: "invalid_origin" }, 403);
+    const identity = await syncIdentity(context.req.raw);
+    const ids = documentParameters(context.req.param("workspaceId")!, context.req.param("documentId")!);
+    const parsed = DocumentContracts.documentExchangeSchema.safeParse(await context.req.json().catch(() => null));
+    if (!parsed.success) throw new RequestError(400, "invalid_document_request");
+    const body = parsed.data;
+    const result = await store.sync.withIdentity(identity, (scoped) => scoped.exchangeDocument(...ids, body));
+    return context.json(result);
+  });
+  registerApi(app, "saveDocumentRecovery", documentBodyLimit, async (context) => {
+    const requiresBrowserOrigin = config.authProvider === "accounts" && !context.req.header("authorization");
+    if ((requiresBrowserOrigin || context.req.header("origin")) && !mutationOriginAllowed(context.req.raw, config.baseUrl)) return context.json({ error: "invalid_origin" }, 403);
+    const identity = await syncIdentity(context.req.raw);
+    const ids = documentParameters(context.req.param("workspaceId")!, context.req.param("documentId")!);
+    const parsed = DocumentContracts.documentRecoverySchema.safeParse(await context.req.json().catch(() => null));
+    if (!parsed.success) throw new RequestError(400, "invalid_document_request");
+    const body = parsed.data;
+    const result = await store.sync.withIdentity(identity, (scoped) => scoped.saveDocumentRecovery(...ids, body));
+    void result; return context.json({});
+  });
+  registerApi(app, "updateDocumentPresence", syncBodyLimit, async (context) => {
+    const requiresBrowserOrigin = config.authProvider === "accounts" && !context.req.header("authorization");
+    if ((requiresBrowserOrigin || context.req.header("origin")) && !mutationOriginAllowed(context.req.raw, config.baseUrl)) return context.json({ error: "invalid_origin" }, 403);
+    const identity = await syncIdentity(context.req.raw);
+    const ids = documentParameters(context.req.param("workspaceId")!, context.req.param("documentId")!);
+    const parsed = DocumentContracts.documentPresenceRequestSchema.safeParse(await context.req.json().catch(() => null));
+    if (!parsed.success) throw new RequestError(400, "invalid_document_request");
+    const body = parsed.data;
+    const result = await store.sync.withIdentity(identity, (scoped) => scoped.documentPresence(...ids, body.sessionId));
+    return context.json({ items: result });
+  });
   registerApi(app, "getCapabilities", async (context) => {
     await syncIdentity(context.req.raw);
     if (!await store.sync.isAvailable()) return context.json({});
     const sources = dependencies.summaryService?.methods.map((method) => method.id) ?? [];
     return context.json({
-      sync: { version: 6 },
+      sync: { version: 7 },
+      documents: { version: 1 },
       ...(config.encryption ? { workspaceEncryption: { version: 1 } } : {}),
       workspaceTransfers: { version: 1 },
       recordingArchive: { version: 1 },

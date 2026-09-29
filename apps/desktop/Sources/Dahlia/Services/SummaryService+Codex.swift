@@ -73,7 +73,7 @@ extension SummaryService {
 
         var transcriptContent = "<transcript>\n\(context.transcriptText)\n</transcript>"
         if let noteText = context.noteText, !noteText.isEmpty {
-            transcriptContent += "\n<note>\n\(noteText)\n</note>"
+            transcriptContent += "\n<note>\n\(SummaryPromptContext.xmlEscaped(noteText))\n</note>"
         }
         inputs.append(.text(transcriptContent))
         guard !context.screenshots.isEmpty else { return inputs }

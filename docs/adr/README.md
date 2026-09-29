@@ -43,6 +43,8 @@ Server / Private Web、配置、API、認可、storage。
 
 ## Shared
 
+- [会議 Notes の共同編集 Documents 化](shared/documents.md)
+
 Desktop / Server / 外部 client 間の契約。
 
 - [Desktop / Server / MCP の OAuth 契約](shared/oauth.md)

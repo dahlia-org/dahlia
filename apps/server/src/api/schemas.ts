@@ -112,6 +112,7 @@ export const summaryJob = z.object({ id, method: z.enum(["transcript", "audio"])
   createdAt: date, error: z.string().nullable(),
 }).openapi("SummaryJob");
 export const capabilities = z.object({
+  documents: z.object({ version: integer }).optional(),
   workspaceEncryption: z.object({ version: integer }).optional(),
   sync: z.object({ version: integer }).optional(), workspaceTransfers: z.object({ version: integer }).optional(),
   recordingArchive: z.object({ version: integer }).optional(), meetingEvents: z.object({ version: integer }).optional(),

@@ -599,9 +599,12 @@
         func holdUploads() { uploadsHeld = true }
         func releaseUploads() {
             uploadsHeld = false
-            for release in uploadReleases { release.finish() }
+            for release in uploadReleases {
+                release.finish()
+            }
             uploadReleases.removeAll()
         }
+
         func failNextCommit(afterSaving: Bool) { commitFailure = afterSaving }
         func failUpload(_ id: UUID, status: Int) { uploadFailures[id.uuidString.lowercased()] = status }
         func expirePullCursor() { expiredPullCursor = true }
@@ -616,7 +619,7 @@
         func handle(_ request: URLRequest) async throws -> (Int, Data) {
             let path = request.url!.path
             if expiredPullCursor {
-                if path.hasSuffix("/capabilities") { return (200, Data("{\"sync\":{\"version\":6}}".utf8)) }
+                if path.hasSuffix("/capabilities") { return (200, Data("{\"documents\":{\"version\":1},\"sync\":{\"version\":7}}".utf8)) }
                 if path.hasSuffix("/changes") { return (410, Data("{\"code\":\"sync_cursor_expired\"}".utf8)) }
             }
             if path == "/api/v1/file-uploads" {

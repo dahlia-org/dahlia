@@ -840,9 +840,9 @@
                         sql: "CREATE TABLE compaction_fixture(bytes BLOB); INSERT INTO compaction_fixture VALUES (zeroblob(8388608)); DELETE FROM compaction_fixture"
                     )
             }
-            let before = try #require(path.resourceValues(forKeys: [.fileSizeKey]).fileSize)
+            let before = try #require(FileManager.default.attributesOfItem(atPath: path.path)[.size] as? NSNumber).int64Value
             try await ScreenshotStorageMaintenance.compactAtStartup(dbQueue: database.dbQueue, minimumFreeBytes: 1)
-            let after = try #require(path.resourceValues(forKeys: [.fileSizeKey]).fileSize)
+            let after = try #require(FileManager.default.attributesOfItem(atPath: path.path)[.size] as? NSNumber).int64Value
             #expect(after < before)
             #expect(try await retained.storedBytes() == retained.bytes)
             #expect(try await database.dbQueue.read { try Int.fetchOne($0, sql: "PRAGMA auto_vacuum") } == 2)
@@ -897,7 +897,8 @@
     /// Canonical text responses for cached bodies and the fixtures' empty transcripts.
     private func cachedTextResponse(_ request: URLRequest, queue: DatabaseQueue) -> (Int, [String: String], Data)? {
         guard let url = request.url else { return nil }
-        if url.path.hasSuffix("/capabilities") { return (200, [:], Data("{\"sync\":{\"version\":6}}".utf8)) }
+        if url.path.contains("/documents/") { return (200, [:], Data(#"{"document":null}"#.utf8)) }
+        if url.path.hasSuffix("/capabilities") { return (200, [:], Data("{\"documents\":{\"version\":1},\"sync\":{\"version\":7}}".utf8)) }
         if url.path.hasSuffix("/changes") {
             return (
                 200,

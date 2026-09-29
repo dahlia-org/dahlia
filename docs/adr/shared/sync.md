@@ -238,3 +238,7 @@ Server の `meeting:delete` は `deleted_at` を記録する論理削除とす�
 通常の読取・検索・MCP・子データ取得は削除済み会議を除外する。本文・要約履歴・イベント・録音・画像関連付けは保持し、古い更新・アップロード・同一IDのcreateでは復活させない。処理中の要約ジョブはキャンセルする。削除は親と子の既存delete通知を発行し、`meeting:restore` は現在の削除済みrevisionを検査して親のrevisionを増やし、保持した子のupsertを親から順に再通知する。子のrevisionは巻き戻さない。物理削除前なら期限後も復旧でき、再削除はその時点から数える。画像単独削除は即時のままで、消した関連付けを復旧時に再作成しない。
 
 ごみ箱APIは現在のWorkspace閲覧権限を要求し、復旧はadmin/editorに許可する。Node/Workersの既存メンテナンスは通常commitと同じWorkspaceロック下で現在設定を再読し、対象を小分けに物理削除する。関連filesは他の会議に参照がなければ削除し、録音と共に既存の永続storage削除キューへ入れる。DB削除はstorage未設定でも実施する。ごみ箱が残るWorkspaceは空とみなさない。
+
+## Documents 専用同期（2026-09-29）
+
+[Documents ADR](documents.md) が、明示公開した会議 Notes の同期・復元・presence を追加する。旧端末内 note の除外と MCP read-only は維持する。本文更新は transaction キュー・receipt・pending による受信 defer の対象にせず、文書ごとの CRDT 差分 API と送信待ちで処理する。送信待ちでも受信をマージする。Server / Desktop / Web の同時更新により sync capability は7、documents capability は1となる。会議の物理削除・reset は外部キーで文書を除去し、soft delete は generation を更新して古い編集を拒否する。復元は新しいブロックの挿入とする。

@@ -781,6 +781,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         guard !isTerminating else { return .terminateLater }
         isTerminating = true
         Task {
+            do {
+                try await DocumentEditorModel.finishLocalSaves()
+            } catch {
+                isTerminating = false
+                sender.reply(toApplicationShouldTerminate: false)
+                let alert = NSAlert()
+                alert.alertStyle = .warning
+                alert.messageText = L10n.terminationPersistenceFailedTitle
+                alert.informativeText = L10n.documentSaveFailed
+                alert.runModal()
+                return
+            }
             await startup?.prepareForTermination()
             if let failureMessage = await terminationHandler?() {
                 isTerminating = false

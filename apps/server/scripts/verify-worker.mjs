@@ -39,6 +39,7 @@ try {
       DAHLIA_STORAGE_BACKEND: 'r2', DAHLIA_AI_BACKEND: 'cloudflare',
       OPENAI_BASE_URL: 'https://api.cloudflare.com/client/v4/accounts/synthetic/ai/v1', OPENAI_API_KEY: 'synthetic' } });
   await mf.ready;
+  assert.deepEqual(await (await mf.dispatchFetch('http://localhost:5173/runtime/documents')).json(), { success: true });
   const startupMs = Math.round(performance.now() - started);
   const first = await (await mf.dispatchFetch('http://localhost:5173/runtime/database')).json();
   const second = await (await mf.dispatchFetch('http://localhost:5173/runtime/database')).json();
@@ -151,5 +152,5 @@ try {
   }
   assert(completed, 'native Queue consumer did not complete');
   assert.equal(await completed.text(), 'ok');
-  console.log(JSON.stringify({ runtime: 'workerd', checks: ['configured-email-identity-and-domain-enrollment', 'native-header-user-provisioning', 'verified-google-organization-policies', 'organization-request-and-lifecycle-authorization', 'postgres-event-isolation', 'fetch-lifecycle', 'R2-audio-stream', 'Images-WebP', 'queue-handler', 'Cloudflare-and-Databricks-adapters'], bundleBytes: Buffer.byteLength(script), gzipBytes: gzipSync(script).length, startupMs }));
+  console.log(JSON.stringify({ runtime: 'workerd', checks: ['portable-documents-fixture', 'configured-email-identity-and-domain-enrollment', 'native-header-user-provisioning', 'verified-google-organization-policies', 'organization-request-and-lifecycle-authorization', 'postgres-event-isolation', 'fetch-lifecycle', 'R2-audio-stream', 'Images-WebP', 'queue-handler', 'Cloudflare-and-Databricks-adapters'], bundleBytes: Buffer.byteLength(script), gzipBytes: gzipSync(script).length, startupMs }));
 } finally { await mf?.dispose(); await rm(directory, { recursive: true, force: true }); }

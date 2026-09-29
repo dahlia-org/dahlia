@@ -1,3 +1,5 @@
+import documentFixture from "../../../desktop/Tests/DahliaTests/Fixtures/documents.json";
+import { DocumentCore } from "../../src/documents/core";
 import { createWorkerHandler, initializeWorkerApp, type WorkerEnv } from "../../src/worker";
 import { createWorkerScreenshotTransformer } from "../../src/sync/worker-screenshot-transformer";
 import { audioBase64 } from "../../src/summary/audio";
@@ -26,6 +28,14 @@ export default {
   ...handler,
   async fetch(request: Request<unknown, IncomingRequestCfProperties>, env: WorkerEnv, context: ExecutionContext) {
     const path = new URL(request.url).pathname;
+    if (path === "/runtime/documents") {
+      const core = new DocumentCore(documentFixture.checkpoint);
+      try {
+        for (const update of documentFixture.updates) core.apply(update);
+        assert.deepEqual(core.projection(), { text: documentFixture.text, blocks: documentFixture.blocks });
+        return Response.json({ success: true });
+      } finally { core.destroy(); }
+    }
     if (path === "/runtime/provider") {
       const backend = new URL(request.url).searchParams.get("backend")!;
       const config = loadConfig({ DAHLIA_AUTH_TYPE: "header", DAHLIA_AUTH_SECRET: env.DAHLIA_AUTH_SECRET, DAHLIA_AI_BACKEND: backend,

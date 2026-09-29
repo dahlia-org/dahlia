@@ -837,3 +837,68 @@ CREATE VIEW `meeting_images` AS
   FROM meeting_attachments m JOIN files f ON f.file_id = m.file_id AND f.workspace_id = m.workspace_id
   WHERE json_extract(f.metadata, '$.source') = 'screenshot'
 ;
+--> statement-breakpoint
+CREATE TABLE `documents` (
+	`id` text PRIMARY KEY,
+	`workspace_id` text NOT NULL,
+	`meeting_id` text NOT NULL UNIQUE,
+	`schema_version` integer DEFAULT 1 NOT NULL,
+	`generation` text NOT NULL,
+	`revision` integer DEFAULT 0 NOT NULL,
+	`checkpoint_revision` integer DEFAULT 0 NOT NULL,
+	`checkpoint` text NOT NULL,
+	`text` text NOT NULL,
+	`projection_revision` integer DEFAULT 0 NOT NULL,
+	`encrypted_payload` text,
+	`created_at` integer NOT NULL,
+	`updated_at` integer NOT NULL,
+	CONSTRAINT `fk_documents_workspace_id_workspaces_workspace_id_fk` FOREIGN KEY (`workspace_id`) REFERENCES `workspaces`(`workspace_id`) ON DELETE CASCADE,
+	CONSTRAINT `fk_documents_meeting_id_meetings_meeting_id_fk` FOREIGN KEY (`meeting_id`) REFERENCES `meetings`(`meeting_id`) ON DELETE CASCADE,
+	CONSTRAINT `document_parent_workspace_fk` FOREIGN KEY (`workspace_id`,`meeting_id`) REFERENCES `meetings`(`workspace_id`,`meeting_id`) ON UPDATE CASCADE ON DELETE CASCADE,
+	CONSTRAINT `document_workspace_id_unique` UNIQUE(`workspace_id`,`id`),
+	CONSTRAINT "document_meeting_id" CHECK("id" = "meeting_id"),
+	CONSTRAINT "document_watermarks" CHECK("projection_revision" = "revision" AND "checkpoint_revision" <= "revision")
+);
+--> statement-breakpoint
+CREATE TABLE `document_presence` (
+	`id` text PRIMARY KEY,
+	`document_id` text NOT NULL,
+	`workspace_id` text NOT NULL,
+	`user_id` text NOT NULL,
+	`expires_at` integer NOT NULL,
+	CONSTRAINT `fk_document_presence_document_id_documents_id_fk` FOREIGN KEY (`document_id`) REFERENCES `documents`(`id`) ON DELETE CASCADE,
+	CONSTRAINT `fk_document_presence_workspace_id_workspaces_workspace_id_fk` FOREIGN KEY (`workspace_id`) REFERENCES `workspaces`(`workspace_id`) ON DELETE CASCADE,
+	CONSTRAINT `fk_document_presence_user_id_user_id_fk` FOREIGN KEY (`user_id`) REFERENCES `user`(`id`) ON DELETE CASCADE,
+	CONSTRAINT `documentPresence_workspace_fk` FOREIGN KEY (`workspace_id`,`document_id`) REFERENCES `documents`(`workspace_id`,`id`) ON UPDATE CASCADE ON DELETE CASCADE
+);
+--> statement-breakpoint
+CREATE TABLE `document_recoveries` (
+	`id` text PRIMARY KEY,
+	`document_id` text NOT NULL,
+	`workspace_id` text NOT NULL,
+	`blocks` text NOT NULL,
+	`reason` text NOT NULL,
+	`encrypted_payload` text,
+	`created_at` integer NOT NULL,
+	CONSTRAINT `fk_document_recoveries_document_id_documents_id_fk` FOREIGN KEY (`document_id`) REFERENCES `documents`(`id`) ON DELETE CASCADE,
+	CONSTRAINT `fk_document_recoveries_workspace_id_workspaces_workspace_id_fk` FOREIGN KEY (`workspace_id`) REFERENCES `workspaces`(`workspace_id`) ON DELETE CASCADE,
+	CONSTRAINT `documentRecovery_workspace_fk` FOREIGN KEY (`workspace_id`,`document_id`) REFERENCES `documents`(`workspace_id`,`id`) ON UPDATE CASCADE ON DELETE CASCADE
+);
+--> statement-breakpoint
+CREATE TABLE `document_updates` (
+	`document_id` text NOT NULL,
+	`workspace_id` text NOT NULL,
+	`revision` integer NOT NULL,
+	`update` text NOT NULL,
+	`encrypted_payload` text,
+	`created_at` integer NOT NULL,
+	CONSTRAINT `document_updates_pk` PRIMARY KEY(`document_id`, `revision`),
+	CONSTRAINT `fk_document_updates_document_id_documents_id_fk` FOREIGN KEY (`document_id`) REFERENCES `documents`(`id`) ON DELETE CASCADE,
+	CONSTRAINT `fk_document_updates_workspace_id_workspaces_workspace_id_fk` FOREIGN KEY (`workspace_id`) REFERENCES `workspaces`(`workspace_id`) ON DELETE CASCADE,
+	CONSTRAINT `documentUpdate_workspace_fk` FOREIGN KEY (`workspace_id`,`document_id`) REFERENCES `documents`(`workspace_id`,`id`) ON UPDATE CASCADE ON DELETE CASCADE
+);
+--> statement-breakpoint
+ALTER TABLE `jobs_summary` ADD `notes_snapshot` text;--> statement-breakpoint
+CREATE INDEX `documents_workspace_id` ON `documents` (`workspace_id`,`id`);--> statement-breakpoint
+CREATE INDEX `document_presence_expiry` ON `document_presence` (`expires_at`);--> statement-breakpoint
+CREATE INDEX `document_recoveries_document_id` ON `document_recoveries` (`document_id`);

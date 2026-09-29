@@ -6,7 +6,7 @@ import { createWorkspaceCipher, EncryptionError, unwrapDataKey, wrapDataKey, typ
 
 type ContentSchema = typeof Schema;
 type Row = Record<string, unknown>;
-type ContentTable = ContentSchema["syncedWorkspace" | "syncedProject" | "syncedMeeting" | "transcript" | "syncedTranscriptSegment" | "transcriptPatchChunk" | "syncedFile" | "syncTransactionReceipt" | "summaryJob" | "summary"];
+type ContentTable = ContentSchema["syncedWorkspace" | "syncedProject" | "syncedMeeting" | "transcript" | "syncedTranscriptSegment" | "transcriptPatchChunk" | "syncedFile" | "syncTransactionReceipt" | "summaryJob" | "summary" | "document" | "documentUpdate" | "documentRecovery"];
 
 const policies: Record<string, { ids: string[]; fields: Row; hashes?: string[] }> = {
   workspaces: { ids: ["workspaceId"], fields: { name: "" } },
@@ -17,7 +17,10 @@ const policies: Record<string, { ids: string[]; fields: Row; hashes?: string[] }
   transcript_patch_chunks: { ids: ["workspaceId", "meetingId", "patchId", "chunkIndex"], fields: { payload: {}, contentHash: "" }, hashes: ["contentHash"] },
   files: { ids: ["fileId"], fields: { name: "", uri: "", metadata: {}, checksum: "" }, hashes: ["checksum"] },
   transaction_receipts: { ids: ["transactionId"], fields: { responseJson: null, requestHash: "" }, hashes: ["requestHash"] },
-  jobs_summary: { ids: ["id"], fields: { settings: {}, input: null, transcriptResult: null, inputVersion: "", requestHash: "" }, hashes: ["inputVersion", "requestHash"] },
+  jobs_summary: { ids: ["id"], fields: { settings: {}, input: null, notesSnapshot: null, transcriptResult: null, inputVersion: "", requestHash: "" }, hashes: ["inputVersion", "requestHash"] },
+  documents: { ids: ["id"], fields: { checkpoint: "", text: "" } },
+  document_updates: { ids: ["documentId", "revision"], fields: { update: "" } },
+  document_recoveries: { ids: ["id"], fields: { blocks: [] } },
   summaries: { ids: ["id"], fields: { title: "", document: "", metadata: null } },
 };
 

@@ -265,7 +265,13 @@ actor SyncWorker {
         self.workspacesDidChange = workspacesDidChange
     }
 
+    private var documentTask: Task<Void, Never>?
+
     func start() async {
+        if documentTask == nil {
+            let documents = DocumentSyncService(dbQueue: dbQueue, api: apiClient)
+            documentTask = Task { await documents.run() }
+        }
         guard drainTask == nil else { return }
         fileUploadsStopped = false
         drainTask = Task { [weak self] in
@@ -293,6 +299,10 @@ actor SyncWorker {
     }
 
     func stop() async {
+        documentTask?.cancel()
+        // Shared authentication refresh can ignore cancellation. Document transport must
+        // not gate shutdown; durable local editor commits have their own termination drain.
+        documentTask = nil
         discoveryTask?.cancel()
         drainTask?.cancel()
         cancelFileUploads()
@@ -1009,7 +1019,7 @@ actor SyncWorker {
             }
             let capabilities = try decode(ServerCapabilities.self, from: data)
             updateTransferSupport(capabilities, connectionId: target.connectionId)
-            guard capabilities.sync?.version == 6 else {
+            guard capabilities.sync?.version == 7 else {
                 throw SyncHTTPError(status: 426, body: Data())
             }
             let meetingEventsVersion = capabilities.meetingEvents?.version == 1 ? 1 : 0
@@ -1769,6 +1779,7 @@ struct ServerCapabilities: Decodable {
     }
 
     let sync: Feature?
+    let documents: Feature?
     let recordingArchive: Feature?
     let workspaceTransfers: Feature?
     let meetingEvents: Feature?

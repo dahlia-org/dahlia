@@ -349,7 +349,7 @@
             let unrelatedWriteCompleted = Mutex(false)
             ImageURLProtocol.register(origin: fixture.connection.origin) { request in
                 switch request.url!.lastPathComponent {
-                case "capabilities": return (200, [:], Data(#"{"sync":{"version":6}}"#.utf8))
+                case "capabilities": return (200, [:], Data(#"{"documents":{"version":1},"sync":{"version":7}}"#.utf8))
                 case "workspaces": return (200, [:], listing)
                 case "snapshot":
                     do {

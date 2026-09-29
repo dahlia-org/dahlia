@@ -652,9 +652,68 @@
     },
     "aiLiveContext": {
       "meetingId": "id:meeting"
+    },
+    "sharedDocument": {
+      "id": "id:document",
+      "workspaceId": "id:workspace",
+      "meetingId": "id:meeting"
+    },
+    "documentEnvelope": {
+      "document": "sharedDocument"
+    },
+    "documentList": {
+      "items": "array:sharedDocument",
+      "nextCursor": "id:document"
+    },
+    "documentRecovery": {
+      "id": "id:documentRecovery"
+    },
+    "documentRecoveries": {
+      "items": "array:documentRecovery",
+      "nextCursor": "id:documentRecovery"
+    },
+    "documentPresence": {
+      "items": "array:documentEditorPerson"
+    },
+    "documentEditorPerson": {
+      "userId": "id:user"
     }
   },
   "routes": [
+    {
+      "path": "/api/v1/workspaces/:workspace/documents",
+      "response": "documentList",
+      "query": {
+        "after": "id:document"
+      }
+    },
+    {
+      "path": "/api/v1/workspaces/:workspace/documents/:document",
+      "request": "pass",
+      "response": "documentEnvelope",
+      "limit": 25165824
+    },
+    {
+      "path": "/api/v1/workspaces/:workspace/documents/:document/sync",
+      "request": "pass",
+      "response": "pass",
+      "limit": 25165824
+    },
+    {
+      "path": "/api/v1/workspaces/:workspace/documents/:document/recoveries",
+      "request": "documentRecovery",
+      "response": "documentRecoveries",
+      "query": {
+        "after": "id:documentRecovery"
+      },
+      "limit": 25165824
+    },
+    {
+      "path": "/api/v1/workspaces/:workspace/documents/:document/presence",
+      "request": "pass",
+      "response": "documentPresence",
+      "limit": 8388608
+    },
     {
       "path": "/api/v1/user/memory/scopes",
       "methods": [
@@ -2326,6 +2385,14 @@
         "POST"
       ],
       "response": "pass"
+    },
+    {
+      "path": "/api/v1/workspaces/:workspace/documents/:document/events",
+      "response": "pass",
+      "methods": [
+        "GET",
+        "HEAD"
+      ]
     }
   ]
 }

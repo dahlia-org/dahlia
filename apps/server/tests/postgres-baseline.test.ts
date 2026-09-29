@@ -40,7 +40,7 @@ it.runIf(process.env.TEST_MIGRATION_DATABASE_URL)("creates the complete PostgreS
     const protectedTables = await client.query<{ relname: string; relforcerowsecurity: boolean }>(`SELECT relname, relforcerowsecurity FROM pg_class
       WHERE relnamespace IN ('app'::regnamespace, 'jobs'::regnamespace, 'search'::regnamespace, 'crypto'::regnamespace, 'agent'::regnamespace) AND relrowsecurity ORDER BY relname`);
     expect(protectedTables.rows.map((row) => row.relname)).toEqual([
-      "ai_thread_runs", "documents", "files", "knowledge_pages", "live_contexts", "mastra_messages",
+      "ai_thread_runs", "document_presence", "document_recoveries", "document_updates", "documents", "documents", "files", "knowledge_pages", "live_contexts", "mastra_messages",
       "mastra_observational_memory", "mastra_resources", "mastra_threads", "meeting_attachments",
       "meeting_events", "meetings", "memory_jobs", "personal_memories", "projects",
       "recordings", "shared_memories", "summaries", "summary", "transaction_receipts",

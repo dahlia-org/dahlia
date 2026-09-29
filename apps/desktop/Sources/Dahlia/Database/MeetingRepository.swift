@@ -248,6 +248,7 @@ final class MeetingRepository {
         guard serverWorkspace.workspaceId == id, serverWorkspace.connectionId == connectionID, serverWorkspace.role == "admin" else {
             throw LocalWorkspaceImportError.unavailable
         }
+        try await DocumentPersistence(dbQueue: dbQueue).prepareAccountTransfer(workspaceID: id)
         let adoptedName = requestedName?.trimmingCharacters(in: .whitespacesAndNewlines) ?? serverWorkspace.name
         guard !adoptedName.isEmpty else { throw LocalWorkspaceImportError.unavailable }
         screenshotContent.retainOriginals(workspaceIds: [id], dbQueue: dbQueue)
@@ -259,6 +260,7 @@ final class MeetingRepository {
                   try !RecordingSessionRecord.hasActiveRecording(workspaceId: id, in: db),
                   try !SyncTransactionQueue.hasPending(workspaceId: id, in: db) else { throw LocalWorkspaceImportError.changed }
             try ScreenshotContentProvider.installTransfers(files, workspaceId: id, in: db)
+            try DocumentPersistence.preservePrivateCopies(workspaceID: id, in: db)
             workspace.name = adoptedName
             workspace.accountConnectionId = connectionID
             workspace.organizationId = serverWorkspace.organizationId
@@ -428,6 +430,15 @@ final class MeetingRepository {
         }
         guard !workspaceIds.isEmpty else { return }
 
+        try await DocumentEditorModel.finishLocalSaves(dbQueue: dbQueue)
+        if disposition != .moveToLocalAccount {
+            try await dbQueue.read { db in
+                for id in workspaceIds where try DocumentRetention.hasPrivateData(workspaceID: id, in: db) {
+                    throw DocumentCoreError.privateDataRequiresLocalCopy
+                }
+            }
+        }
+
         if disposition == .moveToLocalAccount {
             screenshotContent.retainOriginals(workspaceIds: workspaceIds, dbQueue: dbQueue)
             defer { screenshotContent.releaseOriginals(workspaceIds: workspaceIds, dbQueue: dbQueue) }
@@ -471,6 +482,18 @@ final class MeetingRepository {
                 for var workspace in try WorkspaceRecord.filter(Column("accountConnectionId") == connectionID).fetchAll(db) {
                     workspace.moveToLocalAccount()
                     try workspace.update(db)
+                    try db.execute(
+                        sql: "UPDATE document_updates SET pending = 0 WHERE meetingId IN (SELECT id FROM meetings WHERE workspace_id = ?)",
+                        arguments: [workspace.id]
+                    )
+                    try db.execute(
+                        sql: "UPDATE documents SET generation = NULL, revision = 0 WHERE meetingId IN (SELECT id FROM meetings WHERE workspace_id = ?)",
+                        arguments: [workspace.id]
+                    )
+                    try db.execute(
+                        sql: "UPDATE document_recoveries SET pending = 0 WHERE meetingId IN (SELECT id FROM meetings WHERE workspace_id = ?)",
+                        arguments: [workspace.id]
+                    )
                 }
             }
             return

@@ -121,7 +121,7 @@ export function createTranscriptSummaryMethod(config: AppConfig, store: MeetingS
       }));
       if (!job.transcriptResult && await fingerprint(input) !== job.inputVersion) throw new SummaryError("summary_input_changed");
       if (!input.transcript?.some((segment) => segment.text.trim())) throw new SummaryError("summary_transcript_empty");
-      const { content, images, imageIds, imageSelection } = await summaryImageContent(input, sync, identity, signal, recordingSessions, selector);
+      const { content, images, imageIds, imageSelection } = await summaryImageContent(input, sync, identity, signal, recordingSessions, selector, job.notesSnapshot);
       const model = execution.resolveModel(job.settings.model);
       if (provider.backend === "cloudflare" && (model !== "openai/gpt-4.1" || job.settings.reasoningEffort !== "none")) {
         throw new SummaryError("summary_invalid_model");
@@ -203,7 +203,8 @@ function summaryElapsedTime(startedAt: Date, timeBase: Date, sessions: readonly 
 
 export async function summaryImageContent(input: Awaited<ReturnType<typeof collectSummaryInput>>, sync: MeetingSyncService,
   identity: import("../auth/identity").Identity, signal: AbortSignal, recordingSessions: readonly SummaryRecordingSession[] = [],
-  selector?: ScreenshotSelector) {
+  selector?: ScreenshotSelector, notesSnapshot?: import("./model").SummaryJob["notesSnapshot"]) {
+  if (JSON.stringify(input).length + (notesSnapshot?.text.length ?? 0) > 2_000_000) throw new SummaryError("summary_input_too_large");
   const candidates = summaryScreenshotCandidates(input.images, input.uninformative);
   const { images, method } = await selectSummaryScreenshots(candidates, signal, selector, async (image, deadline) => {
     const { upstream } = await sync.readFileContent(identity, image.fileId, "thumb_480", "GET", new Request("https://dahlia.invalid/", { signal: deadline }));
@@ -231,6 +232,7 @@ export async function summaryImageContent(input: Awaited<ReturnType<typeof colle
     <path>${summaryXMLText(project.path)}</path>
   </project>` : ""}
 </context>` }];
+  if (notesSnapshot) content.push({ type: "input_text", text: `<notes trust="untrusted">${summaryXMLText(notesSnapshot.text)}</notes>` });
   if (input.transcript) {
     const timeBase = meeting.recordingStartedAt ?? meeting.createdAt;
     const transcript = input.transcript.map((segment) => {

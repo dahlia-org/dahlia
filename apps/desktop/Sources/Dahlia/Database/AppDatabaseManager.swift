@@ -305,7 +305,7 @@ final class AppDatabaseManager: Sendable {
             try VaultAISettingsBackfillMigration.migrate(in: db)
         }
 
-        // v0.21.0 shipped through v41. The following changes have never been distributed.
+        // Released history: v0.21.0 through v41; v0.22.0 through v45; v0.23.0–v0.24.1 through v46.
         migrator.registerMigration("v42_localFirstSchema", foreignKeyChecks: .deferred) { db in
             try MeetingSyncMigration.migrate(in: db)
             try RetireVectorSearchMigration.migrate(in: db)
@@ -352,6 +352,10 @@ final class AppDatabaseManager: Sendable {
 
         migrator.registerMigration("v47_orphanedRecordingRecoveryState") { db in
             try OrphanedRecordingRecoveryRecord.createTableIfNeeded(in: db)
+        }
+
+        migrator.registerMigration("v47_documents") { db in
+            try DocumentsMigration.migrate(in: db)
         }
 
         return migrator

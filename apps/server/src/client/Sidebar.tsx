@@ -1,4 +1,5 @@
 import { objectPath, parseObjectPath } from "../object-url";
+import { finishBrowserDocuments } from "./Documents";
 import { apiQuery } from "./live-data";
 import { isChatPath } from "./routes";
 import { collectionAppearance, AppearanceIcon, projectAppearance, type Appearance } from "./AppearancePicker";
@@ -104,6 +105,7 @@ function SignOutButton() {
     setPending(true);
     setError(undefined);
     try {
+      await finishBrowserDocuments();
       await json("/api/auth/sign-out", { method: "POST", body: "{}" });
       window.location.replace("/sign-out");
     } catch {

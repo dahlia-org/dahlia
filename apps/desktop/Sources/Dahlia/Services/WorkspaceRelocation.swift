@@ -133,6 +133,10 @@ struct WorkspaceRelocation: Decodable, Sendable {
             }
             if item.entity == .meeting {
                 try db.execute(sql: "UPDATE recording_archives SET workspace_id = ? WHERE meetingId = ?", arguments: [item.workspaceId, item.id])
+                try db.execute(
+                    sql: "UPDATE document_local_archives SET workspace_id = ? WHERE workspace_id = ? AND meetingId = ?",
+                    arguments: [item.workspaceId, source, item.id]
+                )
                 for state in ["sync_entity_state", "sync_content_state"] {
                     try db.execute(sql: """
                     UPDATE \(state) SET workspace_id = ? WHERE workspace_id = ? AND (

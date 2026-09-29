@@ -465,6 +465,7 @@ export const imageAnalysisJob = sqliteTable("jobs_image_analysis", {
 // Settings and input fingerprints are owner-private; no transcript or provider credentials are queued.
 export const summaryJob = sqliteTable("jobs_summary", {
   encryptedPayload: text("encrypted_payload"),
+  notesSnapshot: text("notes_snapshot", { mode: "json" }).$type<SummaryJob["notesSnapshot"]>(),
   id: text("id").primaryKey(),
   workspaceId: text("workspace_id").notNull().references(() => syncedWorkspace.workspaceId, { onDelete: "cascade" }),
   meetingId: text("meeting_id").notNull().references(() => syncedMeeting.meetingId, { onDelete: "cascade" }),
@@ -639,3 +640,47 @@ export const knowledgePage = sqliteTable("knowledge_pages", {
   completedVersion: integer("completed_version").default(0).notNull(),
   operation: text("operation", { mode: "json" }).$type<import("../memory/pages-model").PageOperation>(),
 }, (table) => [primaryKey({ columns: [table.scopeId, table.id] })]);
+
+
+export const document = sqliteTable("documents", {
+  id: text("id").primaryKey(),
+  workspaceId: text("workspace_id").notNull().references(() => syncedWorkspace.workspaceId, { onDelete: "cascade" }),
+  meetingId: text("meeting_id").notNull().unique().references(() => syncedMeeting.meetingId, { onDelete: "cascade" }),
+  schemaVersion: integer("schema_version").default(1).notNull(),
+  generation: text("generation").notNull(),
+  revision: integer("revision").default(0).notNull(),
+  checkpointRevision: integer("checkpoint_revision").default(0).notNull(),
+  checkpoint: text("checkpoint").notNull(),
+  text: text("text").notNull(),
+  projectionRevision: integer("projection_revision").default(0).notNull(),
+  encryptedPayload: text("encrypted_payload"),
+  createdAt: sqliteTimestamp("created_at").notNull(),
+  updatedAt: sqliteTimestamp("updated_at").notNull(),
+}, (table) => [unique("document_workspace_id_unique").on(table.workspaceId, table.id), foreignKey({ name: "document_parent_workspace_fk", columns: [table.workspaceId, table.meetingId], foreignColumns: [syncedMeeting.workspaceId, syncedMeeting.meetingId] }).onDelete("cascade").onUpdate("cascade"), check("document_meeting_id", sql`${table.id} = ${table.meetingId}`), check("document_watermarks", sql`${table.projectionRevision} = ${table.revision} AND ${table.checkpointRevision} <= ${table.revision}`), index("documents_workspace_id").on(table.workspaceId, table.id)]);
+
+export const documentUpdate = sqliteTable("document_updates", {
+  documentId: text("document_id").notNull().references(() => document.id, { onDelete: "cascade" }),
+  workspaceId: text("workspace_id").notNull().references(() => syncedWorkspace.workspaceId, { onDelete: "cascade" }),
+  revision: integer("revision").notNull(),
+  update: text("update").notNull(),
+  encryptedPayload: text("encrypted_payload"),
+  createdAt: sqliteTimestamp("created_at").notNull(),
+}, (table) => [foreignKey({ name: "documentUpdate_workspace_fk", columns: [table.workspaceId, table.documentId], foreignColumns: [document.workspaceId, document.id] }).onDelete("cascade").onUpdate("cascade"), primaryKey({ columns: [table.documentId, table.revision] })]);
+
+export const documentRecovery = sqliteTable("document_recoveries", {
+  id: text("id").primaryKey(),
+  documentId: text("document_id").notNull().references(() => document.id, { onDelete: "cascade" }),
+  workspaceId: text("workspace_id").notNull().references(() => syncedWorkspace.workspaceId, { onDelete: "cascade" }),
+  blocks: text("blocks", { mode: "json" }).$type<import("../documents/core").DocumentBlock[]>().notNull(),
+  reason: text("reason").$type<"deleted" | "concurrent_delete">().notNull(),
+  encryptedPayload: text("encrypted_payload"),
+  createdAt: sqliteTimestamp("created_at").notNull(),
+}, (table) => [foreignKey({ name: "documentRecovery_workspace_fk", columns: [table.workspaceId, table.documentId], foreignColumns: [document.workspaceId, document.id] }).onDelete("cascade").onUpdate("cascade"), index("document_recoveries_document_id").on(table.documentId)]);
+
+export const documentPresence = sqliteTable("document_presence", {
+  id: text("id").primaryKey(),
+  documentId: text("document_id").notNull().references(() => document.id, { onDelete: "cascade" }),
+  workspaceId: text("workspace_id").notNull().references(() => syncedWorkspace.workspaceId, { onDelete: "cascade" }),
+  userId: text("user_id").notNull().references(() => authUser.id, { onDelete: "cascade" }),
+  expiresAt: sqliteTimestamp("expires_at").notNull(),
+}, (table) => [foreignKey({ name: "documentPresence_workspace_fk", columns: [table.workspaceId, table.documentId], foreignColumns: [document.workspaceId, document.id] }).onDelete("cascade").onUpdate("cascade"), index("document_presence_expiry").on(table.expiresAt)]);

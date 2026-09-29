@@ -51,6 +51,7 @@ extension MeetingContentProvider {
                         }
                         guard !ids.isEmpty else { break }
                         for id in ids {
+                            if table == "meetings" { try await DocumentSyncService(dbQueue: dbQueue, api: client).synchronize(meetingID: id) }
                             for entity in entities {
                                 try await ensure(entity: entity, id: id, dbQueue: dbQueue, refresh: true)
                             }

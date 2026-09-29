@@ -136,3 +136,7 @@ PATCH は現在行の指定葉だけを更新し、異なる葉の並行更新�
 旧列削除後はアプリだけを旧版へ戻せないため、復旧は修正の前進適用、または移行前バックアップと対応バージョンの組み合わせで行う。
 
 latest の応答は `formatVersion`（通信形式）、`version`（要約世代）、`revision`（同期番号）を区別する。Desktop の最新本文・header の物理保存と本文解放用途は維持し、履歴テーブルは追加しない。
+
+## 共有 Documents の固定入力（2026-09-29）
+
+[Documents ADR](../shared/documents.md) により、受理時点の共有 Notes の ID・revision・本文または不在を内部 `notesSnapshot` に固定する。snapshot は暗号化対象で状態 API には含めない。ローカルの未公開 Notes は送信しない。Notes は現在状態との fingerprint 比較から除外し、既存文字起こし等の比較は維持する。同じジョブの retry は同じ snapshot、明示 `/retry` は最新 snapshot の新しいジョブ。2段階処理も最初の snapshot を維持する。合計2,000,000 UTF-16 code units、XML escape、untrusted 資料という入力契約を適用する。
