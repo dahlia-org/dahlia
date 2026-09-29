@@ -66,7 +66,14 @@ final class AppDatabaseManager: Sendable {
                try dbQueue.read({ try !Self.migrator.hasCompletedMigrations($0) }) {
                 onMigration()
             }
+            let recoveryPath = URL(fileURLWithPath: path).appendingPathExtension("recovered-recordings").path
+            if try dbQueue.read({ try OrphanedRecordingRecovery.isNeeded(in: $0) }) {
+                try dbQueue.write { try OrphanedRecordingRecovery.prepare(in: $0, recoveryPath: recoveryPath) }
+            }
             try Self.migrator.migrate(dbQueue)
+            if try dbQueue.read({ try OrphanedRecordingRecovery.needsFinalization(in: $0) }) {
+                try dbQueue.write { try OrphanedRecordingRecovery.finish(in: $0) }
+            }
         }
         if !usesConcurrentSearch {
             searchDBQueue = dbQueue
@@ -341,6 +348,10 @@ final class AppDatabaseManager: Sendable {
 
         migrator.registerMigration("v46_workspacePersonalUser") { db in
             try addColumnIfNeeded(in: db, table: "workspaces", column: "personalUserId", type: .text)
+        }
+
+        migrator.registerMigration("v47_orphanedRecordingRecoveryState") { db in
+            try OrphanedRecordingRecoveryRecord.createTableIfNeeded(in: db)
         }
 
         return migrator

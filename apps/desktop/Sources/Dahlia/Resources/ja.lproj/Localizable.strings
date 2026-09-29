@@ -1729,3 +1729,6 @@
 "summary.source.useSaved.description" = "サーバーの最新版を取得せず、このMacに保存された版から生成します。内容が古い可能性があります。オフライン時に選択できます。";
 
 "settings.serverConnections" = "アカウント管理";
+
+"recovery.recordings" = "復旧した録音";
+"recovery.recording" = "復旧した録音";
