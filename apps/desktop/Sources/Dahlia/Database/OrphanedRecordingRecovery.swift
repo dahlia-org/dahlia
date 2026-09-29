@@ -31,10 +31,13 @@ enum OrphanedRecordingRecovery {
         // especially a Server-connected workspace that could publish recovered content.
         let workspaceID = UUID.v7()
         let now = Date.now
+        let temporaryPath = URL(fileURLWithPath: recoveryPath).appending(path: workspaceID.uuidString).path
+        try OrphanedRecordingRecoveryRecord.createTableIfNeeded(in: db)
         try db.execute(sql: """
         INSERT INTO vaults (id, path, name, createdAt, lastOpenedAt)
         VALUES (?, ?, ?, ?, ?)
-        """, arguments: [workspaceID, recoveryPath, L10n.recoveredRecordings, now, Date(timeIntervalSince1970: 0)])
+        """, arguments: [workspaceID, temporaryPath, L10n.recoveredRecordings, now, Date(timeIntervalSince1970: 0)])
+        try OrphanedRecordingRecoveryRecord(workspaceId: workspaceID).insert(db)
         for row in missing {
             // Preserve the stored key representation as well as its value.
             let meetingID: DatabaseValue = row["meetingId"]
@@ -49,22 +52,27 @@ enum OrphanedRecordingRecovery {
         try db.checkForeignKeys()
     }
 
-    static func needsFinalization(in db: Database, recoveryPath: String) throws -> Bool {
-        guard try db.tableExists("workspaces") else { return false }
-        guard try db.columns(in: "workspaces").contains(where: { $0.name == "path" }) else { return false }
-        return try Bool.fetchOne(db, sql: "SELECT EXISTS (SELECT 1 FROM workspaces WHERE path = ?)", arguments: [recoveryPath]) == true
+    static func needsFinalization(in db: Database) throws -> Bool {
+        guard try db.tableExists(OrphanedRecordingRecoveryRecord.databaseTableName) else { return false }
+        return try OrphanedRecordingRecoveryRecord.fetchCount(db) > 0
     }
 
-    static func finish(in db: Database, recoveryPath: String) throws {
-        guard try db.tableExists("workspaces") else { return }
-        // The private path is a durable marker across a failed migration/restart. Old
-        // vault schemas require a path; the current schema allows no output directory.
-        // Clear the marker and disable automatic processing atomically before startup.
+    static func finish(in db: Database) throws {
+        guard try needsFinalization(in: db) else { return }
+        let pendingCount = try OrphanedRecordingRecoveryRecord.fetchCount(db)
+        // Old vault schemas require a path; the current schema allows no output directory.
+        // Only explicit recovery IDs authorize changing settings. Consume the checkpoint
+        // in this same transaction so failure/restart cannot lose or replay finalization.
         try db.execute(sql: """
         UPDATE workspaces
         SET path = NULL, aiSettingsBackfilled = 1,
             generationSettings = json_set(generationSettings, '$.automaticProcessing', json('false'))
-        WHERE path = ? AND accountConnectionId IS NULL AND organizationId IS NULL
-        """, arguments: [recoveryPath])
+        WHERE id IN (SELECT workspaceId FROM orphaned_recording_recoveries)
+            AND accountConnectionId IS NULL AND organizationId IS NULL
+        """)
+        guard db.changesCount == pendingCount else {
+            throw DatabaseError(message: "Recovered workspace is missing or no longer local")
+        }
+        try OrphanedRecordingRecoveryRecord.deleteAll(db)
     }
 }

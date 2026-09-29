@@ -13,6 +13,7 @@ import GRDB
             try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
             defer { try? FileManager.default.removeItem(at: directory) }
             let path = directory.appending(path: "test.sqlite").path
+            let existingPath = URL(fileURLWithPath: path).appendingPathExtension("recovered-recordings").path
             let meetingID = UUID.v7()
             let existingWorkspaceID = UUID.v7(), existingMeetingID = UUID.v7()
             let sessionIDs = [UUID.v7(), UUID.v7()]
@@ -21,9 +22,9 @@ import GRDB
             try AppDatabaseManager.migrator.migrate(queue, upTo: version)
             try queue.writeWithoutTransaction { db in
                 try db.execute(sql: """
-                INSERT INTO vaults (id, path, name, createdAt, lastOpenedAt) VALUES (?, '/tmp/existing', 'Existing', ?, ?);
+                INSERT INTO vaults (id, path, name, createdAt, lastOpenedAt) VALUES (?, ?, 'Existing', ?, ?);
                 INSERT INTO meetings (id, vaultId, name, createdAt, updatedAt) VALUES (?, ?, 'Existing meeting', ?, ?);
-                """, arguments: [existingWorkspaceID, date, date, existingMeetingID, existingWorkspaceID, date, date])
+                """, arguments: [existingWorkspaceID, existingPath, date, date, existingMeetingID, existingWorkspaceID, date, date])
                 try db.execute(sql: "PRAGMA foreign_keys = OFF")
                 for sessionID in sessionIDs {
                     try db.execute(sql: """
@@ -48,7 +49,7 @@ import GRDB
                     #expect(workspace.id != existingWorkspaceID)
                     #expect(try MeetingRecord.fetchCount(db) == 2)
                     #expect(try WorkspaceRecord.fetchCount(db) == 2)
-                    #expect(try WorkspaceRecord.fetchOne(db, key: existingWorkspaceID)?.path == "/tmp/existing")
+                    #expect(try WorkspaceRecord.fetchOne(db, key: existingWorkspaceID)?.path == existingPath)
                     #expect(try MeetingRecord.fetchOne(db, key: existingMeetingID)?.name == "Existing meeting")
                     #expect(try RecordingSessionRecord.fetchCount(db) == 2)
                     for id in sessionIDs {
@@ -57,6 +58,7 @@ import GRDB
                         #expect(session.endedAt == date.addingTimeInterval(700) && session.duration == 700)
                     }
                     try db.checkForeignKeys()
+                    #expect(try OrphanedRecordingRecoveryRecord.fetchCount(db) == 0)
                     #expect(try AppDatabaseManager.hasExpectedCurrentSchema(db))
                 }
                 try manager.close()
@@ -92,22 +94,95 @@ import GRDB
             #expect(throws: DatabaseError.self) { try AppDatabaseManager.migrator.migrate(queue) }
             try queue.write { db in
                 #expect(try Int.fetchOne(db, sql: "SELECT count(*) FROM vaults") == 1)
+                #expect(try OrphanedRecordingRecoveryRecord.fetchCount(db) == 1)
                 #expect(try String.fetchOne(db, sql: "SELECT text FROM transcript_segments") == "saved transcript")
                 #expect(try Data.fetchOne(db, sql: "SELECT imageData FROM screenshots") == image)
                 try db.execute(sql: "DROP TABLE workspace_relocation_scope")
                 try OrphanedRecordingRecovery.prepare(in: db, recoveryPath: recoveryPath)
             }
             try AppDatabaseManager.migrator.migrate(queue)
-            try queue.write { try OrphanedRecordingRecovery.finish(in: $0, recoveryPath: recoveryPath) }
+            // A restored/moved database or a changed export folder must not lose the checkpoint.
+            try queue.write { try $0.execute(sql: "UPDATE workspaces SET path = '/tmp/changed-output-folder'") }
+            try queue.write { try OrphanedRecordingRecovery.finish(in: $0) }
             try queue.read { db in
                 let workspace = try #require(try WorkspaceRecord.fetchOne(db))
                 #expect(try WorkspaceRecord.fetchCount(db) == 1)
                 #expect(workspace.path == nil && !workspace.generationSettings.automaticProcessing)
+                #expect(try OrphanedRecordingRecoveryRecord.fetchCount(db) == 0)
                 #expect(try String.fetchOne(db, sql: "SELECT text FROM transcript_segment_bodies WHERE segmentId = ?", arguments: [segmentID])
                     == "saved transcript")
                 #expect(try MeetingScreenshotRecord.fetchOne(db, key: imageID)?.imageData == image)
                 #expect(try MeetingNoteRecord.fetchOne(db, key: meetingID)?.text == "saved note")
                 try db.checkForeignKeys()
+            }
+            try queue.write { db in
+                try db.execute(sql: """
+                UPDATE workspaces SET path = '/tmp/user-selected-folder',
+                    generationSettings = json_set(generationSettings, '$.automaticProcessing', json('true'))
+                """)
+                try OrphanedRecordingRecovery.finish(in: db)
+                let workspace = try #require(try WorkspaceRecord.fetchOne(db))
+                #expect(workspace.path == "/tmp/user-selected-folder" && workspace.generationSettings.automaticProcessing)
+            }
+        }
+
+        @Test
+        func v46UpgradeDoesNotFinalizeAnUnrelatedWorkspaceWithTheOldMarkerPath() throws {
+            let directory = FileManager.default.temporaryDirectory.appending(path: UUID.v7().uuidString)
+            try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+            defer { try? FileManager.default.removeItem(at: directory) }
+            let path = directory.appending(path: "test.sqlite").path
+            let queue = try DatabaseQueue(path: path, configuration: AppDatabaseManager.configuration())
+            try AppDatabaseManager.migrator.migrate(queue, upTo: "v46_workspacePersonalUser")
+            let workspace = WorkspaceRecord(
+                id: .v7(), path: URL(fileURLWithPath: path).appendingPathExtension("recovered-recordings").path,
+                name: "Existing", createdAt: .now, lastOpenedAt: .now, aiSettingsBackfilled: false
+            )
+            let meeting = MeetingRecord(id: .v7(), workspaceId: workspace.id, name: "Saved", createdAt: .now, updatedAt: .now)
+            try queue.write { db in
+                try workspace.insert(db)
+                try meeting.insert(db)
+            }
+            let original = try queue.read { try WorkspaceRecord.fetchOne($0, key: workspace.id) }
+            let originalMeeting = try queue.read { try MeetingRecord.fetchOne($0, key: meeting.id) }
+            try queue.close()
+            let manager = try AppDatabaseManager(path: path)
+            defer { try? manager.close() }
+            try manager.dbQueue.read { db throws in
+                #expect(try WorkspaceRecord.fetchOne(db, key: workspace.id) == original)
+                #expect(try MeetingRecord.fetchOne(db, key: meeting.id) == originalMeeting)
+                #expect(try OrphanedRecordingRecoveryRecord.fetchCount(db) == 0)
+                #expect(try AppDatabaseManager.hasExpectedCurrentSchema(db))
+                try db.checkForeignKeys()
+            }
+        }
+
+        @Test(arguments: [false, true])
+        func finalizationFailurePreservesAllSettingsAndCheckpoints(serverOwned: Bool) throws {
+            let manager = try AppDatabaseManager(path: ":memory:")
+            let workspace = WorkspaceRecord(id: .v7(), path: "/tmp/output", name: "Recovered", createdAt: .now, lastOpenedAt: .now)
+            try manager.dbQueue.write { db in
+                try workspace.insert(db)
+                try OrphanedRecordingRecoveryRecord(workspaceId: workspace.id).insert(db)
+                // A missing or Server-owned parent must not allow a partial commit.
+                let unavailableID = UUID.v7()
+                if serverOwned {
+                    let connectionID = UUID.v7()
+                    try db.execute(sql: """
+                    INSERT INTO dahlia_account_connections(id, origin, clientID, createdAt) VALUES (?, 'https://example.com', 'desktop', ?);
+                    INSERT INTO workspaces(id, name, createdAt, lastOpenedAt, accountConnectionId, organizationId)
+                    VALUES (?, 'Server workspace', ?, ?, ?, ?);
+                    """, arguments: [connectionID, Date.now, unavailableID, Date.now, Date.now, connectionID, UUID.v7()])
+                }
+                try OrphanedRecordingRecoveryRecord(workspaceId: unavailableID).insert(db)
+            }
+            let original = try manager.dbQueue.read { try WorkspaceRecord.fetchOne($0, key: workspace.id) }
+            #expect(throws: DatabaseError.self) {
+                try manager.dbQueue.write { try OrphanedRecordingRecovery.finish(in: $0) }
+            }
+            try manager.dbQueue.read { db throws in
+                #expect(try WorkspaceRecord.fetchOne(db, key: workspace.id) == original)
+                #expect(try OrphanedRecordingRecoveryRecord.fetchCount(db) == 2)
             }
         }
 
