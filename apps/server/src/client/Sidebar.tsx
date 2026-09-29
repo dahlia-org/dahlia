@@ -52,6 +52,8 @@ interface SidebarState {
   workspaces?: SyncedWorkspaceInfo[];
   error?: string;
   reload: () => void;
+  chatWorkspaceId?: string;
+  setChatWorkspaceId?: (id: string | undefined) => void;
   chatHistoryTarget?: HTMLElement | null;
   setChatHistoryTarget?: (target: HTMLElement | null) => void;
 }
@@ -64,6 +66,7 @@ export function useSidebar() {
 }
 
 export function SidebarProvider({ session, children }: { session: SessionInfo; children: ReactNode }) {
+  const [chatWorkspaceId, setChatWorkspaceId] = useState<string>();
   const [chatHistoryTarget, setChatHistoryTarget] = useState<HTMLElement | null>(null);
   const organizationsQuery = useLiveJSON<OrganizationInfo[]>(!session.capabilities.sharing ? undefined
     : "/api/auth/organization/list");
@@ -72,7 +75,7 @@ export function SidebarProvider({ session, children }: { session: SessionInfo; c
   const reload = () => { organizationsQuery.reload(); workspacesQuery.reload(); };
   return <SidebarContext.Provider value={{ userId: session.user.id, organizations: organizationsQuery.data,
     workspaces: workspacesQuery.data?.items, error: workspacesQuery.error?.message, reload,
-    chatHistoryTarget, setChatHistoryTarget }}>
+    chatHistoryTarget, setChatHistoryTarget, chatWorkspaceId, setChatWorkspaceId }}>
     {children}
   </SidebarContext.Provider>;
 }
@@ -148,6 +151,7 @@ export function Sidebar({ brand, session, children, serverLinks, routeWorkspaceI
   const currentPath = typeof window === "undefined" ? "" : window.location.pathname;
   const homeActive = currentPath === "/dashboard";
   const aiActive = isChatPath(currentPath);
+  const searchWorkspaceId = aiActive ? state.chatWorkspaceId : selectedWorkspaceId;
   useEffect(() => {
     if (selectedOrganizationId) save(selectionOrgKey, selectedOrganizationId);
     if (selectedWorkspaceId && selectedOrganizationId) save(`${selectionKey}:${selectedOrganizationId}`, selectedWorkspaceId);
@@ -168,7 +172,7 @@ export function Sidebar({ brand, session, children, serverLinks, routeWorkspaceI
     <nav className="primary-navigation flex items-center gap-1 px-1" aria-label={uiText("Library navigation", "ライブラリ")}>
       <Tooltip label={uiText("Home", "ホーム")}><a className={`flex h-8 min-w-0 items-center gap-1.5 whitespace-nowrap rounded-full px-2.5 text-muted-foreground hover:bg-accent hover:text-foreground${homeActive ? " bg-accent pr-3 text-foreground" : " w-8 shrink-0 justify-center"}`} href="/dashboard" aria-label={uiText("Home", "ホーム")} aria-current={homeActive ? "page" : undefined}><MenuIcon name="home" /><span className={homeActive ? "truncate text-xs font-medium" : "sr-only"}>{uiText("Home", "ホーム")}</span></a></Tooltip>
       {session.capabilities.ai && <Tooltip label={uiText("Chat with Dahlia AI", "Dahlia AI とチャット")}><a className={`flex h-8 min-w-0 items-center gap-1.5 whitespace-nowrap rounded-full px-2.5 text-muted-foreground hover:bg-accent hover:text-foreground${aiActive ? " bg-accent pr-3 text-foreground" : " w-8 shrink-0 justify-center"}`} href="/chat" aria-label={uiText("Chat with Dahlia AI", "Dahlia AI とチャット")} aria-current={aiActive ? "page" : undefined}><MenuIcon name="chat" /><span className={aiActive ? "truncate text-xs font-medium" : "sr-only"}>{uiText("Chat", "チャット")}</span></a></Tooltip>}
-      {session.capabilities.sync && selectedWorkspaceId && <Search key={`${selectionKey}:${selectedWorkspaceId}`} workspaceId={selectedWorkspaceId} />}
+      {session.capabilities.sync && searchWorkspaceId && <Search key={`${selectionKey}:${searchWorkspaceId}`} workspaceId={searchWorkspaceId} />}
     </nav>
     <div className="sidebar-scroll flex min-h-0 flex-1 flex-col overflow-y-auto">
       {aiActive && <div className="flex min-h-0 flex-1 flex-col pt-2" ref={state.setChatHistoryTarget} />}

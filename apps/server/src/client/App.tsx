@@ -432,7 +432,8 @@ function Settings({ session, extensions }: { session: SessionInfo; extensions: r
   return (
     <>
       {dialog}
-      <PageHeader title={uiText("Account settings", "アカウント設定")} description={uiText("Applies to every workspace in this account and syncs across your devices.", "このアカウントのすべてのワークスペースに適用され、ほかの端末にも同期されます。")} />
+      <PageHeader title={uiText("Account settings", "アカウント設定")} description={uiText("Applies to every workspace in this account and syncs across your devices.", "このアカウントのすべてのワークスペースに適用され、ほかの端末にも同期されます。")}
+        actions={session.capabilities.sync && !session.capabilities.ai && <Button asChild variant="outline"><a href="/memory">Dahlia Memory</a></Button>} />
       <section className="section-block">
         <h2 className="section-label text-[15px] font-semibold text-foreground">{uiText("Account", "アカウント")}</h2>
         <div className="panel account-card"><dl className="account-details">

@@ -1,4 +1,4 @@
-import { ChatMarkdown } from "./ChatMarkdown";
+import { ChatMarkdown, StreamingChatMarkdown } from "./ChatMarkdown";
 import { WorkingMemoryEditor, LiveChatContext } from "./ChatMemory";
 import { WorkspaceMemory, SaveSharedMemory } from "./WorkspaceMemory";
 import { Brain, BriefcaseBusiness, Ellipsis, Plus, Send, Sparkles, Square, Trash2 } from "lucide-react";
@@ -103,7 +103,7 @@ function ComposerPicker({ kind, label, value, options, disabled, onValueChange }
 
 export function AiChat({ requestedThreadId }: { requestedThreadId?: string }) {
   const { dialog, openDialog } = useActionDialog();
-  const { chatHistoryTarget, workspaces } = useSidebar();
+  const { chatHistoryTarget, workspaces, setChatWorkspaceId } = useSidebar();
   const [models, setModels] = useState<AiModel[]>([]);
   const [workspaceId, setWorkspaceId] = useState("");
   const [memoryWorkspace, setMemoryWorkspace] = useState("");
@@ -194,6 +194,11 @@ export function AiChat({ requestedThreadId }: { requestedThreadId?: string }) {
   }, [workspaceId, workspaces]);
   useEffect(() => { transcript.current?.lastElementChild?.scrollIntoView({ block: "nearest" }); }, [messages, answer, tool]);
   const selectedWorkspace = workspaces?.find((workspace) => workspace.workspaceId === workspaceId);
+  const searchWorkspaceId = openingThread || (requestedThreadId && requestedThreadId !== threadId) ? undefined : selectedWorkspace?.workspaceId;
+  useEffect(() => {
+    setChatWorkspaceId?.(searchWorkspaceId);
+    return () => setChatWorkspaceId?.(undefined);
+  }, [searchWorkspaceId, setChatWorkspaceId]);
   const persistentHistory = Boolean(threadId) || (historyEnabled && Boolean(selectedWorkspace && selectedWorkspace.encryption !== "server"));
 
   const send = async (nextMessages: Message[]) => {
@@ -502,7 +507,7 @@ export function AiChat({ requestedThreadId }: { requestedThreadId?: string }) {
         {messages.map((message, index) => <article className={`ai-message ${message.role}`} key={message.id || index}>{message.role === "assistant" ? <ChatMarkdown content={message.content} /> : message.content}
           {message.role === "assistant" && memoryWorkspace === workspaceId && selectedWorkspace && selectedWorkspace.role !== "viewer" && !pending && <SaveSharedMemory key={workspaceId} workspaceId={workspaceId} workspaceName={selectedWorkspace.name} model={model} content={message.content} question={messages.slice(0, index).findLast(item => item.role === "user")?.content} />}
         </article>)}
-        {answer && <article className="ai-message assistant"><ChatMarkdown content={answer} /></article>}
+        {answer && <article className="ai-message assistant"><StreamingChatMarkdown content={answer} /></article>}
         {tool && <p className="ai-status" role="status">{uiText(`Checking meetings with ${tool}…`, `${tool} でミーティングを確認中…`)}</p>}
         {error && <div className="ai-error" role="alert"><span>{error}</span>{!persistentHistory && <button className="secondary" disabled={pending || openingThread || messages.at(-1)?.role !== "user"} onClick={retry}>{uiText("Retry", "再試行")}</button>}</div>}
       </div>

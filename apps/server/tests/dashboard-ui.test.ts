@@ -349,7 +349,7 @@ describe("desktop-style meeting layout", () => {
     } finally { query.mockRestore(); page.mockRestore(); }
   });
 
-  it.each(["/chat", "/chat/thread"])("keeps search available while showing chat history instead of the Workspace tree on %s", (pathname) => {
+  it.each(["/chat", "/chat/thread"])("waits for the active chat scope before showing search on %s", (pathname) => {
     vi.stubGlobal("navigator", { language: "en" });
     vi.stubGlobal("window", { location: { pathname } });
     const query = vi.spyOn(liveData, "useLiveJSON").mockImplementation((input) => {
@@ -366,7 +366,7 @@ describe("desktop-style meeting layout", () => {
       }) }));
       expect(html).not.toContain("workspace-navigation");
       expect(html).not.toContain("Loading Workspaces");
-      expect(html).toContain('aria-label="Search"');
+      expect(html).not.toContain('aria-label="Search"');
       expect(html).not.toContain('href="/memory"');
       expect(html).toContain('href="/chat"');
       expect(html).toContain("server-navigation");

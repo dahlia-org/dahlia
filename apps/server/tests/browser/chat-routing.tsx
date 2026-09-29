@@ -11,6 +11,8 @@ const previewMode = new URLSearchParams(location.search).has("preview");
 Object.defineProperty(navigator, "language", { value: "en-US", configurable: true });
 
 const workspaceId = encodeId("workspace", "01990ab0-0000-7000-8000-000000000001");
+const workspaceB = encodeId("workspace", "01990ab0-0000-7000-8000-000000000002");
+const searchScopes: string[] = [];
 const idA = encodeId("aiThread", "01990ab0-0000-7000-8000-000000000010");
 const idB = encodeId("aiThread", "01990ab0-0000-7000-8000-000000000011");
 const missing = encodeId("aiThread", "01990ab0-0000-7000-8000-000000000099");
@@ -19,8 +21,9 @@ const pathB = `/chat/${idB}`;
 const date = "2026-09-20T00:00:00.000Z";
 const threads = new Map([
   [idA, { id: idA, title: "Chat A", workspaceId, createdAt: date, updatedAt: date }],
-  [idB, { id: idB, title: "Chat B", workspaceId, createdAt: date, updatedAt: date }],
+  [idB, { id: idB, title: "Chat B", workspaceId: workspaceB, createdAt: date, updatedAt: date }],
 ]);
+let aiAvailable = true;
 let creates = 0;
 let sends = 0;
 let failCreate = false;
@@ -52,8 +55,9 @@ globalThis.fetch = async (input, init) => {
   const path = url.pathname;
   const method = init?.method ?? (input instanceof Request ? input.method : "GET");
   if (path === "/api/v1/session") return Response.json({ user: { id: "user", name: "Tester" },
-    capabilities: { admin: true, sessions: false, sharing: false, sync: true, ai: true } });
-  if (path === "/api/v1/workspaces") return Response.json({ items: [{ workspaceId, name: "Workspace", encryption: "none" }], nextCursor: null });
+    capabilities: { admin: true, sessions: false, sharing: false, sync: true, ai: aiAvailable } });
+  if (path === "/api/v1/workspaces") return Response.json({ items: [{ workspaceId, name: "Workspace", encryption: "none" }, { workspaceId: workspaceB, name: "Workspace B", encryption: "none" }], nextCursor: null });
+  if (path.endsWith("/search")) { searchScopes.push(path.split("/")[4]!); return Response.json({ meetings: [], screenshots: [], projects: [], limited: { meetings: false, screenshots: false, projects: false } }); }
   if (path.endsWith("/projects") || path.endsWith("/meetings")) return Response.json({ items: [], nextCursor: null });
   if (path === "/api/v1/responses") {
     draftCalls++; const body = await (input instanceof Request ? input.clone() : new Request(url, init)).json<{ model: string; input: string; store: boolean }>();
@@ -129,10 +133,31 @@ const completeStream = () => {
   stream!.close();
 };
 
+async function chooseWorkspace(value: string) {
+  const trigger = document.querySelector<HTMLButtonElement>('[data-ai-picker="workspace"]')!;
+  trigger.focus(); trigger.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }));
+  await until(() => document.querySelector(`[role="option"][data-value="${value}"]`), "workspace option");
+  document.querySelector<HTMLElement>(`[role="option"][data-value="${value}"]`)!.click();
+  await until(() => !document.querySelector('[role="listbox"]'), "workspace selected");
+}
+async function checkSearchScope(expected: string) {
+  const count = searchScopes.length;
+  await until(() => document.querySelector('button.navigation-search'), "chat search available");
+  click('button.navigation-search');
+  await until(() => searchScopes.length > count, "search requested");
+  assert(searchScopes.slice(count).every(scope => scope === expected), "Search used another Workspace");
+  document.querySelector<HTMLElement>('[role="dialog"]')!.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+  await until(() => !document.querySelector('[role="dialog"]'), "search closed");
+}
+
 async function run() {
   history.replaceState(null, "", "/chat");
   mount();
   await until(() => ready() && document.querySelector('[data-ai-picker="reasoning"]')?.getAttribute("data-value") === "medium", "new chat ready");
+  await checkSearchScope(workspaceId);
+  await chooseWorkspace(workspaceB);
+  await checkSearchScope(workspaceB);
+  await chooseWorkspace(workspaceId);
   assert(document.querySelector(".sidebar-scroll .ai-history"), "Chat history is not in the sidebar");
   assert(document.querySelector(".ai-history h2")?.textContent === "Chats", "Chat history heading is missing");
   const newChatButton = document.querySelector<HTMLAnchorElement>(".ai-history-heading .ai-history-new");
@@ -223,6 +248,7 @@ async function run() {
   assert(target?.href.endsWith(pathB), "Thread selection is not a native deep link");
   click(`.ai-history-row a[href="${pathB}"]`);
   await until(() => location.pathname === pathB && messages() === "Saved B", "select B");
+  await checkSearchScope(workspaceB);
   history.back();
   await until(() => location.pathname === pathA && messages() === "Saved A", "back to A");
   history.forward();
@@ -247,6 +273,7 @@ async function run() {
   navigateDashboard(`/chat/${missing}`);
   await until(() => document.body.textContent?.includes("Chat not found."), "missing thread");
   assert(!ready() && location.pathname.endsWith(missing), "Missing thread became a new chat");
+  assert(!document.querySelector(".navigation-search"), "Unresolved chat exposes previous search scope");
   const readCount = reads.length;
   navigateDashboard("/chat/invalid");
   await until(() => location.pathname === "/chat/invalid" && document.body.textContent?.includes("Chat not found."), "invalid ID");
@@ -266,12 +293,14 @@ async function run() {
   navigateDashboard(pathA);
   await until(() => deferredA, "delayed A");
   assert(!messages().includes("Saved B"), "Old messages leaked into loading view");
+  assert(!document.querySelector(".navigation-search"), "Loading chat retains previous search scope");
   navigateDashboard(pathB);
   await until(() => messages() === "Saved B", "B wins race");
   deferredA!();
   deferA = false;
   await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
   assert(messages() === "Saved B", "Late A replaced B");
+  await checkSearchScope(workspaceB);
   navigateDashboard(pathA);
   await until(() => messages() === "Saved A", "A before streaming navigation");
   await submit("Stream then leave");
@@ -318,7 +347,13 @@ async function run() {
   await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
   assert(String(location.pathname) === "/dashboard/settings", "Late deletion redirected after leaving chat");
   assert(!threads.has(idA), "Leaving chat prevented confirmed deletion");
+  aiAvailable = false;
+  reload();
+  await until(() => document.querySelector('.page-header a[href="/memory"]'), "Memory entry without AI");
+  assert(!document.querySelector('.sidebar a[href="/chat"]'), "AI capability fixture still exposes chat");
+  click('.page-header a[href="/memory"]');
+  await until(() => location.pathname === "/memory" && document.querySelector("h1")?.textContent === "Dahlia Memory", "Memory reachable without AI");
   document.body.dataset.testResult = "passed";
-  document.getElementById("result")!.textContent = "PASS: creation/generation failure, URL adoption, uninterrupted stream, native links, Back/Forward, reload, late first-page merge, list failure, missing/forbidden/invalid IDs, retry, stale results, navigation abort, deletion, history readiness recovery, deletion after navigation";
+  document.getElementById("result")!.textContent = "PASS: chat-scoped search and loading races, Memory without AI, creation/generation failure, URL adoption, uninterrupted stream, native links, Back/Forward, reload, late first-page merge, list failure, missing/forbidden/invalid IDs, retry, stale results, navigation abort, deletion, history readiness recovery, deletion after navigation";
 }
 void run().catch((error: unknown) => { document.body.dataset.testResult = "failed"; document.getElementById("result")!.textContent = `FAIL: ${String(error)}`; });
