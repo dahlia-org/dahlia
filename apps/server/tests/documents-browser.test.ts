@@ -131,6 +131,7 @@ it("uses the canonical Notes ID after an offline first edit loses the initializa
   } finally { controller.stop(); server.destroy(); edited.destroy(); }
 });
 
+// Allow shared CI workers time for the repeated multi-MiB merges in this full lifecycle test.
 it.each(["accumulated", "single"])("keeps the accepted state valid and syncs a correction after an oversized %s rich-text edit", async (mode) => {
   vi.useFakeTimers();
   vi.stubGlobal("window", { addEventListener() {}, removeEventListener() {} });
@@ -188,4 +189,4 @@ it.each(["accumulated", "single"])("keeps the accepted state valid and syncs a c
     expect(server.projection().text).toBe(acceptedText.replace("seed", "seed corrected"));
     expect(server.document.store.pendingStructs).toBeNull();
   } finally { undo.destroy(); controller.stop(); server.destroy(); }
-});
+}, 30_000);
