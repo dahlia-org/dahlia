@@ -67,8 +67,8 @@ describe("desktop-style meeting layout", () => {
     try {
       const html = renderToStaticMarkup(createElement(SyncedMeeting, { workspaceId: "w1", meetingId: "m1" }));
       expect(html).toContain('aria-label="Breadcrumbs"');
-      expect(html).toContain('href="/projects/root"');
-      expect(html).toContain('href="/projects/child"');
+      expect(html).toContain('href="/o/root"');
+      expect(html).toContain('href="/o/child"');
       expect(html).toContain(">Project</span>");
       expect(html).toContain(">Sub Project</span>");
       expect(html).toContain('aria-current="page"');
@@ -87,8 +87,8 @@ describe("desktop-style meeting layout", () => {
     ] as SyncedProjectInfo[], undefined, { projectId: "child", meetingId: "m1", meetings: [
       { meetingId: "m1", name: "Weekly Meeting" }, { meetingId: "m2", name: "Design Review" },
     ] as SyncedMeetingInfo[] });
-    expect(options).toMatchObject([{ href: "/projects/root", children: [{ href: "/projects/child", current: true, children: [
-      { href: "/meetings/m1", current: true }, { href: "/meetings/m2", current: false },
+    expect(options).toMatchObject([{ href: "/o/root", children: [{ href: "/o/child", current: true, children: [
+      { href: "/o/m1", current: true }, { href: "/o/m2", current: false },
     ] }] }]);
   });
 
@@ -179,7 +179,7 @@ describe("desktop-style meeting layout", () => {
   });
 
   it("leaves a pending route meeting query owned by App", () => {
-    vi.stubGlobal("window", { location: { pathname: "/meetings/m1" } });
+    vi.stubGlobal("window", { location: { pathname: "/o/m1" } });
     vi.stubGlobal("sessionStorage", { getItem: vi.fn(), setItem: vi.fn() });
     const workspace = { workspaceId: "v1", name: "Workspace" } as SyncedWorkspaceInfo;
     const query = vi.spyOn(liveData, "useLiveJSON").mockImplementation((input) => ({
@@ -304,7 +304,7 @@ describe("desktop-style meeting layout", () => {
     expect(footer).not.toContain("All accessible Workspaces");
     expect(footer).not.toContain("<small>");
     expect(footer).not.toContain('href="/workspaces"');
-    expect(navigation).toContain('href="/workspaces"');
+    expect(navigation).not.toContain('href="/workspaces"');
     expect(footer).not.toContain('<strong>Organizations</strong>');
     expect(footer).not.toContain("aria-pressed");
     expect(readFileSync(new URL("../src/client/Sidebar.tsx", import.meta.url), "utf8"))
@@ -316,8 +316,8 @@ describe("desktop-style meeting layout", () => {
     expect(footer).not.toContain("Artifacts");
   });
 
-  it("lists only the selected organization's Workspaces and defers collapsed contents", () => {
-    vi.stubGlobal("navigator", { language: "en" });
+  it.each([["en", "Private"], ["ja-JP", "プライベート"]])("flattens personal navigation and defers collapsed shared Workspaces (%s)", (language, privateLabel) => {
+    vi.stubGlobal("navigator", { language });
     const session = { user: { id: "user" }, capabilities: { sync: true, sharing: true, sessions: true, admin: false } };
     const ready = { loading: false, refreshing: false, error: undefined, reload: vi.fn(), replace: vi.fn() };
     const query = vi.spyOn(liveData, "useLiveJSON").mockImplementation((input) => {
@@ -328,22 +328,49 @@ describe("desktop-style meeting layout", () => {
         { workspaceId: "team", organizationId: "org1", personalUserId: null, name: "Team Workspace" },
         { workspaceId: "other", organizationId: "org2", personalUserId: null, name: "Other Workspace" },
       ] } };
-      if (key?.startsWith('["listProjects"')) return { ...ready, data: { items: [] } };
+      if (key?.startsWith('["listProjects"')) return { ...ready, data: { items: [{ projectId: "personal-project", workspaceId: "private", parentProjectId: null, name: "Personal Project" }] } };
       return { ...ready, data: undefined };
     });
     const page = vi.spyOn(liveData, "useLivePage").mockReturnValue({ ...ready, data: { items: [] }, loadingMore: false, loadMore: vi.fn() });
     try {
       const html = renderToStaticMarkup(createElement(SidebarProvider, { session, children: createElement(Sidebar, { session, brand: "Dahlia", children: null, routeMeeting: { workspaceId: "other", meetingId: "other-meeting", name: "Other meeting", projectId: null } as SyncedMeetingInfo }) }));
       expect(html).toContain("First Org");
-      expect(html).toContain('href="/workspaces/private"');
-      expect(html).toContain('href="/workspaces/team"');
-      expect(html).not.toContain('href="/workspaces/other"');
-      expect(html).toContain("Private");
+      expect(html).not.toContain('href="/o/private"');
+      expect(html).toContain('id="private-heading-private"');
+      expect(html).not.toContain("Expand Private");
+      expect(html).toContain('href="/o/team"');
+      expect(html).not.toContain('href="/o/other"');
+      expect(html).toContain(privateLabel);
+      expect(html).toMatch(/id="private-heading-private"[^]*href="\/o\/personal-project"[^]*<\/section>/);
       expect(html).not.toContain("Other meeting");
       const keys = query.mock.calls.map(([input]) => typeof input === "object" ? input.key : input);
       expect(keys.some((key) => key?.startsWith('["listProjects"') && key.includes('"private"'))).toBe(true);
       expect(keys.some((key) => key?.startsWith('["listProjects"') && key.includes('"team"'))).toBe(false);
     } finally { query.mockRestore(); page.mockRestore(); }
+  });
+
+  it.each(["/chat", "/chat/thread"])("keeps search available while showing chat history instead of the Workspace tree on %s", (pathname) => {
+    vi.stubGlobal("navigator", { language: "en" });
+    vi.stubGlobal("window", { location: { pathname } });
+    const query = vi.spyOn(liveData, "useLiveJSON").mockImplementation((input) => {
+      const key = typeof input === "object" ? input.key : input;
+      const data = key === "/api/auth/organization/list" ? [{ id: "org1", name: "Organization", slug: "org" }]
+        : key?.startsWith('["listWorkspaces"') ? { items: [{ workspaceId: "private", organizationId: "org1", personalUserId: "user", name: "Personal" }] }
+        : undefined;
+      return { data, loading: false, refreshing: false, error: undefined, reload: vi.fn(), replace: vi.fn() };
+    });
+    try {
+      const session = { user: { id: "user" }, capabilities: { sync: true, sharing: true, sessions: true, admin: false, ai: true } };
+      const html = renderToStaticMarkup(createElement(SidebarProvider, { session, children: createElement(Sidebar, {
+        session, brand: "Dahlia", children: null,
+      }) }));
+      expect(html).not.toContain("workspace-navigation");
+      expect(html).not.toContain("Loading Workspaces");
+      expect(html).toContain('aria-label="Search"');
+      expect(html).not.toContain('href="/memory"');
+      expect(html).toContain('href="/chat"');
+      expect(html).toContain("server-navigation");
+    } finally { query.mockRestore(); }
   });
 
   it("labels the AI navigation as chat", () => {
@@ -396,7 +423,8 @@ describe("desktop-style meeting layout", () => {
     const html = renderToStaticMarkup(createElement(SidebarProvider, { session, children: createElement(Sidebar, {
       session, brand: "Dahlia", children: null,
     }) }));
-    expect(html).toContain('aria-label="ワークスペース"');
+    expect(html).toContain('aria-label="ホーム"');
+    expect(html).not.toContain('href="/workspaces"');
     expect(html).not.toContain("ワークスペースを管理");
     expect(html).not.toContain("サインアウト");
     expect(html).not.toContain('<strong>組織</strong>');
@@ -434,6 +462,13 @@ describe("dashboard navigation", () => {
     vi.stubGlobal("navigator", { language: "en-US" });
     for (const pathname of ["/sign-in", "/oauth/consent"]) {
       vi.stubGlobal("window", { location: { pathname } });
+    vi.spyOn(liveData, "useLiveJSON").mockImplementation((input) => {
+      const key = typeof input === "object" ? input.key : input;
+      const data = key === "/api/auth/organization/list" ? [{ id: "org1", name: "Organization", slug: "org" }]
+        : key?.startsWith('["listWorkspaces"') ? { items: [{ workspaceId: "private", organizationId: "org1", personalUserId: "user", name: "Personal" }] }
+        : undefined;
+      return { data, loading: false, refreshing: false, error: undefined, reload: vi.fn(), replace: vi.fn() };
+    });
       const html = renderToStaticMarkup(createElement(App));
       expect(html).toContain("Loading account…");
       expect(html).not.toContain("Continue with Google");
@@ -466,7 +501,7 @@ describe("dashboard navigation", () => {
     const capturedAt = "2026-09-07T00:00:00Z";
     const html = renderToStaticMarkup(createElement(ScreenshotFigure, { file, capturedAt }));
     expect(html).toContain('src="/small"');
-    expect(html).toContain('href="/files/file"');
+    expect(html).toContain('href="/o/file"');
     expect(html).not.toContain('target="_blank"');
     expect(html).toContain('href="/api/v1/files/file/content"');
     expect(html).toContain("Download original");
@@ -548,7 +583,7 @@ describe("dashboard navigation", () => {
 
   it("navigates dashboard links in place and leaves other URLs to the browser", () => {
     const current = "https://dahlia.example/workspaces/v1/meetings/m1";
-    for (const path of ["/dashboard", "/workspaces/v1", "/workspaces/v1/meetings/m2", "/workspaces/v1/projects/p1", "/dashboard/settings"]) {
+    for (const path of ["/dashboard", "/o/v1", "/o/mtg_test", "/o/proj_test", "/dashboard/settings"]) {
       expect(dashboardNavigationPath(path, current)).toBe(path);
       expect(dashboardNavigationPath(`https://dahlia.example${path}`, current)).toBe(path);
     }
@@ -597,7 +632,7 @@ describe("dashboard navigation", () => {
   });
 
   it("resolves canonical detail URLs and preserves capability gates", () => {
-    for (const [path, result] of [[`/projects/${encodeId("project", "01990ab0-0000-7000-8000-000000000001")}`, { page: "project", projectId: encodeId("project", "01990ab0-0000-7000-8000-000000000001") }], [`/meetings/${encodeId("meeting", "01990ab0-0000-7000-8000-000000000001")}`, { page: "meeting", meetingId: encodeId("meeting", "01990ab0-0000-7000-8000-000000000001") }], [`/files/${encodeId("file", "01990ab0-0000-7000-8000-000000000001")}`, { page: "file", fileId: encodeId("file", "01990ab0-0000-7000-8000-000000000001") }]] as const) {
+    for (const [path, result] of [[`/o/${encodeId("project", "01990ab0-0000-7000-8000-000000000001")}`, { page: "project", projectId: encodeId("project", "01990ab0-0000-7000-8000-000000000001") }], [`/o/${encodeId("meeting", "01990ab0-0000-7000-8000-000000000001")}`, { page: "meeting", meetingId: encodeId("meeting", "01990ab0-0000-7000-8000-000000000001") }], [`/o/${encodeId("file", "01990ab0-0000-7000-8000-000000000001")}`, { page: "file", fileId: encodeId("file", "01990ab0-0000-7000-8000-000000000001") }]] as const) {
       expect(resolveDashboardRoute(path, { admin: false, sessions: true, sync: true })).toEqual(result);
       expect(resolveDashboardRoute(path, { admin: false, sessions: true, sync: false })).toEqual({ redirect: "/dashboard" });
       expect(dashboardNavigationPath(path, "https://dahlia.example/workspaces/v1")).toBe(path);
@@ -607,7 +642,7 @@ describe("dashboard navigation", () => {
   it("renders localized collection rows without internal metadata", () => {
     const meeting = { meetingId: "m1", name: "Planning", description: "Preview omitted from compact rows", createdAt: "2026-09-07T00:00:00Z", status: "TRANSCRIPT_NOT_FOUND" } as SyncedMeetingInfo;
     const html = renderToStaticMarkup(createElement(MeetingList, { meetings: [meeting], loading: false }));
-    expect(html).toContain('href="/meetings/m1"');
+    expect(html).toContain('href="/o/m1"');
     expect(html).toContain("Planning");
     expect(html).not.toContain("TRANSCRIPT_NOT_FOUND");
     expect(html).not.toContain("Preview omitted from compact rows");
@@ -617,12 +652,12 @@ describe("dashboard navigation", () => {
 
   it("gates synchronized Workspace routes with the sync capability", () => {
     const enabled = { admin: false, sessions: false, sync: true };
-    expect(resolveDashboardRoute("/workspaces", enabled)).toEqual({ page: "workspaces" });
+    expect(resolveDashboardRoute("/workspaces", enabled)).toEqual({ redirect: "/dashboard" });
     const workspace = encodeId("workspace", "01990ab0-0000-7000-8000-000000000001");
-    expect(resolveDashboardRoute(`/workspaces/${workspace}`, enabled)).toEqual({ page: "workspace", workspaceId: workspace });
-    expect(resolveDashboardRoute("/workspaces/v1/projects/p1", enabled))
+    expect(resolveDashboardRoute(`/o/${workspace}`, enabled)).toEqual({ page: "workspace", workspaceId: workspace });
+    expect(resolveDashboardRoute("/o/v1/projects/p1", enabled))
       .toEqual({ redirect: "/dashboard" });
-    expect(resolveDashboardRoute("/workspaces/v1/meetings/m1", enabled))
+    expect(resolveDashboardRoute("/o/v1/meetings/m1", enabled))
       .toEqual({ redirect: "/dashboard" });
     expect(resolveDashboardRoute("/workspaces", { admin: false, sessions: false, sync: false }))
       .toEqual({ redirect: "/dashboard" });
@@ -767,6 +802,7 @@ it("keeps Workspace creation available while showing every accessible Workspace"
   try {
     const html = renderToStaticMarkup(createElement(Workspaces));
     expect(html).toContain("New Workspace</button>");
+    expect(html).toContain("Home</h1>");
     expect(html).not.toContain("Accessible Workspaces owned by this organization");
   } finally { scope.mockRestore(); query.mockRestore(); }
 });
@@ -792,7 +828,7 @@ it("rejects retired Web paths and workspace ID prefixes", () => {
   expect(isCoreDashboardPath(`/vaults/${id.replace("ws_", "vlt_")}`)).toBe(false);
   expect(resolveDashboardRoute("/vaults", capabilities)).toEqual({ redirect: "/dashboard" });
   expect(resolveDashboardRoute(`/vaults/${id.replace("ws_", "vlt_")}`, capabilities)).toEqual({ redirect: "/dashboard" });
-  expect(resolveDashboardRoute(`/workspaces/${id.replace("ws_", "vlt_")}`, capabilities)).toEqual({ redirect: "/dashboard" });
+  expect(resolveDashboardRoute(`/o/${id.replace("ws_", "vlt_")}`, capabilities)).toEqual({ redirect: "/dashboard" });
   expect(resolveDashboardRoute("/vaults/vlt_invalid", capabilities)).toEqual({ redirect: "/dashboard" });
   expect(resolveDashboardRoute(`/vaults/${id.replace("ws_", "vlt_")}`, { ...capabilities, sync: false })).toEqual({ redirect: "/dashboard" });
 });

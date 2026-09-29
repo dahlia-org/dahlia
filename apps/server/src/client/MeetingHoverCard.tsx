@@ -1,3 +1,4 @@
+import { objectPath } from "../object-url";
 import { createContext, useCallback, useContext, useEffect, useId, useRef, useState, type ReactNode } from "react";
 import { AppearanceIcon, type Appearance } from "./AppearancePicker";
 import { HoverCard, HoverCardContent, HoverCardTrigger } from "./components/ui/hover-card";
@@ -38,7 +39,7 @@ export function MeetingHoverCard({ meeting, projectName, appearance, active, chi
 }) {
   return <li className={active ? "rounded-md bg-accent text-accent-foreground" : "rounded-md hover:bg-accent/70"}>
     <HoverPreview details={<MeetingHoverDetails meeting={meeting} projectName={projectName} appearance={appearance} />}>
-      {(describedBy) => <a className="block min-w-0 px-3 py-2" href={`/meetings/${meeting.meetingId}`} aria-current={active ? "page" : undefined} aria-describedby={describedBy}>{children}</a>}
+      {(describedBy) => <a className="block min-w-0 px-3 py-2" href={objectPath(meeting.meetingId)} aria-current={active ? "page" : undefined} aria-describedby={describedBy}>{children}</a>}
     </HoverPreview>
   </li>;
 }

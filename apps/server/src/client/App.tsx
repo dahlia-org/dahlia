@@ -1,3 +1,4 @@
+import { objectPath, parseObjectPath } from "../object-url";
 import { DahliaMemoryPage } from "./DahliaMemory";
 import { WorkspaceMemory } from "./WorkspaceMemory";
 import { WorkspaceSharing } from "./WorkspaceSharing";
@@ -388,7 +389,7 @@ function Consent({ brand }: { brand: DashboardBrand }) {
 }
 
 function Overview({ session }: { session: SessionInfo }) {
-  if (session.capabilities.sync) return <Workspaces home />;
+  if (session.capabilities.sync) return <Workspaces />;
   return (
     <>
       <PageHeader title="Overview" />
@@ -468,7 +469,7 @@ function Settings({ session, extensions }: { session: SessionInfo; extensions: r
   );
 }
 
-export function Workspaces({ home = false }: { home?: boolean }) {
+export function Workspaces() {
   const { dialog, openDialog } = useActionDialog();
   const { workspaces, error: loadError, reload, organizations } = useSidebar();
   const availableOrganizations = organizations ?? [];
@@ -477,7 +478,7 @@ export function Workspaces({ home = false }: { home?: boolean }) {
   useEffect(() => {
     if (recentWorkspace) setRecentWorkspaceId(recentWorkspace.workspaceId);
   }, [recentWorkspace]);
-  const recent = useLiveJSON<{ items: SyncedMeetingInfo[] }>(home && recentWorkspace ? apiQuery("listMeetings", { params: { path: { workspaceId: recentWorkspace.workspaceId } } }) : undefined);
+  const recent = useLiveJSON<{ items: SyncedMeetingInfo[] }>(recentWorkspace ? apiQuery("listMeetings", { params: { path: { workspaceId: recentWorkspace.workspaceId } } }) : undefined);
   const [recovering, setRecovering] = useState(false);
 
   const { data: encryptionCapabilities } = useLiveJSON<{ workspaceEncryption?: { version: number } }>(apiQuery("getCapabilities", {}));
@@ -492,13 +493,13 @@ export function Workspaces({ home = false }: { home?: boolean }) {
       ...workspaceEncryptionFields(Boolean(encryptionCapabilities?.workspaceEncryption))],
     onSubmit: async ({ name, encryption, organizationId: targetOrganizationId }) => {
       const id = await createWorkspaceRecord(targetOrganizationId!, name!, encryption, setRecovering);
-      navigateDashboard(`/workspaces/${id}`);
+      navigateDashboard(objectPath(id));
     },
   });
   return <>
     {dialog}
-    <PageHeader title={home ? uiText("Home", "ホーム") : uiText("Workspaces", "ワークスペース")}
-      description={home ? uiText("Pick up where your last conversation left off.", "前回の会話の続きから、始めましょう。") : uiText("Your meetings, organized in one place.", "ミーティングとその記録を、ワークスペースごとに整理します。")}
+    <PageHeader title={uiText("Home", "ホーム")}
+      description={uiText("Pick up where your last conversation left off.", "前回の会話の続きから、始めましょう。")}
       actions={<button className="primary" disabled={availableOrganizations.length === 0} onClick={createWorkspace}><MenuIcon name="plus" />{uiText("New Workspace", "ワークスペースを作成")}</button>} />
     {recovering && <p role="status">{syncMessage("sync_recovering")}</p>}
     <section className="section-block">
@@ -510,14 +511,14 @@ export function Workspaces({ home = false }: { home?: boolean }) {
         <h2>{uiText("A home for your meetings", "ミーティングの記録を、ひとつの場所に")}</h2>
         <p>{uiText("Create a Workspace, then connect it in Dahlia for macOS to bring your meeting notes, transcripts and screenshots here.", "ワークスペースを作成して macOS 版 Dahlia で接続すると、ミーティングの要約・文字起こし・スクリーンショットをここで閲覧できます。")}</p>
       </div>}
-      <div className="workspace-grid">{workspaces?.map((workspace) => <a className="workspace-card" href={`/workspaces/${workspace.workspaceId}`} key={workspace.workspaceId}>
+      <div className="workspace-grid">{workspaces?.map((workspace) => <a className="workspace-card" href={objectPath(workspace.workspaceId)} key={workspace.workspaceId}>
           <div className="workspace-card-top"><span className="workspace-symbol"><AppearanceIcon appearance={collectionAppearance(workspace, "workspace")} size={22} /></span><span className={`inline-block rounded-full px-2 py-1 text-[11px] font-bold capitalize ${workspace.role === "admin" ? "bg-muted text-muted-foreground" : "bg-accent text-primary"}`}>{workspaceRoleLabel(workspace.role)}</span></div>
           <h3>{workspace.name}</h3>
           <span className="workspace-organization-badge" role="img" aria-label={uiText(`Organization: ${workspace.organizationName}`, `組織: ${workspace.organizationName}`)} title={workspace.organizationName}><MenuIcon name="organization" /><span>{workspace.organizationName}</span></span>
           <div className="workspace-card-bottom"><span>{uiText("Updated", "更新日")} {new Date(workspace.updatedAt ?? workspace.createdAt).toLocaleDateString()}</span><MenuIcon name="arrow" /></div>
         </a>)}</div>
     </section>
-    {home && recentWorkspace && <section className="section-block recent-meetings">
+    {recentWorkspace && <section className="section-block recent-meetings">
       <div className="collection-heading"><h2>{uiText("Recent meetings", "最近のミーティング")}</h2>
         <Select aria-label={uiText("Workspace for recent meetings", "最近のミーティングのワークスペース")} value={recentWorkspace.workspaceId} onValueChange={(value) => setRecentWorkspaceId(value)}>
           {workspaces?.map((workspace) => <option value={workspace.workspaceId} key={workspace.workspaceId}><AppearanceIcon appearance={collectionAppearance(workspace, "workspace")} /><span>{workspace.name}</span></option>)}
@@ -525,7 +526,7 @@ export function Workspaces({ home = false }: { home?: boolean }) {
       </div>
       <DataError error={recent.error} retry={recent.reload} />
       <MeetingList meetings={recent.data?.items.slice(0, 10)} loading={recent.loading} />
-      <a className="inline-flex items-center gap-2 py-3 text-[13px] font-medium text-primary hover:underline" href={`/workspaces/${recentWorkspace.workspaceId}`}>{uiText("View all meetings", "すべてのミーティングを見る")} <MenuIcon name="arrow" /></a>
+      <a className="inline-flex items-center gap-2 py-3 text-[13px] font-medium text-primary hover:underline" href={objectPath(recentWorkspace.workspaceId)}>{uiText("View all meetings", "すべてのミーティングを見る")} <MenuIcon name="arrow" /></a>
     </section>}
   </>;
 }
@@ -565,7 +566,7 @@ function WorkspaceTransfer({ workspace }: { workspace: SyncedWorkspaceInfo }) {
         confirmLabel: uiText("Transfer", "移管する"), destructive: true,
         onSubmit: async () => {
           await api.transferWorkspace({ params: { path: { workspaceId: source.workspaceId }, header: { "idempotency-key": key } }, body });
-          window.location.assign(`/workspaces/${target.workspaceId}`);
+          window.location.assign(objectPath(target.workspaceId));
         },
       });
     } catch (caught) { setError(caught instanceof Error ? caught.message : String(caught)); }
@@ -596,7 +597,7 @@ export function MeetingList({ meetings, loading, filtered = false, onClear }: { 
     </div>}
     {meetings?.map((meeting) => {
       const date = meeting.recordingStartedAt ?? meeting.createdAt;
-      return <a className="collection-row meeting-list-row" href={`/meetings/${meeting.meetingId}`} key={meeting.meetingId}>
+      return <a className="collection-row meeting-list-row" href={objectPath(meeting.meetingId)} key={meeting.meetingId}>
         <span className="collection-icon"><MenuIcon name="document" /></span>
         <span className="collection-copy"><strong>{meeting.name || uiText("Untitled meeting", "無題のミーティング")} <RecordingIndicator isRecording={meeting.isRecording} /></strong>
           <span className="collection-date"><time dateTime={date}>{new Date(date).toLocaleString(undefined, { year: "numeric", month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })}</time>
@@ -696,7 +697,7 @@ export function WorkspaceMeetings({ session, workspaceId }: { session: SessionIn
       onSubmit: async () => {
         await commitSyncTransaction(workspaceId, [{ entity: "workspace", action: "reset", entityId: workspaceId,
           baseRevision: workspace.revision, data: { preservePermissions: false } }], setRecovering);
-        navigateDashboard("/workspaces");
+        navigateDashboard("/dashboard");
       },
     });
   };
@@ -712,17 +713,17 @@ export function WorkspaceMeetings({ session, workspaceId }: { session: SessionIn
       const id = encodeId("project", uuidV7());
       await commitSyncTransaction(workspaceId, [{ entity: "project", action: "create", entityId: id, baseRevision: null,
         data: { parentProjectId: null, name: name!.trim(), description: description ?? "", projectType: "undefined", createdAt: new Date().toISOString() } }], setRecovering);
-      navigateDashboard(`/projects/${id}`);
+      navigateDashboard(objectPath(id));
     },
   });
   return <article className="main-column meeting-detail collection-detail" aria-busy={!workspace && workspaceQuery.loading}>
-    {workspace && <header className="meeting-header">
+    {workspace && <>
       <BreadcrumbHeader segments={[{ current: true, label: workspace.name,
         icon: <AppearanceIcon appearance={collectionAppearance(workspace, "workspace")} />,
         menuLabel: uiText("Workspaces", "ワークスペース"), options: workspaceOptions }]} />
-      <h1><AppearanceIcon appearance={collectionAppearance(workspace, "workspace")} size={28} />{workspace.name}</h1>
+      <header className="meeting-header"><h1><AppearanceIcon appearance={collectionAppearance(workspace, "workspace")} size={28} />{workspace.name}</h1>
       <div className="meeting-metadata"><span className="metadata-chip">{workspaceRoleLabel(workspace.role)}</span></div>
-    </header>}
+    </header></>}
     {dialog}
     {recovering && <p role="status">{syncMessage("sync_recovering")}</p>}
     <DataError error={workspaceQuery.error} retry={workspaceQuery.reload} />
@@ -746,7 +747,7 @@ export function WorkspaceMeetings({ session, workspaceId }: { session: SessionIn
         <DataError error={projectsQuery.error} retry={projectsQuery.reload} />
         {projectsQuery.loading && !projectsQuery.data && <p className="content-empty">{uiText("Loading…", "読み込み中…")}</p>}
         {projectsQuery.data && projects.length === 0 && <p className="content-empty">{uiText("No projects yet", "プロジェクトはまだありません")}</p>}
-        <div className="collection-list">{projects.map((project) => <a className="collection-row project-list-row" href={`/projects/${project.projectId}`} key={project.projectId}>
+        <div className="collection-list">{projects.map((project) => <a className="collection-row project-list-row" href={objectPath(project.projectId)} key={project.projectId}>
           <span className="collection-project-name"><AppearanceIcon appearance={projectAppearance(project, projects.find((parent) => parent.projectId === project.parentProjectId))} /><strong>{project.path}</strong></span><span className="muted">{meetingCount(project.subtreeMeetingCount ?? 0)}</span>
         </a>)}</div>
       </> },
@@ -815,7 +816,7 @@ function SyncedProject({ workspaceId, projectId, resolvedProject }: { workspaceI
         const id = encodeId("project", uuidV7());
         await commitSyncTransaction(workspaceId, [{ entity: "project", action: "create", entityId: id, baseRevision: null,
           data: { parentProjectId: projectId, name: name!.trim(), description: description ?? "", projectType: null, createdAt: new Date().toISOString() } }], setRecovering);
-        navigateDashboard(`/projects/${id}`);
+        navigateDashboard(objectPath(id));
       },
     });
   };
@@ -828,23 +829,23 @@ function SyncedProject({ workspaceId, projectId, resolvedProject }: { workspaceI
       onSubmit: async () => {
         await commitSyncTransaction(workspaceId, [{ entity: "project", action: "delete", entityId: projectId,
           baseRevision: project.revision, data: {} }], setRecovering);
-        navigateDashboard(`/workspaces/${workspaceId}`);
+        navigateDashboard(objectPath(workspaceId));
       },
     });
   };
   return <article className="main-column meeting-detail collection-detail">
-    <header className="meeting-header">
-      {project && <BreadcrumbHeader segments={[
-        { href: `/workspaces/${workspaceId}`, label: workspace?.name ?? uiText("Workspace", "ワークスペース"),
+    {project && <BreadcrumbHeader segments={[
+        { href: objectPath(workspaceId), label: workspace?.name ?? uiText("Workspace", "ワークスペース"),
           icon: <AppearanceIcon appearance={collectionAppearance(workspace, "workspace")} />,
           menuLabel: uiText("Workspaces", "ワークスペース"), options: workspaceOptions },
-        ...(parentProject ? [{ href: `/projects/${parentProject.projectId}`, label: parentProject.name,
+        ...(parentProject ? [{ href: objectPath(parentProject.projectId), label: parentProject.name,
           icon: <AppearanceIcon appearance={projectAppearance(parentProject)} />,
           menuLabel: uiText("Projects", "プロジェクト"), options: projectOptions }] : []),
         { current: true, label: project.name, icon: <AppearanceIcon appearance={projectAppearance(project, parentProject)} />,
           menuLabel: parentProject ? uiText(`Projects in ${parentProject.name}`, `${parentProject.name} 内のプロジェクト`) : uiText("Projects", "プロジェクト"),
           options: projectBreadcrumbOptions(projects, project.parentProjectId ?? undefined, { projectId, meetings }) },
       ]} />}
+    <header className="meeting-header">
       <h1><AppearanceIcon appearance={projectAppearance(project, parentProject)} size={28} />{project?.name ?? uiText("Project", "プロジェクト")}</h1>
       {project?.description && <p className="project-description">{project.description}</p>}
       {project && <div className="meeting-metadata"><span className="metadata-chip">{meetingCount(project.subtreeMeetingCount ?? 0)}</span></div>}
@@ -914,8 +915,8 @@ function MeetingScreenshots({ meetingId }: { meetingId: string }) {
   };
   const closeScreenshot = () => {
     const opener = screenshotReturnFocus.current;
-    const returnFocus = opener?.element.isConnected ? opener.element : [...globalThis.document.querySelectorAll<HTMLAnchorElement>(".screenshot-grid a")]
-      .find((link) => link.getAttribute("href") === `/files/${opener?.fileId}`);
+    const returnFocus = opener?.element.isConnected ? opener.element : opener && [...globalThis.document.querySelectorAll<HTMLAnchorElement>(".screenshot-grid a")]
+      .find((link) => link.getAttribute("href") === objectPath(opener.fileId));
     setScreenshotPreview(undefined);
     setLoadAfterFileId(undefined);
     returnFocus?.focus({ preventScroll: true });
@@ -945,7 +946,7 @@ type BreadcrumbSegment = Omit<BreadcrumbOption, "children" | "childrenLabel" | "
 
 function workspaceBreadcrumbOptions(workspaces: SyncedWorkspaceInfo[] | undefined, workspaceId: string, children: BreadcrumbOption[]): BreadcrumbOption[] {
   return (workspaces ?? []).map((workspace) => ({
-    href: `/workspaces/${workspace.workspaceId}`,
+    href: objectPath(workspace.workspaceId),
     icon: <AppearanceIcon appearance={collectionAppearance(workspace, "workspace")} />,
     label: workspace.name,
     current: workspace.workspaceId === workspaceId,
@@ -962,10 +963,10 @@ export function projectBreadcrumbOptions(projects: SyncedProjectInfo[], parentId
   return projects.filter((item) => (item.parentProjectId ?? undefined) === parentId).map((item) => {
     const children = projectBreadcrumbOptions(projects, item.projectId, context);
     if (item.projectId === context.projectId) children.push(...(context.meetings ?? []).map((meeting) => ({
-      href: `/meetings/${meeting.meetingId}`, icon: <MenuIcon name="document" />,
+      href: objectPath(meeting.meetingId), icon: <MenuIcon name="document" />,
       label: meeting.name || uiText("Untitled meeting", "無題のミーティング"), current: meeting.meetingId === context.meetingId,
     })));
-    return { href: `/projects/${item.projectId}`,
+    return { href: objectPath(item.projectId),
       icon: <AppearanceIcon appearance={projectAppearance(item, projects.find((parent) => parent.projectId === item.parentProjectId))} />,
       label: item.name, current: item.projectId === context.projectId, children,
       childrenLabel: uiText(`Contents of ${item.name}`, `${item.name} の内容`) };
@@ -1035,7 +1036,7 @@ export function SyncedMeeting({ workspaceId, meetingId, resolvedMeeting }: { wor
   const meetingFilters = meeting?.projectId ? { projectId: meeting.projectId, projectScope: "direct" as const } : { projectScope: "unassigned" as const };
   const siblingMeetings = useLivePage<SyncedMeetingInfo>(meeting ? apiQuery("listMeetings", { params: { path: { workspaceId }, query: meetingFilters } }) : undefined);
   const projects = projectsQuery.data?.items ?? [];
-  const meetingBreadcrumbOptions: BreadcrumbOption[] = (siblingMeetings.data?.items ?? []).map((item) => ({ href: `/meetings/${item.meetingId}`,
+  const meetingBreadcrumbOptions: BreadcrumbOption[] = (siblingMeetings.data?.items ?? []).map((item) => ({ href: objectPath(item.meetingId),
     icon: <MenuIcon name="document" />, label: item.name || uiText("Untitled meeting", "無題のミーティング"), current: item.meetingId === meetingId }));
   const projectOptions = projectBreadcrumbOptions(projects, undefined, { projectId: project?.projectId, meetingId, meetings: siblingMeetings.data?.items });
   const workspaceOptions = workspaceBreadcrumbOptions(workspaces, workspaceId, projectOptions);
@@ -1062,21 +1063,21 @@ export function SyncedMeeting({ workspaceId, meetingId, resolvedMeeting }: { wor
       confirmLabel: uiText("Move to trash", "ごみ箱に移動"), destructive: true,
       onSubmit: async () => {
         await commitSyncTransaction(workspaceId, [{ entity: "meeting", action: "delete", entityId: meetingId, baseRevision: meeting.revision, data: {} }], setRecovering);
-        navigateDashboard(`/workspaces/${workspaceId}`);
+        navigateDashboard(objectPath(workspaceId));
       },
     }, restoreFocus);
   };
   return (
     <article className="main-column" aria-busy={!meeting && (meetingQuery.loading || workspaceQuery.loading)}>
-      {meeting && <header className="mb-6">
+      {meeting && <>
         <BreadcrumbHeader segments={[
-            { label: workspace?.name ?? uiText("Workspace", "ワークスペース"), href: `/workspaces/${workspaceId}`,
+            { label: workspace?.name ?? uiText("Workspace", "ワークスペース"), href: objectPath(workspaceId),
               icon: <AppearanceIcon appearance={collectionAppearance(workspace, "workspace")} />,
               menuLabel: uiText("Workspaces", "ワークスペース"), options: workspaceOptions },
-            ...(parentProject ? [{ label: parentProject.name, href: `/projects/${parentProject.projectId}`,
+            ...(parentProject ? [{ label: parentProject.name, href: objectPath(parentProject.projectId),
               icon: <AppearanceIcon appearance={projectAppearance(parentProject)} />,
               menuLabel: uiText("Projects", "プロジェクト"), options: projectOptions }] : []),
-            ...(project ? [{ label: project.name, href: `/projects/${project.projectId}`,
+            ...(project ? [{ label: project.name, href: objectPath(project.projectId),
               icon: <AppearanceIcon appearance={projectAppearance(project, parentProject)} />,
               menuLabel: parentProject ? uiText(`Projects in ${parentProject.name}`, `${parentProject.name} 内のプロジェクト`) : uiText("Projects", "プロジェクト"),
               options: projectBreadcrumbOptions(projects, project.parentProjectId ?? undefined, { projectId: project.projectId, meetingId, meetings: siblingMeetings.data?.items }) }] : []),
@@ -1099,6 +1100,7 @@ export function SyncedMeeting({ workspaceId, meetingId, resolvedMeeting }: { wor
               </DropdownMenuContent>
             </DropdownMenu>}
           </>} />
+      <header className="mb-6">
         {canWriteWorkspace(workspace?.role) && <ServerSummaryGeneration key={meetingId} meetingId={meetingId}
           workspaceId={meeting.workspaceId} open={summaryDialogOpen} onOpenChange={setSummaryDialogOpen} restoreFocus={summaryRestoreFocus.current} hasSummary={Boolean(currentSummary)} showTrigger={false} />}
         <h1 className="mb-4 break-words text-[28px] font-semibold leading-snug tracking-tight max-sm:text-2xl">{meeting.name || uiText("Untitled meeting", "無題のミーティング")}</h1>
@@ -1107,13 +1109,13 @@ export function SyncedMeeting({ workspaceId, meetingId, resolvedMeeting }: { wor
           <span className="metadata-chip"><time dateTime={meeting.recordingStartedAt ?? meeting.createdAt}>
             {new Date(meeting.recordingStartedAt ?? meeting.createdAt).toLocaleString(undefined, { year: "numeric", month: "long", day: "numeric", hour: "2-digit", minute: "2-digit" })}
           </time>{meeting.duration != null && <> · {Math.floor(meeting.duration / 60)}:{String(Math.floor(meeting.duration % 60)).padStart(2, "0")}</>}</span>
-          {meeting.projectId ? <a className="metadata-chip" href={`/projects/${meeting.projectId}`}>
+          {meeting.projectId ? <a className="metadata-chip" href={objectPath(meeting.projectId)}>
             <AppearanceIcon appearance={projectAppearance(project, parentProject)} size={14} />{project?.path ?? uiText("Project", "プロジェクト")}
           </a> : <span className="metadata-chip">{uiText("Unassigned", "未分類")}</span>}
           <SummaryTags document={document} />
         </div>
         {meeting.description?.trim() && <details className="meeting-description"><summary>{uiText("Description", "説明")}</summary><p>{meeting.description}</p></details>}
-      </header>}
+      </header></>}
       {dialog}
       {recovering && <p role="status">{syncMessage("sync_recovering")}</p>}
       <DataError error={meetingQuery.error} retry={meetingQuery.reload} />
@@ -1174,7 +1176,7 @@ function OrganizationWorkspaces({ organization }: { organization: OrganizationIn
         ...workspaceEncryptionFields(Boolean(encryptionCapabilities.data?.workspaceEncryption))],
       onSubmit: async ({ name, encryption }) => {
         const id = await createWorkspaceRecord(organization.id, name!, encryption, setRecovering);
-        navigateDashboard(`/workspaces/${id}`);
+        navigateDashboard(objectPath(id));
       },
     });
   }
@@ -1201,7 +1203,7 @@ function OrganizationWorkspaces({ organization }: { organization: OrganizationIn
     {recovering && <p role="status">{syncMessage("sync_recovering")}</p>}
     {query.data?.items.map((workspace) => <div className="row" key={workspace.workspaceId}>
       {workspaces?.some(({ workspaceId }) => workspaceId === workspace.workspaceId)
-        ? <a className="flex min-w-0 flex-1 items-center gap-2 hover:text-primary hover:underline" href={`/workspaces/${workspace.workspaceId}`}><AppearanceIcon appearance={collectionAppearance(workspace, "workspace")} /><strong>{workspace.name}</strong></a>
+        ? <a className="flex min-w-0 flex-1 items-center gap-2 hover:text-primary hover:underline" href={objectPath(workspace.workspaceId)}><AppearanceIcon appearance={collectionAppearance(workspace, "workspace")} /><strong>{workspace.name}</strong></a>
         : <div className="flex min-w-0 flex-1 flex-row items-center gap-2"><AppearanceIcon appearance={collectionAppearance(workspace, "workspace")} /><strong>{workspace.name}</strong></div>}
       {<button className="secondary danger-button" onClick={() => void confirm(workspace.workspaceId)}>{uiText("Delete", "削除")}</button>}
     </div>)}
@@ -2027,7 +2029,7 @@ function AdminMembers() {
 }
 
 function DashboardRedirect({ path }: { path: string }) {
-  useEffect(() => navigateDashboard(path, true), [path]);
+  useEffect(() => navigateDashboard(parseObjectPath(path) ? `${path}${window.location.search}${window.location.hash}` : path, true), [path]);
   return null;
 }
 
@@ -2089,14 +2091,14 @@ export function App({ brand = defaultBrand, extensions = [] }: AppProps) {
     return subscribeLiveUpdates();
   }, [needsSession, unauthorized, userId, syncEnabled]);
 
-  const detailPath = path.match(/^\/(meetings|projects|files)\/([^/]+)$/);
-  const detailQuery = useLiveJSON<{ workspaceId: string }>(!session?.capabilities.sync || !detailPath ? undefined
-    : detailPath[1] === "meetings" ? apiQuery("getMeeting", { params: { path: { meetingId: decodeURIComponent(detailPath[2]!) } } })
-      : detailPath[1] === "projects" ? apiQuery("getProject", { params: { path: { projectId: decodeURIComponent(detailPath[2]!) } } })
-        : apiQuery("getFile", { params: { path: { fileId: decodeURIComponent(detailPath[2]!) } } }));
+  const detail = parseObjectPath(path);
+  const detailQuery = useLiveJSON<{ workspaceId: string }>(!session?.capabilities.sync || !detail || detail.kind === "workspace" ? undefined
+    : detail.kind === "meeting" ? apiQuery("getMeeting", { params: { path: { meetingId: detail.id } } })
+      : detail.kind === "project" ? apiQuery("getProject", { params: { path: { projectId: detail.id } } })
+        : apiQuery("getFile", { params: { path: { fileId: detail.id } } }));
   const detailWorkspaceId = detailQuery.data?.workspaceId;
-  const detailMeeting = detailPath?.[1] === "meetings" ? detailQuery.data as SyncedMeetingInfo | undefined : undefined;
-  const detailProject = detailPath?.[1] === "projects" ? detailQuery.data as SyncedProjectInfo | undefined : undefined;
+  const detailMeeting = detail?.kind === "meeting" ? detailQuery.data as SyncedMeetingInfo | undefined : undefined;
+  const detailProject = detail?.kind === "project" ? detailQuery.data as SyncedProjectInfo | undefined : undefined;
 
   if (path === "/sign-in") return <AccountsOnly brand={brand}><SignIn brand={brand} /></AccountsOnly>;
   if (path === "/oauth/consent") return <AccountsOnly brand={brand}><Consent brand={brand} /></AccountsOnly>;
@@ -2124,7 +2126,6 @@ export function App({ brand = defaultBrand, extensions = [] }: AppProps) {
   else if (route.page === "admin-organization") page = <AdminOrganization key={route.organizationId} organizationId={route.organizationId!} session={session} />;
   else if (route.page === "admin-organizations") page = <AdminDirectory kind="organizations" />;
   else if (route.page === "admin-settings") page = <AdminSearchSettings />;
-  else if (route.page === "workspaces") page = <Workspaces />;
   else if (route.page === "workspace") page = <WorkspaceMeetings session={session} workspaceId={route.workspaceId!} />;
   else if (route.page === "meeting") page = detailWorkspaceId ? <SyncedMeeting workspaceId={detailWorkspaceId} meetingId={route.meetingId!} resolvedMeeting={detailMeeting} /> : null;
   else if (route.page === "project") page = detailWorkspaceId ? <SyncedProject workspaceId={detailWorkspaceId} projectId={route.projectId!} resolvedProject={detailProject} /> : null;
@@ -2140,9 +2141,9 @@ export function App({ brand = defaultBrand, extensions = [] }: AppProps) {
     serverLinks={extensions.flatMap((extension) => extension.navigation ?? []).filter(isServerNavigation).map((item) =>
       (!item.capability || session.capabilities[item.capability]) && <a className="flex items-center gap-2 rounded-md px-2 py-1.5 text-xs text-muted-foreground hover:bg-accent hover:text-foreground" key={item.path} href={item.path}><MenuIcon name="settings" />{item.label}</a>)}
     session={session} path={path} navigate={navigateDashboard} routeWorkspaceId={detailWorkspaceId ?? route.workspaceId}
-    routeMeeting={detailMeeting} routeMeetingOwned={detailPath?.[1] === "meetings"}>
+    routeMeeting={detailMeeting} routeMeetingOwned={detail?.kind === "meeting"}>
     <DataError error={sessionError ? new Error(sessionError) : undefined} retry={() => setSessionAttempt((attempt) => attempt + 1)} />
-    {detailPath && !detailWorkspaceId && route.page !== "file" && <>
+    {detail && detail.kind !== "workspace" && !detailWorkspaceId && route.page !== "file" && <>
       <DataError error={detailQuery.error} retry={detailQuery.reload} />
       {!detailQuery.error && <p className="content-empty">{uiText("Loading…", "読み込み中…")}</p>}
     </>}

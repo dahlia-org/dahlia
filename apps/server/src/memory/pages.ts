@@ -1,3 +1,4 @@
+import { objectPath } from "../object-url";
 import { imageCoverage, imageReferences, validImageLineage } from "./images";
 import type { z } from "zod";
 import type { Identity } from "../auth/identity";
@@ -178,7 +179,7 @@ export class KnowledgePages {
         const source = document.source, id = encodeId(source.kind === "meeting" ? "meeting" : "sharedMemory", source.id);
         const excerpt = canonicalExcerpt(document, [], 1000);
         return { kind: source.kind, id, images: imageReferences(document), imageCoverage: imageCoverage(document), revision: source.revision, canonicalExcerpt: excerpt.text, truncated: excerpt.truncated,
-          href: source.kind === "meeting" ? `/meetings/${id}` : `/memory?workspaceId=${encodeId("workspace", scopeId)}&noteId=${id}` };
+          href: source.kind === "meeting" ? objectPath(id) : `/memory?workspaceId=${encodeId("workspace", scopeId)}&noteId=${id}` };
       });
       if (new TextEncoder().encode(JSON.stringify([verified.snapshot.body, sources])).byteLength > 2 * 1024 * 1024) reject("error");
       await this.current(identity, scopeId, state!.generation, projectId, signal);

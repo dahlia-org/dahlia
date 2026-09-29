@@ -100,7 +100,7 @@ it("distinguishes revoked/deleted data from transient refresh failures", () => {
 });
 
 it("navigates within browser history and allows explicitly registered extension paths", () => {
-  const browser = Object.assign(new EventTarget(), { location: { pathname: "/workspaces" }, history: { pushState: vi.fn(), replaceState: vi.fn() } });
+  const browser = Object.assign(new EventTarget(), { location: { pathname: "/workspaces", search: "", hash: "" }, history: { pushState: vi.fn(), replaceState: vi.fn() } });
   vi.stubGlobal("window", browser);
   vi.stubGlobal("PopStateEvent", Event);
   const changed = vi.fn();

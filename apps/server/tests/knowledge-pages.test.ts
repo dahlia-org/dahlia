@@ -256,7 +256,7 @@ describe("Knowledge Pages publication", () => {
       await f.ready();
       const input = { workspaceId: f.workspaceId, pageId: `project-${projectId}` };
       for (let i = 0; i < 5; i++) await f.tick();
-      expect(await f.memory.pages.get(f.owner, input, signal)).toMatchObject({ status: "ready", sources: [{ id: encodeId("meeting", meetingId) }] });
+      expect(await f.memory.pages.get(f.owner, input, signal)).toMatchObject({ status: "ready", sources: [{ id: encodeId("meeting", meetingId), href: `/o/${encodeId("meeting", meetingId)}` }] });
       expect((await f.memory.pages.list(f.owner, { workspaceId: f.workspaceId, projectId: encodeId("project", projectId) }, signal)).items.map((page) => page.id)).toEqual([input.pageId]);
       await f.commit([{ entity: "meeting", action: "update", entityId: meetingId, baseRevision: 1, data: { projectId: null, name: meeting.name, description: meeting.description, status: "READY", duration: 60, recordingStartedAt: now, updatedAt: now } }]);
       expect(await f.memory.pages.get(f.owner, input, signal)).toMatchObject({ body: null, snippet: null, sources: [] });

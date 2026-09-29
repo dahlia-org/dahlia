@@ -117,14 +117,15 @@ async function run() {
   await until(() => document.body.textContent.includes("Surviving canonical note"));
   imageSettings = { enabled: true, imagesEnabled: false };
   root.render(<WorkspaceMemory workspaceId="team" role="admin" />);
-  await until(() => button("Enable screenshots"));
-  button("Enable screenshots").click(); await until(() => document.querySelector("[data-confirm]"));
+  const imagesSwitch = () => document.querySelector<HTMLButtonElement>('button[role="switch"][id$="-images"]');
+  await until(() => imagesSwitch() && !imagesSwitch()!.disabled);
+  imagesSwitch()!.click(); await until(() => document.querySelector("[data-confirm]"));
   (document.querySelector("[data-confirm]") as HTMLButtonElement).click();
-  await until(() => button("Disable screenshots"));
+  await until(() => imagesSwitch()?.getAttribute("aria-checked") === "true");
   assert(imageSettings.imagesEnabled, "Admin opt-in was not sent");
   root.render(<WorkspaceMemory workspaceId="team" role="viewer" />);
-  await until(() => !button("Disable screenshots"));
-  assert(!button("Enable screenshots"), "Viewer can change image settings");
+  await until(() => !imagesSwitch());
+  assert(!document.querySelector('[role="switch"]'), "Viewer can change analysis settings");
   history.replaceState({}, "", location.pathname);
   document.getElementById("result")!.textContent = "PASS: image admin opt-in/viewer boundary, scope, conflict preservation, sharing, sources, deletion, purge, canonical deep links, missing note, authorization failures and recovery";
 }
