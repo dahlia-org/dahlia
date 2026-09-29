@@ -29,6 +29,8 @@ macOS ネイティブのリアルタイム文字起こしアプリです。マ�
 - Swift 6.2
 - Xcode 26 以降（Swift ツールチェーン用）
 
+旧データベースからの更新時に、会議の行が失われた録音セッションが見つかった場合は、新しいローカルの「復旧した録音」Workspaceに保持します。残っているID・文字起こし・メモ・画像は保持しますが、元の会議名と所属Workspaceは録音セッションだけでは特定できません。復旧先はサーバーに接続せず、出力フォルダーを設定せず、自動処理を無効にします。失われた音声ファイル自体は復元できません。それ以外のデータ不整合では、データを削除したり整合性検査を省略したりせず、起動を停止します。
+
 新規インストールでは、Dahlia が `Documents/Dahlia` を作成して `Default` というワークスペースとして登録し、自動的に開きます。既存のワークスペース登録は維持されます。自動設定に失敗した場合はワークスペース管理画面が表示され、フォルダを手動で選択できます。
 
 Dahlia は、同梱 Codex の状態と認証を他の Codex アプリや Codex CLI から分離して管理します。**設定 → このMacのAI → AI接続**で、ChatGPT Subscription を選ぶか、「プロファイルを新規作成」から Databricks CLI プロファイル名と workspace URL を入力してブラウザでサインインします。既存の Databricks OAuth プロファイルも引き続き選択できます。Databricks CLI は同梱せず、未導入時は設定画面から公式手順・ライセンスを確認し、Terminal で `brew install databricks/tap/databricks` を実行できます。ChatGPT 認証は Dahlia の Application Support ディレクトリに保存され、Databricks のトークンは Databricks CLI が管理します。

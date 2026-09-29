@@ -66,7 +66,14 @@ final class AppDatabaseManager: Sendable {
                try dbQueue.read({ try !Self.migrator.hasCompletedMigrations($0) }) {
                 onMigration()
             }
+            let recoveryPath = URL(fileURLWithPath: path).appendingPathExtension("recovered-recordings").path
+            if try dbQueue.read({ try OrphanedRecordingRecovery.isNeeded(in: $0) }) {
+                try dbQueue.write { try OrphanedRecordingRecovery.prepare(in: $0, recoveryPath: recoveryPath) }
+            }
             try Self.migrator.migrate(dbQueue)
+            if try dbQueue.read({ try OrphanedRecordingRecovery.needsFinalization(in: $0, recoveryPath: recoveryPath) }) {
+                try dbQueue.write { try OrphanedRecordingRecovery.finish(in: $0, recoveryPath: recoveryPath) }
+            }
         }
         if !usesConcurrentSearch {
             searchDBQueue = dbQueue
