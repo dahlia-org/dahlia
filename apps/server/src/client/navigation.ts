@@ -12,7 +12,7 @@ export function dashboardNavigationPath(href: string, currentURL: string, extens
 export function navigateDashboard(path: string, replace = false) {
   // A same-page selection still completes navigation, without adding history.
   window.dispatchEvent(new Event(dashboardNavigationEvent));
-  if (path === window.location.pathname) return;
+  if (path === `${window.location.pathname}${window.location.search}${window.location.hash}`) return;
   if (replace) window.history.replaceState(null, "", path);
   else window.history.pushState(null, "", path);
   window.dispatchEvent(new PopStateEvent("popstate"));

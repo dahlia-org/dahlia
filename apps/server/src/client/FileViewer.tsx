@@ -1,3 +1,4 @@
+import { objectPath } from "../object-url";
 import { apiUrls } from "./generated-operations";
 import { apiQuery } from "./live-data";
 import { useEffect, useRef, useState, type MouseEvent, type ReactNode } from "react";
@@ -131,7 +132,7 @@ export function FileViewer({ fileId, separateTab = false, capturedAt, onClose, o
       <h2 className="mb-3 mt-4 border-t pt-3.5 font-semibold">{uiText("Image description", "画像の説明")}</h2><p className="whitespace-pre-wrap">{file.metadata.caption || uiText("No description", "説明はありません")}</p>
       <h2 className="mb-3 mt-4 border-t pt-3.5 font-semibold">{uiText("Detected text", "検出したテキスト")}</h2><p className="whitespace-pre-wrap">{file.metadata.ocrText || uiText("No detected text", "検出したテキストはありません")}</p>
       <p className="my-4 text-zinc-500">{file.name}</p>
-      {separateTab && <a className="text-primary hover:underline" href={`/files/${fileId}`} target="_blank" rel="noreferrer">{uiText("Open in new tab", "別タブで開く")}</a>}
+      {separateTab && <a className="text-primary hover:underline" href={objectPath(fileId)} target="_blank" rel="noreferrer">{uiText("Open in new tab", "別タブで開く")}</a>}
     </aside>}
     <footer className="col-span-full row-start-3 flex self-center justify-self-center rounded-full bg-white p-1 text-zinc-900 shadow-lg [&_button]:h-9 [&_button]:min-w-9 [&_button]:rounded-full [&_button]:px-2 [&_button]:text-sm [&_button]:tabular-nums [&_button]:hover:bg-zinc-100 [&_button]:disabled:opacity-35" aria-label={uiText("Zoom", "ズーム")}>
       <button aria-label={uiText("Zoom out", "縮小")} disabled={!supportedImage || zoom <= 25} onClick={() => setZoom(Math.max(25, zoom - 25))}>−</button>
@@ -169,7 +170,7 @@ export function FileLink({ fileId, label, children, capturedAt, onOpen }: {
   const link = useRef<HTMLAnchorElement>(null);
   const [open, setOpen] = useState(false);
   return <>
-    <a ref={link} href={`/files/${fileId}`} aria-label={label} onClick={(event) => {
+    <a ref={link} href={objectPath(fileId)} aria-label={label} onClick={(event) => {
       if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
       event.preventDefault();
       if (onOpen) onOpen(event.currentTarget);

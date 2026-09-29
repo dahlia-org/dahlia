@@ -8,7 +8,7 @@ Object.defineProperty(navigator, "language", { value: "en-US", configurable: tru
 const body = 'Synthetic hypothesis <img src="https://invalid.example/track" onerror="alert(1)">';
 let page: KnowledgePage = { id: "workspace-insights", workspaceId: "team", projectId: null, title: "Team overview", status: "ready", coverage: "partial", skippedCount: 1, canRefresh: true,
   generatedAt: "2026-09-28T00:00:00Z", body, snippet: "Synthetic hypothesis", instruction: "Synthetic instruction",
-  sources: [{ kind: "meeting", id: "meeting", revision: "1", href: "/meetings/meeting", canonicalExcerpt: "Canonical evidence", truncated: false }] };
+  sources: [{ kind: "meeting", id: "meeting", revision: "1", href: "/o/meeting", canonicalExcerpt: "Canonical evidence", truncated: false }] };
 let regenerations = 0, forbidden = false, listForbidden = false, projectFilter: string | null = null;
 let validation: Promise<void> | undefined;
 window.fetch = async (input, init) => {
@@ -41,7 +41,7 @@ async function run() {
   await until(() => document.body.textContent.includes("Canonical evidence"));
   assert(document.body.textContent.includes("AI-generated summaries and hypotheses"), "Missing generated label");
   assert(document.body.textContent.includes("Partial ingestion: 1 skipped sources"), "Missing coverage");
-  assert(document.querySelector('a[href="/meetings/meeting"]'), "Missing canonical link");
+  assert(document.querySelector('a[href="/o/meeting"]'), "Missing canonical link");
   assert(document.querySelector('a[download]') && document.querySelector("time"), "Missing export or generation time");
   assert(document.body.textContent.includes(body) && !document.querySelector("img"), "Generated HTML executed");
   assert(!document.querySelector("textarea"), "Unexpected generated-body editor");

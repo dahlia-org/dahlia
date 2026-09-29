@@ -252,8 +252,8 @@ These concrete endpoints preserve Better Auth/OAuth/OIDC, OpenAI and MCP formats
 | openidMetadata | GET `/.well-known/openid-configuration` | OIDC discovery | accounts |
 | gatewayResourceMetadata | GET `/.well-known/oauth-protected-resource` | RFC 9728 | accounts |
 | mcpResourceMetadata | GET `/.well-known/oauth-protected-resource/mcp` | RFC 9728 | accounts |
-| listModels | GET `/api/v1/models` | OpenAI / Codex model catalog | configured AI backend; all-apis or trusted proxy |
-| createResponse | POST `/api/v1/responses` | OpenAI Responses / SSE | configured AI backend; all-apis or trusted proxy |
+| listModels | GET `/api/v1/models` | OpenAI / Codex model catalog | configured AI backend; browser session, all-apis or trusted proxy |
+| createResponse | POST `/api/v1/responses` | OpenAI Responses / SSE | configured AI backend; browser session, all-apis or trusted proxy |
 | mcp | POST `/mcp` | MCP 2026-07-28 stateless JSON-RPC | MCP OAuth scopes/DPoP or trusted proxy |
 | mcpScreenshot | GET `/mcp/resources/workspaces/{workspaceId}/meetings/{meetingId}/screenshots/{screenshotId}/content` | MCP resource HTTP bytes | current Workspace read permission and MCP read scope |
 | headMcpScreenshot | HEAD `/mcp/resources/workspaces/{workspaceId}/meetings/{meetingId}/screenshots/{screenshotId}/content` | MCP resource HTTP bytes | current Workspace read permission and MCP read scope |

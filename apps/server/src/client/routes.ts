@@ -1,3 +1,4 @@
+import { legacyObjectPath, parseObjectPath } from "../object-url";
 import { decodeId, type IDKind } from "../typeid";
 
 export interface DashboardCapabilities {
@@ -32,6 +33,7 @@ const coreDashboardPaths = new Set([
 
 export function isCoreDashboardPath(path: string): boolean {
   return coreDashboardPaths.has(path)
+    || /^\/o\/[^/]+$/.test(path)
     || isChatPath(path)
     || /^\/(?:meetings|projects|files|orgs)\/[^/]+$/.test(path)
     || /^\/workspaces\/[^/]+(?:\/(?:meetings|projects)\/[^/]+)?$/.test(path)
@@ -40,7 +42,7 @@ export function isCoreDashboardPath(path: string): boolean {
 }
 
 export type DashboardRoute = {
-  page?: "memory" | "ai" | "file" | "overview" | "settings" | "workspaces" | "workspace" | "meeting" | "project" | "organizations" | "organization" | "invitation" | "admin-users" | "admin-organizations" | "admin-organization" | "admin-settings";
+  page?: "memory" | "ai" | "file" | "overview" | "settings" | "workspace" | "meeting" | "project" | "organizations" | "organization" | "invitation" | "admin-users" | "admin-organizations" | "admin-organization" | "admin-settings";
   redirect?: string;
   threadId?: string;
   fileId?: string;
@@ -77,16 +79,17 @@ export function resolveDashboardRoute(
       ? { page: "invitation", invitationId: invitation[1] }
       : { redirect: "/dashboard" };
   }
-  if (path === "/workspaces") return capabilities.sync ? { page: "workspaces" } : { redirect: "/dashboard" };
-  const detail = path.match(/^\/(meetings|projects|files)\/([^/]+)$/);
-  if (detail && validID(({ meetings: "meeting", projects: "project", files: "file" } as const)[detail[1] as "meetings" | "projects" | "files"], detail[2])) {
+  if (path === "/workspaces") return { redirect: "/dashboard" };
+  const legacy = legacyObjectPath(path);
+  if (legacy) return { redirect: capabilities.sync ? legacy : "/dashboard" };
+  const object = parseObjectPath(path);
+  if (object) {
     if (!capabilities.sync) return { redirect: "/dashboard" };
-    if (detail[1] === "meetings") return { page: "meeting", meetingId: detail[2] };
-    if (detail[1] === "projects") return { page: "project", projectId: detail[2] };
-    return { page: "file", fileId: detail[2] };
+    if (object.kind === "workspace") return { page: "workspace", workspaceId: object.id };
+    if (object.kind === "project") return { page: "project", projectId: object.id };
+    if (object.kind === "meeting") return { page: "meeting", meetingId: object.id };
+    return { page: "file", fileId: object.id };
   }
-  const workspace = path.match(/^\/workspaces\/([^/]+)$/);
-  if (workspace && validID("workspace", workspace[1])) return capabilities.sync ? { page: "workspace", workspaceId: workspace[1] } : { redirect: "/dashboard" };
   if (path === "/dashboard/settings") {
     return { page: "settings" };
   }

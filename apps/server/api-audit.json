@@ -2213,14 +2213,14 @@
       "method": "GET",
       "path": "/api/v1/models",
       "protocol": "OpenAI / Codex model catalog",
-      "availability": "configured AI backend; all-apis or trusted proxy"
+      "availability": "configured AI backend; browser session, all-apis or trusted proxy"
     },
     {
       "operation": "createResponse",
       "method": "POST",
       "path": "/api/v1/responses",
       "protocol": "OpenAI Responses / SSE",
-      "availability": "configured AI backend; all-apis or trusted proxy"
+      "availability": "configured AI backend; browser session, all-apis or trusted proxy"
     },
     {
       "operation": "mcp",

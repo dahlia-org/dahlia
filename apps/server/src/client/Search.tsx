@@ -1,3 +1,4 @@
+import { objectPath } from "../object-url";
 import { apiUrls } from "./generated-operations";
 import { apiOperations as api } from "./generated-operations";
 import { apiQuery } from "./live-data";
@@ -83,7 +84,7 @@ function SearchDialog({ workspaceId, onClose }: { workspaceId: string; onClose: 
     if (!hit) return;
     if (hit.kind === "screenshot") { setPreview(hit); return; }
     onClose();
-    navigateDashboard(hit.kind === "project" ? `/projects/${hit.id}` : `/meetings/${hit.id}`);
+    navigateDashboard(objectPath(hit.id));
   }
   function keyDown(event: KeyboardEvent<HTMLDivElement>) {
     if (event.nativeEvent.isComposing || composing || preview) return;

@@ -1,3 +1,4 @@
+import { objectPath, parseObjectPath } from "../object-url";
 import { apiQuery } from "./live-data";
 import { isChatPath } from "./routes";
 import { collectionAppearance, AppearanceIcon, projectAppearance, type Appearance } from "./AppearancePicker";
@@ -51,6 +52,8 @@ interface SidebarState {
   workspaces?: SyncedWorkspaceInfo[];
   error?: string;
   reload: () => void;
+  chatWorkspaceId?: string;
+  setChatWorkspaceId?: (id: string | undefined) => void;
   chatHistoryTarget?: HTMLElement | null;
   setChatHistoryTarget?: (target: HTMLElement | null) => void;
 }
@@ -63,6 +66,7 @@ export function useSidebar() {
 }
 
 export function SidebarProvider({ session, children }: { session: SessionInfo; children: ReactNode }) {
+  const [chatWorkspaceId, setChatWorkspaceId] = useState<string>();
   const [chatHistoryTarget, setChatHistoryTarget] = useState<HTMLElement | null>(null);
   const organizationsQuery = useLiveJSON<OrganizationInfo[]>(!session.capabilities.sharing ? undefined
     : "/api/auth/organization/list");
@@ -71,7 +75,7 @@ export function SidebarProvider({ session, children }: { session: SessionInfo; c
   const reload = () => { organizationsQuery.reload(); workspacesQuery.reload(); };
   return <SidebarContext.Provider value={{ userId: session.user.id, organizations: organizationsQuery.data,
     workspaces: workspacesQuery.data?.items, error: workspacesQuery.error?.message, reload,
-    chatHistoryTarget, setChatHistoryTarget }}>
+    chatHistoryTarget, setChatHistoryTarget, chatWorkspaceId, setChatWorkspaceId }}>
     {children}
   </SidebarContext.Provider>;
 }
@@ -119,7 +123,8 @@ export function Sidebar({ brand, session, children, serverLinks, routeWorkspaceI
   const accountMenuTrigger = useRef<HTMLButtonElement>(null);
   const [mcpDialogOpen, setMcpDialogOpen] = useState(false);
   const identity = session.user.name || session.user.email || session.user.id;
-  const routeWorkspaceId = resolvedWorkspaceId ?? (typeof window === "undefined" ? undefined : window.location.pathname.match(/^\/workspaces\/([^/]+)/)?.[1]);
+  const object = typeof window === "undefined" ? undefined : parseObjectPath(window.location.pathname);
+  const routeWorkspaceId = resolvedWorkspaceId ?? (object?.kind === "workspace" ? object.id : undefined);
   const selectionKey = `dahlia:sidebar:${session.user.id}:workspace`;
   const routedWorkspace = useLiveJSON<SyncedWorkspaceInfo>(resolvedWorkspaceId ? apiQuery("getWorkspace", { params: { path: { workspaceId: resolvedWorkspaceId } } }) : undefined);
   const selectionOrgKey = `dahlia:sidebar:${session.user.id}:organization`;
@@ -141,12 +146,12 @@ export function Sidebar({ brand, session, children, serverLinks, routeWorkspaceI
     const workspaces = (state.workspaces ?? []).filter((workspace) => workspace.organizationId === organizationId);
     const savedId = readSelection(`${selectionKey}:${organizationId}`);
     const workspace = preferredOrganizationWorkspace(workspaces, savedId, state.userId);
-    return workspace ? `/workspaces/${workspace.workspaceId}` : `/orgs/${organizationId}`;
+    return workspace ? objectPath(workspace.workspaceId) : `/orgs/${organizationId}`;
   }
   const currentPath = typeof window === "undefined" ? "" : window.location.pathname;
   const homeActive = currentPath === "/dashboard";
   const aiActive = isChatPath(currentPath);
-  const workspacesActive = currentPath === "/workspaces";
+  const searchWorkspaceId = aiActive ? state.chatWorkspaceId : selectedWorkspaceId;
   useEffect(() => {
     if (selectedOrganizationId) save(selectionOrgKey, selectedOrganizationId);
     if (selectedWorkspaceId && selectedOrganizationId) save(`${selectionKey}:${selectedOrganizationId}`, selectedWorkspaceId);
@@ -166,19 +171,20 @@ export function Sidebar({ brand, session, children, serverLinks, routeWorkspaceI
     </DropdownMenu>}
     <nav className="primary-navigation flex items-center gap-1 px-1" aria-label={uiText("Library navigation", "ライブラリ")}>
       <Tooltip label={uiText("Home", "ホーム")}><a className={`flex h-8 min-w-0 items-center gap-1.5 whitespace-nowrap rounded-full px-2.5 text-muted-foreground hover:bg-accent hover:text-foreground${homeActive ? " bg-accent pr-3 text-foreground" : " w-8 shrink-0 justify-center"}`} href="/dashboard" aria-label={uiText("Home", "ホーム")} aria-current={homeActive ? "page" : undefined}><MenuIcon name="home" /><span className={homeActive ? "truncate text-xs font-medium" : "sr-only"}>{uiText("Home", "ホーム")}</span></a></Tooltip>
-      <a href="/memory" className="text-xs text-muted-foreground hover:text-foreground">Dahlia Memory</a>
       {session.capabilities.ai && <Tooltip label={uiText("Chat with Dahlia AI", "Dahlia AI とチャット")}><a className={`flex h-8 min-w-0 items-center gap-1.5 whitespace-nowrap rounded-full px-2.5 text-muted-foreground hover:bg-accent hover:text-foreground${aiActive ? " bg-accent pr-3 text-foreground" : " w-8 shrink-0 justify-center"}`} href="/chat" aria-label={uiText("Chat with Dahlia AI", "Dahlia AI とチャット")} aria-current={aiActive ? "page" : undefined}><MenuIcon name="chat" /><span className={aiActive ? "truncate text-xs font-medium" : "sr-only"}>{uiText("Chat", "チャット")}</span></a></Tooltip>}
-      {session.capabilities.sync && <Tooltip label={uiText("Workspaces", "ワークスペース")}><a className={`flex h-8 min-w-0 items-center gap-1.5 whitespace-nowrap rounded-full px-2.5 text-muted-foreground hover:bg-accent hover:text-foreground${workspacesActive ? " bg-accent pr-3 text-foreground" : " w-8 shrink-0 justify-center"}`} href="/workspaces" aria-label={uiText("Workspaces", "ワークスペース")} aria-current={workspacesActive ? "page" : undefined}><MenuIcon name="workspace" /><span className={workspacesActive ? "truncate text-xs font-medium" : "sr-only"}>{uiText("Workspaces", "ワークスペース")}</span></a></Tooltip>}
-      {!aiActive && session.capabilities.sync && selectedWorkspaceId && <Search key={`${selectionKey}:${selectedWorkspaceId}`} workspaceId={selectedWorkspaceId} />}
+      {session.capabilities.sync && searchWorkspaceId && <Search key={`${selectionKey}:${searchWorkspaceId}`} workspaceId={searchWorkspaceId} />}
     </nav>
     <div className="sidebar-scroll flex min-h-0 flex-1 flex-col overflow-y-auto">
       {aiActive && <div className="flex min-h-0 flex-1 flex-col pt-2" ref={state.setChatHistoryTarget} />}
-      {session.capabilities.sync && <nav className="workspace-navigation mt-2" aria-label={uiText("Project navigation", "プロジェクト")}>
+      {!aiActive && session.capabilities.sync && <nav className="workspace-navigation mt-2" aria-label={uiText("Project navigation", "プロジェクト")}>
         {state.error && <Failure message={state.error} retry={state.reload} />}
         {!state.workspaces && !state.error && <p className="px-2 py-1 text-xs text-muted-foreground">{uiText("Loading Workspaces…", "読み込み中…")}</p>}
         {state.organizations?.length === 0 && <p className="px-2 py-2 text-xs text-muted-foreground">{uiText("Join an organization or wait for an invitation.", "組織に参加するか、招待をお待ちください。")} <a className="text-primary underline" href={session.capabilities.admin ? "/admin/orgs" : "/orgs"}>{uiText("Organizations", "組織")}</a></p>}
         <HoverPreviewProvider>
-          {organizationWorkspaces.filter((workspace) => workspace.personalUserId === state.userId).map((workspace) => <SidebarWorkspace key={workspace.workspaceId} workspace={workspace} personal selected={workspace.workspaceId === selectedWorkspaceId} routeMeeting={routeMeeting} routeMeetingOwned={routeMeetingOwned} />)}
+          {organizationWorkspaces.filter((workspace) => workspace.personalUserId === state.userId).map((workspace) => <section key={workspace.workspaceId} className="mb-3" aria-labelledby={`private-heading-${workspace.workspaceId}`}>
+            <h2 id={`private-heading-${workspace.workspaceId}`} className="px-2 py-1 text-[11px] font-semibold text-muted-foreground">{uiText("Private", "プライベート")}</h2>
+            <WorkspaceChildren workspaceId={workspace.workspaceId} resolvedMeeting={routeMeeting} routeMeetingOwned={routeMeetingOwned} />
+          </section>)}
           <h2 className="px-2 py-1 text-[11px] font-semibold text-muted-foreground">{uiText("Workspaces", "ワークスペース")}</h2>
           {organizationWorkspaces.filter((workspace) => workspace.personalUserId == null).map((workspace) => <SidebarWorkspace key={workspace.workspaceId} workspace={workspace} selected={workspace.workspaceId === selectedWorkspaceId} routeMeeting={routeMeeting} routeMeetingOwned={routeMeetingOwned} />)}
           {externalWorkspaces.length > 0 && <>
@@ -260,8 +266,9 @@ function TreeNode({ id, name, href, initialOpen, children, appearance, project }
 
 function WorkspaceChildren({ workspaceId, resolvedMeeting, routeMeetingOwned }: { workspaceId: string; resolvedMeeting?: SyncedMeetingInfo; routeMeetingOwned?: boolean }) {
   const route = typeof window === "undefined" ? "" : window.location.pathname;
-  const meetingId = route.match(/^\/meetings\/([^/]+)$/)?.[1];
-  const projectId = route.match(/^\/projects\/([^/]+)$/)?.[1];
+  const object = parseObjectPath(route);
+  const meetingId = object?.kind === "meeting" ? object.id : undefined;
+  const projectId = object?.kind === "project" ? object.id : undefined;
   const projectsQuery = useLiveJSON<{ items: SyncedProjectInfo[] }>(apiQuery("listProjects", { params: { path: { workspaceId: workspaceId } } }));
   const meetingQuery = useLiveJSON<SyncedMeetingInfo>(meetingId && !routeMeetingOwned && !resolvedMeeting ? apiQuery("getMeeting", { params: { path: { meetingId: meetingId } } }) : undefined);
   const projects = projectsQuery.data?.items;
@@ -280,8 +287,8 @@ function WorkspaceChildren({ workspaceId, resolvedMeeting, routeMeetingOwned }: 
   }
   const projectsUnder = (parentId?: string): ReactNode => (childrenByParent.get(parentId) ?? []).map((project) => {
     const appearance = projectAppearance(project, projects.find((parent) => parent.projectId === project.parentProjectId));
-    return <TreeNode project={project} key={project.projectId} id={`${workspaceId}:${project.projectId}`} name={project.name} appearance={appearance} href={`/projects/${project.projectId}`} initialOpen={ancestors.has(project.projectId)}>
-      <ul className="ml-3 grid list-none gap-0.5 p-0">
+    return <TreeNode project={project} key={project.projectId} id={`${workspaceId}:${project.projectId}`} name={project.name} appearance={appearance} href={objectPath(project.projectId)} initialOpen={ancestors.has(project.projectId)}>
+      <ul className="ml-3 grid grid-cols-1 list-none gap-0.5 p-0">
         {projectsUnder(project.projectId)}
         <Meetings workspaceId={workspaceId} projectId={project.projectId} projectName={project.name} appearance={appearance} selectedMeeting={selectedMeeting} />
       </ul>
@@ -290,12 +297,12 @@ function WorkspaceChildren({ workspaceId, resolvedMeeting, routeMeetingOwned }: 
   return <>
     {projectsQuery.error && <Failure message={projectsQuery.error.message} retry={projectsQuery.reload} />}
     {meetingQuery.error && <Failure message={meetingQuery.error.message} retry={meetingQuery.reload} />}
-    <ul className="grid list-none gap-0.5 p-0">
+    <ul className="grid grid-cols-1 list-none gap-0.5 p-0">
       {projectsUnder()}
     </ul>
     <section className="mt-3" aria-labelledby={`unassigned-heading-${workspaceId}`}>
       <h2 id={`unassigned-heading-${workspaceId}`} className="px-2 py-1 text-[11px] font-semibold text-muted-foreground">{uiText("Unassigned", "未分類")}</h2>
-      <ul className="grid list-none gap-0.5 p-0"><Meetings workspaceId={workspaceId} selectedMeeting={selectedMeeting} /></ul>
+      <ul className="grid grid-cols-1 list-none gap-0.5 p-0"><Meetings workspaceId={workspaceId} selectedMeeting={selectedMeeting} /></ul>
     </section>
   </>;
 }
@@ -315,7 +322,7 @@ function Meetings({ workspaceId, projectId, projectName, appearance, selectedMee
   }
   return <>
     {visibleMeetings.map((meeting) => {
-      const href = `/meetings/${meeting.meetingId}`;
+      const href = objectPath(meeting.meetingId);
       const active = window.location.pathname === href;
       const meetingDate = meeting.recordingStartedAt ?? meeting.createdAt;
       return <MeetingHoverCard key={meeting.meetingId} meeting={meeting} projectName={projectName} appearance={appearance} active={active}>
@@ -331,15 +338,15 @@ function Meetings({ workspaceId, projectId, projectName, appearance, selectedMee
   </>;
 }
 
-function SidebarWorkspace({ workspace, personal = false, selected, routeMeeting, routeMeetingOwned }: { workspace: SyncedWorkspaceInfo; personal?: boolean; selected: boolean; routeMeeting?: SyncedMeetingInfo; routeMeetingOwned?: boolean }) {
+function SidebarWorkspace({ workspace, selected, routeMeeting, routeMeetingOwned }: { workspace: SyncedWorkspaceInfo; selected: boolean; routeMeeting?: SyncedMeetingInfo; routeMeetingOwned?: boolean }) {
   const [expanded, setExpanded] = useState(selected);
   useEffect(() => { if (selected) setExpanded(true); }, [selected]);
-  const label = personal ? uiText("Private", "自分専用") : workspace.name;
+  const label = workspace.name;
   return <div>
     <div className="flex items-center rounded-md hover:bg-accent">
       <button className="rounded p-1 focus-visible:ring-2 focus-visible:ring-ring" onClick={() => setExpanded(!expanded)} aria-expanded={expanded} aria-label={uiText(`Expand ${label}`, `${label}を展開`)}><Chevron expanded={expanded} /></button>
-      <a className="flex min-w-0 flex-1 items-center gap-2 rounded px-1 py-1.5 text-sm aria-[current=page]:bg-accent" href={`/workspaces/${workspace.workspaceId}`} aria-current={selected ? "page" : undefined}>
-        <AppearanceIcon appearance={collectionAppearance(workspace, "workspace")} /><span className="truncate">{label}</span>{personal && <span aria-label={uiText("Only you", "本人のみ")}>🔒</span>}
+      <a className="flex min-w-0 flex-1 items-center gap-2 rounded px-1 py-1.5 text-sm aria-[current=page]:bg-accent" href={objectPath(workspace.workspaceId)} aria-current={selected ? "page" : undefined}>
+        <AppearanceIcon appearance={collectionAppearance(workspace, "workspace")} /><span className="truncate">{label}</span>
       </a>
     </div>
     {expanded && <div className="pl-3"><WorkspaceChildren workspaceId={workspace.workspaceId} resolvedMeeting={routeMeeting} routeMeetingOwned={routeMeetingOwned} /></div>}

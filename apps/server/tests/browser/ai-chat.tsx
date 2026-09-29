@@ -80,7 +80,7 @@ async function run() {
   await until(() => document.querySelector<HTMLElement>('[data-ai-picker="workspace"]')?.dataset.value === workspaceA
     && document.querySelector<HTMLElement>('[data-ai-picker="model"]')?.dataset.value === "model-a"
     && document.querySelector<HTMLElement>('[data-ai-picker="reasoning"]')?.dataset.value === "medium", "initial selection");
-  assert(!document.querySelector(".ai-header"), "The initial /chat page must not show a chat header");
+  assert(document.querySelector(".ai-header"), "The initial /chat page must show a chat header");
   let { workspace, reasoning, model } = controls();
   let textarea = document.querySelector<HTMLTextAreaElement>('.ai-composer textarea')!;
   assert(workspace.dataset.value === workspaceA && model.dataset.value === "model-a" && reasoning.dataset.value === "medium", "Initial selectors were not selected");
@@ -91,13 +91,15 @@ async function run() {
   await until(() => document.querySelector<HTMLButtonElement>("button.ai-send:not(:disabled)"), "stop button");
   const header = document.querySelector(".ai-header")?.textContent ?? "";
   assert(header.includes("Dahlia AI") && header.includes("/") && header.includes("New chat"), "Chat breadcrumb is missing after chat starts");
+  await new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve())));
   const headerBounds = document.querySelector<HTMLElement>(".ai-header")!.getBoundingClientRect();
   const firstMessageBounds = document.querySelector<HTMLElement>(".ai-message")!.getBoundingClientRect();
   const headerContentBounds = document.querySelector<HTMLElement>(".ai-header > div")!.getBoundingClientRect();
   assert(Math.abs(headerBounds.top - headerContentBounds.top) < 1 && Math.abs(headerBounds.bottom - headerContentBounds.bottom) < 1,
     "Chat header reserves space outside its visible toolbar");
   assert(firstMessageBounds.top >= headerBounds.bottom, "First message overlaps the header");
-  assert(firstMessageBounds.top - headerBounds.bottom <= 24, "Chat messages start too far below the header");
+  const transcriptBounds = document.querySelector<HTMLElement>(".ai-transcript")!.getBoundingClientRect();
+  assert(transcriptBounds.top - headerBounds.bottom <= 24, "Chat transcript starts too far below the header");
   for (const [selector, pseudo] of [[".ai-header", "::after"], [".ai-bottom", "::before"]] as const) {
     assert(getComputedStyle(document.querySelector<HTMLElement>(selector)!).backdropFilter === "none",
       `${selector} isolates its scroll edge from the messages behind it`);
@@ -136,7 +138,7 @@ async function run() {
   assert(getComputedStyle(document.querySelector<HTMLElement>(".ai-header")!).position === "sticky", "AI header does not remain fixed while scrolling");
   document.querySelector<HTMLButtonElement>(".ai-new-chat")!.click();
   await until(() => document.querySelector(".ai-start"), "new chat");
-  assert(!document.querySelector(".ai-header"), "The chat header remained visible after starting a new chat");
+  assert(document.querySelector(".ai-header"), "The chat header disappeared after starting a new chat");
   ({ workspace, reasoning, model } = controls());
   assert(!workspace.disabled && document.querySelectorAll(".ai-message").length === 0, "New chat did not clear history and unlock Workspace");
   await choose(workspace, workspaceB);

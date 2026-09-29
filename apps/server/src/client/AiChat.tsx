@@ -1,12 +1,16 @@
+import { ChatMarkdown, StreamingChatMarkdown } from "./ChatMarkdown";
 import { WorkingMemoryEditor, LiveChatContext } from "./ChatMemory";
 import { WorkspaceMemory, SaveSharedMemory } from "./WorkspaceMemory";
-import { Brain, BriefcaseBusiness, Plus, Send, Sparkles, Square, Trash2 } from "lucide-react";
+import { Brain, BriefcaseBusiness, Ellipsis, Plus, Send, Sparkles, Square, Trash2 } from "lucide-react";
 import { useEffect, useRef, useState, type KeyboardEvent, type MouseEvent } from "react";
 import { createPortal } from "react-dom";
 
 import { json, RequestError, uiText } from "./api";
 import { useActionDialog } from "./ActionDialog";
+import { HoverPreview, HoverPreviewProvider } from "./MeetingHoverCard";
 import { MenuIcon, useSidebar } from "./Sidebar";
+import { Button } from "./components/ui/button";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "./components/ui/dropdown-menu";
 import { DetailHeaderBar } from "./layout/AppShell";
 import { navigateDashboard } from "./navigation";
 import { decodeId } from "../typeid";
@@ -99,7 +103,7 @@ function ComposerPicker({ kind, label, value, options, disabled, onValueChange }
 
 export function AiChat({ requestedThreadId }: { requestedThreadId?: string }) {
   const { dialog, openDialog } = useActionDialog();
-  const { chatHistoryTarget, workspaces } = useSidebar();
+  const { chatHistoryTarget, workspaces, setChatWorkspaceId } = useSidebar();
   const [models, setModels] = useState<AiModel[]>([]);
   const [workspaceId, setWorkspaceId] = useState("");
   const [memoryWorkspace, setMemoryWorkspace] = useState("");
@@ -190,6 +194,11 @@ export function AiChat({ requestedThreadId }: { requestedThreadId?: string }) {
   }, [workspaceId, workspaces]);
   useEffect(() => { transcript.current?.lastElementChild?.scrollIntoView({ block: "nearest" }); }, [messages, answer, tool]);
   const selectedWorkspace = workspaces?.find((workspace) => workspace.workspaceId === workspaceId);
+  const searchWorkspaceId = openingThread || (requestedThreadId && requestedThreadId !== threadId) ? undefined : selectedWorkspace?.workspaceId;
+  useEffect(() => {
+    setChatWorkspaceId?.(searchWorkspaceId);
+    return () => setChatWorkspaceId?.(undefined);
+  }, [searchWorkspaceId, setChatWorkspaceId]);
   const persistentHistory = Boolean(threadId) || (historyEnabled && Boolean(selectedWorkspace && selectedWorkspace.encryption !== "server"));
 
   const send = async (nextMessages: Message[]) => {
@@ -438,20 +447,44 @@ export function AiChat({ requestedThreadId }: { requestedThreadId?: string }) {
     </div>
   </div>;
   const history = <aside className="ai-history" aria-label={uiText("Chat history", "チャット履歴")}>
-    <a className="ai-history-new" href="/chat" onClick={newChat}><Plus aria-hidden="true" />{uiText("New chat", "新しいチャット")}</a>
+    <div className="ai-history-heading flex items-center justify-between pl-2">
+      <h2 className="text-[11px] font-semibold text-muted-foreground">{uiText("Chats", "チャット")}</h2>
+      <a className="ai-history-new" href="/chat" onClick={newChat} aria-label={uiText("New chat", "新しいチャット")} title={uiText("New chat", "新しいチャット")}><Plus aria-hidden="true" /></a>
+    </div>
     {historyError && <div className="ai-error" role="alert">
       <span>{historyError}</span><button className="secondary" onClick={() => void refreshThreads()}>{uiText("Retry", "再試行")}</button>
     </div>}
-    {threads.map((thread) => <div className={`ai-history-row${thread.id === requestedThreadId ? " active" : ""}`} key={thread.id}>
-      <a href={`/chat/${thread.id}`} aria-current={thread.id === requestedThreadId ? "page" : undefined}><span>{thread.title}</span><time>{new Date(thread.updatedAt).toLocaleDateString()}</time></a>
-      <button className="ai-history-delete" aria-label={uiText("Delete chat", "チャットを削除")} onClick={() => void deleteThread(thread.id)}><Trash2 aria-hidden="true" /></button>
-    </div>)}
+    <div className="flex min-w-0 shrink-0 flex-col gap-px"><HoverPreviewProvider>{threads.map((thread) => <HoverPreview key={thread.id} details={<>
+      <p className="break-words text-sm font-medium">{thread.title}</p>
+      <time className="mt-1 block text-xs text-muted-foreground" dateTime={thread.updatedAt}>{uiText("Updated", "更新日時")}: {new Date(thread.updatedAt).toLocaleString(undefined, { year: "numeric", month: "long", day: "numeric", hour: "2-digit", minute: "2-digit" })}</time>
+    </>}>
+      {(describedBy) => <div className={`ai-history-row${thread.id === requestedThreadId ? " active" : ""}`}>
+        <a href={`/chat/${thread.id}`} aria-describedby={describedBy} aria-current={thread.id === requestedThreadId ? "page" : undefined}><span>{thread.title}</span></a>
+        <button className="ai-history-delete" aria-label={uiText("Delete chat", "チャットを削除")} onClick={() => void deleteThread(thread.id)}><Trash2 aria-hidden="true" /></button>
+      </div>}
+    </HoverPreview>)}</HoverPreviewProvider></div>
     {hasMoreThreads && <button className="secondary" disabled={loadingMoreThreads} onClick={() => void loadMoreThreads()}>{loadingMoreThreads ? uiText("Loading…", "読み込み中…") : uiText("Load more", "さらに読み込む")}</button>}
   </aside>;
 
   return <section className={`ai-chat${messages.length ? " has-messages" : ""}`} aria-label="AI">
     {dialog}
     {chatHistoryTarget && createPortal(history, chatHistoryTarget)}
+    <header className="ai-header">
+      <DetailHeaderBar actions={<DropdownMenu>
+        <DropdownMenuTrigger asChild><Button variant="ghost" size="icon" aria-label={uiText("Chat options", "チャットのオプション")}><Ellipsis aria-hidden="true" /></Button></DropdownMenuTrigger>
+        <DropdownMenuContent align="end">
+          <DropdownMenuItem asChild><a href="/memory"><Brain aria-hidden="true" />Dahlia Memory</a></DropdownMenuItem>
+        </DropdownMenuContent>
+      </DropdownMenu>}>
+        <div className="flex min-w-0 flex-1 items-center gap-1 whitespace-nowrap px-1.5 text-xs">
+          <a className="ai-new-chat" href="/chat" aria-label={uiText("New chat", "新しいチャット")} onClick={newChat}>
+            <MenuIcon name="chat" /><span className="truncate">Dahlia AI</span>
+          </a>
+          <span className="text-muted-foreground" aria-hidden="true">/</span>
+          <strong className="truncate">{threads.find(({ id }) => id === requestedThreadId)?.title || uiText("New chat", "新しいチャット")}</strong>
+        </div>
+      </DetailHeaderBar>
+    </header>
     {requestedThreadId && (openingThread || threadId !== requestedThreadId) ? <div className="ai-start">
       {threadFailure ? <>
         <p role="alert">{threadFailure === "missing" ? uiText("Chat not found.", "チャットが見つかりません。") : uiText("Could not load this chat.", "チャットを読み込めませんでした。")}</p>
@@ -459,17 +492,6 @@ export function AiChat({ requestedThreadId }: { requestedThreadId?: string }) {
         <a href="/chat">{uiText("New chat", "新しいチャット")}</a>
       </> : <p role="status">{uiText("Loading…", "読み込み中…")}</p>}
     </div> : <>
-    {messages.length > 0 && <header className="ai-header">
-      <DetailHeaderBar>
-        <div className="flex min-w-0 flex-1 items-center gap-1 whitespace-nowrap px-1.5 text-xs">
-          <a className="ai-new-chat" href="/chat" aria-label={uiText("New chat", "新しいチャット")} onClick={newChat}>
-            <MenuIcon name="chat" /><span className="truncate">Dahlia AI</span>
-          </a>
-          <span className="text-muted-foreground" aria-hidden="true">/</span>
-          <strong className="truncate">{threads.find(({ id }) => id === threadId)?.title || uiText("New chat", "新しいチャット")}</strong>
-        </div>
-      </DetailHeaderBar>
-    </header>}
     {messages.length === 0 ? <div className="ai-start">
       <div className="ai-mark" aria-hidden="true">D</div>
       <h1>{uiText("What can I help you find?", "何をお探しですか？")}</h1>
@@ -482,10 +504,10 @@ export function AiChat({ requestedThreadId }: { requestedThreadId?: string }) {
       <div className="ai-transcript" ref={transcript}>
         {hasEarlierMessages && <button className="secondary" disabled={openingThread || pending} onClick={() => void loadEarlierMessages()}>{uiText("Load earlier messages", "以前のメッセージを読み込む")}</button>}
         {selectedWorkspace && <WorkspaceMemory key={workspaceId} workspaceId={workspaceId} role={selectedWorkspace.role} onEnabledWorkspace={setMemoryWorkspace} compact />}
-        {messages.map((message, index) => <article className={`ai-message ${message.role}`} key={message.id || index}>{message.content}
-          {memoryWorkspace === workspaceId && selectedWorkspace && selectedWorkspace.role !== "viewer" && !pending && <SaveSharedMemory key={workspaceId} workspaceId={workspaceId} workspaceName={selectedWorkspace.name} content={message.content} />}
+        {messages.map((message, index) => <article className={`ai-message ${message.role}`} key={message.id || index}>{message.role === "assistant" ? <ChatMarkdown content={message.content} /> : message.content}
+          {message.role === "assistant" && memoryWorkspace === workspaceId && selectedWorkspace && selectedWorkspace.role !== "viewer" && !pending && <SaveSharedMemory key={workspaceId} workspaceId={workspaceId} workspaceName={selectedWorkspace.name} model={model} content={message.content} question={messages.slice(0, index).findLast(item => item.role === "user")?.content} />}
         </article>)}
-        {answer && <article className="ai-message assistant">{answer}</article>}
+        {answer && <article className="ai-message assistant"><StreamingChatMarkdown content={answer} /></article>}
         {tool && <p className="ai-status" role="status">{uiText(`Checking meetings with ${tool}…`, `${tool} でミーティングを確認中…`)}</p>}
         {error && <div className="ai-error" role="alert"><span>{error}</span>{!persistentHistory && <button className="secondary" disabled={pending || openingThread || messages.at(-1)?.role !== "user"} onClick={retry}>{uiText("Retry", "再試行")}</button>}</div>}
       </div>

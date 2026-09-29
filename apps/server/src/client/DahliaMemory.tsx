@@ -1,3 +1,5 @@
+import { objectPath } from "../object-url";
+import { PageHeader } from "./layout/AppShell";
 import { KnowledgePages } from "./KnowledgePages";
 import { useEffect, useRef, useState } from "react";
 import type { MemoryClaim, ReflectionStatus } from "../memory/reflection";
@@ -52,7 +54,7 @@ export function DahliaMemoryPage() {
   }, []);
   const current = scopes.find((s) => scopeKey(s) === selected);
   return <main className="mx-auto grid w-full max-w-4xl gap-5 p-6">
-    <h1 className="text-2xl font-semibold">Dahlia Memory</h1>
+    <PageHeader title="Dahlia Memory" />
     <p>{uiText("Your knowledge, across AI tools. Personal memories stay private; Workspace memories are shared with its members.", "AI ツールを跨いで使える記憶。個人の記憶は非公開、Workspace の記憶はそのメンバーに共有されます。")}</p>
     {error && <p role="alert">{uiText("Could not load memory. Reload to retry.", "記憶を読み込めません。再読み込みしてください。")}</p>}
     <label className="grid gap-1 text-sm">{uiText("Memory scope", "記憶の保存先")}<select className="rounded-md border bg-background px-3 py-2" value={selected} onChange={(e) => setSelected(e.target.value)}>
@@ -145,7 +147,7 @@ function MemoryPanel({ scope, scopes }: { scope: Scope; scopes: Scope[] }) {
     <div className="flex flex-wrap items-end gap-2">
       {scope.writable && <Button variant="outline" onClick={() => edit()}>{uiText("Add memory", "記憶を追加")}</Button>}
       {scope.scope === "personal" && status?.status !== "unavailable" && <Button variant="outline" onClick={configure}>{status?.enabled ? uiText("Pause analysis", "分析を停止") : uiText("Enable analysis", "分析を有効化")}</Button>}
-      {scope.workspaceId && <a href={`/workspaces/${scope.workspaceId}`}>{uiText("Workspace settings", "Workspace 設定")}</a>}
+      {scope.workspaceId && <a href={objectPath(scope.workspaceId)}>{uiText("Workspace settings", "Workspace 設定")}</a>}
       <Button variant="outline" onClick={() => { setQuery(""); setResults([]); setReload((v) => v + 1); }}>{uiText("Reload", "再読み込み")}</Button>
     </div>
     <form className="flex flex-wrap items-end gap-2" onSubmit={(e) => { e.preventDefault(); void search("list"); }}>
@@ -165,7 +167,7 @@ function MemoryPanel({ scope, scopes }: { scope: Scope; scopes: Scope[] }) {
             <li key={sourceIndex}><a href={`#memory-source-${i}-${sourceIndex}`}>{uiText(`Source ${sourceIndex + 1}`, `出典 ${sourceIndex + 1}`)}</a></li>)}</ul>
         </article>)}
       </>}
-      {result.sources?.map((source, index) => <article key={source.id} id={`memory-source-${i}-${index}`}><h3>{source.meeting_id ? <a href={`/meetings/${source.meeting_id}`}>{uiText("Source meeting", "出典の会議")}</a> : uiText("Saved memory", "保存された記憶")}</h3><p className="whitespace-pre-wrap">{source.canonicalExcerpt}</p>{source.images?.map((image) => <a key={image.screenshotId} href={image.href} target="_blank" rel="noreferrer">{uiText("Source screenshot", "正本画像")}</a>)}{!!source.imageCoverage?.omitted && <p>{uiText(`${source.imageCoverage.selected} screenshots selected; ${source.imageCoverage.omitted} omitted by selection.`, `画像 ${source.imageCoverage.selected} 枚を選択し、${source.imageCoverage.omitted} 枚を選別で省略しました。`)}</p>}{source.truncated && <p>{uiText("Excerpt only", "抜粋のみ")}</p>}</article>)}
+      {result.sources?.map((source, index) => <article key={source.id} id={`memory-source-${i}-${index}`}><h3>{source.meeting_id ? <a href={objectPath(source.meeting_id)}>{uiText("Source meeting", "出典の会議")}</a> : uiText("Saved memory", "保存された記憶")}</h3><p className="whitespace-pre-wrap">{source.canonicalExcerpt}</p>{source.images?.map((image) => <a key={image.screenshotId} href={image.href} target="_blank" rel="noreferrer">{uiText("Source screenshot", "正本画像")}</a>)}{!!source.imageCoverage?.omitted && <p>{uiText(`${source.imageCoverage.selected} screenshots selected; ${source.imageCoverage.omitted} omitted by selection.`, `画像 ${source.imageCoverage.selected} 枚を選択し、${source.imageCoverage.omitted} 枚を選別で省略しました。`)}</p>}{source.truncated && <p>{uiText("Excerpt only", "抜粋のみ")}</p>}</article>)}
       {result.canonical?.items.map((note) => <p key={note.id} className="whitespace-pre-wrap">{note.content}</p>)}
     </section>)}
     {!notes.length && <p>{uiText("No saved memories in this list.", "この一覧に記憶はありません。")}</p>}

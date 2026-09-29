@@ -84,7 +84,7 @@ async function run() {
   release?.(); assert(aborted, "Obsolete request not canceled");
   key("ArrowDown"); await until(() => document.querySelector('[data-selected="true"] strong')?.textContent === "latest 1"); key("Enter");
   await until(() => !document.querySelector('[data-slot="dialog-content"]'));
-  assert(location.pathname === "/meetings/m1", "Arrow/Enter rank navigation failed");
+  assert(location.pathname === "/o/m1", "Arrow/Enter rank navigation failed");
   assert(document.activeElement === opener, "Focus not restored");
   key("k", window, { ctrlKey: true }); await until(() => document.querySelectorAll('[role="option"]').length === 9);
   key("k", window, { ctrlKey: true }); await until(() => !document.querySelector('[data-slot="dialog-content"]'));

@@ -1,6 +1,7 @@
 // Run with pnpm dev:client, then open /tests/browser/live-data.html.
 // All API responses and mutations are local fixtures; no backend is contacted.
 import { StrictMode } from "react";
+import { flushSync } from "react-dom";
 import { createRoot } from "react-dom/client";
 import { App, SyncedMeeting } from "../../src/client/App";
 import { DetailTabs } from "../../src/client/MeetingContent";
@@ -10,6 +11,7 @@ import "../../src/client/styles.css";
 
 const previewMode = new URLSearchParams(location.search).has("preview");
 const previewPage = new URLSearchParams(location.search).get("page") ?? "meeting";
+const objectURLTest = new URLSearchParams(location.search).has("object-url-test");
 const navigationTest = new URLSearchParams(location.search).has("navigation-test");
 const performanceTest = new URLSearchParams(location.search).has("performance-test");
 Object.defineProperty(navigator, "language", { value: previewMode && new URLSearchParams(location.search).get("lang") === "ja" ? "ja-JP" : "en-US", configurable: true });
@@ -23,7 +25,7 @@ const fileId = (index: number) => encodeId("file", `019d3f46-8d00-7000-8000-${St
 const base = `/api/v1/workspaces/${workspaceId}`;
 const primaryMeetingId = encodeId("meeting", "019d3f46-8b72-77f1-b232-93726eec3e9e");
 const secondaryMeetingId = encodeId("meeting", "019d3f46-8b72-77f1-b232-93726eec3e9f");
-const route = `/meetings/${primaryMeetingId}`;
+const route = `/o/${primaryMeetingId}`;
 const sources: EventTarget[] = [];
 const requests: string[] = [];
 const requestURLs: string[] = [];
@@ -57,7 +59,8 @@ const previewSummary = {
     ] }] },
   ], actionItems: [],
 };
-const meeting = (id: string) => ({ meetingId: id, workspaceId, projectId: projectId(0), name: id === primaryMeetingId ? meetingName : previewMode ? (ja ? "9月のリリース計画と優先順位" : "September release planning & priorities") : "Other meeting", description: previewMode ? (ja ? "プロダクト・デザインチームの週次レビュー" : "Weekly product and design team review") : "", duration: previewMode ? 2540 : undefined, status: "recording", revision: 1, summaryRevision: 1, createdAt: workspace.createdAt, summaryDocument: JSON.stringify(previewMode ? previewSummary : { sections: [{ heading: summary, blocks: [] }] }) });
+let meetingWorkspaceId = workspaceId;
+const meeting = (id: string) => ({ meetingId: id, workspaceId: meetingWorkspaceId, projectId: projectId(0), name: id === primaryMeetingId ? meetingName : previewMode ? (ja ? "9月のリリース計画と優先順位" : "September release planning & priorities") : "Other meeting", description: previewMode ? (ja ? "プロダクト・デザインチームの週次レビュー" : "Weekly product and design team review") : "", duration: previewMode ? 2540 : undefined, status: "recording", revision: 1, summaryRevision: 1, createdAt: workspace.createdAt, summaryDocument: JSON.stringify(previewMode ? previewSummary : { sections: [{ heading: summary, blocks: [] }] }) });
 const image = "data:image/svg+xml," + encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="600" height="400"><rect width="600" height="400" fill="#aaa"/></svg>');
 const file = (index: number) => ({ id: fileId(index), capturedAt: workspace.createdAt, file: { id: fileId(index), workspaceId, name: `Screenshot ${index}.png`, contentType: "image/png", variants: { thumb_480: image, thumb_1568: image }, metadata: { source: navigationTest && (index === 2 || index === 3) ? "upload" : "screenshot", caption: index === 0 ? caption : `Screenshot ${index}` } } });
 window.EventSource = class extends EventTarget {
@@ -71,6 +74,8 @@ window.fetch = async (input, init) => {
   requestURLs.push(url.pathname + url.search);
   const failure = failures.get(url.pathname);
   if (failure) return Response.json({ code: `fixture_${failure}` }, { status: failure });
+  if (objectURLTest && url.pathname === `/api/v1/workspaces/${otherWorkspaceId}`) return Response.json(workspaces.find(w => w.workspaceId === otherWorkspaceId));
+  if (objectURLTest) url.pathname = url.pathname.replace(`/api/v1/workspaces/${otherWorkspaceId}/`, `${base}/`);
   if (url.pathname === `${base}/search`) return Response.json({
     meetings: [{ id: primaryMeetingId, kind: "meeting", title: meeting(primaryMeetingId).name, projectPath: "", date: meeting(primaryMeetingId).createdAt, snippet: "" }],
     projects: [{ id: projectId(0), kind: "project", title: projects[0]!.name, projectPath: projects[0]!.path, date: workspace.createdAt, snippet: "" }],
@@ -197,7 +202,7 @@ async function choose(control: HTMLButtonElement, value: string) {
 function selectedTab() { return document.querySelector('[role="tab"][aria-selected="true"]')?.textContent; }
 
 async function verifyMeetingImageNavigation(route: string) {
-  const fileLink = document.querySelector<HTMLAnchorElement>(`a[href="/files/${fileId(1)}"]`)!;
+  const fileLink = document.querySelector<HTMLAnchorElement>(`a[href="/o/${fileId(1)}"]`)!;
   fileLink.click();
   await until(() => document.querySelector<HTMLImageElement>('[role="dialog"][aria-label="File preview"] img')?.complete);
   const dialog = document.querySelector<HTMLElement>('[role="dialog"][aria-label="File preview"]')!;
@@ -219,7 +224,7 @@ async function verifyMeetingImageNavigation(route: string) {
   await until(() => document.querySelectorAll(".screenshot-grid figure").length === loadedCount && !dialog.querySelector<HTMLButtonElement>('[aria-label="Previous image"]')?.disabled);
   dialog.querySelector<HTMLButtonElement>('[aria-label="Previous image"]')!.click();
   await until(() => dialog.querySelector("img")?.getAttribute("alt") === caption);
-  return { dialog, fileLink: document.querySelector<HTMLAnchorElement>(`a[href="/files/${fileId(1)}"]`)!, preview: dialog.querySelector("img") };
+  return { dialog, fileLink: document.querySelector<HTMLAnchorElement>(`a[href="/o/${fileId(1)}"]`)!, preview: dialog.querySelector("img") };
 }
 
 async function verifyTabSelection() {
@@ -246,6 +251,34 @@ async function verifyTabSelection() {
 }
 
 async function run() {
+  if (objectURLTest) {
+    const root = createRoot(document.getElementById("root")!);
+    const mount = (url: string) => { history.replaceState(null, "", url); flushSync(() => root.render(<StrictMode><App key={url} /></StrictMode>)); };
+    for (const [kind, id] of [["workspaces", workspaceId], ["projects", projectId(0)], ["meetings", primaryMeetingId], ["files", fileId(0)]]) {
+      const length = history.length;
+      mount(`/${kind}/${id}?keep=value#section`);
+      await until(() => location.pathname === `/o/${id}` && !!document.querySelector(kind === "files" ? 'main [aria-label="File preview"]' : "main h1"));
+      assert(location.search === "?keep=value" && location.hash === "#section", "Legacy redirect lost URL suffix");
+      assert(history.length === length, "Legacy redirect added history");
+      mount(`/o/${id}`);
+      await until(() => !!document.querySelector(kind === "files" ? 'main [aria-label="File preview"]' : "main h1"));
+    }
+    workspaces.push({ ...workspace, workspaceId: otherWorkspaceId, name: "Moved destination" });
+    projects[0]!.workspaceId = otherWorkspaceId;
+    meetingWorkspaceId = otherWorkspaceId;
+    for (const id of [projectId(0), primaryMeetingId]) {
+      mount(`/o/${id}`);
+      await until(() => document.querySelector(`main a[href="/o/${otherWorkspaceId}"]`)?.textContent === "Moved destination");
+      assert(location.pathname === `/o/${id}`, "Transfer changed object URL");
+    }
+    failures.set(`/api/v1/meetings/${primaryMeetingId}`, 403);
+    root.render(<StrictMode><App key="revoked" /></StrictMode>);
+    await until(() => document.querySelector('main [role="alert"]'));
+    assert(!document.querySelector("main article h1"), "Revoked meeting remains visible");
+    document.body.dataset.testResult = "passed";
+    return;
+  }
+
   if (!previewMode && !navigationTest) await verifyTabSelection();
   if (navigationTest) {
     history.replaceState(null, "", route);
@@ -265,7 +298,7 @@ async function run() {
   }
   history.replaceState(null, "", route);
   createRoot(document.getElementById("root")!).render(<StrictMode><App /></StrictMode>);
-  await until(() => document.querySelector('[role="tab"]') && document.querySelector(`aside a[href="/meetings/${secondaryMeetingId}"]`));
+  await until(() => document.querySelector('[role="tab"]') && document.querySelector(`aside a[href="/o/${secondaryMeetingId}"]`));
   if (performanceTest) {
     assert(maxConcurrentMeetingDetailReads === 1, "Initial route issued duplicate active meeting detail reads");
     assert(!requests.some((url) => url === `/api/v1/meetings/${primaryMeetingId}/files`), "Screenshots loaded before opening the tab");
@@ -279,12 +312,12 @@ async function run() {
   if (previewMode) {
     const { navigateDashboard } = await import("../../src/client/navigation");
     if (previewPage === "home") navigateDashboard("/dashboard");
-    if (previewPage === "workspace") navigateDashboard(`/workspaces/${workspaceId}`);
+    if (previewPage === "workspace") navigateDashboard(`/o/${workspaceId}`);
     if (previewPage === "settings") navigateDashboard("/dashboard/settings");
     return;
   }
   assert(document.getElementById(`unassigned-heading-${workspaceId}`)?.textContent === "Unassigned" && !document.getElementById(`unassigned-heading-${workspaceId}`)?.querySelector("svg"), "Unassigned meetings must have a separate section without a folder icon");
-  assert(document.querySelector('.primary-navigation a[href="/workspaces"]'), "Workspace navigation is missing from the sidebar");
+  assert(!document.querySelector('.primary-navigation a[href="/workspaces"]'), "Redundant Workspace navigation remains in the sidebar");
   assert(!document.querySelector(".identity-copy small"), "Account identity must not repeat Organization or Workspace context");
   const accountMenuTrigger = document.querySelector<HTMLButtonElement>('aside button[aria-label^="Account menu:"]')!;
   pointerClick(accountMenuTrigger);
@@ -308,7 +341,7 @@ async function run() {
   await until(() => !document.querySelector('[role="dialog"]'));
   await until(() => document.activeElement === accountMenuTrigger);
   const library = document.querySelector(".primary-navigation")!;
-  assert(library.querySelector('a[aria-label="Home"] svg') && library.querySelector('a[aria-label="Workspaces"] svg') && library.querySelector('button[aria-label="Search"]'), "Library icons and search must remain accessible together");
+  assert(library.querySelector('a[aria-label="Home"] svg') && library.querySelector('button[aria-label="Search"]'), "Home and search must remain accessible together");
   const homeLink = library.querySelector<HTMLAnchorElement>('a[aria-label="Home"]')!;
   homeLink.focus();
   await until(() => homeLink.getAttribute("aria-describedby"));
@@ -317,22 +350,22 @@ async function run() {
   homeLink.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
   await until(() => !help.isConnected || getComputedStyle(help).visibility === "hidden");
   const documentBeforeWorkspaceNavigation = document.documentElement;
-  document.querySelector<HTMLAnchorElement>(`aside a[href="/workspaces/${workspaceId}"]`)!.click();
-  await until(() => location.pathname === `/workspaces/${workspaceId}`);
+  document.querySelector<HTMLAnchorElement>(`aside a[href="/o/${workspaceId}"]`)!.click();
+  await until(() => location.pathname === `/o/${workspaceId}`);
   assert(document.documentElement === documentBeforeWorkspaceNavigation, "Sidebar Workspace link reloaded the document");
   const { navigateDashboard } = await import("../../src/client/navigation");
   navigateDashboard("/dashboard");
-  await until(() => document.querySelector(`.recent-meetings a[href="/meetings/${primaryMeetingId}"]`));
+  await until(() => document.querySelector(`.recent-meetings a[href="/o/${primaryMeetingId}"]`));
   const dateEdges = [...document.querySelectorAll<HTMLElement>(".recent-meetings .meeting-list-row .collection-date")].map((date) => Math.round(date.getBoundingClientRect().right));
   assert(dateEdges.length > 1 && new Set(dateEdges).size === 1, "Meeting dates moved with title length");
   const recentSelector = () => document.querySelector(".recent-meetings")!.querySelector<HTMLButtonElement>('[role="combobox"]')!;
-  const recentRow = document.querySelector(`.recent-meetings a[href="/meetings/${primaryMeetingId}"]`);
+  const recentRow = document.querySelector(`.recent-meetings a[href="/o/${primaryMeetingId}"]`);
   const otherWorkspace = { ...workspace, workspaceId: otherWorkspaceId, name: "Another Workspace" };
   workspaces.unshift(otherWorkspace); notify();
   recentSelector().click();
   await until(() => options(recentSelector()).length === 2);
   assert(recentSelector().dataset.value === workspaceId, "New Workspace changed the initial Home selection");
-  assert(document.querySelector(`.recent-meetings a[href="/meetings/${primaryMeetingId}"]`) === recentRow, "Workspace reorder replaced recent meeting rows");
+  assert(document.querySelector(`.recent-meetings a[href="/o/${primaryMeetingId}"]`) === recentRow, "Workspace reorder replaced recent meeting rows");
   await choose(recentSelector(), otherWorkspaceId);
   await until(() => document.querySelector(".recent-meetings .welcome-empty"));
   workspaces.reverse(); notify();
@@ -358,7 +391,7 @@ async function run() {
     navigateDashboard(location.pathname);
     assert(navigation.isConnected, "Same-page navigation removed the desktop sidebar");
   }
-  for (const target of [route, `/projects/${projectId(0)}`]) {
+  for (const target of [route, `/o/${projectId(0)}`]) {
     navigateDashboard(target);
     await until(() => document.querySelector("main article h1"));
     document.querySelector<HTMLButtonElement>('aside button[aria-label="Search"]')!.click();
@@ -368,7 +401,7 @@ async function run() {
     assert(navigation.isConnected, "Canceling search dismissed navigation");
     document.querySelector<HTMLButtonElement>('aside button[aria-label="Search"]')!.click();
     await until(() => document.querySelectorAll('[role="dialog"] [role="option"]').length === 2);
-    document.querySelectorAll<HTMLButtonElement>('[role="dialog"] [role="option"]')[target.startsWith("/meetings/") ? 0 : 1]!.click();
+    document.querySelectorAll<HTMLButtonElement>('[role="dialog"] [role="option"]')[target.startsWith("/o/mtg_") ? 0 : 1]!.click();
     await until(() => !document.querySelector('[role="dialog"]'));
     assert(location.pathname === target && navigation.isConnected, "Same-page search result removed navigation");
   }
@@ -378,7 +411,7 @@ async function run() {
   await until(() => document.querySelectorAll(".screenshot-grid figure").length === 3);
   const tab = button("Screenshots");
   const img = document.querySelector(".screenshot-grid img");
-  const row = document.querySelector(`aside a[href="/meetings/${primaryMeetingId}"]`);
+  const row = document.querySelector(`aside a[href="/o/${primaryMeetingId}"]`);
   const sidebar = document.querySelector<HTMLElement>(".sidebar-scroll")!;
   const main = document.querySelector<HTMLElement>("main")!;
   sidebar.scrollTop = 180;
@@ -390,7 +423,7 @@ async function run() {
   await until(() => document.querySelectorAll(".screenshot-grid figure").length === 4 && document.querySelector("figcaption")?.textContent === caption);
   assert(selectedTab() === "Screenshots", "Tab changed on invalidation");
   assert(tab === button("Screenshots") && img === document.querySelector(".screenshot-grid img"), "Existing tab/image DOM replaced");
-  assert(row === document.querySelector(`aside a[href="/meetings/${primaryMeetingId}"]`), "Sidebar row remounted");
+  assert(row === document.querySelector(`aside a[href="/o/${primaryMeetingId}"]`), "Sidebar row remounted");
   assert(sidebar.scrollTop === sidebarScroll, `Sidebar scrolled from ${sidebarScroll} to ${sidebar.scrollTop}`);
   assert(documentNode === document.documentElement && main === document.querySelector("main"), "Document/main replaced");
   assert(requests.filter((url) => url === "/api/v1/session").length === sessionReads, "Sync notification refreshed session");
@@ -469,7 +502,7 @@ async function run() {
   failures.set(`/api/v1/meetings/${primaryMeetingId}`, 503); notify();
   await until(() => document.querySelector('[role="alert"]')?.textContent?.includes("fixture_503"));
   assert(selectedTab() === "Screenshots", "Transient failure unmounted tabs");
-  assert(row === document.querySelector(`aside a[href="/meetings/${primaryMeetingId}"]`), "Sidebar refresh failure replaced the tree");
+  assert(row === document.querySelector(`aside a[href="/o/${primaryMeetingId}"]`), "Sidebar refresh failure replaced the tree");
   failures.clear();
   for (const retry of [...document.querySelectorAll<HTMLButtonElement>("button")].filter((b) => b.textContent === "Retry")) retry.click();
   await until(() => !document.querySelector('[role="alert"]'));
@@ -501,7 +534,7 @@ async function run() {
   };
   notify();
   await until(() => heldSignals.length === 1);
-  document.querySelector<HTMLAnchorElement>(`a[href="/meetings/${secondaryMeetingId}"]`)!.click();
+  document.querySelector<HTMLAnchorElement>(`a[href="/o/${secondaryMeetingId}"]`)!.click();
   await until(() => document.querySelector("main article h1")?.textContent === "Other meeting");
   assert(selectedTab() === "Summary", "Different meeting did not reset tab");
   assert(heldSignals.every((signal) => signal.aborted), "Obsolete detail/sidebar reads were not aborted");
@@ -513,7 +546,7 @@ async function run() {
   await until(() => document.querySelector("main article h1")?.textContent === "Edited meeting");
   history.forward();
   await until(() => document.querySelector("main article h1")?.textContent === "Other meeting");
-  document.querySelector<HTMLAnchorElement>(`a[href="/workspaces/${workspaceId}"]`)!.click();
+  document.querySelector<HTMLAnchorElement>(`a[href="/o/${workspaceId}"]`)!.click();
   await until(() => document.querySelector('input[aria-label="Search meetings"]'));
   selectTab("Permissions");
   await until(() => [...document.querySelectorAll("button")].some((button) => button.textContent === "Add access"));
@@ -550,7 +583,7 @@ async function run() {
   assert(filter.dataset.value === projectId(0), "Refresh reset valid Project filter");
   const removedProjects = projects.splice(0);
   notify();
-  await until(() => !document.querySelector('[aria-label="Filter by Project"]') && document.querySelector(`main a[href="/meetings/${primaryMeetingId}"]`));
+  await until(() => !document.querySelector('[aria-label="Filter by Project"]') && document.querySelector(`main a[href="/o/${primaryMeetingId}"]`));
   assert(search.value === "recording", "Deleted Project reset search text");
   projects.push(...removedProjects); notify();
   await until(() => document.querySelector('[aria-label="Filter by Project"]'));
@@ -578,15 +611,15 @@ async function run() {
   button("Delete Project").click();
   await until(() => document.querySelector('.action-dialog [data-confirm]'));
   document.querySelector<HTMLButtonElement>('.action-dialog [data-confirm]')!.click();
-  await until(() => location.pathname === `/workspaces/${workspaceId}`);
+  await until(() => location.pathname === `/o/${workspaceId}`);
   pointerClick(document.querySelector<HTMLButtonElement>('aside button[aria-label^="Account menu:"]')!);
   await until(() => document.querySelector('[role="menu"] a[href="/orgs"]'));
   document.querySelector<HTMLAnchorElement>('[role="menu"] a[href="/orgs"]')!.click();
   await until(() => location.pathname === "/orgs");
   assert(documentNode === document.documentElement, "Account menu navigation reloaded document");
-  document.querySelector<HTMLAnchorElement>(`a[href="/meetings/${primaryMeetingId}"]`)?.click();
+  document.querySelector<HTMLAnchorElement>(`a[href="/o/${primaryMeetingId}"]`)?.click();
   // Use the existing internal navigation helper when the newly scoped tree is still loading.
-  navigateDashboard(`/files/${fileId(0)}`);
+  navigateDashboard(`/o/${fileId(0)}`);
   await until(() => document.querySelector<HTMLImageElement>('main section[aria-label="File preview"] img')?.complete);
   assert(!document.querySelector('[role="dialog"][aria-label="File preview"]'), "Standalone file URL opened a modal");
   navigateDashboard(route);
@@ -601,7 +634,7 @@ async function run() {
   await until(() => !document.querySelector('[role="tab"]'));
   assert(document.querySelector('[role="alert"]')?.textContent?.includes("fixture_404"), "Deleted meeting remained visible");
   failures.clear();
-  navigateDashboard(`/workspaces/${workspaceId}`);
+  navigateDashboard(`/o/${workspaceId}`);
   await until(() => [...document.querySelectorAll('[role="tab"]')].some((tab) => tab.textContent === "Settings"));
   selectTab("Projects");
   await until(() => document.querySelector('.collection-project-name'));
@@ -630,13 +663,13 @@ async function run() {
   await until(() => !document.querySelector('[data-slot="popover-content"][data-state="open"]'));
   document.querySelector<HTMLButtonElement>('.action-dialog [data-confirm]')!.click();
   await until(() => !document.querySelector('.action-dialog') && document.querySelector('h1 svg')?.parentElement?.getAttribute("style")?.includes("34, 197, 94"));
-  const sidebarIcon = document.querySelector(`aside a[href="/workspaces/${workspaceId}"] svg`)!.parentElement!;
+  const sidebarIcon = document.querySelector(`aside a[href="/o/${workspaceId}"] svg`)!.parentElement!;
   assert(sidebarIcon.getBoundingClientRect().width === 18, "Workspace icon expanded into the label space");
   assert(getComputedStyle(document.querySelector('h1 svg')!).color === getComputedStyle(sidebarIcon).color, "Heading and sidebar icon colors differ");
   const child = { ...projects[1]!, parentProjectId: projects[0]!.projectId, icon: "heart", color: "red" };
   Object.assign(projects[0]!, { icon: "book.closed", color: "green" });
   Object.assign(projects[1]!, child);
-  navigateDashboard(`/projects/${child.projectId}`);
+  navigateDashboard(`/o/${child.projectId}`);
   await until(() => document.querySelector("h1")?.textContent === child.name && document.querySelector('h1 svg')?.parentElement?.getAttribute("style")?.includes("34, 197, 94"));
   selectTab("Settings");
   await until(() => [...document.querySelectorAll("button")].some((button) => button.textContent === "Edit Project"));
@@ -645,7 +678,7 @@ async function run() {
   assert(!document.querySelector('.action-dialog button[aria-label="Change icon and color"]'), "Child Project exposed an editable appearance");
   await editDialog("Renamed child");
   await until(() => !document.querySelector('.action-dialog'));
-  navigateDashboard(`/workspaces/${workspaceId}`);
+  navigateDashboard(`/o/${workspaceId}`);
   await until(() => document.querySelector("main h1")?.textContent === workspace.name
     && [...document.querySelectorAll('[role="tab"]')].some((tab) => tab.textContent === "Settings"));
   selectTab("Settings");
@@ -660,10 +693,10 @@ async function run() {
   failures.set("/api/v1/transactions", 409);
   document.querySelector<HTMLButtonElement>('.action-dialog [data-confirm]')!.click();
   await until(() => document.querySelector('.action-dialog [role="alert"]'));
-  assert(String(location.pathname) === `/workspaces/${workspaceId}` && workspaces.some((v) => v.workspaceId === workspaceId), "Failed deletion left the Workspace page");
+  assert(String(location.pathname) === `/o/${workspaceId}` && workspaces.some((v) => v.workspaceId === workspaceId), "Failed deletion left the Workspace page");
   failures.clear();
   document.querySelector<HTMLButtonElement>('.action-dialog [data-confirm]')!.click();
-  await until(() => location.pathname === "/workspaces" && !workspaces.some((v) => v.workspaceId === workspaceId));
+  await until(() => location.pathname === "/dashboard" && !workspaces.some((v) => v.workspaceId === workspaceId));
   document.body.dataset.testResult = "passed";
   console.log("PASS: live data, DOM identity, scroll, paging, retries, edits, canonical URLs, modal, standalone file, history, create/delete, organization, access revocation");
 }

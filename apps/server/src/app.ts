@@ -246,9 +246,9 @@ export function createApp(dependencies: AppDependencies): DahliaServerApp & { ru
   });
   app.use("/api/v1/*", problemMiddleware);
   app.use("/api/v1/*", async (context, next) => {
-    if (!["GET", "HEAD", "OPTIONS"].includes(context.req.method)
-      && !["/api/v1/models", "/api/v1/responses"].includes(context.req.path)) {
-      const requiresBrowserOrigin = config.authProvider === "accounts" && !context.req.header("authorization");
+    const requiresBrowserOrigin = config.authProvider === "accounts" && !context.req.header("authorization");
+    const gatewayPath = ["/api/v1/models", "/api/v1/responses"].includes(context.req.path);
+    if (!["GET", "HEAD", "OPTIONS"].includes(context.req.method) && (requiresBrowserOrigin || !gatewayPath)) {
       if ((requiresBrowserOrigin || context.req.header("origin")) && !mutationOriginAllowed(context.req.raw, config.baseUrl)) return problemResponse(403, "invalid_origin");
     }
     await next();
@@ -1198,15 +1198,17 @@ export function createApp(dependencies: AppDependencies): DahliaServerApp & { ru
   app.use("/api/v1/*", async (context, next) => {
     const matches = fallbackRoutes.match(context.req.method === "HEAD" ? "GET" : context.req.method, context.req.path)[0]
       .map(([kind]) => kind);
-    // Domain 405s accept browser sessions; extension handlers retain gateway authentication.
+    // Domain 405s keep their own authentication; gateway and extension routes accept sessions or scoped tokens.
     if (matches.includes("domain") && !matches.includes("extension")) {
       await next();
       return;
     }
-    context.set("identity", await identities.fromGateway(
+    const identity = await identities.fromBrowserOrGateway(
       context.req.raw,
       ALL_APIS_SCOPE,
-    ));
+    );
+    if (identity.impersonated) throw new AuthenticationError("Impersonated sessions are read-only", true);
+    context.set("identity", identity);
     for (const extension of extensions) {
       const response = await extension.beforeGateway?.({
         identity: context.get("identity"),

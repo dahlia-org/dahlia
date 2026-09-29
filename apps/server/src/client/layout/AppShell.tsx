@@ -65,7 +65,7 @@ export function AppShell({ brand, children, extensionPaths, navigate, path, rout
   return <SidebarProvider key={session.user.id} session={session}>
     <div className="grid min-h-dvh min-w-0 md:grid-cols-[240px_minmax(0,1fr)]">
       <a className="fixed left-3 top-3 z-[100] -translate-y-16 rounded-md bg-primary px-3 py-2 text-sm text-primary-foreground focus:translate-y-0" href="#main-content">{uiText("Skip to content", "本文へ移動")}</a>
-      <header className="flex h-11 items-center gap-2 px-3 md:hidden">
+      <header className="sticky top-0 z-30 flex h-11 items-center gap-2 bg-background px-3 md:hidden">
         <Tooltip label={uiText("Open navigation", "ナビゲーションを開く")}><Button variant="ghost" size="icon" aria-label={uiText("Open navigation", "ナビゲーションを開く")} aria-controls="primary-navigation" onClick={() => setNavigationOpen(true)}><MenuIcon name="menu" /></Button></Tooltip>
         {brand}
       </header>
@@ -81,12 +81,12 @@ export function AppShell({ brand, children, extensionPaths, navigate, path, rout
 }
 
 export function PageHeader({ title, description, actions }: { title: string; description?: string; actions?: ReactNode }) {
-  return <header className="mb-8 flex items-start justify-between gap-6"><div className="min-w-0"><h1 className="text-2xl font-semibold tracking-tight">{title}</h1>{description && <p className="mt-2 max-w-2xl text-sm leading-6 text-muted-foreground">{description}</p>}</div>{actions}</header>;
+  return <header className="page-header mb-8 flex items-start justify-between gap-6 py-3"><div className="min-w-0"><h1 className="text-2xl font-semibold tracking-tight">{title}</h1>{description && <p className="mt-2 max-w-2xl text-sm leading-6 text-muted-foreground">{description}</p>}</div>{actions}</header>;
 }
 
 export function DetailHeaderBar({ children, actions, className = "" }: { children: ReactNode; actions?: ReactNode; className?: string }) {
-  return <div className={`relative left-1/2 flex h-9 w-[calc(100vw-240px)] -translate-x-1/2 items-center gap-3 px-4 max-md:w-screen ${className}`}>
+  return <div className={`detail-header ${className}`}><div className="relative left-1/2 flex h-9 w-[calc(100vw-240px)] -translate-x-1/2 items-center gap-3 bg-background px-4 max-md:w-screen">
     {children}
     {actions && <div className="flex shrink-0 items-center gap-1">{actions}</div>}
-  </div>;
+  </div></div>;
 }
