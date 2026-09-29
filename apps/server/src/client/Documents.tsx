@@ -3,7 +3,7 @@ import { EditorContent, useEditor } from "@tiptap/react";
 import * as Y from "yjs";
 import { apiOperations as api, apiUrls } from "./generated-operations";
 import { RequestError, uiText } from "./api";
-import { decodeId, encodeId } from "../typeid";
+import { encodeId } from "../typeid";
 import { uuidV7 } from "../id";
 import { DocumentSession, type PendingDocumentUpdate } from "../documents/session";
 import { DocumentCore, decodeBinary, documentPlainText, encodeBinary, type DocumentRecovery } from "../documents/core";
@@ -25,7 +25,7 @@ export class BrowserDocument {
   people: string[] = [];
   error = "";
   private sequence = 0;
-  private readonly events: EventSource;
+  private events: EventSource | null = null;
   private saving = 0;
   private localSaves: Promise<void> = Promise.resolve();
   private failedEditorUpdate: Uint8Array | null = null;
@@ -40,7 +40,7 @@ export class BrowserDocument {
   readonly params: { path: { workspaceId: string; documentId: string } };
 
   constructor(readonly userId: string, workspaceId: string, readonly meetingId: string, initial: SharedDocument | null) {
-    this.params = { path: { workspaceId, documentId: encodeId("document", decodeId("meeting", meetingId)) } };
+    this.params = { path: { workspaceId, documentId: initial?.id ?? encodeId("document", uuidV7()) } };
     if (initial) Y.applyUpdate(this.editorDocument, decodeBinary(initial.checkpoint), "remote");
     this.hydration = new DocumentEditorHydration(this.editorDocument);
     this.session = new DocumentSession({
@@ -67,9 +67,10 @@ export class BrowserDocument {
         let generation = request.generation;
         if (!generation) {
           const response = request.update
-            ? await api.initializeDocument({ params: this.params, body: {} }, false)
-            : await api.getDocument({ params: this.params });
+            ? await api.initializeMeetingNotes({ params: { path: { workspaceId, meetingId } }, body: { id: this.params.path.documentId } }, false)
+            : await api.getMeetingNotes({ params: { path: { workspaceId, meetingId } } });
           if (!response.document) return { generation: null, revision: 0, update: "AAA=" };
+          this.bindDocument(response.document.id);
           generation = response.document.generation;
         }
         try {
@@ -84,6 +85,12 @@ export class BrowserDocument {
     }, { checkpoint: initial?.checkpoint, generation: initial?.generation ?? null, revision: initial?.revision ?? 0 });
     this.timer = setInterval(() => { void this.sync().catch(() => {}); }, 2_000);
     window.addEventListener("beforeunload", this.beforeUnload);
+    if (initial) this.bindDocument(initial.id);
+  }
+  private bindDocument(id: string) {
+    if (this.events && this.params.path.documentId === id) return;
+    this.events?.close();
+    this.params.path.documentId = id;
     this.events = new EventSource(apiUrls.getDocumentEvents({ params: this.params }));
     this.events.addEventListener("invalidation", () => { void this.sync().catch(() => {}); });
   }
@@ -98,7 +105,7 @@ export class BrowserDocument {
     this.hydration.edited();
     this.saving++; this.changed();
     const result = this.localSaves.then(async () => {
-      const combined = preserveOnFailure && this.failedEditorUpdate ? Y.mergeUpdates([this.failedEditorUpdate, update]) : update;
+      const combined = preserveOnFailure && this.failedEditorUpdate ? this.correctedEditorUpdate() : update;
       try {
         await this.session.accept(encodeBinary(combined), true);
         if (preserveOnFailure) { this.failedEditorUpdate = null; this.failedEditorText = ""; }
@@ -113,6 +120,15 @@ export class BrowserDocument {
     }).finally(() => { this.saving--; this.changed(); });
     this.localSaves = result.catch(() => {});
     return result;
+  }
+  private correctedEditorUpdate(): Uint8Array {
+    // An oversized rejected update may still be retained by Undo. A fresh Y.Doc
+    // collects deleted content while preserving the clocks needed by later edits.
+    const corrected = new Y.Doc();
+    try {
+      Y.applyUpdate(corrected, Y.encodeStateAsUpdate(this.editorDocument));
+      return Y.encodeStateAsUpdate(corrected, Y.encodeStateVector(this.session.core.document));
+    } finally { corrected.destroy(); }
   }
   sync(): Promise<void> {
     if (this.stopped) return Promise.resolve();
@@ -175,7 +191,7 @@ export class BrowserDocument {
     for (const [key, value] of sessions) if (value === this) sessions.delete(key);
   }
   stop() {
-    this.stopped = true; clearInterval(this.timer); this.events.close();
+    this.stopped = true; clearInterval(this.timer); this.events?.close();
     window.removeEventListener("beforeunload", this.beforeUnload);
     void this.session.close(); this.editorDocument.destroy();
   }
@@ -188,8 +204,7 @@ async function openDocument(workspaceId: string, meetingId: string): Promise<{ c
   const key = `${identity.user.id}/${workspaceId}/${meetingId}`;
   let controller = sessions.get(key);
   if (!controller) {
-    const documentId = encodeId("document", decodeId("meeting", meetingId));
-    const { document } = await api.getDocument({ params: { path: { workspaceId, documentId } } });
+    const { document } = await api.getMeetingNotes({ params: { path: { workspaceId, meetingId } } });
     controller = sessions.get(key) ?? new BrowserDocument(identity.user.id, workspaceId, meetingId, document);
     sessions.set(key, controller);
   }

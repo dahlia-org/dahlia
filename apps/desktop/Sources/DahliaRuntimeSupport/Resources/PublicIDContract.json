@@ -264,9 +264,14 @@
       "records": "array:canonical",
       "nextCursor": "cursor:snapshot"
     },
+    "documentLocation": {
+      "id": "id:document",
+      "workspaceId": "id:workspace"
+    },
     "relocations": {
       "workspaces": "array:workspace",
-      "items": "array:canonical"
+      "items": "array:canonical",
+      "documents": "array:documentLocation"
     },
     "transfer": {
       "id": "id:transaction",
@@ -677,9 +682,21 @@
     },
     "documentEditorPerson": {
       "userId": "id:user"
+    },
+    "documentInitialize": {
+      "meetingId": "id:meeting"
+    },
+    "meetingNotesInitialize": {
+      "id": "id:document"
     }
   },
   "routes": [
+    {
+      "path": "/api/v1/workspaces/:workspace/meetings/:meeting/notes",
+      "request": "meetingNotesInitialize",
+      "response": "documentEnvelope",
+      "limit": 25165824
+    },
     {
       "path": "/api/v1/workspaces/:workspace/documents",
       "response": "documentList",
@@ -689,7 +706,7 @@
     },
     {
       "path": "/api/v1/workspaces/:workspace/documents/:document",
-      "request": "pass",
+      "request": "documentInitialize",
       "response": "documentEnvelope",
       "limit": 25165824
     },

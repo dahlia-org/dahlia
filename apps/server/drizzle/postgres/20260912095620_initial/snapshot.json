@@ -279,12 +279,38 @@
     {
       "type": "uuid",
       "typeSchema": null,
-      "notNull": true,
+      "notNull": false,
       "dimensions": 0,
       "default": null,
       "generated": null,
       "identity": null,
       "name": "meeting_id",
+      "entityType": "columns",
+      "schema": "app",
+      "table": "documents"
+    },
+    {
+      "type": "text",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "kind",
+      "entityType": "columns",
+      "schema": "app",
+      "table": "documents"
+    },
+    {
+      "type": "text",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": "''",
+      "generated": null,
+      "identity": null,
+      "name": "title",
       "entityType": "columns",
       "schema": "app",
       "table": "documents"
@@ -4981,6 +5007,27 @@
       "nameExplicit": true,
       "columns": [
         {
+          "value": "meeting_id",
+          "isExpression": false,
+          "asc": true,
+          "nullsFirst": false,
+          "opclass": null
+        }
+      ],
+      "isUnique": true,
+      "where": "\"kind\" = 'notes'",
+      "with": "",
+      "method": "btree",
+      "concurrently": false,
+      "name": "document_meeting_notes_unique",
+      "entityType": "indexes",
+      "schema": "app",
+      "table": "documents"
+    },
+    {
+      "nameExplicit": true,
+      "columns": [
+        {
           "value": "workspace_id",
           "isExpression": false,
           "asc": true,
@@ -7334,17 +7381,6 @@
     {
       "nameExplicit": false,
       "columns": [
-        "meeting_id"
-      ],
-      "nullsNotDistinct": false,
-      "name": "documents_meeting_id_key",
-      "schema": "app",
-      "table": "documents",
-      "entityType": "uniques"
-    },
-    {
-      "nameExplicit": false,
-      "columns": [
         "id"
       ],
       "nullsNotDistinct": false,
@@ -7354,8 +7390,8 @@
       "entityType": "uniques"
     },
     {
-      "value": "\"id\" = \"meeting_id\"",
-      "name": "document_meeting_id",
+      "value": "\"kind\" IN ('notes', 'summary', 'general') AND (\"kind\" != 'notes' OR \"meeting_id\" IS NOT NULL)",
+      "name": "document_kind",
       "entityType": "checks",
       "schema": "app",
       "table": "documents"

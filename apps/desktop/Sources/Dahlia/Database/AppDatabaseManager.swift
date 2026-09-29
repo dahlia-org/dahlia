@@ -358,6 +358,10 @@ final class AppDatabaseManager: Sendable {
             try DocumentsMigration.migrate(in: db)
         }
 
+        migrator.registerMigration("v48_independentDocuments", foreignKeyChecks: .deferred) { db in
+            try IndependentDocumentsMigration.migrate(in: db)
+        }
+
         return migrator
     }()
 

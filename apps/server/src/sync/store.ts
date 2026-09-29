@@ -526,7 +526,7 @@ function createIdentityStore(
     return columns;
   }
   const workspaceHasResources = (workspace: AnyColumn) => or(
-    ...[schema.syncedProject, schema.syncedMeeting, schema.syncedFile].map((table) =>
+    ...[schema.syncedProject, schema.syncedMeeting, schema.syncedFile, schema.document].map((table) =>
       exists(db.select({ value: sql`1` }).from(table).where(eq(table.workspaceId, workspace)))),
   )!;
 
@@ -650,6 +650,8 @@ function createIdentityStore(
       summaryRevision: schema.syncedMeeting.summaryRevision, transcriptRevision: schema.syncedMeeting.transcriptRevision,
     }).from(schema.syncedMeeting).where(eq(schema.syncedMeeting.workspaceId, sourceWorkspaceId));
     const files = await db.select({ id: schema.syncedFile.fileId, revision: schema.syncedFile.revision }).from(schema.syncedFile).where(eq(schema.syncedFile.workspaceId, sourceWorkspaceId));
+    const standaloneDocuments = await db.select({ id: schema.document.id }).from(schema.document)
+      .where(and(eq(schema.document.workspaceId, sourceWorkspaceId), isNull(schema.document.meetingId)));
     const movedChanges: Pick<SyncChangeRecord, "entity" | "entityId" | "action" | "revision">[] = [
       ...projects.filter((project) => project.workspaceId === sourceWorkspaceId).map((project) => ({ entity: "project" as const, entityId: project.projectId, action: "upsert" as const, revision: project.revision })),
       ...meetings.flatMap((meeting) => [
@@ -681,7 +683,7 @@ function createIdentityStore(
       id, ownerUserId: userPrincipalId, idempotencyKey: request.idempotencyKey, requestHash: request.requestHash,
       sourceWorkspaceId, destinationWorkspaceId,
       manifest: { projects: projects.filter((project) => project.workspaceId === sourceWorkspaceId).map((project) => project.projectId),
-        meetings: meetings.map((meeting) => meeting.id), files: files.map((file) => file.id) },
+        meetings: meetings.map((meeting) => meeting.id), files: files.map((file) => file.id), documents: standaloneDocuments.map((document) => document.id) },
     }).returning();
     if (!result) throw new SyncTransactionError(500, "transfer_not_recorded");
     for (const workspace of workspaces) {
@@ -702,23 +704,26 @@ function createIdentityStore(
       eq(table.ownerUserId, userPrincipalId), readable(table.sourceWorkspaceId), readable(table.destinationWorkspaceId),
     )).orderBy(asc(table.sequence));
     const relevant = history.filter((transfer) => transfer.sourceWorkspaceId === workspaceId || transfer.destinationWorkspaceId === workspaceId);
-    if (!relevant.length) return { workspaces: [], items: [] };
-    const ids = { projects: new Set<string>(), meetings: new Set<string>(), files: new Set<string>() };
-    for (const transfer of relevant) for (const kind of ["projects", "meetings", "files"] as const) {
-      for (const id of transfer.manifest[kind]) ids[kind].add(id);
+    if (!relevant.length) return { workspaces: [], items: [], documents: [] };
+    const ids = { projects: new Set<string>(), meetings: new Set<string>(), files: new Set<string>(), documents: new Set<string>() };
+    for (const transfer of relevant) for (const kind of ["projects", "meetings", "files", "documents"] as const) {
+      for (const id of transfer.manifest[kind] ?? []) ids[kind].add(id);
     }
     const destinations = new Map<string, string>();
     const items: WorkspaceRelocations["items"] = [];
+    const documents: WorkspaceRelocations["documents"] = [];
     for (const [kind, entity, content, key] of [
       ["projects", "project", schema.syncedProject, schema.syncedProject.projectId],
       ["meetings", "meeting", schema.syncedMeeting, schema.syncedMeeting.meetingId],
       ["files", "file", schema.syncedFile, schema.syncedFile.fileId],
+      ["documents", "document", schema.document, schema.document.id],
     ] as const) {
       for (const batch of batches([...ids[kind]], 100)) {
         const rows = await db.select({ id: key, workspaceId: content.workspaceId }).from(content).where(and(inArray(key, batch), readable(content.workspaceId)));
         for (const row of rows) {
-          destinations.set(row.id, row.workspaceId);
-          items.push({ entity, ...row });
+          destinations.set(`${kind}/${row.id}`, row.workspaceId);
+          if (entity === "document") documents.push(row);
+          else items.push({ entity, ...row });
         }
       }
     }
@@ -728,8 +733,9 @@ function createIdentityStore(
       eq(table.ownerUserId, userPrincipalId), readable(table.sourceWorkspaceId), readable(table.destinationWorkspaceId),
     )).orderBy(asc(table.sequence));
     const present = new Set(items.map((item) => item.id));
-    for (const transfer of latestHistory) for (const kind of ["projects", "meetings", "files"] as const) {
-      for (const id of transfer.manifest[kind]) if (ids[kind].has(id) && !present.has(id)) destinations.set(id, transfer.destinationWorkspaceId);
+    const presentDocuments = new Set(documents.map((item) => item.id));
+    for (const transfer of latestHistory) for (const kind of ["projects", "meetings", "files", "documents"] as const) {
+      for (const id of transfer.manifest[kind] ?? []) if (ids[kind].has(id) && !(kind === "documents" ? presentDocuments : present).has(id)) destinations.set(`${kind}/${id}`, transfer.destinationWorkspaceId);
     }
     const workspaces: WorkspaceRelocations["workspaces"] = [];
     for (const id of new Set(destinations.values())) {
@@ -741,7 +747,7 @@ function createIdentityStore(
       if (!workspace) throw new SyncTransactionError(403, "transfer_access_required");
       workspaces.push(workspace);
     }
-    return { workspaces, items };
+    return { workspaces, items, documents };
   }
 
   async function projectViews(workspaceId: string): Promise<SyncProjectView[]> {
@@ -1493,6 +1499,7 @@ function createIdentityStore(
     const files = await db.select({ id: schema.syncedFile.fileId }).from(schema.syncedFile).where(eq(schema.syncedFile.workspaceId, workspaceId));
     if (files.length) await db.insert(schema.storageDeleteJob).values(files.map(({ id }) => ({ storageKey: fileStorageKey(id) }))).onConflictDoNothing();
     if (preservePermissions) {
+      await db.delete(schema.document).where(eq(schema.document.workspaceId, workspaceId));
       await db.delete(schema.meetingAttachment).where(eq(schema.meetingAttachment.workspaceId, workspaceId));
       await db.delete(schema.syncedFile).where(eq(schema.syncedFile.workspaceId, workspaceId));
       await redactMeetingEvents(workspaceId);
@@ -1829,7 +1836,7 @@ function createIdentityStore(
           await db.update(schema.syncedMeeting).set({ deletedAt: now, revision: sql`${schema.syncedMeeting.revision} + 1`, updatedAt: now })
             .where(writableMeeting(transaction.workspaceId, operation.entityId));
           await db.update(schema.document).set({ generation: uuidV7() }).where(and(eq(schema.document.workspaceId, transaction.workspaceId), eq(schema.document.meetingId, operation.entityId)));
-          await db.delete(schema.documentPresence).where(eq(schema.documentPresence.documentId, operation.entityId));
+          await db.delete(schema.documentPresence).where(inArray(schema.documentPresence.documentId, db.select({ id: schema.document.id }).from(schema.document).where(and(eq(schema.document.workspaceId, transaction.workspaceId), eq(schema.document.meetingId, operation.entityId)))));
           await insertMeetingEvent({ id: operation.id, workspaceId: transaction.workspaceId, meetingId: operation.entityId, kind: "meeting_deleted", occurredAt: now, receivedAt: now });
           // Cancel leases from every requester so restoring does not revive work started before deletion.
           if (searchBackend !== "sqlite") await db.execute(sql`select set_config('app.maintenance', 'meeting-retention', true), set_config('app.maintenance_workspace_id', ${transaction.workspaceId}, true)`);

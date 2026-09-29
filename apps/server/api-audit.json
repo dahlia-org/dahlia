@@ -756,8 +756,9 @@
       "path": "/api/v1/workspaces/{workspaceId}/relocations",
       "classification": "maintained",
       "previous": "/api/v1/workspaces/{workspaceId}/relocations",
-      "reason": "Resolve moved resources to currently accessible Workspaces",
+      "reason": "Resolve moved resources and independent documents to currently accessible Workspaces",
       "consumers": [
+        "apps/desktop/Sources/Dahlia/Services/DocumentSyncService.swift",
         "apps/desktop/Sources/Dahlia/Services/SyncWorker.swift"
       ]
     },
@@ -1471,6 +1472,30 @@
       "reason": "Document revision notifications; canonical HTTP catch-up",
       "consumers": [
         "apps/server/src/client/Documents.tsx"
+      ]
+    },
+    {
+      "operationId": "getMeetingNotes",
+      "method": "GET",
+      "path": "/api/v1/workspaces/{workspaceId}/meetings/{meetingId}/notes",
+      "classification": "modified",
+      "previous": "new public contract",
+      "reason": "Resolve the unique meeting Notes without creating it",
+      "consumers": [
+        "apps/server/src/client/Documents.tsx",
+        "apps/desktop/Sources/Dahlia/Services/DocumentSyncService.swift"
+      ]
+    },
+    {
+      "operationId": "initializeMeetingNotes",
+      "method": "POST",
+      "path": "/api/v1/workspaces/{workspaceId}/meetings/{meetingId}/notes",
+      "classification": "modified",
+      "previous": "new public contract",
+      "reason": "Converge concurrent Notes initialization onto an independent canonical document ID",
+      "consumers": [
+        "apps/server/src/client/Documents.tsx",
+        "apps/desktop/Sources/Dahlia/Services/DocumentSyncService.swift"
       ]
     }
   ],

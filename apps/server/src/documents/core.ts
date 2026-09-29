@@ -65,7 +65,11 @@ export class DocumentCore {
   }
   destroy(): void { this.document.destroy(); }
   apply(update: string): void { Y.applyUpdate(this.document, decodeBinary(update), "persisted"); }
-  checkpoint(): string { return encodeBinary(Y.encodeStateAsUpdate(this.document)); }
+  checkpoint(): string {
+    const bytes = Y.encodeStateAsUpdate(this.document);
+    if (bytes.byteLength > documentStateLimit) throw new Error("document_too_large");
+    return encodeBinary(bytes);
+  }
   stateBytes(): number { return Y.encodeStateAsUpdate(this.document).byteLength; }
   vector(): string { return encodeBinary(Y.encodeStateVector(this.document)); }
   difference(vector?: string): string {

@@ -10,8 +10,9 @@ enum WorkspaceBackupTransfer {
     static let meetingTables = [
         "recording_sessions", "transcript_segments", "notes", "meeting_attachments", "summaries", "action_items",
         "summary_exports", "meeting_conversation_metrics", "meeting_conversation_source_metrics", "meeting_tags",
-        "summary_bodies", "documents", "document_updates", "document_recoveries", "document_private_copies", "document_legacy_imports",
+        "summary_bodies", "document_legacy_imports",
     ]
+    static let documentTables = ["documents", "document_private_copies", "document_updates", "document_recoveries"]
     static let referenceTables = [
         "transcript_segment_bodies": ("segmentId", "transcript_segments"),
         "file_text_bodies": ("fileId", "files"),
@@ -20,7 +21,7 @@ enum WorkspaceBackupTransfer {
         "segmentId": "transcript_segments",
         "fileId": "files", "workspace_id": "workspaces", "projectId": "projects", "parentProjectId": "projects",
         "meetingId": "meetings", "sessionId": "recording_sessions", "recordingSessionId": "recording_sessions",
-        "tagId": "tags",
+        "tagId": "tags", "documentId": "documents",
     ]
 
     private static func restoredDocumentValue(column: String) -> DatabaseValue? {
@@ -46,13 +47,10 @@ enum WorkspaceBackupTransfer {
         ]
         // meeting_attachments triggers inspect OCR to choose indexing or analysis, so restore file text first.
         let tables = workspaceTables + ["file_text_bodies", "meetings"] + meetingTables
-            + referenceTables.keys.sorted().filter { $0 != "file_text_bodies" }
+            + documentTables + referenceTables.keys.sorted().filter { $0 != "file_text_bodies" }
         if remapIDs {
             for table in tables where try db.columns(in: table).contains(where: { $0.name == "id" && $0.type == "BLOB" }) {
                 let ids = try UUID.fetchAll(db, sql: "SELECT id FROM backup_source.\(table) WHERE \(predicate(table))", arguments: [workspaceId])
-                if table == "documents" { mappings[table] = mappings["meetings"]
-                    continue
-                }
                 mappings[table] = Dictionary(uniqueKeysWithValues: ids.map { ($0.databaseValue, UUID.v7().databaseValue) })
             }
         }
@@ -239,6 +237,10 @@ enum WorkspaceBackupTransfer {
     }
 
     private static func predicate(_ table: String) -> String {
+        if table == "documents" || table == "document_private_copies" { return "workspace_id = ?" }
+        if table == "document_updates" || table == "document_recoveries" {
+            return "documentId IN (SELECT id FROM backup_source.documents WHERE workspace_id = ?)"
+        }
         if workspaceTables.contains(table) || table == "meetings" { return "workspace_id = ?" }
         if meetingTables.contains(table) { return "meetingId IN (SELECT id FROM backup_source.meetings WHERE workspace_id = ?)" }
         let (column, parent) = referenceTables[table]!

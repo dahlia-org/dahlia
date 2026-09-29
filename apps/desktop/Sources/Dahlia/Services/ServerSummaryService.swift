@@ -280,7 +280,12 @@ actor ServerSummaryService {
         return try JSONDecoder().decode(Response.self, from: data).job
     }
 
-    func retry(_ target: Target, previousID: String, id: UUID) async throws -> Job? {
+    func retry(_ target: Target, previousID: String, id: UUID, dbQueue: DatabaseQueue) async throws -> Job? {
+        try await awaitSynchronization(target, dbQueue: dbQueue)
+        return try await retrySynchronized(target, previousID: previousID, id: id)
+    }
+
+    private func retrySynchronized(_ target: Target, previousID: String, id: UUID) async throws -> Job? {
         guard UUID(uuidString: previousID) != nil, let origin = URL(string: target.origin) else { throw Failure.unavailable }
         let data = try await client.data(origin: origin, connectionId: target.connectionID, maximumBytes: 65536) {
             try await $0.retrySummaryJob(
@@ -317,7 +322,7 @@ actor ServerSummaryService {
         }
         var job = try await status(target, id: id)
         if job == nil, let previousID = processing?.retryOf {
-            job = try await retry(target, previousID: previousID, id: id)
+            job = try await retrySynchronized(target, previousID: previousID, id: id)
         }
         if job == nil {
             let body: Request

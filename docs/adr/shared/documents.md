@@ -4,7 +4,7 @@
 
 ## 正本と公開
 
-会議 Notes を Tiptap / Yjs の文書へ置き換える。Server Workspace の共有文書は Server canonical、Desktop SQLite はオフライン作業コピー、Local Account は独立した正本とする。会議 Notes の文書 UUID は会議 UUID と同じ値を使い、公開 ID は `doc_` とする。`documents.meeting_id` は一意。Yjs checkpoint と更新ログが本文の正本であり、本文テキストとブロック一覧は派生物。別の `document_blocks` / `meeting_documents` 正本は作らない。
+会議 Notes を Tiptap / Yjs の文書へ置き換える。Server Workspace の共有文書は Server canonical、Desktop SQLite はオフライン作業コピー、Local Account は独立した正本とする。文書の識別・所属は [独立した Document](document-identity.md) で改訂した。文書 UUID は独立して発行し、公開 ID は `doc_` とする。会議との関連は任意で、会議 Notes のみ会議ごとに一意。Yjs checkpoint と更新ログが本文の正本であり、本文テキストとブロック一覧は派生物。別の `document_blocks` / `meeting_documents` 正本は作らない。
 
 既存 Notes は自動公開しない。Local Account の既存本文は文字列・改行・日時を保って変換する。Server Workspace の旧 Notes は端末内に残し、Workspace 単位で対象と公開先を確認してから空の文書へ一度だけ取り込む。既存の共有本文との衝突では非公開コピーを保持し、人が判断する。旧 `notes` は今回削除しない。新しい共有 Notes と復元記録は Workspace の閲覧権限を継承する。未公開本文を共有要約に混ぜない。
 

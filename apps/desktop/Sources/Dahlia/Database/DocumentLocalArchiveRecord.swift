@@ -5,7 +5,7 @@ struct DocumentLocalArchiveRecord: Codable, FetchableRecord, PersistableRecord, 
     static let databaseTableName = "document_local_archives"
     let id: UUID
     let workspaceId: UUID
-    let meetingId: UUID
+    let meetingId: UUID?
     let name: String
     let payload: String
     let createdAt: Date

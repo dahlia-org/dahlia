@@ -1274,7 +1274,7 @@
             ])
             let provider = provider(fixture) { request in
                 let path = request.url!.path
-                if path.contains("/documents/") { return (200, [:], Data(#"{"document":null}"#.utf8)) }
+                if path.hasSuffix("/documents") { return (200, [:], Data(#"{"items":[],"nextCursor":null}"#.utf8)) }
                 if path.hasSuffix("/capabilities") { return (200, [:], Data("{\"documents\":{\"version\":1},\"sync\":{\"version\":7}}".utf8)) }
                 if path.hasSuffix("/changes") {
                     let count = changeRequests.withLock { $0 += 1

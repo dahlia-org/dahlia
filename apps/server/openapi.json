@@ -2826,8 +2826,22 @@
             "pattern": "^ws_[0-7][0-9abcdefghjkmnpqrstvwxyz]{25}$"
           },
           "meetingId": {
-            "type": "string",
+            "type": [
+              "string",
+              "null"
+            ],
             "pattern": "^mtg_[0-7][0-9abcdefghjkmnpqrstvwxyz]{25}$"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "notes",
+              "summary",
+              "general"
+            ]
+          },
+          "title": {
+            "type": "string"
           },
           "schemaVersion": {
             "type": "number",
@@ -2862,6 +2876,8 @@
           "id",
           "workspaceId",
           "meetingId",
+          "kind",
+          "title",
           "schemaVersion",
           "generation",
           "revision",
@@ -2870,6 +2886,23 @@
           "createdAt",
           "updatedAt"
         ]
+      },
+      "MeetingNotesInitialize": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^doc_[0-7][0-9abcdefghjkmnpqrstvwxyz]{25}$"
+          },
+          "legacyUpdate": {
+            "type": "string",
+            "maxLength": 11184812
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "additionalProperties": false
       },
       "DocumentList": {
         "type": "object",
@@ -2883,6 +2916,21 @@
                   "type": "string",
                   "pattern": "^doc_[0-7][0-9abcdefghjkmnpqrstvwxyz]{25}$"
                 },
+                "meetingId": {
+                  "type": [
+                    "string",
+                    "null"
+                  ],
+                  "pattern": "^mtg_[0-7][0-9abcdefghjkmnpqrstvwxyz]{25}$"
+                },
+                "kind": {
+                  "type": "string",
+                  "enum": [
+                    "notes",
+                    "summary",
+                    "general"
+                  ]
+                },
                 "revision": {
                   "type": "integer"
                 },
@@ -2893,6 +2941,8 @@
               },
               "required": [
                 "id",
+                "meetingId",
+                "kind",
                 "revision",
                 "generation"
               ]
@@ -2914,11 +2964,35 @@
       "DocumentInitialize": {
         "type": "object",
         "properties": {
+          "meetingId": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "pattern": "^mtg_[0-7][0-9abcdefghjkmnpqrstvwxyz]{25}$"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "notes",
+              "summary",
+              "general"
+            ]
+          },
+          "title": {
+            "type": "string",
+            "maxLength": 1000
+          },
           "legacyUpdate": {
             "type": "string",
             "maxLength": 11184812
           }
         },
+        "required": [
+          "meetingId",
+          "kind",
+          "title"
+        ],
         "additionalProperties": false
       },
       "DocumentExchangeResult": {
@@ -9501,6 +9575,102 @@
         "responses": {
           "204": {
             "description": "Success; no response body."
+          },
+          "default": {
+            "$ref": "#/components/responses/Problem"
+          }
+        }
+      }
+    },
+    "/api/v1/workspaces/{workspaceId}/meetings/{meetingId}/notes": {
+      "get": {
+        "operationId": "getMeetingNotes",
+        "summary": "Resolve meeting Notes without creating a document",
+        "tags": [
+          "workspaces"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "pattern": "^ws_[0-7][0-9abcdefghjkmnpqrstvwxyz]{25}$"
+            },
+            "required": true,
+            "name": "workspaceId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "pattern": "^mtg_[0-7][0-9abcdefghjkmnpqrstvwxyz]{25}$"
+            },
+            "required": true,
+            "name": "meetingId",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DocumentEnvelope"
+                }
+              }
+            }
+          },
+          "default": {
+            "$ref": "#/components/responses/Problem"
+          }
+        }
+      },
+      "post": {
+        "operationId": "initializeMeetingNotes",
+        "summary": "Resolve or initialize the unique Notes document; concurrent proposals return the canonical ID",
+        "tags": [
+          "workspaces"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "pattern": "^ws_[0-7][0-9abcdefghjkmnpqrstvwxyz]{25}$"
+            },
+            "required": true,
+            "name": "workspaceId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "pattern": "^mtg_[0-7][0-9abcdefghjkmnpqrstvwxyz]{25}$"
+            },
+            "required": true,
+            "name": "meetingId",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MeetingNotesInitialize"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DocumentEnvelope"
+                }
+              }
+            }
           },
           "default": {
             "$ref": "#/components/responses/Problem"
@@ -16459,6 +16629,26 @@
                         },
                         "required": [
                           "entity",
+                          "id",
+                          "workspaceId"
+                        ]
+                      }
+                    },
+                    "documents": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "id": {
+                            "type": "string",
+                            "pattern": "^doc_[0-7][0-9abcdefghjkmnpqrstvwxyz]{25}$"
+                          },
+                          "workspaceId": {
+                            "type": "string",
+                            "pattern": "^ws_[0-7][0-9abcdefghjkmnpqrstvwxyz]{25}$"
+                          }
+                        },
+                        "required": [
                           "id",
                           "workspaceId"
                         ]

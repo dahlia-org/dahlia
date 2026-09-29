@@ -88,8 +88,9 @@ extension MeetingContentProvider {
             if raw == "document" {
                 let protected = Set(retainedWorkspaces[ObjectIdentifier(dbQueue), default: [:]].keys)
                 let active = await DocumentEditorModel.activeMeetingIDs(dbQueue: dbQueue)
-                if !active.contains(id) {
-                    used -= try await dbQueue.write { try DocumentRetention.evict(meetingID: id, protectedWorkspaces: protected, in: $0) }
+                let meeting = try await dbQueue.read { try DocumentRecord.fetchOne($0, key: id)?.meetingId }
+                if meeting == nil || !active.contains(meeting!) {
+                    used -= try await dbQueue.write { try DocumentRetention.evict(documentID: id, protectedWorkspaces: protected, in: $0) }
                 }
                 continue
             }

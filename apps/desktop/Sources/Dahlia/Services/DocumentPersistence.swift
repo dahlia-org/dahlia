@@ -18,7 +18,7 @@ actor DocumentPersistence {
 
     func prepare(meetingID: UUID) async throws -> DocumentCoreResult {
         let legacy = try await dbQueue.read { db -> MeetingNoteRecord? in
-            guard try DocumentRecord.fetchOne(db, key: meetingID) == nil,
+            guard try DocumentRecord.notes(in: db, meetingID: meetingID) == nil,
                   let meeting = try MeetingRecord.fetchOne(db, key: meetingID),
                   let workspace = try WorkspaceRecord.fetchOne(db, key: meeting.workspaceId),
                   workspace.accountConnectionId == nil else { return nil }
@@ -27,12 +27,13 @@ actor DocumentPersistence {
         if let legacy {
             let converted = try await core.process(DocumentCoreCommand(text: legacy.text, repair: true))
             try await dbQueue.write { db in
-                guard try DocumentRecord.fetchOne(db, key: meetingID) == nil,
+                guard try DocumentRecord.notes(in: db, meetingID: meetingID) == nil,
                       let meeting = try MeetingRecord.fetchOne(db, key: meetingID),
                       let workspace = try WorkspaceRecord.fetchOne(db, key: meeting.workspaceId),
                       workspace.accountConnectionId == nil else { return }
                 try DocumentRecord(
-                    id: meetingID,
+                    id: .v7(),
+                    workspaceId: meeting.workspaceId,
                     meetingId: meetingID,
                     checkpoint: converted.checkpoint,
                     text: converted.projection.text,
@@ -46,7 +47,14 @@ actor DocumentPersistence {
     }
 
     /// Resolves immediately after the short local commit, before any Yjs projection or network request.
-    func append(meetingID: UUID, update: String, local: Bool, orphan: OrphanContext? = nil, privateOnly: Bool = false) async throws {
+    func append(
+        meetingID: UUID,
+        update: String,
+        local: Bool,
+        orphan: OrphanContext? = nil,
+        privateOnly: Bool = false,
+        restoreDraft: Bool = false
+    ) async throws {
         guard update.utf8.count <= DocumentLimits.encodedUpdateBytes,
               let bytes = Data(base64Encoded: update), bytes.count <= DocumentLimits.stateBytes else { throw DocumentCoreError.invalidCommand }
         let privateCopy = try await dbQueue.write { db -> Bool in
@@ -69,13 +77,30 @@ actor DocumentPersistence {
                 try DocumentRetention.archiveBeforeRemoteDeletion(meetingID: meetingID, rejectedUpdate: update, in: db)
                 return true
             }
-            if let existing = try DocumentRecord.fetchOne(db, key: meetingID), !existing.resident { throw DocumentCoreError.unavailable }
+            if let existing = try DocumentRecord.notes(in: db, meetingID: meetingID), !existing.resident { throw DocumentCoreError.unavailable }
             let now = Date()
-            if try DocumentRecord.fetchOne(db, key: meetingID) == nil {
-                try DocumentRecord(id: meetingID, meetingId: meetingID, checkpoint: "AAA=", createdAt: now, updatedAt: now).insert(db)
+            if try DocumentRecord.notes(in: db, meetingID: meetingID) == nil {
+                try DocumentRecord(
+                    id: .v7(),
+                    workspaceId: meeting.workspaceId,
+                    meetingId: meetingID,
+                    checkpoint: "AAA=",
+                    createdAt: now,
+                    updatedAt: now
+                ).insert(db)
+            }
+            guard let document = try DocumentRecord.notes(in: db, meetingID: meetingID) else { throw DocumentCoreError.unavailable }
+            if local, restoreDraft, let orphan, orphan.meetingID == meetingID {
+                // A resolved draft's next delta can reference structs already saved in its private archive.
+                // Replay those prerequisites only after the original account/Workspace checks above.
+                try db.execute(sql: """
+                INSERT INTO document_updates(documentId, payload, pending, createdAt)
+                SELECT ?, value, ?, ? FROM document_local_archives a, json_each(a.payload, '$.updates')
+                WHERE a.id = ? AND a.workspace_id = ? AND a.meetingId = ?
+                """, arguments: [document.id, workspace.accountConnectionId != nil, now, meetingID, orphan.workspaceID, meetingID])
             }
             var record = DocumentUpdateRecord(
-                meetingId: meetingID,
+                documentId: document.id,
                 payload: update,
                 pending: local && workspace.accountConnectionId != nil,
                 createdAt: now
@@ -83,7 +108,7 @@ actor DocumentPersistence {
             try record.insert(db)
             if local {
                 try WorkspaceTransferFence.recordLocalMutation(workspaceID: workspace.id, in: db)
-                try db.execute(sql: "UPDATE documents SET locallyEdited = 1, updatedAt = ? WHERE id = ?", arguments: [now, meetingID])
+                try db.execute(sql: "UPDATE documents SET locallyEdited = 1, updatedAt = ? WHERE id = ?", arguments: [now, document.id])
             }
             return false
         }
@@ -91,10 +116,28 @@ actor DocumentPersistence {
     }
 
     func materialize(meetingID: UUID, compact: Bool = false) async throws -> DocumentCoreResult {
+        try await materialize(reference: .notes(meetingID), compact: compact)
+    }
+
+    func materialize(documentID: UUID, compact: Bool = false) async throws -> DocumentCoreResult {
+        try await materialize(reference: .document(documentID), compact: compact)
+    }
+
+    private enum Reference: Sendable {
+        case notes(UUID), document(UUID)
+        func load(in db: Database) throws -> DocumentRecord? {
+            switch self {
+            case let .notes(id): try DocumentRecord.notes(in: db, meetingID: id)
+            case let .document(id): try DocumentRecord.fetchOne(db, key: id)
+            }
+        }
+    }
+
+    private func materialize(reference: Reference, compact: Bool) async throws -> DocumentCoreResult {
         while true {
             let source = try await dbQueue.read { db -> (DocumentRecord?, [DocumentUpdateRecord]) in
-                let record = try DocumentRecord.fetchOne(db, key: meetingID)
-                let updates = try DocumentUpdateRecord.filter(Column("meetingId") == meetingID)
+                let record = try reference.load(in: db)
+                let updates = try DocumentUpdateRecord.filter(Column("documentId") == record?.id)
                     .filter(Column("id") > (record?.checkpointSequence ?? 0)).order(Column("id")).fetchAll(db)
                 return (record, updates)
             }
@@ -104,25 +147,25 @@ actor DocumentPersistence {
             let through = source.1.last?.id ?? record.checkpointSequence
             if !compact, source.1.isEmpty, record.projectionSequence == through { return result }
             let committed = try await dbQueue.write { db -> Bool in
-                guard let current = try DocumentRecord.fetchOne(db, key: meetingID),
+                guard let current = try reference.load(in: db),
+                      current.id == record.id,
                       current.checkpointSequence == record.checkpointSequence,
                       current.generation == record.generation else { return false }
                 // The checkpoint includes exactly `through`. Later durable appends remain in the log.
-                let workspaceID = try MeetingRecord.fetchOne(db, key: meetingID)?.workspaceId
-                let recording = try workspaceID.map { try RecordingSessionRecord.hasActiveRecording(workspaceId: $0, in: db) } ?? false
+                let recording = try RecordingSessionRecord.hasActiveRecording(workspaceId: record.workspaceId, in: db)
                 if compact || (source.1.count >= 32 && !recording) {
                     try db.execute(
                         sql: "UPDATE documents SET checkpoint = ?, checkpointSequence = ?, projectionSequence = ?, text = ? WHERE id = ?",
-                        arguments: [result.checkpoint, through, through, result.projection.text, meetingID]
+                        arguments: [result.checkpoint, through, through, result.projection.text, record.id]
                     )
                     try db.execute(
-                        sql: "DELETE FROM document_updates WHERE meetingId = ? AND id <= ? AND pending = 0",
-                        arguments: [meetingID, through]
+                        sql: "DELETE FROM document_updates WHERE documentId = ? AND id <= ? AND pending = 0",
+                        arguments: [record.id, through]
                     )
                 } else {
                     try db.execute(
                         sql: "UPDATE documents SET projectionSequence = ?, text = ? WHERE id = ?",
-                        arguments: [through, result.projection.text, meetingID]
+                        arguments: [through, result.projection.text, record.id]
                     )
                 }
                 return true
@@ -133,19 +176,21 @@ actor DocumentPersistence {
     }
 
     func receive(
-        meetingID: UUID,
+        document: DocumentRecord,
         update: String,
         generation: UUID,
         revision: Int,
         validate: @escaping @Sendable (Database) throws -> Void
     ) async throws {
+        let reference: Reference = if document.kind == "notes",
+                                      let meetingID = document.meetingId { .notes(meetingID) } else { .document(document.id) }
         while true {
             let source = try await dbQueue.read { db -> (DocumentRecord?, [DocumentUpdateRecord], Int64) in
                 try validate(db)
-                let record = try DocumentRecord.fetchOne(db, key: meetingID)
-                let updates = try DocumentUpdateRecord.filter(Column("meetingId") == meetingID)
+                let record = try reference.load(in: db)
+                let updates = try DocumentUpdateRecord.filter(Column("documentId") == record?.id)
                     .filter(Column("id") > (record?.checkpointSequence ?? 0)).order(Column("id")).fetchAll(db)
-                let latest = try Int64.fetchOne(db, sql: "SELECT max(id) FROM document_updates WHERE meetingId = ?", arguments: [meetingID]) ?? 0
+                let latest = try Int64.fetchOne(db, sql: "SELECT max(id) FROM document_updates WHERE documentId = ?", arguments: [record?.id]) ?? 0
                 return (record, updates, latest)
             }
             let before = try await core.process(DocumentCoreCommand(checkpoint: source.0?.checkpoint, updates: source.1.map(\.payload)))
@@ -156,22 +201,34 @@ actor DocumentPersistence {
             )
             let committed = try await dbQueue.write { db -> Bool in
                 try validate(db)
-                let existing = try DocumentRecord.fetchOne(db, key: meetingID)
-                guard existing?.checkpointSequence == source.0?.checkpointSequence,
+                let existing = try reference.load(in: db)
+                guard existing?.id == source.0?.id,
+                      existing?.checkpointSequence == source.0?.checkpointSequence,
                       existing?.generation == source.0?.generation else { return false }
-                let latest = try Int64.fetchOne(db, sql: "SELECT max(id) FROM document_updates WHERE meetingId = ?", arguments: [meetingID]) ?? 0
+                let latest = try Int64.fetchOne(db, sql: "SELECT max(id) FROM document_updates WHERE documentId = ?", arguments: [existing?.id]) ?? 0
                 guard latest == source.2 else { return false }
                 // An authorized reread after restoration changes the send generation, not Yjs causality.
                 // Keep local structs/outbox because a still-open editor's next delta depends on them.
                 let nextRevision = existing?.generation == generation ? max(existing?.revision ?? 0, revision) : revision
                 let now = Date()
-                if existing == nil {
-                    try DocumentRecord(id: meetingID, meetingId: meetingID, checkpoint: before.checkpoint, createdAt: now, updatedAt: now).insert(db)
+                if let existing, existing.id != document.id {
+                    // Cascading foreign keys preserve updates and recoveries under the canonical ID.
+                    try db.execute(sql: "UPDATE documents SET id = ? WHERE id = ?", arguments: [document.id, existing.id])
+                } else if existing == nil {
+                    var row = document
+                    row.checkpoint = before.checkpoint
+                    row.text = before.projection.text
+                    row.revision = 0
+                    try row.insert(db)
                 }
+                try db.execute(
+                    sql: "UPDATE documents SET workspace_id = ?, title = ? WHERE id = ?",
+                    arguments: [document.workspaceId, document.title, document.id]
+                )
                 if let recoveryJSON {
                     try DocumentRecoveryRecord(
                         id: .v7(),
-                        meetingId: meetingID,
+                        documentId: document.id,
                         blocksJSON: recoveryJSON,
                         reason: "concurrent_delete",
                         pending: true,
@@ -179,16 +236,16 @@ actor DocumentPersistence {
                     ).insert(db)
                 }
                 if merged.checkpoint != before.checkpoint {
-                    var entry = DocumentUpdateRecord(meetingId: meetingID, payload: update, pending: false, createdAt: now)
+                    var entry = DocumentUpdateRecord(documentId: document.id, payload: update, pending: false, createdAt: now)
                     try entry.insert(db)
                     try db.execute(
                         sql: "UPDATE documents SET projectionSequence = ?, text = ? WHERE id = ?",
-                        arguments: [entry.id, merged.projection.text, meetingID]
+                        arguments: [entry.id, merged.projection.text, document.id]
                     )
                 }
                 try db.execute(
                     sql: "UPDATE documents SET generation = ?, revision = ?, resident = 1 WHERE id = ?",
-                    arguments: [generation, nextRevision, meetingID]
+                    arguments: [generation, nextRevision, document.id]
                 )
                 return true
             }
@@ -209,7 +266,8 @@ actor DocumentPersistence {
 
     func recoveries(meetingID: UUID) async throws -> ([DocumentRecoveryRecord], [UUID: String]) {
         let records = try await dbQueue.read { db in
-            try DocumentRecoveryRecord.filter(Column("meetingId") == meetingID).order(Column("createdAt").desc).fetchAll(db)
+            try DocumentRecoveryRecord.filter(Column("documentId") == DocumentRecord.notes(in: db, meetingID: meetingID)?.id)
+                .order(Column("createdAt").desc).fetchAll(db)
         }
         let text = try Dictionary(uniqueKeysWithValues: records.map { record in
             let blocks = try JSONDecoder().decode([DocumentBlock].self, from: Data(record.blocksJSON.utf8))
@@ -249,34 +307,37 @@ actor DocumentPersistence {
         let ids = try await dbQueue.read { db in
             try UUID.fetchAll(
                 db,
-                sql: "SELECT d.meetingId FROM documents d JOIN meetings m ON m.id = d.meetingId WHERE m.workspace_id = ?",
+                sql: "SELECT id FROM documents WHERE workspace_id = ?",
                 arguments: [workspaceID]
             )
         }
         for id in ids {
-            _ = try await materialize(meetingID: id, compact: true)
+            _ = try await materialize(documentID: id, compact: true)
         }
     }
 
     nonisolated static func preservePrivateCopies(workspaceID: UUID, in db: Database) throws {
         let documents = try DocumentRecord.fetchAll(
             db,
-            sql: "SELECT d.* FROM documents d JOIN meetings m ON m.id = d.meetingId WHERE m.workspace_id = ?",
+            sql: "SELECT * FROM documents WHERE workspace_id = ?",
             arguments: [workspaceID]
         )
         for document in documents {
-            let latest = try Int64.fetchOne(db, sql: "SELECT max(id) FROM document_updates WHERE meetingId = ?", arguments: [document.meetingId]) ?? 0
+            let latest = try Int64.fetchOne(db, sql: "SELECT max(id) FROM document_updates WHERE documentId = ?", arguments: [document.id]) ?? 0
             guard latest <= document.checkpointSequence else { throw LocalWorkspaceImportError.changed }
             try DocumentPrivateCopyRecord(
                 id: .v7(),
+                workspaceId: document.workspaceId,
                 meetingId: document.meetingId,
+                kind: document.kind,
+                title: document.title,
                 checkpoint: document.checkpoint,
                 text: document.text,
                 createdAt: document.createdAt,
                 updatedAt: document.updatedAt
             ).insert(db)
+            try DocumentRetention.archive(documentID: document.id, in: db)
             try document.delete(db)
-            try db.execute(sql: "UPDATE document_recoveries SET pending = 0 WHERE meetingId = ?", arguments: [document.meetingId])
             try db.execute(sql: "DELETE FROM document_legacy_imports WHERE meetingId = ?", arguments: [document.meetingId])
         }
     }

@@ -47,11 +47,17 @@ final class DocumentEditorModel {
     private let dbQueue: DatabaseQueue
     private let documentID: UUID
     private let orphan: DocumentPersistence.OrphanContext?
-    private var preservingOrphan = false
+    private var hasUnresolvedDraft = false
     var flushEditor: (@MainActor () async throws -> Void)?
     private var saveTask: Task<Void, Never>?
     private var syncTask: Task<Void, Never>?
-    private var failedUpdates: [String] = []
+    private struct Edit {
+        let update: String
+        let meetingID: UUID?
+        let restoreDraft: Bool
+    }
+
+    private var failedUpdates: [Edit] = []
     private(set) var meetingID: UUID?
     var resolveMeeting: @MainActor () -> UUID?
 
@@ -94,11 +100,14 @@ final class DocumentEditorModel {
             try await Self.finishLocalSaves(dbQueue: dbQueue, meetingID: meetingID)
             guard isVisible(generation) else { return }
             if let meetingID {
-                let resident = try await dbQueue.read { try DocumentRecord.fetchOne($0, key: meetingID)?.resident ?? true }
+                let resident = try await dbQueue.read { try DocumentRecord.notes(in: $0, meetingID: meetingID)?.resident ?? true }
                 if !resident { try await sync.synchronize(meetingID: meetingID) }
                 let prepared = try await persistence.prepare(meetingID: meetingID).checkpoint
                 try await dbQueue.write { db in
-                    try db.execute(sql: "UPDATE documents SET lastAccessedAt = ? WHERE id = ?", arguments: [Date(), meetingID])
+                    try db.execute(
+                        sql: "UPDATE documents SET lastAccessedAt = ? WHERE meetingId = ? AND kind = 'notes'",
+                        arguments: [Date(), meetingID]
+                    )
                 }
                 let legacy = try await readLegacyText(meetingID: meetingID)
                 guard isVisible(generation) else { return }
@@ -112,24 +121,8 @@ final class DocumentEditorModel {
                 while !Task.isCancelled {
                     try? await Task.sleep(for: .seconds(2))
                     guard let self, self.isVisible(generation) else { return }
-                    guard let meetingID = self.meetingID else { continue }
                     do {
-                        try await self.sync.synchronize(meetingID: meetingID)
-                        let received = try await self.persistence.materialize(meetingID: meetingID).checkpoint
-                        let pending = try await self.dbQueue.read { db in
-                            try DocumentUpdateRecord.filter(Column("meetingId") == meetingID).filter(Column("pending") == true).fetchCount(db) > 0
-                        }
-                        let savedStatus = try await self.sync.target(meetingID: meetingID) == nil ? L10n.documentSavedLocally : L10n.documentSynced
-                        guard self.isVisible(generation) else { return }
-                        self.receivedUpdate = received
-                        if !pending, self.failedUpdates.isEmpty {
-                            self.status = savedStatus
-                        }
-                        let people = try await self.sync.presence(meetingID: meetingID, sessionID: self.sessionID, editing: self.focused)
-                        guard self.isVisible(generation) else { return }
-                        self.people = people
-                        if self.error != L10n.documentPrivateRecoverySaved { self.error = "" }
-                        await self.refreshRecoveries()
+                        try await self.synchronizeVisibleDocument()
                     } catch {
                         guard self.isVisible(generation) else { return }
                         self.error = L10n.documentSyncFailed
@@ -141,13 +134,37 @@ final class DocumentEditorModel {
         }
     }
 
+    func synchronizeVisibleDocument() async throws {
+        if visible, meetingID == nil { try await finishLocalSaves() }
+        guard visible, let meetingID else { return }
+        let generation = loadGeneration
+        try await sync.synchronize(meetingID: meetingID)
+        let received = try await persistence.materialize(meetingID: meetingID).checkpoint
+        let pending = try await dbQueue.read { db in
+            try DocumentUpdateRecord.filter(Column("documentId") == DocumentRecord.notes(in: db, meetingID: meetingID)?.id)
+                .filter(Column("pending") == true).fetchCount(db) > 0
+        }
+        let savedStatus = try await sync.target(meetingID: meetingID) == nil ? L10n.documentSavedLocally : L10n.documentSynced
+        guard isVisible(generation) else { return }
+        receivedUpdate = received
+        if !pending, failedUpdates.isEmpty {
+            status = savedStatus
+        }
+        let names = try await sync.presence(meetingID: meetingID, sessionID: sessionID, editing: focused)
+        guard isVisible(generation) else { return }
+        people = names
+        if error != L10n.documentPrivateRecoverySaved { error = "" }
+        await refreshRecoveries()
+    }
+
     private func isVisible(_ generation: Int) -> Bool {
         visible && loadGeneration == generation && !Task.isCancelled
     }
 
     private func readLegacyText(meetingID: UUID) async throws -> String {
         try await dbQueue.read { db in
-            let copies = try DocumentPrivateCopyRecord.filter(Column("meetingId") == meetingID).order(Column("updatedAt").desc).fetchAll(db)
+            let copies = try DocumentPrivateCopyRecord.filter(Column("meetingId") == meetingID).filter(Column("kind") == "notes")
+                .order(Column("updatedAt").desc).fetchAll(db)
             if !copies.isEmpty { return copies.map(\.text).joined(separator: "\n\n") }
             let imported = try Bool.fetchOne(
                 db,
@@ -161,10 +178,18 @@ final class DocumentEditorModel {
     var editorCommand: (id: UUID, name: String)?
     var focused = false
 
+    @discardableResult
+    private func resolveDraft() -> Bool {
+        guard meetingID == nil, let resolved = resolveMeeting(), orphan == nil || orphan?.meetingID == resolved else { return false }
+        meetingID = resolved
+        return true
+    }
+
     func accept(_ update: String) {
-        if meetingID == nil, !preservingOrphan { meetingID = resolveMeeting() }
-        if meetingID == nil { preservingOrphan = true }
-        failedUpdates.append(update)
+        resolveDraft()
+        let restoreDraft = hasUnresolvedDraft && meetingID != nil
+        hasUnresolvedDraft = meetingID == nil
+        failedUpdates.append(Edit(update: update, meetingID: meetingID, restoreDraft: restoreDraft))
         enqueueSave()
     }
 
@@ -174,11 +199,13 @@ final class DocumentEditorModel {
         saveTask = Task {
             await previous?.value
             do {
-                let meetingID = meetingID ?? documentID
                 var savedPrivately = false
                 while let next = failedUpdates.first {
                     do {
-                        try await persistence.append(meetingID: meetingID, update: next, local: true, orphan: orphan, privateOnly: preservingOrphan)
+                        try await persistence.append(
+                            meetingID: next.meetingID ?? documentID, update: next.update, local: true, orphan: orphan,
+                            privateOnly: next.meetingID == nil, restoreDraft: next.restoreDraft
+                        )
                     } catch DocumentCoreError.editPreservedPrivately {
                         savedPrivately = true
                     }
@@ -192,6 +219,7 @@ final class DocumentEditorModel {
 
     func finishLocalSaves() async throws {
         try await flushEditor?()
+        if visible, hasUnresolvedDraft, resolveDraft() { accept("AAA=") }
         await saveTask?.value
         if !failedUpdates.isEmpty {
             enqueueSave()

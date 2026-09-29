@@ -897,7 +897,7 @@
     /// Canonical text responses for cached bodies and the fixtures' empty transcripts.
     private func cachedTextResponse(_ request: URLRequest, queue: DatabaseQueue) -> (Int, [String: String], Data)? {
         guard let url = request.url else { return nil }
-        if url.path.contains("/documents/") { return (200, [:], Data(#"{"document":null}"#.utf8)) }
+        if url.path.hasSuffix("/documents") { return (200, [:], Data(#"{"items":[],"nextCursor":null}"#.utf8)) }
         if url.path.hasSuffix("/capabilities") { return (200, [:], Data("{\"documents\":{\"version\":1},\"sync\":{\"version\":7}}".utf8)) }
         if url.path.hasSuffix("/changes") {
             return (

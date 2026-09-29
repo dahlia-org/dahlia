@@ -189,6 +189,24 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/workspaces/{workspaceId}/meetings/{meetingId}/notes": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Resolve meeting Notes without creating a document */
+        get: operations["getMeetingNotes"];
+        put?: never;
+        /** Resolve or initialize the unique Notes document; concurrent proposals return the canonical ID */
+        post: operations["initializeMeetingNotes"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/workspaces/{workspaceId}/documents/{documentId}": {
         parameters: {
             query?: never;
@@ -2328,7 +2346,10 @@ export interface components {
         NullableSharedDocument: {
             id: string;
             workspaceId: string;
-            meetingId: string;
+            meetingId: string | null;
+            /** @enum {string} */
+            kind: "notes" | "summary" | "general";
+            title: string;
             /** @enum {number} */
             schemaVersion: 1;
             generation: string;
@@ -2340,15 +2361,26 @@ export interface components {
             /** Format: date-time */
             updatedAt: string;
         } | null;
+        MeetingNotesInitialize: {
+            id: string;
+            legacyUpdate?: string;
+        };
         DocumentList: {
             items: {
                 id: string;
+                meetingId: string | null;
+                /** @enum {string} */
+                kind: "notes" | "summary" | "general";
                 revision: number;
                 generation: string;
             }[];
             nextCursor: string | null;
         };
         DocumentInitialize: {
+            meetingId: string | null;
+            /** @enum {string} */
+            kind: "notes" | "summary" | "general";
+            title: string;
             legacyUpdate?: string;
         };
         DocumentExchangeResult: {
@@ -3925,6 +3957,58 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+            default: components["responses"]["Problem"];
+        };
+    };
+    getMeetingNotes: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: string;
+                meetingId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DocumentEnvelope"];
+                };
+            };
+            default: components["responses"]["Problem"];
+        };
+    };
+    initializeMeetingNotes: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: string;
+                meetingId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["MeetingNotesInitialize"];
+            };
+        };
+        responses: {
+            /** @description Successful response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DocumentEnvelope"];
+                };
             };
             default: components["responses"]["Problem"];
         };
@@ -6820,6 +6904,10 @@ export interface operations {
                         items: {
                             /** @enum {string} */
                             entity: "project" | "meeting" | "file";
+                            id: string;
+                            workspaceId: string;
+                        }[];
+                        documents?: {
                             id: string;
                             workspaceId: string;
                         }[];

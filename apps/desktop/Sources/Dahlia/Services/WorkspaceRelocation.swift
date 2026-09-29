@@ -17,8 +17,14 @@ struct WorkspaceRelocation: Decodable, Sendable {
         let workspaceId: UUID
     }
 
+    struct Document: Decodable, Sendable {
+        let id: UUID
+        let workspaceId: UUID
+    }
+
     let workspaces: [Workspace]
     let items: [Item]
+    var documents: [Document]?
 
     /// Only canonical IDs change affiliation. Recording paths and local payloads stay intact.
     func apply(connectionId: UUID, in db: Database) throws -> Bool {
@@ -38,8 +44,20 @@ struct WorkspaceRelocation: Decodable, Sendable {
                 moves.append((item, source))
             }
         }
-        guard !moves.isEmpty else { return false }
-        let affected = Set(moves.flatMap { [$0.0.workspaceId, $0.1] })
+        var documentMoves: [(Document, UUID)] = []
+        for item in documents ?? [] {
+            if let document = try DocumentRecord.fetchOne(db, key: item.id), document.meetingId == nil,
+               document.generation != nil, document.workspaceId != item.workspaceId {
+                guard try SyncTransactionQueue.matchesExpectedConnection(workspaceId: document.workspaceId, connectionId: connectionId, in: db),
+                      try !WorkspaceTransferFence.blocksRemoteChanges(workspaceID: document.workspaceId, in: db),
+                      try !WorkspaceTransferFence.blocksRemoteChanges(workspaceID: item.workspaceId, in: db)
+                else { throw SyncTransactionQueueError.invalidReceipt }
+                documentMoves.append((item, document.workspaceId))
+            }
+        }
+        guard !moves.isEmpty || !documentMoves.isEmpty else { return false }
+        let domainAffected = Set(moves.flatMap { [$0.0.workspaceId, $0.1] })
+        let affected = domainAffected.union(documentMoves.flatMap { [$0.0.workspaceId, $0.1] })
         for id in affected {
             // Committed audio awaiting local verification no longer needs an upload.
             let hasPendingAudio = try Bool.fetchOne(db, sql: """
@@ -51,44 +69,64 @@ struct WorkspaceRelocation: Decodable, Sendable {
                     WHERE json_extract(prepared.value, '$.checksum') IS NOT json_extract(canonical.value, '$.checksum')
                   )))
             """, arguments: [id]) == true
-            if try hasPendingAudio || SyncTransactionQueue.hasPending(workspaceId: id, in: db) {
+            if domainAffected.contains(id), try hasPendingAudio || SyncTransactionQueue.hasPending(workspaceId: id, in: db) {
                 throw SyncHTTPError(status: 409, body: Data("{\"error\":\"transfer_local_changes\"}".utf8))
             }
             if let existing = try WorkspaceRecord.fetchOne(db, key: id), existing.accountConnectionId != connectionId {
                 throw SyncTransactionQueueError.invalidReceipt
             }
-            if try RecordingSessionRecord.hasActiveRecording(workspaceId: id, in: db) {
+            if domainAffected.contains(id), try RecordingSessionRecord.hasActiveRecording(workspaceId: id, in: db) {
                 throw SyncHTTPError(status: 409, body: Data("{\"error\":\"transfer_recording_active\"}".utf8))
             }
         }
         for workspace in workspaces where affected.contains(workspace.workspaceId) {
-            guard ["admin", "editor", "viewer"].contains(workspace.role) else { throw SyncTransactionQueueError.invalidReceipt }
-            if let existing = try WorkspaceRecord.fetchOne(db, key: workspace.workspaceId), existing.organizationId != workspace.organizationId {
-                throw SyncTransactionQueueError.invalidReceipt
-            }
-            if try WorkspaceRecord.fetchOne(db, key: workspace.workspaceId) == nil {
-                try WorkspaceRecord(
-                    id: workspace.workspaceId,
-                    path: nil,
-                    name: workspace.name,
-                    createdAt: workspace.createdAt,
-                    lastOpenedAt: Date(),
-                    accountConnectionId: connectionId,
-                    personalUserId: workspace.personalUserId,
-                    organizationId: workspace.organizationId,
-                    syncRole: workspace.role,
-                    syncConfirmedConnectionId: connectionId
-                ).insert(db)
-            }
+            try Self.register(workspace, connectionId: connectionId, in: db)
         }
         try Self.move(moves, in: db)
+        for (item, source) in documentMoves {
+            try db.execute(
+                sql: "UPDATE documents SET workspace_id = ? WHERE id = ? AND workspace_id = ?",
+                arguments: [item.workspaceId, item.id, source]
+            )
+        }
         for id in affected {
             try db.execute(sql: """
-            UPDATE workspaces SET syncPullCursor = NULL, syncRecoveryState = NULL,
+            UPDATE workspaces SET syncPullCursor = CASE WHEN ? THEN NULL ELSE syncPullCursor END, syncRecoveryState = NULL,
                 syncMutationGeneration = syncMutationGeneration + 1 WHERE id = ?
-            """, arguments: [id])
+            """, arguments: [domainAffected.contains(id), id])
         }
         return true
+    }
+
+    /// Canonical metadata can refresh permissions, but cannot complete a local restore.
+    private static func register(_ workspace: Workspace, connectionId: UUID, in db: Database) throws {
+        guard ["admin", "editor", "viewer"].contains(workspace.role) else { throw SyncTransactionQueueError.invalidReceipt }
+        if let existing = try WorkspaceRecord.fetchOne(db, key: workspace.workspaceId) {
+            guard existing.organizationId == workspace.organizationId else { throw SyncTransactionQueueError.invalidReceipt }
+            // Only the snapshot builder can complete an existing restore/initial-sync checkpoint.
+            guard existing.syncConfirmedConnectionId == connectionId else {
+                throw SyncHTTPError(status: 409, body: Data("{\"error\":\"transfer_local_changes\"}".utf8))
+            }
+        }
+        if try WorkspaceRecord.fetchOne(db, key: workspace.workspaceId) == nil {
+            try WorkspaceRecord(
+                id: workspace.workspaceId,
+                path: nil,
+                name: workspace.name,
+                createdAt: workspace.createdAt,
+                lastOpenedAt: Date(),
+                accountConnectionId: connectionId,
+                personalUserId: workspace.personalUserId,
+                organizationId: workspace.organizationId,
+                syncRole: workspace.role,
+                syncConfirmedConnectionId: connectionId
+            ).insert(db)
+        } else {
+            try db.execute(
+                sql: "UPDATE workspaces SET syncRole = ?, personalUserId = ? WHERE id = ?",
+                arguments: [workspace.role, workspace.personalUserId, workspace.workspaceId]
+            )
+        }
     }
 
     /// Shared affiliation change for remote transfer and Local import. Caller owns validation and transaction.

@@ -64,13 +64,15 @@
                 """, arguments: [UUID.v7(), session.id, Date.now, Date.now])
             }
             try AppDatabaseManager.migrator.migrate(queue)
+            let personalUserID = UUID.v7()
             let relocation = WorkspaceRelocation(
                 workspaces: [.init(
                     workspaceId: destination.id,
                     organizationId: destination.organizationId ?? .v7(),
+                    personalUserId: personalUserID,
                     name: destination.name,
                     createdAt: .now,
-                    role: "admin"
+                    role: "viewer"
                 )],
                 items: [
                     .init(entity: .meeting, id: meeting.id, workspaceId: destination.id),
@@ -81,6 +83,10 @@
             #expect(try queue.write { try relocation.apply(connectionId: connection.id, in: $0) })
             #expect(try !queue.write { try relocation.apply(connectionId: connection.id, in: $0) })
             try queue.read { (db: Database) throws in
+                let movedWorkspace = try #require(try WorkspaceRecord.fetchOne(db, key: destination.id))
+                #expect(movedWorkspace.syncRole == "viewer" && !movedWorkspace.allowsCanonicalEdits)
+                #expect(movedWorkspace.personalUserId == personalUserID)
+                #expect(movedWorkspace.syncConfirmedConnectionId == connection.id)
                 #expect(try MeetingRecord.fetchOne(db, key: meeting.id)?.workspaceId == destination.id)
                 #expect(try ProjectRecord.fetchOne(db, key: child.id)?.parentProjectId == root.id)
                 #expect(try RecordingSessionRecord.fetchOne(db, key: session.id)?.meetingId == meeting.id)

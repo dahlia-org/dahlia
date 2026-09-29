@@ -4,6 +4,7 @@ import { describe, expect, it } from "vitest";
 import * as Y from "yjs";
 import { DocumentCore, decodeBinary, documentFragment, documentStateLimit, encodeBinary, mergeDocumentUpdates, removedBlocks } from "../src/documents/core";
 import { DocumentSession, type PendingDocumentUpdate } from "../src/documents/session";
+import { run as runNativeDocument } from "../src/documents/native-core";
 
 const id = () => crypto.randomUUID();
 const paragraph = (core: DocumentCore) => core.document.getXmlFragment(documentFragment).get(0) as Y.XmlElement;
@@ -150,4 +151,28 @@ it("publishes monotonic versions inside the durable queue even when a local edit
   await expect(session.accept("AAA=", false, { generation: "replaced", revision: 1 })).rejects.toThrow("document_generation_changed");
   expect(sequence).toBe(3);
   await session.close();
+});
+
+
+it("never serializes an oversized native checkpoint and can rebuild its durable log after a corrective deletion", () => {
+  const editor = new Y.Doc(), root = editor.getXmlFragment(documentFragment);
+  const insert = () => {
+    const paragraph = new Y.XmlElement("paragraph"), text = new Y.XmlText();
+    paragraph.setAttribute("id", id());
+    text.insert(0, "linked", { link: { href: `https://example.invalid/${"x".repeat(documentStateLimit / 2)}` } });
+    paragraph.insert(0, [text]); root.insert(root.length, [paragraph]);
+  };
+  try {
+    insert();
+    const checkpoint = encodeBinary(Y.encodeStateAsUpdate(editor));
+    const before = Y.encodeStateVector(editor); insert();
+    const addition = encodeBinary(Y.encodeStateAsUpdate(editor, before));
+    expect(() => runNativeDocument(JSON.stringify({ checkpoint, updates: [addition] }))).toThrow("document_too_large");
+    const oversized = Y.encodeStateVector(editor); root.delete(1, 1);
+    const deletion = encodeBinary(Y.encodeStateAsUpdate(editor, oversized));
+    const restored = JSON.parse(runNativeDocument(JSON.stringify({ checkpoint, updates: [addition, deletion] }))) as { checkpoint: string };
+    const valid = new DocumentCore(restored.checkpoint);
+    try { expect(valid.projection().text).toBe("linked"); expect(valid.document.store.pendingStructs).toBeNull(); }
+    finally { valid.destroy(); }
+  } finally { editor.destroy(); }
 });

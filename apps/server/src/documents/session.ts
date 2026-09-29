@@ -47,6 +47,7 @@ export class DocumentSession {
         const before = preview.projection();
         preview.apply(update);
         const projection = preview.projection();
+        const checkpoint = preview.checkpoint();
         const blocks = removedBlocks(before, projection);
         const recovery: DocumentRecovery | null = !local && this.hasLocalEdits && blocks.length
           ? { id: this.host.newID(), blocks, reason: "concurrent_delete" } : null;
@@ -55,7 +56,7 @@ export class DocumentSession {
         if (local) this.hasLocalEdits = true;
         this.generation = version.generation;
         this.revision = version.revision;
-        await this.host.checkpoint({ checkpoint: this.core.checkpoint(), projection, through: sequence,
+        await this.host.checkpoint({ checkpoint, projection, through: sequence,
           revision: this.revision, generation: this.generation });
       } finally { preview.destroy(); }
     });

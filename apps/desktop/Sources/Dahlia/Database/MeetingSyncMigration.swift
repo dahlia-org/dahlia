@@ -1,7 +1,7 @@
 import Foundation
 import GRDB
 
-/// Final unreleased synchronization schema. v1-v41 are the only published migrations.
+/// Released synchronization schema. Preserve v1-v46 and add forward migrations.
 enum MeetingSyncMigration {
     static func migrate(in db: Database, defaults: UserDefaults = .standard) throws {
         guard try ["vaults", "meetings", "screenshots", "transcript_segments", "dahlia_account_connections"]

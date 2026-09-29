@@ -9,14 +9,16 @@ export const documentRecoveryPageBytes = 6 * 1024 * 1024;
 const opaqueUUID = z.string().regex(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i);
 const checkpoint = z.string().max(Math.ceil(documentStateLimit / 3) * 4);
 const binary = z.string().max(Math.ceil(documentUpdateLimit / 3) * 4);
-export const documentInitializeSchema = z.object({ legacyUpdate: binary.optional() }).strict().openapi("DocumentInitialize");
+export const documentKindSchema = z.enum(["notes", "summary", "general"]);
+export const documentInitializeSchema = z.object({ meetingId: z.uuid().nullable(), kind: documentKindSchema, title: z.string().max(1000), legacyUpdate: binary.optional() }).strict().openapi("DocumentInitialize");
+export const meetingNotesInitializeSchema = z.object({ id: z.uuid(), legacyUpdate: binary.optional() }).strict().openapi("MeetingNotesInitialize");
 export const documentExchangeSchema = z.object({ generation: opaqueUUID, vector: binary, update: binary.optional() }).strict().openapi("DocumentExchange");
 export const documentExchangeResultSchema = z.object({ generation: opaqueUUID, revision: z.number().int(), update: checkpoint }).openapi("DocumentExchangeResult");
-export const sharedDocumentSchema = z.object({ id: z.uuid(), workspaceId: z.uuid(), meetingId: z.uuid(), schemaVersion: z.literal(1),
+export const sharedDocumentSchema = z.object({ id: z.uuid(), workspaceId: z.uuid(), meetingId: z.uuid().nullable(), kind: documentKindSchema, title: z.string(), schemaVersion: z.literal(1),
   generation: opaqueUUID, revision: z.number().int(), checkpoint, text: z.string(), createdAt: z.iso.datetime(), updatedAt: z.iso.datetime(),
 }).openapi("SharedDocument");
 export const documentEnvelopeSchema = z.object({ document: z.object(sharedDocumentSchema.shape).nullable().openapi("NullableSharedDocument") }).openapi("DocumentEnvelope");
-export const documentListSchema = z.object({ items: z.array(z.object({ id: z.uuid(), revision: z.number().int(), generation: opaqueUUID })), nextCursor: z.uuid().nullable() }).openapi("DocumentList");
+export const documentListSchema = z.object({ items: z.array(z.object({ id: z.uuid(), meetingId: z.uuid().nullable(), kind: documentKindSchema, revision: z.number().int(), generation: opaqueUUID })), nextCursor: z.uuid().nullable() }).openapi("DocumentList");
 export const documentRecoverySchema = z.object({ id: z.uuid(), reason: z.enum(["deleted", "concurrent_delete"]),
   blocks: z.array(z.object({ id: z.string().max(128), type: z.enum(["paragraph", "heading", "codeBlock"]), text: z.string().max(2_000_000) }).strict()).min(1).max(50_000),
 }).strict().openapi("DocumentRecovery");

@@ -13,7 +13,7 @@ vi.mock("react", async (importOriginal) => ({
   useEffect: (effect: () => void | (() => void)) => { hooks.effect = effect; },
   useState: (initial: unknown) => [initial, hooks.state],
 }));
-const api = vi.hoisted(() => ({ getSession: vi.fn(), getCapabilities: vi.fn(), getDocument: vi.fn(), exchangeDocument: vi.fn(),
+const api = vi.hoisted(() => ({ getSession: vi.fn(), getCapabilities: vi.fn(), getMeetingNotes: vi.fn(), exchangeDocument: vi.fn(),
   listDocumentRecoveries: vi.fn(), getDocumentPresence: vi.fn() }));
 vi.mock("../src/client/generated-operations", () => ({ apiOperations: api, apiUrls: { getDocumentEvents: () => "/events" } }));
 afterEach(async () => { await finishBrowserDocuments(); vi.useRealTimers(); vi.unstubAllGlobals(); vi.clearAllMocks(); });
@@ -32,11 +32,11 @@ function setup() {
   const server = new DocumentCore(); server.insertText("seed", uuidV7);
   const user = encodeId("user", uuidV7()), workspaceId = encodeId("workspace", uuidV7()), id = uuidV7();
   const meetingId = encodeId("meeting", id), generation = uuidV7();
-  const document = { id: encodeId("document", id), workspaceId, meetingId, generation, revision: 1, schemaVersion: 1,
+  const document = { id: encodeId("document", uuidV7()), workspaceId, meetingId, kind: "notes" as const, title: "", generation, revision: 1, schemaVersion: 1,
     checkpoint: server.checkpoint(), text: "seed", createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() };
   api.getSession.mockResolvedValue({ user: { id: user } });
   api.getCapabilities.mockResolvedValue({ documents: { version: 1 } });
-  api.getDocument.mockResolvedValue({ document });
+  api.getMeetingNotes.mockResolvedValue({ document });
   api.exchangeDocument.mockImplementation(async ({ body }: { body: { update?: string; vector: string } }) => {
     if (body.update) server.apply(body.update);
     return { generation, revision: 2, update: server.difference(body.vector) };
@@ -55,10 +55,10 @@ function setup() {
 it("releases a Notes load that completes after its view closes", async () => {
   const f = setup();
   const fetched = deferred<{ document: typeof f.document }>();
-  api.getDocument.mockReturnValueOnce(fetched.promise);
+  api.getMeetingNotes.mockReturnValueOnce(fetched.promise);
   const unmount = f.mount();
   try {
-    await vi.waitFor(() => expect(api.getDocument).toHaveBeenCalledOnce());
+    await vi.waitFor(() => expect(api.getMeetingNotes).toHaveBeenCalledOnce());
     unmount();
     fetched.resolve({ document: f.document });
     await vi.waitFor(() => expect(f.close).toHaveBeenCalledOnce());
@@ -71,10 +71,10 @@ it("releases a Notes load that completes after its view closes", async () => {
 it.each([false, true])("keeps overlapping Notes loads alive until the last view leaves (pending=%s)", async (pending) => {
   const f = setup();
   const fetched = deferred<{ document: typeof f.document }>();
-  api.getDocument.mockReturnValue(fetched.promise);
+  api.getMeetingNotes.mockReturnValue(fetched.promise);
   const first = f.mount(), second = f.mount();
   try {
-    await vi.waitFor(() => expect(api.getDocument).toHaveBeenCalledTimes(2));
+    await vi.waitFor(() => expect(api.getMeetingNotes).toHaveBeenCalledTimes(2));
     first();
     fetched.resolve({ document: f.document });
     await vi.waitFor(() => expect(hooks.state.mock.calls.some(([value]) => value instanceof BrowserDocument)).toBe(true));

@@ -27,46 +27,65 @@ it.runIf(process.env.TEST_DATABASE_URL)("enforces Documents RLS, composite tenan
           data: { name: "Meeting", projectId: null, description: "", status: "READY", duration: null, recordingStartedAt: null,
             createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() } }] : []),
       ] });
-    const doc = await first.sync.withIdentity(owner, (s) => s.initializeDocument(workspaceId, meetingId, core.checkpoint()));
-    expect((await client.query("SELECT * FROM app.documents WHERE id = $1", [meetingId])).rows).toEqual([]);
-    await expect(first.sync.withIdentity(reader, (s) => s.getDocument(workspaceId, meetingId))).rejects.toThrow("document_unavailable");
+    const documentId = uuidV7();
+    const doc = await first.sync.withIdentity(owner, (s) => s.initializeMeetingNotes(workspaceId, meetingId, documentId, core.checkpoint()));
+    expect((await client.query("SELECT * FROM app.documents WHERE id = $1", [documentId])).rows).toEqual([]);
+    const generalId = uuidV7();
+    await first.sync.withIdentity(owner, (s) => s.initializeDocument(workspaceId, generalId, { meetingId: null, kind: "general", title: "Independent" }));
+    expect((await second.sync.withIdentity(owner, (s) => s.getDocument(workspaceId, generalId)))?.meetingId).toBeNull();
+    await expect(second.sync.withIdentity(reader, (s) => s.getDocument(workspaceId, generalId))).rejects.toThrow("document_unavailable");
+    const concurrent = await Promise.all([first, second].map((store) => store.sync.withIdentity(owner, (s) => s.initializeMeetingNotes(workspaceId, meetingId, uuidV7()))));
+    expect(concurrent.map((row) => row.id)).toEqual([documentId, documentId]);
+    await expect(first.sync.withIdentity(reader, (s) => s.getDocument(workspaceId, documentId))).rejects.toThrow("document_unavailable");
     await client.query("BEGIN");
     await client.query("SELECT set_config('app.user_id', $1, true)", [owner.userId]);
     await client.query("INSERT INTO app.workspace_permissions(workspace_id, principal_type, principal_id, role, granted_by_user_id) VALUES ($1, 'user', $2, 'viewer', $3)", [workspaceId, reader.userId, owner.userId]);
     await client.query("COMMIT");
-    expect((await second.sync.withIdentity(reader, (s) => s.getDocument(workspaceId, meetingId)))?.text).toBe("private PostgreSQL document");
+    expect((await second.sync.withIdentity(reader, (s) => s.getDocument(workspaceId, documentId)))?.text).toBe("private PostgreSQL document");
     const recovery = { id: uuidV7(), reason: "concurrent_delete" as const, blocks: [{ id: uuidV7(), type: "paragraph", text: "retained" }] };
-    await first.sync.withIdentity(owner, (s) => s.saveDocumentRecovery(workspaceId, meetingId, recovery));
-    expect((await second.sync.withIdentity(reader, (s) => s.documentRecoveries(workspaceId, meetingId))).items[0]).toMatchObject(recovery);
-    await expect(first.sync.withIdentity(reader, (s) => s.exchangeDocument(workspaceId, meetingId,
+    await first.sync.withIdentity(owner, (s) => s.saveDocumentRecovery(workspaceId, documentId, recovery));
+    expect((await second.sync.withIdentity(reader, (s) => s.documentRecoveries(workspaceId, documentId))).items[0]).toMatchObject(recovery);
+    await expect(first.sync.withIdentity(reader, (s) => s.exchangeDocument(workspaceId, documentId,
       { generation: doc.generation, vector: core.vector(), update: core.checkpoint() }))).rejects.toThrow("document_unavailable");
     const session = uuidV7();
-    await first.sync.withIdentity(owner, (s) => s.documentPresence(workspaceId, meetingId, session));
-    expect(await second.sync.withIdentity(reader, (s) => s.documentPresence(workspaceId, meetingId))).toHaveLength(1);
+    await first.sync.withIdentity(owner, (s) => s.documentPresence(workspaceId, documentId, session));
+    expect(await second.sync.withIdentity(reader, (s) => s.documentPresence(workspaceId, documentId))).toHaveLength(1);
     await client.query("BEGIN");
     await client.query("SELECT set_config('app.user_id', $1, true)", [owner.userId]);
     await client.query("UPDATE app.document_presence SET expires_at = now() - interval '1 second' WHERE id = $1", [session]);
     await client.query("COMMIT");
-    expect(await second.sync.withIdentity(reader, (s) => s.documentPresence(workspaceId, meetingId))).toEqual([]);
+    expect(await second.sync.withIdentity(reader, (s) => s.documentPresence(workspaceId, documentId))).toEqual([]);
+    await client.query("BEGIN");
+    await client.query("SELECT set_config('app.user_id', $1, true)", [owner.userId]);
+    expect((await client.query("SELECT id FROM app.document_presence WHERE id = $1", [session])).rows).toEqual([{ id: session }]);
+    await client.query("COMMIT");
     // A different editor reclaims a departed user's expired session; viewer reads above remain allowed.
     await client.query("BEGIN");
     await client.query("SELECT set_config('app.user_id', $1, true)", [owner.userId]);
     await client.query("UPDATE app.workspace_permissions SET role = 'editor' WHERE workspace_id = $1 AND principal_id = $2", [workspaceId, reader.userId]);
     await client.query("COMMIT");
-    await second.sync.withIdentity(reader, (s) => s.documentPresence(workspaceId, meetingId));
+    await second.sync.withIdentity(reader, (s) => s.documentPresence(workspaceId, documentId, uuidV7()));
     await client.query("BEGIN");
     await client.query("SELECT set_config('app.user_id', $1, true)", [owner.userId]);
     expect((await client.query("SELECT id FROM app.document_presence WHERE id = $1", [session])).rows).toEqual([]);
     await client.query("COMMIT");
     await client.query("BEGIN");
     await client.query("SELECT set_config('app.user_id', $1, true)", [owner.userId]);
-    await expect(client.query("INSERT INTO app.document_updates(document_id, workspace_id, revision, update, created_at) VALUES ($1, $2, 2, 'AAA=', now())", [meetingId, otherWorkspace])).rejects.toMatchObject({ code: "23503" });
+    await expect(client.query("INSERT INTO app.document_updates(document_id, workspace_id, revision, update, created_at) VALUES ($1, $2, 2, 'AAA=', now())", [documentId, otherWorkspace])).rejects.toMatchObject({ code: "23503" });
+    await client.query("ROLLBACK");
+    await client.query("BEGIN");
+    await client.query("SELECT set_config('app.user_id', $1, true)", [owner.userId]);
+    await expect(client.query("UPDATE app.documents SET workspace_id = $1 WHERE id = $2", [otherWorkspace, documentId])).rejects.toMatchObject({ code: "23503" });
+    await client.query("ROLLBACK");
+    await client.query("BEGIN");
+    await client.query("SELECT set_config('app.user_id', $1, true)", [owner.userId]);
+    await expect(client.query("INSERT INTO app.documents(id, workspace_id, meeting_id, kind, title, generation, checkpoint, text, created_at, updated_at) SELECT $1, workspace_id, meeting_id, kind, title, generation, checkpoint, text, created_at, updated_at FROM app.documents WHERE id = $2", [uuidV7(), documentId])).rejects.toMatchObject({ code: "23505" });
     await client.query("ROLLBACK");
     await client.query("BEGIN");
     await client.query("SELECT set_config('app.user_id', $1, true)", [owner.userId]);
     await client.query("UPDATE app.workspaces SET deleting_at = now() WHERE workspace_id = $1", [workspaceId]);
     await client.query("COMMIT");
-    expect((await second.sync.withIdentity(reader, (s) => s.listDocuments(workspaceId))).items).toEqual([]);
+    await expect(second.sync.withIdentity(reader, (s) => s.listDocuments(workspaceId))).rejects.toThrow("document_unavailable");
   } finally {
     await client.query("ROLLBACK"); await client.end(); await first.close?.(); await second.close?.(); core.destroy();
   }

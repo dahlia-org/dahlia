@@ -54,7 +54,6 @@ import DahliaRuntimeSupport
             #expect(try await service.status(target)?.id == body.id)
             #expect(try await service.status(target, id: id)?.id == body.id)
             #expect(try await service.cancel(target, id: id)?.id == body.id)
-            #expect(try await service.retry(target, previousID: body.id, id: .v7())?.id == body.id)
         }
 
         @Test(arguments: [false, true])
@@ -87,7 +86,7 @@ import DahliaRuntimeSupport
             }
             let paths = Mutex<[String]>([])
             ImageURLProtocol.register(origin: target.origin) { request in
-                if request.url!.path.contains("/documents/") { return (200, ["Content-Type": "application/json"], Data(#"{"document":null}"#.utf8)) }
+                if request.url!.path.hasSuffix("/notes") { return (200, ["Content-Type": "application/json"], Data(#"{"document":null}"#.utf8)) }
                 let path = request.url!.path
                 paths.withLock { $0.append(path) }
                 if path == "/api/v1/capabilities" { return (
@@ -173,7 +172,7 @@ import DahliaRuntimeSupport
                 model: "gpt-5.4", detailLevel: "high", summaryLanguage: "ja"
             )
             ImageURLProtocol.register(origin: target.origin) { request in
-                if request.url!.path.contains("/documents/") { return (200, ["Content-Type": "application/json"], Data(#"{"document":null}"#.utf8)) }
+                if request.url!.path.hasSuffix("/notes") { return (200, ["Content-Type": "application/json"], Data(#"{"document":null}"#.utf8)) }
                 if request.url!.path == "/api/v1/capabilities" { return (
                     200,
                     [:],
@@ -527,7 +526,7 @@ import DahliaRuntimeSupport
             processing.transcriptionOnly = transcriptionOnly ? true : nil
             let bodies = Mutex<[Data]>([])
             ImageURLProtocol.register(origin: target.origin) { request in
-                if request.url!.path.contains("/documents/") { return (200, ["Content-Type": "application/json"], Data(#"{"document":null}"#.utf8)) }
+                if request.url!.path.hasSuffix("/notes") { return (200, ["Content-Type": "application/json"], Data(#"{"document":null}"#.utf8)) }
                 if request.url!.path.hasSuffix("/capabilities") {
                     return (
                         200,

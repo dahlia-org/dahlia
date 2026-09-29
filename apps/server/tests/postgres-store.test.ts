@@ -174,6 +174,8 @@ integration("PostgreSQL application store", () => {
       { id: crypto.randomUUID(), entity: "meeting", action: "create", entityId: meeting, baseRevision: null,
         data: meetingData(child, now, "Meeting", "") },
     ]));
+    const document = await store.sync.withIdentity(owner, (sync) => sync.initializeDocument(source, crypto.randomUUID(),
+      { meetingId: null, kind: "general", title: "Independent transfer" }));
     const request = { sourceWorkspaceId: source, destinationWorkspaceId: destination, sourceRevision: 1, destinationRevision: 1,
       audienceHash: (await store.sync.withIdentity(owner, (sync) => sync.workspaceTransferAudience(source, destination))).audienceHash,
       idempotencyKey: crypto.randomUUID(), requestHash: "first" };
@@ -185,6 +187,9 @@ integration("PostgreSQL application store", () => {
     const resolved = await store.sync.withIdentity(owner, (sync) => sync.getWorkspaceRelocations(source));
     const moved = resolved.items.find((item) => item.id === meeting)!;
     expect([destination, alternative]).toContain(moved.workspaceId);
+    expect(resolved.documents).toEqual([{ id: document.id, workspaceId: moved.workspaceId }]);
+    expect(await store.sync.withIdentity(owner, (sync) => sync.getDocument(moved.workspaceId, document.id)))
+      .toMatchObject({ id: document.id, title: "Independent transfer", meetingId: null });
     expect(await store.sync.withIdentity(owner, (sync) => sync.getMeeting(moved.workspaceId, meeting))).toMatchObject({ meetingId: meeting, projectId: child });
     expect(await store.sync.withIdentity(owner, (sync) => sync.getWorkspace(source))).toMatchObject({ hasResources: false });
     expect(await connection!.db.select().from(schema.workspaceTransfer)).toEqual([]);

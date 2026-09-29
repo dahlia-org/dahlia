@@ -785,6 +785,22 @@ export function createApp(dependencies: AppDependencies): DahliaServerApp & { ru
     ));
   });
   const documentParameters = (workspaceId: string, documentId: string) => [sync.parseId(workspaceId), sync.parseId(documentId)] as const;
+  registerApi(app, "getMeetingNotes", async (context) => {
+    const identity = await syncIdentity(context.req.raw);
+    const ids = documentParameters(context.req.param("workspaceId")!, context.req.param("meetingId")!);
+    context.header("Cache-Control", "no-store");
+    return context.json({ document: await store.sync.withIdentity(identity, (scoped) => scoped.getMeetingNotes(...ids)) });
+  });
+  registerApi(app, "initializeMeetingNotes", documentBodyLimit, async (context) => {
+    const requiresBrowserOrigin = config.authProvider === "accounts" && !context.req.header("authorization");
+    if ((requiresBrowserOrigin || context.req.header("origin")) && !mutationOriginAllowed(context.req.raw, config.baseUrl)) return context.json({ error: "invalid_origin" }, 403);
+    const identity = await syncIdentity(context.req.raw);
+    const ids = documentParameters(context.req.param("workspaceId")!, context.req.param("meetingId")!);
+    const parsed = DocumentContracts.meetingNotesInitializeSchema.safeParse(await context.req.json().catch(() => null));
+    if (!parsed.success) throw new RequestError(400, "invalid_document_request");
+    const result = await store.sync.withIdentity(identity, (scoped) => scoped.initializeMeetingNotes(...ids, parsed.data.id, parsed.data.legacyUpdate));
+    return context.json({ document: result });
+  });
   registerApi(app, "getDocument", async (context) => {
     const identity = await syncIdentity(context.req.raw);
     const ids = documentParameters(context.req.param("workspaceId")!, context.req.param("documentId")!);
@@ -831,7 +847,7 @@ export function createApp(dependencies: AppDependencies): DahliaServerApp & { ru
     const parsed = DocumentContracts.documentInitializeSchema.safeParse(await context.req.json().catch(() => null));
     if (!parsed.success) throw new RequestError(400, "invalid_document_request");
     const body = parsed.data;
-    const result = await store.sync.withIdentity(identity, (scoped) => scoped.initializeDocument(...ids, body.legacyUpdate));
+    const result = await store.sync.withIdentity(identity, (scoped) => scoped.initializeDocument(...ids, body));
     return context.json({ document: result });
   });
   registerApi(app, "exchangeDocument", documentBodyLimit, async (context) => {

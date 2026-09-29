@@ -483,15 +483,15 @@ final class MeetingRepository {
                     workspace.moveToLocalAccount()
                     try workspace.update(db)
                     try db.execute(
-                        sql: "UPDATE document_updates SET pending = 0 WHERE meetingId IN (SELECT id FROM meetings WHERE workspace_id = ?)",
+                        sql: "UPDATE document_updates SET pending = 0 WHERE documentId IN (SELECT id FROM documents WHERE workspace_id = ?)",
                         arguments: [workspace.id]
                     )
                     try db.execute(
-                        sql: "UPDATE documents SET generation = NULL, revision = 0 WHERE meetingId IN (SELECT id FROM meetings WHERE workspace_id = ?)",
+                        sql: "UPDATE documents SET generation = NULL, revision = 0 WHERE workspace_id = ?",
                         arguments: [workspace.id]
                     )
                     try db.execute(
-                        sql: "UPDATE document_recoveries SET pending = 0 WHERE meetingId IN (SELECT id FROM meetings WHERE workspace_id = ?)",
+                        sql: "UPDATE document_recoveries SET pending = 0 WHERE documentId IN (SELECT id FROM documents WHERE workspace_id = ?)",
                         arguments: [workspace.id]
                     )
                 }

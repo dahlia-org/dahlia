@@ -5216,7 +5216,9 @@ final class CaptionViewModel: ObservableObject {
                     )
                     if next.id == job.id { next.serverRequest = job.serverRequest }
                     if previous?.isRetryable == true {
-                        _ = try await self.serverSummaryService.retry(target, previousID: job.id.uuidString.lowercased(), id: next.id)
+                        _ = try await self.serverSummaryService.retry(
+                            target, previousID: job.id.uuidString.lowercased(), id: next.id, dbQueue: request.dbQueue
+                        )
                     }
                     self.summaryGenerationJobs.removeAll { $0.id == job.id }
                     self.summaryGenerationJobs.append(next)

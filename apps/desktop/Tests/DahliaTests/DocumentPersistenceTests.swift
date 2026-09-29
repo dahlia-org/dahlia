@@ -1,6 +1,7 @@
 #if canImport(Testing)
     import Foundation
     import GRDB
+    import Synchronization
     import Testing
     @testable import Dahlia
 
@@ -22,6 +23,21 @@
                 try MeetingRecord(id: meetingID, workspaceId: workspaceID, name: "Meeting", createdAt: .now, updatedAt: .now).insert(db)
             }
             return (queue, workspaceID, meetingID)
+        }
+
+        private func remoteDocument(_ queue: DatabaseQueue, meetingID: UUID) async throws -> DocumentRecord {
+            try await queue.read { db in
+                if let existing = try DocumentRecord.notes(in: db, meetingID: meetingID) { return existing }
+                let meeting = try #require(try MeetingRecord.fetchOne(db, key: meetingID))
+                return DocumentRecord(
+                    id: .v7(),
+                    workspaceId: meeting.workspaceId,
+                    meetingId: meetingID,
+                    checkpoint: "AAA=",
+                    createdAt: .now,
+                    updatedAt: .now
+                )
+            }
         }
 
         @Test(arguments: ["v41_vaultAISettingsBackfill", "v45_workspaceLiveTranscriptDraft", "v46_workspacePersonalUser"])
@@ -51,8 +67,8 @@
             #expect(try await persistence.prepare(meetingID: meetingID).projection.text == legacy)
             try await queue.read { db throws in
                 #expect(try MeetingNoteRecord.fetchOne(db, key: meetingID)?.text == legacy)
-                #expect(try DocumentRecord.fetchOne(db, key: meetingID)?.createdAt == date)
-                #expect(try DocumentRecord.fetchOne(db, key: meetingID)?.updatedAt == date)
+                #expect(try DocumentRecord.notes(in: db, meetingID: meetingID)?.createdAt == date)
+                #expect(try DocumentRecord.notes(in: db, meetingID: meetingID)?.updatedAt == date)
                 #expect(try String.fetchOne(db, sql: "PRAGMA integrity_check") == "ok")
             }
         }
@@ -125,7 +141,11 @@
             try await persistence.append(meetingID: id, update: update, local: true)
             _ = try await persistence.materialize(meetingID: id)
             try await queue.write { db throws in
-                #expect(try DocumentRetention.evict(meetingID: id, protectedWorkspaces: [], in: db) == 0)
+                #expect(try DocumentRetention.evict(
+                    documentID: #require(try DocumentRecord.notes(in: db, meetingID: id)).id,
+                    protectedWorkspaces: [],
+                    in: db
+                ) == 0)
                 try DocumentRetention.archiveBeforeRemoteDeletion(meetingID: id, in: db)
                 try MeetingRecord.deleteOne(db, key: id)
             }
@@ -146,6 +166,21 @@
             let persistence = DocumentPersistence(dbQueue: source.dbQueue)
             let update = try await persistence.legacyImport(text: "portable edits")
             try await persistence.append(meetingID: meetingID, update: update, local: true)
+            let generalID = UUID.v7()
+            try await source.dbQueue.write { db in
+                try DocumentRecord(
+                    id: generalID,
+                    workspaceId: workspaceID,
+                    meetingId: nil,
+                    kind: "general",
+                    title: "Independent",
+                    checkpoint: "AAA=",
+                    createdAt: .now,
+                    updatedAt: .now
+                ).insert(db)
+                var entry = DocumentUpdateRecord(documentId: generalID, payload: update, pending: true, createdAt: .now)
+                try entry.insert(db)
+            }
             try source.close()
             let destination = try AppDatabaseManager(path: ":memory:").dbQueue
             let workspace = WorkspaceRecord(id: .v7(), name: "Restored", createdAt: .now, lastOpenedAt: .now)
@@ -158,8 +193,12 @@
             }
             let restoredID = try #require(restored)
             #expect(restoredID != meetingID)
-            #expect(try await destination.read { try DocumentRecord.fetchOne($0, key: restoredID)?.meetingId } == restoredID)
+            #expect(try await destination.read { try DocumentRecord.notes(in: $0, meetingID: restoredID)?.meetingId } == restoredID)
             #expect(try await DocumentPersistence(dbQueue: destination).materialize(meetingID: restoredID).projection.text == "portable edits")
+            let general = try #require(try await destination.read { try DocumentRecord.filter(Column("kind") == "general").fetchOne($0) })
+            #expect(general.id != generalID && general.meetingId == nil && general.workspaceId == workspace.id && general.title == "Independent")
+            #expect(try await DocumentPersistence(dbQueue: destination).materialize(documentID: general.id).projection.text == "portable edits")
+            #expect(try await destination.read { try DocumentRecord.notes(in: $0, meetingID: restoredID)?.id } != restoredID)
         }
 
         @Test func revokedPermissionPreservesBridgedEditsWithoutPublishing() async throws {
@@ -174,16 +213,81 @@
             #expect(try await persistence.archives(workspaceID: workspaceID).first?.2.contains("typed before revocation") == true)
         }
 
+        @Test func viewerSyncReceivesWithoutPublishingPendingEditsAndFlushFails() async throws {
+            let (queue, workspaceID, meetingID) = try seed(server: true)
+            let persistence = DocumentPersistence(dbQueue: queue), generation = UUID.v7()
+            let document = try await remoteDocument(queue, meetingID: meetingID)
+            let shared = try await persistence.legacyImport(text: "shared"), pending = try await persistence.legacyImport(text: "private edit")
+            try await persistence.receive(document: document, update: shared, generation: generation, revision: 1, validate: { _ in })
+            try await persistence.append(meetingID: meetingID, update: pending, local: true)
+            let origin = "https://viewer-\(UUID.v7().uuidString.lowercased()).invalid"
+            try await queue.write { db in
+                try db.execute(sql: "UPDATE dahlia_account_connections SET origin = ?", arguments: [origin])
+                try db.execute(sql: "UPDATE workspaces SET syncRole = 'viewer' WHERE id = ?", arguments: [workspaceID])
+                try DocumentRecoveryRecord(id: .v7(), documentId: document.id, blocksJSON: "[]", reason: "deleted", pending: true, createdAt: .now)
+                    .insert(db)
+            }
+            let remoteEdit = try await persistence.legacyImport(text: "remote edit")
+            let response = try JSONSerialization.data(withJSONObject: ["generation": generation.uuidString, "revision": 2, "update": remoteEdit])
+            let writes = Mutex(0)
+            ImageURLProtocol.register(origin: origin) { request in
+                let path = request.url!.path
+                if path.hasSuffix("/capabilities") { return (200, [:], Data(#"{"documents":{"version":1}}"#.utf8)) }
+                if path.hasSuffix("/sync") {
+                    let body = try? JSONSerialization.jsonObject(with: request.httpBody ?? Data()) as? [String: Any]
+                    if body?["update"] is String { writes.withLock { $0 += 1 } }
+                    return (200, [:], response)
+                }
+                if path.hasSuffix("/recoveries") {
+                    if request.httpMethod == "POST" { writes.withLock { $0 += 1 } }
+                    return (200, [:], Data(#"{"items":[],"nextCursor":null}"#.utf8))
+                }
+                return (500, [:], Data())
+            }
+            defer { ImageURLProtocol.remove(origin: origin) }
+            let configuration = URLSessionConfiguration.ephemeral
+            configuration.protocolClasses = [ImageURLProtocol.self]
+            let api = SyncAPIClient(session: URLSession(configuration: configuration), tokenProvider: { _, _ in "test" })
+            let sync = DocumentSyncService(dbQueue: queue, api: api)
+            try await sync.synchronize(meetingID: meetingID)
+            await #expect(throws: SyncHTTPError.self) { try await sync.flush(meetingID: meetingID) }
+            #expect(writes.withLock { $0 } == 0)
+            let text = try await persistence.materialize(meetingID: meetingID).projection.text
+            #expect(text.contains("private edit") && text.contains("remote edit"))
+            try await queue.read { db throws in
+                #expect(try DocumentUpdateRecord.filter(Column("pending") == true).fetchCount(db) == 1)
+                #expect(try DocumentRecoveryRecord.filter(Column("pending") == true).fetchCount(db) == 1)
+            }
+        }
+
         @Test func acknowledgedSharedCacheCanBeEvictedAndRefetched() async throws {
             let (queue, _, meetingID) = try seed(server: true)
             let persistence = DocumentPersistence(dbQueue: queue)
             let update = try await persistence.legacyImport(text: "reconstructable")
             let generation = UUID.v7()
-            try await persistence.receive(meetingID: meetingID, update: update, generation: generation, revision: 1, validate: { _ in })
+            try await persistence.receive(
+                document: remoteDocument(queue, meetingID: meetingID),
+                update: update,
+                generation: generation,
+                revision: 1,
+                validate: { _ in }
+            )
             _ = try await persistence.materialize(meetingID: meetingID, compact: true)
-            #expect(try await queue.write { try DocumentRetention.evict(meetingID: meetingID, protectedWorkspaces: [], in: $0) } > 0)
-            #expect(try await queue.read { try DocumentRecord.fetchOne($0, key: meetingID)?.resident } == false)
-            try await persistence.receive(meetingID: meetingID, update: update, generation: generation, revision: 1, validate: { _ in })
+            #expect(try await queue.write { db in
+                try DocumentRetention.evict(
+                    documentID: #require(try DocumentRecord.notes(in: db, meetingID: meetingID)).id,
+                    protectedWorkspaces: [],
+                    in: db
+                )
+            } > 0)
+            #expect(try await queue.read { try DocumentRecord.notes(in: $0, meetingID: meetingID)?.resident } == false)
+            try await persistence.receive(
+                document: remoteDocument(queue, meetingID: meetingID),
+                update: update,
+                generation: generation,
+                revision: 1,
+                validate: { _ in }
+            )
             #expect(try await persistence.materialize(meetingID: meetingID).projection.text == "reconstructable")
         }
 
@@ -194,7 +298,13 @@
             defer { worker.stop() }
             let initial = try await worker.process(DocumentCoreCommand(text: "seed"))
             let originalGeneration = UUID.v7(), restoredGeneration = UUID.v7()
-            try await persistence.receive(meetingID: meetingID, update: initial.checkpoint, generation: originalGeneration, revision: 9, validate: { _ in })
+            try await persistence.receive(
+                document: remoteDocument(queue, meetingID: meetingID),
+                update: initial.checkpoint,
+                generation: originalGeneration,
+                revision: 9,
+                validate: { _ in }
+            )
             let edited: DocumentCoreResult
             if pending {
                 edited = try await worker.process(DocumentCoreCommand(checkpoint: initial.checkpoint, text: "old", vector: initial.vector))
@@ -202,14 +312,20 @@
             } else {
                 edited = initial
             }
-            try await persistence.receive(meetingID: meetingID, update: initial.checkpoint, generation: restoredGeneration, revision: 1, validate: { _ in })
+            try await persistence.receive(
+                document: remoteDocument(queue, meetingID: meetingID),
+                update: initial.checkpoint,
+                generation: restoredGeneration,
+                revision: 1,
+                validate: { _ in }
+            )
             // A still-open editor's next delta depends on the earlier local insertion.
             let next = try await worker.process(DocumentCoreCommand(checkpoint: edited.checkpoint, text: "new", vector: edited.vector))
             try await persistence.append(meetingID: meetingID, update: next.update, local: true)
             let expected = pending ? "seed\nold\nnew" : "seed\nnew"
             #expect(try await persistence.materialize(meetingID: meetingID).projection.text == expected)
             try await queue.read { db in
-                let record = try #require(try DocumentRecord.fetchOne(db, key: meetingID))
+                let record = try #require(try DocumentRecord.notes(in: db, meetingID: meetingID))
                 #expect(record.generation == restoredGeneration)
                 #expect(record.revision == 1)
                 #expect(try DocumentUpdateRecord.filter(Column("pending") == true).fetchCount(db) == (pending ? 2 : 1))
@@ -218,10 +334,12 @@
 
         @Test func acknowledgedRecoveryStillProtectsItsLocalCopy() async throws {
             let (queue, workspaceID, meetingID) = try seed(server: true)
+            let document = try await remoteDocument(queue, meetingID: meetingID)
             try await queue.write { db in
+                try document.insert(db)
                 try DocumentRecoveryRecord(
                     id: .v7(),
-                    meetingId: meetingID,
+                    documentId: document.id,
                     blocksJSON: "[]",
                     reason: "concurrent_delete",
                     pending: false,
@@ -243,9 +361,15 @@
             let (queue, workspaceID, meetingID) = try seed(server: true)
             try await queue.write { try $0.execute(sql: "UPDATE workspaces SET syncRole = 'viewer' WHERE id = ?", arguments: [workspaceID]) }
             let persistence = DocumentPersistence(dbQueue: queue), generation = UUID.v7()
-            try await persistence.receive(meetingID: meetingID, update: fixture.checkpoint, generation: generation, revision: 1, validate: { _ in })
             try await persistence.receive(
-                meetingID: meetingID,
+                document: remoteDocument(queue, meetingID: meetingID),
+                update: fixture.checkpoint,
+                generation: generation,
+                revision: 1,
+                validate: { _ in }
+            )
+            try await persistence.receive(
+                document: remoteDocument(queue, meetingID: meetingID),
                 update: fixture.deletionUpdate,
                 generation: generation,
                 revision: 2,
@@ -282,6 +406,456 @@
             }
             #expect(try await queue.read { try DocumentRecord.fetchCount($0) } == 0)
             #expect(try await persistence.archives(workspaceID: workspaceID).first?.2.contains("private before move\nlate input") == true)
+        }
+
+        @Test func v47UpgradePreservesDocumentRelationshipsAndBytes() throws {
+            let queue = try DatabaseQueue(configuration: AppDatabaseManager.configuration())
+            try AppDatabaseManager.migrator.migrate(queue, upTo: "v47_documents")
+            let workspaceID = UUID.v7(), meetingID = UUID.v7(), recoveryID = UUID.v7(), copyID = UUID.v7(), date = Date()
+            try queue.write { db in
+                try WorkspaceRecord(id: workspaceID, name: "Old", createdAt: date, lastOpenedAt: date).insert(db)
+                try MeetingRecord(id: meetingID, workspaceId: workspaceID, name: "Old", createdAt: date, updatedAt: date).insert(db)
+                try db.execute(
+                    sql: "INSERT INTO documents(id, meetingId, checkpoint, text, createdAt, updatedAt) VALUES (?, ?, 'AAA=', 'old projection', ?, ?)",
+                    arguments: [meetingID, meetingID, date, date]
+                )
+                try db.execute(
+                    sql: "INSERT INTO document_updates(meetingId, payload, pending, createdAt) VALUES (?, 'AAA=', 1, ?)",
+                    arguments: [meetingID, date]
+                )
+                try db.execute(
+                    sql: "INSERT INTO document_recoveries(id, meetingId, blocksJSON, reason, pending, createdAt) VALUES (?, ?, '[]', 'deleted', 1, ?)",
+                    arguments: [recoveryID, meetingID, date]
+                )
+                try db.execute(
+                    sql: "INSERT INTO document_private_copies(id, meetingId, checkpoint, text, createdAt, updatedAt) VALUES (?, ?, 'AAA=', 'private', ?, ?)",
+                    arguments: [copyID, meetingID, date, date]
+                )
+            }
+            try AppDatabaseManager.migrator.migrate(queue)
+            try queue.read { db in
+                let document = try #require(try DocumentRecord.notes(in: db, meetingID: meetingID))
+                #expect(document.id == meetingID) // Existing identity is preserved, but no longer required.
+                #expect(document.workspaceId == workspaceID && document.text == "old projection")
+                #expect(try DocumentUpdateRecord.fetchOne(db)?.documentId == document.id)
+                #expect(try DocumentRecoveryRecord.fetchOne(db, key: recoveryID)?.documentId == document.id)
+                #expect(try DocumentPrivateCopyRecord.fetchOne(db, key: copyID)?.workspaceId == workspaceID)
+                #expect(try Row.fetchAll(db, sql: "PRAGMA foreign_key_check").isEmpty)
+            }
+        }
+
+        @Test func canonicalNotesIDRebindPreservesPendingUpdatesAndRecoveries() async throws {
+            let (queue, workspaceID, meetingID) = try seed(server: true)
+            let persistence = DocumentPersistence(dbQueue: queue)
+            let update = try await persistence.legacyImport(text: "offline")
+            try await persistence.append(meetingID: meetingID, update: update, local: true)
+            let old = try #require(try await queue.read { try DocumentRecord.notes(in: $0, meetingID: meetingID) })
+            let recoveryID = UUID.v7(), canonicalID = UUID.v7()
+            try await queue.write { db in
+                try DocumentRecoveryRecord(id: recoveryID, documentId: old.id, blocksJSON: "[]", reason: "deleted", pending: true, createdAt: .now)
+                    .insert(db)
+            }
+            let remote = DocumentRecord(
+                id: canonicalID,
+                workspaceId: workspaceID,
+                meetingId: meetingID,
+                checkpoint: "AAA=",
+                createdAt: .now,
+                updatedAt: .now
+            )
+            try await persistence.receive(document: remote, update: "AAA=", generation: .v7(), revision: 0, validate: { _ in })
+            #expect(try await persistence.materialize(meetingID: meetingID).projection.text == "offline")
+            try await queue.read { db throws in
+                #expect(try DocumentRecord.fetchOne(db, key: old.id) == nil)
+                #expect(try DocumentRecord.notes(in: db, meetingID: meetingID)?.id == canonicalID)
+                #expect(try DocumentUpdateRecord.filter(Column("pending") == true).fetchOne(db)?.documentId == canonicalID)
+                #expect(try DocumentRecoveryRecord.fetchOne(db, key: recoveryID)?.documentId == canonicalID)
+                #expect(try Row.fetchAll(db, sql: "PRAGMA foreign_key_check").isEmpty)
+            }
+        }
+
+        @Test func independentDocumentOwnershipAndMeetingNotesUniqueness() async throws {
+            let (queue, workspaceID, meetingID) = try seed()
+            let other = UUID.v7(), generalID = UUID.v7()
+            let persistence = DocumentPersistence(dbQueue: queue)
+            let state = try await persistence.legacyImport(text: "general")
+            try await queue.write { db in
+                try WorkspaceRecord(id: other, name: "Other", createdAt: .now, lastOpenedAt: .now).insert(db)
+                try DocumentRecord(
+                    id: generalID,
+                    workspaceId: workspaceID,
+                    meetingId: nil,
+                    kind: "general",
+                    title: "Own title",
+                    checkpoint: state,
+                    createdAt: .now,
+                    updatedAt: .now
+                ).insert(db)
+                for _ in 0 ..< 2 {
+                    try DocumentRecord(
+                        id: .v7(),
+                        workspaceId: workspaceID,
+                        meetingId: meetingID,
+                        kind: "summary",
+                        checkpoint: "AAA=",
+                        createdAt: .now,
+                        updatedAt: .now
+                    ).insert(db)
+                }
+                try DocumentRecord(id: .v7(), workspaceId: workspaceID, meetingId: meetingID, checkpoint: "AAA=", createdAt: .now, updatedAt: .now)
+                    .insert(db)
+                #expect(throws: (any Error).self) {
+                    try DocumentRecord(
+                        id: .v7(),
+                        workspaceId: workspaceID,
+                        meetingId: meetingID,
+                        checkpoint: "AAA=",
+                        createdAt: .now,
+                        updatedAt: .now
+                    ).insert(db)
+                }
+                #expect(throws: (any Error).self) {
+                    try DocumentRecord(
+                        id: .v7(),
+                        workspaceId: other,
+                        meetingId: meetingID,
+                        kind: "general",
+                        checkpoint: "AAA=",
+                        createdAt: .now,
+                        updatedAt: .now
+                    ).insert(db)
+                }
+                try WorkspaceRelocation.move([(.init(entity: .meeting, id: meetingID, workspaceId: other), workspaceID)], in: db)
+                #expect(try DocumentRecord.notes(in: db, meetingID: meetingID)?.workspaceId == other)
+                try MeetingRecord.deleteOne(db, key: meetingID)
+                #expect(try DocumentRecord.fetchCount(db) == 1)
+            }
+            #expect(try await persistence.materialize(documentID: generalID).projection.text == "general")
+            try await persistence.prepareAccountTransfer(workspaceID: workspaceID)
+            try await queue.write { try DocumentPersistence.preservePrivateCopies(workspaceID: workspaceID, in: $0) }
+            let copy = try #require(try await queue.read { try DocumentPrivateCopyRecord.fetchOne($0) })
+            #expect(copy.meetingId == nil && copy.workspaceId == workspaceID && copy.kind == "general" && copy.title == "Own title")
+            #expect(copy.text == "general")
+        }
+
+        @Test func synchronizationResolvesNotesThenUsesCanonicalDocumentID() async throws {
+            let (queue, workspaceID, meetingID) = try seed(server: true)
+            let persistence = DocumentPersistence(dbQueue: queue), canonicalID = UUID.v7(), generation = UUID.v7()
+            let origin = "https://documents-\(UUID.v7().uuidString.lowercased()).invalid"
+            try await queue.write { try $0.execute(sql: "UPDATE dahlia_account_connections SET origin = ?", arguments: [origin]) }
+            try await persistence.append(meetingID: meetingID, update: persistence.legacyImport(text: "offline input"), local: true)
+            let proposed = try #require(try await queue.read { try DocumentRecord.notes(in: $0, meetingID: meetingID)?.id })
+            let response = try JSONSerialization.data(withJSONObject: ["document": [
+                "id": canonicalID.uuidString, "workspaceId": workspaceID.uuidString, "meetingId": meetingID.uuidString,
+                "kind": "notes", "title": "", "schemaVersion": 1, "generation": generation.uuidString, "revision": 0,
+                "checkpoint": "AAA=", "text": "", "createdAt": "2026-09-29T00:00:00.000Z", "updatedAt": "2026-09-29T00:00:00.000Z",
+            ]])
+            let exchange = try JSONSerialization.data(withJSONObject: ["generation": generation.uuidString, "revision": 1, "update": "AAA="])
+            ImageURLProtocol.register(origin: origin) { request in
+                let path = request.url!.path.lowercased()
+                if path.hasSuffix("/capabilities") { return (200, [:], Data(#"{"documents":{"version":1}}"#.utf8)) }
+                if path.hasSuffix("/meetings/\(meetingID.uuidString.lowercased())/notes") {
+                    if request.httpMethod == "GET" { return (200, [:], Data(#"{"document":null}"#.utf8)) }
+                    #expect((ImageURLProtocol.requestJSON(request)?["id"] as? String)?.lowercased() == proposed.uuidString.lowercased())
+                    return (200, [:], response)
+                }
+                #expect(path.contains("/documents/\(canonicalID.uuidString.lowercased())/"))
+                if path.hasSuffix("/sync") { return (200, [:], exchange) }
+                if path.hasSuffix("/recoveries") { return (200, [:], Data(#"{"items":[],"nextCursor":null}"#.utf8)) }
+                return (404, [:], Data())
+            }
+            defer { ImageURLProtocol.remove(origin: origin) }
+            let configuration = URLSessionConfiguration.ephemeral
+            configuration.protocolClasses = [ImageURLProtocol.self]
+            let client = SyncAPIClient(session: URLSession(configuration: configuration), tokenProvider: { _, _ in "test" })
+            try await DocumentSyncService(dbQueue: queue, api: client).synchronize(meetingID: meetingID)
+            #expect(try await persistence.materialize(meetingID: meetingID).projection.text == "offline input")
+            try await queue.read { db throws in
+                #expect(try DocumentRecord.notes(in: db, meetingID: meetingID)?.id == canonicalID)
+                #expect(try DocumentUpdateRecord.filter(Column("pending") == true).fetchCount(db) == 0)
+            }
+        }
+
+        @Test(arguments: [false, true])
+        func workspaceDownloadIncludesUnattachedDocumentsAndRebindsMovedOwnership(alreadyCached: Bool) async throws {
+            let (queue, workspaceID, _) = try seed(server: true)
+            let persistence = DocumentPersistence(dbQueue: queue)
+            let id = UUID.v7(), generation = UUID.v7(), oldWorkspaceID = UUID.v7()
+            let checkpoint = try await persistence.legacyImport(text: "Independent body")
+            let origin = "https://general-\(UUID.v7().uuidString.lowercased()).invalid"
+            try await queue.write { db in
+                try db.execute(sql: "UPDATE dahlia_account_connections SET origin = ?", arguments: [origin])
+                if alreadyCached {
+                    var oldWorkspace = try #require(try WorkspaceRecord.fetchOne(db, key: workspaceID))
+                    oldWorkspace.id = oldWorkspaceID
+                    try oldWorkspace.insert(db)
+                    try DocumentRecord(
+                        id: id, workspaceId: oldWorkspaceID, meetingId: nil, kind: "general", title: "Independent title",
+                        revision: 1, generation: generation, checkpoint: checkpoint, text: "Independent body",
+                        createdAt: .now, updatedAt: .now
+                    ).insert(db)
+                    var update = DocumentUpdateRecord(documentId: id, payload: "AAA=", pending: true, createdAt: .now)
+                    try update.insert(db)
+                }
+            }
+            let item: [String: Any] = [
+                "id": id.uuidString, "meetingId": NSNull(), "kind": "general", "generation": generation.uuidString, "revision": 1,
+            ]
+            let listing = try JSONSerialization.data(withJSONObject: ["items": [item], "nextCursor": NSNull()])
+            let response = try JSONSerialization.data(withJSONObject: ["document": [
+                "id": id.uuidString, "workspaceId": workspaceID.uuidString, "meetingId": NSNull(),
+                "kind": "general", "title": "Independent title", "schemaVersion": 1,
+                "generation": generation.uuidString, "revision": 1, "checkpoint": checkpoint, "text": "Independent body",
+                "createdAt": "2026-09-29T00:00:00.000Z", "updatedAt": "2026-09-29T00:00:00.000Z",
+            ]])
+            let exchange = try JSONSerialization.data(withJSONObject: ["generation": generation.uuidString, "revision": 1, "update": "AAA="])
+            ImageURLProtocol.register(origin: origin) { request in
+                let path = request.url!.path.lowercased()
+                if path.hasSuffix("/capabilities") { return (200, [:], Data(#"{"documents":{"version":1}}"#.utf8)) }
+                #expect(path.contains("/workspaces/\(workspaceID.uuidString.lowercased())/documents"))
+                if path.hasSuffix("/documents") { return (200, [:], listing) }
+                if path.hasSuffix("/documents/\(id.uuidString.lowercased())") { return (200, [:], response) }
+                if path.hasSuffix("/sync") { return (200, [:], exchange) }
+                if path.hasSuffix("/recoveries") { return (200, [:], Data(#"{"items":[],"nextCursor":null}"#.utf8)) }
+                return (404, [:], Data())
+            }
+            defer { ImageURLProtocol.remove(origin: origin) }
+            let configuration = URLSessionConfiguration.ephemeral
+            configuration.protocolClasses = [ImageURLProtocol.self]
+            let client = SyncAPIClient(session: URLSession(configuration: configuration), tokenProvider: { _, _ in "test" })
+            try await DocumentSyncService(dbQueue: queue, api: client).synchronizeWorkspace(workspaceID: workspaceID)
+            #expect(try await persistence.materialize(documentID: id).projection.text == "Independent body")
+            try await queue.read { db in
+                let row = try #require(try DocumentRecord.fetchOne(db, key: id))
+                #expect(row.workspaceId == workspaceID && row.meetingId == nil && row.title == "Independent title")
+                #expect(try DocumentUpdateRecord.filter(Column("pending") == true).fetchCount(db) == 0)
+                #expect(try Row.fetchAll(db, sql: "PRAGMA foreign_key_check").isEmpty)
+            }
+        }
+
+        @Test(arguments: ["moved", "movedViewer", "restoringDestination", "denied", "unavailable"])
+        func standaloneTransferBeforeCatalogDiscoveryPreservesPendingEdits(scenario: String) async throws {
+            let moved = scenario.hasPrefix("moved"), viewer = scenario == "movedViewer"
+            let (queue, sourceID, _) = try seed(server: true)
+            let destinationID = UUID.v7(), id = UUID.v7(), generation = UUID.v7()
+            let persistence = DocumentPersistence(dbQueue: queue)
+            let checkpoint = try await persistence.legacyImport(text: "shared")
+            let pending = try await persistence.legacyImport(text: "pending edit")
+            let origin = "https://relocated-\(UUID.v7().uuidString.lowercased()).invalid"
+            let organizationID = try await queue.write { db in
+                try db.execute(sql: "UPDATE dahlia_account_connections SET origin = ?", arguments: [origin])
+                try DocumentRecord(
+                    id: id, workspaceId: sourceID, meetingId: nil, kind: "general", title: "Independent",
+                    revision: 1, generation: generation, checkpoint: checkpoint, text: "shared", createdAt: .now, updatedAt: .now
+                ).insert(db)
+                var update = DocumentUpdateRecord(documentId: id, payload: pending, pending: true, createdAt: .now)
+                try update.insert(db)
+                let source = try #require(try WorkspaceRecord.fetchOne(db, key: sourceID))
+                if scenario == "restoringDestination" {
+                    try WorkspaceRecord(
+                        id: destinationID, name: "Restoring", createdAt: .now, lastOpenedAt: .now,
+                        accountConnectionId: source.accountConnectionId, organizationId: source.organizationId,
+                        syncRole: "admin", syncConfirmedConnectionId: nil
+                    ).insert(db)
+                }
+                return try #require(source.organizationId)
+            }
+            let relocation = try JSONSerialization.data(withJSONObject: [
+                "workspaces": [[
+                    "workspaceId": destinationID.uuidString,
+                    "organizationId": organizationID.uuidString,
+                    "organizationName": "Organization",
+                    "meetingDeletionGraceDays": 7,
+                    "generationSettings": JSONSerialization.jsonObject(with: JSONEncoder().encode(WorkspaceGenerationSettings())),
+                    "name": "Destination",
+                    "createdAt": "2026-09-29T00:00:00.000Z",
+                    "updatedAt": "2026-09-29T00:00:00.000Z",
+                    "revision": 1,
+                    "role": viewer ? "viewer" : "admin",
+                ]],
+                "items": [], "documents": [["id": id.uuidString, "workspaceId": destinationID.uuidString]],
+            ])
+            let item: [String: Any] = [
+                "id": id.uuidString, "meetingId": NSNull(), "kind": "general", "generation": generation.uuidString, "revision": 1,
+            ]
+            let listing = try JSONSerialization.data(withJSONObject: ["items": [item], "nextCursor": NSNull()])
+            let exchange = try JSONSerialization.data(withJSONObject: ["generation": generation.uuidString, "revision": 2, "update": "AAA="])
+            let sent = Mutex<String?>(nil)
+            ImageURLProtocol.register(origin: origin) { request in
+                let path = request.url!.path.lowercased()
+                if path.hasSuffix("/capabilities") { return (200, [:], Data(#"{"documents":{"version":1}}"#.utf8)) }
+                if path.contains(destinationID.uuidString.lowercased()) {
+                    if path.hasSuffix("/documents") { return (200, [:], listing) }
+                    if path.hasSuffix("/sync") {
+                        if let data = request.httpBody,
+                           let body = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
+                            sent.withLock { $0 = body["update"] as? String }
+                        }
+                        return (200, [:], exchange)
+                    }
+                    if path.hasSuffix("/recoveries") { return (200, [:], Data(#"{"items":[],"nextCursor":null}"#.utf8)) }
+                }
+                if path.hasSuffix("/documents") { return (200, [:], Data(#"{"items":[],"nextCursor":null}"#.utf8)) }
+                if path.hasSuffix("/relocations") {
+                    return (moved || scenario == "restoringDestination" ? 200 : scenario == "denied" ? 403 : 503, [:], relocation)
+                }
+                return (404, [:], Data())
+            }
+            defer { ImageURLProtocol.remove(origin: origin) }
+            let configuration = URLSessionConfiguration.ephemeral
+            configuration.protocolClasses = [ImageURLProtocol.self]
+            let api = SyncAPIClient(session: URLSession(configuration: configuration), tokenProvider: { _, _ in "test" })
+            let sync = DocumentSyncService(dbQueue: queue, api: api)
+            if moved {
+                try await sync.synchronizeWorkspace(workspaceID: sourceID)
+            } else {
+                await #expect(throws: (any Error).self) { try await sync.synchronizeWorkspace(workspaceID: sourceID) }
+            }
+            try await queue.read { db throws in
+                #expect(try DocumentRecord.fetchOne(db, key: id)?.workspaceId == (moved ? destinationID : sourceID))
+                #expect(try DocumentUpdateRecord.filter(Column("pending") == true).fetchCount(db) == 1)
+                #expect(try DocumentLocalArchiveRecord.fetchCount(db) == 0)
+                if scenario == "restoringDestination" {
+                    #expect(try WorkspaceRecord.fetchOne(db, key: destinationID)?.syncConfirmedConnectionId == nil)
+                }
+            }
+            if moved {
+                try await sync.synchronizeWorkspace(workspaceID: destinationID)
+                if viewer {
+                    #expect(sent.withLock { $0 } == nil)
+                    #expect(try await queue.read { try DocumentUpdateRecord.filter(Column("pending") == true).fetchCount($0) } == 1)
+                    #expect(try await persistence.materialize(documentID: id).projection.text.contains("pending edit"))
+                    try await queue
+                        .write { try $0.execute(sql: "UPDATE workspaces SET syncRole = 'editor' WHERE id = ?", arguments: [destinationID]) }
+                    try await sync.synchronizeWorkspace(workspaceID: destinationID)
+                }
+                #expect(try await queue.read { try DocumentUpdateRecord.filter(Column("pending") == true).fetchCount($0) } == 0)
+                let worker = DocumentCoreWorker()
+                defer { worker.stop() }
+                let update = try #require(sent.withLock { $0 })
+                #expect(try await worker.process(DocumentCoreCommand(checkpoint: checkpoint, updates: [update])).projection.text
+                    .contains("pending edit"))
+            }
+        }
+
+        @Test(arguments: ["missing", "inventoryFailure", "readFailure", "changedGeneration"], [false, true])
+        func missingStandaloneCacheRequiresCanonicalAbsenceAndPreservesPrivateBytes(scenario: String, pending: Bool) async throws {
+            let (queue, workspaceID, _) = try seed(server: true)
+            let persistence = DocumentPersistence(dbQueue: queue), id = UUID.v7(), generation = UUID.v7()
+            let checkpoint = try await persistence.legacyImport(text: "Retained body")
+            let origin = "https://missing-\(UUID.v7().uuidString.lowercased()).invalid"
+            try await queue.write { db in
+                try db.execute(sql: "UPDATE dahlia_account_connections SET origin = ?", arguments: [origin])
+                try DocumentRecord(
+                    id: id, workspaceId: workspaceID, meetingId: nil, kind: "general", title: "Document",
+                    revision: 1, generation: generation, checkpoint: checkpoint, text: "Retained body", createdAt: .now, updatedAt: .now
+                ).insert(db)
+                if pending {
+                    var update = DocumentUpdateRecord(documentId: id, payload: "AAA=", pending: true, createdAt: .now)
+                    try update.insert(db)
+                }
+                try DocumentPrivateCopyRecord(
+                    id: .v7(), workspaceId: workspaceID, meetingId: nil, kind: "general", title: "Private",
+                    checkpoint: checkpoint, text: "Private body", createdAt: .now, updatedAt: .now
+                ).insert(db)
+            }
+            ImageURLProtocol.register(origin: origin) { request in
+                let path = request.url!.path.lowercased()
+                if path.hasSuffix("/capabilities") { return (200, [:], Data(#"{"documents":{"version":1}}"#.utf8)) }
+                if path.hasSuffix("/documents") {
+                    return scenario == "inventoryFailure" ? (503, [:], Data()) : (200, [:], Data(#"{"items":[],"nextCursor":null}"#.utf8))
+                }
+                if path.hasSuffix("/sync") { return (404, [:], Data()) }
+                if path.hasSuffix("/relocations") { return (200, [:], Data(#"{"workspaces":[],"items":[],"documents":[]}"#.utf8)) }
+                if path.hasSuffix("/documents/\(id.uuidString.lowercased())") {
+                    if scenario == "changedGeneration" {
+                        do {
+                            try queue.write { try $0.execute(sql: "UPDATE documents SET generation = ? WHERE id = ?", arguments: [UUID.v7(), id]) }
+                        } catch {
+                            Issue.record(error)
+                        }
+                    }
+                    return (scenario == "readFailure" ? 503 : 404, [:], Data())
+                }
+                Issue.record("Unexpected route: \(path)")
+                return (500, [:], Data())
+            }
+            defer { ImageURLProtocol.remove(origin: origin) }
+            let configuration = URLSessionConfiguration.ephemeral
+            configuration.protocolClasses = [ImageURLProtocol.self]
+            let client = SyncAPIClient(session: URLSession(configuration: configuration), tokenProvider: { _, _ in "test" })
+            let sync = DocumentSyncService(dbQueue: queue, api: client)
+            if scenario == "missing" {
+                try await sync.synchronizeWorkspace(workspaceID: workspaceID)
+            } else {
+                await #expect(throws: (any Error).self) { try await sync.synchronizeWorkspace(workspaceID: workspaceID) }
+            }
+            try await queue.read { db throws in
+                #expect(try DocumentRecord.fetchCount(db) == (scenario == "missing" ? 0 : 1))
+                #expect(try DocumentPrivateCopyRecord.fetchOne(db)?.text == "Private body")
+                #expect(try DocumentUpdateRecord.filter(Column("pending") == true).fetchCount(db) == (pending && scenario != "missing" ? 1 : 0))
+            }
+            let archives = try await persistence.archives(workspaceID: workspaceID)
+            #expect(archives.count == (pending && scenario == "missing" ? 1 : 0))
+            if pending, scenario == "missing" { #expect(archives.first?.2.contains("Retained body") == true) }
+        }
+
+        @Test(arguments: [false, true])
+        func directSummaryRetryFlushesNotesBeforeSnapshotAndStopsOnFailure(fails: Bool) async throws {
+            let (queue, workspaceID, meetingID) = try seed(server: true)
+            let persistence = DocumentPersistence(dbQueue: queue), generation = UUID.v7()
+            let origin = "https://retry-\(UUID.v7().uuidString.lowercased()).invalid"
+            try await queue.write { db in
+                try db.execute(sql: "UPDATE dahlia_account_connections SET origin = ?", arguments: [origin])
+                try db.execute(sql: "UPDATE workspaces SET syncPullCursor = 'ready' WHERE id = ?", arguments: [workspaceID])
+                try DocumentRecord(
+                    id: .v7(), workspaceId: workspaceID, meetingId: meetingID, generation: generation,
+                    checkpoint: "AAA=", createdAt: .now, updatedAt: .now
+                ).insert(db)
+            }
+            try await persistence.append(meetingID: meetingID, update: persistence.legacyImport(text: "Pending snapshot input"), local: true)
+            let calls = Mutex<[String]>([])
+            let retryResponse = try JSONSerialization.data(withJSONObject: ["job": [
+                "id": generation.uuidString, "method": "transcript", "status": "pending", "attempts": 0,
+                "settings": ["model": "gpt-5.4", "detail": "high", "reasoningEffort": "medium"], "outputLanguage": "ja", "error": NSNull(),
+                "createdAt": "2026-09-29T00:00:00.000Z",
+            ]])
+            let exchange = try JSONSerialization.data(withJSONObject: ["generation": generation.uuidString, "revision": 1, "update": "AAA="])
+            ImageURLProtocol.register(origin: origin) { request in
+                let path = request.url!.path
+                if path.hasSuffix("/capabilities") { return (200, [:], Data(#"{"documents":{"version":1}}"#.utf8)) }
+                if path.hasSuffix("/sync") {
+                    calls.withLock { $0.append("sync") }
+                    #expect(ImageURLProtocol.requestJSON(request)?["update"] is String)
+                    return fails ? (503, [:], Data()) : (200, [:], exchange)
+                }
+                if path.hasSuffix("/recoveries") { return (200, [:], Data(#"{"items":[],"nextCursor":null}"#.utf8)) }
+                if path.hasSuffix("/retry") {
+                    calls.withLock { $0.append("retry") }
+                    do {
+                        #expect(try queue.read { try DocumentUpdateRecord.filter(Column("pending") == true).fetchCount($0) } == 0)
+                    } catch {
+                        Issue.record(error)
+                    }
+                    return (202, [:], retryResponse)
+                }
+                Issue.record("Unexpected route: \(path)")
+                return (500, [:], Data())
+            }
+            defer { ImageURLProtocol.remove(origin: origin) }
+            let configuration = URLSessionConfiguration.ephemeral
+            configuration.protocolClasses = [ImageURLProtocol.self]
+            let client = SyncAPIClient(session: URLSession(configuration: configuration), tokenProvider: { _, _ in "test" })
+            let service = ServerSummaryService(client: client, synchronize: { _, _ in })
+            let target = try #require(try await service.target(meetingID: meetingID, dbQueue: queue))
+            if fails {
+                await #expect(throws: (any Error).self) {
+                    try await service.retry(target, previousID: UUID.v7().uuidString, id: .v7(), dbQueue: queue)
+                }
+            } else {
+                _ = try await service.retry(target, previousID: UUID.v7().uuidString, id: .v7(), dbQueue: queue)
+            }
+            #expect(calls.withLock { $0 } == (fails ? ["sync"] : ["sync", "retry"]))
         }
 
         @Test func failedMigrationRollsBackWithoutChangingLegacyRows() throws {
@@ -380,6 +954,44 @@
             }
         }
 
+        @Test func transientDraftResolutionRestoresCausalHistoryAndLaterEditing() async throws {
+            let queue = try AppDatabaseManager(path: ":memory:").dbQueue
+            let workspace = WorkspaceRecord(id: .v7(), name: "Local", createdAt: .now, lastOpenedAt: .now), draftID = UUID.v7()
+            try await queue.write { try workspace.insert($0) }
+            let resolved = Mutex(false)
+            let model = DocumentEditorModel(
+                dbQueue: queue, meetingID: nil, orphan: .init(workspaceID: workspace.id, meetingID: draftID, name: "Draft"),
+                resolveMeeting: { resolved.withLock { $0 } ? draftID : nil }
+            )
+            await model.load()
+            let core = DocumentCoreWorker()
+            defer { core.stop() }
+            let first = try await core.process(DocumentCoreCommand(text: "Before resolution", repair: true))
+            model.accept(first.update)
+            try await model.finishLocalSaves()
+            #expect(try await queue.read { try DocumentRecord.fetchCount($0) } == 0)
+            try await queue
+                .write { try MeetingRecord(id: draftID, workspaceId: workspace.id, name: "Resolved", createdAt: .now, updatedAt: .now).insert($0) }
+            resolved.withLock { $0 = true }
+            // A summary/save flush also resolves the draft if no further keystroke arrives.
+            try await model.finishLocalSaves()
+            #expect(try await DocumentPersistence(dbQueue: queue).materialize(meetingID: draftID).projection.text == "Before resolution")
+            let second = try await core.process(DocumentCoreCommand(checkpoint: first.checkpoint, text: "After resolution", vector: first.vector))
+            model.accept(second.update)
+            try await model.finishLocalSaves()
+            let third = try await core.process(DocumentCoreCommand(checkpoint: second.checkpoint, text: "Continued", vector: second.vector))
+            model.accept(third.update)
+            try await model.finishLocalSaves()
+            let text = try await DocumentPersistence(dbQueue: queue).materialize(meetingID: draftID).projection.text
+            #expect(text == "Before resolution\nAfter resolution\nContinued")
+            try await model.synchronizeVisibleDocument()
+            #expect(model.status == L10n.documentSavedLocally)
+            #expect(model.error.isEmpty)
+            #expect(try await queue.read { try DocumentLocalArchiveRecord.fetchCount($0) } == 1)
+            model.stop()
+            try await model.finishLocalSaves()
+        }
+
         @Test func unresolvedDraftRetainsOriginalWorkspaceAndNeverPublishesItsPrivateFallback() async throws {
             let queue = try AppDatabaseManager(path: ":memory:").dbQueue
             let workspace = WorkspaceRecord(id: .v7(), name: "Original", createdAt: .now, lastOpenedAt: .now)
@@ -462,7 +1074,9 @@
 
         func release() {
             released = true
-            for waiter in waiters { waiter.resume() }
+            for waiter in waiters {
+                waiter.resume()
+            }
             waiters.removeAll()
         }
     }

@@ -9,6 +9,27 @@
 
     @MainActor
     struct LocalWorkspaceImportTests {
+        @Test func importsUnattachedPrivateDocumentsWithoutPublishingThem() async throws {
+            let fixture = try LocalImportFixture(role: "admin")
+            defer { fixture.close() }
+            let queue = fixture.database.dbQueue, id = UUID.v7()
+            try await queue.write { db in
+                try DocumentRecord(
+                    id: id, workspaceId: fixture.source.id, meetingId: nil, kind: "general", title: "Private title",
+                    checkpoint: "AAA=", text: "Retained projection", createdAt: .now, updatedAt: .now
+                ).insert(db)
+                _ = try fixture.commit(in: db)
+                let copy = try #require(try DocumentPrivateCopyRecord.fetchOne(db))
+                #expect(copy.workspaceId == fixture.target.id && copy.meetingId == nil && copy.kind == "general")
+                #expect(copy.title == "Private title" && copy.text == "Retained projection" && copy.checkpoint == "AAA=")
+                #expect(try DocumentRecord.fetchCount(db) == 0)
+                #expect(try Int.fetchOne(db, sql: "SELECT count(*) FROM sync_operations WHERE entity = 'document'") == 0)
+                try WorkspaceRecord.deleteOne(db, key: fixture.source.id)
+                #expect(try DocumentPrivateCopyRecord.fetchCount(db) == 1)
+                #expect(try Row.fetchAll(db, sql: "PRAGMA foreign_key_check").isEmpty)
+            }
+        }
+
         @Test(arguments: ["admin", "editor"])
         func importsIntoANonemptyWorkspaceAndTracksOnlyInitialWork(role: String) async throws {
             let fixture = try LocalImportFixture(role: role)

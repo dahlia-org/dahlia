@@ -229,6 +229,7 @@ export interface SyncSearchQuery {
 }
 
 export interface WorkspaceRelocations {
+  documents: { id: string; workspaceId: string }[];
   workspaces: SyncWorkspaceRecord[];
   items: { entity: "project" | "meeting" | "file"; id: string; workspaceId: string }[];
 }
@@ -248,7 +249,7 @@ export interface WorkspaceTransferRecord {
   id: string;
   sourceWorkspaceId: string;
   destinationWorkspaceId: string;
-  manifest: { projects: string[]; meetings: string[]; files: string[] };
+  manifest: { projects: string[]; meetings: string[]; files: string[]; documents?: string[] };
 }
 
 export interface GovernanceWorkspace { workspaceId: string; name: string; icon?: string | null; color?: string | null; revision: number; creatorId: string }

@@ -25,7 +25,8 @@ enum DocumentPublication {
                 ) ?? false
                 return try (
                     published,
-                    DocumentPrivateCopyRecord.filter(Column("meetingId") == meeting.id).order(Column("updatedAt").desc).fetchOne(db),
+                    DocumentPrivateCopyRecord.filter(Column("meetingId") == meeting.id).filter(Column("kind") == "notes")
+                        .order(Column("updatedAt").desc).fetchOne(db),
                     MeetingNoteRecord.fetchOne(db, key: meeting.id)
                 )
             }
@@ -35,6 +36,7 @@ enum DocumentPublication {
                 let checkpoint = try await persistence.legacyImport(text: note.text)
                 let prepared = DocumentPrivateCopyRecord(
                     id: .v7(),
+                    workspaceId: meeting.workspaceId,
                     meetingId: meeting.id,
                     checkpoint: checkpoint,
                     text: note.text,
@@ -63,11 +65,11 @@ enum DocumentPublication {
             guard let target = try await sync.target(meetingID: candidate.meetingID), target.workspaceID == workspaceID,
                   target.connectionID == connectionID else { throw DocumentCoreError.unavailable }
             do {
-                let workspaceID = workspaceID.uuidString.lowercased(), documentID = candidate.meetingID.uuidString.lowercased()
+                let workspaceID = workspaceID.uuidString.lowercased(), meetingID = candidate.meetingID.uuidString.lowercased()
                 _ = try await client.data(origin: target.origin, connectionId: target.connectionID, maximumBytes: DocumentLimits.responseBytes) {
-                    try await $0.initializeDocument(
-                        path: .init(workspaceId: workspaceID, documentId: documentID),
-                        body: .json(.init(legacyUpdate: candidate.checkpoint))
+                    try await $0.initializeMeetingNotes(
+                        path: .init(workspaceId: workspaceID, meetingId: meetingID),
+                        body: .json(.init(id: UUID.v7().uuidString.lowercased(), legacyUpdate: candidate.checkpoint))
                     ).ok.body.json
                 }
                 try await sync.synchronize(meetingID: candidate.meetingID)

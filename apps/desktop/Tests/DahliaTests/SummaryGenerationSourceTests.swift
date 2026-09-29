@@ -292,7 +292,7 @@ import DahliaRuntimeSupport
                 outputLanguage: .ja
             )
             ImageURLProtocol.register(origin: target.origin) { request in
-                if request.url!.path.contains("/documents/") { return (200, [:], Data(#"{"document":null}"#.utf8)) }
+                if request.url!.path.hasSuffix("/notes") { return (200, [:], Data(#"{"document":null}"#.utf8)) }
                 let path = request.url!.path
                 if path == "/api/v1/capabilities" {
                     return (200, [:], Self.documentCapabilities)
@@ -540,7 +540,7 @@ import DahliaRuntimeSupport
             let recordingRequests = Mutex(0)
             let audioOnly = Mutex(false)
             ImageURLProtocol.register(origin: target.origin) { request in
-                if request.url!.path.contains("/documents/") { return (200, [:], Data(#"{"document":null}"#.utf8)) }
+                if request.url!.path.hasSuffix("/notes") { return (200, [:], Data(#"{"document":null}"#.utf8)) }
                 if request.url!.path == "/api/v1/capabilities" {
                     let requestNumber = capabilityRequests.withLock {
                         $0 += 1

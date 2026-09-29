@@ -143,6 +143,7 @@ enum LocalWorkspaceImport {
         try record.insert(db)
         try ScreenshotContentProvider.installTransfers(files, workspaceId: sourceId, in: db)
         try WorkspaceRelocation.move(moves, in: db)
+        try db.execute(sql: "UPDATE document_private_copies SET workspace_id = ? WHERE workspace_id = ?", arguments: [target.id, sourceId])
         try db.execute(sql: "UPDATE document_local_archives SET workspace_id = ? WHERE workspace_id = ?", arguments: [target.id, sourceId])
         // A Local revision is not a Server base revision. Only the imported entities are new.
         for (item, _) in moves {

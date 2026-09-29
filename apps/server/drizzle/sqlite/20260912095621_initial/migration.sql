@@ -251,6 +251,68 @@ CREATE TABLE `verification` (
 	`updated_at` integer DEFAULT (cast(unixepoch('subsecond') * 1000 as integer)) NOT NULL
 );
 --> statement-breakpoint
+CREATE TABLE `documents` (
+	`id` text PRIMARY KEY,
+	`workspace_id` text NOT NULL,
+	`meeting_id` text,
+	`kind` text NOT NULL,
+	`title` text DEFAULT '' NOT NULL,
+	`schema_version` integer DEFAULT 1 NOT NULL,
+	`generation` text NOT NULL,
+	`revision` integer DEFAULT 0 NOT NULL,
+	`checkpoint_revision` integer DEFAULT 0 NOT NULL,
+	`checkpoint` text NOT NULL,
+	`text` text NOT NULL,
+	`projection_revision` integer DEFAULT 0 NOT NULL,
+	`encrypted_payload` text,
+	`created_at` integer NOT NULL,
+	`updated_at` integer NOT NULL,
+	CONSTRAINT `fk_documents_workspace_id_workspaces_workspace_id_fk` FOREIGN KEY (`workspace_id`) REFERENCES `workspaces`(`workspace_id`) ON DELETE CASCADE,
+	CONSTRAINT `fk_documents_meeting_id_meetings_meeting_id_fk` FOREIGN KEY (`meeting_id`) REFERENCES `meetings`(`meeting_id`) ON DELETE CASCADE,
+	CONSTRAINT `document_parent_workspace_fk` FOREIGN KEY (`workspace_id`,`meeting_id`) REFERENCES `meetings`(`workspace_id`,`meeting_id`) ON UPDATE CASCADE ON DELETE CASCADE,
+	CONSTRAINT `document_workspace_id_unique` UNIQUE(`workspace_id`,`id`),
+	CONSTRAINT "document_kind" CHECK("kind" IN ('notes', 'summary', 'general') AND ("kind" != 'notes' OR "meeting_id" IS NOT NULL)),
+	CONSTRAINT "document_watermarks" CHECK("projection_revision" = "revision" AND "checkpoint_revision" <= "revision")
+);
+--> statement-breakpoint
+CREATE TABLE `document_presence` (
+	`id` text PRIMARY KEY,
+	`document_id` text NOT NULL,
+	`workspace_id` text NOT NULL,
+	`user_id` text NOT NULL,
+	`expires_at` integer NOT NULL,
+	CONSTRAINT `fk_document_presence_document_id_documents_id_fk` FOREIGN KEY (`document_id`) REFERENCES `documents`(`id`) ON DELETE CASCADE,
+	CONSTRAINT `fk_document_presence_workspace_id_workspaces_workspace_id_fk` FOREIGN KEY (`workspace_id`) REFERENCES `workspaces`(`workspace_id`) ON DELETE CASCADE,
+	CONSTRAINT `fk_document_presence_user_id_user_id_fk` FOREIGN KEY (`user_id`) REFERENCES `user`(`id`) ON DELETE CASCADE,
+	CONSTRAINT `documentPresence_workspace_fk` FOREIGN KEY (`workspace_id`,`document_id`) REFERENCES `documents`(`workspace_id`,`id`) ON UPDATE CASCADE ON DELETE CASCADE
+);
+--> statement-breakpoint
+CREATE TABLE `document_recoveries` (
+	`id` text PRIMARY KEY,
+	`document_id` text NOT NULL,
+	`workspace_id` text NOT NULL,
+	`blocks` text NOT NULL,
+	`reason` text NOT NULL,
+	`encrypted_payload` text,
+	`created_at` integer NOT NULL,
+	CONSTRAINT `fk_document_recoveries_document_id_documents_id_fk` FOREIGN KEY (`document_id`) REFERENCES `documents`(`id`) ON DELETE CASCADE,
+	CONSTRAINT `fk_document_recoveries_workspace_id_workspaces_workspace_id_fk` FOREIGN KEY (`workspace_id`) REFERENCES `workspaces`(`workspace_id`) ON DELETE CASCADE,
+	CONSTRAINT `documentRecovery_workspace_fk` FOREIGN KEY (`workspace_id`,`document_id`) REFERENCES `documents`(`workspace_id`,`id`) ON UPDATE CASCADE ON DELETE CASCADE
+);
+--> statement-breakpoint
+CREATE TABLE `document_updates` (
+	`document_id` text NOT NULL,
+	`workspace_id` text NOT NULL,
+	`revision` integer NOT NULL,
+	`update` text NOT NULL,
+	`encrypted_payload` text,
+	`created_at` integer NOT NULL,
+	CONSTRAINT `document_updates_pk` PRIMARY KEY(`document_id`, `revision`),
+	CONSTRAINT `fk_document_updates_document_id_documents_id_fk` FOREIGN KEY (`document_id`) REFERENCES `documents`(`id`) ON DELETE CASCADE,
+	CONSTRAINT `fk_document_updates_workspace_id_workspaces_workspace_id_fk` FOREIGN KEY (`workspace_id`) REFERENCES `workspaces`(`workspace_id`) ON DELETE CASCADE,
+	CONSTRAINT `documentUpdate_workspace_fk` FOREIGN KEY (`workspace_id`,`document_id`) REFERENCES `documents`(`workspace_id`,`id`) ON UPDATE CASCADE ON DELETE CASCADE
+);
+--> statement-breakpoint
 CREATE TABLE `jobs_image_analysis` (
 	`file_id` text PRIMARY KEY,
 	`workspace_id` text NOT NULL,
@@ -496,6 +558,7 @@ CREATE TABLE `summaries` (
 --> statement-breakpoint
 CREATE TABLE `jobs_summary` (
 	`encrypted_payload` text,
+	`notes_snapshot` text,
 	`id` text PRIMARY KEY,
 	`workspace_id` text NOT NULL,
 	`meeting_id` text NOT NULL,
@@ -729,9 +792,9 @@ CREATE TABLE `workspace_keys` (
 );
 --> statement-breakpoint
 CREATE TABLE `workspace_memory_state` (
-	`images_enabled` integer DEFAULT false NOT NULL,
 	`workspace_id` text PRIMARY KEY,
 	`enabled` integer DEFAULT false NOT NULL,
+	`images_enabled` integer DEFAULT false NOT NULL,
 	`requested_by` text NOT NULL,
 	`bank_id` text NOT NULL,
 	`generation` integer DEFAULT 1 NOT NULL,
@@ -760,64 +823,130 @@ CREATE TABLE `workspace_transfers` (
 	CONSTRAINT `workspace_transfer_owner_key_unique` UNIQUE(`owner_user_id`,`idempotency_key`)
 );
 --> statement-breakpoint
-CREATE UNIQUE INDEX `account_issuer_accountId_uidx` ON `account` (`issuer`,`account_id`);--> statement-breakpoint
-CREATE INDEX `account_userId_idx` ON `account` (`user_id`);--> statement-breakpoint
-CREATE INDEX `invitation_organizationId_idx` ON `invitation` (`organization_id`);--> statement-breakpoint
-CREATE INDEX `invitation_email_idx` ON `invitation` (`email`);--> statement-breakpoint
-CREATE INDEX `member_organizationId_idx` ON `member` (`organization_id`);--> statement-breakpoint
-CREATE INDEX `member_userId_idx` ON `member` (`user_id`);--> statement-breakpoint
-CREATE INDEX `oauthAccessToken_clientId_idx` ON `oauth_access_token` (`client_id`);--> statement-breakpoint
-CREATE INDEX `oauthAccessToken_sessionId_idx` ON `oauth_access_token` (`session_id`);--> statement-breakpoint
-CREATE INDEX `oauthAccessToken_userId_idx` ON `oauth_access_token` (`user_id`);--> statement-breakpoint
-CREATE INDEX `oauthAccessToken_authorizationCodeId_idx` ON `oauth_access_token` (`authorization_code_id`);--> statement-breakpoint
-CREATE INDEX `oauthAccessToken_refreshId_idx` ON `oauth_access_token` (`refresh_id`);--> statement-breakpoint
-CREATE INDEX `oauthClient_userId_idx` ON `oauth_client` (`user_id`);--> statement-breakpoint
-CREATE UNIQUE INDEX `oauthClientResource_clientId_resourceId_uidx` ON `oauth_client_resource` (`client_id`,`resource_id`);--> statement-breakpoint
-CREATE INDEX `oauthClientResource_clientId_idx` ON `oauth_client_resource` (`client_id`);--> statement-breakpoint
-CREATE INDEX `oauthClientResource_resourceId_idx` ON `oauth_client_resource` (`resource_id`);--> statement-breakpoint
-CREATE INDEX `oauthConsent_clientId_idx` ON `oauth_consent` (`client_id`);--> statement-breakpoint
-CREATE INDEX `oauthConsent_userId_idx` ON `oauth_consent` (`user_id`);--> statement-breakpoint
-CREATE INDEX `oauthRefreshToken_clientId_idx` ON `oauth_refresh_token` (`client_id`);--> statement-breakpoint
-CREATE INDEX `oauthRefreshToken_sessionId_idx` ON `oauth_refresh_token` (`session_id`);--> statement-breakpoint
-CREATE INDEX `oauthRefreshToken_userId_idx` ON `oauth_refresh_token` (`user_id`);--> statement-breakpoint
-CREATE INDEX `oauthRefreshToken_authorizationCodeId_idx` ON `oauth_refresh_token` (`authorization_code_id`);--> statement-breakpoint
-CREATE UNIQUE INDEX `organization_slug_uidx` ON `organization` (`slug`);--> statement-breakpoint
-CREATE INDEX `session_userId_idx` ON `session` (`user_id`);--> statement-breakpoint
-CREATE INDEX `team_organizationId_idx` ON `team` (`organization_id`);--> statement-breakpoint
-CREATE INDEX `teamMember_teamId_idx` ON `team_member` (`team_id`);--> statement-breakpoint
-CREATE INDEX `teamMember_userId_idx` ON `team_member` (`user_id`);--> statement-breakpoint
-CREATE INDEX `verification_identifier_idx` ON `verification` (`identifier`);--> statement-breakpoint
-CREATE INDEX `image_analysis_job_claim_idx` ON `jobs_image_analysis` (`status`,`available_at`,`lease_expires_at`);--> statement-breakpoint
-CREATE INDEX `meeting_attachments_file_idx` ON `meeting_attachments` (`file_id`);--> statement-breakpoint
-CREATE INDEX `meeting_attachments_workspace_meeting_id_idx` ON `meeting_attachments` (`workspace_id`,`meeting_id`,`id`);--> statement-breakpoint
-CREATE INDEX `meeting_events_meeting_time_idx` ON `meeting_events` (`workspace_id`,`meeting_id`,`occurred_at`,`id`);--> statement-breakpoint
-CREATE INDEX `meeting_events_session_idx` ON `meeting_events` (`workspace_id`,`session_id`);--> statement-breakpoint
-CREATE INDEX `organization_domains_domain_idx` ON `organization_domains` (`domain`);--> statement-breakpoint
-CREATE UNIQUE INDEX `organization_join_requests_pending_idx` ON `organization_join_requests` (`organization_id`,`user_id`) WHERE "organization_join_requests"."status" = 'pending';--> statement-breakpoint
-CREATE INDEX `organization_join_requests_user_idx` ON `organization_join_requests` (`user_id`);--> statement-breakpoint
-CREATE INDEX `personal_memories_user_idx` ON `personal_memories` (`user_id`);--> statement-breakpoint
-CREATE INDEX `personal_memory_due_idx` ON `personal_memory_state` (`available_at`);--> statement-breakpoint
-CREATE INDEX `search_document_workspace_kind_meeting_document_idx` ON `search_documents` (`workspace_id`,`kind`,`meeting_id`,`document_id`);--> statement-breakpoint
-CREATE INDEX `search_index_job_claim_idx` ON `jobs_search_index` (`status`,`available_at`,`lease_expires_at`);--> statement-breakpoint
-CREATE INDEX `shared_memories_workspace_idx` ON `shared_memories` (`workspace_id`);--> statement-breakpoint
-CREATE INDEX `storage_delete_job_claim_idx` ON `jobs_storage_delete` (`status`,`available_at`,`lease_expires_at`);--> statement-breakpoint
-CREATE UNIQUE INDEX `summary_job_active_meeting_idx` ON `jobs_summary` (`meeting_id`) WHERE "jobs_summary"."status" IN ('pending', 'processing');--> statement-breakpoint
-CREATE INDEX `summary_job_owner_created_idx` ON `jobs_summary` (`owner_user_id`,`created_at`);--> statement-breakpoint
-CREATE INDEX `sync_change_workspace_sequence_idx` ON `sync_changes` (`workspace_id`,`sequence`);--> statement-breakpoint
-CREATE INDEX `transaction_receipt_owner_created_idx` ON `transaction_receipts` (`owner_user_id`,`created_at`);--> statement-breakpoint
-CREATE INDEX `files_workspace_file_idx` ON `files` (`workspace_id`,`file_id`);--> statement-breakpoint
-CREATE INDEX `meetings_workspace_deleted_idx` ON `meetings` (`workspace_id`,`deleted_at`,`meeting_id`);--> statement-breakpoint
-CREATE INDEX `meetings_workspace_project_live_created_idx` ON `meetings` (`workspace_id`,`project_id`,`active`,`deleted_at`,`deleting_at`,`created_at`,`meeting_id`);--> statement-breakpoint
-CREATE INDEX `meetings_calendar_event_idx` ON `meetings` (`ical_uid`,`recurrence_id`);--> statement-breakpoint
-CREATE INDEX `synced_meeting_workspace_created_id_idx` ON `meetings` (`workspace_id`,`created_at`,`meeting_id`);--> statement-breakpoint
-CREATE INDEX `project_workspace_parent_name_idx` ON `projects` (`workspace_id`,`parent_project_id`,`name`);--> statement-breakpoint
-CREATE INDEX `recordings_meeting_session_idx` ON `recordings` (`meeting_id`,`session_id`);--> statement-breakpoint
-CREATE INDEX `transcript_segment_created_idx` ON `transcript_segments` (`transcript_id`,`created_at`);--> statement-breakpoint
-CREATE INDEX `transcript_segment_start_id_idx` ON `transcript_segments` (`transcript_id`,`started_at`,`segment_id`);--> statement-breakpoint
-CREATE UNIQUE INDEX `workspace_personal_user_idx` ON `workspaces` (`organization_id`,`personal_user_id`);--> statement-breakpoint
-CREATE INDEX `workspace_permission_principal_workspace_idx` ON `workspace_permissions` (`principal_type`,`principal_id`,`role`,`workspace_id`);--> statement-breakpoint
-CREATE INDEX `workspace_memory_due_idx` ON `workspace_memory_state` (`available_at`);--> statement-breakpoint
-CREATE INDEX `workspace_transfer_owner_sequence_idx` ON `workspace_transfers` (`owner_user_id`,`sequence`);--> statement-breakpoint
+CREATE UNIQUE INDEX `account_issuer_accountId_uidx` ON `account` (`issuer`,`account_id`);
+--> statement-breakpoint
+CREATE INDEX `account_userId_idx` ON `account` (`user_id`);
+--> statement-breakpoint
+CREATE INDEX `invitation_organizationId_idx` ON `invitation` (`organization_id`);
+--> statement-breakpoint
+CREATE INDEX `invitation_email_idx` ON `invitation` (`email`);
+--> statement-breakpoint
+CREATE INDEX `member_organizationId_idx` ON `member` (`organization_id`);
+--> statement-breakpoint
+CREATE INDEX `member_userId_idx` ON `member` (`user_id`);
+--> statement-breakpoint
+CREATE INDEX `oauthAccessToken_clientId_idx` ON `oauth_access_token` (`client_id`);
+--> statement-breakpoint
+CREATE INDEX `oauthAccessToken_sessionId_idx` ON `oauth_access_token` (`session_id`);
+--> statement-breakpoint
+CREATE INDEX `oauthAccessToken_userId_idx` ON `oauth_access_token` (`user_id`);
+--> statement-breakpoint
+CREATE INDEX `oauthAccessToken_authorizationCodeId_idx` ON `oauth_access_token` (`authorization_code_id`);
+--> statement-breakpoint
+CREATE INDEX `oauthAccessToken_refreshId_idx` ON `oauth_access_token` (`refresh_id`);
+--> statement-breakpoint
+CREATE INDEX `oauthClient_userId_idx` ON `oauth_client` (`user_id`);
+--> statement-breakpoint
+CREATE UNIQUE INDEX `oauthClientResource_clientId_resourceId_uidx` ON `oauth_client_resource` (`client_id`,`resource_id`);
+--> statement-breakpoint
+CREATE INDEX `oauthClientResource_clientId_idx` ON `oauth_client_resource` (`client_id`);
+--> statement-breakpoint
+CREATE INDEX `oauthClientResource_resourceId_idx` ON `oauth_client_resource` (`resource_id`);
+--> statement-breakpoint
+CREATE INDEX `oauthConsent_clientId_idx` ON `oauth_consent` (`client_id`);
+--> statement-breakpoint
+CREATE INDEX `oauthConsent_userId_idx` ON `oauth_consent` (`user_id`);
+--> statement-breakpoint
+CREATE INDEX `oauthRefreshToken_clientId_idx` ON `oauth_refresh_token` (`client_id`);
+--> statement-breakpoint
+CREATE INDEX `oauthRefreshToken_sessionId_idx` ON `oauth_refresh_token` (`session_id`);
+--> statement-breakpoint
+CREATE INDEX `oauthRefreshToken_userId_idx` ON `oauth_refresh_token` (`user_id`);
+--> statement-breakpoint
+CREATE INDEX `oauthRefreshToken_authorizationCodeId_idx` ON `oauth_refresh_token` (`authorization_code_id`);
+--> statement-breakpoint
+CREATE UNIQUE INDEX `organization_slug_uidx` ON `organization` (`slug`);
+--> statement-breakpoint
+CREATE INDEX `session_userId_idx` ON `session` (`user_id`);
+--> statement-breakpoint
+CREATE INDEX `team_organizationId_idx` ON `team` (`organization_id`);
+--> statement-breakpoint
+CREATE INDEX `teamMember_teamId_idx` ON `team_member` (`team_id`);
+--> statement-breakpoint
+CREATE INDEX `teamMember_userId_idx` ON `team_member` (`user_id`);
+--> statement-breakpoint
+CREATE INDEX `verification_identifier_idx` ON `verification` (`identifier`);
+--> statement-breakpoint
+CREATE UNIQUE INDEX `document_meeting_notes_unique` ON `documents` (`meeting_id`) WHERE "documents"."kind" = 'notes';
+--> statement-breakpoint
+CREATE INDEX `documents_workspace_id` ON `documents` (`workspace_id`,`id`);
+--> statement-breakpoint
+CREATE INDEX `document_presence_expiry` ON `document_presence` (`expires_at`);
+--> statement-breakpoint
+CREATE INDEX `document_recoveries_document_id` ON `document_recoveries` (`document_id`);
+--> statement-breakpoint
+CREATE INDEX `image_analysis_job_claim_idx` ON `jobs_image_analysis` (`status`,`available_at`,`lease_expires_at`);
+--> statement-breakpoint
+CREATE INDEX `meeting_attachments_file_idx` ON `meeting_attachments` (`file_id`);
+--> statement-breakpoint
+CREATE INDEX `meeting_attachments_workspace_meeting_id_idx` ON `meeting_attachments` (`workspace_id`,`meeting_id`,`id`);
+--> statement-breakpoint
+CREATE INDEX `meeting_events_meeting_time_idx` ON `meeting_events` (`workspace_id`,`meeting_id`,`occurred_at`,`id`);
+--> statement-breakpoint
+CREATE INDEX `meeting_events_session_idx` ON `meeting_events` (`workspace_id`,`session_id`);
+--> statement-breakpoint
+CREATE INDEX `organization_domains_domain_idx` ON `organization_domains` (`domain`);
+--> statement-breakpoint
+CREATE UNIQUE INDEX `organization_join_requests_pending_idx` ON `organization_join_requests` (`organization_id`,`user_id`) WHERE "organization_join_requests"."status" = 'pending';
+--> statement-breakpoint
+CREATE INDEX `organization_join_requests_user_idx` ON `organization_join_requests` (`user_id`);
+--> statement-breakpoint
+CREATE INDEX `personal_memories_user_idx` ON `personal_memories` (`user_id`);
+--> statement-breakpoint
+CREATE INDEX `personal_memory_due_idx` ON `personal_memory_state` (`available_at`);
+--> statement-breakpoint
+CREATE INDEX `search_document_workspace_kind_meeting_document_idx` ON `search_documents` (`workspace_id`,`kind`,`meeting_id`,`document_id`);
+--> statement-breakpoint
+CREATE INDEX `search_index_job_claim_idx` ON `jobs_search_index` (`status`,`available_at`,`lease_expires_at`);
+--> statement-breakpoint
+CREATE INDEX `shared_memories_workspace_idx` ON `shared_memories` (`workspace_id`);
+--> statement-breakpoint
+CREATE INDEX `storage_delete_job_claim_idx` ON `jobs_storage_delete` (`status`,`available_at`,`lease_expires_at`);
+--> statement-breakpoint
+CREATE UNIQUE INDEX `summary_job_active_meeting_idx` ON `jobs_summary` (`meeting_id`) WHERE "jobs_summary"."status" IN ('pending', 'processing');
+--> statement-breakpoint
+CREATE INDEX `summary_job_owner_created_idx` ON `jobs_summary` (`owner_user_id`,`created_at`);
+--> statement-breakpoint
+CREATE INDEX `sync_change_workspace_sequence_idx` ON `sync_changes` (`workspace_id`,`sequence`);
+--> statement-breakpoint
+CREATE INDEX `transaction_receipt_owner_created_idx` ON `transaction_receipts` (`owner_user_id`,`created_at`);
+--> statement-breakpoint
+CREATE INDEX `files_workspace_file_idx` ON `files` (`workspace_id`,`file_id`);
+--> statement-breakpoint
+CREATE INDEX `meetings_workspace_deleted_idx` ON `meetings` (`workspace_id`,`deleted_at`,`meeting_id`);
+--> statement-breakpoint
+CREATE INDEX `meetings_workspace_project_live_created_idx` ON `meetings` (`workspace_id`,`project_id`,`active`,`deleted_at`,`deleting_at`,`created_at`,`meeting_id`);
+--> statement-breakpoint
+CREATE INDEX `meetings_calendar_event_idx` ON `meetings` (`ical_uid`,`recurrence_id`);
+--> statement-breakpoint
+CREATE INDEX `synced_meeting_workspace_created_id_idx` ON `meetings` (`workspace_id`,`created_at`,`meeting_id`);
+--> statement-breakpoint
+CREATE INDEX `project_workspace_parent_name_idx` ON `projects` (`workspace_id`,`parent_project_id`,`name`);
+--> statement-breakpoint
+CREATE INDEX `recordings_meeting_session_idx` ON `recordings` (`meeting_id`,`session_id`);
+--> statement-breakpoint
+CREATE INDEX `transcript_segment_created_idx` ON `transcript_segments` (`transcript_id`,`created_at`);
+--> statement-breakpoint
+CREATE INDEX `transcript_segment_start_id_idx` ON `transcript_segments` (`transcript_id`,`started_at`,`segment_id`);
+--> statement-breakpoint
+CREATE UNIQUE INDEX `workspace_personal_user_idx` ON `workspaces` (`organization_id`,`personal_user_id`);
+--> statement-breakpoint
+CREATE INDEX `workspace_permission_principal_workspace_idx` ON `workspace_permissions` (`principal_type`,`principal_id`,`role`,`workspace_id`);
+--> statement-breakpoint
+CREATE INDEX `workspace_memory_due_idx` ON `workspace_memory_state` (`available_at`);
+--> statement-breakpoint
+CREATE INDEX `workspace_transfer_owner_sequence_idx` ON `workspace_transfers` (`owner_user_id`,`sequence`);
+--> statement-breakpoint
 CREATE VIEW `recording_sessions` AS
   SELECT workspace_id, meeting_id, session_id,
     min(CASE WHEN kind = 'recording_started' THEN occurred_at END) AS started_at,
@@ -825,7 +954,8 @@ CREATE VIEW `recording_sessions` AS
   FROM meeting_events
   WHERE session_id IS NOT NULL AND kind IN ('recording_started', 'recording_ended')
   GROUP BY workspace_id, meeting_id, session_id
-;--> statement-breakpoint
+;
+--> statement-breakpoint
 CREATE VIEW `meeting_images` AS
   SELECT m.id AS screenshot_id, f.file_id, m.workspace_id, m.meeting_id,
     coalesce(m.captured_at, m.created_at) AS captured_at, f.content_type,
@@ -837,68 +967,3 @@ CREATE VIEW `meeting_images` AS
   FROM meeting_attachments m JOIN files f ON f.file_id = m.file_id AND f.workspace_id = m.workspace_id
   WHERE json_extract(f.metadata, '$.source') = 'screenshot'
 ;
---> statement-breakpoint
-CREATE TABLE `documents` (
-	`id` text PRIMARY KEY,
-	`workspace_id` text NOT NULL,
-	`meeting_id` text NOT NULL UNIQUE,
-	`schema_version` integer DEFAULT 1 NOT NULL,
-	`generation` text NOT NULL,
-	`revision` integer DEFAULT 0 NOT NULL,
-	`checkpoint_revision` integer DEFAULT 0 NOT NULL,
-	`checkpoint` text NOT NULL,
-	`text` text NOT NULL,
-	`projection_revision` integer DEFAULT 0 NOT NULL,
-	`encrypted_payload` text,
-	`created_at` integer NOT NULL,
-	`updated_at` integer NOT NULL,
-	CONSTRAINT `fk_documents_workspace_id_workspaces_workspace_id_fk` FOREIGN KEY (`workspace_id`) REFERENCES `workspaces`(`workspace_id`) ON DELETE CASCADE,
-	CONSTRAINT `fk_documents_meeting_id_meetings_meeting_id_fk` FOREIGN KEY (`meeting_id`) REFERENCES `meetings`(`meeting_id`) ON DELETE CASCADE,
-	CONSTRAINT `document_parent_workspace_fk` FOREIGN KEY (`workspace_id`,`meeting_id`) REFERENCES `meetings`(`workspace_id`,`meeting_id`) ON UPDATE CASCADE ON DELETE CASCADE,
-	CONSTRAINT `document_workspace_id_unique` UNIQUE(`workspace_id`,`id`),
-	CONSTRAINT "document_meeting_id" CHECK("id" = "meeting_id"),
-	CONSTRAINT "document_watermarks" CHECK("projection_revision" = "revision" AND "checkpoint_revision" <= "revision")
-);
---> statement-breakpoint
-CREATE TABLE `document_presence` (
-	`id` text PRIMARY KEY,
-	`document_id` text NOT NULL,
-	`workspace_id` text NOT NULL,
-	`user_id` text NOT NULL,
-	`expires_at` integer NOT NULL,
-	CONSTRAINT `fk_document_presence_document_id_documents_id_fk` FOREIGN KEY (`document_id`) REFERENCES `documents`(`id`) ON DELETE CASCADE,
-	CONSTRAINT `fk_document_presence_workspace_id_workspaces_workspace_id_fk` FOREIGN KEY (`workspace_id`) REFERENCES `workspaces`(`workspace_id`) ON DELETE CASCADE,
-	CONSTRAINT `fk_document_presence_user_id_user_id_fk` FOREIGN KEY (`user_id`) REFERENCES `user`(`id`) ON DELETE CASCADE,
-	CONSTRAINT `documentPresence_workspace_fk` FOREIGN KEY (`workspace_id`,`document_id`) REFERENCES `documents`(`workspace_id`,`id`) ON UPDATE CASCADE ON DELETE CASCADE
-);
---> statement-breakpoint
-CREATE TABLE `document_recoveries` (
-	`id` text PRIMARY KEY,
-	`document_id` text NOT NULL,
-	`workspace_id` text NOT NULL,
-	`blocks` text NOT NULL,
-	`reason` text NOT NULL,
-	`encrypted_payload` text,
-	`created_at` integer NOT NULL,
-	CONSTRAINT `fk_document_recoveries_document_id_documents_id_fk` FOREIGN KEY (`document_id`) REFERENCES `documents`(`id`) ON DELETE CASCADE,
-	CONSTRAINT `fk_document_recoveries_workspace_id_workspaces_workspace_id_fk` FOREIGN KEY (`workspace_id`) REFERENCES `workspaces`(`workspace_id`) ON DELETE CASCADE,
-	CONSTRAINT `documentRecovery_workspace_fk` FOREIGN KEY (`workspace_id`,`document_id`) REFERENCES `documents`(`workspace_id`,`id`) ON UPDATE CASCADE ON DELETE CASCADE
-);
---> statement-breakpoint
-CREATE TABLE `document_updates` (
-	`document_id` text NOT NULL,
-	`workspace_id` text NOT NULL,
-	`revision` integer NOT NULL,
-	`update` text NOT NULL,
-	`encrypted_payload` text,
-	`created_at` integer NOT NULL,
-	CONSTRAINT `document_updates_pk` PRIMARY KEY(`document_id`, `revision`),
-	CONSTRAINT `fk_document_updates_document_id_documents_id_fk` FOREIGN KEY (`document_id`) REFERENCES `documents`(`id`) ON DELETE CASCADE,
-	CONSTRAINT `fk_document_updates_workspace_id_workspaces_workspace_id_fk` FOREIGN KEY (`workspace_id`) REFERENCES `workspaces`(`workspace_id`) ON DELETE CASCADE,
-	CONSTRAINT `documentUpdate_workspace_fk` FOREIGN KEY (`workspace_id`,`document_id`) REFERENCES `documents`(`workspace_id`,`id`) ON UPDATE CASCADE ON DELETE CASCADE
-);
---> statement-breakpoint
-ALTER TABLE `jobs_summary` ADD `notes_snapshot` text;--> statement-breakpoint
-CREATE INDEX `documents_workspace_id` ON `documents` (`workspace_id`,`id`);--> statement-breakpoint
-CREATE INDEX `document_presence_expiry` ON `document_presence` (`expires_at`);--> statement-breakpoint
-CREATE INDEX `document_recoveries_document_id` ON `document_recoveries` (`document_id`);

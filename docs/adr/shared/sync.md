@@ -241,4 +241,4 @@ Server の `meeting:delete` は `deleted_at` を記録する論理削除とす�
 
 ## Documents 専用同期（2026-09-29）
 
-[Documents ADR](documents.md) が、明示公開した会議 Notes の同期・復元・presence を追加する。旧端末内 note の除外と MCP read-only は維持する。本文更新は transaction キュー・receipt・pending による受信 defer の対象にせず、文書ごとの CRDT 差分 API と送信待ちで処理する。送信待ちでも受信をマージする。Server / Desktop / Web の同時更新により sync capability は7、documents capability は1となる。会議の物理削除・reset は外部キーで文書を除去し、soft delete は generation を更新して古い編集を拒否する。復元は新しいブロックの挿入とする。
+[Documents ADR](documents.md) が、明示公開した会議 Notes の同期・復元・presence を追加する。旧端末内 note の除外と MCP read-only は維持する。本文更新は transaction キュー・receipt・pending による受信 defer の対象にせず、文書ごとの CRDT 差分 API と送信待ちで処理する。送信待ちでも受信をマージする。Server / Desktop / Web の同時更新により sync capability は7、documents capability は1となる。[独立した Document](document-identity.md) により文書は Workspace に属し、会議との関連は任意となる。会議の物理削除・reset は関連する文書を除去し、soft delete は関連する全用途の generation を更新して古い編集を拒否する。会議のない文書は Workspace のライフサイクルに従う。復元は新しいブロックの挿入とする。

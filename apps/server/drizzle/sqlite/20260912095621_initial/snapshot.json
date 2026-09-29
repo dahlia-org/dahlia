@@ -2058,11 +2058,31 @@
     },
     {
       "type": "text",
-      "notNull": true,
+      "notNull": false,
       "autoincrement": false,
       "default": null,
       "generated": null,
       "name": "meeting_id",
+      "entityType": "columns",
+      "table": "documents"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "kind",
+      "entityType": "columns",
+      "table": "documents"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": "''",
+      "generated": null,
+      "name": "title",
       "entityType": "columns",
       "table": "documents"
     },
@@ -7540,6 +7560,20 @@
     {
       "columns": [
         {
+          "value": "meeting_id",
+          "isExpression": false
+        }
+      ],
+      "isUnique": true,
+      "where": "\"documents\".\"kind\" = 'notes'",
+      "origin": "manual",
+      "name": "document_meeting_notes_unique",
+      "entityType": "indexes",
+      "table": "documents"
+    },
+    {
+      "columns": [
+        {
           "value": "workspace_id",
           "isExpression": false
         },
@@ -8340,15 +8374,6 @@
     },
     {
       "columns": [
-        "meeting_id"
-      ],
-      "nameExplicit": false,
-      "name": "documents_meeting_id_unique",
-      "entityType": "uniques",
-      "table": "documents"
-    },
-    {
-      "columns": [
         "id"
       ],
       "nameExplicit": false,
@@ -8357,8 +8382,8 @@
       "table": "workspace_transfers"
     },
     {
-      "value": "\"id\" = \"meeting_id\"",
-      "name": "document_meeting_id",
+      "value": "\"kind\" IN ('notes', 'summary', 'general') AND (\"kind\" != 'notes' OR \"meeting_id\" IS NOT NULL)",
+      "name": "document_kind",
       "entityType": "checks",
       "table": "documents"
     },

@@ -694,7 +694,7 @@ export const workspaceTransfer = appSchema.table("workspace_transfers", {
   requestHash: text("request_hash").notNull(),
   sourceWorkspaceId: uuid("source_workspace_id").notNull(),
   destinationWorkspaceId: uuid("destination_workspace_id").notNull(),
-  manifest: jsonb("manifest").$type<{ projects: string[]; meetings: string[]; files: string[] }>().notNull(),
+  manifest: jsonb("manifest").$type<{ projects: string[]; meetings: string[]; files: string[]; documents?: string[] }>().notNull(),
 }, (table) => [
   unique("workspace_transfer_owner_key_unique").on(table.ownerUserId, table.idempotencyKey),
   index("workspace_transfer_owner_sequence_idx").on(table.ownerUserId, table.sequence),
@@ -850,7 +850,9 @@ function documentPolicies(name: string, workspaceId: AnyPgColumn) {
 export const document = appSchema.table("documents", {
   id: uuid("id").primaryKey(),
   workspaceId: uuid("workspace_id").notNull().references(() => syncedWorkspace.workspaceId, { onDelete: "cascade" }),
-  meetingId: uuid("meeting_id").notNull().unique().references(() => syncedMeeting.meetingId, { onDelete: "cascade" }),
+  meetingId: uuid("meeting_id").references(() => syncedMeeting.meetingId, { onDelete: "cascade" }),
+  kind: text("kind").$type<"notes" | "summary" | "general">().notNull(),
+  title: text("title").notNull().default(""),
   schemaVersion: integer("schema_version").default(1).notNull(),
   generation: uuid("generation").notNull(),
   revision: integer("revision").default(0).notNull(),
@@ -861,7 +863,7 @@ export const document = appSchema.table("documents", {
   encryptedPayload: text("encrypted_payload"),
   createdAt: timestamp("created_at").notNull(),
   updatedAt: timestamp("updated_at").notNull(),
-}, (table) => [unique("document_workspace_id_unique").on(table.workspaceId, table.id), foreignKey({ name: "document_parent_workspace_fk", columns: [table.workspaceId, table.meetingId], foreignColumns: [syncedMeeting.workspaceId, syncedMeeting.meetingId] }).onDelete("cascade").onUpdate("cascade"), check("document_meeting_id", sql`${table.id} = ${table.meetingId}`), check("document_watermarks", sql`${table.projectionRevision} = ${table.revision} AND ${table.checkpointRevision} <= ${table.revision}`), index("documents_workspace_id").on(table.workspaceId, table.id), ...documentPolicies("document", table.workspaceId)]).enableRLS();
+}, (table) => [unique("document_workspace_id_unique").on(table.workspaceId, table.id), foreignKey({ name: "document_parent_workspace_fk", columns: [table.workspaceId, table.meetingId], foreignColumns: [syncedMeeting.workspaceId, syncedMeeting.meetingId] }).onDelete("cascade").onUpdate("cascade"), uniqueIndex("document_meeting_notes_unique").on(table.meetingId).where(sql`${table.kind} = 'notes'`), check("document_kind", sql`${table.kind} IN ('notes', 'summary', 'general') AND (${table.kind} != 'notes' OR ${table.meetingId} IS NOT NULL)`), check("document_watermarks", sql`${table.projectionRevision} = ${table.revision} AND ${table.checkpointRevision} <= ${table.revision}`), index("documents_workspace_id").on(table.workspaceId, table.id), ...documentPolicies("document", table.workspaceId)]).enableRLS();
 
 export const documentUpdate = appSchema.table("document_updates", {
   documentId: uuid("document_id").notNull().references(() => document.id, { onDelete: "cascade" }),

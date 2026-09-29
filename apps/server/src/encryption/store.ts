@@ -18,7 +18,7 @@ const policies: Record<string, { ids: string[]; fields: Row; hashes?: string[] }
   files: { ids: ["fileId"], fields: { name: "", uri: "", metadata: {}, checksum: "" }, hashes: ["checksum"] },
   transaction_receipts: { ids: ["transactionId"], fields: { responseJson: null, requestHash: "" }, hashes: ["requestHash"] },
   jobs_summary: { ids: ["id"], fields: { settings: {}, input: null, notesSnapshot: null, transcriptResult: null, inputVersion: "", requestHash: "" }, hashes: ["inputVersion", "requestHash"] },
-  documents: { ids: ["id"], fields: { checkpoint: "", text: "" } },
+  documents: { ids: ["id"], fields: { checkpoint: "", text: "", title: "" } },
   document_updates: { ids: ["documentId", "revision"], fields: { update: "" } },
   document_recoveries: { ids: ["id"], fields: { blocks: [] } },
   summaries: { ids: ["id"], fields: { title: "", document: "", metadata: null } },

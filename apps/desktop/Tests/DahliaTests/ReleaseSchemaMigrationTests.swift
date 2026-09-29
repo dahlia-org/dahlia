@@ -383,6 +383,7 @@
                 "v46_workspacePersonalUser",
                 "v47_orphanedRecordingRecoveryState",
                 "v47_documents",
+                "v48_independentDocuments",
             ])
             try database.dbQueue.read { db throws in
                 #expect(try Row.fetchAll(db, sql: "PRAGMA foreign_key_check").isEmpty)

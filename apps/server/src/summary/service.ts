@@ -221,7 +221,7 @@ function summaryRequestHashesMatch(existingHash: string, requestHash: string): b
 async function captureNotesSnapshot(store: IdentitySyncStore, workspaceId: string, meetingId: string,
   input: SummaryInput | null | undefined, method: "transcript" | "audio"): Promise<SummaryJob["notesSnapshot"]> {
   if (input?.type === "recording" && input.transcriptionOnly) return null;
-  const document = await store.getDocument(workspaceId, meetingId);
+  const document = await store.getMeetingNotes(workspaceId, meetingId);
   if (!document) return null;
   try {
     const context = method === "audio" ? await collectAudio(store, workspaceId, meetingId, input)
