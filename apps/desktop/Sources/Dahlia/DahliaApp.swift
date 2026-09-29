@@ -157,12 +157,13 @@ struct DahliaApp: App {
                         pending: pending, isBusy: workspaceManagementModel.updatingWorkspaceAccountID != nil,
                         onCancel: cancelServerAdoption,
                         onReload: { await workspaceManagementModel.reloadServerAdoption() },
-                        onImport: { destinationId, organizationId, workspaceName in
+                        onImport: { destinationId, organizationId, workspaceName, reconnectExisting in
                             await confirmServerAdoption(
                                 pending,
                                 destinationId: destinationId,
                                 organizationId: organizationId,
-                                workspaceName: workspaceName
+                                workspaceName: workspaceName,
+                                reconnectExisting: reconnectExisting
                             )
                         }
                     )
@@ -480,13 +481,15 @@ struct DahliaApp: App {
         _ pending: PendingWorkspaceServerAdoption,
         destinationId: UUID?,
         organizationId: UUID?,
-        workspaceName: String?
+        workspaceName: String?,
+        reconnectExisting: Bool
     ) async {
         guard let updated = await workspaceManagementModel.confirmServerAdoption(
             pending,
             destinationId: destinationId,
             organizationId: organizationId,
-            workspaceName: workspaceName
+            workspaceName: workspaceName,
+            reconnectExisting: reconnectExisting
         )
         else {
             if workspaceManagementModel.pendingServerAdoption == nil {
@@ -495,7 +498,7 @@ struct DahliaApp: App {
             return
         }
         await meetingSyncWorker?.drain()
-        if pendingSetupAdoptionWorkspaceID == updated.id {
+        if pendingSetupAdoptionWorkspaceID == pending.workspace.id {
             pendingSetupAdoptionWorkspaceID = nil
             guard openWorkspace(updated, recordsLastOpened: false),
                   await workspaceManagementModel.markWorkspaceOpened(updated)
@@ -505,9 +508,8 @@ struct DahliaApp: App {
             await dahliaAccountController.reload()
             return
         }
-        if AppSettings.shared.currentWorkspace?.id == updated.id {
-            AppSettings.shared.currentWorkspace = updated
-            WorkspaceAISettingsModel.shared.activate(workspace: updated)
+        if AppSettings.shared.currentWorkspace?.id == pending.workspace.id || AppSettings.shared.currentWorkspace?.id == updated.id {
+            openWorkspace(updated)
         }
         await dahliaAccountController.reload()
     }

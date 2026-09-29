@@ -2091,7 +2091,7 @@ export function App({ brand = defaultBrand, extensions = [] }: AppProps) {
   const userId = session?.user.id;
   useEffect(() => {
     if (!needsSession || unauthorized || !userId || !syncEnabled) return;
-    return subscribeLiveUpdates();
+    return subscribeLiveUpdates(userId);
   }, [needsSession, unauthorized, userId, syncEnabled]);
 
   const detail = parseObjectPath(path);

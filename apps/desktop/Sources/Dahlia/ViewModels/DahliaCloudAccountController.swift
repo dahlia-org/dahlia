@@ -171,6 +171,11 @@ final class DahliaCloudAccountController {
         await syncWorker.drain()
     }
 
+    func retrySnapshot(workspaceID: UUID, connectionID: UUID) async throws {
+        guard let syncWorker else { throw DahliaCloudError.notConfigured }
+        try await syncWorker.retrySnapshot(workspaceId: workspaceID, connectionId: connectionID)
+    }
+
     func acceptServerSyncVersion(
         workspaceID: UUID,
         expectedLastTransactionID: UUID,

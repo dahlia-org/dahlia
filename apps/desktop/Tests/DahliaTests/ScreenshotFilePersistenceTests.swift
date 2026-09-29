@@ -180,7 +180,7 @@
                 try WorkspaceTransferFence.create(workspaceIDs: [fixture.workspace.id], in: $0)
             }
             await #expect(throws: (any Error).self) {
-                try await repository.adoptWorkspaceForServerSync(
+                try await repository.importIntoEmptyServerWorkspace(
                     id: fixture.workspace.id,
                     connectionID: fixture.connection.id,
                     serverWorkspace: .init(
@@ -202,7 +202,7 @@
                 #expect(try MeetingScreenshotRecord.fetchOne(db, key: fixture.image.id)?.localReference == fixture.source.jsonString())
             }
             try await queue.write { try $0.execute(sql: "DROP TRIGGER reject_adoption") }
-            _ = try await repository.adoptWorkspaceForServerSync(
+            _ = try await repository.importIntoEmptyServerWorkspace(
                 id: fixture.workspace.id,
                 connectionID: fixture.connection.id,
                 serverWorkspace: .init(

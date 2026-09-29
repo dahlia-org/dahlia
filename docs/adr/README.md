@@ -15,6 +15,7 @@ macOS、ローカル SQLite、録音、UI、内蔵 Codex / local MCP。
 - [録音音声の結合保存と Server 保管](shared/recording-audio-archive.md)
 - [実行コンテキストと UI projection](desktop/concurrency-and-projection.md)
 - [SQLite backup / restore](desktop/database-backup.md)
+- [Server Workspace への取り込みと再接続](desktop/workspace-reconnection.md)
 - [Local MCP と Project 階層](desktop/local-mcp-and-projects.md)
 - [顧客情報の正準モデルと更新（廃止済み）](desktop/customer-intelligence.md)
 - [内蔵 AI skill と context](desktop/ai-skills-and-context.md)

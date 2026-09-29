@@ -236,108 +236,125 @@ enum RemoteChangeApplier {
             expectedMutationGeneration: expectedMutationGeneration,
             incrementalContext: incrementalContext
         ) { db in
-            let existing = try ProjectRecord.fetchResolvedAll(workspaceId: workspaceId, in: db)
-            let existingByID = Dictionary(uniqueKeysWithValues: existing.map { ($0.id, $0) })
-            let incomingIDs = Set(projects.map(\.projectId))
-            let removedIDs = removeMissing ? Set(existingByID.keys).subtracting(incomingIDs) : []
-            if incrementalContext != nil {
-                for project in projects {
-                    guard try RemoteChangePolicy.permits(.project, id: project.projectId, workspaceId: workspaceId, in: db) else { return false }
-                    if let revision = try Int.fetchOne(
-                        db,
-                        sql: "SELECT confirmedRevision FROM sync_entity_state WHERE workspace_id = ? AND entity = 'project' AND entityId = ?",
-                        arguments: [workspaceId, project.projectId]
-                    ), revision > project.revision { return false }
-                }
-                for id in removedIDs {
-                    guard try RemoteChangePolicy.permits(.project, id: id, action: "delete", workspaceId: workspaceId, in: db) else { return false }
-                }
-            } else {
-                guard try !SyncTransactionQueue.hasPending(workspaceId: workspaceId, in: db), try !RecordingSessionRecord.hasActiveRecording(
-                    workspaceId: workspaceId,
-                    in: db
-                ) else { return false }
-            }
+            try applyProjectSnapshot(
+                orderedProjects,
+                workspaceId: workspaceId,
+                removeMissing: removeMissing,
+                incrementalContext: incrementalContext,
+                in: db
+            )
+        }
+    }
 
-            // Keep retained rows in place so local-only CRM references survive canonical refreshes.
-            let roots = orderedProjects.filter { $0.parentProjectId == nil }
-            let children = orderedProjects.filter { $0.parentProjectId != nil }
-            for project in roots where existingByID[project.projectId] != nil {
-                try db.execute(
-                    sql: "UPDATE projects SET parentProjectId = NULL, projectType = ? WHERE id = ? AND workspace_id = ?",
-                    arguments: [project.projectType, project.projectId, workspaceId]
-                )
+    static func applyProjectSnapshot(
+        _ orderedProjects: [SyncProjectSnapshot],
+        workspaceId: UUID,
+        removeMissing: Bool,
+        incrementalContext: RemoteChangePolicy.Context? = nil,
+        in db: Database
+    ) throws -> Bool {
+        let projects = orderedProjects
+        let existing = try ProjectRecord.fetchResolvedAll(workspaceId: workspaceId, in: db)
+        let existingByID = Dictionary(uniqueKeysWithValues: existing.map { ($0.id, $0) })
+        let incomingIDs = Set(projects.map(\.projectId))
+        let removedIDs = removeMissing ? Set(existingByID.keys).subtracting(incomingIDs) : []
+        if incrementalContext != nil {
+            for project in projects {
+                guard try RemoteChangePolicy.permits(.project, id: project.projectId, workspaceId: workspaceId, in: db) else { return false }
+                if let revision = try Int.fetchOne(
+                    db,
+                    sql: "SELECT confirmedRevision FROM sync_entity_state WHERE workspace_id = ? AND entity = 'project' AND entityId = ?",
+                    arguments: [workspaceId, project.projectId]
+                ), revision > project.revision { return false }
             }
-            for project in roots where existingByID[project.projectId] == nil {
-                try insert(project, workspaceId: workspaceId, in: db)
+            for id in removedIDs {
+                guard try RemoteChangePolicy.permits(.project, id: id, action: "delete", workspaceId: workspaceId, in: db) else { return false }
             }
-            for project in existing where removedIDs.contains(project.id) && project.parentProjectId != nil {
-                try ProjectRecord.deleteOne(db, key: project.id)
-            }
-            for project in children where existingByID[project.projectId]?.parentProjectId != nil {
-                try db.execute(
-                    sql: "UPDATE projects SET parentProjectId = ?, projectType = NULL WHERE id = ? AND workspace_id = ?",
-                    arguments: [project.parentProjectId, project.projectId, workspaceId]
-                )
-            }
-            for project in existing where removedIDs.contains(project.id) && project.parentProjectId == nil {
-                try ProjectRecord.deleteOne(db, key: project.id)
-            }
-            for project in children where existingByID[project.projectId]?.parentProjectId == nil {
-                try db.execute(
-                    sql: "UPDATE projects SET parentProjectId = ?, projectType = NULL WHERE id = ? AND workspace_id = ?",
-                    arguments: [project.parentProjectId, project.projectId, workspaceId]
-                )
-            }
-            for project in children where existingByID[project.projectId] == nil {
-                try insert(project, workspaceId: workspaceId, in: db)
-            }
+        } else {
+            guard try !SyncTransactionQueue.hasPending(workspaceId: workspaceId, in: db), try !RecordingSessionRecord.hasActiveRecording(
+                workspaceId: workspaceId,
+                in: db
+            ) else { return false }
+        }
 
-            for project in orderedProjects {
-                let previous = existingByID[project.projectId]
-                try ProjectRecord.applyCanonical(
-                    id: project.projectId,
-                    workspaceId: workspaceId,
-                    parentProjectId: project.parentProjectId,
-                    name: project.name,
-                    createdAt: project.createdAt,
-                    description: project.description,
-                    projectType: project.projectType.flatMap(ProjectType.init(rawValue:)),
-                    icon: project.icon, color: project.color,
-                    in: db
-                )
-                if let previous {
-                    let hierarchyWasPreapplied = previous.parentProjectId != project.parentProjectId
-                        || previous.projectType?.rawValue != project.projectType
-                    if previous.name == project.name, hierarchyWasPreapplied {
-                        var invalidatedIDs = Set(
-                            ProjectRecord.hierarchy(projectId: previous.id, records: existing)
-                                .dropFirst()
-                                .map(\.id)
-                        )
-                        if previous.createdAt == project.createdAt,
-                           previous.description == project.description {
-                            invalidatedIDs.insert(previous.id)
-                        }
-                        try ProjectRecord.incrementRevisions(invalidatedIDs, in: db)
+        // Keep retained rows in place so local-only CRM references survive canonical refreshes.
+        let roots = orderedProjects.filter { $0.parentProjectId == nil }
+        let children = orderedProjects.filter { $0.parentProjectId != nil }
+        for project in roots where existingByID[project.projectId] != nil {
+            try db.execute(
+                sql: "UPDATE projects SET parentProjectId = NULL, projectType = ? WHERE id = ? AND workspace_id = ?",
+                arguments: [project.projectType, project.projectId, workspaceId]
+            )
+        }
+        for project in roots where existingByID[project.projectId] == nil {
+            try insert(project, workspaceId: workspaceId, in: db)
+        }
+        for project in existing where removedIDs.contains(project.id) && project.parentProjectId != nil {
+            try ProjectRecord.deleteOne(db, key: project.id)
+        }
+        for project in children where existingByID[project.projectId]?.parentProjectId != nil {
+            try db.execute(
+                sql: "UPDATE projects SET parentProjectId = ?, projectType = NULL WHERE id = ? AND workspace_id = ?",
+                arguments: [project.parentProjectId, project.projectId, workspaceId]
+            )
+        }
+        for project in existing where removedIDs.contains(project.id) && project.parentProjectId == nil {
+            try ProjectRecord.deleteOne(db, key: project.id)
+        }
+        for project in children where existingByID[project.projectId]?.parentProjectId == nil {
+            try db.execute(
+                sql: "UPDATE projects SET parentProjectId = ?, projectType = NULL WHERE id = ? AND workspace_id = ?",
+                arguments: [project.parentProjectId, project.projectId, workspaceId]
+            )
+        }
+        for project in children where existingByID[project.projectId] == nil {
+            try insert(project, workspaceId: workspaceId, in: db)
+        }
+
+        for project in orderedProjects {
+            let previous = existingByID[project.projectId]
+            try ProjectRecord.applyCanonical(
+                id: project.projectId,
+                workspaceId: workspaceId,
+                parentProjectId: project.parentProjectId,
+                name: project.name,
+                createdAt: project.createdAt,
+                description: project.description,
+                projectType: project.projectType.flatMap(ProjectType.init(rawValue:)),
+                icon: project.icon, color: project.color,
+                in: db
+            )
+            if let previous {
+                let hierarchyWasPreapplied = previous.parentProjectId != project.parentProjectId
+                    || previous.projectType?.rawValue != project.projectType
+                if previous.name == project.name, hierarchyWasPreapplied {
+                    var invalidatedIDs = Set(
+                        ProjectRecord.hierarchy(projectId: previous.id, records: existing)
+                            .dropFirst()
+                            .map(\.id)
+                    )
+                    if previous.createdAt == project.createdAt,
+                       previous.description == project.description {
+                        invalidatedIDs.insert(previous.id)
                     }
+                    try ProjectRecord.incrementRevisions(invalidatedIDs, in: db)
                 }
-                try db.execute(
-                    sql: """
-                    INSERT INTO sync_entity_state(workspace_id, entity, entityId, confirmedRevision)
-                    VALUES (?, 'project', ?, ?)
-                    ON CONFLICT(workspace_id, entity, entityId) DO UPDATE SET
-                        confirmedRevision = excluded.confirmedRevision
-                    """,
-                    arguments: [workspaceId, project.projectId, project.revision]
-                )
             }
             try db.execute(
-                sql: "DELETE FROM sync_entity_state WHERE workspace_id = ? AND entity = 'project' AND entityId NOT IN (SELECT id FROM projects WHERE workspace_id = ?)",
-                arguments: [workspaceId, workspaceId]
+                sql: """
+                INSERT INTO sync_entity_state(workspace_id, entity, entityId, confirmedRevision)
+                VALUES (?, 'project', ?, ?)
+                ON CONFLICT(workspace_id, entity, entityId) DO UPDATE SET
+                    confirmedRevision = excluded.confirmedRevision
+                """,
+                arguments: [workspaceId, project.projectId, project.revision]
             )
-            return true
         }
+        try db.execute(
+            sql: "DELETE FROM sync_entity_state WHERE workspace_id = ? AND entity = 'project' AND entityId NOT IN (SELECT id FROM projects WHERE workspace_id = ?)",
+            arguments: [workspaceId, workspaceId]
+        )
+        return true
     }
 
     private static func insert(_ project: SyncProjectSnapshot, workspaceId: UUID, in db: Database) throws {
@@ -902,7 +919,7 @@ enum RemoteChangeApplier {
         }
     }
 
-    private static func upsert(
+    static func upsert(
         _ change: SyncChangePage.Change,
         record: SyncCanonicalPayload,
         screenshots _: [UUID: Data],

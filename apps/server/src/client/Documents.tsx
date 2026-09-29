@@ -1,7 +1,8 @@
+import { syncNotifications, type SyncNotifications } from "./sync-notifications";
 import { useEffect, useState } from "react";
 import { EditorContent, useEditor } from "@tiptap/react";
 import * as Y from "yjs";
-import { apiOperations as api, apiUrls } from "./generated-operations";
+import { apiOperations as api } from "./generated-operations";
 import { RequestError, uiText } from "./api";
 import { encodeId } from "../typeid";
 import { uuidV7 } from "../id";
@@ -23,23 +24,33 @@ export class BrowserDocument {
   readonly listeners = new Set<() => void>();
   readonly presenceSession = uuidV7();
   people: string[] = [];
-  error = "";
+  private bodyError = "";
+  private maintenanceError = "";
+  private readonly auxiliaryAbort = new AbortController();
+  get error() { return this.bodyError || this.maintenanceError; }
+  set error(value: string) { this.bodyError = value; }
   private sequence = 0;
-  private events: EventSource | null = null;
+  private unsubscribe: (() => void) | undefined;
+  private unavailable = false;
   private saving = 0;
   private localSaves: Promise<void> = Promise.resolve();
   private failedEditorUpdate: Uint8Array | null = null;
   private failedEditorText = "";
   private syncing: Promise<void> | null = null;
+  private sendTimer: ReturnType<typeof setTimeout> | undefined;
+  private syncRequested = false;
+  private maintenance: Promise<void> | null = null;
+  private recoverySaving: Promise<void> | null = null;
+  private lastRecoveries = 0;
   private views = 0;
   private stopped = false;
-  private timer: ReturnType<typeof setInterval>;
+  private timer: ReturnType<typeof setTimeout> | undefined;
   private readonly unsentRecoveries = new Set<string>();
   private lastPresence = 0;
   focused = false;
   readonly params: { path: { workspaceId: string; documentId: string } };
 
-  constructor(readonly userId: string, workspaceId: string, readonly meetingId: string, initial: SharedDocument | null) {
+  constructor(readonly userId: string, workspaceId: string, readonly meetingId: string, initial: SharedDocument | null, private readonly accountBinding = false, private readonly notifications: SyncNotifications = syncNotifications) {
     this.params = { path: { workspaceId, documentId: initial?.id ?? encodeId("document", uuidV7()) } };
     if (initial) Y.applyUpdate(this.editorDocument, decodeBinary(initial.checkpoint), "remote");
     this.hydration = new DocumentEditorHydration(this.editorDocument);
@@ -63,36 +74,54 @@ export class BrowserDocument {
       },
       exchange: async (request) => {
         // A retained tab must never submit one account's unsent content after account switching.
-        if ((await api.getSession({})).user.id !== this.userId) throw new Error(uiText("Sign in with the original account to sync these edits.", "この編集を同期するには、元のアカウントでサインインしてください。"));
+        if (!this.accountBinding && (await api.getSession({})).user.id !== this.userId) throw new Error(uiText("Sign in with the original account to sync these edits.", "この編集を同期するには、元のアカウントでサインインしてください。"));
         let generation = request.generation;
         if (!generation) {
           const response = request.update
-            ? await api.initializeMeetingNotes({ params: { path: { workspaceId, meetingId } }, body: { id: this.params.path.documentId } }, false)
-            : await api.getMeetingNotes({ params: { path: { workspaceId, meetingId } } });
+            ? await api.initializeMeetingNotes({ headers: this.headers, params: { path: { workspaceId, meetingId } }, body: { id: this.params.path.documentId } }, false)
+            : await api.getMeetingNotes({ headers: this.headers, params: { path: { workspaceId, meetingId } } });
           if (!response.document) return { generation: null, revision: 0, update: "AAA=" };
-          this.bindDocument(response.document.id);
+          this.params.path.documentId = response.document.id;
           generation = response.document.generation;
         }
         try {
-          return await api.exchangeDocument({ params: this.params, body: { ...request, generation } }, false);
+          return await api.exchangeDocument({ headers: this.headers, params: this.params, body: { ...request, generation } }, false);
         } catch (error) {
           if (!(error instanceof RequestError) || error.status !== 409 || error.message !== "document_generation_changed") throw error;
-          const { document } = await api.getDocument({ params: this.params });
+          const { document } = await api.getDocument({ headers: this.headers, params: this.params });
           if (!document) throw error;
           return { generation: document.generation, revision: document.revision, update: document.checkpoint, refreshed: true };
         }
       },
     }, { checkpoint: initial?.checkpoint, generation: initial?.generation ?? null, revision: initial?.revision ?? 0 });
-    this.timer = setInterval(() => { void this.sync().catch(() => {}); }, 2_000);
+    this.scheduleFallback();
     window.addEventListener("beforeunload", this.beforeUnload);
-    if (initial) this.bindDocument(initial.id);
   }
-  private bindDocument(id: string) {
-    if (this.events && this.params.path.documentId === id) return;
-    this.events?.close();
-    this.params.path.documentId = id;
-    this.events = new EventSource(apiUrls.getDocumentEvents({ params: this.params }));
-    this.events.addEventListener("invalidation", () => { void this.sync().catch(() => {}); });
+  private scheduleFallback() {
+    this.timer = setTimeout(() => {
+      if (this.stopped) return;
+      if (this.hasUnsent() || !this.views || (!this.unavailable && !this.notifications.connected)) void this.sync().catch(() => {});
+      if (this.views) void this.refreshMaintenance().catch(() => {});
+      this.scheduleFallback();
+    }, 2_000);
+  }
+  private get headers() { return { "X-Dahlia-Document-User": this.userId }; }
+  private subscribe() {
+    if (this.unsubscribe) return;
+    this.unsubscribe = this.notifications.subscribeNotes(this.userId, this.params.path.workspaceId, this.meetingId, (hint) => {
+      if (hint?.unavailable) {
+        this.unavailable = true; this.error = uiText("These Notes are no longer available.", "この Notes へのアクセス権がありません。"); this.changed(); return;
+      }
+      if (!hint || (hint.cursor !== "absent" && hint.cursor !== `${this.session.generation}:${this.session.revision}`)) this.requestSync();
+    });
+    this.unavailable = false;
+  }
+  private resumeSubscription() {
+    if (this.stopped || !this.views || !this.unavailable) return;
+    // An unavailable hint removed the tab owner's target; a successful authorized
+    // sync can rearm it only while this document still has a visible owner.
+    this.unsubscribe?.(); this.unsubscribe = undefined;
+    this.subscribe();
   }
   private beforeUnload = (event: BeforeUnloadEvent) => {
     if (this.hasUnsent()) { event.preventDefault(); event.returnValue = ""; }
@@ -108,6 +137,7 @@ export class BrowserDocument {
       const combined = preserveOnFailure && this.failedEditorUpdate ? this.correctedEditorUpdate() : update;
       try {
         await this.session.accept(encodeBinary(combined), true);
+        this.requestSync(100);
         if (preserveOnFailure) { this.failedEditorUpdate = null; this.failedEditorText = ""; }
       } catch (error) {
         if (preserveOnFailure) {
@@ -130,43 +160,90 @@ export class BrowserDocument {
       return Y.encodeStateAsUpdate(corrected, Y.encodeStateVector(this.session.core.document));
     } finally { corrected.destroy(); }
   }
+  private requestSync(delay = 0) {
+    if (this.stopped) return;
+    this.syncRequested = true;
+    if (this.sendTimer !== undefined || this.syncing) return;
+    // Fixed window from the first edit; continuous typing cannot postpone delivery.
+    this.sendTimer = setTimeout(() => { this.sendTimer = undefined; void this.sync().catch(() => {}); }, delay);
+  }
   sync(): Promise<void> {
     if (this.stopped) return Promise.resolve();
-    if (this.syncing) return this.syncing;
-    this.syncing = this.performSync().finally(() => { this.syncing = null; this.releaseIfIdle(); });
+    if (this.syncing) { this.syncRequested = true; return this.syncing; }
+    clearTimeout(this.sendTimer); this.sendTimer = undefined;
+    this.syncRequested = false;
+    this.syncing = this.performSync().finally(() => {
+      this.syncing = null;
+      if (this.syncRequested) this.requestSync();
+      this.releaseIfIdle();
+    });
     return this.syncing;
   }
   private async performSync() {
     try {
       await this.session.synchronize();
-      if (this.session.generation) {
-        for (const id of [...this.unsentRecoveries]) {
-          const recovery = this.recoveries.get(id)!;
-          await api.saveDocumentRecovery({ params: this.params, body: { ...recovery, blocks: recovery.blocks.map((block) => ({ ...block, type: block.type as RecoveryBlock["type"] })) } }, false);
-          this.unsentRecoveries.delete(id);
-        }
+      this.resumeSubscription();
+      if (!this.failedEditorUpdate) this.error = "";
+      this.changed();
+      void this.saveRecoveries().catch((error: unknown) => { this.maintenanceError = error instanceof Error ? error.message : String(error); this.changed(); });
+      void this.refreshMaintenance().catch(() => {});
+    } catch (error) { this.error = error instanceof Error ? error.message : String(error); this.changed(); throw error; }
+  }
+  private refreshMaintenance(): Promise<void> {
+    if (this.maintenance) return this.maintenance;
+    this.maintenance = this.performMaintenance().catch((error: unknown) => {
+      this.maintenanceError = error instanceof Error ? error.message : String(error); this.changed(); throw error;
+    }).finally(() => { this.maintenance = null; this.releaseIfIdle(); });
+    return this.maintenance;
+  }
+  private async performMaintenance() {
+    if (!this.session.generation) return;
+    // Recovery writes carry the same account precondition as body writes.
+    if (!this.accountBinding && (await api.getSession({})).user.id !== this.userId) throw new Error(uiText("Sign in with the original account to sync these edits.", "この編集を同期するには、元のアカウントでサインインしてください。"));
+    await Promise.all([
+      (async () => {
+        if (Date.now() - this.lastRecoveries < 5_000) return;
         let after: string | undefined;
         do {
-          const recovered = await api.listDocumentRecoveries({ params: { ...this.params, query: { after } } });
+          const recovered = await api.listDocumentRecoveries({ signal: this.auxiliaryAbort.signal, headers: this.headers, params: { ...this.params, query: { after } } });
           for (const entry of recovered.items) this.recoveries.set(entry.id, entry);
           after = recovered.nextCursor ?? undefined;
         } while (after);
-        if (Date.now() - this.lastPresence >= 5_000) {
-          const response = this.focused
-            ? await api.updateDocumentPresence({ params: this.params, body: { sessionId: this.presenceSession } }, false)
-            : await api.getDocumentPresence({ params: this.params });
-          this.people = response.items.map((person) => person.name);
-          this.lastPresence = Date.now();
-        }
+        this.lastRecoveries = Date.now();
+      })(),
+      (async () => {
+        if (Date.now() - this.lastPresence < 5_000) return;
+        const response = this.focused
+          ? await api.updateDocumentPresence({ signal: this.auxiliaryAbort.signal, headers: this.headers, params: this.params, body: { sessionId: this.presenceSession } }, false)
+          : await api.getDocumentPresence({ signal: this.auxiliaryAbort.signal, headers: this.headers, params: this.params });
+        this.people = response.items.map((person) => person.name);
+        this.lastPresence = Date.now();
+      })(),
+    ]);
+    this.maintenanceError = "";
+    this.changed();
+  }
+  private saveRecoveries(): Promise<void> {
+    if (this.recoverySaving) return this.recoverySaving;
+    this.recoverySaving = (async () => {
+      if (!this.unsentRecoveries.size) return;
+      if (!this.accountBinding && (await api.getSession({})).user.id !== this.userId) throw new Error("document_account_changed");
+      for (const id of [...this.unsentRecoveries]) {
+        const recovery = this.recoveries.get(id)!;
+        await api.saveDocumentRecovery({ headers: this.headers, params: this.params, body: { ...recovery, blocks: recovery.blocks.map((block) => ({ ...block, type: block.type as RecoveryBlock["type"] })) } }, false);
+        this.unsentRecoveries.delete(id);
       }
-      if (!this.failedEditorUpdate) this.error = "";
-      this.changed();
-    } catch (error) { this.error = error instanceof Error ? error.message : String(error); this.changed(); throw error; }
+    })().finally(() => { this.recoverySaving = null; this.releaseIfIdle(); });
+    return this.recoverySaving;
   }
   async flush() {
     await this.localSaves;
     if (this.failedEditorUpdate) throw new Error(this.error);
-    await this.session.flush(); await this.sync();
+    await this.session.flush();
+    this.resumeSubscription();
+    // Explicit exit/summary waits for unpublished recovery records, never for presence/history.
+    while (this.unsentRecoveries.size) await this.saveRecoveries();
+    this.releaseIfIdle();
   }
   async restore(recovery: DocumentRecovery) {
     await this.localSaves;
@@ -177,11 +254,16 @@ export class BrowserDocument {
   }
   retainView(): () => void {
     this.views++;
+    if (this.views === 1) {
+      try { this.subscribe(); this.requestSync(); }
+      catch (error) { this.views--; this.releaseIfIdle(); throw error; }
+    }
     let retained = true;
     return () => {
       if (!retained) return;
       retained = false;
       this.views--;
+      if (!this.views) { this.unsubscribe?.(); this.unsubscribe = undefined; }
       this.releaseIfIdle();
     };
   }
@@ -191,7 +273,7 @@ export class BrowserDocument {
     for (const [key, value] of sessions) if (value === this) sessions.delete(key);
   }
   stop() {
-    this.stopped = true; clearInterval(this.timer); this.events?.close();
+    this.stopped = true; this.auxiliaryAbort.abort(); clearTimeout(this.timer); clearTimeout(this.sendTimer); this.unsubscribe?.(); this.unsubscribe = undefined;
     window.removeEventListener("beforeunload", this.beforeUnload);
     void this.session.close(); this.editorDocument.destroy();
   }
@@ -204,8 +286,8 @@ async function openDocument(workspaceId: string, meetingId: string): Promise<{ c
   const key = `${identity.user.id}/${workspaceId}/${meetingId}`;
   let controller = sessions.get(key);
   if (!controller) {
-    const { document } = await api.getMeetingNotes({ params: { path: { workspaceId, meetingId } } });
-    controller = sessions.get(key) ?? new BrowserDocument(identity.user.id, workspaceId, meetingId, document);
+    const { document } = await api.getMeetingNotes({ headers: { "X-Dahlia-Document-User": identity.user.id }, params: { path: { workspaceId, meetingId } } });
+    controller = sessions.get(key) ?? new BrowserDocument(identity.user.id, workspaceId, meetingId, document, capabilities.documents.accountBinding === true);
     sessions.set(key, controller);
   }
   // Own the result before resolving: another view may still be waiting to mount.

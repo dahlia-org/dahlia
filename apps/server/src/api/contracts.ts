@@ -72,7 +72,8 @@ const params = (path: string) => z.object(Object.fromEntries(
 function route(method: RouteConfig["method"], path: string, operationId: string, summary: string,
   responses: RouteConfig["responses"], request: RouteConfig["request"] = {}, security?: Record<string, string[]>[]) {
   return createRoute({ method, path, operationId, summary, tags: [path.split("/")[3] ?? "system"], security,
-    request: { params: params(path), query: z.object({}).strict(), ...request }, responses: { ...problemResponses, ...responses },
+    request: { params: params(path), query: z.object({}).strict(),
+      ...((path.includes("/documents") || path.endsWith("/notes")) ? { headers: z.object({ "X-Dahlia-Document-User": z.string().optional().openapi({ description: "Expected authenticated public user ID. A mismatch rejects the request before reading or writing document content." }) }) } : {}), ...request }, responses: { ...problemResponses, ...responses },
   });
 }
 const body = (schema: z.ZodType, example?: unknown) => ({ body: { required: true, content: { "application/json": { schema, ...(example === undefined ? {} : { example }) } } } });
@@ -220,7 +221,9 @@ export const contracts: Record<OperationId, RouteConfig & { operationId: string 
   getSnapshot: route("get", `${v}/snapshot`, "getSnapshot", "Bounded snapshot; retain startCursor and catch up before reconciliation", { 200: json(S.snapshot) }, { query: S.pageQuery.extend({ startCursor: S.cursor.optional() }).strict() }),
   search: route("post", `${v}/search`, "search", "Ranked search with explicit truncation indicators; maximum 16 KiB", { 200: json(S.searchResults) }, body(workspaceSearchRequestSchema)),
   textSearch: route("post", `${v}/text-search`, "textSearch", "Exhaustive full-text search pages; cursor invalidates when the ledger changes", { 200: json(S.textSearchResults) }, body(S.textSearchRequest)),
-  getEvents: route("get", "/api/v1/events", "getEvents", "SSE invalidation events; recover through canonical reads", { 200: { description: "text/event-stream: invalidation has {cursor}. No user content.", content: { "text/event-stream": { schema: z.string() } } } }, { query: z.object({ cursor: S.cursor.optional() }).strict(), headers: z.object({ "last-event-id": z.string().optional() }) }),
+  getEvents: route("get", "/api/v1/events", "getEvents", "SSE invalidation events; recover through canonical reads", { 200: { description: "text/event-stream: invalidation has {cursor}; document has {workspaceId,meetingId,documentId,cursor,unavailable}. Subscription is immutable per connection. No user content.", content: { "text/event-stream": { schema: z.string() } } } }, { query: z.object({ cursor: S.cursor.optional(), user: z.string().max(100).optional(), tab: z.string().regex(/^[0-9a-f]{32}$/).optional(),
+    notes: z.string().max(8_192).optional().openapi({ description: "JSON array of up to 32 {workspaceId,meetingId} public IDs. Replace this GET connection to change subscriptions. Requires user and tab; never mutates another connection." }),
+  }).strict(), headers: z.object({ "last-event-id": z.string().optional() }) }),
   putTranscriptChunk: route("put", `${m}/transcript-uploads/{patchId}/chunks/{chunkIndex}`, "putTranscriptChunk", "Stage an owner-only transcript patch chunk; SHA-256 of exact request bytes", { 204: empty }, { ...body(transcriptChunkSchema), headers: z.object({ "x-dahlia-content-sha256": z.string().regex(/^[a-fA-F0-9]{64}$/) }) }, [{ bearerAuth: [] }, { trustedProxy: [] }]),
   reserveFileUpload: route("post", "/api/v1/file-uploads", "reserveFileUpload", "Reserve private file staging with a client-generated UUIDv7; maximum 8 KiB", { 201: created(S.file), 200: json(S.file) }, body(fileUploadSchema)),
   putFileContent: route("put", "/api/v1/file-uploads/{fileId}/content", "putFileContent", "Stream reserved file bytes; identical replay succeeds, different content conflicts", { 201: created(S.file), 200: json(S.file) }, uploadBody),

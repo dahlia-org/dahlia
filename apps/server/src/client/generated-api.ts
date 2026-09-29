@@ -2423,6 +2423,7 @@ export interface components {
         Capabilities: {
             documents?: {
                 version: number;
+                accountBinding?: boolean;
             };
             workspaceEncryption?: {
                 version: number;
@@ -3964,7 +3965,10 @@ export interface operations {
     getMeetingNotes: {
         parameters: {
             query?: never;
-            header?: never;
+            header?: {
+                /** @description Expected authenticated public user ID. A mismatch rejects the request before reading or writing document content. */
+                "X-Dahlia-Document-User"?: string;
+            };
             path: {
                 workspaceId: string;
                 meetingId: string;
@@ -3988,7 +3992,10 @@ export interface operations {
     initializeMeetingNotes: {
         parameters: {
             query?: never;
-            header?: never;
+            header?: {
+                /** @description Expected authenticated public user ID. A mismatch rejects the request before reading or writing document content. */
+                "X-Dahlia-Document-User"?: string;
+            };
             path: {
                 workspaceId: string;
                 meetingId: string;
@@ -4016,7 +4023,10 @@ export interface operations {
     getDocument: {
         parameters: {
             query?: never;
-            header?: never;
+            header?: {
+                /** @description Expected authenticated public user ID. A mismatch rejects the request before reading or writing document content. */
+                "X-Dahlia-Document-User"?: string;
+            };
             path: {
                 workspaceId: string;
                 documentId: string;
@@ -4040,7 +4050,10 @@ export interface operations {
     initializeDocument: {
         parameters: {
             query?: never;
-            header?: never;
+            header?: {
+                /** @description Expected authenticated public user ID. A mismatch rejects the request before reading or writing document content. */
+                "X-Dahlia-Document-User"?: string;
+            };
             path: {
                 workspaceId: string;
                 documentId: string;
@@ -4068,7 +4081,10 @@ export interface operations {
     getDocumentEvents: {
         parameters: {
             query?: never;
-            header?: never;
+            header?: {
+                /** @description Expected authenticated public user ID. A mismatch rejects the request before reading or writing document content. */
+                "X-Dahlia-Document-User"?: string;
+            };
             path: {
                 workspaceId: string;
                 documentId: string;
@@ -4094,7 +4110,10 @@ export interface operations {
             query?: {
                 after?: string;
             };
-            header?: never;
+            header?: {
+                /** @description Expected authenticated public user ID. A mismatch rejects the request before reading or writing document content. */
+                "X-Dahlia-Document-User"?: string;
+            };
             path: {
                 workspaceId: string;
             };
@@ -4117,7 +4136,10 @@ export interface operations {
     exchangeDocument: {
         parameters: {
             query?: never;
-            header?: never;
+            header?: {
+                /** @description Expected authenticated public user ID. A mismatch rejects the request before reading or writing document content. */
+                "X-Dahlia-Document-User"?: string;
+            };
             path: {
                 workspaceId: string;
                 documentId: string;
@@ -4147,7 +4169,10 @@ export interface operations {
             query?: {
                 after?: string;
             };
-            header?: never;
+            header?: {
+                /** @description Expected authenticated public user ID. A mismatch rejects the request before reading or writing document content. */
+                "X-Dahlia-Document-User"?: string;
+            };
             path: {
                 workspaceId: string;
                 documentId: string;
@@ -4171,7 +4196,10 @@ export interface operations {
     saveDocumentRecovery: {
         parameters: {
             query?: never;
-            header?: never;
+            header?: {
+                /** @description Expected authenticated public user ID. A mismatch rejects the request before reading or writing document content. */
+                "X-Dahlia-Document-User"?: string;
+            };
             path: {
                 workspaceId: string;
                 documentId: string;
@@ -4199,7 +4227,10 @@ export interface operations {
     getDocumentPresence: {
         parameters: {
             query?: never;
-            header?: never;
+            header?: {
+                /** @description Expected authenticated public user ID. A mismatch rejects the request before reading or writing document content. */
+                "X-Dahlia-Document-User"?: string;
+            };
             path: {
                 workspaceId: string;
                 documentId: string;
@@ -4223,7 +4254,10 @@ export interface operations {
     updateDocumentPresence: {
         parameters: {
             query?: never;
-            header?: never;
+            header?: {
+                /** @description Expected authenticated public user ID. A mismatch rejects the request before reading or writing document content. */
+                "X-Dahlia-Document-User"?: string;
+            };
             path: {
                 workspaceId: string;
                 documentId: string;
@@ -4398,7 +4432,10 @@ export interface operations {
                 after?: string;
                 query?: string;
             };
-            header?: never;
+            header?: {
+                /** @description Expected authenticated public user ID. A mismatch rejects the request before reading or writing document content. */
+                "X-Dahlia-Document-User"?: string;
+            };
             path?: never;
             cookie?: never;
         };
@@ -4419,7 +4456,10 @@ export interface operations {
     personalMemorySave: {
         parameters: {
             query?: never;
-            header?: never;
+            header?: {
+                /** @description Expected authenticated public user ID. A mismatch rejects the request before reading or writing document content. */
+                "X-Dahlia-Document-User"?: string;
+            };
             path?: never;
             cookie?: never;
         };
@@ -4667,7 +4707,10 @@ export interface operations {
                 after?: string;
                 query?: string;
             };
-            header?: never;
+            header?: {
+                /** @description Expected authenticated public user ID. A mismatch rejects the request before reading or writing document content. */
+                "X-Dahlia-Document-User"?: string;
+            };
             path: {
                 workspaceId: string;
             };
@@ -4690,7 +4733,10 @@ export interface operations {
     workspaceMemorySave: {
         parameters: {
             query?: never;
-            header?: never;
+            header?: {
+                /** @description Expected authenticated public user ID. A mismatch rejects the request before reading or writing document content. */
+                "X-Dahlia-Document-User"?: string;
+            };
             path: {
                 workspaceId: string;
             };
@@ -6119,6 +6165,10 @@ export interface operations {
             query?: {
                 /** @description Opaque cursor. Pass back unchanged with the original filters. */
                 cursor?: string;
+                user?: string;
+                tab?: string;
+                /** @description JSON array of up to 32 {workspaceId,meetingId} public IDs. Replace this GET connection to change subscriptions. Requires user and tab; never mutates another connection. */
+                notes?: string;
             };
             header?: {
                 "last-event-id"?: string;
@@ -6128,7 +6178,7 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description text/event-stream: invalidation has {cursor}. No user content. */
+            /** @description text/event-stream: invalidation has {cursor}; document has {workspaceId,meetingId,documentId,cursor,unavailable}. Subscription is immutable per connection. No user content. */
             200: {
                 headers: {
                     [name: string]: unknown;

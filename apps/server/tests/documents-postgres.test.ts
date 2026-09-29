@@ -34,6 +34,8 @@ it.runIf(process.env.TEST_DATABASE_URL)("enforces Documents RLS, composite tenan
     await first.sync.withIdentity(owner, (s) => s.initializeDocument(workspaceId, generalId, { meetingId: null, kind: "general", title: "Independent" }));
     expect((await second.sync.withIdentity(owner, (s) => s.getDocument(workspaceId, generalId)))?.meetingId).toBeNull();
     await expect(second.sync.withIdentity(reader, (s) => s.getDocument(workspaceId, generalId))).rejects.toThrow("document_unavailable");
+    expect(await second.sync.withIdentity(owner, (s) => s.notesHeads([{ workspaceId, meetingId }]))).toEqual([{ workspaceId, meetingId, id: documentId, generation: doc.generation, revision: doc.revision }]);
+    expect(await second.sync.withIdentity(reader, (s) => s.notesHeads([{ workspaceId, meetingId }]))).toEqual([]);
     const concurrent = await Promise.all([first, second].map((store) => store.sync.withIdentity(owner, (s) => s.initializeMeetingNotes(workspaceId, meetingId, uuidV7()))));
     expect(concurrent.map((row) => row.id)).toEqual([documentId, documentId]);
     await expect(first.sync.withIdentity(reader, (s) => s.getDocument(workspaceId, documentId))).rejects.toThrow("document_unavailable");

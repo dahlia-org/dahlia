@@ -615,9 +615,10 @@ enum SyncInitialSnapshotBuilder {
         _ items: [WorkspaceRelocation.Item],
         workspaceId: UUID,
         replaceServerImageAnalysis: Bool = false,
+        existing: SyncResetSnapshot = .init(ids: [:]),
         in db: Database
     ) throws {
-        let projects = try items.filter { $0.entity == .project }.map { item in
+        let projects = try items.filter { $0.entity == .project && !existing.projects.contains($0.id) }.map { item in
             guard let project = try ProjectRecord.fetchOne(db, key: item.id) else { throw LocalWorkspaceImportError.changed }
             return project
         }.sorted { $0.parentProjectId == nil && $1.parentProjectId != nil }
@@ -625,25 +626,9 @@ enum SyncInitialSnapshotBuilder {
             try Self.projectOperation($0, action: .create)
         }, in: db)
         for item in items where item.entity == .meeting {
-            guard let meeting = try MeetingRecord.fetchOne(db, key: item.id) else { throw LocalWorkspaceImportError.changed }
-            try TextContentAccess.requireComplete(entity: .summary, id: meeting.id, in: db)
-            try TextContentAccess.requireComplete(entity: .transcript, id: meeting.id, in: db)
-            try SyncTransactionRecorder.record(workspaceId: workspaceId, operations: [
-                Self.meetingOperation(meeting, action: .create, in: db),
-            ], in: db)
-            if let summary = try SummaryContent.fetchOne(db, key: meeting.id) {
-                try SyncTransactionRecorder.record(workspaceId: workspaceId, operations: [
-                    Self.summaryOperation(summary, action: .upsert),
-                ], in: db)
-            }
-            if var transcript = try TranscriptRecord.current(meeting.id, in: db) {
-                transcript.version = nil
-                transcript.syncRevision = nil
-                try TranscriptRecord(meetingId: meeting.id, info: transcript).save(db)
-                try TranscriptRecord.enqueueSnapshot(meetingId: meeting.id, info: transcript, in: db)
-            }
+            try enqueueMeetingContents(meetingId: item.id, workspaceId: workspaceId, existing: existing, in: db)
         }
-        for item in items where item.entity == .file {
+        for item in items where item.entity == .file && !existing.files.contains(item.id) {
             guard let file = try FileRecord.fetchOne(db, key: item.id), let reference = file.localReference else {
                 throw ScreenshotContentError.unavailable
             }
@@ -683,6 +668,7 @@ enum SyncInitialSnapshotBuilder {
             ])
             let attachments = try MeetingAttachmentRecord.filter(Column("meetingId") == item.id).fetchCursor(db)
             while let attachment = try attachments.next() {
+                if existing.screenshots.contains(attachment.id) { continue }
                 try SyncTransactionRecorder.record(workspaceId: workspaceId, operations: [
                     Self.meetingAttachmentOperation(attachment),
                 ], in: db)
@@ -690,6 +676,10 @@ enum SyncInitialSnapshotBuilder {
             let archives = try RecordingArchiveRecord.filter(Column("meetingId") == item.id).fetchCursor(db)
             while var archive = try archives.next() {
                 let prepared = try SyncJSON.decoder.decode([String: RecordingArchiveEncoder.Prepared].self, from: Data(archive.preparedJSON.utf8))
+                if existing.recordings.contains(archive.sessionId) {
+                    try enqueueMissingRecordingSources(archive, prepared: prepared, workspaceId: workspaceId, in: db)
+                    continue
+                }
                 let hasRetainedSegments = try Bool.fetchOne(db, sql: """
                 SELECT EXISTS (
                     SELECT 1 FROM recording_audio_segments
@@ -749,4 +739,61 @@ enum SyncInitialSnapshotBuilder {
             }
         }
     }
+
+    private static func enqueueMeetingContents(
+        meetingId: UUID,
+        workspaceId: UUID,
+        existing: SyncResetSnapshot,
+        in db: Database
+    ) throws {
+        guard let meeting = try MeetingRecord.fetchOne(db, key: meetingId) else { throw LocalWorkspaceImportError.changed }
+        if !existing.meetings.contains(meeting.id) {
+            try SyncTransactionRecorder.record(workspaceId: workspaceId, operations: [
+                Self.meetingOperation(meeting, action: .create, in: db),
+            ], in: db)
+        }
+        if !existing.summaries.contains(meeting.id) {
+            try TextContentAccess.requireComplete(entity: .summary, id: meeting.id, in: db)
+            if let summary = try SummaryContent.fetchOne(db, key: meeting.id) {
+                try SyncTransactionRecorder.record(workspaceId: workspaceId, operations: [
+                    Self.summaryOperation(summary, action: .upsert),
+                ], in: db)
+            }
+        }
+        if !existing.transcripts.contains(meeting.id) {
+            try TextContentAccess.requireComplete(entity: .transcript, id: meeting.id, in: db)
+            if var transcript = try TranscriptRecord.current(meeting.id, in: db) {
+                transcript.version = nil
+                transcript.syncRevision = nil
+                try TranscriptRecord(meetingId: meeting.id, info: transcript).save(db)
+                try TranscriptRecord.enqueueSnapshot(meetingId: meeting.id, info: transcript, in: db)
+            }
+        }
+    }
+
+    private static func enqueueMissingRecordingSources(
+        _ archive: RecordingArchiveRecord,
+        prepared: [String: RecordingArchiveEncoder.Prepared],
+        workspaceId: UUID,
+        in db: Database
+    ) throws {
+        let canonical = try archive.audio
+        // Reconnection adopts existing Server sources. Only still-missing sources are submitted;
+        // differing local originals/preparations remain available without overwriting Server audio.
+        for (source, file) in prepared.sorted(by: { $0.key < $1.key }) where canonical[source] == nil {
+            try SyncTransactionRecorder.record(workspaceId: workspaceId, operations: [
+                SyncOperationDraft(
+                    entity: .recording,
+                    action: .upsert,
+                    entityId: archive.sessionId,
+                    payloadJSON: SyncJSON.encoder.encode(RecordingArchiveService.Commit(
+                        source: source,
+                        checksum: file.checksum,
+                        manifest: file.manifest
+                    ))
+                ),
+            ], in: db)
+        }
+    }
+
 }

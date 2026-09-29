@@ -86,6 +86,7 @@ export function createPostgresMeetingSyncStore(
   searchBackend: SyncSearchBackend = "postgres",
   embeddingConfig?: AppConfig["searchEmbedding"],
   encryption?: AppConfig["encryption"],
+  committed?: () => void,
 ): MeetingSyncStore {
   let available: Promise<boolean> | undefined;
   const isAvailable = () => available ??= roleSupportsRls(db);
@@ -96,7 +97,8 @@ export function createPostgresMeetingSyncStore(
     ...createHistoryMaintenanceStore(db, postgresSchema, true, encryption),
     async withIdentity(identity, action) {
       if (!await isAvailable()) throw new SyncStoreUnavailableError();
-      return db.transaction(async (transaction) => {
+      let changed = false;
+      const result = await db.transaction(async (transaction) => {
         await transaction.execute(sql`select set_config('app.user_id', ${identity.userId}, true)`);
         await transaction.execute(sql`select set_config('app.sharing_enabled', 'true', true)`);
         if (searchBackend === "lakebase") {
@@ -111,8 +113,11 @@ export function createPostgresMeetingSyncStore(
           searchBackend,
           embeddingConfig,
           encryption,
+          () => { changed = true; },
         ));
       });
+      if (changed) committed?.();
+      return result;
     },
   };
 }
@@ -121,6 +126,7 @@ export function createSqliteMeetingSyncStore(
   db: SQLiteDatabase,
   embeddingConfig?: AppConfig["searchEmbedding"],
   encryption?: AppConfig["encryption"],
+  committed?: () => void,
 ): MeetingSyncStore {
   const storageDeletes = createStorageDeleteStore(
     db as unknown as PostgresDatabase,
@@ -131,16 +137,22 @@ export function createSqliteMeetingSyncStore(
     isAvailable: () => Promise.resolve(true),
     ...storageDeletes,
     ...createHistoryMaintenanceStore(db as unknown as PostgresDatabase, sqliteSchema as unknown as SyncSchema, false, encryption),
-    withIdentity: (identity, action) => Promise.resolve(db.transaction(async (transaction) => {
-      return action(createIdentityStore(
-        transaction as unknown as PostgresDatabase,
-        sqliteSchema as unknown as SyncSchema,
-        identity,
-        "sqlite",
-        embeddingConfig,
-        encryption,
-      ));
-    })),
+    async withIdentity(identity, action) {
+      let changed = false;
+      const result = await db.transaction(async (transaction) => {
+        return action(createIdentityStore(
+          transaction as unknown as PostgresDatabase,
+          sqliteSchema as unknown as SyncSchema,
+          identity,
+          "sqlite",
+          embeddingConfig,
+          encryption,
+          () => { changed = true; },
+        ));
+      });
+      if (changed) committed?.();
+      return result;
+    },
   };
 }
 
@@ -485,6 +497,7 @@ function createIdentityStore(
   searchBackend: SyncSearchBackend,
   embeddingConfig?: AppConfig["searchEmbedding"],
   encryption?: AppConfig["encryption"],
+  changed?: () => void,
 ): IdentitySyncStore {
   const userPrincipalId = identity.userId;
   let searchSettings: Promise<SearchSettings> | undefined;
@@ -1284,6 +1297,7 @@ function createIdentityStore(
       target: [schema.syncWorkspaceState.workspaceId],
       set: { latestSequence: cursor },
     });
+    changed?.();
     return cursor;
   }
 

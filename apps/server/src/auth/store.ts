@@ -1,3 +1,4 @@
+import { SyncEvents } from "../sync/events";
 import { createMemoryStore, type MemoryStore } from "../memory/store";
 import { hasEmailDomain, headerIdentityValue } from "./header";
 import { lockAuthorization } from "./authorization";
@@ -105,6 +106,7 @@ export interface ApplicationStore {
   memory?: MemoryStore;
   personalMemory?: MemoryStore;
   sync: MeetingSyncStore;
+  syncEvents?: SyncEvents;
   resolveHeaderUser(identity: Identity): Promise<string | null>;
   ensureIdentityUser(identity: Identity): Promise<boolean>;
   seedDahliaClient(config: AppConfig): Promise<void>;
@@ -132,15 +134,17 @@ export function createPostgresApplicationStore(
   authProviderId = "external",
   localSingleUser = false,
   autoCreateOrgOnSignup = false,
+  syncEvents = new SyncEvents(),
 ): ApplicationStore {
   const organizations = createOrganizationStore(db, true, false, autoCreateOrgOnSignup);
   return {
     database: drizzleAdapter(db, { provider: "pg", schema: postgresAuthSchema, schemaName: "auth" }),
     organizations,
+    syncEvents,
     searchSettings: createSearchSettingsStore(db, true),
     memory: createMemoryStore(db, true),
     personalMemory: createMemoryStore(db, true, true),
-    sync: createPostgresMeetingSyncStore(db, searchBackend, searchEmbedding, encryption),
+    sync: createPostgresMeetingSyncStore(db, searchBackend, searchEmbedding, encryption, () => syncEvents.publish("domain")),
     async resolveHeaderUser(identity) {
       const email = headerIdentityValue({ localSingleUser }, identity.email ?? identity.userId);
       if (!email) return null;
@@ -360,15 +364,17 @@ export function createSqliteApplicationStore(
   authProviderId = "external",
   localSingleUser = false,
   autoCreateOrgOnSignup = false,
+  syncEvents = new SyncEvents(),
 ): ApplicationStore {
   const organizations = createOrganizationStore(db, false, false, autoCreateOrgOnSignup);
   return {
     database: drizzleAdapter(db, { provider: "sqlite", schema: sqliteAuthSchema, transaction: transactions }),
     organizations,
+    syncEvents,
     searchSettings: createSearchSettingsStore(db, false),
     memory: createMemoryStore(db, false),
     personalMemory: createMemoryStore(db, false, true),
-    sync: createSqliteMeetingSyncStore(db, searchEmbedding, encryption),
+    sync: createSqliteMeetingSyncStore(db, searchEmbedding, encryption, () => syncEvents.publish("domain")),
     async resolveHeaderUser(identity) {
       const email = headerIdentityValue({ localSingleUser }, identity.email ?? identity.userId);
       if (!email) return null;

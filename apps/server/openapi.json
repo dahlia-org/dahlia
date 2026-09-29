@@ -3181,6 +3181,9 @@
                 "type": "integer",
                 "minimum": 0,
                 "maximum": 9007199254740991
+              },
+              "accountBinding": {
+                "type": "boolean"
               }
             },
             "required": [
@@ -9607,6 +9610,16 @@
             "required": true,
             "name": "meetingId",
             "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "description": "Expected authenticated public user ID. A mismatch rejects the request before reading or writing document content."
+            },
+            "required": false,
+            "description": "Expected authenticated public user ID. A mismatch rejects the request before reading or writing document content.",
+            "name": "X-Dahlia-Document-User",
+            "in": "header"
           }
         ],
         "responses": {
@@ -9649,6 +9662,16 @@
             "required": true,
             "name": "meetingId",
             "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "description": "Expected authenticated public user ID. A mismatch rejects the request before reading or writing document content."
+            },
+            "required": false,
+            "description": "Expected authenticated public user ID. A mismatch rejects the request before reading or writing document content.",
+            "name": "X-Dahlia-Document-User",
+            "in": "header"
           }
         ],
         "requestBody": {
@@ -9703,6 +9726,16 @@
             "required": true,
             "name": "documentId",
             "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "description": "Expected authenticated public user ID. A mismatch rejects the request before reading or writing document content."
+            },
+            "required": false,
+            "description": "Expected authenticated public user ID. A mismatch rejects the request before reading or writing document content.",
+            "name": "X-Dahlia-Document-User",
+            "in": "header"
           }
         ],
         "responses": {
@@ -9745,6 +9778,16 @@
             "required": true,
             "name": "documentId",
             "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "description": "Expected authenticated public user ID. A mismatch rejects the request before reading or writing document content."
+            },
+            "required": false,
+            "description": "Expected authenticated public user ID. A mismatch rejects the request before reading or writing document content.",
+            "name": "X-Dahlia-Document-User",
+            "in": "header"
           }
         ],
         "requestBody": {
@@ -9799,6 +9842,16 @@
             "required": true,
             "name": "documentId",
             "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "description": "Expected authenticated public user ID. A mismatch rejects the request before reading or writing document content."
+            },
+            "required": false,
+            "description": "Expected authenticated public user ID. A mismatch rejects the request before reading or writing document content.",
+            "name": "X-Dahlia-Document-User",
+            "in": "header"
           }
         ],
         "responses": {
@@ -9843,6 +9896,16 @@
             "required": false,
             "name": "after",
             "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "description": "Expected authenticated public user ID. A mismatch rejects the request before reading or writing document content."
+            },
+            "required": false,
+            "description": "Expected authenticated public user ID. A mismatch rejects the request before reading or writing document content.",
+            "name": "X-Dahlia-Document-User",
+            "in": "header"
           }
         ],
         "responses": {
@@ -9887,6 +9950,16 @@
             "required": true,
             "name": "documentId",
             "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "description": "Expected authenticated public user ID. A mismatch rejects the request before reading or writing document content."
+            },
+            "required": false,
+            "description": "Expected authenticated public user ID. A mismatch rejects the request before reading or writing document content.",
+            "name": "X-Dahlia-Document-User",
+            "in": "header"
           }
         ],
         "requestBody": {
@@ -9950,6 +10023,16 @@
             "required": false,
             "name": "after",
             "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "description": "Expected authenticated public user ID. A mismatch rejects the request before reading or writing document content."
+            },
+            "required": false,
+            "description": "Expected authenticated public user ID. A mismatch rejects the request before reading or writing document content.",
+            "name": "X-Dahlia-Document-User",
+            "in": "header"
           }
         ],
         "responses": {
@@ -9992,6 +10075,16 @@
             "required": true,
             "name": "documentId",
             "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "description": "Expected authenticated public user ID. A mismatch rejects the request before reading or writing document content."
+            },
+            "required": false,
+            "description": "Expected authenticated public user ID. A mismatch rejects the request before reading or writing document content.",
+            "name": "X-Dahlia-Document-User",
+            "in": "header"
           }
         ],
         "requestBody": {
@@ -10047,6 +10140,16 @@
             "required": true,
             "name": "documentId",
             "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "description": "Expected authenticated public user ID. A mismatch rejects the request before reading or writing document content."
+            },
+            "required": false,
+            "description": "Expected authenticated public user ID. A mismatch rejects the request before reading or writing document content.",
+            "name": "X-Dahlia-Document-User",
+            "in": "header"
           }
         ],
         "responses": {
@@ -10089,6 +10192,16 @@
             "required": true,
             "name": "documentId",
             "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "description": "Expected authenticated public user ID. A mismatch rejects the request before reading or writing document content."
+            },
+            "required": false,
+            "description": "Expected authenticated public user ID. A mismatch rejects the request before reading or writing document content.",
+            "name": "X-Dahlia-Document-User",
+            "in": "header"
           }
         ],
         "requestBody": {
@@ -10444,6 +10557,16 @@
             "required": false,
             "name": "query",
             "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "description": "Expected authenticated public user ID. A mismatch rejects the request before reading or writing document content."
+            },
+            "required": false,
+            "description": "Expected authenticated public user ID. A mismatch rejects the request before reading or writing document content.",
+            "name": "X-Dahlia-Document-User",
+            "in": "header"
           }
         ],
         "responses": {
@@ -10474,6 +10597,18 @@
           },
           {
             "trustedProxy": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "description": "Expected authenticated public user ID. A mismatch rejects the request before reading or writing document content."
+            },
+            "required": false,
+            "description": "Expected authenticated public user ID. A mismatch rejects the request before reading or writing document content.",
+            "name": "X-Dahlia-Document-User",
+            "in": "header"
           }
         ],
         "requestBody": {
@@ -10980,6 +11115,16 @@
             "required": false,
             "name": "query",
             "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "description": "Expected authenticated public user ID. A mismatch rejects the request before reading or writing document content."
+            },
+            "required": false,
+            "description": "Expected authenticated public user ID. A mismatch rejects the request before reading or writing document content.",
+            "name": "X-Dahlia-Document-User",
+            "in": "header"
           }
         ],
         "responses": {
@@ -11021,6 +11166,16 @@
             "required": true,
             "name": "workspaceId",
             "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "description": "Expected authenticated public user ID. A mismatch rejects the request before reading or writing document content."
+            },
+            "required": false,
+            "description": "Expected authenticated public user ID. A mismatch rejects the request before reading or writing document content.",
+            "name": "X-Dahlia-Document-User",
+            "in": "header"
           }
         ],
         "requestBody": {
@@ -14478,6 +14633,35 @@
           },
           {
             "schema": {
+              "type": "string",
+              "maxLength": 100
+            },
+            "required": false,
+            "name": "user",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{32}$"
+            },
+            "required": false,
+            "name": "tab",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "maxLength": 8192,
+              "description": "JSON array of up to 32 {workspaceId,meetingId} public IDs. Replace this GET connection to change subscriptions. Requires user and tab; never mutates another connection."
+            },
+            "required": false,
+            "description": "JSON array of up to 32 {workspaceId,meetingId} public IDs. Replace this GET connection to change subscriptions. Requires user and tab; never mutates another connection.",
+            "name": "notes",
+            "in": "query"
+          },
+          {
+            "schema": {
               "type": "string"
             },
             "required": false,
@@ -14487,7 +14671,7 @@
         ],
         "responses": {
           "200": {
-            "description": "text/event-stream: invalidation has {cursor}. No user content.",
+            "description": "text/event-stream: invalidation has {cursor}; document has {workspaceId,meetingId,documentId,cursor,unavailable}. Subscription is immutable per connection. No user content.",
             "content": {
               "text/event-stream": {
                 "schema": {

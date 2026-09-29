@@ -97,22 +97,6 @@ private struct TranscriptPatchData: Codable {
     let chunks: [Chunk]
 }
 
-struct SyncChangePage: Decodable {
-    struct Change: Codable, Sendable {
-        let sequence: Int
-        let entity: SyncEntity
-        let entityId: UUID
-        let action: String
-        let revision: Int?
-        let record: SyncCanonicalPayload?
-    }
-
-    let items: [Change]
-    let cursor: String
-    let highWaterCursor: String
-    let hasMore: Bool
-}
-
 struct SyncResetSnapshot: Sendable {
     let projects: Set<UUID>
     let meetings: Set<UUID>
@@ -870,6 +854,23 @@ actor SyncWorker {
         }
     }
 
+    func retrySnapshot(workspaceId: UUID, connectionId: UUID) async throws {
+        guard let target = try await pullTarget(workspaceId: workspaceId, connectionId: connectionId) else { throw TextContentError.changed }
+        try await dbQueue.read { db in
+            guard try target.context.isCurrent(in: db) else { throw TextContentError.changed }
+            try SyncSnapshotRecovery.validate(workspaceId: workspaceId, in: db)
+        }
+        let snapshotTarget = SyncTarget(
+            workspaceId: workspaceId,
+            connectionId: connectionId,
+            origin: target.origin,
+            cursor: nil,
+            mutationGeneration: target.mutationGeneration
+        )
+        guard try await performPull(snapshotTarget) else { throw SyncSnapshotRecoveryError.pendingChanges }
+        await meetingContent.scheduleMaintenance(dbQueue: dbQueue)
+    }
+
     private func performPull(_ target: SyncTarget) async throws -> Bool {
         let key = PullKey(database: ObjectIdentifier(dbQueue), workspaceId: target.workspaceId)
         guard Self.pullingWorkspaces.withLock({ $0.insert(key).inserted }) else { throw TextContentError.changed }
@@ -1179,6 +1180,16 @@ actor SyncWorker {
         return try await staged.resetSnapshot()
     }
 
+    func reconnectionSnapshot(workspaceId: UUID, connectionId: UUID, origin: URL) async throws -> WorkspaceReconnectionSnapshot {
+        let target = SyncTarget(workspaceId: workspaceId, connectionId: connectionId, origin: origin, cursor: nil, mutationGeneration: 0)
+        let (store, cursor, deleted) = try await fetchStagedSnapshot(target)
+        guard deleted == nil, let cursor,
+              try await store.revisionChanges().contains(where: { $0.entity == .workspace && $0.entityId == workspaceId }) else {
+            throw SyncTransactionQueueError.invalidReceipt
+        }
+        return try await WorkspaceReconnectionSnapshot(store: store, cursor: cursor, ids: store.resetSnapshot(), projects: store.projects())
+    }
+
     private func fetchStagedSnapshot(_ target: SyncTarget) async throws -> (SyncSnapshotStore, String?, SyncChangePage.Change?) {
         let staged = try SyncSnapshotStore()
         var position: String?
@@ -1462,7 +1473,12 @@ actor SyncWorker {
             ).ok
                 .body.json
         }
-        return try SyncJSON.decoder.decode(SyncChangePage.self, from: data)
+        do {
+            return try SyncJSON.decoder.decode(SyncChangePage.self, from: data)
+        } catch {
+            throw SyncPayloadFailure(operation: "getChanges", error: error) ?? error
+        }
+
     }
 
     private func applyIncrementalPage(_ changes: [SyncChangePage.Change], target: SyncTarget) async throws -> RemoteChangePolicy.Result {

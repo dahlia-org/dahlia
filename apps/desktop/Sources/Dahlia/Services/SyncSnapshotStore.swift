@@ -82,6 +82,16 @@ final class SyncSnapshotStore: Sendable {
         }
     }
 
+    /// The caller owns the destination transaction; this temporary store is immutable after staging.
+    func forEachChange(_ body: (SyncChangePage.Change) throws -> Void) throws {
+        try database.read { db in
+            let cursor = try Data.fetchCursor(db, sql: "SELECT payload FROM changes ORDER BY phase, entityId")
+            while let payload = try cursor.next() {
+                try body(SyncJSON.decoder.decode(SyncChangePage.Change.self, from: payload))
+            }
+        }
+    }
+
     func page(after: SyncChangePage.Change? = nil) async throws -> [SyncChangePage.Change] {
         try await database.read { db in
             let phase = after.map(Self.phase) ?? -1

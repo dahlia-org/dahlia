@@ -1754,3 +1754,14 @@
 "document.undo" = "Undo";
 "document.redo" = "Redo";
 "document.privateRecoverySaved" = "Your input was saved in a recovery copy on this Mac, available in Workspace settings.";
+
+"Reconnect to existing meetings" = "Reconnect to existing meetings";
+
+"Use the Server version of existing records and upload records missing from the Server. Your local version is saved in a backup before reconnecting. Private Notes stay on this Mac." = "Use the Server version of existing records and upload records missing from the Server. Your local version is saved in a backup before reconnecting. Private Notes stay on this Mac.";
+
+"The local Workspace %@ is the same Workspace as %@ on the Server. After reconnecting, it appears under the Server name." = "The local Workspace %@ is the same Workspace as %@ on the Server. After reconnecting, it appears under the Server name.";
+
+"sync.payloadGuidance" = "Sync data could not be read. Check that the app and Server are up to date, then retry. You can fetch the current Server state when no edits are pending and recording has stopped. If the problem persists, copy the diagnostics and share them with your administrator.";
+"sync.snapshotPendingChanges" = "There are unsent edits, an active recording, or concurrent changes. Your data is retained. Wait for uploads and recording to finish, then fetch again.";
+"sync.copyDiagnostics" = "Copy sync diagnostics";
+"sync.fetchSnapshot" = "Fetch from Server";

@@ -69,7 +69,7 @@ import GRDB
                 role: "admin"
             )
 
-            _ = try await MeetingRepository(dbQueue: fixture.database.dbQueue).adoptWorkspaceForServerSync(
+            _ = try await MeetingRepository(dbQueue: fixture.database.dbQueue).importIntoEmptyServerWorkspace(
                 id: fixture.meeting.workspaceId,
                 connectionID: connection.id,
                 serverWorkspace: remote,

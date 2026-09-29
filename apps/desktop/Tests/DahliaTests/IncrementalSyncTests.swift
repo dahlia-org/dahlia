@@ -12,6 +12,140 @@
 
     @MainActor
     struct IncrementalSyncTests {
+        @Test(arguments: [true, false])
+        func queuedFileMetadataDoesNotBreakProjectConflictChecks(related: Bool) async throws {
+            let fixture = try Fixture()
+            let projectID = UUID.v7()
+            try await fixture.queue.write { db in
+                try ProjectRecord(
+                    id: projectID,
+                    workspaceId: fixture.workspaceId,
+                    parentProjectId: nil,
+                    name: "Project",
+                    createdAt: .now,
+                    projectType: .undefined
+                ).insert(db)
+                try db.execute(sql: "UPDATE meetings SET projectId = ? WHERE id = ?", arguments: [projectID, fixture.meetingId])
+            }
+            try await fixture.queueFile()
+            try await fixture.queue.read { db throws in
+                // FileOperationPayload uses the durable metadata key ocr_text, not the API's ocrText.
+                let before = try String.fetchOne(db, sql: "SELECT payloadJSON FROM sync_operations")
+                #expect(before?.contains("ocr_text") == true)
+                #expect(try RemoteChangePolicy.permits(
+                    .project, id: related ? projectID : .v7(), workspaceId: fixture.workspaceId, in: db
+                ) == !related)
+                #expect(try String.fetchOne(db, sql: "SELECT payloadJSON FROM sync_operations") == before)
+                #expect(try SyncTransactionQueue.hasPending(workspaceId: fixture.workspaceId, in: db))
+            }
+        }
+
+        @Test
+        func malformedChangeResponseKeepsCursorAndExposesSafeDiagnostics() async throws {
+            let fixture = try Fixture()
+            let malformed = try JSONSerialization.data(withJSONObject: [
+                "items": [], "cursor": "after", "highWaterCursor": "after", "hasMore": "invalid",
+            ])
+            let client = fixture.client { request in
+                if request.url!.path.hasSuffix("capabilities") {
+                    return (200, [:], Data(#"{"documents":{"version":1},"sync":{"version":7}}"#.utf8))
+                }
+                return (200, [:], malformed)
+            }
+            defer { ImageURLProtocol.remove(origin: fixture.origin) }
+            await #expect(throws: SyncPayloadFailure.self) {
+                try await SyncWorker(dbQueue: fixture.queue, apiClient: client).retryPull(
+                    workspaceId: fixture.workspaceId, connectionId: fixture.connectionId
+                )
+            }
+            try await fixture.queue.read { db throws in
+                let workspace = try #require(try WorkspaceRecord.fetchOne(db, key: fixture.workspaceId))
+                #expect(workspace.syncPullCursor == "before")
+                let incident = try #require(SyncIncident(jsonString: workspace.syncPullErrorJSON))
+                #expect(incident.code == "invalid_sync_payload")
+                #expect(incident.diagnostic?.contains("getChanges") == true)
+                #expect(incident.diagnostic?.contains("hasMore") == true)
+                #expect(try MeetingRecord.fetchOne(db, key: fixture.meetingId) != nil)
+            }
+        }
+
+        @Test(arguments: ["none", "queued", "recording", "document"])
+        func userSnapshotRecoveryPreservesPendingWork(blocker: String) async throws {
+            let fixture = try Fixture()
+            if blocker == "queued" { try await fixture.queueFile() }
+            if blocker == "recording" {
+                try await fixture.queue.write { db in
+                    try RecordingSessionRecord(
+                        id: .v7(),
+                        meetingId: fixture.meetingId,
+                        startedAt: .now,
+                        duration: 0,
+                        offsetSeconds: 0,
+                        createdAt: .now,
+                        updatedAt: .now
+                    ).insert(db)
+                }
+            }
+            if blocker == "document" {
+                try await fixture.queue.write { db in
+                    let document = DocumentRecord(
+                        id: .v7(),
+                        workspaceId: fixture.workspaceId,
+                        meetingId: fixture.meetingId,
+                        checkpoint: "AAA=",
+                        createdAt: .now,
+                        updatedAt: .now
+                    )
+                    try document.insert(db)
+                    var update = DocumentUpdateRecord(documentId: document.id, payload: "AAA=", pending: true, createdAt: .now)
+                    try update.insert(db)
+                }
+            }
+            let canonical = try fixture.change(.workspace, id: fixture.workspaceId, revision: 7, fields: [
+                "name": "Server", "createdAt": "2026-09-07T00:00:00Z",
+                "generationSettings": JSONSerialization.jsonObject(with: JSONEncoder().encode(WorkspaceGenerationSettings())),
+            ])
+            var snapshotRow = try wireChange(canonical, workspaceId: fixture.workspaceId)
+            snapshotRow["id"] = snapshotRow.removeValue(forKey: "entityId")
+            var workspaceRecord = try #require(snapshotRow["record"] as? [String: Any])
+            let organizationID: String? = try await fixture.queue.read {
+                try WorkspaceRecord.fetchOne($0, key: fixture.workspaceId)?.organizationId?.uuidString
+            }
+            workspaceRecord["organizationId"] = try #require(organizationID)
+            snapshotRow["record"] = workspaceRecord
+            let snapshot = try JSONSerialization.data(withJSONObject: [
+                "items": [snapshotRow], "startCursor": "after", "nextCursor": NSNull(),
+            ])
+            let empty = try page(workspaceId: fixture.workspaceId, [], cursor: "after")
+            let requests = Mutex(0)
+            let client = fixture.client { request in
+                requests.withLock { $0 += 1 }
+                if request.url!.path.hasSuffix("capabilities") {
+                    return (200, [:], Data(#"{"documents":{"version":1},"sync":{"version":7}}"#.utf8))
+                }
+                if request.url!.path.hasSuffix("snapshot") { return (200, [:], snapshot) }
+                if request.url!.path.hasSuffix("changes") { return (200, [:], empty) }
+                return (404, [:], Data())
+            }
+            defer { ImageURLProtocol.remove(origin: fixture.origin) }
+            let worker = SyncWorker(dbQueue: fixture.queue, apiClient: client)
+            if blocker == "none" {
+                try await worker.retrySnapshot(workspaceId: fixture.workspaceId, connectionId: fixture.connectionId)
+                #expect(requests.withLock { $0 } > 0)
+                #expect(try await fixture.queue.read { try WorkspaceRecord.fetchOne($0, key: fixture.workspaceId)?.syncPullCursor } == "after")
+            } else {
+                await #expect(throws: SyncSnapshotRecoveryError.self) {
+                    try await worker.retrySnapshot(workspaceId: fixture.workspaceId, connectionId: fixture.connectionId)
+                }
+                #expect(requests.withLock { $0 } == 0)
+                try await fixture.queue.read { db throws in
+                    #expect(try WorkspaceRecord.fetchOne(db, key: fixture.workspaceId)?.syncPullCursor == "before")
+                    #expect(try MeetingRecord.fetchOne(db, key: fixture.meetingId) != nil)
+                    #expect(try SyncTransactionQueue.hasPending(workspaceId: fixture.workspaceId, in: db) == (blocker == "queued"))
+                }
+            }
+        }
+
         @Test
         func restoredMeetingReappliesChildrenAtTheirOriginalRevision() async throws {
             let fixture = try Fixture()

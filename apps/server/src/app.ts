@@ -1,3 +1,5 @@
+import { SyncEvents, documentEventKey, notesEventKey } from "./sync/events";
+import { decodeId, encodeId as documentUserID } from "./typeid";
 import * as DocumentContracts from "./documents/model";
 import { pageGetSchema, pageListSchema } from "./memory/pages-model";
 import { DahliaMemory, memoryConfigureSchema, memoryListSchema, memoryGetSchema, memorySaveSchema, personalMemorySearchSchema, workspaceMemorySearchSchema } from "./memory/dahlia";
@@ -57,7 +59,7 @@ import type { ObjectStorage } from "./storage/storage";
 import { createServerMcpHandler, MCP_MAX_REQUEST_BYTES } from "./mcp";
 import { MeetingSyncService } from "./sync/service";
 import { SCREENSHOT_VARIANTS, type ScreenshotVariant, type ScreenshotTransformer } from "./sync/screenshot-variants";
-import { decodeSyncCursor, SyncStoreUnavailableError, SyncTransactionError } from "./sync/store";
+import { encodeSyncCursor, decodeSyncCursor, SyncStoreUnavailableError, SyncTransactionError } from "./sync/store";
 import type { SearchTokenizer } from "./search/tokenizer";
 import type { SearchEmbedder } from "./search/embedding";
 
@@ -192,6 +194,7 @@ export function createApp(dependencies: AppDependencies): DahliaServerApp & { ru
   const store = dependencies.authStore;
   if (!store) throw new Error("The Dahlia application store must be initialized before creating the application");
   const authStore = store;
+  const syncEvents = store.syncEvents ?? new SyncEvents();
   const auth: DahliaAuth | undefined = dependencies.auth;
   if (config.authProvider === "accounts" && (!auth || !authStore)) {
     throw new Error("Better Auth must be initialized before creating the application");
@@ -784,9 +787,19 @@ export function createApp(dependencies: AppDependencies): DahliaServerApp & { ru
       context.req.query("startCursor"),
     ));
   });
+  async function documentIdentity(request: Request) {
+    const identity = await syncIdentity(request);
+    const expected = request.headers.get("X-Dahlia-Document-User");
+    if (expected && expected !== documentUserID("user", identity.userId)) throw new RequestError(409, "document_account_changed");
+    return identity;
+  }
   const documentParameters = (workspaceId: string, documentId: string) => [sync.parseId(workspaceId), sync.parseId(documentId)] as const;
+  function publishDocumentChange(workspaceId: string, documentId: string) {
+    syncEvents.publish(documentEventKey(workspaceId, documentId));
+    syncEvents.publish(notesEventKey(workspaceId));
+  }
   registerApi(app, "getMeetingNotes", async (context) => {
-    const identity = await syncIdentity(context.req.raw);
+    const identity = await documentIdentity(context.req.raw);
     const ids = documentParameters(context.req.param("workspaceId")!, context.req.param("meetingId")!);
     context.header("Cache-Control", "no-store");
     return context.json({ document: await store.sync.withIdentity(identity, (scoped) => scoped.getMeetingNotes(...ids)) });
@@ -794,77 +807,86 @@ export function createApp(dependencies: AppDependencies): DahliaServerApp & { ru
   registerApi(app, "initializeMeetingNotes", documentBodyLimit, async (context) => {
     const requiresBrowserOrigin = config.authProvider === "accounts" && !context.req.header("authorization");
     if ((requiresBrowserOrigin || context.req.header("origin")) && !mutationOriginAllowed(context.req.raw, config.baseUrl)) return context.json({ error: "invalid_origin" }, 403);
-    const identity = await syncIdentity(context.req.raw);
+    const identity = await documentIdentity(context.req.raw);
     const ids = documentParameters(context.req.param("workspaceId")!, context.req.param("meetingId")!);
     const parsed = DocumentContracts.meetingNotesInitializeSchema.safeParse(await context.req.json().catch(() => null));
     if (!parsed.success) throw new RequestError(400, "invalid_document_request");
     const result = await store.sync.withIdentity(identity, (scoped) => scoped.initializeMeetingNotes(...ids, parsed.data.id, parsed.data.legacyUpdate));
+    publishDocumentChange(ids[0], result.id);
     return context.json({ document: result });
   });
   registerApi(app, "getDocument", async (context) => {
-    const identity = await syncIdentity(context.req.raw);
+    const identity = await documentIdentity(context.req.raw);
     const ids = documentParameters(context.req.param("workspaceId")!, context.req.param("documentId")!);
     context.header("Cache-Control", "no-store");
     return context.json({ document: await store.sync.withIdentity(identity, (scoped) => scoped.getDocument(...ids)) });
   });
   registerApi(app, "getDocumentEvents", async (context) => {
-    const identity = await syncIdentity(context.req.raw);
+    const identity = await documentIdentity(context.req.raw);
     const ids = documentParameters(context.req.param("workspaceId")!, context.req.param("documentId")!);
     // Authorize before entering the stream and on every subsequent database read.
     await store.sync.withIdentity(identity, (scoped) => scoped.documentHead(...ids));
     return streamSSE(context, async (stream) => {
+      const abort = new AbortController();
+      stream.onAbort(() => abort.abort());
+      const watch = syncEvents.watch(documentEventKey(...ids), abort.signal);
       let previous = "";
-      while (!stream.aborted) {
-        const head = await store.sync.withIdentity(identity, (scoped) => scoped.documentHead(...ids));
-        const cursor = head ? `${head.generation}:${head.revision}` : "absent";
-        if (cursor !== previous) {
-          await stream.writeSSE({ event: "invalidation", id: cursor, data: JSON.stringify({ cursor, revision: head?.revision ?? 0 }) });
-          previous = cursor;
+      try {
+        while (!stream.aborted) {
+          watch.consume();
+          const head = await store.sync.withIdentity(identity, (scoped) => scoped.documentHead(...ids));
+          const cursor = head ? `${head.generation}:${head.revision}` : "absent";
+          if (cursor !== previous) {
+            await stream.writeSSE({ event: "invalidation", id: cursor, data: JSON.stringify({ cursor, revision: head?.revision ?? 0 }) });
+            previous = cursor;
+          }
+          await watch.wait();
         }
-        await stream.sleep(2_000);
-      }
+      } finally { watch.close(); }
     });
   });
   registerApi(app, "listDocuments", async (context) => {
-    const identity = await syncIdentity(context.req.raw);
+    const identity = await documentIdentity(context.req.raw);
     return context.json(await store.sync.withIdentity(identity, (scoped) => scoped.listDocuments(sync.parseId(context.req.param("workspaceId")!), context.req.query("after"))));
   });
   registerApi(app, "listDocumentRecoveries", async (context) => {
-    const identity = await syncIdentity(context.req.raw);
+    const identity = await documentIdentity(context.req.raw);
     const ids = documentParameters(context.req.param("workspaceId")!, context.req.param("documentId")!);
     return context.json(await store.sync.withIdentity(identity, (scoped) => scoped.documentRecoveries(...ids, context.req.query("after"))));
   });
   registerApi(app, "getDocumentPresence", async (context) => {
-    const identity = await syncIdentity(context.req.raw);
+    const identity = await documentIdentity(context.req.raw);
     const ids = documentParameters(context.req.param("workspaceId")!, context.req.param("documentId")!);
     return context.json({ items: await store.sync.withIdentity(identity, (scoped) => scoped.documentPresence(...ids)) });
   });
   registerApi(app, "initializeDocument", documentBodyLimit, async (context) => {
     const requiresBrowserOrigin = config.authProvider === "accounts" && !context.req.header("authorization");
     if ((requiresBrowserOrigin || context.req.header("origin")) && !mutationOriginAllowed(context.req.raw, config.baseUrl)) return context.json({ error: "invalid_origin" }, 403);
-    const identity = await syncIdentity(context.req.raw);
+    const identity = await documentIdentity(context.req.raw);
     const ids = documentParameters(context.req.param("workspaceId")!, context.req.param("documentId")!);
     const parsed = DocumentContracts.documentInitializeSchema.safeParse(await context.req.json().catch(() => null));
     if (!parsed.success) throw new RequestError(400, "invalid_document_request");
     const body = parsed.data;
     const result = await store.sync.withIdentity(identity, (scoped) => scoped.initializeDocument(...ids, body));
+    publishDocumentChange(ids[0], result.id);
     return context.json({ document: result });
   });
   registerApi(app, "exchangeDocument", documentBodyLimit, async (context) => {
     const requiresBrowserOrigin = config.authProvider === "accounts" && !context.req.header("authorization");
     if ((requiresBrowserOrigin || context.req.header("origin")) && !mutationOriginAllowed(context.req.raw, config.baseUrl)) return context.json({ error: "invalid_origin" }, 403);
-    const identity = await syncIdentity(context.req.raw);
+    const identity = await documentIdentity(context.req.raw);
     const ids = documentParameters(context.req.param("workspaceId")!, context.req.param("documentId")!);
     const parsed = DocumentContracts.documentExchangeSchema.safeParse(await context.req.json().catch(() => null));
     if (!parsed.success) throw new RequestError(400, "invalid_document_request");
     const body = parsed.data;
     const result = await store.sync.withIdentity(identity, (scoped) => scoped.exchangeDocument(...ids, body));
+    if (body.update) publishDocumentChange(...ids);
     return context.json(result);
   });
   registerApi(app, "saveDocumentRecovery", documentBodyLimit, async (context) => {
     const requiresBrowserOrigin = config.authProvider === "accounts" && !context.req.header("authorization");
     if ((requiresBrowserOrigin || context.req.header("origin")) && !mutationOriginAllowed(context.req.raw, config.baseUrl)) return context.json({ error: "invalid_origin" }, 403);
-    const identity = await syncIdentity(context.req.raw);
+    const identity = await documentIdentity(context.req.raw);
     const ids = documentParameters(context.req.param("workspaceId")!, context.req.param("documentId")!);
     const parsed = DocumentContracts.documentRecoverySchema.safeParse(await context.req.json().catch(() => null));
     if (!parsed.success) throw new RequestError(400, "invalid_document_request");
@@ -875,7 +897,7 @@ export function createApp(dependencies: AppDependencies): DahliaServerApp & { ru
   registerApi(app, "updateDocumentPresence", syncBodyLimit, async (context) => {
     const requiresBrowserOrigin = config.authProvider === "accounts" && !context.req.header("authorization");
     if ((requiresBrowserOrigin || context.req.header("origin")) && !mutationOriginAllowed(context.req.raw, config.baseUrl)) return context.json({ error: "invalid_origin" }, 403);
-    const identity = await syncIdentity(context.req.raw);
+    const identity = await documentIdentity(context.req.raw);
     const ids = documentParameters(context.req.param("workspaceId")!, context.req.param("documentId")!);
     const parsed = DocumentContracts.documentPresenceRequestSchema.safeParse(await context.req.json().catch(() => null));
     if (!parsed.success) throw new RequestError(400, "invalid_document_request");
@@ -889,7 +911,7 @@ export function createApp(dependencies: AppDependencies): DahliaServerApp & { ru
     const sources = dependencies.summaryService?.methods.map((method) => method.id) ?? [];
     return context.json({
       sync: { version: 7 },
-      documents: { version: 1 },
+      documents: { version: 1, accountBinding: true },
       ...(config.encryption ? { workspaceEncryption: { version: 1 } } : {}),
       workspaceTransfers: { version: 1 },
       recordingArchive: { version: 1 },
@@ -933,18 +955,78 @@ export function createApp(dependencies: AppDependencies): DahliaServerApp & { ru
   });
   registerApi(app, "getEvents", async (context) => {
     const identity = await syncIdentity(context.req.raw);
+    const expectedUser = context.req.query("user");
+    if (expectedUser && expectedUser !== documentUserID("user", identity.userId)) throw new RequestError(409, "document_account_changed");
+    let targets: { workspaceId: string; meetingId: string }[] = [];
+    if (context.req.query("notes")) {
+      if (!expectedUser || !context.req.query("tab")) throw new RequestError(400, "invalid_sync_subscription");
+      let value: unknown;
+      try { value = JSON.parse(context.req.query("notes")!); } catch { throw new RequestError(400, "invalid_sync_subscription"); }
+      const parsed = z.array(z.object({ workspaceId: z.string(), meetingId: z.string() }).strict()).max(32).safeParse(value);
+      if (!parsed.success) throw new RequestError(400, "invalid_sync_subscription");
+      try { targets = parsed.data.map((target) => ({ workspaceId: decodeId("workspace", target.workspaceId), meetingId: decodeId("meeting", target.meetingId) })); }
+      catch { throw new RequestError(400, "invalid_sync_subscription"); }
+      targets = [...new Map(targets.map((target) => [`${target.workspaceId}/${target.meetingId}`, target])).values()];
+    }
     const suppliedCursor = context.req.query("cursor") ?? context.req.header("last-event-id");
     let sequence = suppliedCursor ? decodeSyncCursor(suppliedCursor) : 0;
+    context.header("Cache-Control", "no-store");
     return streamSSE(context, async (stream) => {
-      while (!stream.aborted) {
-        const cursor = await sync.latestCursor(identity);
-        const latest = decodeSyncCursor(cursor);
-        if (latest > sequence) {
-          sequence = latest;
-          await stream.writeSSE({ event: "invalidation", id: cursor, data: JSON.stringify({ cursor }) });
+      const abort = new AbortController();
+      stream.onAbort(() => abort.abort());
+      // Subscription changes replace this GET; no shared mutable registration or tab authority exists.
+      const watchKeys = () => ["domain", ...new Set(targets.map((target) => notesEventKey(target.workspaceId)))];
+      let watch = syncEvents.watch(watchKeys(), abort.signal);
+      const previous = new Map<string, string>();
+      let domainAt = 0, notesAt = 0, authAt = Date.now();
+      try {
+        while (!stream.aborted) {
+          const dirty = watch.consume(), now = Date.now();
+          if (now - authAt >= 5_000) {
+            const current = await syncIdentity(context.req.raw);
+            if (current.userId !== identity.userId) throw new RequestError(409, "document_account_changed");
+            authAt = now;
+          }
+          const domainInterval = Math.max(2_000, syncEvents.pollInterval);
+          const readDomain = dirty.has("domain") || now - domainAt >= domainInterval;
+          const readNotes = targets.length > 0 && (dirty.size > 0 || now - notesAt >= syncEvents.pollInterval);
+          const result = await store.sync.withIdentity(identity, async (scoped) => ({
+            sequence: readDomain ? await scoped.latestChangeSequence() : null,
+            heads: readNotes ? await scoped.notesHeads(targets) : null,
+          }));
+          if (result.sequence !== null) {
+            domainAt = now;
+            if (result.sequence > sequence) {
+              sequence = result.sequence;
+              const cursor = encodeSyncCursor(sequence);
+              await stream.writeSSE({ event: "invalidation", id: cursor, data: JSON.stringify({ cursor }) });
+            }
+          }
+          if (result.heads) {
+            notesAt = now;
+            for (const target of targets) {
+              const key = `${target.workspaceId}/${target.meetingId}`;
+              const head = result.heads.find((head) => head.workspaceId === target.workspaceId && head.meetingId === target.meetingId);
+              let cursor = "unavailable";
+              if (head) cursor = head.id ? `${head.generation}:${head.revision}` : "absent";
+              if (previous.get(key) === cursor) continue;
+              previous.set(key, cursor);
+              await stream.writeSSE({ event: "document", data: JSON.stringify({
+                workspaceId: documentUserID("workspace", target.workspaceId), meetingId: documentUserID("meeting", target.meetingId),
+                documentId: head?.id ? documentUserID("document", head.id) : null, cursor, unavailable: !head,
+              }) });
+            }
+            const accessible = targets.filter((target) => previous.get(`${target.workspaceId}/${target.meetingId}`) !== "unavailable");
+            if (accessible.length !== targets.length) {
+              targets = accessible; watch.close(); watch = syncEvents.watch(watchKeys(), abort.signal); notesAt = 0;
+            }
+          }
+          // Bound hot notification bursts without putting document HTTP saves behind domain work.
+          await stream.sleep(50);
+          await watch.wait(Math.max(0, Math.min(domainAt + domainInterval, authAt + 5_000,
+            targets.length ? notesAt + syncEvents.pollInterval : Infinity) - Date.now()));
         }
-        await stream.sleep(2_000);
-      }
+      } finally { watch.close(); }
     });
   });
 

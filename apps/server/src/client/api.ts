@@ -16,6 +16,7 @@ export const workspaceRoleLabel = (role: SyncedWorkspaceInfo["role"]) => role ==
 
 export function syncMessage(code: string, language = globalThis.navigator?.language ?? "en"): string | undefined {
   const messages: Record<string, [string, string]> = {
+    document_account_changed: ["Sign in with the original account to sync these edits.", "この編集を同期するには、元のアカウントでサインインしてください。"],
     workspace_delete_confirmation_stale: ["The Workspace changed. Close this dialog and confirm deletion again.", "ワークスペースが変更されました。この画面を閉じ、削除内容を再確認してください。"],
     meeting_not_deleted: ["This meeting has already been restored or permanently deleted. Refresh the trash.", "このミーティングは復旧済み、または完全に削除されています。ごみ箱を更新してください。"],
     meeting_deleted: ["This meeting is in the trash. Restore it before editing.", "このミーティングはごみ箱にあります。編集するには復旧してください。"],

@@ -11,6 +11,7 @@ struct WorkspaceTransferFence: Sendable {
         in db: Database
     ) throws -> Self {
         let token = UUID.v7()
+        let workspaceIDs = Set(workspaceIDs)
         for workspaceID in workspaceIDs {
             try db.execute(
                 sql: """

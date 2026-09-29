@@ -236,65 +236,6 @@ final class MeetingRepository {
         }
     }
 
-    nonisolated func adoptWorkspaceForServerSync(
-        id: UUID,
-        connectionID: UUID,
-        serverWorkspace: CloudWorkspaceRecord,
-        transferFence: WorkspaceTransferFence,
-        requestedName: String? = nil,
-        replaceServerImageAnalysis: Bool = false,
-        screenshotContent: ScreenshotContentProvider = .shared
-    ) async throws -> WorkspaceRecord? {
-        guard serverWorkspace.workspaceId == id, serverWorkspace.connectionId == connectionID, serverWorkspace.role == "admin" else {
-            throw LocalWorkspaceImportError.unavailable
-        }
-        try await DocumentPersistence(dbQueue: dbQueue).prepareAccountTransfer(workspaceID: id)
-        let adoptedName = requestedName?.trimmingCharacters(in: .whitespacesAndNewlines) ?? serverWorkspace.name
-        guard !adoptedName.isEmpty else { throw LocalWorkspaceImportError.unavailable }
-        screenshotContent.retainOriginals(workspaceIds: [id], dbQueue: dbQueue)
-        defer { screenshotContent.releaseOriginals(workspaceIds: [id], dbQueue: dbQueue) }
-        let files = try await screenshotContent.prepareAccountTransfer(workspaceId: id, connectionId: connectionID, dbQueue: dbQueue)
-        return try await dbQueue.write { db in
-            guard try transferFence.isCurrent(in: db),
-                  var workspace = try WorkspaceRecord.fetchOne(db, key: id), workspace.accountConnectionId == nil,
-                  try !RecordingSessionRecord.hasActiveRecording(workspaceId: id, in: db),
-                  try !SyncTransactionQueue.hasPending(workspaceId: id, in: db) else { throw LocalWorkspaceImportError.changed }
-            try ScreenshotContentProvider.installTransfers(files, workspaceId: id, in: db)
-            try DocumentPersistence.preservePrivateCopies(workspaceID: id, in: db)
-            workspace.name = adoptedName
-            workspace.accountConnectionId = connectionID
-            workspace.organizationId = serverWorkspace.organizationId
-            workspace.personalUserId = serverWorkspace.personalUserId
-            workspace.syncRole = serverWorkspace.role
-            workspace.syncConfirmedConnectionId = connectionID
-            try workspace.update(db)
-            try db.execute(
-                sql: "INSERT INTO sync_entity_state(workspace_id, entity, entityId, confirmedRevision) VALUES (?, 'workspace', ?, ?)",
-                arguments: [id, id, serverWorkspace.revision]
-            )
-            if adoptedName != serverWorkspace.name {
-                try SyncTransactionRecorder.record(
-                    workspaceId: id,
-                    operations: [SyncInitialSnapshotBuilder.workspaceOperation(workspace, action: .update)],
-                    in: db
-                )
-            }
-            var items: [WorkspaceRelocation.Item] = []
-            for (entity, table) in [(SyncEntity.project, "projects"), (.meeting, "meetings"), (.file, "files")] {
-                items += try UUID.fetchAll(db, sql: "SELECT id FROM \(table) WHERE workspace_id = ?", arguments: [id])
-                    .map { .init(entity: entity, id: $0, workspaceId: id) }
-            }
-            try SyncInitialSnapshotBuilder.enqueueContents(
-                items,
-                workspaceId: id,
-                replaceServerImageAnalysis: replaceServerImageAnalysis,
-                in: db
-            )
-            try transferFence.release(in: db)
-            return workspace
-        }
-    }
-
     nonisolated func acceptServerSyncVersion(
         workspaceId: UUID,
         expectedLastTransactionId: UUID? = nil,

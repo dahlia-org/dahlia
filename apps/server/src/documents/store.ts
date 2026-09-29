@@ -13,6 +13,7 @@ export type SharedDocument = Pick<DocumentRow, "id" | "workspaceId" | "meetingId
 export interface DocumentExchangeRequest { generation: string; vector: string; update?: string }
 export interface DocumentMetadata { meetingId: string | null; kind: "notes" | "summary" | "general"; title: string; legacyUpdate?: string }
 export interface DocumentStore {
+  notesHeads(targets: { workspaceId: string; meetingId: string }[]): Promise<{ workspaceId: string; meetingId: string; id: string | null; generation: string | null; revision: number | null }[]>;
   getMeetingNotes(workspaceId: string, meetingId: string): Promise<SharedDocument | null>;
   initializeMeetingNotes(workspaceId: string, meetingId: string, proposedId: string, legacyUpdate?: string): Promise<SharedDocument>;
   documentHead(workspaceId: string, id: string): Promise<{ generation: string; revision: number } | null>;
@@ -138,6 +139,17 @@ export function createDocumentStore(db: NodePgDatabase, schema: typeof Schema, i
     } finally { core.destroy(); }
   }
   return {
+    async notesHeads(targets) {
+      if (!targets.length) return [];
+      const meeting = schema.syncedMeeting, workspace = schema.syncedWorkspace, document = schema.document;
+      // One bounded metadata query; no checkpoint decoding, writes or workspace locks.
+      return db.select({ workspaceId: meeting.workspaceId, meetingId: meeting.meetingId,
+        id: document.id, generation: document.generation, revision: document.revision }).from(meeting)
+        .innerJoin(workspace, eq(workspace.workspaceId, meeting.workspaceId))
+        .leftJoin(document, and(eq(document.workspaceId, meeting.workspaceId), eq(document.meetingId, meeting.meetingId), eq(document.kind, "notes")))
+        .where(and(or(...targets.map((target) => and(eq(meeting.workspaceId, target.workspaceId), eq(meeting.meetingId, target.meetingId)))),
+          access.read(workspace.workspaceId), isNull(workspace.deletingAt), eq(meeting.active, true), isNull(meeting.deletedAt), isNull(meeting.deletingAt)));
+    },
     async getMeetingNotes(workspaceId, meetingId) {
       await authorizeParent(workspaceId, meetingId);
       const id = await notesID(workspaceId, meetingId);

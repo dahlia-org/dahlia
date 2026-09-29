@@ -1,3 +1,7 @@
+import { createApp } from "../../src/app";
+import { encodeId } from "../../src/typeid";
+import { MeetingSyncService } from "../../src/sync/service";
+import { SyncEvents } from "../../src/sync/events";
 import documentFixture from "../../../desktop/Tests/DahliaTests/Fixtures/documents.json";
 import { DocumentCore } from "../../src/documents/core";
 import { createWorkerHandler, initializeWorkerApp, type WorkerEnv } from "../../src/worker";
@@ -33,8 +37,58 @@ export default {
       try {
         for (const update of documentFixture.updates) core.apply(update);
         assert.deepEqual(core.projection(), { text: documentFixture.text, blocks: documentFixture.blocks });
+        const events = new SyncEvents(), watch = events.watch(["domain", "notes/fixture"], request.signal);
+        try {
+          watch.consume(); events.publish("domain"); events.publish("notes/fixture"); await watch.wait();
+          assert.deepEqual([...watch.consume()].sort(), ["domain", "notes/fixture"]);
+          watch.consume(); await watch.wait(); // Shared-DB fallback timer also works in workerd.
+          assert.equal(events.pollInterval, 250);
+        } finally { watch.close(); }
         return Response.json({ success: true });
       } finally { core.destroy(); }
+    }
+    if (path === "/runtime/sync-notifications") {
+      const writer = connectPostgresUrl(env.DAHLIA_DATABASE_URL!, 2), readerConnection = connectPostgresUrl(env.DAHLIA_DATABASE_URL!, 2);
+      let stream: ReadableStreamDefaultReader<Uint8Array> | undefined;
+      try {
+        const store = createPostgresApplicationStore(writer.db), readerStore = createPostgresApplicationStore(readerConnection.db);
+        const email = `sync-${uuidV7()}@fixture.example.com`;
+        const userId = (await store.resolveHeaderUser({ userId: email, email, source: "header" }))!;
+        const identity = { userId, email, source: "header" as const };
+        await store.addAdminUser(email);
+        const organization = await store.organizations.create(identity, { name: "Sync fixture", slug: `sync-${uuidV7()}`, initialOwnerUserId: userId });
+        const workspaceId = uuidV7(), meetingId = uuidV7(), documentId = uuidV7();
+        await new MeetingSyncService(store.sync).commitTransaction(identity, { id: uuidV7(), schemaVersion: 3, workspaceId, createdAt: new Date().toISOString(), operations: [
+          { id: uuidV7(), entity: "workspace", action: "create", entityId: workspaceId, baseRevision: null, data: { organizationId: organization.id, name: "Sync", encryption: "none", createdAt: new Date().toISOString() } },
+          { id: uuidV7(), entity: "meeting", action: "create", entityId: meetingId, baseRevision: null, data: { name: "Meeting", projectId: null, status: "READY", duration: null, recordingStartedAt: null, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() } },
+        ] });
+        const app = createApp({ config: { databaseType: "postgres", authProvider: "header", authHeader: "Cf-Access-Authenticated-User-Email", baseUrl: "http://localhost:5173", oauthRedirectUris: [], maxRequestBytes: 1_048_576 }, authStore: readerStore });
+        const query = new URLSearchParams({ user: encodeId("user", userId), tab: uuidV7().replaceAll("-", ""), notes: JSON.stringify([{ workspaceId: encodeId("workspace", workspaceId), meetingId: encodeId("meeting", meetingId) }]) });
+        const response = await app.request(`/api/v1/events?${query}`, { headers: { "Cf-Access-Authenticated-User-Email": email } });
+        assert.equal(response.status, 200);
+        stream = response.body!.getReader();
+        const decoder = new TextDecoder(); let buffer = "";
+        const nextDocument = async () => {
+          while (true) {
+            const boundary = buffer.indexOf("\n\n");
+            if (boundary >= 0) {
+              const frame = buffer.slice(0, boundary); buffer = buffer.slice(boundary + 2);
+              if (frame.includes("event: document\n")) return frame;
+            } else {
+              const next = await stream!.read(); assert.equal(next.done, false); buffer += decoder.decode(next.value, { stream: true });
+            }
+          }
+        };
+        assert.match(await nextDocument(), /"cursor":"absent"/);
+        // A separate connection/store writes, with no shared JS bus or PG NOTIFY.
+        const doc = await store.sync.withIdentity(identity, (scoped) => scoped.initializeMeetingNotes(workspaceId, meetingId, documentId));
+        let timeout: ReturnType<typeof setTimeout> | undefined;
+        try {
+          const frame = await Promise.race([nextDocument(), new Promise<never>((_, reject) => { timeout = setTimeout(() => reject(new Error("Worker Notes fallback timed out")), 2_000); })]);
+          assert.ok(frame.includes(`${doc.generation}:${doc.revision}`));
+        } finally { clearTimeout(timeout); }
+        return Response.json({ success: true });
+      } finally { await stream?.cancel(); await writer.close(); await readerConnection.close(); }
     }
     if (path === "/runtime/provider") {
       const backend = new URL(request.url).searchParams.get("backend")!;

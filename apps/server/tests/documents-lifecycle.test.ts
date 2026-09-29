@@ -1,3 +1,4 @@
+import { syncNotifications } from "../src/client/sync-notifications";
 import { afterEach, expect, it, vi } from "vitest";
 import * as Y from "yjs";
 import { BrowserDocument, MeetingNotes, finishBrowserDocuments } from "../src/client/Documents";
@@ -15,7 +16,7 @@ vi.mock("react", async (importOriginal) => ({
 }));
 const api = vi.hoisted(() => ({ getSession: vi.fn(), getCapabilities: vi.fn(), getMeetingNotes: vi.fn(), exchangeDocument: vi.fn(),
   listDocumentRecoveries: vi.fn(), getDocumentPresence: vi.fn() }));
-vi.mock("../src/client/generated-operations", () => ({ apiOperations: api, apiUrls: { getDocumentEvents: () => "/events" } }));
+vi.mock("../src/client/generated-operations", () => ({ apiOperations: api, apiUrls: { getEvents: () => "/events" } }));
 afterEach(async () => { await finishBrowserDocuments(); vi.useRealTimers(); vi.unstubAllGlobals(); vi.clearAllMocks(); });
 
 function deferred<T>() {
@@ -26,7 +27,8 @@ function deferred<T>() {
 
 function setup() {
   vi.useFakeTimers();
-  vi.stubGlobal("window", { addEventListener() {}, removeEventListener() {} });
+  const removed = vi.fn();
+  vi.stubGlobal("window", { addEventListener() {}, removeEventListener: removed });
   const close = vi.fn(), created = vi.fn();
   vi.stubGlobal("EventSource", class { constructor() { created(); } addEventListener() {} close() { close(); } });
   const server = new DocumentCore(); server.insertText("seed", uuidV7);
@@ -49,7 +51,7 @@ function setup() {
     if (typeof cleanup !== "function") throw new Error("Missing Notes loading effect");
     return cleanup;
   };
-  return { close, created, document, mount, server };
+  return { close, created, removed, document, mount, server };
 }
 
 it("releases a Notes load that completes after its view closes", async () => {
@@ -61,7 +63,8 @@ it("releases a Notes load that completes after its view closes", async () => {
     await vi.waitFor(() => expect(api.getMeetingNotes).toHaveBeenCalledOnce());
     unmount();
     fetched.resolve({ document: f.document });
-    await vi.waitFor(() => expect(f.close).toHaveBeenCalledOnce());
+    await vi.waitFor(() => expect(f.removed).toHaveBeenCalledOnce());
+    expect(f.created).not.toHaveBeenCalled();
     expect(vi.getTimerCount()).toBe(0);
     expect(api.exchangeDocument).not.toHaveBeenCalled();
     expect(hooks.state.mock.calls.some(([value]) => value instanceof BrowserDocument)).toBe(false);
@@ -93,7 +96,7 @@ it.each([false, true])("keeps overlapping Notes loads alive until the last view 
     }
     third();
     if (pending) {
-      expect(f.close).not.toHaveBeenCalled();
+      expect(f.close).toHaveBeenCalledOnce();
       expect(controller.copyText()).toBe("seed pending");
       await controller.flush();
       expect(f.server.projection().text).toBe("seed pending");
@@ -101,4 +104,22 @@ it.each([false, true])("keeps overlapping Notes loads alive until the last view 
     expect(f.close).toHaveBeenCalledOnce();
     expect(vi.getTimerCount()).toBe(0);
   } finally { fetched.resolve({ document: f.document }); f.server.destroy(); }
+});
+
+it.each([false, true])("does not let an old Notes load replace the new account's notifications (closed=%s)", async (closed) => {
+  const f = setup(), fetched = deferred<{ document: typeof f.document }>();
+  api.getMeetingNotes.mockReturnValueOnce(fetched.promise);
+  const unmount = f.mount();
+  await vi.waitFor(() => expect(api.getMeetingNotes).toHaveBeenCalledOnce());
+  if (closed) unmount();
+  const stopCurrent = syncNotifications.subscribeDomain(encodeId("user", uuidV7()), () => {});
+  try {
+    await vi.advanceTimersByTimeAsync(1);
+    expect(f.created).toHaveBeenCalledOnce();
+    fetched.resolve({ document: f.document });
+    await vi.waitFor(() => expect(f.removed).toHaveBeenCalledOnce());
+    expect(f.close).not.toHaveBeenCalled();
+    expect(hooks.state.mock.calls.some(([value]) => value instanceof BrowserDocument)).toBe(false);
+    expect(api.exchangeDocument).not.toHaveBeenCalled();
+  } finally { unmount(); stopCurrent(); fetched.resolve({ document: f.document }); f.server.destroy(); }
 });

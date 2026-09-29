@@ -1,4 +1,8 @@
-import { afterEach, expect, it } from "vitest";
+import { SyncEvents } from "../src/sync/events";
+import { SyncNotifications } from "../src/client/sync-notifications";
+import { z } from "zod";
+import { afterEach, expect, it, vi } from "vitest";
+import { BrowserDocument } from "../src/client/Documents";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -15,7 +19,7 @@ import type { DocumentStore } from "../src/documents/store";
 import { SummaryService, summaryJobResponse } from "../src/summary/service";
 import { createApp } from "../src/app";
 import { encodeId } from "../src/typeid";
-import { documentRecoveryPageBytes, documentResponseLimit } from "../src/documents/model";
+import { documentExchangeResultSchema, sharedDocumentSchema, documentRecoveryPageBytes, documentResponseLimit } from "../src/documents/model";
 
 const owner: Identity = { userId: testUserID("document-owner"), source: "header" };
 const outsider: Identity = { userId: testUserID("document-outsider"), source: "header" };
@@ -317,4 +321,217 @@ it("treats standalone documents as Workspace resources and clears their dependen
       }
     } finally { raw.close(); }
   } finally { core.destroy(); }
+});
+
+it("rejects a switched browser identity before document reads and writes", async () => {
+  const f = await setup(), app = createApp({ config: f.config, authStore: f.store });
+  const workspace = encodeId("workspace", f.workspaceId), meeting = encodeId("meeting", f.meetingId);
+  const headers = { "X-Forwarded-Email": `${owner.userId}@example.com`, "content-type": "application/json",
+    "X-Dahlia-Document-User": encodeId("user", outsider.userId) };
+  const path = `/api/v1/workspaces/${workspace}/meetings/${meeting}/notes`;
+  const rejected = await app.request(path, { method: "POST", headers, body: JSON.stringify({ id: encodeId("document", f.documentId) }) });
+  expect(rejected.status).toBe(409);
+  expect(await rejected.json()).toMatchObject({ code: "document_account_changed" });
+  expect(await f.run((s) => s.getMeetingNotes(f.workspaceId, f.meetingId))).toBeNull();
+  expect((await app.request(path, { headers })).status).toBe(409);
+  const accepted = await app.request(path, { method: "POST", headers: { ...headers, "X-Dahlia-Document-User": encodeId("user", owner.userId) }, body: JSON.stringify({ id: encodeId("document", f.documentId) }) });
+  expect(accepted.status).toBe(200);
+});
+
+it.each([false, true])("delivers committed revisions over SSE across application instances (separate=%s)", async (separate) => {
+  const f = await setup(), writer = createApp({ config: f.config, authStore: f.store });
+  const second = separate ? createNodeApplicationStore(f.config) : undefined;
+  if (second) cleanups.push(async () => { await second.close?.(); });
+  const readerApp = second ? createApp({ config: f.config, authStore: second }) : writer;
+  const document = await f.run((s) => s.initializeMeetingNotes(f.workspaceId, f.meetingId, f.documentId));
+  const path = `/api/v1/workspaces/${encodeId("workspace", f.workspaceId)}/documents/${encodeId("document", f.documentId)}`;
+  const headers = { "X-Forwarded-Email": `${owner.userId}@example.com`, "content-type": "application/json" };
+  const response = await readerApp.request(`${path}/events`, { headers });
+  const reader = response.body!.getReader(), decoder = new TextDecoder(), core = new DocumentCore(document.checkpoint);
+  const frame = async () => { const next = await reader.read(); expect(next.done).toBe(false); return decoder.decode(next.value); };
+  try {
+    expect(await frame()).toContain(`id: ${document.generation}:0`);
+    core.insertText("committed", uuidV7);
+    const update = await writer.request(`${path}/sync`, { method: "POST", headers,
+      body: JSON.stringify({ generation: document.generation, vector: core.vector(), update: core.checkpoint() }) });
+    expect(update.status).toBe(200);
+    const committed = documentExchangeResultSchema.parse(await update.json());
+    expect(await frame()).toContain(`id: ${committed.generation}:${committed.revision}`);
+    expect((await f.run((s) => s.getDocument(f.workspaceId, f.documentId)))?.text).toBe("committed");
+    const invalid = await writer.request(`${path}/sync`, { method: "POST", headers,
+      body: JSON.stringify({ generation: uuidV7(), vector: core.vector(), update: core.checkpoint() }) });
+    expect(invalid.status).toBe(409);
+    expect((await f.run((s) => s.documentHead(f.workspaceId, f.documentId)))?.revision).toBe(committed.revision);
+  } finally { await reader.cancel(); core.destroy(); }
+});
+
+
+it("measures edit-to-reader latency through two browser controllers, HTTP handlers and separate SSE instances", async () => {
+  const f = await setup();
+  const apps = [createApp({ config: f.config, authStore: { ...f.store, syncEvents: new SyncEvents() } }), createApp({ config: f.config, authStore: { ...f.store, syncEvents: new SyncEvents() } })];
+  const seed = new DocumentCore(); seed.insertText("seed", uuidV7);
+  await f.run((s) => s.initializeMeetingNotes(f.workspaceId, f.meetingId, f.documentId, seed.checkpoint())); seed.destroy();
+  const path = `/api/v1/workspaces/${encodeId("workspace", f.workspaceId)}/documents/${encodeId("document", f.documentId)}`;
+  const headers = { "X-Forwarded-Email": `${owner.userId}@example.com` };
+  const initial = z.object({ document: sharedDocumentSchema.extend({
+    id: z.string(), workspaceId: z.string(), meetingId: z.string().nullable(),
+  }) }).parse(await (await apps[0]!.request(path, { headers })).json()).document;
+  const deferred = () => {
+    let resolve!: () => void, reject!: (error: unknown) => void;
+    const promise = new Promise<void>((done, fail) => { resolve = done; reject = fail; });
+    return { promise, resolve, reject };
+  };
+  const ready = deferred(); let connections = 0, opened = 0;
+  const failures: unknown[] = [];
+  class LocalEventSource extends EventTarget {
+    private reader?: ReadableStreamDefaultReader<Uint8Array>;
+    private closed = false;
+    constructor(url: string) {
+      super();
+      const app = apps[connections++ % 2]!;
+      void (async () => {
+        const response = await app.request(url, { headers }); if (!response.ok) throw new Error(`SSE HTTP ${response.status}`); this.reader = response.body!.getReader();
+        if (this.closed) { await this.reader.cancel(); return; }
+        this.dispatchEvent(new Event("open"));
+        const decoder = new TextDecoder(); let buffer = "";
+        while (!this.closed) {
+          const result = await this.reader.read(); if (result.done) break;
+          buffer += decoder.decode(result.value, { stream: true });
+          let end: number;
+          while ((end = buffer.indexOf("\n\n")) >= 0) {
+            const frame = buffer.slice(0, end); buffer = buffer.slice(end + 2);
+            const id = /^id: ?(.*)$/m.exec(frame)?.[1] ?? "";
+            const event = /^event: ?(.*)$/m.exec(frame)?.[1] ?? "message";
+            const data = /^data: ?(.*)$/m.exec(frame)?.[1] ?? "";
+            this.dispatchEvent(new MessageEvent(event, { lastEventId: id, data }));
+            if (event === "document" && ++opened === 2) ready.resolve();
+          }
+        }
+      })().catch((error: unknown) => { if (!this.closed) { failures.push(error); ready.reject(error); } });
+    }
+    close() { this.closed = true; void this.reader?.cancel(); }
+  }
+  vi.stubGlobal("window", new EventTarget()); vi.stubGlobal("EventSource", LocalEventSource);
+  vi.stubGlobal("fetch", (request: Request) => {
+    const bound = new Request(request); bound.headers.set("X-Forwarded-Email", headers["X-Forwarded-Email"]);
+    return apps[0]!.fetch(bound);
+  });
+  const within = async (pending: Promise<void>, phase: string) => {
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    try { await Promise.race([pending, new Promise<void>((_, reject) => { timer = setTimeout(() => reject(new Error(phase)), 2_000); })]); }
+    finally { clearTimeout(timer); }
+  };
+  const controllers = [0, 1].map(() => new BrowserDocument(encodeId("user", owner.userId), initial.workspaceId, encodeId("meeting", f.meetingId), initial, true, new SyncNotifications()));
+  const releases = controllers.map((controller) => controller.retainView());
+  try {
+    await within(ready.promise, "SSE initial revision");
+    const durations: number[] = []; let expected = "seed";
+    for (let sample = 0; sample < 20; sample++) {
+      const complete = deferred(); expected += "x";
+      const listener = () => { if (controllers[1]!.copyText() === expected) complete.resolve(); };
+      controllers[1]!.listeners.add(listener);
+      const started = performance.now();
+      const doc = controllers[0]!.editorDocument, vector = Y.encodeStateVector(doc);
+      const text = (doc.getXmlFragment(documentFragment).get(0) as Y.XmlElement).get(0) as Y.XmlText;
+      text.insert(text.length, "x"); await controllers[0]!.editFromEditor(Y.encodeStateAsUpdate(doc, vector));
+      await within(complete.promise, `sample ${sample}: ${controllers.map((c) => c.error).join(" / ")}`); durations.push(performance.now() - started);
+      controllers[1]!.listeners.delete(listener);
+    }
+    durations.sort((a, b) => a - b);
+    process.stdout.write(`document_latency_local_http_sqlite ${JSON.stringify({ samples: durations.length, p50: durations[9], p95: durations[18], max: durations[19] })}\n`);
+    expect(failures).toEqual([]); expect(controllers[1]!.copyText()).toBe(expected);
+    await controllers[0]!.flush();
+  } finally { releases.forEach((release) => release()); controllers.forEach((controller) => controller.stop()); vi.unstubAllGlobals(); }
+}, 15_000);
+
+function notificationURL(userId: string, targets: { workspaceId: string; meetingId: string }[], tab = uuidV7()) {
+  return `/api/v1/events?${new URLSearchParams({ user: encodeId("user", userId), tab: tab.replaceAll("-", ""),
+    notes: JSON.stringify(targets.map((target) => ({ workspaceId: encodeId("workspace", target.workspaceId), meetingId: encodeId("meeting", target.meetingId) }))) })}`;
+}
+function notificationReader(response: Response) {
+  expect(response.status).toBe(200);
+  const reader = response.body!.getReader(), decoder = new TextDecoder();
+  let buffer = "";
+  const next = async (kind: string): Promise<string> => {
+    while (true) {
+      const boundary = buffer.indexOf("\n\n");
+      if (boundary >= 0) {
+        const frame = buffer.slice(0, boundary); buffer = buffer.slice(boundary + 2);
+        if (frame.includes(`event: ${kind}\n`)) return frame;
+        continue;
+      }
+      const result = await reader.read();
+      if (result.done) throw new Error("stream closed before expected hint");
+      buffer += decoder.decode(result.value, { stream: true });
+    }
+  };
+  return { next: async (kind: string) => {
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    try { return await Promise.race([next(kind), new Promise<never>((_, reject) => { timer = setTimeout(() => reject(new Error(`missing ${kind} hint`)), 2_000); })]); }
+    finally { clearTimeout(timer); }
+  }, close: () => reader.cancel() };
+}
+
+it("combines domain and Notes hints, detects first creation across instances, and replaces only its own subscription", async () => {
+  const f = await setup(), second = createNodeApplicationStore(f.config);
+  cleanups.push(async () => { await second.close?.(); });
+  const readerApp = createApp({ config: f.config, authStore: second });
+  const target = { workspaceId: f.workspaceId, meetingId: f.meetingId };
+  const headers = { "X-Forwarded-Email": `${owner.userId}@example.com` };
+  const tab = uuidV7();
+  const first = notificationReader(await readerApp.request(notificationURL(owner.userId, [target], tab), { headers }));
+  let replacement: ReturnType<typeof notificationReader> | undefined;
+  try {
+    expect(await first.next("invalidation")).toContain('"cursor"');
+    expect(await first.next("document")).toContain('"cursor":"absent"');
+    expect(await f.run((s) => s.getMeetingNotes(f.workspaceId, f.meetingId))).toBeNull();
+    // Another instance writes without a process-local notification.
+    const document = await f.run((s) => s.initializeMeetingNotes(f.workspaceId, f.meetingId, f.documentId));
+    expect(await first.next("document")).toContain(`${document.generation}:0`);
+    await first.close();
+    const core = new DocumentCore(document.checkpoint); core.insertText("during reconnect", uuidV7);
+    await f.run((s) => s.exchangeDocument(f.workspaceId, f.documentId, { generation: document.generation, vector: core.vector(), update: core.checkpoint() })); core.destroy();
+    replacement = notificationReader(await readerApp.request(notificationURL(owner.userId, [target], tab), { headers }));
+    expect(await replacement.next("document")).toContain(`${document.generation}:1`);
+    // Empty replacement has no authority to change another tab's live subscription.
+    const closed = notificationReader(await readerApp.request(notificationURL(owner.userId, [], uuidV7()), { headers }));
+    expect(await closed.next("invalidation")).toContain('"cursor"'); await closed.close();
+    const next = new DocumentCore(); next.insertText("second change", uuidV7);
+    await f.run((s) => s.exchangeDocument(f.workspaceId, f.documentId, { generation: document.generation, vector: next.vector(), update: next.checkpoint() })); next.destroy();
+    expect(await replacement.next("document")).toContain(`${document.generation}:2`);
+  } finally { await first.close(); await replacement?.close(); }
+});
+
+it("binds subscriptions to the authenticated user, rejects malformed targets and stops after permission revocation", async () => {
+  const f = await setup(), app = createApp({ config: f.config, authStore: f.store });
+  const headers = { "X-Forwarded-Email": `${outsider.userId}@example.com` }, target = { workspaceId: f.workspaceId, meetingId: f.meetingId };
+  expect((await app.request(notificationURL(owner.userId, [target]), { headers })).status).toBe(409);
+  const malformed = `/api/v1/events?${new URLSearchParams({ user: encodeId("user", outsider.userId), tab: uuidV7().replaceAll("-", ""), notes: '[{"workspaceId":"invalid","meetingId":"invalid"}]' })}`;
+  expect((await app.request(malformed, { headers })).status).toBe(400);
+  const denied = notificationReader(await app.request(notificationURL(outsider.userId, [target]), { headers }));
+  expect(await denied.next("document")).toContain('"unavailable":true'); await denied.close();
+  const db = new DatabaseSync(f.path);
+  db.prepare("INSERT INTO workspace_permissions(workspace_id, principal_type, principal_id, role, granted_by_user_id) VALUES (?, 'user', ?, 'viewer', ?)").run(f.workspaceId, outsider.userId, owner.userId);
+  const allowed = notificationReader(await app.request(notificationURL(outsider.userId, [target]), { headers }));
+  try {
+    expect(await allowed.next("document")).toContain('"cursor":"absent"');
+    db.prepare("DELETE FROM workspace_permissions WHERE workspace_id = ? AND principal_id = ?").run(f.workspaceId, outsider.userId);
+    expect(await allowed.next("document")).toContain('"unavailable":true');
+  } finally { await allowed.close(); db.close(); }
+});
+
+it("publishes domain hints only after successful commits, never after rolled-back transactions", async () => {
+  const f = await setup(), published = vi.spyOn(f.store.syncEvents!, "publish");
+  await expect(f.sync.commitTransaction(owner, { id: uuidV7(), schemaVersion: 3, workspaceId: f.workspaceId, createdAt: new Date().toISOString(), operations: [
+    { id: uuidV7(), entity: "meeting", action: "update", entityId: f.meetingId, baseRevision: 1, data: { name: "rolled back", projectId: null, status: "READY", duration: null, recordingStartedAt: null, updatedAt: new Date().toISOString() } },
+    { id: uuidV7(), entity: "meeting", action: "update", entityId: uuidV7(), baseRevision: 1, data: { name: "missing", projectId: null, status: "READY", duration: null, recordingStartedAt: null, updatedAt: new Date().toISOString() } },
+  ] })).rejects.toThrow();
+  expect(published).not.toHaveBeenCalled();
+  await f.sync.commitTransaction(owner, { id: uuidV7(), schemaVersion: 3, workspaceId: f.workspaceId, createdAt: new Date().toISOString(), operations: [
+    { id: uuidV7(), entity: "meeting", action: "update", entityId: f.meetingId, baseRevision: 1, data: { name: "committed", projectId: null, status: "READY", duration: null, recordingStartedAt: null, updatedAt: new Date().toISOString() } },
+  ] });
+  expect(published).toHaveBeenCalledWith("domain");
+  const db = new DatabaseSync(f.path);
+  try { expect(db.prepare("SELECT name FROM meetings WHERE meeting_id = ?").get(f.meetingId)?.name).toBe("committed"); }
+  finally { db.close(); published.mockRestore(); }
 });

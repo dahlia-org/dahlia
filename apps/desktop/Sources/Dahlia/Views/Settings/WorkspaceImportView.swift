@@ -6,15 +6,16 @@ struct WorkspaceImportView: View {
     let isBusy: Bool
     let onCancel: () -> Void
     let onReload: () async -> Void
-    let onImport: (UUID?, UUID?, String?) async -> Void
+    let onImport: (UUID?, UUID?, String?, Bool) async -> Void
 
+    @State private var reconnectExisting = false
     @State private var useExisting = true
     @State private var destinationId: UUID?
     @State private var organizationId: UUID?
     @State private var workspaceName = ""
 
     private var destinations: [CloudWorkspaceRecord] {
-        pending.serverWorkspaces.filter { $0.workspaceId != pending.workspace.id && ["admin", "editor"].contains($0.role) }
+        pending.serverWorkspaces.filter { ["admin", "editor"].contains($0.role) }
     }
 
     var body: some View {
@@ -42,6 +43,17 @@ struct WorkspaceImportView: View {
                                 .tag(Optional(workspace.workspaceId))
                         }
                     }
+                    if let destination = destinations.first(where: { $0.workspaceId == destinationId }),
+                       destination.workspaceId == pending.workspace.id {
+                        Text(L10n.workspaceImportSameIdentity(local: pending.workspace.name, server: destination.name))
+                            .foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                    }
+                    Toggle(L10n.workspaceImportReconnect, isOn: $reconnectExisting)
+                        .toggleStyle(.checkbox)
+                    if reconnectExisting {
+                        Text(L10n.workspaceImportReconnectDescription)
+                            .foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                    }
                 } else {
                     Picker(L10n.workspaceImportOrganization, selection: $organizationId) {
                         Text(L10n.workspaceImportSelectOrganization).tag(nil as UUID?)
@@ -64,7 +76,8 @@ struct WorkspaceImportView: View {
                     Button(L10n.workspaceImportStart, action: startImport)
                         .buttonStyle(.dahlia(.primary))
                         .keyboardShortcut(.defaultAction)
-                        .disabled(useExisting ? destinationId == nil : !canImportToNewWorkspace)
+                        .disabled(useExisting ? destinationId == nil || (destinationId == pending.workspace.id && !reconnectExisting) :
+                            !canImportToNewWorkspace)
                 }
                 if isBusy { ProgressView().controlSize(.small) }
             }
@@ -96,9 +109,9 @@ struct WorkspaceImportView: View {
     private func startImport() {
         Task {
             if useExisting {
-                await onImport(destinationId, nil, nil)
+                await onImport(destinationId, nil, nil, reconnectExisting)
             } else {
-                await onImport(nil, organizationId, workspaceName)
+                await onImport(nil, organizationId, workspaceName, false)
             }
         }
     }

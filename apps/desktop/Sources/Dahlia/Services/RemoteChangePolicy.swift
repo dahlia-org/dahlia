@@ -55,8 +55,24 @@ enum RemoteChangePolicy {
         let id: UUID
     }
 
+    /// Durable operation bodies and canonical API records have different content/metadata schemas.
+    /// Conflict checks decode only relationships, without interpreting unrelated payload fields.
+    private struct References: Decodable {
+        let parentProjectId: UUID?
+        let projectId: UUID?
+        let meetingId: UUID?
+        let fileId: UUID?
+
+        init(_ record: SyncCanonicalPayload) {
+            parentProjectId = record.parentProjectId
+            projectId = record.projectId
+            meetingId = record.meetingId
+            fileId = record.fileId
+        }
+    }
+
     /// Relationships include both the stored and incoming parents, so moves and queued deletions cannot evade protection.
-    private static func references(_ entity: SyncEntity, id: UUID, record: SyncCanonicalPayload?, in db: Database) throws -> Set<Key> {
+    private static func references(_ entity: SyncEntity, id: UUID, record: References?, in db: Database) throws -> Set<Key> {
         var keys: Set<Key> = [.init(entity: entity, id: id)]
         var meetings: Set<UUID> = []
         var projects: Set<UUID> = []
@@ -109,7 +125,7 @@ enum RemoteChangePolicy {
         guard try String.fetchOne(db, sql: "SELECT syncRecoveryState FROM workspaces WHERE id = ?", arguments: [workspaceId]) == nil
         else { return false }
         let key = Key(entity: entity, id: id)
-        let related = try references(entity, id: id, record: record, in: db)
+        let related = try references(entity, id: id, record: record.map(References.init), in: db)
         let destructive = action == "delete" || action == "reset"
         if entity == .file, destructive,
            try Bool.fetchOne(db, sql: "SELECT EXISTS(SELECT 1 FROM meeting_attachments WHERE fileId = ?)", arguments: [id]) == true { return false }
@@ -139,7 +155,7 @@ enum RemoteChangePolicy {
             if entity == .meetingAttachment, localEntity == .file, related.contains(localKey) { return false }
             guard destructive || entity == .project || (entity == .file && localEntity == .meetingAttachment) else { continue }
             let payload: String? = row["payloadJSON"]
-            let localRecord = try payload.map { try SyncJSON.decoder.decode(SyncCanonicalPayload.self, from: Data($0.utf8)) }
+            let localRecord = try payload.map { try SyncJSON.decoder.decode(References.self, from: Data($0.utf8)) }
             let localReferences = try references(localEntity, id: localId, record: localRecord, in: db)
             if localReferences.contains(key) { return false }
         }

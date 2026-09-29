@@ -18,6 +18,7 @@ struct SyncProgressIssue: Identifiable, Equatable, Sendable {
     let status: Int?
     let code: String
     let target: SyncRecordTarget?
+    var diagnostic: String?
 
     var id: String {
         let sourceId = switch source {
@@ -124,7 +125,8 @@ extension MeetingRepository {
                     source: .discovery,
                     status: $0.status,
                     code: $0.code,
-                    target: nil
+                    target: nil,
+                    diagnostic: $0.diagnostic
                 )
             }
             return (connection.id, AccountSyncProgress(discoveryIssue: issue, workspaces: []))
@@ -175,7 +177,8 @@ extension MeetingRepository {
                     source: .pull,
                     status: incident.status,
                     code: incident.code,
-                    target: .init(entity: .workspace, id: workspace.id)
+                    target: .init(entity: .workspace, id: workspace.id),
+                    diagnostic: incident.diagnostic
                 ))
             } else if workspace.syncRecoveryState == "updateRequired" {
                 issues.append(.init(

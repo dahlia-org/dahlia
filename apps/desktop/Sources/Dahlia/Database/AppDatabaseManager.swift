@@ -362,6 +362,20 @@ final class AppDatabaseManager: Sendable {
             try IndependentDocumentsMigration.migrate(in: db)
         }
 
+        migrator.registerMigration("v49_workspaceImportDestinations") { db in
+            try db.execute(sql: """
+            CREATE TABLE workspace_import_destinations (
+                sourceWorkspaceId TEXT NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
+                connectionId TEXT NOT NULL REFERENCES dahlia_account_connections(id) ON DELETE CASCADE,
+                organizationId TEXT NOT NULL,
+                name TEXT NOT NULL,
+                destinationWorkspaceId TEXT NOT NULL UNIQUE,
+                requestJSON BLOB NOT NULL,
+                PRIMARY KEY (sourceWorkspaceId, connectionId, organizationId, name)
+            )
+            """)
+        }
+
         return migrator
     }()
 

@@ -13,6 +13,47 @@ import os
     // swiftlint:disable:next type_body_length
     struct AppDatabaseManagerTests {
         @Test
+        func workspaceImportDestinationMigrationPreservesV48Data() throws {
+            let queue = try DatabaseQueue()
+            try AppDatabaseManager.migrator.migrate(queue, upTo: "v48_independentDocuments")
+            let connection = DahliaAccountConnectionRecord(id: .v7(), origin: "https://migration.example.com", clientID: "test", createdAt: .now)
+            let workspace = WorkspaceRecord(id: .v7(), path: nil, name: "Local", createdAt: .now, lastOpenedAt: .now)
+            let meeting = MeetingRecord(id: .v7(), workspaceId: workspace.id, name: "Preserved", createdAt: .now, updatedAt: .now)
+            try queue.write { db in
+                try connection.insert(db)
+                try workspace.insert(db)
+                try meeting.insert(db)
+            }
+            let before = try queue.read { db in
+                try (WorkspaceRecord.fetchOne(db, key: workspace.id), MeetingRecord.fetchOne(db, key: meeting.id))
+            }
+            try AppDatabaseManager.migrator.migrate(queue)
+            try queue.write { db in
+                #expect(try WorkspaceRecord.fetchOne(db, key: workspace.id) == before.0)
+                #expect(try MeetingRecord.fetchOne(db, key: meeting.id) == before.1)
+                let organization = UUID.v7()
+                let first = try WorkspaceImportDestinationRecord.prepare(
+                    sourceId: workspace.id,
+                    connection: connection,
+                    organizationId: organization,
+                    name: "Server",
+                    in: db
+                )
+                let retry = try WorkspaceImportDestinationRecord.prepare(
+                    sourceId: workspace.id,
+                    connection: connection,
+                    organizationId: organization,
+                    name: "Server",
+                    in: db
+                )
+                #expect(first.destinationWorkspaceId != workspace.id)
+                #expect(first.destinationWorkspaceId == retry.destinationWorkspaceId)
+                #expect(first.requestJSON == retry.requestJSON)
+                #expect(try Row.fetchAll(db, sql: "PRAGMA foreign_key_check").isEmpty)
+            }
+        }
+
+        @Test
         func collectionAppearanceMigrationPreservesExistingRows() throws {
             let queue = try DatabaseQueue()
             try AppDatabaseManager.migrator.migrate(queue, upTo: "v41_vaultAISettingsBackfill")
@@ -131,7 +172,7 @@ import os
             ]
             let schema = try database.dbQueue.read { db in
                 let columns = try Dictionary(uniqueKeysWithValues: inspectedTables.map { table in
-                    (table, try db.columns(in: table).map(\.name))
+                    try (table, db.columns(in: table).map(\.name))
                 })
                 let tables = try Set(String.fetchAll(
                     db,

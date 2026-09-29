@@ -512,8 +512,48 @@
             #expect(try repository.fetchAllWorkspaces().first?.accountConnectionId == nil)
         }
 
-        @Test(arguments: ["viewer", "editor"])
-        func adoptingSameIDRequiresAnAdmin(role: String) async throws {
+        @Test(arguments: [false, true])
+        func adoptionDiscoveryRefreshesTheListWithoutDuplicatingLocalIdentity(sameIdentity: Bool) async throws {
+            let database = try AppDatabaseManager(path: ":memory:")
+            let repository = MeetingRepository(dbQueue: database.dbQueue)
+            let connection = DahliaAccountConnectionRecord(
+                id: .v7(),
+                origin: "https://server.example.com",
+                clientID: "desktop-client",
+                createdAt: .now
+            )
+            let workspace = makeWorkspace(name: "Obsidian", lastOpenedAt: .now)
+            try await repository.insertDahliaAccountConnection(connection)
+            try repository.insertWorkspace(workspace)
+            let remote = CloudWorkspaceRecord(
+                workspaceId: sameIdentity ? workspace.id : .v7(),
+                connectionId: connection.id,
+                organizationId: .v7(),
+                name: "Test",
+                createdAt: .now,
+                revision: 1,
+                role: "admin"
+            )
+            let model = WorkspaceManagementModel(cloudWorkspaceFetcher: { _ in [remote] }, organizationFetcher: { _ in [] })
+            await model.configure(appDatabase: database)
+            let account = DahliaAccountConnection(
+                record: connection,
+                account: DahliaCloudAccount(id: "user", name: "User", email: nil),
+                isCloud: false,
+                grantedScopes: ["all-apis"]
+            )
+            await model.requestServerAdoption(for: workspace, connection: account)
+            #expect(model.pendingServerAdoption?.serverWorkspaces.first?.name == "Test")
+            #expect(model.workspaces.count == (sameIdentity ? 1 : 2))
+            #expect(model.workspaces.first(where: { $0.id == workspace.id })?.name == "Obsidian")
+            #expect(model.workspaces.first(where: { $0.id == workspace.id })?.accountConnectionId == nil)
+            if !sameIdentity {
+                #expect(model.workspaces.first(where: { $0.id == remote.workspaceId })?.name == "Test")
+            }
+        }
+
+        @Test(arguments: ["viewer"])
+        func reconnectingSameIDRequiresWritePermission(role: String) async throws {
             let database = try AppDatabaseManager(path: ":memory:")
             let repository = MeetingRepository(dbQueue: database.dbQueue)
             let workspace = makeWorkspace(name: "Local", lastOpenedAt: .now)
@@ -531,7 +571,7 @@
                 try WorkspaceTransferFence.create(workspaceIDs: [workspace.id], in: $0)
             }
             await #expect(throws: LocalWorkspaceImportError.self) {
-                try await repository.adoptWorkspaceForServerSync(
+                try await repository.importIntoEmptyServerWorkspace(
                     id: workspace.id,
                     connectionID: remote.connectionId,
                     serverWorkspace: remote,
@@ -567,7 +607,7 @@
                 try $0.execute(sql: "UPDATE workspaces SET lastOpenedAt = lastOpenedAt WHERE id = ?", arguments: [workspace.id])
             }
 
-            let adopted = try await repository.adoptWorkspaceForServerSync(
+            let adopted = try await repository.importIntoEmptyServerWorkspace(
                 id: workspace.id,
                 connectionID: connection.id,
                 serverWorkspace: remote,
@@ -607,7 +647,7 @@
             } == 0)
 
             await #expect(throws: LocalWorkspaceImportError.self) {
-                try await repository.adoptWorkspaceForServerSync(
+                try await repository.importIntoEmptyServerWorkspace(
                     id: workspace.id,
                     connectionID: connection.id,
                     serverWorkspace: remote,
@@ -616,52 +656,6 @@
                 )
             }
             #expect(try repository.fetchAllWorkspaces().first?.accountConnectionId == nil)
-        }
-
-        @Test
-        func adoptingSameIDQueuesTheRequestedWorkspaceNameOnRetry() async throws {
-            let database = try AppDatabaseManager(path: ":memory:")
-            let repository = MeetingRepository(dbQueue: database.dbQueue)
-            let connection = DahliaAccountConnectionRecord(
-                id: .v7(), origin: "https://server.example.com", clientID: "desktop-client", createdAt: .now
-            )
-            let workspace = makeWorkspace(name: "Local", lastOpenedAt: .now)
-            let remote = CloudWorkspaceRecord(
-                workspaceId: workspace.id,
-                connectionId: connection.id,
-                organizationId: .v7(),
-                name: "First Attempt",
-                createdAt: .now,
-                revision: 4,
-                role: "admin"
-            )
-            try await repository.insertDahliaAccountConnection(connection)
-            try repository.insertWorkspace(workspace)
-            let transferFence = try await database.dbQueue.write {
-                try WorkspaceTransferFence.create(workspaceIDs: [workspace.id], in: $0)
-            }
-
-            let adopted = try await repository.adoptWorkspaceForServerSync(
-                id: workspace.id,
-                connectionID: connection.id,
-                serverWorkspace: remote,
-                transferFence: transferFence,
-                requestedName: "  Second Attempt  "
-            )
-
-            #expect(adopted?.name == "Second Attempt")
-            let queued = try await database.dbQueue.read { db in
-                try (
-                    Int.fetchOne(db, sql: "SELECT count(*) FROM sync_operations WHERE entity = 'workspace' AND action = 'update'") ?? 0,
-                    Int.fetchOne(db, sql: "SELECT baseRevision FROM sync_operations WHERE entity = 'workspace' AND action = 'update'"),
-                    String.fetchOne(db, sql: "SELECT payloadJSON FROM sync_operations WHERE entity = 'workspace' AND action = 'update'")
-                )
-            }
-            #expect(queued.0 == 1)
-            #expect(queued.1 == remote.revision)
-            let payloadData = try Data(#require(queued.2).utf8)
-            let payload = try #require(try JSONSerialization.jsonObject(with: payloadData) as? [String: Any])
-            #expect(payload["name"] as? String == "Second Attempt")
         }
 
         @Test

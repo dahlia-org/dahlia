@@ -163,6 +163,7 @@ struct SyncCanonicalPayload: Codable, Sendable {
     var contentPresent: Bool?
     var contentCount: Int?
     var hasSummary: Bool?
+    var summaryRevision: Int?
     var transcriptRevision: Int?
     var transcript: TranscriptInfo?
     let parentProjectId: UUID?
@@ -195,7 +196,7 @@ struct SyncCanonicalPayload: Codable, Sendable {
     enum CodingKeys: String, CodingKey {
         case generationSettings, organizationId, personalUserId, icalUid, recurrenceId, calendarEvent
         case icon, color
-        case contentOmitted, contentPresent, contentCount, hasSummary, transcriptRevision, transcript
+        case contentOmitted, contentPresent, contentCount, hasSummary, summaryRevision, transcriptRevision, transcript
         case parentProjectId, projectId, meetingId, name, description, projectType, status, duration, recordingStartedAt
         case createdAt, updatedAt, title, document, capturedAt, fileId, sessionId, uri, offset, size, checksum, metadata
         case recordingNumber

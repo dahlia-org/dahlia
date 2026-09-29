@@ -1754,3 +1754,14 @@
 "document.undo" = "元に戻す";
 "document.redo" = "やり直す";
 "document.privateRecoverySaved" = "入力はこの Mac の復元用コピーに保存しました。Workspace 設定からコピーできます。";
+
+"Reconnect to existing meetings" = "既存の会議へ再接続する";
+
+"Use the Server version of existing records and upload records missing from the Server. Your local version is saved in a backup before reconnecting. Private Notes stay on this Mac." = "既存データは Server 側の内容を採用し、Server にないデータを送信します。再接続前のローカル版はバックアップに保存します。非公開 Notes はこの Mac に残ります。";
+
+"The local Workspace %@ is the same Workspace as %@ on the Server. After reconnecting, it appears under the Server name." = "ローカルの「%@」は Server の「%@」と同じワークスペースです。再接続すると Server の名前で一覧に表示されます。";
+
+"sync.payloadGuidance" = "同期データを読み取れません。アプリと Server が最新か確認して再試行してください。未送信の変更がなく録音停止中なら、Server から再取得できます。改善しない場合は診断情報をコピーして管理者に共有してください。";
+"sync.snapshotPendingChanges" = "未送信の変更、録音中の会議、または進行中の変更があります。データは保持されています。送信と録音が完了してから再取得してください。";
+"sync.copyDiagnostics" = "同期診断をコピー";
+"sync.fetchSnapshot" = "Server から再取得";

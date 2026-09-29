@@ -1,4 +1,5 @@
-import { apiOperations, apiUrls, type GetOperation } from "./generated-operations";
+import { syncNotifications } from "./sync-notifications";
+import { apiOperations, type GetOperation } from "./generated-operations";
 import { useEffect, useEffectEvent, useRef, useState } from "react";
 import { clientMutationEvent, json, RequestError } from "./api";
 
@@ -160,12 +161,9 @@ export function useLivePage<T>(input: string | ApiQuery<Page<T>> | undefined) {
   return { ...query, loadingMore, loadMore };
 }
 
-export function subscribeLiveUpdates() {
-  // EventSource owns reconnect cursors. A notification is never a completed data checkpoint.
-  const source = new EventSource(apiUrls.getEvents({}));
-  const refreshSettings = () => window.dispatchEvent(new Event(accountSettingsEvent));
-  source.addEventListener("open", refreshData);
-  source.addEventListener("open", refreshSettings);
-  source.addEventListener("invalidation", refreshData);
-  return () => source.close();
+export function subscribeLiveUpdates(userId: string) {
+  return syncNotifications.subscribeDomain(userId, (reconnected) => {
+    refreshData();
+    if (reconnected) window.dispatchEvent(new Event(accountSettingsEvent));
+  });
 }

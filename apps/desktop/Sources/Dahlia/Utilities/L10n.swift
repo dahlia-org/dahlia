@@ -228,6 +228,10 @@ enum L10n { // swiftlint:disable:this type_body_length
     static var syncCheckServer: String { String(localized: "sync.checkServer", bundle: bundle) }
     static var syncOpenServerFailed: String { String(localized: "sync.openServerFailed", bundle: bundle) }
     static var syncDiscoveryFailed: String { String(localized: "sync.discoveryFailed", bundle: bundle) }
+    static var syncPayloadGuidance: String { String(localized: "sync.payloadGuidance", bundle: bundle) }
+    static var syncSnapshotPendingChanges: String { String(localized: "sync.snapshotPendingChanges", bundle: bundle) }
+    static var syncCopyDiagnostics: String { String(localized: "sync.copyDiagnostics", bundle: bundle) }
+    static var syncFetchSnapshot: String { String(localized: "sync.fetchSnapshot", bundle: bundle) }
     static var syncPullFailed: String { String(localized: "sync.pullFailed", bundle: bundle) }
     static var syncLocalValidationFailed: String { String(localized: "sync.localValidationFailed", bundle: bundle) }
     static var syncDiscardWarning: String { String(localized: "sync.discardWarning", bundle: bundle) }
@@ -3284,6 +3288,23 @@ extension L10n {
         localized: "The Workspace changed during preparation. Your data is preserved. Try again.",
         bundle: bundle
     ) }
+    static func workspaceImportSameIdentity(local: String, server: String) -> String {
+        String(format: String(
+            localized: "The local Workspace %@ is the same Workspace as %@ on the Server. After reconnecting, it appears under the Server name.",
+            bundle: bundle
+        ), local, server)
+    }
+
+    static var workspaceImportReconnect: String { String(localized: "Reconnect to existing meetings", bundle: bundle) }
+    static var workspaceImportReconnectDescription: String {
+        String(
+            localized: """
+            Use the Server version of existing records and upload records missing from the Server. Your local version is saved in a backup before reconnecting. Private Notes stay on this Mac.
+            """,
+            bundle: bundle
+        )
+    }
+
     static var workspaceImportCollision: String { String(localized: "Some IDs already exist on the Server. No local data was moved.", bundle: bundle)
     }
 
