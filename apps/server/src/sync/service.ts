@@ -69,6 +69,7 @@ export class MeetingSyncService {
     private readonly fileStorageRoot?: string,
     private readonly automaticStorageMaintenance = true,
     private readonly imageAnalysisModel?: string,
+    private readonly storageOperationConcurrency = STORAGE_OPERATION_CONCURRENCY,
   ) {
     if (storage) this.scheduleStorageDeletes();
     else this.scheduleStorageDeleteRetry();
@@ -875,7 +876,7 @@ export class MeetingSyncService {
   }
 
   private async acquireStorageOperationSlot(): Promise<void> {
-    if (this.activeStorageOperations < STORAGE_OPERATION_CONCURRENCY) {
+    if (this.activeStorageOperations < this.storageOperationConcurrency) {
       this.activeStorageOperations += 1;
       return;
     }

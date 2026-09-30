@@ -15,6 +15,7 @@ import type { Socket } from "node:net";
 import { createApp } from "./app";
 import { initializeDahliaAuth } from "./auth/better-auth";
 import { createNodeApplicationStore } from "./auth/node-store";
+import { NODE_STORAGE_OPERATION_CONCURRENCY } from "./db/client";
 import { DatabricksVolumeObjectStorage } from "./storage/databricks-volume";
 import { LocalObjectStorage } from "./storage/local";
 import { S3ObjectStorage } from "./storage/s3";
@@ -49,7 +50,7 @@ const captioner = createImageCaptioner(config);
 const syncService = new MeetingSyncService(applicationStore.sync, objectStorage, searchTokenizer,
   searchEmbedder, transformScreenshot,
   config.storageBackend === "databricks" ? config.storageDatabricksVolumePath : undefined,
-  true, captioner?.model);
+  true, captioner?.model, NODE_STORAGE_OPERATION_CONCURRENCY);
 const workspaceMemory = config.hindsight && applicationStore.memory ? new WorkspaceMemoryService(config, applicationStore.memory, syncService, applicationStore.sync) : undefined;
 const personalMemory = config.hindsight && applicationStore.personalMemory ? new WorkspaceMemoryService(config, applicationStore.personalMemory, syncService, applicationStore.sync) : undefined;
 const memoryWorker = workspaceMemory ? new MemoryWorker(workspaceMemory, personalMemory) : undefined;

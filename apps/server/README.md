@@ -6,7 +6,7 @@ Better Auth, Gateway administration, and meeting sync share one Drizzle applicat
 
 ## Database and Gateway configuration
 
-PostgreSQL and Lakebase pools handle idle connection errors without terminating the server. The driver discards failed idle connections and reconnects on subsequent requests; active query errors still propagate to their callers. Diagnostics record only the `database_pool_idle_error` event, without connection or query details. Migrations retain a single connection for the entire advisory-lock lifetime and fail on disconnect rather than reconnecting without the lock.
+PostgreSQL and Lakebase pools handle idle connection errors without terminating the server. The driver discards failed idle connections and reconnects on subsequent requests; active query errors still propagate to their callers. Diagnostics record only the `database_pool_idle_error` event, without connection or query details. Migrations retain a single connection for the entire advisory-lock lifetime and fail on disconnect rather than reconnecting without the lock. Node runs two file and recording storage operations per available CPU core (minimum 4, maximum 16). Each operation holds one pooled connection for its storage-key advisory lock, so the Node application pool has that many connections plus five for LISTEN and scoped queries. Workers keep four storage operations and five connections.
 
 `DAHLIA_DATABASE_TYPE` selects storage independently from authentication and the AI Gateway:
 

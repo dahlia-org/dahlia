@@ -9,7 +9,7 @@ import { eq, sql } from "drizzle-orm";
 import { createPostgresAuthStore } from "../src/auth/store";
 import type { Identity } from "../src/auth/identity";
 import type { AppConfig } from "../src/config";
-import { connectAuthDatabase } from "../src/db/client";
+import { connectAuthDatabase, NODE_STORAGE_OPERATION_CONCURRENCY } from "../src/db/client";
 import * as schema from "../src/db/auth-schema";
 import { createPostgresMeetingSyncStore, SyncTransactionError } from "../src/sync/store";
 import { createImageAnalysisStore } from "../src/image-analysis/store";
@@ -238,6 +238,25 @@ integration("PostgreSQL application store", () => {
       expect(await store.sync.withIdentity(owner, (sync) => sync.getRecording(meetingId, 1))).toBeNull();
     } finally {
       await store.sync.withIdentity(owner, (sync) => resetWorkspace(sync, workspaceId));
+    }
+  });
+
+  it("keeps scoped queries available while every storage operation holds its key lock", async () => {
+    const store = createPostgresMeetingSyncStore(connection!.db);
+    // PostgresSyncEvents pins one pooled connection for LISTEN while any SSE client is subscribed.
+    const listener = await connection!.pool.connect();
+    try {
+      let locked = 0;
+      let release!: () => void;
+      const allLocked = new Promise<void>((resolve) => { release = resolve; });
+      await Promise.all(Array.from({ length: NODE_STORAGE_OPERATION_CONCURRENCY }, (_, index) =>
+        store.withStorageKeyLock(`test:${crypto.randomUUID()}:${index}`, async () => {
+          if (++locked === NODE_STORAGE_OPERATION_CONCURRENCY) release();
+          await allLocked;
+          await connection!.db.execute(sql`select 1`);
+        })));
+    } finally {
+      listener.release();
     }
   });
 
