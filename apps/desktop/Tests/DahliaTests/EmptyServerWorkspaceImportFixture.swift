@@ -11,6 +11,7 @@
             serverWorkspace: CloudWorkspaceRecord,
             transferFence: WorkspaceTransferFence,
             replaceServerImageAnalysis: Bool = false,
+            reconnectExisting: Bool = true,
             screenshotContent: ScreenshotContentProvider = .shared
         ) async throws -> WorkspaceRecord? {
             guard serverWorkspace.workspaceId == id, serverWorkspace.connectionId == connectionID else {
@@ -42,10 +43,23 @@
             let snapshot = try await WorkspaceReconnectionSnapshot(store: store, cursor: "empty-server", ids: store.resetSnapshot(), projects: [])
             return try await dbQueue.write { db in
                 guard try transferFence.isCurrent(in: db) else { throw LocalWorkspaceImportError.changed }
+                var destination = serverWorkspace
+                if !reconnectExisting {
+                    let destinationId = UUID.v7()
+                    destination = CloudWorkspaceRecord(
+                        workspaceId: destinationId, connectionId: connectionID, organizationId: serverWorkspace.organizationId,
+                        name: serverWorkspace.name, createdAt: serverWorkspace.createdAt, revision: 1, role: serverWorkspace.role
+                    )
+                    try WorkspaceRecord(
+                        id: destinationId, path: nil, name: destination.name, createdAt: .now, lastOpenedAt: .now,
+                        accountConnectionId: connectionID, organizationId: destination.organizationId,
+                        syncRole: destination.role, syncConfirmedConnectionId: connectionID, syncPullCursor: "empty-server"
+                    ).insert(db)
+                }
                 let result = try LocalWorkspaceImport.commit(
-                    sourceId: id, destination: serverWorkspace, snapshot: snapshot.ids, files: files,
+                    sourceId: id, destination: destination, snapshot: snapshot.ids, files: files,
                     backupPath: "/tmp/test-import-backup.dahlia", replaceServerImageAnalysis: replaceServerImageAnalysis,
-                    reconnection: snapshot, in: db
+                    reconnection: reconnectExisting ? snapshot : nil, in: db
                 )
                 try transferFence.release(in: db)
                 return result

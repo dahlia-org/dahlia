@@ -1757,7 +1757,7 @@
 
 "Reconnect to existing meetings" = "既存の会議へ再接続する";
 
-"Use the Server version of existing records and upload records missing from the Server. Your local version is saved in a backup before reconnecting. Private Notes stay on this Mac." = "既存データは Server 側の内容を採用し、Server にないデータを送信します。再接続前のローカル版はバックアップに保存します。非公開 Notes はこの Mac に残ります。";
+"Use the Server version. Local data missing from the Server is kept in the backup and is not uploaded. Private Notes stay on this Mac." = "Server 側の内容を採用します。Server にないローカルデータはバックアップに保全し、送信しません。非公開 Notes はこの Mac に残ります。";
 
 "The local Workspace %@ is the same Workspace as %@ on the Server. After reconnecting, it appears under the Server name." = "ローカルの「%@」は Server の「%@」と同じワークスペースです。再接続すると Server の名前で一覧に表示されます。";
 
@@ -1765,3 +1765,5 @@
 "sync.snapshotPendingChanges" = "未送信の変更、録音中の会議、または進行中の変更があります。データは保持されています。送信と録音が完了してから再取得してください。";
 "sync.copyDiagnostics" = "同期診断をコピー";
 "sync.fetchSnapshot" = "Server から再取得";
+
+"Local recordings from reconnection" = "再接続前のローカル録音";

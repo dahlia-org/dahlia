@@ -3296,10 +3296,12 @@ extension L10n {
     }
 
     static var workspaceImportReconnect: String { String(localized: "Reconnect to existing meetings", bundle: bundle) }
+    static var workspaceReconnectionAudio: String { String(localized: "Local recordings from reconnection", bundle: bundle) }
+
     static var workspaceImportReconnectDescription: String {
         String(
             localized: """
-            Use the Server version of existing records and upload records missing from the Server. Your local version is saved in a backup before reconnecting. Private Notes stay on this Mac.
+            Use the Server version. Local data missing from the Server is kept in the backup and is not uploaded. Private Notes stay on this Mac.
             """,
             bundle: bundle
         )

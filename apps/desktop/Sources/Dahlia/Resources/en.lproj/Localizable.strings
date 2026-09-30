@@ -1757,7 +1757,7 @@
 
 "Reconnect to existing meetings" = "Reconnect to existing meetings";
 
-"Use the Server version of existing records and upload records missing from the Server. Your local version is saved in a backup before reconnecting. Private Notes stay on this Mac." = "Use the Server version of existing records and upload records missing from the Server. Your local version is saved in a backup before reconnecting. Private Notes stay on this Mac.";
+"Use the Server version. Local data missing from the Server is kept in the backup and is not uploaded. Private Notes stay on this Mac." = "Use the Server version. Local data missing from the Server is kept in the backup and is not uploaded. Private Notes stay on this Mac.";
 
 "The local Workspace %@ is the same Workspace as %@ on the Server. After reconnecting, it appears under the Server name." = "The local Workspace %@ is the same Workspace as %@ on the Server. After reconnecting, it appears under the Server name.";
 
@@ -1765,3 +1765,5 @@
 "sync.snapshotPendingChanges" = "There are unsent edits, an active recording, or concurrent changes. Your data is retained. Wait for uploads and recording to finish, then fetch again.";
 "sync.copyDiagnostics" = "Copy sync diagnostics";
 "sync.fetchSnapshot" = "Fetch from Server";
+
+"Local recordings from reconnection" = "Local recordings from reconnection";

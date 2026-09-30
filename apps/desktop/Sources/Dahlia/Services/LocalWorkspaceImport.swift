@@ -167,6 +167,7 @@ enum LocalWorkspaceImport {
             target.syncConfirmedConnectionId = destination.connectionId
             try target.update(db)
         }
+        try reconnection?.adoptAbsence(workspaceId: sourceId, in: db)
         var moves: [(WorkspaceRelocation.Item, UUID)] = []
         for (entity, table, remote) in [
             (SyncEntity.project, "projects", snapshot.projects),
@@ -197,7 +198,7 @@ enum LocalWorkspaceImport {
             createdAt: .now
         )
         try record.insert(db)
-        try ScreenshotContentProvider.installTransfers(files, workspaceId: sourceId, in: db)
+        if reconnection == nil { try ScreenshotContentProvider.installTransfers(files, workspaceId: sourceId, in: db) }
         if sourceId != target.id { try WorkspaceRelocation.move(moves, in: db) }
         try db.execute(sql: "UPDATE document_private_copies SET workspace_id = ? WHERE workspace_id = ?", arguments: [target.id, sourceId])
         try db.execute(sql: "UPDATE document_local_archives SET workspace_id = ? WHERE workspace_id = ?", arguments: [target.id, sourceId])
@@ -212,22 +213,24 @@ enum LocalWorkspaceImport {
             )
         }
         try reconnection?.apply(workspaceId: target.id, advanceCursor: sourceId == target.id, in: db)
-        try SyncInitialProgress.start(
-            workspaceId: target.id,
-            connectionId: destination.connectionId,
-            restoring: false,
-            replaceImages: replaceServerImageAnalysis,
-            importId: record.id,
-            items: moves.map(\.0),
-            existing: reconnection?.ids ?? .init(ids: [:]),
-            in: db
-        )
-        try SyncInitialSnapshotBuilder.enqueueRecordingContents(
-            moves.map(\.0),
-            workspaceId: target.id,
-            existing: reconnection?.ids ?? .init(ids: [:]),
-            in: db
-        )
+        if reconnection == nil {
+            try SyncInitialProgress.start(
+                workspaceId: target.id,
+                connectionId: destination.connectionId,
+                restoring: false,
+                replaceImages: replaceServerImageAnalysis,
+                importId: record.id,
+                items: moves.map(\.0),
+                existing: .init(ids: [:]),
+                in: db
+            )
+            try SyncInitialSnapshotBuilder.enqueueRecordingContents(
+                moves.map(\.0),
+                workspaceId: target.id,
+                existing: .init(ids: [:]),
+                in: db
+            )
+        }
         try WorkspaceImportDestinationRecord.filter(Column("sourceWorkspaceId") == sourceId
             && Column("connectionId") == destination.connectionId
             && Column("destinationWorkspaceId") == target.id).deleteAll(db)

@@ -73,7 +73,8 @@ import GRDB
                 id: fixture.meeting.workspaceId,
                 connectionID: connection.id,
                 serverWorkspace: remote,
-                transferFence: transferFence
+                transferFence: transferFence,
+                reconnectExisting: false
             )
 
             let archive = try #require(try await fixture.database.dbQueue.read {

@@ -10,7 +10,7 @@
     @MainActor
     struct LocalWorkspaceImportTests {
         @Test(arguments: [false, true])
-        func reconnectsExistingMeetingsAndUploadsOnlyMissingRecords(sameWorkspace: Bool) async throws {
+        func reconnectsExistingMeetingsWithoutUploadingAbsentRecords(sameWorkspace: Bool) async throws {
             let fixture = try LocalImportFixture(role: "admin")
             defer { fixture.close() }
             let snapshot = try await fixture.reconnection(sameWorkspace: sameWorkspace)
@@ -22,16 +22,49 @@
                 #expect(try WorkspaceRecord.fetchOne(db, key: targetID)?.syncPullCursor == (sameWorkspace ? "reconnected" : "complete"))
                 #expect(try WorkspaceRecord.fetchOne(db, key: targetID)?.accountConnectionId == fixture.connection.id)
                 #expect(try Int.fetchOne(db, sql: "SELECT count(*) FROM sync_operations WHERE entity IN ('project', 'meeting')") == 0)
-                for entity in ["summary", "transcript", "file", "meeting_attachment", "recording"] {
-                    #expect(try Int.fetchOne(db, sql: "SELECT count(*) FROM sync_operations WHERE entity = ?", arguments: [entity])! > 0)
-                }
-                #expect(try SummaryContent.fetchOne(db, key: fixture.meeting.id)?.document == "original summary")
+                #expect(try Int.fetchOne(db, sql: "SELECT count(*) FROM sync_operations") == 0)
+                #expect(try SummaryContent.fetchOne(db, key: fixture.meeting.id) == nil)
+                #expect(try TranscriptRecord.fetchOne(db, key: fixture.meeting.id) == nil)
+                #expect(try FileRecord.fetchOne(db, key: fixture.file.id) == nil)
+                #expect(try MeetingAttachmentRecord.fetchOne(db, key: fixture.attachment.id) == nil)
+                let savedSession = try #require(try RecordingSessionRecord.fetchOne(db, key: fixture.session.id))
+                let savedMeeting = try #require(try MeetingRecord.fetchOne(db, key: savedSession.meetingId))
+                #expect(savedMeeting.workspaceId == targetID)
+                #expect(try RecordingArchiveRecord.fetchOne(db, key: fixture.session.id)?.connectionId == nil)
+                #expect(try LocalWorkspaceImportRecord.fetchOne(db)?.backupPath == "/tmp/preserved-backup.dahlia")
+                #expect(try Row.fetchAll(db, sql: "PRAGMA foreign_key_check").isEmpty)
+            }
+        }
+
+        @Test(arguments: [false, true])
+        func deletedServerHierarchyIsNotRecreatedAndPrivateNotesSurvive(sameWorkspace: Bool) async throws {
+            let fixture = try LocalImportFixture(role: "admin")
+            defer { fixture.close() }
+            let snapshot = try await fixture.reconnection(sameWorkspace: sameWorkspace, emptyServer: true)
+            try await fixture.database.dbQueue.write { db in
+                try db.execute(
+                    sql: "INSERT INTO notes(meetingId, text, createdAt, updatedAt) VALUES (?, 'private note', ?, ?)",
+                    arguments: [fixture.meeting.id, Date.now, Date.now]
+                )
+                _ = try fixture.commit(reconnection: snapshot, sameWorkspace: sameWorkspace, in: db)
+                #expect(try MeetingRecord.fetchOne(db, key: fixture.meeting.id) == nil)
+                #expect(try ProjectRecord.fetchOne(db, key: fixture.root.id) == nil)
+                #expect(try ProjectRecord.fetchOne(db, key: fixture.child.id) == nil)
+                #expect(try Int.fetchOne(db, sql: "SELECT count(*) FROM sync_operations") == 0)
+                #expect(try Int.fetchOne(db, sql: "SELECT count(*) FROM sync_initial_builds") == 0)
                 #expect(try String.fetchOne(
                     db,
-                    sql: "SELECT text FROM transcript_segment_bodies WHERE segmentId = ?",
-                    arguments: [fixture.segmentId]
-                ) == "原文")
-                #expect(try LocalWorkspaceImportRecord.fetchOne(db)?.backupPath == "/tmp/preserved-backup.dahlia")
+                    sql: "SELECT json_extract(payload, '$.legacy') FROM document_local_archives WHERE meetingId = ?",
+                    arguments: [fixture.meeting.id]
+                ) == "private note")
+                let archive = try #require(try RecordingArchiveRecord.fetchOne(db, key: fixture.session.id))
+                #expect(archive.connectionId == nil)
+                #expect(try WorkspaceRecord.fetchOne(db, key: archive.workspaceId)?.accountConnectionId == nil)
+                #expect(try Int.fetchOne(
+                    db,
+                    sql: "SELECT count(*) FROM recording_audio_files WHERE recordingSessionId = ?",
+                    arguments: [fixture.session.id]
+                ) == 1)
                 #expect(try Row.fetchAll(db, sql: "PRAGMA foreign_key_check").isEmpty)
             }
         }
@@ -50,7 +83,7 @@
                 #expect(workspace.syncRecoveryState == nil)
                 #expect(workspace.syncPullCursor == nil)
                 #expect(try MeetingRecord.fetchOne(db, key: fixture.meeting.id)?.workspaceId == fixture.target.id)
-                #expect(try SyncTransactionQueue.hasPending(workspaceId: fixture.target.id, in: db))
+                #expect(try !SyncTransactionQueue.hasPending(workspaceId: fixture.target.id, in: db))
             }
         }
 
@@ -86,7 +119,7 @@
             }
         }
 
-        @Test func reconnectsPartiallyUploadedAudioWithoutReplacingExistingSources() async throws {
+        @Test func reconnectsPartiallyUploadedAudioWithoutUploadingMissingSources() async throws {
             let fixture = try LocalImportFixture(role: "admin")
             defer { fixture.close() }
             let snapshot = try await fixture.reconnection()
@@ -122,9 +155,8 @@
                 #expect(try archive.audio["system"] != nil)
                 #expect(archive.state == "remote")
                 let payloads = try String.fetchAll(db, sql: "SELECT payloadJSON FROM sync_operations WHERE entity = 'recording'")
-                #expect(payloads.count == 1)
-                let commit = try JSONSerialization.jsonObject(with: Data(#require(payloads.first).utf8)) as? [String: Any]
-                #expect(commit?["source"] as? String == "mic")
+                #expect(payloads.isEmpty)
+                #expect(archive.preparedJSON != "{}")
                 #expect(try Int.fetchOne(
                     db,
                     sql: "SELECT count(*) FROM recording_audio_files WHERE recordingSessionId = ?",
@@ -147,6 +179,8 @@
                 #expect(try MeetingRecord.fetchOne(db, key: fixture.meeting.id)?.name == fixture.meeting.name)
                 #expect(try MeetingRecord.fetchOne(db, key: fixture.existing.id)?.workspaceId == fixture.target.id)
                 #expect(try LocalWorkspaceImportRecord.fetchCount(db) == 0)
+                #expect(try WorkspaceRecord.fetchCount(db) == 2)
+                #expect(try RecordingSessionRecord.fetchOne(db, key: fixture.session.id)?.meetingId == fixture.meeting.id)
                 #expect(try Int.fetchOne(db, sql: "SELECT count(*) FROM sync_operations") == 0)
             }
         }
@@ -576,17 +610,35 @@
             #expect(unrelatedWriteCompleted.withLock { $0 })
             let record = try #require(try await queue.read { try LocalWorkspaceImportRecord.fetchOne($0) })
             #expect(FileManager.default.fileExists(atPath: record.backupPath))
-            #expect(try await screenshots.fileContent(id: fixture.file.id, dbQueue: queue).data == bytes)
-            #expect(try await queue.read { try MeetingRecord.fetchOne($0, key: fixture.meeting.id)?.workspaceId } == destinationId)
-            let filePayload = try await queue.read { db in
-                let value = try String.fetchOne(
-                    db,
-                    sql: "SELECT payloadJSON FROM sync_operations WHERE entity = 'file' LIMIT 1"
-                )
-                let json = try #require(value)
-                return try SyncJSON.decoder.decode(FileOperationPayload.self, from: Data(json.utf8))
+            try BackupArchive.withExtracted(at: URL(filePath: record.backupPath)) { directory, _ in
+                var configuration = Configuration()
+                configuration.readonly = true
+                let backup = try DatabaseQueue(path: directory.appending(path: "database.sqlite").path, configuration: configuration)
+                defer { try? backup.close() }
+                try backup.read { db throws in
+                    #expect(try SummaryContent.fetchOne(db, key: fixture.meeting.id)?.document == "original summary")
+                    #expect(try FileRecord.fetchOne(db, key: fixture.file.id) != nil)
+                    #expect(try ProjectRecord.fetchOne(db, key: fixture.child.id) != nil)
+                }
+                #expect(try Data(contentsOf: directory.appending(path: "files/\(fixture.file.id.uuidString.lowercased())/original")) == bytes)
             }
-            #expect(filePayload.imageAnalysis == "replace")
+            if !reconnect {
+                #expect(try await screenshots.fileContent(id: fixture.file.id, dbQueue: queue).data == bytes)
+            } else {
+                #expect(try await queue.read { try FileRecord.fetchOne($0, key: fixture.file.id) } == nil)
+            }
+            #expect(try await queue.read { try MeetingRecord.fetchOne($0, key: fixture.meeting.id)?.workspaceId } == destinationId)
+            if !reconnect {
+                let filePayload = try await queue.read { db in
+                    let value = try String.fetchOne(
+                        db,
+                        sql: "SELECT payloadJSON FROM sync_operations WHERE entity = 'file' LIMIT 1"
+                    )
+                    let json = try #require(value)
+                    return try SyncJSON.decoder.decode(FileOperationPayload.self, from: Data(json.utf8))
+                }
+                #expect(filePayload.imageAnalysis == "replace")
+            }
             if reconnect {
                 #expect(try await queue.read { try MeetingRecord.fetchOne($0, key: fixture.meeting.id)?.name } == "Server existing meeting")
                 let duplicateCreates = try await queue.read { db in
@@ -785,7 +837,8 @@
             sameWorkspace: Bool = false,
             includeSummary: Bool = false,
             deletedSummary: Bool = false,
-            includeForeignMeeting: Bool = false
+            includeForeignMeeting: Bool = false,
+            emptyServer: Bool = false
         ) async throws -> WorkspaceReconnectionSnapshot {
             let changes = try await database.dbQueue.read { db -> [SyncChangePage.Change] in
                 var workspace = sameWorkspace ? source : target
@@ -798,6 +851,7 @@
                     SyncInitialSnapshotBuilder.projectOperation(child, action: .create),
                     SyncInitialSnapshotBuilder.meetingOperation(serverMeeting, action: .create, in: db),
                 ]
+                if emptyServer { drafts = Array(drafts.prefix(1)) }
                 if includeForeignMeeting {
                     try drafts.append(SyncInitialSnapshotBuilder.meetingOperation(existing, action: .create, in: db))
                 }
