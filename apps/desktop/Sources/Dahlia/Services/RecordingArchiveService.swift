@@ -265,7 +265,7 @@ actor RecordingArchiveService {
     }
 
     /// Refresh expired staging before replaying the unchanged durable transaction.
-    func stage(sessionId: UUID, payload: Data, origin: URL, connectionId: UUID) async throws {
+    func stage(sessionId: UUID, payload: Data, origin: URL, connectionId: UUID, background: Bool) async throws {
         let archive = try await dbQueue.read { db -> RecordingArchiveRecord in
             guard let archive = try RecordingArchiveRecord.fetchOne(db, key: sessionId),
                   archive.connectionId == connectionId else { throw RecordingAudioStoreError.missingFile }
@@ -275,7 +275,7 @@ actor RecordingArchiveService {
         let commit = try SyncJSON.decoder.decode(Commit.self, from: payload)
         let prepared = try SyncJSON.decoder.decode([String: RecordingArchiveEncoder.Prepared].self, from: Data(archive.preparedJSON.utf8))
         guard let file = prepared[commit.source], file.checksum == commit.checksum else { throw RecordingAudioStoreError.integrityMismatch }
-        _ = try await SyncTransferSlots.shared(dbQueue: dbQueue).perform(background: true) {
+        _ = try await SyncTransferSlots.shared(dbQueue: dbQueue).perform(background: background) {
             try await self.upload(file, source: commit.source, archive: archive, origin: origin, connectionId: connectionId)
         }
     }

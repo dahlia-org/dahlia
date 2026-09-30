@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 import { existsSync, readFileSync } from "node:fs";
+import { availableParallelism } from "node:os";
 import { join } from "node:path";
 
 import { getLakebasePgConfig, type DriverTelemetry } from "@databricks/lakebase";
@@ -13,6 +14,7 @@ import type { Pool } from "pg";
 import type { AppConfig } from "../config";
 import { postgresMigrations, serverMigrationManifest, type PostgresMigrationDirectory } from "../migrations";
 import { SEARCH_FIELDS } from "../search/settings-model";
+import { STORAGE_OPERATION_CONCURRENCY } from "../sync/schemas";
 import { createPostgresPool, ensurePublicExtensions, POSTGRES_MIGRATION_SCHEMA } from "./postgres";
 
 export type PostgresDatabase = NodePgDatabase & { $client: Pool };
@@ -53,8 +55,14 @@ function createDatabasePool(config: AppConfig, max: number): Pool {
   return createPostgresPool(config.databaseUrl, max);
 }
 
+/** Object-storage operations wait on the network, so Node admits two per core. */
+// ponytail: fixed cap bounds pooled Lakebase connections per process; make it configurable if a deployment needs more.
+export const NODE_STORAGE_OPERATION_CONCURRENCY = Math.min(8, Math.max(STORAGE_OPERATION_CONCURRENCY, availableParallelism() * 2));
+
 export function connectApplicationDatabase(config: AppConfig) {
-  const pool = createDatabasePool(config, 5);
+  // Each storage operation pins a connection for its key lock and briefly needs a second for scoped queries;
+  // keep five more for LISTEN and API queries.
+  const pool = createDatabasePool(config, 2 * NODE_STORAGE_OPERATION_CONCURRENCY + 5);
   return {
     db: drizzle({ client: pool }),
     pool,

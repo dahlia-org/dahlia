@@ -7650,6 +7650,24 @@
     {
       "columns": [
         {
+          "value": "owner_user_id",
+          "isExpression": false
+        },
+        {
+          "value": "available_at",
+          "isExpression": false
+        }
+      ],
+      "isUnique": false,
+      "where": null,
+      "origin": "manual",
+      "name": "image_analysis_job_owner_idx",
+      "entityType": "indexes",
+      "table": "jobs_image_analysis"
+    },
+    {
+      "columns": [
+        {
           "value": "file_id",
           "isExpression": false
         }
@@ -7914,6 +7932,24 @@
       "where": null,
       "origin": "manual",
       "name": "summary_job_owner_created_idx",
+      "entityType": "indexes",
+      "table": "jobs_summary"
+    },
+    {
+      "columns": [
+        {
+          "value": "owner_user_id",
+          "isExpression": false
+        },
+        {
+          "value": "available_at",
+          "isExpression": false
+        }
+      ],
+      "isUnique": false,
+      "where": "\"jobs_summary\".\"status\" IN ('pending', 'processing')",
+      "origin": "manual",
+      "name": "summary_job_due_idx",
       "entityType": "indexes",
       "table": "jobs_summary"
     },

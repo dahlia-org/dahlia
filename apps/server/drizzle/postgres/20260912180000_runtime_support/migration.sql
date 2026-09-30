@@ -135,6 +135,8 @@ CREATE POLICY "summary_write" ON "app"."summaries" FOR ALL USING (EXISTS (SELECT
 --> statement-breakpoint
 CREATE POLICY "summary_job_retention_select" ON "jobs"."summary" FOR SELECT USING (current_setting('app.maintenance', true) = 'meeting-retention' AND "jobs"."summary"."workspace_id" = nullif(current_setting('app.maintenance_workspace_id', true), '')::uuid);
 --> statement-breakpoint
+CREATE POLICY "summary_job_dispatch_select" ON "jobs"."summary" FOR SELECT USING (current_setting('app.maintenance', true) = 'summary-dispatch' AND "jobs"."summary"."status" IN ('pending', 'processing'));
+--> statement-breakpoint
 CREATE POLICY "summary_job_retention_update" ON "jobs"."summary" FOR UPDATE USING (current_setting('app.maintenance', true) = 'meeting-retention' AND "jobs"."summary"."workspace_id" = nullif(current_setting('app.maintenance_workspace_id', true), '')::uuid) WITH CHECK (current_setting('app.maintenance', true) = 'meeting-retention' AND "jobs"."summary"."workspace_id" = nullif(current_setting('app.maintenance_workspace_id', true), '')::uuid);
 --> statement-breakpoint
 CREATE POLICY "summary_job_owner" ON "jobs"."summary" FOR ALL USING ("jobs"."summary"."owner_user_id" = nullif(current_setting('app.user_id', true), '')::uuid) WITH CHECK ("jobs"."summary"."owner_user_id" = nullif(current_setting('app.user_id', true), '')::uuid);

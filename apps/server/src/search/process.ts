@@ -5,6 +5,7 @@ import {
   SEARCH_EMBEDDING_BATCH_SIZE,
   SEARCH_EMBEDDING_DOCUMENT_MAX_BYTES,
 } from "./embedding";
+import { isRateLimited, RATE_LIMIT_COOLDOWN_MS } from "../jobs/rate-limit";
 import type { SearchIndexStore, SearchIndexReference } from "./index-store";
 
 export async function processSearchIndexBatch(
@@ -43,7 +44,8 @@ export async function processSearchIndexBatch(
       ? error
       : new SearchEmbeddingError("embedding_unknown_error", true);
     await Promise.all(documents.map((document) => embeddingError.retryable
-      ? store.retry(document, embeddingError.code, retryAt(document.attempts))
+      ? store.retry(document, embeddingError.code, isRateLimited(embeddingError.code)
+        ? new Date(Date.now() + RATE_LIMIT_COOLDOWN_MS) : retryAt(document.attempts))
       : store.fail(document, embeddingError.code)));
     return jobs.length;
   }

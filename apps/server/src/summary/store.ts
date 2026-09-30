@@ -6,6 +6,7 @@ import type { NodePgDatabase } from "drizzle-orm/node-postgres";
 import type { PostgresDatabase, SQLiteDatabase } from "../db/client";
 import * as postgresSchema from "../db/auth-schema";
 import * as sqliteSchema from "../db/sqlite-schema";
+import { isRateLimited, RATE_LIMIT_COOLDOWN_MS } from "../jobs/rate-limit";
 import { storedTranscriptSettingsSchema, type SummaryJob, type SummaryStage } from "./model";
 
 export type SummaryJobReference = Pick<SummaryJob, "id" | "ownerUserId">;
@@ -27,6 +28,9 @@ export function createSummaryJobStore(database: PostgresDatabase | SQLiteDatabas
     if (isPostgres) await connection.execute(sql`select set_config('app.user_id', ${userId}, true)`);
     return action(connection);
   });
+  // Per process: rotation keeps one owner's backlog from starving others; SKIP LOCKED still prevents double claims.
+  let lastOwner = "";
+  let cooldownUntil = 0;
   return {
     due(ownerUserId, after) {
       return withOwner(ownerUserId, (connection) => connection.select({ id: jobs.id, ownerUserId: jobs.ownerUserId }).from(jobs)
@@ -36,8 +40,17 @@ export function createSummaryJobStore(database: PostgresDatabase | SQLiteDatabas
         .orderBy(asc(jobs.id)).limit(100));
     },
     async claim(reference) {
-      const owners = reference ? [{ id: reference.ownerUserId }] : await db.select({ id: schema.user.id }).from(schema.user);
-      for (const owner of owners) {
+      if (!reference && Date.now() < cooldownUntil) return null;
+      // Idle polling must scale with due jobs, not with every registered user.
+      const owners = reference ? [{ id: reference.ownerUserId }] : await db.transaction(async (connection) => {
+        if (isPostgres) await connection.execute(sql`select set_config('app.maintenance', 'summary-dispatch', true)`);
+        const now = new Date();
+        return connection.selectDistinct({ id: jobs.ownerUserId }).from(jobs).where(and(lte(jobs.availableAt, now),
+          or(eq(jobs.status, "pending"), and(eq(jobs.status, "processing"), lte(jobs.leaseExpiresAt, now)))))
+          .orderBy(asc(jobs.ownerUserId));
+      });
+      const start = reference ? 0 : owners.findIndex((owner) => owner.id > lastOwner);
+      for (const owner of start > 0 ? [...owners.slice(start), ...owners.slice(0, start)] : owners) {
         const job = await withOwner(owner.id, async (connection) => {
           const now = new Date();
           const eligible = and(eq(jobs.ownerUserId, owner.id), reference ? eq(jobs.id, reference.id) : undefined, lte(jobs.availableAt, now),
@@ -62,7 +75,9 @@ export function createSummaryJobStore(database: PostgresDatabase | SQLiteDatabas
           await connection.update(jobs).set({ status: claimed.status, attempts: claimed.attempts, claimedAt: claimed.claimedAt, leaseExpiresAt: claimed.leaseExpiresAt }).where(eq(jobs.id, row.id));
           return claimed;
         });
-        if (job) return job;
+        if (!job) continue;
+        if (!reference) lastOwner = owner.id;
+        return job;
       }
       return null;
     },
@@ -76,10 +91,15 @@ export function createSummaryJobStore(database: PostgresDatabase | SQLiteDatabas
       });
     },
     async fail(job, code, retryable) {
+      // A 429 is refunded for an hour; later ones spend attempts so a persistent limit still fails visibly.
+      const throttled = isRateLimited(code);
+      const refunded = throttled && Date.now() - job.createdAt.getTime() < 60 * 60_000;
+      if (throttled) cooldownUntil = Date.now() + RATE_LIMIT_COOLDOWN_MS;
       await withOwner(job.ownerUserId, async (connection) => {
-        await connection.update(jobs).set({ status: retryable && job.attempts < 3 ? "pending" : "failed",
+        await connection.update(jobs).set({ status: refunded || (retryable && job.attempts < 3) ? "pending" : "failed",
+          ...(refunded ? { attempts: job.attempts - 1 } : {}),
           lastErrorCode: code, claimedAt: null, leaseExpiresAt: null,
-          availableAt: new Date(Date.now() + 5_000 * 2 ** job.attempts),
+          availableAt: new Date(Math.max(throttled ? cooldownUntil : 0, Date.now() + (refunded ? 0 : 5_000 * 2 ** job.attempts))),
         }).where(and(eq(jobs.id, job.id), eq(jobs.ownerUserId, job.ownerUserId), eq(jobs.status, "processing"), eq(jobs.claimedAt, job.claimedAt!)));
       });
     },

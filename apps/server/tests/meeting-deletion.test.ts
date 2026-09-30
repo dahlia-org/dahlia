@@ -216,6 +216,16 @@ describe("meeting trash", () => {
     expect(raw.prepare("SELECT meeting_id FROM meetings WHERE meeting_id = ?").get(meetingId)).toBeUndefined();
   });
 
+  it("purges only on a Workspace sweep, not on a storage-delete retry tick", async () => {
+    const { service, raw, meetingId, change, trashTime } = await setup();
+    await change("delete", 1);
+    trashTime(Date.now() - 8 * day);
+    await service.runStorageMaintenance(false);
+    expect(raw.prepare("SELECT meeting_id FROM meetings WHERE meeting_id = ?").get(meetingId)).toBeDefined();
+    await service.runStorageMaintenance();
+    expect(raw.prepare("SELECT meeting_id FROM meetings WHERE meeting_id = ?").get(meetingId)).toBeUndefined();
+  });
+
   it("validates settings and enforces permissions for trash reads, restore and settings", async () => {
     const { service, workspaceId, change, grace } = await setup();
     for (const days of [0, 91, 1.5, -1]) await expect(grace(days)).rejects.toMatchObject({ code: "invalid_sync_operation" });

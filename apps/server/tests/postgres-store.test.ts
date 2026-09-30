@@ -9,10 +9,14 @@ import { eq, sql } from "drizzle-orm";
 import { createPostgresAuthStore } from "../src/auth/store";
 import type { Identity } from "../src/auth/identity";
 import type { AppConfig } from "../src/config";
-import { connectAuthDatabase } from "../src/db/client";
+import { connectAuthDatabase, NODE_STORAGE_OPERATION_CONCURRENCY } from "../src/db/client";
 import * as schema from "../src/db/auth-schema";
 import { createPostgresMeetingSyncStore, SyncTransactionError } from "../src/sync/store";
 import { createImageAnalysisStore } from "../src/image-analysis/store";
+import type { SummaryMethod } from "../src/summary/model";
+import { SummaryService } from "../src/summary/service";
+import { createSummaryJobStore } from "../src/summary/store";
+import { summaryStyleDetail } from "../src/workspace-generation-settings";
 import { uuidV7 } from "../src/id";
 import type { IdentitySyncStore, SyncTransaction, SyncTransactionOperation } from "../src/sync/types";
 
@@ -239,6 +243,79 @@ integration("PostgreSQL application store", () => {
     } finally {
       await store.sync.withIdentity(owner, (sync) => resetWorkspace(sync, workspaceId));
     }
+  });
+
+  it("lets the summary worker list due owners only through the SELECT-only dispatch policy", async () => {
+    const store = createPostgresAuthStore(connection!.db, "postgres");
+    // Sorts before UUIDv7 owners of concurrent suites, so the owner-ordered claim reaches this job first.
+    const userId = `00000000-0000-7000-8000-${crypto.randomUUID().slice(-12)}`;
+    const identity: Identity = { userId, source: "header" };
+    await seedPostgresIdentity(store, databaseUrl!, identity);
+    const workspaceId = crypto.randomUUID(), meetingId = crypto.randomUUID();
+    await store.sync.withIdentity(identity, (sync) => createWorkspace(sync, workspaceId, [{ id: crypto.randomUUID(), entity: "meeting",
+      action: "create", entityId: meetingId, baseRevision: null, data: meetingData(null, new Date(), "Summary", "") }]));
+    const method: SummaryMethod = { id: "transcript", version: () => Promise.resolve("v1"), generate: () => Promise.reject(new Error("unused")),
+      captureSettings: (settings) => ({ model: settings.processing.remote.summaryModel ?? "model",
+        reasoningEffort: settings.processing.remote.reasoningEffort ?? "medium", detail: summaryStyleDetail(settings.summary.style) }) };
+    const accepted = await new SummaryService(store.sync, [method]).start(identity, workspaceId, meetingId, { id: uuidV7() });
+    const access = (maintenance: string) => connection!.db.transaction(async (tx) => {
+      await tx.execute(sql`select set_config('app.maintenance', ${maintenance}, true)`);
+      const selected = await tx.execute(sql`select owner_user_id from jobs.summary where id = ${accepted.id}`);
+      const updated = await tx.execute(sql`update jobs.summary set attempts = attempts where id = ${accepted.id}`);
+      return { selected: selected.rows.length, updated: updated.rowCount };
+    });
+    try {
+      expect(await access("")).toEqual({ selected: 0, updated: 0 });
+      expect(await access("summary-dispatch")).toEqual({ selected: 1, updated: 0 });
+      const jobs = createSummaryJobStore(connection!.db, true);
+      const claimed = await jobs.claim();
+      expect(claimed?.id).toBe(accepted.id);
+      await jobs.fail(claimed!, "test_complete", false);
+      expect(await access("summary-dispatch")).toEqual({ selected: 0, updated: 0 });
+    } finally {
+      // A leftover low-sorting due job would be claimed first by the next run.
+      await connection!.db.transaction(async (tx) => {
+        await tx.execute(sql`select set_config('app.user_id', ${userId}, true)`);
+        await tx.execute(sql`update jobs.summary set status = 'cancelled' where owner_user_id = ${userId} and status in ('pending', 'processing')`);
+      });
+    }
+  });
+
+  it("keeps API queries available while every storage operation holds its key lock and a scoped transaction", async () => {
+    const store = createPostgresMeetingSyncStore(connection!.db);
+    // PostgresSyncEvents pins one pooled connection for LISTEN while any SSE client is subscribed.
+    const listener = await connection!.pool.connect();
+    try {
+      let inside = 0;
+      let entered!: () => void, finish!: () => void;
+      const allInside = new Promise<void>((resolve) => { entered = resolve; });
+      const finished = new Promise<void>((resolve) => { finish = resolve; });
+      const operations = Promise.all(Array.from({ length: NODE_STORAGE_OPERATION_CONCURRENCY }, (_, index) =>
+        store.withStorageKeyLock(`test:${crypto.randomUUID()}:${index}`, () => connection!.db.transaction(async (tx) => {
+          await tx.execute(sql`select 1`);
+          if (++inside === NODE_STORAGE_OPERATION_CONCURRENCY) entered();
+          await finished;
+        }))));
+      await allInside;
+      // Every operation now holds two connections; an unrelated API query must still get one.
+      await connection!.db.execute(sql`select 1`);
+      finish();
+      await operations;
+    } finally {
+      listener.release();
+    }
+  });
+
+  it("fails readiness when the summary dispatch policy is missing", async () => {
+    expect(await createPostgresMeetingSyncStore(connection!.db).isAvailable()).toBe(true);
+    try {
+      await connection!.db.execute(sql`DROP POLICY "summary_job_dispatch_select" ON "jobs"."summary"`);
+      expect(await createPostgresMeetingSyncStore(connection!.db).isAvailable()).toBe(false);
+    } finally {
+      await connection!.db.execute(sql`CREATE POLICY "summary_job_dispatch_select" ON "jobs"."summary" FOR SELECT
+        USING (current_setting('app.maintenance', true) = 'summary-dispatch' AND "jobs"."summary"."status" IN ('pending', 'processing'))`);
+    }
+    expect(await createPostgresMeetingSyncStore(connection!.db).isAvailable()).toBe(true);
   });
 
   it.each(["meeting_events", "documents", "document_updates", "document_recoveries", "document_presence"])("fails readiness when %s FORCE RLS is missing", async (table) => {

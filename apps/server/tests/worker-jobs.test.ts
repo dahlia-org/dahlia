@@ -103,6 +103,14 @@ describe("Worker job delivery", () => {
     expect(close).toHaveBeenCalledOnce();
   });
 
+  it.each([[0, true], [5, false]])("sweeps every Workspace only at the top of the hour (minute %i)", async (minute, sweep) => {
+    const runStorageMaintenance = vi.fn(() => Promise.resolve());
+    const handler = createWorkerHandler(() => Promise.resolve({ jobs: { schedule: () => Promise.resolve() }, runStorageMaintenance,
+      close: () => Promise.resolve() } as unknown as WorkerApp));
+    await handler.scheduled!({ scheduledTime: Date.UTC(2026, 8, 30, 12, minute) } as ScheduledController, {}, {} as ExecutionContext);
+    expect(runStorageMaintenance).toHaveBeenCalledWith(sweep);
+  });
+
   it("recovers a failed post-commit notification by enumerating scopes and dispatching canonical due references", async () => {
     const { jobs, queue, sent, stores } = setup();
     vi.spyOn(console, "warn").mockImplementation(() => {});

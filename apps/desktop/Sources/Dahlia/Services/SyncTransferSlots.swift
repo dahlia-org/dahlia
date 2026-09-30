@@ -2,8 +2,10 @@ import Foundation
 import GRDB
 import Synchronization
 
-/// Shared by archive and file transport; one of four permits is reserved for interactive work.
+/// Shared by archive and file transport; one permit is reserved for interactive work.
 actor SyncTransferSlots {
+    static let permits = 8
+    static let backgroundPermits = permits - 1
     private struct Entry: Sendable { weak var value: SyncTransferSlots? }
     private static let registry = Mutex<[ObjectIdentifier: Entry]>([:])
     private let database: DatabaseQueue
@@ -53,8 +55,8 @@ actor SyncTransferSlots {
     }
 
     private func admit() {
-        while active.count < 4 {
-            let backgroundAvailable = active.values.filter(\.self).count < 3
+        while active.count < Self.permits {
+            let backgroundAvailable = active.values.filter(\.self).count < Self.backgroundPermits
             let foregroundIndex = waiting.firstIndex(where: { !$0.background })
             let nextIndex = foregroundIndex ?? (backgroundAvailable ? waiting.indices.first : nil)
             guard let index = nextIndex else { return }

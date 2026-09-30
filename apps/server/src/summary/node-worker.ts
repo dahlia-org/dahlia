@@ -8,8 +8,10 @@ import { processSummaryJob } from "./process";
 export class SummaryWorker {
   private readonly abort = new AbortController();
   private running?: Promise<void>;
-  constructor(private readonly jobs: SummaryJobStore, private readonly methods: readonly SummaryMethod[], private readonly sync: MeetingSyncService) {}
-  start(): void { this.running ??= this.run(); }
+  constructor(private readonly jobs: SummaryJobStore, private readonly methods: readonly SummaryMethod[], private readonly sync: MeetingSyncService,
+    private readonly concurrency = 1) {}
+  // Jobs wait on the model, not the CPU; each loop claims independently through leases.
+  start(): void { this.running ??= Promise.all(Array.from({ length: this.concurrency }, () => this.run())).then(() => undefined); }
   async stop(): Promise<void> {
     this.abort.abort();
     await this.running;

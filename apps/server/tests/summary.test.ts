@@ -591,6 +591,72 @@ describe("server summary jobs", () => {
     } finally { await reopened.close?.(); }
   });
 
+  it("refunds rate-limited attempts for one hour and pauses unreferenced claims", async () => {
+    const { store, service, workspaceId, meetingId, path } = await setup();
+    const raw = new DatabaseSync(path);
+    try {
+      const accepted = await service.start(owner, workspaceId, meetingId, { id: uuidV7() });
+      const reference = { id: accepted.id, ownerUserId: owner.userId };
+      await store.summaryJobs.fail((await store.summaryJobs.claim())!, "summary_http_429", true);
+      raw.exec("UPDATE jobs_summary SET available_at = 0");
+      expect(await store.summaryJobs.claim()).toBeNull();
+      const referenced = (await store.summaryJobs.claim(reference))!;
+      expect(referenced.attempts).toBe(1);
+      await store.summaryJobs.fail(referenced, "summary_http_429", true);
+      expect(await service.status(owner, workspaceId, meetingId)).toMatchObject({ status: "pending", attempts: 0 });
+      raw.prepare("UPDATE jobs_summary SET available_at = 0, created_at = ?").run(Date.now() - 61 * 60_000);
+      await store.summaryJobs.fail((await store.summaryJobs.claim(reference))!, "summary_http_429", true);
+      // Past the window a 429 spends attempts like any retryable failure, so a persistent limit fails after three.
+      expect(await service.status(owner, workspaceId, meetingId)).toMatchObject({ status: "pending", attempts: 1 });
+      // It still waits out the shared cooldown rather than the shorter attempt backoff.
+      expect((raw.prepare("SELECT available_at FROM jobs_summary").get() as { available_at: number }).available_at).toBeGreaterThan(Date.now() + 25_000);
+    } finally { raw.close(); await store.close?.(); }
+  });
+
+  it("alternates due owners so one backlog cannot starve another", async () => {
+    const { store, sync, service, path } = await setup();
+    const other: Identity = { userId: testUserID("other-owner"), source: "header" };
+    await seedHeaderIdentity(store, path, other);
+    // The lower-sorting owner holds the backlog, which plain owner order would drain first.
+    const [backlog, single]: [Identity, Identity] = owner.userId < other.userId ? [owner, other] : [other, owner];
+    const now = new Date().toISOString();
+    const startJobs = async (identity: Identity, count: number) => {
+      const workspace = uuidV7(), meetings = Array.from({ length: count }, () => uuidV7());
+      await sync.commitTransaction(identity, { schemaVersion: 3, id: uuidV7(), workspaceId: workspace, createdAt: now, operations: [
+        { id: uuidV7(), entity: "workspace", action: "create", entityId: workspace, baseRevision: null,
+          data: { organizationId: testOrganizationID, name: "Workspace", createdAt: now } },
+        ...meetings.map((id) => ({ id: uuidV7(), entity: "meeting" as const, action: "create" as const, entityId: id, baseRevision: null,
+          data: { name: "Meeting", description: "", status: "READY", projectId: null, duration: 60, recordingStartedAt: null, createdAt: now, updatedAt: now } })),
+      ] });
+      for (const id of meetings) await service.start(identity, workspace, id, { id: uuidV7() });
+    };
+    try {
+      await startJobs(backlog, 2);
+      await startJobs(single, 1);
+      const claims = [await store.summaryJobs.claim(), await store.summaryJobs.claim(), await store.summaryJobs.claim()];
+      expect(claims.map((job) => job?.ownerUserId)).toEqual([backlog.userId, single.userId, backlog.userId]);
+    } finally { await store.close?.(); }
+  });
+
+  it("runs configured summary loops concurrently", async () => {
+    const { store, sync, method, service, workspaceId, meetingId } = await setup();
+    const second = uuidV7();
+    await sync.commitTransaction(owner, { schemaVersion: 3, id: uuidV7(), workspaceId, createdAt: new Date().toISOString(), operations: [
+      { id: uuidV7(), entity: "meeting", action: "create", entityId: second, baseRevision: null, data: { name: "Second", description: "", status: "READY",
+        projectId: null, duration: 60, recordingStartedAt: null, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() } }] });
+    for (const id of [meetingId, second]) await service.start(owner, workspaceId, id, { id: uuidV7() });
+    let active = 0, overlap!: () => void;
+    const overlapping = new Promise<void>((resolve) => { overlap = resolve; });
+    const generate = vi.fn(async () => { if (++active === 2) overlap(); await overlapping; return doc(); });
+    method.generate = generate;
+    const worker = new SummaryWorker(store.summaryJobs, [method], sync, 2);
+    try {
+      worker.start();
+      await overlapping;
+    } finally { await worker.stop(); await store.close?.(); }
+    expect(generate).toHaveBeenCalledTimes(2);
+  });
+
   it("authorizes API owners, rejects unknown methods and disables unsupported runtime capability", async () => {
     const { store, service, config, meetingId } = await setup();
     try {

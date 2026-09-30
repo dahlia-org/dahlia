@@ -48,6 +48,8 @@ PostgreSQL は既存の生成 Auth baseline → application initial → runtime_
 
 2026-09-30: Notesの検索条件に合わせ、復元履歴は `(document_id, id)`、presenceは `(document_id, expires_at)` と `(workspace_id, expires_at)` を用いる。後者はWorkspace内の期限切れ削除、前者は表示中文書の参加者一覧と文書削除の参照探索を支える。Documentsの `(workspace_id, id)` は既存の一意制約が索引を持つため、重複した通常indexは除く。Notes本体の部分一意indexと更新ログの `(document_id, revision)` 主キーは保持する。宣言schemaから未リリースapplication/SQLite baselineとsnapshotを再生成し、runtime_supportの認可関数・RLS・FTS・DEFERRABLE制約とAuth/Agentの独立ledgerは維持する。既存Server DBへこのbaselineを再適用せず、稼働DBへの索引追加は別の明示的な運用作業とする。検証は空の使い捨てDBで行う。
 
+2026-09-30: ユーザー承認により、バックグラウンドジョブの取得を登録ユーザー数から切り離す変更も未リリース baseline に統合した。`jobs.summary` の部分 index `summary_job_due_idx`（pending / processing の `owner_user_id, available_at`）と `jobs.image_analysis` の `image_analysis_job_owner_idx` を PostgreSQL / SQLite の initial と snapshot に加え、要約 worker が期限到来ジョブのある所有者だけを列挙する SELECT 専用 policy `summary_job_dispatch_select`（`app.maintenance = 'summary-dispatch'` かつ pending / processing）を runtime_support に生成した。取得・更新は従来どおり所有者 identity の policy で行う。個別の forward migration は撤回し、デプロイ済み環境がないため既存 DB への適用手順は用意しない。
+
 ## Header identity
 
 proxy は client-supplied identity header を除去・上書きし、Server への直接到達を防ぐ。Server 側の CIDR 判定で代替しない。

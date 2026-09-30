@@ -8,6 +8,7 @@ import type { PostgresDatabase, SQLiteDatabase } from "../db/client";
 import * as postgresSchema from "../db/auth-schema";
 import * as sqliteSchema from "../db/sqlite-schema";
 import { imageContentTypes } from "../files/model";
+import { isRateLimited } from "../jobs/rate-limit";
 import { needsImageAnalysis, type ImageAnalysisClaim } from "./model";
 
 export type ImageAnalysisReference = Pick<ImageAnalysisClaim, "fileId" | "ownerUserId" | "model">;
@@ -66,6 +67,9 @@ export function createImageAnalysisStore(database: PostgresDatabase | SQLiteData
     });
     return rows.length === batchSize ? rows.at(-1)!.fileId : undefined;
   }
+  // Per process, like the summary queue; SKIP LOCKED still prevents double claims across replicas.
+  let lastOwner = "";
+  let cooldownUntil = 0;
   return {
     reconcilePage,
     due(model, ownerUserId, after) {
@@ -87,6 +91,7 @@ export function createImageAnalysisStore(database: PostgresDatabase | SQLiteData
       }
     },
     claim(model, reference) {
+      if (!reference && Date.now() < cooldownUntil) return Promise.resolve(null);
       return db.transaction(async (transaction) => {
         const now = new Date();
         const due = and(
@@ -95,9 +100,11 @@ export function createImageAnalysisStore(database: PostgresDatabase | SQLiteData
           or(eq(jobs.status, "pending"), and(eq(jobs.status, "processing"), lte(jobs.leaseExpiresAt, now))),
         );
         const owners = reference ? [reference.ownerUserId] : (await transaction.select({ ownerUserId: jobs.ownerUserId }).from(jobs).where(due)
-          .groupBy(jobs.ownerUserId).orderBy(sql`min(${jobs.availableAt})`, asc(jobs.ownerUserId))).map((row) => row.ownerUserId);
+          .groupBy(jobs.ownerUserId).orderBy(asc(jobs.ownerUserId))).map((row) => row.ownerUserId);
         // Readiness is evaluated per owner, so owners with only unready jobs cannot hide others' ready jobs.
-        for (const ownerUserId of owners) {
+        // Rotation keeps one owner's bulk import from starving others.
+        const start = reference ? 0 : owners.findIndex((owner) => owner > lastOwner);
+        for (const ownerUserId of start > 0 ? [...owners.slice(start), ...owners.slice(0, start)] : owners) {
           // Forced RLS hides files and attachments until the job owner's identity is set.
           if (isPostgres) await transaction.execute(sql`select set_config('app.user_id', ${ownerUserId}, true)`);
           const ready = exists(transaction.select({ id: files.fileId }).from(files).where(and(
@@ -121,12 +128,14 @@ export function createImageAnalysisStore(database: PostgresDatabase | SQLiteData
           await transaction.update(jobs).set({
             outputLanguage, status: "processing", claimedAt: now, leaseExpiresAt: new Date(now.getTime() + 300_000),
           }).where(eq(jobs.fileId, row.fileId));
+          if (!reference) lastOwner = ownerUserId;
           return { ...row, outputLanguage, claimedAt: now };
         }
         return null;
       });
     },
     async finish(claim, error) {
+      if (error?.retryAt && isRateLimited(error.code)) cooldownUntil = Math.max(cooldownUntil, error.retryAt.getTime());
       const filter = and(eq(jobs.fileId, claim.fileId), eq(jobs.ownerUserId, claim.ownerUserId),
         eq(jobs.model, claim.model), eq(jobs.claimedAt, claim.claimedAt));
       if (!error) await db.delete(jobs).where(filter);

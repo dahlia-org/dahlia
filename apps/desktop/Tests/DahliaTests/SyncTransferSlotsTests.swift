@@ -30,11 +30,11 @@
             #expect(slots === SyncTransferSlots.shared(dbQueue: database.dbQueue))
             let gate = Gate()
             var entries = await gate.entered.makeAsyncIterator()
-            let background = (0 ..< 4).map { index in
+            let background = (0 ... SyncTransferSlots.backgroundPermits).map { index in
                 Task { try await slots.perform(background: true) { await gate.hold("background-\(index)") } }
             }
             var admitted: [String] = []
-            for _ in 0 ..< 3 {
+            for _ in 0 ..< SyncTransferSlots.backgroundPermits {
                 try admitted.append(#require(await entries.next()))
             }
             let foreground = Task { try await slots.perform(background: false) { await gate.hold("foreground") } }
