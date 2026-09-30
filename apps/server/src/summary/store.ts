@@ -36,7 +36,14 @@ export function createSummaryJobStore(database: PostgresDatabase | SQLiteDatabas
         .orderBy(asc(jobs.id)).limit(100));
     },
     async claim(reference) {
-      const owners = reference ? [{ id: reference.ownerUserId }] : await db.select({ id: schema.user.id }).from(schema.user);
+      // Idle polling must scale with due jobs, not with every registered user.
+      const owners = reference ? [{ id: reference.ownerUserId }] : await db.transaction(async (connection) => {
+        if (isPostgres) await connection.execute(sql`select set_config('app.maintenance', 'summary-dispatch', true)`);
+        const now = new Date();
+        return connection.selectDistinct({ id: jobs.ownerUserId }).from(jobs).where(and(lte(jobs.availableAt, now),
+          or(eq(jobs.status, "pending"), and(eq(jobs.status, "processing"), lte(jobs.leaseExpiresAt, now)))))
+          .orderBy(asc(jobs.ownerUserId));
+      });
       for (const owner of owners) {
         const job = await withOwner(owner.id, async (connection) => {
           const now = new Date();

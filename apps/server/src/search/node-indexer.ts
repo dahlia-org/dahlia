@@ -6,7 +6,8 @@ import { processSearchIndexBatch } from "./process";
 export { processSearchIndexBatch } from "./process";
 import type { SearchIndexStore } from "./index-store";
 
-const RECONCILE_INTERVAL_MS = 60_000;
+// Commits enqueue jobs and startup covers model changes; this full scan is only a safety net.
+const RECONCILE_INTERVAL_MS = 60 * 60_000;
 
 export class SearchIndexer {
   private stopping = false;

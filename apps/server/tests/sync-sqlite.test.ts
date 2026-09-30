@@ -806,7 +806,7 @@ describe("SQLite canonical sync", () => {
       database.prepare("UPDATE recordings SET audio = json_set(audio, '$.system.createdAt', ?, '$.mic.createdAt', ?) WHERE session_id = ?")
         .run("2020-01-01T00:00:00.000Z", "2020-01-01T00:00:00.000Z", sessionId);
     } finally { database.close(); }
-    // No further request to this Workspace: Node maintenance or a cold Worker cron must find the upload.
+    // No further request to this Workspace: Node maintenance or a cold hourly Worker cron must find the upload.
     const maintain = async () => {
       if (runtime === "node") return app.runStorageMaintenance();
       const coldWorker = createWorkerHandler(async () => app);
@@ -814,7 +814,8 @@ describe("SQLite canonical sync", () => {
       const scheduled = coldWorker.scheduled!.bind(coldWorker) as unknown as (
         controller: ScheduledController, env: Cloudflare.Env, context: ExecutionContext,
       ) => Promise<void>;
-      await scheduled({} as ScheduledController, {} as Cloudflare.Env, { waitUntil: (task: Promise<unknown>) => pending.push(task) } as unknown as ExecutionContext);
+      await scheduled({ scheduledTime: Date.UTC(2026, 8, 30, 12, 0) } as ScheduledController, {} as Cloudflare.Env,
+        { waitUntil: (task: Promise<unknown>) => pending.push(task) } as unknown as ExecutionContext);
       await Promise.all(pending);
     };
     await maintain();
@@ -1073,6 +1074,29 @@ describe("SQLite canonical sync", () => {
     database.close();
     await jobs.reconcile(captioner.model);
     expect(await worker.processOne()).toBe(false);
+    await store.close?.();
+  });
+
+  it("enqueues missing image analysis when the attachment commits, without a reconcile scan", async () => {
+    const { store, service, publish, attach } = await fileSetup("model");
+    const analyze = vi.fn(async () => ({ ocr_text: "OCR", caption: "Caption", informative: true, reason: "Shared material" }));
+    const worker = new ImageAnalysisWorker(store.imageAnalysis!, { model: "model", analyze }, store.sync, service);
+    await publish();
+    expect(await worker.processOne()).toBe(false);
+    await attach();
+    expect(await worker.processOne()).toBe(true);
+    expect(analyze).toHaveBeenCalledOnce();
+    await store.close?.();
+  });
+
+  it.each(["analyzed", "unconfigured"] as const)("does not enqueue image analysis at attachment for %s files", async (kind) => {
+    const { store, service, attach, file, databasePath } = await fileSetup(kind === "analyzed" ? "model" : undefined);
+    await service.commitTransaction(owner, wire([{ entity: "file", action: "upsert", entityId: file.id, baseRevision: null,
+      data: { checksum: file.checksum, metadata: kind === "analyzed" ? { ocrText: "OCR", caption: "Caption" } : {} } }]));
+    await attach();
+    const database = new DatabaseSync(databasePath);
+    expect(database.prepare("SELECT count(*) AS n FROM jobs_image_analysis").get()).toEqual({ n: 0 });
+    database.close();
     await store.close?.();
   });
 

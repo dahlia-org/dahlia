@@ -56,6 +56,7 @@ export class MeetingSyncService {
   private storageDeleteDrain?: Promise<void>;
   private storageMaintenance?: Promise<void>;
   private storageDeleteRetry?: ReturnType<typeof setTimeout>;
+  private nextStorageSweepAt = 0;
   private readonly variantJobs = new Map<string, Promise<void>>();
   private readonly variantWaiters: Array<() => void> = [];
   private activeVariants = 0;
@@ -278,10 +279,10 @@ export class MeetingSyncService {
             const metadata = { ...file, ...(operation.entity === "file" ? data.metadata as object : {}) };
             if (metadata.source) fileMetadata.set(fileId, metadata as FileRecord["metadata"]);
             Object.assign(data, await this.fileSearchData(metadata));
-            if (operation.entity === "file" && data.imageAnalysis === "replace") {
-              if (!this.imageAnalysisModel) throw new SyncTransactionError(422, "image_analysis_unavailable", [], operation.id);
-              Object.assign(data, { imageAnalysisModel: this.imageAnalysisModel });
+            if (operation.entity === "file" && data.imageAnalysis === "replace" && !this.imageAnalysisModel) {
+              throw new SyncTransactionError(422, "image_analysis_unavailable", [], operation.id);
             }
+            if (this.imageAnalysisModel) Object.assign(data, { imageAnalysisModel: this.imageAnalysisModel });
           }
           prepared.push({ ...operation, data });
         }
@@ -309,14 +310,15 @@ export class MeetingSyncService {
     return response;
   }
 
-  runStorageMaintenance(): Promise<void> {
-    return this.storageMaintenance ??= this.maintainStorage().finally(() => { this.storageMaintenance = undefined; });
+  /** `sweep` visits every Workspace; retry ticks without it only drain queued storage deletes. */
+  runStorageMaintenance(sweep = true): Promise<void> {
+    return this.storageMaintenance ??= this.maintainStorage(sweep).finally(() => { this.storageMaintenance = undefined; });
   }
 
-  private async maintainStorage(): Promise<void> {
+  private async maintainStorage(sweep: boolean): Promise<void> {
     let after: SyncHistoryTarget | undefined;
     const before = new Date(Date.now() - 86_400_000);
-    for (;;) {
+    while (sweep) {
       const targets = await this.store.listHistoryTargets(after);
       if (!targets.length) break;
       for (const target of targets) {
@@ -345,7 +347,10 @@ export class MeetingSyncService {
     if (this.storageDeleteRetry) return;
     this.storageDeleteRetry = setTimeout(() => {
       this.storageDeleteRetry = undefined;
-      void this.runStorageMaintenance().catch(() => undefined).finally(() => this.scheduleStorageDeleteRetry());
+      // Purge grace is days and staging expires after 24 hours, so an hourly Workspace sweep suffices.
+      const sweep = Date.now() >= this.nextStorageSweepAt;
+      if (sweep) this.nextStorageSweepAt = Date.now() + 60 * 60_000;
+      void this.runStorageMaintenance(sweep).catch(() => undefined).finally(() => this.scheduleStorageDeleteRetry());
     }, 60_000);
     this.storageDeleteRetry.unref?.();
   }

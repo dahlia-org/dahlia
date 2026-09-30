@@ -265,12 +265,13 @@ export function createWorkerHandler(initialize: WorkerAppInitializer = initializ
       try { return await closeAfterResponse(await app.fetch(request, env, context), app.close); }
       catch (error) { await app.close?.(); throw error; }
     },
-    async scheduled(_controller, env): Promise<void> {
+    async scheduled(controller, env): Promise<void> {
       const app = await initialize(env);
       try {
         await app.jobs?.schedule();
       } finally {
-        try { await app.runStorageMaintenance(); }
+        // The minute cron drains storage deletes; only the top of the hour visits every Workspace.
+        try { await app.runStorageMaintenance(new Date(controller.scheduledTime).getUTCMinutes() === 0); }
         finally { await app.close?.(); }
       }
     },

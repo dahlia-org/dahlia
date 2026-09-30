@@ -1,0 +1,2 @@
+CREATE INDEX "summary_job_due_idx" ON "jobs"."summary" ("owner_user_id","available_at") WHERE "status" IN ('pending', 'processing');--> statement-breakpoint
+CREATE POLICY "summary_job_dispatch_select" ON "jobs"."summary" AS PERMISSIVE FOR SELECT TO public USING (current_setting('app.maintenance', true) = 'summary-dispatch' AND "jobs"."summary"."status" IN ('pending', 'processing'));

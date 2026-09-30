@@ -660,7 +660,12 @@ export const summaryJob = jobsSchema.table("summary", {
   check("summary_job_status_check", sql`${table.status} IN ('pending', 'processing', 'succeeded', 'failed', 'cancelled')`),
   uniqueIndex("summary_job_active_meeting_idx").on(table.meetingId).where(sql`${table.status} IN ('pending', 'processing')`),
   index("summary_job_owner_created_idx").on(table.ownerUserId, table.createdAt),
+  index("summary_job_due_idx").on(table.ownerUserId, table.availableAt).where(sql`${table.status} IN ('pending', 'processing')`),
   pgPolicy("summary_job_retention_select", { for: "select", using: meetingRetentionWorkspace(table.workspaceId) }),
+  // The worker lists due owners without their identity; each claim still runs under the owner's policy.
+  pgPolicy("summary_job_dispatch_select", {
+    for: "select", using: sql`current_setting('app.maintenance', true) = 'summary-dispatch' AND ${table.status} IN ('pending', 'processing')`,
+  }),
   pgPolicy("summary_job_retention_update", { for: "update", using: meetingRetentionWorkspace(table.workspaceId), withCheck: meetingRetentionWorkspace(table.workspaceId) }),
   pgPolicy("summary_job_owner", {
     for: "all", using: sql`${table.ownerUserId} = nullif(current_setting('app.user_id', true), '')::uuid`,

@@ -176,7 +176,7 @@ export function mcpSetupAvailable(authProvider: AppConfig["authProvider"], suppo
   return authProvider === "accounts" ? supportsCimd : databricksProxy;
 }
 
-export function createApp(dependencies: AppDependencies): DahliaServerApp & { runStorageMaintenance(): Promise<void> } {
+export function createApp(dependencies: AppDependencies): DahliaServerApp & { runStorageMaintenance(sweep?: boolean): Promise<void> } {
   const { config } = dependencies;
   const app = new OpenAPIHono<{ Variables: AppVariables }>({ defaultHook: async (result, context) => {
     if (!result.success) {
@@ -1470,7 +1470,7 @@ export function createApp(dependencies: AppDependencies): DahliaServerApp & { ru
   });
 
   installPublicIDs(app);
-  return Object.assign(app, { runStorageMaintenance: () => sync.runStorageMaintenance() });
+  return Object.assign(app, { runStorageMaintenance: (sweep?: boolean) => sync.runStorageMaintenance(sweep) });
 }
 
 function requestRoute(path: string): string {

@@ -2159,6 +2159,12 @@ function createIdentityStore(
           }).onConflictDoNothing().returning({ id: schema.meetingAttachment.id });
           if (!inserted) throw new SyncTransactionError(409, "meeting_attachment_id_conflict", [], operation.id);
         }
+        // The attached file and live meeting satisfy claim readiness; periodic reconcile remains only a safety net.
+        if (typeof data.imageAnalysisModel === "string" && imageContentTypes.has(file.contentType) && needsImageAnalysis(file.metadata)) {
+          await db.insert(schema.imageAnalysisJob).values({
+            fileId, workspaceId: transaction.workspaceId, ownerUserId: userPrincipalId, model: data.imageAnalysisModel, mode: "fill_missing",
+          }).onConflictDoNothing();
+        }
       }
 
       if (["meeting", "summary"].includes(operation.entity) && typeof data.searchText === "string") {

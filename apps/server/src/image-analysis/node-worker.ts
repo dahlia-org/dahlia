@@ -28,8 +28,9 @@ export class ImageAnalysisWorker {
     let idleDelay = 1_000;
     while (!this.abort.signal.aborted) {
       try {
+        // Commits enqueue jobs; this full scan only repairs missed or model-changed work.
         if (Date.now() >= nextReconcile) {
-          nextReconcile = Date.now() + 60_000;
+          nextReconcile = Date.now() + 60 * 60_000;
           idleDelay = 1_000;
           await this.jobs.reconcile(this.captioner.model);
         }

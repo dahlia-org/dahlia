@@ -13,6 +13,10 @@ import { connectAuthDatabase, NODE_STORAGE_OPERATION_CONCURRENCY } from "../src/
 import * as schema from "../src/db/auth-schema";
 import { createPostgresMeetingSyncStore, SyncTransactionError } from "../src/sync/store";
 import { createImageAnalysisStore } from "../src/image-analysis/store";
+import type { SummaryMethod } from "../src/summary/model";
+import { SummaryService } from "../src/summary/service";
+import { createSummaryJobStore } from "../src/summary/store";
+import { summaryStyleDetail } from "../src/workspace-generation-settings";
 import { uuidV7 } from "../src/id";
 import type { IdentitySyncStore, SyncTransaction, SyncTransactionOperation } from "../src/sync/types";
 
@@ -238,6 +242,42 @@ integration("PostgreSQL application store", () => {
       expect(await store.sync.withIdentity(owner, (sync) => sync.getRecording(meetingId, 1))).toBeNull();
     } finally {
       await store.sync.withIdentity(owner, (sync) => resetWorkspace(sync, workspaceId));
+    }
+  });
+
+  it("lets the summary worker list due owners only through the SELECT-only dispatch policy", async () => {
+    const store = createPostgresAuthStore(connection!.db, "postgres");
+    // Sorts before UUIDv7 owners of concurrent suites, so the owner-ordered claim reaches this job first.
+    const userId = `00000000-0000-7000-8000-${crypto.randomUUID().slice(-12)}`;
+    const identity: Identity = { userId, source: "header" };
+    await seedPostgresIdentity(store, databaseUrl!, identity);
+    const workspaceId = crypto.randomUUID(), meetingId = crypto.randomUUID();
+    await store.sync.withIdentity(identity, (sync) => createWorkspace(sync, workspaceId, [{ id: crypto.randomUUID(), entity: "meeting",
+      action: "create", entityId: meetingId, baseRevision: null, data: meetingData(null, new Date(), "Summary", "") }]));
+    const method: SummaryMethod = { id: "transcript", version: () => Promise.resolve("v1"), generate: () => Promise.reject(new Error("unused")),
+      captureSettings: (settings) => ({ model: settings.processing.remote.summaryModel ?? "model",
+        reasoningEffort: settings.processing.remote.reasoningEffort ?? "medium", detail: summaryStyleDetail(settings.summary.style) }) };
+    const accepted = await new SummaryService(store.sync, [method]).start(identity, workspaceId, meetingId, { id: uuidV7() });
+    const access = (maintenance: string) => connection!.db.transaction(async (tx) => {
+      await tx.execute(sql`select set_config('app.maintenance', ${maintenance}, true)`);
+      const selected = await tx.execute(sql`select owner_user_id from jobs.summary where id = ${accepted.id}`);
+      const updated = await tx.execute(sql`update jobs.summary set attempts = attempts where id = ${accepted.id}`);
+      return { selected: selected.rows.length, updated: updated.rowCount };
+    });
+    try {
+      expect(await access("")).toEqual({ selected: 0, updated: 0 });
+      expect(await access("summary-dispatch")).toEqual({ selected: 1, updated: 0 });
+      const jobs = createSummaryJobStore(connection!.db, true);
+      const claimed = await jobs.claim();
+      expect(claimed?.id).toBe(accepted.id);
+      await jobs.fail(claimed!, "test_complete", false);
+      expect(await access("summary-dispatch")).toEqual({ selected: 0, updated: 0 });
+    } finally {
+      // A leftover low-sorting due job would be claimed first by the next run.
+      await connection!.db.transaction(async (tx) => {
+        await tx.execute(sql`select set_config('app.user_id', ${userId}, true)`);
+        await tx.execute(sql`update jobs.summary set status = 'cancelled' where owner_user_id = ${userId} and status in ('pending', 'processing')`);
+      });
     }
   });
 
