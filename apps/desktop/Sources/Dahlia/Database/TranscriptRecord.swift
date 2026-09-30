@@ -125,6 +125,7 @@ struct TranscriptRecord: Codable, FetchableRecord, PersistableRecord, Sendable {
         allowAfterReset: Bool = false,
         connectionId: UUID? = nil,
         reapplyOnCurrentRevision: Bool = false,
+        buildingInitial: Bool = false,
         in db: Database
     ) throws {
         try TextContentAccess.requireComplete(entity: .transcript, id: meetingId, in: db)
@@ -132,6 +133,8 @@ struct TranscriptRecord: Codable, FetchableRecord, PersistableRecord, Sendable {
         let operation = try mutation(meetingId: meetingId, info: info, mode: "replace")
         guard try SyncTransactionRecorder.record(
             workspaceId: meeting.workspaceId,
+            background: buildingInitial,
+            buildingInitial: buildingInitial,
             operations: [operation],
             allowAfterReset: allowAfterReset,
             connectionIdOverride: connectionId,

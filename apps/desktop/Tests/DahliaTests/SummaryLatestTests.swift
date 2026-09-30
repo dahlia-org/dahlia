@@ -48,6 +48,7 @@ import Synchronization
                     INSERT INTO sync_operations(transactionId, position, id, entity, action, entityId, payloadJSON)
                     VALUES (?, 0, ?, 'transcript', 'patch', ?, '{}')
                     """, arguments: [transactionId, UUID.v7(), otherMeetingId])
+                    try SyncDependencies.index(transactionId: transactionId, workspaceId: fixture.workspaceId, in: db)
                 }
                 try db.execute(sql: "INSERT INTO summaries(meetingId, title, createdAt) VALUES (?, 'Old', ?)", arguments: [fixture.meetingId, Date()])
                 try db.execute(sql: "INSERT INTO sync_entity_state VALUES (?, 'summary', ?, 3)", arguments: [fixture.workspaceId, fixture.meetingId])
@@ -84,7 +85,7 @@ import Synchronization
             let calls = Mutex(0)
             let syncs = Mutex(0)
             let provider = provider(fixture) { request in
-                if request.url!.path.hasSuffix("/capabilities") { return (200, [:], Data(#"{"sync":{"version":6}}"#.utf8)) }
+                if request.url!.path.hasSuffix("/capabilities") { return (200, [:], Data(#"{"documents":{"version":1},"sync":{"version":7}}"#.utf8)) }
                 if request.url!.path.hasSuffix("/changes") {
                     syncs.withLock { $0 += 1 }
                     return (200, [:], changeData)

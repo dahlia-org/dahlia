@@ -1,5 +1,7 @@
 # Desktop / Server の canonical sync
 
+2026-09-30追記: Desktop の送信優先度・競合解決の範囲・通常受信の世代検査・文書送信間隔と Server のロックは、[優先同期 ADR](sync-priority.md) が該当する旧決定を置き換える。以下の旧仕様はこの範囲に限り履歴として残す。
+
 対象: Desktop・Server・Private Web。採択: 2026-09-02〜09-03。API の詳細は [Server README](../../../apps/server/README.md)、ローカルの保存保証は [Architecture](../../../ARCHITECTURE.md) を参照する。
 
 ## 正本とアカウント境界
@@ -62,7 +64,7 @@ snapshot 復旧の pending / recovering はローカル送信キューの確定�
 
 Server は Workspace ごとの durable change ledger と opaque cursor を持つ。delta は high-water cursor を固定し、その境界までの各 entity の最終 canonical state をページングする。一時的な delete / recreate を露出しない。pull checkpoint は対応ページの適用時だけ進め、commit receipt の cursor で代用しない。
 
-`GET /api/v1/events` は cursor だけの SSE invalidation。起動、foreground 復帰、再接続、イベント欠落は必ず delta API で追いつく。Web も同じ transaction endpoint を使い、同期データの Server MCP は read-only。OAuth と認可は [共通 OAuth](oauth.md) と [Workspace permission](../server/database-and-identity.md#workspace-permission) に従う。
+`GET /api/v1/events` は本文を含めない SSE invalidation。Web は開いている Notes の通知も同じ接続へ集約する（購読・再接続・通知基盤は [Documents ADR](documents.md#web-の変更駆動同期2026-09-29-改訂)）。通常の cursor と文書の revision を別イベントとして扱い、送信レーンや ACK は統合しない。起動、foreground 復帰、再接続、イベント欠落は必ず delta API で追いつく。Web も同じ transaction endpoint を使い、同期データの Server MCP は read-only。OAuth と認可は [共通 OAuth](oauth.md) と [Workspace permission](../server/database-and-identity.md#workspace-permission) に従う。
 
 原本は Workspace 所有の `files`、会議との関係は独立 ID の `meeting_attachments` に保存する。`files` の基本項目は `uri`、`offset`（現在は0）、`size`、`content_type`、`checksum`（`SHA-256:` 接頭辞）とし、source / OCR / caption / 寸法は metadata に置く。source は作成時に固定し、metadata の部分更新は未指定キーを保持する。同じ Workspace の複数会議で同じ file を共有でき、紐付けを解除しても原本を削除しない。参照が残る明示 file 削除は拒否する。
 
@@ -238,3 +240,15 @@ Server の `meeting:delete` は `deleted_at` を記録する論理削除とす�
 通常の読取・検索・MCP・子データ取得は削除済み会議を除外する。本文・要約履歴・イベント・録音・画像関連付けは保持し、古い更新・アップロード・同一IDのcreateでは復活させない。処理中の要約ジョブはキャンセルする。削除は親と子の既存delete通知を発行し、`meeting:restore` は現在の削除済みrevisionを検査して親のrevisionを増やし、保持した子のupsertを親から順に再通知する。子のrevisionは巻き戻さない。物理削除前なら期限後も復旧でき、再削除はその時点から数える。画像単独削除は即時のままで、消した関連付けを復旧時に再作成しない。
 
 ごみ箱APIは現在のWorkspace閲覧権限を要求し、復旧はadmin/editorに許可する。Node/Workersの既存メンテナンスは通常commitと同じWorkspaceロック下で現在設定を再読し、対象を小分けに物理削除する。関連filesは他の会議に参照がなければ削除し、録音と共に既存の永続storage削除キューへ入れる。DB削除はstorage未設定でも実施する。ごみ箱が残るWorkspaceは空とみなさない。
+
+## Documents 専用同期（2026-09-29）
+
+[Documents ADR](documents.md) が、明示公開した会議 Notes の同期・復元・presence を追加する。旧端末内 note の除外と MCP read-only は維持する。本文更新は transaction キュー・receipt・pending による受信 defer の対象にせず、文書ごとの CRDT 差分 API と送信待ちで処理する。送信待ちでも受信をマージする。Server / Desktop / Web の同時更新により sync capability は7、documents capability は1となる。[独立した Document](document-identity.md) により文書は Workspace に属し、会議との関連は任意となる。会議の物理削除・reset は関連する文書を除去し、soft delete は関連する全用途の generation を更新して古い編集を拒否する。会議のない文書は Workspace のライフサイクルに従う。復元は新しいブロックの挿入とする。
+
+## 利用者による受信エラーの復旧
+
+2026-09-29: `invalid_sync_payload` は、同期処理で形式・公開 ID の読み取りに失敗した状態として表示する。受信以外のローカル処理でも発生し得るため、Server のデータ不正と断定しない。API 名、エラー種別、許可したスキーマ項目名だけを端末内の incident に保持する。レスポンス本文・値・認証情報・decoder の自由文は診断へ含めない。同期画面から利用者が診断をコピーできる。
+
+「Server から再取得」は Server の reset や送信待ちの破棄ではなく、既存の snapshot 復旧を明示的に開始する。開始時に通常の送信待ち、Documents の未送信差分・復元記録、録音、Workspace 移管を検査し、保護対象があればカーソルを変更せず案内する。開始後も既存の接続・変更世代・未送信操作による snapshot 適用制御を維持する。壊れたレスポンスを読み飛ばしたり、失敗した差分の先へカーソルを進めたりしない。Server の最新状態にも形式不整合がある場合、再取得だけで直るとは扱わず、診断を共有して Desktop / Server 側の修正を行う。
+
+受信と送信待ちの競合判定は、関連する親 Project・Meeting・File の ID だけをローカル操作から読む。保存済み operation payload と公開 API の canonical response は別契約であり、画像 metadata の `ocr_text` などを response 用モデルで復号しない。送信待ちの本文や metadata の差異で独立した受信を止めず、関連する操作の保護は維持する。

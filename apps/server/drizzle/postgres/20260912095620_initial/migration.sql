@@ -1,7 +1,64 @@
-CREATE SCHEMA "app";--> statement-breakpoint
-CREATE SCHEMA "crypto";--> statement-breakpoint
-CREATE SCHEMA "jobs";--> statement-breakpoint
-CREATE SCHEMA "search";--> statement-breakpoint
+CREATE SCHEMA "app";
+--> statement-breakpoint
+CREATE SCHEMA "crypto";
+--> statement-breakpoint
+CREATE SCHEMA "jobs";
+--> statement-breakpoint
+CREATE SCHEMA "search";
+--> statement-breakpoint
+CREATE TABLE "app"."documents" (
+	"id" uuid PRIMARY KEY,
+	"workspace_id" uuid NOT NULL,
+	"meeting_id" uuid,
+	"kind" text NOT NULL,
+	"title" text DEFAULT '' NOT NULL,
+	"schema_version" integer DEFAULT 1 NOT NULL,
+	"generation" uuid NOT NULL,
+	"revision" integer DEFAULT 0 NOT NULL,
+	"checkpoint_revision" integer DEFAULT 0 NOT NULL,
+	"checkpoint" text NOT NULL,
+	"text" text NOT NULL,
+	"projection_revision" integer DEFAULT 0 NOT NULL,
+	"encrypted_payload" text,
+	"created_at" timestamp NOT NULL,
+	"updated_at" timestamp NOT NULL,
+	CONSTRAINT "document_workspace_id_unique" UNIQUE("workspace_id","id"),
+	CONSTRAINT "document_kind" CHECK ("kind" IN ('notes', 'summary', 'general') AND ("kind" != 'notes' OR "meeting_id" IS NOT NULL)),
+	CONSTRAINT "document_watermarks" CHECK ("projection_revision" = "revision" AND "checkpoint_revision" <= "revision")
+);
+--> statement-breakpoint
+ALTER TABLE "app"."documents" ENABLE ROW LEVEL SECURITY;--> statement-breakpoint
+CREATE TABLE "app"."document_presence" (
+	"id" uuid PRIMARY KEY,
+	"document_id" uuid NOT NULL,
+	"workspace_id" uuid NOT NULL,
+	"user_id" uuid NOT NULL,
+	"expires_at" timestamp NOT NULL
+);
+--> statement-breakpoint
+ALTER TABLE "app"."document_presence" ENABLE ROW LEVEL SECURITY;--> statement-breakpoint
+CREATE TABLE "app"."document_recoveries" (
+	"id" uuid PRIMARY KEY,
+	"document_id" uuid NOT NULL,
+	"workspace_id" uuid NOT NULL,
+	"blocks" jsonb NOT NULL,
+	"reason" text NOT NULL,
+	"encrypted_payload" text,
+	"created_at" timestamp NOT NULL
+);
+--> statement-breakpoint
+ALTER TABLE "app"."document_recoveries" ENABLE ROW LEVEL SECURITY;--> statement-breakpoint
+CREATE TABLE "app"."document_updates" (
+	"document_id" uuid,
+	"workspace_id" uuid NOT NULL,
+	"revision" integer,
+	"update" text NOT NULL,
+	"encrypted_payload" text,
+	"created_at" timestamp NOT NULL,
+	CONSTRAINT "document_updates_pkey" PRIMARY KEY("document_id","revision")
+);
+--> statement-breakpoint
+ALTER TABLE "app"."document_updates" ENABLE ROW LEVEL SECURITY;--> statement-breakpoint
 CREATE TABLE "jobs"."image_analysis" (
 	"file_id" uuid PRIMARY KEY,
 	"workspace_id" uuid NOT NULL,
@@ -17,7 +74,8 @@ CREATE TABLE "jobs"."image_analysis" (
 	"last_error_code" text,
 	CONSTRAINT "image_analysis_job_status_check" CHECK ("status" IN ('pending', 'processing', 'failed')),
 	CONSTRAINT "image_analysis_job_mode_check" CHECK ("mode" IN ('fill_missing', 'replace'))
-);--> statement-breakpoint
+);
+--> statement-breakpoint
 CREATE TABLE "search"."knowledge_pages" (
 	"workspace_id" uuid,
 	"id" text,
@@ -29,7 +87,8 @@ CREATE TABLE "search"."knowledge_pages" (
 	"completed_version" integer DEFAULT 0 NOT NULL,
 	"operation" jsonb,
 	CONSTRAINT "knowledge_pages_pkey" PRIMARY KEY("workspace_id","id")
-);--> statement-breakpoint
+);
+--> statement-breakpoint
 ALTER TABLE "search"."knowledge_pages" ENABLE ROW LEVEL SECURITY;--> statement-breakpoint
 CREATE TABLE "app"."meeting_attachments" (
 	"id" uuid PRIMARY KEY,
@@ -41,7 +100,8 @@ CREATE TABLE "app"."meeting_attachments" (
 	"created_at" timestamp DEFAULT now() NOT NULL,
 	"revision" integer DEFAULT 1 NOT NULL,
 	CONSTRAINT "meeting_attachments_meeting_attachment_unique" UNIQUE("meeting_id","file_id")
-);--> statement-breakpoint
+);
+--> statement-breakpoint
 ALTER TABLE "app"."meeting_attachments" ENABLE ROW LEVEL SECURITY;--> statement-breakpoint
 CREATE TABLE "app"."meeting_events" (
 	"id" uuid PRIMARY KEY,
@@ -58,7 +118,8 @@ CREATE TABLE "app"."meeting_events" (
 	"changed_fields" text,
 	CONSTRAINT "meeting_events_kind_check" CHECK ("kind" IN ('meeting_created', 'meeting_updated', 'meeting_deleted', 'tag_added', 'tag_removed', 'recording_started', 'recording_ended', 'segment_rotated')),
 	CONSTRAINT "meeting_events_source_check" CHECK ("audio_source" IN ('mic', 'system'))
-);--> statement-breakpoint
+);
+--> statement-breakpoint
 ALTER TABLE "app"."meeting_events" ENABLE ROW LEVEL SECURITY;--> statement-breakpoint
 CREATE TABLE "jobs"."memory_documents" (
 	"workspace_id" uuid,
@@ -68,7 +129,8 @@ CREATE TABLE "jobs"."memory_documents" (
 	"ingestion_fingerprint" text,
 	"generation" integer NOT NULL,
 	CONSTRAINT "memory_documents_pkey" PRIMARY KEY("workspace_id","document_id")
-);--> statement-breakpoint
+);
+--> statement-breakpoint
 CREATE TABLE "jobs"."memory_source_jobs" (
 	"workspace_id" uuid,
 	"document_id" text,
@@ -77,14 +139,16 @@ CREATE TABLE "jobs"."memory_source_jobs" (
 	"generation" integer DEFAULT 1 NOT NULL,
 	"operation" jsonb,
 	CONSTRAINT "memory_source_jobs_pkey" PRIMARY KEY("workspace_id","document_id")
-);--> statement-breakpoint
+);
+--> statement-breakpoint
 CREATE TABLE "app"."organization_domains" (
 	"organization_id" uuid,
 	"domain" text,
 	"join_policy" text DEFAULT 'invite_only' NOT NULL,
 	CONSTRAINT "organization_domains_pkey" PRIMARY KEY("organization_id","domain"),
 	CONSTRAINT "organization_domains_policy_check" CHECK ("join_policy" IN ('invite_only', 'need_approval', 'auto_join'))
-);--> statement-breakpoint
+);
+--> statement-breakpoint
 CREATE TABLE "app"."organization_join_requests" (
 	"id" uuid PRIMARY KEY,
 	"organization_id" uuid NOT NULL,
@@ -94,7 +158,8 @@ CREATE TABLE "app"."organization_join_requests" (
 	"resolved_at" timestamp,
 	"resolved_by" uuid,
 	CONSTRAINT "organization_join_requests_status_check" CHECK ("status" IN ('pending', 'approved', 'rejected', 'cancelled'))
-);--> statement-breakpoint
+);
+--> statement-breakpoint
 CREATE TABLE "app"."personal_memories" (
 	"id" uuid PRIMARY KEY,
 	"user_id" uuid NOT NULL,
@@ -103,7 +168,8 @@ CREATE TABLE "app"."personal_memories" (
 	"protected" boolean DEFAULT true NOT NULL,
 	"revision" integer DEFAULT 1 NOT NULL,
 	"updated_at" timestamp NOT NULL
-);--> statement-breakpoint
+);
+--> statement-breakpoint
 ALTER TABLE "app"."personal_memories" ENABLE ROW LEVEL SECURITY;--> statement-breakpoint
 CREATE TABLE "jobs"."personal_memory_documents" (
 	"user_id" uuid,
@@ -113,7 +179,8 @@ CREATE TABLE "jobs"."personal_memory_documents" (
 	"ingestion_fingerprint" text,
 	"generation" integer NOT NULL,
 	CONSTRAINT "personal_memory_documents_pkey" PRIMARY KEY("user_id","document_id")
-);--> statement-breakpoint
+);
+--> statement-breakpoint
 CREATE TABLE "jobs"."personal_memory_source_jobs" (
 	"user_id" uuid,
 	"document_id" text,
@@ -122,7 +189,8 @@ CREATE TABLE "jobs"."personal_memory_source_jobs" (
 	"generation" integer DEFAULT 1 NOT NULL,
 	"operation" jsonb,
 	CONSTRAINT "personal_memory_source_jobs_pkey" PRIMARY KEY("user_id","document_id")
-);--> statement-breakpoint
+);
+--> statement-breakpoint
 CREATE TABLE "jobs"."personal_memory_state" (
 	"user_id" uuid PRIMARY KEY,
 	"enabled" boolean DEFAULT false NOT NULL,
@@ -139,7 +207,8 @@ CREATE TABLE "jobs"."personal_memory_state" (
 	"available_at" timestamp NOT NULL,
 	"attempts" integer DEFAULT 0 NOT NULL,
 	"error_code" text
-);--> statement-breakpoint
+);
+--> statement-breakpoint
 CREATE TABLE "search"."documents" (
 	"document_id" uuid,
 	"workspace_id" uuid,
@@ -166,7 +235,8 @@ CREATE TABLE "search"."documents" (
 	CONSTRAINT "search_document_pk" PRIMARY KEY("workspace_id","document_id"),
 	CONSTRAINT "search_document_embedding_dimensions_check" CHECK ("embedding" IS NULL OR cardinality("embedding") BETWEEN 32 AND 1024),
 	CONSTRAINT "search_document_kind_check" CHECK ("kind" IN ('meeting', 'screenshot'))
-);--> statement-breakpoint
+);
+--> statement-breakpoint
 ALTER TABLE "search"."documents" ENABLE ROW LEVEL SECURITY;--> statement-breakpoint
 CREATE TABLE "jobs"."search_index" (
 	"workspace_id" uuid,
@@ -184,12 +254,14 @@ CREATE TABLE "jobs"."search_index" (
 	CONSTRAINT "search_index_job_pk" PRIMARY KEY("workspace_id","document_id"),
 	CONSTRAINT "search_index_job_status_check" CHECK ("status" IN ('pending', 'processing', 'failed')),
 	CONSTRAINT "search_index_job_dimensions_check" CHECK ("dimensions" BETWEEN 32 AND 1024)
-);--> statement-breakpoint
+);
+--> statement-breakpoint
 CREATE TABLE "app"."server_settings" (
 	"id" integer PRIMARY KEY,
 	"search_weights" jsonb DEFAULT '{"title":5,"tags":3,"description":2,"summary":1,"ocr":1,"caption":2}' NOT NULL,
 	CONSTRAINT "server_settings_singleton" CHECK ("id" = 1)
-);--> statement-breakpoint
+);
+--> statement-breakpoint
 CREATE TABLE "app"."shared_memories" (
 	"id" uuid PRIMARY KEY,
 	"workspace_id" uuid NOT NULL,
@@ -198,7 +270,8 @@ CREATE TABLE "app"."shared_memories" (
 	"protected" boolean DEFAULT true NOT NULL,
 	"revision" integer DEFAULT 1 NOT NULL,
 	"updated_at" timestamp NOT NULL
-);--> statement-breakpoint
+);
+--> statement-breakpoint
 ALTER TABLE "app"."shared_memories" ENABLE ROW LEVEL SECURITY;--> statement-breakpoint
 CREATE TABLE "jobs"."storage_delete" (
 	"storage_key" text PRIMARY KEY,
@@ -210,7 +283,8 @@ CREATE TABLE "jobs"."storage_delete" (
 	"last_error_code" text,
 	"created_at" timestamp DEFAULT now() NOT NULL,
 	CONSTRAINT "storage_delete_job_status_check" CHECK ("status" IN ('pending', 'processing', 'failed'))
-);--> statement-breakpoint
+);
+--> statement-breakpoint
 CREATE TABLE "app"."summaries" (
 	"encrypted_payload" text,
 	"id" uuid PRIMARY KEY,
@@ -222,10 +296,12 @@ CREATE TABLE "app"."summaries" (
 	"saved_at" timestamp NOT NULL,
 	"metadata" jsonb,
 	CONSTRAINT "summary_meeting_version_unique" UNIQUE("meeting_id","version")
-);--> statement-breakpoint
+);
+--> statement-breakpoint
 ALTER TABLE "app"."summaries" ENABLE ROW LEVEL SECURITY;--> statement-breakpoint
 CREATE TABLE "jobs"."summary" (
 	"encrypted_payload" text,
+	"notes_snapshot" jsonb,
 	"id" uuid PRIMARY KEY,
 	"workspace_id" uuid NOT NULL,
 	"meeting_id" uuid NOT NULL,
@@ -248,7 +324,8 @@ CREATE TABLE "jobs"."summary" (
 	"input_version" text NOT NULL,
 	"request_hash" text NOT NULL,
 	CONSTRAINT "summary_job_status_check" CHECK ("status" IN ('pending', 'processing', 'succeeded', 'failed', 'cancelled'))
-);--> statement-breakpoint
+);
+--> statement-breakpoint
 ALTER TABLE "jobs"."summary" ENABLE ROW LEVEL SECURITY;--> statement-breakpoint
 CREATE TABLE "app"."sync_changes" (
 	"sequence" bigserial PRIMARY KEY,
@@ -261,7 +338,8 @@ CREATE TABLE "app"."sync_changes" (
 	"created_at" timestamp DEFAULT now() NOT NULL,
 	CONSTRAINT "sync_change_entity_check" CHECK ("entity" IN ('workspace', 'project', 'meeting', 'summary', 'transcript', 'file', 'meeting_attachment', 'recording')),
 	CONSTRAINT "sync_change_action_check" CHECK ("action" IN ('upsert', 'delete', 'reset'))
-);--> statement-breakpoint
+);
+--> statement-breakpoint
 CREATE TABLE "app"."transaction_receipts" (
 	"encrypted_payload" text,
 	"transaction_id" uuid PRIMARY KEY,
@@ -272,14 +350,16 @@ CREATE TABLE "app"."transaction_receipts" (
 	"results_json" jsonb DEFAULT '[]' NOT NULL,
 	"cursor" bigint NOT NULL,
 	"created_at" timestamp DEFAULT now() NOT NULL
-);--> statement-breakpoint
+);
+--> statement-breakpoint
 ALTER TABLE "app"."transaction_receipts" ENABLE ROW LEVEL SECURITY;--> statement-breakpoint
 CREATE TABLE "app"."sync_workspace_state" (
 	"workspace_id" uuid PRIMARY KEY,
 	"latest_sequence" bigint DEFAULT 0 NOT NULL,
 	"pruned_through" bigint DEFAULT 0 NOT NULL,
 	CONSTRAINT "sync_workspace_state_boundary_check" CHECK ("pruned_through" >= 0 AND "latest_sequence" >= "pruned_through")
-);--> statement-breakpoint
+);
+--> statement-breakpoint
 CREATE TABLE "app"."files" (
 	"encrypted_payload" text,
 	"file_id" uuid PRIMARY KEY,
@@ -301,7 +381,8 @@ CREATE TABLE "app"."files" (
 	CONSTRAINT "files_size_check" CHECK ("size" >= 0),
 	CONSTRAINT "files_metadata_ocr_text_length_check" CHECK (char_length("metadata"->>'ocr_text') <= 65536),
 	CONSTRAINT "files_metadata_caption_length_check" CHECK (char_length("metadata"->>'caption') <= 2048)
-);--> statement-breakpoint
+);
+--> statement-breakpoint
 ALTER TABLE "app"."files" ENABLE ROW LEVEL SECURITY;--> statement-breakpoint
 CREATE TABLE "app"."meetings" (
 	"encrypted_payload" text,
@@ -325,7 +406,8 @@ CREATE TABLE "app"."meetings" (
 	"deleting_at" timestamp,
 	"deleted_at" timestamp,
 	CONSTRAINT "synced_meeting_workspace_meeting_unique" UNIQUE("workspace_id","meeting_id")
-);--> statement-breakpoint
+);
+--> statement-breakpoint
 ALTER TABLE "app"."meetings" ENABLE ROW LEVEL SECURITY;--> statement-breakpoint
 CREATE TABLE "app"."projects" (
 	"encrypted_payload" text,
@@ -347,7 +429,8 @@ CREATE TABLE "app"."projects" (
   )),
 	CONSTRAINT "project_revision_check" CHECK ("revision" >= 1),
 	CONSTRAINT "project_parent_check" CHECK ("parent_project_id" IS NULL OR "parent_project_id" <> "project_id")
-);--> statement-breakpoint
+);
+--> statement-breakpoint
 ALTER TABLE "app"."projects" ENABLE ROW LEVEL SECURITY;--> statement-breakpoint
 CREATE TABLE "app"."recordings" (
 	"session_id" uuid PRIMARY KEY,
@@ -361,7 +444,8 @@ CREATE TABLE "app"."recordings" (
 	"updated_at" timestamp NOT NULL,
 	CONSTRAINT "recordings_meeting_number_unique" UNIQUE("meeting_id","number"),
 	CONSTRAINT "recordings_number_check" CHECK ("number" > 0)
-);--> statement-breakpoint
+);
+--> statement-breakpoint
 ALTER TABLE "app"."recordings" ENABLE ROW LEVEL SECURITY;--> statement-breakpoint
 CREATE TABLE "app"."transcript_segments" (
 	"encrypted_payload" text,
@@ -376,7 +460,8 @@ CREATE TABLE "app"."transcript_segments" (
 	"normalized_character_count" integer,
 	CONSTRAINT "synced_transcript_segment_pk" PRIMARY KEY("transcript_id","segment_id"),
 	CONSTRAINT "transcript_segment_normalized_character_count_check" CHECK ("normalized_character_count" IS NULL OR "normalized_character_count" >= 0)
-);--> statement-breakpoint
+);
+--> statement-breakpoint
 ALTER TABLE "app"."transcript_segments" ENABLE ROW LEVEL SECURITY;--> statement-breakpoint
 CREATE TABLE "app"."workspaces" (
 	"encryption" text DEFAULT 'none' NOT NULL,
@@ -396,7 +481,8 @@ CREATE TABLE "app"."workspaces" (
 	"updated_at" timestamp DEFAULT now() NOT NULL,
 	CONSTRAINT "workspace_meeting_deletion_grace_check" CHECK ("meeting_deletion_grace_days" BETWEEN 1 AND 90),
 	CONSTRAINT "workspace_encryption_check" CHECK ("encryption" IN ('none', 'server'))
-);--> statement-breakpoint
+);
+--> statement-breakpoint
 ALTER TABLE "app"."workspaces" ENABLE ROW LEVEL SECURITY;--> statement-breakpoint
 CREATE TABLE "app"."workspace_permissions" (
 	"workspace_id" uuid,
@@ -408,7 +494,8 @@ CREATE TABLE "app"."workspace_permissions" (
 	CONSTRAINT "workspace_permission_pk" PRIMARY KEY("workspace_id","principal_type","principal_id"),
 	CONSTRAINT "workspace_permission_principal_type_check" CHECK ("principal_type" IN ('user', 'organization', 'team')),
 	CONSTRAINT "workspace_permission_role_check" CHECK ("role" IN ('admin', 'editor', 'viewer'))
-);--> statement-breakpoint
+);
+--> statement-breakpoint
 CREATE TABLE "app"."transcripts" (
 	"encrypted_payload" text,
 	"id" uuid PRIMARY KEY,
@@ -421,7 +508,8 @@ CREATE TABLE "app"."transcripts" (
 	"metadata" jsonb,
 	CONSTRAINT "transcript_meeting_version_unique" UNIQUE("meeting_id","version"),
 	CONSTRAINT "transcript_version_check" CHECK ("version" >= 1)
-);--> statement-breakpoint
+);
+--> statement-breakpoint
 ALTER TABLE "app"."transcripts" ENABLE ROW LEVEL SECURITY;--> statement-breakpoint
 CREATE TABLE "app"."transcript_patch_chunks" (
 	"encrypted_payload" text,
@@ -433,18 +521,20 @@ CREATE TABLE "app"."transcript_patch_chunks" (
 	"payload" jsonb NOT NULL,
 	"created_at" timestamp DEFAULT now() NOT NULL,
 	CONSTRAINT "transcript_patch_chunk_pk" PRIMARY KEY("workspace_id","meeting_id","patch_id","chunk_index")
-);--> statement-breakpoint
+);
+--> statement-breakpoint
 ALTER TABLE "app"."transcript_patch_chunks" ENABLE ROW LEVEL SECURITY;--> statement-breakpoint
 CREATE TABLE "crypto"."workspace_keys" (
 	"workspace_id" uuid PRIMARY KEY,
 	"wrapped_key" text NOT NULL,
 	"created_at" timestamp DEFAULT now() NOT NULL
-);--> statement-breakpoint
+);
+--> statement-breakpoint
 ALTER TABLE "crypto"."workspace_keys" ENABLE ROW LEVEL SECURITY;--> statement-breakpoint
 CREATE TABLE "jobs"."workspace_memory_state" (
-	"images_enabled" boolean DEFAULT false NOT NULL,
 	"workspace_id" uuid PRIMARY KEY,
 	"enabled" boolean DEFAULT false NOT NULL,
+	"images_enabled" boolean DEFAULT false NOT NULL,
 	"requested_by" uuid NOT NULL,
 	"bank_id" text NOT NULL,
 	"generation" integer DEFAULT 1 NOT NULL,
@@ -458,7 +548,8 @@ CREATE TABLE "jobs"."workspace_memory_state" (
 	"available_at" timestamp NOT NULL,
 	"attempts" integer DEFAULT 0 NOT NULL,
 	"error_code" text
-);--> statement-breakpoint
+);
+--> statement-breakpoint
 CREATE TABLE "app"."workspace_transfers" (
 	"sequence" bigserial PRIMARY KEY,
 	"id" uuid NOT NULL UNIQUE,
@@ -469,8 +560,13 @@ CREATE TABLE "app"."workspace_transfers" (
 	"destination_workspace_id" uuid NOT NULL,
 	"manifest" jsonb NOT NULL,
 	CONSTRAINT "workspace_transfer_owner_key_unique" UNIQUE("owner_user_id","idempotency_key")
-);--> statement-breakpoint
+);
+--> statement-breakpoint
 ALTER TABLE "app"."workspace_transfers" ENABLE ROW LEVEL SECURITY;--> statement-breakpoint
+CREATE UNIQUE INDEX "document_meeting_notes_unique" ON "app"."documents" ("meeting_id") WHERE "kind" = 'notes';--> statement-breakpoint
+CREATE INDEX "document_presence_document_expiry" ON "app"."document_presence" ("document_id","expires_at");--> statement-breakpoint
+CREATE INDEX "document_presence_workspace_expiry" ON "app"."document_presence" ("workspace_id","expires_at");--> statement-breakpoint
+CREATE INDEX "document_recoveries_document_cursor" ON "app"."document_recoveries" ("document_id","id");--> statement-breakpoint
 CREATE INDEX "image_analysis_job_claim_idx" ON "jobs"."image_analysis" ("status","available_at","lease_expires_at");--> statement-breakpoint
 CREATE INDEX "meeting_attachments_file_idx" ON "app"."meeting_attachments" ("file_id");--> statement-breakpoint
 CREATE INDEX "meeting_attachments_workspace_meeting_id_idx" ON "app"."meeting_attachments" ("workspace_id","meeting_id","id");--> statement-breakpoint
@@ -502,6 +598,19 @@ CREATE UNIQUE INDEX "workspace_personal_user_idx" ON "app"."workspaces" ("organi
 CREATE INDEX "workspace_permission_principal_workspace_idx" ON "app"."workspace_permissions" ("principal_type","principal_id","role","workspace_id");--> statement-breakpoint
 CREATE INDEX "workspace_memory_due_idx" ON "jobs"."workspace_memory_state" ("available_at");--> statement-breakpoint
 CREATE INDEX "workspace_transfer_owner_sequence_idx" ON "app"."workspace_transfers" ("owner_user_id","sequence");--> statement-breakpoint
+ALTER TABLE "app"."documents" ADD CONSTRAINT "documents_workspace_id_workspaces_workspace_id_fkey" FOREIGN KEY ("workspace_id") REFERENCES "app"."workspaces"("workspace_id") ON DELETE CASCADE;--> statement-breakpoint
+ALTER TABLE "app"."documents" ADD CONSTRAINT "documents_meeting_id_meetings_meeting_id_fkey" FOREIGN KEY ("meeting_id") REFERENCES "app"."meetings"("meeting_id") ON DELETE CASCADE;--> statement-breakpoint
+ALTER TABLE "app"."documents" ADD CONSTRAINT "document_parent_workspace_fk" FOREIGN KEY ("workspace_id","meeting_id") REFERENCES "app"."meetings"("workspace_id","meeting_id") ON DELETE CASCADE ON UPDATE CASCADE;--> statement-breakpoint
+ALTER TABLE "app"."document_presence" ADD CONSTRAINT "document_presence_document_id_documents_id_fkey" FOREIGN KEY ("document_id") REFERENCES "app"."documents"("id") ON DELETE CASCADE;--> statement-breakpoint
+ALTER TABLE "app"."document_presence" ADD CONSTRAINT "document_presence_workspace_id_workspaces_workspace_id_fkey" FOREIGN KEY ("workspace_id") REFERENCES "app"."workspaces"("workspace_id") ON DELETE CASCADE;--> statement-breakpoint
+ALTER TABLE "app"."document_presence" ADD CONSTRAINT "document_presence_user_id_user_id_fkey" FOREIGN KEY ("user_id") REFERENCES "auth"."user"("id") ON DELETE CASCADE;--> statement-breakpoint
+ALTER TABLE "app"."document_presence" ADD CONSTRAINT "documentPresence_workspace_fk" FOREIGN KEY ("workspace_id","document_id") REFERENCES "app"."documents"("workspace_id","id") ON DELETE CASCADE ON UPDATE CASCADE;--> statement-breakpoint
+ALTER TABLE "app"."document_recoveries" ADD CONSTRAINT "document_recoveries_document_id_documents_id_fkey" FOREIGN KEY ("document_id") REFERENCES "app"."documents"("id") ON DELETE CASCADE;--> statement-breakpoint
+ALTER TABLE "app"."document_recoveries" ADD CONSTRAINT "document_recoveries_workspace_id_workspaces_workspace_id_fkey" FOREIGN KEY ("workspace_id") REFERENCES "app"."workspaces"("workspace_id") ON DELETE CASCADE;--> statement-breakpoint
+ALTER TABLE "app"."document_recoveries" ADD CONSTRAINT "documentRecovery_workspace_fk" FOREIGN KEY ("workspace_id","document_id") REFERENCES "app"."documents"("workspace_id","id") ON DELETE CASCADE ON UPDATE CASCADE;--> statement-breakpoint
+ALTER TABLE "app"."document_updates" ADD CONSTRAINT "document_updates_document_id_documents_id_fkey" FOREIGN KEY ("document_id") REFERENCES "app"."documents"("id") ON DELETE CASCADE;--> statement-breakpoint
+ALTER TABLE "app"."document_updates" ADD CONSTRAINT "document_updates_workspace_id_workspaces_workspace_id_fkey" FOREIGN KEY ("workspace_id") REFERENCES "app"."workspaces"("workspace_id") ON DELETE CASCADE;--> statement-breakpoint
+ALTER TABLE "app"."document_updates" ADD CONSTRAINT "documentUpdate_workspace_fk" FOREIGN KEY ("workspace_id","document_id") REFERENCES "app"."documents"("workspace_id","id") ON DELETE CASCADE ON UPDATE CASCADE;--> statement-breakpoint
 ALTER TABLE "jobs"."image_analysis" ADD CONSTRAINT "jobs_image_analysis_file_id_files_file_id_fkey" FOREIGN KEY ("file_id") REFERENCES "app"."files"("file_id") ON DELETE CASCADE;--> statement-breakpoint
 ALTER TABLE "jobs"."image_analysis" ADD CONSTRAINT "jobs_image_analysis_workspace_id_workspaces_workspace_id_fkey" FOREIGN KEY ("workspace_id") REFERENCES "app"."workspaces"("workspace_id") ON DELETE CASCADE;--> statement-breakpoint
 ALTER TABLE "jobs"."image_analysis" ADD CONSTRAINT "jobs_image_analysis_owner_user_id_user_id_fkey" FOREIGN KEY ("owner_user_id") REFERENCES "auth"."user"("id") ON DELETE CASCADE;--> statement-breakpoint
@@ -555,4 +664,4 @@ CREATE VIEW "app"."meeting_images" WITH (security_invoker = true) AS (
     m.revision
   FROM app.meeting_attachments m JOIN app.files f ON f.file_id = m.file_id AND f.workspace_id = m.workspace_id
   WHERE f.metadata ->> 'source' = 'screenshot'
-);
+);--> statement-breakpoint

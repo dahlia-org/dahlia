@@ -57,7 +57,8 @@ BEGIN
       AND connamespace IN ('app'::regnamespace, 'search'::regnamespace)
       AND conrelid IN ('app.projects'::regclass, 'app.meetings'::regclass,
         'app.transcript_patch_chunks'::regclass, 'app.recordings'::regclass,
-        'app.meeting_attachments'::regclass, 'search.documents'::regclass)
+        'app.meeting_attachments'::regclass, 'search.documents'::regclass, 'app.documents'::regclass,
+        'app.document_updates'::regclass, 'app.document_recoveries'::regclass, 'app.document_presence'::regclass)
   LOOP
     EXECUTE format('ALTER TABLE %s ALTER CONSTRAINT %I DEFERRABLE INITIALLY IMMEDIATE', membership.relation, membership.conname);
   END LOOP;
@@ -66,6 +67,43 @@ ALTER TABLE "crypto"."workspace_keys" FORCE ROW LEVEL SECURITY;--> statement-bre
 ALTER TABLE "app"."shared_memories" FORCE ROW LEVEL SECURITY;--> statement-breakpoint
 ALTER TABLE "app"."personal_memories" FORCE ROW LEVEL SECURITY;--> statement-breakpoint
 ALTER TABLE "search"."knowledge_pages" FORCE ROW LEVEL SECURITY;--> statement-breakpoint
+
+ALTER TABLE "app"."documents" FORCE ROW LEVEL SECURITY;--> statement-breakpoint
+ALTER TABLE "app"."document_updates" FORCE ROW LEVEL SECURITY;--> statement-breakpoint
+ALTER TABLE "app"."document_recoveries" FORCE ROW LEVEL SECURITY;--> statement-breakpoint
+ALTER TABLE "app"."document_presence" FORCE ROW LEVEL SECURITY;--> statement-breakpoint
+--> statement-breakpoint
+CREATE POLICY "document_read" ON "app"."documents" FOR SELECT USING ("app"."current_identity_can_read_workspace"("app"."documents"."workspace_id"));
+--> statement-breakpoint
+CREATE POLICY "document_insert" ON "app"."documents" FOR INSERT WITH CHECK ("app"."current_identity_can_write_workspace"("app"."documents"."workspace_id"));
+--> statement-breakpoint
+CREATE POLICY "document_update" ON "app"."documents" FOR UPDATE USING ("app"."current_identity_can_write_workspace"("app"."documents"."workspace_id")) WITH CHECK ("app"."current_identity_can_write_workspace"("app"."documents"."workspace_id"));
+--> statement-breakpoint
+CREATE POLICY "document_delete" ON "app"."documents" FOR DELETE USING ("app"."current_identity_can_write_workspace"("app"."documents"."workspace_id") OR (current_setting('app.maintenance', true) = 'governance-delete' AND "app"."documents"."workspace_id" = nullif(current_setting('app.maintenance_workspace_id', true), '')::uuid) OR (current_setting('app.maintenance', true) = 'meeting-retention' AND "app"."documents"."workspace_id" = nullif(current_setting('app.maintenance_workspace_id', true), '')::uuid));
+--> statement-breakpoint
+CREATE POLICY "document_presence_read" ON "app"."document_presence" FOR SELECT USING ("app"."current_identity_can_read_workspace"("app"."document_presence"."workspace_id"));
+--> statement-breakpoint
+CREATE POLICY "document_presence_insert" ON "app"."document_presence" FOR INSERT WITH CHECK ("app"."current_identity_can_write_workspace"("app"."document_presence"."workspace_id"));
+--> statement-breakpoint
+CREATE POLICY "document_presence_update" ON "app"."document_presence" FOR UPDATE USING ("app"."current_identity_can_write_workspace"("app"."document_presence"."workspace_id")) WITH CHECK ("app"."current_identity_can_write_workspace"("app"."document_presence"."workspace_id"));
+--> statement-breakpoint
+CREATE POLICY "document_presence_delete" ON "app"."document_presence" FOR DELETE USING ("app"."current_identity_can_write_workspace"("app"."document_presence"."workspace_id") OR (current_setting('app.maintenance', true) = 'governance-delete' AND "app"."document_presence"."workspace_id" = nullif(current_setting('app.maintenance_workspace_id', true), '')::uuid) OR (current_setting('app.maintenance', true) = 'meeting-retention' AND "app"."document_presence"."workspace_id" = nullif(current_setting('app.maintenance_workspace_id', true), '')::uuid));
+--> statement-breakpoint
+CREATE POLICY "document_recovery_read" ON "app"."document_recoveries" FOR SELECT USING ("app"."current_identity_can_read_workspace"("app"."document_recoveries"."workspace_id"));
+--> statement-breakpoint
+CREATE POLICY "document_recovery_insert" ON "app"."document_recoveries" FOR INSERT WITH CHECK ("app"."current_identity_can_write_workspace"("app"."document_recoveries"."workspace_id"));
+--> statement-breakpoint
+CREATE POLICY "document_recovery_update" ON "app"."document_recoveries" FOR UPDATE USING ("app"."current_identity_can_write_workspace"("app"."document_recoveries"."workspace_id")) WITH CHECK ("app"."current_identity_can_write_workspace"("app"."document_recoveries"."workspace_id"));
+--> statement-breakpoint
+CREATE POLICY "document_recovery_delete" ON "app"."document_recoveries" FOR DELETE USING ("app"."current_identity_can_write_workspace"("app"."document_recoveries"."workspace_id") OR (current_setting('app.maintenance', true) = 'governance-delete' AND "app"."document_recoveries"."workspace_id" = nullif(current_setting('app.maintenance_workspace_id', true), '')::uuid) OR (current_setting('app.maintenance', true) = 'meeting-retention' AND "app"."document_recoveries"."workspace_id" = nullif(current_setting('app.maintenance_workspace_id', true), '')::uuid));
+--> statement-breakpoint
+CREATE POLICY "document_update_read" ON "app"."document_updates" FOR SELECT USING ("app"."current_identity_can_read_workspace"("app"."document_updates"."workspace_id"));
+--> statement-breakpoint
+CREATE POLICY "document_update_insert" ON "app"."document_updates" FOR INSERT WITH CHECK ("app"."current_identity_can_write_workspace"("app"."document_updates"."workspace_id"));
+--> statement-breakpoint
+CREATE POLICY "document_update_update" ON "app"."document_updates" FOR UPDATE USING ("app"."current_identity_can_write_workspace"("app"."document_updates"."workspace_id")) WITH CHECK ("app"."current_identity_can_write_workspace"("app"."document_updates"."workspace_id"));
+--> statement-breakpoint
+CREATE POLICY "document_update_delete" ON "app"."document_updates" FOR DELETE USING ("app"."current_identity_can_write_workspace"("app"."document_updates"."workspace_id") OR (current_setting('app.maintenance', true) = 'governance-delete' AND "app"."document_updates"."workspace_id" = nullif(current_setting('app.maintenance_workspace_id', true), '')::uuid) OR (current_setting('app.maintenance', true) = 'meeting-retention' AND "app"."document_updates"."workspace_id" = nullif(current_setting('app.maintenance_workspace_id', true), '')::uuid));
 --> statement-breakpoint
 CREATE POLICY "knowledge_page_read" ON "search"."knowledge_pages" FOR SELECT USING ("app"."current_identity_can_read_workspace"("search"."knowledge_pages"."workspace_id"));
 --> statement-breakpoint

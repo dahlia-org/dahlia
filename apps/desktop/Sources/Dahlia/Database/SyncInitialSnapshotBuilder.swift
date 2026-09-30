@@ -4,7 +4,6 @@ import Foundation
 import GRDB
 
 enum SyncInitialSnapshotBuilder {
-    private static let projectBatchSize = 100
     private static let serverImageAnalysisContentTypes: Set = [
         "image/png", "image/jpeg", "image/webp", "image/gif", "image/tiff",
     ]
@@ -15,344 +14,12 @@ enum SyncInitialSnapshotBuilder {
         replaceServerImageAnalysisWorkspaceId: UUID? = nil,
         onFailure: @Sendable (any Error) throws -> Void = { throw $0 }
     ) async throws {
-        let interruptedWorkspaceId = try await dbQueue.read { db in
-            try UUID.fetchOne(
-                db,
-                sql: """
-                SELECT id FROM workspaces
-                WHERE accountConnectionId IS NOT NULL
-                  AND syncConfirmedConnectionId = accountConnectionId
-                  AND syncRole = 'admin'
-                  AND NOT EXISTS (
-                    SELECT 1 FROM sync_transactions t WHERE t.workspace_id = workspaces.id
-                  )
-                  AND NOT EXISTS (
-                    SELECT 1 FROM sync_entity_state s
-                    WHERE s.workspace_id = workspaces.id AND s.entity = 'workspace' AND s.entityId = workspaces.id
-                  )
-                ORDER BY createdAt, id
-                LIMIT 1
-                """
-            )
-        }
-        if let interruptedWorkspaceId {
-            try await dbQueue.write { db in
-                try db.execute(
-                    sql: """
-                    UPDATE workspaces SET syncConfirmedConnectionId = NULL,
-                        syncPullCursor = NULL, syncLastCommittedCursor = NULL
-                    WHERE id = ?
-                      AND accountConnectionId IS NOT NULL
-                      AND syncConfirmedConnectionId = accountConnectionId
-                      AND syncRole = 'admin'
-                      AND NOT EXISTS (
-                        SELECT 1 FROM sync_transactions t WHERE t.workspace_id = workspaces.id
-                      )
-                      AND NOT EXISTS (
-                        SELECT 1 FROM sync_entity_state s
-                        WHERE s.workspace_id = workspaces.id AND s.entity = 'workspace' AND s.entityId = workspaces.id
-                      )
-                    """,
-                    arguments: [interruptedWorkspaceId]
-                )
-            }
-        }
-
-        let pending = try await dbQueue.read { db -> [(UUID, UUID, Bool)] in
-            try Row.fetchAll(
-                db,
-                sql: """
-                SELECT v.id, v.accountConnectionId, EXISTS (
-                    SELECT 1 FROM sync_transactions t
-                    JOIN sync_operations o ON o.transactionId = t.id
-                    WHERE t.workspace_id = v.id AND o.entity = 'workspace' AND o.action = 'reset'
-                ) AS restoring
-                FROM workspaces v
-                WHERE v.accountConnectionId IS NOT NULL
-                  AND (? IS NULL OR v.id = ?)
-                  AND v.syncConfirmedConnectionId IS NULL
-                  AND v.syncRole = 'admin'
-                  AND (
-                    EXISTS (
-                      SELECT 1 FROM sync_transactions t
-                      JOIN sync_operations o ON o.transactionId = t.id
-                      WHERE t.workspace_id = v.id AND o.entity = 'workspace' AND o.action = 'reset'
-                    )
-                    OR NOT EXISTS (
-                      SELECT 1 FROM sync_entity_state s
-                      WHERE s.workspace_id = v.id AND s.entity = 'workspace' AND s.entityId = v.id
-                    )
-                  )
-                ORDER BY v.createdAt, v.id
-                """,
-                arguments: [replaceServerImageAnalysisWorkspaceId, replaceServerImageAnalysisWorkspaceId]
-            ).map { ($0["id"], $0["accountConnectionId"], $0["restoring"]) }
-        }
-        for (workspaceId, connectionId, restoring) in pending {
-            do {
-                if try await enqueue(
-                    workspaceId: workspaceId, connectionId: connectionId, restoring: restoring,
-                    replaceServerImageAnalysis: workspaceId == replaceServerImageAnalysisWorkspaceId,
-                    dbQueue: dbQueue, screenshotContent: screenshotContent
-                ) { return }
-            } catch is CancellationError {
-                throw CancellationError()
-            } catch {
-                // Background synchronization can report this Workspace's failure and continue other Workspaces.
-                // Explicit recovery callers keep the default throwing behavior.
-                try onFailure(error)
-            }
-        }
-    }
-
-    private static func enqueue(
-        workspaceId: UUID,
-        connectionId: UUID,
-        restoring: Bool,
-        replaceServerImageAnalysis: Bool,
-        dbQueue: DatabaseQueue,
-        screenshotContent: ScreenshotContentProvider
-    ) async throws -> Bool {
-        screenshotContent.retainOriginals(workspaceIds: [workspaceId], dbQueue: dbQueue)
-        defer { screenshotContent.releaseOriginals(workspaceIds: [workspaceId], dbQueue: dbQueue) }
-        try await screenshotContent.prepareOriginals(workspaceId: workspaceId, dbQueue: dbQueue)
-        guard let markerId = try await dbQueue.write({ db -> UUID? in
-            guard try !RecordingSessionRecord.hasActiveRecording(workspaceId: workspaceId, in: db),
-                  let workspace = try WorkspaceRecord.fetchOne(db, key: workspaceId),
-                  workspace.accountConnectionId == connectionId,
-                  workspace.syncConfirmedConnectionId == nil else { return nil }
-            try SyncTransactionQueue.discard(workspaceId: workspaceId, in: db)
-            if restoring {
-                try SyncTransactionRecorder.record(
-                    workspaceId: workspaceId,
-                    operations: [restoreResetOperation(workspaceId: workspaceId)],
-                    allowAfterReset: true,
-                    connectionIdOverride: connectionId,
-                    in: db
-                )
-            }
-            return try SyncTransactionRecorder.record(
-                workspaceId: workspaceId,
-                operations: [workspaceOperation(workspace, action: .create)],
-                allowAfterReset: restoring,
-                connectionIdOverride: connectionId,
-                in: db
-            )
-        }) else { return false }
-
-        try await enqueueProjects(
-            workspaceId: workspaceId,
-            connectionId: connectionId,
-            markerId: markerId,
-            restoring: restoring,
-            dbQueue: dbQueue
+        try await SyncInitialProgress.enqueuePending(
+            dbQueue: dbQueue,
+            screenshotContent: screenshotContent,
+            replaceImages: replaceServerImageAnalysisWorkspaceId,
+            onFailure: onFailure
         )
-        try await enqueueMeetings(
-            workspaceId: workspaceId,
-            connectionId: connectionId,
-            markerId: markerId,
-            restoring: restoring,
-            dbQueue: dbQueue
-        )
-        try await enqueueFiles(
-            workspaceId: workspaceId, connectionId: connectionId, markerId: markerId, restoring: restoring,
-            replaceServerImageAnalysis: replaceServerImageAnalysis, dbQueue: dbQueue
-        )
-        try await enqueueScreenshots(
-            workspaceId: workspaceId, connectionId: connectionId, markerId: markerId, restoring: restoring, dbQueue: dbQueue
-        )
-
-        return try await dbQueue.write { db in
-            guard try canContinue(markerId: markerId, workspaceId: workspaceId, in: db) else { return false }
-            if restoring {
-                try db.execute(sql: "DELETE FROM sync_entity_state WHERE workspace_id = ?", arguments: [workspaceId])
-            }
-            try db.execute(
-                sql: """
-                UPDATE workspaces SET syncConfirmedConnectionId = accountConnectionId
-                WHERE id = ? AND accountConnectionId = ? AND syncConfirmedConnectionId IS NULL
-                """,
-                arguments: [workspaceId, connectionId]
-            )
-            return db.changesCount == 1
-        }
-    }
-
-    private static func enqueueProjects(
-        workspaceId: UUID,
-        connectionId: UUID,
-        markerId: UUID,
-        restoring: Bool,
-        dbQueue: DatabaseQueue
-    ) async throws {
-        for roots in [true, false] {
-            var lastId: UUID?
-            while true {
-                try Task.checkCancellation()
-                let cursor = lastId
-                let projects = try await dbQueue.write { db -> [ProjectRecord] in
-                    guard try canContinue(markerId: markerId, workspaceId: workspaceId, in: db) else { return [] }
-                    let parentClause = roots ? "parentProjectId IS NULL" : "parentProjectId IS NOT NULL"
-                    let cursorClause = cursor == nil ? "" : "AND id > ?"
-                    var arguments: StatementArguments = [workspaceId]
-                    if let cursor { arguments += [cursor] }
-                    let projects = try ProjectRecord.fetchAll(
-                        db,
-                        sql: """
-                        SELECT * FROM projects
-                        WHERE workspace_id = ? AND \(parentClause) \(cursorClause)
-                        ORDER BY id LIMIT \(projectBatchSize)
-                        """,
-                        arguments: arguments
-                    )
-                    try SyncTransactionRecorder.recordBatches(
-                        workspaceId: workspaceId,
-                        operations: projects.map { try projectOperation($0, action: .create) },
-                        allowAfterReset: restoring,
-                        connectionIdOverride: connectionId,
-                        in: db
-                    )
-                    return projects
-                }
-                guard let nextId = projects.last?.id else { break }
-                lastId = nextId
-            }
-        }
-    }
-
-    private static func enqueueMeetings(
-        workspaceId: UUID,
-        connectionId: UUID,
-        markerId: UUID,
-        restoring: Bool,
-        dbQueue: DatabaseQueue
-    ) async throws {
-        var lastMeetingId: UUID?
-        while true {
-            try Task.checkCancellation()
-            let cursor = lastMeetingId
-            let meeting = try await dbQueue.write { db -> MeetingRecord? in
-                guard try canContinue(markerId: markerId, workspaceId: workspaceId, in: db) else { return nil }
-                let meeting = if let cursor {
-                    try MeetingRecord.fetchOne(
-                        db,
-                        sql: "SELECT * FROM meetings WHERE workspace_id = ? AND id > ? ORDER BY id LIMIT 1",
-                        arguments: [workspaceId, cursor]
-                    )
-                } else {
-                    try MeetingRecord.fetchOne(
-                        db,
-                        sql: "SELECT * FROM meetings WHERE workspace_id = ? ORDER BY id LIMIT 1",
-                        arguments: [workspaceId]
-                    )
-                }
-                guard let meeting else { return nil }
-                try TextContentAccess.requireComplete(entity: .summary, id: meeting.id, in: db)
-                try TextContentAccess.requireComplete(entity: .transcript, id: meeting.id, in: db)
-                var metadata = try [meetingOperation(meeting, action: .create, in: db)]
-                if let summary = try SummaryContent.fetchOne(db, key: meeting.id) {
-                    try metadata.append(summaryOperation(summary, action: .upsert))
-                }
-                try SyncTransactionRecorder.record(
-                    workspaceId: workspaceId,
-                    operations: metadata,
-                    allowAfterReset: restoring,
-                    connectionIdOverride: connectionId,
-                    in: db
-                )
-                return meeting
-            }
-            guard let meeting else { break }
-            lastMeetingId = meeting.id
-
-            try await enqueueTranscript(
-                meetingId: meeting.id,
-                workspaceId: workspaceId,
-                connectionId: connectionId,
-                markerId: markerId,
-                restoring: restoring,
-                dbQueue: dbQueue
-            )
-        }
-    }
-
-    private static func enqueueTranscript(
-        meetingId: UUID,
-        workspaceId: UUID,
-        connectionId: UUID,
-        markerId: UUID,
-        restoring: Bool,
-        dbQueue: DatabaseQueue
-    ) async throws {
-        try await dbQueue.write { db in
-            guard try canContinue(markerId: markerId, workspaceId: workspaceId, in: db) else { return }
-            let previous = try TranscriptRecord.current(meetingId, in: db)
-            let count = try TranscriptSegmentRecord.filter(Column("meetingId") == meetingId).fetchCount(db)
-            guard previous != nil || count > 0 else { return }
-            var info = previous ?? TranscriptInfo(id: .v7(), status: "completed", startedAt: nil, completedAt: nil, metadata: nil)
-            info.id = .v7()
-            info.version = nil
-            info.syncRevision = nil
-            try TranscriptRecord(meetingId: meetingId, info: info).save(db)
-            try TranscriptRecord.enqueueSnapshot(
-                meetingId: meetingId,
-                info: info,
-                allowAfterReset: restoring,
-                connectionId: connectionId,
-                in: db
-            )
-        }
-    }
-
-    private static func enqueueScreenshots(
-        workspaceId: UUID,
-        connectionId: UUID,
-        markerId: UUID,
-        restoring: Bool,
-        dbQueue: DatabaseQueue
-    ) async throws {
-        var lastScreenshotId: UUID?
-        while true {
-            try Task.checkCancellation()
-            let cursor = lastScreenshotId
-            let screenshot = try await dbQueue.write { db -> MeetingAttachmentRecord? in
-                guard try canContinue(markerId: markerId, workspaceId: workspaceId, in: db) else { return nil }
-                // Walk the attachment ID index instead of sorting every meeting's candidate for each row.
-                let screenshot = if let cursor {
-                    try MeetingAttachmentRecord.fetchOne(
-                        db,
-                        sql: """
-                        SELECT a.* FROM meeting_attachments a
-                        WHERE EXISTS (SELECT 1 FROM meetings m WHERE m.id = a.meetingId AND m.workspace_id = ?)
-                          AND a.id > ? ORDER BY a.id LIMIT 1
-                        """,
-                        arguments: [workspaceId, cursor]
-                    )
-                } else {
-                    try MeetingAttachmentRecord.fetchOne(
-                        db,
-                        sql: """
-                        SELECT a.* FROM meeting_attachments a
-                        WHERE EXISTS (SELECT 1 FROM meetings m WHERE m.id = a.meetingId AND m.workspace_id = ?)
-                        ORDER BY a.id LIMIT 1
-                        """,
-                        arguments: [workspaceId]
-                    )
-                }
-                guard let screenshot else { return nil }
-                let operation = try meetingAttachmentOperation(screenshot)
-                try SyncTransactionRecorder.record(
-                    workspaceId: workspaceId,
-                    operations: [operation],
-                    allowAfterReset: restoring,
-                    connectionIdOverride: connectionId,
-                    in: db
-                )
-                return screenshot
-            }
-            guard let screenshot else { break }
-            lastScreenshotId = screenshot.id
-        }
     }
 
     static func prepareRestore(dbQueue: DatabaseQueue) async throws {
@@ -368,7 +35,7 @@ enum SyncInitialSnapshotBuilder {
             for workspaceId in workspaceIds {
                 try SyncTransactionQueue.discard(workspaceId: workspaceId, in: db)
                 try SyncTransactionRecorder.record(
-                    workspaceId: workspaceId,
+                    workspaceId: workspaceId, background: true,
                     operations: [restoreResetOperation(workspaceId: workspaceId)],
                     in: db
                 )
@@ -382,20 +49,6 @@ enum SyncInitialSnapshotBuilder {
                 )
             }
         }
-    }
-
-    private static func canContinue(markerId: UUID, workspaceId: UUID, in db: Database) throws -> Bool {
-        let markerExists = try Bool.fetchOne(
-            db,
-            sql: "SELECT EXISTS(SELECT 1 FROM sync_transactions WHERE id = ? AND workspace_id = ?)",
-            arguments: [markerId, workspaceId]
-        ) ?? false
-        guard markerExists else { return false }
-        if try RecordingSessionRecord.hasActiveRecording(workspaceId: workspaceId, in: db) {
-            try SyncTransactionQueue.discardPartialSnapshot(workspaceId: workspaceId, in: db)
-            return false
-        }
-        return true
     }
 
     private static func restoreResetOperation(workspaceId: UUID) throws -> SyncOperationDraft {
@@ -523,45 +176,6 @@ enum SyncInitialSnapshotBuilder {
         ])
     }
 
-    private static func enqueueFiles(
-        workspaceId: UUID,
-        connectionId: UUID,
-        markerId: UUID,
-        restoring: Bool,
-        replaceServerImageAnalysis: Bool,
-        dbQueue: DatabaseQueue
-    ) async throws {
-        var lastId: UUID?
-        while true {
-            let cursor = lastId
-            let file = try await dbQueue.write { db -> FileRecord? in
-                guard try canContinue(markerId: markerId, workspaceId: workspaceId, in: db) else { return nil }
-                let file = try FileRecord.fetchOne(
-                    db,
-                    sql: "SELECT * FROM files WHERE workspace_id = ? AND (? IS NULL OR id > ?) ORDER BY id LIMIT 1",
-                    arguments: [workspaceId, cursor, cursor]
-                )
-                guard let file, let reference = file.localReference else { return nil }
-                let source = try JSONDecoder().decode(ScreenshotRemoteReference.self, from: Data(reference.utf8))
-                let operation = try fileOperation(file, replaceServerImageAnalysis: replaceServerImageAnalysis, in: db)
-                try SyncTransactionRecorder.record(
-                    workspaceId: workspaceId,
-                    operations: [operation],
-                    screenshotAttachments: [operation.id: SyncScreenshotAttachmentReference(
-                        mimeType: file.contentType,
-                        source: source
-                    )],
-                    allowAfterReset: restoring,
-                    connectionIdOverride: connectionId,
-                    in: db
-                )
-                return file
-            }
-            guard let file else { break }
-            lastId = file.id
-        }
-    }
-
     static func projectOperation(_ project: ProjectRecord, action: SyncAction) throws -> SyncOperationDraft {
         guard project.description.utf16.count <= 20000 else {
             throw ProjectWorkspaceError.descriptionTooLong
@@ -615,35 +229,20 @@ enum SyncInitialSnapshotBuilder {
         _ items: [WorkspaceRelocation.Item],
         workspaceId: UUID,
         replaceServerImageAnalysis: Bool = false,
+        existing: SyncResetSnapshot = .init(ids: [:]),
         in db: Database
     ) throws {
-        let projects = try items.filter { $0.entity == .project }.map { item in
+        let projects = try items.filter { $0.entity == .project && !existing.projects.contains($0.id) }.map { item in
             guard let project = try ProjectRecord.fetchOne(db, key: item.id) else { throw LocalWorkspaceImportError.changed }
             return project
         }.sorted { $0.parentProjectId == nil && $1.parentProjectId != nil }
-        try SyncTransactionRecorder.recordBatches(workspaceId: workspaceId, operations: projects.map {
+        try SyncTransactionRecorder.recordBatches(workspaceId: workspaceId, background: true, operations: projects.map {
             try Self.projectOperation($0, action: .create)
         }, in: db)
         for item in items where item.entity == .meeting {
-            guard let meeting = try MeetingRecord.fetchOne(db, key: item.id) else { throw LocalWorkspaceImportError.changed }
-            try TextContentAccess.requireComplete(entity: .summary, id: meeting.id, in: db)
-            try TextContentAccess.requireComplete(entity: .transcript, id: meeting.id, in: db)
-            try SyncTransactionRecorder.record(workspaceId: workspaceId, operations: [
-                Self.meetingOperation(meeting, action: .create, in: db),
-            ], in: db)
-            if let summary = try SummaryContent.fetchOne(db, key: meeting.id) {
-                try SyncTransactionRecorder.record(workspaceId: workspaceId, operations: [
-                    Self.summaryOperation(summary, action: .upsert),
-                ], in: db)
-            }
-            if var transcript = try TranscriptRecord.current(meeting.id, in: db) {
-                transcript.version = nil
-                transcript.syncRevision = nil
-                try TranscriptRecord(meetingId: meeting.id, info: transcript).save(db)
-                try TranscriptRecord.enqueueSnapshot(meetingId: meeting.id, info: transcript, in: db)
-            }
+            try enqueueMeetingContents(meetingId: item.id, workspaceId: workspaceId, existing: existing, in: db)
         }
-        for item in items where item.entity == .file {
+        for item in items where item.entity == .file && !existing.files.contains(item.id) {
             guard let file = try FileRecord.fetchOne(db, key: item.id), let reference = file.localReference else {
                 throw ScreenshotContentError.unavailable
             }
@@ -653,10 +252,30 @@ enum SyncInitialSnapshotBuilder {
                 replaceServerImageAnalysis: replaceServerImageAnalysis,
                 in: db
             )
-            try SyncTransactionRecorder.record(workspaceId: workspaceId, operations: [operation], screenshotAttachments: [
+            try SyncTransactionRecorder.record(workspaceId: workspaceId, background: true, operations: [operation], screenshotAttachments: [
                 operation.id: .init(mimeType: file.contentType, source: source),
             ], in: db)
         }
+        for item in items where item.entity == .meeting {
+            for attachment in try MeetingAttachmentRecord.filter(Column("meetingId") == item.id).fetchAll(db)
+                where !existing.screenshots.contains(attachment.id) {
+                try SyncTransactionRecorder.record(
+                    workspaceId: workspaceId,
+                    background: true,
+                    operations: [meetingAttachmentOperation(attachment)],
+                    in: db
+                )
+            }
+        }
+        try enqueueRecordingContents(items, workspaceId: workspaceId, existing: existing, in: db)
+    }
+
+    static func enqueueRecordingContents(
+        _ items: [WorkspaceRelocation.Item],
+        workspaceId: UUID,
+        existing: SyncResetSnapshot,
+        in db: Database
+    ) throws {
         for item in items where item.entity == .meeting {
             guard let target = try WorkspaceRecord.fetchOne(db, key: workspaceId),
                   let connectionId = target.accountConnectionId else { throw LocalWorkspaceImportError.changed }
@@ -681,15 +300,13 @@ enum SyncInitialSnapshotBuilder {
                 RecordingAudioSegmentState.purged.rawValue,
                 RecordingAudioSegmentState.failed.rawValue,
             ])
-            let attachments = try MeetingAttachmentRecord.filter(Column("meetingId") == item.id).fetchCursor(db)
-            while let attachment = try attachments.next() {
-                try SyncTransactionRecorder.record(workspaceId: workspaceId, operations: [
-                    Self.meetingAttachmentOperation(attachment),
-                ], in: db)
-            }
             let archives = try RecordingArchiveRecord.filter(Column("meetingId") == item.id).fetchCursor(db)
             while var archive = try archives.next() {
                 let prepared = try SyncJSON.decoder.decode([String: RecordingArchiveEncoder.Prepared].self, from: Data(archive.preparedJSON.utf8))
+                if existing.recordings.contains(archive.sessionId) {
+                    try enqueueMissingRecordingSources(archive, prepared: prepared, workspaceId: workspaceId, in: db)
+                    continue
+                }
                 let hasRetainedSegments = try Bool.fetchOne(db, sql: """
                 SELECT EXISTS (
                     SELECT 1 FROM recording_audio_segments
@@ -737,7 +354,7 @@ enum SyncInitialSnapshotBuilder {
                 guard !prepared.isEmpty else { continue }
                 for (source, file) in prepared.sorted(by: { $0.key < $1.key }) {
                     let payload = RecordingArchiveService.Commit(source: source, checksum: file.checksum, manifest: file.manifest)
-                    try SyncTransactionRecorder.record(workspaceId: workspaceId, operations: [
+                    try SyncTransactionRecorder.record(workspaceId: workspaceId, background: true, operations: [
                         SyncOperationDraft(
                             entity: .recording,
                             action: .upsert,
@@ -749,4 +366,61 @@ enum SyncInitialSnapshotBuilder {
             }
         }
     }
+
+    private static func enqueueMeetingContents(
+        meetingId: UUID,
+        workspaceId: UUID,
+        existing: SyncResetSnapshot,
+        in db: Database
+    ) throws {
+        guard let meeting = try MeetingRecord.fetchOne(db, key: meetingId) else { throw LocalWorkspaceImportError.changed }
+        if !existing.meetings.contains(meeting.id) {
+            try SyncTransactionRecorder.record(workspaceId: workspaceId, background: true, operations: [
+                Self.meetingOperation(meeting, action: .create, in: db),
+            ], in: db)
+        }
+        if !existing.summaries.contains(meeting.id) {
+            try TextContentAccess.requireComplete(entity: .summary, id: meeting.id, in: db)
+            if let summary = try SummaryContent.fetchOne(db, key: meeting.id) {
+                try SyncTransactionRecorder.record(workspaceId: workspaceId, background: true, operations: [
+                    Self.summaryOperation(summary, action: .upsert),
+                ], in: db)
+            }
+        }
+        if !existing.transcripts.contains(meeting.id) {
+            try TextContentAccess.requireComplete(entity: .transcript, id: meeting.id, in: db)
+            if var transcript = try TranscriptRecord.current(meeting.id, in: db) {
+                transcript.version = nil
+                transcript.syncRevision = nil
+                try TranscriptRecord(meetingId: meeting.id, info: transcript).save(db)
+                try TranscriptRecord.enqueueSnapshot(meetingId: meeting.id, info: transcript, in: db)
+            }
+        }
+    }
+
+    private static func enqueueMissingRecordingSources(
+        _ archive: RecordingArchiveRecord,
+        prepared: [String: RecordingArchiveEncoder.Prepared],
+        workspaceId: UUID,
+        in db: Database
+    ) throws {
+        let canonical = try archive.audio
+        // Reconnection adopts existing Server sources. Only still-missing sources are submitted;
+        // differing local originals/preparations remain available without overwriting Server audio.
+        for (source, file) in prepared.sorted(by: { $0.key < $1.key }) where canonical[source] == nil {
+            try SyncTransactionRecorder.record(workspaceId: workspaceId, background: true, operations: [
+                SyncOperationDraft(
+                    entity: .recording,
+                    action: .upsert,
+                    entityId: archive.sessionId,
+                    payloadJSON: SyncJSON.encoder.encode(RecordingArchiveService.Commit(
+                        source: source,
+                        checksum: file.checksum,
+                        manifest: file.manifest
+                    ))
+                ),
+            ], in: db)
+        }
+    }
+
 }

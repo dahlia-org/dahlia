@@ -1,0 +1,27 @@
+{
+  "checkpoint": "AQq19PGwCwAHAQdjb250ZW50AwlwYXJhZ3JhcGgHALX08bALAAYEALX08bALAQbkvJrorbAoALX08bALAAJpZAF3JGE1MDZjMTRhLTQ2MGUtNGRmYi05NGMwLTgyOTQwZTdhMTU2M4e19PGwCwADCXBhcmFncmFwaAcAtfTxsAsFBgQAtfTxsAsGCiMgbGl0ZXJhbA0oALX08bALBQJpZAF3JDgyM2FhNTRhLTQzNDItNGYxNy04NTQ1LTU0M2QyOGQ4NDdkYYe19PGwCwUDCXBhcmFncmFwaCgAtfTxsAsSAmlkAXckZWQ3MWQxMmQtMjBmZi00OGEwLTg1NzAtNmJhYmM2ZDNjNmE0AA==",
+  "updates": [
+    "AQGnnvLhCgDEtfTxsAsCtfTxsAsDA+S5mQA=",
+    "AQGT4PvhBQDEtfTxsAsCtfTxsAsDA+eUsgA=",
+    "AQGnnvLhCgDEtfTxsAsCtfTxsAsDA+S5mQA="
+  ],
+  "text": "会甲乙議\n# literal\r\n",
+  "blocks": [
+    {
+      "id": "a506c14a-460e-4dfb-94c0-82940e7a1563",
+      "type": "paragraph",
+      "text": "会甲乙議"
+    },
+    {
+      "id": "823aa54a-4342-4f17-8545-543d28d847da",
+      "type": "paragraph",
+      "text": "# literal\r"
+    },
+    {
+      "id": "ed71d12d-20ff-48a0-8570-6babc6d3c6a4",
+      "type": "paragraph",
+      "text": ""
+    }
+  ],
+  "deletionUpdate": "AQi19PGwCwABAQdjb250ZW50AQAEh7X08bALAAMJcGFyYWdyYXBoBwC19PGwCwUGBAC19PGwCwYKIyBsaXRlcmFsDSgAtfTxsAsFAmlkAXckODIzYWE1NGEtNDM0Mi00ZjE3LTg1NDUtNTQzZDI4ZDg0N2Rhh7X08bALBQMJcGFyYWdyYXBoKAC19PGwCxICaWQBdyRlZDcxZDEyZC0yMGZmLTQ4YTAtODU3MC02YmFiYzZkM2M2YTQBtfTxsAsBAAU="
+}

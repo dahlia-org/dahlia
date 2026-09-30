@@ -9,6 +9,15 @@ actor MeetingContentProvider {
     static let shared = MeetingContentProvider()
     static let capacityBytes = 128 * 1024 * 1024
 
+    /// Independent foreground reads share the existing two-slot limiter, not a serial UI task.
+    func ensureMeeting(id: UUID, dbQueue: DatabaseQueue, refresh: Bool = false) async {
+        await withTaskGroup(of: Void.self) { group in
+            for entity in [TextContentEntity.summary, .transcript] {
+                group.addTask { try? await self.ensure(entity: entity, id: id, dbQueue: dbQueue, refresh: refresh) }
+            }
+        }
+    }
+
     struct Key: Hashable, Sendable {
         let database: ObjectIdentifier
         let entity: TextContentEntity

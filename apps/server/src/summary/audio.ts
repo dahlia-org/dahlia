@@ -23,7 +23,7 @@ interface AudioInput {
   size: number; checksum: string; manifest: RecordingManifest;
 }
 const MAX_AUDIO_SECONDS = 9.5 * 60 * 60;
-async function collectAudio(store: IdentitySyncStore, workspaceId: string, meetingId: string, reference?: SummaryInput | null,
+export async function collectAudio(store: IdentitySyncStore, workspaceId: string, meetingId: string, reference?: SummaryInput | null,
   requireCompleteMeeting = false) {
   const context = await collectSummaryInput(store, workspaceId, meetingId, false);
   if (requireCompleteMeeting && await store.hasPendingRecordings(meetingId)) throw new SummaryError("summary_audio_pair_incomplete");
@@ -186,7 +186,7 @@ export function createAudioSummaryMethod(config: AppConfig, store: MeetingSyncSt
           : job.settings.reasoningEffort;
         if (!levels.some(({ effort }) => effort === reasoningEffort)) throw new SummaryError("summary_invalid_reasoning_effort");
         const model = resolveModel(configuredModel);
-        const { content, imageIds, images, imageSelection } = await summaryImageContent(input, sync, identity, signal, [], selector);
+        const { content, imageIds, images, imageSelection } = await summaryImageContent(input, sync, identity, signal, [], selector, transcriptionOnly ? null : job.notesSnapshot);
         const chatContent = content.map((item) => item.type === "input_text"
           ? { type: "text", text: item.text } : { type: "image_url", image_url: { url: item.image_url } });
         const parameters = { model, stream: false, reasoning_effort: reasoningEffort,

@@ -707,6 +707,7 @@ final class CaptionViewModel: ObservableObject {
 
     // MARK: - Private
 
+    var documentDatabaseQueue: DatabaseQueue? { currentDbQueue }
     private var currentDbQueue: DatabaseQueue?
     private var persistenceService: MeetingPersistenceService?
     private var failedPersistenceService: MeetingPersistenceService?
@@ -2579,7 +2580,7 @@ final class CaptionViewModel: ObservableObject {
         let requestedProjectURL = projectURL ?? draftMeeting.projectURL ?? currentProjectURL
         let requestedProjectId = projectId ?? draftMeeting.projectId ?? currentProjectId
         let requestedProjectName = projectName ?? draftMeeting.projectName ?? currentProjectName
-        let meetingId = UUID.v7()
+        let meetingId = draftMeeting.id
         let now = Date.now
         let calendarEventKey = draftMeeting.linkedCalendarEvent?.key
         let assignedProjectId: UUID?
@@ -2936,9 +2937,7 @@ final class CaptionViewModel: ObservableObject {
         guard let id = currentMeetingId, let queue = currentDbQueue else { return }
         textContentTask?.cancel()
         textContentTask = Task {
-            for entity in [TextContentEntity.summary, .transcript] {
-                try? await MeetingContentProvider.shared.ensure(entity: entity, id: id, dbQueue: queue, refresh: true)
-            }
+            await MeetingContentProvider.shared.ensureMeeting(id: id, dbQueue: queue, refresh: true)
         }
     }
 
@@ -2992,9 +2991,7 @@ final class CaptionViewModel: ObservableObject {
         textContentTask = Task {
             await acquisition.value
             guard !Task.isCancelled else { return }
-            for entity in [TextContentEntity.summary, .transcript] {
-                try? await MeetingContentProvider.shared.ensure(entity: entity, id: meetingId, dbQueue: dbQueue)
-            }
+            await MeetingContentProvider.shared.ensureMeeting(id: meetingId, dbQueue: dbQueue)
         }
         meetingSyncObservation = ValueObservation.tracking { db in
             try MeetingRepository.fetchMeetingSyncSnapshot(meetingId: meetingId, in: db)
@@ -4419,7 +4416,6 @@ final class CaptionViewModel: ObservableObject {
         let projectDescription: String?
         let recordingStartedAt: Date
         let workspaceURL: URL?
-        let noteText: String?
         let recordingSessions: [RecordingSessionTimeline]
         let options: SummaryGenerationOptions
         var generationSettings: SummaryGenerationSettings
@@ -4832,7 +4828,6 @@ final class CaptionViewModel: ObservableObject {
             projectDescription: project?.description,
             recordingStartedAt: store.timeBase,
             workspaceURL: workspaceURL,
-            noteText: noteText.nilIfBlank,
             recordingSessions: store.recordingSessions,
             options: options,
             generationSettings: .current(detailLevel: options.detailLevel),
@@ -4941,12 +4936,11 @@ final class CaptionViewModel: ObservableObject {
         let snapshot = try dbQueue.read { db in
             let meeting = try MeetingRecord.fetchOne(db, key: meetingId)
             let project = try meeting?.projectId.flatMap { try ProjectRecord.fetchResolved(id: $0, in: db) }
-            let note = try MeetingNoteRecord.fetchOne(db, key: meetingId)
             let recordingSessions = try RecordingSessionRecord
                 .filter(Column("meetingId") == meetingId)
                 .order(Column("offsetSeconds").asc, Column("startedAt").asc)
                 .fetchAll(db)
-            return (meeting, project, note, recordingSessions)
+            return (meeting, project, recordingSessions)
         }
         guard let meeting = snapshot.0 else { throw SummaryGenerationPreparationError.meetingUnavailable }
         let project = snapshot.1
@@ -4961,8 +4955,7 @@ final class CaptionViewModel: ObservableObject {
             projectDescription: project?.description,
             recordingStartedAt: meeting.effectiveRecordingStartedAt,
             workspaceURL: workspaceURL,
-            noteText: snapshot.2?.text.nilIfBlank,
-            recordingSessions: snapshot.3.map(RecordingSessionTimeline.init),
+            recordingSessions: snapshot.2.map(RecordingSessionTimeline.init),
             options: options,
             generationSettings: generationSettings ?? .current(detailLevel: options.detailLevel),
             retriesFailedPersistence: false,
@@ -5219,7 +5212,9 @@ final class CaptionViewModel: ObservableObject {
                     )
                     if next.id == job.id { next.serverRequest = job.serverRequest }
                     if previous?.isRetryable == true {
-                        _ = try await self.serverSummaryService.retry(target, previousID: job.id.uuidString.lowercased(), id: next.id)
+                        _ = try await self.serverSummaryService.retry(
+                            target, previousID: job.id.uuidString.lowercased(), id: next.id, dbQueue: request.dbQueue
+                        )
                     }
                     self.summaryGenerationJobs.removeAll { $0.id == job.id }
                     self.summaryGenerationJobs.append(next)
@@ -5383,6 +5378,13 @@ final class CaptionViewModel: ObservableObject {
         job.progress.summaryGeneration = .running
         job.showStage("summarizing")
 
+        let documents = DocumentPersistence(dbQueue: request.dbQueue)
+        let documentSync = DocumentSyncService.shared(dbQueue: request.dbQueue)
+        let documentText: String
+        if case nil = savedResult {
+            try await documentSync.flush(meetingID: meetingId)
+            documentText = try await documents.prepare(meetingID: meetingId).projection.text
+        } else { documentText = "" }
         let generatedSummary: SummaryService.GeneratedSummary = if let savedResult {
             savedResult
         } else { try await summaryGenerationRunner(SummaryGenerationRunnerInput(
@@ -5394,7 +5396,7 @@ final class CaptionViewModel: ObservableObject {
                 projectDescription: request.projectDescription
             ),
             transcriptText: summaryInput.text,
-            noteText: request.noteText,
+            noteText: documentText.nilIfBlank,
             screenshots: summaryScreenshots,
             recordingSessions: request.recordingSessions,
             generationSettings: request.generationSettings

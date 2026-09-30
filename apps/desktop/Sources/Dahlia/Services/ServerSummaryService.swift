@@ -119,7 +119,7 @@ actor ServerSummaryService {
         self.client = client
         self.synchronize = synchronize ?? { target, queue in
             let worker = SyncWorker(dbQueue: queue, session: client.session, apiClient: client)
-            try await worker.synchronizeForTransfer(workspaceId: target.workspaceID, connectionId: target.connectionID)
+            try await worker.synchronizeForMeeting(meetingId: target.meetingID, workspaceId: target.workspaceID, connectionId: target.connectionID)
         }
     }
 
@@ -280,7 +280,12 @@ actor ServerSummaryService {
         return try JSONDecoder().decode(Response.self, from: data).job
     }
 
-    func retry(_ target: Target, previousID: String, id: UUID) async throws -> Job? {
+    func retry(_ target: Target, previousID: String, id: UUID, dbQueue: DatabaseQueue) async throws -> Job? {
+        try await awaitSynchronization(target, dbQueue: dbQueue)
+        return try await retrySynchronized(target, previousID: previousID, id: id)
+    }
+
+    private func retrySynchronized(_ target: Target, previousID: String, id: UUID) async throws -> Job? {
         guard UUID(uuidString: previousID) != nil, let origin = URL(string: target.origin) else { throw Failure.unavailable }
         let data = try await client.data(origin: origin, connectionId: target.connectionID, maximumBytes: 65536) {
             try await $0.retrySummaryJob(
@@ -317,7 +322,7 @@ actor ServerSummaryService {
         }
         var job = try await status(target, id: id)
         if job == nil, let previousID = processing?.retryOf {
-            job = try await retry(target, previousID: previousID, id: id)
+            job = try await retrySynchronized(target, previousID: previousID, id: id)
         }
         if job == nil {
             let body: Request
@@ -520,21 +525,18 @@ actor ServerSummaryService {
     }
 
     private func awaitSynchronization(_ target: Target, dbQueue: DatabaseQueue) async throws {
+        try await dbQueue.write { try SyncDependencies.prioritizeMeeting(meetingId: target.meetingID, workspaceId: target.workspaceID, in: $0) }
         let deadline = ContinuousClock.now.advanced(by: .seconds(60))
         while ContinuousClock.now < deadline {
             guard try await self.target(meetingID: target.meetingID, dbQueue: dbQueue) == target else { throw Failure.unavailable }
             let ready = try await dbQueue.read { db in
                 try SyncTransactionQueue.matchesExpectedConnection(workspaceId: target.workspaceID, connectionId: target.connectionID, in: db)
-                    && !SyncTransactionQueue.hasPending(workspaceId: target.workspaceID, in: db)
-                    && String.fetchOne(
-                        db,
-                        sql: "SELECT syncPullCursor FROM workspaces WHERE id = ? AND syncRecoveryState IS NULL",
-                        arguments: [target.workspaceID]
-                    ) != nil
+                    && SyncDependencies.meetingTransactions(meetingId: target.meetingID, workspaceId: target.workspaceID, in: db).isEmpty
             }
             if ready {
                 do {
                     try await synchronize(target, dbQueue)
+                    try await DocumentSyncService.shared(dbQueue: dbQueue, api: client).flush(meetingID: target.meetingID)
                     return
                 } catch TextContentError.changed {
                     // Another pull or local mutation may own the Workspace; recheck its connection before retrying.

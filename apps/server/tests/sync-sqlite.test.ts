@@ -466,6 +466,31 @@ describe("SQLite canonical sync", () => {
     await store.close?.();
   });
 
+  it("resolves standalone-only transfers before clients discover the destination and checks its access", async () => {
+    const { store, databasePath } = await setup();
+    await createWorkspace(store);
+    const destinationWorkspaceId = freshId();
+    await commit(store, owner, { ...transaction(freshId(), [{ id: freshId(), entity: "workspace", action: "create",
+      entityId: destinationWorkspaceId, baseRevision: null, data: { organizationId: testOrganizationID, name: "Destination", createdAt: now } }]), workspaceId: destinationWorkspaceId });
+    const document = await store.sync.withIdentity(owner, (sync) => sync.initializeDocument(workspaceId, freshId(), { meetingId: null, kind: "general", title: "Independent" }));
+    const database = new DatabaseSync(databasePath);
+    const grant = database.prepare("INSERT INTO workspace_permissions (workspace_id, principal_type, principal_id, role, granted_by_user_id) VALUES (?, 'user', ?, 'viewer', ?)");
+    try {
+      grant.run(workspaceId, other.userId, owner.userId);
+      await store.sync.withIdentity(owner, async (sync) => sync.transferWorkspace({ sourceWorkspaceId: workspaceId, destinationWorkspaceId,
+        audienceHash: (await sync.workspaceTransferAudience(workspaceId, destinationWorkspaceId)).audienceHash,
+        sourceRevision: 1, destinationRevision: 1, idempotencyKey: freshId(), requestHash: freshId() }));
+      const moved = await store.sync.withIdentity(owner, (sync) => sync.getWorkspaceRelocations(workspaceId));
+      expect(moved.items).toEqual([]);
+      expect(moved.documents).toEqual([{ id: document.id, workspaceId: destinationWorkspaceId }]);
+      expect(moved.workspaces.map((workspace) => workspace.workspaceId)).toEqual([destinationWorkspaceId]);
+      await expect(store.sync.withIdentity(other, (sync) => sync.getWorkspaceRelocations(workspaceId)))
+        .rejects.toMatchObject({ status: 403, code: "transfer_access_required" });
+      grant.run(destinationWorkspaceId, other.userId, owner.userId);
+      expect((await store.sync.withIdentity(other, (sync) => sync.getWorkspaceRelocations(workspaceId))).documents).toEqual(moved.documents);
+    } finally { database.close(); await store.close?.(); }
+  });
+
   it("transfers stable IDs atomically and retains its replay history after source deletion", async () => {
     const { store, databasePath } = await setup();
     await createWorkspace(store);
@@ -479,6 +504,11 @@ describe("SQLite canonical sync", () => {
         data: { ...projectData("Child"), parentProjectId: projectId, projectType: null } },
       { id: freshId(), entity: "meeting", action: "create", entityId: meetingId, baseRevision: null, data: { ...meetingData(), projectId: childId } },
     ]));
+    const documents = await store.sync.withIdentity(owner, async (sync) => [
+      await sync.initializeMeetingNotes(workspaceId, meetingId, freshId()),
+      await sync.initializeDocument(workspaceId, freshId(), { meetingId: null, kind: "general", title: "Independent" }),
+      await sync.initializeDocument(workspaceId, freshId(), { meetingId, kind: "summary", title: "Meeting summary" }),
+    ]);
     const request = { sourceWorkspaceId: workspaceId, destinationWorkspaceId, sourceRevision: 1, destinationRevision: 1,
       audienceHash: (await store.sync.withIdentity(owner, (sync) => sync.workspaceTransferAudience(workspaceId, destinationWorkspaceId))).audienceHash,
       idempotencyKey: freshId(), requestHash: "transfer" };
@@ -492,8 +522,16 @@ describe("SQLite canonical sync", () => {
     expect(result.manifest.projects.toSorted()).toEqual([projectId, childId].sort());
     expect(result.manifest.meetings).toEqual([meetingId]);
     expect(result.manifest.files).toEqual([]);
+    expect(result.manifest.documents).toEqual([documents[1]!.id]);
+    expect((await store.sync.withIdentity(owner, (sync) => sync.getWorkspaceRelocations(workspaceId))).documents)
+      .toEqual([{ id: documents[1]!.id, workspaceId: destinationWorkspaceId }]);
     expect(await store.sync.withIdentity(owner, (sync) => sync.getMeeting(workspaceId, meetingId))).toBeNull();
     expect(await store.sync.withIdentity(owner, (sync) => sync.getMeeting(destinationWorkspaceId, meetingId))).toMatchObject({ meetingId, projectId: childId });
+    for (const document of documents) {
+      const moved = await store.sync.withIdentity(owner, (sync) => sync.getDocument(destinationWorkspaceId, document.id));
+      expect(moved).toMatchObject({ id: document.id, workspaceId: destinationWorkspaceId, meetingId: document.meetingId, kind: document.kind, title: document.title });
+      await expect(store.sync.withIdentity(owner, (sync) => sync.getDocument(workspaceId, document.id))).rejects.toMatchObject({ status: 404 });
+    }
     expect(await store.sync.withIdentity(owner, (sync) => sync.getWorkspace(workspaceId))).toMatchObject({ hasResources: false, revision: 2 });
     const changes = await store.sync.withIdentity(owner, async (sync) => sync.listChanges(destinationWorkspaceId, 0, await sync.latestChangeSequence(destinationWorkspaceId), 100));
     expect(changes.some((change) => change.entity === "meeting" && change.entityId === meetingId && change.action === "upsert")).toBe(true);
@@ -823,10 +861,10 @@ describe("SQLite canonical sync", () => {
     const detail = async () => (await send(`meetings/${meetingId}`)).json();
     const capabilities = await send("capabilities");
     expect(capabilities.status).toBe(200);
-    expect(await capabilities.json()).toEqual({ sync: { version: 6 }, workspaceTransfers: { version: 1 }, recordingArchive: { version: 1 }, meetingEvents: { version: 1 }, search: { version: 1 }, conversationAnalytics: { version: 1 } });
+    expect(await capabilities.json()).toEqual({ sync: { version: 7 }, documents: { version: 1, accountBinding: true }, workspaceTransfers: { version: 1 }, recordingArchive: { version: 1 }, meetingEvents: { version: 1 }, search: { version: 1 }, conversationAnalytics: { version: 1 } });
     const enabledApp = createApp({ config: testConfig(databasePath), authStore: store, imageAnalysisEnabled: true });
     expect(await (await enabledApp.request("http://localhost:5173/api/v1/capabilities", { headers: headers() })).json())
-      .toEqual({ sync: { version: 6 }, workspaceTransfers: { version: 1 }, recordingArchive: { version: 1 }, meetingEvents: { version: 1 }, search: { version: 1 }, conversationAnalytics: { version: 1 }, imageAnalysis: { version: 2 } });
+      .toEqual({ sync: { version: 7 }, documents: { version: 1, accountBinding: true }, workspaceTransfers: { version: 1 }, recordingArchive: { version: 1 }, meetingEvents: { version: 1 }, search: { version: 1 }, conversationAnalytics: { version: 1 }, imageAnalysis: { version: 2 } });
     expect((await send("sync-content")).status).toBe(404);
     const availability = vi.spyOn(store.sync, "isAvailable").mockResolvedValueOnce(false);
     const unsupported = await send("capabilities");

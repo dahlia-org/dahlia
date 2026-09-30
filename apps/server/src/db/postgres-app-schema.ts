@@ -631,6 +631,7 @@ export const imageAnalysisJob = jobsSchema.table("image_analysis", {
 // Settings and input fingerprints are owner-private; no transcript or provider credentials are queued.
 export const summaryJob = jobsSchema.table("summary", {
   encryptedPayload: text("encrypted_payload"),
+  notesSnapshot: jsonb("notes_snapshot").$type<SummaryJob["notesSnapshot"]>(),
   id: uuid("id").primaryKey(),
   workspaceId: uuid("workspace_id").notNull(),
   meetingId: uuid("meeting_id").notNull(),
@@ -693,7 +694,7 @@ export const workspaceTransfer = appSchema.table("workspace_transfers", {
   requestHash: text("request_hash").notNull(),
   sourceWorkspaceId: uuid("source_workspace_id").notNull(),
   destinationWorkspaceId: uuid("destination_workspace_id").notNull(),
-  manifest: jsonb("manifest").$type<{ projects: string[]; meetings: string[]; files: string[] }>().notNull(),
+  manifest: jsonb("manifest").$type<{ projects: string[]; meetings: string[]; files: string[]; documents?: string[] }>().notNull(),
 }, (table) => [
   unique("workspace_transfer_owner_key_unique").on(table.ownerUserId, table.idempotencyKey),
   index("workspace_transfer_owner_sequence_idx").on(table.ownerUserId, table.sequence),
@@ -836,3 +837,57 @@ export const knowledgePage = searchSchema.table("knowledge_pages", {
   pgPolicy("knowledge_page_read", { for: "select", using: sql`"app"."current_identity_can_read_workspace"(${table.scopeId})` }),
   pgPolicy("knowledge_page_write", { for: "all", using: sql`"app"."current_identity_can_admin_workspace"(${table.scopeId})`, withCheck: sql`"app"."current_identity_can_admin_workspace"(${table.scopeId})` }),
 ]).enableRLS();
+
+function documentPolicies(name: string, workspaceId: AnyPgColumn) {
+  return [
+    pgPolicy(`${name}_read`, { for: "select", using: sql`"app"."current_identity_can_read_workspace"(${workspaceId})` }),
+    pgPolicy(`${name}_insert`, { for: "insert", withCheck: sql`"app"."current_identity_can_write_workspace"(${workspaceId})` }),
+    pgPolicy(`${name}_update`, { for: "update", using: sql`"app"."current_identity_can_write_workspace"(${workspaceId})`, withCheck: sql`"app"."current_identity_can_write_workspace"(${workspaceId})` }),
+    pgPolicy(`${name}_delete`, { for: "delete", using: sql`"app"."current_identity_can_write_workspace"(${workspaceId}) OR (${governanceWorkspace(workspaceId)}) OR (${meetingRetentionWorkspace(workspaceId)})` }),
+  ];
+}
+
+export const document = appSchema.table("documents", {
+  id: uuid("id").primaryKey(),
+  workspaceId: uuid("workspace_id").notNull().references(() => syncedWorkspace.workspaceId, { onDelete: "cascade" }),
+  meetingId: uuid("meeting_id").references(() => syncedMeeting.meetingId, { onDelete: "cascade" }),
+  kind: text("kind").$type<"notes" | "summary" | "general">().notNull(),
+  title: text("title").notNull().default(""),
+  schemaVersion: integer("schema_version").default(1).notNull(),
+  generation: uuid("generation").notNull(),
+  revision: integer("revision").default(0).notNull(),
+  checkpointRevision: integer("checkpoint_revision").default(0).notNull(),
+  checkpoint: text("checkpoint").notNull(),
+  text: text("text").notNull(),
+  projectionRevision: integer("projection_revision").default(0).notNull(),
+  encryptedPayload: text("encrypted_payload"),
+  createdAt: timestamp("created_at").notNull(),
+  updatedAt: timestamp("updated_at").notNull(),
+}, (table) => [unique("document_workspace_id_unique").on(table.workspaceId, table.id), foreignKey({ name: "document_parent_workspace_fk", columns: [table.workspaceId, table.meetingId], foreignColumns: [syncedMeeting.workspaceId, syncedMeeting.meetingId] }).onDelete("cascade").onUpdate("cascade"), uniqueIndex("document_meeting_notes_unique").on(table.meetingId).where(sql`${table.kind} = 'notes'`), check("document_kind", sql`${table.kind} IN ('notes', 'summary', 'general') AND (${table.kind} != 'notes' OR ${table.meetingId} IS NOT NULL)`), check("document_watermarks", sql`${table.projectionRevision} = ${table.revision} AND ${table.checkpointRevision} <= ${table.revision}`), ...documentPolicies("document", table.workspaceId)]).enableRLS();
+
+export const documentUpdate = appSchema.table("document_updates", {
+  documentId: uuid("document_id").notNull().references(() => document.id, { onDelete: "cascade" }),
+  workspaceId: uuid("workspace_id").notNull().references(() => syncedWorkspace.workspaceId, { onDelete: "cascade" }),
+  revision: integer("revision").notNull(),
+  update: text("update").notNull(),
+  encryptedPayload: text("encrypted_payload"),
+  createdAt: timestamp("created_at").notNull(),
+}, (table) => [foreignKey({ name: "documentUpdate_workspace_fk", columns: [table.workspaceId, table.documentId], foreignColumns: [document.workspaceId, document.id] }).onDelete("cascade").onUpdate("cascade"), primaryKey({ columns: [table.documentId, table.revision] }), ...documentPolicies("document_update", table.workspaceId)]).enableRLS();
+
+export const documentRecovery = appSchema.table("document_recoveries", {
+  id: uuid("id").primaryKey(),
+  documentId: uuid("document_id").notNull().references(() => document.id, { onDelete: "cascade" }),
+  workspaceId: uuid("workspace_id").notNull().references(() => syncedWorkspace.workspaceId, { onDelete: "cascade" }),
+  blocks: jsonb("blocks").$type<import("../documents/core").DocumentBlock[]>().notNull(),
+  reason: text("reason").$type<"deleted" | "concurrent_delete">().notNull(),
+  encryptedPayload: text("encrypted_payload"),
+  createdAt: timestamp("created_at").notNull(),
+}, (table) => [foreignKey({ name: "documentRecovery_workspace_fk", columns: [table.workspaceId, table.documentId], foreignColumns: [document.workspaceId, document.id] }).onDelete("cascade").onUpdate("cascade"), index("document_recoveries_document_cursor").on(table.documentId, table.id), ...documentPolicies("document_recovery", table.workspaceId)]).enableRLS();
+
+export const documentPresence = appSchema.table("document_presence", {
+  id: uuid("id").primaryKey(),
+  documentId: uuid("document_id").notNull().references(() => document.id, { onDelete: "cascade" }),
+  workspaceId: uuid("workspace_id").notNull().references(() => syncedWorkspace.workspaceId, { onDelete: "cascade" }),
+  userId: uuid("user_id").notNull().references(() => authUser.id, { onDelete: "cascade" }),
+  expiresAt: timestamp("expires_at").notNull(),
+}, (table) => [foreignKey({ name: "documentPresence_workspace_fk", columns: [table.workspaceId, table.documentId], foreignColumns: [document.workspaceId, document.id] }).onDelete("cascade").onUpdate("cascade"), index("document_presence_document_expiry").on(table.documentId, table.expiresAt), index("document_presence_workspace_expiry").on(table.workspaceId, table.expiresAt), ...documentPolicies("document_presence", table.workspaceId)]).enableRLS();

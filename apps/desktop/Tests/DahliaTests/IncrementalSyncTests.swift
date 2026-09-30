@@ -12,6 +12,181 @@
 
     @MainActor
     struct IncrementalSyncTests {
+        @Test(arguments: [true, false])
+        func queuedFileMetadataDoesNotBreakProjectConflictChecks(related: Bool) async throws {
+            let fixture = try Fixture()
+            let projectID = UUID.v7()
+            try await fixture.queue.write { db in
+                try ProjectRecord(
+                    id: projectID,
+                    workspaceId: fixture.workspaceId,
+                    parentProjectId: nil,
+                    name: "Project",
+                    createdAt: .now,
+                    projectType: .undefined
+                ).insert(db)
+                try db.execute(sql: "UPDATE meetings SET projectId = ? WHERE id = ?", arguments: [projectID, fixture.meetingId])
+            }
+            try await fixture.queueFile()
+            try await fixture.queue.read { db throws in
+                // FileOperationPayload uses the durable metadata key ocr_text, not the API's ocrText.
+                let before = try String.fetchOne(db, sql: "SELECT payloadJSON FROM sync_operations")
+                #expect(before?.contains("ocr_text") == true)
+                #expect(try RemoteChangePolicy.permits(
+                    .project, id: related ? projectID : .v7(), workspaceId: fixture.workspaceId, in: db
+                ) == !related)
+                #expect(try String.fetchOne(db, sql: "SELECT payloadJSON FROM sync_operations") == before)
+                #expect(try SyncTransactionQueue.hasPending(workspaceId: fixture.workspaceId, in: db))
+            }
+        }
+
+        @Test(arguments: ["stored", "proposed", "unrelated"])
+        func fileConflictChecksKeepBothAttachmentEndpoints(endpoint: String) async throws {
+            let fixture = try Fixture()
+            try await fixture.queue.write { db in
+                let proposed = endpoint == "proposed" ? fixture.fileId.uuidString.lowercased() : UUID.v7().uuidString
+                let payload = Data("{\"fileId\":\"\(proposed)\",\"meetingId\":\"\(fixture.meetingId)\"}".utf8)
+                _ = try SyncTransactionRecorder.record(workspaceId: fixture.workspaceId, operations: [.init(
+                    entity: .meetingAttachment, action: .upsert,
+                    entityId: endpoint == "stored" ? fixture.fileId : .v7(), payloadJSON: payload
+                )], in: db)
+                #expect(try RemoteChangePolicy.permits(.file, id: fixture.fileId, workspaceId: fixture.workspaceId, in: db)
+                    == (endpoint == "unrelated"))
+            }
+        }
+
+        @Test
+        func fileConflictChecksDoNotLoadEveryQueuedAttachmentsAncestry() async throws {
+            let fixture = try Fixture()
+            try await fixture.queueFile()
+            try await fixture.queue.write { db in
+                let transaction = try #require(try UUID.fetchOne(db, sql: "SELECT id FROM sync_transactions"))
+                try db.execute(sql: "DELETE FROM sync_operations")
+                for position in 0 ..< 2000 {
+                    let payload = "{\"meetingId\":\"\(fixture.meetingId)\",\"fileId\":\"\(UUID.v7())\"}"
+                    try db.execute(sql: """
+                    INSERT INTO sync_operations(transactionId, position, id, entity, action, entityId, payloadJSON)
+                    VALUES (?, ?, ?, 'meeting_attachment', 'upsert', ?, ?)
+                    """, arguments: [transaction, position, UUID.v7(), UUID.v7(), payload])
+                }
+                try db.execute(sql: "DELETE FROM sync_dependency_keys WHERE transactionId = ?", arguments: [transaction])
+                try SyncDependencies.index(transactionId: transaction, workspaceId: fixture.workspaceId, in: db)
+                let statements = Mutex(0)
+                db.trace { _ in statements.withLock { $0 += 1 } }
+                defer { db.trace(nil) }
+                #expect(try RemoteChangePolicy.permits(.file, id: fixture.fileId, workspaceId: fixture.workspaceId, in: db))
+                // A large outbox must not turn one received file into thousands of database queries.
+                #expect(statements.withLock { $0 } < 20)
+                #expect(try Int.fetchOne(db, sql: "SELECT count(*) FROM sync_operations") == 2000)
+            }
+        }
+
+        @Test
+        func malformedChangeResponseKeepsCursorAndExposesSafeDiagnostics() async throws {
+            let fixture = try Fixture()
+            let malformed = try JSONSerialization.data(withJSONObject: [
+                "items": [], "cursor": "after", "highWaterCursor": "after", "hasMore": "invalid",
+            ])
+            let client = fixture.client { request in
+                if request.url!.path.hasSuffix("capabilities") {
+                    return (200, [:], Data(#"{"documents":{"version":1},"sync":{"version":7}}"#.utf8))
+                }
+                return (200, [:], malformed)
+            }
+            defer { ImageURLProtocol.remove(origin: fixture.origin) }
+            await #expect(throws: SyncPayloadFailure.self) {
+                try await SyncWorker(dbQueue: fixture.queue, apiClient: client).retryPull(
+                    workspaceId: fixture.workspaceId, connectionId: fixture.connectionId
+                )
+            }
+            try await fixture.queue.read { db throws in
+                let workspace = try #require(try WorkspaceRecord.fetchOne(db, key: fixture.workspaceId))
+                #expect(workspace.syncPullCursor == "before")
+                let incident = try #require(SyncIncident(jsonString: workspace.syncPullErrorJSON))
+                #expect(incident.code == "invalid_sync_payload")
+                #expect(incident.diagnostic?.contains("getChanges") == true)
+                #expect(incident.diagnostic?.contains("hasMore") == true)
+                #expect(try MeetingRecord.fetchOne(db, key: fixture.meetingId) != nil)
+            }
+        }
+
+        @Test(arguments: ["none", "queued", "recording", "document"])
+        func userSnapshotRecoveryPreservesPendingWork(blocker: String) async throws {
+            let fixture = try Fixture()
+            if blocker == "queued" { try await fixture.queueFile() }
+            if blocker == "recording" {
+                try await fixture.queue.write { db in
+                    try RecordingSessionRecord(
+                        id: .v7(),
+                        meetingId: fixture.meetingId,
+                        startedAt: .now,
+                        duration: 0,
+                        offsetSeconds: 0,
+                        createdAt: .now,
+                        updatedAt: .now
+                    ).insert(db)
+                }
+            }
+            if blocker == "document" {
+                try await fixture.queue.write { db in
+                    let document = DocumentRecord(
+                        id: .v7(),
+                        workspaceId: fixture.workspaceId,
+                        meetingId: fixture.meetingId,
+                        checkpoint: "AAA=",
+                        createdAt: .now,
+                        updatedAt: .now
+                    )
+                    try document.insert(db)
+                    var update = DocumentUpdateRecord(documentId: document.id, payload: "AAA=", pending: true, createdAt: .now)
+                    try update.insert(db)
+                }
+            }
+            let canonical = try fixture.change(.workspace, id: fixture.workspaceId, revision: 7, fields: [
+                "name": "Server", "createdAt": "2026-09-07T00:00:00Z",
+                "generationSettings": JSONSerialization.jsonObject(with: JSONEncoder().encode(WorkspaceGenerationSettings())),
+            ])
+            var snapshotRow = try wireChange(canonical, workspaceId: fixture.workspaceId)
+            snapshotRow["id"] = snapshotRow.removeValue(forKey: "entityId")
+            var workspaceRecord = try #require(snapshotRow["record"] as? [String: Any])
+            let organizationID: String? = try await fixture.queue.read {
+                try WorkspaceRecord.fetchOne($0, key: fixture.workspaceId)?.organizationId?.uuidString
+            }
+            workspaceRecord["organizationId"] = try #require(organizationID)
+            snapshotRow["record"] = workspaceRecord
+            let snapshot = try JSONSerialization.data(withJSONObject: [
+                "items": [snapshotRow], "startCursor": "after", "nextCursor": NSNull(),
+            ])
+            let empty = try page(workspaceId: fixture.workspaceId, [], cursor: "after")
+            let requests = Mutex(0)
+            let client = fixture.client { request in
+                requests.withLock { $0 += 1 }
+                if request.url!.path.hasSuffix("capabilities") {
+                    return (200, [:], Data(#"{"documents":{"version":1},"sync":{"version":7}}"#.utf8))
+                }
+                if request.url!.path.hasSuffix("snapshot") { return (200, [:], snapshot) }
+                if request.url!.path.hasSuffix("changes") { return (200, [:], empty) }
+                return (404, [:], Data())
+            }
+            defer { ImageURLProtocol.remove(origin: fixture.origin) }
+            let worker = SyncWorker(dbQueue: fixture.queue, apiClient: client)
+            if blocker == "none" {
+                try await worker.retrySnapshot(workspaceId: fixture.workspaceId, connectionId: fixture.connectionId)
+                #expect(requests.withLock { $0 } > 0)
+                #expect(try await fixture.queue.read { try WorkspaceRecord.fetchOne($0, key: fixture.workspaceId)?.syncPullCursor } == "after")
+            } else {
+                await #expect(throws: SyncSnapshotRecoveryError.self) {
+                    try await worker.retrySnapshot(workspaceId: fixture.workspaceId, connectionId: fixture.connectionId)
+                }
+                #expect(requests.withLock { $0 } == 0)
+                try await fixture.queue.read { db throws in
+                    #expect(try WorkspaceRecord.fetchOne(db, key: fixture.workspaceId)?.syncPullCursor == "before")
+                    #expect(try MeetingRecord.fetchOne(db, key: fixture.meetingId) != nil)
+                    #expect(try SyncTransactionQueue.hasPending(workspaceId: fixture.workspaceId, in: db) == (blocker == "queued"))
+                }
+            }
+        }
+
         @Test
         func restoredMeetingReappliesChildrenAtTheirOriginalRevision() async throws {
             let fixture = try Fixture()
@@ -124,7 +299,7 @@
             let client = fixture.client { request in
                 let path = request.url!.path
                 if path.hasSuffix("capabilities") {
-                    return (200, [:], Data(#"{"sync":{"version":6},"workspaceTransfers":{"version":1}}"#.utf8))
+                    return (200, [:], Data(#"{"documents":{"version":1},"sync":{"version":7},"workspaceTransfers":{"version":1}}"#.utf8))
                 }
                 if path.hasSuffix("/changes") {
                     if request.url!.query?.contains("cursor=middle") == true {
@@ -190,6 +365,7 @@
                 "records": [["entity": "transcript", "id": fixture.meetingId.uuidString, "revision": 1, "record": NSNull()]],
             ])
             let client = fixture.client { request in
+                if request.url!.path.hasSuffix("/capabilities") { return (200, [:], Data(#"{"documents":{"version":1},"sync":{"version":7}}"#.utf8)) }
                 let body = Self.requestBody(request)
                 if request.url?.path == "/api/v1/transactions/resolve" {
                     manifests.withLock { $0.append(body) }
@@ -276,7 +452,7 @@
                 let path = request.url!.path
                 requests.withLock { $0.append(path) }
                 if path.hasSuffix("capabilities") {
-                    return (200, [:], Data("{\"sync\":{\"version\":6},\"workspaceTransfers\":{\"version\":1}}".utf8))
+                    return (200, [:], Data("{\"documents\":{\"version\":1},\"sync\":{\"version\":7},\"workspaceTransfers\":{\"version\":1}}".utf8))
                 }
                 if path.hasSuffix("/changes") { return (200, [:], changes) }
                 if path.hasSuffix("/relocations") { return (200, [:], relocation) }
@@ -304,7 +480,10 @@
             #expect(!paths.contains("/api/v1/transactions"))
             try await fixture.queue.read { db throws in
                 #expect(try SyncTransactionQueue.hasPending(workspaceId: fixture.workspaceId, in: db) == (status == "unknown"))
-                #expect(try MeetingRecord.fetchOne(db, key: fixture.meetingId)?.workspaceId == fixture.workspaceId)
+                let actual = try #require(try MeetingRecord.fetchOne(db, key: fixture.meetingId)?.workspaceId)
+                // An unknown receipt must keep the old ownership. Once acknowledged, the
+                // independent receive lane may already have applied the relocation.
+                #expect(status == "unknown" ? actual == fixture.workspaceId : [fixture.workspaceId, destination].contains(actual))
             }
         }
 
@@ -343,7 +522,7 @@
                 let path = request.url!.path
                 paths.withLock { $0.append(path) }
                 if path.hasSuffix("capabilities") {
-                    return (200, [:], Data("{\"sync\":{\"version\":6},\"workspaceTransfers\":{\"version\":1}}".utf8))
+                    return (200, [:], Data("{\"documents\":{\"version\":1},\"sync\":{\"version\":7},\"workspaceTransfers\":{\"version\":1}}".utf8))
                 }
                 if path.contains(fixture.workspaceId.uuidString.lowercased()) {
                     if path.hasSuffix("/relocations") { return (403, [:], Data("{\"code\":\"transfer_access_required\"}".utf8)) }
@@ -362,7 +541,8 @@
             await worker.drain()
             let deadline = ContinuousClock.now.advanced(by: .seconds(3))
             while ContinuousClock.now < deadline {
-                if try await fixture.queue.read({ try !SyncTransactionQueue.hasPending(workspaceId: healthy, in: $0) }) { break }
+                if healthyPulls.withLock({ $0 > 0 }),
+                   try await fixture.queue.read({ try !SyncTransactionQueue.hasPending(workspaceId: healthy, in: $0) }) { break }
                 try await Task.sleep(for: .milliseconds(10))
             }
             await worker.stop()
@@ -393,9 +573,9 @@
                         return count
                     }
                     if requestNumber == 1 {
-                        return (200, [:], Data(#"{"sync":{"version":6},"workspaceTransfers":{"version":1}}"#.utf8))
+                        return (200, [:], Data(#"{"documents":{"version":1},"sync":{"version":7},"workspaceTransfers":{"version":1}}"#.utf8))
                     }
-                    return (200, [:], Data(#"{"sync":{"version":6}}"#.utf8))
+                    return (200, [:], Data(#"{"documents":{"version":1},"sync":{"version":7}}"#.utf8))
                 }
                 if path.hasSuffix("/changes") {
                     let requestNumber = changeRequestCount.withLock { count in
@@ -447,8 +627,13 @@
                         return count
                     }
                     return requestNumber == 1
-                        ? (200, [:], Data(#"{"sync":{"version":6},"meetingEvents":{"version":1},"workspaceTransfers":{"version":1}}"#.utf8))
-                        : (200, [:], Data(#"{"sync":{"version":6},"meetingEvents":{"version":1}}"#.utf8))
+                        ? (
+                            200,
+                            [:],
+                            Data(#"{"documents":{"version":1},"sync":{"version":7},"meetingEvents":{"version":1},"workspaceTransfers":{"version":1}}"#
+                                .utf8)
+                        )
+                        : (200, [:], Data(#"{"documents":{"version":1},"sync":{"version":7},"meetingEvents":{"version":1}}"#.utf8))
                 }
                 if path.hasSuffix("/changes") { return (200, [:], initialPage) }
                 if path.hasSuffix("/relocations") {
@@ -513,7 +698,7 @@
                 let path = request.url!.path
                 if path.hasSuffix("capabilities") {
                     capabilityRequests.withLock { $0 += 1 }
-                    return (200, [:], Data(#"{"sync":{"version":6},"meetingEvents":{"version":1}}"#.utf8))
+                    return (200, [:], Data(#"{"documents":{"version":1},"sync":{"version":7},"meetingEvents":{"version":1}}"#.utf8))
                 }
                 if path.hasSuffix("/changes") {
                     changeRequests.withLock { $0 += 1 }
@@ -580,7 +765,12 @@
             let client = fixture.client { request in
                 let path = request.url!.path
                 if path.hasSuffix("capabilities") {
-                    return (200, [:], Data(#"{"sync":{"version":6},"meetingEvents":{"version":1},"workspaceTransfers":{"version":1}}"#.utf8))
+                    return (
+                        200,
+                        [:],
+                        Data(#"{"documents":{"version":1},"sync":{"version":7},"meetingEvents":{"version":1},"workspaceTransfers":{"version":1}}"#
+                            .utf8)
+                    )
                 }
                 if path.hasSuffix("/relocations") {
                     relocationRequests.withLock { $0 += 1 }
@@ -626,7 +816,7 @@
                 if request.url!.path.hasSuffix("capabilities") { return (
                     200,
                     [:],
-                    Data("{\"sync\":{\"version\":6},\"meetingEvents\":{\"version\":1}}".utf8)
+                    Data("{\"documents\":{\"version\":1},\"sync\":{\"version\":7},\"meetingEvents\":{\"version\":1}}".utf8)
                 ) }
                 let cursor = URLComponents(url: request.url!, resolvingAgainstBaseURL: false)!.queryItems!.first { $0.name == "cursor" }!.value!
                 cursors.withLock { $0.append(cursor) }
@@ -687,7 +877,9 @@
                 (
                     200,
                     [:],
-                    request.url!.path.hasSuffix("capabilities") ? Data("{\"sync\":{\"version\":6},\"meetingEvents\":{\"version\":1}}".utf8) : changes
+                    request.url!.path
+                        .hasSuffix("capabilities") ?
+                        Data("{\"documents\":{\"version\":1},\"sync\":{\"version\":7},\"meetingEvents\":{\"version\":1}}".utf8) : changes
                 )
             }
             defer { ImageURLProtocol.remove(origin: fixture.origin) }
@@ -714,7 +906,9 @@
                 (
                     200,
                     [:],
-                    request.url!.path.hasSuffix("capabilities") ? Data("{\"sync\":{\"version\":6},\"meetingEvents\":{\"version\":1}}".utf8) : changes
+                    request.url!.path
+                        .hasSuffix("capabilities") ?
+                        Data("{\"documents\":{\"version\":1},\"sync\":{\"version\":7},\"meetingEvents\":{\"version\":1}}".utf8) : changes
                 )
             }
             client.tokenProvider = { _, _ in await gate.wait()
@@ -874,7 +1068,7 @@
                 if request.url!.path.hasSuffix("capabilities") { return (
                     200,
                     [:],
-                    Data("{\"sync\":{\"version\":6},\"meetingEvents\":{\"version\":1}}".utf8)
+                    Data("{\"documents\":{\"version\":1},\"sync\":{\"version\":7},\"meetingEvents\":{\"version\":1}}".utf8)
                 ) }
                 if request.url!.path.hasSuffix("snapshot") {
                     snapshots.withLock { $0 += 1 }
@@ -923,7 +1117,7 @@
                 if request.url!.path.hasSuffix("capabilities") { return (
                     200,
                     [:],
-                    Data("{\"sync\":{\"version\":6},\"meetingEvents\":{\"version\":1}}".utf8)
+                    Data("{\"documents\":{\"version\":1},\"sync\":{\"version\":7},\"meetingEvents\":{\"version\":1}}".utf8)
                 ) }
                 if request.url!.path.hasSuffix("projects") {
                     snapshots.withLock { $0 += 1 }
@@ -960,7 +1154,7 @@
                 if request.url!.path.hasSuffix("capabilities") { return (
                     200,
                     [:],
-                    Data("{\"sync\":{\"version\":6},\"meetingEvents\":{\"version\":1}}".utf8)
+                    Data("{\"documents\":{\"version\":1},\"sync\":{\"version\":7},\"meetingEvents\":{\"version\":1}}".utf8)
                 ) }
                 if request.url!.path.hasSuffix("changes") { return (200, [:], changes) }
                 #expect(request.url!
@@ -1009,7 +1203,7 @@
             ])
             let calls = Mutex(0)
             let client = fixture.client { request in
-                if request.url!.path.hasSuffix("capabilities") { return (200, [:], Data(#"{"sync":{"version":6}}"#.utf8)) }
+                if request.url!.path.hasSuffix("capabilities") { return (200, [:], Data(#"{"documents":{"version":1},"sync":{"version":7}}"#.utf8)) }
                 if request.url!.path.hasSuffix("changes") { return (200, [:], changes) }
                 calls.withLock { $0 += 1 }
                 #expect(request.url!.path == "/api/v1/files/\(fileId.uuidString.lowercased())")
@@ -1057,7 +1251,7 @@
                 if request.url!.path.hasSuffix("capabilities") { return (
                     200,
                     [:],
-                    Data("{\"sync\":{\"version\":6},\"meetingEvents\":{\"version\":1}}".utf8)
+                    Data("{\"documents\":{\"version\":1},\"sync\":{\"version\":7},\"meetingEvents\":{\"version\":1}}".utf8)
                 ) }
                 #expect(request.url!.path.hasSuffix("changes"))
                 return (200, [:], changes)
@@ -1111,7 +1305,7 @@
                 if request.url!.path.hasSuffix("capabilities") { return (
                     200,
                     [:],
-                    Data("{\"sync\":{\"version\":6},\"meetingEvents\":{\"version\":1}}".utf8)
+                    Data("{\"documents\":{\"version\":1},\"sync\":{\"version\":7},\"meetingEvents\":{\"version\":1}}".utf8)
                 ) }
                 if request.url!.query!.contains("cursor=before") { return (200, [:], first) }
                 return fail.withLock { $0 } ? (503, [:], Data()) : (200, [:], second)
@@ -1176,7 +1370,7 @@
             let fails = Mutex(true)
             let client = fixture.client { request in
                 if request.url!.path.hasSuffix("capabilities") {
-                    return (200, [:], Data(#"{"sync":{"version":6}}"#.utf8))
+                    return (200, [:], Data(#"{"documents":{"version":1},"sync":{"version":7}}"#.utf8))
                 }
                 if fails.withLock({ $0 }) {
                     return (503, [:], Data(#"{"code":"unavailable"}"#.utf8))
@@ -1210,7 +1404,7 @@
             let fixture = try Fixture()
             let gate = Gate()
             var client = fixture.client { request in
-                if request.url!.path.hasSuffix("capabilities") { return (200, [:], Data(#"{"sync":{"version":6}}"#.utf8)) }
+                if request.url!.path.hasSuffix("capabilities") { return (200, [:], Data(#"{"documents":{"version":1},"sync":{"version":7}}"#.utf8)) }
                 return (503, [:], Data(#"{"code":"unavailable"}"#.utf8))
             }
             client.tokenProvider = { _, _ in
@@ -1239,7 +1433,7 @@
             let fixture = try Fixture()
             let gate = Gate()
             var client = fixture.client { request in
-                if request.url!.path.hasSuffix("capabilities") { return (200, [:], Data(#"{"sync":{"version":6}}"#.utf8)) }
+                if request.url!.path.hasSuffix("capabilities") { return (200, [:], Data(#"{"documents":{"version":1},"sync":{"version":7}}"#.utf8)) }
                 return (200, [:], Data(#"{"items":[],"cursor":"after","highWaterCursor":"after","hasMore":false}"#.utf8))
             }
             client.tokenProvider = { _, _ in
@@ -1279,7 +1473,7 @@
             let changes = try page(workspaceId: fixture.workspaceId, [transcript], cursor: "after")
             let client = fixture.client { request in
                 if request.url!.path.hasSuffix("capabilities") {
-                    return (200, [:], Data(#"{"sync":{"version":6}}"#.utf8))
+                    return (200, [:], Data(#"{"documents":{"version":1},"sync":{"version":7}}"#.utf8))
                 }
                 return (200, [:], changes)
             }
@@ -1327,7 +1521,7 @@
             }
             let client = fixture.client { request in
                 if request.url!.path.hasSuffix("capabilities") {
-                    return (200, [:], Data(#"{"sync":{"version":6}}"#.utf8))
+                    return (200, [:], Data(#"{"documents":{"version":1},"sync":{"version":7}}"#.utf8))
                 }
                 return (410, [:], Data(#"{"code":"sync_cursor_expired"}"#.utf8))
             }
@@ -1352,7 +1546,7 @@
             let client = fixture.client { request in
                 let path = request.url!.path
                 if path.hasSuffix("capabilities") {
-                    return (200, [:], Data(#"{"sync":{"version":6}}"#.utf8))
+                    return (200, [:], Data(#"{"documents":{"version":1},"sync":{"version":7}}"#.utf8))
                 }
                 if path.hasSuffix("changes") {
                     return (410, [:], Data(#"{"code":"sync_cursor_expired"}"#.utf8))
@@ -1406,7 +1600,7 @@
             let client = fixture.client { request in
                 let path = request.url!.path
                 if path.hasSuffix("capabilities") {
-                    return (200, [:], Data(#"{"sync":{"version":6},"workspaceTransfers":{"version":1}}"#.utf8))
+                    return (200, [:], Data(#"{"documents":{"version":1},"sync":{"version":7},"workspaceTransfers":{"version":1}}"#.utf8))
                 }
                 if path.hasSuffix("snapshot") { return (200, [:], snapshot) }
                 if path.hasSuffix("relocations") { return (200, [:], relocation) }
@@ -1437,7 +1631,7 @@
             let client = fixture.client { request in
                 let path = request.url!.path
                 if path.hasSuffix("capabilities") {
-                    return (200, [:], Data(#"{"sync":{"version":6}}"#.utf8))
+                    return (200, [:], Data(#"{"documents":{"version":1},"sync":{"version":7}}"#.utf8))
                 }
                 if path == "/api/v1/workspaces" { return (200, [:], Data(#"{"items":[]}"#.utf8)) }
                 return serverReady.withLock { $0 } ? (200, [:], changes) :
@@ -1498,7 +1692,7 @@
             let client = fixture.client { request in
                 let path = request.url!.path
                 if path.hasSuffix("capabilities") {
-                    return (200, [:], Data(#"{"sync":{"version":6}}"#.utf8))
+                    return (200, [:], Data(#"{"documents":{"version":1},"sync":{"version":7}}"#.utf8))
                 }
                 if path.hasSuffix("changes") { return (200, [:], emptyChanges) }
                 if path == "/api/v1/workspaces" { return (503, [:], Data()) }
@@ -1565,7 +1759,7 @@
             }
             let client = fixture.client { request in
                 if request.url!.path.hasSuffix("capabilities") {
-                    return (200, [:], Data(#"{"sync":{"version":6}}"#.utf8))
+                    return (200, [:], Data(#"{"documents":{"version":1},"sync":{"version":7}}"#.utf8))
                 }
                 return (404, [:], Data(#"{"code":"workspace_not_found"}"#.utf8))
             }
@@ -1621,7 +1815,7 @@
             let client = fixture.client { request in
                 let path = request.url!.path
                 if path.hasSuffix("capabilities") {
-                    return (200, [:], Data(#"{"sync":{"version":6}}"#.utf8))
+                    return (200, [:], Data(#"{"documents":{"version":1},"sync":{"version":7}}"#.utf8))
                 }
                 if path.hasSuffix("snapshot") {
                     snapshots.withLock { $0 += 1 }
@@ -1661,7 +1855,7 @@
             }
             let client = fixture.client { request in
                 if request.url!.path.hasSuffix("capabilities") {
-                    return (200, [:], Data(#"{"sync":{"version":6}}"#.utf8))
+                    return (200, [:], Data(#"{"documents":{"version":1},"sync":{"version":7}}"#.utf8))
                 }
                 return (404, [:], Data(#"{"code":"workspace_not_found"}"#.utf8))
             }
@@ -1686,7 +1880,7 @@
             let client = fixture.client { request in
                 let path = request.url!.path
                 if path.hasSuffix("capabilities") {
-                    return (200, [:], Data(#"{"sync":{"version":6},"workspaceTransfers":{"version":1}}"#.utf8))
+                    return (200, [:], Data(#"{"documents":{"version":1},"sync":{"version":7},"workspaceTransfers":{"version":1}}"#.utf8))
                 }
                 if path.hasSuffix("relocations") {
                     return (200, [:], Data(#"{"workspaces":[],"items":[]}"#.utf8))

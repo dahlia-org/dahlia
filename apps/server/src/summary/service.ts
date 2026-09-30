@@ -1,3 +1,6 @@
+import { collectSummaryInput } from "./transcript";
+import { collectAudio } from "./audio";
+import type { IdentitySyncStore } from "../sync/types";
 import { canWriteWorkspace } from "../auth/workspace-permissions";
 import { z } from "zod";
 import { generationPreferencesSchema, normalizeSummaryDetail, outputLanguageSchema, summaryModelSettingsSchema } from "../workspace-generation-settings";
@@ -78,6 +81,7 @@ export class SummaryService {
       }
       const now = new Date();
       const job: SummaryJob = { ...previous, id: parsed.data.id, requestHash, status: "pending", attempts: 0,
+        notesSnapshot: await captureNotesSnapshot(scoped, workspaceId, meetingId, previous.input, previous.method),
         summaryRevision: meeting.summaryRevision ?? 0, transcriptRevision: meeting.transcriptRevision ?? 0, inputVersion,
         createdAt: now, availableAt: now, claimedAt: null, leaseExpiresAt: null, lastErrorCode: null,
         stage: previous.transcriptResult || previous.method === "transcript" ? "summarizing"
@@ -172,6 +176,7 @@ export class SummaryService {
       const job: SummaryJob = {
         id: parsed.data.id, workspaceId, meetingId, ownerUserId: identity.userId,
         method: methodID, settings: captured,
+        notesSnapshot: await captureNotesSnapshot(scoped, workspaceId, meetingId, input, methodID),
         input: input ?? null, transcriptRevision: meeting.transcriptRevision ?? 0,
         stage: methodID === "transcript" ? "summarizing" : input?.type === "recording" && input.transcriptionModel ? "transcribing" : "generating",
         transcriptResult: null,
@@ -211,4 +216,20 @@ function summaryRequestHashesMatch(existingHash: string, requestHash: string): b
   const request = record.parse(requestJSON);
   if (!("reasoningEffort" in existing) && "reasoningEffort" in request) delete request.reasoningEffort;
   return JSON.stringify(existing) === JSON.stringify(request);
+}
+
+async function captureNotesSnapshot(store: IdentitySyncStore, workspaceId: string, meetingId: string,
+  input: SummaryInput | null | undefined, method: "transcript" | "audio"): Promise<SummaryJob["notesSnapshot"]> {
+  if (input?.type === "recording" && input.transcriptionOnly) return null;
+  const document = await store.getMeetingNotes(workspaceId, meetingId);
+  if (!document) return null;
+  try {
+    const context = method === "audio" ? await collectAudio(store, workspaceId, meetingId, input)
+      : await collectSummaryInput(store, workspaceId, meetingId, true, input);
+    if (JSON.stringify(context).length + document.text.length > 2_000_000) throw new SummaryError("summary_input_too_large");
+    return { documentId: document.id, revision: document.revision, text: document.text };
+  } catch (error) {
+    if (error instanceof SummaryError) throw new RequestError(error.retryable ? 503 : 400, error.code);
+    throw error;
+  }
 }

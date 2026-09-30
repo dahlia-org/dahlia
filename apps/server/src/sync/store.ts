@@ -1,3 +1,6 @@
+import { beginSyncTiming } from "./diagnostics";
+import { createSyncLocks } from "./locks";
+import { createDocumentStore } from "../documents/store";
 import { enqueueMemorySource } from "../memory/enqueue";
 import { memoryDocumentId } from "../memory/ids";
 import { DEFAULT_WORKSPACE_GENERATION_SETTINGS, type WorkspaceGenerationSettings } from "../workspace-generation-settings";
@@ -85,6 +88,7 @@ export function createPostgresMeetingSyncStore(
   searchBackend: SyncSearchBackend = "postgres",
   embeddingConfig?: AppConfig["searchEmbedding"],
   encryption?: AppConfig["encryption"],
+  committed?: () => void,
 ): MeetingSyncStore {
   let available: Promise<boolean> | undefined;
   const isAvailable = () => available ??= roleSupportsRls(db);
@@ -95,23 +99,33 @@ export function createPostgresMeetingSyncStore(
     ...createHistoryMaintenanceStore(db, postgresSchema, true, encryption),
     async withIdentity(identity, action) {
       if (!await isAvailable()) throw new SyncStoreUnavailableError();
-      return db.transaction(async (transaction) => {
-        await transaction.execute(sql`select set_config('app.user_id', ${identity.userId}, true)`);
-        await transaction.execute(sql`select set_config('app.sharing_enabled', 'true', true)`);
-        if (searchBackend === "lakebase") {
-          await transaction.execute(sql`select set_config('lakebase_bm25.prefilter', 'on', true)`);
-        } else if (searchBackend === "postgres" && embeddingConfig) {
-          await transaction.execute(sql`select set_config('hnsw.iterative_scan', 'strict_order', true)`);
-        }
-        return action(createIdentityStore(
-          transaction,
-          postgresSchema,
-          identity,
-          searchBackend,
-          embeddingConfig,
-          encryption,
-        ));
-      });
+      let changed = false;
+      // Drizzle acquires the connection and starts BEGIN before invoking this callback.
+      const connected = beginSyncTiming("connectionAndBegin");
+      const result = await db.transaction(async (transaction) => {
+        connected();
+        const processed = beginSyncTiming("transaction");
+        try {
+          await transaction.execute(sql`select set_config('app.user_id', ${identity.userId}, true)`);
+          await transaction.execute(sql`select set_config('app.sharing_enabled', 'true', true)`);
+          if (searchBackend === "lakebase") {
+            await transaction.execute(sql`select set_config('lakebase_bm25.prefilter', 'on', true)`);
+          } else if (searchBackend === "postgres" && embeddingConfig) {
+            await transaction.execute(sql`select set_config('hnsw.iterative_scan', 'strict_order', true)`);
+          }
+          return await action(createIdentityStore(
+            transaction,
+            postgresSchema,
+            identity,
+            searchBackend,
+            embeddingConfig,
+            encryption,
+            () => { changed = true; },
+          ));
+        } finally { processed(); }
+      }).finally(connected);
+      if (changed) committed?.();
+      return result;
     },
   };
 }
@@ -120,6 +134,7 @@ export function createSqliteMeetingSyncStore(
   db: SQLiteDatabase,
   embeddingConfig?: AppConfig["searchEmbedding"],
   encryption?: AppConfig["encryption"],
+  committed?: () => void,
 ): MeetingSyncStore {
   const storageDeletes = createStorageDeleteStore(
     db as unknown as PostgresDatabase,
@@ -130,16 +145,22 @@ export function createSqliteMeetingSyncStore(
     isAvailable: () => Promise.resolve(true),
     ...storageDeletes,
     ...createHistoryMaintenanceStore(db as unknown as PostgresDatabase, sqliteSchema as unknown as SyncSchema, false, encryption),
-    withIdentity: (identity, action) => Promise.resolve(db.transaction(async (transaction) => {
-      return action(createIdentityStore(
-        transaction as unknown as PostgresDatabase,
-        sqliteSchema as unknown as SyncSchema,
-        identity,
-        "sqlite",
-        embeddingConfig,
-        encryption,
-      ));
-    })),
+    async withIdentity(identity, action) {
+      let changed = false;
+      const result = await db.transaction(async (transaction) => {
+        return action(createIdentityStore(
+          transaction as unknown as PostgresDatabase,
+          sqliteSchema as unknown as SyncSchema,
+          identity,
+          "sqlite",
+          embeddingConfig,
+          encryption,
+          () => { changed = true; },
+        ));
+      });
+      if (changed) committed?.();
+      return result;
+    },
   };
 }
 
@@ -218,7 +239,7 @@ function createHistoryMaintenanceStore(db: PostgresDatabase, schema: SyncSchema,
     async purgeDeletedMeetings(workspaceId: string, now: Date): Promise<number> {
       return db.transaction(async (tx) => {
         if (isPostgres) {
-          await tx.execute(sql`select pg_advisory_xact_lock(hashtextextended(${`workspace:${workspaceId}`}, 0))`);
+          await createSyncLocks(tx, true).workspace(workspaceId, "exclusive");
           await tx.execute(sql`select set_config('app.maintenance', 'meeting-retention', true), set_config('app.maintenance_workspace_id', ${workspaceId}, true)`);
         }
         const [workspace] = await tx.select({ days: schema.syncedWorkspace.meetingDeletionGraceDays }).from(schema.syncedWorkspace)
@@ -249,7 +270,7 @@ function createHistoryMaintenanceStore(db: PostgresDatabase, schema: SyncSchema,
     async expireRecordingUploads(workspaceId: string, before: Date) {
       await db.transaction(async (tx) => {
         if (isPostgres) {
-          await tx.execute(sql`select pg_advisory_xact_lock(hashtextextended(${`workspace:${workspaceId}`}, 0))`);
+          await createSyncLocks(tx, true).workspace(workspaceId, "exclusive");
           await tx.execute(sql`select set_config('app.maintenance', 'storage', true), set_config('app.maintenance_workspace_id', ${workspaceId}, true)`);
         }
         await expireRecordingStaging(tx, schema, isPostgres, workspaceId, before);
@@ -263,7 +284,7 @@ function createHistoryMaintenanceStore(db: PostgresDatabase, schema: SyncSchema,
     async pruneHistoryBatch(target: SyncHistoryTarget) {
       return db.transaction(async (transaction) => {
         if (isPostgres) {
-          await transaction.execute(sql`select pg_advisory_xact_lock(hashtextextended(${`workspace:${target.workspaceId}`}, 0))`);
+          await createSyncLocks(transaction, true).workspace(target.workspaceId, "exclusive");
           await transaction.execute(sql`select set_config('app.maintenance', 'retention', true)`);
         }
         const statePredicate = and(
@@ -415,6 +436,10 @@ async function roleSupportsRls(db: PostgresDatabase): Promise<boolean> {
       "app.workspace_transfers",
       "app.meetings",
       "app.meeting_events",
+      "app.documents",
+      "app.document_updates",
+      "app.document_recoveries",
+      "app.document_presence",
       "app.transcripts",
       "app.transcript_segments",
       "app.transcript_patch_chunks",
@@ -480,6 +505,7 @@ function createIdentityStore(
   searchBackend: SyncSearchBackend,
   embeddingConfig?: AppConfig["searchEmbedding"],
   encryption?: AppConfig["encryption"],
+  changed?: () => void,
 ): IdentitySyncStore {
   const userPrincipalId = identity.userId;
   let searchSettings: Promise<SearchSettings> | undefined;
@@ -521,7 +547,7 @@ function createIdentityStore(
     return columns;
   }
   const workspaceHasResources = (workspace: AnyColumn) => or(
-    ...[schema.syncedProject, schema.syncedMeeting, schema.syncedFile].map((table) =>
+    ...[schema.syncedProject, schema.syncedMeeting, schema.syncedFile, schema.document].map((table) =>
       exists(db.select({ value: sql`1` }).from(table).where(eq(table.workspaceId, workspace)))),
   )!;
 
@@ -539,12 +565,10 @@ function createIdentityStore(
     }
   }
 
-  async function lockWorkspace(workspaceId: string, checkTransfers = true): Promise<void> {
-    if (searchBackend !== "sqlite") {
-      // ponytail: serialize authorization-changing transactions; partition this lock if write throughput requires it.
-      await db.execute(sql`select pg_advisory_xact_lock(75047176522050)`);
-      await db.execute(sql`select pg_advisory_xact_lock(hashtextextended(${`workspace:${workspaceId}`}, 0))`);
-    }
+  const locks = createSyncLocks(db, searchBackend !== "sqlite");
+  async function lockWorkspace(workspaceId: string, checkTransfers = true, mode: "lifecycle" | "domain" | "document" | "authorization" = "lifecycle"): Promise<void> {
+    await locks.workspace(workspaceId, mode === "lifecycle" || mode === "authorization" ? "exclusive" : "shared", mode === "authorization" ? "exclusive" : "shared");
+    if (mode === "domain") await locks.domain(workspaceId);
     if (checkTransfers && identity.syncClient && !identity.syncClient.workspaceTransfers) {
       const [transfer] = await db.select({ id: schema.workspaceTransfer.id }).from(schema.workspaceTransfer).where(and(or(
         eq(schema.workspaceTransfer.sourceWorkspaceId, workspaceId), eq(schema.workspaceTransfer.destinationWorkspaceId, workspaceId),
@@ -584,6 +608,7 @@ function createIdentityStore(
   async function transferWorkspace(request: WorkspaceTransferRequest): Promise<WorkspaceTransferRecord> {
     const { sourceWorkspaceId, destinationWorkspaceId } = request;
     if (sourceWorkspaceId === destinationWorkspaceId) throw new SyncTransactionError(400, "same_workspace");
+    await locks.authorization();
     // Serialize reused keys even when the second request names different Workspaces.
     if (searchBackend !== "sqlite") {
       await db.execute(sql`select pg_advisory_xact_lock(hashtextextended(${`transfer:${userPrincipalId}:${request.idempotencyKey}`}, 0))`);
@@ -645,6 +670,8 @@ function createIdentityStore(
       summaryRevision: schema.syncedMeeting.summaryRevision, transcriptRevision: schema.syncedMeeting.transcriptRevision,
     }).from(schema.syncedMeeting).where(eq(schema.syncedMeeting.workspaceId, sourceWorkspaceId));
     const files = await db.select({ id: schema.syncedFile.fileId, revision: schema.syncedFile.revision }).from(schema.syncedFile).where(eq(schema.syncedFile.workspaceId, sourceWorkspaceId));
+    const standaloneDocuments = await db.select({ id: schema.document.id }).from(schema.document)
+      .where(and(eq(schema.document.workspaceId, sourceWorkspaceId), isNull(schema.document.meetingId)));
     const movedChanges: Pick<SyncChangeRecord, "entity" | "entityId" | "action" | "revision">[] = [
       ...projects.filter((project) => project.workspaceId === sourceWorkspaceId).map((project) => ({ entity: "project" as const, entityId: project.projectId, action: "upsert" as const, revision: project.revision })),
       ...meetings.flatMap((meeting) => [
@@ -666,7 +693,7 @@ function createIdentityStore(
     }
     for (const table of [schema.syncedProject, schema.syncedMeeting, schema.syncedFile,
       schema.meetingAttachment, schema.meetingEvent, schema.transcriptPatchChunk, schema.searchDocument,
-      schema.searchIndexJob, schema.imageAnalysisJob, schema.summaryJob]) {
+      schema.searchIndexJob, schema.imageAnalysisJob, schema.summaryJob, schema.document, schema.documentUpdate, schema.documentRecovery, schema.documentPresence]) {
       await db.update(table).set({ workspaceId: destinationWorkspaceId }).where(eq(table.workspaceId, sourceWorkspaceId));
     }
     for (const meeting of meetings) await enqueueMemoryMeeting(sourceWorkspaceId, meeting.id);
@@ -676,7 +703,7 @@ function createIdentityStore(
       id, ownerUserId: userPrincipalId, idempotencyKey: request.idempotencyKey, requestHash: request.requestHash,
       sourceWorkspaceId, destinationWorkspaceId,
       manifest: { projects: projects.filter((project) => project.workspaceId === sourceWorkspaceId).map((project) => project.projectId),
-        meetings: meetings.map((meeting) => meeting.id), files: files.map((file) => file.id) },
+        meetings: meetings.map((meeting) => meeting.id), files: files.map((file) => file.id), documents: standaloneDocuments.map((document) => document.id) },
     }).returning();
     if (!result) throw new SyncTransactionError(500, "transfer_not_recorded");
     for (const workspace of workspaces) {
@@ -697,23 +724,26 @@ function createIdentityStore(
       eq(table.ownerUserId, userPrincipalId), readable(table.sourceWorkspaceId), readable(table.destinationWorkspaceId),
     )).orderBy(asc(table.sequence));
     const relevant = history.filter((transfer) => transfer.sourceWorkspaceId === workspaceId || transfer.destinationWorkspaceId === workspaceId);
-    if (!relevant.length) return { workspaces: [], items: [] };
-    const ids = { projects: new Set<string>(), meetings: new Set<string>(), files: new Set<string>() };
-    for (const transfer of relevant) for (const kind of ["projects", "meetings", "files"] as const) {
-      for (const id of transfer.manifest[kind]) ids[kind].add(id);
+    if (!relevant.length) return { workspaces: [], items: [], documents: [] };
+    const ids = { projects: new Set<string>(), meetings: new Set<string>(), files: new Set<string>(), documents: new Set<string>() };
+    for (const transfer of relevant) for (const kind of ["projects", "meetings", "files", "documents"] as const) {
+      for (const id of transfer.manifest[kind] ?? []) ids[kind].add(id);
     }
     const destinations = new Map<string, string>();
     const items: WorkspaceRelocations["items"] = [];
+    const documents: WorkspaceRelocations["documents"] = [];
     for (const [kind, entity, content, key] of [
       ["projects", "project", schema.syncedProject, schema.syncedProject.projectId],
       ["meetings", "meeting", schema.syncedMeeting, schema.syncedMeeting.meetingId],
       ["files", "file", schema.syncedFile, schema.syncedFile.fileId],
+      ["documents", "document", schema.document, schema.document.id],
     ] as const) {
       for (const batch of batches([...ids[kind]], 100)) {
         const rows = await db.select({ id: key, workspaceId: content.workspaceId }).from(content).where(and(inArray(key, batch), readable(content.workspaceId)));
         for (const row of rows) {
-          destinations.set(row.id, row.workspaceId);
-          items.push({ entity, ...row });
+          destinations.set(`${kind}/${row.id}`, row.workspaceId);
+          if (entity === "document") documents.push(row);
+          else items.push({ entity, ...row });
         }
       }
     }
@@ -723,8 +753,9 @@ function createIdentityStore(
       eq(table.ownerUserId, userPrincipalId), readable(table.sourceWorkspaceId), readable(table.destinationWorkspaceId),
     )).orderBy(asc(table.sequence));
     const present = new Set(items.map((item) => item.id));
-    for (const transfer of latestHistory) for (const kind of ["projects", "meetings", "files"] as const) {
-      for (const id of transfer.manifest[kind]) if (ids[kind].has(id) && !present.has(id)) destinations.set(id, transfer.destinationWorkspaceId);
+    const presentDocuments = new Set(documents.map((item) => item.id));
+    for (const transfer of latestHistory) for (const kind of ["projects", "meetings", "files", "documents"] as const) {
+      for (const id of transfer.manifest[kind] ?? []) if (ids[kind].has(id) && !(kind === "documents" ? presentDocuments : present).has(id)) destinations.set(`${kind}/${id}`, transfer.destinationWorkspaceId);
     }
     const workspaces: WorkspaceRelocations["workspaces"] = [];
     for (const id of new Set(destinations.values())) {
@@ -736,7 +767,7 @@ function createIdentityStore(
       if (!workspace) throw new SyncTransactionError(403, "transfer_access_required");
       workspaces.push(workspace);
     }
-    return { workspaces, items };
+    return { workspaces, items, documents };
   }
 
   async function projectViews(workspaceId: string): Promise<SyncProjectView[]> {
@@ -1273,6 +1304,7 @@ function createIdentityStore(
       target: [schema.syncWorkspaceState.workspaceId],
       set: { latestSequence: cursor },
     });
+    changed?.();
     return cursor;
   }
 
@@ -1434,7 +1466,9 @@ function createIdentityStore(
   }
 
   async function resolveTransaction(transaction: SyncTransaction): Promise<SyncTransactionResponse | null> {
-    await lockWorkspace(transaction.workspaceId);
+    const changesAuthorization = transaction.operations.some((operation) => operation.entity === "workspace");
+    const changesParents = transaction.operations.some((operation) => operation.entity === "meeting" || operation.entity === "project");
+    await lockWorkspace(transaction.workspaceId, true, changesAuthorization ? "authorization" : changesParents ? "lifecycle" : "domain");
     if (searchBackend !== "sqlite") {
       await db.execute(sql`select pg_advisory_xact_lock(hashtextextended(${`transaction:${transaction.id}`}, 0))`);
     }
@@ -1488,6 +1522,7 @@ function createIdentityStore(
     const files = await db.select({ id: schema.syncedFile.fileId }).from(schema.syncedFile).where(eq(schema.syncedFile.workspaceId, workspaceId));
     if (files.length) await db.insert(schema.storageDeleteJob).values(files.map(({ id }) => ({ storageKey: fileStorageKey(id) }))).onConflictDoNothing();
     if (preservePermissions) {
+      await db.delete(schema.document).where(eq(schema.document.workspaceId, workspaceId));
       await db.delete(schema.meetingAttachment).where(eq(schema.meetingAttachment.workspaceId, workspaceId));
       await db.delete(schema.syncedFile).where(eq(schema.syncedFile.workspaceId, workspaceId));
       await redactMeetingEvents(workspaceId);
@@ -1525,7 +1560,7 @@ function createIdentityStore(
   }
 
   async function forceDeleteWorkspace(organizationId: string, transaction: SyncTransaction, revision: number, changeCursor: string) {
-    await lockWorkspace(transaction.workspaceId);
+    await lockWorkspace(transaction.workspaceId, true, "authorization");
     await governance(organizationId);
     const previous = await resolveTransaction(transaction);
     if (previous) return previous;
@@ -1823,6 +1858,8 @@ function createIdentityStore(
           await assertRevision(transaction, "meeting", operation.entityId, operation.baseRevision);
           await db.update(schema.syncedMeeting).set({ deletedAt: now, revision: sql`${schema.syncedMeeting.revision} + 1`, updatedAt: now })
             .where(writableMeeting(transaction.workspaceId, operation.entityId));
+          await db.update(schema.document).set({ generation: uuidV7() }).where(and(eq(schema.document.workspaceId, transaction.workspaceId), eq(schema.document.meetingId, operation.entityId)));
+          await db.delete(schema.documentPresence).where(inArray(schema.documentPresence.documentId, db.select({ id: schema.document.id }).from(schema.document).where(and(eq(schema.document.workspaceId, transaction.workspaceId), eq(schema.document.meetingId, operation.entityId)))));
           await insertMeetingEvent({ id: operation.id, workspaceId: transaction.workspaceId, meetingId: operation.entityId, kind: "meeting_deleted", occurredAt: now, receivedAt: now });
           // Cancel leases from every requester so restoring does not revive work started before deletion.
           if (searchBackend !== "sqlite") await db.execute(sql`select set_config('app.maintenance', 'meeting-retention', true), set_config('app.maintenance_workspace_id', ${transaction.workspaceId}, true)`);
@@ -2212,7 +2249,7 @@ function createIdentityStore(
   }
 
   async function completeImageAnalysis(input: ImageAnalysisInput, transaction: SyncTransaction): Promise<boolean> {
-    await lockWorkspace(input.workspaceId);
+    await lockWorkspace(input.workspaceId, true, "domain");
     const claimQuery = db.select({ id: schema.imageAnalysisJob.fileId }).from(schema.imageAnalysisJob)
       .where(imageClaimKey(input));
     const [claim] = searchBackend === "sqlite" ? await claimQuery : await claimQuery.for("update");
@@ -2241,7 +2278,7 @@ function createIdentityStore(
     through: number,
     limit: number,
   ): Promise<SyncChangeRecord[]> {
-    await lockWorkspace(workspaceId);
+    await lockWorkspace(workspaceId, true, "domain");
     await assertCursorAvailable(workspaceId, after);
     const [workspace] = await db.select({ id: schema.syncedWorkspace.workspaceId }).from(schema.syncedWorkspace)
       .where(and(readable(schema.syncedWorkspace.workspaceId), eq(schema.syncedWorkspace.workspaceId, workspaceId))).limit(1);
@@ -2418,6 +2455,7 @@ function createIdentityStore(
   }
 
   return {
+    ...createDocumentStore(db, schema, identity, content, (id) => lockWorkspace(id, true, "document"), { read: readable, write: writeAccess }, locks),
     workspaceTransferAudience,
     transferWorkspace,
     getWorkspaceRelocations,
@@ -2481,7 +2519,7 @@ function createIdentityStore(
       await db.update(jobs).set({ status: "succeeded", claimedAt: null, leaseExpiresAt: null, lastErrorCode: null }).where(filter);
       return true;
     },
-    lockWorkspace,
+    lockWorkspace: (workspaceId, options) => lockWorkspace(workspaceId, true, options?.authorization ? "authorization" : "lifecycle"),
     loadImageAnalysis,
     listUninformativeScreenshots,
     completeImageAnalysis,
@@ -2501,7 +2539,7 @@ function createIdentityStore(
     latestChangeSequence,
     ensureUploadTarget,
     async putTranscriptChunk(workspaceId, meetingId, patchId, chunkIndex, contentHash, segments, deletions) {
-      await lockWorkspace(workspaceId);
+      await lockWorkspace(workspaceId, true, "domain");
       if (!await ensureUploadTarget(workspaceId, meetingId)) return false;
       await db.delete(schema.transcriptPatchChunk).where(and(
         eq(schema.transcriptPatchChunk.workspaceId, workspaceId),
@@ -2550,7 +2588,7 @@ function createIdentityStore(
       return file ?? null;
     },
     async reserveRecording(workspaceId, meetingId, sessionId, source) {
-      await lockWorkspace(workspaceId);
+      await lockWorkspace(workspaceId, true, "domain");
       if (!await ensureUploadTarget(workspaceId, meetingId)) throw new SyncTransactionError(404, "meeting_not_found");
       const [session] = await db.select().from(schema.recordingSession).where(and(
         eq(schema.recordingSession.workspaceId, workspaceId), eq(schema.recordingSession.meetingId, meetingId),
@@ -2596,7 +2634,7 @@ function createIdentityStore(
         eq(schema.syncedRecording.sessionId, sessionId), writeAccess(schema.syncedMeeting.workspaceId),
       )).limit(1);
       if (!initial) return null;
-      await lockWorkspace(initial.workspaceId);
+      await lockWorkspace(initial.workspaceId, true, "domain");
       const [record] = await selectRecordings().where(eq(schema.syncedRecording.sessionId, sessionId)).limit(1);
       const audio = record?.audio[source];
       if (!record || audio?.generation !== generation || !await ensureUploadTarget(record.workspaceId, record.meetingId)) return null;
@@ -2634,12 +2672,12 @@ function createIdentityStore(
       )).orderBy(asc(schema.syncedRecording.number)).limit(limit);
     },
     async expireRecordingUploads(workspaceId, before) {
-      await lockWorkspace(workspaceId);
+      await lockWorkspace(workspaceId, true, "domain");
       if (!await db.select({ id: schema.syncedWorkspace.workspaceId }).from(schema.syncedWorkspace).where(writableWorkspace(workspaceId)).limit(1).then((rows) => rows.length)) return;
       await expireRecordingStaging(db, schema, searchBackend !== "sqlite", workspaceId, before);
     },
     async reserveFile(input) {
-      await lockWorkspace(input.workspaceId);
+      await lockWorkspace(input.workspaceId, true, "domain");
       const [workspace] = await db.select({ id: schema.syncedWorkspace.workspaceId }).from(schema.syncedWorkspace)
         .where(writableWorkspace(input.workspaceId)).limit(1);
       if (!workspace) return null;
@@ -2660,7 +2698,7 @@ function createIdentityStore(
       return file ?? null;
     },
     async expireFileUploads(workspaceId, before) {
-      await lockWorkspace(workspaceId);
+      await lockWorkspace(workspaceId, true, "domain");
       const files = await db.select({ id: schema.syncedFile.fileId }).from(schema.syncedFile).where(and(
         eq(schema.syncedFile.workspaceId, workspaceId), eq(schema.syncedFile.active, false), lt(schema.syncedFile.updatedAt, before), writeAccess(schema.syncedFile.workspaceId),
       )).limit(25);
@@ -3031,7 +3069,7 @@ function createIdentityStore(
       });
     },
     async putPermission(workspaceId, principalType, principalId, role) {
-      await lockWorkspace(workspaceId);
+      await lockWorkspace(workspaceId, true, "authorization");
       const [workspace] = await db.select({ id: schema.syncedWorkspace.workspaceId }).from(schema.syncedWorkspace)
         .innerJoin(schema.organization, eq(schema.organization.id, schema.syncedWorkspace.organizationId))
         .where(and(adminWorkspace(workspaceId), isNull(schema.syncedWorkspace.personalUserId), isNull(schema.syncedWorkspace.deletingAt))).limit(1);
@@ -3045,7 +3083,7 @@ function createIdentityStore(
       return true;
     },
     async deletePermission(workspaceId, principalType, principalId) {
-      await lockWorkspace(workspaceId);
+      await lockWorkspace(workspaceId, true, "authorization");
       const [workspace] = await db.select({ id: schema.syncedWorkspace.workspaceId }).from(schema.syncedWorkspace)
         .innerJoin(schema.organization, eq(schema.organization.id, schema.syncedWorkspace.organizationId))
         .where(and(adminWorkspace(workspaceId), isNull(schema.syncedWorkspace.personalUserId))).limit(1);

@@ -283,30 +283,29 @@ struct ControlPanelView: View {
     }
 
     private var notesTabContent: some View {
-        GeometryReader { proxy in
-            VStack(alignment: .leading, spacing: 0) {
-                ZStack(alignment: .topLeading) {
-                    TextEditor(text: $viewModel.noteText)
-                        .font(.body)
-                        .focused($isNotesFieldFocused)
-                        .scrollContentBackground(.hidden)
-                        .frame(height: notesEditorHeight(for: proxy.size.height))
-                        .padding(NotesEditorLayout.editorPadding)
-                        .simultaneousGesture(
-                            TapGesture().onEnded {
-                                didTapInsideNotesField = true
-                            }
-                        )
-
-                    if viewModel.noteText.isEmpty {
-                        Text(L10n.notesPlaceholder)
-                            .font(.body)
-                            .foregroundStyle(DahliaDesign.optionalTextColor)
-                            .padding(NotesEditorLayout.placeholderPadding)
-                            .allowsHitTesting(false)
+        Group {
+            if let dbQueue = viewModel.documentDatabaseQueue {
+                let documentID = viewModel.currentMeetingId ?? viewModel.draftMeeting?.id
+                DocumentEditorView(
+                    dbQueue: dbQueue,
+                    meetingID: viewModel.currentMeetingId,
+                    orphan: sidebarViewModel.currentWorkspace.flatMap { workspace in
+                        documentID.map { id in
+                            .init(
+                                workspaceID: workspace.id,
+                                meetingID: id,
+                                name: viewModel.draftMeeting?.title ?? "Notes",
+                                connectionID: workspace.accountConnectionId
+                            )
+                        }
+                    },
+                    editable: sidebarViewModel.canEditCurrentWorkspace,
+                    resolveMeeting: {
+                        guard viewModel.currentMeetingId == documentID || viewModel.draftMeeting?.id == documentID else { return nil }
+                        return viewModel.materializeDraftMeeting()
                     }
-                }
-                Spacer(minLength: 0)
+                )
+                .id(viewModel.currentMeetingId ?? viewModel.draftMeeting?.id)
             }
         }
         .padding(DahliaDesign.tabContentInset)

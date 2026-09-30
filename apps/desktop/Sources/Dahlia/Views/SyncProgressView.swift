@@ -5,6 +5,7 @@ import SwiftUI
 enum SyncRecoveryAction: Hashable {
     case retryDiscovery(UUID)
     case retryPull(workspaceId: UUID, connectionId: UUID)
+    case retrySnapshot(workspaceId: UUID, connectionId: UUID)
     case reauthenticate(UUID)
     case retryAuthorization(UUID)
     case acceptServer(workspaceId: UUID, lastTransactionId: UUID, hasConfirmedWorkspace: Bool)
@@ -171,6 +172,8 @@ struct SyncProgressView: View {
                     try await controller.retryDiscovery(connectionID: connectionId)
                 case let .retryPull(workspaceId, connectionId):
                     try await controller.retryPull(workspaceID: workspaceId, connectionID: connectionId)
+                case let .retrySnapshot(workspaceId, connectionId):
+                    try await controller.retrySnapshot(workspaceID: workspaceId, connectionID: connectionId)
                 case let .reauthenticate(connectionId):
                     guard let task = controller.startReauthentication(connectionID: connectionId) else {
                         throw SyncRecoveryError.accountBusy
@@ -306,6 +309,22 @@ private struct SyncIssueView: View {
                 LabeledContent(L10n.syncHTTPStatus, value: "HTTP \(status)")
             }
             LabeledContent(L10n.syncErrorCode, value: issue.code).textSelection(.enabled)
+            if let diagnostic = issue.diagnostic { Text(diagnostic).textSelection(.enabled) }
+            if issue.code == "invalid_sync_payload" {
+                Text(L10n.syncPayloadGuidance).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+            }
+            Button(L10n.syncCopyDiagnostics) {
+                let version = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "development"
+                let details = [
+                    "Dahlia " + version,
+                    issue.code,
+                    issue.status.map { "HTTP \($0)" },
+                    issue.diagnostic,
+                    issue.target?.displayName,
+                ].compactMap(\.self).joined(separator: "\n")
+                NSPasteboard.general.clearContents()
+                NSPasteboard.general.setString(details, forType: .string)
+            }.buttonStyle(.borderless)
             if let target = issue.target {
                 LabeledContent(L10n.syncTargetRecord, value: target.displayName).textSelection(.enabled)
             }
@@ -324,66 +343,48 @@ private struct SyncRecoveryButtons: View {
     let onDestructive: (SyncRecoveryAction, String, SyncDiscardImpact) -> Void
 
     var body: some View {
-        HStack(spacing: 6) {
-            if issue.status == 401 {
-                actionButton(L10n.reauthenticate, "person.crop.circle.badge.exclamation", .reauthenticate(connectionId))
-            } else if issue.status == 403 {
-                serverButton
-                switch issue.source {
-                case .discovery:
-                    actionButton(L10n.syncRetryAfterPermission, "arrow.clockwise", .retryDiscovery(connectionId))
-                case .pull:
-                    if let workspace {
-                        actionButton(
-                            L10n.syncRetryAfterPermission,
-                            "arrow.clockwise",
-                            .retryPull(workspaceId: workspace.id, connectionId: connectionId)
-                        )
-                    }
-                case .queue:
-                    actionButton(L10n.syncRetryAfterPermission, "arrow.clockwise", .retryAuthorization(connectionId))
-                }
-            } else {
-                switch issue.source {
-                case .discovery:
-                    actionButton(L10n.retry, "arrow.clockwise", .retryDiscovery(connectionId))
-                    serverButton
-                case .pull:
-                    if let workspace {
-                        actionButton(
-                            L10n.retry,
-                            "arrow.clockwise",
-                            .retryPull(workspaceId: workspace.id, connectionId: connectionId)
-                        )
-                    }
-                    serverButton
-                case .queue(.authorization):
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 6) {
+                if issue.status == 401 {
                     actionButton(L10n.reauthenticate, "person.crop.circle.badge.exclamation", .reauthenticate(connectionId))
-                case .queue(.conflict):
-                    if let workspace, let impact = workspace.discardImpact {
-                        destructiveButton(
-                            L10n.useServerVersion,
-                            "icloud.and.arrow.down",
-                            .acceptServer(
-                                workspaceId: workspace.id,
-                                lastTransactionId: impact.lastTransactionId,
-                                hasConfirmedWorkspace: impact.hasConfirmedWorkspace
-                            ),
-                            workspace,
-                            impact
-                        )
+                } else if issue.status == 403 {
+                    serverButton
+                    switch issue.source {
+                    case .discovery:
+                        actionButton(L10n.syncRetryAfterPermission, "arrow.clockwise", .retryDiscovery(connectionId))
+                    case .pull:
+                        if let workspace {
+                            actionButton(
+                                L10n.syncRetryAfterPermission,
+                                "arrow.clockwise",
+                                .retryPull(workspaceId: workspace.id, connectionId: connectionId)
+                            )
+                        }
+                    case .queue:
+                        actionButton(L10n.syncRetryAfterPermission, "arrow.clockwise", .retryAuthorization(connectionId))
                     }
-                    if let workspace, workspace.allowsCanonicalEdits {
-                        actionButton(L10n.reapplyLocalVersion, "arrow.up.circle", .reapplyLocal(workspace.id))
-                    }
-                case .queue(.validation):
-                    if let workspace {
-                        actionButton(L10n.retry, "arrow.clockwise", .retryValidation(workspace.id))
-                        if let impact = workspace.discardImpact {
+                } else {
+                    switch issue.source {
+                    case .discovery:
+                        actionButton(L10n.retry, "arrow.clockwise", .retryDiscovery(connectionId))
+                        serverButton
+                    case .pull:
+                        if let workspace {
+                            actionButton(
+                                L10n.retry,
+                                "arrow.clockwise",
+                                .retryPull(workspaceId: workspace.id, connectionId: connectionId)
+                            )
+                        }
+                        serverButton
+                    case .queue(.authorization):
+                        actionButton(L10n.reauthenticate, "person.crop.circle.badge.exclamation", .reauthenticate(connectionId))
+                    case .queue(.conflict):
+                        if let workspace, let impact = workspace.discardImpact {
                             destructiveButton(
-                                L10n.syncDiscardFollowing,
-                                "trash",
-                                .discardValidation(
+                                L10n.useServerVersion,
+                                "icloud.and.arrow.down",
+                                .acceptServer(
                                     workspaceId: workspace.id,
                                     lastTransactionId: impact.lastTransactionId,
                                     hasConfirmedWorkspace: impact.hasConfirmedWorkspace
@@ -392,8 +393,35 @@ private struct SyncRecoveryButtons: View {
                                 impact
                             )
                         }
+                        if let workspace, workspace.allowsCanonicalEdits {
+                            actionButton(L10n.reapplyLocalVersion, "arrow.up.circle", .reapplyLocal(workspace.id))
+                        }
+                    case .queue(.validation):
+                        if let workspace {
+                            actionButton(L10n.retry, "arrow.clockwise", .retryValidation(workspace.id))
+                            if let impact = workspace.discardImpact {
+                                destructiveButton(
+                                    L10n.syncDiscardFollowing,
+                                    "trash",
+                                    .discardValidation(
+                                        workspaceId: workspace.id,
+                                        lastTransactionId: impact.lastTransactionId,
+                                        hasConfirmedWorkspace: impact.hasConfirmedWorkspace
+                                    ),
+                                    workspace,
+                                    impact
+                                )
+                            }
+                        }
                     }
                 }
+            }
+            if let workspace, issue.source == .pull, issue.code == "invalid_sync_payload" {
+                actionButton(
+                    L10n.syncFetchSnapshot,
+                    "arrow.down.circle",
+                    .retrySnapshot(workspaceId: workspace.id, connectionId: connectionId)
+                )
             }
         }
         .controlSize(.small)

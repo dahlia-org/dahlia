@@ -38,6 +38,7 @@ extension MeetingContentProvider {
                 guard let source = try await dbQueue.read({ try TransferSource.read(workspaceId: workspaceId, in: $0) }),
                       source.source.connectionId == connectionId else { throw TextContentError.changed }
                 sources[workspaceId] = source
+                try await DocumentSyncService.shared(dbQueue: dbQueue, api: client).synchronizeWorkspace(workspaceID: workspaceId)
                 for (table, entities) in [("meetings", [TextContentEntity.summary, .transcript]), ("files", [.file])] {
                     var cursor: UUID?
                     while true {

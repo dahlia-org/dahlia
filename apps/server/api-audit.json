@@ -756,8 +756,9 @@
       "path": "/api/v1/workspaces/{workspaceId}/relocations",
       "classification": "maintained",
       "previous": "/api/v1/workspaces/{workspaceId}/relocations",
-      "reason": "Resolve moved resources to currently accessible Workspaces",
+      "reason": "Resolve moved resources and independent documents to currently accessible Workspaces",
       "consumers": [
+        "apps/desktop/Sources/Dahlia/Services/DocumentSyncService.swift",
         "apps/desktop/Sources/Dahlia/Services/SyncWorker.swift"
       ]
     },
@@ -1364,6 +1365,137 @@
       "reason": "Standard generated pages with complete current canonical provenance validation; regeneration is admin-only",
       "consumers": [
         "apps/server/src/client/KnowledgePages.tsx"
+      ]
+    },
+    {
+      "operationId": "getDocument",
+      "method": "GET",
+      "path": "/api/v1/workspaces/{workspaceId}/documents/{documentId}",
+      "classification": "modified",
+      "previous": "new public contract",
+      "reason": "Read the canonical document without creating it",
+      "consumers": [
+        "apps/server/src/client/Documents.tsx",
+        "apps/desktop/Sources/Dahlia/Services/DocumentSyncService.swift"
+      ]
+    },
+    {
+      "operationId": "listDocuments",
+      "method": "GET",
+      "path": "/api/v1/workspaces/{workspaceId}/documents",
+      "classification": "modified",
+      "previous": "new public contract",
+      "reason": "List document revisions independently of domain sync",
+      "consumers": [
+        "apps/server/src/client/Documents.tsx",
+        "apps/desktop/Sources/Dahlia/Services/DocumentSyncService.swift"
+      ]
+    },
+    {
+      "operationId": "initializeDocument",
+      "method": "POST",
+      "path": "/api/v1/workspaces/{workspaceId}/documents/{documentId}",
+      "classification": "modified",
+      "previous": "new public contract",
+      "reason": "Initialize on first edit; explicit legacy import only into an unedited document",
+      "consumers": [
+        "apps/server/src/client/Documents.tsx",
+        "apps/desktop/Sources/Dahlia/Services/DocumentSyncService.swift"
+      ]
+    },
+    {
+      "operationId": "exchangeDocument",
+      "method": "POST",
+      "path": "/api/v1/workspaces/{workspaceId}/documents/{documentId}/sync",
+      "classification": "modified",
+      "previous": "new public contract",
+      "reason": "Merge Yjs updates despite pending local edits; replay is idempotent",
+      "consumers": [
+        "apps/server/src/client/Documents.tsx",
+        "apps/desktop/Sources/Dahlia/Services/DocumentSyncService.swift"
+      ]
+    },
+    {
+      "operationId": "listDocumentRecoveries",
+      "method": "GET",
+      "path": "/api/v1/workspaces/{workspaceId}/documents/{documentId}/recoveries",
+      "classification": "modified",
+      "previous": "new public contract",
+      "reason": "Read preserved deleted blocks",
+      "consumers": [
+        "apps/server/src/client/Documents.tsx",
+        "apps/desktop/Sources/Dahlia/Services/DocumentSyncService.swift"
+      ]
+    },
+    {
+      "operationId": "saveDocumentRecovery",
+      "method": "POST",
+      "path": "/api/v1/workspaces/{workspaceId}/documents/{documentId}/recoveries",
+      "classification": "modified",
+      "previous": "new public contract",
+      "reason": "Preserve shared content lost to concurrent deletion",
+      "consumers": [
+        "apps/server/src/client/Documents.tsx",
+        "apps/desktop/Sources/Dahlia/Services/DocumentSyncService.swift"
+      ]
+    },
+    {
+      "operationId": "getDocumentPresence",
+      "method": "GET",
+      "path": "/api/v1/workspaces/{workspaceId}/documents/{documentId}/presence",
+      "classification": "modified",
+      "previous": "new public contract",
+      "reason": "List current editors",
+      "consumers": [
+        "apps/server/src/client/Documents.tsx",
+        "apps/desktop/Sources/Dahlia/Services/DocumentSyncService.swift"
+      ]
+    },
+    {
+      "operationId": "updateDocumentPresence",
+      "method": "POST",
+      "path": "/api/v1/workspaces/{workspaceId}/documents/{documentId}/presence",
+      "classification": "modified",
+      "previous": "new public contract",
+      "reason": "Renew an editing session for fifteen seconds",
+      "consumers": [
+        "apps/server/src/client/Documents.tsx",
+        "apps/desktop/Sources/Dahlia/Services/DocumentSyncService.swift"
+      ]
+    },
+    {
+      "operationId": "getDocumentEvents",
+      "method": "GET",
+      "path": "/api/v1/workspaces/{workspaceId}/documents/{documentId}/events",
+      "classification": "modified",
+      "previous": "new public contract",
+      "reason": "Document revision notifications; canonical HTTP catch-up",
+      "consumers": [
+        "apps/server/src/client/Documents.tsx"
+      ]
+    },
+    {
+      "operationId": "getMeetingNotes",
+      "method": "GET",
+      "path": "/api/v1/workspaces/{workspaceId}/meetings/{meetingId}/notes",
+      "classification": "modified",
+      "previous": "new public contract",
+      "reason": "Resolve the unique meeting Notes without creating it",
+      "consumers": [
+        "apps/server/src/client/Documents.tsx",
+        "apps/desktop/Sources/Dahlia/Services/DocumentSyncService.swift"
+      ]
+    },
+    {
+      "operationId": "initializeMeetingNotes",
+      "method": "POST",
+      "path": "/api/v1/workspaces/{workspaceId}/meetings/{meetingId}/notes",
+      "classification": "modified",
+      "previous": "new public contract",
+      "reason": "Converge concurrent Notes initialization onto an independent canonical document ID",
+      "consumers": [
+        "apps/server/src/client/Documents.tsx",
+        "apps/desktop/Sources/Dahlia/Services/DocumentSyncService.swift"
       ]
     }
   ],

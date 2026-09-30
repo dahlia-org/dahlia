@@ -76,7 +76,7 @@
             )
             staleSettings.generationSettings.local.model = "new-summary-model"
 
-            _ = try await repository.adoptWorkspaceForServerSync(
+            _ = try await repository.importIntoEmptyServerWorkspace(
                 id: workspace.id,
                 connectionID: connection.id,
                 serverWorkspace: .init(

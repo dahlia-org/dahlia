@@ -228,6 +228,10 @@ enum L10n { // swiftlint:disable:this type_body_length
     static var syncCheckServer: String { String(localized: "sync.checkServer", bundle: bundle) }
     static var syncOpenServerFailed: String { String(localized: "sync.openServerFailed", bundle: bundle) }
     static var syncDiscoveryFailed: String { String(localized: "sync.discoveryFailed", bundle: bundle) }
+    static var syncPayloadGuidance: String { String(localized: "sync.payloadGuidance", bundle: bundle) }
+    static var syncSnapshotPendingChanges: String { String(localized: "sync.snapshotPendingChanges", bundle: bundle) }
+    static var syncCopyDiagnostics: String { String(localized: "sync.copyDiagnostics", bundle: bundle) }
+    static var syncFetchSnapshot: String { String(localized: "sync.fetchSnapshot", bundle: bundle) }
     static var syncPullFailed: String { String(localized: "sync.pullFailed", bundle: bundle) }
     static var syncLocalValidationFailed: String { String(localized: "sync.localValidationFailed", bundle: bundle) }
     static var syncDiscardWarning: String { String(localized: "sync.discardWarning", bundle: bundle) }
@@ -1091,6 +1095,26 @@ enum L10n { // swiftlint:disable:this type_body_length
 
     static var summary: String { String(localized: "Summary", bundle: bundle) }
     static var notes: String { String(localized: "Notes", bundle: bundle) }
+    static var documentSavedLocally: String { String(localized: "documentSavedLocally", bundle: bundle) }
+    static var documentSynced: String { String(localized: "documentSynced", bundle: bundle) }
+    static var documentPrivateRecoverySaved: String { String(localized: "document.privateRecoverySaved", bundle: .module) }
+    static var documentBold: String { String(localized: "document.bold", bundle: .module) }
+    static var documentHeading: String { String(localized: "document.heading", bundle: .module) }
+    static var documentList: String { String(localized: "document.list", bundle: .module) }
+    static var documentUndo: String { String(localized: "document.undo", bundle: .module) }
+    static var documentRedo: String { String(localized: "document.redo", bundle: .module) }
+    static var documentKeepLocal: String { String(localized: "document.keepLocal", bundle: .module) }
+    static var documentRecoveryTitle: String { String(localized: "document.recovery.title", bundle: .module) }
+    static var documentRestore: String { String(localized: "document.restore", bundle: .module) }
+    static var documentEditing: String { String(localized: "document.editing", bundle: .module) }
+    static var documentSaving: String { String(localized: "documentSaving", bundle: bundle) }
+    static var documentSyncFailed: String { String(localized: "documentSyncFailed", bundle: bundle) }
+    static var documentSaveFailed: String { String(localized: "documentSaveFailed", bundle: bundle) }
+    static var documentPrivateLegacy: String { String(localized: "documentPrivateLegacy", bundle: bundle) }
+    static var documentPublishTitle: String { String(localized: "documentPublishTitle", bundle: bundle) }
+    static var documentPublishAudience: String { String(localized: "documentPublishAudience", bundle: bundle) }
+    static var documentPublishConflict: String { String(localized: "documentPublishConflict", bundle: bundle) }
+    static var documentMigrationPrivate: String { String(localized: "documentMigrationPrivate", bundle: bundle) }
     static var notesPlaceholder: String { String(localized: "NotesPlaceholder", bundle: bundle) }
     static var screenshots: String { String(localized: "Screenshots", bundle: bundle) }
     static var transcript: String { String(localized: "Transcript", bundle: bundle) }
@@ -3264,6 +3288,25 @@ extension L10n {
         localized: "The Workspace changed during preparation. Your data is preserved. Try again.",
         bundle: bundle
     ) }
+    static func workspaceImportSameIdentity(local: String, server: String) -> String {
+        String(format: String(
+            localized: "The local Workspace %@ is the same Workspace as %@ on the Server. After reconnecting, it appears under the Server name.",
+            bundle: bundle
+        ), local, server)
+    }
+
+    static var workspaceImportReconnect: String { String(localized: "Reconnect to existing meetings", bundle: bundle) }
+    static var workspaceReconnectionAudio: String { String(localized: "Local recordings from reconnection", bundle: bundle) }
+
+    static var workspaceImportReconnectDescription: String {
+        String(
+            localized: """
+            Use the Server version. Local data missing from the Server is kept in the backup and is not uploaded. Private Notes stay on this Mac.
+            """,
+            bundle: bundle
+        )
+    }
+
     static var workspaceImportCollision: String { String(localized: "Some IDs already exist on the Server. No local data was moved.", bundle: bundle)
     }
 

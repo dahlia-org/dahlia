@@ -1,3 +1,4 @@
+import type { DocumentStore as importDocumentStore } from "../documents/store";
 import type { WorkspaceGenerationSettings } from "../workspace-generation-settings";
 import type { CalendarEventSnapshot } from "./schemas";
 import type { TranscriptVersion } from "./transcript";
@@ -228,6 +229,7 @@ export interface SyncSearchQuery {
 }
 
 export interface WorkspaceRelocations {
+  documents: { id: string; workspaceId: string }[];
   workspaces: SyncWorkspaceRecord[];
   items: { entity: "project" | "meeting" | "file"; id: string; workspaceId: string }[];
 }
@@ -247,12 +249,12 @@ export interface WorkspaceTransferRecord {
   id: string;
   sourceWorkspaceId: string;
   destinationWorkspaceId: string;
-  manifest: { projects: string[]; meetings: string[]; files: string[] };
+  manifest: { projects: string[]; meetings: string[]; files: string[]; documents?: string[] };
 }
 
 export interface GovernanceWorkspace { workspaceId: string; name: string; icon?: string | null; color?: string | null; revision: number; creatorId: string }
 
-export interface IdentitySyncStore {
+export interface IdentitySyncStore extends importDocumentStore {
   listGovernanceWorkspaces(organizationId: string, after?: string): Promise<{ items: GovernanceWorkspace[]; nextCursor: string | null }>;
   confirmWorkspaceDeletion(organizationId: string, workspaceId: string): Promise<GovernanceWorkspace & { changeCursor: string }>;
   forceDeleteWorkspace(organizationId: string, transaction: SyncTransaction, revision: number, changeCursor: string): Promise<SyncTransactionResponse>;
@@ -286,7 +288,7 @@ export interface IdentitySyncStore {
   searchTextPage(workspaceId: string, query: SyncSearchQuery, kind: "meeting" | "screenshot", offset: number, limit: number): Promise<{
     id: string; meetingId: string; snippet: string;
   }[]>;
-  lockWorkspace(workspaceId: string): Promise<void>;
+  lockWorkspace(workspaceId: string, options?: { authorization: boolean }): Promise<void>;
   commitTransaction(transaction: SyncTransaction): Promise<SyncTransactionResponse>;
   resolveTransaction(transaction: SyncTransaction): Promise<SyncTransactionResponse | null>;
   assertCursorAvailable(workspaceId: string, after: number): Promise<void>;

@@ -1,3 +1,4 @@
+import { PostgresSyncEvents } from "../sync/events-node";
 import { ChatMemoryStore } from "../agent/context-store";
 import { rotateWorkspaceKeys } from "../encryption/rotation";
 import { createSummaryJobStore, type SummaryJobStore } from "../summary/store";
@@ -42,6 +43,7 @@ export function createNodeApplicationStore(
 ): NodeApplicationStore {
   if (config.databaseType === "postgres" || config.databaseType === "lakebase") {
     const connection = connectApplicationDatabase(config);
+    const syncEvents = new PostgresSyncEvents(connection.pool);
     return {
       ...createPostgresApplicationStore(
         connection.db,
@@ -51,6 +53,7 @@ export function createNodeApplicationStore(
         config.authProviderId,
         config.localSingleUser,
         config.autoCreateOrgOnSignup,
+        syncEvents,
       ),
       aiHistory: createAiHistoryService(connection.pool),
       chatMemoryStore: config.chatMemoryModel ? new ChatMemoryStore(connection.pool) : undefined,
@@ -62,7 +65,7 @@ export function createNodeApplicationStore(
       searchIndex: config.searchEmbedding ? createPostgresSearchIndexStore(connection.db) : undefined,
       summaryJobs: createSummaryJobStore(connection.db, true, config.encryption),
       imageAnalysis: config.captioningModel ? createImageAnalysisStore(connection.db, true, config.encryption) : undefined,
-      close: connection.close,
+      close: async () => { await syncEvents.close(); await connection.close(); },
     };
   }
   if (config.databaseType !== "sqlite" || !config.databaseUrl) {

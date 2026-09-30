@@ -3,7 +3,7 @@ import Foundation
 import GRDB
 import OpenAPIRuntime
 
-/// Durable archive preparation runs in the sync worker's idle lane, never in recording stop/drain.
+/// Durable archive preparation runs in an independent background lane, never in recording stop/drain.
 actor RecordingArchiveService {
     private let dbQueue: DatabaseQueue
     private let api: SyncAPIClient
@@ -54,7 +54,12 @@ actor RecordingArchiveService {
               AND v.syncRecoveryState IS NULL AND (v.accountConnectionId IS NULL OR v.syncRole IN ('admin', 'editor'))
               AND s.endedAt IS NOT NULL AND s.batchDiscardedAt IS NULL
               AND NOT EXISTS (SELECT 1 FROM recording_audio_segments WHERE recordingSessionId = a.sessionId AND state NOT IN ('ready', 'purgePending', 'purged'))
-              AND NOT EXISTS (SELECT 1 FROM sync_transactions WHERE workspace_id = a.workspace_id)
+              AND (a.state = 'saved' OR (a.connectionId IS NULL OR EXISTS (SELECT 1 FROM sync_entity_state e WHERE e.workspace_id = a.workspace_id
+                  AND e.entity = 'meeting' AND e.entityId = a.meetingId AND e.confirmedRevision > 0))
+              AND NOT EXISTS (SELECT 1 FROM sync_transactions t JOIN sync_operations o ON o.transactionId = t.id
+                  WHERE t.workspace_id = a.workspace_id AND (t.blockedReason = 'authorization' OR t.dependenciesReady = 0
+                    OR o.entity = 'workspace' OR o.entity = 'meeting' AND o.entityId = a.meetingId
+                    OR o.entity = 'recording' AND o.entityId = a.sessionId)))
               AND NOT EXISTS (SELECT 1 FROM recording_audio_segments WHERE state IN ('recording', 'finalizing'))
               AND NOT EXISTS (SELECT 1 FROM recording_sessions WHERE batchLastAttemptAt > COALESCE(batchCompletedAt, 0)
                               AND batchLastError IS NULL AND batchDiscardedAt IS NULL)
@@ -65,7 +70,11 @@ actor RecordingArchiveService {
             return try Target(archive: RecordingArchiveRecord(row: row), origin: origin.flatMap(URL.init(string:)))
         }
         guard let target else { return }
-        let work = Task(priority: .utility) { try await self.process(target) }
+        let work = Task(priority: .utility) {
+            try await SyncTransferSlots.shared(dbQueue: self.dbQueue).perform(background: true) {
+                try await self.process(target)
+            }
+        }
         let observation = ValueObservation.tracking { db in
             try Bool.fetchOne(db, sql: """
             SELECT EXISTS (SELECT 1 FROM recording_audio_segments WHERE state IN ('recording', 'finalizing'))
@@ -266,7 +275,9 @@ actor RecordingArchiveService {
         let commit = try SyncJSON.decoder.decode(Commit.self, from: payload)
         let prepared = try SyncJSON.decoder.decode([String: RecordingArchiveEncoder.Prepared].self, from: Data(archive.preparedJSON.utf8))
         guard let file = prepared[commit.source], file.checksum == commit.checksum else { throw RecordingAudioStoreError.integrityMismatch }
-        _ = try await upload(file, source: commit.source, archive: archive, origin: origin, connectionId: connectionId)
+        _ = try await SyncTransferSlots.shared(dbQueue: dbQueue).perform(background: true) {
+            try await self.upload(file, source: commit.source, archive: archive, origin: origin, connectionId: connectionId)
+        }
     }
 
     private static func checkTarget(_ archive: RecordingArchiveRecord, in db: Database) throws {

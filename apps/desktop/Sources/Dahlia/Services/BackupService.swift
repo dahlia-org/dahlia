@@ -516,12 +516,13 @@ actor BackupService {
                 reason: reason, workspaces: workspaces
             )
             if shouldValidateIntegrity {
-                guard let index = AppDatabaseManager.migrationIdentifiers.firstIndex(of: metadata.migrationIdentifier),
+                let schemaMigrator = AppDatabaseManager.schemaMigrator(for: metadata.migrationIdentifier)
+                guard let index = schemaMigrator.migrations.firstIndex(of: metadata.migrationIdentifier),
                       metadata.schemaVersion == AppDatabaseManager.schemaVersion(from: metadata.migrationIdentifier) else {
                     throw BackupServiceError.newerSchema(metadata.migrationIdentifier)
                 }
-                guard try AppDatabaseManager.migrator.completedMigrations(db) == Array(AppDatabaseManager.migrationIdentifiers.prefix(index + 1)),
-                      try !AppDatabaseManager.migrator.hasBeenSuperseded(db),
+                guard try schemaMigrator.completedMigrations(db) == Array(schemaMigrator.migrations.prefix(index + 1)),
+                      try !schemaMigrator.hasBeenSuperseded(db),
                       try AppDatabaseManager.hasExpectedSchema(db, upTo: metadata.migrationIdentifier, excludingTableNames: [metadataTableName]),
                       try Int.fetchOne(db, sql: "SELECT COUNT(*) FROM workspaces") == workspaces.count
                 else { throw BackupServiceError.invalidBackup }

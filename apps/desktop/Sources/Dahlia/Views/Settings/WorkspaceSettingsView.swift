@@ -10,6 +10,7 @@ struct WorkspaceSettingsView: View {
     @State private var isShowingFolderPicker = false
     @State private var isShowingCreateAlert = false
     @State private var isShowingRenameAlert = false
+    @State private var publishingDocuments: WorkspaceRecord?
     @State private var pendingRemoval: WorkspaceRecord?
     @State private var pendingRename: WorkspaceRecord?
     @State private var pendingExportFolderWorkspace: WorkspaceRecord?
@@ -24,6 +25,11 @@ struct WorkspaceSettingsView: View {
             .overlay {
                 if model.isRemovingWorkspace {
                     ProgressView(L10n.removingWorkspace)
+                }
+            }
+            .overlay {
+                if let workspace = publishingDocuments, let appDatabase {
+                    DocumentPublicationView(workspace: workspace, dbQueue: appDatabase.dbQueue) { publishingDocuments = nil }
                 }
             }
             .onChange(of: currentWorkspace?.id) {
@@ -176,6 +182,8 @@ struct WorkspaceSettingsView: View {
                     }
                 }
             }
+
+            Button(L10n.documentPrivateLegacy) { publishingDocuments = workspace }
 
             if workspace.id != currentWorkspace?.id, workspace.accountConnectionId == nil {
                 Button(L10n.removeWorkspace, systemImage: "minus", role: .destructive) {

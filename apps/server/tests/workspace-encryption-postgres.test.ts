@@ -57,7 +57,7 @@ it.runIf(process.env.TEST_ENCRYPTION_DATABASE_URL)("stores ciphertext under Post
     const wrapped = (await client.query<{ wrapped_key: string }>("SELECT wrapped_key FROM crypto.workspace_keys WHERE workspace_id = $1", [workspaceId])).rows[0]!.wrapped_key;
     const cipher = await createWorkspaceCipher(workspaceId, await unwrapDataKey(encryption, workspaceId, wrapped));
     const fields = { settings: job.settings, input: job.input, transcriptResult: job.transcriptResult,
-      inputVersion: job.inputVersion, requestHash: job.requestHash };
+      inputVersion: job.inputVersion, requestHash: job.requestHash, notesSnapshot: null };
     expect(await cipher.decrypt("jobs_summary", JSON.stringify([job.id]), "content", raw.encrypted_payload)).toEqual(fields);
     expect(raw.input_version).toBe(await cipher.hash("jobs_summary.inputVersion", job.inputVersion));
     expect(raw.request_hash).toBe(await cipher.hash("jobs_summary.requestHash", job.requestHash));

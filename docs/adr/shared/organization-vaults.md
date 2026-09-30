@@ -38,9 +38,11 @@ Local から既存 Server Workspace への merge はバックアップ・ID 衝�
 
 インポート中に会議を明示削除する場合、Project 階層の削除も含め、録音 archive が残っている間に削除 operation を記録する。不要になった録音 upload を削除 operation に置き換え、その receipt で固定したインポート完了集合を完了させる。
 
+2026-09-29: 新規 Server Workspace も独立 ID で作成後に共通取り込みを使う。作成の再試行状態と同じ ID の既存データへ明示的に再接続する経路は[Workspace 再接続](../desktop/workspace-reconnection.md)で追加した。通常の取り込みに対する衝突拒否は維持する。
+
 ## 配布境界
 
-Server は未リリース。Desktop は v0.21.0 / DB v41 までが公開済み。Server baseline と Desktop v42 以降を最終形へ再生成・統合し、v41 以前と公開済み backup の復元を維持する。未公開 DB への互換移行や旧 role alias は提供せず、稼働 DB を自動消去しない。新同期契約は capability 5 / transaction schema 3。D1 はサポート対象から外す。D1 の batch は原子的だが、アプリ側の判断を挟む対話的 transaction を Better Auth と共有できず、専用実装の保守を避けるため。Workers は PostgreSQL / Hyperdrive を維持する。
+採択時点では Server は未リリース、Desktop は v0.21.0 / DB v41 までが公開済みだったため、Server baseline と当時未配布の Desktop v42 以降を統合した。2026-09-29 時点では Desktop v1〜v46 が配布済みであり、以降は追加 migration を使う（[Documents ADR](documents.md)）。公開済み backup の復元を維持する。未公開 DB への互換移行や旧 role alias は提供せず、稼働 DB を自動消去しない。新同期契約は capability 5 / transaction schema 3。D1 はサポート対象から外す。D1 の batch は原子的だが、アプリ側の判断を挟む対話的 transaction を Better Auth と共有できず、専用実装の保守を避けるため。Workers は PostgreSQL / Hyperdrive を維持する。
 
 公開版v41の `accountConnectionId` はAI利用先の設定で、Server Workspaceの所属ではない。v42ではアカウント接続レコードとWorkspaceのAI設定を保持し、Workspaceの接続をnilにする。Organizationを推測せずLocalとして移行し、Serverへの関連付けは移行画面で明示的に行う。Server WorkspaceはorganizationId必須、Local WorkspaceはnilをSQLite CHECKでも検証する。
 

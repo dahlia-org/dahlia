@@ -6,6 +6,25 @@
 
     struct SyncRecoveryTests {
         @Test
+        func payloadDiagnosticsExcludeResponseValuesAndUnknownKeys() throws {
+            struct Key: CodingKey {
+                let stringValue: String
+                var intValue: Int? { nil }
+                init?(stringValue: String) { self.stringValue = stringValue }
+                init?(intValue _: Int) { nil }
+            }
+            let key = try #require(Key(stringValue: "private content"))
+            let error = DecodingError.dataCorrupted(.init(codingPath: [key], debugDescription: "secret response"))
+            let failure = try #require(SyncPayloadFailure(operation: "getChanges", error: error))
+            let incident = SyncIncident(stage: .pull, error: failure)
+            let json = try #require(incident.jsonString)
+            #expect(incident.code == "invalid_sync_payload")
+            #expect(incident.diagnostic == "getChanges / invalid_value / ?")
+            #expect(!json.contains("private content") && !json.contains("secret response"))
+            #expect(SyncIncident(jsonString: json)?.diagnostic == incident.diagnostic)
+        }
+
+        @Test
         func queueFailureDispositionRetriesOnlyTransportErrors() {
             #expect(SyncWorker.localQueueFailureDisposition(CancellationError()) == .ignore)
             #expect(SyncWorker.localQueueFailureDisposition(URLError(.cancelled)) == .ignore)

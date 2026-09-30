@@ -59,19 +59,16 @@ enum CloudWorkspaceDiscovery {
         }
     }
 
-    static func createWorkspace(
+    static func creationRequest(
         _ workspace: WorkspaceRecord,
-        organizationId: UUID,
-        connection: DahliaAccountConnectionRecord,
-        api: SyncAPIClient
-    ) async throws {
-        guard let origin = URL(string: connection.origin) else { throw URLError(.badURL) }
+        organizationId: UUID
+    ) throws -> Data {
         var creating = workspace
         creating.organizationId = organizationId
         let draft = try SyncInitialSnapshotBuilder.workspaceOperation(creating, action: .create)
         guard let payloadJSON = draft.payloadJSON else { throw SyncTransactionQueueError.invalidReceipt }
         let payload = try JSONSerialization.jsonObject(with: payloadJSON)
-        let data = try JSONSerialization.data(withJSONObject: [
+        return try JSONSerialization.data(withJSONObject: [
             "id": UUID.v7().uuidString.lowercased(), "workspaceId": workspace.id.uuidString.lowercased(), "schemaVersion": 3,
             "createdAt": Date.now.ISO8601Format(),
             "operations": [[
@@ -83,8 +80,16 @@ enum CloudWorkspaceDiscovery {
                 "data": payload,
             ]],
         ], options: [.sortedKeys])
-        let body = try SyncJSON.decoder.decode(Components.Schemas.Transaction.self, from: data)
-        _ = try await api.perform(origin: origin, connectionId: connection.id, preservingJSONBody: data) {
+    }
+
+    static func createWorkspace(
+        request: Data,
+        connection: DahliaAccountConnectionRecord,
+        api: SyncAPIClient
+    ) async throws {
+        guard let origin = URL(string: connection.origin) else { throw URLError(.badURL) }
+        let body = try SyncJSON.decoder.decode(Components.Schemas.Transaction.self, from: request)
+        _ = try await api.perform(origin: origin, connectionId: connection.id, preservingJSONBody: request) {
             try await $0.commitTransaction(body: .json(body)).ok
         }
     }

@@ -30,6 +30,7 @@ public enum PublicIDWire {
     }()
 
     private static let kinds: [String: TypeID.Kind] = [
+        "document": .document, "documentRecovery": .documentRecovery,
         "workspace": .workspace, "project": .project, "meeting": .meeting, "file": .file, "attachment": .attachment,
         "summary": .summary, "transcript": .transcript, "segment": .segment, "recording": .recording,
         "event": .event, "summaryJob": .summaryJob, "user": .user, "organization": .organization, "team": .team,

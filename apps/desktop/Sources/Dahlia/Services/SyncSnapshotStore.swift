@@ -82,6 +82,38 @@ final class SyncSnapshotStore: Sendable {
         }
     }
 
+    /// The caller owns the destination transaction; this temporary store is immutable after staging.
+    func forEachChange(_ body: (SyncChangePage.Change) throws -> Void) throws {
+        try database.read { db in
+            let cursor = try Data.fetchCursor(db, sql: "SELECT payload FROM changes ORDER BY phase, entityId")
+            while let payload = try cursor.next() {
+                try body(SyncJSON.decoder.decode(SyncChangePage.Change.self, from: payload))
+            }
+        }
+    }
+
+    /// Restoring a locally deleted parent also restores its canonical children and referenced files.
+    func reconciliationSubtree(_ roots: Set<SyncReconciliation.Key>) throws -> Set<SyncReconciliation.Key> {
+        guard !roots.isEmpty else { return [] }
+        var keys = roots
+        try forEachChange { change in
+            guard let record = change.record else { return }
+            let key = SyncReconciliation.Key(entity: change.entity, id: change.entityId)
+            let parents = [
+                record.parentProjectId.map { SyncReconciliation.Key(entity: .project, id: $0) },
+                record.projectId.map { SyncReconciliation.Key(entity: .project, id: $0) },
+                record.meetingId.map { SyncReconciliation.Key(entity: .meeting, id: $0) },
+                record.fileId.map { SyncReconciliation.Key(entity: .file, id: $0) },
+                [.summary, .transcript].contains(change.entity) ? SyncReconciliation.Key(entity: .meeting, id: change.entityId) : nil,
+            ].compactMap(\.self)
+            if keys.contains(key) || parents.contains(where: { $0.entity == .file ? roots.contains($0) : keys.contains($0) }) {
+                keys.insert(key)
+                if let file = record.fileId { keys.insert(.init(entity: .file, id: file)) }
+            }
+        }
+        return keys
+    }
+
     func page(after: SyncChangePage.Change? = nil) async throws -> [SyncChangePage.Change] {
         try await database.read { db in
             let phase = after.map(Self.phase) ?? -1

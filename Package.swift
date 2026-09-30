@@ -117,7 +117,8 @@ let package = Package(
             exclude: [
                 "AGENTS.md",
                 "CLAUDE.md",
-            ]
+            ],
+            resources: [.copy("Fixtures")]
         ),
     ]
 )

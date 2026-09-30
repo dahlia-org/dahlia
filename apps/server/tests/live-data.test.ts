@@ -70,7 +70,8 @@ it("stops on the last page after deletions and discards aborted page responses",
   await expect(readVisiblePages("/api/meetings", 1, controller.signal)).rejects.toMatchObject({ name: "AbortError" });
 });
 
-it("invalidates on connection, reconnection and notifications without persisting a data checkpoint", () => {
+it("invalidates on connection, reconnection and notifications without persisting a data checkpoint", async () => {
+  vi.useFakeTimers();
   const browser = new EventTarget();
   vi.stubGlobal("window", browser);
   const changed = vi.fn();
@@ -79,8 +80,9 @@ it("invalidates on connection, reconnection and notifications without persisting
   browser.addEventListener(liveDataEvent, changed);
   const source = new EventTarget();
   const close = vi.fn();
-  vi.stubGlobal("EventSource", class { constructor(url: string) { expect(url).toBe("/api/v1/events"); return Object.assign(source, { close }); } });
-  const dispose = subscribeLiveUpdates();
+  vi.stubGlobal("EventSource", class { constructor(url: string) { expect(url).toContain("/api/v1/events?"); return Object.assign(source, { close }); } });
+  const dispose = subscribeLiveUpdates("user");
+  await vi.advanceTimersByTimeAsync(0);
   source.dispatchEvent(new Event("open"));
   source.dispatchEvent(new Event("invalidation"));
   source.dispatchEvent(new Event("open"));
@@ -91,6 +93,7 @@ it("invalidates on connection, reconnection and notifications without persisting
   expect(changed).toHaveBeenCalledTimes(3);
   dispose();
   expect(close).toHaveBeenCalledOnce();
+  vi.useRealTimers();
 });
 
 it("distinguishes revoked/deleted data from transient refresh failures", () => {

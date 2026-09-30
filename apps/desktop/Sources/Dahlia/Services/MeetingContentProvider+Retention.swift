@@ -61,10 +61,10 @@ extension MeetingContentProvider {
 
     static func usedBytes(dbQueue: DatabaseQueue) async throws -> Int {
         try await dbQueue.read { db in
-            try Int.fetchOne(db, sql: """
+            try DocumentRetention.usedBytes(in: db) + (Int.fetchOne(db, sql: """
             SELECT coalesce(sum(c.byteCount), 0) FROM sync_content_state c JOIN workspaces v ON v.id = c.workspace_id
             WHERE v.accountConnectionId IS NOT NULL
-            """) ?? 0
+            """) ?? 0)
         }
     }
 
@@ -74,13 +74,26 @@ extension MeetingContentProvider {
         let candidates = try await dbQueue.read { db in
             try Row.fetchAll(
                 db,
-                sql: "SELECT entity, entityId FROM sync_content_state WHERE complete = 1 AND byteCount > 0 AND verifiedHash IS NOT NULL ORDER BY lastAccessedAt, entityId"
+                sql: """
+                SELECT entity, entityId, lastAccessedAt FROM sync_content_state WHERE complete = 1 AND byteCount > 0 AND verifiedHash IS NOT NULL
+                UNION ALL SELECT 'document', id, lastAccessedAt FROM documents WHERE resident = 1 AND generation IS NOT NULL
+                ORDER BY lastAccessedAt, entityId
+                """
             )
             .map { ($0["entity"] as String, $0["entityId"] as UUID) }
         }
         for (raw, id) in candidates {
             guard used > capacity * 4 / 5 else { break }
             try Task.checkCancellation()
+            if raw == "document" {
+                let protected = Set(retainedWorkspaces[ObjectIdentifier(dbQueue), default: [:]].keys)
+                let active = await DocumentEditorModel.activeMeetingIDs(dbQueue: dbQueue)
+                let meeting = try await dbQueue.read { try DocumentRecord.fetchOne($0, key: id)?.meetingId }
+                if meeting == nil || !active.contains(meeting!) {
+                    used -= try await dbQueue.write { try DocumentRetention.evict(documentID: id, protectedWorkspaces: protected, in: $0) }
+                }
+                continue
+            }
             guard let entity = TextContentEntity(rawValue: raw) else { continue }
             let key = Key(database: ObjectIdentifier(dbQueue), entity: entity, id: id)
             guard leases[key] == nil, requests[key] == nil else { continue }

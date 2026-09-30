@@ -54,7 +54,6 @@ import DahliaRuntimeSupport
             #expect(try await service.status(target)?.id == body.id)
             #expect(try await service.status(target, id: id)?.id == body.id)
             #expect(try await service.cancel(target, id: id)?.id == body.id)
-            #expect(try await service.retry(target, previousID: body.id, id: .v7())?.id == body.id)
         }
 
         @Test(arguments: [false, true])
@@ -87,12 +86,13 @@ import DahliaRuntimeSupport
             }
             let paths = Mutex<[String]>([])
             ImageURLProtocol.register(origin: target.origin) { request in
+                if request.url!.path.hasSuffix("/notes") { return (200, ["Content-Type": "application/json"], Data(#"{"document":null}"#.utf8)) }
                 let path = request.url!.path
                 paths.withLock { $0.append(path) }
                 if path == "/api/v1/capabilities" { return (
                     200,
                     [:],
-                    Data(#"{"meetingSummaryGeneration":{"version":2,"sources":["transcript"]}}"#.utf8)
+                    Data(#"{"documents":{"version":1},"meetingSummaryGeneration":{"version":2,"sources":["transcript"]}}"#.utf8)
                 )
                 }
                 // Synchronization is unavailable; the unsynchronized meeting's job API must never be queried.
@@ -141,6 +141,10 @@ import DahliaRuntimeSupport
                     updatedAt: .now
                 )
                 .insert(db)
+                try db.execute(
+                    sql: "INSERT INTO sync_entity_state(workspace_id, entity, entityId, confirmedRevision) VALUES (?, 'meeting', ?, 1)",
+                    arguments: [target.workspaceID, target.meetingID]
+                )
                 var info = TranscriptInfo(id: .v7(), startedAt: nil, endedAt: nil, metadata: nil)
                 info.version = 1
                 try TranscriptRecord(meetingId: target.meetingID, info: info).insert(db)
@@ -172,10 +176,11 @@ import DahliaRuntimeSupport
                 model: "gpt-5.4", detailLevel: "high", summaryLanguage: "ja"
             )
             ImageURLProtocol.register(origin: target.origin) { request in
+                if request.url!.path.hasSuffix("/notes") { return (200, ["Content-Type": "application/json"], Data(#"{"document":null}"#.utf8)) }
                 if request.url!.path == "/api/v1/capabilities" { return (
                     200,
                     [:],
-                    Data(#"{"meetingSummaryGeneration":{"version":2,"sources":["transcript"]}}"#.utf8)
+                    Data(#"{"documents":{"version":1},"meetingSummaryGeneration":{"version":2,"sources":["transcript"]}}"#.utf8)
                 )
                 }
                 if request.url!.path == "/api/v1/account/settings" {
@@ -241,7 +246,7 @@ import DahliaRuntimeSupport
             ImageURLProtocol.register(origin: origin) { request in
                 #expect(request.value(forHTTPHeaderField: "Authorization") == "Bearer test-token")
                 if request.url?.path == "/api/v1/capabilities" {
-                    return (200, [:], Data(#"{"meetingSummaryGeneration":{"version":2,"sources":["transcript"]}}"#.utf8))
+                    return (200, [:], Data(#"{"documents":{"version":1},"meetingSummaryGeneration":{"version":2,"sources":["transcript"]}}"#.utf8))
                 }
                 #expect(request.url?
                     .path ==
@@ -377,8 +382,8 @@ import DahliaRuntimeSupport
 
         @Test(arguments: [
             "{}",
-            #"{"meetingSummaryGeneration":{"version":3,"sources":["transcript","audio"]}}"#,
-            #"{"meetingSummaryGeneration":{"version":2,"sources":[]}}"#,
+            #"{"documents":{"version":1},"meetingSummaryGeneration":{"version":3,"sources":["transcript","audio"]}}"#,
+            #"{"documents":{"version":1},"meetingSummaryGeneration":{"version":2,"sources":[]}}"#,
         ])
         func missingOrUnsupportedCapabilitiesHaveNoMethods(_ json: String) async throws {
             let origin = "https://capabilities-\(UUID.v7().uuidString.lowercased()).test"
@@ -399,7 +404,7 @@ import DahliaRuntimeSupport
         func legacyCapabilityKeepsAutomaticAudioButNotManualAudio() async throws {
             let origin = "https://capabilities-\(UUID.v7().uuidString.lowercased()).test"
             ImageURLProtocol.register(origin: origin) { _ in
-                (200, [:], Data(#"{"meetingSummaryGeneration":{"version":2,"sources":["transcript","audio"]}}"#.utf8))
+                (200, [:], Data(#"{"documents":{"version":1},"meetingSummaryGeneration":{"version":2,"sources":["transcript","audio"]}}"#.utf8))
             }
             defer { ImageURLProtocol.remove(origin: origin) }
             let configuration = URLSessionConfiguration.ephemeral
@@ -421,7 +426,7 @@ import DahliaRuntimeSupport
                     200,
                     [:],
                     Data(
-                        #"{"meetingSummaryGeneration":{"version":2,"sources":["audio"],"completeRecordings":true,"retranscription":{"version":1,"provider":"gemini"}}}"#
+                        #"{"documents":{"version":1},"meetingSummaryGeneration":{"version":2,"sources":["audio"],"completeRecordings":true,"retranscription":{"version":1,"provider":"gemini"}}}"#
                             .utf8
                     )
                 )
@@ -476,6 +481,10 @@ import DahliaRuntimeSupport
                     updatedAt: .now
                 )
                 .insert(db)
+                try db.execute(
+                    sql: "INSERT INTO sync_entity_state(workspace_id, entity, entityId, confirmedRevision) VALUES (?, 'meeting', ?, 1)",
+                    arguments: [target.workspaceID, target.meetingID]
+                )
                 for id in [first, later] {
                     try RecordingSessionRecord(
                         id: id,
@@ -525,13 +534,17 @@ import DahliaRuntimeSupport
             processing.transcriptionOnly = transcriptionOnly ? true : nil
             let bodies = Mutex<[Data]>([])
             ImageURLProtocol.register(origin: target.origin) { request in
+                if request.url!.path.hasSuffix("/notes") { return (200, ["Content-Type": "application/json"], Data(#"{"document":null}"#.utf8)) }
                 if request.url!.path.hasSuffix("/capabilities") {
                     return (
                         200,
                         [:],
                         Data(
-                            #"{"meetingSummaryGeneration":{"version":2,"sources":["transcript","audio"],"completeRecordings":true,"retranscription":{"version":1,"provider":"gemini"}}}"#
-                                .utf8
+                            """
+                            {"documents":{"version":1},"meetingSummaryGeneration":{"version":2,"sources":["transcript","audio"],
+                            "completeRecordings":true,"retranscription":{"version":1,"provider":"gemini"}}}
+                            """
+                            .utf8
                         )
                     )
                 }

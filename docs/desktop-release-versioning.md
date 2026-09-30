@@ -10,7 +10,9 @@
 - Treat `CFBundleVersion` as an integer build number independent of the marketing version. Increase it from the latest published build for every newly published distribution artifact, including a replacement with the same marketing version. Local builds and unpublished attempts do not require an increment.
 - During release preparation, update `CFBundleShortVersionString` and `CFBundleVersion` together in `Resources/Info.plist`.
 
-## v0.21.0 以降の未配布 DB マイグレーション
+## v0.21.0 以降の DB マイグレーション履歴
+
+2026-09-29 確認: v0.22.0 は v45、v0.23.0〜v0.24.1 は v46 まで配布済み。**v1〜v46 の登録名・順序・処理・呼び出す helper は変更しない。** 以下の「未配布」「統合」は配布前の作業履歴であり、現在の変更許可ではない。2026-09-30 確認: 公開済み v0.24.2 は `v47_orphanedRecordingRecoveryState` まで含むため、これも変更しない。未リリースの Documents・同期は `v52_documentsAndSync` へ統合する。
 
 v0.21.0（2026-09-01、`a2bb5d3b`）の最終マイグレーションは `v41_vaultAISettingsBackfill`。
 次のリリースでは、未配布だった v42〜v54（v51 の2件を含む）を `v42_localFirstSchema` に統合した。

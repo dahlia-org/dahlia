@@ -223,6 +223,10 @@ import DahliaRuntimeSupport
             #expect(availability.transcriptCount == 1)
         }
 
+        private static let documentCapabilities = Data("""
+        {"documents":{"version":1},"meetingSummaryGeneration":{"version":2,"sources":["transcript","audio"],"completeRecordings":true}}
+        """.utf8)
+
         @Test(arguments: [SummaryGenerationSource.transcript, .audio])
         func serverRequestUsesSelectedSourceAndFallsBackOnlyForAnIncompatibleModel(
             source: SummaryGenerationSource
@@ -256,6 +260,10 @@ import DahliaRuntimeSupport
                     id: target.meetingID, workspaceId: target.workspaceID, projectId: nil,
                     name: "Test", createdAt: .now, updatedAt: .now
                 ).insert(db)
+                try db.execute(
+                    sql: "INSERT INTO sync_entity_state(workspace_id, entity, entityId, confirmedRevision) VALUES (?, 'meeting', ?, 1)",
+                    arguments: [target.workspaceID, target.meetingID]
+                )
                 var transcript = TranscriptInfo(id: .v7(), startedAt: nil, endedAt: .now, metadata: nil)
                 transcript.version = 4
                 try TranscriptRecord(meetingId: target.meetingID, info: transcript).insert(db)
@@ -288,13 +296,10 @@ import DahliaRuntimeSupport
                 outputLanguage: .ja
             )
             ImageURLProtocol.register(origin: target.origin) { request in
+                if request.url!.path.hasSuffix("/notes") { return (200, [:], Data(#"{"document":null}"#.utf8)) }
                 let path = request.url!.path
                 if path == "/api/v1/capabilities" {
-                    return (
-                        200,
-                        [:],
-                        Data(#"{"meetingSummaryGeneration":{"version":2,"sources":["transcript","audio"],"completeRecordings":true}}"#.utf8)
-                    )
+                    return (200, [:], Self.documentCapabilities)
                 }
                 if path == "/api/v1/models" {
                     return (200, [:], Data("""
@@ -530,6 +535,10 @@ import DahliaRuntimeSupport
                     id: target.meetingID, workspaceId: target.workspaceID, projectId: nil, name: "Test",
                     createdAt: .now, updatedAt: .now
                 ).insert(db)
+                try db.execute(
+                    sql: "INSERT INTO sync_entity_state(workspace_id, entity, entityId, confirmedRevision) VALUES (?, 'meeting', ?, 1)",
+                    arguments: [target.workspaceID, target.meetingID]
+                )
                 var info = TranscriptInfo(id: .v7(), startedAt: nil, endedAt: .now, metadata: nil)
                 info.version = 2
                 try TranscriptRecord(meetingId: target.meetingID, info: info).insert(db)
@@ -539,6 +548,7 @@ import DahliaRuntimeSupport
             let recordingRequests = Mutex(0)
             let audioOnly = Mutex(false)
             ImageURLProtocol.register(origin: target.origin) { request in
+                if request.url!.path.hasSuffix("/notes") { return (200, [:], Data(#"{"document":null}"#.utf8)) }
                 if request.url!.path == "/api/v1/capabilities" {
                     let requestNumber = capabilityRequests.withLock {
                         $0 += 1
@@ -547,7 +557,7 @@ import DahliaRuntimeSupport
                     if requestNumber == 1 { return (503, [:], Data()) }
                     let sources = audioOnly.withLock { $0 } ? #"["audio"]"# : #"["transcript","audio"]"#
                     return (200, [:], Data("""
-                    {"meetingSummaryGeneration":{"version":2,"sources":\(sources),"completeRecordings":true}}
+                    {"documents":{"version":1},"meetingSummaryGeneration":{"version":2,"sources":\(sources),"completeRecordings":true}}
                     """.utf8))
                 }
                 if request.url!.path.hasSuffix("/recordings") {

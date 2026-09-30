@@ -171,8 +171,8 @@
             #expect(try await queue.read { try Int.fetchOne($0, sql: "SELECT count(*) FROM sync_operations") } == 0)
             try await queue.write { db in
                 try db.execute(sql: """
-                CREATE TRIGGER reject_adoption BEFORE UPDATE OF accountConnectionId ON workspaces
-                WHEN NEW.accountConnectionId IS NOT NULL BEGIN SELECT RAISE(ABORT, 'injected adoption failure'); END
+                CREATE TRIGGER reject_adoption BEFORE UPDATE OF workspace_id ON meetings
+                WHEN NEW.workspace_id != OLD.workspace_id BEGIN SELECT RAISE(ABORT, 'injected adoption failure'); END
                 """)
             }
             let repository = MeetingRepository(dbQueue: queue)
@@ -180,7 +180,7 @@
                 try WorkspaceTransferFence.create(workspaceIDs: [fixture.workspace.id], in: $0)
             }
             await #expect(throws: (any Error).self) {
-                try await repository.adoptWorkspaceForServerSync(
+                try await repository.importIntoEmptyServerWorkspace(
                     id: fixture.workspace.id,
                     connectionID: fixture.connection.id,
                     serverWorkspace: .init(
@@ -193,6 +193,7 @@
                         role: "admin"
                     ),
                     transferFence: transferFence,
+                    reconnectExisting: false,
                     screenshotContent: fixture.provider
                 )
             }
@@ -202,7 +203,7 @@
                 #expect(try MeetingScreenshotRecord.fetchOne(db, key: fixture.image.id)?.localReference == fixture.source.jsonString())
             }
             try await queue.write { try $0.execute(sql: "DROP TRIGGER reject_adoption") }
-            _ = try await repository.adoptWorkspaceForServerSync(
+            _ = try await repository.importIntoEmptyServerWorkspace(
                 id: fixture.workspace.id,
                 connectionID: fixture.connection.id,
                 serverWorkspace: .init(
@@ -216,6 +217,11 @@
                 ),
                 transferFence: transferFence,
                 replaceServerImageAnalysis: true,
+                reconnectExisting: false,
+                screenshotContent: fixture.provider
+            )
+            try await SyncInitialSnapshotBuilder.enqueuePending(
+                dbQueue: queue,
                 screenshotContent: fixture.provider
             )
             let filePayload = try await queue.read { db in
@@ -230,7 +236,10 @@
             try await fixture.provider.trimFiles(dbQueue: queue, budget: 0)
             #expect(try fixture.files.read(fixture.source, variant: .original)?.data == fixture.bytes)
             #expect(try await queue.read { try MeetingScreenshotRecord.fetchOne($0, key: fixture.image.id)?.imageData } == nil)
-            try await SyncInitialSnapshotBuilder.enqueuePending(dbQueue: queue, screenshotContent: fixture.provider)
+            try await SyncInitialSnapshotBuilder.enqueuePending(
+                dbQueue: queue,
+                screenshotContent: fixture.provider
+            )
             let attachmentCount = try await queue.read { db in
                 try Int.fetchOne(db, sql: "SELECT count(*) FROM sync_operations WHERE attachmentReference IS NOT NULL AND attachmentBytes IS NULL")
             }

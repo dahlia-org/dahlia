@@ -132,6 +132,13 @@ final class AppDatabaseManager: Sendable {
     }
 
     static let migrator: DatabaseMigrator = {
+        var migrator = releasedMigrator
+        DocumentsAndSyncMigration.register(in: &migrator)
+        return migrator
+    }()
+
+    /// Registrations shipped through v0.24.2. Keep their order and implementation intact.
+    static let releasedMigrator: DatabaseMigrator = {
         var migrator = DatabaseMigrator()
 
         // リリース後は既存ユーザーデータを保持する。破壊的な自動再作成は行わない。
@@ -305,7 +312,7 @@ final class AppDatabaseManager: Sendable {
             try VaultAISettingsBackfillMigration.migrate(in: db)
         }
 
-        // v0.21.0 shipped through v41. The following changes have never been distributed.
+        // Released history: v0.21.0 through v41; v0.22.0 through v45; v0.23.0–v0.24.1 through v46.
         migrator.registerMigration("v42_localFirstSchema", foreignKeyChecks: .deferred) { db in
             try MeetingSyncMigration.migrate(in: db)
             try RetireVectorSearchMigration.migrate(in: db)
@@ -427,6 +434,10 @@ final class AppDatabaseManager: Sendable {
         try hasExpectedSchema(db, upTo: currentMigrationIdentifier, excludingTableNames: excludingTableNames)
     }
 
+    static func schemaMigrator(for identifier: String) -> DatabaseMigrator {
+        DocumentsAndSyncMigration.legacyIdentifiers.contains(identifier) ? DevelopmentSchemaHistory.migrator : migrator
+    }
+
     static func hasExpectedSchema(
         _ db: Database,
         upTo migrationIdentifier: String,
@@ -434,7 +445,7 @@ final class AppDatabaseManager: Sendable {
     ) throws -> Bool {
         let reference = try DatabaseQueue(configuration: configuration())
         defer { try? reference.close() }
-        try migrator.migrate(reference, upTo: migrationIdentifier)
+        try schemaMigrator(for: migrationIdentifier).migrate(reference, upTo: migrationIdentifier)
         let expected = try reference.read {
             try schemaSignature(in: $0, excludingTableNames: excludingTableNames)
         }

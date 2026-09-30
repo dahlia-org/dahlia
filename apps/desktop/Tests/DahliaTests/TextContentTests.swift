@@ -1205,6 +1205,32 @@
                 .read { try TextContentStore.fingerprint(entity: .transcript, id: fixture.meetingId, in: $0)?.hash } == expectedHash)
         }
 
+        @Test func meetingStartsBothTextReadsBeforeEitherCompletes() async throws {
+            let fixture = try textFixture()
+            let configuration = URLSessionConfiguration.ephemeral
+            configuration.protocolClasses = [ImageURLProtocol.self]
+            let gate = TextRequestGate()
+            let provider = MeetingContentProvider(client: SyncAPIClient(session: URLSession(configuration: configuration), tokenProvider: { _, _ in
+                await gate.wait()
+                return "test-token"
+            }))
+            ImageURLProtocol.register(origin: fixture.origin) { request in
+                if request.url!.path.contains("summary") { return (404, [:], Data()) }
+                return fixture.response(request)
+            }
+            defer { ImageURLProtocol.remove(origin: fixture.origin) }
+            let task = Task { await provider.ensureMeeting(id: fixture.meetingId, dbQueue: fixture.queue, refresh: true) }
+            let deadline = ContinuousClock.now.advanced(by: .seconds(5))
+            while await gate.count < 2, ContinuousClock.now < deadline {
+                try await Task.sleep(for: .milliseconds(5))
+            }
+            #expect(await gate.count == 2)
+            await gate.open()
+            await task.value
+            #expect(try await fixture.queue
+                .read { try TextContentStore.fingerprint(entity: .transcript, id: fixture.meetingId, in: $0)?.hash } == fixture.hash)
+        }
+
         @Test
         func concurrentReadsShareRequestsAndUseAtMostTwoSlots() async throws {
             let fixtures = try (0 ..< 3).map { _ in try textFixture() }
@@ -1274,7 +1300,8 @@
             ])
             let provider = provider(fixture) { request in
                 let path = request.url!.path
-                if path.hasSuffix("/capabilities") { return (200, [:], Data("{\"sync\":{\"version\":6}}".utf8)) }
+                if path.hasSuffix("/documents") { return (200, [:], Data(#"{"items":[],"nextCursor":null}"#.utf8)) }
+                if path.hasSuffix("/capabilities") { return (200, [:], Data("{\"documents\":{\"version\":1},\"sync\":{\"version\":7}}".utf8)) }
                 if path.hasSuffix("/changes") {
                     let count = changeRequests.withLock { $0 += 1
                         return $0
@@ -1333,7 +1360,8 @@
                 try await repository.resolveWorkspacesForSignOut(connectionID: connectionId, disposition: .moveToLocalAccount, textContent: provider)
                 #expect(changeRequests.withLock { $0 } == 4)
                 #expect(try await fixture.queue.read { try WorkspaceRecord.fetchOne($0, key: fixture.workspaceId)?.accountConnectionId } == nil)
-                #expect(try await fixture.queue.read { try WorkspaceRecord.fetchOne($0, key: fixture.workspaceId)?.generationSettings.processing.location } == .local)
+                #expect(try await fixture.queue
+                    .read { try WorkspaceRecord.fetchOne($0, key: fixture.workspaceId)?.generationSettings.processing.location } == .local)
             }
         }
 
@@ -1345,7 +1373,8 @@
             #"{"sync":{"version":3}}"#,
             #"{"sync":{"version":4}}"#,
             #"{"sync":{"version":5}}"#,
-            #"{"sync":{"version":7}}"#,
+            #"{"sync":{"version":6}}"#,
+            #"{"sync":{"version":8}}"#,
         ])
         func incompatibleServerStopsMetadataSyncWithoutDiscardingExistingText(capabilities: String?) async throws {
             let fixture = try textFixture()
@@ -1412,7 +1441,7 @@
             let provider = provider(fixture) { request in
                 calls.withLock { $0.append(request.url!.path) }
                 if request.url!.path.hasSuffix("/capabilities") {
-                    return (200, [:], Data(#"{"sync":{"version":6},"futureFeature":{"enabled":true}}"#.utf8))
+                    return (200, [:], Data(#"{"documents":{"version":1},"sync":{"version":7},"futureFeature":{"enabled":true}}"#.utf8))
                 }
                 return (200, [:], payload)
             }

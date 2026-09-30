@@ -89,6 +89,7 @@ extension MeetingRepository {
             arguments: [workspace.id]
         ).flatMap(SyncBlockedReason.init(rawValue:))
         let hasPending = try SyncTransactionQueue.hasPending(workspaceId: workspace.id, in: db)
+            || !SyncReconciliation.keys(workspaceId: workspace.id, in: db).isEmpty
         return if let blocked {
             .blocked(blocked)
         } else if workspace.syncRecoveryState == "transferBlocked" {

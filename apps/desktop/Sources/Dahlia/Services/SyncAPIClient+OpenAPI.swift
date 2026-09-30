@@ -35,6 +35,8 @@ extension SyncAPIClient {
             } catch {
                 let underlying = (error as? ClientError)?.underlyingError ?? error
                 if let failure = underlying as? SyncHTTPError, failure.status == 401, attempt == 0 { continue }
+                if let clientError = error as? ClientError,
+                   let failure = SyncPayloadFailure(operation: clientError.operationID, error: underlying) { throw failure }
                 throw underlying
             }
         }

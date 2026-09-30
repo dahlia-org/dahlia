@@ -69,11 +69,12 @@ import GRDB
                 role: "admin"
             )
 
-            _ = try await MeetingRepository(dbQueue: fixture.database.dbQueue).adoptWorkspaceForServerSync(
+            _ = try await MeetingRepository(dbQueue: fixture.database.dbQueue).importIntoEmptyServerWorkspace(
                 id: fixture.meeting.workspaceId,
                 connectionID: connection.id,
                 serverWorkspace: remote,
-                transferFence: transferFence
+                transferFence: transferFence,
+                reconnectExisting: false
             )
 
             let archive = try #require(try await fixture.database.dbQueue.read {

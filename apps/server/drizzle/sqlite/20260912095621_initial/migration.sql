@@ -251,6 +251,68 @@ CREATE TABLE `verification` (
 	`updated_at` integer DEFAULT (cast(unixepoch('subsecond') * 1000 as integer)) NOT NULL
 );
 --> statement-breakpoint
+CREATE TABLE `documents` (
+	`id` text PRIMARY KEY,
+	`workspace_id` text NOT NULL,
+	`meeting_id` text,
+	`kind` text NOT NULL,
+	`title` text DEFAULT '' NOT NULL,
+	`schema_version` integer DEFAULT 1 NOT NULL,
+	`generation` text NOT NULL,
+	`revision` integer DEFAULT 0 NOT NULL,
+	`checkpoint_revision` integer DEFAULT 0 NOT NULL,
+	`checkpoint` text NOT NULL,
+	`text` text NOT NULL,
+	`projection_revision` integer DEFAULT 0 NOT NULL,
+	`encrypted_payload` text,
+	`created_at` integer NOT NULL,
+	`updated_at` integer NOT NULL,
+	CONSTRAINT `fk_documents_workspace_id_workspaces_workspace_id_fk` FOREIGN KEY (`workspace_id`) REFERENCES `workspaces`(`workspace_id`) ON DELETE CASCADE,
+	CONSTRAINT `fk_documents_meeting_id_meetings_meeting_id_fk` FOREIGN KEY (`meeting_id`) REFERENCES `meetings`(`meeting_id`) ON DELETE CASCADE,
+	CONSTRAINT `document_parent_workspace_fk` FOREIGN KEY (`workspace_id`,`meeting_id`) REFERENCES `meetings`(`workspace_id`,`meeting_id`) ON UPDATE CASCADE ON DELETE CASCADE,
+	CONSTRAINT `document_workspace_id_unique` UNIQUE(`workspace_id`,`id`),
+	CONSTRAINT "document_kind" CHECK("kind" IN ('notes', 'summary', 'general') AND ("kind" != 'notes' OR "meeting_id" IS NOT NULL)),
+	CONSTRAINT "document_watermarks" CHECK("projection_revision" = "revision" AND "checkpoint_revision" <= "revision")
+);
+--> statement-breakpoint
+CREATE TABLE `document_presence` (
+	`id` text PRIMARY KEY,
+	`document_id` text NOT NULL,
+	`workspace_id` text NOT NULL,
+	`user_id` text NOT NULL,
+	`expires_at` integer NOT NULL,
+	CONSTRAINT `fk_document_presence_document_id_documents_id_fk` FOREIGN KEY (`document_id`) REFERENCES `documents`(`id`) ON DELETE CASCADE,
+	CONSTRAINT `fk_document_presence_workspace_id_workspaces_workspace_id_fk` FOREIGN KEY (`workspace_id`) REFERENCES `workspaces`(`workspace_id`) ON DELETE CASCADE,
+	CONSTRAINT `fk_document_presence_user_id_user_id_fk` FOREIGN KEY (`user_id`) REFERENCES `user`(`id`) ON DELETE CASCADE,
+	CONSTRAINT `documentPresence_workspace_fk` FOREIGN KEY (`workspace_id`,`document_id`) REFERENCES `documents`(`workspace_id`,`id`) ON UPDATE CASCADE ON DELETE CASCADE
+);
+--> statement-breakpoint
+CREATE TABLE `document_recoveries` (
+	`id` text PRIMARY KEY,
+	`document_id` text NOT NULL,
+	`workspace_id` text NOT NULL,
+	`blocks` text NOT NULL,
+	`reason` text NOT NULL,
+	`encrypted_payload` text,
+	`created_at` integer NOT NULL,
+	CONSTRAINT `fk_document_recoveries_document_id_documents_id_fk` FOREIGN KEY (`document_id`) REFERENCES `documents`(`id`) ON DELETE CASCADE,
+	CONSTRAINT `fk_document_recoveries_workspace_id_workspaces_workspace_id_fk` FOREIGN KEY (`workspace_id`) REFERENCES `workspaces`(`workspace_id`) ON DELETE CASCADE,
+	CONSTRAINT `documentRecovery_workspace_fk` FOREIGN KEY (`workspace_id`,`document_id`) REFERENCES `documents`(`workspace_id`,`id`) ON UPDATE CASCADE ON DELETE CASCADE
+);
+--> statement-breakpoint
+CREATE TABLE `document_updates` (
+	`document_id` text NOT NULL,
+	`workspace_id` text NOT NULL,
+	`revision` integer NOT NULL,
+	`update` text NOT NULL,
+	`encrypted_payload` text,
+	`created_at` integer NOT NULL,
+	CONSTRAINT `document_updates_pk` PRIMARY KEY(`document_id`, `revision`),
+	CONSTRAINT `fk_document_updates_document_id_documents_id_fk` FOREIGN KEY (`document_id`) REFERENCES `documents`(`id`) ON DELETE CASCADE,
+	CONSTRAINT `fk_document_updates_workspace_id_workspaces_workspace_id_fk` FOREIGN KEY (`workspace_id`) REFERENCES `workspaces`(`workspace_id`) ON DELETE CASCADE,
+	CONSTRAINT `documentUpdate_workspace_fk` FOREIGN KEY (`workspace_id`,`document_id`) REFERENCES `documents`(`workspace_id`,`id`) ON UPDATE CASCADE ON DELETE CASCADE
+);
+--> statement-breakpoint
 CREATE TABLE `jobs_image_analysis` (
 	`file_id` text PRIMARY KEY,
 	`workspace_id` text NOT NULL,
@@ -496,6 +558,7 @@ CREATE TABLE `summaries` (
 --> statement-breakpoint
 CREATE TABLE `jobs_summary` (
 	`encrypted_payload` text,
+	`notes_snapshot` text,
 	`id` text PRIMARY KEY,
 	`workspace_id` text NOT NULL,
 	`meeting_id` text NOT NULL,
@@ -729,9 +792,9 @@ CREATE TABLE `workspace_keys` (
 );
 --> statement-breakpoint
 CREATE TABLE `workspace_memory_state` (
-	`images_enabled` integer DEFAULT false NOT NULL,
 	`workspace_id` text PRIMARY KEY,
 	`enabled` integer DEFAULT false NOT NULL,
+	`images_enabled` integer DEFAULT false NOT NULL,
 	`requested_by` text NOT NULL,
 	`bank_id` text NOT NULL,
 	`generation` integer DEFAULT 1 NOT NULL,
@@ -787,6 +850,10 @@ CREATE INDEX `team_organizationId_idx` ON `team` (`organization_id`);--> stateme
 CREATE INDEX `teamMember_teamId_idx` ON `team_member` (`team_id`);--> statement-breakpoint
 CREATE INDEX `teamMember_userId_idx` ON `team_member` (`user_id`);--> statement-breakpoint
 CREATE INDEX `verification_identifier_idx` ON `verification` (`identifier`);--> statement-breakpoint
+CREATE UNIQUE INDEX `document_meeting_notes_unique` ON `documents` (`meeting_id`) WHERE "documents"."kind" = 'notes';--> statement-breakpoint
+CREATE INDEX `document_presence_document_expiry` ON `document_presence` (`document_id`,`expires_at`);--> statement-breakpoint
+CREATE INDEX `document_presence_workspace_expiry` ON `document_presence` (`workspace_id`,`expires_at`);--> statement-breakpoint
+CREATE INDEX `document_recoveries_document_cursor` ON `document_recoveries` (`document_id`,`id`);--> statement-breakpoint
 CREATE INDEX `image_analysis_job_claim_idx` ON `jobs_image_analysis` (`status`,`available_at`,`lease_expires_at`);--> statement-breakpoint
 CREATE INDEX `meeting_attachments_file_idx` ON `meeting_attachments` (`file_id`);--> statement-breakpoint
 CREATE INDEX `meeting_attachments_workspace_meeting_id_idx` ON `meeting_attachments` (`workspace_id`,`meeting_id`,`id`);--> statement-breakpoint

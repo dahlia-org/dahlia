@@ -25,12 +25,12 @@ extension SyncWorker {
         }
         try Task.checkCancellation()
         guard !fileUploadsStopped else { throw CancellationError() }
-        fileUploadCandidates = candidates
-        let ids = Set(candidates.map(\.operation.id))
-        for (id, pending) in fileUploads where !ids.contains(id) {
-            pending.task.cancel()
-            if pending.finishedAt != nil { fileUploads.removeValue(forKey: id) }
-        }
+        // Several independently claimable files can upload while domain metadata continues.
+        // Preserve in-flight candidates owned by another claim; their observations cancel
+        // them when authorization, ownership or their durable operation changes.
+        let active = fileUploadCandidates.filter { fileUploads[$0.operation.id]?.finishedAt == nil && fileUploads[$0.operation.id] != nil }
+        var seen = Set<UUID>()
+        fileUploadCandidates = (candidates + active).filter { seen.insert($0.operation.id).inserted }
         startFileUploads()
     }
 
@@ -54,7 +54,9 @@ extension SyncWorker {
             guard let running = fileUploads.values.first(where: { $0.finishedAt == nil }) else { throw CancellationError() }
             _ = await running.task.result
         }
-        guard let pending = fileUploads[id], pending.upload == upload else { throw CancellationError() }
+        guard let pending = fileUploads[id], pending.upload.operation == upload.operation,
+              pending.upload.transactionId == upload.transactionId, pending.upload.connectionId == upload.connectionId,
+              pending.upload.workspaceId == upload.workspaceId, pending.upload.origin == upload.origin else { throw CancellationError() }
         try await withTaskCancellationHandler {
             try await pending.task.value
         } onCancel: {
@@ -68,6 +70,7 @@ extension SyncWorker {
         guard !fileUploadsStopped else { return }
         for upload in fileUploadCandidates {
             guard fileUploads.values.filter({ $0.finishedAt == nil }).count < 4 else { return }
+            if !upload.foreground, fileUploads.values.filter({ $0.finishedAt == nil && !$0.upload.foreground }).count >= 3 { continue }
             let id = upload.operation.id
             guard fileUploads[id] == nil,
                   !fileUploads.values.contains(where: { $0.finishedAt == nil && $0.upload.operation.entityId == upload.operation.entityId })
@@ -75,7 +78,9 @@ extension SyncWorker {
             let task = Task {
                 defer { fileUploadFinished(id) }
                 do {
-                    try await uploadFile(upload)
+                    try await SyncTransferSlots.shared(dbQueue: dbQueue).perform(background: !upload.foreground) {
+                        try await self.uploadFile(upload)
+                    }
                 } catch {
                     if Task.isCancelled { throw CancellationError() }
                     throw error

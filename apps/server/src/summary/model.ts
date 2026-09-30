@@ -44,6 +44,7 @@ export interface SummaryJob {
   method: "transcript" | "audio"; settings: TranscriptSettings; outputLanguage: string;
   status: string; attempts: number; createdAt: Date; availableAt: Date;
   claimedAt: Date | null; leaseExpiresAt: Date | null; lastErrorCode: string | null;
+  notesSnapshot?: { documentId: string; revision: number; text: string } | null;
   input?: SummaryInput | null; stage?: SummaryStage | null;
   transcriptRevision?: number | null; transcriptResult?: SummaryTranscriptResult | null;
   summaryRevision: number; inputVersion: string; requestHash: string;

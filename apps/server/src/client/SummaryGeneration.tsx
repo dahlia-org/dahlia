@@ -1,3 +1,4 @@
+import { flushMeetingDocument } from "./Documents";
 import { apiOperations as api } from "./generated-operations";
 import type { components, operations } from "./generated-api";
 import { apiQuery } from "./live-data";
@@ -389,6 +390,7 @@ export function SummaryGenerationSurface({ meetingId, workspaceId, hasSummary = 
           preferences: { processing: { location: "remote", remote }, outputLanguage: (language || settings.outputLanguage) as WorkspaceGenerationSettings["outputLanguage"],
             summary: { style: detail ? summaryStyles[details.indexOf(detail as typeof details[number])]! : settings.summary.style } } };
       }
+      await flushMeetingDocument(workspaceId, meetingId);
       await api.startSummaryJob({ params: { path: { meetingId } }, body: requestBody.current });
       clearPendingRequest(); query.reload();
     } catch (error) {
@@ -406,6 +408,7 @@ export function SummaryGenerationSurface({ meetingId, workspaceId, hasSummary = 
     requestID.current ??= encodeId("summaryJob", uuidV7());
     try {
       const params = { path: { meetingId, jobId: job.id } };
+      if (action === "retry") await flushMeetingDocument(workspaceId, meetingId);
       if (action === "retry") await api.retrySummaryJob({ params, body: { id: requestID.current } });
       else await api.cancelSummaryJob({ params });
       clearPendingRequest(); query.reload();

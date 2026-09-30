@@ -9,6 +9,203 @@
 
     @MainActor
     struct LocalWorkspaceImportTests {
+        @Test(arguments: [false, true])
+        func reconnectsExistingMeetingsWithoutUploadingAbsentRecords(sameWorkspace: Bool) async throws {
+            let fixture = try LocalImportFixture(role: "admin")
+            defer { fixture.close() }
+            let snapshot = try await fixture.reconnection(sameWorkspace: sameWorkspace)
+            try await fixture.database.dbQueue.write { db throws in
+                let targetID = sameWorkspace ? fixture.source.id : fixture.target.id
+                _ = try fixture.commit(reconnection: snapshot, sameWorkspace: sameWorkspace, in: db)
+                #expect(try MeetingRecord.fetchOne(db, key: fixture.meeting.id)?.workspaceId == targetID)
+                #expect(try MeetingRecord.fetchOne(db, key: fixture.meeting.id)?.name == "Server meeting")
+                #expect(try WorkspaceRecord.fetchOne(db, key: targetID)?.syncPullCursor == (sameWorkspace ? "reconnected" : "complete"))
+                #expect(try WorkspaceRecord.fetchOne(db, key: targetID)?.accountConnectionId == fixture.connection.id)
+                #expect(try Int.fetchOne(db, sql: "SELECT count(*) FROM sync_operations WHERE entity IN ('project', 'meeting')") == 0)
+                #expect(try Int.fetchOne(db, sql: "SELECT count(*) FROM sync_operations") == 0)
+                #expect(try SummaryContent.fetchOne(db, key: fixture.meeting.id) == nil)
+                #expect(try TranscriptRecord.fetchOne(db, key: fixture.meeting.id) == nil)
+                #expect(try FileRecord.fetchOne(db, key: fixture.file.id) == nil)
+                #expect(try MeetingAttachmentRecord.fetchOne(db, key: fixture.attachment.id) == nil)
+                let savedSession = try #require(try RecordingSessionRecord.fetchOne(db, key: fixture.session.id))
+                let savedMeeting = try #require(try MeetingRecord.fetchOne(db, key: savedSession.meetingId))
+                #expect(savedMeeting.workspaceId == targetID)
+                #expect(try RecordingArchiveRecord.fetchOne(db, key: fixture.session.id)?.connectionId == nil)
+                #expect(try LocalWorkspaceImportRecord.fetchOne(db)?.backupPath == "/tmp/preserved-backup.dahlia")
+                #expect(try Row.fetchAll(db, sql: "PRAGMA foreign_key_check").isEmpty)
+            }
+        }
+
+        @Test(arguments: [false, true])
+        func deletedServerHierarchyIsNotRecreatedAndPrivateNotesSurvive(sameWorkspace: Bool) async throws {
+            let fixture = try LocalImportFixture(role: "admin")
+            defer { fixture.close() }
+            let snapshot = try await fixture.reconnection(sameWorkspace: sameWorkspace, emptyServer: true)
+            try await fixture.database.dbQueue.write { db in
+                try db.execute(
+                    sql: "INSERT INTO notes(meetingId, text, createdAt, updatedAt) VALUES (?, 'private note', ?, ?)",
+                    arguments: [fixture.meeting.id, Date.now, Date.now]
+                )
+                _ = try fixture.commit(reconnection: snapshot, sameWorkspace: sameWorkspace, in: db)
+                #expect(try MeetingRecord.fetchOne(db, key: fixture.meeting.id) == nil)
+                #expect(try ProjectRecord.fetchOne(db, key: fixture.root.id) == nil)
+                #expect(try ProjectRecord.fetchOne(db, key: fixture.child.id) == nil)
+                #expect(try Int.fetchOne(db, sql: "SELECT count(*) FROM sync_operations") == 0)
+                #expect(try Int.fetchOne(db, sql: "SELECT count(*) FROM sync_initial_builds") == 0)
+                #expect(try String.fetchOne(
+                    db,
+                    sql: "SELECT json_extract(payload, '$.legacy') FROM document_local_archives WHERE meetingId = ?",
+                    arguments: [fixture.meeting.id]
+                ) == "private note")
+                let archive = try #require(try RecordingArchiveRecord.fetchOne(db, key: fixture.session.id))
+                #expect(archive.connectionId == nil)
+                #expect(try WorkspaceRecord.fetchOne(db, key: archive.workspaceId)?.accountConnectionId == nil)
+                #expect(try Int.fetchOne(
+                    db,
+                    sql: "SELECT count(*) FROM recording_audio_files WHERE recordingSessionId = ?",
+                    arguments: [fixture.session.id]
+                ) == 1)
+                #expect(try Row.fetchAll(db, sql: "PRAGMA foreign_key_check").isEmpty)
+            }
+        }
+
+        @Test func reconnectsWhenTheDestinationSnapshotWasInterruptedByLocalIDs() async throws {
+            let fixture = try LocalImportFixture(role: "admin")
+            defer { fixture.close() }
+            let snapshot = try await fixture.reconnection()
+            try await fixture.database.dbQueue.write { db throws in
+                try db.execute(
+                    sql: "UPDATE workspaces SET syncPullCursor = NULL, syncRecoveryState = 'pending' WHERE id = ?",
+                    arguments: [fixture.target.id]
+                )
+                _ = try fixture.commit(reconnection: snapshot, in: db)
+                let workspace = try #require(try WorkspaceRecord.fetchOne(db, key: fixture.target.id))
+                #expect(workspace.syncRecoveryState == nil)
+                #expect(workspace.syncPullCursor == nil)
+                #expect(try MeetingRecord.fetchOne(db, key: fixture.meeting.id)?.workspaceId == fixture.target.id)
+                #expect(try !SyncTransactionQueue.hasPending(workspaceId: fixture.target.id, in: db))
+            }
+        }
+
+        @Test func reconnectionUsesServerContentWithoutRepublishingLocalChanges() async throws {
+            let fixture = try LocalImportFixture(role: "admin")
+            defer { fixture.close() }
+            let snapshot = try await fixture.reconnection(includeSummary: true)
+            try await fixture.database.dbQueue.write { db throws in
+                _ = try fixture.commit(reconnection: snapshot, in: db)
+                #expect(try SummaryContent.fetchOne(db, key: fixture.meeting.id)?.document == "Server summary")
+                #expect(try Int.fetchOne(db, sql: "SELECT count(*) FROM sync_operations WHERE entity = 'summary'") == 0)
+                #expect(try Int.fetchOne(
+                    db,
+                    sql: "SELECT confirmedRevision FROM sync_entity_state WHERE workspace_id = ? AND entity = 'summary' AND entityId = ?",
+                    arguments: [fixture.target.id, fixture.meeting.id]
+                ) == 7)
+            }
+        }
+
+        @Test func reconnectionDoesNotResurrectAServerDeletedSummary() async throws {
+            let fixture = try LocalImportFixture(role: "admin")
+            defer { fixture.close() }
+            let snapshot = try await fixture.reconnection(deletedSummary: true)
+            try await fixture.database.dbQueue.write { db throws in
+                _ = try fixture.commit(reconnection: snapshot, in: db)
+                #expect(try SummaryContent.fetchOne(db, key: fixture.meeting.id) == nil)
+                #expect(try Int.fetchOne(db, sql: "SELECT count(*) FROM sync_operations WHERE entity = 'summary'") == 0)
+                #expect(try Int.fetchOne(
+                    db,
+                    sql: "SELECT confirmedRevision FROM sync_entity_state WHERE workspace_id = ? AND entity = 'summary' AND entityId = ?",
+                    arguments: [fixture.target.id, fixture.meeting.id]
+                ) == 9)
+            }
+        }
+
+        @Test func reconnectsPartiallyUploadedAudioWithoutUploadingMissingSources() async throws {
+            let fixture = try LocalImportFixture(role: "admin")
+            defer { fixture.close() }
+            let snapshot = try await fixture.reconnection()
+            let payload = try SyncJSON.decoder.decode(SyncCanonicalPayload.self, from: JSONSerialization.data(withJSONObject: [
+                "recordingNumber": 12, "meetingId": fixture.meeting.id.uuidString, "sessionId": fixture.session.id.uuidString,
+                "startedAt": "2026-09-07T00:00:00Z", "endedAt": "2026-09-07T00:00:01Z",
+                "audio": ["system": [
+                    "contentType": "audio/mp4",
+                    "size": 128,
+                    "checksum": "SHA-256:" + String(repeating: "0", count: 64),
+                    "contentUrl": "/api/v1/audio/system",
+                    "manifest": ["sampleRate": 16000, "frameCount": 16000, "ranges": []],
+                ]],
+            ]))
+            try await snapshot.store.merge([.init(
+                sequence: 0,
+                entity: .recording,
+                entityId: fixture.session.id,
+                action: "upsert",
+                revision: 3,
+                record: payload
+            )])
+            let complete = try await WorkspaceReconnectionSnapshot(
+                store: snapshot.store,
+                cursor: snapshot.cursor,
+                ids: snapshot.store.resetSnapshot(),
+                projects: snapshot.projects
+            )
+            try await fixture.database.dbQueue.write { db throws in
+                _ = try fixture.commit(reconnection: complete, in: db)
+                let archive = try #require(try RecordingArchiveRecord.fetchOne(db, key: fixture.session.id))
+                #expect(archive.number == 12)
+                #expect(try archive.audio["system"] != nil)
+                #expect(archive.state == "remote")
+                let payloads = try String.fetchAll(db, sql: "SELECT payloadJSON FROM sync_operations WHERE entity = 'recording'")
+                #expect(payloads.isEmpty)
+                #expect(archive.preparedJSON != "{}")
+                #expect(try Int.fetchOne(
+                    db,
+                    sql: "SELECT count(*) FROM recording_audio_files WHERE recordingSessionId = ?",
+                    arguments: [fixture.session.id]
+                ) == 1)
+            }
+        }
+
+        @Test func reconnectionRejectsRecordsOwnedByAnotherLocalWorkspace() async throws {
+            let fixture = try LocalImportFixture(role: "admin")
+            defer { fixture.close() }
+            let snapshot = try await fixture.reconnection(sameWorkspace: true, includeForeignMeeting: true)
+            await #expect(throws: LocalWorkspaceImportError.self) {
+                try await fixture.database.dbQueue.write { db in
+                    _ = try fixture.commit(reconnection: snapshot, sameWorkspace: true, in: db)
+                }
+            }
+            try await fixture.database.dbQueue.read { db throws in
+                #expect(try WorkspaceRecord.fetchOne(db, key: fixture.source.id)?.accountConnectionId == nil)
+                #expect(try MeetingRecord.fetchOne(db, key: fixture.meeting.id)?.name == fixture.meeting.name)
+                #expect(try MeetingRecord.fetchOne(db, key: fixture.existing.id)?.workspaceId == fixture.target.id)
+                #expect(try LocalWorkspaceImportRecord.fetchCount(db) == 0)
+                #expect(try WorkspaceRecord.fetchCount(db) == 2)
+                #expect(try RecordingSessionRecord.fetchOne(db, key: fixture.session.id)?.meetingId == fixture.meeting.id)
+                #expect(try Int.fetchOne(db, sql: "SELECT count(*) FROM sync_operations") == 0)
+            }
+        }
+
+        @Test func importsUnattachedPrivateDocumentsWithoutPublishingThem() async throws {
+            let fixture = try LocalImportFixture(role: "admin")
+            defer { fixture.close() }
+            let queue = fixture.database.dbQueue, id = UUID.v7()
+            try await queue.write { db in
+                try DocumentRecord(
+                    id: id, workspaceId: fixture.source.id, meetingId: nil, kind: "general", title: "Private title",
+                    checkpoint: "AAA=", text: "Retained projection", createdAt: .now, updatedAt: .now
+                ).insert(db)
+                _ = try fixture.commit(in: db)
+                let copy = try #require(try DocumentPrivateCopyRecord.fetchOne(db))
+                #expect(copy.workspaceId == fixture.target.id && copy.meetingId == nil && copy.kind == "general")
+                #expect(copy.title == "Private title" && copy.text == "Retained projection" && copy.checkpoint == "AAA=")
+                #expect(try DocumentRecord.fetchCount(db) == 0)
+                #expect(try Int.fetchOne(db, sql: "SELECT count(*) FROM sync_operations WHERE entity = 'document'") == 0)
+                try WorkspaceRecord.deleteOne(db, key: fixture.source.id)
+                #expect(try DocumentPrivateCopyRecord.fetchCount(db) == 1)
+                #expect(try Row.fetchAll(db, sql: "PRAGMA foreign_key_check").isEmpty)
+            }
+        }
+
         @Test(arguments: ["admin", "editor"])
         func importsIntoANonemptyWorkspaceAndTracksOnlyInitialWork(role: String) async throws {
             let fixture = try LocalImportFixture(role: role)
@@ -60,8 +257,10 @@
             defer { try? reopened.close() }
             #expect(try await reopened
                 .read { try Set(UUID.fetchAll($0, sql: "SELECT operationId FROM local_workspace_import_operations")) } == operationIDs)
-            while let transaction = try await SyncTransactionQueue.claim(dbQueue: reopened),
-                  transaction.operations.contains(where: { operationIDs.contains($0.id) }) {
+            while let transaction = try await SyncTransactionQueue.claim(dbQueue: reopened) {
+                // The later edit may now overtake unrelated import work. Keep that request
+                // leased to verify the fixed import can finish without its acknowledgement.
+                guard transaction.operations.contains(where: { operationIDs.contains($0.id) }) else { continue }
                 let records = try transaction.operations.map { operation in
                     let value: JSONValue? = operation.entity == .meeting
                         ? try SyncJSON.decoder.decode(
@@ -297,11 +496,14 @@
             }
         }
 
-        @Test
-        func preparesARealBackupAndImageDespiteAnUnrelatedDatabaseWrite() async throws {
+        @Test(arguments: ["newRecords", "reconnect", "sameWorkspace"])
+        func preparesARealBackupAndImageDespiteAnUnrelatedDatabaseWrite(mode: String) async throws {
+            let reconnect = mode != "newRecords"
+            let sameWorkspace = mode == "sameWorkspace"
             let fixture = try LocalImportFixture(role: "editor")
             defer { fixture.close() }
             let queue = fixture.database.dbQueue
+            let destinationId = sameWorkspace ? fixture.source.id : fixture.target.id
             let bytes = try #require(TestScreenshotImageFixture.data(using: .png))
             try await queue.write { db in
                 try db.execute(
@@ -313,7 +515,7 @@
             let files = try ScreenshotFileStore(directory: fixture.directory.appending(path: "FileStore"))
             let screenshots = ScreenshotContentProvider(cache: files)
             let workspace: [String: Any] = try [
-                "workspaceId": fixture.target.id.uuidString,
+                "workspaceId": destinationId.uuidString,
                 "organizationId": #require(fixture.target.organizationId?.uuidString),
                 "organizationName": "Organization",
                 "meetingDeletionGraceDays": 7,
@@ -326,7 +528,7 @@
             ]
             let meeting: [String: Any] = [
                 "meetingId": fixture.existing.id.uuidString,
-                "workspaceId": fixture.target.id.uuidString,
+                "workspaceId": destinationId.uuidString,
                 "name": "Existing",
                 "description": "",
                 "projectId": NSNull(),
@@ -338,22 +540,35 @@
                 "updatedAt": "2026-09-01T00:00:00Z",
             ]
             let listing = try JSONSerialization.data(withJSONObject: ["items": [workspace], "nextCursor": NSNull()])
+            var snapshotItems: [[String: Any]] = [
+                ["entity": "workspace", "id": destinationId.uuidString, "revision": 1, "record": workspace],
+            ]
+            if !sameWorkspace {
+                snapshotItems.append(["entity": "meeting", "id": fixture.existing.id.uuidString, "revision": 1, "record": meeting])
+            }
+            if reconnect {
+                var collision = meeting
+                collision["meetingId"] = fixture.meeting.id.uuidString
+                collision["name"] = "Server existing meeting"
+                snapshotItems.append(["entity": "meeting", "id": fixture.meeting.id.uuidString, "revision": 1, "record": collision])
+            }
             let snapshot = try JSONSerialization.data(withJSONObject: [
-                "items": [
-                    ["entity": "workspace", "id": fixture.target.id.uuidString, "revision": 1, "record": workspace],
-                    ["entity": "meeting", "id": fixture.existing.id.uuidString, "revision": 1, "record": meeting],
-                ],
+                "items": snapshotItems,
                 "startCursor": "complete", "nextCursor": NSNull(),
             ])
-            let destinationId = fixture.target.id
+            let connectionId = fixture.connection.id
             let unrelatedWriteCompleted = Mutex(false)
             ImageURLProtocol.register(origin: fixture.connection.origin) { request in
                 switch request.url!.lastPathComponent {
-                case "capabilities": return (200, [:], Data(#"{"sync":{"version":6}}"#.utf8))
+                case "capabilities": return (200, [:], Data(#"{"documents":{"version":1},"sync":{"version":7}}"#.utf8))
                 case "workspaces": return (200, [:], listing)
                 case "snapshot":
                     do {
                         try queue.write {
+                            try $0.execute(
+                                sql: "UPDATE dahlia_account_connections SET syncDiscoveryErrorJSON = '{}' WHERE id = ?",
+                                arguments: [connectionId]
+                            )
                             try $0.execute(
                                 sql: "UPDATE workspaces SET lastOpenedAt = lastOpenedAt WHERE id = ?",
                                 arguments: [destinationId]
@@ -373,7 +588,7 @@
             configuration.protocolClasses = [ImageURLProtocol.self]
             let api = SyncAPIClient(session: URLSession(configuration: configuration), tokenProvider: { _, _ in "test" })
             let destination = try CloudWorkspaceRecord(
-                workspaceId: fixture.target.id,
+                workspaceId: destinationId,
                 connectionId: fixture.connection.id,
                 organizationId: #require(fixture.target.organizationId),
                 name: "Existing",
@@ -388,22 +603,53 @@
                 backup: BackupService(dbQueue: queue, applicationSupportURL: fixture.directory),
                 api: api,
                 replaceServerImageAnalysis: true,
+                reconnectExisting: reconnect,
                 screenshots: screenshots
             )
+            try await SyncInitialSnapshotBuilder.enqueuePending(dbQueue: queue, screenshotContent: screenshots)
             #expect(unrelatedWriteCompleted.withLock { $0 })
             let record = try #require(try await queue.read { try LocalWorkspaceImportRecord.fetchOne($0) })
             #expect(FileManager.default.fileExists(atPath: record.backupPath))
-            #expect(try await screenshots.fileContent(id: fixture.file.id, dbQueue: queue).data == bytes)
-            #expect(try await queue.read { try MeetingRecord.fetchOne($0, key: fixture.meeting.id)?.workspaceId } == fixture.target.id)
-            let filePayload = try await queue.read { db in
-                let value = try String.fetchOne(
-                    db,
-                    sql: "SELECT payloadJSON FROM sync_operations WHERE entity = 'file' LIMIT 1"
-                )
-                let json = try #require(value)
-                return try SyncJSON.decoder.decode(FileOperationPayload.self, from: Data(json.utf8))
+            try BackupArchive.withExtracted(at: URL(filePath: record.backupPath)) { directory, _ in
+                var configuration = Configuration()
+                configuration.readonly = true
+                let backup = try DatabaseQueue(path: directory.appending(path: "database.sqlite").path, configuration: configuration)
+                defer { try? backup.close() }
+                try backup.read { db throws in
+                    #expect(try SummaryContent.fetchOne(db, key: fixture.meeting.id)?.document == "original summary")
+                    #expect(try FileRecord.fetchOne(db, key: fixture.file.id) != nil)
+                    #expect(try ProjectRecord.fetchOne(db, key: fixture.child.id) != nil)
+                }
+                #expect(try Data(contentsOf: directory.appending(path: "files/\(fixture.file.id.uuidString.lowercased())/original")) == bytes)
             }
-            #expect(filePayload.imageAnalysis == "replace")
+            if !reconnect {
+                #expect(try await screenshots.fileContent(id: fixture.file.id, dbQueue: queue).data == bytes)
+            } else {
+                #expect(try await queue.read { try FileRecord.fetchOne($0, key: fixture.file.id) } == nil)
+            }
+            #expect(try await queue.read { try MeetingRecord.fetchOne($0, key: fixture.meeting.id)?.workspaceId } == destinationId)
+            if !reconnect {
+                let filePayload = try await queue.read { db in
+                    let value = try String.fetchOne(
+                        db,
+                        sql: "SELECT payloadJSON FROM sync_operations WHERE entity = 'file' LIMIT 1"
+                    )
+                    let json = try #require(value)
+                    return try SyncJSON.decoder.decode(FileOperationPayload.self, from: Data(json.utf8))
+                }
+                #expect(filePayload.imageAnalysis == "replace")
+            }
+            if reconnect {
+                #expect(try await queue.read { try MeetingRecord.fetchOne($0, key: fixture.meeting.id)?.name } == "Server existing meeting")
+                let duplicateCreates = try await queue.read { db in
+                    try Int.fetchOne(
+                        db,
+                        sql: "SELECT count(*) FROM sync_operations WHERE entity = 'meeting' AND entityId = ?",
+                        arguments: [fixture.meeting.id]
+                    )
+                }
+                #expect(duplicateCreates == 0)
+            }
         }
 
         @Test(arguments: [false, true])
@@ -587,9 +833,68 @@
             }
         }
 
-        nonisolated func commit(collision: Bool = false, in db: Database) throws -> WorkspaceRecord {
+        func reconnection(
+            sameWorkspace: Bool = false,
+            includeSummary: Bool = false,
+            deletedSummary: Bool = false,
+            includeForeignMeeting: Bool = false,
+            emptyServer: Bool = false
+        ) async throws -> WorkspaceReconnectionSnapshot {
+            let changes = try await database.dbQueue.read { db -> [SyncChangePage.Change] in
+                var workspace = sameWorkspace ? source : target
+                workspace.organizationId = target.organizationId
+                var serverMeeting = meeting
+                serverMeeting.name = "Server meeting"
+                var drafts = try [
+                    SyncInitialSnapshotBuilder.workspaceOperation(workspace, action: .update),
+                    SyncInitialSnapshotBuilder.projectOperation(root, action: .create),
+                    SyncInitialSnapshotBuilder.projectOperation(child, action: .create),
+                    SyncInitialSnapshotBuilder.meetingOperation(serverMeeting, action: .create, in: db),
+                ]
+                if emptyServer { drafts = Array(drafts.prefix(1)) }
+                if includeForeignMeeting {
+                    try drafts.append(SyncInitialSnapshotBuilder.meetingOperation(existing, action: .create, in: db))
+                }
+                if includeSummary {
+                    try drafts.append(SyncInitialSnapshotBuilder.summaryOperation(
+                        .init(meetingId: meeting.id, title: "Server", document: "Server summary", createdAt: .now),
+                        action: .upsert
+                    ))
+                }
+                return try drafts.map { draft in
+                    var payload = try SyncJSON.decoder.decode(SyncCanonicalPayload.self, from: draft.payloadJSON!)
+                    if deletedSummary, draft.entity == .meeting {
+                        payload.hasSummary = false
+                        payload.summaryRevision = 9
+                    }
+                    return SyncChangePage.Change(
+                        sequence: 0,
+                        entity: draft.entity,
+                        entityId: draft.entityId,
+                        action: "upsert",
+                        revision: 7,
+                        record: payload
+                    )
+                }
+            }
+            let store = try SyncSnapshotStore()
+            try await store.merge(changes)
+            return try await WorkspaceReconnectionSnapshot(
+                store: store,
+                cursor: "reconnected",
+                ids: store.resetSnapshot(),
+                projects: store.projects()
+            )
+        }
+
+        nonisolated func commit(
+            collision: Bool = false,
+            reconnection: WorkspaceReconnectionSnapshot? = nil,
+            sameWorkspace: Bool = false,
+            in db: Database
+        ) throws -> WorkspaceRecord {
             let destination = CloudWorkspaceRecord(
-                workspaceId: target.id,
+                workspaceId: sameWorkspace ? source.id : target.id,
                 connectionId: connection.id,
                 organizationId: target.organizationId!,
                 name: target.name,
@@ -603,17 +908,22 @@
                 fileId: file.id,
                 contentHash: file.contentHash
             )
-            return try LocalWorkspaceImport.commit(
+            let imported = try LocalWorkspaceImport.commit(
                 sourceId: source.id,
                 destination: destination,
-                snapshot: .init(ids: [.meeting: collision ? [meeting.id, existing.id] : [existing.id]]),
+                snapshot: reconnection?.ids ?? .init(ids: [.meeting: collision ? [meeting.id, existing.id] : [existing.id]]),
                 files: [.init(
                     file: file,
                     reference: reference.jsonString()
                 )],
                 backupPath: "/tmp/preserved-backup.dahlia",
+                reconnection: reconnection,
                 in: db
             )
+            // These tests assert the completed construction phase; separate scheduler tests
+            // exercise editing and restart between individual construction commits.
+            while try SyncInitialProgress.constructNext(workspaceId: imported.id, in: db) {}
+            return imported
         }
 
         func close() { try? database.dbQueue.close()

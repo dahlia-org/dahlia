@@ -35,6 +35,7 @@ struct LocalWorkspaceImportRecord: Codable, FetchableRecord, PersistableRecord, 
     static func complete(in db: Database) throws {
         try db.execute(sql: """
         UPDATE local_workspace_imports SET completedAt = ? WHERE completedAt IS NULL
+          AND NOT EXISTS (SELECT 1 FROM sync_initial_builds b WHERE b.importId = local_workspace_imports.id)
           AND NOT EXISTS (SELECT 1 FROM local_workspace_import_operations o
               WHERE o.importId = local_workspace_imports.id AND o.completedAt IS NULL)
         """, arguments: [Date.now])

@@ -42,7 +42,8 @@ extension SyncWorker {
             case .readOnlyWorkspace: "read_only_workspace"
             }
         }
-        if error is TypeID.Failure || error is DecodingError || error is EncodingError { return "invalid_sync_payload" }
+        if error is SyncPayloadFailure || error is TypeID
+            .Failure || error is DecodingError || error is EncodingError { return "invalid_sync_payload" }
         return "local_sync_failed"
     }
 
@@ -94,9 +95,11 @@ struct SyncIncident: Codable, Equatable, Sendable {
     let status: Int?
     let code: String
     let occurredAt: Date
+    let diagnostic: String?
 
     init(stage: Stage, error: any Error, occurredAt: Date = .now) {
         self.stage = stage
+        diagnostic = (error as? SyncPayloadFailure)?.diagnostic
         if let error = error as? SyncHTTPError {
             status = error.status
             code = error.code ?? "http_\(error.status)"

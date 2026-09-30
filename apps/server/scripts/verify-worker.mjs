@@ -29,7 +29,7 @@ try {
       });
     } }],
     write: false, metafile: true, minify: true });
-  assert(!Object.keys(bundle.metafile.inputs).some((file) => /sharp|storage\/local|node-worker|node-indexer/.test(file)), 'Node-only modules leaked into workerd');
+  assert(!Object.keys(bundle.metafile.inputs).some((file) => /sharp|storage\/local|node-worker|node-indexer|sync\/events-node/.test(file)), 'Node-only modules leaked into workerd');
   const script = bundle.outputFiles[0].text;
   const started = performance.now();
   mf = new Miniflare({ modules: [{ type: 'ESModule', path: join(directory, 'worker.js'), contents: script }, ...wasmModules], modulesRoot: directory, compatibilityDate: '2026-08-08', compatibilityFlags: ['nodejs_compat'],
@@ -39,7 +39,11 @@ try {
       DAHLIA_STORAGE_BACKEND: 'r2', DAHLIA_AI_BACKEND: 'cloudflare',
       OPENAI_BASE_URL: 'https://api.cloudflare.com/client/v4/accounts/synthetic/ai/v1', OPENAI_API_KEY: 'synthetic' } });
   await mf.ready;
+  assert.deepEqual(await (await mf.dispatchFetch('http://localhost:5173/runtime/documents')).json(), { success: true });
   const startupMs = Math.round(performance.now() - started);
+  const unified = await mf.dispatchFetch('http://localhost:5173/runtime/sync-notifications');
+  assert.equal(unified.status, 200, await unified.clone().text());
+  assert.deepEqual(await unified.json(), { success: true });
   const first = await (await mf.dispatchFetch('http://localhost:5173/runtime/database')).json();
   const second = await (await mf.dispatchFetch('http://localhost:5173/runtime/database')).json();
   assert(first.pid && second.pid && first.pid !== second.pid, 'events must create independent connections');
@@ -151,5 +155,5 @@ try {
   }
   assert(completed, 'native Queue consumer did not complete');
   assert.equal(await completed.text(), 'ok');
-  console.log(JSON.stringify({ runtime: 'workerd', checks: ['configured-email-identity-and-domain-enrollment', 'native-header-user-provisioning', 'verified-google-organization-policies', 'organization-request-and-lifecycle-authorization', 'postgres-event-isolation', 'fetch-lifecycle', 'R2-audio-stream', 'Images-WebP', 'queue-handler', 'Cloudflare-and-Databricks-adapters'], bundleBytes: Buffer.byteLength(script), gzipBytes: gzipSync(script).length, startupMs }));
+  console.log(JSON.stringify({ runtime: 'workerd', checks: ['portable-documents-fixture', 'unified-sync-shared-db-fallback', 'configured-email-identity-and-domain-enrollment', 'native-header-user-provisioning', 'verified-google-organization-policies', 'organization-request-and-lifecycle-authorization', 'postgres-event-isolation', 'fetch-lifecycle', 'R2-audio-stream', 'Images-WebP', 'queue-handler', 'Cloudflare-and-Databricks-adapters'], bundleBytes: Buffer.byteLength(script), gzipBytes: gzipSync(script).length, startupMs }));
 } finally { await mf?.dispose(); await rm(directory, { recursive: true, force: true }); }

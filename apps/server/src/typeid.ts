@@ -1,4 +1,5 @@
 export const idPrefixes = {
+  document: "doc", documentRecovery: "drec",
   workspace: "ws", project: "proj", meeting: "mtg", file: "file", attachment: "att",
   summary: "sum", transcript: "transcript", segment: "seg", recording: "rec",
   event: "evt", summaryJob: "sjob", contact: "contact", topic: "topic", insight: "inst",

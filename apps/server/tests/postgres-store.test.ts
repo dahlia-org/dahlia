@@ -174,6 +174,8 @@ integration("PostgreSQL application store", () => {
       { id: crypto.randomUUID(), entity: "meeting", action: "create", entityId: meeting, baseRevision: null,
         data: meetingData(child, now, "Meeting", "") },
     ]));
+    const document = await store.sync.withIdentity(owner, (sync) => sync.initializeDocument(source, crypto.randomUUID(),
+      { meetingId: null, kind: "general", title: "Independent transfer" }));
     const request = { sourceWorkspaceId: source, destinationWorkspaceId: destination, sourceRevision: 1, destinationRevision: 1,
       audienceHash: (await store.sync.withIdentity(owner, (sync) => sync.workspaceTransferAudience(source, destination))).audienceHash,
       idempotencyKey: crypto.randomUUID(), requestHash: "first" };
@@ -185,6 +187,9 @@ integration("PostgreSQL application store", () => {
     const resolved = await store.sync.withIdentity(owner, (sync) => sync.getWorkspaceRelocations(source));
     const moved = resolved.items.find((item) => item.id === meeting)!;
     expect([destination, alternative]).toContain(moved.workspaceId);
+    expect(resolved.documents).toEqual([{ id: document.id, workspaceId: moved.workspaceId }]);
+    expect(await store.sync.withIdentity(owner, (sync) => sync.getDocument(moved.workspaceId, document.id)))
+      .toMatchObject({ id: document.id, title: "Independent transfer", meetingId: null });
     expect(await store.sync.withIdentity(owner, (sync) => sync.getMeeting(moved.workspaceId, meeting))).toMatchObject({ meetingId: meeting, projectId: child });
     expect(await store.sync.withIdentity(owner, (sync) => sync.getWorkspace(source))).toMatchObject({ hasResources: false });
     expect(await connection!.db.select().from(schema.workspaceTransfer)).toEqual([]);
@@ -236,13 +241,13 @@ integration("PostgreSQL application store", () => {
     }
   });
 
-  it("fails readiness when meeting event FORCE RLS is missing", async () => {
+  it.each(["meeting_events", "documents", "document_updates", "document_recoveries", "document_presence"])("fails readiness when %s FORCE RLS is missing", async (table) => {
     expect(await createPostgresMeetingSyncStore(connection!.db).isAvailable()).toBe(true);
     try {
-      await connection!.db.execute(sql`ALTER TABLE app.meeting_events NO FORCE ROW LEVEL SECURITY`);
+      await connection!.db.execute(sql`ALTER TABLE app.${sql.identifier(table)} NO FORCE ROW LEVEL SECURITY`);
       expect(await createPostgresMeetingSyncStore(connection!.db).isAvailable()).toBe(false);
     } finally {
-      await connection!.db.execute(sql`ALTER TABLE app.meeting_events FORCE ROW LEVEL SECURITY`);
+      await connection!.db.execute(sql`ALTER TABLE app.${sql.identifier(table)} FORCE ROW LEVEL SECURITY`);
     }
     expect(await createPostgresMeetingSyncStore(connection!.db).isAvailable()).toBe(true);
   });
@@ -282,6 +287,7 @@ integration("PostgreSQL application store", () => {
       const concurrent = await Promise.allSettled([1, 2].map(() => store.sync.withIdentity(owner, (sync) => save(sync, 1))));
       expect(concurrent.filter((result) => result.status === "fulfilled")).toHaveLength(1);
       await store.sync.withIdentity(owner, async (sync) => {
+        await sync.lockWorkspace(workspaceId);
         expect((await sync.listSummaryVersions(workspaceId, meetingId, 20)).map((row) => row.version)).toEqual([2, 1]);
         await commit(sync, workspaceId, [{ id: crypto.randomUUID(), entity: "summary", action: "delete", entityId: meetingId, baseRevision: 2, data: {} }]);
         await save(sync, 3);
@@ -313,6 +319,7 @@ integration("PostgreSQL application store", () => {
     expect((await connection!.db.select().from(schema.meetingEvent).where(eq(schema.meetingEvent.workspaceId, workspaceId)))).toEqual([]);
     expect((await connection!.db.select().from(schema.recordingSession).where(eq(schema.recordingSession.workspaceId, workspaceId)))).toEqual([]);
     await store.sync.withIdentity(identity, async (sync) => {
+      await sync.lockWorkspace(workspaceId, { authorization: true });
       await commit(sync, workspaceId, [{ id: crypto.randomUUID(), entity: "meeting_event", action: "create", entityId: crypto.randomUUID(), baseRevision: null, data: { meetingId, kind: "recording_ended", sessionId, occurredAt: new Date(now.getTime() + 60000) } }]);
       expect(await sync.getMeeting(workspaceId, meetingId)).toMatchObject({ isRecording: false });
       await resetWorkspace(sync, workspaceId);

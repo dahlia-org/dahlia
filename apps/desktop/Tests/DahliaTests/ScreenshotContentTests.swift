@@ -9,6 +9,23 @@
 
     @MainActor
     struct ScreenshotContentTests {
+        private nonisolated static func recordingBody(of request: URLRequest) -> URLRequest {
+            var recorded = request
+            if let stream = request.httpBodyStream, request.httpBody == nil {
+                stream.open()
+                defer { stream.close() }
+                var body = Data()
+                var buffer = [UInt8](repeating: 0, count: 1024)
+                while true {
+                    let count = stream.read(&buffer, maxLength: buffer.count)
+                    if count <= 0 { break }
+                    body.append(contentsOf: buffer.prefix(count))
+                }
+                recorded.httpBody = body
+            }
+            return recorded
+        }
+
         @Test(arguments: [nil, "", " \n\t"] as [String?])
         func remoteAnalysisWaitIsBoundedWithoutDiscardingText(caption: String?) {
             let pending = ScreenshotOCRState.remote(ocrText: "OCR", caption: caption, state: .ready)
@@ -95,21 +112,10 @@
             ]))
             let requests = Mutex<[URLRequest]>([])
             ImageURLProtocol.register(origin: fixture.source.origin) { request in
-                var recorded = request
-                if let stream = request.httpBodyStream, request.httpBody == nil {
-                    stream.open()
-                    defer { stream.close() }
-                    var body = Data()
-                    var buffer = [UInt8](repeating: 0, count: 1024)
-                    while true {
-                        let count = stream.read(&buffer, maxLength: buffer.count)
-                        if count <= 0 { break }
-                        body.append(contentsOf: buffer.prefix(count))
-                    }
-                    recorded.httpBody = body
-                }
+                let recorded = Self.recordingBody(of: request)
                 requests.withLock { $0.append(recorded) }
                 let path = request.url!.path
+                if path.hasSuffix("/capabilities") { return (200, [:], Data(#"{"sync":{"version":7}}"#.utf8)) }
                 if path == "/api/v1/transactions/resolve" {
                     return (200, [:], Data("{\"id\":\"\(transactionId)\",\"status\":\"unknown\"}".utf8))
                 }
@@ -254,10 +260,15 @@
             #expect(transaction.workspaceId == queued.workspaceId)
             try await missing.dbQueue.read { db throws in
                 #expect(try WorkspaceRecord.fetchOne(db, key: pending.workspaceId)?.syncConfirmedConnectionId == pending.connectionId)
-                #expect(try WorkspaceRecord.fetchOne(db, key: missing.workspaceId)?.syncConfirmedConnectionId == nil)
+                #expect(try WorkspaceRecord.fetchOne(db, key: missing.workspaceId)?.syncConfirmedConnectionId == missing.connectionId)
+                #expect(try SyncInitialProgress.active(workspaceId: missing.workspaceId, in: db))
                 #expect(try MeetingScreenshotRecord.fetchOne(db, key: missing.screenshotId)?.remoteSource == missing.source)
                 #expect(try Int
-                    .fetchOne(db, sql: "SELECT count(*) FROM sync_transactions WHERE workspace_id = ?", arguments: [missing.workspaceId]) == 0)
+                    .fetchOne(
+                        db,
+                        sql: "SELECT count(*) FROM sync_operations o JOIN sync_transactions t ON t.id = o.transactionId WHERE t.workspace_id = ? AND o.entity = 'file'",
+                        arguments: [missing.workspaceId]
+                    ) == 0)
             }
             available.withLock { $0 = true }
             try await SyncInitialSnapshotBuilder.enqueuePending(dbQueue: missing.dbQueue, screenshotContent: provider)
@@ -840,9 +851,9 @@
                         sql: "CREATE TABLE compaction_fixture(bytes BLOB); INSERT INTO compaction_fixture VALUES (zeroblob(8388608)); DELETE FROM compaction_fixture"
                     )
             }
-            let before = try #require(path.resourceValues(forKeys: [.fileSizeKey]).fileSize)
+            let before = try #require(FileManager.default.attributesOfItem(atPath: path.path)[.size] as? NSNumber).int64Value
             try await ScreenshotStorageMaintenance.compactAtStartup(dbQueue: database.dbQueue, minimumFreeBytes: 1)
-            let after = try #require(path.resourceValues(forKeys: [.fileSizeKey]).fileSize)
+            let after = try #require(FileManager.default.attributesOfItem(atPath: path.path)[.size] as? NSNumber).int64Value
             #expect(after < before)
             #expect(try await retained.storedBytes() == retained.bytes)
             #expect(try await database.dbQueue.read { try Int.fetchOne($0, sql: "PRAGMA auto_vacuum") } == 2)
@@ -897,7 +908,8 @@
     /// Canonical text responses for cached bodies and the fixtures' empty transcripts.
     private func cachedTextResponse(_ request: URLRequest, queue: DatabaseQueue) -> (Int, [String: String], Data)? {
         guard let url = request.url else { return nil }
-        if url.path.hasSuffix("/capabilities") { return (200, [:], Data("{\"sync\":{\"version\":6}}".utf8)) }
+        if url.path.hasSuffix("/documents") { return (200, [:], Data(#"{"items":[],"nextCursor":null}"#.utf8)) }
+        if url.path.hasSuffix("/capabilities") { return (200, [:], Data("{\"documents\":{\"version\":1},\"sync\":{\"version\":7}}".utf8)) }
         if url.path.hasSuffix("/changes") {
             return (
                 200,

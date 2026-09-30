@@ -1,0 +1,15 @@
+/* Shared by the Web editor and the bundled Desktop editor. Explicit rules also
+   preserve empty paragraphs and heading semantics under Tailwind's reset. */
+.dahlia-document { outline: none; min-height: 140px; line-height: 1.6; overflow-wrap: anywhere; white-space: pre-wrap; }
+.dahlia-document p { margin: 0 0 .5em; min-height: 1.6em; }
+.dahlia-document h1, .dahlia-document h2, .dahlia-document h3,
+.dahlia-document h4, .dahlia-document h5, .dahlia-document h6 { font-weight: bold; margin: 1em 0 .5em; }
+.dahlia-document h1 { font-size: 1.6em; }
+.dahlia-document h2 { font-size: 1.4em; }
+.dahlia-document h3 { font-size: 1.2em; }
+.dahlia-document h4, .dahlia-document h5, .dahlia-document h6 { font-size: 1em; }
+.dahlia-document strong { font-weight: bold; }
+.dahlia-document a { color: LinkText; text-decoration: underline; }
+.dahlia-document ul, .dahlia-document ol { padding-left: 1.5em; margin: 1em 0; }
+.dahlia-document ul { list-style-type: disc; }
+.dahlia-document ol { list-style-type: decimal; }
