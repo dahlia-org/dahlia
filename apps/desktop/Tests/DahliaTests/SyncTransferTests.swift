@@ -119,7 +119,7 @@
         }
 
         @Test(.timeLimit(.minutes(1)))
-        func continuingSyncStagesFourFilesAndKeepsCommitOrder() async throws {
+        func continuingSyncStagesEightFilesAndKeepsCommitOrder() async throws {
             let fixture = try SyncTransferFixture()
             defer { fixture.close() }
             let meeting = try await fixture.addMeeting()
@@ -148,7 +148,7 @@
             try await SyncTransactionQueue.complete(first, response: response, dbQueue: fixture.queue)
             try await fixture.drain(worker)
             await worker.stop()
-            #expect(await fixture.server.maximumUploads == 4)
+            #expect(await fixture.server.maximumUploads == 8)
             #expect(await fixture.server.commitIds == ids)
             #expect(await fixture.server.uploadCount == 12)
             #expect(await fixture.server.resolveCount == 0)
@@ -260,12 +260,12 @@
             let worker = fixture.worker()
             let first = try #require(try await SyncTransactionQueue.claim(dbQueue: fixture.queue))
             try await worker.prepareFileUploads(for: first, origin: fixture.origin)
-            for await count in fixture.server.uploadStarts where count == 4 {
+            for await count in fixture.server.uploadStarts where count == 8 {
                 break
             }
             if boundary == "stop" {
                 await worker.stop()
-                for await count in fixture.server.uploadCancellations where count == 4 {
+                for await count in fixture.server.uploadCancellations where count == 8 {
                     break
                 }
             } else {
@@ -281,13 +281,13 @@
                     default: try db.execute(sql: "UPDATE workspaces SET syncRecoveryState = 'updateRequired'")
                     }
                 }
-                for await count in fixture.server.uploadCancellations where count == 4 {
+                for await count in fixture.server.uploadCancellations where count == 8 {
                     break
                 }
                 await worker.stop()
             }
             #expect(await fixture.server.commitIds.isEmpty)
-            #expect(await fixture.server.cancelledUploads == 4)
+            #expect(await fixture.server.cancelledUploads == 8)
             if boundary != "discard" {
                 #expect(try await fixture.queue.read { try Int.fetchOne($0, sql: "SELECT count(*) FROM sync_transactions") } == 8)
             }
@@ -344,10 +344,10 @@
                 if prefetch {
                     await fixture.server.holdUploads()
                     try await worker.prepareFileUploads(for: head, origin: fixture.origin)
-                    for await count in fixture.server.uploadStarts where count == 4 {
+                    for await count in fixture.server.uploadStarts where count == 8 {
                         break
                     }
-                    #expect(await fixture.server.maximumUploads == 4)
+                    #expect(await fixture.server.maximumUploads == 8)
                     await fixture.server.releaseUploads()
                 }
                 for candidate in candidates {
@@ -360,7 +360,7 @@
             try await stage(serial, prefetch: false)
             try await stage(parallel, prefetch: true)
             #expect(await serial.server.maximumUploads == 1)
-            #expect(await parallel.server.maximumUploads == 4)
+            #expect(await parallel.server.maximumUploads == 8)
         }
 
         @Test(.timeLimit(.minutes(1)), arguments: [429, 503, 403, 409])
@@ -444,6 +444,38 @@
             #expect(candidates.filter { $0.operation.entityId == file.id }.count == 1)
             // Unrelated deletes, retries and blocked files no longer fence the whole Workspace.
             #expect(candidates.count == (["sameFile", "delete", "retry", "blocked"].contains(boundary) ? 2 : 1))
+        }
+
+        @Test(.timeLimit(.minutes(1)))
+        func waitingDemandUploadSurvivesAnotherClaimsLookahead() async throws {
+            let fixture = try SyncTransferFixture()
+            defer { fixture.close() }
+            for _ in 0 ..< 10 {
+                _ = try await fixture.addFile()
+            }
+            let ids = try await fixture.queue.read { try UUID.fetchAll($0, sql: "SELECT id FROM sync_transactions ORDER BY sequence") }
+            let worker = fixture.worker()
+            let head = try #require(try await SyncTransactionQueue.claim(dbQueue: fixture.queue))
+            await fixture.server.holdUploads()
+            try await worker.prepareFileUploads(for: head, origin: fixture.origin)
+            for await count in fixture.server.uploadStarts where count == 8 {
+                break
+            }
+            // The last transaction is outside the head's eight-transaction lookahead.
+            let last = try #require(try await SyncTransactionQueue.claim(dbQueue: fixture.queue, excluding: Set(ids[1 ..< 9])))
+            let demand = try SyncFileUpload(
+                transactionId: last.id, workspaceId: last.workspaceId, connectionId: last.connectionId,
+                origin: fixture.origin, operation: #require(last.operations.first), foreground: last.foreground
+            )
+            let staged = Task { try await worker.stageFileUpload(demand) }
+            while await worker.fileUploadCandidates.first?.operation.id != demand.operation.id {
+                await Task.yield()
+            }
+            try await worker.prepareFileUploads(for: head, origin: fixture.origin)
+            await fixture.server.releaseUploads()
+            try await staged.value
+            await worker.stop()
+            #expect(await fixture.server.uploadCount == 9)
         }
 
         @Test(.timeLimit(.minutes(1)), arguments: [false, true])

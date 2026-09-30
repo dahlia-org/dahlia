@@ -308,8 +308,8 @@ actor SyncWorker {
                     dbQueue: dbQueue,
                     recordingsOnly: false,
                     excluding: Set(transferClaims.keys),
-                    allowTransfers: transferClaims.count < 4,
-                    allowBackgroundTransfers: transferClaims.values.filter { !$0.foreground }.count < 3
+                    allowTransfers: transferClaims.count < SyncTransferSlots.permits,
+                    allowBackgroundTransfers: transferClaims.values.filter { !$0.foreground }.count < SyncTransferSlots.backgroundPermits
                 ) else {
                     try? await screenshotContent.trimFiles(dbQueue: dbQueue)
                     try? await ScreenshotStorageMaintenance.reclaimIncrementally(dbQueue: dbQueue)
@@ -412,11 +412,10 @@ actor SyncWorker {
                     origin: target, operation: operation, foreground: transaction.foreground
                 ))
             } else if stageAttachments, operation.entity == .recording, operation.action == .upsert, let payload = operation.payloadJSON {
-                try await SyncTransferSlots.shared(dbQueue: dbQueue).perform(background: !transaction.foreground) {
-                    try await self.archiveService.stage(
-                        sessionId: operation.entityId, payload: payload, origin: target, connectionId: transaction.connectionId
-                    )
-                }
+                try await archiveService.stage(
+                    sessionId: operation.entityId, payload: payload, origin: target, connectionId: transaction.connectionId,
+                    background: !transaction.foreground
+                )
             } else if operation.entity == .transcript, operation.action == .patch {
                 let payload: Data = if stageAttachments {
                     try await SyncTransferSlots.shared(dbQueue: dbQueue).perform(background: !transaction.foreground) {

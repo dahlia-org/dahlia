@@ -49,6 +49,8 @@ extension SyncWorker {
         while fileUploads[id] == nil {
             try Task.checkCancellation()
             guard !fileUploadsStopped else { throw CancellationError() }
+            // Another claim's lookahead replaces the candidate list while this demand upload waits.
+            if !fileUploadCandidates.contains(where: { $0.operation.id == id }) { fileUploadCandidates.insert(upload, at: 0) }
             startFileUploads()
             if fileUploads[id] != nil { break }
             guard let running = fileUploads.values.first(where: { $0.finishedAt == nil }) else { throw CancellationError() }
@@ -69,8 +71,9 @@ extension SyncWorker {
     private func startFileUploads() {
         guard !fileUploadsStopped else { return }
         for upload in fileUploadCandidates {
-            guard fileUploads.values.filter({ $0.finishedAt == nil }).count < 4 else { return }
-            if !upload.foreground, fileUploads.values.filter({ $0.finishedAt == nil && !$0.upload.foreground }).count >= 3 { continue }
+            guard fileUploads.values.filter({ $0.finishedAt == nil }).count < SyncTransferSlots.permits else { return }
+            if !upload.foreground,
+               fileUploads.values.filter({ $0.finishedAt == nil && !$0.upload.foreground }).count >= SyncTransferSlots.backgroundPermits { continue }
             let id = upload.operation.id
             guard fileUploads[id] == nil,
                   !fileUploads.values.contains(where: { $0.finishedAt == nil && $0.upload.operation.entityId == upload.operation.entityId })

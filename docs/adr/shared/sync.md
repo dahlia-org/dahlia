@@ -44,7 +44,7 @@ worker は録音中も push / pull できるが、transcript patch は確定済�
 
 初期 snapshot の送信順序は Workspace / Project、全会議の metadata / summary / transcript、file、添付関連付けの順とする。全画像のアップロードを待たずに会議本文を利用できる。構築済みのキューは並べ替えない。
 
-初回・継続同期の file staging は共通の SyncWorker が最大4件並行で処理する。先読みは同じ Workspace の先頭8 transaction、最大8 file operation までとし、原本の読み込みも転送枠の取得後に行う。同じ file の後続操作、未確定の Workspace 作成・reset・削除、再送確認待ち・blocked transaction を越えて staging しない。commit / receipt 適用は従来の Workspace 内順序を維持する。先読みの失敗は対象 transaction の送信時に既存の retry / block 経路へ渡し、手前の commit は妨げない。
+初回・継続同期の file staging は共通の SyncWorker が最大8件並行で処理し、録音 archive と共有する転送枠の1件を対話的な転送に残す（2026-09-30: 往復遅延の間も Server のストレージ処理枠を埋めるため4件から引き上げた）。先読みは同じ Workspace の先頭8 transaction、最大8 file operation までとし、原本の読み込みも転送枠の取得後に行う。同じ file の後続操作、未確定の Workspace 作成・reset・削除、再送確認待ち・blocked transaction を越えて staging しない。commit / receipt 適用は従来の Workspace 内順序を維持する。先読みの失敗は対象 transaction の送信時に既存の retry / block 経路へ渡し、手前の commit は妨げない。
 
 snapshot 復旧の pending / recovering はローカル送信キューの確定を待つため、既存の file staging を止めない。移管保留・更新必須・権限喪失など、送信できない状態とは区別する。
 
