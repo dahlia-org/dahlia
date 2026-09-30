@@ -108,6 +108,7 @@ describe("PostgreSQL migrations", () => {
           expect(requested.length).toBeGreaterThan(0);
           return { rows: [{ count: requested.filter((table) => protectedTables.has(table)).length }] };
         }
+        if (statement.includes("pg_policies")) return { rows: sql.includes('CREATE POLICY "summary_job_dispatch_select"') ? [{}] : [] };
         if (statement.includes("current_setting")) return { rows: [{ user_id: "", sharing_enabled: "" }] };
         return { rows: [] };
       }),

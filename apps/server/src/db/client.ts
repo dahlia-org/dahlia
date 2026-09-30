@@ -57,11 +57,12 @@ function createDatabasePool(config: AppConfig, max: number): Pool {
 
 /** Object-storage operations wait on the network, so Node admits two per core. */
 // ponytail: fixed cap bounds pooled Lakebase connections per process; make it configurable if a deployment needs more.
-export const NODE_STORAGE_OPERATION_CONCURRENCY = Math.min(16, Math.max(STORAGE_OPERATION_CONCURRENCY, availableParallelism() * 2));
+export const NODE_STORAGE_OPERATION_CONCURRENCY = Math.min(8, Math.max(STORAGE_OPERATION_CONCURRENCY, availableParallelism() * 2));
 
 export function connectApplicationDatabase(config: AppConfig) {
-  // Each storage operation pins a connection for its key lock; keep five more for LISTEN and scoped queries.
-  const pool = createDatabasePool(config, NODE_STORAGE_OPERATION_CONCURRENCY + 5);
+  // Each storage operation pins a connection for its key lock and briefly needs a second for scoped queries;
+  // keep five more for LISTEN and API queries.
+  const pool = createDatabasePool(config, 2 * NODE_STORAGE_OPERATION_CONCURRENCY + 5);
   return {
     db: drizzle({ client: pool }),
     pool,

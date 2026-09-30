@@ -461,6 +461,9 @@ async function roleSupportsRls(db: PostgresDatabase): Promise<boolean> {
         and pg_get_userbyid(c.relowner) = current_user
     `, [tables])).rows[0];
     if (secured?.count !== tables.length) return false;
+    // The summary worker lists due owners only through this policy; without it summaries would stall silently.
+    if (!(await client.query(`select 1 from pg_policies where schemaname = 'jobs' and tablename = 'summary'
+      and policyname = 'summary_job_dispatch_select'`)).rows.length) return false;
 
     await client.query("begin");
     transaction = true;

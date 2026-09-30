@@ -468,9 +468,11 @@
                 origin: fixture.origin, operation: #require(last.operations.first), foreground: last.foreground
             )
             let staged = Task { try await worker.stageFileUpload(demand) }
-            while await worker.fileUploadCandidates.first?.operation.id != demand.operation.id {
-                await Task.yield()
+            let deadline = ContinuousClock.now.advanced(by: .seconds(10))
+            while await worker.fileUploadCandidates.first?.operation.id != demand.operation.id, ContinuousClock.now < deadline {
+                try await Task.sleep(for: .milliseconds(10))
             }
+            #expect(await worker.fileUploadCandidates.first?.operation.id == demand.operation.id)
             try await worker.prepareFileUploads(for: head, origin: fixture.origin)
             await fixture.server.releaseUploads()
             try await staged.value

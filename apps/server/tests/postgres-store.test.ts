@@ -281,23 +281,41 @@ integration("PostgreSQL application store", () => {
     }
   });
 
-  it("keeps scoped queries available while every storage operation holds its key lock", async () => {
+  it("keeps API queries available while every storage operation holds its key lock and a scoped transaction", async () => {
     const store = createPostgresMeetingSyncStore(connection!.db);
     // PostgresSyncEvents pins one pooled connection for LISTEN while any SSE client is subscribed.
     const listener = await connection!.pool.connect();
     try {
-      let locked = 0;
-      let release!: () => void;
-      const allLocked = new Promise<void>((resolve) => { release = resolve; });
-      await Promise.all(Array.from({ length: NODE_STORAGE_OPERATION_CONCURRENCY }, (_, index) =>
-        store.withStorageKeyLock(`test:${crypto.randomUUID()}:${index}`, async () => {
-          if (++locked === NODE_STORAGE_OPERATION_CONCURRENCY) release();
-          await allLocked;
-          await connection!.db.execute(sql`select 1`);
-        })));
+      let inside = 0;
+      let entered!: () => void, finish!: () => void;
+      const allInside = new Promise<void>((resolve) => { entered = resolve; });
+      const finished = new Promise<void>((resolve) => { finish = resolve; });
+      const operations = Promise.all(Array.from({ length: NODE_STORAGE_OPERATION_CONCURRENCY }, (_, index) =>
+        store.withStorageKeyLock(`test:${crypto.randomUUID()}:${index}`, () => connection!.db.transaction(async (tx) => {
+          await tx.execute(sql`select 1`);
+          if (++inside === NODE_STORAGE_OPERATION_CONCURRENCY) entered();
+          await finished;
+        }))));
+      await allInside;
+      // Every operation now holds two connections; an unrelated API query must still get one.
+      await connection!.db.execute(sql`select 1`);
+      finish();
+      await operations;
     } finally {
       listener.release();
     }
+  });
+
+  it("fails readiness when the summary dispatch policy is missing", async () => {
+    expect(await createPostgresMeetingSyncStore(connection!.db).isAvailable()).toBe(true);
+    try {
+      await connection!.db.execute(sql`DROP POLICY "summary_job_dispatch_select" ON "jobs"."summary"`);
+      expect(await createPostgresMeetingSyncStore(connection!.db).isAvailable()).toBe(false);
+    } finally {
+      await connection!.db.execute(sql`CREATE POLICY "summary_job_dispatch_select" ON "jobs"."summary" FOR SELECT
+        USING (current_setting('app.maintenance', true) = 'summary-dispatch' AND "jobs"."summary"."status" IN ('pending', 'processing'))`);
+    }
+    expect(await createPostgresMeetingSyncStore(connection!.db).isAvailable()).toBe(true);
   });
 
   it.each(["meeting_events", "documents", "document_updates", "document_recoveries", "document_presence"])("fails readiness when %s FORCE RLS is missing", async (table) => {

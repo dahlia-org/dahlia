@@ -13,6 +13,7 @@ it("disables Lakebase top-K scans before weighted ranking and reads settings onc
       const text = typeof input === "string" ? input : input.text;
       queries.push({ text, parameters });
       if (text.includes("from pg_roles")) return { rows: [{ rolsuper: false, rolbypassrls: false }] };
+      if (text.includes("from pg_policies")) return { rows: [{}] };
       if (text.includes("from pg_class")) return { rows: [{ count: (parameters[0] as string[]).length }] };
       if (text.includes('from "app"."server_settings"')) return { rows: [[{ ...DEFAULT_SEARCH_SETTINGS, title: 9 }]] };
       return { rows: [] };
@@ -43,6 +44,7 @@ it("decodes PostgreSQL project activity as UTC on a non-UTC host", async () => {
       async query(input: string | { text: string }, parameters: unknown[] = []) {
         const text = typeof input === "string" ? input : input.text;
         if (text.includes("from pg_roles")) return { rows: [{ rolsuper: false, rolbypassrls: false }] };
+        if (text.includes("from pg_policies")) return { rows: [{}] };
         if (text.includes("from pg_class")) return { rows: [{ count: (parameters[0] as string[]).length }] };
         if (text.includes("max(")) return { rows: [["project", "2026-09-03 00:00:00"]] };
         return { rows: [] };
@@ -64,6 +66,7 @@ it.each(["postgres", "lakebase"] as const)("ranks integrated plaintext vectors i
       const text = typeof input === "string" ? input : input.text;
       queries.push({ text, parameters });
       if (text.includes("from pg_roles")) return { rows: [{ rolsuper: false, rolbypassrls: false }] };
+      if (text.includes("from pg_policies")) return { rows: [{}] };
       if (text.includes("from pg_class")) return { rows: [{ count: (parameters[0] as string[]).length }] };
       if (text.startsWith('select "meeting_id" from "app"."meetings"')) return { rows: [["meeting"]] };
       return { rows: [] };
