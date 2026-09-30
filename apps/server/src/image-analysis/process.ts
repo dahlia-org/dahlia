@@ -1,5 +1,6 @@
 import type { Identity } from "../auth/identity";
 import { RequestError } from "../storage/upload";
+import { isRateLimited, RATE_LIMIT_COOLDOWN_MS } from "../jobs/rate-limit";
 import type { MeetingSyncService } from "../sync/service";
 import type { MeetingSyncStore } from "../sync/types";
 import type { ImageCaptioner } from "./captioner";
@@ -58,7 +59,8 @@ export async function processImageAnalysisJob(
         : new ImageAnalysisError("captioning_processing_failed", true);
     await jobs.finish(job, {
       code: failure.code,
-      retryAt: failure.retryable ? new Date(Date.now() + Math.min(15 * 60_000, 1_000 * 2 ** Math.min(job.attempts, 10))) : undefined,
+      retryAt: failure.retryable ? new Date(Date.now() + (isRateLimited(failure.code) ? RATE_LIMIT_COOLDOWN_MS
+        : Math.min(15 * 60_000, 1_000 * 2 ** Math.min(job.attempts, 10)))) : undefined,
     });
   }
   return true;

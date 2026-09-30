@@ -1,0 +1,1 @@
+CREATE INDEX `image_analysis_job_owner_idx` ON `jobs_image_analysis` (`owner_user_id`,`available_at`);

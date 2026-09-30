@@ -4,6 +4,7 @@ import type { NodePgDatabase } from "drizzle-orm/node-postgres";
 import { Buffer } from "node:buffer";
 
 import type { PostgresDatabase, SQLiteDatabase } from "../db/client";
+import { isRateLimited } from "../jobs/rate-limit";
 import * as postgresSchema from "../db/auth-schema";
 import * as sqliteSchema from "../db/sqlite-schema";
 
@@ -246,6 +247,7 @@ function createSearchIndexStore(
       return `${last.documentId}/${last.workspaceId}`;
     });
   }
+  let cooldownUntil = 0;
   return {
     reconcilePage,
     due(model, dimensions, workspaceId, after) {
@@ -268,7 +270,7 @@ function createSearchIndexStore(
       }
     },
     claim(model, dimensions, limit, references) {
-      if (references?.length === 0) return Promise.resolve([]);
+      if (references?.length === 0 || (!references && Date.now() < cooldownUntil)) return Promise.resolve([]);
       return db.transaction(async (transaction) => {
         const now = new Date();
         const filter = and(
@@ -315,6 +317,7 @@ function createSearchIndexStore(
       (await saveMany([job], model, dimensions, [embedding])).has(documentKey(job)),
     saveMany,
     async retry(job, errorCode, availableAt) {
+      if (isRateLimited(errorCode)) cooldownUntil = Math.max(cooldownUntil, availableAt.getTime());
       await db.update(schema.searchIndexJob).set({
         status: "pending",
         attempts: job.attempts + 1,

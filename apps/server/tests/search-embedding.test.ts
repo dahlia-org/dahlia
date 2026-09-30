@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 
 import type { AppConfig } from "../src/config";
-import { createSearchEmbedder } from "../src/search/embedding";
+import { createSearchEmbedder, SearchEmbeddingError } from "../src/search/embedding";
 import { processSearchIndexBatch } from "../src/search/node-indexer";
 import { reciprocalRankFusion } from "../src/search/ranking";
 import type { SearchIndexDocumentRecord, SearchIndexStore } from "../src/search/index-store";
@@ -219,6 +219,27 @@ describe("search embeddings", () => {
     } as never;
     expect(await processSearchIndexBatch(store, embedder)).toBe(1);
     expect(retry).toHaveBeenCalledWith(document, "stale_content", expect.any(Date));
+  });
+
+  it("retries a rate-limited batch after the shared cooldown instead of its attempt backoff", async () => {
+    const document: SearchIndexDocumentRecord = {
+      workspaceId: "workspace", documentId: "document", generation: 1, attempts: 10, claimedAt: new Date(), embeddingText: "summary", contentHash: "hash",
+    };
+    const retry = vi.fn<(job: unknown, code: string, at: Date) => Promise<void>>(() => Promise.resolve());
+    const store = {
+      claim: vi.fn(() => Promise.resolve([document])),
+      loadMany: vi.fn(() => Promise.resolve([document])),
+      retry,
+      discard: vi.fn(() => Promise.resolve()),
+    } as unknown as SearchIndexStore;
+    const embedder = { model: "model", dimensions: 32,
+      embedDocuments: vi.fn(() => Promise.reject(new SearchEmbeddingError("embedding_http_429", true))) } as never;
+    const before = Date.now();
+    expect(await processSearchIndexBatch(store, embedder)).toBe(1);
+    const [, code, at] = retry.mock.calls[0]!;
+    expect(code).toBe("embedding_http_429");
+    expect(at.getTime() - before).toBeGreaterThanOrEqual(30_000);
+    expect(at.getTime() - before).toBeLessThan(60_000);
   });
 
   it("fails an oversized indexed document without sending it to the model", async () => {

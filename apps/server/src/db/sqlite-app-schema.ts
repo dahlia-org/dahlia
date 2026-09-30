@@ -460,6 +460,8 @@ export const imageAnalysisJob = sqliteTable("jobs_image_analysis", {
   check("image_analysis_job_status_check", sql`${table.status} IN ('pending', 'processing', 'failed')`),
   check("image_analysis_job_mode_check", sql`${table.mode} IN ('fill_missing', 'replace')`),
   index("image_analysis_job_claim_idx").on(table.status, table.availableAt, table.leaseExpiresAt),
+  // Owner rotation claims per owner; a large backlog must not slow a small owner's claim.
+  index("image_analysis_job_owner_idx").on(table.ownerUserId, table.availableAt),
 ]);
 
 // Settings and input fingerprints are owner-private; no transcript or provider credentials are queued.

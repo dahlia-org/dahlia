@@ -62,13 +62,13 @@ if (development) {
   installDevelopmentSeed(config, applicationStore, syncService);
 }
 const imageAnalysis = captioner && applicationStore.imageAnalysis
-  ? new ImageAnalysisWorker(applicationStore.imageAnalysis, captioner, applicationStore.sync, syncService)
+  ? new ImageAnalysisWorker(applicationStore.imageAnalysis, captioner, applicationStore.sync, syncService, config.aiJobConcurrency)
   : undefined;
 
 const summaryMethods = [createTranscriptSummaryMethod(config, applicationStore.sync, syncService),
   createAudioSummaryMethod(config, applicationStore.sync, syncService)].filter((method) => method !== undefined);
 const summaryService = summaryMethods.length ? new SummaryService(applicationStore.sync, summaryMethods) : undefined;
-const summaryWorker = summaryMethods.length ? new SummaryWorker(applicationStore.summaryJobs, summaryMethods, syncService) : undefined;
+const summaryWorker = summaryMethods.length ? new SummaryWorker(applicationStore.summaryJobs, summaryMethods, syncService, config.aiJobConcurrency) : undefined;
 const app = createApp({
   summaryService,
   workspaceMemory,
