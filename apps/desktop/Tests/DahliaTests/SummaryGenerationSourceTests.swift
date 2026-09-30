@@ -260,6 +260,10 @@ import DahliaRuntimeSupport
                     id: target.meetingID, workspaceId: target.workspaceID, projectId: nil,
                     name: "Test", createdAt: .now, updatedAt: .now
                 ).insert(db)
+                try db.execute(
+                    sql: "INSERT INTO sync_entity_state(workspace_id, entity, entityId, confirmedRevision) VALUES (?, 'meeting', ?, 1)",
+                    arguments: [target.workspaceID, target.meetingID]
+                )
                 var transcript = TranscriptInfo(id: .v7(), startedAt: nil, endedAt: .now, metadata: nil)
                 transcript.version = 4
                 try TranscriptRecord(meetingId: target.meetingID, info: transcript).insert(db)
@@ -531,6 +535,10 @@ import DahliaRuntimeSupport
                     id: target.meetingID, workspaceId: target.workspaceID, projectId: nil, name: "Test",
                     createdAt: .now, updatedAt: .now
                 ).insert(db)
+                try db.execute(
+                    sql: "INSERT INTO sync_entity_state(workspace_id, entity, entityId, confirmedRevision) VALUES (?, 'meeting', ?, 1)",
+                    arguments: [target.workspaceID, target.meetingID]
+                )
                 var info = TranscriptInfo(id: .v7(), startedAt: nil, endedAt: .now, metadata: nil)
                 info.version = 2
                 try TranscriptRecord(meetingId: target.meetingID, info: info).insert(db)

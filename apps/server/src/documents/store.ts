@@ -1,3 +1,4 @@
+import type { SyncLocks } from "../sync/locks";
 import { and, asc, eq, gt, inArray, isNull, lte, or, sql, type AnyColumn, type SQL } from "drizzle-orm";
 import type { NodePgDatabase } from "drizzle-orm/node-postgres";
 import type * as Schema from "../db/auth-schema";
@@ -30,6 +31,7 @@ export interface DocumentStore {
 export function createDocumentStore(db: NodePgDatabase, schema: typeof Schema, identity: Identity,
   content: ReturnType<typeof createContentEncryption>, lockWorkspace: (id: string) => Promise<void>,
   access: { read: (column: AnyColumn) => SQL | undefined; write: (column: AnyColumn) => SQL | undefined },
+  locks: SyncLocks,
 ): DocumentStore {
   async function authorizeParent(workspaceId: string, meetingId: string | null, write = false) {
     await lockWorkspace(workspaceId);
@@ -50,6 +52,7 @@ export function createDocumentStore(db: NodePgDatabase, schema: typeof Schema, i
   }
   async function authorize(workspaceId: string, id: string, write = false) {
     await authorizeParent(workspaceId, null, write);
+    await locks.document(id, write ? "exclusive" : "shared");
     const [row] = await db.select({ meetingId: schema.document.meetingId }).from(schema.document)
       .where(and(eq(schema.document.id, id), eq(schema.document.workspaceId, workspaceId))).limit(1);
     if (!row) throw new RequestError(404, "document_unavailable");
@@ -102,6 +105,8 @@ export function createDocumentStore(db: NodePgDatabase, schema: typeof Schema, i
     const { meetingId, kind, title, legacyUpdate } = metadata;
     if (kind === "notes" && !meetingId) throw new RequestError(400, "document_notes_require_meeting");
     await authorizeParent(workspaceId, meetingId, true);
+    if (kind === "notes" && meetingId) await locks.notes(meetingId, "exclusive");
+    await locks.document(id, "exclusive");
     const existing = await load(workspaceId, id);
     if (existing) {
       if (existing.row.meetingId !== meetingId || existing.row.kind !== kind) { existing.core.destroy(); throw new RequestError(409, "document_identity_conflict"); }
@@ -142,7 +147,8 @@ export function createDocumentStore(db: NodePgDatabase, schema: typeof Schema, i
     async notesHeads(targets) {
       if (!targets.length) return [];
       const meeting = schema.syncedMeeting, workspace = schema.syncedWorkspace, document = schema.document;
-      // One bounded metadata query; no checkpoint decoding, writes or workspace locks.
+      for (const id of [...new Set(targets.map((target) => target.workspaceId))].sort()) await lockWorkspace(id);
+      // One bounded metadata query; no checkpoint decoding or writes.
       return db.select({ workspaceId: meeting.workspaceId, meetingId: meeting.meetingId,
         id: document.id, generation: document.generation, revision: document.revision }).from(meeting)
         .innerJoin(workspace, eq(workspace.workspaceId, meeting.workspaceId))
@@ -152,14 +158,17 @@ export function createDocumentStore(db: NodePgDatabase, schema: typeof Schema, i
     },
     async getMeetingNotes(workspaceId, meetingId) {
       await authorizeParent(workspaceId, meetingId);
+      await locks.notes(meetingId, "shared");
       const id = await notesID(workspaceId, meetingId);
       if (!id) return null;
+      await locks.document(id, "shared");
       const loaded = await load(workspaceId, id);
       if (!loaded) return null;
       try { return shared(loaded.row, loaded.core); } finally { loaded.core.destroy(); }
     },
     async initializeMeetingNotes(workspaceId, meetingId, proposedId, legacyUpdate) {
       await authorizeParent(workspaceId, meetingId, true);
+      await locks.notes(meetingId, "exclusive");
       const id = await notesID(workspaceId, meetingId) ?? proposedId;
       return initializeDocument(workspaceId, id, { meetingId, kind: "notes", title: "", legacyUpdate });
     },

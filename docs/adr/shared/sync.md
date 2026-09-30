@@ -1,5 +1,7 @@
 # Desktop / Server の canonical sync
 
+2026-09-30追記: Desktop の送信優先度・競合解決の範囲・通常受信の世代検査・文書送信間隔と Server のロックは、[優先同期 ADR](sync-priority.md) が該当する旧決定を置き換える。以下の旧仕様はこの範囲に限り履歴として残す。
+
 対象: Desktop・Server・Private Web。採択: 2026-09-02〜09-03。API の詳細は [Server README](../../../apps/server/README.md)、ローカルの保存保証は [Architecture](../../../ARCHITECTURE.md) を参照する。
 
 ## 正本とアカウント境界

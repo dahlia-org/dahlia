@@ -97,10 +97,14 @@ extension ScreenshotContentProvider {
         activeFileWork += 1
         defer { activeFileWork -= 1 }
         try await migrateLegacyAttachments(workspaceId: workspaceId, dbQueue: dbQueue)
-        let ids = try await dbQueue.read { db in
-            try UUID.fetchAll(db, sql: "SELECT id FROM files WHERE workspace_id = ? ORDER BY id", arguments: [workspaceId])
+        let ids: [UUID] = if let screenshotIds {
+            screenshotIds
+        } else {
+            try await dbQueue.read { db in
+                try UUID.fetchAll(db, sql: "SELECT id FROM files WHERE workspace_id = ? ORDER BY id", arguments: [workspaceId])
+            }
         }
-        for id in ids where screenshotIds?.contains(id) ?? true {
+        for id in ids {
             try Task.checkCancellation()
             guard let file = try await dbQueue.read({ try FileRecord.fetchOne($0, key: id) }), file.workspaceId == workspaceId else { continue }
             let connectionId = try await dbQueue.read { try WorkspaceRecord.fetchOne($0, key: workspaceId)?.accountConnectionId }

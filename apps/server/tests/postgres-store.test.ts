@@ -287,6 +287,7 @@ integration("PostgreSQL application store", () => {
       const concurrent = await Promise.allSettled([1, 2].map(() => store.sync.withIdentity(owner, (sync) => save(sync, 1))));
       expect(concurrent.filter((result) => result.status === "fulfilled")).toHaveLength(1);
       await store.sync.withIdentity(owner, async (sync) => {
+        await sync.lockWorkspace(workspaceId);
         expect((await sync.listSummaryVersions(workspaceId, meetingId, 20)).map((row) => row.version)).toEqual([2, 1]);
         await commit(sync, workspaceId, [{ id: crypto.randomUUID(), entity: "summary", action: "delete", entityId: meetingId, baseRevision: 2, data: {} }]);
         await save(sync, 3);
@@ -318,6 +319,7 @@ integration("PostgreSQL application store", () => {
     expect((await connection!.db.select().from(schema.meetingEvent).where(eq(schema.meetingEvent.workspaceId, workspaceId)))).toEqual([]);
     expect((await connection!.db.select().from(schema.recordingSession).where(eq(schema.recordingSession.workspaceId, workspaceId)))).toEqual([]);
     await store.sync.withIdentity(identity, async (sync) => {
+      await sync.lockWorkspace(workspaceId, { authorization: true });
       await commit(sync, workspaceId, [{ id: crypto.randomUUID(), entity: "meeting_event", action: "create", entityId: crypto.randomUUID(), baseRevision: null, data: { meetingId, kind: "recording_ended", sessionId, occurredAt: new Date(now.getTime() + 60000) } }]);
       expect(await sync.getMeeting(workspaceId, meetingId)).toMatchObject({ isRecording: false });
       await resetWorkspace(sync, workspaceId);

@@ -144,8 +144,18 @@ extension MeetingRepository {
                     o.entityId
                 FROM sync_transactions t JOIN sync_operations o ON o.transactionId = t.id
                 WHERE t.workspace_id = ? AND t.connectionId = ?
+                UNION
+                SELECT CASE WHEN entity IN ('meeting', 'summary', 'transcript') THEN 'meeting'
+                    WHEN entity IN ('file', 'meeting_attachment') THEN entity ELSE 'other' END,
+                    CASE WHEN entity IN ('meeting', 'summary', 'transcript') THEN 'meeting' ELSE entity END, entityId
+                FROM sync_initial_entities WHERE workspaceId = ? AND built = 0
+                UNION
+                SELECT CASE WHEN entity IN ('meeting', 'summary', 'transcript') THEN 'meeting'
+                    WHEN entity IN ('file', 'meeting_attachment') THEN entity ELSE 'other' END,
+                    CASE WHEN entity IN ('meeting', 'summary', 'transcript') THEN 'meeting' ELSE entity END, entityId
+                FROM sync_reconciliations WHERE workspaceId = ? AND connectionId = ?
             ) GROUP BY category
-            """, arguments: [workspace.id, connectionId])
+            """, arguments: [workspace.id, connectionId, workspace.id, workspace.id, connectionId])
             let remaining = Dictionary(uniqueKeysWithValues: counts.map { ($0["category"] as String, $0["count"] as Int) })
             let head = try Row.fetchOne(db, sql: """
             SELECT t.id, t.sequence, t.availableAt, t.leaseExpiresAt, t.serverResponseJSON, t.blockedReason,
@@ -153,7 +163,7 @@ extension MeetingRepository {
                     AND o.entity IN ('file', 'meeting_attachment', 'recording')) AS attachment,
                 EXISTS(SELECT 1 FROM sync_operations o WHERE o.transactionId = t.id
                     AND o.entity IN ('meeting', 'summary', 'transcript')) AS text
-            FROM sync_transactions t WHERE t.workspace_id = ? AND t.connectionId = ? ORDER BY t.sequence LIMIT 1
+            FROM sync_transactions t WHERE t.workspace_id = ? AND t.connectionId = ? ORDER BY (t.blockedReason IS NOT NULL) DESC, t.sequence LIMIT 1
             """, arguments: [workspace.id, connectionId])
             let problem = SyncProblem(json: head?["serverResponseJSON"])
             let blockedReason = (head?["blockedReason"] as String?).flatMap(SyncBlockedReason.init(rawValue:))

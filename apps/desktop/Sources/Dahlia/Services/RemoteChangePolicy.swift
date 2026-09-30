@@ -7,14 +7,16 @@ enum RemoteChangePolicy {
         let workspaceId: UUID
         let connectionId: UUID
         let generation: Int64
+        var lifecycleGeneration: Int64?
 
         func isCurrent(in db: Database) throws -> Bool {
-            try SyncTransactionQueue.matchesExpectedConnection(workspaceId: workspaceId, connectionId: connectionId, in: db)
+            let column = lifecycleGeneration == nil ? "syncMutationGeneration" : "syncLifecycleGeneration"
+            return try SyncTransactionQueue.matchesExpectedConnection(workspaceId: workspaceId, connectionId: connectionId, in: db)
                 && Int64.fetchOne(
                     db,
-                    sql: "SELECT syncMutationGeneration FROM workspaces WHERE id = ? AND syncRecoveryState IS NULL",
+                    sql: "SELECT \(column) FROM workspaces WHERE id = ? AND syncRecoveryState IS NULL",
                     arguments: [workspaceId]
-                ) == generation
+                ) == (lifecycleGeneration ?? generation)
         }
     }
 
@@ -45,7 +47,10 @@ enum RemoteChangePolicy {
                arguments: [context.workspaceId, change.entity, change.entityId]
            ), confirmed >= incoming {
             // Changes carry current canonical records, not historical bodies. A decrease may be a coalesced delete/recreate.
-            return confirmed == incoming ? .alreadyApplied : .retry
+            if confirmed > incoming { return .retry }
+            if try !SyncReconciliation.contains(change.entity, id: change.entityId, workspaceId: context.workspaceId, in: db) {
+                return .alreadyApplied
+            }
         }
         return .applied
     }
@@ -129,36 +134,30 @@ enum RemoteChangePolicy {
         let destructive = action == "delete" || action == "reset"
         if entity == .file, destructive,
            try Bool.fetchOne(db, sql: "SELECT EXISTS(SELECT 1 FROM meeting_attachments WHERE fileId = ?)", arguments: [id]) == true { return false }
-        let pending = try Row.fetchCursor(db, sql: """
-        SELECT o.entity, o.entityId, o.action, o.payloadJSON
-        FROM sync_operations o JOIN sync_transactions t ON t.id = o.transactionId
-        WHERE t.workspace_id = ? AND (
-            o.entity = 'workspace' OR o.entity = ? AND o.entityId = ?
-            OR o.action IN ('delete', 'reset', 'create') OR ?
-            OR ? AND o.entity = 'meeting_attachment' OR ? AND o.entity = 'file'
-        )
-        """, arguments: [
-            workspaceId,
-            entity,
-            id,
-            destructive || entity == .project || entity == .workspace,
-            entity == .file,
-            entity == .meetingAttachment,
-        ])
-        while let row = try pending.next() {
-            let localEntity: SyncEntity = row["entity"]
-            let localId: UUID = row["entityId"]
-            let localAction: String = row["action"]
-            let localKey = Key(entity: localEntity, id: localId)
-            if entity == .workspace || localEntity == .workspace || key == localKey { return false }
-            if localAction == "delete" || localAction == "reset" || localAction == "create", related.contains(localKey) { return false }
-            if entity == .meetingAttachment, localEntity == .file, related.contains(localKey) { return false }
-            guard destructive || entity == .project || (entity == .file && localEntity == .meetingAttachment) else { continue }
-            let payload: String? = row["payloadJSON"]
-            let localRecord = try payload.map { try SyncJSON.decoder.decode(References.self, from: Data($0.utf8)) }
-            let localReferences = try references(localEntity, id: localId, record: localRecord, in: db)
-            if localReferences.contains(key) { return false }
+        // Unknown legacy requests remain a barrier until indexed. Known requests use only
+        // durable resource keys, so a bulk attachment import cannot cause per-change JSON scans.
+        if try Bool.fetchOne(db, sql: """
+        SELECT EXISTS(SELECT 1 FROM sync_transactions WHERE workspace_id = ? AND dependenciesReady = 0)
+          OR EXISTS(SELECT 1 FROM sync_dependency_keys WHERE resource = ? AND exclusive = 1)
+        """, arguments: [workspaceId, "workspace:\(workspaceId.uuidString.lowercased())"]) == true { return false }
+        if entity == .workspace, try SyncTransactionQueue.hasPending(workspaceId: workspaceId, in: db) { return false }
+        if try Bool.fetchOne(
+            db,
+            sql: "SELECT EXISTS(SELECT 1 FROM sync_dependency_keys WHERE resource = ?)",
+            arguments: ["entity:\(SyncDependencies.key(entity, id))"]
+        ) == true { return false }
+        for reference in related.union([key]) {
+            let protectAllReferences = reference == key && (destructive || entity == .project || entity == .file)
+                || entity == .meetingAttachment && reference.entity == .file
+            if try Bool.fetchOne(db, sql: """
+            SELECT EXISTS(SELECT 1 FROM sync_dependency_keys WHERE resource = ? AND (exclusive = 1 OR ?))
+            """, arguments: ["exists:\(SyncDependencies.key(reference.entity, reference.id))", protectAllReferences]) == true { return false }
         }
+        // These sources are durable but their initial requests have not been constructed yet.
+        if try Bool.fetchOne(db, sql: """
+        SELECT EXISTS(SELECT 1 FROM sync_initial_entities WHERE workspaceId = ? AND built = 0
+          AND ((entity = ? AND entityId = ?) OR ?))
+        """, arguments: [workspaceId, entity, id, destructive]) == true { return false }
         let activeMeetings = try UUID.fetchAll(db, sql: "SELECT DISTINCT meetingId FROM recording_sessions WHERE endedAt IS NULL")
         for meeting in activeMeetings {
             if entity == .transcript, id == meeting { return false }

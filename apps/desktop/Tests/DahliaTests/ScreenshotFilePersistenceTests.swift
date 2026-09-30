@@ -218,6 +218,7 @@
                 replaceServerImageAnalysis: true,
                 screenshotContent: fixture.provider
             )
+            try await SyncInitialSnapshotBuilder.enqueuePending(dbQueue: queue, screenshotContent: fixture.provider)
             let filePayload = try await queue.read { db in
                 let value = try String.fetchOne(
                     db,

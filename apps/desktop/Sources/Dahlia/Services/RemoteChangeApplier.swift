@@ -616,6 +616,10 @@ enum RemoteChangeApplier {
                     if change.action == "delete" {
                         try delete(change.entity, id: change.entityId, workspaceId: workspaceId, in: db)
                     } else if change.action == "reset" {
+                        try db.execute(
+                            sql: "UPDATE workspaces SET syncLifecycleGeneration = syncLifecycleGeneration + 1 WHERE id = ?",
+                            arguments: [workspaceId]
+                        )
                         if let record = change.record {
                             try SyncTransactionQueue.discard(workspaceId: workspaceId, in: db)
                             try db.execute(sql: "DELETE FROM sync_entity_state WHERE workspace_id = ?", arguments: [workspaceId])
@@ -635,6 +639,10 @@ enum RemoteChangeApplier {
                             confirmedRevision = excluded.confirmedRevision
                         """,
                         arguments: [workspaceId, change.entity, change.entityId, change.revision]
+                    )
+                    try SyncReconciliation.finish(
+                        change.entity, id: change.entityId, workspaceId: workspaceId,
+                        includingDescendants: change.action == "delete", in: db
                     )
                 }
                 if let cursor {
@@ -927,6 +935,7 @@ enum RemoteChangeApplier {
         workspaceId: UUID,
         in db: Database
     ) throws {
+        try SyncDependencies.confirmed(entity: change.entity, id: change.entityId, workspaceId: workspaceId, value: record, in: db)
         switch change.entity {
         case .meetingEvent:
             break

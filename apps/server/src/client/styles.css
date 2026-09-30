@@ -1,5 +1,6 @@
 @import "tailwindcss";
 @import "tw-animate-css";
+@import "../documents/editor.css";
 @source "./**/*.{ts,tsx}";
 
 @theme inline {

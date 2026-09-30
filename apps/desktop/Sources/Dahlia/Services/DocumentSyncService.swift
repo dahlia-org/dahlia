@@ -1,3 +1,4 @@
+import DahliaRuntimeSupport
 import DahliaServerAPI
 import Foundation
 import GRDB
@@ -10,7 +11,7 @@ actor DocumentSyncService {
         let kind: String
         let connectionID: UUID
         let origin: URL
-        let mutationGeneration: Int64
+        let lifecycleGeneration: Int64
 
         func document(in db: Database) throws -> DocumentRecord? {
             if kind == "notes", let meetingID { return try DocumentRecord.notes(in: db, meetingID: meetingID) }
@@ -20,7 +21,7 @@ actor DocumentSyncService {
         func validate(in db: Database) throws {
             guard try SyncTransactionQueue.matchesExpectedConnection(workspaceId: workspaceID, connectionId: connectionID, in: db),
                   try Int64
-                  .fetchOne(db, sql: "SELECT syncMutationGeneration FROM workspaces WHERE id = ?", arguments: [workspaceID]) == mutationGeneration,
+                  .fetchOne(db, sql: "SELECT syncLifecycleGeneration FROM workspaces WHERE id = ?", arguments: [workspaceID]) == lifecycleGeneration,
                   try (meetingID.map { try MeetingRecord.fetchOne(db, key: $0)?.workspaceId == workspaceID } ?? true)
             else { throw CancellationError() }
             if let existing = try document(in: db), existing.workspaceId != workspaceID {
@@ -79,18 +80,43 @@ actor DocumentSyncService {
         let update: String
     }
 
-    private let dbQueue: DatabaseQueue
-    private let api: SyncAPIClient
+    let dbQueue: DatabaseQueue
+    let api: SyncAPIClient
+    let waitForSendWindow: @Sendable () async throws -> Void
     private let persistence: DocumentPersistence
     private let worker = DocumentCoreWorker()
-    deinit { worker.stop() }
-    private var capableConnections: Set<UUID> = []
-    private var lastPresence: [UUID: (Date, [String])] = [:]
-    private var inFlight: [UUID: Task<Void, any Error>] = [:]
+    deinit {
+        worker.stop()
+        api.session.invalidateAndCancel()
+    }
 
-    init(dbQueue: DatabaseQueue, api: SyncAPIClient = SyncAPIClient(session: .shared)) {
+    private var capableConnections: Set<UUID> = []
+    private var backgroundTask: Task<Void, Never>?
+    private var backgroundOwners: [UUID: CheckedContinuation<Void, Never>] = [:]
+    private var recoveryTasks: [UUID: Task<Void, Never>] = [:]
+    private var lastPresence: [UUID: (Date, [String])] = [:]
+    var observers: [UUID: [UUID: AsyncStream<Bool>.Continuation]] = [:]
+    var observationTasks: [UUID: Task<Void, Never>] = [:]
+    var sendTasks: [UUID: Task<Void, Never>] = [:]
+    var requestedSends: Set<UUID> = []
+    var connectedDocuments: Set<UUID> = []
+    private struct Flight {
+        let id: UUID
+        let task: Task<Void, any Error>
+        var waiters: Set<UUID>
+    }
+
+    private var inFlight: [UUID: Flight] = [:]
+
+    init(
+        dbQueue: DatabaseQueue,
+        api: SyncAPIClient = SyncAPIClient(session: .shared),
+        waitForSendWindow: @escaping @Sendable () async throws -> Void = { try await Task.sleep(for: .milliseconds(200)) }
+    ) {
+        self.waitForSendWindow = waitForSendWindow
         self.dbQueue = dbQueue
-        self.api = api
+        // Documents have their own HTTP connection pool, independent of bulk uploads and domain SSE.
+        self.api = SyncAPIClient(session: URLSession(configuration: api.session.configuration), tokenProvider: api.tokenProvider)
         persistence = DocumentPersistence(dbQueue: dbQueue)
     }
 
@@ -102,7 +128,7 @@ actor DocumentSyncService {
             guard let origin = try String.fetchOne(db, sql: "SELECT origin FROM dahlia_account_connections WHERE id = ?", arguments: [connectionID])
                 .flatMap(URL.init(string:)),
                 let generation = try Int64
-                .fetchOne(db, sql: "SELECT syncMutationGeneration FROM workspaces WHERE id = ?", arguments: [workspace.id])
+                .fetchOne(db, sql: "SELECT syncLifecycleGeneration FROM workspaces WHERE id = ?", arguments: [workspace.id])
             else { throw DocumentCoreError.unavailable }
             return try Target(
                 workspaceID: workspace.id,
@@ -111,30 +137,56 @@ actor DocumentSyncService {
                 kind: "notes",
                 connectionID: connectionID,
                 origin: origin,
-                mutationGeneration: generation
+                lifecycleGeneration: generation
             )
         }
     }
 
     func synchronize(meetingID: UUID) async throws {
+        let exchange = SyncDiagnostics.begin("DocumentExchange")
+        defer { SyncDiagnostics.end("DocumentExchange", exchange) }
         try Task.checkCancellation()
-        let ownsExchange = inFlight[meetingID] == nil
-        let task = inFlight[meetingID] ?? Task { try await exchange(meetingID: meetingID) }
-        inFlight[meetingID] = task
-        defer { if ownsExchange { inFlight[meetingID] = nil } }
-        // Task.value does not propagate cancellation to an unstructured shared exchange.
-        // Cancelling any waiter stops transport; its durable outbox remains retryable.
+        try await sharedExchange(id: meetingID) { try await self.exchange(meetingID: meetingID) }
+        notify(meetingID: meetingID, succeeded: true)
+    }
+
+    private func sharedExchange(id: UUID, operation: @escaping @Sendable () async throws -> Void) async throws {
+        let waiter = UUID()
+        var flight = inFlight[id] ?? Flight(id: UUID(), task: Task { try await operation() }, waiters: [])
+        flight.waiters.insert(waiter)
+        inFlight[id] = flight
+        let token = flight.id
+        let task = flight.task
+        defer { releaseExchange(id: id, token: token, waiter: waiter) }
         try await withTaskCancellationHandler {
             try await task.value
             try Task.checkCancellation()
         } onCancel: {
-            task.cancel()
+            Task { await self.releaseExchange(id: id, token: token, waiter: waiter) }
+        }
+    }
+
+    private func releaseExchange(id: UUID, token: UUID, waiter: UUID) {
+        guard var flight = inFlight[id], flight.id == token else { return }
+        flight.waiters.remove(waiter)
+        if flight.waiters.isEmpty {
+            inFlight[id] = nil
+            flight.task.cancel()
+        } else {
+            inFlight[id] = flight
         }
     }
 
     func flush(meetingID: UUID) async throws {
         try await DocumentEditorModel.finishLocalSaves(dbQueue: dbQueue, meetingID: meetingID)
-        guard try await target(meetingID: meetingID) != nil else { return }
+        guard let parent = try await target(meetingID: meetingID) else { return }
+        try await dbQueue.write { try SyncDependencies.prioritizeMeeting(meetingId: meetingID, workspaceId: parent.workspaceID, in: $0) }
+        let deadline = ContinuousClock.now.advanced(by: .seconds(60))
+        while try await !dbQueue.read({ try SyncDependencies.parentConfirmed(meetingId: meetingID, workspaceId: parent.workspaceID, in: $0) }) {
+            try await dbQueue.read { try parent.validate(in: $0) }
+            guard ContinuousClock.now < deadline else { throw TextContentError.changed }
+            try await Task.sleep(for: .milliseconds(100))
+        }
         repeat {
             try await synchronize(meetingID: meetingID)
         } while try await dbQueue.read({ db in
@@ -154,6 +206,15 @@ actor DocumentSyncService {
     }
 
     private func exchange(target: Target) async throws {
+        if let meetingID = target.meetingID {
+            let parentPending = try await dbQueue.read { db in
+                try Bool.fetchOne(db, sql: """
+                SELECT EXISTS(SELECT 1 FROM sync_operations o JOIN sync_transactions t ON t.id = o.transactionId
+                  WHERE t.workspace_id = ? AND o.entity = 'meeting' AND o.entityId = ? AND o.action IN ('create', 'delete'))
+                """, arguments: [target.workspaceID, meetingID]) == true
+            }
+            if parentPending { throw TextContentError.changed }
+        }
         if !capableConnections.contains(target.connectionID) {
             let data = try await api.data(origin: target.origin, connectionId: target.connectionID) {
                 try await $0.getCapabilities().ok.body.json
@@ -221,6 +282,12 @@ actor DocumentSyncService {
                 validate: target.validate
             )
             generation = remote.generation
+            // The checkpoint is already current. With no local edits there is nothing to exchange.
+            // In particular, first display must not wait for a redundant second body download.
+            if source.1.isEmpty {
+                scheduleRecoveries(target, documentID: documentID, canWrite: source.2)
+                return
+            }
         }
         guard let generation else { return }
         let canonicalID = documentID.uuidString.lowercased()
@@ -268,7 +335,19 @@ actor DocumentSyncService {
                 try db.execute(sql: "UPDATE document_updates SET pending = 0 WHERE documentId = ? AND id <= ?", arguments: [current.id, through])
             }
         }
-        try await recoveries(target, documentID: current.id, canWrite: source.2)
+        scheduleRecoveries(target, documentID: current.id, canWrite: source.2)
+    }
+
+    private func scheduleRecoveries(_ target: Target, documentID: UUID, canWrite: Bool) {
+        guard recoveryTasks[documentID] == nil else { return }
+        recoveryTasks[documentID] = Task { [weak self] in
+            await self?.exchangeRecoveries(target, documentID: documentID, canWrite: canWrite)
+        }
+    }
+
+    private func exchangeRecoveries(_ target: Target, documentID: UUID, canWrite: Bool) async {
+        defer { recoveryTasks[documentID] = nil }
+        try? await recoveries(target, documentID: documentID, canWrite: canWrite)
     }
 
     func presence(meetingID: UUID, sessionID: UUID, editing: Bool) async throws -> [String] {
@@ -300,6 +379,7 @@ actor DocumentSyncService {
         }
         let workspace = target.workspaceID.uuidString.lowercased(), document = documentID.uuidString.lowercased()
         for entry in pending where canWrite {
+            try await dbQueue.read { try target.validate(in: $0) }
             let blocks = try JSONDecoder().decode([DocumentBlock].self, from: Data(entry.blocksJSON.utf8))
             struct Payload: Encodable { let id: UUID
                 let reason: String
@@ -370,18 +450,14 @@ actor DocumentSyncService {
         if target.kind == "notes", let meetingID = target.meetingID { return try await synchronize(meetingID: meetingID) }
         guard let id = target.documentID else { return }
         try Task.checkCancellation()
-        let ownsExchange = inFlight[id] == nil
-        let task = inFlight[id] ?? Task {
-            let generation = try await dbQueue.read { try target.document(in: $0)?.generation }
+        try await sharedExchange(id: id) {
+            let generation = try await self.dbQueue.read { try target.document(in: $0)?.generation }
             do {
-                try await exchange(target: target)
+                try await self.exchange(target: target)
             } catch let error as SyncHTTPError where error.status == 404 {
-                guard try await removeMissingStandalone(target, generation: generation) else { throw error }
+                guard try await self.removeMissingStandalone(target, generation: generation) else { throw error }
             }
         }
-        inFlight[id] = task
-        defer { if ownsExchange { inFlight[id] = nil } }
-        try await withTaskCancellationHandler { try await task.value } onCancel: { task.cancel() }
     }
 
     /// A complete inventory schedules missing caches; only a canonical 404 confirms removal.
@@ -450,7 +526,7 @@ actor DocumentSyncService {
                       ).flatMap(URL.init(string:)),
                           let generation = try Int64.fetchOne(
                               db,
-                              sql: "SELECT syncMutationGeneration FROM workspaces WHERE id = ?",
+                              sql: "SELECT syncLifecycleGeneration FROM workspaces WHERE id = ?",
                               arguments: [workspace.id]
                           ) else { return nil }
                       return (origin, generation)
@@ -470,7 +546,7 @@ actor DocumentSyncService {
                     kind: kind,
                     connectionID: connectionID,
                     origin: connection.0,
-                    mutationGeneration: connection.1
+                    lifecycleGeneration: connection.1
                 )
             }
             pendingTargets += pending.map { target(id: $0.id, meeting: $0.meetingId, kind: $0.kind) }
@@ -515,30 +591,92 @@ actor DocumentSyncService {
             } catch { if includeEvicted { throw error } }
         }
         var seen: Set<UUID> = []
-        return (targets + pendingTargets + missingTargets).filter { target in
+        return (pendingTargets + targets + missingTargets).filter { target in
             guard let id = target.kind == "notes" ? target.meetingID : target.documentID else { return false }
             return seen.insert(id).inserted
         }
     }
 
+    /// Sending the local outbox never waits for the Server's document catalogue to paginate.
+    private func pendingTargets() async throws -> [Target] {
+        try await dbQueue.read { db in
+            let rows = try Row.fetchAll(db, sql: """
+            SELECT d.id, d.meetingId, d.kind, d.workspace_id, w.accountConnectionId, w.syncLifecycleGeneration, c.origin
+            FROM documents d JOIN workspaces w ON w.id = d.workspace_id
+              JOIN dahlia_account_connections c ON c.id = w.accountConnectionId
+            WHERE w.accountConnectionId = w.syncConfirmedConnectionId AND w.syncRecoveryState IS NULL
+              AND (EXISTS(SELECT 1 FROM document_updates WHERE documentId = d.id AND pending = 1)
+                OR EXISTS(SELECT 1 FROM document_recoveries WHERE documentId = d.id AND pending = 1))
+            """)
+            return rows.compactMap { row in
+                guard let origin = URL(string: row["origin"]) else { return nil }
+                return Target(
+                    workspaceID: row["workspace_id"],
+                    meetingID: row["meetingId"],
+                    documentID: row["id"],
+                    kind: row["kind"],
+                    connectionID: row["accountConnectionId"],
+                    origin: origin,
+                    lifecycleGeneration: row["syncLifecycleGeneration"]
+                )
+            }
+        }
+    }
+
+    private func runPending() async {
+        while !Task.isCancelled {
+            let targets = await (try? pendingTargets()) ?? []
+            await synchronizeAll(targets)
+            do { try await Task.sleep(for: .seconds(2)) } catch { return }
+        }
+    }
+
     /// A failed document never blocks another document or domain synchronization.
     func run() async {
+        let owner = UUID()
+        await withTaskCancellationHandler {
+            await withCheckedContinuation { continuation in
+                guard !Task.isCancelled else { continuation.resume()
+                    return
+                }
+                backgroundOwners[owner] = continuation
+                if backgroundTask == nil { backgroundTask = Task { await self.runBackground() } }
+            }
+        } onCancel: { Task { await self.releaseBackground(owner) } }
+    }
+
+    private func releaseBackground(_ owner: UUID) {
+        backgroundOwners.removeValue(forKey: owner)?.resume()
+        if backgroundOwners.isEmpty {
+            backgroundTask?.cancel()
+            backgroundTask = nil
+        }
+    }
+
+    private func runBackground() async {
+        let pendingTask = Task { await self.runPending() }
+        defer { pendingTask.cancel() }
         while !Task.isCancelled {
             let targets = await (try? discover()) ?? []
             guard !Task.isCancelled else { return }
-            await withTaskGroup(of: Void.self) { group in
-                var iterator = targets.makeIterator()
-                for _ in 0 ..< 4 {
-                    if let target = iterator.next() { group.addTask { try? await self.synchronize(target: target) } }
-                }
-                while await group.next() != nil {
-                    if Task.isCancelled { group.cancelAll()
-                        break
-                    }
-                    if let target = iterator.next() { group.addTask { try? await self.synchronize(target: target) } }
-                }
-            }
+            await synchronizeAll(targets)
             try? await Task.sleep(for: .seconds(2))
         }
     }
+
+    private func synchronizeAll(_ targets: [Target]) async {
+        await withTaskGroup(of: Void.self) { group in
+            var iterator = targets.makeIterator()
+            for _ in 0 ..< 4 {
+                if let target = iterator.next() { group.addTask { try? await self.synchronize(target: target) } }
+            }
+            while await group.next() != nil {
+                if Task.isCancelled { group.cancelAll()
+                    break
+                }
+                if let target = iterator.next() { group.addTask { try? await self.synchronize(target: target) } }
+            }
+        }
+    }
+
 }

@@ -223,8 +223,10 @@
             defer { try? reopened.close() }
             #expect(try await reopened
                 .read { try Set(UUID.fetchAll($0, sql: "SELECT operationId FROM local_workspace_import_operations")) } == operationIDs)
-            while let transaction = try await SyncTransactionQueue.claim(dbQueue: reopened),
-                  transaction.operations.contains(where: { operationIDs.contains($0.id) }) {
+            while let transaction = try await SyncTransactionQueue.claim(dbQueue: reopened) {
+                // The later edit may now overtake unrelated import work. Keep that request
+                // leased to verify the fixed import can finish without its acknowledgement.
+                guard transaction.operations.contains(where: { operationIDs.contains($0.id) }) else { continue }
                 let records = try transaction.operations.map { operation in
                     let value: JSONValue? = operation.entity == .meeting
                         ? try SyncJSON.decoder.decode(
@@ -570,6 +572,7 @@
                 reconnectExisting: reconnect,
                 screenshots: screenshots
             )
+            try await SyncInitialSnapshotBuilder.enqueuePending(dbQueue: queue, screenshotContent: screenshots)
             #expect(unrelatedWriteCompleted.withLock { $0 })
             let record = try #require(try await queue.read { try LocalWorkspaceImportRecord.fetchOne($0) })
             #expect(FileManager.default.fileExists(atPath: record.backupPath))
@@ -851,7 +854,7 @@
                 fileId: file.id,
                 contentHash: file.contentHash
             )
-            return try LocalWorkspaceImport.commit(
+            let imported = try LocalWorkspaceImport.commit(
                 sourceId: source.id,
                 destination: destination,
                 snapshot: reconnection?.ids ?? .init(ids: [.meeting: collision ? [meeting.id, existing.id] : [existing.id]]),
@@ -863,6 +866,10 @@
                 reconnection: reconnection,
                 in: db
             )
+            // These tests assert the completed construction phase; separate scheduler tests
+            // exercise editing and restart between individual construction commits.
+            while try SyncInitialProgress.constructNext(workspaceId: imported.id, in: db) {}
+            return imported
         }
 
         func close() { try? database.dbQueue.close()

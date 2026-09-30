@@ -48,6 +48,7 @@ import Synchronization
                     INSERT INTO sync_operations(transactionId, position, id, entity, action, entityId, payloadJSON)
                     VALUES (?, 0, ?, 'transcript', 'patch', ?, '{}')
                     """, arguments: [transactionId, UUID.v7(), otherMeetingId])
+                    try SyncDependencies.index(transactionId: transactionId, workspaceId: fixture.workspaceId, in: db)
                 }
                 try db.execute(sql: "INSERT INTO summaries(meetingId, title, createdAt) VALUES (?, 'Old', ?)", arguments: [fixture.meetingId, Date()])
                 try db.execute(sql: "INSERT INTO sync_entity_state VALUES (?, 'summary', ?, 3)", arguments: [fixture.workspaceId, fixture.meetingId])

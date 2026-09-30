@@ -69,7 +69,8 @@ struct WorkspaceRelocation: Decodable, Sendable {
                     WHERE json_extract(prepared.value, '$.checksum') IS NOT json_extract(canonical.value, '$.checksum')
                   )))
             """, arguments: [id]) == true
-            if domainAffected.contains(id), try hasPendingAudio || SyncTransactionQueue.hasPending(workspaceId: id, in: db) {
+            if domainAffected.contains(id), try hasPendingAudio || SyncTransactionQueue.hasPending(workspaceId: id, in: db)
+                || !SyncReconciliation.keys(workspaceId: id, in: db).isEmpty {
                 throw SyncHTTPError(status: 409, body: Data("{\"error\":\"transfer_local_changes\"}".utf8))
             }
             if let existing = try WorkspaceRecord.fetchOne(db, key: id), existing.accountConnectionId != connectionId {
@@ -150,6 +151,16 @@ struct WorkspaceRelocation: Decodable, Sendable {
             )
         }
         for (item, source) in ordered {
+            // Adoption belongs to the old Workspace. Never delete moved content from a stale snapshot.
+            try SyncReconciliation.finish(item.entity, id: item.id, workspaceId: source, in: db)
+            if item.entity == .meeting {
+                try db.execute(sql: """
+                DELETE FROM sync_reconciliations WHERE workspaceId = ? AND (
+                    entity IN ('summary', 'transcript') AND entityId = ?
+                    OR entity = 'meeting_attachment' AND entityId IN (SELECT id FROM meeting_attachments WHERE meetingId = ?)
+                    OR entity = 'recording' AND entityId IN (SELECT id FROM recording_sessions WHERE meetingId = ?))
+                """, arguments: [source, item.id, item.id, item.id])
+            }
             let table = item.entity == .project ? "projects" : item.entity == .meeting ? "meetings" : "files"
             if item.entity == .meeting {
                 try db.execute(sql: """

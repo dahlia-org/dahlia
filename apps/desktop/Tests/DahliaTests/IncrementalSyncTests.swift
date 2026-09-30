@@ -40,6 +40,47 @@
             }
         }
 
+        @Test(arguments: ["stored", "proposed", "unrelated"])
+        func fileConflictChecksKeepBothAttachmentEndpoints(endpoint: String) async throws {
+            let fixture = try Fixture()
+            try await fixture.queue.write { db in
+                let proposed = endpoint == "proposed" ? fixture.fileId.uuidString.lowercased() : UUID.v7().uuidString
+                let payload = Data("{\"fileId\":\"\(proposed)\",\"meetingId\":\"\(fixture.meetingId)\"}".utf8)
+                _ = try SyncTransactionRecorder.record(workspaceId: fixture.workspaceId, operations: [.init(
+                    entity: .meetingAttachment, action: .upsert,
+                    entityId: endpoint == "stored" ? fixture.fileId : .v7(), payloadJSON: payload
+                )], in: db)
+                #expect(try RemoteChangePolicy.permits(.file, id: fixture.fileId, workspaceId: fixture.workspaceId, in: db)
+                    == (endpoint == "unrelated"))
+            }
+        }
+
+        @Test
+        func fileConflictChecksDoNotLoadEveryQueuedAttachmentsAncestry() async throws {
+            let fixture = try Fixture()
+            try await fixture.queueFile()
+            try await fixture.queue.write { db in
+                let transaction = try #require(try UUID.fetchOne(db, sql: "SELECT id FROM sync_transactions"))
+                try db.execute(sql: "DELETE FROM sync_operations")
+                for position in 0 ..< 2000 {
+                    let payload = "{\"meetingId\":\"\(fixture.meetingId)\",\"fileId\":\"\(UUID.v7())\"}"
+                    try db.execute(sql: """
+                    INSERT INTO sync_operations(transactionId, position, id, entity, action, entityId, payloadJSON)
+                    VALUES (?, ?, ?, 'meeting_attachment', 'upsert', ?, ?)
+                    """, arguments: [transaction, position, UUID.v7(), UUID.v7(), payload])
+                }
+                try db.execute(sql: "DELETE FROM sync_dependency_keys WHERE transactionId = ?", arguments: [transaction])
+                try SyncDependencies.index(transactionId: transaction, workspaceId: fixture.workspaceId, in: db)
+                let statements = Mutex(0)
+                db.trace { _ in statements.withLock { $0 += 1 } }
+                defer { db.trace(nil) }
+                #expect(try RemoteChangePolicy.permits(.file, id: fixture.fileId, workspaceId: fixture.workspaceId, in: db))
+                // A large outbox must not turn one received file into thousands of database queries.
+                #expect(statements.withLock { $0 } < 20)
+                #expect(try Int.fetchOne(db, sql: "SELECT count(*) FROM sync_operations") == 2000)
+            }
+        }
+
         @Test
         func malformedChangeResponseKeepsCursorAndExposesSafeDiagnostics() async throws {
             let fixture = try Fixture()
@@ -324,6 +365,7 @@
                 "records": [["entity": "transcript", "id": fixture.meetingId.uuidString, "revision": 1, "record": NSNull()]],
             ])
             let client = fixture.client { request in
+                if request.url!.path.hasSuffix("/capabilities") { return (200, [:], Data(#"{"documents":{"version":1},"sync":{"version":7}}"#.utf8)) }
                 let body = Self.requestBody(request)
                 if request.url?.path == "/api/v1/transactions/resolve" {
                     manifests.withLock { $0.append(body) }
@@ -438,7 +480,10 @@
             #expect(!paths.contains("/api/v1/transactions"))
             try await fixture.queue.read { db throws in
                 #expect(try SyncTransactionQueue.hasPending(workspaceId: fixture.workspaceId, in: db) == (status == "unknown"))
-                #expect(try MeetingRecord.fetchOne(db, key: fixture.meetingId)?.workspaceId == fixture.workspaceId)
+                let actual = try #require(try MeetingRecord.fetchOne(db, key: fixture.meetingId)?.workspaceId)
+                // An unknown receipt must keep the old ownership. Once acknowledged, the
+                // independent receive lane may already have applied the relocation.
+                #expect(status == "unknown" ? actual == fixture.workspaceId : [fixture.workspaceId, destination].contains(actual))
             }
         }
 
@@ -496,7 +541,8 @@
             await worker.drain()
             let deadline = ContinuousClock.now.advanced(by: .seconds(3))
             while ContinuousClock.now < deadline {
-                if try await fixture.queue.read({ try !SyncTransactionQueue.hasPending(workspaceId: healthy, in: $0) }) { break }
+                if healthyPulls.withLock({ $0 > 0 }),
+                   try await fixture.queue.read({ try !SyncTransactionQueue.hasPending(workspaceId: healthy, in: $0) }) { break }
                 try await Task.sleep(for: .milliseconds(10))
             }
             await worker.stop()

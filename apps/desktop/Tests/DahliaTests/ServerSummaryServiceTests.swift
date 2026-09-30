@@ -141,6 +141,10 @@ import DahliaRuntimeSupport
                     updatedAt: .now
                 )
                 .insert(db)
+                try db.execute(
+                    sql: "INSERT INTO sync_entity_state(workspace_id, entity, entityId, confirmedRevision) VALUES (?, 'meeting', ?, 1)",
+                    arguments: [target.workspaceID, target.meetingID]
+                )
                 var info = TranscriptInfo(id: .v7(), startedAt: nil, endedAt: nil, metadata: nil)
                 info.version = 1
                 try TranscriptRecord(meetingId: target.meetingID, info: info).insert(db)
@@ -477,6 +481,10 @@ import DahliaRuntimeSupport
                     updatedAt: .now
                 )
                 .insert(db)
+                try db.execute(
+                    sql: "INSERT INTO sync_entity_state(workspace_id, entity, entityId, confirmedRevision) VALUES (?, 'meeting', ?, 1)",
+                    arguments: [target.workspaceID, target.meetingID]
+                )
                 for id in [first, later] {
                     try RecordingSessionRecord(
                         id: id,

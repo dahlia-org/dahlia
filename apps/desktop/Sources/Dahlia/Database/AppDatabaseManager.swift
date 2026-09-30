@@ -377,6 +377,27 @@ final class AppDatabaseManager: Sendable {
             """)
         }
 
+        migrator.registerMigration("v50_syncPriority") { db in
+            try SyncPriorityMigration.migrate(in: db)
+        }
+
+        migrator.registerMigration("v51_scopedSyncReconciliation") { db in
+            guard try db.tableExists("workspaces") else { return }
+            try db.execute(sql: """
+            CREATE TABLE sync_reconciliations (
+                workspaceId BLOB NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
+                connectionId BLOB NOT NULL REFERENCES dahlia_account_connections(id) ON DELETE CASCADE,
+                entity TEXT NOT NULL, entityId BLOB NOT NULL, includeDescendants BOOLEAN NOT NULL DEFAULT 0,
+                PRIMARY KEY(workspaceId, entity, entityId)
+            );
+            CREATE TRIGGER sync_reconciliation_connection AFTER UPDATE OF accountConnectionId ON workspaces
+            WHEN OLD.accountConnectionId IS NOT NEW.accountConnectionId
+            BEGIN
+                DELETE FROM sync_reconciliations WHERE workspaceId = NEW.id;
+            END;
+            """)
+        }
+
         return migrator
     }()
 

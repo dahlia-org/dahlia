@@ -355,7 +355,7 @@ function DocumentEditor({ controller, editable }: { controller: BrowserDocument;
       <button onClick={() => editor?.commands.undo()} className="rounded px-2 hover:bg-muted">{uiText("Undo", "元に戻す")}</button>
       <button onClick={() => editor?.commands.redo()} className="rounded px-2 hover:bg-muted">{uiText("Redo", "やり直す")}</button>
     </div>}
-    <EditorContent editor={editor} className="min-h-48 whitespace-pre-wrap [&_.tiptap]:min-h-48 [&_.tiptap]:outline-none [&_ul]:list-disc [&_ol]:list-decimal [&_ul]:pl-6 [&_ol]:pl-6 [&_h2]:text-xl" />
+    <EditorContent editor={editor} className="min-h-48 [&_.tiptap]:min-h-48" />
     {controller.recoveries.size > 0 && <details><summary>{uiText("Preserved deleted paragraphs", "削除された段落の復元用コピー")}</summary>
       {[...controller.recoveries.values()].map((recovery) => <div key={recovery.id} className="my-3 border-t pt-3"><pre className="whitespace-pre-wrap">{recovery.blocks.map((block) => block.text).join("\n")}</pre>
         {editable && <button className="underline hover:no-underline" onClick={() => { void controller.restore(recovery).catch(() => {}); }}>{uiText("Insert as new paragraphs", "新しい段落として挿入")}</button>}

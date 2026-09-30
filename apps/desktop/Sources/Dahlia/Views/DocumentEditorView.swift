@@ -51,6 +51,7 @@ final class DocumentEditorModel {
     var flushEditor: (@MainActor () async throws -> Void)?
     private var saveTask: Task<Void, Never>?
     private var syncTask: Task<Void, Never>?
+    private var detailsTask: Task<Void, Never>?
     private struct Edit {
         let update: String
         let meetingID: UUID?
@@ -73,7 +74,7 @@ final class DocumentEditorModel {
         documentID = meetingID ?? orphan?.meetingID ?? .v7()
         self.resolveMeeting = resolveMeeting
         persistence = DocumentPersistence(dbQueue: dbQueue)
-        sync = DocumentSyncService(dbQueue: dbQueue)
+        sync = DocumentSyncService.shared(dbQueue: dbQueue)
     }
 
     func load() async {
@@ -81,6 +82,8 @@ final class DocumentEditorModel {
         let generation = loadGeneration
         syncTask?.cancel()
         syncTask = nil
+        detailsTask?.cancel()
+        detailsTask = nil
         ready = false
         visible = true
         do {
@@ -114,31 +117,53 @@ final class DocumentEditorModel {
                 checkpoint = prepared
                 legacyText = legacy
             }
-            await refreshRecoveries()
             guard isVisible(generation) else { return }
             ready = true
-            syncTask = Task { [weak self] in
-                while !Task.isCancelled {
-                    try? await Task.sleep(for: .seconds(2))
-                    guard let self, self.isVisible(generation) else { return }
-                    do {
-                        try await self.synchronizeVisibleDocument()
-                    } catch {
-                        guard self.isVisible(generation) else { return }
-                        self.error = L10n.documentSyncFailed
-                    }
-                }
-            }
+            startWatching(generation: generation)
         } catch {
             if isVisible(generation) { self.error = L10n.documentSaveFailed }
+        }
+    }
+
+    private func startWatching(generation: Int) {
+        syncTask = Task { [weak self] in
+            guard let self else { return }
+            while self.isVisible(generation), self.meetingID == nil {
+                try? await self.finishLocalSaves()
+                if self.meetingID == nil { try? await Task.sleep(for: .seconds(2)) }
+            }
+            guard self.isVisible(generation), let meetingID = self.meetingID else { return }
+            for await succeeded in await self.sync.observe(meetingID: meetingID) {
+                guard self.isVisible(generation) else { return }
+                do {
+                    if succeeded {
+                        try await self.refreshBody(meetingID: meetingID)
+                    } else { self.error = L10n.documentSyncFailed }
+                } catch { self.error = L10n.documentSyncFailed }
+            }
+        }
+        detailsTask = Task { [weak self] in
+            while !Task.isCancelled {
+                guard let self, self.isVisible(generation) else { return }
+                if let meetingID = self.meetingID {
+                    if let names = try? await self.sync.presence(meetingID: meetingID, sessionID: self.sessionID, editing: self.focused),
+                       self.isVisible(generation) { self.people = names }
+                    await self.refreshRecoveries()
+                }
+                try? await Task.sleep(for: .seconds(5))
+            }
         }
     }
 
     func synchronizeVisibleDocument() async throws {
         if visible, meetingID == nil { try await finishLocalSaves() }
         guard visible, let meetingID else { return }
-        let generation = loadGeneration
         try await sync.synchronize(meetingID: meetingID)
+        try await refreshBody(meetingID: meetingID)
+    }
+
+    private func refreshBody(meetingID: UUID) async throws {
+        let generation = loadGeneration
         let received = try await persistence.materialize(meetingID: meetingID).checkpoint
         let pending = try await dbQueue.read { db in
             try DocumentUpdateRecord.filter(Column("documentId") == DocumentRecord.notes(in: db, meetingID: meetingID)?.id)
@@ -150,11 +175,7 @@ final class DocumentEditorModel {
         if !pending, failedUpdates.isEmpty {
             status = savedStatus
         }
-        let names = try await sync.presence(meetingID: meetingID, sessionID: sessionID, editing: focused)
-        guard isVisible(generation) else { return }
-        people = names
         if error != L10n.documentPrivateRecoverySaved { error = "" }
-        await refreshRecoveries()
     }
 
     private func isVisible(_ generation: Int) -> Bool {
@@ -206,6 +227,7 @@ final class DocumentEditorModel {
                             meetingID: next.meetingID ?? documentID, update: next.update, local: true, orphan: orphan,
                             privateOnly: next.meetingID == nil, restoreDraft: next.restoreDraft
                         )
+                        if let meetingID = next.meetingID { await sync.localCommitted(meetingID: meetingID) }
                     } catch DocumentCoreError.editPreservedPrivately {
                         savedPrivately = true
                     }
@@ -235,6 +257,8 @@ final class DocumentEditorModel {
         focused = false
         syncTask?.cancel()
         syncTask = nil
+        detailsTask?.cancel()
+        detailsTask = nil
         Task { try? await finishLocalSaves() }
     }
 
@@ -255,6 +279,7 @@ final class DocumentEditorModel {
         Task {
             do {
                 try await persistence.insertRecoveredText(meetingID: meetingID, text: text)
+                await sync.localCommitted(meetingID: meetingID)
                 receivedUpdate = try await persistence.materialize(meetingID: meetingID).checkpoint
             } catch { self.error = L10n.documentSaveFailed }
         }
@@ -438,14 +463,15 @@ private struct DocumentWebEditor: NSViewRepresentable {
                     completionHandler: nil
                 )
             }
-            guard !parent.receivedUpdate.isEmpty, parent.receivedUpdate != lastUpdate else { return }
+            guard let view, !parent.receivedUpdate.isEmpty, parent.receivedUpdate != lastUpdate else { return }
             lastUpdate = parent.receivedUpdate
-            view?.callAsyncJavaScript(
+            let render = SyncDiagnostics.begin("DocumentApplyToWebView")
+            view.callAsyncJavaScript(
                 "window.dahliaDocument.receive(update)",
                 arguments: ["update": parent.receivedUpdate],
                 in: nil,
                 in: .page,
-                completionHandler: nil
+                completionHandler: { _ in SyncDiagnostics.end("DocumentApplyToWebView", render) }
             )
         }
 

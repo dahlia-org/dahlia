@@ -2937,9 +2937,7 @@ final class CaptionViewModel: ObservableObject {
         guard let id = currentMeetingId, let queue = currentDbQueue else { return }
         textContentTask?.cancel()
         textContentTask = Task {
-            for entity in [TextContentEntity.summary, .transcript] {
-                try? await MeetingContentProvider.shared.ensure(entity: entity, id: id, dbQueue: queue, refresh: true)
-            }
+            await MeetingContentProvider.shared.ensureMeeting(id: id, dbQueue: queue, refresh: true)
         }
     }
 
@@ -2993,9 +2991,7 @@ final class CaptionViewModel: ObservableObject {
         textContentTask = Task {
             await acquisition.value
             guard !Task.isCancelled else { return }
-            for entity in [TextContentEntity.summary, .transcript] {
-                try? await MeetingContentProvider.shared.ensure(entity: entity, id: meetingId, dbQueue: dbQueue)
-            }
+            await MeetingContentProvider.shared.ensureMeeting(id: meetingId, dbQueue: dbQueue)
         }
         meetingSyncObservation = ValueObservation.tracking { db in
             try MeetingRepository.fetchMeetingSyncSnapshot(meetingId: meetingId, in: db)
@@ -5383,7 +5379,7 @@ final class CaptionViewModel: ObservableObject {
         job.showStage("summarizing")
 
         let documents = DocumentPersistence(dbQueue: request.dbQueue)
-        let documentSync = DocumentSyncService(dbQueue: request.dbQueue)
+        let documentSync = DocumentSyncService.shared(dbQueue: request.dbQueue)
         let documentText: String
         if case nil = savedResult {
             try await documentSync.flush(meetingID: meetingId)

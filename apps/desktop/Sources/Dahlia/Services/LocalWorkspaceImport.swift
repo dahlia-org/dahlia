@@ -203,6 +203,8 @@ enum LocalWorkspaceImport {
         try db.execute(sql: "UPDATE document_local_archives SET workspace_id = ? WHERE workspace_id = ?", arguments: [target.id, sourceId])
         // A Local revision is not a Server base revision. Reconnection reinstalls confirmed Server revisions below.
         for (item, _) in moves {
+            try db.execute(sql: "DELETE FROM sync_relation_history WHERE entity = ? AND entityId = ?", arguments: [item.entity, item.id])
+            try db.execute(sql: "DELETE FROM sync_confirmed_relations WHERE entity = ? AND entityId = ?", arguments: [item.entity, item.id])
             try db.execute(sql: "DELETE FROM sync_entity_state WHERE workspace_id = ? AND entityId = ?", arguments: [target.id, item.id])
             try db.execute(
                 sql: "UPDATE sync_content_state SET residentRevision = NULL WHERE workspace_id = ? AND entityId = ?",
@@ -210,17 +212,22 @@ enum LocalWorkspaceImport {
             )
         }
         try reconnection?.apply(workspaceId: target.id, advanceCursor: sourceId == target.id, in: db)
-        try SyncInitialSnapshotBuilder.enqueueContents(
-            moves.map(\.0),
+        try SyncInitialProgress.start(
             workspaceId: target.id,
-            replaceServerImageAnalysis: replaceServerImageAnalysis,
+            connectionId: destination.connectionId,
+            restoring: false,
+            replaceImages: replaceServerImageAnalysis,
+            importId: record.id,
+            items: moves.map(\.0),
             existing: reconnection?.ids ?? .init(ids: [:]),
             in: db
         )
-        try db.execute(sql: """
-        INSERT INTO local_workspace_import_operations(operationId, importId)
-        SELECT o.id, ? FROM sync_operations o JOIN sync_transactions t ON t.id = o.transactionId WHERE t.workspace_id = ?
-        """, arguments: [record.id, target.id])
+        try SyncInitialSnapshotBuilder.enqueueRecordingContents(
+            moves.map(\.0),
+            workspaceId: target.id,
+            existing: reconnection?.ids ?? .init(ids: [:]),
+            in: db
+        )
         try WorkspaceImportDestinationRecord.filter(Column("sourceWorkspaceId") == sourceId
             && Column("connectionId") == destination.connectionId
             && Column("destinationWorkspaceId") == target.id).deleteAll(db)

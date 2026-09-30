@@ -105,7 +105,8 @@ Server Account の画像本体は未送信分も含めて Application Support �
 一覧用 `thumb_480`（長辺最大480px）、`thumb_1280`（1280px）、プレビュー用 `thumb_1568`（1568px）、`thumb_1920`（1920px）は Node Server が要求時に生成し Volume に永続化する。生成非対応の環境は variant を広告しない。Web の画像リンクは1568px版を開き、原寸リンクも提供する。Desktop の要約・OCR・キャプション・チャット・MCP通常画像入力は共通の1280px上限を使い、原寸指定は維持する。
 MCP の本文・画像の cache miss は同梱 helper 用 broker でアプリの共通 provider に取得を依頼する。未送信原本は解放しない。Local Account への移動は metadata 同期と全本文取得を完了し、必要な原本をファイルで揃えてから、所属変更とファイル参照を同じ transaction で確定する。バックアップの新規作成は Local Account のワークスペースに限定する。
 `files` は Workspace 所有の原本と metadata、`meeting_attachments` は会議への独立した紐付けを保持する。原本 URI は Volume の絶対パスで、Local Account と未確定の原本は NULL とする。端末の保存先は FileStore/index.sqlite と local/files/{fileId}/original または server/{accountConnectionId}/files/{fileId}/original。
-詳細は [同期 ADR](docs/adr/shared/sync.md) を参照する。
+Desktop の送受信、初期構築、文書交換、録音アーカイブ、画像転送は独立して進む。依存キーと同一 entity の順序を SQLite に保存し、実行可能な通常操作4件に背景1件の機会を与える。未構築の本文と未送信原本は保護する。文書同期は DB ごとの共有サービスと専用 SSE、ローカル commit 後200msの固定送信窓を使う。Server は認可・Workspace lifecycle・domain・Document のロックを分け、通常の大量 domain 更新中も文書交換を進める。
+詳細は [同期 ADR](docs/adr/shared/sync.md) と [優先同期 ADR](docs/adr/shared/sync-priority.md) を参照する。
 
 利用テレメトリは録音・永続化の正本から独立した lossy projection である。`CaptionViewModel` などの owner は低頻度の
 workflow 境界で型付き `UsageTelemetryEvent` を生成し、`UsageTelemetryService` が公式 SDK の非ブロッキングキューへ渡す。内蔵 MCP helper も型付きの粗い tool-call event だけを専用 adapter へ渡し、外部 MCP client は計測しない。
@@ -542,6 +543,8 @@ New Server Workspace batch sessions enqueue a durable `recording_archives` job a
 ## Collaborative meeting Documents
 
 [Documents ADR](docs/adr/shared/documents.md) defines meeting Notes as Yjs checkpoint plus update logs. `apps/server/src/documents` owns portable operations, batching, and recovery detection. Web retains pending changes in memory; Desktop commits deltas to SQLite before acknowledging local persistence, then processes projections in a dedicated JavaScriptCore thread. Document synchronization runs independently of domain transactions and recording stop. Server Node and Workers use the same authorized store and encryption layer.
+
+Desktop domain synchronization and Documents still share the SQLite queue. Conflict checks use durable dependency keys that include stored and proposed attachment endpoints; unknown legacy requests remain barriers until indexed. This preserves protection during attachment moves without decoding the full outbox or loading unrelated meeting and project ancestry for every received record.
 
 Legacy Server Notes stay private until explicit Workspace publication. Local Account conversion preserves literal text and dates. Protected pending, private, and recovery data cannot be evicted; refetchable shared state participates in the 128 MiB cache. Remote deletion archives protected local state before removing the parent. Local-to-Server moves preserve documents privately by default. Server summaries capture an internal encrypted `notesSnapshot` at acceptance. Presence is a DB-backed expiring session list; there are no block locks.
 

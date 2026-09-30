@@ -9,6 +9,23 @@
 
     @MainActor
     struct ScreenshotContentTests {
+        private nonisolated static func recordingBody(of request: URLRequest) -> URLRequest {
+            var recorded = request
+            if let stream = request.httpBodyStream, request.httpBody == nil {
+                stream.open()
+                defer { stream.close() }
+                var body = Data()
+                var buffer = [UInt8](repeating: 0, count: 1024)
+                while true {
+                    let count = stream.read(&buffer, maxLength: buffer.count)
+                    if count <= 0 { break }
+                    body.append(contentsOf: buffer.prefix(count))
+                }
+                recorded.httpBody = body
+            }
+            return recorded
+        }
+
         @Test(arguments: [nil, "", " \n\t"] as [String?])
         func remoteAnalysisWaitIsBoundedWithoutDiscardingText(caption: String?) {
             let pending = ScreenshotOCRState.remote(ocrText: "OCR", caption: caption, state: .ready)
@@ -95,21 +112,10 @@
             ]))
             let requests = Mutex<[URLRequest]>([])
             ImageURLProtocol.register(origin: fixture.source.origin) { request in
-                var recorded = request
-                if let stream = request.httpBodyStream, request.httpBody == nil {
-                    stream.open()
-                    defer { stream.close() }
-                    var body = Data()
-                    var buffer = [UInt8](repeating: 0, count: 1024)
-                    while true {
-                        let count = stream.read(&buffer, maxLength: buffer.count)
-                        if count <= 0 { break }
-                        body.append(contentsOf: buffer.prefix(count))
-                    }
-                    recorded.httpBody = body
-                }
+                let recorded = Self.recordingBody(of: request)
                 requests.withLock { $0.append(recorded) }
                 let path = request.url!.path
+                if path.hasSuffix("/capabilities") { return (200, [:], Data(#"{"sync":{"version":7}}"#.utf8)) }
                 if path == "/api/v1/transactions/resolve" {
                     return (200, [:], Data("{\"id\":\"\(transactionId)\",\"status\":\"unknown\"}".utf8))
                 }
@@ -254,10 +260,15 @@
             #expect(transaction.workspaceId == queued.workspaceId)
             try await missing.dbQueue.read { db throws in
                 #expect(try WorkspaceRecord.fetchOne(db, key: pending.workspaceId)?.syncConfirmedConnectionId == pending.connectionId)
-                #expect(try WorkspaceRecord.fetchOne(db, key: missing.workspaceId)?.syncConfirmedConnectionId == nil)
+                #expect(try WorkspaceRecord.fetchOne(db, key: missing.workspaceId)?.syncConfirmedConnectionId == missing.connectionId)
+                #expect(try SyncInitialProgress.active(workspaceId: missing.workspaceId, in: db))
                 #expect(try MeetingScreenshotRecord.fetchOne(db, key: missing.screenshotId)?.remoteSource == missing.source)
                 #expect(try Int
-                    .fetchOne(db, sql: "SELECT count(*) FROM sync_transactions WHERE workspace_id = ?", arguments: [missing.workspaceId]) == 0)
+                    .fetchOne(
+                        db,
+                        sql: "SELECT count(*) FROM sync_operations o JOIN sync_transactions t ON t.id = o.transactionId WHERE t.workspace_id = ? AND o.entity = 'file'",
+                        arguments: [missing.workspaceId]
+                    ) == 0)
             }
             available.withLock { $0 = true }
             try await SyncInitialSnapshotBuilder.enqueuePending(dbQueue: missing.dbQueue, screenshotContent: provider)

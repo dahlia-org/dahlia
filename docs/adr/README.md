@@ -44,6 +44,8 @@ Server / Private Web、配置、API、認可、storage。
 
 ## Shared
 
+- [Desktop の優先同期と文書ロック](shared/sync-priority.md)
+
 - [会議 Notes の共同編集 Documents 化](shared/documents.md)
 - [Workspace に属する独立した Document](shared/document-identity.md)
 

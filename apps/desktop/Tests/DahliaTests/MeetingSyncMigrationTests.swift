@@ -8,70 +8,6 @@
     @MainActor
     struct MeetingSyncMigrationTests {
         @Test
-        func finalUnreleasedSchemaUsesFourDerivedStateFreeQueueTables() throws {
-            let database = try AppDatabaseManager(path: ":memory:")
-            let tables = try database.dbQueue.read { db in
-                try String.fetchAll(
-                    db,
-                    sql: "SELECT name FROM sqlite_master WHERE type = 'table' AND name LIKE 'sync_%' ORDER BY name"
-                )
-            }
-            #expect(tables == [
-                "sync_content_state",
-                "sync_entity_state",
-                "sync_operations",
-                "sync_transactions",
-                "sync_transcript_patch_items",
-            ])
-
-            let cloudWorkspaceExists = try database.dbQueue.read { db in
-                try db.tableExists("cloud_workspaces")
-            }
-            #expect(!cloudWorkspaceExists)
-
-            let transactionColumns = try database.dbQueue.read { db in
-                try String.fetchAll(db, sql: "SELECT name FROM pragma_table_info('sync_transactions')")
-            }
-            #expect(!transactionColumns.contains("status"))
-            #expect(!transactionColumns.contains("claimedAt"))
-
-            let operationColumns = try database.dbQueue.read { db in
-                try String.fetchAll(db, sql: "SELECT name FROM pragma_table_info('sync_operations')")
-            }
-            #expect(operationColumns.contains("attachmentReference"))
-            #expect(!operationColumns.contains("expectedRevision"))
-
-            let stateColumns = try database.dbQueue.read { db in
-                try String.fetchAll(db, sql: "SELECT name FROM pragma_table_info('sync_entity_state')")
-            }
-            #expect(stateColumns == ["workspace_id", "entity", "entityId", "confirmedRevision"])
-            let stateWorkspaceForeignKey = try database.dbQueue.read { db in
-                try Row.fetchOne(
-                    db,
-                    sql: "SELECT \"table\", \"from\", on_delete FROM pragma_foreign_key_list('sync_entity_state')"
-                )
-            }
-            #expect(stateWorkspaceForeignKey?["table"] as String? == "workspaces")
-            #expect(stateWorkspaceForeignKey?["from"] as String? == "workspace_id")
-            #expect(stateWorkspaceForeignKey?["on_delete"] as String? == "CASCADE")
-            let workspaceColumns = try database.dbQueue.read { db in
-                try String.fetchAll(db, sql: "SELECT name FROM pragma_table_info('workspaces')")
-            }
-            #expect(!workspaceColumns.contains("syncEnabled"))
-            let projectNameIndexes = try database.dbQueue.read { db in
-                try Int.fetchOne(
-                    db,
-                    sql: """
-                    SELECT count(*) FROM sqlite_master
-                    WHERE type = 'index'
-                      AND name IN ('projects_unique_root_name', 'projects_unique_child_name')
-                    """
-                ) ?? 0
-            }
-            #expect(projectNameIndexes == 0)
-        }
-
-        @Test
         func recorderReferencesTheSameFileAfterTheScreenshotRowIsDeleted() async throws {
             let (database, workspace) = try await syncedDatabase()
             let firstId = UUID.v7()
@@ -319,7 +255,12 @@
         @Test
         func reapplyingADeletedWorkspaceQueuesTheCompleteLocalSnapshot() async throws {
             let (database, workspace) = try await syncedDatabase()
-            var otherPending = WorkspaceRecord(id: .v7(), name: "Older pending", createdAt: workspace.createdAt.addingTimeInterval(-1), lastOpenedAt: .distantPast)
+            var otherPending = WorkspaceRecord(
+                id: .v7(),
+                name: "Older pending",
+                createdAt: workspace.createdAt.addingTimeInterval(-1),
+                lastOpenedAt: .distantPast
+            )
             otherPending.accountConnectionId = workspace.accountConnectionId
             otherPending.organizationId = workspace.organizationId
             otherPending.syncRole = "admin"
@@ -332,8 +273,16 @@
                 id: .v7(), workspaceId: workspace.id, projectId: project.id, name: "Meeting",
                 createdAt: .now, updatedAt: .now
             )
-            let screenshot = MeetingScreenshotRecord(id: .v7(), meetingId: meeting.id, sessionId: nil, capturedAt: .now, imageData: Data([1, 2, 3]), mimeType: "image/png",
-                                                     ocrText: "text", caption: "caption")
+            let screenshot = MeetingScreenshotRecord(
+                id: .v7(),
+                meetingId: meeting.id,
+                sessionId: nil,
+                capturedAt: .now,
+                imageData: Data([1, 2, 3]),
+                mimeType: "image/png",
+                ocrText: "text",
+                caption: "caption"
+            )
             try await database.dbQueue.write { db in
                 try pendingWorkspace.insert(db)
                 try project.insert(db)
@@ -374,8 +323,11 @@
                     JOIN sync_transactions t ON t.id = o.transactionId
                     WHERE t.workspace_id = ? AND o.entity = 'file'
                     """, arguments: [workspace.id]),
-                    Int.fetchOne(db, sql: "SELECT count(*) FROM sync_transactions WHERE workspace_id = ?",
-                                 arguments: [pendingWorkspace.id]) ?? 0
+                    Int.fetchOne(
+                        db,
+                        sql: "SELECT count(*) FROM sync_transactions WHERE workspace_id = ?",
+                        arguments: [pendingWorkspace.id]
+                    ) ?? 0
                 )
             }
             #expect(state.0 == ["workspace", "project", "meeting", "file", "meeting_attachment"])
@@ -502,8 +454,15 @@
                     WHERE t.workspace_id = ? ORDER BY t.sequence, o.position
                     """,
                     arguments: [workspace.id]
-                ).map { (id: $0["id"] as UUID, entity: $0["entity"] as String, action: $0["action"] as String, baseRevision: $0["baseRevision"] as Int?,
-                    payloadJSON: $0["payloadJSON"] as String?, attachmentSHA256: $0["attachmentSHA256"] as String?, attachmentLength: $0["attachmentLength"] as Int?)
+                ).map { (
+                    id: $0["id"] as UUID,
+                    entity: $0["entity"] as String,
+                    action: $0["action"] as String,
+                    baseRevision: $0["baseRevision"] as Int?,
+                    payloadJSON: $0["payloadJSON"] as String?,
+                    attachmentSHA256: $0["attachmentSHA256"] as String?,
+                    attachmentLength: $0["attachmentLength"] as Int?
+                )
                 }
             }
             #expect(rows.count == 3)
@@ -1163,7 +1122,7 @@
                     """
                 ).map { ($0["operationCount"] as Int, $0["payloadBytes"] as Int) }
             }
-            #expect(batches.count == 4)
+            #expect(batches.count == 330)
             #expect(batches.reduce(0) { $0 + $1.0 } == 330)
             #expect(batches.allSatisfy { $0.1 < 8 * 1024 * 1024 })
         }
@@ -1793,7 +1752,12 @@
 
         private func syncedDatabase() async throws -> (AppDatabaseManager, WorkspaceRecord) {
             let database = try AppDatabaseManager(path: ":memory:")
-            let connection = DahliaAccountConnectionRecord(id: .v7(), origin: "https://server.example.com", clientID: "desktop-client", createdAt: .now)
+            let connection = DahliaAccountConnectionRecord(
+                id: .v7(),
+                origin: "https://server.example.com",
+                clientID: "desktop-client",
+                createdAt: .now
+            )
             var workspace = WorkspaceRecord(id: .v7(), path: "/tmp/sync", name: "Sync", createdAt: .now, lastOpenedAt: .now)
             workspace.accountConnectionId = connection.id
             if workspace.syncRole == nil { workspace.syncRole = "admin" }

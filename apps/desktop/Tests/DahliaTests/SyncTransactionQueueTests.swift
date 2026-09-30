@@ -259,7 +259,7 @@
         }
 
         @Test
-        func releasingACancelledClaimAddsShortDelayWithoutCountingTheAttempt() async throws {
+        func releasingACancelledClaimPreservesItsUncertainAttemptAndOriginalIdentity() async throws {
             let (database, workspace) = try await syncedDatabase()
             _ = try await database.dbQueue.write { db in
                 try SyncTransactionRecorder.record(
@@ -278,7 +278,7 @@
                     sql: "SELECT attempts, availableAt, leaseExpiresAt FROM sync_transactions WHERE id = ?",
                     arguments: [transaction.id]
                 ))
-                #expect(row["attempts"] as Int == 0)
+                #expect(row["attempts"] as Int == 1)
                 #expect(row["availableAt"] as Date > Date.now)
                 #expect(row["leaseExpiresAt"] as Date? == nil)
             }
@@ -291,7 +291,7 @@
             }
             let reclaimed = try #require(try await SyncTransactionQueue.claim(dbQueue: database.dbQueue))
             #expect(reclaimed.id == transaction.id)
-            #expect(reclaimed.attempts == 1)
+            #expect(reclaimed.attempts == 2)
         }
 
         @Test

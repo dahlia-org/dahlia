@@ -154,6 +154,47 @@
             #expect(await fixture.server.resolveCount == 0)
         }
 
+        @Test(.timeLimit(.minutes(1)))
+        func blockedBackgroundUploadDoesNotBlockCurrentMetadata() async throws {
+            let fixture = try SyncTransferFixture()
+            defer { fixture.close() }
+            _ = try await fixture.addFile()
+            try await fixture.queue.write { try $0.execute(sql: "UPDATE sync_transactions SET syncPriority = 0") }
+            await fixture.server.holdUploads()
+            var uploads = fixture.server.uploadStarts.makeAsyncIterator()
+            let worker = fixture.worker()
+            await worker.drain()
+            #expect(await uploads.next() == 1)
+            let current = try await fixture.queue.write { db in
+                try #require(try SyncTransactionRecorder.record(
+                    workspaceId: fixture.workspaceId,
+                    operations: [.init(
+                        entity: .project,
+                        action: .create,
+                        entityId: .v7(),
+                        payloadJSON: Data(#"{"name":"Current","projectType":"undefined","createdAt":"2026-09-30T00:00:00Z"}"#
+                            .utf8)
+                    )],
+                    in: db
+                ))
+            }
+            let completed = ValueObservation.tracking { db in
+                try Int.fetchOne(db, sql: "SELECT count(*) FROM sync_transactions WHERE id = ?", arguments: [current]) == 0
+            }.values(in: fixture.queue)
+            for try await done in completed where done {
+                break
+            }
+            #expect(await fixture.server.commitIds.contains(current))
+            #expect(try await fixture.queue.read { try Int.fetchOne($0, sql: "SELECT count(*) FROM sync_operations WHERE entity = 'file'") } == 1)
+            await fixture.server.releaseUploads()
+            let remaining = ValueObservation.tracking { db in try Int.fetchOne(db, sql: "SELECT count(*) FROM sync_transactions") == 0 }
+                .values(in: fixture.queue)
+            for try await done in remaining where done {
+                break
+            }
+            await worker.stop()
+        }
+
         @Test(.timeLimit(.minutes(1)), arguments: [false, true])
         func retryResolvesBeforeRestagingAndKeepsTheOriginalRequest(committed: Bool) async throws {
             let fixture = try SyncTransferFixture()
@@ -401,7 +442,8 @@
             let first = try #require(try await SyncTransactionQueue.claim(dbQueue: fixture.queue))
             let candidates = try await fixture.queue.read { try SyncTransactionQueue.fileUploads(for: first, origin: fixture.origin, in: $0) }
             #expect(candidates.filter { $0.operation.entityId == file.id }.count == 1)
-            #expect(candidates.count == (boundary == "sameFile" ? 2 : 1))
+            // Unrelated deletes, retries and blocked files no longer fence the whole Workspace.
+            #expect(candidates.count == (["sameFile", "delete", "retry", "blocked"].contains(boundary) ? 2 : 1))
         }
 
         @Test(.timeLimit(.minutes(1)), arguments: [false, true])
@@ -618,6 +660,7 @@
 
         func handle(_ request: URLRequest) async throws -> (Int, Data) {
             let path = request.url!.path
+            if path.hasSuffix("/capabilities") { return (200, Data(#"{"documents":{"version":1},"sync":{"version":7}}"#.utf8)) }
             if expiredPullCursor {
                 if path.hasSuffix("/capabilities") { return (200, Data("{\"documents\":{\"version\":1},\"sync\":{\"version\":7}}".utf8)) }
                 if path.hasSuffix("/changes") { return (410, Data("{\"code\":\"sync_cursor_expired\"}".utf8)) }

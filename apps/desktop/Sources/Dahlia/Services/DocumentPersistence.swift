@@ -57,7 +57,11 @@ actor DocumentPersistence {
     ) async throws {
         guard update.utf8.count <= DocumentLimits.encodedUpdateBytes,
               let bytes = Data(base64Encoded: update), bytes.count <= DocumentLimits.stateBytes else { throw DocumentCoreError.invalidCommand }
+        let commit = SyncDiagnostics.begin("DocumentLocalCommit")
+        defer { SyncDiagnostics.end("DocumentLocalCommit", commit) }
         let privateCopy = try await dbQueue.write { db -> Bool in
+            let write = SyncDiagnostics.begin("DocumentDatabaseWrite")
+            defer { SyncDiagnostics.end("DocumentDatabaseWrite", write) }
             guard !privateOnly, let meeting = try MeetingRecord.fetchOne(db, key: meetingID),
                   let workspace = try WorkspaceRecord.fetchOne(db, key: meeting.workspaceId) else {
                 guard local, let orphan, orphan.meetingID == meetingID,

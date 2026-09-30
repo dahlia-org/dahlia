@@ -32,6 +32,23 @@ describe("portable document core", () => {
     core.insertText(legacy, id);
     expect(new DocumentCore(core.checkpoint()).projection().text).toBe(legacy);
   });
+  it("preserves headings, empty paragraphs and trailing edits across native and Web checkpoints", () => {
+    const native = new DocumentCore();
+    native.insertText("見出し\n\n本文\n\n末尾\n", id);
+    const first = paragraph(native);
+    const heading = new Y.XmlElement("heading");
+    heading.setAttribute("id", first.getAttribute("id")!);
+    heading.setAttribute("level", "2");
+    const content = new Y.XmlText(); content.insert(0, "見出し"); heading.insert(0, [content]);
+    const root = native.document.getXmlFragment(documentFragment);
+    root.delete(0, 1); root.insert(0, [heading]);
+    const web = new DocumentCore(native.checkpoint());
+    expect(web.document.getXmlFragment(documentFragment).toJSON()).toBe(root.toJSON());
+    expect(web.projection().text).toBe("見出し\n\n本文\n\n末尾\n");
+    const result = JSON.parse(runNativeDocument(JSON.stringify({ checkpoint: web.checkpoint() }))) as { projection: ReturnType<DocumentCore["projection"]> };
+    expect(result.projection).toEqual(web.projection());
+    native.destroy(); web.destroy();
+  });
   it("converges on concurrent insertion in the same paragraph, reverse and duplicate delivery", () => {
     const initial = new DocumentCore(); initial.insertText("会議", id);
     const a = new DocumentCore(initial.checkpoint()), b = new DocumentCore(initial.checkpoint());

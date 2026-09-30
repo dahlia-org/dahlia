@@ -1,3 +1,5 @@
+import { beginSyncTiming } from "./diagnostics";
+import { createSyncLocks } from "./locks";
 import { createDocumentStore } from "../documents/store";
 import { enqueueMemorySource } from "../memory/enqueue";
 import { memoryDocumentId } from "../memory/ids";
@@ -98,24 +100,30 @@ export function createPostgresMeetingSyncStore(
     async withIdentity(identity, action) {
       if (!await isAvailable()) throw new SyncStoreUnavailableError();
       let changed = false;
+      // Drizzle acquires the connection and starts BEGIN before invoking this callback.
+      const connected = beginSyncTiming("connectionAndBegin");
       const result = await db.transaction(async (transaction) => {
-        await transaction.execute(sql`select set_config('app.user_id', ${identity.userId}, true)`);
-        await transaction.execute(sql`select set_config('app.sharing_enabled', 'true', true)`);
-        if (searchBackend === "lakebase") {
-          await transaction.execute(sql`select set_config('lakebase_bm25.prefilter', 'on', true)`);
-        } else if (searchBackend === "postgres" && embeddingConfig) {
-          await transaction.execute(sql`select set_config('hnsw.iterative_scan', 'strict_order', true)`);
-        }
-        return action(createIdentityStore(
-          transaction,
-          postgresSchema,
-          identity,
-          searchBackend,
-          embeddingConfig,
-          encryption,
-          () => { changed = true; },
-        ));
-      });
+        connected();
+        const processed = beginSyncTiming("transaction");
+        try {
+          await transaction.execute(sql`select set_config('app.user_id', ${identity.userId}, true)`);
+          await transaction.execute(sql`select set_config('app.sharing_enabled', 'true', true)`);
+          if (searchBackend === "lakebase") {
+            await transaction.execute(sql`select set_config('lakebase_bm25.prefilter', 'on', true)`);
+          } else if (searchBackend === "postgres" && embeddingConfig) {
+            await transaction.execute(sql`select set_config('hnsw.iterative_scan', 'strict_order', true)`);
+          }
+          return await action(createIdentityStore(
+            transaction,
+            postgresSchema,
+            identity,
+            searchBackend,
+            embeddingConfig,
+            encryption,
+            () => { changed = true; },
+          ));
+        } finally { processed(); }
+      }).finally(connected);
       if (changed) committed?.();
       return result;
     },
@@ -231,7 +239,7 @@ function createHistoryMaintenanceStore(db: PostgresDatabase, schema: SyncSchema,
     async purgeDeletedMeetings(workspaceId: string, now: Date): Promise<number> {
       return db.transaction(async (tx) => {
         if (isPostgres) {
-          await tx.execute(sql`select pg_advisory_xact_lock(hashtextextended(${`workspace:${workspaceId}`}, 0))`);
+          await createSyncLocks(tx, true).workspace(workspaceId, "exclusive");
           await tx.execute(sql`select set_config('app.maintenance', 'meeting-retention', true), set_config('app.maintenance_workspace_id', ${workspaceId}, true)`);
         }
         const [workspace] = await tx.select({ days: schema.syncedWorkspace.meetingDeletionGraceDays }).from(schema.syncedWorkspace)
@@ -262,7 +270,7 @@ function createHistoryMaintenanceStore(db: PostgresDatabase, schema: SyncSchema,
     async expireRecordingUploads(workspaceId: string, before: Date) {
       await db.transaction(async (tx) => {
         if (isPostgres) {
-          await tx.execute(sql`select pg_advisory_xact_lock(hashtextextended(${`workspace:${workspaceId}`}, 0))`);
+          await createSyncLocks(tx, true).workspace(workspaceId, "exclusive");
           await tx.execute(sql`select set_config('app.maintenance', 'storage', true), set_config('app.maintenance_workspace_id', ${workspaceId}, true)`);
         }
         await expireRecordingStaging(tx, schema, isPostgres, workspaceId, before);
@@ -276,7 +284,7 @@ function createHistoryMaintenanceStore(db: PostgresDatabase, schema: SyncSchema,
     async pruneHistoryBatch(target: SyncHistoryTarget) {
       return db.transaction(async (transaction) => {
         if (isPostgres) {
-          await transaction.execute(sql`select pg_advisory_xact_lock(hashtextextended(${`workspace:${target.workspaceId}`}, 0))`);
+          await createSyncLocks(transaction, true).workspace(target.workspaceId, "exclusive");
           await transaction.execute(sql`select set_config('app.maintenance', 'retention', true)`);
         }
         const statePredicate = and(
@@ -557,12 +565,10 @@ function createIdentityStore(
     }
   }
 
-  async function lockWorkspace(workspaceId: string, checkTransfers = true): Promise<void> {
-    if (searchBackend !== "sqlite") {
-      // ponytail: serialize authorization-changing transactions; partition this lock if write throughput requires it.
-      await db.execute(sql`select pg_advisory_xact_lock(75047176522050)`);
-      await db.execute(sql`select pg_advisory_xact_lock(hashtextextended(${`workspace:${workspaceId}`}, 0))`);
-    }
+  const locks = createSyncLocks(db, searchBackend !== "sqlite");
+  async function lockWorkspace(workspaceId: string, checkTransfers = true, mode: "lifecycle" | "domain" | "document" | "authorization" = "lifecycle"): Promise<void> {
+    await locks.workspace(workspaceId, mode === "lifecycle" || mode === "authorization" ? "exclusive" : "shared", mode === "authorization" ? "exclusive" : "shared");
+    if (mode === "domain") await locks.domain(workspaceId);
     if (checkTransfers && identity.syncClient && !identity.syncClient.workspaceTransfers) {
       const [transfer] = await db.select({ id: schema.workspaceTransfer.id }).from(schema.workspaceTransfer).where(and(or(
         eq(schema.workspaceTransfer.sourceWorkspaceId, workspaceId), eq(schema.workspaceTransfer.destinationWorkspaceId, workspaceId),
@@ -602,6 +608,7 @@ function createIdentityStore(
   async function transferWorkspace(request: WorkspaceTransferRequest): Promise<WorkspaceTransferRecord> {
     const { sourceWorkspaceId, destinationWorkspaceId } = request;
     if (sourceWorkspaceId === destinationWorkspaceId) throw new SyncTransactionError(400, "same_workspace");
+    await locks.authorization();
     // Serialize reused keys even when the second request names different Workspaces.
     if (searchBackend !== "sqlite") {
       await db.execute(sql`select pg_advisory_xact_lock(hashtextextended(${`transfer:${userPrincipalId}:${request.idempotencyKey}`}, 0))`);
@@ -1459,7 +1466,9 @@ function createIdentityStore(
   }
 
   async function resolveTransaction(transaction: SyncTransaction): Promise<SyncTransactionResponse | null> {
-    await lockWorkspace(transaction.workspaceId);
+    const changesAuthorization = transaction.operations.some((operation) => operation.entity === "workspace");
+    const changesParents = transaction.operations.some((operation) => operation.entity === "meeting" || operation.entity === "project");
+    await lockWorkspace(transaction.workspaceId, true, changesAuthorization ? "authorization" : changesParents ? "lifecycle" : "domain");
     if (searchBackend !== "sqlite") {
       await db.execute(sql`select pg_advisory_xact_lock(hashtextextended(${`transaction:${transaction.id}`}, 0))`);
     }
@@ -1551,7 +1560,7 @@ function createIdentityStore(
   }
 
   async function forceDeleteWorkspace(organizationId: string, transaction: SyncTransaction, revision: number, changeCursor: string) {
-    await lockWorkspace(transaction.workspaceId);
+    await lockWorkspace(transaction.workspaceId, true, "authorization");
     await governance(organizationId);
     const previous = await resolveTransaction(transaction);
     if (previous) return previous;
@@ -2240,7 +2249,7 @@ function createIdentityStore(
   }
 
   async function completeImageAnalysis(input: ImageAnalysisInput, transaction: SyncTransaction): Promise<boolean> {
-    await lockWorkspace(input.workspaceId);
+    await lockWorkspace(input.workspaceId, true, "domain");
     const claimQuery = db.select({ id: schema.imageAnalysisJob.fileId }).from(schema.imageAnalysisJob)
       .where(imageClaimKey(input));
     const [claim] = searchBackend === "sqlite" ? await claimQuery : await claimQuery.for("update");
@@ -2269,7 +2278,7 @@ function createIdentityStore(
     through: number,
     limit: number,
   ): Promise<SyncChangeRecord[]> {
-    await lockWorkspace(workspaceId);
+    await lockWorkspace(workspaceId, true, "domain");
     await assertCursorAvailable(workspaceId, after);
     const [workspace] = await db.select({ id: schema.syncedWorkspace.workspaceId }).from(schema.syncedWorkspace)
       .where(and(readable(schema.syncedWorkspace.workspaceId), eq(schema.syncedWorkspace.workspaceId, workspaceId))).limit(1);
@@ -2446,7 +2455,7 @@ function createIdentityStore(
   }
 
   return {
-    ...createDocumentStore(db, schema, identity, content, lockWorkspace, { read: readable, write: writeAccess }),
+    ...createDocumentStore(db, schema, identity, content, (id) => lockWorkspace(id, true, "document"), { read: readable, write: writeAccess }, locks),
     workspaceTransferAudience,
     transferWorkspace,
     getWorkspaceRelocations,
@@ -2510,7 +2519,7 @@ function createIdentityStore(
       await db.update(jobs).set({ status: "succeeded", claimedAt: null, leaseExpiresAt: null, lastErrorCode: null }).where(filter);
       return true;
     },
-    lockWorkspace,
+    lockWorkspace: (workspaceId, options) => lockWorkspace(workspaceId, true, options?.authorization ? "authorization" : "lifecycle"),
     loadImageAnalysis,
     listUninformativeScreenshots,
     completeImageAnalysis,
@@ -2530,7 +2539,7 @@ function createIdentityStore(
     latestChangeSequence,
     ensureUploadTarget,
     async putTranscriptChunk(workspaceId, meetingId, patchId, chunkIndex, contentHash, segments, deletions) {
-      await lockWorkspace(workspaceId);
+      await lockWorkspace(workspaceId, true, "domain");
       if (!await ensureUploadTarget(workspaceId, meetingId)) return false;
       await db.delete(schema.transcriptPatchChunk).where(and(
         eq(schema.transcriptPatchChunk.workspaceId, workspaceId),
@@ -2579,7 +2588,7 @@ function createIdentityStore(
       return file ?? null;
     },
     async reserveRecording(workspaceId, meetingId, sessionId, source) {
-      await lockWorkspace(workspaceId);
+      await lockWorkspace(workspaceId, true, "domain");
       if (!await ensureUploadTarget(workspaceId, meetingId)) throw new SyncTransactionError(404, "meeting_not_found");
       const [session] = await db.select().from(schema.recordingSession).where(and(
         eq(schema.recordingSession.workspaceId, workspaceId), eq(schema.recordingSession.meetingId, meetingId),
@@ -2625,7 +2634,7 @@ function createIdentityStore(
         eq(schema.syncedRecording.sessionId, sessionId), writeAccess(schema.syncedMeeting.workspaceId),
       )).limit(1);
       if (!initial) return null;
-      await lockWorkspace(initial.workspaceId);
+      await lockWorkspace(initial.workspaceId, true, "domain");
       const [record] = await selectRecordings().where(eq(schema.syncedRecording.sessionId, sessionId)).limit(1);
       const audio = record?.audio[source];
       if (!record || audio?.generation !== generation || !await ensureUploadTarget(record.workspaceId, record.meetingId)) return null;
@@ -2663,12 +2672,12 @@ function createIdentityStore(
       )).orderBy(asc(schema.syncedRecording.number)).limit(limit);
     },
     async expireRecordingUploads(workspaceId, before) {
-      await lockWorkspace(workspaceId);
+      await lockWorkspace(workspaceId, true, "domain");
       if (!await db.select({ id: schema.syncedWorkspace.workspaceId }).from(schema.syncedWorkspace).where(writableWorkspace(workspaceId)).limit(1).then((rows) => rows.length)) return;
       await expireRecordingStaging(db, schema, searchBackend !== "sqlite", workspaceId, before);
     },
     async reserveFile(input) {
-      await lockWorkspace(input.workspaceId);
+      await lockWorkspace(input.workspaceId, true, "domain");
       const [workspace] = await db.select({ id: schema.syncedWorkspace.workspaceId }).from(schema.syncedWorkspace)
         .where(writableWorkspace(input.workspaceId)).limit(1);
       if (!workspace) return null;
@@ -2689,7 +2698,7 @@ function createIdentityStore(
       return file ?? null;
     },
     async expireFileUploads(workspaceId, before) {
-      await lockWorkspace(workspaceId);
+      await lockWorkspace(workspaceId, true, "domain");
       const files = await db.select({ id: schema.syncedFile.fileId }).from(schema.syncedFile).where(and(
         eq(schema.syncedFile.workspaceId, workspaceId), eq(schema.syncedFile.active, false), lt(schema.syncedFile.updatedAt, before), writeAccess(schema.syncedFile.workspaceId),
       )).limit(25);
@@ -3060,7 +3069,7 @@ function createIdentityStore(
       });
     },
     async putPermission(workspaceId, principalType, principalId, role) {
-      await lockWorkspace(workspaceId);
+      await lockWorkspace(workspaceId, true, "authorization");
       const [workspace] = await db.select({ id: schema.syncedWorkspace.workspaceId }).from(schema.syncedWorkspace)
         .innerJoin(schema.organization, eq(schema.organization.id, schema.syncedWorkspace.organizationId))
         .where(and(adminWorkspace(workspaceId), isNull(schema.syncedWorkspace.personalUserId), isNull(schema.syncedWorkspace.deletingAt))).limit(1);
@@ -3074,7 +3083,7 @@ function createIdentityStore(
       return true;
     },
     async deletePermission(workspaceId, principalType, principalId) {
-      await lockWorkspace(workspaceId);
+      await lockWorkspace(workspaceId, true, "authorization");
       const [workspace] = await db.select({ id: schema.syncedWorkspace.workspaceId }).from(schema.syncedWorkspace)
         .innerJoin(schema.organization, eq(schema.organization.id, schema.syncedWorkspace.organizationId))
         .where(and(adminWorkspace(workspaceId), isNull(schema.syncedWorkspace.personalUserId))).limit(1);

@@ -59,7 +59,7 @@ enum DocumentPublication {
 
     static func publish(_ candidates: [Candidate], workspaceID: UUID, connectionID: UUID, dbQueue: DatabaseQueue) async throws -> [String] {
         let client = SyncAPIClient(session: .shared)
-        let sync = DocumentSyncService(dbQueue: dbQueue, api: client)
+        let sync = DocumentSyncService.shared(dbQueue: dbQueue, api: client)
         var conflicts: [String] = []
         for candidate in candidates {
             guard let target = try await sync.target(meetingID: candidate.meetingID), target.workspaceID == workspaceID,

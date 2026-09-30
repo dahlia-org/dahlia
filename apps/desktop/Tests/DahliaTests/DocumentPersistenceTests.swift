@@ -21,6 +21,12 @@
                 }
                 try workspace.insert(db)
                 try MeetingRecord(id: meetingID, workspaceId: workspaceID, name: "Meeting", createdAt: .now, updatedAt: .now).insert(db)
+                if server {
+                    try db.execute(
+                        sql: "INSERT INTO sync_entity_state(workspace_id, entity, entityId, confirmedRevision) VALUES (?, 'meeting', ?, 1)",
+                        arguments: [workspaceID, meetingID]
+                    )
+                }
             }
             return (queue, workspaceID, meetingID)
         }
@@ -81,6 +87,42 @@
             #expect(try await DocumentPersistence(dbQueue: queue).prepare(meetingID: id).projection.text.isEmpty)
             #expect(try await queue.read { try DocumentRecord.fetchCount($0) } == 0)
             #expect(try await queue.read { try DocumentUpdateRecord.fetchCount($0) } == 0)
+        }
+
+        @Test(.timeLimit(.minutes(1))) func fixedSendWindowDoesNotRestartAndFlushBypassesIt() async throws {
+            let (queue, _, meetingID) = try seed(server: true)
+            let origin = "https://window-\(UUID.v7().uuidString.lowercased()).invalid"
+            try await queue.write { try $0.execute(sql: "UPDATE dahlia_account_connections SET origin = ?", arguments: [origin]) }
+            let calls = Mutex(0)
+            ImageURLProtocol.register(origin: origin) { request in
+                if request.url!.path.hasSuffix("/capabilities") { return (200, [:], Data(#"{"documents":{"version":1}}"#.utf8)) }
+                calls.withLock { $0 += 1 }
+                return (200, [:], Data(#"{"document":null}"#.utf8))
+            }
+            defer { ImageURLProtocol.remove(origin: origin) }
+            let configuration = URLSessionConfiguration.ephemeral
+            configuration.protocolClasses = [ImageURLProtocol.self]
+            let api = SyncAPIClient(session: URLSession(configuration: configuration), tokenProvider: { _, _ in "test" })
+            let gate = DocumentSendWindow()
+            let service = DocumentSyncService(dbQueue: queue, api: api, waitForSendWindow: { await gate.wait() })
+            var started = await gate.entered.makeAsyncIterator()
+            await service.localCommitted(meetingID: meetingID)
+            #expect(await started.next() == true)
+            for _ in 0 ..< 100 {
+                await service.localCommitted(meetingID: meetingID)
+            }
+            #expect(await gate.starts == 1)
+            #expect(calls.withLock { $0 } == 0)
+            try await service.flush(meetingID: meetingID)
+            #expect(calls.withLock { $0 } > 0)
+            let scheduled = try #require(await service.sendTasks[meetingID])
+            await gate.release()
+            await scheduled.value
+            #expect(await gate.starts == 1)
+            let shared = DocumentSyncService.shared(dbQueue: queue, api: api)
+            #expect(shared === DocumentSyncService.shared(dbQueue: queue, api: api))
+            let other = try seed(server: true).0
+            #expect(shared !== DocumentSyncService.shared(dbQueue: other, api: api))
         }
 
         @Test func cancellationStopsDocumentTransportAndAllowsRetry() async throws {
@@ -548,6 +590,38 @@
             let copy = try #require(try await queue.read { try DocumentPrivateCopyRecord.fetchOne($0) })
             #expect(copy.meetingId == nil && copy.workspaceId == workspaceID && copy.kind == "general" && copy.title == "Own title")
             #expect(copy.text == "general")
+        }
+
+        @Test func firstRemoteReadDoesNotWaitForRedundantExchange() async throws {
+            let (queue, workspaceID, meetingID) = try seed(server: true)
+            let persistence = DocumentPersistence(dbQueue: queue)
+            let checkpoint = try await persistence.legacyImport(text: "見出し\n\n本文\n")
+            let origin = "https://documents-\(UUID.v7().uuidString.lowercased()).invalid"
+            try await queue.write { try $0.execute(sql: "UPDATE dahlia_account_connections SET origin = ?", arguments: [origin]) }
+            let body = try JSONSerialization.data(withJSONObject: ["document": [
+                "id": UUID.v7().uuidString, "workspaceId": workspaceID.uuidString, "meetingId": meetingID.uuidString,
+                "kind": "notes", "title": "", "schemaVersion": 1, "generation": UUID.v7().uuidString, "revision": 1,
+                "checkpoint": checkpoint, "text": "", "createdAt": "2026-09-29T00:00:00.000Z", "updatedAt": "2026-09-29T00:00:00.000Z",
+            ]])
+            let exchanges = Mutex(0)
+            ImageURLProtocol.register(origin: origin) { request in
+                let path = request.url!.path
+                if path.hasSuffix("/capabilities") { return (200, [:], Data(#"{"documents":{"version":1}}"#.utf8)) }
+                if path.hasSuffix("/notes") { return (200, [:], body) }
+                if path.hasSuffix("/recoveries") { return (200, [:], Data(#"{"items":[],"nextCursor":null}"#.utf8)) }
+                exchanges.withLock { $0 += 1 }
+                return (503, [:], Data())
+            }
+            defer { ImageURLProtocol.remove(origin: origin) }
+            let configuration = URLSessionConfiguration.ephemeral
+            configuration.protocolClasses = [ImageURLProtocol.self]
+            let domainSession = URLSession(configuration: configuration)
+            let service = DocumentSyncService(dbQueue: queue, api: SyncAPIClient(session: domainSession, tokenProvider: { _, _ in "test" }))
+            let documentSession = await service.api.session
+            #expect(documentSession !== domainSession)
+            try await service.synchronize(meetingID: meetingID)
+            #expect(exchanges.withLock { $0 } == 0)
+            #expect(try await persistence.materialize(meetingID: meetingID).projection.text == "見出し\n\n本文\n")
         }
 
         @Test func synchronizationResolvesNotesThenUsesCanonicalDocumentID() async throws {
@@ -1090,6 +1164,25 @@
                 waiter.resume()
             }
             waiters.removeAll()
+        }
+    }
+
+    private actor DocumentSendWindow {
+        let entered: AsyncStream<Bool>
+        private let events: AsyncStream<Bool>.Continuation
+        private var pending: CheckedContinuation<Void, Never>?
+        private(set) var starts = 0
+        init() { (entered, events) = AsyncStream.makeStream() }
+        func wait() async {
+            await withCheckedContinuation { continuation in
+                pending = continuation
+                starts += 1
+                events.yield(true)
+            }
+        }
+
+        func release() { pending?.resume()
+            pending = nil
         }
     }
 

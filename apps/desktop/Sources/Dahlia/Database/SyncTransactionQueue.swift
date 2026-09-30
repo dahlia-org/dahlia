@@ -133,6 +133,8 @@ struct SyncQueuedTransaction: Sendable {
     let createdAt: Date
     let attempts: Int
     let operations: [SyncQueuedOperation]
+    var foreground = false
+    var requiresTransfer = false
 }
 
 struct SyncTransactionResponse: Decodable, Sendable {
@@ -237,6 +239,7 @@ enum SyncTransactionRecorder {
 
     static func recordBatches(
         workspaceId: UUID,
+        background: Bool = false,
         operations: [SyncOperationDraft],
         allowAfterReset: Bool = false,
         connectionIdOverride: UUID? = nil,
@@ -251,6 +254,7 @@ enum SyncTransactionRecorder {
                || batch.count == maximumOperationsPerTransaction {
                 try record(
                     workspaceId: workspaceId,
+                    background: background,
                     operations: batch,
                     allowAfterReset: allowAfterReset,
                     connectionIdOverride: connectionIdOverride,
@@ -265,6 +269,7 @@ enum SyncTransactionRecorder {
         if !batch.isEmpty {
             try record(
                 workspaceId: workspaceId,
+                background: background,
                 operations: batch,
                 allowAfterReset: allowAfterReset,
                 connectionIdOverride: connectionIdOverride,
@@ -299,6 +304,8 @@ enum SyncTransactionRecorder {
     @discardableResult
     static func record(
         workspaceId: UUID,
+        background: Bool = false,
+        buildingInitial: Bool = false,
         operations requestedOperations: [SyncOperationDraft],
         transcriptSegments: [UUID: [SyncTranscriptPatchSegment]] = [:],
         transcriptDeletions: [UUID: [UUID]] = [:],
@@ -309,7 +316,14 @@ enum SyncTransactionRecorder {
         in db: Database
     ) throws -> UUID? {
         let confirmedSegments = transcriptSegments.mapValues { $0.filter(\.isConfirmed) }
-        let operations = requestedOperations.filter { operation in
+        let initialTranscriptIDs = try SyncInitialProgress.initialTranscriptOperations(
+            requestedOperations,
+            workspaceId: workspaceId,
+            buildingInitial: buildingInitial,
+            in: db
+        )
+        let prepared = try buildingInitial ? requestedOperations : SyncInitialProgress.prepare(requestedOperations, workspaceId: workspaceId, in: db)
+        let operations = prepared.filter { operation in
             operation.entity != .transcript || operation.action != .patch
                 || !confirmedSegments[operation.id, default: []].isEmpty
                 || !transcriptDeletions[operation.id, default: []].isEmpty
@@ -326,7 +340,7 @@ enum SyncTransactionRecorder {
         let connectionId: UUID
         if let connectionIdOverride {
             guard connectionIdOverride == targetConnectionId,
-                  workspace.syncConfirmedConnectionId == nil else { return nil }
+                  try workspace.syncConfirmedConnectionId == nil || SyncInitialProgress.active(workspaceId: workspaceId, in: db) else { return nil }
             connectionId = connectionIdOverride
         } else {
             guard let confirmedConnectionId = workspace.syncConfirmedConnectionId,
@@ -339,24 +353,7 @@ enum SyncTransactionRecorder {
         }
         guard operations.contains(where: { $0.entity == .workspace }) ? workspace.allowsWorkspaceManagement : workspace.allowsCanonicalEdits
         else { throw SyncTransactionQueueError.readOnlyWorkspace }
-        for operation in operations where (operation.entity == .meeting && operation.action == .delete)
-            || (operation.entity == .workspace && operation.action == .reset) {
-            // An explicit later deletion supersedes imported audio; retain the original ID until the deletion is acknowledged.
-            try db.execute(sql: """
-            UPDATE local_workspace_import_operations SET replacementOperationId = ?
-            WHERE completedAt IS NULL AND operationId IN (
-                SELECT o.id FROM sync_operations o JOIN sync_transactions t ON t.id = o.transactionId
-                JOIN recording_archives a ON a.sessionId = o.entityId
-                WHERE t.workspace_id = ? AND o.entity = 'recording' AND (? = 'workspace' OR a.meetingId = ?))
-            """, arguments: [operation.id, workspaceId, operation.entity.rawValue, operation.entityId])
-            // Parent deletion also abandons its derived audio uploads, including an unacknowledged commit.
-            try db.execute(sql: """
-            DELETE FROM sync_transactions WHERE workspace_id = ? AND id IN (
-                SELECT o.transactionId FROM sync_operations o JOIN recording_archives a ON a.sessionId = o.entityId
-                WHERE o.entity = 'recording' AND (? = 'workspace' OR a.meetingId = ?)
-            ) AND NOT EXISTS (SELECT 1 FROM sync_operations o WHERE o.transactionId = sync_transactions.id AND o.entity <> 'recording')
-            """, arguments: [workspaceId, operation.entity.rawValue, operation.entityId])
-        }
+        try supersedeRecordingUploads(operations, workspaceId: workspaceId, in: db)
         if !allowAfterReset {
             let resetIsLast = try Bool.fetchOne(
                 db,
@@ -384,10 +381,10 @@ enum SyncTransactionRecorder {
         let now = Date()
         try db.execute(
             sql: """
-            INSERT INTO sync_transactions(id, workspace_id, connectionId, createdAt, availableAt)
-            VALUES (?, ?, ?, ?, ?)
+            INSERT INTO sync_transactions(id, workspace_id, connectionId, createdAt, availableAt, syncPriority)
+            VALUES (?, ?, ?, ?, ?, ?)
             """,
-            arguments: [transactionId, workspaceId, connectionId, now, now]
+            arguments: [transactionId, workspaceId, connectionId, now, now, background ? 0 : 1]
         )
 
         for (position, operation) in operations.enumerated() {
@@ -452,7 +449,7 @@ enum SyncTransactionRecorder {
                 ]
             )
             var patchPosition = 0
-            for segment in confirmedSegments[operation.id, default: []] {
+            for segment in initialTranscriptIDs.contains(operation.id) ? [] : confirmedSegments[operation.id, default: []] {
                 try db.execute(
                     sql: """
                     INSERT INTO sync_transcript_patch_items(
@@ -467,7 +464,7 @@ enum SyncTransactionRecorder {
                 )
                 patchPosition += 1
             }
-            for segmentId in transcriptDeletions[operation.id, default: []] {
+            for segmentId in initialTranscriptIDs.contains(operation.id) ? [] : transcriptDeletions[operation.id, default: []] {
                 try db.execute(
                     sql: """
                     INSERT INTO sync_transcript_patch_items(operationId, position, action, segmentId)
@@ -478,8 +475,60 @@ enum SyncTransactionRecorder {
                 patchPosition += 1
             }
         }
+        for operation in operations where initialTranscriptIDs.contains(operation.id) {
+            try TranscriptRecord.copySnapshot(meetingId: operation.entityId, operationId: operation.id, in: db)
+        }
+        try registerDependencies(operations, transactionId: transactionId, workspaceId: workspaceId, background: background, in: db)
         return transactionId
     }
+
+    private static func supersedeRecordingUploads(_ operations: [SyncOperationDraft], workspaceId: UUID, in db: Database) throws {
+        for operation in operations where (operation.entity == .meeting && operation.action == .delete)
+            || (operation.entity == .workspace && operation.action == .reset) {
+            // An explicit later deletion supersedes imported audio; retain the original ID until the deletion is acknowledged.
+            try db.execute(sql: """
+            UPDATE local_workspace_import_operations SET replacementOperationId = ?
+            WHERE completedAt IS NULL AND operationId IN (
+                SELECT o.id FROM sync_operations o JOIN sync_transactions t ON t.id = o.transactionId
+                JOIN recording_archives a ON a.sessionId = o.entityId
+                WHERE t.workspace_id = ? AND o.entity = 'recording' AND (? = 'workspace' OR a.meetingId = ?))
+            """, arguments: [operation.id, workspaceId, operation.entity.rawValue, operation.entityId])
+            // Parent deletion also abandons its derived audio uploads, including an unacknowledged commit.
+            try db.execute(sql: """
+            DELETE FROM sync_transactions WHERE workspace_id = ? AND attempts = 0 AND leaseExpiresAt IS NULL AND id IN (
+                SELECT o.transactionId FROM sync_operations o JOIN recording_archives a ON a.sessionId = o.entityId
+                WHERE o.entity = 'recording' AND (? = 'workspace' OR a.meetingId = ?)
+            ) AND NOT EXISTS (SELECT 1 FROM sync_operations o WHERE o.transactionId = sync_transactions.id AND o.entity <> 'recording')
+            """, arguments: [workspaceId, operation.entity.rawValue, operation.entityId])
+        }
+    }
+
+    private static func registerDependencies(
+        _ operations: [SyncOperationDraft],
+        transactionId: UUID,
+        workspaceId: UUID,
+        background: Bool,
+        in db: Database
+    ) throws {
+        try SyncDependencies.index(transactionId: transactionId, workspaceId: workspaceId, in: db)
+        try SyncInitialProgress.mark(operations, workspaceId: workspaceId, in: db)
+        if !background {
+            try db.execute(sql: """
+            UPDATE sync_initial_entities SET priority = 1 WHERE built = 0 AND resource IN (
+              SELECT resource FROM sync_dependency_keys WHERE transactionId = ?)
+            """, arguments: [transactionId])
+        }
+        // A child recorded during construction brings its still-unbuilt parents into this
+        // same durable commit. No later deletion can strand that immutable child request.
+        let prerequisites = try String.fetchAll(db, sql: """
+        SELECT p.resource FROM sync_initial_entities p JOIN sync_dependency_keys k ON k.resource = p.resource
+        WHERE k.transactionId = ? AND p.workspaceId = ? AND p.built = 0
+        """, arguments: [transactionId, workspaceId])
+        for resource in prerequisites {
+            _ = try SyncInitialProgress.constructNext(workspaceId: workspaceId, resource: resource, in: db)
+        }
+    }
+
 }
 
 enum SyncTransactionQueue {
@@ -514,16 +563,37 @@ enum SyncTransactionQueue {
         }
     }
 
-    static func claim(dbQueue: DatabaseQueue) async throws -> SyncQueuedTransaction? {
+    static func claim(
+        dbQueue: DatabaseQueue,
+        recordingsOnly: Bool? = nil,
+        excluding: Set<UUID> = [],
+        allowTransfers: Bool = true,
+        allowBackgroundTransfers: Bool = true
+    ) async throws -> SyncQueuedTransaction? {
         try await dbQueue.write { db in
+            _ = try SyncDependencies.backfill(in: db)
             let now = Date()
+            let recordingPredicate = recordingsOnly.map { only in
+                "AND \(only ? "NOT " : "")EXISTS (SELECT 1 FROM sync_operations lane WHERE lane.transactionId = t.id AND lane.entity <> 'recording')"
+            } ?? ""
+            let exclusions = excluding.isEmpty ? "" : "AND t.id NOT IN (\(excluding.map { _ in "?" }.joined(separator: ",")))"
             guard let row = try Row.fetchOne(
                 db,
                 sql: """
-                SELECT t.sequence, t.id, t.workspace_id, t.connectionId, t.createdAt, t.attempts
+                WITH RECURSIVE urgent(id) AS (
+                  SELECT id FROM sync_transactions WHERE syncPriority = 1
+                  UNION SELECT d.predecessorId FROM sync_dependencies d JOIN urgent u ON d.transactionId = u.id
+                )
+                SELECT t.sequence, t.id, t.workspace_id, t.connectionId, t.createdAt, t.attempts,
+                    EXISTS(SELECT 1 FROM urgent WHERE id = t.id) AS urgent,
+                    EXISTS(SELECT 1 FROM sync_operations transfer WHERE transfer.transactionId = t.id
+                      AND (transfer.entity = 'file' AND transfer.attachmentReference IS NOT NULL
+                        OR transfer.entity = 'transcript' AND transfer.action = 'patch')) AS requiresTransfer
                 FROM sync_transactions t
                 JOIN workspaces v ON v.id = t.workspace_id
+                CROSS JOIN sync_scheduler_state scheduler
                 WHERE \(sendableWorkspacePredicate)
+                  \(recordingPredicate)
                   AND NOT EXISTS (
                     SELECT 1 FROM sync_entity_state s
                     WHERE s.workspace_id = t.workspace_id AND s.entity = 'workspace' AND s.entityId = t.workspace_id
@@ -532,16 +602,37 @@ enum SyncTransactionQueue {
                   AND t.blockedReason IS NULL
                   AND t.availableAt <= ?
                   AND (t.leaseExpiresAt IS NULL OR t.leaseExpiresAt < ?)
+                  \(exclusions)
+                  AND (NOT EXISTS (SELECT 1 FROM sync_operations transfer WHERE transfer.transactionId = t.id
+                        AND (transfer.entity = 'file' AND transfer.attachmentReference IS NOT NULL
+                        OR transfer.entity = 'transcript' AND transfer.action = 'patch'))
+                    OR \(allowTransfers ? 1 : 0) AND (\(allowBackgroundTransfers ? 1 : 0) OR EXISTS(SELECT 1 FROM urgent WHERE id = t.id)))
                   AND NOT EXISTS (
-                    SELECT 1 FROM sync_transactions earlier
-                    WHERE earlier.workspace_id = t.workspace_id AND earlier.sequence < t.sequence
+                    SELECT 1 FROM sync_transactions blocked WHERE blocked.workspace_id = t.workspace_id AND blocked.blockedReason = 'authorization'
                   )
-                ORDER BY t.sequence
+                  AND (t.attempts > 0 OR (
+                    NOT EXISTS (SELECT 1 FROM sync_dependencies d WHERE d.transactionId = t.id)
+                    AND NOT EXISTS (SELECT 1 FROM sync_dependency_keys k JOIN sync_initial_entities p ON p.resource = k.resource
+                        WHERE k.transactionId = t.id AND p.built = 0)
+                    AND (t.dependenciesReady = 1 OR NOT EXISTS (SELECT 1 FROM sync_transactions earlier
+                        WHERE earlier.workspace_id = t.workspace_id AND earlier.sequence < t.sequence))
+                    AND NOT EXISTS (SELECT 1 FROM sync_transactions earlier
+                        WHERE earlier.dependenciesReady = 0 AND earlier.workspace_id = t.workspace_id AND earlier.sequence < t.sequence)
+                  ))
+                ORDER BY CASE WHEN scheduler.foregroundCount >= 4
+                    THEN EXISTS(SELECT 1 FROM urgent WHERE id = t.id)
+                    ELSE NOT EXISTS(SELECT 1 FROM urgent WHERE id = t.id) END,
+                  CASE WHEN scheduler.lastWorkspace IS NULL OR t.workspace_id > scheduler.lastWorkspace THEN 0 ELSE 1 END,
+                  t.workspace_id, t.sequence
                 LIMIT 1
                 """,
-                arguments: [now, now]
+                arguments: StatementArguments([now, now]) + StatementArguments(excluding)
             ) else { return nil }
             let transactionId: UUID = row["id"]
+            try db.execute(sql: """
+            UPDATE sync_scheduler_state SET foregroundCount = CASE WHEN ? THEN min(foregroundCount + 1, 4) ELSE 0 END,
+                lastWorkspace = ? WHERE id = 1
+            """, arguments: [row["urgent"] as Bool, row["workspace_id"] as UUID])
             let operations = try Row.fetchAll(
                 db,
                 sql: """
@@ -573,20 +664,29 @@ enum SyncTransactionQueue {
                 connectionId: row["connectionId"],
                 createdAt: row["createdAt"],
                 attempts: (row["attempts"] as Int) + 1,
-                operations: operations
+                operations: operations, foreground: row["urgent"] as Bool, requiresTransfer: row["requiresTransfer"] as Bool
             )
         }
     }
 
-    static func releaseClaim(_ transaction: SyncQueuedTransaction, dbQueue: DatabaseQueue) async throws {
+    static func prerequisitesReady(_ transaction: SyncQueuedTransaction, in db: Database) throws -> Bool {
+        try Bool.fetchOne(db, sql: """
+        SELECT NOT EXISTS(SELECT 1 FROM sync_dependencies WHERE transactionId = ?)
+          AND NOT EXISTS(SELECT 1 FROM sync_transactions WHERE workspace_id = ? AND sequence < ? AND dependenciesReady = 0)
+          AND NOT EXISTS(SELECT 1 FROM sync_dependency_keys k JOIN sync_initial_entities p ON p.resource = k.resource
+            WHERE k.transactionId = ? AND p.built = 0)
+        """, arguments: [transaction.id, transaction.workspaceId, transaction.sequence, transaction.id]) == true
+    }
+
+    static func releaseClaim(_ transaction: SyncQueuedTransaction, knownAbsent: Bool = false, dbQueue: DatabaseQueue) async throws {
         try await dbQueue.write { db in
             try db.execute(
                 sql: """
                 UPDATE sync_transactions SET leaseExpiresAt = NULL,
-                    availableAt = max(availableAt, ?), attempts = max(attempts - 1, 0)
+                    availableAt = max(availableAt, ?), attempts = CASE WHEN ? THEN 0 ELSE attempts END
                 WHERE id = ?
                 """,
-                arguments: [Date.now.addingTimeInterval(1), transaction.id]
+                arguments: [Date.now.addingTimeInterval(1), knownAbsent, transaction.id]
             )
         }
     }
@@ -688,6 +788,16 @@ enum SyncTransactionQueue {
                     """,
                     arguments: [transaction.workspaceId, transaction.sequence, record.entity, record.id]
                 ) ?? false
+                if let value = record.record {
+                    let canonical = try SyncJSON.decoder.decode(SyncCanonicalPayload.self, from: SyncJSON.encoder.encode(value))
+                    try SyncDependencies.confirmed(
+                        entity: record.entity,
+                        id: record.id,
+                        workspaceId: transaction.workspaceId,
+                        value: canonical,
+                        in: db
+                    )
+                }
                 if response.receipt != "compact", !hasLaterOperation, let value = record.record {
                     let canonical = try SyncJSON.decoder.decode(
                         SyncCanonicalPayload.self,
@@ -900,8 +1010,8 @@ enum SyncTransactionQueue {
     static func hasPending(workspaceId: UUID, in db: Database) throws -> Bool {
         try Bool.fetchOne(
             db,
-            sql: "SELECT EXISTS(SELECT 1 FROM sync_transactions WHERE workspace_id = ?)",
-            arguments: [workspaceId]
+            sql: "SELECT EXISTS(SELECT 1 FROM sync_transactions WHERE workspace_id = ?) OR EXISTS(SELECT 1 FROM sync_initial_builds WHERE workspaceId = ?)",
+            arguments: [workspaceId, workspaceId]
         ) ?? false
     }
 
@@ -1053,13 +1163,37 @@ enum SyncTransactionQueue {
     }
 
     static func discard(workspaceId: UUID, fromSequence: Int64 = 0, in db: Database) throws {
+        var discardedReconciliation = false
+        if fromSequence == 0 {
+            try db.execute(sql: "DELETE FROM sync_reconciliations WHERE workspaceId = ?", arguments: [workspaceId])
+            discardedReconciliation = db.changesCount > 0
+            try db.execute(sql: "DELETE FROM sync_initial_builds WHERE workspaceId = ?", arguments: [workspaceId])
+            try db.execute(sql: "DELETE FROM sync_initial_entities WHERE workspaceId = ?", arguments: [workspaceId])
+        }
         try db.execute(
             sql: "DELETE FROM sync_transactions WHERE workspace_id = ? AND sequence >= ?",
             arguments: [workspaceId, fromSequence]
         )
-        if db.changesCount > 0 {
+        if discardedReconciliation || db.changesCount > 0 {
             try db.execute(sql: "UPDATE workspaces SET syncMutationGeneration = syncMutationGeneration + 1 WHERE id = ?", arguments: [workspaceId])
         }
+    }
+
+    /// A lost response may already be committed remotely. Never replace its idempotency identity.
+    private static func requireResolvedRequests(_ ids: [UUID], in db: Database) throws {
+        let placeholders = Array(repeating: "?", count: ids.count).joined(separator: ",")
+        guard try !Bool.fetchOne(db, sql: """
+        SELECT EXISTS (SELECT 1 FROM sync_transactions WHERE id IN (\(placeholders))
+          AND (leaseExpiresAt IS NOT NULL OR (attempts > 0 AND blockedReason IS NULL)))
+        """, arguments: StatementArguments(ids))! else { throw TextContentError.changed }
+    }
+
+    private static func discardResolved(_ ids: [UUID], workspaceId: UUID, in db: Database) throws {
+        try requireResolvedRequests(ids, in: db)
+        for id in ids {
+            try db.execute(sql: "DELETE FROM sync_transactions WHERE id = ?", arguments: [id])
+        }
+        try db.execute(sql: "UPDATE workspaces SET syncMutationGeneration = syncMutationGeneration + 1 WHERE id = ?", arguments: [workspaceId])
     }
 
     static func acceptServerVersion(
@@ -1131,7 +1265,7 @@ enum SyncTransactionQueue {
             guard let blocked = try Row.fetchOne(
                 db,
                 sql: """
-                SELECT sequence FROM sync_transactions
+                SELECT id, sequence FROM sync_transactions
                 WHERE workspace_id = ? AND blockedReason = ? ORDER BY sequence LIMIT 1
                 """,
                 arguments: [workspaceId, reason]
@@ -1153,14 +1287,16 @@ enum SyncTransactionQueue {
                 guard hasConfirmedWorkspace == expectedHasConfirmedWorkspace else { throw TextContentError.changed }
             }
             let rebuildInitialSnapshot = reason == .validation && !hasConfirmedWorkspace
-            let sequence: Int64 = blocked["sequence"]
+            let affected = try SyncDependencies.affected(startingAt: blocked["id"], in: db)
+            try requireResolvedRequests(affected, in: db)
+            let placeholders = Array(repeating: "?", count: affected.count).joined(separator: ",")
             if !rebuildInitialSnapshot {
                 let abandoned = try Row.fetchAll(db, sql: """
                 SELECT DISTINCT c.entity, c.entityId FROM sync_content_state c
                 JOIN sync_operations o ON o.entity = c.entity AND o.entityId = c.entityId
                 JOIN sync_transactions t ON t.id = o.transactionId AND t.workspace_id = c.workspace_id
-                WHERE c.workspace_id = ? AND t.sequence >= ?
-                """, arguments: [workspaceId, sequence])
+                WHERE c.workspace_id = ? AND t.id IN (\(placeholders))
+                """, arguments: StatementArguments([workspaceId]) + StatementArguments(affected))
                 for row in abandoned {
                     guard let entity = TextContentEntity(rawValue: row["entity"]) else { throw TextContentError.integrityFailure }
                     let id: UUID = row["entityId"]
@@ -1171,12 +1307,38 @@ enum SyncTransactionQueue {
                     )
                 }
             }
-            try discard(workspaceId: workspaceId, fromSequence: sequence, in: db)
-            try db.execute(sql: "DELETE FROM sync_entity_state WHERE workspace_id = ?", arguments: [workspaceId])
+            let scoped = try !rebuildInitialSnapshot && (String.fetchOne(
+                db,
+                sql: "SELECT syncPullCursor FROM workspaces WHERE id = ?",
+                arguments: [workspaceId]
+            )) != nil
+                && !(Bool.fetchOne(
+                    db,
+                    sql: "SELECT EXISTS(SELECT 1 FROM sync_operations WHERE transactionId IN (\(placeholders)) AND entity = 'workspace')",
+                    arguments: StatementArguments(affected)
+                ) ?? false)
+            if scoped {
+                try db.execute(sql: """
+                INSERT INTO sync_reconciliations(workspaceId, connectionId, entity, entityId, includeDescendants)
+                SELECT ?, (SELECT accountConnectionId FROM workspaces WHERE id = ?), entity, entityId,
+                    MAX(CASE WHEN action = 'delete' THEN 1 ELSE 0 END)
+                FROM sync_operations WHERE transactionId IN (\(placeholders)) GROUP BY entity, entityId
+                ON CONFLICT(workspaceId, entity, entityId) DO UPDATE SET
+                    includeDescendants = MAX(sync_reconciliations.includeDescendants, excluded.includeDescendants)
+                """, arguments: StatementArguments([workspaceId, workspaceId]) + StatementArguments(affected))
+                try discardResolved(affected, workspaceId: workspaceId, in: db)
+                return false
+            }
+            try db.execute(sql: """
+            DELETE FROM sync_entity_state WHERE workspace_id = ? AND EXISTS (
+              SELECT 1 FROM sync_operations o WHERE o.transactionId IN (\(placeholders))
+                AND o.entity = sync_entity_state.entity AND o.entityId = sync_entity_state.entityId)
+            """, arguments: StatementArguments([workspaceId]) + StatementArguments(affected))
+            try discardResolved(affected, workspaceId: workspaceId, in: db)
             if !rebuildInitialSnapshot {
                 // Keep the pull target distinct from an interrupted initial upload until reconciliation completes.
                 try db.execute(
-                    sql: "INSERT INTO sync_entity_state(workspace_id, entity, entityId, confirmedRevision) VALUES (?, 'workspace', ?, NULL)",
+                    sql: "INSERT OR IGNORE INTO sync_entity_state(workspace_id, entity, entityId, confirmedRevision) VALUES (?, 'workspace', ?, NULL)",
                     arguments: [workspaceId, workspaceId]
                 )
             }
@@ -1208,12 +1370,15 @@ enum SyncTransactionQueue {
             guard let first = try Row.fetchOne(
                 db,
                 sql: """
-                SELECT sequence, serverResponseJSON FROM sync_transactions
+                SELECT id, sequence, serverResponseJSON FROM sync_transactions
                 WHERE workspace_id = ? AND blockedReason = 'conflict' ORDER BY sequence LIMIT 1
                 """,
                 arguments: [workspaceId]
             ) else { return (false, false) }
             let sequence: Int64 = first["sequence"]
+            let transactionIds = try SyncDependencies.affected(startingAt: first["id"], in: db)
+            try requireResolvedRequests(transactionIds, in: db)
+            let placeholders = Array(repeating: "?", count: transactionIds.count).joined(separator: ",")
             let response: String? = first["serverResponseJSON"]
             let directMissingEntities = missingConflictEntities(response)
             let existingEntities = existingConflictEntities(response)
@@ -1237,17 +1402,12 @@ enum SyncTransactionQueue {
                 )
             }
             applyConflictRevision(response, workspaceId: workspaceId, in: db)
-            let transactionIds = try UUID.fetchAll(
-                db,
-                sql: "SELECT id FROM sync_transactions WHERE workspace_id = ? AND sequence >= ? ORDER BY sequence",
-                arguments: [workspaceId, sequence]
-            )
             var queued: [RequeuedTransaction] = []
             let transcriptMeetings = try UUID.fetchAll(db, sql: """
             SELECT DISTINCT o.entityId FROM sync_operations o
             JOIN sync_transactions t ON t.id = o.transactionId JOIN meetings m ON m.id = o.entityId
-            WHERE t.workspace_id = ? AND t.sequence >= ? AND o.entity = 'transcript' ORDER BY o.entityId
-            """, arguments: [workspaceId, sequence])
+            WHERE t.workspace_id = ? AND t.id IN (\(placeholders)) AND o.entity = 'transcript' ORDER BY o.entityId
+            """, arguments: StatementArguments([workspaceId]) + StatementArguments(transactionIds))
             let projectOperations = try missingProjectOperations(missingProjects, in: db)
             if !projectOperations.isEmpty {
                 queued.append(.init(operations: projectOperations, segments: [:], deletions: [:], attachments: [:]))
@@ -1335,7 +1495,7 @@ enum SyncTransactionQueue {
                     ))
                 }
             }
-            try discard(workspaceId: workspaceId, fromSequence: sequence, in: db)
+            try discardResolved(transactionIds, workspaceId: workspaceId, in: db)
             for transaction in queued {
                 try SyncTransactionRecorder.record(
                     workspaceId: workspaceId,
@@ -1364,6 +1524,8 @@ enum SyncTransactionQueue {
         fromSequence sequence: Int64,
         in db: Database
     ) throws -> Bool {
+        let allRequests = try UUID.fetchAll(db, sql: "SELECT id FROM sync_transactions WHERE workspace_id = ?", arguments: [workspaceId])
+        try requireResolvedRequests(allRequests, in: db)
         let replaceImages = try requestsImageAnalysisReplacement(workspaceId: workspaceId, fromSequence: sequence, in: db)
         try discard(workspaceId: workspaceId, in: db)
         try db.execute(sql: "DELETE FROM sync_entity_state WHERE workspace_id = ?", arguments: [workspaceId])
@@ -1395,16 +1557,18 @@ enum SyncTransactionQueue {
     /// A missing Workspace requires a complete snapshot; otherwise only recreated screenshots need originals.
     private static func screenshotIdsRequiringReupload(workspaceId: UUID, in db: Database) throws -> [UUID]? {
         guard let blocked = try Row.fetchOne(db, sql: """
-        SELECT sequence, serverResponseJSON FROM sync_transactions
+        SELECT id, sequence, serverResponseJSON FROM sync_transactions
         WHERE workspace_id = ? AND blockedReason = 'conflict' ORDER BY sequence LIMIT 1
         """, arguments: [workspaceId]) else { return [] }
         let missing = missingConflictEntities(blocked["serverResponseJSON"])
         if missing.contains(.init(entity: .workspace, id: workspaceId)) { return nil }
-        let sequence: Int64 = blocked["sequence"]
+        let affected = try SyncDependencies.affected(startingAt: blocked["id"], in: db)
+        let placeholders = affected.map { _ in "?" }.joined(separator: ",")
         return try UUID.fetchAll(db, sql: """
-        SELECT DISTINCT o.entityId FROM sync_operations o JOIN sync_transactions t ON t.id = o.transactionId
-        WHERE t.workspace_id = ? AND t.sequence >= ? AND o.entity = 'file' AND o.action != 'delete'
-        """, arguments: [workspaceId, sequence]).filter { missing.contains(.init(entity: .file, id: $0)) }
+        SELECT DISTINCT o.entityId FROM sync_operations o
+        WHERE o.transactionId IN (\(placeholders)) AND o.entity = 'file' AND o.action != 'delete'
+        """, arguments: StatementArguments(affected)).filter { missing.contains(.init(entity: .file, id: $0)) }
+
     }
 
     private static func missingProjectOperations(

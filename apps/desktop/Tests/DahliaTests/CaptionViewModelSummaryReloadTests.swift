@@ -157,7 +157,7 @@ import GRDB
         }
 
         @Test
-        func serverAdoptionClearsOpenTextAndSearchThenDisplaysRefetchedContent() async throws {
+        func serverAdoptionClearsRejectedSummaryAndPreservesIndependentTranscript() async throws {
             let context = try Self.makeContext()
             defer { try? FileManager.default.removeItem(at: context.workspaceURL) }
             let queue = context.manager.dbQueue
@@ -217,7 +217,7 @@ import GRDB
             // Initial display loads independently of the content provider's two ensure calls.
             // Wait for both resident reads before discarding their bodies, or the late ensure can start a fetch.
             #expect(await pollUntil {
-                (try? await queue.read { db in
+                await (try? queue.read { db in
                     try Int.fetchOne(db, sql: """
                     SELECT count(*) FROM sync_content_state
                     WHERE entityId = ? AND entity IN ('summary', 'transcript') AND lastAccessedAt IS NOT NULL
@@ -229,7 +229,7 @@ import GRDB
             try await SyncTransactionQueue.block(transaction, reason: .conflict, response: Data("{}".utf8), dbQueue: queue)
             try await SyncTransactionQueue.acceptServerVersion(workspaceId: workspaceId, dbQueue: queue)
             #expect(await pollUntil {
-                viewModel.currentSummaryDocument == nil && viewModel.store.segments.isEmpty && viewModel.textContentState == .missing
+                viewModel.currentSummaryDocument == nil && viewModel.store.segments.first?.text == "discarded transcript"
             })
             try await queue.read { db throws in
                 #expect(try Int
@@ -253,7 +253,10 @@ import GRDB
                     arguments: [segmentId]
                 )
                 for entity in ["summary", "transcript"] {
-                    try db.execute(sql: "INSERT INTO sync_entity_state VALUES (?, ?, ?, 2)", arguments: [workspaceId, entity, context.meetingID])
+                    try db.execute(
+                        sql: "INSERT INTO sync_entity_state VALUES (?, ?, ?, 2) ON CONFLICT(workspace_id, entity, entityId) DO UPDATE SET confirmedRevision = 2",
+                        arguments: [workspaceId, entity, context.meetingID]
+                    )
                     try db.execute(sql: "UPDATE sync_content_state SET complete = 1, residentRevision = 2 WHERE entity = ?", arguments: [entity])
                 }
             }
