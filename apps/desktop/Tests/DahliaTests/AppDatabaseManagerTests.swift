@@ -15,7 +15,7 @@ import os
         @Test
         func workspaceImportDestinationMigrationPreservesV48Data() throws {
             let queue = try DatabaseQueue()
-            try AppDatabaseManager.migrator.migrate(queue, upTo: "v48_independentDocuments")
+            try DevelopmentSchemaHistory.migrator.migrate(queue, upTo: "v48_independentDocuments")
             let connection = DahliaAccountConnectionRecord(id: .v7(), origin: "https://migration.example.com", clientID: "test", createdAt: .now)
             let workspace = WorkspaceRecord(id: .v7(), path: nil, name: "Local", createdAt: .now, lastOpenedAt: .now)
             let meeting = MeetingRecord(id: .v7(), workspaceId: workspace.id, name: "Preserved", createdAt: .now, updatedAt: .now)

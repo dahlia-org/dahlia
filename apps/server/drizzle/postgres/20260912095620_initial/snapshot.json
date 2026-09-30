@@ -1,7 +1,7 @@
 {
   "version": "8",
   "dialect": "postgres",
-  "id": "48a10aec-0a13-4978-9903-6a75610cd4fe",
+  "id": "e756ae6d-e969-4a1d-a5db-76d04cedacdf",
   "prevIds": [
     "00000000-0000-0000-0000-000000000000"
   ],
@@ -5028,7 +5028,63 @@
       "nameExplicit": true,
       "columns": [
         {
+          "value": "document_id",
+          "isExpression": false,
+          "asc": true,
+          "nullsFirst": false,
+          "opclass": null
+        },
+        {
+          "value": "expires_at",
+          "isExpression": false,
+          "asc": true,
+          "nullsFirst": false,
+          "opclass": null
+        }
+      ],
+      "isUnique": false,
+      "where": null,
+      "with": "",
+      "method": "btree",
+      "concurrently": false,
+      "name": "document_presence_document_expiry",
+      "entityType": "indexes",
+      "schema": "app",
+      "table": "document_presence"
+    },
+    {
+      "nameExplicit": true,
+      "columns": [
+        {
           "value": "workspace_id",
+          "isExpression": false,
+          "asc": true,
+          "nullsFirst": false,
+          "opclass": null
+        },
+        {
+          "value": "expires_at",
+          "isExpression": false,
+          "asc": true,
+          "nullsFirst": false,
+          "opclass": null
+        }
+      ],
+      "isUnique": false,
+      "where": null,
+      "with": "",
+      "method": "btree",
+      "concurrently": false,
+      "name": "document_presence_workspace_expiry",
+      "entityType": "indexes",
+      "schema": "app",
+      "table": "document_presence"
+    },
+    {
+      "nameExplicit": true,
+      "columns": [
+        {
+          "value": "document_id",
           "isExpression": false,
           "asc": true,
           "nullsFirst": false,
@@ -5047,49 +5103,7 @@
       "with": "",
       "method": "btree",
       "concurrently": false,
-      "name": "documents_workspace_id",
-      "entityType": "indexes",
-      "schema": "app",
-      "table": "documents"
-    },
-    {
-      "nameExplicit": true,
-      "columns": [
-        {
-          "value": "expires_at",
-          "isExpression": false,
-          "asc": true,
-          "nullsFirst": false,
-          "opclass": null
-        }
-      ],
-      "isUnique": false,
-      "where": null,
-      "with": "",
-      "method": "btree",
-      "concurrently": false,
-      "name": "document_presence_expiry",
-      "entityType": "indexes",
-      "schema": "app",
-      "table": "document_presence"
-    },
-    {
-      "nameExplicit": true,
-      "columns": [
-        {
-          "value": "document_id",
-          "isExpression": false,
-          "asc": true,
-          "nullsFirst": false,
-          "opclass": null
-        }
-      ],
-      "isUnique": false,
-      "where": null,
-      "with": "",
-      "method": "btree",
-      "concurrently": false,
-      "name": "document_recoveries_document_id",
+      "name": "document_recoveries_document_cursor",
       "entityType": "indexes",
       "schema": "app",
       "table": "document_recoveries"

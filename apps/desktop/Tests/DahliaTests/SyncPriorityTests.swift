@@ -542,7 +542,7 @@
 
         @Test func v49UpgradePreservesPendingIdentityAndDefaultsToBackgroundBarrier() throws {
             let queue = try DatabaseQueue(configuration: AppDatabaseManager.configuration())
-            try AppDatabaseManager.migrator.migrate(queue, upTo: "v49_workspaceImportDestinations")
+            try DevelopmentSchemaHistory.migrator.migrate(queue, upTo: "v49_workspaceImportDestinations")
             let connection = UUID.v7(), workspace = UUID.v7(), transaction = UUID.v7()
             try queue.write { db in
                 try DahliaAccountConnectionRecord(id: connection, origin: "https://example.invalid", clientID: "test", createdAt: .now).insert(db)

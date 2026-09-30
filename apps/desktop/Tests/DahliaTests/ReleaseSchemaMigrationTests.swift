@@ -382,11 +382,7 @@
                 "v45_workspaceLiveTranscriptDraft",
                 "v46_workspacePersonalUser",
                 "v47_orphanedRecordingRecoveryState",
-                "v47_documents",
-                "v48_independentDocuments",
-                "v49_workspaceImportDestinations",
-                "v50_syncPriority",
-                "v51_scopedSyncReconciliation",
+                "v52_documentsAndSync",
             ])
             try database.dbQueue.read { db throws in
                 #expect(try Row.fetchAll(db, sql: "PRAGMA foreign_key_check").isEmpty)

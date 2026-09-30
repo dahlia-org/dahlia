@@ -12,7 +12,7 @@
 - 新しい Server Workspace に取り込む場合も、Local Workspace 自体の ID / 所属を変更しない。Local と独立した UUID で Server Workspace を作成し、取得・登録した移行先へ既存の取り込み処理を適用する。新規・既存で異なるのは移行先を作成するか選択するかだけとする。Server の作成 API は既存の client-proposed UUID を使う。
 - 作成前に、元 Workspace・接続・Organization・指定名に対応する移行先 ID と正確な transaction 本文を SQLite に保存する。再試行では discovery で同じ移行先を探し、未確認なら同じ作成要求を再送する。応答消失や再起動で別 Workspace を増やさない。指定名や Organization を変更した場合は別の作成要求として扱う。
 - 元 Workspace の設定・ローカル書き出し先・instructions は移行元に残す。移行先の設定を採用し、バックアップ後に内容と送信待ちを原子的に移す。空の移行先作成後に失敗してもローカル内容は維持し、次回は作成済み移行先を再利用する。
-- 作成再試行状態は追加 migration `v49_workspaceImportDestinations` で導入する。過去の migration は変更しない。ローカル取り込み確定時に対応する作成状態を削除し、その後は既存の固定 import / outbox で完了を追跡する。再試行状態は端末固有のため portable backup へ含めない。
+- 作成再試行状態は当初 `v49_workspaceImportDestinations` で導入し、2026-09-30のユーザー承認により未リリース分を `v52_documentsAndSync` に統合する。配布済み migration は変更しない。ローカル取り込み確定時に対応する作成状態を削除し、その後は既存の固定 import / outbox で完了を追跡する。再試行状態は端末固有のため portable backup へ含めない。
 - 旧実装で Local / Server の ID が一致する場合だけ、以下の明示的な再接続で既存 identity を引き継ぐ。新規作成ではこの状態を作らない。
 
 - 画面で Server 側の既存データを採用することを説明し、既定では無効な再接続を利用者が選ぶ。会議 ID の変更、同名による推測、自動上書きは行わない。

@@ -132,6 +132,13 @@ final class AppDatabaseManager: Sendable {
     }
 
     static let migrator: DatabaseMigrator = {
+        var migrator = releasedMigrator
+        DocumentsAndSyncMigration.register(in: &migrator)
+        return migrator
+    }()
+
+    /// Registrations shipped through v0.24.2. Keep their order and implementation intact.
+    static let releasedMigrator: DatabaseMigrator = {
         var migrator = DatabaseMigrator()
 
         // リリース後は既存ユーザーデータを保持する。破壊的な自動再作成は行わない。
@@ -354,50 +361,6 @@ final class AppDatabaseManager: Sendable {
             try OrphanedRecordingRecoveryRecord.createTableIfNeeded(in: db)
         }
 
-        // Both v47 identifiers were registered independently. Keep their complete names and bodies unchanged.
-        migrator.registerMigration("v47_documents") { db in
-            try DocumentsMigration.migrate(in: db)
-        }
-
-        migrator.registerMigration("v48_independentDocuments", foreignKeyChecks: .deferred) { db in
-            try IndependentDocumentsMigration.migrate(in: db)
-        }
-
-        migrator.registerMigration("v49_workspaceImportDestinations") { db in
-            try db.execute(sql: """
-            CREATE TABLE workspace_import_destinations (
-                sourceWorkspaceId TEXT NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
-                connectionId TEXT NOT NULL REFERENCES dahlia_account_connections(id) ON DELETE CASCADE,
-                organizationId TEXT NOT NULL,
-                name TEXT NOT NULL,
-                destinationWorkspaceId TEXT NOT NULL UNIQUE,
-                requestJSON BLOB NOT NULL,
-                PRIMARY KEY (sourceWorkspaceId, connectionId, organizationId, name)
-            )
-            """)
-        }
-
-        migrator.registerMigration("v50_syncPriority") { db in
-            try SyncPriorityMigration.migrate(in: db)
-        }
-
-        migrator.registerMigration("v51_scopedSyncReconciliation") { db in
-            guard try db.tableExists("workspaces") else { return }
-            try db.execute(sql: """
-            CREATE TABLE sync_reconciliations (
-                workspaceId BLOB NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
-                connectionId BLOB NOT NULL REFERENCES dahlia_account_connections(id) ON DELETE CASCADE,
-                entity TEXT NOT NULL, entityId BLOB NOT NULL, includeDescendants BOOLEAN NOT NULL DEFAULT 0,
-                PRIMARY KEY(workspaceId, entity, entityId)
-            );
-            CREATE TRIGGER sync_reconciliation_connection AFTER UPDATE OF accountConnectionId ON workspaces
-            WHEN OLD.accountConnectionId IS NOT NEW.accountConnectionId
-            BEGIN
-                DELETE FROM sync_reconciliations WHERE workspaceId = NEW.id;
-            END;
-            """)
-        }
-
         return migrator
     }()
 
@@ -471,6 +434,10 @@ final class AppDatabaseManager: Sendable {
         try hasExpectedSchema(db, upTo: currentMigrationIdentifier, excludingTableNames: excludingTableNames)
     }
 
+    static func schemaMigrator(for identifier: String) -> DatabaseMigrator {
+        DocumentsAndSyncMigration.legacyIdentifiers.contains(identifier) ? DevelopmentSchemaHistory.migrator : migrator
+    }
+
     static func hasExpectedSchema(
         _ db: Database,
         upTo migrationIdentifier: String,
@@ -478,7 +445,7 @@ final class AppDatabaseManager: Sendable {
     ) throws -> Bool {
         let reference = try DatabaseQueue(configuration: configuration())
         defer { try? reference.close() }
-        try migrator.migrate(reference, upTo: migrationIdentifier)
+        try schemaMigrator(for: migrationIdentifier).migrate(reference, upTo: migrationIdentifier)
         let expected = try reference.read {
             try schemaSignature(in: $0, excludingTableNames: excludingTableNames)
         }

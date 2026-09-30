@@ -658,7 +658,7 @@ export const document = sqliteTable("documents", {
   encryptedPayload: text("encrypted_payload"),
   createdAt: sqliteTimestamp("created_at").notNull(),
   updatedAt: sqliteTimestamp("updated_at").notNull(),
-}, (table) => [unique("document_workspace_id_unique").on(table.workspaceId, table.id), foreignKey({ name: "document_parent_workspace_fk", columns: [table.workspaceId, table.meetingId], foreignColumns: [syncedMeeting.workspaceId, syncedMeeting.meetingId] }).onDelete("cascade").onUpdate("cascade"), uniqueIndex("document_meeting_notes_unique").on(table.meetingId).where(sql`${table.kind} = 'notes'`), check("document_kind", sql`${table.kind} IN ('notes', 'summary', 'general') AND (${table.kind} != 'notes' OR ${table.meetingId} IS NOT NULL)`), check("document_watermarks", sql`${table.projectionRevision} = ${table.revision} AND ${table.checkpointRevision} <= ${table.revision}`), index("documents_workspace_id").on(table.workspaceId, table.id)]);
+}, (table) => [unique("document_workspace_id_unique").on(table.workspaceId, table.id), foreignKey({ name: "document_parent_workspace_fk", columns: [table.workspaceId, table.meetingId], foreignColumns: [syncedMeeting.workspaceId, syncedMeeting.meetingId] }).onDelete("cascade").onUpdate("cascade"), uniqueIndex("document_meeting_notes_unique").on(table.meetingId).where(sql`${table.kind} = 'notes'`), check("document_kind", sql`${table.kind} IN ('notes', 'summary', 'general') AND (${table.kind} != 'notes' OR ${table.meetingId} IS NOT NULL)`), check("document_watermarks", sql`${table.projectionRevision} = ${table.revision} AND ${table.checkpointRevision} <= ${table.revision}`)]);
 
 export const documentUpdate = sqliteTable("document_updates", {
   documentId: text("document_id").notNull().references(() => document.id, { onDelete: "cascade" }),
@@ -677,7 +677,7 @@ export const documentRecovery = sqliteTable("document_recoveries", {
   reason: text("reason").$type<"deleted" | "concurrent_delete">().notNull(),
   encryptedPayload: text("encrypted_payload"),
   createdAt: sqliteTimestamp("created_at").notNull(),
-}, (table) => [foreignKey({ name: "documentRecovery_workspace_fk", columns: [table.workspaceId, table.documentId], foreignColumns: [document.workspaceId, document.id] }).onDelete("cascade").onUpdate("cascade"), index("document_recoveries_document_id").on(table.documentId)]);
+}, (table) => [foreignKey({ name: "documentRecovery_workspace_fk", columns: [table.workspaceId, table.documentId], foreignColumns: [document.workspaceId, document.id] }).onDelete("cascade").onUpdate("cascade"), index("document_recoveries_document_cursor").on(table.documentId, table.id)]);
 
 export const documentPresence = sqliteTable("document_presence", {
   id: text("id").primaryKey(),
@@ -685,4 +685,4 @@ export const documentPresence = sqliteTable("document_presence", {
   workspaceId: text("workspace_id").notNull().references(() => syncedWorkspace.workspaceId, { onDelete: "cascade" }),
   userId: text("user_id").notNull().references(() => authUser.id, { onDelete: "cascade" }),
   expiresAt: sqliteTimestamp("expires_at").notNull(),
-}, (table) => [foreignKey({ name: "documentPresence_workspace_fk", columns: [table.workspaceId, table.documentId], foreignColumns: [document.workspaceId, document.id] }).onDelete("cascade").onUpdate("cascade"), index("document_presence_expiry").on(table.expiresAt)]);
+}, (table) => [foreignKey({ name: "documentPresence_workspace_fk", columns: [table.workspaceId, table.documentId], foreignColumns: [document.workspaceId, document.id] }).onDelete("cascade").onUpdate("cascade"), index("document_presence_document_expiry").on(table.documentId, table.expiresAt), index("document_presence_workspace_expiry").on(table.workspaceId, table.expiresAt)]);

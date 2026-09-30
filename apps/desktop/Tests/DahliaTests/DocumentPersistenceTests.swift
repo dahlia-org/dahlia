@@ -455,7 +455,7 @@
         @Test(arguments: [false, true])
         func v47UpgradePreservesDocumentRelationshipsAndBytes(predatesRecordingRecovery: Bool) throws {
             let queue = try DatabaseQueue(configuration: AppDatabaseManager.configuration())
-            try AppDatabaseManager.migrator.migrate(queue, upTo: "v47_documents")
+            try DevelopmentSchemaHistory.migrator.migrate(queue, upTo: "v47_documents")
             if predatesRecordingRecovery {
                 // Disposable fixture for a Documents build made before the independent main migration.
                 try queue.write { db in
@@ -952,7 +952,7 @@
             try queue.read { db throws in
                 #expect(try !db.tableExists("documents"))
                 #expect(try db.columns(in: "document_updates").map(\.name) == ["sentinel"])
-                #expect(try !String.fetchAll(db, sql: "SELECT identifier FROM grdb_migrations").contains("v47_documents"))
+                #expect(try !String.fetchAll(db, sql: "SELECT identifier FROM grdb_migrations").contains("v52_documentsAndSync"))
             }
         }
     }

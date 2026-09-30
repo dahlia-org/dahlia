@@ -26,7 +26,7 @@
 
 ## 実装上の境界
 
-- `v50_syncPriority` を追加する。v49までの登録・処理は変更しない。依存索引、確定済みの親、構築済みentity、選択回数はSQLiteに保存する。既存キューは背景扱いで32 transactionずつ索引を補完する。
+- 未リリースの `v50_syncPriority` は、2026-09-30の承認により `v52_documentsAndSync` に統合する。配布済み v47 録音復旧までの登録・処理は変更しない。依存索引、確定済みの親、構築済みentity、選択回数はSQLiteに保存する。既存キューは背景扱いで32 transactionずつ索引を補完する。
 - 旧親はSQLiteの`BEFORE UPDATE/DELETE` triggerで記録し、recorderが同じtransaction内で消費する。行を変更済みの呼び出し元でも旧親を推測しない。未知の旧関係はbarrierを維持する。
 - 初期構築の開始時には識別情報だけを登録する。本文の構築と原本の準備はentityごとに進め、全画像の準備完了を会議metadata送信の条件にしない。既に構築した要求IDは再起動や後続編集で置換しない。
 - 画像、文字起こしのchunk、録音の送信は共有する4枠・背景最大3枠を利用する。domain commitの一つのtransactionは分割しない。通常の録音停止は同期を待たない。
@@ -66,4 +66,4 @@ Server内部の`captureSyncTimings()`は明示的なローカル計測だけに�
 
 既存の pull cursor があり Workspace 自体を含まない競合・validation を破棄する場合、対象 entity を永続的な再取得リストへ記録する。cursor と無関係な entity の revision は保持する。通常差分で対象が届けば同じ revision でも採用し、届かなければ snapshot から対象だけを再取得する。この処理は Workspace 全体の snapshot 復旧とは分離し、無関係な blocked transaction を待たない。取得中の mutation generation 変更、新しい対象編集、録音・移管・接続変更は既存の受信ガードで再検査する。再取得リストの消去は本文・metadata の適用と同じ DB transaction で行う。Workspace 全体の reset・初期同期・cursor 失効の厳しい復旧条件は維持する。
 
-再取得リストは追加 migration `v51_scopedSyncReconciliation` で作成する。ローカルで削除した親をServer版へ戻す場合は、canonicalな子と参照ファイルも復元する。親の通常差分が先に到着しても、子の列挙を永続化するまでは再取得リストを残す。接続解除・Workspace移動・キューの全破棄では対応するリストも破棄する。
+再取得リストは統合 migration `v52_documentsAndSync` で作成する（統合前の識別子は `v51_scopedSyncReconciliation`）。ローカルで削除した親をServer版へ戻す場合は、canonicalな子と参照ファイルも復元する。親の通常差分が先に到着しても、子の列挙を永続化するまでは再取得リストを残す。接続解除・Workspace移動・キューの全破棄では対応するリストも破棄する。

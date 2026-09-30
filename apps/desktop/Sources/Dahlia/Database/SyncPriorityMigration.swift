@@ -1,7 +1,7 @@
 import Foundation
 import GRDB
 
-/// Appended after v49. Existing operations remain barriers until their immutable inputs are indexed.
+/// Part of the unreleased Documents/sync migration. Existing operations remain barriers until their immutable inputs are indexed.
 enum SyncPriorityMigration {
     static func migrate(in db: Database) throws {
         // Some historical migration fixtures deliberately contain only their affected tables.

@@ -1,7 +1,7 @@
 {
   "version": "7",
   "dialect": "sqlite",
-  "id": "11f273c7-ae86-4d1d-9ec7-e7515b079f30",
+  "id": "ae368ba8-c90c-4453-841c-d26b86eea70c",
   "prevIds": [
     "00000000-0000-0000-0000-000000000000"
   ],
@@ -7574,7 +7574,43 @@
     {
       "columns": [
         {
+          "value": "document_id",
+          "isExpression": false
+        },
+        {
+          "value": "expires_at",
+          "isExpression": false
+        }
+      ],
+      "isUnique": false,
+      "where": null,
+      "origin": "manual",
+      "name": "document_presence_document_expiry",
+      "entityType": "indexes",
+      "table": "document_presence"
+    },
+    {
+      "columns": [
+        {
           "value": "workspace_id",
+          "isExpression": false
+        },
+        {
+          "value": "expires_at",
+          "isExpression": false
+        }
+      ],
+      "isUnique": false,
+      "where": null,
+      "origin": "manual",
+      "name": "document_presence_workspace_expiry",
+      "entityType": "indexes",
+      "table": "document_presence"
+    },
+    {
+      "columns": [
+        {
+          "value": "document_id",
           "isExpression": false
         },
         {
@@ -7585,35 +7621,7 @@
       "isUnique": false,
       "where": null,
       "origin": "manual",
-      "name": "documents_workspace_id",
-      "entityType": "indexes",
-      "table": "documents"
-    },
-    {
-      "columns": [
-        {
-          "value": "expires_at",
-          "isExpression": false
-        }
-      ],
-      "isUnique": false,
-      "where": null,
-      "origin": "manual",
-      "name": "document_presence_expiry",
-      "entityType": "indexes",
-      "table": "document_presence"
-    },
-    {
-      "columns": [
-        {
-          "value": "document_id",
-          "isExpression": false
-        }
-      ],
-      "isUnique": false,
-      "where": null,
-      "origin": "manual",
-      "name": "document_recoveries_document_id",
+      "name": "document_recoveries_document_cursor",
       "entityType": "indexes",
       "table": "document_recoveries"
     },

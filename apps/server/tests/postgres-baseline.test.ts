@@ -53,6 +53,27 @@ it.runIf(process.env.TEST_MIGRATION_DATABASE_URL)("creates the complete PostgreS
     expect(membership.rows.every((row) => row.condeferrable && !row.condeferred)).toBe(true);
     expect((await client.query("SELECT * FROM app.meetings")).rows).toEqual([]);
     expect((await client.query("SELECT to_regclass('app.artifact') AS retired")).rows).toEqual([{ retired: null }]);
+    // Non-superuser, forced RLS and realistic cardinality: verify the planner, not just index declarations.
+    await client.query(`INSERT INTO app.documents(id, workspace_id, kind, generation, checkpoint, text, created_at, updated_at)
+      SELECT md5('index-document-' || g)::uuid, $1, 'general', md5('generation-' || g)::uuid, 'AAA=', '', now(), now()
+      FROM generate_series(1, 2000) g`, [owner]);
+    await client.query(`INSERT INTO app.document_recoveries(id, document_id, workspace_id, blocks, reason, created_at)
+      SELECT md5('recovery-' || g)::uuid, md5('index-document-' || (1 + g % 2000))::uuid, $1, '[]', 'concurrent_delete', now()
+      FROM generate_series(1, 20000) g`, [owner]);
+    await client.query(`INSERT INTO app.document_presence(id, document_id, workspace_id, user_id, expires_at)
+      SELECT md5('presence-' || g)::uuid, md5('index-document-' || (1 + g % 2000))::uuid, $1, $1,
+        now() + CASE WHEN g <= 10 THEN interval '-1 second' ELSE interval '15 seconds' END
+      FROM generate_series(1, 10000) g`, [owner]);
+    await client.query("ANALYZE app.documents; ANALYZE app.document_recoveries; ANALYZE app.document_presence");
+    const documentID = (await client.query<{ id: string }>("SELECT md5('index-document-1')::uuid AS id")).rows[0]!.id;
+    for (const [query, index, parameters] of [
+      ["SELECT id FROM app.document_recoveries WHERE workspace_id = $1 AND document_id = $2 ORDER BY id LIMIT 101", "document_recoveries_document_cursor", [owner, documentID]],
+      ["SELECT user_id FROM app.document_presence WHERE workspace_id = $1 AND document_id = $2 AND expires_at > $3", "document_presence_document_expiry", [owner, documentID, new Date().toISOString()]],
+      ["SELECT id FROM app.document_presence WHERE workspace_id = $1 AND expires_at <= $2", "document_presence_workspace_expiry", [owner, new Date().toISOString()]],
+    ] as const) {
+      const plan = await client.query(`EXPLAIN (FORMAT JSON) ${query}`, [...parameters]);
+      expect(JSON.stringify(plan.rows)).toContain(index);
+    }
     const digest = "abcdefghijklmnopqrstuvwxyz012345";
     await client.query("INSERT INTO auth.oauth_client_assertion(id, expires_at) VALUES ($1, now() + interval '1 minute')", [digest]);
     expect((await client.query("SELECT id FROM auth.oauth_client_assertion")).rows).toEqual([{ id: digest }]);

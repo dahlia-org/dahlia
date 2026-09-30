@@ -8,7 +8,7 @@
     struct SyncPrioritySchemaTests {
         @Test func reconciliationMigrationPreservesExistingWorkspace() throws {
             let queue = try DatabaseQueue(configuration: AppDatabaseManager.configuration())
-            try AppDatabaseManager.migrator.migrate(queue, upTo: "v50_syncPriority")
+            try DevelopmentSchemaHistory.migrator.migrate(queue, upTo: "v50_syncPriority")
             let id = UUID.v7()
             try queue.write { db in
                 try WorkspaceRecord(id: id, name: "Local", createdAt: .now, lastOpenedAt: .now).insert(db)
@@ -18,6 +18,87 @@
                 #expect(try WorkspaceRecord.fetchOne(db, key: id)?.name == "Local")
                 #expect(try db.tableExists("sync_reconciliations"))
                 #expect(try String.fetchOne(db, sql: "PRAGMA integrity_check") == "ok")
+            }
+        }
+
+        @Test(arguments: [
+            "v47_orphanedRecordingRecoveryState",
+            "v48_independentDocuments",
+            "v49_workspaceImportDestinations",
+            "v50_syncPriority",
+            "v51_scopedSyncReconciliation",
+        ])
+        func consolidatedMigrationPreservesRowsAndMatchesFreshSchema(version: String) throws {
+            let queue = try DatabaseQueue(configuration: AppDatabaseManager.configuration())
+            try DevelopmentSchemaHistory.migrator.migrate(queue, upTo: version)
+            let workspace = UUID.v7(), meeting = UUID.v7(), document = UUID.v7()
+            let hasDocuments = version != "v47_orphanedRecordingRecoveryState"
+            try queue.write { db in
+                try WorkspaceRecord(id: workspace, name: "Retained", createdAt: .now, lastOpenedAt: .now).insert(db)
+                try MeetingRecord(id: meeting, workspaceId: workspace, name: "Meeting", createdAt: .now, updatedAt: .now).insert(db)
+                try MeetingNoteRecord(meetingId: meeting, text: "private legacy\nNotes", createdAt: .now, updatedAt: .now).insert(db)
+                if hasDocuments {
+                    try DocumentRecord(
+                        id: document,
+                        workspaceId: workspace,
+                        meetingId: meeting,
+                        checkpoint: "AAA=",
+                        text: "retained",
+                        createdAt: .now,
+                        updatedAt: .now
+                    ).insert(db)
+                    var update = DocumentUpdateRecord(documentId: document, payload: "AAA=", pending: true, createdAt: .now)
+                    try update.insert(db)
+                }
+            }
+            try AppDatabaseManager.migrator.migrate(queue)
+            try AppDatabaseManager.migrator.migrate(queue)
+            try queue.read { db throws in
+                #expect(try MeetingNoteRecord.fetchOne(db, key: meeting)?.text == "private legacy\nNotes")
+                if hasDocuments {
+                    #expect(try DocumentRecord.fetchOne(db, key: document)?.text == "retained")
+                    #expect(try DocumentUpdateRecord.fetchOne(db)?.pending == true)
+                }
+                #expect(try AppDatabaseManager.hasExpectedCurrentSchema(db))
+                #expect(try AppDatabaseManager.migrator.hasCompletedMigrations(db))
+                #expect(try Row.fetchAll(db, sql: "PRAGMA foreign_key_check").isEmpty)
+                #expect(try String.fetchAll(db, sql: "SELECT identifier FROM grdb_migrations").contains("v47_orphanedRecordingRecoveryState"))
+            }
+        }
+
+        @Test(arguments: ["v47_documents", "v51_scopedSyncReconciliation"], [false, true])
+        func validatesHistoricalBackupWithoutTrustingUnexpectedTriggers(version: String, tampered: Bool) throws {
+            let url = FileManager.default.temporaryDirectory.appending(path: "migration-backup-\(UUID.v7()).sqlite")
+            defer { try? FileManager.default.removeItem(at: url) }
+            let queue = try DatabaseQueue(path: url.path, configuration: AppDatabaseManager.configuration())
+            try DevelopmentSchemaHistory.migrator.migrate(queue, upTo: version)
+            let workspace = UUID.v7()
+            let entries = try String(decoding: JSONEncoder().encode([BackupWorkspace(id: workspace, name: "Retained")]), as: UTF8.self)
+            try queue.write { db in
+                try WorkspaceRecord(id: workspace, name: "Retained", createdAt: .now, lastOpenedAt: .now).insert(db)
+                try db.execute(sql: """
+                CREATE TABLE dahlia_backup_metadata (
+                    formatVersion INTEGER, generationId TEXT, createdAt DATETIME, schemaVersion INTEGER,
+                    migrationIdentifier TEXT, appVersion TEXT, appBuild TEXT, reason TEXT, workspacesJSON TEXT
+                );
+                INSERT INTO dahlia_backup_metadata VALUES (?, ?, ?, ?, ?, 'test', '1', 'manual', ?);
+                """, arguments: [
+                    BackupMetadata.currentFormatVersion,
+                    UUID.v7().uuidString,
+                    Date(),
+                    AppDatabaseManager.schemaVersion(from: version),
+                    version,
+                    entries,
+                ])
+                if tampered {
+                    try db.execute(sql: "CREATE TRIGGER unexpected AFTER UPDATE ON workspaces BEGIN DELETE FROM meetings; END")
+                }
+            }
+            try queue.close()
+            if tampered {
+                #expect(throws: BackupServiceError.invalidBackup) { try BackupService.readAndValidateMetadata(at: url) }
+            } else {
+                #expect(try BackupService.readAndValidateMetadata(at: url).migrationIdentifier == version)
             }
         }
 

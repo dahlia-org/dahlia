@@ -46,10 +46,14 @@
             try queue.write { db in
                 try db
                     .execute(
-                        sql: "CREATE TABLE meetings (id TEXT PRIMARY KEY); CREATE TABLE notes (meetingId TEXT PRIMARY KEY REFERENCES meetings(id), text TEXT);"
+                        sql: """
+                        CREATE TABLE workspaces (id TEXT PRIMARY KEY);
+                        CREATE TABLE meetings (id TEXT PRIMARY KEY, workspace_id TEXT);
+                        CREATE TABLE notes (meetingId TEXT PRIMARY KEY REFERENCES meetings(id), text TEXT);
+                        """
                     )
                 let id = UUID.v7()
-                try db.execute(sql: "INSERT INTO meetings VALUES (?); INSERT INTO notes VALUES (?, ?)", arguments: [id, id, "private legacy"])
+                try db.execute(sql: "INSERT INTO meetings(id) VALUES (?); INSERT INTO notes VALUES (?, ?)", arguments: [id, id, "private legacy"])
                 try DocumentsMigration.migrate(in: db)
                 #expect(try String.fetchOne(db, sql: "SELECT text FROM notes") == "private legacy")
                 #expect(try Int.fetchOne(db, sql: "SELECT count(*) FROM documents") == 0)

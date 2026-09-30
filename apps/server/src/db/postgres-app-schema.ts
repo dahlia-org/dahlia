@@ -863,7 +863,7 @@ export const document = appSchema.table("documents", {
   encryptedPayload: text("encrypted_payload"),
   createdAt: timestamp("created_at").notNull(),
   updatedAt: timestamp("updated_at").notNull(),
-}, (table) => [unique("document_workspace_id_unique").on(table.workspaceId, table.id), foreignKey({ name: "document_parent_workspace_fk", columns: [table.workspaceId, table.meetingId], foreignColumns: [syncedMeeting.workspaceId, syncedMeeting.meetingId] }).onDelete("cascade").onUpdate("cascade"), uniqueIndex("document_meeting_notes_unique").on(table.meetingId).where(sql`${table.kind} = 'notes'`), check("document_kind", sql`${table.kind} IN ('notes', 'summary', 'general') AND (${table.kind} != 'notes' OR ${table.meetingId} IS NOT NULL)`), check("document_watermarks", sql`${table.projectionRevision} = ${table.revision} AND ${table.checkpointRevision} <= ${table.revision}`), index("documents_workspace_id").on(table.workspaceId, table.id), ...documentPolicies("document", table.workspaceId)]).enableRLS();
+}, (table) => [unique("document_workspace_id_unique").on(table.workspaceId, table.id), foreignKey({ name: "document_parent_workspace_fk", columns: [table.workspaceId, table.meetingId], foreignColumns: [syncedMeeting.workspaceId, syncedMeeting.meetingId] }).onDelete("cascade").onUpdate("cascade"), uniqueIndex("document_meeting_notes_unique").on(table.meetingId).where(sql`${table.kind} = 'notes'`), check("document_kind", sql`${table.kind} IN ('notes', 'summary', 'general') AND (${table.kind} != 'notes' OR ${table.meetingId} IS NOT NULL)`), check("document_watermarks", sql`${table.projectionRevision} = ${table.revision} AND ${table.checkpointRevision} <= ${table.revision}`), ...documentPolicies("document", table.workspaceId)]).enableRLS();
 
 export const documentUpdate = appSchema.table("document_updates", {
   documentId: uuid("document_id").notNull().references(() => document.id, { onDelete: "cascade" }),
@@ -882,7 +882,7 @@ export const documentRecovery = appSchema.table("document_recoveries", {
   reason: text("reason").$type<"deleted" | "concurrent_delete">().notNull(),
   encryptedPayload: text("encrypted_payload"),
   createdAt: timestamp("created_at").notNull(),
-}, (table) => [foreignKey({ name: "documentRecovery_workspace_fk", columns: [table.workspaceId, table.documentId], foreignColumns: [document.workspaceId, document.id] }).onDelete("cascade").onUpdate("cascade"), index("document_recoveries_document_id").on(table.documentId), ...documentPolicies("document_recovery", table.workspaceId)]).enableRLS();
+}, (table) => [foreignKey({ name: "documentRecovery_workspace_fk", columns: [table.workspaceId, table.documentId], foreignColumns: [document.workspaceId, document.id] }).onDelete("cascade").onUpdate("cascade"), index("document_recoveries_document_cursor").on(table.documentId, table.id), ...documentPolicies("document_recovery", table.workspaceId)]).enableRLS();
 
 export const documentPresence = appSchema.table("document_presence", {
   id: uuid("id").primaryKey(),
@@ -890,4 +890,4 @@ export const documentPresence = appSchema.table("document_presence", {
   workspaceId: uuid("workspace_id").notNull().references(() => syncedWorkspace.workspaceId, { onDelete: "cascade" }),
   userId: uuid("user_id").notNull().references(() => authUser.id, { onDelete: "cascade" }),
   expiresAt: timestamp("expires_at").notNull(),
-}, (table) => [foreignKey({ name: "documentPresence_workspace_fk", columns: [table.workspaceId, table.documentId], foreignColumns: [document.workspaceId, document.id] }).onDelete("cascade").onUpdate("cascade"), index("document_presence_expiry").on(table.expiresAt), ...documentPolicies("document_presence", table.workspaceId)]).enableRLS();
+}, (table) => [foreignKey({ name: "documentPresence_workspace_fk", columns: [table.workspaceId, table.documentId], foreignColumns: [document.workspaceId, document.id] }).onDelete("cascade").onUpdate("cascade"), index("document_presence_document_expiry").on(table.documentId, table.expiresAt), index("document_presence_workspace_expiry").on(table.workspaceId, table.expiresAt), ...documentPolicies("document_presence", table.workspaceId)]).enableRLS();

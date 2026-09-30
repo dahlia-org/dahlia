@@ -46,6 +46,8 @@ PostgreSQL は既存の生成 Auth baseline → application initial → runtime_
 
 2026-09-23: Server は引き続き未リリースであり、ユーザー承認により migration の直接編集・統合を許可する。Dahlia Memory の個人表と共有ノート保護列を既存のメモリー migration に、個人表の FORCE RLS を既存の RLS migration に統合した。Drizzle snapshot と登録一覧も同期する。適用済み DB や ledger は自動変更しない。検証には新しい空 DB を使い、保持する開発データの移行は別途扱う。Desktop の released migration はこの許可の対象外。
 
+2026-09-30: Notesの検索条件に合わせ、復元履歴は `(document_id, id)`、presenceは `(document_id, expires_at)` と `(workspace_id, expires_at)` を用いる。後者はWorkspace内の期限切れ削除、前者は表示中文書の参加者一覧と文書削除の参照探索を支える。Documentsの `(workspace_id, id)` は既存の一意制約が索引を持つため、重複した通常indexは除く。Notes本体の部分一意indexと更新ログの `(document_id, revision)` 主キーは保持する。宣言schemaから未リリースapplication/SQLite baselineとsnapshotを再生成し、runtime_supportの認可関数・RLS・FTS・DEFERRABLE制約とAuth/Agentの独立ledgerは維持する。既存Server DBへこのbaselineを再適用せず、稼働DBへの索引追加は別の明示的な運用作業とする。検証は空の使い捨てDBで行う。
+
 ## Header identity
 
 proxy は client-supplied identity header を除去・上書きし、Server への直接到達を防ぐ。Server 側の CIDR 判定で代替しない。
