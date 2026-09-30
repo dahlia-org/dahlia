@@ -1,1 +1,0 @@
-CREATE INDEX `summary_job_due_idx` ON `jobs_summary` (`owner_user_id`,`available_at`) WHERE "jobs_summary"."status" IN ('pending', 'processing');

@@ -855,6 +855,7 @@ CREATE INDEX `document_presence_document_expiry` ON `document_presence` (`docume
 CREATE INDEX `document_presence_workspace_expiry` ON `document_presence` (`workspace_id`,`expires_at`);--> statement-breakpoint
 CREATE INDEX `document_recoveries_document_cursor` ON `document_recoveries` (`document_id`,`id`);--> statement-breakpoint
 CREATE INDEX `image_analysis_job_claim_idx` ON `jobs_image_analysis` (`status`,`available_at`,`lease_expires_at`);--> statement-breakpoint
+CREATE INDEX `image_analysis_job_owner_idx` ON `jobs_image_analysis` (`owner_user_id`,`available_at`);--> statement-breakpoint
 CREATE INDEX `meeting_attachments_file_idx` ON `meeting_attachments` (`file_id`);--> statement-breakpoint
 CREATE INDEX `meeting_attachments_workspace_meeting_id_idx` ON `meeting_attachments` (`workspace_id`,`meeting_id`,`id`);--> statement-breakpoint
 CREATE INDEX `meeting_events_meeting_time_idx` ON `meeting_events` (`workspace_id`,`meeting_id`,`occurred_at`,`id`);--> statement-breakpoint
@@ -870,6 +871,7 @@ CREATE INDEX `shared_memories_workspace_idx` ON `shared_memories` (`workspace_id
 CREATE INDEX `storage_delete_job_claim_idx` ON `jobs_storage_delete` (`status`,`available_at`,`lease_expires_at`);--> statement-breakpoint
 CREATE UNIQUE INDEX `summary_job_active_meeting_idx` ON `jobs_summary` (`meeting_id`) WHERE "jobs_summary"."status" IN ('pending', 'processing');--> statement-breakpoint
 CREATE INDEX `summary_job_owner_created_idx` ON `jobs_summary` (`owner_user_id`,`created_at`);--> statement-breakpoint
+CREATE INDEX `summary_job_due_idx` ON `jobs_summary` (`owner_user_id`,`available_at`) WHERE "jobs_summary"."status" IN ('pending', 'processing');--> statement-breakpoint
 CREATE INDEX `sync_change_workspace_sequence_idx` ON `sync_changes` (`workspace_id`,`sequence`);--> statement-breakpoint
 CREATE INDEX `transaction_receipt_owner_created_idx` ON `transaction_receipts` (`owner_user_id`,`created_at`);--> statement-breakpoint
 CREATE INDEX `files_workspace_file_idx` ON `files` (`workspace_id`,`file_id`);--> statement-breakpoint
