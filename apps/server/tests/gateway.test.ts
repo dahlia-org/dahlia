@@ -75,7 +75,7 @@ describe("AI Gateway", () => {
   });
 
   it("publishes fully qualified Databricks slugs with Codex metadata", async () => {
-    expect(LATEST_CODEX_CLIENT_VERSION).toBe("0.156.0");
+    expect(LATEST_CODEX_CLIENT_VERSION).toBe("0.159.3");
     const transport = vi.fn<GatewayFetch>();
     const list = await new GatewayService(databricksConfig, transport).models(
       new Request(`https://dahlia.example/api/v1/models?client_version=${LATEST_CODEX_CLIENT_VERSION}`, {
@@ -100,9 +100,10 @@ describe("AI Gateway", () => {
     expect(old.models.some(({ slug }) => slug === "system.ai.gpt-6-luna")).toBe(false);
     expect(old.models.find(({ slug }) => slug === "gpt-5.4-mini")).toMatchObject({ visibility: "hide", supported_in_api: false });
 
-    const current = await service.models(new Request("https://dahlia.example/api/v1/models?client_version=0.156.0"));
+    const current = await service.models(new Request("https://dahlia.example/api/v1/models?client_version=0.159.3"));
     expect(current.data[0]?.id).toBe("system.ai.gpt-6-luna");
     expect((await service.models()).data).toEqual(current.data);
+    expect(await service.models(new Request("https://dahlia.example/api/v1/models?client_version=0.156.0"))).toEqual(current);
     expect((await new GatewayService(config).models(oldRequest)).data.map(({ id }) => id)).toEqual(["gpt-5.6-luna"]);
     await expect(service.models(new Request("https://dahlia.example/api/v1/models?client_version=0.150.0")))
       .rejects.toMatchObject({ code: "unsupported_codex_client_version" });

@@ -11,8 +11,8 @@ struct BundleCodexExecutableLocator: CodexExecutableLocating {
 }
 
 enum CodexBundle {
-    nonisolated static let version = "0.156.0"
-    nonisolated static let sourceCommit = "fe74a774532af67b5a4a3dec03ce9469e17f89af"
+    nonisolated static let version = "0.159.3"
+    nonisolated static let sourceCommit = "01fc69f4026735edfdf6789820549727a4867b11"
 
     nonisolated static func executableURL(in bundle: Bundle = .main) throws -> URL {
         let helpersURL = bundle.bundleURL
