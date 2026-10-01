@@ -10,8 +10,8 @@ import { modelList } from "./models";
 import { DatabricksTokenProvider } from "../databricks/token";
 
 export { GatewayRequestError } from "./errors";
-export const LATEST_CODEX_CLIENT_VERSION = "0.156.0";
-const PREVIOUS_CODEX_CLIENT_VERSION = "0.153.4";
+export const LATEST_CODEX_CLIENT_VERSION = "0.159.3";
+const PREVIOUS_CODEX_CLIENT_VERSIONS = ["0.156.0", "0.153.4"];
 
 export class GatewayService {
   private readonly backend?: AIGatewayBackend;
@@ -112,7 +112,7 @@ function requireSupportedCodexClient(request?: Request): string {
   if (!request) return LATEST_CODEX_CLIENT_VERSION;
   const version = new URL(request.url).searchParams.get("client_version")
     ?? LATEST_CODEX_CLIENT_VERSION;
-  if (version !== LATEST_CODEX_CLIENT_VERSION && version !== PREVIOUS_CODEX_CLIENT_VERSION) {
+  if (version !== LATEST_CODEX_CLIENT_VERSION && !PREVIOUS_CODEX_CLIENT_VERSIONS.includes(version)) {
     throw new GatewayRequestError(
       `Codex client version '${version}' is not supported`,
       400,
