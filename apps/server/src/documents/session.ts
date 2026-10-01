@@ -24,7 +24,6 @@ export class DocumentSession {
   readonly core: DocumentCore;
   generation: string | null;
   revision: number;
-  private hasLocalEdits = false;
   private tail: Promise<void> = Promise.resolve();
   private sending: Promise<void> | null = null;
   constructor(private readonly host: DocumentHost, initial?: { checkpoint?: string; generation: string | null; revision: number }) {
@@ -49,11 +48,12 @@ export class DocumentSession {
         const projection = preview.projection(local);
         const checkpoint = preview.checkpoint(local);
         const blocks = removedBlocks(before, projection);
-        const recovery: DocumentRecovery | null = !local && this.hasLocalEdits && blocks.length
-          ? { id: this.host.newID(), blocks, reason: "concurrent_delete" } : null;
+        // Save unsent local deletions too: a later remote purge can consume their
+        // hidden bodies before the Server ever receives this edit.
+        const recovery: DocumentRecovery | null = blocks.length && (local || (await this.host.pending()).length)
+          ? { id: this.host.newID(), blocks, reason: local ? "deleted" : "concurrent_delete" } : null;
         const sequence = await this.host.append(update, local, recovery);
         this.core.apply(update);
-        if (local) this.hasLocalEdits = true;
         this.generation = version.generation;
         this.revision = version.revision;
         await this.host.checkpoint({ checkpoint, projection, through: sequence,
@@ -74,7 +74,9 @@ export class DocumentSession {
     const response = await this.host.exchange({ generation: this.generation, vector: this.core.vector(),
       ...(batch.update ? { update: batch.update } : {}) });
     await this.accept(response.update, false, response);
-    if (!response.refreshed && batch.through !== null) await this.host.acknowledge(batch.through);
+    const through = batch.through;
+    // Keep outbox removal ordered with recovery's pending check and atomic append.
+    if (!response.refreshed && through !== null) await this.ordered(() => this.host.acknowledge(through));
   }
   async flush(): Promise<void> {
     do { await this.synchronize(); await this.tail; } while ((await this.host.pending()).length);

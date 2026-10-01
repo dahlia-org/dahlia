@@ -4,10 +4,10 @@ import { getSchema } from "@tiptap/core";
 import StarterKit from "@tiptap/starter-kit";
 import { Fragment, type Node } from "@tiptap/pm/model";
 import fixture from "../../desktop/Tests/DahliaTests/Fixtures/documents.json";
-import { DocumentCore, decodeBinary, documentStateLimit, encodeBinary, mergeDocumentUpdates, removedBlocks } from "../src/documents/core";
+import { DocumentCore, decodeBinary, documentStateLimit, encodeBinary, mergeDocumentUpdates, removedBlocks, type DocumentRecovery } from "../src/documents/core";
 import { blockLayout, blockMap, renderedAttributes, rootOrder, writeBlocks, writeInline, type BlockInput } from "../src/documents/blocks";
 import { DocumentEditorHydration, pastedTextSlice, withoutTrailingBreaks } from "../src/documents/editor";
-import { DocumentSession, type PendingDocumentUpdate } from "../src/documents/session";
+import { DocumentSession, type DocumentHost, type PendingDocumentUpdate } from "../src/documents/session";
 import { run as runNativeDocument } from "../src/documents/native-core";
 import { deleteFirst, firstText } from "./fixtures/document-helpers";
 const id = () => crypto.randomUUID();
@@ -221,6 +221,48 @@ it("does not enqueue recovery for viewers and accepts concurrent over-limit remo
   await session.accept(seed.checkpoint(false), false);
   expect(session.core.projection(false).blocks.length).toBeGreaterThan(0);
   await session.close(); seed.destroy();
+});
+
+it.each(["acknowledged", "failed ACK", "restarted", "newer than ACK", "pending deletion"])("uses the current outbox for remote recovery (%s)", async (mode) => {
+  const pending: PendingDocumentUpdate[] = [], recoveries: DocumentRecovery[] = [];
+  let sequence = 0;
+  const host: DocumentHost = { newID: id,
+    append: async (update, local, recovery) => {
+      sequence++;
+      if (local) pending.push({ sequence, update });
+      if (recovery) recoveries.push(recovery);
+      return sequence;
+    },
+    pending: async () => [...pending], checkpoint: async () => {},
+    exchange: async () => {
+      if (mode === "newer than ACK") await session.accept(fixture.lateUpdate, true);
+      return { generation: null, revision: 0, update: "AAA=" };
+    },
+    acknowledge: async (through) => {
+      if (mode === "failed ACK") throw new Error("ACK failed");
+      while (pending.length && pending[0]!.sequence <= through) pending.shift();
+    },
+  };
+  let session = new DocumentSession(host);
+  await session.accept(fixture.checkpoint, true);
+  if (mode !== "newer than ACK") await session.accept(fixture.lateUpdate, true);
+  if (mode === "pending deletion") await session.accept(fixture.retainedDeletionUpdate, true);
+  else if (mode === "restarted") {
+    const checkpoint = session.core.checkpoint();
+    await session.close();
+    session = new DocumentSession(host, { checkpoint, generation: null, revision: 0 });
+  } else if (mode === "failed ACK") await expect(session.synchronize()).rejects.toThrow("ACK failed");
+  else await session.synchronize();
+  expect(pending.length > 0).toBe(mode !== "acknowledged");
+  await session.accept(fixture.purgedCheckpoint, false);
+  expect(recoveries).toHaveLength(mode === "acknowledged" ? 0 : 1);
+  if (mode === "pending deletion") {
+    expect(recoveries[0]?.reason).toBe("deleted");
+    expect(recoveries[0]?.blocks.some((block) => block.text.includes("offline"))).toBe(true);
+  }
+  await session.accept(fixture.purgedCheckpoint, false);
+  expect(recoveries).toHaveLength(mode === "acknowledged" ? 0 : 1);
+  await session.close();
 });
 
 it("merges duplicate updates", () => {

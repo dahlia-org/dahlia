@@ -242,25 +242,35 @@ actor DocumentPersistence {
                       current.id == record.id,
                       current.checkpointSequence == record.checkpointSequence,
                       current.checkpoint == record.checkpoint,
-                      current.generation == record.generation else { return false }
+                      current.generation == record.generation,
+                      current.workspaceId == record.workspaceId,
+                      let workspace = try WorkspaceRecord.fetchOne(db, key: current.workspaceId),
+                      (workspace.accountConnectionId == nil) == source.2 else { return false }
                 if purged {
                     let latest = try Int64.fetchOne(db, sql: "SELECT max(id) FROM document_updates WHERE documentId = ?", arguments: [record.id]) ?? 0
                     guard latest <= through else { return false }
                 }
-                if source.2, let recoveryJSON, current.projectionSequence < through {
+                let pending = try Bool.fetchOne(
+                    db,
+                    sql: "SELECT EXISTS(SELECT 1 FROM document_updates WHERE documentId = ? AND pending = 1)",
+                    arguments: [record.id]
+                ) == true
+                let preservesRecovery = recoveryJSON != nil && (source.2 || pending)
+                if preservesRecovery, let recoveryJSON {
                     try DocumentRecoveryRecord(
                         id: .v7(),
                         documentId: record.id,
                         blocksJSON: recoveryJSON,
                         reason: "deleted",
-                        pending: false,
+                        pending: !source.2,
                         createdAt: Date()
                     ).insert(db)
                 }
                 // The checkpoint includes exactly `through`. Later durable appends remain in the log.
                 let recording = try RecordingSessionRecord.hasActiveRecording(workspaceId: record.workspaceId, in: db)
-                // Advance the recovery's causal baseline atomically so later edits cannot record the same deletion again.
-                if compact || purged || (source.2 && recoveryJSON != nil) || (source.1.count >= 32 && !recording) {
+                // A Server replica must also preserve unsent deletions before compaction or conversion to Local.
+                // The checkpoint, not the projection watermark, is the recovery's atomic causal baseline.
+                if compact || purged || preservesRecovery || (source.1.count >= 32 && !recording) {
                     try db.execute(
                         sql: "UPDATE documents SET checkpoint = ?, checkpointSequence = ?, projectionSequence = ?, text = ? WHERE id = ?",
                         arguments: [result.checkpoint, through, through, result.projection.text, record.id]
@@ -302,8 +312,12 @@ actor DocumentPersistence {
             }
             let before = try await core.process(DocumentCoreCommand(checkpoint: source.0?.checkpoint, updates: source.1.map(\.payload)))
             let merged = try await core.process(DocumentCoreCommand(checkpoint: before.checkpoint, updates: [update]))
-            let recoveryJSON = try source.0?.locallyEdited != true || merged.removed.isEmpty ? nil : String(
-                decoding: JSONEncoder().encode(merged.removed),
+            // A pending deletion may not have been projected yet. Preserve its hidden body
+            // too, unless the incoming merge restored it or already supplies its newer copy.
+            let mergedIDs = Set((merged.projection.blocks + merged.removed).map(\.id))
+            let removed = merged.removed + before.removed.filter { !mergedIDs.contains($0.id) }
+            let recoveryJSON = try removed.isEmpty ? nil : String(
+                decoding: JSONEncoder().encode(removed),
                 as: UTF8.self
             )
             let committed = try await dbQueue.write { db -> Bool in
@@ -311,6 +325,7 @@ actor DocumentPersistence {
                 let existing = try reference.load(in: db)
                 guard existing?.id == source.0?.id,
                       existing?.checkpointSequence == source.0?.checkpointSequence,
+                      existing?.checkpoint == source.0?.checkpoint,
                       existing?.generation == source.0?.generation else { return false }
                 let latest = try Int64.fetchOne(db, sql: "SELECT max(id) FROM document_updates WHERE documentId = ?", arguments: [existing?.id]) ?? 0
                 guard latest == source.2 else { return false }
@@ -332,7 +347,14 @@ actor DocumentPersistence {
                     sql: "UPDATE documents SET workspace_id = ?, title = ? WHERE id = ?",
                     arguments: [document.workspaceId, document.title, document.id]
                 )
-                if let recoveryJSON {
+                // Query at commit, including pending entries already incorporated into the checkpoint.
+                let pending = try Bool.fetchOne(
+                    db,
+                    sql: "SELECT EXISTS(SELECT 1 FROM document_updates WHERE documentId = ? AND pending = 1)",
+                    arguments: [document.id]
+                ) == true
+                let preservesRecovery = recoveryJSON != nil && pending
+                if preservesRecovery, let recoveryJSON {
                     try DocumentRecoveryRecord(
                         id: .v7(),
                         documentId: document.id,
@@ -348,6 +370,19 @@ actor DocumentPersistence {
                     try db.execute(
                         sql: "UPDATE documents SET projectionSequence = ?, text = ? WHERE id = ?",
                         arguments: [entry.id, merged.projection.text, document.id]
+                    )
+                }
+                if preservesRecovery {
+                    // The receive recovery and its baseline must advance together, just as in materialize.
+                    let through = try Int64
+                        .fetchOne(db, sql: "SELECT max(id) FROM document_updates WHERE documentId = ?", arguments: [document.id]) ?? 0
+                    try db.execute(
+                        sql: "UPDATE documents SET checkpoint = ?, checkpointSequence = ? WHERE id = ?",
+                        arguments: [merged.checkpoint, through, document.id]
+                    )
+                    try db.execute(
+                        sql: "DELETE FROM document_updates WHERE documentId = ? AND id <= ? AND pending = 0",
+                        arguments: [document.id, through]
                     )
                 }
                 try db.execute(

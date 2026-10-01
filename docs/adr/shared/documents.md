@@ -135,6 +135,11 @@ Undo / Redo も変更前に検証する。リモートの追加で上限へ達�
 
 通常入力も、Desktop の50ms待ちや host 保存待ちの間に受信した削除と競合し得る。共通の受信処理は未確認のローカル編集がある場合、マージで消える本文を先に復元キューへ渡す。受信 checkpoint が編集側の clock を含んでいても、消去後に差分だけ受け取って本文を失った可能性があるため、復元判定を先に行う。未反映の clock が残る場合は確認待ちを維持し、本文を失わず host 確認できた編集は host 側の通常の復元経路に任せる。
 
+未確認の編集がない受信では復元用の全文コピーを作らない。保存確認も、Yjs の struct と削除集合の両方が編集側に既知ならコピーを省く。Desktop と Web の host は、過去の編集履歴ではなく現在の未 ACK 更新で追加の競合復元を判定する。Desktop は checkpoint へ取り込んだ未送信更新も対象にし、判定と保存を同じ DB transaction で行う。Web の ACK は受信・保存と同じ順序キューを通す。
+
+Desktop の未送信削除は Server 側での復元保存がまだ保証されないため、Server レプリカでも checkpoint を進める前に復元記録を保存する。復元と checkpoint は原子的に確定し、表示用の projectionSequence を復元済みの根拠にしない。これにより、未送信の末尾を残して Local Account へ移した場合や保存失敗後の再試行でも本文を保持する。
+Web も未送信の削除本文を local append と同時に既存の復元キューへ渡し、送信より先に Server の消去が届いても保持する。
+
 v1 の自動変換・互換読み取りは設けない。checkpoint / legacyUpdate は `unsupported_document_schema`（Server 422）、未解決の依存が残る差分は `invalid_document_update`（400）で拒否し、保存と ACK を行わない。旧文書・未送信差分・非公開コピーは残す。Desktop は旧形式専用の表示を行い、1 件の旧 archive が他の archive の一覧を止めない。旧 Notes の平文取り込みは v2 で生成する。`documents.version=2`、SharedDocument の `schemaVersion=2` とし、domain 同期の `sync.version=7` は変えない。
 
 暗号化、RLS、世代・リビジョン、復元ページング、送信間隔、文書ロック、文書 ID・所属・再関連付けは維持する。collaboration 関連ライブラリは bundle と同梱ライセンスから外れるが、package.json / lockfile の依存削除は別途承認まで行わない。

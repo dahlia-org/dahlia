@@ -111,21 +111,88 @@
             #expect(try await restarted.recoveries(meetingID: meetingID).0.count == 2)
         }
 
-        @Test func physicalPurgePreservesOfflineInputAcrossPersistenceRestart() async throws {
+        @Test(arguments: [false, true]) func remoteRecoveryRequiresPendingInputAfterCompactionAndRestart(pending: Bool) async throws {
             let (queue, _, meetingID) = try seed(server: true)
             let fixture = try schemaFixture(), generation = UUID.v7()
             let original = DocumentPersistence(dbQueue: queue)
             let document = try await remoteDocument(queue, meetingID: meetingID)
             try await original.receive(document: document, update: fixture.checkpoint, generation: generation, revision: 1, validate: { _ in })
             try await original.append(meetingID: meetingID, update: fixture.lateUpdate, local: true)
+            _ = try await original.materialize(meetingID: meetingID, compact: true)
+            if !pending {
+                try await queue.write { try $0.execute(sql: "UPDATE document_updates SET pending = 0") }
+            }
             let restarted = DocumentPersistence(dbQueue: queue)
             try await restarted.receive(document: document, update: fixture.purgedCheckpoint, generation: generation, revision: 2, validate: { _ in })
             let (records, text) = try await restarted.recoveries(meetingID: meetingID)
-            #expect(records.count == 1 && records[0].pending && records[0].reason == "concurrent_delete")
-            #expect(text[records[0].id] == "会議 offline")
+            #expect(records.count == (pending ? 1 : 0))
+            if pending {
+                let record = try #require(records.first)
+                #expect(record.pending && record.reason == "concurrent_delete")
+                #expect(text[record.id] == "会議 offline")
+            }
             #expect(try await restarted.materialize(meetingID: meetingID).projection.text == "# literal\r\n")
-            #expect(try await queue.read { try DocumentUpdateRecord.filter(Column("pending") == true).fetchCount($0) } == 1)
+            #expect(try await queue.read { try DocumentUpdateRecord.filter(Column("pending") == true).fetchCount($0) } == (pending ? 1 : 0))
             try await restarted.receive(document: document, update: fixture.purgedCheckpoint, generation: generation, revision: 2, validate: { _ in })
+            #expect(try await restarted.recoveries(meetingID: meetingID).0.count == (pending ? 1 : 0))
+        }
+
+        @Test func incomingPurgePreservesPendingDeletionBeforeProjection() async throws {
+            let (queue, _, meetingID) = try seed(server: true)
+            let fixture = try schemaFixture(), persistence = DocumentPersistence(dbQueue: queue), generation = UUID.v7()
+            let document = try await remoteDocument(queue, meetingID: meetingID)
+            try await persistence.receive(document: document, update: fixture.checkpoint, generation: generation, revision: 1, validate: { _ in })
+            try await persistence.append(meetingID: meetingID, update: fixture.lateUpdate, local: true)
+            try await persistence.append(meetingID: meetingID, update: fixture.retainedDeletionUpdate, local: true)
+            try await persistence.receive(
+                document: document,
+                update: fixture.purgedCheckpoint,
+                generation: generation,
+                revision: 2,
+                validate: { _ in }
+            )
+            _ = try await persistence.materialize(meetingID: meetingID)
+            let (records, text) = try await persistence.recoveries(meetingID: meetingID)
+            #expect(records.count == 1)
+            #expect(text.values.contains { $0.contains("offline") })
+        }
+
+        @Test(arguments: [false, true]) func pendingDeletionSurvivesServerToLocalConversion(compact: Bool) async throws {
+            let (queue, workspaceID, meetingID) = try seed(server: true)
+            let fixture = try schemaFixture(), persistence = DocumentPersistence(dbQueue: queue)
+            let document = try await remoteDocument(queue, meetingID: meetingID)
+            try await persistence.receive(document: document, update: fixture.checkpoint, generation: .v7(), revision: 1, validate: { _ in })
+            try await persistence.append(meetingID: meetingID, update: fixture.deletionUpdate, local: true)
+            let baseline = try await queue.read { try DocumentRecord.fetchOne($0, key: document.id) }
+            try await queue.write { db in
+                try db.execute(
+                    sql: "CREATE TRIGGER fail_recovery BEFORE INSERT ON document_recoveries BEGIN SELECT RAISE(ABORT, 'fixture disk error'); END"
+                )
+            }
+            await #expect(throws: (any Error).self) {
+                _ = try await persistence.materialize(meetingID: meetingID, compact: compact)
+            }
+            let failed = try await queue.read { try DocumentRecord.fetchOne($0, key: document.id) }
+            #expect(failed?.checkpoint == baseline?.checkpoint && failed?.checkpointSequence == baseline?.checkpointSequence)
+            try await queue.write { try $0.execute(sql: "DROP TRIGGER fail_recovery") }
+            _ = try await persistence.materialize(meetingID: meetingID, compact: compact)
+            #expect(try await persistence.recoveries(meetingID: meetingID).0.contains { $0.pending })
+            // Account conversion can leave an unsent suffix after a bounded exchange.
+            try await queue.write { db in
+                var workspace = try #require(try WorkspaceRecord.fetchOne(db, key: workspaceID))
+                workspace.moveToLocalAccount()
+                try workspace.update(db)
+                try db.execute(sql: "UPDATE document_updates SET pending = 0")
+                try db.execute(sql: "UPDATE document_recoveries SET pending = 0")
+                try db.execute(sql: "UPDATE documents SET generation = NULL, revision = 0")
+            }
+            let restarted = DocumentPersistence(dbQueue: queue)
+            #expect(try await restarted.materialize(documentID: document.id).purged == true)
+            let (records, text) = try await restarted.recoveries(meetingID: meetingID)
+            #expect(records.count == 1)
+            #expect(text.values.contains { $0.contains("議") })
+            try await restarted.insertRecoveredText(meetingID: meetingID, text: "Unrelated edit")
+            _ = try await restarted.materialize(meetingID: meetingID)
             #expect(try await restarted.recoveries(meetingID: meetingID).0.count == 1)
         }
 

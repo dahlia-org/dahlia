@@ -171,23 +171,27 @@ export class DocumentEditorHydration {
   }
   receive(checkpoint: Uint8Array) {
     if (this.firstLocalUpdate) this.hostVector = Y.encodeStateVectorFromUpdate(checkpoint);
-    const preview = new Y.Doc();
-    try {
-      Y.applyUpdate(preview, Y.encodeStateAsUpdate(this.document));
-      const before = projectDocument(preview, false);
-      Y.applyUpdate(preview, checkpoint);
-      const after = projectDocument(preview, false);
-      if (this.locallyEdited) {
-        // The host may not have saved a throttled/queued edit, or may already have
-        // discarded its structs under a purged parent. Clocks alone do not prove preservation.
-        const lost = removedBlocks(before, after);
-        if (lost.length) this.onRecovery(lost);
-        const known = Y.decodeStateVector(Y.encodeStateVectorFromUpdate(checkpoint));
-        this.locallyEdited = [...Y.decodeStateVector(Y.encodeStateVector(this.document))]
-          .some(([client, clock]) => clock > (known.get(client) ?? 0));
+    if (this.locallyEdited) {
+      // Own save acknowledgements contain no new structs or deletions. Avoid a full
+      // clone/projection for them, but never use clocks alone to skip a remote purge.
+      if (!Y.snapshotContainsUpdate(Y.snapshot(this.document), checkpoint)) {
+        const preview = new Y.Doc();
+        try {
+          Y.applyUpdate(preview, Y.encodeStateAsUpdate(this.document));
+          const before = projectDocument(preview, false);
+          Y.applyUpdate(preview, checkpoint);
+          const after = projectDocument(preview, false);
+          // The host may not have saved a throttled/queued edit, or may already have
+          // discarded its structs under a purged parent. Clocks alone do not prove preservation.
+          const lost = removedBlocks(before, after);
+          if (lost.length) this.onRecovery(lost);
+        }
+        finally { preview.destroy(); }
       }
+      const known = Y.decodeStateVector(Y.encodeStateVectorFromUpdate(checkpoint));
+      this.locallyEdited = [...Y.decodeStateVector(Y.encodeStateVector(this.document))]
+        .some(([client, clock]) => clock > (known.get(client) ?? 0));
     }
-    finally { preview.destroy(); }
     Y.applyUpdate(this.document, checkpoint, "remote");
   }
 }

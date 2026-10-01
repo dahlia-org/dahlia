@@ -21,6 +21,14 @@ function editor(text = "first\nsecond", checkpoint?: string, editable = true) {
 const insert = (editor: Editor, text: string) => editor.commands.insertContent({ type: "text", text });
 
 describe("Documents editor binding", () => {
+  it.each([false, true])("does not clone the document for a no-op host checkpoint (edited=%s)", (edited) => {
+    const a = editor(), hydration = new DocumentEditorHydration(a.core.document);
+    if (edited) hydration.edited();
+    const checkpoint = decodeBinary(a.core.checkpoint());
+    const destroy = vi.spyOn(Y.Doc.prototype, "destroy");
+    hydration.receive(checkpoint);
+    expect(destroy).not.toHaveBeenCalled();
+  });
   it.each(["first", "later", "known-clocks", "intermediate"])("preserves ordinary input when purge races the host save (%s)", (scenario) => {
     const a = editor("日本語\ntail"), b = editor("", a.core.checkpoint());
     const hydration = new DocumentEditorHydration(a.core.document, (blocks) => a.recovered.push(...blocks));
