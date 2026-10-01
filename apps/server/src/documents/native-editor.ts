@@ -1,32 +1,34 @@
 import * as Y from "yjs";
-import { decodeBinary, encodeBinary } from "./core";
+import { decodeBinary, encodeBinary, type DocumentBlock } from "./core";
 import { DocumentEditorHydration, mountDocumentEditor } from "./editor";
 
 declare global {
   interface Window {
     webkit: { messageHandlers: { document: { postMessage(value: unknown): void } } };
-    dahliaDocument: { open(checkpoint: string, editable: boolean): void; receive(update: string): void; setEditable(editable: boolean): void; command(name: string): void; drain(): string | null };
+    dahliaDocument: { open(checkpoint: string, editable: boolean, placeholder: string): void; receive(update: string): void; setEditable(editable: boolean): void; drain(): { update: string; recovery?: string } | null };
   }
 }
 const document = new Y.Doc();
 let hydration: DocumentEditorHydration;
 let initialized = false;
 let pending: Uint8Array[] = [];
+let pendingRecovery: DocumentBlock[] = [];
 let sendTimer: ReturnType<typeof setTimeout> | undefined;
+function preserveRecovery(blocks: DocumentBlock[]) {
+  pendingRecovery.push(...blocks); sendTimer ??= setTimeout(sendPending, 50);
+}
 function sendPending() {
-  sendTimer = undefined;
-  if (!pending.length) return;
-  const update = hydration.captureLocalUpdate(Y.mergeUpdates(pending));
-  pending = [];
-  window.webkit.messageHandlers.document.postMessage({ type: "update", update: encodeBinary(update) });
+  const batch = window.dahliaDocument.drain();
+  if (batch) window.webkit.messageHandlers.document.postMessage({ type: "update", ...batch });
 }
 let editor: ReturnType<typeof mountDocumentEditor> | undefined;
 window.dahliaDocument = {
-  open(checkpoint, editable) {
+  open(checkpoint, editable, placeholder) {
     if (editor) return;
-    if (checkpoint) Y.applyUpdate(document, decodeBinary(checkpoint), "remote");
-    hydration = new DocumentEditorHydration(document);
-    editor = mountDocumentEditor(window.document.getElementById("editor")!, document, editable);
+    if (checkpoint) Y.applyUpdate(document, decodeBinary(checkpoint, Infinity), "remote");
+    hydration = new DocumentEditorHydration(document, preserveRecovery);
+    editor = mountDocumentEditor(window.document.getElementById("editor")!, document, editable, placeholder,
+      (message) => window.webkit.messageHandlers.document.postMessage({ type: "error", message }), preserveRecovery);
     editor.on("create", () => { initialized = true; });
     editor.on("focus", () => window.webkit.messageHandlers.document.postMessage({ type: "focus", focused: "true" }));
     editor.on("blur", () => window.webkit.messageHandlers.document.postMessage({ type: "focus", focused: "false" }));
@@ -40,24 +42,17 @@ window.dahliaDocument = {
     });
   },
   drain() {
-    if (!pending.length) return null;
+    if (!pending.length && !pendingRecovery.length) return null;
     const update = hydration.captureLocalUpdate(Y.mergeUpdates(pending));
+    const recovery = pendingRecovery.length ? JSON.stringify(pendingRecovery) : undefined;
     clearTimeout(sendTimer); sendTimer = undefined; pending = [];
-    return encodeBinary(update);
+    pendingRecovery = [];
+    return { update: encodeBinary(update), ...(recovery ? { recovery } : {}) };
   },
   receive(update) {
-    hydration.receive(decodeBinary(update));
+    hydration.receive(decodeBinary(update, Infinity));
   },
   setEditable(editable) { editor?.setEditable(editable); },
-  command(name) {
-    if (!editor?.isEditable) return;
-    const chain = editor.chain().focus();
-    if (name === "bold") chain.toggleBold().run();
-    else if (name === "heading") chain.toggleHeading({ level: 2 }).run();
-    else if (name === "list") chain.toggleBulletList().run();
-    else if (name === "undo") chain.undo().run();
-    else if (name === "redo") chain.redo().run();
-  },
 };
 window.document.addEventListener("click", (event) => {
   const link = (event.target as HTMLElement).closest("a");

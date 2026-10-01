@@ -91,8 +91,8 @@ export function TranscriptTime({ startTime, timeBase }: { startTime: string; tim
 export function MeetingTabs({ summary, screenshots, transcript, notes, actions }: { notes?: ReactNode; summary: ReactNode; screenshots: ReactNode; transcript: ReactNode; actions?: ReactNode }) {
   const tabs = [
     { id: "summary", label: uiText("Summary", "要約"), content: summary },
+    ...(notes ? [{ id: "notes", label: uiText("Notes", "ノート"), content: notes }] : []),
     { id: "screenshots", label: uiText("Screenshots", "スクリーンショット"), content: screenshots },
-    ...(notes ? [{ id: "notes", label: uiText("Notes", "Notes"), content: notes }] : []),
     { id: "transcript", label: uiText("Transcript", "文字起こし"), content: transcript },
   ];
   return <DetailTabs tabs={tabs} actions={actions} label={uiText("Meeting content", "ミーティングの内容")} />;

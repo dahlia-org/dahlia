@@ -5,7 +5,10 @@
 <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'">
 <style>
 :root { color-scheme: light dark; font: -apple-system-body; }
-body { margin: 0; padding: 8px; background: transparent; color: CanvasText; }
+/* The web view spans the tab's full width; the 24px sides align text with the summary and hold the block handle. */
+body { margin: 0; padding: 8px 24px; background: transparent; color: CanvasText; }
+/* Fill the web view so a click anywhere below the text places the caret. */
+#editor .dahlia-document { min-height: calc(100vh - 16px); }
 </style>
 <link rel="stylesheet" href="document-editor.css">
 <div id="editor"></div>

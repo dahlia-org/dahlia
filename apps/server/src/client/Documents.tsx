@@ -1,5 +1,6 @@
 import { syncNotifications, type SyncNotifications } from "./sync-notifications";
 import { useEffect, useState } from "react";
+import { createPortal } from "react-dom";
 import { EditorContent, useEditor } from "@tiptap/react";
 import * as Y from "yjs";
 import { apiOperations as api } from "./generated-operations";
@@ -7,7 +8,7 @@ import { RequestError, uiText } from "./api";
 import { encodeId } from "../typeid";
 import { uuidV7 } from "../id";
 import { DocumentSession, type PendingDocumentUpdate } from "../documents/session";
-import { DocumentCore, decodeBinary, documentPlainText, encodeBinary, type DocumentRecovery } from "../documents/core";
+import { DocumentCore, decodeBinary, documentPlainText, encodeBinary, type DocumentBlock, type DocumentRecovery } from "../documents/core";
 import { DocumentEditorHydration, documentEditorOptions } from "../documents/editor";
 import type { components } from "./generated-api";
 
@@ -53,7 +54,7 @@ export class BrowserDocument {
   constructor(readonly userId: string, workspaceId: string, readonly meetingId: string, initial: SharedDocument | null, private readonly accountBinding = false, private readonly notifications: SyncNotifications = syncNotifications) {
     this.params = { path: { workspaceId, documentId: initial?.id ?? encodeId("document", uuidV7()) } };
     if (initial) Y.applyUpdate(this.editorDocument, decodeBinary(initial.checkpoint), "remote");
-    this.hydration = new DocumentEditorHydration(this.editorDocument);
+    this.hydration = new DocumentEditorHydration(this.editorDocument, this.preserveEditorRecovery);
     this.session = new DocumentSession({
       newID: () => encodeId("documentRecovery", uuidV7()),
       append: (update, local, recovery) => {
@@ -69,7 +70,7 @@ export class BrowserDocument {
         this.changed(); return Promise.resolve();
       },
       checkpoint: ({ checkpoint }) => {
-        this.hydration.receive(decodeBinary(checkpoint));
+        this.hydration.receive(decodeBinary(checkpoint, Infinity));
         this.changed(); return Promise.resolve();
       },
       exchange: async (request) => {
@@ -110,7 +111,7 @@ export class BrowserDocument {
     if (this.unsubscribe) return;
     this.unsubscribe = this.notifications.subscribeNotes(this.userId, this.params.path.workspaceId, this.meetingId, (hint) => {
       if (hint?.unavailable) {
-        this.unavailable = true; this.error = uiText("These Notes are no longer available.", "この Notes へのアクセス権がありません。"); this.changed(); return;
+        this.unavailable = true; this.error = uiText("These Notes are no longer available.", "このノートにはアクセスできなくなりました。"); this.changed(); return;
       }
       if (!hint || (hint.cursor !== "absent" && hint.cursor !== `${this.session.generation}:${this.session.revision}`)) this.requestSync();
     });
@@ -128,8 +129,14 @@ export class BrowserDocument {
   };
   private changed() { for (const listener of this.listeners) listener(); }
   hasUnsent() { return this.saving > 0 || this.failedEditorUpdate !== null || this.pending.length > 0 || this.unsentRecoveries.size > 0; }
-  copyText() { return this.failedEditorUpdate ? this.failedEditorText : this.session.core.projection().text; }
+  copyText() { return this.failedEditorUpdate ? this.failedEditorText : this.session.core.projection(false).text; }
   editFromEditor(update: Uint8Array) { return this.edit(this.hydration.captureLocalUpdate(update), true); }
+  preserveEditorRecovery = (blocks: DocumentBlock[]) => {
+    const id = encodeId("documentRecovery", uuidV7());
+    this.recoveries.set(id, { id, blocks, reason: "concurrent_delete" });
+    this.unsentRecoveries.add(id);
+    this.changed(); this.requestSync(100);
+  };
   private edit(update: Uint8Array, preserveOnFailure = false): Promise<void> {
     this.hydration.edited();
     this.saving++; this.changed();
@@ -248,7 +255,7 @@ export class BrowserDocument {
   async restore(recovery: DocumentRecovery) {
     await this.localSaves;
     if (this.failedEditorUpdate) throw new Error(this.error);
-    const preview = new DocumentCore(this.session.core.checkpoint());
+    const preview = new DocumentCore(this.session.core.checkpoint(false));
     try { await this.edit(decodeBinary(preview.restore(recovery.blocks, uuidV7))); }
     finally { preview.destroy(); }
   }
@@ -282,7 +289,7 @@ export class BrowserDocument {
 async function openDocument(workspaceId: string, meetingId: string): Promise<{ controller: BrowserDocument; release: () => void }> {
   const identity = await api.getSession({});
   const capabilities = await api.getCapabilities({});
-  if (capabilities.documents?.version !== 1) throw new Error(uiText("This server does not support collaborative Notes.", "この Server は共同編集 Notes に対応していません。"));
+  if (capabilities.documents?.version !== 2) throw new Error(uiText("This server does not support this Notes version.", "このサーバーはこのバージョンのノートに対応していません。"));
   const key = `${identity.user.id}/${workspaceId}/${meetingId}`;
   let controller = sessions.get(key);
   if (!controller) {
@@ -308,7 +315,8 @@ export async function flushMeetingDocument(workspaceId: string, meetingId: strin
   if (controller) await controller.flush();
 }
 
-export function MeetingNotes({ workspaceId, meetingId, editable }: { workspaceId: string; meetingId: string; editable: boolean }) {
+/** `statusSlot` hosts the sync status outside the editor, e.g. in the page header. */
+export function MeetingNotes({ workspaceId, meetingId, editable, statusSlot }: { workspaceId: string; meetingId: string; editable: boolean; statusSlot?: HTMLElement | null }) {
   const [controller, setController] = useState<BrowserDocument>();
   const [error, setError] = useState("");
   useEffect(() => {
@@ -322,13 +330,15 @@ export function MeetingNotes({ workspaceId, meetingId, editable }: { workspaceId
     return () => { current = false; release?.(); };
   }, [workspaceId, meetingId]);
   if (error) return <p role="alert">{error}</p>;
-  if (!controller) return <p role="status">{uiText("Loading notes…", "Notes を読み込み中…")}</p>;
-  return <DocumentEditor key={`${workspaceId}/${meetingId}`} controller={controller} editable={editable} />;
+  if (!controller) return <p role="status">{uiText("Loading notes…", "ノートを読み込み中…")}</p>;
+  return <DocumentEditor key={`${workspaceId}/${meetingId}`} controller={controller} editable={editable} statusSlot={statusSlot} />;
 }
 
-function DocumentEditor({ controller, editable }: { controller: BrowserDocument; editable: boolean }) {
+function DocumentEditor({ controller, editable, statusSlot }: { controller: BrowserDocument; editable: boolean; statusSlot?: HTMLElement | null }) {
   const [, render] = useState(0);
-  const editor = useEditor({ ...documentEditorOptions(controller.editorDocument, editable),
+  const [limitError, setLimitError] = useState("");
+  const editor = useEditor({ ...documentEditorOptions(controller.editorDocument, editable, uiText("Add notes…", "メモを入力…"), () => setLimitError(uiText("This edit exceeds the Notes limit. Reduce the content or synchronize before retrying.", "ノートの上限を超えるため変更できません。内容を減らすか、同期後に再試行してください。")), controller.preserveEditorRecovery),
+    onUpdate: () => setLimitError(""),
     onFocus: () => { controller.focused = editable; }, onBlur: () => { controller.focused = false; },
   }, [controller]);
   useEffect(() => { editor?.setEditable(editable); }, [editor, editable]);
@@ -342,20 +352,17 @@ function DocumentEditor({ controller, editable }: { controller: BrowserDocument;
     controller.editorDocument.on("update", edited);
     return () => { controller.listeners.delete(changed); controller.editorDocument.off("update", edited); controller.focused = false; queueMicrotask(() => controller.releaseIfIdle()); };
   }, [controller, editor]);
+  // The global PendingDocumentNotice carries the keep-this-tab-open guidance.
+  const status = <>
+    {controller.people.length > 0 && <span className="max-w-48 truncate max-lg:hidden">{uiText("Editing: ", "編集中: ")}{controller.people.join(", ")}</span>}
+    <span>{!controller.hasUnsent() ? uiText("Synced", "同期済み") : controller.error ? uiText("Not synced", "未同期") : uiText("Syncing…", "同期中…")}</span>
+  </>;
   return <div className="space-y-3">
-    <div className="flex flex-wrap items-center gap-3 text-sm" role="status">
-      <span>{controller.hasUnsent() ? uiText("Unsynced edits — keep this tab open", "未送信の編集があります。このタブを開いたままにしてください") : uiText("Synced", "同期済み")}</span>
-      {controller.people.length > 0 && <span>{uiText("Editing: ", "編集中: ")}{controller.people.join(", ")}</span>}
-    </div>
+    {limitError && <p role="alert" className="text-destructive">{limitError}</p>}
+    {statusSlot ? createPortal(status, statusSlot) : <div className="flex flex-wrap items-center gap-3 text-sm" role="status">{status}</div>}
     {controller.error && <p role="alert" className="text-destructive">{controller.error}<button className="ml-3 underline hover:no-underline" onClick={() => { void controller.sync().catch(() => {}); }}>{uiText("Retry", "再試行")}</button></p>}
-    {editable && <div className="flex gap-3">
-      <button onClick={() => editor?.chain().focus().toggleBold().run()} className="rounded px-2 hover:bg-muted">{uiText("Bold", "太字")}</button>
-      <button onClick={() => editor?.chain().focus().toggleHeading({ level: 2 }).run()} className="rounded px-2 hover:bg-muted">{uiText("Heading", "見出し")}</button>
-      <button onClick={() => editor?.chain().focus().toggleBulletList().run()} className="rounded px-2 hover:bg-muted">{uiText("List", "箇条書き")}</button>
-      <button onClick={() => editor?.commands.undo()} className="rounded px-2 hover:bg-muted">{uiText("Undo", "元に戻す")}</button>
-      <button onClick={() => editor?.commands.redo()} className="rounded px-2 hover:bg-muted">{uiText("Redo", "やり直す")}</button>
-    </div>}
-    <EditorContent editor={editor} className="min-h-48 [&_.tiptap]:min-h-48" />
+    {/* Clicking anywhere in the tall area below the text places the caret. `!` overrides the unlayered editor.css. */}
+    <EditorContent editor={editor} className="[&_.tiptap]:min-h-[50vh]!" />
     {controller.recoveries.size > 0 && <details><summary>{uiText("Preserved deleted paragraphs", "削除された段落の復元用コピー")}</summary>
       {[...controller.recoveries.values()].map((recovery) => <div key={recovery.id} className="my-3 border-t pt-3"><pre className="whitespace-pre-wrap">{recovery.blocks.map((block) => block.text).join("\n")}</pre>
         {editable && <button className="underline hover:no-underline" onClick={() => { void controller.restore(recovery).catch(() => {}); }}>{uiText("Insert as new paragraphs", "新しい段落として挿入")}</button>}
@@ -369,7 +376,7 @@ export function PendingDocumentNotice({ userId }: { userId: string }) {
   useEffect(() => { const timer = setInterval(() => render((n) => n + 1), 1000); return () => clearInterval(timer); }, []);
   const pending = [...sessions.values()].filter((item) => item.userId === userId && item.hasUnsent());
   if (!pending.length) return null;
-  return <aside role="status" className="border-b bg-muted p-3 text-sm">{uiText("Notes have unsynced changes. Keep this tab open.", "Notes に未送信の編集があります。このタブを開いたままにしてください。")}
-    {pending.map((item) => <details key={item.meetingId}><summary>{uiText("Copy unsynced notes", "未送信の Notes をコピー")}</summary><pre className="whitespace-pre-wrap">{item.copyText()}</pre></details>)}
+  return <aside role="status" className="border-b bg-muted p-3 text-sm">{uiText("Notes have unsynced changes. Keep this tab open.", "ノートに未送信の編集があります。このタブを開いたままにしてください。")}
+    {pending.map((item) => <details key={item.meetingId}><summary>{uiText("Copy unsynced notes", "未送信のノートをコピー")}</summary><pre className="whitespace-pre-wrap">{item.copyText()}</pre></details>)}
   </aside>;
 }

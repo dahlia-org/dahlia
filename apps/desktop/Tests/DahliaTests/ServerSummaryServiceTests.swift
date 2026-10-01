@@ -92,7 +92,7 @@ import DahliaRuntimeSupport
                 if path == "/api/v1/capabilities" { return (
                     200,
                     [:],
-                    Data(#"{"documents":{"version":1},"meetingSummaryGeneration":{"version":2,"sources":["transcript"]}}"#.utf8)
+                    Data(#"{"documents":{"version":2},"meetingSummaryGeneration":{"version":2,"sources":["transcript"]}}"#.utf8)
                 )
                 }
                 // Synchronization is unavailable; the unsynchronized meeting's job API must never be queried.
@@ -180,7 +180,7 @@ import DahliaRuntimeSupport
                 if request.url!.path == "/api/v1/capabilities" { return (
                     200,
                     [:],
-                    Data(#"{"documents":{"version":1},"meetingSummaryGeneration":{"version":2,"sources":["transcript"]}}"#.utf8)
+                    Data(#"{"documents":{"version":2},"meetingSummaryGeneration":{"version":2,"sources":["transcript"]}}"#.utf8)
                 )
                 }
                 if request.url!.path == "/api/v1/account/settings" {
@@ -246,7 +246,7 @@ import DahliaRuntimeSupport
             ImageURLProtocol.register(origin: origin) { request in
                 #expect(request.value(forHTTPHeaderField: "Authorization") == "Bearer test-token")
                 if request.url?.path == "/api/v1/capabilities" {
-                    return (200, [:], Data(#"{"documents":{"version":1},"meetingSummaryGeneration":{"version":2,"sources":["transcript"]}}"#.utf8))
+                    return (200, [:], Data(#"{"documents":{"version":2},"meetingSummaryGeneration":{"version":2,"sources":["transcript"]}}"#.utf8))
                 }
                 #expect(request.url?
                     .path ==
@@ -382,8 +382,8 @@ import DahliaRuntimeSupport
 
         @Test(arguments: [
             "{}",
-            #"{"documents":{"version":1},"meetingSummaryGeneration":{"version":3,"sources":["transcript","audio"]}}"#,
-            #"{"documents":{"version":1},"meetingSummaryGeneration":{"version":2,"sources":[]}}"#,
+            #"{"documents":{"version":2},"meetingSummaryGeneration":{"version":3,"sources":["transcript","audio"]}}"#,
+            #"{"documents":{"version":2},"meetingSummaryGeneration":{"version":2,"sources":[]}}"#,
         ])
         func missingOrUnsupportedCapabilitiesHaveNoMethods(_ json: String) async throws {
             let origin = "https://capabilities-\(UUID.v7().uuidString.lowercased()).test"
@@ -404,7 +404,7 @@ import DahliaRuntimeSupport
         func legacyCapabilityKeepsAutomaticAudioButNotManualAudio() async throws {
             let origin = "https://capabilities-\(UUID.v7().uuidString.lowercased()).test"
             ImageURLProtocol.register(origin: origin) { _ in
-                (200, [:], Data(#"{"documents":{"version":1},"meetingSummaryGeneration":{"version":2,"sources":["transcript","audio"]}}"#.utf8))
+                (200, [:], Data(#"{"documents":{"version":2},"meetingSummaryGeneration":{"version":2,"sources":["transcript","audio"]}}"#.utf8))
             }
             defer { ImageURLProtocol.remove(origin: origin) }
             let configuration = URLSessionConfiguration.ephemeral
@@ -426,7 +426,7 @@ import DahliaRuntimeSupport
                     200,
                     [:],
                     Data(
-                        #"{"documents":{"version":1},"meetingSummaryGeneration":{"version":2,"sources":["audio"],"completeRecordings":true,"retranscription":{"version":1,"provider":"gemini"}}}"#
+                        #"{"documents":{"version":2},"meetingSummaryGeneration":{"version":2,"sources":["audio"],"completeRecordings":true,"retranscription":{"version":1,"provider":"gemini"}}}"#
                             .utf8
                     )
                 )
@@ -541,7 +541,7 @@ import DahliaRuntimeSupport
                         [:],
                         Data(
                             """
-                            {"documents":{"version":1},"meetingSummaryGeneration":{"version":2,"sources":["transcript","audio"],
+                            {"documents":{"version":2},"meetingSummaryGeneration":{"version":2,"sources":["transcript","audio"],
                             "completeRecordings":true,"retranscription":{"version":1,"provider":"gemini"}}}
                             """
                             .utf8

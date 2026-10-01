@@ -911,7 +911,7 @@ export function createApp(dependencies: AppDependencies): DahliaServerApp & { ru
     const sources = dependencies.summaryService?.methods.map((method) => method.id) ?? [];
     return context.json({
       sync: { version: 7 },
-      documents: { version: 1, accountBinding: true },
+      documents: { version: 2, accountBinding: true },
       ...(config.encryption ? { workspaceEncryption: { version: 1 } } : {}),
       workspaceTransfers: { version: 1 },
       recordingArchive: { version: 1 },

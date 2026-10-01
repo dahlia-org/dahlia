@@ -1043,6 +1043,7 @@ export function SyncedMeeting({ workspaceId, meetingId, resolvedMeeting }: { wor
   const projectOptions = projectBreadcrumbOptions(projects, undefined, { projectId: project?.projectId, meetingId, meetings: siblingMeetings.data?.items });
   const workspaceOptions = workspaceBreadcrumbOptions(workspaces, workspaceId, projectOptions);
   const [summaryDialogOpen, setSummaryDialogOpen] = useState(false);
+  const [notesStatus, setNotesStatus] = useState<HTMLElement | null>(null);
   const editMeeting = (restoreFocus?: HTMLElement | null) => {
     if (!meeting) return;
     openDialog({
@@ -1087,6 +1088,7 @@ export function SyncedMeeting({ workspaceId, meetingId, resolvedMeeting }: { wor
               menuLabel: project ? uiText(`Meetings in ${project.name}`, `${project.name} 内のミーティング`) : uiText("Unassigned meetings", "未分類のミーティング"),
               options: meetingBreadcrumbOptions },
           ]} actions={<>
+            <div ref={setNotesStatus} role="status" className="flex items-center gap-3 px-2 text-xs text-muted-foreground empty:hidden" />
             <Tooltip label={uiText("Copy link", "リンクをコピーします")}>
               <Button variant="ghost" size="icon" aria-label={uiText("Copy meeting link", "ミーティングのリンクをコピー")} onClick={() => void navigator.clipboard.writeText(window.location.href)}><MenuIcon name="link" /></Button>
             </Tooltip>
@@ -1124,7 +1126,7 @@ export function SyncedMeeting({ workspaceId, meetingId, resolvedMeeting }: { wor
       <DataError error={workspaceQuery.error} retry={workspaceQuery.reload} />
       <DataError error={projectsQuery.error} retry={projectsQuery.reload} />
       {meeting && <MeetingTabs
-        notes={<MeetingNotes key={meetingId} workspaceId={workspaceId} meetingId={meetingId} editable={workspace?.role === "admin" || workspace?.role === "editor"} />}
+        notes={<MeetingNotes key={meetingId} workspaceId={workspaceId} meetingId={meetingId} editable={workspace?.role === "admin" || workspace?.role === "editor"} statusSlot={notesStatus} />}
         summary={<>
           <DataError error={latestSummary.error} retry={latestSummary.reload} />
           <SummaryHistory key={meetingId} meetingId={meetingId} latest={latestSummary.data} selected={selectedSummary} onSelect={setSelectedSummary} />

@@ -30,13 +30,13 @@ export class SyncNotifications {
     // App's domain subscription owns account changes. A delayed Notes load may
     // initialize an idle owner, but must never displace active account listeners.
     if (this.user !== user && (this.domain.size || this.notes.size)) {
-      throw new Error(uiText("The account has changed. Reopen these Notes.", "アカウントが変更されました。Notes を開き直してください。"));
+      throw new Error(uiText("The account has changed. Reopen these Notes.", "アカウントが変更されました。ノートを開き直してください。"));
     }
     this.bind(user);
     const key = `${workspaceId}/${meetingId}`;
     let subscription = this.notes.get(key);
     if (!subscription) {
-      if (this.notes.size >= 32) throw new Error(uiText("Close a Notes view before opening another.", "別の Notes を開くには、開いている Notes を閉じてください。"));
+      if (this.notes.size >= 32) throw new Error(uiText("Close a Notes view before opening another.", "別のノートを開くには、開いているノートを閉じてください。"));
       subscription = { workspaceId, meetingId, listeners: new Set() };
       this.notes.set(key, subscription);
     }

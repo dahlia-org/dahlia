@@ -89,6 +89,7 @@ export function createPostgresMeetingSyncStore(
   embeddingConfig?: AppConfig["searchEmbedding"],
   encryption?: AppConfig["encryption"],
   committed?: () => void,
+  documentDeletionGraceHours?: number,
 ): MeetingSyncStore {
   let available: Promise<boolean> | undefined;
   const isAvailable = () => available ??= roleSupportsRls(db);
@@ -121,6 +122,7 @@ export function createPostgresMeetingSyncStore(
             embeddingConfig,
             encryption,
             () => { changed = true; },
+            documentDeletionGraceHours,
           ));
         } finally { processed(); }
       }).finally(connected);
@@ -135,6 +137,7 @@ export function createSqliteMeetingSyncStore(
   embeddingConfig?: AppConfig["searchEmbedding"],
   encryption?: AppConfig["encryption"],
   committed?: () => void,
+  documentDeletionGraceHours?: number,
 ): MeetingSyncStore {
   const storageDeletes = createStorageDeleteStore(
     db as unknown as PostgresDatabase,
@@ -156,6 +159,7 @@ export function createSqliteMeetingSyncStore(
           embeddingConfig,
           encryption,
           () => { changed = true; },
+          documentDeletionGraceHours,
         ));
       });
       if (changed) committed?.();
@@ -509,6 +513,7 @@ function createIdentityStore(
   embeddingConfig?: AppConfig["searchEmbedding"],
   encryption?: AppConfig["encryption"],
   changed?: () => void,
+  documentDeletionGraceHours?: number,
 ): IdentitySyncStore {
   const userPrincipalId = identity.userId;
   let searchSettings: Promise<SearchSettings> | undefined;
@@ -2464,7 +2469,7 @@ function createIdentityStore(
   }
 
   return {
-    ...createDocumentStore(db, schema, identity, content, (id) => lockWorkspace(id, true, "document"), { read: readable, write: writeAccess }, locks),
+    ...createDocumentStore(db, schema, identity, content, (id) => lockWorkspace(id, true, "document"), { read: readable, write: writeAccess }, locks, documentDeletionGraceHours),
     workspaceTransferAudience,
     transferWorkspace,
     getWorkspaceRelocations,

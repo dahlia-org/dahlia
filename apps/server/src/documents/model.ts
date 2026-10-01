@@ -14,7 +14,7 @@ export const documentInitializeSchema = z.object({ meetingId: z.uuid().nullable(
 export const meetingNotesInitializeSchema = z.object({ id: z.uuid(), legacyUpdate: binary.optional() }).strict().openapi("MeetingNotesInitialize");
 export const documentExchangeSchema = z.object({ generation: opaqueUUID, vector: binary, update: binary.optional() }).strict().openapi("DocumentExchange");
 export const documentExchangeResultSchema = z.object({ generation: opaqueUUID, revision: z.number().int(), update: checkpoint }).openapi("DocumentExchangeResult");
-export const sharedDocumentSchema = z.object({ id: z.uuid(), workspaceId: z.uuid(), meetingId: z.uuid().nullable(), kind: documentKindSchema, title: z.string(), schemaVersion: z.literal(1),
+export const sharedDocumentSchema = z.object({ id: z.uuid(), workspaceId: z.uuid(), meetingId: z.uuid().nullable(), kind: documentKindSchema, title: z.string(), schemaVersion: z.literal(2),
   generation: opaqueUUID, revision: z.number().int(), checkpoint, text: z.string(), createdAt: z.iso.datetime(), updatedAt: z.iso.datetime(),
 }).openapi("SharedDocument");
 export const documentEnvelopeSchema = z.object({ document: z.object(sharedDocumentSchema.shape).nullable().openapi("NullableSharedDocument") }).openapi("DocumentEnvelope");

@@ -1738,26 +1738,21 @@
 "documentSaving" = "保存中…";
 "documentSyncFailed" = "未同期です。編集内容はこの Mac に保持されています。";
 "documentSaveFailed" = "保存できませんでした。この画面を開いたまま編集内容をコピーしてください。";
-"documentPrivateLegacy" = "この Mac の旧 Notes（未公開）";
+"documentPrivateLegacy" = "この Mac の旧ノート（未公開）";
 
-"documentPublishTitle" = "この Mac の Notes を公開";
-"documentPublishAudience" = "以下の Notes を、この Workspace の閲覧者を含む全メンバーが Desktop と Web から読めるようにします。非公開コピーはこの Mac に残ります。";
-"documentPublishConflict" = "以下の会議には共有 Notes があるため取り込みませんでした。非公開コピーは保持しています。";
-"documentMigrationPrivate" = "Notes はこの Mac の非公開コピーとして保持します。共有や Server 要約への利用には、移行後に Workspace 設定から公開してください。";
+"documentPublishTitle" = "この Mac のノートを公開";
+"documentPublishAudience" = "以下のノートを、この Workspace の閲覧者を含む全メンバーが Desktop と Web から読めるようにします。非公開コピーはこの Mac に残ります。";
+"documentPublishConflict" = "以下の会議には共有ノートがあるため取り込みませんでした。非公開コピーは保持しています。";
+"documentMigrationPrivate" = "ノートはこの Mac の非公開コピーとして保持します。共有や Server 要約への利用には、移行後に Workspace 設定から公開してください。";
 "document.recovery.title" = "削除された段落の復元用コピー";
 "document.restore" = "新しい段落として挿入";
 "document.editing" = "編集中: ";
-"document.keepLocal" = "未送信の編集や非公開の Notes が残っています。Local Account へ移動して保全してください。";
-"document.bold" = "太字";
-"document.heading" = "見出し";
-"document.list" = "箇条書き";
-"document.undo" = "元に戻す";
-"document.redo" = "やり直す";
+"document.keepLocal" = "未送信の編集や非公開のノートが残っています。Local Account へ移動して保全してください。";
 "document.privateRecoverySaved" = "入力はこの Mac の復元用コピーに保存しました。Workspace 設定からコピーできます。";
 
 "Reconnect to existing meetings" = "既存の会議へ再接続する";
 
-"Use the Server version. Local data missing from the Server is kept in the backup and is not uploaded. Private Notes stay on this Mac." = "Server 側の内容を採用します。Server にないローカルデータはバックアップに保全し、送信しません。非公開 Notes はこの Mac に残ります。";
+"Use the Server version. Local data missing from the Server is kept in the backup and is not uploaded. Private Notes stay on this Mac." = "Server 側の内容を採用します。Server にないローカルデータはバックアップに保全し、送信しません。非公開のノートはこの Mac に残ります。";
 
 "The local Workspace %@ is the same Workspace as %@ on the Server. After reconnecting, it appears under the Server name." = "ローカルの「%@」は Server の「%@」と同じワークスペースです。再接続すると Server の名前で一覧に表示されます。";
 
@@ -1767,3 +1762,5 @@
 "sync.fetchSnapshot" = "Server から再取得";
 
 "Local recordings from reconnection" = "再接続前のローカル録音";
+"documentUnsupportedSchema" = "旧バージョンのノート形式には対応していません。データは端末に保持されています。";
+"documentTooLarge" = "ノートの上限を超えるため変更できません。内容を減らすか、同期後に再試行してください。";

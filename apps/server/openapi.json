@@ -2846,7 +2846,7 @@
           "schemaVersion": {
             "type": "number",
             "enum": [
-              1
+              2
             ]
           },
           "generation": {

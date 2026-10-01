@@ -135,6 +135,7 @@ export function createPostgresApplicationStore(
   localSingleUser = false,
   autoCreateOrgOnSignup = false,
   syncEvents = new SyncEvents(),
+  documentDeletionGraceHours?: number,
 ): ApplicationStore {
   const organizations = createOrganizationStore(db, true, false, autoCreateOrgOnSignup);
   return {
@@ -144,7 +145,7 @@ export function createPostgresApplicationStore(
     searchSettings: createSearchSettingsStore(db, true),
     memory: createMemoryStore(db, true),
     personalMemory: createMemoryStore(db, true, true),
-    sync: createPostgresMeetingSyncStore(db, searchBackend, searchEmbedding, encryption, () => syncEvents.publish("domain")),
+    sync: createPostgresMeetingSyncStore(db, searchBackend, searchEmbedding, encryption, () => syncEvents.publish("domain"), documentDeletionGraceHours),
     async resolveHeaderUser(identity) {
       const email = headerIdentityValue({ localSingleUser }, identity.email ?? identity.userId);
       if (!email) return null;
@@ -365,6 +366,7 @@ export function createSqliteApplicationStore(
   localSingleUser = false,
   autoCreateOrgOnSignup = false,
   syncEvents = new SyncEvents(),
+  documentDeletionGraceHours?: number,
 ): ApplicationStore {
   const organizations = createOrganizationStore(db, false, false, autoCreateOrgOnSignup);
   return {
@@ -374,7 +376,7 @@ export function createSqliteApplicationStore(
     searchSettings: createSearchSettingsStore(db, false),
     memory: createMemoryStore(db, false),
     personalMemory: createMemoryStore(db, false, true),
-    sync: createSqliteMeetingSyncStore(db, searchEmbedding, encryption, () => syncEvents.publish("domain")),
+    sync: createSqliteMeetingSyncStore(db, searchEmbedding, encryption, () => syncEvents.publish("domain"), documentDeletionGraceHours),
     async resolveHeaderUser(identity) {
       const email = headerIdentityValue({ localSingleUser }, identity.email ?? identity.userId);
       if (!email) return null;

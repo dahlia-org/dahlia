@@ -19,6 +19,16 @@ import { initializeWorkerApp } from "../src/worker";
 describe("Worker initialization", () => {
   beforeEach(() => { close.mockClear(); vi.mocked(connectPostgresUrl).mockClear(); });
 
+  it.each([undefined, "0", "48"])("forwards document deletion grace hours %s", async (graceHours) => {
+    await expect(initializeWorkerApp({
+      DAHLIA_AUTH_TYPE: "header", DAHLIA_STORAGE_BACKEND: "r2", DAHLIA_DATABASE_TYPE: "postgres",
+      DAHLIA_DATABASE_URL: "postgresql://dahlia.example/dahlia",
+      DAHLIA_DOCUMENT_DELETION_GRACE_HOURS: graceHours,
+    })).rejects.toThrow("seed failed");
+    expect(vi.mocked(initializeDahliaAuth).mock.calls.at(-1)?.[0].documentDeletionGraceHours)
+      .toBe(graceHours === undefined ? 24 : Number(graceHours));
+  });
+
   it.each([false, true])("requires an image transformer only for configured Memory images (binding: %s)", async (binding) => {
     const env = {
       DAHLIA_AUTH_TYPE: "header", DAHLIA_STORAGE_BACKEND: "r2", DAHLIA_DATABASE_TYPE: "postgres",

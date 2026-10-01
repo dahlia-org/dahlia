@@ -1,3 +1,4 @@
+import oldFixture from "./fixtures/documents-v1.json";
 import { SyncEvents } from "../src/sync/events";
 import { SyncNotifications } from "../src/client/sync-notifications";
 import { z } from "zod";
@@ -12,7 +13,9 @@ import { createNodeApplicationStore } from "../src/auth/node-store";
 import { MeetingSyncService } from "../src/sync/service";
 import { uuidV7 } from "../src/id";
 import { seedHeaderIdentity, testOrganizationID, testUserID } from "./public-test-client";
-import { DocumentCore, documentFragment, documentStateLimit } from "../src/documents/core";
+import { DocumentCore } from "../src/documents/core";
+import { blockMap } from "../src/documents/blocks";
+import { firstText, deleteFirst } from "./fixtures/document-helpers";
 import { encryptionConfig, encodeBase64 } from "../src/encryption/crypto";
 import type { Identity } from "../src/auth/identity";
 import type { DocumentStore } from "../src/documents/store";
@@ -25,10 +28,10 @@ const owner: Identity = { userId: testUserID("document-owner"), source: "header"
 const outsider: Identity = { userId: testUserID("document-outsider"), source: "header" };
 const cleanups: (() => Promise<void>)[] = [];
 afterEach(async () => { for (const cleanup of cleanups.splice(0).reverse()) await cleanup(); });
-async function setup(encrypted = false) {
+async function setup(encrypted = false, documentDeletionGraceHours = 24) {
   const directory = mkdtempSync(join(tmpdir(), "dahlia-document-")), path = join(directory, "db.sqlite");
   const config = { authProvider: "header" as const, authHeader: "X-Forwarded-Email", databaseType: "sqlite" as const, databaseUrl: `file:${path}`,
-    baseUrl: "http://localhost:5173", oauthRedirectUris: [], maxRequestBytes: 1_048_576,
+    baseUrl: "http://localhost:5173", oauthRedirectUris: [], maxRequestBytes: 1_048_576, documentDeletionGraceHours,
     encryption: encryptionConfig({ DAHLIA_ENCRYPTION_ACTIVE_KEY_ID: "1", DAHLIA_ENCRYPTION_MASTER_KEY_1: encodeBase64(new Uint8Array(32).fill(7)) }),
   };
   const store = createNodeApplicationStore(config);
@@ -130,18 +133,10 @@ it("accepts a whole valid state through the dedicated HTTP budget", async () => 
   } finally { core.destroy(); }
 });
 
-it.each(["initialize", "exchange"])("rejects ID repair that exceeds the state budget atomically (%s)", async (operation) => {
+it.each(["initialize", "exchange"])("rejects v1 storage atomically (%s)", async (operation) => {
   const f = await setup(), core = new DocumentCore();
   try {
-    // A valid-sized input can grow when the canonical worker assigns missing block IDs.
-    const paragraph = new Y.XmlElement("paragraph");
-    core.document.getXmlFragment(documentFragment).insert(0, [paragraph]);
-    paragraph.setAttribute("padding", "x".repeat(documentStateLimit - 512));
-    core.document.getXmlFragment(documentFragment).insert(1, Array.from({ length: 10 }, () => new Y.XmlElement("paragraph")));
-    const submitted = core.checkpoint(), vector = core.vector();
-    expect(core.stateBytes()).toBeLessThanOrEqual(documentStateLimit);
-    core.repairBlockIDs(uuidV7);
-    expect(core.stateBytes()).toBeGreaterThan(documentStateLimit);
+    const submitted = oldFixture.checkpoint, vector = core.vector();
     const initial = operation === "exchange" ? await f.run((s) => s.initializeMeetingNotes(f.workspaceId, f.meetingId, f.documentId)) : null;
     const app = createApp({ config: f.config, authStore: f.store });
     const workspace = encodeId("workspace", f.workspaceId);
@@ -152,7 +147,7 @@ it.each(["initialize", "exchange"])("rejects ID repair that exceeds the state bu
       body: JSON.stringify(operation === "initialize" ? { id: encodeId("document", f.documentId), legacyUpdate: submitted }
         : { generation: initial!.generation, vector, update: submitted }),
     });
-    expect(response.status).toBe(400);
+    expect(response.status).toBe(422);
     expect(await f.run((s) => s.getMeetingNotes(f.workspaceId, f.meetingId))).toEqual(initial);
     const db = new DatabaseSync(f.path);
     try { expect(db.prepare("SELECT count(*) AS n FROM document_updates").get()!.n).toBe(0); }
@@ -168,7 +163,7 @@ it("initializes once, merges pending edits, replays idempotently and survives co
   const independent = new DocumentCore(); independent.insertText("note", uuidV7);
   await expect(f.run((s) => s.initializeMeetingNotes(f.workspaceId, f.meetingId, f.documentId, independent.checkpoint()))).rejects.toThrow("document_already_initialized");
   const a = new DocumentCore(doc.checkpoint), b = new DocumentCore(doc.checkpoint);
-  const edit = (core: DocumentCore, value: string) => ((core.document.getXmlFragment(documentFragment).get(0) as Y.XmlElement).get(0) as Y.XmlText).insert(0, value);
+  const edit = (core: DocumentCore, value: string) => firstText(core.document).insert(0, value);
   edit(a, "A"); edit(b, "B");
   const exchange = (core: DocumentCore) => f.run((s) => s.exchangeDocument(f.workspaceId, f.documentId, { generation: doc.generation, vector: core.vector(), update: core.checkpoint() }));
   await exchange(a); b.apply((await exchange(b)).update); a.apply((await exchange(a)).update);
@@ -180,11 +175,28 @@ it("initializes once, merges pending edits, replays idempotently and survives co
   try { expect(Number(db.prepare("SELECT count(*) AS n FROM document_updates").get()!.n)).toBeLessThan(32); } finally { db.close(); }
 });
 
+it("records unsent text before canonical purge and distributes the purge", async () => {
+  const f = await setup(false, 0), core = new DocumentCore(); core.insertText("before", uuidV7);
+  const doc = await f.run((s) => s.initializeMeetingNotes(f.workspaceId, f.meetingId, f.documentId, core.checkpoint()));
+  firstText(core).insert(6, " UNSENT"); deleteFirst(core);
+  const response = await f.run((s) => s.exchangeDocument(f.workspaceId, f.documentId, { generation: doc.generation, vector: core.vector(), update: core.checkpoint() }));
+  core.apply(response.update);
+  expect(blockMap(core.document).size).toBe(0);
+  expect((await f.run((s) => s.documentRecoveries(f.workspaceId, f.documentId))).items[0]?.blocks[0]?.text).toBe("before UNSENT");
+  core.destroy();
+});
+
+it.each(["append", "deletion"] as const)("rejects unresolved v1 %s without appending or advancing revision", async (kind) => {
+  const f = await setup(), doc = await f.run((s) => s.initializeMeetingNotes(f.workspaceId, f.meetingId, f.documentId));
+  await expect(f.run((s) => s.exchangeDocument(f.workspaceId, f.documentId, { generation: doc.generation, vector: "AA==", update: oldFixture[kind] }))).rejects.toMatchObject({ status: 400, message: "invalid_document_update" });
+  expect((await f.run((s) => s.getDocument(f.workspaceId, f.documentId)))?.revision).toBe(0);
+});
+
 it("requires explicit meeting restoration and a fresh generation before merging offline edits", async () => {
   const f = await setup(), core = new DocumentCore(); core.insertText("seed", uuidV7);
   try {
     const initial = await f.run((s) => s.initializeMeetingNotes(f.workspaceId, f.meetingId, f.documentId, core.checkpoint()));
-    ((core.document.getXmlFragment(documentFragment).get(0) as Y.XmlElement).get(0) as Y.XmlText).insert(4, " offline");
+    firstText(core.document).insert(4, " offline");
     const request = { generation: initial.generation, vector: core.vector(), update: core.checkpoint() };
     const lifecycle = (action: "delete" | "restore", baseRevision: number) => f.sync.commitTransaction(owner, {
       id: uuidV7(), schemaVersion: 3, workspaceId: f.workspaceId, createdAt: new Date().toISOString(), operations: [
@@ -214,7 +226,7 @@ it("authorizes all document paths and encrypts checkpoints, updates, recovery an
   const job = await service.start(owner, f.workspaceId, f.meetingId, { id: uuidV7() });
   expect(job.notesSnapshot).toMatchObject({ documentId: f.documentId, text: "PRIVATE_NOTE", revision: 1 });
   expect(JSON.stringify(summaryJobResponse(job))).not.toContain("PRIVATE_NOTE");
-  core.document.getXmlFragment(documentFragment).delete(0, 1);
+  deleteFirst(core.document);
   await f.run((s) => s.exchangeDocument(f.workspaceId, f.documentId, { generation: doc.generation, vector: core.vector(), update: core.checkpoint() }));
   expect((await f.run((s) => s.documentRecoveries(f.workspaceId, f.documentId))).items[0]?.blocks[0]?.text).toBe("PRIVATE_NOTE");
   const saved = await f.store.sync.withIdentity(owner, (s) => s.getSummaryJob(f.workspaceId, f.meetingId, job.id));
@@ -304,7 +316,7 @@ it("treats standalone documents as Workspace resources and clears their dependen
     const document = await f.run((s) => s.initializeDocument(workspaceId, uuidV7(), { meetingId: null, kind: "general", title: "Owned", legacyUpdate: core.checkpoint() }));
     await f.run((s) => s.saveDocumentRecovery(workspaceId, document.id, { id: uuidV7(), reason: "deleted", blocks: core.projection().blocks }));
     await f.run((s) => s.documentPresence(workspaceId, document.id, uuidV7()));
-    ((core.document.getXmlFragment(documentFragment).get(0) as Y.XmlElement).get(0) as Y.XmlText).insert(10, " edit");
+    firstText(core.document).insert(10, " edit");
     await f.run((s) => s.exchangeDocument(workspaceId, document.id, { generation: document.generation, vector: core.vector(), update: core.checkpoint() }));
     expect(await f.store.sync.withIdentity(owner, (s) => s.getWorkspace(workspaceId))).toMatchObject({ hasResources: true });
     const reset = (preservePermissions: boolean) => f.sync.commitTransaction(owner, { id: uuidV7(), schemaVersion: 3, workspaceId, createdAt: new Date().toISOString(), operations: [
@@ -432,7 +444,7 @@ it("measures edit-to-reader latency through two browser controllers, HTTP handle
       controllers[1]!.listeners.add(listener);
       const started = performance.now();
       const doc = controllers[0]!.editorDocument, vector = Y.encodeStateVector(doc);
-      const text = (doc.getXmlFragment(documentFragment).get(0) as Y.XmlElement).get(0) as Y.XmlText;
+      const text = firstText(doc);
       text.insert(text.length, "x"); await controllers[0]!.editFromEditor(Y.encodeStateAsUpdate(doc, vector));
       await within(complete.promise, `sample ${sample}: ${controllers.map((c) => c.error).join(" / ")}`); durations.push(performance.now() - started);
       controllers[1]!.listeners.delete(listener);

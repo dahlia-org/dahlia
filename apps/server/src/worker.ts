@@ -33,6 +33,7 @@ import { connectPostgresUrl } from "./db/postgres";
 import { createIntlSearchTokenizer } from "./search/tokenizer";
 
 export interface RuntimeSecrets {
+  DAHLIA_DOCUMENT_DELETION_GRACE_HOURS?: string;
   DAHLIA_CHAT_MEMORY_MODEL?: string;
   DAHLIA_MEMORY_MCP_ACCESS?: string;
   DAHLIA_HINDSIGHT_URL?: string;
@@ -105,7 +106,7 @@ function createWorkerApplicationStore(config: AppConfig, env: WorkerEnv): Applic
   if (!url) throw new Error("Worker storage supports DAHLIA_DATABASE_TYPE=hyperdrive or postgres");
   const connection = connectPostgresUrl(url, 5);
   const permissions = syncedWorkspacePermission;
-  return { ...createPostgresApplicationStore(connection.db, "postgres", config.searchEmbedding, config.encryption, config.authProviderId, config.localSingleUser, config.autoCreateOrgOnSignup), close: connection.close,
+  return { ...createPostgresApplicationStore(connection.db, "postgres", config.searchEmbedding, config.encryption, config.authProviderId, config.localSingleUser, config.autoCreateOrgOnSignup, undefined, config.documentDeletionGraceHours), close: connection.close,
     aiHistory: createAiHistoryService(connection.pool),
     chatMemoryStore: config.chatMemoryModel ? new ChatMemoryStore(connection.pool) : undefined,
     jobs: {
@@ -129,6 +130,7 @@ function createWorkerApplicationStore(config: AppConfig, env: WorkerEnv): Applic
 
 export async function initializeWorkerApp(env: WorkerEnv): Promise<WorkerApp> {
   const config = loadConfig({
+    DAHLIA_DOCUMENT_DELETION_GRACE_HOURS: env.DAHLIA_DOCUMENT_DELETION_GRACE_HOURS,
     DAHLIA_HINDSIGHT_URL: env.DAHLIA_HINDSIGHT_URL,
     DAHLIA_MEMORY_IMAGE_MODEL: env.DAHLIA_MEMORY_IMAGE_MODEL,
     DAHLIA_MEMORY_IMAGE_MAX_COUNT: env.DAHLIA_MEMORY_IMAGE_MAX_COUNT,

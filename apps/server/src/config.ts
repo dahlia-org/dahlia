@@ -70,6 +70,7 @@ export interface AppConfig {
   maxRequestBytes: number;
   /** Node summary and image-analysis loops per worker; bounded by the application pool headroom. */
   aiJobConcurrency?: number;
+  documentDeletionGraceHours?: number;
   foundationModels?: string[];
   codexAutoReviewModel?: string;
   storageBackend?: StorageBackend;
@@ -252,6 +253,7 @@ export function loadConfig(env: Record<string, string | undefined>): AppConfig {
     .max(64 * 1024 * 1024)
     .parse(env.DAHLIA_MAX_REQUEST_BYTES ?? String(16 * 1024 * 1024));
   const aiJobConcurrency = z.coerce.number().int().min(1).max(8).parse(env.DAHLIA_AI_JOB_CONCURRENCY?.trim() || "4");
+  const documentDeletionGraceHours = z.coerce.number().finite().min(0).max(8760).parse(env.DAHLIA_DOCUMENT_DELETION_GRACE_HOURS?.trim() || "24");
   const aiBackend = aiBackendSchema.parse(env.DAHLIA_AI_BACKEND?.trim() || "openai");
   const foundationModels = z.array(z.string().max(UPSTREAM_MODEL_MAX_LENGTH))
     .parse([...new Set(csv(env.DAHLIA_FOUNDATION_MODELS))]);
@@ -316,6 +318,7 @@ export function loadConfig(env: Record<string, string | undefined>): AppConfig {
     oauthRedirectUris: csv(env.DAHLIA_OAUTH_REDIRECT_URIS),
     maxRequestBytes,
     aiJobConcurrency,
+    documentDeletionGraceHours,
     foundationModels,
     codexAutoReviewModel: codexAutoReviewModel
       ? z.string().max(UPSTREAM_MODEL_MAX_LENGTH).parse(codexAutoReviewModel)
