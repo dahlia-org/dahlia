@@ -1198,7 +1198,7 @@
             try queue.read { db throws in
                 #expect(try !db.tableExists("documents"))
                 #expect(try db.columns(in: "document_updates").map(\.name) == ["sentinel"])
-                #expect(try !String.fetchAll(db, sql: "SELECT identifier FROM grdb_migrations").contains("v52_documentsAndSync"))
+                #expect(try !String.fetchAll(db, sql: "SELECT identifier FROM grdb_migrations").contains("v53_documentsSyncAndBackgroundJobs"))
             }
         }
     }

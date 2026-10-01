@@ -37,7 +37,7 @@ import Synchronization
                 updated.generationSettings.outputLanguage = .en
                 try updated.update(db)
                 try db.execute(
-                    sql: "UPDATE jobs_search_index SET availableAt = ? WHERE targetKind = 'screenshotAnalysis'",
+                    sql: "UPDATE jobs_background SET availableAt = ? WHERE targetKind = 'screenshotAnalysis'",
                     arguments: [Date.distantPast]
                 )
             }
@@ -99,7 +99,7 @@ import Synchronization
             defer { ImageURLProtocol.remove(origin: connection.origin) }
             let configuration = URLSessionConfiguration.ephemeral
             configuration.protocolClasses = [ImageURLProtocol.self]
-            let indexer = SearchIndexer(
+            let indexer = BackgroundJobWorker(
                 dbQueue: database.dbQueue,
                 screenshotAnalyzer: analyzer,
                 apiClient: SyncAPIClient(session: URLSession(configuration: configuration), tokenProvider: { _, _ in "test" }),
@@ -114,13 +114,16 @@ import Synchronization
                     sql: "SELECT ocrText FROM meeting_images WHERE id = ?",
                     arguments: [screenshot.id]
                 ) == (fallsBack ? "device OCR" : nil))
-                let jobs = try Int.fetchOne(db, sql: "SELECT count(*) FROM jobs_search_index WHERE targetKind = 'screenshotAnalysis'")
+                let jobs = try Int.fetchOne(db, sql: "SELECT count(*) FROM jobs_background WHERE targetKind = 'screenshotAnalysis'")
                 #expect(jobs == (capability == "unavailable" || capability == "detached" ? 1 : 0))
             }
             if capability == "unavailable" {
                 unavailable.withLock { $0 = false }
                 try await database.dbQueue.write { db in
-                    try db.execute(sql: "UPDATE jobs_search_index SET availableAt = ? WHERE targetKind = 'screenshotAnalysis'", arguments: [Date.distantPast])
+                    try db.execute(
+                        sql: "UPDATE jobs_background SET availableAt = ? WHERE targetKind = 'screenshotAnalysis'",
+                        arguments: [Date.distantPast]
+                    )
                 }
                 await indexer.drain()
                 #expect(await analyzer.runtimeProviders[screenshot.id] == .dahlia(connectionID: connection.id))
@@ -177,7 +180,7 @@ import Synchronization
             }
             let dbQueue = database.dbQueue
             let workspaceID = workspace.id
-            let indexer = SearchIndexer(
+            let indexer = BackgroundJobWorker(
                 dbQueue: dbQueue,
                 screenshotAnalyzer: analyzer,
                 runtimeProviderResolver: {
@@ -204,7 +207,7 @@ import Synchronization
                 #expect(try MeetingScreenshotRecord.fetchOne(db, key: localScreenshot.id)?.ocrText == "device OCR")
                 let serverJob = try #require(try Row.fetchOne(
                     db,
-                    sql: "SELECT status, attempts FROM jobs_search_index WHERE targetKind = 'screenshotAnalysis' AND targetKey = ?",
+                    sql: "SELECT status, attempts FROM jobs_background WHERE targetKind = 'screenshotAnalysis' AND targetKey = ?",
                     arguments: [screenshot.id]
                 ))
                 let status: String = serverJob["status"]
@@ -213,7 +216,7 @@ import Synchronization
                 #expect(attempts == 1)
                 #expect(try Int.fetchOne(
                     db,
-                    sql: "SELECT count(*) FROM jobs_search_index WHERE targetKind = 'screenshotAnalysis' AND targetKey = ?",
+                    sql: "SELECT count(*) FROM jobs_background WHERE targetKind = 'screenshotAnalysis' AND targetKey = ?",
                     arguments: [localScreenshot.id]
                 ) == 0)
             }
@@ -251,7 +254,7 @@ import Synchronization
             defer { ImageURLProtocol.remove(origin: connection.origin) }
             let configuration = URLSessionConfiguration.ephemeral
             configuration.protocolClasses = [ImageURLProtocol.self]
-            let indexer = SearchIndexer(
+            let indexer = BackgroundJobWorker(
                 dbQueue: database.dbQueue,
                 screenshotAnalyzer: analyzer,
                 apiClient: SyncAPIClient(session: URLSession(configuration: configuration), tokenProvider: { _, _ in "test" }),
@@ -273,7 +276,7 @@ import Synchronization
                 #expect(try MeetingScreenshotRecord.fetchOne(db, key: screenshot.id)?.ocrText == nil)
                 let row = try #require(try Row.fetchOne(
                     db,
-                    sql: "SELECT status, attempts FROM jobs_search_index WHERE targetKind = 'screenshotAnalysis' AND targetKey = ?",
+                    sql: "SELECT status, attempts FROM jobs_background WHERE targetKind = 'screenshotAnalysis' AND targetKey = ?",
                     arguments: [screenshot.id]
                 ))
                 let status: String = row["status"]
@@ -392,9 +395,9 @@ import Synchronization
                     db,
                     sql: """
                     SELECT
-                        (SELECT priority FROM jobs_search_index WHERE targetKind = 'meeting' AND targetKey = ?)
+                        (SELECT priority FROM jobs_background WHERE targetKind = 'meeting' AND targetKey = ?)
                         >
-                        (SELECT priority FROM jobs_search_index WHERE targetKind = 'screenshotAnalysis' AND targetKey = ?)
+                        (SELECT priority FROM jobs_background WHERE targetKind = 'screenshotAnalysis' AND targetKey = ?)
                     """,
                     arguments: [meeting.id, screenshot.id]
                 ) ?? false
@@ -553,7 +556,7 @@ import Synchronization
                     try screenshot.insertLegacyForTesting(db)
                 }
             }
-            #expect(await pollUntil { await analyzer.startedCount == 8 })
+            #expect(await pollUntil { await analyzer.startedCount == 2 })
 
             await database.searchIndexer.pauseForRecording()
 
@@ -566,7 +569,7 @@ import Synchronization
                     Int.fetchOne(
                         db,
                         sql: """
-                        SELECT COUNT(*) FROM jobs_search_index
+                        SELECT COUNT(*) FROM jobs_background
                         WHERE targetKind = 'screenshotAnalysis' AND status = 'pending'
                         """
                     ) ?? 0
@@ -574,7 +577,7 @@ import Synchronization
             }
             #expect(state.0 == 0)
             #expect(state.1 == 8)
-            #expect(await analyzer.cancelledCount == 8)
+            #expect(await analyzer.cancelledCount == 2)
         }
 
         @Test(.timeLimit(.minutes(1)))
@@ -598,7 +601,7 @@ import Synchronization
                 }
             }
             let rebuildTask = Task { try await database.searchIndexer.requestRebuild() }
-            #expect(await pollUntil { await analyzer.startedCount == 8 })
+            #expect(await pollUntil { await analyzer.startedCount == 2 })
 
             await database.searchIndexer.pauseForRecording()
             try await rebuildTask.value
@@ -609,14 +612,14 @@ import Synchronization
                     Int.fetchOne(
                         db,
                         sql: """
-                        SELECT COUNT(*) FROM jobs_search_index
+                        SELECT COUNT(*) FROM jobs_background
                         WHERE targetKind = 'screenshotAnalysis' AND status = 'pending'
                         """
                     ) ?? 0
                 )
             }
             #expect(state == (0, 8))
-            #expect(await analyzer.cancelledCount == 8)
+            #expect(await analyzer.cancelledCount == 2)
         }
 
         @Test
@@ -664,7 +667,7 @@ import Synchronization
         }
 
         @Test(.timeLimit(.minutes(1)))
-        func analyzesSingleScreenshotsUpToEightConcurrently() async throws {
+        func analyzesSingleScreenshotsUpToTwoConcurrently() async throws {
             let analyzer = ConcurrentScreenshotAnalyzer()
             let database = try makeDatabase(screenshotAnalyzer: analyzer)
             let workspace = makeWorkspace()
@@ -688,14 +691,14 @@ import Synchronization
             }
 
             let drainTask = Task { await database.searchIndexer.drain() }
-            let startedFirstWave = await pollUntil { await analyzer.callSizes.count == 8 }
+            let startedFirstWave = await pollUntil { await analyzer.callSizes.count == 2 }
             await analyzer.releaseFirstWave()
             await drainTask.value
 
             #expect(startedFirstWave)
             #expect(await analyzer.callSizes == Array(repeating: 1, count: 9))
-            #expect(await analyzer.activeCountsAtStart == Array(1 ... 8) + [1])
-            #expect(await analyzer.maximumActiveCount == 8)
+            #expect(await analyzer.activeCountsAtStart.prefix(2) == [1, 2])
+            #expect(await analyzer.maximumActiveCount == 2)
             let indexedCount = try await database.dbQueue.read { db in
                 try Int.fetchOne(
                     db,
@@ -738,10 +741,10 @@ import Synchronization
                     ) ?? 0,
                     Int.fetchOne(
                         db,
-                        sql: "SELECT attempts FROM jobs_search_index WHERE targetKey = ?",
+                        sql: "SELECT attempts FROM jobs_background WHERE targetKey = ?",
                         arguments: [failingID]
                     ),
-                    Int.fetchOne(db, sql: "SELECT COUNT(*) FROM jobs_search_index WHERE targetKind = 'screenshotAnalysis'") ?? 0
+                    Int.fetchOne(db, sql: "SELECT COUNT(*) FROM jobs_background WHERE targetKind = 'screenshotAnalysis'") ?? 0
                 )
             }
             #expect(state.0 == 7)
@@ -789,7 +792,7 @@ import Synchronization
                 let failure = try Row.fetchOne(
                     db,
                     sql: """
-                    SELECT status, attempts FROM jobs_search_index
+                    SELECT status, attempts FROM jobs_background
                     WHERE targetKind = 'screenshotAnalysis' AND targetKey = ?
                     """,
                     arguments: [failingID]
@@ -799,7 +802,7 @@ import Synchronization
                     Int.fetchOne(
                         db,
                         sql: """
-                        SELECT COUNT(*) FROM jobs_search_index
+                        SELECT COUNT(*) FROM jobs_background
                         WHERE targetKind = 'screenshotAnalysis' AND targetKey != ?
                         """,
                         arguments: [failingID]
@@ -838,12 +841,12 @@ import Synchronization
                     try screenshot.insertLegacyForTesting(db)
                 }
                 try db.execute(
-                    sql: "UPDATE jobs_search_index SET attempts = 3 WHERE targetKind = 'screenshotAnalysis'"
+                    sql: "UPDATE jobs_background SET attempts = 3 WHERE targetKind = 'screenshotAnalysis'"
                 )
             }
 
             let drainTask = Task { await database.searchIndexer.drain() }
-            let startedFirstWave = await pollUntil { await analyzer.firstWaveStartedCount == 8 }
+            let startedFirstWave = await pollUntil { await analyzer.firstWaveStartedCount == 2 }
             let triggeredFailure = await analyzer.failFirstWave()
             if !triggeredFailure { drainTask.cancel() }
             await drainTask.value
@@ -852,7 +855,7 @@ import Synchronization
                     db,
                     sql: """
                     SELECT COUNT(*) AS pendingCount, SUM(attempts = 3) AS preservedAttempts, MIN(availableAt) AS availableAt
-                    FROM jobs_search_index WHERE targetKind = 'screenshotAnalysis' AND status = 'pending'
+                    FROM jobs_background WHERE targetKind = 'screenshotAnalysis' AND status = 'pending'
                     """
                 )
                 return (
@@ -865,12 +868,12 @@ import Synchronization
             #expect(deferred.0 == 9)
             #expect(deferred.1 == 9)
             #expect((deferred.2 ?? .distantPast) > .now)
-            #expect(await analyzer.firstWaveStartedCount == 8)
-            #expect(await analyzer.firstWaveCancelledCount == 7)
+            #expect(await analyzer.firstWaveStartedCount == 2)
+            #expect(await analyzer.firstWaveCancelledCount == 1)
 
             try await database.dbQueue.write { db in
                 try db.execute(
-                    sql: "UPDATE jobs_search_index SET availableAt = ? WHERE targetKind = 'screenshotAnalysis'",
+                    sql: "UPDATE jobs_background SET availableAt = ? WHERE targetKind = 'screenshotAnalysis'",
                     arguments: [Date.distantPast]
                 )
             }
@@ -906,7 +909,7 @@ import Synchronization
                 try screenshot.insertLegacyForTesting(db)
                 try db.execute(
                     sql: """
-                    UPDATE jobs_search_index SET attempts = 4
+                    UPDATE jobs_background SET attempts = 4
                     WHERE targetKind = 'screenshotAnalysis' AND targetKey = ?
                     """,
                     arguments: [screenshot.id]
@@ -919,7 +922,7 @@ import Synchronization
                     try Int.fetchOne(
                         db,
                         sql: """
-                        SELECT attempts FROM jobs_search_index
+                        SELECT attempts FROM jobs_background
                         WHERE targetKind = 'screenshotAnalysis' AND targetKey = ?
                         """,
                         arguments: [screenshot.id]
@@ -932,7 +935,7 @@ import Synchronization
             let reset = try await database.dbQueue.read { db in
                 let row = try Row.fetchOne(
                     db,
-                    sql: "SELECT status, attempts FROM jobs_search_index WHERE targetKind = 'screenshotAnalysis' AND targetKey = ?",
+                    sql: "SELECT status, attempts FROM jobs_background WHERE targetKind = 'screenshotAnalysis' AND targetKey = ?",
                     arguments: [screenshot.id]
                 )
                 return (row?["status"] as String?, row?["attempts"] as Int?)
@@ -988,7 +991,7 @@ import Synchronization
                     Int.fetchOne(
                         db,
                         sql: """
-                        SELECT COUNT(*) FROM jobs_search_index
+                        SELECT COUNT(*) FROM jobs_background
                         WHERE indexKind = 'fts' AND targetKind = 'screenshotAnalysis' AND targetKey = ?
                         """,
                         arguments: [screenshot.id]
@@ -1105,7 +1108,7 @@ import Synchronization
                     Int.fetchOne(
                         db,
                         sql: """
-                        SELECT COUNT(*) FROM jobs_search_index
+                        SELECT COUNT(*) FROM jobs_background
                         WHERE targetKind = 'screenshotAnalysis' AND targetKey = ?
                         """,
                         arguments: [screenshot.id]

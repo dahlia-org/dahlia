@@ -35,7 +35,7 @@ try {
   await symlink(fileURLToPath(new URL("../node_modules", import.meta.url)), join(source, "node_modules"));
   const built = spawnSync("pnpm", ["run", "build"], { cwd: source, encoding: "utf8" });
   if (built.status !== 0) throw new Error(built.stderr || built.stdout || "deployment build failed");
-  for (const path of ["dist/client/index.html", "dist/server/node.js", "dist/server/db/migrate.js"]) {
+  for (const path of ["dist/client/index.html", "dist/server/node.js", "dist/server/job-worker.js", "dist/server/db/migrate.js"]) {
     await readFile(join(source, path));
   }
   const deploymentFiles = await readdir(join(source, "dist"), { recursive: true });
@@ -78,7 +78,7 @@ try {
     import * as server from "@dahlia-ai/server";
     import {
       createNodeAuthStore,
-      SummaryService, SummaryWorker, createTranscriptSummaryMethod, createAudioSummaryMethod,
+      SummaryService, JobRunner, createTranscriptSummaryMethod, createAudioSummaryMethod,
       createPostgresApplicationStore,
       createPostgresAuthStore, migrateApplicationDatabase,
     } from "@dahlia-ai/server/node";
@@ -88,7 +88,7 @@ try {
     import { DatabaseSync } from "node:sqlite";
     import { fileURLToPath } from "node:url";
 
-    if ([SummaryService, SummaryWorker, createTranscriptSummaryMethod, createAudioSummaryMethod].some((value) => typeof value !== "function")) throw new Error("Missing Node summary API");
+    if ([SummaryService, JobRunner, createTranscriptSummaryMethod, createAudioSummaryMethod].some((value) => typeof value !== "function")) throw new Error("Missing Node summary API");
     if (typeof server.createApp !== "function" || typeof App !== "function") throw new Error("Package API is incomplete");
     const runtimeRls = await readFile(new URL("./drizzle/postgres/20260912180000_runtime_support/migration.sql", new URL(import.meta.resolve("@dahlia-ai/server/package.json"))), "utf8");
     for (const table of ['"app"."shared_memories"', '"app"."personal_memories"', '"search"."knowledge_pages"']) {

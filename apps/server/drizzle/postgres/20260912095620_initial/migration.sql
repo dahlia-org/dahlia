@@ -6,6 +6,23 @@ CREATE SCHEMA "jobs";
 --> statement-breakpoint
 CREATE SCHEMA "search";
 --> statement-breakpoint
+CREATE TABLE "jobs"."queue" (
+	"id" text PRIMARY KEY,
+	"kind" text NOT NULL,
+	"owner" text NOT NULL,
+	"target" text NOT NULL,
+	"reference" jsonb NOT NULL,
+	"generation" integer DEFAULT 1 NOT NULL,
+	"status" text DEFAULT 'pending' NOT NULL,
+	"available_at" timestamp NOT NULL,
+	"created_at" timestamp NOT NULL,
+	"lease" text,
+	"lease_until" timestamp,
+	"attempts" integer DEFAULT 0 NOT NULL,
+	"last_error" text,
+	CONSTRAINT "jobs_queue_status_check" CHECK ("status" IN ('pending', 'processing', 'failed'))
+);
+--> statement-breakpoint
 CREATE TABLE "app"."documents" (
 	"id" uuid PRIMARY KEY,
 	"workspace_id" uuid NOT NULL,
@@ -74,6 +91,12 @@ CREATE TABLE "jobs"."image_analysis" (
 	"last_error_code" text,
 	CONSTRAINT "image_analysis_job_status_check" CHECK ("status" IN ('pending', 'processing', 'failed')),
 	CONSTRAINT "image_analysis_job_mode_check" CHECK ("mode" IN ('fill_missing', 'replace'))
+);
+--> statement-breakpoint
+CREATE TABLE "jobs"."dispatch" (
+	"id" integer PRIMARY KEY,
+	"last_owner" text DEFAULT '' NOT NULL,
+	"cooldowns" jsonb NOT NULL
 );
 --> statement-breakpoint
 CREATE TABLE "search"."knowledge_pages" (
@@ -563,6 +586,8 @@ CREATE TABLE "app"."workspace_transfers" (
 );
 --> statement-breakpoint
 ALTER TABLE "app"."workspace_transfers" ENABLE ROW LEVEL SECURITY;--> statement-breakpoint
+CREATE INDEX "jobs_queue_due_idx" ON "jobs"."queue" ("status","available_at","owner","created_at");--> statement-breakpoint
+CREATE INDEX "jobs_queue_lease_idx" ON "jobs"."queue" ("status","lease_until","target");--> statement-breakpoint
 CREATE UNIQUE INDEX "document_meeting_notes_unique" ON "app"."documents" ("meeting_id") WHERE "kind" = 'notes';--> statement-breakpoint
 CREATE INDEX "document_presence_document_expiry" ON "app"."document_presence" ("document_id","expires_at");--> statement-breakpoint
 CREATE INDEX "document_presence_workspace_expiry" ON "app"."document_presence" ("workspace_id","expires_at");--> statement-breakpoint

@@ -1,10 +1,8 @@
+import { createJobStore } from "./jobs/store";
+import { defaultJobLimits } from "./jobs/model";
 import { ChatMemoryStore } from "./agent/context-store";
 import { ChatMemoryService, createMemoryGenerator } from "./agent/context-service";
 import { WorkspaceMemoryService } from "./memory/service";
-import * as authSchema from "./db/auth-schema";
-import { workspacePermissions } from "./auth/workspace-permissions";
-import { and, asc, gt, inArray } from "drizzle-orm";
-import { syncedWorkspacePermission } from "./db/auth-schema";
 import { createSummaryJobStore } from "./summary/store";
 import { createImageAnalysisStore } from "./image-analysis/store";
 import { createPostgresSearchIndexStore } from "./search/index-store";
@@ -33,6 +31,8 @@ import { connectPostgresUrl } from "./db/postgres";
 import { createIntlSearchTokenizer } from "./search/tokenizer";
 
 export interface RuntimeSecrets {
+  DAHLIA_JOB_CONCURRENCY?: string;
+  DAHLIA_JOB_LIMITS?: string;
   DAHLIA_DOCUMENT_DELETION_GRACE_HOURS?: string;
   DAHLIA_CHAT_MEMORY_MODEL?: string;
   DAHLIA_MEMORY_MCP_ACCESS?: string;
@@ -99,37 +99,28 @@ const healthApp = new Hono();
 healthApp.use("*", secureHeaders());
 healthApp.get("/healthz", (context) => context.json({ status: "ok" }));
 
-function createWorkerApplicationStore(config: AppConfig, env: WorkerEnv): ApplicationStore & { jobs?: WorkerJobStores; aiHistory: AiHistoryService; chatMemoryStore?: ChatMemoryStore } {
+function createWorkerApplicationStore(config: AppConfig, env: WorkerEnv): ApplicationStore & { jobs: WorkerJobStores; aiHistory: AiHistoryService; chatMemoryStore?: ChatMemoryStore } {
   if (config.databaseType === "hyperdrive" && !env.HYPERDRIVE) throw new Error("The HYPERDRIVE binding is required");
   const url = config.databaseType === "hyperdrive" ? env.HYPERDRIVE!.connectionString
     : config.databaseType === "postgres" ? config.databaseUrl : undefined;
   if (!url) throw new Error("Worker storage supports DAHLIA_DATABASE_TYPE=hyperdrive or postgres");
   const connection = connectPostgresUrl(url, 5);
-  const permissions = syncedWorkspacePermission;
   return { ...createPostgresApplicationStore(connection.db, "postgres", config.searchEmbedding, config.encryption, config.authProviderId, config.localSingleUser, config.autoCreateOrgOnSignup, undefined, config.documentDeletionGraceHours), close: connection.close,
     aiHistory: createAiHistoryService(connection.pool),
     chatMemoryStore: config.chatMemoryModel ? new ChatMemoryStore(connection.pool) : undefined,
     jobs: {
+      queue: createJobStore(connection.db, true, config.jobs?.limits ?? defaultJobLimits),
       summaryJobs: createSummaryJobStore(connection.db, true, config.encryption),
       imageAnalysis: createImageAnalysisStore(connection.db, true, config.encryption),
       searchIndex: createPostgresSearchIndexStore(connection.db),
-      async listJobScopes(kind, after, userId) {
-        if (kind !== "search") {
-          return (await connection.db.select({ id: authSchema.user.id }).from(authSchema.user)
-            .where(after ? gt(authSchema.user.id, after) : undefined).orderBy(asc(authSchema.user.id)).limit(100)).map((row) => row.id);
-        }
-        const rows = await connection.db.selectDistinct({ id: permissions.workspaceId }).from(permissions)
-          .where(and(after ? gt(permissions.workspaceId, after) : undefined,
-            userId ? and(workspacePermissions(connection.db, authSchema, userId).matchingPrincipal(), inArray(permissions.role, ["admin", "editor"])) : undefined))
-          .orderBy(asc(permissions.workspaceId)).limit(100);
-        return rows.map((row) => row.id);
-      },
     },
   };
 }
 
 export async function initializeWorkerApp(env: WorkerEnv): Promise<WorkerApp> {
   const config = loadConfig({
+    DAHLIA_JOB_CONCURRENCY: env.DAHLIA_JOB_CONCURRENCY,
+    DAHLIA_JOB_LIMITS: env.DAHLIA_JOB_LIMITS,
     DAHLIA_DOCUMENT_DELETION_GRACE_HOURS: env.DAHLIA_DOCUMENT_DELETION_GRACE_HOURS,
     DAHLIA_HINDSIGHT_URL: env.DAHLIA_HINDSIGHT_URL,
     DAHLIA_MEMORY_IMAGE_MODEL: env.DAHLIA_MEMORY_IMAGE_MODEL,
@@ -193,38 +184,33 @@ export async function initializeWorkerApp(env: WorkerEnv): Promise<WorkerApp> {
     const objectStorage = config.storageBackend === "r2"
       ? new R2ObjectStorage(requiredR2Binding(env))
       : new S3ObjectStorage(config.storageS3!);
-    const hasQueues = env.DAHLIA_SUMMARY_QUEUE || env.DAHLIA_IMAGE_QUEUE || env.DAHLIA_SEARCH_QUEUE;
-    if (!applicationStore.jobs && (hasQueues || config.searchEmbedding || config.captioningModel)) {
-      throw new Error("Worker AI jobs require PostgreSQL or Hyperdrive");
+    if (!env.DAHLIA_JOB_QUEUE) throw new Error("DAHLIA_JOB_QUEUE is required");
+    if (config.captioningModel && !env.IMAGES) {
+      throw new Error("Image analysis requires DAHLIA_JOB_QUEUE and IMAGES bindings");
     }
-    if (env.DAHLIA_SUMMARY_QUEUE && !env.IMAGES) throw new Error("Summary jobs require the IMAGES binding");
-    if (config.captioningModel && (!env.DAHLIA_IMAGE_QUEUE || !env.IMAGES)) {
-      throw new Error("Image analysis requires DAHLIA_IMAGE_QUEUE and IMAGES bindings");
-    }
-    if (config.searchEmbedding && !env.DAHLIA_SEARCH_QUEUE) throw new Error("Embedding jobs require DAHLIA_SEARCH_QUEUE");
     const searchTokenizer = createIntlSearchTokenizer();
     const searchEmbedder = createSearchEmbedder(config);
     const captioner = createImageCaptioner(config);
     const screenshotTransformer = env.IMAGES ? createWorkerScreenshotTransformer(env.IMAGES) : undefined;
     const syncService = new MeetingSyncService(applicationStore.sync, objectStorage, searchTokenizer, searchEmbedder,
       screenshotTransformer, undefined, false, captioner?.model);
-    const summaryMethods = applicationStore.jobs && env.DAHLIA_SUMMARY_QUEUE ? [
+    const summaryMethods = [
       createTranscriptSummaryMethod(config, applicationStore.sync, syncService),
       createAudioSummaryMethod(config, applicationStore.sync, syncService),
-    ].filter((method) => method !== undefined) : [];
-    if (config.hindsight && !env.DAHLIA_MEMORY_QUEUE) throw new Error("DAHLIA_MEMORY_QUEUE is required for Hindsight");
+    ].filter((method) => method !== undefined);
+    if (summaryMethods.length && !env.IMAGES) throw new Error("Summary jobs require the IMAGES binding");
     const personalMemory = config.hindsight && applicationStore.personalMemory ? new WorkspaceMemoryService(config, applicationStore.personalMemory, syncService, applicationStore.sync) : undefined;
     const workspaceMemory = config.hindsight && applicationStore.memory ? new WorkspaceMemoryService(config, applicationStore.memory, syncService, applicationStore.sync) : undefined;
-    if (config.chatMemoryModel && !env.DAHLIA_MEMORY_QUEUE) throw new Error("DAHLIA_MEMORY_QUEUE is required for chat memory");
     const chatMemory = applicationStore.chatMemoryStore ? new ChatMemoryService(applicationStore.chatMemoryStore, syncService, createMemoryGenerator(config)) : undefined;
-    const jobs = applicationStore.jobs ? createQueueJobs(env, applicationStore.jobs, applicationStore.sync,
-      syncService, summaryMethods, captioner, searchEmbedder, workspaceMemory, chatMemory, personalMemory) : undefined;
+    const jobs = createQueueJobs(env, applicationStore.jobs, applicationStore.sync,
+      syncService, summaryMethods, captioner, searchEmbedder, workspaceMemory, chatMemory, personalMemory,
+      config.jobs?.concurrency === "auto" ? 4 : config.jobs?.concurrency ?? 4);
     const app = createApp({
       workspaceMemory, personalMemory, chatMemory, config, auth, authStore: applicationStore, aiHistory: applicationStore.aiHistory, objectStorage, searchTokenizer, searchEmbedder, screenshotTransformer, syncService,
       mcpSupportsCimd: false,
       summaryService: summaryMethods.length ? new SummaryService(applicationStore.sync, summaryMethods) : undefined,
       imageAnalysisEnabled: captioner !== undefined,
-      onSyncMutation: jobs ? (owner, context) => context.waitUntil(jobs.notify(owner)) : undefined,
+      onSyncMutation: (_owner, context) => context.waitUntil(jobs.notify()),
     });
     return Object.assign(app, { jobs, close: () => applicationStore.close?.() ?? Promise.resolve() });
   } catch (error) {
@@ -267,14 +253,12 @@ export function createWorkerHandler(initialize: WorkerAppInitializer = initializ
       try { return await closeAfterResponse(await app.fetch(request, env, context), app.close); }
       catch (error) { await app.close?.(); throw error; }
     },
-    async scheduled(controller, env): Promise<void> {
+    async scheduled(_controller, env): Promise<void> {
       const app = await initialize(env);
       try {
         await app.jobs?.schedule();
       } finally {
-        // The minute cron drains storage deletes; only the top of the hour visits every Workspace.
-        try { await app.runStorageMaintenance(new Date(controller.scheduledTime).getUTCMinutes() === 0); }
-        finally { await app.close?.(); }
+        await app.close?.();
       }
     },
     async queue(batch, env): Promise<void> {

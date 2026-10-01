@@ -1,175 +1,52 @@
+import { z } from "zod";
 import type { ChatMemoryService } from "../agent/context-service";
 import type { WorkspaceMemoryService } from "../memory/service";
-import { z } from "zod";
 import type { MeetingSyncStore } from "../sync/types";
 import type { MeetingSyncService } from "../sync/service";
 import type { SummaryMethod } from "../summary/model";
-import type { SummaryJobQueueStore } from "../summary/store";
-import { processSummaryJob } from "../summary/process";
+import type { SummaryJobStore } from "../summary/store";
 import type { ImageAnalysisQueueStore } from "../image-analysis/store";
 import type { ImageCaptioner } from "../image-analysis/captioner";
-import { processImageAnalysisJob } from "../image-analysis/process";
 import type { SearchIndexQueueStore } from "../search/index-store";
 import type { SearchEmbedder } from "../search/embedding";
-import { processSearchIndexBatch } from "../search/process";
+import type { JobStore } from "./store";
+import { createJobExecutor } from "./execute";
 
-const kind = z.enum(["summary", "image", "search"]);
-const ownerUserId = z.string().min(1).max(500);
-const id = z.uuid();
-const cursor = z.union([id, z.string().regex(/^[0-9a-f-]{36}\/[0-9a-f-]{36}$/)]);
-const scan = z.object({ action: z.literal("scan"), kind, scopeId: id,
-  phase: z.enum(["reconcile", "dispatch"]), after: cursor.optional() }).strict();
-export const jobMessageSchema = z.union([
-  z.object({ action: z.literal("chat-memory"), id: z.string().min(1).max(200).optional(), userId: id.optional() }).strict()
-    .refine((message) => (message.id === undefined) === (message.userId === undefined)),
-  z.object({ action: z.literal("memory"), personal: z.boolean().optional(), workspaceId: id.optional(), after: id.optional() }).strict(),
-  z.object({ action: z.literal("scopes"), kind, after: id.optional(), userId: id.optional() }).strict(),
-  scan.refine((value) => !value.after || (value.kind === "search") === value.after.includes("/")),
-  z.object({ action: z.literal("run"), kind: z.literal("summary"),
-    reference: z.object({ id, ownerUserId }).strict() }).strict(),
-  z.object({ action: z.literal("run"), kind: z.literal("image"),
-    reference: z.object({ fileId: id, ownerUserId, model: z.string().min(1).max(200) }).strict() }).strict(),
-  z.object({ action: z.literal("run"), kind: z.literal("search"), references: z.array(z.object({
-    workspaceId: id, documentId: id, generation: z.number().int().positive(),
-  }).strict()).min(1).max(16) }).strict(),
-]);
+export const jobMessageSchema = z.object({ action: z.literal("wake") }).strict();
 export type JobMessage = z.infer<typeof jobMessageSchema>;
-type JobKind = z.infer<typeof kind>;
-
 export interface JobQueue {
   send(body: JobMessage, options?: { delaySeconds: number }): Promise<unknown>;
   sendBatch(messages: { body: JobMessage }[]): Promise<unknown>;
 }
-export interface WorkerJobBindings {
-  DAHLIA_MEMORY_QUEUE?: JobQueue;
-  DAHLIA_SUMMARY_QUEUE?: JobQueue;
-  DAHLIA_IMAGE_QUEUE?: JobQueue;
-  DAHLIA_SEARCH_QUEUE?: JobQueue;
-}
+export interface WorkerJobBindings { DAHLIA_JOB_QUEUE?: JobQueue }
 export interface WorkerJobStores {
-  summaryJobs: SummaryJobQueueStore;
+  queue: JobStore;
+  summaryJobs: SummaryJobStore;
   imageAnalysis: ImageAnalysisQueueStore;
   searchIndex: SearchIndexQueueStore;
-  listJobScopes(kind: JobKind, after?: string, userId?: string): Promise<string[]>;
 }
-
 export function createQueueJobs(bindings: WorkerJobBindings, stores: WorkerJobStores,
-  syncStore: MeetingSyncStore, sync: MeetingSyncService,
-  methods: readonly SummaryMethod[], captioner?: ImageCaptioner, embedder?: SearchEmbedder, memory?: WorkspaceMemoryService, chatMemory?: ChatMemoryService, personalMemory?: WorkspaceMemoryService) {
-  const queues = {
-    summary: methods.length ? bindings.DAHLIA_SUMMARY_QUEUE : undefined,
-    image: captioner ? bindings.DAHLIA_IMAGE_QUEUE : undefined,
-    search: embedder ? bindings.DAHLIA_SEARCH_QUEUE : undefined,
+  syncStore: MeetingSyncStore, sync: MeetingSyncService, methods: readonly SummaryMethod[],
+  captioner?: ImageCaptioner, embedder?: SearchEmbedder, memory?: WorkspaceMemoryService,
+  chatMemory?: ChatMemoryService, personalMemory?: WorkspaceMemoryService, concurrency = 4) {
+  const executor = createJobExecutor({ ...stores, methods, syncStore, sync, captioner, embedder, memory, chatMemory, personalMemory });
+  const notify = async () => {
+    try { await bindings.DAHLIA_JOB_QUEUE?.send({ action: "wake" }); }
+    catch { console.warn(JSON.stringify({ event: "job_notification_failed" })); }
   };
-  const scanMessage = (kind: JobKind, scopeId: string): JobMessage => ({
-    kind, action: "scan", scopeId, phase: kind === "summary" ? "dispatch" : "reconcile",
-  });
   return {
-    async notify(ownerUserId: string) {
-      // This is a post-commit hint. Cron recovers a failed send from the canonical job tables.
-      const results = await Promise.allSettled(Object.entries(queues).map(([kind, queue]) =>
-        queue?.send(kind === "search" ? { action: "scopes", kind: "search", userId: ownerUserId } : scanMessage(kind as JobKind, ownerUserId)) ?? Promise.resolve()));
-      if (results.some((result) => result.status === "rejected")) {
-        console.warn(JSON.stringify({ level: "warn", event: "job_notification_failed" }));
-      }
-    },
-    async schedule() {
-      const results = await Promise.allSettled([
-        chatMemory ? bindings.DAHLIA_MEMORY_QUEUE?.send({ action: "chat-memory" }) : undefined,
-        memory ? bindings.DAHLIA_MEMORY_QUEUE?.send({ action: "memory" }) : undefined,
-        personalMemory ? bindings.DAHLIA_MEMORY_QUEUE?.send({ action: "memory", personal: true }) : undefined,
-        ...Object.entries(queues).map(([kind, queue]) => queue?.send({ kind: kind as JobKind, action: "scopes" })),
-      ]);
+    notify,
+    async schedule() { await stores.queue.scheduleMaintenance(); await notify(); },
+    async consume(body: unknown, signal: AbortSignal) {
+      jobMessageSchema.parse(body);
+      if (!bindings.DAHLIA_JOB_QUEUE) throw new Error("job_queue_unavailable");
+      const results = await Promise.allSettled(Array.from({ length: concurrency }, () => executor.processOne(signal)));
       const failure = results.find((result) => result.status === "rejected");
       if (failure) throw failure.reason;
-    },
-    async consume(body: unknown, signal: AbortSignal) {
-      const message = jobMessageSchema.parse(body);
-      if (message.action === "chat-memory") {
-        const queue = bindings.DAHLIA_MEMORY_QUEUE;
-        if (!queue || !chatMemory) throw new Error("chat_memory_unavailable");
-        if (message.id && message.userId) {
-          const delaySeconds = await chatMemory.step(message.id, message.userId, signal);
-          if (delaySeconds !== undefined) await queue.send(message, { delaySeconds });
-        } else {
-          const due = await chatMemory.store.due();
-          if (due.length) await queue.sendBatch(due.map(({ id, userId }) => ({ body: { action: "chat-memory", id, userId } })));
-        }
-        return;
-      }
-      if (message.action === "memory") {
-        const engine = message.personal ? personalMemory : memory;
-        const queue = bindings.DAHLIA_MEMORY_QUEUE;
-        if (!queue || !engine) throw new Error("memory_queue_unavailable");
-        if (message.workspaceId) {
-          await engine.step(message.workspaceId, signal);
-          const delaySeconds = await engine.store.nextDelay(message.workspaceId);
-          if (delaySeconds !== undefined) await queue.send(message, { delaySeconds });
-        } else {
-          const ids = await engine.store.due(message.after);
-          if (ids.length) await queue.sendBatch(ids.map((workspaceId) => ({ body: { ...message, workspaceId } })));
-          if (ids.length === 100) await queue.send({ ...message, after: ids.at(-1) });
-        }
-        return;
-      }
-      const queue = queues[message.kind];
-      if (!queue) throw new Error("job_queue_unavailable");
-      signal.throwIfAborted();
-      if (message.action === "scopes") {
-        const scopes = await stores.listJobScopes(message.kind, message.after, message.userId);
-        if (scopes.length) await queue.sendBatch(scopes.map((id) => ({ body: scanMessage(message.kind, id) })));
-        if (scopes.length === 100) await queue.send({ ...message, after: scopes.at(-1)! });
-        return;
-      }
-      if (message.action === "scan") {
-        if (message.phase === "reconcile") {
-          let after: string | undefined;
-          if (message.kind === "image") {
-            after = await stores.imageAnalysis.reconcilePage(captioner!.model, message.scopeId, message.after);
-          } else if (message.kind === "search") {
-            after = await stores.searchIndex.reconcilePage(embedder!.model, embedder!.dimensions, message.scopeId, message.after);
-          }
-          await queue.send({ ...message, after, phase: after ? "reconcile" : "dispatch" });
-          return;
-        }
-        let messages: JobMessage[];
-        let count: number;
-        let after: string | undefined;
-        if (message.kind === "summary") {
-          const rows = await stores.summaryJobs.due(message.scopeId, message.after);
-          messages = rows.map((reference) => ({ action: "run", kind: "summary", reference }));
-          count = rows.length;
-          after = rows.at(-1)?.id;
-        } else if (message.kind === "image") {
-          const rows = await stores.imageAnalysis.due(captioner!.model, message.scopeId, message.after);
-          messages = rows.map((reference) => ({ action: "run", kind: "image", reference }));
-          count = rows.length;
-          after = rows.at(-1)?.fileId;
-        } else {
-          const rows = await stores.searchIndex.due(embedder!.model, embedder!.dimensions, message.scopeId, message.after);
-          messages = [];
-          for (let offset = 0; offset < rows.length; offset += 16) {
-            messages.push({ action: "run", kind: "search", references: rows.slice(offset, offset + 16) });
-          }
-          const last = rows.at(-1);
-          count = rows.length;
-          after = last ? `${last.documentId}/${last.workspaceId}` : undefined;
-        }
-        if (messages.length) await queue.sendBatch(messages.map((body) => ({ body })));
-        if (count === 100) await queue.send({ ...message, after });
-        return;
-      }
-      if (message.kind === "summary") {
-        await processSummaryJob(stores.summaryJobs, methods, sync, signal, message.reference);
-      } else if (message.kind === "image") {
-        await processImageAnalysisJob(stores.imageAnalysis, captioner!, syncStore, sync, signal, message.reference);
-      } else {
-        await processSearchIndexBatch(stores.searchIndex, embedder!, signal, message.references);
-      }
-      // A generated summary, transcript, or caption can invalidate a search document.
-      if (message.kind !== "search" && queues.search) {
-        await queues.search.send({ action: "scopes", kind: "search", userId: message.reference.ownerUserId });
-      }
+      // The DB remains authoritative if this hint fails; minute cron retries missed and delayed work.
+      const delaySeconds = await stores.queue.nextDelay(executor.kinds);
+      // Cron owns longer waits; chaining hourly maintenance hints forever would multiply idle polling.
+      if (delaySeconds !== undefined && delaySeconds < 60) await bindings.DAHLIA_JOB_QUEUE.send({ action: "wake" }, { delaySeconds });
     },
   };
 }

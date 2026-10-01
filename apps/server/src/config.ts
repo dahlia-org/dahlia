@@ -1,3 +1,4 @@
+import { loadJobConfig, type JobConfig } from "./jobs/model";
 import { validateAuthSecret } from "./auth/secret";
 import { z } from "zod";
 import { encryptionConfig, type EncryptionConfig } from "./encryption/crypto";
@@ -68,8 +69,8 @@ export interface AppConfig {
   betterAuthSecret?: string;
   oauthRedirectUris: string[];
   maxRequestBytes: number;
-  /** Node summary and image-analysis loops per worker; bounded by the application pool headroom. */
-  aiJobConcurrency?: number;
+  /** Shared job process/slot sizing and database-wide limits. */
+  jobs?: JobConfig;
   documentDeletionGraceHours?: number;
   foundationModels?: string[];
   codexAutoReviewModel?: string;
@@ -252,7 +253,6 @@ export function loadConfig(env: Record<string, string | undefined>): AppConfig {
     .positive()
     .max(64 * 1024 * 1024)
     .parse(env.DAHLIA_MAX_REQUEST_BYTES ?? String(16 * 1024 * 1024));
-  const aiJobConcurrency = z.coerce.number().int().min(1).max(8).parse(env.DAHLIA_AI_JOB_CONCURRENCY?.trim() || "4");
   const documentDeletionGraceHours = z.coerce.number().finite().min(0).max(8760).parse(env.DAHLIA_DOCUMENT_DELETION_GRACE_HOURS?.trim() || "24");
   const aiBackend = aiBackendSchema.parse(env.DAHLIA_AI_BACKEND?.trim() || "openai");
   const foundationModels = z.array(z.string().max(UPSTREAM_MODEL_MAX_LENGTH))
@@ -317,7 +317,7 @@ export function loadConfig(env: Record<string, string | undefined>): AppConfig {
     provider: providerConfig(env, aiBackend, databricksWorkspace),
     oauthRedirectUris: csv(env.DAHLIA_OAUTH_REDIRECT_URIS),
     maxRequestBytes,
-    aiJobConcurrency,
+    jobs: loadJobConfig(env),
     documentDeletionGraceHours,
     foundationModels,
     codexAutoReviewModel: codexAutoReviewModel

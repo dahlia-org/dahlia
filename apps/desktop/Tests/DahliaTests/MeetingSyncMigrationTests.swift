@@ -608,7 +608,7 @@
                 try (
                     Int.fetchOne(
                         db,
-                        sql: "SELECT count(*) FROM jobs_search_index WHERE targetKind = 'screenshotAnalysis' AND targetKey = ?",
+                        sql: "SELECT count(*) FROM jobs_background WHERE targetKind = 'screenshotAnalysis' AND targetKey = ?",
                         arguments: [screenshotID]
                     ),
                     Int.fetchOne(

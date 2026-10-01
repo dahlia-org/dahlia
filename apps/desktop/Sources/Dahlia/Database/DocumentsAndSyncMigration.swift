@@ -4,21 +4,24 @@ import GRDB
 enum DocumentsAndSyncMigration {
     static let legacyIdentifiers: Set = [
         "v47_documents", "v48_independentDocuments", "v49_workspaceImportDestinations",
-        "v50_syncPriority", "v51_scopedSyncReconciliation",
+        "v50_syncPriority", "v51_scopedSyncReconciliation", "v52_documentsAndSync", "v53_sharedBackgroundJobs",
     ]
 
     static func register(in migrator: inout DatabaseMigrator) {
-        migrator.registerMigration("v52_documentsAndSync", merging: legacyIdentifiers) { db, applied in
-            if !applied.contains("v48_independentDocuments") {
-                if applied.contains("v47_documents") {
-                    try IndependentDocumentsMigration.migrate(in: db)
-                } else {
-                    try DocumentsMigration.migrate(in: db)
+        migrator.registerMigration("v53_documentsSyncAndBackgroundJobs", merging: legacyIdentifiers) { db, applied in
+            if !applied.contains("v52_documentsAndSync") {
+                if !applied.contains("v48_independentDocuments") {
+                    if applied.contains("v47_documents") {
+                        try IndependentDocumentsMigration.migrate(in: db)
+                    } else {
+                        try DocumentsMigration.migrate(in: db)
+                    }
                 }
+                if !applied.contains("v49_workspaceImportDestinations") { try createImportDestinations(in: db) }
+                if !applied.contains("v50_syncPriority") { try SyncPriorityMigration.migrate(in: db) }
+                if !applied.contains("v51_scopedSyncReconciliation") { try createReconciliations(in: db) }
             }
-            if !applied.contains("v49_workspaceImportDestinations") { try createImportDestinations(in: db) }
-            if !applied.contains("v50_syncPriority") { try SyncPriorityMigration.migrate(in: db) }
-            if !applied.contains("v51_scopedSyncReconciliation") { try createReconciliations(in: db) }
+            if !applied.contains("v53_sharedBackgroundJobs") { try BackgroundJobsMigration.migrate(in: db) }
         }
     }
 

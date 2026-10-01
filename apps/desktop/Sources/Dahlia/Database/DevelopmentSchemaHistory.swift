@@ -48,6 +48,12 @@ enum DevelopmentSchemaHistory {
             """)
         }
 
+        // v52 consolidated the same final Documents/sync schema represented above.
+        migrator.registerMigration("v52_documentsAndSync") { _ in }
+        migrator.registerMigration("v53_sharedBackgroundJobs") { db in
+            try BackgroundJobsMigration.migrate(in: db)
+        }
+
         return migrator
     }
 }

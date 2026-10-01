@@ -1,149 +1,67 @@
 import { describe, expect, it, vi } from "vitest";
-import { createQueueJobs, jobMessageSchema, type JobMessage, type JobQueue, type WorkerJobStores } from "../src/jobs/queues";
+import { createQueueJobs, jobMessageSchema, type WorkerJobStores } from "../src/jobs/queues";
 import { closeAfterResponse, createWorkerHandler, type WorkerApp } from "../src/worker";
-import type { MeetingSyncStore } from "../src/sync/types";
-import type { MeetingSyncService } from "../src/sync/service";
-import { uuidV7 } from "../src/id";
 
-function setup(imageQueue?: JobQueue) {
-  const sent: JobMessage[] = [];
-  const queue = { send: vi.fn((body: JobMessage) => { sent.push(body); return Promise.resolve(); }),
-    sendBatch: vi.fn((messages: { body: JobMessage }[]) => { sent.push(...messages.map((entry) => entry.body)); return Promise.resolve(); }) };
-  const stores = { listJobScopes: vi.fn(() => Promise.resolve(["01990ab0-0000-7000-8000-000000000001"])),
-    summaryJobs: { due: vi.fn(() => Promise.resolve([{ id: uuidV7(), ownerUserId: "owner" }])), claim: vi.fn(() => Promise.resolve(null)) },
-  };
-  const jobs = createQueueJobs({ DAHLIA_SUMMARY_QUEUE: queue, DAHLIA_IMAGE_QUEUE: imageQueue }, stores as unknown as WorkerJobStores,
-    {} as MeetingSyncStore, {} as MeetingSyncService, [{ id: "transcript" }] as never, imageQueue ? { model: "synthetic" } as never : undefined);
-  return { queue, stores, jobs, sent };
+function setup() {
+  const send = vi.fn().mockResolvedValue(undefined);
+  const queue = { claim: vi.fn().mockResolvedValue(null), nextDelay: vi.fn().mockResolvedValue(undefined),
+    scheduleMaintenance: vi.fn().mockResolvedValue(undefined) };
+  const jobs = createQueueJobs({ DAHLIA_JOB_QUEUE: { send, sendBatch: vi.fn() } }, { queue } as unknown as WorkerJobStores,
+    {} as never, {} as never, []);
+  return { jobs, queue, send };
 }
-const signal = () => new AbortController().signal;
-describe("Worker job delivery", () => {
-  it("keeps personal and legacy Workspace deliveries in separate engines", async () => {
-    const id = uuidV7(), queue = { send: vi.fn(), sendBatch: vi.fn() };
-    const personal = { step: vi.fn(), store: { due: vi.fn().mockResolvedValue([id]), nextDelay: vi.fn().mockResolvedValue(5) } };
-    const workspace = { step: vi.fn(), store: { nextDelay: vi.fn() } };
-    const jobs = createQueueJobs({ DAHLIA_MEMORY_QUEUE: queue }, {} as WorkerJobStores,
-      {} as MeetingSyncStore, {} as MeetingSyncService, [], undefined, undefined, workspace as never, undefined, personal as never);
-    await jobs.schedule(); expect(queue.send).toHaveBeenCalledWith({ action: "memory", personal: true });
-    await jobs.consume({ action: "memory", personal: true }, signal());
-    const message = { action: "memory" as const, personal: true, workspaceId: id };
-    expect(queue.sendBatch).toHaveBeenCalledWith([{ body: message }]);
-    await jobs.consume(message, signal());
-    expect(personal.step).toHaveBeenCalledWith(id, expect.any(AbortSignal));
-    expect(workspace.step).not.toHaveBeenCalled();
-    expect(queue.send).toHaveBeenCalledWith(message, { delaySeconds: 5 });
-    await jobs.consume({ action: "memory", workspaceId: id }, signal());
-    expect(workspace.step).toHaveBeenCalledWith(id, expect.any(AbortSignal));
-  });
-  it("dispatches private memory references and reschedules only unfinished work", async () => {
-    const reference = { action: "chat-memory" as const, id: `live:${uuidV7()}`, userId: uuidV7() };
-    const queue = { send: vi.fn(), sendBatch: vi.fn() };
-    const memory = { step: vi.fn().mockResolvedValueOnce(30).mockResolvedValue(undefined),
-      store: { due: vi.fn().mockResolvedValue([reference]) } };
-    const jobs = createQueueJobs({ DAHLIA_MEMORY_QUEUE: queue }, {} as WorkerJobStores,
-      {} as MeetingSyncStore, {} as MeetingSyncService, [], undefined, undefined, undefined, memory as never);
+describe("shared Worker job delivery", () => {
+  it("recovers failed post-commit hints from cron without putting content in messages", async () => {
+    const { jobs, queue, send } = setup();
+    send.mockRejectedValueOnce(new Error("unavailable"));
+    await jobs.notify();
     await jobs.schedule();
-    expect(queue.send).toHaveBeenCalledWith({ action: "chat-memory" });
-    await jobs.consume({ action: "chat-memory" }, signal());
-    expect(queue.sendBatch).toHaveBeenCalledWith([{ body: reference }]);
-    await jobs.consume(reference, signal());
-    expect(memory.step).toHaveBeenCalledWith(reference.id, reference.userId, expect.any(AbortSignal));
-    expect(queue.send).toHaveBeenLastCalledWith(reference, { delaySeconds: 30 });
-    queue.send.mockClear();
-    await jobs.consume(reference, signal());
-    expect(queue.send).not.toHaveBeenCalled();
-    await jobs.consume(reference, signal());
-    expect(queue.send).not.toHaveBeenCalled();
-    expect(jobMessageSchema.safeParse({ ...reference, text: "private" }).success).toBe(false);
-    expect(jobMessageSchema.safeParse({ action: "chat-memory", id: reference.id }).success).toBe(false);
+    expect(queue.scheduleMaintenance).toHaveBeenCalledOnce();
+    expect(send).toHaveBeenLastCalledWith({ action: "wake" });
+    await jobs.consume({ action: "wake" }, new AbortController().signal);
+    expect(queue.claim).toHaveBeenCalledTimes(4);
+    expect(jobMessageSchema.safeParse({ action: "wake", text: "private" }).success).toBe(false);
+    expect(jobMessageSchema.safeParse({ action: "run", reference: "private" }).success).toBe(false);
   });
-  it("dispatches existing queues even when memory scheduling fails", async () => {
-    const send = vi.fn<(body: JobMessage) => Promise<void>>().mockResolvedValue(undefined);
-    const queue = { send, sendBatch: vi.fn() };
-    const memoryQueue = { send: vi.fn().mockRejectedValue(new Error("memory unavailable")), sendBatch: vi.fn() };
-    const jobs = createQueueJobs({ DAHLIA_MEMORY_QUEUE: memoryQueue, DAHLIA_SUMMARY_QUEUE: queue,
-      DAHLIA_IMAGE_QUEUE: queue, DAHLIA_SEARCH_QUEUE: queue }, {} as WorkerJobStores,
-    {} as MeetingSyncStore, {} as MeetingSyncService, [{ id: "transcript" }] as never,
-    { model: "image" } as never, { model: "search" } as never, {} as never);
-    await expect(jobs.schedule()).rejects.toThrow("memory unavailable");
-    expect(send.mock.calls.map(([message]) => message)).toEqual([
-      { kind: "summary", action: "scopes" }, { kind: "image", action: "scopes" }, { kind: "search", action: "scopes" },
-    ]);
+  it("reschedules according to durable availability and exposes DB failures for queue retry", async () => {
+    const { jobs, queue, send } = setup();
+    queue.nextDelay.mockResolvedValue(30);
+    await jobs.consume({ action: "wake" }, new AbortController().signal);
+    expect(send).toHaveBeenLastCalledWith({ action: "wake" }, { delaySeconds: 30 });
+    queue.nextDelay.mockResolvedValue(60);
+    send.mockClear();
+    await jobs.consume({ action: "wake" }, new AbortController().signal);
+    expect(send).not.toHaveBeenCalled();
+    queue.claim.mockRejectedValue(new Error("database unavailable"));
+    await expect(jobs.consume({ action: "wake" }, new AbortController().signal)).rejects.toThrow("database unavailable");
   });
-  it("settles all scheduled sends before surfacing a queue failure", async () => {
+  it("waits for every admitted claim before propagating an event failure", async () => {
+    const { jobs, queue } = setup();
     let release!: () => void;
-    const pending = new Promise<void>((resolve) => { release = resolve; });
-    const imageQueue = { send: () => pending, sendBatch: () => pending };
-    const { jobs, queue } = setup(imageQueue);
-    queue.send.mockRejectedValueOnce(new Error("queue unavailable"));
+    const blocked = new Promise<null>((resolve) => { release = () => resolve(null); });
+    queue.claim.mockRejectedValueOnce(new Error("database unavailable")).mockReturnValueOnce(blocked);
     let settled = false;
-    const scheduling = jobs.schedule().finally(() => { settled = true; });
-    const rejection = expect(scheduling).rejects.toThrow("queue unavailable");
-    await new Promise<void>((resolve) => setImmediate(resolve));
+    const consumed = jobs.consume({ action: "wake" }, new AbortController().signal).catch(() => { settled = true; });
+    await new Promise((resolve) => setTimeout(resolve, 0));
     expect(settled).toBe(false);
     release();
-    await rejection;
+    await consumed;
+    expect(settled).toBe(true);
   });
-  it.each([false, true])("awaits maintenance after scheduling failure and closes on maintenance failure=%s", async (failMaintenance) => {
-    let markStarted!: () => void, finish!: () => void, fail!: (error: Error) => void;
-    const started = new Promise<void>((resolve) => { markStarted = resolve; });
-    const maintenance = new Promise<void>((resolve, reject) => { finish = resolve; fail = reject; });
-    const close = vi.fn(() => Promise.resolve());
-    const schedule = vi.fn(() => Promise.reject(new Error("queue unavailable")));
-    const runStorageMaintenance = vi.fn(() => { markStarted(); return maintenance; });
-    const handler = createWorkerHandler(() => Promise.resolve({ jobs: { schedule }, runStorageMaintenance, close } as unknown as WorkerApp));
-    const scheduled = handler.scheduled!({} as ScheduledController, {}, {} as ExecutionContext);
-    const rejection = expect(scheduled).rejects.toThrow(failMaintenance ? "maintenance failed" : "queue unavailable");
-    await started;
-    expect(close).not.toHaveBeenCalled();
-    if (failMaintenance) fail(new Error("maintenance failed"));
-    else finish();
-    await rejection;
-    expect(runStorageMaintenance).toHaveBeenCalledOnce();
+  it("closes the cron connection after failed registration, with no independent maintenance execution", async () => {
+    const close = vi.fn(), runStorageMaintenance = vi.fn();
+    const handler = createWorkerHandler(async () => ({ jobs: { schedule: async () => { throw new Error("database unavailable"); } },
+      close, runStorageMaintenance }) as unknown as WorkerApp);
+    await expect(handler.scheduled!({} as never, {}, {} as never)).rejects.toThrow("database unavailable");
     expect(close).toHaveBeenCalledOnce();
+    expect(runStorageMaintenance).not.toHaveBeenCalled();
   });
-
-  it.each([[0, true], [5, false]])("sweeps every Workspace only at the top of the hour (minute %i)", async (minute, sweep) => {
-    const runStorageMaintenance = vi.fn(() => Promise.resolve());
-    const handler = createWorkerHandler(() => Promise.resolve({ jobs: { schedule: () => Promise.resolve() }, runStorageMaintenance,
-      close: () => Promise.resolve() } as unknown as WorkerApp));
-    await handler.scheduled!({ scheduledTime: Date.UTC(2026, 8, 30, 12, minute) } as ScheduledController, {}, {} as ExecutionContext);
-    expect(runStorageMaintenance).toHaveBeenCalledWith(sweep);
-  });
-
-  it("recovers a failed post-commit notification by enumerating scopes and dispatching canonical due references", async () => {
-    const { jobs, queue, sent, stores } = setup();
-    vi.spyOn(console, "warn").mockImplementation(() => {});
-    queue.send.mockRejectedValueOnce(new Error("unavailable"));
-    await jobs.notify("owner");
-    await jobs.schedule();
-    await jobs.consume(sent.shift(), signal());
-    await jobs.consume(sent.shift(), signal());
-    const run = sent.shift();
-    expect(run).toMatchObject({ action: "run", kind: "summary", reference: { ownerUserId: "owner" } });
-    await jobs.consume(run, signal());
-    await jobs.consume(run, signal());
-    expect(stores.summaryJobs.claim).toHaveBeenCalledTimes(2);
-    expect(stores.summaryJobs.claim).toHaveBeenLastCalledWith((run as Extract<JobMessage, { action: "run"; kind: "summary" }>).reference);
-    vi.restoreAllMocks();
-  });
-  it("rejects content-bearing, cross-kind and oversized messages", () => {
-    const reference = { id: uuidV7(), ownerUserId: "owner" };
-    expect(jobMessageSchema.safeParse({ action: "run", kind: "summary", reference, text: "private" }).success).toBe(false);
-    expect(jobMessageSchema.safeParse({ action: "scan", kind: "summary", ownerUserId: "owner", phase: "dispatch", after: `${uuidV7()}/${uuidV7()}` }).success).toBe(false);
-    expect(jobMessageSchema.safeParse({ action: "run", kind: "search", references: Array(17).fill({ workspaceId: uuidV7(), documentId: uuidV7(), ownerUserId: "owner", generation: 1 }) }).success).toBe(false);
-  });
-  it("propagates database failure for native Queue retry", async () => {
-    const { jobs, stores } = setup();
-    stores.summaryJobs.claim.mockRejectedValueOnce(new Error("database unavailable"));
-    await expect(jobs.consume({ action: "run", kind: "summary", reference: { id: uuidV7(), ownerUserId: "owner" } }, signal())).rejects.toThrow("database unavailable");
-  });
-  it("acks completed work, retries storage failure and closes the event connection", async () => {
+  it("acks completed work, retries failure and closes the event connection", async () => {
     const consume = vi.fn().mockResolvedValueOnce(undefined).mockRejectedValueOnce(new Error("db"));
-    const close = vi.fn(() => Promise.resolve());
-    const handler = createWorkerHandler(() => Promise.resolve({ jobs: { consume }, close } as unknown as WorkerApp));
+    const close = vi.fn();
+    const handler = createWorkerHandler(async () => ({ jobs: { consume }, close }) as unknown as WorkerApp);
     const messages = [0, 1].map((body) => ({ body, ack: vi.fn(), retry: vi.fn() }));
-    await handler.queue!({ messages } as never, {}, {} as ExecutionContext);
+    await handler.queue!({ messages } as never, {}, {} as never);
     expect(messages[0]!.ack).toHaveBeenCalledOnce();
     expect(messages[1]!.retry).toHaveBeenCalledOnce();
     expect(close).toHaveBeenCalledOnce();

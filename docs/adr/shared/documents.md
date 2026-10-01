@@ -147,3 +147,5 @@ v1 の自動変換・互換読み取りは設けない。checkpoint / legacyUpda
 #### メモリ測定範囲
 
 `node --expose-gc --import tsx scripts/document-memory.ts --collect`（Node v26.3.0、2026-10-01）。表示 5,000、総数 8,000、本文 1,994,999 UTF-16 単位（日本語）、checkpoint 7,351,158 bytes で、送信側と受信側、前後の projection、復元・消去・再エンコードを保持した。開始時との差分 heap は GC 後最大 **79.8 MiB**、各段階の GC 前観測最大 **121.7 MiB**。段階間の明示 GC なしでは **164.8 MiB** の観測があり、GC 後の値は実行中ピークの保証ではない。Workers 実機の 128 MiB 内での動作は未検証であり、本測定だけで保証しない。スクリプトは合成データのみを扱う。
+
+2026-10-01: ユーザー承認により未リリースの Documents・同期・共通背景ジョブを `v53_documentsSyncAndBackgroundJobs` の単一登録に統合する。v0.24.2 の v47 までの履歴とデータ保持処理は変更しない。旧開発版 v52 / v53 は GRDB merging で認識し、未適用の処理だけを実行する。検索ジョブはリリース済み DB に存在するため、共通キューへのデータ保持変換を維持する。

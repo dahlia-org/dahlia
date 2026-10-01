@@ -365,7 +365,7 @@ export interface MeetingSyncStore {
   listHistoryTargets(after?: SyncHistoryTarget): Promise<SyncHistoryTarget[]>;
   pruneHistoryBatch(target: SyncHistoryTarget): Promise<SyncRetentionResult>;
   withIdentity<T>(identity: Identity, action: (store: IdentitySyncStore) => Promise<T>): Promise<T>;
-  claimStorageDeletes(limit: number): Promise<StorageDeleteClaim[]>;
+  claimStorageDeletes(limit: number, storageKey?: string): Promise<StorageDeleteClaim[]>;
   hasStorageDelete(storageKey: string): Promise<boolean>;
   enqueueStorageDelete(storageKey: string): Promise<void>;
   isStorageDeleteClaimCurrent(claim: StorageDeleteClaim): Promise<boolean>;

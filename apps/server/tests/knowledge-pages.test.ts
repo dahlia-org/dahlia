@@ -15,7 +15,8 @@ import { createDahliaMemoryTools } from "../src/memory/dahlia-tools";
 import { meetingRequestContext } from "../src/agent/tools";
 import { standardModel } from "../src/memory/pages-model";
 import { createApp } from "../src/app";
-import { MemoryWorker } from "../src/memory/node-worker";
+import { createJobExecutor } from "../src/jobs/execute";
+import { JobRunner } from "../src/jobs/node-runner";
 import { createQueueJobs } from "../src/jobs/queues";
 
 const directories: string[] = [], signal = new AbortController().signal;
@@ -237,12 +238,13 @@ describe("Knowledge Pages publication", () => {
       for (let i = 0; i < 10; i++) await f.tick();
       expect((await f.get()).status).toBe("ready");
       const send = vi.fn(), sendBatch = vi.fn();
-      const queue = createQueueJobs({ DAHLIA_MEMORY_QUEUE: { send, sendBatch } }, {} as never, f.app.sync, f.sync, [], undefined, undefined, f.engine);
+      const queue = createQueueJobs({ DAHLIA_JOB_QUEUE: { send, sendBatch } }, { queue: f.app.jobs } as never, f.app.sync, f.sync, [], undefined, undefined, f.engine);
       f.models.get("workspace-insights")!.content = "Automatic refresh";
       f.db.exec("UPDATE workspace_memory_state SET available_at = 0, progress = json_remove(progress, '$.pageAfter')");
-      await queue.consume({ action: "memory", workspaceId: f.workspace }, signal);
+      await queue.consume({ action: "wake" }, signal);
       expect((await f.get()).body).toBe("Automatic refresh");
-      expect(send).toHaveBeenCalledWith({ action: "memory", workspaceId: f.workspace }, { delaySeconds: 5 });
+      expect(send).toHaveBeenCalled();
+      expect((send.mock.calls.at(-1)?.[1] as { delaySeconds: number }).delaySeconds).toBeGreaterThan(0);
     } finally { await f.close(); }
   });
   it("reconciles canonical Project membership and filters Project pages", async () => {
@@ -298,7 +300,8 @@ describe("Knowledge Pages publication", () => {
   });
   it("adopts automatic refresh through the Node worker and rejects sub-millisecond fact mutations", async () => {
     const f = await fixture();
-    const worker = new MemoryWorker(f.engine);
+    const worker = new JobRunner(createJobExecutor({ queue: f.app.jobs, summaryJobs: f.app.summaryJobs, methods: [],
+      sync: f.sync, syncStore: f.app.sync, memory: f.engine }), 2);
     try {
       f.models.get("workspace-insights")!.content = "Node automatic update";
       expect((await f.get()).status).toBe("stale");

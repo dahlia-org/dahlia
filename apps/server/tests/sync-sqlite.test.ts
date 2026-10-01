@@ -19,6 +19,7 @@ import { createNodeApplicationStore } from "../src/auth/node-store";
 import { LocalObjectStorage } from "../src/storage/local";
 import { createContractApp as createApp } from "./api-test-client";
 import { createWorkerHandler } from "../src/worker";
+import { createQueueJobs } from "../src/jobs/queues";
 import type { AppConfig } from "../src/config";
 import { MeetingSyncService } from "../src/sync/service";
 import { transformScreenshot } from "../src/sync/node-screenshot-transformer";
@@ -26,7 +27,9 @@ import { fileMetadataLimits, fileStorageKey, fileVariantKey } from "../src/files
 import sharp from "sharp";
 import { SCREENSHOT_VARIANTS } from "../src/sync/screenshot-variants";
 import type { SyncTransaction } from "../src/sync/types";
-import { ImageAnalysisWorker } from "../src/image-analysis/node-worker";
+import { processImageAnalysisJob } from "../src/image-analysis/process";
+import type { ImageAnalysisStore } from "../src/image-analysis/store";
+import type { MeetingSyncStore } from "../src/sync/types";
 import type { ImageCaptioner } from "../src/image-analysis/captioner";
 import { ImageAnalysisError } from "../src/image-analysis/model";
 
@@ -743,7 +746,10 @@ describe("SQLite canonical sync", () => {
       await commit(store, owner, transaction(freshId(), [{ id: freshId(), entity: "meeting_event", action: "create", entityId: freshId(), baseRevision: null, data: { meetingId, sessionId, kind, occurredAt: now } }]));
     }
     const storage = new LocalObjectStorage(join(directory, "objects"));
-    const app = createApp({ config: testConfig(databasePath), authStore: store, objectStorage: storage });
+    const syncService = new MeetingSyncService(store.sync, storage, undefined, undefined, undefined, undefined, false);
+    const jobs = createQueueJobs({ DAHLIA_JOB_QUEUE: { send: async () => {}, sendBatch: async () => {} } },
+      { queue: store.jobs, summaryJobs: store.summaryJobs, imageAnalysis: store.imageAnalysis!, searchIndex: store.searchIndex! }, store.sync, syncService, []);
+    const app = Object.assign(createApp({ config: testConfig(databasePath), authStore: store, objectStorage: storage, syncService }), { jobs });
     const worker = createWorkerHandler(async () => app);
     const workerFetch = worker.fetch!.bind(worker) as unknown as (request: Request, env: Cloudflare.Env, context: ExecutionContext) => Promise<Response>;
     const send = (path: string, init: RequestInit = {}) => {
@@ -817,6 +823,7 @@ describe("SQLite canonical sync", () => {
       await scheduled({ scheduledTime: Date.UTC(2026, 8, 30, 12, 0) } as ScheduledController, {} as Cloudflare.Env,
         { waitUntil: (task: Promise<unknown>) => pending.push(task) } as unknown as ExecutionContext);
       await Promise.all(pending);
+      for (let i = 0; i < 4; i++) await jobs.consume({ action: "wake" }, new AbortController().signal);
     };
     await maintain();
     expect(await storage.exists(`meetings/${meetingId}/recordings/audio_system_01.m4a`)).toBe(false);
@@ -1046,7 +1053,7 @@ describe("SQLite canonical sync", () => {
     });
     const captioner: ImageCaptioner = { model: "catalog.ai.gpt-5-6-luna", analyze };
     await updateGenerationSettings(store, owner, file.workspaceId, { outputLanguage: "en" });
-    const worker = new ImageAnalysisWorker(jobs, captioner, store.sync, service);
+    const worker = imageProcessor(jobs, captioner, store.sync, service);
     await jobs.reconcile(captioner.model);
     expect(await worker.processOne()).toBe(false);
     await publish();
@@ -1080,7 +1087,7 @@ describe("SQLite canonical sync", () => {
   it("enqueues missing image analysis when the attachment commits, without a reconcile scan", async () => {
     const { store, service, publish, attach } = await fileSetup("model");
     const analyze = vi.fn(async () => ({ ocr_text: "OCR", caption: "Caption", informative: true, reason: "Shared material" }));
-    const worker = new ImageAnalysisWorker(store.imageAnalysis!, { model: "model", analyze }, store.sync, service);
+    const worker = imageProcessor(store.imageAnalysis!, { model: "model", analyze }, store.sync, service);
     await publish();
     expect(await worker.processOne()).toBe(false);
     await attach();
@@ -1096,7 +1103,7 @@ describe("SQLite canonical sync", () => {
       await publish();
       await attach();
       const captioner: ImageCaptioner = { model: "model", analyze: async () => { throw new ImageAnalysisError("captioning_http_429", true); } };
-      expect(await new ImageAnalysisWorker(store.imageAnalysis!, captioner, store.sync, service).processOne()).toBe(true);
+      expect(await imageProcessor(store.imageAnalysis!, captioner, store.sync, service).processOne()).toBe(true);
       raw.exec("UPDATE jobs_image_analysis SET available_at = 0");
       expect(await store.imageAnalysis!.claim("model")).toBeNull();
       expect(await store.imageAnalysis!.claim("model", { fileId: file.id, ownerUserId: owner.userId, model: "model" })).not.toBeNull();
@@ -1147,7 +1154,7 @@ describe("SQLite canonical sync", () => {
     const captioner: ImageCaptioner = { model: "model", analyze: vi.fn(async () => ({
       ocr_text: "Server OCR", caption: "Server caption", informative: true, reason: "Shared material",
     })) };
-    const worker = new ImageAnalysisWorker(store.imageAnalysis!, captioner, store.sync, service);
+    const worker = imageProcessor(store.imageAnalysis!, captioner, store.sync, service);
     expect(await worker.processOne()).toBe(false);
     await attach();
     let database = new DatabaseSync(databasePath);
@@ -1184,7 +1191,7 @@ describe("SQLite canonical sync", () => {
     const captioner: ImageCaptioner = { model: "model", analyze: async () => {
       throw new ImageAnalysisError("captioning_invalid_response", false);
     } };
-    expect(await new ImageAnalysisWorker(store.imageAnalysis!, captioner, store.sync, service).processOne()).toBe(true);
+    expect(await imageProcessor(store.imageAnalysis!, captioner, store.sync, service).processOne()).toBe(true);
     await store.searchIndex!.reconcile("embedding", 32);
 
     database = new DatabaseSync(databasePath);
@@ -1247,7 +1254,7 @@ describe("SQLite canonical sync", () => {
           return { ocr_text: "Authorized OCR", caption: "Authorized caption", informative: true, reason: "Shared material" };
         } };
         if (boundary === "before") await changeRole();
-        await new ImageAnalysisWorker(store.imageAnalysis!, captioner, store.sync, service).processOne();
+        await imageProcessor(store.imageAnalysis!, captioner, store.sync, service).processOne();
         expect(calls).toBe(boundary === "before" && role === "viewer" ? 0 : 1);
         expect((await service.getFile(other, file.id)).metadata.caption).toBe(role === "editor" ? "Authorized caption" : null);
       } finally { await store.close?.(); }
@@ -1294,7 +1301,7 @@ describe("SQLite canonical sync", () => {
         : { ocr_text: "Roadmap", caption: "A roadmap slide", informative: true, reason: "" };
     } };
     await store.imageAnalysis!.reconcile("model");
-    const worker = new ImageAnalysisWorker(store.imageAnalysis!, captioner, store.sync, service);
+    const worker = imageProcessor(store.imageAnalysis!, captioner, store.sync, service);
     expect(await worker.processOne()).toBe(true);
     expect(await worker.processOne()).toBe(true);
     expect(await worker.processOne()).toBe(false);
@@ -1318,7 +1325,7 @@ describe("SQLite canonical sync", () => {
     await attach();
     await store.imageAnalysis!.reconcile("model");
     const captioner: ImageCaptioner = { model: "model", analyze: async () => { throw new ImageAnalysisError("captioning_http_429", true); } };
-    const worker = new ImageAnalysisWorker(store.imageAnalysis!, captioner, store.sync, service);
+    const worker = imageProcessor(store.imageAnalysis!, captioner, store.sync, service);
     expect(await worker.processOne()).toBe(true);
     await store.close?.();
     const database = new DatabaseSync(databasePath);
@@ -3378,4 +3385,8 @@ async function uploadFile(service: MeetingSyncService, identity: Identity, reque
 async function uploadRecording(service: MeetingSyncService, identity: Identity, meetingId: string, request: Request) {
   const query = new URL(request.url).searchParams;
   return service.putRecordingContent(identity, meetingId, query.get("sessionId")!, query.get("source")!, request);
+}
+
+function imageProcessor(jobs: ImageAnalysisStore, captioner: ImageCaptioner, store: MeetingSyncStore, sync: MeetingSyncService) {
+  return { processOne: () => processImageAnalysisJob(jobs, captioner, store, sync, new AbortController().signal) };
 }

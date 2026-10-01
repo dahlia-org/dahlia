@@ -251,6 +251,23 @@ CREATE TABLE `verification` (
 	`updated_at` integer DEFAULT (cast(unixepoch('subsecond') * 1000 as integer)) NOT NULL
 );
 --> statement-breakpoint
+CREATE TABLE `jobs_queue` (
+	`id` text PRIMARY KEY,
+	`kind` text NOT NULL,
+	`owner` text NOT NULL,
+	`target` text NOT NULL,
+	`reference` text NOT NULL,
+	`generation` integer DEFAULT 1 NOT NULL,
+	`status` text DEFAULT 'pending' NOT NULL,
+	`available_at` integer NOT NULL,
+	`created_at` integer NOT NULL,
+	`lease` text,
+	`lease_until` integer,
+	`attempts` integer DEFAULT 0 NOT NULL,
+	`last_error` text,
+	CONSTRAINT "jobs_queue_status_check" CHECK("status" IN ('pending', 'processing', 'failed'))
+);
+--> statement-breakpoint
 CREATE TABLE `documents` (
 	`id` text PRIMARY KEY,
 	`workspace_id` text NOT NULL,
@@ -331,6 +348,12 @@ CREATE TABLE `jobs_image_analysis` (
 	CONSTRAINT `fk_jobs_image_analysis_owner_user_id_user_id_fk` FOREIGN KEY (`owner_user_id`) REFERENCES `user`(`id`) ON DELETE CASCADE,
 	CONSTRAINT "image_analysis_job_status_check" CHECK("status" IN ('pending', 'processing', 'failed')),
 	CONSTRAINT "image_analysis_job_mode_check" CHECK("mode" IN ('fill_missing', 'replace'))
+);
+--> statement-breakpoint
+CREATE TABLE `jobs_dispatch` (
+	`id` integer PRIMARY KEY,
+	`last_owner` text DEFAULT '' NOT NULL,
+	`cooldowns` text NOT NULL
 );
 --> statement-breakpoint
 CREATE TABLE `knowledge_pages` (
@@ -850,6 +873,8 @@ CREATE INDEX `team_organizationId_idx` ON `team` (`organization_id`);--> stateme
 CREATE INDEX `teamMember_teamId_idx` ON `team_member` (`team_id`);--> statement-breakpoint
 CREATE INDEX `teamMember_userId_idx` ON `team_member` (`user_id`);--> statement-breakpoint
 CREATE INDEX `verification_identifier_idx` ON `verification` (`identifier`);--> statement-breakpoint
+CREATE INDEX `jobs_queue_due_idx` ON `jobs_queue` (`status`,`available_at`,`owner`,`created_at`);--> statement-breakpoint
+CREATE INDEX `jobs_queue_lease_idx` ON `jobs_queue` (`status`,`lease_until`,`target`);--> statement-breakpoint
 CREATE UNIQUE INDEX `document_meeting_notes_unique` ON `documents` (`meeting_id`) WHERE "documents"."kind" = 'notes';--> statement-breakpoint
 CREATE INDEX `document_presence_document_expiry` ON `document_presence` (`document_id`,`expires_at`);--> statement-breakpoint
 CREATE INDEX `document_presence_workspace_expiry` ON `document_presence` (`workspace_id`,`expires_at`);--> statement-breakpoint

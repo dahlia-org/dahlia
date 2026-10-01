@@ -986,15 +986,16 @@ describe("Workspace memory", () => {
       expect(f.requests.slice(beforeRename).filter((r) => r.path.endsWith("/memories") && r.method === "POST")).toHaveLength(1);
     } finally { await f.close(); }
   });
-  it("dispatches identifier-only Worker queue jobs and schedules pending work", async () => {
-    const send = vi.fn(); const sendBatch = vi.fn(); const step = vi.fn();
-    const memory = { step, store: { due: vi.fn().mockResolvedValue([workspaceId]), nextDelay: vi.fn().mockResolvedValue(5) } } as unknown as WorkspaceMemoryService;
-    const jobs = createQueueJobs({ DAHLIA_MEMORY_QUEUE: { send, sendBatch } }, {} as never, {} as never, {} as never, [], undefined, undefined, memory);
-    await jobs.schedule(); expect(send).toHaveBeenCalledWith({ action: "memory" });
-    await jobs.consume({ action: "memory" }, new AbortController().signal);
-    expect(sendBatch).toHaveBeenCalledWith([{ body: { action: "memory", workspaceId } }]);
-    await jobs.consume({ action: "memory", workspaceId }, new AbortController().signal);
-    expect(step).toHaveBeenCalled(); expect(send).toHaveBeenCalledWith({ action: "memory", workspaceId }, { delaySeconds: 5 });
+  it("dispatches memory work from the shared DB queue", async () => {
+    const send = vi.fn(), step = vi.fn();
+    const job = { id: "memory", kind: "workspace-memory", reference: { scopeId: workspaceId }, createdAt: new Date() };
+    const queue = { claim: vi.fn().mockResolvedValueOnce({ ...job, batch: [job] }).mockResolvedValue(null),
+      complete: vi.fn(), nextDelay: vi.fn().mockResolvedValue(5) };
+    const jobs = createQueueJobs({ DAHLIA_JOB_QUEUE: { send, sendBatch: vi.fn() } }, { queue } as never,
+      {} as never, {} as never, [], undefined, undefined, { step } as unknown as WorkspaceMemoryService);
+    await jobs.consume({ action: "wake" }, new AbortController().signal);
+    expect(step).toHaveBeenCalledWith(workspaceId, expect.any(AbortSignal));
+    expect(send).toHaveBeenCalledWith({ action: "wake" }, { delaySeconds: 5 });
   });
 });
 

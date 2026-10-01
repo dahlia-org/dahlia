@@ -58,7 +58,7 @@
             let cleanupJob = try queue.read { db in
                 try Row.fetchOne(
                     db,
-                    sql: "SELECT targetKind, targetKey FROM jobs_search_index WHERE targetKind = 'workspaceCleanup'"
+                    sql: "SELECT targetKind, targetKey FROM jobs_background WHERE targetKind = 'workspaceCleanup'"
                 )
             }
             #expect(cleanupJob?["targetKind"] as String? == "workspaceCleanup")

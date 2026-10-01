@@ -60,44 +60,8 @@
     "cpu_ms": 300000
   },
   "queues": {
-    "producers": [
-      { "binding": "DAHLIA_MEMORY_QUEUE", "queue": "dahlia-memory" },
-      {
-        "binding": "DAHLIA_SUMMARY_QUEUE",
-        "queue": "dahlia-summary"
-      },
-      {
-        "binding": "DAHLIA_IMAGE_QUEUE",
-        "queue": "dahlia-image"
-      },
-      {
-        "binding": "DAHLIA_SEARCH_QUEUE",
-        "queue": "dahlia-search"
-      }
-    ],
-    "consumers": [
-      { "queue": "dahlia-memory", "max_batch_size": 1, "max_concurrency": 1, "max_retries": 3, "dead_letter_queue": "dahlia-memory-dlq" },
-      {
-        "queue": "dahlia-summary",
-        "max_batch_size": 1,
-        "max_concurrency": 1,
-        "max_retries": 3,
-        "dead_letter_queue": "dahlia-summary-dlq"
-      },
-      {
-        "queue": "dahlia-image",
-        "max_batch_size": 1,
-        "max_concurrency": 1,
-        "max_retries": 3,
-        "dead_letter_queue": "dahlia-image-dlq"
-      },
-      {
-        "queue": "dahlia-search",
-        "max_batch_size": 1,
-        "max_concurrency": 1,
-        "max_retries": 3,
-        "dead_letter_queue": "dahlia-search-dlq"
-      }
-    ]
+    "producers": [{ "binding": "DAHLIA_JOB_QUEUE", "queue": "dahlia-jobs" }],
+    "consumers": [{ "queue": "dahlia-jobs", "max_batch_size": 1, "max_concurrency": 1,
+      "max_retries": 3, "dead_letter_queue": "dahlia-jobs-dlq" }]
   }
 }
