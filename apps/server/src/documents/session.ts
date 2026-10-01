@@ -42,12 +42,12 @@ export class DocumentSession {
     return this.ordered(async () => {
       const version = incoming?.refreshed ? { generation: incoming.generation, revision: incoming.revision }
         : incoming ? documentReplyVersion(this, incoming) : { generation: this.generation, revision: this.revision };
-      const preview = new DocumentCore(this.core.checkpoint());
+      const preview = new DocumentCore(this.core.checkpoint(false));
       try {
-        const before = preview.projection();
+        const before = preview.projection(false);
         preview.apply(update);
-        const projection = preview.projection();
-        const checkpoint = preview.checkpoint();
+        const projection = preview.projection(local);
+        const checkpoint = preview.checkpoint(local);
         const blocks = removedBlocks(before, projection);
         const recovery: DocumentRecovery | null = !local && this.hasLocalEdits && blocks.length
           ? { id: this.host.newID(), blocks, reason: "concurrent_delete" } : null;

@@ -6,7 +6,7 @@ import type { Identity } from "../auth/identity";
 import type { createContentEncryption } from "../encryption/store";
 import { RequestError } from "../storage/upload";
 import { uuidV7 } from "../id";
-import { DocumentCore, documentStateLimit, emptyDocumentUpdate, removedBlocks, type DocumentRecovery } from "./core";
+import { DocumentCore, documentSchemaVersion, documentStateLimit, emptyDocumentUpdate, removedBlocks, type DocumentRecovery } from "./core";
 import { documentRecoveryPageBytes } from "./model";
 
 type DocumentRow = typeof Schema.document.$inferSelect;
@@ -32,6 +32,7 @@ export function createDocumentStore(db: NodePgDatabase, schema: typeof Schema, i
   content: ReturnType<typeof createContentEncryption>, lockWorkspace: (id: string) => Promise<void>,
   access: { read: (column: AnyColumn) => SQL | undefined; write: (column: AnyColumn) => SQL | undefined },
   locks: SyncLocks,
+  deletionGraceHours = 24,
 ): DocumentStore {
   async function authorizeParent(workspaceId: string, meetingId: string | null, write = false) {
     await lockWorkspace(workspaceId);
@@ -69,6 +70,7 @@ export function createDocumentStore(db: NodePgDatabase, schema: typeof Schema, i
     const table = schema.document;
     const [row] = await content.read(table, await db.select().from(table).where(and(eq(table.id, id), eq(table.workspaceId, workspaceId))));
     if (!row) return null;
+    if (row.schemaVersion !== documentSchemaVersion) throw new RequestError(422, "unsupported_document_schema");
     const core = new DocumentCore(row.checkpoint);
     try {
       const updates = await content.read(schema.documentUpdate, await db.select().from(schema.documentUpdate).where(and(
@@ -81,7 +83,7 @@ export function createDocumentStore(db: NodePgDatabase, schema: typeof Schema, i
     } catch (error) { core.destroy(); throw error; }
   }
   const shared = (row: DocumentRow, core: DocumentCore): SharedDocument => ({ id: row.id, workspaceId: row.workspaceId,
-    meetingId: row.meetingId, kind: row.kind, title: row.title, schemaVersion: row.schemaVersion, generation: row.generation, revision: row.revision,
+    meetingId: row.meetingId, kind: row.kind, title: row.title, schemaVersion: documentSchemaVersion, generation: row.generation, revision: row.revision,
     text: row.text, checkpoint: core.checkpoint(), createdAt: row.createdAt, updatedAt: row.updatedAt });
   async function recordRecovery(workspaceId: string, id: string, recovery: DocumentRecovery) {
     const table = schema.documentRecovery;
@@ -99,7 +101,12 @@ export function createDocumentStore(db: NodePgDatabase, schema: typeof Schema, i
       if (core.stateBytes() > documentStateLimit) throw new Error("document_too_large");
       return core.projection();
     }
-    catch { throw new RequestError(400, "invalid_document_content"); }
+    catch (error) { throw documentError(error, "invalid_document_content"); }
+  }
+  function documentError(error: unknown, fallback = "invalid_document_update") {
+    const code = error instanceof Error ? error.message : fallback;
+    return new RequestError(code === "unsupported_document_schema" ? 422 : 400,
+      ["unsupported_document_schema", "invalid_document_update", "document_too_large"].includes(code) ? code : fallback);
   }
   async function initializeDocument(workspaceId: string, id: string, metadata: DocumentMetadata) {
     const { meetingId, kind, title, legacyUpdate } = metadata;
@@ -113,7 +120,7 @@ export function createDocumentStore(db: NodePgDatabase, schema: typeof Schema, i
       try {
         if (legacyUpdate) {
           let imported: DocumentCore;
-          try { imported = new DocumentCore(legacyUpdate); } catch { throw new RequestError(400, "invalid_document_content"); }
+          try { imported = new DocumentCore(legacyUpdate); } catch (error) { throw documentError(error, "invalid_document_content"); }
           try {
             validProjection(imported);
             if (emptyDocumentUpdate(imported.difference(existing.core.vector()))) return shared(existing.row, existing.core);
@@ -127,11 +134,11 @@ export function createDocumentStore(db: NodePgDatabase, schema: typeof Schema, i
     const core = new DocumentCore();
     try {
       if (legacyUpdate) {
-        try { core.apply(legacyUpdate); validProjection(core); core.repairBlockIDs(uuidV7); validProjection(core); }
-        catch { throw new RequestError(400, "invalid_document_content"); }
+        try { core.apply(legacyUpdate); validProjection(core); }
+        catch (error) { throw documentError(error, "invalid_document_content"); }
       }
       const now = new Date(), revision = legacyUpdate ? 1 : 0;
-      const row = { id, workspaceId, meetingId, kind, title: existing?.row.title ?? title, schemaVersion: 1, generation: existing?.row.generation ?? uuidV7(),
+      const row = { id, workspaceId, meetingId, kind, title: existing?.row.title ?? title, schemaVersion: documentSchemaVersion, generation: existing?.row.generation ?? uuidV7(),
         revision, checkpointRevision: revision, projectionRevision: revision, checkpoint: core.checkpoint(),
         text: validProjection(core).text, createdAt: existing?.row.createdAt ?? now, updatedAt: now, encryptedPayload: null };
       const values = await content.write(schema.document, row);
@@ -203,15 +210,20 @@ export function createDocumentStore(db: NodePgDatabase, schema: typeof Schema, i
       const { row, core } = loaded;
       try {
         if (request.generation !== row.generation) throw new RequestError(409, "document_generation_changed");
-        const before = validProjection(core), checkpoint = core.checkpoint(), vector = core.vector();
+        const before = core.projection(false), checkpoint = core.checkpoint(false), vector = core.vector();
         let difference: string;
+        let blocks: DocumentRecovery["blocks"] = [];
         try {
-          if (request.update) { core.apply(request.update); validProjection(core); core.repairBlockIDs(uuidV7); validProjection(core); }
+          if (request.update) {
+            core.apply(request.update);
+            blocks = removedBlocks(before, core.projection(false));
+            core.purgeDeletedBlocks(Date.now() - deletionGraceHours * 60 * 60 * 1000);
+            validProjection(core);
+          }
           difference = core.difference(request.vector);
-        } catch { throw new RequestError(400, "invalid_document_update"); }
+        } catch (error) { throw documentError(error); }
         if (request.update && core.checkpoint() !== checkpoint) {
           const projection = validProjection(core), revision = row.revision + 1;
-          const blocks = removedBlocks(before, projection);
           if (blocks.length) await recordRecovery(workspaceId, id, { id: uuidV7(), reason: "deleted", blocks });
           const now = new Date();
           await db.insert(schema.documentUpdate).values(await content.write(schema.documentUpdate,

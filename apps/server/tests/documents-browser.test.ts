@@ -1,15 +1,107 @@
+import oldFixture from "./fixtures/documents-v1.json";
 import { SyncNotifications } from "../src/client/sync-notifications";
 import { afterEach, expect, it, vi } from "vitest";
+import { Editor } from "@tiptap/core";
 import * as Y from "yjs";
 import { BrowserDocument } from "../src/client/Documents";
-import { DocumentCore, documentFragment } from "../src/documents/core";
+import { DocumentCore, type DocumentRecovery } from "../src/documents/core";
+import { firstText, deleteFirst } from "./fixtures/document-helpers";
 import { encodeId } from "../src/typeid";
 import { uuidV7 } from "../src/id";
 import { RequestError } from "../src/client/api";
+import { documentEditorOptions } from "../src/documents/editor";
 
 const api = vi.hoisted(() => ({ getSession: vi.fn(), getDocument: vi.fn(), getMeetingNotes: vi.fn(), initializeMeetingNotes: vi.fn(), exchangeDocument: vi.fn(), listDocumentRecoveries: vi.fn(), getDocumentPresence: vi.fn(), saveDocumentRecovery: vi.fn() }));
 vi.mock("../src/client/generated-operations", () => ({ apiOperations: api, apiUrls: { getEvents: () => "/events" } }));
 afterEach(() => { vi.useRealTimers(); vi.unstubAllGlobals(); vi.clearAllMocks(); });
+
+it("retains post-purge IME recovery across editor detach and failed upload", async () => {
+  vi.useFakeTimers();
+  const server = new DocumentCore(); server.insertText("日本語\ntail", uuidV7);
+  const user = encodeId("user", uuidV7()), workspace = encodeId("workspace", uuidV7()), generation = uuidV7();
+  const initial = { id: encodeId("document", uuidV7()), meetingId: encodeId("meeting", uuidV7()), workspaceId: workspace,
+    kind: "notes" as const, title: "", generation, revision: 0, schemaVersion: 2 as const, checkpoint: server.checkpoint(), text: "日本語\ntail",
+    createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() };
+  api.getSession.mockResolvedValue({ user: { id: user } });
+  api.listDocumentRecoveries.mockResolvedValue({ items: [], nextCursor: null });
+  api.getDocumentPresence.mockResolvedValue({ items: [] });
+  api.saveDocumentRecovery.mockRejectedValue(new Error("recovery offline"));
+  api.exchangeDocument.mockImplementation(async ({ body }: { body: { update?: string; vector: string } }) => {
+    if (body.update) server.apply(body.update);
+    return { generation, revision: 1, update: server.difference(body.vector) };
+  });
+  vi.stubGlobal("window", { addEventListener() {}, removeEventListener() {} });
+  vi.stubGlobal("EventSource", class { addEventListener() {} close() {} });
+  const controller = new BrowserDocument(user, workspace, initial.meetingId, initial);
+  const release = controller.retainView();
+  // A headless Editor must be created without a browser global (no DOM is needed).
+  vi.unstubAllGlobals();
+  const editor = new Editor({ ...documentEditorOptions(controller.editorDocument, true, "", undefined, controller.preserveEditorRecovery), element: null });
+  editor.view.updateState(editor.state.reconfigure({ plugins: editor.extensionManager.plugins }));
+  vi.stubGlobal("window", { addEventListener() {}, removeEventListener() {} });
+  editor.commands.setTextSelection(2);
+  const view = editor.view;
+  const composing = vi.spyOn(editor, "view", "get").mockReturnValue(new Proxy(view, { get: (target, key): unknown => key === "composing" ? true : Reflect.get(target, key) as unknown }));
+  const saves: Promise<void>[] = [];
+  const edited = (update: Uint8Array, origin: unknown) => { if (origin !== "remote") saves.push(controller.editFromEditor(update)); };
+  controller.editorDocument.on("update", edited);
+  try {
+    deleteFirst(server); server.purgeDeletedBlocks(Date.now() + 1);
+    await controller.sync();
+    editor.commands.insertContent({ type: "text", text: "確定" });
+    await Promise.all(saves);
+    expect([...controller.recoveries.values()].map((entry) => entry.blocks.map((block) => block.text))).toEqual([["日確定本語"]]);
+    composing.mockRestore(); editor.destroy(); controller.editorDocument.off("update", edited); release();
+    await expect(controller.flush()).rejects.toThrow("recovery offline");
+    expect(controller.hasUnsent()).toBe(true);
+    api.saveDocumentRecovery.mockResolvedValue({});
+    await controller.flush();
+    expect(controller.hasUnsent()).toBe(false);
+    expect(server.projection().text).toBe("tail");
+    const saved = api.saveDocumentRecovery.mock.calls.at(-1)![0] as { body: DocumentRecovery };
+    expect(saved.body.blocks[0]?.text).toBe("日確定本語");
+  } finally { composing.mockRestore(); editor.destroy(); controller.stop(); server.destroy(); }
+});
+
+it.each([false, true])("retains offline input after physical purge, including queued local save and recovery upload retry (queued=%s)", async (queued) => {
+  vi.useFakeTimers();
+  vi.stubGlobal("window", { addEventListener() {}, removeEventListener() {} });
+  vi.stubGlobal("EventSource", class { addEventListener() {} close() {} });
+  const server = new DocumentCore(); server.insertText("seed", uuidV7);
+  const user = encodeId("user", uuidV7()), workspace = encodeId("workspace", uuidV7()), generation = uuidV7();
+  const initial = { id: encodeId("document", uuidV7()), meetingId: encodeId("meeting", uuidV7()), workspaceId: workspace,
+    kind: "notes" as const, title: "", generation, revision: 0, schemaVersion: 2 as const, checkpoint: server.checkpoint(), text: "seed",
+    createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() };
+  api.getSession.mockResolvedValue({ user: { id: user } });
+  api.listDocumentRecoveries.mockResolvedValue({ items: [], nextCursor: null });
+  api.getDocumentPresence.mockResolvedValue({ items: [] });
+  api.saveDocumentRecovery.mockRejectedValue(new Error("recovery offline"));
+  api.exchangeDocument.mockImplementation(async ({ body }: { body: { update?: string; vector: string } }) => {
+    if (body.update) server.apply(body.update);
+    return { generation, revision: 1, update: server.difference(body.vector) };
+  });
+  const controller = new BrowserDocument(user, workspace, initial.meetingId, initial);
+  controller.listeners.add(() => {});
+  try {
+    const vector = Y.encodeStateVector(controller.editorDocument);
+    firstText(controller.editorDocument).insert(4, " OFFLINE");
+    const saving = controller.editFromEditor(Y.encodeStateAsUpdate(controller.editorDocument, vector));
+    if (!queued) await saving;
+    deleteFirst(server); server.purgeDeletedBlocks(Date.now() + 1);
+    if (queued) await controller.session.accept(server.checkpoint(), false, { generation, revision: 1 });
+    await saving;
+    await expect(controller.flush()).rejects.toThrow("recovery offline");
+    expect(controller.hasUnsent()).toBe(true);
+    expect([...controller.recoveries.values()].map((recovery) => recovery.blocks.map((block) => block.text))).toEqual([["seed OFFLINE"]]);
+    expect(server.projection().text).toBe("");
+    api.saveDocumentRecovery.mockResolvedValue({});
+    await controller.flush();
+    expect(controller.hasUnsent()).toBe(false);
+    const saved = api.saveDocumentRecovery.mock.calls.at(-1)![0] as { body: DocumentRecovery };
+    expect(saved.body.reason).toBe("concurrent_delete");
+    expect(saved.body.blocks.map((block) => block.text)).toEqual(["seed OFFLINE"]);
+  } finally { controller.stop(); server.destroy(); }
+});
 
 it.each([false, true])("refreshes a restored document generation without acknowledging rejected edits (pending=%s)", async (pending) => {
   vi.useFakeTimers();
@@ -18,7 +110,7 @@ it.each([false, true])("refreshes a restored document generation without acknowl
   const server = new DocumentCore(); server.insertText("seed", uuidV7);
   const user = encodeId("user", uuidV7()), workspace = encodeId("workspace", uuidV7()), meetingId = uuidV7(), oldGeneration = uuidV7(), generation = uuidV7();
   const initial = { id: encodeId("document", uuidV7()), meetingId: encodeId("meeting", meetingId), workspaceId: workspace,
-    kind: "notes" as const, title: "", generation: oldGeneration, revision: 9, schemaVersion: 1 as const, checkpoint: server.checkpoint(), text: "seed",
+    kind: "notes" as const, title: "", generation: oldGeneration, revision: 9, schemaVersion: 2 as const, checkpoint: server.checkpoint(), text: "seed",
     createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() };
   api.getSession.mockResolvedValue({ user: { id: user } });
   api.exchangeDocument.mockImplementation(async ({ body }: { body: { generation: string; update?: string; vector: string } }) => {
@@ -32,7 +124,7 @@ it.each([false, true])("refreshes a restored document generation without acknowl
   controller.listeners.add(() => {});
   const edit = async (value: string) => {
     const vector = Y.encodeStateVector(controller.editorDocument);
-    const text = (controller.editorDocument.getXmlFragment(documentFragment).get(0) as Y.XmlElement).get(0) as Y.XmlText;
+    const text = firstText(controller.editorDocument);
     text.insert(text.length, value);
     await controller.editFromEditor(Y.encodeStateAsUpdate(controller.editorDocument, vector));
   };
@@ -72,13 +164,13 @@ it("retains a rejected browser draft across detach/sync and merges corrective ed
   api.getDocumentPresence.mockResolvedValue({ items: [] });
   const controller = new BrowserDocument(user, workspace, encodeId("meeting", meetingId), {
     id: encodeId("document", uuidV7()), meetingId: encodeId("meeting", meetingId), workspaceId: workspace,
-    kind: "notes" as const, title: "", generation, revision: 1, schemaVersion: 1, checkpoint: server.checkpoint(), text: "seed", createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(),
+    kind: "notes" as const, title: "", generation, revision: 1, schemaVersion: 2, checkpoint: server.checkpoint(), text: "seed", createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(),
   });
   const replace = (value: string) => {
     let update: Uint8Array = new Uint8Array();
     const listener = (bytes: Uint8Array) => { update = bytes; };
     controller.editorDocument.on("update", listener);
-    const text = (controller.editorDocument.getXmlFragment(documentFragment).get(0) as Y.XmlElement).get(0) as Y.XmlText;
+    const text = firstText(controller.editorDocument);
     controller.editorDocument.transact(() => { text.delete(0, text.length); text.insert(0, value); });
     controller.editorDocument.off("update", listener);
     return update;
@@ -132,66 +224,22 @@ it("uses the canonical Notes ID after an offline first edit loses the initializa
   } finally { controller.stop(); server.destroy(); edited.destroy(); }
 });
 
-// Allow shared CI workers time for the repeated multi-MiB merges in this full lifecycle test.
-it.each(["accumulated", "single"])("keeps the accepted state valid and syncs a correction after an oversized %s rich-text edit", async (mode) => {
+it("rejects v1 remote data without acknowledging local changes", async () => {
   vi.useFakeTimers();
   vi.stubGlobal("window", { addEventListener() {}, removeEventListener() {} });
   vi.stubGlobal("EventSource", class { addEventListener() {} close() {} });
-  const server = new DocumentCore(); server.insertText("seed", uuidV7);
-  const userId = encodeId("user", uuidV7()), workspaceId = encodeId("workspace", uuidV7());
-  const meetingId = encodeId("meeting", uuidV7()), generation = uuidV7();
-  const controller = new BrowserDocument(userId, workspaceId, meetingId, {
-    id: encodeId("document", uuidV7()), meetingId, workspaceId, kind: "notes", title: "", generation,
-    revision: 1, schemaVersion: 1, checkpoint: server.checkpoint(), text: "seed", createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(),
-  });
-  controller.listeners.add(() => {});
-  api.getSession.mockResolvedValue({ user: { id: userId } });
-  api.exchangeDocument.mockImplementation(async ({ body }: { body: { update?: string; vector: string } }) => {
-    if (body.update) server.apply(body.update);
-    return { generation, revision: 2, update: server.difference(body.vector) };
-  });
-  api.listDocumentRecoveries.mockResolvedValue({ items: [], nextCursor: null });
-  api.getDocumentPresence.mockResolvedValue({ items: [] });
-  const fragment = controller.editorDocument.getXmlFragment(documentFragment);
-  // The real collaborative editor keeps deleted structs in its Undo history.
-  const undo = new Y.UndoManager(fragment, { captureTimeout: 0 });
-  const edit = (work: () => void) => {
-    let update: Uint8Array = new Uint8Array();
-    const listener = (bytes: Uint8Array) => { update = bytes; };
-    controller.editorDocument.on("update", listener);
-    controller.editorDocument.transact(work);
-    controller.editorDocument.off("update", listener);
-    return controller.editFromEditor(update);
-  };
-  const appendRichText = (bytes: number) => edit(() => {
-    const paragraph = new Y.XmlElement("paragraph"), text = new Y.XmlText();
-    paragraph.setAttribute("id", uuidV7());
-    text.insert(0, "linked", { link: { href: `https://example.invalid/${"x".repeat(bytes)}` } });
-    paragraph.insert(0, [text]); fragment.insert(fragment.length, [paragraph]);
-  });
+  const controller = new BrowserDocument(encodeId("user", uuidV7()), encodeId("workspace", uuidV7()), encodeId("meeting", uuidV7()), null);
+  api.getSession.mockResolvedValue({ user: { id: controller.userId } });
+  const edited = new DocumentCore(); edited.insertText("retained", uuidV7);
+  api.initializeMeetingNotes.mockResolvedValue({ document: { id: encodeId("document", uuidV7()), generation: uuidV7() } });
+  api.exchangeDocument.mockResolvedValue({ generation: uuidV7(), revision: 1, update: oldFixture.checkpoint });
   try {
-    if (mode === "accumulated") { await appendRichText(4 * 1024 * 1024); await controller.flush(); }
-    const accepted = controller.session.core.checkpoint(), acceptedText = server.projection().text;
-    await expect(appendRichText((mode === "single" ? 8 : 4) * 1024 * 1024)).rejects.toThrow();
-    expect(controller.session.core.checkpoint()).toBe(accepted);
-    expect(controller.pending).toHaveLength(0);
-    controller.releaseIfIdle();
-    await controller.sync();
-    expect(controller.copyText()).toBe(`${acceptedText}\nlinked`);
-    expect(server.projection().text).toBe(acceptedText);
-    await expect(controller.flush()).rejects.toThrow();
-    await edit(() => {
-      fragment.delete(fragment.length - 1, 1);
-      const text = (fragment.get(0) as Y.XmlElement).get(0) as Y.XmlText;
-      text.insert(text.length, " corrected");
-    });
-    await controller.flush();
-    expect(controller.hasUnsent()).toBe(false);
-    expect(server.projection().text).toBe(acceptedText.replace("seed", "seed corrected"));
-    expect(server.document.store.pendingStructs).toBeNull();
-  } finally { undo.destroy(); controller.stop(); server.destroy(); }
-}, 30_000);
-
+    const update = Y.encodeStateAsUpdate(edited.document); Y.applyUpdate(controller.editorDocument, update);
+    await controller.editFromEditor(update);
+    await expect(controller.flush()).rejects.toThrow("unsupported_document_schema");
+    expect(controller.hasUnsent()).toBe(true); expect(controller.copyText()).toBe("retained");
+  } finally { controller.stop(); edited.destroy(); }
+});
 
 it("sends continuous typing within 100ms and receives invalidations while auxiliary reads are stalled", async () => {
   vi.useFakeTimers();
@@ -204,7 +252,7 @@ it("sends continuous typing within 100ms and receives invalidations while auxili
   const server = new DocumentCore(); server.insertText("seed", uuidV7);
   const user = encodeId("user", uuidV7()), workspace = encodeId("workspace", uuidV7()), generation = uuidV7();
   const initial = { id: encodeId("document", uuidV7()), meetingId: encodeId("meeting", uuidV7()), workspaceId: workspace,
-    kind: "notes" as const, title: "", generation, revision: 0, schemaVersion: 1 as const, checkpoint: server.checkpoint(), text: "seed",
+    kind: "notes" as const, title: "", generation, revision: 0, schemaVersion: 2 as const, checkpoint: server.checkpoint(), text: "seed",
     createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() };
   const controllers = [0, 1].map(() => new BrowserDocument(user, workspace, initial.meetingId, initial, true, new SyncNotifications()));
   controllers.forEach((controller) => controller.listeners.add(() => {}));
@@ -221,7 +269,7 @@ it("sends continuous typing within 100ms and receives invalidations while auxili
   api.getDocumentPresence.mockImplementation(async () => { await blocked; return { items: [] }; });
   const edit = async (value: string) => {
     const doc = controllers[0]!.editorDocument, vector = Y.encodeStateVector(doc);
-    const text = (doc.getXmlFragment(documentFragment).get(0) as Y.XmlElement).get(0) as Y.XmlText;
+    const text = firstText(doc);
     text.insert(text.length, value); await controllers[0]!.editFromEditor(Y.encodeStateAsUpdate(doc, vector));
   };
   const releases = controllers.map((controller) => controller.retainView());
@@ -288,7 +336,7 @@ it("unsubscribes a closed view while preserving and retrying its unsent conflict
   const server = new DocumentCore(); server.insertText("seed", uuidV7);
   const user = encodeId("user", uuidV7()), workspace = encodeId("workspace", uuidV7()), generation = uuidV7();
   const initial = { id: encodeId("document", uuidV7()), meetingId: encodeId("meeting", uuidV7()), workspaceId: workspace,
-    kind: "notes" as const, title: "", generation, revision: 0, schemaVersion: 1 as const, checkpoint: server.checkpoint(), text: "seed",
+    kind: "notes" as const, title: "", generation, revision: 0, schemaVersion: 2 as const, checkpoint: server.checkpoint(), text: "seed",
     createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() };
   api.exchangeDocument.mockImplementation(async ({ body }: { body: { vector: string; update?: string } }) => {
     if (body.update) server.apply(body.update);
@@ -301,9 +349,9 @@ it("unsubscribes a closed view while preserving and retrying its unsent conflict
   try {
     await vi.advanceTimersByTimeAsync(0);
     const doc = controller.editorDocument, vector = Y.encodeStateVector(doc);
-    ((doc.getXmlFragment(documentFragment).get(0) as Y.XmlElement).get(0) as Y.XmlText).insert(4, " pending");
+    firstText(doc).insert(4, " pending");
     await controller.editFromEditor(Y.encodeStateAsUpdate(doc, vector));
-    server.document.getXmlFragment(documentFragment).delete(0, 1);
+    deleteFirst(server.document);
     await controller.session.accept(server.checkpoint(), false);
     release(); expect(close).toHaveBeenCalledOnce(); expect(controller.hasUnsent()).toBe(true);
     await vi.advanceTimersByTimeAsync(100);
@@ -326,7 +374,7 @@ it.each(["sync", "flush"] as const)("rearms Notes hints after %s recovers access
   const server = new DocumentCore(); server.insertText("seed", uuidV7);
   const user = encodeId("user", uuidV7()), workspace = encodeId("workspace", uuidV7()), meeting = encodeId("meeting", uuidV7()), generation = uuidV7();
   const initial = { id: encodeId("document", uuidV7()), meetingId: meeting, workspaceId: workspace,
-    kind: "notes" as const, title: "", generation, revision: 1, schemaVersion: 1 as const, checkpoint: server.checkpoint(), text: "seed",
+    kind: "notes" as const, title: "", generation, revision: 1, schemaVersion: 2 as const, checkpoint: server.checkpoint(), text: "seed",
     createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() };
   const notifications = new SyncNotifications(), stopDomain = notifications.subscribeDomain(user, () => {});
   const controller = new BrowserDocument(user, workspace, meeting, initial, true, notifications);
@@ -353,7 +401,7 @@ it.each(["sync", "flush"] as const)("rearms Notes hints after %s recovers access
     expect(Source.instances).toHaveLength(removed);
     await recover(); await vi.advanceTimersByTimeAsync(1);
     expect(Source.instances).toHaveLength(removed + 1);
-    const text = (server.document.getXmlFragment(documentFragment).get(0) as Y.XmlElement).get(0) as Y.XmlText;
+    const text = firstText(server.document);
     text.insert(text.length, " remote"); revision++;
     hint(Source.instances.at(-1)!, false); await vi.advanceTimersByTimeAsync(1);
     expect(controller.copyText()).toBe("seed remote");

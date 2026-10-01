@@ -2,7 +2,8 @@ import { syncNotifications } from "../src/client/sync-notifications";
 import { afterEach, expect, it, vi } from "vitest";
 import * as Y from "yjs";
 import { BrowserDocument, MeetingNotes, finishBrowserDocuments } from "../src/client/Documents";
-import { DocumentCore, documentFragment } from "../src/documents/core";
+import { DocumentCore } from "../src/documents/core";
+import { firstText } from "./fixtures/document-helpers";
 import { encodeId } from "../src/typeid";
 import { uuidV7 } from "../src/id";
 
@@ -34,10 +35,10 @@ function setup() {
   const server = new DocumentCore(); server.insertText("seed", uuidV7);
   const user = encodeId("user", uuidV7()), workspaceId = encodeId("workspace", uuidV7()), id = uuidV7();
   const meetingId = encodeId("meeting", id), generation = uuidV7();
-  const document = { id: encodeId("document", uuidV7()), workspaceId, meetingId, kind: "notes" as const, title: "", generation, revision: 1, schemaVersion: 1,
+  const document = { id: encodeId("document", uuidV7()), workspaceId, meetingId, kind: "notes" as const, title: "", generation, revision: 1, schemaVersion: 2,
     checkpoint: server.checkpoint(), text: "seed", createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() };
   api.getSession.mockResolvedValue({ user: { id: user } });
-  api.getCapabilities.mockResolvedValue({ documents: { version: 1 } });
+  api.getCapabilities.mockResolvedValue({ documents: { version: 2 } });
   api.getMeetingNotes.mockResolvedValue({ document });
   api.exchangeDocument.mockImplementation(async ({ body }: { body: { update?: string; vector: string } }) => {
     if (body.update) server.apply(body.update);
@@ -90,7 +91,7 @@ it.each([false, true])("keeps overlapping Notes loads alive until the last view 
     expect(f.close).not.toHaveBeenCalled();
     if (pending) {
       const vector = Y.encodeStateVector(controller.editorDocument);
-      const text = (controller.editorDocument.getXmlFragment(documentFragment).get(0) as Y.XmlElement).get(0) as Y.XmlText;
+      const text = firstText(controller.editorDocument);
       text.insert(text.length, " pending");
       await controller.editFromEditor(Y.encodeStateAsUpdate(controller.editorDocument, vector));
     }

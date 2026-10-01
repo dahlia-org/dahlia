@@ -8,7 +8,7 @@ struct DocumentRecord: Codable, FetchableRecord, PersistableRecord, Sendable {
     var meetingId: UUID?
     var kind = "notes"
     var title = ""
-    var schemaVersion = 1
+    var schemaVersion = 2
     var revision = 0
     var generation: UUID?
     var checkpoint: String

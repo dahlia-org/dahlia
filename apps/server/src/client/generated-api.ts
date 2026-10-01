@@ -2351,7 +2351,7 @@ export interface components {
             kind: "notes" | "summary" | "general";
             title: string;
             /** @enum {number} */
-            schemaVersion: 1;
+            schemaVersion: 2;
             generation: string;
             revision: number;
             checkpoint: string;

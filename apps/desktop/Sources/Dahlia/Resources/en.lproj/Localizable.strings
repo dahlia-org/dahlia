@@ -469,7 +469,7 @@
 /* Detail Tabs */
 "Summary" = "Summary";
 "Notes" = "Notes";
-"NotesPlaceholder" = "Add your private notes...";
+"NotesPlaceholder" = "Add notes...";
 "Screenshots" = "Screenshots";
 "Meeting Content" = "Meeting Content";
 "Transcript" = "Transcript";
@@ -1748,11 +1748,6 @@
 "document.restore" = "Insert as new paragraphs";
 "document.editing" = "Editing: ";
 "document.keepLocal" = "Unsynced edits or private notes remain. Move this workspace to the Local Account to keep them.";
-"document.bold" = "Bold";
-"document.heading" = "Heading";
-"document.list" = "List";
-"document.undo" = "Undo";
-"document.redo" = "Redo";
 "document.privateRecoverySaved" = "Your input was saved in a recovery copy on this Mac, available in Workspace settings.";
 
 "Reconnect to existing meetings" = "Reconnect to existing meetings";
@@ -1767,3 +1762,5 @@
 "sync.fetchSnapshot" = "Fetch from Server";
 
 "Local recordings from reconnection" = "Local recordings from reconnection";
+"documentUnsupportedSchema" = "This older Notes format is not supported. Your data remains on this device.";
+"documentTooLarge" = "This edit exceeds the Notes limit. Reduce the content or synchronize before retrying.";

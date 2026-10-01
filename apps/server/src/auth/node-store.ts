@@ -54,6 +54,7 @@ export function createNodeApplicationStore(
         config.localSingleUser,
         config.autoCreateOrgOnSignup,
         syncEvents,
+        config.documentDeletionGraceHours,
       ),
       aiHistory: createAiHistoryService(connection.pool),
       chatMemoryStore: config.chatMemoryModel ? new ChatMemoryStore(connection.pool) : undefined,
@@ -119,6 +120,8 @@ export function createNodeApplicationStore(
     config.authProviderId,
     config.localSingleUser,
     config.autoCreateOrgOnSignup,
+    undefined,
+    config.documentDeletionGraceHours,
   );
   const applyMigrationQueries = (queries: string[]) => {
     for (const query of queries) database.exec(query);

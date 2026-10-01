@@ -9,6 +9,12 @@ const accounts = {
 };
 
 describe("configuration", () => {
+  it("validates the document deletion grace period", () => {
+    expect(loadConfig(accounts).documentDeletionGraceHours).toBe(24);
+    expect(loadConfig({ ...accounts, DAHLIA_DOCUMENT_DELETION_GRACE_HOURS: "0" }).documentDeletionGraceHours).toBe(0);
+    expect(loadConfig({ ...accounts, DAHLIA_DOCUMENT_DELETION_GRACE_HOURS: "48" }).documentDeletionGraceHours).toBe(48);
+    for (const value of ["-1", "8761", "NaN", "Infinity"]) expect(() => loadConfig({ ...accounts, DAHLIA_DOCUMENT_DELETION_GRACE_HOURS: value })).toThrow();
+  });
   it("requires an explicit header-mode grant for Dahlia Memory MCP", () => {
     expect(loadConfig(accounts).memoryMcpAccess).toBe("off");
     for (const access of ["off", "read", "write"]) expect(loadConfig({ ...accounts, DAHLIA_MEMORY_MCP_ACCESS: access }).memoryMcpAccess).toBe(access);

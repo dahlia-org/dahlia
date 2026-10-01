@@ -26,6 +26,7 @@ struct DocumentCoreResult: Codable, Sendable {
     var update: String
     var projection: Projection
     var removed: [DocumentBlock]
+    var purged: Bool?
     struct Batch: Codable, Sendable { var update: String?
         var through: Int64?
     }
@@ -43,13 +44,19 @@ struct DocumentCoreCommand: Encodable, Sendable {
     var updates: [String]?
     var text: String?
     var vector: String?
-    var repair: Bool?
+    var purgeBefore: Double?
+    var local: Bool?
 }
 
 enum DocumentCoreError: LocalizedError {
-    case unavailable, invalidCommand, failed, privateDataRequiresLocalCopy, editPreservedPrivately
+    case unavailable, invalidCommand, failed, unsupportedSchema, tooLarge, privateDataRequiresLocalCopy, editPreservedPrivately
     var errorDescription: String? {
-        self == .privateDataRequiresLocalCopy ? L10n.documentKeepLocal : L10n.documentSaveFailed
+        switch self {
+        case .privateDataRequiresLocalCopy: L10n.documentKeepLocal
+        case .unsupportedSchema: L10n.documentUnsupportedSchema
+        case .tooLarge: L10n.documentTooLarge
+        default: L10n.documentSaveFailed
+        }
     }
 }
 
@@ -161,7 +168,10 @@ final class DocumentCoreWorker: @unchecked Sendable {
                 if let result = entry?.call(withArguments: [work.command]), context.exception == nil, let value = result.toString() {
                     work.continuation.resume(returning: value)
                 } else {
-                    work.continuation.resume(throwing: DocumentCoreError.failed)
+                    let message = context.exception?.toString() ?? ""
+                    let error: DocumentCoreError = message.contains("unsupported_document_schema") ? .unsupportedSchema
+                        : message.contains("document_too_large") ? .tooLarge : .failed
+                    work.continuation.resume(throwing: error)
                 }
             }
         }

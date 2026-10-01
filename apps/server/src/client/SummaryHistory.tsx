@@ -25,7 +25,7 @@ export function SummaryHistory({ meetingId, latest, selected, onSelect }: {
   const metadata = raw ? summaryMetadata(raw) : null;
   const error = versions.error ?? history.error;
   const inputLabels: Record<string, string> = { transcript: uiText("Transcript", "文字起こし"), image: uiText("Images", "画像"),
-    audio: uiText("Audio", "音声"), note: uiText("Notes", "メモ"), context: uiText("Meeting context", "会議情報") };
+    audio: uiText("Audio", "音声"), note: uiText("Notes", "ノート"), context: uiText("Meeting context", "会議情報") };
   const detailLabels: Record<string, string> = { low: uiText("Concise", "簡潔"), medium: uiText("Standard", "標準"),
     high: uiText("Detailed", "詳細"), xhigh: uiText("Event session", "イベントセッション"), max: uiText("Event Play-by-Play", "イベント実況中継") };
   return <div>

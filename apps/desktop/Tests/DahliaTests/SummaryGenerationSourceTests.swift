@@ -224,7 +224,7 @@ import DahliaRuntimeSupport
         }
 
         private static let documentCapabilities = Data("""
-        {"documents":{"version":1},"meetingSummaryGeneration":{"version":2,"sources":["transcript","audio"],"completeRecordings":true}}
+        {"documents":{"version":2},"meetingSummaryGeneration":{"version":2,"sources":["transcript","audio"],"completeRecordings":true}}
         """.utf8)
 
         @Test(arguments: [SummaryGenerationSource.transcript, .audio])
@@ -557,7 +557,7 @@ import DahliaRuntimeSupport
                     if requestNumber == 1 { return (503, [:], Data()) }
                     let sources = audioOnly.withLock { $0 } ? #"["audio"]"# : #"["transcript","audio"]"#
                     return (200, [:], Data("""
-                    {"documents":{"version":1},"meetingSummaryGeneration":{"version":2,"sources":\(sources),"completeRecordings":true}}
+                    {"documents":{"version":2},"meetingSummaryGeneration":{"version":2,"sources":\(sources),"completeRecordings":true}}
                     """.utf8))
                 }
                 if request.url!.path.hasSuffix("/recordings") {

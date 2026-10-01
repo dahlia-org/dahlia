@@ -289,6 +289,12 @@ describe("desktop-style meeting layout", () => {
     expect(html).not.toContain("Hidden transcript");
   });
 
+  it("orders meeting tabs like Desktop", () => {
+    vi.stubGlobal("navigator", { language: "ja-JP" });
+    const html = renderToStaticMarkup(createElement(MeetingTabs, { summary: "", notes: "Notes body", screenshots: "", transcript: "" }));
+    expect([...html.matchAll(/role="tab"[^>]*>([^<]+)</g)].map((match) => match[1])).toEqual(["要約", "ノート", "スクリーンショット", "文字起こし"]);
+  });
+
   it("groups account actions in the footer and keeps Workspace navigation in the sidebar", () => {
     vi.stubGlobal("navigator", { language: "en" });
     const session = { user: { id: "user", name: "Example User" },  capabilities: { sync: true, sharing: true, sessions: true, admin: false } };

@@ -1098,11 +1098,6 @@ enum L10n { // swiftlint:disable:this type_body_length
     static var documentSavedLocally: String { String(localized: "documentSavedLocally", bundle: bundle) }
     static var documentSynced: String { String(localized: "documentSynced", bundle: bundle) }
     static var documentPrivateRecoverySaved: String { String(localized: "document.privateRecoverySaved", bundle: .module) }
-    static var documentBold: String { String(localized: "document.bold", bundle: .module) }
-    static var documentHeading: String { String(localized: "document.heading", bundle: .module) }
-    static var documentList: String { String(localized: "document.list", bundle: .module) }
-    static var documentUndo: String { String(localized: "document.undo", bundle: .module) }
-    static var documentRedo: String { String(localized: "document.redo", bundle: .module) }
     static var documentKeepLocal: String { String(localized: "document.keepLocal", bundle: .module) }
     static var documentRecoveryTitle: String { String(localized: "document.recovery.title", bundle: .module) }
     static var documentRestore: String { String(localized: "document.restore", bundle: .module) }
@@ -1110,6 +1105,8 @@ enum L10n { // swiftlint:disable:this type_body_length
     static var documentSaving: String { String(localized: "documentSaving", bundle: bundle) }
     static var documentSyncFailed: String { String(localized: "documentSyncFailed", bundle: bundle) }
     static var documentSaveFailed: String { String(localized: "documentSaveFailed", bundle: bundle) }
+    static var documentUnsupportedSchema: String { String(localized: "documentUnsupportedSchema", bundle: bundle) }
+    static var documentTooLarge: String { String(localized: "documentTooLarge", bundle: bundle) }
     static var documentPrivateLegacy: String { String(localized: "documentPrivateLegacy", bundle: bundle) }
     static var documentPublishTitle: String { String(localized: "documentPublishTitle", bundle: bundle) }
     static var documentPublishAudience: String { String(localized: "documentPublishAudience", bundle: bundle) }

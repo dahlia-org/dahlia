@@ -219,7 +219,7 @@ actor DocumentSyncService {
             let data = try await api.data(origin: target.origin, connectionId: target.connectionID) {
                 try await $0.getCapabilities().ok.body.json
             }
-            guard try JSONDecoder().decode(ServerCapabilities.self, from: data).documents?.version == 1 else {
+            guard try JSONDecoder().decode(ServerCapabilities.self, from: data).documents?.version == 2 else {
                 throw SyncHTTPError(status: 426, body: Data())
             }
             capableConnections.insert(target.connectionID)

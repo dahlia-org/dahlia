@@ -54,6 +54,7 @@ final class DocumentEditorModel {
     private var detailsTask: Task<Void, Never>?
     private struct Edit {
         let update: String
+        let recovery: String?
         let meetingID: UUID?
         let restoreDraft: Bool
     }
@@ -121,7 +122,7 @@ final class DocumentEditorModel {
             ready = true
             startWatching(generation: generation)
         } catch {
-            if isVisible(generation) { self.error = L10n.documentSaveFailed }
+            if isVisible(generation) { self.error = (error as? DocumentCoreError)?.errorDescription ?? L10n.documentSaveFailed }
         }
     }
 
@@ -196,7 +197,6 @@ final class DocumentEditorModel {
         }
     }
 
-    var editorCommand: (id: UUID, name: String)?
     var focused = false
 
     @discardableResult
@@ -206,11 +206,11 @@ final class DocumentEditorModel {
         return true
     }
 
-    func accept(_ update: String) {
+    func accept(_ update: String, recovery: String? = nil) {
         resolveDraft()
         let restoreDraft = hasUnresolvedDraft && meetingID != nil
         hasUnresolvedDraft = meetingID == nil
-        failedUpdates.append(Edit(update: update, meetingID: meetingID, restoreDraft: restoreDraft))
+        failedUpdates.append(Edit(update: update, recovery: recovery, meetingID: meetingID, restoreDraft: restoreDraft))
         enqueueSave()
     }
 
@@ -225,7 +225,7 @@ final class DocumentEditorModel {
                     do {
                         try await persistence.append(
                             meetingID: next.meetingID ?? documentID, update: next.update, local: true, orphan: orphan,
-                            privateOnly: next.meetingID == nil, restoreDraft: next.restoreDraft
+                            privateOnly: next.meetingID == nil, restoreDraft: next.restoreDraft, recovery: next.recovery
                         )
                         if let meetingID = next.meetingID { await sync.localCommitted(meetingID: meetingID) }
                     } catch DocumentCoreError.editPreservedPrivately {
@@ -311,24 +311,17 @@ struct DocumentEditorView: View {
             }
             if !model.error.isEmpty { Text(model.error).font(.callout).foregroundStyle(.red).textSelection(.enabled) }
             if model.ready {
-                if editable {
-                    HStack {
-                        Button(L10n.documentBold) { model.editorCommand = (.v7(), "bold") }
-                        Button(L10n.documentHeading) { model.editorCommand = (.v7(), "heading") }
-                        Button(L10n.documentList) { model.editorCommand = (.v7(), "list") }
-                        Button(L10n.documentUndo) { model.editorCommand = (.v7(), "undo") }
-                        Button(L10n.documentRedo) { model.editorCommand = (.v7(), "redo") }
-                    }.buttonStyle(.borderless)
-                }
                 DocumentWebEditor(
                     checkpoint: model.checkpoint,
                     receivedUpdate: model.receivedUpdate,
                     editable: editable,
-                    command: model.editorCommand,
                     onUpdate: model.accept,
+                    onError: { model.error = $0 == "document_too_large" ? L10n.documentTooLarge : L10n.documentSaveFailed },
                     onFocus: { model.focused = $0 && editable },
                     onAttachFlush: { model.flushEditor = $0 }
                 )
+                // The page draws its own side insets so the block handle fits in the gutter.
+                .padding(.horizontal, -DahliaDesign.tabContentInset)
             } else {
                 ProgressView().frame(maxWidth: .infinity, maxHeight: .infinity)
             }
@@ -359,8 +352,8 @@ private struct DocumentWebEditor: NSViewRepresentable {
     let checkpoint: String
     let receivedUpdate: String
     let editable: Bool
-    let command: (id: UUID, name: String)?
-    let onUpdate: @MainActor (String) -> Void
+    let onUpdate: @MainActor (String, String?) -> Void
+    let onError: @MainActor (String) -> Void
     let onFocus: @MainActor (Bool) -> Void
     let onAttachFlush: @MainActor (@escaping @MainActor () async throws -> Void) -> Void
 
@@ -403,7 +396,6 @@ private struct DocumentWebEditor: NSViewRepresentable {
         weak var view: WKWebView?
         private var ready = false
         private var lastUpdate = ""
-        private var lastCommand: UUID?
         private var flushing: Task<Void, Error>?
 
         init(parent: DocumentWebEditor) { self.parent = parent }
@@ -414,15 +406,17 @@ private struct DocumentWebEditor: NSViewRepresentable {
             case "ready":
                 ready = true
                 view?.callAsyncJavaScript(
-                    "window.dahliaDocument.open(checkpoint, editable)",
-                    arguments: ["checkpoint": parent.checkpoint, "editable": parent.editable],
+                    "window.dahliaDocument.open(checkpoint, editable, placeholder)",
+                    arguments: ["checkpoint": parent.checkpoint, "editable": parent.editable, "placeholder": L10n.notesPlaceholder],
                     in: nil,
                     in: .page,
                     completionHandler: nil
                 )
                 update()
             case "update":
-                if let update = body["update"] { parent.onUpdate(update) }
+                if let update = body["update"] { parent.onUpdate(update, body["recovery"]) }
+            case "error":
+                if let error = body["message"] { parent.onError(error) }
             case "focus": parent.onFocus(body["focused"] == "true")
             case "link":
                 if let string = body["url"], let url = URL(string: string), ["https", "http", "mailto"].contains(url.scheme?.lowercased() ?? "") {
@@ -437,7 +431,7 @@ private struct DocumentWebEditor: NSViewRepresentable {
             if let flushing { return try await flushing.value }
             let task = Task {
                 let value = try await view.callAsyncJavaScript("return window.dahliaDocument.drain()", arguments: [:], in: nil, contentWorld: .page)
-                if let update = value as? String { parent.onUpdate(update) }
+                if let batch = value as? [String: String], let update = batch["update"] { parent.onUpdate(update, batch["recovery"]) }
             }
             flushing = task
             defer { flushing = nil }
@@ -453,16 +447,6 @@ private struct DocumentWebEditor: NSViewRepresentable {
                 in: .page,
                 completionHandler: nil
             )
-            if let command = parent.command, command.id != lastCommand {
-                lastCommand = command.id
-                view?.callAsyncJavaScript(
-                    "window.dahliaDocument.command(name)",
-                    arguments: ["name": command.name],
-                    in: nil,
-                    in: .page,
-                    completionHandler: nil
-                )
-            }
             guard let view, !parent.receivedUpdate.isEmpty, parent.receivedUpdate != lastUpdate else { return }
             lastUpdate = parent.receivedUpdate
             let render = SyncDiagnostics.begin("DocumentApplyToWebView")
