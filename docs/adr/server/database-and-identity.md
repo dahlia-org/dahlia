@@ -111,7 +111,7 @@ FORCE RLS は backfill transaction 内だけ解除し commit 前に復元する�
 
 ## 運用テーブルと番号の整理（2026-09-09）
 
-PostgreSQL / Lakebase のジョブは `jobs.search_index`、`jobs.storage_delete`、`jobs.image_analysis`、`jobs.summary` に配置する。SQLite は `jobs_*`、Desktop の検索ジョブは `jobs_search_index` を維持する。要約ジョブの暗号化ポリシー・AAD・HMAC purpose は物理名から独立した既存の `jobs_summary` を維持する。未リリース Server の baseline を更新し、既存開発 DB は [データを保持する手順](../../../apps/server/docs/jobs-schema-move.md)で手動移行する。
+PostgreSQL / Lakebase のジョブは `jobs.search_index`、`jobs.storage_delete`、`jobs.image_analysis`、`jobs.summary` に配置する。SQLite は `jobs_*`、Desktop の検索ジョブは `jobs_search_index` を維持する。要約ジョブの暗号化ポリシー・AAD・HMAC purpose は物理名から独立した既存の `jobs_summary` を維持する。当時の開発 DB 用手動移行は[廃止](../../../apps/server/docs/jobs-schema-move.md)した。現行 Server は共通ディスパッチ `jobs.queue` を含む空 DB 用 baseline を使い、既存開発データの移行は提供しない。Desktop の現行検索キューは `jobs_background` に統合し、公開済み DB のデータ変換を維持する。
 
 `recordings` は `meeting_id` を外部キーとし、Workspace は親会議から導出する。PostgreSQL RLS と共通 store の認可をともに親会議経由にし、API の `workspaceId` は維持する。`meeting_events.workspace_id` は会議削除後の履歴認可のため、`meeting_attachments.workspace_id` は同一 Workspace の複合外部キー制約のため維持する。
 
