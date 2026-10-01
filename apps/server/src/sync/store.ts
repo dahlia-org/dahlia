@@ -349,14 +349,14 @@ function createStorageDeleteStore(db: PostgresDatabase, schema: SyncSchema, isPo
     async enqueueStorageDelete(storageKey: string): Promise<void> {
       await db.insert(schema.storageDeleteJob).values({ storageKey }).onConflictDoNothing();
     },
-    async claimStorageDeletes(limit: number) {
+    async claimStorageDeletes(limit: number, storageKey?: string) {
       return db.transaction(async (transaction) => {
         const now = new Date();
         const query = transaction.select({
           storageKey: schema.storageDeleteJob.storageKey,
           attempts: schema.storageDeleteJob.attempts,
         })
-          .from(schema.storageDeleteJob).where(or(
+          .from(schema.storageDeleteJob).where(and(storageKey ? eq(schema.storageDeleteJob.storageKey, storageKey) : undefined, or(
             and(
               inArray(schema.storageDeleteJob.status, ["pending", "failed"]),
               lt(schema.storageDeleteJob.availableAt, new Date(now.getTime() + 1)),
@@ -365,7 +365,7 @@ function createStorageDeleteStore(db: PostgresDatabase, schema: SyncSchema, isPo
               eq(schema.storageDeleteJob.status, "processing"),
               lt(schema.storageDeleteJob.leaseExpiresAt, now),
             ),
-          )).orderBy(asc(schema.storageDeleteJob.availableAt)).limit(limit);
+          ))).orderBy(asc(schema.storageDeleteJob.availableAt)).limit(limit);
         const rows = isPostgres ? await query.for("update", { skipLocked: true }) : await query;
         const keys = rows.map(({ storageKey }) => storageKey);
         if (keys.length) await transaction.update(schema.storageDeleteJob).set({

@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 
 import type { AppConfig } from "../src/config";
 import { createSearchEmbedder, SearchEmbeddingError } from "../src/search/embedding";
-import { processSearchIndexBatch } from "../src/search/node-indexer";
+import { processSearchIndexBatch } from "../src/search/process";
 import { reciprocalRankFusion } from "../src/search/ranking";
 import type { SearchIndexDocumentRecord, SearchIndexStore } from "../src/search/index-store";
 import { MeetingSyncService } from "../src/sync/service";

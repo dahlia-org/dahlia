@@ -34,7 +34,7 @@ describe("Worker initialization", () => {
       DAHLIA_AUTH_TYPE: "header", DAHLIA_STORAGE_BACKEND: "r2", DAHLIA_DATABASE_TYPE: "postgres",
       DAHLIA_DATABASE_URL: "postgresql://dahlia.example/dahlia", DAHLIA_HINDSIGHT_URL: "https://memory.example/api",
       DAHLIA_HINDSIGHT_AUTH: "none",
-      DAHLIA_MEMORY_QUEUE: { send: vi.fn(), sendBatch: vi.fn() },
+      DAHLIA_JOB_QUEUE: { send: vi.fn(), sendBatch: vi.fn() },
       ...(binding ? { IMAGES: { input: vi.fn() } } : {}),
     };
     await expect(initializeWorkerApp({ ...env, DAHLIA_MEMORY_IMAGE_MODEL: "system.ai.gpt-6-luna" }))

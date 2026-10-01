@@ -16,6 +16,7 @@ export default defineConfig({
     index: "src/index.ts",
     migrations: "src/migration-api.ts",
     node: "src/node.ts",
+    "job-worker": "src/job-worker.ts",
     "node-api": "src/node-api.ts",
     worker: "src/worker.ts",
   },

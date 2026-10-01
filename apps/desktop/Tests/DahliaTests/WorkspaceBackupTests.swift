@@ -134,7 +134,7 @@ import GRDB
                 #expect(screenshot.caption == "saved")
                 let analysisJobCount = try Int.fetchOne(
                     db,
-                    sql: "SELECT COUNT(*) FROM jobs_search_index WHERE targetKind = 'screenshotAnalysis' AND targetKey = ?",
+                    sql: "SELECT COUNT(*) FROM jobs_background WHERE targetKind = 'screenshotAnalysis' AND targetKey = ?",
                     arguments: [screenshot.id]
                 )
                 try #require(analysisJobCount == 0)

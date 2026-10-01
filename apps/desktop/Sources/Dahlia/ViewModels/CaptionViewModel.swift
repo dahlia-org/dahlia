@@ -324,7 +324,7 @@ final class CaptionViewModel: ObservableObject {
                 LEFT JOIN sync_entity_state s ON s.workspace_id = v.id AND s.entity = 'file' AND s.entityId = f.id
                 WHERE a.id = ? AND (v.accountConnectionId IS NULL OR s.confirmedRevision > 0) AND NOT (
                     v.accountConnectionId IS NULL AND c.complete = 1 AND (f.remoteReference IS NULL OR f.localReference IS NOT NULL)
-                    AND EXISTS(SELECT 1 FROM jobs_search_index j WHERE j.indexKind = 'fts'
+                    AND EXISTS(SELECT 1 FROM jobs_background j WHERE j.indexKind = 'fts'
                         AND j.targetKind = 'screenshotAnalysis' AND j.targetKey = a.id)
                 )
                 """,
@@ -364,7 +364,7 @@ final class CaptionViewModel: ObservableObject {
             guard let row = try Row.fetchOne(
                 db,
                 sql: """
-                SELECT status, attempts FROM jobs_search_index
+                SELECT status, attempts FROM jobs_background
                 WHERE indexKind = 'fts' AND targetKind = 'screenshotAnalysis' AND targetKey = ?
                 """,
                 arguments: [id]
@@ -715,7 +715,7 @@ final class CaptionViewModel: ObservableObject {
     private var summaryPersistenceRecoveryTask: Task<String?, Never>?
     private var transcriptionEventPipeline: TranscriptionEventPipeline?
     private var liveCaptionEventRelay: LiveCaptionEventRelay?
-    private var searchIndexer: SearchIndexer?
+    private var searchIndexer: BackgroundJobWorker?
     private var batchTranscriptionCoordinator: BatchTranscriptionCoordinator?
     private var batchTranscriptionRecoveryTask: Task<Void, Never>?
     private var activeBatchTelemetrySessionIDs: Set<UUID> = []
@@ -1117,7 +1117,7 @@ final class CaptionViewModel: ObservableObject {
         }
     }
 
-    func configureSearchIndexer(_ searchIndexer: SearchIndexer) {
+    func configureBackgroundJobWorker(_ searchIndexer: BackgroundJobWorker) {
         self.searchIndexer = searchIndexer
     }
 

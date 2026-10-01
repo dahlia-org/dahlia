@@ -21,11 +21,11 @@ describe("configuration", () => {
     expect(() => loadConfig({ ...accounts, DAHLIA_MEMORY_MCP_ACCESS: "all" })).toThrow();
   });
   it("defaults AI job loops to four and bounds them by the pool headroom", () => {
-    expect(loadConfig(accounts).aiJobConcurrency).toBe(4);
-    expect(loadConfig({ ...accounts, DAHLIA_AI_JOB_CONCURRENCY: "" }).aiJobConcurrency).toBe(4);
-    expect(loadConfig({ ...accounts, DAHLIA_AI_JOB_CONCURRENCY: "1" }).aiJobConcurrency).toBe(1);
-    expect(loadConfig({ ...accounts, DAHLIA_AI_JOB_CONCURRENCY: "8" }).aiJobConcurrency).toBe(8);
-    for (const value of ["0", "9", "2.5", "abc"]) expect(() => loadConfig({ ...accounts, DAHLIA_AI_JOB_CONCURRENCY: value })).toThrow();
+    expect(loadConfig(accounts).jobs?.concurrency).toBe("auto");
+    expect(loadConfig({ ...accounts, DAHLIA_JOB_CONCURRENCY: "" }).jobs?.concurrency).toBe("auto");
+    expect(loadConfig({ ...accounts, DAHLIA_JOB_CONCURRENCY: "1" }).jobs?.concurrency).toBe(1);
+    expect(loadConfig({ ...accounts, DAHLIA_JOB_CONCURRENCY: "8" }).jobs?.concurrency).toBe(8);
+    for (const value of ["0", "9", "2.5", "abc"]) expect(() => loadConfig({ ...accounts, DAHLIA_JOB_CONCURRENCY: value })).toThrow();
   });
   it("keeps signup Org provisioning off unless explicitly enabled", () => {
     expect(loadConfig(accounts).autoCreateOrgOnSignup).toBe(false);

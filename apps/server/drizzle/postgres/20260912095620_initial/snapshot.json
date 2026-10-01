@@ -1,7 +1,7 @@
 {
   "version": "8",
   "dialect": "postgres",
-  "id": "e756ae6d-e969-4a1d-a5db-76d04cedacdf",
+  "id": "d8e6691d-8e9d-4059-8d52-72e35c760fd4",
   "prevIds": [
     "00000000-0000-0000-0000-000000000000"
   ],
@@ -21,6 +21,12 @@
     {
       "name": "search",
       "entityType": "schemas"
+    },
+    {
+      "isRlsEnabled": false,
+      "name": "queue",
+      "entityType": "tables",
+      "schema": "jobs"
     },
     {
       "isRlsEnabled": true,
@@ -49,6 +55,12 @@
     {
       "isRlsEnabled": false,
       "name": "image_analysis",
+      "entityType": "tables",
+      "schema": "jobs"
+    },
+    {
+      "isRlsEnabled": false,
+      "name": "dispatch",
       "entityType": "tables",
       "schema": "jobs"
     },
@@ -249,6 +261,175 @@
       "name": "workspace_transfers",
       "entityType": "tables",
       "schema": "app"
+    },
+    {
+      "type": "text",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "id",
+      "entityType": "columns",
+      "schema": "jobs",
+      "table": "queue"
+    },
+    {
+      "type": "text",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "kind",
+      "entityType": "columns",
+      "schema": "jobs",
+      "table": "queue"
+    },
+    {
+      "type": "text",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "owner",
+      "entityType": "columns",
+      "schema": "jobs",
+      "table": "queue"
+    },
+    {
+      "type": "text",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "target",
+      "entityType": "columns",
+      "schema": "jobs",
+      "table": "queue"
+    },
+    {
+      "type": "jsonb",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "reference",
+      "entityType": "columns",
+      "schema": "jobs",
+      "table": "queue"
+    },
+    {
+      "type": "integer",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": "1",
+      "generated": null,
+      "identity": null,
+      "name": "generation",
+      "entityType": "columns",
+      "schema": "jobs",
+      "table": "queue"
+    },
+    {
+      "type": "text",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": "'pending'",
+      "generated": null,
+      "identity": null,
+      "name": "status",
+      "entityType": "columns",
+      "schema": "jobs",
+      "table": "queue"
+    },
+    {
+      "type": "timestamp",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "available_at",
+      "entityType": "columns",
+      "schema": "jobs",
+      "table": "queue"
+    },
+    {
+      "type": "timestamp",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "created_at",
+      "entityType": "columns",
+      "schema": "jobs",
+      "table": "queue"
+    },
+    {
+      "type": "text",
+      "typeSchema": null,
+      "notNull": false,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "lease",
+      "entityType": "columns",
+      "schema": "jobs",
+      "table": "queue"
+    },
+    {
+      "type": "timestamp",
+      "typeSchema": null,
+      "notNull": false,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "lease_until",
+      "entityType": "columns",
+      "schema": "jobs",
+      "table": "queue"
+    },
+    {
+      "type": "integer",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": "0",
+      "generated": null,
+      "identity": null,
+      "name": "attempts",
+      "entityType": "columns",
+      "schema": "jobs",
+      "table": "queue"
+    },
+    {
+      "type": "text",
+      "typeSchema": null,
+      "notNull": false,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "last_error",
+      "entityType": "columns",
+      "schema": "jobs",
+      "table": "queue"
     },
     {
       "type": "uuid",
@@ -834,6 +1015,45 @@
       "entityType": "columns",
       "schema": "jobs",
       "table": "image_analysis"
+    },
+    {
+      "type": "integer",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "id",
+      "entityType": "columns",
+      "schema": "jobs",
+      "table": "dispatch"
+    },
+    {
+      "type": "text",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": "''",
+      "generated": null,
+      "identity": null,
+      "name": "last_owner",
+      "entityType": "columns",
+      "schema": "jobs",
+      "table": "dispatch"
+    },
+    {
+      "type": "jsonb",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "cooldowns",
+      "entityType": "columns",
+      "schema": "jobs",
+      "table": "dispatch"
     },
     {
       "type": "uuid",
@@ -5007,6 +5227,83 @@
       "nameExplicit": true,
       "columns": [
         {
+          "value": "status",
+          "isExpression": false,
+          "asc": true,
+          "nullsFirst": false,
+          "opclass": null
+        },
+        {
+          "value": "available_at",
+          "isExpression": false,
+          "asc": true,
+          "nullsFirst": false,
+          "opclass": null
+        },
+        {
+          "value": "owner",
+          "isExpression": false,
+          "asc": true,
+          "nullsFirst": false,
+          "opclass": null
+        },
+        {
+          "value": "created_at",
+          "isExpression": false,
+          "asc": true,
+          "nullsFirst": false,
+          "opclass": null
+        }
+      ],
+      "isUnique": false,
+      "where": null,
+      "with": "",
+      "method": "btree",
+      "concurrently": false,
+      "name": "jobs_queue_due_idx",
+      "entityType": "indexes",
+      "schema": "jobs",
+      "table": "queue"
+    },
+    {
+      "nameExplicit": true,
+      "columns": [
+        {
+          "value": "status",
+          "isExpression": false,
+          "asc": true,
+          "nullsFirst": false,
+          "opclass": null
+        },
+        {
+          "value": "lease_until",
+          "isExpression": false,
+          "asc": true,
+          "nullsFirst": false,
+          "opclass": null
+        },
+        {
+          "value": "target",
+          "isExpression": false,
+          "asc": true,
+          "nullsFirst": false,
+          "opclass": null
+        }
+      ],
+      "isUnique": false,
+      "where": null,
+      "with": "",
+      "method": "btree",
+      "concurrently": false,
+      "name": "jobs_queue_lease_idx",
+      "entityType": "indexes",
+      "schema": "jobs",
+      "table": "queue"
+    },
+    {
+      "nameExplicit": true,
+      "columns": [
+        {
           "value": "meeting_id",
           "isExpression": false,
           "asc": true,
@@ -7095,6 +7392,16 @@
         "id"
       ],
       "nameExplicit": false,
+      "name": "queue_pkey",
+      "schema": "jobs",
+      "table": "queue",
+      "entityType": "pks"
+    },
+    {
+      "columns": [
+        "id"
+      ],
+      "nameExplicit": false,
       "name": "documents_pkey",
       "schema": "app",
       "table": "documents",
@@ -7128,6 +7435,16 @@
       "name": "image_analysis_pkey",
       "schema": "jobs",
       "table": "image_analysis",
+      "entityType": "pks"
+    },
+    {
+      "columns": [
+        "id"
+      ],
+      "nameExplicit": false,
+      "name": "dispatch_pkey",
+      "schema": "jobs",
+      "table": "dispatch",
       "entityType": "pks"
     },
     {
@@ -7458,6 +7775,13 @@
       "schema": "app",
       "table": "workspace_transfers",
       "entityType": "uniques"
+    },
+    {
+      "value": "\"status\" IN ('pending', 'processing', 'failed')",
+      "name": "jobs_queue_status_check",
+      "entityType": "checks",
+      "schema": "jobs",
+      "table": "queue"
     },
     {
       "value": "\"kind\" IN ('notes', 'summary', 'general') AND (\"kind\" != 'notes' OR \"meeting_id\" IS NOT NULL)",

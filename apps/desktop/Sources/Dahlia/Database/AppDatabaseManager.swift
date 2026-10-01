@@ -12,7 +12,7 @@ import OSLog
 final class AppDatabaseManager: Sendable {
     let dbQueue: DatabaseQueue
     let searchDBQueue: DatabaseQueue
-    let searchIndexer: SearchIndexer
+    let searchIndexer: BackgroundJobWorker
 
     /// アプリケーションサポートディレクトリに DB を作成・オープンする。
     convenience init(onMigration: (@Sendable () -> Void)? = nil) throws {
@@ -33,10 +33,10 @@ final class AppDatabaseManager: Sendable {
         enablesConcurrentSearch: Bool = false,
         onMigration: (@Sendable () -> Void)? = nil,
         screenshotAnalyzer: any ScreenshotAnalyzing = CodexScreenshotAnalysisService(),
-        screenshotRuntimeProviderResolver: @escaping SearchIndexer.RuntimeProviderResolver = {
+        screenshotRuntimeProviderResolver: @escaping BackgroundJobWorker.RuntimeProviderResolver = {
             CodexRuntimeContextStore.shared.provider
         },
-        localAccountSettingsResolver: @escaping SearchIndexer.LocalAccountSettingsResolver = {
+        localAccountSettingsResolver: @escaping BackgroundJobWorker.LocalAccountSettingsResolver = {
             WorkspaceAISettingsModel.shared.localAccountSettings
         }
     ) throws {
@@ -81,7 +81,7 @@ final class AppDatabaseManager: Sendable {
             configuration.readonly = true
             searchDBQueue = try DatabaseQueue(path: path, configuration: configuration)
         }
-        searchIndexer = SearchIndexer(
+        searchIndexer = BackgroundJobWorker(
             dbQueue: dbQueue,
             screenshotAnalyzer: screenshotAnalyzer,
             runtimeProviderResolver: screenshotRuntimeProviderResolver,
@@ -134,6 +134,7 @@ final class AppDatabaseManager: Sendable {
     static let migrator: DatabaseMigrator = {
         var migrator = releasedMigrator
         DocumentsAndSyncMigration.register(in: &migrator)
+
         return migrator
     }()
 
@@ -435,7 +436,7 @@ final class AppDatabaseManager: Sendable {
     }
 
     static func schemaMigrator(for identifier: String) -> DatabaseMigrator {
-        DocumentsAndSyncMigration.legacyIdentifiers.contains(identifier) ? DevelopmentSchemaHistory.migrator : migrator
+        DocumentsAndSyncMigration.legacyIdentifiers.contains(identifier) ? DevelopmentSchemaHistory.migrator(for: identifier) : migrator
     }
 
     static func hasExpectedSchema(

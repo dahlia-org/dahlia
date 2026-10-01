@@ -2,6 +2,18 @@ import GRDB
 
 /// Frozen development schemas used only to validate old backups before any migration or trigger can execute.
 enum DevelopmentSchemaHistory {
+    static func migrator(for identifier: String) -> DatabaseMigrator {
+        guard ["v52_documentsAndSync", "v53_sharedBackgroundJobs"].contains(identifier) else { return migrator }
+        var migrator = AppDatabaseManager.releasedMigrator
+        migrator.registerMigration("v52_documentsAndSync") { db in
+            try DocumentsAndSyncMigration.migrateDocumentsAndSync(in: db, applied: [])
+        }
+        migrator.registerMigration("v53_sharedBackgroundJobs") { db in
+            try BackgroundJobsMigration.migrate(in: db)
+        }
+        return migrator
+    }
+
     static var migrator: DatabaseMigrator {
         var migrator = AppDatabaseManager.releasedMigrator
         // Both v47 identifiers were registered independently. Keep their complete names and bodies unchanged.
@@ -46,6 +58,12 @@ enum DevelopmentSchemaHistory {
                 DELETE FROM sync_reconciliations WHERE workspaceId = NEW.id;
             END;
             """)
+        }
+
+        // v52 consolidated the same final Documents/sync schema represented above.
+        migrator.registerMigration("v52_documentsAndSync") { _ in }
+        migrator.registerMigration("v53_sharedBackgroundJobs") { db in
+            try BackgroundJobsMigration.migrate(in: db)
         }
 
         return migrator

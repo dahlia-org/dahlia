@@ -399,7 +399,7 @@ struct DahliaApp: App {
         }
         await db.searchIndexer.start()
         sidebarViewModel.setAppDatabase(db)
-        viewModel.configureSearchIndexer(db.searchIndexer)
+        viewModel.configureBackgroundJobWorker(db.searchIndexer)
         viewModel.configureBatchTranscription(dbQueue: db.dbQueue) { [weak sidebarViewModel] in
             await sidebarViewModel?.refreshUnprocessedRecordings()
         }

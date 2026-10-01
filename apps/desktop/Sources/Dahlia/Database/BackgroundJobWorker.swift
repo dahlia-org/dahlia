@@ -4,10 +4,11 @@ import Dispatch
 import Foundation
 import GRDB
 
-actor SearchIndexer {
+actor BackgroundJobWorker {
     typealias RuntimeProviderResolver = @Sendable () -> CodexRuntimeProvider
     typealias LocalAccountSettingsResolver = @MainActor @Sendable () -> LocalAccountAISettings
 
+    private let archiveService: RecordingArchiveService
     private let apiClient: SyncAPIClient
     private let dbQueue: DatabaseQueue
     private let screenshotAnalyzer: any ScreenshotAnalyzing
@@ -25,7 +26,7 @@ actor SearchIndexer {
     private var lastDivergenceCheckAt: Date?
 
     private static let divergenceCheckInterval: TimeInterval = 15 * 60
-    private static let maximumConcurrentScreenshotAnalysisCount = 8
+    private static let maximumConcurrentScreenshotAnalysisCount = 2
 
     init(
         dbQueue: DatabaseQueue,
@@ -36,6 +37,7 @@ actor SearchIndexer {
             WorkspaceAISettingsModel.shared.localAccountSettings
         }
     ) {
+        archiveService = RecordingArchiveService(dbQueue: dbQueue, api: apiClient)
         self.apiClient = apiClient
         self.dbQueue = dbQueue
         self.screenshotAnalyzer = screenshotAnalyzer
@@ -51,7 +53,7 @@ actor SearchIndexer {
                 db,
                 sql: """
                 SELECT COUNT(*) + COALESCE(SUM(generation), 0)
-                FROM jobs_search_index WHERE indexKind = 'fts'
+                FROM jobs_background WHERE indexKind IN ('fts', 'archive')
                 """
             ) ?? 0
         }.removeDuplicates()
@@ -100,7 +102,7 @@ actor SearchIndexer {
         try await dbQueue.write { db in
             try db.execute(
                 sql: """
-                UPDATE jobs_search_index
+                UPDATE jobs_background
                 SET status = 'pending', attempts = 0, availableAt = ?, claimedAt = NULL,
                     leaseExpiresAt = NULL, lastErrorCode = NULL, updatedAt = ?
                 WHERE indexKind = 'fts' AND targetKind = 'screenshotAnalysis' AND attempts >= 5
@@ -164,42 +166,67 @@ actor SearchIndexer {
             let phase = try await indexPhase()
             if phase == "failed" {
                 try await drainCleanupJobs()
+                if let jobs = try await claimNextJobs(archivesOnly: true), let job = jobs.first {
+                    let processed = try await archiveService.runNext(sessionId: job.targetID)
+                    try await rescheduleArchive(job, processed: processed)
+                }
                 return
             }
             try await validateAnalyzer()
             if try await needsRebuild(phase: phase, checksDivergence: checksDivergence) {
                 try await rebuild()
             }
-            while !isPaused, let jobs = try await claimNextJobs() {
-                if jobs.first?.targetKind == "screenshotAnalysis" {
-                    do {
-                        if try await processScreenshotJobsConcurrently(jobs) { return }
-                    } catch is CancellationError {
-                        try await release(jobs)
-                        return
-                    } catch {
-                        for job in jobs {
-                            try await fail(job, error: error)
+            try await withThrowingTaskGroup(of: (String, Int, Bool).self) { group in
+                var active: [String: Int] = [:]
+                while !isPaused, !Task.isCancelled {
+                    while active.values.reduce(0, +) < 2 {
+                        let capacity = 2 - active.values.reduce(0, +)
+                        guard let jobs = try await claimNextJobs(
+                            maximumCount: capacity,
+                            allowsSearch: active["search", default: 0] == 0,
+                            allowsArchives: active["archive", default: 0] == 0
+                        ), let first = jobs.first else { break }
+                        let kind = first.targetKind == "recordingArchive" ? "archive" : first.targetKind == "screenshotAnalysis" ? "image" : "search"
+                        active[kind, default: 0] += jobs.count
+                        group.addTask { [self] in
+                            let deferred = try await processGroup(jobs)
+                            return (kind, jobs.count, deferred)
                         }
                     }
-                    continue
-                }
-                do {
-                    try await process(jobs)
-                    try await complete(jobs)
-                } catch is CancellationError {
-                    try await release(jobs)
-                    return
-                } catch {
-                    for job in jobs {
-                        try await fail(job, error: error)
+                    guard let (kind, count, deferred) = try await group.next() else { break }
+                    active[kind, default: 0] -= count
+                    if deferred { group.cancelAll()
+                        break
                     }
                 }
+                if isPaused || Task.isCancelled { group.cancelAll() }
             }
         } catch is CancellationError {
         } catch {
             try? await recordFailure(error)
         }
+    }
+
+    private func processGroup(_ jobs: [SearchIndexJob]) async throws -> Bool {
+        do {
+            try checkCanContinue()
+            if let job = jobs.first, job.targetKind == "recordingArchive" {
+                let processed = try await archiveService.runNext(sessionId: job.targetID)
+                try await rescheduleArchive(job, processed: processed)
+            } else if jobs.first?.targetKind == "screenshotAnalysis" {
+                return try await processScreenshotJobsConcurrently(jobs)
+            } else {
+                try await process(jobs)
+                try await complete(jobs)
+            }
+        } catch is CancellationError {
+            try? await release(jobs)
+        } catch {
+            for job in jobs {
+                try await fail(job, error: error)
+            }
+        }
+        return false
     }
 
     private func drainCleanupJobs() async throws {
@@ -384,22 +411,32 @@ actor SearchIndexer {
         }
     }
 
-    private func claimNextJobs(cleanupOnly: Bool = false) async throws -> [SearchIndexJob]? {
+    private func claimNextJobs(
+        cleanupOnly: Bool = false,
+        archivesOnly: Bool = false,
+        maximumCount: Int = 2,
+        allowsSearch: Bool = true,
+        allowsArchives: Bool = true
+    ) async throws -> [SearchIndexJob]? {
         try await dbQueue.write { db in
             let now = Date()
-            let cleanupFilter = cleanupOnly
-                ? "AND targetKind IN ('workspaceCleanup', 'meetingCleanup', 'projectCleanup', 'screenshotCleanup')"
+            let searchFilter = allowsSearch ? "" : "AND targetKind IN ('screenshotAnalysis', 'recordingArchive')"
+            let archiveFilter = allowsArchives ? "" : "AND targetKind <> 'recordingArchive'"
+            let cleanupFilter = archivesOnly ? "AND indexKind = 'archive'" : cleanupOnly
+                ? "AND indexKind = 'fts' AND targetKind IN ('workspaceCleanup', 'meetingCleanup', 'projectCleanup', 'screenshotCleanup')"
                 : ""
             guard let firstRow = try Row.fetchOne(
                 db,
                 sql: """
                 SELECT targetKind, targetKey, generation, attempts, captionLanguage
-                FROM jobs_search_index
-                WHERE indexKind = 'fts'
+                FROM jobs_background
+                WHERE indexKind IN ('fts', 'archive')
                   AND availableAt <= ?
-                  AND attempts < 5
+                  AND (targetKind = 'recordingArchive' OR attempts < 5)
                   AND (status = 'pending' OR leaseExpiresAt < ?)
                   \(cleanupFilter)
+                  \(searchFilter)
+                  \(archiveFilter)
                 ORDER BY priority DESC, availableAt, targetKind, targetKey
                 LIMIT 1
                 """,
@@ -411,14 +448,14 @@ actor SearchIndexer {
                     db,
                     sql: """
                     SELECT targetKind, targetKey, generation, attempts, captionLanguage
-                    FROM jobs_search_index
+                    FROM jobs_background
                     WHERE indexKind = 'fts' AND targetKind = 'screenshotAnalysis'
                       AND availableAt <= ? AND attempts < 5
                       AND (status = 'pending' OR leaseExpiresAt < ?)
                     ORDER BY priority DESC, availableAt, targetKey
                     LIMIT ?
                     """,
-                    arguments: [now, now, Self.maximumConcurrentScreenshotAnalysisCount]
+                    arguments: [now, now, min(maximumCount, Self.maximumConcurrentScreenshotAnalysisCount)]
                 )
             } else {
                 [firstRow]
@@ -440,14 +477,14 @@ actor SearchIndexer {
                     outputLanguage: language
                 )
             }
-            let leaseDuration: TimeInterval = targetKind == "screenshotAnalysis" ? 300 : 60
+            let leaseDuration: TimeInterval = ["screenshotAnalysis", "recordingArchive"].contains(targetKind) ? 300 : 60
             for job in jobs {
                 try db.execute(
                     sql: """
-                    UPDATE jobs_search_index
+                    UPDATE jobs_background
                     SET status = 'processing', attempts = attempts + 1, captionLanguage = ?,
                         claimedAt = ?, leaseExpiresAt = ?, updatedAt = ?
-                    WHERE indexKind = 'fts' AND targetKind = ? AND targetKey = ? AND generation = ?
+                    WHERE indexKind = CASE WHEN targetKind = 'recordingArchive' THEN 'archive' ELSE 'fts' END AND targetKind = ? AND targetKey = ? AND generation = ?
                     """,
                     arguments: [
                         job.outputLanguage?.rawValue,
@@ -461,6 +498,29 @@ actor SearchIndexer {
                 )
             }
             return jobs
+        }
+    }
+
+    private func rescheduleArchive(_ job: SearchIndexJob, processed: Bool) async throws {
+        let delay: TimeInterval = processed ? 5 : min(300, 5 * pow(2, Double(min(job.attempts, 6))))
+        try await dbQueue.write { db in
+            let needed = try Bool.fetchOne(db, sql: """
+            SELECT EXISTS (SELECT 1 FROM recording_archives a WHERE a.sessionId = ? AND a.connectionId IS NOT NULL AND (
+                a.state IN ('pending', 'failed', 'syncing') OR a.state = 'saved' AND EXISTS (
+                    SELECT 1 FROM recording_audio_segments WHERE recordingSessionId = a.sessionId AND state IN ('ready', 'purgePending'))))
+            """, arguments: [job.targetID]) ?? false
+            if needed {
+                try db.execute(sql: """
+                UPDATE jobs_background SET status = 'pending', attempts = ?, claimedAt = NULL, leaseExpiresAt = NULL,
+                    availableAt = MAX(?, COALESCE((SELECT retryAt FROM recording_archives WHERE sessionId = ?), 0))
+                WHERE indexKind = 'archive' AND targetKey = ? AND generation = ? AND status = 'processing'
+                """, arguments: [processed ? 0 : job.attempts, Date.now.addingTimeInterval(delay), job.targetID, job.targetID, job.generation])
+            } else {
+                try db.execute(
+                    sql: "DELETE FROM jobs_background WHERE indexKind = 'archive' AND targetKey = ? AND generation = ? AND status = 'processing'",
+                    arguments: [job.targetID, job.generation]
+                )
+            }
         }
     }
 
@@ -530,7 +590,7 @@ actor SearchIndexer {
     }
 }
 
-private extension SearchIndexer {
+private extension BackgroundJobWorker {
     func indexScreenshot(id: UUID, generation: Int) async throws {
         try await dbQueue.write { db in
             try indexScreenshotDocument(id: id, generation: generation, in: db)
@@ -849,8 +909,8 @@ private extension SearchIndexer {
                 }
                 try db.execute(
                     sql: """
-                    DELETE FROM jobs_search_index
-                    WHERE indexKind = 'fts' AND targetKind = ? AND targetKey = ? AND generation = ?
+                    DELETE FROM jobs_background
+                    WHERE indexKind = CASE WHEN targetKind = 'recordingArchive' THEN 'archive' ELSE 'fts' END AND targetKind = ? AND targetKey = ? AND generation = ?
                     """,
                     arguments: [job.targetKind, job.targetID, job.generation]
                 )
@@ -871,10 +931,11 @@ private extension SearchIndexer {
                 for job in jobs {
                     try db.execute(
                         sql: """
-                        UPDATE jobs_search_index
+                        UPDATE jobs_background
                         SET status = 'pending', attempts = max(0, attempts - 1), availableAt = ?,
                             claimedAt = NULL, leaseExpiresAt = NULL, updatedAt = ?
-                        WHERE indexKind = 'fts' AND targetKind = ? AND targetKey = ? AND generation = ?
+                        WHERE indexKind = CASE WHEN targetKind = 'recordingArchive' THEN 'archive' ELSE 'fts' END AND targetKind = ? AND targetKey = ? AND generation = ?
+                          AND status = 'processing'
                         """,
                         arguments: [Date(), Date(), job.targetKind, job.targetID, job.generation]
                     )
@@ -888,7 +949,7 @@ private extension SearchIndexer {
         try await dbQueue.write { db in
             try db.execute(
                 sql: """
-                UPDATE jobs_search_index
+                UPDATE jobs_background
                 SET status = 'pending',
                     attempts = CASE WHEN status = 'processing' THEN MAX(0, attempts - 1) ELSE attempts END,
                     availableAt = MAX(availableAt, ?),
@@ -908,10 +969,10 @@ private extension SearchIndexer {
             for job in jobs {
                 try db.execute(
                     sql: """
-                    UPDATE jobs_search_index
+                    UPDATE jobs_background
                     SET status = 'pending', attempts = max(0, attempts - 1), availableAt = ?,
                         claimedAt = NULL, leaseExpiresAt = NULL, lastErrorCode = ?, updatedAt = ?
-                    WHERE indexKind = 'fts' AND targetKind = ? AND targetKey = ? AND generation = ?
+                    WHERE indexKind = CASE WHEN targetKind = 'recordingArchive' THEN 'archive' ELSE 'fts' END AND targetKind = ? AND targetKey = ? AND generation = ?
                     """,
                     arguments: [
                         retryAt, "runtimeProviderMismatch", Date(),
@@ -923,15 +984,15 @@ private extension SearchIndexer {
     }
 
     private func fail(_ job: SearchIndexJob, error: Error) async throws {
-        if job.attempts >= 5 {
-            if job.targetKind == "screenshotAnalysis" {
+        if job.attempts >= 5, job.targetKind != "recordingArchive" {
+            if ["screenshotAnalysis", "recordingArchive"].contains(job.targetKind) {
                 try await dbQueue.write { db in
                     try db.execute(
                         sql: """
-                        UPDATE jobs_search_index
+                        UPDATE jobs_background
                         SET status = 'pending', claimedAt = NULL, leaseExpiresAt = NULL,
                             lastErrorCode = ?, updatedAt = ?
-                        WHERE indexKind = 'fts' AND targetKind = ? AND targetKey = ? AND generation = ?
+                        WHERE indexKind = CASE WHEN targetKind = 'recordingArchive' THEN 'archive' ELSE 'fts' END AND targetKind = ? AND targetKey = ? AND generation = ?
                         """,
                         arguments: [
                             String(describing: type(of: error)), Date(),
@@ -944,8 +1005,8 @@ private extension SearchIndexer {
             try await dbQueue.write { db in
                 try db.execute(
                     sql: """
-                    DELETE FROM jobs_search_index
-                    WHERE indexKind = 'fts' AND targetKind = ? AND targetKey = ? AND generation = ?
+                    DELETE FROM jobs_background
+                    WHERE indexKind = CASE WHEN targetKind = 'recordingArchive' THEN 'archive' ELSE 'fts' END AND targetKind = ? AND targetKey = ? AND generation = ?
                     """,
                     arguments: [
                         job.targetKind,
@@ -959,10 +1020,10 @@ private extension SearchIndexer {
         try await dbQueue.write { db in
             try db.execute(
                 sql: """
-                UPDATE jobs_search_index
+                UPDATE jobs_background
                 SET status = 'pending', availableAt = ?, claimedAt = NULL, leaseExpiresAt = NULL,
                     lastErrorCode = ?, updatedAt = ?
-                WHERE indexKind = 'fts' AND targetKind = ? AND targetKey = ? AND generation = ?
+                WHERE indexKind = CASE WHEN targetKind = 'recordingArchive' THEN 'archive' ELSE 'fts' END AND targetKind = ? AND targetKey = ? AND generation = ?
                 """,
                 arguments: [
                     Date().addingTimeInterval(30),

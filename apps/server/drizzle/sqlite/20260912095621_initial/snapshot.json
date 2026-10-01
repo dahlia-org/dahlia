@@ -1,7 +1,7 @@
 {
   "version": "7",
   "dialect": "sqlite",
-  "id": "ae368ba8-c90c-4453-841c-d26b86eea70c",
+  "id": "fca3b006-7903-4659-a2f8-73006c228ab0",
   "prevIds": [
     "00000000-0000-0000-0000-000000000000"
   ],
@@ -75,6 +75,10 @@
       "entityType": "tables"
     },
     {
+      "name": "jobs_queue",
+      "entityType": "tables"
+    },
+    {
       "name": "documents",
       "entityType": "tables"
     },
@@ -92,6 +96,10 @@
     },
     {
       "name": "jobs_image_analysis",
+      "entityType": "tables"
+    },
+    {
+      "name": "jobs_dispatch",
       "entityType": "tables"
     },
     {
@@ -2044,6 +2052,136 @@
       "generated": null,
       "name": "id",
       "entityType": "columns",
+      "table": "jobs_queue"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "kind",
+      "entityType": "columns",
+      "table": "jobs_queue"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "owner",
+      "entityType": "columns",
+      "table": "jobs_queue"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "target",
+      "entityType": "columns",
+      "table": "jobs_queue"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "reference",
+      "entityType": "columns",
+      "table": "jobs_queue"
+    },
+    {
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": "1",
+      "generated": null,
+      "name": "generation",
+      "entityType": "columns",
+      "table": "jobs_queue"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": "'pending'",
+      "generated": null,
+      "name": "status",
+      "entityType": "columns",
+      "table": "jobs_queue"
+    },
+    {
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "available_at",
+      "entityType": "columns",
+      "table": "jobs_queue"
+    },
+    {
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "created_at",
+      "entityType": "columns",
+      "table": "jobs_queue"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "lease",
+      "entityType": "columns",
+      "table": "jobs_queue"
+    },
+    {
+      "type": "integer",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "lease_until",
+      "entityType": "columns",
+      "table": "jobs_queue"
+    },
+    {
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": "0",
+      "generated": null,
+      "name": "attempts",
+      "entityType": "columns",
+      "table": "jobs_queue"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "last_error",
+      "entityType": "columns",
+      "table": "jobs_queue"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "id",
+      "entityType": "columns",
       "table": "documents"
     },
     {
@@ -2485,6 +2623,36 @@
       "name": "last_error_code",
       "entityType": "columns",
       "table": "jobs_image_analysis"
+    },
+    {
+      "type": "integer",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "id",
+      "entityType": "columns",
+      "table": "jobs_dispatch"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": "''",
+      "generated": null,
+      "name": "last_owner",
+      "entityType": "columns",
+      "table": "jobs_dispatch"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "cooldowns",
+      "entityType": "columns",
+      "table": "jobs_dispatch"
     },
     {
       "type": "text",
@@ -6951,6 +7119,15 @@
         "id"
       ],
       "nameExplicit": false,
+      "name": "jobs_queue_pk",
+      "table": "jobs_queue",
+      "entityType": "pks"
+    },
+    {
+      "columns": [
+        "id"
+      ],
+      "nameExplicit": false,
       "name": "documents_pk",
       "table": "documents",
       "entityType": "pks"
@@ -6980,6 +7157,15 @@
       "nameExplicit": false,
       "name": "jobs_image_analysis_pk",
       "table": "jobs_image_analysis",
+      "entityType": "pks"
+    },
+    {
+      "columns": [
+        "id"
+      ],
+      "nameExplicit": false,
+      "name": "jobs_dispatch_pk",
+      "table": "jobs_dispatch",
       "entityType": "pks"
     },
     {
@@ -7556,6 +7742,54 @@
       "name": "verification_identifier_idx",
       "entityType": "indexes",
       "table": "verification"
+    },
+    {
+      "columns": [
+        {
+          "value": "status",
+          "isExpression": false
+        },
+        {
+          "value": "available_at",
+          "isExpression": false
+        },
+        {
+          "value": "owner",
+          "isExpression": false
+        },
+        {
+          "value": "created_at",
+          "isExpression": false
+        }
+      ],
+      "isUnique": false,
+      "where": null,
+      "origin": "manual",
+      "name": "jobs_queue_due_idx",
+      "entityType": "indexes",
+      "table": "jobs_queue"
+    },
+    {
+      "columns": [
+        {
+          "value": "status",
+          "isExpression": false
+        },
+        {
+          "value": "lease_until",
+          "isExpression": false
+        },
+        {
+          "value": "target",
+          "isExpression": false
+        }
+      ],
+      "isUnique": false,
+      "where": null,
+      "origin": "manual",
+      "name": "jobs_queue_lease_idx",
+      "entityType": "indexes",
+      "table": "jobs_queue"
     },
     {
       "columns": [
@@ -8424,6 +8658,12 @@
       "name": "workspace_transfers_id_unique",
       "entityType": "uniques",
       "table": "workspace_transfers"
+    },
+    {
+      "value": "\"status\" IN ('pending', 'processing', 'failed')",
+      "name": "jobs_queue_status_check",
+      "entityType": "checks",
+      "table": "jobs_queue"
     },
     {
       "value": "\"kind\" IN ('notes', 'summary', 'general') AND (\"kind\" != 'notes' OR \"meeting_id\" IS NOT NULL)",

@@ -7,5 +7,8 @@ export * from "./migrations";
 export { transformScreenshot } from "./sync/node-screenshot-transformer";
 
 export { SummaryService } from "./summary/service";
-export { SummaryWorker } from "./summary/node-worker";
+export { JobRunner } from "./jobs/node-runner";
+export { JobPool } from "./jobs/node-pool";
+export { createJobExecutor } from "./jobs/execute";
+export { jobResources } from "./jobs/resources";
 export { createTranscriptSummaryMethod } from "./summary/transcript";

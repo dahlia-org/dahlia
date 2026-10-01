@@ -289,7 +289,7 @@
                 )
                 try db.execute(sql: "UPDATE file_text_bodies SET ocrText = NULL, caption = NULL WHERE fileId = ?", arguments: [fixture.screenshotId])
                 try db.execute(
-                    sql: "INSERT INTO jobs_search_index(indexKind, targetKind, targetKey, priority, availableAt, updatedAt) VALUES ('fts', 'screenshotAnalysis', ?, -10, ?, ?)",
+                    sql: "INSERT INTO jobs_background(indexKind, targetKind, targetKey, priority, availableAt, updatedAt) VALUES ('fts', 'screenshotAnalysis', ?, -10, ?, ?)",
                     arguments: [fixture.screenshotId, Date(), Date()]
                 )
                 try SyncTransactionRecorder.record(workspaceId: fixture.workspaceId, operations: [
@@ -309,15 +309,15 @@
             let remotePending = ScreenshotOCRState.remote(ocrText: nil, caption: nil, state: .ready)
             #expect(await viewModel.screenshotOCRState(id: fixture.screenshotId) == (uploaded ? remotePending : .pending))
             try await fixture.dbQueue.write { db in
-                try db.execute(sql: "UPDATE jobs_search_index SET status = 'processing', attempts = 1 WHERE targetKind = 'screenshotAnalysis'")
+                try db.execute(sql: "UPDATE jobs_background SET status = 'processing', attempts = 1 WHERE targetKind = 'screenshotAnalysis'")
             }
             #expect(await viewModel.screenshotOCRState(id: fixture.screenshotId) == (uploaded ? remotePending : .processing))
             try await fixture.dbQueue.write { db in
-                try db.execute(sql: "UPDATE jobs_search_index SET status = 'pending', attempts = 5 WHERE targetKind = 'screenshotAnalysis'")
+                try db.execute(sql: "UPDATE jobs_background SET status = 'pending', attempts = 5 WHERE targetKind = 'screenshotAnalysis'")
             }
             #expect(await viewModel.screenshotOCRState(id: fixture.screenshotId) == (uploaded ? remotePending : .failed))
             try await fixture.dbQueue.write { db in
-                try db.execute(sql: "UPDATE jobs_search_index SET status = 'pending', attempts = 0 WHERE targetKind = 'screenshotAnalysis'")
+                try db.execute(sql: "UPDATE jobs_background SET status = 'pending', attempts = 0 WHERE targetKind = 'screenshotAnalysis'")
             }
             #expect(await viewModel.screenshotOCRState(id: fixture.screenshotId) == (uploaded ? remotePending : .pending))
             try await fixture.dbQueue.write { db in

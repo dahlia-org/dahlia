@@ -1,3 +1,5 @@
+import { createJobStore, type JobStore } from "../jobs/store";
+import { defaultJobLimits } from "../jobs/model";
 import { PostgresSyncEvents } from "../sync/events-node";
 import { ChatMemoryStore } from "../agent/context-store";
 import { rotateWorkspaceKeys } from "../encryption/rotation";
@@ -24,25 +26,27 @@ import {
   createSqliteApplicationStore,
   type ApplicationStore,
 } from "./store";
-import { createPostgresSearchIndexStore, createSqliteSearchIndexStore, type SearchIndexStore } from "../search/index-store";
-import { createImageAnalysisStore, type ImageAnalysisStore } from "../image-analysis/store";
+import { createPostgresSearchIndexStore, createSqliteSearchIndexStore, type SearchIndexQueueStore } from "../search/index-store";
+import { createImageAnalysisStore, type ImageAnalysisQueueStore } from "../image-analysis/store";
 
 export interface NodeApplicationStore extends ApplicationStore {
+  jobs: JobStore;
   aiHistory?: AiHistoryService;
   chatMemoryStore?: ChatMemoryStore;
   migrate(): Promise<void>;
   rotateEncryptionKeys(apply: boolean): Promise<{ checked: number; pending: number; rotated: number }>;
-  searchIndex?: SearchIndexStore;
-  imageAnalysis?: ImageAnalysisStore;
+  searchIndex?: SearchIndexQueueStore;
+  imageAnalysis?: ImageAnalysisQueueStore;
   summaryJobs: SummaryJobStore;
 }
 
 export function createNodeApplicationStore(
   config: AppConfig,
   migrations: MigrationManifest = serverMigrationManifest,
+  poolMax?: number,
 ): NodeApplicationStore {
   if (config.databaseType === "postgres" || config.databaseType === "lakebase") {
-    const connection = connectApplicationDatabase(config);
+    const connection = connectApplicationDatabase(config, poolMax);
     const syncEvents = new PostgresSyncEvents(connection.pool);
     return {
       ...createPostgresApplicationStore(
@@ -56,6 +60,7 @@ export function createNodeApplicationStore(
         syncEvents,
         config.documentDeletionGraceHours,
       ),
+      jobs: createJobStore(connection.db, true, config.jobs?.limits ?? defaultJobLimits),
       aiHistory: createAiHistoryService(connection.pool),
       chatMemoryStore: config.chatMemoryModel ? new ChatMemoryStore(connection.pool) : undefined,
       migrate: () => migrateApplicationDatabase(
@@ -167,6 +172,7 @@ export function createNodeApplicationStore(
   };
   return {
     ...store,
+    jobs: createJobStore(transactionalSqlite, false, config.jobs?.limits ?? defaultJobLimits),
     sync: {
       ...store.sync,
       async withStorageKeyLock<T>(_storageKey: string, action: () => Promise<T>): Promise<T> {

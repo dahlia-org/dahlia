@@ -958,7 +958,7 @@ enum RemoteChangeApplier {
         case .meetingAttachment:
             try MeetingAttachmentRecord.applyCanonical(id: change.entityId, workspaceId: workspaceId, value: record, in: db)
             try db.execute(
-                sql: "DELETE FROM jobs_search_index WHERE indexKind = 'fts' AND targetKind = 'screenshotAnalysis' AND targetKey = ?",
+                sql: "DELETE FROM jobs_background WHERE indexKind = 'fts' AND targetKind = 'screenshotAnalysis' AND targetKey = ?",
                 arguments: [change.entityId]
             )
             let generation = try Int.fetchOne(

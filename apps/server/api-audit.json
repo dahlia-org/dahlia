@@ -219,7 +219,7 @@
       "reason": "Discover feature versions; unsupported features are omitted",
       "consumers": [
         "apps/server/src/client/SummaryGeneration.tsx",
-        "apps/desktop/Sources/Dahlia/Database/SearchIndexer.swift",
+        "apps/desktop/Sources/Dahlia/Database/BackgroundJobWorker.swift",
         "apps/desktop/Sources/Dahlia/Services/RecordingArchiveService.swift",
         "apps/desktop/Sources/Dahlia/Services/SyncWorker.swift",
         "apps/desktop/Sources/Dahlia/Services/ServerSummaryService.swift",
@@ -512,7 +512,7 @@
         "apps/desktop/Sources/Dahlia/Database/ScreenshotStorageMaintenance.swift",
         "apps/desktop/Sources/Dahlia/Database/MeetingRepository+ServerSearch.swift",
         "apps/desktop/Sources/Dahlia/Database/MeetingRepository+ScreenshotSearch.swift",
-        "apps/desktop/Sources/Dahlia/Database/SearchIndexer.swift",
+        "apps/desktop/Sources/Dahlia/Database/BackgroundJobWorker.swift",
         "apps/desktop/Sources/Dahlia/Database/TextContentStore.swift",
         "apps/desktop/Sources/Dahlia/ViewModels/SidebarViewModel+Meetings.swift",
         "apps/desktop/Sources/Dahlia/Models/MeetingDateGrouping.swift",

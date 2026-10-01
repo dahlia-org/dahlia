@@ -33,8 +33,9 @@ actor RecordingArchiveService {
         let manifest: RecordingArchiveManifest
     }
 
-    func runNext(localOnly: Bool = false) async throws {
-        guard !isProcessing else { return }
+    @discardableResult
+    func runNext(localOnly: Bool = false, sessionId: UUID? = nil) async throws -> Bool {
+        guard !isProcessing else { return false }
         isProcessing = true
         defer { isProcessing = false }
         let target = try await dbQueue.read { db -> Target? in
@@ -51,6 +52,7 @@ actor RecordingArchiveService {
               AND ((a.connectionId IS NULL AND v.accountConnectionId IS NULL)
                    OR (v.accountConnectionId = a.connectionId AND v.syncConfirmedConnectionId = a.connectionId))
               AND (a.connectionId IS NULL) = ?
+              AND (? IS NULL OR a.sessionId = ?)
               AND v.syncRecoveryState IS NULL AND (v.accountConnectionId IS NULL OR v.syncRole IN ('admin', 'editor'))
               AND s.endedAt IS NOT NULL AND s.batchDiscardedAt IS NULL
               AND NOT EXISTS (SELECT 1 FROM recording_audio_segments WHERE recordingSessionId = a.sessionId AND state NOT IN ('ready', 'purgePending', 'purged'))
@@ -64,12 +66,12 @@ actor RecordingArchiveService {
               AND NOT EXISTS (SELECT 1 FROM recording_sessions WHERE batchLastAttemptAt > COALESCE(batchCompletedAt, 0)
                               AND batchLastError IS NULL AND batchDiscardedAt IS NULL)
             ORDER BY s.startedAt LIMIT 1
-            """, arguments: [now, localOnly])
+            """, arguments: [now, localOnly, sessionId, sessionId])
             guard let row else { return nil }
             let origin: String? = row["origin"]
             return try Target(archive: RecordingArchiveRecord(row: row), origin: origin.flatMap(URL.init(string:)))
         }
-        guard let target else { return }
+        guard let target else { return false }
         let work = Task(priority: .utility) {
             try await SyncTransferSlots.shared(dbQueue: self.dbQueue).perform(background: true) {
                 try await self.process(target)
@@ -103,6 +105,7 @@ actor RecordingArchiveService {
                 """, arguments: [code, Date.now.addingTimeInterval(60), target.archive.sessionId, target.archive.connectionId])
             }
         }
+        return true
     }
 
     private func process(_ target: Target) async throws {

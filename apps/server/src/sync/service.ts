@@ -355,10 +355,10 @@ export class MeetingSyncService {
     this.storageDeleteRetry.unref?.();
   }
 
-  private async drainStorageDeletes(): Promise<void> {
+  async drainStorageDeletes(storageKey?: string): Promise<void> {
     if (!this.storage) return;
     while (true) {
-      const claims = await this.store.claimStorageDeletes(SCREENSHOT_DELETE_BATCH_SIZE);
+      const claims = await this.store.claimStorageDeletes(storageKey ? 1 : SCREENSHOT_DELETE_BATCH_SIZE, storageKey);
       if (claims.length === 0) return;
       for (const claim of claims) {
         try {
@@ -381,6 +381,7 @@ export class MeetingSyncService {
           this.scheduleStorageDeleteRetry();
         }
       }
+      if (storageKey) return;
     }
   }
 

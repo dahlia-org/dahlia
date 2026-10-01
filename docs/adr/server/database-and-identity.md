@@ -111,7 +111,7 @@ FORCE RLS は backfill transaction 内だけ解除し commit 前に復元する�
 
 ## 運用テーブルと番号の整理（2026-09-09）
 
-PostgreSQL / Lakebase のジョブは `jobs.search_index`、`jobs.storage_delete`、`jobs.image_analysis`、`jobs.summary` に配置する。SQLite は `jobs_*`、Desktop の検索ジョブは `jobs_search_index` を維持する。要約ジョブの暗号化ポリシー・AAD・HMAC purpose は物理名から独立した既存の `jobs_summary` を維持する。未リリース Server の baseline を更新し、既存開発 DB は [データを保持する手順](../../../apps/server/docs/jobs-schema-move.md)で手動移行する。
+PostgreSQL / Lakebase のジョブは `jobs.search_index`、`jobs.storage_delete`、`jobs.image_analysis`、`jobs.summary` に配置する。SQLite は `jobs_*`、Desktop の検索ジョブは `jobs_search_index` を維持する。要約ジョブの暗号化ポリシー・AAD・HMAC purpose は物理名から独立した既存の `jobs_summary` を維持する。当時の開発 DB 用手動移行は[廃止](../../../apps/server/docs/jobs-schema-move.md)した。現行 Server は共通ディスパッチ `jobs.queue` を含む空 DB 用 baseline を使い、既存開発データの移行は提供しない。Desktop の現行検索キューは `jobs_background` に統合し、公開済み DB のデータ変換を維持する。
 
 `recordings` は `meeting_id` を外部キーとし、Workspace は親会議から導出する。PostgreSQL RLS と共通 store の認可をともに親会議経由にし、API の `workspaceId` は維持する。`meeting_events.workspace_id` は会議削除後の履歴認可のため、`meeting_attachments.workspace_id` は同一 Workspace の複合外部キー制約のため維持する。
 
@@ -126,3 +126,5 @@ Header は設定されたメールヘッダーを外部 identity に使い、初
 Better Auth runtime の `generateId` は UUIDv7 callback を使う。schema 生成だけは `generateId: "uuid"` とし、生成器が native uuid 型を選べるようにする。生成後に PostgreSQL の UUIDv4 default を除去し、runtime が ID を供給する。新規 mapping table は追加しない。
 
 2026-09-14: 上記の初回参加を確認済みGoogleメールにも拡張する。`registrationState` は信頼済みHeaderと確認済みGoogle登録で `domain`、その他は `personal`、初期化完了後は `ready` とする。`organization.domain` と未公開の `organization_auto_join_domains` を `organization_domains`（組織・ドメイン複合主キーと参加方式）に置き換え、`organization_join_requests`（pendingの部分一意制約と処理履歴）を追加する。いずれも認可メタデータとして共通OrganizationStoreが認可を検査し、設定・参加・申請処理と作成・削除を既存の認可ロックで直列化する。ユーザー承認により現行Drizzle schemaから空DB専用のinitialを再生成する。既存DBの自動変換・削除、Desktop migrationの変更は行わない。既存のruntime_supportは維持する。
+
+2026-10-01: ユーザー承認により共通ジョブキューを現行 Drizzle schema の初期 DDL に統合した。PostgreSQL / SQLite は initial → runtime_support、Agent は initial → force_rls とし、dispatch trigger を runtime SQL に保持する。既存ジョブ・Memory・Agent 行の backfill は提供しない。生成 snapshot は初期状態から再生成し、旧追加 migration を配布 manifest から除去する。既存 DB や適用 ledger は変更せず、検証には空の一時 DB を使う。

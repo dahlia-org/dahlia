@@ -34,7 +34,7 @@ try {
   const started = performance.now();
   mf = new Miniflare({ modules: [{ type: 'ESModule', path: join(directory, 'worker.js'), contents: script }, ...wasmModules], modulesRoot: directory, compatibilityDate: '2026-08-08', compatibilityFlags: ['nodejs_compat'],
     port: 0, persist: directory, r2Buckets: ['DAHLIA_STORAGE'], images: { binding: 'IMAGES' },
-    queueProducers: { DAHLIA_SUMMARY_QUEUE: 'summary' }, queueConsumers: { summary: { maxBatchSize: 1, maxRetries: 0 } },
+    queueProducers: { DAHLIA_JOB_QUEUE: 'jobs' }, queueConsumers: { jobs: { maxBatchSize: 1, maxRetries: 0 } },
     bindings: { DAHLIA_APP_URL: 'http://localhost:5173', DAHLIA_AUTH_HEADER: 'Cf-Access-Authenticated-User-Email', DAHLIA_AUTH_TYPE: 'header', DAHLIA_AUTH_SECRET: 'test-worker-secret-at-least-32-characters', DAHLIA_DATABASE_TYPE: 'postgres', DAHLIA_DATABASE_URL: databaseUrl,
       DAHLIA_STORAGE_BACKEND: 'r2', DAHLIA_AI_BACKEND: 'cloudflare',
       OPENAI_BASE_URL: 'https://api.cloudflare.com/client/v4/accounts/synthetic/ai/v1', OPENAI_API_KEY: 'synthetic' } });
@@ -146,7 +146,7 @@ try {
   const transformed = await mf.dispatchFetch('http://localhost:5173/runtime/image');
   assert.equal(transformed.status, 200, await transformed.clone().text());
   assert.equal(Buffer.from(await transformed.arrayBuffer()).subarray(8, 12).toString(), 'WEBP');
-  await bindings.DAHLIA_SUMMARY_QUEUE.send({ action: 'run', kind: 'summary', reference: { id: '019a0000-0000-7000-8000-000000000001', ownerUserId: '019a0000-0000-7000-8000-000000000002' } });
+  await bindings.DAHLIA_JOB_QUEUE.send({ action: 'wake' });
   let completed;
   const deadline = Date.now() + 10_000;
   while (!completed && Date.now() < deadline) {

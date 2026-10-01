@@ -124,7 +124,6 @@ actor SyncWorker {
                 while !Task.isCancelled {
                     do {
                         guard let self else { return }
-                        try await self.archiveService.runNext()
                         if let claim = try await SyncTransactionQueue.claim(dbQueue: self.dbQueue, recordingsOnly: true) {
                             try await self.processClaim(claim)
                             continue

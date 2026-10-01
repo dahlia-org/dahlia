@@ -898,3 +898,30 @@ export const documentPresence = appSchema.table("document_presence", {
   userId: uuid("user_id").notNull().references(() => authUser.id, { onDelete: "cascade" }),
   expiresAt: timestamp("expires_at").notNull(),
 }, (table) => [foreignKey({ name: "documentPresence_workspace_fk", columns: [table.workspaceId, table.documentId], foreignColumns: [document.workspaceId, document.id] }).onDelete("cascade").onUpdate("cascade"), index("document_presence_document_expiry").on(table.documentId, table.expiresAt), index("document_presence_workspace_expiry").on(table.workspaceId, table.expiresAt), ...documentPolicies("document_presence", table.workspaceId)]).enableRLS();
+
+// Shared dispatch metadata. Domain tables retain their payload and publication fences.
+export const backgroundJob = jobsSchema.table("queue", {
+  id: text("id").primaryKey(),
+  kind: text("kind").$type<import("../jobs/model").JobKind>().notNull(),
+  owner: text("owner").notNull(),
+  target: text("target").notNull(),
+  reference: jsonb("reference").$type<import("../jobs/model").JobReference>().notNull(),
+  generation: integer("generation").default(1).notNull(),
+  status: text("status").default("pending").notNull(),
+  availableAt: timestamp("available_at").notNull(),
+  createdAt: timestamp("created_at").notNull(),
+  lease: text("lease"),
+  leaseUntil: timestamp("lease_until"),
+  attempts: integer("attempts").default(0).notNull(),
+  lastError: text("last_error"),
+}, (table) => [
+  index("jobs_queue_due_idx").on(table.status, table.availableAt, table.owner, table.createdAt),
+  index("jobs_queue_lease_idx").on(table.status, table.leaseUntil, table.target),
+  check("jobs_queue_status_check", sql`${table.status} IN ('pending', 'processing', 'failed')`),
+]);
+
+export const jobDispatch = jobsSchema.table("dispatch", {
+  id: integer("id").primaryKey(),
+  lastOwner: text("last_owner").default("").notNull(),
+  cooldowns: jsonb("cooldowns").$type<Partial<Record<import("../jobs/model").JobGroup, number>>>().notNull(),
+});
