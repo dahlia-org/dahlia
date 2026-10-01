@@ -295,6 +295,8 @@ Each job process has a PostgreSQL pool of `2*C+2`; total configured connections 
 
 `DAHLIA_JOB_LIMITS` is a JSON object overriding DB-wide concurrency limits: `summary:8`, `audio:2` (also consumes summary capacity), `image:4`, `search:1` (up to 16 documents per batch), `memory:1` (Workspace and Personal combined), `chat:1`, `storage:1` (also reconciliation). All instances sharing a database must use the same limits. Global dispatch holds one short database lock; no network I/O runs under it. Claims rotate owners and take their oldest eligible work, skipping capped groups and active targets. Completion order is not globally FIFO. A 429 pauses the affected group across processes for 30 seconds; existing domain retry limits and refunds still apply.
 
+Domain-backed dispatch retries infrastructure failures with a delay capped at five minutes; the domain store owns terminal failure. Maintenance/reconciliation dispatch can fail after eight attempts and is revived by the scheduler. Cloudflare minute cron registers maintenance and executes one bounded shared-job batch directly from the database, even when Queue producer hints fail. Queue consumers and cron share the same DB-wide caps.
+
 Workers stop claiming on shutdown, abort active handlers and have 30 seconds to drain before termination. Uncertain in-flight work stays leased until recovery; generation and domain revision checks reject stale results. Node-only public APIs now expose `JobRunner`, `JobPool`, `createJobExecutor` and `jobResources` instead of `SummaryWorker`.
 
 ### Full-text search weights

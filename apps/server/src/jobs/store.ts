@@ -58,7 +58,9 @@ export function createJobStore(database: PostgresDatabase | SQLiteDatabase, isPo
       });
     },
     async retry(job: BackgroundJob) {
-      await db.update(jobs).set({ status: job.attempts >= 8 ? "failed" : "pending", lease: null, leaseUntil: null,
+      // Domain stores own terminal failure; infrastructure errors must leave their dispatch recoverable.
+      const terminal = job.attempts >= 8 && (job.kind === "maintenance" || job.kind === "reconcile");
+      await db.update(jobs).set({ status: terminal ? "failed" : "pending", lease: null, leaseUntil: null,
         availableAt: new Date(Math.max(Date.now() + Math.min(300_000, 1000 * 2 ** job.attempts), (job.leaseUntil?.getTime() ?? 0) + 1000)),
         lastError: "job_execution_failed" }).where(and(key(job), eq(jobs.generation, job.generation)));
       await this.complete(job);

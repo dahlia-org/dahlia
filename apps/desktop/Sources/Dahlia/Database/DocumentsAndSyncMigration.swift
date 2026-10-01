@@ -9,19 +9,23 @@ enum DocumentsAndSyncMigration {
 
     static func register(in migrator: inout DatabaseMigrator) {
         migrator.registerMigration("v53_documentsSyncAndBackgroundJobs", merging: legacyIdentifiers) { db, applied in
-            if !applied.contains("v52_documentsAndSync") {
-                if !applied.contains("v48_independentDocuments") {
-                    if applied.contains("v47_documents") {
-                        try IndependentDocumentsMigration.migrate(in: db)
-                    } else {
-                        try DocumentsMigration.migrate(in: db)
-                    }
-                }
-                if !applied.contains("v49_workspaceImportDestinations") { try createImportDestinations(in: db) }
-                if !applied.contains("v50_syncPriority") { try SyncPriorityMigration.migrate(in: db) }
-                if !applied.contains("v51_scopedSyncReconciliation") { try createReconciliations(in: db) }
-            }
+            try migrateDocumentsAndSync(in: db, applied: applied)
             if !applied.contains("v53_sharedBackgroundJobs") { try BackgroundJobsMigration.migrate(in: db) }
+        }
+    }
+
+    static func migrateDocumentsAndSync(in db: Database, applied: Set<String>) throws {
+        if !applied.contains("v52_documentsAndSync") {
+            if !applied.contains("v48_independentDocuments") {
+                if applied.contains("v47_documents") {
+                    try IndependentDocumentsMigration.migrate(in: db)
+                } else {
+                    try DocumentsMigration.migrate(in: db)
+                }
+            }
+            if !applied.contains("v49_workspaceImportDestinations") { try createImportDestinations(in: db) }
+            if !applied.contains("v50_syncPriority") { try SyncPriorityMigration.migrate(in: db) }
+            if !applied.contains("v51_scopedSyncReconciliation") { try createReconciliations(in: db) }
         }
     }
 

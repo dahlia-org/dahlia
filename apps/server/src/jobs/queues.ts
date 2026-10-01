@@ -34,15 +34,22 @@ export function createQueueJobs(bindings: WorkerJobBindings, stores: WorkerJobSt
     try { await bindings.DAHLIA_JOB_QUEUE?.send({ action: "wake" }); }
     catch { console.warn(JSON.stringify({ event: "job_notification_failed" })); }
   };
+  const processBatch = async (signal: AbortSignal) => {
+    const results = await Promise.allSettled(Array.from({ length: concurrency }, () => executor.processOne(signal)));
+    const failure = results.find((result) => result.status === "rejected");
+    if (failure) throw failure.reason;
+  };
   return {
     notify,
-    async schedule() { await stores.queue.scheduleMaintenance(); await notify(); },
+    async schedule() {
+      await stores.queue.scheduleMaintenance();
+      await processBatch(AbortSignal.timeout(240_000));
+      await notify();
+    },
     async consume(body: unknown, signal: AbortSignal) {
       jobMessageSchema.parse(body);
       if (!bindings.DAHLIA_JOB_QUEUE) throw new Error("job_queue_unavailable");
-      const results = await Promise.allSettled(Array.from({ length: concurrency }, () => executor.processOne(signal)));
-      const failure = results.find((result) => result.status === "rejected");
-      if (failure) throw failure.reason;
+      await processBatch(signal);
       // The DB remains authoritative if this hint fails; minute cron retries missed and delayed work.
       const delaySeconds = await stores.queue.nextDelay(executor.kinds);
       // Cron owns longer waits; chaining hourly maintenance hints forever would multiply idle polling.

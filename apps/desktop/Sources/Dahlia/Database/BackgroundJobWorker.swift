@@ -167,8 +167,8 @@ actor BackgroundJobWorker {
             if phase == "failed" {
                 try await drainCleanupJobs()
                 if let jobs = try await claimNextJobs(archivesOnly: true), let job = jobs.first {
-                    try await archiveService.runNext(sessionId: job.targetID)
-                    try await rescheduleArchive(job)
+                    let processed = try await archiveService.runNext(sessionId: job.targetID)
+                    try await rescheduleArchive(job, processed: processed)
                 }
                 return
             }
@@ -211,8 +211,8 @@ actor BackgroundJobWorker {
         do {
             try checkCanContinue()
             if let job = jobs.first, job.targetKind == "recordingArchive" {
-                try await archiveService.runNext(sessionId: job.targetID)
-                try await rescheduleArchive(job)
+                let processed = try await archiveService.runNext(sessionId: job.targetID)
+                try await rescheduleArchive(job, processed: processed)
             } else if jobs.first?.targetKind == "screenshotAnalysis" {
                 return try await processScreenshotJobsConcurrently(jobs)
             } else {
@@ -432,7 +432,7 @@ actor BackgroundJobWorker {
                 FROM jobs_background
                 WHERE indexKind IN ('fts', 'archive')
                   AND availableAt <= ?
-                  AND attempts < 5
+                  AND (targetKind = 'recordingArchive' OR attempts < 5)
                   AND (status = 'pending' OR leaseExpiresAt < ?)
                   \(cleanupFilter)
                   \(searchFilter)
@@ -501,7 +501,8 @@ actor BackgroundJobWorker {
         }
     }
 
-    private func rescheduleArchive(_ job: SearchIndexJob) async throws {
+    private func rescheduleArchive(_ job: SearchIndexJob, processed: Bool) async throws {
+        let delay: TimeInterval = processed ? 5 : min(300, 5 * pow(2, Double(min(job.attempts, 6))))
         try await dbQueue.write { db in
             let needed = try Bool.fetchOne(db, sql: """
             SELECT EXISTS (SELECT 1 FROM recording_archives a WHERE a.sessionId = ? AND a.connectionId IS NOT NULL AND (
@@ -510,12 +511,15 @@ actor BackgroundJobWorker {
             """, arguments: [job.targetID]) ?? false
             if needed {
                 try db.execute(sql: """
-                UPDATE jobs_background SET status = 'pending', attempts = 0, claimedAt = NULL, leaseExpiresAt = NULL,
+                UPDATE jobs_background SET status = 'pending', attempts = ?, claimedAt = NULL, leaseExpiresAt = NULL,
                     availableAt = MAX(?, COALESCE((SELECT retryAt FROM recording_archives WHERE sessionId = ?), 0))
-                WHERE indexKind = 'archive' AND targetKey = ?
-                """, arguments: [Date.now.addingTimeInterval(5), job.targetID, job.targetID])
+                WHERE indexKind = 'archive' AND targetKey = ? AND generation = ? AND status = 'processing'
+                """, arguments: [processed ? 0 : job.attempts, Date.now.addingTimeInterval(delay), job.targetID, job.targetID, job.generation])
             } else {
-                try db.execute(sql: "DELETE FROM jobs_background WHERE indexKind = 'archive' AND targetKey = ?", arguments: [job.targetID])
+                try db.execute(
+                    sql: "DELETE FROM jobs_background WHERE indexKind = 'archive' AND targetKey = ? AND generation = ? AND status = 'processing'",
+                    arguments: [job.targetID, job.generation]
+                )
             }
         }
     }
@@ -980,7 +984,7 @@ private extension BackgroundJobWorker {
     }
 
     private func fail(_ job: SearchIndexJob, error: Error) async throws {
-        if job.attempts >= 5 {
+        if job.attempts >= 5, job.targetKind != "recordingArchive" {
             if ["screenshotAnalysis", "recordingArchive"].contains(job.targetKind) {
                 try await dbQueue.write { db in
                     try db.execute(

@@ -436,7 +436,7 @@ final class AppDatabaseManager: Sendable {
     }
 
     static func schemaMigrator(for identifier: String) -> DatabaseMigrator {
-        DocumentsAndSyncMigration.legacyIdentifiers.contains(identifier) ? DevelopmentSchemaHistory.migrator : migrator
+        DocumentsAndSyncMigration.legacyIdentifiers.contains(identifier) ? DevelopmentSchemaHistory.migrator(for: identifier) : migrator
     }
 
     static func hasExpectedSchema(

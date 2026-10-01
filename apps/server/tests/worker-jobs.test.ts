@@ -5,10 +5,11 @@ import { closeAfterResponse, createWorkerHandler, type WorkerApp } from "../src/
 function setup() {
   const send = vi.fn().mockResolvedValue(undefined);
   const queue = { claim: vi.fn().mockResolvedValue(null), nextDelay: vi.fn().mockResolvedValue(undefined),
-    scheduleMaintenance: vi.fn().mockResolvedValue(undefined) };
+    scheduleMaintenance: vi.fn().mockResolvedValue(undefined), complete: vi.fn().mockResolvedValue(undefined) };
+  const sync = { drainStorageDeletes: vi.fn().mockResolvedValue(undefined) };
   const jobs = createQueueJobs({ DAHLIA_JOB_QUEUE: { send, sendBatch: vi.fn() } }, { queue } as unknown as WorkerJobStores,
-    {} as never, {} as never, []);
-  return { jobs, queue, send };
+    {} as never, sync as never, []);
+  return { jobs, queue, send, sync };
 }
 describe("shared Worker job delivery", () => {
   it("recovers failed post-commit hints from cron without putting content in messages", async () => {
@@ -19,9 +20,20 @@ describe("shared Worker job delivery", () => {
     expect(queue.scheduleMaintenance).toHaveBeenCalledOnce();
     expect(send).toHaveBeenLastCalledWith({ action: "wake" });
     await jobs.consume({ action: "wake" }, new AbortController().signal);
-    expect(queue.claim).toHaveBeenCalledTimes(4);
+    expect(queue.claim).toHaveBeenCalledTimes(8);
     expect(jobMessageSchema.safeParse({ action: "wake", text: "private" }).success).toBe(false);
     expect(jobMessageSchema.safeParse({ action: "run", reference: "private" }).success).toBe(false);
+  });
+  it("drains durable storage work from cron even while every producer hint fails", async () => {
+    const { jobs, queue, send, sync } = setup();
+    send.mockRejectedValue(new Error("producer unavailable"));
+    queue.claim.mockResolvedValueOnce({ id: "storage-delete:key", kind: "storage-delete", reference: { storageKey: "key" },
+      batch: [{}], createdAt: new Date() });
+    await jobs.schedule();
+    expect(sync.drainStorageDeletes).toHaveBeenCalledWith("key");
+    expect(queue.complete).toHaveBeenCalledOnce();
+    expect(queue.claim).toHaveBeenCalledTimes(4);
+    expect(send).toHaveBeenCalledOnce();
   });
   it("reschedules according to durable availability and exposes DB failures for queue retry", async () => {
     const { jobs, queue, send } = setup();

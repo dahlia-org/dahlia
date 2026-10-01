@@ -6,7 +6,7 @@ import { DatabaseSync } from "node:sqlite";
 import { afterEach, describe, expect, it } from "vitest";
 import { serverMigrationManifest } from "../src/migrations";
 import { createNodeApplicationStore } from "../src/auth/node-store";
-import { defaultJobLimits, loadJobConfig } from "../src/jobs/model";
+import { defaultJobLimits, jobKinds, loadJobConfig } from "../src/jobs/model";
 import { jobResources } from "../src/jobs/resources";
 import { JobRunner } from "../src/jobs/node-runner";
 const cleanup: Array<() => Promise<void>> = [];
@@ -38,6 +38,21 @@ describe("shared durable dispatch", () => {
       await queue.enqueue(id, kind, "", id, { after: "ignored-active" });
       expect(await queue.claim([kind])).toBeNull();
       await queue.complete(revived);
+    }
+  });
+  it("keeps source-backed dispatch recoverable after repeated infrastructure failures", async () => {
+    const { queue, db } = await fixture();
+    for (const kind of jobKinds.filter((kind) => kind !== "maintenance" && kind !== "reconcile")) {
+      await queue.enqueue(kind, kind, "owner", kind, {});
+      db.prepare("UPDATE jobs_queue SET attempts = 7 WHERE id = ?").run(kind);
+      await queue.retry((await queue.claim([kind]))!);
+      expect(db.prepare("SELECT status, attempts FROM jobs_queue WHERE id = ?").get(kind)).toMatchObject({ status: "pending", attempts: 8 });
+      expect(await queue.claim([kind])).toBeNull();
+      expect(await queue.nextDelay([kind])).toBeDefined();
+      db.prepare("UPDATE jobs_queue SET available_at = 0 WHERE id = ?").run(kind);
+      const recovered = (await queue.claim([kind]))!;
+      expect(recovered.attempts).toBe(9);
+      await queue.complete(recovered);
     }
   });
   it("enforces caps, target serialization, owner fairness and old-first eligibility", async () => {
