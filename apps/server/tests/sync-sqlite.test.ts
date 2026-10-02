@@ -1101,6 +1101,29 @@ describe("SQLite canonical sync", () => {
     await store.close?.();
   });
 
+  it.each(["insert", "update", "processing"] as const)("revives accepted image dispatch on attachment during %s", async (action) => {
+    const { store, publish, attach, service, file, databasePath } = await fileSetup("model");
+    const db = new DatabaseSync(databasePath);
+    try {
+      await publish();
+      if (action === "update") await attach();
+      seedLegacyImageJob(databasePath, file.id, "model");
+      db.exec("UPDATE jobs_image_analysis SET attempts = 1; UPDATE jobs_queue SET attempts = 2 WHERE kind = 'image'");
+      const job = (await store.jobs.claim(["image"]))!;
+      if (action !== "processing") await store.jobs.retry(job, { delayMs: 0, errorCode: "job_source_not_ready" });
+      expect(db.prepare("SELECT status, attempts FROM jobs_queue WHERE kind = 'image'").get())
+        .toMatchObject({ status: action === "processing" ? "processing" : "failed", attempts: 3 });
+      if (action !== "update") await attach();
+      else await service.commitTransaction(owner, wire([{ entity: "meeting_attachment", action: "upsert", entityId: file.id,
+        baseRevision: 1, data: { fileId: file.id, meetingId, capturedAt: now.toISOString(), sessionId: null, createdAt: now.toISOString() } }]));
+      if (action === "processing") await store.jobs.retry(job, { delayMs: 0, errorCode: "job_source_not_ready" });
+      expect(db.prepare("SELECT status, attempts, last_error FROM jobs_queue WHERE kind = 'image'").get())
+        .toMatchObject({ status: "pending", attempts: 0, last_error: null });
+      expect(db.prepare("SELECT status, attempts FROM jobs_image_analysis").get()).toMatchObject({ status: "pending", attempts: 1 });
+      expect(await store.imageAnalysis!.claim("model")).toMatchObject({ fileId: file.id, attempts: 1 });
+    } finally { db.close(); await store.close?.(); }
+  });
+
   it("pauses unreferenced image and embedding claims after an upstream 429", async () => {
     const { store, service, publish, attach, file, databasePath } = await fileSetup("model", "fill_missing");
     const raw = new DatabaseSync(databasePath);

@@ -3,14 +3,15 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { serverMigrationManifest } from "../src/migrations";
 import { createNodeApplicationStore } from "../src/auth/node-store";
 import { defaultJobLimits, jobKinds, loadJobConfig } from "../src/jobs/model";
 import { jobResources } from "../src/jobs/resources";
 import { JobRunner } from "../src/jobs/node-runner";
+import { createJobExecutor } from "../src/jobs/execute";
 const cleanup: Array<() => Promise<void>> = [];
-afterEach(async () => { for (const close of cleanup.splice(0)) await close(); });
+afterEach(async () => { vi.useRealTimers(); for (const close of cleanup.splice(0)) await close(); });
 async function fixture() {
   const path = mkdtempSync(join(tmpdir(), "dahlia-jobs-"));
   const url = `file:${join(path, "test.sqlite")}`;
@@ -23,11 +24,55 @@ async function fixture() {
   return { queue: store.jobs, db, url };
 }
 describe("shared durable dispatch", () => {
+  it("lets waiting memory run ahead of an older image after its retry becomes due", async () => {
+    const { queue, db } = await fixture();
+    await queue.enqueue("image", "image", "owner", "file", {});
+    await queue.enqueue("memory", "workspace-memory", "owner", "memory", {});
+    db.exec("UPDATE jobs_queue SET created_at = CASE WHEN id = 'image' THEN 1000 ELSE 2000 END, available_at = 0");
+    const image = (await queue.claim(["image", "workspace-memory"]))!;
+    expect(image.id).toBe("image");
+    await queue.reschedule(image, image.reference, 0);
+    expect((await queue.claim(["image", "workspace-memory"]))!.id).toBe("memory");
+  });
+  it("runs memory before rechecking an older image whose source is not ready", async () => {
+    const { queue, db } = await fixture();
+    vi.useFakeTimers();
+    await queue.enqueue("image", "image", "owner", "file", { fileId: "file", ownerUserId: "owner", model: "model" });
+    await queue.enqueue("memory", "workspace-memory", "owner", "memory", { scopeId: "scope" });
+    db.exec("UPDATE jobs_queue SET created_at = CASE WHEN id = 'image' THEN 1000 ELSE 2000 END");
+    const claim = vi.fn().mockResolvedValue(null), step = vi.fn().mockResolvedValue(undefined);
+    const executor = createJobExecutor({ queue: { ...queue, sourceAvailableAt: async () => new Date(0) },
+      summaryJobs: {} as never, methods: [], sync: {} as never, syncStore: {} as never,
+      imageAnalysis: { claim } as never, captioner: { model: "model" } as never, memory: { step } as never });
+    const signal = new AbortController().signal;
+    await executor.processOne(signal);
+    expect(claim).toHaveBeenCalledOnce();
+    vi.setSystemTime(Date.now() + 2_000);
+    await executor.processOne(signal);
+    expect(step).toHaveBeenCalledWith("scope", expect.any(AbortSignal));
+    expect(claim).toHaveBeenCalledOnce();
+    expect(await executor.processOne(signal)).toBe(false);
+    vi.setSystemTime(Date.now() + 60_000);
+    await executor.processOne(signal);
+    expect(claim).toHaveBeenCalledTimes(2);
+    vi.setSystemTime(Date.now() + 60_000);
+    await executor.processOne(signal);
+    expect(db.prepare("SELECT status, attempts, last_error FROM jobs_queue WHERE id = 'image'").get())
+      .toMatchObject({ status: "failed", attempts: 3, last_error: "job_source_not_ready" });
+    vi.setSystemTime(Date.now() + 60_000);
+    expect(await executor.processOne(signal)).toBe(false);
+    expect(claim).toHaveBeenCalledTimes(3);
+    await queue.enqueue("image", "image", "owner", "file", { fileId: "file", ownerUserId: "owner", model: "model" });
+    await executor.processOne(signal);
+    expect(claim).toHaveBeenCalledTimes(4);
+    expect(db.prepare("SELECT status, attempts FROM jobs_queue WHERE id = 'image'").get())
+      .toMatchObject({ status: "pending", attempts: 1 });
+  });
   it("revives failed recurring work without replacing pending or active registrations", async () => {
     const { queue, db } = await fixture();
     for (const [id, kind] of [["maintenance", "maintenance"], ["reconcile:image:scope", "reconcile"]] as const) {
       await queue.enqueue(id, kind, "", id, { after: "old" });
-      db.prepare("UPDATE jobs_queue SET attempts = 7 WHERE id = ?").run(id);
+      db.prepare("UPDATE jobs_queue SET attempts = 2 WHERE id = ?").run(id);
       const failed = (await queue.claim([kind]))!;
       await queue.retry(failed);
       expect(db.prepare("SELECT status FROM jobs_queue WHERE id = ?").get(id)?.status).toBe("failed");
@@ -40,18 +85,18 @@ describe("shared durable dispatch", () => {
       await queue.complete(revived);
     }
   });
-  it("keeps source-backed dispatch recoverable after repeated infrastructure failures", async () => {
+  it("retains source-backed dispatch in the DLQ after three infrastructure failures and revives on registration", async () => {
     const { queue, db } = await fixture();
     for (const kind of jobKinds.filter((kind) => kind !== "maintenance" && kind !== "reconcile")) {
       await queue.enqueue(kind, kind, "owner", kind, {});
-      db.prepare("UPDATE jobs_queue SET attempts = 7 WHERE id = ?").run(kind);
+      db.prepare("UPDATE jobs_queue SET attempts = 2 WHERE id = ?").run(kind);
       await queue.retry((await queue.claim([kind]))!);
-      expect(db.prepare("SELECT status, attempts FROM jobs_queue WHERE id = ?").get(kind)).toMatchObject({ status: "pending", attempts: 8 });
+      expect(db.prepare("SELECT status, attempts FROM jobs_queue WHERE id = ?").get(kind)).toMatchObject({ status: "failed", attempts: 3 });
       expect(await queue.claim([kind])).toBeNull();
-      expect(await queue.nextDelay([kind])).toBeDefined();
-      db.prepare("UPDATE jobs_queue SET available_at = 0 WHERE id = ?").run(kind);
+      expect(await queue.nextDelay([kind])).toBeUndefined();
+      await queue.enqueue(kind, kind, "owner", kind, {});
       const recovered = (await queue.claim([kind]))!;
-      expect(recovered.attempts).toBe(9);
+      expect(recovered.attempts).toBe(1);
       await queue.complete(recovered);
     }
   });
@@ -106,14 +151,35 @@ describe("shared durable dispatch", () => {
     db.exec("BEGIN; INSERT INTO jobs_storage_delete(storage_key) VALUES ('rolled-back'); ROLLBACK;");
     expect(await queue.claim(["storage-delete"])).toBeNull();
   });
-  it("counts a search batch as one execution slot and bounds it at sixteen documents", async () => {
-    const { queue } = await fixture();
+  it("orders search batches by availability, bounds them at sixteen and uses one execution slot", async () => {
+    const { queue, db } = await fixture();
     for (let i = 0; i < 17; i++) await queue.enqueue(`doc${i}`, "search", "scope", `doc${i}`, {});
+    db.exec("UPDATE jobs_queue SET created_at = CASE WHEN id = 'doc16' THEN 2000 ELSE 1000 END, available_at = CASE WHEN id = 'doc16' THEN 0 ELSE 1000 END");
     const job = (await queue.claim(["search"]))!;
+    expect(job.id).toBe("doc16");
+    expect(job.batch[0]?.id).toBe("doc16");
     expect(job.batch).toHaveLength(16);
     expect(await queue.claim(["search"])).toBeNull();
     for (const item of job.batch) await queue.complete(item);
     expect((await queue.claim(["search"]))!.batch).toHaveLength(1);
+  });
+  it("waits past each five-minute lease before infrastructure retries reach the DLQ", async () => {
+    const { queue } = await fixture();
+    vi.useFakeTimers();
+    await queue.enqueue("memory", "workspace-memory", "owner", "memory", {});
+    const first = (await queue.claim(["workspace-memory"]))!;
+    await queue.retry(first);
+    vi.setSystemTime(Date.now() + 6_000);
+    expect(await queue.claim(["workspace-memory"])).toBeNull();
+    vi.setSystemTime(first.leaseUntil.getTime() + 1_000);
+    const second = (await queue.claim(["workspace-memory"]))!;
+    expect(second.attempts).toBe(2);
+    await queue.retry(second);
+    vi.setSystemTime(second.leaseUntil.getTime() + 1_000);
+    const third = (await queue.claim(["workspace-memory"]))!;
+    expect(third.attempts).toBe(3);
+    await queue.retry(third);
+    expect(await queue.nextDelay(["workspace-memory"])).toBeUndefined();
   });
   it("shares throttling across kinds using the same summary budget", async () => {
     const { queue } = await fixture();

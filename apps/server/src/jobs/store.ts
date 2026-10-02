@@ -38,10 +38,10 @@ export function createJobStore(database: PostgresDatabase | SQLiteDatabase, isPo
           or(eq(jobs.status, "pending"), and(eq(jobs.status, "processing"), lte(jobs.leaseUntil, now))),
           active.length ? notInArray(jobs.target, active.map((item) => item.target)) : undefined);
         const [job] = await tx.select().from(jobs).where(and(inArray(jobs.kind, allowed), eligible))
-          .orderBy(sql`CASE WHEN ${jobs.owner} > ${state!.lastOwner} THEN 0 ELSE 1 END`, asc(jobs.owner), asc(jobs.createdAt), asc(jobs.id)).limit(1);
+          .orderBy(sql`CASE WHEN ${jobs.owner} > ${state!.lastOwner} THEN 0 ELSE 1 END`, asc(jobs.owner), asc(jobs.availableAt), asc(jobs.createdAt), asc(jobs.id)).limit(1);
         if (!job) return null;
         const batch = job.kind === "search" ? await tx.select().from(jobs).where(and(eq(jobs.kind, "search"), eq(jobs.owner, job.owner), eligible))
-          .orderBy(asc(jobs.createdAt), asc(jobs.id)).limit(16) : [job];
+          .orderBy(asc(jobs.availableAt), asc(jobs.createdAt), asc(jobs.id)).limit(16) : [job];
         const lease = uuidV7(), leaseUntil = new Date(now.getTime() + JOB_LEASE_MS);
         const claimed = batch.map((item) => ({ ...item, status: "processing", lease, leaseUntil, attempts: item.attempts + 1 }));
         await tx.update(jobs).set({ status: "processing", lease, leaseUntil, attempts: sql`${jobs.attempts} + 1` })
@@ -57,12 +57,12 @@ export function createJobStore(database: PostgresDatabase | SQLiteDatabase, isPo
           .where(and(key(job), gt(jobs.generation, job.generation)));
       });
     },
-    async retry(job: BackgroundJob) {
-      // Domain stores own terminal failure; infrastructure errors must leave their dispatch recoverable.
-      const terminal = job.attempts >= 8 && (job.kind === "maintenance" || job.kind === "reconcile");
+    async retry(job: BackgroundJob, deferred?: { delayMs: number; errorCode: string }) {
+      const terminal = job.attempts >= 3;
       await db.update(jobs).set({ status: terminal ? "failed" : "pending", lease: null, leaseUntil: null,
-        availableAt: new Date(Math.max(Date.now() + Math.min(300_000, 1000 * 2 ** job.attempts), (job.leaseUntil?.getTime() ?? 0) + 1000)),
-        lastError: "job_execution_failed" }).where(and(key(job), eq(jobs.generation, job.generation)));
+        availableAt: new Date(deferred ? Date.now() + deferred.delayMs
+          : Math.max(Date.now() + Math.min(300_000, 1000 * 2 ** job.attempts), (job.leaseUntil?.getTime() ?? 0) + 1000)),
+        lastError: deferred?.errorCode ?? "job_execution_failed" }).where(and(key(job), eq(jobs.generation, job.generation)));
       await this.complete(job);
     },
     async reschedule(job: BackgroundJob, reference: JobReference, delayMs: number) {
