@@ -34,13 +34,13 @@ struct DahliaAccountsSettingsView: View {
     @ViewBuilder
     private var sections: some View {
         Section {
-            selectionRow(connection: nil) {
+            selectionButton(connection: nil) {
                 HStack {
                     Label(L10n.localAccount, systemImage: "desktopcomputer")
                     selectionMark(connectionID: nil)
                 }
-                .accessibilityHidden(true)
             }
+            .modifier(AccountRowHoverModifier(isEnabled: workspaceToSelect(for: nil) != nil))
             ForEach(controller.connections) { connection in
                 connectionRow(connection)
             }
@@ -71,8 +71,8 @@ struct DahliaAccountsSettingsView: View {
     }
 
     private func connectionRow(_ connection: DahliaAccountConnection) -> some View {
-        selectionRow(connection: connection) {
-            HStack {
+        HStack(spacing: 0) {
+            selectionButton(connection: connection) {
                 HStack {
                     Image(systemName: connection.isCloud ? "icloud" : "xserve")
                         .foregroundStyle(connection.isSignedIn ? .green : .secondary)
@@ -87,10 +87,8 @@ struct DahliaAccountsSettingsView: View {
                             .foregroundStyle(.secondary)
                     }
                 }
-                .accessibilityHidden(true)
-
-                Spacer()
-
+            }
+            Group {
                 if controller.isBusy(connectionID: connection.id) {
                     ProgressView()
                         .controlSize(.small)
@@ -112,34 +110,33 @@ struct DahliaAccountsSettingsView: View {
                     .disabled(controller.isBusy)
                 }
             }
+            .padding(.trailing, 8)
+            .padding(.vertical, 6)
         }
+        .modifier(AccountRowHoverModifier(isEnabled: workspaceToSelect(for: connection) != nil))
     }
 
-    private func selectionRow(
+    private func selectionButton(
         connection: DahliaAccountConnection?,
         @ViewBuilder label: () -> some View
     ) -> some View {
         let isSelected = currentWorkspace != nil && currentWorkspace?.accountConnectionId == connection?.id
         let canSelect = workspaceToSelect(for: connection) != nil
-        return label()
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(.horizontal, 8)
-            .padding(.vertical, 6)
-            .background {
-                Button {
-                    selectAccount(connection)
-                } label: {
-                    Color.clear
-                        .contentShape(.rect(cornerRadius: DahliaDesign.Highlight.compactCornerRadius))
-                }
-                .buttonStyle(.plain)
-                .disabled(!canSelect)
-                .accessibilityLabel(connection?.displayName ?? L10n.localAccount)
-                .accessibilityValue(connection?.origin ?? "")
-                .accessibilityHint(isSelected ? "" : L10n.switchAccount)
-                .accessibilityAddTraits(isSelected ? .isSelected : [])
-            }
-            .modifier(AccountRowHoverModifier(isEnabled: canSelect))
+        return Button {
+            selectAccount(connection)
+        } label: {
+            label()
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.horizontal, 8)
+                .padding(.vertical, 6)
+                .contentShape(.rect(cornerRadius: DahliaDesign.Highlight.compactCornerRadius))
+        }
+        .buttonStyle(.plain)
+        .disabled(!canSelect && !isSelected)
+        .accessibilityLabel(connection?.displayName ?? L10n.localAccount)
+        .accessibilityValue(connection?.origin ?? "")
+        .accessibilityHint(isSelected ? "" : L10n.switchAccount)
+        .accessibilityAddTraits(isSelected ? .isSelected : [])
     }
 
     func selectAccount(_ connection: DahliaAccountConnection?) {
