@@ -2272,6 +2272,11 @@ function createIdentityStore(
           }).onConflictDoNothing().returning({ id: schema.meetingAttachment.id });
           if (!inserted) throw new SyncTransactionError(409, "meeting_attachment_id_conflict", [], operation.id);
         }
+        // Revive accepted work through its dispatch trigger when a delayed attachment makes it ready.
+        await db.update(schema.imageAnalysisJob).set({ status: "pending" }).where(and(
+          eq(schema.imageAnalysisJob.fileId, fileId), eq(schema.imageAnalysisJob.workspaceId, transaction.workspaceId),
+          eq(schema.imageAnalysisJob.status, "pending"),
+        ));
 
       }
 

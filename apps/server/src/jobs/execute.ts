@@ -89,7 +89,8 @@ export function createJobExecutor(services: JobServices) {
     }
     if (!processed) for (const item of job.batch) {
       const availableAt = await services.queue.sourceAvailableAt(item);
-      if (availableAt) await services.queue.reschedule(item, item.reference, Math.max(1000, availableAt.getTime() - Date.now() + 1000));
+      if (availableAt) await services.queue.retry(item, { delayMs: Math.max(60_000, availableAt.getTime() - Date.now() + 1000),
+        errorCode: "job_source_not_ready" });
     }
   }
   return {
