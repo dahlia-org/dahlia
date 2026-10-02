@@ -72,9 +72,9 @@ enum TextContentStore {
         }
         let bytes = try Int.fetchOne(db, sql: byteCountSQL, arguments: [id]) ?? 0
         try db.execute(sql: """
-        INSERT INTO sync_content_state(workspace_id, entity, entityId, residentRevision, complete, byteCount)
-        VALUES (?, ?, ?, (SELECT confirmedRevision FROM sync_entity_state WHERE workspace_id = ? AND entity = ? AND entityId = ?), 1, ?)
-        """, arguments: [workspaceId, entity.rawValue, id, workspaceId, entity.rawValue, id, bytes])
+        INSERT INTO sync_content_state(workspace_id, entity, entityId, residentRevision, complete, byteCount, lastAccessedAt)
+        VALUES (?, ?, ?, (SELECT confirmedRevision FROM sync_entity_state WHERE workspace_id = ? AND entity = ? AND entityId = ?), 1, ?, ?)
+        """, arguments: [workspaceId, entity.rawValue, id, workspaceId, entity.rawValue, id, bytes, Date()])
     }
 
     static func requireWorkspaceComplete(workspaceId: UUID, in db: Database) throws {
@@ -218,7 +218,8 @@ enum TextContentStore {
         ON CONFLICT(workspace_id, entity, entityId) DO UPDATE SET residentRevision = excluded.residentRevision,
             complete = 1, present = excluded.present, contentCount = excluded.contentCount,
             verifiedHash = excluded.verifiedHash, byteCount = excluded.byteCount, fetchError = NULL,
-            lastAccessedAt = coalesce(excluded.lastAccessedAt, sync_content_state.lastAccessedAt)
+            lastAccessedAt = CASE WHEN ? OR sync_content_state.complete = 0 THEN excluded.lastAccessedAt
+                ELSE coalesce(sync_content_state.lastAccessedAt, excluded.lastAccessedAt) END
         """, arguments: [
             source.workspaceId,
             manifest.entity.rawValue,
@@ -228,7 +229,8 @@ enum TextContentStore {
             manifest.count,
             manifest.sha256,
             manifest.byteCount,
-            accessed ? Date() : nil,
+            Date(),
+            accessed,
         ])
     }
 }

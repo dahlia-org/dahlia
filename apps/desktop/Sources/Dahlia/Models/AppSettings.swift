@@ -1,4 +1,5 @@
 import Combine
+import DahliaMeetingAccess
 import SwiftUI
 
 /// アプリの表示言語。
@@ -274,6 +275,16 @@ final class AppSettings: ObservableObject, GoogleDriveExportFolderSettingsProvid
         BatchTranscriptionStallTimeout.defaultValue.rawValue
     @AppStorage(AppSettings.batchAudioRetentionPeriodUserDefaultsKey) private var batchAudioRetentionPeriodRawValue =
         BatchAudioRetentionPeriod.defaultValue.rawValue
+    @AppStorage(ServerContentRetention.defaultsKey) private var storedServerContentRetentionDays = ServerContentRetention.defaultDays
+
+    var serverContentRetentionDays: Int {
+        get { storedServerContentRetentionDays >= 0 ? storedServerContentRetentionDays : ServerContentRetention.defaultDays }
+        set {
+            objectWillChange.send()
+            storedServerContentRetentionDays = newValue >= 0 ? newValue : ServerContentRetention.defaultDays
+        }
+    }
+
     @AppStorage(AppSettings.generateSummaryAfterBatchTranscriptionUserDefaultsKey) var generateSummaryAfterBatchTranscription = false
     @AppStorage(AppSettings.exportBatchSummaryToWorkspaceUserDefaultsKey) var exportBatchSummaryToWorkspace = true
     @AppStorage(AppSettings.exportBatchSummaryToGoogleDocsUserDefaultsKey) var exportBatchSummaryToGoogleDocs = false

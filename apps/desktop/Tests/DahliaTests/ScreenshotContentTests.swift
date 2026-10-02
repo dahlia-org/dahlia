@@ -519,7 +519,7 @@
             #expect(await events.next() == "second image")
             #expect(try await first.storedBytes() == nil)
             #expect(try await provider.content(id: first.screenshotId, dbQueue: first.dbQueue).data == first.bytes)
-            try await provider.trimFiles(dbQueue: first.dbQueue, budget: 0)
+            try await provider.trimFiles(dbQueue: first.dbQueue, budget: 0, now: .distantFuture, retentionDays: 1)
             #expect(try await first.storedBytes() == nil)
             #expect(try await provider.content(id: first.screenshotId, dbQueue: first.dbQueue).data == first.bytes)
             #expect(try await unrelated.storedBytes() == unrelated.bytes)
@@ -539,7 +539,7 @@
                     }
                 }
                 // Failure releases the protection, so normal cache maintenance can resume.
-                try await provider.trimFiles(dbQueue: first.dbQueue, budget: 0)
+                try await provider.trimFiles(dbQueue: first.dbQueue, budget: 0, now: .distantFuture, retentionDays: 1)
                 #expect(try await first.storedBytes() == nil)
             } else {
                 try await moving.value
@@ -564,7 +564,7 @@
             let workspaceId = fixture.workspaceId
             try await provider.prepareOriginals(workspaceId: workspaceId, dbQueue: queue)
             #expect(try await fixture.storedBytes() == nil)
-            try await provider.trimFiles(dbQueue: queue, budget: 0)
+            try await provider.trimFiles(dbQueue: queue, budget: 0, now: .distantFuture, retentionDays: 1)
             #expect(try cache.read(fixture.source, variant: .original)?.data == fixture.bytes)
             try await fixture.confirm()
             if remoteOnly {
@@ -581,22 +581,22 @@
                     in: db
                 )
             }
-            try await provider.trimFiles(dbQueue: queue, budget: 0)
+            try await provider.trimFiles(dbQueue: queue, budget: 0, now: .distantFuture, retentionDays: 1)
             #expect(try cache.read(fixture.source, variant: .original)?.data == fixture.bytes)
             let transaction = try #require(try await SyncTransactionQueue.claim(dbQueue: queue))
             try await SyncTransactionQueue.block(transaction, reason: .conflict, response: Data("{}".utf8), dbQueue: queue)
-            try await provider.trimFiles(dbQueue: queue, budget: 0)
+            try await provider.trimFiles(dbQueue: queue, budget: 0, now: .distantFuture, retentionDays: 1)
             #expect(try cache.read(fixture.source, variant: .original)?.data == fixture.bytes)
             try await queue.write { db in
                 try SyncTransactionQueue.discard(workspaceId: workspaceId, in: db)
                 try db.execute(sql: "UPDATE workspaces SET syncRecoveryState = 'pending' WHERE id = ?", arguments: [workspaceId])
             }
-            try await provider.trimFiles(dbQueue: queue, budget: 0)
+            try await provider.trimFiles(dbQueue: queue, budget: 0, now: .distantFuture, retentionDays: 1)
             #expect(try cache.read(fixture.source, variant: .original)?.data == fixture.bytes)
             try await queue.write { db in
                 try db.execute(sql: "UPDATE workspaces SET syncRecoveryState = NULL WHERE id = ?", arguments: [workspaceId])
             }
-            try await provider.trimFiles(dbQueue: queue, budget: 0)
+            try await provider.trimFiles(dbQueue: queue, budget: 0, now: .distantFuture, retentionDays: 1)
             #expect(try cache.read(fixture.source, variant: .original) == nil)
             #expect(try await queue.read { try WorkspaceRecord.fetchOne($0, key: workspaceId)?.syncPullCursor } == "cursor")
             #expect(try await !SyncTransactionQueue.hasPending(workspaceId: workspaceId, dbQueue: queue))
@@ -829,18 +829,18 @@
             let cache = try ScreenshotFileStore(directory: root.appending(path: "cache"))
             let fixture = try ScreenshotContentFixture()
             let content = ScreenshotContent(data: fixture.bytes, mimeType: "image/png", variant: .original)
-            try cache.write(content, source: fixture.source, budget: fixture.bytes.count)
+            try cache.write(content, source: fixture.source)
             let second = ScreenshotRemoteReference(
                 origin: fixture.source.origin,
                 accountConnectionId: fixture.connectionId,
                 fileId: .v7(),
                 contentHash: fixture.source.contentHash
             )
-            try cache.write(content, source: second, budget: fixture.bytes.count)
-            try cache.trim(budget: fixture.bytes.count, protecting: [])
+            try cache.write(content, source: second)
+            try cache.trim(budget: fixture.bytes.count, protecting: [], now: .distantFuture, retentionDays: 1)
             #expect(try cache.read(fixture.source, variant: .original) == nil)
-            try cache.write(content, source: fixture.source, budget: 100)
-            try cache.trim(budget: 0, protecting: [])
+            try cache.write(content, source: fixture.source)
+            try cache.trim(budget: 0, protecting: [], now: .distantFuture, retentionDays: 1)
             #expect(try cache.read(fixture.source, variant: .original) == nil)
             let path = root.appending(path: "compact.sqlite")
             let database = try AppDatabaseManager(path: path.path)

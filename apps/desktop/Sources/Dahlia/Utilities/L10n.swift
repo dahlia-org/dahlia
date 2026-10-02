@@ -167,6 +167,9 @@ enum L10n { // swiftlint:disable:this type_body_length
     static var textContentSearchFailed: String { String(localized: "text.content.searchFailed", bundle: bundle) }
     static var screenshotCacheLimit: String { String(localized: "screenshot.cache.limit", bundle: bundle) }
     static var screenshotCacheDescription: String { String(localized: "screenshot.cache.description", bundle: bundle) }
+    static var serverContentRetention: String { String(localized: "server.content.retention", bundle: bundle) }
+    static var serverContentRetentionDays: String { String(localized: "server.content.retention.days", bundle: bundle) }
+    static var serverContentRetentionDescription: String { String(localized: "server.content.retention.description", bundle: bundle) }
     /// キャッシュ済みの Bundle と、その生成元の言語 rawValue。
     /// 言語設定が変わらない限り Bundle を再生成しない。
     private nonisolated(unsafe) static var cachedBundle: Bundle = .appModule

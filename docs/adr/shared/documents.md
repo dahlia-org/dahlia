@@ -28,7 +28,7 @@
 
 Desktop は差分と送信待ちを短い SQLite transaction で保存してから保存済みと通知する。本文生成・マージ・checkpoint 作成は MainActor と DB write transaction の外で行う。通常時250ms以内のローカル commit を目標とするが、強制終了前の未確認入力の保全時間は保証しない。録音停止に文書待機を追加しない。通常終了・画面切替はローカル commit だけを待つ。今回の Web はメモリのみで、閉じた後の未送信入力は復元保証の対象外。
 
-本文・差分・復元記録・要約 snapshot は既存の Server 暗号化 store と RLS の対象。Notes の FTS / 検索 / Hindsight への直接取り込みは追加しない。再取得可能な共有文書キャッシュは既存128 MiB LRUへ含め、未送信・非公開・復元用・Local Account のデータは解放しない。バックアップ、移管、Server→Local、サインアウトで同じ保存境界を維持する。
+本文・差分・復元記録・要約 snapshot は既存の Server 暗号化 store と RLS の対象。Notes の FTS / 検索 / Hindsight への直接取り込みは追加しない。再取得可能な共有文書キャッシュは既存128 MiB LRUへ含め、[Desktop の最低保持期間](sync.md#desktop-の最低保持期間2026-10-02)を優先して解放し、未送信・非公開・復元用・Local Account のデータは解放しない。バックアップ、移管、Server→Local、サインアウトで同じ保存境界を維持する。
 
 ## 要約
 

@@ -109,9 +109,9 @@ extension ScreenshotContentProvider {
             guard let file = try await dbQueue.read({ try FileRecord.fetchOne($0, key: id) }), file.workspaceId == workspaceId else { continue }
             let connectionId = try await dbQueue.read { try WorkspaceRecord.fetchOne($0, key: workspaceId)?.accountConnectionId }
             let origin = try await origin(connectionId: connectionId, dbQueue: dbQueue)
-            let content = try await fileContent(id: id, dbQueue: dbQueue)
+            let content = try await fileContent(id: id, dbQueue: dbQueue, recordAccess: false)
             let source = ScreenshotRemoteReference(origin: origin, accountConnectionId: connectionId, fileId: id, contentHash: file.contentHash)
-            try fileStore(for: dbQueue).write(content, source: source, required: true)
+            try fileStore(for: dbQueue).write(content, source: source, required: true, recordAccess: false)
             let reference = try source.jsonString()
             try await dbQueue.write { db in
                 guard try WorkspaceRecord.fetchOne(db, key: workspaceId)?.accountConnectionId == connectionId,
@@ -161,7 +161,7 @@ extension ScreenshotContentProvider {
             guard let attachment else { return }
             let hash = attachment.source.contentHash
             guard ScreenshotRemoteReference.digest(attachment.content.data) == hash else { throw ScreenshotContentError.integrityFailure }
-            try fileStore(for: dbQueue).write(attachment.content, source: attachment.source, required: true)
+            try fileStore(for: dbQueue).write(attachment.content, source: attachment.source, required: true, recordAccess: false)
             let operationId = attachment.id
             let reference = try attachment.source.jsonString()
             try await dbQueue.write { db in
@@ -196,11 +196,14 @@ extension ScreenshotContentProvider {
                   source.contentHash == row["attachmentSHA256"] as String else { throw ScreenshotContentError.integrityFailure }
             return (source, row["attachmentMimeType"])
         }
-        guard let content = try fileStore(for: dbQueue).read(source, variant: .original) else { throw ScreenshotContentError.unavailable }
+        guard let content = try fileStore(for: dbQueue).read(source, variant: .original, recordAccess: false) else {
+            throw ScreenshotContentError.unavailable
+        }
         return SyncScreenshotAttachment(mimeType: mimeType, bytes: content.data)
     }
 
-    func trimFiles(dbQueue: DatabaseQueue, budget: Int? = nil) throws {
+    func trimFiles(dbQueue: DatabaseQueue, budget: Int? = nil, now: Date = .now, retentionDays: Int? = nil) throws {
+        guard (retentionDays ?? ServerContentRetention.days()) > 0 else { return }
         // ponytail: pause eviction during publication or account moves; use per-file leases if contention becomes material.
         guard activeFileWork == 0, retainedWorkspaces.withLock({ $0.values.allSatisfy(\.isEmpty) }) else { return }
         let files = try fileStore(for: dbQueue)
@@ -221,7 +224,7 @@ extension ScreenshotContentProvider {
             let keys = try Set(references.map {
                 try JSONDecoder().decode(ScreenshotRemoteReference.self, from: Data($0.utf8)).cacheKey(variant: .original)
             })
-            try files.trim(budget: budget, protecting: keys)
+            try files.trim(budget: budget, protecting: keys, now: now, retentionDays: retentionDays)
         }
     }
 

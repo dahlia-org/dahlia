@@ -1,3 +1,4 @@
+import DahliaMeetingAccess
 import Foundation
 import GRDB
 
@@ -56,8 +57,17 @@ enum DocumentRetention {
         """) ?? 0
     }
 
-    static func evict(documentID: UUID, protectedWorkspaces: Set<UUID>, in db: Database) throws -> Int {
+    static func evict(
+        documentID: UUID,
+        protectedWorkspaces: Set<UUID>,
+        now: Date = .now,
+        retentionDays: Int? = nil,
+        in db: Database
+    ) throws -> Int {
         guard let document = try DocumentRecord.fetchOne(db, key: documentID), !protectedWorkspaces.contains(document.workspaceId),
+              ServerContentRetention.allowsEviction(
+                  lastUsedAt: document.lastAccessedAt, now: now, days: retentionDays ?? ServerContentRetention.days()
+              ),
               let workspace = try WorkspaceRecord.fetchOne(db, key: document.workspaceId), workspace.accountConnectionId != nil,
               workspace.syncRecoveryState == nil, document.generation != nil, document.resident,
               try !RecordingSessionRecord.hasActiveRecording(workspaceId: workspace.id, in: db),

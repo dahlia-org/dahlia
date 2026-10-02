@@ -132,7 +132,7 @@ actor MeetingContentProvider {
             return (available, stale)
         }
         if available, !refresh, !(refreshIfStale && stale) {
-            try await touch(entity: entity, id: id, dbQueue: dbQueue)
+            if prefetchBudget == nil { try await touch(entity: entity, id: id, dbQueue: dbQueue) }
             return
         }
         let user = UUID()
@@ -158,6 +158,7 @@ actor MeetingContentProvider {
         } onCancel: {
             Task { await self.cancelRequest(key: key, requestId: request.id, user: user) }
         }
+        if prefetchBudget == nil { try await touch(entity: entity, id: id, dbQueue: dbQueue) }
         // An explicit reader may have joined a budget-limited prefetch; retry without that limit.
         if prefetchBudget == nil,
            try await dbQueue.read({ (try? TextContentAccess.requireComplete(entity: entity, id: id, in: $0)) == nil }) {

@@ -278,7 +278,13 @@ enum SyncTransactionRecorder {
         }
     }
 
-    private static func contentRevision(for operation: SyncOperationDraft, workspaceId: UUID, in db: Database) throws -> Int? {
+    private static func contentRevision(
+        for operation: SyncOperationDraft,
+        workspaceId: UUID,
+        recordAccess: Bool,
+        now: Date,
+        in db: Database
+    ) throws -> Int? {
         let contentEntity = TextContentEntity(rawValue: operation.entity.rawValue)
         if operation.action != .delete {
             if let contentEntity {
@@ -290,6 +296,12 @@ enum SyncTransactionRecorder {
                 for entity in [TextContentEntity.summary, .transcript] {
                     try TextContentStore.registerLocal(entity: entity, id: operation.entityId, workspaceId: workspaceId, in: db)
                 }
+            }
+            if recordAccess {
+                try db.execute(
+                    sql: "UPDATE sync_content_state SET lastAccessedAt = ? WHERE workspace_id = ? AND entity = ? AND entityId = ?",
+                    arguments: [now, workspaceId, operation.entity, operation.entityId]
+                )
             }
         }
         guard let contentEntity else { return nil }
@@ -388,7 +400,9 @@ enum SyncTransactionRecorder {
         )
 
         for (position, operation) in operations.enumerated() {
-            let residentRevision = try contentRevision(for: operation, workspaceId: workspaceId, in: db)
+            let residentRevision = try contentRevision(
+                for: operation, workspaceId: workspaceId, recordAccess: !background && !buildingInitial, now: now, in: db
+            )
             let attachment = screenshotAttachments[operation.id]
             if let attachment {
                 guard operation.entity == .file, attachment.source.fileId == operation.entityId,

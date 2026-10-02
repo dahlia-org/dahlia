@@ -1520,7 +1520,7 @@
 "meetingSync.validation" = "Saved on device · Sync needs attention";
 
 "screenshot.cache.limit" = "Cloud image cache limit";
-"screenshot.cache.description" = "Synced images are downloaded as needed. Older cached images are removed when the limit is exceeded. Local account images, unsent images, and backups are excluded.";
+"screenshot.cache.description" = "Synced images are downloaded as needed. Older cached images are removed when the limit is exceeded, subject to the Server data retention period in General settings. The retention period takes priority over this limit. Local account images, unsent images, and backups are excluded.";
 
 "Only workspaces in the Local Account can be backed up." = "Only workspaces in the Local Account can be backed up.";
 
@@ -1765,3 +1765,7 @@
 "Local recordings from reconnection" = "Local recordings from reconnection";
 "documentUnsupportedSchema" = "This older Notes format is not supported. Your data remains on this device.";
 "documentTooLarge" = "This edit exceeds the Notes limit. Reduce the content or synchronize before retrying.";
+
+"server.content.retention" = "Local Retention of Server Data";
+"server.content.retention.days" = "Retention (days)";
+"server.content.retention.description" = "Retention defaults to Forever to prevent older data from being automatically removed after connecting to Server. Keep Server data created, edited, viewed, or first downloaded on this Mac for at least this period. Applies to text, Documents, and downloaded images across all Server accounts. After the period, unused data may be removed in the background when storage limits are exceeded, then downloaded again when needed. Forever prevents automatic removal. Storage limits may be exceeded to honor the retention period. Recording audio is managed separately.";

@@ -2,6 +2,7 @@ import SwiftUI
 
 /// Mac-wide appearance, language, and notification preferences.
 struct GeneralSettingsView: View {
+    private static let initialRetentionDays = 30
     @ObservedObject private var settings = AppSettings.shared
     @AppStorage(AppSettings.meetingSidebarRowStyleUserDefaultsKey)
     private var meetingSidebarRowStyle = MeetingSidebarRowStyle.standard.rawValue
@@ -93,6 +94,25 @@ struct GeneralSettingsView: View {
                 }
                 .toggleStyle(.switch)
                 Text(L10n.builtInMicrophoneEchoCancellationDescription).foregroundStyle(.secondary)
+            }
+
+            Section {
+                Toggle(L10n.forever, isOn: Binding(
+                    get: { settings.serverContentRetentionDays == 0 },
+                    set: { settings.serverContentRetentionDays = $0 ? 0 : Self.initialRetentionDays }
+                ))
+                .toggleStyle(.switch)
+                LabeledContent(L10n.serverContentRetentionDays) {
+                    TextField(L10n.serverContentRetentionDays, value: Binding(
+                        get: { settings.serverContentRetentionDays == 0 ? Self.initialRetentionDays : settings.serverContentRetentionDays },
+                        set: { if $0 > 0 { settings.serverContentRetentionDays = $0 } }
+                    ), format: .number.grouping(.never))
+                        .disabled(settings.serverContentRetentionDays == 0)
+                }
+            } header: {
+                Text(L10n.serverContentRetention)
+            } footer: {
+                Text(L10n.serverContentRetentionDescription)
             }
         }
         .formStyle(.grouped)

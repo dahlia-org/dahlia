@@ -14,6 +14,12 @@
         }
     }
 
+    func brokerTestExecutableURL() -> URL {
+        var path = [CChar](repeating: 0, count: Int(PATH_MAX))
+        let count = proc_pidpath(getpid(), &path, UInt32(path.count))
+        return URL(filePath: String(decoding: path.prefix(Int(count)).map { UInt8(bitPattern: $0) }, as: UTF8.self))
+    }
+
     @MainActor
     struct DahliaImageBrokerTests {
         @Test
@@ -23,7 +29,7 @@
             let socket = root.appending(path: "image.sock")
             let request = DahliaImageBrokerProtocol.Request(workspaceId: .v7(), meetingId: .v7(), screenshotId: .v7())
             let bytes = Data(repeating: 0xAB, count: 128 * 1024)
-            let broker = DahliaImageBrokerServer(helperURL: executableURL()) { _ in bytes }
+            let broker = DahliaImageBrokerServer(helperURL: brokerTestExecutableURL()) { _ in bytes }
             try broker.start(socketURL: socket)
             defer { broker.stop() }
             let received = try await withBrokerClientThread {
@@ -67,7 +73,7 @@
                     mimeType: "image/png"
                 ).insertLegacyForTesting(db)
             }
-            let broker = DahliaImageBrokerServer(dbQueue: db.dbQueue, helperURL: executableURL())
+            let broker = DahliaImageBrokerServer(dbQueue: db.dbQueue, helperURL: brokerTestExecutableURL())
             try broker.start(socketURL: socket)
             defer { broker.stop() }
             let valid = DahliaImageBrokerProtocol.Request(workspaceId: workspace.id, meetingId: meeting.id, screenshotId: imageId)
@@ -84,7 +90,7 @@
             defer { try? FileManager.default.removeItem(at: root) }
             let socket = root.appending(path: "text.sock")
             let pages = Mutex(0)
-            let broker = DahliaImageBrokerServer(helperURL: executableURL()) { _ in
+            let broker = DahliaImageBrokerServer(helperURL: brokerTestExecutableURL()) { _ in
                 // Simulated healthy page latency; the aggregate exceeds both image IPC deadlines.
                 for _ in 0 ..< 3 {
                     try await Task.sleep(for: .seconds(12))
@@ -106,7 +112,7 @@
             defer { try? FileManager.default.removeItem(at: root) }
             let socket = root.appending(path: "image.sock")
             let (events, continuation) = AsyncStream.makeStream(of: String.self)
-            let broker = DahliaImageBrokerServer(helperURL: executableURL()) { _ in
+            let broker = DahliaImageBrokerServer(helperURL: brokerTestExecutableURL()) { _ in
                 continuation.yield("started")
                 do {
                     // Stand in for a suspended network read; only cancellation completes it.
@@ -134,7 +140,7 @@
             let root = URL(filePath: "/tmp/dahlia-text-errors-\(UUID().uuidString)")
             defer { try? FileManager.default.removeItem(at: root) }
             let socket = root.appending(path: "text.sock")
-            let broker = DahliaImageBrokerServer(helperURL: executableURL()) { _ in
+            let broker = DahliaImageBrokerServer(helperURL: brokerTestExecutableURL()) { _ in
                 if code == "offline" { throw URLError(.notConnectedToInternet) }
                 if code == "noCredential" { throw DahliaCloudError.noCredential }
                 if code == "expiredRefresh" { throw DahliaCloudError.tokenRequestFailed(400) }
@@ -154,10 +160,5 @@
             }
         }
 
-        private func executableURL() -> URL {
-            var path = [CChar](repeating: 0, count: Int(PATH_MAX))
-            let count = proc_pidpath(getpid(), &path, UInt32(path.count))
-            return URL(filePath: String(decoding: path.prefix(Int(count)).map { UInt8(bitPattern: $0) }, as: UTF8.self))
-        }
     }
 #endif

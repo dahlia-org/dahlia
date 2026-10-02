@@ -36,7 +36,7 @@ public final class ScreenshotFileStore: Sendable {
         // An interrupted registration can leave a file without an index row. Never delete it at open.
     }
 
-    public func read(_ source: ScreenshotRemoteReference, variant: ScreenshotVariant) throws -> ScreenshotContent? {
+    public func read(_ source: ScreenshotRemoteReference, variant: ScreenshotVariant, recordAccess: Bool = true) throws -> ScreenshotContent? {
         let key = source.cacheKey(variant: variant)
         let row = try index.read { db in
             try Row.fetchOne(db, sql: "SELECT * FROM images WHERE key = ?", arguments: [key])
@@ -52,23 +52,28 @@ public final class ScreenshotFileStore: Sendable {
             throw ScreenshotContentError.integrityFailure
         }
         let content = ScreenshotContent(data: bytes, mimeType: row["mimeType"], variant: variant)
-        if !readOnly {
-            try? index.write { db in
-                try db.execute(sql: "UPDATE images SET accessedAt = ? WHERE key = ?", arguments: [Date().timeIntervalSince1970, key])
-            }
-        }
+        if !readOnly, recordAccess { try? touch(source, variant: variant) }
         return content
+    }
+
+    public func touch(_ source: ScreenshotRemoteReference, variant: ScreenshotVariant = .original, now: Date = .now) throws {
+        guard !readOnly else { throw ScreenshotContentError.unavailable }
+        try index.write { db in
+            try db.execute(
+                sql: "UPDATE images SET accessedAt = ? WHERE key IN (?, ?)",
+                arguments: [now.timeIntervalSince1970, source.cacheKey(variant: variant), source.cacheKey(variant: .original)]
+            )
+        }
     }
 
     public func write(
         _ content: ScreenshotContent,
         source: ScreenshotRemoteReference,
         required: Bool = false,
-        budget: Int? = nil
+        recordAccess: Bool = true,
+        now: Date = .now
     ) throws {
         guard !readOnly else { throw ScreenshotContentError.unavailable }
-        let budget = budget ?? Self.configuredBudget
-        guard required || content.data.count <= budget else { return }
         let digest = ScreenshotRemoteReference.digest(content.data)
         guard content.variant != .original || digest == source.contentHash else { throw ScreenshotContentError.integrityFailure }
         let key = source.cacheKey(variant: content.variant)
@@ -91,25 +96,42 @@ public final class ScreenshotFileStore: Sendable {
         try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: file.path)
         try index.write { db in
             try db.execute(sql: """
-            INSERT OR REPLACE INTO images (key, mimeType, variant, byteCount, digest, accessedAt, sourceHash) VALUES (?, ?, ?, ?, ?, ?, ?)
+            INSERT INTO images (key, mimeType, variant, byteCount, digest, accessedAt, sourceHash) VALUES (?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(key) DO UPDATE SET mimeType = excluded.mimeType, variant = excluded.variant,
+                byteCount = excluded.byteCount, digest = excluded.digest, sourceHash = excluded.sourceHash,
+                accessedAt = CASE WHEN ? THEN excluded.accessedAt ELSE images.accessedAt END
             """, arguments: [
                 key,
                 content.mimeType,
                 content.variant.rawValue,
                 content.data.count,
                 digest,
-                Date().timeIntervalSince1970,
+                now.timeIntervalSince1970,
                 source.contentHash,
+                recordAccess,
             ])
+            if recordAccess {
+                try db.execute(
+                    sql: "UPDATE images SET accessedAt = ? WHERE key = ?",
+                    arguments: [now.timeIntervalSince1970, source.cacheKey(variant: .original)]
+                )
+            }
         }
         // No implicit eviction: only the app can inspect pending operations and transient readers.
     }
 
-    public func trim(budget: Int? = nil, protecting keys: Set<String>, limit: Int = 16) throws {
+    public func trim(
+        budget: Int? = nil,
+        protecting keys: Set<String>,
+        limit: Int = 16,
+        now: Date = .now,
+        retentionDays: Int? = nil
+    ) throws {
         guard !readOnly else { throw ScreenshotContentError.unavailable }
+        guard (retentionDays ?? ServerContentRetention.days()) > 0 else { return }
         let budget = budget ?? Self.configuredBudget
         try index.write { db in
-            let rows = try Row.fetchAll(db, sql: "SELECT key, byteCount, variant FROM images ORDER BY accessedAt")
+            let rows = try Row.fetchAll(db, sql: "SELECT key, byteCount, variant, accessedAt FROM images ORDER BY accessedAt")
                 .filter { !keys.contains($0["key"] as String) && !(($0["key"] as String).hasPrefix("local/")) }
             var total = rows.reduce(0) { $0 + ($1["byteCount"] as Int) }
             guard total > budget else { return }
@@ -117,6 +139,10 @@ public final class ScreenshotFileStore: Sendable {
                 .reduce(0) { $0 + ($1["byteCount"] as Int) }
             var removed = 0
             for row in rows where total > budget * 4 / 5 && removed < limit {
+                guard ServerContentRetention.allowsEviction(
+                    lastUsedAt: Date(timeIntervalSince1970: row["accessedAt"]),
+                    now: now, days: retentionDays ?? ServerContentRetention.days()
+                ) else { continue }
                 let isThumbnail = row["variant"] as String == ScreenshotVariant.thumbnail.rawValue
                 if isThumbnail, thumbnails <= budget / 5 { continue }
                 let key: String = row["key"]
