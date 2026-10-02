@@ -62,7 +62,9 @@ struct ContentView: View {
                         onRequestProjectDeletion: { projectPendingDeletion = $0 },
                         onOpenSidebarProject: handleMeetingSidebarProjectAction,
                         onSelectWorkspace: onSelectWorkspace
-                    )
+                    ) {
+                        mainDetailHeader
+                    }
                 } else {
                     MainSidebarSplitView(
                         width: mainWindowNavigation.sidebarWidth,
@@ -126,6 +128,11 @@ struct ContentView: View {
                             )
                         }
                         .mainDetailPane()
+                        .overlay(alignment: .top) {
+                            if !isShowingSettings, !isShowingFullScreenChat {
+                                mainDetailHeader
+                            }
+                        }
                     }
                 }
             }
@@ -492,6 +499,55 @@ private extension ContentView {
     private var canNavigateHistory: Bool {
         !viewModel.isRecordingStartPending
             && !viewModel.isFinalizingRecording
+    }
+
+    @ViewBuilder
+    private var mainDetailHeader: some View {
+        if let workspace = sidebarViewModel.currentWorkspace {
+            MainDetailHeader(
+                reservesChatControl: !chatCoordinator.isDockedVisible,
+                leadingInset: isSidebarVisible ? 0 : MainWorkspaceHeader.controlsWidth,
+                syncState: headerMeetingTitle != nil ? viewModel.meetingSyncState : nil,
+                textContentState: headerMeetingTitle != nil ? viewModel.textContentState : nil,
+                retryTextContent: viewModel.retryTextContent
+            ) {
+                MainNavigationBreadcrumbs(
+                    workspace: workspace,
+                    workspaces: workspaceManagementModel.workspaces.filter { $0.accountConnectionId == workspace.accountConnectionId },
+                    projects: sidebarViewModel.projectItemsByID,
+                    projectID: headerProjectID,
+                    meetingTitle: headerMeetingTitle,
+                    dbQueue: sidebarViewModel.dbQueue,
+                    onOpenMeeting: openProjectMeeting,
+                    appearanceForProject: projectAppearance,
+                    onSelectWorkspace: onSelectWorkspace,
+                    onShowProjects: showProjectCatalog,
+                    onOpenProject: openProjectDetail
+                )
+            }
+            .id(sidebarViewModel.currentWorkspace?.id)
+        }
+    }
+
+    private var headerMeetingTitle: String? {
+        guard mainWindowNavigation.section == .meetings,
+              !isShowingFullScreenChat,
+              !isShowingUnprocessedRecordings,
+              sidebarViewModel.selectedMeetingIds.count <= 1,
+              !Self.isMeetingSelectionPending(
+                  selectedMeetingID: sidebarViewModel.selectedMeetingId,
+                  currentMeetingID: viewModel.currentMeetingId
+              ) else { return nil }
+        if let id = viewModel.currentMeetingId {
+            guard let meeting = sidebarViewModel.selectedMeetingDetail, meeting.meetingId == id else { return "" }
+            return meeting.meetingName
+        }
+        return viewModel.hasDraftMeeting ? viewModel.draftMeetingTitle : nil
+    }
+
+    private var headerProjectID: UUID? {
+        if case let .project(id) = mainWindowNavigation.currentLocation { return id }
+        return headerMeetingTitle != nil ? viewModel.currentProjectId : nil
     }
 
     @ViewBuilder

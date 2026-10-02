@@ -2,6 +2,8 @@ import SwiftUI
 
 struct ScreenshotTabContentView: View {
     @ObservedObject var screenshotStore: ScreenshotStore
+    let pageHeader: AnyView
+    let pageFooter: AnyView
     let meetingID: UUID?
     let recordingSessions: [RecordingSessionTimeline]
     let fallbackTimeBase: Date
@@ -17,43 +19,50 @@ struct ScreenshotTabContentView: View {
 
     var body: some View {
         if screenshotStore.records.isEmpty {
-            ContentUnavailableView {
-                Label(L10n.screenshots, systemImage: "photo.on.rectangle.angled")
-            } description: {
-                Text(L10n.noScreenshotsYet)
+            ScrollView {
+                VStack(spacing: 0) {
+                    pageHeader
+                    ContentUnavailableView {
+                        Label(L10n.screenshots, systemImage: "photo.on.rectangle.angled")
+                    } description: {
+                        Text(L10n.noScreenshotsYet)
+                    }
+                    .frame(maxWidth: .infinity, minHeight: 280)
+                    pageFooter
+                }
+                .frame(maxWidth: DahliaDesign.mainContentMaxWidth)
+                .frame(maxWidth: .infinity)
             }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
         } else {
-            VStack(spacing: 0) {
-                ScreenshotManagementToolbar(
-                    minimumWidth: $minimumItemWidth,
-                    isSelecting: $isSelecting,
-                    selectedCount: selectedScreenshotIDs.count,
-                    canSelectAll: selectedScreenshotIDs.count < deletableScreenshotIDs.count,
-                    isDeletionDisabled: isDeletionDisabled,
-                    selectAll: selectAllScreenshots,
-                    deleteSelected: deleteSelected
-                )
-                .padding(12)
+            ScreenshotCollectionView(
+                pageHeader: AnyView(VStack(spacing: 0) { pageHeader
+                    ScreenshotManagementToolbar(
+                        minimumWidth: $minimumItemWidth,
+                        isSelecting: $isSelecting,
+                        selectedCount: selectedScreenshotIDs.count,
+                        canSelectAll: selectedScreenshotIDs.count < deletableScreenshotIDs.count,
+                        isDeletionDisabled: isDeletionDisabled,
+                        selectAll: selectAllScreenshots,
+                        deleteSelected: deleteSelected
+                    )
+                    .padding(12)
+                }),
+                pageFooter: pageFooter,
+                meetingID: meetingID,
+                screenshots: screenshotStore.records,
+                contentRevision: screenshotStore.contentRevision,
+                recordingSessions: recordingSessions,
+                fallbackTimeBase: fallbackTimeBase,
+                minimumItemWidth: minimumItemWidth,
+                isSelecting: isSelecting,
+                referencedScreenshotIDs: referencedScreenshotIDs,
+                isDeletionDisabled: isDeletionDisabled,
+                selectedScreenshotIDs: $selectedScreenshotIDs,
+                open: open,
+                download: download,
+                delete: delete
+            )
 
-                ScreenshotCollectionView(
-                    meetingID: meetingID,
-                    screenshots: screenshotStore.records,
-                    contentRevision: screenshotStore.contentRevision,
-                    recordingSessions: recordingSessions,
-                    fallbackTimeBase: fallbackTimeBase,
-                    minimumItemWidth: minimumItemWidth,
-                    isSelecting: isSelecting,
-                    referencedScreenshotIDs: referencedScreenshotIDs,
-                    isDeletionDisabled: isDeletionDisabled,
-                    selectedScreenshotIDs: $selectedScreenshotIDs,
-                    open: open,
-                    download: download,
-                    delete: delete
-                )
-                .padding(.horizontal, DahliaDesign.tabContentInset)
-                .padding(.bottom, DahliaDesign.tabContentInset)
-            }
         }
     }
 

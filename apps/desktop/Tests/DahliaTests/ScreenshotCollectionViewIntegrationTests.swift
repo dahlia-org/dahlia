@@ -9,6 +9,42 @@ import SwiftUI
     @MainActor
     extension ScreenshotCollectionViewTests {
         @Test
+        func wideViewportCentersGridWithoutNarrowingScrollView() {
+            let layout = ScreenshotCollectionLayout()
+            let collection = NSCollectionView(frame: NSRect(x: 0, y: 0, width: 1400, height: 360))
+            collection.collectionViewLayout = layout
+            layout.prepare()
+            #expect(collection.bounds.width == 1400)
+            #expect(layout.sectionInset.left == 212)
+            #expect(layout.sectionInset.right == 212)
+            #expect(layout.itemSize == ScreenshotCollectionLayout.metrics(
+                containerWidth: DahliaDesign.mainContentMaxWidth,
+                minimumItemWidth: layout.minimumItemWidth
+            ).itemSize)
+        }
+
+        @Test
+        func pageHeaderAndFooterShareTheCollectionScrollLayout() {
+            let layout = ScreenshotCollectionLayout()
+            let collection = NSCollectionView(frame: NSRect(x: 0, y: 0, width: 640, height: 360))
+            collection.collectionViewLayout = layout
+            layout.setPageContent(
+                header: AnyView(Color.clear.frame(height: 180)),
+                footer: AnyView(Color.clear.frame(height: 40))
+            )
+            layout.prepare()
+            #expect(layout.headerReferenceSize == NSSize(width: 640, height: 180))
+            #expect(layout.footerReferenceSize == NSSize(width: 640, height: 40))
+            collection.frame.size.width = 500
+            layout.prepare()
+            #expect(layout.headerReferenceSize.width == 500)
+            layout.setPageContent(header: nil, footer: nil)
+            layout.prepare()
+            #expect(layout.headerReferenceSize == .zero)
+            #expect(layout.footerReferenceSize == .zero)
+        }
+
+        @Test
         func layoutPreparationAndInvalidationUseCollectionBoundsWidth() {
             let layout = ScreenshotCollectionLayout()
             let collectionView = NSCollectionView(frame: NSRect(x: 0, y: 0, width: 700, height: 360))
@@ -30,6 +66,27 @@ import SwiftUI
                 width: collectionView.bounds.width + 1,
                 height: collectionView.bounds.height
             )))
+        }
+
+        @Test
+        func pageHeaderScrollsAwayWhileScreenshotCellsStayVirtualized() async throws {
+            let meetingID = UUID.v7()
+            let screenshots = makeScreenshots(count: 500, meetingID: meetingID)
+            var input = makeCollectionInput(meetingID: meetingID, screenshots: screenshots)
+            input.pageHeader = AnyView(Color.clear.frame(height: 180))
+            input.pageFooter = AnyView(Color.clear.frame(height: 40))
+            let harness = ScreenshotCollectionHarness(parent: input)
+            await integrationWaitUntil { harness.coordinator.snapshotItemIdentifiers.count == 500 }
+            harness.layoutViews()
+            let layout = try #require(harness.collectionView.collectionViewLayout)
+            let header = try #require(layout.layoutAttributesForSupplementaryView(
+                ofKind: NSCollectionView.elementKindSectionHeader, at: IndexPath(item: 0, section: 0)
+            ))
+            #expect(header.frame.height == 180)
+            harness.scroll(toY: 240)
+            harness.layoutViews()
+            #expect(harness.scrollView.contentView.bounds.minY > header.frame.maxY)
+            #expect(harness.collectionView.visibleItems().count < 100)
         }
 
         @Test
