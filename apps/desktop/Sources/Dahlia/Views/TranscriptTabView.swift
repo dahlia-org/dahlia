@@ -1,33 +1,45 @@
 import SwiftUI
 
-struct TranscriptTabView: View {
-    private static let prefetchDistance = 30
+struct TranscriptTabView<Header: View, Footer: View>: View {
+    private var prefetchDistance: Int { 30 }
 
     @ObservedObject var store: TranscriptStore
     let allowsTextSelection: Bool
     let showsTranslatedText: Bool
     let retryInitialMeetingLoad: () -> Void
+    @ViewBuilder let header: Header
+    @ViewBuilder let footer: Footer
 
     @State private var scrollPosition = ScrollPosition(idType: TranscriptSegment.ID.self)
     @State private var isFollowingLatest = true
     @State private var pageLoadTask: Task<Void, Never>?
 
     var body: some View {
-        VStack(spacing: 0) {
-            if store.isLoadingInitialPage {
-                ProgressView()
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-            } else if store.segments.isEmpty,
-                      store.pageLoadError == nil {
-                ContentUnavailableView {
-                    Label(L10n.transcript, systemImage: "waveform.badge.microphone")
-                } description: {
-                    Text(L10n.transcriptEmpty)
+        ScrollView {
+            VStack(spacing: 0) {
+                header
+                if store.isLoadingInitialPage {
+                    ProgressView()
+                        .frame(maxWidth: .infinity, minHeight: 280)
+                } else if store.segments.isEmpty,
+                          store.pageLoadError == nil {
+                    ContentUnavailableView {
+                        Label(L10n.transcript, systemImage: "waveform.badge.microphone")
+                    } description: {
+                        Text(L10n.transcriptEmpty)
+                    }
+                    .frame(maxWidth: .infinity, minHeight: 280)
+                } else {
+                    transcriptContent
                 }
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-            } else {
-                transcriptContent
+                footer
             }
+            .frame(maxWidth: DahliaDesign.mainContentMaxWidth)
+            .frame(maxWidth: .infinity)
+        }
+        .scrollPosition($scrollPosition)
+        .onScrollTargetVisibilityChange(idType: TranscriptSegment.ID.self, threshold: 0.1) { ids in
+            updateVisibleSegments(ids)
         }
         .onDisappear {
             pageLoadTask?.cancel()
@@ -70,39 +82,33 @@ struct TranscriptTabView: View {
                 .padding(.vertical, 6)
             }
 
-            ScrollView {
-                LazyVStack(alignment: .leading, spacing: 2) {
-                    let timeBase = store.timeBase
-                    let recordingSessions = store.recordingSessions
-                    ForEach(store.segments) { segment in
-                        TranscriptRowView(
-                            segment: segment,
-                            timestamp: Formatters.elapsedHHmmss(
-                                at: segment.startTime,
-                                sessionId: segment.sessionId,
-                                sessions: recordingSessions,
-                                fallbackTimeBase: timeBase
-                            ),
-                            showsTranslatedText: showsTranslatedText,
-                            allowsTextSelection: allowsTextSelection
-                        )
-                        .equatable()
-                        .id(segment.id)
-                    }
+            LazyVStack(alignment: .leading, spacing: 2) {
+                let timeBase = store.timeBase
+                let recordingSessions = store.recordingSessions
+                ForEach(store.segments) { segment in
+                    TranscriptRowView(
+                        segment: segment,
+                        timestamp: Formatters.elapsedHHmmss(
+                            at: segment.startTime,
+                            sessionId: segment.sessionId,
+                            sessions: recordingSessions,
+                            fallbackTimeBase: timeBase
+                        ),
+                        showsTranslatedText: showsTranslatedText,
+                        allowsTextSelection: allowsTextSelection
+                    )
+                    .equatable()
+                    .id(segment.id)
                 }
-                .scrollTargetLayout()
-                .padding(DahliaDesign.tabContentInset)
             }
-            .scrollPosition($scrollPosition)
-            .onScrollTargetVisibilityChange(idType: TranscriptSegment.ID.self, threshold: 0.1) { ids in
-                updateVisibleSegments(ids)
-            }
+            .scrollTargetLayout()
+            .padding(DahliaDesign.tabContentInset)
             .onAppear {
-                scrollToLatest()
+                scrollToLatest(in: &scrollPosition)
             }
             .onChange(of: store.latestConfirmedID) { _, _ in
                 guard isFollowingLatest, !store.hasLaterSegments else { return }
-                scrollToLatest()
+                scrollToLatest(in: &scrollPosition)
             }
         }
     }
@@ -110,6 +116,10 @@ struct TranscriptTabView: View {
     private func updateVisibleSegments(_ ids: [TranscriptSegment.ID]) {
         let indexesByID = Dictionary(uniqueKeysWithValues: store.segments.enumerated().map { ($0.element.id, $0.offset) })
         let visible = ids.compactMap { id in indexesByID[id].map { (id, $0) } }
+        if visible.isEmpty, scrollPosition.isPositionedByUser {
+            isFollowingLatest = false
+            store.setFollowingLatest(false)
+        }
         guard let first = visible.min(by: { $0.1 < $1.1 }),
               let last = visible.max(by: { $0.1 < $1.1 }) else { return }
 
@@ -118,9 +128,9 @@ struct TranscriptTabView: View {
         isFollowingLatest = followsLatest
         store.setFollowingLatest(followsLatest)
 
-        if first.1 <= Self.prefetchDistance, store.hasEarlierSegments {
+        if first.1 <= prefetchDistance, store.hasEarlierSegments {
             loadPage(.earlier, anchorID: first.0)
-        } else if last.1 >= store.segments.count - Self.prefetchDistance - 1,
+        } else if last.1 >= store.segments.count - prefetchDistance - 1,
                   store.hasLaterSegments {
             loadPage(.later, anchorID: last.0)
         }
@@ -165,7 +175,7 @@ struct TranscriptTabView: View {
             if await store.reloadLatest() {
                 isFollowingLatest = true
                 store.setFollowingLatest(true)
-                scrollToLatest()
+                scrollToLatest(in: &scrollPosition)
             }
             pageLoadTask = nil
         }
@@ -182,11 +192,12 @@ struct TranscriptTabView: View {
         }
     }
 
-    private func scrollToLatest() {
+    func scrollToLatest(in position: inout ScrollPosition) {
+        guard let latestID = store.segments.last?.id else { return }
         var transaction = Transaction(animation: nil)
         transaction.disablesAnimations = true
         withTransaction(transaction) {
-            scrollPosition.scrollTo(edge: .bottom)
+            position.scrollTo(id: latestID, anchor: .bottom)
         }
     }
 }

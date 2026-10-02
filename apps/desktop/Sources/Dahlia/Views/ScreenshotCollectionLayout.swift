@@ -1,4 +1,5 @@
 import AppKit
+import SwiftUI
 
 final class ScreenshotCollectionLayout: NSCollectionViewFlowLayout {
     struct Metrics: Equatable {
@@ -15,6 +16,32 @@ final class ScreenshotCollectionLayout: NSCollectionViewFlowLayout {
             guard minimumItemWidth != oldValue else { return }
             invalidateLayout()
         }
+    }
+
+    var pageHeader: NSHostingView<AnyView>?
+    var pageFooter: NSHostingView<AnyView>?
+    private var headerContent: AnyView?
+    private var footerContent: AnyView?
+    private var measuredWidth: CGFloat?
+
+    func setPageContent(header: AnyView?, footer: AnyView?) {
+        measuredWidth = nil
+        headerContent = header
+        footerContent = footer
+        if let header, pageHeader == nil { pageHeader = NSHostingView(rootView: header) }
+        if let footer, pageFooter == nil { pageFooter = NSHostingView(rootView: footer) }
+        if header == nil { pageHeader = nil }
+        if footer == nil { pageFooter = nil }
+        invalidateLayout()
+    }
+
+    private func pageSize(_ content: AnyView?, host: NSHostingView<AnyView>?, width: CGFloat) -> NSSize {
+        guard let content, let host, width > 0 else { return .zero }
+        host.rootView = AnyView(content.frame(maxWidth: DahliaDesign.mainContentMaxWidth).frame(width: width).fixedSize(
+            horizontal: false,
+            vertical: true
+        ))
+        return NSSize(width: width, height: host.fittingSize.height)
     }
 
     override init() {
@@ -42,7 +69,18 @@ final class ScreenshotCollectionLayout: NSCollectionViewFlowLayout {
         }
 
         let viewportWidth = collectionView.bounds.width
-        let metrics = Self.metrics(containerWidth: viewportWidth, minimumItemWidth: minimumItemWidth)
+        if measuredWidth != viewportWidth {
+            let headerSize = pageSize(headerContent, host: pageHeader, width: viewportWidth)
+            let footerSize = pageSize(footerContent, host: pageFooter, width: viewportWidth)
+            if headerReferenceSize != headerSize { headerReferenceSize = headerSize }
+            if footerReferenceSize != footerSize { footerReferenceSize = footerSize }
+            measuredWidth = viewportWidth
+        }
+        let contentWidth = min(viewportWidth, DahliaDesign.mainContentMaxWidth)
+        let sideInset = Self.sectionPadding + max(0, (viewportWidth - contentWidth) / 2)
+        sectionInset.left = sideInset
+        sectionInset.right = sideInset
+        let metrics = Self.metrics(containerWidth: contentWidth, minimumItemWidth: minimumItemWidth)
         if itemSize != metrics.itemSize {
             itemSize = metrics.itemSize
         }

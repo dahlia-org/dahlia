@@ -5,6 +5,8 @@ import SwiftUI
 struct ScreenshotCollectionView: NSViewRepresentable {
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
+    var pageHeader: AnyView?
+    var pageFooter: AnyView?
     let meetingID: UUID?
     let screenshots: [MeetingScreenshotRecord]
     var contentRevision: UInt64?
@@ -91,6 +93,14 @@ extension ScreenshotCollectionView {
         }
 
         func installDataSource(on collectionView: NSCollectionView) {
+            for kind in [NSCollectionView.elementKindSectionHeader, NSCollectionView.elementKindSectionFooter] {
+                collectionView.register(
+                    ScreenshotPageSupplementaryView.self,
+                    forSupplementaryViewOfKind: kind,
+                    withIdentifier: NSUserInterfaceItemIdentifier(kind)
+                )
+            }
+
             dataSource = NSCollectionViewDiffableDataSource<Int, UUID>(collectionView: collectionView) { [weak self] collectionView, indexPath, id in
                 MainActor.assumeIsolated {
                     guard let self,
@@ -103,6 +113,23 @@ extension ScreenshotCollectionView {
                     return item
                 }
             }
+            dataSource?.supplementaryViewProvider = { collectionView, kind, indexPath in
+                MainActor.assumeIsolated {
+                    guard let layout = collectionView.collectionViewLayout as? ScreenshotCollectionLayout else { return nil }
+                    let host = kind == NSCollectionView.elementKindSectionHeader ? layout.pageHeader : layout.pageFooter
+                    guard let host else { return nil }
+                    guard let container = collectionView.makeSupplementaryView(
+                        ofKind: kind,
+                        withIdentifier: NSUserInterfaceItemIdentifier(kind),
+                        for: indexPath
+                    ) as? ScreenshotPageSupplementaryView else { return nil }
+                    container.subviews.forEach { $0.removeFromSuperview() }
+                    host.frame = container.bounds
+                    host.autoresizingMask = [.width, .height]
+                    container.addSubview(host)
+                    return container
+                }
+            }
         }
 
         func update(
@@ -113,6 +140,7 @@ extension ScreenshotCollectionView {
             guard !isDismantled else { return }
             self.parent = parent
             layout.minimumItemWidth = parent.minimumItemWidth
+            layout.setPageContent(header: parent.pageHeader, footer: parent.pageFooter)
 
             let screenshots = parent.screenshots
             let ids = screenshots.map(\.id)
@@ -482,3 +510,5 @@ extension ScreenshotCollectionView.Coordinator {
         }
     }
 }
+
+final class ScreenshotPageSupplementaryView: NSView, NSCollectionViewElement {}

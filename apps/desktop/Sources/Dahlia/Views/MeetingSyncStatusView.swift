@@ -5,6 +5,7 @@ struct MeetingSyncStatusView: View {
 
     let state: MeetingSyncState
     var isSyncing = false
+    var helpBounds: CGRect?
 
     var body: some View {
         Label {
@@ -22,7 +23,7 @@ struct MeetingSyncStatusView: View {
         .labelStyle(.iconOnly)
         .font(.caption)
         .foregroundStyle(.secondary)
-        .dahliaHoverHelp(label: state.title)
+        .dahliaHoverHelp(label: state.title, bounds: helpBounds)
         .accessibilityLabel(state.title)
     }
 }

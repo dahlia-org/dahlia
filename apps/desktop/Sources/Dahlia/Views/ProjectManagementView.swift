@@ -1,6 +1,6 @@
 import SwiftUI
 
-struct ProjectManagementView: View {
+struct ProjectManagementView<Header: View>: View {
     @Binding var isSidebarVisible: Bool
     var sidebarViewModel: SidebarViewModel
     @ObservedObject var captionViewModel: CaptionViewModel
@@ -20,6 +20,7 @@ struct ProjectManagementView: View {
     let onRequestProjectDeletion: (ProjectOverviewItem) -> Void
     let onOpenSidebarProject: (UUID, ProjectNavigationIntent) -> Void
     let onSelectWorkspace: (WorkspaceRecord) -> Void
+    @ViewBuilder let header: Header
 
     private var canEdit: Bool { sidebarViewModel.canEditCurrentWorkspace }
 
@@ -74,6 +75,9 @@ struct ProjectManagementView: View {
                 )
             }
             .mainDetailPane()
+            .overlay(alignment: .top) {
+                if !isShowingSettings { header }
+            }
         }
         .onChange(of: sidebarViewModel.allProjectItems) {
             reconcileVisibleProject()

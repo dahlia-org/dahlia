@@ -5,7 +5,6 @@ import SwiftUI
 private struct MeetingNameHeader: View {
     let title: String
     let meetingID: UUID?
-    let syncState: MeetingSyncState?
     let canEdit: Bool
     @Binding var isEditing: Bool
     @Binding var editingName: String
@@ -72,10 +71,6 @@ private struct MeetingNameHeader: View {
                     }
                     .help(L10n.rename)
 
-                    if let syncState {
-                        MeetingSyncStatusView(state: syncState)
-                    }
-
                     if meetingID != nil {
                         Button(action: copyMeetingID) {
                             Label(L10n.copyMeetingID, systemImage: "square.on.square")
@@ -135,7 +130,6 @@ struct MeetingDetailHeader: View {
                 MeetingNameHeader(
                     title: title,
                     meetingID: viewModel.currentMeetingId,
-                    syncState: viewModel.meetingSyncState,
                     canEdit: sidebarViewModel.canEditCurrentWorkspace,
                     isEditing: $isEditing,
                     editingName: $editingName,
@@ -165,10 +159,6 @@ struct MeetingDetailHeader: View {
                         .fixedSize(horizontal: true, vertical: false)
                     }
                 }
-            }
-
-            if let state = viewModel.textContentState, state != .ready {
-                TextContentStatusView(state: state, retry: viewModel.retryTextContent)
             }
 
             MeetingMetadataBar(
