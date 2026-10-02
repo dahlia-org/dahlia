@@ -1,5 +1,7 @@
 # Desktop の認証と account 分離
 
+2026-10-02: 実行場所、AI設定スコープ、Codex切替の現行方針は[アカウント別Desktop推論](../shared/account-scoped-desktop-inference.md)を優先する。以下は採択時点の履歴。
+
 対象: Desktop。採択: 2026-08-04〜09-01。Server account の移行・サインアウト時のデータ扱いは、後続の [同期契約](../shared/sync.md#正本とアカウント境界) を優先する。
 
 ## 接続と Vault

@@ -669,10 +669,9 @@ private extension BackgroundJobWorker {
             }
             return (inputs, serverConnectionIDs)
         }
-        var inputs = routing.0
+        let inputs = routing.0
         let serverConnectionIDs = routing.1
         let runtimeProvider = runtimeProviderResolver()
-        inputs = try await deviceScreenshotInputs(in: inputs, runtimeProvider: runtimeProvider)
         var outcomes = jobs.compactMap { job in
             inputs[job.targetID] == nil ? ScreenshotJobOutcome.missing(job) : nil
         }
@@ -742,36 +741,6 @@ private extension BackgroundJobWorker {
             }
         }
         return false
-    }
-
-    func deviceScreenshotInputs(
-        in inputs: [UUID: ScreenshotAnalysisInput],
-        runtimeProvider: CodexRuntimeProvider
-    ) async throws -> [UUID: ScreenshotAnalysisInput] {
-        let delegatesMatchingServer = if let connectionId = runtimeProvider.accountConnectionID,
-                                         inputs.values.contains(where: { $0.runtimeProvider == runtimeProvider }) {
-            try await serverAnalyzesImages(connectionId: connectionId)
-        } else {
-            false
-        }
-        return inputs.filter {
-            $0.value.runtimeProvider.accountConnectionID == nil
-                || ($0.value.runtimeProvider == runtimeProvider && !delegatesMatchingServer)
-        }
-    }
-
-    func serverAnalyzesImages(connectionId: UUID) async throws -> Bool {
-        guard let connection = try await dbQueue.read({ try DahliaAccountConnectionRecord.fetchOne($0, key: connectionId) }),
-              let origin = URL(string: connection.origin) else { throw URLError(.badURL) }
-        let data: Data
-        do {
-            data = try await apiClient.data(origin: origin, connectionId: connectionId, maximumBytes: 8192) {
-                try await $0.getCapabilities().ok.body.json
-            }
-        } catch let error as SyncHTTPError where error.status == 404 {
-            return false // Older servers use device analysis.
-        }
-        return try JSONDecoder().decode(ServerCapabilities.self, from: data).imageAnalysis?.version == 2
     }
 
     func storeScreenshotAnalyses(_ results: [ScreenshotAnalysis], generation: Int, expectedConnectionId: UUID?) async throws {

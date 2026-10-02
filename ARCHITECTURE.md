@@ -207,8 +207,8 @@ Server は meeting の名前・説明・summary 表示本文と screenshot の O
 その他の PostgreSQL は pgvector、SQLite は exact cosine を使う。query 時は FTS と vector の上位候補を
 RRF で統合し、embedding の未設定・未完成・障害時は FTS に縮退する。transcript と内部識別子は Server 検索対象に含めず、
 すべての検索 query は `workspace_id` 経由の permission／RLS を通す。D1 adapterは削除し、WorkerはPostgreSQL／Hyperdriveを使用する。
-Node の画像解析 worker は canonical 登録済みの会議画像をファイル単位で扱い、既存1280px variant と App service principal を使って不足する OCR・caption を生成する。Local Workspace から新規 Server Workspace へ登録された画像は `replace` job とし、既存値を再生成成功まで維持してから OCR・caption を両方置換する。requesterの現在のAdmin／Editor権限・checksum・revision・lease を再確認し、正本・差分・FTS と共通 embedding job を同じ transaction で更新する。待機中の既存値から embedding は生成しない。Desktop は Local Account の画像だけを解析する。
-Server の出力言語・画像解析言語は本人の account settings API を正本とし、Desktop はメモリに保持する。SSE は invalidation のみ、再接続時に再取得する。設定用のローカル table・revision・再送 queue は作らず、設定や認証の取得を録音開始・継続・停止の前提にしない。文字起こしと要約は[処理場所の契約](docs/adr/shared/transcription-summary-processing.md)に従い、localではDesktop、remoteではServerが担当する。
+Desktopで作成した画像はアカウントを問わずMacのCodex app-serverでOCR・captionを生成し、結果を同期する。Serverは同期や不足データの巡回から画像解析を開始しない。旧版で受付済みのジョブだけ既存の認可・lease・revision検証で処理する。
+AI設定はこのMac内でアカウント別に保存し、Workspaceの既定出力言語だけを共有する。文字起こし・要約の実行場所は[操作元の契約](docs/adr/shared/account-scoped-desktop-inference.md)に従う。Desktopの選択中アカウントだけCodexを動かし、別アカウントへ切り替えると旧プロセスを停止する。
 翻訳文、音声、SQLite file、note、tag、calendar、
 Project は階層参照と meeting 絞り込みのためだけに同期し、Server の全文・vector projection へは含めない。transcript の `audio_source` は `mic`／`system` の収録経路、nullable な `speaker_label` は将来の話者分離ラベルとし、音声特徴量は同期しない。runtime と data boundary の判断は次を正本とする。
 
@@ -301,7 +301,7 @@ recording-critical lane から捨てる根拠にはしない。
 画面や選択対象が変わった場合は不要な処理をキャンセルし、identity または generation を確認して古い完了結果を捨てる。
 UI projection を破棄しても、durable source of truth は変更しない。
 
-Databricks DAB の Server 側画像解析は `system.ai.gpt-6-luna` を使う。以下の Desktop 解析経路が使う GPT 5.6 Luna は互換用に Gateway の公開モデル一覧へ残す。
+Databricks DAB の既存受付済み画像解析とWeb要約内の画像選別は `system.ai.gpt-6-luna` を使う。以下の Desktop 解析経路が使う GPT 5.6 Luna は互換用に Gateway の公開モデル一覧へ残す。
 
 全文検索は `search_documents` registry と contentless `search_documents_fts` を再構築可能な projection として扱う。meeting metadata、構造化 summary の本文、project、全 screenshot の検出文字と画像説明を索引し、summary の metadata・内部識別子と文字起こし・翻訳文は対象にしない。ミーティング自由文検索はアプリと MCP のどちらも title、description、summary、calendar、tags を対象とし、project path は Project 専用検索と明示的な Project 絞り込みだけに使う。画像解析の正本は `file_text_bodies.ocrText` と `file_text_bodies.caption` に保存し、meeting_attachments insert trigger は coalesce 可能な `screenshotAnalysis` job の upsert だけを行う。utility-priority の `BackgroundJobWorker` actor は Codex app-server の `gpt-5.6-luna`（Dahlia Account は Gateway の `system.ai.gpt-5-6-luna`）、reasoning effort `low` に1枚ずつ最大2並行で送り、正本保存、Lindera tokenization、FTS 更新を一つの複合 job として処理する。指定モデルへフォールバックせず、Codex の未設定、未認証、モデル利用不可では並行処理を停止し、試行回数を消費せず job を queue に残す。Indexer は録音開始前に停止して録音終了後に再開し、録音中は画像解析を含む projection work を実行しない。screenshot は meeting 検索結果へ統合せず、同じ検索画面と MCP の独立した結果として返す。要約生成には従来どおり画像を渡し、抽出結果を代替入力にしない。初期構築・再構築中は不完全な結果を返さず検索 unavailable とし、索引の遅延や failure は録音、確定文字起こし、正本 metadata と summary の commit を待たせない。
 
@@ -532,7 +532,7 @@ lane を分離した。R5 は instrumentation のみ完了しており、backpre
 
 New Local Workspace batch sessions keep verified source-specific CAF segments for the configured retention period and do not create `recording_archives` jobs or joined M4A files. Local retranscription reads those CAF segments, detects each segment's language, and uses Apple Speech. Existing Local M4A archives remain compatible inputs and expire through the same purge state machine.
 
-New Server Workspace batch sessions enqueue a durable `recording_archives` job at session creation. The idle sync lane converts every recording to source-specific M4A, uploads it, verifies the receipt and re-download, then releases CAF through the existing purge state machine. Server retranscription requires the complete uploaded M4A set and a compatible `retranscription` capability, and uses Gemini without a language hint or local fallback. Capture, initial transcript persistence, and existing transcript or summary results never wait for archiving or retranscription. See [the archive ADR](docs/adr/shared/recording-audio-archive.md) for retention and protocol details.
+New Server Workspace batch sessions enqueue a durable `recording_archives` job at session creation. The idle sync lane converts every recording to source-specific M4A, uploads it, verifies the receipt and re-download, then releases CAF through the existing purge state machine. Desktop retranscription downloads and verifies archived M4A when local audio is absent, then uses Apple Speech. Web-initiated audio operations continue to use the Server API. Capture, initial transcript persistence, and existing transcript or summary results never wait for archiving or retranscription. See [the archive ADR](docs/adr/shared/recording-audio-archive.md) for retention and protocol details.
 
 ### ライブ MCP 配信
 

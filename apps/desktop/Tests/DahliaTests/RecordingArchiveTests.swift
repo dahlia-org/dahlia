@@ -1,6 +1,7 @@
 @preconcurrency import AVFoundation
 import Foundation
 import GRDB
+import Synchronization
 @testable import Dahlia
 
 #if canImport(Testing)
@@ -189,13 +190,18 @@ import GRDB
                 #expect(segments.first?.ranges.first?.localeIdentifier == "en_US")
                 await #expect(throws: RecordingAudioStoreError.self) { try await store.requestPurge(sessionId: fixture.session.id) }
             }
+            let downloadingArchive = Mutex(false)
             let coordinator = BatchTranscriptionCoordinator(
                 dbQueue: fixture.database.dbQueue,
                 managedRootURL: fixture.managedRootURL,
                 speechRecognizer: TestBatchSpeechRecognizer(),
                 audioRetentionPeriod: .forever,
                 supportedLocalesProvider: { testSupportedSpeechLocales },
-                onStateChange: { _ in }
+                onStateChange: { update in
+                    if case let .running(_, progress) = update.state, progress?.isDownloadingArchive == true {
+                        downloadingArchive.withLock { $0 = true }
+                    }
+                }
             )
             await coordinator.enqueue(sessionId: fixture.session.id)
             #expect(await pollUntil {
@@ -204,6 +210,7 @@ import GRDB
                     return session?.batchCompletedAt.map { $0 > fixture.now } == true && session?.batchLastError == nil
                 }) == true
             })
+            #expect(downloadingArchive.withLock { $0 })
             try await coordinator.shutdown()
             try await store.requestRetentionPurge(sessionId: fixture.session.id, cutoff: Date.now.addingTimeInterval(1))
             #expect(!FileManager.default.fileExists(atPath: fixture.managedRootURL.appending(path: file.relativePath).path))

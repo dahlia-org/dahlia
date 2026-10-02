@@ -2,7 +2,7 @@
 "settings.organization.settingsDataAndAccounts" = "Data management";
 "settings.organization.workspaceSettings" = "Workspace settings";
 "settings.organization.searchSettings" = "Search settings";
-"settings.organization.settingsAccountIntro" = "Choose how the current workspace creates summaries and image captions.";
+"settings.organization.settingsAccountIntro" = "Set account AI preferences on this Mac and the workspace's shared output language.";
 "settings.organization.settingsAccountsIntro" = "Manage connected accounts and the workspaces that belong to them.";
 "settings.organization.settingsExportIntro" = "Configure export destinations on this Mac for the account selected in the sidebar.";
 "settings.organization.settingsAccountSelectionDescription" = "Choosing an account here does not switch your open workspace.";
@@ -26,13 +26,13 @@
 "settings.organization.summaryStyleTimelineDescription" = "Follow an event in order, including demonstrations and Q&A.";
 "settings.preferences.macInferencePreferences" = "Model providers";
 "settings.preferences.accountPreferences" = "Workspace generation settings";
-"settings.preferences.accountPreferencesScope" = "These defaults are shared by everyone in the displayed workspace.";
+"settings.preferences.accountPreferencesScope" = "Output language is shared by the workspace. Other AI settings are stored per account on this Mac.";
 "settings.preferences.accountSummaryPreferencesDescription" = "Style and output language apply regardless of processing location. Changes affect new processing only. Summaries on Mac also send transcripts and images to the connected AI.";
 "settings.preferences.summaryStyle" = "Summary style";
 "settings.preferences.recordingSettings" = "Recording & storage";
 "settings.preferences.recordingStopDetection" = "Stop detection";
 "settings.preferences.macTranscriptionPreferences" = "Transcription settings on this Mac";
-"settings.preferences.localModelPreferencesDescription" = "AI provider and credentials are specific to this Mac. Generation models are configured per workspace.";
+"settings.preferences.localModelPreferencesDescription" = "Set the Local account provider and credentials on this Mac. Generation models are configured per account.";
 "settings.preferences.summaryProcessingLocation" = "Summary processing";
 "settings.preferences.serverSummaryProcessingDescription" = "The original transcript is synchronized and summarized on the server, including transcripts created in Dahlia for Mac.";
 "settings.preferences.processingWorkflow" = "Summary method";
@@ -1724,7 +1724,7 @@
 "setup.preparingWorkspace" = "Preparing your workspace…";
 "setup.workspaceUnavailable" = "Your workspace is not ready yet. Check your connection and retry.";
 "For this generation only" = "For this generation only";
-"Workspace default" = "Workspace default";
+"Workspace default" = "Default";
 
 "summary.source.useSaved" = "Use the saved transcript";
 "summary.source.useSaved.description" = "Generate from the copy saved on this Mac without fetching the latest server version. It may be outdated. Select this when working offline.";
@@ -1772,3 +1772,8 @@
 "server.content.retention" = "Local Retention of Server Data";
 "server.content.retention.days" = "Retention (days)";
 "server.content.retention.description" = "Retention defaults to Forever to prevent older data from being automatically removed after connecting to Server. Keep Server data created, edited, viewed, or first downloaded on this Mac for at least this period. Applies to text, Documents, and downloaded images across all Server accounts. After the period, unused data may be removed in the background when storage limits are exceeded, then downloaded again when needed. Forever prevents automatic removal. Storage limits may be exceeded to honor the retention period. Recording audio is managed separately.";
+
+"processing.dataUnreadable" = "Some recording processing states could not be read. Other recordings will still be restored.";
+"processing.retryOnMac" = "This previous server operation cannot be resumed. Run it again on this Mac.";
+"settings.accountInference.description" = "Applies to the selected account on this Mac, across its workspaces.";
+"processing.downloadingArchive" = "Downloading recording audio…";

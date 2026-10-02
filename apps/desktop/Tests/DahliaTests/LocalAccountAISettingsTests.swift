@@ -8,7 +8,7 @@
     @MainActor
     struct LocalAccountAISettingsTests {
         @Test
-        func localInferenceUsesMacPreferencesForEitherAccountAndKeepsAccountOutputChoices() async throws {
+        func inferenceKeepsServerGatewayAndUsesAccountPreferencesWithSharedLanguage() async throws {
             let suiteName = "MacInferenceSettingsTests-\(UUID())"
             let defaults = try #require(UserDefaults(suiteName: suiteName))
             defer { defaults.removePersistentDomain(forName: suiteName) }
@@ -26,9 +26,9 @@
             let captured = SummaryGenerationSettings.current(workspaceAISettings: model, workspace: server)
             #expect(captured.modelID == "not-the-mac-model")
             #expect(captured.reasoningEffort == "high")
-            #expect(captured.runtimeProvider == .databricks(profile: "MAC"))
+            #expect(try captured.runtimeProvider == .dahlia(connectionID: #require(server.accountConnectionId)))
             #expect(captured.languageDisplayName == SummaryLanguage.fr.displayName)
-            #expect(captured.detailLevelInstruction == SummaryDetailLevel.concise.instruction)
+            #expect(captured.detailLevelInstruction == SummaryDetailLevel.detailed.instruction)
             model.activate(workspace: makeWorkspace(openedAt: .now))
             #expect(await model.waitForRuntimeContext())
             #expect(SummaryGenerationSettings.current(workspaceAISettings: model, workspace: server).runtimeProvider == captured
@@ -65,6 +65,7 @@
 
             model.configure(dbQueue: database.dbQueue)
             try await model.inheritLocalAccountSettings(from: database.dbQueue)
+            try await model.inheritAccountInferenceSettings(from: database.dbQueue)
 
             #expect(model.localAccountSettings == .init(provider: .databricks, databricksProfile: "LOCAL"))
             #expect(defaults.string(forKey: LocalAccountAISettings.summaryModelKey) == nil)
@@ -98,6 +99,7 @@
 
             model.configure(dbQueue: database.dbQueue)
             try await model.inheritLocalAccountSettings(from: database.dbQueue)
+            try await model.inheritAccountInferenceSettings(from: database.dbQueue)
 
             #expect(model.localAccountSettings == .init(provider: .databricks, databricksProfile: "LEGACY"))
             #expect(defaults.bool(forKey: LocalAccountAISettings.migrationKey))
@@ -174,7 +176,10 @@
             let workspace = makeWorkspace(openedAt: .now)
             try await database.dbQueue.write { db in
                 try workspace.insert(db)
-                try db.execute(sql: "CREATE TRIGGER fail_ai_settings_update BEFORE UPDATE ON workspaces BEGIN SELECT RAISE(ABORT, 'test persistence failure'); END")
+                try db
+                    .execute(
+                        sql: "CREATE TRIGGER fail_ai_settings_update BEFORE UPDATE ON workspaces BEGIN SELECT RAISE(ABORT, 'test persistence failure'); END"
+                    )
             }
             let activations = Mutex(0)
             let model = WorkspaceAISettingsModel(setupDefaults: defaults) { _ in
@@ -184,7 +189,7 @@
             model.activate(workspace: workspace)
             #expect(await model.waitForRuntimeContext())
 
-            model.summaryModelID = "not-persisted"
+            model.generationSettings.outputLanguage = .fr
 
             #expect(await pollUntil { activations.withLock { $0 == 2 } })
             #expect(await model.waitForRuntimeContext())
@@ -220,13 +225,14 @@
             model.summaryModelID = "updated"
             model.chatReasoningEffort = "low"
 
-            let workspaceID = workspace.id
-            #expect(await pollUntil {
-                let stored = try? await database.dbQueue.read { db in
-                    try WorkspaceRecord.fetchOne(db, key: workspaceID)
-                }
-                return stored?.summaryModelID == "updated" && stored?.chatReasoningEffort == "low"
-            })
+            let restored = AccountInferenceSettings(workspace: workspace, defaults: defaults)
+            #expect(restored.local.model == "updated")
+            #expect(restored.chatReasoningEffort == "low")
+            let storedModel = try await database.dbQueue.read { [id = workspace.id] db in
+                try WorkspaceRecord.fetchOne(db, key: id)?.summaryModelID
+            }
+            #expect(storedModel == workspace.summaryModelID)
+
         }
 
         @Test
@@ -247,7 +253,56 @@
 
             #expect(updated.localProvider == .databricks)
             #expect(updated.databricksProfile == "OLD")
-            #expect(updated.summaryModelID == "new-model")
+            #expect(updated.summaryModelID == workspace.summaryModelID)
+        }
+
+        @Test
+        func preferencesAreSharedWithinAnAccountButIsolatedAcrossAccountsAndMacs() async throws {
+            let suite = "AccountInferenceSettingsTests-\(UUID())"
+            let defaults = try #require(UserDefaults(suiteName: suite))
+            defer { defaults.removePersistentDomain(forName: suite) }
+            let database = try AppDatabaseManager(path: ":memory:")
+            let older = makeWorkspace(openedAt: Date(timeIntervalSince1970: 1))
+            var latest = makeWorkspace(openedAt: Date(timeIntervalSince1970: 2))
+            latest.summaryModelID = "latest-model"
+            latest.chatModelID = "latest-chat"
+            latest.generationSettings.automaticProcessing = false
+            let connection = DahliaAccountConnectionRecord(id: .v7(), origin: "https://account.invalid", clientID: "test", createdAt: .now)
+            var server = makeWorkspace(openedAt: Date(timeIntervalSince1970: 3))
+            server.accountConnectionId = connection.id
+            server.organizationId = .v7()
+            try await database.dbQueue.write { [latest, server] db in
+                try connection.insert(db)
+                try older.insert(db)
+                try latest.insert(db)
+                try server.insert(db)
+            }
+            let model = WorkspaceAISettingsModel(setupDefaults: defaults, activateRuntime: { _ in })
+            try await model.inheritLocalAccountSettings(from: database.dbQueue)
+            try await model.inheritAccountInferenceSettings(from: database.dbQueue)
+            model.activate(workspace: older)
+            #expect(model.summaryModelID == "latest-model")
+            #expect(model.chatModelID == "latest-chat")
+            #expect(!model.generationSettings.automaticProcessing)
+            model.summaryModelID = "changed-model"
+            model.chatModelID = "changed-chat"
+            model.activate(workspace: latest)
+            #expect(model.summaryModelID == "changed-model")
+            #expect(model.chatModelID == "changed-chat")
+            model.activate(workspace: server)
+            #expect(model.summaryModelID == server.summaryModelID)
+            #expect(model.generationSettings.automaticProcessing)
+            model.summaryModelID = "server-model"
+            model.accountConnectionID = nil
+            #expect(AccountInferenceSettings(workspace: older, defaults: defaults).local.model == "changed-model")
+            let restored = WorkspaceAISettingsModel(setupDefaults: defaults, activateRuntime: { _ in })
+            restored.activate(workspace: older)
+            #expect(restored.summaryModelID == "changed-model")
+            restored.activate(workspace: server)
+            #expect(restored.summaryModelID == "server-model")
+            // Clearing this Mac's preferences exposes the unchanged canonical defaults.
+            defaults.removePersistentDomain(forName: suite)
+            #expect(AccountInferenceSettings(workspace: server, defaults: defaults).local.model == server.summaryModelID)
         }
 
         private func makeWorkspace(openedAt: Date) -> WorkspaceRecord {

@@ -632,6 +632,12 @@ integration("PostgreSQL application store", () => {
     const jobs = createImageAnalysisStore(connection!.db, true);
     const model = `model-${crypto.randomUUID()}`;
     await jobs.reconcilePage(model, owner.userId);
+    expect(await jobs.claim(model)).toBeNull();
+    // Only jobs accepted before Desktop owned image analysis are recovered.
+    await connection!.db.insert(schema.imageAnalysisJob).values([hiddenFileId, fileId].map((fileId) => ({
+      fileId, workspaceId, ownerUserId: owner.userId, model: `legacy-${model}`, mode: "fill_missing" as const,
+    })));
+    await jobs.reconcilePage(model, owner.userId);
     // An older job whose owner cannot read its file must not hide the ready job behind it.
     await connection!.db.update(schema.imageAnalysisJob).set({ ownerUserId: outsider.userId, availableAt: new Date(0) })
       .where(eq(schema.imageAnalysisJob.fileId, hiddenFileId));

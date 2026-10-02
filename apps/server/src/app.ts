@@ -919,7 +919,6 @@ export function createApp(dependencies: AppDependencies): DahliaServerApp & { ru
       search: { version: 1 },
       conversationAnalytics: { version: 1 },
       ...((await ai.models(context.req.raw.signal)).length ? { ai: { version: 1 } } : {}),
-      ...(dependencies.imageAnalysisEnabled === true ? { imageAnalysis: { version: 2 } } : {}),
       ...(sources.length ? {
         meetingSummaryGeneration: {
           version: 2,

@@ -94,6 +94,10 @@ import Foundation
                 profile: databricksProfile(host: "https://dbc.example.com")
             )
 
+            let accountHistory = try locator.homeURL(connectionID: connectionID).appending(path: "sessions", directoryHint: .isDirectory)
+            try FileManager.default.createDirectory(at: accountHistory, withIntermediateDirectories: true)
+            let savedThread = accountHistory.appending(path: "saved-thread.jsonl")
+            try Data("saved conversation".utf8).write(to: savedThread)
             let accountConfigURL = try locator.homeURL(connectionID: connectionID).appending(path: "config.toml")
             let localConfigURL = try locator.homeURL(connectionID: nil).appending(path: "config.toml")
             #expect(try String(contentsOf: accountConfigURL, encoding: .utf8).contains(#"model_provider = "dahlia""#))
@@ -102,6 +106,8 @@ import Foundation
             _ = try await manager.configureChatGPTSubscription()
             #expect(try String(contentsOf: accountConfigURL, encoding: .utf8).contains(#"model_provider = "dahlia""#))
             #expect(try String(contentsOf: localConfigURL, encoding: .utf8).contains(#"model_provider = "openai""#))
+            #expect(try String(contentsOf: savedThread, encoding: .utf8) == "saved conversation")
+            #expect(try !FileManager.default.fileExists(atPath: locator.homeURL().appending(path: "sessions/saved-thread.jsonl").path))
         }
 
         @Test

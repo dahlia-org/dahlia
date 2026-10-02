@@ -11,7 +11,7 @@ struct SummaryGenerationSettings: Codable, Equatable, Sendable {
     var workspaceID: UUID?
     var workspacePreferences: WorkspaceGenerationSettings?
 
-    var sourceAccountConnectionID: UUID? { accountConnectionID ?? runtimeProvider.accountConnectionID }
+    var sourceAccountConnectionID: UUID? { accountConnectionID }
 
     @MainActor
     static func current(
@@ -20,20 +20,21 @@ struct SummaryGenerationSettings: Codable, Equatable, Sendable {
         detailLevel: SummaryDetailLevel? = nil,
         workspace: WorkspaceRecord? = nil
     ) -> Self {
-        let preferences = workspace?.generationSettings ?? WorkspaceGenerationSettings()
+        let preferences = workspace.map { workspaceAISettings.generationSettings(for: $0) }
+            ?? WorkspaceGenerationSettings()
         return Self(
             modelID: preferences.local.model,
             reasoningEffort: preferences.local.reasoningEffort,
             detailLevelInstruction: (detailLevel ?? preferences.summary.detailLevel).instruction,
             languageDisplayName: preferences.outputLanguage.displayName,
             runtimeProvider: CodexRuntimeProvider(
-                accountConnectionID: nil,
+                accountConnectionID: workspace?.accountConnectionId,
                 localProvider: workspaceAISettings.localProvider,
                 databricksProfile: workspaceAISettings.databricksProfile
             ),
             accountConnectionID: workspace?.accountConnectionId,
             workspaceID: workspace?.id,
-            workspacePreferences: workspace?.generationSettings
+            workspacePreferences: preferences
         )
     }
 
@@ -50,8 +51,10 @@ struct SummaryGenerationSettings: Codable, Equatable, Sendable {
     func applying(workspace: WorkspaceRecord? = nil, options: SummaryGenerationOptions) -> Self {
         let connectionID = workspace.map(\.accountConnectionId) ?? sourceAccountConnectionID
         let preferences = options.applying(
-            to: workspace?.generationSettings ?? workspacePreferences ?? WorkspaceGenerationSettings(),
-            usesServer: connectionID != nil
+            to: workspacePreferences ?? workspace
+                .map { AccountInferenceSettings(workspace: $0).generationSettings(outputLanguage: $0.generationSettings.outputLanguage) } ??
+                WorkspaceGenerationSettings(),
+            usesServer: false
         )
         return Self(
             modelID: preferences.local.model, reasoningEffort: preferences.local.reasoningEffort,

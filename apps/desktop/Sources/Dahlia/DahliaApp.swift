@@ -374,6 +374,7 @@ struct DahliaApp: App {
             try await workspaceAISettings.inheritLocalAccountSettings(from: db.dbQueue)
             try await MeetingRepository(dbQueue: db.dbQueue)
                 .backfillWorkspaceAISettings(WorkspaceAISettingsLegacyValues(settings: .shared))
+            try await workspaceAISettings.inheritAccountInferenceSettings(from: db.dbQueue)
         } catch {
             ErrorReportingService.capture(error, context: ["source": "workspaceAISettingsBackfill"])
         }
@@ -808,7 +809,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 return
             }
             await CodexAppServerService.shared.shutdown()
-            await CodexAppServerService.macInference.shutdown()
             await CodexAppServerService.localAccount.shutdown()
             sender.reply(toApplicationShouldTerminate: true)
         }

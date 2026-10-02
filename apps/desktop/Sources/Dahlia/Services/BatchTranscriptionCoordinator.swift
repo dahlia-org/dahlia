@@ -443,6 +443,9 @@ actor BatchTranscriptionCoordinator {
                 .fetchCount(db) == 0
         }
         if useArchive {
+            let progress = BatchTranscriptionProgress(isDownloadingArchive: true, completedFileCount: 0, totalFileCount: 0)
+            runningProgress = progress
+            await onStateChange(.init(meetingId: job.session.meetingId, state: .running(sessionId: job.session.id, progress: progress)))
             return try await recordingArchiveService.withArchivedSegments(sessionId: job.session.id) { verified in
                 try await self.transcribe(verifiedSegments: verified, job: job)
             }

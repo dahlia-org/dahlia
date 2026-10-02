@@ -206,7 +206,7 @@ import Synchronization
         }
 
         @Test(arguments: ["enabled", "disabled", "future", "legacy", "missing", "unavailable", "detached"])
-        func serverAnalysisCapabilityControlsDeviceFallback(capability: String) async throws {
+        func serverImagesUseMacWithoutDependingOnServerCapabilities(capability: String) async throws {
             let analyzer = StubScreenshotAnalyzer(text: "device OCR")
             let database = try makeDatabase(screenshotAnalyzer: analyzer)
             let connection = DahliaAccountConnectionRecord(
@@ -232,25 +232,11 @@ import Synchronization
                 )
                 try TextContentStore.registerLocal(entity: .file, id: screenshot.originalFileId, workspaceId: workspace.id, in: db)
             }
-            let unavailable = Mutex(capability == "unavailable")
-            ImageURLProtocol.register(origin: connection.origin) { [queue = database.dbQueue, workspaceID = workspace.id] request in
-                #expect(request.url?.path == "/api/v1/capabilities")
-                if capability == "detached" {
-                    do {
-                        try queue.write { db in
-                            try db.execute(
-                                sql: "UPDATE workspaces SET accountConnectionId = NULL, organizationId = NULL WHERE id = ?",
-                                arguments: [workspaceID]
-                            )
-                        }
-                    } catch { Issue.record(error) }
-                }
-                let status = capability == "missing" ? 404 : unavailable.withLock { $0 } ? 503 : 200
-                let body = switch capability {
-                case "enabled", "detached": #"{"imageAnalysis":{"version":2}}"#
-                case "future": #"{"imageAnalysis":{"version":3}}"#
-                default: "{}"
-                }
+            let requests = Mutex(0)
+            ImageURLProtocol.register(origin: connection.origin) { _ in
+                requests.withLock { $0 += 1 }
+                let status = capability == "missing" ? 404 : capability == "unavailable" ? 503 : 200
+                let body = capability == "enabled" ? #"{"imageAnalysis":{"version":2}}"# : "{}"
                 return (status, [:], Data(body.utf8))
             }
             defer { ImageURLProtocol.remove(origin: connection.origin) }
@@ -263,31 +249,18 @@ import Synchronization
                 runtimeProviderResolver: { .dahlia(connectionID: connection.id) }
             )
             await indexer.drain()
-            let fallsBack = capability != "enabled" && capability != "unavailable" && capability != "detached"
-            #expect(await analyzer.runtimeProviders[screenshot.id] == (fallsBack ? .dahlia(connectionID: connection.id) : nil))
+            #expect(requests.withLock { $0 } == 0)
+            #expect(await analyzer.runtimeProviders[screenshot.id] == .dahlia(connectionID: connection.id))
             try await database.dbQueue.read { db throws in
                 #expect(try String.fetchOne(
                     db,
                     sql: "SELECT ocrText FROM meeting_images WHERE id = ?",
                     arguments: [screenshot.id]
-                ) == (fallsBack ? "device OCR" : nil))
+                ) == "device OCR")
                 let jobs = try Int.fetchOne(db, sql: "SELECT count(*) FROM jobs_background WHERE targetKind = 'screenshotAnalysis'")
-                #expect(jobs == (capability == "unavailable" || capability == "detached" ? 1 : 0))
+                #expect(jobs == 0)
             }
-            if capability == "unavailable" {
-                unavailable.withLock { $0 = false }
-                try await database.dbQueue.write { db in
-                    try db.execute(
-                        sql: "UPDATE jobs_background SET availableAt = ? WHERE targetKind = 'screenshotAnalysis'",
-                        arguments: [Date.distantPast]
-                    )
-                }
-                await indexer.drain()
-                #expect(await analyzer.runtimeProviders[screenshot.id] == .dahlia(connectionID: connection.id))
-                #expect(try await database.dbQueue.read { db in
-                    try String.fetchOne(db, sql: "SELECT ocrText FROM meeting_images WHERE id = ?", arguments: [screenshot.id])
-                } == "device OCR")
-            }
+
         }
 
         @Test

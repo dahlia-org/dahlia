@@ -30,21 +30,19 @@ enum SummaryService {
             recordingSessions: recordingSessions
         ))
 
-        let service: CodexAppServerService
-        if generationSettings.runtimeProvider.accountConnectionID == nil {
-            guard LocalAccountAISettings(defaults: .standard).runtimeProvider == generationSettings.runtimeProvider else {
-                throw CodexConfigurationError.providerChanged(generationSettings.runtimeProvider.displayName)
-            }
-            try await CodexRuntimeContextCoordinator.macInference.activate(provider: generationSettings.runtimeProvider)
-            service = .macInference
-        } else {
-            // Previously captured Server-Gateway requests retain their original provider.
-            service = .shared
+        let service = CodexAppServerService.shared
+        guard CodexRuntimeContextStore.shared.provider == generationSettings.runtimeProvider else {
+            throw CodexConfigurationError.providerChanged(generationSettings.runtimeProvider.displayName)
         }
+        let models = try await service.models()
+        let selected = models.first { $0.model == generationSettings.modelID }
+            ?? models.first(where: \.isDefault) ?? models.first
+        let effort = selected?.supportedReasoningEfforts.contains { $0.reasoningEffort == generationSettings.reasoningEffort } == true
+            ? generationSettings.reasoningEffort : selected?.defaultReasoningEffort ?? generationSettings.reasoningEffort
         let responseText = try await service.generate(.init(
-            model: generationSettings.modelID,
+            model: selected?.model ?? generationSettings.modelID,
             requiresExactModel: true,
-            reasoningEffort: generationSettings.reasoningEffort,
+            reasoningEffort: effort,
             developerInstructions: systemPrompt,
             inputs: inputs,
             outputSchema: SummaryDocumentResponse.outputSchema
@@ -62,7 +60,7 @@ enum SummaryService {
             inputTypes: ["context", "transcript"] + (screenshots.isEmpty ? [] : ["image"]) + (noteText?.isEmpty == false ? ["note"] : []),
             detailLevel: SummaryDetailLevel.allCases.first { $0.instruction == generationSettings.detailLevelInstruction }?.rawValue,
             outputLanguage: SummaryLanguage.allCases.first { $0.displayName == generationSettings.languageDisplayName }?.rawValue,
-            request: .init(model: generationSettings.modelID, reasoning: .init(effort: generationSettings.reasoningEffort))
+            request: .init(model: selected?.model ?? generationSettings.modelID, reasoning: .init(effort: effort))
         )
         let rendered = ObsidianMarkdownSummaryRenderer.render(document: document, context: context)
 

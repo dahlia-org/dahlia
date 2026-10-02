@@ -1,5 +1,7 @@
 # 文字起こし・要約の処理場所
 
+2026-10-02: 実行場所、AI設定スコープ、Codex切替の現行方針は[アカウント別Desktop推論](account-scoped-desktop-inference.md)を優先する。以下は採択時点の履歴。
+
 対象: Desktop / Server / Private Web。採択・設定スコープ改訂: 2026-09-10。
 
 ## 決定

@@ -91,24 +91,6 @@ struct BatchTranscriptionConfirmationView: View {
                 isRetranscription: isRetranscription
             )
 
-            if isRetranscription, usesServerSummary,
-               let serverRetranscriptionUnavailableReason = viewModel.serverRetranscriptionUnavailableReason {
-                HStack(alignment: .top, spacing: 8) {
-                    Label(serverRetranscriptionUnavailableReason, systemImage: "info.circle")
-                        .font(.body)
-                        .foregroundStyle(.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
-                    Spacer(minLength: 8)
-                    if viewModel.canRetryServerRetranscriptionAvailability {
-                        Button(L10n.retry, action: viewModel.retryServerRetranscriptionAvailability)
-                            .buttonStyle(.link)
-                    }
-                }
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.horizontal, 20)
-                .padding(.bottom, 8)
-            }
-
             if let errorMessage {
                 Label(errorMessage, systemImage: "exclamationmark.triangle.fill")
                     .font(.body)
@@ -161,10 +143,7 @@ struct BatchTranscriptionConfirmationView: View {
             processingMethod: processingMethod,
             languageSelection: languageSelection,
             automaticLanguageLocales: automaticLanguageLocales,
-            serverRetranscriptionUnavailable: isRetranscription
-                && usesServerSummary
-                && (viewModel.isCheckingServerRetranscriptionAvailability
-                    || viewModel.serverRetranscriptionUnavailableReason != nil)
+            serverRetranscriptionUnavailable: false
         )
     }
 

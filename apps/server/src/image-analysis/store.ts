@@ -34,15 +34,17 @@ export function createImageAnalysisStore(database: PostgresDatabase | SQLiteData
       if (isPostgres) await transaction.execute(sql`select set_config('app.user_id', ${userId}, true)`);
       return action(transaction);
     });
+  // Recover accepted jobs only. Missing metadata in synchronized files is not a request.
   async function reconcilePage(model: string, userId: string, after?: string, batchSize = 100): Promise<string | undefined> {
     const rows = await withOwner(userId, async (transaction) => {
       const content = createContentEncryption(transaction, schema, userId, encryption);
       const page = await content.read(files, await transaction.select({ encryptedPayload: files.encryptedPayload, fileId: files.fileId, workspaceId: files.workspaceId, metadata: files.metadata, mode: jobs.mode })
-        .from(files).leftJoin(jobs, eq(jobs.fileId, files.fileId))
+        .from(files).innerJoin(jobs, eq(jobs.fileId, files.fileId))
         .where(and(
           eq(files.active, true), isNotNull(files.uploadedAt), inArray(files.contentType, [...imageContentTypes]),
           after ? gt(files.fileId, after) : undefined,
-          or(isNull(jobs.fileId), ne(jobs.model, model)),
+          ne(jobs.model, model),
+          inArray(jobs.status, ["pending", "processing"]),
           workspacePermissions(transaction, schema, userId).write(files.workspaceId),
           exists(transaction.select({ id: schema.syncedWorkspace.workspaceId }).from(schema.syncedWorkspace).where(and(
             eq(schema.syncedWorkspace.workspaceId, files.workspaceId), isNull(schema.syncedWorkspace.deletingAt),

@@ -12,6 +12,53 @@ import Synchronization
     @MainActor
     // swiftlint:disable:next type_body_length
     struct CaptionViewModelSummaryGenerationTests {
+        @Test
+        func corruptRecordingDoesNotBlockLocalRecoveryAndLegacyRemoteFailsForMacRetry() async throws {
+            let fixture = try SummaryGenerationFixture()
+            defer { fixture.removeFiles() }
+            let invalidID = try fixture.insertRecordingSession(for: fixture.first, offset: 0)
+            let remoteID = try fixture.insertRecordingSession(for: fixture.first, offset: 1)
+            let localID = try fixture.insertRecordingSession(for: fixture.second, offset: 2)
+            let local = RecordingProcessing(
+                id: .v7(),
+                automatic: true,
+                liveDraft: false,
+                localeIdentifier: "en-US",
+                method: .transcript,
+                options: .manual,
+                generationSettings: .current(),
+                workspaceSettings: nil,
+                summaryMode: .local,
+                stage: .failed,
+                error: "Local failure"
+            )
+            try await fixture.database.dbQueue.write { db in
+                try db.execute(sql: "UPDATE recording_sessions SET processingJSON = ? WHERE id = ?", arguments: ["invalid-json", invalidID])
+                try db.execute(
+                    sql: "UPDATE recording_sessions SET processingJSON = ? WHERE id = ?",
+                    arguments: [RecordingProcessingTests.releasedProcessingJSON, remoteID]
+                )
+                try local.save(sessionID: localID, in: db)
+            }
+            let viewModel = CaptionViewModel(summaryGenerationRunner: { _ in
+                Issue.record("Failed processing must require explicit retry")
+                throw CancellationError()
+            })
+            try await viewModel.restoreRecordingProcessingForTesting(dbQueue: fixture.database.dbQueue)
+            #expect(viewModel.errorMessage == L10n.processingDataUnreadable)
+            #expect(viewModel.summaryGenerationJobs.count == 2)
+            #expect(!viewModel.summaryGenerationJobs.contains { !$0.hasFailure })
+            let remote = try #require(try await fixture.database.dbQueue.read { db in
+                try RecordingProcessing.load(sessionID: remoteID, in: db)
+            })
+            #expect(remote.stage == .failed)
+            #expect(remote.error == L10n.legacyProcessingRetryOnMac)
+            #expect(remote.serverRequest?.model == "gemini")
+            #expect(try await fixture.database.dbQueue.read { db in
+                try RecordingSessionRecord.fetchOne(db, key: invalidID)?.processingJSON
+            } == "invalid-json")
+        }
+
         @Test(arguments: [false, true], [false, true])
         func dismissedFailureStaysHiddenAfterRestart(transcriptionOnly: Bool, confirmsTranscription: Bool) async throws {
             let fixture = try SummaryGenerationFixture()
@@ -851,7 +898,8 @@ import Synchronization
             )
             let options = SummaryGenerationOptions(
                 exportOptions: SummaryExportOptions(exportsToWorkspace: false, exportsToGoogleDocs: false),
-                detailLevel: .eventSession
+                detailLevel: .eventSession,
+                overrides: .init(model: "frozen-model", reasoningEffort: "high")
             )
             await fixture.select(fixture.first, in: viewModel, note: "note")
 

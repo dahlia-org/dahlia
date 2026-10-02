@@ -117,7 +117,6 @@ export class SummaryService {
       if (!summaryRequestHashesMatch(accepted.requestHash, requestHash)) throw new RequestError(409, "summary_id_reused");
       return accepted;
     }
-    if (!input && settings.processing.location === "remote") throw new RequestError(400, "summary_input_required");
     const methodID = (input?.type === "recording" ? "audio" : input?.type) ?? "transcript";
     const method = this.methods.find((method) => method.id === methodID);
     if (!method) throw new RequestError(400, "summary_method_unavailable");

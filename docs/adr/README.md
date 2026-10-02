@@ -44,6 +44,8 @@ Server / Private Web、配置、API、認可、storage。
 
 ## Shared
 
+- [アカウント別のDesktop推論と操作元による実行場所](shared/account-scoped-desktop-inference.md)
+
 - [Desktop の優先同期と文書ロック](shared/sync-priority.md)
 
 - [会議 Notes の共同編集 Documents 化](shared/documents.md)

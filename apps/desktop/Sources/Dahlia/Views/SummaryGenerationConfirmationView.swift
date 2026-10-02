@@ -11,8 +11,7 @@ struct SummaryGenerationConfirmationView: View {
     @State private var sourceErrorMessage: String?
     @State private var errorMessage: String?
     @State private var overrides = SummaryGenerationOptions.Overrides()
-    @State private var catalog = CodexModelCatalog(service: .macInference)
-    @Bindable private var serverCatalog = ServerAccountSettingsModel.shared
+    @State private var catalog = CodexModelCatalog(service: .shared)
 
     let title: String
     let description: String
@@ -60,8 +59,7 @@ struct SummaryGenerationConfirmationView: View {
 
             Form {
                 Section(L10n.summaryGenerationSource) {
-                    SummaryGenerationSourcePicker(
-                        selection: $selectedSource,
+                    SummaryGenerationSourceStatus(
                         availability: sourceAvailability,
                         isLoading: isLoadingSources,
                         errorMessage: sourceErrorMessage
@@ -69,14 +67,13 @@ struct SummaryGenerationConfirmationView: View {
                 }
 
                 Section(L10n.generationOverrides) {
-                    LabeledContent(L10n.processingLocation, value: usesRemote ? L10n.remoteProcessing : L10n.localProcessing)
+                    LabeledContent(L10n.processingLocation, value: L10n.localProcessing)
                     Picker(L10n.summaryOutputLanguage, selection: $overrides.outputLanguage) {
                         Text(L10n.workspaceGenerationDefault).tag(SummaryLanguage?.none)
                         ForEach(SummaryLanguage.allCases) { Text($0.displayName).tag(Optional($0)) }
                     }
                     Picker(L10n.summaryModel, selection: modelSelection) {
                         Text("\(L10n.workspaceGenerationDefault) — \(modelName(defaultModel))").tag(String?.none)
-                        if usesRemote { Text(L10n.automaticModelPreference).tag(Optional("")) }
                         if let model = overrides.model, !model.isEmpty, !modelIDs.contains(model) {
                             Text(isModelCatalogLoaded ? "\(model) — \(L10n.unavailableModelPreference)" : model).tag(Optional(model))
                         }
@@ -90,7 +87,6 @@ struct SummaryGenerationConfirmationView: View {
                     }
                     Picker(L10n.reasoningEffort, selection: $overrides.reasoningEffort) {
                         Text(L10n.workspaceGenerationDefault).tag(String?.none)
-                        if usesRemote { Text(L10n.automaticModelPreference).tag(Optional("")) }
                         if let effort = overrides.reasoningEffort, !effort.isEmpty, !effortOptions.contains(effort) {
                             Text("\(effort) — \(L10n.checkModelPreference)").tag(Optional(effort))
                         }
@@ -112,7 +108,7 @@ struct SummaryGenerationConfirmationView: View {
                         exportsToWorkspace: $exportsToWorkspace,
                         exportsToGoogleDocs: $exportsToGoogleDocs,
                         isEnabled: true,
-                        usesServerSummary: usesRemote
+                        usesServerSummary: false
                     )
                 }
             }
@@ -149,51 +145,33 @@ struct SummaryGenerationConfirmationView: View {
         }
     }
 
-    private var usesRemote: Bool {
-        sourceAvailability?.hasServerConnection == true
-    }
-
     private var defaultModel: String {
-        guard let settings = sourceAvailability?.generationSettings else { return "" }
-        if !usesRemote { return settings.local.model }
-        if selectedSource == .audio { return settings.processing.remote.summaryModel ?? "" }
-        return settings.processing.remote.transcriptSummaryModel
-            ?? (settings.processing.location == .local ? settings.processing.remote.summaryModel : nil) ?? ""
+        let saved = sourceAvailability?.generationSettings?.local.model ?? ""
+        return catalog.models.contains(where: { $0.model == saved }) ? saved
+            : catalog.models.first(where: \.isDefault)?.model ?? catalog.models.first?.model ?? saved
     }
 
-    private var serverState: ServerAccountSettingsModel.State? {
-        sourceAvailability?.accountConnectionID.map { serverCatalog.state(for: $0) }
-    }
-
-    private var modelIDs: [String] {
-        if usesRemote {
-            return serverState?.summaryModels.filter { $0.supportsSummary(method: selectedSource == .audio ? "audio" : "transcript") }.map(\.id) ?? []
-        }
-        return catalog.models.map(\.model)
-    }
+    private var modelIDs: [String] { catalog.models.map(\.model) }
 
     private func modelName(_ id: String) -> String {
-        if id.isEmpty { return L10n.automaticModelPreference }
-        if usesRemote { return serverState?.summaryModels.first { $0.id == id }?.displayName ?? id }
-        return catalog.models.first { $0.model == id }?.displayName ?? id
+        catalog.models.first { $0.model == id }?.displayName ?? id
     }
 
     private var modelSelection: Binding<String?> {
         Binding(get: { overrides.model }, set: { model in
             overrides.selectModel(
                 model,
-                defaultReasoningEffort: usesRemote ? "" : catalog.resolvedEffort(current: "", modelID: model ?? defaultModel)
+                defaultReasoningEffort: catalog.resolvedEffort(current: "", modelID: model ?? defaultModel)
             )
         })
     }
 
     private var isModelAvailable: Bool {
-        overrides.isModelAvailable(defaultModel: defaultModel, modelIDs: modelIDs, allowsAutomatic: usesRemote)
+        overrides.isModelAvailable(defaultModel: defaultModel, modelIDs: modelIDs, allowsAutomatic: false)
     }
 
     private var isModelCatalogLoaded: Bool {
         guard !isLoadingSources, selectedSource != nil, modelError == nil else { return false }
-        if usesRemote { return serverState?.isModelCatalogLoaded == true }
         return catalog.hasAttemptedLoad && !catalog.isLoading
     }
 
@@ -204,22 +182,17 @@ struct SummaryGenerationConfirmationView: View {
 
     private var effortOptions: [String] {
         let id = overrides.model ?? defaultModel
-        if usesRemote { return serverState?.summaryModels.first { $0.id == id }?.supportedReasoningLevels.map(\.effort) ?? [] }
         return catalog.effortOptions(modelID: id).map(\.reasoningEffort)
     }
 
     private var modelError: String? {
-        usesRemote ? serverState?.modelErrorMessage ?? serverState?.errorMessage : catalog.errorMessage
+        catalog.errorMessage
     }
 
     private func loadModels() async {
-        if let connectionID = sourceAvailability?.accountConnectionID {
-            await serverCatalog.refresh(connectionID: connectionID, reloadModels: true)?.value
-        } else if sourceAvailability != nil {
-            let provider = WorkspaceAISettingsModel.shared.localAccountSettings.runtimeProvider
-            await catalog.load(forceRefresh: true) {
-                try await CodexRuntimeContextCoordinator.macInference.activate(provider: provider)
-            }
+        guard sourceAvailability != nil else { return }
+        await catalog.load(forceRefresh: true) {
+            guard await WorkspaceAISettingsModel.shared.waitForRuntimeContext() else { throw CodexConfigurationError.accountNotReady }
         }
     }
 

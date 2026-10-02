@@ -294,7 +294,7 @@ describe("server summary jobs", () => {
       expect((await send(false)).status).toBe(401);
       expect(await (await send(true)).json()).toEqual({
         sync: { version: 7 }, documents: { version: 3, accountBinding: true }, workspaceTransfers: { version: 1 }, recordingArchive: { version: 1 }, meetingEvents: { version: 1 },
-        search: { version: 1 }, imageAnalysis: { version: 2 }, conversationAnalytics: { version: 1 },
+        search: { version: 1 },  conversationAnalytics: { version: 1 },
         meetingSummaryGeneration: { version: 2, sources: ["transcript", "audio"], completeRecordings: true,
           retranscription: { version: 1, provider: "gemini" } },
       });
@@ -1222,7 +1222,7 @@ describe("staged summary generation", () => {
       await updateGenerationSettings(value.store, owner, value.workspaceId, { processing: { location: "remote" } });
       expect(await service.start(owner, value.workspaceId, value.meetingId, request)).toEqual(accepted);
       await expect(service.start(owner, value.workspaceId, value.meetingId, { id: uuidV7() }))
-        .rejects.toMatchObject({ code: "summary_input_required" });
+        .rejects.toMatchObject({ code: "summary_already_running" });
     } finally { await value.store.close?.(); }
   });
 

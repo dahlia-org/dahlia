@@ -17,21 +17,20 @@ struct WorkspaceAISettingsSnapshot: Equatable, Sendable {
     }
 
     func applyAISettings(to workspace: inout WorkspaceRecord) {
-        workspace.generationSettings = generationSettings
-        workspace.chatModelID = chatModelID
-        workspace.chatReasoningEffort = chatReasoningEffort
+        workspace.generationSettings.outputLanguage = generationSettings.outputLanguage
         workspace.aiSettingsBackfilled = true
     }
 }
 
 extension WorkspaceAISettingsSnapshot {
-    init(workspace: WorkspaceRecord, localAccountSettings: LocalAccountAISettings) {
+    init(workspace: WorkspaceRecord, localAccountSettings: LocalAccountAISettings, defaults: UserDefaults = .standard) {
+        let account = AccountInferenceSettings(workspace: workspace, defaults: defaults)
         workspaceID = workspace.id
         accountConnectionID = workspace.accountConnectionId
         localProvider = localAccountSettings.provider
         databricksProfile = localAccountSettings.databricksProfile
-        generationSettings = workspace.generationSettings
-        chatModelID = workspace.chatModelID
-        chatReasoningEffort = workspace.chatReasoningEffort
+        generationSettings = account.generationSettings(outputLanguage: workspace.generationSettings.outputLanguage)
+        chatModelID = account.chatModelID
+        chatReasoningEffort = account.chatReasoningEffort
     }
 }

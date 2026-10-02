@@ -5,8 +5,109 @@ import Testing
 
 @MainActor
 struct CodexRuntimeAccountIsolationTests {
+    @Test(arguments: [
+        (CodexRuntimeProvider.chatGPTSubscription, CodexRuntimeProvider.databricks(profile: "first")),
+        (.databricks(profile: "first"), .chatGPTSubscription),
+        (.databricks(profile: "first"), .databricks(profile: "second")),
+    ])
+    func capturedLocalProviderFailsAfterSettingsChange(expected: CodexRuntimeProvider, active: CodexRuntimeProvider) async {
+        let store = CodexRuntimeContextStore()
+        store.apply(active)
+        var finished = false
+        var failure: CodexConfigurationError?
+        let waiter = Task {
+            defer { finished = true }
+            do {
+                try await store.waitUntilActive(expected)
+            } catch {
+                failure = error as? CodexConfigurationError
+            }
+        }
+        let completed = await pollUntil { finished }
+        waiter.cancel()
+        await waiter.value
+        #expect(completed)
+        #expect(failure == .providerChanged(expected.displayName))
+    }
+
+    @Test(arguments: [false, true])
+    func selectedProviderWaitsForActivationResult(fails: Bool) async {
+        let store = CodexRuntimeContextStore()
+        store.apply(.chatGPTSubscription)
+        let expected = CodexRuntimeProvider.databricks(profile: "next")
+        store.beginActivation(expected)
+        var started = false
+        var finished = false
+        var failure: (any Error)?
+        let waiter = Task {
+            started = true
+            defer { finished = true }
+            do {
+                try await store.waitUntilActive(expected)
+            } catch {
+                failure = error
+            }
+        }
+        #expect(await pollUntil { started })
+        #expect(!finished)
+        #expect(!store.isConfigured)
+        if fails {
+            store.activationFailed()
+        } else {
+            store.apply(expected)
+        }
+        let completed = await pollUntil { finished }
+        waiter.cancel()
+        await waiter.value
+        #expect(completed)
+        if fails {
+            #expect(failure as? CodexConfigurationError == .accountNotReady)
+        } else {
+            #expect(failure == nil)
+        }
+    }
+
+    @Test(arguments: ["activate", "cancel", "replace"])
+    func inactiveAccountWaitHandlesReturnCancellationAndStaleSettings(action: String) async {
+        let store = CodexRuntimeContextStore()
+        store.apply(.dahlia(connectionID: .v7()))
+        let expected = CodexRuntimeProvider.chatGPTSubscription
+        var started = false
+        var finished = false
+        var failure: (any Error)?
+        let waiter = Task {
+            started = true
+            defer { finished = true }
+            do {
+                try await store.waitUntilActive(expected)
+            } catch {
+                failure = error
+            }
+        }
+        #expect(await pollUntil { started })
+        #expect(!finished)
+        switch action {
+        case "activate":
+            store.beginActivation(expected)
+            store.apply(expected)
+        case "cancel":
+            waiter.cancel()
+        default:
+            store.beginActivation(.databricks(profile: "changed-while-away"))
+        }
+        let completed = await pollUntil { finished }
+        waiter.cancel()
+        await waiter.value
+        #expect(completed)
+        switch action {
+        case "activate": #expect(failure == nil)
+        case "cancel": #expect(failure is CancellationError)
+        default: #expect(failure as? CodexConfigurationError == .providerChanged(expected.displayName))
+        }
+    }
+
     @Test
-    func prepareNormalizesEffortAfterFallingBackToAnAvailableModel() async {
+    func prepareNormalizesEffortAfterFallingBackToAnAvailableModel() async throws {
         let service = TestCodexChatService(mode: .complete)
         let settings = AppSettings()
         settings.currentWorkspace = WorkspaceRecord(
@@ -16,17 +117,28 @@ struct CodexRuntimeAccountIsolationTests {
             createdAt: .now,
             lastOpenedAt: .now
         )
+        let suite = "ModelFallback-\(UUID())"
+        let defaults = try #require(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let workspaceSettings = WorkspaceAISettingsModel(setupDefaults: defaults, activateRuntime: { _ in })
+        try workspaceSettings.activate(workspace: #require(settings.currentWorkspace))
+        workspaceSettings.chatModelID = "unavailable-model"
+        workspaceSettings.chatReasoningEffort = "high"
         let session = CodexChatSessionModel(
             modelID: "unavailable-model",
             effort: "high",
             service: service,
-            settings: settings
+            settings: settings,
+            workspaceSettings: workspaceSettings
         )
 
         await session.prepare()
 
         #expect(session.selectedModelID == "default-model")
         #expect(session.selectedEffort == "medium")
+        #expect(workspaceSettings.chatModelID == "unavailable-model")
+        #expect(workspaceSettings.chatReasoningEffort == "high")
+
     }
 
     @Test
@@ -96,7 +208,7 @@ struct CodexRuntimeAccountIsolationTests {
     }
 
     @Test
-    func cancelledProviderSwitchRestoresThePreviouslyActiveConfiguration() async throws {
+    func providerSwitchCancelsGenerationAndStartsNextProcessOnDemand() async throws {
         let rootURL = FileManager.default.temporaryDirectory
             .appending(path: "dahlia-codex-context-\(UUID().uuidString)", directoryHint: .isDirectory)
         defer { try? FileManager.default.removeItem(at: rootURL) }
@@ -145,26 +257,37 @@ struct CodexRuntimeAccountIsolationTests {
                 localAccountSettings: .init(provider: .databricks, databricksProfile: connection.id.uuidString)
             ))
         }
-        await service.waitUntilConfigurationReloadIsWaitingForTesting()
+        try await databricksActivation.value
+        await #expect(throws: CancellationError.self) { try await generation.value }
+        #expect(await first.isClosed)
+        #expect(transports.withLock { $0.count } == 1)
+        #expect(contextStore.provider == .databricks(profile: connection.id.uuidString))
 
-        databricksActivation.cancel()
-        await #expect(throws: CancellationError.self) { try await databricksActivation.value }
-        let localActivation = Task {
-            try await coordinator.activate(WorkspaceAISettingsSnapshot(
-                workspace: localWorkspace,
-                localAccountSettings: .init(provider: .chatGPTSubscription, databricksProfile: "")
-            ))
-        }
-        await completeGeneration(on: first)
-
-        _ = try await generation.value
-        try await localActivation.value
+        try await coordinator.activate(WorkspaceAISettingsSnapshot(
+            workspace: localWorkspace,
+            localAccountSettings: .init(provider: .chatGPTSubscription, databricksProfile: "")
+        ))
+        #expect(transports.withLock { $0.count } == 1)
+        _ = try await service.models()
+        #expect(transports.withLock { $0.count } == 0)
+        try await coordinator.activate(provider: .chatGPTSubscription)
+        #expect(await !second.isClosed)
         let configuration = try String(
             contentsOf: locator.homeURL().appending(path: "config.toml"),
             encoding: .utf8
         )
         #expect(configuration.contains(#"model_provider = "openai""#))
         #expect(contextStore.provider == .chatGPTSubscription)
+        let unavailable = CodexRuntimeProvider.dahlia(connectionID: .v7())
+        await #expect(throws: CodexConfigurationError.accountNotReady) {
+            try await coordinator.activate(provider: unavailable)
+        }
+        #expect(!contextStore.isConfigured)
+        await #expect(throws: CodexConfigurationError.accountNotReady) {
+            try await contextStore.waitUntilActive(unavailable)
+        }
+        try await coordinator.activate(provider: .chatGPTSubscription)
+        #expect(contextStore.isConfigured)
         await service.shutdown()
     }
 

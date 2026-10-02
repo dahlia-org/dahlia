@@ -30,7 +30,7 @@
             workspace.generationSettings.processing.remote.workflow = method == .audio ? .combined : .transcribeThenSummarize
             workspace.generationSettings.outputLanguage = .en
             workspace.generationSettings.automaticProcessing = false
-            let expected = workspace.generationSettings
+            let expected = AccountInferenceSettings(workspace: workspace).generationSettings(outputLanguage: .en)
             let viewModel = CaptionViewModel()
             viewModel.supportedLocales = [Locale(identifier: "en-US"), Locale(identifier: "fr-FR")]
             let processing = viewModel.processingSnapshot(
@@ -41,8 +41,8 @@
             workspace.generationSettings = WorkspaceGenerationSettings()
             var restored = try JSONDecoder().decode(RecordingProcessing.self, from: JSONEncoder().encode(processing))
             restored.prepareRetry(serverJob: nil)
-            #expect(restored.method == (server ? method : .transcript))
-            #expect(restored.usesServerSummary == server)
+            #expect(restored.method == .transcript)
+            #expect(restored.usesServerSummary == false)
             #expect(restored.generationSettings.sourceAccountConnectionID == workspace.accountConnectionId)
             #expect(restored.workspaceSettings == expected)
             #expect(restored.generationSettings.workspacePreferences == expected)
@@ -50,6 +50,32 @@
             #expect(restored.localeIdentifier == "fr-FR")
             #expect(restored.automaticLanguageDetection == true)
             #expect(restored.automaticLanguageCandidates?.identifierSet == ["en", "fr"])
+        }
+
+        /// Fixed JSON using the released v0.24.2 Codable field and enum shapes.
+        nonisolated static let releasedProcessingJSON = #"""
+        {"id":"019d4a01-0000-7000-8000-000000000001","automatic":true,"liveDraft":false,
+         "localeIdentifier":"ja-JP","method":"audio","summaryMode":"remote","stage":"uploading","sessionIDs":[],
+         "options":{"exportOptions":{"exportsToWorkspace":false,"exportsToGoogleDocs":false}},
+         "generationSettings":{"modelID":"saved-model","reasoningEffort":"high","detailLevelInstruction":"Detailed",
+           "languageDisplayName":"日本語","runtimeProvider":{"chatGPTSubscription":{}},
+           "accountConnectionID":"019d4a01-0000-7000-8000-000000000002"},
+         "workspaceSettings":{"processing":{"location":"remote","remote":{"workflow":"combined","summaryModel":"gemini"}},
+           "local":{"model":"saved-model","reasoningEffort":"high"}},
+         "serverRequest":{"id":"019d4a01-0000-7000-8000-000000000001","input":{"type":"recording","recordings":[]},
+           "model":"gemini","detailLevel":"max","summaryLanguage":"ja","reasoningEffort":"high"}}
+        """#
+
+        @Test(arguments: ["audio", "cloudTranscription", "transcript"])
+        func decodesReleasedProcessingJSON(method: String) throws {
+            let json = Self.releasedProcessingJSON.replacingOccurrences(of: #""method":"audio""#, with: "\"method\":\"\(method)\"")
+            let processing = try JSONDecoder().decode(RecordingProcessing.self, from: Data(json.utf8))
+            #expect(processing.method.rawValue == method)
+            #expect(processing.summaryMode == .remote)
+            #expect(processing.workspaceSettings?.processing.location == .remote)
+            #expect(processing.serverRequest?.model == "gemini")
+            #expect(processing.generationSettings.modelID == "saved-model")
+            #expect(processing.generationSettings.runtimeProvider == .chatGPTSubscription)
         }
 
         @Test
@@ -86,7 +112,7 @@
         }
 
         @Test
-        func forcedServerRetryStartsFreshRequestWhenPreviousJobIsUnavailable() throws {
+        func forcedServerRetryStartsFreshRequestWhenPreviousJobIsUnavailable() {
             var processing = Self.processing(method: .cloudTranscription)
             processing.stage = .failed
             processing.serverRequest = .init(
@@ -104,7 +130,7 @@
         }
 
         @Test(arguments: ["pending", "processing", "succeeded", "failed", "cancelled"])
-        func serverRetranscriptionRetryUsesTheRemoteJobState(status: String) throws {
+        func serverRetranscriptionRetryUsesTheRemoteJobState(status: String) {
             var processing = Self.processing(method: .cloudTranscription)
             processing.stage = .failed
             processing.transcriptionOnly = true
@@ -128,7 +154,7 @@
         }
 
         @Test
-        func serverRetranscriptionRetryStartsFreshWhenRemoteJobIsMissing() throws {
+        func serverRetranscriptionRetryStartsFreshWhenRemoteJobIsMissing() {
             var processing = Self.processing(method: .cloudTranscription)
             processing.stage = .failed
             processing.transcriptionOnly = true

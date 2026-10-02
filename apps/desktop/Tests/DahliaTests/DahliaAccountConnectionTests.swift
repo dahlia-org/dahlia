@@ -96,7 +96,7 @@
                 try WorkspaceRecord.fetchOne(db, key: workspace.id)
             })
             #expect(stored.accountConnectionId == connection.id)
-            #expect(stored.summaryModelID == "new-summary-model")
+            #expect(stored.summaryModelID == workspace.summaryModelID)
         }
 
         @Test
@@ -164,7 +164,7 @@
                 }),
                 localAccountSettings: .init(provider: .chatGPTSubscription, databricksProfile: "")
             )
-            settings.generationSettings.local.model = "explicit-model"
+            settings.generationSettings.outputLanguage = .fr
 
             _ = try await repository.updateWorkspaceAISettings(settings)
             try await repository.backfillWorkspaceAISettings(WorkspaceAISettingsLegacyValues(
@@ -176,7 +176,7 @@
                 try await manager.dbQueue.read { db in try WorkspaceRecord.fetchOne(db, key: pending.id) }
             )
             #expect(stored.aiSettingsBackfilled)
-            #expect(stored.summaryModelID == "explicit-model")
+            #expect(stored.generationSettings.outputLanguage == .fr)
         }
 
         @Test

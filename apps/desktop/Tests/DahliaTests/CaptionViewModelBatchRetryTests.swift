@@ -495,7 +495,7 @@ import Synchronization
         }
 
         @Test
-        func serverRetranscriptionRetriesCapabilityCheckAndWaitsForEveryArchive() async throws {
+        func serverRetranscriptionUsesMacAndWaitsForEveryArchive() async throws {
             let completedAt = Date(timeIntervalSince1970: 1_776_384_002)
             let batch = try BatchAudioTestFixture(
                 name: "server-retranscription-availability",
@@ -515,7 +515,7 @@ import Synchronization
                     size: 1,
                     checksum: "SHA-256:" + String(repeating: "0", count: 64),
                     contentURL: "/audio",
-                    manifest: .init(sampleRate: 16_000, frameCount: 16_000, ranges: [])
+                    manifest: .init(sampleRate: 16000, frameCount: 16000, ranges: [])
                 ),
             ]), as: UTF8.self)
             try await batch.database.dbQueue.write { db in
@@ -574,7 +574,8 @@ import Synchronization
                 }
                 if number == 1 { return (503, [:], Data()) }
                 return (200, [:], Data(
-                    #"{"meetingSummaryGeneration":{"version":2,"sources":["audio"],"completeRecordings":true,"retranscription":{"version":1,"provider":"gemini"}}}"#.utf8
+                    #"{"meetingSummaryGeneration":{"version":2,"sources":["audio"],"completeRecordings":true,"retranscription":{"version":1,"provider":"gemini"}}}"#
+                        .utf8
                 ))
             }
             defer { ImageURLProtocol.remove(origin: origin) }
@@ -586,12 +587,7 @@ import Synchronization
                 ))
             }
             defer { ImageURLProtocol.remove(origin: replacementOrigin) }
-            let configuration = URLSessionConfiguration.ephemeral
-            configuration.protocolClasses = [ImageURLProtocol.self]
-            let viewModel = CaptionViewModel(serverSummaryService: ServerSummaryService(client: SyncAPIClient(
-                session: URLSession(configuration: configuration),
-                tokenProvider: { _, _ in "test" }
-            )))
+            let viewModel = CaptionViewModel()
             viewModel.loadMeeting(
                 batch.meeting.id,
                 dbQueue: batch.database.dbQueue,
@@ -600,19 +596,8 @@ import Synchronization
                 workspaceURL: batch.workspaceURL
             )
 
-            #expect(await waitUntil { viewModel.canRetryServerRetranscriptionAvailability })
             #expect(viewModel.retranscribableBatchSessionIds.isEmpty)
-
-            viewModel.retryServerRetranscriptionAvailability()
-            #expect(viewModel.isCheckingServerRetranscriptionAvailability)
-            #expect(viewModel.serverRetranscriptionUnavailableReason == nil)
-            #expect(!viewModel.canRetranscribeBatchAudio)
-            #expect(await waitUntil {
-                !viewModel.isCheckingServerRetranscriptionAvailability
-                    && viewModel.serverRetranscriptionUnavailableReason == nil
-                    && requests.withLock { $0 } >= 2
-            })
-            #expect(viewModel.retranscribableBatchSessionIds.isEmpty)
+            #expect(requests.withLock { $0 } == 0)
 
             try await batch.database.dbQueue.write { db in
                 try db.execute(
@@ -636,11 +621,8 @@ import Synchronization
                     arguments: [replacementConnectionID, replacementConnectionID, batch.meeting.workspaceId]
                 )
             }
-            #expect(await waitUntil {
-                replacementRequests.withLock { $0 } > 0
-                    && viewModel.serverRetranscriptionUnavailableReason == L10n.serverRetranscriptionUnsupported
-                    && !viewModel.canRetranscribeBatchAudio
-            })
+            #expect(await waitUntil { viewModel.canRetranscribeBatchAudio })
+            #expect(replacementRequests.withLock { $0 } == 0)
 
             try await batch.database.dbQueue.write { db in
                 try db.execute(
@@ -686,7 +668,7 @@ import Synchronization
                     size: 1,
                     checksum: "SHA-256:" + String(repeating: "0", count: 64),
                     contentURL: "/audio",
-                    manifest: .init(sampleRate: 16_000, frameCount: 16_000, ranges: [])
+                    manifest: .init(sampleRate: 16000, frameCount: 16000, ranges: [])
                 ),
             ]), as: UTF8.self)
             try await batch.database.dbQueue.write { db in
@@ -734,16 +716,12 @@ import Synchronization
             }
             ImageURLProtocol.register(origin: origin) { _ in
                 (200, [:], Data(
-                    #"{"meetingSummaryGeneration":{"version":2,"sources":["audio"],"completeRecordings":true,"retranscription":{"version":1,"provider":"gemini"}}}"#.utf8
+                    #"{"meetingSummaryGeneration":{"version":2,"sources":["audio"],"completeRecordings":true,"retranscription":{"version":1,"provider":"gemini"}}}"#
+                        .utf8
                 ))
             }
             defer { ImageURLProtocol.remove(origin: origin) }
-            let configuration = URLSessionConfiguration.ephemeral
-            configuration.protocolClasses = [ImageURLProtocol.self]
-            let viewModel = CaptionViewModel(serverSummaryService: ServerSummaryService(client: SyncAPIClient(
-                session: URLSession(configuration: configuration),
-                tokenProvider: { _, _ in "test" }
-            )))
+            let viewModel = CaptionViewModel()
 
             viewModel.loadMeeting(
                 batch.meeting.id,
