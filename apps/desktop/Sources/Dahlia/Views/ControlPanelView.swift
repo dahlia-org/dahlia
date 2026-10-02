@@ -38,6 +38,8 @@ struct ControlPanelView: View {
     @Binding var selectedTab: DetailTab
     @Binding var expandedScreenshot: ExpandedScreenshotPresentation?
 
+    @Environment(MainWindowNavigation.self) private var mainWindowNavigation
+    @Environment(\.locale) private var locale
     @ObservedObject private var appSettings = AppSettings.shared
     @State private var screenshotMinimumWidth = ScreenshotGridSizing.defaultMinimumWidth
     @State private var isSelectingScreenshots = false
@@ -60,121 +62,34 @@ struct ControlPanelView: View {
     }
 
     var body: some View {
-        VStack(spacing: 0) {
-            VStack(spacing: 12) {
-                // 準備中プログレス
-                if viewModel.isPreparingAnalyzer {
-                    ProgressView(L10n.preparingSpeechRecognition)
-                        .progressViewStyle(.linear)
+        Group {
+            switch selectedTab {
+            case .transcript:
+                TranscriptTabView(
+                    store: viewModel.store,
+                    allowsTextSelection: !viewModel.isListening,
+                    showsTranslatedText: viewModel.showsTranscriptTranslations,
+                    retryInitialMeetingLoad: viewModel.retryInitialMeetingLoad
+                ) {
+                    pageHeader
+                } footer: {
+                    pageFooter
                 }
-
-                if let meetingTitle = displayedMeetingTitle,
-                   viewModel.hasDraftMeeting || viewModel.currentMeetingId != nil {
-                    MeetingDetailHeader(
-                        viewModel: viewModel,
-                        sidebarViewModel: sidebarViewModel,
-                        recordingCoordinator: recordingCoordinator,
-                        title: meetingTitle,
-                        metadataText: meetingMetadataText,
-                        calendarEvent: displayedCalendarEvent,
-                        isEditing: $isEditingMeetingName,
-                        editingName: $editingMeetingName,
-                        isFocused: $isMeetingNameFieldFocused,
-                        onBeginEditing: beginMeetingRename,
-                        onCommit: commitMeetingRename,
-                        onCancel: cancelMeetingRename,
-                        onEditorTap: markMeetingNameEditorTap,
-                        onPresentSummaryGeneration: onPresentSummaryGeneration
-                    )
-                }
-
-                MeetingDetailNavigationBar(
-                    selection: $selectedTab,
-                    viewModel: viewModel,
-                    canEdit: sidebarViewModel.canEditCurrentWorkspace,
-                    onRename: beginMeetingRename,
-                    onDelete: requestCurrentMeetingDeletion
-                )
-            }
-            .padding(.horizontal, DahliaDesign.detailHorizontalPadding)
-            .padding(.top, DahliaDesign.detailTopPadding)
-
-            Divider()
-                .opacity(0.5)
-
-            // タブコンテンツ
-            Group {
-                switch selectedTab {
-                case .summary:
-                    summaryTabContent
-                case .notes:
-                    notesTabContent
-                case .screenshots:
-                    screenshotsTabContent
-                case .transcript:
-                    TranscriptTabView(
-                        store: viewModel.store,
-                        allowsTextSelection: !viewModel.isListening,
-                        showsTranslatedText: viewModel.showsTranscriptTranslations,
-                        retryInitialMeetingLoad: viewModel.retryInitialMeetingLoad
-                    )
-                case .conversationAnalytics:
-                    ConversationAnalyticsDashboardView(
-                        store: viewModel.conversationMetricsStore,
-                        load: viewModel.loadCurrentMeetingConversationMetrics
-                    )
-                }
-            }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .frame(minHeight: 280)
-            .background {
-                Rectangle().fill(tabContentBackgroundColor)
-            }
-
-            if let batchTranscriptionState = viewModel.batchTranscriptionState {
-                BatchTranscriptionStatusBanner(
-                    state: batchTranscriptionState,
-                    canAct: viewModel.canStartOrResumeBatchTranscription,
-                    actionTitle: viewModel.batchTranscriptionActionTitle,
-                    onAction: viewModel.presentAvailableBatchRetranscription,
-                    onDiscard: viewModel.discardFailedBatchTranscription,
-                    onKeepCurrentTranscript: viewModel.cancelFailedBatchRetranscription
-                )
-            }
-
-            if let archiveState = viewModel.recordingArchiveState {
-                HStack {
-                    Label(
-                        archiveState == "saved" ? L10n.recordingArchiveSaved : archiveState == "failed" ? L10n.recordingArchiveFailed : L10n
-                            .recordingArchivePending,
-                        systemImage: archiveState == "saved" ? "checkmark.circle" : "waveform"
-                    )
-                    Spacer()
-                    if archiveState == "failed", sidebarViewModel.canEditCurrentWorkspace {
-                        Button(L10n.retry, action: viewModel.retryRecordingArchive)
+            case .screenshots:
+                screenshotsTabContent
+            default:
+                ScrollView {
+                    VStack(spacing: 0) {
+                        pageHeader
+                        tabContent
+                        pageFooter
                     }
+                    .frame(maxWidth: DahliaDesign.mainContentMaxWidth)
+                    .frame(maxWidth: .infinity)
                 }
-                .font(.caption)
-                .foregroundStyle(.secondary)
-                .padding(.horizontal, DahliaDesign.detailHorizontalPadding)
-                .padding(.vertical, 6)
-            }
-
-            // エラー表示
-            if let error = viewModel.errorMessage {
-                detailErrorBanner(message: error, tint: .red)
-            }
-
-            if let summaryError = viewModel.summaryError {
-                detailErrorBanner(message: summaryError, tint: .red)
-            }
-
-            if let googleDocsExportError = viewModel.googleDocsExportError {
-                detailErrorBanner(message: googleDocsExportError, tint: .orange)
             }
         }
         .frame(minWidth: MainSidebarLayout.minimumDetailWidth, minHeight: 500)
-        .frame(maxWidth: DahliaDesign.mainContentMaxWidth, maxHeight: .infinity, alignment: .top)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .simultaneousGesture(
             TapGesture().onEnded {
@@ -258,6 +173,122 @@ struct ControlPanelView: View {
         .padding(.vertical, 4)
     }
 
+    private var pageHeader: some View {
+        VStack(spacing: 0) {
+            VStack(spacing: 12) {
+                // 準備中プログレス
+                if viewModel.isPreparingAnalyzer {
+                    ProgressView(L10n.preparingSpeechRecognition)
+                        .progressViewStyle(.linear)
+                }
+
+                if let meetingTitle = displayedMeetingTitle,
+                   viewModel.hasDraftMeeting || viewModel.currentMeetingId != nil {
+                    MeetingDetailHeader(
+                        viewModel: viewModel,
+                        sidebarViewModel: sidebarViewModel,
+                        recordingCoordinator: recordingCoordinator,
+                        title: meetingTitle,
+                        metadataText: meetingMetadataText,
+                        calendarEvent: displayedCalendarEvent,
+                        isEditing: $isEditingMeetingName,
+                        editingName: $editingMeetingName,
+                        isFocused: $isMeetingNameFieldFocused,
+                        onBeginEditing: beginMeetingRename,
+                        onCommit: commitMeetingRename,
+                        onCancel: cancelMeetingRename,
+                        onEditorTap: markMeetingNameEditorTap,
+                        onPresentSummaryGeneration: onPresentSummaryGeneration
+                    )
+                }
+
+                MeetingDetailNavigationBar(
+                    selection: $selectedTab,
+                    viewModel: viewModel,
+                    canEdit: sidebarViewModel.canEditCurrentWorkspace,
+                    onRename: beginMeetingRename,
+                    onDelete: requestCurrentMeetingDeletion
+                )
+            }
+            .padding(.horizontal, DahliaDesign.detailHorizontalPadding)
+            .padding(.top, DahliaDesign.detailTopPadding)
+
+            Divider()
+                .opacity(0.5)
+
+        }
+    }
+
+    private var pageFooter: some View {
+        VStack(spacing: 0) {
+            if let batchTranscriptionState = viewModel.batchTranscriptionState {
+                BatchTranscriptionStatusBanner(
+                    state: batchTranscriptionState,
+                    canAct: viewModel.canStartOrResumeBatchTranscription,
+                    actionTitle: viewModel.batchTranscriptionActionTitle,
+                    onAction: viewModel.presentAvailableBatchRetranscription,
+                    onDiscard: viewModel.discardFailedBatchTranscription,
+                    onKeepCurrentTranscript: viewModel.cancelFailedBatchRetranscription
+                )
+            }
+
+            if let archiveState = viewModel.recordingArchiveState {
+                HStack {
+                    Label(
+                        archiveState == "saved" ? L10n.recordingArchiveSaved : archiveState == "failed" ? L10n.recordingArchiveFailed : L10n
+                            .recordingArchivePending,
+                        systemImage: archiveState == "saved" ? "checkmark.circle" : "waveform"
+                    )
+                    Spacer()
+                    if archiveState == "failed", sidebarViewModel.canEditCurrentWorkspace {
+                        Button(L10n.retry, action: viewModel.retryRecordingArchive)
+                    }
+                }
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .padding(.horizontal, DahliaDesign.detailHorizontalPadding)
+                .padding(.vertical, 6)
+            }
+
+            // エラー表示
+            if let error = viewModel.errorMessage {
+                detailErrorBanner(message: error, tint: .red)
+            }
+
+            if let summaryError = viewModel.summaryError {
+                detailErrorBanner(message: summaryError, tint: .red)
+            }
+
+            if let googleDocsExportError = viewModel.googleDocsExportError {
+                detailErrorBanner(message: googleDocsExportError, tint: .orange)
+            }
+        }
+    }
+
+    private var tabContent: some View {
+        Group {
+            switch selectedTab {
+            case .summary:
+                summaryTabContent
+            case .notes:
+                notesTabContent
+            case .transcript, .screenshots:
+                EmptyView()
+            case .conversationAnalytics:
+                ConversationAnalyticsDashboardView(
+                    store: viewModel.conversationMetricsStore,
+                    load: viewModel.loadCurrentMeetingConversationMetrics
+                )
+            }
+        }
+        .frame(maxWidth: .infinity)
+        .frame(minHeight: 280)
+        .background {
+            Rectangle().fill(tabContentBackgroundColor)
+        }
+
+    }
+
     private var summaryTabContent: some View {
         SummaryTabContentView(
             screenshotStore: viewModel.screenshotStore,
@@ -295,7 +326,7 @@ struct ControlPanelView: View {
             }
         }
         .padding(DahliaDesign.tabContentInset)
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .frame(maxWidth: .infinity, alignment: .topLeading)
     }
 
     private func notesEditorHeight(for availableHeight: CGFloat) -> CGFloat {
@@ -309,6 +340,8 @@ struct ControlPanelView: View {
     private var screenshotsTabContent: some View {
         ScreenshotTabContentView(
             screenshotStore: viewModel.screenshotStore,
+            pageHeader: AnyView(pageHeader.environment(mainWindowNavigation).environment(\.locale, locale)),
+            pageFooter: AnyView(pageFooter.environment(mainWindowNavigation).environment(\.locale, locale)),
             meetingID: viewModel.currentMeetingId,
             recordingSessions: viewModel.store.recordingSessions,
             fallbackTimeBase: screenshotTimeBase,

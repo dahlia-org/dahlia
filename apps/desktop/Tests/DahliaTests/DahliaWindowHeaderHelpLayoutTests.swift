@@ -6,6 +6,21 @@
     @MainActor
     struct DahliaWindowHeaderHelpLayoutTests {
         @Test
+        func syncHelpStaysInsideDetailPaneBesideChatSidebar() {
+            let pane = CGRect(x: 240, y: 0, width: 600, height: 32)
+            let button = CGRect(x: 800, y: 2, width: 28, height: 28)
+            let helpWidth: CGFloat = 300
+            let offset = DahliaWindowHeaderHelpLayout.horizontalOffset(
+                buttonMidX: button.width / 2,
+                helpWidth: helpWidth,
+                windowBounds: pane.offsetBy(dx: -button.minX, dy: -button.minY)
+            )
+            let helpMinX = button.midX - helpWidth / 2 + offset
+            #expect(helpMinX >= pane.minX + DahliaDesign.windowHeaderHelpHorizontalInset)
+            #expect(helpMinX + helpWidth <= pane.maxX - DahliaDesign.windowHeaderHelpHorizontalInset)
+        }
+
+        @Test
         func placesHelpAboveOnlyWhenItFits() {
             #expect(DahliaWindowHeaderHelpLayout.verticalOffset(buttonMinY: 80, helpHeight: 32) == -34)
             #expect(DahliaWindowHeaderHelpLayout.verticalOffset(buttonMinY: 20, helpHeight: 32) == 34)

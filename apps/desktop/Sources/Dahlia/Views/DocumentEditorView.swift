@@ -354,6 +354,7 @@ final class DocumentEditorModel {
 }
 
 struct DocumentEditorView: View {
+    @State private var contentHeight: CGFloat = 280
     @State private var model: DocumentEditorModel
     let editable: Bool
 
@@ -386,8 +387,10 @@ struct DocumentEditorView: View {
                     onUpdate: model.accept,
                     onError: { model.error = $0 == "document_too_large" ? L10n.documentTooLarge : L10n.documentSaveFailed },
                     onFocus: { model.focused = $0 && editable },
-                    onAttachFlush: { model.flushEditor = $0 }
+                    onAttachFlush: { model.flushEditor = $0 },
+                    onHeight: { contentHeight = $0 }
                 )
+                .frame(height: contentHeight)
                 // The page draws its own side insets so the block handle fits in the gutter.
                 .padding(.horizontal, -DahliaDesign.tabContentInset)
             } else {
@@ -432,12 +435,34 @@ struct DocumentWebEditor: NSViewRepresentable {
     let onFocus: @MainActor (Bool) -> Void
     let onAttachFlush: @MainActor (@escaping @MainActor () async throws -> Void) -> Void
 
+    static let maximumContentHeight: CGFloat = 4096
+
+    var onHeight: (@MainActor (CGFloat) -> Void)?
+
     func makeCoordinator() -> Coordinator { Coordinator(parent: self) }
 
     func makeNSView(context: Context) -> WKWebView {
         let configuration = WKWebViewConfiguration()
         configuration.websiteDataStore = .nonPersistent()
         configuration.userContentController.add(context.coordinator, name: "document")
+        if onHeight != nil {
+            configuration.userContentController.addUserScript(WKUserScript(source: """
+            const style = document.createElement('style');
+            style.textContent = '#editor .dahlia-document { min-height: 264px; } html { overflow: hidden; }';
+            document.head.appendChild(style);
+            let scheduled = false;
+            new ResizeObserver(() => {
+                if (scheduled) return;
+                scheduled = true;
+                requestAnimationFrame(() => {
+                    scheduled = false;
+                    const height = Math.ceil(document.body.getBoundingClientRect().height);
+                    document.documentElement.style.overflowY = height > \(Self.maximumContentHeight) ? 'auto' : 'hidden';
+                    window.webkit.messageHandlers.document.postMessage({type: 'height', height: String(height)});
+                });
+            }).observe(document.body);
+            """, injectionTime: .atDocumentEnd, forMainFrameOnly: true))
+        }
         let view = WKWebView(frame: .zero, configuration: configuration)
         view.navigationDelegate = context.coordinator
         view.setValue(false, forKey: "drawsBackground")
@@ -504,6 +529,10 @@ struct DocumentWebEditor: NSViewRepresentable {
 
         func userContentController(_: WKUserContentController, didReceive message: WKScriptMessage) {
             guard message.frameInfo.isMainFrame, let body = message.body as? [String: String] else { return }
+            receive(body)
+        }
+
+        func receive(_ body: [String: String]) {
             switch body["type"] {
             case "ready":
                 ready = true
@@ -519,6 +548,11 @@ struct DocumentWebEditor: NSViewRepresentable {
                 if let update = body["update"] { parent.onUpdate(update, body["recovery"]) }
             case "error":
                 if let error = body["message"] { parent.onError(error) }
+            case "height":
+                if let raw = body["height"], let height = Double(raw), height.isFinite, height > 0 { parent.onHeight?(min(
+                    CGFloat(height),
+                    DocumentWebEditor.maximumContentHeight
+                )) }
             case "focus": parent.onFocus(body["focused"] == "true")
             case "link":
                 if let string = body["url"], let url = URL(string: string), ["https", "http", "mailto"].contains(url.scheme?.lowercased() ?? "") {

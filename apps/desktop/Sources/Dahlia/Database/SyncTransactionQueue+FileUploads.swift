@@ -44,6 +44,8 @@ extension SyncTransactionQueue {
         WHERE workspace_id = ? AND blockedReason IS NULL
           AND (id = ? OR attempts = 0)
           AND NOT EXISTS (SELECT 1 FROM sync_dependencies d WHERE d.transactionId = sync_transactions.id)
+          AND EXISTS (SELECT 1 FROM sync_operations o WHERE o.transactionId = sync_transactions.id
+              AND o.entity = 'file' AND o.attachmentReference IS NOT NULL)
         ORDER BY syncPriority DESC, sequence LIMIT 8
         """, arguments: [transaction.workspaceId, transaction.id])
         var uploads: [SyncFileUpload] = []

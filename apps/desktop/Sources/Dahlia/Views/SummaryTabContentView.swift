@@ -10,17 +10,15 @@ struct SummaryTabContentView: View {
 
     var body: some View {
         if hasSummary, let document {
-            ScrollView {
-                SummaryDocumentView(
-                    document: document,
-                    screenshotProvider: screenshot,
-                    onOpenImage: openScreenshot,
-                    transcriptTextProvider: transcriptText
-                )
-                .padding(.horizontal, DahliaDesign.detailHorizontalPadding)
-                .padding(.vertical, DahliaDesign.tabContentInset)
-                .frame(maxWidth: .infinity, alignment: .leading)
-            }
+            SummaryDocumentView(
+                document: document,
+                screenshotProvider: screenshot,
+                onOpenImage: openScreenshot,
+                transcriptTextProvider: transcriptText
+            )
+            .padding(.horizontal, DahliaDesign.detailHorizontalPadding)
+            .padding(.vertical, DahliaDesign.tabContentInset)
+            .frame(maxWidth: .infinity, alignment: .leading)
         } else {
             ContentUnavailableView {
                 Label(L10n.summary, systemImage: "list.bullet.clipboard")

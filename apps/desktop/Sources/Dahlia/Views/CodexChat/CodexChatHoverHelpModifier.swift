@@ -3,6 +3,7 @@ import SwiftUI
 private struct DahliaHoverHelpModifier: ViewModifier {
     let label: String
     let shortcut: String?
+    let bounds: CGRect?
 
     @State private var helpController = DahliaWindowHeaderHelpController()
     @State private var helpID = UUID()
@@ -52,7 +53,7 @@ private struct DahliaHoverHelpModifier: ViewModifier {
         DahliaWindowHeaderHelpLayout.horizontalOffset(
             buttonMidX: buttonFrame.width / 2,
             helpWidth: helpSize.width,
-            windowBounds: helpController.windowBounds
+            windowBounds: bounds.map { $0.offsetBy(dx: -buttonFrame.minX, dy: -buttonFrame.minY) } ?? helpController.windowBounds
         )
     }
 
@@ -71,7 +72,7 @@ private struct DahliaHoverHelpModifier: ViewModifier {
 }
 
 extension View {
-    func dahliaHoverHelp(label: String, shortcut: String? = nil) -> some View {
-        modifier(DahliaHoverHelpModifier(label: label, shortcut: shortcut))
+    func dahliaHoverHelp(label: String, shortcut: String? = nil, bounds: CGRect? = nil) -> some View {
+        modifier(DahliaHoverHelpModifier(label: label, shortcut: shortcut, bounds: bounds))
     }
 }

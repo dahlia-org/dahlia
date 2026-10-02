@@ -16,6 +16,7 @@ it.runIf(process.env.TEST_SYNC_LOCKS_DATABASE_URL)("Notes bypass the domain lane
   const blocker = new Client({ connectionString: url });
   const owner = { userId: uuidV7(), source: "header" as const }, editor = { userId: uuidV7(), source: "header" as const };
   const workspaceId = uuidV7(), meetingId = uuidV7(), id = uuidV7();
+  const parallelMeeting = uuidV7();
   const otherWorkspace = uuidV7(), otherMeeting = uuidV7(), otherDocument = uuidV7();
   const core = new DocumentCore(); core.insertText("concurrent", uuidV7);
   async function waitingForLock() {
@@ -49,9 +50,86 @@ it.runIf(process.env.TEST_SYNC_LOCKS_DATABASE_URL)("Notes bypass the domain lane
         data: { name: "Meeting", projectId: null, description: "", status: "READY", duration: null, recordingStartedAt: null,
           createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() } },
     ] });
+    const meetingData = { name: "Parallel", projectId: null, description: "", status: "READY", duration: null, recordingStartedAt: null,
+      createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() };
+    const mutation = (target: string, name: string) => ({ id: uuidV7(), schemaVersion: 3, workspaceId, createdAt: new Date().toISOString(), operations: [
+      { id: uuidV7(), entity: "meeting", action: "update", entityId: target, baseRevision: 1, data: { name, projectId: null, description: "", status: "READY", duration: null, recordingStartedAt: null, updatedAt: new Date().toISOString() } },
+    ] });
+    await sync.commitTransaction(owner, { ...mutation(parallelMeeting, "Parallel"), operations: [
+      { id: uuidV7(), entity: "meeting", action: "create", entityId: parallelMeeting, baseRevision: null, data: meetingData },
+    ] });
+    const expiredPatch = uuidV7(), freshPatch = uuidV7(), currentPatch = uuidV7();
+    await store.sync.withIdentity(owner, async (s) => {
+      await s.putTranscriptChunk(workspaceId, meetingId, expiredPatch, 0, "expired", [], []);
+      await s.putTranscriptChunk(workspaceId, meetingId, freshPatch, 0, "fresh", [], []);
+    });
+    await blocker.query("BEGIN");
+    await blocker.query("SELECT set_config('app.user_id', $1, true)", [owner.userId]);
+    await blocker.query("UPDATE app.transcript_patch_chunks SET created_at = now() - interval '2 days' WHERE patch_id = $1", [expiredPatch]);
+    await blocker.query("COMMIT");
+    await store.sync.withIdentity(owner, (s) => s.putTranscriptChunk(workspaceId, parallelMeeting, currentPatch, 0, "current", [], []));
+    await blocker.query("BEGIN");
+    await blocker.query("SELECT set_config('app.user_id', $1, true)", [owner.userId]);
+    const remaining = await blocker.query<{ patch_id: string }>("SELECT patch_id FROM app.transcript_patch_chunks WHERE workspace_id = $1", [workspaceId]);
+    await blocker.query("COMMIT");
+    expect(remaining.rows.map((row) => row.patch_id).sort()).toEqual([freshPatch, currentPatch].sort());
+    await store.sync.withIdentity(owner, async (s) => {
+      await s.deleteTranscriptPatch(workspaceId, meetingId, freshPatch);
+      await s.deleteTranscriptPatch(workspaceId, parallelMeeting, currentPatch);
+    });
+    let announce!: () => void, release!: () => void;
+    const ready = new Promise<void>((resolve) => { announce = resolve; });
+    const gate = new Promise<void>((resolve) => { release = resolve; });
+    const input = mutation(meetingId, "Slow");
+    const firstRequest = { ...input, createdAt: new Date(), requestHash: uuidV7(), operations: input.operations.map((op) => ({ ...op, data: { ...op.data, updatedAt: new Date() } })) };
+    const first = store.sync.withIdentity(owner, async (s) => {
+      await s.resolveTransaction(firstRequest as Parameters<typeof s.resolveTransaction>[0]);
+      announce(); await gate;
+      return s.commitTransaction(firstRequest as Parameters<typeof s.commitTransaction>[0]);
+    });
+    try {
+      await bounded(ready);
+      const second = await bounded(sync.commitTransaction(owner, mutation(parallelMeeting, "Fast")));
+      // A read can observe the last committed version while another meeting is still processing.
+      await bounded(store.sync.withIdentity(owner, async (s) => { await s.lockWorkspace(workspaceId); return s.latestChangeSequence(workspaceId); }));
+      const conflict = sync.commitTransaction(owner, mutation(meetingId, "Must conflict"))
+        .then(() => "unexpected", (error: Error) => error.message);
+      await waitingForLock();
+      release();
+      const slow = await first;
+      expect(slow.cursor).not.toBe(second.cursor);
+      expect(await conflict).toBe("revision_conflict");
+      const changes = await sync.listChanges(owner, workspaceId, second.cursor);
+      expect(changes.items.some((change) => change.entityId === meetingId)).toBe(true);
+      expect(changes.items.some((change) => change.entityId === parallelMeeting)).toBe(false);
+    } finally { release(); await first.catch(() => undefined); }
+    const pair = [mutation(meetingId, "Pair A").operations[0]!, mutation(parallelMeeting, "Pair B").operations[0]!]
+      .map((operation) => ({ ...operation, baseRevision: 2 }));
+    const ordered = await bounded(Promise.allSettled([pair, [...pair].reverse()].map((operations) => sync.commitTransaction(owner,
+      { ...mutation(meetingId, "Pair"), operations }))));
+    expect(ordered.filter((result) => result.status === "fulfilled")).toHaveLength(1);
+    const rejected = ordered.find((result) => result.status === "rejected");
+    expect(rejected).toMatchObject({ status: "rejected", reason: { message: "revision_conflict" } });
     await store.sync.withIdentity(owner, (s) => s.initializeMeetingNotes(otherWorkspace, otherMeeting, otherDocument));
     const document = await store.sync.withIdentity(owner, (s) => s.initializeMeetingNotes(workspaceId, meetingId, id));
     await store.sync.withIdentity(owner, (s) => s.putPermission(workspaceId, "user", editor.userId, "editor"));
+    // Holding either per-request cleanup transaction must not block the independent document lane.
+    for (const kind of ["file", "recording"] as const) {
+      let entered!: () => void, finish!: () => void;
+      const cleaning = new Promise<void>((resolve) => { entered = resolve; });
+      const hold = new Promise<void>((resolve) => { finish = resolve; });
+      const expiry = store.sync.withIdentity(owner, async (s) => {
+        const before = new Date(Date.now() - 86_400_000);
+        if (kind === "file") await s.expireFileUploads(workspaceId, before);
+        else await s.expireRecordingUploads(workspaceId, before);
+        entered(); await hold;
+      });
+      try {
+        await bounded(cleaning);
+        await bounded(store.sync.withIdentity(editor, (s) => s.exchangeDocument(workspaceId, id,
+          { generation: document.generation, vector: core.vector(), update: core.checkpoint() })));
+      } finally { finish(); await expiry; }
+    }
     await blocker.query("BEGIN");
     await blocker.query("SELECT pg_advisory_xact_lock_shared(75047176522050)");
     await blocker.query("SELECT pg_advisory_xact_lock_shared(hashtextextended($1,0)), pg_advisory_xact_lock(hashtextextended($2,0))", [`workspace:${workspaceId}`, `domain:${workspaceId}`]);
@@ -87,7 +165,7 @@ it.runIf(process.env.TEST_SYNC_LOCKS_DATABASE_URL)("Notes bypass the domain lane
     expect(await denied).toBe("document_unavailable");
     await blocker.query("BEGIN");
     await blocker.query("SELECT pg_advisory_xact_lock_shared(75047176522050), set_config('app.user_id', $1, true)", [owner.userId]);
-    await blocker.query("SELECT pg_advisory_xact_lock(hashtextextended($1,0))", [`workspace:${workspaceId}`]);
+    await blocker.query("SELECT pg_advisory_xact_lock(hashtextextended($1,0))", [`1:meeting:${meetingId}`]);
     const deleted = store.sync.withIdentity(owner, (s) => s.exchangeDocument(workspaceId, id,
       { generation: document.generation, vector: core.vector(), update: core.checkpoint() })).then(() => "unexpected", (error: Error) => error.message);
     await waitingForLock();

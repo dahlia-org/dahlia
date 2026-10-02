@@ -142,7 +142,7 @@ enum DahliaDesign {
     static let tabIndicatorHeight: CGFloat = 2
 
     static let detailHorizontalPadding: CGFloat = 24
-    static let detailTopPadding = windowHeaderHeight + sidebarNavigationVerticalPadding
+    static let detailTopPadding = windowHeaderHeight + 32
     static let tabContentInset: CGFloat = 16
 
     private static func adaptiveTextColor(

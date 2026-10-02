@@ -122,7 +122,7 @@ export class MeetingSyncService {
     this.requireWritableIdentity(identity);
     const { transcript, ...document } = result;
     return this.store.withIdentity(identity, async (scoped) => {
-      await scoped.lockWorkspace(job.workspaceId);
+      await scoped.lockMeeting(job.workspaceId, job.meetingId, true);
       if (!canWriteWorkspace((await scoped.getWorkspace(job.workspaceId))?.role)) throw new SummaryError("summary_meeting_unavailable");
       const meeting = await scoped.getMeeting(job.workspaceId, job.meetingId);
       if (!meeting) throw new SummaryError("summary_meeting_unavailable");
@@ -154,7 +154,7 @@ export class MeetingSyncService {
   async saveSummaryTranscript(identity: Identity, job: SummaryJob, transcript: GeneratedTranscript, method: SummaryMethod) {
     this.requireWritableIdentity(identity);
     return this.store.withIdentity(identity, async (scoped) => {
-      await scoped.lockWorkspace(job.workspaceId);
+      await scoped.lockMeeting(job.workspaceId, job.meetingId, true);
       if (!canWriteWorkspace((await scoped.getWorkspace(job.workspaceId))?.role)) throw new SummaryError("summary_meeting_unavailable");
       if (await method.version(scoped, job.workspaceId, job.meetingId, job.input) !== job.inputVersion) throw new SummaryError("summary_input_changed");
       const staged = await this.stageSummaryTranscript(scoped, job, transcript);
@@ -391,7 +391,6 @@ export class MeetingSyncService {
     }
     const { rows, highWater } = await this.store.withIdentity(identity, async (scoped) => {
       await scoped.lockWorkspace(workspaceId);
-      await scoped.expireRecordingUploads(workspaceId, new Date(Date.now() - 86_400_000));
       const highWater = suppliedHighWater ?? await scoped.latestChangeSequence(workspaceId);
       const rows = await scoped.listChanges(workspaceId, after, highWater, SYNC_CHANGE_PAGE_SIZE + 1);
       for (const row of rows) {
@@ -440,7 +439,7 @@ export class MeetingSyncService {
   async latestSummary(identity: Identity, workspaceId: string, meetingId: string, manifest?: string) {
     if (manifest !== undefined && manifest !== "1") throw new SyncTransactionError(400, "invalid_content_request");
     return this.store.withIdentity(identity, async (scoped) => {
-      await scoped.lockWorkspace(workspaceId);
+      await scoped.lockMeeting(workspaceId, meetingId);
       const meeting = await scoped.getMeeting(workspaceId, meetingId);
       if (!meeting) throw new SyncTransactionError(404, "meeting_not_found");
       return readTextContent(scoped, workspaceId, "summary", meetingId, meeting.summaryRevision ?? 0, manifest === "1");
@@ -493,7 +492,7 @@ export class MeetingSyncService {
     }
     const after = cursor ? this.parseTranscriptCursor(cursor) : undefined;
     return this.store.withIdentity(identity, async (scoped) => {
-      await scoped.lockWorkspace(workspaceId);
+      await scoped.lockMeeting(workspaceId, meetingId);
       const meeting = await scoped.getMeeting(workspaceId, meetingId);
       if (!meeting) throw new SyncTransactionError(404, "meeting_not_found");
       return readTextContent(scoped, workspaceId, "transcript", meetingId, meeting.transcriptRevision ?? 0,
@@ -1126,7 +1125,7 @@ export class MeetingSyncService {
       options?.signal?.throwIfAborted();
       await options?.authorize?.();
       const result = await this.store.withIdentity(identity, async (scoped) => {
-        await scoped.lockWorkspace(workspaceId);
+        await scoped.lockMeeting(workspaceId, meetingId);
         if (!await scoped.getMeeting(workspaceId, meetingId)) throw new RequestError(404, "meeting_not_found");
         const transcript = await scoped.getTranscript(workspaceId, meetingId);
         // HTTP pagination keeps its bounded query; MCP also verifies the previously delivered prefix.

@@ -582,9 +582,11 @@ enum SyncTransactionQueue {
         recordingsOnly: Bool? = nil,
         excluding: Set<UUID> = [],
         allowTransfers: Bool = true,
-        allowBackgroundTransfers: Bool = true
+        allowBackgroundTransfers: Bool = true,
+        allowMetadata: Bool = true,
+        allowBackgroundMetadata: Bool = true
     ) async throws -> SyncQueuedTransaction? {
-        try await dbQueue.write { db in
+        let transaction = try await dbQueue.write { db -> SyncQueuedTransaction? in
             _ = try SyncDependencies.backfill(in: db)
             let now = Date()
             let recordingPredicate = recordingsOnly.map { only in
@@ -621,6 +623,10 @@ enum SyncTransactionQueue {
                         AND (transfer.entity = 'file' AND transfer.attachmentReference IS NOT NULL
                         OR transfer.entity = 'transcript' AND transfer.action = 'patch'))
                     OR \(allowTransfers ? 1 : 0) AND (\(allowBackgroundTransfers ? 1 : 0) OR EXISTS(SELECT 1 FROM urgent WHERE id = t.id)))
+                  AND (EXISTS (SELECT 1 FROM sync_operations transfer WHERE transfer.transactionId = t.id
+                        AND (transfer.entity = 'file' AND transfer.attachmentReference IS NOT NULL
+                        OR transfer.entity = 'transcript' AND transfer.action = 'patch'))
+                    OR \(allowMetadata ? 1 : 0) AND (\(allowBackgroundMetadata ? 1 : 0) OR EXISTS(SELECT 1 FROM urgent WHERE id = t.id)))
                   AND NOT EXISTS (
                     SELECT 1 FROM sync_transactions blocked WHERE blocked.workspace_id = t.workspace_id AND blocked.blockedReason = 'authorization'
                   )
@@ -681,6 +687,14 @@ enum SyncTransactionQueue {
                 operations: operations, foreground: row["urgent"] as Bool, requiresTransfer: row["requiresTransfer"] as Bool
             )
         }
+        if Task.isCancelled {
+            if let transaction {
+                // Cleanup must run even though this caller is already cancelled.
+                try await Task { try await releaseClaim(transaction, dbQueue: dbQueue) }.value
+            }
+            throw CancellationError()
+        }
+        return transaction
     }
 
     static func prerequisitesReady(_ transaction: SyncQueuedTransaction, in db: Database) throws -> Bool {

@@ -70,6 +70,34 @@ async function setup() {
 }
 
 describe("transcript versions", () => {
+  it("cleans abandoned patches from other meetings without deleting fresh or other-workspace staging", async () => {
+    const { store, sync, body, databasePath, workspaceId, meetingId } = await setup();
+    const raw = new DatabaseSync(databasePath);
+    const nextMeeting = uuidV7(), otherWorkspace = uuidV7(), otherMeeting = uuidV7();
+    const expired = uuidV7(), fresh = uuidV7(), other = uuidV7();
+    const now = new Date().toISOString();
+    const meeting = (id: string) => ({ id: uuidV7(), entity: "meeting", action: "create", entityId: id, baseRevision: null,
+      data: { name: "Meeting", status: "READY", projectId: null, duration: null, recordingStartedAt: null, createdAt: now, updatedAt: now } });
+    try {
+      await sync.commitTransaction(owner, body([meeting(nextMeeting)]));
+      await sync.commitTransaction(owner, { ...body([
+        { id: uuidV7(), entity: "workspace", action: "create", entityId: otherWorkspace, baseRevision: null,
+          data: { organizationId: testOrganizationID, name: "Other", createdAt: now } }, meeting(otherMeeting),
+      ]), workspaceId: otherWorkspace });
+      await store.sync.withIdentity(owner, async (s) => {
+        await s.putTranscriptChunk(workspaceId, meetingId, expired, 0, "expired", [], []);
+        await s.putTranscriptChunk(workspaceId, meetingId, fresh, 0, "fresh", [], []);
+        await s.putTranscriptChunk(otherWorkspace, otherMeeting, other, 0, "other", [], []);
+      });
+      raw.prepare("UPDATE transcript_patch_chunks SET created_at = ? WHERE patch_id IN (?, ?)")
+        .run(Date.now() - 2 * 86_400_000, expired, other);
+      const current = uuidV7();
+      expect(await store.sync.withIdentity(owner, (s) => s.putTranscriptChunk(workspaceId, nextMeeting, current, 0, "current", [], []))).toBe(true);
+      expect(raw.prepare("SELECT patch_id FROM transcript_patch_chunks ORDER BY patch_id").all().map((row) => row.patch_id))
+        .toEqual([fresh, other, current].sort());
+    } finally { raw.close(); await store.close?.(); }
+  });
+
   it("reports whether a transcript manifest contains non-whitespace text", async () => {
     const { store, sync, workspaceId, meetingId, write } = await setup();
     try {

@@ -289,6 +289,7 @@ export interface IdentitySyncStore extends importDocumentStore {
     id: string; meetingId: string; snippet: string;
   }[]>;
   lockWorkspace(workspaceId: string, options?: { authorization: boolean }): Promise<void>;
+  lockMeeting(workspaceId: string, meetingId: string, write?: boolean): Promise<void>;
   commitTransaction(transaction: SyncTransaction): Promise<SyncTransactionResponse>;
   resolveTransaction(transaction: SyncTransaction): Promise<SyncTransactionResponse | null>;
   assertCursorAvailable(workspaceId: string, after: number): Promise<void>;

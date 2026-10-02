@@ -635,7 +635,7 @@ Account extension links, such as billing, live on Account settings. Administrato
 At widths up to 820px the same
 navigation becomes a native modal drawer, with Escape, backdrop dismissal and focus containment.
 Selecting a destination closes the drawer even when it is already the current page; canceling search keeps it open.
-Meetings retain their readable Summary, Screenshots and Transcript tabs, breadcrumbs and actions allowed by the effective Workspace role.
+Meetings retain their readable Summary, Screenshots and Transcript tabs, breadcrumbs and actions allowed by the effective Workspace role. Header names truncate with an ellipsis at 24ch for Workspaces and Projects and 64ch for Meetings, or sooner when space is limited; hovering exposes the full name. Breadcrumb menus containing Meetings use 520px instead of 260px, capped to the viewport, and truncate long names within each row (including nested menus). Nested menus reposition at screen edges to stay within the viewport. Run `pnpm dev:client` and open `/tests/browser/breadcrumbs.html` at desktop and mobile widths to check menu sizing, truncation, full-name hover text, and header action visibility.
 
 Creation, editing, deletion and session revocation use native HTML dialogs styled consistently
 with the workspace. Editors retain multiline drafts after errors, protect dirty drafts from

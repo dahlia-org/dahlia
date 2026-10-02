@@ -1,5 +1,5 @@
 import { beginSyncTiming } from "./diagnostics";
-import { createSyncLocks } from "./locks";
+import { createSyncLocks, type SyncLockMode } from "./locks";
 import { createDocumentStore } from "../documents/store";
 import { enqueueMemorySource } from "../memory/enqueue";
 import { memoryDocumentId } from "../memory/ids";
@@ -574,15 +574,130 @@ function createIdentityStore(
   }
 
   const locks = createSyncLocks(db, searchBackend !== "sqlite");
-  async function lockWorkspace(workspaceId: string, checkTransfers = true, mode: "lifecycle" | "domain" | "document" | "authorization" = "lifecycle"): Promise<void> {
+  const exclusiveWorkspaces = new Set<string>();
+  async function lockWorkspace(workspaceId: string, checkTransfers = true, mode: "lifecycle" | "domain" | "document" | "authorization" | "staging" = "lifecycle"): Promise<void> {
     await locks.workspace(workspaceId, mode === "lifecycle" || mode === "authorization" ? "exclusive" : "shared", mode === "authorization" ? "exclusive" : "shared");
-    if (mode === "domain") await locks.domain(workspaceId);
+    if (mode === "lifecycle" || mode === "authorization") exclusiveWorkspaces.add(workspaceId);
+    // ponytail: bounded staging cleanup keeps the domain gate; use resource locks if expiry throughput matters.
+    if (mode === "domain" || mode === "staging") await locks.domain(workspaceId, mode === "staging" ? "exclusive" : "shared");
     if (checkTransfers && identity.syncClient && !identity.syncClient.workspaceTransfers) {
       const [transfer] = await db.select({ id: schema.workspaceTransfer.id }).from(schema.workspaceTransfer).where(and(or(
         eq(schema.workspaceTransfer.sourceWorkspaceId, workspaceId), eq(schema.workspaceTransfer.destinationWorkspaceId, workspaceId),
       ), or(eq(schema.workspaceTransfer.ownerUserId, userPrincipalId), readable(schema.workspaceTransfer.sourceWorkspaceId), readable(schema.workspaceTransfer.destinationWorkspaceId)))).limit(1);
       if (transfer) throw new SyncTransactionError(426, "workspace_transfer_update_required");
     }
+  }
+
+  async function lockRead(workspaceId: string) {
+    await lockWorkspace(workspaceId, true, "domain");
+    if (exclusiveWorkspaces.has(workspaceId)) return;
+    await locks.publication(workspaceId, "shared");
+  }
+
+  async function transactionResources(transaction: Pick<SyncTransaction, "workspaceId" | "operations">) {
+    const resources = new Map<string, SyncLockMode>();
+    const add = (key: string, mode: SyncLockMode = "exclusive") => {
+      resources.set(key, resources.get(key) === "exclusive" ? "exclusive" : mode);
+    };
+    const meeting = (id: string, lifecycle: SyncLockMode = "shared", write = true) => {
+      add(`1:meeting:${id}`, lifecycle);
+      if (write) add(`2:meeting:${id}`);
+    };
+    const projects = new Set<string>(), metadataMeetings = new Set<string>(), lifecycleMeetings = new Set<string>();
+    const attachments = new Set<string>(), files = new Set<string>(), recordings = new Set<string>();
+    for (const operation of transaction.operations) {
+      const id = operation.entityId, data = operation.data ?? {};
+      add(`5:${operation.entity}:${id}`);
+      switch (operation.entity) {
+        case "project":
+          add(`0:project:${id}`);
+          projects.add(id);
+          if (typeof data.parentProjectId === "string") { projects.add(data.parentProjectId); add(`0:project:${data.parentProjectId}`, "shared"); }
+          break;
+        case "meeting":
+          meeting(id, ["create", "delete", "restore"].includes(operation.action) ? "exclusive" : "shared");
+          if (["delete", "restore"].includes(operation.action)) lifecycleMeetings.add(id);
+          metadataMeetings.add(id);
+          if (typeof data.projectId === "string") { projects.add(data.projectId); add(`0:project:${data.projectId}`, "shared"); }
+          break;
+        case "summary": case "transcript": meeting(id); break;
+        case "meeting_event":
+          if (typeof data.meetingId === "string") meeting(data.meetingId);
+          if (typeof data.sessionId === "string") add(`4:session:${data.sessionId}`);
+          break;
+        case "meeting_attachment":
+          attachments.add(id);
+          if (typeof data.meetingId === "string") meeting(data.meetingId);
+          if (typeof data.fileId === "string") { files.add(data.fileId); add(`3:file:${data.fileId}`); }
+          break;
+        case "file": files.add(id); add(`3:file:${id}`); break;
+        case "recording": recordings.add(id); add(`4:session:${id}`); break;
+      }
+    }
+    if (lifecycleMeetings.size) {
+      const rows = await db.select({ fileId: schema.meetingAttachment.fileId }).from(schema.meetingAttachment)
+        .where(and(eq(schema.meetingAttachment.workspaceId, transaction.workspaceId), inArray(schema.meetingAttachment.meetingId, [...lifecycleMeetings])));
+      for (const row of rows) add(`3:file:${row.fileId}`);
+    }
+    if (attachments.size || files.size) {
+      const rows = await db.select({ meetingId: schema.meetingAttachment.meetingId, fileId: schema.meetingAttachment.fileId })
+        .from(schema.meetingAttachment).where(and(eq(schema.meetingAttachment.workspaceId, transaction.workspaceId), or(
+          attachments.size ? inArray(schema.meetingAttachment.id, [...attachments]) : undefined,
+          files.size ? inArray(schema.meetingAttachment.fileId, [...files]) : undefined,
+        )));
+      for (const row of rows) {
+        meeting(row.meetingId, "shared", attachments.size > 0);
+        add(`3:file:${row.fileId}`);
+      }
+    }
+    if (recordings.size) {
+      const rows = await db.select({ meetingId: schema.syncedRecording.meetingId }).from(schema.syncedRecording)
+        .where(inArray(schema.syncedRecording.sessionId, [...recordings]));
+      for (const row of rows) meeting(row.meetingId);
+    }
+    if (metadataMeetings.size) {
+      const rows = await db.select({ projectId: schema.syncedMeeting.projectId }).from(schema.syncedMeeting)
+        .where(and(eq(schema.syncedMeeting.workspaceId, transaction.workspaceId), inArray(schema.syncedMeeting.meetingId, [...metadataMeetings])));
+      for (const row of rows) if (row.projectId) { projects.add(row.projectId); add(`0:project:${row.projectId}`, "shared"); }
+    }
+    if (projects.size) {
+      const rows = await db.select({ parentId: schema.syncedProject.parentProjectId }).from(schema.syncedProject)
+        .where(and(eq(schema.syncedProject.workspaceId, transaction.workspaceId), inArray(schema.syncedProject.projectId, [...projects])));
+      for (const row of rows) if (row.parentId) add(`0:project:${row.parentId}`, "shared");
+    }
+    return resources;
+  }
+
+  async function lockCurrentResources(transaction: Pick<SyncTransaction, "workspaceId" | "operations">) {
+    const resources = await transactionResources(transaction);
+    await locks.resources(resources);
+    const current = await transactionResources(transaction);
+    if (resources.size !== current.size || [...current].some(([key, mode]) => resources.get(key) !== mode)) {
+      // Restart from immutable input; never acquire an earlier lock or upgrade midway.
+      throw new SyncTransactionError(503, "sync_target_changed");
+    }
+  }
+
+  const lockedTransactions = new Set<string>();
+  async function lockTransaction(transaction: SyncTransaction) {
+    if (lockedTransactions.has(transaction.id)) return;
+    const workspaceOperation = transaction.operations.some((operation) => operation.entity === "workspace");
+    await lockWorkspace(transaction.workspaceId, true, workspaceOperation ? "authorization" : "domain");
+    if (!exclusiveWorkspaces.has(transaction.workspaceId)) await lockCurrentResources(transaction);
+    lockedTransactions.add(transaction.id);
+  }
+
+  async function lockMeeting(workspaceId: string, meetingId: string, write = false) {
+    await lockWorkspace(workspaceId, true, "domain");
+    if (exclusiveWorkspaces.has(workspaceId)) return;
+    if (!write) {
+      await locks.resources(new Map([[`1:meeting:${meetingId}`, "shared"], [`2:meeting:${meetingId}`, "shared"]]));
+      return;
+    }
+    const target: Pick<SyncTransaction, "workspaceId" | "operations"> = { workspaceId, operations: [
+      { id: meetingId, entity: "meeting", action: "update", entityId: meetingId, baseRevision: null, data: null },
+    ] };
+    await lockCurrentResources(target);
   }
 
   async function workspaceTransferAudience(sourceWorkspaceId: string, destinationWorkspaceId: string) {
@@ -1216,12 +1331,14 @@ function createIdentityStore(
     return { entity, id: entityId, revision: record?.revision ?? null, record: record ?? null };
   }
 
-  async function appendMeetingLifecycleChanges(transaction: SyncTransaction, meetingId: string, action: "upsert" | "delete") {
+  type PendingSyncChange = Pick<SyncChangeRecord, "entity" | "entityId" | "action" | "revision">;
+
+  async function meetingLifecycleChanges(transaction: SyncTransaction, meetingId: string, action: "upsert" | "delete") {
     const attachments = await db.select().from(schema.meetingAttachment).where(and(
       eq(schema.meetingAttachment.workspaceId, transaction.workspaceId), eq(schema.meetingAttachment.meetingId, meetingId),
     ));
     const recordings = await selectRecordings().where(and(eq(schema.syncedRecording.meetingId, meetingId), eq(schema.syncedMeeting.workspaceId, transaction.workspaceId)));
-    const changes: Pick<SyncChangeRecord, "entity" | "entityId" | "action" | "revision">[] = [];
+    const changes: PendingSyncChange[] = [];
     for (const entity of ["meeting", "summary", "transcript"] as const) {
       const record = action === "upsert" ? await canonicalRecord(entity, transaction.workspaceId, meetingId) : null;
       changes.push({ entity, entityId: meetingId, action, revision: record?.revision ?? null });
@@ -1234,7 +1351,7 @@ function createIdentityStore(
     }
     changes.push(...attachments.map((attachment) => ({ entity: "meeting_attachment" as const, entityId: attachment.id, action, revision: action === "delete" ? null : attachment.revision })),
       ...recordings.filter((record) => record.revision > 0).map((record) => ({ entity: "recording" as const, entityId: record.sessionId, action, revision: action === "delete" ? null : record.revision })));
-    return appendChanges(transaction, changes);
+    return changes;
   }
 
   async function appendChange(
@@ -1265,7 +1382,7 @@ function createIdentityStore(
     await enqueueMemorySource(db, schema, workspaceId, "meeting", meetingId);
   }
 
-  async function enqueueMemoryChanges(workspaceId: string, changes: Pick<SyncChangeRecord, "entity" | "entityId" | "action" | "revision">[]) {
+  async function enqueueMemoryChanges(workspaceId: string, changes: PendingSyncChange[]) {
     const [memory] = await db.select({ purge: schema.workspaceMemoryState.purge }).from(schema.workspaceMemoryState)
       .where(eq(schema.workspaceMemoryState.scopeId, workspaceId));
     if (!memory || memory.purge) return;
@@ -1291,8 +1408,10 @@ function createIdentityStore(
 
   async function appendChanges(
     transaction: SyncTransaction,
-    changes: Pick<SyncChangeRecord, "entity" | "entityId" | "action" | "revision">[],
+    changes: PendingSyncChange[],
   ): Promise<number> {
+    // Sequence allocation is serialized only after the expensive canonical writes finish.
+    await locks.publication(transaction.workspaceId, "exclusive");
     await enqueueMemoryChanges(transaction.workspaceId, changes);
     let cursor: number | undefined;
     for (const batch of batches(changes, 100)) {
@@ -1474,9 +1593,7 @@ function createIdentityStore(
   }
 
   async function resolveTransaction(transaction: SyncTransaction): Promise<SyncTransactionResponse | null> {
-    const changesAuthorization = transaction.operations.some((operation) => operation.entity === "workspace");
-    const changesParents = transaction.operations.some((operation) => operation.entity === "meeting" || operation.entity === "project");
-    await lockWorkspace(transaction.workspaceId, true, changesAuthorization ? "authorization" : changesParents ? "lifecycle" : "domain");
+    await lockTransaction(transaction);
     if (searchBackend !== "sqlite") {
       await db.execute(sql`select pg_advisory_xact_lock(hashtextextended(${`transaction:${transaction.id}`}, 0))`);
     }
@@ -1601,7 +1718,9 @@ function createIdentityStore(
     if (receipt) return receipt;
 
     const records: SyncCanonicalRecord[] = [];
-    let cursor = 0;
+    const changes: PendingSyncChange[] = [];
+    const recordChange = (entity: SyncCanonicalRecord["entity"], entityId: string,
+      action: PendingSyncChange["action"], revision: number | null) => { changes.push({ entity, entityId, action, revision }); };
     const firstOperation = transaction.operations[0];
     const establishesWorkspace = firstOperation?.entity === "workspace"
       && (firstOperation.action === "create"
@@ -1641,7 +1760,7 @@ function createIdentityStore(
           audioSource: data.audioSource as string | undefined, segmentIndex: data.segmentIndex as number | undefined,
         });
         // Invalidate the existing meeting projection; event history is not a sync entity to pull.
-        cursor = await appendChange(transaction, "meeting", meetingId, "upsert", meeting.revision);
+        recordChange("meeting", meetingId, "upsert", meeting.revision);
         records.push({ entity: "meeting_event", id: operation.entityId, revision: null, record: null });
         continue;
       }
@@ -1757,7 +1876,7 @@ function createIdentityStore(
             if (content) throw new SyncTransactionError(409, "workspace_not_empty", [], operation.id);
           }
           await clearWorkspace(transaction.workspaceId, data.preservePermissions === true);
-          cursor = await appendChange(transaction, "workspace", operation.entityId, "reset", null);
+          recordChange("workspace", operation.entityId, "reset", null);
           records.push({ entity: "workspace", id: operation.entityId, revision: null, record: null });
           continue;
         }
@@ -1805,7 +1924,7 @@ function createIdentityStore(
             eq(schema.syncedProject.projectId, operation.entityId),
             writeAccess(schema.syncedProject.workspaceId),
           ));
-          cursor = await appendChange(transaction, "project", operation.entityId, "delete", null);
+          recordChange("project", operation.entityId, "delete", null);
           records.push({ entity: "project", id: operation.entityId, revision: null, record: null });
           continue;
         }
@@ -1875,7 +1994,7 @@ function createIdentityStore(
             .where(and(eq(schema.summaryJob.workspaceId, transaction.workspaceId), eq(schema.summaryJob.meetingId, operation.entityId), inArray(schema.summaryJob.status, ["pending", "processing"])));
           if (searchBackend !== "sqlite") await db.execute(sql`select set_config('app.maintenance', '', true), set_config('app.maintenance_workspace_id', '', true)`);
           await db.delete(schema.transcriptPatchChunk).where(and(eq(schema.transcriptPatchChunk.workspaceId, transaction.workspaceId), eq(schema.transcriptPatchChunk.meetingId, operation.entityId)));
-          cursor = await appendMeetingLifecycleChanges(transaction, operation.entityId, "delete");
+          changes.push(...await meetingLifecycleChanges(transaction, operation.entityId, "delete"));
           records.push({ entity: "meeting", id: operation.entityId, revision: null, record: null });
           continue;
         } else if (operation.action === "restore") {
@@ -2089,7 +2208,7 @@ function createIdentityStore(
           if (reference) throw new SyncTransactionError(409, "file_in_use", [], operation.id);
           await db.insert(schema.storageDeleteJob).values({ storageKey: fileStorageKey(file.fileId) }).onConflictDoNothing();
           await db.delete(schema.syncedFile).where(eq(schema.syncedFile.fileId, file.fileId));
-          cursor = await appendChange(transaction, "file", operation.entityId, "delete", null);
+          recordChange("file", operation.entityId, "delete", null);
           records.push({ entity: "file", id: operation.entityId, revision: null, record: null });
           continue;
         }
@@ -2118,11 +2237,11 @@ function createIdentityStore(
           await db.delete(schema.searchIndexJob).where(and(eq(schema.searchIndexJob.workspaceId, transaction.workspaceId), eq(schema.searchIndexJob.documentId, operation.entityId)));
           await db.delete(schema.searchDocument).where(and(eq(schema.searchDocument.workspaceId, transaction.workspaceId), eq(schema.searchDocument.documentId, operation.entityId)));
           await enqueueMemoryMeeting(transaction.workspaceId, String(previous.record!.meetingId));
-          cursor = await appendChange(transaction, "meeting_attachment", operation.entityId, "delete", null);
+          recordChange("meeting_attachment", operation.entityId, "delete", null);
           const fileId = String(previous.record!.fileId);
           if (!(await canonicalRecord("file", transaction.workspaceId, fileId)).record) {
             await db.delete(schema.imageAnalysisJob).where(eq(schema.imageAnalysisJob.fileId, fileId));
-            cursor = await appendChange(transaction, "file", fileId, "delete", null);
+            recordChange("file", fileId, "delete", null);
           }
           records.push({ entity: "meeting_attachment", id: operation.entityId, revision: null, record: null });
           continue;
@@ -2196,11 +2315,14 @@ function createIdentityStore(
 
       const record = await canonicalRecord(operation.entity, transaction.workspaceId, operation.entityId);
       records.push(record);
-      cursor = operation.entity === "meeting" && operation.action === "restore"
-        ? await appendMeetingLifecycleChanges(transaction, operation.entityId, "upsert")
-        : await appendChange(transaction, operation.entity, operation.entityId, "upsert", record.revision);
+      if (operation.entity === "meeting" && operation.action === "restore") {
+        changes.push(...await meetingLifecycleChanges(transaction, operation.entityId, "upsert"));
+      } else {
+        recordChange(operation.entity, operation.entityId, "upsert", record.revision);
+      }
     }
 
+    const cursor = await appendChanges(transaction, changes);
     const response: SyncTransactionResponse = {
       id: transaction.id,
       status: "committed",
@@ -2244,7 +2366,7 @@ function createIdentityStore(
   }
 
   async function completeImageAnalysis(input: ImageAnalysisInput, transaction: SyncTransaction): Promise<boolean> {
-    await lockWorkspace(input.workspaceId, true, "domain");
+    await lockTransaction(transaction);
     const claimQuery = db.select({ id: schema.imageAnalysisJob.fileId }).from(schema.imageAnalysisJob)
       .where(imageClaimKey(input));
     const [claim] = searchBackend === "sqlite" ? await claimQuery : await claimQuery.for("update");
@@ -2273,7 +2395,7 @@ function createIdentityStore(
     through: number,
     limit: number,
   ): Promise<SyncChangeRecord[]> {
-    await lockWorkspace(workspaceId, true, "domain");
+    await lockRead(workspaceId);
     await assertCursorAvailable(workspaceId, after);
     const [workspace] = await db.select({ id: schema.syncedWorkspace.workspaceId }).from(schema.syncedWorkspace)
       .where(and(readable(schema.syncedWorkspace.workspaceId), eq(schema.syncedWorkspace.workspaceId, workspaceId))).limit(1);
@@ -2514,7 +2636,9 @@ function createIdentityStore(
       await db.update(jobs).set({ status: "succeeded", claimedAt: null, leaseExpiresAt: null, lastErrorCode: null }).where(filter);
       return true;
     },
-    lockWorkspace: (workspaceId, options) => lockWorkspace(workspaceId, true, options?.authorization ? "authorization" : "lifecycle"),
+    lockWorkspace: (workspaceId, options) => options?.authorization
+      ? lockWorkspace(workspaceId, true, "authorization") : lockRead(workspaceId),
+    lockMeeting,
     loadImageAnalysis,
     listUninformativeScreenshots,
     completeImageAnalysis,
@@ -2535,10 +2659,20 @@ function createIdentityStore(
     ensureUploadTarget,
     async putTranscriptChunk(workspaceId, meetingId, patchId, chunkIndex, contentHash, segments, deletions) {
       await lockWorkspace(workspaceId, true, "domain");
+      const before = new Date(Date.now() - TRANSCRIPT_PATCH_RETENTION_MS);
+      const expired = await db.selectDistinct({ meetingId: schema.transcriptPatchChunk.meetingId }).from(schema.transcriptPatchChunk)
+        .where(and(eq(schema.transcriptPatchChunk.workspaceId, workspaceId), lt(schema.transcriptPatchChunk.createdAt, before)))
+        .orderBy(asc(schema.transcriptPatchChunk.meetingId)).limit(100);
+      const meetings = [...new Set([meetingId, ...expired.map((row) => row.meetingId)])];
+      // Lock cleanup targets and the upload together; never add earlier meeting locks after waiting.
+      await lockCurrentResources({ workspaceId, operations: meetings.map((id) => ({
+        id, entity: "transcript", action: "patch", entityId: id, baseRevision: null, data: null,
+      })) });
       if (!await ensureUploadTarget(workspaceId, meetingId)) return false;
       await db.delete(schema.transcriptPatchChunk).where(and(
         eq(schema.transcriptPatchChunk.workspaceId, workspaceId),
-        lt(schema.transcriptPatchChunk.createdAt, new Date(Date.now() - TRANSCRIPT_PATCH_RETENTION_MS)),
+        inArray(schema.transcriptPatchChunk.meetingId, meetings),
+        lt(schema.transcriptPatchChunk.createdAt, before),
       ));
       const payload = { segments, deletions };
       await db.insert(schema.transcriptPatchChunk).values(await content.write(schema.transcriptPatchChunk, {
@@ -2559,6 +2693,7 @@ function createIdentityStore(
       return stored?.contentHash === contentHash;
     },
     async deleteTranscriptPatch(workspaceId, meetingId, patchId) {
+      await lockMeeting(workspaceId, meetingId, true);
       await db.delete(schema.transcriptPatchChunk).where(and(
         eq(schema.transcriptPatchChunk.workspaceId, workspaceId),
         eq(schema.transcriptPatchChunk.meetingId, meetingId),
@@ -2583,7 +2718,8 @@ function createIdentityStore(
       return file ?? null;
     },
     async reserveRecording(workspaceId, meetingId, sessionId, source) {
-      await lockWorkspace(workspaceId, true, "domain");
+      await lockMeeting(workspaceId, meetingId, true);
+      await locks.resources(new Map([[`4:session:${sessionId}`, "exclusive"]]));
       if (!await ensureUploadTarget(workspaceId, meetingId)) throw new SyncTransactionError(404, "meeting_not_found");
       const [session] = await db.select().from(schema.recordingSession).where(and(
         eq(schema.recordingSession.workspaceId, workspaceId), eq(schema.recordingSession.meetingId, meetingId),
@@ -2629,7 +2765,8 @@ function createIdentityStore(
         eq(schema.syncedRecording.sessionId, sessionId), writeAccess(schema.syncedMeeting.workspaceId),
       )).limit(1);
       if (!initial) return null;
-      await lockWorkspace(initial.workspaceId, true, "domain");
+      await lockMeeting(initial.workspaceId, initial.meetingId, true);
+      await locks.resources(new Map([[`4:session:${sessionId}`, "exclusive"]]));
       const [record] = await selectRecordings().where(eq(schema.syncedRecording.sessionId, sessionId)).limit(1);
       const audio = record?.audio[source];
       if (!record || audio?.generation !== generation || !await ensureUploadTarget(record.workspaceId, record.meetingId)) return null;
@@ -2667,12 +2804,13 @@ function createIdentityStore(
       )).orderBy(asc(schema.syncedRecording.number)).limit(limit);
     },
     async expireRecordingUploads(workspaceId, before) {
-      await lockWorkspace(workspaceId, true, "domain");
+      await lockWorkspace(workspaceId, true, "staging");
       if (!await db.select({ id: schema.syncedWorkspace.workspaceId }).from(schema.syncedWorkspace).where(writableWorkspace(workspaceId)).limit(1).then((rows) => rows.length)) return;
       await expireRecordingStaging(db, schema, searchBackend !== "sqlite", workspaceId, before);
     },
     async reserveFile(input) {
       await lockWorkspace(input.workspaceId, true, "domain");
+      await locks.resources(new Map([[`3:file:${input.fileId}`, "exclusive"]]));
       const [workspace] = await db.select({ id: schema.syncedWorkspace.workspaceId }).from(schema.syncedWorkspace)
         .where(writableWorkspace(input.workspaceId)).limit(1);
       if (!workspace) return null;
@@ -2683,6 +2821,8 @@ function createIdentityStore(
       return file ?? null;
     },
     async markFileUploaded(pending, size, checksum) {
+      await lockWorkspace(pending.workspaceId, true, "domain");
+      await locks.resources(new Map([[`3:file:${pending.fileId}`, "exclusive"]]));
       const [file] = await content.read(schema.syncedFile, await db.update(schema.syncedFile).set(await content.write(schema.syncedFile, { size, checksum, uploadedAt: new Date(), updatedAt: new Date() }, { fileId: pending.fileId, workspaceId: pending.workspaceId }))
         .where(and(eq(schema.syncedFile.fileId, pending.fileId), eq(schema.syncedFile.workspaceId, pending.workspaceId),
           eq(schema.syncedFile.createdAt, pending.createdAt), isNull(schema.syncedFile.uploadedAt),
@@ -2693,7 +2833,7 @@ function createIdentityStore(
       return file ?? null;
     },
     async expireFileUploads(workspaceId, before) {
-      await lockWorkspace(workspaceId, true, "domain");
+      await lockWorkspace(workspaceId, true, "staging");
       const files = await db.select({ id: schema.syncedFile.fileId }).from(schema.syncedFile).where(and(
         eq(schema.syncedFile.workspaceId, workspaceId), eq(schema.syncedFile.active, false), lt(schema.syncedFile.updatedAt, before), writeAccess(schema.syncedFile.workspaceId),
       )).limit(25);

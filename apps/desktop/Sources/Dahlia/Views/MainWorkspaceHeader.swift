@@ -54,11 +54,20 @@ struct MainWorkspaceHeader: View {
                     .disabled(!canGoForward)
                     .keyboardShortcut("]", modifiers: .command)
                 }
-                Spacer(minLength: 12)
+                Spacer(minLength: 0)
             }
         }
+        .frame(width: Self.controlsWidth)
+        .frame(maxWidth: .infinity, alignment: .leading)
         .allowsHitTesting(isVisible)
         .accessibilityHidden(!isVisible)
+    }
+
+    static var controlsWidth: CGFloat {
+        DahliaDesign.windowControlsLeadingInset
+            + 4 * DahliaDesign.windowHeaderControlSize
+            + 5 * DahliaDesign.windowHeaderGroupSpacing
+            + 2 * DahliaDesign.windowHeaderHorizontalPadding
     }
 
     private var sidebarToggleLabel: String {
