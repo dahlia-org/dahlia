@@ -60,7 +60,64 @@ import Synchronization
         }
 
         @Test
-        func expiredFinalImageLeaseRecoversWithoutResettingExhaustedFailures() async throws {
+        func failedReleaseRetainsEveryClaimedImage() async throws {
+            let database = try makeDatabase(screenshotAnalyzer: StubScreenshotAnalyzer(text: "解放後の画像"))
+            let workspace = makeWorkspace()
+            let meeting = makeMeeting(workspaceID: workspace.id)
+            try await database.dbQueue.write { db in
+                try workspace.insert(db)
+                try meeting.insert(db)
+            }
+            await database.searchIndexer.drain()
+            let screenshots = (0 ..< 2).map { _ in
+                MeetingScreenshotRecord(
+                    id: .v7(), meetingId: meeting.id, sessionId: nil, capturedAt: .now,
+                    imageData: Data([1]), mimeType: "image/png"
+                )
+            }
+            try await database.dbQueue.write { db in
+                for screenshot in screenshots {
+                    try screenshot.insertLegacyForTesting(db)
+                }
+                try db.execute(sql: "UPDATE jobs_background SET attempts = 4, priority = 100 WHERE targetKind = 'screenshotAnalysis'")
+                db.add(function: DatabaseFunction("failLockedWrite", argumentCount: 0) { _ in
+                    throw DatabaseError(resultCode: .SQLITE_BUSY)
+                })
+                try db.execute(sql: """
+                CREATE TEMP TRIGGER fail_image_write BEFORE INSERT ON file_text_bodies
+                WHEN NEW.ocrText IS NOT NULL BEGIN SELECT failLockedWrite(); END;
+                CREATE TEMP TRIGGER fail_job_release BEFORE UPDATE ON jobs_background
+                WHEN OLD.status = 'processing' AND NEW.status = 'pending'
+                BEGIN SELECT failLockedWrite(); END;
+                """)
+            }
+            await database.searchIndexer.drain()
+            try await database.dbQueue.write { db in
+                #expect(try Int.fetchOne(
+                    db,
+                    sql: "SELECT count(*) FROM jobs_background WHERE targetKind = 'screenshotAnalysis' AND status = 'processing' AND attempts = 5"
+                ) == 2)
+                try db.execute(sql: "DROP TRIGGER fail_image_write; DROP TRIGGER fail_job_release")
+            }
+            await database.searchIndexer.drain()
+            try await database.dbQueue.write { db in
+                #expect(try Int.fetchOne(
+                    db,
+                    sql: "SELECT count(*) FROM jobs_background WHERE targetKind = 'screenshotAnalysis' AND status = 'pending' AND attempts = 4"
+                ) == 2)
+                try db.execute(sql: "UPDATE jobs_background SET availableAt = ?", arguments: [Date.distantPast])
+            }
+            await database.searchIndexer.drain()
+            try await database.dbQueue.read { db throws in
+                for screenshot in screenshots {
+                    #expect(try MeetingScreenshotRecord.fetchOne(db, key: screenshot.id)?.ocrText == "解放後の画像")
+                }
+                #expect(try Int.fetchOne(db, sql: "SELECT count(*) FROM jobs_background WHERE targetKind = 'screenshotAnalysis'") == 0)
+            }
+        }
+
+        @Test
+        func expiredImageLeasesStillRespectTheAttemptLimit() async throws {
             let database = try makeDatabase(screenshotAnalyzer: StubScreenshotAnalyzer(text: "期限切れ画像検索語"))
             let workspace = makeWorkspace()
             let meeting = makeMeeting(workspaceID: workspace.id)
@@ -77,11 +134,14 @@ import Synchronization
                 try meeting.insert(db)
                 try screenshot.insertLegacyForTesting(db)
                 try exhausted.insertLegacyForTesting(db)
-                try db.execute(sql: "UPDATE jobs_background SET attempts = 5 WHERE targetKind = 'screenshotAnalysis'")
                 try db.execute(sql: """
-                UPDATE jobs_background SET status = 'processing', claimedAt = ?, leaseExpiresAt = ?
+                UPDATE jobs_background SET attempts = 5, status = 'processing', claimedAt = ?, leaseExpiresAt = ?
+                WHERE targetKind = 'screenshotAnalysis'
+                """, arguments: [Date.distantPast, Date.distantPast])
+                try db.execute(sql: """
+                UPDATE jobs_background SET attempts = 4
                 WHERE targetKey = ?
-                """, arguments: [Date.distantPast, Date.distantPast, screenshot.id])
+                """, arguments: [screenshot.id])
             }
             await database.searchIndexer.drain()
             try await database.dbQueue.read { db in
@@ -277,6 +337,13 @@ import Synchronization
             }
             let dbQueue = database.dbQueue
             let workspaceID = workspace.id
+            try await dbQueue.write { db in
+                // Capture Server routing before the resolver disconnects its workspace.
+                try db.execute(
+                    sql: "UPDATE jobs_background SET priority = priority + 1 WHERE targetKind = 'screenshotAnalysis' AND targetKey = ?",
+                    arguments: [screenshot.id]
+                )
+            }
             let indexer = BackgroundJobWorker(
                 dbQueue: dbQueue,
                 screenshotAnalyzer: analyzer,

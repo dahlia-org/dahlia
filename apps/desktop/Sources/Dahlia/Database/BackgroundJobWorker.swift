@@ -260,8 +260,12 @@ actor BackgroundJobWorker {
         } catch is CancellationError {
             try? await release(jobs)
         } catch {
-            for job in jobs {
-                try await fail(job, error: error)
+            if Self.isTransientDatabaseError(error) {
+                try await release(jobs, retryAt: Date().addingTimeInterval(30), errorCode: Self.errorCode(error))
+            } else {
+                for job in jobs {
+                    try await fail(job, error: error)
+                }
             }
         }
         return false
@@ -458,14 +462,6 @@ actor BackgroundJobWorker {
     ) async throws -> [SearchIndexJob]? {
         try await dbQueue.write { db in
             let now = Date()
-            // An expired lease is unfinished work, not a confirmed failed attempt.
-            // Archives have their own unlimited retry/backoff policy.
-            try db.execute(sql: """
-            UPDATE jobs_background
-            SET status = 'pending', attempts = max(0, attempts - 1),
-                claimedAt = NULL, leaseExpiresAt = NULL, updatedAt = ?
-            WHERE indexKind = 'fts' AND status = 'processing' AND leaseExpiresAt < ?
-            """, arguments: [now, now])
             let searchFilter = allowsSearch ? "" : "AND targetKind IN ('screenshotAnalysis', 'recordingArchive')"
             let archiveFilter = allowsArchives ? "" : "AND targetKind <> 'recordingArchive'"
             let cleanupFilter = archivesOnly ? "AND indexKind = 'archive'" : cleanupOnly
