@@ -3,6 +3,7 @@ import SwiftUI
 struct BreadcrumbSwitcher<Options: View>: View {
     let title: String
     let systemImage: String
+    var sectionTitle: String?
     var arrowEdge: Edge = .bottom
     let action: () -> Void
     @ViewBuilder let options: Options
@@ -43,7 +44,6 @@ struct BreadcrumbSwitcher<Options: View>: View {
         }
         .buttonStyle(.plain)
         .allowsWindowActivationEvents(true)
-        .help(title)
         .onKeyPress(.downArrow) {
             isPresented = true
             return .handled
@@ -63,6 +63,12 @@ struct BreadcrumbSwitcher<Options: View>: View {
             BreadcrumbPopover(isPresented: $isPresented, arrowEdge: arrowEdge) {
                 ScrollView {
                     VStack(alignment: .leading, spacing: 2) {
+                        if let sectionTitle {
+                            Text(sectionTitle)
+                                .font(.subheadline)
+                                .foregroundStyle(.secondary)
+                                .padding(6)
+                        }
                         options
                     }
                     .padding(6)

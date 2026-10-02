@@ -22,6 +22,7 @@ struct MainNavigationBreadcrumbs: View {
             BreadcrumbSwitcher(
                 title: workspace.name,
                 systemImage: (workspace.appearance ?? .workspaceDefault).icon.systemImageName,
+                sectionTitle: L10n.workspace,
                 action: onShowProjects
             ) {
                 ForEach(workspaces) { item in
@@ -29,16 +30,6 @@ struct MainNavigationBreadcrumbs: View {
                         onSelectWorkspace(item)
                     }
                 }
-                Divider()
-                ProjectBreadcrumbMenu(
-                    childrenByParent: childrenByParent,
-                    parentID: nil,
-                    workspaceID: workspace.id,
-                    dbQueue: dbQueue,
-                    appearanceForProject: appearanceForProject,
-                    onOpenProject: onOpenProject,
-                    onOpenMeeting: onOpenMeeting
-                )
             }
 
             ForEach(Self.projectPath(projectID: projectID, projects: projects)) { project in
@@ -46,6 +37,7 @@ struct MainNavigationBreadcrumbs: View {
                 BreadcrumbSwitcher(
                     title: project.projectDisplayName.nilIfBlank ?? project.projectName,
                     systemImage: appearanceForProject(project.projectId).icon.systemImageName,
+                    sectionTitle: L10n.projects,
                     action: { onOpenProject(project.projectId) }
                 ) {
                     ProjectBreadcrumbMenu(
@@ -63,7 +55,7 @@ struct MainNavigationBreadcrumbs: View {
             if let meetingTitle {
                 let title = meetingTitle.nilIfBlank ?? L10n.newMeeting
                 Text("/").accessibilityHidden(true)
-                BreadcrumbSwitcher(title: title, systemImage: "doc.text", action: {}) {
+                BreadcrumbSwitcher(title: title, systemImage: "doc.text", sectionTitle: L10n.meetings, action: {}) {
                     MeetingBreadcrumbList(
                         workspaceID: workspace.id,
                         projectID: projectID,
