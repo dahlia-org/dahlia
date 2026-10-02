@@ -151,14 +151,35 @@ describe("shared durable dispatch", () => {
     db.exec("BEGIN; INSERT INTO jobs_storage_delete(storage_key) VALUES ('rolled-back'); ROLLBACK;");
     expect(await queue.claim(["storage-delete"])).toBeNull();
   });
-  it("counts a search batch as one execution slot and bounds it at sixteen documents", async () => {
-    const { queue } = await fixture();
+  it("orders search batches by availability, bounds them at sixteen and uses one execution slot", async () => {
+    const { queue, db } = await fixture();
     for (let i = 0; i < 17; i++) await queue.enqueue(`doc${i}`, "search", "scope", `doc${i}`, {});
+    db.exec("UPDATE jobs_queue SET created_at = CASE WHEN id = 'doc16' THEN 2000 ELSE 1000 END, available_at = CASE WHEN id = 'doc16' THEN 0 ELSE 1000 END");
     const job = (await queue.claim(["search"]))!;
+    expect(job.id).toBe("doc16");
+    expect(job.batch[0]?.id).toBe("doc16");
     expect(job.batch).toHaveLength(16);
     expect(await queue.claim(["search"])).toBeNull();
     for (const item of job.batch) await queue.complete(item);
     expect((await queue.claim(["search"]))!.batch).toHaveLength(1);
+  });
+  it("waits past each five-minute lease before infrastructure retries reach the DLQ", async () => {
+    const { queue } = await fixture();
+    vi.useFakeTimers();
+    await queue.enqueue("memory", "workspace-memory", "owner", "memory", {});
+    const first = (await queue.claim(["workspace-memory"]))!;
+    await queue.retry(first);
+    vi.setSystemTime(Date.now() + 6_000);
+    expect(await queue.claim(["workspace-memory"])).toBeNull();
+    vi.setSystemTime(first.leaseUntil.getTime() + 1_000);
+    const second = (await queue.claim(["workspace-memory"]))!;
+    expect(second.attempts).toBe(2);
+    await queue.retry(second);
+    vi.setSystemTime(second.leaseUntil.getTime() + 1_000);
+    const third = (await queue.claim(["workspace-memory"]))!;
+    expect(third.attempts).toBe(3);
+    await queue.retry(third);
+    expect(await queue.nextDelay(["workspace-memory"])).toBeUndefined();
   });
   it("shares throttling across kinds using the same summary budget", async () => {
     const { queue } = await fixture();

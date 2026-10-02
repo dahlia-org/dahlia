@@ -298,6 +298,20 @@ Within each owner, dispatch orders eligible jobs by availability time, then crea
 
 Dispatch stops after three infrastructure failures or source-readiness checks and retains the job in the same queue with `status = 'failed'` (the DLQ), its reference, attempts and `last_error` (`job_execution_failed` or `job_source_not_ready`). Failed rows are excluded from claims and wake-up scheduling; canonical data and domain jobs remain intact. Re-registering a failed job revives it with a fresh attempt budget; source scheduling changes also register work through the existing domain triggers. Attaching an image revives failed dispatch for an existing pending analysis request without resetting the domain attempt budget or creating a new request. Maintenance/reconciliation jobs are revived by their scheduler. Domain processing failures continue to use their domain retry limits and terminal states. Cloudflare minute cron registers maintenance and executes one bounded shared-job batch directly from the database, even when Queue producer hints fail. Queue consumers and cron share the same DB-wide caps.
 
+Infrastructure retries wait until both the exponential backoff (capped at five minutes) and the original five-minute dispatch lease plus one second have elapsed. Immediate failures therefore reach the third attempt after roughly ten minutes. This lease wait also avoids overlapping uncertain upstream work. The three-attempt limit intentionally stops automatic infrastructure recovery; restoring the infrastructure alone does not revive DLQ rows.
+
+To recover retained work after fixing its cause, re-register the failed dispatch with `JobStore.enqueue` using its existing ID, kind, owner, target and reference, or update the existing source's scheduling field through an authorized store/DB operation. Keep domain attempts, leases and content intact; do not create a new processing request just to recover dispatch. The source triggers cover every domain-backed kind (PostgreSQL table names below; SQLite uses the corresponding tables):
+
+| Kind | Existing source registration / recovery event |
+| --- | --- |
+| `summary`, `audio-summary` | Update `available_at` on an existing pending `jobs.summary` row. |
+| `image` | Attachment upsert touches an existing pending `jobs.image_analysis` row; a pending source scheduling/model update also registers it. |
+| `search` | Update `available_at` on an existing pending `jobs.search_index` row; index generation changes register pending work. Search batches use the same availability/creation/ID ordering as the first selection. |
+| `workspace-memory`, `personal-memory` | Update the existing memory state's `available_at` while `enabled` or `purge` is true. Settings changes and new source scheduling also register it. |
+| `chat-memory` | Update `available_at` or `revision` on the existing `agent.memory_jobs` row (PostgreSQL agent runtime). |
+| `storage-delete` | Update `available_at` on an existing pending/failed `jobs.storage_delete` row. |
+| `maintenance`, `reconcile` | `JobStore.scheduleMaintenance` periodically re-registers failed recurring work. |
+
 Workers stop claiming on shutdown, abort active handlers and have 30 seconds to drain before termination. Uncertain in-flight work stays leased until recovery; generation and domain revision checks reject stale results. Node-only public APIs now expose `JobRunner`, `JobPool`, `createJobExecutor` and `jobResources` instead of `SummaryWorker`.
 
 ### Full-text search weights

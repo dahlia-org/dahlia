@@ -41,7 +41,7 @@ export function createJobStore(database: PostgresDatabase | SQLiteDatabase, isPo
           .orderBy(sql`CASE WHEN ${jobs.owner} > ${state!.lastOwner} THEN 0 ELSE 1 END`, asc(jobs.owner), asc(jobs.availableAt), asc(jobs.createdAt), asc(jobs.id)).limit(1);
         if (!job) return null;
         const batch = job.kind === "search" ? await tx.select().from(jobs).where(and(eq(jobs.kind, "search"), eq(jobs.owner, job.owner), eligible))
-          .orderBy(asc(jobs.createdAt), asc(jobs.id)).limit(16) : [job];
+          .orderBy(asc(jobs.availableAt), asc(jobs.createdAt), asc(jobs.id)).limit(16) : [job];
         const lease = uuidV7(), leaseUntil = new Date(now.getTime() + JOB_LEASE_MS);
         const claimed = batch.map((item) => ({ ...item, status: "processing", lease, leaseUntil, attempts: item.attempts + 1 }));
         await tx.update(jobs).set({ status: "processing", lease, leaseUntil, attempts: sql`${jobs.attempts} + 1` })
