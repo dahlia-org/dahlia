@@ -149,3 +149,11 @@ v1 の自動変換・互換読み取りは設けない。checkpoint / legacyUpda
 `node --expose-gc --import tsx scripts/document-memory.ts --collect`（Node v26.3.0、2026-10-01）。表示 5,000、総数 8,000、本文 1,994,999 UTF-16 単位（日本語）、checkpoint 7,351,158 bytes で、送信側と受信側、前後の projection、復元・消去・再エンコードを保持した。開始時との差分 heap は GC 後最大 **79.8 MiB**、各段階の GC 前観測最大 **121.7 MiB**。段階間の明示 GC なしでは **164.8 MiB** の観測があり、GC 後の値は実行中ピークの保証ではない。Workers 実機の 128 MiB 内での動作は未検証であり、本測定だけで保証しない。スクリプトは合成データのみを扱う。
 
 2026-10-01: ユーザー承認により未リリースの Documents・同期・共通背景ジョブを `v53_documentsSyncAndBackgroundJobs` の単一登録に統合する。v0.24.2 の v47 までの履歴とデータ保持処理は変更しない。旧開発版 v52 / v53 は GRDB merging で認識し、未適用の処理だけを実行する。検索ジョブはリリース済み DB に存在するため、共通キューへのデータ保持変換を維持する。
+
+2026-10-02: 承認済みの修正計画に従い、Documents sync capability / request protocol を v3 に統一する。容量拒否は canonical を変更せず、accepted=false と canonical の差分を返す。未送信ログは保持し、後続の修正を含む現在の causal diff を再送し、取得時点の pending sequence のみ ACK する。Yjs schema v2 と domain sync v7 は維持する。Web の canonical / staging は Worker、Desktop は DB ごとに共有する専用 JSC thread が所有する。本文・layout は差分で更新し、通常 ACK は差分と vector の通知にする。復元検出済み sequence は projection / checkpoint と独立して永続化し、delta と復元コピーを同一 transaction に記録する。
+
+復元履歴には document lock 下で割り当てる単調 sequence を導入する。同期は ascending の high-water cursor、表示は descending の独立した cursor とし、document / generation / mode / version を検証する。最大100件・保守的な6 MiBのページ（単独の大型コピーは例外）を使用する。Desktop は履歴と cursor を原子的に保存する。画面は1ページ・2,000文字のプレビューを保持し、全文は明示操作で開く。presence の5秒更新から履歴取得を分離する。
+
+Server 未公開 baseline は最終 schema に直接更新する。Desktop は公開済み v0.24.2 の v47 までを変更せず、未公開 v52 / v53 と新しい復元 watermark / cursor を `v54_documentsSyncAndBackgroundJobs` に統合する。旧開発DBは GRDB merging と不足列の追加・必要な default のデータ保持変換で引き継ぐ。実DBの消去・手作業の migration ledger 編集は行わない。
+
+通常の Desktop ingress / send / editor notification は常駐 runtime の処理済み位置から新しい SQLite delta だけを取得する。cache miss 時には checkpoint と永続ログ全体を再取得し、不完全な前提状態から開始しない。検出済みの復元コピーは durable recovery watermark が進むまで runtime に保持する。下書きの archive 前提は staging にだけ適用し、SQLite commit 後に canonical へ反映する。Web は Worker 障害に備え、main thread に index を持たない保存済み Yjs replica を delta で保持する。再起動時だけ snapshot を生成し、未保存の editor input を canonical に昇格しない。

@@ -14,6 +14,8 @@ struct DocumentRecord: Codable, FetchableRecord, PersistableRecord, Sendable {
     var checkpoint: String
     var checkpointSequence: Int64 = 0
     var projectionSequence: Int64 = 0
+    var recoverySequence: Int64 = 0
+    var recoveryCursor: String?
     var text = ""
     var createdAt: Date
     var updatedAt: Date
@@ -22,7 +24,8 @@ struct DocumentRecord: Codable, FetchableRecord, PersistableRecord, Sendable {
     var locallyEdited = false
     enum CodingKeys: String, CodingKey {
         case id, workspaceId = "workspace_id", meetingId, kind, title, schemaVersion, revision, generation
-        case checkpoint, checkpointSequence, projectionSequence, text, createdAt, updatedAt, lastAccessedAt, resident, locallyEdited
+        case checkpoint, checkpointSequence, projectionSequence, recoverySequence, recoveryCursor, text, createdAt, updatedAt, lastAccessedAt,
+             resident, locallyEdited
     }
 
     static func notes(in db: Database, meetingID: UUID) throws -> Self? {

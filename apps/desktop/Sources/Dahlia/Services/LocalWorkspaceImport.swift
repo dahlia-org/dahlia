@@ -61,7 +61,7 @@ enum LocalWorkspaceImport {
             return try DahliaAccountConnectionRecord.fetchOne(db, key: destination.connectionId)
         }
         guard let connection, let origin = URL(string: connection.origin) else { throw LocalWorkspaceImportError.unavailable }
-        try await DocumentPersistence(dbQueue: dbQueue).prepareAccountTransfer(workspaceID: sourceId)
+        try await DocumentPersistence.shared(dbQueue: dbQueue).prepareAccountTransfer(workspaceID: sourceId)
         let worker = SyncWorker(dbQueue: dbQueue, apiClient: api)
         if !reconnectExisting {
             try await worker.synchronizeForTransfer(workspaceId: destination.workspaceId, connectionId: destination.connectionId)

@@ -35,10 +35,18 @@ final class DocumentEditorModel {
 
     var checkpoint = ""
     var receivedUpdate = ""
+    var receivedVector = ""
     var status = ""
     var error = ""
     var legacyText = ""
     var recoveries: [DocumentRecoveryRecord] = []
+    var recoveryOpen = false
+    var recoveryNext: Int64?
+    private var recoveryBefore: Int64?
+    private var recoveryPages: [Int64?] = []
+    var recoveryPrevious: Bool { !recoveryPages.isEmpty }
+    var fullRecoveryText: String?
+    private var recoveryTask: Task<Void, Never>?
     var people: [String] = []
     var recoveryText: [UUID: String] = [:]
     var ready = false
@@ -74,7 +82,7 @@ final class DocumentEditorModel {
         self.orphan = orphan
         documentID = meetingID ?? orphan?.meetingID ?? .v7()
         self.resolveMeeting = resolveMeeting
-        persistence = DocumentPersistence(dbQueue: dbQueue)
+        persistence = DocumentPersistence.shared(dbQueue: dbQueue)
         sync = DocumentSyncService.shared(dbQueue: dbQueue)
     }
 
@@ -106,7 +114,7 @@ final class DocumentEditorModel {
             if let meetingID {
                 let resident = try await dbQueue.read { try DocumentRecord.notes(in: $0, meetingID: meetingID)?.resident ?? true }
                 if !resident { try await sync.synchronize(meetingID: meetingID) }
-                let prepared = try await persistence.prepare(meetingID: meetingID).checkpoint
+                let prepared = try await persistence.prepare(meetingID: meetingID)
                 try await dbQueue.write { db in
                     try db.execute(
                         sql: "UPDATE documents SET lastAccessedAt = ? WHERE meetingId = ? AND kind = 'notes'",
@@ -115,7 +123,8 @@ final class DocumentEditorModel {
                 }
                 let legacy = try await readLegacyText(meetingID: meetingID)
                 guard isVisible(generation) else { return }
-                checkpoint = prepared
+                checkpoint = prepared.checkpoint
+                receivedVector = prepared.vector
                 legacyText = legacy
             }
             guard isVisible(generation) else { return }
@@ -149,7 +158,6 @@ final class DocumentEditorModel {
                 if let meetingID = self.meetingID {
                     if let names = try? await self.sync.presence(meetingID: meetingID, sessionID: self.sessionID, editing: self.focused),
                        self.isVisible(generation) { self.people = names }
-                    await self.refreshRecoveries()
                 }
                 try? await Task.sleep(for: .seconds(5))
             }
@@ -165,14 +173,15 @@ final class DocumentEditorModel {
 
     private func refreshBody(meetingID: UUID) async throws {
         let generation = loadGeneration
-        let received = try await persistence.materialize(meetingID: meetingID).checkpoint
+        let received = try await persistence.editorState(meetingID: meetingID, vector: receivedVector)
         let pending = try await dbQueue.read { db in
             try DocumentUpdateRecord.filter(Column("documentId") == DocumentRecord.notes(in: db, meetingID: meetingID)?.id)
                 .filter(Column("pending") == true).fetchCount(db) > 0
         }
         let savedStatus = try await sync.target(meetingID: meetingID) == nil ? L10n.documentSavedLocally : L10n.documentSynced
         guard isVisible(generation) else { return }
-        receivedUpdate = received
+        receivedUpdate = received.update
+        receivedVector = received.vector
         if !pending, failedUpdates.isEmpty {
             status = savedStatus
         }
@@ -259,28 +268,86 @@ final class DocumentEditorModel {
         syncTask = nil
         detailsTask?.cancel()
         detailsTask = nil
+        recoveryTask?.cancel()
+        recoveryTask = nil
         Task { try? await finishLocalSaves() }
     }
 
     func refreshRecoveries() async {
         guard let meetingID else { return }
         let generation = loadGeneration
+        let before = recoveryBefore
         do {
-            let loaded = try await persistence.recoveries(meetingID: meetingID)
-            guard isVisible(generation) else { return }
-            (recoveries, recoveryText) = loaded
+            let loaded = try await persistence.recoveryPage(meetingID: meetingID, before: before)
+            guard isVisible(generation), recoveryOpen, recoveryBefore == before else { return }
+            recoveries = loaded.records
+            recoveryText = loaded.previews
+            recoveryNext = loaded.next
         } catch {
             if isVisible(generation) { self.error = L10n.documentSaveFailed }
         }
     }
 
-    func restore(_ recovery: DocumentRecoveryRecord) {
-        guard let meetingID, let text = recoveryText[recovery.id] else { return }
+    func setRecoveryOpen(_ open: Bool) {
+        recoveryOpen = open
+        recoveryTask?.cancel()
+        recoveryTask = nil
+        guard open, let meetingID else { recoveries = []
+            recoveryText = [:]
+            fullRecoveryText = nil
+            return
+        }
+        recoveryBefore = nil
+        recoveryPages = []
+        let queue = dbQueue
+        recoveryTask = Task { [weak self] in
+            let observation = ValueObservation.tracking { db in
+                try Int.fetchOne(
+                    db,
+                    sql: "SELECT count(*) FROM document_recoveries WHERE documentId = (SELECT id FROM documents WHERE meetingId = ? AND kind = 'notes')",
+                    arguments: [meetingID]
+                ) ?? 0
+            }.removeDuplicates()
+            do { for try await _ in observation.values(in: queue) {
+                guard let self, self.visible, self.recoveryOpen else { return }
+                await self.refreshRecoveries()
+            } } catch {}
+        }
+    }
+
+    func nextRecoveryPage() {
+        fullRecoveryText = nil
+        guard let next = recoveryNext else { return }
+        recoveryPages.append(recoveryBefore)
+        recoveryBefore = next
+        Task { await refreshRecoveries() }
+    }
+
+    func previousRecoveryPage() {
+        fullRecoveryText = nil
+        guard !recoveryPages.isEmpty else { return }
+        recoveryBefore = recoveryPages.removeLast()
+        Task { await refreshRecoveries() }
+    }
+
+    func showRecovery(_ recovery: DocumentRecoveryRecord) {
+        let before = recoveryBefore
         Task {
             do {
+                let text = try await persistence.recoveryText(id: recovery.id)
+                if recoveryOpen, recoveryBefore == before { fullRecoveryText = text }
+            } catch { self.error = L10n.documentSaveFailed }
+        }
+    }
+
+    func restore(_ recovery: DocumentRecoveryRecord) {
+        guard let meetingID else { return }
+        Task {
+            do {
+                let text = try await persistence.recoveryText(id: recovery.id)
                 try await persistence.insertRecoveredText(meetingID: meetingID, text: text)
                 await sync.localCommitted(meetingID: meetingID)
-                receivedUpdate = try await persistence.materialize(meetingID: meetingID).checkpoint
+                try await refreshBody(meetingID: meetingID)
             } catch { self.error = L10n.documentSaveFailed }
         }
     }
@@ -314,6 +381,7 @@ struct DocumentEditorView: View {
                 DocumentWebEditor(
                     checkpoint: model.checkpoint,
                     receivedUpdate: model.receivedUpdate,
+                    receivedVector: model.receivedVector,
                     editable: editable,
                     onUpdate: model.accept,
                     onError: { model.error = $0 == "document_too_large" ? L10n.documentTooLarge : L10n.documentSaveFailed },
@@ -325,17 +393,23 @@ struct DocumentEditorView: View {
             } else {
                 ProgressView().frame(maxWidth: .infinity, maxHeight: .infinity)
             }
-            if !model.recoveries.isEmpty {
-                DisclosureGroup(L10n.documentRecoveryTitle) {
-                    ScrollView {
-                        ForEach(model.recoveries, id: \.id) { recovery in
-                            VStack(alignment: .leading) {
-                                Text(model.recoveryText[recovery.id] ?? "").textSelection(.enabled)
+            DisclosureGroup(L10n.documentRecoveryTitle, isExpanded: Binding(get: { model.recoveryOpen }, set: { model.setRecoveryOpen($0) })) {
+                HStack {
+                    Button(L10n.documentHistoryPrevious) { model.previousRecoveryPage() }.disabled(!model.recoveryPrevious)
+                    Button(L10n.documentHistoryNext) { model.nextRecoveryPage() }.disabled(model.recoveryNext == nil)
+                }
+                ScrollView {
+                    ForEach(model.recoveries, id: \.id) { recovery in
+                        VStack(alignment: .leading) {
+                            Text(model.recoveryText[recovery.id] ?? "").textSelection(.enabled)
+                            HStack {
+                                Button(L10n.documentHistoryFullText) { model.showRecovery(recovery) }
                                 if editable { Button(L10n.documentRestore) { model.restore(recovery) } }
                             }
                         }
-                    }.frame(maxHeight: 160)
-                }
+                    }
+                    if let text = model.fullRecoveryText { Text(text).textSelection(.enabled) }
+                }.frame(maxHeight: 160)
             }
             if !model.people.isEmpty { Text(L10n.documentEditing + model.people.joined(separator: ", ")).font(.caption) }
             Text(model.status).font(.caption).foregroundStyle(.secondary)
@@ -351,6 +425,7 @@ struct DocumentEditorView: View {
 private struct DocumentWebEditor: NSViewRepresentable {
     let checkpoint: String
     let receivedUpdate: String
+    let receivedVector: String
     let editable: Bool
     let onUpdate: @MainActor (String, String?) -> Void
     let onError: @MainActor (String) -> Void
@@ -396,6 +471,7 @@ private struct DocumentWebEditor: NSViewRepresentable {
         weak var view: WKWebView?
         private var ready = false
         private var lastUpdate = ""
+        private var lastVector = ""
         private var flushing: Task<Void, Error>?
 
         init(parent: DocumentWebEditor) { self.parent = parent }
@@ -447,12 +523,13 @@ private struct DocumentWebEditor: NSViewRepresentable {
                 in: .page,
                 completionHandler: nil
             )
-            guard let view, !parent.receivedUpdate.isEmpty, parent.receivedUpdate != lastUpdate else { return }
+            guard let view, !parent.receivedUpdate.isEmpty, parent.receivedUpdate != lastUpdate || parent.receivedVector != lastVector else { return }
             lastUpdate = parent.receivedUpdate
+            lastVector = parent.receivedVector
             let render = SyncDiagnostics.begin("DocumentApplyToWebView")
             view.callAsyncJavaScript(
-                "window.dahliaDocument.receive(update)",
-                arguments: ["update": parent.receivedUpdate],
+                "window.dahliaDocument.receive(update, vector)",
+                arguments: ["update": parent.receivedUpdate, "vector": parent.receivedVector],
                 in: nil,
                 in: .page,
                 completionHandler: { _ in SyncDiagnostics.end("DocumentApplyToWebView", render) }

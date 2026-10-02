@@ -27,6 +27,8 @@ struct DocumentCoreResult: Codable, Sendable {
     var projection: Projection
     var removed: [DocumentBlock]
     var purged: Bool?
+    var changed: Bool?
+    var runtimeThrough: Int64?
     struct Batch: Codable, Sendable { var update: String?
         var through: Int64?
     }
@@ -39,6 +41,17 @@ struct DocumentCoreCommand: Encodable, Sendable {
         var update: String
     }
 
+    struct Runtime: Encodable, Sendable {
+        var key: String
+        var baseline: String
+        var entries: [Pending]
+        var recoveryThrough: Int64?
+        var after: Int64?
+        var prerequisites: [String]?
+        var draft: String?
+        var action: String?
+    }
+
     var pending: [Pending]?
     var checkpoint: String?
     var updates: [String]?
@@ -46,6 +59,9 @@ struct DocumentCoreCommand: Encodable, Sendable {
     var vector: String?
     var purgeBefore: Double?
     var local: Bool?
+    var lightweight: Bool?
+    var sending: Bool?
+    var runtime: Runtime?
 }
 
 enum DocumentCoreError: LocalizedError {
@@ -169,7 +185,8 @@ final class DocumentCoreWorker: @unchecked Sendable {
                     work.continuation.resume(returning: value)
                 } else {
                     let message = context.exception?.toString() ?? ""
-                    let error: DocumentCoreError = message.contains("unsupported_document_schema") ? .unsupportedSchema
+                    let error: DocumentCoreError = message.contains("document_runtime_unavailable") ? .unavailable
+                        : message.contains("unsupported_document_schema") ? .unsupportedSchema
                         : message.contains("document_too_large") ? .tooLarge : .failed
                     work.continuation.resume(throwing: error)
                 }

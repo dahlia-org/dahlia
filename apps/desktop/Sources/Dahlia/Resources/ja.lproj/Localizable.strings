@@ -1764,3 +1764,7 @@
 "Local recordings from reconnection" = "再接続前のローカル録音";
 "documentUnsupportedSchema" = "旧バージョンのノート形式には対応していません。データは端末に保持されています。";
 "documentTooLarge" = "ノートの上限を超えるため変更できません。内容を減らすか、同期後に再試行してください。";
+
+"documentHistoryPrevious" = "前へ";
+"documentHistoryNext" = "次へ";
+"documentHistoryFullText" = "全文を表示";

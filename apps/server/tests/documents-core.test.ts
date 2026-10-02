@@ -1,10 +1,10 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import * as Y from "yjs";
 import { getSchema } from "@tiptap/core";
 import StarterKit from "@tiptap/starter-kit";
 import { Fragment, type Node } from "@tiptap/pm/model";
 import fixture from "../../desktop/Tests/DahliaTests/Fixtures/documents.json";
-import { DocumentCore, decodeBinary, documentStateLimit, encodeBinary, mergeDocumentUpdates, removedBlocks, type DocumentRecovery } from "../src/documents/core";
+import { DocumentCore, decodeBinary, documentStateLimit, encodeBinary, mergeDocumentUpdates, projectDocument, removedBlocks, type DocumentRecovery } from "../src/documents/core";
 import { blockLayout, blockMap, renderedAttributes, rootOrder, writeBlocks, writeInline, type BlockInput } from "../src/documents/blocks";
 import { DocumentEditorHydration, pastedTextSlice, withoutTrailingBreaks } from "../src/documents/editor";
 import { DocumentSession, type DocumentHost, type PendingDocumentUpdate } from "../src/documents/session";
@@ -15,6 +15,69 @@ const seed = (value = "before\nstays") => { const core = new DocumentCore(); cor
 const order = (core: DocumentCore, ids: string[], origin: unknown = "move") => writeBlocks(core.document, { blocks: [], removed: [], order: new Map([[null, ids]]) }, origin);
 
 describe("portable document core v2", () => {
+  it("keeps native replicas incremental and restores staging after an interleaved prepare", () => {
+    const editor = seed(Array<string>(500).fill("paragraph").join("\n"));
+    const key = id(), checkpoint = editor.checkpoint();
+    const invoke = (draft?: string, action?: string, initial = false) => JSON.parse(runNativeDocument(JSON.stringify({
+      ...(initial ? { checkpoint } : {}), lightweight: true,
+      runtime: { key, baseline: "0/local", entries: [], recoveryThrough: 0, draft, action },
+    }))) as { checkpoint: string; vector: string; changed: boolean; diagnostics: { bodies: number; layouts: number } };
+    const initial = invoke(undefined, undefined, true), vector = editor.vector();
+    firstText(editor).insert(0, "saved "); const update = editor.difference(vector);
+    const prepared = invoke(update);
+    expect(prepared.checkpoint).toBe(""); expect(prepared.changed).toBe(true);
+    expect(prepared.diagnostics.bodies - initial.diagnostics.bodies).toBe(1);
+    expect(prepared.diagnostics.layouts).toBe(initial.diagnostics.layouts);
+    // Another reader cancels the prepared staging replica before its durable commit arrives.
+    invoke(); invoke(update, "commit");
+    expect(invoke(update).changed).toBe(false);
+    const nextVector = editor.vector(); firstText(editor).insert(0, "next ");
+    invoke(editor.difference(nextVector)); invoke(undefined, "rollback");
+    expect(invoke().vector).toBe(prepared.vector);
+    editor.destroy();
+  });
+
+  it("bounds native runtime retention and reloads an evicted document from its durable baseline", () => {
+    const source = seed("durable"), checkpoint = source.checkpoint(), key = id();
+    const command = (key: string, initial: boolean) => JSON.stringify({ ...(initial ? { checkpoint } : {}), lightweight: true,
+      runtime: { key, baseline: "1/local", entries: [] } });
+    runNativeDocument(command(key, true));
+    for (let n = 0; n < 16; n++) runNativeDocument(command(id(), true));
+    expect(() => runNativeDocument(command(key, false))).toThrow("document_runtime_unavailable");
+    const reloaded = JSON.parse(runNativeDocument(command(key, true))) as { vector: string };
+    expect(reloaded.vector).toBe(source.vector()); source.destroy();
+  });
+
+  it("keeps uncommitted recovery detections across incremental reads and requires a complete baseline after cache loss", () => {
+    const source = seed("recover me\nstays"), checkpoint = source.checkpoint(), vector = source.vector(), key = id();
+    deleteFirst(source); const update = source.difference(vector);
+    const invoke = (entries: PendingDocumentUpdate[], recoveryThrough: number, after: number, initial = false) => runNativeDocument(JSON.stringify({
+      ...(initial ? { checkpoint } : {}), lightweight: true, runtime: { key, baseline: "0/local", entries, recoveryThrough, after },
+    }));
+    const initial = JSON.parse(invoke([{ sequence: 1, update }], 0, 0, true)) as { removed: { text: string }[] };
+    expect(initial.removed.map((block) => block.text)).toEqual(["recover me"]);
+    expect(JSON.parse(invoke([], 0, 1))).toMatchObject({ removed: initial.removed, runtimeThrough: 1 });
+    expect(JSON.parse(invoke([], 1, 1))).toMatchObject({ removed: [] });
+    // Reinitializing from checkpoint while omitting already cached logs must fail before returning an incomplete state.
+    expect(() => invoke([], 1, 1, true)).toThrow("document_runtime_unavailable");
+    const rebuilt = JSON.parse(invoke([{ sequence: 1, update }], 1, 0, true)) as { vector: string; removed: unknown[] };
+    expect(rebuilt.vector).toBe(source.vector()); expect(rebuilt.removed).toEqual([]); source.destroy();
+  });
+
+  it("keeps draft archive prerequisites out of canonical state until the durable commit", () => {
+    const source = seed("private draft"), prerequisite = source.checkpoint(), before = source.vector(), key = id();
+    firstText(source).insert(0, "published "); const draft = source.difference(before);
+    const invoke = (action?: string, initial = false) => JSON.parse(runNativeDocument(JSON.stringify({
+      ...(initial ? { checkpoint: "AAA=" } : {}), lightweight: true,
+      runtime: { key, baseline: "0/local", entries: [], ...(action ? { draft, prerequisites: [prerequisite], action } : {}) },
+    }))) as { vector: string };
+    invoke(undefined, true);
+    // A concurrent canonical read between prepare and commit sees only durable data.
+    runNativeDocument(JSON.stringify({ lightweight: true, runtime: { key, baseline: "0/local", entries: [], draft, prerequisites: [prerequisite] } }));
+    expect(invoke().vector).toBe("AA==");
+    expect(invoke("commit").vector).toBe(source.vector()); source.destroy();
+  });
+
   it.each([false, true])("uses the same fixture in Node, Workers and JavaScriptCore (difference=%s)", (difference) => {
     const core = new DocumentCore(fixture.checkpoint);
     const vector = difference ? core.vector() : undefined;
@@ -268,4 +331,38 @@ it.each(["acknowledged", "failed ACK", "restarted", "newer than ACK", "pending d
 it("merges duplicate updates", () => {
   const core = seed("one");
   expect(new DocumentCore(mergeDocumentUpdates([core.checkpoint(), core.checkpoint()])).projection()).toEqual(core.projection()); core.destroy();
+});
+
+it.each([100, 1000, 5000])("validates only the edited body and never checkpoints a normal accept (%i blocks)", async (count) => {
+  const source = seed(Array<string>(count).fill("body").join("\n"));
+  const pending: PendingDocumentUpdate[] = [];
+  let sequence = 0;
+  const session = new DocumentSession({ newID: id,
+    append: async (update, local) => { if (local) pending.push({ update, sequence: ++sequence }); return sequence; },
+    pending: async () => pending, acknowledge: async () => {}, checkpoint: async () => {}, exchange: async () => { throw new Error("unused"); },
+  }, { checkpoint: source.checkpoint(), generation: null, revision: 0 });
+  const bodies = session.core.diagnostics.bodies, layouts = session.core.diagnostics.layouts;
+  const checkpoint = vi.spyOn(session.core, "checkpoint");
+  const projection = vi.spyOn(session.core, "projection");
+  const vector = source.vector(); firstText(source).insert(0, "x");
+  await session.accept(source.difference(vector), true);
+  expect(session.core.diagnostics.bodies - bodies).toBe(1);
+  expect(session.core.diagnostics.layouts).toBe(layouts);
+  expect(checkpoint).not.toHaveBeenCalled(); expect(projection).not.toHaveBeenCalled();
+  expect(session.core.projection(false)).toEqual(projectDocument(source.document, false));
+  await session.close(); source.destroy();
+});
+
+it("rebuilds only after storage failure and preserves the committed baseline", async () => {
+  const source = seed("before"), checkpoint = source.checkpoint();
+  let fail = true;
+  const session = new DocumentSession({ newID: id, append: async () => { if (fail) throw new Error("disk full"); return 1; },
+    pending: async () => [], acknowledge: async () => {}, checkpoint: async () => {}, exchange: async () => { throw new Error("unused"); },
+  }, { checkpoint, generation: null, revision: 0 });
+  const vector = source.vector(); firstText(source).insert(0, "after "); const update = source.difference(vector);
+  await expect(session.accept(update, true)).rejects.toThrow("disk full");
+  expect(session.core.projection().text).toBe("before");
+  fail = false; await session.accept(update, true);
+  expect(session.core.projection().text).toBe("after before");
+  await session.close(); source.destroy();
 });

@@ -7,6 +7,7 @@ import { apiOperations as api } from "./generated-operations";
 import { RequestError, uiText } from "./api";
 import { encodeId } from "../typeid";
 import { uuidV7 } from "../id";
+import { RemoteDocumentSession } from "../documents/remote-session";
 import { DocumentSession, type PendingDocumentUpdate } from "../documents/session";
 import { DocumentCore, decodeBinary, documentPlainText, encodeBinary, type DocumentBlock, type DocumentRecovery } from "../documents/core";
 import { DocumentEditorHydration, documentEditorOptions } from "../documents/editor";
@@ -17,9 +18,11 @@ type SharedDocument = NonNullable<components["schemas"]["DocumentEnvelope"]["doc
 const sessions = new Map<string, BrowserDocument>();
 
 export class BrowserDocument {
-  readonly session: DocumentSession;
+  readonly session: DocumentSession | RemoteDocumentSession;
   private readonly hydration: DocumentEditorHydration;
   readonly editorDocument = new Y.Doc();
+  // A lightweight committed replica supports Worker restart without promoting uncommitted editor input.
+  private readonly retainedDocument = new Y.Doc();
   readonly pending: PendingDocumentUpdate[] = [];
   readonly recoveries = new Map<string, DocumentRecovery>();
   readonly listeners = new Set<() => void>();
@@ -42,7 +45,41 @@ export class BrowserDocument {
   private syncRequested = false;
   private maintenance: Promise<void> | null = null;
   private recoverySaving: Promise<void> | null = null;
-  private lastRecoveries = 0;
+  recoveryOpen = false;
+  recoveryNext: string | null = null;
+  private recoveryPages: (string | undefined)[] = [];
+  private recoveryPage: string | undefined;
+  private recoveryRequest = 0;
+  private displayedRecoveryIDs = new Set<string>();
+  get recoveryPrevious() { return this.recoveryPages.length > 0; }
+  async loadRecoveryPage(after?: string) {
+    if (!this.session.generation) return;
+    const request = ++this.recoveryRequest;
+    const generation = this.session.generation;
+    const recovered = await api.listDocumentRecoveries({ signal: this.auxiliaryAbort.signal, headers: this.headers,
+      params: { ...this.params, query: { after, mode: "display" } } });
+    if (request !== this.recoveryRequest || !this.recoveryOpen || generation !== this.session.generation) return;
+    for (const id of this.displayedRecoveryIDs) if (!this.unsentRecoveries.has(id)) this.recoveries.delete(id);
+    this.displayedRecoveryIDs = new Set(recovered.items.map((entry) => entry.id));
+    for (const entry of recovered.items) this.recoveries.set(entry.id, entry);
+    this.recoveryPage = after; this.recoveryNext = recovered.nextCursor; this.changed();
+  }
+  async nextRecoveryPage() {
+    if (!this.recoveryNext) return;
+    const previous = this.recoveryPage; await this.loadRecoveryPage(this.recoveryNext); this.recoveryPages.push(previous); this.changed();
+  }
+  async previousRecoveryPage() {
+    if (!this.recoveryPages.length) return;
+    await this.loadRecoveryPage(this.recoveryPages.at(-1)); this.recoveryPages.pop(); this.changed();
+  }
+  async toggleRecoveries(open: boolean) {
+    this.recoveryOpen = open; ++this.recoveryRequest;
+    if (open) { this.recoveryPages = []; await this.loadRecoveryPage(); }
+    else {
+      for (const id of this.displayedRecoveryIDs) if (!this.unsentRecoveries.has(id)) this.recoveries.delete(id);
+      this.displayedRecoveryIDs.clear(); this.changed();
+    }
+  }
   private views = 0;
   private stopped = false;
   private timer: ReturnType<typeof setTimeout> | undefined;
@@ -53,14 +90,19 @@ export class BrowserDocument {
 
   constructor(readonly userId: string, workspaceId: string, readonly meetingId: string, initial: SharedDocument | null, private readonly accountBinding = false, private readonly notifications: SyncNotifications = syncNotifications) {
     this.params = { path: { workspaceId, documentId: initial?.id ?? encodeId("document", uuidV7()) } };
-    if (initial) Y.applyUpdate(this.editorDocument, decodeBinary(initial.checkpoint), "remote");
+    if (initial) { const update = decodeBinary(initial.checkpoint); Y.applyUpdate(this.editorDocument, update, "remote"); Y.applyUpdate(this.retainedDocument, update); }
     this.hydration = new DocumentEditorHydration(this.editorDocument, this.preserveEditorRecovery);
-    this.session = new DocumentSession({
+    this.session = new (typeof Worker === "undefined" ? DocumentSession : RemoteDocumentSession)({
       newID: () => encodeId("documentRecovery", uuidV7()),
+      snapshot: () => encodeBinary(Y.encodeStateAsUpdate(this.retainedDocument)),
       append: (update, local, recovery) => {
+        Y.applyUpdate(this.retainedDocument, decodeBinary(update, Infinity));
         const sequence = ++this.sequence;
         if (local) this.pending.push({ sequence, update });
-        if (recovery) { this.recoveries.set(recovery.id, recovery); this.unsentRecoveries.add(recovery.id); }
+        if (recovery) {
+          const id = recovery.id.startsWith("drec_") ? recovery.id : encodeId("documentRecovery", recovery.id);
+          this.recoveries.set(id, { ...recovery, id }); this.unsentRecoveries.add(id);
+        }
         this.changed(); return Promise.resolve(sequence);
       },
       pending: () => Promise.resolve([...this.pending]),
@@ -69,8 +111,8 @@ export class BrowserDocument {
         this.pending.splice(0, firstUnacknowledged < 0 ? this.pending.length : firstUnacknowledged);
         this.changed(); return Promise.resolve();
       },
-      checkpoint: ({ checkpoint }) => {
-        this.hydration.receive(decodeBinary(checkpoint, Infinity));
+      checkpoint: ({ update, vector }) => {
+        this.hydration.receive(decodeBinary(update, Infinity), decodeBinary(vector));
         this.changed(); return Promise.resolve();
       },
       exchange: async (request) => {
@@ -86,7 +128,7 @@ export class BrowserDocument {
           generation = response.document.generation;
         }
         try {
-          return await api.exchangeDocument({ headers: this.headers, params: this.params, body: { ...request, generation } }, false);
+          return await api.exchangeDocument({ headers: this.headers, params: this.params, body: { ...request, protocolVersion: 3, generation } }, false);
         } catch (error) {
           if (!(error instanceof RequestError) || error.status !== 409 || error.message !== "document_generation_changed") throw error;
           const { document } = await api.getDocument({ headers: this.headers, params: this.params });
@@ -129,7 +171,7 @@ export class BrowserDocument {
   };
   private changed() { for (const listener of this.listeners) listener(); }
   hasUnsent() { return this.saving > 0 || this.failedEditorUpdate !== null || this.pending.length > 0 || this.unsentRecoveries.size > 0; }
-  copyText() { return this.failedEditorUpdate ? this.failedEditorText : this.session.core.projection(false).text; }
+  copyText() { return this.failedEditorUpdate ? this.failedEditorText : documentPlainText(this.editorDocument); }
   editFromEditor(update: Uint8Array) { return this.edit(this.hydration.captureLocalUpdate(update), true); }
   preserveEditorRecovery = (blocks: DocumentBlock[]) => {
     const id = encodeId("documentRecovery", uuidV7());
@@ -164,7 +206,7 @@ export class BrowserDocument {
     const corrected = new Y.Doc();
     try {
       Y.applyUpdate(corrected, Y.encodeStateAsUpdate(this.editorDocument));
-      return Y.encodeStateAsUpdate(corrected, Y.encodeStateVector(this.session.core.document));
+      return Y.encodeStateAsUpdate(corrected);
     } finally { corrected.destroy(); }
   }
   private requestSync(delay = 0) {
@@ -194,7 +236,10 @@ export class BrowserDocument {
       this.changed();
       void this.saveRecoveries().catch((error: unknown) => { this.maintenanceError = error instanceof Error ? error.message : String(error); this.changed(); });
       void this.refreshMaintenance().catch(() => {});
-    } catch (error) { this.error = error instanceof Error ? error.message : String(error); this.changed(); throw error; }
+    } catch (error) {
+      void this.saveRecoveries().catch(() => {});
+      this.error = error instanceof Error ? error.message : String(error); this.changed(); throw error;
+    }
   }
   private refreshMaintenance(): Promise<void> {
     if (this.maintenance) return this.maintenance;
@@ -208,16 +253,6 @@ export class BrowserDocument {
     // Recovery writes carry the same account precondition as body writes.
     if (!this.accountBinding && (await api.getSession({})).user.id !== this.userId) throw new Error(uiText("Sign in with the original account to sync these edits.", "この編集を同期するには、元のアカウントでサインインしてください。"));
     await Promise.all([
-      (async () => {
-        if (Date.now() - this.lastRecoveries < 5_000) return;
-        let after: string | undefined;
-        do {
-          const recovered = await api.listDocumentRecoveries({ signal: this.auxiliaryAbort.signal, headers: this.headers, params: { ...this.params, query: { after } } });
-          for (const entry of recovered.items) this.recoveries.set(entry.id, entry);
-          after = recovered.nextCursor ?? undefined;
-        } while (after);
-        this.lastRecoveries = Date.now();
-      })(),
       (async () => {
         if (Date.now() - this.lastPresence < 5_000) return;
         const response = this.focused
@@ -239,6 +274,8 @@ export class BrowserDocument {
         const recovery = this.recoveries.get(id)!;
         await api.saveDocumentRecovery({ headers: this.headers, params: this.params, body: { ...recovery, blocks: recovery.blocks.map((block) => ({ ...block, type: block.type as RecoveryBlock["type"] })) } }, false);
         this.unsentRecoveries.delete(id);
+        if (!this.displayedRecoveryIDs.has(id)) this.recoveries.delete(id);
+        this.changed();
       }
     })().finally(() => { this.recoverySaving = null; this.releaseIfIdle(); });
     return this.recoverySaving;
@@ -255,7 +292,7 @@ export class BrowserDocument {
   async restore(recovery: DocumentRecovery) {
     await this.localSaves;
     if (this.failedEditorUpdate) throw new Error(this.error);
-    const preview = new DocumentCore(this.session.core.checkpoint(false));
+    const preview = new DocumentCore(encodeBinary(Y.encodeStateAsUpdate(this.editorDocument)));
     try { await this.edit(decodeBinary(preview.restore(recovery.blocks, uuidV7))); }
     finally { preview.destroy(); }
   }
@@ -282,14 +319,14 @@ export class BrowserDocument {
   stop() {
     this.stopped = true; this.auxiliaryAbort.abort(); clearTimeout(this.timer); clearTimeout(this.sendTimer); this.unsubscribe?.(); this.unsubscribe = undefined;
     window.removeEventListener("beforeunload", this.beforeUnload);
-    void this.session.close(); this.editorDocument.destroy();
+    void this.session.close(); this.editorDocument.destroy(); this.retainedDocument.destroy();
   }
 }
 
 async function openDocument(workspaceId: string, meetingId: string): Promise<{ controller: BrowserDocument; release: () => void }> {
   const identity = await api.getSession({});
   const capabilities = await api.getCapabilities({});
-  if (capabilities.documents?.version !== 2) throw new Error(uiText("This server does not support this Notes version.", "このサーバーはこのバージョンのノートに対応していません。"));
+  if (capabilities.documents?.version !== 3) throw new Error(uiText("This server does not support this Notes version.", "このサーバーはこのバージョンのノートに対応していません。"));
   const key = `${identity.user.id}/${workspaceId}/${meetingId}`;
   let controller = sessions.get(key);
   if (!controller) {
@@ -363,12 +400,20 @@ function DocumentEditor({ controller, editable, statusSlot }: { controller: Brow
     {controller.error && <p role="alert" className="text-destructive">{controller.error}<button className="ml-3 underline hover:no-underline" onClick={() => { void controller.sync().catch(() => {}); }}>{uiText("Retry", "再試行")}</button></p>}
     {/* Clicking anywhere in the tall area below the text places the caret. `!` overrides the unlayered editor.css. */}
     <EditorContent editor={editor} className="[&_.tiptap]:min-h-[50vh]!" />
-    {controller.recoveries.size > 0 && <details><summary>{uiText("Preserved deleted paragraphs", "削除された段落の復元用コピー")}</summary>
-      {[...controller.recoveries.values()].map((recovery) => <div key={recovery.id} className="my-3 border-t pt-3"><pre className="whitespace-pre-wrap">{recovery.blocks.map((block) => block.text).join("\n")}</pre>
+    <details onToggle={(event) => { void controller.toggleRecoveries(event.currentTarget.open).catch(() => {}); }}><summary>{uiText("Preserved deleted paragraphs", "削除された段落の復元用コピー")}</summary>
+      <div className="flex gap-3"><button disabled={!controller.recoveryPrevious} className="underline hover:no-underline disabled:opacity-50" onClick={() => { void controller.previousRecoveryPage().catch(() => {}); }}>{uiText("Previous", "前へ")}</button><button disabled={!controller.recoveryNext} className="underline hover:no-underline disabled:opacity-50" onClick={() => { void controller.nextRecoveryPage().catch(() => {}); }}>{uiText("Next", "次へ")}</button></div>
+      {[...controller.recoveries.values()].map((recovery) => <div key={recovery.id} className="my-3 border-t pt-3"><pre className="whitespace-pre-wrap">{recovery.blocks.map((block) => block.text).join("\n").slice(0, 2000)}</pre>
+        <RecoveryText recovery={recovery} />
         {editable && <button className="underline hover:no-underline" onClick={() => { void controller.restore(recovery).catch(() => {}); }}>{uiText("Insert as new paragraphs", "新しい段落として挿入")}</button>}
       </div>)}
-    </details>}
+    </details>
   </div>;
+}
+
+function RecoveryText({ recovery }: { recovery: DocumentRecovery }) {
+  const [open, setOpen] = useState(false);
+  return <details onToggle={(event) => setOpen(event.currentTarget.open)}><summary>{uiText("Show full text", "全文を表示")}</summary>
+    {open && <pre className="whitespace-pre-wrap">{recovery.blocks.map((block) => block.text).join("\n")}</pre>}</details>;
 }
 
 export function PendingDocumentNotice({ userId }: { userId: string }) {

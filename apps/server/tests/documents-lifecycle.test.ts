@@ -38,7 +38,7 @@ function setup() {
   const document = { id: encodeId("document", uuidV7()), workspaceId, meetingId, kind: "notes" as const, title: "", generation, revision: 1, schemaVersion: 2,
     checkpoint: server.checkpoint(), text: "seed", createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() };
   api.getSession.mockResolvedValue({ user: { id: user } });
-  api.getCapabilities.mockResolvedValue({ documents: { version: 2 } });
+  api.getCapabilities.mockResolvedValue({ documents: { version: 3 } });
   api.getMeetingNotes.mockResolvedValue({ document });
   api.exchangeDocument.mockImplementation(async ({ body }: { body: { update?: string; vector: string } }) => {
     if (body.update) server.apply(body.update);

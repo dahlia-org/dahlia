@@ -1,0 +1,8 @@
+<!doctype html><html lang="ja"><meta charset="utf-8"><title>Documents synthetic browser benchmark</title>
+<style>body { max-width: 900px; margin: 40px auto; font-family: system-ui; } .tiptap { outline: none; }</style>
+<pre id="result">Measuring synthetic Notes…</pre><div id="editor"></div>
+<script type="module">
+import { benchmarkDocumentBrowser } from './document-browser-benchmark.ts';
+window.documentBenchmark = benchmarkDocumentBrowser(document.querySelector('#editor'));
+window.documentBenchmark.then(result => { document.querySelector('#result').textContent = JSON.stringify(result, null, 2); }, error => { document.querySelector('#result').textContent = String(error); });
+</script></html>

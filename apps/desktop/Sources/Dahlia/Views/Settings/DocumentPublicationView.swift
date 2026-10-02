@@ -66,7 +66,7 @@ struct DocumentPublicationView: View {
         }
         .task {
             do {
-                archives = try await DocumentPersistence(dbQueue: dbQueue).archives(workspaceID: workspace.id)
+                archives = try await DocumentPersistence.shared(dbQueue: dbQueue).archives(workspaceID: workspace.id)
                 if workspace.accountConnectionId != nil { candidates = try await DocumentPublication.candidates(
                     workspaceID: workspace.id,
                     dbQueue: dbQueue

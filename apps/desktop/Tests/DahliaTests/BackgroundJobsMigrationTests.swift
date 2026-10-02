@@ -7,7 +7,7 @@ import GRDB
 
     @MainActor
     struct BackgroundJobsMigrationTests {
-        @Test(arguments: ["v52_documentsAndSync", "v53_sharedBackgroundJobs"])
+        @Test(arguments: ["v52_documentsAndSync", "v53_sharedBackgroundJobs", "v53_documentsSyncAndBackgroundJobs"])
         func validatesBackupsWithActualMergedDevelopmentHistory(prior: String) throws {
             let url = FileManager.default.temporaryDirectory.appending(path: "merged-backup-\(UUID.v7()).sqlite")
             defer { try? FileManager.default.removeItem(at: url) }
@@ -26,10 +26,13 @@ import GRDB
                 ] {
                     try db.execute(sql: "DELETE FROM grdb_migrations WHERE identifier = ?", arguments: [identifier])
                 }
-                try db.execute(sql: "INSERT INTO grdb_migrations VALUES ('v52_documentsAndSync')")
-                if prior == "v53_sharedBackgroundJobs" {
+                try db.execute(
+                    sql: "INSERT INTO grdb_migrations VALUES (?)",
+                    arguments: [prior == "v53_documentsSyncAndBackgroundJobs" ? prior : "v52_documentsAndSync"]
+                )
+                if prior != "v52_documentsAndSync" {
                     try BackgroundJobsMigration.migrate(in: db)
-                    try db.execute(sql: "INSERT INTO grdb_migrations VALUES ('v53_sharedBackgroundJobs')")
+                    if prior == "v53_sharedBackgroundJobs" { try db.execute(sql: "INSERT INTO grdb_migrations VALUES ('v53_sharedBackgroundJobs')") }
                 }
                 let workspaces = try String(decoding: JSONEncoder().encode([BackupWorkspace(id: workspace.id, name: workspace.name)]), as: UTF8.self)
                 try db.execute(sql: """

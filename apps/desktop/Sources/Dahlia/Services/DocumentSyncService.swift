@@ -78,22 +78,25 @@ actor DocumentSyncService {
     private struct Exchange: Decodable { let generation: UUID
         let revision: Int
         let update: String
+        let accepted: Bool
+        let vector: String
+        let reason: String?
     }
 
     let dbQueue: DatabaseQueue
     let api: SyncAPIClient
     let waitForSendWindow: @Sendable () async throws -> Void
     private let persistence: DocumentPersistence
-    private let worker = DocumentCoreWorker()
     deinit {
-        worker.stop()
         api.session.invalidateAndCancel()
     }
 
     private var capableConnections: Set<UUID> = []
     private var backgroundTask: Task<Void, Never>?
     private var backgroundOwners: [UUID: CheckedContinuation<Void, Never>] = [:]
-    private var recoveryTasks: [UUID: Task<Void, Never>] = [:]
+    private var recoveryTasks: [UUID: Task<Void, Error>] = [:]
+    private var serverVectors: [UUID: (UUID, String)] = [:]
+    private var rejected: [UUID: (generation: UUID, through: Int64?, revision: Int)] = [:]
     private var lastPresence: [UUID: (Date, [String])] = [:]
     var observers: [UUID: [UUID: AsyncStream<Bool>.Continuation]] = [:]
     var observationTasks: [UUID: Task<Void, Never>] = [:]
@@ -117,7 +120,7 @@ actor DocumentSyncService {
         self.dbQueue = dbQueue
         // Documents have their own HTTP connection pool, independent of bulk uploads and domain SSE.
         self.api = SyncAPIClient(session: URLSession(configuration: api.session.configuration), tokenProvider: api.tokenProvider)
-        persistence = DocumentPersistence(dbQueue: dbQueue)
+        persistence = DocumentPersistence.shared(dbQueue: dbQueue)
     }
 
     func target(meetingID: UUID) async throws -> Target? {
@@ -188,7 +191,11 @@ actor DocumentSyncService {
             try await Task.sleep(for: .milliseconds(100))
         }
         repeat {
-            try await synchronize(meetingID: meetingID)
+            do { try await synchronize(meetingID: meetingID) } catch DocumentCoreError.tooLarge {
+                if let id = try await dbQueue
+                    .read({ try parent.document(in: $0)?.id }) { try await recoveries(parent, documentID: id, canWrite: true) }
+                throw DocumentCoreError.tooLarge
+            }
         } while try await dbQueue.read({ db in
             guard let document = try DocumentRecord.notes(in: db, meetingID: meetingID),
                   try DocumentUpdateRecord.filter(Column("documentId") == document.id)
@@ -198,6 +205,10 @@ actor DocumentSyncService {
             }
             return true
         })
+        if let id = try await dbQueue
+            .read({ try parent.document(in: $0)?.id }) {
+            try await recoveries(parent, documentID: id, canWrite: true)
+        }
     }
 
     private func exchange(meetingID: UUID) async throws {
@@ -219,22 +230,12 @@ actor DocumentSyncService {
             let data = try await api.data(origin: target.origin, connectionId: target.connectionID) {
                 try await $0.getCapabilities().ok.body.json
             }
-            guard try JSONDecoder().decode(ServerCapabilities.self, from: data).documents?.version == 2 else {
+            guard try JSONDecoder().decode(ServerCapabilities.self, from: data).documents?.version == 3 else {
                 throw SyncHTTPError(status: 426, body: Data())
             }
             capableConnections.insert(target.connectionID)
         }
         let resident = try await dbQueue.read { try target.document(in: $0)?.resident ?? true }
-        let state: DocumentCoreResult
-        if !resident {
-            state = try await worker.process(DocumentCoreCommand())
-        } else if target.kind == "notes", let meetingID = target.meetingID {
-            state = try await persistence.prepare(meetingID: meetingID)
-        } else if let documentID = target.documentID {
-            state = try await persistence.materialize(documentID: documentID)
-        } else {
-            return
-        }
         let source = try await dbQueue.read { db -> (DocumentRecord?, [DocumentUpdateRecord], Bool) in
             try target.validate(in: db)
             let document = try target.document(in: db)
@@ -293,15 +294,22 @@ actor DocumentSyncService {
         let canonicalID = documentID.uuidString.lowercased()
         // Revoked edits remain locally readable and retryable if permission is restored.
         // A viewer still receives remote changes, without publishing or acknowledging their pending bytes.
-        let batch = try await worker.process(DocumentCoreCommand(pending: source.2 ? source.1.compactMap { entry in
-            entry.id.map { DocumentCoreCommand.Pending(sequence: $0, update: entry.payload) }
-        } : [])).batch
-        let payload = batch?.update
+        let knownVector = serverVectors[documentID].flatMap { $0.0 == generation ? $0.1 : nil }
+        let rejection = rejected[documentID].flatMap { $0.generation == generation ? $0 : nil }
+        let captured = try await persistence.sendingState(
+            documentID: documentID,
+            serverVector: knownVector,
+            canWrite: source.2,
+            rejectedThrough: rejection?.through,
+            rejectedRevision: rejection?.revision
+        )
+        let oversized = (captured.update?.utf8.count ?? 0) > DocumentLimits.encodedUpdateBytes
+        let payload = oversized ? nil : captured.update
         let response: Data
         do { response = try await api.data(origin: target.origin, connectionId: target.connectionID, maximumBytes: DocumentLimits.responseBytes) {
             try await $0.exchangeDocument(
                 path: .init(workspaceId: workspaceID, documentId: canonicalID),
-                body: .json(.init(generation: generation.uuidString.lowercased(), vector: state.vector, update: payload))
+                body: .json(.init(protocolVersion: 3, generation: generation.uuidString.lowercased(), vector: captured.vector, update: payload))
             )
             .ok.body.json
         }
@@ -329,25 +337,36 @@ actor DocumentSyncService {
             revision: result.revision,
             validate: target.validate
         )
-        if let through = batch?.through {
+        serverVectors[current.id] = (result.generation, result.vector)
+        if result.accepted, payload != nil, let through = captured.through {
             try await dbQueue.write { db in
                 try target.validate(in: db)
                 try db.execute(sql: "UPDATE document_updates SET pending = 0 WHERE documentId = ? AND id <= ?", arguments: [current.id, through])
             }
         }
         scheduleRecoveries(target, documentID: current.id, canWrite: source.2)
+        if !result.accepted || oversized {
+            rejected[current.id] = (result.generation, captured.through, result.revision)
+            throw DocumentCoreError.tooLarge
+        }
+        if captured.through != nil, payload == nil,
+           let rejection = rejected[current.id], rejection.generation == result.generation,
+           rejection.through == captured.through, rejection.revision == captured.revision {
+            throw DocumentCoreError.tooLarge
+        }
+        if payload != nil { rejected[current.id] = nil }
     }
 
     private func scheduleRecoveries(_ target: Target, documentID: UUID, canWrite: Bool) {
-        guard recoveryTasks[documentID] == nil else { return }
-        recoveryTasks[documentID] = Task { [weak self] in
-            await self?.exchangeRecoveries(target, documentID: documentID, canWrite: canWrite)
-        }
+        Task { try? await recoveries(target, documentID: documentID, canWrite: canWrite) }
     }
 
-    private func exchangeRecoveries(_ target: Target, documentID: UUID, canWrite: Bool) async {
+    private func recoveries(_ target: Target, documentID: UUID, canWrite: Bool) async throws {
+        if let task = recoveryTasks[documentID] { return try await task.value }
+        let task = Task { try await self.exchangeRecoveries(target, documentID: documentID, canWrite: canWrite) }
+        recoveryTasks[documentID] = task
         defer { recoveryTasks[documentID] = nil }
-        try? await recoveries(target, documentID: documentID, canWrite: canWrite)
+        try await task.value
     }
 
     func presence(meetingID: UUID, sessionID: UUID, editing: Bool) async throws -> [String] {
@@ -373,28 +392,32 @@ actor DocumentSyncService {
         return names
     }
 
-    private func recoveries(_ target: Target, documentID: UUID, canWrite: Bool) async throws {
-        let pending = try await dbQueue.read { db in
-            try DocumentRecoveryRecord.filter(Column("documentId") == documentID).filter(Column("pending") == true).fetchAll(db)
-        }
+    private func exchangeRecoveries(_ target: Target, documentID: UUID, canWrite: Bool) async throws {
+        let expectedGeneration = try await dbQueue.read { try DocumentRecord.fetchOne($0, key: documentID)?.generation }
         let workspace = target.workspaceID.uuidString.lowercased(), document = documentID.uuidString.lowercased()
-        for entry in pending where canWrite {
-            try await dbQueue.read { try target.validate(in: $0) }
-            let blocks = try JSONDecoder().decode([DocumentBlock].self, from: Data(entry.blocksJSON.utf8))
-            struct Payload: Encodable { let id: UUID
-                let reason: String
-                let blocks: [DocumentBlock]
+        while canWrite {
+            let pending = try await dbQueue.read { db in
+                try DocumentRecoveryRecord.filter(Column("documentId") == documentID).filter(Column("pending") == true).limit(100).fetchAll(db)
             }
-            let body = try JSONDecoder().decode(
-                Components.Schemas.DocumentRecovery.self,
-                from: JSONEncoder().encode(Payload(id: entry.id, reason: entry.reason, blocks: blocks))
-            )
-            _ = try await api.data(origin: target.origin, connectionId: target.connectionID) {
-                try await $0.saveDocumentRecovery(path: .init(workspaceId: workspace, documentId: document), body: .json(body)).ok.body.json
-            }
-            try await dbQueue.write { db in
-                try target.validate(in: db)
-                try db.execute(sql: "UPDATE document_recoveries SET pending = 0 WHERE id = ?", arguments: [entry.id])
+            if pending.isEmpty { break }
+            for entry in pending {
+                try await dbQueue.read { try target.validate(in: $0) }
+                let blocks = try JSONDecoder().decode([DocumentBlock].self, from: Data(entry.blocksJSON.utf8))
+                struct Payload: Encodable { let id: UUID
+                    let reason: String
+                    let blocks: [DocumentBlock]
+                }
+                let body = try JSONDecoder().decode(
+                    Components.Schemas.DocumentRecovery.self,
+                    from: JSONEncoder().encode(Payload(id: entry.id, reason: entry.reason, blocks: blocks))
+                )
+                _ = try await api.data(origin: target.origin, connectionId: target.connectionID) {
+                    try await $0.saveDocumentRecovery(path: .init(workspaceId: workspace, documentId: document), body: .json(body)).ok.body.json
+                }
+                try await dbQueue.write { db in
+                    try target.validate(in: db)
+                    try db.execute(sql: "UPDATE document_recoveries SET pending = 0 WHERE id = ?", arguments: [entry.id])
+                }
             }
         }
         struct Page: Decodable {
@@ -402,12 +425,14 @@ actor DocumentSyncService {
                 let reason: String
                 let blocks: [DocumentBlock]
                 let createdAt: String
+                let sequence: Int64
             }
 
             let items: [Item]
             let nextCursor: String?
+            let cursor: String
         }
-        var after: String?
+        var after = try await dbQueue.read { try DocumentRecord.fetchOne($0, key: documentID)?.recoveryCursor }
         repeat {
             let cursor = after
             let data = try await api.data(origin: target.origin, connectionId: target.connectionID, maximumBytes: DocumentLimits.responseBytes) {
@@ -426,14 +451,18 @@ actor DocumentSyncService {
                     blocksJSON: String(decoding: JSONEncoder().encode(item.blocks), as: UTF8.self),
                     reason: item.reason,
                     pending: false,
-                    createdAt: date
+                    createdAt: date,
+                    serverSequence: item.sequence
                 )
             }
             try await dbQueue.write { db in
                 try target.validate(in: db)
+                guard try DocumentRecord.fetchOne(db, key: documentID)?.generation == expectedGeneration else { throw TextContentError.changed }
                 for row in rows {
                     try row.insert(db, onConflict: .ignore)
+                    try db.execute(sql: "UPDATE document_recoveries SET serverSequence = ? WHERE id = ?", arguments: [row.serverSequence, row.id])
                 }
+                try db.execute(sql: "UPDATE documents SET recoveryCursor = ? WHERE id = ?", arguments: [page.cursor, documentID])
             }
             after = page.nextCursor
         } while after != nil

@@ -852,7 +852,7 @@ export function createApp(dependencies: AppDependencies): DahliaServerApp & { ru
   registerApi(app, "listDocumentRecoveries", async (context) => {
     const identity = await documentIdentity(context.req.raw);
     const ids = documentParameters(context.req.param("workspaceId")!, context.req.param("documentId")!);
-    return context.json(await store.sync.withIdentity(identity, (scoped) => scoped.documentRecoveries(...ids, context.req.query("after"))));
+    return context.json(await store.sync.withIdentity(identity, (scoped) => scoped.documentRecoveries(...ids, context.req.query("after"), context.req.query("mode") as "sync" | "display" | undefined)));
   });
   registerApi(app, "getDocumentPresence", async (context) => {
     const identity = await documentIdentity(context.req.raw);
@@ -880,7 +880,7 @@ export function createApp(dependencies: AppDependencies): DahliaServerApp & { ru
     if (!parsed.success) throw new RequestError(400, "invalid_document_request");
     const body = parsed.data;
     const result = await store.sync.withIdentity(identity, (scoped) => scoped.exchangeDocument(...ids, body));
-    if (body.update) publishDocumentChange(...ids);
+    if (body.update && result.accepted) publishDocumentChange(...ids);
     return context.json(result);
   });
   registerApi(app, "saveDocumentRecovery", documentBodyLimit, async (context) => {
@@ -911,7 +911,7 @@ export function createApp(dependencies: AppDependencies): DahliaServerApp & { ru
     const sources = dependencies.summaryService?.methods.map((method) => method.id) ?? [];
     return context.json({
       sync: { version: 7 },
-      documents: { version: 2, accountBinding: true },
+      documents: { version: 3, accountBinding: true },
       ...(config.encryption ? { workspaceEncryption: { version: 1 } } : {}),
       workspaceTransfers: { version: 1 },
       recordingArchive: { version: 1 },

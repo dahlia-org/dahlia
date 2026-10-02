@@ -102,6 +102,7 @@ export class DocumentBinding {
   private applying = false;
   private timer?: ReturnType<typeof setTimeout>;
   private size: number;
+  private layout?: LayoutNode[];
   constructor(readonly editor: Editor, readonly document: Y.Doc, private readonly onError: (message: string) => void, private readonly onRecovery: (blocks: DocumentBlock[]) => void) {
     if (adapters.has(document)) throw new Error("document_editor_already_attached");
     adapters.set(document, this);
@@ -112,6 +113,8 @@ export class DocumentBinding {
     document.on("beforeTransaction", this.beforeY);
     document.on("afterTransaction", this.afterY);
     blockMap(document).observeDeep(this.invalidate);
+    rootOrder(document).observe(this.invalidateLayout);
+    document.on("update", this.measureRemote);
     editor.on("transaction", this.onTransaction);
   }
   initialize(): Node { this.rendered = this.build(this.editor.schema); return this.rendered; }
@@ -128,14 +131,19 @@ export class DocumentBinding {
       const node = schema.nodes[layout.type]!.create({ ...renderedAttributes(layout.type, layout.block), id: layout.id }, children.length ? children : content);
       this.cache.set(layout.id, { node, children, type: layout.type }); return node;
     };
-    const content = blockLayout(this.document).map(visit);
+    const content = (this.layout ??= blockLayout(this.document)).map(visit);
     return schema.nodes.doc!.create(null, content.length ? content : schema.nodes.paragraph!.create({ id: null }));
   }
   private invalidate = (events: Y.YEvent<Y.AbstractType<unknown>>[]) => {
     for (const event of events) {
+      if (!(event instanceof Y.YTextEvent)) this.layout = undefined;
       if (event.path.length) this.cache.delete(String(event.path[0]));
       else if (event instanceof Y.YMapEvent) for (const key of event.keysChanged) if (typeof key === "string") this.cache.delete(key);
     }
+  };
+  private invalidateLayout = () => { this.layout = undefined; };
+  private measureRemote = (update: Uint8Array, origin: unknown) => {
+    if (origin !== this) this.size += update.byteLength + 64;
   };
   private beforeY = (transaction: Y.Transaction) => {
     if (!this.rendered || transaction.origin === this) return;
@@ -145,8 +153,7 @@ export class DocumentBinding {
     }
   };
   private afterY = (transaction: Y.Transaction) => {
-    if (transaction.origin === this) return;
-    this.size = Y.encodeStateAsUpdate(this.document).byteLength;
+    if (transaction.origin === this || transaction.changed.size === 0) return;
     if (!this.composing()) this.receive();
   };
   private composing(): boolean { try { return this.editor.view.composing; } catch { return false; } }
@@ -252,7 +259,8 @@ export class DocumentBinding {
   destroy(): void {
     clearTimeout(this.timer); this.draft?.destroy();
     this.document.off("beforeTransaction", this.beforeY); this.document.off("afterTransaction", this.afterY);
-    blockMap(this.document).unobserveDeep(this.invalidate); this.undoManager.destroy();
+    blockMap(this.document).unobserveDeep(this.invalidate);
+    rootOrder(this.document).unobserve(this.invalidateLayout); this.document.off("update", this.measureRemote); this.undoManager.destroy();
     this.editor.off("transaction", this.onTransaction); adapters.delete(this.document);
   }
 }

@@ -169,8 +169,8 @@ export class DocumentEditorHydration {
     // prerequisites even when remote hydration has since replaced the placeholder.
     return Y.encodeStateAsUpdate(this.document, this.hostVector);
   }
-  receive(checkpoint: Uint8Array) {
-    if (this.firstLocalUpdate) this.hostVector = Y.encodeStateVectorFromUpdate(checkpoint);
+  receive(checkpoint: Uint8Array, vector = Y.encodeStateVectorFromUpdate(checkpoint)) {
+    if (this.firstLocalUpdate) this.hostVector = vector;
     if (this.locallyEdited) {
       // Own save acknowledgements contain no new structs or deletions. Avoid a full
       // clone/projection for them, but never use clocks alone to skip a remote purge.
@@ -188,7 +188,7 @@ export class DocumentEditorHydration {
         }
         finally { preview.destroy(); }
       }
-      const known = Y.decodeStateVector(Y.encodeStateVectorFromUpdate(checkpoint));
+      const known = Y.decodeStateVector(vector);
       this.locallyEdited = [...Y.decodeStateVector(Y.encodeStateVector(this.document))]
         .some(([client, clock]) => clock > (known.get(client) ?? 0));
     }

@@ -1,12 +1,12 @@
 import type { SyncLocks } from "../sync/locks";
-import { and, asc, eq, gt, inArray, isNull, lte, or, sql, type AnyColumn, type SQL } from "drizzle-orm";
+import { and, asc, desc, lt, eq, gt, inArray, isNull, lte, or, sql, type AnyColumn, type SQL } from "drizzle-orm";
 import type { NodePgDatabase } from "drizzle-orm/node-postgres";
 import type * as Schema from "../db/auth-schema";
 import type { Identity } from "../auth/identity";
 import type { createContentEncryption } from "../encryption/store";
 import { RequestError } from "../storage/upload";
 import { uuidV7 } from "../id";
-import { DocumentCore, documentSchemaVersion, documentStateLimit, emptyDocumentUpdate, removedBlocks, type DocumentRecovery } from "./core";
+import { DocumentCore, decodeBinary, encodeBinary, documentSchemaVersion, documentStateLimit, emptyDocumentUpdate, type DocumentRecovery } from "./core";
 import { documentRecoveryPageBytes } from "./model";
 
 type DocumentRow = typeof Schema.document.$inferSelect;
@@ -21,8 +21,8 @@ export interface DocumentStore {
   getDocument(workspaceId: string, id: string): Promise<SharedDocument | null>;
   listDocuments(workspaceId: string, after?: string): Promise<{ items: { id: string; meetingId: string | null; kind: DocumentMetadata["kind"]; revision: number; generation: string }[]; nextCursor: string | null }>;
   initializeDocument(workspaceId: string, id: string, metadata: DocumentMetadata): Promise<SharedDocument>;
-  exchangeDocument(workspaceId: string, id: string, request: DocumentExchangeRequest): Promise<{ generation: string; revision: number; update: string }>;
-  documentRecoveries(workspaceId: string, id: string, after?: string): Promise<{ items: (DocumentRecovery & { createdAt: Date })[]; nextCursor: string | null }>;
+  exchangeDocument(workspaceId: string, id: string, request: DocumentExchangeRequest): Promise<{ accepted: boolean; reason?: "document_too_large"; generation: string; revision: number; vector: string; update: string }>;
+  documentRecoveries(workspaceId: string, id: string, after?: string, mode?: "sync" | "display"): Promise<{ items: (DocumentRecovery & { sequence: number; createdAt: Date })[]; nextCursor: string | null; cursor: string }>;
   saveDocumentRecovery(workspaceId: string, id: string, recovery: DocumentRecovery): Promise<void>;
   documentPresence(workspaceId: string, id: string, sessionId?: string): Promise<{ userId: string; name: string }[]>;
 }
@@ -87,8 +87,9 @@ export function createDocumentStore(db: NodePgDatabase, schema: typeof Schema, i
     text: row.text, checkpoint: core.checkpoint(), createdAt: row.createdAt, updatedAt: row.updatedAt });
   async function recordRecovery(workspaceId: string, id: string, recovery: DocumentRecovery) {
     const table = schema.documentRecovery;
+    const [head] = await db.select({ sequence: sql<number>`coalesce(max(${table.sequence}), 0)` }).from(table).where(eq(table.documentId, id));
     const inserted = await db.insert(table).values(await content.write(table,
-      { ...recovery, documentId: id, workspaceId, createdAt: new Date() })).onConflictDoNothing().returning({ id: table.id });
+      { ...recovery, sequence: Number(head!.sequence) + 1, documentId: id, workspaceId, createdAt: new Date() })).onConflictDoNothing().returning({ id: table.id });
     if (!inserted.length) {
       const [existing] = await content.read(table, await db.select().from(table).where(and(eq(table.id, recovery.id), eq(table.documentId, id), eq(table.workspaceId, workspaceId))));
       if (!existing || existing.reason !== recovery.reason || JSON.stringify(existing.blocks) !== JSON.stringify(recovery.blocks)) {
@@ -210,18 +211,23 @@ export function createDocumentStore(db: NodePgDatabase, schema: typeof Schema, i
       const { row, core } = loaded;
       try {
         if (request.generation !== row.generation) throw new RequestError(409, "document_generation_changed");
-        const before = core.projection(false), checkpoint = core.checkpoint(false), vector = core.vector();
+        const checkpoint = core.checkpoint(false), vector = core.vector();
         let difference: string;
         let blocks: DocumentRecovery["blocks"] = [];
         try {
           if (request.update) {
-            core.apply(request.update);
-            blocks = removedBlocks(before, core.projection(false));
+            blocks = core.apply(request.update);
             core.purgeDeletedBlocks(Date.now() - deletionGraceHours * 60 * 60 * 1000);
             validProjection(core);
           }
           difference = core.difference(request.vector);
-        } catch (error) { throw documentError(error); }
+        } catch (error) {
+          if (!(error instanceof Error) || error.message !== "document_too_large") throw documentError(error);
+          const canonical = new DocumentCore(checkpoint);
+          try { return { accepted: false, reason: "document_too_large", generation: row.generation, revision: row.revision,
+            vector: canonical.vector(), update: canonical.difference(request.vector) }; }
+          finally { canonical.destroy(); }
+        }
         if (request.update && core.checkpoint() !== checkpoint) {
           const projection = validProjection(core), revision = row.revision + 1;
           if (blocks.length) await recordRecovery(workspaceId, id, { id: uuidV7(), reason: "deleted", blocks });
@@ -236,36 +242,48 @@ export function createDocumentStore(db: NodePgDatabase, schema: typeof Schema, i
           if (compact) await db.delete(schema.documentUpdate).where(and(eq(schema.documentUpdate.documentId, id), lte(schema.documentUpdate.revision, revision)));
           row.revision = revision;
         }
-        return { generation: row.generation, revision: row.revision, update: difference };
+        return { accepted: true, generation: row.generation, revision: row.revision, vector: core.vector(), update: difference };
       } finally { core.destroy(); }
     },
-    async documentRecoveries(workspaceId, id, after) {
+    async documentRecoveries(workspaceId, id, after, mode = "sync") {
       await authorize(workspaceId, id);
+      if (mode !== "sync" && mode !== "display") throw new RequestError(400, "invalid_document_cursor");
       const table = schema.documentRecovery;
-      // Select a bounded payload before reading/decrypting it. Four bytes per SQL
-      // character conservatively covers UTF-8 in both dialects and encrypted JSON.
-      const candidates = await db.select({ id: table.id,
+      const [document] = await db.select({ generation: schema.document.generation }).from(schema.document).where(eq(schema.document.id, id));
+      const [head] = await db.select({ sequence: sql<number>`coalesce(max(${table.sequence}), 0)` }).from(table).where(eq(table.documentId, id));
+      let highWater = Number(head!.sequence), position = mode === "sync" ? 0 : highWater + 1;
+      if (after) {
+        try {
+          const cursor = JSON.parse(new TextDecoder().decode(decodeBinary(after, 1024))) as { version: number; document: string; generation: string; mode: string; after: number; highWater: number | null };
+          if (cursor.version !== 1 || cursor.document !== id || cursor.generation !== document!.generation || cursor.mode !== mode
+            || !Number.isSafeInteger(cursor.after) || cursor.after < 0
+            || (cursor.highWater !== null && (!Number.isSafeInteger(cursor.highWater) || cursor.highWater < 0))) throw new Error();
+          position = cursor.after; highWater = cursor.highWater ?? highWater;
+        } catch { throw new RequestError(400, "invalid_document_cursor"); }
+      }
+      const order = mode === "sync" ? asc(table.sequence) : desc(table.sequence);
+      const candidates = await db.select({ id: table.id, sequence: table.sequence,
         bytes: sql<number>`4 * (length(cast(${table.blocks} as text)) + coalesce(length(${table.encryptedPayload}), 0)) + 256`,
-      }).from(table).where(and(eq(table.documentId, id), eq(table.workspaceId, workspaceId),
-        after ? gt(table.id, after) : undefined)).orderBy(asc(table.id)).limit(101);
-      const selected: string[] = [];
-      let bytes = 128;
+      }).from(table).where(and(eq(table.documentId, id), eq(table.workspaceId, workspaceId), lte(table.sequence, highWater),
+        mode === "sync" ? gt(table.sequence, position) : lt(table.sequence, position))).orderBy(order).limit(101);
+      const selected: string[] = []; let bytes = 128;
       for (const candidate of candidates) {
-        // A single legal record must make progress even above the usual page budget.
         if (selected.length && (selected.length >= 100 || bytes + Number(candidate.bytes) > documentRecoveryPageBytes)) break;
         selected.push(candidate.id); bytes += Number(candidate.bytes);
       }
       const rows = selected.length ? await content.read(table, await db.select().from(table).where(and(
         eq(table.documentId, id), eq(table.workspaceId, workspaceId), inArray(table.id, selected),
-      )).orderBy(asc(table.id))) : [];
-      return { items: rows.map(({ id, blocks, reason, createdAt }) => ({ id, blocks, reason, createdAt })),
-        nextCursor: candidates.length > selected.length ? selected.at(-1)! : null };
+      )).orderBy(order)) : [];
+      const more = candidates.length > selected.length;
+      const token = (position: number, ceiling: number | null) => encodeBinary(new TextEncoder().encode(JSON.stringify({
+        version: 1, document: id, generation: document!.generation, mode, after: position, highWater: ceiling,
+      })));
+      const nextCursor = more ? token(rows.at(-1)!.sequence, highWater) : null;
+      return { items: rows.map(({ id, blocks, reason, sequence, createdAt }) => ({ id, blocks, reason, sequence, createdAt })),
+        nextCursor, cursor: nextCursor ?? token(mode === "sync" ? highWater : (rows.at(-1)?.sequence ?? position), mode === "sync" ? null : highWater) };
     },
     async saveDocumentRecovery(workspaceId, id, recovery) {
       await authorize(workspaceId, id, true);
-      const loaded = await load(workspaceId, id);
-      if (!loaded) throw new RequestError(404, "document_unavailable");
-      loaded.core.destroy();
       await recordRecovery(workspaceId, id, recovery);
     },
     async documentPresence(workspaceId, id, sessionId) {

@@ -2998,6 +2998,15 @@
       "DocumentExchangeResult": {
         "type": "object",
         "properties": {
+          "accepted": {
+            "type": "boolean"
+          },
+          "reason": {
+            "type": "string",
+            "enum": [
+              "document_too_large"
+            ]
+          },
           "generation": {
             "type": "string",
             "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i"
@@ -3005,20 +3014,32 @@
           "revision": {
             "type": "integer"
           },
+          "vector": {
+            "type": "string",
+            "maxLength": 11184812
+          },
           "update": {
             "type": "string",
             "maxLength": 11184812
           }
         },
         "required": [
+          "accepted",
           "generation",
           "revision",
+          "vector",
           "update"
         ]
       },
       "DocumentExchange": {
         "type": "object",
         "properties": {
+          "protocolVersion": {
+            "type": "number",
+            "enum": [
+              3
+            ]
+          },
           "generation": {
             "type": "string",
             "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i"
@@ -3033,6 +3054,7 @@
           }
         },
         "required": [
+          "protocolVersion",
           "generation",
           "vector"
         ],
@@ -3051,12 +3073,17 @@
                 {
                   "type": "object",
                   "properties": {
+                    "sequence": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
                     "createdAt": {
                       "type": "string",
                       "format": "date-time"
                     }
                   },
                   "required": [
+                    "sequence",
                     "createdAt"
                   ],
                   "additionalProperties": false
@@ -3070,11 +3097,15 @@
               "null"
             ],
             "pattern": "^drec_[0-7][0-9abcdefghjkmnpqrstvwxyz]{25}$"
+          },
+          "cursor": {
+            "type": "string"
           }
         },
         "required": [
           "items",
-          "nextCursor"
+          "nextCursor",
+          "cursor"
         ]
       },
       "DocumentRecovery": {
@@ -10018,10 +10049,23 @@
           {
             "schema": {
               "type": "string",
+              "maxLength": 1024,
               "pattern": "^drec_[0-7][0-9abcdefghjkmnpqrstvwxyz]{25}$"
             },
             "required": false,
             "name": "after",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "sync",
+                "display"
+              ]
+            },
+            "required": false,
+            "name": "mode",
             "in": "query"
           },
           {

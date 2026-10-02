@@ -38,15 +38,11 @@
                 try MeetingRecord(id: meeting, workspaceId: workspace, name: "Meeting", createdAt: .now, updatedAt: .now).insert(db)
                 try MeetingNoteRecord(meetingId: meeting, text: "private legacy\nNotes", createdAt: .now, updatedAt: .now).insert(db)
                 if hasDocuments {
-                    try DocumentRecord(
-                        id: document,
-                        workspaceId: workspace,
-                        meetingId: meeting,
-                        checkpoint: "AAA=",
-                        text: "retained",
-                        createdAt: .now,
-                        updatedAt: .now
-                    ).insert(db)
+                    // Seed the historical schema without columns introduced by v54.
+                    try db.execute(sql: """
+                    INSERT INTO documents(id, workspace_id, meetingId, kind, checkpoint, text, createdAt, updatedAt)
+                    VALUES (?, ?, ?, 'notes', 'AAA=', 'retained', ?, ?)
+                    """, arguments: [document, workspace, meeting, Date.now, Date.now])
                     var update = DocumentUpdateRecord(documentId: document, payload: "AAA=", pending: true, createdAt: .now)
                     try update.insert(db)
                 }

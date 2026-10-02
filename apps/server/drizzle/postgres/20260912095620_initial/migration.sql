@@ -55,6 +55,7 @@ CREATE TABLE "app"."document_presence" (
 --> statement-breakpoint
 ALTER TABLE "app"."document_presence" ENABLE ROW LEVEL SECURITY;--> statement-breakpoint
 CREATE TABLE "app"."document_recoveries" (
+	"sequence" integer NOT NULL,
 	"id" uuid PRIMARY KEY,
 	"document_id" uuid NOT NULL,
 	"workspace_id" uuid NOT NULL,
@@ -591,7 +592,7 @@ CREATE INDEX "jobs_queue_lease_idx" ON "jobs"."queue" ("status","lease_until","t
 CREATE UNIQUE INDEX "document_meeting_notes_unique" ON "app"."documents" ("meeting_id") WHERE "kind" = 'notes';--> statement-breakpoint
 CREATE INDEX "document_presence_document_expiry" ON "app"."document_presence" ("document_id","expires_at");--> statement-breakpoint
 CREATE INDEX "document_presence_workspace_expiry" ON "app"."document_presence" ("workspace_id","expires_at");--> statement-breakpoint
-CREATE INDEX "document_recoveries_document_cursor" ON "app"."document_recoveries" ("document_id","id");--> statement-breakpoint
+CREATE UNIQUE INDEX "document_recoveries_document_cursor" ON "app"."document_recoveries" ("document_id","sequence");--> statement-breakpoint
 CREATE INDEX "image_analysis_job_claim_idx" ON "jobs"."image_analysis" ("status","available_at","lease_expires_at");--> statement-breakpoint
 CREATE INDEX "image_analysis_job_owner_idx" ON "jobs"."image_analysis" ("owner_user_id","available_at");--> statement-breakpoint
 CREATE INDEX "meeting_attachments_file_idx" ON "app"."meeting_attachments" ("file_id");--> statement-breakpoint
