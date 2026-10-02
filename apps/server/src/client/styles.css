@@ -144,9 +144,11 @@
   .meeting-metadata { @apply flex flex-wrap gap-1.5; }
   .metadata-chip { @apply inline-flex max-w-full items-center gap-1.5 rounded-full bg-muted px-2.5 py-1 text-xs font-medium text-muted-foreground; }
   a.metadata-chip { @apply hover:bg-accent; }
-  .breadcrumb-menu-item { @apply relative; }
-  .breadcrumb-submenu { @apply invisible pointer-events-none absolute left-full top-0 z-10 ml-1 grid w-64 translate-x-1 gap-0.5 rounded-lg border bg-popover p-1 opacity-0 shadow-md transition-[opacity,transform] duration-150 motion-reduce:transition-none max-md:hidden; }
-  .breadcrumb-menu-item:hover > .breadcrumb-submenu, .breadcrumb-menu-item:focus-within > .breadcrumb-submenu { @apply visible pointer-events-auto translate-x-0 opacity-100; }
+  .breadcrumb-trigger { max-width: 24ch; }
+  .breadcrumb-trigger[data-kind="meeting"] { max-width: 64ch; }
+  .breadcrumb-trigger > svg { flex-shrink: 0; }
+  .breadcrumb-submenu[data-wide] { width: min(520px, calc(100vw - 24px)); }
+  .breadcrumb-submenu { max-width: var(--radix-hover-card-content-available-width); @apply z-50 w-64 rounded-lg border bg-popover p-1 text-popover-foreground shadow-md max-md:hidden; }
   .meeting-description { @apply mt-3 text-sm text-muted-foreground; }
   .meeting-description summary { @apply cursor-pointer; }
   .meeting-description p, .project-description { @apply whitespace-pre-wrap break-words leading-7; }
