@@ -203,6 +203,7 @@ extension ScreenshotContentProvider {
     }
 
     func trimFiles(dbQueue: DatabaseQueue, budget: Int? = nil, now: Date = .now, retentionDays: Int? = nil) throws {
+        guard (retentionDays ?? ServerContentRetention.days()) > 0 else { return }
         // ponytail: pause eviction during publication or account moves; use per-file leases if contention becomes material.
         guard activeFileWork == 0, retainedWorkspaces.withLock({ $0.values.allSatisfy(\.isEmpty) }) else { return }
         let files = try fileStore(for: dbQueue)

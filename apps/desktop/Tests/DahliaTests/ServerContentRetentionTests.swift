@@ -37,6 +37,35 @@
             #expect(!ServerContentRetention.allowsEviction(lastUsedAt: nil, now: boundary, days: days))
         }
 
+        @Test(arguments: ["text", "images", "index"])
+        func foreverSkipsDatabaseAndIndexWork(entry: String) async throws {
+            let root = FileManager.default.temporaryDirectory.appending(path: "retention-skip-\(UUID.v7())")
+            defer { try? FileManager.default.removeItem(at: root) }
+            if entry == "text" {
+                let database = try AppDatabaseManager(path: ":memory:")
+                try database.close()
+                let provider = MeetingContentProvider()
+                try await provider.trim(dbQueue: database.dbQueue, retentionDays: 0)
+                await #expect(throws: (any Error).self) {
+                    try await provider.trim(dbQueue: database.dbQueue, retentionDays: 1)
+                }
+            } else if entry == "images" {
+                let database = try AppDatabaseManager(path: ":memory:")
+                try database.close()
+                let provider = try ScreenshotContentProvider(cache: ScreenshotFileStore(directory: root))
+                try await provider.trimFiles(dbQueue: database.dbQueue, retentionDays: 0)
+                await #expect(throws: (any Error).self) {
+                    try await provider.trimFiles(dbQueue: database.dbQueue, retentionDays: 1)
+                }
+            } else {
+                let cache = try ScreenshotFileStore(directory: root)
+                let index = try DatabaseQueue(path: root.appending(path: "index.sqlite").path)
+                try await index.write { try $0.execute(sql: "DROP TABLE images") }
+                try cache.trim(budget: 0, protecting: [], retentionDays: 0)
+                #expect(throws: (any Error).self) { try cache.trim(budget: 0, protecting: [], retentionDays: 1) }
+            }
+        }
+
         @Test func transcriptSurvivesCapacityPressureAndForeverThenCanBeRefetched() async throws {
             let support = TextContentTests()
             let fixture = try support.textFixture()

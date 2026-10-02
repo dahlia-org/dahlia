@@ -128,6 +128,7 @@ public final class ScreenshotFileStore: Sendable {
         retentionDays: Int? = nil
     ) throws {
         guard !readOnly else { throw ScreenshotContentError.unavailable }
+        guard (retentionDays ?? ServerContentRetention.days()) > 0 else { return }
         let budget = budget ?? Self.configuredBudget
         try index.write { db in
             let rows = try Row.fetchAll(db, sql: "SELECT key, byteCount, variant, accessedAt FROM images ORDER BY accessedAt")

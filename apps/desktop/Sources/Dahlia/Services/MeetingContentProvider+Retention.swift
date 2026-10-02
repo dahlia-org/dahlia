@@ -75,6 +75,7 @@ extension MeetingContentProvider {
         now: Date = .now,
         retentionDays: Int? = nil
     ) async throws {
+        guard (retentionDays ?? ServerContentRetention.days()) > 0 else { return }
         var used = try await Self.usedBytes(dbQueue: dbQueue)
         guard used > capacity else { return }
         let candidates = try await dbQueue.read { db in
