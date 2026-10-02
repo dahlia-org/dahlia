@@ -6,12 +6,18 @@ public struct TextBrokerRequest: Codable, Sendable {
     public let operation: Operation
     public let meetingId: UUID?
     public let entity: TextContentEntity?
+    public private(set) var fileId: UUID?
     public let query: String?
     public let kind: TextSearchKind?
     public let cursor: String?
     public let limit: Int
     public let fromElapsedSeconds: Double?
     public let toElapsedSeconds: Double?
+
+    public init(touchingFile fileId: UUID, meetingId: UUID) {
+        self.init(operation: .touch, meetingId: meetingId, entity: .file)
+        self.fileId = fileId
+    }
 
     public init(
         operation: Operation,
@@ -24,6 +30,7 @@ public struct TextBrokerRequest: Codable, Sendable {
         fromElapsedSeconds: Double? = nil,
         toElapsedSeconds: Double? = nil
     ) {
+        fileId = nil
         self.operation = operation
         self.meetingId = meetingId
         self.entity = entity

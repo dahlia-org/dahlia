@@ -189,7 +189,10 @@ actor DocumentPersistence {
                     }
                     if local {
                         try WorkspaceTransferFence.recordLocalMutation(workspaceID: workspace.id, in: db)
-                        try db.execute(sql: "UPDATE documents SET locallyEdited = 1, updatedAt = ? WHERE id = ?", arguments: [now, document.id])
+                        try db.execute(
+                            sql: "UPDATE documents SET locallyEdited = 1, updatedAt = ?, lastAccessedAt = ? WHERE id = ?",
+                            arguments: [now, now, document.id]
+                        )
                     }
                     return false
                 }
@@ -386,8 +389,11 @@ actor DocumentPersistence {
                     )
                 }
                 try db.execute(
-                    sql: "UPDATE documents SET generation = ?, revision = ?, resident = 1 WHERE id = ?",
-                    arguments: [generation, nextRevision, document.id]
+                    sql: """
+                    UPDATE documents SET generation = ?, revision = ?, resident = 1,
+                        lastAccessedAt = CASE WHEN resident = 0 THEN ? ELSE coalesce(lastAccessedAt, ?) END WHERE id = ?
+                    """,
+                    arguments: [generation, nextRevision, now, now, document.id]
                 )
                 return true
             }

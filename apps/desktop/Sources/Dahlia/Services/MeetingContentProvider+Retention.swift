@@ -1,3 +1,4 @@
+import DahliaMeetingAccess
 import DahliaRuntimeSupport
 import Foundation
 import GRDB
@@ -68,7 +69,12 @@ extension MeetingContentProvider {
         }
     }
 
-    func trim(dbQueue: DatabaseQueue, capacity: Int = MeetingContentProvider.capacityBytes) async throws {
+    func trim(
+        dbQueue: DatabaseQueue,
+        capacity: Int = MeetingContentProvider.capacityBytes,
+        now: Date = .now,
+        retentionDays: Int? = nil
+    ) async throws {
         var used = try await Self.usedBytes(dbQueue: dbQueue)
         guard used > capacity else { return }
         let candidates = try await dbQueue.read { db in
@@ -90,18 +96,20 @@ extension MeetingContentProvider {
                 let active = await DocumentEditorModel.activeMeetingIDs(dbQueue: dbQueue)
                 let meeting = try await dbQueue.read { try DocumentRecord.fetchOne($0, key: id)?.meetingId }
                 if meeting == nil || !active.contains(meeting!) {
-                    used -= try await dbQueue.write { try DocumentRetention.evict(documentID: id, protectedWorkspaces: protected, in: $0) }
+                    used -= try await dbQueue.write {
+                        try DocumentRetention.evict(documentID: id, protectedWorkspaces: protected, now: now, retentionDays: retentionDays, in: $0)
+                    }
                 }
                 continue
             }
             guard let entity = TextContentEntity(rawValue: raw) else { continue }
             let key = Key(database: ObjectIdentifier(dbQueue), entity: entity, id: id)
             guard leases[key] == nil, requests[key] == nil else { continue }
-            used -= try evict(entity: entity, id: id, dbQueue: dbQueue)
+            used -= try evict(entity: entity, id: id, dbQueue: dbQueue, now: now, retentionDays: retentionDays)
         }
     }
 
-    private func evict(entity: TextContentEntity, id: UUID, dbQueue: DatabaseQueue) throws -> Int {
+    private func evict(entity: TextContentEntity, id: UUID, dbQueue: DatabaseQueue, now: Date, retentionDays: Int?) throws -> Int {
         let raw = entity.rawValue
         let protected = Set(retainedWorkspaces[ObjectIdentifier(dbQueue), default: [:]].keys)
         // Keep lease acquisition and the eviction transaction ordered on this actor.
@@ -110,8 +118,11 @@ extension MeetingContentProvider {
                   try TextContentStore.mayReplace(source, entity: entity, id: id, in: db),
                   let row = try Row.fetchOne(
                       db,
-                      sql: "SELECT residentRevision, verifiedHash FROM sync_content_state WHERE entity = ? AND entityId = ?",
+                      sql: "SELECT residentRevision, verifiedHash, lastAccessedAt FROM sync_content_state WHERE entity = ? AND entityId = ?",
                       arguments: [raw, id]
+                  ),
+                  ServerContentRetention.allowsEviction(
+                      lastUsedAt: row["lastAccessedAt"], now: now, days: retentionDays ?? ServerContentRetention.days()
                   ),
                   row["residentRevision"] as Int? == source.revision,
                   let fingerprint = try TextContentStore.fingerprint(entity: entity, id: id, in: db),

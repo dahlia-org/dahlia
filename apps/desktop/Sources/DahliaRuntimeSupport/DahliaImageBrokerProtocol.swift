@@ -47,7 +47,8 @@ public enum DahliaImageBrokerProtocol {
         guard descriptor >= 0 else { throw POSIXError(.EIO) }
         defer { Darwin.close(descriptor) }
         // Full text uses the app's per-page network deadlines; keep request writes bounded.
-        try configure(descriptor, timeout: 35, receiveTimeout: request.text == nil ? 35 : 0)
+        let receiveTimeout = request.text?.operation == .touch ? 2 : request.text == nil ? 35 : 0
+        try configure(descriptor, timeout: 35, receiveTimeout: receiveTimeout)
         var address = try DahliaTokenBrokerProtocol.unixAddress(path: socketURL.path)
         let connected = withUnsafePointer(to: &address) { pointer in
             pointer.withMemoryRebound(to: sockaddr.self, capacity: 1) {
