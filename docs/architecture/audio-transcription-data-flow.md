@@ -7,7 +7,7 @@
 対象は capture、録音、逐次認識、ライブ字幕、MCP へのライブ文字起こし供給、リアルタイム／バッチ文字起こしの
 SQLite 保存までとする。要約、書き出し、チャットでの利用方法、音声の保持期限と削除 protocol の詳細は扱わない。
 
-最終確認日: 2026-09-16
+最終確認日: 2026-10-02
 
 ## まず確認すること
 
@@ -17,21 +17,20 @@ SQLite 保存までとする。要約、書き出し、チャットでの利用�
 - 「ライブ文字起こしで初版を作成」は既定OFF。ONでは確定発話を初版として保存し、最終文字起こしの保存成功まで保持する。
 - ライブ字幕と初版保存は独立したconsumer。ライブ MCP は初版設定を使う。同じ音源の認識器を共有し、字幕だけをONにしても初版を保存しない。
 - 「録音終了後に自動処理」は既定ON。OFFでは確認画面から同じ処理経路を開始する。
-- Macの端末設定がローカル文字起こしの言語・検出範囲・ライブ初版を所有し、ワークスペース設定は録音後の自動処理を所有する。文字起こしはローカル／サーバーの2択（ローカルワークスペースはローカル固定）。サーバー文字起こしは Gemini が処理中に言語を判定し、`remote.workflow` で文字起こし後の要約／音声からの直接要約を選ぶ。
-- 要約の場所は所有元で決まる。ローカルワークスペースはこのMacの認証を使い、サーバーワークスペースはローカル文字起こしの場合も原文同期後にサーバーで要約する。
+- Macの端末設定が文字起こしの言語・検出範囲を所有する。ライブ初版・録音後の自動処理・要約モデルとスタイルは、このMacのアカウント別設定で共有する。Workspaceで共有する生成設定は出力言語のみ。
+- Desktopからの文字起こしはApple Speech、要約は内蔵Codex app-serverで行う。LocalはChatGPT／Databricks、Serverアカウントは自身のGatewayを使う。Webから明示的に開始した処理はServerで行う ([ADR](../adr/shared/account-scoped-desktop-inference.md))。
 
 `RecordingProcessing` は録音開始時の方式、ライブ初版、自動処理、言語、モデル・詳細度とジョブIDを
 `recording_sessions.processingJSON` に保存する。以後の設定変更で録音中の方針を変えない。
-Server設定の読込や通信成功を録音開始条件にしない。キャッシュ済みワークスペース設定を開始時に固定し、再試行でも同じ設定を使用する。
-録音の保存完了後、既存のローカル文字起こしcoordinatorとServer summary jobへ接続し、再起動時は保存済み段階から復旧する。
-クラウド方式は固定した録音のアーカイブとアップロードを待つ。後から追加した録音を要求に混ぜない。
+Server設定の読込や通信成功を録音開始条件にしない。このMacのアカウント別設定と共有出力言語を開始時に固定し、再試行でも同じ設定を使用する。
+録音の保存完了後、既存のMac文字起こしcoordinatorと要約処理へ接続し、再起動時は保存済み段階から復旧する。
+旧remote処理のJSONは読み取るが自動再開せず、Macで再実行できる失敗として表示する。
 同じ会議の処理は既存キューで順番に実行し、永続化した別々のジョブは統合せず、それぞれの完了状態を保存する。
-明示的な再文字起こしは初回処理設定と分離する。Local Workspace は保持中の CAF を区間別に自動言語判定し、
-Apple Speech で全文を再生成する。Server Workspace は確定アップロード済み M4A を Server の Gemini へ渡し、
-言語指定もローカルフォールバックも行わない。どちらも成功時は文字起こしだけを atomic に置換し、既存要約を変更しない。
+明示的な再文字起こしは初回処理設定と分離する。Desktopは保持中のCAFを優先し、手元の音声が削除済みならServerのM4Aを認可・checksum検証付きで一時取得する。
+どちらも区間別の自動言語判定とApple Speechで全文を再生成する。成功時だけ文字起こしをatomicに置換し、既存要約を変更しない。
 
-ローカルの最終文字起こしを保存してから要約する。クラウドの二段階方式も保存済み文字起こしを要約入力にする。
-一括方式は1回の生成結果を同一トランザクションで保存する。キャンセルと既存の競合検出は遅延した結果の上書きを防ぐ。
+Desktopは最終文字起こしを保存してから要約する。Webの二段階方式も保存済み文字起こしを要約入力にし、音声からの直接生成も引き続き利用できる。
+キャンセルと既存の競合検出は遅延した結果の上書きを防ぐ。
 失敗時も録音と既存の結果を保持する。処理成功による録音の即時削除は行わず、アーカイブ・保存期間・明示的削除の既存方針に従う。
 
 文字起こし言語は保存音声のrange metadataとApple Speechによる最終文字起こしに使う。
@@ -123,7 +122,7 @@ flowchart LR
 | writer queue の `AudioChunk` | `SegmentedAudioSourceWriter` memory | bounded queue が frame を accepted と数えた | durable ではない。overflow は録音失敗 | queue から失うと再生成できない |
 | active partial CAF | app-managed recording directory | writer が可変 file へ frame を書いた | まだ published source of truth ではない | startup reconciliation の対象 |
 | ready CAF | app-managed recording directory と `recording_audio_segments` | seal、同期、検証、rename、`ready` 更新が完了した | immutable CAF と対応する SQLite state が確定した時点 | 文字起こしを再生成できる |
-| Server M4A archive | Server storage と `recording_archives`／同期 receipt | 音源別変換、upload、確定、再取得照合を完了した | checksum と完全な録音集合を Server が確定した時点 | Gemini 再文字起こしの入力。Local 保持期間の対象外 |
+| Server M4A archive | Server storage と `recording_archives`／同期 receipt | 音源別変換、upload、確定、再取得照合を完了した | checksum と完全な録音集合を Server が確定した時点 | Desktop再取得・WebのGemini処理の入力。Local保持期間の対象外 |
 | preview／preview translation | event pipeline と UI store memory | 現在の表示候補を更新した | durable にしない | 後続イベントまたは正本から置換 |
 | realtime finalized event | event pipeline／persistence writer memory | UI より先に persistence lane へ受理した | `transcript_segments` の SQLite transaction が commit した時点 | batch 音声がなければ元音声からは再生成不能 |
 | batch recognition result | `BatchTranscriptionCoordinator` memory | ready CAF から一式を生成した | transcript rows と batch 完了状態の transaction が commit した時点 | ready CAF が残る間は再生成可能 |
@@ -345,11 +344,11 @@ sequenceDiagram
 
 Server は `transcripts` と `transcript_segments` に各版の全文を保持する。Desktop の `transcripts` は最新の生成情報だけを保持し、既存の segment/body table は最新本文だけを保持する。履歴番号 `version` と同期用 `syncRevision` は別の値とする。
 
-ライブ (`apple-speech-live`) は開始時に版を確保し、同じモデルの既存本文を引き継ぐ。確定 segment をその版へ追記し、生成終了を確認した日時だけを `endedAt` に記録する。明示キャンセルも終了確認に含む。異常終了からの復旧では終了日時を推測しない。バッチ (`apple-speech`) の同モデル追加録音は追加音声だけを認識し、既存本文と結合した全文を新しい版として保存する。Local の明示的な再文字起こしは会議の全 CAF を区間別自動判定と Apple Speech で処理する。Server の明示的な再文字起こしは完全な M4A 集合を Gemini で処理する。全処理成功時だけ本文・生成情報・完了状態・送信 snapshot を同じ transaction で確定し、要約は変更しない。失敗・キャンセルでは旧本文と要約を保持する。
+ライブ (`apple-speech-live`) は開始時に版を確保し、同じモデルの既存本文を引き継ぐ。確定 segment をその版へ追記し、生成終了を確認した日時だけを `endedAt` に記録する。明示キャンセルも終了確認に含む。異常終了からの復旧では終了日時を推測しない。バッチ (`apple-speech`) の同モデル追加録音は追加音声だけを認識し、既存本文と結合した全文を新しい版として保存する。Desktopの明示的な再文字起こしは、保持中のCAFまたは再取得したM4Aの完全な集合を区間別自動判定とApple Speechで処理する。Webからの明示的な再文字起こしは完全なM4A集合をServerのGeminiで処理する。全処理成功時だけ本文・生成情報・完了状態・送信 snapshot を同じ transaction で確定し、要約は変更しない。失敗・キャンセルでは旧本文と要約を保持する。
 
-音声を保存しない旧ライブ録音や保持期限切れが含まれる場合、全文再生成は利用不可とし、部分結果で旧本文を置換しない。Server の Gemini 生成は metadata の各 run に元録音の番号・ソース・チェックサムを記録する。Desktop の run は内部録音 session ID を記録する。開始時と保存 transaction 内で完全な対象録音集合を確認し、Server upload が未完了・失敗なら再文字起こしだけを無効にする。
+音声を保存しない旧ライブ録音や保持期限切れが含まれる場合、全文再生成は利用不可とし、部分結果で旧本文を置換しない。Server の Gemini 生成は metadata の各 run に元録音の番号・ソース・チェックサムを記録する。Desktop の run は内部録音 session ID を記録する。開始時と保存transaction内で完全な対象録音集合を確認する。WebおよびDesktopのアーカイブ再取得にはアップロード完了が必要であり、手元に完全な音声があればDesktopの再文字起こしはそれを使える。
 
-Server の生成が実行中または成功済みなら、通信・結果同期の再試行は同じ job ID を再開する。Server が失敗・キャンセル済みの場合だけ新しい試行を作る。 Desktop の再試行は前の Task の終了処理を待ってから永続状態を再開し、同じ ID の遅延したキャンセル処理と競合させない。過去のキャンセルはその試行の遅延結果を拒否するが、後続の新しい処理が保存済み音声を利用することは妨げない。
+Webから開始したServerの生成が実行中または成功済みなら、通信・結果同期の再試行は同じ job ID を再開する。Server が失敗・キャンセル済みの場合だけ新しい試行を作る。 Desktop の再試行は前の Task の終了処理を待ってから永続状態を再開し、同じ ID の遅延したキャンセル処理と競合させない。過去のキャンセルはその試行の遅延結果を拒否するが、後続の新しい処理が保存済み音声を利用することは妨げない。
 
 ローカル要約の適用済み状態と適用後の本文は、要約保存と同じ transaction で処理状態へ記録する。書き出し失敗からの再試行は生成済み結果を使い、現在の本文が一致するときだけ書き出しを再開する。要約本文・タグ・送信イベントの再保存は行わない。 要約保存時点では処理を saving に保ち、指定した書き出しが完了してから succeeded にする。書き出し失敗は failed として保存し、再起動後も再試行できる。
 

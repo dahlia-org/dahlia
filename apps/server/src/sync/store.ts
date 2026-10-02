@@ -2101,25 +2101,11 @@ function createIdentityStore(
         }
         const metadata = { ...file.metadata, ...data.metadata as Partial<FileMetadata> };
         if (metadata.source !== file.metadata.source) throw new SyncTransactionError(409, "file_source_immutable", [], operation.id);
-        if (data.imageAnalysis === "replace" && (file.active || operation.baseRevision !== null
-          || metadata.source !== "screenshot" || !imageContentTypes.has(file.contentType))) {
-          throw new SyncTransactionError(422, "invalid_image_analysis_request", [], operation.id);
-        }
         await db.update(schema.syncedFile).set(await content.write(schema.syncedFile, { active: true, metadata,
           name: typeof data.name === "string" ? data.name : file.name,
           revision: file.revision + 1, updatedAt: now,
         }, { fileId: file.fileId, workspaceId: transaction.workspaceId })).where(eq(schema.syncedFile.fileId, file.fileId));
-        if (data.imageAnalysis === "replace") {
-          await db.insert(schema.imageAnalysisJob).values({
-            fileId: file.fileId, workspaceId: transaction.workspaceId, ownerUserId: userPrincipalId,
-            model: String(data.imageAnalysisModel), mode: "replace",
-          }).onConflictDoUpdate({
-            target: schema.imageAnalysisJob.fileId,
-            set: { ownerUserId: userPrincipalId, model: String(data.imageAnalysisModel), mode: "replace",
-              outputLanguage: null, status: "pending", attempts: 0, availableAt: now,
-              claimedAt: null, leaseExpiresAt: null, lastErrorCode: null },
-          });
-        }
+
       } else if (operation.entity === "meeting_attachment") {
         const previous = await canonicalRecord("meeting_attachment", transaction.workspaceId, operation.entityId);
         if (previous.record !== null || operation.baseRevision !== null || operation.action === "delete") {
@@ -2167,12 +2153,7 @@ function createIdentityStore(
           }).onConflictDoNothing().returning({ id: schema.meetingAttachment.id });
           if (!inserted) throw new SyncTransactionError(409, "meeting_attachment_id_conflict", [], operation.id);
         }
-        // The attached file and live meeting satisfy claim readiness; periodic reconcile remains only a safety net.
-        if (typeof data.imageAnalysisModel === "string" && imageContentTypes.has(file.contentType) && needsImageAnalysis(file.metadata)) {
-          await db.insert(schema.imageAnalysisJob).values({
-            fileId, workspaceId: transaction.workspaceId, ownerUserId: userPrincipalId, model: data.imageAnalysisModel, mode: "fill_missing",
-          }).onConflictDoNothing();
-        }
+
       }
 
       if (["meeting", "summary"].includes(operation.entity) && typeof data.searchText === "string") {

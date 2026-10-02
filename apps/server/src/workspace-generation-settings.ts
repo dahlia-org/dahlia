@@ -40,6 +40,8 @@ export const DEFAULT_GENERATION_PREFERENCES: GenerationPreferences = {
   processing: { location: "local", remote: { workflow: "combined" } },
   summary: { style: "detailed" },
 };
+// Retained wire shape for v0.24.x clients and stored JSON. Only outputLanguage is
+// a shared default in current clients; the remaining fields do not route processing.
 export const workspaceGenerationSettingsSchema = generationPreferencesSchema.extend({
   local: summaryModelSettingsSchema,
   automaticProcessing: z.boolean(),

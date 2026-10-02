@@ -68,7 +68,7 @@ import GRDB
         }
 
         @Test
-        func restoredServerRetranscriptionUsesOnlyBatchTranscriptionAccounting() async throws {
+        func restoredServerRetranscriptionRequiresRetryWithoutNewInferenceTelemetry() async throws {
             let batch = try BatchAudioTestFixture(name: "server-retranscription-telemetry", endedAt: .now, batchCompletedAt: .now)
             defer { batch.removeFiles() }
             let connectionID = UUID.v7()
@@ -111,28 +111,20 @@ import GRDB
             }
             ImageURLProtocol.register(origin: origin) { _ in (503, [:], Data()) }
             defer { ImageURLProtocol.remove(origin: origin) }
-            let configuration = URLSessionConfiguration.ephemeral
-            configuration.protocolClasses = [ImageURLProtocol.self]
             var events: [UsageTelemetryEvent] = []
             let viewModel = CaptionViewModel(
-                serverSummaryService: ServerSummaryService(client: SyncAPIClient(
-                    session: URLSession(configuration: configuration),
-                    tokenProvider: { _, _ in "test" }
-                )),
                 usageTelemetryReporter: { events.append($0) }
             )
 
             try await viewModel.restoreRecordingProcessingForTesting(dbQueue: batch.database.dbQueue)
-            #expect(await waitUntil { events.count == 2 })
             let job = try #require(viewModel.summaryGenerationJobs.first)
             #expect(job.transcriptionOnly)
             #expect(job.progress.summaryGeneration.isSkipped)
             #expect(!viewModel.isSummaryGenerating(meetingId: batch.meeting.id))
             #expect(viewModel.summaryError == nil)
-            #expect(events == [
-                .transcription(.started, mode: .batch),
-                .transcription(.failed(.transcription), mode: .batch),
-            ])
+            #expect(job.hasFailure)
+            #expect(events.isEmpty)
+
         }
 
         @Test

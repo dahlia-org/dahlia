@@ -15,7 +15,8 @@
         func remoteProcessingDecodesWithoutSeparateTranscriptSummarySettings() throws {
             let settings = try JSONDecoder().decode(
                 WorkspaceGenerationSettings.self,
-                from: Data(#"{"processing":{"location":"remote","remote":{"workflow":"combined","summaryModel":"audio","reasoningEffort":"medium"}}}"#.utf8)
+                from: Data(#"{"processing":{"location":"remote","remote":{"workflow":"combined","summaryModel":"audio","reasoningEffort":"medium"}}}"#
+                    .utf8)
             )
 
             #expect(settings.processing.remote.summaryModel == "audio")
@@ -93,11 +94,13 @@
             snapshot.generationSettings.liveTranscriptDraft = true
             if role == "local" || role == "admin" {
                 let updated = try #require(try await repository.updateWorkspaceAISettings(snapshot))
-                #expect(updated.generationSettings == snapshot.generationSettings)
+                #expect(updated.generationSettings.outputLanguage == .fr)
+                #expect(updated.generationSettings.local == workspace.generationSettings.local)
+                #expect(updated.generationSettings.automaticProcessing == workspace.generationSettings.automaticProcessing)
                 #expect(try await SyncTransactionQueue.hasPending(workspaceId: workspace.id, dbQueue: database.dbQueue) == (role == "admin"))
                 let operation = try SyncInitialSnapshotBuilder.workspaceOperation(updated, action: .update)
                 let payload = try JSONDecoder().decode(SyncCanonicalPayload.self, from: #require(operation.payloadJSON))
-                #expect(payload.generationSettings == snapshot.generationSettings)
+                #expect(payload.generationSettings == updated.generationSettings)
             } else {
                 await #expect(throws: SyncTransactionQueueError.self) { try await repository.updateWorkspaceAISettings(snapshot) }
                 let unchanged = try await database.dbQueue.read { db in try WorkspaceRecord.fetchOne(db, key: saved.id) }
@@ -135,7 +138,10 @@
             try await database.dbQueue.write { db in
                 try SyncTransactionQueue.applyCanonical(.workspace, id: workspace.id, workspaceId: workspace.id, value: payload, in: db)
             }
-            #expect(await pollUntil { model.generationSettings == changed })
+            #expect(await pollUntil { model.generationSettings.outputLanguage == .en })
+            #expect(model.generationSettings.summary.style == workspace.generationSettings.summary.style)
+            #expect(model.generationSettings.local == workspace.generationSettings.local)
+            #expect(model.generationSettings.automaticProcessing)
             #expect(try await !SyncTransactionQueue.hasPending(workspaceId: workspace.id, dbQueue: database.dbQueue))
             #expect(model.snapshot(for: other.id).generationSettings == WorkspaceGenerationSettings())
             #expect(try await database.dbQueue.read { db in

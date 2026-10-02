@@ -7,10 +7,25 @@
     @MainActor
     struct SummaryGenerationAccountRoutingTests {
         @Test(arguments: [false, true])
-        func serverRequestsNeverUseLocalInference(bulk: Bool) async throws {
+        func serverRequestsUseMacInferenceThroughTheirOwnGateway(bulk: Bool) async throws {
             let fixture = try SummaryGenerationFixture()
             defer { fixture.removeFiles() }
-            _ = try attachServerAccount(to: fixture)
+            let connectionID = try attachServerAccount(to: fixture)
+            let origin = try await fixture.database.dbQueue.read { db in
+                try #require(try DahliaAccountConnectionRecord.fetchOne(db, key: connectionID)).origin
+            }
+            ImageURLProtocol.register(origin: origin) { request in
+                if request.url!.path.hasSuffix("/capabilities") { return (200, [:], Data(#"{"documents":{"version":3}}"#.utf8)) }
+                return (200, [:], Data(#"{"document":null}"#.utf8))
+            }
+            defer { ImageURLProtocol.remove(origin: origin) }
+            let configuration = URLSessionConfiguration.ephemeral
+            configuration.protocolClasses = [ImageURLProtocol.self]
+            let documentSync = DocumentSyncService.shared(
+                dbQueue: fixture.database.dbQueue,
+                api: SyncAPIClient(session: URLSession(configuration: configuration), tokenProvider: { _, _ in "test" })
+            )
+            defer { withExtendedLifetime(documentSync) {} }
             var generatedSettings: [SummaryGenerationSettings] = []
             let viewModel = CaptionViewModel(summaryGenerationRunner: { input in
                 generatedSettings.append(input.generationSettings)
@@ -29,8 +44,12 @@
             for job in jobs {
                 await job.task?.value
             }
-            #expect(generatedSettings.isEmpty)
-            #expect(!jobs.contains { !$0.hasFailure })
+            #expect(generatedSettings.count == (bulk ? 2 : 1))
+            for settings in generatedSettings {
+                #expect(settings.runtimeProvider == .dahlia(connectionID: connectionID))
+                #expect(settings.sourceAccountConnectionID == connectionID)
+                #expect(settings.languageDisplayName == SummaryLanguage.fr.displayName)
+            }
 
         }
 
@@ -49,6 +68,7 @@
             let sessionID = try fixture.insertRecordingSession(for: fixture.first, offset: 0)
             var generationSettings = SummaryGenerationSettings.current()
             generationSettings.accountConnectionID = connectionID
+            generationSettings.workspaceID = fixture.workspace.id
             let processing = RecordingProcessing(
                 id: .v7(), automatic: true, liveDraft: false, localeIdentifier: "en_US", method: .transcript,
                 options: .manual, generationSettings: generationSettings, workspaceSettings: nil,
@@ -92,7 +112,7 @@
 
         private func attachServerAccount(to fixture: SummaryGenerationFixture) throws -> UUID {
             let connection = DahliaAccountConnectionRecord(
-                id: .v7(), origin: "https://summary-routing.invalid", clientID: "test", createdAt: .now
+                id: .v7(), origin: "https://summary-routing-\(UUID.v7().uuidString.lowercased()).invalid", clientID: "test", createdAt: .now
             )
             try fixture.database.dbQueue.write { db in
                 try connection.insert(db)
@@ -100,12 +120,20 @@
                     db,
                     Column("accountConnectionId").set(to: connection.id),
                     Column("organizationId").set(to: UUID.v7()),
-                    Column("syncRole").set(to: "admin")
+                    Column("syncRole").set(to: "admin"),
+                    Column("syncConfirmedConnectionId").set(to: connection.id),
+                    Column("syncPullCursor").set(to: "ready")
                 )
                 var workspace = try WorkspaceRecord.fetchOne(db, key: fixture.workspace.id)!
                 workspace.generationSettings.outputLanguage = .fr
                 workspace.generationSettings.summary.style = .concise
                 try workspace.update(db)
+                for meeting in [fixture.first, fixture.second] {
+                    try db.execute(
+                        sql: "INSERT INTO sync_entity_state(workspace_id, entity, entityId, confirmedRevision) VALUES (?, 'meeting', ?, 1)",
+                        arguments: [workspace.id, meeting.id]
+                    )
+                }
             }
             return connection.id
         }

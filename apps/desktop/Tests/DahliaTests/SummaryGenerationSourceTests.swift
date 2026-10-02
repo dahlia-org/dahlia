@@ -515,152 +515,47 @@ import DahliaRuntimeSupport
 
         @MainActor
         @Test
-        func serverAvailabilityUsesLiveCapabilitiesAndCanonicalTranscriptUnlessItsMutationIsPending() async throws {
-            let queue = try AppDatabaseManager(path: ":memory:").dbQueue
-            let target = ServerSummaryService.Target(
-                workspaceID: .v7(), meetingID: .v7(), connectionID: .v7(),
-                origin: "https://\(UUID.v7().uuidString.lowercased()).example.test"
-            )
-            try await queue.write { db in
-                try DahliaAccountConnectionRecord(
-                    id: target.connectionID, origin: target.origin, clientID: "test", createdAt: .now
-                ).insert(db)
-                let workspace = WorkspaceRecord(
-                    id: target.workspaceID, path: nil, name: "Server", createdAt: .now, lastOpenedAt: .now,
-                    accountConnectionId: target.connectionID, organizationId: .v7(), syncRole: "admin",
-                    syncConfirmedConnectionId: target.connectionID, syncPullCursor: "ready"
-                )
-                try workspace.insert(db)
-                try MeetingRecord(
-                    id: target.meetingID, workspaceId: target.workspaceID, projectId: nil, name: "Test",
-                    createdAt: .now, updatedAt: .now
-                ).insert(db)
-                try db.execute(
-                    sql: "INSERT INTO sync_entity_state(workspace_id, entity, entityId, confirmedRevision) VALUES (?, 'meeting', ?, 1)",
-                    arguments: [target.workspaceID, target.meetingID]
-                )
-                var info = TranscriptInfo(id: .v7(), startedAt: nil, endedAt: .now, metadata: nil)
-                info.version = 2
-                try TranscriptRecord(meetingId: target.meetingID, info: info).insert(db)
-            }
-            let capabilityRequests = Mutex(0)
-            let transcriptRequests = Mutex(0)
-            let recordingRequests = Mutex(0)
-            let audioOnly = Mutex(false)
-            ImageURLProtocol.register(origin: target.origin) { request in
-                if request.url!.path.hasSuffix("/notes") { return (200, [:], Data(#"{"document":null}"#.utf8)) }
-                if request.url!.path == "/api/v1/capabilities" {
-                    let requestNumber = capabilityRequests.withLock {
-                        $0 += 1
-                        return $0
-                    }
-                    if requestNumber == 1 { return (503, [:], Data()) }
-                    let sources = audioOnly.withLock { $0 } ? #"["audio"]"# : #"["transcript","audio"]"#
-                    return (200, [:], Data("""
-                    {"documents":{"version":3},"meetingSummaryGeneration":{"version":2,"sources":\(sources),"completeRecordings":true}}
-                    """.utf8))
-                }
-                if request.url!.path.hasSuffix("/recordings") {
-                    #expect(request.value(forHTTPHeaderField: "X-Dahlia-Require-Complete-Recordings") == "1")
-                    let requestNumber = recordingRequests.withLock {
-                        $0 += 1
-                        return $0
-                    }
-                    if requestNumber != 2 { return (500, [:], Data()) }
-                    return (409, [:], Data())
-                }
-                let requestNumber = transcriptRequests.withLock {
-                    $0 += 1
-                    return $0
-                }
-                let secondPage = requestNumber == 2
-                #expect(request.url!.path.hasSuffix(secondPage ? "/transcripts/7" : "/transcripts/latest"))
-                let text = secondPage ? "Server only transcript" : "   "
-                let cursor = secondPage ? "null" : #""2026-09-09T00:00:00.000Z,\#(target.meetingID.uuidString.lowercased())""#
-                return (200, [:], Data("""
-                {"formatVersion":1,"version":7,"entityId":"\(target.meetingID.uuidString.lowercased())","present":true,
-                "count":2,"byteCount":20,"sha256":"test","entity":"transcript","syncRevision":7,
-                "items":[{"segmentId":"\(target.meetingID.uuidString.lowercased())","startedAt":"2026-09-09T00:00:00Z","endedAt":null,
-                "text":"\(text)","createdAt":null,"audioSource":null,"speakerLabel":null}],"nextCursor":\(cursor)}
-                """.utf8))
-            }
-            defer { ImageURLProtocol.remove(origin: target.origin) }
-            let configuration = URLSessionConfiguration.ephemeral
-            configuration.protocolClasses = [ImageURLProtocol.self]
-            let service = ServerSummaryService(client: SyncAPIClient(
-                session: URLSession(configuration: configuration), tokenProvider: { _, _ in "test" }
-            ))
-            try await queue.write { db in
-                var workspace = try WorkspaceRecord.fetchOne(db, key: target.workspaceID)!
+        func serverWorkspaceOffersMacTranscriptSummaryIncludingPendingLocalText() async throws {
+            let fixture = try SummaryGenerationFixture()
+            defer { fixture.removeFiles() }
+            let connection = DahliaAccountConnectionRecord(id: .v7(), origin: "https://source.invalid", clientID: "test", createdAt: .now)
+            try await fixture.database.dbQueue.write { db in
+                try connection.insert(db)
+                var workspace = try WorkspaceRecord.fetchOne(db, key: fixture.workspace.id)!
+                workspace.accountConnectionId = connection.id
+                workspace.organizationId = .v7()
+                workspace.syncRole = "admin"
+                workspace.syncConfirmedConnectionId = connection.id
+                workspace.syncPullCursor = "ready"
                 workspace.generationSettings.processing.location = .remote
                 try workspace.update(db)
-            }
-            let viewModel = CaptionViewModel(serverSummaryService: service)
-
-            var availability = try await viewModel.summaryGenerationSourceAvailability(
-                meetingIDs: [target.meetingID], dbQueue: queue
-            )
-            #expect(availability.sourceCheckFailed)
-            #expect(availability.hasServerConnection)
-            #expect(availability.generationSettings?.processing.location == .remote)
-            #expect(availability.preferredSource == nil)
-
-            try await queue.write { db in
-                try TranscriptContent(
-                    from: TranscriptSegment(startTime: .now, text: "Cached transcript", isConfirmed: true),
-                    meetingId: target.meetingID
-                ).insert(db)
-            }
-            #expect(availability.usesServer)
-            #expect(capabilityRequests.withLock { $0 } == 1)
-            #expect(transcriptRequests.withLock { $0 } == 0)
-            #expect(recordingRequests.withLock { $0 } == 0)
-            try await queue.write { db in
-                var workspace = try WorkspaceRecord.fetchOne(db, key: target.workspaceID)!
-                workspace.generationSettings.processing.location = .local
-                try workspace.update(db)
-            }
-
-            availability = try await viewModel.summaryGenerationSourceAvailability(
-                meetingIDs: [target.meetingID], dbQueue: queue
-            )
-            #expect(!availability.sourceCheckFailed)
-            #expect(availability.preferredSource == .transcript)
-            #expect(capabilityRequests.withLock { $0 } == 2)
-            #expect(transcriptRequests.withLock { $0 } == 2)
-            #expect(recordingRequests.withLock { $0 } == 1)
-
-            try await queue.write { db in
-                let current = try TranscriptRecord.current(target.meetingID, in: db)
-                let info = try #require(current)
+                let transcript = TranscriptInfo(id: .v7(), startedAt: nil, endedAt: .now, metadata: nil)
+                try TranscriptRecord(meetingId: fixture.first.id, info: transcript).insert(db)
                 try SyncTransactionRecorder.record(
-                    workspaceId: target.workspaceID,
-                    operations: [TranscriptRecord.mutation(meetingId: target.meetingID, info: info, mode: "append")],
+                    workspaceId: workspace.id,
+                    operations: [TranscriptRecord.mutation(
+                        meetingId: fixture.first.id,
+                        info: transcript,
+                        mode: "append"
+                    )],
                     in: db
                 )
             }
-            availability = try await viewModel.summaryGenerationSourceAvailability(
-                meetingIDs: [target.meetingID], dbQueue: queue
+            let viewModel = CaptionViewModel()
+            let availability = try await viewModel.summaryGenerationSourceAvailability(
+                meetingIDs: [fixture.first.id], dbQueue: fixture.database.dbQueue
             )
-            #expect(availability.preferredSource == nil)
-            #expect(capabilityRequests.withLock { $0 } == 3)
-            #expect(transcriptRequests.withLock { $0 } == 2)
-            #expect(recordingRequests.withLock { $0 } == 2)
-
-            audioOnly.withLock { $0 = true }
-            availability = try await viewModel.summaryGenerationSourceAvailability(
-                meetingIDs: [target.meetingID], dbQueue: queue
-            )
-            #expect(availability.sourceCheckFailed && availability.hasServerConnection)
-            #expect(availability.preferredSource == nil)
-
-            try await queue.write { db in
-                try db.execute(sql: "UPDATE workspaces SET syncRole = 'viewer' WHERE id = ?", arguments: [target.workspaceID])
+            #expect(!availability.sourceCheckFailed)
+            #expect(availability.hasServerConnection)
+            #expect(!availability.usesServer)
+            #expect(availability.generationSettings?.processing.location == .local)
+            #expect(availability.supportedSources == [.transcript])
+            #expect(availability.preferredSource == .transcript)
+            try await fixture.database.dbQueue.write { db in
+                try db.execute(sql: "UPDATE workspaces SET syncRole = 'viewer' WHERE id = ?", arguments: [fixture.workspace.id])
             }
             await #expect(throws: (any Error).self) {
-                try await viewModel.summaryGenerationSourceAvailability(
-                    meetingIDs: [target.meetingID], dbQueue: queue
-                )
+                try await viewModel.summaryGenerationSourceAvailability(meetingIDs: [fixture.first.id], dbQueue: fixture.database.dbQueue)
             }
         }
     }

@@ -2,7 +2,7 @@
 "settings.organization.settingsDataAndAccounts" = "データ管理";
 "settings.organization.workspaceSettings" = "ワークスペースの設定";
 "settings.organization.searchSettings" = "設定を検索";
-"settings.organization.settingsAccountIntro" = "現在のワークスペースでの要約と画像キャプションの生成方法を設定します。";
+"settings.organization.settingsAccountIntro" = "このMacのアカウント別AI設定と、ワークスペースで共有する出力言語を設定します。";
 "settings.organization.settingsAccountsIntro" = "接続先のアカウントと、それぞれのワークスペースを管理します。";
 "settings.organization.settingsExportIntro" = "サイドバーで選択中のアカウントの書き出し先を、このMacで設定します。";
 "settings.organization.settingsAccountSelectionDescription" = "編集対象を選んでも、開いているワークスペースは変わりません。";
@@ -26,13 +26,13 @@
 "settings.organization.summaryStyleTimelineDescription" = "発言やデモ、質疑応答を時系列で詳しく辿れる形にします。";
 "settings.preferences.macInferencePreferences" = "モデルプロバイダー";
 "settings.preferences.accountPreferences" = "ワークスペースの生成設定";
-"settings.preferences.accountPreferencesScope" = "表示中のワークスペースの全員で共有する既定値です。";
+"settings.preferences.accountPreferencesScope" = "出力言語はワークスペースで共有します。他のAI設定はこのMacのアカウントごとに保存します。";
 "settings.preferences.accountSummaryPreferencesDescription" = "まとめ方と出力言語は処理場所にかかわらず共通です。変更は次回の処理から適用されます。Macでの要約も、接続先のAIへ文字起こしや画像を送信します。";
 "settings.preferences.summaryStyle" = "まとめ方";
 "settings.preferences.recordingSettings" = "録音・保存";
 "settings.preferences.recordingStopDetection" = "停止検出";
 "settings.preferences.macTranscriptionPreferences" = "このMacの文字起こし設定";
-"settings.preferences.localModelPreferencesDescription" = "AIプロバイダーと認証情報はこのMac固有です。生成モデルはワークスペースごとに設定します。";
+"settings.preferences.localModelPreferencesDescription" = "ローカルアカウントのAIプロバイダーと認証情報をこのMacに設定します。生成モデルはアカウントごとに設定します。";
 "settings.preferences.summaryProcessingLocation" = "要約の処理場所";
 "settings.preferences.serverSummaryProcessingDescription" = "Dahlia for Macで作成した文字起こしも、原文を同期してからサーバーで要約します。";
 "settings.preferences.processingWorkflow" = "要約方法";
@@ -1724,7 +1724,7 @@
 "setup.preparingWorkspace" = "ワークスペースを準備しています…";
 "setup.workspaceUnavailable" = "ワークスペースを準備できませんでした。接続を確認して再試行してください。";
 "For this generation only" = "今回の生成のみ";
-"Workspace default" = "ワークスペース設定";
+"Workspace default" = "既定";
 
 "summary.source.useSaved" = "保存済みの文字起こしを使う";
 "summary.source.useSaved.description" = "サーバーの最新版を取得せず、このMacに保存された版から生成します。内容が古い可能性があります。オフライン時に選択できます。";
@@ -1772,3 +1772,8 @@
 "server.content.retention" = "Serverデータのローカル保持期間";
 "server.content.retention.days" = "保持日数";
 "server.content.retention.description" = "Server連携直後に過去のデータが自動削除されることを防ぐため、既定は無期限です。このMacで作成・編集・閲覧・初回取得したServerデータを、指定期間は保持します。全Serverアカウントの本文・Documents・取得済み画像に適用されます。期間を過ぎた未使用データは、容量上限を超えた場合にバックグラウンドで削除し、必要時に再取得します。無期限では自動削除しません。保持期間を優先するため容量上限を超える場合があります。録音音声は別の保持設定に従います。";
+
+"processing.dataUnreadable" = "一部の録音の処理状態を読み込めませんでした。他の録音の復元は続行します。";
+"processing.retryOnMac" = "以前のサーバー処理は再開できません。このMacで再実行してください。";
+"settings.accountInference.description" = "このMacの、選択中のアカウントに適用します。同じアカウントのワークスペースで共有します。";
+"processing.downloadingArchive" = "録音音声をダウンロード中…";

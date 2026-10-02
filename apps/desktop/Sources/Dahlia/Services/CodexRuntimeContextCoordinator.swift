@@ -4,7 +4,6 @@ import GRDB
 
 actor CodexRuntimeContextCoordinator {
     static let shared = CodexRuntimeContextCoordinator()
-    static let macInference = CodexRuntimeContextCoordinator(service: .macInference, contextStore: .macInference)
 
     private var repository: MeetingRepository?
     private let configurationManager: CodexConfigurationManager
@@ -12,6 +11,8 @@ actor CodexRuntimeContextCoordinator {
     private let service: CodexAppServerService
     private let contextStore: CodexRuntimeContextStore
     private var configuredProvider: CodexRuntimeProvider?
+    private var requestedProvider: CodexRuntimeProvider?
+    private var activationGeneration = 0
 
     init(
         configurationManager: CodexConfigurationManager = CodexConfigurationManager(),
@@ -42,7 +43,20 @@ actor CodexRuntimeContextCoordinator {
         guard !contextStore.isConfigured
             || contextStore.provider != provider
             || configuredProvider != provider
+            || requestedProvider != provider
         else { return }
+
+        requestedProvider = provider
+        activationGeneration += 1
+        let generation = activationGeneration
+        try await service.reloadConfiguration(applyingContext: {
+            try await self.configure(provider: provider, generation: generation)
+        }, interruptActiveOperations: true, startImmediately: false)
+    }
+
+    private func configure(provider: CodexRuntimeProvider, generation: Int) async throws {
+        try Task.checkCancellation()
+        guard generation == activationGeneration else { throw CancellationError() }
 
         switch provider {
         case let .dahlia(connectionID):
@@ -65,9 +79,8 @@ actor CodexRuntimeContextCoordinator {
             _ = try await configurationManager.configureDatabricks(profile: profile)
         }
         configuredProvider = provider
-
-        try await service.reloadConfiguration {
-            self.contextStore.apply(provider)
-        }
+        try Task.checkCancellation()
+        guard generation == activationGeneration else { throw CancellationError() }
+        contextStore.apply(provider)
     }
 }

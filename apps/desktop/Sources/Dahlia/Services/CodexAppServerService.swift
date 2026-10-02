@@ -36,20 +36,6 @@ actor CodexAppServerService {
 
     static let shared = CodexAppServerService()
 
-    /// Mac inference is independent of the selected Workspace's chat/Gateway context.
-    static let macInference = CodexAppServerService(
-        launcher: BundledCodexAppServerLauncher(
-            tokenBrokerAuthorization: .macInference,
-            runtimeProviderResolver: { LocalAccountAISettings(defaults: .standard).runtimeProvider }
-        ),
-        configurationReadiness: {
-            CodexRuntimeContextStore.macInference.isConfigured
-                && CodexRuntimeContextStore.macInference.provider == LocalAccountAISettings(defaults: .standard).runtimeProvider
-        },
-        accountProviderResolver: { LocalAccountAISettings(defaults: .standard).provider },
-        runtimeProviderResolver: { LocalAccountAISettings(defaults: .standard).runtimeProvider }
-    )
-
     /// Account management uses the local credential store without changing the
     /// active provider's configuration or its token-broker authorization.
     static let localAccount = CodexAppServerService(
@@ -162,6 +148,8 @@ actor CodexAppServerService {
     private var transport: (any CodexAppServerTransport)?
     private var readerTask: Task<Void, Never>?
     private var connectionGeneration = 0
+    private var contextGeneration = 0
+    private var isInterruptingConfiguration = false
     private var nextRequestID = 1
     private var pendingRequests: [Int: PendingRequest] = [:]
     private var turnWaiters: [TurnKey: TurnWaiter] = [:]
@@ -252,6 +240,8 @@ actor CodexAppServerService {
     }
 
     func start() async throws {
+        try Task.checkCancellation()
+        guard !isInterruptingConfiguration else { throw CancellationError() }
         if isInitialized { return }
         if isStoppingConnection {
             await waitForConnectionStop()
@@ -293,7 +283,9 @@ actor CodexAppServerService {
     }
 
     func reloadConfiguration(
-        applyingContext: (@Sendable () -> Void)? = nil
+        applyingContext: (@Sendable () async throws -> Void)? = nil,
+        interruptActiveOperations: Bool = false,
+        startImmediately: Bool = true
     ) async throws {
         guard !isShuttingDown else { throw CancellationError() }
         if isConfigurationReloading {
@@ -303,26 +295,38 @@ actor CodexAppServerService {
                 guard !Task.isCancelled, applyingContext != nil else { throw CancellationError() }
             }
             if let applyingContext {
-                try await reloadConfiguration(applyingContext: applyingContext)
+                try await reloadConfiguration(
+                    applyingContext: applyingContext,
+                    interruptActiveOperations: interruptActiveOperations,
+                    startImmediately: startImmediately
+                )
             }
             return
         }
 
         isConfigurationReloading = true
         do {
+            if interruptActiveOperations {
+                isInterruptingConfiguration = true
+                contextGeneration += 1
+                providerAuthenticationPreparationState?.task.cancel()
+                await stopConnection(error: CancellationError())
+            }
             try await waitForCodexOperationsToFinish()
             try await waitForGenerationsToFinish()
             try await waitForChatTurnsToFinish()
             await stopConnection(error: CancellationError())
             try Task.checkCancellation()
-            applyingContext?()
+            try await applyingContext?()
+            isInterruptingConfiguration = false
             cachedModels = nil
             cachedAccountStatus = nil
             cachedConfigReadResult = nil
-            try await start()
+            if startImmediately { try await start() }
             providerAuthenticationReloadRequired = false
             finishConfigurationReload()
         } catch {
+            isInterruptingConfiguration = false
             finishConfigurationReload(throwing: error)
             throw error
         }
@@ -891,11 +895,13 @@ actor CodexAppServerService {
         guard runtimeProviderResolver() == runtimeProvider else {
             throw CodexConfigurationError.accountNotReady
         }
+        let capturedContextGeneration = contextGeneration
         let generationID = UUID()
         generations[generationID] = GenerationContext()
 
         do {
             let result = try await performGeneration(request, generationID: generationID)
+            guard contextGeneration == capturedContextGeneration else { throw CancellationError() }
             await finishGeneration(generationID)
             return result
         } catch {
@@ -1095,6 +1101,7 @@ private extension CodexAppServerService {
         let account = try await accountStatus(forceRefresh: false)
         guard account.canUseCodex else { throw CodexAppServerError.notLoggedIn }
         let availableModels = try await models(
+            bypassConfigurationCheck: true,
             bypassProviderAuthenticationPreparation: true,
             bypassConfigurationReloadAdmission: true
         )
@@ -1105,6 +1112,7 @@ private extension CodexAppServerService {
            selectedModel?.model != request.model {
             let refreshedModels = try await models(
                 forceRefresh: true,
+                bypassConfigurationCheck: true,
                 bypassProviderAuthenticationPreparation: true,
                 bypassConfigurationReloadAdmission: true
             )

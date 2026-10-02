@@ -1,10 +1,10 @@
 import SwiftUI
 
-/// Workspace model defaults; authentication remains specific to this Mac.
+/// Device-local defaults for the selected account.
 struct LocalSummarySettingsRows: View {
     var canEdit = true
     @Bindable private var workspaceSettings = WorkspaceAISettingsModel.shared
-    @State private var catalog = CodexModelCatalog(service: .macInference)
+    @State private var catalog = CodexModelCatalog(service: .shared)
     @State private var retryTask: Task<Void, Never>?
 
     var body: some View {
@@ -56,7 +56,8 @@ struct LocalSummarySettingsRows: View {
 
     private func loadModels(forceRefresh: Bool, context: CodexRuntimeProvider) async {
         await catalog.load(forceRefresh: forceRefresh) {
-            try await CodexRuntimeContextCoordinator.macInference.activate(provider: context)
+            guard await workspaceSettings.waitForRuntimeContext(),
+                  CodexRuntimeContextStore.shared.provider == context else { throw CodexConfigurationError.accountNotReady }
         }
     }
 
@@ -74,7 +75,7 @@ struct LocalSummarySettingsRows: View {
 
     private var modelCatalogContext: CodexRuntimeProvider {
         CodexRuntimeProvider(
-            accountConnectionID: nil,
+            accountConnectionID: workspaceSettings.accountConnectionID,
             localProvider: workspaceSettings.localProvider,
             databricksProfile: workspaceSettings.databricksProfile
         )

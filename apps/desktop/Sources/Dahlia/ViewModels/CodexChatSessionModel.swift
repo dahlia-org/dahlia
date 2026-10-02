@@ -213,6 +213,7 @@ final class CodexChatSessionModel: Identifiable {
         selectedModelID = modelID
         persistChatModelID(modelID)
         resolveEffort()
+        persistChatReasoningEffort(selectedEffort)
         processPendingInputIfPossible()
     }
 
@@ -1024,7 +1025,6 @@ extension CodexChatSessionModel {
         guard !models.isEmpty else { return }
         if !models.contains(where: { $0.model == selectedModelID }) {
             selectedModelID = models.first(where: \CodexModel.isDefault)?.model ?? models[0].model
-            persistChatModelID(selectedModelID)
         }
         resolveEffort()
     }
@@ -1037,7 +1037,6 @@ extension CodexChatSessionModel {
                 ?? models.first(where: { $0.model == selectedModelID })?.defaultReasoningEffort
                 ?? options[0].reasoningEffort
         }
-        persistChatReasoningEffort(selectedEffort)
     }
 
     private func persistChatModelID(_ modelID: String) {

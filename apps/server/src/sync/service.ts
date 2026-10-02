@@ -279,10 +279,8 @@ export class MeetingSyncService {
             const metadata = { ...file, ...(operation.entity === "file" ? data.metadata as object : {}) };
             if (metadata.source) fileMetadata.set(fileId, metadata as FileRecord["metadata"]);
             Object.assign(data, await this.fileSearchData(metadata));
-            if (operation.entity === "file" && data.imageAnalysis === "replace" && !this.imageAnalysisModel) {
-              throw new SyncTransactionError(422, "image_analysis_unavailable", [], operation.id);
-            }
-            if (this.imageAnalysisModel) Object.assign(data, { imageAnalysisModel: this.imageAnalysisModel });
+            // Legacy clients may send imageAnalysis. Sync never schedules inference.
+            delete data.imageAnalysis;
           }
           prepared.push({ ...operation, data });
         }

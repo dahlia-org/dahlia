@@ -5,6 +5,10 @@ import Foundation
 
 /// ローカライズ文字列への型安全なアクセスを提供する。
 enum L10n { // swiftlint:disable:this type_body_length
+    static var downloadingRecordingArchive: String { String(localized: "processing.downloadingArchive", bundle: bundle) }
+    static var processingDataUnreadable: String { String(localized: "processing.dataUnreadable", bundle: bundle) }
+    static var legacyProcessingRetryOnMac: String { String(localized: "processing.retryOnMac", bundle: bundle) }
+    static var accountInferenceSettingsDescription: String { String(localized: "settings.accountInference.description", bundle: bundle) }
     static var recoveredRecordings: String { String(localized: "recovery.recordings", bundle: bundle) }
     static var recoveredRecording: String { String(localized: "recovery.recording", bundle: bundle) }
     static var settingsCheckAdvancedModels: String { String(localized: "settings.organization.checkAdvancedModels", bundle: bundle) }

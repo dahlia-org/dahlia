@@ -6,7 +6,7 @@ import Testing
 @MainActor
 struct CodexRuntimeAccountIsolationTests {
     @Test
-    func prepareNormalizesEffortAfterFallingBackToAnAvailableModel() async {
+    func prepareNormalizesEffortAfterFallingBackToAnAvailableModel() async throws {
         let service = TestCodexChatService(mode: .complete)
         let settings = AppSettings()
         settings.currentWorkspace = WorkspaceRecord(
@@ -16,17 +16,28 @@ struct CodexRuntimeAccountIsolationTests {
             createdAt: .now,
             lastOpenedAt: .now
         )
+        let suite = "ModelFallback-\(UUID())"
+        let defaults = try #require(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let workspaceSettings = WorkspaceAISettingsModel(setupDefaults: defaults, activateRuntime: { _ in })
+        try workspaceSettings.activate(workspace: #require(settings.currentWorkspace))
+        workspaceSettings.chatModelID = "unavailable-model"
+        workspaceSettings.chatReasoningEffort = "high"
         let session = CodexChatSessionModel(
             modelID: "unavailable-model",
             effort: "high",
             service: service,
-            settings: settings
+            settings: settings,
+            workspaceSettings: workspaceSettings
         )
 
         await session.prepare()
 
         #expect(session.selectedModelID == "default-model")
         #expect(session.selectedEffort == "medium")
+        #expect(workspaceSettings.chatModelID == "unavailable-model")
+        #expect(workspaceSettings.chatReasoningEffort == "high")
+
     }
 
     @Test
@@ -96,7 +107,7 @@ struct CodexRuntimeAccountIsolationTests {
     }
 
     @Test
-    func cancelledProviderSwitchRestoresThePreviouslyActiveConfiguration() async throws {
+    func providerSwitchCancelsGenerationAndStartsNextProcessOnDemand() async throws {
         let rootURL = FileManager.default.temporaryDirectory
             .appending(path: "dahlia-codex-context-\(UUID().uuidString)", directoryHint: .isDirectory)
         defer { try? FileManager.default.removeItem(at: rootURL) }
@@ -145,20 +156,21 @@ struct CodexRuntimeAccountIsolationTests {
                 localAccountSettings: .init(provider: .databricks, databricksProfile: connection.id.uuidString)
             ))
         }
-        await service.waitUntilConfigurationReloadIsWaitingForTesting()
+        try await databricksActivation.value
+        await #expect(throws: CancellationError.self) { try await generation.value }
+        #expect(await first.isClosed)
+        #expect(transports.withLock { $0.count } == 1)
+        #expect(contextStore.provider == .databricks(profile: connection.id.uuidString))
 
-        databricksActivation.cancel()
-        await #expect(throws: CancellationError.self) { try await databricksActivation.value }
-        let localActivation = Task {
-            try await coordinator.activate(WorkspaceAISettingsSnapshot(
-                workspace: localWorkspace,
-                localAccountSettings: .init(provider: .chatGPTSubscription, databricksProfile: "")
-            ))
-        }
-        await completeGeneration(on: first)
-
-        _ = try await generation.value
-        try await localActivation.value
+        try await coordinator.activate(WorkspaceAISettingsSnapshot(
+            workspace: localWorkspace,
+            localAccountSettings: .init(provider: .chatGPTSubscription, databricksProfile: "")
+        ))
+        #expect(transports.withLock { $0.count } == 1)
+        _ = try await service.models()
+        #expect(transports.withLock { $0.count } == 0)
+        try await coordinator.activate(provider: .chatGPTSubscription)
+        #expect(await !second.isClosed)
         let configuration = try String(
             contentsOf: locator.homeURL().appending(path: "config.toml"),
             encoding: .utf8

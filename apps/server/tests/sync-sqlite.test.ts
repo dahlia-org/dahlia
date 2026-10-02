@@ -59,14 +59,15 @@ describe("SQLite canonical sync", () => {
     } finally { database.close(); await store.close?.(); }
   });
 
-  it("shares generation defaults through Workspace reads, receipts and deltas with admin-only writes", async () => {
+  it("accepts v0.24.2 workspace settings and preserves legacy keys in reads, receipts and deltas", async () => {
     const { store } = await setup();
     const service = new MeetingSyncService(store.sync);
     try {
       await createWorkspace(store);
       const initial = await store.sync.withIdentity(owner, (scoped) => scoped.getWorkspace(workspaceId));
       expect(initial?.generationSettings).toEqual(DEFAULT_WORKSPACE_GENERATION_SETTINGS);
-      const settings = { ...DEFAULT_WORKSPACE_GENERATION_SETTINGS, outputLanguage: "fr" as const,
+      const settings = { processing: { location: "remote" as const, remote: { workflow: "combined" as const } },
+        summary: { style: "detailed" as const }, outputLanguage: "fr" as const,
         local: { model: "shared-local", reasoningEffort: "high" as const }, automaticProcessing: false };
       const transaction = wire([{ entity: "workspace", action: "update", entityId: workspaceId,
         baseRevision: initial!.revision!, data: { name: initial!.name, generationSettings: settings } }]);
@@ -111,7 +112,7 @@ describe("SQLite canonical sync", () => {
   });
 
   it("freezes image output language across retries after shared settings change", async () => {
-    const { store, publish, attach, file } = await fileSetup("gpt-5-6-luna");
+    const { store, publish, attach, file } = await fileSetup("gpt-5-6-luna", "fill_missing");
     try {
       await publish(); await attach();
       await updateGenerationSettings(store, owner, file.workspaceId, { outputLanguage: "en" });
@@ -872,7 +873,7 @@ describe("SQLite canonical sync", () => {
     expect(await capabilities.json()).toEqual({ sync: { version: 7 }, documents: { version: 3, accountBinding: true }, workspaceTransfers: { version: 1 }, recordingArchive: { version: 1 }, meetingEvents: { version: 1 }, search: { version: 1 }, conversationAnalytics: { version: 1 } });
     const enabledApp = createApp({ config: testConfig(databasePath), authStore: store, imageAnalysisEnabled: true });
     expect(await (await enabledApp.request("http://localhost:5173/api/v1/capabilities", { headers: headers() })).json())
-      .toEqual({ sync: { version: 7 }, documents: { version: 3, accountBinding: true }, workspaceTransfers: { version: 1 }, recordingArchive: { version: 1 }, meetingEvents: { version: 1 }, search: { version: 1 }, conversationAnalytics: { version: 1 }, imageAnalysis: { version: 2 } });
+      .toEqual({ sync: { version: 7 }, documents: { version: 3, accountBinding: true }, workspaceTransfers: { version: 1 }, recordingArchive: { version: 1 }, meetingEvents: { version: 1 }, search: { version: 1 }, conversationAnalytics: { version: 1 } });
     expect((await send("sync-content")).status).toBe(404);
     const availability = vi.spyOn(store.sync, "isAvailable").mockResolvedValueOnce(false);
     const unsupported = await send("capabilities");
@@ -1045,7 +1046,7 @@ describe("SQLite canonical sync", () => {
 
 
   it("analyzes only published attached files and commits text, delta and embeddings atomically", async () => {
-    const { store, service, publish, attach, file, databasePath } = await fileSetup("catalog.ai.gpt-5-6-luna");
+    const { store, service, publish, attach, file, databasePath } = await fileSetup("catalog.ai.gpt-5-6-luna", "fill_missing");
     const jobs = store.imageAnalysis!;
     const analyze = vi.fn(async (_bytes: Uint8Array, settings: { outputLanguage: string }) => {
       expect(settings.outputLanguage).toBe("en");
@@ -1084,20 +1085,24 @@ describe("SQLite canonical sync", () => {
     await store.close?.();
   });
 
-  it("enqueues missing image analysis when the attachment commits, without a reconcile scan", async () => {
-    const { store, service, publish, attach } = await fileSetup("model");
+  it("does not enqueue image analysis from sync or reconciliation", async () => {
+    const { store, service, publish, attach, databasePath } = await fileSetup("model");
     const analyze = vi.fn(async () => ({ ocr_text: "OCR", caption: "Caption", informative: true, reason: "Shared material" }));
     const worker = imageProcessor(store.imageAnalysis!, { model: "model", analyze }, store.sync, service);
     await publish();
-    expect(await worker.processOne()).toBe(false);
     await attach();
-    expect(await worker.processOne()).toBe(true);
-    expect(analyze).toHaveBeenCalledOnce();
+    expect(await worker.processOne()).toBe(false);
+    await store.imageAnalysis!.reconcile("model");
+    expect(await worker.processOne()).toBe(false);
+    expect(analyze).not.toHaveBeenCalled();
+    const db = new DatabaseSync(databasePath);
+    expect(db.prepare("SELECT count(*) AS n FROM jobs_image_analysis").get()).toEqual({ n: 0 });
+    db.close();
     await store.close?.();
   });
 
   it("pauses unreferenced image and embedding claims after an upstream 429", async () => {
-    const { store, service, publish, attach, file, databasePath } = await fileSetup("model");
+    const { store, service, publish, attach, file, databasePath } = await fileSetup("model", "fill_missing");
     const raw = new DatabaseSync(databasePath);
     try {
       await publish();
@@ -1132,7 +1137,7 @@ describe("SQLite canonical sync", () => {
   });
 
   it("preserves existing captions while backfilling OCR and excludes other identities", async () => {
-    const { store, service, publish, attach, file } = await fileSetup("model");
+    const { store, service, publish, attach, file } = await fileSetup("model", "fill_missing");
     await publish();
     await attach();
     await service.commitTransaction(owner, wire([{ entity: "file", action: "upsert", entityId: file.id, baseRevision: 1,
@@ -1148,7 +1153,7 @@ describe("SQLite canonical sync", () => {
   });
 
   it("replaces imported image analysis after attachment and embeds only the generated text", async () => {
-    const { store, service, attach, file, databasePath } = await fileSetup("model");
+    const { store, service, attach, file, databasePath } = await fileSetup("model", "replace");
     await service.commitTransaction(owner, wire([{ entity: "file", action: "upsert", entityId: file.id, baseRevision: null,
       data: { checksum: file.checksum, metadata: { ocrText: "Imported OCR", caption: "Imported caption" }, imageAnalysis: "replace" } }]));
     const captioner: ImageCaptioner = { model: "model", analyze: vi.fn(async () => ({
@@ -1179,7 +1184,7 @@ describe("SQLite canonical sync", () => {
   });
 
   it("enqueues the imported image embedding after terminal replacement failure", async () => {
-    const { store, service, attach, file, databasePath } = await fileSetup("model");
+    const { store, service, attach, file, databasePath } = await fileSetup("model", "replace");
     await service.commitTransaction(owner, wire([{ entity: "file", action: "upsert", entityId: file.id, baseRevision: null,
       data: { checksum: file.checksum, metadata: { ocrText: "Imported OCR", caption: "Imported caption" }, imageAnalysis: "replace" } }]));
     await attach();
@@ -1202,27 +1207,39 @@ describe("SQLite canonical sync", () => {
     await store.close?.();
   });
 
-  it("accepts replacement only on the initial screenshot publication", async () => {
+  it("accepts and ignores legacy replacement on a published screenshot", async () => {
     const { store, service, publish, file } = await fileSetup("model");
     try {
       await publish();
       await expect(service.commitTransaction(owner, wire([{ entity: "file", action: "upsert", entityId: file.id, baseRevision: 1,
-        data: { checksum: file.checksum, metadata: {}, imageAnalysis: "replace" } }]))).rejects
-        .toMatchObject({ status: 422, code: "invalid_image_analysis_request" });
+        data: { checksum: file.checksum, metadata: {}, imageAnalysis: "replace" } }]))).resolves.toMatchObject({ status: "committed" });
     } finally { await store.close?.(); }
   });
 
-  it("rejects replacement when Server image analysis is unavailable", async () => {
+  it("accepts and ignores legacy replacement without image analysis", async () => {
     const { store, service, file } = await fileSetup();
     try {
       await expect(service.commitTransaction(owner, wire([{ entity: "file", action: "upsert", entityId: file.id, baseRevision: null,
-        data: { checksum: file.checksum, metadata: {}, imageAnalysis: "replace" } }]))).rejects
-        .toMatchObject({ status: 422, code: "image_analysis_unavailable" });
+        data: { checksum: file.checksum, metadata: {}, imageAnalysis: "replace" } }]))).resolves.toMatchObject({ status: "committed" });
     } finally { await store.close?.(); }
   });
 
+  it("preserves imported OCR and indexing when a legacy client requests replacement", async () => {
+    const { store, service, file, attach, databasePath } = await fileSetup("model");
+    await service.commitTransaction(owner, wire([{ entity: "file", action: "upsert", entityId: file.id, baseRevision: null,
+      data: { checksum: file.checksum, metadata: { ocrText: "Imported OCR", caption: "Imported caption" }, imageAnalysis: "replace" } }]));
+    await attach();
+    await store.imageAnalysis!.reconcile("model");
+    expect((await service.getFile(owner, file.id)).metadata).toMatchObject({ ocrText: "Imported OCR", caption: "Imported caption" });
+    const db = new DatabaseSync(databasePath);
+    expect(db.prepare("SELECT count(*) AS n FROM jobs_image_analysis").get()).toEqual({ n: 0 });
+    expect(db.prepare("SELECT count(*) AS n FROM jobs_search_index").get()).toEqual({ n: 1 });
+    db.close();
+    await store.close?.();
+  });
+
   it("backfills only missing metadata when a legacy sibling exceeds the API limit", async () => {
-    const { store, service, publish, attach, file, databasePath } = await fileSetup("model");
+    const { store, service, publish, attach, file, databasePath } = await fileSetup("model", "fill_missing");
     await publish();
     await attach();
     const legacyOCR = "x".repeat(fileMetadataLimits.api.ocrText + 1);
@@ -1242,7 +1259,7 @@ describe("SQLite canonical sync", () => {
 
   it.each(["before", "during"].flatMap((boundary) => ["editor", "viewer"].map((role) => ({ boundary, role }))))(
     "checks image requester permission $boundary inference after Admin becomes $role", async ({ boundary, role }) => {
-      const { store, service, publish, attach, file } = await fileSetup("model");
+      const { store, service, publish, attach, file } = await fileSetup("model", "fill_missing");
       try {
         await publish(); await attach();
         await store.imageAnalysis!.reconcile("model");
@@ -1262,7 +1279,7 @@ describe("SQLite canonical sync", () => {
   );
 
   it.each(["edit", "detach", "delete", "lease", "permission"])("rejects an image result after concurrent %s", async (change) => {
-    const { store, service, publish, attach, file, databasePath } = await fileSetup("model");
+    const { store, service, publish, attach, file, databasePath } = await fileSetup("model", "fill_missing");
     await publish();
     await attach();
     await store.imageAnalysis!.reconcile("model");
@@ -1293,6 +1310,7 @@ describe("SQLite canonical sync", () => {
   it("records why a screenshot is not informative in file metadata without reanalyzing existing screenshots", async () => {
     const { store, service, databasePath } = await fileSetup("model");
     const files = await attachScreenshots(service, 2);
+    for (const file of files) seedLegacyImageJob(databasePath, file.id, "model");
     let calls = 0;
     const captioner: ImageCaptioner = { model: "model", analyze: async () => {
       calls++;
@@ -1320,7 +1338,7 @@ describe("SQLite canonical sync", () => {
   });
 
   it("retries transient captioning failures after reopening the database", async () => {
-    const { store, service, publish, attach, databasePath } = await fileSetup("model");
+    const { store, service, publish, attach, databasePath } = await fileSetup("model", "fill_missing");
     await publish();
     await attach();
     await store.imageAnalysis!.reconcile("model");
@@ -3315,7 +3333,7 @@ function wire(operations: Omit<SyncTransaction["operations"][number], "id">[]) {
     operations: operations.map((operation) => ({ ...operation, id: freshId() })) };
 }
 
-async function fileSetup(captioningModel?: string) {
+async function fileSetup(captioningModel?: string, legacyMode?: "fill_missing" | "replace") {
   const setupValue = await setup(captioningModel ? { model: "embedding", dimensions: 32 } : undefined, captioningModel);
   const { store, directory } = setupValue;
   await createWorkspace(store);
@@ -3333,9 +3351,21 @@ async function fileSetup(captioningModel?: string) {
   await uploadFile(service, owner, fileUploadRequest(file, bytes));
   const publish = () => service.commitTransaction(owner, wire([{ entity: "file", action: "upsert", entityId: file.id,
     baseRevision: null, data: { checksum: file.checksum, metadata: {} } }]));
-  const attach = () => service.commitTransaction(owner, wire([{ entity: "meeting_attachment", action: "upsert", entityId: file.id,
-    baseRevision: null, data: { fileId: file.id, meetingId, capturedAt: now.toISOString(), sessionId: null, createdAt: now.toISOString() } }]));
+  const attach = async () => {
+    if (legacyMode) seedLegacyImageJob(setupValue.databasePath, file.id, captioningModel!, legacyMode);
+    return service.commitTransaction(owner, wire([{ entity: "meeting_attachment", action: "upsert", entityId: file.id,
+      baseRevision: null, data: { fileId: file.id, meetingId, capturedAt: now.toISOString(), sessionId: null, createdAt: now.toISOString() } }]));
+  };
   return { ...setupValue, service, storage, transformer, file, bytes, publish, attach };
+}
+
+// Simulate jobs accepted before Desktop became the image-analysis executor.
+function seedLegacyImageJob(databasePath: string, fileId: string, model: string, mode = "fill_missing") {
+  const db = new DatabaseSync(databasePath);
+  try {
+    db.prepare("INSERT INTO jobs_image_analysis(file_id, workspace_id, owner_user_id, model, mode) VALUES (?, ?, ?, ?, ?)")
+      .run(fileId, workspaceId, owner.userId, model, mode);
+  } finally { db.close(); }
 }
 
 async function attachScreenshots(service: MeetingSyncService, count: number) {

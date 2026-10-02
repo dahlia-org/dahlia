@@ -1,8 +1,9 @@
+import Foundation
 import Synchronization
 
 final class CodexRuntimeContextStore: Sendable {
+    static let didChange = Notification.Name("DahliaCodexRuntimeContextDidChange")
     static let shared = CodexRuntimeContextStore()
-    static let macInference = CodexRuntimeContextStore()
 
     private struct State: Sendable {
         var provider = CodexRuntimeProvider.chatGPTSubscription
@@ -24,5 +25,16 @@ final class CodexRuntimeContextStore: Sendable {
             $0.provider = provider
             $0.isConfigured = true
         }
+        NotificationCenter.default.post(name: Self.didChange, object: nil)
+    }
+
+    func waitUntilActive(_ expected: CodexRuntimeProvider) async throws {
+        let changes = NotificationCenter.default.notifications(named: Self.didChange)
+        if isConfigured, provider == expected { return }
+        for await _ in changes {
+            try Task.checkCancellation()
+            if isConfigured, provider == expected { return }
+        }
+        throw CancellationError()
     }
 }

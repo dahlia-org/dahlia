@@ -221,7 +221,7 @@ final class MeetingRepository {
     nonisolated func updateWorkspaceAISettings(_ settings: WorkspaceAISettingsSnapshot) async throws -> WorkspaceRecord? {
         try await dbQueue.write { db in
             guard var workspace = try WorkspaceRecord.fetchOne(db, key: settings.workspaceID) else { return nil }
-            let changesGeneration = workspace.generationSettings != settings.generationSettings
+            let changesGeneration = workspace.generationSettings.outputLanguage != settings.generationSettings.outputLanguage
             if changesGeneration, !workspace.allowsWorkspaceManagement { throw SyncTransactionQueueError.readOnlyWorkspace }
             settings.applyAISettings(to: &workspace)
             try workspace.update(db)

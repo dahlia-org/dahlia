@@ -81,6 +81,7 @@ struct BatchTranscriptionStatusBanner: View {
     }
 
     private func runningMessage(_ progress: BatchTranscriptionProgress?) -> String {
+        if progress?.isDownloadingArchive == true { return L10n.downloadingRecordingArchive }
         guard let progress else { return L10n.batchTranscriptionRunning }
         return "\(L10n.batchTranscriptionRunning) \(L10n.batchTranscriptionFileProgress(completed: progress.completedFileCount, total: progress.totalFileCount))"
     }
