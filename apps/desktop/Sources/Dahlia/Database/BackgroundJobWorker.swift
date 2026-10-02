@@ -27,6 +27,7 @@ actor BackgroundJobWorker {
     private var hasStarted = false
     private var shouldRecoverLegacyFailure = false
     private var scheduledRetryAt: Date?
+    private var pendingJobReleases: [PendingJobRelease] = []
 
     private static let divergenceCheckInterval: TimeInterval = 15 * 60
     private static let maximumConcurrentScreenshotAnalysisCount = 2
@@ -172,6 +173,10 @@ actor BackgroundJobWorker {
             drainWaiters.removeAll()
         }
         do {
+            while let release = pendingJobReleases.first {
+                try await persistRelease(release)
+                pendingJobReleases.removeFirst()
+            }
             if shouldRecoverLegacyFailure {
                 try await dbQueue.write { db in
                     // Older releases persisted only the error type, including transient DB locks.
@@ -453,6 +458,14 @@ actor BackgroundJobWorker {
     ) async throws -> [SearchIndexJob]? {
         try await dbQueue.write { db in
             let now = Date()
+            // An expired lease is unfinished work, not a confirmed failed attempt.
+            // Archives have their own unlimited retry/backoff policy.
+            try db.execute(sql: """
+            UPDATE jobs_background
+            SET status = 'pending', attempts = max(0, attempts - 1),
+                claimedAt = NULL, leaseExpiresAt = NULL, updatedAt = ?
+            WHERE indexKind = 'fts' AND status = 'processing' AND leaseExpiresAt < ?
+            """, arguments: [now, now])
             let searchFilter = allowsSearch ? "" : "AND targetKind IN ('screenshotAnalysis', 'recordingArchive')"
             let archiveFilter = allowsArchives ? "" : "AND targetKind <> 'recordingArchive'"
             let cleanupFilter = archivesOnly ? "AND indexKind = 'archive'" : cleanupOnly
@@ -959,9 +972,21 @@ private extension BackgroundJobWorker {
     }
 
     private func release(_ jobs: [SearchIndexJob], retryAt: Date = .now, errorCode: String? = nil) async throws {
+        let release = PendingJobRelease(jobs: jobs, retryAt: retryAt, errorCode: errorCode)
+        do {
+            try await persistRelease(release)
+        } catch {
+            if Self.isTransientDatabaseError(error) || error is CancellationError {
+                pendingJobReleases.append(release)
+            }
+            throw error
+        }
+    }
+
+    private func persistRelease(_ release: PendingJobRelease) async throws {
         try await Task.detached(priority: .utility) { [dbQueue] in
             try await dbQueue.write { db in
-                for job in jobs {
+                for job in release.jobs {
                     try db.execute(
                         sql: """
                         UPDATE jobs_background
@@ -970,7 +995,7 @@ private extension BackgroundJobWorker {
                         WHERE indexKind = CASE WHEN targetKind = 'recordingArchive' THEN 'archive' ELSE 'fts' END AND targetKind = ? AND targetKey = ? AND generation = ?
                           AND status = 'processing'
                         """,
-                        arguments: [retryAt, errorCode, Date(), job.targetKind, job.targetID, job.generation]
+                        arguments: [release.retryAt, release.errorCode, Date(), job.targetKind, job.targetID, job.generation]
                     )
                 }
             }
@@ -1111,6 +1136,12 @@ private extension BackgroundJobWorker {
             )
         }
     }
+}
+
+private struct PendingJobRelease: Sendable {
+    let jobs: [SearchIndexJob]
+    let retryAt: Date
+    let errorCode: String?
 }
 
 private struct SearchIndexJob: Sendable {

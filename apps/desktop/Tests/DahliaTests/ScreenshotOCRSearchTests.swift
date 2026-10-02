@@ -60,6 +60,40 @@ import Synchronization
         }
 
         @Test
+        func expiredFinalImageLeaseRecoversWithoutResettingExhaustedFailures() async throws {
+            let database = try makeDatabase(screenshotAnalyzer: StubScreenshotAnalyzer(text: "期限切れ画像検索語"))
+            let workspace = makeWorkspace()
+            let meeting = makeMeeting(workspaceID: workspace.id)
+            let screenshot = MeetingScreenshotRecord(
+                id: .v7(), meetingId: meeting.id, sessionId: nil, capturedAt: .now,
+                imageData: Data([1, 2, 3]), mimeType: "image/png"
+            )
+            let exhausted = MeetingScreenshotRecord(
+                id: .v7(), meetingId: meeting.id, sessionId: nil, capturedAt: .now,
+                imageData: Data([4, 5, 6]), mimeType: "image/png"
+            )
+            try await database.dbQueue.write { db in
+                try workspace.insert(db)
+                try meeting.insert(db)
+                try screenshot.insertLegacyForTesting(db)
+                try exhausted.insertLegacyForTesting(db)
+                try db.execute(sql: "UPDATE jobs_background SET attempts = 5 WHERE targetKind = 'screenshotAnalysis'")
+                try db.execute(sql: """
+                UPDATE jobs_background SET status = 'processing', claimedAt = ?, leaseExpiresAt = ?
+                WHERE targetKey = ?
+                """, arguments: [Date.distantPast, Date.distantPast, screenshot.id])
+            }
+            await database.searchIndexer.drain()
+            try await database.dbQueue.read { db in
+                let recovered = try #require(try MeetingScreenshotRecord.fetchOne(db, key: screenshot.id))
+                #expect(recovered.ocrText == "期限切れ画像検索語")
+                #expect(recovered.caption == "画像の説明")
+                #expect(try Int.fetchOne(db, sql: "SELECT attempts FROM jobs_background WHERE targetKey = ?", arguments: [exhausted.id]) == 5)
+                #expect(try MeetingScreenshotRecord.fetchOne(db, key: exhausted.id)?.caption == nil)
+            }
+        }
+
+        @Test
         func startupLeavesKnownPermanentFailureForManualRebuild() async throws {
             let database = try makeDatabase(screenshotAnalyzer: StubScreenshotAnalyzer(text: "unused"))
             try await database.dbQueue.write { db in
