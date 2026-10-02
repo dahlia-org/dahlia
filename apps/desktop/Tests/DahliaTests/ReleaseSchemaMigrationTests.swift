@@ -370,43 +370,26 @@
             }
         }
 
-        @Test
-        func v53DevelopmentDatabasePreservesPendingDocumentAndRecovery() throws {
-            let database = try AppDatabaseManager(path: ":memory:")
+        @Test(arguments: ["v53_documentsSyncAndBackgroundJobs", "v54_serverContentRetention"])
+        func v53DevelopmentDatabasePreservesPendingDocumentAndRecovery(prior: String) throws {
+            let queue = try DatabaseQueue(configuration: AppDatabaseManager.configuration())
+            try DevelopmentSchemaHistory.migrator(for: prior).migrate(queue)
             let workspaceID = UUID.v7(), documentID = UUID.v7(), recoveryID = UUID.v7()
-            try database.dbQueue.write { db in
+            try queue.write { db in
                 try WorkspaceRecord(id: workspaceID, path: nil, name: "Development", createdAt: .now, lastOpenedAt: .now).insert(db)
-                try DocumentRecord(
-                    id: documentID,
-                    workspaceId: workspaceID,
-                    meetingId: nil,
-                    kind: "general",
-                    checkpoint: "AAA=",
-                    createdAt: .now,
-                    updatedAt: .now
-                ).insert(db)
-                var update = DocumentUpdateRecord(documentId: documentID, payload: "AAA=", pending: true, createdAt: .now)
-                try update.insert(db)
-                try DocumentRecoveryRecord(
-                    id: recoveryID,
-                    documentId: documentID,
-                    blocksJSON: "[]",
-                    reason: "deleted",
-                    pending: true,
-                    createdAt: .now
-                ).insert(db)
-                try db
-                    .execute(
-                        sql: "ALTER TABLE documents DROP COLUMN recoverySequence; ALTER TABLE documents DROP COLUMN recoveryCursor; ALTER TABLE document_recoveries DROP COLUMN serverSequence"
-                    )
-                try db
-                    .execute(
-                        sql: "UPDATE grdb_migrations SET identifier = 'v53_documentsSyncAndBackgroundJobs' WHERE identifier = 'v54_documentsSyncAndBackgroundJobs'"
-                    )
+                try db.execute(sql: """
+                INSERT INTO documents(id, workspace_id, kind, checkpoint, createdAt, updatedAt)
+                VALUES (?, ?, 'general', 'AAA=', ?, ?);
+                INSERT INTO document_updates(documentId, payload, pending, createdAt) VALUES (?, 'AAA=', 1, ?);
+                INSERT INTO document_recoveries(id, documentId, blocksJSON, reason, pending, createdAt)
+                VALUES (?, ?, '[]', 'deleted', 1, ?);
+                """, arguments: [documentID, workspaceID, Date(), Date(), documentID, Date(), recoveryID, documentID, Date()])
+                #expect(try db.columns(in: "documents").first(where: { $0.name == "schemaVersion" })?.defaultValueSQL == "1")
+                #expect(try AppDatabaseManager.hasExpectedSchema(db, upTo: prior))
             }
-            try AppDatabaseManager.migrator.migrate(database.dbQueue)
-            try database.dbQueue.read { db throws in
-                #expect(try DocumentRecord.fetchOne(db, key: documentID)?.schemaVersion == 2)
+            try AppDatabaseManager.migrator.migrate(queue)
+            try queue.read { db throws in
+                #expect(try DocumentRecord.fetchOne(db, key: documentID)?.schemaVersion == 1)
                 #expect(try DocumentUpdateRecord.filter(Column("documentId") == documentID).filter(Column("pending") == true).fetchCount(db) == 1)
                 #expect(try DocumentRecoveryRecord.fetchOne(db, key: recoveryID)?.pending == true)
                 #expect(try Row.fetchAll(db, sql: "PRAGMA foreign_key_check").isEmpty)
@@ -427,6 +410,7 @@
                 "v46_workspacePersonalUser",
                 "v47_orphanedRecordingRecoveryState",
                 "v54_documentsSyncAndBackgroundJobs",
+                "v55_serverContentRetention",
             ])
             try database.dbQueue.read { db throws in
                 #expect(try Row.fetchAll(db, sql: "PRAGMA foreign_key_check").isEmpty)

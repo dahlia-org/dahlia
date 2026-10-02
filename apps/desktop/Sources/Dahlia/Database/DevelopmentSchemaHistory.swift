@@ -3,7 +3,8 @@ import GRDB
 /// Frozen development schemas used only to validate old backups before any migration or trigger can execute.
 enum DevelopmentSchemaHistory {
     static func migrator(for identifier: String) -> DatabaseMigrator {
-        guard ["v52_documentsAndSync", "v53_sharedBackgroundJobs", "v53_documentsSyncAndBackgroundJobs"].contains(identifier) else { return migrator }
+        guard ["v52_documentsAndSync", "v53_sharedBackgroundJobs", "v53_documentsSyncAndBackgroundJobs", "v54_serverContentRetention"]
+            .contains(identifier) else { return migrator }
         var migrator = AppDatabaseManager.releasedMigrator
         migrator.registerMigration("v52_documentsAndSync") { db in
             try FrozenDocumentsMigration.migrate(in: db)
@@ -12,12 +13,16 @@ enum DevelopmentSchemaHistory {
         migrator.registerMigration("v53_sharedBackgroundJobs") { db in
             try BackgroundJobsMigration.migrate(in: db)
         }
-        if identifier == "v53_documentsSyncAndBackgroundJobs" {
+        if identifier == "v53_documentsSyncAndBackgroundJobs" || identifier == "v54_serverContentRetention" {
             var consolidated = AppDatabaseManager.releasedMigrator
-            consolidated.registerMigration(identifier) { db in
+            consolidated.registerMigration("v53_documentsSyncAndBackgroundJobs") { db in
                 try FrozenDocumentsMigration.migrate(in: db)
                 try DocumentsAndSyncMigration.migrateDocumentsAndSync(in: db, applied: ["v48_independentDocuments"])
                 try BackgroundJobsMigration.migrate(in: db)
+            }
+            if identifier == "v54_serverContentRetention" {
+                // Retention only backfilled timestamps; it did not change the schema.
+                consolidated.registerMigration(identifier) { _ in }
             }
             return consolidated
         }

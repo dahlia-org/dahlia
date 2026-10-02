@@ -8,7 +8,7 @@ enum DocumentsAndSyncMigration {
     ]
 
     static func register(in migrator: inout DatabaseMigrator) {
-        migrator.registerMigration("v54_documentsSyncAndBackgroundJobs", merging: legacyIdentifiers) { db, applied in
+        migrator.registerMigration("v54_documentsSyncAndBackgroundJobs", foreignKeyChecks: .deferred, merging: legacyIdentifiers) { db, applied in
             if !applied.contains("v53_documentsSyncAndBackgroundJobs") {
                 try migrateDocumentsAndSync(in: db, applied: applied)
                 if !applied.contains("v53_sharedBackgroundJobs") { try BackgroundJobsMigration.migrate(in: db) }

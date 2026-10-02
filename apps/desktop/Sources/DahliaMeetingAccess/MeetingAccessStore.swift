@@ -884,6 +884,7 @@ extension MeetingAccessStore {
         if original == nil, let json = payload.remoteReference,
            let source = try? JSONDecoder().decode(ScreenshotRemoteReference.self, from: Data(json.utf8)),
            source.fileId == payload.fileId {
+            _ = try? textResolver?(workspaceID, .init(touchingFile: payload.fileId, meetingId: meetingID))
             original = try? screenshotCache?.read(source, variant: .original)?.data
         }
         if original == nil {

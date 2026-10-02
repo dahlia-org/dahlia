@@ -28,7 +28,7 @@
 
 Desktop は差分と送信待ちを短い SQLite transaction で保存してから保存済みと通知する。本文生成・マージ・checkpoint 作成は MainActor と DB write transaction の外で行う。通常時250ms以内のローカル commit を目標とするが、強制終了前の未確認入力の保全時間は保証しない。録音停止に文書待機を追加しない。通常終了・画面切替はローカル commit だけを待つ。今回の Web はメモリのみで、閉じた後の未送信入力は復元保証の対象外。
 
-本文・差分・復元記録・要約 snapshot は既存の Server 暗号化 store と RLS の対象。Notes の FTS / 検索 / Hindsight への直接取り込みは追加しない。再取得可能な共有文書キャッシュは既存128 MiB LRUへ含め、未送信・非公開・復元用・Local Account のデータは解放しない。バックアップ、移管、Server→Local、サインアウトで同じ保存境界を維持する。
+本文・差分・復元記録・要約 snapshot は既存の Server 暗号化 store と RLS の対象。Notes の FTS / 検索 / Hindsight への直接取り込みは追加しない。再取得可能な共有文書キャッシュは既存128 MiB LRUへ含め、[Desktop の最低保持期間](sync.md#desktop-の最低保持期間2026-10-02)を優先して解放し、未送信・非公開・復元用・Local Account のデータは解放しない。バックアップ、移管、Server→Local、サインアウトで同じ保存境界を維持する。
 
 ## 要約
 
@@ -157,3 +157,5 @@ v1 の自動変換・互換読み取りは設けない。checkpoint / legacyUpda
 Server 未公開 baseline は最終 schema に直接更新する。Desktop は公開済み v0.24.2 の v47 までを変更せず、未公開 v52 / v53 と新しい復元 watermark / cursor を `v54_documentsSyncAndBackgroundJobs` に統合する。旧開発DBは GRDB merging と不足列の追加・必要な default のデータ保持変換で引き継ぐ。実DBの消去・手作業の migration ledger 編集は行わない。
 
 通常の Desktop ingress / send / editor notification は常駐 runtime の処理済み位置から新しい SQLite delta だけを取得する。cache miss 時には checkpoint と永続ログ全体を再取得し、不完全な前提状態から開始しない。検出済みの復元コピーは durable recovery watermark が進むまで runtime に保持する。下書きの archive 前提は staging にだけ適用し、SQLite commit 後に canonical へ反映する。Web は Worker 障害に備え、main thread に index を持たない保存済み Yjs replica を delta で保持する。再起動時だけ snapshot を生成し、未保存の editor input を canonical に昇格しない。
+
+2026-10-02: main の最低保持期間変更は Documents v54 の後の `v55_serverContentRetention` に配置する。未公開の旧 `v54_serverContentRetention` は merging で認識し、保持日時の再設定は行わない。旧 v53 / v54 の実スキーマから pending 更新・復元記録と外部キーの保持を検証する。

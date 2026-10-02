@@ -28,8 +28,13 @@ extension MeetingContentProvider {
                       true
               }) else { throw TextContentError.deleted }
         if request.operation == .touch {
-            guard let entity = request.entity, entity != .file else { throw TextContentError.unavailable }
-            try await touch(entity: entity, id: meetingId, dbQueue: dbQueue)
+            guard let entity = request.entity else { throw TextContentError.unavailable }
+            if entity == .file {
+                guard let fileId = request.fileId else { throw TextContentError.unavailable }
+                try await ScreenshotContentProvider.shared.touch(fileId: fileId, meetingId: meetingId, workspaceId: workspaceId, dbQueue: dbQueue)
+            } else {
+                try await touch(entity: entity, id: meetingId, dbQueue: dbQueue)
+            }
             return Data("{}".utf8)
         }
         let entities: Set<TextContentEntity> = request.operation == .meeting ? [.summary] : [.transcript]

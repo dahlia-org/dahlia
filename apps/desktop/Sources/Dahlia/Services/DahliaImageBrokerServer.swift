@@ -147,7 +147,9 @@ final class DahliaImageBrokerServer: Sendable {
                 return
             }
             // Text hydration has per-page network deadlines; its total duration depends on the transcript size.
-            let deadline: DispatchTime = request.text == nil ? .now() + .seconds(30) : .distantFuture
+            let deadline: DispatchTime = request.text?.operation == .touch
+                ? .now() + .seconds(2)
+                : request.text == nil ? .now() + .seconds(30) : .distantFuture
             guard semaphore.wait(timeout: deadline) == .success else {
                 task.cancel()
                 throw ScreenshotContentError.unavailable

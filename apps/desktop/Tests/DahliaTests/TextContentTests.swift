@@ -155,7 +155,7 @@
             #expect(completed == .remote(ocrText: "", caption: "Server caption during recording", state: .ready))
             #expect(completed.isTerminal)
             #expect(calls.withLock { $0.count } == 1)
-            try await provider.trim(dbQueue: fixture.queue, capacity: 1)
+            try await provider.trim(dbQueue: fixture.queue, capacity: 1, now: .distantFuture, retentionDays: 1)
             try await fixture.queue.read { db throws in
                 #expect(try String.fetchOne(db, sql: "SELECT syncPullCursor FROM workspaces") == "before")
                 #expect(try SyncTransactionQueue.hasPending(workspaceId: fixture.workspaceId, in: db))
@@ -214,7 +214,7 @@
             let provider = provider(fixture) { fixture.response($0) }
             defer { ImageURLProtocol.remove(origin: fixture.origin) }
             try await provider.ensure(entity: .transcript, id: fixture.meetingId, dbQueue: fixture.queue)
-            try await provider.trim(dbQueue: fixture.queue, capacity: 1)
+            try await provider.trim(dbQueue: fixture.queue, capacity: 1, now: .distantFuture, retentionDays: 1)
             try await fixture.queue.read { db throws in
                 #expect(try TextContentAccess.transcript(meetingId: fixture.meetingId, in: db).count == 2)
                 #expect(try TextContentAccess.transcript(meetingId: recording, in: db).first?.text == "durable recording")
@@ -254,7 +254,7 @@
                 try db.execute(sql: "DELETE FROM summary_bodies")
                 try db.execute(sql: "DELETE FROM file_text_bodies")
                 // Even an inconsistent state row must not let an INNER JOIN silently return an empty transcript.
-                try db.execute(sql: "UPDATE sync_content_state SET complete = 1")
+                try db.execute(sql: "UPDATE sync_content_state SET complete = 1, lastAccessedAt = ?", arguments: [Date()])
                 #expect(throws: TextContentError.incomplete) { try TextContentAccess.transcript(meetingId: meetingId, in: db) }
                 #expect(throws: TextContentError.incomplete) { try TextContentAccess.transcript(meetingId: meetingId, limit: 1, in: db) }
                 #expect(throws: TextContentError.incomplete) { try TextContentAccess.summary(meetingId: meetingId, in: db) }
@@ -376,10 +376,10 @@
             let provider = MeetingContentProvider()
             try await provider.ensure(entity: .transcript, id: meetingId, dbQueue: queue)
             await provider.retain(entity: .transcript, id: meetingId, dbQueue: queue)
-            try await provider.trim(dbQueue: queue, capacity: 1)
+            try await provider.trim(dbQueue: queue, capacity: 1, now: .distantFuture, retentionDays: 1)
             #expect(try MeetingRepository(dbQueue: queue).fetchSegments(forMeetingId: meetingId).count == 1)
             await provider.release(entity: .transcript, id: meetingId, dbQueue: queue)
-            try await provider.trim(dbQueue: queue, capacity: 1)
+            try await provider.trim(dbQueue: queue, capacity: 1, now: .distantFuture, retentionDays: 1)
             try await queue.read { db in
                 let row = try #require(try Row.fetchOne(db, sql: "SELECT * FROM transcript_segments WHERE meetingId = ?", arguments: [meetingId]))
                 #expect(try Int.fetchOne(db, sql: """
@@ -436,7 +436,7 @@
                 .read { try TextContentStore.fingerprint(entity: .transcript, id: fixture.meetingId, in: $0)?.hash }
             #expect(fingerprint == fixture.hash)
             #expect(try MeetingRepository(dbQueue: fixture.queue).fetchSegments(forMeetingId: fixture.meetingId).count == 2)
-            try await provider.trim(dbQueue: fixture.queue, capacity: 1)
+            try await provider.trim(dbQueue: fixture.queue, capacity: 1, now: .distantFuture, retentionDays: 1)
             #expect(try await MeetingContentProvider.usedBytes(dbQueue: fixture.queue) == 0)
             try await provider.ensure(entity: .transcript, id: fixture.meetingId, dbQueue: fixture.queue)
             #expect(calls.withLock { $0 } == 6)
@@ -710,7 +710,7 @@
             await #expect(throws: TextContentError.integrityFailure) {
                 try await provider.ensure(entity: .transcript, id: fixture.meetingId, dbQueue: fixture.queue, refresh: true)
             }
-            try await provider.trim(dbQueue: fixture.queue, capacity: 1)
+            try await provider.trim(dbQueue: fixture.queue, capacity: 1, now: .distantFuture, retentionDays: 1)
             #expect(calls.withLock { $0 } == 1)
             #expect(try MeetingRepository(dbQueue: fixture.queue).fetchSegments(forMeetingId: fixture.meetingId).first?
                 .text == "unverified local body")
@@ -753,7 +753,7 @@
             for _ in 0 ..< 2 {
                 try await queue.write { db in
                     try db.execute(sql: "DELETE FROM transcript_segments WHERE meetingId = ?", arguments: [meetingId])
-                    try db.execute(sql: "UPDATE sync_content_state SET complete = 1")
+                    try db.execute(sql: "UPDATE sync_content_state SET complete = 1, lastAccessedAt = ?", arguments: [Date()])
                     for index in 0 ..< 256 {
                         try TranscriptContent(
                             id: .v7(), meetingId: meetingId, startTime: Date(timeIntervalSince1970: Double(index)),
@@ -768,7 +768,7 @@
                 }
                 try await queue.writeWithoutTransaction { try $0.execute(sql: "PRAGMA wal_checkpoint(TRUNCATE)") }
                 try retainedSizes.append(storageBytes(directory))
-                try await provider.trim(dbQueue: queue, capacity: 1)
+                try await provider.trim(dbQueue: queue, capacity: 1, now: .distantFuture, retentionDays: 1)
                 try await queue.writeWithoutTransaction { db in
                     for _ in 0 ..< 10000 {
                         if try (Int.fetchOne(db, sql: "PRAGMA freelist_count") ?? 0) == 0 { break }
@@ -811,7 +811,7 @@
                     .execute(sql: "UPDATE workspaces SET accountConnectionId = NULL, organizationId = NULL, syncConfirmedConnectionId = NULL")
                 }
             }
-            try await provider.trim(dbQueue: fixture.queue, capacity: 1)
+            try await provider.trim(dbQueue: fixture.queue, capacity: 1, now: .distantFuture, retentionDays: 1)
             #expect(try MeetingRepository(dbQueue: fixture.queue).fetchSegments(forMeetingId: fixture.meetingId).count == 2)
         }
 
@@ -1576,7 +1576,7 @@
                     try db.execute(sql: "UPDATE sync_entity_state SET confirmedRevision = 3 WHERE entity = 'file'")
                 }
             }
-            try await provider.trim(dbQueue: fixture.queue, capacity: 1)
+            try await provider.trim(dbQueue: fixture.queue, capacity: 1, now: .distantFuture, retentionDays: 1)
             try await fixture.queue.read { db throws in
                 if entity == .summary {
                     #expect(try String.fetchOne(db, sql: "SELECT title FROM summaries WHERE meetingId = ?", arguments: [id]) == "Remote")
@@ -1600,7 +1600,7 @@
                     #expect(try Int.fetchOne(db, sql: "SELECT count(*) FROM sync_transactions") == 0)
                     #expect(try SummaryExportRecord.fetchOne(meetingId: id, type: .workspace, in: db) != nil)
                 }
-                try await provider.trim(dbQueue: fixture.queue, capacity: 1)
+                try await provider.trim(dbQueue: fixture.queue, capacity: 1, now: .distantFuture, retentionDays: 1)
                 let replacement = try SummaryDocument(title: "Replacement", sections: []).databaseJSONString()
                 var replacementDigest = TextContentDigest()
                 replacementDigest.add(replacement)

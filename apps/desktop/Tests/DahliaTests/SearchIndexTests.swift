@@ -585,6 +585,136 @@ import GRDB
             #expect(resumed.1 == 0)
         }
 
+        @Test(arguments: [5, 6])
+        func transientDatabaseFailurePreservesTheJobRetryBudget(code: Int32) async throws {
+            let database = try AppDatabaseManager(path: ":memory:")
+            let workspace = Self.makeWorkspace()
+            let meeting = Self.makeMeeting(workspaceID: workspace.id)
+            try await database.dbQueue.write { db in
+                try workspace.insert(db)
+                try meeting.insert(db)
+            }
+            await database.searchIndexer.drain()
+            let changedMeeting = {
+                var changed = meeting
+                changed.name = "復旧後の検索会議"
+                return changed
+            }()
+            try await database.dbQueue.write { db in
+                try changedMeeting.update(db)
+                try db.execute(sql: "UPDATE jobs_background SET attempts = 4 WHERE targetKind = 'meeting'")
+                db.add(function: DatabaseFunction("failSearchWrite", argumentCount: 0) { _ in
+                    throw DatabaseError(resultCode: ResultCode(rawValue: code))
+                })
+                try db.execute(sql: """
+                CREATE TEMP TRIGGER fail_search_write BEFORE UPDATE ON search_documents BEGIN
+                    SELECT failSearchWrite();
+                END;
+                """)
+            }
+
+            await database.searchIndexer.drain()
+            try await database.dbQueue.write { db in
+                let job = try #require(try Row.fetchOne(db, sql: "SELECT * FROM jobs_background WHERE targetKind = 'meeting'"))
+                #expect(job["attempts"] as Int == 4)
+                #expect(job["status"] as String == "pending")
+                #expect(job["lastErrorCode"] as String == "sqlite:\(code):\(code)")
+                #expect(job["availableAt"] as Date > Date.now)
+                #expect(try String.fetchOne(db, sql: "SELECT phase FROM search_index_state WHERE indexKind = 'fts'") == "ready")
+                try db.execute(sql: "DROP TRIGGER fail_search_write")
+                try db.execute(sql: "UPDATE jobs_background SET availableAt = ?", arguments: [Date.distantPast])
+            }
+            await database.searchIndexer.drain()
+            let results = try await MeetingRepository.searchMeetingSidebarPage(
+                workspaceId: workspace.id, query: "復旧後", limit: 20, dbQueue: database.dbQueue
+            )
+            #expect(results.items.map(\.id) == [meeting.id])
+        }
+
+        @Test(arguments: [5, 6])
+        func transientReleaseFailureIsRetriedWithoutWaitingForTheLease(code: Int32) async throws {
+            let database = try AppDatabaseManager(path: ":memory:")
+            let workspace = Self.makeWorkspace()
+            let meeting = Self.makeMeeting(workspaceID: workspace.id)
+            try await database.dbQueue.write { db in
+                try workspace.insert(db)
+                try meeting.insert(db)
+            }
+            await database.searchIndexer.drain()
+            try await database.dbQueue.write { db in
+                var changed = meeting
+                changed.name = "解放後の検索会議"
+                try changed.update(db)
+                try db.execute(sql: "UPDATE jobs_background SET attempts = 4 WHERE targetKind = 'meeting'")
+                db.add(function: DatabaseFunction("failLockedWrite", argumentCount: 0) { _ in
+                    throw DatabaseError(resultCode: ResultCode(rawValue: code))
+                })
+                try db.execute(sql: """
+                CREATE TEMP TRIGGER fail_index_write BEFORE UPDATE ON search_documents BEGIN
+                    SELECT failLockedWrite();
+                END;
+                CREATE TEMP TRIGGER fail_job_release BEFORE UPDATE ON jobs_background
+                WHEN OLD.status = 'processing' AND NEW.status = 'pending' BEGIN
+                    SELECT failLockedWrite();
+                END;
+                """)
+            }
+            await database.searchIndexer.drain()
+            try await database.dbQueue.write { db in
+                let job = try #require(try Row.fetchOne(db, sql: "SELECT * FROM jobs_background WHERE targetKind = 'meeting'"))
+                #expect(job["status"] as String == "processing")
+                #expect(job["attempts"] as Int == 5)
+                #expect(job["leaseExpiresAt"] as Date > Date.now)
+                try db.execute(sql: "DROP TRIGGER fail_index_write; DROP TRIGGER fail_job_release")
+            }
+            await database.searchIndexer.drain()
+            try await database.dbQueue.write { db in
+                let job = try #require(try Row.fetchOne(db, sql: "SELECT * FROM jobs_background WHERE targetKind = 'meeting'"))
+                #expect(job["status"] as String == "pending")
+                #expect(job["attempts"] as Int == 4)
+                try db.execute(sql: "UPDATE jobs_background SET availableAt = ?", arguments: [Date.distantPast])
+            }
+            await database.searchIndexer.drain()
+            let results = try await MeetingRepository.searchMeetingSidebarPage(
+                workspaceId: workspace.id, query: "解放後", limit: 20, dbQueue: database.dbQueue
+            )
+            #expect(results.items.map(\.id) == [meeting.id])
+        }
+
+        @Test
+        func transientLockDoesNotPermanentlyFailTheIndex() async throws {
+            let url = FileManager.default.temporaryDirectory.appending(path: "search-lock-\(UUID.v7()).sqlite")
+            defer { try? FileManager.default.removeItem(at: url) }
+            let database = try AppDatabaseManager(path: url.path)
+            await database.searchIndexer.drain()
+            try database.close()
+            var blockerConfiguration = AppDatabaseManager.configuration()
+            blockerConfiguration.allowsUnsafeTransactions = true
+            let blocker = try DatabaseQueue(path: url.path, configuration: blockerConfiguration)
+            defer { try? blocker.close() }
+            var configuration = AppDatabaseManager.configuration()
+            configuration.busyMode = .callback { _ in
+                try? blocker.writeWithoutTransaction { try $0.execute(sql: "COMMIT") }
+                return false
+            }
+            let queue = try DatabaseQueue(path: url.path, configuration: configuration)
+            defer { try? queue.close() }
+            let worker = BackgroundJobWorker(dbQueue: queue)
+            try await blocker.writeWithoutTransaction { try $0.execute(sql: "BEGIN EXCLUSIVE") }
+            await worker.drain()
+            try await queue.read { db throws in
+                #expect(try String.fetchOne(db, sql: "SELECT phase FROM search_index_state WHERE indexKind = 'fts'") == "ready")
+                #expect(try String.fetchOne(db, sql: "SELECT lastErrorCode FROM search_index_state WHERE indexKind = 'fts'") == "sqlite:5:5")
+            }
+            // An explicit drain can run immediately after the lock has been released.
+            await worker.drain()
+            try await queue.read { db throws in
+                #expect(try String.fetchOne(db, sql: "SELECT phase FROM search_index_state WHERE indexKind = 'fts'") == "ready")
+                #expect(try String.fetchOne(db, sql: "SELECT lastErrorCode FROM search_index_state WHERE indexKind = 'fts'") == nil)
+            }
+            await worker.stop()
+        }
+
         @Test
         func permanentlyInvalidJobStopsAfterFiveAttempts() async throws {
             let database = try AppDatabaseManager(path: ":memory:")

@@ -471,6 +471,8 @@
                 #expect(try DocumentRetention.evict(
                     documentID: #require(try DocumentRecord.notes(in: db, meetingID: id)).id,
                     protectedWorkspaces: [],
+                    now: .distantFuture,
+                    retentionDays: 1,
                     in: db
                 ) == 0)
                 try DocumentRetention.archiveBeforeRemoteDeletion(meetingID: id, in: db)
@@ -661,6 +663,8 @@
                 try DocumentRetention.evict(
                     documentID: #require(try DocumentRecord.notes(in: db, meetingID: meetingID)).id,
                     protectedWorkspaces: [],
+                    now: .distantFuture,
+                    retentionDays: 1,
                     in: db
                 )
             } > 0)

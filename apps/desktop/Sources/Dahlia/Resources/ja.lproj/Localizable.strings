@@ -1299,6 +1299,7 @@
 "Close search" = "検索を閉じる";
 "Remove search filter" = "検索フィルターを削除";
 "Search unavailable" = "検索を利用できません";
+"search.indexRecovery" = "検索インデックスを準備できません。設定 → 検索 → 全文検索を再構築から再試行してください。";
 "Select a Workspace to search." = "検索するにはWorkspaceを選択してください。";
 "Show chat" = "チャットを表示";
 "Shown" = "表示中";
@@ -1519,7 +1520,7 @@
 "meetingSync.validation" = "端末保存済み・同期内容の確認が必要";
 
 "screenshot.cache.limit" = "クラウド画像キャッシュの上限";
-"screenshot.cache.description" = "同期済み画像は、必要なときに取得して保存します。上限を超えると古いキャッシュを削除します。ローカルアカウントの画像、未送信の画像、バックアップは上限に含まれません。";
+"screenshot.cache.description" = "同期済み画像は、必要なときに取得して保存します。上限を超えると、一般設定のServerデータ保持期間を過ぎた古いキャッシュを削除します。保持期間をこの上限より優先します。ローカルアカウントの画像、未送信の画像、バックアップは上限に含まれません。";
 
 "Only workspaces in the Local Account can be backed up." = "バックアップできるのは、ローカルアカウント内のワークスペースだけです。";
 
@@ -1768,3 +1769,6 @@
 "documentHistoryPrevious" = "前へ";
 "documentHistoryNext" = "次へ";
 "documentHistoryFullText" = "全文を表示";
+"server.content.retention" = "Serverデータのローカル保持期間";
+"server.content.retention.days" = "保持日数";
+"server.content.retention.description" = "Server連携直後に過去のデータが自動削除されることを防ぐため、既定は無期限です。このMacで作成・編集・閲覧・初回取得したServerデータを、指定期間は保持します。全Serverアカウントの本文・Documents・取得済み画像に適用されます。期間を過ぎた未使用データは、容量上限を超えた場合にバックグラウンドで削除し、必要時に再取得します。無期限では自動削除しません。保持期間を優先するため容量上限を超える場合があります。録音音声は別の保持設定に従います。";

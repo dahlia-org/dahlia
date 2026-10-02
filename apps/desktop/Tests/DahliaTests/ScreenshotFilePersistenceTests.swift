@@ -3,6 +3,7 @@
     import DahliaRuntimeSupport
     import Foundation
     import GRDB
+    import Synchronization
     import Testing
     @testable import Dahlia
 
@@ -38,7 +39,7 @@
             let operation = try #require(transaction.operations.first)
             #expect(try await fixture.provider.attachment(operationId: operation.id, dbQueue: fixture.database.dbQueue)?.bytes == fixture.bytes)
             // Staging/upload completion is insufficient to release an original.
-            try await fixture.provider.trimFiles(dbQueue: fixture.database.dbQueue, budget: 0)
+            try await fixture.provider.trimFiles(dbQueue: fixture.database.dbQueue, budget: 0, now: .distantFuture, retentionDays: 1)
             #expect(FileManager.default.fileExists(atPath: fixture.imageURL.path))
             let response = try SyncJSON.decoder.decode(SyncTransactionResponse.self, from: Data("""
             {"id":"\(transaction.id)","status":"committed","cursor":"after-image","records":[
@@ -78,7 +79,7 @@
             }
             #expect(try FileManager.default.attributesOfItem(atPath: fixture.imageURL.path)[.modificationDate] as? Date == modified)
             #expect(try fixture.files.read(fixture.source, variant: .original)?.data == fixture.bytes)
-            try await fixture.provider.trimFiles(dbQueue: fixture.database.dbQueue, budget: 0)
+            try await fixture.provider.trimFiles(dbQueue: fixture.database.dbQueue, budget: 0, now: .distantFuture, retentionDays: 1)
             #expect(!FileManager.default.fileExists(atPath: fixture.imageURL.path))
             try await fixture.database.dbQueue.read { db in
                 let image = try #require(try MeetingScreenshotRecord.fetchOne(db, key: stored.id))
@@ -128,18 +129,110 @@
             let operation = try #require(transaction.operations.first)
             try await SyncTransactionQueue.block(transaction, reason: .conflict, response: Data("{}".utf8), dbQueue: queue)
             let restarted = try ScreenshotContentProvider(cache: ScreenshotFileStore(directory: fixture.directory))
-            try await restarted.trimFiles(dbQueue: queue, budget: 0)
+            try await restarted.trimFiles(dbQueue: queue, budget: 0, now: .distantFuture, retentionDays: 1)
             #expect(try await restarted.attachment(operationId: operation.id, dbQueue: queue)?.bytes == fixture.bytes)
             try Data([99]).write(to: fixture.imageURL, options: .atomic)
             await #expect(throws: ScreenshotContentError.integrityFailure) {
                 try await restarted.attachment(operationId: operation.id, dbQueue: queue)
             }
-            try await restarted.trimFiles(dbQueue: queue, budget: 0)
+            try await restarted.trimFiles(dbQueue: queue, budget: 0, now: .distantFuture, retentionDays: 1)
             #expect(try Data(contentsOf: fixture.imageURL) == Data([99]))
             let blockedReason = try await queue.read { db in
                 try String.fetchOne(db, sql: "SELECT blockedReason FROM sync_transactions WHERE id = ?", arguments: [transaction.id])
             }
             #expect(blockedReason == "conflict")
+        }
+
+        @Test
+        func helperCachedImageReportsAccessToTheApp() async throws {
+            let fixture = try Fixture()
+            defer { fixture.removeFiles() }
+            try await fixture.provider.persistCapture(fixture.image, dbQueue: fixture.database.dbQueue)
+            let calls = Mutex(0)
+            let helperWorkspaceId = fixture.workspace.id
+            let meetingId = fixture.image.meetingId
+            let helper = try MeetingAccessStore(
+                databaseURL: fixture.databaseURL, workspaceID: fixture.workspace.id,
+                screenshotCache: ScreenshotFileStore(directory: fixture.directory, readOnly: true),
+                imageResolver: { _, _, _ in throw ScreenshotContentError.unavailable },
+                textResolver: { workspaceId, request in
+                    #expect(workspaceId == helperWorkspaceId)
+                    #expect(request.operation == .touch)
+                    #expect(request.entity == .file)
+                    #expect(request.meetingId == meetingId)
+                    calls.withLock { $0 += 1 }
+                    return Data("{}".utf8)
+                }
+            )
+            #expect(try helper.screenshot(meetingID: fixture.image.meetingId, screenshotID: fixture.image.id, originalSize: true).imageData == fixture
+                .bytes)
+            #expect(calls.withLock { $0 } == 1)
+        }
+
+        @Test(arguments: [false, true])
+        func helperCachedImagesRenewRetentionThroughScopedIPC(batch: Bool) async throws {
+            let fixture = try Fixture()
+            defer { fixture.removeFiles() }
+            let queue = fixture.database.dbQueue
+            try await fixture.provider.persistCapture(fixture.image, dbQueue: queue)
+            try fixture.files.touch(fixture.source, now: Date(timeIntervalSince1970: 0))
+            let socketRoot = URL(filePath: "/tmp/dahlia-touch-\(UUID().uuidString)")
+            defer { try? FileManager.default.removeItem(at: socketRoot) }
+            let socket = socketRoot.appending(path: "touch.sock")
+            let broker = DahliaImageBrokerServer(dbQueue: queue, helperURL: brokerTestExecutableURL())
+            try broker.start(socketURL: socket)
+            defer { broker.stop() }
+            let workspaceId = fixture.workspace.id
+            let meetingId = fixture.image.meetingId
+            let screenshotId = fixture.image.id
+            let helper = try MeetingAccessStore(
+                databaseURL: fixture.databaseURL, workspaceID: workspaceId,
+                screenshotCache: ScreenshotFileStore(directory: fixture.directory, readOnly: true),
+                imageResolver: { _, _, _ in throw ScreenshotContentError.unavailable },
+                textResolver: { workspaceId, request in
+                    try DahliaImageBrokerProtocol.requestImage(.init(workspaceId: workspaceId, text: request), socketURL: socket)
+                }
+            )
+            let bytes = try await withBrokerClientThread {
+                if batch {
+                    return try helper.screenshotImages(meetingID: meetingId, query: .init(limit: 10), originalSize: true).images.first?.imageData
+                }
+                return try helper.screenshot(meetingID: meetingId, screenshotID: screenshotId, originalSize: true).imageData
+            }
+            #expect(bytes == fixture.bytes)
+            let index = try DatabaseQueue(path: fixture.directory.appending(path: "index.sqlite").path)
+            let accessedAt = try #require(try await index.read {
+                try Double.fetchOne($0, sql: "SELECT accessedAt FROM images WHERE key = ?", arguments: [fixture.source.cacheKey(variant: .original)])
+            })
+            #expect(accessedAt > Date.now.addingTimeInterval(-60).timeIntervalSince1970)
+            try fixture.files.trim(budget: 0, protecting: [], now: .now, retentionDays: 30)
+            #expect(FileManager.default.fileExists(atPath: fixture.imageURL.path))
+            // An unrelated meeting, workspace, missing file, or stale account must not extend retention.
+            for request in [
+                DahliaImageBrokerProtocol.Request(workspaceId: .v7(), text: .init(touchingFile: fixture.source.fileId, meetingId: meetingId)),
+                .init(workspaceId: workspaceId, text: .init(touchingFile: fixture.source.fileId, meetingId: .v7())),
+                .init(workspaceId: workspaceId, text: .init(touchingFile: .v7(), meetingId: meetingId)),
+            ] {
+                await #expect(throws: (any Error).self) {
+                    try await withBrokerClientThread { try DahliaImageBrokerProtocol.requestImage(request, socketURL: socket) }
+                }
+            }
+            try await queue.write { db in
+                try db.execute(
+                    sql: "UPDATE dahlia_account_connections SET origin = ? WHERE id = ?",
+                    arguments: ["https://changed.example.test", fixture.connection.id]
+                )
+            }
+            let stale = DahliaImageBrokerProtocol.Request(
+                workspaceId: workspaceId,
+                text: .init(touchingFile: fixture.source.fileId, meetingId: meetingId)
+            )
+            await #expect(throws: (any Error).self) {
+                try await withBrokerClientThread { try DahliaImageBrokerProtocol.requestImage(stale, socketURL: socket) }
+            }
+            #expect(try await index.read {
+                try Double.fetchOne($0, sql: "SELECT accessedAt FROM images WHERE key = ?", arguments: [fixture.source.cacheKey(variant: .original)])
+            } == accessedAt)
         }
 
         @Test
@@ -154,6 +247,7 @@
             )
             #expect(try helper.screenshot(meetingID: fixture.image.meetingId, screenshotID: fixture.image.id, originalSize: true).imageData == fixture
                 .bytes)
+            #expect(throws: ScreenshotContentError.unavailable) { try files.touch(fixture.source) }
             #expect(throws: ScreenshotContentError.unavailable) { try files.trim(budget: 0, protecting: []) }
             try Data([99]).write(to: fixture.imageURL, options: .atomic)
             #expect(throws: ScreenshotContentError.integrityFailure) { try files.read(fixture.source, variant: .original) }
@@ -233,7 +327,7 @@
                 return try SyncJSON.decoder.decode(FileOperationPayload.self, from: Data(json.utf8))
             }
             #expect(filePayload.imageAnalysis == "replace")
-            try await fixture.provider.trimFiles(dbQueue: queue, budget: 0)
+            try await fixture.provider.trimFiles(dbQueue: queue, budget: 0, now: .distantFuture, retentionDays: 1)
             #expect(try fixture.files.read(fixture.source, variant: .original)?.data == fixture.bytes)
             #expect(try await queue.read { try MeetingScreenshotRecord.fetchOne($0, key: fixture.image.id)?.imageData } == nil)
             try await SyncInitialSnapshotBuilder.enqueuePending(

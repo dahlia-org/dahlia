@@ -111,6 +111,9 @@ enum SettingsCategory: String, CaseIterable, Identifiable {
                 L10n.externalMicrophoneEchoCancellation,
                 L10n.automaticRecordingStop,
                 L10n.automaticMeetingEndRecordingStop,
+                L10n.serverContentRetention,
+                L10n.serverContentRetentionDays,
+                L10n.forever,
             ]
         case .accountPreferences:
             [

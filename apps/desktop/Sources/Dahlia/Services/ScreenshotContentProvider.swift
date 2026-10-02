@@ -85,7 +85,12 @@ actor ScreenshotContentProvider {
         return try await fileContent(id: record.originalFileId, variant: variant, dbQueue: dbQueue)
     }
 
-    func fileContent(id: UUID, variant: ScreenshotVariant = .original, dbQueue: DatabaseQueue) async throws -> ScreenshotContent {
+    func fileContent(
+        id: UUID,
+        variant: ScreenshotVariant = .original,
+        dbQueue: DatabaseQueue,
+        recordAccess: Bool = true
+    ) async throws -> ScreenshotContent {
         activeFileWork += 1
         defer { activeFileWork -= 1 }
         guard let file = try await dbQueue.read({ try FileRecord.fetchOne($0, key: id) }) else { throw ScreenshotContentError.deleted }
@@ -104,13 +109,15 @@ actor ScreenshotContentProvider {
         }
         let content: ScreenshotContent
         if file.remoteReference == nil || file.localReference != nil && file.localReference != file.remoteReference {
-            guard let original = try fileStore(for: dbQueue).read(source, variant: .original) else { throw ScreenshotContentError.unavailable }
+            guard let original = try fileStore(for: dbQueue).read(source, variant: .original, recordAccess: recordAccess) else {
+                throw ScreenshotContentError.unavailable
+            }
             content = original
         } else {
             do {
-                content = try await remoteContent(source, variant: variant, credentials: dbQueue)
+                content = try await remoteContent(source, variant: variant, credentials: dbQueue, recordAccess: recordAccess)
             } catch where variant == .thumbnail {
-                content = try await remoteContent(source, variant: .original, credentials: dbQueue)
+                content = try await remoteContent(source, variant: .original, credentials: dbQueue, recordAccess: recordAccess)
             }
         }
         try Task.checkCancellation()
@@ -118,6 +125,32 @@ actor ScreenshotContentProvider {
         guard current?.localReference == file.localReference, current?.remoteReference == file.remoteReference,
               try await matchesCurrentSource(source, workspaceId: file.workspaceId, dbQueue: dbQueue) else { throw ScreenshotContentError.deleted }
         return content
+    }
+
+    /// The helper reports use through the app; it never writes the file index itself.
+    func touch(fileId: UUID, meetingId: UUID, workspaceId: UUID, dbQueue: DatabaseQueue) async throws {
+        activeFileWork += 1
+        defer { activeFileWork -= 1 }
+        let files = try fileStore(for: dbQueue)
+        try Task.checkCancellation()
+        try await dbQueue.read { db in
+            guard let file = try FileRecord.fetchOne(db, key: fileId), file.workspaceId == workspaceId,
+                  try Bool.fetchOne(db, sql: """
+                  SELECT EXISTS(SELECT 1 FROM meeting_attachments a JOIN meetings m ON m.id = a.meetingId
+                  WHERE a.meetingId = ? AND a.fileId = ? AND m.workspace_id = ?)
+                  """, arguments: [meetingId, fileId, workspaceId]) == true,
+                  let reference = file.localReference ?? file.remoteReference else { throw ScreenshotContentError.deleted }
+            let source = try JSONDecoder().decode(ScreenshotRemoteReference.self, from: Data(reference.utf8))
+            guard source.fileId == fileId, source.contentHash == file.contentHash,
+                  let workspace = try WorkspaceRecord.fetchOne(db, key: workspaceId),
+                  workspace.accountConnectionId == source.accountConnectionId else { throw ScreenshotContentError.authorizationRequired }
+            if let connectionId = source.accountConnectionId {
+                guard try DahliaAccountConnectionRecord.fetchOne(db, key: connectionId)?.origin == source.origin else {
+                    throw ScreenshotContentError.authorizationRequired
+                }
+            } else if !source.origin.isEmpty { throw ScreenshotContentError.authorizationRequired }
+            try files.touch(source)
+        }
     }
 
     private func matchesCurrentSource(_ source: ScreenshotRemoteReference, workspaceId: UUID, dbQueue: DatabaseQueue) async throws -> Bool {
@@ -170,11 +203,12 @@ actor ScreenshotContentProvider {
     func remoteContent(
         _ source: ScreenshotRemoteReference,
         variant: ScreenshotVariant = .original,
-        credentials: DatabaseQueue
+        credentials: DatabaseQueue,
+        recordAccess: Bool = true
     ) async throws -> ScreenshotContent {
         let files = try? fileStore(for: credentials)
-        if let content = try? files?.read(source, variant: variant) { return content }
-        if variant != .original, let content = try? files?.read(source, variant: .original) { return content }
+        if let content = try? files?.read(source, variant: variant, recordAccess: recordAccess) { return content }
+        if variant != .original, let content = try? files?.read(source, variant: .original, recordAccess: recordAccess) { return content }
         let connection = try await credentials.read { db in
             try DahliaAccountConnectionRecord.fetchOne(
                 db,
@@ -226,8 +260,7 @@ actor ScreenshotContentProvider {
                 throw ScreenshotContentError.integrityFailure
             }
             let content = ScreenshotContent(data: bytes, mimeType: mimeType, variant: actual)
-            try? files?.write(content, source: source)
-            try? trimFiles(dbQueue: credentials)
+            try? files?.write(content, source: source, recordAccess: recordAccess)
             return content
         } catch let error as SyncHTTPError {
             if [401, 403].contains(error.status) { throw ScreenshotContentError.authorizationRequired }
