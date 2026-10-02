@@ -72,6 +72,9 @@ describe("desktop-style meeting layout", () => {
       expect(html).toContain(">Project</span>");
       expect(html).toContain(">Sub Project</span>");
       expect(html).toContain('aria-current="page"');
+      expect(html).toContain('data-kind="meeting" title="Weekly Meeting"');
+      expect(html).toContain('title="Workspace"');
+      expect(html).toContain('title="Sub Project"');
       expect(html).toContain('aria-label="Copy meeting link"');
       expect(html).toContain('aria-label="Meeting actions"');
       expect(html).toContain('aria-haspopup="menu"');
@@ -88,7 +91,7 @@ describe("desktop-style meeting layout", () => {
       { meetingId: "m1", name: "Weekly Meeting" }, { meetingId: "m2", name: "Design Review" },
     ] as SyncedMeetingInfo[] });
     expect(options).toMatchObject([{ href: "/o/root", children: [{ href: "/o/child", current: true, children: [
-      { href: "/o/m1", current: true }, { href: "/o/m2", current: false },
+      { kind: "meeting", href: "/o/m1", current: true }, { kind: "meeting", href: "/o/m2", current: false },
     ] }] }]);
   });
 
