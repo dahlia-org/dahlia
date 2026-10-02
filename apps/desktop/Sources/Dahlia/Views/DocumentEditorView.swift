@@ -435,6 +435,8 @@ struct DocumentWebEditor: NSViewRepresentable {
     let onFocus: @MainActor (Bool) -> Void
     let onAttachFlush: @MainActor (@escaping @MainActor () async throws -> Void) -> Void
 
+    static let maximumContentHeight: CGFloat = 4096
+
     var onHeight: (@MainActor (CGFloat) -> Void)?
 
     func makeCoordinator() -> Coordinator { Coordinator(parent: self) }
@@ -454,7 +456,9 @@ struct DocumentWebEditor: NSViewRepresentable {
                 scheduled = true;
                 requestAnimationFrame(() => {
                     scheduled = false;
-                    window.webkit.messageHandlers.document.postMessage({type: 'height', height: String(Math.ceil(document.body.getBoundingClientRect().height))});
+                    const height = Math.ceil(document.body.getBoundingClientRect().height);
+                    document.documentElement.style.overflowY = height > \(Self.maximumContentHeight) ? 'auto' : 'hidden';
+                    window.webkit.messageHandlers.document.postMessage({type: 'height', height: String(height)});
                 });
             }).observe(document.body);
             """, injectionTime: .atDocumentEnd, forMainFrameOnly: true))
@@ -545,7 +549,10 @@ struct DocumentWebEditor: NSViewRepresentable {
             case "error":
                 if let error = body["message"] { parent.onError(error) }
             case "height":
-                if let raw = body["height"], let height = Double(raw), height.isFinite, height > 0 { parent.onHeight?(CGFloat(height)) }
+                if let raw = body["height"], let height = Double(raw), height.isFinite, height > 0 { parent.onHeight?(min(
+                    CGFloat(height),
+                    DocumentWebEditor.maximumContentHeight
+                )) }
             case "focus": parent.onFocus(body["focused"] == "true")
             case "link":
                 if let string = body["url"], let url = URL(string: string), ["https", "http", "mailto"].contains(url.scheme?.lowercased() ?? "") {

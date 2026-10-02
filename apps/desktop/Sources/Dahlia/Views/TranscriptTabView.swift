@@ -20,7 +20,7 @@ struct TranscriptTabView<Header: View, Footer: View>: View {
                 header
                 if store.isLoadingInitialPage {
                     ProgressView()
-                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                        .frame(maxWidth: .infinity, minHeight: 280)
                 } else if store.segments.isEmpty,
                           store.pageLoadError == nil {
                     ContentUnavailableView {
@@ -28,7 +28,7 @@ struct TranscriptTabView<Header: View, Footer: View>: View {
                     } description: {
                         Text(L10n.transcriptEmpty)
                     }
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .frame(maxWidth: .infinity, minHeight: 280)
                 } else {
                     transcriptContent
                 }

@@ -7,16 +7,16 @@
     @MainActor
     struct DocumentEditorShortcutTests {
         @Test
-        func documentHeightAcceptsOnlyPositiveFiniteValues() {
+        func documentHeightIsBoundedAndAcceptsOnlyPositiveFiniteValues() {
             var heights: [CGFloat] = []
             var editor = parent(editable: true)
             editor.onHeight = { heights.append($0) }
             let coordinator = DocumentWebEditor.Coordinator(parent: editor)
-            for raw in ["280", "720.5", "0", "-1", "nan", "inf", "invalid"] {
+            for raw in ["280", "720.5", "4095", "4096", "4097", "1000000", "280", "0", "-1", "nan", "inf", "invalid"] {
                 coordinator.receive(["type": "height", "height": raw])
             }
             coordinator.receive(["type": "height"])
-            #expect(heights == [280, 720.5])
+            #expect(heights == [280, 720.5, 4095, 4096, 4096, 4096, 280])
         }
 
         @Test
