@@ -2677,12 +2677,21 @@ function createIdentityStore(
     latestChangeSequence,
     ensureUploadTarget,
     async putTranscriptChunk(workspaceId, meetingId, patchId, chunkIndex, contentHash, segments, deletions) {
-      await lockMeeting(workspaceId, meetingId, true);
+      await lockWorkspace(workspaceId, true, "domain");
+      const before = new Date(Date.now() - TRANSCRIPT_PATCH_RETENTION_MS);
+      const expired = await db.selectDistinct({ meetingId: schema.transcriptPatchChunk.meetingId }).from(schema.transcriptPatchChunk)
+        .where(and(eq(schema.transcriptPatchChunk.workspaceId, workspaceId), lt(schema.transcriptPatchChunk.createdAt, before)))
+        .orderBy(asc(schema.transcriptPatchChunk.meetingId)).limit(100);
+      const meetings = [...new Set([meetingId, ...expired.map((row) => row.meetingId)])];
+      // Lock cleanup targets and the upload together; never add earlier meeting locks after waiting.
+      await lockCurrentResources({ workspaceId, operations: meetings.map((id) => ({
+        id, entity: "transcript", action: "patch", entityId: id, baseRevision: null, data: null,
+      })) });
       if (!await ensureUploadTarget(workspaceId, meetingId)) return false;
       await db.delete(schema.transcriptPatchChunk).where(and(
         eq(schema.transcriptPatchChunk.workspaceId, workspaceId),
-        eq(schema.transcriptPatchChunk.meetingId, meetingId),
-        lt(schema.transcriptPatchChunk.createdAt, new Date(Date.now() - TRANSCRIPT_PATCH_RETENTION_MS)),
+        inArray(schema.transcriptPatchChunk.meetingId, meetings),
+        lt(schema.transcriptPatchChunk.createdAt, before),
       ));
       const payload = { segments, deletions };
       await db.insert(schema.transcriptPatchChunk).values(await content.write(schema.transcriptPatchChunk, {

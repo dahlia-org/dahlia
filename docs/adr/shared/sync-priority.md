@@ -77,6 +77,7 @@ Server内部の`captureSyncTimings()`は明示的なローカル計測だけに�
 - canonical 更新の終了後に短い Workspace publication 排他を取得し、Memory キューの無効化、change sequence の採番、delta ledger、latest cursor、receipt を同じ DB transaction で確定する。差分・snapshot は publication 共有で読む。採番後に別の transaction が先に commit して cursor が未公開変更を飛び越す状態を防ぐ。重い本文更新全体を Workspace 単位に直列化しない。
 - delta GET から録音 staging の期限切れ清掃を除き、既存の storage maintenance sweep で実行する。
 - アップロード要求時の期限切れ staging 清掃は、既存の domain gate を排他、Workspace lifecycle を共有で取得する。清掃と domain の予約・確定は競合させるが、Documents は待たせない。清掃対象は file 最大25件・recording 最大100件に制限する。定期 maintenance の Workspace 排他は維持する。
+- transcript chunk の要求時は、同じ Workspace で期限切れ staging がある最大100会議とアップロード先をまとめてロックして清掃する。別会議で放置された patch も後続アップロードで回収し、fresh な chunk と別 Workspace は残す。Workspace 全体の排他へ戻さず、ロック取得後に対象を追加しない。
 - 新規の初期構築は同 Workspace・同 entity・同優先度で最大8操作、wire envelope 込み256KiBを目安にまとめる。大きい1操作と transcript は単独で進める。親の作成順と依存を保持し、既に durable な要求 ID・payload は書き換えない。queue の既存 bulk 分割と通常操作の atomicity は維持する。
 - 軽い送信は2枠、背景最大1枠にする。画像・transcript の共有転送8枠、背景最大7枠とは独立する。file lookahead は file 原本を含む sendable な要求を先に絞り、先行する無関係な要約に探索枠を使わない。
 - 移管確認 GET を接続・Workspace・origin・lifecycle 世代ごとに共有する。変更なしの push 事前確認だけ5秒再利用する。pull の適用前確認は再利用しない。復帰・stop・移管で破棄し、commit の403/404/409では再確認する。結果適用時も接続と lifecycle 世代を再検証する。Server の commit 時の認可・所属検証は省略しない。

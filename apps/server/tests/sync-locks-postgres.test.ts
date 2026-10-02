@@ -58,6 +58,25 @@ it.runIf(process.env.TEST_SYNC_LOCKS_DATABASE_URL)("Notes bypass the domain lane
     await sync.commitTransaction(owner, { ...mutation(parallelMeeting, "Parallel"), operations: [
       { id: uuidV7(), entity: "meeting", action: "create", entityId: parallelMeeting, baseRevision: null, data: meetingData },
     ] });
+    const expiredPatch = uuidV7(), freshPatch = uuidV7(), currentPatch = uuidV7();
+    await store.sync.withIdentity(owner, async (s) => {
+      await s.putTranscriptChunk(workspaceId, meetingId, expiredPatch, 0, "expired", [], []);
+      await s.putTranscriptChunk(workspaceId, meetingId, freshPatch, 0, "fresh", [], []);
+    });
+    await blocker.query("BEGIN");
+    await blocker.query("SELECT set_config('app.user_id', $1, true)", [owner.userId]);
+    await blocker.query("UPDATE app.transcript_patch_chunks SET created_at = now() - interval '2 days' WHERE patch_id = $1", [expiredPatch]);
+    await blocker.query("COMMIT");
+    await store.sync.withIdentity(owner, (s) => s.putTranscriptChunk(workspaceId, parallelMeeting, currentPatch, 0, "current", [], []));
+    await blocker.query("BEGIN");
+    await blocker.query("SELECT set_config('app.user_id', $1, true)", [owner.userId]);
+    const remaining = await blocker.query<{ patch_id: string }>("SELECT patch_id FROM app.transcript_patch_chunks WHERE workspace_id = $1", [workspaceId]);
+    await blocker.query("COMMIT");
+    expect(remaining.rows.map((row) => row.patch_id).sort()).toEqual([freshPatch, currentPatch].sort());
+    await store.sync.withIdentity(owner, async (s) => {
+      await s.deleteTranscriptPatch(workspaceId, meetingId, freshPatch);
+      await s.deleteTranscriptPatch(workspaceId, parallelMeeting, currentPatch);
+    });
     let announce!: () => void, release!: () => void;
     const ready = new Promise<void>((resolve) => { announce = resolve; });
     const gate = new Promise<void>((resolve) => { release = resolve; });
