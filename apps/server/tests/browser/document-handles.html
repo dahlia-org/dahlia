@@ -1,0 +1,72 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<title>Notes block handle regression</title>
+<style>body { margin: 40px; font: 16px system-ui; } #editor { margin: 24px; }</style>
+<pre id="result">Running…</pre><div id="editor"></div>
+<script type="module">
+// pnpm dev:client -> /tests/browser/document-handles.html. Synthetic content only.
+import { mountDocumentEditor } from '../../src/documents/editor';
+import { DocumentCore } from '../../src/documents/core';
+import '../../src/documents/editor.css';
+const core = new DocumentCore();
+core.insertText('first\nsecond', () => crypto.randomUUID());
+let host = document.querySelector('#editor');
+const editor = mountDocumentEditor(host, core.document, true, 'Notes');
+const assert = (condition, message) => { if (!condition) throw new Error(message); };
+const hover = (x, y) => document.elementFromPoint(x, y).dispatchEvent(new MouseEvent('mousemove', { bubbles: true, clientX: x, clientY: y }));
+const visible = () => host.querySelector('.dahlia-block-handle')?.style.display === 'flex';
+try {
+  editor.commands.setTextSelection({ from: 1, to: 6 });
+  const commandB = () => editor.view.dom.dispatchEvent(new KeyboardEvent('keydown', { bubbles: true, cancelable: true, key: 'b', code: 'KeyB', keyCode: 66, metaKey: true }));
+  commandB();
+  assert(editor.view.dom.querySelector('strong')?.textContent === 'first', 'Command+B must make the selected Notes text bold');
+  commandB();
+  assert(!editor.view.dom.querySelector('strong'), 'Command+B must toggle bold off');
+  const first = editor.view.dom.querySelector('p').getBoundingClientRect();
+  hover(first.left - 9, first.top + 8);
+  assert(visible(), 'Direct gutter hover must show the handle without entering text');
+  const handle = host.querySelector('.dahlia-block-handle');
+  const second = editor.view.dom.querySelectorAll('p')[1].getBoundingClientRect();
+  hover(second.left - 9, second.top + 8);
+  assert(visible() && handle.getBoundingClientRect().top >= second.top, 'Moving down the gutter must select the second block');
+  host.dispatchEvent(new MouseEvent('mouseleave', { relatedTarget: document.body }));
+  assert(!visible(), 'Leaving the host must hide the handle');
+  const previousHost = host;
+  host = document.createElement('div'); host.id = 'editor';
+  previousHost.replaceWith(host); host.append(...previousHost.childNodes);
+  editor.setOptions({ element: host }); // Same reparenting as React's EditorContent.
+  assert(!previousHost.classList.contains('dahlia-document-host'), 'Reparenting must release the old host');
+  hover(first.left - 9, first.top + 8);
+  assert(visible(), 'Direct gutter hover must work after React reparents the editor');
+  const transfer = new DataTransfer();
+  handle.dispatchEvent(new DragEvent('dragstart', { bubbles: true, dataTransfer: transfer }));
+  assert(editor.view.dragging?.node?.node.textContent === 'first', 'Direct gutter entry must drag the first block');
+  editor.view.dom.dispatchEvent(new DragEvent('drop', { bubbles: true, cancelable: true, dataTransfer: transfer, clientX: second.right - 2, clientY: second.bottom - 1 }));
+  assert(core.projection().text === 'second\nfirst', 'Dragging from the gutter must move the selected block');
+  editor.commands.undo();
+  assert(core.projection().text === 'first\nsecond', 'The move must remain undoable');
+  editor.commands.selectAll(); editor.commands.toggleBulletList();
+  editor.commands.setTextSelection(12); editor.commands.sinkListItem('listItem');
+  const nested = editor.view.dom.querySelector('li li');
+  assert(nested, 'Fixture must contain a nested list item');
+  const nestedText = nested.querySelector('p').getBoundingClientRect();
+  hover(nestedText.left + 2, nestedText.top + 8);
+  const nestedHandle = handle.getBoundingClientRect();
+  hover(nestedHandle.left + 9, nestedHandle.top + 12);
+  assert(visible() && handle.getBoundingClientRect().left === nestedHandle.left, 'Hovering the handle must retain the nested item');
+  host.dispatchEvent(new MouseEvent('mouseleave', { relatedTarget: document.body }));
+  hover(nestedHandle.left + 9, nestedHandle.top + 12);
+  assert(visible() && handle.getBoundingClientRect().left === nestedHandle.left, 'Direct nested gutter entry must select the nested item');
+  editor.setEditable(false);
+  hover(first.left - 9, first.top + 8);
+  assert(!visible(), 'Read-only editors must not show a handle');
+  editor.destroy();
+  assert(!host.querySelector('.dahlia-block-handle'), 'Destroy must remove the handle');
+  hover(first.left - 9, first.top + 8);
+  assert(!visible(), 'Destroy must remove hover listeners');
+  document.querySelector('#result').textContent = 'PASS: Command+B bold, direct gutter entry, gutter row change, leave, React reparent, drag/undo, nested list, read-only, teardown';
+} catch (error) { document.querySelector('#result').textContent = `FAIL: ${error.message}`; }
+finally { core.destroy(); }
+</script>
+</html>

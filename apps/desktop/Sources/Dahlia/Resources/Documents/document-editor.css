@@ -13,7 +13,9 @@
 .dahlia-document ul, .dahlia-document ol { padding-left: 1.5em; margin: 1em 0; }
 .dahlia-document ul { list-style-type: disc; }
 .dahlia-document ol { list-style-type: decimal; }
-/* Hovering a block shows a handle in the left gutter; dragging it moves the block. */
+/* Include the handle gutter in the hover host without shifting the text. */
+.dahlia-document-host { position: relative; padding-left: 18px; margin-left: -18px; }
+/* Hovering a block or its left gutter shows a handle; dragging it moves the block. */
 .dahlia-block-handle { position: absolute; display: none; width: 18px; height: 24px; align-items: center; justify-content: center;
   border-radius: 4px; color: GrayText; cursor: grab; user-select: none; -webkit-user-select: none; }
 .dahlia-block-handle:hover { background: rgba(128, 128, 128, .16); }
