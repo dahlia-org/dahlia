@@ -634,6 +634,7 @@ enum L10n { // swiftlint:disable:this type_body_length
     static var closeSearch: String { String(localized: "Close search", bundle: bundle) }
     static var removeSearchFilter: String { String(localized: "Remove search filter", bundle: bundle) }
     static var searchUnavailable: String { String(localized: "Search unavailable", bundle: bundle) }
+    static var searchIndexRecovery: String { String(localized: "search.indexRecovery", bundle: bundle) }
     static var searchRequiresWorkspace: String { String(localized: "Select a Workspace to search.", bundle: bundle) }
     static var recentMeetings: String { String(localized: "Recent Meetings", bundle: bundle) }
     static var recentProjects: String { String(localized: "Recent Projects", bundle: bundle) }

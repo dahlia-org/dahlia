@@ -1299,6 +1299,7 @@
 "Close search" = "Close search";
 "Remove search filter" = "Remove search filter";
 "Search unavailable" = "Search unavailable";
+"search.indexRecovery" = "The search index is unavailable. Try Rebuild Full-Text Search in Settings → Search.";
 "Select a Workspace to search." = "Select a Workspace to search.";
 "Show chat" = "Show chat";
 "Shown" = "Shown";

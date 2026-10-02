@@ -11,6 +11,69 @@ import Synchronization
     // swiftlint:disable:next type_body_length
     struct ScreenshotOCRSearchTests {
         @Test
+        func startupRecoversLegacyFailureAndResumesImageAnalysisOnlyOnce() async throws {
+            let database = try makeDatabase(screenshotAnalyzer: StubScreenshotAnalyzer(text: "復旧画像検索語"))
+            let workspace = makeWorkspace()
+            let meeting = makeMeeting(workspaceID: workspace.id)
+            let screenshot = MeetingScreenshotRecord(
+                id: .v7(), meetingId: meeting.id, sessionId: nil, capturedAt: .now,
+                imageData: Data([1, 2, 3]), mimeType: "image/png"
+            )
+            let exhaustedScreenshot = MeetingScreenshotRecord(
+                id: .v7(), meetingId: meeting.id, sessionId: nil, capturedAt: .now,
+                imageData: Data([4, 5, 6]), mimeType: "image/png"
+            )
+            try await database.dbQueue.write { db in
+                try workspace.insert(db)
+                try meeting.insert(db)
+                try screenshot.insertLegacyForTesting(db)
+                try exhaustedScreenshot.insertLegacyForTesting(db)
+                try db.execute(sql: "UPDATE jobs_background SET attempts = 5 WHERE targetKey = ?", arguments: [exhaustedScreenshot.id])
+                try db.execute(sql: "UPDATE search_index_state SET phase = 'failed', lastErrorCode = 'DatabaseError' WHERE indexKind = 'fts'")
+            }
+            await database.searchIndexer.start()
+            await database.searchIndexer.drain()
+            await database.searchIndexer.pauseForRecording()
+            try await database.dbQueue.read { db in
+                #expect(try String.fetchOne(db, sql: "SELECT phase FROM search_index_state WHERE indexKind = 'fts'") == "ready")
+                let recovered = try #require(try MeetingScreenshotRecord.fetchOne(db, key: screenshot.id))
+                #expect(recovered.ocrText == "復旧画像検索語")
+                #expect(recovered.caption == "画像の説明")
+                #expect(recovered.imageData == screenshot.imageData)
+                #expect(try Int
+                    .fetchOne(db, sql: "SELECT attempts FROM jobs_background WHERE targetKey = ?", arguments: [exhaustedScreenshot.id]) == 5)
+                #expect(try MeetingRecord.fetchOne(db, key: meeting.id)?.name == meeting.name)
+            }
+            let results = try await MeetingRepository.searchScreenshotPage(
+                workspaceID: workspace.id, criteria: MeetingSearchCriteria(text: "復旧画像検索語"), limit: 20, dbQueue: database.dbQueue
+            )
+            #expect(results.items.map(\.id) == [screenshot.id])
+            try await database.dbQueue.write { db in
+                try db.execute(sql: "UPDATE search_index_state SET phase = 'failed', lastErrorCode = 'DatabaseError' WHERE indexKind = 'fts'")
+            }
+            await database.searchIndexer.start()
+            await database.searchIndexer.drain()
+            await database.searchIndexer.stop()
+            #expect(try await database.dbQueue.read { db in
+                try String.fetchOne(db, sql: "SELECT phase FROM search_index_state WHERE indexKind = 'fts'")
+            } == "failed")
+        }
+
+        @Test
+        func startupLeavesKnownPermanentFailureForManualRebuild() async throws {
+            let database = try makeDatabase(screenshotAnalyzer: StubScreenshotAnalyzer(text: "unused"))
+            try await database.dbQueue.write { db in
+                try db.execute(sql: "UPDATE search_index_state SET phase = 'failed', lastErrorCode = 'sqlite:11:11' WHERE indexKind = 'fts'")
+            }
+            await database.searchIndexer.start()
+            await database.searchIndexer.drain()
+            await database.searchIndexer.stop()
+            #expect(try await database.dbQueue.read { db in
+                try String.fetchOne(db, sql: "SELECT phase FROM search_index_state WHERE indexKind = 'fts'")
+            } == "failed")
+        }
+
+        @Test
         func captionRetryKeepsTheWorkspaceLanguageCapturedAtFirstClaim() async throws {
             let analyzer = LanguageRetryAnalyzer()
             let database = try makeDatabase(screenshotAnalyzer: analyzer)

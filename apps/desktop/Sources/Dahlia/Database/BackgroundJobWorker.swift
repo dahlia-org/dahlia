@@ -24,6 +24,9 @@ actor BackgroundJobWorker {
     private var drainWaiters: [CheckedContinuation<Void, Never>] = []
     private var didValidateAnalyzer = false
     private var lastDivergenceCheckAt: Date?
+    private var hasStarted = false
+    private var shouldRecoverLegacyFailure = false
+    private var scheduledRetryAt: Date?
 
     private static let divergenceCheckInterval: TimeInterval = 15 * 60
     private static let maximumConcurrentScreenshotAnalysisCount = 2
@@ -48,6 +51,10 @@ actor BackgroundJobWorker {
     func start() async {
         guard workerTask == nil else { return }
         isPaused = false
+        if !hasStarted {
+            hasStarted = true
+            shouldRecoverLegacyFailure = true
+        }
         let observation = ValueObservation.tracking { db in
             try Int.fetchOne(
                 db,
@@ -99,6 +106,7 @@ actor BackgroundJobWorker {
     }
 
     func requestRebuild() async throws {
+        scheduledRetryAt = nil
         try await dbQueue.write { db in
             try db.execute(
                 sql: """
@@ -130,6 +138,7 @@ actor BackgroundJobWorker {
     private func drainScheduledWork() async {
         guard workerTask != nil, !isPaused else { return }
         let now = Date()
+        guard scheduledRetryAt.map({ now >= $0 }) ?? true else { return }
         let checksDivergence = lastDivergenceCheckAt.map {
             now.timeIntervalSince($0) >= Self.divergenceCheckInterval
         } ?? true
@@ -163,6 +172,18 @@ actor BackgroundJobWorker {
             drainWaiters.removeAll()
         }
         do {
+            if shouldRecoverLegacyFailure {
+                try await dbQueue.write { db in
+                    // Older releases persisted only the error type, including transient DB locks.
+                    try db.execute(sql: """
+                    UPDATE search_index_state
+                    SET indexGeneration = indexGeneration + 1, phase = 'pending',
+                        completedCount = 0, totalCount = 0, lastErrorCode = NULL, updatedAt = ?
+                    WHERE indexKind = 'fts' AND phase = 'failed' AND lastErrorCode = 'DatabaseError'
+                    """, arguments: [Date()])
+                }
+                shouldRecoverLegacyFailure = false
+            }
             let phase = try await indexPhase()
             if phase == "failed" {
                 try await drainCleanupJobs()
@@ -201,9 +222,21 @@ actor BackgroundJobWorker {
                 }
                 if isPaused || Task.isCancelled { group.cancelAll() }
             }
+            if scheduledRetryAt != nil {
+                try await dbQueue.write { db in
+                    try db.execute(sql: """
+                    UPDATE search_index_state SET lastErrorCode = NULL
+                    WHERE indexKind = 'fts' AND (lastErrorCode LIKE 'sqlite:5:%' OR lastErrorCode LIKE 'sqlite:6:%')
+                    """)
+                }
+                scheduledRetryAt = nil
+            }
         } catch is CancellationError {
         } catch {
-            try? await recordFailure(error)
+            guard !isPaused, !Task.isCancelled else { return }
+            let transient = Self.isTransientDatabaseError(error)
+            if transient { scheduledRetryAt = Date().addingTimeInterval(30) }
+            try? await recordFailure(error, transient: transient)
         }
     }
 
@@ -925,7 +958,7 @@ private extension BackgroundJobWorker {
         }
     }
 
-    private func release(_ jobs: [SearchIndexJob]) async throws {
+    private func release(_ jobs: [SearchIndexJob], retryAt: Date = .now, errorCode: String? = nil) async throws {
         try await Task.detached(priority: .utility) { [dbQueue] in
             try await dbQueue.write { db in
                 for job in jobs {
@@ -933,11 +966,11 @@ private extension BackgroundJobWorker {
                         sql: """
                         UPDATE jobs_background
                         SET status = 'pending', attempts = max(0, attempts - 1), availableAt = ?,
-                            claimedAt = NULL, leaseExpiresAt = NULL, updatedAt = ?
+                            claimedAt = NULL, leaseExpiresAt = NULL, lastErrorCode = ?, updatedAt = ?
                         WHERE indexKind = CASE WHEN targetKind = 'recordingArchive' THEN 'archive' ELSE 'fts' END AND targetKind = ? AND targetKey = ? AND generation = ?
                           AND status = 'processing'
                         """,
-                        arguments: [Date(), Date(), job.targetKind, job.targetID, job.generation]
+                        arguments: [retryAt, errorCode, Date(), job.targetKind, job.targetID, job.generation]
                     )
                 }
             }
@@ -984,8 +1017,16 @@ private extension BackgroundJobWorker {
     }
 
     private func fail(_ job: SearchIndexJob, error: Error) async throws {
+        if isPaused || Task.isCancelled {
+            try await release([job])
+            return
+        }
+        if Self.isTransientDatabaseError(error) {
+            try await release([job], retryAt: Date().addingTimeInterval(30), errorCode: Self.errorCode(error))
+            return
+        }
         if job.attempts >= 5, job.targetKind != "recordingArchive" {
-            if ["screenshotAnalysis", "recordingArchive"].contains(job.targetKind) {
+            if job.targetKind == "screenshotAnalysis" {
                 try await dbQueue.write { db in
                     try db.execute(
                         sql: """
@@ -995,7 +1036,7 @@ private extension BackgroundJobWorker {
                         WHERE indexKind = CASE WHEN targetKind = 'recordingArchive' THEN 'archive' ELSE 'fts' END AND targetKind = ? AND targetKey = ? AND generation = ?
                         """,
                         arguments: [
-                            String(describing: type(of: error)), Date(),
+                            Self.errorCode(error), Date(),
                             job.targetKind, job.targetID, job.generation,
                         ]
                     )
@@ -1015,7 +1056,7 @@ private extension BackgroundJobWorker {
                     ]
                 )
             }
-            throw SearchIndexError.retryLimitReached
+            throw error
         }
         try await dbQueue.write { db in
             try db.execute(
@@ -1027,7 +1068,7 @@ private extension BackgroundJobWorker {
                 """,
                 arguments: [
                     Date().addingTimeInterval(30),
-                    String(describing: type(of: error)),
+                    Self.errorCode(error),
                     Date(),
                     job.targetKind,
                     job.targetID,
@@ -1048,14 +1089,25 @@ private extension BackgroundJobWorker {
         }
     }
 
-    private func recordFailure(_ error: Error) async throws {
+    private nonisolated static func isTransientDatabaseError(_ error: Error) -> Bool {
+        guard let error = error as? DatabaseError else { return false }
+        return error.resultCode == .SQLITE_BUSY || error.resultCode == .SQLITE_LOCKED
+    }
+
+    private nonisolated static func errorCode(_ error: Error) -> String {
+        guard let error = error as? DatabaseError else { return String(describing: type(of: error)) }
+        return "sqlite:\(error.resultCode.rawValue):\(error.extendedResultCode.rawValue)"
+    }
+
+    private func recordFailure(_ error: Error, transient: Bool) async throws {
         try await dbQueue.write { db in
             try db.execute(
                 sql: """
                 UPDATE search_index_state
-                SET phase = 'failed', lastErrorCode = ?, updatedAt = ? WHERE indexKind = 'fts'
+                SET phase = CASE WHEN ? THEN phase ELSE 'failed' END,
+                    lastErrorCode = ?, updatedAt = ? WHERE indexKind = 'fts'
                 """,
-                arguments: [String(describing: type(of: error)), Date()]
+                arguments: [transient, Self.errorCode(error), Date()]
             )
         }
     }
@@ -1078,7 +1130,6 @@ private enum ScreenshotJobOutcome: Sendable {
 
 private enum SearchIndexError: Error {
     case analyzerMismatch
-    case retryLimitReached
     case unknownJob(String)
 }
 
