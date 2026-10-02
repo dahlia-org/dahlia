@@ -24,7 +24,7 @@ actor SyncWorker {
     private let screenshotContent: ScreenshotContentProvider
     private let meetingContent: MeetingContentProvider
     let apiClient: SyncAPIClient
-    private let workspacesDidChange: @MainActor @Sendable () async -> Void
+    let workspacesDidChange: @MainActor @Sendable () async -> Void
     private var drainTask: Task<Void, Never>?
     var fileUploads: [UUID: PendingFileUpload] = [:]
     var fileUploadCandidates: [SyncFileUpload] = []
@@ -35,7 +35,16 @@ actor SyncWorker {
     private var discoveringConnections: Set<UUID> = []
     private var discoverySuspensionWaiters: [UUID: [CheckedContinuation<Void, Never>]] = [:]
     private var suspendedDiscoveryConnections: Set<UUID> = []
-    private var transferConnections: Set<UUID> = []
+    var transferConnections: Set<UUID> = []
+    struct RelocationKey: Hashable {
+        let connectionId: UUID
+        let workspaceId: UUID
+        let origin: URL
+        let generation: Int
+    }
+
+    var relocationResults: [RelocationKey: Date] = [:]
+    var relocationRequests: [RelocationKey: (id: UUID, task: Task<WorkspaceRelocation, Error>)] = [:]
     private var knownCapabilities: [UUID: ServerCapabilities] = [:]
     private var updateRequiredWorkspaces: Set<UUID> = []
     private struct PullKey: Hashable { let database: ObjectIdentifier
@@ -67,6 +76,7 @@ actor SyncWorker {
     private var archiveTask: Task<Void, Never>?
     private var constructionTask: Task<Void, Never>?
     private var transferClaims: [UUID: (task: Task<Void, Never>, foreground: Bool)] = [:]
+    private var metadataClaims: [UUID: (task: Task<Void, Never>, foreground: Bool)] = [:]
 
     func start() async {
         if documentTask == nil {
@@ -136,6 +146,7 @@ actor SyncWorker {
     }
 
     func applicationBecameActive() async {
+        relocationResults.removeAll()
         do {
             try await pullRemoteChanges()
         } catch {
@@ -146,6 +157,11 @@ actor SyncWorker {
     }
 
     func stop() async {
+        relocationResults.removeAll()
+        for request in relocationRequests.values {
+            request.task.cancel()
+        }
+        relocationRequests.removeAll()
         constructionTask?.cancel()
         pullTask?.cancel()
         archiveTask?.cancel()
@@ -158,12 +174,19 @@ actor SyncWorker {
         for claim in transferClaims.values {
             claim.task.cancel()
         }
+        for claim in metadataClaims.values {
+            claim.task.cancel()
+        }
         cancelFileUploads()
         await drainTask?.value
         for claim in transferClaims.values {
             await claim.task.value
         }
         transferClaims.removeAll()
+        for claim in metadataClaims.values {
+            await claim.task.value
+        }
+        metadataClaims.removeAll()
         await finishFileUploads()
         drainTask = nil
         await constructionTask?.value
@@ -299,6 +322,15 @@ actor SyncWorker {
         try? await processClaim(transaction)
     }
 
+    private func processMetadataClaim(_ transaction: SyncQueuedTransaction) async {
+        defer { metadataClaims[transaction.id] = nil }
+        do {
+            try await processClaim(transaction)
+        } catch {
+            if !Task.isCancelled { ErrorReportingService.capture(error, context: ["source": "syncDrain"]) }
+        }
+    }
+
     private func runDrain() async {
         startIndependentLanes()
         while !Task.isCancelled {
@@ -306,9 +338,11 @@ actor SyncWorker {
                 guard let transaction = try await SyncTransactionQueue.claim(
                     dbQueue: dbQueue,
                     recordingsOnly: false,
-                    excluding: Set(transferClaims.keys),
+                    excluding: Set(transferClaims.keys).union(metadataClaims.keys),
                     allowTransfers: transferClaims.count < SyncTransferSlots.permits,
-                    allowBackgroundTransfers: transferClaims.values.filter { !$0.foreground }.count < SyncTransferSlots.backgroundPermits
+                    allowBackgroundTransfers: transferClaims.values.filter { !$0.foreground }.count < SyncTransferSlots.backgroundPermits,
+                    allowMetadata: metadataClaims.count < 2,
+                    allowBackgroundMetadata: !metadataClaims.values.contains { !$0.foreground }
                 ) else {
                     try? await screenshotContent.trimFiles(dbQueue: dbQueue)
                     try? await ScreenshotStorageMaintenance.reclaimIncrementally(dbQueue: dbQueue)
@@ -322,7 +356,11 @@ actor SyncWorker {
                     }
                     transferClaims[transaction.id] = (task, transaction.foreground)
                 } else {
-                    try await processClaim(transaction)
+                    let task = Task { [weak self] in
+                        guard let self else { return }
+                        await self.processMetadataClaim(transaction)
+                    }
+                    metadataClaims[transaction.id] = (task, transaction.foreground)
                 }
             } catch is CancellationError {
                 return
@@ -381,7 +419,12 @@ actor SyncWorker {
                 return nil
             }
         }
-        if try await reconcileRelocations(workspaceId: transaction.workspaceId, connectionId: transaction.connectionId, origin: target) { return nil }
+        if try await reconcileRelocations(
+            workspaceId: transaction.workspaceId,
+            connectionId: transaction.connectionId,
+            origin: target,
+            useCachedResult: true
+        ) { return nil }
         if transaction.operations.contains(where: { $0.entity == .file && $0.action != .delete }) {
             try await prepareFileUploads(for: transaction, origin: target)
         }
@@ -391,8 +434,16 @@ actor SyncWorker {
         guard try await dbQueue.read({ db in
             try SyncTransactionQueue.isCurrentForCommit(transaction, in: db)
         }) else { throw CancellationError() }
-        let data = try await sendData(origin: target, connectionId: transaction.connectionId, preservingJSONBody: body) {
-            try await $0.commitTransaction(body: .json(typedBody)).ok.body.json
+        let data: Data
+        do {
+            data = try await sendData(origin: target, connectionId: transaction.connectionId, preservingJSONBody: body) {
+                try await $0.commitTransaction(body: .json(typedBody)).ok.body.json
+            }
+        } catch let error as SyncHTTPError {
+            if [403, 404, 409].contains(error.status) {
+                _ = try await reconcileRelocations(workspaceId: transaction.workspaceId, connectionId: transaction.connectionId, origin: target)
+            }
+            throw error
         }
         return try SyncJSON.decoder.decode(SyncTransactionResponse.self, from: data)
     }
@@ -875,46 +926,6 @@ actor SyncWorker {
             }
         } catch {
             try? await recordPullIncident(error, target: target)
-            throw error
-        }
-    }
-
-    private func reconcileRelocations(
-        workspaceId: UUID,
-        connectionId: UUID,
-        origin: URL,
-        clearPullIncidentOnSuccess: Bool = false
-    ) async throws -> Bool {
-        guard transferConnections.contains(connectionId) else { return false }
-        do {
-            let data = try await sendData(origin: origin, connectionId: connectionId) {
-                try await $0.getRelocations(path: .init(workspaceId: workspaceId.lowercase)).ok.body.json
-            }
-            let relocation = try SyncJSON.decoder.decode(WorkspaceRelocation.self, from: data)
-            let changed = try await dbQueue.write { db in
-                let changed = try relocation.apply(connectionId: connectionId, in: db)
-                try db.execute(
-                    sql: "UPDATE workspaces SET syncRecoveryState = NULL WHERE id = ? AND accountConnectionId = ? AND syncRecoveryState = 'transferBlocked'",
-                    arguments: [workspaceId, connectionId]
-                )
-                if changed, clearPullIncidentOnSuccess {
-                    try db.execute(
-                        sql: "UPDATE workspaces SET syncPullErrorJSON = NULL WHERE id = ? AND accountConnectionId = ? AND syncConfirmedConnectionId = ?",
-                        arguments: [workspaceId, connectionId, connectionId]
-                    )
-                }
-                return changed
-            }
-            if changed { await workspacesDidChange() }
-            return changed
-        } catch let error as SyncHTTPError {
-            if error.code == "transfer_access_required" || error.code == "transfer_local_changes" {
-                try await dbQueue.write { db in
-                    guard try SyncTransactionQueue.matchesExpectedConnection(workspaceId: workspaceId, connectionId: connectionId, in: db)
-                    else { return }
-                    try db.execute(sql: "UPDATE workspaces SET syncRecoveryState = 'transferBlocked' WHERE id = ?", arguments: [workspaceId])
-                }
-            }
             throw error
         }
     }

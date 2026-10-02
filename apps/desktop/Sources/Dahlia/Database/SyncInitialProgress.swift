@@ -5,6 +5,8 @@ import GRDB
 
 /// Construction metadata is committed with each entity's immutable outbound operation.
 enum SyncInitialProgress {
+    static let batchOperationLimit = 8
+    static let batchByteLimit = 256 * 1024
     static func active(workspaceId: UUID, in db: Database) throws -> Bool {
         try Bool.fetchOne(db, sql: "SELECT EXISTS(SELECT 1 FROM sync_initial_builds WHERE workspaceId = ?)", arguments: [workspaceId]) == true
     }
@@ -272,18 +274,20 @@ extension SyncInitialProgress {
         screenshotContent.retainOriginals(workspaceIds: startedWorkspaces, dbQueue: dbQueue)
         defer { screenshotContent.releaseOriginals(workspaceIds: startedWorkspaces, dbQueue: dbQueue) }
         var ready = startedWorkspaces
-        // Commit one entity per Workspace per turn. A large import cannot postpone the
+        // Commit one bounded batch per Workspace per turn. A large import cannot postpone the
         // construction of the next Workspace's first independently sendable request.
         while !ready.isEmpty {
             var remaining: [UUID] = []
             for workspace in ready {
                 try Task.checkCancellation()
                 do {
-                    let next = try await dbQueue.read { db in
-                        try nextEntity(workspaceId: workspace, in: db).map { (entity: $0["entity"] as String, id: $0["entityId"] as UUID) }
+                    let files = try await dbQueue.read { db in
+                        try nextBatch(workspaceId: workspace, in: db)
+                            .filter { $0["entity"] as String == SyncEntity.file.rawValue }
+                            .map { $0["entityId"] as UUID }
                     }
-                    if let next, next.entity == SyncEntity.file.rawValue {
-                        try await screenshotContent.prepareOriginals(workspaceId: workspace, dbQueue: dbQueue, screenshotIds: [next.id])
+                    if !files.isEmpty {
+                        try await screenshotContent.prepareOriginals(workspaceId: workspace, dbQueue: dbQueue, screenshotIds: files)
                     }
                     if try await dbQueue.write({ try constructNext(workspaceId: workspace, in: $0) }) { remaining.append(workspace) }
                 } catch { try onFailure(error) }
@@ -298,6 +302,19 @@ extension SyncInitialProgress {
         SELECT p.* FROM sync_initial_entities p WHERE p.workspaceId = ? AND p.built = 0 AND (? IS NULL OR p.resource = ?)
         ORDER BY priority DESC, CASE entity WHEN 'project' THEN 0 WHEN 'meeting' THEN 1 WHEN 'summary' THEN 2 WHEN 'transcript' THEN 3 WHEN 'file' THEN 4 ELSE 5 END, entityId LIMIT 1
         """, arguments: [workspaceId, resource, resource])
+    }
+
+    private static func nextBatch(workspaceId: UUID, in db: Database) throws -> [Row] {
+        guard let first = try nextEntity(workspaceId: workspaceId, in: db) else { return [] }
+        let entity: SyncEntity = first["entity"]
+        if entity == .transcript { return [first] }
+        // Match type and priority so one background batch cannot absorb an interactive edit.
+        return try Row.fetchAll(db, sql: """
+        SELECT * FROM sync_initial_entities WHERE workspaceId = ? AND built = 0 AND entity = ? AND priority = ?
+        ORDER BY CASE WHEN entity = 'project' AND EXISTS (
+            SELECT 1 FROM projects p WHERE p.id = entityId AND p.parentProjectId IS NULL) THEN 0 ELSE 1 END,
+            entityId LIMIT ?
+        """, arguments: [workspaceId, entity, first["priority"] as Int, batchOperationLimit])
     }
 
     static func constructNext(workspaceId: UUID, resource: String? = nil, in db: Database) throws -> Bool {
@@ -317,6 +334,57 @@ extension SyncInitialProgress {
             try LocalWorkspaceImportRecord.complete(in: db)
             return false
         }
+        let candidates = try resource == nil ? nextBatch(workspaceId: workspaceId, in: db) : [next]
+        var drafts: [SyncOperationDraft] = []
+        var references: [UUID: SyncScreenshotAttachmentReference] = [:]
+        var constructed: [Row] = []
+        // The envelope and maximum-width revisions are included in the byte budget.
+        var wire: [SyncOperationBody] = []
+        for candidate in candidates {
+            let entity: SyncEntity = candidate["entity"]
+            let (operations, attachments) = try constructEntity(candidate, build: build, workspaceId: workspaceId, in: db)
+            let incoming = try operations.map { operation in
+                try SyncOperationBody(
+                    id: operation.id,
+                    entity: operation.entity,
+                    action: operation.action,
+                    entityId: operation.entityId,
+                    baseRevision: Int.max,
+                    data: operation.payloadJSON.map { try SyncJSON.decoder.decode(JSONValue.self, from: $0) }
+                )
+            }
+            let bytes = try SyncJSON.encoder.encode(SyncTransactionBody(
+                id: workspaceId, workspaceId: workspaceId, createdAt: .now, operations: wire + incoming
+            )).count
+            if !drafts.isEmpty, bytes > batchByteLimit { break }
+            wire += incoming
+            drafts += operations
+            references.merge(attachments) { _, value in value }
+            constructed.append(candidate)
+            // A large entity remains a valid standalone operation; never split its body here.
+            if bytes > batchByteLimit || entity == .transcript { break }
+        }
+        if !drafts.isEmpty {
+            let transactionId = try SyncTransactionRecorder.record(
+                workspaceId: workspaceId, background: true, buildingInitial: true,
+                operations: drafts, screenshotAttachments: references,
+                allowAfterReset: build["restoring"], in: db
+            )
+            if next["priority"] as Int == 1, let transactionId {
+                try db.execute(sql: "UPDATE sync_transactions SET syncPriority = 1 WHERE id = ?", arguments: [transactionId])
+            }
+        }
+        for candidate in constructed {
+            try db.execute(
+                sql: "UPDATE sync_initial_entities SET built = 1 WHERE workspaceId = ? AND entity = ? AND entityId = ?",
+                arguments: [workspaceId, candidate["entity"] as String, candidate["entityId"] as UUID]
+            )
+        }
+        return true
+    }
+
+    private static func constructEntity(_ next: Row, build: Row, workspaceId: UUID, in db: Database) throws
+        -> ([SyncOperationDraft], [UUID: SyncScreenshotAttachmentReference]) {
         let entity: SyncEntity = next["entity"], id: UUID = next["entityId"], restoring: Bool = build["restoring"]
         var operations: [SyncOperationDraft] = []
         var attachments: [UUID: SyncScreenshotAttachmentReference] = [:]
@@ -367,27 +435,12 @@ extension SyncInitialProgress {
             }
         case .workspace, .recording, .meetingEvent: break
         }
-        if !operations.isEmpty {
-            try SyncTransactionRecorder.record(
-                workspaceId: workspaceId,
-                background: true,
-                buildingInitial: true,
-                operations: operations,
-                screenshotAttachments: attachments,
-                allowAfterReset: restoring,
-                in: db
-            )
-        }
-        if next["priority"] as Int == 1 {
+        if entity == .transcript, next["priority"] as Int == 1 {
             try db.execute(sql: """
             UPDATE sync_transactions SET syncPriority = 1 WHERE id IN (
                 SELECT transactionId FROM sync_operations WHERE entity = ? AND entityId = ?)
             """, arguments: [entity, id])
         }
-        try db.execute(
-            sql: "UPDATE sync_initial_entities SET built = 1 WHERE workspaceId = ? AND entity = ? AND entityId = ?",
-            arguments: [workspaceId, entity, id]
-        )
-        return true
+        return (operations, attachments)
     }
 }

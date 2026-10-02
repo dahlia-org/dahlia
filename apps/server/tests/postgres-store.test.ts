@@ -364,7 +364,7 @@ integration("PostgreSQL application store", () => {
       const concurrent = await Promise.allSettled([1, 2].map(() => store.sync.withIdentity(owner, (sync) => save(sync, 1))));
       expect(concurrent.filter((result) => result.status === "fulfilled")).toHaveLength(1);
       await store.sync.withIdentity(owner, async (sync) => {
-        await sync.lockWorkspace(workspaceId);
+        await sync.lockWorkspace(workspaceId, { authorization: true });
         expect((await sync.listSummaryVersions(workspaceId, meetingId, 20)).map((row) => row.version)).toEqual([2, 1]);
         await commit(sync, workspaceId, [{ id: crypto.randomUUID(), entity: "summary", action: "delete", entityId: meetingId, baseRevision: 2, data: {} }]);
         await save(sync, 3);

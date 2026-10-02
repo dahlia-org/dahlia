@@ -41,7 +41,7 @@ export class SummaryService {
   async cancel(identity: Identity, workspaceId: string, meetingId: string, id: string): Promise<SummaryJob> {
     if (identity.impersonated) throw new RequestError(403, "impersonation_read_only");
     return this.store.withIdentity(identity, async (scoped) => {
-      await scoped.lockWorkspace(workspaceId);
+      await scoped.lockMeeting(workspaceId, meetingId, true);
       if (!canWriteWorkspace((await scoped.getWorkspace(workspaceId))?.role) || !await scoped.getMeeting(workspaceId, meetingId)) {
         throw new RequestError(404, "summary_meeting_unavailable");
       }
@@ -56,7 +56,7 @@ export class SummaryService {
     const parsed = z.object({ id: z.uuidv7() }).strict().safeParse(body);
     if (!parsed.success) throw new RequestError(400, "invalid_summary_request");
     return this.store.withIdentity(identity, async (scoped) => {
-      await scoped.lockWorkspace(workspaceId);
+      await scoped.lockMeeting(workspaceId, meetingId, true);
       const meeting = await scoped.getMeeting(workspaceId, meetingId);
       if (!canWriteWorkspace((await scoped.getWorkspace(workspaceId))?.role) || !meeting) {
         throw new RequestError(404, "summary_meeting_unavailable");
@@ -153,7 +153,7 @@ export class SummaryService {
       throw error;
     }
     return this.store.withIdentity(identity, async (scoped) => {
-      await scoped.lockWorkspace(workspaceId);
+      await scoped.lockMeeting(workspaceId, meetingId, true);
       if (!canWriteWorkspace((await scoped.getWorkspace(workspaceId))?.role)) throw new RequestError(404, "summary_meeting_unavailable");
       const meeting = await scoped.getMeeting(workspaceId, meetingId);
       if (!meeting) throw new RequestError(404, "summary_meeting_unavailable");

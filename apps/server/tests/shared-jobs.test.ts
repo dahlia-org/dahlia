@@ -133,7 +133,8 @@ describe("shared durable dispatch", () => {
       child.once("exit", (code) => { if (code === 0) resolve(result); else reject(new Error(`child exit ${code}`)); });
     })));
     expect(claims.filter(Boolean)).toEqual(["shared"]);
-  });
+    // Include three Node/tsx startups and SQLite's 5s busy wait on shared CI runners.
+  }, 30_000);
 });
 describe("resource configuration", () => {
   it("divides the memory budget across workers instead of multiplying independent CPU heuristics", () => {

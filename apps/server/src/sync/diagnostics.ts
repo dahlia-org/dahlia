@@ -1,5 +1,5 @@
 /** Opt-in, process-local timing samples for tests and profiling; never sent to telemetry. */
-export type SyncTimingPhase = "connectionAndBegin" | "transaction" | "authorizationLock" | "workspaceLock" | "domainLock" | "documentLock" | "notesLock";
+export type SyncTimingPhase = "connectionAndBegin" | "transaction" | "authorizationLock" | "workspaceLock" | "domainLock" | "documentLock" | "notesLock" | "resourceLock" | "publicationLock";
 const captures = new Set<Map<SyncTimingPhase, number[]>>();
 
 export function beginSyncTiming(phase: SyncTimingPhase): () => void {

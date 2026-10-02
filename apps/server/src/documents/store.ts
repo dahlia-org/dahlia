@@ -44,6 +44,7 @@ export function createDocumentStore(db: NodePgDatabase, schema: typeof Schema, i
     )).limit(1);
     if (!allowed) throw new RequestError(404, "document_unavailable");
     if (meetingId === null) return;
+    await locks.resources(new Map([[`1:meeting:${meetingId}`, "shared"]]));
     const meeting = schema.syncedMeeting;
     const [parent] = await db.select({ id: meeting.meetingId }).from(meeting).where(and(
       eq(meeting.meetingId, meetingId), eq(meeting.workspaceId, workspaceId), eq(meeting.active, true),
@@ -53,11 +54,14 @@ export function createDocumentStore(db: NodePgDatabase, schema: typeof Schema, i
   }
   async function authorize(workspaceId: string, id: string, write = false) {
     await authorizeParent(workspaceId, null, write);
-    await locks.document(id, write ? "exclusive" : "shared");
     const [row] = await db.select({ meetingId: schema.document.meetingId }).from(schema.document)
       .where(and(eq(schema.document.id, id), eq(schema.document.workspaceId, workspaceId))).limit(1);
     if (!row) throw new RequestError(404, "document_unavailable");
     if (row.meetingId) await authorizeParent(workspaceId, row.meetingId, write);
+    await locks.document(id, write ? "exclusive" : "shared");
+    const [current] = await db.select({ meetingId: schema.document.meetingId }).from(schema.document)
+      .where(and(eq(schema.document.id, id), eq(schema.document.workspaceId, workspaceId))).limit(1);
+    if (!current || current.meetingId !== row.meetingId) throw new RequestError(503, "document_parent_changed");
   }
   async function notesID(workspaceId: string, meetingId: string) {
     const table = schema.document;
