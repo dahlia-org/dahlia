@@ -8,9 +8,27 @@ import Foundation
 
     struct SettingsCategoryTests {
         @Test
+        func accountAndWorkspacePreferencesHaveSeparateDestinations() {
+            #expect(SettingsGroup.account.categories == [.accountsAndWorkspaces])
+            #expect(SettingsNavigation.visibleSelection(.accountPreferences) == .accountsAndWorkspaces)
+            #expect(SettingsNavigation.visibleSelection(.macInference) == .accountsAndWorkspaces)
+            #expect(!SettingsGroup.workspace.categories.contains(.accountPreferences))
+            #expect(SettingsGroup.workspace.categories.contains(.workspacePreferences))
+            #expect(!SettingsGroup.app.categories.contains(.macInference))
+            #expect(SettingsCategory.accountPreferences.label == L10n.accountPreferences)
+            #expect(SettingsCategory.workspacePreferences.label == L10n.workspaceSettings)
+            #expect(SettingsNavigation.visibleSelection(.workspacePreferences) == .workspacePreferences)
+            #expect(SettingsCategory.workspacePreferences.matches(L10n.summaryOutputLanguage))
+            #expect(!SettingsCategory.accountPreferences.matches(L10n.summaryOutputLanguage))
+            #expect(!SettingsCategory.workspacePreferences.matches(L10n.automaticRecordingProcessing))
+        }
+
+        @Test
         func groupsContainEveryCategoryOnce() {
             let groupedCategories = SettingsGroup.allCases.flatMap(\.categories)
             let hiddenCategories: Set<SettingsCategory> = [
+                .accountPreferences,
+                .macInference,
                 .dahliaAccounts,
                 .modelProvider,
                 .aiSummary,
@@ -54,12 +72,12 @@ import Foundation
             #expect(SettingsNavigation.visibleSelection(.language) == .general)
             #expect(SettingsNavigation.visibleSelection(.appearance) == .general)
             #expect(SettingsNavigation.visibleSelection(.recordingStopDetection) == .general)
-            #expect(SettingsNavigation.visibleSelection(.instructions) == .accountPreferences)
-            #expect(SettingsNavigation.visibleSelection(.mcp) == .accountPreferences)
-            #expect(SettingsNavigation.visibleSelection(.aiSummary) == .accountPreferences)
+            #expect(SettingsNavigation.visibleSelection(.instructions) == .accountsAndWorkspaces)
+            #expect(SettingsNavigation.visibleSelection(.mcp) == .accountsAndWorkspaces)
+            #expect(SettingsNavigation.visibleSelection(.aiSummary) == .accountsAndWorkspaces)
             #expect(SettingsNavigation.visibleSelection(.dahliaAccounts) == .accountsAndWorkspaces)
             #expect(SettingsNavigation.visibleSelection(.workspace) == .workspace)
-            #expect(SettingsNavigation.visibleSelection(.modelProvider) == .macInference)
+            #expect(SettingsNavigation.visibleSelection(.modelProvider) == .accountsAndWorkspaces)
             #expect(SettingsNavigation.visibleSelection(.calendar) == .calendar)
 
             let visible = Set(SettingsGroup.allCases.flatMap(\.categories))
@@ -78,12 +96,15 @@ import Foundation
             #expect(SettingsCategory.general.matches(L10n.serverContentRetentionDays))
             #expect(SettingsCategory.general.matches(L10n.forever))
             #expect(SettingsCategory.liveSubtitles.matches(L10n.translationTargetLanguage))
-            #expect(SettingsCategory.macInference.matches("  chatGPT \n "))
+            #expect(SettingsCategory.accountsAndWorkspaces.matches("  chatGPT \n "))
             #expect(SettingsCategory.cloudStorage.matches("google"))
-            #expect(SettingsCategory.accountPreferences.matches(L10n.automaticRecordingProcessing))
+            #expect(SettingsCategory.accountsAndWorkspaces.matches(L10n.automaticRecordingProcessing))
+            #expect(SettingsCategory.accountsAndWorkspaces.matches(L10n.accountPreferences))
+            #expect(SettingsCategory.accountsAndWorkspaces.matches(L10n.summaryStyle))
+            #expect(SettingsCategory.accountsAndWorkspaces.matches(L10n.modelProvider))
             #expect(SettingsCategory.general.matches(" \n "))
             #expect(!SettingsCategory.general.matches("not-a-setting"))
-            #expect(!SettingsCategory.macInference.matches("ChatGPT not-a-setting"))
+            #expect(!SettingsCategory.accountsAndWorkspaces.matches("ChatGPT not-a-setting"))
         }
 
         @Test
@@ -96,13 +117,21 @@ import Foundation
 
             defaults.set(SettingsCategory.instructions.rawValue, forKey: SettingsNavigation.selectedCategoryDefaultsKey)
 
-            #expect(SettingsNavigation.savedSelection(in: defaults) == .accountPreferences)
+            #expect(SettingsNavigation.savedSelection(in: defaults) == .accountsAndWorkspaces)
 
             defaults.set(SettingsCategory.dahliaAccounts.rawValue, forKey: SettingsNavigation.selectedCategoryDefaultsKey)
             #expect(SettingsNavigation.savedSelection(in: defaults) == .accountsAndWorkspaces)
 
+            for category in [SettingsCategory.accountPreferences, .macInference, .modelProvider] {
+                defaults.set(category.rawValue, forKey: SettingsNavigation.selectedCategoryDefaultsKey)
+                #expect(SettingsNavigation.savedSelection(in: defaults) == .accountsAndWorkspaces)
+            }
+
             defaults.set(SettingsCategory.recordingStopDetection.rawValue, forKey: SettingsNavigation.selectedCategoryDefaultsKey)
             #expect(SettingsNavigation.savedSelection(in: defaults) == .general)
+
+            SettingsNavigation.saveSelection(.workspacePreferences, in: defaults)
+            #expect(SettingsNavigation.savedSelection(in: defaults) == .workspacePreferences)
         }
 
         @Test

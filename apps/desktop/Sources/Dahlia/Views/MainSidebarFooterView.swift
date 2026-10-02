@@ -19,16 +19,12 @@ struct MainSidebarFooterView: View {
             dahliaAccountController.connections.first(where: { $0.id == connectionID })
         }
         let signedInConnections = dahliaAccountController.connections.filter(\.isSignedIn)
-        let accountWorkspaces = Self.workspaces(workspaces, linkedTo: workspaceAISettings.accountConnectionID)
         HStack(spacing: 4) {
             MainSidebarAccountMenuButton(
-                workspaces: accountWorkspaces,
-                currentWorkspace: currentWorkspace,
                 connections: signedInConnections,
                 currentConnectionID: connection?.id,
                 isLocalAccount: workspaceAISettings.isLocalAccount,
                 isLocalAccountAvailable: workspaces.contains { $0.accountConnectionId == nil },
-                onSelectWorkspace: onSelectWorkspace,
                 onOpenSettings: showSettings,
                 onSelectAccount: selectAccount,
                 onAccountAction: accountAction
@@ -44,7 +40,7 @@ struct MainSidebarFooterView: View {
             .onContinuousHover { phase in
                 isAccountMenuHovered = phase != .ended
             }
-            .help(L10n.accountAndWorkspaceMenuDescription)
+            .help(L10n.accountMenuDescription)
 
             if workspaceAISettings.isSwitchingRuntime {
                 ProgressView()
@@ -124,7 +120,7 @@ struct MainSidebarFooterView: View {
         currentWorkspace: WorkspaceRecord?,
         connectionID: UUID?
     ) -> WorkspaceRecord? {
-        guard currentWorkspace?.accountConnectionId != connectionID else { return nil }
+        guard currentWorkspace == nil || currentWorkspace?.accountConnectionId != connectionID else { return nil }
         return Self.workspaces(workspaces, linkedTo: connectionID).first
     }
 }

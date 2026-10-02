@@ -2,8 +2,10 @@
 "settings.organization.settingsDataAndAccounts" = "データ管理";
 "settings.organization.workspaceSettings" = "ワークスペースの設定";
 "settings.organization.searchSettings" = "設定を検索";
-"settings.organization.settingsAccountIntro" = "このMacのアカウント別AI設定と、ワークスペースで共有する出力言語を設定します。";
-"settings.organization.settingsAccountsIntro" = "接続先のアカウントと、それぞれのワークスペースを管理します。";
+"settings.organization.settingsAccountIntro" = "選択中のアカウントのAI設定です。このMacでのみ適用され、同じアカウントのすべてのワークスペースで共通です。別のMacやWebには同期されません。";
+"settings.organization.settingsWorkspaceManagementIntro" = "ワークスペースの名前、所属アカウント、共有と書き出し先を管理します。";
+"settings.organization.settingsWorkspaceIntro" = "選択中のワークスペースで共有する出力言語を設定します。";
+"settings.organization.settingsAccountsIntro" = "使用するアカウントを切り替え、選択中のアカウントの接続とAI設定を管理します。";
 "settings.organization.settingsExportIntro" = "サイドバーで選択中のアカウントの書き出し先を、このMacで設定します。";
 "settings.organization.settingsAccountSelectionDescription" = "編集対象を選んでも、開いているワークスペースは変わりません。";
 "settings.organization.settingsLoading" = "設定を読み込み中…";
@@ -25,7 +27,7 @@
 "settings.organization.summaryStyleEventDescription" = "講演やセッションの主張・デモ・学びを流れに沿ってまとめます。";
 "settings.organization.summaryStyleTimelineDescription" = "発言やデモ、質疑応答を時系列で詳しく辿れる形にします。";
 "settings.preferences.macInferencePreferences" = "モデルプロバイダー";
-"settings.preferences.accountPreferences" = "ワークスペースの生成設定";
+"settings.preferences.accountPreferences" = "アカウントの設定";
 "settings.preferences.accountPreferencesScope" = "出力言語はワークスペースで共有します。他のAI設定はこのMacのアカウントごとに保存します。";
 "settings.preferences.accountSummaryPreferencesDescription" = "まとめ方と出力言語は処理場所にかかわらず共通です。変更は次回の処理から適用されます。Macでの要約も、接続先のAIへ文字起こしや画像を送信します。";
 "settings.preferences.summaryStyle" = "まとめ方";
@@ -608,7 +610,7 @@
 "%lld server meeting deletions are waiting. Continue deleting them?" = "Server 上の %lld 件のミーティング削除が保留中です。削除を続行しますか？";
 "Current Workspace" = "現在のワークスペース";
 "Choose the workspace used for recordings and sync." = "録音と同期に使用するワークスペースを選択します。";
-"Open the account and workspace menu." = "アカウントとワークスペースのメニューを開きます。";
+"Open the account menu." = "アカウントメニューを開きます。";
 "No workspace selected" = "ワークスペースが選択されていません";
 "Appearance" = "外観";
 "Display" = "表示";
@@ -1126,6 +1128,7 @@
 "Unknown Codex app-server error." = "Codex app-server で不明なエラーが発生しました。";
 "Account" = "アカウント";
 "Selected Account" = "選択中のアカウント";
+"Switch Account" = "アカウントを切り替え";
 "Local Account Model Provider" = "ローカルアカウントのモデルプロバイダー";
 "Choose the model provider used by the Local Account." = "ローカルアカウントで使用するモデルプロバイダーを選択します。";
 "This setting is shared by all Local Account workspaces. Dahlia Server and Cloud use hosted models automatically." = "この設定はローカルアカウントのすべてのワークスペースで共通です。Dahlia Server と Cloud は hosted モデルを自動的に使用します。";
@@ -1775,5 +1778,4 @@
 
 "processing.dataUnreadable" = "一部の録音の処理状態を読み込めませんでした。他の録音の復元は続行します。";
 "processing.retryOnMac" = "以前のサーバー処理は再開できません。このMacで再実行してください。";
-"settings.accountInference.description" = "このMacの、選択中のアカウントに適用します。同じアカウントのワークスペースで共有します。";
 "processing.downloadingArchive" = "録音音声をダウンロード中…";

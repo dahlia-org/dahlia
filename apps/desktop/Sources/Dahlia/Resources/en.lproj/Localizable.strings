@@ -2,8 +2,10 @@
 "settings.organization.settingsDataAndAccounts" = "Data management";
 "settings.organization.workspaceSettings" = "Workspace settings";
 "settings.organization.searchSettings" = "Search settings";
-"settings.organization.settingsAccountIntro" = "Set account AI preferences on this Mac and the workspace's shared output language.";
-"settings.organization.settingsAccountsIntro" = "Manage connected accounts and the workspaces that belong to them.";
+"settings.organization.settingsAccountIntro" = "AI settings for the selected account. They apply only on this Mac across all workspaces in the account, and do not sync to other Macs or the web.";
+"settings.organization.settingsWorkspaceManagementIntro" = "Manage workspace names, account membership, sharing, and export folders.";
+"settings.organization.settingsWorkspaceIntro" = "Set the output language shared by the selected workspace.";
+"settings.organization.settingsAccountsIntro" = "Switch accounts and manage the selected account's connection and AI settings.";
 "settings.organization.settingsExportIntro" = "Configure export destinations on this Mac for the account selected in the sidebar.";
 "settings.organization.settingsAccountSelectionDescription" = "Choosing an account here does not switch your open workspace.";
 "settings.organization.settingsLoading" = "Loading settings…";
@@ -25,7 +27,7 @@
 "settings.organization.summaryStyleEventDescription" = "Key claims, demonstrations, and takeaways from a talk or session.";
 "settings.organization.summaryStyleTimelineDescription" = "Follow an event in order, including demonstrations and Q&A.";
 "settings.preferences.macInferencePreferences" = "Model providers";
-"settings.preferences.accountPreferences" = "Workspace generation settings";
+"settings.preferences.accountPreferences" = "Account Settings";
 "settings.preferences.accountPreferencesScope" = "Output language is shared by the workspace. Other AI settings are stored per account on this Mac.";
 "settings.preferences.accountSummaryPreferencesDescription" = "Style and output language apply regardless of processing location. Changes affect new processing only. Summaries on Mac also send transcripts and images to the connected AI.";
 "settings.preferences.summaryStyle" = "Summary style";
@@ -608,7 +610,7 @@
 "%lld server meeting deletions are waiting. Continue deleting them?" = "%lld server meeting deletions are waiting. Continue deleting them?";
 "Current Workspace" = "Current Workspace";
 "Choose the workspace used for recordings and sync." = "Choose the workspace used for recordings and sync.";
-"Open the account and workspace menu." = "Open the account and workspace menu.";
+"Open the account menu." = "Open the account menu.";
 "No workspace selected" = "No workspace selected";
 "Appearance" = "Appearance";
 "Display" = "Display";
@@ -1126,6 +1128,7 @@
 "Unknown Codex app-server error." = "Unknown Codex app-server error.";
 "Account" = "Account";
 "Selected Account" = "Selected Account";
+"Switch Account" = "Switch Account";
 "Local Account Model Provider" = "Local Account Model Provider";
 "Choose the model provider used by the Local Account." = "Choose the model provider used by the Local Account.";
 "This setting is shared by all Local Account workspaces. Dahlia Server and Cloud use hosted models automatically." = "This setting is shared by all Local Account workspaces. Dahlia Server and Cloud use hosted models automatically.";
@@ -1775,5 +1778,4 @@
 
 "processing.dataUnreadable" = "Some recording processing states could not be read. Other recordings will still be restored.";
 "processing.retryOnMac" = "This previous server operation cannot be resumed. Run it again on this Mac.";
-"settings.accountInference.description" = "Applies to the selected account on this Mac, across its workspaces.";
 "processing.downloadingArchive" = "Downloading recording audio…";

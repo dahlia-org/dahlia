@@ -35,9 +35,10 @@
                 other: 0
             )
             let progress = AccountSyncProgress(workspaces: [pending])
-            let footer = MainSidebarAccountMenuButton.footerTitle(accountName: "Account", workspaceName: pending.name, syncSummary: progress.summary)
+            let footer = MainSidebarAccountMenuButton.footerTitle(accountName: "Account", syncSummary: progress.summary)
             #expect(footer.string.contains(progress.summary))
-            #expect(footer.string.contains(pending.name))
+            #expect(footer.string == "Account\n" + progress.summary)
+            #expect(!footer.string.contains(pending.name))
             let connection = makeConnection(origin: "https://server.example.com", isCloud: false)
             let menu = NSHostingView(rootView: MainSidebarAccountMenuPanel(width: 320) {
                 SyncProgressView(connection: connection, navigation: MainSidebarAccountMenuNavigationState())
@@ -111,27 +112,23 @@
         }
 
         @Test
-        func footerTitleShowsAccountAndWorkspaceOnSeparateLines() {
+        func footerTitleShowsOnlyTheAccountWithoutSyncProgress() {
             let title = MainSidebarAccountMenuButton.footerTitle(
-                accountName: "Kazuki Matsuda",
-                workspaceName: "Obsidian Workspace"
+                accountName: "Kazuki Matsuda"
             )
 
-            #expect(title.string.contains("Kazuki Matsuda"))
-            #expect(title.string.contains("Obsidian Workspace"))
-            #expect(title.string.contains("\n"))
+            #expect(title.string == "Kazuki Matsuda")
+            #expect(!title.string.contains("\n"))
             #expect(!title.string.contains("\u{FFFC}"))
 
             let accountRange = (title.string as NSString).range(of: "Kazuki Matsuda")
-            let workspaceRange = (title.string as NSString).range(of: "Obsidian Workspace")
             let accountFont = title.attribute(.font, at: accountRange.location, effectiveRange: nil) as? NSFont
-            let workspaceFont = title.attribute(.font, at: workspaceRange.location, effectiveRange: nil) as? NSFont
             let paragraphStyle = title.attribute(
                 .paragraphStyle,
                 at: accountRange.location,
                 effectiveRange: nil
             ) as? NSParagraphStyle
-            #expect(accountFont?.pointSize ?? 0 > workspaceFont?.pointSize ?? 0)
+            #expect(accountFont?.pointSize == NSFont.preferredFont(forTextStyle: .body).pointSize)
             #expect(paragraphStyle?.firstLineHeadIndent == 6)
             #expect(paragraphStyle?.headIndent == 6)
         }
@@ -318,9 +315,9 @@
             window.contentView?.addSubview(button)
             let connections = [makeConnection(origin: "https://server.example.com", isCloud: false)]
             let coordinator = MainSidebarAccountMenuCoordinator(
-                workspaces: [], currentWorkspace: nil, connections: connections,
+                connections: connections,
                 accountSelection: .init(connectionID: nil, isLocal: true, isLocalAvailable: true),
-                onSelectWorkspace: { _ in }, onOpenSettings: { _ in }, onSelectAccount: { _ in }, onAccountAction: {}
+                onOpenSettings: { _ in }, onSelectAccount: { _ in }, onAccountAction: {}
             )
             coordinator.button = button
             var openedURLs: [URL] = []
@@ -332,6 +329,13 @@
                 window.close()
             }
             coordinator.toggleMenu()
+            if let path = ProcessInfo.processInfo.environment["DAHLIA_ACCOUNT_MENU_SNAPSHOT"] {
+                let content = try #require(window.childWindows?.first?.contentView)
+                content.layoutSubtreeIfNeeded()
+                let bitmap = try #require(content.bitmapImageRepForCachingDisplay(in: content.bounds))
+                content.cacheDisplay(in: content.bounds, to: bitmap)
+                try #require(bitmap.representation(using: .png, properties: [:])).write(to: URL(fileURLWithPath: path))
+            }
             coordinator.moveSelection(1)
             coordinator.openSelectedSubmenu()
             let panel = try #require(window.childWindows?.last)
@@ -364,15 +368,12 @@
             var didSelectAccount = false
             var didManageAccounts = false
             let coordinator = MainSidebarAccountMenuCoordinator(
-                workspaces: [],
-                currentWorkspace: nil,
                 connections: [cloud, server],
                 accountSelection: MainSidebarAccountSelection(
                     connectionID: cloud.id,
                     isLocal: false,
                     isLocalAvailable: true
                 ),
-                onSelectWorkspace: { _ in },
                 onOpenSettings: { _ in },
                 onSelectAccount: {
                     didSelectAccount = true
@@ -408,15 +409,12 @@
             let available = makeConnection(origin: "https://used.example.com", isCloud: false)
             var selectedConnectionID: UUID?
             let coordinator = MainSidebarAccountMenuCoordinator(
-                workspaces: [],
-                currentWorkspace: nil,
                 connections: [unavailable, available],
                 accountSelection: MainSidebarAccountSelection(
                     connectionID: nil,
                     isLocal: true,
                     isLocalAvailable: true
                 ),
-                onSelectWorkspace: { _ in },
                 onOpenSettings: { _ in },
                 onSelectAccount: { selectedConnectionID = $0?.id },
                 onAccountAction: {}
@@ -429,43 +427,32 @@
         }
 
         @Test
-        func currentWorkspaceRemainsSelectableButDoesNothing() {
-            let current = makeWorkspace(name: "Current", accountConnectionID: nil)
-            let other = makeWorkspace(name: "Other", accountConnectionID: nil)
-            var selectedWorkspace: WorkspaceRecord?
-            var openedCategory: SettingsCategory?
+        func keyboardMenuKeepsSettingsAndAccountActionsWithoutWorkspaceItems() {
+            var openedCategories: [SettingsCategory?] = []
+            var selectedAccount = false
+            var accountActions = 0
             let coordinator = MainSidebarAccountMenuCoordinator(
-                workspaces: [current, other],
-                currentWorkspace: current,
                 connections: [],
-                accountSelection: MainSidebarAccountSelection(
-                    connectionID: nil,
-                    isLocal: true,
-                    isLocalAvailable: true
-                ),
-                onSelectWorkspace: { selectedWorkspace = $0 },
-                onOpenSettings: { openedCategory = $0 },
-                onSelectAccount: { _ in },
-                onAccountAction: {}
+                accountSelection: .init(connectionID: nil, isLocal: true, isLocalAvailable: true),
+                onOpenSettings: { openedCategories.append($0) },
+                onSelectAccount: { _ in selectedAccount = true },
+                onAccountAction: { accountActions += 1 }
             )
 
             coordinator.moveSelection(1)
-            coordinator.moveSelection(1)
             coordinator.activateSelection()
-            #expect(selectedWorkspace == nil)
+            #expect(!selectedAccount)
 
-            coordinator.moveSelection(1)
-            coordinator.moveSelection(1)
-            coordinator.moveSelection(1)
+            for _ in 0 ..< 3 {
+                coordinator.moveSelection(1)
+            }
             coordinator.activateSelection()
-            #expect(selectedWorkspace == other)
+            #expect(openedCategories == [nil])
 
-            coordinator.moveSelection(1)
-            coordinator.moveSelection(1)
-            coordinator.moveSelection(1)
-            coordinator.moveSelection(1)
+            coordinator.moveSelection(-1)
             coordinator.activateSelection()
-            #expect(openedCategory == .accountsAndWorkspaces)
+            #expect(accountActions == 1)
+
         }
 
         private func makeConnection(origin: String, isCloud: Bool, workspaceCount: Int = 1) -> DahliaAccountConnection {

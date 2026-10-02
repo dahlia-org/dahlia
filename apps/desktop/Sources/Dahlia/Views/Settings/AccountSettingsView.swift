@@ -25,15 +25,6 @@ struct AccountSettingsView: View {
             }
         }
 
-        if workspaceSettings.isLocalAccount, let errorMessage = workspaceSettings.errorMessage {
-            Section {
-                SettingsStatusMessage(
-                    text: errorMessage,
-                    systemImage: "exclamationmark.triangle.fill",
-                    tint: .red
-                )
-            }
-        }
     }
 
     private var providerPicker: some View {
