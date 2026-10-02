@@ -49,9 +49,15 @@ actor CodexRuntimeContextCoordinator {
         requestedProvider = provider
         activationGeneration += 1
         let generation = activationGeneration
-        try await service.reloadConfiguration(applyingContext: {
-            try await self.configure(provider: provider, generation: generation)
-        }, interruptActiveOperations: true, startImmediately: false)
+        contextStore.beginActivation(provider)
+        do {
+            try await service.reloadConfiguration(applyingContext: {
+                try await self.configure(provider: provider, generation: generation)
+            }, interruptActiveOperations: true, startImmediately: false)
+        } catch {
+            if generation == activationGeneration { contextStore.activationFailed() }
+            throw error
+        }
     }
 
     private func configure(provider: CodexRuntimeProvider, generation: Int) async throws {
