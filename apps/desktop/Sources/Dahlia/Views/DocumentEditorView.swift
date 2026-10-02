@@ -422,7 +422,7 @@ struct DocumentEditorView: View {
     }
 }
 
-private struct DocumentWebEditor: NSViewRepresentable {
+struct DocumentWebEditor: NSViewRepresentable {
     let checkpoint: String
     let receivedUpdate: String
     let receivedVector: String
@@ -442,6 +442,7 @@ private struct DocumentWebEditor: NSViewRepresentable {
         view.navigationDelegate = context.coordinator
         view.setValue(false, forKey: "drawsBackground")
         context.coordinator.view = view
+        context.coordinator.startKeyboardMonitoring()
         let coordinator = context.coordinator
         onAttachFlush { [weak coordinator] in
             guard let coordinator, let view = coordinator.view else { return }
@@ -459,6 +460,7 @@ private struct DocumentWebEditor: NSViewRepresentable {
     }
 
     static func dismantleNSView(_ view: WKWebView, coordinator: Coordinator) {
+        coordinator.stopKeyboardMonitoring()
         Task {
             try? await coordinator.flush(view)
             view.configuration.userContentController.removeScriptMessageHandler(forName: "document")
@@ -473,8 +475,32 @@ private struct DocumentWebEditor: NSViewRepresentable {
         private var lastUpdate = ""
         private var lastVector = ""
         private var flushing: Task<Void, Error>?
+        private var keyboardMonitor: Any?
 
         init(parent: DocumentWebEditor) { self.parent = parent }
+
+        func startKeyboardMonitoring() {
+            keyboardMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
+                guard let self else { return event }
+                return handleKeyDown(event)
+            }
+        }
+
+        func stopKeyboardMonitoring() {
+            if let keyboardMonitor { NSEvent.removeMonitor(keyboardMonitor) }
+            keyboardMonitor = nil
+        }
+
+        func handleKeyDown(_ event: NSEvent) -> NSEvent? {
+            guard parent.editable, let view, let window = view.window, event.window === window,
+                  let responder = window.firstResponder as? NSView, responder.isDescendant(of: view),
+                  event.charactersIgnoringModifiers?.lowercased() == "b",
+                  event.modifierFlags.intersection([.command, .shift, .control, .option]) == .command
+            else { return event }
+            // Deliver to WebKit before SwiftUI's sidebar key equivalent consumes it.
+            responder.keyDown(with: event)
+            return nil
+        }
 
         func userContentController(_: WKUserContentController, didReceive message: WKScriptMessage) {
             guard message.frameInfo.isMainFrame, let body = message.body as? [String: String] else { return }

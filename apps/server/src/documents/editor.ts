@@ -70,29 +70,41 @@ function draggableBlock($pos: ResolvedPos): number | null {
 /** Resolve the ID again at drop: remote edits may have changed the source position. */
 class BlockHandleView {
   private readonly handle: HTMLElement;
+  private host!: HTMLElement;
   private pos: number | null = null;
   private draggedID: string | null = null;
   constructor(private readonly view: EditorView, private readonly editor: Editor) {
+    this.setHost(view.dom.parentElement!);
     this.handle = view.dom.ownerDocument.createElement("div");
     this.handle.className = "dahlia-block-handle";
     this.handle.draggable = true;
     this.handle.setAttribute("aria-hidden", "true");
     this.handle.innerHTML = '<svg viewBox="0 0 10 16" width="10" height="16" fill="currentColor">'
       + [3, 8, 13].map((y) => `<circle cx="2.5" cy="${y}" r="1.5"/><circle cx="7.5" cy="${y}" r="1.5"/>`).join("") + "</svg>";
-    view.dom.addEventListener("mousemove", this.hover);
-    view.dom.addEventListener("mouseleave", this.leave);
-    this.handle.addEventListener("mouseleave", this.leave);
     this.handle.addEventListener("dragstart", this.dragStart);
     this.handle.addEventListener("dragend", this.dragEnd);
     view.dom.addEventListener("drop", this.drop, true);
   }
   update(view: EditorView, previous: { doc: Node }) {
+    // React's EditorContent reparents the view after Tiptap creates it.
+    this.setHost(view.dom.parentElement!);
     // A stale position could move the wrong block after typing or a remote change.
     if (view.state.doc !== previous.doc) this.hide();
   }
+  private setHost(host: HTMLElement) {
+    if (this.host === host) return;
+    this.host?.removeEventListener("mousemove", this.hover);
+    this.host?.removeEventListener("mouseleave", this.leave);
+    this.host?.classList.remove("dahlia-document-host");
+    this.host = host;
+    host.classList.add("dahlia-document-host");
+    host.addEventListener("mousemove", this.hover);
+    host.addEventListener("mouseleave", this.leave);
+  }
   destroy() {
-    this.view.dom.removeEventListener("mousemove", this.hover);
-    this.view.dom.removeEventListener("mouseleave", this.leave);
+    this.host.removeEventListener("mousemove", this.hover);
+    this.host.removeEventListener("mouseleave", this.leave);
+    this.host.classList.remove("dahlia-document-host");
     this.view.dom.removeEventListener("drop", this.drop, true);
     this.handle.remove();
   }
@@ -100,6 +112,8 @@ class BlockHandleView {
   private hover = (event: MouseEvent) => {
     const { view } = this;
     if (!view.editable || view.dragging) return this.hide();
+    // The handle can sit outside a nested item's text bounds; keep its resolved block.
+    if (event.target instanceof globalThis.Node && this.handle.contains(event.target)) return;
     const bounds = view.dom.getBoundingClientRect();
     const hit = view.posAtCoords({ left: Math.min(Math.max(event.clientX, bounds.left + 1), bounds.right - 1), top: event.clientY });
     const pos = hit ? draggableBlock(view.state.doc.resolve(hit.pos)) : null;
@@ -107,8 +121,8 @@ class BlockHandleView {
     if (pos === null || !(block instanceof HTMLElement)) return this.hide();
     const box = block.getBoundingClientRect();
     if (event.clientY < box.top || event.clientY > box.bottom) return this.hide();
-    const host = view.dom.parentElement!;
-    if (this.handle.parentElement !== host) { host.style.position = "relative"; host.appendChild(this.handle); }
+    const host = this.host;
+    if (this.handle.parentElement !== host) host.appendChild(this.handle);
     this.pos = pos;
     this.handle.style.display = "flex";
     // Sit left of the bullet for list items, and center on the block's first line.
