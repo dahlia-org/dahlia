@@ -3,6 +3,9 @@ import SwiftUI
 struct DahliaAccountsSettingsView: View {
     let controller: DahliaCloudAccountController
     let currentWorkspace: WorkspaceRecord?
+    let workspaces: [WorkspaceRecord]
+    let canSwitchAccount: Bool
+    let onSelectWorkspace: (WorkspaceRecord) -> Void
     let onShowSignIn: () -> Void
 
     @State private var pendingRemoval: DahliaAccountConnection?
@@ -31,10 +34,13 @@ struct DahliaAccountsSettingsView: View {
     @ViewBuilder
     private var sections: some View {
         Section {
-            HStack {
-                Label(L10n.localAccount, systemImage: "desktopcomputer")
-                selectionMark(connectionID: nil)
+            selectionButton(connection: nil) {
+                HStack {
+                    Label(L10n.localAccount, systemImage: "desktopcomputer")
+                    selectionMark(connectionID: nil)
+                }
             }
+            .modifier(AccountRowHoverModifier(isEnabled: workspaceToSelect(for: nil) != nil))
             ForEach(controller.connections) { connection in
                 connectionRow(connection)
             }
@@ -65,46 +71,86 @@ struct DahliaAccountsSettingsView: View {
     }
 
     private func connectionRow(_ connection: DahliaAccountConnection) -> some View {
-        HStack {
-            HStack {
-                Image(systemName: connection.isCloud ? "icloud" : "xserve")
-                    .foregroundStyle(connection.isSignedIn ? .green : .secondary)
-                    .accessibilityHidden(true)
-
-                VStack(alignment: .leading, spacing: 2) {
-                    HStack {
-                        Text(connection.displayName)
-                        selectionMark(connectionID: connection.id)
-                    }
-                    Text(connection.isSignedIn ? connection.origin : L10n.signInRequired)
-                        .font(.footnote)
-                        .foregroundStyle(.secondary)
-                }
-            }
-
-            Spacer()
-
-            if controller.isBusy(connectionID: connection.id) {
-                ProgressView()
-                    .controlSize(.small)
-            } else if connection.isSignedIn {
-                Button(L10n.signOut) {
-                    controller.requestSignOut(connectionID: connection.id)
-                }
-                .disabled(controller.isBusy)
-            } else {
+        HStack(spacing: 0) {
+            selectionButton(connection: connection) {
                 HStack {
-                    Button(L10n.reauthenticate) {
-                        controller.startReauthentication(connectionID: connection.id)
-                    }
-                    Button(L10n.remove, role: .destructive) {
-                        pendingRemoval = connection
-                        isShowingRemovalConfirmation = true
+                    Image(systemName: connection.isCloud ? "icloud" : "xserve")
+                        .foregroundStyle(connection.isSignedIn ? .green : .secondary)
+
+                    VStack(alignment: .leading, spacing: 2) {
+                        HStack {
+                            Text(connection.displayName)
+                            selectionMark(connectionID: connection.id)
+                        }
+                        Text(connection.isSignedIn ? connection.origin : L10n.signInRequired)
+                            .font(.footnote)
+                            .foregroundStyle(.secondary)
                     }
                 }
-                .disabled(controller.isBusy)
             }
+            Group {
+                if controller.isBusy(connectionID: connection.id) {
+                    ProgressView()
+                        .controlSize(.small)
+                } else if connection.isSignedIn {
+                    Button(L10n.signOut) {
+                        controller.requestSignOut(connectionID: connection.id)
+                    }
+                    .disabled(controller.isBusy)
+                } else {
+                    HStack {
+                        Button(L10n.reauthenticate) {
+                            controller.startReauthentication(connectionID: connection.id)
+                        }
+                        Button(L10n.remove, role: .destructive) {
+                            pendingRemoval = connection
+                            isShowingRemovalConfirmation = true
+                        }
+                    }
+                    .disabled(controller.isBusy)
+                }
+            }
+            .padding(.trailing, 8)
+            .padding(.vertical, 6)
         }
+        .modifier(AccountRowHoverModifier(isEnabled: workspaceToSelect(for: connection) != nil))
+    }
+
+    private func selectionButton(
+        connection: DahliaAccountConnection?,
+        @ViewBuilder label: () -> some View
+    ) -> some View {
+        let isSelected = currentWorkspace != nil && currentWorkspace?.accountConnectionId == connection?.id
+        let canSelect = workspaceToSelect(for: connection) != nil
+        return Button {
+            selectAccount(connection)
+        } label: {
+            label()
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.horizontal, 8)
+                .padding(.vertical, 6)
+                .contentShape(.rect(cornerRadius: DahliaDesign.Highlight.compactCornerRadius))
+        }
+        .buttonStyle(.plain)
+        .disabled(!canSelect && !isSelected)
+        .accessibilityLabel(connection?.displayName ?? L10n.localAccount)
+        .accessibilityValue(connection?.origin ?? "")
+        .accessibilityHint(isSelected ? "" : L10n.switchAccount)
+        .accessibilityAddTraits(isSelected ? .isSelected : [])
+    }
+
+    func selectAccount(_ connection: DahliaAccountConnection?) {
+        guard let workspace = workspaceToSelect(for: connection) else { return }
+        onSelectWorkspace(workspace)
+    }
+
+    private func workspaceToSelect(for connection: DahliaAccountConnection?) -> WorkspaceRecord? {
+        guard canSwitchAccount, !controller.isBusy, connection?.isSignedIn != false else { return nil }
+        return MainSidebarFooterView.workspaceToSelect(
+            from: workspaces,
+            currentWorkspace: currentWorkspace,
+            connectionID: connection?.id
+        )
     }
 
     @ViewBuilder
@@ -114,5 +160,19 @@ struct DahliaAccountsSettingsView: View {
                 .foregroundStyle(.tint)
                 .accessibilityLabel(L10n.selectedAccount)
         }
+    }
+}
+
+private struct AccountRowHoverModifier: ViewModifier {
+    let isEnabled: Bool
+    @State private var isHovered = false
+
+    func body(content: Content) -> some View {
+        content
+            .background(
+                isEnabled && isHovered ? DahliaDesign.sidebarHighlightColor : .clear,
+                in: .rect(cornerRadius: DahliaDesign.Highlight.compactCornerRadius)
+            )
+            .onHover { isHovered = $0 }
     }
 }

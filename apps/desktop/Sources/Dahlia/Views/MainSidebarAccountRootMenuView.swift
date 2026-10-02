@@ -7,15 +7,11 @@ struct MainSidebarAccountRootMenuView: View {
     let currentConnectionID: UUID?
     let isLocalAccount: Bool
     let isLocalAccountAvailable: Bool
-    let workspaces: [WorkspaceRecord]
-    let currentWorkspace: WorkspaceRecord?
     let onShowLanguages: (CGFloat?) -> Void
     let onShowAccountDetails: (DahliaAccountConnection, CGFloat?) -> Void
     let onDismissSubmenu: () -> Void
     let onOpenSettings: (SettingsCategory?) -> Void
     let onSelectAccount: (DahliaAccountConnection?) -> Void
-    let onSelectWorkspace: (WorkspaceRecord) -> Void
-    let onManageWorkspaces: () -> Void
     let onAccountAction: () -> Void
 
     @State private var accountController = DahliaCloudAccountController.shared
@@ -69,38 +65,6 @@ struct MainSidebarAccountRootMenuView: View {
             Divider()
                 .padding(.vertical, 4)
 
-            Text(L10n.workspace)
-                .font(.footnote)
-                .foregroundStyle(.secondary)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.horizontal, 8)
-                .accessibilityAddTraits(.isHeader)
-
-            ForEach(workspaces.enumerated(), id: \.element.id) { index, workspace in
-                MainSidebarAccountMenuRow(
-                    title: workspace.name,
-                    image: Image(systemName: (workspace.appearance ?? .workspaceDefault).icon.systemImageName),
-                    imageColor: (workspace.appearance ?? .workspaceDefault).color.color,
-                    selectionState: workspace.id == currentWorkspace?.id,
-                    isKeyboardHighlighted: navigation.activeMenu == .root && navigation.rootSelection == workspaceOffset + index,
-                    onHoverStart: { hover(index: workspaceOffset + index, opensSubmenu: false, action: onDismissSubmenu) },
-                    onHoverEnd: cancelPendingHover,
-                    action: { activate(index: workspaceOffset + index, action: { onSelectWorkspace(workspace) }) }
-                )
-            }
-
-            MainSidebarAccountMenuRow(
-                title: L10n.manageWorkspaces,
-                image: Image(systemName: "gearshape"),
-                isKeyboardHighlighted: navigation.activeMenu == .root && navigation.rootSelection == manageWorkspacesIndex,
-                onHoverStart: { hover(index: manageWorkspacesIndex, opensSubmenu: false, action: onDismissSubmenu) },
-                onHoverEnd: cancelPendingHover,
-                action: { activate(index: manageWorkspacesIndex, action: onManageWorkspaces) }
-            )
-
-            Divider()
-                .padding(.vertical, 4)
-
             MainSidebarAccountMenuRow(
                 title: L10n.language,
                 image: Image(systemName: "globe"),
@@ -137,9 +101,7 @@ struct MainSidebarAccountRootMenuView: View {
         .onDisappear(perform: cancelPendingHover)
     }
 
-    private var workspaceOffset: Int { connections.count + 1 }
-    private var manageWorkspacesIndex: Int { workspaceOffset + workspaces.count }
-    private var menuOffset: Int { manageWorkspacesIndex + 1 }
+    private var menuOffset: Int { connections.count + 1 }
     private var currentConnection: DahliaAccountConnection? {
         connections.first { $0.id == currentConnectionID }
     }

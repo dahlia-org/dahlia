@@ -8,7 +8,6 @@ enum L10n { // swiftlint:disable:this type_body_length
     static var downloadingRecordingArchive: String { String(localized: "processing.downloadingArchive", bundle: bundle) }
     static var processingDataUnreadable: String { String(localized: "processing.dataUnreadable", bundle: bundle) }
     static var legacyProcessingRetryOnMac: String { String(localized: "processing.retryOnMac", bundle: bundle) }
-    static var accountInferenceSettingsDescription: String { String(localized: "settings.accountInference.description", bundle: bundle) }
     static var recoveredRecordings: String { String(localized: "recovery.recordings", bundle: bundle) }
     static var recoveredRecording: String { String(localized: "recovery.recording", bundle: bundle) }
     static var settingsCheckAdvancedModels: String { String(localized: "settings.organization.checkAdvancedModels", bundle: bundle) }
@@ -17,6 +16,11 @@ enum L10n { // swiftlint:disable:this type_body_length
     static var workspaceSettings: String { String(localized: "settings.organization.workspaceSettings", bundle: bundle) }
     static var searchSettings: String { String(localized: "settings.organization.searchSettings", bundle: bundle) }
     static var settingsAccountIntro: String { String(localized: "settings.organization.settingsAccountIntro", bundle: bundle) }
+    static var settingsWorkspaceIntro: String { String(localized: "settings.organization.settingsWorkspaceIntro", bundle: bundle) }
+    static var settingsWorkspaceManagementIntro: String { String(
+        localized: "settings.organization.settingsWorkspaceManagementIntro",
+        bundle: bundle
+    ) }
     static var settingsAccountsIntro: String { String(localized: "settings.organization.settingsAccountsIntro", bundle: bundle) }
     static var settingsExportIntro: String { String(localized: "settings.organization.settingsExportIntro", bundle: bundle) }
     static var settingsAccountSelectionDescription: String { String(
@@ -1650,7 +1654,7 @@ enum L10n { // swiftlint:disable:this type_body_length
     }
 
     static var currentWorkspaceDescription: String { String(localized: "Choose the workspace used for recordings and sync.", bundle: bundle) }
-    static var accountAndWorkspaceMenuDescription: String { String(localized: "Open the account and workspace menu.", bundle: bundle) }
+    static var accountMenuDescription: String { String(localized: "Open the account menu.", bundle: bundle) }
     static var noWorkspaceSelected: String { String(localized: "No workspace selected", bundle: bundle) }
     static var accountsAndWorkspaces: String { String(localized: "Accounts and Workspaces", bundle: bundle) }
     static var dahliaAccount: String { String(localized: "Dahlia Account", bundle: bundle) }
@@ -2395,6 +2399,7 @@ enum L10n { // swiftlint:disable:this type_body_length
     static var codexUnknownError: String { String(localized: "Unknown Codex app-server error.", bundle: bundle) }
     static var account: String { String(localized: "Account", bundle: bundle) }
     static var selectedAccount: String { String(localized: "Selected Account", bundle: bundle) }
+    static var switchAccount: String { String(localized: "Switch Account", bundle: bundle) }
     static var localAccountModelProvider: String { String(localized: "Local Account Model Provider", bundle: bundle) }
     static var aiAccountDescription: String { String(
         localized: "Choose the model provider used by the Local Account.",

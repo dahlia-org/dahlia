@@ -31,7 +31,7 @@ struct SettingsDetailView: View {
                                 .fixedSize(horizontal: false, vertical: true)
                         }
                         Spacer()
-                        if selection == .accountPreferences {
+                        if selection == .workspacePreferences {
                             Menu {
                                 ForEach(workspaceManagementModel.workspaces) { workspace in
                                     Button {
@@ -81,15 +81,32 @@ struct SettingsDetailView: View {
         switch selection {
         case .general, .language, .appearance, .recordingStopDetection:
             GeneralSettingsView()
-        case .macInference, .modelProvider:
-            MacInferenceSettingsView()
-        case .accountsAndWorkspaces, .dahliaAccounts:
+        case .accountsAndWorkspaces, .dahliaAccounts, .accountPreferences, .macInference, .modelProvider, .aiSummary, .mcp:
             Form {
                 DahliaAccountsSettingsView(
                     controller: dahliaAccountController,
                     currentWorkspace: appSettings.currentWorkspace,
+                    workspaces: workspaceManagementModel.workspaces,
+                    canSwitchAccount: captionViewModel.canSwitchWorkspace && !WorkspaceAISettingsModel.shared.isSwitchingRuntime,
+                    onSelectWorkspace: onSelectWorkspace,
                     onShowSignIn: mainWindowNavigation.openDahliaSignIn
                 )
+                Group {
+                    if appSettings.currentWorkspace != nil {
+                        Section {
+                            LabeledContent(L10n.appliesToAccount, value: selectedAccountName)
+                        } header: {
+                            Text(L10n.accountPreferences)
+                        } footer: {
+                            Text(L10n.settingsAccountIntro)
+                        }
+                        if WorkspaceAISettingsModel.shared.isLocalAccount {
+                            AccountSettingsView()
+                        }
+                    }
+                    AccountProcessingSettingsView(onOpenMacTranscription: { selection = .transcription })
+                }
+                .id(appSettings.currentWorkspace?.accountConnectionId)
             }
             .formStyle(.grouped)
             .onChange(of: dahliaAccountController.connections) {
@@ -119,11 +136,8 @@ struct SettingsDetailView: View {
             )
         case .search:
             SearchSettingsView(database: appDatabase)
-        case .accountPreferences, .aiSummary, .mcp:
-            WorkspaceProcessingSettingsView(
-                onOpenMacTranscription: { selection = .transcription },
-                onOpenMacInference: { selection = .macInference }
-            )
+        case .workspacePreferences:
+            WorkspaceProcessingSettingsView()
         case .transcription:
             TranscriptionSettingsView()
         case .liveSubtitles:
@@ -147,14 +161,19 @@ struct SettingsDetailView: View {
 
     private var scopeDescription: String {
         switch SettingsNavigation.visibleSelection(selection) {
-        case .accountPreferences: L10n.settingsAccountIntro
+        case .workspacePreferences: L10n.settingsWorkspaceIntro
         case .accountsAndWorkspaces: L10n.settingsAccountsIntro
-        case .workspace: L10n.settingsAccountIntro
+        case .workspace: L10n.settingsWorkspaceManagementIntro
         case .backups: L10n.backupLocalWorkspacesOnly
-        case .macInference: L10n.localModelPreferencesDescription
         case .cloudStorage: L10n.settingsExportIntro
         default: L10n.thisMacSettingsDescription
         }
+    }
+
+    private var selectedAccountName: String {
+        guard let workspace = appSettings.currentWorkspace else { return L10n.noWorkspaceSelected }
+        return dahliaAccountController.connections.first { $0.id == workspace.accountConnectionId }?.displayName
+            ?? (workspace.accountConnectionId == nil ? L10n.localAccount : L10n.dahliaAccount)
     }
 
     private func updateCurrentWorkspaceIfNeeded(_ workspace: WorkspaceRecord) {

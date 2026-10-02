@@ -4,6 +4,7 @@ import Foundation
 enum SettingsCategory: String, CaseIterable, Identifiable {
     case accountsAndWorkspaces
     case accountPreferences
+    case workspacePreferences
     case macInference
     case general
     case dahliaAccounts
@@ -32,7 +33,8 @@ enum SettingsCategory: String, CaseIterable, Identifiable {
     var label: String {
         switch self {
         case .accountsAndWorkspaces: L10n.serverConnections
-        case .accountPreferences: L10n.workspaceSettings
+        case .accountPreferences: L10n.accountPreferences
+        case .workspacePreferences: L10n.workspaceSettings
         case .macInference: L10n.macInferencePreferences
         case .general: L10n.general
         case .dahliaAccounts: L10n.dahliaAccount
@@ -62,6 +64,7 @@ enum SettingsCategory: String, CaseIterable, Identifiable {
         switch self {
         case .accountsAndWorkspaces: "person.2"
         case .accountPreferences: "text.badge.star"
+        case .workspacePreferences: "globe"
         case .macInference: "sparkles"
         case .general: "gearshape"
         case .dahliaAccounts: "person.crop.circle"
@@ -117,16 +120,19 @@ enum SettingsCategory: String, CaseIterable, Identifiable {
             ]
         case .accountPreferences:
             [
-                L10n.accountPreferences,
                 L10n.transcriptionAndSummary,
                 L10n.summaryStyle,
-                L10n.summaryOutputLanguage,
+                L10n.model,
+                L10n.reasoningEffort,
+                L10n.liveTranscriptDraft,
                 L10n.processingLocation,
                 L10n.automaticRecordingProcessing,
                 L10n.summaryModel,
                 L10n.transcriptionModel,
                 "AI",
             ]
+        case .workspacePreferences:
+            [L10n.workspace, L10n.generatedContentLanguage, L10n.summaryOutputLanguage]
         case .macInference:
             [L10n.modelProvider, L10n.model, L10n.reasoningEffort, "AI", "ChatGPT", "Codex", "Databricks"]
         case .transcription:
@@ -147,7 +153,16 @@ enum SettingsCategory: String, CaseIterable, Identifiable {
         case .cloudStorage:
             ["Google", L10n.googleDrive, L10n.googleDriveExportFolder]
         case .accountsAndWorkspaces:
-            [L10n.account, L10n.workspace, L10n.dahliaSignIn, L10n.dahliaServer, L10n.dahliaCloud]
+            [
+                L10n.account,
+                L10n.workspace,
+                L10n.dahliaSignIn,
+                L10n.dahliaServer,
+                L10n.dahliaCloud,
+                L10n.accountPreferences,
+                L10n.macInferencePreferences,
+            ]
+                + Self.accountPreferences.searchTerms + Self.macInference.searchTerms
         case .backups:
             [L10n.workspace, L10n.createBackup, L10n.importBackup, L10n.restoreBackup]
         case .search:

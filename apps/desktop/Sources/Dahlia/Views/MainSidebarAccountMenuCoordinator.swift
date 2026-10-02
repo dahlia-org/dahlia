@@ -11,13 +11,10 @@ struct MainSidebarAccountSelection {
 final class MainSidebarAccountMenuCoordinator: NSObject {
     weak var button: NSButton?
 
-    private var workspaces: [WorkspaceRecord]
-    private var currentWorkspace: WorkspaceRecord?
     private var connections: [DahliaAccountConnection]
     private var currentConnectionID: UUID?
     private var isLocalAccount: Bool
     private var isLocalAccountAvailable: Bool
-    private var onSelectWorkspace: (WorkspaceRecord) -> Void
     private var onOpenSettings: (SettingsCategory?) -> Void
     private var onSelectAccount: (DahliaAccountConnection?) -> Void
     private var onAccountAction: () -> Void
@@ -31,22 +28,16 @@ final class MainSidebarAccountMenuCoordinator: NSObject {
     private var typeAheadBuffer = ""
 
     init(
-        workspaces: [WorkspaceRecord],
-        currentWorkspace: WorkspaceRecord?,
         connections: [DahliaAccountConnection],
         accountSelection: MainSidebarAccountSelection,
-        onSelectWorkspace: @escaping (WorkspaceRecord) -> Void,
         onOpenSettings: @escaping (SettingsCategory?) -> Void,
         onSelectAccount: @escaping (DahliaAccountConnection?) -> Void,
         onAccountAction: @escaping () -> Void
     ) {
-        self.workspaces = workspaces
-        self.currentWorkspace = currentWorkspace
         self.connections = connections
         currentConnectionID = accountSelection.connectionID
         isLocalAccount = accountSelection.isLocal
         isLocalAccountAvailable = accountSelection.isLocalAvailable
-        self.onSelectWorkspace = onSelectWorkspace
         self.onOpenSettings = onOpenSettings
         self.onSelectAccount = onSelectAccount
         self.onAccountAction = onAccountAction
@@ -57,22 +48,16 @@ final class MainSidebarAccountMenuCoordinator: NSObject {
     }
 
     func update(
-        workspaces: [WorkspaceRecord],
-        currentWorkspace: WorkspaceRecord?,
         connections: [DahliaAccountConnection],
         accountSelection: MainSidebarAccountSelection,
-        onSelectWorkspace: @escaping (WorkspaceRecord) -> Void,
         onOpenSettings: @escaping (SettingsCategory?) -> Void,
         onSelectAccount: @escaping (DahliaAccountConnection?) -> Void,
         onAccountAction: @escaping () -> Void
     ) {
-        self.workspaces = workspaces
-        self.currentWorkspace = currentWorkspace
         self.connections = connections
         currentConnectionID = accountSelection.connectionID
         isLocalAccount = accountSelection.isLocal
         isLocalAccountAvailable = accountSelection.isLocalAvailable
-        self.onSelectWorkspace = onSelectWorkspace
         self.onOpenSettings = onOpenSettings
         self.onSelectAccount = onSelectAccount
         self.onAccountAction = onAccountAction
@@ -105,8 +90,6 @@ final class MainSidebarAccountMenuCoordinator: NSObject {
                 currentConnectionID: currentConnectionID,
                 isLocalAccount: isLocalAccount,
                 isLocalAccountAvailable: isLocalAccountAvailable,
-                workspaces: workspaces,
-                currentWorkspace: currentWorkspace,
                 onShowLanguages: { [weak self] in self?.presentLanguageMenu(anchorMinY: $0) },
                 onShowAccountDetails: { [weak self] connection, minY in
                     self?.presentAccountDetails(connection, anchorMinY: minY)
@@ -114,8 +97,6 @@ final class MainSidebarAccountMenuCoordinator: NSObject {
                 onDismissSubmenu: { [weak self] in self?.closeSubmenu() },
                 onOpenSettings: { [weak self] in self?.openSettings(category: $0) },
                 onSelectAccount: { [weak self] in self?.selectAccount($0) },
-                onSelectWorkspace: { [weak self] in self?.selectWorkspace($0) },
-                onManageWorkspaces: { [weak self] in self?.manageWorkspaces() },
                 onAccountAction: { [weak self] in self?.performAccountAction() }
             )
         }
@@ -226,16 +207,6 @@ final class MainSidebarAccountMenuCoordinator: NSObject {
             parentWindow.addChildWindow(panel, ordered: .above)
         }
         panel.orderFront(nil)
-    }
-
-    private func selectWorkspace(_ workspace: WorkspaceRecord) {
-        dismissMenu()
-        guard workspace.id != currentWorkspace?.id else { return }
-        onSelectWorkspace(workspace)
-    }
-
-    private func manageWorkspaces() {
-        openSettings(category: .accountsAndWorkspaces)
     }
 
     private func openSettings(category: SettingsCategory? = nil) {
@@ -516,15 +487,6 @@ extension MainSidebarAccountMenuCoordinator {
             selectAccount(nil)
             return
         }
-        let workspaceIndex = selection - workspaceOffset
-        if workspaces.indices.contains(workspaceIndex) {
-            selectWorkspace(workspaces[workspaceIndex])
-            return
-        }
-        if selection == manageWorkspacesIndex {
-            manageWorkspaces()
-            return
-        }
         switch selection - menuOffset {
         case 0: presentLanguageMenu()
         case 1: openSettings(category: nil)
@@ -547,8 +509,6 @@ extension MainSidebarAccountMenuCoordinator {
         switch navigation.activeMenu {
         case .root:
             let titles = connections.map(\.displayName) + [L10n.localAccount]
-                + workspaces.map(\.name)
-                + [L10n.manageWorkspaces]
                 + [L10n.language, L10n.settings, hasCurrentConnection ? L10n.signOut : L10n.dahliaSignIn]
             title = navigation.rootSelection.flatMap { titles.indices.contains($0) ? titles[$0] : nil }
         case .accountDetails:
@@ -578,9 +538,7 @@ extension MainSidebarAccountMenuCoordinator {
         connections.contains { $0.id == currentConnectionID }
     }
 
-    var workspaceOffset: Int { connections.count + 1 }
-    var manageWorkspacesIndex: Int { workspaceOffset + workspaces.count }
-    var menuOffset: Int { manageWorkspacesIndex + 1 }
+    var menuOffset: Int { connections.count + 1 }
 
     private func isRootIndexEnabled(_ index: Int) -> Bool {
         if connections.indices.contains(index) { return connections[index].workspaceCount > 0 }

@@ -22,9 +22,9 @@ enum SettingsGroup: CaseIterable, Identifiable {
 
     var categories: [SettingsCategory] {
         switch self {
-        case .app: [.general, .transcription, .liveSubtitles, .screenshots, .macInference, .permissions, .backups]
+        case .app: [.general, .transcription, .liveSubtitles, .screenshots, .permissions, .backups]
         case .account: [.accountsAndWorkspaces]
-        case .workspace: [.workspace, .accountPreferences]
+        case .workspace: [.workspace, .workspacePreferences]
         case .integrations: [.calendar, .cloudStorage]
         case .advanced: [.search, .betaFeatures, .developer, .audioDiagnostics]
         }
