@@ -67,3 +67,22 @@ Server内部の`captureSyncTimings()`は明示的なローカル計測だけに�
 既存の pull cursor があり Workspace 自体を含まない競合・validation を破棄する場合、対象 entity を永続的な再取得リストへ記録する。cursor と無関係な entity の revision は保持する。通常差分で対象が届けば同じ revision でも採用し、届かなければ snapshot から対象だけを再取得する。この処理は Workspace 全体の snapshot 復旧とは分離し、無関係な blocked transaction を待たない。取得中の mutation generation 変更、新しい対象編集、録音・移管・接続変更は既存の受信ガードで再検査する。再取得リストの消去は本文・metadata の適用と同じ DB transaction で行う。Workspace 全体の reset・初期同期・cursor 失効の厳しい復旧条件は維持する。
 
 再取得リストは統合 migration `v52_documentsAndSync` で作成する（統合前の識別子は `v51_scopedSyncReconciliation`）。ローカルで削除した親をServer版へ戻す場合は、canonicalな子と参照ファイルも復元する。親の通常差分が先に到着しても、子の列挙を永続化するまでは再取得リストを残す。接続解除・Workspace移動・キューの全破棄では対応するリストも破棄する。
+
+## 初期同期の高速化と更新単位のロック（2026-10-02）
+
+承認された修正案により、Workspace 内の全 domain 更新を排他にする方式を置き換える。
+
+- 通常の更新は認可・Workspace lifecycle を共有取得する。旧 Server の domain 排他との互換用に domain キーも共有取得する。会議の本文・metadata、file、recording session、Project の親子関係を対象 ID ごとに保護し、必要な旧・新の関係を一度に昇順取得する。取得後に所属が変わっていた場合は `503 sync_target_changed` で immutable request を再試行する。途中でロックを追加・昇格して所属変更を追わない。
+- 会議の作成・削除・復元は親 lifecycle を排他、通常更新と Documents は共有にする。Documents は会議の本文更新ロックを取得しない。Workspace の削除・reset・移管、認可変更の排他と RLS は維持する。
+- canonical 更新の終了後に短い Workspace publication 排他を取得し、Memory キューの無効化、change sequence の採番、delta ledger、latest cursor、receipt を同じ DB transaction で確定する。差分・snapshot は publication 共有で読む。採番後に別の transaction が先に commit して cursor が未公開変更を飛び越す状態を防ぐ。重い本文更新全体を Workspace 単位に直列化しない。
+- delta GET から録音 staging の期限切れ清掃を除き、既存の storage maintenance sweep で実行する。
+- アップロード要求時の期限切れ staging 清掃は、既存の domain gate を排他、Workspace lifecycle を共有で取得する。清掃と domain の予約・確定は競合させるが、Documents は待たせない。清掃対象は file 最大25件・recording 最大100件に制限する。定期 maintenance の Workspace 排他は維持する。
+- 新規の初期構築は同 Workspace・同 entity・同優先度で最大8操作、wire envelope 込み256KiBを目安にまとめる。大きい1操作と transcript は単独で進める。親の作成順と依存を保持し、既に durable な要求 ID・payload は書き換えない。queue の既存 bulk 分割と通常操作の atomicity は維持する。
+- 軽い送信は2枠、背景最大1枠にする。画像・transcript の共有転送8枠、背景最大7枠とは独立する。file lookahead は file 原本を含む sendable な要求を先に絞り、先行する無関係な要約に探索枠を使わない。
+- 移管確認 GET を接続・Workspace・origin・lifecycle 世代ごとに共有する。変更なしの push 事前確認だけ5秒再利用する。pull の適用前確認は再利用しない。復帰・stop・移管で破棄し、commit の403/404/409では再確認する。結果適用時も接続と lifecycle 世代を再検証する。Server の commit 時の認可・所属検証は省略しない。
+
+検証は使い捨て PostgreSQL と in-memory Desktop DB を使用する。`TEST_SYNC_LOCKS_DATABASE_URL` は別会議の並行更新・同一会議の競合・親削除・権限変更・公開順を、`TEST_SYNC_LOAD_DATABASE_URL` は10,000操作の単件／8件送信と通常編集の p95 を計測する。後者は wall clock の揺れを assertion にせず結果を記録する。Server store の計測と QA の通信・実画面の反映時間は区別する。DB migration・API version・依存追加、QA データ削除・deploy は行わない。
+
+2026-10-02 の使い捨て PostgreSQL で、10,000 Project 作成の単件送信は147.82秒、8件送信は32.81秒（約4.5倍、総時間78%減）。同じ Workspace の会議編集30件の p95 は通常24.04ms、取込中31.00ms（1.29倍）。同一ホストで他の検証も実行中の Server store 計測であり、ネットワーク・画像・transcript・実画面は含まない。初期構築と通常編集を合わせた QA 実機の目標達成は、専用データで別途確認する。
+
+最終検証: Desktop 全体2,475 tests／313 suites成功、Server `pnpm check` は1,175成功・66skip（追加環境が必要なテスト）、PostgreSQL の共有・認可・暗号化・文書・保守は90成功。並行ロックの専用テストは別実行で成功。最後に追加した先読み・移管確認と移行テスト56件も成功。Swift build・SwiftFormat・SwiftLint、Server package検査・Workers dry-runも成功。実装確認はローカルに限定し、QA deploy は含めない。

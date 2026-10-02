@@ -1122,9 +1122,10 @@
                     """
                 ).map { ($0["operationCount"] as Int, $0["payloadBytes"] as Int) }
             }
-            #expect(batches.count == 330)
+            #expect(batches.count < 330)
+            #expect(batches.allSatisfy { $0.0 <= SyncInitialProgress.batchOperationLimit })
             #expect(batches.reduce(0) { $0 + $1.0 } == 330)
-            #expect(batches.allSatisfy { $0.1 < 8 * 1024 * 1024 })
+            #expect(batches.allSatisfy { $0.1 < SyncInitialProgress.batchByteLimit })
         }
 
         @Test

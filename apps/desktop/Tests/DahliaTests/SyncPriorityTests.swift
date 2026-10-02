@@ -1,4 +1,5 @@
 #if canImport(Testing)
+    import DahliaMeetingAccess
     import Foundation
     import GRDB
     import Synchronization
@@ -422,12 +423,76 @@
             defer { try? reopened.close() }
             try await reopened.write { db in
                 #expect(try SyncInitialProgress.active(workspaceId: workspace, in: db))
-                #expect(try Int.fetchOne(db, sql: "SELECT count(*) FROM sync_initial_entities WHERE built = 0") == 2)
+                #expect(try Int.fetchOne(db, sql: "SELECT count(*) FROM sync_initial_entities WHERE built = 0") == 0)
                 while try SyncInitialProgress.constructNext(workspaceId: workspace, in: db) {}
                 #expect(try Set(identities).isSubset(of: Set(UUID.fetchAll(db, sql: "SELECT id FROM sync_transactions"))))
                 #expect(try Int.fetchOne(db, sql: "SELECT count(*) FROM sync_operations WHERE entity = 'project'") == 3)
                 #expect(try !SyncInitialProgress.active(workspaceId: workspace, in: db))
             }
+        }
+
+        @Test func initialBatchesBoundOperationsAndBytes() async throws {
+            let (queue, workspace) = try seed()
+            try await queue.write { db in
+                for index in 0 ..< 17 {
+                    try ProjectRecord(
+                        id: .v7(),
+                        workspaceId: workspace,
+                        parentProjectId: nil,
+                        name: "Project \(index)",
+                        createdAt: .now,
+                        projectType: .undefined
+                    ).insert(db)
+                }
+                for _ in 0 ..< 3 {
+                    let id = UUID.v7()
+                    try MeetingRecord(id: id, workspaceId: workspace, name: "Meeting", createdAt: .now, updatedAt: .now).insert(db)
+                    try SummaryContent(meetingId: id, title: "Summary", document: String(repeating: "あ", count: 50000), createdAt: .now).insert(db)
+                }
+                let connection = try #require(try WorkspaceRecord.fetchOne(db, key: workspace)?.accountConnectionId)
+                try SyncInitialProgress.start(workspaceId: workspace, connectionId: connection, restoring: false, replaceImages: false, in: db)
+                while try SyncInitialProgress.constructNext(workspaceId: workspace, in: db) {}
+                let counts = try Int.fetchAll(db, sql: """
+                SELECT count(*) FROM sync_operations WHERE entity = 'project' GROUP BY transactionId ORDER BY count(*) DESC
+                """)
+                #expect(counts == [8, 8, 1])
+                #expect(try Int.fetchOne(db, sql: "SELECT count(DISTINCT transactionId) FROM sync_operations WHERE entity = 'summary'") == 3)
+                #expect(try Int.fetchOne(db, sql: "SELECT count(*) FROM sync_transactions WHERE dependenciesReady = 0") == 0)
+            }
+        }
+
+        @Test func metadataAdmissionKeepsForegroundAndTransferCapacity() async throws {
+            let (queue, workspace) = try seed()
+            let background = UUID.v7(), foreground = UUID.v7(), transcript = UUID.v7()
+            try await queue.write { db in
+                for (id, isBackground) in [(background, true), (foreground, false)] {
+                    try SyncTransactionRecorder.record(
+                        workspaceId: workspace,
+                        background: isBackground,
+                        operations: [.init(entity: .project, action: .create, entityId: id)],
+                        in: db
+                    )
+                }
+                try MeetingRecord(id: transcript, workspaceId: workspace, name: "Meeting", createdAt: .now, updatedAt: .now).insert(db)
+                try SyncTransactionRecorder.record(
+                    workspaceId: workspace,
+                    background: true,
+                    operations: [.init(
+                        entity: .transcript,
+                        action: .patch,
+                        entityId: transcript,
+                        payloadJSON: Data("{}".utf8)
+                    )],
+                    in: db
+                )
+            }
+            let interactive = try #require(try await SyncTransactionQueue.claim(dbQueue: queue, allowBackgroundMetadata: false))
+            #expect(interactive.operations.first?.entityId == foreground)
+            let transfer = try #require(try await SyncTransactionQueue.claim(dbQueue: queue, allowMetadata: false))
+            #expect(transfer.requiresTransfer)
+            #expect(try await SyncTransactionQueue.claim(dbQueue: queue, allowTransfers: false, allowMetadata: false) == nil)
+            let remaining = try #require(try await SyncTransactionQueue.claim(dbQueue: queue, allowTransfers: false))
+            #expect(remaining.operations.first?.entityId == background)
         }
 
         @Test func transcriptTransfersUseTheBoundedLaneWithoutBlockingMetadata() async throws {

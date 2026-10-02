@@ -118,6 +118,206 @@
             #expect(await fixture.server.resolveCount == 0)
         }
 
+        @Test func fileLookaheadFindsTransfersBeyondUnrelatedSummaries() async throws {
+            let fixture = try SyncTransferFixture()
+            defer { fixture.close() }
+            for _ in 0 ..< 16 {
+                let meeting = try await fixture.addMeeting()
+                try await fixture.queue.write { db in
+                    try db.execute(sql: "INSERT INTO sync_entity_state VALUES (?, 'meeting', ?, 1)", arguments: [fixture.workspaceId, meeting])
+                    try SyncTransactionRecorder.record(
+                        workspaceId: fixture.workspaceId,
+                        background: true,
+                        operations: [.init(
+                            entity: .summary,
+                            action: .upsert,
+                            entityId: meeting,
+                            payloadJSON: Data("{}".utf8)
+                        )],
+                        in: db
+                    )
+                }
+            }
+            for _ in 0 ..< 8 {
+                _ = try await fixture.addFile()
+            }
+            try await fixture.queue.write { try $0.execute(sql: "UPDATE sync_transactions SET syncPriority = 0") }
+            let first = try #require(try await SyncTransactionQueue.claim(dbQueue: fixture.queue))
+            #expect(first.operations.first?.entity == .summary)
+            let candidates = try await fixture.queue.read { try SyncTransactionQueue.fileUploads(for: first, origin: fixture.origin, in: $0) }
+            #expect(candidates.count == 8)
+        }
+
+        @Test(.timeLimit(.minutes(1)))
+        func cancelledClaimsReleaseMetadataAndTransferLeases() async throws {
+            for transfer in [false, true] {
+                let fixture = try SyncTransferFixture()
+                defer { fixture.close() }
+                if transfer {
+                    _ = try await fixture.addFile()
+                } else {
+                    try await fixture.queue.write { db in
+                        _ = try SyncTransactionRecorder.record(
+                            workspaceId: fixture.workspaceId,
+                            operations: [.init(entity: .project, action: .create, entityId: .v7(), payloadJSON: nil)],
+                            in: db
+                        )
+                    }
+                }
+                let taskBox = Mutex<Task<SyncQueuedTransaction?, Error>?>(nil)
+                try await fixture.queue.write { db in
+                    db.add(transactionObserver: CancelClaimOnCommit { taskBox.withLock { $0?.cancel() } }, extent: .databaseLifetime)
+                }
+                let (ready, signal) = AsyncStream.makeStream(of: CheckedContinuation<Void, Never>.self)
+                var starts = ready.makeAsyncIterator()
+                let task = Task {
+                    await withCheckedContinuation { signal.yield($0) }
+                    return try await SyncTransactionQueue.claim(dbQueue: fixture.queue)
+                }
+                let resume = try #require(await starts.next())
+                taskBox.withLock { $0 = task }
+                resume.resume()
+                do {
+                    _ = try await task.value
+                    Issue.record("Cancelled claim returned work")
+                } catch is CancellationError {}
+                let pending = try await fixture.queue.read { db -> (Int, Date?)? in
+                    guard let row = try Row.fetchOne(db, sql: "SELECT attempts, leaseExpiresAt FROM sync_transactions") else { return nil }
+                    return (row["attempts"], row["leaseExpiresAt"])
+                }
+                let row = try #require(pending)
+                #expect(row.1 == nil)
+                #expect(row.0 == 1)
+            }
+        }
+
+        @Test(.timeLimit(.minutes(1)))
+        func cancelledRelocationPreflightDoesNotStartARequest() async throws {
+            let fixture = try SyncTransferFixture()
+            defer { fixture.close() }
+            await fixture.server.enableTransfers()
+            _ = try await fixture.addFile()
+            let worker = fixture.worker()
+            try await fixture.drain(worker)
+            let checks = await fixture.server.relocationChecks
+            let (ready, signal) = AsyncStream.makeStream(of: CheckedContinuation<Void, Never>.self)
+            var starts = ready.makeAsyncIterator()
+            let task = Task {
+                await withCheckedContinuation { signal.yield($0) }
+                return try await worker.reconcileRelocations(
+                    workspaceId: fixture.workspaceId, connectionId: fixture.connectionId, origin: fixture.origin
+                )
+            }
+            let resume = try #require(await starts.next())
+            task.cancel()
+            resume.resume()
+            do {
+                _ = try await task.value
+                Issue.record("Cancelled preflight returned a result")
+            } catch is CancellationError {}
+            #expect(await fixture.server.relocationChecks == checks)
+            await worker.stop()
+        }
+
+        @Test(.timeLimit(.minutes(1)))
+        func backgroundMetadataDoesNotHoldForegroundOrFileTransfers() async throws {
+            let fixture = try SyncTransferFixture()
+            defer { fixture.close() }
+            let background = try await fixture.queue.write { db in
+                try #require(try SyncTransactionRecorder.record(
+                    workspaceId: fixture.workspaceId,
+                    background: true,
+                    operations: [.init(
+                        entity: .project,
+                        action: .create,
+                        entityId: .v7(),
+                        payloadJSON: Data(
+                            #"{"name":"Project","parentProjectId":null,"description":"","projectType":"undefined","createdAt":"2026-09-30T00:00:00Z"}"#
+                                .utf8
+                        )
+                    )],
+                    in: db
+                ))
+            }
+            await fixture.server.holdCommit(background)
+            var starts = fixture.server.commitStarts.makeAsyncIterator()
+            var uploads = fixture.server.uploadStarts.makeAsyncIterator()
+            let worker = fixture.worker()
+            await worker.drain()
+            #expect(await starts.next() == background)
+            _ = try await fixture.addFile()
+            #expect(await uploads.next() == 1)
+            let foreground = try await fixture.queue.write { db in
+                try #require(try SyncTransactionRecorder.record(
+                    workspaceId: fixture.workspaceId,
+                    operations: [.init(
+                        entity: .project,
+                        action: .create,
+                        entityId: .v7(),
+                        payloadJSON: Data(
+                            #"{"name":"Project","parentProjectId":null,"description":"","projectType":"undefined","createdAt":"2026-09-30T00:00:00Z"}"#
+                                .utf8
+                        )
+                    )],
+                    in: db
+                ))
+            }
+            for try await complete in ValueObservation.tracking({ db in
+                try Int.fetchOne(db, sql: "SELECT count(*) FROM sync_transactions WHERE id = ?", arguments: [foreground]) == 0
+            }).values(in: fixture.queue) where complete {
+                break
+            }
+            #expect(await fixture.server.commitIds.contains(foreground))
+            let pendingBackground = try await fixture.queue.read { db in
+                try Int.fetchOne(db, sql: "SELECT count(*) FROM sync_transactions WHERE id = ?", arguments: [background])
+            }
+            #expect(pendingBackground == 1)
+            await fixture.server.releaseCommit()
+            for try await complete in ValueObservation.tracking({ db in
+                try Int.fetchOne(db, sql: "SELECT count(*) FROM sync_transactions") == 0
+            }).values(in: fixture.queue) where complete {
+                break
+            }
+            await worker.stop()
+        }
+
+        @Test(.timeLimit(.minutes(1)))
+        func relocationPreflightIsReusedUntilLifecycleChangesOrCommitRejects() async throws {
+            let fixture = try SyncTransferFixture()
+            defer { fixture.close() }
+            await fixture.server.enableTransfers()
+            let worker = fixture.worker()
+            for _ in 0 ..< 2 {
+                _ = try await fixture.addFile()
+            }
+            try await fixture.drain(worker)
+            #expect(await fixture.server.relocationChecks == 1)
+            await fixture.server.delayRelocations()
+            async let left = worker.reconcileRelocations(workspaceId: fixture.workspaceId, connectionId: fixture.connectionId, origin: fixture.origin)
+            async let right = worker.reconcileRelocations(
+                workspaceId: fixture.workspaceId,
+                connectionId: fixture.connectionId,
+                origin: fixture.origin
+            )
+            let shared = try await (left, right)
+            #expect(!shared.0 && !shared.1)
+            #expect(await fixture.server.relocationChecks == 2)
+
+            try await fixture.queue.write { try $0.execute(sql: "UPDATE workspaces SET syncLifecycleGeneration = syncLifecycleGeneration + 1") }
+            _ = try await fixture.addFile()
+            try await fixture.drain(worker)
+            #expect(await fixture.server.relocationChecks == 3)
+            _ = try await fixture.addFile()
+            await fixture.server.rejectNextCommit()
+            let claim = try #require(try await SyncTransactionQueue.claim(dbQueue: fixture.queue))
+            await #expect(throws: SyncHTTPError.self) { _ = try await worker.push(claim) }
+            #expect(await fixture.server.relocationChecks == 4)
+            // Pull checks are fresh even while the push preflight is cached.
+            try await worker.retryPull(workspaceId: fixture.workspaceId, connectionId: fixture.connectionId)
+            #expect(await fixture.server.relocationChecks > 4)
+            await worker.stop()
+        }
+
         @Test(.timeLimit(.minutes(1)))
         func continuingSyncStagesEightFilesAndKeepsCommitOrder() async throws {
             let fixture = try SyncTransferFixture()
@@ -529,6 +729,22 @@
         }
     }
 
+    private final class CancelClaimOnCommit: TransactionObserver {
+        private let cancel: @Sendable () -> Void
+        private var changed = false
+
+        init(cancel: @escaping @Sendable () -> Void) { self.cancel = cancel }
+        func observes(eventsOfKind eventKind: DatabaseEventKind) -> Bool { eventKind.tableName == "sync_transactions" }
+        func databaseDidChange(with _: DatabaseEvent) { changed = true }
+        func databaseDidCommit(_: Database) {
+            if changed {
+                changed = false
+                cancel()
+            }
+        }
+        func databaseDidRollback(_: Database) { changed = false }
+    }
+
     @MainActor
     private struct SyncTransferFixture {
         let queue: DatabaseQueue
@@ -639,6 +855,10 @@
     private actor SyncTransferServer {
         nonisolated let uploadStarts: AsyncStream<Int>
         nonisolated let uploadCancellations: AsyncStream<Int>
+        nonisolated let commitStarts: AsyncStream<UUID>
+        private let commitStarted: AsyncStream<UUID>.Continuation
+        private var heldCommit: UUID?
+        private var commitRelease: AsyncStream<Void>.Continuation?
         nonisolated let resolveStarts: AsyncStream<Int>
         private let started: AsyncStream<Int>.Continuation
         private let cancelled: AsyncStream<Int>.Continuation
@@ -646,6 +866,10 @@
         var events: [String] = []
         var commitIds: [UUID] = []
         var transactionBodies: [Data] = []
+        var relocationChecks = 0
+        private var relocationDelay = Duration.zero
+        private var transfersEnabled = false
+        private var rejectCommit = false
         var resolveCount = 0
         var uploadCount = 0
         var cancelledUploads = 0
@@ -668,7 +892,18 @@
             (uploadStarts, started) = AsyncStream.makeStream(of: Int.self)
             (uploadCancellations, cancelled) = AsyncStream.makeStream(of: Int.self)
             (resolveStarts, resolveStarted) = AsyncStream.makeStream(of: Int.self)
+            (commitStarts, commitStarted) = AsyncStream.makeStream(of: UUID.self)
         }
+
+        func holdCommit(_ id: UUID) { heldCommit = id }
+        func releaseCommit() { heldCommit = nil
+            commitRelease?.finish()
+            commitRelease = nil
+        }
+
+        func delayRelocations() { relocationDelay = .milliseconds(200) }
+        func enableTransfers() { transfersEnabled = true }
+        func rejectNextCommit() { rejectCommit = true }
 
         func register(_ file: FileRecord) { files[file.id.uuidString.lowercased()] = file }
         func setUploadDelay(_ delay: Duration) { uploadDelay = delay }
@@ -692,8 +927,36 @@
             resolveRelease = nil
         }
 
+        private func relocationResponse(_ path: String) async throws -> (Int, Data)? {
+            if transfersEnabled {
+                if path.hasSuffix("/capabilities") { return (
+                    200,
+                    Data(#"{"documents":{"version":1},"sync":{"version":7},"workspaceTransfers":{"version":1}}"#.utf8)
+                ) }
+                if path.hasSuffix("/relocations") {
+                    relocationChecks += 1
+                    // Deliberate network latency lets concurrent callers share the same request.
+                    try await Task.sleep(for: relocationDelay)
+                    return (200, Data(#"{"workspaces":[],"items":[]}"#.utf8))
+                }
+                if path.hasSuffix("/changes") { return (200, Data(#"{"items":[],"cursor":"after","highWaterCursor":"after","hasMore":false}"#.utf8)) }
+            }
+            return nil
+        }
+
+        private func waitForHeldCommit(_ transactionId: UUID) async throws {
+            if heldCommit == transactionId {
+                let (release, continuation) = AsyncStream<Void>.makeStream()
+                commitRelease = continuation
+                commitStarted.yield(transactionId)
+                for await _ in release {}
+                try Task.checkCancellation()
+            }
+        }
+
         func handle(_ request: URLRequest) async throws -> (Int, Data) {
             let path = request.url!.path
+            if let response = try await relocationResponse(path) { return response }
             if path.hasSuffix("/capabilities") { return (200, Data(#"{"documents":{"version":1},"sync":{"version":7}}"#.utf8)) }
             if expiredPullCursor {
                 if path.hasSuffix("/capabilities") { return (200, Data("{\"documents\":{\"version\":1},\"sync\":{\"version\":7}}".utf8)) }
@@ -741,6 +1004,11 @@
                         gateResolve = false
                     }
                     return try (200, receipts[id] ?? JSONSerialization.data(withJSONObject: ["id": id, "status": "unknown"]))
+                }
+                let transactionId = try #require(UUID(uuidString: id))
+                try await waitForHeldCommit(transactionId)
+                if rejectCommit { rejectCommit = false
+                    return (409, Data(#"{"code":"revision_conflict"}"#.utf8))
                 }
                 if commitFailure == false {
                     commitFailure = nil
