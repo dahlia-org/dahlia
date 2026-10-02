@@ -1766,6 +1766,9 @@
 "documentUnsupportedSchema" = "This older Notes format is not supported. Your data remains on this device.";
 "documentTooLarge" = "This edit exceeds the Notes limit. Reduce the content or synchronize before retrying.";
 
+"documentHistoryPrevious" = "Previous";
+"documentHistoryNext" = "Next";
+"documentHistoryFullText" = "Show full text";
 "server.content.retention" = "Local Retention of Server Data";
 "server.content.retention.days" = "Retention (days)";
 "server.content.retention.description" = "Retention defaults to Forever to prevent older data from being automatically removed after connecting to Server. Keep Server data created, edited, viewed, or first downloaded on this Mac for at least this period. Applies to text, Documents, and downloaded images across all Server accounts. After the period, unused data may be removed in the background when storage limits are exceeded, then downloaded again when needed. Forever prevents automatic removal. Storage limits may be exceeded to honor the retention period. Recording audio is managed separately.";

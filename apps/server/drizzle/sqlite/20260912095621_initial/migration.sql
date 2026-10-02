@@ -305,6 +305,7 @@ CREATE TABLE `document_presence` (
 );
 --> statement-breakpoint
 CREATE TABLE `document_recoveries` (
+	`sequence` integer NOT NULL,
 	`id` text PRIMARY KEY,
 	`document_id` text NOT NULL,
 	`workspace_id` text NOT NULL,
@@ -878,7 +879,7 @@ CREATE INDEX `jobs_queue_lease_idx` ON `jobs_queue` (`status`,`lease_until`,`tar
 CREATE UNIQUE INDEX `document_meeting_notes_unique` ON `documents` (`meeting_id`) WHERE "documents"."kind" = 'notes';--> statement-breakpoint
 CREATE INDEX `document_presence_document_expiry` ON `document_presence` (`document_id`,`expires_at`);--> statement-breakpoint
 CREATE INDEX `document_presence_workspace_expiry` ON `document_presence` (`workspace_id`,`expires_at`);--> statement-breakpoint
-CREATE INDEX `document_recoveries_document_cursor` ON `document_recoveries` (`document_id`,`id`);--> statement-breakpoint
+CREATE UNIQUE INDEX `document_recoveries_document_cursor` ON `document_recoveries` (`document_id`,`sequence`);--> statement-breakpoint
 CREATE INDEX `image_analysis_job_claim_idx` ON `jobs_image_analysis` (`status`,`available_at`,`lease_expires_at`);--> statement-breakpoint
 CREATE INDEX `image_analysis_job_owner_idx` ON `jobs_image_analysis` (`owner_user_id`,`available_at`);--> statement-breakpoint
 CREATE INDEX `meeting_attachments_file_idx` ON `meeting_attachments` (`file_id`);--> statement-breakpoint

@@ -1,7 +1,7 @@
 {
   "version": "7",
   "dialect": "sqlite",
-  "id": "fca3b006-7903-4659-a2f8-73006c228ab0",
+  "id": "ded27deb-7fd6-411d-acae-07fd37ca316a",
   "prevIds": [
     "00000000-0000-0000-0000-000000000000"
   ],
@@ -2401,6 +2401,16 @@
       "default": null,
       "generated": null,
       "name": "workspace_id",
+      "entityType": "columns",
+      "table": "document_recoveries"
+    },
+    {
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "sequence",
       "entityType": "columns",
       "table": "document_recoveries"
     },
@@ -7848,11 +7858,11 @@
           "isExpression": false
         },
         {
-          "value": "id",
+          "value": "sequence",
           "isExpression": false
         }
       ],
-      "isUnique": false,
+      "isUnique": true,
       "where": null,
       "origin": "manual",
       "name": "document_recoveries_document_cursor",

@@ -27,7 +27,7 @@ const validID = (value: unknown): value is string => typeof value === "string" &
 const fail = (): never => { throw new Error("invalid_document_schema"); };
 
 /** Reject malformed storage, not legitimate concurrent tree conflicts. */
-export function validateBlocks(doc: Y.Doc): void {
+export function validateBlocks(doc: Y.Doc, ids?: ReadonlySet<string>, structure = true, textIDs = ids): void {
   if (doc.share.has("content")) throw new Error("unsupported_document_schema");
   if (doc.store.pendingStructs || doc.store.pendingDs) throw new Error("invalid_document_update");
   for (const name of doc.share.keys()) if (name !== "blocks" && name !== "root") fail();
@@ -35,8 +35,10 @@ export function validateBlocks(doc: Y.Doc): void {
   const array = (value: unknown) => {
     if (!(value instanceof Y.Array) || value.toArray().some((id) => !validID(id))) fail();
   };
-  array(root);
-  for (const [id, block] of blocks) {
+  if (structure) array(root);
+  for (const id of ids ?? blocks.keys()) {
+    const block = blocks.get(id);
+    if (!block) continue;
     if (!validID(id) || !(block instanceof Y.Map)) fail();
     const type = block.get("type"), attrs = block.get("attrs"), parent = block.get("parent");
     if (!blockTypes.includes(type as BlockType) || !object(attrs) || typeof block.get("alive") !== "boolean"
@@ -51,7 +53,7 @@ export function validateBlocks(doc: Y.Doc): void {
     if (![undefined, null, "1", "a", "A", "i", "I"].includes(attributes.type as string)) fail();
     if (textBlock(type)) {
       if (!(block.get("text") instanceof Y.Text) || block.has("children")) fail();
-      for (const part of blockText(block).toDelta() as Inline[]) {
+      for (const part of !textIDs || textIDs.has(id) ? blockText(block).toDelta() as Inline[] : []) {
         if (typeof part.insert !== "string" && (!object(part.insert) || part.insert.type !== "hardBreak" || Object.keys(part.insert).length !== 1)) fail();
         for (const [mark, value] of Object.entries(part.attributes ?? {})) {
           if (!marks.includes(mark) || !object(value)) fail();

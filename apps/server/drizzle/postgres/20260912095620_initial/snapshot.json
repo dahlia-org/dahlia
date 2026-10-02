@@ -1,7 +1,7 @@
 {
   "version": "8",
   "dialect": "postgres",
-  "id": "d8e6691d-8e9d-4059-8d52-72e35c760fd4",
+  "id": "442cfb50-0bfa-4ebb-bae9-83553fc4d7b8",
   "prevIds": [
     "00000000-0000-0000-0000-000000000000"
   ],
@@ -726,6 +726,19 @@
       "generated": null,
       "identity": null,
       "name": "workspace_id",
+      "entityType": "columns",
+      "schema": "app",
+      "table": "document_recoveries"
+    },
+    {
+      "type": "integer",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "sequence",
       "entityType": "columns",
       "schema": "app",
       "table": "document_recoveries"
@@ -5388,14 +5401,14 @@
           "opclass": null
         },
         {
-          "value": "id",
+          "value": "sequence",
           "isExpression": false,
           "asc": true,
           "nullsFirst": false,
           "opclass": null
         }
       ],
-      "isUnique": false,
+      "isUnique": true,
       "where": null,
       "with": "",
       "method": "btree",

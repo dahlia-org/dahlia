@@ -5378,7 +5378,7 @@ final class CaptionViewModel: ObservableObject {
         job.progress.summaryGeneration = .running
         job.showStage("summarizing")
 
-        let documents = DocumentPersistence(dbQueue: request.dbQueue)
+        let documents = DocumentPersistence.shared(dbQueue: request.dbQueue)
         let documentSync = DocumentSyncService.shared(dbQueue: request.dbQueue)
         let documentText: String
         if case nil = savedResult {

@@ -220,7 +220,7 @@
 
         @Test func migrationInitializesUnknownResidentDatesWithoutChangingContent() throws {
             let queue = try DatabaseQueue(configuration: AppDatabaseManager.configuration())
-            try AppDatabaseManager.migrator.migrate(queue, upTo: "v53_documentsSyncAndBackgroundJobs")
+            try AppDatabaseManager.migrator.migrate(queue, upTo: "v54_documentsSyncAndBackgroundJobs")
             let workspace = WorkspaceRecord(id: .v7(), name: "Preserved", createdAt: .now, lastOpenedAt: .now)
             let meeting = MeetingRecord(id: .v7(), workspaceId: workspace.id, name: "Meeting", createdAt: .now, updatedAt: .now)
             let old = Date(timeIntervalSince1970: 1_000_000)

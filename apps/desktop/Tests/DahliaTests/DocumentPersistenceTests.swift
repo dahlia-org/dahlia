@@ -24,6 +24,45 @@
             return try JSONDecoder().decode(SchemaFixture.self, from: Data(contentsOf: url))
         }
 
+        @Test func recoveryPagesBoundPreviewAndReadFullTextExplicitly() async throws {
+            let (queue, workspaceID, meetingID) = try seed()
+            let documentID = UUID.v7()
+            let fullText = String(repeating: "文", count: 3000)
+            let blocks = try String(
+                decoding: JSONEncoder().encode([DocumentBlock(id: "paragraph", type: "paragraph", text: fullText)]),
+                as: UTF8.self
+            )
+            try await queue.write { db in
+                try DocumentRecord(
+                    id: documentID,
+                    workspaceId: workspaceID,
+                    meetingId: meetingID,
+                    checkpoint: "AAA=",
+                    createdAt: .now,
+                    updatedAt: .now
+                ).insert(db)
+                for _ in 0 ..< 205 {
+                    try DocumentRecoveryRecord(
+                        id: .v7(),
+                        documentId: documentID,
+                        blocksJSON: blocks,
+                        reason: "deleted",
+                        pending: false,
+                        createdAt: .now
+                    ).insert(db)
+                }
+            }
+            let persistence = DocumentPersistence(dbQueue: queue)
+            let first = try await persistence.recoveryPage(meetingID: meetingID)
+            #expect(first.records.count == 100 && first.previews.values.allSatisfy { $0.count == 2000 })
+            let id = try #require(first.records.first?.id)
+            #expect(try await persistence.recoveryText(id: id) == fullText)
+            let second = try await persistence.recoveryPage(meetingID: meetingID, before: first.next)
+            #expect(second.records.count == 100 && Set(first.records.map(\.id)).isDisjoint(with: second.records.map(\.id)))
+            let last = try await persistence.recoveryPage(meetingID: meetingID, before: second.next)
+            #expect(last.records.count == 5 && last.next == nil)
+        }
+
         @Test(arguments: [false, true]) func editorRecoveryCommitsWithItsUpdateAndSurvivesRestart(server: Bool) async throws {
             let (queue, workspaceID, meetingID) = try seed(server: server)
             let fixture = try schemaFixture()
@@ -162,7 +201,6 @@
             let fixture = try schemaFixture(), persistence = DocumentPersistence(dbQueue: queue)
             let document = try await remoteDocument(queue, meetingID: meetingID)
             try await persistence.receive(document: document, update: fixture.checkpoint, generation: .v7(), revision: 1, validate: { _ in })
-            try await persistence.append(meetingID: meetingID, update: fixture.deletionUpdate, local: true)
             let baseline = try await queue.read { try DocumentRecord.fetchOne($0, key: document.id) }
             try await queue.write { db in
                 try db.execute(
@@ -170,11 +208,12 @@
                 )
             }
             await #expect(throws: (any Error).self) {
-                _ = try await persistence.materialize(meetingID: meetingID, compact: compact)
+                try await persistence.append(meetingID: meetingID, update: fixture.deletionUpdate, local: true)
             }
             let failed = try await queue.read { try DocumentRecord.fetchOne($0, key: document.id) }
             #expect(failed?.checkpoint == baseline?.checkpoint && failed?.checkpointSequence == baseline?.checkpointSequence)
             try await queue.write { try $0.execute(sql: "DROP TRIGGER fail_recovery") }
+            try await persistence.append(meetingID: meetingID, update: fixture.deletionUpdate, local: true)
             _ = try await persistence.materialize(meetingID: meetingID, compact: compact)
             #expect(try await persistence.recoveries(meetingID: meetingID).0.contains { $0.pending })
             // Account conversion can leave an unsent suffix after a bounded exchange.
@@ -339,7 +378,7 @@
             try await queue.write { try $0.execute(sql: "UPDATE dahlia_account_connections SET origin = ?", arguments: [origin]) }
             let calls = Mutex(0)
             ImageURLProtocol.register(origin: origin) { request in
-                if request.url!.path.hasSuffix("/capabilities") { return (200, [:], Data(#"{"documents":{"version":2}}"#.utf8)) }
+                if request.url!.path.hasSuffix("/capabilities") { return (200, [:], Data(#"{"documents":{"version":3}}"#.utf8)) }
                 calls.withLock { $0 += 1 }
                 return (200, [:], Data(#"{"document":null}"#.utf8))
             }
@@ -503,6 +542,57 @@
             #expect(try await persistence.archives(workspaceID: workspaceID).first?.2.contains("typed before revocation") == true)
         }
 
+        @Test func rejectedBatchRetriesAfterCanonicalGenerationChanges() async throws {
+            let (queue, workspaceID, meetingID) = try seed(server: true)
+            let persistence = DocumentPersistence.shared(dbQueue: queue)
+            let originalGeneration = UUID.v7(), restoredGeneration = UUID.v7()
+            let document = try await remoteDocument(queue, meetingID: meetingID)
+            let shared = try await persistence.legacyImport(text: "shared")
+            let pending = try await persistence.legacyImport(text: "pending")
+            try await persistence.receive(document: document, update: shared, generation: originalGeneration, revision: 1, validate: { _ in })
+            try await persistence.append(meetingID: meetingID, update: pending, local: true)
+            let origin = "https://rejected-generation-\(UUID.v7().uuidString.lowercased()).invalid"
+            try await queue.write { try $0.execute(sql: "UPDATE dahlia_account_connections SET origin = ?", arguments: [origin]) }
+            let calls = Mutex(0), uploads = Mutex<[Bool]>([])
+            let restored = try JSONSerialization.data(withJSONObject: ["document": [
+                "id": document.id.uuidString, "workspaceId": workspaceID.uuidString, "meetingId": meetingID.uuidString,
+                "kind": "notes", "title": "", "schemaVersion": 2, "generation": restoredGeneration.uuidString,
+                "revision": 1, "checkpoint": shared, "text": "shared",
+                "createdAt": "2026-01-01T00:00:00Z", "updatedAt": "2026-01-01T00:00:00Z",
+            ]])
+            let exchangeResponses = try [originalGeneration, restoredGeneration].enumerated().map { index, generation in
+                try JSONSerialization.data(withJSONObject: [
+                    "accepted": index == 1, "vector": "AA==", "update": "AAA=", "revision": 1,
+                    "generation": generation.uuidString,
+                ])
+            }
+            ImageURLProtocol.register(origin: origin) { request in
+                let path = request.url!.path
+                if path.hasSuffix("/capabilities") { return (200, [:], Data(#"{"documents":{"version":3}}"#.utf8)) }
+                if path.hasSuffix("/sync") {
+                    let body = try? JSONSerialization.jsonObject(with: request.httpBody ?? Data()) as? [String: Any]
+                    uploads.withLock { $0.append(body?["update"] is String) }
+                    let call = calls.withLock { $0 += 1
+                        return $0
+                    }
+                    if call == 2 { return (409, [:], Data(#"{"error":"document_generation_changed"}"#.utf8)) }
+                    return (200, [:], exchangeResponses[call == 1 ? 0 : 1])
+                }
+                if path.hasSuffix("/recoveries") { return (200, [:], Data(#"{"items":[],"nextCursor":null,"cursor":"fixture"}"#.utf8)) }
+                return (200, [:], restored)
+            }
+            defer { ImageURLProtocol.remove(origin: origin) }
+            let configuration = URLSessionConfiguration.ephemeral
+            configuration.protocolClasses = [ImageURLProtocol.self]
+            let api = SyncAPIClient(session: URLSession(configuration: configuration), tokenProvider: { _, _ in "test" })
+            let service = DocumentSyncService(dbQueue: queue, api: api)
+            await #expect(throws: DocumentCoreError.tooLarge) { try await service.synchronize(meetingID: meetingID) }
+            try await service.synchronize(meetingID: meetingID)
+            try await service.synchronize(meetingID: meetingID)
+            #expect(uploads.withLock { $0 } == [true, false, true])
+            #expect(try await queue.read { try DocumentUpdateRecord.filter(Column("pending") == true).fetchCount($0) } == 0)
+        }
+
         @Test func viewerSyncReceivesWithoutPublishingPendingEditsAndFlushFails() async throws {
             let (queue, workspaceID, meetingID) = try seed(server: true)
             let persistence = DocumentPersistence(dbQueue: queue), generation = UUID.v7()
@@ -518,11 +608,17 @@
                     .insert(db)
             }
             let remoteEdit = try await persistence.legacyImport(text: "remote edit")
-            let response = try JSONSerialization.data(withJSONObject: ["generation": generation.uuidString, "revision": 2, "update": remoteEdit])
+            let response = try JSONSerialization.data(withJSONObject: [
+                "accepted": true,
+                "vector": "AA==",
+                "generation": generation.uuidString,
+                "revision": 2,
+                "update": remoteEdit,
+            ])
             let writes = Mutex(0)
             ImageURLProtocol.register(origin: origin) { request in
                 let path = request.url!.path
-                if path.hasSuffix("/capabilities") { return (200, [:], Data(#"{"documents":{"version":2}}"#.utf8)) }
+                if path.hasSuffix("/capabilities") { return (200, [:], Data(#"{"documents":{"version":3}}"#.utf8)) }
                 if path.hasSuffix("/sync") {
                     let body = try? JSONSerialization.jsonObject(with: request.httpBody ?? Data()) as? [String: Any]
                     if body?["update"] is String { writes.withLock { $0 += 1 } }
@@ -530,7 +626,7 @@
                 }
                 if path.hasSuffix("/recoveries") {
                     if request.httpMethod == "POST" { writes.withLock { $0 += 1 } }
-                    return (200, [:], Data(#"{"items":[],"nextCursor":null}"#.utf8))
+                    return (200, [:], Data(#"{"items":[],"nextCursor":null,"cursor":"test-cursor"}"#.utf8))
                 }
                 return (500, [:], Data())
             }
@@ -856,9 +952,9 @@
             let exchanges = Mutex(0)
             ImageURLProtocol.register(origin: origin) { request in
                 let path = request.url!.path
-                if path.hasSuffix("/capabilities") { return (200, [:], Data(#"{"documents":{"version":2}}"#.utf8)) }
+                if path.hasSuffix("/capabilities") { return (200, [:], Data(#"{"documents":{"version":3}}"#.utf8)) }
                 if path.hasSuffix("/notes") { return (200, [:], body) }
-                if path.hasSuffix("/recoveries") { return (200, [:], Data(#"{"items":[],"nextCursor":null}"#.utf8)) }
+                if path.hasSuffix("/recoveries") { return (200, [:], Data(#"{"items":[],"nextCursor":null,"cursor":"test-cursor"}"#.utf8)) }
                 exchanges.withLock { $0 += 1 }
                 return (503, [:], Data())
             }
@@ -886,10 +982,16 @@
                 "kind": "notes", "title": "", "schemaVersion": 2, "generation": generation.uuidString, "revision": 0,
                 "checkpoint": "AAA=", "text": "", "createdAt": "2026-09-29T00:00:00.000Z", "updatedAt": "2026-09-29T00:00:00.000Z",
             ]])
-            let exchange = try JSONSerialization.data(withJSONObject: ["generation": generation.uuidString, "revision": 1, "update": "AAA="])
+            let exchange = try JSONSerialization.data(withJSONObject: [
+                "accepted": true,
+                "vector": "AA==",
+                "generation": generation.uuidString,
+                "revision": 1,
+                "update": "AAA=",
+            ])
             ImageURLProtocol.register(origin: origin) { request in
                 let path = request.url!.path.lowercased()
-                if path.hasSuffix("/capabilities") { return (200, [:], Data(#"{"documents":{"version":2}}"#.utf8)) }
+                if path.hasSuffix("/capabilities") { return (200, [:], Data(#"{"documents":{"version":3}}"#.utf8)) }
                 if path.hasSuffix("/meetings/\(meetingID.uuidString.lowercased())/notes") {
                     if request.httpMethod == "GET" { return (200, [:], Data(#"{"document":null}"#.utf8)) }
                     #expect((ImageURLProtocol.requestJSON(request)?["id"] as? String)?.lowercased() == proposed.uuidString.lowercased())
@@ -897,7 +999,7 @@
                 }
                 #expect(path.contains("/documents/\(canonicalID.uuidString.lowercased())/"))
                 if path.hasSuffix("/sync") { return (200, [:], exchange) }
-                if path.hasSuffix("/recoveries") { return (200, [:], Data(#"{"items":[],"nextCursor":null}"#.utf8)) }
+                if path.hasSuffix("/recoveries") { return (200, [:], Data(#"{"items":[],"nextCursor":null,"cursor":"test-cursor"}"#.utf8)) }
                 return (404, [:], Data())
             }
             defer { ImageURLProtocol.remove(origin: origin) }
@@ -944,15 +1046,21 @@
                 "generation": generation.uuidString, "revision": 1, "checkpoint": checkpoint, "text": "Independent body",
                 "createdAt": "2026-09-29T00:00:00.000Z", "updatedAt": "2026-09-29T00:00:00.000Z",
             ]])
-            let exchange = try JSONSerialization.data(withJSONObject: ["generation": generation.uuidString, "revision": 1, "update": "AAA="])
+            let exchange = try JSONSerialization.data(withJSONObject: [
+                "accepted": true,
+                "vector": "AA==",
+                "generation": generation.uuidString,
+                "revision": 1,
+                "update": "AAA=",
+            ])
             ImageURLProtocol.register(origin: origin) { request in
                 let path = request.url!.path.lowercased()
-                if path.hasSuffix("/capabilities") { return (200, [:], Data(#"{"documents":{"version":2}}"#.utf8)) }
+                if path.hasSuffix("/capabilities") { return (200, [:], Data(#"{"documents":{"version":3}}"#.utf8)) }
                 #expect(path.contains("/workspaces/\(workspaceID.uuidString.lowercased())/documents"))
                 if path.hasSuffix("/documents") { return (200, [:], listing) }
                 if path.hasSuffix("/documents/\(id.uuidString.lowercased())") { return (200, [:], response) }
                 if path.hasSuffix("/sync") { return (200, [:], exchange) }
-                if path.hasSuffix("/recoveries") { return (200, [:], Data(#"{"items":[],"nextCursor":null}"#.utf8)) }
+                if path.hasSuffix("/recoveries") { return (200, [:], Data(#"{"items":[],"nextCursor":null,"cursor":"test-cursor"}"#.utf8)) }
                 return (404, [:], Data())
             }
             defer { ImageURLProtocol.remove(origin: origin) }
@@ -1015,11 +1123,17 @@
                 "id": id.uuidString, "meetingId": NSNull(), "kind": "general", "generation": generation.uuidString, "revision": 1,
             ]
             let listing = try JSONSerialization.data(withJSONObject: ["items": [item], "nextCursor": NSNull()])
-            let exchange = try JSONSerialization.data(withJSONObject: ["generation": generation.uuidString, "revision": 2, "update": "AAA="])
+            let exchange = try JSONSerialization.data(withJSONObject: [
+                "accepted": true,
+                "vector": "AA==",
+                "generation": generation.uuidString,
+                "revision": 2,
+                "update": "AAA=",
+            ])
             let sent = Mutex<String?>(nil)
             ImageURLProtocol.register(origin: origin) { request in
                 let path = request.url!.path.lowercased()
-                if path.hasSuffix("/capabilities") { return (200, [:], Data(#"{"documents":{"version":2}}"#.utf8)) }
+                if path.hasSuffix("/capabilities") { return (200, [:], Data(#"{"documents":{"version":3}}"#.utf8)) }
                 if path.contains(destinationID.uuidString.lowercased()) {
                     if path.hasSuffix("/documents") { return (200, [:], listing) }
                     if path.hasSuffix("/sync") {
@@ -1029,9 +1143,9 @@
                         }
                         return (200, [:], exchange)
                     }
-                    if path.hasSuffix("/recoveries") { return (200, [:], Data(#"{"items":[],"nextCursor":null}"#.utf8)) }
+                    if path.hasSuffix("/recoveries") { return (200, [:], Data(#"{"items":[],"nextCursor":null,"cursor":"test-cursor"}"#.utf8)) }
                 }
-                if path.hasSuffix("/documents") { return (200, [:], Data(#"{"items":[],"nextCursor":null}"#.utf8)) }
+                if path.hasSuffix("/documents") { return (200, [:], Data(#"{"items":[],"nextCursor":null,"cursor":"test-cursor"}"#.utf8)) }
                 if path.hasSuffix("/relocations") {
                     return (moved || scenario == "restoringDestination" ? 200 : scenario == "denied" ? 403 : 503, [:], relocation)
                 }
@@ -1097,9 +1211,13 @@
             }
             ImageURLProtocol.register(origin: origin) { request in
                 let path = request.url!.path.lowercased()
-                if path.hasSuffix("/capabilities") { return (200, [:], Data(#"{"documents":{"version":2}}"#.utf8)) }
+                if path.hasSuffix("/capabilities") { return (200, [:], Data(#"{"documents":{"version":3}}"#.utf8)) }
                 if path.hasSuffix("/documents") {
-                    return scenario == "inventoryFailure" ? (503, [:], Data()) : (200, [:], Data(#"{"items":[],"nextCursor":null}"#.utf8))
+                    return scenario == "inventoryFailure" ? (503, [:], Data()) : (
+                        200,
+                        [:],
+                        Data(#"{"items":[],"nextCursor":null,"cursor":"test-cursor"}"#.utf8)
+                    )
                 }
                 if path.hasSuffix("/sync") { return (404, [:], Data()) }
                 if path.hasSuffix("/relocations") { return (200, [:], Data(#"{"workspaces":[],"items":[],"documents":[]}"#.utf8)) }
@@ -1156,16 +1274,22 @@
                 "settings": ["model": "gpt-5.4", "detail": "high", "reasoningEffort": "medium"], "outputLanguage": "ja", "error": NSNull(),
                 "createdAt": "2026-09-29T00:00:00.000Z",
             ]])
-            let exchange = try JSONSerialization.data(withJSONObject: ["generation": generation.uuidString, "revision": 1, "update": "AAA="])
+            let exchange = try JSONSerialization.data(withJSONObject: [
+                "accepted": true,
+                "vector": "AA==",
+                "generation": generation.uuidString,
+                "revision": 1,
+                "update": "AAA=",
+            ])
             ImageURLProtocol.register(origin: origin) { request in
                 let path = request.url!.path
-                if path.hasSuffix("/capabilities") { return (200, [:], Data(#"{"documents":{"version":2}}"#.utf8)) }
+                if path.hasSuffix("/capabilities") { return (200, [:], Data(#"{"documents":{"version":3}}"#.utf8)) }
                 if path.hasSuffix("/sync") {
                     calls.withLock { $0.append("sync") }
                     #expect(ImageURLProtocol.requestJSON(request)?["update"] is String)
                     return fails ? (503, [:], Data()) : (200, [:], exchange)
                 }
-                if path.hasSuffix("/recoveries") { return (200, [:], Data(#"{"items":[],"nextCursor":null}"#.utf8)) }
+                if path.hasSuffix("/recoveries") { return (200, [:], Data(#"{"items":[],"nextCursor":null,"cursor":"test-cursor"}"#.utf8)) }
                 if path.hasSuffix("/retry") {
                     calls.withLock { $0.append("retry") }
                     do {
@@ -1202,7 +1326,7 @@
             try queue.read { db throws in
                 #expect(try !db.tableExists("documents"))
                 #expect(try db.columns(in: "document_updates").map(\.name) == ["sentinel"])
-                #expect(try !String.fetchAll(db, sql: "SELECT identifier FROM grdb_migrations").contains("v53_documentsSyncAndBackgroundJobs"))
+                #expect(try !String.fetchAll(db, sql: "SELECT identifier FROM grdb_migrations").contains("v54_documentsSyncAndBackgroundJobs"))
             }
         }
     }

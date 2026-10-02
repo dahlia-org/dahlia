@@ -1,5 +1,5 @@
 import * as Y from "yjs";
-import { blockLayout, blockMap, blockText, inlineText, purgeDeletedBlocks, textBlock, totalBlockLimit, validateBlocks, visibleBlockLimit, writeBlocks, type BlockInput, type Inline, type LayoutNode } from "./blocks";
+import { blockLayout, blockMap, rootOrder, blockText, inlineText, purgeDeletedBlocks, textBlock, totalBlockLimit, validateBlocks, visibleBlockLimit, writeBlocks, type BlockInput, type Inline, type LayoutNode } from "./blocks";
 
 export const documentSchemaVersion = 2;
 export const documentTextLimit = 2_000_000;
@@ -65,19 +65,118 @@ export function projectDocument(document: Y.Doc, limits = true): DocumentProject
   const projection = { text, blocks }; projectedLeaves.set(projection, leaves); return projection;
 }
 
+/** Incremental bodies and layout. Full strings are assembled only for explicit reads. */
+class DocumentIndex {
+  readonly leaves = new Map<string, DocumentBlock>();
+  private dirty = new Set<string>();
+  private structural = true;
+  private layout: LayoutNode[] = [];
+  private visible = new Set<string>();
+  private lengths = new Map<string, number>();
+  private parents = new Map<string, string>();
+  private textLength = 0;
+  readonly diagnostics = { bodies: 0, layouts: 0 };
+  constructor(private readonly document: Y.Doc) {
+    blockMap(document).observeDeep((events) => {
+      for (const event of events) {
+        const id = event.path[0];
+        if (typeof id === "string") this.dirty.add(id);
+        else if (event instanceof Y.YMapEvent) for (const key of event.keysChanged) if (typeof key === "string") this.dirty.add(key);
+        if (!(event instanceof Y.YTextEvent)) this.structural = true;
+      }
+    });
+    rootOrder(document).observe(() => { this.structural = true; });
+  }
+  refresh(): DocumentBlock[] {
+    const dirty = this.dirty, structural = this.structural, blocks = blockMap(this.document);
+    // Also validate shared roots and unresolved dependencies when an update has no visible event.
+    validateBlocks(this.document, structural ? new Set(blocks.keys()) : dirty, structural, dirty);
+    const previous = new Map<string, DocumentBlock | undefined>();
+    for (const id of dirty) {
+      previous.set(id, this.leaves.get(id));
+      const block = blocks.get(id);
+      if (block && textBlock(block.get("type"))) {
+        this.diagnostics.bodies++;
+        this.leaves.set(id, { id, type: block.get("type") as string, text: inlineText(blockText(block).toDelta() as Inline[]) });
+      } else this.leaves.delete(id);
+    }
+    const oldVisible = this.visible;
+    if (structural) {
+      this.diagnostics.layouts++;
+      this.layout = blockLayout(this.document); this.visible = new Set(); this.parents.clear(); this.lengths.clear();
+      const visit = (node: LayoutNode, parent?: string): number => {
+        this.visible.add(node.id); if (parent) this.parents.set(node.id, parent);
+        const length = textBlock(node.type) ? this.leaves.get(node.id)!.text.length
+          : node.children.reduce((sum, child, i) => sum + visit(child, node.id) + (i ? 1 : 0), 0);
+        this.lengths.set(node.id, length); return length;
+      };
+      this.textLength = this.layout.reduce((sum, node, i) => sum + visit(node) + (i ? 1 : 0), 0);
+    } else {
+      for (const id of dirty) if (this.visible.has(id)) {
+        const length = this.leaves.get(id)!.text.length, delta = length - this.lengths.get(id)!;
+        this.lengths.set(id, length); this.textLength += delta;
+        for (let parent = this.parents.get(id); parent; parent = this.parents.get(parent)) this.lengths.set(parent, this.lengths.get(parent)! + delta);
+      }
+    }
+    const recovered: DocumentBlock[] = [];
+    for (const id of new Set([...dirty, ...(structural ? [...oldVisible].filter((id) => !this.visible.has(id)) : [])])) {
+      if (this.visible.has(id)) continue;
+      const old = previous.has(id) ? previous.get(id) : this.leaves.get(id), next = this.leaves.get(id) ?? old;
+      if (next && (oldVisible.has(id) || (next.text.length > 0 && old?.text !== next.text))) recovered.push(next);
+    }
+    this.dirty = new Set(); this.structural = false; return recovered;
+  }
+  constraints() { return { text: this.textLength, visible: this.visible.size, total: blockMap(this.document).size }; }
+  validateLimits(): void {
+    if (this.textLength > documentTextLimit || this.visible.size > visibleBlockLimit || blockMap(this.document).size > totalBlockLimit) throw new Error("document_too_large");
+  }
+  projection(limits: boolean): DocumentProjection {
+    this.refresh(); if (limits) this.validateLimits();
+    const blocks: DocumentBlock[] = [];
+    const visit = (node: LayoutNode): string => {
+      const text = textBlock(node.type) ? this.leaves.get(node.id)!.text : node.children.map(visit).join("\n");
+      blocks.push({ id: node.id, type: node.type, text }); return text;
+    };
+    const projection = { text: this.layout.map(visit).join("\n"), blocks };
+    projectedLeaves.set(projection, new Map(this.leaves)); return projection;
+  }
+}
+
 /** Owns a canonical Yjs document. Storage and scheduling belong to the host. */
 export class DocumentCore {
   readonly document = new Y.Doc();
+  private readonly index = new DocumentIndex(this.document);
+  private sizeBudget = 2;
+  changeVersion = 0;
+  get diagnostics() { return this.index.diagnostics; }
   constructor(checkpoint?: string) {
+    this.document.on("update", (update: Uint8Array) => { this.sizeBudget += update.byteLength + 64; this.changeVersion++; });
     if (checkpoint) this.apply(checkpoint);
+    this.index.refresh(); this.sizeBudget = this.stateBytes();
   }
   destroy(): void { this.document.destroy(); }
-  apply(update: string): void {
-    Y.applyUpdate(this.document, decodeBinary(update, Infinity), "persisted");
-    validateBlocks(this.document);
+  apply(update: string): DocumentBlock[] {
+    this.index.refresh();
+    const bytes = decodeBinary(update, Infinity);
+    Y.applyUpdate(this.document, bytes, "persisted");
+    return this.index.refresh();
+  }
+  constraints() { this.index.refresh(); return this.index.constraints(); }
+  validate(previous?: ReturnType<DocumentCore["constraints"]>): void {
+    this.index.refresh();
+    try { this.index.validateLimits(); }
+    catch (error) {
+      const next = this.index.constraints();
+      if (!previous || next.text > previous.text || next.visible > previous.visible || next.total > previous.total
+        || (next.text === previous.text && next.visible === previous.visible && next.total === previous.total)) throw error;
+      this.sizeBudget = this.stateBytes();
+    }
+    if (this.sizeBudget >= documentStateLimit * 0.9) this.sizeBudget = this.stateBytes();
+    if (this.sizeBudget > documentStateLimit) throw new Error("document_too_large");
   }
   checkpoint(limits = true): string {
     const bytes = Y.encodeStateAsUpdate(this.document);
+    this.sizeBudget = bytes.byteLength;
     if (limits && bytes.byteLength > documentStateLimit) throw new Error("document_too_large");
     return encodeBinary(bytes);
   }
@@ -86,7 +185,7 @@ export class DocumentCore {
   difference(vector?: string): string {
     return encodeBinary(Y.encodeStateAsUpdate(this.document, vector ? decodeBinary(vector) : undefined));
   }
-  projection(limits = true): DocumentProjection { return projectDocument(this.document, limits); }
+  projection(limits = true): DocumentProjection { return this.index.projection(limits); }
   purgeDeletedBlocks(expiredBefore: number): number { return purgeDeletedBlocks(this.document, expiredBefore); }
   /** Literal import: no Markdown parsing, trimming, or line-ending normalization. */
   insertText(text: string, newID: () => string): string {

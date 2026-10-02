@@ -2384,21 +2384,29 @@ export interface components {
             legacyUpdate?: string;
         };
         DocumentExchangeResult: {
+            accepted: boolean;
+            /** @enum {string} */
+            reason?: "document_too_large";
             generation: string;
             revision: number;
+            vector: string;
             update: string;
         };
         DocumentExchange: {
+            /** @enum {number} */
+            protocolVersion: 3;
             generation: string;
             vector: string;
             update?: string;
         };
         DocumentRecoveryList: {
             items: (components["schemas"]["DocumentRecovery"] & {
+                sequence: number;
                 /** Format: date-time */
                 createdAt: string;
             })[];
             nextCursor: string | null;
+            cursor: string;
         };
         DocumentRecovery: {
             id: string;
@@ -4168,6 +4176,7 @@ export interface operations {
         parameters: {
             query?: {
                 after?: string;
+                mode?: "sync" | "display";
             };
             header?: {
                 /** @description Expected authenticated public user ID. A mismatch rejects the request before reading or writing document content. */

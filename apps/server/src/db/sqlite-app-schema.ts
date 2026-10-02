@@ -676,11 +676,12 @@ export const documentRecovery = sqliteTable("document_recoveries", {
   id: text("id").primaryKey(),
   documentId: text("document_id").notNull().references(() => document.id, { onDelete: "cascade" }),
   workspaceId: text("workspace_id").notNull().references(() => syncedWorkspace.workspaceId, { onDelete: "cascade" }),
+  sequence: integer("sequence").notNull(),
   blocks: text("blocks", { mode: "json" }).$type<import("../documents/core").DocumentBlock[]>().notNull(),
   reason: text("reason").$type<"deleted" | "concurrent_delete">().notNull(),
   encryptedPayload: text("encrypted_payload"),
   createdAt: sqliteTimestamp("created_at").notNull(),
-}, (table) => [foreignKey({ name: "documentRecovery_workspace_fk", columns: [table.workspaceId, table.documentId], foreignColumns: [document.workspaceId, document.id] }).onDelete("cascade").onUpdate("cascade"), index("document_recoveries_document_cursor").on(table.documentId, table.id)]);
+}, (table) => [foreignKey({ name: "documentRecovery_workspace_fk", columns: [table.workspaceId, table.documentId], foreignColumns: [document.workspaceId, document.id] }).onDelete("cascade").onUpdate("cascade"), uniqueIndex("document_recoveries_document_cursor").on(table.documentId, table.sequence)]);
 
 export const documentPresence = sqliteTable("document_presence", {
   id: text("id").primaryKey(),

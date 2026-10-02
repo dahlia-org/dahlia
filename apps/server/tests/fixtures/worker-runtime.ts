@@ -47,6 +47,41 @@ export default {
         return Response.json({ success: true });
       } finally { core.destroy(); }
     }
+    if (path === "/runtime/document-capacity") {
+      const concurrency = Number(new URL(request.url).searchParams.get("concurrency"));
+      assert.ok(concurrency === 1 || concurrency === 2);
+      const { checkpoint }: { checkpoint: string } = await request.json();
+      const connection = connectPostgresUrl(env.DAHLIA_DATABASE_URL!, 4);
+      try {
+        const store = createPostgresApplicationStore(connection.db);
+        const email = `capacity-${uuidV7()}@fixture.example.com`;
+        const userId = (await store.resolveHeaderUser({ userId: email, email, source: "header" }))!;
+        const identity = { userId, email, source: "header" as const };
+        await store.addAdminUser(email);
+        const organization = await store.organizations.create(identity, { name: "Capacity fixture", slug: `capacity-${uuidV7()}`, initialOwnerUserId: userId });
+        const app = createApp({ config: { databaseType: "postgres", authProvider: "header", authHeader: "Cf-Access-Authenticated-User-Email", baseUrl: "http://localhost:5173", oauthRedirectUris: [], maxRequestBytes: 1_048_576 }, authStore: store });
+        const documents = await Promise.all(Array.from({ length: concurrency }, async () => {
+          const workspaceId = uuidV7(), meetingId = uuidV7(), documentId = uuidV7();
+          await new MeetingSyncService(store.sync).commitTransaction(identity, { id: uuidV7(), schemaVersion: 3, workspaceId, createdAt: new Date().toISOString(), operations: [
+            { id: uuidV7(), entity: "workspace", action: "create", entityId: workspaceId, baseRevision: null, data: { organizationId: organization.id, name: "Capacity", encryption: "none", createdAt: new Date().toISOString() } },
+            { id: uuidV7(), entity: "meeting", action: "create", entityId: meetingId, baseRevision: null, data: { name: "Meeting", projectId: null, status: "READY", duration: null, recordingStartedAt: null, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() } },
+          ] });
+          const document = await store.sync.withIdentity(identity, (scoped) => scoped.initializeMeetingNotes(workspaceId, meetingId, documentId));
+          return { workspaceId, documentId, generation: document.generation };
+        }));
+        const began = performance.now();
+        const results = await Promise.all(documents.map(async ({ workspaceId, documentId, generation }) => {
+          const response = await app.request(`/api/v1/workspaces/${encodeId("workspace", workspaceId)}/documents/${encodeId("document", documentId)}/sync`, {
+            method: "POST", headers: { "Cf-Access-Authenticated-User-Email": email, "content-type": "application/json" },
+            body: JSON.stringify({ protocolVersion: 3, generation, vector: "AA==", update: checkpoint }),
+          });
+          assert.equal(response.status, 200);
+          const result: { accepted: boolean; revision: number } = await response.json();
+          assert.equal(result.accepted, true); return { accepted: result.accepted, revision: result.revision };
+        }));
+        return Response.json({ concurrency, durationMs: performance.now() - began, results });
+      } finally { await connection.close(); }
+    }
     if (path === "/runtime/sync-notifications") {
       const writer = connectPostgresUrl(env.DAHLIA_DATABASE_URL!, 2), readerConnection = connectPostgresUrl(env.DAHLIA_DATABASE_URL!, 2);
       let stream: ReadableStreamDefaultReader<Uint8Array> | undefined;

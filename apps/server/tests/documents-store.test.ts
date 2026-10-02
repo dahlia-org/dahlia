@@ -13,6 +13,7 @@ import { createNodeApplicationStore } from "../src/auth/node-store";
 import { MeetingSyncService } from "../src/sync/service";
 import { uuidV7 } from "../src/id";
 import { seedHeaderIdentity, testOrganizationID, testUserID } from "./public-test-client";
+import { DocumentSession, type PendingDocumentUpdate } from "../src/documents/session";
 import { DocumentCore } from "../src/documents/core";
 import { blockMap } from "../src/documents/blocks";
 import { firstText, deleteFirst } from "./fixtures/document-helpers";
@@ -124,7 +125,7 @@ it("accepts a whole valid state through the dedicated HTTP budget", async () => 
     const app = createApp({ config: f.config, authStore: f.store });
     const response = await app.request(`/api/v1/workspaces/${encodeId("workspace", f.workspaceId)}/documents/${encodeId("document", f.documentId)}/sync`, {
       method: "POST", headers: { "content-type": "application/json", "X-Forwarded-Email": `${owner.userId}@example.com` },
-      body: JSON.stringify({ generation: document.generation, vector: core.vector(), update }),
+      body: JSON.stringify({ protocolVersion: 3, generation: document.generation, vector: core.vector(), update }),
     });
     expect(response.status).toBe(200);
     const db = new DatabaseSync(f.path);
@@ -145,7 +146,7 @@ it.each(["initialize", "exchange"])("rejects v1 storage atomically (%s)", async 
       : `/api/v1/workspaces/${workspace}/documents/${encodeId("document", f.documentId)}/sync`, {
       method: "POST", headers: { "content-type": "application/json", "X-Forwarded-Email": `${owner.userId}@example.com` },
       body: JSON.stringify(operation === "initialize" ? { id: encodeId("document", f.documentId), legacyUpdate: submitted }
-        : { generation: initial!.generation, vector, update: submitted }),
+        : { protocolVersion: 3, generation: initial!.generation, vector, update: submitted }),
     });
     expect(response.status).toBe(422);
     expect(await f.run((s) => s.getMeetingNotes(f.workspaceId, f.meetingId))).toEqual(initial);
@@ -365,13 +366,13 @@ it.each([false, true])("delivers committed revisions over SSE across application
     expect(await frame()).toContain(`id: ${document.generation}:0`);
     core.insertText("committed", uuidV7);
     const update = await writer.request(`${path}/sync`, { method: "POST", headers,
-      body: JSON.stringify({ generation: document.generation, vector: core.vector(), update: core.checkpoint() }) });
+      body: JSON.stringify({ protocolVersion: 3, generation: document.generation, vector: core.vector(), update: core.checkpoint() }) });
     expect(update.status).toBe(200);
     const committed = documentExchangeResultSchema.parse(await update.json());
     expect(await frame()).toContain(`id: ${committed.generation}:${committed.revision}`);
     expect((await f.run((s) => s.getDocument(f.workspaceId, f.documentId)))?.text).toBe("committed");
     const invalid = await writer.request(`${path}/sync`, { method: "POST", headers,
-      body: JSON.stringify({ generation: uuidV7(), vector: core.vector(), update: core.checkpoint() }) });
+      body: JSON.stringify({ protocolVersion: 3, generation: uuidV7(), vector: core.vector(), update: core.checkpoint() }) });
     expect(invalid.status).toBe(409);
     expect((await f.run((s) => s.documentHead(f.workspaceId, f.documentId)))?.revision).toBe(committed.revision);
   } finally { await reader.cancel(); core.destroy(); }
@@ -546,4 +547,63 @@ it("publishes domain hints only after successful commits, never after rolled-bac
   const db = new DatabaseSync(f.path);
   try { expect(db.prepare("SELECT name FROM meetings WHERE meeting_id = ?").get(f.meetingId)?.name).toBe("committed"); }
   finally { db.close(); published.mockRestore(); }
+});
+
+
+it("receives after capacity rejection, suppresses the same batch and accepts a corrective deletion", async () => {
+  const f = await setup();
+  const initial = await f.run((s) => s.initializeMeetingNotes(f.workspaceId, f.meetingId, f.documentId));
+  const a = new DocumentCore(), b = new DocumentCore();
+  a.insertText("A".repeat(1_600_000), uuidV7); b.insertText("B".repeat(1_600_000), uuidV7);
+  await f.run((s) => s.exchangeDocument(f.workspaceId, f.documentId, { generation: initial.generation, vector: a.vector(), update: a.checkpoint() }));
+  let sequence = 0; const pending: PendingDocumentUpdate[] = [], sent: (string | undefined)[] = [];
+  const session = new DocumentSession({ newID: uuidV7,
+    append: async (update, local) => { const next = ++sequence; if (local) pending.push({ sequence: next, update }); return next; },
+    pending: async () => [...pending], acknowledge: async (through) => { while (pending[0] && pending[0].sequence <= through) pending.shift(); },
+    checkpoint: async () => {},
+    exchange: async (request) => { sent.push(request.update); return f.run((s) => s.exchangeDocument(f.workspaceId, f.documentId, { ...request, generation: initial.generation })); },
+  }, { checkpoint: initial.checkpoint, generation: initial.generation, revision: 0 });
+  try {
+    await session.accept(b.checkpoint(), true);
+    await expect(session.synchronize()).rejects.toThrow("document_too_large");
+    expect(session.core.projection(false).text).toContain("A".repeat(100));
+    await expect(session.synchronize()).rejects.toThrow("document_too_large");
+    expect(sent[1]).toBeUndefined(); expect(pending).toHaveLength(1);
+    const vector = b.vector(); firstText(b).delete(0, firstText(b).length);
+    await session.accept(b.difference(vector), true); await session.flush();
+    expect(pending).toHaveLength(0);
+    expect((await f.run((s) => s.getDocument(f.workspaceId, f.documentId)))!.text.replaceAll("\n", "")).toBe("A".repeat(1_600_000));
+  } finally { await session.close(); a.destroy(); b.destroy(); }
+});
+
+it("bounds recovery catch-up with a high-water cursor and finds late IDs on the next pass", async () => {
+  const f = await setup();
+  await f.run((s) => s.initializeMeetingNotes(f.workspaceId, f.meetingId, f.documentId));
+  const records = Array.from({ length: 120 }, (_, i) => ({ id: uuidV7(), reason: "deleted" as const, blocks: [{ id: `block-${i}`, type: "paragraph", text: String(i) }] }));
+  for (const record of records) await f.run((s) => s.saveDocumentRecovery(f.workspaceId, f.documentId, record));
+  const first = await f.run((s) => s.documentRecoveries(f.workspaceId, f.documentId));
+  expect(first.items).toHaveLength(100); expect(first.items[0]!.sequence).toBe(1);
+  const late = { id: "00000000-0000-4000-8000-000000000001", reason: "deleted" as const, blocks: [{ id: "late", type: "paragraph", text: "late" }] };
+  await f.run((s) => s.saveDocumentRecovery(f.workspaceId, f.documentId, late));
+  await f.run((s) => s.saveDocumentRecovery(f.workspaceId, f.documentId, late));
+  const second = await f.run((s) => s.documentRecoveries(f.workspaceId, f.documentId, first.nextCursor!));
+  expect(second.items).toHaveLength(20); expect(second.nextCursor).toBeNull();
+  const next = await f.run((s) => s.documentRecoveries(f.workspaceId, f.documentId, second.cursor));
+  expect(next.items.map((item) => [item.id, item.sequence])).toEqual([[late.id, 121]]);
+  expect((await f.run((s) => s.documentRecoveries(f.workspaceId, f.documentId, next.cursor))).items).toEqual([]);
+  const display = await f.run((s) => s.documentRecoveries(f.workspaceId, f.documentId, undefined, "display"));
+  expect(display.items[0]!.id).toBe(late.id);
+  await expect(f.run((s) => s.documentRecoveries(f.workspaceId, f.documentId, display.cursor))).rejects.toThrow("invalid_document_cursor");
+});
+
+it("rejects old protocol requests before writing any document state", async () => {
+  const f = await setup();
+  const initial = await f.run((s) => s.initializeMeetingNotes(f.workspaceId, f.meetingId, f.documentId));
+  const app = createApp({ config: f.config, authStore: f.store });
+  const response = await app.request(`/api/v1/workspaces/${encodeId("workspace", f.workspaceId)}/documents/${encodeId("document", f.documentId)}/sync`, {
+    method: "POST", headers: { "content-type": "application/json", "X-Forwarded-Email": `${owner.userId}@example.com` },
+    body: JSON.stringify({ generation: initial.generation, vector: "AA==", update: "AAA=" }),
+  });
+  expect(response.status).toBe(400);
+  expect((await f.run((s) => s.getDocument(f.workspaceId, f.documentId)))!.revision).toBe(0);
 });

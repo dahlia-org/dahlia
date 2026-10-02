@@ -40,6 +40,24 @@ try {
       OPENAI_BASE_URL: 'https://api.cloudflare.com/client/v4/accounts/synthetic/ai/v1', OPENAI_API_KEY: 'synthetic' } });
   await mf.ready;
   assert.deepEqual(await (await mf.dispatchFetch('http://localhost:5173/runtime/documents')).json(), { success: true });
+  if (process.env.DOCUMENT_CAPACITY_FIXTURE || process.env.DOCUMENT_CAPACITY_CHECK === '1') {
+    let body;
+    if (process.env.DOCUMENT_CAPACITY_FIXTURE) body = await readFile(process.env.DOCUMENT_CAPACITY_FIXTURE, 'utf8');
+    else {
+      const generated = await build({ entryPoints: ['tests/fixtures/document-helpers.ts'], bundle: true, write: false, format: 'esm', platform: 'node' });
+      const { capacityDocumentCheckpoint } = await import(`data:text/javascript;base64,${Buffer.from(generated.outputFiles[0].text).toString('base64')}`);
+      const fixture = capacityDocumentCheckpoint();
+      assert.equal(fixture.totalBlocks, 8000); assert.equal(fixture.textUnits, 1994999);
+      assert(fixture.stateBytes > 6 * 1024 * 1024 && fixture.stateBytes <= 8 * 1024 * 1024);
+      console.log(JSON.stringify({ runtime: 'node', capacityFixture: { totalBlocks: fixture.totalBlocks, textUnits: fixture.textUnits, stateBytes: fixture.stateBytes } }));
+      body = JSON.stringify({ checkpoint: fixture.checkpoint });
+    }
+    for (const concurrency of [1, 2]) {
+      const response = await mf.dispatchFetch(`http://localhost:5173/runtime/document-capacity?concurrency=${concurrency}`, { method: 'POST', body });
+      assert.equal(response.status, 200, `document capacity (${concurrency}): ${response.status}`);
+      console.log(JSON.stringify({ runtime: 'workerd', documentCapacity: await response.json() }));
+    }
+  }
   const startupMs = Math.round(performance.now() - started);
   const unified = await mf.dispatchFetch('http://localhost:5173/runtime/sync-notifications');
   assert.equal(unified.status, 200, await unified.clone().text());

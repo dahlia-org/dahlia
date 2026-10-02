@@ -370,6 +370,33 @@
             }
         }
 
+        @Test(arguments: ["v53_documentsSyncAndBackgroundJobs", "v54_serverContentRetention"])
+        func v53DevelopmentDatabasePreservesPendingDocumentAndRecovery(prior: String) throws {
+            let queue = try DatabaseQueue(configuration: AppDatabaseManager.configuration())
+            try DevelopmentSchemaHistory.migrator(for: prior).migrate(queue)
+            let workspaceID = UUID.v7(), documentID = UUID.v7(), recoveryID = UUID.v7()
+            try queue.write { db in
+                try WorkspaceRecord(id: workspaceID, path: nil, name: "Development", createdAt: .now, lastOpenedAt: .now).insert(db)
+                try db.execute(sql: """
+                INSERT INTO documents(id, workspace_id, kind, checkpoint, createdAt, updatedAt)
+                VALUES (?, ?, 'general', 'AAA=', ?, ?);
+                INSERT INTO document_updates(documentId, payload, pending, createdAt) VALUES (?, 'AAA=', 1, ?);
+                INSERT INTO document_recoveries(id, documentId, blocksJSON, reason, pending, createdAt)
+                VALUES (?, ?, '[]', 'deleted', 1, ?);
+                """, arguments: [documentID, workspaceID, Date(), Date(), documentID, Date(), recoveryID, documentID, Date()])
+                #expect(try db.columns(in: "documents").first(where: { $0.name == "schemaVersion" })?.defaultValueSQL == "1")
+                #expect(try AppDatabaseManager.hasExpectedSchema(db, upTo: prior))
+            }
+            try AppDatabaseManager.migrator.migrate(queue)
+            try queue.read { db throws in
+                #expect(try DocumentRecord.fetchOne(db, key: documentID)?.schemaVersion == 1)
+                #expect(try DocumentUpdateRecord.filter(Column("documentId") == documentID).filter(Column("pending") == true).fetchCount(db) == 1)
+                #expect(try DocumentRecoveryRecord.fetchOne(db, key: recoveryID)?.pending == true)
+                #expect(try Row.fetchAll(db, sql: "PRAGMA foreign_key_check").isEmpty)
+                #expect(try AppDatabaseManager.hasExpectedCurrentSchema(db))
+            }
+        }
+
         @Test
         func freshDatabaseRegistersConsolidatedMigration() throws {
             let database = try AppDatabaseManager(path: ":memory:")
@@ -382,8 +409,8 @@
                 "v45_workspaceLiveTranscriptDraft",
                 "v46_workspacePersonalUser",
                 "v47_orphanedRecordingRecoveryState",
-                "v53_documentsSyncAndBackgroundJobs",
-                "v54_serverContentRetention",
+                "v54_documentsSyncAndBackgroundJobs",
+                "v55_serverContentRetention",
             ])
             try database.dbQueue.read { db throws in
                 #expect(try Row.fetchAll(db, sql: "PRAGMA foreign_key_check").isEmpty)

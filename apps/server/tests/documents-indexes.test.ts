@@ -20,7 +20,7 @@ it("uses bounded document indexes for recovery pages, presence reads and expiry 
         'workspace', 'user', CASE WHEN g <= 10 THEN 0 ELSE 2 END FROM n;
       ANALYZE document_presence;`);
     const cases = [
-      ["SELECT id FROM document_recoveries WHERE document_id = 'doc' AND workspace_id = 'workspace' AND id > 'cursor' ORDER BY id LIMIT 101", "document_recoveries_document_cursor"],
+      ["SELECT id FROM document_recoveries WHERE document_id = 'doc' AND workspace_id = 'workspace' AND sequence > 0 AND sequence <= 100 ORDER BY sequence LIMIT 101", "document_recoveries_document_cursor"],
       ["SELECT user_id FROM document_presence WHERE document_id = 'doc' AND workspace_id = 'workspace' AND expires_at > 1", "document_presence_document_expiry"],
       ["DELETE FROM document_presence WHERE workspace_id = 'workspace' AND expires_at <= 1", "document_presence_workspace_expiry"],
       ["SELECT id FROM documents WHERE workspace_id = 'workspace' AND id > 'cursor' ORDER BY id LIMIT 101", "COVERING INDEX"],

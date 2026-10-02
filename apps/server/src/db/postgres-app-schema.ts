@@ -885,11 +885,12 @@ export const documentRecovery = appSchema.table("document_recoveries", {
   id: uuid("id").primaryKey(),
   documentId: uuid("document_id").notNull().references(() => document.id, { onDelete: "cascade" }),
   workspaceId: uuid("workspace_id").notNull().references(() => syncedWorkspace.workspaceId, { onDelete: "cascade" }),
+  sequence: integer("sequence").notNull(),
   blocks: jsonb("blocks").$type<import("../documents/core").DocumentBlock[]>().notNull(),
   reason: text("reason").$type<"deleted" | "concurrent_delete">().notNull(),
   encryptedPayload: text("encrypted_payload"),
   createdAt: timestamp("created_at").notNull(),
-}, (table) => [foreignKey({ name: "documentRecovery_workspace_fk", columns: [table.workspaceId, table.documentId], foreignColumns: [document.workspaceId, document.id] }).onDelete("cascade").onUpdate("cascade"), index("document_recoveries_document_cursor").on(table.documentId, table.id), ...documentPolicies("document_recovery", table.workspaceId)]).enableRLS();
+}, (table) => [foreignKey({ name: "documentRecovery_workspace_fk", columns: [table.workspaceId, table.documentId], foreignColumns: [document.workspaceId, document.id] }).onDelete("cascade").onUpdate("cascade"), uniqueIndex("document_recoveries_document_cursor").on(table.documentId, table.sequence), ...documentPolicies("document_recovery", table.workspaceId)]).enableRLS();
 
 export const documentPresence = appSchema.table("document_presence", {
   id: uuid("id").primaryKey(),

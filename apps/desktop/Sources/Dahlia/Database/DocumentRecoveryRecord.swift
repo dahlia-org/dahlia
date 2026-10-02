@@ -9,4 +9,5 @@ struct DocumentRecoveryRecord: Codable, FetchableRecord, PersistableRecord, Send
     var reason: String
     var pending: Bool
     var createdAt: Date
+    var serverSequence: Int64?
 }

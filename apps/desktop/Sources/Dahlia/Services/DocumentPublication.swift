@@ -14,7 +14,7 @@ enum DocumentPublication {
         let source = try await dbQueue.read { db in
             try MeetingRecord.filter(Column("workspace_id") == workspaceID).order(Column("createdAt")).fetchAll(db)
         }
-        let persistence = DocumentPersistence(dbQueue: dbQueue)
+        let persistence = DocumentPersistence.shared(dbQueue: dbQueue)
         var result: [Candidate] = []
         for meeting in source {
             let existing = try await dbQueue.read { db -> (Bool, DocumentPrivateCopyRecord?, MeetingNoteRecord?) in

@@ -4,13 +4,31 @@ import GRDB
 enum DocumentsAndSyncMigration {
     static let legacyIdentifiers: Set = [
         "v47_documents", "v48_independentDocuments", "v49_workspaceImportDestinations",
-        "v50_syncPriority", "v51_scopedSyncReconciliation", "v52_documentsAndSync", "v53_sharedBackgroundJobs",
+        "v50_syncPriority", "v51_scopedSyncReconciliation", "v52_documentsAndSync", "v53_sharedBackgroundJobs", "v53_documentsSyncAndBackgroundJobs",
     ]
 
     static func register(in migrator: inout DatabaseMigrator) {
-        migrator.registerMigration("v53_documentsSyncAndBackgroundJobs", merging: legacyIdentifiers) { db, applied in
-            try migrateDocumentsAndSync(in: db, applied: applied)
-            if !applied.contains("v53_sharedBackgroundJobs") { try BackgroundJobsMigration.migrate(in: db) }
+        migrator.registerMigration("v54_documentsSyncAndBackgroundJobs", foreignKeyChecks: .deferred, merging: legacyIdentifiers) { db, applied in
+            if !applied.contains("v53_documentsSyncAndBackgroundJobs") {
+                try migrateDocumentsAndSync(in: db, applied: applied)
+                if !applied.contains("v53_sharedBackgroundJobs") { try BackgroundJobsMigration.migrate(in: db) }
+            }
+            if try db.tableExists("documents") {
+                let columns = try db.columns(in: "documents").map(\.name)
+                if !columns
+                    .contains("recoverySequence") {
+                    try db
+                        .execute(
+                            sql: "ALTER TABLE documents ADD COLUMN recoverySequence INTEGER NOT NULL DEFAULT 0; UPDATE documents SET recoverySequence = checkpointSequence"
+                        )
+                }
+                if !columns.contains("recoveryCursor") { try db.execute(sql: "ALTER TABLE documents ADD COLUMN recoveryCursor TEXT") }
+                if try !db.columns(in: "document_recoveries").contains(where: { $0.name == "serverSequence" }) {
+                    try db.execute(sql: "ALTER TABLE document_recoveries ADD COLUMN serverSequence INTEGER")
+                }
+                try DocumentsMigration.upgradeDevelopmentDefault(in: db)
+                try db.execute(sql: "CREATE INDEX IF NOT EXISTS document_recoveries_document ON document_recoveries(documentId, createdAt)")
+            }
         }
     }
 

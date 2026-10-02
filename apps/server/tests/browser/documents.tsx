@@ -23,13 +23,13 @@ if (!client) {
   window.fetch = async (input, init) => {
     if (offline) throw new TypeError("Synthetic offline connection");
     const request = new Request(input, init), url = new URL(request.url);
-    if (url.pathname.endsWith("/capabilities")) return Response.json({ documents: { version: 2 } });
+    if (url.pathname.endsWith("/capabilities")) return Response.json({ documents: { version: 3 } });
     if (url.pathname.endsWith("/session")) return Response.json({ user: { id: encodeId("user", client === "A" ? "019959c4-4000-7000-8000-000000000003" : "019959c4-4000-7000-8000-000000000004") } });
     const body: Record<string, unknown> = request.method === "POST" ? await request.json() : {};
     if (url.pathname.endsWith("/presence")) return Response.json({ items: [] });
     if (url.pathname.endsWith("/recoveries")) {
       if (request.method === "POST") state.recoveries.push(body as unknown as DocumentRecovery);
-      return Response.json({ items: state.recoveries.map((item) => ({ ...item, createdAt: now() })), nextCursor: null });
+      return Response.json({ items: state.recoveries.map((item, index) => ({ ...item, sequence: index + 1, createdAt: now() })), nextCursor: null, cursor: "fixture-cursor" });
     }
     if (url.pathname.endsWith("/sync")) {
       if (body.update) {
@@ -40,7 +40,7 @@ if (!client) {
         state.core.purgeDeletedBlocks(Date.now() - 86_400_000);
         if (checkpoint !== state.core.checkpoint()) state.revision++;
       }
-      return Response.json({ generation: state.generation, revision: state.revision, update: state.core.difference(body.vector as string) });
+      return Response.json({ accepted: true, vector: state.core.vector(), generation: state.generation, revision: state.revision, update: state.core.difference(body.vector as string) });
     }
     if (request.method === "POST") state.initialized = true;
     return Response.json({ document: state.initialized ? { id: documentId, workspaceId: workspace, meetingId: meeting, schemaVersion: 2,

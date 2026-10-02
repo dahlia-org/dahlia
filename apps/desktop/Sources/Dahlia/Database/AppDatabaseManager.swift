@@ -134,7 +134,8 @@ final class AppDatabaseManager: Sendable {
     static let migrator: DatabaseMigrator = {
         var migrator = releasedMigrator
         DocumentsAndSyncMigration.register(in: &migrator)
-        migrator.registerMigration("v54_serverContentRetention") { db in
+        migrator.registerMigration("v55_serverContentRetention", merging: ["v54_serverContentRetention"]) { db, applied in
+            guard !applied.contains("v54_serverContentRetention") else { return }
             let now = Date()
             if try db.tableExists("sync_content_state") {
                 try db.execute(
@@ -451,7 +452,8 @@ final class AppDatabaseManager: Sendable {
     }
 
     static func schemaMigrator(for identifier: String) -> DatabaseMigrator {
-        DocumentsAndSyncMigration.legacyIdentifiers.contains(identifier) ? DevelopmentSchemaHistory.migrator(for: identifier) : migrator
+        (DocumentsAndSyncMigration.legacyIdentifiers.contains(identifier) || identifier == "v54_serverContentRetention") ? DevelopmentSchemaHistory
+            .migrator(for: identifier) : migrator
     }
 
     static func hasExpectedSchema(

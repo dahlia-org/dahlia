@@ -63,8 +63,8 @@ it.runIf(process.env.TEST_MIGRATION_DATABASE_URL)("creates the complete PostgreS
     await client.query(`INSERT INTO app.documents(id, workspace_id, kind, generation, checkpoint, text, created_at, updated_at)
       SELECT md5('index-document-' || g)::uuid, $1, 'general', md5('generation-' || g)::uuid, 'AAA=', '', now(), now()
       FROM generate_series(1, 2000) g`, [owner]);
-    await client.query(`INSERT INTO app.document_recoveries(id, document_id, workspace_id, blocks, reason, created_at)
-      SELECT md5('recovery-' || g)::uuid, md5('index-document-' || (1 + g % 2000))::uuid, $1, '[]', 'concurrent_delete', now()
+    await client.query(`INSERT INTO app.document_recoveries(id, document_id, workspace_id, blocks, reason, sequence, created_at)
+      SELECT md5('recovery-' || g)::uuid, md5('index-document-' || (1 + g % 2000))::uuid, $1, '[]', 'concurrent_delete', g, now()
       FROM generate_series(1, 20000) g`, [owner]);
     await client.query(`INSERT INTO app.document_presence(id, document_id, workspace_id, user_id, expires_at)
       SELECT md5('presence-' || g)::uuid, md5('index-document-' || (1 + g % 2000))::uuid, $1, $1,
@@ -73,7 +73,7 @@ it.runIf(process.env.TEST_MIGRATION_DATABASE_URL)("creates the complete PostgreS
     await client.query("ANALYZE app.documents; ANALYZE app.document_recoveries; ANALYZE app.document_presence");
     const documentID = (await client.query<{ id: string }>("SELECT md5('index-document-1')::uuid AS id")).rows[0]!.id;
     for (const [query, index, parameters] of [
-      ["SELECT id FROM app.document_recoveries WHERE workspace_id = $1 AND document_id = $2 ORDER BY id LIMIT 101", "document_recoveries_document_cursor", [owner, documentID]],
+      ["SELECT id FROM app.document_recoveries WHERE workspace_id = $1 AND document_id = $2 AND sequence > 0 AND sequence <= 20000 ORDER BY sequence LIMIT 101", "document_recoveries_document_cursor", [owner, documentID]],
       ["SELECT user_id FROM app.document_presence WHERE workspace_id = $1 AND document_id = $2 AND expires_at > $3", "document_presence_document_expiry", [owner, documentID, new Date().toISOString()]],
       ["SELECT id FROM app.document_presence WHERE workspace_id = $1 AND expires_at <= $2", "document_presence_workspace_expiry", [owner, new Date().toISOString()]],
     ] as const) {

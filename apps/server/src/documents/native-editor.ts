@@ -5,7 +5,7 @@ import { DocumentEditorHydration, mountDocumentEditor } from "./editor";
 declare global {
   interface Window {
     webkit: { messageHandlers: { document: { postMessage(value: unknown): void } } };
-    dahliaDocument: { open(checkpoint: string, editable: boolean, placeholder: string): void; receive(update: string): void; setEditable(editable: boolean): void; drain(): { update: string; recovery?: string } | null };
+    dahliaDocument: { open(checkpoint: string, editable: boolean, placeholder: string): void; receive(update: string, vector?: string): void; setEditable(editable: boolean): void; drain(): { update: string; recovery?: string } | null };
   }
 }
 const document = new Y.Doc();
@@ -49,8 +49,8 @@ window.dahliaDocument = {
     pendingRecovery = [];
     return { update: encodeBinary(update), ...(recovery ? { recovery } : {}) };
   },
-  receive(update) {
-    hydration.receive(decodeBinary(update, Infinity));
+  receive(update, vector) {
+    hydration.receive(decodeBinary(update, Infinity), vector ? decodeBinary(vector, Infinity) : undefined);
   },
   setEditable(editable) { editor?.setEditable(editable); },
 };

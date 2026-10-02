@@ -1766,6 +1766,9 @@
 "documentUnsupportedSchema" = "旧バージョンのノート形式には対応していません。データは端末に保持されています。";
 "documentTooLarge" = "ノートの上限を超えるため変更できません。内容を減らすか、同期後に再試行してください。";
 
+"documentHistoryPrevious" = "前へ";
+"documentHistoryNext" = "次へ";
+"documentHistoryFullText" = "全文を表示";
 "server.content.retention" = "Serverデータのローカル保持期間";
 "server.content.retention.days" = "保持日数";
 "server.content.retention.description" = "Server連携直後に過去のデータが自動削除されることを防ぐため、既定は無期限です。このMacで作成・編集・閲覧・初回取得したServerデータを、指定期間は保持します。全Serverアカウントの本文・Documents・取得済み画像に適用されます。期間を過ぎた未使用データは、容量上限を超えた場合にバックグラウンドで削除し、必要時に再取得します。無期限では自動削除しません。保持期間を優先するため容量上限を超える場合があります。録音音声は別の保持設定に従います。";
