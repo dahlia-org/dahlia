@@ -1299,6 +1299,7 @@
 "Close search" = "検索を閉じる";
 "Remove search filter" = "検索フィルターを削除";
 "Search unavailable" = "検索を利用できません";
+"search.indexRecovery" = "検索インデックスを準備できません。設定 → 検索 → 全文検索を再構築から再試行してください。";
 "Select a Workspace to search." = "検索するにはWorkspaceを選択してください。";
 "Show chat" = "チャットを表示";
 "Shown" = "表示中";

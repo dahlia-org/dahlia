@@ -50,6 +50,8 @@ screenshot は独立結果と `query_screenshots` で返し、meeting に集約�
 
 通常は source hash 一致で再処理を省略し、明示 rebuild / repair は全行を再解析する。cleanup は analyzer failure 中も続ける。job 5回失敗で index failed とし無限 retry しない。画像固有 failure は meeting / Project FTS を failed にしない。
 
+SQLite の `BUSY` / `LOCKED` は一時的な競合として30秒後に再試行し、index failed にせず job の試行回数も消費しない。解放の DB write も競合した場合は解放要求を保持し、次の drain で取得処理より先に再試行する。試行回数を戻すのは、キャンセルまたは一時的な競合で中断したことが分かる解放要求に限定する。クラッシュなどで解放要求が失われた場合、期限切れ processing job の試行回数は消費したままとし、pending / processing とも上限に達した job は明示再構築まで保持する。録音によるキャンセルでは失敗状態を記録しない。旧版が `DatabaseError` として固定した failed 状態は、起動時に一度だけ検索 projection を再構築する。録音終了後の再開では自動復旧を繰り返さず、画像解析の試行上限も保持する。復旧後の恒久エラーは基本・拡張 SQLite code を内容や SQL を含めず記録し、設定の明示再構築で再試行する。
+
 enqueue と projection 更新で revision を同 transaction で進め、query cursor を無効化する。初期 / 全再構築中は unavailable とし、勝手に LIKE へ縮退しない。正本は保持し、snippet は正本から再生成する。contentless column の直接 SELECT は本文取得ではない。FTS secure-delete と索引削除時の SQLite secure_delete を使い、contentless-delete に SQLite 3.43以上を要求する。
 
 固定 evidence class、80文字の vector 足切り、Project による meeting 補正は廃止した。Project を除いた benchmark は旧正解データを再利用せず別 key で生成する。保存済み projectPath 重みは無視し、残りを保つ。schema / model / 索引条件の変更は意味を変えずに履歴へ残す。

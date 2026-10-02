@@ -679,7 +679,7 @@ enum MeetingSearchError: LocalizedError {
 
     var errorDescription: String? {
         switch self {
-        case .indexUnavailable: L10n.searchUnavailable
+        case .indexUnavailable: L10n.searchIndexRecovery
         case .queryTooBroad: L10n.searchQueryTooBroad
         }
     }
