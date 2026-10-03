@@ -306,9 +306,7 @@ describe("deployment routing", () => {
       catalog_name: \${var.catalog}
       schema_name: \${resources.schemas.app_schema.name}
       name: \${var.volume_name}`);
-    expect(resource).toContain("name: DAHLIA_FOUNDATION_MODELS");
-    expect(resource).toContain("name: DAHLIA_FOUNDATION_MODELS\n            value: system.ai.gpt-6-astra,system.ai.gpt-6-sol,system.ai.gpt-6-luna,");
-    expect(resource).toContain("system.ai.gpt-5-6-luna");
+    expect(resource).not.toContain("name: DAHLIA_FOUNDATION_MODELS");
     expect(resource).not.toContain("DATABRICKS_MODEL_SCHEMA");
     expect(resource).not.toContain("ai_schema");
     expect(resource).toContain("name: DAHLIA_IMAGE_ANALYSIS_MODEL");

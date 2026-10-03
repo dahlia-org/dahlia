@@ -29,3 +29,7 @@ managed Volume resource key は `dahlia_storage`、既定名は `storage`。Unit
 発見用の `catalog.catalogs:read` / `catalog.schemas:read` user scope は廃止した。DAB の OBO scope と Desktop の `all-apis` は [共通 OAuth](../shared/oauth.md#scope) の別境界。provider secret を bundle や利用者へ配布せず、App runtime から取得する。
 
 2026-09-05 に DB の Model Alias 管理を廃止し、2026-09-16 に backend discovery と DAB の暫定登録処理を廃止した。公開名・予約モデルは [Backend モデル契約](gateway.md#backend-モデル契約) に従う。
+
+## 2026-10-03: プラットフォームによるモデル公開管理
+
+Databricks の表示モデル管理機能に合わせ、上記の設定一覧方式を廃止する。Gateway は `/ai-gateway/codex/v1/models` と `/ai-gateway/codex/v1/responses` を使用し、モデル公開・順序・metadata・client version 判定・推論のモデル認可をプラットフォームに委ねる。モデル一覧も OBO token を優先し、ない場合は App service principal の短期 token を使う。失敗時にローカル JSON へ fallback しない。background Chat Completions と Embeddings は `/ai-gateway/mlflow/v1` を維持する。

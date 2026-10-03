@@ -21,6 +21,8 @@ export interface RequestContext {
 }
 
 export interface ListModelsRequest {
+  headers?: Headers;
+  clientVersion?: string;
   signal: AbortSignal;
 }
 

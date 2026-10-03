@@ -30,9 +30,9 @@ export function createSearchEmbedder(
   const execution = createJobProvider(config, transport);
   if (!execution) throw new Error("Embedding provider is not configured");
   const cloudflare = execution.provider.backend === "cloudflare";
-  const endpoint = new URL(cloudflare
-    ? `${execution.provider.baseUrl.replace(/\/v1\/?$/, "")}/run/${embedding.model}`
-    : `${execution.provider.baseUrl.replace(/\/$/, "")}/embeddings`);
+  const endpoint = cloudflare
+    ? new URL(`${execution.provider.baseUrl.replace(/\/v1\/?$/, "")}/run/${embedding.model}`)
+    : new URL("/ai-gateway/mlflow/v1/embeddings", execution.provider.baseUrl);
   const request = async (input: string[], instruction?: string, signal?: AbortSignal): Promise<number[][]> => {
     let headers: Record<string, string>;
     try {

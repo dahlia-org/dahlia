@@ -252,12 +252,12 @@ describe("AI chat boundary", () => {
     }));
     vi.stubGlobal("fetch", inference);
     const config = {
-      provider: { backend: "databricks", baseUrl: "https://workspace.example/ai-gateway/mlflow/v1" },
+      provider: { backend: "databricks", baseUrl: "https://workspace.example/ai-gateway/codex/v1" },
       databricksWorkspace: {
         host: "https://workspace.example", clientId: "app-client", clientSecret: "app-secret",
         tokenUrl: "https://workspace.example/oidc/v1/token",
       },
-      baseUrl: "https://dahlia.example", foundationModels: ["system.ai.gpt-5-6-luna"],
+      baseUrl: "https://dahlia.example",
     } as AppConfig;
     const gateway = { models: async () => ({
       data: [{ id: "system.ai.gpt-5-6-luna", display_name: "GPT 5.6 Luna" }],
@@ -271,7 +271,7 @@ describe("AI chat boundary", () => {
     await expect(stream[Symbol.asyncIterator]().next()).rejects.toThrow("captured");
     expect(tokenTransport).toHaveBeenCalledOnce();
     expect(String(tokenTransport.mock.calls[0]![0])).toBe("https://workspace.example/oidc/v1/token");
-    expect(String(inference.mock.calls[0]![0])).toBe("https://workspace.example/ai-gateway/mlflow/v1/responses");
+    expect(String(inference.mock.calls[0]![0])).toBe("https://workspace.example/ai-gateway/codex/v1/responses");
     expect(new Headers(inference.mock.calls[0]![1]?.headers).get("authorization")).toBe("Bearer app-token");
     vi.unstubAllGlobals();
   });

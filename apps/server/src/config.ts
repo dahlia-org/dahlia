@@ -209,7 +209,7 @@ function providerConfig(
     if (new URL(host).pathname !== "/") throw new Error("DATABRICKS_HOST must be a workspace origin without a path");
     return {
       backend,
-      baseUrl: `${host}/ai-gateway/mlflow/v1`,
+      baseUrl: `${host}/ai-gateway/codex/v1`,
     };
   }
   const apiKey = env.OPENAI_API_KEY?.trim();
@@ -255,7 +255,7 @@ export function loadConfig(env: Record<string, string | undefined>): AppConfig {
     .parse(env.DAHLIA_MAX_REQUEST_BYTES ?? String(16 * 1024 * 1024));
   const documentDeletionGraceHours = z.coerce.number().finite().min(0).max(8760).parse(env.DAHLIA_DOCUMENT_DELETION_GRACE_HOURS?.trim() || "24");
   const aiBackend = aiBackendSchema.parse(env.DAHLIA_AI_BACKEND?.trim() || "openai");
-  const foundationModels = z.array(z.string().max(UPSTREAM_MODEL_MAX_LENGTH))
+  const foundationModels = aiBackend === "databricks" ? [] : z.array(z.string().max(UPSTREAM_MODEL_MAX_LENGTH))
     .parse([...new Set(csv(env.DAHLIA_FOUNDATION_MODELS))]);
   const codexAutoReviewModel = env.DAHLIA_CODEX_AUTO_REVIEW_MODEL?.trim();
   const storageBackend = storageBackendSchema.parse(env.DAHLIA_STORAGE_BACKEND?.trim() || "local");
@@ -269,8 +269,8 @@ export function loadConfig(env: Record<string, string | undefined>): AppConfig {
   const memoryMcpAccess = env.DAHLIA_MEMORY_MCP_ACCESS ?? "off";
   if (!["off", "read", "write"].includes(memoryMcpAccess)) throw new Error("DAHLIA_MEMORY_MCP_ACCESS must be off, read or write");
   const chatMemoryModel = env.DAHLIA_CHAT_MEMORY_MODEL?.trim() || undefined;
-  if (chatMemoryModel && (!foundationModels.includes(chatMemoryModel) || databaseType === "sqlite")) {
-    throw new Error("DAHLIA_CHAT_MEMORY_MODEL requires PostgreSQL and a model in DAHLIA_FOUNDATION_MODELS");
+  if (chatMemoryModel && ((aiBackend !== "databricks" && !foundationModels.includes(chatMemoryModel)) || databaseType === "sqlite")) {
+    throw new Error("DAHLIA_CHAT_MEMORY_MODEL requires PostgreSQL and, for non-Databricks backends, a model in DAHLIA_FOUNDATION_MODELS");
   }
   const captioningModel = env.DAHLIA_IMAGE_ANALYSIS_MODEL?.trim()
     ? z.string().max(UPSTREAM_MODEL_MAX_LENGTH).parse(env.DAHLIA_IMAGE_ANALYSIS_MODEL.trim())

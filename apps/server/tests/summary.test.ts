@@ -1,3 +1,4 @@
+import { modelList } from "../src/ai-gateway/models";
 import { summaryInstructions } from "../src/summary/transcript";
 import { DocumentCore } from "../src/documents/core";
 import { DEFAULT_GENERATION_PREFERENCES } from "../src/workspace-generation-settings";
@@ -762,6 +763,7 @@ describe("server summary jobs", () => {
       }));
       const transport = vi.fn(async (url: RequestInfo | URL, init?: RequestInit) => {
         if (String(url).endsWith("/token")) return Response.json({ access_token: "app-token", expires_in: 3600 });
+        if (new URL(String(url)).pathname.endsWith("/models")) return Response.json(modelList([{ id: "system.ai.gpt-5-6-luna" }]));
         const headers = new Headers(init?.headers);
         expect(headers.get("authorization")).toBe(cloudflare ? "Bearer synthetic" : "Bearer app-token");
         if (!cloudflare) expect(JSON.parse(headers.get("Databricks-Ai-Gateway-Request-Tags")!)).toEqual({ user_id: owner.userId });
@@ -807,7 +809,7 @@ describe("server summary jobs", () => {
         return;
       }
       expect((await service.status(owner, workspaceId, meetingId))?.status).toBe("succeeded");
-      expect(transport).toHaveBeenCalledTimes(cloudflare ? 1 : 2);
+      expect(transport).toHaveBeenCalledTimes(cloudflare ? 1 : 3);
       const meeting = await store.sync.withIdentity(owner, (scoped) => scoped.getMeeting(workspaceId, meetingId));
       expect(meeting).toMatchObject({ name: "Decisions", description: "Launch discussion" });
       const metadata = summaryMetadata(meeting!.summaryDocument!);
@@ -861,6 +863,7 @@ function audioMethod(value: Awaited<ReturnType<typeof setup>>, result?: (body: R
   const calls: Record<string, unknown>[] = [];
   const transport = vi.fn(async (url: RequestInfo | URL, init?: RequestInit) => {
     if (String(url).endsWith("/token")) return Response.json({ access_token: "app-token", expires_in: 3600 });
+    if (new URL(String(url)).pathname.endsWith("/models")) return Response.json(modelList(models.map((id) => ({ id }))));
     expect(String(url)).toBe("https://workspace.example/ai-gateway/mlflow/v1/chat/completions");
     const headers = new Headers(init?.headers);
     expect(headers.get("authorization")).toBe("Bearer app-token");

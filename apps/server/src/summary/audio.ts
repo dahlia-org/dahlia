@@ -254,7 +254,9 @@ export function createAudioSummaryMethod(config: AppConfig, store: MeetingSyncSt
             yield cloudflare ? "]}]}}" : "]}]}";
           } catch (error) { streamFailure = error instanceof Error ? error : new SummaryError("summary_audio_unavailable"); throw streamFailure; }
         }
-        const endpoint = new URL(audioProvider.baseUrl);
+        const endpoint = audioProvider.backend === "databricks"
+          ? new URL("/ai-gateway/mlflow/v1", audioProvider.baseUrl)
+          : new URL(audioProvider.baseUrl);
         endpoint.pathname = cloudflare ? `${endpoint.pathname.replace(/\/v1\/?$/, "")}/run`
           : `${endpoint.pathname.replace(/\/$/, "")}/chat/completions`;
         const headers = await executionHeaders(job.ownerUserId);

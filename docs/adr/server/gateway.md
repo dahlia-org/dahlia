@@ -41,3 +41,7 @@ Server migration を常に先、extension migration を後に合成し、各 led
 fork や機能別 provider adapter の重複を避ける代わりに、明示した hook / migration / version の互換性を管理する。Server は extension 固有の dependency、schema、設定、運用を所有しない。secret、request content、録音、Desktop DB を新しい共有 extension contract に含めない。
 
 初期 Gateway は Personal workspace と AI 中継だけに限定した。後に採択された [Artifact（廃止）](artifacts.md)、[canonical sync](../shared/sync.md)、[共有](sharing-and-administration.md) は別の保存・認可境界であり、中継内容の永続保存禁止を解除しない。初期の root pnpm workspace と管理者 email table は、アプリ単位の依存管理と共通 Auth role に置き換わった。
+
+## 2026-10-03: Databricks モデル契約の改訂
+
+Databricks については上記の環境変数・JSON catalog による一覧方式を廃止し、`/ai-gateway/codex/v1` の一覧・metadata・モデル認可を正本とする。`client_version` は上流に渡し、ローカルで一覧を追加・削除しない。OpenAI と Cloudflare は既存の環境変数・JSON 方式を維持する。予約 `codex-auto-review` の実行先 override は維持するが、Databricks の一覧には Server が予約 entry を追加しない。

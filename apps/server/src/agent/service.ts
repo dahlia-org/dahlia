@@ -63,8 +63,8 @@ export type AiChatEvent = { type: "text"; text: string }
   | { type: "done" };
 
 export interface AiService {
-  models(signal?: AbortSignal): Promise<AiModel[]>;
-  stream(input: AiChatInput, identity: Identity, request: Request): AsyncIterable<AiChatEvent>;
+  models(signal?: AbortSignal, headers?: Headers): Promise<AiModel[]>;
+  stream(input: AiChatInput, identity: Identity, request: Request, availableModels?: AiModel[]): AsyncIterable<AiChatEvent>;
 }
 
 export function createAiService(
@@ -79,9 +79,9 @@ export function createAiService(
   const databricksTokens = config.provider?.backend === "databricks" && config.databricksWorkspace
     ? new DatabricksTokenProvider(config.databricksWorkspace, transport)
     : undefined;
-  const models = async (signal?: AbortSignal) => {
-    if (!config.provider || !config.foundationModels?.length) return [];
-    const catalog = await gateway.models(new Request(config.baseUrl, { signal }));
+  const models = async (signal?: AbortSignal, headers?: Headers) => {
+    if (!config.provider || (config.provider.backend !== "databricks" && !config.foundationModels?.length)) return [];
+    const catalog = await gateway.models(new Request(config.baseUrl, { signal, headers }));
     const published = new Map(catalog.models.filter((model) => model.supported_in_api && model.visibility !== "hide")
       .map((model) => [model.slug, model]));
     return catalog.data.flatMap((model) => {
@@ -98,8 +98,9 @@ export function createAiService(
   };
   return {
     models,
-    async *stream(input, identity, request) {
-      const selectedModel = await models(request.signal).then((items) => items.find(({ id }) => id === input.model));
+    async *stream(input, identity, request, availableModels) {
+      const catalog = availableModels ?? await models(request.signal, request.headers);
+      const selectedModel = catalog.find(({ id }) => id === input.model);
       if (!selectedModel) {
         throw new GatewayRequestError("Model is not available for Agent chat", 400, "model_not_configured");
       }

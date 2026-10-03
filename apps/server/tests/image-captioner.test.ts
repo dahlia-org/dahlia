@@ -14,7 +14,7 @@ describe("server image captioning", () => {
   it("uses the configured model and App SP without persisting Responses content", async () => {
     const transport = vi.fn(async (url: RequestInfo | URL, init?: RequestInit) => {
       if (String(url).endsWith("/token")) return Response.json({ access_token: "app-token", expires_in: 3600 });
-      expect(String(url)).toBe("https://workspace.example/ai-gateway/mlflow/v1/responses");
+      expect(String(url)).toBe("https://workspace.example/ai-gateway/codex/v1/responses");
       expect(init?.headers).toMatchObject({ authorization: "Bearer app-token" });
       const body = JSON.parse(String(init?.body)) as {
         instructions: string;
