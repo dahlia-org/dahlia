@@ -8,6 +8,7 @@ import type { AiService } from "../src/agent/service";
 import type { AiHistoryCursor, AiHistoryService, AiThread } from "../src/agent/history";
 import { encodeId } from "../src/typeid";
 import { MeetingSyncService } from "../src/sync/service";
+import { modelList } from "../src/ai-gateway/models";
 
 const config = {
   authProvider: "header" as const, authHeader: "X-Forwarded-Email", databaseType: "sqlite" as const,
@@ -85,15 +86,9 @@ describe.each(["node", "worker"])("v1 HTTP contract (%s)", (runtime) => {
     const send = fixture(true);
     const session: { capabilities: Record<string, boolean> } = await (await send("/api/v1/session")).json();
     expect(session.capabilities.ai).toBe(true);
-    expect(await (await send("/api/v1/chat/models")).json()).toEqual({ items: [
-      { id: "test-model", displayName: "Test model", defaultReasoningEffort: "medium", supportedReasoningEfforts: [
-        { effort: "low", description: "Fast" }, { effort: "medium", description: "Balanced" },
-      ] },
-      { id: "error-model", displayName: "Error model", defaultReasoningEffort: "medium", supportedReasoningEfforts: [
-        { effort: "low", description: "Fast" }, { effort: "medium", description: "Balanced" },
-      ] },
-    ] });
-    expect((await send("/api/v1/chat/models", "GET", undefined, {})).status).toBe(401);
+    expect(await (await send("/api/v1/capabilities")).json()).toHaveProperty("ai", { version: 1 });
+    expect(await (await send("/api/v1/models")).json()).toMatchObject({ object: "list", data: [] });
+    expect((await send("/api/v1/models", "GET", undefined, {})).status).toBe(401);
     const workspaceId = encodeId("workspace", "01990ab0-0000-7000-8000-000000000001");
     const body = JSON.stringify({ workspaceId, model: "test-model", reasoningEffort: "medium", messages: [{ role: "user", content: "Question" }] });
     const response = await send("/api/v1/chat/messages", "POST", body, { ...identityHeaders, origin: config.baseUrl, "content-type": "application/json" });
@@ -125,11 +120,34 @@ describe.each(["node", "worker"])("v1 HTTP contract (%s)", (runtime) => {
     expect(failedEvents).not.toContain("secret tool output");
   });
 
+  it("advertises client composition without adding GPT entries to the unified Databricks models API", async () => {
+    const store = testStore();
+    store.sync.isAvailable = async () => true;
+    const kimi = modelList([{ id: "system.ai.kimi-k3" }]).models.find(({ slug }) => slug === "system.ai.kimi-k3")!;
+    let available = true;
+    const app = createApp({ config: { ...config, provider: { backend: "databricks", baseUrl: "https://workspace.example/ai-gateway/codex/v1" } },
+      authStore: store, fetch: async () => available ? Response.json({ models: [kimi] }) : new Response(null, { status: 503 }) });
+    const worker = createWorkerHandler(async () => app);
+    const fetchWorker = worker.fetch!.bind(worker) as unknown as (request: Request, env: Cloudflare.Env, context: ExecutionContext) => Promise<Response>;
+    const send = (path: string) => {
+      const request = new Request(`${config.baseUrl}${path}`, { headers: { ...identityHeaders, "x-forwarded-access-token": "user-token" } });
+      return runtime === "node" ? app.request(request) : fetchWorker(request, {} as Cloudflare.Env, {} as ExecutionContext);
+    };
+    const response = await send("/api/v1/models");
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({ models: [kimi], data: [{ id: kimi.slug }] });
+    expect(await (await send("/api/v1/capabilities")).json()).toHaveProperty("ai", { version: 1, bundledModels: "codex" });
+    expect((await send("/api/v1/chat/models")).status).not.toBe(200);
+    available = false;
+    expect((await send("/api/v1/models")).status).toBe(503);
+    expect(await (await send("/api/v1/capabilities")).json()).not.toHaveProperty("ai");
+  });
+
   it("does not publish AI capability without an Agent-compatible model", async () => {
     const send = fixture(true, { ...aiService, models: async () => [] });
     const session: { capabilities: Record<string, boolean> } = await (await send("/api/v1/session")).json();
     expect(session.capabilities.ai).toBe(false);
-    expect(await (await send("/api/v1/chat/models")).json()).toEqual({ items: [] });
+    expect(await (await send("/api/v1/models")).json()).toMatchObject({ object: "list", data: [] });
     const capabilities = await (await send("/api/v1/capabilities")).json();
     expect(capabilities).not.toHaveProperty("ai");
   });

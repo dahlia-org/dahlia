@@ -447,11 +447,6 @@ export function createApp(dependencies: AppDependencies): DahliaServerApp & { ru
     await chatMemory().select(identity, context.req.param("threadId")!, meetingId);
     return context.body(null, 204);
   });
-  registerApi(app, "getAiModels", async (context) => {
-    await identities.fromBrowser(context.req.raw);
-    if (!await store.sync.isAvailable()) return context.json({ items: [] });
-    return context.json({ items: await ai.models(context.req.raw.signal, context.req.raw.headers) });
-  });
   registerApi(app, "listAiThreads", async (context) => {
     if (!aiHistory) return context.json({ error: "ai_history_unavailable" }, 404);
     const identity = await identities.fromBrowser(context.req.raw);
@@ -922,7 +917,8 @@ export function createApp(dependencies: AppDependencies): DahliaServerApp & { ru
       meetingEvents: { version: 1 },
       search: { version: 1 },
       conversationAnalytics: { version: 1 },
-      ...((await ai.models(context.req.raw.signal, context.req.raw.headers).catch(() => [])).length ? { ai: { version: 1 } } : {}),
+      ...((await ai.models(context.req.raw.signal, context.req.raw.headers).catch(() => [])).length
+        ? { ai: { version: 1, ...(config.provider?.backend === "databricks" ? { bundledModels: "codex" as const } : {}) } } : {}),
       ...(sources.length ? {
         meetingSummaryGeneration: {
           version: 2,

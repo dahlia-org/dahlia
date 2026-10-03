@@ -4,6 +4,7 @@ import { createRoot } from "react-dom/client";
 import { AiChat } from "../../src/client/AiChat";
 import { AppShell } from "../../src/client/layout/AppShell";
 import "../../src/client/styles.css";
+import policy from "../../resources/codex/source.json";
 
 Object.defineProperty(navigator, "language", { value: "en-US", configurable: true });
 
@@ -11,6 +12,10 @@ const workspaceA = "ws_01k45b0000e008000000000001";
 const workspaceB = "ws_01k45b0000e008000000000002";
 const requests: Array<{ sessionId?: string; timeZone?: string; resume?: { tool: string; answer?: string | string[]; action?: string }; workspaceId: string; model: string; reasoningEffort: string; messages: Array<{ role: string; content: string }> }> = [];
 let chats = 0;
+let bundledModels = false;
+let aiCapability = false;
+let capabilityFailure: "http" | "network" | undefined;
+let discoveryFails = false;
 
 const sse = (answer: string) => new Response(`event: text\ndata: ${JSON.stringify({ text: answer })}\n\nevent: done\ndata: {}\n\n`, {
   headers: { "content-type": "text/event-stream" },
@@ -18,11 +23,20 @@ const sse = (answer: string) => new Response(`event: text\ndata: ${JSON.stringif
 
 globalThis.fetch = async (input, init) => {
   const url = new URL(typeof input === "string" ? input : input instanceof URL ? input : input.url, location.href);
-  if (url.pathname === "/api/v1/chat/models") return Response.json({ items: [
-    { id: "model-a", displayName: "Model A", defaultReasoningEffort: "medium", supportedReasoningEfforts: [
+  if (url.pathname === "/api/v1/capabilities" && capabilityFailure === "http") return Response.json({ error: "capability_failed" }, { status: 503 });
+  if (url.pathname === "/api/v1/capabilities" && capabilityFailure === "network") throw new Error("capability_network_failed");
+  if (url.pathname === "/api/v1/capabilities") return Response.json(aiCapability
+    ? { ai: { version: 1, ...(bundledModels ? { bundledModels: "codex" } : {}) } } : {});
+  if (url.pathname === "/api/v1/models" && discoveryFails) return Response.json({ error: "discovery_failed" }, { status: 503 });
+  if (url.pathname === "/api/v1/models") return Response.json({ data: [
+    { id: "model-a", display_name: "Model A" }, { id: "model-b", display_name: "Model B" },
+  ], models: [
+    { slug: "model-a", display_name: "Model A", supported_in_api: true, visibility: "list",
+      default_reasoning_level: "medium", supported_reasoning_levels: [
       { effort: "low", description: "Fast" }, { effort: "medium", description: "Balanced" },
     ] },
-    { id: "model-b", displayName: "Model B", defaultReasoningEffort: "high", supportedReasoningEfforts: [
+    { slug: "model-b", display_name: "Model B", supported_in_api: true, visibility: "list",
+      default_reasoning_level: "high", supported_reasoning_levels: [
       { effort: "high", description: "Deep" }, { effort: "max", description: "Maximum" },
     ] },
   ] });
@@ -82,17 +96,31 @@ const choose = async (trigger: HTMLButtonElement, value: string) => {
 
 async function run() {
   history.replaceState(null, "", "/chat");
-  createRoot(document.getElementById("root")!).render(<AppShell brand={<strong>Dahlia</strong>} extensionPaths={[]} navigate={() => {}}
+  const root = createRoot(document.getElementById("root")!);
+  const render = (key: string) => root.render(<AppShell brand={<strong>Dahlia</strong>} extensionPaths={[]} navigate={() => {}}
     path="/chat" session={{ capabilities: { admin: false, sessions: false, sharing: false, sync: true, ai: true }, user: { id: "user" } }}>
-    <AiChat />
+    <AiChat key={key} />
+    <span hidden data-fixture-key={key} />
   </AppShell>);
-  await until(() => document.querySelector<HTMLElement>('[data-ai-picker="workspace"]')?.dataset.value === workspaceA
+  for (const failure of ["http", "network"] as const) {
+    capabilityFailure = failure;
+    render(`capability-${failure}`);
+    await until(() => document.querySelector(`[data-fixture-key="capability-${failure}"]`)
+      && document.querySelector<HTMLElement>('[data-ai-picker="model"]')?.dataset.value === "model-a",
+      `remote selection after capability ${failure} failure`);
+    assert(!document.querySelector(".ai-error"), "Optional capability failure blocked model discovery");
+  }
+  capabilityFailure = undefined;
+  render("configured");
+  await until(() => document.querySelector('[data-fixture-key="configured"]')
+    && document.querySelector<HTMLElement>('[data-ai-picker="workspace"]')?.dataset.value === workspaceA
     && document.querySelector<HTMLElement>('[data-ai-picker="model"]')?.dataset.value === "model-a"
     && document.querySelector<HTMLElement>('[data-ai-picker="reasoning"]')?.dataset.value === "medium", "initial selection");
   assert(document.querySelector(".ai-header"), "The initial /chat page must show a chat header");
   let { workspace, reasoning, model } = controls();
   let textarea = document.querySelector<HTMLTextAreaElement>('.ai-composer textarea')!;
   assert(workspace.dataset.value === workspaceA && model.dataset.value === "model-a" && reasoning.dataset.value === "medium", "Initial selectors were not selected");
+  assert(!model.textContent?.includes("GPT"), "Missing AI capability opted into bundled GPT models");
   change(textarea, "Line one\nLine two");
   press(textarea, "Enter", true);
   assert(requests.length === 0 && textarea.value.includes("\n"), "Shift+Enter submitted or lost the newline");
@@ -240,8 +268,34 @@ async function run() {
   for (const request of requests.slice(11)) {
     assert(request.messages.every((message, index) => message.role === (index % 2 ? "assistant" : "user")), "Interaction recovery appended consecutive user messages");
   }
+  aiCapability = true;
+  bundledModels = true;
+  render("databricks");
+  await until(() => controls().model?.dataset.value === "gpt-6-astra", "bundled GPT selection");
+  model = controls().model;
+  model.click();
+  await until(() => document.querySelector('[role="option"][data-value="gpt-6.1-sol"]'), "bundled GPT options");
+  const modelIds = [...document.querySelectorAll<HTMLElement>('[role="option"][data-value]')].map((option) => option.dataset.value);
+  assert(modelIds.length === policy.models.length + 2 && policy.models.every((id) => modelIds.includes(id)), "Bundled allowlist or remote merge failed");
+  document.querySelector<HTMLElement>('[role="option"][data-value="gpt-6.1-sol"]')!.click();
+  await until(() => controls().reasoning.dataset.value === "low", "upstream GPT reasoning default");
+  textarea = document.querySelector<HTMLTextAreaElement>('.ai-composer textarea')!;
+  change(textarea, "Reply only OK");
+  press(textarea, "Enter");
+  await until(() => requests.length === 27 && document.querySelector(".ai-message.assistant")?.textContent === "Follow-up answer", "bundled GPT response");
+  assert(requests[26]?.model === "gpt-6.1-sol" && requests[26]?.reasoningEffort === "low", "GPT slug or upstream default was changed before submission");
+  discoveryFails = true;
+  render("discovery-failed");
+  await until(() => document.querySelector(".ai-error[role=alert]"), "model discovery failure");
+  assert(!controls().model.dataset.value && document.querySelector<HTMLButtonElement>("button.ai-send")?.disabled,
+    "Failed model discovery fell back to bundled GPT models");
+  capabilityFailure = "http";
+  render("both-discovery-failed");
+  await until(() => document.querySelector('[data-fixture-key="both-discovery-failed"]')
+    && document.querySelector(".ai-error[role=alert]"), "both discovery failures");
+  assert(!controls().model.dataset.value, "Capability failure hid the model discovery failure");
   document.body.dataset.testResult = "passed";
-  document.getElementById("result")!.textContent = "PASS: selectors, Workspace lock, chat controls, empty response retry, two-to-ten-line composer, sticky header, keyboard, stop, retry, mobile width, session/timezone, question choices/free text, explicit plan approval, failed resume retry/revision, accepted failure, lost acknowledgement recovery";
+  document.getElementById("result")!.textContent = "PASS: selectors, Workspace lock, chat controls, empty response retry, composer, keyboard, stop, retry, interactions, missing or failed AI capability preserves remote models, Databricks GPT allowlist composition, upstream reasoning defaults, unchanged GPT submission and no fallback after discovery failure";
 }
 
 void run().catch((error: unknown) => { document.getElementById("result")!.textContent = `FAIL: ${String(error)}`; });

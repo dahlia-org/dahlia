@@ -73,8 +73,10 @@ globalThis.fetch = async (input, init) => {
   }
   if (path.endsWith("/memory/notes") && method === "POST") { savedContent = (await (input instanceof Request ? input.clone() : new Request(url, init)).json<{ content: string }>()).content; return Response.json({ saved: true }); }
   if (path.endsWith("/memory/analysis/status")) return Response.json({ enabled: true, status: "ready", errorCode: null, skippedCount: 0, skippedSources: [] });
-  if (path === "/api/v1/chat/models") return Response.json({ items: [{ id: "model", displayName: "Model",
-    defaultReasoningEffort: "medium", supportedReasoningEfforts: [{ effort: "medium", description: "Balanced" }] }] });
+  if (path === "/api/v1/capabilities") return Response.json({ ai: { version: 1 } });
+  if (path === "/api/v1/models") return Response.json({ data: [{ id: "model", display_name: "Model" }],
+    models: [{ slug: "model", display_name: "Model", supported_in_api: true, visibility: "list",
+      default_reasoning_level: "medium", supported_reasoning_levels: [{ effort: "medium", description: "Balanced" }] }] });
   if (path === "/api/v1/chat") {
     if (method === "POST") { creates++; return failCreate ? failure(503) : Response.json(threads.get(idA), { status: 201 }); }
     if (deferList) return new Promise<Response>((resolve) => {

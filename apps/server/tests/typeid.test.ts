@@ -10,7 +10,7 @@ const uuid = vectors[2]!.uuid;
 describe("public TypeIDs", () => {
   it("keeps fixed chat paths separate from encoded chat IDs", () => {
     for (const direction of ["encode", "decode"] as const) {
-      expect(wireURL("/api/v1/chat/models", direction)).toBe("/api/v1/chat/models");
+      expect(wireURL("/api/v1/models", direction)).toBe("/api/v1/models");
       expect(wireURL("/api/v1/chat/messages", direction, "POST")).toBe("/api/v1/chat/messages");
     }
     const path = `/api/v1/chat/${uuid}`;

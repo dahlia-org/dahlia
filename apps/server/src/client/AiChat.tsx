@@ -1,4 +1,7 @@
 import { ChatInteraction } from "./ChatInteraction";
+import { chatModels, type AiModel, type ReasoningEffort } from "../agent/models";
+import type { GatewayModelList } from "../ai-gateway/backend";
+import type { components } from "./generated-api";
 import type { AiInteraction, AiResume } from "../agent/builtin";
 import { ChatMarkdown, StreamingChatMarkdown } from "./ChatMarkdown";
 import { WorkingMemoryEditor, LiveChatContext } from "./ChatMemory";
@@ -33,13 +36,6 @@ type AiEvent = { type: "text"; text: string }
   | { type: "interaction"; interaction: AiInteraction }
   | { type: "interaction-resumed"; runId: string; toolCallId: string }
   | { type: "done" };
-type ReasoningEffort = "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max" | "ultra";
-type AiModel = {
-  id: string;
-  displayName: string;
-  defaultReasoningEffort: ReasoningEffort;
-  supportedReasoningEfforts: Array<{ effort: ReasoningEffort; description: string }>;
-};
 type AiThread = { id: string; title: string; workspaceId: string; createdAt: string; updatedAt: string };
 type PickerOption = { value: string; label: string; description: string };
 
@@ -146,8 +142,15 @@ export function AiChat({ requestedThreadId }: { requestedThreadId?: string }) {
 
   useEffect(() => {
     const request = new AbortController();
-    void json<{ items: AiModel[] }>("/api/v1/chat/models", { signal: request.signal }, { notifyMutation: false })
-      .then(({ items }) => { setModels(items); setModel((current) => current || items[0]?.id || ""); })
+    void Promise.all([
+      json<GatewayModelList>("/api/v1/models", { signal: request.signal }, { notifyMutation: false }),
+      json<components["schemas"]["Capabilities"]>("/api/v1/capabilities", { signal: request.signal }, { notifyMutation: false })
+        .catch((): components["schemas"]["Capabilities"] => ({})),
+    ]).then(([catalog, capabilities]) => {
+      if (request.signal.aborted) return;
+      const items = chatModels(catalog, capabilities.ai?.bundledModels === "codex");
+      setModels(items); setModel((current) => current || items[0]?.id || "");
+    })
       .catch((caught: unknown) => { if (!request.signal.aborted) setError(caught instanceof Error ? caught.message : uiText("Could not load models.", "モデルを読み込めませんでした。")); });
     return () => request.abort();
   }, []);

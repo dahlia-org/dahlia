@@ -106,7 +106,7 @@ export type OperationId =
   | "getServerOrganization" | "getSearchSettings" | "updateSearchSettings"
   | "listGovernanceWorkspaces" | "confirmWorkspaceDeletion" | "forceDeleteWorkspace"
   | "getCapabilities" | "listWorkspaces" | "getWorkspace"
-  | "getAiModels" | "chatWithAi" | "createAiThread" | "listAiThreads" | "getAiThread" | "deleteAiThread" | "continueAiThread"
+  | "chatWithAi" | "createAiThread" | "listAiThreads" | "getAiThread" | "deleteAiThread" | "continueAiThread"
   | "listProjects" | "getProject" | "listMeetings" | "listDeletedMeetings" | "getMeeting" | "listSummaries"
   | "getSummary" | "getLatestSummary" | "listTranscripts" | "getTranscript" | "getLatestTranscript"
   | "getConversationAnalytics"
@@ -178,7 +178,6 @@ export const contracts: Record<OperationId, RouteConfig & { operationId: string 
   updateWorkingMemory: route("patch", "/api/v1/user/memory/working", "updateWorkingMemory", "Edit one private Working Memory section with revision checking", { 200: json(workingMemorySettingsSchema) }, body(workingMemoryEditSchema), browser),
   getAiLiveContext: route("get", "/api/v1/chat/{threadId}/live-context", "getAiLiveContext", "Read selected meeting context freshness", { 200: json(liveStatusSchema) }, { params: z.object({ threadId: aiThreadId }) }, browser),
   setAiLiveContext: route("put", "/api/v1/chat/{threadId}/live-context", "setAiLiveContext", "Select or detach a meeting in the thread Workspace", { 204: empty }, { params: z.object({ threadId: aiThreadId }), ...body(liveSelectionSchema) }, browser),
-  getAiModels: route("get", "/api/v1/chat/models", "getAiModels", "Agent-compatible models available to Private Web", { 200: json(z.object({ items: z.array(S.aiModel) })) }, {}, browser),
   createAiThread: route("post", "/api/v1/chat", "createAiThread", "Create a private AI chat thread",
     { 201: { ...json(aiThread, "Created."), headers: location } }, body(aiThreadCreateSchema), browser),
   listAiThreads: route("get", "/api/v1/chat", "listAiThreads", "List the current user's private AI chat threads", { 200: json(z.object({ items: z.array(aiThread), hasMore: z.boolean() })) },

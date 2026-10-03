@@ -33,3 +33,7 @@ managed Volume resource key は `dahlia_storage`、既定名は `storage`。Unit
 ## 2026-10-03: プラットフォームによるモデル公開管理
 
 Databricks の表示モデル管理機能に合わせ、上記の設定一覧方式を廃止する。Gateway は `/ai-gateway/codex/v1/models` と `/ai-gateway/codex/v1/responses` を使用し、モデル公開・順序・metadata・client version 判定・推論のモデル認可をプラットフォームに委ねる。モデル一覧も OBO token を優先し、ない場合は App service principal の短期 token を使う。失敗時にローカル JSON へ fallback しない。background Chat Completions と Embeddings は `/ai-gateway/mlflow/v1` を維持する。
+
+同日の実挙動では、上流 Models API は Kimi／GLM の定義を返す一方、一覧にない native ID `gpt-6.1-sol` への Responses は成功した。Codex が内蔵 GPT catalog と上流定義を合成する経路に合わせ、Web チャットも `/api/v1/models` を使用し、`capabilities.ai.bundledModels: codex` の場合だけ承認済み GPT の表示・推論 metadata をクライアント側で補完する。`/api/v1/chat/models` は廃止する。同一 slug は上流定義を優先し、非表示・API 不可・不正な推論設定であれば補完しない。Server のチャット入力検証は同じ合成処理を使うが、推論の最終認可は引き続き上流に委ねる。
+
+`resources/codex/source.json` に取得元 URL・version・原本の SHA-256・採用モデル一覧をまとめ、GPT 6 系の表示・推論 metadata だけを `resources/codex/models.json` に生成する。原本は Desktop の固定版 Codex と同じ tag から生成時にメモリ上で取得・検証し、ファイルには保存しない。`pnpm codex-models:generate` は取得・検証・絞り込み・生成をまとめて行う。通常のビルド・実行時には取得せず、`pnpm codex-models:check` はフィルタ済み JSON の採用モデルと生成形式をオフラインで確認する。Gateway の返却 catalog にローカル GPT を追加せず、discovery 失敗時にも補完を使わない。

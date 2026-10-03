@@ -677,23 +677,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/v1/chat/models": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** Agent-compatible models available to Private Web */
-        get: operations["getAiModels"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/api/v1/chat": {
         parameters: {
             query?: never;
@@ -2459,6 +2442,8 @@ export interface components {
             };
             ai?: {
                 version: number;
+                /** @enum {string} */
+                bundledModels?: "codex";
             };
             meetingSummaryGeneration?: {
                 version: number;
@@ -2615,17 +2600,6 @@ export interface components {
             /** Format: date-time */
             updatedAt: string;
             protected: boolean;
-        };
-        AIModel: {
-            id: string;
-            displayName: string;
-            /** @enum {string} */
-            defaultReasoningEffort: "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max" | "ultra";
-            supportedReasoningEfforts: {
-                /** @enum {string} */
-                effort: "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max" | "ultra";
-                description: string;
-            }[];
         };
         AiThread: {
             id: string;
@@ -5156,29 +5130,6 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
-            };
-            default: components["responses"]["Problem"];
-        };
-    };
-    getAiModels: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        items: components["schemas"]["AIModel"][];
-                    };
-                };
             };
             default: components["responses"]["Problem"];
         };
