@@ -77,12 +77,12 @@ ${Object.values(contracts).filter((v) => v.method === "get").map(({ operationId,
 };
 `;
 const outputs = new Map([
-  [new URL("../../desktop/Sources/DahliaRuntimeSupport/Resources/PublicIDContract.json", import.meta.url), await readFile(new URL("../src/public-id-contract.json", import.meta.url), "utf8")],
+  [new URL("../../macos/Sources/DahliaRuntimeSupport/Resources/PublicIDContract.json", import.meta.url), await readFile(new URL("../src/public-id-contract.json", import.meta.url), "utf8")],
   [new URL("../../../docs/architecture/server-api-audit.md", import.meta.url), auditMarkdown],
   [new URL("../openapi.json", import.meta.url), document],
   [new URL("../src/client/generated-api.ts", import.meta.url), types],
   [new URL("../src/client/generated-operations.ts", import.meta.url), calls],
-  [new URL("../../desktop/Sources/Dahlia/Models/SyncValidationLimits.generated.swift", import.meta.url), swiftLimits],
+  [new URL("../../macos/Sources/Dahlia/Models/SyncValidationLimits.generated.swift", import.meta.url), swiftLimits],
 ]);
 for (const [url, content] of outputs) {
   if (process.argv.includes("--check")) {

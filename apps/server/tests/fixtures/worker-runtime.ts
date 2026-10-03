@@ -2,7 +2,7 @@ import { createApp } from "../../src/app";
 import { encodeId } from "../../src/typeid";
 import { MeetingSyncService } from "../../src/sync/service";
 import { SyncEvents } from "../../src/sync/events";
-import documentFixture from "../../../desktop/Tests/DahliaTests/Fixtures/documents.json";
+import documentFixture from "../../../macos/Tests/DahliaTests/Fixtures/documents.json";
 import { DocumentCore } from "../../src/documents/core";
 import { createWorkerHandler, initializeWorkerApp, type WorkerEnv } from "../../src/worker";
 import { createWorkerScreenshotTransformer } from "../../src/sync/worker-screenshot-transformer";

@@ -2,4 +2,4 @@
 set -euo pipefail
 
 repo_root="$(cd "$(dirname "$0")/.." && pwd)"
-exec "${repo_root}/apps/desktop/scripts/build-app.sh" "$@"
+exec "${repo_root}/apps/macos/scripts/build-app.sh" "$@"

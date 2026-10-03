@@ -459,7 +459,7 @@ public extension SummaryBlock {
     }
 }
 
-/// `apps/desktop/Sources/Dahlia` の同名ユーティリティと衝突しないよう、共有ターゲット内部だけで使う。
+/// `apps/macos/Sources/Dahlia` の同名ユーティリティと衝突しないよう、共有ターゲット内部だけで使う。
 extension String {
     var summaryNilIfBlank: String? {
         let trimmed = trimmingCharacters(in: .whitespacesAndNewlines)
@@ -467,7 +467,7 @@ extension String {
     }
 }
 
-/// 共有ターゲット内部用の UUID v7 生成。`apps/desktop/Sources/Dahlia` の `UUID.v7()` と同じレイアウト。
+/// 共有ターゲット内部用の UUID v7 生成。`apps/macos/Sources/Dahlia` の `UUID.v7()` と同じレイアウト。
 func summaryUUIDv7() -> UUID {
     let milliseconds = UInt64(Date().timeIntervalSince1970 * 1000)
     var bytes = (0 ..< 16).map { index -> UInt8 in

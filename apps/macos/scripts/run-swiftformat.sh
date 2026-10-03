@@ -13,9 +13,9 @@ export CLANG_MODULE_CACHE_PATH="${CLANG_MODULE_CACHE_PATH:-${TMPDIR:-/tmp}/dahli
 mkdir -p "$CLANG_MODULE_CACHE_PATH"
 
 exec swift run \
-    --package-path "$repo_root/apps/desktop/BuildTools" \
+    --package-path "$repo_root/apps/macos/BuildTools" \
     --configuration release \
     --disable-automatic-resolution \
     swiftformat \
-    --config "$repo_root/apps/desktop/.swiftformat" \
+    --config "$repo_root/apps/macos/.swiftformat" \
     "$@"

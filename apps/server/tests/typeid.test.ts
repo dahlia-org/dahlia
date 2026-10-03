@@ -85,7 +85,7 @@ describe("public TypeIDs", () => {
   });
   it("shares the explicit field contract with Swift", () => {
     expect(readFileSync(new URL("../src/public-id-contract.json", import.meta.url), "utf8"))
-      .toBe(readFileSync(new URL("../../desktop/Sources/DahliaRuntimeSupport/Resources/PublicIDContract.json", import.meta.url), "utf8"));
+      .toBe(readFileSync(new URL("../../macos/Sources/DahliaRuntimeSupport/Resources/PublicIDContract.json", import.meta.url), "utf8"));
   });
   it.each(["declared", "streamed"])("rejects %s oversized presence bodies before dispatch", async (size) => {
     const app = new Hono();

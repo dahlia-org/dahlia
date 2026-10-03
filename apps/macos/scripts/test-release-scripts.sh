@@ -629,10 +629,10 @@ test_pre_commit_compatibility_entrypoint() {
     local fake_repo="${TEST_DIR}/pre-commit-repo"
 
     git init -q "$fake_repo"
-    mkdir -p "${fake_repo}/apps/desktop/scripts"
+    mkdir -p "${fake_repo}/apps/macos/scripts"
     cp "${REPOSITORY_DIR}/scripts/pre-commit" "${fake_repo}/.git/hooks/pre-commit"
-    printf '%s\n' '#!/bin/bash' ': > hook-ran' > "${fake_repo}/apps/desktop/scripts/pre-commit"
-    chmod +x "${fake_repo}/.git/hooks/pre-commit" "${fake_repo}/apps/desktop/scripts/pre-commit"
+    printf '%s\n' '#!/bin/bash' ': > hook-ran' > "${fake_repo}/apps/macos/scripts/pre-commit"
+    chmod +x "${fake_repo}/.git/hooks/pre-commit" "${fake_repo}/apps/macos/scripts/pre-commit"
 
     (cd "$fake_repo" && .git/hooks/pre-commit)
     [ -f "${fake_repo}/hook-ran" ] || fail "installed pre-commit hook did not reach the desktop implementation"

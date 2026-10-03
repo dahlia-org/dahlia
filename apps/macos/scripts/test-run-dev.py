@@ -51,7 +51,7 @@ def check_fingerprints(root):
 
 
 def check_packaging(root):
-    scripts = root / "apps/desktop/scripts"
+    scripts = root / "apps/macos/scripts"
     scripts.mkdir(parents=True)
     for name in ("run-dev.sh", "common.sh", "dev-build-fingerprint.py"):
         shutil.copy2(SCRIPTS / name, scripts / name)
@@ -119,7 +119,7 @@ exec /usr/bin/sqlite3 "$@"
     write(root / "Resources/Info.plist", '<?xml version="1.0"?><plist version="1.0"><dict/></plist>')
     for locale in ("en", "ja"):
         write(root / "Resources" / f"{locale}.lproj/Localizable.strings", '"key" = "value";')
-    write(root / "apps/desktop/Sources/Dahlia/Resources/Assets.xcassets/AppIcon.appiconset/AppIcon.png", "icon")
+    write(root / "apps/macos/Sources/Dahlia/Resources/Assets.xcassets/AppIcon.appiconset/AppIcon.png", "icon")
 
     log = root / "calls.log"
     environment = dict(os.environ, PATH=f"{tools}:{os.environ['PATH']}", CODESIGN_IDENTITY="-", DEV_TEST_LOG=str(log))
@@ -149,7 +149,7 @@ exec /usr/bin/sqlite3 "$@"
         ("CodexHelper.entitlements",
          '<?xml version="1.0"?><plist version="1.0"><dict><key>com.apple.security.cs.allow-jit</key><true/></dict></plist>'),
         ("Resources/en.lproj/Localizable.strings", "changed"),
-        ("apps/desktop/Sources/Dahlia/Resources/Assets.xcassets/AppIcon.appiconset/AppIcon.png", "changed"),
+        ("apps/macos/Sources/Dahlia/Resources/Assets.xcassets/AppIcon.appiconset/AppIcon.png", "changed"),
     ):
         write(root / name, content)
         run("Assembling")

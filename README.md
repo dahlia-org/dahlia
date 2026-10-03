@@ -48,7 +48,7 @@ The in-app chat model picker lists models in ascending display-name order. The i
 
 ### SwiftUI previews and Xcode MCP
 
-For component work, open `apps/desktop/Previews/Package.swift` in Xcode, select the **DahliaPreviews** scheme and **My Mac**, then open `Sources/DahliaPreviews/SettingsStatusMessage.swift` with **Editor → Canvas**. The previews cover a success message and an error message with interactive detail visibility.
+For component work, open `apps/macos/Previews/Package.swift` in Xcode, select the **DahliaPreviews** scheme and **My Mac**, then open `Sources/DahliaPreviews/SettingsStatusMessage.swift` with **Editor → Canvas**. The previews cover a success message and an error message with interactive detail visibility.
 
 This development-only package shares actual app sources through relative symbolic links, without starting recording, database services, or external dependencies. Editing the linked view updates the preview. Add only the real source files and UI dependencies needed by each new preview; keep live-data services out. The root package currently encounters a vendored XCFramework `module.modulemap` output collision in Xcode builds, so use this package for component previews. If Xcode treats a newly created package as a folder with no scheme, restart Xcode.
 
@@ -113,7 +113,7 @@ Use `run-dev.sh` for development builds and launches. `build-app.sh` also embeds
 
 `--reset` removes only the development profile's `dahlia.sqlite`, `-wal`, and `-shm` files. `--copy-production` (or `--copy`) makes a WAL-safe SQLite backup of the production database, validates it, replaces those same development files, and lets normal app startup run migrations. Production recordings, files, authentication, and settings are not copied; the development profile uses a separate Keychain namespace and starts copied account connections signed out. These options cannot be combined with `--build-only`.
 
-The lint script and pre-commit hook use the exact SwiftFormat version managed by the independent `apps/desktop/BuildTools` Swift package. SwiftPM resolves and caches the tool separately from the app's dependencies.
+The lint script and pre-commit hook use the exact SwiftFormat version managed by the independent `apps/macos/BuildTools` Swift package. SwiftPM resolves and caches the tool separately from the app's dependencies.
 
 If you set `SENTRY_DSN` before running `build-app.sh`, `notarize.sh`, or `run-dev.sh`, the generated app embeds the DSN into `Info.plist` and enables Sentry. Debug events are tagged with the `debug` environment. `swift run Dahlia` and `run-dev.sh` without an explicitly configured DSN do not send Sentry events.
 
@@ -204,9 +204,11 @@ Database selection is independent from the `OPENAI_API_KEY` and `OPENAI_BASE_URL
 
 ### Project Structure
 
+The planned Electron app will live in `apps/desktop` with the npm package name `@dahlia-ai/desktop`.
+
 ```
 apps/
-├── desktop/        # Native macOS app and SwiftPM tests
+├── macos/          # Native macOS app and SwiftPM tests
 │   ├── BuildTools/  # Pinned SwiftFormat package
 │   ├── scripts/     # Desktop build, signing, and lint implementations
 │   ├── Tests/       # SwiftPM tests

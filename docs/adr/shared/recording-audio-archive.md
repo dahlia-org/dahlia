@@ -72,7 +72,7 @@ CAF の削除開始は `purgeRequestedAt` で判定し、削除時の整合性�
 2026-09-08: 利用者の明示指示により、上記の保存・整合性検証後に元 CAF を削除する。既存の保存済みアーカイブにも再検証後に適用する。
 正解音声による認識品質評価は未実施であり、CAF 削除の実行条件から外す。単体テストの合成音声は復号・時刻の検証にのみ使い、認識精度の根拠にはしない。配置先での長時間アップロード検証は引き続きリリース確認事項とする。
 
-認識結果を同じ正解文と対にして、`python3 apps/desktop/scripts/check-recording-quality.py results.json` で採点する。
+認識結果を同じ正解文と対にして、`python3 apps/macos/scripts/check-recording-quality.py results.json` で採点する。
 入力は `{id, language: "ja"|"en", engine: "apple"|"whisper", reference, original, decoded}` の配列。
 このツールは音声送信や認識を行わず、両エンジン・両言語の結果が揃わなければ失敗する。
 `--self-test` は採点処理だけの検証であり、品質評価の代わりではない。
@@ -87,7 +87,7 @@ CAF の削除開始は `purgeRequestedAt` で判定し、削除時の整合性�
 - `env DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer CI=true ./scripts/lint.sh`: SwiftFormat、telemetry policy、SwiftLint 成功。
 - `apps/server` で `pnpm check`: 269件成功、13件スキップ。型検査・lint・ビルド・インストール済みパッケージ検証・Worker dry-run 成功。
 - Serverのスキーマ生成テストはSwift全体テストとの同時実行中に5秒の制限を超えた。単独で3件成功後、通常の `pnpm check` 全体も成功した。制限値は変更していない。
-- `python3 apps/desktop/scripts/check-recording-quality.py --self-test`: 6件成功。認識品質の実測ではない。
+- `python3 apps/macos/scripts/check-recording-quality.py --self-test`: 6件成功。認識品質の実測ではない。
 
 追加した検証は、短いAAC末尾、結合区間の空白・言語、重複区間の拒否、元CAF削除後の既存バッチ再文字起こし、
 Local保持期限、別端末のcanonical metadata、owner境界、親削除時の送信中止、未送信文字起こしを保持するDB移行を含む。

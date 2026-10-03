@@ -2,4 +2,4 @@
 set -euo pipefail
 
 repo_root="$(git rev-parse --show-toplevel)"
-exec "${repo_root}/apps/desktop/scripts/pre-commit" "$@"
+exec "${repo_root}/apps/macos/scripts/pre-commit" "$@"

@@ -25,14 +25,14 @@ let package = Package(
         .package(url: "https://github.com/SDWebImage/libwebp-Xcode.git", exact: "1.6.0"),
     ],
     targets: [
-        .executableTarget(name: "AuthHelper", dependencies: ["DahliaRuntimeSupport"], path: "apps/desktop/Sources/AuthHelper"),
+        .executableTarget(name: "AuthHelper", dependencies: ["DahliaRuntimeSupport"], path: "apps/macos/Sources/AuthHelper"),
         .target(
             name: "DahliaServerAPI",
             dependencies: [
                 .product(name: "OpenAPIRuntime", package: "swift-openapi-runtime"),
                 .product(name: "OpenAPIURLSession", package: "swift-openapi-urlsession"),
             ],
-            path: "apps/desktop/Sources/DahliaServerAPI",
+            path: "apps/macos/Sources/DahliaServerAPI",
             swiftSettings: [.unsafeFlags(["-suppress-warnings"])],
             plugins: [.plugin(name: "OpenAPIGenerator", package: "swift-openapi-generator")]
         ),
@@ -47,7 +47,7 @@ let package = Package(
         .target(
             name: "DahliaRuntimeSupport",
             dependencies: [.product(name: "libwebp", package: "libwebp-Xcode")],
-            path: "apps/desktop/Sources/DahliaRuntimeSupport",
+            path: "apps/macos/Sources/DahliaRuntimeSupport",
             resources: [.process("Resources")]
         ),
         .target(
@@ -58,7 +58,7 @@ let package = Package(
                 .product(name: "GRDB", package: "GRDB.swift"),
                 .product(name: "GRDBSQLite", package: "GRDB.swift"),
             ],
-            path: "apps/desktop/Sources/DahliaMeetingAccess"
+            path: "apps/macos/Sources/DahliaMeetingAccess"
         ),
         .executableTarget(
             name: "DahliaMCP",
@@ -66,7 +66,7 @@ let package = Package(
                 "DahliaMeetingAccess",
                 .product(name: "TelemetryDeck", package: "SwiftSDK"),
             ],
-            path: "apps/desktop/Sources/DahliaMCP"
+            path: "apps/macos/Sources/DahliaMCP"
         ),
         .executableTarget(
             name: "DahliaSearchRankingBenchmark",
@@ -91,7 +91,7 @@ let package = Package(
                 .product(name: "Sparkle", package: "Sparkle"),
                 .product(name: "WhisperKit", package: "argmax-oss-swift"),
             ],
-            path: "apps/desktop/Sources/Dahlia",
+            path: "apps/macos/Sources/Dahlia",
             exclude: [
                 "AGENTS.md",
                 "CLAUDE.md",
@@ -113,7 +113,7 @@ let package = Package(
                 "DahliaRuntimeSupport",
                 "DahliaSearchRankingBenchmark",
             ],
-            path: "apps/desktop/Tests/DahliaTests",
+            path: "apps/macos/Tests/DahliaTests",
             exclude: [
                 "AGENTS.md",
                 "CLAUDE.md",
