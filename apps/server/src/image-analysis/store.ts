@@ -35,9 +35,10 @@ export function createImageAnalysisStore(database: PostgresDatabase | SQLiteData
   // Recover accepted jobs only. Missing file metadata never constitutes a request.
   async function reconcilePage(model: string, ownerUserId: string, after?: string): Promise<string | undefined> {
     return withOwner(ownerUserId, async (tx) => {
-      const rows = await tx.select().from(q).where(and(eq(q.kind, "image"), eq(q.owner, ownerUserId),
-        inArray(q.status, ["pending", "processing"]), ne(payloadField(schema, "model"), model),
+      const query = tx.select().from(q).where(and(eq(q.kind, "image"), eq(q.owner, ownerUserId),
+        inArray(q.status, ["pending", "processing", "failed"]), ne(payloadField(schema, "model"), model),
         after ? gt(payloadField(schema, "fileId"), after) : undefined)).orderBy(asc(payloadField(schema, "fileId"))).limit(100);
+      const rows = isPostgres ? await query.for("update") : await query;
       for (const row of rows) await enqueueJob(tx, schema, row.dedupeKey, "image", row.owner, row.target, { ...row.payload, model, outputLanguage: null });
       return rows.length === 100 ? rows.at(-1)!.payload.fileId : undefined;
     });

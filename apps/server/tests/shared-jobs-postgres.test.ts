@@ -1,3 +1,4 @@
+import { createImageAnalysisStore } from "../src/image-analysis/store";
 import { testJobPayload } from "./fixtures/job-payload";
 import { enqueueStorageDelete, cancelJobs, lockJob } from "../src/jobs/state";
 import * as schema from "../src/db/auth-schema";
@@ -110,6 +111,51 @@ describe.runIf(url)("PostgreSQL shared job dispatch without RLS bypass", () => {
       client.query = original;
       client.release();
       await connection!.db.delete(schema.backgroundJob).where(inArray(schema.backgroundJob.dedupeKey, keys));
+    }
+  });
+  it("does not revive an image cancelled during model reconciliation", async () => {
+    const key = `${prefix}:image:reconcile`;
+    await jobs!.enqueue(key, "image", prefix, key, testJobPayload("image"));
+    const client = await connection!.pool.connect();
+    const { rows: [backend] } = await client.query<{ pid: number }>("SELECT pg_backend_pid() AS pid");
+    let notifySelected!: () => void, resume!: () => void;
+    const selected = new Promise<void>((resolve) => { notifySelected = resolve; });
+    const resumed = new Promise<void>((resolve) => { resume = resolve; });
+    const original = client.query.bind(client);
+    client.query = new Proxy(original, {
+      async apply(query, receiver, args) {
+        const result: unknown = await (Reflect.apply(query, receiver, args) as Promise<unknown>);
+        const input: unknown = args[0];
+        const text = typeof input === "string" ? input : (input as { text: string }).text;
+        if (text.startsWith("select ") && text.includes('from "jobs"."queue"') && text.includes("limit")) {
+          notifySelected(); await resumed;
+        }
+        return result;
+      },
+    });
+    const images = createImageAnalysisStore(drizzle({ client }) as unknown as NonNullable<typeof connection>["db"], true);
+    const reconciling = images.reconcilePage("new-model", prefix);
+    let cancelling: Promise<unknown> | undefined;
+    try {
+      await Promise.race([selected, reconciling.then(() => { throw new Error("reconciliation finished before interception"); })]);
+      let written = false;
+      cancelling = cancelJobs(connection!.db, schema, eq(schema.backgroundJob.dedupeKey, key), true)
+        .finally(() => { written = true; });
+      await vi.waitFor(async () => {
+        const waiting = await connection!.pool.query<{ blocked: boolean }>(
+          "SELECT EXISTS(SELECT 1 FROM pg_stat_activity WHERE $1 = ANY(pg_blocking_pids(pid))) AS blocked", [backend!.pid]);
+        expect(written || waiting.rows[0]?.blocked).toBe(true);
+      });
+      resume();
+      await Promise.all([reconciling, cancelling]);
+      const [current] = await connection!.db.select().from(schema.backgroundJob).where(eq(schema.backgroundJob.dedupeKey, key));
+      expect(current).toMatchObject({ status: "cancelled" });
+      expect(await jobs!.claim(["image"], [key])).toBeNull();
+    } finally {
+      resume();
+      await Promise.allSettled([reconciling, ...(cancelling ? [cancelling] : [])]);
+      client.query = original; client.release();
+      await connection!.db.delete(schema.backgroundJob).where(eq(schema.backgroundJob.dedupeKey, key));
     }
   });
   it("uses a non-superuser without bypass and atomically enforces caps across pooled connections", async () => {

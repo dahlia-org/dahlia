@@ -48,6 +48,22 @@ afterEach(() => {
 });
 
 describe("SQLite canonical sync", () => {
+  it("uses the queue's unique index for pending storage deletion checks", async () => {
+    const { store, databasePath } = await setup();
+    const database = new DatabaseSync(databasePath);
+    const key = "indexed-storage-delete";
+    await store.sync.enqueueStorageDelete(key);
+    const prepare = vi.spyOn(DatabaseSync.prototype, "prepare");
+    try {
+      expect(await store.sync.hasStorageDelete(key)).toBe(true);
+      const [query] = prepare.mock.calls.at(-1)!;
+      prepare.mockRestore();
+      const plan = database.prepare(`EXPLAIN QUERY PLAN ${query}`).all(...Array(query.match(/\?/g)?.length ?? 0).fill(null));
+      expect(plan.some((row) => String(row.detail).includes("SEARCH jobs_queue")
+        && String(row.detail).includes("dedupe_key=?"))).toBe(true);
+    } finally { prepare.mockRestore(); database.close(); await store.close?.(); }
+  });
+
   it("uses the project meeting index for live ordered pages", async () => {
     const { store, databasePath } = await setup();
     const database = new DatabaseSync(databasePath);
@@ -1143,6 +1159,51 @@ describe("SQLite canonical sync", () => {
       expect(await store.jobs.nextDelay(["image"])).toBeUndefined();
       await attach();
       expect(await store.imageAnalysis!.claim("model")).toMatchObject({ fileId: file.id, attempts: 0 });
+    } finally { db.close(); await store.close?.(); }
+  });
+
+  it.each(["failed", "processing", "cancelled", "current-model"] as const)("reconciles an accepted image model after %s", async (state) => {
+    const model = state === "current-model" ? "next-model" : "old-model";
+    const { store, service, publish, attach, file, databasePath } = await fileSetup(model, "fill_missing");
+    const db = new DatabaseSync(databasePath);
+    try {
+      await publish(); await attach();
+      const row = db.prepare("SELECT id, generation FROM jobs_queue WHERE kind = 'image'").get() as { id: string; generation: number };
+      const oldClaim = state === "processing" ? (await store.imageAnalysis!.claim(model))! : null;
+      const input = oldClaim ? await store.sync.withIdentity(owner, (scoped) => scoped.loadImageAnalysis(oldClaim)) : null;
+      if (state === "failed") {
+        for (let attempt = 1; attempt <= 3; attempt++) {
+          db.exec("UPDATE jobs_queue SET available_at = 0 WHERE kind = 'image'");
+          expect(await store.imageAnalysis!.claim("next-model")).toBeNull();
+        }
+        expect(db.prepare("SELECT status, dispatch_attempts FROM jobs_queue WHERE id = ?").get(row.id))
+          .toEqual({ status: "failed", dispatch_attempts: 3 });
+      } else if (state !== "processing") {
+        db.prepare("UPDATE jobs_queue SET status = ? WHERE id = ?").run(state === "cancelled" ? "cancelled" : "failed", row.id);
+      }
+      await store.imageAnalysis!.reconcile("next-model");
+      const recovered = db.prepare("SELECT id, status, lease, generation, payload ->> 'model' AS model FROM jobs_queue WHERE id = ?").get(row.id)!;
+      if (state === "cancelled") {
+        expect(recovered?.status ?? "cancelled").toBe("cancelled");
+        expect(await store.imageAnalysis!.claim("next-model")).toBeNull();
+        return;
+      }
+      if (state === "current-model") {
+        expect(recovered).toMatchObject({ id: row.id, status: "failed", model, generation: row.generation });
+        return;
+      }
+      expect(recovered).toMatchObject({ id: row.id, model: "next-model", status: oldClaim ? "processing" : "pending" });
+      expect(Number(recovered.generation)).toBeGreaterThan(Number(row.generation));
+      if (oldClaim) {
+        expect(recovered.lease).toBe(oldClaim.queue!.lease);
+        expect(await service.completeImageAnalysis(owner, input!, { ocr_text: "stale", caption: "stale", informative: true, reason: "Shared material" })).toBe(false);
+        await store.imageAnalysis!.finish(oldClaim);
+      }
+      const analyze = vi.fn(async () => ({ ocr_text: "Recovered OCR", caption: "Recovered caption", informative: true, reason: "Shared material" }));
+      expect(await imageProcessor(store.imageAnalysis!, { model: "next-model", analyze }, store.sync, service).processOne()).toBe(true);
+      expect(analyze).toHaveBeenCalledOnce();
+      expect((await service.getFile(owner, file.id)).metadata.caption).toBe("Recovered caption");
+      expect(db.prepare("SELECT id FROM jobs_queue WHERE id = ?").get(row.id)).toBeUndefined();
     } finally { db.close(); await store.close?.(); }
   });
 

@@ -349,8 +349,8 @@ function createHistoryMaintenanceStore(db: PostgresDatabase, schema: SyncSchema,
 function createStorageDeleteStore(db: PostgresDatabase, schema: SyncSchema, isPostgres: boolean) {
   return {
     async hasStorageDelete(storageKey: string): Promise<boolean> {
-      const [row] = await db.select({ key: payloadField(schema, "storageKey") })
-        .from(schema.backgroundJob).where(eq(payloadField(schema, "storageKey"), storageKey)).limit(1);
+      const [row] = await db.select({ id: schema.backgroundJob.id })
+        .from(schema.backgroundJob).where(eq(schema.backgroundJob.dedupeKey, `storage-delete:${storageKey}`)).limit(1);
       return row !== undefined;
     },
     async enqueueStorageDelete(storageKey: string): Promise<void> {
@@ -2127,7 +2127,7 @@ function createIdentityStore(
         const source = data.source as RecordingSource;
         const audio = record.audio[source];
         const [pendingDelete] = await db.select().from(schema.backgroundJob)
-          .where(eq(payloadField(schema, "storageKey"), recordingStorageKey(record, source))).limit(1);
+          .where(eq(schema.backgroundJob.dedupeKey, `storage-delete:${recordingStorageKey(record, source)}`)).limit(1);
         if (pendingDelete || !audio?.uploadedAt || audio.checksum !== data.checksum
           || (!audio.active && new Date(audio.createdAt).getTime() <= now.getTime() - 86_400_000)) {
           throw new SyncTransactionError(409, "recording_content_missing", [], operation.id);
@@ -2162,8 +2162,8 @@ function createIdentityStore(
           records.push({ entity: "file", id: operation.entityId, revision: null, record: null });
           continue;
         }
-        const [pendingDelete] = await db.select({ key: payloadField(schema, "storageKey") }).from(schema.backgroundJob)
-          .where(eq(payloadField(schema, "storageKey"), fileStorageKey(file.fileId))).limit(1);
+        const [pendingDelete] = await db.select({ id: schema.backgroundJob.id }).from(schema.backgroundJob)
+          .where(eq(schema.backgroundJob.dedupeKey, `storage-delete:${fileStorageKey(file.fileId)}`)).limit(1);
         if (pendingDelete) throw new SyncTransactionError(503, "file_storage_delete_pending", [], operation.id);
         if (!file.uploadedAt || data.checksum !== file.checksum) {
           throw new SyncTransactionError(422, "file_content_missing", [], operation.id);
@@ -2701,7 +2701,7 @@ function createIdentityStore(
       }
       if (!record) throw new SyncTransactionError(409, "recording_session_conflict");
       const [pending] = await db.select().from(schema.backgroundJob)
-        .where(eq(payloadField(schema, "storageKey"), recordingStorageKey(record, source))).limit(1);
+        .where(eq(schema.backgroundJob.dedupeKey, `storage-delete:${recordingStorageKey(record, source)}`)).limit(1);
       if (pending) throw new SyncTransactionError(503, "recording_storage_delete_pending");
       if (!record.audio[source]) {
         const audio = { ...record.audio, [source]: { generation: crypto.randomUUID(), createdAt: now.toISOString(),
@@ -2729,7 +2729,7 @@ function createIdentityStore(
       const audio = record?.audio[source];
       if (!record || audio?.generation !== generation || !await ensureUploadTarget(record.workspaceId, record.meetingId)) return null;
       const [pending] = await db.select().from(schema.backgroundJob)
-        .where(eq(payloadField(schema, "storageKey"), recordingStorageKey(record, source))).limit(1);
+        .where(eq(schema.backgroundJob.dedupeKey, `storage-delete:${recordingStorageKey(record, source)}`)).limit(1);
       if (pending) return null;
       const updated: RecordingRecord = { ...record, updatedAt: new Date(), audio: { ...record.audio,
         [source]: { ...audio, size, checksum, uploadedAt: new Date().toISOString() } } };
@@ -2785,8 +2785,8 @@ function createIdentityStore(
         .where(and(eq(schema.syncedFile.fileId, pending.fileId), eq(schema.syncedFile.workspaceId, pending.workspaceId),
           eq(schema.syncedFile.createdAt, pending.createdAt), isNull(schema.syncedFile.uploadedAt),
           eq(schema.syncedFile.active, false), writeAccess(schema.syncedFile.workspaceId),
-          notExists(db.select({ key: payloadField(schema, "storageKey") }).from(schema.backgroundJob)
-            .where(eq(payloadField(schema, "storageKey"), fileStorageKey(pending.fileId))))))
+          notExists(db.select({ id: schema.backgroundJob.id }).from(schema.backgroundJob)
+            .where(eq(schema.backgroundJob.dedupeKey, `storage-delete:${fileStorageKey(pending.fileId)}`)))))
         .returning(), pending.workspaceId);
       return file ?? null;
     },
