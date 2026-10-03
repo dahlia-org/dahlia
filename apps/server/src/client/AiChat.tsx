@@ -564,7 +564,7 @@ export function AiChat({ requestedThreadId }: { requestedThreadId?: string }) {
         </article>)}
         {answer && <article className="ai-message assistant"><StreamingChatMarkdown content={answer} /></article>}
         {tool && <p className="ai-status" role="status">{uiText(`Checking meetings with ${tool}…`, `${tool} でミーティングを確認中…`)}</p>}
-        {error && <div className="ai-error" role="alert"><span>{error}</span>{!persistentHistory && <button className="secondary" disabled={pending || openingThread || messages.at(-1)?.role !== "user"} onClick={retry}>{uiText("Retry", "再試行")}</button>}</div>}
+        {error && <div className="ai-error" role="alert"><span>{error}</span><button className="secondary" disabled={pending || openingThread || messages.at(-1)?.role !== "user"} onClick={retry}>{uiText("Retry", "再試行")}</button></div>}
       </div>
       <div className="ai-bottom">{composer}<p className="sr-only" aria-live="polite">{pending ? uiText("AI is responding", "AIが回答中です") : error || uiText("Ready", "準備完了")}</p></div>
     </>}

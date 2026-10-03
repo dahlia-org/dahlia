@@ -202,12 +202,20 @@ it.runIf(process.env.TEST_DATABASE_URL)("persists built-in task, plan and suspen
     await expect(strangerState!.setState({ threadId: thread.id, type: "task", value: [] })).rejects.toThrow();
     const nextHistory = { ...history, memory: serviceHistory.memory(owner) };
     const resume = { tool: "submit_plan" as const, runId: event.interaction.runId, toolCallId: event.interaction.toolCallId, action: "approved" as const };
+    const beforeResumeState = await nextHistory.memory.storage.getStore("threadState");
+    vi.spyOn(beforeResumeState!, "deleteState").mockRejectedValueOnce(new Error("state_clear_failed"));
+    await expect(collect(createAiService(config, gateway, {} as never).stream({ ...input, history: nextHistory, resume,
+      messages: [{ role: "user", content: "First approval attempt" }] }, owner, new Request(config.baseUrl)))).rejects.toThrow("state_clear_failed");
+    expect(await readInteraction(nextHistory)).toEqual(event.interaction);
     const completed = await collect(createAiService(config, gateway, {} as never).stream({ ...input, history: nextHistory, resume, messages: [{ role: "user", content: "Approve plan" }] }, owner, new Request(config.baseUrl)));
     expect(completed).toContainEqual({ type: "text", text: "Done" });
     const state = await nextHistory.memory.storage.getStore("threadState");
     expect(await state!.getState({ threadId: thread.id, type: "task" })).toEqual([{ id: "one", content: "Review", activeForm: "Reviewing", status: "completed" }]);
     expect(await readPlan(nextHistory, "plans/review.md")).toMatchObject({ content: "Read summaries." });
-    expect((await serviceHistory.get(owner, thread.id))?.messages.some((message) => message.role === "user" && message.content === "Approve plan")).toBe(true);
+    const savedMessages = (await serviceHistory.get(owner, thread.id))!.messages;
+    expect(savedMessages.filter((message) => message.role === "user" && ["First approval attempt", "Approve plan"].includes(message.content)))
+      .toEqual([expect.objectContaining({ content: "Approve plan" })]);
+    expect((await connection.pool.query('SELECT count(*)::int AS count FROM agent.mastra_workflow_snapshot WHERE "resourceId" = $1', [owner.userId])).rows).toEqual([{ count: 0 }]);
     expect(await readInteraction(nextHistory)).toBeUndefined();
     await serviceHistory.delete(owner, thread.id);
     expect(await state!.getState({ threadId: thread.id, type: "task" })).toBeUndefined();

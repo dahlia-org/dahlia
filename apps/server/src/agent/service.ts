@@ -8,6 +8,7 @@ import { Mastra } from "@mastra/core/mastra";
 import { InMemoryStore } from "@mastra/core/storage";
 import { TaskSignalProvider } from "@mastra/core/signals";
 import { uuidV7 } from "../id";
+import { sha256 } from "../storage/sha256";
 import { aiResumeSchema, createInteractiveTools, readInteraction, saveInteraction, suspendedInteraction, type AiInteraction, type AiResume, type AgentHistory } from "./builtin";
 import { ModelsDevGateway, ModelRouterLanguageModel, type LanguageModel } from "@mastra/core/llm";
 import { noopLogger } from "@mastra/core/logger";
@@ -220,7 +221,8 @@ export function createAiService(
             if (!runs.some((run) => run.runId === resume.runId && run.toolCalls.some((call) => call.toolCallId === resume.toolCallId && call.toolName === resume.tool))) {
               throw new GatewayRequestError("Suspended tool not found", 409, "ai_interaction_mismatch");
             }
-            await memory.saveMessages({ messages: [{ id: uuidV7(), threadId: history.threadId, resourceId: history.resourceId, role: "user", createdAt: new Date(),
+            const messageId = `resume-${await sha256(JSON.stringify([history.resourceId, history.threadId, resume.runId, resume.toolCallId, resume.tool]))}`;
+            await memory.saveMessages({ messages: [{ id: messageId, threadId: history.threadId, resourceId: history.resourceId, role: "user", createdAt: new Date(),
               content: { format: 2, parts: [{ type: "text", text: input.messages.at(-1)!.content }] } }] });
             await saveInteraction(history, undefined);
             const resumeData = resume.tool === "ask_user" ? resume.answer : { action: resume.action, feedback: resume.feedback };
