@@ -41,7 +41,8 @@ export const DEFAULT_GENERATION_PREFERENCES: GenerationPreferences = {
   summary: { style: "detailed" },
 };
 // Retained wire shape for v0.24.x clients and stored JSON. Only outputLanguage is
-// a shared default in current clients; the remaining fields do not route processing.
+// shared by Desktop and Web. Remote model/workflow and style are Web generation
+// defaults; the remaining legacy fields do not route server processing.
 export const workspaceGenerationSettingsSchema = generationPreferencesSchema.extend({
   local: summaryModelSettingsSchema,
   automaticProcessing: z.boolean(),

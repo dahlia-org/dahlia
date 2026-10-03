@@ -10,7 +10,7 @@
 "settings.organization.settingsAccountSelectionDescription" = "編集対象を選んでも、開いているワークスペースは変わりません。";
 "settings.organization.settingsLoading" = "設定を読み込み中…";
 "settings.organization.settingsApplyNextGeneration" = "変更は自動保存され、次回の生成から適用されます。";
-"settings.organization.settingsSummaryOutput" = "要約";
+"settings.organization.settingsSummaryOutput" = "要約生成";
 "settings.organization.settingsOutputLanguageDescription" = "出力言語は要約と画像の説明に共通です。音声認識の言語は変更しません。";
 "settings.organization.generatedContentLanguage" = "生成コンテンツの言語";
 "settings.organization.settingsLocalAnalysisLanguages" = "画像の解析には「一般」で選んだ、このMacの対象言語を使用します。";

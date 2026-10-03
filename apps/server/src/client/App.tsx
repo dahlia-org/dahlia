@@ -434,7 +434,7 @@ function Settings({ session, extensions }: { session: SessionInfo; extensions: r
   return (
     <>
       {dialog}
-      <PageHeader title={uiText("Account settings", "アカウント設定")} description={uiText("Applies to every workspace in this account and syncs across your devices.", "このアカウントのすべてのワークスペースに適用され、ほかの端末にも同期されます。")}
+      <PageHeader title={uiText("Account settings", "アカウント設定")} description={uiText("Manage your account and connected sessions. Desktop AI settings are stored on each Mac and are not synced.", "アカウントと接続中のセッションを管理します。デスクトップのAI設定は各Macに保存され、同期されません。")}
         actions={session.capabilities.sync && !session.capabilities.ai && <Button asChild variant="outline"><a href="/memory">Dahlia Memory</a></Button>} />
       <section className="section-block">
         <h2 className="section-label text-[15px] font-semibold text-foreground">{uiText("Account", "アカウント")}</h2>
@@ -758,10 +758,10 @@ export function WorkspaceMeetings({ session, workspaceId }: { session: SessionIn
       ...(session.capabilities.sharing && workspace ? [{ id: "permissions", label: uiText("Permissions", "権限"), content: <WorkspaceSharing workspace={workspace} /> }] : []),
       { id: "settings", label: uiText("Settings", "設定"), content: <>
         <section className="workspace-settings"><h2>{uiText("Workspace details", "ワークスペースの詳細")}</h2><div className="collection-heading"><span>{workspace?.name}</span>{workspace?.role === "admin" && <button className="secondary" onClick={renameWorkspace}>{uiText("Edit Workspace", "ワークスペースを編集")}</button>}</div></section>
-        {workspace && <WorkspaceMemory key={workspaceId} workspaceId={workspaceId} role={workspace.role} />}
-        {workspace && <ServerSummarySettings key={workspaceId} workspaceId={workspaceId} onSave={(current, generationSettings) =>
+        {workspace && <ServerSummarySettings key={`generation-${workspaceId}`} workspaceId={workspaceId} onSave={(current, generationSettings) =>
           commitSyncTransaction(workspaceId, [{ entity: "workspace", action: "update", entityId: workspaceId,
             baseRevision: current.revision, data: { name: current.name, generationSettings } }], setRecovering)} />}
+        {workspace && <WorkspaceMemory key={`memory-${workspaceId}`} workspaceId={workspaceId} role={workspace.role} />}
         {workspace?.role === "admin" && <WorkspaceTransfer workspace={workspace} />}
         {workspace?.role === "admin" && !personal && <section className="workspace-settings"><h2>{uiText("Delete Workspace", "ワークスペースを削除")}</h2>
           <div className="collection-heading"><p>{uiText("Only empty Workspaces can be deleted. Transfer resources or wait for meetings in the trash to be permanently deleted.", "空のワークスペースのみ削除できます。ごみ箱内のミーティングを含むリソースが残っている場合は、先に移管または削除完了を待ってください。")}</p>

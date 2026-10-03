@@ -92,19 +92,10 @@ struct SettingsDetailView: View {
                     onShowSignIn: mainWindowNavigation.openDahliaSignIn
                 )
                 Group {
-                    if appSettings.currentWorkspace != nil {
-                        Section {
-                            LabeledContent(L10n.appliesToAccount, value: selectedAccountName)
-                        } header: {
-                            Text(L10n.accountPreferences)
-                        } footer: {
-                            Text(L10n.settingsAccountIntro)
-                        }
-                        if WorkspaceAISettingsModel.shared.isLocalAccount {
-                            AccountSettingsView()
-                        }
+                    if appSettings.currentWorkspace != nil, WorkspaceAISettingsModel.shared.isLocalAccount {
+                        AccountSettingsView()
                     }
-                    AccountProcessingSettingsView(onOpenMacTranscription: { selection = .transcription })
+                    AccountProcessingSettingsView()
                 }
                 .id(appSettings.currentWorkspace?.accountConnectionId)
             }
@@ -168,12 +159,6 @@ struct SettingsDetailView: View {
         case .cloudStorage: L10n.settingsExportIntro
         default: L10n.thisMacSettingsDescription
         }
-    }
-
-    private var selectedAccountName: String {
-        guard let workspace = appSettings.currentWorkspace else { return L10n.noWorkspaceSelected }
-        return dahliaAccountController.connections.first { $0.id == workspace.accountConnectionId }?.displayName
-            ?? (workspace.accountConnectionId == nil ? L10n.localAccount : L10n.dahliaAccount)
     }
 
     private func updateCurrentWorkspaceIfNeeded(_ workspace: WorkspaceRecord) {
