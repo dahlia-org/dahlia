@@ -109,19 +109,6 @@ export const agentObservations = agentSchema.table("mastra_observational_memory"
     withCheck: sql`${table.scope} = 'thread' AND ${table.resourceId} = ${currentUser} AND ${ownedThread(table.threadId)}` }),
 ]).enableRLS();
 
-export const agentMemoryJobs = agentSchema.table("memory_jobs", {
-  id: text("id").primaryKey(), userId: text("user_id").notNull(),
-  threadId: text("thread_id").notNull().references(() => agentThreads.id, { onDelete: "cascade" }),
-  kind: text("kind").notNull(), messageId: text("message_id"), revision: integer("revision").notNull(),
-  availableAt: timestamp("available_at", { withTimezone: true }).defaultNow().notNull(),
-  lease: text("lease"), leaseUntil: timestamp("lease_until", { withTimezone: true }),
-  attempts: integer("attempts").default(0).notNull(),
-}, (table) => [index("agent_memory_due_idx").on(table.availableAt),
-  pgPolicy("agent_memory_job_owner", { for: "all", using: sql`${table.userId} = ${currentUser} AND ${ownedThread(table.threadId)}`,
-    withCheck: sql`${table.userId} = ${currentUser} AND ${ownedThread(table.threadId)}` }),
-  pgPolicy("agent_memory_job_dispatch", { for: "select", using: sql`current_setting('app.maintenance', true) = 'agent-memory'` }),
-]).enableRLS();
-
 export const agentLiveContexts = agentSchema.table("live_contexts", {
   meetingId: uuid("meeting_id").primaryKey().references(() => syncedMeeting.meetingId, { onDelete: "cascade" }),
   snapshot: jsonb("snapshot"), lease: text("lease"), leaseUntil: timestamp("lease_until", { withTimezone: true }),

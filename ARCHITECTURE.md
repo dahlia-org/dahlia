@@ -54,7 +54,7 @@ UI の応答性と録音データの保全は別の品質軸として扱う。�
 
 ## Runtime Data Flow
 
-Server のバックグラウンド処理は共通の永続キューから実行し、Node の子プロセス数と各プロセスの並列数を設定できる。Cloudflare は一つの起床通知 Queue から同じ claim・lease・種類別上限を使う。各ドメインのテーブルには入力、公開状態、古い結果を拒否する世代情報を保持する。Desktop の `BackgroundJobWorker` は検索・画像解析・Server 向け録音アーカイブ準備を `jobs_background` で管理し、全体2枠、検索1・画像2・アーカイブ1を上限とする。録音と文字起こしの永続化、バッチ文字起こし、同期トランザクション、Documents は既存の専用経路を維持する。
+Server のバックグラウンド処理は共通の永続キューから実行し、Node の子プロセス数と各プロセスの並列数を設定できる。Cloudflare は一つの起床通知 Queue から同じ claim・lease・種類別上限を使う。Server の実行状態・lease・試行回数・待機時刻は `jobs.queue` だけが保持する。インフラ障害・入力準備待ちは別の `dispatch_attempts` で3回までとし、用途別の処理試行上限や rate limit の返却条件は維持する。UUIDv7 ID と一意な `dedupe_key`、種類別に検証した運用情報の `payload` を使い、正本更新と同じ transaction で登録する。要約の暗号化入力・stage・公開 ID と Memory の進捗・入力世代・外部 operation は専用テーブルに残す。保存は queue の ID・lease・generation・期限と正本の revision/hash・認可を同じ transaction で検証する。キャンセルや実行中の更新でも有効な lease を保持し、並列数と同一 target の排他に数える。Desktop の `BackgroundJobWorker` は検索・画像解析・Server 向け録音アーカイブ準備を `jobs_background` で管理し、全体2枠、検索1・画像2・アーカイブ1を上限とする。録音と文字起こしの永続化、バッチ文字起こし、同期トランザクション、Documents は既存の専用経路を維持する。
 
 音声と文字起こしの mode／ライブ機能の組み合わせ、データごとの永続化境界、開始・停止・異常時の runtime scenario は
 [`音声・文字起こしデータフロー`](docs/architecture/audio-transcription-data-flow.md) を正本とする。

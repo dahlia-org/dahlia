@@ -29,10 +29,12 @@ it.runIf(process.env.TEST_MIGRATION_DATABASE_URL)("creates the complete PostgreS
     }
     expect((await client.query("SELECT to_regclass('jobs.queue') AS queue")).rows).toEqual([{ queue: "jobs.queue" }]);
     expect((await client.query<{ tgname: string }>(`SELECT tgname FROM pg_trigger
-      WHERE NOT tgisinternal AND tgname LIKE 'dispatch_%' ORDER BY tgname`)).rows.map(({ tgname }) => tgname)).toEqual([
-      "dispatch_chat_memory", "dispatch_image", "dispatch_personal_memory", "dispatch_search",
-      "dispatch_storage_delete", "dispatch_summary", "dispatch_workspace_memory",
-    ]);
+      WHERE NOT tgisinternal AND tgname LIKE 'dispatch_%' ORDER BY tgname`)).rows.map(({ tgname }) => tgname)).toEqual([]);
+    for (const name of ["jobs.image_analysis", "jobs.search_index", "jobs.storage_delete", "agent.memory_jobs"]) {
+      expect((await client.query("SELECT to_regclass($1) AS retired", [name])).rows).toEqual([{ retired: null }]);
+    }
+    expect((await client.query("SELECT data_type FROM information_schema.columns WHERE table_schema = 'jobs' AND table_name = 'queue' AND column_name = 'id'")).rows)
+      .toEqual([{ data_type: "uuid" }]);
     const owner = testUserID("owner");
     await client.query('INSERT INTO auth."user"(id, name, email) VALUES ($1, $2, $3)', [owner, "Owner", "owner@example.com"]);
     await client.query("SELECT set_config('app.user_id', $1, true)", [owner]);
@@ -48,7 +50,7 @@ it.runIf(process.env.TEST_MIGRATION_DATABASE_URL)("creates the complete PostgreS
     expect(protectedTables.rows.map((row) => row.relname)).toEqual([
       "ai_thread_runs", "document_presence", "document_recoveries", "document_updates", "documents", "documents", "files", "knowledge_pages", "live_contexts", "mastra_messages",
       "mastra_observational_memory", "mastra_resources", "mastra_threads", "meeting_attachments",
-      "meeting_events", "meetings", "memory_jobs", "personal_memories", "projects",
+      "meeting_events", "meetings", "personal_memories", "projects",
       "recordings", "shared_memories", "summaries", "summary", "transaction_receipts",
       "transcript_patch_chunks", "transcript_segments", "transcripts", "workspace_keys", "workspace_transfers", "workspaces",
     ]);

@@ -188,7 +188,7 @@ describe("SQLite canonical sync", () => {
     const vector = [1, ...new Array<number>(31).fill(0)];
     const index = store.searchIndex!;
     const claim = async (model = "model") => {
-      raw.exec("UPDATE jobs_search_index SET available_at = 0");
+      raw.exec("UPDATE jobs_queue SET available_at = 0 WHERE kind = 'search'");
       const jobs = await index.claim(model, 32, 100);
       return (await index.load(jobs.find((job) => job.documentId === meetingId)!))!;
     };
@@ -238,6 +238,32 @@ describe("SQLite canonical sync", () => {
     } finally { raw.close(); await store.close?.(); }
   });
 
+  it("rolls back an embedding when its lease expires at settlement and recovers it", async () => {
+    const { store, databasePath } = await setup({ model: "model", dimensions: 32 });
+    const raw = new DatabaseSync(databasePath);
+    try {
+      await createWorkspace(store);
+      await new MeetingSyncService(store.sync).commitTransaction(owner, wire([{ entity: "meeting", action: "create", entityId: meetingId,
+        baseRevision: null, data: { ...meetingData(), createdAt: now.toISOString(), updatedAt: now.toISOString(), recordingStartedAt: now.toISOString(), projectId: null } }]));
+      const index = store.searchIndex!;
+      raw.exec("UPDATE jobs_queue SET available_at = 0 WHERE kind = 'search'");
+      const first = (await index.load((await index.claim("model", 32, 16))[0]!))!;
+      const state = await import("../src/jobs/state");
+      const settle = state.settleJob;
+      vi.useFakeTimers({ toFake: ["Date"] });
+      const expiry = vi.spyOn(state, "settleJob").mockImplementationOnce(async (...args) => {
+        vi.setSystemTime(first.queue!.leaseUntil!.getTime() + 1);
+        return settle(...args);
+      });
+      const vector = [1, ...new Array<number>(31).fill(0)];
+      await expect(index.save(first, "model", 32, vector)).rejects.toThrow("job_lease_changed");
+      expiry.mockRestore();
+      expect(raw.prepare("SELECT embedding FROM search_documents WHERE document_id = ?").get(meetingId)).toEqual({ embedding: null });
+      const current = (await index.load((await index.claim("model", 32, 16))[0]!))!;
+      expect(await index.save(current, "model", 32, vector)).toBe(true);
+    } finally { vi.useRealTimers(); raw.close(); await store.close?.(); }
+  });
+
   it("does not requeue retained meeting and image projections until restore", async () => {
     const { store, service, publish, attach, file, databasePath } = await fileSetup("caption-model");
     const raw = new DatabaseSync(databasePath);
@@ -248,16 +274,16 @@ describe("SQLite canonical sync", () => {
       await service.commitTransaction(owner, wire([{ entity: "meeting", action: "update", entityId: meetingId, baseRevision: 1,
         data: { name: "Meeting", description: "", status: "READY", duration: 60, projectId: null, updatedAt: now.toISOString(), recordingStartedAt: now.toISOString() } }]));
       await service.commitTransaction(owner, wire([{ entity: "meeting", action: "delete", entityId: meetingId, baseRevision: 2, data: {} }]));
-      raw.exec("UPDATE jobs_search_index SET available_at = 0");
+      raw.exec("UPDATE jobs_queue SET available_at = 0 WHERE kind = 'search'");
       const stale = await index.claim("embedding", 32, 100);
       expect(stale.map((job) => job.documentId).sort()).toEqual([meetingId, file.id].sort());
       expect(await index.loadMany(stale)).toEqual([]);
       for (const job of stale) await index.discard(job);
       await index.reconcile("embedding", 32);
-      expect(raw.prepare("SELECT count(*) AS n FROM jobs_search_index").get()?.n).toBe(0);
+      expect(raw.prepare("SELECT count(*) AS n FROM jobs_queue WHERE kind = 'search'").get()?.n).toBe(0);
       await service.commitTransaction(owner, wire([{ entity: "meeting", action: "restore", entityId: meetingId, baseRevision: 3, data: {} }]));
       await index.reconcile("embedding", 32);
-      raw.exec("UPDATE jobs_search_index SET available_at = 0");
+      raw.exec("UPDATE jobs_queue SET available_at = 0 WHERE kind = 'search'");
       const restored = await index.claim("embedding", 32, 100);
       expect((await index.loadMany(restored)).map((job) => job.documentId).sort()).toEqual([meetingId, file.id].sort());
     } finally { raw.close(); await store.close?.(); }
@@ -292,7 +318,7 @@ describe("SQLite canonical sync", () => {
     const vector = [1, ...new Array<number>(31).fill(0)];
     const index = store.searchIndex!;
     const claim = async () => {
-      raw.exec("UPDATE jobs_search_index SET available_at = 0");
+      raw.exec("UPDATE jobs_queue SET available_at = 0 WHERE kind = 'search'");
       const jobs = await index.claim("embedding", 32, 100);
       return (await index.load(jobs.find((job) => job.documentId === file.id)!))!;
     };
@@ -546,7 +572,7 @@ describe("SQLite canonical sync", () => {
     expect((await store.sync.withIdentity(owner, (sync) => sync.getWorkspaceRelocations(workspaceId))).items).toEqual(expect.arrayContaining([expect.objectContaining({ entity: "meeting", id: meetingId, workspaceId: destinationWorkspaceId })]));
     const database = new DatabaseSync(databasePath);
     expect(database.prepare("PRAGMA foreign_key_check").all()).toEqual([]);
-    expect(database.prepare("SELECT count(*) AS count FROM jobs_storage_delete").get()).toMatchObject({ count: 0 });
+    expect(database.prepare("SELECT count(*) AS count FROM jobs_queue WHERE kind = 'storage-delete'").get()).toMatchObject({ count: 0 });
     database.close();
     await store.close?.();
   });
@@ -925,7 +951,7 @@ describe("SQLite canonical sync", () => {
       expect(response.status, kind).toBe(409);
       expect(await response.json()).toMatchObject({ code: "workspace_not_empty" });
       expect(await store.sync.withIdentity(owner, (sync) => sync.getWorkspace(workspaceId))).toMatchObject({ hasResources: true, revision: 1 });
-      expect(db.prepare("SELECT count(*) AS count FROM jobs_storage_delete").get()).toMatchObject({ count: 0 });
+      expect(db.prepare("SELECT count(*) AS count FROM jobs_queue WHERE kind = 'storage-delete'").get()).toMatchObject({ count: 0 });
       if (kind === "project") {
         expect(db.prepare("SELECT count(*) AS count FROM projects").get()).toMatchObject({ count: 1 });
         await commit(store, owner, transaction(freshId(), [{ id: freshId(), entity: "project", action: "delete", entityId: projectId, baseRevision: 1, data: {} }]));
@@ -1077,8 +1103,8 @@ describe("SQLite canonical sync", () => {
     const database = new DatabaseSync(databasePath);
     expect(database.prepare("SELECT caption_text FROM search_documents WHERE kind = 'screenshot'").all())
       .toEqual([{ caption_text: "architecture diagram" }, { caption_text: "architecture diagram" }]);
-    expect(database.prepare("SELECT count(*) AS n FROM jobs_search_index WHERE document_id IN (SELECT document_id FROM search_documents WHERE kind = 'screenshot')").get()).toMatchObject({ n: 2 });
-    expect(database.prepare("SELECT count(*) AS n FROM jobs_image_analysis").get()).toMatchObject({ n: 0 });
+    expect(database.prepare("SELECT count(*) AS n FROM jobs_queue WHERE kind = 'search' AND payload ->> 'documentId' IN (SELECT document_id FROM search_documents WHERE kind = 'screenshot')").get()).toMatchObject({ n: 2 });
+    expect(database.prepare("SELECT count(*) AS n FROM jobs_queue WHERE kind = 'image'").get()).toMatchObject({ n: 0 });
     database.close();
     await jobs.reconcile(captioner.model);
     expect(await worker.processOne()).toBe(false);
@@ -1096,9 +1122,28 @@ describe("SQLite canonical sync", () => {
     expect(await worker.processOne()).toBe(false);
     expect(analyze).not.toHaveBeenCalled();
     const db = new DatabaseSync(databasePath);
-    expect(db.prepare("SELECT count(*) AS n FROM jobs_image_analysis").get()).toEqual({ n: 0 });
+    expect(db.prepare("SELECT count(*) AS n FROM jobs_queue WHERE kind = 'image'").get()).toEqual({ n: 0 });
     db.close();
     await store.close?.();
+  });
+
+  it("retains an accepted unattached image in the DLQ after three readiness checks", async () => {
+    const { store, publish, attach, file, databasePath } = await fileSetup("model");
+    const db = new DatabaseSync(databasePath);
+    try {
+      await publish();
+      seedLegacyImageJob(databasePath, file.id, "model");
+      for (let attempt = 1; attempt <= 3; attempt++) {
+        db.exec("UPDATE jobs_queue SET available_at = 0 WHERE kind = 'image'");
+        expect(await store.imageAnalysis!.claim("model")).toBeNull();
+        expect(db.prepare("SELECT status, attempts, dispatch_attempts, last_error FROM jobs_queue WHERE kind = 'image'").get())
+          .toMatchObject({ status: attempt === 3 ? "failed" : "pending", attempts: 0,
+            dispatch_attempts: attempt, last_error: "job_source_not_ready" });
+      }
+      expect(await store.jobs.nextDelay(["image"])).toBeUndefined();
+      await attach();
+      expect(await store.imageAnalysis!.claim("model")).toMatchObject({ fileId: file.id, attempts: 0 });
+    } finally { db.close(); await store.close?.(); }
   });
 
   it.each(["insert", "update", "processing"] as const)("revives accepted image dispatch on attachment during %s", async (action) => {
@@ -1108,19 +1153,41 @@ describe("SQLite canonical sync", () => {
       await publish();
       if (action === "update") await attach();
       seedLegacyImageJob(databasePath, file.id, "model");
-      db.exec("UPDATE jobs_image_analysis SET attempts = 1; UPDATE jobs_queue SET attempts = 2 WHERE kind = 'image'");
+      db.exec("UPDATE jobs_queue SET attempts = 1, dispatch_attempts = 2 WHERE kind = 'image'");
       const job = (await store.jobs.claim(["image"]))!;
       if (action !== "processing") await store.jobs.retry(job, { delayMs: 0, errorCode: "job_source_not_ready" });
-      expect(db.prepare("SELECT status, attempts FROM jobs_queue WHERE kind = 'image'").get())
-        .toMatchObject({ status: action === "processing" ? "processing" : "failed", attempts: 3 });
+      expect(db.prepare("SELECT status, attempts, dispatch_attempts FROM jobs_queue WHERE kind = 'image'").get())
+        .toMatchObject({ status: action === "processing" ? "processing" : "failed", attempts: action === "processing" ? 2 : 1, dispatch_attempts: 3 });
       if (action !== "update") await attach();
       else await service.commitTransaction(owner, wire([{ entity: "meeting_attachment", action: "upsert", entityId: file.id,
         baseRevision: 1, data: { fileId: file.id, meetingId, capturedAt: now.toISOString(), sessionId: null, createdAt: now.toISOString() } }]));
-      if (action === "processing") await store.jobs.retry(job, { delayMs: 0, errorCode: "job_source_not_ready" });
-      expect(db.prepare("SELECT status, attempts, last_error FROM jobs_queue WHERE kind = 'image'").get())
-        .toMatchObject({ status: "pending", attempts: 0, last_error: null });
-      expect(db.prepare("SELECT status, attempts FROM jobs_image_analysis").get()).toMatchObject({ status: "pending", attempts: 1 });
+      if (action === "processing") {
+        // A repeated attachment update under the same live lease must refund only its uncompleted attempt once.
+        await service.commitTransaction(owner, wire([{ entity: "meeting_attachment", action: "upsert", entityId: file.id,
+          baseRevision: 1, data: { fileId: file.id, meetingId, capturedAt: now.toISOString(), sessionId: null, createdAt: now.toISOString() } }]));
+        await store.jobs.retry(job, { delayMs: 0, errorCode: "job_source_not_ready" });
+      }
+      expect(db.prepare("SELECT status, attempts, dispatch_attempts, last_error FROM jobs_queue WHERE kind = 'image'").get())
+        .toMatchObject({ status: "pending", attempts: 1, dispatch_attempts: 0, last_error: null });
       expect(await store.imageAnalysis!.claim("model")).toMatchObject({ fileId: file.id, attempts: 1 });
+    } finally { db.close(); await store.close?.(); }
+  });
+
+  it("keeps image processing retries separate from the three-attempt infrastructure budget", async () => {
+    const { store, publish, attach, service, file, databasePath } = await fileSetup("model");
+    const db = new DatabaseSync(databasePath);
+    try {
+      await publish(); await attach();
+      seedLegacyImageJob(databasePath, file.id, "model");
+      const worker = imageProcessor(store.imageAnalysis!, { model: "model", analyze: async () => {
+        throw new ImageAnalysisError("captioning_processing_failed", true);
+      } }, store.sync, service);
+      for (let attempt = 1; attempt <= 4; attempt++) {
+        db.exec("UPDATE jobs_queue SET available_at = 0 WHERE kind = 'image'");
+        expect(await worker.processOne()).toBe(true);
+        expect(db.prepare("SELECT status, attempts, dispatch_attempts, last_error FROM jobs_queue WHERE kind = 'image'").get())
+          .toMatchObject({ status: "pending", attempts: attempt, dispatch_attempts: 0, last_error: "captioning_processing_failed" });
+      }
     } finally { db.close(); await store.close?.(); }
   });
 
@@ -1132,18 +1199,20 @@ describe("SQLite canonical sync", () => {
       await attach();
       const captioner: ImageCaptioner = { model: "model", analyze: async () => { throw new ImageAnalysisError("captioning_http_429", true); } };
       expect(await imageProcessor(store.imageAnalysis!, captioner, store.sync, service).processOne()).toBe(true);
-      raw.exec("UPDATE jobs_image_analysis SET available_at = 0");
+      raw.exec("UPDATE jobs_queue SET available_at = 0 WHERE kind = 'image'");
       expect(await store.imageAnalysis!.claim("model")).toBeNull();
+      raw.exec("UPDATE jobs_dispatch SET cooldowns = '{}'");
       expect(await store.imageAnalysis!.claim("model", { fileId: file.id, ownerUserId: owner.userId, model: "model" })).not.toBeNull();
 
       const index = store.searchIndex!;
       await service.commitTransaction(owner, wire([{ entity: "meeting", action: "create", entityId: freshId(), baseRevision: null,
         data: { ...meetingData(), createdAt: now.toISOString(), updatedAt: now.toISOString(), recordingStartedAt: now.toISOString(), projectId: null } }]));
-      raw.exec("UPDATE jobs_search_index SET available_at = 0");
+      raw.exec("UPDATE jobs_queue SET available_at = 0 WHERE kind = 'search'");
       const [job] = await index.claim("embedding", 32, 1);
       await index.retry(job!, "embedding_http_429", new Date(Date.now() + 30_000));
-      raw.exec("UPDATE jobs_search_index SET available_at = 0");
+      raw.exec("UPDATE jobs_queue SET available_at = 0 WHERE kind = 'search'");
       expect(await index.claim("embedding", 32, 1)).toEqual([]);
+      raw.exec("UPDATE jobs_dispatch SET cooldowns = '{}'");
       expect(await index.claim("embedding", 32, 1, [job!])).toHaveLength(1);
     } finally { raw.close(); await store.close?.(); }
   });
@@ -1154,7 +1223,7 @@ describe("SQLite canonical sync", () => {
       data: { checksum: file.checksum, metadata: kind === "analyzed" ? { ocrText: "OCR", caption: "Caption" } : {} } }]));
     await attach();
     const database = new DatabaseSync(databasePath);
-    expect(database.prepare("SELECT count(*) AS n FROM jobs_image_analysis").get()).toEqual({ n: 0 });
+    expect(database.prepare("SELECT count(*) AS n FROM jobs_queue WHERE kind = 'image'").get()).toEqual({ n: 0 });
     database.close();
     await store.close?.();
   });
@@ -1186,11 +1255,11 @@ describe("SQLite canonical sync", () => {
     expect(await worker.processOne()).toBe(false);
     await attach();
     let database = new DatabaseSync(databasePath);
-    expect(database.prepare("SELECT mode FROM jobs_image_analysis").get()).toEqual({ mode: "replace" });
+    expect(database.prepare("SELECT payload ->> 'mode' AS mode FROM jobs_queue WHERE kind = 'image'").get()).toEqual({ mode: "replace" });
     const imported = database.prepare("SELECT ocr_text, caption_text, embedding, embedding_content_hash FROM search_documents WHERE kind = 'screenshot'").get();
     expect(imported).toMatchObject({ ocr_text: "imported ocr", caption_text: "imported caption", embedding: null });
     expect(imported).toHaveProperty("embedding_content_hash", expect.any(String));
-    expect(database.prepare("SELECT count(*) AS n FROM jobs_search_index").get()).toEqual({ n: 0 });
+    expect(database.prepare("SELECT count(*) AS n FROM jobs_queue WHERE kind = 'search'").get()).toEqual({ n: 0 });
     database.close();
 
     expect(await worker.processOne()).toBe(true);
@@ -1200,8 +1269,8 @@ describe("SQLite canonical sync", () => {
     database = new DatabaseSync(databasePath);
     expect(database.prepare("SELECT ocr_text, caption_text FROM search_documents WHERE kind = 'screenshot'").get())
       .toEqual({ ocr_text: "server ocr", caption_text: "server caption" });
-    expect(database.prepare("SELECT count(*) AS n FROM jobs_image_analysis").get()).toEqual({ n: 0 });
-    expect(database.prepare("SELECT count(*) AS n FROM jobs_search_index").get()).toEqual({ n: 1 });
+    expect(database.prepare("SELECT count(*) AS n FROM jobs_queue WHERE kind = 'image'").get()).toEqual({ n: 0 });
+    expect(database.prepare("SELECT count(*) AS n FROM jobs_queue WHERE kind = 'search'").get()).toEqual({ n: 1 });
     database.close();
     await store.close?.();
   });
@@ -1213,7 +1282,7 @@ describe("SQLite canonical sync", () => {
     await attach();
     await store.searchIndex!.reconcile("embedding", 32);
     let database = new DatabaseSync(databasePath);
-    expect(database.prepare("SELECT count(*) AS n FROM jobs_search_index").get()).toEqual({ n: 0 });
+    expect(database.prepare("SELECT count(*) AS n FROM jobs_queue WHERE kind = 'search'").get()).toEqual({ n: 0 });
     database.close();
 
     const captioner: ImageCaptioner = { model: "model", analyze: async () => {
@@ -1223,9 +1292,9 @@ describe("SQLite canonical sync", () => {
     await store.searchIndex!.reconcile("embedding", 32);
 
     database = new DatabaseSync(databasePath);
-    expect(database.prepare("SELECT status, last_error_code FROM jobs_image_analysis").get())
+    expect(database.prepare("SELECT status, last_error AS last_error_code FROM jobs_queue WHERE kind = 'image'").get())
       .toEqual({ status: "failed", last_error_code: "captioning_invalid_response" });
-    expect(database.prepare("SELECT count(*) AS n FROM jobs_search_index").get()).toEqual({ n: 1 });
+    expect(database.prepare("SELECT count(*) AS n FROM jobs_queue WHERE kind = 'search'").get()).toEqual({ n: 1 });
     database.close();
     await store.close?.();
   });
@@ -1255,8 +1324,8 @@ describe("SQLite canonical sync", () => {
     await store.imageAnalysis!.reconcile("model");
     expect((await service.getFile(owner, file.id)).metadata).toMatchObject({ ocrText: "Imported OCR", caption: "Imported caption" });
     const db = new DatabaseSync(databasePath);
-    expect(db.prepare("SELECT count(*) AS n FROM jobs_image_analysis").get()).toEqual({ n: 0 });
-    expect(db.prepare("SELECT count(*) AS n FROM jobs_search_index").get()).toEqual({ n: 1 });
+    expect(db.prepare("SELECT count(*) AS n FROM jobs_queue WHERE kind = 'image'").get()).toEqual({ n: 0 });
+    expect(db.prepare("SELECT count(*) AS n FROM jobs_queue WHERE kind = 'search'").get()).toEqual({ n: 1 });
     db.close();
     await store.close?.();
   });
@@ -1317,7 +1386,7 @@ describe("SQLite canonical sync", () => {
       database.close();
     } else if (change === "lease") {
       const database = new DatabaseSync(databasePath);
-      database.prepare("UPDATE jobs_image_analysis SET lease_expires_at = 0").run();
+      database.prepare("UPDATE jobs_queue SET lease_until = 0 WHERE kind = 'image'").run();
       database.close();
       const nextClaim = await store.imageAnalysis!.claim("model");
       expect(nextClaim).not.toBeNull();
@@ -1370,9 +1439,10 @@ describe("SQLite canonical sync", () => {
     expect(await worker.processOne()).toBe(true);
     await store.close?.();
     const database = new DatabaseSync(databasePath);
-    expect(database.prepare("SELECT status, attempts, last_error_code FROM jobs_image_analysis").get())
+    expect(database.prepare("SELECT status, attempts, last_error AS last_error_code FROM jobs_queue WHERE kind = 'image'").get())
       .toEqual({ status: "pending", attempts: 1, last_error_code: "captioning_http_429" });
-    database.prepare("UPDATE jobs_image_analysis SET available_at = 0").run();
+    database.prepare("UPDATE jobs_queue SET available_at = 0 WHERE kind = 'image'").run();
+    database.exec("UPDATE jobs_dispatch SET cooldowns = '{}'");
     database.close();
     const reopened = createNodeApplicationStore({ ...testConfig(databasePath), captioningModel: "model" });
     expect(await reopened.imageAnalysis!.claim("model")).toMatchObject({ attempts: 1 });
@@ -2431,7 +2501,7 @@ describe("SQLite canonical sync", () => {
         { entity: "meeting", action: "create", entityId: meetingId, baseRevision: null, data: { ...meetingData(), projectId: null } },
       ]);
       const snapshot = () => ["workspaces", "workspace_permissions", "projects", "meetings", "meeting_events",
-        "sync_changes", "sync_workspace_state", "transaction_receipts", "search_documents", "jobs_search_index"]
+        "sync_changes", "sync_workspace_state", "transaction_receipts", "search_documents", "jobs_queue"]
         .map((table) => database.prepare(`SELECT * FROM ${table} ORDER BY rowid`).all());
       for (const shared of [false, true]) {
         if (shared) await store.sync.withIdentity(owner, (sync) => sync.putPermission(workspaceId, "organization", "01990ab0-0000-7000-8000-000000000001", "viewer"));
@@ -2486,7 +2556,7 @@ describe("SQLite canonical sync", () => {
     await store.sync.enqueueStorageDelete(storageKey);
     const first = (await store.sync.claimStorageDeletes(1))[0]!;
     const database = new DatabaseSync(databasePath);
-    database.prepare("update jobs_storage_delete set lease_expires_at = 0 where storage_key = ?")
+    database.prepare("update jobs_queue set lease_until = 0 WHERE kind = 'storage-delete' AND payload ->> 'storageKey' = ?")
       .run(storageKey);
     database.close();
     const second = (await store.sync.claimStorageDeletes(1))[0]!;
@@ -3252,7 +3322,7 @@ describe("SQLite canonical sync", () => {
     `);
     database.exec("BEGIN");
     for (let index = 0; index < 501; index += 1) {
-      insert.run(`document-${index.toString().padStart(3, "0")}`, workspaceId, meetingId);
+      insert.run(`019d4a01-4400-7000-8000-${index.toString().padStart(12, "0")}`, workspaceId, meetingId);
     }
     database.exec("COMMIT");
     database.close();
@@ -3386,8 +3456,9 @@ async function fileSetup(captioningModel?: string, legacyMode?: "fill_missing" |
 function seedLegacyImageJob(databasePath: string, fileId: string, model: string, mode = "fill_missing") {
   const db = new DatabaseSync(databasePath);
   try {
-    db.prepare("INSERT INTO jobs_image_analysis(file_id, workspace_id, owner_user_id, model, mode) VALUES (?, ?, ?, ?, ?)")
-      .run(fileId, workspaceId, owner.userId, model, mode);
+    db.prepare("INSERT INTO jobs_queue(id, dedupe_key, kind, owner, target, payload, available_at, created_at) VALUES (?, ?, 'image', ?, ?, ?, 0, ?)")
+      .run(freshId(), `image:${fileId}`, owner.userId, `file:${fileId}`, JSON.stringify({ fileId, workspaceId,
+        ownerUserId: owner.userId, model, mode }), Date.now());
   } finally { db.close(); }
 }
 

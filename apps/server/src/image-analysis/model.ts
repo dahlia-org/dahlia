@@ -2,6 +2,7 @@ import { z } from "zod";
 import { codePointLimitedString, fileMetadataLimits, type FileRecord } from "../files/model";
 
 export interface ImageAnalysisClaim {
+  queue?: import("../jobs/store").BackgroundJob;
   fileId: string;
   workspaceId: string;
   ownerUserId: string;

@@ -117,7 +117,7 @@ it("encrypts canonical content, patches and receipts while preserving plaintext 
   expect(listed).toMatchObject({ meetingId, hasSummary: true, contentOmitted: true });
   for (const key of ["summaryTitle", "summaryDocument", "summaryCreatedAt"]) expect(listed).not.toHaveProperty(key);
   expect(await f.store.sync.withIdentity(outsider, (sync) => sync.getMeeting(f.workspaceId, meetingId))).toBeNull();
-  f.db.exec("UPDATE jobs_search_index SET available_at = 0");
+  f.db.exec("UPDATE jobs_queue SET available_at = 0 WHERE kind = 'search'");
   const [job] = await f.store.searchIndex!.claim("test", 32, 1);
   const document = await f.store.searchIndex!.load(job!);
   expect(document?.embeddingText).toBe("allowed search");

@@ -1,3 +1,11 @@
+import { drizzle } from "drizzle-orm/sqlite-proxy";
+import type { NodePgDatabase } from "drizzle-orm/node-postgres";
+import { eq } from "drizzle-orm";
+import * as sqliteSchema from "../src/db/sqlite-schema";
+import type * as pgSchema from "../src/db/auth-schema";
+const schema = sqliteSchema as unknown as typeof pgSchema;
+import { cancelJobs, enqueueJob, lockJob } from "../src/jobs/state";
+import { testJobPayload } from "./fixtures/job-payload";
 import { fork } from "node:child_process";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -21,27 +29,38 @@ async function fixture() {
   await store.migrate();
   const db = new DatabaseSync(join(path, "test.sqlite"));
   cleanup.push(async () => { db.close(); await store.close?.(); rmSync(path, { recursive: true, force: true }); });
-  return { queue: store.jobs, db, url };
+  const sqlDb = drizzle(async (query, params, method) => {
+    const statement = db.prepare(query);
+    statement.setReturnArrays(true);
+    if (method === "run") { statement.run(...params as []); return { rows: [] }; }
+    return { rows: statement.all(...params as []) };
+  }) as unknown as NodePgDatabase;
+  return { queue: store.jobs, db, url, sqlDb };
+
 }
 describe("shared durable dispatch", () => {
   it("lets waiting memory run ahead of an older image after its retry becomes due", async () => {
     const { queue, db } = await fixture();
-    await queue.enqueue("image", "image", "owner", "file", {});
-    await queue.enqueue("memory", "workspace-memory", "owner", "memory", {});
-    db.exec("UPDATE jobs_queue SET created_at = CASE WHEN id = 'image' THEN 1000 ELSE 2000 END, available_at = 0");
+    await queue.enqueue("image", "image", "owner", "file", testJobPayload("image"));
+    await queue.enqueue("memory", "workspace-memory", "owner", "memory", testJobPayload("workspace-memory"));
+    db.exec("UPDATE jobs_queue SET created_at = CASE WHEN dedupe_key = 'image' THEN 1000 ELSE 2000 END, available_at = 0");
     const image = (await queue.claim(["image", "workspace-memory"]))!;
-    expect(image.id).toBe("image");
-    await queue.reschedule(image, image.reference, 0);
-    expect((await queue.claim(["image", "workspace-memory"]))!.id).toBe("memory");
+    expect(image.dedupeKey).toBe("image");
+    await queue.reschedule(image, image.payload, 0);
+    expect((await queue.claim(["image", "workspace-memory"]))!.dedupeKey).toBe("memory");
   });
   it("runs memory before rechecking an older image whose source is not ready", async () => {
     const { queue, db } = await fixture();
     vi.useFakeTimers();
-    await queue.enqueue("image", "image", "owner", "file", { fileId: "file", ownerUserId: "owner", model: "model" });
-    await queue.enqueue("memory", "workspace-memory", "owner", "memory", { scopeId: "scope" });
-    db.exec("UPDATE jobs_queue SET created_at = CASE WHEN id = 'image' THEN 1000 ELSE 2000 END");
-    const claim = vi.fn().mockResolvedValue(null), step = vi.fn().mockResolvedValue(undefined);
-    const executor = createJobExecutor({ queue: { ...queue, sourceAvailableAt: async () => new Date(0) },
+    await queue.enqueue("image", "image", "owner", "file", { ...testJobPayload("image"), model: "model" });
+    const memoryPayload = testJobPayload("workspace-memory");
+    await queue.enqueue("memory", "workspace-memory", "owner", "memory", memoryPayload);
+    db.exec("UPDATE jobs_queue SET created_at = CASE WHEN dedupe_key = 'image' THEN 1000 ELSE 2000 END");
+    const claim = vi.fn(async (_model: string, job: import("../src/jobs/store").BackgroundJob) => {
+      await queue.retry(job, { delayMs: 60_000, errorCode: "job_source_not_ready" });
+      return null;
+    }), step = vi.fn().mockResolvedValue(undefined);
+    const executor = createJobExecutor({ queue,
       summaryJobs: {} as never, methods: [], sync: {} as never, syncStore: {} as never,
       imageAnalysis: { claim } as never, captioner: { model: "model" } as never, memory: { step } as never });
     const signal = new AbortController().signal;
@@ -49,7 +68,7 @@ describe("shared durable dispatch", () => {
     expect(claim).toHaveBeenCalledOnce();
     vi.setSystemTime(Date.now() + 2_000);
     await executor.processOne(signal);
-    expect(step).toHaveBeenCalledWith("scope", expect.any(AbortSignal));
+    expect(step).toHaveBeenCalledWith(memoryPayload.scopeId, expect.any(AbortSignal), expect.objectContaining({ kind: "workspace-memory" }));
     expect(claim).toHaveBeenCalledOnce();
     expect(await executor.processOne(signal)).toBe(false);
     vi.setSystemTime(Date.now() + 60_000);
@@ -57,30 +76,30 @@ describe("shared durable dispatch", () => {
     expect(claim).toHaveBeenCalledTimes(2);
     vi.setSystemTime(Date.now() + 60_000);
     await executor.processOne(signal);
-    expect(db.prepare("SELECT status, attempts, last_error FROM jobs_queue WHERE id = 'image'").get())
-      .toMatchObject({ status: "failed", attempts: 3, last_error: "job_source_not_ready" });
+    expect(db.prepare("SELECT status, attempts, dispatch_attempts, last_error FROM jobs_queue WHERE dedupe_key = 'image'").get())
+      .toMatchObject({ status: "failed", attempts: 0, dispatch_attempts: 3, last_error: "job_source_not_ready" });
     vi.setSystemTime(Date.now() + 60_000);
     expect(await executor.processOne(signal)).toBe(false);
     expect(claim).toHaveBeenCalledTimes(3);
-    await queue.enqueue("image", "image", "owner", "file", { fileId: "file", ownerUserId: "owner", model: "model" });
+    await queue.enqueue("image", "image", "owner", "file", { ...testJobPayload("image"), model: "model" });
     await executor.processOne(signal);
     expect(claim).toHaveBeenCalledTimes(4);
-    expect(db.prepare("SELECT status, attempts FROM jobs_queue WHERE id = 'image'").get())
-      .toMatchObject({ status: "pending", attempts: 1 });
+    expect(db.prepare("SELECT status, attempts, dispatch_attempts FROM jobs_queue WHERE dedupe_key = 'image'").get())
+      .toMatchObject({ status: "pending", attempts: 0, dispatch_attempts: 1 });
   });
   it("revives failed recurring work without replacing pending or active registrations", async () => {
     const { queue, db } = await fixture();
     for (const [id, kind] of [["maintenance", "maintenance"], ["reconcile:image:scope", "reconcile"]] as const) {
-      await queue.enqueue(id, kind, "", id, { after: "old" });
-      db.prepare("UPDATE jobs_queue SET attempts = 2 WHERE id = ?").run(id);
+      await queue.enqueue(id, kind, "", id, { ...testJobPayload(kind), after: "old" });
+      db.prepare("UPDATE jobs_queue SET dispatch_attempts = 2 WHERE dedupe_key = ?").run(id);
       const failed = (await queue.claim([kind]))!;
       await queue.retry(failed);
-      expect(db.prepare("SELECT status FROM jobs_queue WHERE id = ?").get(id)?.status).toBe("failed");
-      await queue.enqueue(id, kind, "", id, { after: "new" });
-      await queue.enqueue(id, kind, "", id, { after: "ignored-pending" });
+      expect(db.prepare("SELECT status FROM jobs_queue WHERE dedupe_key = ?").get(id)?.status).toBe("failed");
+      await queue.enqueue(id, kind, "", id, { ...testJobPayload(kind), after: "new" });
+      await queue.enqueue(id, kind, "", id, { ...testJobPayload(kind), after: "ignored-pending" });
       const revived = (await queue.claim([kind]))!;
-      expect(revived).toMatchObject({ attempts: 1, reference: { after: "new" } });
-      await queue.enqueue(id, kind, "", id, { after: "ignored-active" });
+      expect(revived).toMatchObject({ attempts: 1, payload: { after: "new" } });
+      await queue.enqueue(id, kind, "", id, { ...testJobPayload(kind), after: "ignored-active" });
       expect(await queue.claim([kind])).toBeNull();
       await queue.complete(revived);
     }
@@ -88,15 +107,16 @@ describe("shared durable dispatch", () => {
   it("retains source-backed dispatch in the DLQ after three infrastructure failures and revives on registration", async () => {
     const { queue, db } = await fixture();
     for (const kind of jobKinds.filter((kind) => kind !== "maintenance" && kind !== "reconcile")) {
-      await queue.enqueue(kind, kind, "owner", kind, {});
-      db.prepare("UPDATE jobs_queue SET attempts = 2 WHERE id = ?").run(kind);
+      await queue.enqueue(kind, kind, "owner", kind, testJobPayload(kind));
+      db.prepare("UPDATE jobs_queue SET attempts = 7, dispatch_attempts = 2 WHERE dedupe_key = ?").run(kind);
       await queue.retry((await queue.claim([kind]))!);
-      expect(db.prepare("SELECT status, attempts FROM jobs_queue WHERE id = ?").get(kind)).toMatchObject({ status: "failed", attempts: 3 });
+      expect(db.prepare("SELECT status, attempts, dispatch_attempts FROM jobs_queue WHERE dedupe_key = ?").get(kind))
+        .toMatchObject({ status: "failed", attempts: 7, dispatch_attempts: 3 });
       expect(await queue.claim([kind])).toBeNull();
       expect(await queue.nextDelay([kind])).toBeUndefined();
-      await queue.enqueue(kind, kind, "owner", kind, {});
+      await queue.enqueue(kind, kind, "owner", kind, testJobPayload(kind));
       const recovered = (await queue.claim([kind]))!;
-      expect(recovered.attempts).toBe(1);
+      expect(recovered).toMatchObject({ attempts: 8, dispatchAttempts: 1 });
       await queue.complete(recovered);
     }
   });
@@ -104,60 +124,110 @@ describe("shared durable dispatch", () => {
     const { queue } = await fixture();
     for (const [id, kind, owner, target] of [
       ["a1", "image", "a", "file1"], ["a2", "image", "a", "file2"], ["b1", "summary", "b", "meeting1"],
-      ["b2", "summary", "b", "meeting1"], ["b3", "summary", "b", "meeting2"],
-    ] as const) await queue.enqueue(id, kind, owner, target, {});
-    const first = (await queue.claim(["image", "summary"]))!;
-    expect(first.id).toBe("a1");
-    const second = (await queue.claim(["image", "summary"]))!;
-    expect(second.id).toBe("b1");
-    expect((await queue.claim(["image", "summary"]))!.id).toBe("b3");
-    expect(await queue.claim(["image", "summary"])).toBeNull();
+      ["b2", "storage-delete", "b", "meeting1"], ["b3", "summary", "b", "meeting2"],
+    ] as const) await queue.enqueue(id, kind, owner, target, testJobPayload(kind));
+    const first = (await queue.claim(["image", "summary", "storage-delete"]))!;
+    expect(first.dedupeKey).toBe("a1");
+    const second = (await queue.claim(["image", "summary", "storage-delete"]))!;
+    expect(second.dedupeKey).toBe("b1");
+    expect((await queue.claim(["image", "summary", "storage-delete"]))!.dedupeKey).toBe("b3");
+    expect(await queue.claim(["image", "summary", "storage-delete"])).toBeNull();
     await queue.complete(first);
-    expect((await queue.claim(["image", "summary"]))!.id).toBe("a2");
+    expect((await queue.claim(["image", "summary", "storage-delete"]))!.dedupeKey).toBe("a2");
     await queue.complete(second);
-    expect((await queue.claim(["image", "summary"]))!.id).toBe("b2");
+    expect((await queue.claim(["image", "summary", "storage-delete"]))!.dedupeKey).toBe("b2");
   });
   it("preserves newer work and rejects completion from an expired lease", async () => {
     const { queue, db } = await fixture();
-    await queue.enqueue("one", "summary", "a", "meeting", {});
+    await queue.enqueue("one", "summary", "a", "meeting", testJobPayload("summary"));
     const first = (await queue.claim(["summary"]))!;
     db.exec("UPDATE jobs_queue SET generation = generation + 1");
     await queue.complete(first);
     const next = (await queue.claim(["summary"]))!;
     expect(next.generation).toBe(2);
-    expect(next.attempts).toBe(1);
+    expect(next.attempts).toBe(2);
     db.exec("UPDATE jobs_queue SET lease_until = 0");
     const retry = (await queue.claim(["summary"]))!;
     expect(retry.lease).not.toBe(next.lease);
     await queue.complete(next);
     expect(await queue.claim(["summary"])).toBeNull();
     await queue.complete(retry);
-    expect(db.prepare("SELECT count(*) AS n FROM jobs_queue").get()?.n).toBe(0);
+    expect(db.prepare("SELECT status FROM jobs_queue").get()?.status).toBe("succeeded");
   });
-  it("atomically registers domain retries while retaining the active dispatch lease", async () => {
-    const { queue, db } = await fixture();
-    db.exec("INSERT INTO jobs_storage_delete(storage_key) VALUES ('synthetic')");
-    const job = (await queue.claim(["storage-delete"]))!;
-    expect(job.reference).toEqual({ storageKey: "synthetic" });
-    db.exec("UPDATE jobs_storage_delete SET status = 'failed', available_at = 100");
-    expect(await queue.claim(["storage-delete"])).toBeNull();
+  it("deduplicates updates under a stable UUIDv7 and retains newer work", async () => {
+    const { queue } = await fixture();
+    const payload = testJobPayload("image");
+    const inserted = (await queue.enqueue("image:test", "image", "a", "file:test", payload))!;
+    expect(inserted.id).toMatch(/^[0-9a-f-]{14}7[0-9a-f-]{21}$/);
+    const job = (await queue.claim(["image"]))!;
+    const updated = (await queue.enqueue("image:test", "image", "a", "file:test", { ...payload, mode: "replace" }, new Date(), true))!;
+    expect(updated.id).toBe(inserted.id);
+    expect(updated.lease).toBe(job.lease);
+    expect(await queue.claim(["image"])).toBeNull();
     await queue.complete(job);
-    const retry = (await queue.claim(["storage-delete"]))!;
-    expect(retry.generation).toBeGreaterThan(job.generation);
-    expect(retry.attempts).toBe(1);
-    db.exec("DELETE FROM jobs_storage_delete");
+    const retry = (await queue.claim(["image"]))!;
+    expect(retry.generation).toBe(job.generation + 1);
+    expect(retry.payload.mode).toBe("replace");
     await queue.complete(retry);
-    expect(await queue.claim(["storage-delete"])).toBeNull();
-    db.exec("BEGIN; INSERT INTO jobs_storage_delete(storage_key) VALUES ('rolled-back'); ROLLBACK;");
-    expect(await queue.claim(["storage-delete"])).toBeNull();
+    expect(await queue.claim(["image"])).toBeNull();
+  });
+  it("keeps cancelled leases in capacity and target exclusion until settlement", async () => {
+    const { queue, sqlDb, db } = await fixture();
+    await queue.enqueue("image:cancel", "image", "a", "same", testJobPayload("image"));
+    const claim = (await queue.claim(["image"]))!;
+    await sqlDb.transaction((tx) => cancelJobs(tx, schema, eq(schema.backgroundJob.id, claim.id)));
+    expect(db.prepare("SELECT status,lease FROM jobs_queue WHERE id = ?").get(claim.id))
+      .toMatchObject({ status: "cancelled", lease: claim.lease });
+    expect(await sqlDb.transaction((tx) => lockJob(tx, schema, claim))).toBeUndefined();
+    await queue.enqueue("image:other", "image", "b", "other", testJobPayload("image"));
+    await queue.enqueue("summary:same", "summary", "b", "same", testJobPayload("summary"));
+    expect(await queue.claim(["image", "summary"])).toBeNull();
+    await queue.complete(claim);
+    expect(await queue.claim(["image", "summary"])).not.toBeNull();
+  });
+  it("blocks an immediate summary retry behind the cancelled execution and rejects cross-method duplicates", async () => {
+    const { queue, sqlDb } = await fixture();
+    await queue.enqueue("summary:first", "summary", "a", "meeting", testJobPayload("summary"));
+    await expect(queue.enqueue("summary:duplicate", "audio-summary", "b", "meeting", testJobPayload("audio-summary"))).rejects.toThrow();
+    const claim = (await queue.claim(["summary"]))!;
+    await sqlDb.transaction((tx) => cancelJobs(tx, schema, eq(schema.backgroundJob.id, claim.id), true));
+    await queue.enqueue("summary:retry", "audio-summary", "a", "meeting", testJobPayload("audio-summary"));
+    expect(await queue.claim(["summary", "audio-summary"])).toBeNull();
+    await queue.complete(claim);
+    expect((await queue.claim(["summary", "audio-summary"]))?.dedupeKey).toBe("summary:retry");
+  });
+  it("refuses expired publication and rolls registration back with canonical writes", async () => {
+    const { queue, sqlDb, db } = await fixture();
+    await expect(sqlDb.transaction(async (tx) => {
+      await tx.insert(schema.user).values({ id: "rollback", name: "Owner", email: "rollback@example.com", updatedAt: new Date() });
+      await enqueueJob(tx, schema, "image:rollback", "image", "a", "rollback", testJobPayload("image"));
+      throw new Error("rollback");
+    })).rejects.toThrow("rollback");
+    expect(db.prepare("SELECT id FROM user WHERE id = 'rollback'").all()).toEqual([]);
+    expect(db.prepare("SELECT id FROM jobs_queue").all()).toEqual([]);
+    await queue.enqueue("image:expired", "image", "a", "expired", testJobPayload("image"));
+    const claim = (await queue.claim(["image"]))!;
+    db.exec("UPDATE jobs_queue SET lease_until = 0");
+    expect(await sqlDb.transaction((tx) => lockJob(tx, schema, claim))).toBeUndefined();
+    await queue.complete(claim);
+    const recovered = (await queue.claim(["image"]))!;
+    expect(recovered.id).toBe(claim.id);
+    expect(recovered.lease).not.toBe(claim.lease);
+  });
+  it("rejects malformed payloads before durable registration", async () => {
+    const { queue } = await fixture();
+    await expect(queue.enqueue("image:invalid", "image", "a", "file", {})).rejects.toThrow();
+    await expect(queue.enqueue("reconcile:invalid", "reconcile", "a", "scope", { kind: "image", phase: "page" })).rejects.toThrow();
+    await expect(queue.enqueue("chat:invalid", "chat-memory", "a", "chat", { ...testJobPayload("chat-memory"), memoryKind: "working" })).rejects.toThrow();
+    expect(await queue.claim(["image"])).toBeNull();
   });
   it("orders search batches by availability, bounds them at sixteen and uses one execution slot", async () => {
     const { queue, db } = await fixture();
-    for (let i = 0; i < 17; i++) await queue.enqueue(`doc${i}`, "search", "scope", `doc${i}`, {});
-    db.exec("UPDATE jobs_queue SET created_at = CASE WHEN id = 'doc16' THEN 2000 ELSE 1000 END, available_at = CASE WHEN id = 'doc16' THEN 0 ELSE 1000 END");
+    for (let i = 0; i < 17; i++) await queue.enqueue(`doc${i}`, "search", "scope", `doc${i}`, testJobPayload("search"));
+    db.exec("UPDATE jobs_queue SET created_at = CASE WHEN dedupe_key = 'doc16' THEN 2000 ELSE 1000 END, available_at = CASE WHEN dedupe_key = 'doc16' THEN 0 ELSE 1000 END");
     const job = (await queue.claim(["search"]))!;
-    expect(job.id).toBe("doc16");
-    expect(job.batch[0]?.id).toBe("doc16");
+    expect(job.dedupeKey).toBe("doc16");
+    expect(job.batch[0]?.dedupeKey).toBe("doc16");
     expect(job.batch).toHaveLength(16);
     expect(await queue.claim(["search"])).toBeNull();
     for (const item of job.batch) await queue.complete(item);
@@ -166,31 +236,31 @@ describe("shared durable dispatch", () => {
   it("waits past each five-minute lease before infrastructure retries reach the DLQ", async () => {
     const { queue } = await fixture();
     vi.useFakeTimers();
-    await queue.enqueue("memory", "workspace-memory", "owner", "memory", {});
+    await queue.enqueue("memory", "workspace-memory", "owner", "memory", testJobPayload("workspace-memory"));
     const first = (await queue.claim(["workspace-memory"]))!;
     await queue.retry(first);
     vi.setSystemTime(Date.now() + 6_000);
     expect(await queue.claim(["workspace-memory"])).toBeNull();
     vi.setSystemTime(first.leaseUntil.getTime() + 1_000);
     const second = (await queue.claim(["workspace-memory"]))!;
-    expect(second.attempts).toBe(2);
+    expect(second.dispatchAttempts).toBe(2);
     await queue.retry(second);
     vi.setSystemTime(second.leaseUntil.getTime() + 1_000);
     const third = (await queue.claim(["workspace-memory"]))!;
-    expect(third.attempts).toBe(3);
+    expect(third.dispatchAttempts).toBe(3);
     await queue.retry(third);
     expect(await queue.nextDelay(["workspace-memory"])).toBeUndefined();
   });
   it("shares throttling across kinds using the same summary budget", async () => {
     const { queue } = await fixture();
-    await queue.enqueue("text", "summary", "a", "one", {});
-    await queue.enqueue("audio", "audio-summary", "a", "two", {});
+    await queue.enqueue("text", "summary", "a", "one", testJobPayload("summary"));
+    await queue.enqueue("audio", "audio-summary", "a", "two", testJobPayload("audio-summary"));
     await queue.cooldown("audio-summary", Date.now() + 30_000);
     expect(await queue.claim(["summary", "audio-summary"])).toBeNull();
   });
   it("claims through separate OS processes without duplicate delivery", async () => {
     const { queue, url } = await fixture();
-    await queue.enqueue("shared", "image", "a", "shared", {});
+    await queue.enqueue("shared", "image", "a", "shared", testJobPayload("image"));
     const claims = await Promise.all(Array.from({ length: 3 }, () => new Promise<unknown>((resolve, reject) => {
       const child = fork(new URL("./fixtures/job-claim.ts", import.meta.url), [url], { execArgv: ["--import", "tsx"], stdio: ["ignore", "ignore", "pipe", "ipc"] });
       let result: unknown;
@@ -198,7 +268,7 @@ describe("shared durable dispatch", () => {
       child.once("error", reject);
       child.once("exit", (code) => { if (code === 0) resolve(result); else reject(new Error(`child exit ${code}`)); });
     })));
-    expect(claims.filter(Boolean)).toEqual(["shared"]);
+    expect(claims.filter(Boolean)).toHaveLength(1);
     // Include three Node/tsx startups and SQLite's 5s busy wait on shared CI runners.
   }, 30_000);
 });

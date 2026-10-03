@@ -364,29 +364,6 @@ export const searchDocument = sqliteTable("search_documents", {
     .on(table.workspaceId, table.kind, table.meetingId, table.documentId),
 ]);
 
-export const searchIndexJob = sqliteTable("jobs_search_index", {
-  workspaceId: text("workspace_id").notNull(),
-  documentId: text("document_id").notNull(),
-  model: text("model").notNull(),
-  dimensions: integer("dimensions").notNull(),
-  generation: integer("generation").default(1).notNull(),
-  status: text("status").default("pending").notNull(),
-  attempts: integer("attempts").default(0).notNull(),
-  availableAt: sqliteTimestamp("available_at").default(sql`(cast(unixepoch('subsecond') * 1000 as integer))`).notNull(),
-  claimedAt: sqliteTimestamp("claimed_at"),
-  leaseExpiresAt: sqliteTimestamp("lease_expires_at"),
-  lastErrorCode: text("last_error_code"),
-  updatedAt: sqliteTimestamp("updated_at").default(sql`(cast(unixepoch('subsecond') * 1000 as integer))`).notNull(),
-}, (table) => [
-  primaryKey({ columns: [table.workspaceId, table.documentId] }),
-  foreignKey({
-    columns: [table.workspaceId],
-    foreignColumns: [syncedWorkspace.workspaceId],
-  }).onDelete("cascade"),
-  check("search_index_job_status_check", sql`${table.status} IN ('pending', 'processing', 'failed')`),
-  check("search_index_job_dimensions_check", sql`${table.dimensions} BETWEEN 32 AND 1024`),
-  index("search_index_job_claim_idx").on(table.status, table.availableAt, table.leaseExpiresAt),
-]);
 
 export const syncTransactionReceipt = sqliteTable("transaction_receipts", {
   encryptedPayload: text("encrypted_payload"),
@@ -428,47 +405,13 @@ export const syncWorkspaceState = sqliteTable("sync_workspace_state", {
   check("sync_workspace_state_boundary_check", sql`${table.prunedThrough} >= 0 AND ${table.latestSequence} >= ${table.prunedThrough}`),
 ]);
 
-export const storageDeleteJob = sqliteTable("jobs_storage_delete", {
-  storageKey: text("storage_key").primaryKey(),
-  attempts: integer("attempts").default(0).notNull(),
-  status: text("status").default("pending").notNull(),
-  availableAt: sqliteTimestamp("available_at").default(sql`(cast(unixepoch('subsecond') * 1000 as integer))`).notNull(),
-  claimedAt: sqliteTimestamp("claimed_at"),
-  leaseExpiresAt: sqliteTimestamp("lease_expires_at"),
-  lastErrorCode: text("last_error_code"),
-  createdAt: sqliteTimestamp("created_at").default(sql`(cast(unixepoch('subsecond') * 1000 as integer))`).notNull(),
-}, (table) => [
-  check("storage_delete_job_status_check", sql`${table.status} IN ('pending', 'processing', 'failed')`),
-  index("storage_delete_job_claim_idx").on(table.status, table.availableAt, table.leaseExpiresAt),
-]);
 
-// Operational queue metadata only; canonical image/text access remains owner-scoped.
-export const imageAnalysisJob = sqliteTable("jobs_image_analysis", {
-  fileId: text("file_id").primaryKey().references(() => syncedFile.fileId, { onDelete: "cascade" }),
-  workspaceId: text("workspace_id").notNull().references(() => syncedWorkspace.workspaceId, { onDelete: "cascade" }),
-  ownerUserId: text("owner_user_id").notNull().references(() => authUser.id, { onDelete: "cascade" }),
-  model: text("model").notNull(),
-  mode: text("mode").$type<"fill_missing" | "replace">().default("fill_missing").notNull(),
-  outputLanguage: text("output_language"),
-  status: text("status").default("pending").notNull(),
-  attempts: integer("attempts").default(0).notNull(),
-  availableAt: sqliteTimestamp("available_at").default(sql`(cast(unixepoch('subsecond') * 1000 as integer))`).notNull(),
-  claimedAt: sqliteTimestamp("claimed_at"),
-  leaseExpiresAt: sqliteTimestamp("lease_expires_at"),
-  lastErrorCode: text("last_error_code"),
-}, (table) => [
-  check("image_analysis_job_status_check", sql`${table.status} IN ('pending', 'processing', 'failed')`),
-  check("image_analysis_job_mode_check", sql`${table.mode} IN ('fill_missing', 'replace')`),
-  index("image_analysis_job_claim_idx").on(table.status, table.availableAt, table.leaseExpiresAt),
-  // Owner rotation claims per owner; a large backlog must not slow a small owner's claim.
-  index("image_analysis_job_owner_idx").on(table.ownerUserId, table.availableAt),
-]);
 
-// Settings and input fingerprints are owner-private; no transcript or provider credentials are queued.
 export const summaryJob = sqliteTable("jobs_summary", {
   encryptedPayload: text("encrypted_payload"),
   notesSnapshot: text("notes_snapshot", { mode: "json" }).$type<SummaryJob["notesSnapshot"]>(),
   id: text("id").primaryKey(),
+  queueId: text("queue_id").notNull().unique().references(() => backgroundJob.id, { onDelete: "cascade" }),
   workspaceId: text("workspace_id").notNull().references(() => syncedWorkspace.workspaceId, { onDelete: "cascade" }),
   meetingId: text("meeting_id").notNull().references(() => syncedMeeting.meetingId, { onDelete: "cascade" }),
   ownerUserId: text("owner_user_id").notNull().references(() => authUser.id, { onDelete: "cascade" }),
@@ -479,21 +422,12 @@ export const summaryJob = sqliteTable("jobs_summary", {
   transcriptRevision: integer("transcript_revision"),
   transcriptResult: text("transcript_result", { mode: "json" }).$type<SummaryJob["transcriptResult"]>(),
   outputLanguage: text("output_language").notNull(),
-  status: text("status").default("pending").notNull(),
-  attempts: integer("attempts").default(0).notNull(),
   createdAt: sqliteTimestamp("created_at").notNull(),
-  availableAt: sqliteTimestamp("available_at").notNull(),
-  claimedAt: sqliteTimestamp("claimed_at"),
-  leaseExpiresAt: sqliteTimestamp("lease_expires_at"),
-  lastErrorCode: text("last_error_code"),
   summaryRevision: integer("summary_revision").notNull(),
   inputVersion: text("input_version").notNull(),
   requestHash: text("request_hash").notNull(),
 }, (table) => [
-  check("summary_job_status_check", sql`${table.status} IN ('pending', 'processing', 'succeeded', 'failed', 'cancelled')`),
-  uniqueIndex("summary_job_active_meeting_idx").on(table.meetingId).where(sql`${table.status} IN ('pending', 'processing')`),
   index("summary_job_owner_created_idx").on(table.ownerUserId, table.createdAt),
-  index("summary_job_due_idx").on(table.ownerUserId, table.availableAt).where(sql`${table.status} IN ('pending', 'processing')`),
 ]);
 
 export const summary = sqliteTable("summaries", {
@@ -545,12 +479,7 @@ export const workspaceMemoryState = sqliteTable("workspace_memory_state", {
   purge: integer("purge", { mode: "boolean" }).default(false).notNull(),
   reconcile: integer("reconcile", { mode: "boolean" }).default(true).notNull(),
   progress: text("progress", { mode: "json" }).$type<import("../memory/model").MemoryProgress>(),
-  lease: text("lease"),
-  leaseUntil: sqliteTimestamp("lease_until"),
-  availableAt: sqliteTimestamp("available_at").notNull(),
-  attempts: integer("attempts").default(0).notNull(),
-  errorCode: text("error_code"),
-}, (table) => [index("workspace_memory_due_idx").on(table.availableAt)]);
+});
 
 // Durable, content-free per-source work. In-flight operations survive newer edits.
 export const memorySourceJob = sqliteTable("memory_source_jobs", {
@@ -594,12 +523,7 @@ export const personalMemoryState = sqliteTable("personal_memory_state", {
   purge: integer("purge", { mode: "boolean" }).default(false).notNull(),
   reconcile: integer("reconcile", { mode: "boolean" }).default(true).notNull(),
   progress: text("progress", { mode: "json" }).$type<import("../memory/model").MemoryProgress>(),
-  lease: text("lease"),
-  leaseUntil: sqliteTimestamp("lease_until"),
-  availableAt: sqliteTimestamp("available_at").notNull(),
-  attempts: integer("attempts").default(0).notNull(),
-  errorCode: text("error_code"),
-}, (table) => [index("personal_memory_due_idx").on(table.availableAt)]);
+});
 
 // Durable, content-free per-source work. In-flight operations survive newer edits.
 export const personalMemorySourceJob = sqliteTable("personal_memory_source_jobs", {
@@ -694,22 +618,27 @@ export const documentPresence = sqliteTable("document_presence", {
 // Shared dispatch metadata. Domain tables retain their payload and publication fences.
 export const backgroundJob = sqliteTable("jobs_queue", {
   id: text("id").primaryKey(),
+  dedupeKey: text("dedupe_key").notNull().unique(),
   kind: text("kind").$type<import("../jobs/model").JobKind>().notNull(),
   owner: text("owner").notNull(),
   target: text("target").notNull(),
-  reference: text("reference", { mode: "json" }).$type<import("../jobs/model").JobReference>().notNull(),
+  payload: text("payload", { mode: "json" }).$type<import("../jobs/model").JobPayload>().notNull(),
   generation: integer("generation").default(1).notNull(),
   status: text("status").default("pending").notNull(),
+  retainCancelled: integer("retain_cancelled", { mode: "boolean" }).default(false).notNull(),
   availableAt: sqliteTimestamp("available_at").notNull(),
   createdAt: sqliteTimestamp("created_at").notNull(),
   lease: text("lease"),
+  claimedAt: sqliteTimestamp("claimed_at"),
   leaseUntil: sqliteTimestamp("lease_until"),
   attempts: integer("attempts").default(0).notNull(),
+  dispatchAttempts: integer("dispatch_attempts").default(0).notNull(),
   lastError: text("last_error"),
 }, (table) => [
+  uniqueIndex("jobs_queue_active_summary_idx").on(table.target).where(sql`${table.kind} IN ('summary', 'audio-summary') AND ${table.status} IN ('pending', 'processing')`),
   index("jobs_queue_due_idx").on(table.status, table.availableAt, table.owner, table.createdAt),
   index("jobs_queue_lease_idx").on(table.status, table.leaseUntil, table.target),
-  check("jobs_queue_status_check", sql`${table.status} IN ('pending', 'processing', 'failed')`),
+  check("jobs_queue_status_check", sql`${table.status} IN ('pending', 'processing', 'succeeded', 'failed', 'cancelled')`),
 ]);
 
 export const jobDispatch = sqliteTable("jobs_dispatch", {

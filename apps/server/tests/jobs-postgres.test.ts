@@ -63,7 +63,7 @@ describe.runIf(databaseUrl)("PostgreSQL targeted summary delivery", () => {
         expect(await jobs.claim(reference)).toBeNull();
         await connection.db.transaction(async (tx) => {
           await tx.execute(sql`select set_config('app.user_id', ${userId}, true)`);
-          await tx.execute(sql`update jobs.summary set available_at = timestamp '1970-01-01' where id = ${accepted.id}`);
+          await tx.execute(sql`update jobs.queue set available_at = timestamp '1970-01-01' where dedupe_key = ${"summary:" + accepted.id}`);
         });
       }
       if (scenario === "lease") {
@@ -71,7 +71,7 @@ describe.runIf(databaseUrl)("PostgreSQL targeted summary delivery", () => {
         expect(claims.filter(Boolean)).toHaveLength(1);
         await connection.db.transaction(async (tx) => {
           await tx.execute(sql`select set_config('app.user_id', ${userId}, true)`);
-          await tx.execute(sql`update jobs.summary set lease_expires_at = timestamp '1970-01-01' where id = ${accepted.id}`);
+          await tx.execute(sql`update jobs.queue set lease_until = timestamp '1970-01-01' where dedupe_key = ${"summary:" + accepted.id}`);
         });
         expect(await jobs.due(userId)).toContainEqual(reference);
       }

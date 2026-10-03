@@ -23,11 +23,14 @@ describe.runIf(url)("Chat memory PostgreSQL", () => {
       role: "user" as const, createdAt: new Date(), content: { format: 2 as const, parts: [{ type: "text" as const, text: "Remember this" }] } })) });
     for (const id of messages) await store.enqueueLearned(owner, thread.id, id, 0);
     const first = (await store.claim(owner, `working:${messages[0]}`))!;
-    const second = (await store.claim(owner, `working:${messages[1]}`))!;
+    expect(await store.claim(owner, `working:${messages[1]}`)).toBeUndefined();
     await store.applyLearned(owner, first, "Prefers concise replies");
+    await store.finish(owner, first);
+    const second = (await store.claim(owner, `working:${messages[1]}`))!;
     await store.applyLearned(owner, second, "Prefers concise");
     await store.applyLearned(owner, second, "Prefers concise");
     expect((await store.settings(owner)).learned).toBe("- Prefers concise replies\n- Prefers concise");
+    await store.finish(owner, second);
     await history.delete(owner, thread.id);
   });
   it("keeps manual and learned Markdown across chat deletion and isolates the owner", async () => {
@@ -60,6 +63,7 @@ describe.runIf(url)("Chat memory PostgreSQL", () => {
     await store.applyLearned(owner, job, "Stale queued note");
     expect((await store.settings(owner)).learned).not.toContain("Stale queued note");
     await history.delete(owner, thread.id);
+    await store.finish(owner, job);
     expect((await store.settings(owner)).manual).toContain("Dahlia");
     expect((await store.settings(owner)).learned).toContain("日本語");
     expect(await store.claim(owner, job.id)).toBeUndefined();
@@ -84,6 +88,7 @@ describe.runIf(url)("Chat memory PostgreSQL", () => {
     const resumed = await store.editSettings(owner, { section: "settings", automatic: true, revision: shorter.revision, explicit: true });
     await store.applyLearned(owner, { ...job, revision: resumed.revision }, "New preference");
     expect((await store.settings(owner)).learned).toBe("Shortened notes\n- New preference");
+    await store.finish(owner, job);
     await history.delete(owner, thread.id);
   });
   it("shares only meeting context with current readers and hides it on revocation or meeting deletion", async () => {
@@ -106,7 +111,8 @@ describe.runIf(url)("Chat memory PostgreSQL", () => {
     expect(await memory.snapshot(viewer, meetingId)).toBeNull();
     await withIdentityTransaction(pool, owner, (client) => client.query("UPDATE agent.live_contexts SET snapshot = snapshot - 'truncated' WHERE meeting_id = $1", [meetingId]));
     expect(await memory.snapshot(owner, meetingId)).toBeNull();
-    await memory.saveSnapshot(owner, meetingId, lease!, snapshot);
+    const renewed = await memory.claimMeeting(owner, meetingId);
+    await memory.saveSnapshot(owner, meetingId, renewed!, snapshot);
     await app.sync.withIdentity(owner, (sync) => sync.putPermission(workspaceId, "user", viewer.userId, "viewer"));
     expect(await memory.snapshot(viewer, meetingId)).toEqual(snapshot);
     await app.sync.withIdentity(owner, (sync) => sync.deletePermission(workspaceId, "user", viewer.userId));

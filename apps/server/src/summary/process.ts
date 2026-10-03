@@ -1,10 +1,11 @@
 import type { MeetingSyncService } from "../sync/service";
+import { SyncTransactionError } from "../sync/store";
 import { SummaryError, type SummaryMethod, type SummaryStage } from "./model";
 import type { SummaryJobReference, SummaryJobStore } from "./store";
 
 export async function processSummaryJob(
   jobs: SummaryJobStore, methods: readonly SummaryMethod[], sync: MeetingSyncService,
-  abortSignal: AbortSignal, reference?: SummaryJobReference,
+  abortSignal: AbortSignal, reference?: SummaryJobReference | import("../jobs/store").BackgroundJob,
 ): Promise<boolean> {
   const job = await jobs.claim(reference);
   if (!job) return false;
@@ -49,7 +50,7 @@ export async function processSummaryJob(
     console.info(JSON.stringify({ level: "info", event: saved ? "summary_job_succeeded" : "summary_job_lease_lost",
       attempt: job.attempts, durationMs: Date.now() - startedAt }));
   } catch (error) {
-    if (!(error instanceof SummaryError) && !signal.aborted) throw error;
+    if (!(error instanceof SummaryError) && !(error instanceof SyncTransactionError && error.status < 500) && !signal.aborted) throw error;
     const failure = error instanceof SummaryError ? error : new SummaryError("summary_processing_failed", true);
     console.warn(JSON.stringify({ level: "warn", event: "summary_job_failed", phase,
       code: /^[a-z0-9_]{1,80}$/.test(failure.code) ? failure.code : "summary_processing_failed",

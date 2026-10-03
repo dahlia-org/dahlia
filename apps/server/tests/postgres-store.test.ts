@@ -1,3 +1,4 @@
+import { enqueueJob } from "../src/jobs/state";
 import { seedPostgresIdentity } from "./public-test-client";
 import { testOrganizationID } from "./public-test-client";
 import { testUserID } from "./public-test-client";
@@ -245,7 +246,7 @@ integration("PostgreSQL application store", () => {
     }
   });
 
-  it("lets the summary worker list due owners only through the SELECT-only dispatch policy", async () => {
+  it("dispatches summary metadata without exposing encrypted inputs outside owner RLS", async () => {
     const store = createPostgresAuthStore(connection!.db, "postgres");
     // Sorts before UUIDv7 owners of concurrent suites, so the owner-ordered claim reaches this job first.
     const userId = `00000000-0000-7000-8000-${crypto.randomUUID().slice(-12)}`;
@@ -261,14 +262,14 @@ integration("PostgreSQL application store", () => {
     const access = (maintenance: string) => connection!.db.transaction(async (tx) => {
       await tx.execute(sql`select set_config('app.maintenance', ${maintenance}, true)`);
       const selected = await tx.execute(sql`select owner_user_id from jobs.summary where id = ${accepted.id}`);
-      const updated = await tx.execute(sql`update jobs.summary set attempts = attempts where id = ${accepted.id}`);
+      const updated = await tx.execute(sql`update jobs.summary set stage = stage where id = ${accepted.id}`);
       return { selected: selected.rows.length, updated: updated.rowCount };
     });
     try {
       expect(await access("")).toEqual({ selected: 0, updated: 0 });
-      expect(await access("summary-dispatch")).toEqual({ selected: 1, updated: 0 });
+      expect(await access("summary-dispatch")).toEqual({ selected: 0, updated: 0 });
       const jobs = createSummaryJobStore(connection!.db, true);
-      const claimed = await jobs.claim();
+      const claimed = await jobs.claim({ id: accepted.id, ownerUserId: userId });
       expect(claimed?.id).toBe(accepted.id);
       await jobs.fail(claimed!, "test_complete", false);
       expect(await access("summary-dispatch")).toEqual({ selected: 0, updated: 0 });
@@ -276,7 +277,7 @@ integration("PostgreSQL application store", () => {
       // A leftover low-sorting due job would be claimed first by the next run.
       await connection!.db.transaction(async (tx) => {
         await tx.execute(sql`select set_config('app.user_id', ${userId}, true)`);
-        await tx.execute(sql`update jobs.summary set status = 'cancelled' where owner_user_id = ${userId} and status in ('pending', 'processing')`);
+        await tx.execute(sql`update jobs.queue set status = 'cancelled' where owner = ${userId} and status in ('pending', 'processing')`);
       });
     }
   });
@@ -306,15 +307,8 @@ integration("PostgreSQL application store", () => {
     }
   });
 
-  it("fails readiness when the summary dispatch policy is missing", async () => {
-    expect(await createPostgresMeetingSyncStore(connection!.db).isAvailable()).toBe(true);
-    try {
-      await connection!.db.execute(sql`DROP POLICY "summary_job_dispatch_select" ON "jobs"."summary"`);
-      expect(await createPostgresMeetingSyncStore(connection!.db).isAvailable()).toBe(false);
-    } finally {
-      await connection!.db.execute(sql`CREATE POLICY "summary_job_dispatch_select" ON "jobs"."summary" FOR SELECT
-        USING (current_setting('app.maintenance', true) = 'summary-dispatch' AND "jobs"."summary"."status" IN ('pending', 'processing'))`);
-    }
+  it("does not require the retired summary dispatch policy", async () => {
+    expect((await connection!.db.execute(sql`SELECT 1 FROM pg_policies WHERE schemaname = 'jobs' AND policyname = 'summary_job_dispatch_select'`)).rows).toEqual([]);
     expect(await createPostgresMeetingSyncStore(connection!.db).isAvailable()).toBe(true);
   });
 
@@ -634,14 +628,15 @@ integration("PostgreSQL application store", () => {
     await jobs.reconcilePage(model, owner.userId);
     expect(await jobs.claim(model)).toBeNull();
     // Only jobs accepted before Desktop owned image analysis are recovered.
-    await connection!.db.insert(schema.imageAnalysisJob).values([hiddenFileId, fileId].map((fileId) => ({
-      fileId, workspaceId, ownerUserId: owner.userId, model: `legacy-${model}`, mode: "fill_missing" as const,
-    })));
+    for (const id of [hiddenFileId, fileId]) await enqueueJob(connection!.db, schema, `image:${id}`, "image", owner.userId, `file:${id}`,
+      { fileId: id, workspaceId, ownerUserId: owner.userId, model: `legacy-${model}`, mode: "fill_missing" });
     await jobs.reconcilePage(model, owner.userId);
     // An older job whose owner cannot read its file must not hide the ready job behind it.
-    await connection!.db.update(schema.imageAnalysisJob).set({ ownerUserId: outsider.userId, availableAt: new Date(0) })
-      .where(eq(schema.imageAnalysisJob.fileId, hiddenFileId));
-    const claim = (await jobs.claim(model))!;
+    await connection!.db.update(schema.backgroundJob).set({ owner: outsider.userId, availableAt: new Date(0),
+      payload: { fileId: hiddenFileId, workspaceId, ownerUserId: outsider.userId, model, mode: "fill_missing" } })
+      .where(eq(schema.backgroundJob.dedupeKey, `image:${hiddenFileId}`));
+    expect(await jobs.claim(model, { fileId: hiddenFileId, ownerUserId: outsider.userId, model })).toBeNull();
+    const claim = (await jobs.claim(model, { fileId, ownerUserId: owner.userId, model }))!;
     expect(claim).toMatchObject({ fileId, ownerUserId: owner.userId });
     await store.sync.withIdentity(owner, (sync) => commit(sync, workspaceId, [{ id: crypto.randomUUID(), entity: "file", action: "upsert",
       entityId: fileId, baseRevision: 1, data: { checksum: `SHA-256:${"1".repeat(64)}`, metadata: { informative_reason: "A camera view" } } }]));

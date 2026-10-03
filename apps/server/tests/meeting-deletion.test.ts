@@ -12,6 +12,8 @@ import { uuidV7 } from "../src/id";
 import { fileStorageKey } from "../src/files/model";
 import { encodeBase64, encryptionConfig } from "../src/encryption/crypto";
 import { LocalObjectStorage } from "../src/storage/local";
+import { createJobExecutor } from "../src/jobs/execute";
+import { createQueueJobs } from "../src/jobs/queues";
 import { createContractApp } from "./api-test-client";
 import { seedHeaderIdentity, testOrganizationID, testUserID } from "./public-test-client";
 
@@ -87,7 +89,7 @@ describe("meeting trash", () => {
     await change("delete", 1, editor);
     expect(raw.prepare("SELECT deleted_at FROM meetings WHERE meeting_id = ?").get(meetingId)?.deleted_at).toEqual(expect.any(Number));
     expect(raw.prepare("SELECT count(*) AS n FROM summaries WHERE meeting_id = ?").get(meetingId)?.n).toBe(1);
-    expect(raw.prepare("SELECT count(*) AS n FROM jobs_storage_delete").get()?.n).toBe(0);
+    expect(raw.prepare("SELECT count(*) AS n FROM jobs_queue WHERE kind = 'storage-delete'").get()?.n).toBe(0);
     expect(await service.getMeetingById(owner, meetingId)).toBeNull();
     expect((await service.listMeetings(owner, workspaceId)).items).toEqual([]);
     expect((await service.listMeetings(owner, workspaceId, "Recoverable")).items).toEqual([]);
@@ -199,7 +201,7 @@ describe("meeting trash", () => {
     expect(raw.prepare("SELECT file_id FROM files WHERE file_id = ?").get(exclusive)).toBeUndefined();
     expect(raw.prepare("SELECT file_id FROM files WHERE file_id = ?").get(shared)).toBeDefined();
     expect(raw.prepare("SELECT file_id FROM files WHERE file_id = ?").get(independent)).toBeDefined();
-    expect(raw.prepare("SELECT storage_key FROM jobs_storage_delete").all()).toEqual([{ storage_key: fileStorageKey(exclusive) }]);
+    expect(raw.prepare("SELECT payload ->> 'storageKey' AS storage_key FROM jobs_queue WHERE kind = 'storage-delete'").all()).toEqual([{ storage_key: fileStorageKey(exclusive) }]);
     await expect(change("restore", 2)).rejects.toMatchObject({ code: "meeting_not_deleted" });
     expect(await store.sync.purgeDeletedMeetings(workspaceId, new Date(now))).toBe(0);
   });
@@ -248,7 +250,7 @@ describe("meeting trash", () => {
     raw.exec("CREATE TRIGGER abort_meeting_cleanup BEFORE DELETE ON meetings BEGIN SELECT RAISE(ABORT, 'test cleanup failure'); END");
     await expect(store.sync.purgeDeletedMeetings(workspaceId, new Date())).rejects.toThrow();
     expect(raw.prepare("SELECT deleted_at FROM meetings WHERE meeting_id = ?").get(meetingId)).toBeDefined();
-    expect(raw.prepare("SELECT count(*) AS n FROM jobs_storage_delete").get()?.n).toBe(0);
+    expect(raw.prepare("SELECT count(*) AS n FROM jobs_queue WHERE kind = 'storage-delete'").get()?.n).toBe(0);
     raw.exec("DROP TRIGGER abort_meeting_cleanup");
     expect(await store.sync.purgeDeletedMeetings(workspaceId, new Date())).toBe(1);
   });
@@ -262,12 +264,58 @@ describe("meeting trash", () => {
     trashTime(Date.now() - 8 * day);
     await service.runStorageMaintenance();
     expect((await service.listDeletedMeetings(owner, workspaceId)).items).toEqual([]);
-    expect(raw.prepare("SELECT storage_key FROM jobs_storage_delete").get()).toEqual({ storage_key: fileStorageKey(fileId) });
+    expect(raw.prepare("SELECT payload ->> 'storageKey' AS storage_key FROM jobs_queue WHERE kind = 'storage-delete'").get()).toEqual({ storage_key: fileStorageKey(fileId) });
     remove.mockResolvedValue(undefined);
-    raw.prepare("UPDATE jobs_storage_delete SET available_at = ?").run(Date.now() - 1);
+    raw.prepare("UPDATE jobs_queue SET available_at = ? WHERE kind = 'storage-delete'").run(Date.now() - 1);
     await service.runStorageMaintenance();
-    expect(raw.prepare("SELECT count(*) AS n FROM jobs_storage_delete").get()?.n).toBe(0);
+    expect(raw.prepare("SELECT count(*) AS n FROM jobs_queue WHERE kind = 'storage-delete'").get()?.n).toBe(0);
     expect(await store.sync.purgeDeletedMeetings(workspaceId, new Date())).toBe(0);
+  });
+
+  it.each([
+    ["node", "missing"], ["worker", "missing"], ["direct", "missing"],
+    ["node", "failing"], ["worker", "failing"], ["direct", "failing"],
+  ])("moves storage infrastructure failures to DLQ after three attempts and recovers the same job (%s, %s)", async (runtime, adapter) => {
+    const { store, raw, service, storage } = await setup(false, true);
+    const key = "pending-delete";
+    await storage!.put(key, new Uint8Array([1]), 1, "application/octet-stream");
+    await store.sync.enqueueStorageDelete(key);
+    const id = String(raw.prepare("SELECT id FROM jobs_queue WHERE kind = 'storage-delete'").get()!.id);
+    const unavailable = new MeetingSyncService(store.sync, undefined, undefined, undefined, undefined, undefined, false);
+    await unavailable.drainStorageDeletes();
+    expect(raw.prepare("SELECT attempts FROM jobs_queue WHERE id = ?").get(id)?.attempts).toBe(0);
+    const remove = adapter === "failing" ? vi.spyOn(storage!, "delete").mockRejectedValue(new Error("storage offline")) : undefined;
+    const failing = adapter === "missing" ? unavailable : service;
+    const run = async (sync: MeetingSyncService) => {
+      const signal = new AbortController().signal;
+      if (runtime === "node") await createJobExecutor({ queue: store.jobs, summaryJobs: store.summaryJobs,
+        methods: [], sync, syncStore: store.sync }).processOne(signal);
+      else if (runtime === "direct") await sync.drainStorageDeletes(undefined, (await store.jobs.claim(["storage-delete"]))!);
+      else await createQueueJobs({ DAHLIA_JOB_QUEUE: { send: vi.fn(), sendBatch: vi.fn() } },
+        { queue: store.jobs, summaryJobs: store.summaryJobs, imageAnalysis: store.imageAnalysis!, searchIndex: store.searchIndex! },
+        store.sync, sync, [], undefined, undefined, undefined, undefined, undefined, 1).consume({ action: "wake" }, signal);
+    };
+    for (let attempt = 1; attempt <= 3; attempt++) {
+      raw.prepare("UPDATE jobs_queue SET available_at = 0 WHERE id = ?").run(id);
+      const before = Date.now();
+      await run(failing);
+      const retained = raw.prepare("SELECT id, status, attempts, dispatch_attempts, lease, last_error, available_at FROM jobs_queue WHERE id = ?").get(id);
+      expect(retained).toMatchObject({ id, status: attempt === 3 ? "failed" : "pending", attempts: 0,
+        dispatch_attempts: attempt, lease: null, last_error: "object_storage_unavailable" });
+      expect(Number(retained!.available_at)).toBeGreaterThanOrEqual(before + 60_000);
+    }
+    expect(await storage!.exists(key)).toBe(true);
+    remove?.mockRestore();
+    raw.prepare("UPDATE jobs_queue SET available_at = 0 WHERE id = ?").run(id);
+    await run(service);
+    expect(await storage!.exists(key)).toBe(true);
+    expect(raw.prepare("SELECT status FROM jobs_queue WHERE id = ?").get(id)?.status).toBe("failed");
+    await store.sync.enqueueStorageDelete(key);
+    expect(raw.prepare("SELECT id, status, attempts, dispatch_attempts FROM jobs_queue WHERE kind = 'storage-delete'").get())
+      .toEqual({ id, status: "pending", attempts: 0, dispatch_attempts: 0 });
+    await run(service);
+    expect(await storage!.exists(key)).toBe(false);
+    expect(raw.prepare("SELECT id FROM jobs_queue WHERE id = ?").get(id)).toBeUndefined();
   });
 
   it("does not revive the recording indicator from a session predating deletion", async () => {
@@ -284,15 +332,52 @@ describe("meeting trash", () => {
 
   it("cancels another requester's active job without reviving it on restore", async () => {
     const { raw, workspaceId, meetingId, change } = await setup();
-    raw.prepare(`INSERT INTO jobs_summary(id, workspace_id, meeting_id, owner_user_id, method, settings,
-      output_language, status, created_at, available_at, claimed_at, lease_expires_at, summary_revision, input_version, request_hash)
-      VALUES (?, ?, ?, ?, 'transcript', '{}', 'en', 'processing', ?, ?, ?, ?, 0, '1', 'test')`)
-      .run(uuidV7(), workspaceId, meetingId, editor.userId, Date.now(), Date.now(), Date.now(), Date.now() + day);
+    const id = uuidV7(), queueId = uuidV7(), lease = uuidV7(), expires = Date.now() + day;
+    raw.prepare(`INSERT INTO jobs_queue(id,dedupe_key,kind,owner,target,payload,status,available_at,created_at,claimed_at,lease,lease_until)
+      VALUES (?,?,'summary',?,?,?,'processing',0,0,0,?,?)`).run(queueId, `summary:${id}`, editor.userId, `meeting:${meetingId}`,
+        JSON.stringify({ id, workspaceId, ownerUserId: editor.userId }), lease, expires);
+    raw.prepare(`INSERT INTO jobs_summary(id,queue_id,workspace_id,meeting_id,owner_user_id,method,settings,
+      output_language,created_at,summary_revision,input_version,request_hash)
+      VALUES (?,?,?,?,?,'transcript','{}','en',?,0,'1','test')`)
+      .run(id, queueId, workspaceId, meetingId, editor.userId, Date.now());
     await change("delete", 1);
     await change("restore", 2);
-    expect(raw.prepare("SELECT status, claimed_at, lease_expires_at FROM jobs_summary").get())
-      .toEqual({ status: "cancelled", claimed_at: null, lease_expires_at: null });
+    expect(raw.prepare("SELECT status,lease,lease_until FROM jobs_queue WHERE id = ?").get(queueId))
+      .toEqual({ status: "cancelled", lease, lease_until: expires });
+
   });
+
+  it.each([
+    ["meeting", "complete"], ["meeting", "expire"], ["workspace", "complete"], ["workspace", "expire"],
+  ] as const)("removes a purged %s summary queue row after its lease %s", async (scope, finish) => {
+      const { store, raw, workspaceId, meetingId, change, service } = await setup();
+      const id = uuidV7();
+      const queued = (await store.jobs.enqueue(`summary:${id}`, "summary", editor.userId, `meeting:${meetingId}`,
+        { id, workspaceId, ownerUserId: editor.userId }))!;
+      raw.prepare(`INSERT INTO jobs_summary(id,queue_id,workspace_id,meeting_id,owner_user_id,method,settings,
+        output_language,created_at,summary_revision,input_version,request_hash)
+        VALUES (?,?,?,?,?,'transcript','{}','en',?,0,'1','test')`)
+        .run(id, queued.id, workspaceId, meetingId, editor.userId, Date.now());
+      const claim = (await store.jobs.claim(["summary"], [queued.dedupeKey]))!;
+      await change("delete", 1);
+      expect(raw.prepare("SELECT status,lease FROM jobs_queue WHERE id = ?").get(queued.id))
+        .toEqual({ status: "cancelled", lease: claim.lease });
+      expect(raw.prepare("SELECT id FROM jobs_summary WHERE id = ?").get(id)).toEqual({ id });
+      if (scope === "meeting") {
+        expect(await store.sync.purgeDeletedMeetings(workspaceId, new Date(Date.now() + 8 * day))).toBe(1);
+      } else {
+        await service.commitTransaction(owner, body(workspaceId, [{ entity: "workspace", action: "reset",
+          entityId: workspaceId, baseRevision: 1, data: { preservePermissions: true } }]));
+      }
+      expect(raw.prepare("SELECT id FROM jobs_summary WHERE id = ?").get(id)).toBeUndefined();
+      expect(raw.prepare("SELECT lease FROM jobs_queue WHERE id = ?").get(queued.id)).toEqual({ lease: claim.lease });
+      if (finish === "complete") await store.jobs.complete(claim);
+      else {
+        raw.prepare("UPDATE jobs_queue SET lease_until = 0 WHERE id = ?").run(queued.id);
+        await store.jobs.claim(["summary"]);
+      }
+      expect(raw.prepare("SELECT id FROM jobs_queue WHERE id = ?").get(queued.id)).toBeUndefined();
+    });
 
   it("serves a validated trash API with current Workspace permissions", async () => {
     const { config, store, service, workspaceId, meetingId, change } = await setup();

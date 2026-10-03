@@ -21,7 +21,32 @@ export function loadJobConfig(env: Record<string, string | undefined>): JobConfi
       .parse(JSON.parse(env.DAHLIA_JOB_LIMITS || "{}")) },
   };
 }
-export interface JobReference { id?: string; ownerUserId?: string; workspaceId?: string; documentId?: string;
-  generation?: number; fileId?: string; model?: string; scopeId?: string; storageKey?: string;
+export interface JobPayload { id?: string; ownerUserId?: string; workspaceId?: string; documentId?: string;
+  dimensions?: number; mode?: "fill_missing" | "replace"; outputLanguage?: string | null;
+  threadId?: string; messageId?: string | null; revision?: number; memoryKind?: "working" | "live"; fileId?: string; model?: string; scopeId?: string; storageKey?: string;
   after?: string; phase?: "scopes" | "page"; kind?: "image" | "search"; }
+const id = z.uuid();
+const summaryPayload = z.object({ id, ownerUserId: id, workspaceId: id });
+export const jobPayloadSchema = z.discriminatedUnion("kind", [
+  z.object({ kind: z.literal("summary"), payload: summaryPayload }),
+  z.object({ kind: z.literal("audio-summary"), payload: summaryPayload }),
+  z.object({ kind: z.literal("image"), payload: z.object({ fileId: id, workspaceId: id, ownerUserId: id,
+    model: z.string().min(1), mode: z.enum(["fill_missing", "replace"]), outputLanguage: z.string().nullable().optional() }) }),
+  z.object({ kind: z.literal("search"), payload: z.object({ workspaceId: id, documentId: id,
+    model: z.string().min(1), dimensions: z.number().int().min(32).max(1024) }) }),
+  z.object({ kind: z.literal("storage-delete"), payload: z.object({ storageKey: z.string().min(1) }) }),
+  z.object({ kind: z.literal("workspace-memory"), payload: z.object({ scopeId: id }) }),
+  z.object({ kind: z.literal("personal-memory"), payload: z.object({ scopeId: id }) }),
+  z.object({ kind: z.literal("chat-memory"), payload: z.discriminatedUnion("memoryKind", [
+    z.object({ memoryKind: z.literal("working"), threadId: z.string().min(1), ownerUserId: id,
+      messageId: z.string().min(1), revision: z.number().int().nonnegative() }),
+    z.object({ memoryKind: z.literal("live"), threadId: z.string().min(1), ownerUserId: id,
+      revision: z.number().int().nonnegative() }),
+  ]) }),
+  z.object({ kind: z.literal("maintenance"), payload: z.object({ after: z.string().min(1).optional() }) }),
+  z.object({ kind: z.literal("reconcile"), payload: z.discriminatedUnion("phase", [
+    z.object({ phase: z.literal("scopes"), kind: z.enum(["image", "search"]), after: z.string().min(1).optional() }),
+    z.object({ phase: z.literal("page"), kind: z.enum(["image", "search"]), scopeId: id, after: z.string().min(1).optional() }),
+  ]) }),
+]);
 export const JOB_LEASE_MS = 300_000;

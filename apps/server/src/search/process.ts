@@ -12,7 +12,7 @@ export async function processSearchIndexBatch(
   store: SearchIndexStore,
   embedder: SearchEmbedder,
   signal?: AbortSignal,
-  references?: readonly SearchIndexReference[],
+  references?: readonly (SearchIndexReference | import("../jobs/store").BackgroundJob)[],
 ): Promise<number> {
   const jobs = await store.claim(embedder.model, embedder.dimensions, SEARCH_EMBEDDING_BATCH_SIZE, references);
   const loadedDocuments = await store.loadMany(jobs);

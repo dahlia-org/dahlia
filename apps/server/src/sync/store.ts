@@ -1,7 +1,10 @@
+import { cancelJobs, claimKey, enqueueJob, enqueueStorageDelete, executionState, lockJob, payloadField, retryJob, settleJob } from "../jobs/state";
+import { createJobStore, type BackgroundJob } from "../jobs/store";
+import { defaultJobLimits } from "../jobs/model";
 import { beginSyncTiming } from "./diagnostics";
 import { createSyncLocks, type SyncLockMode } from "./locks";
 import { createDocumentStore } from "../documents/store";
-import { enqueueMemorySource } from "../memory/enqueue";
+import { enqueueMemoryScope, enqueueMemorySource } from "../memory/enqueue";
 import { memoryDocumentId } from "../memory/ids";
 import { DEFAULT_WORKSPACE_GENERATION_SETTINGS, type WorkspaceGenerationSettings } from "../workspace-generation-settings";
 import type { CalendarEventSnapshot } from "./schemas";
@@ -217,7 +220,7 @@ async function expireRecordingStaging(db: NodePgDatabase, schema: SyncSchema, is
         for (const source of ["mic", "system"] as const) {
           const value = audio[source];
           if (!value || value.active || new Date(value.createdAt) >= before) continue;
-          await db.insert(schema.storageDeleteJob).values({ storageKey: recordingStorageKey(record, source) }).onConflictDoNothing();
+          await enqueueStorageDelete(db, schema, recordingStorageKey(record, source));
           audio[source] = { generation: crypto.randomUUID(), createdAt: new Date().toISOString(), uploadedAt: null,
             active: false, content_type: "audio/mp4", size: 0, checksum: null };
         }
@@ -232,8 +235,7 @@ async function queueRecordingStorageDeletes(db: NodePgDatabase, schema: SyncSche
     .from(schema.syncedRecording).innerJoin(schema.syncedMeeting, eq(schema.syncedMeeting.meetingId, schema.syncedRecording.meetingId))
     .where(and(eq(schema.syncedMeeting.workspaceId, workspaceId), meetingId ? eq(schema.syncedRecording.meetingId, meetingId) : undefined));
   for (const record of records) {
-    await db.insert(schema.storageDeleteJob).values((["mic", "system"] as const)
-      .map((source) => ({ storageKey: recordingStorageKey(record, source) }))).onConflictDoNothing();
+    for (const source of ["mic", "system"] as const) await enqueueStorageDelete(db, schema, recordingStorageKey(record, source));
   }
   return records;
 }
@@ -259,13 +261,18 @@ function createHistoryMaintenanceStore(db: PostgresDatabase, schema: SyncSchema,
           await queueRecordingStorageDeletes(tx, schema, workspaceId, meeting.id);
           await tx.update(schema.meetingEvent).set({ sessionId: null, relatedId: null, audioSource: null, segmentIndex: null, changedFields: null })
             .where(and(eq(schema.meetingEvent.workspaceId, workspaceId), eq(schema.meetingEvent.meetingId, meeting.id)));
+          await cancelJobs(tx, schema, eq(schema.backgroundJob.target, `meeting:${meeting.id}`));
+          await cancelJobs(tx, schema, eq(schema.backgroundJob.dedupeKey, `search:${workspaceId}:${meeting.id}`));
           await tx.delete(schema.syncedMeeting).where(and(eq(schema.syncedMeeting.workspaceId, workspaceId),
             eq(schema.syncedMeeting.meetingId, meeting.id), lte(schema.syncedMeeting.deletedAt, cutoff)));
           for (const { fileId } of attachments) {
             const removed = await tx.delete(schema.syncedFile).where(and(eq(schema.syncedFile.workspaceId, workspaceId), eq(schema.syncedFile.fileId, fileId),
               notExists(tx.select({ id: schema.meetingAttachment.id }).from(schema.meetingAttachment).where(eq(schema.meetingAttachment.fileId, fileId))),
             )).returning({ id: schema.syncedFile.fileId });
-            if (removed.length) await tx.insert(schema.storageDeleteJob).values({ storageKey: fileStorageKey(fileId) }).onConflictDoNothing();
+            if (removed.length) {
+              await cancelJobs(tx, schema, eq(schema.backgroundJob.dedupeKey, `image:${fileId}`));
+              await enqueueStorageDelete(tx, schema, fileStorageKey(fileId));
+            }
           }
         }
         return meetings.length;
@@ -342,69 +349,27 @@ function createHistoryMaintenanceStore(db: PostgresDatabase, schema: SyncSchema,
 function createStorageDeleteStore(db: PostgresDatabase, schema: SyncSchema, isPostgres: boolean) {
   return {
     async hasStorageDelete(storageKey: string): Promise<boolean> {
-      const [row] = await db.select({ key: schema.storageDeleteJob.storageKey })
-        .from(schema.storageDeleteJob).where(eq(schema.storageDeleteJob.storageKey, storageKey)).limit(1);
+      const [row] = await db.select({ key: payloadField(schema, "storageKey") })
+        .from(schema.backgroundJob).where(eq(payloadField(schema, "storageKey"), storageKey)).limit(1);
       return row !== undefined;
     },
     async enqueueStorageDelete(storageKey: string): Promise<void> {
-      await db.insert(schema.storageDeleteJob).values({ storageKey }).onConflictDoNothing();
+      await enqueueStorageDelete(db, schema, storageKey);
     },
-    async claimStorageDeletes(limit: number, storageKey?: string) {
-      return db.transaction(async (transaction) => {
-        const now = new Date();
-        const query = transaction.select({
-          storageKey: schema.storageDeleteJob.storageKey,
-          attempts: schema.storageDeleteJob.attempts,
-        })
-          .from(schema.storageDeleteJob).where(and(storageKey ? eq(schema.storageDeleteJob.storageKey, storageKey) : undefined, or(
-            and(
-              inArray(schema.storageDeleteJob.status, ["pending", "failed"]),
-              lt(schema.storageDeleteJob.availableAt, new Date(now.getTime() + 1)),
-            ),
-            and(
-              eq(schema.storageDeleteJob.status, "processing"),
-              lt(schema.storageDeleteJob.leaseExpiresAt, now),
-            ),
-          ))).orderBy(asc(schema.storageDeleteJob.availableAt)).limit(limit);
-        const rows = isPostgres ? await query.for("update", { skipLocked: true }) : await query;
-        const keys = rows.map(({ storageKey }) => storageKey);
-        if (keys.length) await transaction.update(schema.storageDeleteJob).set({
-          status: "processing",
-          attempts: sql`${schema.storageDeleteJob.attempts} + 1`,
-          claimedAt: now,
-          leaseExpiresAt: new Date(now.getTime() + 60_000),
-        }).where(inArray(schema.storageDeleteJob.storageKey, keys));
-        return rows.map(({ storageKey, attempts }) => ({ storageKey, attempt: attempts + 1 }));
-      });
+    async claimStorageDeletes(_limit: number, storageKey?: string, supplied?: BackgroundJob) {
+      const job = supplied ?? await createJobStore(db, isPostgres, defaultJobLimits).claim(["storage-delete"],
+        storageKey ? [`storage-delete:${storageKey}`] : undefined);
+      return job ? [{ storageKey: job.payload.storageKey!, attempt: job.attempts, queue: job }] : [];
     },
-    async isStorageDeleteClaimCurrent(claim: { storageKey: string; attempt: number }): Promise<boolean> {
-      const [row] = await db.select({ storageKey: schema.storageDeleteJob.storageKey })
-        .from(schema.storageDeleteJob).where(and(
-          eq(schema.storageDeleteJob.storageKey, claim.storageKey),
-          eq(schema.storageDeleteJob.status, "processing"),
-          eq(schema.storageDeleteJob.attempts, claim.attempt),
-        )).limit(1);
-      return row !== undefined;
+    async isStorageDeleteClaimCurrent(claim: { storageKey: string; attempt: number; queue?: BackgroundJob }): Promise<boolean> {
+      return !!claim.queue && (await db.select({ id: schema.backgroundJob.id }).from(schema.backgroundJob)
+        .where(claimKey(schema, claim.queue))).length > 0;
     },
-    async completeStorageDelete(claim: { storageKey: string; attempt: number }): Promise<void> {
-      await db.delete(schema.storageDeleteJob).where(and(
-        eq(schema.storageDeleteJob.storageKey, claim.storageKey),
-        eq(schema.storageDeleteJob.status, "processing"),
-        eq(schema.storageDeleteJob.attempts, claim.attempt),
-      ));
+    async completeStorageDelete(claim: { storageKey: string; attempt: number; queue?: BackgroundJob }): Promise<void> {
+      if (claim.queue) await db.transaction((tx) => settleJob(tx, schema, claim.queue!));
     },
-    async failStorageDelete(claim: { storageKey: string; attempt: number }, code: string): Promise<void> {
-      await db.update(schema.storageDeleteJob).set({
-        status: "failed",
-        availableAt: new Date(Date.now() + 60_000),
-        claimedAt: null,
-        leaseExpiresAt: null,
-        lastErrorCode: code,
-      }).where(and(
-        eq(schema.storageDeleteJob.storageKey, claim.storageKey),
-        eq(schema.storageDeleteJob.status, "processing"),
-        eq(schema.storageDeleteJob.attempts, claim.attempt),
-      ));
+    async failStorageDelete(claim: { storageKey: string; attempt: number; queue?: BackgroundJob }, code: string): Promise<void> {
+      if (claim.queue) await db.transaction((tx) => retryJob(tx, schema, claim.queue!, { delayMs: 60_000, errorCode: code }));
     },
     async withStorageKeyLock<T>(storageKey: string, action: () => Promise<T>): Promise<T> {
       if (!isPostgres) return action();
@@ -465,9 +430,8 @@ async function roleSupportsRls(db: PostgresDatabase): Promise<boolean> {
         and pg_get_userbyid(c.relowner) = current_user
     `, [tables])).rows[0];
     if (secured?.count !== tables.length) return false;
-    // The summary worker lists due owners only through this policy; without it summaries would stall silently.
-    if (!(await client.query(`select 1 from pg_policies where schemaname = 'jobs' and tablename = 'summary'
-      and policyname = 'summary_job_dispatch_select'`)).rows.length) return false;
+    // Execution metadata is shared and content-free; canonical inputs retain forced RLS.
+    await client.query('SELECT id, dedupe_key, payload, generation, lease_until FROM jobs.queue LIMIT 0');
 
     await client.query("begin");
     transaction = true;
@@ -724,7 +688,8 @@ function createIdentityStore(
     const destination = await readers(destinationWorkspaceId);
     const audienceHash = await sha256(JSON.stringify([sourceWorkspaceId, destinationWorkspaceId,
       source.map((person) => person.id).sort(), destination.map((person) => person.id).sort()]));
-    return { audienceHash, removed: source.filter((person) => !destination.some((other) => other.id === person.id)),
+
+  return { audienceHash, removed: source.filter((person) => !destination.some((other) => other.id === person.id)),
       added: destination.filter((person) => !source.some((other) => other.id === person.id)) };
   }
 
@@ -777,8 +742,9 @@ function createIdentityStore(
           eq(schema.syncedMeeting.active, false), isNotNull(schema.syncedMeeting.deletingAt), eq(schema.syncedMeeting.status, "PROCESSING_TRANSCRIPT"),
         )))),
         exists(db.select({ value: sql`1` }).from(schema.recordingSession).where(and(eq(schema.recordingSession.workspaceId, schema.syncedWorkspace.workspaceId), isNull(schema.recordingSession.endedAt)))),
-        ...[schema.summaryJob, schema.imageAnalysisJob, schema.searchIndexJob].map((table) =>
-          exists(db.select({ value: sql`1` }).from(table).where(and(eq(table.workspaceId, schema.syncedWorkspace.workspaceId), inArray(table.status, ["pending", "processing"]))))),
+        exists(db.select({ value: sql`1` }).from(schema.backgroundJob).where(and(
+          eq(payloadField(schema, "workspaceId", true), schema.syncedWorkspace.workspaceId),
+          or(inArray(schema.backgroundJob.status, ["pending", "processing"]), gt(schema.backgroundJob.leaseUntil, new Date()))))),
       ),
     )).limit(1);
     if (busy) throw new SyncTransactionError(409, "transfer_processing");
@@ -816,9 +782,11 @@ function createIdentityStore(
     }
     for (const table of [schema.syncedProject, schema.syncedMeeting, schema.syncedFile,
       schema.meetingAttachment, schema.meetingEvent, schema.transcriptPatchChunk, schema.searchDocument,
-      schema.searchIndexJob, schema.imageAnalysisJob, schema.summaryJob, schema.document, schema.documentUpdate, schema.documentRecovery, schema.documentPresence]) {
+      schema.summaryJob, schema.document, schema.documentUpdate, schema.documentRecovery, schema.documentPresence]) {
       await db.update(table).set({ workspaceId: destinationWorkspaceId }).where(eq(table.workspaceId, sourceWorkspaceId));
     }
+    const movedJobs = await db.select().from(schema.backgroundJob).where(eq(payloadField(schema, "workspaceId", true), sourceWorkspaceId));
+    for (const job of movedJobs) await db.update(schema.backgroundJob).set({ payload: { ...job.payload, workspaceId: destinationWorkspaceId } }).where(eq(schema.backgroundJob.id, job.id));
     for (const meeting of meetings) await enqueueMemoryMeeting(sourceWorkspaceId, meeting.id);
     // Transcript and summary history follows the unchanged meeting ID. Object keys never change.
     const id = uuidV7();
@@ -978,10 +946,8 @@ function createIdentityStore(
       const batch = withoutEmbedding.slice(offset, offset + batchSize);
       const documentIds = batch.map(({ documentId }) => documentId);
       const workspaceId = batch[0]!.workspaceId;
-      await db.delete(schema.searchIndexJob).where(and(
-        eq(schema.searchIndexJob.workspaceId, workspaceId),
-        inArray(schema.searchIndexJob.documentId, documentIds),
-      ));
+      await cancelJobs(db, schema, and(eq(schema.backgroundJob.kind, "search"),
+        eq(payloadField(schema, "workspaceId", true), workspaceId), inArray(payloadField(schema, "documentId", true), documentIds)));
       await db.update(schema.searchDocument).set({ embedding: null, embeddingModel: null }).where(and(
         eq(schema.searchDocument.workspaceId, workspaceId),
         inArray(schema.searchDocument.documentId, documentIds),
@@ -993,28 +959,10 @@ function createIdentityStore(
       && input.currentEmbeddingContentHash !== input.embeddingContentHash);
     const availableAt = new Date(Date.now() + 5_000);
     for (let offset = 0; offset < changed.length; offset += batchSize) {
-      await db.insert(schema.searchIndexJob).values(changed.slice(offset, offset + batchSize).map((input) => ({
-        workspaceId: input.workspaceId,
-        documentId: input.documentId,
-        model: embeddingConfig.model,
-        dimensions: embeddingConfig.dimensions,
-        availableAt,
-        updatedAt: now,
-      }))).onConflictDoUpdate({
-        target: [schema.searchIndexJob.workspaceId, schema.searchIndexJob.documentId],
-        set: {
-            model: embeddingConfig.model,
-          dimensions: embeddingConfig.dimensions,
-          generation: sql`${schema.searchIndexJob.generation} + 1`,
-          status: "pending",
-          attempts: 0,
-          availableAt,
-          claimedAt: null,
-          leaseExpiresAt: null,
-          lastErrorCode: null,
-          updatedAt: now,
-        },
-      });
+      for (const input of changed.slice(offset, offset + batchSize)) await enqueueJob(db, schema,
+        `search:${input.workspaceId}:${input.documentId}`, "search", input.workspaceId,
+        `document:${input.workspaceId}:${input.documentId}`, { workspaceId: input.workspaceId, documentId: input.documentId,
+          model: embeddingConfig.model, dimensions: embeddingConfig.dimensions }, availableAt);
     }
   }
 
@@ -1346,7 +1294,7 @@ function createIdentityStore(
     for (const fileId of new Set(attachments.map((attachment) => attachment.fileId))) {
       const file = await canonicalRecord("file", transaction.workspaceId, fileId);
       if (action === "delete" && file.record) continue;
-      if (action === "delete") await db.delete(schema.imageAnalysisJob).where(eq(schema.imageAnalysisJob.fileId, fileId));
+      if (action === "delete") await cancelJobs(db, schema, eq(schema.backgroundJob.dedupeKey, `image:${fileId}`));
       changes.push({ entity: "file", entityId: fileId, action, revision: action === "delete" ? null : file.revision });
     }
     changes.push(...attachments.map((attachment) => ({ entity: "meeting_attachment" as const, entityId: attachment.id, action, revision: action === "delete" ? null : attachment.revision })),
@@ -1400,7 +1348,8 @@ function createIdentityStore(
         rows.forEach((row) => meetings.add(row.id));
       } else if (change.entity === "workspace" && change.action === "reset") {
         await db.update(schema.workspaceMemoryState).set({ reconcile: true, generation: sql`${schema.workspaceMemoryState.generation} + 1`,
-          availableAt: new Date(), status: "pending" }).where(eq(schema.workspaceMemoryState.scopeId, workspaceId));
+          status: "pending" }).where(eq(schema.workspaceMemoryState.scopeId, workspaceId));
+        await enqueueMemoryScope(db, schema, workspaceId);
       }
     }
     for (const meetingId of meetings) await enqueueMemoryMeeting(workspaceId, meetingId);
@@ -1645,13 +1594,14 @@ function createIdentityStore(
   async function clearWorkspace(workspaceId: string, preservePermissions: boolean) {
     await queueRecordingDeletes(workspaceId);
     const files = await db.select({ id: schema.syncedFile.fileId }).from(schema.syncedFile).where(eq(schema.syncedFile.workspaceId, workspaceId));
-    if (files.length) await db.insert(schema.storageDeleteJob).values(files.map(({ id }) => ({ storageKey: fileStorageKey(id) }))).onConflictDoNothing();
+    for (const { id } of files) await enqueueStorageDelete(db, schema, fileStorageKey(id));
+    await cancelJobs(db, schema, and(inArray(schema.backgroundJob.kind, ["image", "search", "summary", "audio-summary"]), eq(payloadField(schema, "workspaceId", true), workspaceId)));
     if (preservePermissions) {
       await db.delete(schema.document).where(eq(schema.document.workspaceId, workspaceId));
       await db.delete(schema.meetingAttachment).where(eq(schema.meetingAttachment.workspaceId, workspaceId));
       await db.delete(schema.syncedFile).where(eq(schema.syncedFile.workspaceId, workspaceId));
       await redactMeetingEvents(workspaceId);
-      await db.delete(schema.searchIndexJob).where(eq(schema.searchIndexJob.workspaceId, workspaceId));
+      await cancelJobs(db, schema, and(eq(schema.backgroundJob.kind, "search"), eq(payloadField(schema, "workspaceId", true), workspaceId)));
       await db.delete(schema.syncedMeeting).where(eq(schema.syncedMeeting.workspaceId, workspaceId));
       await db.delete(schema.syncedProject).where(eq(schema.syncedProject.workspaceId, workspaceId));
       await db.update(schema.syncedWorkspace).set({ revision: 0, updatedAt: new Date() }).where(eq(schema.syncedWorkspace.workspaceId, workspaceId));
@@ -1990,8 +1940,8 @@ function createIdentityStore(
           await insertMeetingEvent({ id: operation.id, workspaceId: transaction.workspaceId, meetingId: operation.entityId, kind: "meeting_deleted", occurredAt: now, receivedAt: now });
           // Cancel leases from every requester so restoring does not revive work started before deletion.
           if (searchBackend !== "sqlite") await db.execute(sql`select set_config('app.maintenance', 'meeting-retention', true), set_config('app.maintenance_workspace_id', ${transaction.workspaceId}, true)`);
-          await db.update(schema.summaryJob).set({ status: "cancelled", claimedAt: null, leaseExpiresAt: null })
-            .where(and(eq(schema.summaryJob.workspaceId, transaction.workspaceId), eq(schema.summaryJob.meetingId, operation.entityId), inArray(schema.summaryJob.status, ["pending", "processing"])));
+          await cancelJobs(db, schema, and(inArray(schema.backgroundJob.kind, ["summary", "audio-summary"]),
+            eq(schema.backgroundJob.target, `meeting:${operation.entityId}`)), true);
           if (searchBackend !== "sqlite") await db.execute(sql`select set_config('app.maintenance', '', true), set_config('app.maintenance_workspace_id', '', true)`);
           await db.delete(schema.transcriptPatchChunk).where(and(eq(schema.transcriptPatchChunk.workspaceId, transaction.workspaceId), eq(schema.transcriptPatchChunk.meetingId, operation.entityId)));
           changes.push(...await meetingLifecycleChanges(transaction, operation.entityId, "delete"));
@@ -2176,8 +2126,8 @@ function createIdentityStore(
         }
         const source = data.source as RecordingSource;
         const audio = record.audio[source];
-        const [pendingDelete] = await db.select().from(schema.storageDeleteJob)
-          .where(eq(schema.storageDeleteJob.storageKey, recordingStorageKey(record, source))).limit(1);
+        const [pendingDelete] = await db.select().from(schema.backgroundJob)
+          .where(eq(payloadField(schema, "storageKey"), recordingStorageKey(record, source))).limit(1);
         if (pendingDelete || !audio?.uploadedAt || audio.checksum !== data.checksum
           || (!audio.active && new Date(audio.createdAt).getTime() <= now.getTime() - 86_400_000)) {
           throw new SyncTransactionError(409, "recording_content_missing", [], operation.id);
@@ -2206,14 +2156,14 @@ function createIdentityStore(
           const [reference] = await db.select({ id: schema.meetingAttachment.id }).from(schema.meetingAttachment)
             .where(eq(schema.meetingAttachment.fileId, file.fileId)).limit(1);
           if (reference) throw new SyncTransactionError(409, "file_in_use", [], operation.id);
-          await db.insert(schema.storageDeleteJob).values({ storageKey: fileStorageKey(file.fileId) }).onConflictDoNothing();
+          await enqueueStorageDelete(db, schema, fileStorageKey(file.fileId));
           await db.delete(schema.syncedFile).where(eq(schema.syncedFile.fileId, file.fileId));
           recordChange("file", operation.entityId, "delete", null);
           records.push({ entity: "file", id: operation.entityId, revision: null, record: null });
           continue;
         }
-        const [pendingDelete] = await db.select({ key: schema.storageDeleteJob.storageKey }).from(schema.storageDeleteJob)
-          .where(eq(schema.storageDeleteJob.storageKey, fileStorageKey(file.fileId))).limit(1);
+        const [pendingDelete] = await db.select({ key: payloadField(schema, "storageKey") }).from(schema.backgroundJob)
+          .where(eq(payloadField(schema, "storageKey"), fileStorageKey(file.fileId))).limit(1);
         if (pendingDelete) throw new SyncTransactionError(503, "file_storage_delete_pending", [], operation.id);
         if (!file.uploadedAt || data.checksum !== file.checksum) {
           throw new SyncTransactionError(422, "file_content_missing", [], operation.id);
@@ -2234,13 +2184,13 @@ function createIdentityStore(
         if (operation.action === "delete") {
           await db.delete(schema.meetingAttachment).where(and(eq(schema.meetingAttachment.id, operation.entityId),
             eq(schema.meetingAttachment.workspaceId, transaction.workspaceId)));
-          await db.delete(schema.searchIndexJob).where(and(eq(schema.searchIndexJob.workspaceId, transaction.workspaceId), eq(schema.searchIndexJob.documentId, operation.entityId)));
+          await cancelJobs(db, schema, eq(schema.backgroundJob.dedupeKey, `search:${transaction.workspaceId}:${operation.entityId}`));
           await db.delete(schema.searchDocument).where(and(eq(schema.searchDocument.workspaceId, transaction.workspaceId), eq(schema.searchDocument.documentId, operation.entityId)));
           await enqueueMemoryMeeting(transaction.workspaceId, String(previous.record!.meetingId));
           recordChange("meeting_attachment", operation.entityId, "delete", null);
           const fileId = String(previous.record!.fileId);
           if (!(await canonicalRecord("file", transaction.workspaceId, fileId)).record) {
-            await db.delete(schema.imageAnalysisJob).where(eq(schema.imageAnalysisJob.fileId, fileId));
+            await cancelJobs(db, schema, eq(schema.backgroundJob.dedupeKey, `image:${fileId}`));
             recordChange("file", fileId, "delete", null);
           }
           records.push({ entity: "meeting_attachment", id: operation.entityId, revision: null, record: null });
@@ -2272,11 +2222,16 @@ function createIdentityStore(
           }).onConflictDoNothing().returning({ id: schema.meetingAttachment.id });
           if (!inserted) throw new SyncTransactionError(409, "meeting_attachment_id_conflict", [], operation.id);
         }
-        // Revive accepted work through its dispatch trigger when a delayed attachment makes it ready.
-        await db.update(schema.imageAnalysisJob).set({ status: "pending" }).where(and(
-          eq(schema.imageAnalysisJob.fileId, fileId), eq(schema.imageAnalysisJob.workspaceId, transaction.workspaceId),
-          eq(schema.imageAnalysisJob.status, "pending"),
-        ));
+        // Attachment readiness revives accepted requests without creating new image work.
+        const imageQueue = schema.backgroundJob;
+        const accepted = db.select().from(imageQueue).where(and(eq(imageQueue.kind, "image"),
+          eq(payloadField(schema, "fileId"), fileId), eq(payloadField(schema, "workspaceId"), transaction.workspaceId),
+          or(inArray(imageQueue.status, ["pending", "processing"]), and(eq(imageQueue.status, "failed"),
+            inArray(imageQueue.lastError, ["job_source_not_ready", "job_execution_failed"])))))
+          .limit(1);
+        const [imageJob] = searchBackend !== "sqlite" ? await accepted.for("update") : await accepted;
+        if (imageJob) await enqueueJob(db, schema, imageJob.dedupeKey, "image", imageJob.owner,
+          imageJob.target, imageJob.payload, new Date(), true, true);
 
       }
 
@@ -2305,8 +2260,8 @@ function createIdentityStore(
         for (const image of images) {
           const [current] = await db.select({ hash: schema.searchDocument.embeddingContentHash }).from(schema.searchDocument)
             .where(and(eq(schema.searchDocument.workspaceId, transaction.workspaceId), eq(schema.searchDocument.documentId, image.screenshotId))).limit(1);
-          const [analysis] = await db.select({ mode: schema.imageAnalysisJob.mode, status: schema.imageAnalysisJob.status }).from(schema.imageAnalysisJob)
-            .where(eq(schema.imageAnalysisJob.fileId, image.fileId)).limit(1);
+          const [analysis] = await db.select({ mode: payloadField(schema, "mode"), status: schema.backgroundJob.status }).from(schema.backgroundJob)
+            .where(eq(schema.backgroundJob.dedupeKey, `image:${image.fileId}`)).limit(1);
           await updateSearchDocuments([{
             documentId: image.screenshotId, workspaceId: transaction.workspaceId, meetingId: image.meetingId, kind: "screenshot",
             searchText: typeof data.searchText === "string" ? data.searchText : "",
@@ -2340,20 +2295,12 @@ function createIdentityStore(
       : response;
   }
 
-  const imageClaimKey = (claim: ImageAnalysisClaim) => and(
-    eq(schema.imageAnalysisJob.fileId, claim.fileId),
-    eq(schema.imageAnalysisJob.workspaceId, claim.workspaceId),
-    eq(schema.imageAnalysisJob.ownerUserId, userPrincipalId),
-    eq(schema.imageAnalysisJob.model, claim.model),
-    eq(schema.imageAnalysisJob.claimedAt, claim.claimedAt),
-    eq(schema.imageAnalysisJob.status, "processing"),
-    gt(schema.imageAnalysisJob.leaseExpiresAt, new Date()),
-  );
+  const imageClaimKey = (claim: ImageAnalysisClaim) => claim.queue ? claimKey(schema, claim.queue) : sql`false`;
 
   async function loadImageAnalysis(claim: ImageAnalysisClaim): Promise<ImageAnalysisInput | null> {
     if (claim.ownerUserId !== userPrincipalId) return null;
     const [file] = await db.select({ file: schema.syncedFile }).from(schema.syncedFile)
-      .innerJoin(schema.imageAnalysisJob, eq(schema.imageAnalysisJob.fileId, schema.syncedFile.fileId))
+      .innerJoin(schema.backgroundJob, eq(payloadField(schema, "fileId", true), schema.syncedFile.fileId))
       .where(and(
         imageClaimKey(claim), eq(schema.syncedFile.workspaceId, claim.workspaceId),
         eq(schema.syncedFile.active, true), isNotNull(schema.syncedFile.uploadedAt),
@@ -2372,13 +2319,10 @@ function createIdentityStore(
 
   async function completeImageAnalysis(input: ImageAnalysisInput, transaction: SyncTransaction): Promise<boolean> {
     await lockTransaction(transaction);
-    const claimQuery = db.select({ id: schema.imageAnalysisJob.fileId }).from(schema.imageAnalysisJob)
-      .where(imageClaimKey(input));
-    const [claim] = searchBackend === "sqlite" ? await claimQuery : await claimQuery.for("update");
-    if (!claim) return false;
+    if (!input.queue || !await lockJob(db, schema, input.queue)) return false;
     const current = await loadImageAnalysis(input);
     if (!current || current.file.checksum !== input.file.checksum || current.file.revision !== input.file.revision) return false;
-    await db.delete(schema.imageAnalysisJob).where(imageClaimKey(input));
+    if (!await settleJob(db, schema, input.queue)) throw new SyncTransactionError(409, "job_lease_changed");
     await commitTransaction(transaction);
     return true;
   }
@@ -2576,6 +2520,18 @@ function createIdentityStore(
     return { items: records, hasMore: false };
   }
 
+  async function getSummaryJob(workspaceId: string, meetingId: string, id?: string) {
+    const j = schema.summaryJob;
+    const [joined] = await db.select({ input: j, queue: schema.backgroundJob }).from(j)
+      .innerJoin(schema.backgroundJob, eq(schema.backgroundJob.id, j.queueId)).where(and(eq(j.workspaceId, workspaceId),
+        eq(j.meetingId, meetingId), eq(j.ownerUserId, identity.userId), id ? eq(j.id, id) : undefined, writeAccess(j.workspaceId)))
+      .orderBy(desc(j.createdAt), desc(j.id)).limit(1);
+    if (!joined) return null;
+    const [row] = await content.read(j, [joined.input]);
+    return row ? { ...row, ...executionState(joined.queue), settings: storedTranscriptSettingsSchema.parse(row.settings) } : null;
+  }
+
+
   return {
     ...createDocumentStore(db, schema, identity, content, (id) => lockWorkspace(id, true, "document"), { read: readable, write: writeAccess }, locks, documentDeletionGraceHours),
     workspaceTransferAudience,
@@ -2590,55 +2546,52 @@ function createIdentityStore(
       )).orderBy(desc(columns.version)).limit(limit), workspaceId);
       return rows.map((row) => ({ ...row, metadata: row.metadata ? summaryMetadataSchema.parse(row.metadata) : null }));
     },
-    async getSummaryJob(workspaceId, meetingId, id) {
-      const [row] = await content.read(schema.summaryJob, await db.select().from(schema.summaryJob).where(and(
-        eq(schema.summaryJob.workspaceId, workspaceId), eq(schema.summaryJob.meetingId, meetingId),
-        eq(schema.summaryJob.ownerUserId, identity.userId),
-        id ? eq(schema.summaryJob.id, id) : undefined,
-        writeAccess(schema.summaryJob.workspaceId),
-      )).orderBy(desc(schema.summaryJob.createdAt), desc(schema.summaryJob.id)).limit(1));
-      return row ? { ...row, settings: storedTranscriptSettingsSchema.parse(row.settings) } : null;
-    },
+    getSummaryJob,
     async insertSummaryJob(job) {
-      const inserted = await db.insert(schema.summaryJob).values(await content.write(schema.summaryJob, { ...job })).onConflictDoNothing({ target: schema.summaryJob.id }).returning({ id: schema.summaryJob.id });
+      const q = schema.backgroundJob;
+      const [active] = await db.select({ id: q.id }).from(q).where(and(eq(q.target, `meeting:${job.meetingId}`),
+        inArray(q.kind, ["summary", "audio-summary"]), inArray(q.status, ["pending", "processing"])));
+      if (active) throw new SyncTransactionError(409, "summary_already_running");
+      const queue = await enqueueJob(db, schema, `summary:${job.id}`, job.method === "audio" ? "audio-summary" : "summary",
+        job.ownerUserId, `meeting:${job.meetingId}`, { id: job.id, ownerUserId: job.ownerUserId, workspaceId: job.workspaceId }, job.availableAt, false);
+      if (!queue) throw new SyncTransactionError(409, "summary_id_reused");
+      const inserted = await db.insert(schema.summaryJob).values(await content.write(schema.summaryJob, { ...job, queueId: queue.id }))
+        .onConflictDoNothing({ target: schema.summaryJob.id }).returning({ id: schema.summaryJob.id });
       if (!inserted.length) throw new SyncTransactionError(409, "summary_id_reused");
+      Object.assign(job, executionState(queue));
     },
     async cancelSummaryJob(workspaceId, meetingId, id) {
-      const jobs = schema.summaryJob;
-      const [row] = await content.read(jobs, await db.update(jobs).set({ status: "cancelled", claimedAt: null, leaseExpiresAt: null })
-        .where(and(eq(jobs.id, id), eq(jobs.workspaceId, workspaceId), eq(jobs.meetingId, meetingId),
-          eq(jobs.ownerUserId, identity.userId), writeAccess(jobs.workspaceId), inArray(jobs.status, ["pending", "processing"])))
-        .returning(), workspaceId);
-      return row ? { ...row, settings: storedTranscriptSettingsSchema.parse(row.settings) } : null;
+      const job = await getSummaryJob(workspaceId, meetingId, id);
+      if (!job || !["pending", "processing"].includes(job.status)) return null;
+      await cancelJobs(db, schema, eq(schema.backgroundJob.id, job.queueId), true);
+      return getSummaryJob(workspaceId, meetingId, id);
     },
     async completeSummaryTranscript(job, transaction, transcriptId) {
       const jobs = schema.summaryJob;
-      const filter = and(eq(jobs.id, job.id), eq(jobs.ownerUserId, identity.userId),
-        eq(jobs.status, "processing"), eq(jobs.claimedAt, job.claimedAt!), gt(jobs.leaseExpiresAt, new Date()));
-      const query = db.select().from(jobs).where(filter);
-      const [current] = await content.read(jobs, searchBackend === "sqlite" ? await query : await query.for("update"), job.workspaceId);
+      await lockTransaction(transaction);
+      if (!job.queue || !await lockJob(db, schema, job.queue)) return null;
+      const [current] = await content.read(jobs, await db.select().from(jobs)
+        .where(and(eq(jobs.id, job.id), eq(jobs.ownerUserId, identity.userId))), job.workspaceId);
       if (!current) return null;
       if (current.transcriptResult) return getTranscript(job.workspaceId, job.meetingId, Number(current.transcriptResult.version));
       await commitTransaction(transaction);
       const transcript = await getTranscript(job.workspaceId, job.meetingId);
       if (!transcript || transcript.id !== transcriptId) throw new SyncTransactionError(409, "summary_transcript_conflict");
       const transcriptionOnly = job.input?.type === "recording" && job.input.transcriptionOnly === true;
-      await db.update(jobs).set(await content.write(jobs, transcriptionOnly
-        ? { status: "succeeded", claimedAt: null, leaseExpiresAt: null, lastErrorCode: null,
-          transcriptResult: { transcriptId, version: String(transcript.version) } }
-        : { stage: "summarizing", transcriptResult: { transcriptId, version: String(transcript.version) } },
-      { id: job.id, workspaceId: job.workspaceId })).where(filter);
+      await db.update(jobs).set(await content.write(jobs, {
+        ...(transcriptionOnly ? {} : { stage: "summarizing" }), transcriptResult: { transcriptId, version: String(transcript.version) },
+      }, { id: job.id, workspaceId: job.workspaceId })).where(eq(jobs.id, job.id));
+      if (transcriptionOnly && !await settleJob(db, schema, job.queue)) throw new SyncTransactionError(409, "job_lease_changed");
       return transcript;
     },
     async completeSummaryJob(job, transaction) {
-      const jobs = schema.summaryJob;
-      const filter = and(eq(jobs.id, job.id), eq(jobs.ownerUserId, identity.userId),
-        eq(jobs.status, "processing"), eq(jobs.claimedAt, job.claimedAt!), gt(jobs.leaseExpiresAt, new Date()));
-      const query = db.select().from(jobs).where(filter);
-      const [current] = await content.read(jobs, searchBackend === "sqlite" ? await query : await query.for("update"), job.workspaceId);
+      await lockTransaction(transaction);
+      if (!job.queue || !await lockJob(db, schema, job.queue)) return false;
+      const [current] = await content.read(schema.summaryJob, await db.select().from(schema.summaryJob)
+        .where(and(eq(schema.summaryJob.id, job.id), eq(schema.summaryJob.ownerUserId, identity.userId))), job.workspaceId);
       if (!current) return false;
       await commitTransaction(transaction);
-      await db.update(jobs).set({ status: "succeeded", claimedAt: null, leaseExpiresAt: null, lastErrorCode: null }).where(filter);
+      if (!await settleJob(db, schema, job.queue)) throw new SyncTransactionError(409, "job_lease_changed");
       return true;
     },
     lockWorkspace: (workspaceId, options) => options?.authorization
@@ -2747,8 +2700,8 @@ function createIdentityStore(
         record = { ...inserted!, workspaceId };
       }
       if (!record) throw new SyncTransactionError(409, "recording_session_conflict");
-      const [pending] = await db.select().from(schema.storageDeleteJob)
-        .where(eq(schema.storageDeleteJob.storageKey, recordingStorageKey(record, source))).limit(1);
+      const [pending] = await db.select().from(schema.backgroundJob)
+        .where(eq(payloadField(schema, "storageKey"), recordingStorageKey(record, source))).limit(1);
       if (pending) throw new SyncTransactionError(503, "recording_storage_delete_pending");
       if (!record.audio[source]) {
         const audio = { ...record.audio, [source]: { generation: crypto.randomUUID(), createdAt: now.toISOString(),
@@ -2775,8 +2728,8 @@ function createIdentityStore(
       const [record] = await selectRecordings().where(eq(schema.syncedRecording.sessionId, sessionId)).limit(1);
       const audio = record?.audio[source];
       if (!record || audio?.generation !== generation || !await ensureUploadTarget(record.workspaceId, record.meetingId)) return null;
-      const [pending] = await db.select().from(schema.storageDeleteJob)
-        .where(eq(schema.storageDeleteJob.storageKey, recordingStorageKey(record, source))).limit(1);
+      const [pending] = await db.select().from(schema.backgroundJob)
+        .where(eq(payloadField(schema, "storageKey"), recordingStorageKey(record, source))).limit(1);
       if (pending) return null;
       const updated: RecordingRecord = { ...record, updatedAt: new Date(), audio: { ...record.audio,
         [source]: { ...audio, size, checksum, uploadedAt: new Date().toISOString() } } };
@@ -2832,8 +2785,8 @@ function createIdentityStore(
         .where(and(eq(schema.syncedFile.fileId, pending.fileId), eq(schema.syncedFile.workspaceId, pending.workspaceId),
           eq(schema.syncedFile.createdAt, pending.createdAt), isNull(schema.syncedFile.uploadedAt),
           eq(schema.syncedFile.active, false), writeAccess(schema.syncedFile.workspaceId),
-          notExists(db.select({ key: schema.storageDeleteJob.storageKey }).from(schema.storageDeleteJob)
-            .where(eq(schema.storageDeleteJob.storageKey, fileStorageKey(pending.fileId))))))
+          notExists(db.select({ key: payloadField(schema, "storageKey") }).from(schema.backgroundJob)
+            .where(eq(payloadField(schema, "storageKey"), fileStorageKey(pending.fileId))))))
         .returning(), pending.workspaceId);
       return file ?? null;
     },
@@ -2846,7 +2799,7 @@ function createIdentityStore(
         const deleted = await db.delete(schema.syncedFile).where(and(
           eq(schema.syncedFile.fileId, file.id), eq(schema.syncedFile.active, false), lt(schema.syncedFile.updatedAt, before),
         )).returning({ id: schema.syncedFile.fileId });
-        if (deleted.length) await db.insert(schema.storageDeleteJob).values({ storageKey: fileStorageKey(file.id) }).onConflictDoNothing();
+        if (deleted.length) await enqueueStorageDelete(db, schema, fileStorageKey(file.id));
       }
     },
     async listFiles(workspaceId, after, limit) {

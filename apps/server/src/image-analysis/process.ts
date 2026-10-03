@@ -11,7 +11,7 @@ import type { ImageAnalysisStore, ImageAnalysisReference } from "./store";
 export async function processImageAnalysisJob(
   jobs: ImageAnalysisStore, captioner: ImageCaptioner, syncStore: MeetingSyncStore,
   sync: MeetingSyncService, signal: AbortSignal,
-  reference?: ImageAnalysisReference,
+  reference?: ImageAnalysisReference | import("../jobs/store").BackgroundJob,
 ): Promise<boolean> {
   signal = AbortSignal.any([signal, AbortSignal.timeout(240_000)]);
   const job = await jobs.claim(captioner.model, reference);

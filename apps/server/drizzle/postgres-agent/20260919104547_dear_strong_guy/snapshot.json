@@ -1,7 +1,7 @@
 {
   "version": "8",
   "dialect": "postgres",
-  "id": "51bca4db-d3ca-4a63-a7b4-b4cbd97b4ce9",
+  "id": "109c6a08-a7e4-4ca9-be83-b27e1de896d1",
   "prevIds": [
     "00000000-0000-0000-0000-000000000000"
   ],
@@ -13,12 +13,6 @@
     {
       "isRlsEnabled": true,
       "name": "live_contexts",
-      "entityType": "tables",
-      "schema": "agent"
-    },
-    {
-      "isRlsEnabled": true,
-      "name": "memory_jobs",
       "entityType": "tables",
       "schema": "agent"
     },
@@ -103,136 +97,6 @@
       "entityType": "columns",
       "schema": "agent",
       "table": "live_contexts"
-    },
-    {
-      "type": "text",
-      "typeSchema": null,
-      "notNull": true,
-      "dimensions": 0,
-      "default": null,
-      "generated": null,
-      "identity": null,
-      "name": "id",
-      "entityType": "columns",
-      "schema": "agent",
-      "table": "memory_jobs"
-    },
-    {
-      "type": "text",
-      "typeSchema": null,
-      "notNull": true,
-      "dimensions": 0,
-      "default": null,
-      "generated": null,
-      "identity": null,
-      "name": "user_id",
-      "entityType": "columns",
-      "schema": "agent",
-      "table": "memory_jobs"
-    },
-    {
-      "type": "text",
-      "typeSchema": null,
-      "notNull": true,
-      "dimensions": 0,
-      "default": null,
-      "generated": null,
-      "identity": null,
-      "name": "thread_id",
-      "entityType": "columns",
-      "schema": "agent",
-      "table": "memory_jobs"
-    },
-    {
-      "type": "text",
-      "typeSchema": null,
-      "notNull": true,
-      "dimensions": 0,
-      "default": null,
-      "generated": null,
-      "identity": null,
-      "name": "kind",
-      "entityType": "columns",
-      "schema": "agent",
-      "table": "memory_jobs"
-    },
-    {
-      "type": "text",
-      "typeSchema": null,
-      "notNull": false,
-      "dimensions": 0,
-      "default": null,
-      "generated": null,
-      "identity": null,
-      "name": "message_id",
-      "entityType": "columns",
-      "schema": "agent",
-      "table": "memory_jobs"
-    },
-    {
-      "type": "integer",
-      "typeSchema": null,
-      "notNull": true,
-      "dimensions": 0,
-      "default": null,
-      "generated": null,
-      "identity": null,
-      "name": "revision",
-      "entityType": "columns",
-      "schema": "agent",
-      "table": "memory_jobs"
-    },
-    {
-      "type": "timestamp with time zone",
-      "typeSchema": null,
-      "notNull": true,
-      "dimensions": 0,
-      "default": "now()",
-      "generated": null,
-      "identity": null,
-      "name": "available_at",
-      "entityType": "columns",
-      "schema": "agent",
-      "table": "memory_jobs"
-    },
-    {
-      "type": "text",
-      "typeSchema": null,
-      "notNull": false,
-      "dimensions": 0,
-      "default": null,
-      "generated": null,
-      "identity": null,
-      "name": "lease",
-      "entityType": "columns",
-      "schema": "agent",
-      "table": "memory_jobs"
-    },
-    {
-      "type": "timestamp with time zone",
-      "typeSchema": null,
-      "notNull": false,
-      "dimensions": 0,
-      "default": null,
-      "generated": null,
-      "identity": null,
-      "name": "lease_until",
-      "entityType": "columns",
-      "schema": "agent",
-      "table": "memory_jobs"
-    },
-    {
-      "type": "integer",
-      "typeSchema": null,
-      "notNull": true,
-      "dimensions": 0,
-      "default": "0",
-      "generated": null,
-      "identity": null,
-      "name": "attempts",
-      "entityType": "columns",
-      "schema": "agent",
-      "table": "memory_jobs"
     },
     {
       "type": "text",
@@ -1109,27 +973,6 @@
       "nameExplicit": true,
       "columns": [
         {
-          "value": "available_at",
-          "isExpression": false,
-          "asc": true,
-          "nullsFirst": false,
-          "opclass": null
-        }
-      ],
-      "isUnique": false,
-      "where": null,
-      "with": "",
-      "method": "btree",
-      "concurrently": false,
-      "name": "agent_memory_due_idx",
-      "entityType": "indexes",
-      "schema": "agent",
-      "table": "memory_jobs"
-    },
-    {
-      "nameExplicit": true,
-      "columns": [
-        {
           "value": "thread_id",
           "isExpression": false,
           "asc": true,
@@ -1223,23 +1066,6 @@
     {
       "nameExplicit": false,
       "columns": [
-        "thread_id"
-      ],
-      "schemaTo": "agent",
-      "tableTo": "mastra_threads",
-      "columnsTo": [
-        "id"
-      ],
-      "onUpdate": "NO ACTION",
-      "onDelete": "CASCADE",
-      "name": "memory_jobs_thread_id_mastra_threads_id_fkey",
-      "entityType": "fks",
-      "schema": "agent",
-      "table": "memory_jobs"
-    },
-    {
-      "nameExplicit": false,
-      "columns": [
         "threadId"
       ],
       "schemaTo": "agent",
@@ -1279,16 +1105,6 @@
       "name": "live_contexts_pkey",
       "schema": "agent",
       "table": "live_contexts",
-      "entityType": "pks"
-    },
-    {
-      "columns": [
-        "id"
-      ],
-      "nameExplicit": false,
-      "name": "memory_jobs_pkey",
-      "schema": "agent",
-      "table": "memory_jobs",
       "entityType": "pks"
     },
     {
@@ -1353,32 +1169,6 @@
       "entityType": "policies",
       "schema": "agent",
       "table": "live_contexts"
-    },
-    {
-      "as": "PERMISSIVE",
-      "for": "ALL",
-      "roles": [
-        "public"
-      ],
-      "using": "\"agent\".\"memory_jobs\".\"user_id\" = nullif(current_setting('app.user_id', true), '') AND EXISTS (\n  SELECT 1 FROM \"agent\".\"mastra_threads\" owner_thread\n  WHERE owner_thread.id = \"agent\".\"memory_jobs\".\"thread_id\" AND owner_thread.\"resourceId\" = nullif(current_setting('app.user_id', true), '')\n)",
-      "withCheck": "\"agent\".\"memory_jobs\".\"user_id\" = nullif(current_setting('app.user_id', true), '') AND EXISTS (\n  SELECT 1 FROM \"agent\".\"mastra_threads\" owner_thread\n  WHERE owner_thread.id = \"agent\".\"memory_jobs\".\"thread_id\" AND owner_thread.\"resourceId\" = nullif(current_setting('app.user_id', true), '')\n)",
-      "name": "agent_memory_job_owner",
-      "entityType": "policies",
-      "schema": "agent",
-      "table": "memory_jobs"
-    },
-    {
-      "as": "PERMISSIVE",
-      "for": "SELECT",
-      "roles": [
-        "public"
-      ],
-      "using": "current_setting('app.maintenance', true) = 'agent-memory'",
-      "withCheck": null,
-      "name": "agent_memory_job_dispatch",
-      "entityType": "policies",
-      "schema": "agent",
-      "table": "memory_jobs"
     },
     {
       "as": "PERMISSIVE",

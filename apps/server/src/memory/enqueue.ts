@@ -1,4 +1,5 @@
-import { and, eq, sql } from "drizzle-orm";
+import { cancelJobs, enqueueJob } from "../jobs/state";
+import { and, eq, getTableName, sql } from "drizzle-orm";
 import type { NodePgDatabase } from "drizzle-orm/node-postgres";
 import type * as Schema from "../db/auth-schema";
 import { memoryDocumentId } from "./ids";
@@ -15,6 +16,21 @@ export async function enqueueMemorySource(db: NodePgDatabase, schema: typeof Sch
   const rows = await (reconcile ? insert.onConflictDoNothing() : insert.onConflictDoUpdate({
     target: [jobs.scopeId, jobs.documentId], set: { generation: sql`${jobs.generation} + 1` },
   })).returning();
-  if (rows.length) await db.update(state).set({ generation: sql`${state.generation} + 1`, status: "pending",
-    availableAt: new Date(), attempts: 0, errorCode: null }).where(and(eq(state.scopeId, scopeId), eq(state.purge, false)));
+  if (rows.length) {
+    await db.update(state).set({ generation: sql`${state.generation} + 1`, status: "pending" })
+      .where(and(eq(state.scopeId, scopeId), eq(state.purge, false)));
+    await enqueueMemoryScope(db, schema, scopeId);
+  }
+}
+
+export async function enqueueMemoryScope(db: NodePgDatabase, schema: typeof Schema, scopeId: string) {
+  const [state] = await db.select().from(schema.workspaceMemoryState).where(eq(schema.workspaceMemoryState.scopeId, scopeId));
+  if (!state) return;
+  const kind = getTableName(schema.workspaceMemoryState).includes("personal") ? "personal-memory" : "workspace-memory";
+  if (!state.enabled && !state.purge) {
+    await cancelJobs(db, schema, eq(schema.backgroundJob.dedupeKey, `${kind}:${scopeId}`));
+    return;
+  }
+  await enqueueJob(db, schema, `${kind}:${scopeId}`, kind, state.requestedBy,
+    `${kind === "workspace-memory" ? "memory" : "personal-memory"}:${scopeId}`, { scopeId });
 }

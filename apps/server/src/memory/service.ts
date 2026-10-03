@@ -268,9 +268,9 @@ export class WorkspaceMemoryService {
     return [...new Set(ids)];
   }
 
-  async step(scopeId: string, signal: AbortSignal) {
+  async step(scopeId: string, signal: AbortSignal, supplied?: import("../jobs/store").BackgroundJob) {
     signal = AbortSignal.any([signal, AbortSignal.timeout(90_000)]);
-    let job = await this.store.claim(scopeId);
+    let job = await this.store.claim(scopeId, supplied);
     if (!job) return;
     try {
       if (job.bankId !== this.client.bank(scopeId, this.store.personal)) throw new HindsightError("memory_bank_config_changed");

@@ -127,7 +127,7 @@ async function setup(images = false) {
     throw new Error(`Unexpected mock route ${path}`);
   });
   const memory = new WorkspaceMemoryService(config, app.memory!, sync, app.sync, transport);
-  const tick = async () => { db.exec("UPDATE workspace_memory_state SET available_at = 0"); await memory.step(workspaceId, new AbortController().signal); };
+  const tick = async () => { db.exec("UPDATE jobs_queue SET available_at = 0 WHERE kind = 'workspace-memory'"); await memory.step(workspaceId, new AbortController().signal); };
   const ready = async (maxSteps = 80) => {
     for (let i = 0; i < maxSteps; i++) {
       await tick(); if (["ready", "partial"].includes((await memory.status(owner, workspaceId)).status)) return;
@@ -453,7 +453,7 @@ describe("Workspace memory", () => {
       if (lost) { f.operations.delete(pending.operation!.id); f.retained.delete(pending.documentId); }
       // A new service instance has no in-memory operation state.
       const restarted = new WorkspaceMemoryService(f.config, f.app.memory!, f.sync, f.app.sync, f.transport);
-      f.db.exec("UPDATE workspace_memory_state SET available_at = 0");
+      f.db.exec("UPDATE jobs_queue SET available_at = 0 WHERE kind = 'workspace-memory'");
       await restarted.step(workspaceId, new AbortController().signal);
       await f.ready();
       expect(f.requests.filter((r) => r.path.endsWith("/reprocess"))).toHaveLength(lost ? 2 : 1);
@@ -988,13 +988,13 @@ describe("Workspace memory", () => {
   });
   it("dispatches memory work from the shared DB queue", async () => {
     const send = vi.fn(), step = vi.fn();
-    const job = { id: "memory", kind: "workspace-memory", reference: { scopeId: workspaceId }, createdAt: new Date() };
+    const job = { id: "memory", kind: "workspace-memory", payload: { scopeId: workspaceId }, createdAt: new Date() };
     const queue = { claim: vi.fn().mockResolvedValueOnce({ ...job, batch: [job] }).mockResolvedValue(null),
       complete: vi.fn(), nextDelay: vi.fn().mockResolvedValue(5) };
     const jobs = createQueueJobs({ DAHLIA_JOB_QUEUE: { send, sendBatch: vi.fn() } }, { queue } as never,
       {} as never, {} as never, [], undefined, undefined, { step } as unknown as WorkspaceMemoryService);
     await jobs.consume({ action: "wake" }, new AbortController().signal);
-    expect(step).toHaveBeenCalledWith(workspaceId, expect.any(AbortSignal));
+    expect(step).toHaveBeenCalledWith(workspaceId, expect.any(AbortSignal), expect.objectContaining({ id: "memory" }));
     expect(send).toHaveBeenCalledWith({ action: "wake" }, { delaySeconds: 5 });
   });
 });
