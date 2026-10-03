@@ -762,9 +762,6 @@
       "limit": 131072
     },
     {
-      "path": "/api/v1/chat/models"
-    },
-    {
       "path": "/api/v1/chat",
       "methods": [
         "POST"

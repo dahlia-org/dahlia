@@ -13,7 +13,6 @@ All listed operations use the generated Web and Desktop clients where a bundled 
 | getHealth | maintained | GET `/healthz` | `/healthz` | Process health | public API; no bundled caller |
 | getOpenAPI | modified | GET `/openapi.json` | `new public contract` | Public OpenAPI 3.1 contract | public API; no bundled caller |
 | getSession | modified | GET `/api/v1/session` | `/api/session` | Current browser identity | apps/server/src/client/App.tsx<br>apps/macos/Sources/Dahlia/Services/DahliaCloudService.swift |
-| getAiModels | modified | GET `/api/v1/chat/models` | `new public contract` | List configured Agent-compatible models for Private Web | apps/server/src/client/AiChat.tsx |
 | chatWithAi | modified | POST `/api/v1/chat/messages` | `new public contract` | Stream one authenticated page-memory Agent response | apps/server/src/client/AiChat.tsx |
 | createAiThread | modified | POST `/api/v1/chat` | `new public contract` | Create a private persistent AI chat for the current user | apps/server/src/client/AiChat.tsx |
 | listAiThreads | modified | GET `/api/v1/chat` | `new public contract` | List the current user's persistent AI chats | apps/server/src/client/AiChat.tsx |

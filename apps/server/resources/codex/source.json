@@ -1,0 +1,11 @@
+{
+  "version": "0.159.3",
+  "source": "https://raw.githubusercontent.com/openai/codex/rust-v0.159.3/codex-rs/models-manager/models.json",
+  "sha256": "fd219bd9f061278275f528939f82f54d2eb97df4b25c23b022adbe48813d920b",
+  "models": [
+    "gpt-6-astra",
+    "gpt-6.1-sol",
+    "gpt-6-sol",
+    "gpt-6-luna"
+  ]
+}

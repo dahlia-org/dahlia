@@ -245,6 +245,31 @@ describe("AI chat boundary", () => {
     vi.unstubAllGlobals();
   });
 
+  it("streams an approved bundled GPT slug unchanged when Databricks only lists OSS models", async () => {
+    const inference = vi.fn<typeof fetch>(async () => responsesStream(
+      { type: "response.output_item.added", output_index: 0, item: { type: "message", id: "message-1", phase: "final_answer" } },
+      { type: "response.output_text.delta", item_id: "message-1", delta: "OK" },
+      { type: "response.output_item.done", output_index: 0, item: { type: "message", id: "message-1", phase: "final_answer" } },
+      { type: "response.completed", response: { incomplete_details: null, usage: { input_tokens: 1, output_tokens: 1 }, reasoning: null, service_tier: null } },
+    ));
+    vi.stubGlobal("fetch", inference);
+    try {
+      const config = { provider: { backend: "databricks", baseUrl: "https://workspace.example/ai-gateway/codex/v1" },
+        baseUrl: "https://dahlia.example" } as AppConfig;
+      const gateway = { models: async () => ({ data: [], models: [] }) } as unknown as GatewayService;
+      const service = createAiService(config, gateway, {} as never);
+      const events = [];
+      for await (const event of service.stream({ workspaceId, model: "gpt-6.1-sol", reasoningEffort: "low",
+        messages: [{ role: "user", content: "Reply only OK" }] }, identity,
+      new Request("https://dahlia.example/api/v1/chat/messages", { headers: { "x-forwarded-access-token": "user-token" } }))) events.push(event);
+      expect(events).toEqual([{ type: "text", text: "OK" }]);
+      expect(inference).toHaveBeenCalledOnce();
+      expect(String(inference.mock.calls[0]![0])).toBe("https://workspace.example/ai-gateway/codex/v1/responses");
+      expect(JSON.parse(String(inference.mock.calls[0]![1]?.body))).toMatchObject({ model: "gpt-6.1-sol", reasoning: { effort: "low" }, store: false });
+      expect(new Headers(inference.mock.calls[0]![1]?.headers).get("authorization")).toBe("Bearer user-token");
+    } finally { vi.unstubAllGlobals(); }
+  });
+
   it("uses the Databricks App service principal when the forwarded token is absent", async () => {
     const inference = vi.fn<(input: RequestInfo | URL, init?: RequestInit) => Promise<Response>>(
       async () => { throw new Error("captured"); },

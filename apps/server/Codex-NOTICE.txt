@@ -1,6 +1,12 @@
 Dahlia Server includes modified catalog material from OpenAI Codex.
 
 Source: https://github.com/openai/codex
+Web chat catalog source: rust-v0.159.3
+Source: codex-rs/models-manager/models.json
+SHA-256: fd219bd9f061278275f528939f82f54d2eb97df4b25c23b022adbe48813d920b
+resources/codex/source.json records provenance and model selection.
+resources/codex/models.json is generated with only approved display and
+reasoning metadata, preserving values. The upstream catalog is not stored.
 Databricks GPT catalog: main checked 2026-09-10
 Commit: 713caa89f389acd9cbcd77016edbb607273826af
 GPT-6 Sol/Luna: main checked 2026-09-25

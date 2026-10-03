@@ -15,6 +15,8 @@ import { noopLogger } from "@mastra/core/logger";
 import { webFetchTool, webSearchTool } from "@mastra/core/tools";
 import { Memory } from "@mastra/memory";
 import { z } from "zod";
+import { chatModels, reasoningEffortSchema, type AiModel, type ReasoningEffort } from "./models";
+export { reasoningEffortSchema, type AiModel, type ReasoningEffort } from "./models";
 
 import { cloudflareHeaders, cloudflareModel } from "../ai-gateway/cloudflare";
 import { databricksAccessToken } from "../ai-gateway/databricks";
@@ -28,8 +30,6 @@ import type { MeetingTools } from "./tools";
 import { meetingRequestContext } from "./tools";
 
 export const AI_CHAT_MAX_REQUEST_BYTES = 128 * 1024;
-export const reasoningEffortSchema = z.enum(["none", "minimal", "low", "medium", "high", "xhigh", "max", "ultra"]);
-export type ReasoningEffort = z.infer<typeof reasoningEffortSchema>;
 export const aiMessageSchema = z.object({
   role: z.enum(["user", "assistant"]),
   content: z.string().min(1).max(16_000),
@@ -53,12 +53,6 @@ export const aiChatSchema = z.object({
   if (messages.at(-1)?.role !== "user") context.addIssue({ code: "custom", path: ["messages"], message: "Conversation must end with a user message" });
 });
 
-export interface AiModel {
-  id: string;
-  displayName: string;
-  defaultReasoningEffort: ReasoningEffort;
-  supportedReasoningEfforts: Array<{ effort: ReasoningEffort; description: string }>;
-}
 export interface AiChatInput {
   workspaceId: string;
   model: string;
@@ -97,19 +91,7 @@ export function createAiService(
   const models = async (signal?: AbortSignal, headers?: Headers) => {
     if (!config.provider || (config.provider.backend !== "databricks" && !config.foundationModels?.length)) return [];
     const catalog = await gateway.models(new Request(config.baseUrl, { signal, headers }));
-    const published = new Map(catalog.models.filter((model) => model.supported_in_api && model.visibility !== "hide")
-      .map((model) => [model.slug, model]));
-    return catalog.data.flatMap((model) => {
-      const definition = published.get(model.id);
-      const defaultEffort = reasoningEffortSchema.safeParse(definition?.default_reasoning_level);
-      const supported = definition?.supported_reasoning_levels.flatMap(({ effort, description }) => {
-        const parsed = reasoningEffortSchema.safeParse(effort);
-        return parsed.success ? [{ effort: parsed.data, description }] : [];
-      }) ?? [];
-      return definition && defaultEffort.success && supported.some(({ effort }) => effort === defaultEffort.data)
-        ? [{ id: model.id, displayName: model.display_name, defaultReasoningEffort: defaultEffort.data, supportedReasoningEfforts: supported }]
-        : [];
-    });
+    return chatModels(catalog, config.provider.backend === "databricks");
   };
   // Page-only chats stay in RAM and may expire on restart or Worker eviction.
   const sessions = new Map<string, { history: AgentHistory; workspaceId: string; expiresAt: number; active: boolean }>();

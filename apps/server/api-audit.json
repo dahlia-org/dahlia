@@ -57,17 +57,6 @@
       ]
     },
     {
-      "operationId": "getAiModels",
-      "method": "GET",
-      "path": "/api/v1/chat/models",
-      "classification": "modified",
-      "previous": "new public contract",
-      "reason": "List configured Agent-compatible models for Private Web",
-      "consumers": [
-        "apps/server/src/client/AiChat.tsx"
-      ]
-    },
-    {
       "operationId": "chatWithAi",
       "method": "POST",
       "path": "/api/v1/chat/messages",

@@ -25,7 +25,7 @@ try {
   const source = join(directory, "source");
   await mkdir(source);
   for (const path of [
-    "src", "drizzle", "scripts", "package.json", "pnpm-lock.yaml", "pnpm-workspace.yaml",
+    "src", "resources", "drizzle", "scripts", "package.json", "pnpm-lock.yaml", "pnpm-workspace.yaml",
     "tsconfig.json", "tsup.config.ts", "tsup.client.config.ts", "vite.config.ts", "worker-configuration.d.ts",
     "Free-email-domains-LICENSE", "Free-email-domains-NOTICE.txt", "openapi.json", "index.html", "README.md", "Codex-LICENSE", "Codex-NOTICE.txt",
   ]) {
@@ -121,6 +121,11 @@ try {
     await readFile(new URL("./dist/server/db/rotate-encryption-keys.js", packageUrl), "utf8");
     const codexLicense = await readFile(new URL("./Codex-LICENSE", packageUrl), "utf8");
     const codexNotice = await readFile(new URL("./Codex-NOTICE.txt", packageUrl), "utf8");
+    const codexCatalog = JSON.parse(await readFile(new URL("./resources/codex/models.json", packageUrl), "utf8"));
+    const codexSource = JSON.parse(await readFile(new URL("./resources/codex/source.json", packageUrl), "utf8"));
+    if (!codexSource.sha256 || !codexSource.models.includes("gpt-6.1-sol")) throw new Error("Missing catalog provenance or model filter");
+    if (JSON.stringify(codexCatalog.models.map(({ slug }) => slug)) !== JSON.stringify(codexSource.models)
+      || JSON.stringify(codexCatalog).includes("instructions_template")) throw new Error("Codex catalog must contain only approved picker metadata");
     const migration = await readFile(
       new URL(import.meta.resolve("@dahlia-ai/server/migrations/sqlite/20260912095621_initial/migration.sql")),
       "utf8",
