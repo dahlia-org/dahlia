@@ -12,7 +12,6 @@ struct TranscriptionSettingsView: View {
     var body: some View {
         Form {
             Section(L10n.transcription) {
-                LabeledContent(L10n.transcriptionModel, value: "Apple Speech")
                 DahliaMenuPicker(
                     title: L10n.transcriptionLanguage,
                     description: L10n.appleSpeechSettingsScopeDescription,

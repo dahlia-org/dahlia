@@ -69,6 +69,10 @@ const defaultLabel = (value: string) => `${value}${uiText(" (default)", "（既�
 const detailLabel = (detail: typeof details[number]) => ({ low: uiText("Concise", "簡潔"), medium: uiText("Standard", "標準"),
   high: uiText("Detailed", "詳細"), xhigh: uiText("Event session", "イベントセッション"), max: uiText("Event Play-by-Play", "イベント実況中継") })[detail];
 
+function findSummaryModel(models: GatewayModelList["data"], id?: string) {
+  return models.find((entry) => entry.id === id || id?.endsWith(`.${entry.id}`));
+}
+
 function useSummaryMethods() {
   const capabilities = useLiveJSON<{
     meetingSummaryGeneration?: { version: number; sources: string[]; completeRecordings?: boolean };
@@ -91,35 +95,95 @@ export function ServerSummarySettings({ workspaceId, onSave }: {
   const [error, setError] = useState<string>();
   const [saving, setSaving] = useState(false);
   const workspace = query.data;
-  const saveLanguage = async (outputLanguage: WorkspaceGenerationSettings["outputLanguage"]) => {
+  const methods = useSummaryMethods().manualMethods;
+  const catalog = useLiveJSON<GatewayModelList>(methods.length ? "/api/v1/models" : undefined, "manual");
+  const save = async (settings: WorkspaceGenerationSettings) => {
     if (!workspace) return;
     setSaving(true); setError(undefined);
     try {
-      // Preserve deprecated values for older clients when changing the shared language.
-      await onSave(workspace, { ...workspace.generationSettings, outputLanguage });
+      await onSave(workspace, settings);
       query.reload();
     } catch (error) { setError(error instanceof Error ? error.message : String(error)); }
     finally { setSaving(false); }
   };
   if (!workspace) return <section className="section-block">
-    {query.loading && <p role="status">{uiText("Loading…", "読み込み中…")}</p>}
+    {query.refreshing && <p role="status">{uiText("Loading…", "読み込み中…")}</p>}
     {query.error && <p role="alert" className="error">{query.error.message}
       <button onClick={query.reload}>{uiText("Retry", "再試行")}</button></p>}
   </section>;
-  return <section className="section-block">
-    <h2 className="section-label">{uiText("Generated content language", "生成コンテンツの言語")}</h2>
-    <fieldset className="account-settings" disabled={saving || workspace.role !== "admin"}>
-      <label>{uiText("Output language", "出力言語")}<Select value={workspace.generationSettings.outputLanguage}
-        onValueChange={(value) => void saveLanguage(value as WorkspaceGenerationSettings["outputLanguage"])}>
+  const settings = workspace.generationSettings;
+  const remote = settings.processing.remote;
+  const supportsAudio = methods.includes("audio");
+  const combined = supportsAudio && remote.workflow === "combined";
+  const sources: SummarySource[] = [];
+  if (supportsAudio) sources.push("audio");
+  // Two-stage audio generation also needs a text summary model.
+  if (!combined && (supportsAudio || methods.includes("transcript"))) sources.push("transcript");
+  const saveRemote = (next: Partial<typeof remote>) => void save({ ...settings, processing: { ...settings.processing, remote: { ...remote, ...next } } });
+  return <>
+  <section className="workspace-settings">
+    <h2>{uiText("Generated content language", "生成コンテンツの言語")}</h2>
+    <fieldset className="account-settings" disabled={saving || query.refreshing || !!query.error || workspace.role !== "admin"}>
+      <label>{uiText("Output language", "出力言語")}<Select value={settings.outputLanguage}
+        onValueChange={(value) => void save({ ...settings, outputLanguage: value as WorkspaceGenerationSettings["outputLanguage"] })}>
         {Object.entries(outputLanguages).map(([id, name]) => <option key={id} value={id}>{name}</option>)}
       </Select></label>
-      <p>{uiText("Shared by summaries and image descriptions. Other AI settings are chosen on each device or when starting a web operation.",
-        "要約と画像の説明に共通です。他のAI設定は各端末、またはWebでの実行時に指定します。")}</p>
+      <p>{uiText("Shared by summaries and image descriptions. Desktop transcription and summaries run on the Mac with account settings stored on that Mac. Web operations run on the server using the defaults below, with overrides available when starting them.",
+        "要約と画像の説明に共通です。デスクトップの文字起こし・要約はMacで実行し、AI設定はそのMacのアカウントごとに保存します。Webからの処理はサーバーで実行し、下の既定設定を使用します。実行時に変更もできます。")}</p>
     </fieldset>
-    {query.loading && <p role="status">{uiText("Loading…", "読み込み中…")}</p>}
+    {query.refreshing && <p role="status">{uiText("Loading…", "読み込み中…")}</p>}
     {(error || query.error) && <p role="alert" className="error">{error ?? query.error?.message}
       <button onClick={query.reload}>{uiText("Retry", "再試行")}</button></p>}
-  </section>;
+  </section>
+  {methods.length > 0 && <section className="workspace-settings">
+    <h2>{uiText("Server generation defaults", "サーバー生成の既定設定")}</h2>
+    <fieldset className="account-settings" disabled={saving || query.refreshing || !!query.error || workspace.role !== "admin"}>
+      <p>{uiText("Used only when generating from Web. Desktop normally generates on the Mac and syncs the results; receiving them does not start server generation.", "Webから生成するときに使用します。通常はデスクトップで生成した結果を受け取ります。結果の受信をきっかけにサーバーで自動生成はしません。")}</p>
+      {supportsAudio && <label>{uiText("Audio processing method", "音声の処理方法")}<Select value={remote.workflow}
+        onValueChange={(workflow) => saveRemote({ workflow: workflow as typeof remote.workflow })}>
+        <option value="combined">{uiText("Transcribe and summarize together", "文字起こし・要約を一括生成")}</option>
+        <option value="transcribeThenSummarize">{uiText("Transcribe, then summarize", "文字起こし後に要約")}</option>
+      </Select></label>}
+      {sources.map((source) => {
+        const isSummary = combined || source === "transcript";
+        const modelKey = source === "audio" ? "summaryModel" : "transcriptSummaryModel";
+        const effortKey = source === "audio" ? "reasoningEffort" : "transcriptSummaryReasoningEffort";
+        const models = catalog.data?.data.filter((entry) => entry.id !== CODEX_AUTO_REVIEW_ALIAS && isSummaryModel(entry.id, catalog.data!, source)) ?? [];
+        const selected = findSummaryModel(models, remote[modelKey]);
+        let modelLabel = uiText("Transcript summary model", "テキスト要約モデル");
+        if (combined) modelLabel = uiText("Summary model", "要約モデル");
+        else if (source === "audio") modelLabel = uiText("Audio processing model", "音声処理モデル");
+        const efforts = catalog.data?.models.find((entry) => entry.slug === selected?.id)?.supported_reasoning_levels.map(({ effort }) => effort) ?? [];
+        return <fieldset key={source} className="min-w-0 rounded-lg border bg-muted/30 p-4">
+          <legend className="px-1 text-sm font-semibold">{isSummary ? uiText("Summary generation", "要約生成") : uiText("Transcription", "文字起こし")}</legend>
+          {combined && <p className="mb-3">{uiText("Generate directly from audio with an audio-capable Gemini model.", "音声対応のGeminiモデルで、音声から直接生成します。")}</p>}
+          <div className="grid gap-3 sm:grid-cols-[minmax(0,2fr)_minmax(0,1fr)]">
+          <label className="grid gap-1.5 text-sm">{modelLabel}
+            <Select value={remote[modelKey] ?? ""} disabled={catalog.loading} onValueChange={(model) => saveRemote({ [modelKey]: model || undefined, [effortKey]: undefined })}>
+              <option value="">{uiText("Automatic", "自動")}</option>
+              {remote[modelKey] && !selected && <option value={remote[modelKey]} disabled>{remote[modelKey]}</option>}
+              {models.map((entry) => <option key={entry.id} value={entry.id}>{entry.display_name}</option>)}
+            </Select>
+          </label>
+          <label className="grid gap-1.5 text-sm">{isSummary ? uiText("Summary reasoning effort", "要約の推論強度") : uiText("Audio reasoning effort", "音声処理の推論強度")}
+            <Select value={remote[effortKey] ?? ""} disabled={catalog.loading} onValueChange={(effort) => saveRemote({ [effortKey]: effort || undefined })}>
+              <option value="">{uiText("Automatic", "自動")}</option>
+              {remote[effortKey] && !efforts.includes(remote[effortKey]) && <option value={remote[effortKey]}>{remote[effortKey]}</option>}
+              {efforts.map((effort) => <option key={effort}>{effort}</option>)}
+            </Select>
+          </label>
+          </div>
+          {isSummary && <label className="mt-4 grid gap-1.5 text-sm">{uiText("Summary style", "要約の詳細度")}<Select value={settings.summary.style}
+            onValueChange={(style) => void save({ ...settings, summary: { style: style as typeof settings.summary.style } })}>
+            {summaryStyles.map((style) => <option key={style} value={style}>{detailLabel(summaryStyleDetail(style))}</option>)}
+          </Select></label>}
+        </fieldset>;
+      })}
+      {catalog.error && <p role="alert" className="error">{catalog.error.message}</p>}
+      <button disabled={catalog.loading} onClick={catalog.reload}>{uiText("Reload models", "モデル一覧を再取得")}</button>
+    </fieldset>
+  </section>}
+  </>;
 }
 
 export function SummaryGenerationSurface({ meetingId, workspaceId, hasSummary = false }: {
@@ -146,6 +210,8 @@ export function SummaryGenerationSurface({ meetingId, workspaceId, hasSummary = 
   const [language, setLanguage] = useState("");
   const [model, setModel] = useState<string>();
   const [effort, setEffort] = useState<string>();
+  const [audioModel, setAudioModel] = useState<string>();
+  const [audioEffort, setAudioEffort] = useState<string>();
   const [source, setSource] = useState<SummarySource>();
   const completed = useRef<string | undefined>(undefined);
   const requestID = useRef<string | undefined>(undefined);
@@ -179,15 +245,27 @@ export function SummaryGenerationSurface({ meetingId, workspaceId, hasSummary = 
   }
   const selectedSource = source ?? preferredSource;
   const selectedSourceAvailable = selectedSource ? sourceAvailable(selectedSource) : false;
-  const models = catalog.data?.data.filter((entry) => entry.id !== CODEX_AUTO_REVIEW_ALIAS
-    && isSummaryModel(entry.id, catalog.data!, selectedSource ?? "transcript")) ?? [];
   const workspaceSettings = workspaceQuery.data?.generationSettings;
-  const selectedModelID = model ?? "";
-  const selectedModel = models.find((entry) => entry.id === selectedModelID || selectedModelID.endsWith(`.${entry.id}`));
-  const isModelUnavailable = !!selectedSource && !!catalog.data && !catalog.loading && !catalog.error && !!selectedModelID && !selectedModel;
-  const efforts = catalog.data?.models.find((entry) => entry.slug === selectedModel?.id)?.supported_reasoning_levels.map(({ effort }) => effort) ?? [];
+  const twoStageAudio = selectedSource === "audio" && workspaceSettings?.processing.remote.workflow === "transcribeThenSummarize";
+  const modelOptions = (twoStageAudio ? [true, false] : [false]).map((transcription) => {
+    const audio = transcription || (selectedSource === "audio" && !twoStageAudio);
+    const defaultModel = audio ? workspaceSettings?.processing.remote.summaryModel : workspaceSettings?.processing.remote.transcriptSummaryModel;
+    const defaultEffort = audio ? workspaceSettings?.processing.remote.reasoningEffort : workspaceSettings?.processing.remote.transcriptSummaryReasoningEffort;
+    const value = transcription ? audioModel : model;
+    const effortValue = transcription ? audioEffort : effort;
+    const models = catalog.data?.data.filter((entry) => entry.id !== CODEX_AUTO_REVIEW_ALIAS
+      && isSummaryModel(entry.id, catalog.data!, audio ? "audio" : "transcript")) ?? [];
+    const selectedModelID = value ?? defaultModel ?? "";
+    const selectedModel = findSummaryModel(models, selectedModelID);
+    const unavailable = !!selectedSource && !!catalog.data && !catalog.loading && !catalog.error && !!selectedModelID && !selectedModel;
+    const efforts = catalog.data?.models.find((entry) => entry.slug === selectedModel?.id)?.supported_reasoning_levels.map(({ effort }) => effort) ?? [];
+    const defaultModelName = defaultModel ? findSummaryModel(models, defaultModel)?.display_name ?? defaultModel : uiText("Automatic", "自動");
+    return { transcription, defaultEffort, value, effortValue, models, selectedModelID, selectedModel, unavailable, efforts, defaultModelName,
+      setModel: transcription ? setAudioModel : setModel, setEffort: transcription ? setAudioEffort : setEffort };
+  });
+  const isModelUnavailable = modelOptions.some((option) => option.unavailable);
   const defaultLanguage = workspaceSettings?.outputLanguage;
-  const defaultDetail = summaryStyleDetail(DEFAULT_WORKSPACE_GENERATION_SETTINGS.summary.style);
+  const defaultDetail = summaryStyleDetail(workspaceSettings?.summary.style ?? DEFAULT_WORKSPACE_GENERATION_SETTINGS.summary.style);
   const automaticDefaultLabel = defaultLabel(uiText("Automatic", "自動"));
 
   const sourceReason = (candidate: SummarySource) => {
@@ -227,8 +305,16 @@ export function SummaryGenerationSurface({ meetingId, workspaceId, hasSummary = 
           input = { type: "recording", recordings: snapshot.recordings };
         }
         const remote: WorkspaceGenerationSettings["processing"]["remote"] = {
-          workflow: selectedSource === "audio" ? "combined" as const : "transcribeThenSummarize" as const };
-        if (selectedSource === "audio") {
+          ...settings.processing.remote,
+          workflow: selectedSource === "audio" ? workspaceSettings?.processing.remote.workflow ?? settings.processing.remote.workflow : "transcribeThenSummarize" };
+        if (selectedSource === "transcript") {
+          delete remote.summaryModel; delete remote.reasoningEffort;
+        }
+        if (twoStageAudio) {
+          if (audioModel !== undefined) remote.summaryModel = audioModel || undefined;
+          if (audioEffort !== undefined) remote.reasoningEffort = audioEffort ? audioEffort as typeof remote.reasoningEffort : undefined;
+        }
+        if (selectedSource === "audio" && !twoStageAudio) {
           if (model !== undefined) remote.summaryModel = model || undefined;
           if (effort !== undefined) remote.reasoningEffort = effort ? effort as typeof remote.reasoningEffort : undefined;
         } else {
@@ -237,7 +323,7 @@ export function SummaryGenerationSurface({ meetingId, workspaceId, hasSummary = 
         }
         requestBody.current = { id: requestID.current, input,
           preferences: { processing: { location: "remote", remote }, outputLanguage: (language || settings.outputLanguage) as WorkspaceGenerationSettings["outputLanguage"],
-            summary: { style: detail ? summaryStyles[details.indexOf(detail as typeof details[number])]! : DEFAULT_WORKSPACE_GENERATION_SETTINGS.summary.style } } };
+            summary: { style: detail ? summaryStyles[details.indexOf(detail as typeof details[number])]! : settings.summary.style } } };
       }
       await flushMeetingDocument(workspaceId, meetingId);
       await api.startSummaryJob({ params: { path: { meetingId } }, body: requestBody.current });
@@ -289,7 +375,7 @@ export function SummaryGenerationSurface({ meetingId, workspaceId, hasSummary = 
           const option = <label className="flex min-h-20 cursor-pointer items-start gap-3 rounded-lg border p-3 text-sm has-[:checked]:border-primary has-[:checked]:bg-accent/50 data-[disabled=true]:cursor-not-allowed data-[disabled=true]:opacity-50"
             data-disabled={!available} aria-label={reason} tabIndex={reason ? 0 : undefined}>
             <input className="mt-1 size-4 accent-primary" type="radio" name={`summary-source-${meetingId}`} value={candidate} checked={selectedSource === candidate}
-              disabled={!available} onChange={() => { setSource(candidate); setModel(undefined); setEffort(undefined); clearPendingRequest(); }} />
+              disabled={!available} onChange={() => { setSource(candidate); setModel(undefined); setEffort(undefined); setAudioModel(undefined); setAudioEffort(undefined); clearPendingRequest(); }} />
             <span className="grid gap-1"><strong>{isTranscript ? uiText("Transcript (text)", "文字起こし（テキスト）") : uiText("Recording files (audio)", "録音ファイル（音声）")}</strong>
               <small className="leading-5 text-muted-foreground">{isTranscript
                 ? uiText("Regenerate only the summary from the latest transcript.", "最新の文字起こしから要約だけを再生成します。")
@@ -309,31 +395,36 @@ export function SummaryGenerationSurface({ meetingId, workspaceId, hasSummary = 
         <option value="">{defaultLabel(defaultLanguage ? outputLanguages[defaultLanguage] : uiText("Loading…", "読み込み中…"))}</option>
         {Object.entries(outputLanguages).map(([id, name]) => <option key={id} value={id}>{name}</option>)}
       </Select></label>
-      <label className="grid gap-1.5 text-xs font-medium text-muted-foreground">{uiText("Summary detail", "要約の詳細度")}<Select value={detail}
-        onValueChange={(value) => { setDetail(value); clearPendingRequest(); }}>
-        <option value="">{defaultLabel(defaultDetail ? detailLabel(defaultDetail) : uiText("Loading…", "読み込み中…"))}</option>
-        {details.map((detail) => <option key={detail} value={detail}>{detailLabel(detail)}</option>)}
-      </Select></label>
-      <label className="grid gap-1.5 text-xs font-medium text-muted-foreground">{uiText("Summary model", "要約モデル")}<Select value={model === undefined ? "__default" : model} disabled={catalog.loading}
+      </div>
+      {modelOptions.map(({ transcription, value, effortValue, defaultEffort, defaultModelName, models, selectedModelID, selectedModel, unavailable, efforts, setModel, setEffort }) => <fieldset key={String(transcription)} className="grid gap-3 rounded-lg border bg-muted/20 p-4">
+      <legend className="px-1 text-sm font-medium">{transcription ? uiText("Transcription", "文字起こし") : uiText("Summary generation", "要約生成")}</legend>
+      <div className="grid gap-3 sm:grid-cols-2">
+      <label className="grid gap-1.5 text-xs font-medium text-muted-foreground">{transcription ? uiText("Transcription model", "文字起こしモデル") : uiText("Summary model", "要約モデル")}<Select value={value === undefined ? "__default" : value} disabled={catalog.loading}
         onValueChange={(value) => {
           const useDefaults = value === "__default";
           setModel(useDefaults ? undefined : value);
           setEffort(useDefaults ? undefined : "");
           clearPendingRequest();
         }}>
-        <option value="__default">{automaticDefaultLabel}</option>
+        <option value="__default">{defaultLabel(defaultModelName)}{value === undefined && unavailable && ` — ${uiText("Unavailable", "利用不可")}`}</option>
         <option value="">{uiText("Automatic", "自動")}</option>
-        {model && !selectedModel && <option value={selectedModelID} disabled>{selectedModelID}{isModelUnavailable && ` — ${uiText("Unavailable", "利用不可")}`}</option>}
+        {value && !selectedModel && <option value={selectedModelID} disabled>{selectedModelID}{unavailable && ` — ${uiText("Unavailable", "利用不可")}`}</option>}
         {models.map((entry) => <option key={entry.id} value={entry.id}>{entry.display_name}</option>)}
       </Select></label>
-      <label className="grid gap-1.5 text-xs font-medium text-muted-foreground">{uiText("Reasoning effort", "推論強度")}<Select value={effort === undefined ? "__default" : effort}
+      <label className="grid gap-1.5 text-xs font-medium text-muted-foreground">{transcription ? uiText("Transcription reasoning effort", "文字起こしの推論強度") : uiText("Reasoning effort", "推論強度")}<Select value={effortValue === undefined ? "__default" : effortValue}
         onValueChange={(value) => { setEffort(value === "__default" ? undefined : value); clearPendingRequest(); }}>
-        <option value="__default" disabled={model !== undefined}>{automaticDefaultLabel}</option>
+        <option value="__default" disabled={value !== undefined}>{defaultEffort ? defaultLabel(defaultEffort) : automaticDefaultLabel}</option>
         <option value="">{uiText("Automatic", "自動")}</option>
-        {effort && !efforts.includes(effort) && <option value={effort} disabled>{effort} — {uiText("Check model compatibility", "モデルとの対応を確認")}</option>}
+        {effortValue && !efforts.includes(effortValue) && <option value={effortValue} disabled>{effortValue} — {uiText("Check model compatibility", "モデルとの対応を確認")}</option>}
         {efforts.map((effort) => <option key={effort}>{effort}</option>)}
       </Select></label>
       </div>
+      {!transcription && <label className="grid gap-1.5 text-xs font-medium text-muted-foreground">{uiText("Summary detail", "要約の詳細度")}<Select value={detail}
+        onValueChange={(value) => { setDetail(value); clearPendingRequest(); }}>
+        <option value="">{defaultLabel(defaultDetail ? detailLabel(defaultDetail) : uiText("Loading…", "読み込み中…"))}</option>
+        {details.map((detail) => <option key={detail} value={detail}>{detailLabel(detail)}</option>)}
+      </Select></label>}
+      </fieldset>)}
       {catalog.error && <p className="text-sm text-destructive" role="alert">{catalog.error.message}</p>}
       <Button variant="outline" size="sm" className="w-fit" disabled={!enabled || catalog.loading} onClick={catalog.reload}>{uiText("Reload models", "モデル一覧を再取得")}</Button>
     </fieldset>
@@ -376,7 +467,7 @@ export function ServerSummaryGeneration({ meetingId, workspaceId, dialogId, hasS
     }}>
       <DialogHeader className="pr-8">
         <DialogTitle className="flex items-center gap-2"><MenuIcon name="sparkles" />{uiText("AI summary", "AI 要約")}</DialogTitle>
-        <DialogDescription>{uiText("Turn this conversation into clear next steps.", "会話のポイントと、次のアクションを整理します。")}</DialogDescription>
+        <DialogDescription>{uiText("Generate a summary on the server. These settings apply to this Web operation and do not change Desktop settings.", "サーバーで要約を生成します。ここで選ぶ設定はこのWeb操作に適用され、デスクトップの設定は変更しません。")}</DialogDescription>
       </DialogHeader>
       <SummaryGenerationSurface meetingId={meetingId} workspaceId={workspaceId} hasSummary={hasSummary} />
     </DialogContent>

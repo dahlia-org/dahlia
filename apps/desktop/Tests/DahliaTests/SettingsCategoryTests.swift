@@ -90,6 +90,10 @@ import Foundation
         func searchFindsControlsAndDoesNotDependOnTechnicalCategoryNames() {
             #expect(SettingsCategory.general.matches(L10n.appLanguage))
             #expect(SettingsCategory.transcription.matches(L10n.batchAudioRetentionPeriod))
+            #expect(!SettingsCategory.transcription.matches(L10n.liveTranscriptDraft))
+            #expect(!SettingsCategory.transcription.matches(L10n.transcriptionModel))
+            #expect(SettingsCategory.accountsAndWorkspaces.matches(L10n.liveTranscriptDraft))
+            #expect(SettingsCategory.accountsAndWorkspaces.matches(L10n.transcriptionModel))
             #expect(SettingsCategory.general.matches(L10n.automaticRecordingStop))
             #expect(SettingsCategory.general.matches(L10n.externalMicrophoneEchoCancellation))
             #expect(SettingsCategory.general.matches(L10n.serverContentRetention))

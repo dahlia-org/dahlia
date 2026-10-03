@@ -10,7 +10,7 @@
 "settings.organization.settingsAccountSelectionDescription" = "Choosing an account here does not switch your open workspace.";
 "settings.organization.settingsLoading" = "Loading settings…";
 "settings.organization.settingsApplyNextGeneration" = "Changes save automatically and apply to the next generation.";
-"settings.organization.settingsSummaryOutput" = "Summary";
+"settings.organization.settingsSummaryOutput" = "Summary generation";
 "settings.organization.settingsOutputLanguageDescription" = "Output language is shared by summaries and image descriptions. It does not change speech recognition languages.";
 "settings.organization.generatedContentLanguage" = "Generated content language";
 "settings.organization.settingsLocalAnalysisLanguages" = "Image analysis uses the languages selected in General settings on this Mac.";

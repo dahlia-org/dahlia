@@ -120,15 +120,15 @@ enum SettingsCategory: String, CaseIterable, Identifiable {
             ]
         case .accountPreferences:
             [
-                L10n.transcriptionAndSummary,
+                L10n.settingsSummaryOutput,
+                L10n.liveTranscriptDraft,
+                L10n.transcriptionModel,
                 L10n.summaryStyle,
                 L10n.model,
                 L10n.reasoningEffort,
-                L10n.liveTranscriptDraft,
                 L10n.processingLocation,
                 L10n.automaticRecordingProcessing,
                 L10n.summaryModel,
-                L10n.transcriptionModel,
                 "AI",
             ]
         case .workspacePreferences:

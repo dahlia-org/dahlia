@@ -1,7 +1,6 @@
 import SwiftUI
 
 struct AccountProcessingSettingsView: View {
-    let onOpenMacTranscription: () -> Void
     @ObservedObject private var settings = AppSettings.shared
     @Bindable private var workspaceSettings = WorkspaceAISettingsModel.shared
 
@@ -11,18 +10,21 @@ struct AccountProcessingSettingsView: View {
                 Section { SettingsStatusMessage(text: error, systemImage: "exclamationmark.triangle", tint: .orange) }
             }
             if settings.currentWorkspace != nil {
-                Section(L10n.transcription) {
+                Section {
                     LabeledContent(L10n.transcriptionModel, value: "Apple Speech")
-                    Button(L10n.macTranscriptionPreferences, systemImage: "arrow.right", action: onOpenMacTranscription)
                     Toggle(L10n.liveTranscriptDraft, isOn: $workspaceSettings.generationSettings.liveTranscriptDraft)
+                } header: {
+                    Text(L10n.transcription)
+                } footer: {
+                    Text(L10n.settingsAccountIntro)
                 }
                 Section(L10n.settingsSummaryOutput) {
                     LabeledContent(L10n.summaryProcessingLocation, value: L10n.localProcessing)
+                    LocalSummarySettingsRows()
                     Picker(L10n.summaryStyle, selection: $workspaceSettings.generationSettings.summary.style) {
                         ForEach(SummaryStyle.allCases) { Text($0.displayName).tag($0) }
                     }
                     Text(workspaceSettings.generationSettings.summary.style.description).foregroundStyle(.secondary)
-                    LocalSummarySettingsRows()
                 }
                 Section(L10n.settingsAfterRecording) {
                     Toggle(L10n.automaticRecordingProcessing, isOn: $workspaceSettings.generationSettings.automaticProcessing)

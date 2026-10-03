@@ -5,6 +5,7 @@ import { ServerSummaryGeneration } from "../../src/client/SummaryGeneration";
 import { DEFAULT_WORKSPACE_GENERATION_SETTINGS, type WorkspaceGenerationSettings } from "../../src/workspace-generation-settings";
 import { cloudflareModels } from "../../src/ai-gateway/cloudflare";
 import type { SummaryRequest } from "../../src/summary/service";
+import { resolveSummaryPreferences } from "../../src/summary/preferences";
 
 Object.defineProperty(navigator, "language", { value: "en-US", configurable: true });
 const base = "/api/v1/meetings/meeting";
@@ -14,11 +15,15 @@ let transcriptVersion = 1;
 let phase = "initializing";
 const bodies: SummaryRequest[] = [];
 const settings: WorkspaceGenerationSettings = {
-  ...DEFAULT_WORKSPACE_GENERATION_SETTINGS, processing: { ...DEFAULT_WORKSPACE_GENERATION_SETTINGS.processing, location: "remote", remote: {
+  ...DEFAULT_WORKSPACE_GENERATION_SETTINGS, processing: { ...DEFAULT_WORKSPACE_GENERATION_SETTINGS.processing, location: "local", remote: {
     ...DEFAULT_WORKSPACE_GENERATION_SETTINGS.processing.remote,
     summaryModel: "gemini-3-flash",
     reasoningEffort: "high",
+    workflow: "transcribeThenSummarize",
+    transcriptSummaryModel: "gpt-4.1",
+    transcriptSummaryReasoningEffort: "none",
   } },
+  summary: { style: "standard" },
 };
 window.fetch = (async (input: string | URL | Request, init?: RequestInit) => {
   await Promise.resolve();
@@ -123,20 +128,48 @@ async function run() {
   const audioRequest = bodies[3]!;
   assert("input" in audioRequest && audioRequest.input.type === "recording"
     && audioRequest.input.recordings[0]!.systemFileId === "system", "Audio request did not include every recording track");
-  assert("preferences" in audioRequest && audioRequest.preferences.processing.remote.workflow === "combined",
-    "Audio request did not force combined processing");
+  assert("preferences" in audioRequest && audioRequest.preferences.processing.remote.workflow === settings.processing.remote.workflow,
+    "Audio request did not inherit the server workflow default");
   assert("preferences" in audioRequest && audioRequest.preferences.processing.remote.summaryModel === settings.processing.remote.summaryModel
     && audioRequest.preferences.processing.remote.reasoningEffort === settings.processing.remote.reasoningEffort,
   "Explicit model and reasoning effort must remain unchanged");
-  await select("Reasoning effort", "high");
+  await select("Transcription model", "gemini-3-flash");
+  await select("Transcription reasoning effort", "high");
+  await select("Summary model", "gpt-4.1");
+  await select("Reasoning effort", "none");
+  await start(5);
+  const stagedRequest = bodies[4]!;
+  assert("preferences" in stagedRequest && "input" in stagedRequest, "Missing staged preferences");
+  const staged = resolveSummaryPreferences(stagedRequest.preferences, stagedRequest.input, cloudflareModels(["gpt-4.1", "gemini-3-flash"]), (model) => model);
+  assert(staged.settings.model === "gpt-4.1" && staged.settings.reasoningEffort === "none"
+    && staged.settings.transcriptionReasoningEffort === "high" && staged.input.type === "recording"
+    && staged.input.transcriptionModel === "gemini-3-flash", "Each stage must use its displayed model and effort");
+  await start(6);
+  assert(JSON.stringify(bodies[5]) === JSON.stringify(stagedRequest), "Two-stage uncertain replay must retain both pairs");
   document.querySelector<HTMLInputElement>('input[value="transcript"]')!.click();
   assert([...document.querySelectorAll("label")].find((node) => node.childNodes[0]?.textContent === "Reasoning effort")
     ?.querySelector<HTMLButtonElement>('[role="combobox"]')?.dataset.value === "__default", "Changing sources must reset the model-effort pair");
-  await start(5);
-  const switchedRequest = bodies[4]!;
-  assert("preferences" in switchedRequest && switchedRequest.preferences.processing.remote.transcriptSummaryModel === undefined
-    && switchedRequest.preferences.processing.remote.transcriptSummaryReasoningEffort === undefined,
+  await start(7);
+  const switchedRequest = bodies[6]!;
+  assert("preferences" in switchedRequest && switchedRequest.preferences.processing.remote.transcriptSummaryModel === settings.processing.remote.transcriptSummaryModel
+    && switchedRequest.preferences.processing.remote.transcriptSummaryReasoningEffort === settings.processing.remote.transcriptSummaryReasoningEffort
+    && switchedRequest.preferences.processing.remote.summaryModel === undefined
+    && switchedRequest.preferences.summary.style === "standard"
+    && switchedRequest.preferences.processing.location === "remote",
   "An audio effort must not leak into transcript generation");
-  document.getElementById("result")!.textContent = "PASS: source selection, paired defaults, rejected refresh, and uncertain replay";
+  settings.processing.remote.workflow = "combined";
+  window.dispatchEvent(new Event("dahlia:data-changed"));
+  await until(() => !document.querySelector<HTMLInputElement>('input[value="audio"]')?.disabled);
+  document.querySelector<HTMLInputElement>('input[value="audio"]')!.click();
+  await until(() => ![...document.querySelectorAll("label")].some((node) => node.childNodes[0]?.textContent === "Transcription model"));
+  await select("Summary model", "gemini-3-flash");
+  await select("Reasoning effort", "high");
+  await start(8);
+  const combinedRequest = bodies[7]!;
+  assert("preferences" in combinedRequest && "input" in combinedRequest, "Missing combined preferences");
+  const combined = resolveSummaryPreferences(combinedRequest.preferences, combinedRequest.input, cloudflareModels(["gpt-4.1", "gemini-3-flash"]), (model) => model);
+  assert(combined.settings.model === "gemini-3-flash" && combined.settings.reasoningEffort === "high"
+    && combined.settings.transcriptionReasoningEffort === undefined, "Combined generation must use the audio pair for summary");
+  document.getElementById("result")!.textContent = "PASS: stage model routing, source selection, paired defaults, rejected refresh, and uncertain replay";
 }
 void run().catch((error: unknown) => { document.getElementById("result")!.textContent = `FAIL (${phase}): ${String(error)}`; });

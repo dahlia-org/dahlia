@@ -104,14 +104,15 @@ it("exposes only the shared language and explains device settings", () => {
     reload: vi.fn(), replace: vi.fn(),
   }));
   const html = renderToStaticMarkup(createElement(ServerSummarySettings, { workspaceId: "test", onSave: async () => {} }));
-  expect(html).toContain("Other AI settings are chosen on each device or when starting a web operation.");
+  expect(html).toContain("Desktop transcription and summaries run on the Mac with account settings stored on that Mac.");
+  expect(html).toContain("Web operations run on the server using the defaults below, with overrides available when starting them.");
   expect(html).toContain("Generated content language");
   expect(html).not.toContain("Transcription location");
   expect(html).not.toContain("Summary model");
   expect(html).not.toContain("After recording");
 });
 
-it("uses shared language and server defaults instead of legacy workspace models", () => {
+it("uses shared language and server style while ignoring Desktop routing and audio models for text", () => {
   vi.mocked(useLiveJSON).mockImplementation((url) => ({
     data: url === "/api/v1/models" ? modelList([{ id: "system.ai.gpt-5-6-luna" }])
       : typeof url === "object" && url.key.startsWith('["getCapabilities"')
@@ -126,17 +127,17 @@ it("uses shared language and server defaults instead of legacy workspace models"
   const html = renderToStaticMarkup(createElement(SummaryGenerationSurface, { meetingId: "test", workspaceId: "test" }));
   expect(html).toContain("Français (default)");
   expect(html).toContain("Automatic (default)");
-  expect(html).toContain("Detailed (default)");
+  expect(html).toContain("Standard (default)");
   expect(html).not.toContain("Workspace default");
 });
 
 it.each([
   ["audio", undefined, true, false],
   ["audio", "system.ai.gemini-3-8-flash", true, false],
-  ["audio", "system.ai.gpt-5-6-terra", true, false],
+  ["audio", "system.ai.gpt-5-6-terra", false, false],
   ["transcript", "system.ai.gpt-5-6-terra", true, false],
-  ["audio", "system.ai.gpt-5-6-terra", true, true],
-] as const)("ignores legacy %s model %s (available: %s, empty catalog: %s)", (source, summaryModel, available, emptyCatalog) => {
+  ["audio", "system.ai.gpt-5-6-terra", false, true],
+] as const)("validates the saved server %s model %s (available: %s, empty catalog: %s)", (source, summaryModel, available, emptyCatalog) => {
   vi.mocked(useLiveJSON).mockImplementation((url) => ({
     data: url === "/api/v1/models" ? modelList(emptyCatalog ? [] : [{ id: "system.ai.gemini-3-8-flash" }, { id: "system.ai.gpt-5-6-terra" }]) : typeof url === "object" && url.key.startsWith('["getCapabilities"')
       ? { meetingSummaryGeneration: { version: 2, sources: [source], completeRecordings: true } }
@@ -336,13 +337,13 @@ it.each([true, false])("filters audio choices to available audio-capable Gemini 
   expect(html).not.toContain('value="system.ai.gemini-unknown"');
   if (available) { expect(html).toContain('value="system.ai.gemini-3-8-flash"'); expect(html).toContain('value="system.ai.gemini-3-7-flash"'); }
   else {
-    expect(html).toContain("Automatic (default)");
-    expect(html).not.toContain("Unavailable");
+    expect(html).toContain("system.ai.gemini-3-8-flash (default) — Unavailable");
+    expect(generationDisabled(html)).toBe(true);
   }
 });
 
-it("does not expose obsolete automatic workflow settings", () => {
-  const catalog = modelList([{ id: "system.ai.gemini-3-8-flash" }]);
+it("keeps explicit server workflow defaults without automatic processing controls", () => {
+  const catalog = modelList([{ id: "system.ai.gemini-3-8-flash" }, { id: "system.ai.gpt-5-6-luna" }]);
   const render = (workflow: "combined" | "transcribeThenSummarize") => {
     vi.mocked(useLiveJSON).mockImplementation((url) => ({
       data: url === "/api/v1/models" ? catalog
@@ -356,7 +357,19 @@ it("does not expose obsolete automatic workflow settings", () => {
   };
   const combined = render("combined");
   const twoStage = render("transcribeThenSummarize");
-  expect(combined).toBe(twoStage);
+  expect(combined).not.toBe(twoStage);
+  expect(combined).toContain('value="combined" selected');
+  expect(twoStage).toContain('value="transcribeThenSummarize" selected');
+  expect(combined).toContain("Server generation defaults");
+  expect(combined).toContain("Summary model");
+  expect(combined).not.toContain("Audio processing model");
+  expect(combined).not.toContain("Transcript summary model");
+  expect(combined).toContain('value="system.ai.gemini-3-8-flash"');
+  expect(combined).not.toContain('value="system.ai.gpt-5-6-luna"');
+  expect(twoStage).toContain("Audio processing model");
+  expect(twoStage).toContain("Transcript summary model");
+  expect(twoStage).toContain("Summary style");
+  expect(combined).toContain("receiving them does not start server generation");
   expect(combined).toContain("Output language");
   expect(combined).not.toContain("Summary method");
   expect(combined).not.toContain("After recording");

@@ -267,6 +267,7 @@
             latest.summaryModelID = "latest-model"
             latest.chatModelID = "latest-chat"
             latest.generationSettings.automaticProcessing = false
+            latest.generationSettings.liveTranscriptDraft = true
             let connection = DahliaAccountConnectionRecord(id: .v7(), origin: "https://account.invalid", clientID: "test", createdAt: .now)
             var server = makeWorkspace(openedAt: Date(timeIntervalSince1970: 3))
             server.accountConnectionId = connection.id
@@ -284,22 +285,32 @@
             #expect(model.summaryModelID == "latest-model")
             #expect(model.chatModelID == "latest-chat")
             #expect(!model.generationSettings.automaticProcessing)
+            #expect(model.generationSettings.liveTranscriptDraft)
+            model.generationSettings.liveTranscriptDraft = false
             model.summaryModelID = "changed-model"
             model.chatModelID = "changed-chat"
             model.activate(workspace: latest)
             #expect(model.summaryModelID == "changed-model")
+            #expect(!model.generationSettings.liveTranscriptDraft)
+            let canonicalDraft = try await database.dbQueue.read { [latest] db in
+                try WorkspaceRecord.fetchOne(db, key: latest.id)?.generationSettings.liveTranscriptDraft
+            }
+            #expect(canonicalDraft == true)
             #expect(model.chatModelID == "changed-chat")
             model.activate(workspace: server)
             #expect(model.summaryModelID == server.summaryModelID)
             #expect(model.generationSettings.automaticProcessing)
             model.summaryModelID = "server-model"
+            model.generationSettings.liveTranscriptDraft = true
             model.accountConnectionID = nil
             #expect(AccountInferenceSettings(workspace: older, defaults: defaults).local.model == "changed-model")
             let restored = WorkspaceAISettingsModel(setupDefaults: defaults, activateRuntime: { _ in })
             restored.activate(workspace: older)
             #expect(restored.summaryModelID == "changed-model")
+            #expect(!restored.generationSettings.liveTranscriptDraft)
             restored.activate(workspace: server)
             #expect(restored.summaryModelID == "server-model")
+            #expect(restored.generationSettings.liveTranscriptDraft)
             // Clearing this Mac's preferences exposes the unchanged canonical defaults.
             defaults.removePersistentDomain(forName: suite)
             #expect(AccountInferenceSettings(workspace: server, defaults: defaults).local.model == server.summaryModelID)
