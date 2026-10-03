@@ -19,6 +19,7 @@ struct ContentView: View {
     @State private var isShowingUnprocessedRecordings = false
     @State private var isShowingChatHistory = false
     @State private var isShowingChatConfiguration = false
+    @State private var notesEditorModel: DocumentEditorModel?
     @State private var selectedDetailTab: DetailTab = .summary
     @State private var searchModel = MainSearchModel()
     @State private var projectEditorRequest: ProjectEditorRequest?
@@ -509,7 +510,8 @@ private extension ContentView {
                 leadingInset: isSidebarVisible ? 0 : MainWorkspaceHeader.controlsWidth,
                 syncState: headerMeetingTitle != nil ? viewModel.meetingSyncState : nil,
                 textContentState: headerMeetingTitle != nil ? viewModel.textContentState : nil,
-                retryTextContent: viewModel.retryTextContent
+                retryTextContent: viewModel.retryTextContent,
+                notesEditorModel: headerMeetingTitle != nil && selectedDetailTab == .notes ? notesEditorModel : nil
             ) {
                 MainNavigationBreadcrumbs(
                     workspace: workspace,
@@ -575,6 +577,7 @@ private extension ContentView {
                 sidebarViewModel: sidebarViewModel,
                 recordingCoordinator: recordingCoordinator,
                 onPresentSummaryGeneration: presentSummaryGeneration,
+                notesEditorModel: $notesEditorModel,
                 selectedTab: $selectedDetailTab,
                 expandedScreenshot: $expandedScreenshot
             )

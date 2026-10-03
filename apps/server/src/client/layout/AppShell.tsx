@@ -1,4 +1,6 @@
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { createContext, useContext, useEffect, useRef, useState, type ReactNode } from "react";
+import { createPortal } from "react-dom";
+
 import type { SessionInfo } from "../App";
 import type { SyncedMeetingInfo } from "../api";
 import { uiText } from "../api";
@@ -10,8 +12,12 @@ import { Button } from "../components/ui/button";
 import { DropdownMenuItem } from "../components/ui/dropdown-menu";
 import { Sheet, SheetContent, SheetTitle } from "../components/ui/sheet";
 
+// Keep unsent-edit guidance in the active header, including after leaving Notes.
+const HeaderStatusSlot = createContext<(slot: HTMLDivElement | null) => void>(() => {});
+
 export function AppShell({ brand, children, extensionPaths, navigate, path, routeMeeting, routeMeetingOwned,
-  routeWorkspaceId, serverLinks, session }: {
+  routeWorkspaceId, serverLinks, session, headerStatus }: {
+  headerStatus?: ReactNode;
   brand: ReactNode;
   children: ReactNode;
   extensionPaths: string[];
@@ -24,6 +30,7 @@ export function AppShell({ brand, children, extensionPaths, navigate, path, rout
   session: SessionInfo;
 }) {
   const main = useRef<HTMLElement>(null);
+  const [statusSlot, setStatusSlot] = useState<HTMLDivElement | null>(null);
   const chatPage = isChatPath(path);
   const [navigationOpen, setNavigationOpen] = useState(false);
   const [compact, setCompact] = useState(() => window.matchMedia("(max-width: 767px)").matches);
@@ -62,7 +69,7 @@ export function AppShell({ brand, children, extensionPaths, navigate, path, rout
       <MenuIcon name="settings" />{uiText("Account settings", "アカウント設定")}
     </a></DropdownMenuItem>
   </Sidebar>;
-  return <SidebarProvider key={session.user.id} session={session}>
+  return <HeaderStatusSlot.Provider value={setStatusSlot}><SidebarProvider key={session.user.id} session={session}>
     <div className="grid min-h-dvh min-w-0 md:grid-cols-[240px_minmax(0,1fr)]">
       <a className="fixed left-3 top-3 z-[100] -translate-y-16 rounded-md bg-primary px-3 py-2 text-sm text-primary-foreground focus:translate-y-0" href="#main-content">{uiText("Skip to content", "本文へ移動")}</a>
       <header className="sticky top-0 z-30 flex h-11 items-center gap-2 bg-background px-3 md:hidden">
@@ -75,18 +82,21 @@ export function AppShell({ brand, children, extensionPaths, navigate, path, rout
           <SheetTitle className="sr-only">{uiText("Navigation", "ナビゲーション")}</SheetTitle>{sidebar}
         </SheetContent>
       </Sheet>}
+      {statusSlot ? createPortal(headerStatus, statusSlot) : <div className="fixed right-3 top-1 z-40 flex h-9 items-center empty:hidden">{headerStatus}</div>}
       <main id="main-content" className={chatPage ? "min-w-0 outline-none md:col-start-2" : "min-w-0 px-5 pb-16 pt-7 outline-none sm:px-8 md:col-start-2 md:px-10 lg:px-14"} key={chatPage ? "/chat" : path} ref={main} tabIndex={-1}>{children}</main>
     </div>
-  </SidebarProvider>;
+  </SidebarProvider></HeaderStatusSlot.Provider>;
 }
 
 export function PageHeader({ title, description, actions }: { title: string; description?: string; actions?: ReactNode }) {
-  return <header className="page-header mb-8 flex items-start justify-between gap-6 py-3"><div className="min-w-0"><h1 className="text-2xl font-semibold tracking-tight">{title}</h1>{description && <p className="mt-2 max-w-2xl text-sm leading-6 text-muted-foreground">{description}</p>}</div>{actions}</header>;
+  const statusRef = useContext(HeaderStatusSlot);
+  return <header className="page-header mb-8 flex items-start justify-between gap-6 py-3"><div className="min-w-0"><h1 className="text-2xl font-semibold tracking-tight">{title}</h1>{description && <p className="mt-2 max-w-2xl text-sm leading-6 text-muted-foreground">{description}</p>}</div><div className="flex shrink-0 items-center gap-1"><div ref={statusRef} className="flex items-center empty:hidden" />{actions}</div></header>;
 }
 
 export function DetailHeaderBar({ children, actions, className = "" }: { children: ReactNode; actions?: ReactNode; className?: string }) {
+  const statusRef = useContext(HeaderStatusSlot);
   return <div className={`detail-header ${className}`}><div className="relative left-1/2 flex h-9 w-[calc(100vw-240px)] -translate-x-1/2 items-center gap-3 bg-background px-4 max-md:w-screen">
     {children}
-    {actions && <div className="flex shrink-0 items-center gap-1">{actions}</div>}
+    <div className="flex shrink-0 items-center gap-1"><div ref={statusRef} className="flex items-center empty:hidden" />{actions}</div>
   </div></div>;
 }
