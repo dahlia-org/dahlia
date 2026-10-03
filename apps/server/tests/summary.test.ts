@@ -89,6 +89,22 @@ async function setup() {
 }
 
 describe("server summary jobs", () => {
+  it.each(["legacy", "preferences"])("captures workspace image analysis settings for %s requests", async (kind) => {
+    const { store, method, service, workspaceId, meetingId } = await setup();
+    try {
+      const imageAnalysis = { enabled: false, model: "selected-vision-model" };
+      await updateGenerationSettings(store, owner, workspaceId, { imageAnalysis });
+      method.resolvePreferences = async (preferences, input) => ({ settings: await method.captureSettings(preferences), input });
+      const job = await service.start(owner, workspaceId, meetingId, kind === "legacy" ? { id: uuidV7() } : {
+        id: uuidV7(), input: { type: "transcript", version: "current" },
+        preferences: { ...DEFAULT_GENERATION_PREFERENCES, imageAnalysis: { enabled: true, model: "request-model" } },
+      });
+      expect(job.settings.imageAnalysis).toEqual(imageAnalysis);
+      await updateGenerationSettings(store, owner, workspaceId, { imageAnalysis: { enabled: true } });
+      expect((await service.status(owner, workspaceId, meetingId))?.settings.imageAnalysis).toEqual(imageAnalysis);
+    } finally { await store.close?.(); }
+  });
+
   it("fixes absent Notes, retries automatically with the same snapshot, and captures fresh Notes on explicit retry", async () => {
     const { store, service, workspaceId, meetingId, path } = await setup();
     const raw = new DatabaseSync(path), core = new DocumentCore();

@@ -27,8 +27,10 @@ export const imageAnalysisSchema = z.object({
 }).strict().refine((analysis) => analysis.informative || analysis.reason !== "", { path: ["reason"] });
 export type ImageAnalysis = z.infer<typeof imageAnalysisSchema>;
 
-export function needsImageAnalysis(metadata: FileRecord["metadata"], mode: ImageAnalysisClaim["mode"] = "fill_missing"): boolean {
-  return mode === "replace" || metadata.ocr_text == null || !metadata.caption?.trim();
+export function needsImageAnalysis(metadata: FileRecord["metadata"]): boolean {
+  // Completed Desktop results take precedence over legacy replacement jobs.
+  // Empty OCR means the image was analyzed and contained no visible text.
+  return metadata.ocr_text == null || !metadata.caption?.trim();
 }
 
 export class ImageAnalysisError extends Error {

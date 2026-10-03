@@ -120,7 +120,7 @@ export function createAudioSummaryMethod(config: AppConfig, store: MeetingSyncSt
   if (!execution) return undefined;
   const { provider: audioProvider, backend, normalizeModel, resolveModel, headers: executionHeaders } = execution;
   const cloudflare = audioProvider.backend === "cloudflare";
-  const selector = createScreenshotSelector(config, transport);
+
   return {
     id: "audio",
     async captureSettings(settings, detail, input) {
@@ -171,6 +171,9 @@ export function createAudioSummaryMethod(config: AppConfig, store: MeetingSyncSt
   async function generateAudio(job: SummaryJob, signal: AbortSignal, transcriptionOnly: boolean): Promise<{
     document?: SummaryGenerationResult; transcription?: GeneratedTranscript;
   }> {
+      const analysis = job.settings.imageAnalysis;
+      const selector = analysis?.enabled === false ? undefined
+        : createScreenshotSelector({ ...config, captioningModel: analysis?.model ?? config.captioningModel }, transport, analysis?.reasoningEffort);
       let requestId: string | undefined;
       try {
         const identity = { userId: job.ownerUserId, source: "accounts" as const };

@@ -1782,3 +1782,8 @@
 
 "sync.discardFile" = "該当ファイルの同期変更を破棄";
 "sync.discardFileConfirmation" = "「%@」の該当ファイルと紐付けの同期変更を破棄しますか？";
+
+"account.settings.imageAnalysis" = "画像解析";
+"account.settings.imageAnalysisEnabled" = "画像解析を有効にする";
+
+"Controls how much reasoning Codex uses for each image." = "画像ごとに Codex が使用する推論の強度を設定します。";

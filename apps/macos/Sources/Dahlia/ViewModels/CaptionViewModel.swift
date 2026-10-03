@@ -307,6 +307,7 @@ final class CaptionViewModel: ObservableObject {
 
     func screenshotOCRState(id: UUID, refresh: Bool = false, contentProvider: MeetingContentProvider = .shared) async -> ScreenshotOCRState {
         guard let dbQueue = currentDbQueue else { return .pending }
+        let analysisEnabled = WorkspaceAISettingsModel.shared.generationSettings.imageAnalysis.enabled
         if let fileId = try? await dbQueue.read({ db in
             try UUID.fetchOne(
                 db,
@@ -329,7 +330,15 @@ final class CaptionViewModel: ObservableObject {
                     try await dbQueue.read { db in
                         guard try FileRecord.fetchOne(db, key: fileId) != nil else { return .remote(ocrText: nil, caption: nil, state: .deleted) }
                         let text = try TextContentAccess.cachedFileText(fileId: fileId, in: db)
-                        let state = try TextContentAccess.availability(entity: .file, id: fileId, in: db).state
+                        var state = try TextContentAccess.availability(entity: .file, id: fileId, in: db).state
+                        if analysisEnabled, state == .ready, text?.ocrText == nil || text?.caption?.nilIfBlank == nil,
+                           let job = try Row.fetchOne(db, sql: """
+                           SELECT attempts FROM jobs_background
+                           WHERE indexKind = 'fts' AND targetKind = 'screenshotAnalysis' AND targetKey = ?
+                           """, arguments: [id]) {
+                            let attempts: Int = job["attempts"]
+                            state = attempts >= 5 ? .failed : .loading
+                        }
                         return .remote(ocrText: text?.ocrText, caption: text?.caption, state: state)
                     }
                 }
@@ -354,6 +363,7 @@ final class CaptionViewModel: ObservableObject {
             ), let text: String = row["ocrText"], let caption: String = row["caption"] {
                 return .completed(ocrText: text, caption: caption)
             }
+            guard analysisEnabled else { return .remote(ocrText: nil, caption: nil, state: .empty) }
             guard let row = try Row.fetchOne(
                 db,
                 sql: """
@@ -361,7 +371,7 @@ final class CaptionViewModel: ObservableObject {
                 WHERE indexKind = 'fts' AND targetKind = 'screenshotAnalysis' AND targetKey = ?
                 """,
                 arguments: [id]
-            ) else { return .pending }
+            ) else { return .remote(ocrText: nil, caption: nil, state: .empty) }
             let attempts: Int = row["attempts"]
             if attempts >= 5 { return .failed }
             let status: String = row["status"]

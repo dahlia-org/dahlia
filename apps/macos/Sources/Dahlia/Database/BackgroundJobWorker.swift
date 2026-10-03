@@ -12,6 +12,7 @@ actor BackgroundJobWorker {
     private let apiClient: SyncAPIClient
     private let dbQueue: DatabaseQueue
     private let screenshotAnalyzer: any ScreenshotAnalyzing
+    private let inferenceSettingsResolver: @Sendable (WorkspaceRecord) -> AccountInferenceSettings
     private let runtimeProviderResolver: RuntimeProviderResolver
     private let localAccountSettingsResolver: LocalAccountSettingsResolver
     private let observationQueue = DispatchQueue(label: "app.dahlia.search-indexer", qos: .utility)
@@ -35,6 +36,7 @@ actor BackgroundJobWorker {
     init(
         dbQueue: DatabaseQueue,
         screenshotAnalyzer: any ScreenshotAnalyzing = CodexScreenshotAnalysisService(),
+        inferenceSettingsResolver: @escaping @Sendable (WorkspaceRecord) -> AccountInferenceSettings = { AccountInferenceSettings(workspace: $0) },
         apiClient: SyncAPIClient = SyncAPIClient(session: .shared),
         runtimeProviderResolver: @escaping RuntimeProviderResolver = { CodexRuntimeContextStore.shared.provider },
         localAccountSettingsResolver: @escaping LocalAccountSettingsResolver = {
@@ -45,6 +47,7 @@ actor BackgroundJobWorker {
         self.apiClient = apiClient
         self.dbQueue = dbQueue
         self.screenshotAnalyzer = screenshotAnalyzer
+        self.inferenceSettingsResolver = inferenceSettingsResolver
         self.runtimeProviderResolver = runtimeProviderResolver
         self.localAccountSettingsResolver = localAccountSettingsResolver
     }
@@ -641,7 +644,7 @@ private extension BackgroundJobWorker {
 
     func processScreenshotJobsConcurrently(_ jobs: [SearchIndexJob]) async throws -> Bool {
         let localSettings = await localAccountSettingsResolver()
-        let routing = try await dbQueue.read { db in
+        let routing = try await dbQueue.read { [inferenceSettingsResolver] db in
             var inputs: [UUID: ScreenshotAnalysisInput] = [:]
             var serverConnectionIDs: [UUID: UUID] = [:]
             for job in jobs {
@@ -652,7 +655,8 @@ private extension BackgroundJobWorker {
                 if let connectionID = workspace.accountConnectionId {
                     serverConnectionIDs[job.targetID] = connectionID
                 }
-                guard let outputLanguage = job.outputLanguage,
+                let analysis = inferenceSettingsResolver(workspace).imageAnalysis
+                guard analysis.enabled, let outputLanguage = job.outputLanguage,
                       screenshot.remoteReference == nil || screenshot.localReference != nil,
                       (try? TextContentAccess.requireComplete(entity: .file, id: screenshot.originalFileId, in: db)) != nil else { continue }
                 inputs[job.targetID] = ScreenshotAnalysisInput(
@@ -664,7 +668,9 @@ private extension BackgroundJobWorker {
                         localProvider: localSettings.provider,
                         databricksProfile: localSettings.databricksProfile
                     ),
-                    outputLanguage: outputLanguage
+                    outputLanguage: outputLanguage,
+                    model: analysis.model,
+                    reasoningEffort: analysis.reasoningEffort
                 )
             }
             return (inputs, serverConnectionIDs)

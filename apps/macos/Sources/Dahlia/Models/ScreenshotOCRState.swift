@@ -11,8 +11,8 @@ enum ScreenshotOCRState: Equatable, Sendable {
     var isTerminal: Bool {
         switch self {
         case .completed, .failed: true
-        case let .remote(ocrText, caption, state):
-            [.failed, .deleted, .empty].contains(state) || (state == .ready && ocrText != nil && caption?.nilIfBlank != nil)
+        case let .remote(_, _, state):
+            [.ready, .failed, .deleted, .empty].contains(state)
         case .pending, .processing: false
         }
     }

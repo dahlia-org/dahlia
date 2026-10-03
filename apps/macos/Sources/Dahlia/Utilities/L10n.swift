@@ -156,6 +156,8 @@ enum L10n { // swiftlint:disable:this type_body_length
     static var retranscriptionKeepsSummary: String { String(localized: "transcription.retranscription.keepsSummary", bundle: bundle) }
     static var serverRetranscriptionCheckFailed: String { String(localized: "transcription.retranscription.checkFailed", bundle: bundle) }
     static var serverRetranscriptionUnsupported: String { String(localized: "transcription.retranscription.unsupported", bundle: bundle) }
+    static var imageAnalysis: String { String(localized: "account.settings.imageAnalysis", bundle: bundle) }
+    static var imageAnalysisEnabled: String { String(localized: "account.settings.imageAnalysisEnabled", bundle: bundle) }
     static var imageAnalysisLanguages: String { String(localized: "account.settings.imageLanguages", bundle: bundle) }
     static var serverAccountSettingsDescription: String { String(localized: "account.settings.description", bundle: bundle) }
     static var serverAccountSettingsNotLoaded: String { String(localized: "account.settings.notLoaded", bundle: bundle) }
@@ -2478,6 +2480,10 @@ enum L10n { // swiftlint:disable:this type_body_length
         bundle: bundle
     ) }
     static var reasoningEffort: String { String(localized: "Reasoning Effort", bundle: bundle) }
+    static var imageAnalysisReasoningEffortDescription: String {
+        String(localized: "Controls how much reasoning Codex uses for each image.", bundle: bundle)
+    }
+
     static var reasoningEffortDescription: String { String(
         localized: "Controls how much reasoning Codex uses for each summary.",
         bundle: bundle

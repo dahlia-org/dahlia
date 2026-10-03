@@ -1733,6 +1733,12 @@ export interface components {
         Workspace: {
             meetingDeletionGraceDays: number;
             generationSettings: {
+                imageAnalysis?: {
+                    enabled: boolean;
+                    model?: string;
+                    /** @enum {string} */
+                    reasoningEffort?: "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max" | "ultra";
+                };
                 /** @enum {string} */
                 outputLanguage: "ja" | "en" | "zh" | "ko" | "fr" | "de" | "es";
                 processing: {
@@ -2100,6 +2106,12 @@ export interface components {
         NullableWorkspaceRecord: {
             meetingDeletionGraceDays: number;
             generationSettings: {
+                imageAnalysis?: {
+                    enabled: boolean;
+                    model?: string;
+                    /** @enum {string} */
+                    reasoningEffort?: "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max" | "ultra";
+                };
                 /** @enum {string} */
                 outputLanguage: "ja" | "en" | "zh" | "ko" | "fr" | "de" | "es";
                 processing: {
@@ -2775,6 +2787,12 @@ export interface components {
                 model: string;
                 /** @enum {string} */
                 reasoningEffort: "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max" | "ultra";
+                imageAnalysis?: {
+                    enabled: boolean;
+                    model?: string;
+                    /** @enum {string} */
+                    reasoningEffort?: "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max" | "ultra";
+                };
                 /** @enum {string} */
                 detail: "low" | "medium" | "high" | "xhigh" | "max";
                 /** @enum {string} */
@@ -2905,6 +2923,12 @@ export interface components {
                 data: {
                     meetingDeletionGraceDays?: number;
                     generationSettings?: {
+                        imageAnalysis?: {
+                            enabled: boolean;
+                            model?: string;
+                            /** @enum {string} */
+                            reasoningEffort?: "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max" | "ultra";
+                        };
                         /** @enum {string} */
                         outputLanguage: "ja" | "en" | "zh" | "ko" | "fr" | "de" | "es";
                         processing: {
@@ -2955,6 +2979,12 @@ export interface components {
                 data: {
                     meetingDeletionGraceDays?: number;
                     generationSettings?: {
+                        imageAnalysis?: {
+                            enabled: boolean;
+                            model?: string;
+                            /** @enum {string} */
+                            reasoningEffort?: "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max" | "ultra";
+                        };
                         /** @enum {string} */
                         outputLanguage: "ja" | "en" | "zh" | "ko" | "fr" | "de" | "es";
                         processing: {
@@ -5809,6 +5839,12 @@ export interface operations {
                         transcriptionOnly?: true;
                     };
                     preferences: {
+                        imageAnalysis?: {
+                            enabled: boolean;
+                            model?: string;
+                            /** @enum {string} */
+                            reasoningEffort?: "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max" | "ultra";
+                        };
                         /** @enum {string} */
                         outputLanguage: "ja" | "en" | "zh" | "ko" | "fr" | "de" | "es";
                         processing: {
@@ -5897,6 +5933,12 @@ export interface operations {
                                 model: string;
                                 /** @enum {string} */
                                 reasoningEffort: "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max" | "ultra";
+                                imageAnalysis?: {
+                                    enabled: boolean;
+                                    model?: string;
+                                    /** @enum {string} */
+                                    reasoningEffort?: "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max" | "ultra";
+                                };
                                 /** @enum {string} */
                                 detail: "low" | "medium" | "high" | "xhigh" | "max";
                                 /** @enum {string} */

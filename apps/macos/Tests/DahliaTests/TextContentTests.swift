@@ -137,7 +137,7 @@
             viewModel.loadMeeting(fixture.meetingId, dbQueue: fixture.queue, projectURL: nil, projectId: nil, workspaceURL: nil)
             defer { viewModel.clearCurrentMeeting() }
             let pending = await viewModel.screenshotOCRState(id: fileId, contentProvider: provider)
-            #expect(pending == .remote(ocrText: nil, caption: nil, state: .ready))
+            #expect(pending == .remote(ocrText: nil, caption: nil, state: .loading))
             #expect(!pending.isTerminal)
             let context = try await fixture.queue.read { db in
                 try RemoteChangePolicy.Context(
@@ -1564,7 +1564,8 @@
                 #expect(cached == .remote(ocrText: nil, caption: "older", state: .stale))
                 #expect(calls.withLock { $0 } == before)
                 let refreshed = await viewModel.screenshotOCRState(id: id, refresh: true, contentProvider: provider)
-                #expect(refreshed == .remote(ocrText: nil, caption: "cloudcaption", state: .ready))
+                // Hydration finished, but the attachment-triggered job is still filling missing OCR.
+                #expect(refreshed == .remote(ocrText: nil, caption: "cloudcaption", state: .loading))
                 #expect(calls.withLock { $0 } == before + 1)
                 try await fixture.queue.write { db in
                     try db.execute(sql: "UPDATE sync_entity_state SET confirmedRevision = 4 WHERE entity = 'file'")

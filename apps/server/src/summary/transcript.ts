@@ -84,7 +84,7 @@ export function createTranscriptSummaryMethod(config: AppConfig, store: MeetingS
   const execution = createJobProvider(config, transport);
   if (!execution) return undefined;
   const { provider, backend } = execution;
-  const selector = createScreenshotSelector(config, transport);
+
   return {
     id: "transcript",
     async captureSettings(settings, detail, input) {
@@ -110,6 +110,9 @@ export function createTranscriptSummaryMethod(config: AppConfig, store: MeetingS
       }
     },
     async generate(job, signal) {
+      const analysis = job.settings.imageAnalysis;
+      const selector = analysis?.enabled === false ? undefined
+        : createScreenshotSelector({ ...config, captioningModel: analysis?.model ?? config.captioningModel }, transport, analysis?.reasoningEffort);
       let requestId: string | undefined;
       try {
       const identity = { userId: job.ownerUserId, source: "accounts" as const };

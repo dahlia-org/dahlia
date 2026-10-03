@@ -1782,3 +1782,8 @@
 
 "sync.discardFile" = "Discard File Sync Changes";
 "sync.discardFileConfirmation" = "Discard sync changes for this file and its links in “%@”?";
+
+"account.settings.imageAnalysis" = "Image analysis";
+"account.settings.imageAnalysisEnabled" = "Enable image analysis";
+
+"Controls how much reasoning Codex uses for each image." = "Controls how much reasoning Codex uses for each image.";

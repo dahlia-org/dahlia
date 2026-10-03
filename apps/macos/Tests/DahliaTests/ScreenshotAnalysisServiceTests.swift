@@ -65,13 +65,17 @@ import Foundation
         }
 
         @Test(arguments: [
-            (CodexRuntimeProvider.chatGPTSubscription, "gpt-5.6-luna"),
-            (.databricks(profile: "test"), "gpt-5.6-luna"),
-            (.dahlia(connectionID: .v7()), "gpt-5.6-luna"),
+            (CodexRuntimeProvider.chatGPTSubscription, nil as String?, "gpt-6-luna", nil as String?),
+            (.databricks(profile: "test"), nil, "gpt-6-luna", nil),
+            (.dahlia(connectionID: .v7()), nil, "gpt-6-luna", nil),
+            (.chatGPTSubscription, "gpt-5.6-luna", "gpt-5.6-luna", "high"),
+            (.dahlia(connectionID: .v7()), "gpt-6-sol", "gpt-6-sol", "high"),
         ])
         func sendsOneStructuredLunaRequestForOneScreenshot(
             provider: CodexRuntimeProvider,
-            expectedModel: String
+            configuredModel: String?,
+            expectedModel: String,
+            effort: String?
         ) async throws {
             let screenshotID = try #require(UUID(uuidString: "00000000-0000-0000-0000-000000000001"))
             let response = """
@@ -95,7 +99,8 @@ import Foundation
                     id: screenshotID,
                     imageData: Data([1]),
                     mimeType: "image/png",
-                    runtimeProvider: provider, outputLanguage: .en
+                    runtimeProvider: provider, outputLanguage: .en, model: configuredModel,
+                    reasoningEffort: effort
                 ),
             ])
 
@@ -107,7 +112,8 @@ import Foundation
                     id: screenshotID,
                     imageData: Data([1]),
                     mimeType: "image/png",
-                    runtimeProvider: provider, outputLanguage: .en
+                    runtimeProvider: provider, outputLanguage: .en, model: configuredModel,
+                    reasoningEffort: effort
                 ),
             ])
             let messages = await transport.messages()
@@ -120,7 +126,7 @@ import Foundation
             #expect(instructions.contains("in English."))
             #expect(instructions.contains("in its original language"))
             #expect(!instructions.contains("Expected text languages"))
-            #expect(threadParams["config"]?.objectValue?["model_reasoning_effort"] == .string("low"))
+            #expect(threadParams["config"]?.objectValue?["model_reasoning_effort"] == .string(effort ?? "low"))
             let turnParams = try #require(messages.first {
                 $0.objectValue?["method"]?.stringValue == "turn/start"
             }?.objectValue?["params"]?.objectValue)

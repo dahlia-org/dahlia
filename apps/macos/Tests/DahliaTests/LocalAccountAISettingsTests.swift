@@ -8,6 +8,32 @@
     @MainActor
     struct LocalAccountAISettingsTests {
         @Test
+        func imageAnalysisSettingsRemainAccountLocalAndDecodeLegacyPreferences() throws {
+            let suite = "ImageAnalysisSettings-\(UUID())"
+            let defaults = try #require(UserDefaults(suiteName: suite))
+            defer { defaults.removePersistentDomain(forName: suite) }
+            let workspace = WorkspaceRecord(id: .v7(), path: nil, name: "Images", createdAt: .now, lastOpenedAt: .now)
+            var account = AccountInferenceSettings(workspace: workspace, defaults: defaults)
+            account.imageAnalysis = .init(enabled: false, model: "vision-model", reasoningEffort: "high")
+            account.save(connectionID: nil, defaults: defaults)
+            let restored = AccountInferenceSettings(workspace: workspace, defaults: defaults)
+            #expect(restored.imageAnalysis == account.imageAnalysis)
+            #expect(restored.generationSettings(outputLanguage: .en).imageAnalysis == account.imageAnalysis)
+            var legacy = try #require(JSONSerialization.jsonObject(with: JSONEncoder().encode(account)) as? [String: Any])
+            legacy.removeValue(forKey: "savedImageAnalysis")
+            let decoded = try JSONDecoder().decode(AccountInferenceSettings.self, from: JSONSerialization.data(withJSONObject: legacy))
+            #expect(decoded.imageAnalysis.enabled)
+            #expect(decoded.imageAnalysis.model == nil)
+            #expect(decoded.imageAnalysis.reasoningEffort == nil)
+            let legacyImage = try JSONDecoder().decode(
+                WorkspaceGenerationSettings.ImageAnalysis.self,
+                from: Data(#"{"enabled":true,"model":"gpt-6-luna"}"#.utf8)
+            )
+            #expect(legacyImage.reasoningEffort == nil)
+            #expect(try JSONDecoder().decode(WorkspaceGenerationSettings.self, from: Data("{}".utf8)).imageAnalysis.enabled)
+        }
+
+        @Test
         func inferenceKeepsServerGatewayAndUsesAccountPreferencesWithSharedLanguage() async throws {
             let suiteName = "MacInferenceSettingsTests-\(UUID())"
             let defaults = try #require(UserDefaults(suiteName: suiteName))

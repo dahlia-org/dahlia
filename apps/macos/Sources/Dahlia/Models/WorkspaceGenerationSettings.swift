@@ -37,6 +37,12 @@ struct WorkspaceGenerationSettings: Codable, Equatable, Sendable {
         var outputLanguage: SummaryLanguage
     }
 
+    struct ImageAnalysis: Codable, Equatable, Sendable {
+        var enabled = true
+        var model: String?
+        var reasoningEffort: String?
+    }
+
     struct LocalProcessing: Codable, Equatable, Sendable {
         var model = "gpt-5.6-luna"
         var reasoningEffort = "high"
@@ -54,6 +60,7 @@ struct WorkspaceGenerationSettings: Codable, Equatable, Sendable {
     var summary = Summary()
     var outputLanguage: SummaryLanguage = .ja
     var local = LocalProcessing()
+    var imageAnalysis = ImageAnalysis()
     var automaticProcessing = true
     var liveTranscriptDraft = false
     private(set) var legacyTranscription: LegacyTranscription?
@@ -63,6 +70,7 @@ struct WorkspaceGenerationSettings: Codable, Equatable, Sendable {
         summary: Summary = Summary(),
         outputLanguage: SummaryLanguage = .ja,
         local: LocalProcessing = LocalProcessing(),
+        imageAnalysis: ImageAnalysis = ImageAnalysis(),
         automaticProcessing: Bool = true,
         liveTranscriptDraft: Bool = false
     ) {
@@ -70,12 +78,13 @@ struct WorkspaceGenerationSettings: Codable, Equatable, Sendable {
         self.summary = summary
         self.outputLanguage = outputLanguage
         self.local = local
+        self.imageAnalysis = imageAnalysis
         self.automaticProcessing = automaticProcessing
         self.liveTranscriptDraft = liveTranscriptDraft
     }
 
     private enum CodingKeys: String, CodingKey {
-        case processing, summary, outputLanguage, local, automaticProcessing, liveTranscriptDraft, transcription
+        case processing, summary, outputLanguage, local, automaticProcessing, liveTranscriptDraft, transcription, imageAnalysis
     }
 
     init(from decoder: Decoder) throws {
@@ -84,6 +93,7 @@ struct WorkspaceGenerationSettings: Codable, Equatable, Sendable {
         summary = try values.decodeIfPresent(Summary.self, forKey: .summary) ?? Summary()
         outputLanguage = try values.decodeIfPresent(SummaryLanguage.self, forKey: .outputLanguage) ?? .ja
         local = try values.decodeIfPresent(LocalProcessing.self, forKey: .local) ?? LocalProcessing()
+        imageAnalysis = try values.decodeIfPresent(ImageAnalysis.self, forKey: .imageAnalysis) ?? ImageAnalysis()
         automaticProcessing = try values.decodeIfPresent(Bool.self, forKey: .automaticProcessing) ?? true
         legacyTranscription = try values.decodeIfPresent(LegacyTranscription.self, forKey: .transcription)
         liveTranscriptDraft = try values.decodeIfPresent(Bool.self, forKey: .liveTranscriptDraft)
@@ -96,6 +106,7 @@ struct WorkspaceGenerationSettings: Codable, Equatable, Sendable {
         try values.encode(summary, forKey: .summary)
         try values.encode(outputLanguage, forKey: .outputLanguage)
         try values.encode(local, forKey: .local)
+        try values.encode(imageAnalysis, forKey: .imageAnalysis)
         try values.encode(automaticProcessing, forKey: .automaticProcessing)
         if liveTranscriptDraft {
             try values.encode(true, forKey: .liveTranscriptDraft)
@@ -105,7 +116,7 @@ struct WorkspaceGenerationSettings: Codable, Equatable, Sendable {
     static func == (lhs: Self, rhs: Self) -> Bool {
         lhs.processing == rhs.processing && lhs.summary == rhs.summary && lhs.outputLanguage == rhs.outputLanguage
             && lhs.local == rhs.local && lhs.automaticProcessing == rhs.automaticProcessing
-            && lhs.liveTranscriptDraft == rhs.liveTranscriptDraft
+            && lhs.liveTranscriptDraft == rhs.liveTranscriptDraft && lhs.imageAnalysis == rhs.imageAnalysis
     }
 
     mutating func setTranscriptSummaryModel(_ model: String?) {

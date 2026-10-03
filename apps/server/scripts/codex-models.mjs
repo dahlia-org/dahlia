@@ -26,8 +26,8 @@ const approved = manifest.models.map((slug) => {
 });
 // Ship only approved picker metadata; never persist the upstream catalog.
 const projection = JSON.stringify({ models: approved.map(({ slug, display_name, supported_in_api, visibility,
-  default_reasoning_level, supported_reasoning_levels }) => ({ slug, display_name, supported_in_api, visibility,
-  default_reasoning_level, supported_reasoning_levels })) }, null, 2) + "\n";
+  default_reasoning_level, supported_reasoning_levels, input_modalities }) => ({ slug, display_name, supported_in_api, visibility,
+  default_reasoning_level, supported_reasoning_levels, input_modalities })) }, null, 2) + "\n";
 if (check) {
   if (saved !== projection) throw new Error("Run pnpm codex-models:generate");
 } else await writeFile(output, projection);

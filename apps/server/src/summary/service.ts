@@ -151,6 +151,7 @@ export class SummaryService {
       if (error instanceof SummaryError) throw new RequestError(error.retryable ? 503 : 400, error.code);
       throw error;
     }
+    if (settings.imageAnalysis) captured = { ...captured, imageAnalysis: settings.imageAnalysis };
     return this.store.withIdentity(identity, async (scoped) => {
       await scoped.lockMeeting(workspaceId, meetingId, true);
       if (!canWriteWorkspace((await scoped.getWorkspace(workspaceId))?.role)) throw new RequestError(404, "summary_meeting_unavailable");

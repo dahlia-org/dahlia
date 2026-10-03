@@ -1,5 +1,5 @@
 import { expect, it } from "vitest";
-import { DEFAULT_WORKSPACE_GENERATION_SETTINGS, summaryStyles, summaryStyleDetail } from "../src/workspace-generation-settings";
+import { workspaceGenerationSettingsSchema, DEFAULT_WORKSPACE_GENERATION_SETTINGS, summaryStyles, summaryStyleDetail } from "../src/workspace-generation-settings";
 import { modelList } from "../src/ai-gateway/models";
 import { cloudflareModels } from "../src/ai-gateway/cloudflare";
 import { resolveSummaryPreferences } from "../src/summary/preferences";
@@ -92,4 +92,12 @@ it("uses separate audio and transcript-summary settings for two-stage generation
       settings: { model: "gpt-4.1", reasoningEffort: "none", transcriptionReasoningEffort: "medium" },
       input: { transcriptionModel: "gemini-3-flash" },
     });
+});
+
+it("captures image analysis choices and keeps legacy workspace settings valid", () => {
+  const preferences = { ...DEFAULT_WORKSPACE_GENERATION_SETTINGS, imageAnalysis: { enabled: false, model: "vision-model", reasoningEffort: "high" as const } };
+  expect(workspaceGenerationSettingsSchema.parse(preferences).imageAnalysis).toEqual(preferences.imageAnalysis);
+  expect(workspaceGenerationSettingsSchema.parse(DEFAULT_WORKSPACE_GENERATION_SETTINGS).imageAnalysis).toBeUndefined();
+  expect(resolveSummaryPreferences(preferences, { type: "transcript", version: "current" }, modelList([{ id: "system.ai.gemini-3-8-flash" }]), (id) => id).settings.imageAnalysis).toEqual(preferences.imageAnalysis);
+  expect(workspaceGenerationSettingsSchema.safeParse({ ...preferences, imageAnalysis: { enabled: true, model: " " } }).success).toBe(false);
 });
