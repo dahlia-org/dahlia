@@ -17,6 +17,9 @@ import assert from "node:assert/strict";
 import { createPostgresApplicationStore } from "../../src/auth/store";
 import { initializeDahliaAuth } from "../../src/auth/better-auth";
 import { uuidV7 } from "../../src/id";
+import { createAiService, type AiChatEvent } from "../../src/agent/service";
+import type { GatewayService } from "../../src/ai-gateway/service";
+import type { AppConfig } from "../../src/config";
 
 // Synthetic, local-only routes; this module is never a deployment entry point.
 const handler = createWorkerHandler(async (env) => {
@@ -32,6 +35,45 @@ export default {
   ...handler,
   async fetch(request: Request<unknown, IncomingRequestCfProperties>, env: WorkerEnv, context: ExecutionContext) {
     const path = new URL(request.url).pathname;
+    if (path === "/runtime/agent-tools") {
+      const originalFetch = globalThis.fetch;
+      const calls = [
+        { name: "task_write", args: { tasks: [{ id: "one", content: "Review", activeForm: "Reviewing", status: "in_progress" }] } },
+        { name: "web_fetch", args: { url: "http://127.0.0.1/private" } },
+        { name: "ask_user", args: { question: "Which meeting?" } },
+      ];
+      globalThis.fetch = async () => {
+        const call = calls.shift();
+        const events: unknown[] = call ? [
+          { type: "response.output_item.added", output_index: 0, item: { type: "function_call", id: "item", call_id: `call-${call.name}`, name: call.name, arguments: "", namespace: null } },
+          { type: "response.function_call_arguments.delta", item_id: "item", output_index: 0, delta: JSON.stringify(call.args) },
+          { type: "response.output_item.done", output_index: 0, item: { type: "function_call", id: "item", call_id: `call-${call.name}`, name: call.name, arguments: JSON.stringify(call.args), status: "completed", namespace: null } },
+        ] : [
+          { type: "response.output_item.added", output_index: 0, item: { type: "message", id: "text", phase: "final_answer" } },
+          { type: "response.output_text.delta", item_id: "text", delta: "Done" },
+          { type: "response.output_item.done", output_index: 0, item: { type: "message", id: "text", phase: "final_answer" } },
+        ];
+        events.push({ type: "response.completed", response: { incomplete_details: null, usage: { input_tokens: 1, output_tokens: 1 }, reasoning: null, service_tier: null } });
+        return new Response(events.map((event) => `data: ${JSON.stringify(event)}\n\n`).join("") + "data: [DONE]\n\n", { headers: { "content-type": "text/event-stream" } });
+      };
+      try {
+        const config = { provider: { backend: "openai", baseUrl: "https://provider.example/v1", apiKey: "synthetic" }, baseUrl: "http://localhost:5173", foundationModels: ["test"] } as AppConfig;
+        const gateway = { models: async () => ({ data: [{ id: "test", display_name: "Test" }], models: [{ slug: "test", supported_in_api: true, visibility: "list", default_reasoning_level: "low", supported_reasoning_levels: [{ effort: "low", description: "Fast" }] }] }) } as unknown as GatewayService;
+        const service = createAiService(config, gateway, {} as never);
+        const input = { workspaceId: uuidV7(), sessionId: uuidV7(), model: "test", reasoningEffort: "low" as const, timeZone: "Asia/Tokyo", messages: [{ role: "user" as const, content: "Review meetings" }] };
+        const identity = { userId: uuidV7(), source: "header" as const };
+        const first: AiChatEvent[] = [];
+        for await (const event of service.stream(input, identity, request)) first.push(event);
+        assert(first.some((event) => event.type === "tool" && event.name === "task_write" && event.status === "complete"));
+        assert(first.some((event) => event.type === "tool" && event.name === "web_fetch" && event.status === "complete"));
+        const question = first.find((event) => event.type === "interaction");
+        assert(question?.type === "interaction" && question.interaction.tool === "ask_user");
+        const resumed: AiChatEvent[] = [];
+        for await (const event of service.stream({ ...input, resume: { tool: "ask_user", runId: question.interaction.runId, toolCallId: question.interaction.toolCallId, answer: "Planning" } }, identity, request)) resumed.push(event);
+        assert(resumed.some((event) => event.type === "text" && event.text === "Done"));
+        return Response.json({ success: true });
+      } finally { globalThis.fetch = originalFetch; }
+    }
     if (path === "/runtime/documents") {
       const core = new DocumentCore(documentFixture.checkpoint);
       try {

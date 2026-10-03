@@ -5264,6 +5264,27 @@ export interface operations {
                         thread: components["schemas"]["AiThread"];
                         messages: components["schemas"]["AiHistoryMessage"][];
                         hasMore: boolean;
+                        interaction?: {
+                            runId: string;
+                            toolCallId: string;
+                            /** @enum {string} */
+                            tool: "ask_user";
+                            question: string;
+                            options?: {
+                                label: string;
+                                description?: string;
+                            }[];
+                            /** @enum {string} */
+                            selectionMode?: "single_select" | "multi_select";
+                        } | {
+                            runId: string;
+                            toolCallId: string;
+                            /** @enum {string} */
+                            tool: "submit_plan";
+                            path: string;
+                            title: string;
+                            content: string;
+                        };
                     };
                 };
             };
@@ -5306,12 +5327,28 @@ export interface operations {
                     model: string;
                     /** @enum {string} */
                     reasoningEffort: "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max" | "ultra";
+                    timeZone?: string;
+                    resume?: {
+                        runId: string;
+                        toolCallId: string;
+                        /** @enum {string} */
+                        tool: "ask_user";
+                        answer: string | string[];
+                    } | {
+                        runId: string;
+                        toolCallId: string;
+                        /** @enum {string} */
+                        tool: "submit_plan";
+                        /** @enum {string} */
+                        action: "approved" | "rejected";
+                        feedback?: string;
+                    };
                     content: string;
                 };
             };
         };
         responses: {
-            /** @description text/event-stream with text, tool, error, and done events. Tool input and output are never included. */
+            /** @description text/event-stream with text, tool, interaction, interaction-resumed, error, and done events. Interaction-resumed carries run/tool-call IDs once a pending response is consumed. Interaction events contain only a user-facing question or plan; other tool input and output are never included. */
             200: {
                 headers: {
                     [name: string]: unknown;
@@ -5337,6 +5374,23 @@ export interface operations {
                     model: string;
                     /** @enum {string} */
                     reasoningEffort: "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max" | "ultra";
+                    timeZone?: string;
+                    sessionId?: string;
+                    resume?: {
+                        runId: string;
+                        toolCallId: string;
+                        /** @enum {string} */
+                        tool: "ask_user";
+                        answer: string | string[];
+                    } | {
+                        runId: string;
+                        toolCallId: string;
+                        /** @enum {string} */
+                        tool: "submit_plan";
+                        /** @enum {string} */
+                        action: "approved" | "rejected";
+                        feedback?: string;
+                    };
                     messages: {
                         /** @enum {string} */
                         role: "user" | "assistant";
@@ -5346,7 +5400,7 @@ export interface operations {
             };
         };
         responses: {
-            /** @description text/event-stream with text, tool, error, and done events. Tool input and output are never included. */
+            /** @description text/event-stream with text, tool, interaction, interaction-resumed, error, and done events. Interaction-resumed carries run/tool-call IDs once a pending response is consumed. Interaction events contain only a user-facing question or plan; other tool input and output are never included. */
             200: {
                 headers: {
                     [name: string]: unknown;

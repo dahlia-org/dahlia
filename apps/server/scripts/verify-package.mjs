@@ -154,9 +154,14 @@ try {
       throw new Error("Package assets are incomplete");
     }
 
-    for (const file of serverMigrationManifest.postgres.files.filter((file) => file.includes("postgres-agent/20260922"))) {
-      const content = await readFile(new URL(import.meta.resolve("@dahlia-ai/server/migrations/" + file.slice("drizzle/".length))), "utf8");
-      if (!content.trim()) throw new Error("Missing chat memory migration");
+    const agentFiles = serverMigrationManifest.postgres.files.filter((file) => file.includes("postgres-agent/"));
+    if (agentFiles.length !== 2) throw new Error("Agent migrations must contain only the unreleased baseline and RLS enforcement");
+    const agentSql = await Promise.all(agentFiles.map((file) => readFile(new URL(import.meta.resolve("@dahlia-ai/server/migrations/" + file.slice("drizzle/".length))), "utf8")));
+    for (const table of ["mastra_thread_state", "mastra_workflow_snapshot"]) {
+      if (!agentSql.some((content) => content.includes('CREATE TABLE "agent"."' + table + '"'))
+        || !agentSql.some((content) => content.includes("agent." + table + " FORCE ROW LEVEL SECURITY"))) {
+        throw new Error("Missing built-in tool persistence or owner RLS: " + table);
+      }
     }
     const databasePath = fileURLToPath(new URL("./auth.sqlite", import.meta.url));
     const store = createNodeAuthStore({

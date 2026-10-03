@@ -38,8 +38,10 @@ let deferredA: (() => void) | undefined;
 let stream: ReadableStreamDefaultController<Uint8Array> | undefined;
 let streamSignal: AbortSignal | null | undefined;
 const reads: string[] = [];
+let retryDetail: { messages: Array<{ id: string; role: string; content: string }>; interaction?: object } | undefined;
+let lastSend: { resume?: object } | undefined;
 const detail = (id: string) => Response.json({ thread: threads.get(id), hasMore: false,
-  messages: [{ id: `message-${id}`, role: "assistant", content: id === idA ? "**Saved A**" : "**Saved B**", createdAt: date }] });
+  messages: [{ id: `message-${id}`, role: "assistant", content: id === idA ? "**Saved A**" : "**Saved B**", createdAt: date }], ...retryDetail });
 const failure = (status: number) => Response.json({ error: "unavailable" }, { status });
 
 const draftResponse = (content: string) => Response.json({ status: "completed", output: [{ type: "message", content: [{ type: "output_text", text: JSON.stringify({ content }) }] }] });
@@ -82,6 +84,8 @@ globalThis.fetch = async (input, init) => {
   }
   if (path === `/api/v1/chat/${idA}/messages`) {
     sends++;
+    if (typeof init?.body !== "string") throw new Error("Missing chat body");
+    lastSend = JSON.parse(init.body) as typeof lastSend;
     streamSignal = init?.signal;
     return new Response(new ReadableStream<Uint8Array>({ start(controller) {
       stream = controller;
@@ -331,6 +335,27 @@ async function run() {
   listStatus = 200;
   click(".ai-history .ai-error button");
   await until(ready, "history retry restores new chat");
+  retryDetail = { messages: [{ id: "question", role: "assistant", content: "Approve this plan?" }],
+    interaction: { tool: "submit_plan", runId: "retry-run", toolCallId: "retry-call", path: "plans/retry.md", title: "Plan", content: "Read summaries" } };
+  navigateDashboard(pathA);
+  await until(() => document.querySelector(".ai-interaction"), "saved pending plan");
+  const approve = [...document.querySelectorAll<HTMLButtonElement>(".ai-interaction button")].find(button => button.textContent === "Approve plan")!;
+  const previousSends = sends;
+  approve.click();
+  await until(() => sends === previousSends + 1, "saved plan resume");
+  retryDetail = { messages: [{ id: "question", role: "assistant", content: "Approve this plan?" }, { id: "response", role: "user", content: "Approve plan" }] };
+  stream!.enqueue(new TextEncoder().encode('event: interaction-resumed\ndata: {"runId":"retry-run","toolCallId":"retry-call"}\n\nevent: error\ndata: {"code":"provider_failed"}\n\n'));
+  stream!.close();
+  await until(() => document.querySelector(".ai-error")?.textContent?.includes("provider_failed") && ready(), "saved accepted failure recovery");
+  assert(!document.querySelector(".ai-interaction"), "Consumed saved plan remains pending");
+  const retryButton = document.querySelector<HTMLButtonElement>(".ai-transcript .ai-error button");
+  assert(retryButton && !retryButton.disabled, "Saved continuation has no available Retry");
+  retryButton.click();
+  await until(() => sends === previousSends + 2, "retry saved continuation");
+  assert(!lastSend?.resume, "Accepted saved continuation was resumed twice");
+  completeStream();
+  await until(() => messages().includes("Completed A"), "saved retry completed");
+  retryDetail = undefined;
   navigateDashboard("/dashboard/settings");
   await until(() => !document.querySelector(".ai-chat"), "leave chat before deletion race");
   assert(document.querySelector(".workspace-switcher, .workspace-navigation"), "Workspace navigation did not return after leaving chat");

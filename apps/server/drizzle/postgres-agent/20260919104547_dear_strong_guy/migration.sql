@@ -74,6 +74,18 @@ CREATE TABLE "agent"."mastra_resources" (
 );
 --> statement-breakpoint
 ALTER TABLE "agent"."mastra_resources" ENABLE ROW LEVEL SECURITY;--> statement-breakpoint
+CREATE TABLE "agent"."mastra_thread_state" (
+	"threadId" text,
+	"type" text,
+	"value" jsonb NOT NULL,
+	"createdAt" timestamp NOT NULL,
+	"updatedAt" timestamp NOT NULL,
+	"createdAtZ" timestamp with time zone,
+	"updatedAtZ" timestamp with time zone,
+	CONSTRAINT "mastra_thread_state_pkey" PRIMARY KEY("threadId","type")
+);
+--> statement-breakpoint
+ALTER TABLE "agent"."mastra_thread_state" ENABLE ROW LEVEL SECURITY;--> statement-breakpoint
 CREATE TABLE "agent"."mastra_threads" (
 	"id" text PRIMARY KEY,
 	"resourceId" text NOT NULL,
@@ -86,6 +98,19 @@ CREATE TABLE "agent"."mastra_threads" (
 );
 --> statement-breakpoint
 ALTER TABLE "agent"."mastra_threads" ENABLE ROW LEVEL SECURITY;--> statement-breakpoint
+CREATE TABLE "agent"."mastra_workflow_snapshot" (
+	"workflow_name" text,
+	"run_id" text,
+	"resourceId" text,
+	"snapshot" jsonb NOT NULL,
+	"createdAt" timestamp NOT NULL,
+	"updatedAt" timestamp NOT NULL,
+	"createdAtZ" timestamp with time zone,
+	"updatedAtZ" timestamp with time zone,
+	CONSTRAINT "mastra_workflow_snapshot_pkey" PRIMARY KEY("workflow_name","run_id")
+);
+--> statement-breakpoint
+ALTER TABLE "agent"."mastra_workflow_snapshot" ENABLE ROW LEVEL SECURITY;--> statement-breakpoint
 CREATE TABLE "agent"."ai_thread_runs" (
 	"thread_id" text PRIMARY KEY,
 	"run_id" text NOT NULL,
@@ -100,6 +125,7 @@ CREATE INDEX "agent_om_lookup_idx" ON "agent"."mastra_observational_memory" ("lo
 CREATE INDEX "agent_mastra_threads_resourceid_createdat_idx" ON "agent"."mastra_threads" ("resourceId","createdAt" DESC NULLS LAST);--> statement-breakpoint
 ALTER TABLE "agent"."live_contexts" ADD CONSTRAINT "live_contexts_meeting_id_meetings_meeting_id_fkey" FOREIGN KEY ("meeting_id") REFERENCES "app"."meetings"("meeting_id") ON DELETE CASCADE;--> statement-breakpoint
 ALTER TABLE "agent"."mastra_observational_memory" ADD CONSTRAINT "mastra_observational_memory_threadId_mastra_threads_id_fkey" FOREIGN KEY ("threadId") REFERENCES "agent"."mastra_threads"("id") ON DELETE CASCADE;--> statement-breakpoint
+ALTER TABLE "agent"."mastra_thread_state" ADD CONSTRAINT "mastra_thread_state_threadId_mastra_threads_id_fkey" FOREIGN KEY ("threadId") REFERENCES "agent"."mastra_threads"("id") ON DELETE CASCADE;--> statement-breakpoint
 ALTER TABLE "agent"."ai_thread_runs" ADD CONSTRAINT "ai_thread_runs_thread_id_mastra_threads_id_fkey" FOREIGN KEY ("thread_id") REFERENCES "agent"."mastra_threads"("id") ON DELETE CASCADE;--> statement-breakpoint
 CREATE POLICY "agent_live_reader" ON "agent"."live_contexts" AS PERMISSIVE FOR ALL TO public USING (EXISTS (SELECT 1 FROM app.meetings m WHERE m.meeting_id = "agent"."live_contexts"."meeting_id" AND m.deleted_at IS NULL AND m.deleting_at IS NULL AND app.current_identity_can_read_workspace(m.workspace_id))) WITH CHECK (EXISTS (SELECT 1 FROM app.meetings m WHERE m.meeting_id = "agent"."live_contexts"."meeting_id" AND m.deleted_at IS NULL AND m.deleting_at IS NULL AND app.current_identity_can_read_workspace(m.workspace_id)));--> statement-breakpoint
 CREATE POLICY "agent_message_owner" ON "agent"."mastra_messages" AS PERMISSIVE FOR ALL TO public USING (EXISTS (
@@ -117,7 +143,15 @@ CREATE POLICY "agent_observation_owner" ON "agent"."mastra_observational_memory"
   WHERE owner_thread.id = "agent"."mastra_observational_memory"."threadId" AND owner_thread."resourceId" = nullif(current_setting('app.user_id', true), '')
 ));--> statement-breakpoint
 CREATE POLICY "agent_resource_owner" ON "agent"."mastra_resources" AS PERMISSIVE FOR ALL TO public USING ("agent"."mastra_resources"."id" = nullif(current_setting('app.user_id', true), '')) WITH CHECK ("agent"."mastra_resources"."id" = nullif(current_setting('app.user_id', true), ''));--> statement-breakpoint
+CREATE POLICY "agent_state_owner" ON "agent"."mastra_thread_state" AS PERMISSIVE FOR ALL TO public USING (EXISTS (
+  SELECT 1 FROM "agent"."mastra_threads" owner_thread
+  WHERE owner_thread.id = "agent"."mastra_thread_state"."threadId" AND owner_thread."resourceId" = nullif(current_setting('app.user_id', true), '')
+)) WITH CHECK (EXISTS (
+  SELECT 1 FROM "agent"."mastra_threads" owner_thread
+  WHERE owner_thread.id = "agent"."mastra_thread_state"."threadId" AND owner_thread."resourceId" = nullif(current_setting('app.user_id', true), '')
+));--> statement-breakpoint
 CREATE POLICY "agent_thread_owner" ON "agent"."mastra_threads" AS PERMISSIVE FOR ALL TO public USING ("agent"."mastra_threads"."resourceId" = nullif(current_setting('app.user_id', true), '')) WITH CHECK ("agent"."mastra_threads"."resourceId" = nullif(current_setting('app.user_id', true), ''));--> statement-breakpoint
+CREATE POLICY "agent_snapshot_owner" ON "agent"."mastra_workflow_snapshot" AS PERMISSIVE FOR ALL TO public USING ("agent"."mastra_workflow_snapshot"."resourceId" = nullif(current_setting('app.user_id', true), '')) WITH CHECK ("agent"."mastra_workflow_snapshot"."resourceId" = nullif(current_setting('app.user_id', true), ''));--> statement-breakpoint
 CREATE POLICY "ai_thread_run_owner" ON "agent"."ai_thread_runs" AS PERMISSIVE FOR ALL TO public USING ("agent"."ai_thread_runs"."resource_id" = nullif(current_setting('app.user_id', true), '') AND EXISTS (
   SELECT 1 FROM "agent"."mastra_threads" owner_thread
   WHERE owner_thread.id = "agent"."ai_thread_runs"."thread_id" AND owner_thread."resourceId" = nullif(current_setting('app.user_id', true), '')

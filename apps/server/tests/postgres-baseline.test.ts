@@ -49,7 +49,7 @@ it.runIf(process.env.TEST_MIGRATION_DATABASE_URL)("creates the complete PostgreS
       WHERE relnamespace IN ('app'::regnamespace, 'jobs'::regnamespace, 'search'::regnamespace, 'crypto'::regnamespace, 'agent'::regnamespace) AND relrowsecurity ORDER BY relname`);
     expect(protectedTables.rows.map((row) => row.relname)).toEqual([
       "ai_thread_runs", "document_presence", "document_recoveries", "document_updates", "documents", "documents", "files", "knowledge_pages", "live_contexts", "mastra_messages",
-      "mastra_observational_memory", "mastra_resources", "mastra_threads", "meeting_attachments",
+      "mastra_observational_memory", "mastra_resources", "mastra_thread_state", "mastra_threads", "mastra_workflow_snapshot", "meeting_attachments",
       "meeting_events", "meetings", "personal_memories", "projects",
       "recordings", "shared_memories", "summaries", "summary", "transaction_receipts",
       "transcript_patch_chunks", "transcript_segments", "transcripts", "workspace_keys", "workspace_transfers", "workspaces",
