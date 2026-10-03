@@ -234,6 +234,11 @@ enum L10n { // swiftlint:disable:this type_body_length
     static var syncTargetRecord: String { String(localized: "sync.targetRecord", bundle: bundle) }
     static var syncPermissionRequired: String { String(localized: "sync.permissionRequired", bundle: bundle) }
     static var syncRetryAfterPermission: String { String(localized: "sync.retryAfterPermission", bundle: bundle) }
+    static var syncDiscardFile: String { String(localized: "sync.discardFile", bundle: bundle) }
+    static func syncDiscardFileConfirmation(_ workspaceName: String) -> String {
+        String(format: String(localized: "sync.discardFileConfirmation", bundle: bundle), workspaceName)
+    }
+
     static var syncDiscardFollowing: String { String(localized: "sync.discardFollowing", bundle: bundle) }
     static var syncOpenServer: String { String(localized: "sync.openServer", bundle: bundle) }
     static var syncCheckServer: String { String(localized: "sync.checkServer", bundle: bundle) }

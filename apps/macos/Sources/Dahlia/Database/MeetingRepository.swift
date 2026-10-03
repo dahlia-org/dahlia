@@ -262,6 +262,15 @@ final class MeetingRepository {
         )
     }
 
+    nonisolated func discardFileSyncChanges(workspaceId: UUID, fileId: UUID, expectedLastTransactionId: UUID) async throws {
+        try await SyncTransactionQueue.discardFileChanges(
+            workspaceId: workspaceId,
+            fileId: fileId,
+            expectedLastTransactionId: expectedLastTransactionId,
+            dbQueue: dbQueue
+        )
+    }
+
     nonisolated func retryInvalidSyncTransaction(workspaceId: UUID) async throws {
         try await SyncTransactionQueue.retryInvalidTransaction(workspaceId: workspaceId, dbQueue: dbQueue)
     }

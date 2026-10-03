@@ -312,6 +312,29 @@ enum SyncTransactionRecorder {
         )
     }
 
+    /// Metadata work can be the first mutation of an imported file, before initial
+    /// construction reaches it. Such a request must stage the immutable original too.
+    static func initialFileAttachment(
+        for operation: SyncOperationDraft,
+        workspaceId: UUID,
+        in db: Database
+    ) throws -> SyncScreenshotAttachmentReference? {
+        guard operation.entity == .file, operation.action == .upsert,
+              try !Bool.fetchOne(db, sql: """
+              SELECT EXISTS(SELECT 1 FROM sync_entity_state WHERE workspace_id = ? AND entity = 'file' AND entityId = ? AND confirmedRevision > 0)
+                OR EXISTS(SELECT 1 FROM sync_operations o JOIN sync_transactions t ON t.id = o.transactionId
+                  WHERE t.workspace_id = ? AND o.entity = 'file' AND o.entityId = ?)
+              """, arguments: [workspaceId, operation.entityId, workspaceId, operation.entityId])!,
+              let file = try FileRecord.fetchOne(db, key: operation.entityId), file.workspaceId == workspaceId,
+              let reference = file.localReference,
+              let data = operation.payloadJSON,
+              let payload = try? SyncJSON.decoder.decode(FileOperationPayload.self, from: data)
+        else { return nil }
+        let source = try JSONDecoder().decode(ScreenshotRemoteReference.self, from: Data(reference.utf8))
+        guard payload.checksum == "SHA-256:" + source.contentHash else { throw ScreenshotContentError.integrityFailure }
+        return .init(mimeType: file.contentType, source: source)
+    }
+
     /// Records an immutable domain transaction. A Workspace without a confirmed remote target stays local-only.
     @discardableResult
     static func record(
@@ -403,7 +426,7 @@ enum SyncTransactionRecorder {
             let residentRevision = try contentRevision(
                 for: operation, workspaceId: workspaceId, recordAccess: !background && !buildingInitial, now: now, in: db
             )
-            let attachment = screenshotAttachments[operation.id]
+            let attachment = try screenshotAttachments[operation.id] ?? initialFileAttachment(for: operation, workspaceId: workspaceId, in: db)
             if let attachment {
                 guard operation.entity == .file, attachment.source.fileId == operation.entityId,
                       attachment.source.accountConnectionId == connectionId,
@@ -753,8 +776,9 @@ enum SyncTransactionQueue {
         }
     }
 
-    static func problemData(code: String, status: Int? = nil) -> Data {
-        normalizedProblemData(Data(), status: status, code: code)
+    static func problemData(code: String, status: Int? = nil, operationId: UUID? = nil) -> Data {
+        let data = operationId.flatMap { try? JSONSerialization.data(withJSONObject: ["operationId": $0.uuidString.lowercased()]) } ?? Data()
+        return normalizedProblemData(data, status: status, code: code)
     }
 
     private static func normalizedProblemData(_ data: Data, status: Int?, code: String?) -> Data {
@@ -1258,6 +1282,7 @@ enum SyncTransactionQueue {
 
     static func retryInvalidTransaction(workspaceId: UUID, dbQueue: DatabaseQueue) async throws {
         try await dbQueue.write { db in
+            try repairRejectedFileUploads(workspaceId: workspaceId, in: db)
             try db.execute(
                 sql: """
                 UPDATE sync_transactions SET blockedReason = NULL, serverResponseJSON = NULL, attempts = 0,

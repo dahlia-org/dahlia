@@ -38,6 +38,7 @@ struct SyncDiscardImpact: Equatable, Sendable {
     let meetings: Int
     let lastTransactionId: UUID
     let hasConfirmedWorkspace: Bool
+    var fileId: UUID?
 }
 
 struct SyncRecordingArchiveFailure: FetchableRecord, Decodable, Identifiable, Equatable, Sendable {
@@ -271,15 +272,22 @@ extension MeetingRepository {
         reason: SyncBlockedReason,
         in db: Database
     ) throws -> SyncDiscardImpact {
+        let blockedId = try UUID.fetchOne(
+            db,
+            sql: "SELECT id FROM sync_transactions WHERE workspace_id = ? AND sequence = ?",
+            arguments: [workspaceId, sequence]
+        )!
+        let filePlan = try reason == .validation ? SyncTransactionQueue.fileDiscardPlan(workspaceId: workspaceId, in: db) : nil
+        let affected = try filePlan.map { Array($0.transactionIds) } ?? SyncDependencies.affected(startingAt: blockedId, in: db)
+        let placeholders = affected.map { _ in "?" }.joined(separator: ",")
         let queue = try Row.fetchOne(db, sql: """
         SELECT count(DISTINCT t.id) AS transactions, count(o.id) AS operations,
             count(DISTINCT o.entity || ':' || hex(o.entityId)) AS records,
             (SELECT latest.id FROM sync_transactions latest
-             WHERE latest.workspace_id = ? AND latest.sequence >= ?
-             ORDER BY latest.sequence DESC LIMIT 1) AS lastTransactionId
+             WHERE latest.workspace_id = ? ORDER BY latest.sequence DESC LIMIT 1) AS lastTransactionId
         FROM sync_transactions t LEFT JOIN sync_operations o ON o.transactionId = t.id
-        WHERE t.workspace_id = ? AND t.sequence >= ?
-        """, arguments: [workspaceId, sequence, workspaceId, sequence])
+        WHERE t.workspace_id = ? AND t.id IN (\(placeholders))
+        """, arguments: StatementArguments([workspaceId, workspaceId]) + StatementArguments(affected))
         let hasConfirmedWorkspace = try Bool.fetchOne(
             db,
             sql: "SELECT EXISTS(SELECT 1 FROM sync_entity_state WHERE workspace_id = ? AND entity = 'workspace' AND entityId = ?)",
@@ -292,22 +300,40 @@ extension MeetingRepository {
                 SELECT DISTINCT c.entity, c.entityId FROM sync_content_state c
                 JOIN sync_operations o ON o.entity = c.entity AND o.entityId = c.entityId
                 JOIN sync_transactions t ON t.id = o.transactionId AND t.workspace_id = c.workspace_id
-                WHERE c.workspace_id = ? AND t.sequence >= ?
+                WHERE c.workspace_id = ? AND t.id IN (\(placeholders))
             )
             SELECT count(DISTINCT a.entity || ':' || hex(a.entityId)) AS bodies,
                 count(DISTINCT CASE
                     WHEN a.entity IN ('summary', 'transcript') THEN a.entityId
                     WHEN a.entity = 'file' THEN ma.meetingId END) AS meetings
             FROM abandoned a LEFT JOIN meeting_attachments ma ON a.entity = 'file' AND ma.fileId = a.entityId
-            """, arguments: [workspaceId, sequence])
+            """, arguments: StatementArguments([workspaceId]) + StatementArguments(affected))
         } else {
             nil
         }
         let transactions: Int = queue?["transactions"] ?? 0
-        let operations: Int = queue?["operations"] ?? 0
-        let records: Int = queue?["records"] ?? 0
-        let localBodies: Int = released?["bodies"] ?? 0
-        let meetings: Int = released?["meetings"] ?? 0
+        let operations: Int
+        let records: Int
+        let localBodies: Int
+        let meetings: Int
+        if let filePlan {
+            operations = filePlan.operations.count
+            let targets = filePlan.operations.map { row in
+                SyncReconciliation.Key(entity: row["entity"], id: row["entityId"])
+            }
+            records = Set(targets).count
+            localBodies = try Int.fetchOne(
+                db,
+                sql: "SELECT count(*) FROM sync_content_state WHERE workspace_id = ? AND entity = 'file' AND entityId = ?",
+                arguments: [workspaceId, filePlan.fileId]
+            ) ?? 0
+            meetings = filePlan.meetingIds.count
+        } else {
+            operations = queue?["operations"] ?? 0
+            records = queue?["records"] ?? 0
+            localBodies = released?["bodies"] ?? 0
+            meetings = released?["meetings"] ?? 0
+        }
         guard let lastTransactionId: UUID = queue?["lastTransactionId"] else { throw TextContentError.changed }
         return .init(
             transactions: transactions,
@@ -316,7 +342,8 @@ extension MeetingRepository {
             localBodies: localBodies,
             meetings: meetings,
             lastTransactionId: lastTransactionId,
-            hasConfirmedWorkspace: hasConfirmedWorkspace
+            hasConfirmedWorkspace: hasConfirmedWorkspace,
+            fileId: filePlan?.fileId
         )
     }
 

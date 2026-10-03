@@ -216,6 +216,12 @@ final class DahliaCloudAccountController {
         await syncWorker?.drain()
     }
 
+    func discardFileSyncChanges(workspaceID: UUID, fileID: UUID, expectedLastTransactionID: UUID) async throws {
+        guard let repository else { throw DahliaCloudError.notConfigured }
+        try await repository.discardFileSyncChanges(workspaceId: workspaceID, fileId: fileID, expectedLastTransactionId: expectedLastTransactionID)
+        await syncWorker?.drain()
+    }
+
     func retryAuthorizationSync(connectionID: UUID) async throws {
         guard let repository else { throw DahliaCloudError.notConfigured }
         try await repository.retryAuthorizationSync(connectionId: connectionID)

@@ -12,6 +12,7 @@ enum SyncRecoveryAction: Hashable {
     case reapplyLocal(UUID)
     case retryValidation(UUID)
     case discardValidation(workspaceId: UUID, lastTransactionId: UUID, hasConfirmedWorkspace: Bool)
+    case discardFile(workspaceId: UUID, fileId: UUID, lastTransactionId: UUID)
     case retryRecording(UUID)
     case openServer(URL)
 }
@@ -196,6 +197,12 @@ struct SyncProgressView: View {
                         workspaceID: workspaceId,
                         expectedLastTransactionID: lastTransactionId,
                         expectedHasConfirmedWorkspace: hasConfirmedWorkspace
+                    )
+                case let .discardFile(workspaceId, fileId, lastTransactionId):
+                    try await controller.discardFileSyncChanges(
+                        workspaceID: workspaceId,
+                        fileID: fileId,
+                        expectedLastTransactionID: lastTransactionId
                     )
                 case let .retryRecording(meetingId):
                     try await controller.retryRecordingArchive(meetingID: meetingId)
@@ -401,13 +408,9 @@ private struct SyncRecoveryButtons: View {
                             actionButton(L10n.retry, "arrow.clockwise", .retryValidation(workspace.id))
                             if let impact = workspace.discardImpact {
                                 destructiveButton(
-                                    L10n.syncDiscardFollowing,
+                                    impact.fileId == nil ? L10n.syncDiscardFollowing : L10n.syncDiscardFile,
                                     "trash",
-                                    .discardValidation(
-                                        workspaceId: workspace.id,
-                                        lastTransactionId: impact.lastTransactionId,
-                                        hasConfirmedWorkspace: impact.hasConfirmedWorkspace
-                                    ),
+                                    validationDiscardAction(workspace, impact: impact),
                                     workspace,
                                     impact
                                 )
@@ -425,6 +428,17 @@ private struct SyncRecoveryButtons: View {
             }
         }
         .controlSize(.small)
+    }
+
+    private func validationDiscardAction(_ workspace: WorkspaceSyncProgress, impact: SyncDiscardImpact) -> SyncRecoveryAction {
+        if let fileId = impact.fileId {
+            return .discardFile(workspaceId: workspace.id, fileId: fileId, lastTransactionId: impact.lastTransactionId)
+        }
+        return .discardValidation(
+            workspaceId: workspace.id,
+            lastTransactionId: impact.lastTransactionId,
+            hasConfirmedWorkspace: impact.hasConfirmedWorkspace
+        )
     }
 
     private func actionButton(_ title: String, _ image: String, _ action: SyncRecoveryAction) -> some View {
@@ -465,6 +479,7 @@ private struct PendingSyncDiscard {
     var title: String {
         switch action {
         case .acceptServer: L10n.syncUseServerConfirmation(workspaceName)
+        case .discardFile: L10n.syncDiscardFileConfirmation(workspaceName)
         default: L10n.syncDiscardConfirmation(workspaceName)
         }
     }
@@ -472,6 +487,7 @@ private struct PendingSyncDiscard {
     var buttonTitle: String {
         switch action {
         case .acceptServer: L10n.useServerVersion
+        case .discardFile: L10n.syncDiscardFile
         default: L10n.syncDiscardFollowing
         }
     }
