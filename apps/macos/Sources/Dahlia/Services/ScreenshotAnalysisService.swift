@@ -7,6 +7,8 @@ struct ScreenshotAnalysisInput: Sendable {
     let mimeType: String
     let runtimeProvider: CodexRuntimeProvider
     var outputLanguage: SummaryLanguage = .ja
+    var model: String?
+    var reasoningEffort: String?
 }
 
 struct ScreenshotAnalysis: Equatable, Sendable {
@@ -20,7 +22,8 @@ protocol ScreenshotAnalyzing: Sendable {
 }
 
 actor CodexScreenshotAnalysisService: ScreenshotAnalyzing {
-    static let model = "gpt-5.6-luna"
+    static let model = "gpt-6-luna"
+
     static let reasoningEffort = "low"
     static let maximumBatchSize = 1
     static let maximumImageLongEdge = ImageEncoder.aiInputMaximumLongEdge
@@ -37,10 +40,10 @@ actor CodexScreenshotAnalysisService: ScreenshotAnalyzing {
         try Task.checkCancellation()
         let inputs = try await Self.codexInputs(for: screenshots)
         let response = try await appServer.generate(.init(
-            model: Self.model,
+            model: screenshots[0].model ?? Self.model,
             requiresExactModel: true,
             requiresImageInput: true,
-            reasoningEffort: Self.reasoningEffort,
+            reasoningEffort: screenshots[0].reasoningEffort ?? Self.reasoningEffort,
             developerInstructions: Self.instructions(
                 captionLanguage: screenshots[0].outputLanguage.displayName
             ),

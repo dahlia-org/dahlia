@@ -32,7 +32,8 @@ export const remoteProcessingSchema = z.object({
 }).strict();
 export const processingSchema = z.object({ location: summaryModeSchema, remote: remoteProcessingSchema }).strict();
 const summarySchema = z.object({ style: summaryStyleSchema }).strict();
-export const generationPreferencesSchema = z.object({ outputLanguage: outputLanguageSchema, processing: processingSchema, summary: summarySchema }).strict();
+export const imageAnalysisSettingsSchema = z.object({ enabled: z.boolean(), model: modelPreference.optional(), reasoningEffort: summaryModelSettingsSchema.shape.reasoningEffort.optional() }).strict();
+export const generationPreferencesSchema = z.object({ imageAnalysis: imageAnalysisSettingsSchema.optional(), outputLanguage: outputLanguageSchema, processing: processingSchema, summary: summarySchema }).strict();
 
 export type GenerationPreferences = z.infer<typeof generationPreferencesSchema>;
 export const DEFAULT_GENERATION_PREFERENCES: GenerationPreferences = {

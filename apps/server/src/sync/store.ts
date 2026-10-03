@@ -2313,7 +2313,7 @@ function createIdentityStore(
           )).where(and(eq(schema.meetingAttachment.fileId, claim.fileId), isNull(schema.syncedMeeting.deletingAt), isNull(schema.syncedMeeting.deletedAt)))),
       )).limit(1);
     if (file) file.file = (await content.read(schema.syncedFile, [file.file]))[0]!;
-    return file && imageContentTypes.has(file.file.contentType) && needsImageAnalysis(file.file.metadata, claim.mode)
+    return file && imageContentTypes.has(file.file.contentType) && needsImageAnalysis(file.file.metadata)
       ? { ...claim, file: file.file } : null;
   }
 

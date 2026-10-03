@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { chatModels } from "../src/agent/models";
+import { chatModels, pickerModels } from "../src/agent/models";
 import { createAiService } from "../src/agent/service";
 import { modelList, type CodexModelWire } from "../src/ai-gateway/models";
 import type { GatewayService } from "../src/ai-gateway/service";
@@ -76,4 +76,13 @@ describe("chat model composition", () => {
     const gateway = { models: async () => { throw new Error("discovery failed"); } } as unknown as GatewayService;
     await expect(createAiService(config, gateway, {} as never).models()).rejects.toThrow("discovery failed");
   });
+});
+
+it("shares image modalities and upstream suppression with chat composition", () => {
+  const upstream = catalog([kimi]);
+  expect(pickerModels(upstream, true).find(({ slug }) => slug === "gpt-6-luna")?.input_modalities)
+    .toEqual(["text", "image"]);
+  expect(pickerModels(upstream).map(({ slug }) => slug)).not.toContain("gpt-6-luna");
+  const hidden = { ...kimi, slug: "gpt-6-luna", visibility: "hide", supported_in_api: false };
+  expect(pickerModels(catalog([hidden]), true).map(({ slug }) => slug)).not.toContain("gpt-6-luna");
 });

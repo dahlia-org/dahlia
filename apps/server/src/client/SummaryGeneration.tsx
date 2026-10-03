@@ -10,6 +10,7 @@ import { RequestError, uiText } from "./api";
 import { refreshData, useLiveJSON } from "./live-data";
 import { encodeId } from "../typeid";
 import { uuidV7 } from "../id";
+import { pickerModels } from "../agent/models";
 import type { GatewayModelList } from "../ai-gateway/backend";
 import { DEFAULT_WORKSPACE_GENERATION_SETTINGS, summaryStyles, summaryStyleDetail, type WorkspaceGenerationSettings } from "../workspace-generation-settings";
 type SummaryRequest = operations["startSummaryJob"]["requestBody"]["content"]["application/json"];
@@ -76,6 +77,7 @@ function findSummaryModel(models: GatewayModelList["data"], id?: string) {
 function useSummaryMethods() {
   const capabilities = useLiveJSON<{
     meetingSummaryGeneration?: { version: number; sources: string[]; completeRecordings?: boolean };
+    ai?: { bundledModels?: "codex" };
   }>(apiQuery("getCapabilities", {}));
   const summary = capabilities.data?.meetingSummaryGeneration;
   return {
@@ -114,6 +116,12 @@ export function ServerSummarySettings({ workspaceId, onSave }: {
   </section>;
   const settings = workspace.generationSettings;
   const remote = settings.processing.remote;
+  const imageAnalysis = settings.imageAnalysis;
+  const imageControlsDisabled = catalog.loading || imageAnalysis?.enabled === false;
+  const imageModels = catalog.data && pickerModels(catalog.data, capabilities.data?.ai?.bundledModels === "codex")
+    .filter((entry) => entry.slug !== CODEX_AUTO_REVIEW_ALIAS && Array.isArray(entry.input_modalities) && entry.input_modalities.includes("image"));
+  const imageEfforts = imageModels?.find((entry) => entry.slug === imageAnalysis?.model)?.supported_reasoning_levels
+    .filter(({ effort }) => effort !== imageAnalysis?.reasoningEffort);
   const supportsAudio = methods.includes("audio");
   const combined = supportsAudio && remote.workflow === "combined";
   const sources: SummarySource[] = [];
@@ -183,6 +191,33 @@ export function ServerSummarySettings({ workspaceId, onSave }: {
           </Select></label>}
         </fieldset>;
       })}
+      <fieldset className="min-w-0 rounded-lg border bg-muted/30 p-4">
+        <legend className="px-1 text-sm font-semibold">{uiText("Image analysis", "画像解析")}</legend>
+        <label className="mb-4 flex items-center gap-2 text-sm">
+          <input className="h-4 w-4 shrink-0" type="checkbox" checked={imageAnalysis?.enabled ?? true}
+            onChange={(event) => void save({ ...settings, imageAnalysis: { ...imageAnalysis, enabled: event.target.checked } })} />
+          {uiText("Enable image analysis", "画像解析を有効にする")}
+        </label>
+        <div className="grid gap-3 sm:grid-cols-[minmax(0,2fr)_minmax(0,1fr)]">
+          <label className="grid gap-1.5 text-sm">{uiText("Image analysis model", "画像解析モデル")}
+            <Select value={imageAnalysis?.model ?? ""} disabled={imageControlsDisabled}
+              onValueChange={(model) => void save({ ...settings, imageAnalysis: { enabled: imageAnalysis?.enabled ?? true, model: model || undefined, reasoningEffort: undefined } })}>
+              <option value="">{uiText("Server default", "サーバーの既定値")}</option>
+              {imageAnalysis?.model && !imageModels?.some((entry) => entry.slug === imageAnalysis?.model)
+                && <option value={imageAnalysis.model}>{imageAnalysis.model}</option>}
+              {imageModels?.map((entry) => <option key={entry.slug} value={entry.slug}>{entry.display_name}</option>)}
+            </Select>
+          </label>
+          <label className="grid gap-1.5 text-sm">{uiText("Image analysis reasoning effort", "画像解析の推論強度")}
+            <Select value={imageAnalysis?.reasoningEffort ?? ""} disabled={imageControlsDisabled}
+              onValueChange={(effort) => void save({ ...settings, imageAnalysis: { ...imageAnalysis, enabled: imageAnalysis?.enabled ?? true, reasoningEffort: effort as typeof remote.reasoningEffort || undefined } })}>
+              <option value="">{uiText("Automatic", "自動")}</option>
+              {imageAnalysis?.reasoningEffort && <option value={imageAnalysis.reasoningEffort}>{imageAnalysis.reasoningEffort}</option>}
+              {imageEfforts?.map(({ effort }) => <option key={effort} value={effort}>{effort}</option>)}
+            </Select>
+          </label>
+        </div>
+      </fieldset>
       {catalog.error && <p role="alert" className="error">{catalog.error.message}</p>}
       <button disabled={catalog.loading} onClick={catalog.reload}>{uiText("Reload models", "モデル一覧を再取得")}</button>
     </fieldset>}

@@ -137,7 +137,7 @@
             viewModel.loadMeeting(fixture.meetingId, dbQueue: fixture.queue, projectURL: nil, projectId: nil, workspaceURL: nil)
             defer { viewModel.clearCurrentMeeting() }
             let pending = await viewModel.screenshotOCRState(id: fileId, contentProvider: provider)
-            #expect(pending == .remote(ocrText: nil, caption: nil, state: .ready))
+            #expect(pending == .remote(ocrText: nil, caption: nil, state: .loading))
             #expect(!pending.isTerminal)
             let context = try await fixture.queue.read { db in
                 try RemoteChangePolicy.Context(

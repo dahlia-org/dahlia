@@ -31,6 +31,10 @@
           "effort": "ultra",
           "description": "Maximum reasoning with automatic task delegation"
         }
+      ],
+      "input_modalities": [
+        "text",
+        "image"
       ]
     },
     {
@@ -64,6 +68,10 @@
           "effort": "ultra",
           "description": "Maximum reasoning with automatic task delegation"
         }
+      ],
+      "input_modalities": [
+        "text",
+        "image"
       ]
     },
     {
@@ -97,6 +105,10 @@
           "effort": "ultra",
           "description": "Maximum reasoning with automatic task delegation"
         }
+      ],
+      "input_modalities": [
+        "text",
+        "image"
       ]
     },
     {
@@ -126,6 +138,10 @@
           "effort": "max",
           "description": "Maximum reasoning depth for the hardest problems"
         }
+      ],
+      "input_modalities": [
+        "text",
+        "image"
       ]
     }
   ]

@@ -5,9 +5,9 @@ import { z } from "zod";
 import { uuidV7 } from "../id";
 import type { IdentitySyncStore } from "../sync/types";
 
-import { normalizeSummaryDetail, summaryDetailSchema, summaryModelSettingsSchema } from "../workspace-generation-settings";
+import { imageAnalysisSettingsSchema, normalizeSummaryDetail, summaryDetailSchema, summaryModelSettingsSchema } from "../workspace-generation-settings";
 export { summaryDetailSchema } from "../workspace-generation-settings";
-export const transcriptSettingsSchema = summaryModelSettingsSchema.extend({ detail: summaryDetailSchema, transcriptionReasoningEffort: summaryModelSettingsSchema.shape.reasoningEffort.optional() });
+export const transcriptSettingsSchema = summaryModelSettingsSchema.extend({ imageAnalysis: imageAnalysisSettingsSchema.optional(), detail: summaryDetailSchema, transcriptionReasoningEffort: summaryModelSettingsSchema.shape.reasoningEffort.optional() });
 // Accepted jobs retain their captured settings across API contract changes.
 const legacyTranscriptionSettingsSchema = z.object({
   localeIdentifier: z.string(), automaticLanguageDetection: z.boolean(), languageScope: z.string(),
@@ -16,8 +16,8 @@ const legacyTranscriptionSettingsSchema = z.object({
 export const storedTranscriptSettingsSchema = transcriptSettingsSchema.extend({
   detail: z.string().transform(normalizeSummaryDetail).pipe(summaryDetailSchema),
   transcription: legacyTranscriptionSettingsSchema.optional(),
-}).transform(({ model, reasoningEffort, detail, transcriptionReasoningEffort, transcription }) => ({
-  model, reasoningEffort, detail, transcriptionReasoningEffort, transcription,
+}).transform(({ model, reasoningEffort, detail, imageAnalysis, transcriptionReasoningEffort, transcription }) => ({
+  model, reasoningEffort, detail, imageAnalysis, transcriptionReasoningEffort, transcription,
 }));
 export type TranscriptSettings = z.infer<typeof transcriptSettingsSchema> & {
   transcription?: z.infer<typeof legacyTranscriptionSettingsSchema>;

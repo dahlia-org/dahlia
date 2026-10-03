@@ -53,6 +53,36 @@
           "generationSettings": {
             "type": "object",
             "properties": {
+              "imageAnalysis": {
+                "type": "object",
+                "properties": {
+                  "enabled": {
+                    "type": "boolean"
+                  },
+                  "model": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 200
+                  },
+                  "reasoningEffort": {
+                    "type": "string",
+                    "enum": [
+                      "none",
+                      "minimal",
+                      "low",
+                      "medium",
+                      "high",
+                      "xhigh",
+                      "max",
+                      "ultra"
+                    ]
+                  }
+                },
+                "required": [
+                  "enabled"
+                ],
+                "additionalProperties": false
+              },
               "outputLanguage": {
                 "type": "string",
                 "enum": [
@@ -1806,6 +1836,36 @@
           "generationSettings": {
             "type": "object",
             "properties": {
+              "imageAnalysis": {
+                "type": "object",
+                "properties": {
+                  "enabled": {
+                    "type": "boolean"
+                  },
+                  "model": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 200
+                  },
+                  "reasoningEffort": {
+                    "type": "string",
+                    "enum": [
+                      "none",
+                      "minimal",
+                      "low",
+                      "medium",
+                      "high",
+                      "xhigh",
+                      "max",
+                      "ultra"
+                    ]
+                  }
+                },
+                "required": [
+                  "enabled"
+                ],
+                "additionalProperties": false
+              },
               "outputLanguage": {
                 "type": "string",
                 "enum": [
@@ -4831,6 +4891,36 @@
                   "ultra"
                 ]
               },
+              "imageAnalysis": {
+                "type": "object",
+                "properties": {
+                  "enabled": {
+                    "type": "boolean"
+                  },
+                  "model": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 200
+                  },
+                  "reasoningEffort": {
+                    "type": "string",
+                    "enum": [
+                      "none",
+                      "minimal",
+                      "low",
+                      "medium",
+                      "high",
+                      "xhigh",
+                      "max",
+                      "ultra"
+                    ]
+                  }
+                },
+                "required": [
+                  "enabled"
+                ],
+                "additionalProperties": false
+              },
               "detail": {
                 "type": "string",
                 "enum": [
@@ -5446,6 +5536,36 @@
                         "generationSettings": {
                           "type": "object",
                           "properties": {
+                            "imageAnalysis": {
+                              "type": "object",
+                              "properties": {
+                                "enabled": {
+                                  "type": "boolean"
+                                },
+                                "model": {
+                                  "type": "string",
+                                  "minLength": 1,
+                                  "maxLength": 200
+                                },
+                                "reasoningEffort": {
+                                  "type": "string",
+                                  "enum": [
+                                    "none",
+                                    "minimal",
+                                    "low",
+                                    "medium",
+                                    "high",
+                                    "xhigh",
+                                    "max",
+                                    "ultra"
+                                  ]
+                                }
+                              },
+                              "required": [
+                                "enabled"
+                              ],
+                              "additionalProperties": false
+                            },
                             "outputLanguage": {
                               "type": "string",
                               "enum": [
@@ -5730,6 +5850,36 @@
                         "generationSettings": {
                           "type": "object",
                           "properties": {
+                            "imageAnalysis": {
+                              "type": "object",
+                              "properties": {
+                                "enabled": {
+                                  "type": "boolean"
+                                },
+                                "model": {
+                                  "type": "string",
+                                  "minLength": 1,
+                                  "maxLength": 200
+                                },
+                                "reasoningEffort": {
+                                  "type": "string",
+                                  "enum": [
+                                    "none",
+                                    "minimal",
+                                    "low",
+                                    "medium",
+                                    "high",
+                                    "xhigh",
+                                    "max",
+                                    "ultra"
+                                  ]
+                                }
+                              },
+                              "required": [
+                                "enabled"
+                              ],
+                              "additionalProperties": false
+                            },
                             "outputLanguage": {
                               "type": "string",
                               "enum": [
@@ -13953,6 +14103,36 @@
                       "preferences": {
                         "type": "object",
                         "properties": {
+                          "imageAnalysis": {
+                            "type": "object",
+                            "properties": {
+                              "enabled": {
+                                "type": "boolean"
+                              },
+                              "model": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 200
+                              },
+                              "reasoningEffort": {
+                                "type": "string",
+                                "enum": [
+                                  "none",
+                                  "minimal",
+                                  "low",
+                                  "medium",
+                                  "high",
+                                  "xhigh",
+                                  "max",
+                                  "ultra"
+                                ]
+                              }
+                            },
+                            "required": [
+                              "enabled"
+                            ],
+                            "additionalProperties": false
+                          },
                           "outputLanguage": {
                             "type": "string",
                             "enum": [
@@ -14283,6 +14463,36 @@
                                 "max",
                                 "ultra"
                               ]
+                            },
+                            "imageAnalysis": {
+                              "type": "object",
+                              "properties": {
+                                "enabled": {
+                                  "type": "boolean"
+                                },
+                                "model": {
+                                  "type": "string",
+                                  "minLength": 1,
+                                  "maxLength": 200
+                                },
+                                "reasoningEffort": {
+                                  "type": "string",
+                                  "enum": [
+                                    "none",
+                                    "minimal",
+                                    "low",
+                                    "medium",
+                                    "high",
+                                    "xhigh",
+                                    "max",
+                                    "ultra"
+                                  ]
+                                }
+                              },
+                              "required": [
+                                "enabled"
+                              ],
+                              "additionalProperties": false
                             },
                             "detail": {
                               "type": "string",

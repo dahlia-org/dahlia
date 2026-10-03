@@ -26,6 +26,11 @@ struct AccountProcessingSettingsView: View {
                     }
                     Text(workspaceSettings.generationSettings.summary.style.description).foregroundStyle(.secondary)
                 }
+                Section(L10n.imageAnalysis) {
+                    Toggle(L10n.imageAnalysisEnabled, isOn: $workspaceSettings.generationSettings.imageAnalysis.enabled)
+                    LocalSummarySettingsRows(imageAnalysis: true)
+                        .disabled(!workspaceSettings.generationSettings.imageAnalysis.enabled)
+                }
                 Section(L10n.settingsAfterRecording) {
                     Toggle(L10n.automaticRecordingProcessing, isOn: $workspaceSettings.generationSettings.automaticProcessing)
                 }

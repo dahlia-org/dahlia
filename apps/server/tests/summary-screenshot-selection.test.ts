@@ -94,12 +94,13 @@ describe("summary screenshot preselection", () => {
       .rejects.toBeDefined();
   });
 
-  it("sends only indexed low-detail images to the image analysis model and validates the indices", async () => {
+  it.each([undefined, "high"])("sends indexed low-detail images with reasoning %s and validates the indices", async (effort) => {
     let answer: unknown = { indices: [2] };
     const transport = vi.fn(async (url: RequestInfo | URL, init?: RequestInit) => {
       if (String(url).endsWith("/token")) return Response.json({ access_token: "app-token", expires_in: 3600 });
-      const body = JSON.parse(String(init?.body)) as { model: string; instructions: string; input: { content: { type: string; text?: string; image_url?: string }[] }[] };
+      const body = JSON.parse(String(init?.body)) as { reasoning: { effort: string }; model: string; instructions: string; input: { content: { type: string; text?: string; image_url?: string }[] }[] };
       expect(body.model).toBe("system.ai.gpt-5-6-luna");
+      expect(body.reasoning).toEqual({ effort: effort ?? "low" });
       expect(body.instructions).toContain("Select at most 24 images");
       expect(body.input[0]!.content).toEqual([
         { type: "input_text", text: '<image index="1" elapsed_seconds="0"/>' },
@@ -109,7 +110,7 @@ describe("summary screenshot preselection", () => {
       ]);
       return Response.json({ status: "completed", output: [{ type: "message", content: [{ type: "output_text", text: JSON.stringify(answer) }] }] });
     });
-    const selector = createScreenshotSelector(loadConfig(environment), transport)!;
+    const selector = createScreenshotSelector(loadConfig(environment), transport, effort)!;
     const inputs = [{ data: new Uint8Array([1]), capturedAt: new Date(0) }, { data: new Uint8Array([2]), capturedAt: new Date(30_000) }];
     expect(await selector.select(inputs, 24, signal())).toEqual([1]);
     for (answer of [{ indices: [3] }, { indices: "1" }]) {

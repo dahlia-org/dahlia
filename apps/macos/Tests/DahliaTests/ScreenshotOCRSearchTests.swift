@@ -10,6 +10,45 @@ import Synchronization
     @MainActor
     // swiftlint:disable:next type_body_length
     struct ScreenshotOCRSearchTests {
+        @Test(arguments: [true, false])
+        func accountImageAnalysisControlsExecutionAndModel(enabled: Bool) async throws {
+            let suite = "ImageAnalysisWorker-\(UUID())"
+            let defaults = try #require(UserDefaults(suiteName: suite))
+            defer { defaults.removePersistentDomain(forName: suite) }
+            let analyzer = StubScreenshotAnalyzer(text: "analysis")
+            let database = try makeDatabase(screenshotAnalyzer: analyzer)
+            let workspace = makeWorkspace()
+            var account = AccountInferenceSettings(workspace: workspace, defaults: defaults)
+            account.imageAnalysis = .init(enabled: enabled, model: "selected-vision-model")
+            let captured = account
+            let worker = BackgroundJobWorker(
+                dbQueue: database.dbQueue,
+                screenshotAnalyzer: analyzer,
+                inferenceSettingsResolver: { _ in captured },
+                runtimeProviderResolver: { .chatGPTSubscription },
+                localAccountSettingsResolver: { .init(provider: .chatGPTSubscription, databricksProfile: "") }
+            )
+            let meeting = makeMeeting(workspaceID: workspace.id)
+            let screenshot = MeetingScreenshotRecord(
+                id: .v7(),
+                meetingId: meeting.id,
+                sessionId: nil,
+                capturedAt: .now,
+                imageData: Data([1]),
+                mimeType: "image/png"
+            )
+            try await database.dbQueue.write { db in
+                try workspace.insert(db)
+                try meeting.insert(db)
+                try screenshot.insertLegacyForTesting(db)
+            }
+            await worker.drain()
+            #expect(await analyzer.models == (enabled ? ["selected-vision-model"] : []))
+            #expect(try await database.dbQueue.read { db in
+                try Int.fetchOne(db, sql: "SELECT COUNT(*) FROM jobs_background WHERE targetKind = 'screenshotAnalysis'")
+            } == 0)
+        }
+
         @Test
         func startupRecoversLegacyFailureAndResumesImageAnalysisOnlyOnce() async throws {
             let database = try makeDatabase(screenshotAnalyzer: StubScreenshotAnalyzer(text: "復旧画像検索語"))
@@ -1294,6 +1333,7 @@ import Synchronization
     private actor StubScreenshotAnalyzer: ScreenshotAnalyzing {
         let text: String
         private(set) var runtimeProviders: [UUID: CodexRuntimeProvider] = [:]
+        private(set) var models: [String] = []
 
         init(text: String) {
             self.text = text
@@ -1302,6 +1342,7 @@ import Synchronization
         func analyze(_ screenshots: [ScreenshotAnalysisInput]) async throws -> [ScreenshotAnalysis] {
             for screenshot in screenshots {
                 runtimeProviders[screenshot.id] = screenshot.runtimeProvider
+                models.append(screenshot.model ?? CodexScreenshotAnalysisService.model)
             }
             return screenshots.map {
                 ScreenshotAnalysis(screenshotID: $0.id, ocrText: text, caption: "画像の説明")

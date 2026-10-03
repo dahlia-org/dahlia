@@ -45,6 +45,7 @@ export function resolveSummaryPreferences(
     throw new SummaryError("summary_invalid_reasoning_effort");
   }
   const settings: TranscriptSettings = {
+    ...(preferences.imageAnalysis ? { imageAnalysis: preferences.imageAnalysis } : {}),
     model, reasoningEffort: reasoningEffort as TranscriptSettings["reasoningEffort"],
     detail: summaryStyleDetail(preferences.summary.style),
   };

@@ -1305,41 +1305,57 @@ describe("SQLite canonical sync", () => {
     await store.close?.();
   });
 
-  it("replaces imported image analysis after attachment and embeds only the generated text", async () => {
-    const { store, service, attach, file, databasePath } = await fileSetup("model", "replace");
-    await service.commitTransaction(owner, wire([{ entity: "file", action: "upsert", entityId: file.id, baseRevision: null,
-      data: { checksum: file.checksum, metadata: { ocrText: "Imported OCR", caption: "Imported caption" }, imageAnalysis: "replace" } }]));
-    const captioner: ImageCaptioner = { model: "model", analyze: vi.fn(async () => ({
-      ocr_text: "Server OCR", caption: "Server caption", informative: true, reason: "Shared material",
-    })) };
-    const worker = imageProcessor(store.imageAnalysis!, captioner, store.sync, service);
-    expect(await worker.processOne()).toBe(false);
-    await attach();
-    let database = new DatabaseSync(databasePath);
-    expect(database.prepare("SELECT payload ->> 'mode' AS mode FROM jobs_queue WHERE kind = 'image'").get()).toEqual({ mode: "replace" });
-    const imported = database.prepare("SELECT ocr_text, caption_text, embedding, embedding_content_hash FROM search_documents WHERE kind = 'screenshot'").get();
-    expect(imported).toMatchObject({ ocr_text: "imported ocr", caption_text: "imported caption", embedding: null });
-    expect(imported).toHaveProperty("embedding_content_hash", expect.any(String));
-    expect(database.prepare("SELECT count(*) AS n FROM jobs_queue WHERE kind = 'search'").get()).toEqual({ n: 0 });
-    database.close();
+  it.each(["fill_missing", "replace"].flatMap((mode) => ["Imported OCR", ""].map((ocrText) => ({ mode, ocrText }))))(
+    "skips legacy $mode analysis when Desktop caption and OCR are complete ($ocrText)", async ({ mode, ocrText }) => {
+      const { store, service, attach, file, databasePath } = await fileSetup("model", mode as "fill_missing" | "replace");
+      try {
+        await service.commitTransaction(owner, wire([{ entity: "file", action: "upsert", entityId: file.id, baseRevision: null,
+          data: { checksum: file.checksum, metadata: { ocrText, caption: "Imported caption" }, imageAnalysis: "replace" } }]));
+        await attach();
+        const analyze = vi.fn();
+        const captioner: ImageCaptioner = { model: "model", analyze };
+        const read = vi.spyOn(service, "readFileContent");
+        expect(await imageProcessor(store.imageAnalysis!, captioner, store.sync, service).processOne()).toBe(true);
+        expect(analyze).not.toHaveBeenCalled();
+        expect(read).not.toHaveBeenCalled();
+        expect(await service.getFile(owner, file.id)).toMatchObject({
+          revision: 1, metadata: { ocrText, caption: "Imported caption" },
+        });
+        await store.searchIndex!.reconcile("embedding", 32);
+        const database = new DatabaseSync(databasePath);
+        try {
+          expect(database.prepare("SELECT count(*) AS n FROM jobs_queue WHERE kind = 'image'").get()).toEqual({ n: 0 });
+          expect(database.prepare("SELECT ocr_text, caption_text FROM search_documents WHERE kind = 'screenshot'").get())
+            .toEqual({ ocr_text: ocrText.toLowerCase(), caption_text: "imported caption" });
+          expect(database.prepare("SELECT count(*) AS n FROM jobs_queue WHERE kind = 'search'").get()).toEqual({ n: 1 });
+        } finally { database.close(); }
+      } finally { await store.close?.(); }
+    },
+  );
 
-    expect(await worker.processOne()).toBe(true);
-    expect(await service.getFile(owner, file.id)).toMatchObject({
-      revision: 2, metadata: { ocrText: "Server OCR", caption: "Server caption" },
-    });
-    database = new DatabaseSync(databasePath);
-    expect(database.prepare("SELECT ocr_text, caption_text FROM search_documents WHERE kind = 'screenshot'").get())
-      .toEqual({ ocr_text: "server ocr", caption_text: "server caption" });
-    expect(database.prepare("SELECT count(*) AS n FROM jobs_queue WHERE kind = 'image'").get()).toEqual({ n: 0 });
-    expect(database.prepare("SELECT count(*) AS n FROM jobs_queue WHERE kind = 'search'").get()).toEqual({ n: 1 });
-    database.close();
-    await store.close?.();
+  it("rechecks Desktop results arriving while a legacy replacement job reads the image", async () => {
+    const { store, service, publish, attach, file } = await fileSetup("model", "replace");
+    try {
+      await publish(); await attach();
+      const read = service.readFileContent.bind(service);
+      vi.spyOn(service, "readFileContent").mockImplementation(async (...args) => {
+        const response = await read(...args);
+        await service.commitTransaction(owner, wire([{ entity: "file", action: "upsert", entityId: file.id, baseRevision: 1,
+          data: { checksum: file.checksum, metadata: { ocrText: "", caption: "Desktop caption" } } }]));
+        return response;
+      });
+      const analyze = vi.fn();
+      const captioner: ImageCaptioner = { model: "model", analyze };
+      expect(await imageProcessor(store.imageAnalysis!, captioner, store.sync, service).processOne()).toBe(true);
+      expect(analyze).not.toHaveBeenCalled();
+      expect(await service.getFile(owner, file.id)).toMatchObject({ revision: 2, metadata: { ocrText: "", caption: "Desktop caption" } });
+    } finally { await store.close?.(); }
   });
 
-  it("enqueues the imported image embedding after terminal replacement failure", async () => {
+  it("enqueues the imported image embedding after terminal replacement failure with incomplete analysis", async () => {
     const { store, service, attach, file, databasePath } = await fileSetup("model", "replace");
     await service.commitTransaction(owner, wire([{ entity: "file", action: "upsert", entityId: file.id, baseRevision: null,
-      data: { checksum: file.checksum, metadata: { ocrText: "Imported OCR", caption: "Imported caption" }, imageAnalysis: "replace" } }]));
+      data: { checksum: file.checksum, metadata: { ocrText: "Imported OCR" }, imageAnalysis: "replace" } }]));
     await attach();
     await store.searchIndex!.reconcile("embedding", 32);
     let database = new DatabaseSync(databasePath);
@@ -1431,14 +1447,17 @@ describe("SQLite canonical sync", () => {
     },
   );
 
-  it.each(["edit", "detach", "delete", "lease", "permission"])("rejects an image result after concurrent %s", async (change) => {
+  it.each(["edit", "desktop", "detach", "delete", "lease", "permission"])("rejects an image result after concurrent %s", async (change) => {
     const { store, service, publish, attach, file, databasePath } = await fileSetup("model", "fill_missing");
     await publish();
     await attach();
     await store.imageAnalysis!.reconcile("model");
     const claim = (await store.imageAnalysis!.claim("model"))!;
     const input = (await store.sync.withIdentity(owner, (scoped) => scoped.loadImageAnalysis(claim)))!;
-    if (change === "edit") {
+    if (change === "desktop") {
+      await service.commitTransaction(owner, wire([{ entity: "file", action: "upsert", entityId: file.id, baseRevision: 1,
+        data: { checksum: file.checksum, metadata: { ocrText: "", caption: "Desktop caption" } } }]));
+    } else if (change === "edit") {
       await service.commitTransaction(owner, wire([{ entity: "file", action: "upsert", entityId: file.id, baseRevision: 1,
         data: { checksum: file.checksum, metadata: { caption: "Concurrent caption" } } }]));
     } else if (change === "permission") {
@@ -1457,6 +1476,7 @@ describe("SQLite canonical sync", () => {
     }
     expect(await service.completeImageAnalysis(owner, input, { ocr_text: "stale", caption: "stale", informative: true, reason: "Shared material" })).toBe(false);
     if (change !== "delete" && change !== "permission") expect((await service.getFile(owner, file.id)).metadata).not.toHaveProperty("ocrText", "stale");
+    if (change === "desktop") expect((await service.getFile(owner, file.id)).metadata).toMatchObject({ ocrText: "", caption: "Desktop caption" });
     await store.close?.();
   });
 

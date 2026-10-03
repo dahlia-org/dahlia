@@ -38,6 +38,12 @@ struct LocalAccountAISettings: Equatable, Sendable {
 struct AccountInferenceSettings: Codable, Equatable, Sendable {
     var summary = WorkspaceGenerationSettings.Summary()
     var local = WorkspaceGenerationSettings.LocalProcessing()
+    private var savedImageAnalysis: WorkspaceGenerationSettings.ImageAnalysis?
+    var imageAnalysis: WorkspaceGenerationSettings.ImageAnalysis {
+        get { savedImageAnalysis ?? .init() }
+        set { savedImageAnalysis = newValue }
+    }
+
     var automaticProcessing = true
     var liveTranscriptDraft = false
     var chatModelID = ""
@@ -66,6 +72,7 @@ struct AccountInferenceSettings: Codable, Equatable, Sendable {
     }
 
     init(snapshot: WorkspaceAISettingsSnapshot) {
+        imageAnalysis = snapshot.generationSettings.imageAnalysis
         summary = snapshot.generationSettings.summary
         local = snapshot.generationSettings.local
         automaticProcessing = snapshot.generationSettings.automaticProcessing
@@ -84,6 +91,7 @@ struct AccountInferenceSettings: Codable, Equatable, Sendable {
             summary: summary,
             outputLanguage: outputLanguage,
             local: local,
+            imageAnalysis: imageAnalysis,
             automaticProcessing: automaticProcessing,
             liveTranscriptDraft: liveTranscriptDraft
         )

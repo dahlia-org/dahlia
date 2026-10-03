@@ -27,12 +27,12 @@
         }
 
         @Test(arguments: [nil, "", " \n\t"] as [String?])
-        func remoteAnalysisWaitIsBoundedWithoutDiscardingText(caption: String?) {
+        func absentRemoteAnalysisIsTerminalWithoutDiscardingText(caption: String?) {
             let pending = ScreenshotOCRState.remote(ocrText: "OCR", caption: caption, state: .ready)
-            #expect(!pending.isTerminal)
+            #expect(pending.isTerminal)
             #expect(pending.limitingRemoteWait(to: .seconds(299)) == pending)
             let timedOut = pending.limitingRemoteWait(to: .seconds(300))
-            #expect(timedOut == .remote(ocrText: "OCR", caption: caption, state: .failed))
+            #expect(timedOut == pending)
             #expect(timedOut.isTerminal)
             let complete = ScreenshotOCRState.remote(ocrText: "", caption: "Caption", state: .ready)
             #expect(complete.isTerminal)
@@ -306,7 +306,7 @@
             let viewModel = CaptionViewModel()
             defer { viewModel.clearCurrentMeeting() }
             viewModel.loadMeeting(fixture.meetingId, dbQueue: fixture.dbQueue, projectURL: nil, projectId: nil, workspaceURL: nil)
-            let remotePending = ScreenshotOCRState.remote(ocrText: nil, caption: nil, state: .ready)
+            let remotePending = ScreenshotOCRState.remote(ocrText: nil, caption: nil, state: .loading)
             #expect(await viewModel.screenshotOCRState(id: fixture.screenshotId) == (uploaded ? remotePending : .pending))
             try await fixture.dbQueue.write { db in
                 try db.execute(sql: "UPDATE jobs_background SET status = 'processing', attempts = 1 WHERE targetKind = 'screenshotAnalysis'")
@@ -315,11 +315,18 @@
             try await fixture.dbQueue.write { db in
                 try db.execute(sql: "UPDATE jobs_background SET status = 'pending', attempts = 5 WHERE targetKind = 'screenshotAnalysis'")
             }
-            #expect(await viewModel.screenshotOCRState(id: fixture.screenshotId) == (uploaded ? remotePending : .failed))
+            #expect(await viewModel
+                .screenshotOCRState(id: fixture.screenshotId) == (uploaded ? .remote(ocrText: nil, caption: nil, state: .failed) : .failed))
             try await fixture.dbQueue.write { db in
                 try db.execute(sql: "UPDATE jobs_background SET status = 'pending', attempts = 0 WHERE targetKind = 'screenshotAnalysis'")
             }
             #expect(await viewModel.screenshotOCRState(id: fixture.screenshotId) == (uploaded ? remotePending : .pending))
+            try await fixture.dbQueue.write { db in
+                try db.execute(sql: "DELETE FROM jobs_background WHERE targetKind = 'screenshotAnalysis'")
+            }
+            let empty = await viewModel.screenshotOCRState(id: fixture.screenshotId)
+            #expect(empty == .remote(ocrText: nil, caption: nil, state: uploaded ? .ready : .empty))
+            #expect(empty.isTerminal)
             try await fixture.dbQueue.write { db in
                 try db.execute(
                     sql: "UPDATE file_text_bodies SET ocrText = 'Recognized text', caption = 'Image caption' WHERE fileId = ?",

@@ -3,6 +3,7 @@ import SwiftUI
 /// Device-local defaults for the selected account.
 struct LocalSummarySettingsRows: View {
     var canEdit = true
+    var imageAnalysis = false
     @Bindable private var workspaceSettings = WorkspaceAISettingsModel.shared
     @State private var catalog = CodexModelCatalog(service: .shared)
     @State private var retryTask: Task<Void, Never>?
@@ -13,10 +14,10 @@ struct LocalSummarySettingsRows: View {
                 LabeledContent(L10n.model) { ProgressView().controlSize(.small) }
             }
             Picker(selection: modelSelection) {
-                if !catalog.models.contains(where: { $0.model == workspaceSettings.summaryModelID }) {
-                    Text(workspaceSettings.summaryModelID).tag(workspaceSettings.summaryModelID)
+                if !catalog.models.contains(where: { $0.model == selectedModelID }) {
+                    Text(selectedModelID).tag(selectedModelID)
                 }
-                ForEach(catalog.models) { model in Text(model.displayName).tag(model.model) }
+                ForEach(catalog.models.filter { !imageAnalysis || $0.supportsImages }) { model in Text(model.displayName).tag(model.model) }
             } label: {
                 Text(L10n.model)
                 Text(L10n.codexModelDescription)
@@ -24,17 +25,17 @@ struct LocalSummarySettingsRows: View {
             .pickerStyle(.menu)
             .disabled(!canEdit)
 
-            Picker(selection: $workspaceSettings.summaryReasoningEffort) {
-                if !catalog.effortOptions(modelID: workspaceSettings.summaryModelID)
-                    .contains(where: { $0.reasoningEffort == workspaceSettings.summaryReasoningEffort }) {
-                    Text(workspaceSettings.summaryReasoningEffort).tag(workspaceSettings.summaryReasoningEffort)
+            Picker(selection: effortSelection) {
+                if !catalog.effortOptions(modelID: selectedModelID)
+                    .contains(where: { $0.reasoningEffort == selectedReasoningEffort }) {
+                    Text(selectedReasoningEffort).tag(selectedReasoningEffort)
                 }
-                ForEach(catalog.effortOptions(modelID: workspaceSettings.summaryModelID)) { effort in
+                ForEach(catalog.effortOptions(modelID: selectedModelID)) { effort in
                     Text(effort.displayName).tag(effort.reasoningEffort)
                 }
             } label: {
                 Text(L10n.reasoningEffort)
-                Text(L10n.reasoningEffortDescription)
+                Text(imageAnalysis ? L10n.imageAnalysisReasoningEffortDescription : L10n.reasoningEffortDescription)
             }
             .pickerStyle(.menu)
             .disabled(!canEdit)
@@ -61,13 +62,49 @@ struct LocalSummarySettingsRows: View {
         }
     }
 
+    private var selectedModelID: String {
+        get {
+            if imageAnalysis {
+                return workspaceSettings.generationSettings.imageAnalysis.model ?? CodexScreenshotAnalysisService.model
+            }
+            return workspaceSettings.summaryModelID
+        }
+        nonmutating set {
+            if imageAnalysis {
+                workspaceSettings.generationSettings.imageAnalysis.model = newValue
+            } else {
+                workspaceSettings.summaryModelID = newValue
+            }
+        }
+    }
+
+    private var selectedReasoningEffort: String {
+        get {
+            if imageAnalysis {
+                return workspaceSettings.generationSettings.imageAnalysis.reasoningEffort ?? CodexScreenshotAnalysisService.reasoningEffort
+            }
+            return workspaceSettings.summaryReasoningEffort
+        }
+        nonmutating set {
+            if imageAnalysis {
+                workspaceSettings.generationSettings.imageAnalysis.reasoningEffort = newValue
+            } else {
+                workspaceSettings.summaryReasoningEffort = newValue
+            }
+        }
+    }
+
+    private var effortSelection: Binding<String> {
+        Binding(get: { selectedReasoningEffort }, set: { selectedReasoningEffort = $0 })
+    }
+
     private var modelSelection: Binding<String> {
         Binding(
-            get: { workspaceSettings.summaryModelID },
+            get: { selectedModelID },
             set: { modelID in
-                workspaceSettings.summaryModelID = modelID
-                if let effort = catalog.resolvedEffort(current: workspaceSettings.summaryReasoningEffort, modelID: modelID) {
-                    workspaceSettings.summaryReasoningEffort = effort
+                selectedModelID = modelID
+                if let effort = catalog.resolvedEffort(current: selectedReasoningEffort, modelID: modelID) {
+                    selectedReasoningEffort = effort
                 }
             }
         )
