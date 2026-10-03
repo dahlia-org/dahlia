@@ -430,27 +430,28 @@ function RecoveryText({ recovery }: { recovery: DocumentRecovery }) {
 
 export function NotesStatus({ status, error, retry }: { status?: string; error?: string; retry?: () => void }) {
   if (!error) return <span>{status}</span>;
-  return <Popover><PopoverTrigger asChild>
+  return <><span role="alert" className="sr-only">{error}</span><Popover><PopoverTrigger asChild>
     <Button variant="ghost" size="sm" className="h-7 gap-1 text-destructive" aria-label={uiText("Notes status", "ノートの状態")}>
       <AlertTriangle className="size-3.5 shrink-0" /><span>{status ?? uiText("Notes warning", "ノートの警告")}</span>
     </Button>
   </PopoverTrigger><PopoverContent align="end" className="max-w-[calc(100vw-24px)] text-sm">
-    <p role="alert" className="break-words">{error}</p>
+    <p className="break-words">{error}</p>
     {retry && <Button variant="outline" size="sm" className="mt-3" onClick={retry}>{uiText("Retry", "再試行")}</Button>}
-  </PopoverContent></Popover>;
+  </PopoverContent></Popover></>;
 }
 
 export function PendingDocumentNotice({ userId }: { userId: string }) {
   const [, render] = useState(0);
   useEffect(() => { const timer = setInterval(() => render((n) => n + 1), 1000); return () => clearInterval(timer); }, []);
   const pending = [...sessions.values()].filter((item) => item.userId === userId && item.hasUnsent());
-  if (!pending.length) return null;
-  return <Popover><PopoverTrigger asChild>
+  const warning = uiText("Notes have unsynced changes. Keep this tab open.", "ノートに未送信の編集があります。このタブを開いたままにしてください。");
+  return <><span role="status" aria-atomic="true" className="sr-only">{pending.length ? warning : ""}</span>
+    {pending.length > 0 && <Popover><PopoverTrigger asChild>
     <Button variant="ghost" size="sm" className="h-7 gap-1 text-destructive" aria-label={uiText("Unsynced notes", "未送信のノート")}>
       <AlertTriangle className="size-3.5" /><span className="max-sm:sr-only">{uiText("Unsynced notes", "未送信のノート")}</span>
     </Button>
   </PopoverTrigger><PopoverContent align="end" className="max-h-[60vh] max-w-[calc(100vw-24px)] overflow-auto text-sm">
-    <p role="status">{uiText("Notes have unsynced changes. Keep this tab open.", "ノートに未送信の編集があります。このタブを開いたままにしてください。")}</p>
+    <p>{warning}</p>
     {pending.map((item) => <details key={item.meetingId} className="mt-3"><summary className="cursor-pointer hover:underline">{uiText("Copy unsynced notes", "未送信のノートをコピー")}</summary><pre className="whitespace-pre-wrap break-words">{item.copyText()}</pre></details>)}
-  </PopoverContent></Popover>;
+  </PopoverContent></Popover>}</>;
 }
