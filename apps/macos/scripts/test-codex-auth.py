@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Check the pinned Codex bearer-command/401 contract against a loopback Gateway.
 
-Usage: python3 apps/desktop/scripts/test-codex-auth.py --codex /path/to/codex
+Usage: python3 apps/macos/scripts/test-codex-auth.py --codex /path/to/codex
 Uses only synthetic credentials and an isolated CODEX_HOME. OAuth and broker
 behavior are covered by DatabricksOAuthServiceTests and DahliaTokenBrokerTests.
 """

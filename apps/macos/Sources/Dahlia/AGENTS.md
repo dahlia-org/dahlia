@@ -1,6 +1,6 @@
-# apps/desktop/Sources/Dahlia Application Guide
+# apps/macos/Sources/Dahlia Application Guide
 
-This file applies under `apps/desktop/Sources/Dahlia/`. Changes under `Database/` must also follow `Database/AGENTS.md`.
+This file applies under `apps/macos/Sources/Dahlia/`. Changes under `Database/` must also follow `Database/AGENTS.md`.
 
 ## Reference Routing
 

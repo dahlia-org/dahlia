@@ -26,9 +26,9 @@ GPT-5.6 には、手順を細かく固定するより、成果、重要な制約
 ## 階層
 
 - ルートの `AGENTS.md`: リポジトリ全体の目的、権限境界、技術的前提、共通の完了条件
-- `apps/desktop/Sources/Dahlia/AGENTS.md`: アプリ固有の所有関係、並行処理、UI とローカライズ
-- `apps/desktop/Sources/Dahlia/Database/AGENTS.md`: データ保全とマイグレーション
-- `apps/desktop/Tests/DahliaTests/AGENTS.md`: テストの隔離、実装規約、実行結果の判定
+- `apps/macos/Sources/Dahlia/AGENTS.md`: アプリ固有の所有関係、並行処理、UI とローカライズ
+- `apps/macos/Sources/Dahlia/Database/AGENTS.md`: データ保全とマイグレーション
+- `apps/macos/Tests/DahliaTests/AGENTS.md`: テストの隔離、実装規約、実行結果の判定
 - `apps/server/AGENTS.md`: Server のテナント分離、公開 API、実行環境の可搬性
 - `apps/hindsight/AGENTS.md`: upstream Hindsight との互換性と patch ワークフロー
 - `docs/code-review.md`: 複数のレビュー手段で共有する finding の採用基準、チェックリスト、保守手順

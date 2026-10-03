@@ -317,14 +317,14 @@ sequenceDiagram
 
 | Question | Start here |
 | --- | --- |
-| どの組み合わせで recognition／recording を作るか | [`TranscriptionSessionPlan`](../../apps/desktop/Sources/Dahlia/Models/TranscriptionSessionPlan.swift) |
-| capture buffer をどこへ分配するか | [`AudioSourcePipeline`](../../apps/desktop/Sources/Dahlia/Audio/AudioSourcePipeline.swift)、[`AudioFrameRouter`](../../apps/desktop/Sources/Dahlia/Audio/AudioFrameRouter.swift) |
-| audio queue と segment rotation はどう動くか | [`SegmentedAudioSourceWriter`](../../apps/desktop/Sources/Dahlia/Audio/SegmentedAudioSourceWriter.swift) |
-| segment をいつ ready にするか | [`RecordingAudioStore`](../../apps/desktop/Sources/Dahlia/Services/RecordingAudioStore.swift) |
-| capture／recognition／writer の lifecycle を誰が所有するか | [`RecordingSessionController`](../../apps/desktop/Sources/Dahlia/Services/RecordingSessionController.swift) |
-| UI と persistence をどう分離するか | [`TranscriptionEventPipeline`](../../apps/desktop/Sources/Dahlia/Services/TranscriptionEventPipeline.swift) |
-| realtime transcript をいつ commit するか | [`TranscriptPersistenceWriter`](../../apps/desktop/Sources/Dahlia/Services/TranscriptPersistenceWriter.swift) |
-| batch transcript をいつ一式反映するか | [`BatchTranscriptionCoordinator`](../../apps/desktop/Sources/Dahlia/Services/BatchTranscriptionCoordinator.swift)、[`BatchTranscriptionPersistence`](../../apps/desktop/Sources/Dahlia/Services/BatchTranscriptionPersistence.swift) |
+| どの組み合わせで recognition／recording を作るか | [`TranscriptionSessionPlan`](../../apps/macos/Sources/Dahlia/Models/TranscriptionSessionPlan.swift) |
+| capture buffer をどこへ分配するか | [`AudioSourcePipeline`](../../apps/macos/Sources/Dahlia/Audio/AudioSourcePipeline.swift)、[`AudioFrameRouter`](../../apps/macos/Sources/Dahlia/Audio/AudioFrameRouter.swift) |
+| audio queue と segment rotation はどう動くか | [`SegmentedAudioSourceWriter`](../../apps/macos/Sources/Dahlia/Audio/SegmentedAudioSourceWriter.swift) |
+| segment をいつ ready にするか | [`RecordingAudioStore`](../../apps/macos/Sources/Dahlia/Services/RecordingAudioStore.swift) |
+| capture／recognition／writer の lifecycle を誰が所有するか | [`RecordingSessionController`](../../apps/macos/Sources/Dahlia/Services/RecordingSessionController.swift) |
+| UI と persistence をどう分離するか | [`TranscriptionEventPipeline`](../../apps/macos/Sources/Dahlia/Services/TranscriptionEventPipeline.swift) |
+| realtime transcript をいつ commit するか | [`TranscriptPersistenceWriter`](../../apps/macos/Sources/Dahlia/Services/TranscriptPersistenceWriter.swift) |
+| batch transcript をいつ一式反映するか | [`BatchTranscriptionCoordinator`](../../apps/macos/Sources/Dahlia/Services/BatchTranscriptionCoordinator.swift)、[`BatchTranscriptionPersistence`](../../apps/macos/Sources/Dahlia/Services/BatchTranscriptionPersistence.swift) |
 
 ## 文書の更新条件
 
@@ -358,4 +358,4 @@ Segment の `startedAt` / `endedAt` は発話の絶対日時であり、ライ�
 
 既存 Desktop segment の `createdAt` は合意したミーティング終了時刻で補完する。終了済み録音 session の最後の `endedAt` を優先し、なければ録音開始と duration から求める。未終了 session がある場合や終了時刻が不明な場合は NULL のままにする。元の発話時刻、session 対応、累積 offset、録音データ、本文、未送信操作を保全する前進 migration とする。
 
-Transcript の `status` は保存しない。`endedAt` があれば `ended`、それ以外は最新の既知の segment `createdAt` から5分以内（境界を含む）を `active`、それより後を `inactive`、作成日時がなければ `unknown` とする。5分は通常の発話間隔や送信遅延を許容する活動推定の窓で、[共通定義](../../apps/desktop/Sources/DahliaRuntimeSupport/Resources/TranscriptPolicy.json)を Server / Web / Desktop で使う。 Server / Web は配布内の `apps/server/src/sync/transcript-policy.json` を読み、Desktop resource との一致をテストする。終了は成功を、活動推定は録音・接続の継続や異常終了を意味しない。Web は時刻境界でも表示を再計算し、Desktop / MCP は読み取り時に再計算する。
+Transcript の `status` は保存しない。`endedAt` があれば `ended`、それ以外は最新の既知の segment `createdAt` から5分以内（境界を含む）を `active`、それより後を `inactive`、作成日時がなければ `unknown` とする。5分は通常の発話間隔や送信遅延を許容する活動推定の窓で、[共通定義](../../apps/macos/Sources/DahliaRuntimeSupport/Resources/TranscriptPolicy.json)を Server / Web / Desktop で使う。 Server / Web は配布内の `apps/server/src/sync/transcript-policy.json` を読み、Desktop resource との一致をテストする。終了は成功を、活動推定は録音・接続の継続や異常終了を意味しない。Web は時刻境界でも表示を再計算し、Desktop / MCP は読み取り時に再計算する。

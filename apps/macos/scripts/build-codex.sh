@@ -89,7 +89,7 @@ validate_output() {
     local expected file_path reference validation_home
 
     for reference in \
-        "${PROJECT_DIR}/apps/desktop/Sources/Dahlia/Services/CodexBundle.swift:static let version = \"${CODEX_VERSION}\"" \
+        "${PROJECT_DIR}/apps/macos/Sources/Dahlia/Services/CodexBundle.swift:static let version = \"${CODEX_VERSION}\"" \
         "${PROJECT_DIR}/Resources/Codex-NOTICE.txt:Codex CLI ${CODEX_VERSION}" \
         "${PROJECT_DIR}/Resources/Codex-NOTICE.txt:Asset: ${ASSET_NAME}" \
         "${PROJECT_DIR}/Resources/Codex-NOTICE.txt:SHA-256: ${ASSET_SHA256}" \

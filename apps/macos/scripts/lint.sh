@@ -3,7 +3,7 @@
 set -euo pipefail
 
 cd "$(dirname "$0")/../../.."
-source "apps/desktop/scripts/common.sh"
+source "apps/macos/scripts/common.sh"
 
 is_ci=false
 if [[ "${CI:-}" == "true" ]]; then
@@ -11,22 +11,22 @@ if [[ "${CI:-}" == "true" ]]; then
 fi
 
 echo "=== SwiftFormat ==="
-swiftformat_command="$PWD/apps/desktop/scripts/run-swiftformat.sh"
+swiftformat_command="$PWD/apps/macos/scripts/run-swiftformat.sh"
 
 if [[ "$is_ci" == "true" ]]; then
-    "$swiftformat_command" --cache ignore --lint apps/desktop/Sources/
+    "$swiftformat_command" --cache ignore --lint apps/macos/Sources/
 else
-    "$swiftformat_command" --cache ignore apps/desktop/Sources/
+    "$swiftformat_command" --cache ignore apps/macos/Sources/
 fi
 echo "SwiftFormat: done"
 
 echo ""
 echo "=== Telemetry policy ==="
-telemetrydeck_app_adapter="apps/desktop/Sources/Dahlia/Services/TelemetryDeckClient.swift"
-telemetrydeck_mcp_adapter="apps/desktop/Sources/DahliaMCP/TelemetryDeckClient.swift"
+telemetrydeck_app_adapter="apps/macos/Sources/Dahlia/Services/TelemetryDeckClient.swift"
+telemetrydeck_mcp_adapter="apps/macos/Sources/DahliaMCP/TelemetryDeckClient.swift"
 telemetrydeck_adapters="$(printf '%s\n%s' "$telemetrydeck_app_adapter" "$telemetrydeck_mcp_adapter" | sort)"
-telemetrydeck_imports="$(grep -RlE '^(@preconcurrency )?import TelemetryDeck$' apps/desktop/Sources | sort || true)"
-telemetrydeck_calls="$(grep -RlE 'TelemetryDeck\.' apps/desktop/Sources | sort || true)"
+telemetrydeck_imports="$(grep -RlE '^(@preconcurrency )?import TelemetryDeck$' apps/macos/Sources | sort || true)"
+telemetrydeck_calls="$(grep -RlE 'TelemetryDeck\.' apps/macos/Sources | sort || true)"
 if [ "$telemetrydeck_imports" != "$telemetrydeck_adapters" ] || [ "$telemetrydeck_calls" != "$telemetrydeck_adapters" ]; then
     echo "error: TelemetryDeck imports and SDK calls must stay inside designated adapters" >&2
     exit 1
@@ -54,9 +54,9 @@ if [[ -z "${DEVELOPER_DIR:-}" ]] \
 fi
 
 "${swiftlint_command[@]}" lint \
-    --config apps/desktop/.swiftlint.yml \
+    --config apps/macos/.swiftlint.yml \
     --strict \
     --quiet \
     --no-cache \
-    apps/desktop/Sources apps/desktop/Tests
+    apps/macos/Sources apps/macos/Tests
 echo "SwiftLint: done"

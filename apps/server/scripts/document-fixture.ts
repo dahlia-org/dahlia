@@ -28,5 +28,5 @@ const fixture = { checkpoint, updates, ...projection, deletionUpdate: core.check
   lateUpdate: late.difference(vector), purgedCheckpoint: purged.checkpoint(),
   retainedDeletionUpdate: retained.checkpoint(),
   deleted: removedBlocks(projection, core.projection()) };
-writeFileSync(new URL("../../desktop/Tests/DahliaTests/Fixtures/documents.json", import.meta.url), `${JSON.stringify(fixture, null, 2)}\n`);
+writeFileSync(new URL("../../macos/Tests/DahliaTests/Fixtures/documents.json", import.meta.url), `${JSON.stringify(fixture, null, 2)}\n`);
 core.destroy(); a.destroy(); b.destroy(); late.destroy(); purged.destroy(); retained.destroy();

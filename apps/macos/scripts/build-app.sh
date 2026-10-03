@@ -93,7 +93,7 @@ configure_sentry_plist "${CONTENTS}/Info.plist"
 configure_telemetrydeck_plist "${CONTENTS}/Info.plist"
 
 # アイコン生成（.iconset → .icns）
-ICON_SRC="apps/desktop/Sources/Dahlia/Resources/Assets.xcassets/AppIcon.appiconset/AppIcon.png"
+ICON_SRC="apps/macos/Sources/Dahlia/Resources/Assets.xcassets/AppIcon.appiconset/AppIcon.png"
 ICONSET_DIR="${CONTENTS}/Resources/AppIcon.iconset"
 mkdir -p "$ICONSET_DIR"
 sips -z 16 16     "$ICON_SRC" --out "$ICONSET_DIR/icon_16x16.png"      > /dev/null

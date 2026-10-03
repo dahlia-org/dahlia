@@ -6,7 +6,7 @@
 
 | 旧計画 | 整理先・状態 |
 | --- | --- |
-| 2026-07-08 transcript relative timestamps | 相対時間 formatter と export、および対応テストが存在するため、旧ファイル・行番号を前提にした作業手順を除去。[Formatter](../../apps/desktop/Sources/Dahlia/Models/TranscriptSegment.swift)、[Export](../../apps/desktop/Sources/Dahlia/Services/TranscriptExportService.swift)、[Tests](../../apps/desktop/Tests/DahliaTests/TranscriptSegmentTests.swift) を参照。今回の整理では runtime test は再実行していない |
+| 2026-07-08 transcript relative timestamps | 相対時間 formatter と export、および対応テストが存在するため、旧ファイル・行番号を前提にした作業手順を除去。[Formatter](../../apps/macos/Sources/Dahlia/Models/TranscriptSegment.swift)、[Export](../../apps/macos/Sources/Dahlia/Services/TranscriptExportService.swift)、[Tests](../../apps/macos/Tests/DahliaTests/TranscriptSegmentTests.swift) を参照。今回の整理では runtime test は再実行していない |
 | 2026-07-09 summary document AST | 設計判断を [正準表現](../adr/desktop/summary.md#正準表現)、更新契約を [訂正と export](../adr/desktop/summary.md#訂正と-export) へ集約。古い型定義、migration 番号、実装手順のコピーを除去。Slack / Google Docs の将来 renderer を実装済みと扱わない |
 
 原文は整理前の固定 commit に残る:

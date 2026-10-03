@@ -47,7 +47,7 @@ Dahlia は、同梱 Codex の状態と認証を他の Codex アプリや Codex C
 
 ### SwiftUI Preview と Xcode MCP
 
-UI 部品の調整には `apps/desktop/Previews/Package.swift` を Xcode で開き、scheme を **DahliaPreviews**、実行先を **My Mac** にします。`Sources/DahliaPreviews/SettingsStatusMessage.swift` を開いて **Editor → Canvas** を表示すると、成功表示と詳細を切り替えられるエラー表示を確認できます。
+UI 部品の調整には `apps/macos/Previews/Package.swift` を Xcode で開き、scheme を **DahliaPreviews**、実行先を **My Mac** にします。`Sources/DahliaPreviews/SettingsStatusMessage.swift` を開いて **Editor → Canvas** を表示すると、成功表示と詳細を切り替えられるエラー表示を確認できます。
 
 この開発専用パッケージは相対シンボリックリンクでアプリの実ソースを共有し、録音・DB・外部依存を起動しません。リンク先の View を編集するとプレビューにも反映されます。対象を追加するときは実ソースと必要な UI 依存だけをリンクし、実データを使うサービスは持ち込まないでください。ルートパッケージは Xcode ビルド時に vendored XCFramework の `module.modulemap` 出力が衝突するため、部品の確認にはこのパッケージを使います。新しいパッケージがフォルダ扱いで scheme が出ない場合は Xcode を再起動してください。
 
@@ -199,9 +199,11 @@ database の選択は AI Gateway の `OPENAI_API_KEY`、`OPENAI_BASE_URL` とは
 
 ### プロジェクト構成
 
+今後追加する Electron アプリは `apps/desktop` に配置し、npm パッケージ名を `@dahlia-ai/desktop` とします。
+
 ```
 apps/
-├── desktop/        # ネイティブ macOS アプリと SwiftPM テスト
+├── macos/          # ネイティブ macOS アプリと SwiftPM テスト
 │   ├── BuildTools/  # SwiftFormat の固定用 package
 │   ├── scripts/     # desktop のビルド・署名・lint 実装
 │   ├── Tests/       # SwiftPM テスト

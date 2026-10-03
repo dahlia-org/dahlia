@@ -53,7 +53,7 @@
       "reason": "Current browser identity",
       "consumers": [
         "apps/server/src/client/App.tsx",
-        "apps/desktop/Sources/Dahlia/Services/DahliaCloudService.swift"
+        "apps/macos/Sources/Dahlia/Services/DahliaCloudService.swift"
       ]
     },
     {
@@ -219,11 +219,11 @@
       "reason": "Discover feature versions; unsupported features are omitted",
       "consumers": [
         "apps/server/src/client/SummaryGeneration.tsx",
-        "apps/desktop/Sources/Dahlia/Database/BackgroundJobWorker.swift",
-        "apps/desktop/Sources/Dahlia/Services/RecordingArchiveService.swift",
-        "apps/desktop/Sources/Dahlia/Services/SyncWorker.swift",
-        "apps/desktop/Sources/Dahlia/Services/ServerSummaryService.swift",
-        "apps/desktop/Sources/Dahlia/Services/MeetingContentProvider+Search.swift"
+        "apps/macos/Sources/Dahlia/Database/BackgroundJobWorker.swift",
+        "apps/macos/Sources/Dahlia/Services/RecordingArchiveService.swift",
+        "apps/macos/Sources/Dahlia/Services/SyncWorker.swift",
+        "apps/macos/Sources/Dahlia/Services/ServerSummaryService.swift",
+        "apps/macos/Sources/Dahlia/Services/MeetingContentProvider+Search.swift"
       ]
     },
     {
@@ -236,9 +236,9 @@
       "consumers": [
         "apps/server/src/client/App.tsx",
         "apps/server/src/client/Sidebar.tsx",
-        "apps/desktop/Sources/Dahlia/ViewModels/BackupSettingsViewModel.swift",
-        "apps/desktop/Sources/Dahlia/Services/BackupService.swift",
-        "apps/desktop/Sources/Dahlia/Services/CloudWorkspaceDiscovery.swift"
+        "apps/macos/Sources/Dahlia/ViewModels/BackupSettingsViewModel.swift",
+        "apps/macos/Sources/Dahlia/Services/BackupService.swift",
+        "apps/macos/Sources/Dahlia/Services/CloudWorkspaceDiscovery.swift"
       ]
     },
     {
@@ -264,7 +264,7 @@
         "apps/server/src/client/App.tsx",
         "apps/server/src/client/Search.tsx",
         "apps/server/src/client/Sidebar.tsx",
-        "apps/desktop/Sources/Dahlia/Services/SyncWorker.swift",
+        "apps/macos/Sources/Dahlia/Services/SyncWorker.swift",
         "apps/server/src/mcp.ts (shared service; native MCP protocol)"
       ]
     },
@@ -303,7 +303,7 @@
       "consumers": [
         "apps/server/src/client/App.tsx",
         "apps/server/src/client/Sidebar.tsx",
-        "apps/desktop/Sources/Dahlia/Services/SyncWorker.swift",
+        "apps/macos/Sources/Dahlia/Services/SyncWorker.swift",
         "apps/server/src/mcp.ts (shared service; native MCP protocol)"
       ]
     },
@@ -338,7 +338,7 @@
       "reason": "Current summary; present=false when absent",
       "consumers": [
         "apps/server/src/client/App.tsx",
-        "apps/desktop/Sources/Dahlia/Services/MeetingContentProvider.swift"
+        "apps/macos/Sources/Dahlia/Services/MeetingContentProvider.swift"
       ]
     },
     {
@@ -373,7 +373,7 @@
       "reason": "Read current transcript; match version and syncRevision across pages",
       "consumers": [
         "apps/server/src/client/TranscriptHistory.tsx",
-        "apps/desktop/Sources/Dahlia/Services/MeetingContentProvider.swift",
+        "apps/macos/Sources/Dahlia/Services/MeetingContentProvider.swift",
         "apps/server/src/mcp.ts (shared service; native MCP protocol)"
       ]
     },
@@ -385,7 +385,7 @@
       "previous": "Desktop-local conversation analytics",
       "reason": "Calculate owner-only analytics for one immutable transcript version backed by committed recording audio",
       "consumers": [
-        "apps/desktop/Sources/Dahlia/Services/ServerConversationAnalyticsService.swift"
+        "apps/macos/Sources/Dahlia/Services/ServerConversationAnalyticsService.swift"
       ]
     },
     {
@@ -397,7 +397,7 @@
       "reason": "Queue an owner-only summary job; ID is the replay key; maximum 8 KiB",
       "consumers": [
         "apps/server/src/client/SummaryGeneration.tsx",
-        "apps/desktop/Sources/Dahlia/Services/ServerSummaryService.swift"
+        "apps/macos/Sources/Dahlia/Services/ServerSummaryService.swift"
       ]
     },
     {
@@ -409,7 +409,7 @@
       "reason": "Most recent owner-visible job, or null",
       "consumers": [
         "apps/server/src/client/SummaryGeneration.tsx",
-        "apps/desktop/Sources/Dahlia/Services/ServerSummaryService.swift"
+        "apps/macos/Sources/Dahlia/Services/ServerSummaryService.swift"
       ]
     },
     {
@@ -420,7 +420,7 @@
       "previous": "/api/v1/workspaces/{workspaceId}/meetings/{meetingId}/summary/job?id={jobId}",
       "reason": "Get an individual owner-visible job",
       "consumers": [
-        "apps/desktop/Sources/Dahlia/Services/ServerSummaryService.swift"
+        "apps/macos/Sources/Dahlia/Services/ServerSummaryService.swift"
       ]
     },
     {
@@ -432,7 +432,7 @@
       "reason": "Cancel a job; repeated cancellation is safe",
       "consumers": [
         "apps/server/src/client/SummaryGeneration.tsx",
-        "apps/desktop/Sources/Dahlia/Services/ServerSummaryService.swift"
+        "apps/macos/Sources/Dahlia/Services/ServerSummaryService.swift"
       ]
     },
     {
@@ -444,7 +444,7 @@
       "reason": "Retry a failed or cancelled job using a new ID",
       "consumers": [
         "apps/server/src/client/SummaryGeneration.tsx",
-        "apps/desktop/Sources/Dahlia/Services/ServerSummaryService.swift"
+        "apps/macos/Sources/Dahlia/Services/ServerSummaryService.swift"
       ]
     },
     {
@@ -456,7 +456,7 @@
       "reason": "Commit one atomic Workspace transaction; maximum 8 MiB",
       "consumers": [
         "apps/server/src/client/App.tsx",
-        "apps/desktop/Sources/Dahlia/Services/SyncWorker.swift"
+        "apps/macos/Sources/Dahlia/Services/SyncWorker.swift"
       ]
     },
     {
@@ -468,7 +468,7 @@
       "reason": "Resolve the exact original request without mutating; never advance the pull cursor from receipts",
       "consumers": [
         "apps/server/src/client/App.tsx",
-        "apps/desktop/Sources/Dahlia/Services/SyncWorker.swift"
+        "apps/macos/Sources/Dahlia/Services/SyncWorker.swift"
       ]
     },
     {
@@ -479,7 +479,7 @@
       "previous": "/api/v1/workspaces/{workspaceId}/changes",
       "reason": "Durable delta feed; retain highWaterCursor across a catch-up",
       "consumers": [
-        "apps/desktop/Sources/Dahlia/Services/SyncWorker.swift"
+        "apps/macos/Sources/Dahlia/Services/SyncWorker.swift"
       ]
     },
     {
@@ -490,7 +490,7 @@
       "previous": "/api/v1/workspaces/{workspaceId}/snapshot",
       "reason": "Bounded snapshot; retain startCursor and catch up before reconciliation",
       "consumers": [
-        "apps/desktop/Sources/Dahlia/Services/SyncWorker.swift"
+        "apps/macos/Sources/Dahlia/Services/SyncWorker.swift"
       ]
     },
     {
@@ -506,28 +506,28 @@
         "apps/server/src/client/Search.tsx",
         "apps/server/src/client/live-data.ts",
         "apps/server/src/client/Sidebar.tsx",
-        "apps/desktop/Sources/Dahlia/Database/TextContentMigration.swift",
-        "apps/desktop/Sources/Dahlia/Database/EmbeddingGemmaDescriptor.swift",
-        "apps/desktop/Sources/Dahlia/Database/MeetingRepository+SidebarSearch.swift",
-        "apps/desktop/Sources/Dahlia/Database/ScreenshotStorageMaintenance.swift",
-        "apps/desktop/Sources/Dahlia/Database/MeetingRepository+ServerSearch.swift",
-        "apps/desktop/Sources/Dahlia/Database/MeetingRepository+ScreenshotSearch.swift",
-        "apps/desktop/Sources/Dahlia/Database/BackgroundJobWorker.swift",
-        "apps/desktop/Sources/Dahlia/Database/TextContentStore.swift",
-        "apps/desktop/Sources/Dahlia/ViewModels/SidebarViewModel+Meetings.swift",
-        "apps/desktop/Sources/Dahlia/Models/MeetingDateGrouping.swift",
-        "apps/desktop/Sources/Dahlia/Models/MeetingSearch.swift",
-        "apps/desktop/Sources/Dahlia/Utilities/L10n.swift",
-        "apps/desktop/Sources/Dahlia/Views/MainWorkspaceHeader.swift",
-        "apps/desktop/Sources/Dahlia/Views/MainSearchPanel.swift",
-        "apps/desktop/Sources/Dahlia/Services/MeetingContentProvider+Broker.swift",
-        "apps/desktop/Sources/Dahlia/Services/CodexChatService.swift",
-        "apps/desktop/Sources/Dahlia/Services/SyncWorker.swift",
-        "apps/desktop/Sources/Dahlia/Services/MeetingContentProvider+Search.swift",
-        "apps/desktop/Sources/Dahlia/Views/Settings/SettingsCategory.swift",
-        "apps/desktop/Sources/Dahlia/Views/Settings/SettingsDetailView.swift",
-        "apps/desktop/Sources/Dahlia/Views/Settings/SettingsGroup.swift",
-        "apps/desktop/Sources/Dahlia/Views/Debug/ApplicationLogView.swift",
+        "apps/macos/Sources/Dahlia/Database/TextContentMigration.swift",
+        "apps/macos/Sources/Dahlia/Database/EmbeddingGemmaDescriptor.swift",
+        "apps/macos/Sources/Dahlia/Database/MeetingRepository+SidebarSearch.swift",
+        "apps/macos/Sources/Dahlia/Database/ScreenshotStorageMaintenance.swift",
+        "apps/macos/Sources/Dahlia/Database/MeetingRepository+ServerSearch.swift",
+        "apps/macos/Sources/Dahlia/Database/MeetingRepository+ScreenshotSearch.swift",
+        "apps/macos/Sources/Dahlia/Database/BackgroundJobWorker.swift",
+        "apps/macos/Sources/Dahlia/Database/TextContentStore.swift",
+        "apps/macos/Sources/Dahlia/ViewModels/SidebarViewModel+Meetings.swift",
+        "apps/macos/Sources/Dahlia/Models/MeetingDateGrouping.swift",
+        "apps/macos/Sources/Dahlia/Models/MeetingSearch.swift",
+        "apps/macos/Sources/Dahlia/Utilities/L10n.swift",
+        "apps/macos/Sources/Dahlia/Views/MainWorkspaceHeader.swift",
+        "apps/macos/Sources/Dahlia/Views/MainSearchPanel.swift",
+        "apps/macos/Sources/Dahlia/Services/MeetingContentProvider+Broker.swift",
+        "apps/macos/Sources/Dahlia/Services/CodexChatService.swift",
+        "apps/macos/Sources/Dahlia/Services/SyncWorker.swift",
+        "apps/macos/Sources/Dahlia/Services/MeetingContentProvider+Search.swift",
+        "apps/macos/Sources/Dahlia/Views/Settings/SettingsCategory.swift",
+        "apps/macos/Sources/Dahlia/Views/Settings/SettingsDetailView.swift",
+        "apps/macos/Sources/Dahlia/Views/Settings/SettingsGroup.swift",
+        "apps/macos/Sources/Dahlia/Views/Debug/ApplicationLogView.swift",
         "apps/server/src/mcp.ts (shared service; native MCP protocol)"
       ]
     },
@@ -539,7 +539,7 @@
       "previous": "/api/v1/workspaces/{workspaceId}/search?q={query} (GET)",
       "reason": "Exhaustive full-text search pages; cursor invalidates when the ledger changes",
       "consumers": [
-        "apps/desktop/Sources/Dahlia/Services/MeetingContentProvider+Search.swift"
+        "apps/macos/Sources/Dahlia/Services/MeetingContentProvider+Search.swift"
       ]
     },
     {
@@ -551,7 +551,7 @@
       "reason": "SSE invalidation and account_settings events; recover through canonical reads",
       "consumers": [
         "apps/server/src/client/live-data.ts",
-        "apps/desktop/Sources/Dahlia/Services/SyncWorker.swift"
+        "apps/macos/Sources/Dahlia/Services/SyncWorker.swift"
       ]
     },
     {
@@ -562,7 +562,7 @@
       "previous": "/api/v1/workspaces/{workspaceId}/meetings/{meetingId}/transcript/{patchId}/chunks/{chunkIndex}",
       "reason": "Stage an owner-only transcript patch chunk; SHA-256 of exact request bytes",
       "consumers": [
-        "apps/desktop/Sources/Dahlia/Services/SyncWorker.swift"
+        "apps/macos/Sources/Dahlia/Services/SyncWorker.swift"
       ]
     },
     {
@@ -573,7 +573,7 @@
       "previous": "/api/v1/files (POST bytes with query attributes)",
       "reason": "Reserve private file staging with a client-generated UUIDv7; maximum 8 KiB",
       "consumers": [
-        "apps/desktop/Sources/Dahlia/Services/SyncWorker.swift"
+        "apps/macos/Sources/Dahlia/Services/SyncWorker.swift"
       ]
     },
     {
@@ -584,7 +584,7 @@
       "previous": "/api/v1/files (POST bytes with query attributes)",
       "reason": "Stream reserved file bytes; identical replay succeeds, different content conflicts",
       "consumers": [
-        "apps/desktop/Sources/Dahlia/Services/SyncWorker.swift"
+        "apps/macos/Sources/Dahlia/Services/SyncWorker.swift"
       ]
     },
     {
@@ -597,8 +597,8 @@
       "consumers": [
         "apps/server/src/client/App.tsx",
         "apps/server/src/client/FileViewer.tsx",
-        "apps/desktop/Sources/Dahlia/Services/MeetingContentProvider.swift",
-        "apps/desktop/Sources/Dahlia/Services/SyncWorker.swift"
+        "apps/macos/Sources/Dahlia/Services/MeetingContentProvider.swift",
+        "apps/macos/Sources/Dahlia/Services/SyncWorker.swift"
       ]
     },
     {
@@ -620,7 +620,7 @@
       "previous": "/api/v1/workspaces/{workspaceId}/files",
       "reason": "Committed files by ID; 200 per page",
       "consumers": [
-        "apps/desktop/Sources/Dahlia/Services/GoogleDriveAPIClient.swift"
+        "apps/macos/Sources/Dahlia/Services/GoogleDriveAPIClient.swift"
       ]
     },
     {
@@ -646,7 +646,7 @@
         "apps/server/src/client/App.tsx",
         "apps/server/src/client/Search.tsx",
         "apps/server/src/client/FileViewer.tsx",
-        "apps/desktop/Sources/Dahlia/Services/ScreenshotContentProvider.swift"
+        "apps/macos/Sources/Dahlia/Services/ScreenshotContentProvider.swift"
       ]
     },
     {
@@ -669,7 +669,7 @@
       "reason": "Stream image variant",
       "consumers": [
         "apps/server/src/client/Search.tsx",
-        "apps/desktop/Sources/Dahlia/Services/ScreenshotContentProvider.swift"
+        "apps/macos/Sources/Dahlia/Services/ScreenshotContentProvider.swift"
       ]
     },
     {
@@ -691,7 +691,7 @@
       "previous": "/api/v1/meetings/{meetingId}/recordings?sessionId={sessionId}&source={source} (POST)",
       "reason": "Stage audio/mp4; maximum 1 GiB; Transaction activates the recording",
       "consumers": [
-        "apps/desktop/Sources/Dahlia/Services/RecordingArchiveService.swift"
+        "apps/macos/Sources/Dahlia/Services/RecordingArchiveService.swift"
       ]
     },
     {
@@ -703,7 +703,7 @@
       "reason": "Committed recordings by meeting-local number; 200 per page",
       "consumers": [
         "apps/server/src/client/SummaryGeneration.tsx",
-        "apps/desktop/Sources/Dahlia/Services/ServerSummaryService.swift"
+        "apps/macos/Sources/Dahlia/Services/ServerSummaryService.swift"
       ]
     },
     {
@@ -714,7 +714,7 @@
       "previous": "/api/v1/meetings/{meetingId}/recordings/{recordingId}/audio/{source}",
       "reason": "Stream recording audio",
       "consumers": [
-        "apps/desktop/Sources/Dahlia/Services/RecordingArchiveService.swift"
+        "apps/macos/Sources/Dahlia/Services/RecordingArchiveService.swift"
       ]
     },
     {
@@ -758,8 +758,8 @@
       "previous": "/api/v1/workspaces/{workspaceId}/relocations",
       "reason": "Resolve moved resources and independent documents to currently accessible Workspaces",
       "consumers": [
-        "apps/desktop/Sources/Dahlia/Services/DocumentSyncService.swift",
-        "apps/desktop/Sources/Dahlia/Services/SyncWorker.swift"
+        "apps/macos/Sources/Dahlia/Services/DocumentSyncService.swift",
+        "apps/macos/Sources/Dahlia/Services/SyncWorker.swift"
       ]
     },
     {
@@ -827,7 +827,7 @@
       "consumers": [
         "apps/server/src/client/App.tsx",
         "apps/server/src/client/Sidebar.tsx",
-        "apps/desktop/Sources/Dahlia/Services/CloudWorkspaceDiscovery.swift"
+        "apps/macos/Sources/Dahlia/Services/CloudWorkspaceDiscovery.swift"
       ]
     },
     {
@@ -1376,7 +1376,7 @@
       "reason": "Read the canonical document without creating it",
       "consumers": [
         "apps/server/src/client/Documents.tsx",
-        "apps/desktop/Sources/Dahlia/Services/DocumentSyncService.swift"
+        "apps/macos/Sources/Dahlia/Services/DocumentSyncService.swift"
       ]
     },
     {
@@ -1388,7 +1388,7 @@
       "reason": "List document revisions independently of domain sync",
       "consumers": [
         "apps/server/src/client/Documents.tsx",
-        "apps/desktop/Sources/Dahlia/Services/DocumentSyncService.swift"
+        "apps/macos/Sources/Dahlia/Services/DocumentSyncService.swift"
       ]
     },
     {
@@ -1400,7 +1400,7 @@
       "reason": "Initialize on first edit; explicit legacy import only into an unedited document",
       "consumers": [
         "apps/server/src/client/Documents.tsx",
-        "apps/desktop/Sources/Dahlia/Services/DocumentSyncService.swift"
+        "apps/macos/Sources/Dahlia/Services/DocumentSyncService.swift"
       ]
     },
     {
@@ -1412,7 +1412,7 @@
       "reason": "Merge Yjs updates despite pending local edits; replay is idempotent",
       "consumers": [
         "apps/server/src/client/Documents.tsx",
-        "apps/desktop/Sources/Dahlia/Services/DocumentSyncService.swift"
+        "apps/macos/Sources/Dahlia/Services/DocumentSyncService.swift"
       ]
     },
     {
@@ -1424,7 +1424,7 @@
       "reason": "Read preserved deleted blocks",
       "consumers": [
         "apps/server/src/client/Documents.tsx",
-        "apps/desktop/Sources/Dahlia/Services/DocumentSyncService.swift"
+        "apps/macos/Sources/Dahlia/Services/DocumentSyncService.swift"
       ]
     },
     {
@@ -1436,7 +1436,7 @@
       "reason": "Preserve shared content lost to concurrent deletion",
       "consumers": [
         "apps/server/src/client/Documents.tsx",
-        "apps/desktop/Sources/Dahlia/Services/DocumentSyncService.swift"
+        "apps/macos/Sources/Dahlia/Services/DocumentSyncService.swift"
       ]
     },
     {
@@ -1448,7 +1448,7 @@
       "reason": "List current editors",
       "consumers": [
         "apps/server/src/client/Documents.tsx",
-        "apps/desktop/Sources/Dahlia/Services/DocumentSyncService.swift"
+        "apps/macos/Sources/Dahlia/Services/DocumentSyncService.swift"
       ]
     },
     {
@@ -1460,7 +1460,7 @@
       "reason": "Renew an editing session for fifteen seconds",
       "consumers": [
         "apps/server/src/client/Documents.tsx",
-        "apps/desktop/Sources/Dahlia/Services/DocumentSyncService.swift"
+        "apps/macos/Sources/Dahlia/Services/DocumentSyncService.swift"
       ]
     },
     {
@@ -1483,7 +1483,7 @@
       "reason": "Resolve the unique meeting Notes without creating it",
       "consumers": [
         "apps/server/src/client/Documents.tsx",
-        "apps/desktop/Sources/Dahlia/Services/DocumentSyncService.swift"
+        "apps/macos/Sources/Dahlia/Services/DocumentSyncService.swift"
       ]
     },
     {
@@ -1495,7 +1495,7 @@
       "reason": "Converge concurrent Notes initialization onto an independent canonical document ID",
       "consumers": [
         "apps/server/src/client/Documents.tsx",
-        "apps/desktop/Sources/Dahlia/Services/DocumentSyncService.swift"
+        "apps/macos/Sources/Dahlia/Services/DocumentSyncService.swift"
       ]
     }
   ],

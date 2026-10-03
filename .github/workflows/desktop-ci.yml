@@ -4,7 +4,7 @@ on:
   pull_request:
     paths:
       - ".github/workflows/desktop-ci.yml"
-      - "apps/desktop/**"
+      - "apps/macos/**"
       - "Package.swift"
       - "Package.resolved"
       - "apps/server/**"
@@ -13,7 +13,7 @@ on:
       - main
     paths:
       - ".github/workflows/desktop-ci.yml"
-      - "apps/desktop/**"
+      - "apps/macos/**"
       - "Package.swift"
       - "Package.resolved"
       - "apps/server/**"
@@ -48,8 +48,8 @@ jobs:
       - name: Cache BuildTools
         uses: actions/cache@v5
         with:
-          path: apps/desktop/BuildTools/.build
-          key: buildtools-${{ runner.os }}-${{ runner.arch }}-${{ steps.toolchain.outputs.hash }}-${{ hashFiles('apps/desktop/BuildTools/Package.resolved') }}
+          path: apps/macos/BuildTools/.build
+          key: buildtools-${{ runner.os }}-${{ runner.arch }}-${{ steps.toolchain.outputs.hash }}-${{ hashFiles('apps/macos/BuildTools/Package.resolved') }}
 
       - name: Install lint tools
         run: brew install swiftlint

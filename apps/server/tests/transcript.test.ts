@@ -18,7 +18,7 @@ import { transcriptMetadataSchema, transcriptStatus, TRANSCRIPT_ACTIVITY_WINDOW_
 import transcriptPolicy from "../src/sync/transcript-policy.json";
 
 it("ships the same activity policy as Desktop without a runtime dependency on its source tree", () => {
-  const desktop: unknown = JSON.parse(readFileSync(new URL("../../desktop/Sources/DahliaRuntimeSupport/Resources/TranscriptPolicy.json", import.meta.url), "utf8"));
+  const desktop: unknown = JSON.parse(readFileSync(new URL("../../macos/Sources/DahliaRuntimeSupport/Resources/TranscriptPolicy.json", import.meta.url), "utf8"));
   expect(transcriptPolicy).toEqual(desktop);
 });
 

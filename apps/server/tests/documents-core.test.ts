@@ -3,7 +3,7 @@ import * as Y from "yjs";
 import { getSchema } from "@tiptap/core";
 import StarterKit from "@tiptap/starter-kit";
 import { Fragment, type Node } from "@tiptap/pm/model";
-import fixture from "../../desktop/Tests/DahliaTests/Fixtures/documents.json";
+import fixture from "../../macos/Tests/DahliaTests/Fixtures/documents.json";
 import { DocumentCore, decodeBinary, documentStateLimit, encodeBinary, mergeDocumentUpdates, projectDocument, removedBlocks, type DocumentRecovery } from "../src/documents/core";
 import { blockLayout, blockMap, renderedAttributes, rootOrder, writeBlocks, writeInline, type BlockInput } from "../src/documents/blocks";
 import { DocumentEditorHydration, pastedTextSlice, withoutTrailingBreaks } from "../src/documents/editor";

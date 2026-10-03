@@ -1,4 +1,4 @@
-# apps/desktop/Tests/DahliaTests Guide
+# apps/macos/Tests/DahliaTests Guide
 
 Tests are complete when they prove the changed behavior with reproducible inputs and run without depending on the user's environment or live external services.
 

@@ -151,7 +151,7 @@ echo "=== Building ${APP_NAME} (debug) ==="
 HELPER_INPUTS=(
     "${SCRIPT_DIR}/build-codex.sh" "${SCRIPT_DIR}/common.sh" "${SCRIPT_DIR}/dev-build-fingerprint.py"
     "$CODEX_ENTITLEMENTS_PATH" "Resources/Codex-LICENSE" "Resources/Codex-NOTICE.txt"
-    "apps/desktop/Sources/Dahlia/Services/CodexBundle.swift" ".build/codex-helper"
+    "apps/macos/Sources/Dahlia/Services/CodexBundle.swift" ".build/codex-helper"
 )
 if [ -f "${CACHE_DIR}/helper.inputs" ] \
     && [ "$(fingerprint "${HELPER_INPUTS[@]}")" = "$(cat "${CACHE_DIR}/helper.inputs")" ]; then
@@ -170,7 +170,7 @@ APP_BUNDLE="${APP_NAME}.app"
 CONTENTS="${APP_BUNDLE}/Contents"
 MACOS="${CONTENTS}/MacOS"
 HELPERS="${CONTENTS}/Helpers"
-ICON_SRC="apps/desktop/Sources/Dahlia/Resources/Assets.xcassets/AppIcon.appiconset/AppIcon.png"
+ICON_SRC="apps/macos/Sources/Dahlia/Resources/Assets.xcassets/AppIcon.appiconset/AppIcon.png"
 ICONSET_DIR="${CONTENTS}/Resources/AppIcon.iconset"
 
 # ponytail: support assets share one cache; split it if resource-heavy edits become common.

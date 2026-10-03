@@ -6,7 +6,7 @@ import assert from "node:assert/strict";
 
 const require = createRequire(import.meta.url);
 const root = resolve(import.meta.dirname, "..");
-const output = resolve(root, "../desktop/Sources/Dahlia/Resources/Documents");
+const output = resolve(root, "../macos/Sources/Dahlia/Resources/Documents");
 execFileSync(process.execPath, [require.resolve("tsup/dist/cli-default.js"), "--config", "tsup.documents.config.ts"], { cwd: root, stdio: "inherit" });
 const metadata = JSON.parse(readFileSync(join(root, "dist/documents/metafile-iife.json"), "utf8"));
 const packages = new Map();
