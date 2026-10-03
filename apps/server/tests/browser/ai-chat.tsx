@@ -15,6 +15,8 @@ let chats = 0;
 let bundledModels = false;
 let aiCapability = false;
 let capabilityFailure: "http" | "network" | undefined;
+let deferCapabilities = false;
+const deferredCapabilities: Array<(response: Response) => void> = [];
 let discoveryFails = false;
 
 const sse = (answer: string) => new Response(`event: text\ndata: ${JSON.stringify({ text: answer })}\n\nevent: done\ndata: {}\n\n`, {
@@ -23,6 +25,9 @@ const sse = (answer: string) => new Response(`event: text\ndata: ${JSON.stringif
 
 globalThis.fetch = async (input, init) => {
   const url = new URL(typeof input === "string" ? input : input instanceof URL ? input : input.url, location.href);
+  if (url.pathname === "/api/v1/capabilities" && deferCapabilities) return new Promise<Response>((resolve) => {
+    deferredCapabilities.push(resolve);
+  });
   if (url.pathname === "/api/v1/capabilities" && capabilityFailure === "http") return Response.json({ error: "capability_failed" }, { status: 503 });
   if (url.pathname === "/api/v1/capabilities" && capabilityFailure === "network") throw new Error("capability_network_failed");
   if (url.pathname === "/api/v1/capabilities") return Response.json(aiCapability
@@ -102,6 +107,20 @@ async function run() {
     <AiChat key={key} />
     <span hidden data-fixture-key={key} />
   </AppShell>);
+  deferCapabilities = true;
+  render("capability-pending");
+  await until(() => document.querySelector('[data-fixture-key="capability-pending"]')
+    && document.querySelector<HTMLElement>('[data-ai-picker="model"]')?.dataset.value === "model-a", "selection while capability pending");
+  await choose(controls().model, "model-b");
+  deferredCapabilities.shift()!(Response.json({ ai: { version: 1, bundledModels: "codex" } }));
+  controls().model.click();
+  await until(() => document.querySelector('[role="option"][data-value="gpt-6.1-sol"]'), "late GPT augmentation");
+  assert(controls().model.dataset.value === "model-b", "Late capability changed the selected model");
+  document.querySelector<HTMLElement>('[role="option"][data-value="model-b"]')!.click();
+  render("capability-stale");
+  await until(() => document.querySelector('[data-fixture-key="capability-stale"]')
+    && document.querySelector<HTMLElement>('[data-ai-picker="model"]')?.dataset.value === "model-a", "old mount pending capability");
+  deferCapabilities = false;
   for (const failure of ["http", "network"] as const) {
     capabilityFailure = failure;
     render(`capability-${failure}`);
@@ -121,6 +140,11 @@ async function run() {
   let textarea = document.querySelector<HTMLTextAreaElement>('.ai-composer textarea')!;
   assert(workspace.dataset.value === workspaceA && model.dataset.value === "model-a" && reasoning.dataset.value === "medium", "Initial selectors were not selected");
   assert(!model.textContent?.includes("GPT"), "Missing AI capability opted into bundled GPT models");
+  deferredCapabilities.shift()!(Response.json({ ai: { version: 1, bundledModels: "codex" } }));
+  model.click();
+  await until(() => document.querySelector('[role="option"][data-value="model-a"]'), "picker after old capability completes");
+  assert(!document.querySelector('[role="option"][data-value="gpt-6.1-sol"]'), "Aborted mount published its late capability");
+  document.querySelector<HTMLElement>('[role="option"][data-value="model-a"]')!.click();
   change(textarea, "Line one\nLine two");
   press(textarea, "Enter", true);
   assert(requests.length === 0 && textarea.value.includes("\n"), "Shift+Enter submitted or lost the newline");
@@ -271,14 +295,15 @@ async function run() {
   aiCapability = true;
   bundledModels = true;
   render("databricks");
-  await until(() => controls().model?.dataset.value === "gpt-6-astra", "bundled GPT selection");
+  await until(() => document.querySelector('[data-fixture-key="databricks"]') && controls().model.dataset.value, "Databricks model selection");
   model = controls().model;
   model.click();
   await until(() => document.querySelector('[role="option"][data-value="gpt-6.1-sol"]'), "bundled GPT options");
   const modelIds = [...document.querySelectorAll<HTMLElement>('[role="option"][data-value]')].map((option) => option.dataset.value);
   assert(modelIds.length === policy.models.length + 2 && policy.models.every((id) => modelIds.includes(id)), "Bundled allowlist or remote merge failed");
   document.querySelector<HTMLElement>('[role="option"][data-value="gpt-6.1-sol"]')!.click();
-  await until(() => controls().reasoning.dataset.value === "low", "upstream GPT reasoning default");
+  await until(() => controls().model.dataset.value === "gpt-6.1-sol", "GPT selection");
+  await choose(controls().reasoning, "low");
   textarea = document.querySelector<HTMLTextAreaElement>('.ai-composer textarea')!;
   change(textarea, "Reply only OK");
   press(textarea, "Enter");
@@ -295,7 +320,7 @@ async function run() {
     && document.querySelector(".ai-error[role=alert]"), "both discovery failures");
   assert(!controls().model.dataset.value, "Capability failure hid the model discovery failure");
   document.body.dataset.testResult = "passed";
-  document.getElementById("result")!.textContent = "PASS: selectors, Workspace lock, chat controls, empty response retry, composer, keyboard, stop, retry, interactions, missing or failed AI capability preserves remote models, Databricks GPT allowlist composition, upstream reasoning defaults, unchanged GPT submission and no fallback after discovery failure";
+  document.getElementById("result")!.textContent = "PASS: selectors, Workspace lock, chat controls, empty response retry, composer, keyboard, stop, retry, interactions, pending/missing/failed capabilities do not block models, late GPT augmentation preserves selection, aborted capability cannot publish, Databricks GPT allowlist and reasoning choices, unchanged GPT submission and no fallback after discovery failure";
 }
 
 void run().catch((error: unknown) => { document.getElementById("result")!.textContent = `FAIL: ${String(error)}`; });

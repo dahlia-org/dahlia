@@ -142,16 +142,19 @@ export function AiChat({ requestedThreadId }: { requestedThreadId?: string }) {
 
   useEffect(() => {
     const request = new AbortController();
-    void Promise.all([
-      json<GatewayModelList>("/api/v1/models", { signal: request.signal }, { notifyMutation: false }),
-      json<components["schemas"]["Capabilities"]>("/api/v1/capabilities", { signal: request.signal }, { notifyMutation: false })
-        .catch((): components["schemas"]["Capabilities"] => ({})),
-    ]).then(([catalog, capabilities]) => {
-      if (request.signal.aborted) return;
-      const items = chatModels(catalog, capabilities.ai?.bundledModels === "codex");
+    let catalog: GatewayModelList | undefined;
+    let includeBundled = false;
+    const publish = () => {
+      if (!catalog || request.signal.aborted) return;
+      const items = chatModels(catalog, includeBundled);
       setModels(items); setModel((current) => current || items[0]?.id || "");
-    })
+    };
+    void json<GatewayModelList>("/api/v1/models", { signal: request.signal }, { notifyMutation: false })
+      .then((result) => { catalog = result; publish(); })
       .catch((caught: unknown) => { if (!request.signal.aborted) setError(caught instanceof Error ? caught.message : uiText("Could not load models.", "モデルを読み込めませんでした。")); });
+    void json<components["schemas"]["Capabilities"]>("/api/v1/capabilities", { signal: request.signal }, { notifyMutation: false })
+      .then((capabilities) => { includeBundled = capabilities.ai?.bundledModels === "codex"; publish(); })
+      .catch(() => {});
     return () => request.abort();
   }, []);
   async function refreshThreads() {
