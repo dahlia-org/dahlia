@@ -2,7 +2,7 @@
 import { StrictMode, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { AppShell, PageHeader } from "../../src/client/layout/AppShell";
-import type { SessionInfo } from "../../src/client/App";
+import type { SessionInfo } from "../../src/client";
 import "../../src/client/styles.css";
 
 Object.defineProperty(navigator, "language", { value: "en-US", configurable: true });

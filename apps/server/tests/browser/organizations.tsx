@@ -1,7 +1,7 @@
 // Open /tests/browser/organizations.html under pnpm dev:client. All requests are mocked.
 import { z } from "zod";
 import { createRoot } from "react-dom/client";
-import { App } from "../../src/client/App";
+import { App } from "../../src/client";
 import { navigateDashboard } from "../../src/client/navigation";
 import { clientMutationEvent } from "../../src/client/api";
 import "../../src/client/styles.css";

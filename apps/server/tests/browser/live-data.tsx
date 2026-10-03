@@ -3,7 +3,7 @@
 import { StrictMode } from "react";
 import { flushSync } from "react-dom";
 import { createRoot } from "react-dom/client";
-import { App, SyncedMeeting } from "../../src/client/App";
+import { App, SyncedMeeting } from "../../src/client";
 import { DetailTabs } from "../../src/client/MeetingContent";
 import { refreshData } from "../../src/client/live-data";
 import { encodeId } from "../../src/typeid";

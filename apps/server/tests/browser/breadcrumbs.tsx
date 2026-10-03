@@ -1,6 +1,6 @@
 // Run pnpm dev:client and open /tests/browser/breadcrumbs.html at desktop and mobile widths.
 import { createRoot } from "react-dom/client";
-import { BreadcrumbHeader } from "../../src/client/App";
+import { BreadcrumbHeader } from "../../src/client";
 import "../../src/client/styles.css";
 
 const workspace = "ワークスペース".repeat(20);

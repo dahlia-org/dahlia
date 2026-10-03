@@ -1,6 +1,6 @@
 // pnpm dev:client -> /tests/browser/search-settings.html. Uses an in-memory API, never a live backend.
 import { createRoot } from "react-dom/client";
-import { AdminSearchSettings } from "../../src/client/App";
+import { AdminSearchSettings } from "../../src/client";
 import { DEFAULT_SEARCH_SETTINGS, searchSettingsSchema } from "../../src/search/settings-model";
 import "../../src/client/styles.css";
 

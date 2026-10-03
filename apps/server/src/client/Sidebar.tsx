@@ -1,5 +1,5 @@
 import { objectPath, parseObjectPath } from "../object-url";
-import { finishBrowserDocuments } from "./Documents";
+import { signOut as signOutAccount } from "./auth";
 import { apiQuery } from "./live-data";
 import { isChatPath } from "./routes";
 import { collectionAppearance, AppearanceIcon, projectAppearance, type Appearance } from "./AppearancePicker";
@@ -10,9 +10,9 @@ import { RecordingIndicator } from "./RecordingIndicator";
 import { MCPConnectionDialog } from "./MCPConnectionDialog";
 import { useLiveJSON, useLivePage } from "./live-data";
 import { createContext, useContext, useEffect, useRef, useState, type ReactNode } from "react";
-import type { SessionInfo } from "./App";
+import type { SessionInfo } from "./dashboard";
 import type { OrganizationInfo, SyncedMeetingInfo, SyncedProjectInfo, SyncedWorkspaceInfo } from "./api";
-import { json, uiText } from "./api";
+import { uiText } from "./api";
 import { ArrowRight, Blocks, Building2, Check, ChevronRight, FileText, Folder, Home, Link, LogOut, Menu, MessageCircle, Pencil, Plus, Search as SearchIcon, Settings2, Sparkles, Trash2, User, Users, type LucideIcon } from "lucide-react";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "./components/ui/dropdown-menu";
 
@@ -105,8 +105,7 @@ function SignOutButton() {
     setPending(true);
     setError(undefined);
     try {
-      await finishBrowserDocuments();
-      await json("/api/auth/sign-out", { method: "POST", body: "{}" });
+      await signOutAccount();
       window.location.replace("/sign-out");
     } catch {
       setError(uiText("Could not sign out. Please try again.", "サインアウトできませんでした。再試行してください。"));

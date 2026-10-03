@@ -1,6 +1,6 @@
 import { liveDataEvent } from "../src/client/live-data";
 import { afterEach, expect, it, vi } from "vitest";
-import { commitSyncTransaction } from "../src/client/App";
+import { commitSyncTransaction } from "../src/client";
 import { syncMessage } from "../src/client/api";
 
 afterEach(() => vi.unstubAllGlobals());

@@ -1,7 +1,7 @@
 // Run pnpm dev:client and open /tests/browser/chat-routing.html. No backend is contacted.
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
-import { App } from "../../src/client/App";
+import { App } from "../../src/client";
 import { dashboardNavigationEvent, navigateDashboard } from "../../src/client/navigation";
 import { encodeId } from "../../src/typeid";
 import "../../src/client/styles.css";

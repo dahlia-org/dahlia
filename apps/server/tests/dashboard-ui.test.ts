@@ -26,7 +26,7 @@ import {
   projectBreadcrumbOptions,
   resolveDashboardExtensionRoute,
   type DashboardExtension,
-} from "../src/client/App";
+} from "../src/client";
 import { isCoreDashboardPath, resolveDashboardRoute, shouldRedirectToSignIn } from "../src/client/routes";
 
 import { FileViewer } from "../src/client/FileViewer";
@@ -751,7 +751,7 @@ describe("dashboard navigation", () => {
   });
 
   it("does not expose implementation names or the browser model API", () => {
-    const source = readFileSync(new URL("../src/client/App.tsx", import.meta.url), "utf8");
+    const source = dashboardSource();
 
     expect(source).not.toContain("Better Auth");
     expect(source).not.toContain("Trusted proxy");
@@ -771,12 +771,19 @@ describe("dashboard navigation", () => {
   });
 
   it("removes the model management UI", () => {
-    const source = readFileSync(new URL("../src/client/App.tsx", import.meta.url), "utf8");
+    const source = dashboardSource();
     expect(source).not.toContain("/admin/models");
     expect(source).not.toContain("AdminModels");
   });
 });
 
+
+// The dashboard screens formerly lived in App.tsx; source assertions cover the same split modules.
+function dashboardSource() {
+  return ["App.tsx", "dashboard.ts", "auth.ts", "transactions.ts", "SignIn.tsx", "Settings.tsx", "Workspaces.tsx", "Project.tsx",
+    "Meeting.tsx", "Breadcrumbs.tsx", "Organizations.tsx", "Admin.tsx", "DataError.tsx"]
+    .map((file) => readFileSync(new URL(`../src/client/${file}`, import.meta.url), "utf8")).join("\n");
+}
 
 describe("meeting hover details", () => {
   it("shows existing metadata, localized recording status and missing-value fallbacks", () => {
