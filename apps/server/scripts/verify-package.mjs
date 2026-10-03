@@ -1,7 +1,8 @@
+import { existsSync } from "node:fs";
 import { cp, mkdir, mkdtemp, readFile, readdir, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
-import { spawnSync } from "node:child_process";
+import { execFileSync, spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 
 const packageJson = JSON.parse(await readFile(new URL("../package.json", import.meta.url), "utf8"));
@@ -22,18 +23,19 @@ async function readEntryGraph(entry) {
 }
 
 try {
-  const source = join(directory, "source");
-  await mkdir(source);
-  for (const path of [
-    "src", "resources", "drizzle", "scripts", "package.json", "pnpm-lock.yaml", "pnpm-workspace.yaml",
-    "tsconfig.json", "tsup.config.ts", "tsup.client.config.ts", "vite.config.ts", "worker-configuration.d.ts",
-    "Free-email-domains-LICENSE", "Free-email-domains-NOTICE.txt", "openapi.json", "index.html", "README.md", "Codex-LICENSE", "Codex-NOTICE.txt",
-  ]) {
-    await cp(new URL(`../${path}`, import.meta.url), join(source, path), { recursive: true });
+  // The Server workspace files Databricks Apps receives (deploy/databricks sync.paths), without
+  // other apps or ignored files. Apps runs a frozen install and the root build there.
+  const workspace = join(directory, "source");
+  const source = join(workspace, "apps", "server");
+  const repository = fileURLToPath(new URL("../../..", import.meta.url));
+  const files = execFileSync("git", ["ls-files", "--cached", "--others", "--exclude-standard", "-z", "--",
+    "package.json", "pnpm-workspace.yaml", "pnpm-lock.yaml", "turbo.json", "apps/server", "packages/ui"], { cwd: repository, encoding: "utf8" });
+  for (const file of files.split("\0").filter((file) => file && existsSync(join(repository, file)))) {
+    await cp(join(repository, file), join(workspace, file));
   }
-  // Build only shipped source. Reuse installed dependencies, never sibling app files or existing dist output.
-  await symlink(fileURLToPath(new URL("../node_modules", import.meta.url)), join(source, "node_modules"));
-  const built = spawnSync("pnpm", ["run", "build"], { cwd: source, encoding: "utf8" });
+  const installed = spawnSync("pnpm", ["install", "--frozen-lockfile", "--offline"], { cwd: workspace, encoding: "utf8" });
+  if (installed.status !== 0) throw new Error(installed.stderr || installed.stdout || "deployment install failed");
+  const built = spawnSync("pnpm", ["run", "build"], { cwd: workspace, encoding: "utf8" });
   if (built.status !== 0) throw new Error(built.stderr || built.stdout || "deployment build failed");
   for (const path of ["dist/client/index.html", "dist/server/node.js", "dist/server/job-worker.js", "dist/server/db/migrate.js"]) {
     await readFile(join(source, path));
@@ -57,6 +59,16 @@ try {
     encoding: "utf8",
   });
   if (extracted.status !== 0) throw new Error(extracted.stderr || extracted.stdout || "tar extraction failed");
+  const packedManifest = JSON.parse(await readFile(join(installedPackage, "package.json"), "utf8"));
+  for (const field of ["dependencies", "peerDependencies", "optionalDependencies"]) {
+    if (Object.keys(packedManifest[field] ?? {}).some((name) => name.startsWith("@dahlia-ai/")) || JSON.stringify(packedManifest[field] ?? {}).includes("workspace:")) {
+      throw new Error(`Packed ${field} reference an unpublished workspace package`);
+    }
+  }
+  for (const file of await readdir(join(installedPackage, "dist"), { recursive: true })) {
+    if (!/\.(?:js|d\.ts)$/.test(file)) continue;
+    if ((await readFile(join(installedPackage, "dist", file), "utf8")).includes("@dahlia-ai/ui")) throw new Error(`Packed file imports @dahlia-ai/ui: ${file}`);
+  }
   await readFile(join(installedPackage, "Free-email-domains-LICENSE"));
   await readFile(join(installedPackage, "Free-email-domains-NOTICE.txt"));
   const workspaceModules = fileURLToPath(new URL("../node_modules", import.meta.url));

@@ -5,12 +5,12 @@ import { aiContext, aiTimeZoneSchema } from "../src/agent/context";
 import { createAiService, aiChatSchema, type AiChatInput, type AiChatEvent } from "../src/agent/service";
 import { createInteractiveTools, readInteraction, readPlan } from "../src/agent/builtin";
 import { connectPostgresUrl } from "../src/db/postgres";
-import { uuidV7 } from "../src/id";
+import { uuidV7 } from "@dahlia-ai/ui/model/id";
 import { createAiHistoryService, aiThreadMessageSchema } from "../src/agent/history";
 import type { AppConfig } from "../src/config";
 import type { GatewayService } from "../src/ai-gateway/service";
 import { createMeetingTools } from "../src/agent/tools";
-import { encodeId } from "../src/typeid";
+import { encodeId } from "@dahlia-ai/ui/model/typeid";
 import type { MeetingSyncService } from "../src/sync/service";
 
 const workspaceId = "01990ab0-0000-7000-8000-000000000001";

@@ -9,8 +9,15 @@ include:
 sync:
   include:
     - ../../apps/hindsight/.upstream/hindsight-api-slim/**
+  # The Server App deploys the repository root and builds its pnpm workspace there.
+  # Upload only the root manifests, Server, shared UI, Hindsight and the setup notebooks.
   paths:
+    - ../../package.json
+    - ../../pnpm-workspace.yaml
+    - ../../pnpm-lock.yaml
+    - ../../turbo.json
     - ../../apps/server
+    - ../../packages/ui
     - ../../apps/hindsight
     - notebooks
 

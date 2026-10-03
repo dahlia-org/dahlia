@@ -2,7 +2,7 @@ import { encodeSyncCursor } from "./sync/store";
 import type { Identity } from "./auth/identity";
 import type { ApplicationStore } from "./auth/store";
 import type { AppConfig } from "./config";
-import { uuidV7 } from "./id";
+import { uuidV7 } from "@dahlia-ai/ui/model/id";
 import { summaryDocument } from "./summary/model";
 import { sha256 } from "./storage/sha256";
 import { RequestError } from "./storage/upload";

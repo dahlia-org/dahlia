@@ -2,7 +2,7 @@ import { eq, sql } from "drizzle-orm";
 import type { NodePgDatabase } from "drizzle-orm/node-postgres";
 import { APIError } from "better-auth/api";
 import type * as Schema from "../db/auth-schema";
-import { isReservedTeamOrganizationSlug, organizationSlugPattern } from "./organization-slug";
+import { isReservedTeamOrganizationSlug, organizationSlugPattern } from "@dahlia-ai/ui/model/organization-slug";
 
 export const authorizationConflict = (message: string): never => { throw new APIError("CONFLICT", { message, code: message }); };
 

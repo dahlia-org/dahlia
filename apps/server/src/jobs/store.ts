@@ -4,7 +4,7 @@ import type { PostgresDatabase, SQLiteDatabase } from "../db/client";
 import * as pg from "../db/auth-schema";
 import * as sqlite from "../db/sqlite-schema";
 import { enqueueJob, retryJob, settleJob } from "./state";
-import { uuidV7 } from "../id";
+import { uuidV7 } from "@dahlia-ai/ui/model/id";
 import { groupsForJob, JOB_LEASE_MS, jobKinds, jobPayloadSchema, type JobKind, type JobLimits, type JobPayload } from "./model";
 
 export type BackgroundJob = typeof pg.backgroundJob.$inferSelect;

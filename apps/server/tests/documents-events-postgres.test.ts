@@ -1,7 +1,7 @@
 import { expect, it } from "vitest";
 import { Pool } from "pg";
 import { PostgresSyncEvents } from "../src/sync/events-node";
-import { uuidV7 } from "../src/id";
+import { uuidV7 } from "@dahlia-ai/ui/model/id";
 
 it.runIf(process.env.TEST_DATABASE_URL)("wakes a separate Node instance through PostgreSQL without waiting for its fallback", async () => {
   const pools = [new Pool({ connectionString: process.env.TEST_DATABASE_URL }), new Pool({ connectionString: process.env.TEST_DATABASE_URL })];

@@ -5,7 +5,7 @@ import { z } from "zod";
 import type { Identity } from "../auth/identity";
 import { wireCursor, wireValue } from "../public-wire";
 import { RequestError } from "../storage/upload";
-import { decodeId, idPrefixes, type IDKind } from "../typeid";
+import { decodeId, idPrefixes, type IDKind } from "@dahlia-ai/ui/model/typeid";
 import type { MeetingSyncService } from "../sync/service";
 
 export interface MeetingToolContext {

@@ -22,9 +22,9 @@ Copy [`wrangler.example.jsonc`](wrangler.example.jsonc) to the ignored `apps/ser
 ## 1. Install and build
 
 ```bash
-cd apps/server
 corepack enable
-pnpm install --frozen-lockfile
+pnpm install --frozen-lockfile --filter @dahlia-ai/server...
+cd apps/server
 pnpm build:cloudflare
 ```
 

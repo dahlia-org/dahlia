@@ -4,7 +4,7 @@ import { describe, expect, it } from "vitest";
 import { createAiHistoryService } from "../src/agent/history";
 import type { Identity } from "../src/auth/identity";
 import { connectPostgresUrl } from "../src/db/postgres";
-import { uuidV7 } from "../src/id";
+import { uuidV7 } from "@dahlia-ai/ui/model/id";
 
 const databaseUrl = process.env.TEST_DATABASE_URL;
 

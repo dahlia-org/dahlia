@@ -1,10 +1,10 @@
 // Run pnpm dev:client and open /tests/browser/chat-routing.html. No backend is contacted.
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
-import { App } from "../../src/client";
-import { dashboardNavigationEvent, navigateDashboard } from "../../src/client/navigation";
-import { encodeId } from "../../src/typeid";
-import "../../src/client/styles.css";
+import { App } from "@dahlia-ai/ui";
+import { dashboardNavigationEvent, navigateDashboard } from "@dahlia-ai/ui/app/navigation";
+import { encodeId } from "@dahlia-ai/ui/model/typeid";
+import "@dahlia-ai/ui/styles.css";
 
 const initialQuery = location.search;
 const previewMode = new URLSearchParams(location.search).has("preview");

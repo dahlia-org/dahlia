@@ -1,5 +1,5 @@
 import { expect, it } from "vitest";
-import { encodeId } from "../src/typeid";
+import { encodeId } from "@dahlia-ai/ui/model/typeid";
 import { evaluateMemory } from "../scripts/evaluate-memory";
 
 it("scores final distinct documents and surviving excerpts, with only aggregate output", async () => {

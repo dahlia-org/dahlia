@@ -17,8 +17,8 @@ import { canonicalJson } from "../src/sync/service";
 import { ingestionFingerprint, ingestionPolicy } from "../src/memory/ingestion";
 import { contentHash, meetingDocument, noteDocument } from "../src/memory/sources";
 import type { MemoryDocument } from "../src/memory/model";
-import { uuidV7 } from "../src/id";
-import { encodeId } from "../src/typeid";
+import { uuidV7 } from "@dahlia-ai/ui/model/id";
+import { encodeId } from "@dahlia-ai/ui/model/typeid";
 import { evaluateMemory, type questionsSchema } from "./evaluate-memory";
 
 export async function compareMemoryIngestion(input: {

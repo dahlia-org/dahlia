@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { chatModels, pickerModels } from "../src/agent/models";
+import { chatModels, pickerModels } from "@dahlia-ai/ui/model/chat-models";
 import { createAiService } from "../src/agent/service";
 import { modelList, type CodexModelWire } from "../src/ai-gateway/models";
 import type { GatewayService } from "../src/ai-gateway/service";

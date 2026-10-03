@@ -4,7 +4,7 @@ import { canonicalJson, type MeetingSyncService } from "../sync/service";
 import type { MeetingSyncStore } from "../sync/types";
 import { sampleEvenly, summaryScreenshotCandidates } from "../sync/screenshot-selection";
 import { RequestError } from "../storage/upload";
-import { encodeId } from "../typeid";
+import { encodeId } from "@dahlia-ai/ui/model/typeid";
 import { HindsightError } from "./errors";
 import type { MemoryDocument } from "./model";
 import { contentHash } from "./sources";

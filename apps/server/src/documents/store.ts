@@ -5,8 +5,8 @@ import type * as Schema from "../db/auth-schema";
 import type { Identity } from "../auth/identity";
 import type { createContentEncryption } from "../encryption/store";
 import { RequestError } from "../storage/upload";
-import { uuidV7 } from "../id";
-import { DocumentCore, decodeBinary, encodeBinary, documentSchemaVersion, documentStateLimit, emptyDocumentUpdate, type DocumentRecovery } from "./core";
+import { uuidV7 } from "@dahlia-ai/ui/model/id";
+import { DocumentCore, decodeBinary, encodeBinary, documentSchemaVersion, documentStateLimit, emptyDocumentUpdate, type DocumentRecovery } from "@dahlia-ai/ui/documents/core";
 import { documentRecoveryPageBytes } from "./model";
 
 type DocumentRow = typeof Schema.document.$inferSelect;

@@ -24,7 +24,8 @@ Use progressive disclosure. Read the closest implementation first, then only the
 | Databricks forwarded user token | [Upstream identity](../../docs/adr/server/databricks.md#upstream-identity) |
 | Databricks model configuration | [Upstream identity](../../docs/adr/server/databricks.md#upstream-identity) |
 | Files and recording storage or HTTP reads | [Shared sync](../../docs/adr/shared/sync.md), then the affected `src/storage` adapter |
-| Dependencies, lockfiles, packaging, or deployment source layout | [アプリ単位の依存管理](../../docs/adr/monorepo/dependencies.md) |
+| Dependencies, lockfiles, packaging, or deployment source layout | [pnpm workspace と共通 UI の依存管理](../../docs/adr/monorepo/dependencies.md) |
+| Web UI screens, client data layer, generated TypeScript client, or Documents core | [`packages/ui/AGENTS.md`](../../packages/ui/AGENTS.md) |
 
 Use the [ADR index](../../docs/adr/README.md) only when historical rationale or a contract change requires it. Do not read unrelated ADRs by default.
 
@@ -84,7 +85,8 @@ Use the [ADR index](../../docs/adr/README.md) only when historical rationale or 
 - Add focused configuration tests for defaults, valid runtime combinations, and rejected unsafe combinations. Do not preserve removed environment aliases unless an approved compatibility contract requires them.
 - When changing package exports, migrations, or bundled assets, update `package.json` and `scripts/verify-package.mjs` so the packed artifact—not only the source tree—is verified.
 - Public API, configuration, schema, auth, or UI behavior changes require matching tests and documentation.
-- Dependency additions or upgrades require user authorization for the specific change. This package owns its `package.json`, `pnpm-lock.yaml`, `pnpm-workspace.yaml`, and pinned pnpm version; run pnpm commands from `apps/server`.
+- Dependency additions or upgrades require user authorization for the specific change. This package owns its `package.json`; the root pnpm workspace owns the lockfile, `pnpm-workspace.yaml`, and pinned pnpm version. Run Server scripts from `apps/server`.
+- The Web UI lives in `@dahlia-ai/ui` (`packages/ui`), a `workspace:*` devDependency bundled into every build and declaration. Server may import its browser-safe `model/*` and `documents/*` modules; the UI must never import Server. Keep `@dahlia-ai/ui` out of packed dependencies; `scripts/verify-package.mjs` checks this.
 
 ## Validation
 

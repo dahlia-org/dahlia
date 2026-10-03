@@ -1,4 +1,4 @@
-import { uuidV7 } from "../../src/id";
+import { uuidV7 } from "@dahlia-ai/ui/model/id";
 import type { JobKind, JobPayload } from "../../src/jobs/model";
 export function testJobPayload(kind: JobKind): JobPayload {
   switch (kind) {

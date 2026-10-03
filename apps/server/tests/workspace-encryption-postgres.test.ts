@@ -9,7 +9,7 @@ import { createPostgresSearchIndexStore } from "../src/search/index-store";
 import { MeetingSyncService } from "../src/sync/service";
 import { createNodeApplicationStore } from "../src/auth/node-store";
 import { createWorkspaceCipher, unwrapDataKey, encodeBase64, encryptionConfig } from "../src/encryption/crypto";
-import { uuidV7 } from "../src/id";
+import { uuidV7 } from "@dahlia-ai/ui/model/id";
 import type { Identity } from "../src/auth/identity";
 import type { SyncTransaction } from "../src/sync/types";
 

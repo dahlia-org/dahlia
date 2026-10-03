@@ -1,9 +1,9 @@
 // Run pnpm dev:client and open /tests/browser/meeting-hover.html. No backend is contacted.
 import { createRoot } from "react-dom/client";
 import { flushSync } from "react-dom";
-import { HoverPreviewProvider, MeetingHoverCard } from "../../src/client/MeetingHoverCard";
-import type { SyncedMeetingInfo } from "../../src/client/api";
-import "../../src/client/styles.css";
+import { HoverPreviewProvider, MeetingHoverCard } from "@dahlia-ai/ui/screens/MeetingHoverCard";
+import type { SyncedMeetingInfo } from "@dahlia-ai/ui/api/api";
+import "@dahlia-ai/ui/styles.css";
 
 const meeting = { meetingId: "preview", name: "リリース計画：次のバージョンの機能と検証方針を確認", duration: 3360,
   createdAt: "2026-09-10T06:00:00Z", description: "次のリリースに含める変更と検証項目を確認し、担当とスケジュールを決定。残っている課題と次回までの作業を整理。" } as SyncedMeetingInfo;

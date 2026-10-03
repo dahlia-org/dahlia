@@ -1,14 +1,14 @@
-import { DEFAULT_WORKSPACE_GENERATION_SETTINGS, type WorkspaceGenerationSettings } from "../workspace-generation-settings";
+import { DEFAULT_WORKSPACE_GENERATION_SETTINGS, type WorkspaceGenerationSettings } from "@dahlia-ai/ui/model/workspace-generation-settings";
 import type { CalendarEventSnapshot } from "../sync/schemas";
 import type { TranscriptMetadata } from "../sync/transcript";
-import type { SummaryMetadata } from "../summary/metadata";
+import type { SummaryMetadata } from "@dahlia-ai/ui/model/summary-metadata";
 import type { SummaryJob } from "../summary/model";
 import type { RecordingRecord } from "../recordings/model";
 import { sql } from "drizzle-orm";
 import { blob, check, foreignKey, index, integer, primaryKey, real, sqliteTable, sqliteView, text, unique, uniqueIndex } from "drizzle-orm/sqlite-core";
 
 import type { FileMetadata } from "../files/model";
-import { DEFAULT_SEARCH_SETTINGS, type SearchSettings } from "../search/settings-model";
+import { DEFAULT_SEARCH_SETTINGS, type SearchSettings } from "@dahlia-ai/ui/model/search-settings";
 
 import { user as authUser, organization as authOrganization } from "./generated/sqlite-auth-schema";
 
@@ -601,7 +601,7 @@ export const documentRecovery = sqliteTable("document_recoveries", {
   documentId: text("document_id").notNull().references(() => document.id, { onDelete: "cascade" }),
   workspaceId: text("workspace_id").notNull().references(() => syncedWorkspace.workspaceId, { onDelete: "cascade" }),
   sequence: integer("sequence").notNull(),
-  blocks: text("blocks", { mode: "json" }).$type<import("../documents/core").DocumentBlock[]>().notNull(),
+  blocks: text("blocks", { mode: "json" }).$type<import("@dahlia-ai/ui/documents/core").DocumentBlock[]>().notNull(),
   reason: text("reason").$type<"deleted" | "concurrent_delete">().notNull(),
   encryptedPayload: text("encrypted_payload"),
   createdAt: sqliteTimestamp("created_at").notNull(),

@@ -1,10 +1,10 @@
-import { DEFAULT_WORKSPACE_GENERATION_SETTINGS } from "../../src/workspace-generation-settings";
+import { DEFAULT_WORKSPACE_GENERATION_SETTINGS } from "@dahlia-ai/ui/model/workspace-generation-settings";
 // Open /tests/browser/sharing.html with pnpm dev:client. All requests are mocked.
 import { createRoot } from "react-dom/client";
-import { SidebarProvider } from "../../src/client/Sidebar";
-import { WorkspaceSharing } from "../../src/client/WorkspaceSharing";
-import type { SyncedWorkspaceInfo } from "../../src/client/api";
-import "../../src/client/styles.css";
+import { SidebarProvider } from "@dahlia-ai/ui/screens/Sidebar";
+import { WorkspaceSharing } from "@dahlia-ai/ui/screens/WorkspaceSharing";
+import type { SyncedWorkspaceInfo } from "@dahlia-ai/ui/api/api";
+import "@dahlia-ai/ui/styles.css";
 
 const targets = [
   { principalType: "organization", principalId: "org", name: "Example Org", detail: "example" },

@@ -64,7 +64,7 @@ Desktop / Server / 外部 client 間の契約。
 
 リポジトリ全体の build / package 所有境界。
 
-- [アプリ単位の依存管理](monorepo/dependencies.md)
+- [pnpm workspace と共通 UI の依存管理](monorepo/dependencies.md)
 
 ## 更新のルール
 

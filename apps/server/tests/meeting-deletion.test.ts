@@ -8,7 +8,7 @@ import type { AppConfig } from "../src/config";
 import type { Identity } from "../src/auth/identity";
 import type { SyncTransactionOperation } from "../src/sync/types";
 import { MeetingSyncService } from "../src/sync/service";
-import { uuidV7 } from "../src/id";
+import { uuidV7 } from "@dahlia-ai/ui/model/id";
 import { fileStorageKey } from "../src/files/model";
 import { encodeBase64, encryptionConfig } from "../src/encryption/crypto";
 import { LocalObjectStorage } from "../src/storage/local";

@@ -5,10 +5,10 @@ import { InMemoryStore } from "@mastra/core/storage";
 import { aiChatSchema, createAiService } from "../src/agent/service";
 import { createMeetingTools, meetingRequestContext } from "../src/agent/tools";
 import { registerMastraTool } from "../src/mcp";
-import { encodeId } from "../src/typeid";
+import { encodeId } from "@dahlia-ai/ui/model/typeid";
 import type { Identity } from "../src/auth/identity";
 import type { MeetingSyncService } from "../src/sync/service";
-import { mergeRecoveredMessages, prependEarlierMessages, readAiEvents, recoverFailedDraft } from "../src/client/AiChat";
+import { mergeRecoveredMessages, prependEarlierMessages, readAiEvents, recoverFailedDraft } from "@dahlia-ai/ui/screens/AiChat";
 import type { AppConfig } from "../src/config";
 import type { GatewayService } from "../src/ai-gateway/service";
 

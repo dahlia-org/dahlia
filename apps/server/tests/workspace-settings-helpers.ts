@@ -1,8 +1,8 @@
 import type { AuthStore } from "../src/auth/store";
 import type { Identity } from "../src/auth/identity";
 import { MeetingSyncService } from "../src/sync/service";
-import { uuidV7 } from "../src/id";
-import { workspaceGenerationSettingsSchema, type WorkspaceGenerationSettings } from "../src/workspace-generation-settings";
+import { uuidV7 } from "@dahlia-ai/ui/model/id";
+import { workspaceGenerationSettingsSchema, type WorkspaceGenerationSettings } from "@dahlia-ai/ui/model/workspace-generation-settings";
 
 type Remote = WorkspaceGenerationSettings["processing"]["remote"];
 type Patch = Omit<Partial<WorkspaceGenerationSettings>, "processing"> & {

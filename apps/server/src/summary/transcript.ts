@@ -1,5 +1,5 @@
 import { canWriteWorkspace } from "../auth/workspace-permissions";
-import { summaryResponseMetadataSchema } from "./metadata";
+import { summaryResponseMetadataSchema } from "@dahlia-ai/ui/model/summary-metadata";
 import { resolveSummaryPreferences } from "./preferences";
 import { Buffer } from "node:buffer";
 import { z } from "zod";
@@ -10,7 +10,7 @@ import { DatabricksTokenError } from "../databricks/token";
 import { createJobProvider } from "../ai-gateway/job-provider";
 import { GatewayRequestError } from "../ai-gateway/errors";
 import { sendOpenAIResponses } from "../ai-gateway/adapters";
-import { isSummaryModel } from "./audio-model";
+import { isSummaryModel } from "@dahlia-ai/ui/model/summary-models";
 import { SummaryError, summaryDocument, summaryResponseSchema, type SummaryMethod, type SummaryInput } from "./model";
 import { createScreenshotSelector, selectSummaryScreenshots, summaryScreenshotCandidates, type ScreenshotSelector } from "./screenshot-selection";
 

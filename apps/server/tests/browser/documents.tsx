@@ -1,11 +1,11 @@
 // pnpm dev:client -> /tests/browser/documents.html. Synthetic in-memory API; no credentials or real data.
 import React, { useState } from "react";
 import { createRoot } from "react-dom/client";
-import { MeetingNotes, PendingDocumentNotice } from "../../src/client/Documents";
-import { DocumentCore, removedBlocks, type DocumentRecovery } from "../../src/documents/core";
-import { encodeId } from "../../src/typeid";
-import { uuidV7 } from "../../src/id";
-import "../../src/client/styles.css";
+import { MeetingNotes, PendingDocumentNotice } from "@dahlia-ai/ui/screens/Documents";
+import { DocumentCore, removedBlocks, type DocumentRecovery } from "@dahlia-ai/ui/documents/core";
+import { encodeId } from "@dahlia-ai/ui/model/typeid";
+import { uuidV7 } from "@dahlia-ai/ui/model/id";
+import "@dahlia-ai/ui/styles.css";
 
 const workspace = encodeId("workspace", "019959c4-4000-7000-8000-000000000001");
 const meeting = encodeId("meeting", "019959c4-4000-7000-8000-000000000002");

@@ -1,7 +1,7 @@
 import type { z } from "zod";
-import { generationPreferencesSchema, summaryStyleDetail } from "../workspace-generation-settings";
+import { generationPreferencesSchema, summaryStyleDetail } from "@dahlia-ai/ui/model/workspace-generation-settings";
 import type { GatewayModelList } from "../ai-gateway/backend";
-import { isAudioSummaryModel, isSummaryModel } from "./audio-model";
+import { isAudioSummaryModel, isSummaryModel } from "@dahlia-ai/ui/model/summary-models";
 import { SummaryError, type SummaryInput, type TranscriptSettings } from "./model";
 
 export type GenerationPreferences = z.infer<typeof generationPreferencesSchema>;

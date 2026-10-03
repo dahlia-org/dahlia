@@ -1,8 +1,8 @@
-import { DEFAULT_WORKSPACE_GENERATION_SETTINGS } from "../src/workspace-generation-settings";
+import { DEFAULT_WORKSPACE_GENERATION_SETTINGS } from "@dahlia-ai/ui/model/workspace-generation-settings";
 import { updateGenerationSettings } from "./workspace-settings-helpers";
 import { makeSignature } from "better-auth/crypto";
 import { testOrganizationID } from "./public-test-client";
-import { encodeId } from "../src/typeid";
+import { encodeId } from "@dahlia-ai/ui/model/typeid";
 import { wireValue } from "../src/public-wire";
 import { seedHeaderIdentity, testUserID } from "./public-test-client";
 import { z } from "zod";

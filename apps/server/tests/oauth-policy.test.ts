@@ -1,6 +1,6 @@
 import { Hono } from "hono";
 import { installPublicIDs } from "../src/public-http";
-import { encodeId } from "../src/typeid";
+import { encodeId } from "@dahlia-ai/ui/model/typeid";
 import { describe, expect, it, vi } from "vitest";
 
 import { denyOAuthManagement } from "../src/auth/better-auth";

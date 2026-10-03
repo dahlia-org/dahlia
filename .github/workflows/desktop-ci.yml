@@ -8,6 +8,10 @@ on:
       - "Package.swift"
       - "Package.resolved"
       - "apps/server/**"
+      - "packages/ui/**"
+      - "package.json"
+      - "pnpm-lock.yaml"
+      - "pnpm-workspace.yaml"
   push:
     branches:
       - main
@@ -17,6 +21,10 @@ on:
       - "Package.swift"
       - "Package.resolved"
       - "apps/server/**"
+      - "packages/ui/**"
+      - "package.json"
+      - "pnpm-lock.yaml"
+      - "pnpm-workspace.yaml"
 
 concurrency:
   group: desktop-ci-${{ github.ref }}
@@ -89,7 +97,7 @@ jobs:
       - name: Set up pnpm
         uses: pnpm/action-setup@v4
         with:
-          package_json_file: apps/server/package.json
+          package_json_file: package.json
           run_install: false
 
       - name: Set up Node.js
@@ -97,13 +105,13 @@ jobs:
         with:
           node-version: 24
           cache: pnpm
-          cache-dependency-path: apps/server/pnpm-lock.yaml
+          cache-dependency-path: pnpm-lock.yaml
 
       - name: Install Server dependencies
-        run: pnpm --dir apps/server install --frozen-lockfile
+        run: pnpm install --frozen-lockfile --filter @dahlia-ai/server...
 
       - name: Verify generated API contract
-        run: pnpm --dir apps/server openapi:check
+        run: pnpm --filter @dahlia-ai/server openapi:check
 
       - name: Build package and tests
         run: |

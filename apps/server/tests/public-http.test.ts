@@ -11,8 +11,8 @@ import { createApp } from "../src/app";
 import { initializeDahliaAuth } from "../src/auth/better-auth";
 import { createNodeApplicationStore } from "../src/auth/node-store";
 import { LocalObjectStorage } from "../src/storage/local";
-import { uuidV7 } from "../src/id";
-import { decodeId, encodeId } from "../src/typeid";
+import { uuidV7 } from "@dahlia-ai/ui/model/id";
+import { decodeId, encodeId } from "@dahlia-ai/ui/model/typeid";
 import { createWorkerHandler } from "../src/worker";
 
 it("covers every registered resource route and method at the public boundary", () => {

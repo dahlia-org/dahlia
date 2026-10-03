@@ -6,7 +6,7 @@ import { createWorkerHandler } from "../src/worker";
 import { testStore } from "./test-store";
 import type { AiService } from "../src/agent/service";
 import type { AiHistoryCursor, AiHistoryService, AiThread } from "../src/agent/history";
-import { encodeId } from "../src/typeid";
+import { encodeId } from "@dahlia-ai/ui/model/typeid";
 import { MeetingSyncService } from "../src/sync/service";
 import { modelList } from "../src/ai-gateway/models";
 

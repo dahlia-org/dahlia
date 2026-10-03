@@ -1,6 +1,6 @@
 // pnpm dev:client -> /tests/browser/chat-memory.html. In-memory API only.
 import { createRoot } from "react-dom/client";
-import { WorkingMemoryEditor, LiveChatContext } from "../../src/client/ChatMemory";
+import { WorkingMemoryEditor, LiveChatContext } from "@dahlia-ai/ui/screens/ChatMemory";
 import { type WorkingMemorySettings } from "../../src/agent/context-model";
 
 Object.defineProperty(navigator, "language", { value: "en-US", configurable: true });

@@ -1,4 +1,6 @@
-import type { CodexModelWire } from "./models";
+import type { GatewayModelList } from "@dahlia-ai/ui/model/gateway-models";
+
+export type { GatewayModelList };
 
 export interface ResponsesInputItem {
   [key: string]: unknown;
@@ -26,17 +28,6 @@ export interface ListModelsRequest {
   signal: AbortSignal;
 }
 
-export interface GatewayModelList {
-  object: "list";
-  data: Array<{
-    id: string;
-    object: "model";
-    created: number;
-    owned_by: string;
-    display_name: string;
-  }>;
-  models: CodexModelWire[];
-}
 
 export interface AIGatewayBackend {
   listModels(request: ListModelsRequest): Promise<GatewayModelList>;

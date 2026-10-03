@@ -16,8 +16,8 @@ import { routeMemory } from "../src/memory/router";
 import { createDahliaMemoryTools } from "../src/memory/dahlia-tools";
 import { meetingRequestContext } from "../src/agent/tools";
 import { MEMORY_READ_SCOPE, MEMORY_WRITE_SCOPE } from "../src/auth/scopes";
-import { decodeId, encodeId } from "../src/typeid";
-import { uuidV7 } from "../src/id";
+import { decodeId, encodeId } from "@dahlia-ai/ui/model/typeid";
+import { uuidV7 } from "@dahlia-ai/ui/model/id";
 import { seedHeaderIdentity, testOrganizationID } from "./public-test-client";
 
 const signal = new AbortController().signal;

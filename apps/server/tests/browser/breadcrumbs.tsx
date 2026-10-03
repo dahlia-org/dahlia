@@ -1,7 +1,7 @@
 // Run pnpm dev:client and open /tests/browser/breadcrumbs.html at desktop and mobile widths.
 import { createRoot } from "react-dom/client";
-import { BreadcrumbHeader } from "../../src/client";
-import "../../src/client/styles.css";
+import { BreadcrumbHeader } from "@dahlia-ai/ui";
+import "@dahlia-ai/ui/styles.css";
 
 const workspace = "ワークスペース".repeat(20);
 const project = "プロジェクト".repeat(20);

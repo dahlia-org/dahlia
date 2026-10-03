@@ -3,11 +3,11 @@
 import { StrictMode } from "react";
 import { flushSync } from "react-dom";
 import { createRoot } from "react-dom/client";
-import { App, SyncedMeeting } from "../../src/client";
-import { DetailTabs } from "../../src/client/MeetingContent";
-import { refreshData } from "../../src/client/live-data";
-import { encodeId } from "../../src/typeid";
-import "../../src/client/styles.css";
+import { App, SyncedMeeting } from "@dahlia-ai/ui";
+import { DetailTabs } from "@dahlia-ai/ui/screens/MeetingContent";
+import { refreshData } from "@dahlia-ai/ui/api/live-data";
+import { encodeId } from "@dahlia-ai/ui/model/typeid";
+import "@dahlia-ai/ui/styles.css";
 
 const previewMode = new URLSearchParams(location.search).has("preview");
 const previewPage = new URLSearchParams(location.search).get("page") ?? "meeting";
@@ -310,7 +310,7 @@ async function run() {
   }
   await document.fonts.ready;
   if (previewMode) {
-    const { navigateDashboard } = await import("../../src/client/navigation");
+    const { navigateDashboard } = await import("@dahlia-ai/ui/app/navigation");
     if (previewPage === "home") navigateDashboard("/dashboard");
     if (previewPage === "workspace") navigateDashboard(`/o/${workspaceId}`);
     if (previewPage === "settings") navigateDashboard("/dashboard/settings");
@@ -353,7 +353,7 @@ async function run() {
   document.querySelector<HTMLAnchorElement>(`aside a[href="/o/${workspaceId}"]`)!.click();
   await until(() => location.pathname === `/o/${workspaceId}`);
   assert(document.documentElement === documentBeforeWorkspaceNavigation, "Sidebar Workspace link reloaded the document");
-  const { navigateDashboard } = await import("../../src/client/navigation");
+  const { navigateDashboard } = await import("@dahlia-ai/ui/app/navigation");
   navigateDashboard("/dashboard");
   await until(() => document.querySelector(`.recent-meetings a[href="/o/${primaryMeetingId}"]`));
   const dateEdges = [...document.querySelectorAll<HTMLElement>(".recent-meetings .meeting-list-row .collection-date")].map((date) => Math.round(date.getBoundingClientRect().right));

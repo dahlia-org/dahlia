@@ -1,9 +1,9 @@
 // Run pnpm dev:client and open /tests/browser/sidebar-hover.html. No backend is contacted.
 import { StrictMode, useState } from "react";
 import { createRoot } from "react-dom/client";
-import { AppShell, PageHeader } from "../../src/client/layout/AppShell";
-import type { SessionInfo } from "../../src/client";
-import "../../src/client/styles.css";
+import { AppShell, PageHeader } from "@dahlia-ai/ui/layout/AppShell";
+import type { SessionInfo } from "@dahlia-ai/ui";
+import "@dahlia-ai/ui/styles.css";
 
 Object.defineProperty(navigator, "language", { value: "en-US", configurable: true });
 const workspace = { workspaceId: "hover-workspace", name: "Workspace", encryption: "none" };

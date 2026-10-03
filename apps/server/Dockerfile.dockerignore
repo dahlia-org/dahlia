@@ -1,0 +1,18 @@
+# The image builds from the repository root; send only the Server workspace inputs.
+*
+!package.json
+!pnpm-lock.yaml
+!pnpm-workspace.yaml
+!apps/server
+!packages/ui
+**/node_modules
+**/dist
+**/.data
+**/.env*
+**/.dev.vars*
+**/.wrangler
+**/dahlia-auth-secret
+apps/server/wrangler.jsonc
+**/.pnpm-store
+**/pnpm-debug.log*
+**/.DS_Store

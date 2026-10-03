@@ -22,7 +22,7 @@ jobs:
       - name: Set up pnpm
         uses: pnpm/action-setup@v4
         with:
-          package_json_file: apps/server/package.json
+          package_json_file: package.json
           run_install: false
 
       - name: Set up Node.js
@@ -30,14 +30,17 @@ jobs:
         with:
           node-version: 24
           cache: pnpm
-          cache-dependency-path: apps/server/pnpm-lock.yaml
+          cache-dependency-path: pnpm-lock.yaml
           registry-url: https://registry.npmjs.org
 
       - name: Install dependencies
-        run: pnpm install --frozen-lockfile
+        run: pnpm install --frozen-lockfile --filter @dahlia-ai/server...
 
       - name: Verify package tag
         run: node -e 'const expected=`server-v${require("./package.json").version}`;if(process.env.GITHUB_REF_NAME!==expected)throw new Error(`Expected tag ${expected}`)'
+
+      - name: Validate shared UI
+        run: pnpm --filter @dahlia-ai/ui check
 
       - name: Validate Server
         run: pnpm check

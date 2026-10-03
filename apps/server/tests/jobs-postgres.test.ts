@@ -1,6 +1,6 @@
 import { seedPostgresIdentity } from "./public-test-client";
 import { testOrganizationID } from "./public-test-client";
-import { summaryStyleDetail } from "../src/workspace-generation-settings";
+import { summaryStyleDetail } from "@dahlia-ai/ui/model/workspace-generation-settings";
 import { describe, expect, it } from "vitest";
 import { sql } from "drizzle-orm";
 import { connectPostgresUrl } from "../src/db/postgres";
@@ -10,7 +10,7 @@ import { SummaryService } from "../src/summary/service";
 import { processSummaryJob } from "../src/summary/process";
 import { summaryDocument, type SummaryMethod } from "../src/summary/model";
 import { MeetingSyncService } from "../src/sync/service";
-import { uuidV7 } from "../src/id";
+import { uuidV7 } from "@dahlia-ai/ui/model/id";
 const databaseUrl = process.env.TEST_DATABASE_URL;
 describe.runIf(databaseUrl)("PostgreSQL targeted summary delivery", () => {
   it.each(["duplicate", "retry", "lease", "cancel", "permission", "conflict", "concurrent"])("protects durable results across %s delivery", async (scenario) => {

@@ -2,8 +2,8 @@ import { expect, it } from "vitest";
 import { Client } from "pg";
 import { createNodeApplicationStore } from "../src/auth/node-store";
 import { MeetingSyncService } from "../src/sync/service";
-import { DocumentCore } from "../src/documents/core";
-import { uuidV7 } from "../src/id";
+import { DocumentCore } from "@dahlia-ai/ui/documents/core";
+import { uuidV7 } from "@dahlia-ai/ui/model/id";
 import { seedPostgresIdentity, testOrganizationID } from "./public-test-client";
 
 it.runIf(process.env.TEST_DATABASE_URL)("enforces Documents RLS, composite tenant relationships, viewer permissions and shared presence", async () => {

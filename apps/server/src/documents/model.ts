@@ -1,5 +1,5 @@
 import { z } from "@hono/zod-openapi";
-import { documentStateLimit, documentUpdateLimit } from "./core";
+import { documentStateLimit, documentUpdateLimit } from "@dahlia-ai/ui/documents/core";
 
 // Two base64 states (update/vector) and JSON overhead; separate from domain transactions.
 export const documentRequestLimit = 24 * 1024 * 1024;

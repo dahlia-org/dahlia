@@ -1,4 +1,4 @@
-import { decodeId, encodeId } from "../typeid";
+import { decodeId, encodeId } from "@dahlia-ai/ui/model/typeid";
 import type { MemorySource } from "./model";
 
 export function memoryBankId(scopeId: string, personal = false) {

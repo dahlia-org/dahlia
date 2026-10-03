@@ -1,10 +1,10 @@
 // Run pnpm dev:client and open /tests/browser/account-settings.html. No backend is contacted.
 import { createRoot } from "react-dom/client";
-import { ServerSummarySettings } from "../../src/client/SummaryGeneration";
-import { DEFAULT_WORKSPACE_GENERATION_SETTINGS, workspaceGenerationSettingsSchema, type WorkspaceGenerationSettings } from "../../src/workspace-generation-settings";
+import { ServerSummarySettings } from "@dahlia-ai/ui/screens/SummaryGeneration";
+import { DEFAULT_WORKSPACE_GENERATION_SETTINGS, workspaceGenerationSettingsSchema, type WorkspaceGenerationSettings } from "@dahlia-ai/ui/model/workspace-generation-settings";
 import { modelList } from "../../src/ai-gateway/models";
-import { liveDataEvent } from "../../src/client/live-data";
-import "../../src/client/styles.css";
+import { liveDataEvent } from "@dahlia-ai/ui/api/live-data";
+import "@dahlia-ai/ui/styles.css";
 
 Object.defineProperty(navigator, "language", { value: "en-US", configurable: true });
 let settings = structuredClone(DEFAULT_WORKSPACE_GENERATION_SETTINGS);

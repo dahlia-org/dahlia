@@ -62,7 +62,7 @@
     "build:cloudflare": "pnpm run ensure:wrangler && WRANGLER_WRITE_LOGS=false WRANGLER_SEND_METRICS=false vite build --config vite.cloudflare.config.ts",
     "build:server": "tsup --config tsup.config.ts --no-dts",
     "build:library-client": "tsup --config tsup.client.config.ts && tailwindcss -i src/client/styles.css -o dist/client-library/styles.css --minify",
-    "check": "pnpm codex-models:check && pnpm documents:check && pnpm openapi:check && pnpm run lint && pnpm run typecheck && pnpm run test && pnpm run test:package && pnpm run worker:dry-run",
+    "check": "pnpm codex-models:check && pnpm openapi:check && pnpm run lint && pnpm run typecheck && pnpm run test && pnpm run test:package && pnpm run worker:dry-run",
     "codex-models:generate": "node scripts/codex-models.mjs",
     "codex-models:check": "node scripts/codex-models.mjs --check",
     "db:generate": "pnpm run db:generate:postgres && pnpm run db:generate:sqlite",
@@ -96,9 +96,7 @@
     "worker:dry-run": "pnpm run build:cloudflare && WRANGLER_WRITE_LOGS=false WRANGLER_SEND_METRICS=false wrangler deploy --dry-run --outdir dist/worker",
     "worker:types": "pnpm run ensure:wrangler && WRANGLER_WRITE_LOGS=false WRANGLER_SEND_METRICS=false wrangler types worker-configuration.d.ts",
     "openapi:generate": "node --import tsx scripts/generate-openapi.ts",
-    "openapi:check": "node --import tsx scripts/generate-openapi.ts --check",
-    "documents:build": "node scripts/document-assets.mjs",
-    "documents:check": "node scripts/document-assets.mjs --check"
+    "openapi:check": "node --import tsx scripts/generate-openapi.ts --check"
   },
   "dependencies": {
     "@better-auth/cimd": "1.7.1",
@@ -143,6 +141,7 @@
   },
   "devDependencies": {
     "@cloudflare/vite-plugin": "^1.51.0",
+    "@dahlia-ai/ui": "workspace:*",
     "@eslint/js": "^10.0.1",
     "@tailwindcss/cli": "^4.3.3",
     "@tailwindcss/vite": "^4.3.3",

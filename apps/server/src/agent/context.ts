@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-import { encodeId } from "../typeid";
+import { encodeId } from "@dahlia-ai/ui/model/typeid";
 
 export const aiTimeZoneSchema = z.string().min(1).max(100).refine((timeZone) => {
   try { new Intl.DateTimeFormat("en", { timeZone }); return true; }

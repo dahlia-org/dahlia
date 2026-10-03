@@ -1,9 +1,9 @@
-import { workspaceGenerationSettingsSchema } from "../workspace-generation-settings";
+import { workspaceGenerationSettingsSchema } from "@dahlia-ai/ui/model/workspace-generation-settings";
 import { z } from "@hono/zod-openapi";
 import { fileWireResponseMetadataSchema } from "../files/model";
 import { recordingManifestSchema } from "../recordings/model";
 import { transcriptMetadataSchema } from "../sync/transcript";
-import { summaryMetadataSchema } from "../summary/metadata";
+import { summaryMetadataSchema } from "@dahlia-ai/ui/model/summary-metadata";
 import { summaryInputSchema, transcriptSettingsSchema } from "../summary/model";
 import { calendarEventSchema, meetingDeletionGraceDaysSchema, transactionDataSchemas, transactionOperationSchema, transactionSchema } from "../sync/schemas";
 

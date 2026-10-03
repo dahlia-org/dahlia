@@ -6,7 +6,7 @@ import { createJobStore, type BackgroundJob } from "../jobs/store";
 import { defaultJobLimits } from "../jobs/model";
 import type { Pool, PoolClient } from "pg";
 import type { Identity } from "../auth/identity";
-import { uuidV7 } from "../id";
+import { uuidV7 } from "@dahlia-ai/ui/model/id";
 import { RequestError } from "../storage/upload";
 import { withIdentityTransaction } from "./history";
 import { workingMemoryContentSchema, liveSnapshotSchema,

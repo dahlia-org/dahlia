@@ -1,4 +1,4 @@
-import { SEARCH_FIELDS, type SearchField } from "./settings-model";
+import { SEARCH_FIELDS, type SearchField } from "@dahlia-ai/ui/model/search-settings";
 import { summarySearchableText, summaryTags } from "./summary";
 import { createSearchText, type SearchTokenizer } from "./tokenizer";
 

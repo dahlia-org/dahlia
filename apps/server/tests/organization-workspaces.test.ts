@@ -2,7 +2,7 @@ import { Client } from "pg";
 import { makeSignature } from "better-auth/crypto";
 import { encryptionConfig } from "../src/encryption/crypto";
 import { AUTH_MAX_REQUEST_BYTES, createApp } from "../src/app";
-import { decodeId, encodeId } from "../src/typeid";
+import { decodeId, encodeId } from "@dahlia-ai/ui/model/typeid";
 import { afterEach, describe, expect, it } from "vitest";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -11,7 +11,7 @@ import { DatabaseSync } from "node:sqlite";
 import { createNodeApplicationStore } from "../src/auth/node-store";
 import { initializeDahliaAuth } from "../src/auth/better-auth";
 import { IdentityService, type Identity } from "../src/auth/identity";
-import { uuidV7 } from "../src/id";
+import { uuidV7 } from "@dahlia-ai/ui/model/id";
 import type { SyncTransaction } from "../src/sync/types";
 
 const cleanups: Array<() => Promise<void>> = [];

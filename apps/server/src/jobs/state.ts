@@ -2,7 +2,7 @@ import { and, eq, gt, sql } from "drizzle-orm";
 import type { SQL } from "drizzle-orm";
 import type { NodePgDatabase } from "drizzle-orm/node-postgres";
 import type * as Schema from "../db/auth-schema";
-import { uuidV7 } from "../id";
+import { uuidV7 } from "@dahlia-ai/ui/model/id";
 import { jobPayloadSchema, type JobKind, type JobPayload } from "./model";
 import type { BackgroundJob } from "./store";
 

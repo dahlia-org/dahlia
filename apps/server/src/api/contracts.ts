@@ -5,12 +5,12 @@ import { memoryResultSchema, memoryScopeSchema, memoryConfigureSchema, memoryLis
 import { workingMemorySettingsSchema, workingMemoryEditSchema, liveSelectionSchema, liveStatusSchema } from "../agent/context-model";
 import { organizationDomainsSchema } from "../auth/organization-domains";
 import { projectPublicIDs } from "./public-schema";
-import { createOrganizationSchema } from "../auth/organization-slug";
+import { createOrganizationSchema } from "@dahlia-ai/ui/model/organization-slug";
 import { problemResponse } from "./problem";
 import { createRoute, OpenAPIHono, z, type RouteConfig } from "@hono/zod-openapi";
 import type { Handler } from "hono";
 import type { AppVariables } from "../app";
-import { searchSettingsSchema } from "../search/settings-model";
+import { searchSettingsSchema } from "@dahlia-ai/ui/model/search-settings";
 import { fileUploadSchema, filePatchSchema, fileWireMetadataSchema } from "../files/model";
 import { summaryStartSchema } from "../summary/service";
 import { workspaceSearchRequestSchema } from "../search/model";

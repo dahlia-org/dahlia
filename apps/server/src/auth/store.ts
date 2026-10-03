@@ -8,7 +8,7 @@ import { createSearchSettingsStore, type SearchSettingsStore } from "../search/s
 import type { DBAdapterInstance } from "better-auth";
 import { drizzleAdapter } from "@better-auth/drizzle-adapter/relations-v2";
 import { and, asc, desc, eq, gt, inArray, isNull, or, sql } from "drizzle-orm";
-import { uuidV7 } from "../id";
+import { uuidV7 } from "@dahlia-ai/ui/model/id";
 
 import { gatewayResource, type AppConfig } from "../config";
 import * as postgresSchema from "../db/auth-schema";

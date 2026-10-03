@@ -3,7 +3,7 @@ import { sql } from "drizzle-orm";
 import { createPostgresAuthStore } from "../src/auth/store";
 import { connectPostgresUrl } from "../src/db/postgres";
 import { MeetingSyncService } from "../src/sync/service";
-import { uuidV7 } from "../src/id";
+import { uuidV7 } from "@dahlia-ai/ui/model/id";
 import { seedPostgresIdentity, testOrganizationID } from "./public-test-client";
 import type { Identity } from "../src/auth/identity";
 import type { AppConfig } from "../src/config";
@@ -11,7 +11,7 @@ import { WorkspaceMemoryService } from "../src/memory/service";
 import { ingestionPolicy } from "../src/memory/ingestion";
 import { standardModel } from "../src/memory/pages-model";
 import { noteDocument } from "../src/memory/sources";
-import { encodeId } from "../src/typeid";
+import { encodeId } from "@dahlia-ai/ui/model/typeid";
 
 const url = process.env.TEST_DATABASE_URL;
 const connection = url ? connectPostgresUrl(url, 1) : undefined;

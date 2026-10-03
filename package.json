@@ -1,0 +1,15 @@
+{
+  "name": "dahlia-workspace",
+  "private": true,
+  "packageManager": "pnpm@11.9.0",
+  "engines": {
+    "node": ">=22.13"
+  },
+  "scripts": {
+    "build": "TURBO_TELEMETRY_DISABLED=1 turbo run build",
+    "check": "TURBO_TELEMETRY_DISABLED=1 turbo run check --concurrency=1"
+  },
+  "devDependencies": {
+    "turbo": "^2.11.4"
+  }
+}

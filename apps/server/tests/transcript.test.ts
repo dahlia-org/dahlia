@@ -12,7 +12,7 @@ import { createWorkerHandler } from "../src/worker";
 import { createNodeApplicationStore } from "../src/auth/node-store";
 import type { Identity } from "../src/auth/identity";
 import type { AppConfig } from "../src/config";
-import { uuidV7 } from "../src/id";
+import { uuidV7 } from "@dahlia-ai/ui/model/id";
 import { MeetingSyncService } from "../src/sync/service";
 import { transcriptMetadataSchema, transcriptStatus, TRANSCRIPT_ACTIVITY_WINDOW_MS } from "../src/sync/transcript";
 import transcriptPolicy from "../src/sync/transcript-policy.json";

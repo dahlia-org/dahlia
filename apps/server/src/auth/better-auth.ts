@@ -1,6 +1,6 @@
 import { resolveAuthSecret } from "./secret";
 import { headerIdentitySource } from "./header";
-import { uuidV7 } from "../id";
+import { uuidV7 } from "@dahlia-ai/ui/model/id";
 import { oauthProvider } from "@better-auth/oauth-provider";
 import { oauthProviderResourceClient } from "@better-auth/oauth-provider/resource-client";
 import { betterAuth, type BetterAuthOptions } from "better-auth";

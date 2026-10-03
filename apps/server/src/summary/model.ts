@@ -1,12 +1,12 @@
 import type { GeneratedTranscript } from "./transcription";
-import type { SummaryMetadata } from "./metadata";
+import type { SummaryMetadata } from "@dahlia-ai/ui/model/summary-metadata";
 import type { GenerationPreferences } from "./preferences";
 import { z } from "zod";
-import { uuidV7 } from "../id";
+import { uuidV7 } from "@dahlia-ai/ui/model/id";
 import type { IdentitySyncStore } from "../sync/types";
 
-import { imageAnalysisSettingsSchema, normalizeSummaryDetail, summaryDetailSchema, summaryModelSettingsSchema } from "../workspace-generation-settings";
-export { summaryDetailSchema } from "../workspace-generation-settings";
+import { imageAnalysisSettingsSchema, normalizeSummaryDetail, summaryDetailSchema, summaryModelSettingsSchema } from "@dahlia-ai/ui/model/workspace-generation-settings";
+export { summaryDetailSchema } from "@dahlia-ai/ui/model/workspace-generation-settings";
 export const transcriptSettingsSchema = summaryModelSettingsSchema.extend({ imageAnalysis: imageAnalysisSettingsSchema.optional(), detail: summaryDetailSchema, transcriptionReasoningEffort: summaryModelSettingsSchema.shape.reasoningEffort.optional() });
 // Accepted jobs retain their captured settings across API contract changes.
 const legacyTranscriptionSettingsSchema = z.object({

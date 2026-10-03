@@ -1,7 +1,7 @@
 // Open /tests/browser/sticky-headers.html at desktop and mobile widths. No backend is contacted.
 import { createRoot } from "react-dom/client";
-import { AppShell, DetailHeaderBar, PageHeader } from "../../src/client/layout/AppShell";
-import "../../src/client/styles.css";
+import { AppShell, DetailHeaderBar, PageHeader } from "@dahlia-ai/ui/layout/AppShell";
+import "@dahlia-ai/ui/styles.css";
 
 globalThis.fetch = () => Promise.resolve(Response.json({ items: [] }));
 const root = createRoot(document.getElementById("root")!);

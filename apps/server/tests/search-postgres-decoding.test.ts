@@ -2,7 +2,7 @@ import { drizzle } from "drizzle-orm/node-postgres";
 import type { Pool } from "pg";
 import { expect, it, vi } from "vitest";
 import { createPostgresMeetingSyncStore } from "../src/sync/store";
-import { DEFAULT_SEARCH_SETTINGS, SEARCH_FIELDS } from "../src/search/settings-model";
+import { DEFAULT_SEARCH_SETTINGS, SEARCH_FIELDS } from "@dahlia-ai/ui/model/search-settings";
 
 it("disables Lakebase top-K scans before weighted ranking and reads settings once per identity transaction", async () => {
   const queries: Array<{ text: string; parameters: unknown[] }> = [];

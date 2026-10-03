@@ -2,7 +2,7 @@ import { createTool } from "@mastra/core/tools";
 import { z } from "zod";
 import { meetingContext, publicIdSchema, withMcpInputSchema } from "../agent/tools";
 import { RequestError } from "../storage/upload";
-import { decodeId } from "../typeid";
+import { decodeId } from "@dahlia-ai/ui/model/typeid";
 import type { WorkspaceMemoryService } from "./service";
 import { HindsightError } from "./hindsight";
 import { memorySearchOptions } from "./dahlia";

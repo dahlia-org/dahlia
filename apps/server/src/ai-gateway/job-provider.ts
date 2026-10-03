@@ -2,7 +2,7 @@ import type { AppConfig } from "../config";
 import { DatabricksTokenProvider } from "../databricks/token";
 import { CloudflareBackend, cloudflareHeaders, cloudflareModel } from "./cloudflare";
 import { DatabricksBackend } from "./databricks";
-import { CODEX_AUTO_REVIEW_ALIAS } from "./model-alias";
+import { CODEX_AUTO_REVIEW_ALIAS } from "@dahlia-ai/ui/model/model-alias";
 
 // Runtime-independent, server-credential execution. Request-scoped OBO belongs to the HTTP relay only.
 export function createJobProvider(config: AppConfig, transport: typeof fetch = fetch) {

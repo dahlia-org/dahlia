@@ -1,8 +1,8 @@
 // Open /tests/browser/select.html under pnpm dev:client. Uses no backend.
 import { createRoot } from "react-dom/client";
 import { useState } from "react";
-import { Select } from "../../src/client/Select";
-import "../../src/client/styles.css";
+import { Select } from "@dahlia-ai/ui/components/Select";
+import "@dahlia-ai/ui/styles.css";
 function Fixture() {
   const [value, setValue] = useState("a");
   const [search, setSearch] = useState("");

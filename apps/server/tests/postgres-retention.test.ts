@@ -1,4 +1,4 @@
-import { uuidV7 } from "../src/id";
+import { uuidV7 } from "@dahlia-ai/ui/model/id";
 import { seedPostgresIdentity } from "./public-test-client";
 import { testOrganizationID } from "./public-test-client";
 import { Client } from "pg";

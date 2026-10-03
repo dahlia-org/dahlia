@@ -1,0 +1,601 @@
+import { ChatInteraction } from "./ChatInteraction";
+import { chatModels, type AiModel, type ReasoningEffort } from "../model/chat-models";
+import type { GatewayModelList } from "../model/gateway-models";
+import type { components } from "../api/generated-api";
+import type { AiInteraction, AiResume } from "../model/ai-interaction";
+import { ChatMarkdown, StreamingChatMarkdown } from "./ChatMarkdown";
+import { WorkingMemoryEditor, LiveChatContext } from "./ChatMemory";
+import { WorkspaceMemory, SaveSharedMemory } from "./WorkspaceMemory";
+import { Brain, BriefcaseBusiness, Ellipsis, Plus, Send, Sparkles, Square, Trash2 } from "lucide-react";
+import { useEffect, useRef, useState, type KeyboardEvent, type MouseEvent } from "react";
+import { createPortal } from "react-dom";
+
+import { json, RequestError, uiText } from "../api/api";
+import { useActionDialog } from "./ActionDialog";
+import { HoverPreview, HoverPreviewProvider } from "./MeetingHoverCard";
+import { MenuIcon, useSidebar } from "./Sidebar";
+import { Button } from "../components/ui/button";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "../components/ui/dropdown-menu";
+import { DetailHeaderBar } from "../layout/AppShell";
+import { navigateDashboard } from "../app/navigation";
+import { decodeId } from "../model/typeid";
+import {
+  Select,
+  SelectContent,
+  SelectGroup,
+  SelectItem,
+  SelectLabel,
+  SelectTrigger,
+  SelectValue,
+} from "../components/ui/select";
+
+export type Message = { id?: string; role: "user" | "assistant"; content: string; createdAt?: string };
+type AiEvent = { type: "text"; text: string }
+  | { type: "tool"; name: string; status: "running" | "complete" }
+  | { type: "error"; code: string }
+  | { type: "interaction"; interaction: AiInteraction }
+  | { type: "interaction-resumed"; runId: string; toolCallId: string }
+  | { type: "done" };
+type AiThread = { id: string; title: string; workspaceId: string; createdAt: string; updatedAt: string };
+type PickerOption = { value: string; label: string; description: string };
+
+export function prependEarlierMessages(current: Message[], earlier: Message[]): Message[] {
+  const known = new Set(current.flatMap(({ id }) => id ? [id] : []));
+  return [...earlier.filter(({ id }) => !id || !known.has(id)), ...current];
+}
+
+export function mergeRecoveredMessages(current: Message[], stored: Message[]): Message[] {
+  const storedIds = new Set(stored.flatMap(({ id }) => id ? [id] : []));
+  const overlap = current.findIndex(({ id }) => Boolean(id && storedIds.has(id)));
+  return overlap < 0 ? stored : [...current.slice(0, overlap), ...stored];
+}
+
+export function recoverFailedDraft(stored: Message[], attempted: Message, previousMessages: Message[]): string {
+  const previousMessageId = previousMessages.findLast(({ id }) => id)?.id;
+  const previous = previousMessageId ? stored.findIndex(({ id }) => id === previousMessageId) : undefined;
+  if (previous === -1) return attempted.content;
+  let added = previous === undefined ? stored : stored.slice(previous + 1);
+  if (previous === undefined && previousMessages.length) {
+    const addedCount = Array.from({ length: stored.length + 1 }, (_, count) => count).find((count) => {
+      const before = stored.slice(0, stored.length - count);
+      const known = before.length ? previousMessages.slice(-before.length) : [];
+      return known.length === before.length
+        && before.every((message, index) => message.role === known[index]?.role && message.content === known[index]?.content);
+    });
+    if (addedCount === undefined) return attempted.content;
+    added = addedCount ? stored.slice(-addedCount) : [];
+  }
+  return added.some(({ role, content }) => role === "user" && content === attempted.content)
+    ? "" : attempted.content;
+}
+
+function ComposerPicker({ kind, label, value, options, disabled, onValueChange }: {
+  kind: "workspace" | "reasoning" | "model";
+  label: string;
+  value: string;
+  options: PickerOption[];
+  disabled: boolean;
+  onValueChange: (value: string) => void;
+}) {
+  const icon = (className?: string) => kind === "workspace"
+    ? <BriefcaseBusiness className={className} aria-hidden="true" />
+    : kind === "reasoning" ? <Brain className={className} aria-hidden="true" />
+      : <Sparkles className={className} aria-hidden="true" />;
+  const selected = options.find((option) => option.value === value);
+  return <Select value={value || undefined} disabled={disabled} onValueChange={onValueChange}>
+    <SelectTrigger className="ai-picker-trigger" aria-label={label} data-ai-picker={kind} data-value={value}>
+      {icon()}
+      <SelectValue placeholder={label}>{selected?.label}</SelectValue>
+    </SelectTrigger>
+    <SelectContent className="ai-picker-content" align="start" side="top" sideOffset={8}>
+      <SelectGroup>
+        <SelectLabel className="ai-picker-label">{label}</SelectLabel>
+        {options.map((option) => <SelectItem className="ai-picker-item" key={option.value} value={option.value}
+          data-value={option.value}>
+          {icon("ai-picker-icon")}
+          <span className="ai-picker-copy"><strong>{option.label}</strong><small>{option.description}</small></span>
+        </SelectItem>)}
+        {!options.length && <span className="ai-picker-empty" role="status">{uiText("No options available", "選択肢がありません")}</span>}
+      </SelectGroup>
+    </SelectContent>
+  </Select>;
+}
+
+export function AiChat({ requestedThreadId }: { requestedThreadId?: string }) {
+  const { dialog, openDialog } = useActionDialog();
+  const { chatHistoryTarget, workspaces, setChatWorkspaceId } = useSidebar();
+  const [models, setModels] = useState<AiModel[]>([]);
+  const [workspaceId, setWorkspaceId] = useState("");
+  const [memoryWorkspace, setMemoryWorkspace] = useState("");
+  const [model, setModel] = useState("");
+  const [reasoningEffort, setReasoningEffort] = useState<ReasoningEffort | "">("");
+  const [messages, setMessages] = useState<Message[]>([]);
+  const [interaction, setInteraction] = useState<AiInteraction>();
+  const sessionId = useRef(crypto.randomUUID());
+  const pendingResume = useRef<AiResume | undefined>(undefined);
+  const [draft, setDraft] = useState("");
+  const [answer, setAnswer] = useState("");
+  const [tool, setTool] = useState<string>();
+  const [pending, setPending] = useState(false);
+  const [locked, setLocked] = useState(false);
+  const [error, setError] = useState<string>();
+  const [historyReady, setHistoryReady] = useState(false);
+  const [historyEnabled, setHistoryEnabled] = useState(false);
+  const [historyError, setHistoryError] = useState<string>();
+  const [threadFailure, setThreadFailure] = useState<"missing" | "retry">();
+  const [threads, setThreads] = useState<AiThread[]>([]);
+  const [threadPage, setThreadPage] = useState(0);
+  const [hasMoreThreads, setHasMoreThreads] = useState(false);
+  const [threadId, setThreadId] = useState<string>();
+  const [hasEarlierMessages, setHasEarlierMessages] = useState(false);
+  const [openingThread, setOpeningThread] = useState(false);
+  const [loadingMoreThreads, setLoadingMoreThreads] = useState(false);
+  const controller = useRef<AbortController | undefined>(undefined);
+  const threadRequest = useRef<AbortController | undefined>(undefined);
+  const activeThread = useRef<string | undefined>(undefined);
+  const viewGeneration = useRef(0);
+  const threadListGeneration = useRef(0);
+  const refreshingThreads = useRef(false);
+  const loadingMoreThreadsRef = useRef(false);
+  const loadingEarlier = useRef(false);
+  const transcript = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const request = new AbortController();
+    let catalog: GatewayModelList | undefined;
+    let includeBundled = false;
+    const publish = () => {
+      if (!catalog || request.signal.aborted) return;
+      const items = chatModels(catalog, includeBundled);
+      setModels(items); setModel((current) => current || items[0]?.id || "");
+    };
+    void json<GatewayModelList>("/api/v1/models", { signal: request.signal }, { notifyMutation: false })
+      .then((result) => { catalog = result; publish(); })
+      .catch((caught: unknown) => { if (!request.signal.aborted) setError(caught instanceof Error ? caught.message : uiText("Could not load models.", "モデルを読み込めませんでした。")); });
+    void json<components["schemas"]["Capabilities"]>("/api/v1/capabilities", { signal: request.signal }, { notifyMutation: false })
+      .then((capabilities) => { includeBundled = capabilities.ai?.bundledModels === "codex"; publish(); })
+      .catch(() => {});
+    return () => request.abort();
+  }, []);
+  async function refreshThreads() {
+    const generation = ++threadListGeneration.current;
+    refreshingThreads.current = true;
+    setHistoryError(undefined);
+    try {
+      const result = await json<{ items: AiThread[]; hasMore: boolean }>("/api/v1/chat", undefined, { notifyMutation: false });
+      if (threadListGeneration.current !== generation) return;
+      setHistoryEnabled(true);
+      setThreads((current) => {
+        const active = current.find(({ id }) => id === activeThread.current);
+        return active && !result.items.some(({ id }) => id === active.id) ? [active, ...result.items] : result.items;
+      });
+      setThreadPage(0);
+      setHasMoreThreads(result.hasMore);
+      setHistoryReady(true);
+    } catch (caught) {
+      if (threadListGeneration.current !== generation) return;
+      if (caught instanceof RequestError && caught.status === 404) { setHistoryReady(true); return; }
+      setHistoryError(uiText("Could not load chat history.", "チャット履歴を読み込めませんでした。"));
+    } finally {
+      if (threadListGeneration.current === generation) refreshingThreads.current = false;
+    }
+  }
+  useEffect(() => {
+    void refreshThreads();
+  }, []);
+  useEffect(() => {
+    // The first send adopts its new URL without reloading or aborting the stream.
+    if (requestedThreadId && requestedThreadId === activeThread.current) return;
+    if (requestedThreadId) void openThread(requestedThreadId);
+    else reset();
+  }, [requestedThreadId]);
+  useEffect(() => {
+    const selected = models.find(({ id }) => id === model);
+    if (selected && !selected.supportedReasoningEfforts.some(({ effort }) => effort === reasoningEffort)) {
+      setReasoningEffort(selected.defaultReasoningEffort);
+    }
+  }, [model, models, reasoningEffort]);
+  useEffect(() => () => {
+    viewGeneration.current += 1;
+    threadListGeneration.current += 1;
+    controller.current?.abort("unmount");
+    controller.current = undefined;
+    threadRequest.current?.abort();
+  }, []);
+  useEffect(() => {
+    if (!workspaceId && workspaces?.[0]) setWorkspaceId(workspaces[0].workspaceId);
+  }, [workspaceId, workspaces]);
+  useEffect(() => { transcript.current?.lastElementChild?.scrollIntoView({ block: "nearest" }); }, [messages, answer, tool]);
+  const selectedWorkspace = workspaces?.find((workspace) => workspace.workspaceId === workspaceId);
+  const searchWorkspaceId = openingThread || (requestedThreadId && requestedThreadId !== threadId) ? undefined : selectedWorkspace?.workspaceId;
+  useEffect(() => {
+    setChatWorkspaceId?.(searchWorkspaceId);
+    return () => setChatWorkspaceId?.(undefined);
+  }, [searchWorkspaceId, setChatWorkspaceId]);
+  const persistentHistory = Boolean(threadId) || (historyEnabled && Boolean(selectedWorkspace && selectedWorkspace.encryption !== "server"));
+
+  const send = async (nextMessages: Message[], resume?: AiResume) => {
+    if (!historyReady || openingThread || !workspaceId || !model || !reasoningEffort || pending || controller.current) return;
+    const request = new AbortController();
+    const generation = viewGeneration.current;
+    const persist = persistentHistory;
+    const current = () => viewGeneration.current === generation && controller.current === request;
+    controller.current = request;
+    pendingResume.current = resume;
+    setPending(true);
+    setLocked(true);
+    setError(undefined);
+    setAnswer("");
+    setTool(undefined);
+    let responseText = "";
+    let nextInteraction: AiInteraction | undefined;
+    let completed = false;
+    let activeThreadId = threadId;
+    try {
+      if (persist && !activeThreadId) {
+        const created = await json<AiThread>("/api/v1/chat", { method: "POST",
+          body: JSON.stringify({ workspaceId, title: nextMessages.at(-1)!.content }) });
+        if (!current()) return;
+        activeThreadId = created.id;
+        activeThread.current = created.id;
+        setThreadId(created.id);
+        setThreads((current) => [created, ...current]);
+        navigateDashboard(`/chat/${created.id}`, true);
+      }
+      const response = await fetch(persist ? `/api/v1/chat/${activeThreadId}/messages` : "/api/v1/chat/messages", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(persist
+          ? { model, reasoningEffort, resume, timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone, content: nextMessages.at(-1)!.content }
+          : { workspaceId, model, reasoningEffort, resume, sessionId: sessionId.current, timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone, messages: nextMessages }),
+        signal: request.signal,
+      });
+      if (!current()) return;
+      if (!response.ok) {
+        const detail = await response.json().catch(() => null) as { error?: string } | null;
+        throw new Error(detail?.error || uiText("AI request failed.", "AIへのリクエストに失敗しました。"));
+      }
+      for await (const event of readAiEvents(response)) {
+        if (!current()) return;
+        if (event.type === "text") { responseText += event.text; setAnswer(responseText); }
+        else if (event.type === "tool") setTool(event.status === "running" ? event.name : undefined);
+        else if (event.type === "interaction-resumed") {
+          if (resume?.runId === event.runId && resume.toolCallId === event.toolCallId) {
+            pendingResume.current = undefined;
+            setInteraction(undefined);
+          }
+        }
+        else if (event.type === "interaction") {
+          nextInteraction = event.interaction;
+          setInteraction(nextInteraction);
+          const interactionText = nextInteraction.tool === "ask_user" ? nextInteraction.question : `# ${nextInteraction.title}\n\n${nextInteraction.content}`;
+          responseText += (responseText ? "\n\n" : "") + interactionText;
+          setTool(undefined);
+        }
+        else if (event.type === "error") throw new Error(event.code);
+        else if (event.type === "done") completed = true;
+      }
+      if (!current()) return;
+      if (!completed || (!responseText.trim() && !nextInteraction)) throw new Error("stream_incomplete");
+      setMessages(responseText.trim() ? [...nextMessages, { role: "assistant", content: responseText }] : nextMessages);
+      setInteraction(nextInteraction);
+      pendingResume.current = undefined;
+      setAnswer("");
+      if (persist) void refreshThreads();
+    } catch (caught) {
+      if (!current()) return;
+      if (caught instanceof Error && caught.message === "ai_interaction_not_pending") {
+        pendingResume.current = undefined;
+        setInteraction(undefined);
+      }
+      if (!persist && nextInteraction) {
+        setMessages([...nextMessages, { role: "assistant", content: responseText }]);
+        pendingResume.current = undefined;
+        setAnswer("");
+      }
+      if (request.signal.reason === "stop") setError(uiText("Response stopped.", "回答を停止しました。"));
+      else if (!request.signal.aborted) setError(caught instanceof Error ? caught.message : uiText("AI request failed.", "AIへのリクエストに失敗しました。"));
+      if (persist && !activeThreadId) {
+        setMessages(nextMessages.slice(0, -1));
+        setDraft(nextMessages.at(-1)!.content);
+        setLocked(false);
+      }
+      if (persist && activeThreadId) {
+        try {
+          const recovered = await json<{ messages: Message[]; hasMore: boolean; interaction?: AiInteraction }>(`/api/v1/chat/${activeThreadId}`, undefined,
+            { notifyMutation: false });
+          if (current()) {
+            setMessages(mergeRecoveredMessages(nextMessages, recovered.messages));
+            setInteraction(recovered.interaction);
+            setHasEarlierMessages(recovered.hasMore);
+            setDraft(recoverFailedDraft(recovered.messages, nextMessages.at(-1)!, nextMessages.slice(0, -1)));
+          }
+        } catch { /* Keep the visible draft when recovery is unavailable. */ }
+      }
+    } finally {
+      if (current()) {
+        controller.current = undefined;
+        setPending(false);
+        setTool(undefined);
+      }
+    }
+  };
+  const sendUserMessage = (content: string, resume?: AiResume) => {
+    const previous = !persistentHistory && resume && messages.at(-1)?.role === "user" ? messages.slice(0, -1) : messages;
+    const next = [...previous, { role: "user" as const, content }];
+    setMessages(next);
+    setDraft("");
+    void send(next, resume);
+  };
+  const submit = () => {
+    const content = draft.trim();
+    if (!historyReady || openingThread || !content || !workspaceId || !model || !reasoningEffort || pending || controller.current
+      || interaction?.tool === "submit_plan" || (!persistentHistory && !interaction && messages.at(-1)?.role === "user")) return;
+    sendUserMessage(content, interaction?.tool === "ask_user" ? { runId: interaction.runId, toolCallId: interaction.toolCallId, tool: "ask_user", answer: content } : undefined);
+  };
+  const respond = (answer: string | string[]) => {
+    if (interaction?.tool !== "ask_user" || pending) return;
+    sendUserMessage(Array.isArray(answer) ? answer.join(", ") : answer,
+      { runId: interaction.runId, toolCallId: interaction.toolCallId, tool: "ask_user", answer });
+  };
+  const reviewPlan = (action: "approved" | "rejected") => {
+    if (interaction?.tool !== "submit_plan" || pending) return;
+    const label = action === "approved" ? uiText("Approve plan", "計画を承認") : uiText("Request changes", "変更を依頼");
+    const feedback = draft.trim();
+    const content = feedback ? `${label}: ${feedback}` : label;
+    sendUserMessage(content, { runId: interaction.runId, toolCallId: interaction.toolCallId, tool: "submit_plan", action, feedback: content });
+  };
+  function reset() {
+    viewGeneration.current += 1;
+    controller.current?.abort("reset");
+    controller.current = undefined;
+    threadRequest.current?.abort();
+    activeThread.current = undefined;
+    loadingEarlier.current = false;
+    setPending(false);
+    setMessages([]);
+    setInteraction(undefined);
+    pendingResume.current = undefined;
+    sessionId.current = crypto.randomUUID();
+    setAnswer("");
+    setTool(undefined);
+    setDraft("");
+    setError(undefined);
+    setThreadFailure(undefined);
+    setLocked(false);
+    setOpeningThread(false);
+    setThreadId(undefined);
+    setHasEarlierMessages(false);
+  }
+  function newChat(event: MouseEvent<HTMLAnchorElement>) {
+    if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+    if (!requestedThreadId) { event.preventDefault(); reset(); navigateDashboard("/chat"); }
+  }
+  async function openThread(id: string) {
+    reset();
+    const generation = ++viewGeneration.current;
+    const request = new AbortController();
+    threadRequest.current = request;
+    setOpeningThread(true);
+    try {
+      try { decodeId("aiThread", id); } catch {
+        setThreadFailure("missing");
+        return;
+      }
+      const result = await json<{ thread: AiThread; messages: Message[]; hasMore: boolean; interaction?: AiInteraction }>(`/api/v1/chat/${id}`, { signal: request.signal },
+        { notifyMutation: false });
+      if (viewGeneration.current !== generation) return;
+      activeThread.current = id;
+      setThreadId(id);
+      setWorkspaceId(result.thread.workspaceId);
+      setThreads((current) => current.some((thread) => thread.id === id) ? current : [result.thread, ...current]);
+      setMessages(result.messages);
+      setInteraction(result.interaction);
+      setHasEarlierMessages(result.hasMore);
+      setLocked(true);
+      setHistoryEnabled(true);
+      setHistoryReady(true);
+    } catch (caught) {
+      if (viewGeneration.current === generation) {
+        setThreadFailure(caught instanceof RequestError && (caught.status === 403 || caught.status === 404) ? "missing" : "retry");
+      }
+    } finally {
+      if (viewGeneration.current === generation) setOpeningThread(false);
+    }
+  }
+  async function loadMoreThreads() {
+    if (loadingMoreThreadsRef.current || refreshingThreads.current) return;
+    loadingMoreThreadsRef.current = true;
+    setLoadingMoreThreads(true);
+    const generation = threadListGeneration.current;
+    try {
+      const page = threadPage + 1;
+      const result = await json<{ items: AiThread[]; hasMore: boolean }>(`/api/v1/chat?page=${page}`, undefined,
+        { notifyMutation: false });
+      if (threadListGeneration.current !== generation) return;
+      setThreads((current) => [...current, ...result.items.filter((item) => !current.some(({ id }) => id === item.id))]);
+      setThreadPage(page);
+      setHasMoreThreads(result.hasMore);
+    } catch (caught) {
+      if (threadListGeneration.current === generation) {
+        setError(caught instanceof Error ? caught.message : uiText("Could not load chat history.", "チャット履歴を読み込めませんでした。"));
+      }
+    } finally {
+      loadingMoreThreadsRef.current = false;
+      setLoadingMoreThreads(false);
+    }
+  }
+  async function loadEarlierMessages() {
+    if (!threadId || pending || loadingEarlier.current) return;
+    const id = threadId;
+    const generation = viewGeneration.current;
+    const before = messages.find(({ id, createdAt }) => id && createdAt);
+    if (!before?.id || !before.createdAt) return;
+    loadingEarlier.current = true;
+    try {
+      const query = new URLSearchParams({ before: before.createdAt, beforeId: before.id, beforeRole: before.role });
+      const result = await json<{ messages: Message[]; hasMore: boolean; interaction?: AiInteraction }>(`/api/v1/chat/${id}?${query}`, undefined,
+        { notifyMutation: false });
+      if (viewGeneration.current !== generation || threadId !== id) return;
+      setMessages((current) => prependEarlierMessages(current, result.messages));
+      setHasEarlierMessages(result.hasMore);
+    } catch (caught) {
+      if (viewGeneration.current === generation && threadId === id) {
+        setError(caught instanceof Error ? caught.message : uiText("Could not load chat history.", "チャット履歴を読み込めませんでした。"));
+      }
+    } finally {
+      if (viewGeneration.current === generation) loadingEarlier.current = false;
+    }
+  }
+  function deleteThread(id: string) {
+    openDialog({ title: uiText("Delete chat history?", "チャット履歴を削除しますか？"),
+      description: uiText("This chat and its messages will be permanently deleted.", "このチャットとメッセージは完全に削除されます。"),
+      confirmLabel: uiText("Delete chat", "チャットを削除"), destructive: true,
+      onSubmit: async () => {
+        await json(`/api/v1/chat/${id}`, { method: "DELETE" });
+        setThreads((current) => current.filter((thread) => thread.id !== id));
+        if (window.location.pathname === `/chat/${id}`) {
+          reset();
+          navigateDashboard("/chat", true);
+        }
+        await refreshThreads();
+      },
+    });
+  }
+  const retry = () => { if (messages.at(-1)?.role === "user") void send(messages, pendingResume.current); };
+  const keyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
+    if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) {
+      event.preventDefault();
+      submit();
+    }
+  };
+  const workspaceOptions = workspaces?.map((workspace) => ({
+    value: workspace.workspaceId,
+    label: workspace.name,
+    description: uiText("Meeting search scope for this chat", "このチャットで参照するミーティングの範囲"),
+  })) ?? [];
+  const modelOptions = models.map((item) => ({
+    value: item.id,
+    label: item.displayName,
+    description: item.id,
+  }));
+  const selectedModel = models.find(({ id }) => id === model);
+  const effortLabel = (effort: ReasoningEffort) => effort === "none" ? uiText("None", "なし")
+    : effort === "xhigh" ? "xHigh" : effort[0]!.toUpperCase() + effort.slice(1);
+  const reasoningOptions = selectedModel?.supportedReasoningEfforts.map(({ effort, description }) => ({
+    value: effort,
+    label: effortLabel(effort),
+    description,
+  })) ?? [];
+  const composer = <div className="ai-composer">
+    {interaction && <ChatInteraction key={interaction.toolCallId} interaction={interaction} disabled={pending || openingThread || !historyReady} onAnswer={respond} onPlan={reviewPlan} />}
+    {persistentHistory && <WorkingMemoryEditor />}
+    {persistentHistory && threadId && <LiveChatContext key={threadId} threadId={threadId} workspaceId={workspaceId} disabled={pending} />}
+    <textarea aria-label={uiText("Message", "メッセージ")} placeholder={uiText("Ask about your meetings…", "ミーティングについて質問…")} rows={messages.length ? 2 : 4}
+      value={draft} disabled={pending || openingThread || !historyReady} onChange={(event) => setDraft(event.target.value)} onKeyDown={keyDown} />
+    <div className="ai-composer-controls">
+      <ComposerPicker kind="workspace" label={uiText("Choose Workspace", "ワークスペースを選択")}
+        value={workspaceId} options={workspaceOptions} disabled={locked || pending} onValueChange={setWorkspaceId} />
+      <div className="ai-composer-actions">
+        <ComposerPicker kind="reasoning" label={uiText("Choose reasoning effort", "推論レベルを選択")}
+          value={reasoningEffort} options={reasoningOptions} disabled={pending} onValueChange={(value) => setReasoningEffort(value as ReasoningEffort)} />
+        <ComposerPicker kind="model" label={uiText("Choose model", "モデルを選択")}
+          value={model} options={modelOptions} disabled={pending} onValueChange={setModel} />
+        {pending
+          ? <button className="ai-send" aria-label={uiText("Stop", "停止")} onClick={() => controller.current?.abort("stop")}><Square aria-hidden="true" /></button>
+          : <button className="ai-send" aria-label={uiText("Send", "送信")} disabled={interaction?.tool === "submit_plan" || !historyReady || openingThread || !draft.trim() || !workspaceId || !model || !reasoningEffort || (!persistentHistory && messages.at(-1)?.role === "user")} onClick={submit}><Send aria-hidden="true" /></button>}
+      </div>
+    </div>
+  </div>;
+  const history = <aside className="ai-history" aria-label={uiText("Chat history", "チャット履歴")}>
+    <div className="ai-history-heading flex items-center justify-between pl-2">
+      <h2 className="text-[11px] font-semibold text-muted-foreground">{uiText("Chats", "チャット")}</h2>
+      <a className="ai-history-new" href="/chat" onClick={newChat} aria-label={uiText("New chat", "新しいチャット")} title={uiText("New chat", "新しいチャット")}><Plus aria-hidden="true" /></a>
+    </div>
+    {historyError && <div className="ai-error" role="alert">
+      <span>{historyError}</span><button className="secondary" onClick={() => void refreshThreads()}>{uiText("Retry", "再試行")}</button>
+    </div>}
+    <div className="flex min-w-0 shrink-0 flex-col gap-px"><HoverPreviewProvider>{threads.map((thread) => <HoverPreview key={thread.id} details={<>
+      <p className="break-words text-sm font-medium">{thread.title}</p>
+      <time className="mt-1 block text-xs text-muted-foreground" dateTime={thread.updatedAt}>{uiText("Updated", "更新日時")}: {new Date(thread.updatedAt).toLocaleString(undefined, { year: "numeric", month: "long", day: "numeric", hour: "2-digit", minute: "2-digit" })}</time>
+    </>}>
+      {(describedBy) => <div className={`ai-history-row${thread.id === requestedThreadId ? " active" : ""}`}>
+        <a href={`/chat/${thread.id}`} aria-describedby={describedBy} aria-current={thread.id === requestedThreadId ? "page" : undefined}><span>{thread.title}</span></a>
+        <button className="ai-history-delete" aria-label={uiText("Delete chat", "チャットを削除")} onClick={() => void deleteThread(thread.id)}><Trash2 aria-hidden="true" /></button>
+      </div>}
+    </HoverPreview>)}</HoverPreviewProvider></div>
+    {hasMoreThreads && <button className="secondary" disabled={loadingMoreThreads} onClick={() => void loadMoreThreads()}>{loadingMoreThreads ? uiText("Loading…", "読み込み中…") : uiText("Load more", "さらに読み込む")}</button>}
+  </aside>;
+
+  return <section className={`ai-chat${messages.length ? " has-messages" : ""}`} aria-label="AI">
+    {dialog}
+    {chatHistoryTarget && createPortal(history, chatHistoryTarget)}
+    <header className="ai-header">
+      <DetailHeaderBar actions={<DropdownMenu>
+        <DropdownMenuTrigger asChild><Button variant="ghost" size="icon" aria-label={uiText("Chat options", "チャットのオプション")}><Ellipsis aria-hidden="true" /></Button></DropdownMenuTrigger>
+        <DropdownMenuContent align="end">
+          <DropdownMenuItem asChild><a href="/memory"><Brain aria-hidden="true" />Dahlia Memory</a></DropdownMenuItem>
+        </DropdownMenuContent>
+      </DropdownMenu>}>
+        <div className="flex min-w-0 flex-1 items-center gap-1 whitespace-nowrap px-1.5 text-xs">
+          <a className="ai-new-chat" href="/chat" aria-label={uiText("New chat", "新しいチャット")} onClick={newChat}>
+            <MenuIcon name="chat" /><span className="truncate">Dahlia AI</span>
+          </a>
+          <span className="text-muted-foreground" aria-hidden="true">/</span>
+          <strong className="truncate">{threads.find(({ id }) => id === requestedThreadId)?.title || uiText("New chat", "新しいチャット")}</strong>
+        </div>
+      </DetailHeaderBar>
+    </header>
+    {requestedThreadId && (openingThread || threadId !== requestedThreadId) ? <div className="ai-start">
+      {threadFailure ? <>
+        <p role="alert">{threadFailure === "missing" ? uiText("Chat not found.", "チャットが見つかりません。") : uiText("Could not load this chat.", "チャットを読み込めませんでした。")}</p>
+        {threadFailure === "retry" && <button className="secondary" onClick={() => void openThread(requestedThreadId)}>{uiText("Retry", "再試行")}</button>}
+        <a href="/chat">{uiText("New chat", "新しいチャット")}</a>
+      </> : <p role="status">{uiText("Loading…", "読み込み中…")}</p>}
+    </div> : <>
+    {messages.length === 0 ? <div className="ai-start">
+      <div className="ai-mark" aria-hidden="true">D</div>
+      <h1>{uiText("What can I help you find?", "何をお探しですか？")}</h1>
+      {composer}
+      {error && <div className="ai-error mt-4 w-full" role="alert"><span>{error}</span></div>}
+      <p>{persistentHistory
+        ? uiText("Answers use meetings in the selected Workspace. Your chat history is saved privately.", "選択したワークスペースのミーティングから回答します。チャット履歴は非公開で保存されます。")
+        : uiText("Answers use meetings in the selected Workspace. History disappears when you leave this page.", "選択したワークスペースのミーティングから回答します。履歴はページを離れると消えます。")}</p>
+    </div> : <>
+      <div className="ai-transcript" ref={transcript}>
+        {hasEarlierMessages && <button className="secondary" disabled={openingThread || pending} onClick={() => void loadEarlierMessages()}>{uiText("Load earlier messages", "以前のメッセージを読み込む")}</button>}
+        {selectedWorkspace && <WorkspaceMemory key={workspaceId} workspaceId={workspaceId} role={selectedWorkspace.role} onEnabledWorkspace={setMemoryWorkspace} compact />}
+        {messages.map((message, index) => <article className={`ai-message ${message.role}`} key={message.id || index}>{message.role === "assistant" ? <ChatMarkdown content={message.content} /> : message.content}
+          {message.role === "assistant" && memoryWorkspace === workspaceId && selectedWorkspace && selectedWorkspace.role !== "viewer" && !pending && <SaveSharedMemory key={workspaceId} workspaceId={workspaceId} workspaceName={selectedWorkspace.name} model={model} content={message.content} question={messages.slice(0, index).findLast(item => item.role === "user")?.content} />}
+        </article>)}
+        {answer && <article className="ai-message assistant"><StreamingChatMarkdown content={answer} /></article>}
+        {tool && <p className="ai-status" role="status">{uiText(`Checking meetings with ${tool}…`, `${tool} でミーティングを確認中…`)}</p>}
+        {error && <div className="ai-error" role="alert"><span>{error}</span><button className="secondary" disabled={pending || openingThread || messages.at(-1)?.role !== "user"} onClick={retry}>{uiText("Retry", "再試行")}</button></div>}
+      </div>
+      <div className="ai-bottom">{composer}<p className="sr-only" aria-live="polite">{pending ? uiText("AI is responding", "AIが回答中です") : error || uiText("Ready", "準備完了")}</p></div>
+    </>}
+    </>}
+  </section>;
+}
+
+export async function* readAiEvents(response: Response): AsyncGenerator<AiEvent> {
+  if (!response.body) throw new Error("stream_unavailable");
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+  while (true) {
+    const chunk = await reader.read();
+    buffer += decoder.decode(chunk.value, { stream: !chunk.done }).replaceAll("\r\n", "\n");
+    let boundary = buffer.indexOf("\n\n");
+    while (boundary >= 0) {
+      const block = buffer.slice(0, boundary);
+      buffer = buffer.slice(boundary + 2);
+      const lines = block.split("\n");
+      const event = lines.find((line) => line.startsWith("event:"))?.slice(6).trim();
+      const data = lines.filter((line) => line.startsWith("data:")).map((line) => line.slice(5).trimStart()).join("\n");
+      if (event && data) yield { type: event, ...JSON.parse(data) } as AiEvent;
+      boundary = buffer.indexOf("\n\n");
+    }
+    if (chunk.done) break;
+  }
+}

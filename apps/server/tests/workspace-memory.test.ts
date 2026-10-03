@@ -7,7 +7,7 @@ import { createNodeApplicationStore } from "../src/auth/node-store";
 import { loadConfig, type AppConfig } from "../src/config";
 import type { Identity } from "../src/auth/identity";
 import { seedHeaderIdentity, testUserID, testOrganizationID } from "./public-test-client";
-import { uuidV7 } from "../src/id";
+import { uuidV7 } from "@dahlia-ai/ui/model/id";
 import { MeetingSyncService } from "../src/sync/service";
 import { WorkspaceMemoryService } from "../src/memory/service";
 import { HindsightClient, HindsightError } from "../src/memory/hindsight";
@@ -15,7 +15,7 @@ import { DatabricksTokenError } from "../src/databricks/token";
 import { sharedMemorySchema } from "../src/memory/model";
 import { createQueueJobs } from "../src/jobs/queues";
 import { createApp } from "../src/app";
-import { decodeId, encodeId } from "../src/typeid";
+import { decodeId, encodeId } from "@dahlia-ai/ui/model/typeid";
 import { compareMemoryIngestion } from "../scripts/evaluate-memory-ingestion";
 import { contentHash, meetingDocument } from "../src/memory/sources";
 

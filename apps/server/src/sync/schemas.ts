@@ -1,8 +1,8 @@
-import { workspaceGenerationSettingsSchema } from "../workspace-generation-settings";
+import { workspaceGenerationSettingsSchema } from "@dahlia-ai/ui/model/workspace-generation-settings";
 import { z } from "@hono/zod-openapi";
-import { appearanceSchema } from "../appearance-model";
+import { appearanceSchema } from "@dahlia-ai/ui/model/appearance";
 import { transcriptWriteSchema } from "./transcript";
-import { summaryMetadataSchema } from "../summary/metadata";
+import { summaryMetadataSchema } from "@dahlia-ai/ui/model/summary-metadata";
 import { recordingSourceSchema, recordingManifestSchema } from "../recordings/model";
 import { fileWireMetadataSchema, fileMetadataFromWire } from "../files/model";
 

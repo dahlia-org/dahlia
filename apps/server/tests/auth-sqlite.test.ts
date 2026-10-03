@@ -1,5 +1,5 @@
-import { uuidV7 } from "../src/id";
-import { decodeId, encodeId } from "../src/typeid";
+import { uuidV7 } from "@dahlia-ai/ui/model/id";
+import { decodeId, encodeId } from "@dahlia-ai/ui/model/typeid";
 import { z } from "zod";
 import { createHash } from "node:crypto";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
