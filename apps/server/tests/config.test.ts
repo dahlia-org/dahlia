@@ -126,7 +126,7 @@ describe("configuration", () => {
     })).toMatchObject({
       provider: {
         backend: "databricks",
-        baseUrl: "https://workspace.cloud.databricks.com/ai-gateway/mlflow/v1",
+        baseUrl: "https://workspace.cloud.databricks.com/ai-gateway/codex/v1",
       },
       databricksWorkspace: {
         host: "https://workspace.cloud.databricks.com",
@@ -136,7 +136,7 @@ describe("configuration", () => {
     expect(loadConfig(databricks)).toMatchObject({
       provider: {
         backend: "databricks",
-        baseUrl: "https://workspace.cloud.databricks.com/ai-gateway/mlflow/v1",
+        baseUrl: "https://workspace.cloud.databricks.com/ai-gateway/codex/v1",
       },
       databricksWorkspace: undefined,
     });
@@ -144,6 +144,17 @@ describe("configuration", () => {
       ...databricks,
       DATABRICKS_CLIENT_ID: "app-client-id",
     })).toThrow("DATABRICKS_CLIENT_SECRET is required");
+  });
+
+  it("ignores local model eligibility for Databricks, including chat memory", () => {
+    const config = loadConfig({
+      ...accounts, DAHLIA_AI_BACKEND: "databricks", DATABRICKS_HOST: "https://workspace.example",
+      DAHLIA_FOUNDATION_MODELS: "m".repeat(768), DAHLIA_DATABASE_TYPE: "postgres",
+      DAHLIA_DATABASE_URL: "postgresql://localhost/dahlia", DAHLIA_CHAT_MEMORY_MODEL: "platform.ai.memory",
+      DATABRICKS_CLIENT_ID: "app", DATABRICKS_CLIENT_SECRET: "secret",
+    });
+    expect(config.foundationModels).toEqual([]);
+    expect(config.chatMemoryModel).toBe("platform.ai.memory");
   });
 
   it("configures object storage independently from the AI backend", () => {

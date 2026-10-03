@@ -349,7 +349,7 @@ export function createApp(dependencies: AppDependencies): DahliaServerApp & { ru
       sessions: auth !== undefined,
       sync: syncAvailable,
       sharing: true,
-      ai: syncAvailable && (await ai.models(context.req.raw.signal)).length > 0,
+      ai: syncAvailable && (await ai.models(context.req.raw.signal, context.req.raw.headers).catch(() => [])).length > 0,
     };
     for (const extension of extensions) {
       const additions = await extension.sessionCapabilities?.(identity) ?? {};
@@ -450,7 +450,7 @@ export function createApp(dependencies: AppDependencies): DahliaServerApp & { ru
   registerApi(app, "getAiModels", async (context) => {
     await identities.fromBrowser(context.req.raw);
     if (!await store.sync.isAvailable()) return context.json({ items: [] });
-    return context.json({ items: await ai.models(context.req.raw.signal) });
+    return context.json({ items: await ai.models(context.req.raw.signal, context.req.raw.headers) });
   });
   registerApi(app, "listAiThreads", async (context) => {
     if (!aiHistory) return context.json({ error: "ai_history_unavailable" }, 404);
@@ -535,9 +535,9 @@ export function createApp(dependencies: AppDependencies): DahliaServerApp & { ru
   });
   registerApi(app, "chatWithAi", aiChatBodyLimit, async (context) => {
     const identity = await identities.fromBrowser(context.req.raw);
-    if (!await store.sync.isAvailable() || !(await ai.models(context.req.raw.signal)).length) {
-      return context.json({ error: "ai_unavailable" }, 404);
-    }
+    if (!await store.sync.isAvailable()) return context.json({ error: "ai_unavailable" }, 404);
+    const availableModels = await ai.models(context.req.raw.signal, context.req.raw.headers);
+    if (!availableModels.length) return context.json({ error: "ai_unavailable" }, 404);
     const parsed = aiChatSchema.safeParse(await context.req.json().catch(() => null));
     if (!parsed.success) return context.json({ error: "invalid_ai_chat" }, 400);
     const workspaceId = sync.parseId(parsed.data.workspaceId);
@@ -545,7 +545,7 @@ export function createApp(dependencies: AppDependencies): DahliaServerApp & { ru
     const input = { ...parsed.data, workspaceId };
     return streamSSE(context, async (stream) => {
       try {
-        for await (const event of ai.stream(input, identity, context.req.raw)) {
+        for await (const event of ai.stream(input, identity, context.req.raw, availableModels)) {
           if (stream.aborted) break;
           if (event.type === "text") await stream.writeSSE({ event: "text", data: JSON.stringify({ text: event.text }) });
           else if (event.type === "tool") await stream.writeSSE({ event: "tool", data: JSON.stringify({ name: event.name, status: event.status }) });
@@ -918,7 +918,7 @@ export function createApp(dependencies: AppDependencies): DahliaServerApp & { ru
       meetingEvents: { version: 1 },
       search: { version: 1 },
       conversationAnalytics: { version: 1 },
-      ...((await ai.models(context.req.raw.signal)).length ? { ai: { version: 1 } } : {}),
+      ...((await ai.models(context.req.raw.signal, context.req.raw.headers).catch(() => [])).length ? { ai: { version: 1 } } : {}),
       ...(sources.length ? {
         meetingSummaryGeneration: {
           version: 2,

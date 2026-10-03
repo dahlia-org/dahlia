@@ -25,7 +25,7 @@ export class GatewayService {
       const tokens = config.databricksWorkspace
         ? new DatabricksTokenProvider(config.databricksWorkspace, transport)
         : undefined;
-      this.backend = new DatabricksBackend(provider, config.foundationModels ?? [], transport, tokens);
+      this.backend = new DatabricksBackend(provider, [], transport, tokens);
     } else if (provider) {
       this.backend = provider.backend === "cloudflare"
         ? new CloudflareBackend(provider, transport, config.foundationModels ?? [])
@@ -34,6 +34,14 @@ export class GatewayService {
   }
 
   async models(request?: Request) {
+    if (this.config.provider?.backend === "databricks") {
+      const clientVersion = request ? new URL(request.url).searchParams.get("client_version") : null;
+      return this.backend!.listModels({
+        signal: request?.signal ?? new AbortController().signal,
+        headers: request?.headers,
+        clientVersion: clientVersion ?? LATEST_CODEX_CLIENT_VERSION,
+      });
+    }
     const clientVersion = requireSupportedCodexClient(request);
     if (!this.backend) return modelList([]);
     let result = await this.backend.listModels({ signal: request?.signal ?? new AbortController().signal });
@@ -84,7 +92,7 @@ export class GatewayService {
     const autoReviewModel = this.config.codexAutoReviewModel?.trim();
     if (body.model === CODEX_AUTO_REVIEW_ALIAS && autoReviewModel) {
       upstreamModel = autoReviewModel;
-    } else if (!this.config.foundationModels?.includes(body.model)) {
+    } else if (this.config.provider?.backend !== "databricks" && !this.config.foundationModels?.includes(body.model)) {
       throw new GatewayRequestError("Model is not configured", 400, "model_not_configured");
     }
     return proxyUpstreamResponse(await this.backend.responses(body as RequestBody, {

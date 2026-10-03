@@ -16,7 +16,7 @@ const config: AppConfig = {
   baseUrl: "https://dahlia.example",
   oauthRedirectUris: [],
   maxRequestBytes: 1024,
-  provider: { backend: "databricks", baseUrl: "https://workspace.example/ai-gateway/mlflow/v1" },
+  provider: { backend: "databricks", baseUrl: "https://workspace.example/ai-gateway/codex/v1" },
   databricksWorkspace: {
     host: "https://workspace.example",
     clientId: "client",
@@ -34,6 +34,7 @@ describe("search embeddings", () => {
       if (url.endsWith("/oidc/v1/token")) {
         return Response.json({ access_token: "app-token", expires_in: 3600 });
       }
+      expect(url).toBe("https://workspace.example/ai-gateway/mlflow/v1/embeddings");
       expect(init?.headers).toMatchObject({ authorization: "Bearer app-token" });
       bodies.push(JSON.parse(String(init?.body)) as Record<string, unknown>);
       const inputCount = (bodies.at(-1)?.input as string[]).length;
