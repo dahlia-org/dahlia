@@ -1689,7 +1689,7 @@
 "sync.targetRecord" = "対象レコード";
 "sync.permissionRequired" = "Server の権限が必要";
 "sync.retryAfterPermission" = "権限復旧後に再試行";
-"sync.discardFollowing" = "この時点以降を破棄";
+"sync.discardFollowing" = "該当変更と依存する変更を破棄";
 "sync.openServer" = "Serverで開く";
 "sync.checkServer" = "Serverで確認";
 "sync.openServerFailed" = "Server をブラウザで開けませんでした。";
@@ -1699,7 +1699,7 @@
 "sync.recordingArchiveFailure" = "「%@」の録音アーカイブ保存に失敗しました";
 "sync.recordingArchiveAskEditor" = "Workspace の管理者または編集者に再試行を依頼してください。";
 "sync.useServerConfirmation" = "「%@」で Server 版を採用しますか？";
-"sync.discardConfirmation" = "「%@」の変更をこの時点以降破棄しますか？";
+"sync.discardConfirmation" = "「%@」の該当変更と依存する変更を破棄しますか？";
 "sync.discardImpact" = "破棄対象: transaction %1$ld件、operation %2$ld件、レコード %3$ld件。ローカル本文 %4$ld件（会議 %5$ld件）を解放します。";
 "sync.discardWarning" = "Server に存在しない未送信の本文、画像、録音原本は復元できなくなる場合があります。";
 "sync.record.meeting" = "会議";
@@ -1779,3 +1779,6 @@
 "processing.dataUnreadable" = "一部の録音の処理状態を読み込めませんでした。他の録音の復元は続行します。";
 "processing.retryOnMac" = "以前のサーバー処理は再開できません。このMacで再実行してください。";
 "processing.downloadingArchive" = "録音音声をダウンロード中…";
+
+"sync.discardFile" = "該当ファイルの同期変更を破棄";
+"sync.discardFileConfirmation" = "「%@」の該当ファイルと紐付けの同期変更を破棄しますか？";

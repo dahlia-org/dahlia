@@ -1,5 +1,6 @@
 #if canImport(Testing)
     import DahliaMeetingAccess
+    import DahliaRuntimeSupport
     import Foundation
     import GRDB
     import Synchronization
@@ -25,6 +26,314 @@
                 )
             }
             return (queue, workspace)
+        }
+
+        @Test func fileDiscardPreservesOtherLinksInUnsentBatch() async throws {
+            let (queue, workspace) = try seed()
+            let file = UUID.v7(), otherFile = UUID.v7(), meeting = UUID.v7()
+            let badLink = UUID.v7(), goodLink = UUID.v7()
+            let fileOperation = SyncOperationDraft(entity: .file, action: .upsert, entityId: file)
+            let rootId = try await queue.write { db in
+                try db.execute(sql: "UPDATE workspaces SET syncPullCursor = 'before' WHERE id = ?", arguments: [workspace])
+                try FileRecord(
+                    id: otherFile,
+                    workspaceId: workspace,
+                    size: 1,
+                    contentType: "image/png",
+                    checksum: "SHA-256:" + String(repeating: "b", count: 64),
+                    name: "keep.png",
+                    metadata: .init(source: .screenshot),
+                    createdAt: .now,
+                    updatedAt: .now
+                ).insert(db)
+                try db.execute(
+                    sql: "INSERT INTO file_text_bodies(fileId, ocrText, caption) VALUES (?, 'Keep OCR', 'Keep caption')",
+                    arguments: [otherFile]
+                )
+                return try SyncTransactionRecorder.record(workspaceId: workspace, operations: [fileOperation], in: db)
+            }
+            let root = try #require(try await SyncTransactionQueue.claim(dbQueue: queue))
+            #expect(root.id == rootId)
+            try await SyncTransactionQueue.block(
+                root,
+                reason: .validation,
+                response: SyncTransactionQueue.problemData(code: "file_content_missing", status: 422, operationId: fileOperation.id),
+                dbQueue: queue
+            )
+            let batch = try #require(try await queue.write { db in
+                try SyncTransactionRecorder.record(workspaceId: workspace, operations: [
+                    .init(
+                        entity: .meetingAttachment,
+                        action: .create,
+                        entityId: badLink,
+                        payloadJSON: Data("{\"meetingId\":\"\(meeting)\",\"fileId\":\"\(file)\"}".utf8)
+                    ),
+                    .init(
+                        entity: .meetingAttachment,
+                        action: .create,
+                        entityId: goodLink,
+                        payloadJSON: Data("{\"meetingId\":\"\(meeting)\",\"fileId\":\"\(otherFile)\"}".utf8)
+                    ),
+                ], in: db)
+            })
+            let successor = try #require(try await queue.write { db in
+                try SyncTransactionRecorder.record(workspaceId: workspace, operations: [
+                    .init(
+                        entity: .meetingAttachment,
+                        action: .update,
+                        entityId: goodLink,
+                        payloadJSON: Data("{\"meetingId\":\"\(meeting)\",\"fileId\":\"\(otherFile)\"}".utf8)
+                    ),
+                ], in: db)
+            })
+            let impact = try #require(try await queue.read { db in
+                try MeetingRepository.fetchSyncProgress(in: db).values.first?.workspaces.first?.discardImpact
+            })
+            #expect(impact.fileId == file)
+            #expect(impact.transactions == 2)
+            #expect(impact.operations == 2)
+            await #expect(throws: TextContentError.self) {
+                try await SyncTransactionQueue.discardFileChanges(
+                    workspaceId: workspace,
+                    fileId: file,
+                    expectedLastTransactionId: UUID.v7(),
+                    dbQueue: queue
+                )
+            }
+            try await SyncTransactionQueue.discardFileChanges(
+                workspaceId: workspace,
+                fileId: file,
+                expectedLastTransactionId: successor,
+                dbQueue: queue
+            )
+            #expect(try await queue.read { db in
+                try String.fetchOne(db, sql: "SELECT ocrText FROM file_text_bodies WHERE fileId = ?", arguments: [otherFile])
+            } == "Keep OCR")
+            let replacement = try #require(try await SyncTransactionQueue.claim(dbQueue: queue))
+            #expect(replacement.id != batch)
+            #expect(replacement.operations.map(\.entityId) == [goodLink])
+            #expect(replacement.operations.first?.baseRevision == nil)
+            #expect(try await queue.read { db in
+                try Bool.fetchOne(
+                    db,
+                    sql: "SELECT EXISTS(SELECT 1 FROM sync_dependencies WHERE transactionId = ? AND predecessorId = ?)",
+                    arguments: [successor, replacement.id]
+                )
+            } == true)
+            #expect(try await queue.read { db in
+                try Int.fetchOne(db, sql: "SELECT count(*) FROM sync_reconciliations WHERE workspaceId = ?", arguments: [workspace])
+            } == 2)
+            #expect(try await queue.read { db in
+                try String.fetchOne(db, sql: "SELECT syncPullCursor FROM workspaces WHERE id = ?", arguments: [workspace])
+            } == "before")
+        }
+
+        @Test(arguments: [0, 1, 2, 3]) func fileDiscardHandlesDeletedLinks(source: Int) async throws {
+            let (queue, workspace) = try seed()
+            let file = UUID.v7(), meeting = UUID.v7(), link = UUID.v7()
+            let otherFile = UUID.v7(), otherLink = UUID.v7()
+            let operation = SyncOperationDraft(entity: .file, action: .upsert, entityId: file)
+            try await queue.write { db in
+                try db.execute(sql: "UPDATE workspaces SET syncPullCursor = 'before' WHERE id = ?", arguments: [workspace])
+                try MeetingRecord(id: meeting, workspaceId: workspace, name: "Meeting", createdAt: .now, updatedAt: .now).insert(db)
+                for id in [file, otherFile] {
+                    try FileRecord(
+                        id: id,
+                        workspaceId: workspace,
+                        size: 1,
+                        contentType: "image/png",
+                        checksum: "SHA-256:" + String(repeating: "b", count: 64),
+                        name: "test.png",
+                        metadata: .init(source: .screenshot),
+                        createdAt: .now,
+                        updatedAt: .now
+                    ).insert(db)
+                    try db.execute(sql: "INSERT INTO file_text_bodies(fileId, ocrText, caption) VALUES (?, '', '')", arguments: [id])
+                }
+                try MeetingAttachmentRecord(id: link, meetingId: meeting, fileId: file, createdAt: .now).insert(db)
+                try SyncTransactionRecorder.record(workspaceId: workspace, operations: [operation], in: db)
+            }
+            let root = try #require(try await SyncTransactionQueue.claim(dbQueue: queue))
+            try await SyncTransactionQueue.block(
+                root,
+                reason: .validation,
+                response: SyncTransactionQueue.problemData(code: "file_content_missing", status: 422, operationId: operation.id),
+                dbQueue: queue
+            )
+            let deletion = try #require(try await queue.write { db in
+                if source == 1 {
+                    try db.execute(
+                        sql: "INSERT INTO sync_confirmed_relations(workspaceId, entity, entityId, meetingId, fileId) VALUES (?, 'meeting_attachment', ?, ?, ?)",
+                        arguments: [workspace, link, meeting, file]
+                    )
+                }
+                if source == 3 {
+                    try SyncTransactionRecorder.record(
+                        workspaceId: workspace,
+                        operations: [.init(
+                            entity: .meetingAttachment,
+                            action: .create,
+                            entityId: link,
+                            payloadJSON: Data("{\"meetingId\":\"\(meeting)\",\"fileId\":\"\(file)\"}".utf8)
+                        )],
+                        in: db
+                    )
+                }
+                try MeetingAttachmentRecord.deleteOne(db, key: link)
+                var drafts = [SyncOperationDraft(entity: .meetingAttachment, action: .delete, entityId: link)]
+                if source != 0 {
+                    drafts.append(.init(
+                        entity: .meetingAttachment,
+                        action: .create,
+                        entityId: otherLink,
+                        payloadJSON: Data("{\"meetingId\":\"\(meeting)\",\"fileId\":\"\(otherFile)\"}".utf8)
+                    ))
+                }
+                return try SyncTransactionRecorder.record(workspaceId: workspace, operations: drafts, in: db)
+            })
+            #expect(try await queue.read { try Int.fetchOne($0, sql: "SELECT count(*) FROM sync_relation_history") } == 0)
+            let hasPlan = try await queue.read { try SyncTransactionQueue.fileDiscardPlan(workspaceId: workspace, in: $0) != nil }
+            if source == 2 {
+                #expect(!hasPlan)
+                await #expect(throws: TextContentError.self) {
+                    try await SyncTransactionQueue.discardFileChanges(
+                        workspaceId: workspace,
+                        fileId: file,
+                        expectedLastTransactionId: deletion,
+                        dbQueue: queue
+                    )
+                }
+                return
+            }
+            let impact = try #require(try await queue
+                .read { try MeetingRepository.fetchSyncProgress(in: $0).values.first?.workspaces.first?.discardImpact })
+            #expect(impact.operations == (source == 3 ? 3 : 2))
+            #expect(impact.meetings == 1)
+            try await SyncTransactionQueue.discardFileChanges(
+                workspaceId: workspace,
+                fileId: file,
+                expectedLastTransactionId: deletion,
+                dbQueue: queue
+            )
+            #expect(try await queue
+                .read { try Int.fetchOne($0, sql: "SELECT count(*) FROM sync_operations WHERE entityId = ?", arguments: [link]) } == 0)
+            #expect(try await queue.read { db in
+                try Int.fetchOne(
+                    db,
+                    sql: "SELECT count(*) FROM sync_reconciliations WHERE entity = 'meeting_attachment' AND entityId = ?",
+                    arguments: [link]
+                )
+            } == 1)
+            if source != 0 {
+                let remaining = try #require(try await SyncTransactionQueue.claim(dbQueue: queue))
+                #expect(remaining.id != deletion)
+                #expect(remaining.operations.map(\.entityId) == [otherLink])
+            }
+        }
+
+        @Test(arguments: [false, true]) func fileDiscardRejectsUncertainDependentRequest(leased: Bool) async throws {
+            let (queue, workspace) = try seed()
+            let file = UUID.v7(), link = UUID.v7()
+            let operation = SyncOperationDraft(entity: .file, action: .upsert, entityId: file)
+            try await queue.write { db in
+                try db.execute(sql: "UPDATE workspaces SET syncPullCursor = 'before' WHERE id = ?", arguments: [workspace])
+                try SyncTransactionRecorder.record(workspaceId: workspace, operations: [operation], in: db)
+            }
+            let root = try #require(try await SyncTransactionQueue.claim(dbQueue: queue))
+            try await SyncTransactionQueue.block(
+                root,
+                reason: .validation,
+                response: SyncTransactionQueue.problemData(code: "file_content_missing", status: 422, operationId: operation.id),
+                dbQueue: queue
+            )
+            let dependent = try #require(try await queue.write { db in
+                try SyncTransactionRecorder.record(workspaceId: workspace, operations: [
+                    .init(
+                        entity: .meetingAttachment,
+                        action: .create,
+                        entityId: link,
+                        payloadJSON: Data("{\"meetingId\":\"\(UUID.v7())\",\"fileId\":\"\(file)\"}".utf8)
+                    ),
+                ], in: db)
+            })
+            try await queue.write { db in
+                if leased {
+                    try db.execute(
+                        sql: "UPDATE sync_transactions SET leaseExpiresAt = ? WHERE id = ?",
+                        arguments: [Date.now.addingTimeInterval(30), dependent]
+                    )
+                } else {
+                    try db.execute(sql: "UPDATE sync_transactions SET attempts = 1 WHERE id = ?", arguments: [dependent])
+                }
+            }
+            #expect(try await queue.read { try SyncTransactionQueue.fileDiscardPlan(workspaceId: workspace, in: $0)?.fileId } == nil)
+            await #expect(throws: TextContentError.self) {
+                try await SyncTransactionQueue.discardFileChanges(
+                    workspaceId: workspace,
+                    fileId: file,
+                    expectedLastTransactionId: dependent,
+                    dbQueue: queue
+                )
+            }
+            #expect(try await queue.read { try Int.fetchOne($0, sql: "SELECT count(*) FROM sync_transactions") } == 2)
+        }
+
+        @Test(arguments: [false, true]) func firstFileMetadataMutationCarriesOriginalReference(retryRejected: Bool) async throws {
+            let (queue, workspace) = try seed()
+            let fileId = UUID.v7()
+            let hash = String(repeating: "a", count: 64)
+            try await queue.write { db in
+                let connection = try #require(try WorkspaceRecord.fetchOne(db, key: workspace)?.accountConnectionId)
+                let source = ScreenshotRemoteReference(
+                    origin: "https://example.invalid",
+                    accountConnectionId: connection,
+                    fileId: fileId,
+                    contentHash: hash
+                )
+                try FileRecord(
+                    id: fileId,
+                    workspaceId: workspace,
+                    size: 1,
+                    contentType: "image/png",
+                    checksum: "SHA-256:" + hash,
+                    name: "file.png",
+                    metadata: .init(source: .screenshot),
+                    createdAt: .now,
+                    updatedAt: .now,
+                    localReference: source.jsonString()
+                ).insert(db)
+                try db.execute(sql: "INSERT INTO file_text_bodies(fileId, ocrText, caption) VALUES (?, 'OCR', 'Caption')", arguments: [fileId])
+                let payload = FileOperationPayload(name: "file.png", checksum: "SHA-256:" + hash, metadata: .init(source: .screenshot))
+                try SyncTransactionRecorder.record(
+                    workspaceId: workspace,
+                    operations: [.init(entity: .file, action: .upsert, entityId: fileId, payloadJSON: SyncJSON.encoder.encode(payload))],
+                    in: db
+                )
+            }
+            if retryRejected {
+                // Reproduce an already persisted request from before the recorder fix.
+                try await queue.write { db in
+                    try db.execute(
+                        sql: "UPDATE sync_operations SET attachmentMimeType = NULL, attachmentSHA256 = NULL, attachmentReference = NULL WHERE entityId = ?",
+                        arguments: [fileId]
+                    )
+                }
+                let request = try #require(try await SyncTransactionQueue.claim(dbQueue: queue))
+                let operation = try #require(request.operations.first)
+                try await SyncTransactionQueue.block(
+                    request,
+                    reason: .validation,
+                    response: SyncTransactionQueue.problemData(code: "file_content_missing", status: 422, operationId: operation.id),
+                    dbQueue: queue
+                )
+                try await SyncTransactionQueue.retryInvalidTransaction(workspaceId: workspace, dbQueue: queue)
+                let retried = try #require(try await SyncTransactionQueue.claim(dbQueue: queue))
+                #expect(retried.id == request.id)
+                #expect(retried.operations == request.operations)
+            }
+            #expect(try await queue.read { db in
+                try String.fetchOne(db, sql: "SELECT attachmentReference FROM sync_operations WHERE entityId = ?", arguments: [fileId])
+            } != nil)
         }
 
         @Test func summaryPreparationIgnoresIndependentBacklogAndConcurrentAcknowledgements() async throws {

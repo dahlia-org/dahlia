@@ -1689,7 +1689,7 @@
 "sync.targetRecord" = "Affected record";
 "sync.permissionRequired" = "Server permission required";
 "sync.retryAfterPermission" = "Retry after access is restored";
-"sync.discardFollowing" = "Discard This and Later Changes";
+"sync.discardFollowing" = "Discard Affected Changes";
 "sync.openServer" = "Open on Server";
 "sync.checkServer" = "Check on Server";
 "sync.openServerFailed" = "Could not open the Server in a browser.";
@@ -1699,7 +1699,7 @@
 "sync.recordingArchiveFailure" = "Could not save the recording archive for “%@”";
 "sync.recordingArchiveAskEditor" = "Ask a Workspace admin or editor to retry.";
 "sync.useServerConfirmation" = "Use the Server version of “%@”?";
-"sync.discardConfirmation" = "Discard this and later changes in “%@”?";
+"sync.discardConfirmation" = "Discard the affected changes and their dependents in “%@”?";
 "sync.discardImpact" = "This discards %1$ld transactions, %2$ld operations, and %3$ld records. It releases %4$ld local bodies across %5$ld meetings.";
 "sync.discardWarning" = "Unsent text, images, and original recordings that do not exist on the Server may not be recoverable.";
 "sync.record.meeting" = "Meeting";
@@ -1779,3 +1779,6 @@
 "processing.dataUnreadable" = "Some recording processing states could not be read. Other recordings will still be restored.";
 "processing.retryOnMac" = "This previous server operation cannot be resumed. Run it again on this Mac.";
 "processing.downloadingArchive" = "Downloading recording audio…";
+
+"sync.discardFile" = "Discard File Sync Changes";
+"sync.discardFileConfirmation" = "Discard sync changes for this file and its links in “%@”?";
