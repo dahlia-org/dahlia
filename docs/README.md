@@ -15,6 +15,7 @@ Dahlia は Desktop、Server / Private Web、公開サイトを持つモノレポ
 | Desktop / Server | [Conversation analytics](conversation-analytics.md) | 会話分析のモデルと操作 |
 | Desktop | [Calendar schema](calendar-event-schema.md) | 予定のキーと Meeting との関係 |
 | Desktop | [Telemetry](telemetry.md) / [Release versioning](desktop-release-versioning.md) | 匿名収集規則、desktop release の版管理 |
+| Desktop（Electron alpha） | [Electron README](../apps/desktop/README.md) | オンライン専用の開発用アルファの起動・構成・制限 |
 | Server / Private Web | [Server README](../apps/server/README.md) | API、認証・認可、Workspace 共有、検索、設定、開発 |
 | Server / Cloud | [Deployment](../deploy/README.md) | 配置方法の入口 |
 | Server / Cloud | [Cloudflare](../deploy/cloudflare/README.md) / [Databricks](../deploy/databricks/README.md) | 配置先ごとの手順・制約 |

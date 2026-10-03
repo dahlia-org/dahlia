@@ -190,7 +190,7 @@ Dahlia が何を作り何を作らないかを決める positioning と tenet �
 UID／RECURRENCE-ID のキー形式、source 対応、Meeting とのカーディナリティは
 [カレンダー予定の永続化スキーマ](docs/calendar-event-schema.md)を参照してください。
 
-TypeScript package は root の pnpm workspace（`apps/server`、`packages/ui`）を共有します。repository root で
+TypeScript package は root の pnpm workspace（`apps/server`、`apps/desktop`、`packages/ui`）を共有します。repository root で
 一度 `pnpm install` を実行してください。Dahlia Server は `cd apps/server && pnpm dev`、公開サイトは
 `cd apps/site && pnpm dev`、Server と共通 UI の検証は root で `pnpm check` を実行します。Dahlia Server の開発用環境変数は
 `apps/server/.env.local` に置きます。既定で `DAHLIA_DATABASE_TYPE=sqlite` と

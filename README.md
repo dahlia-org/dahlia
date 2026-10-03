@@ -196,7 +196,7 @@ remediation plan, and UI responsiveness policy. Historical decisions and their s
 See [Calendar event persistence schema](docs/calendar-event-schema.md) for the UID/RECURRENCE-ID key, source mapping,
 and Meeting cardinality contract.
 
-TypeScript packages share the root pnpm workspace (`apps/server`, `packages/ui`); run `pnpm install` once from the
+TypeScript packages share the root pnpm workspace (`apps/server`, `apps/desktop`, `packages/ui`); run `pnpm install` once from the
 repository root. Run `cd apps/server && pnpm dev` for Dahlia Server, `cd apps/site && pnpm dev` for the public site,
 and `pnpm check` from the root for Server and shared UI validation. Dahlia Server
 uses `apps/server/.env.local` and defaults to `DAHLIA_DATABASE_TYPE=sqlite` with

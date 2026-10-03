@@ -1,4 +1,5 @@
 import * as sidebar from "../src/screens/Sidebar";
+import * as summaryGeneration from "../src/screens/SummaryGeneration";
 import { MeetingHoverDetails } from "../src/screens/MeetingHoverCard";
 import { encodeId } from "../src/model/typeid";
 import { apiUrls } from "../src/api/generated-operations";
@@ -165,6 +166,23 @@ describe("desktop-style meeting layout", () => {
     } finally { query.mockRestore(); page.mockRestore(); scope.mockRestore(); }
   });
 
+  it("mounts Server summary jobs only when the host runs AI on the Server", () => {
+    const scope = vi.spyOn(sidebar, "useSidebar").mockReturnValue({ userId: "user", reload: vi.fn() });
+    const ready = { error: undefined, loading: false, refreshing: false, reload: vi.fn(), replace: vi.fn() };
+    const query = vi.spyOn(liveData, "useLiveJSON").mockImplementation((input) => ({ ...ready,
+      data: typeof input === "object" && input.key.startsWith('["getWorkspace"') ? { role: "admin", meetingDeletionGraceDays: 30 } : undefined }));
+    const page = vi.spyOn(liveData, "useLivePage").mockReturnValue({ ...ready, data: undefined, loadingMore: false, loadMore: vi.fn() });
+    const generation = vi.spyOn(summaryGeneration, "ServerSummaryGeneration").mockImplementation(() => createElement("span"));
+    const meeting = { meetingId: "m1", workspaceId: "v1", name: "Planning", createdAt: "2026-09-07T00:00:00Z" } as SyncedMeetingInfo;
+    try {
+      renderToStaticMarkup(createElement(SyncedMeeting, { workspaceId: "v1", meetingId: "m1", resolvedMeeting: meeting }));
+      expect(generation).toHaveBeenCalled();
+      generation.mockClear();
+      renderToStaticMarkup(createElement(SyncedMeeting, { workspaceId: "v1", meetingId: "m1", resolvedMeeting: meeting, serverAI: false }));
+      expect(generation).not.toHaveBeenCalled();
+    } finally { query.mockRestore(); page.mockRestore(); scope.mockRestore(); generation.mockRestore(); }
+  });
+
   it("reuses a resolved meeting without issuing another detail query", () => {
     const scope = vi.spyOn(sidebar, "useSidebar").mockReturnValue({ userId: "user", reload: vi.fn() });
     const query = vi.spyOn(liveData, "useLiveJSON").mockImplementation((input) => ({
@@ -316,8 +334,9 @@ describe("desktop-style meeting layout", () => {
     expect(navigation).not.toContain('href="/workspaces"');
     expect(footer).not.toContain('<strong>Organizations</strong>');
     expect(footer).not.toContain("aria-pressed");
-    expect(readFileSync(new URL("../src/screens/Sidebar.tsx", import.meta.url), "utf8"))
-      .toContain('window.location.replace("/sign-out")');
+    const sidebarSource = readFileSync(new URL("../src/screens/Sidebar.tsx", import.meta.url), "utf8");
+    expect(sidebarSource).toContain('signOutPath = "/sign-out"');
+    expect(sidebarSource).toContain("window.location.replace(destination)");
     expect(footer).not.toContain("personal:");
     expect(footer).not.toContain("Local account");
     expect(navigation).toContain('href="/orgs"');

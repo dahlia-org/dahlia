@@ -227,7 +227,7 @@ export function WorkspaceTrash({ workspace }: { workspace: SyncedWorkspaceInfo }
   </section>;
 }
 
-export function WorkspaceMeetings({ session, workspaceId }: { session: SessionInfo; workspaceId: string }) {
+export function WorkspaceMeetings({ session, workspaceId, serverAI = true }: { session: SessionInfo; workspaceId: string; serverAI?: boolean }) {
   const { dialog, openDialog } = useActionDialog();
   const { workspaces } = useSidebar();
   const workspaceQuery = useLiveJSON<SyncedWorkspaceInfo>(apiQuery("getWorkspace", { params: { path: { workspaceId: workspaceId } } }));
@@ -333,7 +333,7 @@ export function WorkspaceMeetings({ session, workspaceId }: { session: SessionIn
       ...(session.capabilities.sharing && workspace ? [{ id: "permissions", label: uiText("Permissions", "権限"), content: <WorkspaceSharing workspace={workspace} /> }] : []),
       { id: "settings", label: uiText("Settings", "設定"), content: <>
         <section className="workspace-settings"><h2>{uiText("Workspace details", "ワークスペースの詳細")}</h2><div className="collection-heading"><span>{workspace?.name}</span>{workspace?.role === "admin" && <button className="secondary" onClick={renameWorkspace}>{uiText("Edit Workspace", "ワークスペースを編集")}</button>}</div></section>
-        {workspace && <ServerSummarySettings key={`generation-${workspaceId}`} workspaceId={workspaceId} onSave={(current, generationSettings) =>
+        {serverAI && workspace && <ServerSummarySettings key={`generation-${workspaceId}`} workspaceId={workspaceId} onSave={(current, generationSettings) =>
           commitSyncTransaction(workspaceId, [{ entity: "workspace", action: "update", entityId: workspaceId,
             baseRevision: current.revision, data: { name: current.name, generationSettings } }], setRecovering)} />}
         {workspace && <WorkspaceMemory key={`memory-${workspaceId}`} workspaceId={workspaceId} role={workspace.role} />}

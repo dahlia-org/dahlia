@@ -24,6 +24,7 @@ macOS、ローカル SQLite、録音、UI、内蔵 Codex / local MCP。
 - [チャットの書き込みと承認](desktop/chat-approval.md)
 - [匿名 telemetry](desktop/telemetry.md)
 - [ローカル全文検索と旧 Hybrid 検索](desktop/search.md)
+- [Electron アルファ版](desktop/electron-alpha.md)
 
 ## Server / Cloud
 

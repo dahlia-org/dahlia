@@ -16,7 +16,7 @@ import { Sheet, SheetContent, SheetTitle } from "../components/ui/sheet";
 const HeaderStatusSlot = createContext<(slot: HTMLDivElement | null) => void>(() => {});
 
 export function AppShell({ brand, children, extensionPaths, navigate, path, routeMeeting, routeMeetingOwned,
-  routeWorkspaceId, serverLinks, session, headerStatus }: {
+  routeWorkspaceId, serverLinks, session, headerStatus, signOutPath = "/sign-out" }: {
   headerStatus?: ReactNode;
   brand: ReactNode;
   children: ReactNode;
@@ -28,6 +28,7 @@ export function AppShell({ brand, children, extensionPaths, navigate, path, rout
   routeWorkspaceId?: string;
   serverLinks?: ReactNode;
   session: SessionInfo;
+  signOutPath?: string;
 }) {
   const main = useRef<HTMLElement>(null);
   const [statusSlot, setStatusSlot] = useState<HTMLDivElement | null>(null);
@@ -64,7 +65,7 @@ export function AppShell({ brand, children, extensionPaths, navigate, path, rout
     document.addEventListener("click", followLink);
     return () => document.removeEventListener("click", followLink);
   }, [extensionPaths, navigate]);
-  const sidebar = <Sidebar brand={brand} session={session} routeWorkspaceId={routeWorkspaceId} routeMeeting={routeMeeting} routeMeetingOwned={routeMeetingOwned} serverLinks={serverLinks}>
+  const sidebar = <Sidebar brand={brand} session={session} routeWorkspaceId={routeWorkspaceId} routeMeeting={routeMeeting} routeMeetingOwned={routeMeetingOwned} serverLinks={serverLinks} signOutPath={signOutPath}>
     <DropdownMenuItem asChild><a aria-current={path === "/dashboard/settings" ? "page" : undefined} href="/dashboard/settings">
       <MenuIcon name="settings" />{uiText("Account settings", "アカウント設定")}
     </a></DropdownMenuItem>

@@ -1,8 +1,10 @@
 packages:
+  - apps/desktop
   - apps/server
   - packages/ui
 allowBuilds:
   '@parcel/watcher': true
+  electron: false
   esbuild: true
   workerd: true
 verifyDepsBeforeRun: false

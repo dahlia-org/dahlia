@@ -80,7 +80,7 @@ function MeetingScreenshots({ meetingId }: { meetingId: string }) {
     </button>}
   </>;
 }
-export function SyncedMeeting({ workspaceId, meetingId, resolvedMeeting }: { workspaceId: string; meetingId: string; resolvedMeeting?: SyncedMeetingInfo }) {
+export function SyncedMeeting({ workspaceId, meetingId, resolvedMeeting, publicOrigin, serverAI = true }: { workspaceId: string; meetingId: string; resolvedMeeting?: SyncedMeetingInfo; publicOrigin?: string; serverAI?: boolean }) {
   const { dialog, openDialog } = useActionDialog();
   const optionsTrigger = useRef<HTMLButtonElement>(null);
   const summaryRestoreFocus = useRef<HTMLElement | null>(null);
@@ -153,14 +153,14 @@ export function SyncedMeeting({ workspaceId, meetingId, resolvedMeeting }: { wor
           ]} actions={<>
             <div ref={setNotesStatus} role="status" className="flex items-center gap-3 px-2 text-xs text-muted-foreground empty:hidden" />
             <Tooltip label={uiText("Copy link", "リンクをコピーします")}>
-              <Button variant="ghost" size="icon" aria-label={uiText("Copy meeting link", "ミーティングのリンクをコピー")} onClick={() => void navigator.clipboard.writeText(window.location.href)}><MenuIcon name="link" /></Button>
+              <Button variant="ghost" size="icon" aria-label={uiText("Copy meeting link", "ミーティングのリンクをコピー")} onClick={() => void navigator.clipboard.writeText(new URL(`${window.location.pathname}${window.location.search}${window.location.hash}`, publicOrigin ?? window.location.origin).href)}><MenuIcon name="link" /></Button>
             </Tooltip>
             {canWriteWorkspace(workspace?.role) && <DropdownMenu>
               <Tooltip label={uiText("Meeting options", "ミーティングのオプション")}><DropdownMenuTrigger asChild>
                 <Button ref={optionsTrigger} variant="ghost" size="icon" className="data-[state=open]:bg-accent" aria-label={uiText("Meeting actions", "ミーティングの操作")}><MoreHorizontal className="size-4" /></Button>
               </DropdownMenuTrigger></Tooltip>
               <DropdownMenuContent align="end" sideOffset={6} className="w-[256px] max-w-[calc(100vw-16px)] rounded-xl border-border/80 p-1.5 shadow-lg">
-                <DropdownMenuItem className="min-h-8 rounded-lg px-2.5 text-[13px]" disabled={!currentSummary} onSelect={() => { summaryRestoreFocus.current = optionsTrigger.current; setSummaryDialogOpen(true); }}><MenuIcon name="sparkles" />{uiText("Regenerate summary", "要約を再生成")}</DropdownMenuItem>
+                {serverAI && <DropdownMenuItem className="min-h-8 rounded-lg px-2.5 text-[13px]" disabled={!currentSummary} onSelect={() => { summaryRestoreFocus.current = optionsTrigger.current; setSummaryDialogOpen(true); }}><MenuIcon name="sparkles" />{uiText("Regenerate summary", "要約を再生成")}</DropdownMenuItem>}
                 <DropdownMenuItem className="min-h-8 rounded-lg px-2.5 text-[13px]" onSelect={() => editMeeting(optionsTrigger.current)}><MenuIcon name="edit" />{uiText("Edit Meeting", "ミーティングを編集")}</DropdownMenuItem>
                 <DropdownMenuSeparator className="-mx-0.5 my-1.5" />
                 <DropdownMenuItem className="min-h-8 rounded-lg px-2.5 text-[13px] text-destructive focus:text-destructive" onSelect={() => deleteMeeting(optionsTrigger.current)}><MenuIcon name="trash" />{uiText("Move to trash", "ごみ箱に移動")}</DropdownMenuItem>
@@ -168,7 +168,7 @@ export function SyncedMeeting({ workspaceId, meetingId, resolvedMeeting }: { wor
             </DropdownMenu>}
           </>} />
       <header className="mb-6">
-        {canWriteWorkspace(workspace?.role) && <ServerSummaryGeneration key={meetingId} meetingId={meetingId}
+        {serverAI && canWriteWorkspace(workspace?.role) && <ServerSummaryGeneration key={meetingId} meetingId={meetingId}
           workspaceId={meeting.workspaceId} open={summaryDialogOpen} onOpenChange={setSummaryDialogOpen} restoreFocus={summaryRestoreFocus.current} hasSummary={Boolean(currentSummary)} showTrigger={false} />}
         <h1 className="mb-4 break-words text-[28px] font-semibold leading-snug tracking-tight max-sm:text-2xl">{meeting.name || uiText("Untitled meeting", "無題のミーティング")}</h1>
         <div className="flex flex-wrap gap-1.5">

@@ -26,6 +26,7 @@ source of truth、再生成可能性、実測値に基づいて target state を
 | Reliability Scope、Execution Context、UI、Failure / Overload、Conformance / Remediation | Desktop の録音・保存・応答性。Server の可用性や process crash 耐性の保証へ一般化しない |
 | Runtime Data Flow のローカル処理 | Desktop / local MCP / 内蔵 Codex app-server |
 | Runtime Data Flow の Server・同期・認証境界 | Desktop と Server。API・運用の詳細は [Server README](apps/server/README.md) |
+| Electron alpha（`apps/desktop`） | Server オンライン専用の開発用クライアント。録音・ローカル保存を持たず、Reliability Scope の保証対象外。構成は [Electron README](apps/desktop/README.md) |
 | 設計判断の履歴 | [対象別 ADR](docs/adr/README.md)。Accepted と実装・検証完了は別 |
 
 以下の確認日・適合状況は元の観測時点を示し、文書整理によって再検証済みにはしない。

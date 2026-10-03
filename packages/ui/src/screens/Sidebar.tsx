@@ -98,7 +98,7 @@ export function MenuIcon({ name }: { name: keyof typeof menuIcons }) {
   return <Icon className={name === "check" ? "ml-auto size-4 text-primary" : "size-4 shrink-0"} strokeWidth={1.6} aria-hidden="true" />;
 }
 
-function SignOutButton() {
+function SignOutButton({ destination }: { destination: string }) {
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string>();
   async function signOut() {
@@ -106,7 +106,7 @@ function SignOutButton() {
     setError(undefined);
     try {
       await signOutAccount();
-      window.location.replace("/sign-out");
+      window.location.replace(destination);
     } catch {
       setError(uiText("Could not sign out. Please try again.", "サインアウトできませんでした。再試行してください。"));
       setPending(false);
@@ -119,7 +119,7 @@ function SignOutButton() {
   </>;
 }
 
-export function Sidebar({ brand, session, children, serverLinks, routeWorkspaceId: resolvedWorkspaceId, routeMeeting, routeMeetingOwned }: { brand: ReactNode; session: SessionInfo; children: ReactNode; serverLinks?: ReactNode; routeWorkspaceId?: string; routeMeeting?: SyncedMeetingInfo; routeMeetingOwned?: boolean }) {
+export function Sidebar({ brand, session, children, serverLinks, routeWorkspaceId: resolvedWorkspaceId, routeMeeting, routeMeetingOwned, signOutPath = "/sign-out" }: { brand: ReactNode; session: SessionInfo; children: ReactNode; serverLinks?: ReactNode; routeWorkspaceId?: string; routeMeeting?: SyncedMeetingInfo; routeMeetingOwned?: boolean; signOutPath?: string }) {
   const state = useSidebar();
   const accountMenuTrigger = useRef<HTMLButtonElement>(null);
   const [mcpDialogOpen, setMcpDialogOpen] = useState(false);
@@ -225,7 +225,7 @@ export function Sidebar({ brand, session, children, serverLinks, routeWorkspaceI
         <DropdownMenuItem onSelect={() => { accountMenuTrigger.current?.focus(); setMcpDialogOpen(true); }}>
           <MenuIcon name="document" />{uiText("Connect with MCP", "MCP による接続")}
         </DropdownMenuItem>
-        {session.capabilities.sessions && <SignOutButton />}
+        {session.capabilities.sessions && <SignOutButton destination={signOutPath} />}
       </DropdownMenuContent>
       </DropdownMenu>
       {mcpDialogOpen && <MCPConnectionDialog onClose={() => {

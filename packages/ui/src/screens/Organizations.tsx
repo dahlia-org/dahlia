@@ -192,7 +192,7 @@ function OrganizationJoinRequests({ organizationId }: { organizationId?: string 
   </section>;
 }
 
-function OrganizationDetails({ organization, session }: { organization: OrganizationInfo; session: SessionInfo }) {
+function OrganizationDetails({ organization, session, publicOrigin }: { organization: OrganizationInfo; session: SessionInfo; publicOrigin?: string }) {
   const { dialog, openDialog } = useActionDialog();
   const [members, setMembers] = useState<OrganizationMember[]>();
   const [currentRole, setCurrentRole] = useState<string>();
@@ -257,7 +257,7 @@ function OrganizationDetails({ organization, session }: { organization: Organiza
         const invitation = await json<OrganizationInvitation>("/api/auth/organization/invite-member", {
           method: "POST", body: JSON.stringify({ email: email!.trim(), role: "member", organizationId: organization.id }),
         });
-        setInvitationLink(`${window.location.origin}/accept-invitation/${invitation.id}`);
+        setInvitationLink(`${publicOrigin ?? window.location.origin}/accept-invitation/${invitation.id}`);
         setCopied(false);
         await load();
       },
@@ -498,7 +498,7 @@ function OrganizationDetails({ organization, session }: { organization: Organiza
   );
 }
 
-export function Organization({ session, organizationId }: { session: SessionInfo; organizationId: string }) {
+export function Organization({ session, organizationId, publicOrigin }: { session: SessionInfo; organizationId: string; publicOrigin?: string }) {
   const query = useLiveJSON<OrganizationInfo[]>("/api/auth/organization/list");
   const organization = query.data?.find((item) => item.id === organizationId);
   return <>
@@ -509,7 +509,7 @@ export function Organization({ session, organizationId }: { session: SessionInfo
     <DataError error={query.error} retry={query.reload} />
     {!query.data && query.loading && <p role="status">{uiText("Loading organization…", "組織を読み込み中…")}</p>}
     {query.data && !organization && <p role="alert">{uiText("Organization not found or you no longer have access.", "組織が見つからないか、アクセス権がありません。")}</p>}
-    {organization && <OrganizationDetails key={organization.id} organization={organization} session={session} />}
+    {organization && <OrganizationDetails key={organization.id} organization={organization} session={session} publicOrigin={publicOrigin} />}
   </>;
 }
 

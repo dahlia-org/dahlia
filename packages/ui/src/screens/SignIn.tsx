@@ -59,7 +59,7 @@ export function HeaderAuthenticationNotice({ brand }: { brand: DashboardBrand })
   </main>;
 }
 
-export function SignIn({ brand }: { brand: DashboardBrand }) {
+export function SignIn({ brand, signIn: start = beginSignIn }: { brand: DashboardBrand; signIn?: (callbackPath: string) => Promise<string | undefined> }) {
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string>();
 
@@ -70,7 +70,7 @@ export function SignIn({ brand }: { brand: DashboardBrand }) {
     const params = new URLSearchParams(window.location.search);
     const next = params.get("next");
     const safeNext = next?.startsWith("/") && !next.startsWith("//") ? next : undefined;
-    const failure = await beginSignIn(safeNext ?? (params.has("client_id") ? `/api/auth/oauth2/authorize${window.location.search}` : "/dashboard"));
+    const failure = await start(safeNext ?? (params.has("client_id") ? `/api/auth/oauth2/authorize${window.location.search}` : "/dashboard"));
     if (failure) { setError(failure); setPending(false); }
   }
 
