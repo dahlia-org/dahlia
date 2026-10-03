@@ -25,7 +25,7 @@ export class GatewayService {
       const tokens = config.databricksWorkspace
         ? new DatabricksTokenProvider(config.databricksWorkspace, transport)
         : undefined;
-      this.backend = new DatabricksBackend(provider, transport, tokens);
+      this.backend = new DatabricksBackend(provider, [], transport, tokens);
     } else if (provider) {
       this.backend = provider.backend === "cloudflare"
         ? new CloudflareBackend(provider, transport, config.foundationModels ?? [])

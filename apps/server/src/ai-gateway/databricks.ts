@@ -8,6 +8,7 @@ import { z } from "zod";
 export class DatabricksBackend implements AIGatewayBackend {
   constructor(
     private readonly provider: Extract<ProviderConfig, { backend: "databricks" }>,
+    _models: readonly string[],
     private readonly transport: GatewayFetch = fetch,
     private readonly tokens?: DatabricksTokenProvider,
   ) {}
@@ -22,14 +23,15 @@ export class DatabricksBackend implements AIGatewayBackend {
   }
 
   async listModels(request: ListModelsRequest): Promise<GatewayModelList> {
+    const signal = AbortSignal.any([request.signal, AbortSignal.timeout(10_000)]);
     const endpoint = new URL(`${this.provider.baseUrl}/models`);
     if (request.clientVersion) endpoint.searchParams.set("client_version", request.clientVersion);
     const response = await this.transport(endpoint, {
       headers: {
         accept: "application/json",
-        authorization: `Bearer ${await databricksAccessToken(request.headers ?? new Headers(), this.tokens, request.signal)}`,
+        authorization: `Bearer ${await databricksAccessToken(request.headers ?? new Headers(), this.tokens, signal)}`,
       },
-      signal: request.signal,
+      signal,
     });
     if (!response.ok) {
       await response.body?.cancel();

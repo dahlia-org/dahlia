@@ -97,7 +97,9 @@ describe("AI Gateway", () => {
     const init = transport.mock.calls[0]![1]!;
     expect(new Headers(init.headers).get("authorization")).toBe("Bearer obo");
     expect(new Headers(init.headers).has("x-forwarded-access-token")).toBe(false);
-    expect(init.signal).toBe(req.signal);
+    expect(init.signal).not.toBe(req.signal);
+    controller.abort();
+    expect(init.signal?.aborted).toBe(true);
   });
 
   it("returns the platform catalog through the authenticated shared HTTP route", async () => {
@@ -122,6 +124,30 @@ describe("AI Gateway", () => {
     expect(response.status).toBe(200);
     const body: unknown = await response.json();
     expect(body).toMatchObject(path.endsWith("session") ? { capabilities: { sync: true, ai: false } } : { sync: { version: 7 } });
+  });
+
+  it.each(["/api/v1/session", "/api/v1/capabilities"])("bounds stalled discovery for %s", async (path) => {
+    const timeout = new AbortController();
+    const timeoutSpy = vi.spyOn(AbortSignal, "timeout").mockReturnValue(timeout.signal);
+    const store = testStore();
+    store.sync.isAvailable = async () => true;
+    let started!: () => void;
+    const fetching = new Promise<void>((resolve) => { started = resolve; });
+    const app = createApp({ config: databricksConfig, authStore: store, fetch: async (_url, init) => {
+      started();
+      return new Promise<Response>((_resolve, reject) => {
+        init?.signal?.addEventListener("abort", () => reject(new DOMException("Discovery aborted", "AbortError")), { once: true });
+      });
+    } });
+    try {
+      const pending = app.request(path, { headers: { "X-Forwarded-Email": "real@example.com", "x-forwarded-access-token": "obo" } });
+      await fetching;
+      expect(timeoutSpy).toHaveBeenCalledWith(10_000);
+      timeout.abort(new DOMException("Discovery timed out", "TimeoutError"));
+      const response = await pending;
+      expect(response.status).toBe(200);
+      expect(await response.json()).toMatchObject(path.endsWith("session") ? { capabilities: { sync: true, ai: false } } : { sync: { version: 7 } });
+    } finally { timeoutSpy.mockRestore(); }
   });
 
   it("validates chat bodies before discovery and reuses the request catalog", async () => {
@@ -198,7 +224,7 @@ describe("AI Gateway", () => {
 
   it("does not mutate the body; resolves model, OBO and trusted user tags inside Databricks", async () => {
     const transport = vi.fn<GatewayFetch>(async () => new Response("{}"));
-    const backend = new DatabricksBackend(databricksProvider, transport);
+    const backend = new DatabricksBackend(databricksProvider, ["obsolete.local.model"], transport);
     const body = Object.freeze({ model: "system.ai.gpt-6-luna", input: [], max_output_tokens: 256, stream: true, tools: [{ type: "function", name: "note" }] });
     const controller = new AbortController();
     await backend.responses(body, {

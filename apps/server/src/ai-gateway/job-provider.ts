@@ -11,7 +11,7 @@ export function createJobProvider(config: AppConfig, transport: typeof fetch = f
     const tokens = new DatabricksTokenProvider(config.databricksWorkspace, transport);
     return {
       provider,
-      backend: new DatabricksBackend(provider, transport, tokens),
+      backend: new DatabricksBackend(provider, [], transport, tokens),
       normalizeModel: (model: string) => model,
       resolveModel: (model: string) => model === CODEX_AUTO_REVIEW_ALIAS
         ? config.codexAutoReviewModel?.trim() ?? model
