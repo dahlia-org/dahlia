@@ -40,6 +40,7 @@ export interface SummaryTranscriptResult {
 }
 export type SummaryGenerationResult = SummaryDocument & { transcript?: GeneratedTranscript };
 export interface SummaryJob {
+  queueId?: string; queue?: import("../jobs/store").BackgroundJob;
   id: string; workspaceId: string; meetingId: string; ownerUserId: string;
   method: "transcript" | "audio"; settings: TranscriptSettings; outputLanguage: string;
   status: string; attempts: number; createdAt: Date; availableAt: Date;

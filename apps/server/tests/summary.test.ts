@@ -17,6 +17,7 @@ import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { createNodeApplicationStore } from "../src/auth/node-store";
 import { MeetingSyncService } from "../src/sync/service";
+import { SyncTransactionError } from "../src/sync/store";
 import { SummaryService, summaryJobResponse } from "../src/summary/service";
 import { processSummaryJob } from "../src/summary/process";
 import { createJobExecutor } from "../src/jobs/execute";
@@ -98,7 +99,7 @@ describe("server summary jobs", () => {
       const notes = await store.sync.withIdentity(owner, (sync) => sync.initializeMeetingNotes(workspaceId, meetingId, uuidV7(), core.checkpoint()));
       expect((await service.start(owner, workspaceId, meetingId, request)).notesSnapshot).toBeNull();
       expect((await store.summaryJobs.claim())?.notesSnapshot).toBeNull();
-      raw.prepare("UPDATE jobs_summary SET lease_expires_at = 0 WHERE id = ?").run(first.id);
+      raw.prepare("UPDATE jobs_queue SET lease_until = 0 WHERE dedupe_key = 'summary:' || ?").run(first.id);
       expect(await store.summaryJobs.claim()).toMatchObject({ id: first.id, attempts: 2, notesSnapshot: null });
       await service.cancel(owner, workspaceId, meetingId, first.id);
       const retry = await service.retry(owner, workspaceId, meetingId, first.id, { id: uuidV7() });
@@ -131,7 +132,8 @@ describe("server summary jobs", () => {
         expect((await service.status(owner, workspaceId, meetingId, job.id))?.settings.detail).toBe(current);
         expect((await service.start(owner, workspaceId, meetingId, request)).id).toBe(job.id);
         expect((await store.summaryJobs.claim())?.settings.detail).toBe(current);
-        raw.prepare("UPDATE jobs_summary SET settings = ?, lease_expires_at = 0 WHERE id = ?").run(historical, job.id);
+        raw.prepare("UPDATE jobs_summary SET settings = ? WHERE id = ?").run(historical, job.id);
+        raw.exec("UPDATE jobs_queue SET lease_until = 0");
         expect(await store.summaryJobs.claim()).toMatchObject({ id: job.id, attempts: 2, settings: { detail: current } });
         raw.prepare("UPDATE jobs_summary SET settings = ? WHERE id = ?").run(historical, job.id);
         expect(await service.cancel(owner, workspaceId, meetingId, job.id)).toMatchObject({ status: "cancelled", settings: { detail: current } });
@@ -574,18 +576,93 @@ describe("server summary jobs", () => {
     } finally { await store.close?.(); }
   });
 
+  it.each([
+    ["transcript", "advance"], ["transcript", "publication"], ["audio", "advance"], ["audio", "publication"],
+  ] as const)("bounds %s summary domain conflicts during %s", async (kind, phase) => {
+    const value = await setup(); const { store, sync, path, workspaceId, meetingId } = value;
+    const raw = new DatabaseSync(path);
+    try {
+      if (kind === "audio") await addRecording(value);
+      const method = kind === "audio" ? audioMethod(value, () => combinedResponse()).method : value.method;
+      const service = new SummaryService(store.sync, [method]);
+      const job = await service.start(owner, workspaceId, meetingId, kind === "audio" ? await audioRequest(value) : { id: uuidV7() });
+      if (phase === "advance") vi.spyOn(store.summaryJobs, "advance").mockRejectedValue(new SyncTransactionError(409, "summary_stage_conflict"));
+      else vi.spyOn(sync, "completeSummary").mockRejectedValue(new SyncTransactionError(409, "summary_transcript_conflict"));
+      const executor = createJobExecutor({ queue: store.jobs, summaryJobs: store.summaryJobs, sync, syncStore: store.sync, methods: [method] });
+      for (let attempts = 1; attempts <= 3; attempts++) {
+        raw.prepare("UPDATE jobs_queue SET available_at = 0 WHERE dedupe_key = ?").run(`summary:${job.id}`);
+        await executor.processOne(new AbortController().signal);
+        expect(await service.status(owner, workspaceId, meetingId)).toMatchObject({ id: job.id, attempts,
+          status: attempts < 3 ? "pending" : "failed", lastErrorCode: "summary_processing_failed" });
+      }
+      expect(await executor.processOne(new AbortController().signal)).toBe(false);
+      expect(await store.sync.withIdentity(owner, (scoped) => scoped.listSummaryVersions(workspaceId, meetingId, 100))).toEqual([]);
+    } finally { raw.close(); await store.close?.(); }
+  });
+
+  it.each(["advance", "publication", "503"] as const)("refunds postclaim infrastructure failures during %s and stops after three", async (phase) => {
+    const { store, sync, method, service, path, workspaceId, meetingId } = await setup();
+    const raw = new DatabaseSync(path);
+    try {
+      const job = await service.start(owner, workspaceId, meetingId, { id: uuidV7() });
+      raw.prepare("UPDATE jobs_queue SET attempts = 2 WHERE dedupe_key = ?").run(`summary:${job.id}`);
+      const error = phase === "503" ? new SyncTransactionError(503, "sync_target_changed") : new Error("database unavailable");
+      const unavailable = phase === "advance"
+        ? vi.spyOn(store.summaryJobs, "advance").mockRejectedValue(error)
+        : vi.spyOn(sync, "completeSummary").mockRejectedValue(error);
+      const executor = createJobExecutor({ queue: store.jobs, summaryJobs: store.summaryJobs, sync, syncStore: store.sync, methods: [method] });
+      for (let attempt = 1; attempt <= 3; attempt++) {
+        raw.prepare("UPDATE jobs_queue SET available_at = 0 WHERE dedupe_key = ?").run(`summary:${job.id}`);
+        await executor.processOne(new AbortController().signal);
+        expect(await service.status(owner, workspaceId, meetingId)).toMatchObject({
+          status: attempt === 3 ? "failed" : "pending", attempts: 2, lastErrorCode: "job_execution_failed",
+        });
+        expect(raw.prepare("SELECT dispatch_attempts FROM jobs_queue WHERE dedupe_key = ?").get(`summary:${job.id}`))
+          .toEqual({ dispatch_attempts: attempt });
+      }
+      expect(await executor.processOne(new AbortController().signal)).toBe(false);
+      unavailable.mockRestore();
+      const payload = raw.prepare("SELECT payload FROM jobs_queue WHERE dedupe_key = ?").get(`summary:${job.id}`)!;
+      await store.jobs.enqueue(`summary:${job.id}`, "summary", owner.userId, `meeting:${meetingId}`, JSON.parse(String(payload.payload)));
+      await executor.processOne(new AbortController().signal);
+      expect(await service.status(owner, workspaceId, meetingId)).toMatchObject({ status: "succeeded", attempts: 3 });
+    } finally { raw.close(); await store.close?.(); }
+  });
+
+  it("bounds infrastructure failures separately from summary attempts and recovers retained work", async () => {
+    const { store, sync, method, service, path, workspaceId, meetingId } = await setup();
+    const raw = new DatabaseSync(path);
+    try {
+      const job = await service.start(owner, workspaceId, meetingId, { id: uuidV7() });
+      const unavailable = vi.spyOn(store.summaryJobs, "claim").mockRejectedValue(new Error("claim unavailable"));
+      const executor = createJobExecutor({ queue: store.jobs, summaryJobs: store.summaryJobs, sync, syncStore: store.sync, methods: [method] });
+      for (let attempt = 0; attempt < 3; attempt++) {
+        raw.prepare("UPDATE jobs_queue SET available_at = 0 WHERE dedupe_key = ?").run(`summary:${job.id}`);
+        await executor.processOne(new AbortController().signal);
+        expect(await service.status(owner, workspaceId, meetingId)).toMatchObject({ status: attempt === 2 ? "failed" : "pending", attempts: 0 });
+      }
+      expect(await executor.processOne(new AbortController().signal)).toBe(false);
+      const rawQueue = raw.prepare("SELECT payload FROM jobs_queue WHERE dedupe_key = ?").get(`summary:${job.id}`)!;
+      await store.jobs.enqueue(`summary:${job.id}`, "summary", owner.userId, `meeting:${meetingId}`, JSON.parse(String(rawQueue.payload)));
+      unavailable.mockRestore();
+      raw.prepare("UPDATE jobs_queue SET available_at = 0 WHERE dedupe_key = ?").run(`summary:${job.id}`);
+      await executor.processOne(new AbortController().signal);
+      expect(await service.status(owner, workspaceId, meetingId)).toMatchObject({ status: "succeeded", attempts: 1 });
+    } finally { raw.close(); await store.close?.(); }
+  });
+
   it("recovers expired leases across restart, rejects stale claims and bounds attempts", async () => {
     const setupValue = await setup(); const { store, service, workspaceId, meetingId, config, path, method } = setupValue;
     await service.start(owner, workspaceId, meetingId, { id: uuidV7() });
     const stale = (await store.summaryJobs.claim())!; await store.close?.();
-    const raw = new DatabaseSync(path); raw.exec("UPDATE jobs_summary SET lease_expires_at = 0"); raw.close();
+    const raw = new DatabaseSync(path); raw.exec("UPDATE jobs_queue SET lease_until = 0 WHERE kind IN ('summary', 'audio-summary')"); raw.close();
     const reopened = createNodeApplicationStore(config); const sync = new MeetingSyncService(reopened.sync);
     try {
       const current = (await reopened.summaryJobs.claim())!;
       expect(current.attempts).toBe(2);
       expect(await sync.completeSummary(owner, stale, doc(), method)).toBe(false);
       await reopened.summaryJobs.fail(current, "temporary", true);
-      const raw = new DatabaseSync(path); raw.exec("UPDATE jobs_summary SET available_at = 0"); raw.close();
+      const raw = new DatabaseSync(path); raw.exec("UPDATE jobs_queue SET available_at = 0 WHERE kind IN ('summary', 'audio-summary')"); raw.close();
       method.generate = async () => { throw new SummaryError("temporary", true); };
       await processSummaryJob(reopened.summaryJobs, [method], sync, new AbortController().signal);
       expect(await new SummaryService(reopened.sync, [method]).status(owner, workspaceId, meetingId)).toMatchObject({ status: "failed", attempts: 3 });
@@ -600,18 +677,20 @@ describe("server summary jobs", () => {
       const accepted = await service.start(owner, workspaceId, meetingId, { id: uuidV7() });
       const reference = { id: accepted.id, ownerUserId: owner.userId };
       await store.summaryJobs.fail((await store.summaryJobs.claim())!, "summary_http_429", true);
-      raw.exec("UPDATE jobs_summary SET available_at = 0");
+      raw.exec("UPDATE jobs_queue SET available_at = 0 WHERE kind IN ('summary', 'audio-summary')");
       expect(await store.summaryJobs.claim()).toBeNull();
+      raw.exec("UPDATE jobs_dispatch SET cooldowns = '{}'");
       const referenced = (await store.summaryJobs.claim(reference))!;
       expect(referenced.attempts).toBe(1);
       await store.summaryJobs.fail(referenced, "summary_http_429", true);
       expect(await service.status(owner, workspaceId, meetingId)).toMatchObject({ status: "pending", attempts: 0 });
-      raw.prepare("UPDATE jobs_summary SET available_at = 0, created_at = ?").run(Date.now() - 61 * 60_000);
+      raw.exec("UPDATE jobs_queue SET available_at = 0; UPDATE jobs_dispatch SET cooldowns = '{}'");
+      raw.prepare("UPDATE jobs_summary SET created_at = ?").run(Date.now() - 61 * 60_000);
       await store.summaryJobs.fail((await store.summaryJobs.claim(reference))!, "summary_http_429", true);
       // Past the window a 429 spends attempts like any retryable failure, so a persistent limit fails after three.
       expect(await service.status(owner, workspaceId, meetingId)).toMatchObject({ status: "pending", attempts: 1 });
       // It still waits out the shared cooldown rather than the shorter attempt backoff.
-      expect((raw.prepare("SELECT available_at FROM jobs_summary").get() as { available_at: number }).available_at).toBeGreaterThan(Date.now() + 25_000);
+      expect((raw.prepare("SELECT available_at FROM jobs_queue WHERE kind IN ('summary', 'audio-summary')").get() as { available_at: number }).available_at).toBeGreaterThan(Date.now() + 25_000);
     } finally { raw.close(); await store.close?.(); }
   });
 
@@ -997,8 +1076,8 @@ describe("audio summary jobs", () => {
       let job = await service.start(owner, workspaceId, meetingId, await audioRequest(value));
       expect(job.inputVersion).toBe(legacyVersion);
       const db = new DatabaseSync(value.path);
-      db.prepare("UPDATE jobs_summary SET input_version = ?, status = ? WHERE id = ?")
-        .run(legacyVersion, retry ? "failed" : "pending", job.id);
+      db.prepare("UPDATE jobs_summary SET input_version = ? WHERE id = ?").run(legacyVersion, job.id);
+      db.prepare("UPDATE jobs_queue SET status = ? WHERE dedupe_key = ?").run(retry ? "failed" : "pending", `summary:${job.id}`);
       db.close();
       if (retry) job = await service.retry(owner, workspaceId, meetingId, job.id, { id: uuidV7() });
       await processSummaryJob(store.summaryJobs, [method], sync, new AbortController().signal);
@@ -1280,6 +1359,45 @@ describe("staged summary generation", () => {
     } finally { await store.close?.(); }
   });
 
+  it.each([true, false])("rolls back audio publication when the lease expires at settlement (transcriptionOnly=%s)", async (transcriptionOnly) => {
+    const value = await setup(); const { store, sync, workspaceId, meetingId } = value;
+    try {
+      await addRecording(value);
+      const { method } = audioMethod(value, () => transcriptionOnly
+        ? Response.json({ choices: [{ finish_reason: "stop", message: { content: JSON.stringify(cloudTranscript) } }] })
+        : combinedResponse());
+      const generate = vi.fn(async () => doc());
+      const transcriptMethod = { ...value.method, generate };
+      const service = new SummaryService(store.sync, [method, transcriptMethod]);
+      const settings = await generationSettings(store, owner, workspaceId) ?? DEFAULT_WORKSPACE_GENERATION_SETTINGS;
+      const job = await service.start(owner, workspaceId, meetingId, {
+        id: uuidV7(), input: { ...await recordingInput(value), ...(transcriptionOnly ? { transcriptionOnly: true as const } : {}) },
+        ...(transcriptionOnly ? { preferences: { processing: settings.processing, summary: settings.summary, outputLanguage: settings.outputLanguage } }
+          : { model: "system.ai.gemini-3-8-flash", detail: "high" as const, outputLanguage: "ja" }),
+      });
+      const claimed = (await store.summaryJobs.claim())!;
+      const state = await import("../src/jobs/state");
+      const settle = state.settleJob;
+      vi.useFakeTimers({ toFake: ["Date"] });
+      const expiry = vi.spyOn(state, "settleJob").mockImplementationOnce(async (...args) => {
+        vi.setSystemTime(claimed.leaseExpiresAt!.getTime() + 1);
+        return settle(...args);
+      });
+      await processSummaryJob(store.summaryJobs, [method, transcriptMethod], sync, new AbortController().signal, claimed.queue);
+      expiry.mockRestore();
+      expect(await service.status(owner, workspaceId, meetingId, job.id)).toMatchObject({ status: "processing", transcriptResult: null });
+      await store.sync.withIdentity(owner, async (scoped) => {
+        expect(await scoped.getTranscript(workspaceId, meetingId)).toBeNull();
+        expect(await scoped.listSummaryVersions(workspaceId, meetingId, 100)).toEqual([]);
+      });
+      await processSummaryJob(store.summaryJobs, [method, transcriptMethod], sync, new AbortController().signal);
+      expect(await service.status(owner, workspaceId, meetingId, job.id)).toMatchObject({ status: "succeeded" });
+      expect(generate).not.toHaveBeenCalled();
+      expect(await store.sync.withIdentity(owner, (scoped) => scoped.listSummaryVersions(workspaceId, meetingId, 100)))
+        .toHaveLength(transcriptionOnly ? 0 : 1);
+    } finally { vi.useRealTimers(); await store.close?.(); }
+  });
+
   it("generates both results once, uses both session tracks, and atomically saves their canonical histories", async () => {
     const value = await setup(); const { store, sync, workspaceId, meetingId } = value;
     try {
@@ -1359,7 +1477,7 @@ describe("staged summary generation", () => {
       expect(failed).toMatchObject({ status: "pending", stage: "summarizing", transcriptResult: { version: "1" } });
       expect(calls).toHaveLength(1);
       const db = new DatabaseSync(value.path);
-      db.exec("UPDATE jobs_summary SET available_at = 0"); db.close();
+      db.exec("UPDATE jobs_queue SET available_at = 0 WHERE kind IN ('summary', 'audio-summary')"); db.close();
       await processSummaryJob(store.summaryJobs, [method, transcriptMethod], sync, new AbortController().signal);
       expect(calls).toHaveLength(1);
       expect(generate).toHaveBeenCalledTimes(2);

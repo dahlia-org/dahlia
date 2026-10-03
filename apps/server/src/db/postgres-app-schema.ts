@@ -517,30 +517,6 @@ export const searchDocument = searchSchema.table("documents", {
   }),
 ]).enableRLS();
 
-export const searchIndexJob = jobsSchema.table("search_index", {
-  workspaceId: uuid("workspace_id").notNull(),
-  documentId: uuid("document_id").notNull(),
-  model: text("model").notNull(),
-  dimensions: integer("dimensions").notNull(),
-  generation: integer("generation").default(1).notNull(),
-  status: text("status").default("pending").notNull(),
-  attempts: integer("attempts").default(0).notNull(),
-  availableAt: timestamp("available_at").defaultNow().notNull(),
-  claimedAt: timestamp("claimed_at"),
-  leaseExpiresAt: timestamp("lease_expires_at"),
-  lastErrorCode: text("last_error_code"),
-  updatedAt: timestamp("updated_at").defaultNow().notNull(),
-}, (table) => [
-  primaryKey({ name: "search_index_job_pk", columns: [table.workspaceId, table.documentId] }),
-  foreignKey({
-    name: "search_index_job_workspace_fk",
-    columns: [table.workspaceId],
-    foreignColumns: [syncedWorkspace.workspaceId],
-  }).onDelete("cascade"),
-  check("search_index_job_status_check", sql`${table.status} IN ('pending', 'processing', 'failed')`),
-  check("search_index_job_dimensions_check", sql`${table.dimensions} BETWEEN 32 AND 1024`),
-  index("search_index_job_claim_idx").on(table.status, table.availableAt, table.leaseExpiresAt),
-]);
 
 export const syncTransactionReceipt = appSchema.table("transaction_receipts", {
   encryptedPayload: text("encrypted_payload"),
@@ -591,50 +567,13 @@ export const syncWorkspaceState = appSchema.table("sync_workspace_state", {
   check("sync_workspace_state_boundary_check", sql`${table.prunedThrough} >= 0 AND ${table.latestSequence} >= ${table.prunedThrough}`),
 ]);
 
-export const storageDeleteJob = jobsSchema.table("storage_delete", {
-  storageKey: text("storage_key").primaryKey(),
-  attempts: integer("attempts").default(0).notNull(),
-  status: text("status").default("pending").notNull(),
-  availableAt: timestamp("available_at").defaultNow().notNull(),
-  claimedAt: timestamp("claimed_at"),
-  leaseExpiresAt: timestamp("lease_expires_at"),
-  lastErrorCode: text("last_error_code"),
-  createdAt: timestamp("created_at").defaultNow().notNull(),
-}, (table) => [
-  check("storage_delete_job_status_check", sql`${table.status} IN ('pending', 'processing', 'failed')`),
-  index("storage_delete_job_claim_idx").on(table.status, table.availableAt, table.leaseExpiresAt),
-]);
 
-// Operational queue metadata only; canonical image/text access remains owner-scoped.
-export const imageAnalysisJob = jobsSchema.table("image_analysis", {
-  fileId: uuid("file_id").primaryKey(),
-  workspaceId: uuid("workspace_id").notNull(),
-  ownerUserId: uuid("owner_user_id").notNull(),
-  model: text("model").notNull(),
-  mode: text("mode").$type<"fill_missing" | "replace">().default("fill_missing").notNull(),
-  outputLanguage: text("output_language"),
-  status: text("status").default("pending").notNull(),
-  attempts: integer("attempts").default(0).notNull(),
-  availableAt: timestamp("available_at").defaultNow().notNull(),
-  claimedAt: timestamp("claimed_at"),
-  leaseExpiresAt: timestamp("lease_expires_at"),
-  lastErrorCode: text("last_error_code"),
-}, (table) => [
-  foreignKey({ name: "jobs_image_analysis_file_id_files_file_id_fkey", columns: [table.fileId], foreignColumns: [syncedFile.fileId] }).onDelete("cascade"),
-  foreignKey({ name: "jobs_image_analysis_workspace_id_workspaces_workspace_id_fkey", columns: [table.workspaceId], foreignColumns: [syncedWorkspace.workspaceId] }).onDelete("cascade"),
-  foreignKey({ name: "jobs_image_analysis_owner_user_id_user_id_fkey", columns: [table.ownerUserId], foreignColumns: [authUser.id] }).onDelete("cascade"),
-  check("image_analysis_job_status_check", sql`${table.status} IN ('pending', 'processing', 'failed')`),
-  check("image_analysis_job_mode_check", sql`${table.mode} IN ('fill_missing', 'replace')`),
-  index("image_analysis_job_claim_idx").on(table.status, table.availableAt, table.leaseExpiresAt),
-  // Owner rotation claims per owner; a large backlog must not slow a small owner's claim.
-  index("image_analysis_job_owner_idx").on(table.ownerUserId, table.availableAt),
-]);
 
-// Settings and input fingerprints are owner-private; no transcript or provider credentials are queued.
 export const summaryJob = jobsSchema.table("summary", {
   encryptedPayload: text("encrypted_payload"),
   notesSnapshot: jsonb("notes_snapshot").$type<SummaryJob["notesSnapshot"]>(),
   id: uuid("id").primaryKey(),
+  queueId: uuid("queue_id").notNull().unique().references(() => backgroundJob.id, { onDelete: "cascade" }),
   workspaceId: uuid("workspace_id").notNull(),
   meetingId: uuid("meeting_id").notNull(),
   ownerUserId: uuid("owner_user_id").notNull(),
@@ -645,13 +584,7 @@ export const summaryJob = jobsSchema.table("summary", {
   transcriptRevision: integer("transcript_revision"),
   transcriptResult: jsonb("transcript_result").$type<SummaryJob["transcriptResult"]>(),
   outputLanguage: text("output_language").notNull(),
-  status: text("status").default("pending").notNull(),
-  attempts: integer("attempts").default(0).notNull(),
   createdAt: timestamp("created_at").notNull(),
-  availableAt: timestamp("available_at").notNull(),
-  claimedAt: timestamp("claimed_at"),
-  leaseExpiresAt: timestamp("lease_expires_at"),
-  lastErrorCode: text("last_error_code"),
   summaryRevision: integer("summary_revision").notNull(),
   inputVersion: text("input_version").notNull(),
   requestHash: text("request_hash").notNull(),
@@ -659,15 +592,8 @@ export const summaryJob = jobsSchema.table("summary", {
   foreignKey({ name: "jobs_summary_workspace_id_workspaces_workspace_id_fkey", columns: [table.workspaceId], foreignColumns: [syncedWorkspace.workspaceId] }).onDelete("cascade"),
   foreignKey({ name: "jobs_summary_meeting_id_meetings_meeting_id_fkey", columns: [table.meetingId], foreignColumns: [syncedMeeting.meetingId] }).onDelete("cascade"),
   foreignKey({ name: "jobs_summary_owner_user_id_user_id_fkey", columns: [table.ownerUserId], foreignColumns: [authUser.id] }).onDelete("cascade"),
-  check("summary_job_status_check", sql`${table.status} IN ('pending', 'processing', 'succeeded', 'failed', 'cancelled')`),
-  uniqueIndex("summary_job_active_meeting_idx").on(table.meetingId).where(sql`${table.status} IN ('pending', 'processing')`),
   index("summary_job_owner_created_idx").on(table.ownerUserId, table.createdAt),
-  index("summary_job_due_idx").on(table.ownerUserId, table.availableAt).where(sql`${table.status} IN ('pending', 'processing')`),
   pgPolicy("summary_job_retention_select", { for: "select", using: meetingRetentionWorkspace(table.workspaceId) }),
-  // The worker lists due owners without their identity; each claim still runs under the owner's policy.
-  pgPolicy("summary_job_dispatch_select", {
-    for: "select", using: sql`current_setting('app.maintenance', true) = 'summary-dispatch' AND ${table.status} IN ('pending', 'processing')`,
-  }),
   pgPolicy("summary_job_retention_update", { for: "update", using: meetingRetentionWorkspace(table.workspaceId), withCheck: meetingRetentionWorkspace(table.workspaceId) }),
   pgPolicy("summary_job_owner", {
     for: "all", using: sql`${table.ownerUserId} = nullif(current_setting('app.user_id', true), '')::uuid`,
@@ -739,12 +665,7 @@ export const workspaceMemoryState = jobsSchema.table("workspace_memory_state", {
   purge: boolean("purge").default(false).notNull(),
   reconcile: boolean("reconcile").default(true).notNull(),
   progress: jsonb("progress").$type<import("../memory/model").MemoryProgress>(),
-  lease: uuid("lease"),
-  leaseUntil: timestamp("lease_until"),
-  availableAt: timestamp("available_at").notNull(),
-  attempts: integer("attempts").default(0).notNull(),
-  errorCode: text("error_code"),
-}, (table) => [index("workspace_memory_due_idx").on(table.availableAt)]);
+});
 
 // Durable, content-free per-source work. In-flight operations survive newer edits.
 export const memorySourceJob = jobsSchema.table("memory_source_jobs", {
@@ -790,12 +711,7 @@ export const personalMemoryState = jobsSchema.table("personal_memory_state", {
   purge: boolean("purge").default(false).notNull(),
   reconcile: boolean("reconcile").default(true).notNull(),
   progress: jsonb("progress").$type<import("../memory/model").MemoryProgress>(),
-  lease: uuid("lease"),
-  leaseUntil: timestamp("lease_until"),
-  availableAt: timestamp("available_at").notNull(),
-  attempts: integer("attempts").default(0).notNull(),
-  errorCode: text("error_code"),
-}, (table) => [index("personal_memory_due_idx").on(table.availableAt)]);
+});
 
 // Durable, content-free per-source work. In-flight operations survive newer edits.
 export const personalMemorySourceJob = jobsSchema.table("personal_memory_source_jobs", {
@@ -902,23 +818,28 @@ export const documentPresence = appSchema.table("document_presence", {
 
 // Shared dispatch metadata. Domain tables retain their payload and publication fences.
 export const backgroundJob = jobsSchema.table("queue", {
-  id: text("id").primaryKey(),
+  id: uuid("id").primaryKey(),
+  dedupeKey: text("dedupe_key").notNull().unique(),
   kind: text("kind").$type<import("../jobs/model").JobKind>().notNull(),
   owner: text("owner").notNull(),
   target: text("target").notNull(),
-  reference: jsonb("reference").$type<import("../jobs/model").JobReference>().notNull(),
+  payload: jsonb("payload").$type<import("../jobs/model").JobPayload>().notNull(),
   generation: integer("generation").default(1).notNull(),
   status: text("status").default("pending").notNull(),
+  retainCancelled: boolean("retain_cancelled").default(false).notNull(),
   availableAt: timestamp("available_at").notNull(),
   createdAt: timestamp("created_at").notNull(),
   lease: text("lease"),
+  claimedAt: timestamp("claimed_at"),
   leaseUntil: timestamp("lease_until"),
   attempts: integer("attempts").default(0).notNull(),
+  dispatchAttempts: integer("dispatch_attempts").default(0).notNull(),
   lastError: text("last_error"),
 }, (table) => [
+  uniqueIndex("jobs_queue_active_summary_idx").on(table.target).where(sql`${table.kind} IN ('summary', 'audio-summary') AND ${table.status} IN ('pending', 'processing')`),
   index("jobs_queue_due_idx").on(table.status, table.availableAt, table.owner, table.createdAt),
   index("jobs_queue_lease_idx").on(table.status, table.leaseUntil, table.target),
-  check("jobs_queue_status_check", sql`${table.status} IN ('pending', 'processing', 'failed')`),
+  check("jobs_queue_status_check", sql`${table.status} IN ('pending', 'processing', 'succeeded', 'failed', 'cancelled')`),
 ]);
 
 export const jobDispatch = jobsSchema.table("dispatch", {

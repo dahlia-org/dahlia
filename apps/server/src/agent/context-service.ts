@@ -89,9 +89,9 @@ export class ChatMemoryService {
       unprocessed,
       truncated: !!snapshot?.truncated || unprocessed.some((segment) => segment.truncated) || !!page.nextCursor }) };
   }
-  async step(id: string, userId: string, parentSignal: AbortSignal) {
+  async step(id: string, userId: string, parentSignal: AbortSignal, supplied?: import("../jobs/store").BackgroundJob) {
     const identity: Identity = { userId, source: "accounts" };
-    const job = await this.store.claim(identity, id);
+    const job = await this.store.claim(identity, id, supplied);
     if (!job) return;
     const signal = AbortSignal.any([parentSignal, AbortSignal.timeout(90_000)]);
     try {
@@ -122,7 +122,7 @@ export class ChatMemoryService {
         const saved = await this.store.snapshot(identity, meetingId);
         const { snapshot, page } = await this.delta(identity, workspaceId, meetingId, saved, signal);
         more = !!page.nextCursor;
-        if (!snapshot && saved) await this.store.saveSnapshot(identity, meetingId, lease, null, false);
+        if (!snapshot && saved) await this.store.saveSnapshot(identity, meetingId, lease, null, false, job.queue);
         if (page.items.length || !snapshot) {
           const previousNotes = snapshot?.notes ?? emptyLiveNotes;
           const incoming = page.items.map(liveExcerpt);
@@ -140,7 +140,7 @@ export class ChatMemoryService {
           if (current.meetingId === meetingId) await this.store.saveSnapshot(identity, meetingId, lease, {
             after: page.next_after!, notes, truncated, recent: [...(snapshot?.recent ?? []), ...incoming].slice(-20),
             processedThrough: incoming.at(-1)?.startedAt ?? snapshot?.processedThrough ?? null, updatedAt: new Date().toISOString(),
-          });
+          }, true, job.queue);
         }
       } finally { await this.store.releaseMeeting(identity, meetingId, lease); }
       return await this.store.finish(identity, job, meeting.isRecording || more ? 30 : undefined);

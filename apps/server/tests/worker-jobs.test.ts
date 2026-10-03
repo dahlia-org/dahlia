@@ -27,10 +27,10 @@ describe("shared Worker job delivery", () => {
   it("drains durable storage work from cron even while every producer hint fails", async () => {
     const { jobs, queue, send, sync } = setup();
     send.mockRejectedValue(new Error("producer unavailable"));
-    queue.claim.mockResolvedValueOnce({ id: "storage-delete:key", kind: "storage-delete", reference: { storageKey: "key" },
+    queue.claim.mockResolvedValueOnce({ id: "storage-delete:key", kind: "storage-delete", payload: { storageKey: "key" },
       batch: [{}], createdAt: new Date() });
     await jobs.schedule();
-    expect(sync.drainStorageDeletes).toHaveBeenCalledWith("key");
+    expect(sync.drainStorageDeletes).toHaveBeenCalledWith("key", expect.objectContaining({ id: "storage-delete:key" }));
     expect(queue.complete).toHaveBeenCalledOnce();
     expect(queue.claim).toHaveBeenCalledTimes(4);
     expect(send).toHaveBeenCalledOnce();

@@ -34,31 +34,31 @@ export function createJobExecutor(services: JobServices) {
     if (code && isRateLimited(code)) await services.queue.cooldown(kind, Date.now() + RATE_LIMIT_COOLDOWN_MS);
   };
   async function execute(job: BackgroundJob & { batch: BackgroundJob[] }, signal: AbortSignal) {
-    const reference = job.reference;
-    let processed = true;
+    const payload = job.payload;
+
     switch (job.kind) {
       case "summary": case "audio-summary":
-        processed = await processSummaryJob({ ...services.summaryJobs, fail: async (claim, code, retryable) => {
+        await processSummaryJob({ ...services.summaryJobs, fail: async (claim, code, retryable) => {
           await services.summaryJobs.fail(claim, code, retryable); await cooldown(job.kind, code);
-        } }, services.methods, services.sync, signal, { id: reference.id!, ownerUserId: reference.ownerUserId! });
+        } }, services.methods, services.sync, signal, job);
         break;
       case "image":
-        processed = await processImageAnalysisJob({ ...services.imageAnalysis!, finish: async (claim, error) => {
+        await processImageAnalysisJob({ ...services.imageAnalysis!, finish: async (claim, error) => {
           await services.imageAnalysis!.finish(claim, error); await cooldown("image", error?.code);
-        } }, services.captioner!, services.syncStore, services.sync, signal, { fileId: reference.fileId!, ownerUserId: reference.ownerUserId!, model: reference.model! });
+        } }, services.captioner!, services.syncStore, services.sync, signal, job);
         break;
       case "search":
-        processed = await processSearchIndexBatch({ ...services.searchIndex!, retry: async (claim, code, at) => {
+        await processSearchIndexBatch({ ...services.searchIndex!, retry: async (claim, code, at) => {
           await services.searchIndex!.retry(claim, code, at); await cooldown("search", code);
-        } }, services.embedder!, signal, job.batch.map(({ reference: ref }) => ({ workspaceId: ref.workspaceId!, documentId: ref.documentId!, generation: ref.generation! }))) > 0;
+        } }, services.embedder!, signal, job.batch);
         break;
       case "workspace-memory": case "personal-memory":
-        await (job.kind === "workspace-memory" ? services.memory! : services.personalMemory!).step(reference.scopeId!, signal);
+        await (job.kind === "workspace-memory" ? services.memory! : services.personalMemory!).step(payload.scopeId!, signal, job);
         break;
-      case "chat-memory": await services.chatMemory!.step(reference.id!, reference.ownerUserId!, signal); break;
-      case "storage-delete": await services.sync.drainStorageDeletes(reference.storageKey); break;
+      case "chat-memory": await services.chatMemory!.step(job.dedupeKey.slice("chat-memory:".length), payload.ownerUserId!, signal, job); break;
+      case "storage-delete": await services.sync.drainStorageDeletes(payload.storageKey, job); break;
       case "maintenance": {
-        const targets = await services.syncStore.listHistoryTargets(reference.after ? { workspaceId: reference.after } : undefined);
+        const targets = await services.syncStore.listHistoryTargets(payload.after ? { workspaceId: payload.after } : undefined);
         for (const target of targets) {
           signal.throwIfAborted();
           await services.syncStore.purgeDeletedMeetings(target.workspaceId, new Date());
@@ -69,28 +69,23 @@ export function createJobExecutor(services: JobServices) {
         break;
       }
       case "reconcile": {
-        const kind = reference.kind!;
+        const kind = payload.kind!;
         if ((kind === "image" && !services.captioner) || (kind === "search" && !services.embedder)) {
-          await services.queue.reschedule(job, reference, 3_600_000); break;
+          await services.queue.reschedule(job, payload, 3_600_000); break;
         }
-        if (reference.phase === "scopes") {
-          const scopes = await services.queue.listScopes(kind, reference.after);
+        if (payload.phase === "scopes") {
+          const scopes = await services.queue.listScopes(kind, payload.after);
           for (const scopeId of scopes) await services.queue.enqueue(`reconcile:${kind}:${scopeId}`, "reconcile", scopeId,
             `reconcile:${kind}:${scopeId}`, { kind, phase: "page", scopeId });
           const hasMore = scopes.length === 100;
           await services.queue.reschedule(job, { kind, phase: "scopes", after: hasMore ? scopes.at(-1) : undefined }, hasMore ? 0 : 3_600_000);
         } else {
-          const after = kind === "image" ? await services.imageAnalysis!.reconcilePage(services.captioner!.model, reference.scopeId!, reference.after)
-            : await services.searchIndex!.reconcilePage(services.embedder!.model, services.embedder!.dimensions, reference.scopeId!, reference.after);
-          if (after) await services.queue.reschedule(job, { ...reference, after }, 0);
+          const after = kind === "image" ? await services.imageAnalysis!.reconcilePage(services.captioner!.model, payload.scopeId!, payload.after)
+            : await services.searchIndex!.reconcilePage(services.embedder!.model, services.embedder!.dimensions, payload.scopeId!, payload.after);
+          if (after) await services.queue.reschedule(job, { ...payload, after }, 0);
         }
         break;
       }
-    }
-    if (!processed) for (const item of job.batch) {
-      const availableAt = await services.queue.sourceAvailableAt(item);
-      if (availableAt) await services.queue.retry(item, { delayMs: Math.max(60_000, availableAt.getTime() - Date.now() + 1000),
-        errorCode: "job_source_not_ready" });
     }
   }
   return {

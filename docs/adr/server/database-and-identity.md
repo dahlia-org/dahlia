@@ -111,7 +111,7 @@ FORCE RLS は backfill transaction 内だけ解除し commit 前に復元する�
 
 ## 運用テーブルと番号の整理（2026-09-09）
 
-PostgreSQL / Lakebase のジョブは `jobs.search_index`、`jobs.storage_delete`、`jobs.image_analysis`、`jobs.summary` に配置する。SQLite は `jobs_*`、Desktop の検索ジョブは `jobs_search_index` を維持する。要約ジョブの暗号化ポリシー・AAD・HMAC purpose は物理名から独立した既存の `jobs_summary` を維持する。当時の開発 DB 用手動移行は[廃止](../../../apps/server/docs/jobs-schema-move.md)した。現行 Server は共通ディスパッチ `jobs.queue` を含む空 DB 用 baseline を使い、既存開発データの移行は提供しない。Desktop の現行検索キューは `jobs_background` に統合し、公開済み DB のデータ変換を維持する。
+当時は PostgreSQL / Lakebase のジョブを `jobs.search_index`、`jobs.storage_delete`、`jobs.image_analysis`、`jobs.summary` に配置し、SQLite を `jobs_*` とした。Server の実行管理は後述の2026-10-03決定で `jobs.queue` に一本化する。要約ジョブの暗号化ポリシー・AAD・HMAC purpose は物理名から独立した既存の `jobs_summary` を維持する。当時の開発 DB 用手動移行は[廃止](../../../apps/server/docs/jobs-schema-move.md)した。現行 Server は共通ディスパッチ `jobs.queue` を含む空 DB 用 baseline を使い、既存開発データの移行は提供しない。Desktop の現行検索キューは `jobs_background` に統合し、公開済み DB のデータ変換を維持する。
 
 `recordings` は `meeting_id` を外部キーとし、Workspace は親会議から導出する。PostgreSQL RLS と共通 store の認可をともに親会議経由にし、API の `workspaceId` は維持する。`meeting_events.workspace_id` は会議削除後の履歴認可のため、`meeting_attachments.workspace_id` は同一 Workspace の複合外部キー制約のため維持する。
 
@@ -127,4 +127,15 @@ Better Auth runtime の `generateId` は UUIDv7 callback を使う。schema 生�
 
 2026-09-14: 上記の初回参加を確認済みGoogleメールにも拡張する。`registrationState` は信頼済みHeaderと確認済みGoogle登録で `domain`、その他は `personal`、初期化完了後は `ready` とする。`organization.domain` と未公開の `organization_auto_join_domains` を `organization_domains`（組織・ドメイン複合主キーと参加方式）に置き換え、`organization_join_requests`（pendingの部分一意制約と処理履歴）を追加する。いずれも認可メタデータとして共通OrganizationStoreが認可を検査し、設定・参加・申請処理と作成・削除を既存の認可ロックで直列化する。ユーザー承認により現行Drizzle schemaから空DB専用のinitialを再生成する。既存DBの自動変換・削除、Desktop migrationの変更は行わない。既存のruntime_supportは維持する。
 
-2026-10-01: ユーザー承認により共通ジョブキューを現行 Drizzle schema の初期 DDL に統合した。PostgreSQL / SQLite は initial → runtime_support、Agent は initial → force_rls とし、dispatch trigger を runtime SQL に保持する。既存ジョブ・Memory・Agent 行の backfill は提供しない。生成 snapshot は初期状態から再生成し、旧追加 migration を配布 manifest から除去する。既存 DB や適用 ledger は変更せず、検証には空の一時 DB を使う。
+2026-10-01: ユーザー承認により共通ジョブキューを現行 Drizzle schema の初期 DDL に統合した。PostgreSQL / SQLite は initial → runtime_support、Agent は initial → force_rls とし、当時は dispatch trigger を runtime SQL に保持した（2026-10-03決定で廃止）。既存ジョブ・Memory・Agent 行の backfill は提供しない。生成 snapshot は初期状態から再生成し、旧追加 migration を配布 manifest から除去する。既存 DB や適用 ledger は変更せず、検証には空の一時 DB を使う。
+
+
+### Server 実行管理の一本化（2026-10-03）
+
+ユーザー承認により、全 Server ジョブの実行状態・lease・待機時刻・試行回数を `jobs.queue` に統合する。主キーは PostgreSQL の UUID / SQLite の text に保存する UUIDv7 とし、一意な `dedupe_key` で仕事の同一性を維持する。`dispatch_attempts` でインフラ障害・入力準備待ちを3回でDLQへ移し、種類別の処理 `attempts` とは分離する。処理側の再試行・rate limit 待機では dispatch の予算をリセットする。`reference` は種類ごとの Zod schema で検証する `payload` に統一する。登録は正本更新と同じ接続・transaction の共有ヘルパーで行い、用途別 claim と状態コピー用 dispatch trigger は廃止する。
+
+`jobs.image_analysis`・`jobs.search_index`・`jobs.storage_delete`・`agent.memory_jobs` は廃止する。`jobs.summary` は公開 ID、暗号化入力、設定、stage、途中結果、冪等性情報と一意な queue 参照を保持し、owner RLS と暗号化 purpose は維持する。Memory の設定・進捗・入力世代・外部 operation と `agent.live_contexts` の資源ロックは専用テーブルに残す。queue の payload は本文や認証情報を含まない。
+
+実行中の更新は ID と lease を維持して generation を増やす。古い結果は queue の ID・lease・generation・期限と正本の revision/hash・認可で拒否する。結果保存と完了は原子的に行う。キャンセル後も有効な lease を並列数・target 排他に数える。種類別の再試行条件、owner 公平性、cooldown、最大16件の検索 batch、Node / Worker 共通 executor と起床通知を維持する。画像解析の自動受付範囲は広げない。
+
+未リリースの空 DB baseline と Drizzle snapshot を更新する。既存 DB の変換・実 DB への適用・デプロイは本変更に含めない。Desktop キューは変更しない。

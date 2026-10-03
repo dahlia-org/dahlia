@@ -1,3 +1,9 @@
+import { drizzle } from "drizzle-orm/node-postgres";
+import { and, eq } from "drizzle-orm";
+import * as schema from "../db/auth-schema";
+import { cancelJobs, enqueueJob, lockJob, settleJob } from "../jobs/state";
+import { createJobStore, type BackgroundJob } from "../jobs/store";
+import { defaultJobLimits } from "../jobs/model";
 import type { Pool, PoolClient } from "pg";
 import type { Identity } from "../auth/identity";
 import { uuidV7 } from "../id";
@@ -7,7 +13,7 @@ import { workingMemoryContentSchema, liveSnapshotSchema,
   type WorkingMemoryEdit, type WorkingMemorySettings, type LiveSnapshot } from "./context-model";
 
 type ProfileMetadata = WorkingMemorySettings & { learningRevision: number; manualRevision: number; learnedRevision: number };
-export interface MemoryJob { id: string; userId: string; threadId: string; kind: "working" | "live";
+export interface MemoryJob { queue?: BackgroundJob; id: string; userId: string; threadId: string; kind: "working" | "live";
   messageId: string | null; revision: number; lease: string; attempts: number }
 const defaults = (): ProfileMetadata => ({ revision: 0, learningRevision: 0, manualRevision: 0, learnedRevision: 0,
   automatic: true, capacityReached: false, manual: "", learned: "" });
@@ -64,6 +70,7 @@ export class ChatMemoryStore {
   async applyLearned(identity: Identity, job: MemoryJob, note: string | null) {
     return this.scoped(identity, async (client) => {
       await client.query("SELECT pg_advisory_xact_lock(hashtextextended($1, 1))", [identity.userId]);
+      if (job.queue && !await lockJob(drizzle({ client }), schema, job.queue)) return;
       const metadata = await this.profile(client, identity.userId);
       if (!metadata.automatic || !note || job.revision < metadata.learningRevision) return;
       // A deleted message cannot contribute new learned memory.
@@ -81,9 +88,13 @@ export class ChatMemoryStore {
     });
   }
   async enqueueLearned(identity: Identity, threadId: string, messageId: string, revision: number) {
-    await this.scoped(identity, (client) => client.query(`INSERT INTO agent.memory_jobs
-      (id, user_id, thread_id, kind, message_id, revision) VALUES ($1, $2, $3, 'working', $4, $5) ON CONFLICT DO NOTHING`,
-    [`working:${messageId}`, identity.userId, threadId, messageId, revision]));
+    await this.scoped(identity, async (client) => {
+      const source = await client.query(`SELECT 1 FROM agent.mastra_messages m JOIN agent.mastra_threads t ON t.id = m.thread_id
+        WHERE m.id = $1 AND t.id = $2 AND t."resourceId" = $3 AND m.role = 'user'`, [messageId, threadId, identity.userId]);
+      if (!source.rowCount) return;
+      await enqueueJob(drizzle({ client }), schema, `chat-memory:working:${messageId}`, "chat-memory",
+        identity.userId, `chat:${threadId}`, { threadId, ownerUserId: identity.userId, memoryKind: "working", messageId, revision }, new Date(), false);
+    });
   }
   async selectMeeting(identity: Identity, threadId: string, meetingId: string | null) {
     await this.scoped(identity, async (client) => {
@@ -93,11 +104,13 @@ export class ChatMemoryStore {
       const result = await client.query(`UPDATE agent.mastra_threads SET metadata = metadata || jsonb_build_object('meetingId', $2::text)
         WHERE id = $1 AND "resourceId" = $3 RETURNING id`, [threadId, meetingId, identity.userId]);
       if (!result.rowCount) throw new RequestError(404, "ai_thread_not_found");
-      await client.query("DELETE FROM agent.memory_jobs WHERE id = $1", [`live:${threadId}`]);
-      if (meetingId) await client.query(`INSERT INTO agent.memory_jobs (id, user_id, thread_id, kind, revision)
-        VALUES ($1, $2, $3, 'live', 0)`, [`live:${threadId}`, identity.userId, threadId]);
+      const tx = drizzle({ client });
+      if (meetingId) await enqueueJob(tx, schema, `chat-memory:live:${threadId}`, "chat-memory", identity.userId,
+        `chat:${threadId}`, { threadId, ownerUserId: identity.userId, memoryKind: "live", revision: 0 });
+      else await cancelJobs(tx, schema, eq(schema.backgroundJob.dedupeKey, `chat-memory:live:${threadId}`));
     });
   }
+
   async selection(identity: Identity, threadId: string) {
     return this.scoped(identity, async (client) => {
       const { rows: [row] } = await client.query<{ metadata: { workspaceId: string; meetingId?: string | null } }>(
@@ -122,45 +135,48 @@ export class ChatMemoryStore {
       return result.rowCount ? lease : null;
     });
   }
-  async saveSnapshot(identity: Identity, meetingId: string, lease: string, snapshot: LiveSnapshot | null, release = true) {
-    await this.scoped(identity, (client) => client.query(`UPDATE agent.live_contexts SET snapshot = $3,
-      lease_until = CASE WHEN $4 THEN NULL ELSE lease_until END WHERE meeting_id = $1 AND lease = $2`,
-    [meetingId, lease, snapshot ? JSON.stringify(snapshot) : null, release]));
+  async saveSnapshot(identity: Identity, meetingId: string, lease: string, snapshot: LiveSnapshot | null, release = true, queue?: BackgroundJob) {
+    await this.scoped(identity, async (client) => {
+      if (queue && !await lockJob(drizzle({ client }), schema, queue)) return;
+      await client.query(`UPDATE agent.live_contexts SET snapshot = $3,
+        lease_until = CASE WHEN $4 THEN NULL ELSE lease_until END WHERE meeting_id = $1 AND lease = $2 AND lease_until > now()`,
+      [meetingId, lease, snapshot ? JSON.stringify(snapshot) : null, release]);
+    });
   }
+
   async releaseMeeting(identity: Identity, meetingId: string, lease: string) {
     await this.scoped(identity, (client) => client.query("UPDATE agent.live_contexts SET lease_until = NULL WHERE meeting_id = $1 AND lease = $2", [meetingId, lease]));
   }
   async due() {
-    const client = await this.pool.connect();
-    try {
-      await client.query("BEGIN");
-      await client.query("SELECT set_config('app.maintenance', 'agent-memory', true)");
-      const result = await client.query<{ id: string; userId: string }>(`SELECT id, user_id AS "userId" FROM agent.memory_jobs
-        WHERE available_at <= now() AND (lease_until IS NULL OR lease_until < now()) ORDER BY available_at, id LIMIT 20`);
-      await client.query("COMMIT");
-      return result.rows;
-    } catch (error) { await client.query("ROLLBACK"); throw error; }
-    finally { client.release(); }
+    const rows = await drizzle({ client: this.pool }).select().from(schema.backgroundJob).where(and(eq(schema.backgroundJob.kind, "chat-memory"),
+      eq(schema.backgroundJob.status, "pending"))).limit(20);
+    return rows.map((row) => ({ id: row.dedupeKey.slice("chat-memory:".length), userId: row.owner }));
   }
   async scheduleLive(identity: Identity, threadId: string) {
-    await this.scoped(identity, (client) => client.query(`INSERT INTO agent.memory_jobs (id, user_id, thread_id, kind, revision)
-      VALUES ($1, $2, $3, 'live', 0) ON CONFLICT DO NOTHING`, [`live:${threadId}`, identity.userId, threadId]));
+    await this.scoped(identity, async (client) => {
+      const thread = await client.query('SELECT 1 FROM agent.mastra_threads WHERE id = $1 AND "resourceId" = $2', [threadId, identity.userId]);
+      if (!thread.rowCount) throw new RequestError(404, "ai_thread_not_found");
+      await enqueueJob(drizzle({ client }), schema, `chat-memory:live:${threadId}`, "chat-memory",
+        identity.userId, `chat:${threadId}`, { threadId, ownerUserId: identity.userId, memoryKind: "live", revision: 0 }, new Date(), false);
+    });
   }
-  async claim(identity: Identity, id: string): Promise<MemoryJob | undefined> {
-    return this.scoped(identity, async (client) => (await client.query<MemoryJob>(`UPDATE agent.memory_jobs
-      SET lease = $2, lease_until = now() + interval '2 minutes' WHERE id = $1 AND available_at <= now()
-      AND (lease_until IS NULL OR lease_until < now()) RETURNING id, user_id AS "userId", thread_id AS "threadId", kind,
-      message_id AS "messageId", revision, lease, attempts`, [id, uuidV7()])).rows[0]);
+  async claim(identity: Identity, id: string, supplied?: BackgroundJob): Promise<MemoryJob | undefined> {
+    const job = supplied ?? await createJobStore(drizzle({ client: this.pool }), true, defaultJobLimits).claim(["chat-memory"], [`chat-memory:${id}`]);
+    if (!job || job.owner !== identity.userId) return undefined;
+    return this.scoped(identity, async (client) => {
+      if (!await lockJob(drizzle({ client }), schema, job)) return undefined;
+      const thread = await client.query('SELECT 1 FROM agent.mastra_threads WHERE id = $1 AND "resourceId" = $2', [job.payload.threadId, identity.userId]);
+      if (!thread.rowCount) return undefined;
+      return { queue: job, id, userId: identity.userId, threadId: job.payload.threadId!, kind: job.payload.memoryKind!,
+        messageId: job.payload.messageId ?? null, revision: job.payload.revision!, lease: job.lease!, attempts: Math.max(0, job.attempts - 1) };
+    });
   }
   async finish(identity: Identity, job: MemoryJob, delaySeconds?: number, failed = false) {
-    const result = await this.scoped(identity, (client) => {
-      if (delaySeconds === undefined) {
-        return client.query("DELETE FROM agent.memory_jobs WHERE id = $1 AND lease = $2", [job.id, job.lease]);
-      }
-      return client.query(`UPDATE agent.memory_jobs SET lease_until = NULL, available_at = now() + $3 * interval '1 second',
-          attempts = CASE WHEN $4 THEN attempts + 1 ELSE 0 END WHERE id = $1 AND lease = $2`, [job.id, job.lease, delaySeconds, failed]);
-    });
-    return result.rowCount && delaySeconds !== undefined ? delaySeconds : undefined;
+    if (!job.queue) return undefined;
+    await this.scoped(identity, (client) => settleJob(drizzle({ client }), schema, job.queue!, delaySeconds === undefined ? undefined : {
+      status: "pending", availableAt: new Date(Date.now() + delaySeconds * 1000), attempts: failed ? job.attempts + 1 : 0,
+    }));
+    return delaySeconds;
   }
   async message(identity: Identity, threadId: string, messageId: string) {
     return this.scoped(identity, async (client) => {

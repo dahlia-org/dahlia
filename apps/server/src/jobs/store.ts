@@ -3,24 +3,21 @@ import type { NodePgDatabase } from "drizzle-orm/node-postgres";
 import type { PostgresDatabase, SQLiteDatabase } from "../db/client";
 import * as pg from "../db/auth-schema";
 import * as sqlite from "../db/sqlite-schema";
+import { enqueueJob, retryJob, settleJob } from "./state";
 import { uuidV7 } from "../id";
-import { groupsForJob, JOB_LEASE_MS, jobKinds, type JobKind, type JobLimits, type JobReference } from "./model";
+import { groupsForJob, JOB_LEASE_MS, jobKinds, jobPayloadSchema, type JobKind, type JobLimits, type JobPayload } from "./model";
 
 export type BackgroundJob = typeof pg.backgroundJob.$inferSelect;
 export type JobStore = ReturnType<typeof createJobStore>;
-export function createJobStore(database: PostgresDatabase | SQLiteDatabase, isPostgres: boolean, limits: JobLimits) {
+export function createJobStore(database: PostgresDatabase | SQLiteDatabase | NodePgDatabase, isPostgres: boolean, limits: JobLimits) {
   const db = database as NodePgDatabase;
   const schema = (isPostgres ? pg : sqlite) as typeof pg;
   const jobs = schema.backgroundJob, dispatch = schema.jobDispatch;
-  const key = (job: BackgroundJob) => and(eq(jobs.id, job.id), eq(jobs.lease, job.lease!), eq(jobs.status, "processing"));
   return {
-    async enqueue(id: string, kind: JobKind, owner: string, target: string, reference: JobReference, availableAt = new Date()) {
-      const values = { id, kind, owner, target, reference, availableAt, createdAt: new Date() };
-      await db.insert(jobs).values(values).onConflictDoUpdate({ target: jobs.id,
-        set: { ...values, status: "pending", attempts: 0, lastError: null, lease: null, leaseUntil: null,
-          generation: sql`${jobs.generation} + 1` }, setWhere: eq(jobs.status, "failed") });
+    enqueue(dedupeKey: string, kind: JobKind, owner: string, target: string, payload: JobPayload, availableAt = new Date(), replace = false) {
+      return enqueueJob(db, schema, dedupeKey, kind, owner, target, payload, availableAt, replace);
     },
-    claim(kinds: readonly JobKind[]) {
+    claim(kinds: readonly JobKind[], dedupeKeys?: readonly string[]) {
       if (!kinds.length) return Promise.resolve(null);
       return db.transaction(async (tx) => {
         // ponytail: one short dispatch lock makes cross-process caps atomic; shard only if claim throughput becomes a bottleneck.
@@ -28,47 +25,52 @@ export function createJobStore(database: PostgresDatabase | SQLiteDatabase, isPo
         const query = tx.select().from(dispatch).where(eq(dispatch.id, 1));
         const [state] = isPostgres ? await query.for("update") : await query;
         const now = new Date();
+        await tx.delete(jobs).where(and(eq(jobs.status, "cancelled"), eq(jobs.retainCancelled, false),
+          or(sql`${jobs.leaseUntil} IS NULL`, lte(jobs.leaseUntil, now))));
         const active = await tx.select({ kind: jobs.kind, target: jobs.target, lease: jobs.lease }).from(jobs)
-          .where(and(eq(jobs.status, "processing"), gt(jobs.leaseUntil, now)));
+          .where(gt(jobs.leaseUntil, now));
         const allowed = kinds.filter((kind) => groupsForJob[kind].every((group) =>
           (state!.cooldowns[group] ?? 0) <= now.getTime()
           && new Set(active.filter((job) => groupsForJob[job.kind].includes(group)).map((job) => job.lease)).size < limits[group]));
         if (!allowed.length) return null;
-        const eligible = and(lte(jobs.availableAt, now),
+        const eligible = and(dedupeKeys ? inArray(jobs.dedupeKey, [...dedupeKeys]) : undefined, lte(jobs.availableAt, now),
           or(eq(jobs.status, "pending"), and(eq(jobs.status, "processing"), lte(jobs.leaseUntil, now))),
+          or(sql`${jobs.leaseUntil} IS NULL`, lte(jobs.leaseUntil, now)),
           active.length ? notInArray(jobs.target, active.map((item) => item.target)) : undefined);
-        const [job] = await tx.select().from(jobs).where(and(inArray(jobs.kind, allowed), eligible))
-          .orderBy(sql`CASE WHEN ${jobs.owner} > ${state!.lastOwner} THEN 0 ELSE 1 END`, asc(jobs.owner), asc(jobs.availableAt), asc(jobs.createdAt), asc(jobs.id)).limit(1);
+        // Canonical writers can enqueue or cancel without the dispatch lock; protect each selected row until its lease is written.
+        const candidate = tx.select().from(jobs).where(and(inArray(jobs.kind, allowed), eligible))
+          .orderBy(sql`CASE WHEN ${jobs.owner} > ${state!.lastOwner} THEN 0 ELSE 1 END`, asc(jobs.owner), asc(jobs.availableAt), asc(jobs.createdAt), asc(jobs.dedupeKey)).limit(1);
+        const [job] = isPostgres ? await candidate.for("update", { skipLocked: true }) : await candidate;
         if (!job) return null;
-        const batch = job.kind === "search" ? await tx.select().from(jobs).where(and(eq(jobs.kind, "search"), eq(jobs.owner, job.owner), eligible))
-          .orderBy(asc(jobs.availableAt), asc(jobs.createdAt), asc(jobs.id)).limit(16) : [job];
+        let batch = [job];
+        if (job.kind === "search") {
+          const candidates = tx.select().from(jobs).where(and(eq(jobs.kind, "search"), eq(jobs.owner, job.owner), eligible))
+            .orderBy(asc(jobs.availableAt), asc(jobs.createdAt), asc(jobs.dedupeKey)).limit(16);
+          batch = isPostgres ? await candidates.for("update", { skipLocked: true }) : await candidates;
+        }
+        const valid = batch.filter((item) => jobPayloadSchema.safeParse(item).success);
+        for (const item of batch.filter((item) => !valid.includes(item))) {
+          await tx.update(jobs).set({ status: "failed", lastError: "job_payload_invalid", lease: null, leaseUntil: null }).where(eq(jobs.id, item.id));
+        }
+        if (!valid.length) return null;
         const lease = uuidV7(), leaseUntil = new Date(now.getTime() + JOB_LEASE_MS);
-        const claimed = batch.map((item) => ({ ...item, status: "processing", lease, leaseUntil, attempts: item.attempts + 1 }));
-        await tx.update(jobs).set({ status: "processing", lease, leaseUntil, attempts: sql`${jobs.attempts} + 1` })
-          .where(inArray(jobs.id, batch.map((item) => item.id)));
+        const claimed = valid.map((item) => ({ ...item, status: "processing", claimedAt: now, lease, leaseUntil, attempts: item.attempts + 1, dispatchAttempts: item.dispatchAttempts + 1 }));
+        await tx.update(jobs).set({ status: "processing", claimedAt: now, lease, leaseUntil, attempts: sql`${jobs.attempts} + 1`, dispatchAttempts: sql`${jobs.dispatchAttempts} + 1` })
+          .where(inArray(jobs.id, valid.map((item) => item.id)));
         await tx.update(dispatch).set({ lastOwner: job.owner }).where(eq(dispatch.id, 1));
         return { ...claimed[0]!, batch: claimed };
       });
     },
     async complete(job: BackgroundJob) {
-      await db.transaction(async (tx) => {
-        await tx.delete(jobs).where(and(key(job), eq(jobs.generation, job.generation)));
-        await tx.update(jobs).set({ status: "pending", lease: null, leaseUntil: null, attempts: 0, lastError: null })
-          .where(and(key(job), gt(jobs.generation, job.generation)));
-      });
+      await db.transaction((tx) => settleJob(tx, schema, job));
     },
     async retry(job: BackgroundJob, deferred?: { delayMs: number; errorCode: string }) {
-      const terminal = job.attempts >= 3;
-      await db.update(jobs).set({ status: terminal ? "failed" : "pending", lease: null, leaseUntil: null,
-        availableAt: new Date(deferred ? Date.now() + deferred.delayMs
-          : Math.max(Date.now() + Math.min(300_000, 1000 * 2 ** job.attempts), (job.leaseUntil?.getTime() ?? 0) + 1000)),
-        lastError: deferred?.errorCode ?? "job_execution_failed" }).where(and(key(job), eq(jobs.generation, job.generation)));
-      await this.complete(job);
+      await db.transaction((tx) => retryJob(tx, schema, job, deferred));
     },
-    async reschedule(job: BackgroundJob, reference: JobReference, delayMs: number) {
-      await db.update(jobs).set({ reference, status: "pending", lease: null, leaseUntil: null,
-        attempts: 0, availableAt: new Date(Date.now() + delayMs) }).where(and(key(job), eq(jobs.generation, job.generation)));
-      await this.complete(job);
+    async reschedule(job: BackgroundJob, payload: JobPayload, delayMs: number) {
+      payload = jobPayloadSchema.parse({ kind: job.kind, payload }).payload;
+      await db.transaction((tx) => settleJob(tx, schema, job, { payload, status: "pending", attempts: 0,
+        availableAt: new Date(Date.now() + delayMs) }));
     },
     async cooldown(kind: JobKind, until: number) {
       await db.transaction(async (tx) => {
@@ -98,17 +100,7 @@ export function createJobStore(database: PostgresDatabase | SQLiteDatabase, isPo
         .from(jobs).where(and(inArray(jobs.kind, kinds), inArray(jobs.status, ["pending", "processing"])));
       return row?.at == null ? undefined : Math.max(1, Math.min(60, Math.ceil((new Date(row.at).getTime() - Date.now()) / 1000)));
     },
-    async sourceAvailableAt(job: BackgroundJob) {
-      return db.transaction(async (tx) => {
-        if (isPostgres && job.reference.ownerUserId) await tx.execute(sql`select set_config('app.user_id', ${job.reference.ownerUserId}, true)`);
-        const source = job.kind === "search" ? schema.searchIndexJob : job.kind === "image" ? schema.imageAnalysisJob : schema.summaryJob;
-        const filter = job.kind === "search" ? and(eq(schema.searchIndexJob.workspaceId, job.reference.workspaceId!), eq(schema.searchIndexJob.documentId, job.reference.documentId!))
-          : job.kind === "image" ? eq(schema.imageAnalysisJob.fileId, job.reference.fileId!) : eq(schema.summaryJob.id, job.reference.id!);
-        const [row] = await tx.select({ availableAt: source.availableAt, leaseUntil: source.leaseExpiresAt, status: source.status }).from(source).where(filter);
-        if (!row || !["pending", "processing"].includes(row.status)) return undefined;
-        return new Date(Math.max(row.availableAt.getTime(), row.status === "processing" ? row.leaseUntil?.getTime() ?? 0 : 0));
-      });
-    },
+
   };
 }
 

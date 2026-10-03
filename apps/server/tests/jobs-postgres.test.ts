@@ -13,7 +13,7 @@ import { MeetingSyncService } from "../src/sync/service";
 import { uuidV7 } from "../src/id";
 const databaseUrl = process.env.TEST_DATABASE_URL;
 describe.runIf(databaseUrl)("PostgreSQL targeted summary delivery", () => {
-  it.each(["duplicate", "retry", "lease", "cancel", "permission", "conflict"])("protects durable results across %s delivery", async (scenario) => {
+  it.each(["duplicate", "retry", "lease", "cancel", "permission", "conflict", "concurrent"])("protects durable results across %s delivery", async (scenario) => {
     const connection = connectPostgresUrl(databaseUrl!, 5);
     const store = createPostgresApplicationStore(connection.db, "postgres");
     const jobs = createSummaryJobStore(connection.db, true);
@@ -48,6 +48,21 @@ describe.runIf(databaseUrl)("PostgreSQL targeted summary delivery", () => {
         await seedPostgresIdentity(store, databaseUrl!, { userId: replacementId,  source: "header" });
         await store.sync.withIdentity(identity, (scoped) => scoped.putPermission(workspaceId, "user", replacementId, "admin"));
       }
+      if (scenario === "concurrent") {
+        const mixed = new SummaryService(store.sync, [method, { ...method, id: "audio" }]);
+        const results = await Promise.allSettled([
+          mixed.start(identity, workspaceId, meetingId, { id: uuidV7() }),
+          mixed.start(identity, workspaceId, meetingId, { id: uuidV7(), input: { type: "recording",
+            recordings: [{ micFileId: uuidV7(), systemFileId: null }] }, model: "model", detail: "high", outputLanguage: "en" }),
+        ]);
+        expect(results.filter((result) => result.status === "fulfilled")).toHaveLength(1);
+        const rejected = results.find((result) => result.status === "rejected")!;
+        expect(rejected.status === "rejected" && rejected.reason).toMatchObject({ status: 409, code: "summary_already_running" });
+        const queued = await connection.db.execute(sql`select count(*)::int as count from jobs.queue
+          where target = ${"meeting:" + meetingId} and kind in ('summary','audio-summary') and status in ('pending','processing')`);
+        expect(queued.rows).toEqual([{ count: 1 }]);
+        return;
+      }
       const accepted = await service.start(identity, workspaceId, meetingId, { id: uuidV7() });
       const reference = { id: accepted.id, ownerUserId: userId };
       expect(await jobs.claim({ ...reference, ownerUserId: uuidV7() })).toBeNull();
@@ -63,7 +78,7 @@ describe.runIf(databaseUrl)("PostgreSQL targeted summary delivery", () => {
         expect(await jobs.claim(reference)).toBeNull();
         await connection.db.transaction(async (tx) => {
           await tx.execute(sql`select set_config('app.user_id', ${userId}, true)`);
-          await tx.execute(sql`update jobs.summary set available_at = timestamp '1970-01-01' where id = ${accepted.id}`);
+          await tx.execute(sql`update jobs.queue set available_at = timestamp '1970-01-01' where dedupe_key = ${"summary:" + accepted.id}`);
         });
       }
       if (scenario === "lease") {
@@ -71,7 +86,7 @@ describe.runIf(databaseUrl)("PostgreSQL targeted summary delivery", () => {
         expect(claims.filter(Boolean)).toHaveLength(1);
         await connection.db.transaction(async (tx) => {
           await tx.execute(sql`select set_config('app.user_id', ${userId}, true)`);
-          await tx.execute(sql`update jobs.summary set lease_expires_at = timestamp '1970-01-01' where id = ${accepted.id}`);
+          await tx.execute(sql`update jobs.queue set lease_until = timestamp '1970-01-01' where dedupe_key = ${"summary:" + accepted.id}`);
         });
         expect(await jobs.due(userId)).toContainEqual(reference);
       }

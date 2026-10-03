@@ -253,19 +253,23 @@ CREATE TABLE `verification` (
 --> statement-breakpoint
 CREATE TABLE `jobs_queue` (
 	`id` text PRIMARY KEY,
+	`dedupe_key` text NOT NULL UNIQUE,
 	`kind` text NOT NULL,
 	`owner` text NOT NULL,
 	`target` text NOT NULL,
-	`reference` text NOT NULL,
+	`payload` text NOT NULL,
 	`generation` integer DEFAULT 1 NOT NULL,
 	`status` text DEFAULT 'pending' NOT NULL,
+	`retain_cancelled` integer DEFAULT false NOT NULL,
 	`available_at` integer NOT NULL,
 	`created_at` integer NOT NULL,
 	`lease` text,
+	`claimed_at` integer,
 	`lease_until` integer,
 	`attempts` integer DEFAULT 0 NOT NULL,
+	`dispatch_attempts` integer DEFAULT 0 NOT NULL,
 	`last_error` text,
-	CONSTRAINT "jobs_queue_status_check" CHECK("status" IN ('pending', 'processing', 'failed'))
+	CONSTRAINT "jobs_queue_status_check" CHECK("status" IN ('pending', 'processing', 'succeeded', 'failed', 'cancelled'))
 );
 --> statement-breakpoint
 CREATE TABLE `documents` (
@@ -305,10 +309,10 @@ CREATE TABLE `document_presence` (
 );
 --> statement-breakpoint
 CREATE TABLE `document_recoveries` (
-	`sequence` integer NOT NULL,
 	`id` text PRIMARY KEY,
 	`document_id` text NOT NULL,
 	`workspace_id` text NOT NULL,
+	`sequence` integer NOT NULL,
 	`blocks` text NOT NULL,
 	`reason` text NOT NULL,
 	`encrypted_payload` text,
@@ -329,26 +333,6 @@ CREATE TABLE `document_updates` (
 	CONSTRAINT `fk_document_updates_document_id_documents_id_fk` FOREIGN KEY (`document_id`) REFERENCES `documents`(`id`) ON DELETE CASCADE,
 	CONSTRAINT `fk_document_updates_workspace_id_workspaces_workspace_id_fk` FOREIGN KEY (`workspace_id`) REFERENCES `workspaces`(`workspace_id`) ON DELETE CASCADE,
 	CONSTRAINT `documentUpdate_workspace_fk` FOREIGN KEY (`workspace_id`,`document_id`) REFERENCES `documents`(`workspace_id`,`id`) ON UPDATE CASCADE ON DELETE CASCADE
-);
---> statement-breakpoint
-CREATE TABLE `jobs_image_analysis` (
-	`file_id` text PRIMARY KEY,
-	`workspace_id` text NOT NULL,
-	`owner_user_id` text NOT NULL,
-	`model` text NOT NULL,
-	`mode` text DEFAULT 'fill_missing' NOT NULL,
-	`output_language` text,
-	`status` text DEFAULT 'pending' NOT NULL,
-	`attempts` integer DEFAULT 0 NOT NULL,
-	`available_at` integer DEFAULT (cast(unixepoch('subsecond') * 1000 as integer)) NOT NULL,
-	`claimed_at` integer,
-	`lease_expires_at` integer,
-	`last_error_code` text,
-	CONSTRAINT `fk_jobs_image_analysis_file_id_files_file_id_fk` FOREIGN KEY (`file_id`) REFERENCES `files`(`file_id`) ON DELETE CASCADE,
-	CONSTRAINT `fk_jobs_image_analysis_workspace_id_workspaces_workspace_id_fk` FOREIGN KEY (`workspace_id`) REFERENCES `workspaces`(`workspace_id`) ON DELETE CASCADE,
-	CONSTRAINT `fk_jobs_image_analysis_owner_user_id_user_id_fk` FOREIGN KEY (`owner_user_id`) REFERENCES `user`(`id`) ON DELETE CASCADE,
-	CONSTRAINT "image_analysis_job_status_check" CHECK("status" IN ('pending', 'processing', 'failed')),
-	CONSTRAINT "image_analysis_job_mode_check" CHECK("mode" IN ('fill_missing', 'replace'))
 );
 --> statement-breakpoint
 CREATE TABLE `jobs_dispatch` (
@@ -488,12 +472,7 @@ CREATE TABLE `personal_memory_state` (
 	`status` text DEFAULT 'pending' NOT NULL,
 	`purge` integer DEFAULT false NOT NULL,
 	`reconcile` integer DEFAULT true NOT NULL,
-	`progress` text,
-	`lease` text,
-	`lease_until` integer,
-	`available_at` integer NOT NULL,
-	`attempts` integer DEFAULT 0 NOT NULL,
-	`error_code` text
+	`progress` text
 );
 --> statement-breakpoint
 CREATE TABLE `search_documents` (
@@ -518,25 +497,6 @@ CREATE TABLE `search_documents` (
 	CONSTRAINT "search_document_kind_check" CHECK("kind" IN ('meeting', 'screenshot'))
 );
 --> statement-breakpoint
-CREATE TABLE `jobs_search_index` (
-	`workspace_id` text NOT NULL,
-	`document_id` text NOT NULL,
-	`model` text NOT NULL,
-	`dimensions` integer NOT NULL,
-	`generation` integer DEFAULT 1 NOT NULL,
-	`status` text DEFAULT 'pending' NOT NULL,
-	`attempts` integer DEFAULT 0 NOT NULL,
-	`available_at` integer DEFAULT (cast(unixepoch('subsecond') * 1000 as integer)) NOT NULL,
-	`claimed_at` integer,
-	`lease_expires_at` integer,
-	`last_error_code` text,
-	`updated_at` integer DEFAULT (cast(unixepoch('subsecond') * 1000 as integer)) NOT NULL,
-	CONSTRAINT `jobs_search_index_pk` PRIMARY KEY(`workspace_id`, `document_id`),
-	CONSTRAINT `fk_jobs_search_index_workspace_id_workspaces_workspace_id_fk` FOREIGN KEY (`workspace_id`) REFERENCES `workspaces`(`workspace_id`) ON DELETE CASCADE,
-	CONSTRAINT "search_index_job_status_check" CHECK("status" IN ('pending', 'processing', 'failed')),
-	CONSTRAINT "search_index_job_dimensions_check" CHECK("dimensions" BETWEEN 32 AND 1024)
-);
---> statement-breakpoint
 CREATE TABLE `server_settings` (
 	`id` integer PRIMARY KEY,
 	`search_weights` text DEFAULT '{"title":5,"tags":3,"description":2,"summary":1,"ocr":1,"caption":2}' NOT NULL,
@@ -552,18 +512,6 @@ CREATE TABLE `shared_memories` (
 	`revision` integer DEFAULT 1 NOT NULL,
 	`updated_at` integer NOT NULL,
 	CONSTRAINT `fk_shared_memories_workspace_id_workspaces_workspace_id_fk` FOREIGN KEY (`workspace_id`) REFERENCES `workspaces`(`workspace_id`) ON DELETE CASCADE
-);
---> statement-breakpoint
-CREATE TABLE `jobs_storage_delete` (
-	`storage_key` text PRIMARY KEY,
-	`attempts` integer DEFAULT 0 NOT NULL,
-	`status` text DEFAULT 'pending' NOT NULL,
-	`available_at` integer DEFAULT (cast(unixepoch('subsecond') * 1000 as integer)) NOT NULL,
-	`claimed_at` integer,
-	`lease_expires_at` integer,
-	`last_error_code` text,
-	`created_at` integer DEFAULT (cast(unixepoch('subsecond') * 1000 as integer)) NOT NULL,
-	CONSTRAINT "storage_delete_job_status_check" CHECK("status" IN ('pending', 'processing', 'failed'))
 );
 --> statement-breakpoint
 CREATE TABLE `summaries` (
@@ -584,6 +532,7 @@ CREATE TABLE `jobs_summary` (
 	`encrypted_payload` text,
 	`notes_snapshot` text,
 	`id` text PRIMARY KEY,
+	`queue_id` text NOT NULL UNIQUE,
 	`workspace_id` text NOT NULL,
 	`meeting_id` text NOT NULL,
 	`owner_user_id` text NOT NULL,
@@ -594,20 +543,14 @@ CREATE TABLE `jobs_summary` (
 	`transcript_revision` integer,
 	`transcript_result` text,
 	`output_language` text NOT NULL,
-	`status` text DEFAULT 'pending' NOT NULL,
-	`attempts` integer DEFAULT 0 NOT NULL,
 	`created_at` integer NOT NULL,
-	`available_at` integer NOT NULL,
-	`claimed_at` integer,
-	`lease_expires_at` integer,
-	`last_error_code` text,
 	`summary_revision` integer NOT NULL,
 	`input_version` text NOT NULL,
 	`request_hash` text NOT NULL,
+	CONSTRAINT `fk_jobs_summary_queue_id_jobs_queue_id_fk` FOREIGN KEY (`queue_id`) REFERENCES `jobs_queue`(`id`) ON DELETE CASCADE,
 	CONSTRAINT `fk_jobs_summary_workspace_id_workspaces_workspace_id_fk` FOREIGN KEY (`workspace_id`) REFERENCES `workspaces`(`workspace_id`) ON DELETE CASCADE,
 	CONSTRAINT `fk_jobs_summary_meeting_id_meetings_meeting_id_fk` FOREIGN KEY (`meeting_id`) REFERENCES `meetings`(`meeting_id`) ON DELETE CASCADE,
-	CONSTRAINT `fk_jobs_summary_owner_user_id_user_id_fk` FOREIGN KEY (`owner_user_id`) REFERENCES `user`(`id`) ON DELETE CASCADE,
-	CONSTRAINT "summary_job_status_check" CHECK("status" IN ('pending', 'processing', 'succeeded', 'failed', 'cancelled'))
+	CONSTRAINT `fk_jobs_summary_owner_user_id_user_id_fk` FOREIGN KEY (`owner_user_id`) REFERENCES `user`(`id`) ON DELETE CASCADE
 );
 --> statement-breakpoint
 CREATE TABLE `sync_changes` (
@@ -826,12 +769,7 @@ CREATE TABLE `workspace_memory_state` (
 	`status` text DEFAULT 'pending' NOT NULL,
 	`purge` integer DEFAULT false NOT NULL,
 	`reconcile` integer DEFAULT true NOT NULL,
-	`progress` text,
-	`lease` text,
-	`lease_until` integer,
-	`available_at` integer NOT NULL,
-	`attempts` integer DEFAULT 0 NOT NULL,
-	`error_code` text
+	`progress` text
 );
 --> statement-breakpoint
 CREATE TABLE `workspace_transfers` (
@@ -874,14 +812,13 @@ CREATE INDEX `team_organizationId_idx` ON `team` (`organization_id`);--> stateme
 CREATE INDEX `teamMember_teamId_idx` ON `team_member` (`team_id`);--> statement-breakpoint
 CREATE INDEX `teamMember_userId_idx` ON `team_member` (`user_id`);--> statement-breakpoint
 CREATE INDEX `verification_identifier_idx` ON `verification` (`identifier`);--> statement-breakpoint
+CREATE UNIQUE INDEX `jobs_queue_active_summary_idx` ON `jobs_queue` (`target`) WHERE "jobs_queue"."kind" IN ('summary', 'audio-summary') AND "jobs_queue"."status" IN ('pending', 'processing');--> statement-breakpoint
 CREATE INDEX `jobs_queue_due_idx` ON `jobs_queue` (`status`,`available_at`,`owner`,`created_at`);--> statement-breakpoint
 CREATE INDEX `jobs_queue_lease_idx` ON `jobs_queue` (`status`,`lease_until`,`target`);--> statement-breakpoint
 CREATE UNIQUE INDEX `document_meeting_notes_unique` ON `documents` (`meeting_id`) WHERE "documents"."kind" = 'notes';--> statement-breakpoint
 CREATE INDEX `document_presence_document_expiry` ON `document_presence` (`document_id`,`expires_at`);--> statement-breakpoint
 CREATE INDEX `document_presence_workspace_expiry` ON `document_presence` (`workspace_id`,`expires_at`);--> statement-breakpoint
 CREATE UNIQUE INDEX `document_recoveries_document_cursor` ON `document_recoveries` (`document_id`,`sequence`);--> statement-breakpoint
-CREATE INDEX `image_analysis_job_claim_idx` ON `jobs_image_analysis` (`status`,`available_at`,`lease_expires_at`);--> statement-breakpoint
-CREATE INDEX `image_analysis_job_owner_idx` ON `jobs_image_analysis` (`owner_user_id`,`available_at`);--> statement-breakpoint
 CREATE INDEX `meeting_attachments_file_idx` ON `meeting_attachments` (`file_id`);--> statement-breakpoint
 CREATE INDEX `meeting_attachments_workspace_meeting_id_idx` ON `meeting_attachments` (`workspace_id`,`meeting_id`,`id`);--> statement-breakpoint
 CREATE INDEX `meeting_events_meeting_time_idx` ON `meeting_events` (`workspace_id`,`meeting_id`,`occurred_at`,`id`);--> statement-breakpoint
@@ -890,14 +827,9 @@ CREATE INDEX `organization_domains_domain_idx` ON `organization_domains` (`domai
 CREATE UNIQUE INDEX `organization_join_requests_pending_idx` ON `organization_join_requests` (`organization_id`,`user_id`) WHERE "organization_join_requests"."status" = 'pending';--> statement-breakpoint
 CREATE INDEX `organization_join_requests_user_idx` ON `organization_join_requests` (`user_id`);--> statement-breakpoint
 CREATE INDEX `personal_memories_user_idx` ON `personal_memories` (`user_id`);--> statement-breakpoint
-CREATE INDEX `personal_memory_due_idx` ON `personal_memory_state` (`available_at`);--> statement-breakpoint
 CREATE INDEX `search_document_workspace_kind_meeting_document_idx` ON `search_documents` (`workspace_id`,`kind`,`meeting_id`,`document_id`);--> statement-breakpoint
-CREATE INDEX `search_index_job_claim_idx` ON `jobs_search_index` (`status`,`available_at`,`lease_expires_at`);--> statement-breakpoint
 CREATE INDEX `shared_memories_workspace_idx` ON `shared_memories` (`workspace_id`);--> statement-breakpoint
-CREATE INDEX `storage_delete_job_claim_idx` ON `jobs_storage_delete` (`status`,`available_at`,`lease_expires_at`);--> statement-breakpoint
-CREATE UNIQUE INDEX `summary_job_active_meeting_idx` ON `jobs_summary` (`meeting_id`) WHERE "jobs_summary"."status" IN ('pending', 'processing');--> statement-breakpoint
 CREATE INDEX `summary_job_owner_created_idx` ON `jobs_summary` (`owner_user_id`,`created_at`);--> statement-breakpoint
-CREATE INDEX `summary_job_due_idx` ON `jobs_summary` (`owner_user_id`,`available_at`) WHERE "jobs_summary"."status" IN ('pending', 'processing');--> statement-breakpoint
 CREATE INDEX `sync_change_workspace_sequence_idx` ON `sync_changes` (`workspace_id`,`sequence`);--> statement-breakpoint
 CREATE INDEX `transaction_receipt_owner_created_idx` ON `transaction_receipts` (`owner_user_id`,`created_at`);--> statement-breakpoint
 CREATE INDEX `files_workspace_file_idx` ON `files` (`workspace_id`,`file_id`);--> statement-breakpoint
@@ -911,7 +843,6 @@ CREATE INDEX `transcript_segment_created_idx` ON `transcript_segments` (`transcr
 CREATE INDEX `transcript_segment_start_id_idx` ON `transcript_segments` (`transcript_id`,`started_at`,`segment_id`);--> statement-breakpoint
 CREATE UNIQUE INDEX `workspace_personal_user_idx` ON `workspaces` (`organization_id`,`personal_user_id`);--> statement-breakpoint
 CREATE INDEX `workspace_permission_principal_workspace_idx` ON `workspace_permissions` (`principal_type`,`principal_id`,`role`,`workspace_id`);--> statement-breakpoint
-CREATE INDEX `workspace_memory_due_idx` ON `workspace_memory_state` (`available_at`);--> statement-breakpoint
 CREATE INDEX `workspace_transfer_owner_sequence_idx` ON `workspace_transfers` (`owner_user_id`,`sequence`);--> statement-breakpoint
 CREATE VIEW `recording_sessions` AS
   SELECT workspace_id, meeting_id, session_id,

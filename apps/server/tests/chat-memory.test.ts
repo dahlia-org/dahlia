@@ -107,8 +107,8 @@ describe("live meeting context", () => {
     expect((await service.context(identity, threadId, signal)).context).not.toContain("OLD");
     await service.step(job.id, userId, signal);
     expect(generate.mock.calls[0]?.[1]).not.toContain("OLD");
-    expect(store.saveSnapshot).toHaveBeenCalledWith(expect.anything(), meetingId, "lease", null, false);
-    expect(store.saveSnapshot).toHaveBeenLastCalledWith(expect.anything(), meetingId, "lease", expect.objectContaining({ notes: { ...emptyLiveNotes, topics: [{ text: "NEW", segmentIds: [segmentId] }] } }));
+    expect(store.saveSnapshot).toHaveBeenCalledWith(expect.anything(), meetingId, "lease", null, false, undefined);
+    expect(store.saveSnapshot).toHaveBeenLastCalledWith(expect.anything(), meetingId, "lease", expect.objectContaining({ notes: { ...emptyLiveNotes, topics: [{ text: "NEW", segmentIds: [segmentId] }] } }), true, undefined);
   });
   it("does not turn authorization failures into checkpoint rebuilds or continue unclaimed deliveries", async () => {
     const { service, store, sync } = fixture();
@@ -132,8 +132,8 @@ describe("live meeting context", () => {
     sync.listTranscript.mockRejectedValueOnce(new RequestError(409, "transcript_changed_refetch_without_after"));
     await service.step(`live:${threadId}`, userId, signal);
     expect(generate.mock.calls[0]?.[1]).not.toContain("OLD");
-    expect(store.saveSnapshot).toHaveBeenCalledWith(expect.anything(), meetingId, "lease", null, false);
-    expect(store.saveSnapshot).toHaveBeenCalledWith(expect.anything(), meetingId, "lease", expect.objectContaining({ after: "new" }));
+    expect(store.saveSnapshot).toHaveBeenCalledWith(expect.anything(), meetingId, "lease", null, false, undefined);
+    expect(store.saveSnapshot).toHaveBeenCalledWith(expect.anything(), meetingId, "lease", expect.objectContaining({ after: "new" }), true, undefined);
   });
   it("reuses unchanged context without model calls and stops scheduling when the meeting ends", async () => {
     const { service, store, sync, generate, job } = fixture();

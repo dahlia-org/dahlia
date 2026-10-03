@@ -69,7 +69,7 @@ async function fixture() {
   const generate = vi.fn().mockResolvedValue({ target: "personal", reason: "personal_preference" });
   const memory = new DahliaMemory({ personal: app.personalMemory!, workspace: app.memory! }, sync, { personal, workspace: shared }, generate as MemoryGenerator);
   const db = new DatabaseSync(file);
-  const tick = async () => { db.exec("UPDATE personal_memory_state SET available_at = 0"); await personal.step(owner.userId, signal); };
+  const tick = async () => { db.exec("UPDATE jobs_queue SET available_at = 0 WHERE kind = 'personal-memory'"); await personal.step(owner.userId, signal); };
   const ready = async () => { for (let i = 0; i < 60; i++) { await tick(); if ((await personal.status(owner, owner.userId)).status === "ready") return; } throw new Error("Memory did not settle"); };
   const note = (content: string) => ({ ...memorySaveSchema.parse({ scope: "personal", id: encodeId("sharedMemory", uuidV7()), revision: 0, content }), scope: "personal" as const });
   return { app, config, owner, stranger, workspaceId: encodeId("workspace", workspace), sync, memory, personal, shared, generate, note, db, ready, tick, documents, transport,
@@ -87,7 +87,7 @@ describe("Dahlia Memory", () => {
       await f.memory.configure(f.owner, { scope: "workspace", workspaceId: f.workspaceId, enabled: true });
       await f.ready();
       for (let i = 0; i < 60; i++) {
-        f.db.exec("UPDATE workspace_memory_state SET available_at = 0");
+        f.db.exec("UPDATE jobs_queue SET available_at = 0 WHERE kind = 'workspace-memory'");
         await f.shared.step(workspace, signal);
         if ((await f.shared.status(f.owner, workspace)).status === "ready") break;
       }
@@ -302,9 +302,9 @@ describe("Dahlia Memory", () => {
     const f = await fixture();
     try {
       await f.memory.save(f.stranger, f.note("Private"));
-      await f.personal.configure(f.stranger, f.stranger.userId, true); for (let i = 0; i < 30; i++) { f.db.exec("UPDATE personal_memory_state SET available_at = 0"); await f.personal.step(f.stranger.userId, signal); }
+      await f.personal.configure(f.stranger, f.stranger.userId, true); for (let i = 0; i < 30; i++) { f.db.exec("UPDATE jobs_queue SET available_at = 0 WHERE kind = 'personal-memory'"); await f.personal.step(f.stranger.userId, signal); }
       f.db.prepare('DELETE FROM "user" WHERE id = ?').run(f.stranger.userId);
-      f.db.exec("UPDATE personal_memory_state SET available_at = 0"); await f.personal.step(f.stranger.userId, signal);
+      f.db.exec("UPDATE jobs_queue SET available_at = 0 WHERE kind = 'personal-memory'"); await f.personal.step(f.stranger.userId, signal);
       expect(f.documents.get(`dahlia_${encodeId("user", f.stranger.userId)}`)?.size).toBe(0);
       expect(f.db.prepare("SELECT * FROM personal_memory_state").all()).toEqual([]);
     } finally { f.close(); }

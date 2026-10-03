@@ -1,9 +1,12 @@
-import { and, asc, eq, exists, gt, inArray, isNotNull, isNull, lte, ne, notExists, or, sql } from "drizzle-orm";
+import { and, asc, eq, exists, gt, inArray, isNotNull, isNull, ne, notExists, or, sql } from "drizzle-orm";
 import type { AnyColumn } from "drizzle-orm";
 import type { NodePgDatabase } from "drizzle-orm/node-postgres";
 import { Buffer } from "node:buffer";
 
 import type { PostgresDatabase, SQLiteDatabase } from "../db/client";
+import { createJobStore, type BackgroundJob } from "../jobs/store";
+import { claimKey, enqueueJob, lockJob, payloadField, settleJob } from "../jobs/state";
+import { defaultJobLimits } from "../jobs/model";
 import { isRateLimited } from "../jobs/rate-limit";
 import * as postgresSchema from "../db/auth-schema";
 import * as sqliteSchema from "../db/sqlite-schema";
@@ -13,6 +16,7 @@ type SearchDatabase = NodePgDatabase;
 const RECONCILE_BATCH_SIZE = 500;
 
 export interface SearchIndexJobRecord {
+  queue?: BackgroundJob;
   workspaceId: string;
   documentId: string;
   generation: number;
@@ -29,7 +33,7 @@ export type SearchIndexReference = Pick<SearchIndexJobRecord, "workspaceId" | "d
 
 export interface SearchIndexStore {
   reconcile(model: string, dimensions: number): Promise<void>;
-  claim(model: string, dimensions: number, limit: number, references?: readonly SearchIndexReference[]): Promise<SearchIndexJobRecord[]>;
+  claim(model: string, dimensions: number, limit: number, references?: readonly (SearchIndexReference | BackgroundJob)[]): Promise<SearchIndexJobRecord[]>;
   load(job: SearchIndexJobRecord): Promise<SearchIndexDocumentRecord | null>;
   loadMany(jobs: SearchIndexJobRecord[]): Promise<SearchIndexDocumentRecord[]>;
   save(job: SearchIndexDocumentRecord, model: string, dimensions: number, embedding: number[]): Promise<boolean>;
@@ -71,12 +75,9 @@ function createSearchIndexStore(
       if (isPostgres) await transaction.execute(sql`select set_config('app.maintenance', 'search', true), set_config('app.maintenance_workspace_id', ${workspaceId}, true)`);
       return action(transaction);
     });
-  const jobKey = (job: SearchIndexJobRecord) => and(
-    eq(schema.searchIndexJob.workspaceId, job.workspaceId),
-    eq(schema.searchIndexJob.documentId, job.documentId),
-    eq(schema.searchIndexJob.generation, job.generation),
-    eq(schema.searchIndexJob.claimedAt, job.claimedAt),
-  );
+  const q = schema.backgroundJob;
+  const queue = createJobStore(db, isPostgres, defaultJobLimits);
+  const jobKey = (job: SearchIndexJobRecord) => job.queue ? claimKey(schema, job.queue) : sql`false`;
   const documentKey = ({ workspaceId, documentId }: Pick<SearchIndexJobRecord, "workspaceId" | "documentId">) =>
     `${workspaceId}\0${documentId}`;
   const groupByWorkspace = <T extends SearchIndexJobRecord>(items: T[]) => {
@@ -156,6 +157,10 @@ function createSearchIndexStore(
                 eq(schema.searchDocument.documentId, document.documentId), eq(schema.searchDocument.workspaceId, workspaceId)))
               .for("update");
           }
+          if (!document.queue) continue;
+          if (!await lockJob(transaction, schema, document.queue)) {
+            await settleJob(transaction, schema, document.queue); continue;
+          }
           const rows = await transaction.update(schema.searchDocument).set({
             embedding: (isPostgres ? embedding : encodeFloat32(embedding)) as never,
             embeddingModel: model,
@@ -164,15 +169,15 @@ function createSearchIndexStore(
             eq(schema.searchDocument.workspaceId, document.workspaceId),
             eq(schema.searchDocument.documentId, document.documentId),
             eq(schema.searchDocument.embeddingContentHash, document.contentHash),
-            exists(transaction.select({ value: sql`1` }).from(schema.searchIndexJob).where(and(
-              jobKey(document), eq(schema.searchIndexJob.model, model), eq(schema.searchIndexJob.dimensions, dimensions),
-              eq(schema.searchIndexJob.status, "processing"),
+            exists(transaction.select({ value: sql`1` }).from(q).where(and(
+              jobKey(document), eq(payloadField(schema, "model"), model), sql`cast(${payloadField(schema, "dimensions")} as integer) = ${dimensions}`,
+              eq(q.status, "processing"),
             ))),
             ...liveDocumentParentFilters(transaction),
           )).returning({ documentId: schema.searchDocument.documentId });
           if (rows.length) {
             saved.add(documentKey(document));
-            await transaction.delete(schema.searchIndexJob).where(jobKey(document));
+            if (!await settleJob(transaction, schema, document.queue)) throw new Error("job_lease_changed");
           }
         }
         return saved;
@@ -191,10 +196,8 @@ function createSearchIndexStore(
         workspaceId: schema.searchDocument.workspaceId,
         documentId: schema.searchDocument.documentId,
       }).from(schema.searchDocument)
-        .leftJoin(schema.searchIndexJob, and(
-          eq(schema.searchIndexJob.workspaceId, schema.searchDocument.workspaceId),
-          eq(schema.searchIndexJob.documentId, schema.searchDocument.documentId),
-        ))
+        .leftJoin(q, and(eq(q.kind, "search"),
+          eq(q.dedupeKey, sql`'search:' || ${schema.searchDocument.workspaceId} || ':' || ${schema.searchDocument.documentId}`)))
         .where(and(
           eq(schema.searchDocument.workspaceId, workspaceId),
           ...liveDocumentParentFilters(transaction),
@@ -202,61 +205,35 @@ function createSearchIndexStore(
           or(isNull(schema.searchDocument.embedding), isNull(schema.searchDocument.embeddingModel),
             ne(schema.searchDocument.embeddingModel, model),
             sql`${isPostgres ? sql`cardinality(${schema.searchDocument.embedding})` : sql`length(${schema.searchDocument.embedding}) / 4`} <> ${dimensions}`),
-          notExists(transaction.select({ id: schema.imageAnalysisJob.fileId }).from(schema.imageAnalysisJob)
-            .innerJoin(schema.meetingAttachment, and(
-              eq(schema.meetingAttachment.workspaceId, schema.searchDocument.workspaceId),
-              eq(schema.meetingAttachment.id, schema.searchDocument.documentId),
-              eq(schema.meetingAttachment.fileId, schema.imageAnalysisJob.fileId),
-            )).where(and(
-              eq(schema.imageAnalysisJob.workspaceId, schema.searchDocument.workspaceId),
-              eq(schema.imageAnalysisJob.mode, "replace"),
-              inArray(schema.imageAnalysisJob.status, ["pending", "processing"]),
-            ))),
+          notExists(transaction.select({ id: q.id }).from(q).innerJoin(schema.meetingAttachment, and(
+            eq(schema.meetingAttachment.workspaceId, schema.searchDocument.workspaceId), eq(schema.meetingAttachment.id, schema.searchDocument.documentId),
+            eq(schema.meetingAttachment.fileId, payloadField(schema, "fileId", true))))
+            .where(and(eq(q.kind, "image"), eq(payloadField(schema, "workspaceId", true), schema.searchDocument.workspaceId),
+              eq(payloadField(schema, "mode"), "replace"), inArray(q.status, ["pending", "processing"])))),
           afterDocument(schema.searchDocument.documentId, schema.searchDocument.workspaceId, after),
           or(
-            isNull(schema.searchIndexJob.documentId),
-            ne(schema.searchIndexJob.model, model),
-            ne(schema.searchIndexJob.dimensions, dimensions),
+            isNull(q.id),
+            ne(payloadField(schema, "model"), model),
+            sql`cast(${payloadField(schema, "dimensions")} as integer) <> ${dimensions}`,
           ),
         )).orderBy(asc(schema.searchDocument.documentId), asc(schema.searchDocument.workspaceId)).limit(batchSize);
       if (documents.length === 0) return undefined;
-      const now = new Date();
-      await transaction.insert(schema.searchIndexJob).values(documents.map((document) => ({
-        ...document,
-        model,
-        dimensions,
-        availableAt: now,
-        updatedAt: now,
-      }))).onConflictDoUpdate({
-        target: [schema.searchIndexJob.workspaceId, schema.searchIndexJob.documentId],
-        set: {
-          model,
-          dimensions,
-          generation: sql`${schema.searchIndexJob.generation} + 1`,
-          status: "pending",
-          attempts: 0,
-          availableAt: now,
-          claimedAt: null,
-          leaseExpiresAt: null,
-          lastErrorCode: null,
-          updatedAt: now,
-        },
-      });
+      for (const document of documents) await enqueueJob(transaction, schema,
+        `search:${document.workspaceId}:${document.documentId}`, "search", document.workspaceId,
+        `document:${document.workspaceId}:${document.documentId}`, { ...document, model, dimensions });
       if (documents.length < batchSize) return undefined;
       const last = documents.at(-1)!;
       return `${last.documentId}/${last.workspaceId}`;
     });
   }
-  let cooldownUntil = 0;
   return {
     reconcilePage,
-    due(model, dimensions, workspaceId, after) {
-      const jobs = schema.searchIndexJob;
-      return db.select({ workspaceId: jobs.workspaceId, documentId: jobs.documentId, generation: jobs.generation })
-        .from(jobs).where(and(eq(jobs.model, model), eq(jobs.dimensions, dimensions), eq(jobs.workspaceId, workspaceId),
-          afterDocument(jobs.documentId, jobs.workspaceId, after), lte(jobs.availableAt, new Date()),
-          or(eq(jobs.status, "pending"), and(eq(jobs.status, "processing"), lte(jobs.leaseExpiresAt, new Date())))))
-        .orderBy(asc(jobs.documentId), asc(jobs.workspaceId)).limit(100);
+    async due(model, dimensions, workspaceId, after) {
+      const rows = await db.select().from(q).where(and(eq(q.kind, "search"), eq(q.owner, workspaceId),
+        eq(payloadField(schema, "model"), model), sql`cast(${payloadField(schema, "dimensions")} as integer) = ${dimensions}`,
+        inArray(q.status, ["pending", "processing"]), after ? gt(payloadField(schema, "documentId"), after.split("/")[0]!) : undefined))
+        .orderBy(asc(payloadField(schema, "documentId"))).limit(100);
+      return rows.map((row) => ({ workspaceId: row.payload.workspaceId!, documentId: row.payload.documentId!, generation: row.generation }));
     },
     async reconcile(model, dimensions) {
       const workspaces = await db.selectDistinct({ workspaceId: schema.syncedWorkspacePermission.workspaceId }).from(schema.syncedWorkspacePermission);
@@ -269,47 +246,25 @@ function createSearchIndexStore(
         }
       }
     },
-    claim(model, dimensions, limit, references) {
-      if (references?.length === 0 || (!references && Date.now() < cooldownUntil)) return Promise.resolve([]);
-      return db.transaction(async (transaction) => {
-        const now = new Date();
-        const filter = and(
-          references ? or(...references.map((ref) => and(
-            eq(schema.searchIndexJob.workspaceId, ref.workspaceId), eq(schema.searchIndexJob.documentId, ref.documentId),
-            eq(schema.searchIndexJob.generation, ref.generation),
-          ))) : undefined,
-          eq(schema.searchIndexJob.model, model),
-          eq(schema.searchIndexJob.dimensions, dimensions),
-          lte(schema.searchIndexJob.availableAt, now),
-          or(
-            eq(schema.searchIndexJob.status, "pending"),
-            and(eq(schema.searchIndexJob.status, "processing"), lte(schema.searchIndexJob.leaseExpiresAt, now)),
-          ),
-        );
-        const query = transaction.select().from(schema.searchIndexJob).where(filter)
-          .orderBy(asc(schema.searchIndexJob.availableAt), asc(schema.searchIndexJob.documentId)).limit(limit);
-        const rows = isPostgres ? await query.for("update", { skipLocked: true }) : await query;
-        const leaseExpiresAt = new Date(now.getTime() + 120_000);
-        for (const row of rows) {
-          await transaction.update(schema.searchIndexJob).set({
-            status: "processing",
-            claimedAt: now,
-            leaseExpiresAt,
-            updatedAt: now,
-          }).where(and(
-            eq(schema.searchIndexJob.workspaceId, row.workspaceId),
-            eq(schema.searchIndexJob.documentId, row.documentId),
-            eq(schema.searchIndexJob.generation, row.generation),
-          ));
+    async claim(model, dimensions, limit, references) {
+      if (references?.length === 0) return [];
+      let dispatch = references?.filter((ref): ref is BackgroundJob => "dedupeKey" in ref) ?? [];
+      if (!dispatch.length) {
+        const dedupeKeys = references?.map((ref) => {
+          const { workspaceId, documentId } = ref as SearchIndexReference;
+          return `search:${workspaceId}:${documentId}`;
+        });
+        dispatch = (await queue.claim(["search"], dedupeKeys))?.batch ?? [];
+      }
+      const jobs: SearchIndexJobRecord[] = [];
+      for (const row of dispatch) {
+        if (row.payload.model !== model || row.payload.dimensions !== dimensions || jobs.length >= limit) {
+          await queue.reschedule(row, row.payload, 60_000); continue;
         }
-        return rows.map((row) => ({
-          workspaceId: row.workspaceId,
-          documentId: row.documentId,
-          generation: row.generation,
-          attempts: row.attempts,
-          claimedAt: now,
-        }));
-      });
+        jobs.push({ queue: row, workspaceId: row.payload.workspaceId!, documentId: row.payload.documentId!,
+          generation: row.generation, attempts: row.attempts - 1, claimedAt: row.claimedAt! });
+      }
+      return jobs;
     },
     load: async (job) => (await loadMany([job]))[0] ?? null,
     loadMany,
@@ -317,30 +272,18 @@ function createSearchIndexStore(
       (await saveMany([job], model, dimensions, [embedding])).has(documentKey(job)),
     saveMany,
     async retry(job, errorCode, availableAt) {
-      if (isRateLimited(errorCode)) cooldownUntil = Math.max(cooldownUntil, availableAt.getTime());
-      await db.update(schema.searchIndexJob).set({
-        status: "pending",
-        attempts: job.attempts + 1,
-        availableAt,
-        claimedAt: null,
-        leaseExpiresAt: null,
-        lastErrorCode: errorCode,
-        updatedAt: new Date(),
-      }).where(jobKey(job));
+      if (!job.queue) return;
+      await db.transaction((tx) => settleJob(tx, schema, job.queue!, { status: "pending", lastError: errorCode, availableAt,
+        attempts: errorCode === "embedding_batch_deferred" ? Math.max(0, job.queue!.attempts - 1) : job.queue!.attempts }));
+      if (isRateLimited(errorCode)) await queue.cooldown("search", availableAt.getTime());
     },
     async fail(job, errorCode) {
-      await db.update(schema.searchIndexJob).set({
-        status: "failed",
-        attempts: job.attempts + 1,
-        claimedAt: null,
-        leaseExpiresAt: null,
-        lastErrorCode: errorCode,
-        updatedAt: new Date(),
-      }).where(jobKey(job));
+      if (job.queue) await db.transaction((tx) => settleJob(tx, schema, job.queue!, { status: "failed", lastError: errorCode }));
     },
     async discard(job) {
-      await db.delete(schema.searchIndexJob).where(jobKey(job));
+      if (job.queue) await db.transaction((tx) => settleJob(tx, schema, job.queue!));
     },
+
   };
 }
 

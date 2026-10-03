@@ -353,10 +353,10 @@ export class MeetingSyncService {
     this.storageDeleteRetry.unref?.();
   }
 
-  async drainStorageDeletes(storageKey?: string): Promise<void> {
-    if (!this.storage) return;
+  async drainStorageDeletes(storageKey?: string, supplied?: import("../jobs/store").BackgroundJob): Promise<void> {
+    if (!this.storage && !supplied) return;
     while (true) {
-      const claims = await this.store.claimStorageDeletes(storageKey ? 1 : SCREENSHOT_DELETE_BATCH_SIZE, storageKey);
+      const claims = await this.store.claimStorageDeletes(storageKey ? 1 : SCREENSHOT_DELETE_BATCH_SIZE, storageKey, supplied);
       if (claims.length === 0) return;
       for (const claim of claims) {
         try {
@@ -364,10 +364,11 @@ export class MeetingSyncService {
             claim.storageKey,
             async () => {
               if (!await this.store.isStorageDeleteClaimCurrent(claim)) return;
+              const storage = this.requireStorage();
               for (const variant of (claim.storageKey.endsWith("/original") ? Object.keys(SCREENSHOT_VARIANTS) : []) as ScreenshotVariant[]) {
-                await this.storageCall(() => this.storage!.delete(screenshotVariantKey(claim.storageKey, variant)));
+                await this.storageCall(() => storage.delete(screenshotVariantKey(claim.storageKey, variant)));
               }
-              await this.storageCall(() => this.storage!.delete(claim.storageKey));
+              await this.storageCall(() => storage.delete(claim.storageKey));
               await this.store.completeStorageDelete(claim);
             },
           ));
@@ -379,7 +380,7 @@ export class MeetingSyncService {
           this.scheduleStorageDeleteRetry();
         }
       }
-      if (storageKey) return;
+      if (storageKey || supplied) return;
     }
   }
 

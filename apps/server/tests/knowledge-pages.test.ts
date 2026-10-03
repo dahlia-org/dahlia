@@ -97,7 +97,7 @@ async function fixture(count = 6) {
   });
   const engine = new WorkspaceMemoryService(config, app.memory!, sync, app.sync, transport);
   const memory = new DahliaMemory({ personal: app.personalMemory!, workspace: app.memory! }, sync, { workspace: engine });
-  const tick = async () => { db.exec("UPDATE workspace_memory_state SET available_at = 0"); await engine.step(workspace, signal); };
+  const tick = async () => { db.exec("UPDATE jobs_queue SET available_at = 0 WHERE kind = 'workspace-memory'"); await engine.step(workspace, signal); };
   await engine.configure(owner, workspace, true);
   const notes = [];
   for (let i = 0; i < count; i++) notes.push(await app.memory!.saveNote(owner.userId, workspace, { id: uuidV7(), content: `Canonical source ${i + 1}`, revision: 0 }));
@@ -230,7 +230,7 @@ describe("Knowledge Pages publication", () => {
       const row = (await f.app.memory!.page(f.owner.userId, f.workspace, "workspace-insights"))!;
       expect(row.requestVersion).toBe(1);
       expect(await f.get()).toMatchObject({ status: "generating", body: null });
-      f.db.exec("UPDATE workspace_memory_state SET available_at = 0");
+      f.db.exec("UPDATE jobs_queue SET available_at = 0 WHERE kind = 'workspace-memory'");
       const job = (await f.app.memory!.claim(f.workspace))!;
       expect(await f.app.memory!.savePage(f.owner.userId, { ...job, generation: job.generation - 1 }, row, { status: "ready" })).toBe(false);
       expect(await f.app.memory!.savePage(f.owner.userId, { ...job, lease: uuidV7() }, row, { status: "ready" })).toBe(false);
@@ -240,7 +240,7 @@ describe("Knowledge Pages publication", () => {
       const send = vi.fn(), sendBatch = vi.fn();
       const queue = createQueueJobs({ DAHLIA_JOB_QUEUE: { send, sendBatch } }, { queue: f.app.jobs } as never, f.app.sync, f.sync, [], undefined, undefined, f.engine);
       f.models.get("workspace-insights")!.content = "Automatic refresh";
-      f.db.exec("UPDATE workspace_memory_state SET available_at = 0, progress = json_remove(progress, '$.pageAfter')");
+      f.db.exec("UPDATE jobs_queue SET available_at = 0 WHERE kind = 'workspace-memory'; UPDATE workspace_memory_state SET progress = json_remove(progress, '$.pageAfter')");
       await queue.consume({ action: "wake" }, signal);
       expect((await f.get()).body).toBe("Automatic refresh");
       expect(send).toHaveBeenCalled();
@@ -305,7 +305,7 @@ describe("Knowledge Pages publication", () => {
     try {
       f.models.get("workspace-insights")!.content = "Node automatic update";
       expect((await f.get()).status).toBe("stale");
-      f.db.exec("UPDATE workspace_memory_state SET available_at = 0, progress = json_remove(progress, '$.pageAfter')");
+      f.db.exec("UPDATE jobs_queue SET available_at = 0 WHERE kind = 'workspace-memory'; UPDATE workspace_memory_state SET progress = json_remove(progress, '$.pageAfter')");
       worker.start();
       await vi.waitFor(async () => expect((await f.get()).body).toBe("Node automatic update"));
       await worker.stop();

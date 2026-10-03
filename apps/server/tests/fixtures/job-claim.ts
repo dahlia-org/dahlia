@@ -16,5 +16,5 @@ const db = drizzle(async (sql, params, method) => {
 });
 try {
   const claim = await createJobStore(db, false, defaultJobLimits).claim(["image", "search"]);
-  process.send?.(claim?.id ?? null);
+  process.send?.(claim?.dedupeKey ?? null);
 } finally { database.close(); process.disconnect?.(); }

@@ -1,3 +1,7 @@
+import { drizzle } from "drizzle-orm/node-postgres";
+import { and, eq } from "drizzle-orm";
+import * as jobSchema from "../db/auth-schema";
+import { cancelJobs } from "../jobs/state";
 import type { MastraDBMessage } from "@mastra/core/agent";
 import { Memory } from "@mastra/memory";
 import { PostgresStore } from "@mastra/pg";
@@ -200,7 +204,7 @@ export function createAiHistoryService(pool: Pool): AiHistoryService {
         const thread = await client.query<{ id: string }>(`SELECT id FROM agent.mastra_threads
           WHERE id = $1 AND metadata->>'kind' = 'dahlia-chat'`, [threadId]);
         if (!thread.rowCount) return "missing";
-        await client.query("DELETE FROM agent.memory_jobs WHERE thread_id = $1", [threadId]);
+        await cancelJobs(drizzle({ client }), jobSchema, and(eq(jobSchema.backgroundJob.kind, "chat-memory"), eq(jobSchema.backgroundJob.target, `chat:${threadId}`)));
         await client.query("DELETE FROM agent.mastra_messages WHERE thread_id = $1", [threadId]);
         await client.query("DELETE FROM agent.mastra_threads WHERE id = $1", [threadId]);
         return "deleted" as const;

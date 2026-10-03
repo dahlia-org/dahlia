@@ -101,7 +101,7 @@ it.runIf(process.env.TEST_ENCRYPTION_DATABASE_URL)("stores ciphertext under Post
       }],
     });
     await rename("Searchable title", 1);
-    await client.query("UPDATE jobs.search_index SET available_at = '2000-01-01' WHERE workspace_id = $1", [workspaceId]);
+    await client.query("UPDATE jobs.queue SET available_at = '2000-01-01' WHERE kind = 'search' AND payload ->> 'workspaceId' = $1", [workspaceId]);
     const [indexJob] = await index.claim("test", 32, 100);
     const document = (await index.load(indexJob!))!;
     expect(document.embeddingText).toBe("searchable title");
@@ -120,13 +120,13 @@ it.runIf(process.env.TEST_ENCRYPTION_DATABASE_URL)("stores ciphertext under Post
     expect((await client.query("SELECT embedding, embedding_model FROM search.documents WHERE workspace_id = $1", [workspaceId])).rows)
       .toEqual([{ embedding: null, embedding_model: null }]);
     await client.query("COMMIT");
-    await client.query("UPDATE jobs.search_index SET available_at = '2000-01-01' WHERE workspace_id = $1", [workspaceId]);
+    await client.query("UPDATE jobs.queue SET available_at = '2000-01-01' WHERE kind = 'search' AND payload ->> 'workspaceId' = $1", [workspaceId]);
     const [pending] = await index.claim("test", 32, 100);
     const oldModel = (await index.load(pending!))!;
     await client.query("BEGIN");
     await client.query("SELECT set_config('app.user_id', $1, true)", [owner.userId]);
     await client.query("UPDATE search.documents SET embedding = $1, embedding_model = 'new-model' WHERE workspace_id = $2", [vector, workspaceId]);
-    await client.query("DELETE FROM jobs.search_index WHERE workspace_id = $1", [workspaceId]);
+    await client.query("DELETE FROM jobs.queue WHERE kind = 'search' AND payload ->> 'workspaceId' = $1", [workspaceId]);
     const lateSave = index.save(oldModel, "test", 32, vector);
     await vi.waitFor(async () => {
       expect(Number((await client.query<{ n: string }>("SELECT count(*) AS n FROM pg_stat_activity WHERE datname = current_database() AND wait_event_type = 'Lock' AND query LIKE '%documents%'")).rows[0]!.n)).toBeGreaterThan(0);

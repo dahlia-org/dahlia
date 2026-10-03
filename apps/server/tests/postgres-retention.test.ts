@@ -1,3 +1,4 @@
+import { uuidV7 } from "../src/id";
 import { seedPostgresIdentity } from "./public-test-client";
 import { testOrganizationID } from "./public-test-client";
 import { Client } from "pg";
@@ -97,10 +98,13 @@ describe.runIf(databaseUrl)("PostgreSQL retention", () => {
       await store.sync.withIdentity(owner, (sync) => sync.putPermission(workspaceId, "user", editor.userId, "editor"));
       await raw.query("BEGIN");
       await raw.query("SELECT set_config('app.user_id', $1, true)", [editor.userId]);
-      await raw.query(`INSERT INTO jobs.summary(id, workspace_id, meeting_id, owner_user_id, method, settings, output_language,
-        status, created_at, available_at, claimed_at, lease_expires_at, summary_revision, input_version, request_hash)
-        VALUES (gen_random_uuid(), $1, $2, $3, 'transcript', '{}', 'en', 'processing', now(), now(), now(), now() + interval '1 day', 0, '1', 'test')`,
-      [workspaceId, meetingId, editor.userId]);
+      const jobId = uuidV7(), queueId = uuidV7(), lease = uuidV7();
+      await raw.query(`INSERT INTO jobs.queue(id,dedupe_key,kind,owner,target,payload,status,available_at,created_at,claimed_at,lease,lease_until)
+        VALUES ($1,$2,'summary',$3,$4,$5,'processing',now(),now(),now(),$6,now()+interval '1 day')`,
+        [queueId, `summary:${jobId}`, editor.userId, `meeting:${meetingId}`, { id: jobId, workspaceId, ownerUserId: editor.userId }, lease]);
+      await raw.query(`INSERT INTO jobs.summary(id,queue_id,workspace_id,meeting_id,owner_user_id,method,settings,output_language,
+        created_at,summary_revision,input_version,request_hash)
+        VALUES ($1,$2,$3,$4,$5,'transcript','{}','en',now(),0,'1','test')`, [jobId, queueId, workspaceId, meetingId, editor.userId]);
       await raw.query("COMMIT");
       await change("delete", 1);
       expect((await raw.query("SELECT * FROM app.meetings WHERE meeting_id = $1", [meetingId])).rows).toEqual([]);
@@ -109,8 +113,8 @@ describe.runIf(databaseUrl)("PostgreSQL retention", () => {
       expect(await store.sync.withIdentity(editor, (sync) => sync.getMeeting(workspaceId, meetingId))).toMatchObject({ name: "Retained", revision: 3 });
       await raw.query("BEGIN");
       await raw.query("SELECT set_config('app.user_id', $1, true)", [editor.userId]);
-      expect((await raw.query("SELECT status, claimed_at, lease_expires_at FROM jobs.summary WHERE meeting_id = $1", [meetingId])).rows)
-        .toEqual([{ status: "cancelled", claimed_at: null, lease_expires_at: null }]);
+      expect((await raw.query("SELECT q.status,q.lease FROM jobs.queue q JOIN jobs.summary s ON s.queue_id=q.id WHERE s.meeting_id = $1", [meetingId])).rows)
+        .toEqual([{ status: "cancelled", lease }]);
       await raw.query("COMMIT");
       await change("delete", 3);
       const [restored, purged] = await Promise.allSettled([

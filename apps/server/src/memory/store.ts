@@ -1,4 +1,7 @@
-import { and, asc, eq, gt, inArray, isNull, lt, lte, or, sql } from "drizzle-orm";
+import { createJobStore, type BackgroundJob } from "../jobs/store";
+import { claimKey, lockJob, settleJob } from "../jobs/state";
+import { defaultJobLimits } from "../jobs/model";
+import { and, exists, asc, eq, gt, inArray, isNull, lte, sql } from "drizzle-orm";
 import type { NodePgDatabase } from "drizzle-orm/node-postgres";
 import type { PostgresDatabase, SQLiteDatabase } from "../db/client";
 import * as pg from "../db/auth-schema";
@@ -6,13 +9,14 @@ import * as sqlite from "../db/sqlite-schema";
 import { workspacePermissions } from "../auth/workspace-permissions";
 import { lockAuthorization } from "../auth/authorization";
 import { RequestError } from "../storage/upload";
-import { uuidV7 } from "../id";
-import { enqueueMemorySource } from "./enqueue";
+import { enqueueMemoryScope, enqueueMemorySource } from "./enqueue";
 import type { MemoryProgress, MemoryOperation, MemorySource } from "./model";
 import type { PageSnapshot, PageStatus, PageOperation } from "./pages-model";
 
 export type KnowledgePageRecord = typeof pg.knowledgePage.$inferSelect;
-export type MemoryState = typeof pg.workspaceMemoryState.$inferSelect;
+export type MemoryState = typeof pg.workspaceMemoryState.$inferSelect & {
+  queue?: BackgroundJob; lease: string | null; leaseUntil: Date | null; availableAt: Date; attempts: number; errorCode: string | null;
+};
 export type MemorySourceJob = typeof pg.memorySourceJob.$inferSelect;
 export type SharedMemory = typeof pg.sharedMemory.$inferSelect;
 export type MemoryStore = ReturnType<typeof createMemoryStore>;
@@ -23,6 +27,13 @@ export function createMemoryStore(database: PostgresDatabase | SQLiteDatabase | 
   const schema = (personal ? { ...base, workspaceMemoryState: base.personalMemoryState,
     memoryDocument: base.personalMemoryDocument, memorySourceJob: base.personalMemorySourceJob, sharedMemory: base.personalMemory } : base) as typeof pg;
   const state = schema.workspaceMemoryState;
+  const q = schema.backgroundJob;
+  const queue = createJobStore(database, isPostgres, defaultJobLimits);
+  const dispatchKind = personal ? "personal-memory" : "workspace-memory";
+  const leaseKey = (job: MemoryState) => exists(db.select({ id: q.id }).from(q).where(and(eq(q.id, job.queue!.id),
+    eq(q.lease, job.lease!), gt(q.leaseUntil, new Date()))));
+  const decorate = (row: typeof state.$inferSelect, job: BackgroundJob): MemoryState => ({ ...row, queue: job,
+    lease: job.lease, leaseUntil: job.leaseUntil, availableAt: job.availableAt, attempts: Math.max(0, job.attempts - 1), errorCode: job.lastError });
   const docs = schema.memoryDocument;
   const notes = schema.sharedMemory;
   const jobs = schema.memorySourceJob;
@@ -82,15 +93,16 @@ export function createMemoryStore(database: PostgresDatabase | SQLiteDatabase | 
         const rows = await tx.update(p).set({ requestVersion: sql`CASE WHEN ${p.requestVersion} = ${p.completedVersion} THEN ${p.requestVersion} + 1 ELSE ${p.requestVersion} END`, operation: sql`CASE WHEN ${p.status} = 'error' AND ${p.requestVersion} = ${p.completedVersion} THEN NULL ELSE ${p.operation} END`, status: "generating" })
           .where(and(eq(p.scopeId, scopeId), eq(p.id, id))).returning();
         if (!rows.length) throw new RequestError(404, "knowledge_page_not_found");
-        await tx.update(state).set({ availableAt: new Date() }).where(eq(state.scopeId, scopeId));
+        await enqueueMemoryScope(tx, schema, scopeId);
       });
     },
     async savePage(userId: string, job: MemoryState, page: KnowledgePageRecord,
       patch: { snapshot?: PageSnapshot | null; status?: PageStatus; operation?: PageOperation | null; completedVersion?: number }) {
       const p = base.knowledgePage;
       return scoped(userId, job.scopeId, "admin", async (tx) => {
-        const [current] = await tx.select().from(state).where(and(eq(state.scopeId, job.scopeId), eq(state.lease, job.lease!),
-          eq(state.generation, job.generation), eq(state.enabled, true), eq(state.purge, false), gt(state.leaseUntil, new Date())));
+        if (!await lockJob(tx, schema, job.queue!)) return false;
+        const [current] = await tx.select().from(state).where(and(eq(state.scopeId, job.scopeId), leaseKey(job),
+          eq(state.generation, job.generation), eq(state.enabled, true), eq(state.purge, false), exists(tx.select({ id: q.id }).from(q).where(claimKey(schema, job.queue!)))));
         if (!current) return false;
         return (await tx.update(p).set({ ...patch, generation: job.generation })
           .where(and(eq(p.scopeId, job.scopeId), eq(p.id, page.id), eq(p.requestVersion, page.requestVersion))).returning()).length > 0;
@@ -99,24 +111,28 @@ export function createMemoryStore(database: PostgresDatabase | SQLiteDatabase | 
     async status(userId: string, scopeId: string) {
       return scoped(userId, scopeId, "read", async (tx) => {
         const [row] = await tx.select().from(state).where(eq(state.scopeId, scopeId));
-        return row ?? null;
+        if (!row) return null;
+        const [dispatch] = await tx.select().from(q).where(eq(q.dedupeKey, `${dispatchKind}:${scopeId}`));
+        return dispatch ? { ...decorate(row, dispatch), attempts: dispatch.attempts } : { ...row, attempts: 0, errorCode: null, availableAt: new Date(), lease: null, leaseUntil: null };
       });
     },
     async configure(userId: string, scopeId: string, bankId: string, enabled: boolean, imagesEnabled?: boolean) {
       return scoped(userId, scopeId, "admin", async (tx) => {
         const [current] = await tx.select().from(state).where(eq(state.scopeId, scopeId));
         if (current && (current.bankId !== bankId || current.purge)) throw new RequestError(409, "memory_cleanup_required");
-        await tx.insert(state).values({ scopeId, requestedBy: userId, bankId, enabled, ...(!personal ? { imagesEnabled: imagesEnabled ?? false } : {}), availableAt: new Date() })
-          .onConflictDoUpdate({ target: state.scopeId, set: { enabled, ...(!personal && imagesEnabled !== undefined ? { imagesEnabled } : {}), reconcile: true, requestedBy: userId, availableAt: new Date(),
-            generation: sql`${state.generation} + 1`, status: enabled ? "pending" : "paused", attempts: 0, errorCode: null } });
+        await tx.insert(state).values({ scopeId, requestedBy: userId, bankId, enabled, ...(!personal ? { imagesEnabled: imagesEnabled ?? false } : {}) })
+          .onConflictDoUpdate({ target: state.scopeId, set: { enabled, ...(!personal && imagesEnabled !== undefined ? { imagesEnabled } : {}), reconcile: true, requestedBy: userId,
+            generation: sql`${state.generation} + 1`, status: enabled ? "pending" : "paused" } });
+        await enqueueMemoryScope(tx, schema, scopeId);
       });
     },
     async purge(userId: string, scopeId: string) {
       await scoped(userId, scopeId, "admin", async (tx) => {
         await tx.delete(notes).where(eq(notes.scopeId, scopeId));
         if (!personal) await tx.delete(base.knowledgePage).where(eq(base.knowledgePage.scopeId, scopeId));
-        await tx.update(state).set({ enabled: false, purge: true, status: "deleting", availableAt: new Date(),
+        await tx.update(state).set({ enabled: false, purge: true, status: "deleting",
           generation: sql`${state.generation} + 1` }).where(eq(state.scopeId, scopeId));
+        await enqueueMemoryScope(tx, schema, scopeId);
       });
     },
     async listNotes(userId: string, scopeId: string, after?: string, query?: string) {
@@ -158,14 +174,13 @@ export function createMemoryStore(database: PostgresDatabase | SQLiteDatabase | 
       });
     },
     async nextDelay(scopeId: string) {
-      const [row] = await db.select().from(state).where(eq(state.scopeId, scopeId));
-      return row && (row.purge || (row.enabled && (row.reconcile || row.generation !== row.indexedGeneration || (!personal && row.progress?.pageAfter !== undefined))))
-        ? Math.max(5, Math.ceil((row.availableAt.getTime() - Date.now()) / 1000)) : undefined;
+      const [row] = await db.select().from(q).where(eq(q.dedupeKey, `${dispatchKind}:${scopeId}`));
+      return row && ["pending", "processing"].includes(row.status) ? Math.max(5, Math.ceil((row.availableAt.getTime() - Date.now()) / 1000)) : undefined;
     },
     async due(after?: string) {
-      return (await db.select({ id: state.scopeId }).from(state).where(and(after ? gt(state.scopeId, after) : undefined,
-        lte(state.availableAt, new Date()), or(isNull(state.leaseUntil), lt(state.leaseUntil, new Date()))))
-        .orderBy(asc(state.scopeId)).limit(100)).map((row) => row.id);
+      return (await db.select().from(q).where(and(eq(q.kind, dispatchKind), lte(q.availableAt, new Date()),
+        after ? gt(q.dedupeKey, `${dispatchKind}:${after}`) : undefined, inArray(q.status, ["pending", "processing"])))
+        .orderBy(asc(q.dedupeKey)).limit(100)).map((row) => row.payload.scopeId!);
     },
     async workerUser(scopeId: string) {
       if (personal) return await this.exists(scopeId) ? scopeId : undefined;
@@ -185,34 +200,44 @@ export function createMemoryStore(database: PostgresDatabase | SQLiteDatabase | 
           .where(and(eq(schema.syncedWorkspace.workspaceId, scopeId), isNull(schema.syncedWorkspace.deletingAt)))).length > 0;
       });
     },
-    async claim(scopeId: string) {
-      const [row] = await db.update(state).set({ lease: uuidV7(), leaseUntil: new Date(Date.now() + 120_000) })
-        .where(and(eq(state.scopeId, scopeId), lte(state.availableAt, new Date()),
-          or(isNull(state.leaseUntil), lt(state.leaseUntil, new Date())))).returning();
-      return row;
+    async claim(scopeId: string, supplied?: BackgroundJob) {
+      const dispatch = supplied ?? await queue.claim([dispatchKind], [`${dispatchKind}:${scopeId}`]);
+      if (!dispatch || dispatch.kind !== dispatchKind || dispatch.payload.scopeId !== scopeId) return undefined;
+      return db.transaction(async (tx) => {
+        if (!await lockJob(tx, schema, dispatch)) return undefined;
+        const [row] = await tx.select().from(state).where(eq(state.scopeId, scopeId));
+        if (!row) await settleJob(tx, schema, dispatch);
+        return row ? decorate(row, dispatch) : undefined;
+      });
     },
     async release(job: MemoryState, patch: Partial<MemoryState> = {}) {
-      // Source edits may advance generation, but must not discard a scan or an in-flight operation.
-      await db.update(state).set({ availableAt: new Date(Date.now() + 5_000), ...patch })
-        .where(and(eq(state.scopeId, job.scopeId), eq(state.lease, job.lease!), eq(state.generation, job.generation)));
-      await db.update(state).set({ ...(patch.progress !== undefined ? { progress: patch.progress } : {}), lease: null, leaseUntil: null })
-        .where(and(eq(state.scopeId, job.scopeId), eq(state.lease, job.lease!)));
+      const { availableAt, attempts, errorCode } = patch;
+      const domain = { ...patch };
+      for (const key of ["availableAt", "attempts", "errorCode", "lease", "leaseUntil", "queue"] as const) delete domain[key];
+      await db.transaction(async (tx) => {
+        const [lease] = await tx.select().from(q).where(and(eq(q.id, job.queue!.id), eq(q.lease, job.lease!), gt(q.leaseUntil, new Date())));
+        if (!lease) return;
+        if (Object.keys(domain).length) await tx.update(state).set(domain).where(and(eq(state.scopeId, job.scopeId), eq(state.generation, job.generation)));
+        if (patch.progress !== undefined) await tx.update(state).set({ progress: patch.progress }).where(eq(state.scopeId, job.scopeId));
+        await settleJob(tx, schema, job.queue!, { status: "pending", availableAt: availableAt ?? new Date(Date.now() + 5_000),
+          attempts: attempts ?? 0, lastError: errorCode ?? null });
+      });
     },
     async setProgress(job: MemoryState, progress: MemoryState["progress"]) {
       const rows = await db.update(state).set({ progress }).where(and(eq(state.scopeId, job.scopeId),
-        eq(state.lease, job.lease!))).returning();
+        leaseKey(job))).returning();
       if (!rows.length) throw new RequestError(409, "memory_lease_changed");
     },
     async changeIngestionPolicy(job: MemoryState, progress: MemoryProgress) {
       // Advance the publication fence without dropping durable in-flight source operations.
       const [updated] = await db.update(state).set({ progress, generation: sql`${state.generation} + 1`,
-        reconcile: true, status: "indexing" }).where(and(eq(state.scopeId, job.scopeId), eq(state.lease, job.lease!))).returning();
+        reconcile: true, status: "indexing" }).where(and(eq(state.scopeId, job.scopeId), leaseKey(job))).returning();
       if (!updated) throw new RequestError(409, "memory_lease_changed");
-      return updated;
+      return decorate(updated, job.queue!);
     },
     async startScan(job: MemoryState, progress: NonNullable<MemoryState["progress"]>) {
       await db.update(state).set({ reconcile: false, progress }).where(and(eq(state.scopeId, job.scopeId),
-        eq(state.lease, job.lease!), eq(state.generation, job.generation)));
+        leaseKey(job), eq(state.generation, job.generation)));
     },
     enqueue(scopeId: string, kind: "meeting" | "shared", sourceId: string) {
       return db.transaction((tx) => enqueueMemorySource(tx, schema, scopeId, kind, sourceId, true));
@@ -236,17 +261,26 @@ export function createMemoryStore(database: PostgresDatabase | SQLiteDatabase | 
       return (await db.select().from(docs).where(and(eq(docs.scopeId, scopeId), eq(docs.documentId, id))))[0];
     },
     async saveDocument(job: MemoryState, id: string, source: MemorySource, contentHash: string, ingestionFingerprint: string) {
-      await db.insert(docs).values({ scopeId: job.scopeId, documentId: id, source, contentHash, ingestionFingerprint, generation: job.generation })
+      await db.transaction(async (tx) => {
+        if (!await lockJob(tx, schema, job.queue!)) return;
+        const [current] = await tx.select().from(state).where(and(eq(state.scopeId, job.scopeId), eq(state.generation, job.generation)));
+        if (!current) return;
+        await tx.insert(docs).values({ scopeId: job.scopeId, documentId: id, source, contentHash, ingestionFingerprint, generation: job.generation })
         .onConflictDoUpdate({ target: [docs.scopeId, docs.documentId], set: { source, contentHash, ingestionFingerprint, generation: job.generation } });
+      });
     },
     async forgetDocument(scopeId: string, id: string) {
       await db.delete(docs).where(and(eq(docs.scopeId, scopeId), eq(docs.documentId, id)));
     },
     async purged(job: MemoryState) {
       await db.transaction(async (tx) => {
+        if (!await lockJob(tx, schema, job.queue!)) return;
+        const [current] = await tx.select().from(state).where(and(eq(state.scopeId, job.scopeId), eq(state.generation, job.generation)));
+        if (!current) return;
         await tx.delete(docs).where(eq(docs.scopeId, job.scopeId));
         await tx.delete(jobs).where(eq(jobs.scopeId, job.scopeId));
-        await tx.delete(state).where(and(eq(state.scopeId, job.scopeId), eq(state.lease, job.lease!)));
+        await tx.delete(state).where(eq(state.scopeId, job.scopeId));
+        if (!await settleJob(tx, schema, job.queue!)) throw new RequestError(409, "job_lease_changed");
       });
     },
   };
