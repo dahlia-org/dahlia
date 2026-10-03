@@ -9,7 +9,7 @@ Object.defineProperty(navigator, "language", { value: "en-US", configurable: tru
 
 const workspaceA = "ws_01k45b0000e008000000000001";
 const workspaceB = "ws_01k45b0000e008000000000002";
-const requests: Array<{ workspaceId: string; model: string; reasoningEffort: string; messages: Array<{ role: string; content: string }> }> = [];
+const requests: Array<{ sessionId?: string; timeZone?: string; resume?: { tool: string; answer?: string | string[]; action?: string }; workspaceId: string; model: string; reasoningEffort: string; messages: Array<{ role: string; content: string }> }> = [];
 let chats = 0;
 
 const sse = (answer: string) => new Response(`event: text\ndata: ${JSON.stringify({ text: answer })}\n\nevent: done\ndata: {}\n\n`, {
@@ -39,6 +39,15 @@ globalThis.fetch = async (input, init) => {
       init?.signal?.addEventListener("abort", () => reject(new DOMException("Stopped", "AbortError")), { once: true });
     });
     if (chats === 2) return new Response("event: done\ndata: {}\n\n", { headers: { "content-type": "text/event-stream" } });
+    if (chats === 13 || chats === 16) throw new Error("transient_resume_failure");
+    if (chats === 6 || chats === 8 || chats === 10 || chats === 12 || chats === 15 || chats === 18 || chats === 21 || chats === 25) {
+      const interaction = chats === 8 || chats === 15 ? { runId: "plan-run", toolCallId: "plan-call", tool: "submit_plan", title: "Meeting review", path: "plans/review.md", content: "Read the meeting summaries." }
+        : { runId: "question-run", toolCallId: "question-call", tool: "ask_user", question: "Which meetings?", ...(chats === 6 ? { options: [{ label: "Planning" }, { label: "Review" }], selectionMode: "multi_select" } : (chats === 12 || chats === 18 || chats === 21 || chats === 25) ? { options: [{ label: "Planning" }] } : {}) };
+      return new Response(`event: interaction\ndata: ${JSON.stringify({ interaction })}\n\n${chats === 25 ? 'event: error\ndata: {"code":"after_suspend_failed"}\n\n' : 'event: done\ndata: {}\n\n'}`, { headers: { "content-type": "text/event-stream" } });
+    }
+    if (chats === 19) return new Response('event: interaction-resumed\ndata: {"runId":"question-run","toolCallId":"question-call"}\n\nevent: error\ndata: {"code":"provider_failed"}\n\n', { headers: { "content-type": "text/event-stream" } });
+    if (chats === 22) throw new Error("lost_ack");
+    if (chats === 23) return Response.json({ error: "ai_interaction_not_pending" }, { status: 409 });
     return sse(chats === 3 ? "Retried answer" : chats === 4 ? "New answer" : "Follow-up answer");
   }
   return Response.json({ error: "not_found" }, { status: 404 });
@@ -159,8 +168,80 @@ async function run() {
     "Per-message model change or alternating page history failed");
   assert(document.querySelector('[aria-live="polite"]'), "Readable response status is missing");
   if (innerWidth < 768) assert(document.querySelector(".ai-bottom")!.getBoundingClientRect().width <= innerWidth, "Mobile composer overflowed");
+  assert(requests[4]?.timeZone === Intl.DateTimeFormat().resolvedOptions().timeZone, "Browser time zone was not sent");
+  assert(requests[3]?.sessionId && requests[3].sessionId === requests[4]?.sessionId, "Page session did not survive a follow-up");
+  change(textarea, "Compare meetings");
+  press(textarea, "Enter");
+  await until(() => document.querySelectorAll('.ai-interaction input[type="checkbox"]').length === 2, "multiple choices");
+  document.querySelectorAll<HTMLInputElement>('.ai-interaction input[type="checkbox"]').forEach((checkbox) => checkbox.click());
+  const button = (label: string) => [...document.querySelectorAll<HTMLButtonElement>(".ai-interaction button")].find((item) => item.textContent === label)!;
+  button("Submit selections").click();
+  await until(() => requests.length === 7 && !document.querySelector(".ai-interaction"), "question resume");
+  assert(JSON.stringify(requests[6]?.resume?.answer) === '["Planning","Review"]', "Multiple selections were not sent as an explicit resume");
+  change(textarea, "Make a plan");
+  press(textarea, "Enter");
+  await until(() => button("Approve plan"), "plan approval");
+  const count = requests.length;
+  change(textarea, "Do not implicitly approve");
+  press(textarea, "Enter");
+  assert(requests.length === count, "Typing a message implicitly approved a plan");
+  button("Approve plan").click();
+  await until(() => requests.length === 9 && !document.querySelector(".ai-interaction"), "plan resume");
+  assert(requests[8]?.resume?.action === "approved", "Plan approval was not explicit");
+  change(textarea, "Ask a question");
+  press(textarea, "Enter");
+  await until(() => document.querySelector(".ai-interaction"), "free-text question");
+  change(textarea, "The afternoon meeting");
+  press(textarea, "Enter");
+  await until(() => requests.length === 11 && !document.querySelector(".ai-interaction"), "free-text answer");
+  assert(requests[10]?.resume?.answer === "The afternoon meeting", "Free text did not resume the question");
+  change(textarea, "Question with a transient failure");
+  press(textarea, "Enter");
+  await until(() => button("Planning"), "retryable question");
+  button("Planning").click();
+  await until(() => document.querySelector(".ai-error")?.textContent?.includes("transient_resume_failure"), "failed question resume");
+  document.querySelector<HTMLButtonElement>(".ai-error button")!.click();
+  await until(() => requests.length === 14 && !document.querySelector(".ai-interaction"), "retry question resume");
+  assert(requests[13]?.resume?.answer === "Planning", "Retry lost the explicit question answer");
+  change(textarea, "Plan with a transient failure");
+  press(textarea, "Enter");
+  await until(() => button("Approve plan"), "retryable plan");
+  button("Approve plan").click();
+  await until(() => document.querySelector(".ai-error")?.textContent?.includes("transient_resume_failure"), "failed plan resume");
+  button("Request changes").click();
+  await until(() => requests.length === 17 && !document.querySelector(".ai-interaction"), "revised plan response");
+  assert(requests[16]?.resume?.action === "rejected", "Changed plan response was not explicit");
+  change(textarea, "Question followed by a provider failure");
+  press(textarea, "Enter");
+  await until(() => button("Planning"), "accepted question");
+  button("Planning").click();
+  await until(() => document.querySelector(".ai-error")?.textContent?.includes("provider_failed"), "accepted resume failure");
+  assert(!document.querySelector(".ai-interaction"), "Consumed question remained visible");
+  document.querySelector<HTMLButtonElement>(".ai-error button")!.click();
+  await until(() => requests.length === 20 && !document.querySelector(".ai-error"), "ordinary retry after acceptance");
+  assert(!requests[19]?.resume, "Retry attempted to consume an already accepted answer");
+  change(textarea, "Question whose acceptance event is lost");
+  press(textarea, "Enter");
+  await until(() => button("Planning"), "lost acknowledgement question");
+  button("Planning").click();
+  await until(() => document.querySelector(".ai-error")?.textContent?.includes("lost_ack"), "lost acknowledgement");
+  document.querySelector<HTMLButtonElement>(".ai-error button")!.click();
+  await until(() => document.querySelector(".ai-error")?.textContent?.includes("ai_interaction_not_pending"), "authoritative consumed response");
+  assert(!document.querySelector(".ai-interaction"), "Already consumed question was retained after reconciliation");
+  document.querySelector<HTMLButtonElement>(".ai-error button")!.click();
+  await until(() => requests.length === 24 && !document.querySelector(".ai-error"), "retry after lost acknowledgement");
+  assert(!requests[23]?.resume, "Lost acknowledgement recovery retried the consumed answer");
+  change(textarea, "Question followed by an interrupted stream");
+  press(textarea, "Enter");
+  await until(() => document.querySelector(".ai-error")?.textContent?.includes("after_suspend_failed"), "failure after suspension publication");
+  button("Planning").click();
+  await until(() => requests.length === 26 && !document.querySelector(".ai-interaction"), "answer after interrupted suspension");
+  assert(requests[25]?.resume?.answer === "Planning", "Interrupted suspension lost its pending answer");
+  for (const request of requests.slice(11)) {
+    assert(request.messages.every((message, index) => message.role === (index % 2 ? "assistant" : "user")), "Interaction recovery appended consecutive user messages");
+  }
   document.body.dataset.testResult = "passed";
-  document.getElementById("result")!.textContent = "PASS: selectors, Workspace lock, chat controls, empty response retry, two-to-ten-line composer, sticky header, keyboard, stop, retry, mobile width";
+  document.getElementById("result")!.textContent = "PASS: selectors, Workspace lock, chat controls, empty response retry, two-to-ten-line composer, sticky header, keyboard, stop, retry, mobile width, session/timezone, question choices/free text, explicit plan approval, failed resume retry/revision, accepted failure, lost acknowledgement recovery";
 }
 
 void run().catch((error: unknown) => { document.getElementById("result")!.textContent = `FAIL: ${String(error)}`; });

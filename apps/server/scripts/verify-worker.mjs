@@ -39,6 +39,9 @@ try {
       DAHLIA_STORAGE_BACKEND: 'r2', DAHLIA_AI_BACKEND: 'cloudflare',
       OPENAI_BASE_URL: 'https://api.cloudflare.com/client/v4/accounts/synthetic/ai/v1', OPENAI_API_KEY: 'synthetic' } });
   await mf.ready;
+  const agentTools = await mf.dispatchFetch('http://localhost:5173/runtime/agent-tools');
+  assert.equal(agentTools.status, 200, await agentTools.clone().text());
+  assert.deepEqual(await agentTools.json(), { success: true });
   assert.deepEqual(await (await mf.dispatchFetch('http://localhost:5173/runtime/documents')).json(), { success: true });
   if (process.env.DOCUMENT_CAPACITY_FIXTURE || process.env.DOCUMENT_CAPACITY_CHECK === '1') {
     let body;
@@ -173,5 +176,5 @@ try {
   }
   assert(completed, 'native Queue consumer did not complete');
   assert.equal(await completed.text(), 'ok');
-  console.log(JSON.stringify({ runtime: 'workerd', checks: ['portable-documents-fixture', 'unified-sync-shared-db-fallback', 'configured-email-identity-and-domain-enrollment', 'native-header-user-provisioning', 'verified-google-organization-policies', 'organization-request-and-lifecycle-authorization', 'postgres-event-isolation', 'fetch-lifecycle', 'R2-audio-stream', 'Images-WebP', 'queue-handler', 'Cloudflare-and-Databricks-adapters'], bundleBytes: Buffer.byteLength(script), gzipBytes: gzipSync(script).length, startupMs }));
+  console.log(JSON.stringify({ runtime: 'workerd', checks: ['agent-task-question-resume-and-safe-fetch', 'portable-documents-fixture', 'unified-sync-shared-db-fallback', 'configured-email-identity-and-domain-enrollment', 'native-header-user-provisioning', 'verified-google-organization-policies', 'organization-request-and-lifecycle-authorization', 'postgres-event-isolation', 'fetch-lifecycle', 'R2-audio-stream', 'Images-WebP', 'queue-handler', 'Cloudflare-and-Databricks-adapters'], bundleBytes: Buffer.byteLength(script), gzipBytes: gzipSync(script).length, startupMs }));
 } finally { await mf?.dispose(); await rm(directory, { recursive: true, force: true }); }

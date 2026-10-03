@@ -1,3 +1,5 @@
+import { ChatInteraction } from "./ChatInteraction";
+import type { AiInteraction, AiResume } from "../agent/builtin";
 import { ChatMarkdown, StreamingChatMarkdown } from "./ChatMarkdown";
 import { WorkingMemoryEditor, LiveChatContext } from "./ChatMemory";
 import { WorkspaceMemory, SaveSharedMemory } from "./WorkspaceMemory";
@@ -28,6 +30,8 @@ export type Message = { id?: string; role: "user" | "assistant"; content: string
 type AiEvent = { type: "text"; text: string }
   | { type: "tool"; name: string; status: "running" | "complete" }
   | { type: "error"; code: string }
+  | { type: "interaction"; interaction: AiInteraction }
+  | { type: "interaction-resumed"; runId: string; toolCallId: string }
   | { type: "done" };
 type ReasoningEffort = "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max" | "ultra";
 type AiModel = {
@@ -110,6 +114,9 @@ export function AiChat({ requestedThreadId }: { requestedThreadId?: string }) {
   const [model, setModel] = useState("");
   const [reasoningEffort, setReasoningEffort] = useState<ReasoningEffort | "">("");
   const [messages, setMessages] = useState<Message[]>([]);
+  const [interaction, setInteraction] = useState<AiInteraction>();
+  const sessionId = useRef(crypto.randomUUID());
+  const pendingResume = useRef<AiResume | undefined>(undefined);
   const [draft, setDraft] = useState("");
   const [answer, setAnswer] = useState("");
   const [tool, setTool] = useState<string>();
@@ -201,19 +208,21 @@ export function AiChat({ requestedThreadId }: { requestedThreadId?: string }) {
   }, [searchWorkspaceId, setChatWorkspaceId]);
   const persistentHistory = Boolean(threadId) || (historyEnabled && Boolean(selectedWorkspace && selectedWorkspace.encryption !== "server"));
 
-  const send = async (nextMessages: Message[]) => {
+  const send = async (nextMessages: Message[], resume?: AiResume) => {
     if (!historyReady || openingThread || !workspaceId || !model || !reasoningEffort || pending || controller.current) return;
     const request = new AbortController();
     const generation = viewGeneration.current;
     const persist = persistentHistory;
     const current = () => viewGeneration.current === generation && controller.current === request;
     controller.current = request;
+    pendingResume.current = resume;
     setPending(true);
     setLocked(true);
     setError(undefined);
     setAnswer("");
     setTool(undefined);
     let responseText = "";
+    let nextInteraction: AiInteraction | undefined;
     let completed = false;
     let activeThreadId = threadId;
     try {
@@ -231,8 +240,8 @@ export function AiChat({ requestedThreadId }: { requestedThreadId?: string }) {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify(persist
-          ? { model, reasoningEffort, content: nextMessages.at(-1)!.content }
-          : { workspaceId, model, reasoningEffort, messages: nextMessages }),
+          ? { model, reasoningEffort, resume, timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone, content: nextMessages.at(-1)!.content }
+          : { workspaceId, model, reasoningEffort, resume, sessionId: sessionId.current, timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone, messages: nextMessages }),
         signal: request.signal,
       });
       if (!current()) return;
@@ -244,16 +253,40 @@ export function AiChat({ requestedThreadId }: { requestedThreadId?: string }) {
         if (!current()) return;
         if (event.type === "text") { responseText += event.text; setAnswer(responseText); }
         else if (event.type === "tool") setTool(event.status === "running" ? event.name : undefined);
+        else if (event.type === "interaction-resumed") {
+          if (resume?.runId === event.runId && resume.toolCallId === event.toolCallId) {
+            pendingResume.current = undefined;
+            setInteraction(undefined);
+          }
+        }
+        else if (event.type === "interaction") {
+          nextInteraction = event.interaction;
+          setInteraction(nextInteraction);
+          const interactionText = nextInteraction.tool === "ask_user" ? nextInteraction.question : `# ${nextInteraction.title}\n\n${nextInteraction.content}`;
+          responseText += (responseText ? "\n\n" : "") + interactionText;
+          setTool(undefined);
+        }
         else if (event.type === "error") throw new Error(event.code);
         else if (event.type === "done") completed = true;
       }
       if (!current()) return;
-      if (!completed || !responseText.trim()) throw new Error("stream_incomplete");
-      setMessages([...nextMessages, { role: "assistant", content: responseText }]);
+      if (!completed || (!responseText.trim() && !nextInteraction)) throw new Error("stream_incomplete");
+      setMessages(responseText.trim() ? [...nextMessages, { role: "assistant", content: responseText }] : nextMessages);
+      setInteraction(nextInteraction);
+      pendingResume.current = undefined;
       setAnswer("");
       if (persist) void refreshThreads();
     } catch (caught) {
       if (!current()) return;
+      if (caught instanceof Error && caught.message === "ai_interaction_not_pending") {
+        pendingResume.current = undefined;
+        setInteraction(undefined);
+      }
+      if (!persist && nextInteraction) {
+        setMessages([...nextMessages, { role: "assistant", content: responseText }]);
+        pendingResume.current = undefined;
+        setAnswer("");
+      }
       if (request.signal.reason === "stop") setError(uiText("Response stopped.", "回答を停止しました。"));
       else if (!request.signal.aborted) setError(caught instanceof Error ? caught.message : uiText("AI request failed.", "AIへのリクエストに失敗しました。"));
       if (persist && !activeThreadId) {
@@ -263,10 +296,11 @@ export function AiChat({ requestedThreadId }: { requestedThreadId?: string }) {
       }
       if (persist && activeThreadId) {
         try {
-          const recovered = await json<{ messages: Message[]; hasMore: boolean }>(`/api/v1/chat/${activeThreadId}`, undefined,
+          const recovered = await json<{ messages: Message[]; hasMore: boolean; interaction?: AiInteraction }>(`/api/v1/chat/${activeThreadId}`, undefined,
             { notifyMutation: false });
           if (current()) {
             setMessages(mergeRecoveredMessages(nextMessages, recovered.messages));
+            setInteraction(recovered.interaction);
             setHasEarlierMessages(recovered.hasMore);
             setDraft(recoverFailedDraft(recovered.messages, nextMessages.at(-1)!, nextMessages.slice(0, -1)));
           }
@@ -280,14 +314,30 @@ export function AiChat({ requestedThreadId }: { requestedThreadId?: string }) {
       }
     }
   };
+  const sendUserMessage = (content: string, resume?: AiResume) => {
+    const previous = !persistentHistory && resume && messages.at(-1)?.role === "user" ? messages.slice(0, -1) : messages;
+    const next = [...previous, { role: "user" as const, content }];
+    setMessages(next);
+    setDraft("");
+    void send(next, resume);
+  };
   const submit = () => {
     const content = draft.trim();
     if (!historyReady || openingThread || !content || !workspaceId || !model || !reasoningEffort || pending || controller.current
-      || (!persistentHistory && messages.at(-1)?.role === "user")) return;
-    const next = [...messages, { role: "user" as const, content }];
-    setMessages(next);
-    setDraft("");
-    void send(next);
+      || interaction?.tool === "submit_plan" || (!persistentHistory && !interaction && messages.at(-1)?.role === "user")) return;
+    sendUserMessage(content, interaction?.tool === "ask_user" ? { runId: interaction.runId, toolCallId: interaction.toolCallId, tool: "ask_user", answer: content } : undefined);
+  };
+  const respond = (answer: string | string[]) => {
+    if (interaction?.tool !== "ask_user" || pending) return;
+    sendUserMessage(Array.isArray(answer) ? answer.join(", ") : answer,
+      { runId: interaction.runId, toolCallId: interaction.toolCallId, tool: "ask_user", answer });
+  };
+  const reviewPlan = (action: "approved" | "rejected") => {
+    if (interaction?.tool !== "submit_plan" || pending) return;
+    const label = action === "approved" ? uiText("Approve plan", "計画を承認") : uiText("Request changes", "変更を依頼");
+    const feedback = draft.trim();
+    const content = feedback ? `${label}: ${feedback}` : label;
+    sendUserMessage(content, { runId: interaction.runId, toolCallId: interaction.toolCallId, tool: "submit_plan", action, feedback: content });
   };
   function reset() {
     viewGeneration.current += 1;
@@ -298,6 +348,9 @@ export function AiChat({ requestedThreadId }: { requestedThreadId?: string }) {
     loadingEarlier.current = false;
     setPending(false);
     setMessages([]);
+    setInteraction(undefined);
+    pendingResume.current = undefined;
+    sessionId.current = crypto.randomUUID();
     setAnswer("");
     setTool(undefined);
     setDraft("");
@@ -323,7 +376,7 @@ export function AiChat({ requestedThreadId }: { requestedThreadId?: string }) {
         setThreadFailure("missing");
         return;
       }
-      const result = await json<{ thread: AiThread; messages: Message[]; hasMore: boolean }>(`/api/v1/chat/${id}`, { signal: request.signal },
+      const result = await json<{ thread: AiThread; messages: Message[]; hasMore: boolean; interaction?: AiInteraction }>(`/api/v1/chat/${id}`, { signal: request.signal },
         { notifyMutation: false });
       if (viewGeneration.current !== generation) return;
       activeThread.current = id;
@@ -331,6 +384,7 @@ export function AiChat({ requestedThreadId }: { requestedThreadId?: string }) {
       setWorkspaceId(result.thread.workspaceId);
       setThreads((current) => current.some((thread) => thread.id === id) ? current : [result.thread, ...current]);
       setMessages(result.messages);
+      setInteraction(result.interaction);
       setHasEarlierMessages(result.hasMore);
       setLocked(true);
       setHistoryEnabled(true);
@@ -374,7 +428,7 @@ export function AiChat({ requestedThreadId }: { requestedThreadId?: string }) {
     loadingEarlier.current = true;
     try {
       const query = new URLSearchParams({ before: before.createdAt, beforeId: before.id, beforeRole: before.role });
-      const result = await json<{ messages: Message[]; hasMore: boolean }>(`/api/v1/chat/${id}?${query}`, undefined,
+      const result = await json<{ messages: Message[]; hasMore: boolean; interaction?: AiInteraction }>(`/api/v1/chat/${id}?${query}`, undefined,
         { notifyMutation: false });
       if (viewGeneration.current !== generation || threadId !== id) return;
       setMessages((current) => prependEarlierMessages(current, result.messages));
@@ -402,7 +456,7 @@ export function AiChat({ requestedThreadId }: { requestedThreadId?: string }) {
       },
     });
   }
-  const retry = () => { if (messages.at(-1)?.role === "user") void send(messages); };
+  const retry = () => { if (messages.at(-1)?.role === "user") void send(messages, pendingResume.current); };
   const keyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
     if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) {
       event.preventDefault();
@@ -428,6 +482,7 @@ export function AiChat({ requestedThreadId }: { requestedThreadId?: string }) {
     description,
   })) ?? [];
   const composer = <div className="ai-composer">
+    {interaction && <ChatInteraction key={interaction.toolCallId} interaction={interaction} disabled={pending || openingThread || !historyReady} onAnswer={respond} onPlan={reviewPlan} />}
     {persistentHistory && <WorkingMemoryEditor />}
     {persistentHistory && threadId && <LiveChatContext key={threadId} threadId={threadId} workspaceId={workspaceId} disabled={pending} />}
     <textarea aria-label={uiText("Message", "メッセージ")} placeholder={uiText("Ask about your meetings…", "ミーティングについて質問…")} rows={messages.length ? 2 : 4}
@@ -442,7 +497,7 @@ export function AiChat({ requestedThreadId }: { requestedThreadId?: string }) {
           value={model} options={modelOptions} disabled={pending} onValueChange={setModel} />
         {pending
           ? <button className="ai-send" aria-label={uiText("Stop", "停止")} onClick={() => controller.current?.abort("stop")}><Square aria-hidden="true" /></button>
-          : <button className="ai-send" aria-label={uiText("Send", "送信")} disabled={!historyReady || openingThread || !draft.trim() || !workspaceId || !model || !reasoningEffort || (!persistentHistory && messages.at(-1)?.role === "user")} onClick={submit}><Send aria-hidden="true" /></button>}
+          : <button className="ai-send" aria-label={uiText("Send", "送信")} disabled={interaction?.tool === "submit_plan" || !historyReady || openingThread || !draft.trim() || !workspaceId || !model || !reasoningEffort || (!persistentHistory && messages.at(-1)?.role === "user")} onClick={submit}><Send aria-hidden="true" /></button>}
       </div>
     </div>
   </div>;

@@ -1,3 +1,4 @@
+import { aiInteractionSchema } from "../agent/builtin";
 import * as D from "../documents/model";
 import { pageGetSchema, pageListSchema, pageSchema, pageListResultSchema } from "../memory/pages-model";
 import { memoryResultSchema, memoryScopeSchema, memoryConfigureSchema, memoryListSchema, memoryGetSchema, memorySaveSchema, personalMemorySearchSchema, workspaceMemorySearchSchema } from "../memory/dahlia";
@@ -182,16 +183,16 @@ export const contracts: Record<OperationId, RouteConfig & { operationId: string 
     { 201: { ...json(aiThread, "Created."), headers: location } }, body(aiThreadCreateSchema), browser),
   listAiThreads: route("get", "/api/v1/chat", "listAiThreads", "List the current user's private AI chat threads", { 200: json(z.object({ items: z.array(aiThread), hasMore: z.boolean() })) },
     { query: z.object({ page: aiThreadPage }).strict() }, browser),
-  getAiThread: route("get", "/api/v1/chat/{threadId}", "getAiThread", "Read one owned AI chat thread", { 200: json(z.object({ thread: aiThread, messages: z.array(aiHistoryMessage), hasMore: z.boolean() })) },
+  getAiThread: route("get", "/api/v1/chat/{threadId}", "getAiThread", "Read one owned AI chat thread", { 200: json(z.object({ thread: aiThread, messages: z.array(aiHistoryMessage), hasMore: z.boolean(), interaction: aiInteractionSchema.optional() })) },
     { params: z.object({ threadId: aiThreadId }), query: aiThreadHistoryQuerySchema }, browser),
   deleteAiThread: route("delete", "/api/v1/chat/{threadId}", "deleteAiThread", "Delete one owned AI chat thread", { 204: empty },
     { params: z.object({ threadId: aiThreadId }) }, browser),
   continueAiThread: route("post", "/api/v1/chat/{threadId}/messages", "continueAiThread", "Persist a user message and stream the AI response", { 200: {
-    description: "text/event-stream with text, tool, error, and done events. Tool input and output are never included.",
+    description: "text/event-stream with text, tool, interaction, interaction-resumed, error, and done events. Interaction-resumed carries run/tool-call IDs once a pending response is consumed. Interaction events contain only a user-facing question or plan; other tool input and output are never included.",
     content: { "text/event-stream": { schema: z.string() } },
   } }, { params: z.object({ threadId: aiThreadId }), ...body(aiThreadMessageSchema) }, browser),
   chatWithAi: route("post", "/api/v1/chat/messages", "chatWithAi", "Stream one page-memory Agent response; no conversation is persisted", { 200: {
-    description: "text/event-stream with text, tool, error, and done events. Tool input and output are never included.",
+    description: "text/event-stream with text, tool, interaction, interaction-resumed, error, and done events. Interaction-resumed carries run/tool-call IDs once a pending response is consumed. Interaction events contain only a user-facing question or plan; other tool input and output are never included.",
     content: { "text/event-stream": { schema: z.string() } },
   } }, body(aiChatSchema), browser),
   listWorkspaces: route("get", "/api/v1/workspaces", "listWorkspaces", "Accessible Workspaces", { 200: json(S.page(S.workspaceRead)) }, { query: z.object({ organizationId: S.principalId.optional() }).strict() }),

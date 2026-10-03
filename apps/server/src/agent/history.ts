@@ -7,6 +7,8 @@ import { Memory } from "@mastra/memory";
 import { PostgresStore } from "@mastra/pg";
 import type { Pool, PoolClient, QueryResult } from "pg";
 import { z } from "zod";
+import { aiResumeSchema, readInteraction, type AiInteraction } from "./builtin";
+import { aiTimeZoneSchema } from "./context";
 
 import type { Identity } from "../auth/identity";
 import { uuidV7 } from "../id";
@@ -23,6 +25,8 @@ export const aiThreadCreateSchema = z.object({
 export const aiThreadMessageSchema = z.object({
   model: z.string().min(1).max(200),
   reasoningEffort: z.enum(["none", "minimal", "low", "medium", "high", "xhigh", "max", "ultra"]),
+  timeZone: aiTimeZoneSchema,
+  resume: aiResumeSchema.optional(),
   content: z.string().trim().min(1).max(16_000),
 }).strict();
 export const aiThreadHistoryQuerySchema = z.object({
@@ -56,7 +60,7 @@ export interface AiHistoryService {
   memory(identity: Identity): Memory;
   create(identity: Identity, workspaceId: string, title: string): Promise<AiThread>;
   list(identity: Identity, page: number): Promise<{ items: AiThread[]; hasMore: boolean }>;
-  get(identity: Identity, threadId: string, before?: AiHistoryCursor): Promise<{ thread: AiThread; messages: AiHistoryMessage[]; hasMore: boolean } | null>;
+  get(identity: Identity, threadId: string, before?: AiHistoryCursor): Promise<{ thread: AiThread; messages: AiHistoryMessage[]; hasMore: boolean; interaction?: AiInteraction } | null>;
   delete(identity: Identity, threadId: string): Promise<"deleted" | "missing" | "busy">;
   startRun(identity: Identity, threadId: string): Promise<string | null>;
   finishRun(identity: Identity, threadId: string, runId: string): Promise<void>;
@@ -194,7 +198,8 @@ export function createAiHistoryService(pool: Pool): AiHistoryService {
         const content = messageText(JSON.parse(row.content) as MastraDBMessage["content"]);
         return { id: row.id, role: row.role as AiHistoryMessage["role"], content, createdAt: row.createdAt.toISOString() };
       }).filter(({ content }) => content).sort(compareHistoryMessages);
-      return { thread: threadValue(thread), messages, hasMore: rows.rows.length > PAGE_SIZE };
+      return { thread: threadValue(thread), messages, hasMore: rows.rows.length > PAGE_SIZE,
+        interaction: await readInteraction({ memory, threadId, resourceId: identity.userId }) };
     },
     async delete(identity, threadId) {
       return withIdentityTransaction(pool, identity, async (client) => {
@@ -205,6 +210,8 @@ export function createAiHistoryService(pool: Pool): AiHistoryService {
           WHERE id = $1 AND metadata->>'kind' = 'dahlia-chat'`, [threadId]);
         if (!thread.rowCount) return "missing";
         await cancelJobs(drizzle({ client }), jobSchema, and(eq(jobSchema.backgroundJob.kind, "chat-memory"), eq(jobSchema.backgroundJob.target, `chat:${threadId}`)));
+        await client.query(`DELETE FROM agent.mastra_workflow_snapshot WHERE run_id IN (
+          SELECT value->>'runId' FROM agent.mastra_thread_state WHERE "threadId" = $1 AND type = 'interaction')`, [threadId]);
         await client.query("DELETE FROM agent.mastra_messages WHERE thread_id = $1", [threadId]);
         await client.query("DELETE FROM agent.mastra_threads WHERE id = $1", [threadId]);
         return "deleted" as const;

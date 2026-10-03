@@ -1,7 +1,7 @@
 {
   "version": "8",
   "dialect": "postgres",
-  "id": "109c6a08-a7e4-4ca9-be83-b27e1de896d1",
+  "id": "b0c348bf-83d4-4f9c-9ab8-14c01ea34f68",
   "prevIds": [
     "00000000-0000-0000-0000-000000000000"
   ],
@@ -36,7 +36,19 @@
     },
     {
       "isRlsEnabled": true,
+      "name": "mastra_thread_state",
+      "entityType": "tables",
+      "schema": "agent"
+    },
+    {
+      "isRlsEnabled": true,
       "name": "mastra_threads",
+      "entityType": "tables",
+      "schema": "agent"
+    },
+    {
+      "isRlsEnabled": true,
+      "name": "mastra_workflow_snapshot",
       "entityType": "tables",
       "schema": "agent"
     },
@@ -808,6 +820,97 @@
       "default": null,
       "generated": null,
       "identity": null,
+      "name": "threadId",
+      "entityType": "columns",
+      "schema": "agent",
+      "table": "mastra_thread_state"
+    },
+    {
+      "type": "text",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "type",
+      "entityType": "columns",
+      "schema": "agent",
+      "table": "mastra_thread_state"
+    },
+    {
+      "type": "jsonb",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "value",
+      "entityType": "columns",
+      "schema": "agent",
+      "table": "mastra_thread_state"
+    },
+    {
+      "type": "timestamp",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "createdAt",
+      "entityType": "columns",
+      "schema": "agent",
+      "table": "mastra_thread_state"
+    },
+    {
+      "type": "timestamp",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "updatedAt",
+      "entityType": "columns",
+      "schema": "agent",
+      "table": "mastra_thread_state"
+    },
+    {
+      "type": "timestamp with time zone",
+      "typeSchema": null,
+      "notNull": false,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "createdAtZ",
+      "entityType": "columns",
+      "schema": "agent",
+      "table": "mastra_thread_state"
+    },
+    {
+      "type": "timestamp with time zone",
+      "typeSchema": null,
+      "notNull": false,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "updatedAtZ",
+      "entityType": "columns",
+      "schema": "agent",
+      "table": "mastra_thread_state"
+    },
+    {
+      "type": "text",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
       "name": "id",
       "entityType": "columns",
       "schema": "agent",
@@ -903,6 +1006,110 @@
       "entityType": "columns",
       "schema": "agent",
       "table": "mastra_threads"
+    },
+    {
+      "type": "text",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "workflow_name",
+      "entityType": "columns",
+      "schema": "agent",
+      "table": "mastra_workflow_snapshot"
+    },
+    {
+      "type": "text",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "run_id",
+      "entityType": "columns",
+      "schema": "agent",
+      "table": "mastra_workflow_snapshot"
+    },
+    {
+      "type": "text",
+      "typeSchema": null,
+      "notNull": false,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "resourceId",
+      "entityType": "columns",
+      "schema": "agent",
+      "table": "mastra_workflow_snapshot"
+    },
+    {
+      "type": "jsonb",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "snapshot",
+      "entityType": "columns",
+      "schema": "agent",
+      "table": "mastra_workflow_snapshot"
+    },
+    {
+      "type": "timestamp",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "createdAt",
+      "entityType": "columns",
+      "schema": "agent",
+      "table": "mastra_workflow_snapshot"
+    },
+    {
+      "type": "timestamp",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "updatedAt",
+      "entityType": "columns",
+      "schema": "agent",
+      "table": "mastra_workflow_snapshot"
+    },
+    {
+      "type": "timestamp with time zone",
+      "typeSchema": null,
+      "notNull": false,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "createdAtZ",
+      "entityType": "columns",
+      "schema": "agent",
+      "table": "mastra_workflow_snapshot"
+    },
+    {
+      "type": "timestamp with time zone",
+      "typeSchema": null,
+      "notNull": false,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "updatedAtZ",
+      "entityType": "columns",
+      "schema": "agent",
+      "table": "mastra_workflow_snapshot"
     },
     {
       "type": "text",
@@ -1083,6 +1290,23 @@
     {
       "nameExplicit": false,
       "columns": [
+        "threadId"
+      ],
+      "schemaTo": "agent",
+      "tableTo": "mastra_threads",
+      "columnsTo": [
+        "id"
+      ],
+      "onUpdate": "NO ACTION",
+      "onDelete": "CASCADE",
+      "name": "mastra_thread_state_threadId_mastra_threads_id_fkey",
+      "entityType": "fks",
+      "schema": "agent",
+      "table": "mastra_thread_state"
+    },
+    {
+      "nameExplicit": false,
+      "columns": [
         "thread_id"
       ],
       "schemaTo": "agent",
@@ -1096,6 +1320,28 @@
       "entityType": "fks",
       "schema": "agent",
       "table": "ai_thread_runs"
+    },
+    {
+      "columns": [
+        "threadId",
+        "type"
+      ],
+      "nameExplicit": false,
+      "name": "mastra_thread_state_pkey",
+      "entityType": "pks",
+      "schema": "agent",
+      "table": "mastra_thread_state"
+    },
+    {
+      "columns": [
+        "workflow_name",
+        "run_id"
+      ],
+      "nameExplicit": false,
+      "name": "mastra_workflow_snapshot_pkey",
+      "entityType": "pks",
+      "schema": "agent",
+      "table": "mastra_workflow_snapshot"
     },
     {
       "columns": [
@@ -1215,12 +1461,38 @@
       "roles": [
         "public"
       ],
+      "using": "EXISTS (\n  SELECT 1 FROM \"agent\".\"mastra_threads\" owner_thread\n  WHERE owner_thread.id = \"agent\".\"mastra_thread_state\".\"threadId\" AND owner_thread.\"resourceId\" = nullif(current_setting('app.user_id', true), '')\n)",
+      "withCheck": "EXISTS (\n  SELECT 1 FROM \"agent\".\"mastra_threads\" owner_thread\n  WHERE owner_thread.id = \"agent\".\"mastra_thread_state\".\"threadId\" AND owner_thread.\"resourceId\" = nullif(current_setting('app.user_id', true), '')\n)",
+      "name": "agent_state_owner",
+      "entityType": "policies",
+      "schema": "agent",
+      "table": "mastra_thread_state"
+    },
+    {
+      "as": "PERMISSIVE",
+      "for": "ALL",
+      "roles": [
+        "public"
+      ],
       "using": "\"agent\".\"mastra_threads\".\"resourceId\" = nullif(current_setting('app.user_id', true), '')",
       "withCheck": "\"agent\".\"mastra_threads\".\"resourceId\" = nullif(current_setting('app.user_id', true), '')",
       "name": "agent_thread_owner",
       "entityType": "policies",
       "schema": "agent",
       "table": "mastra_threads"
+    },
+    {
+      "as": "PERMISSIVE",
+      "for": "ALL",
+      "roles": [
+        "public"
+      ],
+      "using": "\"agent\".\"mastra_workflow_snapshot\".\"resourceId\" = nullif(current_setting('app.user_id', true), '')",
+      "withCheck": "\"agent\".\"mastra_workflow_snapshot\".\"resourceId\" = nullif(current_setting('app.user_id', true), '')",
+      "name": "agent_snapshot_owner",
+      "entityType": "policies",
+      "schema": "agent",
+      "table": "mastra_workflow_snapshot"
     },
     {
       "as": "PERMISSIVE",

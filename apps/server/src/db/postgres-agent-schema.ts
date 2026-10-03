@@ -1,5 +1,5 @@
 import { syncedMeeting } from "./postgres-app-schema";
-import { boolean, integer, uuid, index, jsonb, pgPolicy, pgSchema, text, timestamp, type AnyPgColumn } from "drizzle-orm/pg-core";
+import { boolean, integer, uuid, index, jsonb, pgPolicy, pgSchema, primaryKey, text, timestamp, type AnyPgColumn } from "drizzle-orm/pg-core";
 import { sql } from "drizzle-orm";
 
 export const agentSchema = pgSchema("agent");
@@ -24,6 +24,32 @@ const ownedThread = (threadId: AnyPgColumn) => sql`EXISTS (
   SELECT 1 FROM ${agentThreads} owner_thread
   WHERE owner_thread.id = ${threadId} AND owner_thread."resourceId" = ${currentUser}
 )`;
+
+export const agentThreadState = agentSchema.table("mastra_thread_state", {
+  threadId: text("threadId").notNull().references(() => agentThreads.id, { onDelete: "cascade" }),
+  type: text("type").notNull(),
+  value: jsonb("value").notNull(),
+  createdAt: timestamp("createdAt").notNull(),
+  updatedAt: timestamp("updatedAt").notNull(),
+  createdAtZ: timestamp("createdAtZ", { withTimezone: true }),
+  updatedAtZ: timestamp("updatedAtZ", { withTimezone: true }),
+}, (table) => [primaryKey({ columns: [table.threadId, table.type] }),
+  pgPolicy("agent_state_owner", { for: "all", using: ownedThread(table.threadId), withCheck: ownedThread(table.threadId) }),
+]).enableRLS();
+
+export const agentWorkflowSnapshots = agentSchema.table("mastra_workflow_snapshot", {
+  workflowName: text("workflow_name").notNull(),
+  runId: text("run_id").notNull(),
+  resourceId: text("resourceId"),
+  snapshot: jsonb("snapshot").notNull(),
+  createdAt: timestamp("createdAt").notNull(),
+  updatedAt: timestamp("updatedAt").notNull(),
+  createdAtZ: timestamp("createdAtZ", { withTimezone: true }),
+  updatedAtZ: timestamp("updatedAtZ", { withTimezone: true }),
+}, (table) => [primaryKey({ columns: [table.workflowName, table.runId] }),
+  pgPolicy("agent_snapshot_owner", { for: "all", using: sql`${table.resourceId} = ${currentUser}`,
+    withCheck: sql`${table.resourceId} = ${currentUser}` }),
+]).enableRLS();
 
 export const agentMessages = agentSchema.table("mastra_messages", {
   id: text("id").primaryKey(),

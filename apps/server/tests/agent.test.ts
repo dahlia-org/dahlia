@@ -177,8 +177,10 @@ describe("AI chat boundary", () => {
     };
     expect(body).toMatchObject({ model: "gpt-5.6-test", reasoning: { effort: "low" } });
     const instructions = String(body.input?.find(({ role }) => role === "developer")?.content);
-    expect(instructions).toContain(`context: ${JSON.stringify({ workspaceId: encodeId("workspace", workspaceId) })}`);
-    expect(instructions).toContain("Pass context.workspaceId as workspace_id");
+    expect(instructions).toContain(`<workspace_id>${encodeId("workspace", workspaceId)}</workspace_id>`);
+    expect(instructions).toContain("<current_datetime>");
+    expect(instructions).toContain("<timezone>UTC</timezone>");
+    expect(instructions).toContain("Pass the context block's workspace_id");
     expect(instructions).toContain("Set project_id to null unless the user asks to filter by Project");
     expect(instructions).toContain("Set cursor to null on the first query_meetings call");
     expect(logged).not.toHaveBeenCalled();
@@ -229,13 +231,13 @@ describe("AI chat boundary", () => {
       { type: "tool", name: "query_meetings", status: "complete" },
       { type: "text", text: "No meetings" },
     ]);
-    expect(listMeetings).toHaveBeenCalledWith(identity, workspaceId, undefined, request.signal, undefined, undefined);
+    expect(listMeetings).toHaveBeenCalledWith(identity, workspaceId, undefined, expect.any(AbortSignal), undefined, undefined);
     expect(bodies).toHaveLength(2);
-    expect(bodies[0]).toMatchObject({ store: false, include: ["reasoning.encrypted_content"] });
+    expect(bodies[0]).toMatchObject({ store: false, include: ["web_search_call.action.sources", "reasoning.encrypted_content"] });
     const queryTool = bodies[0]?.tools?.find(({ name }) => name === "query_meetings");
     expect(queryTool?.parameters?.required).toEqual(["workspace_id", "query", "project_id", "cursor"]);
     expect(JSON.stringify(queryTool?.parameters?.properties)).toContain('"type":"null"');
-    for (const tool of bodies[0]?.tools ?? []) {
+    for (const tool of bodies[0]?.tools?.filter(({ name }) => ["query_meetings", "get_meeting", "get_meeting_transcript"].includes(name ?? "")) ?? []) {
       expect(tool.strict).toBe(true);
       expect(new Set(tool.parameters?.required)).toEqual(new Set(Object.keys(tool.parameters?.properties ?? {})));
     }

@@ -514,6 +514,8 @@ export function createApp(dependencies: AppDependencies): DahliaServerApp & { ru
           if (stream.aborted) break;
           if (event.type === "text") await stream.writeSSE({ event: "text", data: JSON.stringify({ text: event.text }) });
           else if (event.type === "tool") await stream.writeSSE({ event: "tool", data: JSON.stringify({ name: event.name, status: event.status }) });
+          else if (event.type === "interaction-resumed") await stream.writeSSE({ event: "interaction-resumed", data: JSON.stringify({ runId: event.runId, toolCallId: event.toolCallId }) });
+          else if (event.type === "interaction") await stream.writeSSE({ event: "interaction", data: JSON.stringify({ interaction: event.interaction }) });
           else if (event.type === "error") await stream.writeSSE({ event: "error", data: JSON.stringify({ code: event.code }) });
         }
       } catch (error) {
@@ -549,6 +551,8 @@ export function createApp(dependencies: AppDependencies): DahliaServerApp & { ru
           if (stream.aborted) break;
           if (event.type === "text") await stream.writeSSE({ event: "text", data: JSON.stringify({ text: event.text }) });
           else if (event.type === "tool") await stream.writeSSE({ event: "tool", data: JSON.stringify({ name: event.name, status: event.status }) });
+          else if (event.type === "interaction-resumed") await stream.writeSSE({ event: "interaction-resumed", data: JSON.stringify({ runId: event.runId, toolCallId: event.toolCallId }) });
+          else if (event.type === "interaction") await stream.writeSSE({ event: "interaction", data: JSON.stringify({ interaction: event.interaction }) });
           else if (event.type === "error") await stream.writeSSE({ event: "error", data: JSON.stringify({ code: event.code }) });
         }
       } catch (error) {

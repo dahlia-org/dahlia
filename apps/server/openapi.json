@@ -12394,6 +12394,110 @@
                     },
                     "hasMore": {
                       "type": "boolean"
+                    },
+                    "interaction": {
+                      "oneOf": [
+                        {
+                          "type": "object",
+                          "properties": {
+                            "runId": {
+                              "type": "string",
+                              "minLength": 1,
+                              "maxLength": 200
+                            },
+                            "toolCallId": {
+                              "type": "string",
+                              "minLength": 1,
+                              "maxLength": 200
+                            },
+                            "tool": {
+                              "type": "string",
+                              "enum": [
+                                "ask_user"
+                              ]
+                            },
+                            "question": {
+                              "type": "string"
+                            },
+                            "options": {
+                              "type": "array",
+                              "items": {
+                                "type": "object",
+                                "properties": {
+                                  "label": {
+                                    "type": "string",
+                                    "minLength": 1,
+                                    "maxLength": 200
+                                  },
+                                  "description": {
+                                    "type": "string"
+                                  }
+                                },
+                                "required": [
+                                  "label"
+                                ]
+                              },
+                              "maxItems": 20
+                            },
+                            "selectionMode": {
+                              "type": "string",
+                              "enum": [
+                                "single_select",
+                                "multi_select"
+                              ]
+                            }
+                          },
+                          "required": [
+                            "runId",
+                            "toolCallId",
+                            "tool",
+                            "question"
+                          ]
+                        },
+                        {
+                          "type": "object",
+                          "properties": {
+                            "runId": {
+                              "type": "string",
+                              "minLength": 1,
+                              "maxLength": 200
+                            },
+                            "toolCallId": {
+                              "type": "string",
+                              "minLength": 1,
+                              "maxLength": 200
+                            },
+                            "tool": {
+                              "type": "string",
+                              "enum": [
+                                "submit_plan"
+                              ]
+                            },
+                            "path": {
+                              "type": "string",
+                              "pattern": "^plans\\/[a-zA-Z0-9_-]{1,80}\\.md$"
+                            },
+                            "title": {
+                              "type": "string",
+                              "minLength": 1,
+                              "maxLength": 200
+                            },
+                            "content": {
+                              "type": "string",
+                              "minLength": 1,
+                              "maxLength": 12000
+                            }
+                          },
+                          "required": [
+                            "runId",
+                            "toolCallId",
+                            "tool",
+                            "path",
+                            "title",
+                            "content"
+                          ]
+                        }
+                      ]
                     }
                   },
                   "required": [
@@ -12496,6 +12600,101 @@
                       "ultra"
                     ]
                   },
+                  "timeZone": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 100
+                  },
+                  "resume": {
+                    "oneOf": [
+                      {
+                        "type": "object",
+                        "properties": {
+                          "runId": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 200
+                          },
+                          "toolCallId": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 200
+                          },
+                          "tool": {
+                            "type": "string",
+                            "enum": [
+                              "ask_user"
+                            ]
+                          },
+                          "answer": {
+                            "anyOf": [
+                              {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 16000
+                              },
+                              {
+                                "type": "array",
+                                "items": {
+                                  "type": "string",
+                                  "minLength": 1,
+                                  "maxLength": 200
+                                },
+                                "minItems": 1,
+                                "maxItems": 20
+                              }
+                            ]
+                          }
+                        },
+                        "required": [
+                          "runId",
+                          "toolCallId",
+                          "tool",
+                          "answer"
+                        ],
+                        "additionalProperties": false
+                      },
+                      {
+                        "type": "object",
+                        "properties": {
+                          "runId": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 200
+                          },
+                          "toolCallId": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 200
+                          },
+                          "tool": {
+                            "type": "string",
+                            "enum": [
+                              "submit_plan"
+                            ]
+                          },
+                          "action": {
+                            "type": "string",
+                            "enum": [
+                              "approved",
+                              "rejected"
+                            ]
+                          },
+                          "feedback": {
+                            "type": "string",
+                            "maxLength": 16000
+                          }
+                        },
+                        "required": [
+                          "runId",
+                          "toolCallId",
+                          "tool",
+                          "action"
+                        ],
+                        "additionalProperties": false
+                      }
+                    ]
+                  },
                   "content": {
                     "type": "string",
                     "minLength": 1,
@@ -12514,7 +12713,7 @@
         },
         "responses": {
           "200": {
-            "description": "text/event-stream with text, tool, error, and done events. Tool input and output are never included.",
+            "description": "text/event-stream with text, tool, interaction, interaction-resumed, error, and done events. Interaction-resumed carries run/tool-call IDs once a pending response is consumed. Interaction events contain only a user-facing question or plan; other tool input and output are never included.",
             "content": {
               "text/event-stream": {
                 "schema": {
@@ -12573,6 +12772,105 @@
                       "ultra"
                     ]
                   },
+                  "timeZone": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 100
+                  },
+                  "sessionId": {
+                    "type": "string",
+                    "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i"
+                  },
+                  "resume": {
+                    "oneOf": [
+                      {
+                        "type": "object",
+                        "properties": {
+                          "runId": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 200
+                          },
+                          "toolCallId": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 200
+                          },
+                          "tool": {
+                            "type": "string",
+                            "enum": [
+                              "ask_user"
+                            ]
+                          },
+                          "answer": {
+                            "anyOf": [
+                              {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 16000
+                              },
+                              {
+                                "type": "array",
+                                "items": {
+                                  "type": "string",
+                                  "minLength": 1,
+                                  "maxLength": 200
+                                },
+                                "minItems": 1,
+                                "maxItems": 20
+                              }
+                            ]
+                          }
+                        },
+                        "required": [
+                          "runId",
+                          "toolCallId",
+                          "tool",
+                          "answer"
+                        ],
+                        "additionalProperties": false
+                      },
+                      {
+                        "type": "object",
+                        "properties": {
+                          "runId": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 200
+                          },
+                          "toolCallId": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 200
+                          },
+                          "tool": {
+                            "type": "string",
+                            "enum": [
+                              "submit_plan"
+                            ]
+                          },
+                          "action": {
+                            "type": "string",
+                            "enum": [
+                              "approved",
+                              "rejected"
+                            ]
+                          },
+                          "feedback": {
+                            "type": "string",
+                            "maxLength": 16000
+                          }
+                        },
+                        "required": [
+                          "runId",
+                          "toolCallId",
+                          "tool",
+                          "action"
+                        ],
+                        "additionalProperties": false
+                      }
+                    ]
+                  },
                   "messages": {
                     "type": "array",
                     "items": {
@@ -12614,7 +12912,7 @@
         },
         "responses": {
           "200": {
-            "description": "text/event-stream with text, tool, error, and done events. Tool input and output are never included.",
+            "description": "text/event-stream with text, tool, interaction, interaction-resumed, error, and done events. Interaction-resumed carries run/tool-call IDs once a pending response is consumed. Interaction events contain only a user-facing question or plan; other tool input and output are never included.",
             "content": {
               "text/event-stream": {
                 "schema": {

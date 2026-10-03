@@ -306,3 +306,7 @@
   .ai-bottom { @apply fixed bottom-0 right-0 z-10 w-full bg-background px-4 pb-5 pt-3 md:w-[calc(100%-240px)] md:px-8; }
   .ai-bottom .ai-composer { @apply shadow-md; }
 }
+
+.ai-interaction { max-height: min(40vh, 24rem); overflow: auto; margin-bottom: 0.75rem; }
+.ai-interaction button, .ai-interaction label { margin: 0.25rem; }
+.ai-interaction label { display: block; }
