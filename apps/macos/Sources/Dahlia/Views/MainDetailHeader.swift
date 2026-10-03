@@ -9,11 +9,15 @@ struct MainDetailHeader<NavigationContent: View>: View {
     let syncState: MeetingSyncState?
     let textContentState: TextContentAvailability.State?
     let retryTextContent: () -> Void
+    var notesEditorModel: DocumentEditorModel?
     @ViewBuilder let navigationContent: NavigationContent
 
     var body: some View {
         DahliaWindowHeader {
             navigationContent
+            if let notesEditorModel {
+                DocumentEditorStatusView(model: notesEditorModel)
+            }
             if let textContentState, textContentState != .ready {
                 TextContentStatusView(state: textContentState, retry: retryTextContent)
                     .lineLimit(1)

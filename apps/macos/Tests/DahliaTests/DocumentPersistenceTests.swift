@@ -1333,6 +1333,118 @@
 
     @MainActor
     struct DocumentEditorLifecycleTests {
+        @Test(arguments: [false, true])
+        func recoveryFailureDoesNotOfferSynchronizationRetry(restoring: Bool) async throws {
+            let queue = try AppDatabaseManager(path: ":memory:").dbQueue
+            let workspace = WorkspaceRecord(id: .v7(), name: "Test", createdAt: .now, lastOpenedAt: .now)
+            let meetingID = UUID.v7()
+            try await queue.write { db in
+                try workspace.insert(db)
+                try MeetingRecord(id: meetingID, workspaceId: workspace.id, name: "Test", createdAt: .now, updatedAt: .now).insert(db)
+            }
+            let model = DocumentEditorModel(dbQueue: queue, meetingID: meetingID, resolveMeeting: { nil })
+            await model.load()
+            // Let the fixture's initial synchronization failure finish before testing the recovery action.
+            #expect(await pollUntil { model.error == L10n.documentSyncFailed })
+            model.error = ""
+            let recovery = DocumentRecoveryRecord(
+                id: .v7(), documentId: .v7(), blocksJSON: "[]", reason: "deleted", pending: false, createdAt: .now
+            )
+            if restoring { model.restore(recovery) } else { model.showRecovery(recovery) }
+            #expect(await pollUntil { model.error == L10n.documentSaveFailed })
+            #expect(model.error == L10n.documentSaveFailed)
+            #expect(!model.canRetrySynchronization)
+            model.error = L10n.documentSyncFailed
+            #expect(model.canRetrySynchronization)
+            model.stop()
+            try await model.finishLocalSaves()
+        }
+
+        @Test func retryPreservesLocalSaveFailureUntilStorageRecovers() async throws {
+            let queue = try AppDatabaseManager(path: ":memory:").dbQueue
+            let workspace = WorkspaceRecord(id: .v7(), name: "Test", createdAt: .now, lastOpenedAt: .now)
+            let meetingID = UUID.v7()
+            try await queue.write { db in
+                try workspace.insert(db)
+                try MeetingRecord(id: meetingID, workspaceId: workspace.id, name: "Test", createdAt: .now, updatedAt: .now).insert(db)
+                try db
+                    .execute(
+                        sql: "CREATE TRIGGER fail_retry_save BEFORE INSERT ON document_updates BEGIN SELECT RAISE(ABORT, 'fixture disk error'); END"
+                    )
+            }
+            let model = DocumentEditorModel(dbQueue: queue, meetingID: meetingID, resolveMeeting: { nil })
+            await model.load()
+            try await model.accept(DocumentPersistence(dbQueue: queue).legacyImport(text: "retain until retry succeeds"))
+            await #expect(throws: (any Error).self) { try await model.finishLocalSaves() }
+            #expect(model.error == L10n.documentSaveFailed)
+
+            await model.retryVisibleDocument()
+            #expect(model.error == L10n.documentSaveFailed)
+            #expect(try await queue.read { try DocumentUpdateRecord.fetchCount($0) } == 0)
+
+            try await queue.write { try $0.execute(sql: "DROP TRIGGER fail_retry_save") }
+            await model.retryVisibleDocument()
+            #expect(model.error.isEmpty)
+            #expect(try await DocumentPersistence(dbQueue: queue).materialize(meetingID: meetingID).projection.text == "retain until retry succeeds")
+            model.stop()
+            try await model.finishLocalSaves()
+        }
+
+        @Test func retryDoesNotRepeatDraftFlush() async throws {
+            let queue = try AppDatabaseManager(path: ":memory:").dbQueue
+            let model = DocumentEditorModel(dbQueue: queue, meetingID: nil, resolveMeeting: { nil })
+            await model.load()
+            var flushCount = 0
+            model.flushEditor = {
+                flushCount += 1
+                if flushCount > 1 { throw DocumentCoreError.failed }
+            }
+            await model.retryVisibleDocument()
+            #expect(model.error.isEmpty)
+            #expect(flushCount == 1)
+            model.flushEditor = nil
+            model.stop()
+            try await model.finishLocalSaves()
+        }
+
+        @Test func retryDoesNotPublishAnObsoleteFlushFailure() async throws {
+            let queue = try AppDatabaseManager(path: ":memory:").dbQueue
+            let model = DocumentEditorModel(dbQueue: queue, meetingID: nil, resolveMeeting: { nil })
+            await model.load()
+            let gate = DocumentLoadGate()
+            var firstFlush = true
+            model.flushEditor = {
+                guard firstFlush else { return }
+                firstFlush = false
+                await gate.wait()
+                throw DocumentCoreError.failed
+            }
+            let retrying = Task { await model.retryVisibleDocument() }
+            #expect(await pollUntil { await gate.started })
+            model.stop()
+            await model.load()
+            #expect(model.ready)
+            await gate.release()
+            await retrying.value
+            #expect(model.error.isEmpty)
+            #expect(model.ready)
+            model.stop()
+            try await model.finishLocalSaves()
+        }
+
+        @Test func retryClassifiesEditorFlushFailureAsSaveFailure() async throws {
+            let queue = try AppDatabaseManager(path: ":memory:").dbQueue
+            let model = DocumentEditorModel(dbQueue: queue, meetingID: nil, resolveMeeting: { nil })
+            await model.load()
+            model.flushEditor = { throw DocumentCoreError.failed }
+            await model.retryVisibleDocument()
+            #expect(model.error == L10n.documentSaveFailed)
+            #expect(!model.canRetrySynchronization)
+            model.flushEditor = nil
+            model.stop()
+            try await model.finishLocalSaves()
+        }
+
         @Test func obsoleteLoadFailureCannotOverwriteReopenedEditor() async throws {
             let queue = try AppDatabaseManager(path: ":memory:").dbQueue
             let model = DocumentEditorModel(dbQueue: queue, meetingID: nil, resolveMeeting: { nil })

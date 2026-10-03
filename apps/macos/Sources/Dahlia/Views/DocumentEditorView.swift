@@ -164,6 +164,25 @@ final class DocumentEditorModel {
         }
     }
 
+    var canRetrySynchronization: Bool { ready && error == L10n.documentSyncFailed }
+
+    func retryVisibleDocument() async {
+        guard visible, ready else { return }
+        let generation = loadGeneration
+        do {
+            try await finishLocalSaves()
+        } catch {
+            if isVisible(generation) { self.error = L10n.documentSaveFailed }
+            return
+        }
+        guard isVisible(generation), meetingID != nil else { return }
+        do {
+            try await synchronizeVisibleDocument()
+        } catch {
+            if isVisible(generation) { self.error = L10n.documentSyncFailed }
+        }
+    }
+
     func synchronizeVisibleDocument() async throws {
         if visible, meetingID == nil { try await finishLocalSaves() }
         guard visible, let meetingID else { return }
@@ -357,16 +376,19 @@ struct DocumentEditorView: View {
     @State private var contentHeight: CGFloat = 280
     @State private var model: DocumentEditorModel
     let editable: Bool
+    let onModelChange: (DocumentEditorModel, Bool) -> Void
 
     init(
         dbQueue: DatabaseQueue,
         meetingID: UUID?,
         orphan: DocumentPersistence.OrphanContext?,
         editable: Bool,
+        onModelChange: @escaping (DocumentEditorModel, Bool) -> Void = { _, _ in },
         resolveMeeting: @escaping @MainActor () -> UUID?
     ) {
         _model = State(initialValue: DocumentEditorModel(dbQueue: dbQueue, meetingID: meetingID, orphan: orphan, resolveMeeting: resolveMeeting))
         self.editable = editable
+        self.onModelChange = onModelChange
     }
 
     var body: some View {
@@ -377,7 +399,6 @@ struct DocumentEditorView: View {
                 }
                 .font(.callout)
             }
-            if !model.error.isEmpty { Text(model.error).font(.callout).foregroundStyle(.red).textSelection(.enabled) }
             if model.ready {
                 DocumentWebEditor(
                     checkpoint: model.checkpoint,
@@ -414,13 +435,12 @@ struct DocumentEditorView: View {
                     if let text = model.fullRecoveryText { Text(text).textSelection(.enabled) }
                 }.frame(maxHeight: 160)
             }
-            if !model.people.isEmpty { Text(L10n.documentEditing + model.people.joined(separator: ", ")).font(.caption) }
-            Text(model.status).font(.caption).foregroundStyle(.secondary)
         }
+        .onAppear { onModelChange(model, true) }
         .task { await model.load() }
         .onDisappear {
             model.stop()
-
+            onModelChange(model, false)
         }
     }
 }

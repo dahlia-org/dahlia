@@ -159,3 +159,7 @@ Server 未公開 baseline は最終 schema に直接更新する。Desktop は�
 通常の Desktop ingress / send / editor notification は常駐 runtime の処理済み位置から新しい SQLite delta だけを取得する。cache miss 時には checkpoint と永続ログ全体を再取得し、不完全な前提状態から開始しない。検出済みの復元コピーは durable recovery watermark が進むまで runtime に保持する。下書きの archive 前提は staging にだけ適用し、SQLite commit 後に canonical へ反映する。Web は Worker 障害に備え、main thread に index を持たない保存済み Yjs replica を delta で保持する。再起動時だけ snapshot を生成し、未保存の editor input を canonical に昇格しない。
 
 2026-10-02: main の最低保持期間変更は Documents v54 の後の `v55_serverContentRetention` に配置する。未公開の旧 `v54_serverContentRetention` は merging で認識し、保持日時の再設定は行わない。旧 v53 / v54 の実スキーマから pending 更新・復元記録と外部キーの保持を検証する。
+
+### Notes の状態表示（2026-10-04）
+
+Desktop と Web は保存・同期状態、同期エラーを画面ヘッダーに表示する。詳細はヘッダーのポップオーバーで確認し、状態変化で本文の位置を動かさない。Web の未送信編集に対するタブ保持の案内とコピー操作もヘッダーから利用でき、別画面へ移動した後も保持する。復元履歴と未公開の旧 Notes は引き続き本文側で確認する。

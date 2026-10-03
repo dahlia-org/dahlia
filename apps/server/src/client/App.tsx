@@ -2150,6 +2150,7 @@ export function App({ brand = defaultBrand, extensions = [] }: AppProps) {
   return <AppShell brand={<Brand brand={brand} />} extensionPaths={extensions.flatMap((extension) => extension.routes?.map((item) => item.path) ?? [])}
     serverLinks={extensions.flatMap((extension) => extension.navigation ?? []).filter(isServerNavigation).map((item) =>
       (!item.capability || session.capabilities[item.capability]) && <a className="flex items-center gap-2 rounded-md px-2 py-1.5 text-xs text-muted-foreground hover:bg-accent hover:text-foreground" key={item.path} href={item.path}><MenuIcon name="settings" />{item.label}</a>)}
+    headerStatus={<PendingDocumentNotice userId={session.user.id} />}
     session={session} path={path} navigate={navigateDashboard} routeWorkspaceId={detailWorkspaceId ?? route.workspaceId}
     routeMeeting={detailMeeting} routeMeetingOwned={detail?.kind === "meeting"}>
     <DataError error={sessionError ? new Error(sessionError) : undefined} retry={() => setSessionAttempt((attempt) => attempt + 1)} />
@@ -2157,7 +2158,6 @@ export function App({ brand = defaultBrand, extensions = [] }: AppProps) {
       <DataError error={detailQuery.error} retry={detailQuery.reload} />
       {!detailQuery.error && <p className="content-empty">{uiText("Loading…", "読み込み中…")}</p>}
     </>}
-    <PendingDocumentNotice userId={session.user.id} />
     {page}
   </AppShell>;
 }

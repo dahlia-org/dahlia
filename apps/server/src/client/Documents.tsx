@@ -1,6 +1,9 @@
 import { syncNotifications, type SyncNotifications } from "./sync-notifications";
 import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
+import { AlertTriangle } from "lucide-react";
+import { Button } from "./components/ui/button";
+import { Popover, PopoverContent, PopoverTrigger } from "./components/ui/popover";
 import { EditorContent, useEditor } from "@tiptap/react";
 import * as Y from "yjs";
 import { apiOperations as api } from "./generated-operations";
@@ -366,7 +369,10 @@ export function MeetingNotes({ workspaceId, meetingId, editable, statusSlot }: {
     }).catch((error: unknown) => { if (current) setError(String(error)); });
     return () => { current = false; release?.(); };
   }, [workspaceId, meetingId]);
-  if (error) return <p role="alert">{error}</p>;
+  if (error) {
+    const alert = <NotesStatus error={error} />;
+    return statusSlot ? createPortal(alert, statusSlot) : alert;
+  }
   if (!controller) return <p role="status">{uiText("Loading notes…", "ノートを読み込み中…")}</p>;
   return <DocumentEditor key={`${workspaceId}/${meetingId}`} controller={controller} editable={editable} statusSlot={statusSlot} />;
 }
@@ -389,15 +395,21 @@ function DocumentEditor({ controller, editable, statusSlot }: { controller: Brow
     controller.editorDocument.on("update", edited);
     return () => { controller.listeners.delete(changed); controller.editorDocument.off("update", edited); controller.focused = false; queueMicrotask(() => controller.releaseIfIdle()); };
   }, [controller, editor]);
-  // The global PendingDocumentNotice carries the keep-this-tab-open guidance.
+  let syncStatus: string;
+  if (!controller.hasUnsent()) {
+    syncStatus = uiText("Synced", "同期済み");
+  } else if (controller.error) {
+    syncStatus = uiText("Not synced", "未同期");
+  } else {
+    syncStatus = uiText("Syncing…", "同期中…");
+  }
   const status = <>
     {controller.people.length > 0 && <span className="max-w-48 truncate max-lg:hidden">{uiText("Editing: ", "編集中: ")}{controller.people.join(", ")}</span>}
-    <span>{!controller.hasUnsent() ? uiText("Synced", "同期済み") : controller.error ? uiText("Not synced", "未同期") : uiText("Syncing…", "同期中…")}</span>
+    <NotesStatus status={syncStatus}
+      error={limitError || controller.error} retry={controller.error ? () => { void controller.sync().catch(() => {}); } : undefined} />
   </>;
   return <div className="space-y-3">
-    {limitError && <p role="alert" className="text-destructive">{limitError}</p>}
-    {statusSlot ? createPortal(status, statusSlot) : <div className="flex flex-wrap items-center gap-3 text-sm" role="status">{status}</div>}
-    {controller.error && <p role="alert" className="text-destructive">{controller.error}<button className="ml-3 underline hover:no-underline" onClick={() => { void controller.sync().catch(() => {}); }}>{uiText("Retry", "再試行")}</button></p>}
+    {statusSlot ? createPortal(status, statusSlot) : <div className="flex items-center gap-3 text-xs" role="status">{status}</div>}
     {/* Clicking anywhere in the tall area below the text places the caret. `!` overrides the unlayered editor.css. */}
     <EditorContent editor={editor} className="[&_.tiptap]:min-h-[50vh]!" />
     <details onToggle={(event) => { void controller.toggleRecoveries(event.currentTarget.open).catch(() => {}); }}><summary>{uiText("Preserved deleted paragraphs", "削除された段落の復元用コピー")}</summary>
@@ -416,12 +428,29 @@ function RecoveryText({ recovery }: { recovery: DocumentRecovery }) {
     {open && <pre className="whitespace-pre-wrap">{recovery.blocks.map((block) => block.text).join("\n")}</pre>}</details>;
 }
 
+export function NotesStatus({ status, error, retry }: { status?: string; error?: string; retry?: () => void }) {
+  if (!error) return <span>{status}</span>;
+  return <Popover><PopoverTrigger asChild>
+    <Button variant="ghost" size="sm" className="h-7 gap-1 text-destructive" aria-label={uiText("Notes status", "ノートの状態")}>
+      <AlertTriangle className="size-3.5 shrink-0" /><span>{status ?? uiText("Notes warning", "ノートの警告")}</span>
+    </Button>
+  </PopoverTrigger><PopoverContent align="end" className="max-w-[calc(100vw-24px)] text-sm">
+    <p role="alert" className="break-words">{error}</p>
+    {retry && <Button variant="outline" size="sm" className="mt-3" onClick={retry}>{uiText("Retry", "再試行")}</Button>}
+  </PopoverContent></Popover>;
+}
+
 export function PendingDocumentNotice({ userId }: { userId: string }) {
   const [, render] = useState(0);
   useEffect(() => { const timer = setInterval(() => render((n) => n + 1), 1000); return () => clearInterval(timer); }, []);
   const pending = [...sessions.values()].filter((item) => item.userId === userId && item.hasUnsent());
   if (!pending.length) return null;
-  return <aside role="status" className="border-b bg-muted p-3 text-sm">{uiText("Notes have unsynced changes. Keep this tab open.", "ノートに未送信の編集があります。このタブを開いたままにしてください。")}
-    {pending.map((item) => <details key={item.meetingId}><summary>{uiText("Copy unsynced notes", "未送信のノートをコピー")}</summary><pre className="whitespace-pre-wrap">{item.copyText()}</pre></details>)}
-  </aside>;
+  return <Popover><PopoverTrigger asChild>
+    <Button variant="ghost" size="sm" className="h-7 gap-1 text-destructive" aria-label={uiText("Unsynced notes", "未送信のノート")}>
+      <AlertTriangle className="size-3.5" /><span className="max-sm:sr-only">{uiText("Unsynced notes", "未送信のノート")}</span>
+    </Button>
+  </PopoverTrigger><PopoverContent align="end" className="max-h-[60vh] max-w-[calc(100vw-24px)] overflow-auto text-sm">
+    <p role="status">{uiText("Notes have unsynced changes. Keep this tab open.", "ノートに未送信の編集があります。このタブを開いたままにしてください。")}</p>
+    {pending.map((item) => <details key={item.meetingId} className="mt-3"><summary className="cursor-pointer hover:underline">{uiText("Copy unsynced notes", "未送信のノートをコピー")}</summary><pre className="whitespace-pre-wrap break-words">{item.copyText()}</pre></details>)}
+  </PopoverContent></Popover>;
 }

@@ -1,7 +1,7 @@
 // pnpm dev:client -> /tests/browser/documents.html. Synthetic in-memory API; no credentials or real data.
-import React from "react";
+import React, { useState } from "react";
 import { createRoot } from "react-dom/client";
-import { MeetingNotes } from "../../src/client/Documents";
+import { MeetingNotes, PendingDocumentNotice } from "../../src/client/Documents";
 import { DocumentCore, removedBlocks, type DocumentRecovery } from "../../src/documents/core";
 import { encodeId } from "../../src/typeid";
 import { uuidV7 } from "../../src/id";
@@ -48,7 +48,17 @@ if (!client) {
   };
   // SSE is only an optimization; exercise the real HTTP recovery timer.
   window.EventSource = class { addEventListener() {} close() {} } as unknown as typeof EventSource;
-  createRoot(document.getElementById("root")!).render(<main className="p-4"><h2>Editor {client}</h2>
-    <label><input type="checkbox" onChange={(event) => { offline = event.currentTarget.checked; }} /> Offline</label>
-    <MeetingNotes workspaceId={workspace} meetingId={meeting} editable /></main>);
+  function FixtureEditor() {
+    const [statusSlot, setStatusSlot] = useState<HTMLDivElement | null>(null);
+    const userId = encodeId("user", client === "A" ? "019959c4-4000-7000-8000-000000000003" : "019959c4-4000-7000-8000-000000000004");
+    return <main className="p-4">
+      <header className="flex h-9 items-center justify-between"><h2>Editor {client}</h2><div className="flex items-center gap-2">
+        <div ref={setStatusSlot} role="status" className="flex items-center gap-2 text-xs" />
+        <PendingDocumentNotice userId={userId} />
+      </div></header>
+      <label><input type="checkbox" onChange={(event) => { offline = event.currentTarget.checked; }} /> Offline</label>
+      <MeetingNotes workspaceId={workspace} meetingId={meeting} editable statusSlot={statusSlot} />
+    </main>;
+  }
+  createRoot(document.getElementById("root")!).render(<FixtureEditor />);
 }
