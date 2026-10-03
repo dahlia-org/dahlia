@@ -279,6 +279,59 @@
                 .connectionId)
         }
 
+        @Test(arguments: [(nil as String?, "Existing caption" as String?), ("Existing OCR", nil), ("", nil)])
+        func incompleteRemoteAnalysisKeepsPollingUntilJobSettles(ocr: String?, caption: String?) async throws {
+            let fixture = try ScreenshotContentFixture()
+            try await fixture.confirm()
+            try await fixture.dbQueue.write { db in
+                try db.execute(
+                    sql: "UPDATE files SET remoteReference = ?, localReference = ? WHERE id = ?",
+                    arguments: [fixture.source.jsonString(), fixture.source.jsonString(), fixture.screenshotId]
+                )
+                try SyncTransactionRecorder.record(workspaceId: fixture.workspaceId, operations: [
+                    SyncOperationDraft(entity: .file, action: .upsert, entityId: fixture.screenshotId),
+                ], in: db)
+                try db.execute(sql: "UPDATE sync_content_state SET residentRevision = 1 WHERE entity = 'file'")
+                try db.execute(
+                    sql: "UPDATE file_text_bodies SET ocrText = ?, caption = ? WHERE fileId = ?",
+                    arguments: [ocr, caption, fixture.screenshotId]
+                )
+                try db.execute(
+                    sql: "INSERT INTO jobs_background(indexKind, targetKind, targetKey, priority, availableAt, updatedAt) VALUES ('fts', 'screenshotAnalysis', ?, -10, ?, ?)",
+                    arguments: [fixture.screenshotId, Date(), Date()]
+                )
+            }
+            let viewModel = CaptionViewModel()
+            viewModel.loadMeeting(fixture.meetingId, dbQueue: fixture.dbQueue, projectURL: nil, projectId: nil, workspaceURL: nil)
+            defer { viewModel.clearCurrentMeeting() }
+            let pending = await viewModel.screenshotOCRState(id: fixture.screenshotId)
+            #expect(pending == .remote(ocrText: ocr, caption: caption, state: .loading))
+            #expect(!pending.isTerminal)
+            try await fixture.dbQueue.write { db in
+                try db.execute(sql: "UPDATE jobs_background SET status = 'processing', attempts = 1 WHERE targetKind = 'screenshotAnalysis'")
+            }
+            #expect(await viewModel.screenshotOCRState(id: fixture.screenshotId) == pending)
+            try await fixture.dbQueue.write { db in
+                try db.execute(sql: "UPDATE jobs_background SET attempts = 5 WHERE targetKind = 'screenshotAnalysis'")
+            }
+            #expect(await viewModel.screenshotOCRState(id: fixture.screenshotId) == .remote(ocrText: ocr, caption: caption, state: .failed))
+            try await fixture.dbQueue.write { db in
+                try db.execute(sql: "DELETE FROM jobs_background WHERE targetKind = 'screenshotAnalysis'")
+            }
+            let skipped = await viewModel.screenshotOCRState(id: fixture.screenshotId)
+            #expect(skipped == .remote(ocrText: ocr, caption: caption, state: .ready))
+            #expect(skipped.isTerminal)
+            try await fixture.dbQueue.write { db in
+                try db.execute(
+                    sql: "UPDATE file_text_bodies SET ocrText = '', caption = 'Completed caption' WHERE fileId = ?",
+                    arguments: [fixture.screenshotId]
+                )
+            }
+            let completed = await viewModel.screenshotOCRState(id: fixture.screenshotId)
+            #expect(completed == .remote(ocrText: "", caption: "Completed caption", state: .ready))
+            #expect(completed.isTerminal)
+        }
+
         @Test(arguments: [false, true])
         func newlyCapturedServerImageUsesRemoteStateOnceUploaded(uploaded: Bool) async throws {
             let fixture = try ScreenshotContentFixture()

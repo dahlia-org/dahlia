@@ -2481,7 +2481,7 @@ enum L10n { // swiftlint:disable:this type_body_length
     ) }
     static var reasoningEffort: String { String(localized: "Reasoning Effort", bundle: bundle) }
     static var imageAnalysisReasoningEffortDescription: String {
-        String(localized: "Controls how much reasoning Codex uses for each image.", bundle: .module)
+        String(localized: "Controls how much reasoning Codex uses for each image.", bundle: bundle)
     }
 
     static var reasoningEffortDescription: String { String(

@@ -331,7 +331,7 @@ final class CaptionViewModel: ObservableObject {
                         guard try FileRecord.fetchOne(db, key: fileId) != nil else { return .remote(ocrText: nil, caption: nil, state: .deleted) }
                         let text = try TextContentAccess.cachedFileText(fileId: fileId, in: db)
                         var state = try TextContentAccess.availability(entity: .file, id: fileId, in: db).state
-                        if analysisEnabled, state == .ready, text?.caption?.nilIfBlank == nil,
+                        if analysisEnabled, state == .ready, text?.ocrText == nil || text?.caption?.nilIfBlank == nil,
                            let job = try Row.fetchOne(db, sql: """
                            SELECT attempts FROM jobs_background
                            WHERE indexKind = 'fts' AND targetKind = 'screenshotAnalysis' AND targetKey = ?

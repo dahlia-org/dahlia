@@ -1564,7 +1564,8 @@
                 #expect(cached == .remote(ocrText: nil, caption: "older", state: .stale))
                 #expect(calls.withLock { $0 } == before)
                 let refreshed = await viewModel.screenshotOCRState(id: id, refresh: true, contentProvider: provider)
-                #expect(refreshed == .remote(ocrText: nil, caption: "cloudcaption", state: .ready))
+                // Hydration finished, but the attachment-triggered job is still filling missing OCR.
+                #expect(refreshed == .remote(ocrText: nil, caption: "cloudcaption", state: .loading))
                 #expect(calls.withLock { $0 } == before + 1)
                 try await fixture.queue.write { db in
                     try db.execute(sql: "UPDATE sync_entity_state SET confirmedRevision = 4 WHERE entity = 'file'")
