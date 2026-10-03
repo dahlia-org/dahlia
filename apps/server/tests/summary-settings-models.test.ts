@@ -86,6 +86,23 @@ it.each([{}, { meetingSummaryGeneration: { version: 1, sources: ["transcript", "
   },
 );
 
+it.each([false, true])("shows capability discovery loading/error separately from unsupported generation (error: %s)", (failed) => {
+  vi.mocked(useLiveJSON).mockImplementation((url) => ({
+    data: typeof url === "object" && url.key.startsWith('["getWorkspace"')
+      ? { role: "admin", generationSettings: DEFAULT_WORKSPACE_GENERATION_SETTINGS } : undefined,
+    loading: typeof url === "object" && url.key.startsWith('["getCapabilities"') && !failed,
+    refreshing: false,
+    error: typeof url === "object" && url.key.startsWith('["getCapabilities"') && failed ? new Error("capabilities offline") : undefined,
+    reload: vi.fn(), replace: vi.fn(),
+  }));
+  const html = renderToStaticMarkup(createElement(ServerSummarySettings, { workspaceId: "test", onSave: async () => {} }));
+  expect(html).toContain("Output language");
+  expect(html).toContain("Server generation defaults");
+  expect(html).toContain(failed ? "capabilities offline" : "Loading");
+  if (failed) expect(html).toContain("Retry");
+  expect(html).not.toContain("Summary model");
+});
+
 it.each([false, true])("does not present made-up defaults while settings are unavailable (error: %s)", (failed) => {
   vi.mocked(useLiveJSON).mockReturnValue({
     data: undefined, loading: !failed, refreshing: !failed, error: failed ? new Error("offline") : undefined,

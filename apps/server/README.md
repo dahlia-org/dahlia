@@ -348,7 +348,7 @@ Web account settings manage account identity and sessions; they do not synchroni
 
 `outputLanguage` is shared by Desktop and Web in its own Workspace settings section above Memory. Server model, reasoning effort, audio workflow and summary style remain Workspace defaults for explicit Web generation and can be overridden per operation. Two-stage audio operations expose separate transcription and summary model/effort pairs; combined audio operations expose the Gemini summary pair. Desktop model, reasoning effort, style, automatic post-record processing and live draft are stored on each Mac per account. Receiving Desktop results never starts server generation. Desktop migrates the most recently opened Workspace's preferences once per account. An unavailable saved model falls back for that request without changing the saved choice.
 
-Web administrators edit the shared output language and Server generation defaults; other roles see them read-only. Authorized users explicitly start Server transcription or summaries with per-run language, style, model and effort. Model and reasoning controls are grouped separately for transcription and summary generation, displayed side by side on wider screens and stacked on narrow screens. Summary style appears below the summary model. Direct audio generation hides the transcription group and shows the audio model/effort as summary settings, limited to audio-capable Gemini models; switching workflows preserves both saved pairs. Web uses the saved Server style, source-specific model, reasoning effort and audio workflow defaults, and does not apply legacy Desktop routing or local model preferences. Explicit unavailable Web model choices fail validation. Source availability, permissions and complete-audio checks still gate execution.
+The Server defaults section reports capability-discovery failures and offers Retry instead of treating a failed request as unsupported generation. Web administrators edit the shared output language and Server generation defaults; other roles see them read-only. Authorized users explicitly start Server transcription or summaries with per-run language, style, model and effort. Model and reasoning controls are grouped separately for transcription and summary generation, displayed side by side on wider screens and stacked on narrow screens. Summary style appears below the summary model. Direct audio generation hides the transcription group and shows the audio model/effort as summary settings, limited to audio-capable Gemini models; switching workflows preserves both saved pairs. Web uses the saved Server style, source-specific model, reasoning effort and audio workflow defaults, and does not apply legacy Desktop routing or local model preferences. Explicit unavailable Web model choices fail validation. Source availability, permissions and complete-audio checks still gate execution.
 
 For v0.24.x compatibility, known legacy `processing.location`, `processing.remote`, `local`, `summary`, `automaticProcessing` and `liveTranscriptDraft` keys remain accepted and returned in Workspace settings. Unknown keys remain rejected. Changing the shared language preserves legacy values. These keys do not route new Desktop operations to the Server. Old Desktop `workspace:update` transactions continue to succeed without a database reset.
 
@@ -373,11 +373,15 @@ type SummaryRequest = {
         workflow: "transcribeThenSummarize" | "combined";
         summaryModel?: string;
         reasoningEffort?: "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max" | "ultra";
+        transcriptSummaryModel?: string;
+        transcriptSummaryReasoningEffort?: "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max" | "ultra";
       };
     };
   };
 };
 ```
+
+For two-stage recording input, `summaryModel` / `reasoningEffort` configure audio transcription and `transcriptSummaryModel` / `transcriptSummaryReasoningEffort` configure the final text summary. Combined recording generation uses the audio pair for both results; transcript input uses the text pair (with the audio-named pair retained as a legacy fallback). Omitted models/efforts resolve to the Server's supported defaults.
 
 The meeting is identified only by the route. Transcript version selects an exact retained version; missing versions never fall back to latest. Recording pairs are ordered, nonempty and canonically attached to this meeting, with at least one track each. Unauthorized/mismatched files are rejected. Workflow explicitly selects separate recognition/summary or combined audio generation. Both audio paths share the same transcript schema, let Gemini identify the spoken language, and validate model audio/structured-output capabilities. The preferences snapshot carries the Workspace output language independently of recognition language.
 

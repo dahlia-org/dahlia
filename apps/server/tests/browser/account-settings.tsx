@@ -20,6 +20,7 @@ const save = async (previous: { revision: number }, next: WorkspaceGenerationSet
   const response = await fetch("/api/v1/transactions", { method: "POST", body: JSON.stringify({ revision: previous.revision, settings: next }) });
   if (!response.ok) throw new Error("save_failed");
 };
+let failCapabilities = true;
 let failPatch = false;
 let holdRead = false;
 let blockedRead = false;
@@ -38,6 +39,7 @@ window.fetch = (async (input: string | URL | Request, init?: RequestInit) => {
     revision++;
     return Response.json({});
   }
+  if (path === "/api/v1/capabilities" && failCapabilities) return Response.json({ error: "capabilities_failed" }, { status: 503 });
   if (path === "/api/v1/capabilities") return Response.json({ meetingSummaryGeneration: { version: 2, sources: ["transcript", "audio"], completeRecordings: true } });
   if (path === "/api/v1/models") return Response.json(modelList([{ id: "system.ai.gpt-5-6-luna" }, { id: "system.ai.gemini-3-8-flash" }]));
   if (path !== `/api/v1/workspaces/${workspaceId}`) throw new Error(`Unexpected fixture request ${path}`);
@@ -77,6 +79,13 @@ async function ready() { await until(() => document.querySelector<HTMLButtonElem
 async function run() {
   createRoot(document.getElementById("root")!).render(<ServerSummarySettings workspaceId={workspaceId} onSave={save} />);
   await ready();
+  await until(() => document.querySelector('[role="alert"]'));
+  assert(document.body.textContent?.includes("Server generation defaults"), "Failed capability discovery hid the settings section");
+  assert(![...document.querySelectorAll("label")].some((node) => node.firstChild?.textContent === "Summary model"), "Failed discovery displayed unsupported controls");
+  failCapabilities = false;
+  [...document.querySelectorAll("button")].find((button) => button.textContent === "Retry")!.click();
+  await until(() => [...document.querySelectorAll("label")].some((node) => node.firstChild?.textContent === "Summary style"));
+  assert(!document.querySelector('[role="alert"]'), "Capability retry did not clear the error");
   for (const label of ["Transcription location", "After recording"]) {
     assert(!document.body.textContent?.includes(label), `Obsolete setting remained visible: ${label}`);
   }
@@ -146,6 +155,6 @@ async function run() {
   role = "viewer";
   window.dispatchEvent(new Event(liveDataEvent));
   await until(() => select("Output language").matches(":disabled"));
-  document.getElementById("result")!.textContent = "PASS: delayed refresh and failed reload/retry, independent language and server defaults, Desktop/Web boundary, legacy values preserved, settings notification, failed save/retry, viewer read-only";
+  document.getElementById("result")!.textContent = "PASS: capability discovery failure/retry, delayed refresh and failed reload/retry, independent language and server defaults, Desktop/Web boundary, legacy values preserved, settings notification, failed save/retry, viewer read-only";
 }
 void run().catch((error: unknown) => { document.getElementById("result")!.textContent = `FAIL: ${String(error)}`; console.error(error); });

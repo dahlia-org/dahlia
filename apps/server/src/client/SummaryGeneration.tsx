@@ -95,7 +95,8 @@ export function ServerSummarySettings({ workspaceId, onSave }: {
   const [error, setError] = useState<string>();
   const [saving, setSaving] = useState(false);
   const workspace = query.data;
-  const methods = useSummaryMethods().manualMethods;
+  const capabilities = useSummaryMethods();
+  const methods = capabilities.manualMethods;
   const catalog = useLiveJSON<GatewayModelList>(methods.length ? "/api/v1/models" : undefined, "manual");
   const save = async (settings: WorkspaceGenerationSettings) => {
     if (!workspace) return;
@@ -135,9 +136,12 @@ export function ServerSummarySettings({ workspaceId, onSave }: {
     {(error || query.error) && <p role="alert" className="error">{error ?? query.error?.message}
       <button onClick={query.reload}>{uiText("Retry", "再試行")}</button></p>}
   </section>
-  {methods.length > 0 && <section className="workspace-settings">
+  {(methods.length > 0 || capabilities.loading || capabilities.error) && <section className="workspace-settings">
     <h2>{uiText("Server generation defaults", "サーバー生成の既定設定")}</h2>
-    <fieldset className="account-settings" disabled={saving || query.refreshing || !!query.error || workspace.role !== "admin"}>
+    {capabilities.loading && <p role="status">{uiText("Loading…", "読み込み中…")}</p>}
+    {capabilities.error && <p role="alert" className="error">{capabilities.error.message}
+      <button onClick={capabilities.reload}>{uiText("Retry", "再試行")}</button></p>}
+    {methods.length > 0 && <fieldset className="account-settings" disabled={saving || query.refreshing || !!query.error || !!capabilities.error || workspace.role !== "admin"}>
       <p>{uiText("Used only when generating from Web. Desktop normally generates on the Mac and syncs the results; receiving them does not start server generation.", "Webから生成するときに使用します。通常はデスクトップで生成した結果を受け取ります。結果の受信をきっかけにサーバーで自動生成はしません。")}</p>
       {supportsAudio && <label>{uiText("Audio processing method", "音声の処理方法")}<Select value={remote.workflow}
         onValueChange={(workflow) => saveRemote({ workflow: workflow as typeof remote.workflow })}>
@@ -181,7 +185,7 @@ export function ServerSummarySettings({ workspaceId, onSave }: {
       })}
       {catalog.error && <p role="alert" className="error">{catalog.error.message}</p>}
       <button disabled={catalog.loading} onClick={catalog.reload}>{uiText("Reload models", "モデル一覧を再取得")}</button>
-    </fieldset>
+    </fieldset>}
   </section>}
   </>;
 }
