@@ -23,6 +23,7 @@ from hindsight_api.worker.exceptions import format_task_error
 from hindsight_lakebase.databricks import DatabricksOAuthTokenProvider
 from hindsight_lakebase.images import (
     MAX_COMPLETION_TOKENS,
+    ImageOutputTooLongError,
     image_call,
     image_capabilities,
     image_fact_metadata,
@@ -126,7 +127,7 @@ async def test_image_output_overflow_fails_the_operation_without_worker_retries(
     loader = SimpleNamespace(
         load=AsyncMock(return_value={HASH[:12]: LoadedAttachment(media_type="image/webp", data=DATA)})
     )
-    with pytest.raises(OutputTooLongError) as error:
+    with pytest.raises(ImageOutputTooLongError) as error:
         await extract_facts_from_text(
             TOKEN,
             datetime(2026, 1, 1),
@@ -139,6 +140,10 @@ async def test_image_output_overflow_fails_the_operation_without_worker_retries(
     vision.call.assert_awaited_once()
     assert _is_non_retryable_task_error(error.value)
     assert operation_error_code({"error_message": format_task_error(error.value)}) == "memory_output_too_long"
+    # Reflect and mental-model refresh raise the base type; they keep worker and Server retries.
+    other = OutputTooLongError("LLM output exceeded token limits.")
+    assert not _is_non_retryable_task_error(other)
+    assert operation_error_code({"error_message": format_task_error(other)}) is None
 
 
 @pytest.mark.parametrize("model", ["system.ai.gpt-6-luna", "gpt-5"])

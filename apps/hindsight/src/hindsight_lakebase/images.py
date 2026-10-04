@@ -4,6 +4,7 @@ import asyncio
 import hashlib
 
 from hindsight_api.config_resolver import apply_strategy
+from hindsight_api.engine.llm_interface import OutputTooLongError
 from hindsight_api.engine.retain.attachment_content import iter_placeholder_ids
 
 # Reasoning tokens count against this budget; image chunks also carry transcript text.
@@ -55,17 +56,24 @@ def image_fact_metadata(metadata, chunk_text):
     return {**metadata, "dahlia_image_context": list(dict.fromkeys(iter_placeholder_ids(chunk_text)))}
 
 
+class ImageOutputTooLongError(OutputTooLongError):
+    """An image chunk exceeded the fixed budget; the worker does not retry it."""
+
+
 async def image_call(llm, kwargs):
     # Keep retain admission control while bounding transport retries and output budget.
     async with asyncio.timeout(TIMEOUT_SECONDS):
-        return await llm.call(
-            **{
-                **kwargs,
-                "max_completion_tokens": MAX_COMPLETION_TOKENS,
-                "max_retries": 0,
-                "scope": "retain_dahlia_image",
-            }
-        )
+        try:
+            return await llm.call(
+                **{
+                    **kwargs,
+                    "max_completion_tokens": MAX_COMPLETION_TOKENS,
+                    "max_retries": 0,
+                    "scope": "retain_dahlia_image",
+                }
+            )
+        except OutputTooLongError as error:
+            raise ImageOutputTooLongError(str(error)) from error
 
 
 def bound_image_request(params, token_parameter):

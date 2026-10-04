@@ -92,8 +92,7 @@ def operation_error_code(result):
     message = result.get("error_message") or ""
     if "ProviderContentPolicyError: memory_policy_blocked" in message:
         return "memory_policy_blocked"
-    # Retrying the same input with the same budget fails again, so it is not transient.
-    if "OutputTooLongError:" in message:
+    if "ImageOutputTooLongError:" in message:
         return "memory_output_too_long"
     return None
 
