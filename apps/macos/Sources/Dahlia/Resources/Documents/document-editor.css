@@ -18,10 +18,12 @@
 /* Hovering a block or its left gutter shows a handle; dragging it moves the block. */
 .dahlia-block-handle { position: absolute; display: none; width: 18px; height: 24px; align-items: center; justify-content: center;
   border-radius: 4px; color: GrayText; cursor: grab; user-select: none; -webkit-user-select: none; }
-.dahlia-block-handle:hover { background: rgba(128, 128, 128, .16); }
+/* Hosts set --dahlia-document-hover and --dahlia-document-accent to their theme's highlight colors. */
+.dahlia-block-handle:hover { background: var(--dahlia-document-hover, rgba(128, 128, 128, .16)); }
 .dahlia-block-handle:active { cursor: grabbing; }
 /* A handle drag lands between top-level blocks, never inside a list. */
-.dahlia-block-drop-indicator { position: absolute; height: 2px; background: currentColor; pointer-events: none; }
+.dahlia-block-drop-indicator { position: absolute; height: 4px; border-radius: 2px; background: var(--dahlia-document-accent, Highlight); pointer-events: none; }
+.prosemirror-dropcursor-block, .prosemirror-dropcursor-inline { background: var(--dahlia-document-accent, Highlight); }
 /* An empty editable document shows where to type without adding content. */
 .dahlia-document[contenteditable="true"]:has(> p:only-child > br.ProseMirror-trailingBreak:only-child)::before {
   content: attr(aria-placeholder); position: absolute; color: GrayText; pointer-events: none;
