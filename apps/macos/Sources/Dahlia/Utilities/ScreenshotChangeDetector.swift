@@ -79,8 +79,8 @@ enum ScreenshotChangeDetector {
     }
 }
 
-/// Tracks when each fingerprint pixel last moved so that captures compare only the still part of the screen.
-/// Continuously moving areas such as camera video never settle, so they neither trigger nor dilute a capture.
+/// Tracks when each fingerprint pixel last moved so that adaptive captures compare only the still part of the screen.
+/// Continuously moving areas such as camera video never settle, so they neither trigger nor dilute such a capture.
 struct ScreenshotSettleTracker {
     static let settleDuration: Duration = .seconds(1)
 
@@ -170,9 +170,9 @@ struct ScreenshotSettleTracker {
                 }
             }
         }
+        let wholeScreenChanged = Double(changeCount) / Double(latestPixels.count) >= changeThresholdRatio
         guard isAdaptive else {
-            return now - lastCaptureAt >= interval
-                && Double(changeCount) / Double(latestPixels.count) >= changeThresholdRatio
+            return now - lastCaptureAt >= interval && wholeScreenChanged
         }
         // The half-screen floor keeps small still areas, such as subtitles over video, from looking like a full change.
         let settledArea = max(settledCount, latestPixels.count / 2)
@@ -184,7 +184,7 @@ struct ScreenshotSettleTracker {
               let lastMostlySettledAt,
               now - lastMostlySettledAt >= interval,
               now - lastCaptureAt >= interval else { return false }
-        return Double(changeCount) / Double(latestPixels.count) >= changeThresholdRatio
+        return wholeScreenChanged
     }
 
     func captureReference(at now: ContinuousClock.Instant, isAdaptive: Bool) -> CaptureReference {

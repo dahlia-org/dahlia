@@ -292,8 +292,8 @@ struct PreparedScreenshotFrame: Sendable {
     /// Whether the fingerprint covers a detected shared-content crop instead of the whole screen.
     let fingerprintsSharedContent: Bool
 
-    /// A detected crop is compared with the last saved crop. Otherwise the settle tracker has already
-    /// applied the threshold to the still part of the screen, which keeps camera video out of the decision.
+    /// A detected crop is compared with the last saved crop. Otherwise the settle tracker has already applied the
+    /// threshold; with an adaptive interval only to the still part of the screen, which keeps camera video out.
     func shouldSave(
         after lastSavedFingerprint: ScreenshotFingerprint?,
         changeThresholdRatio: Double,
@@ -467,8 +467,8 @@ actor AutomaticScreenshotFrameProcessor {
     }
 }
 
-/// Watches a low-resolution ScreenCaptureKit stream for settled changes, captures full-resolution
-/// screenshots only for those changes, and keeps image-sized work off MainActor.
+/// Watches a low-resolution ScreenCaptureKit stream for settled changes, or for changes at a fixed interval,
+/// captures full-resolution screenshots only for those changes, and keeps image-sized work off MainActor.
 /// Only capturing and deciding on a frame is exclusive; saved frames are encoded and persisted in capture order
 /// behind it, so the next change can be captured while the previous one is still being saved.
 actor AutomaticScreenshotCaptureService: AutomaticScreenshotCapturing {
