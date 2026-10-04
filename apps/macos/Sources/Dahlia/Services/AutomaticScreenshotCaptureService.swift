@@ -468,7 +468,8 @@ actor AutomaticScreenshotFrameProcessor {
 actor AutomaticScreenshotCaptureService: AutomaticScreenshotCapturing {
     /// With shared-content detection, any still change is checked against the threshold inside the detected crop.
     /// The whole-screen fingerprint is coarser than the crop's, so even a single changed cell can matter. Each change
-    /// is checked once because skipped attempts advance the last-attempt baseline.
+    /// is checked once because skipped attempts advance the last-attempt baseline. The user threshold's 1% floor in
+    /// `normalized` deliberately does not apply here.
     static let sharedContentGateRatio = Double.leastNonzeroMagnitude
 
     private struct ActiveCapture {
@@ -849,14 +850,17 @@ actor AutomaticScreenshotCaptureService: AutomaticScreenshotCapturing {
         outcome: AutomaticScreenshotCaptureOutcome,
         reference: ScreenshotSettleTracker.CaptureReference
     ) {
-        // Applied even when stop or a stream failure took the operation, so a saved frame is never re-captured
-        // and a discarded one stays pending for the restarted stream.
-        if outcome.commitsReference {
-            settleTracker.commit(reference, isSaved: outcome == .saved)
-        } else if outcome == .failed, let request = desiredRequest {
-            let now = ContinuousClock.now
-            failedCaptureRetryNotBefore = now + .seconds(request.intervalSeconds)
-            scheduleSettleCheck(after: now, attempt: attempt)
+        // A replacement start resets the tracker, so only outcomes from the current generation may update it.
+        // A stream restart keeps the generation and tracker, so its saved frame is never re-captured and a
+        // discarded one stays pending, even when the failure handler took the operation.
+        if lifecycle.accepts(generation: attempt.generation) {
+            if outcome.commitsReference {
+                settleTracker.commit(reference, isSaved: outcome == .saved)
+            } else if outcome == .failed, let request = desiredRequest {
+                let now = ContinuousClock.now
+                failedCaptureRetryNotBefore = now + .seconds(request.intervalSeconds)
+                scheduleSettleCheck(after: now, attempt: attempt)
+            }
         }
         guard processingState.complete(
             operationID: operationID,

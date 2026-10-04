@@ -66,6 +66,23 @@ import GRDB
         }
 
         @Test
+        func streamFailureKeepsGenerationWhileReplacementStartInvalidatesIt() throws {
+            // `finishProcessing` applies capture outcomes only while their generation is still accepted.
+            var lifecycle = AutomaticScreenshotCaptureLifecycle()
+            let generation = lifecycle.beginReplacement()
+            let attemptResult = lifecycle.beginAttempt(generation: generation)
+            let attempt = try #require(attemptResult)
+
+            let claimed = lifecycle.claimCompletion(attempt: attempt)
+            lifecycle.finishAttempt(attempt)
+            #expect(claimed)
+            #expect(lifecycle.accepts(generation: generation))
+
+            _ = lifecycle.beginReplacement()
+            #expect(!lifecycle.accepts(generation: generation))
+        }
+
+        @Test
         func staleProcessingCompletionPreservesReplacementOperation() throws {
             var state = AutomaticScreenshotProcessingState()
             let staleAttempt = AutomaticScreenshotCaptureAttempt(generation: 1, id: 1)
