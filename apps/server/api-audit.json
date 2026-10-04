@@ -8,7 +8,7 @@
       "previous": "new public contract",
       "reason": "Read server-wide search weights; administrator only",
       "consumers": [
-        "apps/server/src/client/App.tsx"
+        "packages/ui/src/screens/Admin.tsx"
       ]
     },
     {
@@ -19,7 +19,7 @@
       "previous": "new public contract",
       "reason": "Replace all six search weights with integers from 1 to 10",
       "consumers": [
-        "apps/server/src/client/App.tsx"
+        "packages/ui/src/screens/Admin.tsx"
       ]
     },
     {
@@ -52,7 +52,8 @@
       "previous": "/api/session",
       "reason": "Current browser identity",
       "consumers": [
-        "apps/server/src/client/App.tsx",
+        "packages/ui/src/screens/Documents.tsx",
+        "packages/ui/src/app/dashboard.ts",
         "apps/macos/Sources/Dahlia/Services/DahliaCloudService.swift"
       ]
     },
@@ -64,7 +65,7 @@
       "previous": "new public contract",
       "reason": "Stream one authenticated page-memory Agent response",
       "consumers": [
-        "apps/server/src/client/AiChat.tsx"
+        "packages/ui/src/screens/AiChat.tsx"
       ]
     },
     {
@@ -75,7 +76,7 @@
       "previous": "new public contract",
       "reason": "Create a private persistent AI chat for the current user",
       "consumers": [
-        "apps/server/src/client/AiChat.tsx"
+        "packages/ui/src/screens/AiChat.tsx"
       ]
     },
     {
@@ -86,7 +87,7 @@
       "previous": "new public contract",
       "reason": "List the current user's persistent AI chats",
       "consumers": [
-        "apps/server/src/client/AiChat.tsx"
+        "packages/ui/src/screens/AiChat.tsx"
       ]
     },
     {
@@ -97,7 +98,7 @@
       "previous": "new public contract",
       "reason": "Read an owned AI chat and its messages",
       "consumers": [
-        "apps/server/src/client/AiChat.tsx"
+        "packages/ui/src/screens/AiChat.tsx"
       ]
     },
     {
@@ -108,7 +109,7 @@
       "previous": "new public contract",
       "reason": "Delete an owned AI chat",
       "consumers": [
-        "apps/server/src/client/AiChat.tsx"
+        "packages/ui/src/screens/AiChat.tsx"
       ]
     },
     {
@@ -119,7 +120,7 @@
       "previous": "new public contract",
       "reason": "Continue an owned AI chat with Mastra Message History",
       "consumers": [
-        "apps/server/src/client/AiChat.tsx"
+        "packages/ui/src/screens/AiChat.tsx"
       ]
     },
     {
@@ -130,7 +131,7 @@
       "previous": "/api/sessions",
       "reason": "OAuth sessions (accounts mode only)",
       "consumers": [
-        "apps/server/src/client/App.tsx"
+        "packages/ui/src/screens/Settings.tsx"
       ]
     },
     {
@@ -141,7 +142,7 @@
       "previous": "/api/sessions/{id}",
       "reason": "Revoke an OAuth session",
       "consumers": [
-        "apps/server/src/client/App.tsx"
+        "packages/ui/src/screens/Settings.tsx"
       ]
     },
     {
@@ -152,7 +153,7 @@
       "previous": "/api/admin/members",
       "reason": "List platform administrators; administrator only",
       "consumers": [
-        "apps/server/src/client/App.tsx"
+        "packages/ui/src/screens/Admin.tsx"
       ]
     },
     {
@@ -163,7 +164,7 @@
       "previous": "/api/admin/members",
       "reason": "Grant administrator access to an existing user",
       "consumers": [
-        "apps/server/src/client/App.tsx"
+        "packages/ui/src/screens/Admin.tsx"
       ]
     },
     {
@@ -174,7 +175,7 @@
       "previous": "/api/admin/members/{email}",
       "reason": "Revoke administrator access; retain the last administrator",
       "consumers": [
-        "apps/server/src/client/App.tsx"
+        "packages/ui/src/screens/Admin.tsx"
       ]
     },
     {
@@ -185,7 +186,7 @@
       "previous": "/api/admin/users",
       "reason": "Administrator directory; ordered by name and ID",
       "consumers": [
-        "apps/server/src/client/App.tsx"
+        "packages/ui/src/screens/Admin.tsx"
       ]
     },
     {
@@ -196,7 +197,7 @@
       "previous": "/api/admin/organizations",
       "reason": "Administrator Team Organization directory",
       "consumers": [
-        "apps/server/src/client/App.tsx"
+        "packages/ui/src/screens/Admin.tsx"
       ]
     },
     {
@@ -207,7 +208,7 @@
       "previous": "/api/v1/capabilities",
       "reason": "Discover feature versions; unsupported features are omitted",
       "consumers": [
-        "apps/server/src/client/SummaryGeneration.tsx",
+        "packages/ui/src/screens/SummaryGeneration.tsx",
         "apps/macos/Sources/Dahlia/Database/BackgroundJobWorker.swift",
         "apps/macos/Sources/Dahlia/Services/RecordingArchiveService.swift",
         "apps/macos/Sources/Dahlia/Services/SyncWorker.swift",
@@ -223,8 +224,8 @@
       "previous": "/api/v1/workspaces",
       "reason": "Accessible Workspaces",
       "consumers": [
-        "apps/server/src/client/App.tsx",
-        "apps/server/src/client/Sidebar.tsx",
+        "packages/ui/src/screens/Sidebar.tsx",
+        "packages/ui/src/screens/Workspaces.tsx",
         "apps/macos/Sources/Dahlia/ViewModels/BackupSettingsViewModel.swift",
         "apps/macos/Sources/Dahlia/Services/BackupService.swift",
         "apps/macos/Sources/Dahlia/Services/CloudWorkspaceDiscovery.swift"
@@ -238,8 +239,11 @@
       "previous": "/api/v1/workspaces/{workspaceId}",
       "reason": "Get Workspace",
       "consumers": [
-        "apps/server/src/client/App.tsx",
-        "apps/server/src/client/Sidebar.tsx"
+        "packages/ui/src/screens/Meeting.tsx",
+        "packages/ui/src/screens/Project.tsx",
+        "packages/ui/src/screens/Sidebar.tsx",
+        "packages/ui/src/screens/SummaryGeneration.tsx",
+        "packages/ui/src/screens/Workspaces.tsx"
       ]
     },
     {
@@ -250,9 +254,11 @@
       "previous": "/api/v1/workspaces/{workspaceId}/projects",
       "reason": "Workspace project tree",
       "consumers": [
-        "apps/server/src/client/App.tsx",
-        "apps/server/src/client/Search.tsx",
-        "apps/server/src/client/Sidebar.tsx",
+        "packages/ui/src/screens/Meeting.tsx",
+        "packages/ui/src/screens/Project.tsx",
+        "packages/ui/src/screens/Search.tsx",
+        "packages/ui/src/screens/Sidebar.tsx",
+        "packages/ui/src/screens/Workspaces.tsx",
         "apps/macos/Sources/Dahlia/Services/SyncWorker.swift",
         "apps/server/src/mcp.ts (shared service; native MCP protocol)"
       ]
@@ -265,7 +271,8 @@
       "previous": "/api/v1/workspaces/{workspaceId}/projects/{projectId} (duplicate scoped route removed; unscoped route retained)",
       "reason": "Resolve and get an accessible Project",
       "consumers": [
-        "apps/server/src/client/App.tsx",
+        "packages/ui/src/App.tsx",
+        "packages/ui/src/screens/Project.tsx",
         "apps/server/src/mcp.ts (shared service; native MCP protocol)"
       ]
     },
@@ -277,8 +284,10 @@
       "previous": "/api/v1/workspaces/{workspaceId}/meetings",
       "reason": "Meetings by creation time and ID; 200 per page",
       "consumers": [
-        "apps/server/src/client/App.tsx",
-        "apps/server/src/client/Sidebar.tsx",
+        "packages/ui/src/screens/Meeting.tsx",
+        "packages/ui/src/screens/Project.tsx",
+        "packages/ui/src/screens/Sidebar.tsx",
+        "packages/ui/src/screens/Workspaces.tsx",
         "apps/server/src/mcp.ts (shared service; native MCP protocol)"
       ]
     },
@@ -290,8 +299,9 @@
       "previous": "/api/v1/workspaces/{workspaceId}/meetings/{meetingId} (duplicate scoped route removed; unscoped route retained)",
       "reason": "Resolve and get meeting metadata",
       "consumers": [
-        "apps/server/src/client/App.tsx",
-        "apps/server/src/client/Sidebar.tsx",
+        "packages/ui/src/App.tsx",
+        "packages/ui/src/screens/Meeting.tsx",
+        "packages/ui/src/screens/Sidebar.tsx",
         "apps/macos/Sources/Dahlia/Services/SyncWorker.swift",
         "apps/server/src/mcp.ts (shared service; native MCP protocol)"
       ]
@@ -304,7 +314,7 @@
       "previous": "/api/v1/workspaces/{workspaceId}/meetings/{meetingId}/summary",
       "reason": "Summary versions, newest first; bodies omitted",
       "consumers": [
-        "apps/server/src/client/SummaryHistory.tsx"
+        "packages/ui/src/screens/SummaryHistory.tsx"
       ]
     },
     {
@@ -315,7 +325,7 @@
       "previous": "/api/v1/workspaces/{workspaceId}/meetings/{meetingId}/summary/{version}",
       "reason": "Read a saved summary version",
       "consumers": [
-        "apps/server/src/client/SummaryHistory.tsx"
+        "packages/ui/src/screens/SummaryHistory.tsx"
       ]
     },
     {
@@ -326,7 +336,7 @@
       "previous": "/api/v1/workspaces/{workspaceId}/meetings/{meetingId}/summary/latest",
       "reason": "Current summary; present=false when absent",
       "consumers": [
-        "apps/server/src/client/App.tsx",
+        "packages/ui/src/screens/Meeting.tsx",
         "apps/macos/Sources/Dahlia/Services/MeetingContentProvider.swift"
       ]
     },
@@ -338,8 +348,8 @@
       "previous": "/api/v1/workspaces/{workspaceId}/meetings/{meetingId}/transcript",
       "reason": "Transcript versions, newest first",
       "consumers": [
-        "apps/server/src/client/SummaryGeneration.tsx",
-        "apps/server/src/client/TranscriptHistory.tsx"
+        "packages/ui/src/screens/SummaryGeneration.tsx",
+        "packages/ui/src/screens/TranscriptHistory.tsx"
       ]
     },
     {
@@ -350,7 +360,7 @@
       "previous": "/api/v1/workspaces/{workspaceId}/meetings/{meetingId}/transcript/{version}",
       "reason": "Read a transcript version in bounded pages",
       "consumers": [
-        "apps/server/src/client/TranscriptHistory.tsx"
+        "packages/ui/src/screens/TranscriptHistory.tsx"
       ]
     },
     {
@@ -361,7 +371,7 @@
       "previous": "/api/v1/workspaces/{workspaceId}/meetings/{meetingId}/transcript/latest",
       "reason": "Read current transcript; match version and syncRevision across pages",
       "consumers": [
-        "apps/server/src/client/TranscriptHistory.tsx",
+        "packages/ui/src/screens/TranscriptHistory.tsx",
         "apps/macos/Sources/Dahlia/Services/MeetingContentProvider.swift",
         "apps/server/src/mcp.ts (shared service; native MCP protocol)"
       ]
@@ -385,7 +395,7 @@
       "previous": "/api/v1/workspaces/{workspaceId}/meetings/{meetingId}/summary",
       "reason": "Queue an owner-only summary job; ID is the replay key; maximum 8 KiB",
       "consumers": [
-        "apps/server/src/client/SummaryGeneration.tsx",
+        "packages/ui/src/screens/SummaryGeneration.tsx",
         "apps/macos/Sources/Dahlia/Services/ServerSummaryService.swift"
       ]
     },
@@ -397,7 +407,7 @@
       "previous": "/api/v1/workspaces/{workspaceId}/meetings/{meetingId}/summary/job",
       "reason": "Most recent owner-visible job, or null",
       "consumers": [
-        "apps/server/src/client/SummaryGeneration.tsx",
+        "packages/ui/src/screens/SummaryGeneration.tsx",
         "apps/macos/Sources/Dahlia/Services/ServerSummaryService.swift"
       ]
     },
@@ -420,7 +430,7 @@
       "previous": "/api/v1/workspaces/{workspaceId}/meetings/{meetingId}/summary/job/{jobId}/cancel",
       "reason": "Cancel a job; repeated cancellation is safe",
       "consumers": [
-        "apps/server/src/client/SummaryGeneration.tsx",
+        "packages/ui/src/screens/SummaryGeneration.tsx",
         "apps/macos/Sources/Dahlia/Services/ServerSummaryService.swift"
       ]
     },
@@ -432,7 +442,7 @@
       "previous": "/api/v1/workspaces/{workspaceId}/meetings/{meetingId}/summary/job/{jobId}/retry",
       "reason": "Retry a failed or cancelled job using a new ID",
       "consumers": [
-        "apps/server/src/client/SummaryGeneration.tsx",
+        "packages/ui/src/screens/SummaryGeneration.tsx",
         "apps/macos/Sources/Dahlia/Services/ServerSummaryService.swift"
       ]
     },
@@ -444,7 +454,7 @@
       "previous": "/api/v1/transactions",
       "reason": "Commit one atomic Workspace transaction; maximum 8 MiB",
       "consumers": [
-        "apps/server/src/client/App.tsx",
+        "packages/ui/src/api/transactions.ts",
         "apps/macos/Sources/Dahlia/Services/SyncWorker.swift"
       ]
     },
@@ -456,7 +466,7 @@
       "previous": "/api/v1/transactions/resolve",
       "reason": "Resolve the exact original request without mutating; never advance the pull cursor from receipts",
       "consumers": [
-        "apps/server/src/client/App.tsx",
+        "packages/ui/src/api/transactions.ts",
         "apps/macos/Sources/Dahlia/Services/SyncWorker.swift"
       ]
     },
@@ -490,11 +500,10 @@
       "previous": "/api/v1/search (POST body with workspaceId)",
       "reason": "Ranked search with explicit truncation indicators; maximum 16 KiB",
       "consumers": [
-        "apps/server/src/client/App.tsx",
-        "apps/server/src/client/navigation.ts",
-        "apps/server/src/client/Search.tsx",
-        "apps/server/src/client/live-data.ts",
-        "apps/server/src/client/Sidebar.tsx",
+        "packages/ui/src/screens/Search.tsx",
+        "packages/ui/src/screens/Sidebar.tsx",
+        "packages/ui/src/api/live-data.ts",
+        "packages/ui/src/app/navigation.ts",
         "apps/macos/Sources/Dahlia/Database/TextContentMigration.swift",
         "apps/macos/Sources/Dahlia/Database/EmbeddingGemmaDescriptor.swift",
         "apps/macos/Sources/Dahlia/Database/MeetingRepository+SidebarSearch.swift",
@@ -539,7 +548,7 @@
       "previous": "/api/v1/events",
       "reason": "SSE invalidation and account_settings events; recover through canonical reads",
       "consumers": [
-        "apps/server/src/client/live-data.ts",
+        "packages/ui/src/api/live-data.ts",
         "apps/macos/Sources/Dahlia/Services/SyncWorker.swift"
       ]
     },
@@ -584,8 +593,8 @@
       "previous": "/api/v1/files/{fileId}/metadata",
       "reason": "File JSON metadata; staged files are owner-only",
       "consumers": [
-        "apps/server/src/client/App.tsx",
-        "apps/server/src/client/FileViewer.tsx",
+        "packages/ui/src/App.tsx",
+        "packages/ui/src/screens/FileViewer.tsx",
         "apps/macos/Sources/Dahlia/Services/MeetingContentProvider.swift",
         "apps/macos/Sources/Dahlia/Services/SyncWorker.swift"
       ]
@@ -620,7 +629,7 @@
       "previous": "/api/v1/workspaces/{workspaceId}/meetings/{meetingId}/files",
       "reason": "Meeting file links by ID; 200 per page",
       "consumers": [
-        "apps/server/src/client/App.tsx",
+        "packages/ui/src/screens/Meeting.tsx",
         "apps/server/src/mcp.ts (shared service; native MCP protocol)"
       ]
     },
@@ -632,9 +641,9 @@
       "previous": "/api/v1/files/{fileId}",
       "reason": "Stream original file",
       "consumers": [
-        "apps/server/src/client/App.tsx",
-        "apps/server/src/client/Search.tsx",
-        "apps/server/src/client/FileViewer.tsx",
+        "packages/ui/src/screens/FileViewer.tsx",
+        "packages/ui/src/screens/Meeting.tsx",
+        "packages/ui/src/screens/Search.tsx",
         "apps/macos/Sources/Dahlia/Services/ScreenshotContentProvider.swift"
       ]
     },
@@ -657,7 +666,7 @@
       "previous": "/api/v1/files/{fileId}/variants/{variant}",
       "reason": "Stream image variant",
       "consumers": [
-        "apps/server/src/client/Search.tsx",
+        "packages/ui/src/screens/Search.tsx",
         "apps/macos/Sources/Dahlia/Services/ScreenshotContentProvider.swift"
       ]
     },
@@ -691,7 +700,7 @@
       "previous": "/api/v1/meetings/{meetingId}/recordings",
       "reason": "Committed recordings by meeting-local number; 200 per page",
       "consumers": [
-        "apps/server/src/client/SummaryGeneration.tsx",
+        "packages/ui/src/screens/SummaryGeneration.tsx",
         "apps/macos/Sources/Dahlia/Services/ServerSummaryService.swift"
       ]
     },
@@ -725,7 +734,7 @@
       "previous": "/api/v1/workspaces/{workspaceId}/transfer-audience",
       "reason": "Preview readers gaining or losing access; owner only",
       "consumers": [
-        "apps/server/src/client/App.tsx"
+        "packages/ui/src/screens/Workspaces.tsx"
       ]
     },
     {
@@ -736,7 +745,7 @@
       "previous": "/api/v1/workspaces/{workspaceId}/transfer",
       "reason": "Move all content after revision and audience checks; owner only",
       "consumers": [
-        "apps/server/src/client/App.tsx"
+        "packages/ui/src/screens/Workspaces.tsx"
       ]
     },
     {
@@ -759,7 +768,7 @@
       "previous": "/api/v1/workspaces/{workspaceId}/permissions",
       "reason": "Read Workspace sharing permissions",
       "consumers": [
-        "apps/server/src/client/App.tsx"
+        "packages/ui/src/screens/WorkspaceSharing.tsx"
       ]
     },
     {
@@ -770,7 +779,7 @@
       "previous": "/api/v1/workspaces/{workspaceId}/permissions/organizations/{organizationId}",
       "reason": "Grant read-only organization access; owner only",
       "consumers": [
-        "apps/server/src/client/App.tsx"
+        "packages/ui/src/screens/WorkspaceSharing.tsx"
       ]
     },
     {
@@ -781,7 +790,7 @@
       "previous": "/api/v1/workspaces/{workspaceId}/permissions/organizations/{organizationId}",
       "reason": "Revoke organization access; owner only",
       "consumers": [
-        "apps/server/src/client/App.tsx"
+        "packages/ui/src/screens/WorkspaceSharing.tsx"
       ]
     },
     {
@@ -792,7 +801,7 @@
       "previous": "/api/v1/workspaces/{workspaceId}/permissions/teams/{teamId}",
       "reason": "Grant read-only team access; owner only",
       "consumers": [
-        "apps/server/src/client/App.tsx"
+        "packages/ui/src/screens/WorkspaceSharing.tsx"
       ]
     },
     {
@@ -803,7 +812,7 @@
       "previous": "/api/v1/workspaces/{workspaceId}/permissions/teams/{teamId}",
       "reason": "Revoke team access; owner only",
       "consumers": [
-        "apps/server/src/client/App.tsx"
+        "packages/ui/src/screens/WorkspaceSharing.tsx"
       ]
     },
     {
@@ -814,8 +823,8 @@
       "previous": "/api/v1/organizations",
       "reason": "Current organization memberships",
       "consumers": [
-        "apps/server/src/client/App.tsx",
-        "apps/server/src/client/Sidebar.tsx",
+        "packages/ui/src/screens/Admin.tsx",
+        "packages/ui/src/screens/Sidebar.tsx",
         "apps/macos/Sources/Dahlia/Services/CloudWorkspaceDiscovery.swift"
       ]
     },
@@ -827,7 +836,7 @@
       "previous": "none",
       "reason": "Open Team Organization directory details for server administrators regardless of membership; Personal Organization IDs return 404.",
       "consumers": [
-        "apps/server/src/client/App.tsx"
+        "packages/ui/src/screens/Admin.tsx"
       ]
     },
     {
@@ -838,7 +847,7 @@
       "previous": "new public contract",
       "reason": "Owner-managed read-only sharing with searchable organization-scoped targets",
       "consumers": [
-        "apps/server/src/client/App.tsx"
+        "packages/ui/src/screens/WorkspaceSharing.tsx"
       ]
     },
     {
@@ -849,7 +858,7 @@
       "previous": "new public contract",
       "reason": "Owner-managed read-only sharing with searchable organization-scoped targets",
       "consumers": [
-        "apps/server/src/client/App.tsx"
+        "packages/ui/src/screens/WorkspaceSharing.tsx"
       ]
     },
     {
@@ -860,7 +869,7 @@
       "previous": "new public contract",
       "reason": "Owner-managed read-only sharing with searchable organization-scoped targets",
       "consumers": [
-        "apps/server/src/client/App.tsx"
+        "packages/ui/src/screens/WorkspaceSharing.tsx"
       ]
     },
     {
@@ -871,7 +880,7 @@
       "previous": "new public contract",
       "reason": "Organization governance metadata",
       "consumers": [
-        "apps/server/src/client/App.tsx"
+        "packages/ui/src/screens/Organizations.tsx"
       ]
     },
     {
@@ -882,7 +891,7 @@
       "previous": "new public contract",
       "reason": "Confirmation for Workspace deletion",
       "consumers": [
-        "apps/server/src/client/App.tsx"
+        "packages/ui/src/screens/Organizations.tsx"
       ]
     },
     {
@@ -893,7 +902,7 @@
       "previous": "new public contract",
       "reason": "Confirmed Workspace deletion",
       "consumers": [
-        "apps/server/src/client/App.tsx"
+        "packages/ui/src/screens/Organizations.tsx"
       ]
     },
     {
@@ -904,7 +913,7 @@
       "previous": "new public contract",
       "reason": "Server administrators create a Team Organization with an explicit initial owner through the shared OrganizationStore.",
       "consumers": [
-        "apps/server/src/client/App.tsx"
+        "packages/ui/src/screens/Admin.tsx"
       ]
     },
     {
@@ -1067,7 +1076,7 @@
       "previous": "new public contract",
       "reason": "Read owner-only Working Memory",
       "consumers": [
-        "apps/server/src/client/ChatMemory.tsx"
+        "packages/ui/src/screens/ChatMemory.tsx"
       ]
     },
     {
@@ -1078,7 +1087,7 @@
       "previous": "new public contract",
       "reason": "Edit one owner-only Working Memory section",
       "consumers": [
-        "apps/server/src/client/ChatMemory.tsx"
+        "packages/ui/src/screens/ChatMemory.tsx"
       ]
     },
     {
@@ -1089,7 +1098,7 @@
       "previous": "new public contract",
       "reason": "Read authorized meeting freshness",
       "consumers": [
-        "apps/server/src/client/ChatMemory.tsx"
+        "packages/ui/src/screens/ChatMemory.tsx"
       ]
     },
     {
@@ -1100,7 +1109,7 @@
       "previous": "new public contract",
       "reason": "Select a same-Workspace meeting for live context",
       "consumers": [
-        "apps/server/src/client/ChatMemory.tsx"
+        "packages/ui/src/screens/ChatMemory.tsx"
       ]
     },
     {
@@ -1320,7 +1329,7 @@
       "previous": "new public contract",
       "reason": "Standard generated pages with complete current canonical provenance validation; regeneration is admin-only",
       "consumers": [
-        "apps/server/src/client/KnowledgePages.tsx"
+        "packages/ui/src/screens/KnowledgePages.tsx"
       ]
     },
     {
@@ -1331,7 +1340,7 @@
       "previous": "new public contract",
       "reason": "Standard generated pages with complete current canonical provenance validation; regeneration is admin-only",
       "consumers": [
-        "apps/server/src/client/KnowledgePages.tsx"
+        "packages/ui/src/screens/KnowledgePages.tsx"
       ]
     },
     {
@@ -1342,7 +1351,7 @@
       "previous": "new public contract",
       "reason": "Standard generated pages with complete current canonical provenance validation; regeneration is admin-only",
       "consumers": [
-        "apps/server/src/client/KnowledgePages.tsx"
+        "packages/ui/src/screens/KnowledgePages.tsx"
       ]
     },
     {
@@ -1353,7 +1362,7 @@
       "previous": "new public contract",
       "reason": "Standard generated pages with complete current canonical provenance validation; regeneration is admin-only",
       "consumers": [
-        "apps/server/src/client/KnowledgePages.tsx"
+        "packages/ui/src/screens/KnowledgePages.tsx"
       ]
     },
     {
@@ -1364,7 +1373,7 @@
       "previous": "new public contract",
       "reason": "Read the canonical document without creating it",
       "consumers": [
-        "apps/server/src/client/Documents.tsx",
+        "packages/ui/src/screens/Documents.tsx",
         "apps/macos/Sources/Dahlia/Services/DocumentSyncService.swift"
       ]
     },
@@ -1376,7 +1385,7 @@
       "previous": "new public contract",
       "reason": "List document revisions independently of domain sync",
       "consumers": [
-        "apps/server/src/client/Documents.tsx",
+        "packages/ui/src/screens/Documents.tsx",
         "apps/macos/Sources/Dahlia/Services/DocumentSyncService.swift"
       ]
     },
@@ -1388,7 +1397,7 @@
       "previous": "new public contract",
       "reason": "Initialize on first edit; explicit legacy import only into an unedited document",
       "consumers": [
-        "apps/server/src/client/Documents.tsx",
+        "packages/ui/src/screens/Documents.tsx",
         "apps/macos/Sources/Dahlia/Services/DocumentSyncService.swift"
       ]
     },
@@ -1400,7 +1409,7 @@
       "previous": "new public contract",
       "reason": "Merge Yjs updates despite pending local edits; replay is idempotent",
       "consumers": [
-        "apps/server/src/client/Documents.tsx",
+        "packages/ui/src/screens/Documents.tsx",
         "apps/macos/Sources/Dahlia/Services/DocumentSyncService.swift"
       ]
     },
@@ -1412,7 +1421,7 @@
       "previous": "new public contract",
       "reason": "Read preserved deleted blocks",
       "consumers": [
-        "apps/server/src/client/Documents.tsx",
+        "packages/ui/src/screens/Documents.tsx",
         "apps/macos/Sources/Dahlia/Services/DocumentSyncService.swift"
       ]
     },
@@ -1424,7 +1433,7 @@
       "previous": "new public contract",
       "reason": "Preserve shared content lost to concurrent deletion",
       "consumers": [
-        "apps/server/src/client/Documents.tsx",
+        "packages/ui/src/screens/Documents.tsx",
         "apps/macos/Sources/Dahlia/Services/DocumentSyncService.swift"
       ]
     },
@@ -1436,7 +1445,7 @@
       "previous": "new public contract",
       "reason": "List current editors",
       "consumers": [
-        "apps/server/src/client/Documents.tsx",
+        "packages/ui/src/screens/Documents.tsx",
         "apps/macos/Sources/Dahlia/Services/DocumentSyncService.swift"
       ]
     },
@@ -1448,7 +1457,7 @@
       "previous": "new public contract",
       "reason": "Renew an editing session for fifteen seconds",
       "consumers": [
-        "apps/server/src/client/Documents.tsx",
+        "packages/ui/src/screens/Documents.tsx",
         "apps/macos/Sources/Dahlia/Services/DocumentSyncService.swift"
       ]
     },
@@ -1460,7 +1469,7 @@
       "previous": "new public contract",
       "reason": "Document revision notifications; canonical HTTP catch-up",
       "consumers": [
-        "apps/server/src/client/Documents.tsx"
+        "packages/ui/src/screens/Documents.tsx"
       ]
     },
     {
@@ -1471,7 +1480,7 @@
       "previous": "new public contract",
       "reason": "Resolve the unique meeting Notes without creating it",
       "consumers": [
-        "apps/server/src/client/Documents.tsx",
+        "packages/ui/src/screens/Documents.tsx",
         "apps/macos/Sources/Dahlia/Services/DocumentSyncService.swift"
       ]
     },
@@ -1483,7 +1492,7 @@
       "previous": "new public contract",
       "reason": "Converge concurrent Notes initialization onto an independent canonical document ID",
       "consumers": [
-        "apps/server/src/client/Documents.tsx",
+        "packages/ui/src/screens/Documents.tsx",
         "apps/macos/Sources/Dahlia/Services/DocumentSyncService.swift"
       ]
     }

@@ -17,8 +17,8 @@ import { createImageAnalysisStore } from "../src/image-analysis/store";
 import type { SummaryMethod } from "../src/summary/model";
 import { SummaryService } from "../src/summary/service";
 import { createSummaryJobStore } from "../src/summary/store";
-import { summaryStyleDetail } from "../src/workspace-generation-settings";
-import { uuidV7 } from "../src/id";
+import { summaryStyleDetail } from "@dahlia-ai/ui/model/workspace-generation-settings";
+import { uuidV7 } from "@dahlia-ai/ui/model/id";
 import type { IdentitySyncStore, SyncTransaction, SyncTransactionOperation } from "../src/sync/types";
 
 const databaseUrl = process.env.TEST_DATABASE_URL;

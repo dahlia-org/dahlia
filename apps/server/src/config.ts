@@ -3,7 +3,7 @@ import { validateAuthSecret } from "./auth/secret";
 import { z } from "zod";
 import { encryptionConfig, type EncryptionConfig } from "./encryption/crypto";
 
-import { UPSTREAM_MODEL_MAX_LENGTH } from "./ai-gateway/model-alias";
+import { UPSTREAM_MODEL_MAX_LENGTH } from "@dahlia-ai/ui/model/model-alias";
 
 export type AuthProvider = "accounts" | "header";
 export type DatabaseType = "sqlite" | "postgres" | "lakebase" | "hyperdrive";

@@ -3,7 +3,7 @@ import { collectAudio } from "./audio";
 import type { IdentitySyncStore } from "../sync/types";
 import { canWriteWorkspace } from "../auth/workspace-permissions";
 import { z } from "zod";
-import { generationPreferencesSchema, normalizeSummaryDetail, outputLanguageSchema, summaryModelSettingsSchema } from "../workspace-generation-settings";
+import { generationPreferencesSchema, normalizeSummaryDetail, outputLanguageSchema, summaryModelSettingsSchema } from "@dahlia-ai/ui/model/workspace-generation-settings";
 
 import type { Identity } from "../auth/identity";
 import { RequestError } from "../storage/upload";

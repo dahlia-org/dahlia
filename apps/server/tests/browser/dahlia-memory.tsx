@@ -1,8 +1,8 @@
 // pnpm dev:client -> /tests/browser/dahlia-memory.html. No real user data.
 import { createRoot } from "react-dom/client";
-import { WorkspaceMemory } from "../../src/client/WorkspaceMemory";
-import { DahliaMemoryPage } from "../../src/client/DahliaMemory";
-import "../../src/client/styles.css";
+import { WorkspaceMemory } from "@dahlia-ai/ui/screens/WorkspaceMemory";
+import { DahliaMemoryPage } from "@dahlia-ai/ui/screens/DahliaMemory";
+import "@dahlia-ai/ui/styles.css";
 Object.defineProperty(navigator, "language", { value: "en-US", configurable: true });
 type Note = { id: string; content: string; revision: number; protected: boolean; updatedAt: string };
 const rows: Record<string, Note[]> = { personal: [{ id: "test", content: "Private lesson", revision: 1, protected: true, updatedAt: new Date().toISOString() }], team: [], other: [] };

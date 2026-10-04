@@ -1,9 +1,9 @@
 // Run pnpm dev:client and open /tests/browser/ai-chat.html. No backend is contacted.
 import { createRoot } from "react-dom/client";
 
-import { AiChat } from "../../src/client/AiChat";
-import { AppShell } from "../../src/client/layout/AppShell";
-import "../../src/client/styles.css";
+import { AiChat } from "@dahlia-ai/ui/screens/AiChat";
+import { AppShell } from "@dahlia-ai/ui/layout/AppShell";
+import "@dahlia-ai/ui/styles.css";
 import policy from "../../resources/codex/source.json";
 
 Object.defineProperty(navigator, "language", { value: "en-US", configurable: true });

@@ -4,7 +4,7 @@ import { ChatMemoryService } from "../src/agent/context-service";
 import type { ChatMemoryStore } from "../src/agent/context-store";
 import type { MeetingSyncService } from "../src/sync/service";
 import { RequestError } from "../src/storage/upload";
-import { uuidV7 } from "../src/id";
+import { uuidV7 } from "@dahlia-ai/ui/model/id";
 import { transcriptCheckpoint } from "../src/sync/transcript-checkpoint";
 
 const userId = uuidV7(), workspaceId = uuidV7(), meetingId = uuidV7(), threadId = uuidV7(), segmentId = uuidV7();

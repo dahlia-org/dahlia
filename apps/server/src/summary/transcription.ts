@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { uuidV7 } from "../id";
+import { uuidV7 } from "@dahlia-ai/ui/model/id";
 import type { RecordingManifest, RecordingSource } from "../recordings/model";
 import type { SyncTranscriptSegment } from "../sync/types";
 import type { TranscriptMetadata } from "../sync/transcript";

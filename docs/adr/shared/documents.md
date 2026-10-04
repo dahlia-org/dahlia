@@ -42,7 +42,7 @@ Desktop v0.22.0 は v45、v0.23.0〜v0.24.1 は v46 まで配布済み。v1〜v4
 
 2026-09-30: ユーザー承認により未リリースの `v47_documents`〜`v51_scopedSyncReconciliation` を `v52_documentsAndSync` へ統合する。公開済み v0.24.2 の `v47_orphanedRecordingRecoveryState` と、それ以前の登録名・順序・処理・helper は維持する。新規DBと配布済みDBには最終 Documents schema を直接作成し、一時テーブルへのコピーを省く。GRDB の `merging` で旧開発版の適用状態を認識し、未適用処理だけを実行する。会議ID拘束が残る開発版だけは既存のデータ保持変換を行う。統合時にGRDBが置換するのは未リリース分の識別子だけで、配布済み履歴は変更しない。番号52は旧開発版バックアップのschema versionを下回らないために用いる。実DBへ手作業でledgerを書き換えたり、消去・再作成したりしない。旧開発版バックアップの検証専用に当時のschema生成処理を保持し、移行前の完全な構造・trigger検査を省略しない。通常のDB起動は統合migrationだけを使う。
 
-Server / Web / Desktop を `sync.version = 7` へ一括更新し、`documents: { version: 1 }` を追加する。Node / Workers 共通で Documents を提供し、要約の runtime 対応範囲は維持する。TypeScript は当面 `apps/server` が所有し、既存 Vite / tsup で Desktop 同梱資材を生成する。root workspace は追加しない。
+Server / Web / Desktop を `sync.version = 7` へ一括更新し、`documents: { version: 1 }` を追加する。Node / Workers 共通で Documents を提供し、要約の runtime 対応範囲は維持する。TypeScript は当面 `apps/server` が所有し、既存 Vite / tsup で Desktop 同梱資材を生成する。root workspace は追加しない。2026-10-03 に Web と Electron の UI 共有のため、コア・エディタと資材生成は [`packages/ui`](../monorepo/dependencies.md) へ移り、root workspace を再導入した。生成物と依存の版は変えていない。
 
 依存追加は `yjs`、`@tiptap/core`、`@tiptap/react`、`@tiptap/pm`、`@tiptap/starter-kit`、`@tiptap/extension-collaboration`、`@tiptap/extension-unique-id`、`@tiptap/y-tiptap`。バージョンを固定し、同梱ライセンスと生成物の再現性を検査する。
 
@@ -90,7 +90,7 @@ Workers/HyperdriveはLISTEN/NOTIFYを使わず共有DBを確認する（[公式�
 
 Desktop の Documents は専用 URLSession の接続プールを持ち、domain SSE や大量添付転送による接続枠待ちを分離する。初回の checkpoint 取得で未送信編集がない場合は、その確定状態を直ちに表示し、冗長な差分交換を待たない。未送信編集がある場合は従来どおり交換と ACK を行う。復元履歴の取得は初回のエディタ表示を待たせない。会議の要約と文字起こしは既存の本文取得2枠で並行取得する。
 
-段落の空行・余白、見出し、箇条書きのスタイルを `apps/server/src/documents/editor.css` に共通化し、Web と Desktop 同梱資材の双方から使用する。改行を同期用本文へ再変換せず、Yjs のブロック構造を保持する。
+段落の空行・余白、見出し、箇条書きのスタイルを `packages/ui/src/documents/editor.css`（当時は `apps/server/src/documents`）に共通化し、Web と Desktop 同梱資材の双方から使用する。改行を同期用本文へ再変換せず、Yjs のブロック構造を保持する。
 
 ### 段落内改行・貼り付け・ブロック移動（2026-10-01）
 

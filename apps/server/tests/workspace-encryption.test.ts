@@ -9,7 +9,7 @@ import { createNodeApplicationStore } from "../src/auth/node-store";
 import type { AppConfig } from "../src/config";
 import type { Identity } from "../src/auth/identity";
 import type { SyncTransaction } from "../src/sync/types";
-import { uuidV7 } from "../src/id";
+import { uuidV7 } from "@dahlia-ai/ui/model/id";
 import { seedHeaderIdentity, testUserID } from "./public-test-client";
 import type { SummaryJob } from "../src/summary/model";
 import { MeetingSyncService } from "../src/sync/service";

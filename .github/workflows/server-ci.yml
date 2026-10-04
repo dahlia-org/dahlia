@@ -5,6 +5,11 @@ on:
     paths:
       - ".github/workflows/server-ci.yml"
       - "apps/server/**"
+      - "packages/ui/**"
+      - "package.json"
+      - "pnpm-lock.yaml"
+      - "pnpm-workspace.yaml"
+      - "turbo.json"
       - "docs/architecture/server-api-audit.md"
       - "deploy/**"
   push:
@@ -13,6 +18,11 @@ on:
     paths:
       - ".github/workflows/server-ci.yml"
       - "apps/server/**"
+      - "packages/ui/**"
+      - "package.json"
+      - "pnpm-lock.yaml"
+      - "pnpm-workspace.yaml"
+      - "turbo.json"
       - "docs/architecture/server-api-audit.md"
       - "deploy/**"
 
@@ -39,7 +49,7 @@ jobs:
       - name: Set up pnpm
         uses: pnpm/action-setup@v4
         with:
-          package_json_file: apps/server/package.json
+          package_json_file: package.json
           run_install: false
 
       - name: Set up Node.js
@@ -47,10 +57,16 @@ jobs:
         with:
           node-version: 24
           cache: pnpm
-          cache-dependency-path: apps/server/pnpm-lock.yaml
+          cache-dependency-path: pnpm-lock.yaml
 
       - name: Install dependencies
-        run: pnpm install --frozen-lockfile
+        # Server and its bundled UI package only; Electron is validated separately.
+        run: pnpm install --frozen-lockfile --filter @dahlia-ai/server...
+
+      - name: Validate shared UI
+        run: pnpm --filter @dahlia-ai/ui check
+        env:
+          VITEST_MAX_WORKERS: 4
 
       - name: Validate Server application
         run: pnpm check
@@ -87,7 +103,7 @@ jobs:
       - name: Set up pnpm
         uses: pnpm/action-setup@v4
         with:
-          package_json_file: apps/server/package.json
+          package_json_file: package.json
           run_install: false
 
       - name: Set up Node.js
@@ -95,10 +111,11 @@ jobs:
         with:
           node-version: 24
           cache: pnpm
-          cache-dependency-path: apps/server/pnpm-lock.yaml
+          cache-dependency-path: pnpm-lock.yaml
 
       - name: Install dependencies
-        run: pnpm install --frozen-lockfile
+        # Server and its bundled UI package only; Electron is validated separately.
+        run: pnpm install --frozen-lockfile --filter @dahlia-ai/server...
 
       - name: Bootstrap non-privileged PostgreSQL application role
         run: |

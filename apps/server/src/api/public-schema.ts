@@ -1,7 +1,7 @@
 import type { OpenAPIHono } from "@hono/zod-openapi";
 import contract from "../public-id-contract.json";
 import { entityKinds, publicRoute, recordShapes } from "../public-wire";
-import { idPrefixes, type IDKind } from "../typeid";
+import { idPrefixes, type IDKind } from "@dahlia-ai/ui/model/typeid";
 
 type Schema = Record<string, unknown>;
 const object = (value: unknown): value is Schema => typeof value === "object" && value !== null && !Array.isArray(value);

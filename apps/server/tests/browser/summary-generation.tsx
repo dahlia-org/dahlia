@@ -1,8 +1,8 @@
 // Run pnpm dev:client and open /tests/browser/summary-generation.html. No backend is contacted.
 import { createRoot } from "react-dom/client";
-import "../../src/client/styles.css";
-import { ServerSummaryGeneration } from "../../src/client/SummaryGeneration";
-import { DEFAULT_WORKSPACE_GENERATION_SETTINGS, type WorkspaceGenerationSettings } from "../../src/workspace-generation-settings";
+import "@dahlia-ai/ui/styles.css";
+import { ServerSummaryGeneration } from "@dahlia-ai/ui/screens/SummaryGeneration";
+import { DEFAULT_WORKSPACE_GENERATION_SETTINGS, type WorkspaceGenerationSettings } from "@dahlia-ai/ui/model/workspace-generation-settings";
 import { cloudflareModels } from "../../src/ai-gateway/cloudflare";
 import type { SummaryRequest } from "../../src/summary/service";
 import { resolveSummaryPreferences } from "../../src/summary/preferences";

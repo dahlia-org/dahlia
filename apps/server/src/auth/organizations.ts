@@ -7,15 +7,15 @@ import * as postgres from "../db/auth-schema";
 import * as sqlite from "../db/sqlite-schema";
 import * as postgresAuth from "../db/generated/postgres-auth-schema";
 import * as sqliteAuth from "../db/generated/sqlite-auth-schema";
-import { uuidV7 } from "../id";
+import { uuidV7 } from "@dahlia-ai/ui/model/id";
 import { HEADER_IDENTITY_ISSUER } from "./ids";
 import { APIError } from "better-auth/api";
 import type { Identity } from "./identity";
 import { organizationDomainsSchema, isSharedEmailDomain, type OrganizationDomains } from "./organization-domains";
-import { createOrganizationSchema } from "./organization-slug";
+import { createOrganizationSchema } from "@dahlia-ai/ui/model/organization-slug";
 import { headerEmail } from "./header";
 import { authorizationConflict, lockAuthorization, readAuthorization, validateAuthorization } from "./authorization";
-import { DEFAULT_WORKSPACE_GENERATION_SETTINGS } from "../workspace-generation-settings";
+import { DEFAULT_WORKSPACE_GENERATION_SETTINGS } from "@dahlia-ai/ui/model/workspace-generation-settings";
 
 export type JoinRequest = typeof postgres.organizationJoinRequest.$inferSelect & { organizationName: string; userName: string; userEmail: string };
 

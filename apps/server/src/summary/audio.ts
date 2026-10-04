@@ -12,9 +12,9 @@ import type { MeetingSyncService } from "../sync/service";
 import { cloudTranscriptionSchema, combinedSummaryResponseSchema, generatedTranscript, transcriptionInstructions, type GeneratedTranscript } from "./transcription";
 import type { RecordingManifest, RecordingSource, RecordingRecord } from "../recordings/model";
 import { SummaryError, summaryDocument, summaryResponseSchema, type SummaryMethod, type SummaryJob, type SummaryInput, type SummaryGenerationResult } from "./model";
-import { summaryResponseMetadataSchema } from "./metadata";
+import { summaryResponseMetadataSchema } from "@dahlia-ai/ui/model/summary-metadata";
 import { resolveSummaryPreferences } from "./preferences";
-import { isAudioSummaryModel, isSummaryModel } from "./audio-model";
+import { isAudioSummaryModel, isSummaryModel } from "@dahlia-ai/ui/model/summary-models";
 import { assertSummaryAccess, boundedBytes, collectSummaryInput, fingerprint, summaryImageContent, summaryInstructions, summaryXMLText } from "./transcript";
 import { createScreenshotSelector } from "./screenshot-selection";
 

@@ -2,7 +2,7 @@ import { createDahliaMemoryTools, type DahliaMemoryTool } from "./memory/dahlia-
 import type { DahliaMemory } from "./memory/dahlia";
 import type { ChatMemoryStore } from "./agent/context-store";
 import type { MemoryTools } from "./memory/tools";
-import { decodeId, encodeId } from "./typeid";
+import { decodeId, encodeId } from "@dahlia-ai/ui/model/typeid";
 import { wireValue, wireURL, wireCursor } from "./public-wire";
 import {
   createMcpHandler,

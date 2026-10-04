@@ -5,7 +5,7 @@ import { DatabricksBackend } from "./databricks";
 import { OpenAIBackend } from "./openai";
 import { CloudflareBackend } from "./cloudflare";
 import { GatewayRequestError } from "./errors";
-import { CODEX_AUTO_REVIEW_ALIAS } from "./model-alias";
+import { CODEX_AUTO_REVIEW_ALIAS } from "@dahlia-ai/ui/model/model-alias";
 import { modelList } from "./models";
 import { DatabricksTokenProvider } from "../databricks/token";
 

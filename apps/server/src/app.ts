@@ -1,5 +1,5 @@
 import { SyncEvents, documentEventKey, notesEventKey } from "./sync/events";
-import { decodeId, encodeId as documentUserID } from "./typeid";
+import { decodeId, encodeId as documentUserID } from "@dahlia-ai/ui/model/typeid";
 import * as DocumentContracts from "./documents/model";
 import { pageGetSchema, pageListSchema } from "./memory/pages-model";
 import { DahliaMemory, memoryConfigureSchema, memoryListSchema, memoryGetSchema, memorySaveSchema, personalMemorySearchSchema, workspaceMemorySearchSchema } from "./memory/dahlia";
@@ -29,7 +29,7 @@ import {
   type AuthInfo,
 } from "@modelcontextprotocol/server";
 import { z } from "zod";
-import { searchSettingsSchema } from "./search/settings-model";
+import { searchSettingsSchema } from "@dahlia-ai/ui/model/search-settings";
 import { ConversationAnalyticsService } from "./conversation-analytics";
 import { AI_CHAT_MAX_REQUEST_BYTES, aiChatSchema, createAiService, type AiService } from "./agent/service";
 import { createMeetingTools } from "./agent/tools";

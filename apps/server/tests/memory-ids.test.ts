@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import vectors from "../../../test-fixtures/typeid.json";
 import { loadConfig } from "../src/config";
-import { encodeId } from "../src/typeid";
+import { encodeId } from "@dahlia-ai/ui/model/typeid";
 import { memoryBankId, memoryDocumentId, memoryDocumentSource } from "../src/memory/ids";
 import { HindsightClient } from "../src/memory/hindsight";
 import { contentHash, noteDocument } from "../src/memory/sources";

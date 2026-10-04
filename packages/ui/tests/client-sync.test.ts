@@ -1,0 +1,96 @@
+import { liveDataEvent } from "../src/api/live-data";
+import { afterEach, expect, it, vi } from "vitest";
+import { commitSyncTransaction } from "../src";
+import { syncMessage } from "../src/api/api";
+
+afterEach(() => vi.unstubAllGlobals());
+
+it("resolves a lost response as a compact receipt without another mutation", async () => {
+  const browser = new EventTarget();
+  const changed = vi.fn();
+  browser.addEventListener(liveDataEvent, changed);
+  vi.stubGlobal("window", browser);
+  const bodies: string[] = [];
+  const fetch = vi.fn(async (request: Request) => {
+    const init = { body: await request.text() };
+    const body = String(init.body);
+    bodies.push(body);
+    if (bodies.length === 1) throw new TypeError("connection lost");
+    const transaction = JSON.parse(body) as { id: string };
+    return Response.json({ id: transaction.id, status: "committed", receipt: "compact", records: [] });
+  });
+  vi.stubGlobal("fetch", fetch);
+  const progress = vi.fn();
+  expect(await commitSyncTransaction(crypto.randomUUID(), [], progress)).toMatchObject({ receipt: "compact" });
+  expect(fetch).toHaveBeenCalledTimes(2);
+  expect(new URL(fetch.mock.calls[1]![0].url).pathname).toBe("/api/v1/transactions/resolve");
+  expect(bodies[0]).toBe(bodies[1]);
+  expect(progress.mock.calls).toEqual([[true], [false]]);
+  expect(changed).toHaveBeenCalledTimes(1);
+});
+
+it("retains the transaction ID when resolution reports an uncommitted request", async () => {
+  const browser = new EventTarget();
+  const changed = vi.fn();
+  browser.addEventListener(liveDataEvent, changed);
+  vi.stubGlobal("window", browser);
+  const bodies: string[] = [];
+  vi.stubGlobal("fetch", vi.fn(async (request: Request) => {
+    const init = { body: await request.text() };
+    expect(changed).not.toHaveBeenCalled();
+    bodies.push(String(init.body));
+    if (bodies.length === 1) return Response.json({ code: "unavailable" }, { status: 503 });
+    const { id } = JSON.parse(String(init.body)) as { id: string };
+    return Response.json({ id, status: bodies.length === 2 ? "unknown" : "committed" });
+  }));
+  await commitSyncTransaction(crypto.randomUUID(), []);
+  expect(bodies).toHaveLength(3);
+  expect(new Set(bodies).size).toBe(1);
+  expect(changed).toHaveBeenCalledTimes(1);
+});
+
+it("notifies only after a validated committed receipt on every commit path", async () => {
+  const browser = new EventTarget();
+  const changed = vi.fn();
+  browser.addEventListener(liveDataEvent, changed);
+  vi.stubGlobal("window", browser);
+  for (const recovery of [false, true]) {
+    for (const outcome of ["committed", "wrong-id", "unknown", "invalid-receipt", "failed"]) {
+      changed.mockClear();
+      let calls = 0;
+      vi.stubGlobal("fetch", vi.fn(async (request: Request) => {
+    const init = { body: await request.text() };
+        expect(changed).not.toHaveBeenCalled();
+        if ((recovery && ++calls === 1) || outcome === "failed") {
+          return Response.json({ code: "unavailable" }, { status: 503 });
+        }
+        const { id } = JSON.parse(String(init.body)) as { id: string };
+        return Response.json({
+          id: outcome === "wrong-id" ? "other" : id,
+          status: outcome === "unknown" ? "unknown" : "committed",
+          receipt: outcome === "invalid-receipt" ? "invalid" : "full",
+        });
+      }));
+      const commit = commitSyncTransaction(crypto.randomUUID(), []);
+      if (outcome === "committed") {
+        await expect(commit).resolves.toMatchObject({ status: "committed" });
+        expect(changed).toHaveBeenCalledTimes(1);
+      } else {
+        await expect(commit).rejects.toThrow();
+        expect(changed).not.toHaveBeenCalled();
+      }
+    }
+  }
+});
+
+it("does not retry revision conflicts and provides English and Japanese recovery messages", async () => {
+  const fetch = vi.fn(async () => Response.json({ code: "revision_conflict" }, { status: 409 }));
+  vi.stubGlobal("fetch", fetch);
+  await expect(commitSyncTransaction(crypto.randomUUID(), [])).rejects.toMatchObject({ status: 409 });
+  expect(fetch).toHaveBeenCalledTimes(1);
+  for (const code of ["revision_conflict", "sync_recovering", "sync_upgrade_required"]) {
+    expect(syncMessage(code, "en")).toBeTruthy();
+    expect(syncMessage(code, "ja")).toBeTruthy();
+    expect(syncMessage(code, "en")).not.toBe(syncMessage(code, "ja"));
+  }
+});

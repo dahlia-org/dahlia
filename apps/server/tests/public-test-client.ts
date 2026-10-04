@@ -3,7 +3,7 @@ import { createHash } from "node:crypto";
 import { DatabaseSync } from "node:sqlite";
 import { createApp as createPublicApp } from "../src/app";
 import { publicRoute, wireURL, wireValue } from "../src/public-wire";
-import { uuidV7 } from "../src/id";
+import { uuidV7 } from "@dahlia-ai/ui/model/id";
 import type { Identity } from "../src/auth/identity";
 import type { AuthStore } from "../src/auth/store";
 

@@ -1,8 +1,8 @@
 // Regenerate only the portable, deterministic test data (no user documents).
 import { writeFileSync } from "node:fs";
-import { DocumentCore, removedBlocks } from "../src/documents/core";
-import { blockMap, blockText, writeBlocks } from "../src/documents/blocks";
-import v1 from "../tests/fixtures/documents-v1.json";
+import { DocumentCore, removedBlocks } from "@dahlia-ai/ui/documents/core";
+import { blockMap, blockText, writeBlocks } from "@dahlia-ai/ui/documents/blocks";
+import v1 from "../../../packages/ui/tests/fixtures/documents-v1.json";
 
 const core = new DocumentCore(); core.document.clientID = 101;
 let sequence = 0;

@@ -4,7 +4,7 @@ import type { Identity } from "../auth/identity";
 import type { MemoryGenerator } from "../agent/context-service";
 import type { MeetingSyncService } from "../sync/service";
 import { RequestError } from "../storage/upload";
-import { decodeId, encodeId } from "../typeid";
+import { decodeId, encodeId } from "@dahlia-ai/ui/model/typeid";
 import { publicIdSchema } from "../agent/tools";
 import type { MemoryStore } from "./store";
 import { temporalWindow, type WorkspaceMemoryService } from "./service";

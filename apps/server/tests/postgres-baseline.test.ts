@@ -1,4 +1,4 @@
-import { DEFAULT_WORKSPACE_GENERATION_SETTINGS } from "../src/workspace-generation-settings";
+import { DEFAULT_WORKSPACE_GENERATION_SETTINGS } from "@dahlia-ai/ui/model/workspace-generation-settings";
 import { testUserID } from "./public-test-client";
 import { oauthClientAssertion, session, user } from "../src/db/generated/postgres-auth-schema";
 import { readFileSync } from "node:fs";

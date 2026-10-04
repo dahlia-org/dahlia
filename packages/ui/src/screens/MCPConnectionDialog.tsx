@@ -1,0 +1,164 @@
+import { useEffect, useState } from "react";
+
+import { json, uiText } from "../api/api";
+import { Button } from "../components/ui/button";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "../components/ui/dialog";
+import { Input } from "../components/ui/input";
+import { Tabs, TabsList, TabsTrigger } from "../components/ui/tabs";
+
+export type MCPClient = "mcpJSON" | "claude" | "codex";
+
+type MCPSettings = { url: string; available: boolean } & (
+  { databricksProxy: false; proxyUrl?: never }
+  | { databricksProxy: true; proxyUrl: string }
+);
+
+interface MCPConnectionInfo { mcp: MCPSettings }
+
+export function parseMCPConnectionInfo(value: unknown): MCPConnectionInfo {
+  const mcp = typeof value === "object" && value !== null && "mcp" in value ? value.mcp : undefined;
+  if (typeof mcp === "object" && mcp !== null && "url" in mcp && typeof mcp.url === "string"
+    && "databricksProxy" in mcp && typeof mcp.databricksProxy === "boolean"
+    && "available" in mcp && typeof mcp.available === "boolean") {
+    const proxyUrl = "proxyUrl" in mcp ? mcp.proxyUrl : undefined;
+    try {
+      const protocol = new URL(mcp.url).protocol;
+      if (!["http:", "https:"].includes(protocol)) throw new Error();
+      if (!mcp.databricksProxy) return { mcp: { url: mcp.url, databricksProxy: false, available: mcp.available } };
+      if (typeof proxyUrl === "string" && ["http:", "https:"].includes(new URL(proxyUrl).protocol)) {
+        return { mcp: { url: mcp.url, proxyUrl, databricksProxy: true, available: mcp.available } };
+      }
+    } catch { /* Report the same invalid-response error below. */ }
+  }
+  throw new Error(uiText("The Server returned invalid MCP settings", "Server から無効な MCP 設定が返されました"));
+}
+
+function shellArgument(value: string): string {
+  return `'${value.replaceAll("'", `'\\''`)}'`;
+}
+
+export function mcpConnectionOutput(client: MCPClient, mcp: MCPConnectionInfo["mcp"], profile = "DEFAULT", memoryMode: "off" | "read" | "share" = "off"): string {
+  const url = mcp.databricksProxy ? mcp.proxyUrl : mcp.url;
+  const normalizedProfile = profile.trim() || "DEFAULT";
+  const scopes = `mcp:read mcp:memory:${memoryMode === "share" ? "write" : "read"}`;
+  const http = { type: "http", url, ...(memoryMode !== "off" ? { oauth: { scopes } } : {}) };
+  if (client === "mcpJSON") {
+    return JSON.stringify({
+      mcpServers: {
+        dahlia: mcp.databricksProxy
+          ? { type: "stdio", command: "uvx", args: ["uc-mcp-proxy", "--url", url, "--profile", normalizedProfile] }
+          : http,
+      },
+    }, null, 2);
+  }
+  if (mcp.databricksProxy) {
+    const command = `uvx uc-mcp-proxy --url ${shellArgument(url)} --profile ${shellArgument(normalizedProfile)}`;
+    return client === "claude"
+      ? `claude mcp add --scope user dahlia -- ${command}`
+      : `codex mcp add dahlia -- ${command}`;
+  }
+  if (client === "claude") {
+    return memoryMode === "off"
+      ? `claude mcp add --scope user --transport http dahlia ${shellArgument(url)}`
+      : `claude mcp add-json --scope user dahlia ${shellArgument(JSON.stringify(http))}`;
+  }
+  return `codex mcp add dahlia --url ${shellArgument(url)}${memoryMode !== "off" ? `\ncodex mcp login dahlia --scopes mcp:read,mcp:memory:${memoryMode === "share" ? "write" : "read"}` : ""}`;
+}
+
+const clients: Array<{ id: MCPClient; label: string }> = [
+  { id: "mcpJSON", label: "mcp.json" },
+  { id: "claude", label: "Claude Code" },
+  { id: "codex", label: "Codex" },
+];
+
+export function MCPConnectionDialog({ onClose, memory = false }: { onClose: () => void; memory?: boolean }) {
+  const [connection, setConnection] = useState<MCPConnectionInfo>();
+  const [error, setError] = useState<string>();
+  const [client, setClient] = useState<MCPClient>("mcpJSON");
+  const [profile, setProfile] = useState("DEFAULT");
+  const [memoryMode, setMemoryMode] = useState<"read" | "share">("read");
+  const [copyState, setCopyState] = useState<"idle" | "copied" | "failed">("idle");
+
+  useEffect(() => {
+    const controller = new AbortController();
+    void json<unknown>("/api/auth/mode", { signal: controller.signal })
+      .then((value) => setConnection(parseMCPConnectionInfo(value)))
+      .catch((caught: unknown) => {
+        if (!controller.signal.aborted) setError(caught instanceof Error ? caught.message : uiText("Could not load MCP settings", "MCP 設定を読み込めませんでした"));
+      });
+    return () => controller.abort();
+  }, []);
+
+  const mcpUnavailable = connection?.mcp.available === false;
+  const canConfigure = !error && !mcpUnavailable;
+  const output = connection ? mcpConnectionOutput(client, connection.mcp, profile, memory ? memoryMode : "off") : "";
+  async function copy() {
+    try {
+      await navigator.clipboard.writeText(output);
+      setCopyState("copied");
+      window.setTimeout(() => setCopyState("idle"), 2000);
+    } catch {
+      setCopyState("failed");
+    }
+  }
+
+  return <Dialog open onOpenChange={(value) => { if (!value) onClose(); }}>
+    <DialogContent className="max-w-2xl">
+    <DialogHeader>
+      <DialogTitle>{uiText("Connect with MCP", "MCP による接続")}</DialogTitle>
+      <DialogDescription>{uiText(
+        "Connect an MCP client to search and read meetings in the Workspaces you can access.",
+        "アクセスできるワークスペースのミーティングを検索・参照できるよう、MCP クライアントを接続します。",
+      )}</DialogDescription>
+    </DialogHeader>
+    <div className="grid gap-4">
+      {memory && <div className="grid gap-2 text-sm" role="group" aria-label={uiText("Memory mode", "記憶モード")}>
+        <label><input type="radio" name="memory-mode" checked={memoryMode === "read"} onChange={() => setMemoryMode("read")} />{uiText("Reference only", "参照のみ")}</label>
+        <label><input type="radio" name="memory-mode" checked={memoryMode === "share"} onChange={() => setMemoryMode("share")} />{uiText("Share memory", "記憶を共有")}</label>
+        <p role="note">{uiText("Claude Code and Codex settings request the selected OAuth permission. Reauthenticate after changing modes. JSON uses Claude Code’s oauth.scopes; other clients must support it. Databricks proxy permissions are set by the operator; here the mode only changes the suggested instruction. Hooks are optional.", "Claude Code・Codex の設定には選択した OAuth 権限を反映します。変更後は再認証してください。JSON は Claude Code の oauth.scopes 対応クライアント用です。Databricks proxy の権限は管理者が設定し、ここでの選択は指示例だけを変更します。hooks は任意です。")}</p>
+      </div>}
+      {connection?.mcp.databricksProxy && <div className="grid gap-1 rounded-lg border bg-muted/50 p-3 text-sm">
+        <strong>{uiText("Databricks Apps authentication", "Databricks Apps の認証")}</strong>
+        <span className="leading-6 text-muted-foreground">{uiText(
+          "This deployment connects through uvx uc-mcp-proxy. Install uv and configure a Databricks CLI profile first; an expired OAuth profile opens browser login automatically.",
+          "この環境では uvx uc-mcp-proxy を経由します。事前に uv を用意し、Databricks CLI プロファイルを設定してください。OAuth の期限切れ時はブラウザ認証が自動で開きます。",
+        )}</span>
+      </div>}
+      {mcpUnavailable && <div className="grid gap-1 rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm" role="status">
+        <strong>{uiText("MCP setup is unavailable in this deployment", "この環境では MCP 接続を設定できません")}</strong>
+        <span className="leading-6 text-muted-foreground">{uiText(
+          "This deployment does not provide an authenticated remote MCP transport. Use a Node accounts deployment or Databricks Apps instead.",
+          "この環境では認証済みのリモート MCP transport を提供していません。Node の accounts 環境または Databricks Apps をご利用ください。",
+        )}</span>
+      </div>}
+      {canConfigure && connection?.mcp.databricksProxy && <label className="grid gap-1.5 text-xs font-medium text-muted-foreground">
+        <span>{uiText("Databricks profile", "Databricks プロファイル")}</span>
+        <Input value={profile} onChange={(event) => { setProfile(event.target.value); setCopyState("idle"); }} spellCheck={false} />
+      </label>}
+      {canConfigure && <Tabs value={client} onValueChange={(value) => { setClient(value as MCPClient); setCopyState("idle"); }}>
+        <TabsList className="grid w-full grid-cols-3" aria-label={uiText("MCP client", "MCP クライアント")}>
+          {clients.map((item) => <TabsTrigger key={item.id} value={item.id}>{item.label}</TabsTrigger>)}
+        </TabsList>
+      </Tabs>}
+      {error ? <p className="text-sm text-destructive" role="alert">{error}</p> : !canConfigure ? null : connection ? <>
+        <pre className="max-h-64 overflow-auto whitespace-pre-wrap rounded-lg bg-zinc-950 p-4 text-xs leading-5 text-zinc-100"><code>{output}</code></pre>
+        {memory && <p className="text-xs text-muted-foreground">{memoryMode === "read" ? uiText(
+          "Client instruction: Read get_working_memory and recall_memory when relevant. Do not call update_working_memory, save_memory or delete_memory.",
+          "クライアント指示例: 必要に応じて get_working_memory と recall_memory を参照する。update_working_memory、save_memory、delete_memory は呼ばない。",
+        ) : uiText(
+          "Client instruction: Read Dahlia Memory when relevant. Save only concise durable personal lessons after a conversation; never save full transcripts or secrets. Update Working Memory, share to a Workspace or delete only on my explicit request.",
+          "クライアント指示例: 必要に応じて Dahlia Memory を参照する。会話後は長く役立つ簡潔な個人の学びだけ保存し、全文や秘密情報は保存しない。Working Memory の更新、Workspace への共有、削除は私の明示的な依頼がある場合だけ行う。",
+        )}</p>}
+        <Button type="button" variant="outline" className="w-fit" onClick={() => void copy()}>
+          {copyState === "copied" ? uiText("Copied", "コピーしました") : uiText("Copy", "コピー")}
+        </Button>
+        {copyState === "failed" && <p className="text-sm text-destructive" role="alert">{uiText(
+          "Could not copy. Select the settings above and copy them manually.",
+          "コピーできませんでした。上の設定を選択して手動でコピーしてください。",
+        )}</p>}
+      </> : <p className="text-sm text-muted-foreground" role="status">{uiText("Loading MCP settings…", "MCP 設定を読み込み中…")}</p>}
+    </div>
+    <DialogFooter><Button type="button" onClick={onClose}>{uiText("Done", "完了")}</Button></DialogFooter>
+    </DialogContent>
+  </Dialog>;
+}

@@ -7,7 +7,7 @@ import { createAiHistoryService, withIdentityTransaction } from "../src/agent/hi
 import { ChatMemoryStore } from "../src/agent/context-store";
 import { workingMemoryTemplate } from "../src/agent/context-store";
 import { connectPostgresUrl } from "../src/db/postgres";
-import { uuidV7 } from "../src/id";
+import { uuidV7 } from "@dahlia-ai/ui/model/id";
 
 const url = process.env.TEST_DATABASE_URL;
 const connection = url ? connectPostgresUrl(url, 1) : undefined;

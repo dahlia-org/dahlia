@@ -3,7 +3,7 @@ import { installPublicIDs } from "../src/public-http";
 import { describe, expect, it } from "vitest";
 import { readFileSync } from "node:fs";
 import vectors from "../../../test-fixtures/typeid.json";
-import { decodeId, encodeId, idPrefixes, type IDKind } from "../src/typeid";
+import { decodeId, encodeId, idPrefixes, type IDKind } from "@dahlia-ai/ui/model/typeid";
 import { wireDocument, wireValue, wireURL } from "../src/public-wire";
 
 const uuid = vectors[2]!.uuid;

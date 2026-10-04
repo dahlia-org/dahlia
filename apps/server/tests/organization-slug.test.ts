@@ -1,5 +1,5 @@
 import { expect, it } from "vitest";
-import { isReservedTeamOrganizationSlug, organizationSlugFromName } from "../src/auth/organization-slug";
+import { isReservedTeamOrganizationSlug, organizationSlugFromName } from "@dahlia-ai/ui/model/organization-slug";
 
 it("generates an editable organization slug from its name", () => {
   expect(organizationSlugFromName("  ACME ＆ Research  ")).toBe("acme-research");

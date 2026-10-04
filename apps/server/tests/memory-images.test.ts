@@ -8,8 +8,8 @@ import type { MemoryDocument } from "../src/memory/model";
 import { contentHash } from "../src/memory/sources";
 import { ingestionFingerprint } from "../src/memory/ingestion";
 import { RequestError } from "../src/storage/upload";
-import { uuidV7 } from "../src/id";
-import { encodeId } from "../src/typeid";
+import { uuidV7 } from "@dahlia-ai/ui/model/id";
+import { encodeId } from "@dahlia-ai/ui/model/typeid";
 
 const settings: ImageSettings = { model: "system.ai.gpt-6-luna", maxCount: 8, maxBytes: 8 * 1024 * 1024, longEdge: 1568 };
 const signal = new AbortController().signal;

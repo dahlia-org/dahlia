@@ -1,6 +1,6 @@
 import { testUserID } from "./public-test-client";
 import type { AuthStore } from "../src/auth/store";
-import { DEFAULT_SEARCH_SETTINGS } from "../src/search/settings-model";
+import { DEFAULT_SEARCH_SETTINGS } from "@dahlia-ai/ui/model/search-settings";
 
 export function testStore(overrides: Partial<AuthStore> = {}): AuthStore {
   let searchWeights = { ...DEFAULT_SEARCH_SETTINGS };

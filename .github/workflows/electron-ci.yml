@@ -1,0 +1,58 @@
+name: Electron Desktop CI
+
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/electron-ci.yml"
+      - "apps/desktop/**"
+      - "packages/ui/**"
+      - "package.json"
+      - "pnpm-lock.yaml"
+      - "pnpm-workspace.yaml"
+  push:
+    branches:
+      - main
+    paths:
+      - ".github/workflows/electron-ci.yml"
+      - "apps/desktop/**"
+      - "packages/ui/**"
+      - "package.json"
+      - "pnpm-lock.yaml"
+      - "pnpm-workspace.yaml"
+
+concurrency:
+  group: electron-ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  electron-validation:
+    name: Electron Desktop Validation
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          package_json_file: package.json
+          run_install: false
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
+
+      # The Electron binary downloads lazily on first launch; lint, types, tests and builds do not need it.
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile --filter @dahlia-ai/desktop...
+
+      - name: Validate Electron alpha
+        run: pnpm --filter @dahlia-ai/desktop check

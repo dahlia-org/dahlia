@@ -13,7 +13,7 @@ import type { Pool } from "pg";
 
 import type { AppConfig } from "../config";
 import { postgresMigrations, serverMigrationManifest, type PostgresMigrationDirectory } from "../migrations";
-import { SEARCH_FIELDS } from "../search/settings-model";
+import { SEARCH_FIELDS } from "@dahlia-ai/ui/model/search-settings";
 import { STORAGE_OPERATION_CONCURRENCY } from "../sync/schemas";
 import { createPostgresPool, ensurePublicExtensions, POSTGRES_MIGRATION_SCHEMA } from "./postgres";
 

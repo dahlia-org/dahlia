@@ -1,9 +1,9 @@
 // pnpm dev:client -> /tests/browser/knowledge-pages.html; synthetic data only.
 import { createRoot } from "react-dom/client";
-import { KnowledgePages } from "../../src/client/KnowledgePages";
-import { refreshData } from "../../src/client/live-data";
+import { KnowledgePages } from "@dahlia-ai/ui/screens/KnowledgePages";
+import { refreshData } from "@dahlia-ai/ui/api/live-data";
 import type { KnowledgePage } from "../../src/memory/pages-model";
-import "../../src/client/styles.css";
+import "@dahlia-ai/ui/styles.css";
 Object.defineProperty(navigator, "language", { value: "en-US", configurable: true });
 const body = 'Synthetic hypothesis <img src="https://invalid.example/track" onerror="alert(1)">';
 let page: KnowledgePage = { id: "workspace-insights", workspaceId: "team", projectId: null, title: "Team overview", status: "ready", coverage: "partial", skippedCount: 1, canRefresh: true,

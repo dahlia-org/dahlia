@@ -1,7 +1,7 @@
 // pnpm dev:client -> /tests/browser/workspace-memory.html. Mocked HTTP only.
 import { createRoot } from "react-dom/client";
-import { SaveSharedMemory, WorkspaceMemory } from "../../src/client/WorkspaceMemory";
-import "../../src/client/styles.css";
+import { SaveSharedMemory, WorkspaceMemory } from "@dahlia-ai/ui/screens/WorkspaceMemory";
+import "@dahlia-ai/ui/styles.css";
 const preview = new URLSearchParams(location.search).has("preview");
 Object.defineProperty(navigator, "language", { value: preview ? "ja-JP" : "en-US", configurable: true });
 let status = { enabled: true, imagesEnabled: true, imagesAvailable: true, status: "error", errorCode: "upstream", skippedCount: 0, skippedSources: [] };

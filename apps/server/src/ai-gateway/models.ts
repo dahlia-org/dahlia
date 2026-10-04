@@ -1,19 +1,9 @@
 import catalog from "./databricks-models.json";
 import type { GatewayModelList } from "./backend";
 
-export interface CodexModelWire {
-  [key: string]: unknown;
-  slug: string;
-  display_name: string;
-  description: string | null;
-  default_reasoning_level?: string | null;
-  supported_reasoning_levels: Array<{ effort: string; description: string }>;
-  shell_type: string;
-  visibility: string;
-  supported_in_api: boolean;
-  priority: number;
-  model_messages?: { instructions_template?: string | null; [key: string]: unknown };
-}
+import type { CodexModelWire } from "@dahlia-ai/ui/model/gateway-models";
+
+export type { CodexModelWire };
 
 // Suppress Codex built-ins when its custom-provider catalog merges remote models.
 const databricksDefinitions: readonly CodexModelWire[] = [

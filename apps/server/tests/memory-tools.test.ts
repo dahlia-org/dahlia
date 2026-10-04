@@ -5,10 +5,10 @@ import type { WorkspaceMemoryService } from "../src/memory/service";
 import { meetingRequestContext } from "../src/agent/tools";
 import { createServerMcpHandler, registerMastraTool } from "../src/mcp";
 import { RequestError } from "../src/storage/upload";
-import { encodeId } from "../src/typeid";
+import { encodeId } from "@dahlia-ai/ui/model/typeid";
 import type { AppConfig } from "../src/config";
 import type { MeetingSyncService } from "../src/sync/service";
-import { uuidV7 } from "../src/id";
+import { uuidV7 } from "@dahlia-ai/ui/model/id";
 
 const identity = { userId: uuidV7(), source: "header" as const }, workspaceId = uuidV7();
 const input = { workspace_id: encodeId("workspace", workspaceId), query: "Decisions" };

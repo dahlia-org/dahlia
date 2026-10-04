@@ -1,8 +1,8 @@
 import type { DocumentStore as importDocumentStore } from "../documents/store";
-import type { WorkspaceGenerationSettings } from "../workspace-generation-settings";
+import type { WorkspaceGenerationSettings } from "@dahlia-ai/ui/model/workspace-generation-settings";
 import type { CalendarEventSnapshot } from "./schemas";
 import type { TranscriptVersion } from "./transcript";
-import type { SummaryVersion } from "../summary/metadata";
+import type { SummaryVersion } from "@dahlia-ai/ui/model/summary-metadata";
 import type { SummaryJob } from "../summary/model";
 import type { RecordingRecord, RecordingSource } from "../recordings/model";
 import type { FileRecord, MeetingAttachmentRecord } from "../files/model";

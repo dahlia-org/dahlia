@@ -7,7 +7,7 @@ import { SummaryError, type SummaryJob, type SummaryGenerationResult, type Summa
 import { RECORDING_MAX_BYTES, recordingSourceSchema, recordingStorageKey, recordingContentURL, recordingResponse } from "../recordings/model";
 import { z } from "zod";
 import { searchRequestSchema, searchSnippet, type SearchHit, type SearchResults } from "../search/model";
-import { uuidV7 } from "../id";
+import { uuidV7 } from "@dahlia-ai/ui/model/id";
 import { imageAnalysisSchema, type ImageAnalysisInput, type ImageAnalysis } from "../image-analysis/model";
 
 import type { Identity } from "../auth/identity";

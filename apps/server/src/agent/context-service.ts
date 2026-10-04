@@ -1,4 +1,4 @@
-import { encodeId } from "../typeid";
+import { encodeId } from "@dahlia-ai/ui/model/typeid";
 import { Agent } from "@mastra/core/agent";
 import { noopLogger } from "@mastra/core/logger";
 import type { z } from "zod";

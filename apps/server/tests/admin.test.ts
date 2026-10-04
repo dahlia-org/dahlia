@@ -5,7 +5,7 @@ import type { Identity } from "../src/auth/identity";
 import type { AdminUserRecord } from "../src/auth/store";
 import type { AppConfig } from "../src/config";
 import { testStore } from "./test-store";
-import { DEFAULT_SEARCH_SETTINGS } from "../src/search/settings-model";
+import { DEFAULT_SEARCH_SETTINGS } from "@dahlia-ai/ui/model/search-settings";
 import { createWorkerHandler } from "../src/worker";
 
 const config: AppConfig = {

@@ -1,5 +1,5 @@
 import contract from "./public-id-contract.json";
-import { decodeId, encodeId, idPrefixes, type IDKind } from "./typeid";
+import { decodeId, encodeId, idPrefixes, type IDKind } from "@dahlia-ai/ui/model/typeid";
 
 export type WireDirection = "encode" | "decode";
 type ObjectValue = Record<string, unknown>;

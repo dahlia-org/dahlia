@@ -1,5 +1,5 @@
 import { expect, it } from "vitest";
-import { workspaceGenerationSettingsSchema, DEFAULT_WORKSPACE_GENERATION_SETTINGS, summaryStyles, summaryStyleDetail } from "../src/workspace-generation-settings";
+import { workspaceGenerationSettingsSchema, DEFAULT_WORKSPACE_GENERATION_SETTINGS, summaryStyles, summaryStyleDetail } from "@dahlia-ai/ui/model/workspace-generation-settings";
 import { modelList } from "../src/ai-gateway/models";
 import { cloudflareModels } from "../src/ai-gateway/cloudflare";
 import { resolveSummaryPreferences } from "../src/summary/preferences";

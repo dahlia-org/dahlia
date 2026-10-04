@@ -1,10 +1,10 @@
 // Open /tests/browser/organizations.html under pnpm dev:client. All requests are mocked.
 import { z } from "zod";
 import { createRoot } from "react-dom/client";
-import { App } from "../../src/client/App";
-import { navigateDashboard } from "../../src/client/navigation";
-import { clientMutationEvent } from "../../src/client/api";
-import "../../src/client/styles.css";
+import { App } from "@dahlia-ai/ui";
+import { navigateDashboard } from "@dahlia-ai/ui/app/navigation";
+import { clientMutationEvent } from "@dahlia-ai/ui/api/api";
+import "@dahlia-ai/ui/styles.css";
 
 Object.defineProperty(navigator, "language", { value: "en-US", configurable: true });
 let accounts = true;

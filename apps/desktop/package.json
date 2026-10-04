@@ -1,0 +1,37 @@
+{
+  "name": "@dahlia-ai/desktop",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Dahlia Desktop Electron alpha: the shared Web UI connected to a Dahlia Server",
+  "main": "dist/main.js",
+  "scripts": {
+    "build": "vite build && tsup",
+    "check": "pnpm run lint && pnpm run typecheck && pnpm run test && pnpm run build",
+    "dev": "node scripts/dev.mjs",
+    "lint": "eslint .",
+    "package": "pnpm run build && node scripts/package-mac.mjs",
+    "start": "electron .",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@dahlia-ai/ui": "workspace:*",
+    "@eslint/js": "^10.0.1",
+    "@tailwindcss/vite": "^4.3.3",
+    "@types/node": "^26.1.2",
+    "@types/react": "^19.2.18",
+    "@types/react-dom": "^19.2.4",
+    "@vitejs/plugin-react": "^6.0.5",
+    "electron": "44.4.5",
+    "eslint": "^10.8.0",
+    "react": "^19.2.8",
+    "react-dom": "^19.2.8",
+    "tailwindcss": "^4.3.3",
+    "tsup": "^8.5.1",
+    "typescript": "^6.0.3",
+    "typescript-eslint": "^8.70.1",
+    "vite": "^8.2.0",
+    "vitest": "^4.1.10"
+  }
+}

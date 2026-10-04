@@ -3,7 +3,7 @@ import type { NodePgDatabase } from "drizzle-orm/node-postgres";
 import type { PostgresDatabase, SQLiteDatabase } from "../db/client";
 import * as postgresSchema from "../db/auth-schema";
 import * as sqliteSchema from "../db/sqlite-schema";
-import { DEFAULT_SEARCH_SETTINGS, searchSettingsSchema, type SearchSettings } from "./settings-model";
+import { DEFAULT_SEARCH_SETTINGS, searchSettingsSchema, type SearchSettings } from "@dahlia-ai/ui/model/search-settings";
 
 export interface SearchSettingsStore {
   get(): Promise<SearchSettings>;

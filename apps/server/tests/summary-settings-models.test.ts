@@ -1,13 +1,13 @@
 import { createElement, type ComponentProps } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { expect, it, vi } from "vitest";
-import { loadTranscript, SummaryGenerationSurface, ServerSummarySettings } from "../src/client/SummaryGeneration";
-import { useLiveJSON } from "../src/client/live-data";
-import { apiOperations as api } from "../src/client/generated-operations";
-import { DEFAULT_WORKSPACE_GENERATION_SETTINGS } from "../src/workspace-generation-settings";
+import { loadTranscript, SummaryGenerationSurface, ServerSummarySettings } from "@dahlia-ai/ui/screens/SummaryGeneration";
+import { useLiveJSON } from "@dahlia-ai/ui/api/live-data";
+import { apiOperations as api } from "@dahlia-ai/ui/api/generated-operations";
+import { DEFAULT_WORKSPACE_GENERATION_SETTINGS } from "@dahlia-ai/ui/model/workspace-generation-settings";
 import { modelList } from "../src/ai-gateway/models";
 import { cloudflareModels } from "../src/ai-gateway/cloudflare";
-import { isAudioSummaryModel, isStructuredSummaryModel, isSummaryModel } from "../src/summary/audio-model";
+import { isAudioSummaryModel, isStructuredSummaryModel, isSummaryModel } from "@dahlia-ai/ui/model/summary-models";
 
 function generationButton(html: string): string {
   return html.match(/<button[^>]*>Generate summary<\/button>/)?.[0] ?? "";
@@ -57,10 +57,10 @@ it.each([[true, true], [false, false]] as const)("checks semantic transcript ava
 });
 
 // These tests inspect available choices; real picker interactions run in tests/browser/select.html.
-vi.mock("../src/client/Select", () => ({ Select: ({ value, disabled, children }: ComponentProps<typeof import("../src/client/Select").Select>) =>
+vi.mock("@dahlia-ai/ui/components/Select", () => ({ Select: ({ value, disabled, children }: ComponentProps<typeof import("@dahlia-ai/ui/components/Select").Select>) =>
   createElement("select", { value, disabled, onChange: () => {} }, children) }));
-vi.mock("../src/client/live-data", async (original) => ({ ...await original<typeof import("../src/client/live-data")>(), useLiveJSON: vi.fn(), refreshData: vi.fn() }));
-vi.mock("../src/client/api", async (original) => ({ ...await original<typeof import("../src/client/api")>(), json: vi.fn(), uiText: (en: string) => en }));
+vi.mock("@dahlia-ai/ui/api/live-data", async (original) => ({ ...await original<typeof import("@dahlia-ai/ui/api/live-data")>(), useLiveJSON: vi.fn(), refreshData: vi.fn() }));
+vi.mock("@dahlia-ai/ui/api/api", async (original) => ({ ...await original<typeof import("@dahlia-ai/ui/api/api")>(), json: vi.fn(), uiText: (en: string) => en }));
 
 const transcript = (available: boolean) => ({ version: 3, available });
 const recordings = (complete: boolean) => ({

@@ -1,7 +1,7 @@
 import { expect, it } from "vitest";
 import { createNodeApplicationStore } from "../src/auth/node-store";
 import { MeetingSyncService } from "../src/sync/service";
-import { uuidV7 } from "../src/id";
+import { uuidV7 } from "@dahlia-ai/ui/model/id";
 import { seedPostgresIdentity, testOrganizationID } from "./public-test-client";
 
 // Opt-in: two disposable Workspaces, 10,000 logical operations per run; no live QA data.

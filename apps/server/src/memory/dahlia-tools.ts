@@ -4,7 +4,7 @@ import { createTool } from "@mastra/core/tools";
 import { z } from "zod";
 import type { Identity } from "../auth/identity";
 import { withMcpInputSchema, type MeetingToolContext } from "../agent/tools";
-import { encodeId } from "../typeid";
+import { encodeId } from "@dahlia-ai/ui/model/typeid";
 import { RequestError } from "../storage/upload";
 import type { ChatMemoryStore } from "../agent/context-store";
 import { workingMemoryEditSchema } from "../agent/context-model";

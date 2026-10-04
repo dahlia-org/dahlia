@@ -11,7 +11,7 @@ import { aiResumeSchema, readInteraction, type AiInteraction } from "./builtin";
 import { aiTimeZoneSchema } from "./context";
 
 import type { Identity } from "../auth/identity";
-import { uuidV7 } from "../id";
+import { uuidV7 } from "@dahlia-ai/ui/model/id";
 
 const AGENT_SCHEMA = "agent";
 const PAGE_SIZE = 50;

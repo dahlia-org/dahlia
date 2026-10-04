@@ -1,10 +1,10 @@
-import { objectPath } from "../object-url";
+import { objectPath } from "@dahlia-ai/ui/model/object-url";
 import { imageCoverage, imageReferences, validImageLineage } from "./images";
 import type { z } from "zod";
 import type { Identity } from "../auth/identity";
 import { canonicalJson, type MeetingSyncService } from "../sync/service";
 import { RequestError } from "../storage/upload";
-import { decodeId, encodeId } from "../typeid";
+import { decodeId, encodeId } from "@dahlia-ai/ui/model/typeid";
 import { DatabricksTokenError } from "../databricks/token";
 import { HindsightError, type HindsightClient } from "./hindsight";
 import type { WorkspaceMemoryService } from "./service";

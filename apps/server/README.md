@@ -512,7 +512,7 @@ Web chat also uses `GET /api/v1/models`; there is no separate `/api/v1/chat/mode
 
 The capabilities marker only controls bundled composition. Public models are shown as soon as catalog discovery succeeds; a later capability marker adds bundled definitions without changing the selected model. An omitted, slow or failed capability lookup does not block public models; a failed model catalog lookup still reports an error without bundled fallback.
 
-`resources/codex/models.json` is the generated artifact containing only approved model display and reasoning metadata; the upstream catalog is never saved. `resources/codex/source.json` records the source version, URL, SHA-256 and approved model list (currently GPT 6 only). Run `pnpm codex-models:generate` to download from this pinned URL, verify SHA-256 and generate picker metadata for the approved models. Web and Server consume the generated JSON; normal builds never download the catalog. Generation verifies the upstream hash in memory. `pnpm check` validates the filtered artifact against the configured model list without network access.
+`resources/codex/models.json` is the generated artifact containing only approved model display and reasoning metadata; the upstream catalog is never saved. The same projection is written to `packages/ui/src/model/codex-models.json` for the shared chat picker, and `pnpm codex-models:check` verifies both. `resources/codex/source.json` records the source version, URL, SHA-256 and approved model list (currently GPT 6 only). Run `pnpm codex-models:generate` to download from this pinned URL, verify SHA-256 and generate picker metadata for the approved models. Web and Server consume the generated JSON; normal builds never download the catalog. Generation verifies the upstream hash in memory. `pnpm check` validates the filtered artifact against the configured model list without network access.
 
 Cloudflare AI Gateway:
 
@@ -526,13 +526,13 @@ This uses Cloudflare's account REST API. The token needs Account > Workers AI > 
 
 ## Local Node deployment
 
-Node 22.13 or newer is required. Dahlia Server owns its pnpm version, lockfile, and dependency build allowlist independently from the other applications:
+Node 22.13 or newer is required. The repository-root pnpm workspace owns the pnpm version, lockfile, and dependency build allowlist; the Web UI comes from the workspace package `@dahlia-ai/ui` in `packages/ui`:
 
 ```bash
-cd apps/server
 corepack enable
+pnpm install --frozen-lockfile --filter @dahlia-ai/server...
+cd apps/server
 cp .env.example .env.local
-pnpm install --frozen-lockfile
 pnpm dev
 ```
 
@@ -562,10 +562,10 @@ For an identity-aware proxy, set `DAHLIA_AUTH_TYPE=header` and `DAHLIA_AUTH_HEAD
 
 The reference production container runs `pnpm db:migrate:prod` before starting Node, including with `header` authentication. PostgreSQL migrations use a session-level advisory lock, so replicas wait for one migrator instead of racing the same DDL. Migration metadata is kept outside the application schemas: Better Auth uses `drizzle.__dahlia_auth_migrations`, the application baseline uses `drizzle.__dahlia_server_migrations`, and AI history uses `drizzle.__dahlia_agent_migrations`. They are applied in that order.
 
-SQLite contains user accounts, OAuth sessions, refresh tokens, and signing keys. Persist it across container replacement with a named volume:
+The image builds from the repository root so that the bundled `packages/ui` source is available; the runtime stage contains only the `pnpm deploy --prod` output. SQLite contains user accounts, OAuth sessions, refresh tokens, and signing keys. Persist it across container replacement with a named volume:
 
 ```bash
-docker build -t dahlia-server apps/server
+docker build -f apps/server/Dockerfile -t dahlia-server .
 docker volume create dahlia-server-data
 docker run --mount source=dahlia-server-data,target=/app/.data \
   --env-file apps/server/.env.local -p 3000:3000 dahlia-server
@@ -628,6 +628,8 @@ This runs lint, TypeScript checks, unit and adapter contract tests, Node/SPA bui
 
 `@dahlia-ai/server` is versioned independently from the macOS app and published to npm from `server-v<version>` tags. Consumers should pin an exact version. Build the complete package from `apps/server` with `pnpm build:package`. For active sibling-repository development, run `pnpm link ../dahlia/apps/server` from the consumer repository. To verify the exact published artifact shape, run `pnpm pack` from `apps/server` and install the resulting tarball; the `prepack` lifecycle runs `build:package` automatically. `pnpm build` builds only the Web and Server runtime assets for deployment; it skips TypeScript declaration generation and the embeddable client library, which are only needed by package consumers.
 
+The Dashboard source lives in the private workspace package `@dahlia-ai/ui` (`packages/ui`). The Server bundles it into its JavaScript, CSS and declarations and keeps it out of the published dependencies, so consumers never resolve `@dahlia-ai/ui`; `pnpm test:package` installs the packed artifact outside the workspace to verify this.
+
 The tag workflow requires an `NPM_TOKEN` repository secret with publish access to the `@dahlia-ai/server` package.
 
 The Worker-safe package root exports the backend extension contract from `@dahlia-ai/server`; Node-only APIs such as `createNodeAuthStore` are exported from `@dahlia-ai/server/node`. Dashboard components come from `@dahlia-ai/server/client`, shared styles from `@dahlia-ai/server/client/styles.css`, and the migration manifest from `@dahlia-ai/server/migrations`. Apply PostgreSQL manifests through `createNodeApplicationStore(...).migrate()` or `migrateApplicationDatabase`; data migrations may require Node's Unicode segmentation and are not raw-SQL entrypoints. Server migrations must run before consumer migrations. Give every SQLite and PostgreSQL Drizzle migration directory a stable lowercase ledger ID; never derive it from manifest position.
@@ -659,7 +661,7 @@ accidental dismissal, and block duplicate submissions and dismissal during a sav
 confirmations explain their scope and initially focus Cancel. Closing restores focus to the
 opener. Summary edits preserve block structure, IDs, tables, references and attachments; a changed
 manual version clears generation metadata, following the existing summary contract.
-Single-value fields use `src/client/Select.tsx`; its trigger, menu, and row styles are shared with the Workspace selector. Keep new dropdowns on this component so keyboard navigation, disabled states, and modal focus behavior stay consistent.
+Single-value fields use `packages/ui/src/components/Select.tsx`; its trigger, menu, and row styles are shared with the Workspace selector. Keep new dropdowns on this component so keyboard navigation, disabled states, and modal focus behavior stay consistent.
 `/tests/browser/select.html` checks picker interactions and `/tests/browser/account-settings.html` checks saving through those controls.
 
 Settings report automatic-save progress and success. Narrow layouts use larger touch targets;
@@ -1016,7 +1018,7 @@ Web pending edits exist only in memory: keep the tab open until the server ackno
 
 Summary acceptance selects only the meeting document with `kind=notes` and stores its current shared Notes in internal `notesSnapshot`, including their absence. Existing transcript/audio input-change guards remain; later Notes edits do not alter the accepted job. Automatic retries retain the snapshot; explicit `/retry` creates a fresh snapshot after the initiating client flushes its edits. Notes count toward the 2,000,000 UTF-16-unit limit and are escaped untrusted XML data. Private Mac Notes never enter shared summaries.
 
-Run `pnpm documents:build` after editing the portable core or editor; commit the generated Desktop JavaScript and `DOCUMENT-LICENSES.txt`. `pnpm documents:check` checks reproducibility and is included in `pnpm check`. The Desktop requires no Node/CDN at runtime. These dependencies remain owned and pinned by `apps/server`.
+Run `pnpm --filter @dahlia-ai/ui documents:build` after editing the portable core or editor in `packages/ui/src/documents`; commit the generated Desktop JavaScript and `DOCUMENT-LICENSES.txt`. `documents:check` checks reproducibility and is included in the UI `pnpm check`. The Desktop requires no Node/CDN at runtime. These dependencies are owned and pinned by `packages/ui`; the Server reuses the same core for canonical merges.
 
 
 ### Collaborative Notes latency

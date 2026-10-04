@@ -1,6 +1,6 @@
 // Synthetic maximum-size synchronization. Run: node --expose-gc --import tsx scripts/document-memory.ts
-import { DocumentCore, removedBlocks } from "../src/documents/core";
-import { writeBlocks, type BlockInput } from "../src/documents/blocks";
+import { DocumentCore, removedBlocks } from "@dahlia-ai/ui/documents/core";
+import { writeBlocks, type BlockInput } from "@dahlia-ai/ui/documents/blocks";
 
 globalThis.gc?.();
 const baseline = process.memoryUsage().heapUsed;

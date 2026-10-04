@@ -1,0 +1,112 @@
+import { legacyObjectPath, parseObjectPath } from "../model/object-url";
+import { decodeId, type IDKind } from "../model/typeid";
+
+export interface DashboardCapabilities {
+  admin: boolean;
+  sessions: boolean;
+  [name: string]: boolean;
+}
+
+export function shouldRedirectToSignIn(status: number | undefined): boolean {
+  return status === 401;
+}
+
+export function isChatPath(path: string): boolean {
+  return path === "/chat" || /^\/chat\/[^/]+$/.test(path);
+}
+
+const coreDashboardPaths = new Set([
+  "/",
+  "/sessions",
+  "/dashboard",
+  "/memory",
+  "/dashboard/settings",
+  "/workspaces",
+  "/orgs",
+  "/admin",
+  "/admin/models",
+  "/admin/members",
+  "/admin/users",
+  "/admin/orgs",
+  "/admin/settings",
+]);
+
+export function isCoreDashboardPath(path: string): boolean {
+  return coreDashboardPaths.has(path)
+    || /^\/o\/[^/]+$/.test(path)
+    || isChatPath(path)
+    || /^\/(?:meetings|projects|files|orgs)\/[^/]+$/.test(path)
+    || /^\/workspaces\/[^/]+(?:\/(?:meetings|projects)\/[^/]+)?$/.test(path)
+    || /^\/admin\/orgs\/[^/]+$/.test(path)
+    || /^\/accept-invitation\/[^/]+$/.test(path);
+}
+
+export type DashboardRoute = {
+  page?: "memory" | "ai" | "file" | "overview" | "settings" | "workspace" | "meeting" | "project" | "organizations" | "organization" | "invitation" | "admin-users" | "admin-organizations" | "admin-organization" | "admin-settings";
+  redirect?: string;
+  threadId?: string;
+  fileId?: string;
+  workspaceId?: string;
+  meetingId?: string;
+  projectId?: string;
+  invitationId?: string;
+  organizationId?: string;
+};
+
+export function resolveDashboardRoute(
+  path: string,
+  capabilities: DashboardCapabilities,
+): DashboardRoute {
+  if (path === "/") return { redirect: "/dashboard" };
+  if (path === "/sessions") return { redirect: "/dashboard/settings" };
+  if (path === "/dashboard") return { page: "overview" };
+  if (path === "/memory") return { page: "memory" };
+  if (path === "/chat") return capabilities.ai ? { page: "ai" } : { redirect: "/dashboard" };
+  const chat = path.match(/^\/chat\/([^/]+)$/);
+  if (chat) return capabilities.ai ? { page: "ai", threadId: chat[1] } : { redirect: "/dashboard" };
+  if (path === "/orgs") {
+    return capabilities.sharing
+      ? { page: "organizations" }
+      : { redirect: "/dashboard" };
+  }
+  const organization = path.match(/^\/orgs\/([^/]+)$/);
+  if (organization && validID("organization", organization[1])) return capabilities.sharing
+    ? { page: "organization", organizationId: organization[1] }
+    : { redirect: "/dashboard" };
+  const invitation = path.match(/^\/accept-invitation\/([^/]+)$/);
+  if (invitation && validID("invitation", invitation[1])) {
+    return capabilities.sharing && capabilities.sessions
+      ? { page: "invitation", invitationId: invitation[1] }
+      : { redirect: "/dashboard" };
+  }
+  if (path === "/workspaces") return { redirect: "/dashboard" };
+  const legacy = legacyObjectPath(path);
+  if (legacy) return { redirect: capabilities.sync ? legacy : "/dashboard" };
+  const object = parseObjectPath(path);
+  if (object) {
+    if (!capabilities.sync) return { redirect: "/dashboard" };
+    if (object.kind === "workspace") return { page: "workspace", workspaceId: object.id };
+    if (object.kind === "project") return { page: "project", projectId: object.id };
+    if (object.kind === "meeting") return { page: "meeting", meetingId: object.id };
+    return { page: "file", fileId: object.id };
+  }
+  if (path === "/dashboard/settings") {
+    return { page: "settings" };
+  }
+  if (path === "/admin") return { redirect: capabilities.admin ? "/admin/settings" : "/dashboard" };
+  if (path === "/admin/models") {
+    return { redirect: "/dashboard" };
+  }
+  if (path === "/admin/members") return { redirect: capabilities.admin ? "/admin/users" : "/dashboard" };
+  if (path === "/admin/users") return capabilities.admin ? { page: "admin-users" } : { redirect: "/dashboard" };
+  const adminOrganization = path.match(/^\/admin\/orgs\/([^/]+)$/);
+  if (adminOrganization && validID("organization", adminOrganization[1])) return capabilities.admin
+    ? { page: "admin-organization", organizationId: adminOrganization[1] } : { redirect: "/dashboard" };
+  if (path === "/admin/orgs") return capabilities.admin ? { page: "admin-organizations" } : { redirect: "/dashboard" };
+  if (path === "/admin/settings") return capabilities.admin ? { page: "admin-settings" } : { redirect: "/dashboard" };
+  return { redirect: "/dashboard" };
+}
+
+function validID(kind: IDKind, value: string | undefined): boolean {
+  try { decodeId(kind, value ?? ""); return true; } catch { return false; }
+}

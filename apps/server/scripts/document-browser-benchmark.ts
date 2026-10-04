@@ -1,9 +1,9 @@
 // Open scripts/document-browser-benchmark.html with the local Vite server; synthetic content only.
 import * as Y from "yjs";
-import { DocumentCore, decodeBinary, encodeBinary } from "../src/documents/core";
-import { DocumentEditorHydration, mountDocumentEditor } from "../src/documents/editor";
-import { RemoteDocumentSession } from "../src/documents/remote-session";
-import type { PendingDocumentUpdate } from "../src/documents/session";
+import { DocumentCore, decodeBinary, encodeBinary } from "@dahlia-ai/ui/documents/core";
+import { DocumentEditorHydration, mountDocumentEditor } from "@dahlia-ai/ui/documents/editor";
+import { RemoteDocumentSession } from "@dahlia-ai/ui/documents/remote-session";
+import type { PendingDocumentUpdate } from "@dahlia-ai/ui/documents/session";
 
 export async function benchmarkDocumentBrowser(element: HTMLElement) {
   const source = new DocumentCore();

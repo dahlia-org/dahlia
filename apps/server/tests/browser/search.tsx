@@ -1,9 +1,9 @@
 // pnpm dev:client -> /tests/browser/search.html. No live backend or credentials.
 import { StrictMode, useState } from "react";
 import { createRoot } from "react-dom/client";
-import { Search } from "../../src/client/Search";
-import { refreshData } from "../../src/client/live-data";
-import "../../src/client/styles.css";
+import { Search } from "@dahlia-ai/ui/screens/Search";
+import { refreshData } from "@dahlia-ai/ui/api/live-data";
+import "@dahlia-ai/ui/styles.css";
 
 Object.defineProperty(navigator, "language", { value: "en-US", configurable: true });
 const requests: { query: string; workspaceId: string }[] = [];

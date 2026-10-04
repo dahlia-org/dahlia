@@ -1,9 +1,9 @@
 // pnpm dev:client -> /tests/browser/dialogs.html. No backend is contacted.
 import { StrictMode, useRef } from "react";
 import { createRoot } from "react-dom/client";
-import { useActionDialog } from "../../src/client/ActionDialog";
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "../../src/client/components/ui/dropdown-menu";
-import "../../src/client/styles.css";
+import { useActionDialog } from "@dahlia-ai/ui/screens/ActionDialog";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@dahlia-ai/ui/components/ui/dropdown-menu";
+import "@dahlia-ai/ui/styles.css";
 
 Object.defineProperty(navigator, "language", { value: "en-US", configurable: true });
 let submissions = 0;

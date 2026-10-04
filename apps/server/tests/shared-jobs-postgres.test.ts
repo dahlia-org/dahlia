@@ -9,7 +9,7 @@ import { sql } from "drizzle-orm";
 import { connectPostgresUrl } from "../src/db/postgres";
 import { createJobStore } from "../src/jobs/store";
 import { defaultJobLimits } from "../src/jobs/model";
-import { uuidV7 } from "../src/id";
+import { uuidV7 } from "@dahlia-ai/ui/model/id";
 // Use an isolated migrated DB: these assertions require no unrelated dispatchers.
 const url = process.env.TEST_JOB_DATABASE_URL;
 describe.runIf(url)("PostgreSQL shared job dispatch without RLS bypass", () => {

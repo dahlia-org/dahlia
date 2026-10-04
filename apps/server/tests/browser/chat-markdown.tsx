@@ -2,8 +2,8 @@
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { flushSync } from "react-dom";
-import { ChatMarkdown, StreamingChatMarkdown } from "../../src/client/ChatMarkdown";
-import "../../src/client/styles.css";
+import { ChatMarkdown, StreamingChatMarkdown } from "@dahlia-ai/ui/screens/ChatMarkdown";
+import "@dahlia-ai/ui/styles.css";
 const content = `直近は**2026年9月28日**に次のミーティングがありました。
 
 ## 最近のミーティング

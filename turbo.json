@@ -1,0 +1,9 @@
+{
+  "$schema": "./node_modules/turbo/schema.json",
+  "envMode": "loose",
+  "tasks": {
+    "transit": { "dependsOn": ["^transit"] },
+    "build": { "dependsOn": ["transit"], "outputs": ["dist/**"] },
+    "check": { "cache": false }
+  }
+}

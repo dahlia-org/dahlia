@@ -7,7 +7,7 @@ import { createApp } from "../src/app";
 import { createNodeApplicationStore } from "../src/auth/node-store";
 import type { AppConfig } from "../src/config";
 import { installDevelopmentSeed } from "../src/dev-seed";
-import { uuidV7 } from "../src/id";
+import { uuidV7 } from "@dahlia-ai/ui/model/id";
 import { LocalObjectStorage } from "../src/storage/local";
 import { MeetingSyncService } from "../src/sync/service";
 

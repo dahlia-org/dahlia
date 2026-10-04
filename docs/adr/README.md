@@ -24,6 +24,7 @@ macOS、ローカル SQLite、録音、UI、内蔵 Codex / local MCP。
 - [チャットの書き込みと承認](desktop/chat-approval.md)
 - [匿名 telemetry](desktop/telemetry.md)
 - [ローカル全文検索と旧 Hybrid 検索](desktop/search.md)
+- [Electron アルファ版](desktop/electron-alpha.md)
 
 ## Server / Cloud
 
@@ -64,7 +65,7 @@ Desktop / Server / 外部 client 間の契約。
 
 リポジトリ全体の build / package 所有境界。
 
-- [アプリ単位の依存管理](monorepo/dependencies.md)
+- [pnpm workspace と共通 UI の依存管理](monorepo/dependencies.md)
 
 ## 更新のルール
 

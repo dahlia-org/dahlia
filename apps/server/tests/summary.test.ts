@@ -1,16 +1,16 @@
 import { modelList } from "../src/ai-gateway/models";
 import { summaryInstructions } from "../src/summary/transcript";
-import { DocumentCore } from "../src/documents/core";
-import { DEFAULT_GENERATION_PREFERENCES } from "../src/workspace-generation-settings";
+import { DocumentCore } from "@dahlia-ai/ui/documents/core";
+import { DEFAULT_GENERATION_PREFERENCES } from "@dahlia-ai/ui/model/workspace-generation-settings";
 import { generationSettings, updateGenerationSettings } from "./workspace-settings-helpers";
 import { testOrganizationID } from "./public-test-client";
 import { seedHeaderIdentity, testUserID } from "./public-test-client";
-import { summaryStyleDetail } from "../src/workspace-generation-settings";
+import { summaryStyleDetail } from "@dahlia-ai/ui/model/workspace-generation-settings";
 import { LocalObjectStorage } from "../src/storage/local";
 import { createAudioSummaryMethod } from "../src/summary/audio";
-import { DEFAULT_WORKSPACE_GENERATION_SETTINGS } from "../src/workspace-generation-settings";
+import { DEFAULT_WORKSPACE_GENERATION_SETTINGS } from "@dahlia-ai/ui/model/workspace-generation-settings";
 import { TextContentDigest } from "../src/sync/text-content";
-import { summaryMetadata } from "../src/summary/metadata";
+import { summaryMetadata } from "@dahlia-ai/ui/model/summary-metadata";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -28,7 +28,7 @@ import { collectSummaryInput, createTranscriptSummaryMethod, fingerprint, summar
 import { loadConfig } from "../src/config";
 import { createContractApp as createApp } from "./api-test-client";
 import { createWorkerHandler } from "../src/worker";
-import { uuidV7 } from "../src/id";
+import { uuidV7 } from "@dahlia-ai/ui/model/id";
 import type { AppConfig } from "../src/config";
 import type { Identity } from "../src/auth/identity";
 

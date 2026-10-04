@@ -9,11 +9,11 @@ import { createApp } from "../src/app";
 import { createNodeApplicationStore } from "../src/auth/node-store";
 import type { Identity } from "../src/auth/identity";
 import type { AppConfig } from "../src/config";
-import { uuidV7 } from "../src/id";
+import { uuidV7 } from "@dahlia-ai/ui/model/id";
 import { MeetingSyncService } from "../src/sync/service";
 
 import { seedHeaderIdentity, testUserID } from "./public-test-client";
-import { encodeId } from "../src/typeid";
+import { encodeId } from "@dahlia-ai/ui/model/typeid";
 
 const directories: string[] = [];
 afterEach(() => { for (const directory of directories.splice(0)) rmSync(directory, { recursive: true, force: true }); });

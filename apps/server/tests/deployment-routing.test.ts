@@ -236,7 +236,11 @@ describe("deployment routing", () => {
     expect(workflow).toContain("DAHLIA_DATABASE_URL: postgresql://dahlia@127.0.0.1:5432/dahlia");
     expect(workflow).toContain("DAHLIA_DATABASE_URL: file:/tmp/dahlia-auth.sqlite");
     expect(workflow).toContain("working-directory: apps/server");
-    expect(workflow).toContain("cache-dependency-path: apps/server/pnpm-lock.yaml");
+    expect(workflow).toContain("cache-dependency-path: pnpm-lock.yaml");
+    // turbo.json drives the root build that test:package and Databricks Apps run.
+    expect(workflow.match(/^ {6}- "turbo\.json"$/gm)).toHaveLength(2);
+    expect(workflow).toContain("run: pnpm install --frozen-lockfile --filter @dahlia-ai/server...");
+    expect(application).toContain("run: pnpm --filter @dahlia-ai/ui check");
     expect(workflow).not.toMatch(/DAHLIA_RUNTIME|DAHLIA_AUTH_DATABASE|DAHLIA_AUTH_SQLITE_PATH|\n\s+DATABASE_URL:/);
     expect(application).toContain("name: Server Application Validation");
     expect(application).toContain("run: pnpm check");
@@ -264,27 +268,36 @@ describe("deployment routing", () => {
       packageManager: string;
       scripts: Record<string, string>;
     };
-    const packageConfig = readText("../pnpm-workspace.yaml");
+    const workspacePackage = JSON.parse(readText("../../../package.json")) as { packageManager: string; scripts: Record<string, string> };
+    const packageConfig = readText("../../../pnpm-workspace.yaml");
+    const verifier = readText("../scripts/verify-package.mjs");
 
-    expect(exists("../../../package.json")).toBe(false);
-    expect(exists("../../../pnpm-lock.yaml")).toBe(false);
-    expect(exists("../../../pnpm-workspace.yaml")).toBe(false);
-    expect(exists("../pnpm-lock.yaml")).toBe(true);
+    // One pnpm workspace; the Server App deploys the repository root with only the Server workspace files.
+    expect(exists("../../../pnpm-lock.yaml")).toBe(true);
+    expect(exists("../pnpm-lock.yaml")).toBe(false);
+    expect(exists("../pnpm-workspace.yaml")).toBe(false);
     expect(serverPackage.packageManager).toBe("pnpm@11.9.0");
-    expect(packageConfig).not.toContain("packages:");
+    expect(workspacePackage.packageManager).toBe(serverPackage.packageManager);
+    expect(workspacePackage.scripts.build).toBe("TURBO_TELEMETRY_DISABLED=1 turbo run build");
+    expect(exists("../../../turbo.json")).toBe(true);
+    expect(packageConfig).toMatch(/packages:\n(?: {2}- .+\n)*? {2}- apps\/server\n/);
+    expect(packageConfig).toContain("  - packages/ui");
     expect(packageConfig).toContain("esbuild: true");
     expect(packageConfig).toContain("workerd: true");
+    expect(verifier).toContain('"package.json", "pnpm-workspace.yaml", "pnpm-lock.yaml", "turbo.json", "apps/server", "packages/ui"]');
+    for (const path of ["package.json", "pnpm-workspace.yaml", "pnpm-lock.yaml", "turbo.json", "apps/server", "packages/ui"]) {
+      expect(bundle).toContain(`    - ../../${path}\n`);
+    }
+    expect(bundle).not.toContain("apps/desktop");
+    expect(bundle).not.toContain("    - ../..\n");
     expect(bundle).toContain('databricks_cli_version: ">= 1.4.0"');
     expect(bundle).toContain("engine: direct");
     expect(resource).toContain("lifecycle:\n        started: true");
     expect(hindsight).toContain("lifecycle:\n        started: true");
-    expect(bundle).toContain("- ../../apps/server");
     expect(bundle).toContain("- ../../apps/hindsight");
     expect(bundle).toContain("../../apps/hindsight/.upstream/hindsight-api-slim/**");
     expect(bundle).toContain("prebuild: \"cd ../../apps/hindsight && uv run --no-project scripts/sync_upstream.py\"");
     expect(bundle).toMatch(/hindsight_schema:[\s\S]*?default: hindsight/);
-    expect(bundle).not.toContain("../../pnpm-lock.yaml");
-    expect(bundle).not.toContain("- ../../pnpm-workspace.yaml");
     expect(bundle).not.toContain("app_name:");
     expect(bundle).toContain("database_project_id: dahlia-db-dev");
     expect(bundle).not.toContain("codex_auto_review_model");
@@ -317,7 +330,7 @@ describe("deployment routing", () => {
     expect(bundle).toMatch(/dev:[\s\S]*?purge_on_delete: true[\s\S]*?prod:/);
     expect(bundle).not.toContain("admin_email");
     expect(bundle).not.toContain("postgres_databases:");
-    expect(resource).toContain("source_code_path: ../../../apps/server");
+    expect(resource).toContain("source_code_path: ../../..");
     expect(resource).toContain("name: mcp-dahlia-server-${bundle.target}");
     expect(resource).toContain(`user_api_scopes:
         - ai-gateway
@@ -325,7 +338,7 @@ describe("deployment routing", () => {
     expect(resource).not.toContain("catalog.catalogs:read");
     expect(resource).not.toContain("catalog.schemas:read");
     expect(resource)
-      .toContain('command: ["corepack", "pnpm", "start:databricks"]');
+      .toContain('command: ["corepack", "pnpm", "--filter", "@dahlia-ai/server", "start:databricks"]');
     expect(resource).not.toContain("DAHLIA_APP_URL");
     expect(resource).not.toContain("resources.apps.dahlia_server.url");
     expect(resource).toContain("value: databricks");
@@ -390,7 +403,9 @@ describe("deployment routing", () => {
       .toContain("pnpm run db:migrate:prod && exec node dist/server/node.js");
     expect(readText("../Dockerfile"))
       .toContain('VOLUME ["/app/.data"]');
-    expect(readText("../.dockerignore")).toContain(".env*");
+    expect(readText("../Dockerfile")).toContain("docker build -f apps/server/Dockerfile");
+    expect(readText("../Dockerfile.dockerignore")).toContain(".env*");
+    expect(readText("../Dockerfile.dockerignore")).toContain("!packages/ui");
     expect(readText("../src/db/client.ts"))
       .toContain("pg_advisory_lock");
     expect(readText("../src/db/client.ts"))

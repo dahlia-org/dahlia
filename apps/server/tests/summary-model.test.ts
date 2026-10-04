@@ -3,8 +3,8 @@ import { z } from "zod";
 import { summaryDocument, summaryResponseSchema } from "../src/summary/model";
 import { storedTranscriptSettingsSchema } from "../src/summary/model";
 import { summaryStartSchema } from "../src/summary/service";
-import { DEFAULT_WORKSPACE_GENERATION_SETTINGS } from "../src/workspace-generation-settings";
-import { uuidV7 } from "../src/id";
+import { DEFAULT_WORKSPACE_GENERATION_SETTINGS } from "@dahlia-ai/ui/model/workspace-generation-settings";
+import { uuidV7 } from "@dahlia-ai/ui/model/id";
 
 it("excludes transcription overrides structurally from preference inputs while preserving legacy model requests", () => {
   const input = { type: "recording", recordings: [{ micFileId: uuidV7(), systemFileId: null }] };
@@ -60,7 +60,7 @@ it("omits maxItems and accepts arrays beyond every former limit", () => {
 
 
 it("normalizes legacy details without changing their meaning or reasoning effort", async () => {
-  const { summaryDetailSchema, normalizeSummaryDetail, summaryDetails, DEFAULT_WORKSPACE_GENERATION_SETTINGS, workspaceGenerationSettingsSchema } = await import("../src/workspace-generation-settings");
+  const { summaryDetailSchema, normalizeSummaryDetail, summaryDetails, DEFAULT_WORKSPACE_GENERATION_SETTINGS, workspaceGenerationSettingsSchema } = await import("@dahlia-ai/ui/model/workspace-generation-settings");
   for (const [old, canonical] of [["concise", "low"], ["standard", "medium"], ["detailed", "high"], ["eventSession", "xhigh"]]) {
     expect(normalizeSummaryDetail(old!)).toBe(canonical);
     expect(workspaceGenerationSettingsSchema.safeParse({ summary: { remote: { detail: old } } }).success).toBe(false);

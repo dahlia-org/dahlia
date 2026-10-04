@@ -1,6 +1,6 @@
 import transcriptPolicy from "./transcript-policy.json";
 import { z } from "zod";
-import { summaryResponseMetadataSchema } from "../summary/metadata";
+import { summaryResponseMetadataSchema } from "@dahlia-ai/ui/model/summary-metadata";
 
 const date = z.iso.datetime();
 const locale = z.string().min(1).max(100);

@@ -8,7 +8,7 @@ import { DatabricksBackend } from "../src/ai-gateway/databricks";
 import { createApp } from "../src/app";
 import { testStore } from "./test-store";
 import type { MeetingSyncService } from "../src/sync/service";
-import { encodeId } from "../src/typeid";
+import { encodeId } from "@dahlia-ai/ui/model/typeid";
 
 const config: AppConfig = {
   authProvider: "header", authHeader: "X-Forwarded-Email", databaseType: "sqlite",
