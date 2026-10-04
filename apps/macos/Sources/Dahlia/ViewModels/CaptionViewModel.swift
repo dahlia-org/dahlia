@@ -4962,6 +4962,7 @@ final class CaptionViewModel: ObservableObject {
         let jobID = job.id
         job.persistFailureDismissal = {
             try await dbQueue.write { db in
+                guard try RecordingSessionRecord.exists(db, key: sessionID) else { return }
                 guard var processing = try RecordingProcessing.load(sessionID: sessionID, in: db),
                       processing.id == jobID, processing.stage == .failed else { throw CancellationError() }
                 processing.failureDismissed = true
