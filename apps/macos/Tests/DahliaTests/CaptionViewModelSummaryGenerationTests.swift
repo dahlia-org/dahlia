@@ -201,7 +201,7 @@ import Synchronization
             #expect(restarted.summaryGenerationJobs.isEmpty)
         }
 
-        @Test(arguments: ["active", "missing", "replaced", "writeFailure"])
+        @Test(arguments: ["active", "replaced", "writeFailure"])
         func rejectedDismissalKeepsFailureVisible(reason: String) async throws {
             let fixture = try SummaryGenerationFixture()
             defer { fixture.removeFiles() }
@@ -221,8 +221,6 @@ import Synchronization
                 case "active":
                     changed.stage = .transcribing
                     try changed.save(sessionID: sessionID, in: db)
-                case "missing":
-                    try db.execute(sql: "UPDATE recording_sessions SET processingJSON = NULL WHERE id = ?", arguments: [sessionID])
                 case "replaced":
                     changed.id = .v7()
                     try changed.save(sessionID: sessionID, in: db)

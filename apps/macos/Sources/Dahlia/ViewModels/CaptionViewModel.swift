@@ -4962,9 +4962,10 @@ final class CaptionViewModel: ObservableObject {
         let jobID = job.id
         job.persistFailureDismissal = {
             try await dbQueue.write { db in
-                guard try RecordingSessionRecord.exists(db, key: sessionID) else { return }
-                guard var processing = try RecordingProcessing.load(sessionID: sessionID, in: db),
-                      processing.id == jobID, processing.stage == .failed else { throw CancellationError() }
+                // The notification can outlive its saved processing state, including
+                // when deleting the meeting cascades its recording sessions.
+                guard var processing = try RecordingProcessing.load(sessionID: sessionID, in: db) else { return }
+                guard processing.id == jobID, processing.stage == .failed else { throw CancellationError() }
                 processing.failureDismissed = true
                 try processing.save(sessionID: sessionID, in: db)
             }

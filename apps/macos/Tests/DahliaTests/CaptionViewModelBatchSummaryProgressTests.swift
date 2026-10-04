@@ -128,8 +128,8 @@ import GRDB
             #expect(await waitUntil { !viewModel.isSummaryGenerating(meetingId: fixture.first.id) })
         }
 
-        @Test
-        func failureOfDeletedMeetingCanBeDismissed() async throws {
+        @Test(arguments: [false, true])
+        func failureWithoutPersistedProcessingCanBeDismissed(deletesMeeting: Bool) async throws {
             let fixture = try SummaryGenerationFixture()
             defer { fixture.removeFiles() }
             let sessionID = try fixture.insertRecordingSession(for: fixture.first, offset: 0)
@@ -143,10 +143,16 @@ import GRDB
             let viewModel = CaptionViewModel()
             try await viewModel.restoreRecordingProcessingForTesting(dbQueue: dbQueue)
             try #require(viewModel.summaryGenerationJobs.first?.hasFailure == true)
-            try await MeetingRepository(dbQueue: dbQueue).deleteMeetingsSafely(
-                ids: [fixture.first.id], managedRootURL: fixture.workspaceURL
-            )
-            #expect(try await dbQueue.read { db in try RecordingSessionRecord.exists(db, key: sessionID) } == false)
+            if deletesMeeting {
+                try await MeetingRepository(dbQueue: dbQueue).deleteMeetingsSafely(
+                    ids: [fixture.first.id], managedRootURL: fixture.workspaceURL
+                )
+            } else {
+                try await dbQueue.write { db in
+                    try db.execute(sql: "UPDATE recording_sessions SET processingJSON = NULL WHERE id = ?", arguments: [sessionID])
+                }
+            }
+            #expect(try await dbQueue.read { db in try RecordingSessionRecord.exists(db, key: sessionID) } == !deletesMeeting)
 
             viewModel.dismissSummaryGenerationJob(processing.id)
             try #require(await pollUntil { viewModel.summaryGenerationJobs.isEmpty })
