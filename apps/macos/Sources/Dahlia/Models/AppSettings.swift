@@ -295,7 +295,6 @@ final class AppSettings: ObservableObject, GoogleDriveExportFolderSettingsProvid
     @AppStorage("liveSubtitleOverlayEnabled") var liveSubtitleOverlayEnabled = false
     @AppStorage("liveSubtitleOverlaySegmentCount") var liveSubtitleOverlaySegmentCount = 2
     @AppStorage("liveSubtitleSourceMode") var liveSubtitleSourceModeRawValue = LiveSubtitleSourceMode.defaultMode.rawValue
-    @AppStorage("automaticScreenshotEnabled") var automaticScreenshotEnabled = true
     @AppStorage(AppSettings.automaticScreenshotIntervalSecondsUserDefaultsKey) private var storedAutomaticScreenshotIntervalSeconds =
         AppSettings.defaultAutomaticScreenshotIntervalSeconds
     @AppStorage(AppSettings.automaticScreenshotAdaptiveIntervalKey) var automaticScreenshotAdaptiveIntervalEnabled = true
@@ -948,10 +947,6 @@ extension UserDefaults {
 
     @objc dynamic var liveSubtitleSourceMode: String? {
         string(forKey: "liveSubtitleSourceMode")
-    }
-
-    @objc dynamic var automaticScreenshotEnabled: Bool {
-        object(forKey: "automaticScreenshotEnabled") as? Bool ?? true
     }
 
     @objc dynamic var automaticScreenshotIntervalSeconds: Int {
