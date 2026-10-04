@@ -26,6 +26,7 @@ enum ScreenshotError: LocalizedError {
 struct AutomaticScreenshotCaptureRequest: Sendable {
     let source: ScreenshotCaptureSource
     var intervalSeconds: Int
+    var usesAdaptiveInterval: Bool
     var changeThresholdRatio: Double
     var detectsChangesInSharedContentOnly: Bool
     var cropsToSharedContent: Bool
@@ -40,6 +41,7 @@ protocol AutomaticScreenshotCapturing: Sendable {
     func start(_ request: AutomaticScreenshotCaptureRequest) async
     func updateSettings(
         intervalSeconds: Int,
+        usesAdaptiveInterval: Bool,
         changeThresholdRatio: Double,
         detectsChangesInSharedContentOnly: Bool,
         cropsToSharedContent: Bool
@@ -516,6 +518,7 @@ actor AutomaticScreenshotCaptureService: AutomaticScreenshotCapturing {
 
     func updateSettings(
         intervalSeconds: Int,
+        usesAdaptiveInterval: Bool,
         changeThresholdRatio: Double,
         detectsChangesInSharedContentOnly: Bool,
         cropsToSharedContent: Bool
@@ -524,6 +527,7 @@ actor AutomaticScreenshotCaptureService: AutomaticScreenshotCapturing {
         let detectionScopeChanged = request.detectsChangesInSharedContentOnly != detectsChangesInSharedContentOnly
         let sharedContentSettingsChanged = detectionScopeChanged || request.cropsToSharedContent != cropsToSharedContent
         request.intervalSeconds = intervalSeconds
+        request.usesAdaptiveInterval = usesAdaptiveInterval
         request.changeThresholdRatio = changeThresholdRatio
         request.detectsChangesInSharedContentOnly = detectsChangesInSharedContentOnly
         request.cropsToSharedContent = cropsToSharedContent
@@ -701,10 +705,14 @@ actor AutomaticScreenshotCaptureService: AutomaticScreenshotCapturing {
     ) {
         settleCheckTask?.cancel()
         settleCheckTask = nil
+        guard let request = desiredRequest else { return }
         // ScreenCaptureKit can stop delivering frames while the display is idle, so a timer observes the settle
-        // and the end of a failed-capture backoff.
+        // or the fixed interval, and the end of a failed-capture backoff.
+        let checkDeadline = request.usesAdaptiveInterval
+            ? settleTracker.settleDeadline(after: now)
+            : settleTracker.intervalDeadline(after: now, interval: .seconds(request.intervalSeconds))
         let retryDeadline = failedCaptureRetryNotBefore.flatMap { $0 > now ? $0 : nil }
-        guard let deadline = [settleTracker.settleDeadline(after: now), retryDeadline].compactMap(\.self).max()
+        guard let deadline = [checkDeadline, retryDeadline].compactMap(\.self).max()
         else { return }
         settleCheckTask = Task(priority: .utility) { [weak self] in
             do {
@@ -726,10 +734,11 @@ actor AutomaticScreenshotCaptureService: AutomaticScreenshotCapturing {
             guard now >= failedCaptureRetryNotBefore else { return }
             self.failedCaptureRetryNotBefore = nil
         }
-        let maximumInterval = Duration.seconds(request.intervalSeconds)
+        let interval = Duration.seconds(request.intervalSeconds)
         let stillScreenPassed = settleTracker.shouldCapture(
             at: now,
-            maximumInterval: maximumInterval,
+            interval: interval,
+            isAdaptive: request.usesAdaptiveInterval,
             changeThresholdRatio: request.changeThresholdRatio,
             comparedWith: .lastSaved
         )
@@ -737,7 +746,8 @@ actor AutomaticScreenshotCaptureService: AutomaticScreenshotCapturing {
         let triggers = request.detectsChangesInSharedContentOnly
             ? settleTracker.shouldCapture(
                 at: now,
-                maximumInterval: maximumInterval,
+                interval: interval,
+                isAdaptive: request.usesAdaptiveInterval,
                 changeThresholdRatio: Self.sharedContentGateRatio,
                 comparedWith: .lastAttempt
             )
@@ -746,7 +756,7 @@ actor AutomaticScreenshotCaptureService: AutomaticScreenshotCapturing {
         startProcessing(
             attempt: attempt,
             stillScreenPassed: stillScreenPassed,
-            reference: settleTracker.captureReference(at: now)
+            reference: settleTracker.captureReference(at: now, isAdaptive: request.usesAdaptiveInterval)
         )
     }
 

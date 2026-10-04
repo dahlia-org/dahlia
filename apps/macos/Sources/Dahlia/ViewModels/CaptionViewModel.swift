@@ -941,6 +941,15 @@ final class CaptionViewModel: ObservableObject {
             .store(in: &automaticScreenshotSettingsCancellables)
 
         UserDefaults.standard
+            .publisher(for: \.automaticScreenshotAdaptiveIntervalEnabled)
+            .removeDuplicates()
+            .receive(on: RunLoop.main)
+            .sink { [weak self] _ in
+                self?.updateAutomaticScreenshotProcessingSettings()
+            }
+            .store(in: &automaticScreenshotSettingsCancellables)
+
+        UserDefaults.standard
             .publisher(for: \.automaticScreenshotChangeThresholdPercent)
             .removeDuplicates()
             .receive(on: RunLoop.main)
@@ -5473,12 +5482,14 @@ final class CaptionViewModel: ObservableObject {
               AppSettings.shared.automaticScreenshotEnabled,
               screenshotCaptureSource.isSelected else { return }
         let intervalSeconds = AppSettings.shared.automaticScreenshotIntervalSeconds
+        let usesAdaptiveInterval = AppSettings.shared.automaticScreenshotAdaptiveIntervalEnabled
         let changeThresholdRatio = AppSettings.shared.automaticScreenshotChangeThresholdRatio
         let detectsChangesInSharedContentOnly = AppSettings.shared.automaticScreenshotDetectChangesInSharedRegionOnly
         let cropsToSharedContent = AppSettings.shared.automaticScreenshotCropToSharedRegion
         automaticScreenshotCaptureControl.enqueue { capture in
             await capture.updateSettings(
                 intervalSeconds: intervalSeconds,
+                usesAdaptiveInterval: usesAdaptiveInterval,
                 changeThresholdRatio: changeThresholdRatio,
                 detectsChangesInSharedContentOnly: detectsChangesInSharedContentOnly,
                 cropsToSharedContent: cropsToSharedContent
@@ -5504,6 +5515,7 @@ final class CaptionViewModel: ObservableObject {
         let request = AutomaticScreenshotCaptureRequest(
             source: screenshotCaptureSource,
             intervalSeconds: AppSettings.shared.automaticScreenshotIntervalSeconds,
+            usesAdaptiveInterval: AppSettings.shared.automaticScreenshotAdaptiveIntervalEnabled,
             changeThresholdRatio: AppSettings.shared.automaticScreenshotChangeThresholdRatio,
             detectsChangesInSharedContentOnly: AppSettings.shared.automaticScreenshotDetectChangesInSharedRegionOnly,
             cropsToSharedContent: AppSettings.shared.automaticScreenshotCropToSharedRegion,

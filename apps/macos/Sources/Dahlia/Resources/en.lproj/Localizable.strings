@@ -442,10 +442,14 @@
 "Automatic Screenshots" = "Automatic Screenshots";
 "Capture the screen during recording and save a new image when the display changes significantly." = "Capture the screen during recording and save a new image when the display changes significantly.";
 "Automatically add screenshots while recording." = "Automatically add screenshots while recording.";
-"Maximum Screenshot Interval" = "Maximum Screenshot Interval";
-"Dahlia saves a screenshot once the screen stops changing. While most of the screen keeps moving, such as during full-screen video, Dahlia checks at this interval." = "Dahlia saves a screenshot once the screen stops changing. While most of the screen keeps moving, such as during full-screen video, Dahlia checks at this interval.";
+"Adaptive Screenshot Interval" = "Adaptive Screenshot Interval";
+"Save a screenshot once the screen stops changing instead of checking at a fixed interval." = "Save a screenshot once the screen stops changing instead of checking at a fixed interval.";
+"Screenshot Interval" = "Screenshot Interval";
+"While most of the screen keeps moving, such as during full-screen video, Dahlia checks at this interval." = "While most of the screen keeps moving, such as during full-screen video, Dahlia checks at this interval.";
+"Dahlia checks the screen for changes at this interval." = "Dahlia checks the screen for changes at this interval.";
 "Screenshot Change Threshold" = "Screenshot Change Threshold";
 "Save a new screenshot when at least this much of the screen changes, ignoring moving areas such as camera video." = "Save a new screenshot when at least this much of the screen changes, ignoring moving areas such as camera video.";
+"Save a new screenshot when at least this much of the screen changes." = "Save a new screenshot when at least this much of the screen changes.";
 "Shared Content" = "Shared Content";
 "Detect Changes in Shared Content Only" = "Detect Changes in Shared Content Only";
 "Ignore changes outside detected slides or shared screens." = "Ignore changes outside detected slides or shared screens.";
