@@ -923,15 +923,6 @@ final class CaptionViewModel: ObservableObject {
             .store(in: &audioRetentionCancellables)
 
         UserDefaults.standard
-            .publisher(for: \.automaticScreenshotEnabled)
-            .removeDuplicates()
-            .receive(on: RunLoop.main)
-            .sink { [weak self] _ in
-                self?.syncAutomaticScreenshotCaptureState()
-            }
-            .store(in: &automaticScreenshotSettingsCancellables)
-
-        UserDefaults.standard
             .publisher(for: \.automaticScreenshotIntervalSeconds)
             .removeDuplicates()
             .receive(on: RunLoop.main)
@@ -5478,9 +5469,7 @@ final class CaptionViewModel: ObservableObject {
     }
 
     private func updateAutomaticScreenshotProcessingSettings() {
-        guard isListening,
-              AppSettings.shared.automaticScreenshotEnabled,
-              screenshotCaptureSource.isSelected else { return }
+        guard isListening, screenshotCaptureSource.isSelected else { return }
         let intervalSeconds = AppSettings.shared.automaticScreenshotIntervalSeconds
         let usesAdaptiveInterval = AppSettings.shared.automaticScreenshotAdaptiveIntervalEnabled
         let changeThresholdRatio = AppSettings.shared.automaticScreenshotChangeThresholdRatio
@@ -5498,7 +5487,7 @@ final class CaptionViewModel: ObservableObject {
     }
 
     private func syncAutomaticScreenshotCaptureState() {
-        if isListening, AppSettings.shared.automaticScreenshotEnabled, screenshotCaptureSource.isSelected {
+        if isListening, screenshotCaptureSource.isSelected {
             startAutomaticScreenshotCapture()
         } else {
             stopAutomaticScreenshotCapture()
@@ -5506,10 +5495,7 @@ final class CaptionViewModel: ObservableObject {
     }
 
     private func startAutomaticScreenshotCapture() {
-        guard isListening,
-              AppSettings.shared.automaticScreenshotEnabled,
-              screenshotCaptureSource.isSelected,
-              let meetingId = activeMeetingIdForSessionControls,
+        guard let meetingId = activeMeetingIdForSessionControls,
               let dbQueue = activeDbQueueForSessionControls
         else { return }
         let request = AutomaticScreenshotCaptureRequest(

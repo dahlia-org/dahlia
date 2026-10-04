@@ -1036,14 +1036,6 @@ enum L10n { // swiftlint:disable:this type_body_length
         localized: "Capture the screen during recording and save a new image when the display changes significantly.",
         bundle: bundle
     ) }
-    static var enableAutomaticScreenshotsToConfigure: String { String(
-        localized: "Turn on automatic screenshots to choose the interval and change threshold.",
-        bundle: bundle
-    ) }
-    static var automaticScreenshotsToggleDescription: String { String(
-        localized: "Automatically add screenshots while recording.",
-        bundle: bundle
-    ) }
     static var adaptiveScreenshotInterval: String { String(localized: "Adaptive Screenshot Interval", bundle: bundle) }
     static var adaptiveScreenshotIntervalDescription: String { String(
         localized: "Save a screenshot once the screen stops changing instead of checking at a fixed interval.",

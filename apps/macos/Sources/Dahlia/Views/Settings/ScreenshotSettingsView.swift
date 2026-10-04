@@ -9,18 +9,11 @@ struct ScreenshotSettingsView: View {
     var body: some View {
         Form {
             Section {
-                Toggle(isOn: $settings.automaticScreenshotEnabled) {
-                    Text(L10n.automaticScreenshots)
-                    Text(L10n.automaticScreenshotsToggleDescription)
-                }
-                .toggleStyle(.switch)
-
                 Toggle(isOn: $settings.automaticScreenshotAdaptiveIntervalEnabled) {
                     Text(L10n.adaptiveScreenshotInterval)
                     Text(L10n.adaptiveScreenshotIntervalDescription)
                 }
                 .toggleStyle(.switch)
-                .disabled(!settings.automaticScreenshotEnabled)
 
                 Picker(selection: $settings.automaticScreenshotIntervalSeconds) {
                     ForEach(AppSettings.automaticScreenshotIntervalOptions, id: \.self) { interval in
@@ -33,7 +26,6 @@ struct ScreenshotSettingsView: View {
                         : L10n.fixedScreenshotIntervalDescription)
                 }
                 .pickerStyle(.menu)
-                .disabled(!settings.automaticScreenshotEnabled)
 
                 Picker(selection: $settings.automaticScreenshotChangeThresholdPercent) {
                     ForEach(AppSettings.automaticScreenshotChangeThresholdPercentOptions, id: \.self) { threshold in
@@ -46,16 +38,10 @@ struct ScreenshotSettingsView: View {
                         : L10n.fixedScreenshotChangeThresholdDescription)
                 }
                 .pickerStyle(.menu)
-                .disabled(!settings.automaticScreenshotEnabled)
             } header: {
                 Text(L10n.automaticScreenshots)
             } footer: {
-                VStack(alignment: .leading) {
-                    Text(L10n.automaticScreenshotsDescription)
-                    if !settings.automaticScreenshotEnabled {
-                        Text(L10n.enableAutomaticScreenshotsToConfigure)
-                    }
-                }
+                Text(L10n.automaticScreenshotsDescription)
             }
 
             Section {
@@ -75,7 +61,6 @@ struct ScreenshotSettingsView: View {
             } footer: {
                 Text(L10n.sharedContentDetectionFallbackDescription)
             }
-            .disabled(!settings.automaticScreenshotEnabled)
 
             Section {
                 Picker(L10n.screenshotCacheLimit, selection: $screenshotCacheGiB) {

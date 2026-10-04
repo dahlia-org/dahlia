@@ -441,7 +441,6 @@
 "Screenshot capture failed: %@" = "スクリーンショットの取得に失敗しました: %@";
 "Automatic Screenshots" = "自動スクリーンショット";
 "Capture the screen during recording and save a new image when the display changes significantly." = "録音中に画面を確認し、表示が大きく変わったときに新しい画像を保存します。";
-"Automatically add screenshots while recording." = "録音中にスクリーンショットを自動追加します。";
 "Adaptive Screenshot Interval" = "取得間隔をアダプティブにする";
 "Save a screenshot once the screen stops changing instead of checking at a fixed interval." = "一定間隔ではなく、画面の変化が止まったときにスクリーンショットを保存します。";
 "Screenshot Interval" = "取得間隔";
@@ -1283,7 +1282,6 @@
 "Turn on meeting notifications to choose notification conditions." = "通知条件を選ぶには、ミーティング通知をオンにしてください。";
 "Turn on live subtitle translation to choose a target language." = "翻訳先の言語を選ぶには、ライブ字幕翻訳をオンにしてください。";
 "Turn on live subtitles to choose their source and line count." = "音声ソースと表示行数を選ぶには、ライブ字幕をオンにしてください。";
-"Turn on automatic screenshots to choose the interval and change threshold." = "取得間隔と変化量を選ぶには、自動スクリーンショットをオンにしてください。";
 "Zoom In" = "拡大";
 "Zoom Out" = "縮小";
 "Add" = "追加";

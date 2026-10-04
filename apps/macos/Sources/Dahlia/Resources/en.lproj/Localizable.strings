@@ -441,7 +441,6 @@
 "Screenshot capture failed: %@" = "Screenshot capture failed: %@";
 "Automatic Screenshots" = "Automatic Screenshots";
 "Capture the screen during recording and save a new image when the display changes significantly." = "Capture the screen during recording and save a new image when the display changes significantly.";
-"Automatically add screenshots while recording." = "Automatically add screenshots while recording.";
 "Adaptive Screenshot Interval" = "Adaptive Screenshot Interval";
 "Save a screenshot once the screen stops changing instead of checking at a fixed interval." = "Save a screenshot once the screen stops changing instead of checking at a fixed interval.";
 "Screenshot Interval" = "Screenshot Interval";
@@ -1283,7 +1282,6 @@
 "Turn on meeting notifications to choose notification conditions." = "Turn on meeting notifications to choose notification conditions.";
 "Turn on live subtitle translation to choose a target language." = "Turn on live subtitle translation to choose a target language.";
 "Turn on live subtitles to choose their source and line count." = "Turn on live subtitles to choose their source and line count.";
-"Turn on automatic screenshots to choose the interval and change threshold." = "Turn on automatic screenshots to choose the interval and change threshold.";
 "Zoom In" = "Zoom In";
 "Zoom Out" = "Zoom Out";
 "Add" = "Add";
