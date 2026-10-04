@@ -62,12 +62,13 @@ try {
   assert(editor.view.dragging?.node?.node.type.name === 'bulletList', 'The handle must drag the whole list');
   const dragOver = (x, y) => editor.view.dom.dispatchEvent(new DragEvent('dragover', { bubbles: true, cancelable: true, clientX: x, clientY: y }));
   const indicator = () => host.querySelector('.dahlia-block-drop-indicator')?.getBoundingClientRect();
+  const center = () => indicator().top + indicator().height / 2;
   dragOver(nestedText.left + 2, nestedText.top + 4);
-  assert(indicator() && indicator().top >= list.bottom - 1, 'The drop indicator must sit between top-level blocks, not inside the list');
+  assert(indicator() && center() >= list.bottom - 1, 'The drop indicator must sit between top-level blocks, not inside the list');
   assert(!document.querySelector('.prosemirror-dropcursor-block, .prosemirror-dropcursor-inline'), 'Handle drags must not show the drop cursor, which points inside lists');
   const after = editor.view.dom.querySelector(':scope > p').getBoundingClientRect();
   dragOver(after.left + 2, after.bottom - 1);
-  assert(indicator() && indicator().top >= after.bottom - 1, 'Dragging below the last block must show the indicator at the end');
+  assert(indicator() && Math.abs(center() - after.bottom) <= 1, 'Dragging below the last block must show the indicator at the end');
   editor.view.dom.dispatchEvent(new DragEvent('dragleave', { bubbles: true, clientX: after.left + 2, clientY: after.bottom - 1 }));
   assert(indicator(), 'Crossing elements inside the host must keep the indicator, even without a relatedTarget as in WebKit');
   const outside = new DragEvent('dragover', { bubbles: true, cancelable: true, clientX: 5, clientY: 5 });
@@ -81,8 +82,10 @@ try {
   handle.dispatchEvent(new DragEvent('dragstart', { bubbles: true, dataTransfer: new DataTransfer() }));
   assert(editor.view.dragging?.node?.node.textContent === 'after', 'Fixture must drag the paragraph');
   const movedList = editor.view.dom.querySelector('ul').getBoundingClientRect();
-  const center = () => indicator().top + indicator().height / 2;
-  const enter = new DragEvent('dragenter', { bubbles: true, cancelable: true, dataTransfer: new DataTransfer(), clientX: paragraph.left + 10, clientY: paragraph.top + 3 });
+  // Chromium ignores dropEffect assignments on a synthetic DataTransfer; observe the handler's assignment.
+  const enterTransfer = new DataTransfer();
+  Object.defineProperty(enterTransfer, 'dropEffect', { value: 'none', writable: true });
+  const enter = new DragEvent('dragenter', { bubbles: true, cancelable: true, dataTransfer: enterTransfer, clientX: paragraph.left + 10, clientY: paragraph.top + 3 });
   editor.view.dom.querySelector(':scope > p').dispatchEvent(enter);
   assert(enter.defaultPrevented && enter.dataTransfer.dropEffect === 'move', 'Entering a text row must accept the move, since WebKit decides on dragenter');
   assert(indicator() && Math.abs(center() - paragraph.top) <= 1, 'The upper half of a text row must target the gap above it');
@@ -92,7 +95,7 @@ try {
   const gutter = [editor.view.dom.getBoundingClientRect().left - 9, lower.bottom - 1];
   const gutterEvent = (type) => document.elementFromPoint(...gutter).dispatchEvent(new DragEvent(type, { bubbles: true, cancelable: true, clientX: gutter[0], clientY: gutter[1] }));
   gutterEvent('dragover');
-  assert(indicator() && indicator().top >= list.bottom - 1, 'Dragging down the handle gutter must show the drop indicator');
+  assert(indicator() && center() >= movedList.bottom - 1, 'Dragging down the handle gutter must show the drop indicator');
   gutterEvent('drop');
   assert(editor.state.doc.childCount === 2 && editor.state.doc.lastChild.type.name === 'paragraph', 'A paragraph dropped in the gutter beside a list must land after the list, not inside it');
   const idle = new DragEvent('dragover', { bubbles: true, cancelable: true, clientX: gutter[0], clientY: gutter[1] });
