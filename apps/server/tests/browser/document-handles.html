@@ -6,9 +6,9 @@
 <pre id="result">Running…</pre><div id="editor"></div>
 <script type="module">
 // pnpm dev:client -> /tests/browser/document-handles.html. Synthetic content only.
-import { mountDocumentEditor } from '../../src/documents/editor';
-import { DocumentCore } from '../../src/documents/core';
-import '../../src/documents/editor.css';
+import { mountDocumentEditor } from '../../../../packages/ui/src/documents/editor';
+import { DocumentCore } from '../../../../packages/ui/src/documents/core';
+import '../../../../packages/ui/src/documents/editor.css';
 const core = new DocumentCore();
 core.insertText('first\nsecond', () => crypto.randomUUID());
 let host = document.querySelector('#editor');
@@ -48,16 +48,40 @@ try {
   assert(core.projection().text === 'first\nsecond', 'The move must remain undoable');
   editor.commands.selectAll(); editor.commands.toggleBulletList();
   editor.commands.setTextSelection(12); editor.commands.sinkListItem('listItem');
+  editor.commands.insertContentAt(editor.state.doc.content.size, { type: 'paragraph', content: [{ type: 'text', text: 'after' }] });
   const nested = editor.view.dom.querySelector('li li');
   assert(nested, 'Fixture must contain a nested list item');
+  const list = editor.view.dom.querySelector('ul').getBoundingClientRect();
   const nestedText = nested.querySelector('p').getBoundingClientRect();
   hover(nestedText.left + 2, nestedText.top + 8);
-  const nestedHandle = handle.getBoundingClientRect();
-  hover(nestedHandle.left + 9, nestedHandle.top + 12);
-  assert(visible() && handle.getBoundingClientRect().left === nestedHandle.left, 'Hovering the handle must retain the nested item');
-  host.dispatchEvent(new MouseEvent('mouseleave', { relatedTarget: document.body }));
-  hover(nestedHandle.left + 9, nestedHandle.top + 12);
-  assert(visible() && handle.getBoundingClientRect().left === nestedHandle.left, 'Direct nested gutter entry must select the nested item');
+  const listHandle = handle.getBoundingClientRect();
+  assert(visible() && listHandle.right <= list.left && listHandle.top < nestedText.top, 'Hovering a list item must show the whole list handle');
+  hover(listHandle.left + 9, listHandle.top + 12);
+  assert(visible() && handle.getBoundingClientRect().top === listHandle.top, 'Hovering the handle must retain the list');
+  handle.dispatchEvent(new DragEvent('dragstart', { bubbles: true, dataTransfer: new DataTransfer() }));
+  assert(editor.view.dragging?.node?.node.type.name === 'bulletList', 'The handle must drag the whole list');
+  const dragOver = (x, y) => editor.view.dom.dispatchEvent(new DragEvent('dragover', { bubbles: true, cancelable: true, clientX: x, clientY: y }));
+  const indicator = () => host.querySelector('.dahlia-block-drop-indicator')?.getBoundingClientRect();
+  dragOver(nestedText.left + 2, nestedText.top + 4);
+  assert(indicator() && indicator().top >= list.bottom - 1, 'The drop indicator must sit between top-level blocks, not inside the list');
+  assert(!document.querySelector('.prosemirror-dropcursor-block, .prosemirror-dropcursor-inline'), 'Handle drags must not show the drop cursor, which points inside lists');
+  const after = editor.view.dom.querySelector(':scope > p').getBoundingClientRect();
+  dragOver(after.left + 2, after.bottom - 1);
+  assert(indicator() && indicator().top >= after.bottom - 1, 'Dragging below the last block must show the indicator at the end');
+  editor.view.dom.dispatchEvent(new DragEvent('drop', { bubbles: true, cancelable: true, clientX: after.left + 2, clientY: after.bottom - 1 }));
+  assert(editor.state.doc.firstChild.textContent === 'after' && editor.state.doc.lastChild.type.name === 'bulletList', 'Dropping must move the whole list');
+  assert(!indicator(), 'Dropping must remove the indicator');
+  const paragraph = editor.view.dom.querySelector(':scope > p').getBoundingClientRect();
+  hover(paragraph.left + 2, paragraph.top + 8);
+  handle.dispatchEvent(new DragEvent('dragstart', { bubbles: true, dataTransfer: new DataTransfer() }));
+  assert(editor.view.dragging?.node?.node.textContent === 'after', 'Fixture must drag the paragraph');
+  const lower = editor.view.dom.querySelector('li li > p').getBoundingClientRect();
+  const gutter = [editor.view.dom.getBoundingClientRect().left - 9, lower.bottom - 1];
+  const gutterEvent = (type) => document.elementFromPoint(...gutter).dispatchEvent(new DragEvent(type, { bubbles: true, cancelable: true, clientX: gutter[0], clientY: gutter[1] }));
+  gutterEvent('dragover');
+  assert(indicator() && indicator().top >= list.bottom - 1, 'Dragging down the handle gutter must show the drop indicator');
+  gutterEvent('drop');
+  assert(editor.state.doc.childCount === 2 && editor.state.doc.lastChild.type.name === 'paragraph', 'A paragraph dropped in the gutter beside a list must land after the list, not inside it');
   editor.setEditable(false);
   hover(first.left - 9, first.top + 8);
   assert(!visible(), 'Read-only editors must not show a handle');
@@ -65,7 +89,7 @@ try {
   assert(!host.querySelector('.dahlia-block-handle'), 'Destroy must remove the handle');
   hover(first.left - 9, first.top + 8);
   assert(!visible(), 'Destroy must remove hover listeners');
-  document.querySelector('#result').textContent = 'PASS: Command+B bold, direct gutter entry, gutter row change, leave, React reparent, drag/undo, nested list, read-only, teardown';
+  document.querySelector('#result').textContent = 'PASS: Command+B bold, direct gutter entry, gutter row change, leave, React reparent, drag/undo, whole-list drag, top-level drop, gutter drop, read-only, teardown';
 } catch (error) { document.querySelector('#result').textContent = `FAIL: ${error.message}`; }
 finally { core.destroy(); }
 </script>

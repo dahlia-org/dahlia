@@ -60,9 +60,8 @@ const PreserveBlankLines = Extension.create({
   },
 });
 
-/** The block a handle moves: the innermost list item, otherwise the top-level block. */
+/** The block a handle moves: always a top-level block, so a list moves as a whole. */
 function draggableBlock($pos: ResolvedPos): number | null {
-  for (let depth = $pos.depth; depth > 0; depth--) if ($pos.node(depth).type.name === "listItem") return $pos.before(depth);
   if ($pos.depth > 0) return $pos.before(1);
   return $pos.nodeAfter ? $pos.pos : $pos.nodeBefore ? $pos.pos - $pos.nodeBefore.nodeSize : null;
 }
@@ -70,6 +69,7 @@ function draggableBlock($pos: ResolvedPos): number | null {
 /** Resolve the ID again at drop: remote edits may have changed the source position. */
 class BlockHandleView {
   private readonly handle: HTMLElement;
+  private readonly indicator: HTMLElement;
   private host!: HTMLElement;
   private pos: number | null = null;
   private draggedID: string | null = null;
@@ -83,7 +83,8 @@ class BlockHandleView {
       + [3, 8, 13].map((y) => `<circle cx="2.5" cy="${y}" r="1.5"/><circle cx="7.5" cy="${y}" r="1.5"/>`).join("") + "</svg>";
     this.handle.addEventListener("dragstart", this.dragStart);
     this.handle.addEventListener("dragend", this.dragEnd);
-    view.dom.addEventListener("drop", this.drop, true);
+    this.indicator = view.dom.ownerDocument.createElement("div");
+    this.indicator.className = "dahlia-block-drop-indicator";
   }
   update(view: EditorView, previous: { doc: Node }) {
     // React's EditorContent reparents the view after Tiptap creates it.
@@ -93,30 +94,42 @@ class BlockHandleView {
   }
   private setHost(host: HTMLElement) {
     if (this.host === host) return;
-    this.host?.removeEventListener("mousemove", this.hover);
-    this.host?.removeEventListener("mouseleave", this.leave);
-    this.host?.classList.remove("dahlia-document-host");
+    this.releaseHost();
     this.host = host;
     host.classList.add("dahlia-document-host");
     host.addEventListener("mousemove", this.hover);
     host.addEventListener("mouseleave", this.leave);
+    // The host includes the handle gutter. Capture before the drop cursor, which would point inside a list.
+    host.addEventListener("dragover", this.dragOver, true);
+    host.addEventListener("dragleave", this.dragLeave);
+    host.addEventListener("drop", this.drop, true);
   }
-  destroy() {
+  private releaseHost() {
+    if (!this.host) return;
     this.host.removeEventListener("mousemove", this.hover);
     this.host.removeEventListener("mouseleave", this.leave);
+    this.host.removeEventListener("dragover", this.dragOver, true);
+    this.host.removeEventListener("dragleave", this.dragLeave);
+    this.host.removeEventListener("drop", this.drop, true);
     this.host.classList.remove("dahlia-document-host");
-    this.view.dom.removeEventListener("drop", this.drop, true);
-    this.handle.remove();
+  }
+  destroy() {
+    this.releaseHost();
+    this.handle.remove(); this.indicator.remove();
   }
   private hide() { this.pos = null; this.handle.style.display = "none"; }
+  /** The document position on the pointer's row, so the gutter resolves like the text beside it. */
+  private posAtRow(event: MouseEvent): number | null {
+    const bounds = this.view.dom.getBoundingClientRect();
+    return this.view.posAtCoords({ left: Math.min(Math.max(event.clientX, bounds.left + 1), bounds.right - 1), top: event.clientY })?.pos ?? null;
+  }
   private hover = (event: MouseEvent) => {
     const { view } = this;
     if (!view.editable || view.dragging) return this.hide();
     // The handle can sit outside a nested item's text bounds; keep its resolved block.
     if (event.target instanceof globalThis.Node && this.handle.contains(event.target)) return;
-    const bounds = view.dom.getBoundingClientRect();
-    const hit = view.posAtCoords({ left: Math.min(Math.max(event.clientX, bounds.left + 1), bounds.right - 1), top: event.clientY });
-    const pos = hit ? draggableBlock(view.state.doc.resolve(hit.pos)) : null;
+    const hit = this.posAtRow(event);
+    const pos = hit === null ? null : draggableBlock(view.state.doc.resolve(hit));
     const block = pos === null ? null : view.nodeDOM(pos);
     if (pos === null || !(block instanceof HTMLElement)) return this.hide();
     const box = block.getBoundingClientRect();
@@ -125,11 +138,12 @@ class BlockHandleView {
     if (this.handle.parentElement !== host) host.appendChild(this.handle);
     this.pos = pos;
     this.handle.style.display = "flex";
-    // Sit left of the bullet for list items, and center on the block's first line.
-    const anchor = (block.tagName === "LI" ? block.parentElement! : block).getBoundingClientRect().left;
-    const line = view.coordsAtPos(pos + (block.tagName === "LI" ? 2 : 1));
+    // Sit left of a list's bullets, and center on the first line of its first text block.
+    let text = pos + 1;
+    for (let node = view.state.doc.nodeAt(pos); node && !node.isTextblock; node = node.firstChild) text++;
+    const line = view.coordsAtPos(text);
     const origin = host.getBoundingClientRect();
-    this.handle.style.left = `${anchor - origin.left - this.handle.offsetWidth}px`;
+    this.handle.style.left = `${box.left - origin.left - this.handle.offsetWidth}px`;
     this.handle.style.top = `${(line.top + line.bottom - this.handle.offsetHeight) / 2 - origin.top}px`;
   };
   private leave = (event: MouseEvent) => {
@@ -152,14 +166,40 @@ class BlockHandleView {
     // The drop handler deletes `node` and inserts `slice` at the drop point (Alt copies instead).
     view.dragging = { slice, move: true, node: selection } as EditorView["dragging"];
   };
+  /** The gap between top-level blocks nearest the pointer, and its vertical position. */
+  private dropTarget(event: DragEvent): { pos: number; top: number } | null {
+    const { view } = this, doc = view.state.doc, hit = this.posAtRow(event);
+    if (hit === null) return null;
+    const $pos = doc.resolve(hit);
+    const rect = (index: number) => (view.nodeDOM($pos.posAtIndex(index, 0)) as HTMLElement | null)?.getBoundingClientRect();
+    let index = $pos.index(0);
+    if ($pos.depth > 0) { const box = rect(index); if (box && event.clientY > (box.top + box.bottom) / 2) index++; }
+    const above = index > 0 ? rect(index - 1)?.bottom : undefined, below = index < doc.childCount ? rect(index)?.top : undefined;
+    const top = above !== undefined && below !== undefined ? (above + below) / 2 : above ?? below;
+    return top === undefined ? null : { pos: $pos.posAtIndex(index, 0), top };
+  }
+  private dragOver = (event: DragEvent) => {
+    if (!this.draggedID) return;
+    event.preventDefault(); event.stopImmediatePropagation();
+    const target = this.dropTarget(event);
+    if (!target) return this.indicator.remove();
+    if (this.indicator.parentElement !== this.host) this.host.appendChild(this.indicator);
+    const origin = this.host.getBoundingClientRect(), bounds = this.view.dom.getBoundingClientRect();
+    this.indicator.style.left = `${bounds.left - origin.left}px`;
+    this.indicator.style.width = `${bounds.width}px`;
+    this.indicator.style.top = `${target.top - origin.top - this.indicator.offsetHeight / 2}px`;
+  };
+  private dragLeave = (event: DragEvent) => {
+    if (!(event.relatedTarget instanceof globalThis.Node && this.host.contains(event.relatedTarget))) this.indicator.remove();
+  };
   private drop = (event: DragEvent) => {
     if (!this.draggedID) return;
     event.preventDefault(); event.stopImmediatePropagation();
-    const hit = this.view.posAtCoords({ left: event.clientX, top: event.clientY });
-    if (hit) moveBlock(this.editor, this.draggedID, hit.pos);
+    const target = this.dropTarget(event);
+    if (target) moveBlock(this.editor, this.draggedID, target.pos);
     this.dragEnd();
   };
-  private dragEnd = () => { this.draggedID = null; this.view.dragging = null; this.hide(); };
+  private dragEnd = () => { this.draggedID = null; this.view.dragging = null; this.indicator.remove(); this.hide(); };
 }
 
 const BlockHandle = Extension.create({
