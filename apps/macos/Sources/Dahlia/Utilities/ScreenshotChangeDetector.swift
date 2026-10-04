@@ -79,8 +79,8 @@ enum ScreenshotChangeDetector {
     }
 }
 
-/// Tracks when each fingerprint pixel last moved so that captures compare only the still part of the screen.
-/// Continuously moving areas such as camera video never settle, so they neither trigger nor dilute a capture.
+/// Tracks when each fingerprint pixel last moved so that adaptive captures compare only the still part of the screen.
+/// Continuously moving areas such as camera video never settle, so they neither trigger nor dilute such a capture.
 struct ScreenshotSettleTracker {
     static let settleDuration: Duration = .seconds(1)
 
@@ -129,16 +129,26 @@ struct ScreenshotSettleTracker {
         latestPixels = pixels
     }
 
-    /// When the most recent movement settles, or nil when it has already settled by `now`.
-    func settleDeadline(after now: ContinuousClock.Instant) -> ContinuousClock.Instant? {
-        guard let lastChange = changedAt.max() else { return nil }
-        let deadline = lastChange + Self.settleDuration
-        return deadline > now ? deadline : nil
+    /// When the next check falls due without a new frame: once the latest movement settles with an adaptive interval,
+    /// or once `interval` has passed since the last capture with a fixed one. Nil when it is already due by `now`.
+    func checkDeadline(
+        after now: ContinuousClock.Instant,
+        interval: Duration,
+        isAdaptive: Bool
+    ) -> ContinuousClock.Instant? {
+        let deadline = isAdaptive
+            ? changedAt.max().map { $0 + Self.settleDuration }
+            : lastCaptureAt.map { $0 + interval }
+        guard let deadline, deadline > now else { return nil }
+        return deadline
     }
 
+    /// An adaptive interval waits for changes to settle and uses `interval` only as the fallback for a mostly
+    /// moving screen. A fixed interval compares the whole screen once `interval` has passed since the last capture.
     func shouldCapture(
         at now: ContinuousClock.Instant,
-        maximumInterval: Duration,
+        interval: Duration,
+        isAdaptive: Bool,
         changeThresholdRatio: Double,
         comparedWith baseline: Baseline
     ) -> Bool {
@@ -160,6 +170,10 @@ struct ScreenshotSettleTracker {
                 }
             }
         }
+        let wholeScreenChanged = Double(changeCount) / Double(latestPixels.count) >= changeThresholdRatio
+        guard isAdaptive else {
+            return now - lastCaptureAt >= interval && wholeScreenChanged
+        }
         // The half-screen floor keeps small still areas, such as subtitles over video, from looking like a full change.
         let settledArea = max(settledCount, latestPixels.count / 2)
         if Double(settledChangeCount) / Double(settledArea) >= changeThresholdRatio {
@@ -168,15 +182,15 @@ struct ScreenshotSettleTracker {
         // ponytail: a fixed half-screen cutoff separates full-screen video from camera tiles; tune with real meetings.
         guard settledCount * 2 < latestPixels.count,
               let lastMostlySettledAt,
-              now - lastMostlySettledAt >= maximumInterval,
-              now - lastCaptureAt >= maximumInterval else { return false }
-        return Double(changeCount) / Double(latestPixels.count) >= changeThresholdRatio
+              now - lastMostlySettledAt >= interval,
+              now - lastCaptureAt >= interval else { return false }
+        return wholeScreenChanged
     }
 
-    func captureReference(at now: ContinuousClock.Instant) -> CaptureReference {
+    func captureReference(at now: ContinuousClock.Instant, isAdaptive: Bool) -> CaptureReference {
         CaptureReference(
-            savedPixels: updated(savedPixels, at: now),
-            attemptedPixels: updated(attemptedPixels, at: now),
+            savedPixels: updated(savedPixels, at: now, isAdaptive: isAdaptive),
+            attemptedPixels: updated(attemptedPixels, at: now, isAdaptive: isAdaptive),
             capturedAt: now
         )
     }
@@ -198,11 +212,11 @@ struct ScreenshotSettleTracker {
         attemptedPixels = nil
     }
 
-    private func updated(_ reference: [UInt8]?, at now: ContinuousClock.Instant) -> [UInt8] {
+    private func updated(_ reference: [UInt8]?, at now: ContinuousClock.Instant, isAdaptive: Bool) -> [UInt8] {
         guard var reference else { return latestPixels }
         // Pixels still moving keep their old reference so their final state is evaluated once they settle.
-        // A mostly moving screen is compared as a whole, so the whole frame becomes the reference.
-        let updatesAllPixels = isMostlyMoving(at: now)
+        // A fixed interval or a mostly moving screen is compared as a whole, so the whole frame becomes the reference.
+        let updatesAllPixels = !isAdaptive || isMostlyMoving(at: now)
         for index in latestPixels.indices where updatesAllPixels || isSettled(index, at: now) {
             reference[index] = latestPixels[index]
         }

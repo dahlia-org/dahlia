@@ -95,6 +95,7 @@ final class AppSettings: ObservableObject, GoogleDriveExportFolderSettingsProvid
         50,
     ]
     nonisolated static let automaticScreenshotIntervalSecondsUserDefaultsKey = "automaticScreenshotIntervalSeconds"
+    nonisolated static let automaticScreenshotAdaptiveIntervalKey = "automaticScreenshotAdaptiveIntervalEnabled"
     nonisolated static let automaticScreenshotChangeThresholdPercentUserDefaultsKey = "automaticScreenshotChangeThresholdPercent"
     nonisolated static let automaticScreenshotSharedRegionDetectionKey =
         "automaticScreenshotDetectChangesInSharedRegionOnly"
@@ -297,6 +298,7 @@ final class AppSettings: ObservableObject, GoogleDriveExportFolderSettingsProvid
     @AppStorage("automaticScreenshotEnabled") var automaticScreenshotEnabled = true
     @AppStorage(AppSettings.automaticScreenshotIntervalSecondsUserDefaultsKey) private var storedAutomaticScreenshotIntervalSeconds =
         AppSettings.defaultAutomaticScreenshotIntervalSeconds
+    @AppStorage(AppSettings.automaticScreenshotAdaptiveIntervalKey) var automaticScreenshotAdaptiveIntervalEnabled = true
     @AppStorage(AppSettings.automaticScreenshotChangeThresholdPercentUserDefaultsKey) private var storedAutomaticScreenshotChangeThresholdPercent =
         AppSettings.defaultAutomaticScreenshotChangeThresholdPercent
     @AppStorage(AppSettings.automaticScreenshotSharedRegionDetectionKey)
@@ -955,6 +957,10 @@ extension UserDefaults {
     @objc dynamic var automaticScreenshotIntervalSeconds: Int {
         object(forKey: AppSettings.automaticScreenshotIntervalSecondsUserDefaultsKey) as? Int
             ?? AppSettings.defaultAutomaticScreenshotIntervalSeconds
+    }
+
+    @objc dynamic var automaticScreenshotAdaptiveIntervalEnabled: Bool {
+        object(forKey: AppSettings.automaticScreenshotAdaptiveIntervalKey) as? Bool ?? true
     }
 
     @objc dynamic var automaticScreenshotChangeThresholdPercent: Int {

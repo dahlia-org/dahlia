@@ -147,7 +147,13 @@ enum SettingsCategory: String, CaseIterable, Identifiable {
         case .liveSubtitles:
             [L10n.liveSubtitleLanguage, L10n.liveSubtitleTranslation, L10n.translationTargetLanguage, L10n.includeMicrophone]
         case .screenshots:
-            [L10n.automaticScreenshots, L10n.screenshotCacheLimit, L10n.screenshotInterval, L10n.sharedContent]
+            [
+                L10n.automaticScreenshots,
+                L10n.screenshotCacheLimit,
+                L10n.adaptiveScreenshotInterval,
+                L10n.screenshotInterval,
+                L10n.sharedContent,
+            ]
         case .calendar:
             ["Google", L10n.macOSCalendar, L10n.calendarSources, L10n.menuBarCalendar, L10n.notifications]
         case .cloudStorage:

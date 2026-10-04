@@ -189,12 +189,35 @@ import CoreGraphics
             tracker.ingest(fingerprint { $0 < 30 ? 200 : 0 }, at: changedAt)
 
             #expect(!shouldCapture(tracker, at: changedAt))
-            let deadline = try #require(tracker.settleDeadline(after: changedAt))
+            let deadline = try #require(tracker.checkDeadline(after: changedAt, interval: maximumInterval, isAdaptive: true))
             #expect(deadline == changedAt + ScreenshotSettleTracker.settleDuration)
             #expect(shouldCapture(tracker, at: deadline))
 
-            tracker.commit(tracker.captureReference(at: deadline), isSaved: true)
+            tracker.commit(tracker.captureReference(at: deadline, isAdaptive: true), isSaved: true)
             #expect(!shouldCapture(tracker, at: deadline))
+        }
+
+        @Test
+        func fixedIntervalComparesTheWholeScreenOncePerInterval() throws {
+            var tracker = capturedTracker()
+            let changedAt = start + maximumInterval - .milliseconds(500)
+            tracker.ingest(fingerprint { _ in 200 }, at: changedAt)
+
+            #expect(!shouldCapture(tracker, at: changedAt, isAdaptive: false))
+            let deadline = try #require(tracker.checkDeadline(after: changedAt, interval: maximumInterval, isAdaptive: false))
+            #expect(deadline == start + maximumInterval)
+            // The same state waits only for the settle with an adaptive interval.
+            #expect(
+                tracker.checkDeadline(after: changedAt, interval: maximumInterval, isAdaptive: true)
+                    == changedAt + ScreenshotSettleTracker.settleDuration
+            )
+            // Only an adaptive interval waits for the change to settle.
+            #expect(!shouldCapture(tracker, at: deadline))
+            #expect(shouldCapture(tracker, at: deadline, isAdaptive: false))
+
+            // The whole frame becomes the reference, including pixels that had not settled.
+            tracker.commit(tracker.captureReference(at: deadline, isAdaptive: false), isSaved: true)
+            #expect(!shouldCapture(tracker, at: deadline + maximumInterval, isAdaptive: false))
         }
 
         @Test
@@ -205,10 +228,10 @@ import CoreGraphics
             let settledAt = changedAt + ScreenshotSettleTracker.settleDuration
 
             // A failed or discarded capture never commits its reference, so the change is retried.
-            _ = tracker.captureReference(at: settledAt)
+            _ = tracker.captureReference(at: settledAt, isAdaptive: true)
             #expect(shouldCapture(tracker, at: settledAt))
 
-            tracker.commit(tracker.captureReference(at: settledAt), isSaved: true)
+            tracker.commit(tracker.captureReference(at: settledAt, isAdaptive: true), isSaved: true)
             #expect(!shouldCapture(tracker, at: settledAt))
         }
 
@@ -239,7 +262,7 @@ import CoreGraphics
                 #expect(shouldCapture(tracker, at: settledAt, threshold: 0.01, comparedWith: .lastAttempt))
                 let passesSaveThreshold = shouldCapture(tracker, at: settledAt, threshold: 0.05)
                 #expect(passesSaveThreshold == (step == 3))
-                tracker.commit(tracker.captureReference(at: settledAt), isSaved: passesSaveThreshold)
+                tracker.commit(tracker.captureReference(at: settledAt, isAdaptive: true), isSaved: passesSaveThreshold)
                 // The gate does not re-trigger on the change it just checked.
                 #expect(!shouldCapture(tracker, at: settledAt, threshold: 0.01, comparedWith: .lastAttempt))
             }
@@ -252,7 +275,7 @@ import CoreGraphics
             let blank = ScreenshotFingerprint(width: 64, height: 36, pixels: Array(repeating: 0, count: 64 * 36))
             var tracker = ScreenshotSettleTracker()
             tracker.ingest(blank, at: start)
-            tracker.commit(tracker.captureReference(at: start), isSaved: true)
+            tracker.commit(tracker.captureReference(at: start, isAdaptive: true), isSaved: true)
 
             // One cell is far below 1% of a full-size fingerprint, yet it may be a threshold-sized change in the crop.
             var changed = blank.pixels
@@ -262,7 +285,7 @@ import CoreGraphics
             let settledAt = changedAt + ScreenshotSettleTracker.settleDuration
 
             #expect(shouldCapture(tracker, at: settledAt, threshold: gate, comparedWith: .lastAttempt))
-            tracker.commit(tracker.captureReference(at: settledAt), isSaved: false)
+            tracker.commit(tracker.captureReference(at: settledAt, isAdaptive: true), isSaved: false)
             #expect(!shouldCapture(tracker, at: settledAt, threshold: gate, comparedWith: .lastAttempt))
         }
 
@@ -287,7 +310,7 @@ import CoreGraphics
 
             let firstSettledAt = firstChangeAt + ScreenshotSettleTracker.settleDuration
             #expect(shouldCapture(tracker, at: firstSettledAt))
-            tracker.commit(tracker.captureReference(at: firstSettledAt), isSaved: true)
+            tracker.commit(tracker.captureReference(at: firstSettledAt, isAdaptive: true), isSaved: true)
 
             let nextSettledAt = nextChangeAt + ScreenshotSettleTracker.settleDuration
             #expect(!shouldCapture(tracker, at: nextSettledAt - .milliseconds(1)))
@@ -363,11 +386,13 @@ import CoreGraphics
             _ tracker: ScreenshotSettleTracker,
             at now: ContinuousClock.Instant,
             threshold: Double? = nil,
-            comparedWith baseline: ScreenshotSettleTracker.Baseline = .lastSaved
+            comparedWith baseline: ScreenshotSettleTracker.Baseline = .lastSaved,
+            isAdaptive: Bool = true
         ) -> Bool {
             tracker.shouldCapture(
                 at: now,
-                maximumInterval: maximumInterval,
+                interval: maximumInterval,
+                isAdaptive: isAdaptive,
                 changeThresholdRatio: threshold ?? self.threshold,
                 comparedWith: baseline
             )
@@ -376,7 +401,7 @@ import CoreGraphics
         private func capturedTracker() -> ScreenshotSettleTracker {
             var tracker = ScreenshotSettleTracker()
             tracker.ingest(fingerprint { _ in 0 }, at: start)
-            tracker.commit(tracker.captureReference(at: start), isSaved: true)
+            tracker.commit(tracker.captureReference(at: start, isAdaptive: true), isSaved: true)
             return tracker
         }
 

@@ -15,13 +15,22 @@ struct ScreenshotSettingsView: View {
                 }
                 .toggleStyle(.switch)
 
+                Toggle(isOn: $settings.automaticScreenshotAdaptiveIntervalEnabled) {
+                    Text(L10n.adaptiveScreenshotInterval)
+                    Text(L10n.adaptiveScreenshotIntervalDescription)
+                }
+                .toggleStyle(.switch)
+                .disabled(!settings.automaticScreenshotEnabled)
+
                 Picker(selection: $settings.automaticScreenshotIntervalSeconds) {
                     ForEach(AppSettings.automaticScreenshotIntervalOptions, id: \.self) { interval in
                         Text(L10n.seconds(interval)).tag(interval)
                     }
                 } label: {
                     Text(L10n.screenshotInterval)
-                    Text(L10n.screenshotIntervalDescription)
+                    Text(settings.automaticScreenshotAdaptiveIntervalEnabled
+                        ? L10n.adaptiveScreenshotIntervalFallbackDescription
+                        : L10n.fixedScreenshotIntervalDescription)
                 }
                 .pickerStyle(.menu)
                 .disabled(!settings.automaticScreenshotEnabled)
@@ -32,7 +41,9 @@ struct ScreenshotSettingsView: View {
                     }
                 } label: {
                     Text(L10n.screenshotChangeThreshold)
-                    Text(L10n.screenshotChangeThresholdDescription)
+                    Text(settings.automaticScreenshotAdaptiveIntervalEnabled
+                        ? L10n.adaptiveScreenshotChangeThresholdDescription
+                        : L10n.fixedScreenshotChangeThresholdDescription)
                 }
                 .pickerStyle(.menu)
                 .disabled(!settings.automaticScreenshotEnabled)

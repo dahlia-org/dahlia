@@ -137,6 +137,7 @@ import GRDB
             let request = try AutomaticScreenshotCaptureRequest(
                 source: .entireDesktop,
                 intervalSeconds: 5,
+                usesAdaptiveInterval: true,
                 changeThresholdRatio: 0.20,
                 detectsChangesInSharedContentOnly: false,
                 cropsToSharedContent: false,
@@ -153,6 +154,7 @@ import GRDB
             let settingsTask = control.enqueue { capture in
                 await capture.updateSettings(
                     intervalSeconds: 10,
+                    usesAdaptiveInterval: false,
                     changeThresholdRatio: 0.30,
                     detectsChangesInSharedContentOnly: true,
                     cropsToSharedContent: true
@@ -215,6 +217,7 @@ import GRDB
 
         func updateSettings(
             intervalSeconds _: Int,
+            usesAdaptiveInterval _: Bool,
             changeThresholdRatio _: Double,
             detectsChangesInSharedContentOnly _: Bool,
             cropsToSharedContent _: Bool

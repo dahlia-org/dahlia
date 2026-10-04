@@ -442,10 +442,14 @@
 "Automatic Screenshots" = "自動スクリーンショット";
 "Capture the screen during recording and save a new image when the display changes significantly." = "録音中に画面を確認し、表示が大きく変わったときに新しい画像を保存します。";
 "Automatically add screenshots while recording." = "録音中にスクリーンショットを自動追加します。";
-"Maximum Screenshot Interval" = "スクリーンショットの最大間隔";
-"Dahlia saves a screenshot once the screen stops changing. While most of the screen keeps moving, such as during full-screen video, Dahlia checks at this interval." = "画面の変化が止まったときにスクリーンショットを保存します。全画面の動画など画面の大半が動き続ける間は、この間隔で確認します。";
+"Adaptive Screenshot Interval" = "取得間隔をアダプティブにする";
+"Save a screenshot once the screen stops changing instead of checking at a fixed interval." = "一定間隔ではなく、画面の変化が止まったときにスクリーンショットを保存します。";
+"Screenshot Interval" = "取得間隔";
+"While most of the screen keeps moving, such as during full-screen video, Dahlia checks at this interval." = "全画面の動画など画面の大半が動き続ける間は、この間隔で確認します。";
+"Dahlia checks the screen for changes at this interval." = "この間隔で画面の変化を確認します。";
 "Screenshot Change Threshold" = "画面変化の閾値";
 "Save a new screenshot when at least this much of the screen changes, ignoring moving areas such as camera video." = "カメラ映像など動き続けている部分を除いた画面のうち、この割合以上が変化したときに新しいスクリーンショットを保存します。";
+"Save a new screenshot when at least this much of the screen changes." = "画面の変化率がこの値以上になったときに新しいスクリーンショットを保存します。";
 "Shared Content" = "共有コンテンツ";
 "Detect Changes in Shared Content Only" = "共有領域のみで画面差分を判定";
 "Ignore changes outside detected slides or shared screens." = "検出したスライドや画面共有以外の変化を無視します。";
