@@ -129,8 +129,8 @@ final class AppSettings: ObservableObject, GoogleDriveExportFolderSettingsProvid
     nonisolated static let defaultConversationAnalyticsBetaEnabled = false
     nonisolated static let defaultGoogleDriveExportFolderName = "Dahlia"
     private nonisolated static let legacyGoogleDriveExportFolderName = "Meeting Notes"
-    fileprivate nonisolated static let defaultAutomaticScreenshotIntervalSeconds = 30
-    fileprivate nonisolated static let defaultAutomaticScreenshotChangeThresholdPercent = 20
+    fileprivate nonisolated static let defaultAutomaticScreenshotIntervalSeconds = 20
+    fileprivate nonisolated static let defaultAutomaticScreenshotChangeThresholdPercent = 5
 
     init() {
         Self.migrateCalendarEventFilterSettings(in: .standard)

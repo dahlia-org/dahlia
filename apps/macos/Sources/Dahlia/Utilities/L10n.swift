@@ -1044,14 +1044,14 @@ enum L10n { // swiftlint:disable:this type_body_length
         localized: "Automatically add screenshots while recording.",
         bundle: bundle
     ) }
-    static var screenshotInterval: String { String(localized: "Screenshot Interval", bundle: bundle) }
+    static var screenshotInterval: String { String(localized: "Maximum Screenshot Interval", bundle: bundle) }
     static var screenshotIntervalDescription: String { String(
-        localized: "Choose how often Dahlia checks the screen for meaningful changes.",
+        localized: "Dahlia saves a screenshot once the screen stops changing. While most of the screen keeps moving, such as during full-screen video, Dahlia checks at this interval.",
         bundle: bundle
     ) }
     static var screenshotChangeThreshold: String { String(localized: "Screenshot Change Threshold", bundle: bundle) }
     static var screenshotChangeThresholdDescription: String { String(
-        localized: "Save a new screenshot when at least this much of the screen changes.",
+        localized: "Save a new screenshot when at least this much of the screen changes, ignoring moving areas such as camera video.",
         bundle: bundle
     ) }
     static var sharedContent: String { String(localized: "Shared Content", bundle: bundle) }
