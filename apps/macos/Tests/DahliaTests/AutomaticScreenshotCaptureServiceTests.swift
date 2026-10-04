@@ -1,6 +1,5 @@
 import Foundation
 import GRDB
-@preconcurrency import ScreenCaptureKit
 @testable import Dahlia
 
 #if canImport(Testing)
@@ -67,59 +66,43 @@ import GRDB
         }
 
         @Test
-        func staleProcessingCompletionPreservesReplacementOperationAndPendingFrame() throws {
+        func staleProcessingCompletionPreservesReplacementOperation() throws {
             var state = AutomaticScreenshotProcessingState()
             let staleAttempt = AutomaticScreenshotCaptureAttempt(generation: 1, id: 1)
             let replacementAttempt = AutomaticScreenshotCaptureAttempt(generation: 2, id: 2)
             state.begin(attempt: staleAttempt) { _ in Task {} }
-            _ = state.queueLatest(
-                makeFrame(byte: 1, capturedAt: Date(timeIntervalSince1970: 100)),
-                attempt: staleAttempt
-            )
             let staleOperationResult = state.take(matching: staleAttempt)
             let staleOperation = try #require(staleOperationResult)
 
             state.begin(attempt: replacementAttempt) { _ in Task {} }
-            let replacementDate = Date(timeIntervalSince1970: 200)
-            let queuedReplacement = state.queueLatest(
-                makeFrame(byte: 2, capturedAt: replacementDate),
-                attempt: replacementAttempt
-            )
-            #expect(queuedReplacement)
-            let stalePending = state.complete(
+            let completedStale = state.complete(
                 operationID: staleOperation.id,
                 attempt: staleAttempt
             )
 
-            #expect(stalePending == nil)
+            #expect(!completedStale)
             #expect(state.operation?.attempt == replacementAttempt)
-            #expect(state.pendingFrame?.attempt == replacementAttempt)
-            #expect(state.pendingFrame?.frame.capturedAt == replacementDate)
         }
 
         @Test
-        func frameMailboxRetainsOnlyTheNewestPendingFullResolutionFrame() async throws {
+        func frameMailboxRetainsOnlyTheNewestPendingDetectionFrame() async throws {
             let mailbox = AutomaticScreenshotFrameMailbox()
-            let firstDate = Date(timeIntervalSince1970: 100)
-            let latestDate = Date(timeIntervalSince1970: 300)
-            mailbox.yield(makeFrame(byte: 1, capturedAt: firstDate))
-            mailbox.yield(makeFrame(byte: 2, capturedAt: Date(timeIntervalSince1970: 200)))
-            mailbox.yield(makeFrame(byte: 3, capturedAt: latestDate))
+            mailbox.yield(makeFrame(byte: 1))
+            mailbox.yield(makeFrame(byte: 2))
+            mailbox.yield(makeFrame(byte: 3))
             mailbox.finish()
 
             var iterator = mailbox.stream.makeAsyncIterator()
             let received = try #require(await iterator.next())
             #expect(received.pixels == Data(repeating: 3, count: 4))
-            #expect(received.capturedAt == latestDate)
             #expect(await iterator.next() == nil)
         }
 
         @Test
-        func persistedRecordUsesFrameReceiptTime() {
+        func persistedRecordUsesCaptureTime() {
             let capturedAt = Date(timeIntervalSince1970: 123)
-            let frame = makeFrame(byte: 1, capturedAt: capturedAt)
             let record = AutomaticScreenshotCaptureService.makeRecord(
-                frame: frame,
+                capturedAt: capturedAt,
                 meetingID: .v7(),
                 sessionID: .v7(),
                 encodedData: Data([9]),
@@ -127,6 +110,14 @@ import GRDB
             )
 
             #expect(record.capturedAt == capturedAt)
+        }
+
+        @Test
+        func onlySavedOrSkippedCapturesCommitTheReference() {
+            #expect(AutomaticScreenshotCaptureOutcome.saved.commitsReference)
+            #expect(AutomaticScreenshotCaptureOutcome.skipped.commitsReference)
+            #expect(!AutomaticScreenshotCaptureOutcome.discarded.commitsReference)
+            #expect(!AutomaticScreenshotCaptureOutcome.failed.commitsReference)
         }
 
         @Test
@@ -139,116 +130,6 @@ import GRDB
             baseline.record(oldFingerprint, detectionScopeMatches: false)
 
             #expect(baseline.value == nil)
-        }
-
-        @Test
-        func sourcePixelDimensionsRecoverNativeSizeFromScaledSurface() throws {
-            let dimensions = try #require(AutomaticScreenshotCaptureService.sourcePixelDimensions(
-                contentRect: CGRect(x: 0, y: 0, width: 600, height: 400),
-                contentScale: 0.5,
-                scaleFactor: 2
-            ))
-
-            #expect(dimensions == AutomaticScreenshotPixelDimensions(width: 2400, height: 1600))
-            #expect(AutomaticScreenshotCaptureService.sourcePixelDimensions(
-                contentRect: .zero,
-                contentScale: 1,
-                scaleFactor: 2
-            ) == nil)
-        }
-
-        @Test
-        func sourcePixelDimensionsDecodeDictionaryContentRect() throws {
-            let contentRect = CGRect(x: 0, y: 0, width: 600, height: 400)
-            let attachments: [SCStreamFrameInfo: Any] = [
-                .contentRect: contentRect.dictionaryRepresentation,
-                .contentScale: CGFloat(0.5),
-                .scaleFactor: CGFloat(2),
-            ]
-
-            let dimensions = try #require(AutomaticScreenshotCaptureService.sourcePixelDimensions(
-                from: attachments
-            ))
-
-            #expect(dimensions == AutomaticScreenshotPixelDimensions(width: 2400, height: 1600))
-        }
-
-        @Test
-        func sourcePixelDimensionsDecodeDirectContentRectAndRejectInvalidMetadata() throws {
-            let directAttachments: [SCStreamFrameInfo: Any] = [
-                .contentRect: CGRect(x: 0, y: 0, width: 1358, height: 1219),
-                .contentScale: CGFloat(1),
-                .scaleFactor: CGFloat(1),
-            ]
-            let dimensions = try #require(AutomaticScreenshotCaptureService.sourcePixelDimensions(
-                from: directAttachments
-            ))
-
-            #expect(dimensions == AutomaticScreenshotPixelDimensions(width: 1358, height: 1219))
-            #expect(AutomaticScreenshotCaptureService.sourcePixelDimensions(from: [
-                .contentRect: "invalid",
-                .contentScale: CGFloat(1),
-                .scaleFactor: CGFloat(1),
-            ]) == nil)
-            #expect(AutomaticScreenshotCaptureService.sourcePixelDimensions(from: [
-                .contentRect: CGRect(x: 0, y: 0, width: 1358, height: 1219).dictionaryRepresentation,
-                .contentScale: CGFloat(0),
-                .scaleFactor: CGFloat(1),
-            ]) == nil)
-        }
-
-        @Test
-        func resolutionActionUpdatesThenDiscardsStaleSurfaceBeforeProcessingNativeFrame() {
-            let staleDimensions = AutomaticScreenshotPixelDimensions(width: 1104, height: 932)
-            let nativeDimensions = AutomaticScreenshotPixelDimensions(width: 1358, height: 1219)
-
-            #expect(AutomaticScreenshotCaptureService.frameResolutionAction(
-                frameDimensions: staleDimensions,
-                sourcePixelDimensions: nativeDimensions,
-                configuredDimensions: staleDimensions
-            ) == .updateConfiguration(nativeDimensions))
-            #expect(AutomaticScreenshotCaptureService.frameResolutionAction(
-                frameDimensions: staleDimensions,
-                sourcePixelDimensions: nativeDimensions,
-                configuredDimensions: nativeDimensions
-            ) == .discard)
-            #expect(AutomaticScreenshotCaptureService.frameResolutionAction(
-                frameDimensions: staleDimensions,
-                sourcePixelDimensions: staleDimensions,
-                configuredDimensions: nativeDimensions
-            ) == .discard)
-            #expect(AutomaticScreenshotCaptureService.frameResolutionAction(
-                frameDimensions: nativeDimensions,
-                sourcePixelDimensions: nativeDimensions,
-                configuredDimensions: nativeDimensions
-            ) == .process)
-            #expect(AutomaticScreenshotCaptureService.frameResolutionAction(
-                frameDimensions: staleDimensions,
-                sourcePixelDimensions: nil,
-                configuredDimensions: nativeDimensions
-            ) == .discard)
-            #expect(AutomaticScreenshotCaptureService.frameResolutionAction(
-                frameDimensions: nativeDimensions,
-                sourcePixelDimensions: nil,
-                configuredDimensions: nativeDimensions
-            ) == .process)
-        }
-
-        @Test
-        func resolutionUpdateDiscardsPendingFrameWithoutRemovingActiveOperation() {
-            var state = AutomaticScreenshotProcessingState()
-            let attempt = AutomaticScreenshotCaptureAttempt(generation: 1, id: 1)
-            state.begin(attempt: attempt) { _ in Task {} }
-            let didQueuePendingFrame = state.queueLatest(
-                makeFrame(byte: 1, capturedAt: Date(timeIntervalSince1970: 100)),
-                attempt: attempt
-            )
-            #expect(didQueuePendingFrame)
-
-            state.discardPendingFrame(matching: attempt)
-
-            #expect(state.operation?.attempt == attempt)
-            #expect(state.pendingFrame == nil)
         }
 
         @Test
@@ -308,13 +189,12 @@ import GRDB
             #expect(ErrorReportingService.automaticScreenshotDurationBucket(8000) == 5000)
         }
 
-        private func makeFrame(byte: UInt8, capturedAt: Date) -> CopiedScreenshotFrame {
+        private func makeFrame(byte: UInt8) -> CopiedScreenshotFrame {
             CopiedScreenshotFrame(
                 width: 1,
                 height: 1,
                 bytesPerRow: 4,
-                pixels: Data(repeating: byte, count: 4),
-                capturedAt: capturedAt
+                pixels: Data(repeating: byte, count: 4)
             )
         }
     }

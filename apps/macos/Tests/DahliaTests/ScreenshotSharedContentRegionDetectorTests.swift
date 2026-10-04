@@ -223,8 +223,9 @@ import Foundation
         }
 
         @Test
-        func resetDuringDetectionDiscardsStaleRegion() async {
+        func resetDuringDetectionDiscardsStaleRegion() async throws {
             let imageSize = CGSize(width: 100, height: 80)
+            let image = try makeSolidImage(width: Int(imageSize.width), height: Int(imageSize.height))
             let staleRegion = CGRect(x: 10, y: 10, width: 80, height: 60)
             let gate = SharedContentRegionDetectionGate(result: staleRegion)
             let processor = AutomaticScreenshotFrameProcessor { image in
@@ -232,7 +233,7 @@ import Foundation
             }
             let task = Task {
                 await processor.prepare(
-                    makeFrame(width: Int(imageSize.width), height: Int(imageSize.height)),
+                    image,
                     detectsChangesInSharedContentOnly: true,
                     cropsToSharedContent: true
                 )
@@ -286,6 +287,58 @@ import Foundation
             #expect(selected.encoding.width == fullImage.width)
         }
 
+        @Test(arguments: [
+            (CGRect?.some(CGRect(x: 10, y: 10, width: 80, height: 60)), true),
+            (CGRect?.none, false),
+        ])
+        func preparedFrameRecordsWhetherFingerprintCoversDetectedCrop(
+            detectedRegion: CGRect?,
+            expectsSharedContent: Bool
+        ) async throws {
+            let processor = AutomaticScreenshotFrameProcessor { _ in detectedRegion }
+            let prepared = await processor.prepare(
+                try makeSolidImage(width: 100, height: 80),
+                detectsChangesInSharedContentOnly: true,
+                cropsToSharedContent: false
+            )
+
+            #expect(try #require(prepared).fingerprintsSharedContent == expectsSharedContent)
+        }
+
+        @Test
+        func wholeScreenFallbackDefersToStillScreenDecision() throws {
+            let image = try makeSolidImage(width: 100, height: 80)
+            let fingerprint = ScreenshotFingerprint(width: 1, height: 1, pixels: [0])
+            let frame = PreparedScreenshotFrame(
+                imageToEncode: image,
+                fingerprint: fingerprint,
+                fingerprintsSharedContent: false
+            )
+            let changedBaseline = ScreenshotFingerprint(width: 1, height: 1, pixels: [255])
+
+            #expect(!frame.shouldSave(after: changedBaseline, changeThresholdRatio: 0.05, stillScreenPassed: false))
+            #expect(frame.shouldSave(after: fingerprint, changeThresholdRatio: 0.05, stillScreenPassed: true))
+        }
+
+        @Test
+        func detectedCropIsComparedWithLastSavedCrop() throws {
+            let image = try makeSolidImage(width: 100, height: 80)
+            let fingerprint = ScreenshotFingerprint(width: 1, height: 1, pixels: [0])
+            let frame = PreparedScreenshotFrame(
+                imageToEncode: image,
+                fingerprint: fingerprint,
+                fingerprintsSharedContent: true
+            )
+
+            #expect(frame.shouldSave(after: nil, changeThresholdRatio: 0.05, stillScreenPassed: false))
+            #expect(!frame.shouldSave(after: fingerprint, changeThresholdRatio: 0.05, stillScreenPassed: true))
+            #expect(frame.shouldSave(
+                after: ScreenshotFingerprint(width: 1, height: 1, pixels: [255]),
+                changeThresholdRatio: 0.05,
+                stillScreenPassed: false
+            ))
+        }
+
         private func makeSolidImage(width: Int, height: Int) throws -> CGImage {
             let colorSpace = CGColorSpaceCreateDeviceRGB()
             guard let context = CGContext(
@@ -300,18 +353,6 @@ import Foundation
                 throw TestImageError.imageUnavailable
             }
             return image
-        }
-
-        private func makeFrame(width: Int, height: Int) -> CopiedScreenshotFrame {
-            let bytesPerRow = width * 4
-            return CopiedScreenshotFrame(
-                width: width,
-                height: height,
-                bytesPerRow: bytesPerRow,
-                pixels: Data(repeating: 255, count: bytesPerRow * height),
-                capturedAt: Date(),
-                sourcePixelDimensions: nil
-            )
         }
     }
 
