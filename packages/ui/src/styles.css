@@ -49,6 +49,8 @@
   --input: #d8d2da;
   --ring: #683e60;
   --radius: .625rem;
+  --dahlia-document-hover: var(--accent);
+  --dahlia-document-accent: var(--primary);
 }
 
 @layer base {

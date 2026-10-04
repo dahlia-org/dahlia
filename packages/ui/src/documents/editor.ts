@@ -12,7 +12,7 @@ export { moveBlock } from "./binding";
 export function documentEditorOptions(document: Y.Doc, editable: boolean, placeholder: string, onError: (message: string) => void = () => {}, onRecovery: (blocks: DocumentBlock[]) => void = () => {}): Partial<EditorOptions> {
   return {
     editable,
-    extensions: [StarterKit.configure({ undoRedo: false, trailingNode: false, codeBlock: false, blockquote: false, horizontalRule: false, dropcursor: { width: 2 },
+    extensions: [StarterKit.configure({ undoRedo: false, trailingNode: false, codeBlock: false, blockquote: false, horizontalRule: false, dropcursor: { width: 2, color: false },
       link: { openOnClick: false, protocols: ["http", "https", "mailto"], isAllowedUri: (url) => /^(https?:|mailto:)/i.test(url) } }),
     DocumentAdapter.configure({ document, onError, onRecovery }),
     UniqueID.configure({ types: ["paragraph", "heading", "bulletList", "orderedList", "listItem"],
@@ -99,22 +99,28 @@ class BlockHandleView {
     host.classList.add("dahlia-document-host");
     host.addEventListener("mousemove", this.hover);
     host.addEventListener("mouseleave", this.leave);
-    // The host includes the handle gutter. Capture before the drop cursor, which would point inside a list.
-    host.addEventListener("dragover", this.dragOver, true);
-    host.addEventListener("dragleave", this.dragLeave);
-    host.addEventListener("drop", this.drop, true);
   }
   private releaseHost() {
     if (!this.host) return;
     this.host.removeEventListener("mousemove", this.hover);
     this.host.removeEventListener("mouseleave", this.leave);
-    this.host.removeEventListener("dragover", this.dragOver, true);
-    this.host.removeEventListener("dragleave", this.dragLeave);
-    this.host.removeEventListener("drop", this.drop, true);
     this.host.classList.remove("dahlia-document-host");
+  }
+  /**
+   * Track a handle drag by pointer coordinates across the whole host, including the handle gutter.
+   * WebKit accepts a drop on the first event over a new element (dragenter) and reports dragleave without
+   * a relatedTarget, so element boundaries must neither reject the drop nor hide the indicator.
+   * Capture at the document runs before the drop cursor, which would point inside a list.
+   */
+  private listenToDrag(listen: boolean) {
+    const document = this.view.dom.ownerDocument;
+    for (const [type, listener] of [["dragenter", this.dragOver], ["dragover", this.dragOver], ["dragleave", this.dragLeave], ["drop", this.drop]] as const) {
+      if (listen) document.addEventListener(type, listener, true); else document.removeEventListener(type, listener, true);
+    }
   }
   destroy() {
     this.releaseHost();
+    this.listenToDrag(false);
     this.handle.remove(); this.indicator.remove();
   }
   private hide() { this.pos = null; this.handle.style.display = "none"; }
@@ -165,24 +171,34 @@ class BlockHandleView {
     if (block instanceof HTMLElement) event.dataTransfer.setDragImage(block, 0, 0);
     // The drop handler deletes `node` and inserts `slice` at the drop point (Alt copies instead).
     view.dragging = { slice, move: true, node: selection } as EditorView["dragging"];
+    this.listenToDrag(true);
   };
-  /** The gap between top-level blocks nearest the pointer, and its vertical position. */
-  private dropTarget(event: DragEvent): { pos: number; top: number } | null {
-    const { view } = this, doc = view.state.doc, hit = this.posAtRow(event);
-    if (hit === null) return null;
-    const $pos = doc.resolve(hit);
-    const rect = (index: number) => (view.nodeDOM($pos.posAtIndex(index, 0)) as HTMLElement | null)?.getBoundingClientRect();
-    let index = $pos.index(0);
-    if ($pos.depth > 0) { const box = rect(index); if (box && event.clientY > (box.top + box.bottom) / 2) index++; }
-    const above = index > 0 ? rect(index - 1)?.bottom : undefined, below = index < doc.childCount ? rect(index)?.top : undefined;
-    const top = above !== undefined && below !== undefined ? (above + below) / 2 : above ?? below;
-    return top === undefined ? null : { pos: $pos.posAtIndex(index, 0), top };
+  private inHost(event: DragEvent): boolean {
+    const box = this.host.getBoundingClientRect();
+    return event.clientX >= box.left && event.clientX <= box.right && event.clientY >= box.top && event.clientY <= box.bottom;
+  }
+  /**
+   * The gap before the first top-level block whose vertical middle is below the pointer, and its position.
+   * Only the pointer's height counts, so text, list bullets, and the handle gutter resolve alike.
+   */
+  private dropTarget(event: DragEvent): { pos: number; top: number } {
+    const { view } = this, doc = view.state.doc, starts: number[] = [];
+    doc.forEach((_node, offset) => starts.push(offset));
+    const rect = (index: number) => (view.nodeDOM(starts[index]!) as HTMLElement).getBoundingClientRect();
+    let index = 0, end = starts.length;
+    while (index < end) {
+      const middle = (index + end) >> 1, box = rect(middle);
+      if (event.clientY < (box.top + box.bottom) / 2) end = middle; else index = middle + 1;
+    }
+    const above = index > 0 ? rect(index - 1).bottom : undefined, below = index < starts.length ? rect(index).top : undefined;
+    const top = above !== undefined && below !== undefined ? (above + below) / 2 : (above ?? below)!;
+    return { pos: index < starts.length ? starts[index]! : doc.content.size, top };
   }
   private dragOver = (event: DragEvent) => {
-    if (!this.draggedID) return;
+    if (!this.inHost(event)) return this.indicator.remove();
     event.preventDefault(); event.stopImmediatePropagation();
+    if (event.dataTransfer) event.dataTransfer.dropEffect = "move";
     const target = this.dropTarget(event);
-    if (!target) return this.indicator.remove();
     if (this.indicator.parentElement !== this.host) this.host.appendChild(this.indicator);
     const origin = this.host.getBoundingClientRect(), bounds = this.view.dom.getBoundingClientRect();
     this.indicator.style.left = `${bounds.left - origin.left}px`;
@@ -190,16 +206,18 @@ class BlockHandleView {
     this.indicator.style.top = `${target.top - origin.top - this.indicator.offsetHeight / 2}px`;
   };
   private dragLeave = (event: DragEvent) => {
-    if (!(event.relatedTarget instanceof globalThis.Node && this.host.contains(event.relatedTarget))) this.indicator.remove();
+    if (!this.inHost(event)) this.indicator.remove();
   };
   private drop = (event: DragEvent) => {
-    if (!this.draggedID) return;
+    if (!this.inHost(event) || !this.draggedID) return;
     event.preventDefault(); event.stopImmediatePropagation();
-    const target = this.dropTarget(event);
-    if (target) moveBlock(this.editor, this.draggedID, target.pos);
+    moveBlock(this.editor, this.draggedID, this.dropTarget(event).pos);
     this.dragEnd();
   };
-  private dragEnd = () => { this.draggedID = null; this.view.dragging = null; this.indicator.remove(); this.hide(); };
+  private dragEnd = () => {
+    this.listenToDrag(false);
+    this.draggedID = null; this.view.dragging = null; this.indicator.remove(); this.hide();
+  };
 }
 
 const BlockHandle = Extension.create({

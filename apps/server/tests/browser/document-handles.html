@@ -68,6 +68,11 @@ try {
   const after = editor.view.dom.querySelector(':scope > p').getBoundingClientRect();
   dragOver(after.left + 2, after.bottom - 1);
   assert(indicator() && indicator().top >= after.bottom - 1, 'Dragging below the last block must show the indicator at the end');
+  editor.view.dom.dispatchEvent(new DragEvent('dragleave', { bubbles: true, clientX: after.left + 2, clientY: after.bottom - 1 }));
+  assert(indicator(), 'Crossing elements inside the host must keep the indicator, even without a relatedTarget as in WebKit');
+  const outside = new DragEvent('dragover', { bubbles: true, cancelable: true, clientX: 5, clientY: 5 });
+  document.querySelector('#result').dispatchEvent(outside);
+  assert(!outside.defaultPrevented && !indicator(), 'Dragging outside the editor host must neither accept the drop nor show the indicator');
   editor.view.dom.dispatchEvent(new DragEvent('drop', { bubbles: true, cancelable: true, clientX: after.left + 2, clientY: after.bottom - 1 }));
   assert(editor.state.doc.firstChild.textContent === 'after' && editor.state.doc.lastChild.type.name === 'bulletList', 'Dropping must move the whole list');
   assert(!indicator(), 'Dropping must remove the indicator');
@@ -75,6 +80,14 @@ try {
   hover(paragraph.left + 2, paragraph.top + 8);
   handle.dispatchEvent(new DragEvent('dragstart', { bubbles: true, dataTransfer: new DataTransfer() }));
   assert(editor.view.dragging?.node?.node.textContent === 'after', 'Fixture must drag the paragraph');
+  const movedList = editor.view.dom.querySelector('ul').getBoundingClientRect();
+  const center = () => indicator().top + indicator().height / 2;
+  const enter = new DragEvent('dragenter', { bubbles: true, cancelable: true, dataTransfer: new DataTransfer(), clientX: paragraph.left + 10, clientY: paragraph.top + 3 });
+  editor.view.dom.querySelector(':scope > p').dispatchEvent(enter);
+  assert(enter.defaultPrevented && enter.dataTransfer.dropEffect === 'move', 'Entering a text row must accept the move, since WebKit decides on dragenter');
+  assert(indicator() && Math.abs(center() - paragraph.top) <= 1, 'The upper half of a text row must target the gap above it');
+  dragOver(paragraph.left + 10, paragraph.bottom - 3);
+  assert(indicator() && Math.abs(center() - (paragraph.bottom + movedList.top) / 2) <= 1, 'The lower half of a text row must target the gap below it');
   const lower = editor.view.dom.querySelector('li li > p').getBoundingClientRect();
   const gutter = [editor.view.dom.getBoundingClientRect().left - 9, lower.bottom - 1];
   const gutterEvent = (type) => document.elementFromPoint(...gutter).dispatchEvent(new DragEvent(type, { bubbles: true, cancelable: true, clientX: gutter[0], clientY: gutter[1] }));
@@ -82,6 +95,9 @@ try {
   assert(indicator() && indicator().top >= list.bottom - 1, 'Dragging down the handle gutter must show the drop indicator');
   gutterEvent('drop');
   assert(editor.state.doc.childCount === 2 && editor.state.doc.lastChild.type.name === 'paragraph', 'A paragraph dropped in the gutter beside a list must land after the list, not inside it');
+  const idle = new DragEvent('dragover', { bubbles: true, cancelable: true, clientX: gutter[0], clientY: gutter[1] });
+  host.dispatchEvent(idle);
+  assert(!idle.defaultPrevented, 'Finishing a drag must stop intercepting drag events');
   editor.setEditable(false);
   hover(first.left - 9, first.top + 8);
   assert(!visible(), 'Read-only editors must not show a handle');
@@ -89,7 +105,7 @@ try {
   assert(!host.querySelector('.dahlia-block-handle'), 'Destroy must remove the handle');
   hover(first.left - 9, first.top + 8);
   assert(!visible(), 'Destroy must remove hover listeners');
-  document.querySelector('#result').textContent = 'PASS: Command+B bold, direct gutter entry, gutter row change, leave, React reparent, drag/undo, whole-list drag, top-level drop, gutter drop, read-only, teardown';
+  document.querySelector('#result').textContent = 'PASS: Command+B bold, direct gutter entry, gutter row change, leave, React reparent, drag/undo, whole-list drag, top-level drop, host-wide drag tracking, text-row halves, gutter drop, read-only, teardown';
 } catch (error) { document.querySelector('#result').textContent = `FAIL: ${error.message}`; }
 finally { core.destroy(); }
 </script>
