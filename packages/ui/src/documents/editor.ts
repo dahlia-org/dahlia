@@ -126,7 +126,7 @@ class BlockHandleView {
   private hover = (event: MouseEvent) => {
     const { view } = this;
     if (!view.editable || view.dragging) return this.hide();
-    // The handle can sit outside a nested item's text bounds; keep its resolved block.
+    // The handle sits outside the top-level block's text; keep its resolved block.
     if (event.target instanceof globalThis.Node && this.handle.contains(event.target)) return;
     const hit = this.posAtRow(event);
     const pos = hit === null ? null : draggableBlock(view.state.doc.resolve(hit));
