@@ -245,9 +245,15 @@ async function run() {
   await until(() => savedContent === "Generated shared note", "explicit sharing");
   await until(() => !document.querySelector('[role="dialog"]'), "share confirmation closed");
   await submit("Retry this generation");
-  await until(() => Number(sends) === 2, "failed generation starts");
+  await until(() => Number(sends) === 2 && document.querySelector(".ai-progress-current"), "failed generation starts");
+  deferA = true;
   stream!.enqueue(new TextEncoder().encode('event: error\ndata: {"code":"ai_generation_failed"}\n\n'));
   stream!.close();
+  await until(() => deferredA && document.querySelector(".ai-error"), "failed generation waits for recovery");
+  assert(!document.querySelector(".ai-progress-current"), "Activity indicator stayed beside the failure during recovery");
+  deferA = false;
+  deferredA!();
+  deferredA = undefined;
   await until(() => ready()?.value === "Retry this generation", "failed generation recovers draft");
   assert(location.pathname === pathA && Number(creates) === 2, "Generation failure replaced or recreated the chat");
   const target = document.querySelector<HTMLAnchorElement>(`.ai-history-row a[href="${pathB}"]`);

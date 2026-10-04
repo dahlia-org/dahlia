@@ -18,6 +18,7 @@ let capabilityFailure: "http" | "network" | undefined;
 let deferCapabilities = false;
 const deferredCapabilities: Array<(response: Response) => void> = [];
 let discoveryFails = false;
+let finishSuspendedStream: (() => void) | undefined;
 
 const sse = (answer: string) => new Response(`event: text\ndata: ${JSON.stringify({ text: answer })}\n\nevent: done\ndata: {}\n\n`, {
   headers: { "content-type": "text/event-stream" },
@@ -54,14 +55,19 @@ globalThis.fetch = async (input, init) => {
     const request = JSON.parse(init.body) as typeof requests[number];
     requests.push(request);
     chats += 1;
-    if (chats === 1) return new Promise<Response>((_resolve, reject) => {
-      init?.signal?.addEventListener("abort", () => reject(new DOMException("Stopped", "AbortError")), { once: true });
-    });
+    if (chats === 1) return new Response(new ReadableStream({ start(controller) {
+      controller.enqueue(new TextEncoder().encode('event: text\ndata: {"text":"Partial"}\n\nevent: tool\ndata: {"name":"query_meetings","status":"running"}\n\nevent: tool\ndata: {"name":"query_meetings","status":"complete"}\n\n'));
+      init?.signal?.addEventListener("abort", () => controller.error(new DOMException("Stopped", "AbortError")), { once: true });
+    } }), { headers: { "content-type": "text/event-stream" } });
     if (chats === 2) return new Response("event: done\ndata: {}\n\n", { headers: { "content-type": "text/event-stream" } });
     if (chats === 13 || chats === 16) throw new Error("transient_resume_failure");
     if (chats === 6 || chats === 8 || chats === 10 || chats === 12 || chats === 15 || chats === 18 || chats === 21 || chats === 25) {
       const interaction = chats === 8 || chats === 15 ? { runId: "plan-run", toolCallId: "plan-call", tool: "submit_plan", title: "Meeting review", path: "plans/review.md", content: "Read the meeting summaries." }
         : { runId: "question-run", toolCallId: "question-call", tool: "ask_user", question: "Which meetings?", ...(chats === 6 ? { options: [{ label: "Planning" }, { label: "Review" }], selectionMode: "multi_select" } : (chats === 12 || chats === 18 || chats === 21 || chats === 25) ? { options: [{ label: "Planning" }] } : {}) };
+      if (chats === 6) return new Response(new ReadableStream({ start(controller) {
+        controller.enqueue(new TextEncoder().encode(`event: tool\ndata: {"name":"ask_user","status":"running"}\n\nevent: interaction\ndata: ${JSON.stringify({ interaction })}\n\n`));
+        finishSuspendedStream = () => { controller.enqueue(new TextEncoder().encode("event: done\ndata: {}\n\n")); controller.close(); };
+      } }), { headers: { "content-type": "text/event-stream" } });
       return new Response(`event: interaction\ndata: ${JSON.stringify({ interaction })}\n\n${chats === 25 ? 'event: error\ndata: {"code":"after_suspend_failed"}\n\n' : 'event: done\ndata: {}\n\n'}`, { headers: { "content-type": "text/event-stream" } });
     }
     if (chats === 19) return new Response('event: interaction-resumed\ndata: {"runId":"question-run","toolCallId":"question-call"}\n\nevent: error\ndata: {"code":"provider_failed"}\n\n', { headers: { "content-type": "text/event-stream" } });
@@ -150,6 +156,11 @@ async function run() {
   assert(requests.length === 0 && textarea.value.includes("\n"), "Shift+Enter submitted or lost the newline");
   press(textarea, "Enter");
   await until(() => document.querySelector<HTMLButtonElement>("button.ai-send:not(:disabled)"), "stop button");
+  await until(() => document.querySelector(".ai-tools li svg") && document.querySelector(".ai-tools")?.textContent === "Search meetings"
+    && document.querySelector(".ai-progress-current")?.textContent === "Thinking…", "collapsed tool chip and thinking status");
+  assert(document.querySelector(".ai-tools")!.compareDocumentPosition(document.querySelector(".ai-message.assistant")!) & Node.DOCUMENT_POSITION_FOLLOWING
+    && document.querySelector(".ai-message.assistant")!.compareDocumentPosition(document.querySelector(".ai-progress-current")!) & Node.DOCUMENT_POSITION_FOLLOWING,
+    "Live activity is not below the partial answer");
   const header = document.querySelector(".ai-header")?.textContent ?? "";
   assert(header.includes("Dahlia AI") && header.includes("/") && header.includes("New chat"), "Chat breadcrumb is missing after chat starts");
   await new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve())));
@@ -225,6 +236,9 @@ async function run() {
   change(textarea, "Compare meetings");
   press(textarea, "Enter");
   await until(() => document.querySelectorAll('.ai-interaction input[type="checkbox"]').length === 2, "multiple choices");
+  assert(!document.querySelector(".ai-tools, .ai-progress-current"), "Suspended tool kept its activity beside the question");
+  finishSuspendedStream!();
+  await until(() => !document.querySelector<HTMLInputElement>('.ai-interaction input[type="checkbox"]')?.disabled, "suspended stream completion");
   document.querySelectorAll<HTMLInputElement>('.ai-interaction input[type="checkbox"]').forEach((checkbox) => checkbox.click());
   const button = (label: string) => [...document.querySelectorAll<HTMLButtonElement>(".ai-interaction button")].find((item) => item.textContent === label)!;
   button("Submit selections").click();

@@ -300,7 +300,10 @@
   .chat-markdown :is(th,td) { @apply border px-3 py-2; }
   .chat-markdown th { @apply bg-muted font-semibold; }
   .chat-markdown input[type="checkbox"] { @apply mr-2 size-3.5 align-middle; }
-  .ai-status { @apply m-0 text-xs text-muted-foreground; }
+  .ai-tools { @apply m-0 flex list-none flex-wrap gap-1.5 p-0 text-xs text-muted-foreground; }
+  .ai-tools li { @apply inline-flex items-center gap-1.5 rounded-full border bg-muted/50 px-2.5 py-1; }
+  .ai-progress-current { @apply m-0 flex items-center gap-2 text-xs; }
+  :is(.ai-tools, .ai-progress-current) svg { @apply size-3.5 shrink-0; }
   .ai-error { @apply flex items-center justify-between gap-3 rounded-lg border border-destructive/30 bg-destructive/5 p-3 text-xs text-destructive; }
   .ai-error .secondary { @apply min-h-8 shrink-0 text-xs; }
   .ai-bottom { @apply fixed bottom-0 right-0 z-10 w-full bg-background px-4 pb-5 pt-3 md:w-[calc(100%-240px)] md:px-8; }

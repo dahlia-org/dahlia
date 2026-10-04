@@ -6,7 +6,7 @@ import type { AiInteraction, AiResume } from "../model/ai-interaction";
 import { ChatMarkdown, StreamingChatMarkdown } from "./ChatMarkdown";
 import { WorkingMemoryEditor, LiveChatContext } from "./ChatMemory";
 import { WorkspaceMemory, SaveSharedMemory } from "./WorkspaceMemory";
-import { Brain, BriefcaseBusiness, Ellipsis, Plus, Send, Sparkles, Square, Trash2 } from "lucide-react";
+import { Brain, BriefcaseBusiness, Ellipsis, LoaderCircle, Plus, Send, Sparkles, Square, Trash2, Wrench } from "lucide-react";
 import { useEffect, useRef, useState, type KeyboardEvent, type MouseEvent } from "react";
 import { createPortal } from "react-dom";
 
@@ -38,6 +38,23 @@ type AiEvent = { type: "text"; text: string }
   | { type: "done" };
 type AiThread = { id: string; title: string; workspaceId: string; createdAt: string; updatedAt: string };
 type PickerOption = { value: string; label: string; description: string };
+// Live stream activity only; cleared as soon as the stream stops producing it.
+type Progress = { steps: Array<{ name: string; done: boolean }>; writing: boolean };
+
+export function toolStepLabel(name: string): string {
+  if (name === "query_meetings") return uiText("Search meetings", "ミーティングを検索");
+  if (name === "get_meeting") return uiText("Read meeting", "ミーティングを確認");
+  if (name === "get_meeting_transcript") return uiText("Read transcript", "文字起こしを確認");
+  if (name === "web_search") return uiText("Search the web", "ウェブを検索");
+  if (name === "web_fetch") return uiText("Read web page", "ウェブページを読み込み");
+  if (name === "ask_user") return uiText("Prepare question", "質問を準備");
+  if (name === "write_plan") return uiText("Update plan", "計画を更新");
+  if (name === "read_plan") return uiText("Read plan", "計画を確認");
+  if (name === "submit_plan") return uiText("Submit plan", "計画を提出");
+  if (/^(save|delete|update)_\w*memory/.test(name)) return uiText("Update memory", "メモリーを更新");
+  if (/memor|knowledge|recall/.test(name)) return uiText("Read memory", "メモリーを参照");
+  return uiText(`Run ${name}`, `${name} を実行`);
+}
 
 export function prependEarlierMessages(current: Message[], earlier: Message[]): Message[] {
   const known = new Set(current.flatMap(({ id }) => id ? [id] : []));
@@ -115,7 +132,7 @@ export function AiChat({ requestedThreadId }: { requestedThreadId?: string }) {
   const pendingResume = useRef<AiResume | undefined>(undefined);
   const [draft, setDraft] = useState("");
   const [answer, setAnswer] = useState("");
-  const [tool, setTool] = useState<string>();
+  const [progress, setProgress] = useState<Progress>();
   const [pending, setPending] = useState(false);
   const [locked, setLocked] = useState(false);
   const [error, setError] = useState<string>();
@@ -205,7 +222,7 @@ export function AiChat({ requestedThreadId }: { requestedThreadId?: string }) {
   useEffect(() => {
     if (!workspaceId && workspaces?.[0]) setWorkspaceId(workspaces[0].workspaceId);
   }, [workspaceId, workspaces]);
-  useEffect(() => { transcript.current?.lastElementChild?.scrollIntoView({ block: "nearest" }); }, [messages, answer, tool]);
+  useEffect(() => { transcript.current?.lastElementChild?.scrollIntoView({ block: "nearest" }); }, [messages, answer, progress]);
   const selectedWorkspace = workspaces?.find((workspace) => workspace.workspaceId === workspaceId);
   const searchWorkspaceId = openingThread || (requestedThreadId && requestedThreadId !== threadId) ? undefined : selectedWorkspace?.workspaceId;
   useEffect(() => {
@@ -226,7 +243,7 @@ export function AiChat({ requestedThreadId }: { requestedThreadId?: string }) {
     setLocked(true);
     setError(undefined);
     setAnswer("");
-    setTool(undefined);
+    setProgress({ steps: [], writing: false });
     let responseText = "";
     let nextInteraction: AiInteraction | undefined;
     let completed = false;
@@ -257,8 +274,17 @@ export function AiChat({ requestedThreadId }: { requestedThreadId?: string }) {
       }
       for await (const event of readAiEvents(response)) {
         if (!current()) return;
-        if (event.type === "text") { responseText += event.text; setAnswer(responseText); }
-        else if (event.type === "tool") setTool(event.status === "running" ? event.name : undefined);
+        if (event.type === "text") {
+          responseText += event.text;
+          setAnswer(responseText);
+          setProgress((value) => value && !value.writing ? { ...value, writing: true } : value);
+        }
+        else if (event.type === "tool") setProgress((value) => {
+          if (!value) return value;
+          if (event.status === "running") return { steps: [...value.steps, { name: event.name, done: false }], writing: false };
+          const running = value.steps.findLastIndex(({ name, done }) => name === event.name && !done);
+          return { steps: value.steps.map((step, index) => index === running ? { ...step, done: true } : step), writing: false };
+        });
         else if (event.type === "interaction-resumed") {
           if (resume?.runId === event.runId && resume.toolCallId === event.toolCallId) {
             pendingResume.current = undefined;
@@ -270,7 +296,8 @@ export function AiChat({ requestedThreadId }: { requestedThreadId?: string }) {
           setInteraction(nextInteraction);
           const interactionText = nextInteraction.tool === "ask_user" ? nextInteraction.question : `# ${nextInteraction.title}\n\n${nextInteraction.content}`;
           responseText += (responseText ? "\n\n" : "") + interactionText;
-          setTool(undefined);
+          // A suspended tool never reports completion; the visible question or plan ends the activity.
+          setProgress(undefined);
         }
         else if (event.type === "error") throw new Error(event.code);
         else if (event.type === "done") completed = true;
@@ -284,6 +311,7 @@ export function AiChat({ requestedThreadId }: { requestedThreadId?: string }) {
       if (persist) void refreshThreads();
     } catch (caught) {
       if (!current()) return;
+      setProgress(undefined);
       if (caught instanceof Error && caught.message === "ai_interaction_not_pending") {
         pendingResume.current = undefined;
         setInteraction(undefined);
@@ -316,7 +344,7 @@ export function AiChat({ requestedThreadId }: { requestedThreadId?: string }) {
       if (current()) {
         controller.current = undefined;
         setPending(false);
-        setTool(undefined);
+        setProgress(undefined);
       }
     }
   };
@@ -358,7 +386,7 @@ export function AiChat({ requestedThreadId }: { requestedThreadId?: string }) {
     pendingResume.current = undefined;
     sessionId.current = crypto.randomUUID();
     setAnswer("");
-    setTool(undefined);
+    setProgress(undefined);
     setDraft("");
     setError(undefined);
     setThreadFailure(undefined);
@@ -480,6 +508,8 @@ export function AiChat({ requestedThreadId }: { requestedThreadId?: string }) {
     description: item.id,
   }));
   const selectedModel = models.find(({ id }) => id === model);
+  const usedTools = progress?.steps.filter(({ done }) => done) ?? [];
+  const runningStep = progress?.steps.findLast(({ done }) => !done);
   const effortLabel = (effort: ReasoningEffort) => effort === "none" ? uiText("None", "なし")
     : effort === "xhigh" ? "xHigh" : effort[0]!.toUpperCase() + effort.slice(1);
   const reasoningOptions = selectedModel?.supportedReasoningEfforts.map(({ effort, description }) => ({
@@ -568,8 +598,15 @@ export function AiChat({ requestedThreadId }: { requestedThreadId?: string }) {
         {messages.map((message, index) => <article className={`ai-message ${message.role}`} key={message.id || index}>{message.role === "assistant" ? <ChatMarkdown content={message.content} /> : message.content}
           {message.role === "assistant" && memoryWorkspace === workspaceId && selectedWorkspace && selectedWorkspace.role !== "viewer" && !pending && <SaveSharedMemory key={workspaceId} workspaceId={workspaceId} workspaceName={selectedWorkspace.name} model={model} content={message.content} question={messages.slice(0, index).findLast(item => item.role === "user")?.content} />}
         </article>)}
+        {usedTools.length > 0 && <ul className="ai-tools" aria-label={uiText("Tools used", "使用したツール")}>
+          {usedTools.map((step, index) => <li key={index}><Wrench aria-hidden="true" />{toolStepLabel(step.name)}</li>)}
+        </ul>}
         {answer && <article className="ai-message assistant"><StreamingChatMarkdown content={answer} /></article>}
-        {tool && <p className="ai-status" role="status">{uiText(`Checking meetings with ${tool}…`, `${tool} でミーティングを確認中…`)}</p>}
+        {/* After the answer so auto-scroll keeps live activity visible below partial text. */}
+        {progress && (runningStep || !progress.writing) && <p className="ai-progress-current" aria-live="polite">
+          <LoaderCircle className="animate-spin motion-reduce:animate-none" aria-hidden="true" />
+          {runningStep ? uiText(`${toolStepLabel(runningStep.name)}…`, `${toolStepLabel(runningStep.name)}中…`) : uiText("Thinking…", "考え中…")}
+        </p>}
         {error && <div className="ai-error" role="alert"><span>{error}</span><button className="secondary" disabled={pending || openingThread || messages.at(-1)?.role !== "user"} onClick={retry}>{uiText("Retry", "再試行")}</button></div>}
       </div>
       <div className="ai-bottom">{composer}<p className="sr-only" aria-live="polite">{pending ? uiText("AI is responding", "AIが回答中です") : error || uiText("Ready", "準備完了")}</p></div>
