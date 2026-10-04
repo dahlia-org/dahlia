@@ -129,18 +129,18 @@ struct ScreenshotSettleTracker {
         latestPixels = pixels
     }
 
-    /// When the most recent movement settles, or nil when it has already settled by `now`.
-    func settleDeadline(after now: ContinuousClock.Instant) -> ContinuousClock.Instant? {
-        guard let lastChange = changedAt.max() else { return nil }
-        let deadline = lastChange + Self.settleDuration
-        return deadline > now ? deadline : nil
-    }
-
-    /// When a fixed-interval check next becomes due, or nil when it is already due by `now`.
-    func intervalDeadline(after now: ContinuousClock.Instant, interval: Duration) -> ContinuousClock.Instant? {
-        guard let lastCaptureAt else { return nil }
-        let deadline = lastCaptureAt + interval
-        return deadline > now ? deadline : nil
+    /// When the next check falls due without a new frame: once the latest movement settles with an adaptive interval,
+    /// or once `interval` has passed since the last capture with a fixed one. Nil when it is already due by `now`.
+    func checkDeadline(
+        after now: ContinuousClock.Instant,
+        interval: Duration,
+        isAdaptive: Bool
+    ) -> ContinuousClock.Instant? {
+        let deadline = isAdaptive
+            ? changedAt.max().map { $0 + Self.settleDuration }
+            : lastCaptureAt.map { $0 + interval }
+        guard let deadline, deadline > now else { return nil }
+        return deadline
     }
 
     /// An adaptive interval waits for changes to settle and uses `interval` only as the fallback for a mostly

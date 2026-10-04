@@ -189,7 +189,7 @@ import CoreGraphics
             tracker.ingest(fingerprint { $0 < 30 ? 200 : 0 }, at: changedAt)
 
             #expect(!shouldCapture(tracker, at: changedAt))
-            let deadline = try #require(tracker.settleDeadline(after: changedAt))
+            let deadline = try #require(tracker.checkDeadline(after: changedAt, interval: maximumInterval, isAdaptive: true))
             #expect(deadline == changedAt + ScreenshotSettleTracker.settleDuration)
             #expect(shouldCapture(tracker, at: deadline))
 
@@ -204,8 +204,13 @@ import CoreGraphics
             tracker.ingest(fingerprint { _ in 200 }, at: changedAt)
 
             #expect(!shouldCapture(tracker, at: changedAt, isAdaptive: false))
-            let deadline = try #require(tracker.intervalDeadline(after: changedAt, interval: maximumInterval))
+            let deadline = try #require(tracker.checkDeadline(after: changedAt, interval: maximumInterval, isAdaptive: false))
             #expect(deadline == start + maximumInterval)
+            // The same state waits only for the settle with an adaptive interval.
+            #expect(
+                tracker.checkDeadline(after: changedAt, interval: maximumInterval, isAdaptive: true)
+                    == changedAt + ScreenshotSettleTracker.settleDuration
+            )
             // Only an adaptive interval waits for the change to settle.
             #expect(!shouldCapture(tracker, at: deadline))
             #expect(shouldCapture(tracker, at: deadline, isAdaptive: false))

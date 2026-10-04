@@ -538,6 +538,11 @@ actor AutomaticScreenshotCaptureService: AutomaticScreenshotCapturing {
         if sharedContentSettingsChanged {
             await frameProcessor.resetSharedContentRegion()
         }
+        // The pending timer and decision follow these settings, and an idle display may deliver no frame to apply them.
+        if let attempt = activeCapture?.attempt {
+            scheduleSettleCheck(after: .now, attempt: attempt)
+            evaluateCapture(attempt: attempt)
+        }
     }
 
     func stop() async {
@@ -708,9 +713,11 @@ actor AutomaticScreenshotCaptureService: AutomaticScreenshotCapturing {
         guard let request = desiredRequest else { return }
         // ScreenCaptureKit can stop delivering frames while the display is idle, so a timer observes the settle
         // or the fixed interval, and the end of a failed-capture backoff.
-        let checkDeadline = request.usesAdaptiveInterval
-            ? settleTracker.settleDeadline(after: now)
-            : settleTracker.intervalDeadline(after: now, interval: .seconds(request.intervalSeconds))
+        let checkDeadline = settleTracker.checkDeadline(
+            after: now,
+            interval: .seconds(request.intervalSeconds),
+            isAdaptive: request.usesAdaptiveInterval
+        )
         let retryDeadline = failedCaptureRetryNotBefore.flatMap { $0 > now ? $0 : nil }
         guard let deadline = [checkDeadline, retryDeadline].compactMap(\.self).max()
         else { return }
@@ -725,7 +732,10 @@ actor AutomaticScreenshotCaptureService: AutomaticScreenshotCapturing {
     }
 
     private func evaluateCapture(attempt: AutomaticScreenshotCaptureAttempt) {
+        // A restarting stream already owns the attempt but has no capture yet; processing would only discard and
+        // re-evaluate in a loop, so its first frame triggers the check instead.
         guard lifecycle.accepts(attempt: attempt),
+              activeCapture?.attempt == attempt,
               !processingState.isProcessing,
               pendingSaveCount < Self.maximumPendingSaveCount,
               let request = desiredRequest else { return }
