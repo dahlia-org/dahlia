@@ -277,7 +277,7 @@ describe("AI chat boundary", () => {
       for await (const event of service.stream({ workspaceId, model: "gpt-5.6-test", reasoningEffort: "medium", messages: [{ role: "user", content: "What happened last month?" }] },
         identity, new Request("https://dahlia.example/api/v1/chat/messages"))) events.push(event);
       expect(events.at(-1)).toEqual({ type: "text", text: "Summary" });
-      expect(toolCounts).toHaveLength(100);
+      expect(toolCounts).toHaveLength(24);
       expect(toolCounts.at(-1)).toBe(0);
       expect(toolCounts.slice(0, -1)).not.toContain(0);
     } finally { vi.unstubAllGlobals(); }

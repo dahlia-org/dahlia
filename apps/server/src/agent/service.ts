@@ -30,7 +30,7 @@ import type { MeetingTools } from "./tools";
 import { meetingRequestContext } from "./tools";
 
 export const AI_CHAT_MAX_REQUEST_BYTES = 128 * 1024;
-const AGENT_MAX_STEPS = 100;
+const AGENT_MAX_STEPS = 24;
 export const aiMessageSchema = z.object({
   role: z.enum(["user", "assistant"]),
   content: z.string().min(1).max(16_000),
