@@ -25,6 +25,9 @@ resources:
             value: databricks
           - name: HINDSIGHT_API_LLM_MODEL
             value: system.ai.gpt-6-luna
+          # Retain and the VLM slot only; reflect and Knowledge Pages keep the model default.
+          - name: HINDSIGHT_API_RETAIN_LLM_REASONING_EFFORT
+            value: low
           - name: HINDSIGHT_API_VLM_PROVIDER
             value: databricks
           - name: HINDSIGHT_API_VLM_MODEL

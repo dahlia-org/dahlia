@@ -74,7 +74,7 @@ def ingestion_policy(config, *, strategy=None, applied=False):
             {name: getattr(member, name, None) for name in ("provider", "model", "reasoning_effort")}
             for member in getattr(effective, f"{operation}llm_members", [])
         ]
-    recipe.update(version=2, image_policy=2, upstream="f8950b0c07d9e34c76493dba802bb309f0ce60fd", strategy=selected)
+    recipe.update(version=2, image_policy=3, upstream="f8950b0c07d9e34c76493dba802bb309f0ce60fd", strategy=selected)
     return hashlib.sha256(json.dumps(recipe, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
 
 
@@ -89,8 +89,13 @@ def reject_service_policy(response, provider):
 
 def operation_error_code(result):
     """Expose only a fixed discriminator, including the upstream parent failure summary."""
-    marker = "ProviderContentPolicyError: memory_policy_blocked"
-    return "memory_policy_blocked" if marker in (result.get("error_message") or "") else None
+    message = result.get("error_message") or ""
+    if "ProviderContentPolicyError: memory_policy_blocked" in message:
+        return "memory_policy_blocked"
+    # Retrying the same input with the same budget fails again, so it is not transient.
+    if "OutputTooLongError:" in message:
+        return "memory_output_too_long"
+    return None
 
 
 class IngestionConfigChangedError(RuntimeError):

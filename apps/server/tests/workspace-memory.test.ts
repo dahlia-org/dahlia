@@ -47,7 +47,7 @@ async function setup(images = false) {
   const metadata = new Map<string, Record<string, string>>();
   const attachments = new Map<string, Array<{ id: string; hash: string; kind: string; media_type: string; byte_size: number }>>();
   const counts = new Map<string, number>();
-  const policyBlocked = new Set<string>();
+  const errorCodes = new Map<string, string>();
   let policy = "a".repeat(64);
   const models = new Map<string, boolean>();
   const failingItems = new Set<string>();
@@ -62,7 +62,7 @@ async function setup(images = false) {
     const path = new URL(String(url)).pathname;
     const body = (init?.body ? JSON.parse(String(init.body)) : {}) as Record<string, unknown>;
     requests.push({ path, method: init?.method ?? "GET", body });
-    if (path.endsWith("/config")) return Response.json({ bank_id: path.split("/banks/")[1]!.split("/")[0], dahlia_ingestion_policy: policy, dahlia_images: images ? { enabled: true, provider: "databricks", model: "system.ai.gpt-6-luna", max_count: 8, max_bytes: 8 * 1024 * 1024, max_per_chunk: 1, max_completion_tokens: 4096, timeout: 60, retries: 0 } : null });
+    if (path.endsWith("/config")) return Response.json({ bank_id: path.split("/banks/")[1]!.split("/")[0], dahlia_ingestion_policy: policy, dahlia_images: images ? { enabled: true, provider: "databricks", model: "system.ai.gpt-6-luna", max_count: 8, max_bytes: 8 * 1024 * 1024, max_per_chunk: 1, max_completion_tokens: 16000, timeout: 120, retries: 0 } : null });
     if (path.startsWith("/api/v1/default/chunks/")) {
       const chunk = chunks.get(decodeURIComponent(path.split("/").at(-1)!));
       return chunk ? Response.json({ chunk_id: path.split("/").at(-1), chunk_index: 0, created_at: "", ...chunk }) : new Response(null, { status: 404 });
@@ -93,7 +93,7 @@ async function setup(images = false) {
       const id = path.split("/").at(-1)!;
       const status = operations.get(id) ?? "not_found";
       if (status === "pending") operations.set(id, "failed");
-      return Response.json({ status, ...(policyBlocked.has(id) ? { dahlia_error_code: "memory_policy_blocked" } : {}) });
+      return Response.json({ status, dahlia_error_code: errorCodes.get(id) });
     }
     if (path.endsWith("/mental-models") && init?.method === "GET") return Response.json({ items: [...models.keys()].map((id) => ({ id })) });
     if (path.endsWith("/mental-models") && init?.method === "POST") {
@@ -136,7 +136,7 @@ async function setup(images = false) {
   };
   const close = async () => { db.close(); await app.close?.(); };
   return { app, config, db, sync, memory, commit, tick, ready, close, requests, retained, operations, models, failingItems, chunks,
-    metadata, attachments, counts, policyBlocked, setPolicy: (value: string) => { policy = value; },
+    metadata, attachments, counts, errorCodes, setPolicy: (value: string) => { policy = value; },
     transport, facts, setReflection: (response: () => unknown) => { reflection = response; },
     setRecall: (response: (() => unknown) | undefined) => { recall = response; },
     recallBodies: () => requests.filter((r) => r.path.endsWith("/memories/recall")).map((r) => r.body),
@@ -345,7 +345,7 @@ describe("Workspace memory", () => {
       const before = await f.app.memory!.documents(workspaceId), banks = new Map<string, Map<string, { content: string; metadata: Record<string, unknown>; attachments: Attachment[] }>>();
       const modes = new Map<string, string>(), deleted: string[] = [];
       const capabilities = images ? { enabled: true, provider: "databricks", model: "system.ai.gpt-6-luna", max_count: 8, max_bytes: 8388608,
-        max_per_chunk: 1, max_completion_tokens: 4096, timeout: 60, retries: 0 } : null;
+        max_per_chunk: 1, max_completion_tokens: 16000, timeout: 120, retries: 0 } : null;
       const transport: typeof fetch = async (url, init) => {
         const parsed = new URL(String(url)), bank = parsed.pathname.split("/banks/")[1]!.split("/")[0]!, path = parsed.pathname;
         expect(path).not.toMatch(/\/(clone|webhooks|directives)$/);
@@ -481,7 +481,7 @@ describe("Workspace memory", () => {
       expect(f.requests.filter((r) => r.path.endsWith("/reprocess"))).toHaveLength(2);
     } finally { await f.close(); }
   });
-  it.each(["memory_policy_blocked", "memory_no_facts", "memory_document_mismatch"])("reports %s as partial and retries only after a rescan", async (code) => {
+  it.each(["memory_policy_blocked", "memory_output_too_long", "memory_no_facts", "memory_document_mismatch"])("reports %s as partial and retries only after a rescan", async (code) => {
     const f = await setup();
     try {
       await f.memory.configure(owner, workspaceId, true);
@@ -494,9 +494,9 @@ describe("Workspace memory", () => {
         return stored ? { ...stored, original_text: null } : stored;
       }) : undefined;
       for (let i = 0; i < 30; i++) { await f.tick(); if ((await f.app.memory!.pending(workspaceId))?.operation) break; }
-      if (code === "memory_policy_blocked") {
+      if (code === "memory_policy_blocked" || code === "memory_output_too_long") {
         const operation = (await f.app.memory!.pending(workspaceId))!.operation!;
-        f.operations.set(operation.id, "failed"); f.policyBlocked.add(operation.id);
+        f.operations.set(operation.id, "failed"); f.errorCodes.set(operation.id, code);
       }
       await f.ready();
       expect(await f.memory.status(owner, workspaceId)).toMatchObject({ status: "partial", skippedSources: [{ source: id, code }] });

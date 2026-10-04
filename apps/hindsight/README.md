@@ -338,10 +338,12 @@ HINDSIGHT_API_RETAIN_ATTACHMENT_MAX_COUNT=8
 HINDSIGHT_API_RETAIN_ATTACHMENT_MAX_SIZE_MB=8
 ```
 
+Databricks App は `HINDSIGHT_API_RETAIN_LLM_REASONING_EFFORT=low` も設定します。テキストと画像の事実抽出（VLM は retain の値を継承）だけに適用し、reflect・consolidation・Knowledge Pages はモデル既定のままです。`system.ai.gpt-6-luna` の実呼び出しで、テキストと合成画像の両方が `reasoning_effort: "low"` を受け付けることを確認しました。値は ingestion policy に含まれるため、変更すると全 bank の文書を再取り込みします。
+
 `system.ai.gpt-6-luna` の実呼び出しで既定temperatureの拒否を確認したため、画像処理は標準設定でtemperatureを省略します。モデル名からの推測や別providerへの切り替えは行いません。
 
 `concise` / `verbose` の抽出だけを許可し、`chunks` や Provider Batch は拒否します。能力をモデル名から推定しません。実際のモデルが画像に対応することは、既存 OAuth 経路による合成画像の実呼び出しで別途検証してください。ペイロードは Databricks の [Chat completion API](https://docs.databricks.com/aws/en/machine-learning/foundation-model-apis/api-reference) の `image_url` / base64 data URI を使い、モデル名変換や別 routing は行いません。
 
-inline attachment を含む chunk のみ VLM に渡し、出力 4,096 token、60 秒、呼び出し内 retry 0 に制限します。外側の Dahlia operation の最大 3 回の retry に集約します。画像欠落・破損は固定エラーで失敗し、`[attachment unavailable]` によるテキストのみの成功にはしません。画像chunk由来のfactには構造化された画像contextを残し、上流のfact/attachment関係とServerのmanifestを公開前に照合します。内容や画像byteはログへ出しません。
+inline attachment を含む chunk のみ VLM に渡し、出力 16,000 token、120 秒、呼び出し内 retry 0 に制限します。出力上限には推論 token も含まれ、画像 chunk は同じ chunk の文字起こしも抽出対象にするため、4,096 token では `system.ai.gpt-6-luna` が `OutputTooLongError` で失敗しました。上限超過は同じ入力と予算では繰り返すとみなし、Hindsight worker は retry せずに operation を失敗させ、operation status に固定コード `memory_output_too_long` を返します。Server も retry せずに skip として表示し、管理者の「再試行」で再評価します。その他の失敗は外側の Dahlia operation の最大 3 回の retry に集約します。画像欠落・破損は固定エラーで失敗し、`[attachment unavailable]` によるテキストのみの成功にはしません。画像chunk由来のfactには構造化された画像contextを残し、上流のfact/attachment関係とServerのmanifestを公開前に照合します。内容や画像byteはログへ出しません。
 
 設定APIは秘密情報を含まない `dahlia_images` 能力を返します。VLM、画像上限、抽出設定、固定処理予算のバージョンは ingestion policy に含まれ、変更時には派生文書・Knowledge Pagesを再検証します。bank を消す必要はありません。

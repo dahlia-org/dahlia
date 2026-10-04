@@ -13,14 +13,22 @@ import httpx
 import pytest
 from hindsight_api.config import HindsightConfig, JsonFormatter
 from hindsight_api.engine import llm_wrapper
-from hindsight_api.engine.llm_wrapper import LLMProvider
+from hindsight_api.engine.llm_wrapper import LLMProvider, OutputTooLongError
+from hindsight_api.engine.memory_engine import _is_non_retryable_task_error
 from hindsight_api.engine.response_models import LLMCallResult, TokenUsage
 from hindsight_api.engine.retain.attachment_content import LoadedAttachment, attachment_placeholder
-from hindsight_api.engine.retain.fact_extraction import _extract_facts_from_chunk
+from hindsight_api.engine.retain.fact_extraction import _extract_facts_from_chunk, extract_facts_from_text
+from hindsight_api.worker.exceptions import format_task_error
 
 from hindsight_lakebase.databricks import DatabricksOAuthTokenProvider
-from hindsight_lakebase.images import image_call, image_capabilities, image_fact_metadata, require_images
-from hindsight_lakebase.ingestion import ingestion_policy, stamp_ingestion
+from hindsight_lakebase.images import (
+    MAX_COMPLETION_TOKENS,
+    image_call,
+    image_capabilities,
+    image_fact_metadata,
+    require_images,
+)
+from hindsight_lakebase.ingestion import ingestion_policy, operation_error_code, stamp_ingestion
 from hindsight_lakebase.server import LOG_FIELDS
 
 DATA = b"synthetic-image"
@@ -95,7 +103,7 @@ async def test_only_image_chunks_use_bounded_vision_calls_and_missing_bytes_fail
     await _extract_facts_from_chunk(chunk=TOKEN, **args)
     vision.call.assert_awaited_once()
     call = vision.call.call_args.kwargs
-    assert call["max_completion_tokens"] == 4096 and call["max_retries"] == 0
+    assert call["max_completion_tokens"] == MAX_COMPLETION_TOKENS and call["max_retries"] == 0
     assert any(part["type"] == "image_url" for part in call["messages"][1]["content"])
     loader.load.return_value = {}
     with pytest.raises(RuntimeError, match="memory_image_unavailable"):
@@ -112,6 +120,27 @@ async def test_only_image_chunks_use_bounded_vision_calls_and_missing_bytes_fail
     assert "SECRET-IMAGE" not in rendered and "base64" not in rendered and HASH not in rendered
 
 
+async def test_image_output_overflow_fails_the_operation_without_worker_retries():
+    text = SimpleNamespace(call=AsyncMock())
+    vision = SimpleNamespace(call=AsyncMock(side_effect=OutputTooLongError("LLM output exceeded token limits.")))
+    loader = SimpleNamespace(
+        load=AsyncMock(return_value={HASH[:12]: LoadedAttachment(media_type="image/webp", data=DATA)})
+    )
+    with pytest.raises(OutputTooLongError) as error:
+        await extract_facts_from_text(
+            TOKEN,
+            datetime(2026, 1, 1),
+            text,
+            image_config(),
+            metadata={"dahlia_images": "1"},
+            attachment_loader=loader,
+            vlm_config=vision,
+        )
+    vision.call.assert_awaited_once()
+    assert _is_non_retryable_task_error(error.value)
+    assert operation_error_code({"error_message": format_task_error(error.value)}) == "memory_output_too_long"
+
+
 @pytest.mark.parametrize("model", ["system.ai.gpt-6-luna", "gpt-5"])
 async def test_databricks_preserves_multimodal_parts_and_uses_oauth(monkeypatch, model):
     monkeypatch.setenv("DATABRICKS_HOST", "https://workspace.example")
@@ -120,7 +149,7 @@ async def test_databricks_preserves_multimodal_parts_and_uses_oauth(monkeypatch,
     token = AsyncMock(return_value="synthetic-token")
     monkeypatch.setattr(DatabricksOAuthTokenProvider, "get_token_async", token)
     provider = LLMProvider(
-        provider="databricks", model=model, api_key=None, base_url=None, extra_body={"max_tokens": 16000}
+        provider="databricks", model=model, api_key=None, base_url=None, extra_body={"max_tokens": 64000}
     )
     requests = []
 
@@ -149,8 +178,8 @@ async def test_databricks_preserves_multimodal_parts_and_uses_oauth(monkeypatch,
     assert requests[0].headers["authorization"] == "Bearer synthetic-token"
     assert json.loads(requests[0].content)["messages"][0]["content"] == parts
     payload = json.loads(requests[0].content)
-    assert payload.get("max_completion_tokens", payload.get("max_tokens")) == 4096
-    assert payload.get("max_tokens", 4096) <= 4096
+    assert payload.get("max_completion_tokens", payload.get("max_tokens")) == MAX_COMPLETION_TOKENS
+    assert payload.get("max_tokens", MAX_COMPLETION_TOKENS) <= MAX_COMPLETION_TOKENS
     token.assert_awaited()
 
 

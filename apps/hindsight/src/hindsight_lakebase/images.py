@@ -6,6 +6,11 @@ import hashlib
 from hindsight_api.config_resolver import apply_strategy
 from hindsight_api.engine.retain.attachment_content import iter_placeholder_ids
 
+# Reasoning tokens count against this budget; image chunks also carry transcript text.
+MAX_COMPLETION_TOKENS = 16000
+# Matches Hindsight's default LLM client timeout, which also bounds this call.
+TIMEOUT_SECONDS = 120
+
 
 def image_capabilities(config, *, applied=False):
     if config.retain_default_strategy and not applied:
@@ -25,8 +30,8 @@ def image_capabilities(config, *, applied=False):
         "max_count": config.retain_attachment_max_count,
         "max_bytes": config.retain_attachment_max_size_bytes,
         "max_per_chunk": config.retain_max_attachments_per_chunk,
-        "max_completion_tokens": 4096,
-        "timeout": 60,
+        "max_completion_tokens": MAX_COMPLETION_TOKENS,
+        "timeout": TIMEOUT_SECONDS,
         "retries": 0,
     }
 
@@ -52,9 +57,14 @@ def image_fact_metadata(metadata, chunk_text):
 
 async def image_call(llm, kwargs):
     # Keep retain admission control while bounding transport retries and output budget.
-    async with asyncio.timeout(60):
+    async with asyncio.timeout(TIMEOUT_SECONDS):
         return await llm.call(
-            **{**kwargs, "max_completion_tokens": 4096, "max_retries": 0, "scope": "retain_dahlia_image"}
+            **{
+                **kwargs,
+                "max_completion_tokens": MAX_COMPLETION_TOKENS,
+                "max_retries": 0,
+                "scope": "retain_dahlia_image",
+            }
         )
 
 
@@ -63,4 +73,4 @@ def bound_image_request(params, token_parameter):
         params.pop(key, None)
         if params.get("extra_body"):
             params["extra_body"].pop(key, None)
-    params[token_parameter] = 4096
+    params[token_parameter] = MAX_COMPLETION_TOKENS

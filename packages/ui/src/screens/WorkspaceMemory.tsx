@@ -122,6 +122,7 @@ export function WorkspaceMemory({ workspaceId, role, compact = false, onEnabledW
         <summary className="cursor-pointer font-medium">{uiText(`${status.skippedCount} skipped items`, `取り込めなかったデータ：${status.skippedCount} 件`)}</summary>
         <ul className="mt-2 space-y-2 break-words text-muted-foreground">{status.skippedSources.map((item) => <li key={item.source}>{item.source}: {item.code === "memory_source_too_large" ? uiText("Source exceeds 4 MiB", "元データが 4 MiB を超えています")
           : item.code === "memory_policy_blocked" ? uiText("Blocked by Gateway policy", "Gateway ポリシーにより拒否されました")
+          : item.code === "memory_output_too_long" ? uiText("AI output exceeded its token limit", "AI の出力がトークン上限を超えました")
           : item.code === "memory_no_facts" ? uiText("No facts were extracted", "情報を抽出できませんでした")
           : uiText("Processing failed after retries", "再試行後も処理に失敗しました")}</li>)}</ul>
         {status.skippedCount > status.skippedSources.length && <p>{uiText("Showing up to 20 items.", "最大 20 件を表示しています。")}</p>}
