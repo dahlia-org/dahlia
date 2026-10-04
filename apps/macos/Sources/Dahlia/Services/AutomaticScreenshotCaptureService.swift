@@ -100,11 +100,6 @@ enum AutomaticScreenshotCaptureOutcome: Equatable, Sendable {
     case skipped
     case discarded
     case failed
-
-    /// Saved and intentionally skipped frames advance the comparison references; failed or discarded ones stay pending.
-    var commitsReference: Bool {
-        self == .saved || self == .skipped
-    }
 }
 
 struct AutomaticScreenshotCaptureLifecycle {
@@ -312,22 +307,6 @@ struct PreparedScreenshotFrame: Sendable {
     }
 }
 
-struct AutomaticScreenshotFingerprintBaseline {
-    private(set) var value: ScreenshotFingerprint?
-
-    mutating func reset() {
-        value = nil
-    }
-
-    mutating func record(
-        _ fingerprint: ScreenshotFingerprint,
-        detectionScopeMatches: Bool
-    ) {
-        guard detectionScopeMatches else { return }
-        value = fingerprint
-    }
-}
-
 actor AutomaticScreenshotFrameProcessor {
     private static let maximumSharedContentEdgeDriftRatio: CGFloat = 0.02
 
@@ -450,27 +429,54 @@ actor AutomaticScreenshotFrameProcessor {
         )
     }
 
-    fileprivate func encode(_ image: CGImage) -> EncodedScreenshotFrame? {
+    /// Runs off this actor so that encoding a saved frame never delays preparing the next capture.
+    @concurrent fileprivate nonisolated static func encode(_ image: CGImage) async -> EncodedScreenshotFrame? {
         guard !Task.isCancelled else { return nil }
         let startedAt = ContinuousClock.now
         let state = ScreenshotCaptureMetrics.signposter.beginInterval("Encode")
-        let data = ImageEncoder.encode(image)
+        let data = ImageEncoder.encode(downscaledForSaving(image))
         let mimeType = data.flatMap { ImageEncoder.mimeType(for: $0) }
         ScreenshotCaptureMetrics.signposter.endInterval("Encode", state)
         ScreenshotCaptureMetrics.recordSlowStage(.encoding, startedAt: startedAt)
         guard !Task.isCancelled, let data, let mimeType else { return nil }
         return EncodedScreenshotFrame(data: data, mimeType: mimeType)
     }
+
+    /// Scales the saved image, after any shared-content crop, to `ImageEncoder.screenshotMaximumLongEdge`.
+    static func downscaledForSaving(_ image: CGImage) -> CGImage {
+        let longEdge = max(image.width, image.height)
+        guard longEdge > ImageEncoder.screenshotMaximumLongEdge else { return image }
+        let scale = Double(ImageEncoder.screenshotMaximumLongEdge) / Double(longEdge)
+        let width = max(1, Int((Double(image.width) * scale).rounded()))
+        let height = max(1, Int((Double(image.height) * scale).rounded()))
+        guard let colorSpace = CGColorSpace(name: CGColorSpace.sRGB),
+              let context = CGContext(
+                  data: nil,
+                  width: width,
+                  height: height,
+                  bitsPerComponent: 8,
+                  bytesPerRow: 0,
+                  space: colorSpace,
+                  bitmapInfo: CGBitmapInfo.byteOrder32Little.rawValue | CGImageAlphaInfo.premultipliedFirst.rawValue
+              ) else { return image }
+        context.interpolationQuality = .high
+        context.draw(image, in: CGRect(x: 0, y: 0, width: width, height: height))
+        return context.makeImage() ?? image
+    }
 }
 
 /// Watches a low-resolution ScreenCaptureKit stream for settled changes, captures full-resolution
 /// screenshots only for those changes, and keeps image-sized work off MainActor.
+/// Only capturing and deciding on a frame is exclusive; saved frames are encoded and persisted in capture order
+/// behind it, so the next change can be captured while the previous one is still being saved.
 actor AutomaticScreenshotCaptureService: AutomaticScreenshotCapturing {
     /// With shared-content detection, any still change is checked against the threshold inside the detected crop.
     /// The whole-screen fingerprint is coarser than the crop's, so even a single changed cell can matter. Each change
     /// is checked once because skipped attempts advance the last-attempt baseline. The user threshold's 1% floor in
     /// `normalized` deliberately does not apply here.
     static let sharedContentGateRatio = Double.leastNonzeroMagnitude
+    /// Each pending save holds a full-resolution image, so one may encode while one more waits behind it.
+    private static let maximumPendingSaveCount = 2
 
     private struct ActiveCapture {
         let attempt: AutomaticScreenshotCaptureAttempt
@@ -486,7 +492,10 @@ actor AutomaticScreenshotCaptureService: AutomaticScreenshotCapturing {
     private var desiredRequest: AutomaticScreenshotCaptureRequest?
     private var activeCapture: ActiveCapture?
     private var processingState = AutomaticScreenshotProcessingState()
-    private var fingerprintBaseline = AutomaticScreenshotFingerprintBaseline()
+    private var saveTask: Task<Void, Never>?
+    private var pendingSaveCount = 0
+    /// The last saved shared-content crop. A whole-screen fallback never becomes this baseline.
+    private var lastSavedCropFingerprint: ScreenshotFingerprint?
     private var settleTracker = ScreenshotSettleTracker()
     private var settleCheckTask: Task<Void, Never>?
     private var failedCaptureRetryNotBefore: ContinuousClock.Instant?
@@ -499,7 +508,7 @@ actor AutomaticScreenshotCaptureService: AutomaticScreenshotCapturing {
         let generation = lifecycle.beginReplacement()
         await stopCaptureAndProcessing()
         guard lifecycle.accepts(generation: generation) else { return }
-        fingerprintBaseline.reset()
+        lastSavedCropFingerprint = nil
         settleTracker = ScreenshotSettleTracker()
         failedCaptureRetryNotBefore = nil
         await startStream(generation: generation)
@@ -520,7 +529,7 @@ actor AutomaticScreenshotCaptureService: AutomaticScreenshotCapturing {
         request.cropsToSharedContent = cropsToSharedContent
         desiredRequest = Self.normalized(request)
         if detectionScopeChanged {
-            fingerprintBaseline.reset()
+            lastSavedCropFingerprint = nil
         }
         if sharedContentSettingsChanged {
             await frameProcessor.resetSharedContentRegion()
@@ -542,6 +551,10 @@ actor AutomaticScreenshotCaptureService: AutomaticScreenshotCapturing {
         processingOperation?.task.cancel()
         await stopActiveCapture()
         await processingOperation?.task.value
+        // The lifecycle no longer accepts this generation, so no new save is queued and earlier queued saves
+        // discard themselves; awaiting the tail drains them all.
+        saveTask?.cancel()
+        await saveTask?.value
         await frameProcessor.resetSharedContentRegion()
     }
 
@@ -706,6 +719,7 @@ actor AutomaticScreenshotCaptureService: AutomaticScreenshotCapturing {
     private func evaluateCapture(attempt: AutomaticScreenshotCaptureAttempt) {
         guard lifecycle.accepts(attempt: attempt),
               !processingState.isProcessing,
+              pendingSaveCount < Self.maximumPendingSaveCount,
               let request = desiredRequest else { return }
         let now = ContinuousClock.now
         if let failedCaptureRetryNotBefore {
@@ -743,21 +757,25 @@ actor AutomaticScreenshotCaptureService: AutomaticScreenshotCapturing {
     ) {
         processingState.begin(attempt: attempt) { [weak self] operationID in
             Task(priority: .utility) {
-                guard let outcome = await self?.process(attempt: attempt, stillScreenPassed: stillScreenPassed)
-                else { return }
+                guard let outcome = await self?.process(
+                    attempt: attempt,
+                    stillScreenPassed: stillScreenPassed,
+                    reference: reference
+                ) else { return }
                 await self?.finishProcessing(
                     operationID: operationID,
                     attempt: attempt,
-                    outcome: outcome,
-                    reference: reference
+                    outcome: outcome
                 )
             }
         }
     }
 
+    /// Captures and decides on one frame, then hands a saved frame to `enqueueSave`.
     private func process(
         attempt: AutomaticScreenshotCaptureAttempt,
-        stillScreenPassed: Bool
+        stillScreenPassed: Bool,
+        reference: ScreenshotSettleTracker.CaptureReference
     ) async -> AutomaticScreenshotCaptureOutcome {
         guard lifecycle.accepts(attempt: attempt),
               let request = desiredRequest,
@@ -781,32 +799,88 @@ actor AutomaticScreenshotCaptureService: AutomaticScreenshotCapturing {
             detectsChangesInSharedContentOnly: request.detectsChangesInSharedContentOnly,
             cropsToSharedContent: request.cropsToSharedContent
         )
+        // Only a capture its attempt still accepts may commit: a replacement start resets the tracker, and a stream
+        // restart that took this operation leaves the change pending. Nothing suspends from here to the hand-off,
+        // so the next evaluation always sees this decision.
         guard let preparedFrame,
               !Task.isCancelled,
               lifecycle.accepts(attempt: attempt),
               processingScopeMatches(request) else { return .discarded }
 
         guard preparedFrame.shouldSave(
-            after: fingerprintBaseline.value,
+            after: lastSavedCropFingerprint,
             changeThresholdRatio: request.changeThresholdRatio,
             stillScreenPassed: stillScreenPassed
-        ) else { return .skipped }
+        ) else {
+            settleTracker.commit(reference, isSaved: false)
+            return .skipped
+        }
+        settleTracker.commit(reference, isSaved: true)
+        if preparedFrame.fingerprintsSharedContent {
+            lastSavedCropFingerprint = preparedFrame.fingerprint
+        }
+        enqueueSave(
+            preparedFrame.imageToEncode,
+            capturedAt: capturedAt,
+            request: request,
+            generation: attempt.generation
+        )
+        return .saved
+    }
 
-        guard let encoded = await frameProcessor.encode(preparedFrame.imageToEncode) else {
+    private func finishProcessing(
+        operationID: UInt64,
+        attempt: AutomaticScreenshotCaptureAttempt,
+        outcome: AutomaticScreenshotCaptureOutcome
+    ) {
+        if outcome == .failed {
+            delayAfterFailure(generation: attempt.generation)
+        }
+        guard processingState.complete(
+            operationID: operationID,
+            attempt: attempt
+        ) else { return }
+        // Changes that settled while processing may have no frame or timer left to observe them.
+        evaluateCapture(attempt: attempt)
+    }
+
+    /// Saves run in capture order and outlive a stream restart, because the captured image no longer needs the stream.
+    private func enqueueSave(
+        _ image: CGImage,
+        capturedAt: Date,
+        request: AutomaticScreenshotCaptureRequest,
+        generation: UInt64
+    ) {
+        pendingSaveCount += 1
+        let previousTask = saveTask
+        saveTask = Task(priority: .utility) { [weak self] in
+            await previousTask?.value
+            guard let outcome = await self?.save(
+                image,
+                capturedAt: capturedAt,
+                request: request,
+                generation: generation
+            ) else { return }
+            await self?.finishSave(outcome: outcome, generation: generation)
+        }
+    }
+
+    private func save(
+        _ image: CGImage,
+        capturedAt: Date,
+        request: AutomaticScreenshotCaptureRequest,
+        generation: UInt64
+    ) async -> AutomaticScreenshotCaptureOutcome {
+        guard !Task.isCancelled,
+              lifecycle.accepts(generation: generation) else { return .discarded }
+        guard let encoded = await AutomaticScreenshotFrameProcessor.encode(image) else {
             guard !Task.isCancelled,
-                  lifecycle.accepts(attempt: attempt),
-                  processingScopeMatches(request) else { return .discarded }
+                  lifecycle.accepts(generation: generation) else { return .discarded }
             await request.onFailure(ScreenshotError.encodingFailed)
             return .failed
         }
         guard !Task.isCancelled,
-              lifecycle.accepts(attempt: attempt),
-              processingScopeMatches(request) else { return .discarded }
-        guard preparedFrame.shouldSave(
-            after: fingerprintBaseline.value,
-            changeThresholdRatio: request.changeThresholdRatio,
-            stillScreenPassed: stillScreenPassed
-        ) else { return .skipped }
+              lifecycle.accepts(generation: generation) else { return .discarded }
 
         let record = Self.makeRecord(
             capturedAt: capturedAt,
@@ -823,61 +897,53 @@ actor AutomaticScreenshotCaptureService: AutomaticScreenshotCapturing {
             ScreenshotCaptureMetrics.signposter.endInterval("Persist", persistenceState)
             ScreenshotCaptureMetrics.recordSlowStage(.persistence, startedAt: persistenceStartedAt)
             guard !Task.isCancelled,
-                  lifecycle.accepts(attempt: attempt) else { return .discarded }
+                  lifecycle.accepts(generation: generation) else { return .discarded }
             await request.onFailure(error)
             return .failed
         }
         ScreenshotCaptureMetrics.signposter.endInterval("Persist", persistenceState)
         ScreenshotCaptureMetrics.recordSlowStage(.persistence, startedAt: persistenceStartedAt)
 
-        // The record is durable from here, so later cancellation must not leave the change pending.
+        // The record is durable from here, so later cancellation still reports it as saved.
         guard !Task.isCancelled,
-              lifecycle.accepts(attempt: attempt) else { return .saved }
-        // Only crops are compared later, so a whole-screen fallback must not become the crop baseline.
-        if preparedFrame.fingerprintsSharedContent {
-            fingerprintBaseline.record(
-                preparedFrame.fingerprint,
-                detectionScopeMatches: detectionScopeMatches(request)
-            )
-        }
+              lifecycle.accepts(generation: generation) else { return .saved }
         await request.onPersisted(record)
         return .saved
     }
 
-    private func finishProcessing(
-        operationID: UInt64,
-        attempt: AutomaticScreenshotCaptureAttempt,
+    private func finishSave(
         outcome: AutomaticScreenshotCaptureOutcome,
-        reference: ScreenshotSettleTracker.CaptureReference
+        generation: UInt64
     ) {
-        // A replacement start resets the tracker, so only outcomes from the current generation may update it.
-        // A stream restart keeps the generation and tracker, so its saved frame is never re-captured and a
-        // discarded one stays pending, even when the failure handler took the operation.
-        if lifecycle.accepts(generation: attempt.generation) {
-            if outcome.commitsReference {
-                settleTracker.commit(reference, isSaved: outcome == .saved)
-            } else if outcome == .failed, let request = desiredRequest {
-                let now = ContinuousClock.now
-                failedCaptureRetryNotBefore = now + .seconds(request.intervalSeconds)
-                scheduleSettleCheck(after: now, attempt: attempt)
-            }
+        pendingSaveCount -= 1
+        // A save is discarded only after its generation ended.
+        guard lifecycle.accepts(generation: generation) else { return }
+        if outcome == .failed {
+            // The references already moved past this frame, so capture the screen again after the backoff.
+            settleTracker.forgetReferences()
+            lastSavedCropFingerprint = nil
+            delayAfterFailure(generation: generation)
         }
-        guard processingState.complete(
-            operationID: operationID,
-            attempt: attempt
-        ) else { return }
-        // Changes that settled while processing may have no frame or timer left to observe them.
-        evaluateCapture(attempt: attempt)
+        // A capture held back by the pending-save limit may have no frame or timer left to observe it.
+        if let attempt = lifecycle.activeAttempt {
+            evaluateCapture(attempt: attempt)
+        }
+    }
+
+    private func delayAfterFailure(generation: UInt64) {
+        guard lifecycle.accepts(generation: generation),
+              let request = desiredRequest else { return }
+        let now = ContinuousClock.now
+        failedCaptureRetryNotBefore = now + .seconds(request.intervalSeconds)
+        if let attempt = lifecycle.activeAttempt {
+            scheduleSettleCheck(after: now, attempt: attempt)
+        }
     }
 
     private func processingScopeMatches(_ request: AutomaticScreenshotCaptureRequest) -> Bool {
         guard let desiredRequest else { return false }
         return desiredRequest.detectsChangesInSharedContentOnly == request.detectsChangesInSharedContentOnly
             && desiredRequest.cropsToSharedContent == request.cropsToSharedContent
-    }
-
-    private func detectionScopeMatches(_ request: AutomaticScreenshotCaptureRequest) -> Bool {
-        desiredRequest?.detectsChangesInSharedContentOnly == request.detectsChangesInSharedContentOnly
     }
 }
 

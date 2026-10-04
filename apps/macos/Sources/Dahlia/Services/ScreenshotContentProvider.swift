@@ -53,6 +53,7 @@ actor ScreenshotContentProvider {
         } catch {
             ErrorReportingService.capture(error, context: ["source": "screenshotFileMigration"])
         }
+        startLocalScreenshotConversionIfNeeded(dbQueue: dbQueue)
     }
 
     func fileStore(for dbQueue: DatabaseQueue) throws -> ScreenshotFileStore {

@@ -191,6 +191,13 @@ struct ScreenshotSettleTracker {
         }
     }
 
+    /// Makes the next check capture unconditionally, as for the first frame. A save that fails after its
+    /// reference was committed cannot be uncommitted precisely, so the current screen is captured again instead.
+    mutating func forgetReferences() {
+        savedPixels = nil
+        attemptedPixels = nil
+    }
+
     private func updated(_ reference: [UInt8]?, at now: ContinuousClock.Instant) -> [UInt8] {
         guard var reference else { return latestPixels }
         // Pixels still moving keep their old reference so their final state is evaluated once they settle.

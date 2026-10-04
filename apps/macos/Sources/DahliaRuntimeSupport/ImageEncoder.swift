@@ -9,6 +9,9 @@ package enum ImageEncoder {
     package static let preferredFileExtension = "webp"
     package static let defaultQuality: CGFloat = 0.80
     package static let aiInputMaximumLongEdge = 1280
+    /// Claude's standard-tier image limit, so saved screenshots go to AI unchanged. Retina pixels beyond it cost
+    /// encoding time and storage, not legibility.
+    package static let screenshotMaximumLongEdge = 1568
 
     package static func mimeType(for data: Data) -> String? {
         guard let source = CGImageSourceCreateWithData(data as CFData, nil),
@@ -24,6 +27,15 @@ package enum ImageEncoder {
         case UTType.tiff.identifier: "image/tiff"
         default: nil
         }
+    }
+
+    /// Reads the dimensions from the image header without decoding pixels.
+    package static func pixelSize(of data: Data) -> (width: Int, height: Int)? {
+        guard let source = CGImageSourceCreateWithData(data as CFData, nil),
+              let properties = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any],
+              let width = properties[kCGImagePropertyPixelWidth] as? Int,
+              let height = properties[kCGImagePropertyPixelHeight] as? Int else { return nil }
+        return (width, height)
     }
 
     package static func fileExtension(for mimeType: String) -> String? {

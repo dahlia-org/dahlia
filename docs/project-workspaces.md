@@ -137,9 +137,8 @@ Meeting metadata instead. Project names and paths are excluded from both text-se
 `query_screenshots` searches detected text and generated image descriptions, and returns screenshots as independent
 results with their owning Meeting IDs. Queries must contain at least two non-whitespace characters.
 
-`get_meeting_screenshots` uses `image_size: "preview"` by default. Set `image_size` to `"original"` only when an
-external agent needs the original resolution, such as when preparing a document that must preserve screenshot detail.
-Original-size requests return one screenshot per call; use individual IDs or range pagination to retrieve more.
+`get_meeting_screenshots` returns up to 10 stored screenshots per call unchanged: WebP images whose long edge is at
+most 1568 px. Use individual IDs or range pagination to retrieve more.
 
 Write tools:
 

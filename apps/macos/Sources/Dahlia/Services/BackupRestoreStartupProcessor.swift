@@ -95,6 +95,8 @@ enum BackupRestoreStartupProcessor {
 
             try? fileManager.removeItem(at: markerURL)
             try? fileManager.removeItem(at: candidateURL)
+            // A backup can bring back screenshots saved before the local conversion.
+            UserDefaults.standard.removeObject(forKey: ScreenshotContentProvider.localScreenshotConversionCompletedKey)
             return .completed(results)
         } catch {
             try? fileManager.removeItem(at: markerURL)

@@ -213,6 +213,18 @@ import CoreGraphics
         }
 
         @Test
+        func forgottenReferencesCaptureTheUnchangedScreenAgain() {
+            var tracker = capturedTracker()
+            #expect(!shouldCapture(tracker, at: start + .seconds(5)))
+            #expect(!shouldCapture(tracker, at: start + .seconds(5), comparedWith: .lastAttempt))
+
+            // A save that fails after its reference was committed must not leave the screen counted as captured.
+            tracker.forgetReferences()
+            #expect(shouldCapture(tracker, at: start + .seconds(5)))
+            #expect(shouldCapture(tracker, at: start + .seconds(5), comparedWith: .lastAttempt))
+        }
+
+        @Test
         func skippedAttemptsKeepSmallChangesAddingUpAgainstLastSave() {
             var tracker = capturedTracker()
             // Each step changes 2% of the screen: enough for the 1% gate, not for the 5% save threshold.

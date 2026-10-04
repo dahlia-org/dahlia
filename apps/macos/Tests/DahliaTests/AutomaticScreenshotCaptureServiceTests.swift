@@ -130,26 +130,6 @@ import GRDB
         }
 
         @Test
-        func onlySavedOrSkippedCapturesCommitTheReference() {
-            #expect(AutomaticScreenshotCaptureOutcome.saved.commitsReference)
-            #expect(AutomaticScreenshotCaptureOutcome.skipped.commitsReference)
-            #expect(!AutomaticScreenshotCaptureOutcome.discarded.commitsReference)
-            #expect(!AutomaticScreenshotCaptureOutcome.failed.commitsReference)
-        }
-
-        @Test
-        func stalePersistenceDoesNotRestoreResetFingerprintBaseline() {
-            let oldFingerprint = ScreenshotFingerprint(width: 1, height: 1, pixels: [1])
-            var baseline = AutomaticScreenshotFingerprintBaseline()
-            baseline.record(oldFingerprint, detectionScopeMatches: true)
-
-            baseline.reset()
-            baseline.record(oldFingerprint, detectionScopeMatches: false)
-
-            #expect(baseline.value == nil)
-        }
-
-        @Test
         @MainActor
         func stopBypassesBlockedStartAndInvalidatesPendingSettings() async throws {
             let capture = BlockingAutomaticScreenshotCapture()

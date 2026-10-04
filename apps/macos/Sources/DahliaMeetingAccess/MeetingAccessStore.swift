@@ -749,11 +749,10 @@ extension MeetingAccessStore {
 
     public func screenshotImages(
         meetingID: UUID,
-        query: ScreenshotQuery,
-        originalSize: Bool = false
+        query: ScreenshotQuery
     ) throws -> (page: MeetingScreenshotPage, images: [MeetingScreenshotImage]) {
         let result = try screenshotPageData(meetingID: meetingID, query: query, includeImageData: true)
-        let images = try result.payloads.map { try encodedScreenshot($0, meetingID: meetingID, originalSize: originalSize) }
+        let images = try result.payloads.map { try encodedScreenshot($0, meetingID: meetingID) }
         return (
             MeetingScreenshotPage(
                 workspace: result.page.workspace,
@@ -827,14 +826,9 @@ extension MeetingAccessStore {
 
     public func screenshot(
         meetingID: UUID,
-        screenshotID: UUID,
-        originalSize: Bool = false
+        screenshotID: UUID
     ) throws -> MeetingScreenshotImage {
-        guard let image = try screenshotImages(
-            meetingID: meetingID,
-            screenshotIDs: [screenshotID],
-            originalSize: originalSize
-        ).first else {
+        guard let image = try screenshotImages(meetingID: meetingID, screenshotIDs: [screenshotID]).first else {
             throw MeetingAccessError.screenshotNotFound
         }
         return image
@@ -842,8 +836,7 @@ extension MeetingAccessStore {
 
     public func screenshotImages(
         meetingID: UUID,
-        screenshotIDs: [UUID],
-        originalSize: Bool = false
+        screenshotIDs: [UUID]
     ) throws -> [MeetingScreenshotImage] {
         guard !screenshotIDs.isEmpty, screenshotIDs.count <= 10, Set(screenshotIDs).count == screenshotIDs.count else {
             throw MeetingAccessError.screenshotNotFound
@@ -871,31 +864,26 @@ extension MeetingAccessStore {
             }
         }
         return try payloads.map { payload in
-            try encodedScreenshot(payload, meetingID: meetingID, originalSize: originalSize)
+            try encodedScreenshot(payload, meetingID: meetingID)
         }
     }
 
     private func encodedScreenshot(
         _ payload: ScreenshotPayload,
-        meetingID: UUID,
-        originalSize: Bool
+        meetingID: UUID
     ) throws -> MeetingScreenshotImage {
-        var original = payload.imageData
-        if original == nil, let json = payload.remoteReference,
+        var imageData = payload.imageData
+        if imageData == nil, let json = payload.remoteReference,
            let source = try? JSONDecoder().decode(ScreenshotRemoteReference.self, from: Data(json.utf8)),
            source.fileId == payload.fileId {
             _ = try? textResolver?(workspaceID, .init(touchingFile: payload.fileId, meetingId: meetingID))
-            original = try? screenshotCache?.read(source, variant: .original)?.data
+            imageData = try? screenshotCache?.read(source, variant: .original)?.data
         }
-        if original == nil {
-            original = try imageResolver(workspaceID, meetingID, payload.metadata.id)
+        if imageData == nil {
+            imageData = try imageResolver(workspaceID, meetingID, payload.metadata.id)
         }
-        guard let original else { throw MeetingAccessError.screenshotUnavailable }
-        let imageData = originalSize
-            ? original
-            : ImageEncoder.resizedIfPossible(original, maxLongEdge: ImageEncoder.aiInputMaximumLongEdge)
-        guard let imageData,
-              let mimeType = ImageEncoder.mimeType(for: imageData) else {
+        guard let imageData else { throw MeetingAccessError.screenshotUnavailable }
+        guard let mimeType = ImageEncoder.mimeType(for: imageData) else {
             throw MeetingAccessError.screenshotEncodingFailed
         }
         let metadata = MeetingScreenshotMetadata(
