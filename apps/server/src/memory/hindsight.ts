@@ -112,7 +112,7 @@ export class HindsightClient {
     const raw = await this.request(bank, "/config", "GET", signal);
     const parsed = z.object({ bank_id: z.string(), dahlia_images: z.object({ provider: z.literal("databricks"), model: z.string(),
       enabled: z.literal(true), max_count: z.number(), max_bytes: z.number(), max_per_chunk: z.literal(1),
-      max_completion_tokens: z.literal(4096), timeout: z.literal(60), retries: z.literal(0) }) }).safeParse(raw);
+      max_completion_tokens: z.literal(16000), timeout: z.literal(120), retries: z.literal(0) }) }).safeParse(raw);
     if (!parsed.success || parsed.data.bank_id !== bank || parsed.data.dahlia_images.model !== settings.model
       || parsed.data.dahlia_images.max_count < settings.maxCount || parsed.data.dahlia_images.max_bytes < settings.maxBytes) {
       throw new HindsightError("memory_images_unconfigured");
@@ -159,7 +159,7 @@ export class HindsightClient {
     const result = await this.request(bank, `/operations/${encodeURIComponent(id)}`, "GET", signal, undefined, true);
     return result === null ? { status: "not_found" as const } : z.object({
       status: z.enum(["pending", "processing", "completed", "failed", "cancelled", "not_found"]),
-      dahlia_error_code: z.literal("memory_policy_blocked").nullish(),
+      dahlia_error_code: z.enum(["memory_policy_blocked", "memory_output_too_long"]).nullish(),
     }).parse(result);
   }
   async retryOperation(bank: string, id: string, signal: AbortSignal) {

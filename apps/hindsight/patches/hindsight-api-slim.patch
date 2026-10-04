@@ -64,7 +64,7 @@ index b850eafe6..e339bb1aa 100644
      "pgvectorscale": "CREATE EXTENSION vector; then CREATE EXTENSION vectorscale CASCADE; (or pg_diskann on Azure)",
      "vchord": "CREATE EXTENSION vchord CASCADE;",
 diff --git a/hindsight_api/api/http.py b/hindsight_api/api/http.py
-index 1cb787d6f..ca298127e 100644
+index 1cb787d6f..bc3ddc318 100644
 --- a/hindsight_api/api/http.py
 +++ b/hindsight_api/api/http.py
 @@ -284,6 +284,12 @@ def _internal_error(exc: Exception, where: str) -> HTTPException:
@@ -93,7 +93,7 @@ index 1cb787d6f..ca298127e 100644
 
 
  class OperationStatusResponse(BaseModel):
-+    dahlia_error_code: Literal["memory_policy_blocked"] | None = None
++    dahlia_error_code: Literal["memory_policy_blocked", "memory_output_too_long"] | None = None
      """Response model for getting a single operation status."""
 
      model_config = ConfigDict(
@@ -446,7 +446,7 @@ index 20d4598c9..51be5eee0 100644
      # are retain-time extraction output that nothing recreates, so an edit preserves them (#2864).
      # In lock order, like every other link delete (see delete_unit_links).
 diff --git a/hindsight_api/engine/memory_engine.py b/hindsight_api/engine/memory_engine.py
-index 100357a9a..d28dadd4f 100644
+index 100357a9a..c186098a0 100644
 --- a/hindsight_api/engine/memory_engine.py
 +++ b/hindsight_api/engine/memory_engine.py
 @@ -29,6 +29,7 @@ from datetime import UTC, datetime, timedelta, timezone
@@ -457,24 +457,26 @@ index 100357a9a..d28dadd4f 100644
  from pydantic import ValidationError
 
  from .._vector_index import (
-@@ -1428,6 +1429,8 @@ def _is_non_retryable_task_error(e: Exception) -> bool:
+@@ -1428,6 +1429,9 @@ def _is_non_retryable_task_error(e: Exception) -> bool:
      # database and succeeds. Classifying it with its deterministic
      # IntegrityConstraintViolationError siblings sent those retains terminal at
      # retry_count=0 and dropped the content silently (issue #4453).
++    from hindsight_lakebase.images import ImageOutputTooLongError
 +    from hindsight_lakebase.ingestion import IngestionConfigChangedError
 +
      if _is_foreign_key_violation(e):
          return False
      return (
-@@ -1438,6 +1441,7 @@ def _is_non_retryable_task_error(e: Exception) -> bool:
+@@ -1438,6 +1442,8 @@ def _is_non_retryable_task_error(e: Exception) -> bool:
          # the moment: re-running the task feeds the same chunk to the same model
          # and earns the same refusal (issue #3690).
          or isinstance(e, ProviderContentPolicyError)
++        or isinstance(e, ImageOutputTooLongError)
 +        or isinstance(e, IngestionConfigChangedError)
      )
 
 
-@@ -6694,7 +6698,7 @@ class MemoryEngine(MemoryEngineInterface):
+@@ -6694,7 +6700,7 @@ class MemoryEngine(MemoryEngineInterface):
          await self._get_backend()
 
          # Resolve bank-specific config for this operation
@@ -483,7 +485,7 @@ index 100357a9a..d28dadd4f 100644
 
          # Force chunks mode when LLM provider is "none" (no LLM available for fact extraction)
          if self._llm_config.provider == "none":
-@@ -6710,6 +6714,10 @@ class MemoryEngine(MemoryEngineInterface):
+@@ -6710,6 +6716,10 @@ class MemoryEngine(MemoryEngineInterface):
          if effective_strategy:
              resolved_config = apply_strategy(resolved_config, effective_strategy)
 
@@ -494,7 +496,7 @@ index 100357a9a..d28dadd4f 100644
          # Create parent span for retain operation
          with create_operation_span("retain", bank_id):
              retain_llm = self._retain_llm_config.with_config(resolved_config, bank_id=bank_id, operation="retain")
-@@ -8093,6 +8101,10 @@ class MemoryEngine(MemoryEngineInterface):
+@@ -8093,6 +8103,10 @@ class MemoryEngine(MemoryEngineInterface):
          # derives from max_tokens and clamps to [recall_budget_min, recall_budget_max].
          _t0 = time.time()
          budget_config_dict = await self._config_resolver.get_bank_config(bank_id, request_context)
@@ -505,7 +507,7 @@ index 100357a9a..d28dadd4f 100644
          _d = time.time() - _t0
          get_metrics_collector().record_recall_phase("bank_config", _d)
          if _d > 0.100:
-@@ -13517,6 +13529,7 @@ class MemoryEngine(MemoryEngineInterface):
+@@ -13517,6 +13531,7 @@ class MemoryEngine(MemoryEngineInterface):
          document_id: str,
          *,
          request_context: "RequestContext",
@@ -513,7 +515,7 @@ index 100357a9a..d28dadd4f 100644
      ) -> dict[str, Any]:
          """
          Reprocess a document by re-running retain with its existing content and parameters.
-@@ -13597,6 +13610,7 @@ class MemoryEngine(MemoryEngineInterface):
+@@ -13597,6 +13612,7 @@ class MemoryEngine(MemoryEngineInterface):
              bank_id,
              [content_dict],
              strategy=strategy,
@@ -521,7 +523,7 @@ index 100357a9a..d28dadd4f 100644
              request_context=request_context,
          )
 
-@@ -16916,6 +16930,7 @@ class MemoryEngine(MemoryEngineInterface):
+@@ -16916,6 +16932,7 @@ class MemoryEngine(MemoryEngineInterface):
              json.dumps(trigger) if trigger else None,
              json.dumps(document.structure.model_dump()),
          )
@@ -529,7 +531,7 @@ index 100357a9a..d28dadd4f 100644
          assert row is not None
          return row
 
-@@ -17444,6 +17459,14 @@ class MemoryEngine(MemoryEngineInterface):
+@@ -17444,6 +17461,14 @@ class MemoryEngine(MemoryEngineInterface):
                      based_on_serialized_payload.setdefault(ftype, []).extend(carried)
 
          reflect_response_payload: dict[str, Any] = {
@@ -544,7 +546,7 @@ index 100357a9a..d28dadd4f 100644
              "text": reflect_result.text,
              "based_on": based_on_serialized_payload,
              "mental_models": [],  # Mental models are included in based_on["mental-models"]
-@@ -18062,7 +18085,7 @@ class MemoryEngine(MemoryEngineInterface):
+@@ -18062,7 +18087,7 @@ class MemoryEngine(MemoryEngineInterface):
                  return await _generate_structured_output(
                      content_text,
                      response_schema,
@@ -553,7 +555,7 @@ index 100357a9a..d28dadd4f 100644
                      f"mm-{mental_model_id[:8]}",
                      mental_model.get("max_tokens"),
                  )
-@@ -18403,7 +18426,7 @@ class MemoryEngine(MemoryEngineInterface):
+@@ -18403,7 +18428,7 @@ class MemoryEngine(MemoryEngineInterface):
 
          # The exit stack carries the row lock a trigger patch takes below; it stays
          # empty (and free) on every other update.
@@ -562,7 +564,7 @@ index 100357a9a..d28dadd4f 100644
              # A supplied trigger PATCHES the stored one (see _merge_trigger): callers
              # send only the fields they set, so the rest have to be read back rather
              # than defaulted. Only paid for when a trigger is actually being changed.
-@@ -18565,6 +18588,8 @@ class MemoryEngine(MemoryEngineInterface):
+@@ -18565,6 +18590,8 @@ class MemoryEngine(MemoryEngineInterface):
              """
 
              row = await conn.fetchrow(query, *params)
@@ -571,7 +573,7 @@ index 100357a9a..d28dadd4f 100644
 
              # Persist the previous-version snapshot in the dedicated history table
              # (one row per refresh), then trim to the configured cap. Replaces the
-@@ -18770,7 +18795,7 @@ class MemoryEngine(MemoryEngineInterface):
+@@ -18770,7 +18797,7 @@ class MemoryEngine(MemoryEngineInterface):
              else None
          )
          sv_clause = f", search_vector = {sv_expr}" if sv_expr else ""
@@ -580,7 +582,7 @@ index 100357a9a..d28dadd4f 100644
              row = await conn.fetchrow(
                  f"""
                  UPDATE {fq_table("mental_models")}
-@@ -18791,6 +18816,7 @@ class MemoryEngine(MemoryEngineInterface):
+@@ -18791,6 +18818,7 @@ class MemoryEngine(MemoryEngineInterface):
              # findable by title, rather than leaving the index describing content that no longer
              # exists.
              if row is not None:
@@ -588,7 +590,7 @@ index 100357a9a..d28dadd4f 100644
                  vec = None
                  if self._knowledge_index_store(bank_id) is not None:
                      vec = await self._mental_model_embedding_vector(row["name"] or "", "")
-@@ -19442,7 +19468,7 @@ class MemoryEngine(MemoryEngineInterface):
+@@ -19442,7 +19470,7 @@ class MemoryEngine(MemoryEngineInterface):
              return []
 
          backend = await self._get_backend()
@@ -687,7 +689,7 @@ index ae5952f21..503663b32 100644
                  finish_reason = response.choices[0].finish_reason
 
 diff --git a/hindsight_api/engine/retain/fact_extraction.py b/hindsight_api/engine/retain/fact_extraction.py
-index 4bcc2f068..234a39751 100644
+index 4bcc2f068..ae5b8ab2f 100644
 --- a/hindsight_api/engine/retain/fact_extraction.py
 +++ b/hindsight_api/engine/retain/fact_extraction.py
 @@ -2007,9 +2007,16 @@ async def _extract_facts_from_chunk(
@@ -739,7 +741,7 @@ index 4bcc2f068..234a39751 100644
          # Output exceeded token limits - split the chunk and retry. Conversation
          # chunks are JSON arrays, so preserve array/turn boundaries when possible.
          logger.warning(
-@@ -2662,11 +2676,8 @@ async def extract_facts_from_text(
+@@ -2662,11 +2676,13 @@ async def extract_facts_from_text(
          # batch, whatever the other failures were.
          policy_errors = [err for _, err in failed_chunks if isinstance(err, ProviderContentPolicyError)]
          if policy_errors:
@@ -750,10 +752,15 @@ index 4bcc2f068..234a39751 100644
 -            ) from policy_errors[0]
 +            # Preserve the permanent type and fixed code without copying provider output.
 +            raise policy_errors[0]
++        from hindsight_lakebase.images import ImageOutputTooLongError
++
++        too_long = [err for _, err in failed_chunks if isinstance(err, ImageOutputTooLongError)]
++        if too_long:
++            raise too_long[0]
 
          # Fail the entire retain — partial extraction is not acceptable.
          # All successfully extracted facts are discarded because the transaction
-@@ -3420,6 +3431,8 @@ async def extract_facts_from_contents(
+@@ -3420,6 +3436,8 @@ async def extract_facts_from_contents(
      # them all, then propagate.
      all_fact_results = await asyncio.gather(*fact_extraction_tasks, return_exceptions=True)
 
@@ -762,7 +769,7 @@ index 4bcc2f068..234a39751 100644
      # Step 3: Flatten and convert to typed objects
      extracted_facts: list[ExtractedFactType] = []
      chunks_metadata: list[ChunkMetadata] = []
-@@ -3484,7 +3497,7 @@ async def extract_facts_from_contents(
+@@ -3484,7 +3502,7 @@ async def extract_facts_from_contents(
                      context=content.context,
                      # mentioned_at: always the event_date (when the conversation/document occurred)
                      mentioned_at=content.event_date,

@@ -76,7 +76,7 @@ Dahlia の `search.knowledge_pages`（SQLite は `knowledge_pages`）は再構�
 
 worker は既存 bank も `/config` で確認し、設定が変われば generation を進めて既存の再走査を使う。旧行の fingerprint 未設定は移行未完了とする。本文が変わった場合は retain、設定による再抽出は正本本文・metadata の同期後に標準 document reprocess を使う。同じ本文の retain は抽出を省くことがあるため、代用しない。段階、開始設定、operation ID は永続化する。reprocess の ID を既存の retain 冪等性に渡す最小パッチにより、応答喪失後も同じ operation を確認・再送する。
 
-上流の各抽出 batch は開始時の期待設定と有効設定を照合する。完了時には現在の認可、正本 revision/hash、generation、設定、保存文書・metadata・抽出件数を確認する。抽出ゼロは `memory_no_facts`、Gateway 拒否は `memory_policy_blocked`、一時的な処理障害は有界再試行後に `memory_operation_failed` とする。拒否・抽出ゼロを ready や検索結果なしとして隠さず、coverage / skippedCount / skippedSources に反映する。決定的な失敗は自動で繰り返さず、正本・設定変更または管理者の既存「再試行」で再評価する。
+上流の各抽出 batch は開始時の期待設定と有効設定を照合する。完了時には現在の認可、正本 revision/hash、generation、設定、保存文書・metadata・抽出件数を確認する。抽出ゼロは `memory_no_facts`、Gateway 拒否は `memory_policy_blocked`、画像 chunk の出力 token 上限超過は `memory_output_too_long`、一時的な処理障害は有界再試行後に `memory_operation_failed` とする。拒否・抽出ゼロを ready や検索結果なしとして隠さず、coverage / skippedCount / skippedSources に反映する。決定的な失敗は自動で繰り返さず、正本・設定変更または管理者の既存「再試行」で再評価する。
 
 recall / reflect と Knowledge Pages の本文・snippet・export は同じ現在設定と正本の境界を通す。設定移行中の旧結果は公開せず updating / generating / stale を返す。ページは全ての参照 fact の設定 stamp も確認する。会議の transcript、AI 要約、OCR、caption は同じ `meeting_id` の一つの証拠群で、fact の数を独立した裏付け数に換算しない。
 

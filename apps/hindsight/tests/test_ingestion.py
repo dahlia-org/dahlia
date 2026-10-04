@@ -25,6 +25,7 @@ def test_policy_tracks_effective_settings_without_credentials():
         {"retain_max_attachments_per_chunk": config.retain_max_attachments_per_chunk + 1},
         {"retain_mission": "Different mission"},
         {"retain_llm_model": "system.ai.synthetic"},
+        {"retain_llm_reasoning_effort": "low"},
         {"entities_allow_free_form": False},
         {"retain_strategies": {"test": {"retain_chunk_size": 123}}, "retain_default_strategy": "test"},
     ):
