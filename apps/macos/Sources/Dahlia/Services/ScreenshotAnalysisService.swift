@@ -26,7 +26,6 @@ actor CodexScreenshotAnalysisService: ScreenshotAnalyzing {
 
     static let reasoningEffort = "low"
     static let maximumBatchSize = 1
-    static let maximumImageLongEdge = ImageEncoder.aiInputMaximumLongEdge
 
     private let appServer: CodexAppServerService
     init(appServer: CodexAppServerService = .shared) {
@@ -89,15 +88,11 @@ actor CodexScreenshotAnalysisService: ScreenshotAnalyzing {
         inputs.reserveCapacity(screenshots.count * 2)
         for screenshot in screenshots {
             try Task.checkCancellation()
-            let bytes: Data = if let imageData = screenshot.imageData {
+            let imageData: Data = if let imageData = screenshot.imageData {
                 imageData
             } else {
                 try await ScreenshotContentProvider.shared.content(id: screenshot.id).data
             }
-            let imageData = ImageEncoder.resized(
-                bytes,
-                maxLongEdge: maximumImageLongEdge
-            )
             try Task.checkCancellation()
             let mimeType = ImageEncoder.mimeType(for: imageData) ?? screenshot.mimeType
             inputs.append(.imageMetadata("<screenshot_id>\(screenshot.id.uuidString)</screenshot_id>"))

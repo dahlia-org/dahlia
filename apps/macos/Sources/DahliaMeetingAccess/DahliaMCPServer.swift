@@ -6,17 +6,7 @@ import GRDB
 // swiftlint:disable file_length
 // swiftlint:disable:next type_body_length
 public final class DahliaMCPServer {
-    private enum ScreenshotImageSize: String, CaseIterable {
-        case preview
-        case original
-
-        var maximumScreenshotCount: Int {
-            switch self {
-            case .preview: 10
-            case .original: 1
-            }
-        }
-    }
+    private static let maximumScreenshotCount = 10
 
     let store: MeetingAccessStore
     let workspaceScope: UUID?
@@ -278,7 +268,6 @@ public final class DahliaMCPServer {
         case "get_meeting_screenshots":
             try validate(arguments, allowedKeys: [
                 "meeting_id", "screenshot_ids", "from_elapsed_seconds", "to_elapsed_seconds", "limit", "cursor",
-                "image_size",
             ])
             let result = try getMeetingScreenshots(arguments)
             return try screenshotsToolResult(page: result.page, images: result.images)
@@ -442,11 +431,6 @@ public final class DahliaMCPServer {
         let screenshotIDs = try uuidArray(arguments, key: "screenshot_ids")
         let from = try nonnegativeDouble(arguments, key: "from_elapsed_seconds")
         let to = try nonnegativeDouble(arguments, key: "to_elapsed_seconds")
-        let rawImageSize = try string(arguments, key: "image_size") ?? ScreenshotImageSize.preview.rawValue
-        guard let imageSize = ScreenshotImageSize(rawValue: rawImageSize) else {
-            throw ParameterError("image_size must be preview or original")
-        }
-        let originalSize = imageSize == .original
         let hasRange = from != nil || to != nil
         guard (screenshotIDs != nil) != hasRange else {
             throw ParameterError("Provide either screenshot_ids or an elapsed-time range")
@@ -456,12 +440,7 @@ public final class DahliaMCPServer {
             guard arguments["limit"] == nil, arguments["cursor"] == nil else {
                 throw ParameterError("screenshot_ids cannot be combined with range or pagination parameters")
             }
-            try validateScreenshotCount(screenshotIDs.count, imageSize: imageSize)
-            let images = try store.screenshotImages(
-                meetingID: meetingID,
-                screenshotIDs: screenshotIDs,
-                originalSize: originalSize
-            )
+            let images = try store.screenshotImages(meetingID: meetingID, screenshotIDs: screenshotIDs)
             let page = try MeetingScreenshotPage(
                 workspace: store.scopedWorkspace(),
                 meetingID: meetingID,
@@ -476,11 +455,9 @@ public final class DahliaMCPServer {
         }
         try validateTimeRange(from: from, to: to)
         let limit = try integer(arguments, key: "limit") ?? 1
-        let maximumLimit = ScreenshotImageSize.preview.maximumScreenshotCount
-        guard (1 ... maximumLimit).contains(limit) else {
-            throw ParameterError("limit must be between 1 and \(maximumLimit)")
+        guard (1 ... Self.maximumScreenshotCount).contains(limit) else {
+            throw ParameterError("limit must be between 1 and \(Self.maximumScreenshotCount)")
         }
-        try validateScreenshotCount(limit, imageSize: imageSize)
         return try store.screenshotImages(
             meetingID: meetingID,
             query: ScreenshotQuery(
@@ -488,15 +465,8 @@ public final class DahliaMCPServer {
                 toElapsedSeconds: to,
                 limit: limit,
                 cursor: string(arguments, key: "cursor")
-            ),
-            originalSize: originalSize
+            )
         )
-    }
-
-    private func validateScreenshotCount(_ count: Int, imageSize: ScreenshotImageSize) throws {
-        guard count <= imageSize.maximumScreenshotCount else {
-            throw ParameterError("image_size original requires exactly one screenshot per call")
-        }
     }
 
     func requiredUUID(_ arguments: [String: Any], key: String) throws -> UUID {
@@ -572,7 +542,7 @@ public final class DahliaMCPServer {
 
     private func uuidArray(_ arguments: [String: Any], key: String) throws -> [UUID]? {
         guard let value = arguments[key] else { return nil }
-        let maximumCount = ScreenshotImageSize.preview.maximumScreenshotCount
+        let maximumCount = Self.maximumScreenshotCount
         guard let values = value as? [Any], (1 ... maximumCount).contains(values.count) else {
             throw ParameterError("\(key) must be an array containing 1 to \(maximumCount) screenshot TypeID strings")
         }
@@ -1435,10 +1405,8 @@ extension DahliaMCPServer {
         [
             "name": "get_meeting_screenshots",
             "title": "Get meeting screenshots",
-            "description": "Fetch images and metadata either for 1 to "
-                + "\(ScreenshotImageSize.preview.maximumScreenshotCount) screenshot IDs or for a paginated elapsed-time "
-                + "range when visual evidence is needed. image_size defaults to preview; use original only when the "
-                + "original resolution is required, one screenshot per call.",
+            "description": "Fetch images and metadata either for 1 to \(maximumScreenshotCount) screenshot IDs "
+                + "or for a paginated elapsed-time range when visual evidence is needed.",
             "inputSchema": [
                 "type": "object",
                 "properties": [
@@ -1447,7 +1415,7 @@ extension DahliaMCPServer {
                         "type": "array",
                         "items": idSchema(.attachment),
                         "minItems": 1,
-                        "maxItems": ScreenshotImageSize.preview.maximumScreenshotCount,
+                        "maxItems": maximumScreenshotCount,
                         "uniqueItems": true,
                     ],
                     "from_elapsed_seconds": ["type": "number", "minimum": 0],
@@ -1455,16 +1423,10 @@ extension DahliaMCPServer {
                     "limit": [
                         "type": "integer",
                         "minimum": 1,
-                        "maximum": ScreenshotImageSize.preview.maximumScreenshotCount,
+                        "maximum": maximumScreenshotCount,
                         "default": 1,
                     ],
                     "cursor": ["type": "string"],
-                    "image_size": [
-                        "type": "string",
-                        "enum": ScreenshotImageSize.allCases.map(\.rawValue),
-                        "default": ScreenshotImageSize.preview.rawValue,
-                        "description": "Return a resized preview or the original stored image bytes.",
-                    ],
                 ],
                 "required": ["meeting_id"],
                 "oneOf": [
@@ -1482,22 +1444,6 @@ extension DahliaMCPServer {
                     [
                         "required": ["from_elapsed_seconds", "to_elapsed_seconds"],
                         "not": ["required": ["screenshot_ids"]],
-                    ],
-                ],
-                "allOf": [
-                    [
-                        "if": [
-                            "properties": ["image_size": ["const": ScreenshotImageSize.original.rawValue]],
-                            "required": ["image_size"],
-                        ],
-                        "then": [
-                            "properties": [
-                                "screenshot_ids": [
-                                    "maxItems": ScreenshotImageSize.original.maximumScreenshotCount,
-                                ],
-                                "limit": ["maximum": ScreenshotImageSize.original.maximumScreenshotCount],
-                            ],
-                        ],
                     ],
                 ],
                 "additionalProperties": false,

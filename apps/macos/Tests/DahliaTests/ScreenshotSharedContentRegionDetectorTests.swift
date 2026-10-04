@@ -1,4 +1,5 @@
 import CoreGraphics
+import DahliaRuntimeSupport
 import Foundation
 @testable import Dahlia
 
@@ -337,6 +338,23 @@ import Foundation
                 changeThresholdRatio: 0.05,
                 stillScreenPassed: false
             ))
+        }
+
+        @Test
+        func savedImageLongEdgeIsCappedWithItsAspectRatio() throws {
+            let maximum = ImageEncoder.screenshotMaximumLongEdge
+            let retina = AutomaticScreenshotFrameProcessor.downscaledForSaving(
+                try makeSolidImage(width: 3456, height: 2234)
+            )
+            #expect((retina.width, retina.height) == (maximum, 1014))
+
+            let portrait = AutomaticScreenshotFrameProcessor.downscaledForSaving(
+                try makeSolidImage(width: 1440, height: 3440)
+            )
+            #expect((portrait.width, portrait.height) == (656, maximum))
+
+            let small = try makeSolidImage(width: maximum, height: 900)
+            #expect(AutomaticScreenshotFrameProcessor.downscaledForSaving(small) === small)
         }
 
         private func makeSolidImage(width: Int, height: Int) throws -> CGImage {

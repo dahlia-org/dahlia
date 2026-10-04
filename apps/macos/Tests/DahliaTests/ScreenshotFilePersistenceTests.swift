@@ -3,8 +3,10 @@
     import DahliaRuntimeSupport
     import Foundation
     import GRDB
+    import ImageIO
     import Synchronization
     import Testing
+    import UniformTypeIdentifiers
     @testable import Dahlia
 
     @MainActor
@@ -164,7 +166,7 @@
                     return Data("{}".utf8)
                 }
             )
-            #expect(try helper.screenshot(meetingID: fixture.image.meetingId, screenshotID: fixture.image.id, originalSize: true).imageData == fixture
+            #expect(try helper.screenshot(meetingID: fixture.image.meetingId, screenshotID: fixture.image.id).imageData == fixture
                 .bytes)
             #expect(calls.withLock { $0 } == 1)
         }
@@ -195,9 +197,9 @@
             )
             let bytes = try await withBrokerClientThread {
                 if batch {
-                    return try helper.screenshotImages(meetingID: meetingId, query: .init(limit: 10), originalSize: true).images.first?.imageData
+                    return try helper.screenshotImages(meetingID: meetingId, query: .init(limit: 10)).images.first?.imageData
                 }
-                return try helper.screenshot(meetingID: meetingId, screenshotID: screenshotId, originalSize: true).imageData
+                return try helper.screenshot(meetingID: meetingId, screenshotID: screenshotId).imageData
             }
             #expect(bytes == fixture.bytes)
             let index = try DatabaseQueue(path: fixture.directory.appending(path: "index.sqlite").path)
@@ -245,7 +247,7 @@
                 databaseURL: fixture.databaseURL, workspaceID: fixture.workspace.id, screenshotCache: files,
                 imageResolver: { _, _, _ in throw ScreenshotContentError.unavailable }
             )
-            #expect(try helper.screenshot(meetingID: fixture.image.meetingId, screenshotID: fixture.image.id, originalSize: true).imageData == fixture
+            #expect(try helper.screenshot(meetingID: fixture.image.meetingId, screenshotID: fixture.image.id).imageData == fixture
                 .bytes)
             #expect(throws: ScreenshotContentError.unavailable) { try files.touch(fixture.source) }
             #expect(throws: ScreenshotContentError.unavailable) { try files.trim(budget: 0, protecting: []) }
@@ -356,6 +358,88 @@
             try await fixture.provider.migrateLegacyImages(workspaceId: fixture.workspace.id, dbQueue: queue)
             #expect(try await queue.read { try MeetingScreenshotRecord.fetchOne($0, key: fixture.image.id)?.imageData } == nil)
             #expect(try fixture.files.read(fixture.source, variant: .original)?.data == fixture.bytes)
+        }
+
+        @Test
+        func localConversionReencodesLegacyScreenshotsOnceAndKeepsTheirText() async throws {
+            let fixture = try Fixture(local: true)
+            defer { fixture.removeFiles() }
+            let queue = fixture.database.dbQueue
+            let legacy = try Self.legacyJPEG(replacing: fixture.image)
+            try await fixture.provider.persistCapture(legacy, dbQueue: queue)
+            try await queue.write { db in
+                try db.execute(
+                    sql: "UPDATE file_text_bodies SET ocrText = 'OCR', caption = 'Caption' WHERE fileId = ?",
+                    arguments: [legacy.id]
+                )
+            }
+            let smallWebP = try Self.encodedImage(width: 800, height: 500, type: .webP)
+            let small = MeetingScreenshotRecord(
+                id: .v7(),
+                meetingId: legacy.meetingId,
+                capturedAt: .now,
+                imageData: smallWebP,
+                mimeType: "image/webp"
+            )
+            try await fixture.provider.persistCapture(small, dbQueue: queue)
+
+            try await fixture.provider.convertLocalScreenshots(dbQueue: queue)
+
+            let converted = try #require(try await queue.read { try MeetingScreenshotRecord.fetchOne($0, key: legacy.id) })
+            let convertedFileId = try #require(converted.fileId)
+            #expect(convertedFileId != legacy.id)
+            #expect(converted.mimeType == "image/webp")
+            #expect(converted.ocrText == "OCR")
+            #expect(converted.caption == "Caption")
+            let bytes = try await fixture.provider.content(id: legacy.id, dbQueue: queue).data
+            #expect(ImageEncoder.mimeType(for: bytes) == "image/webp")
+            let size = try #require(ImageEncoder.pixelSize(of: bytes))
+            #expect(max(size.width, size.height) == ImageEncoder.screenshotMaximumLongEdge)
+            #expect(try await queue.read { try FileRecord.fetchOne($0, key: legacy.id) } == nil)
+            #expect(!FileManager.default.fileExists(atPath: fixture.imageURL.path))
+            #expect(try await fixture.provider.content(id: small.id, dbQueue: queue).data == smallWebP)
+
+            try await fixture.provider.convertLocalScreenshots(dbQueue: queue)
+            #expect(try await queue.read { try MeetingScreenshotRecord.fetchOne($0, key: legacy.id)?.fileId } == convertedFileId)
+            #expect(try await queue.read { try MeetingScreenshotRecord.fetchOne($0, key: small.id)?.fileId } == small.id)
+        }
+
+        @Test
+        func localConversionLeavesSyncedWorkspacesUnchanged() async throws {
+            let fixture = try Fixture()
+            defer { fixture.removeFiles() }
+            let queue = fixture.database.dbQueue
+            let legacy = try Self.legacyJPEG(replacing: fixture.image)
+            try await fixture.provider.persistCapture(legacy, dbQueue: queue)
+
+            try await fixture.provider.convertLocalScreenshots(dbQueue: queue)
+
+            #expect(try await queue.read { try MeetingScreenshotRecord.fetchOne($0, key: legacy.id)?.fileId } == legacy.id)
+            #expect(try await fixture.provider.content(id: legacy.id, dbQueue: queue).data == legacy.imageData)
+        }
+
+        /// A screenshot as saved before the WebP format and long-edge limit: a full Retina-size JPEG.
+        private static func legacyJPEG(replacing image: MeetingScreenshotRecord) throws -> MeetingScreenshotRecord {
+            var legacy = image
+            legacy.imageData = try encodedImage(width: 3456, height: 2234, type: .jpeg)
+            legacy.mimeType = "image/jpeg"
+            return legacy
+        }
+
+        private static func encodedImage(width: Int, height: Int, type: UTType) throws -> Data {
+            let context = try #require(CGContext(
+                data: nil, width: width, height: height, bitsPerComponent: 8, bytesPerRow: 0,
+                space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+            ))
+            context.setFillColor(red: 0.2, green: 0.4, blue: 0.8, alpha: 1)
+            context.fill(CGRect(x: 0, y: 0, width: width, height: height))
+            let image = try #require(context.makeImage())
+            if type == .webP { return try #require(ImageEncoder.encode(image)) }
+            let data = NSMutableData()
+            let destination = try #require(CGImageDestinationCreateWithData(data, type.identifier as CFString, 1, nil))
+            CGImageDestinationAddImage(destination, image, nil)
+            #expect(CGImageDestinationFinalize(destination))
+            return data as Data
         }
 
         private struct Fixture {

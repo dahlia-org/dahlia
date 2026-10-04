@@ -120,6 +120,19 @@ public final class ScreenshotFileStore: Sendable {
         // No implicit eviction: only the app can inspect pending operations and transient readers.
     }
 
+    /// Deletes every stored representation of a file that no database reference points to anymore.
+    public func remove(_ source: ScreenshotRemoteReference) throws {
+        guard !readOnly else { throw ScreenshotContentError.unavailable }
+        let keys = [ScreenshotVariant.original, .thumbnail].map { source.cacheKey(variant: $0) }
+        try index.write { db in
+            for key in keys {
+                let file = directory.appending(path: key)
+                if FileManager.default.fileExists(atPath: file.path) { try FileManager.default.removeItem(at: file) }
+                try db.execute(sql: "DELETE FROM images WHERE key = ?", arguments: [key])
+            }
+        }
+    }
+
     public func trim(
         budget: Int? = nil,
         protecting keys: Set<String>,

@@ -446,6 +446,8 @@ final class MeetingRepository {
                     )
                 }
             }
+            // The moved screenshots are local now, so the next launch converts them like any local library.
+            UserDefaults.standard.removeObject(forKey: ScreenshotContentProvider.localScreenshotConversionCompletedKey)
             return
         }
 

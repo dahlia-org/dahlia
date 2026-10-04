@@ -804,9 +804,15 @@
                 session: URLSession(configuration: configuration),
                 tokenProvider: { _, _ in "test-token" }
             ))
+            let conversionKey = ScreenshotContentProvider.localScreenshotConversionCompletedKey
+            let previousConversionFlag = UserDefaults.standard.object(forKey: conversionKey)
+            defer { UserDefaults.standard.set(previousConversionFlag, forKey: conversionKey) }
+            UserDefaults.standard.set(true, forKey: conversionKey)
             try await MeetingRepository(dbQueue: fixture.dbQueue).resolveWorkspacesForSignOut(
                 connectionID: fixture.connectionId, disposition: .moveToLocalAccount, screenshotContent: provider, textContent: textProvider
             )
+            // Moved screenshots are converted like any local library on the next launch.
+            #expect(UserDefaults.standard.object(forKey: conversionKey) == nil)
             let generation = try await backup.createGeneration(workspaceIds: [fixture.workspaceId])
             let marker = try await backup.prepareRestore(from: generation, requests: [WorkspaceBackupRestoreRequest(
                 sourceWorkspaceId: fixture.workspaceId, targetWorkspaceId: .v7(), mode: .newWorkspace, name: "Restored"

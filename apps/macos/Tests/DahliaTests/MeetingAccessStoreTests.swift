@@ -968,12 +968,8 @@ import ImageIO
                 meetingID: fixture.firstMeetingID,
                 screenshotID: fixture.firstScreenshotID
             )
-            #expect(image.imageData != fixture.imageData)
-            #expect(image.mimeType == "image/webp")
-            let source = CGImageSourceCreateWithData(image.imageData as CFData, nil)
-            let properties = source.flatMap { CGImageSourceCopyPropertiesAtIndex($0, 0, nil) as? [CFString: Any] }
-            #expect((properties?[kCGImagePropertyPixelWidth] as? Int ?? 0) <= 1280)
-            #expect((properties?[kCGImagePropertyPixelHeight] as? Int ?? 0) <= 1280)
+            #expect(image.imageData == fixture.imageData)
+            #expect(image.mimeType == ImageEncoder.mimeType(for: fixture.imageData))
             #expect(throws: MeetingAccessError.screenshotNotFound) {
                 try store.screenshot(meetingID: fixture.firstMeetingID, screenshotID: fixture.otherWorkspaceScreenshotID)
             }
@@ -1045,15 +1041,15 @@ import ImageIO
                     return bytes
                 }
             )
-            #expect(try store.screenshot(meetingID: meetingID, screenshotID: imageID, originalSize: true).imageData == bytes)
+            #expect(try store.screenshot(meetingID: meetingID, screenshotID: imageID).imageData == bytes)
             let unavailable = try fixture.store(workspaceID: workspaceID)
             #expect(throws: MeetingAccessError.screenshotUnavailable) {
-                try unavailable.screenshot(meetingID: meetingID, screenshotID: imageID, originalSize: true)
+                try unavailable.screenshot(meetingID: meetingID, screenshotID: imageID)
             }
         }
 
         @Test
-        func screenshotImagesAreActuallyDownsampledAndRejectCorruptData() throws {
+        func screenshotImagesReturnStoredBytesAndRejectCorruptData() throws {
             let fixture = try Fixture()
             let largeImage = try #require(Self.makeImage(width: 2048, height: 512))
             let largeData = try #require(ImageEncoder.encode(largeImage, quality: 0.9))
@@ -1061,24 +1057,8 @@ import ImageIO
             let store = try fixture.store(workspaceID: fixture.primaryWorkspaceID)
 
             let image = try store.screenshot(meetingID: fixture.firstMeetingID, screenshotID: fixture.firstScreenshotID)
-            let source = try #require(CGImageSourceCreateWithData(image.imageData as CFData, nil))
-            let properties = try #require(CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any])
-            #expect(properties[kCGImagePropertyPixelWidth] as? Int == 1280)
-            #expect(properties[kCGImagePropertyPixelHeight] as? Int == 320)
-
-            let original = try store.screenshot(
-                meetingID: fixture.firstMeetingID,
-                screenshotID: fixture.firstScreenshotID,
-                originalSize: true
-            )
-            #expect(original.imageData == largeData)
-            #expect(original.mimeType == ImageEncoder.mimeType(for: largeData))
-            let originalSource = try #require(CGImageSourceCreateWithData(original.imageData as CFData, nil))
-            let originalProperties = try #require(
-                CGImageSourceCopyPropertiesAtIndex(originalSource, 0, nil) as? [CFString: Any]
-            )
-            #expect(originalProperties[kCGImagePropertyPixelWidth] as? Int == 2048)
-            #expect(originalProperties[kCGImagePropertyPixelHeight] as? Int == 512)
+            #expect(image.imageData == largeData)
+            #expect(image.mimeType == ImageEncoder.mimeType(for: largeData))
 
             try fixture.updateFirstScreenshot(data: Data("not an image".utf8))
             #expect(throws: MeetingAccessError.screenshotEncodingFailed) {
@@ -1235,16 +1215,8 @@ import ImageIO
             #expect((screenshotQueryProperties["query"] as? [String: Any])?["minLength"] as? Int == 2)
             let screenshotInputSchema = try #require(screenshotDefinition["inputSchema"] as? [String: Any])
             let screenshotInputProperties = try #require(screenshotInputSchema["properties"] as? [String: Any])
-            let imageSizeSchema = try #require(screenshotInputProperties["image_size"] as? [String: Any])
-            #expect(imageSizeSchema["type"] as? String == "string")
-            #expect(imageSizeSchema["enum"] as? [String] == ["preview", "original"])
-            #expect(imageSizeSchema["default"] as? String == "preview")
-            let screenshotConstraints = try #require(screenshotInputSchema["allOf"] as? [[String: Any]])
-            let originalConstraint = try #require(screenshotConstraints.first)
-            let originalThen = try #require(originalConstraint["then"] as? [String: Any])
-            let originalProperties = try #require(originalThen["properties"] as? [String: Any])
-            #expect((originalProperties["screenshot_ids"] as? [String: Any])?["maxItems"] as? Int == 1)
-            #expect((originalProperties["limit"] as? [String: Any])?["maximum"] as? Int == 1)
+            #expect(screenshotInputProperties["image_size"] == nil)
+            #expect((screenshotInputProperties["screenshot_ids"] as? [String: Any])?["maxItems"] as? Int == 10)
 
             let queryCall = try Self.json(server.handleInternalTestLine(#"""
             {"jsonrpc":"2.0","id":7,"method":"tools/call","params":{"name":"query_meetings","arguments":{"query":"planning","simple":true}}}
@@ -1329,7 +1301,7 @@ import ImageIO
         }
 
         @Test
-        func mcpScreenshotImageSizeOptionSelectsPreviewOrOriginalBytes() throws {
+        func mcpScreenshotsReturnStoredBytesAndRejectRemovedImageSize() throws {
             let fixture = try Fixture()
             let largeImage = try #require(Self.makeImage(width: 2048, height: 512))
             let largeData = try #require(ImageEncoder.encode(largeImage, quality: 0.9))
@@ -1350,16 +1322,13 @@ import ImageIO
                 return try Self.json(server.handleInternalTestLine(requestString))
             }
 
-            func screenshotData(imageSize: String?, selectsByRange: Bool = false) throws -> Data {
+            func screenshotData(selectsByRange: Bool) throws -> Data {
                 var arguments: [String: Any] = ["meeting_id": fixture.firstMeetingID.uuidString]
                 if selectsByRange {
                     arguments["from_elapsed_seconds"] = 15
                     arguments["to_elapsed_seconds"] = 17
                 } else {
                     arguments["screenshot_ids"] = [fixture.firstScreenshotID.uuidString]
-                }
-                if let imageSize {
-                    arguments["image_size"] = imageSize
                 }
                 let response = try call(arguments: arguments)
                 let result = try #require(response["result"] as? [String: Any])
@@ -1369,33 +1338,15 @@ import ImageIO
                 return try #require(Data(base64Encoded: encoded))
             }
 
-            #expect(try screenshotData(imageSize: nil) != largeData)
-            #expect(try screenshotData(imageSize: "preview") != largeData)
-            #expect(try screenshotData(imageSize: "original") == largeData)
-            #expect(try screenshotData(imageSize: "original", selectsByRange: true) == largeData)
+            #expect(try screenshotData(selectsByRange: false) == largeData)
+            #expect(try screenshotData(selectsByRange: true) == largeData)
 
-            let invalidResponse = try call(id: 3, arguments: [
+            let removedOption = try call(id: 3, arguments: [
                 "meeting_id": fixture.firstMeetingID.uuidString,
                 "screenshot_ids": [fixture.firstScreenshotID.uuidString],
-                "image_size": "large",
-            ])
-            #expect((invalidResponse["error"] as? [String: Any])?["code"] as? Int == -32602)
-
-            let multipleOriginals = try call(id: 4, arguments: [
-                "meeting_id": fixture.firstMeetingID.uuidString,
-                "screenshot_ids": [fixture.firstScreenshotID.uuidString, fixture.secondScreenshotID.uuidString],
                 "image_size": "original",
             ])
-            #expect((multipleOriginals["error"] as? [String: Any])?["code"] as? Int == -32602)
-
-            let rangedOriginals = try call(id: 5, arguments: [
-                "meeting_id": fixture.firstMeetingID.uuidString,
-                "from_elapsed_seconds": 0,
-                "to_elapsed_seconds": 100,
-                "limit": 2,
-                "image_size": "original",
-            ])
-            #expect((rangedOriginals["error"] as? [String: Any])?["code"] as? Int == -32602)
+            #expect((removedOption["error"] as? [String: Any])?["code"] as? Int == -32602)
         }
 
         @Test

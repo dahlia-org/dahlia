@@ -9,7 +9,7 @@ import Foundation
     @MainActor
     struct ScreenshotAnalysisServiceTests {
         @Test
-        func analysisAndSummaryUse1280PixelImages() async throws {
+        func analysisAndSummarySendStoredImageBytes() async throws {
             let context = try #require(CGContext(
                 data: nil, width: 2560, height: 1280, bitsPerComponent: 8, bytesPerRow: 0,
                 space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
@@ -35,10 +35,7 @@ import Foundation
                 #expect(images.count == 1)
                 let uri = try #require(images.first)
                 let payload = try #require(uri.split(separator: ",", maxSplits: 1).last)
-                let bytes = try #require(Data(base64Encoded: String(payload)))
-                let decoded = try #require(CGImageDecoder.decode(bytes))
-                #expect(decoded.width == 1280)
-                #expect(decoded.height == 640)
+                #expect(Data(base64Encoded: String(payload)) == data)
             }
         }
 
