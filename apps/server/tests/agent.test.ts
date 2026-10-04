@@ -245,6 +245,44 @@ describe("AI chat boundary", () => {
     vi.unstubAllGlobals();
   });
 
+  it("forces a final answer when tool calls reach the step limit", async () => {
+    const listMeetings = vi.fn().mockResolvedValue({ items: [] });
+    const toolCounts: number[] = [];
+    const call = JSON.stringify({ workspace_id: encodeId("workspace", workspaceId), query: null, project_id: null, cursor: null });
+    const completed = { type: "response.completed", response: { incomplete_details: null, usage: { input_tokens: 1, output_tokens: 1 }, reasoning: null, service_tier: null } };
+    vi.stubGlobal("fetch", vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
+      const body = JSON.parse(String(init?.body)) as { tools?: unknown[] };
+      toolCounts.push(body.tools?.length ?? 0);
+      if (!body.tools?.length) return responsesStream(
+        { type: "response.output_item.added", output_index: 0, item: { type: "message", id: "message-1", phase: "final_answer" } },
+        { type: "response.output_text.delta", item_id: "message-1", delta: "Summary" },
+        { type: "response.output_item.done", output_index: 0, item: { type: "message", id: "message-1", phase: "final_answer" } },
+        completed,
+      );
+      const id = `call-${toolCounts.length}`;
+      return responsesStream(
+        { type: "response.output_item.added", output_index: 0, item: { type: "function_call", id, call_id: id, name: "query_meetings", arguments: "", namespace: null } },
+        { type: "response.output_item.done", output_index: 0, item: { type: "function_call", id, call_id: id, name: "query_meetings", arguments: call, status: "completed", namespace: null } },
+        completed,
+      );
+    }));
+    try {
+      const config = { provider: { backend: "openai", baseUrl: "https://provider.example/v1", apiKey: "secret" },
+        baseUrl: "https://dahlia.example", foundationModels: ["gpt-5.6-test"] } as AppConfig;
+      const gateway = { models: async () => ({ data: [{ id: "gpt-5.6-test", display_name: "GPT Test" }],
+        models: [{ slug: "gpt-5.6-test", display_name: "GPT Test", supported_in_api: true, visibility: "list", default_reasoning_level: "medium",
+          supported_reasoning_levels: [{ effort: "medium", description: "Balanced" }] }] }) } as unknown as GatewayService;
+      const service = createAiService(config, gateway, createMeetingTools({ listMeetings } as unknown as MeetingSyncService));
+      const events = [];
+      for await (const event of service.stream({ workspaceId, model: "gpt-5.6-test", reasoningEffort: "medium", messages: [{ role: "user", content: "What happened last month?" }] },
+        identity, new Request("https://dahlia.example/api/v1/chat/messages"))) events.push(event);
+      expect(events.at(-1)).toEqual({ type: "text", text: "Summary" });
+      expect(toolCounts).toHaveLength(100);
+      expect(toolCounts.at(-1)).toBe(0);
+      expect(toolCounts.slice(0, -1)).not.toContain(0);
+    } finally { vi.unstubAllGlobals(); }
+  });
+
   it("streams an approved bundled GPT slug unchanged when Databricks only lists OSS models", async () => {
     const inference = vi.fn<typeof fetch>(async () => responsesStream(
       { type: "response.output_item.added", output_index: 0, item: { type: "message", id: "message-1", phase: "final_answer" } },

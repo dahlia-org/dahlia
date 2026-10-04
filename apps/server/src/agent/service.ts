@@ -30,6 +30,7 @@ import type { MeetingTools } from "./tools";
 import { meetingRequestContext } from "./tools";
 
 export const AI_CHAT_MAX_REQUEST_BYTES = 128 * 1024;
+const AGENT_MAX_STEPS = 100;
 export const aiMessageSchema = z.object({
   role: z.enum(["user", "assistant"]),
   content: z.string().min(1).max(16_000),
@@ -193,7 +194,9 @@ export function createAiService(
           const options = {
             requestContext: meetingRequestContext(identity, input.workspaceId),
             abortSignal: request.signal,
-            maxSteps: 8,
+            maxSteps: AGENT_MAX_STEPS,
+            // A run that ends on a tool call has no answer, so the last step must reply in text.
+            prepareStep: ({ stepNumber }: { stepNumber: number }) => stepNumber === AGENT_MAX_STEPS - 1 ? { toolChoice: "none" as const } : undefined,
             providerOptions: { openai: { reasoningEffort: input.reasoningEffort, store: false, parallelToolCalls: false } },
             memory: { thread: history.threadId, resource: history.resourceId,
               options: { ...(input.history && config.chatMemoryModel ? {} : { lastMessages: 50 }), semanticRecall: false } },
