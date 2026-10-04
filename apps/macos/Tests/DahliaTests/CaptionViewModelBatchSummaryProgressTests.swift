@@ -1,4 +1,5 @@
 import Foundation
+import GRDB
 @testable import Dahlia
 
 #if canImport(Testing)
@@ -125,6 +126,31 @@ import Foundation
             #expect(job.progress.transcriptionProgress == nil)
             runner.complete(meetingID: fixture.first.id, title: "Summary")
             #expect(await waitUntil { !viewModel.isSummaryGenerating(meetingId: fixture.first.id) })
+        }
+
+        @Test
+        func failureOfDeletedMeetingCanBeDismissed() async throws {
+            let fixture = try SummaryGenerationFixture()
+            defer { fixture.removeFiles() }
+            let sessionID = try fixture.insertRecordingSession(for: fixture.first, offset: 0)
+            let processing = RecordingProcessing(
+                id: .v7(), automatic: true, liveDraft: false, localeIdentifier: "en_US", method: .transcript,
+                options: .manual, generationSettings: .current(), workspaceSettings: nil,
+                sessionIDs: [sessionID], stage: .failed, error: "Original failure"
+            )
+            let dbQueue = fixture.database.dbQueue
+            try await dbQueue.write { db in try processing.save(sessionID: sessionID, in: db) }
+            let viewModel = CaptionViewModel()
+            try await viewModel.restoreRecordingProcessingForTesting(dbQueue: dbQueue)
+            try #require(viewModel.summaryGenerationJobs.first?.hasFailure == true)
+            try await MeetingRepository(dbQueue: dbQueue).deleteMeetingsSafely(
+                ids: [fixture.first.id], managedRootURL: fixture.workspaceURL
+            )
+            #expect(try await dbQueue.read { db in try RecordingSessionRecord.exists(db, key: sessionID) } == false)
+
+            viewModel.dismissSummaryGenerationJob(processing.id)
+            try #require(await pollUntil { viewModel.summaryGenerationJobs.isEmpty })
+            #expect(viewModel.errorMessage == nil)
         }
 
         private func waitUntil(
