@@ -15,8 +15,8 @@ import { uuidV7 } from "@dahlia-ai/ui/model/id";
 
 const AGENT_SCHEMA = "agent";
 const PAGE_SIZE = 50;
-export const AI_HISTORY_RUN_TIMEOUT_MS = 10 * 60 * 1000;
-const RUN_LEASE = "11 minutes";
+export const AI_HISTORY_RUN_TIMEOUT_MS = 60 * 60 * 1000;
+const RUN_LEASE = "61 minutes";
 
 export const aiThreadCreateSchema = z.object({
   workspaceId: z.string().uuid(),
