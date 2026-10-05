@@ -28,6 +28,8 @@ Working Memory の編集中セクションは読込時の revision を維持し�
 
 2026-09-26: 分析先を Hindsight 0.10.1（`f8950b0c`）に固定した。observation、directive、Knowledge Pages などの機能を段階的に使うための前提であり、この更新では Dahlia が送る retain、recall、reflect、mental model の要求の形を変えない。Lakebase 向けの保守パッチは、上流が名称変更を更新処理に統合した分だけ縮めた。0.10 系では、reflect の取得ツールが失敗すると reflect 全体が HTTP 500 になる。この場合は既存の `memory_upstream_failed` として、その scope を利用不可にし、正本の文字列一致による候補を返す。recall だけの結果に切り替えて仮説を省く縮退は採らない。
 
+2026-10-05: Hindsight 0.10.2（`5fc4ce20`）に更新し、reflect とそれを継承する mental model refresh だけを Responses API に移した。`system.ai.gpt-6-luna` の Chat Completions は reasoning を無効にしない限り function tools を拒否し、tool を使う reflect が再試行後も失敗していたためである。上流の `openai-responses` 実装に App service principal の OAuth と AI Gateway の policy block 判定を足した `databricks-responses` provider を使う。reasoning を切って Chat Completions に残す案は、考察の品質を下げるので採らない。retain と consolidation は tool を使わないため Chat Completions のまま残す。provider と上流の版は ingestion policy に含まれるので、この更新で全 bank の文書を一度再取り込みする。
+
 検索設定の比較は、運用者がローカルで実行する評価ハーネスで行う。対象の bank を Hindsight の clone で複製し、複製先だけで hit@k、MRR、応答時間を測り、終了時に複製先を削除する。質問と期待する文書の組は運用者が用意し、リポジトリに置かない。出力は数値だけで、質問、想起した文、本文は出さない。reranker の実装はサーバーの設定なので、実装どうしの比較はそれぞれの設定の App に対して行う。
 
 ## 検索の精度と系譜（Phase 1）

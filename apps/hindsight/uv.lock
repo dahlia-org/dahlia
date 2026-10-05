@@ -1534,7 +1534,7 @@ wheels = [
 
 [[package]]
 name = "hindsight-api-slim"
-version = "0.10.1"
+version = "0.10.2"
 source = { editable = ".upstream/hindsight-api-slim" }
 dependencies = [
     { name = "aiohttp" },
