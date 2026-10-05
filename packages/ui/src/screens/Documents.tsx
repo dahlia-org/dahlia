@@ -1,5 +1,5 @@
 import { syncNotifications, type SyncNotifications } from "../api/sync-notifications";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { AlertTriangle, History } from "lucide-react";
 import { Tooltip } from "../components/Tooltip";
@@ -421,10 +421,12 @@ function DocumentEditor({ controller, editable, statusSlot }: { controller: Brow
 function RecoveryHistory({ controller, editable }: { controller: BrowserDocument; editable: boolean }) {
   const [open, setOpen] = useState(false);
   const [loading, setLoading] = useState(false);
+  const latestToggle = useRef(0);
   const title = uiText("Preserved deleted paragraphs", "削除された段落の復元用コピー");
   const toggle = (value: boolean) => {
+    const request = ++latestToggle.current;
     setOpen(value); setLoading(value);
-    void controller.toggleRecoveries(value).catch(() => {}).finally(() => setLoading(false));
+    void controller.toggleRecoveries(value).catch(() => {}).finally(() => { if (request === latestToggle.current) setLoading(false); });
   };
   const recoveries = [...controller.recoveries.values()];
   return <Dialog open={open} onOpenChange={toggle}>
