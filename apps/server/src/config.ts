@@ -417,9 +417,10 @@ function otelConfig(env: Record<string, string | undefined>): OtelConfig | undef
     const headers = { ...otlpHeaders(env.OTEL_EXPORTER_OTLP_HEADERS, "OTEL_EXPORTER_OTLP_HEADERS"), ...otlpHeaders(env[`${name}_HEADERS`], `${name}_HEADERS`) };
     const target: OtlpTarget = { url: url.toString(), headers };
     if (auth === "databricks") {
-      const workspaceId = /^(\d+)\.zerobus\./.exec(url.hostname)?.[1];
+      // The token grants table writes, so it is only sent to a Databricks Zerobus host.
+      const workspaceId = /^(\d+)\.zerobus\.[a-z0-9-]+\.(?:cloud\.databricks\.com|azuredatabricks\.net|gcp\.databricks\.com)$/.exec(url.hostname)?.[1];
       const table = headers["x-databricks-zerobus-table-name"];
-      if (url.protocol !== "https:" || !workspaceId) throw new Error(`DAHLIA_OTEL_AUTH=databricks requires a https://<workspace-id>.zerobus.<region>.<cloud domain> ${signal} endpoint`);
+      if (url.protocol !== "https:" || !workspaceId) throw new Error(`DAHLIA_OTEL_AUTH=databricks requires a https://<workspace-id>.zerobus.<region>.<Databricks domain> ${signal} endpoint`);
       if (!table || !/^[^.\s`]+\.[^.\s`]+\.[^.\s`]+$/.test(table)) throw new Error(`DAHLIA_OTEL_AUTH=databricks requires x-databricks-zerobus-table-name=<catalog>.<schema>.<table> in ${name}_HEADERS`);
       target.zerobus = { workspaceId, table };
     }

@@ -2,7 +2,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { gzipSync } from "node:zlib";
-import { fromBinary, toJson } from "@bufbuild/protobuf";
+import { create, fromBinary, toBinary, toJson } from "@bufbuild/protobuf";
 import { describe, expect, it, vi } from "vitest";
 import { createApp } from "../src/app";
 import { createNodeApplicationStore } from "../src/auth/node-store";
@@ -10,7 +10,7 @@ import { loadConfig, type AppConfig } from "../src/config";
 import { createWorkerHandler } from "../src/worker";
 import { ExportLogsServiceRequestSchema } from "../src/otel/gen/opentelemetry/proto/collector/logs/v1/logs_service_pb";
 import { ExportMetricsServiceRequestSchema } from "../src/otel/gen/opentelemetry/proto/collector/metrics/v1/metrics_service_pb";
-import { ExportTraceServiceRequestSchema } from "../src/otel/gen/opentelemetry/proto/collector/trace/v1/trace_service_pb";
+import { ExportTraceServiceRequestSchema, ExportTraceServiceResponseSchema } from "../src/otel/gen/opentelemetry/proto/collector/trace/v1/trace_service_pb";
 import { log, setLogSink } from "../src/otel/log";
 import { OtlpError, otlpJsonToProtobuf } from "../src/otel/otlp";
 import { createOtel, createOtlpExporter, OtelExportError, OtelService, type OtlpExporter } from "../src/otel/service";
@@ -68,11 +68,13 @@ describe("OTLP/HTTP receiver", () => {
     const store = createNodeApplicationStore(config);
     const exported: [string, Uint8Array][] = [];
     let upstream: number | undefined;
+    let response = new Uint8Array();
     const cancels: (AbortSignal | undefined)[] = [];
     const exporter: OtlpExporter = { async export(signal, body, cancel) {
       cancels.push(cancel);
       if (upstream) throw new OtelExportError(upstream);
       exported.push([signal, body]);
+      return response;
     } };
     try {
       await store.migrate();
@@ -119,6 +121,14 @@ describe("OTLP/HTTP receiver", () => {
         expect((await post("traces", bytes, protobuf)).status).toBe(503);
         expect(warn).toHaveBeenCalledWith(JSON.stringify({ level: "warn", event: "otel_export_failed", signal: "traces", status: 403 }));
       } finally { warn.mockRestore(); }
+      upstream = undefined;
+
+      // The upstream response, including partial_success, is relayed in the request's encoding.
+      response = toBinary(ExportTraceServiceResponseSchema, create(ExportTraceServiceResponseSchema, { partialSuccess: { rejectedSpans: 2n, errorMessage: "dropped" } }));
+      const partial = await post("traces", bytes, protobuf);
+      expect(new Uint8Array(await partial.arrayBuffer())).toEqual(response);
+      expect(await (await post("traces", JSON.stringify(traces), { "content-type": "application/json" })).json())
+        .toEqual({ partialSuccess: { rejectedSpans: "2", errorMessage: "dropped" } });
 
       // Without a backend the routes do not exist.
       expect((await createApp({ config, authStore: store }).request("/api/v1/traces", { method: "POST", body: bytes, headers: { ...identity, ...protobuf } })).status).toBe(404);
@@ -176,10 +186,18 @@ describe("OTLP exporter", () => {
     expect(request.body).toBe(body);
   });
 
+  it("returns the bounded upstream response body", async () => {
+    const config = loadConfig({ DAHLIA_AUTH_TYPE: "header", OTEL_EXPORTER_OTLP_ENDPOINT: "http://collector:4318" });
+    for (const [size, expected] of [[16, 16], [64 * 1024 + 1, 0]] as const) {
+      const exporter = createOtlpExporter(config.otel!, undefined, vi.fn<typeof fetch>(async () => new Response(new Uint8Array(size))));
+      expect((await exporter.export("traces", new Uint8Array())).length).toBe(expected);
+    }
+  });
+
   it("exposes only signals with an endpoint", async () => {
     const otel = createOtel(loadConfig({ DAHLIA_AUTH_TYPE: "header", OTEL_EXPORTER_OTLP_TRACES_ENDPOINT: "http://collector:4318/v1/traces" }))!;
     expect(otel.signals).toEqual(["traces"]);
-    const send = vi.fn(async () => {});
+    const send = vi.fn(async () => new Uint8Array());
     const service = new OtelService({ export: send }, otel.signals);
     service.log("error", "request_failed", {});
     await service.flush();
@@ -196,6 +214,7 @@ describe("server logs", () => {
       expect(signal).toBe("logs");
       if (fail) throw new OtelExportError(429);
       bodies.push(body);
+      return new Uint8Array();
     } });
     const info = vi.spyOn(console, "info").mockImplementation(() => {});
     const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
@@ -231,7 +250,7 @@ describe("server log queue", () => {
     let release!: () => void;
     const stalled = new Promise<void>((resolve) => { release = resolve; });
     const bodies: Uint8Array[] = [];
-    const service = new OtelService({ async export(_signal, body) { bodies.push(body); await stalled; } });
+    const service = new OtelService({ async export(_signal, body) { bodies.push(body); await stalled; return new Uint8Array(); } });
     for (let index = 0; index < 1_500; index++) service.log("info", "job_completed", { index });
     release();
     await service.flush();
@@ -248,7 +267,7 @@ describe("server log queue", () => {
     const cancels: AbortSignal[] = [];
     const service = new OtelService({ export: (_signal, _body, cancel) => {
       cancels.push(cancel!);
-      return new Promise<void>((_resolve, reject) => cancel!.addEventListener("abort", () => reject(new Error("aborted"))));
+      return new Promise<Uint8Array<ArrayBuffer>>((_resolve, reject) => cancel!.addEventListener("abort", () => reject(new Error("aborted"))));
     } });
     try {
       for (let index = 0; index < 250; index++) service.log("info", "job_completed", { index });
@@ -273,7 +292,7 @@ describe("server log queue", () => {
     const plain = createOtlpExporter(loadConfig({ DAHLIA_AUTH_TYPE: "header", OTEL_EXPORTER_OTLP_ENDPOINT: "http://collector:4318" }).otel!, undefined,
       vi.fn<typeof fetch>(async (_input, init) => pending(init?.signal)));
     const zerobus = loadConfig({ DAHLIA_AUTH_TYPE: "header", DATABRICKS_HOST: "https://workspace.example", DATABRICKS_CLIENT_ID: "client",
-      DATABRICKS_CLIENT_SECRET: "secret", DAHLIA_OTEL_AUTH: "databricks", OTEL_EXPORTER_OTLP_TRACES_ENDPOINT: "https://1234.zerobus.example/v1/traces",
+      DATABRICKS_CLIENT_SECRET: "secret", DAHLIA_OTEL_AUTH: "databricks", OTEL_EXPORTER_OTLP_TRACES_ENDPOINT: "https://1234.zerobus.us-west-2.cloud.databricks.com/v1/traces",
       OTEL_EXPORTER_OTLP_TRACES_HEADERS: "x-databricks-zerobus-table-name=dahlia.ops.dahlia_otel_spans" });
     const tokenStalled = createOtlpExporter(zerobus.otel!, zerobus.databricksWorkspace, vi.fn<typeof fetch>(async () => pending()));
     for (const [exporter, signal] of [[plain, "logs"], [tokenStalled, "traces"]] as const) {
@@ -318,12 +337,16 @@ describe("OTel configuration", () => {
     expect(config.otel?.exporters.traces?.zerobus).toEqual({ workspaceId: "1234", table: "dahlia.ops.dahlia_otel_spans" });
     expect(config.databricksWorkspace?.tokenUrl).toBe("https://workspace.example/oidc/v1/token");
     expect(loadConfig({ ...databricks }).otel).toBeUndefined();
-    for (const endpoint of ["http://1234.zerobus.example/v1/traces", "https://collector.example/v1/traces"]) {
+    expect(loadConfig({ ...databricks, OTEL_EXPORTER_OTLP_TRACES_ENDPOINT: "https://1234.zerobus.westus.azuredatabricks.net/v1/traces" }).otel?.exporters.traces?.zerobus)
+      .toEqual({ workspaceId: "1234", table: "dahlia.ops.dahlia_otel_spans" });
+    // The table-scoped token is never sent to a host outside the Databricks domains.
+    for (const endpoint of ["http://1234.zerobus.us-west-2.cloud.databricks.com/v1/traces", "https://collector.example/v1/traces",
+      "https://1234.zerobus.attacker.example/v1/traces", "https://1234.zerobus.us-west-2.cloud.databricks.com.attacker.example/v1/traces"]) {
       expect(() => loadConfig({ ...databricks, OTEL_EXPORTER_OTLP_TRACES_ENDPOINT: endpoint })).toThrow(/zerobus/);
     }
     for (const headers of ["x-databricks-zerobus-table-name=dahlia.ops", "x-other=1"]) {
       expect(() => loadConfig({ ...databricks, OTEL_EXPORTER_OTLP_TRACES_HEADERS: headers,
-        OTEL_EXPORTER_OTLP_TRACES_ENDPOINT: "https://1234.zerobus.example/v1/traces" })).toThrow(/x-databricks-zerobus-table-name/);
+        OTEL_EXPORTER_OTLP_TRACES_ENDPOINT: "https://1234.zerobus.us-west-2.cloud.databricks.com/v1/traces" })).toThrow(/x-databricks-zerobus-table-name/);
     }
     expect(() => loadConfig({ ...base, DAHLIA_OTEL_AUTH: "clickhouse" })).toThrow();
   });

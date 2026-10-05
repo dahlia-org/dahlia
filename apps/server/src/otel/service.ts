@@ -2,11 +2,13 @@ import type { AppConfig, DatabricksWorkspaceConfig, OtelConfig, OtlpTarget } fro
 import { DatabricksTokenProvider, tokenUntilAborted } from "../databricks/token";
 import { RequestError } from "../storage/upload";
 import { log, type LogFields, type LogLevel } from "./log";
-import { anyValue, logsProtobuf, OTLP_SIGNALS, otlpJsonToProtobuf, type OtlpLogRecord, type OtlpSignal } from "./otlp";
+import { anyValue, logsProtobuf, OTLP_SIGNALS, otlpJsonToProtobuf, otlpResponseJson, type OtlpLogRecord, type OtlpSignal } from "./otlp";
 
 export const OTLP_MAX_REQUEST_BYTES = 4 * 1024 * 1024;
 /** Decompressed protobuf is forwarded without parsing; OTLP/JSON keeps the wire limit because it is parsed synchronously. */
 const OTLP_MAX_DECODED_PROTOBUF_BYTES = 16 * 1024 * 1024;
+/** Upstream Export*ServiceResponse bodies carry only partial_success; a larger body is treated as an empty response. */
+const OTLP_MAX_RESPONSE_BYTES = 64 * 1024;
 const EXPORT_TIMEOUT_MS = 30_000;
 const LOG_BATCH = 100;
 const LOG_BUFFER_LIMIT = 1_000;
@@ -14,13 +16,32 @@ const LOG_FLUSH_MS = 5_000;
 const SHUTDOWN_FLUSH_MS = 5_000;
 const SEVERITY = { info: [9, "INFO"], warn: [13, "WARN"], error: [17, "ERROR"] } as const;
 
-/** Sends one binary Export*ServiceRequest; `cancel` aborts it, including a pending token wait. */
+/**
+ * Sends one binary Export*ServiceRequest; `cancel` aborts it, including a pending token wait. Resolves to the upstream
+ * Export*ServiceResponse protobuf, which carries any partial_success.
+ */
 export interface OtlpExporter {
-  export(signal: OtlpSignal, body: Uint8Array<ArrayBuffer>, cancel?: AbortSignal): Promise<void>;
+  export(signal: OtlpSignal, body: Uint8Array<ArrayBuffer>, cancel?: AbortSignal): Promise<Uint8Array<ArrayBuffer>>;
 }
 
 export class OtelExportError extends Error {
   constructor(readonly status?: number) { super("otel_export_failed"); }
+}
+
+/** Reads a stream into memory, or returns undefined after cancelling it once it exceeds `limit` bytes. */
+async function readAtMost(stream: ReadableStream<Uint8Array<ArrayBuffer>>, limit: number): Promise<Uint8Array<ArrayBuffer> | undefined> {
+  const reader = stream.getReader();
+  const chunks: Uint8Array<ArrayBuffer>[] = [];
+  let length = 0;
+  for (let next = await reader.read(); !next.done; next = await reader.read()) {
+    length += next.value.length;
+    if (length > limit) {
+      await reader.cancel();
+      return undefined;
+    }
+    chunks.push(next.value);
+  }
+  return new Uint8Array(await new Blob(chunks).arrayBuffer());
 }
 
 /** Databricks Zerobus requires an OAuth token whose `authorization_details` name the target table. */
@@ -61,8 +82,13 @@ export function createOtlpExporter(settings: OtelConfig, workspace?: DatabricksW
       } catch {
         throw new OtelExportError();
       }
-      await response.body?.cancel();
-      if (!response.ok) throw new OtelExportError(response.status);
+      if (!response.ok) {
+        await response.body?.cancel();
+        throw new OtelExportError(response.status);
+      }
+      // The batch is accepted once upstream answers 2xx; an unreadable response body only loses partial_success details.
+      const result = response.body && await readAtMost(response.body, OTLP_MAX_RESPONSE_BYTES).catch(() => undefined);
+      return result ?? new Uint8Array();
     },
   };
 }
@@ -71,20 +97,14 @@ async function decompress(encoding: string | null, bytes: Uint8Array<ArrayBuffer
   const value = encoding?.trim().toLowerCase();
   if (!value || value === "identity") return bytes;
   if (value !== "gzip") throw new RequestError(415, "unsupported_content_encoding");
-  const reader = new Response(bytes).body!.pipeThrough(new DecompressionStream("gzip")).getReader();
-  const chunks: Uint8Array<ArrayBuffer>[] = [];
-  let length = 0;
+  let decoded: Uint8Array<ArrayBuffer> | undefined;
   try {
-    for (let next = await reader.read(); !next.done; next = await reader.read()) {
-      length += next.value.length;
-      if (length > limit) throw new RequestError(413, "request_too_large");
-      chunks.push(next.value);
-    }
-  } catch (error) {
-    await reader.cancel().catch(() => undefined);
-    throw error instanceof RequestError ? error : new RequestError(400, "invalid_otlp_request");
+    decoded = await readAtMost(new Response(bytes).body!.pipeThrough(new DecompressionStream("gzip")), limit);
+  } catch {
+    throw new RequestError(400, "invalid_otlp_request");
   }
-  return new Uint8Array(await new Blob(chunks).arrayBuffer());
+  if (!decoded) throw new RequestError(413, "request_too_large");
+  return decoded;
 }
 
 /** OTLP/HTTP receiver that forwards to the configured exporter, which also receives Server logs. */
@@ -105,7 +125,7 @@ export class OtelService {
   ) {}
 
   /**
-   * Handles an OTLP/HTTP request body (binary protobuf or JSON, optionally gzip) and returns the OTLP success response.
+   * Handles an OTLP/HTTP request body (binary protobuf or JSON, optionally gzip) and returns the upstream OTLP response.
    * `cancel` is the request's signal, so a disconnected sender or a closing server aborts the forward.
    */
   async receive(signal: OtlpSignal, headers: Headers, body: ArrayBuffer, cancel?: AbortSignal): Promise<Response> {
@@ -118,8 +138,9 @@ export class OtelService {
     } catch {
       throw new RequestError(400, "invalid_otlp_request");
     }
+    let result: Uint8Array<ArrayBuffer>;
     try {
-      await this.exporter.export(signal, payload, cancel);
+      result = await this.exporter.export(signal, payload, cancel);
     } catch (error) {
       const status = error instanceof OtelExportError ? error.status : undefined;
       // Log every upstream failure: a 400 may come from the Server's endpoint, headers or table rather than the payload.
@@ -127,7 +148,8 @@ export class OtelService {
       // Protobuf is forwarded unparsed, so the upstream 400 is the only payload validation and stays non-retryable.
       throw status === 400 ? new RequestError(400, "invalid_otlp_request") : new RequestError(503, "otel_unavailable");
     }
-    return json ? Response.json({}) : new Response(new Uint8Array(), { headers: { "content-type": "application/x-protobuf" } });
+    // Relay the upstream response so senders see partial_success, in the encoding of their request.
+    return json ? Response.json(otlpResponseJson(signal, result)) : new Response(result, { headers: { "content-type": "application/x-protobuf" } });
   }
 
   /** Buffers one server log record when logs are exported; export is best-effort and never awaited by the caller. */
@@ -155,7 +177,7 @@ export class OtelService {
     const body = logsProtobuf(this.serviceName, records);
     this.queued += records.length;
     // Report export failures to the console only, so a failing endpoint cannot feed its own log buffer.
-    this.flushing = this.flushing.then(() => this.closing.signal.aborted ? undefined : this.exporter.export("logs", body, this.closing.signal))
+    this.flushing = this.flushing.then(async () => { if (!this.closing.signal.aborted) await this.exporter.export("logs", body, this.closing.signal); })
       .catch((error: unknown) => console.warn(JSON.stringify({ level: "warn", event: "otel_log_export_failed",
         status: error instanceof OtelExportError ? error.status : undefined })))
       .finally(() => { this.queued -= records.length; });

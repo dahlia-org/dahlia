@@ -1,7 +1,7 @@
-import { create, fromJson, toBinary, type JsonValue, type MessageInitShape } from "@bufbuild/protobuf";
-import { ExportLogsServiceRequestSchema } from "./gen/opentelemetry/proto/collector/logs/v1/logs_service_pb";
-import { ExportMetricsServiceRequestSchema } from "./gen/opentelemetry/proto/collector/metrics/v1/metrics_service_pb";
-import { ExportTraceServiceRequestSchema } from "./gen/opentelemetry/proto/collector/trace/v1/trace_service_pb";
+import { create, fromBinary, fromJson, toBinary, toJson, type JsonValue, type MessageInitShape } from "@bufbuild/protobuf";
+import { ExportLogsServiceRequestSchema, ExportLogsServiceResponseSchema } from "./gen/opentelemetry/proto/collector/logs/v1/logs_service_pb";
+import { ExportMetricsServiceRequestSchema, ExportMetricsServiceResponseSchema } from "./gen/opentelemetry/proto/collector/metrics/v1/metrics_service_pb";
+import { ExportTraceServiceRequestSchema, ExportTraceServiceResponseSchema } from "./gen/opentelemetry/proto/collector/trace/v1/trace_service_pb";
 import type { AnyValueSchema } from "./gen/opentelemetry/proto/common/v1/common_pb";
 import type { LogRecordSchema } from "./gen/opentelemetry/proto/logs/v1/logs_pb";
 
@@ -12,6 +12,7 @@ export type OtlpLogRecord = MessageInitShape<typeof LogRecordSchema>;
 export class OtlpError extends Error {}
 
 const requests = { traces: ExportTraceServiceRequestSchema, logs: ExportLogsServiceRequestSchema, metrics: ExportMetricsServiceRequestSchema };
+const responses = { traces: ExportTraceServiceResponseSchema, logs: ExportLogsServiceResponseSchema, metrics: ExportMetricsServiceResponseSchema };
 // OTLP/JSON writes trace and span IDs as hex, unlike the protobuf JSON mapping's base64 bytes.
 const ID_FIELDS = new Set(["traceId", "spanId", "parentSpanId", "trace_id", "span_id", "parent_span_id"]);
 
@@ -32,6 +33,15 @@ export function otlpJsonToProtobuf(signal: OtlpSignal, json: string): Uint8Array
     return toBinary(schema, fromJson(schema, base64Ids(JSON.parse(json)) as JsonValue, { ignoreUnknownFields: true }));
   } catch (error) {
     throw error instanceof OtlpError ? error : new OtlpError("invalid OTLP JSON");
+  }
+}
+
+/** OTLP/JSON of an upstream Export*ServiceResponse, so its partial_success reaches JSON senders; `{}` when unreadable. */
+export function otlpResponseJson(signal: OtlpSignal, protobuf: Uint8Array): JsonValue {
+  try {
+    return toJson(responses[signal], fromBinary(responses[signal], protobuf));
+  } catch {
+    return {};
   }
 }
 
