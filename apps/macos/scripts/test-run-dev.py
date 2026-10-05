@@ -124,13 +124,13 @@ exec /usr/bin/sqlite3 "$@"
     log = root / "calls.log"
     environment = dict(os.environ, PATH=f"{tools}:{os.environ['PATH']}", CODESIGN_IDENTITY="-", DEV_TEST_LOG=str(log))
 
-    def run(expected, success=True, arguments=("--build-only",), **overrides):
+    def run(expected, success=True, arguments=("--build-only",), checkout=root, **overrides):
         log.write_text("")
-        result = subprocess.run(["bash", str(scripts / "run-dev.sh"), *arguments],
+        result = subprocess.run(["bash", str(checkout / "apps/macos/scripts/run-dev.sh"), *arguments],
                                 env=environment | overrides, text=True, capture_output=True)
         assert (result.returncode == 0) == success, result.stdout + result.stderr
         assert expected in result.stdout + result.stderr, result.stdout + result.stderr
-        assert not (root / ".build/run-dev/lock").exists(), "build lock leaked"
+        assert not (checkout / ".build/run-dev/lock").exists(), "build lock leaked"
         return log.read_text()
 
     calls = run("Assembling")
@@ -250,12 +250,75 @@ exec /usr/bin/sqlite3 "$@"
 
     for arguments in (("--build-only", "--reset"), ("--build-only", "--copy"), ("--reset", "--copy")):
         run("cannot be combined", success=False, arguments=arguments, **qa_environment)
+
+    worktree = root.parent / "worktree with spaces"
+    shutil.copytree(root, worktree, symlinks=True, ignore=shutil.ignore_patterns(
+        "Dahlia.app", "run-dev", "calls.log", "Application Support", "snapshots"))
+    worktree_git_file = f"gitdir: {root}/.git/worktrees/worktree\n"
+    write(worktree / ".git", worktree_git_file)
+    worktree_dir = Path(os.path.realpath(worktree)) / ".dahlia"
+    worktree_db = worktree_dir / "dahlia.sqlite"
+    worktree_database_files = (worktree_db, Path(f"{worktree_db}-wal"), Path(f"{worktree_db}-shm"))
+
+    def info_plist(checkout):
+        with (checkout / "Dahlia.app/Contents/Info.plist").open("rb") as plist_file:
+            return plistlib.load(plist_file)
+
+    def production_snapshot():
+        # Opening and closing the database here would drop this process's SQLite locks, so compare metadata only.
+        return {path: (path.stat().st_size, path.stat().st_mtime_ns)
+                for path in (application_support / "Dahlia").rglob("*")
+                if path.is_file() and not path.name.endswith("-shm")}
+
+    run(f"development profile: {qa_dir})", arguments=("--reset",), **qa_environment)
+    assert "DAHLIA_DEVELOPMENT_DIRECTORY" not in info_plist(root), "the main checkout must keep the shared profile"
+    run("Assembling", checkout=worktree)
+    assert info_plist(worktree)["DAHLIA_DEVELOPMENT_DIRECTORY"] == str(worktree_dir)
+    run("Reusing signed", checkout=worktree)
+    write(worktree / ".git", f"gitdir: {root}/.git/modules/worktree\n")
+    run("Assembling", checkout=worktree)
+    assert "DAHLIA_DEVELOPMENT_DIRECTORY" not in info_plist(worktree), "a submodule must keep the shared profile"
+    write(worktree / ".git", worktree_git_file)
+    run("Assembling", checkout=worktree)
+
+    for database_file in qa_database_files:
+        write(database_file, "shared QA")
+    shared_before = {path: path.read_bytes() for path in qa_database_files}
+    production_before = production_snapshot()
+    for database_file in worktree_database_files:
+        write(database_file, "worktree QA")
+    write(worktree_dir / "FileStore/file", "worktree file")
+    with qa_db.open():
+        run(f"development profile: {worktree_dir})", arguments=("--reset",), checkout=worktree, **qa_environment)
+    for database_file in worktree_database_files:
+        assert not database_file.exists(), f"worktree reset left {database_file.name}"
+    assert (worktree_dir / "FileStore/file").exists(), "worktree reset removed FileStore"
+
+    run(f"development profile: {worktree_dir})", arguments=("--copy-production",), checkout=worktree, **qa_environment)
+    worktree_connection = sqlite3.connect(worktree_db)
+    assert worktree_connection.execute("SELECT value FROM copied").fetchone() == ("from production WAL",)
+    worktree_connection.close()
+    assert (worktree_dir / "FileStore/local/files/example/original").read_text() == "production image"
+    assert not (worktree_dir / "FileStore/file").exists(), "production copy retained stale worktree files"
+    assert {path: path.read_bytes() for path in qa_database_files} == shared_before, "worktree options changed shared QA"
+    assert production_snapshot() == production_before, "worktree options changed production data"
+
+    with worktree_db.open():
+        run("development database is in use", success=False, arguments=("--reset",), checkout=worktree,
+            **qa_environment)
     production.close()
+
+    long_worktree = root.parent / ("w" * 100)
+    shutil.copytree(worktree, long_worktree, symlinks=True, ignore=shutil.ignore_patterns(
+        "Dahlia.app", "run-dev", ".dahlia"))
+    run("too long for the token broker socket", success=False, checkout=long_worktree)
+    assert not (long_worktree / "Dahlia.app").exists(), "a worktree whose broker cannot bind must not be built"
 
 
 if __name__ == "__main__":
-    with tempfile.TemporaryDirectory(prefix="dahlia-dev-tests-") as directory:
+    # The worktree fixture's broker socket path must fit in sun_path, which the default macOS TMPDIR exceeds.
+    with tempfile.TemporaryDirectory(prefix="dahlia-dev-tests-", dir="/tmp") as directory:
         root = Path(directory)
         check_fingerprints(root)
         check_packaging(root / "repo with spaces")
-    print("Development build tests passed (packaging, QA reset, production copy, validation, conflicts)")
+    print("Development build tests passed (packaging, QA reset, production copy, validation, conflicts, worktree profiles)")

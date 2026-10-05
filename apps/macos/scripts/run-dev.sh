@@ -48,6 +48,20 @@ APPLICATION_SUPPORT_DIR="${DAHLIA_APPLICATION_SUPPORT_DIR:-${HOME}/Library/Appli
 PRODUCTION_DB="${APPLICATION_SUPPORT_DIR}/Dahlia/dahlia.sqlite"
 PRODUCTION_FILE_STORE="${APPLICATION_SUPPORT_DIR}/Dahlia/FileStore"
 QA_DIR="${APPLICATION_SUPPORT_DIR}/Dahlia-Development"
+# A linked worktree keeps its profile in its gitignored .dahlia, so branches with different migrations never share a
+# database and `git worktree remove` deletes the data. A submodule's .git file points at modules/<name> instead.
+# The app and its helpers read the directory from Info.plist.
+DEVELOPMENT_DIR=""
+if [ -f .git ] && [[ "$(sed -n 's/^gitdir:[[:space:]]*//p' .git)" =~ /worktrees/[^/]+/?$ ]]; then
+    DEVELOPMENT_DIR="$(pwd -P)/.dahlia"
+    QA_DIR="$DEVELOPMENT_DIR"
+    # sockaddr_un.sun_path holds 103 bytes plus NUL; images.sock has the same length.
+    BROKER_SOCKET="${DEVELOPMENT_DIR}/TokenBroker/broker.sock"
+    if (( $(printf '%s' "$BROKER_SOCKET" | wc -c) > 103 )); then
+        echo "error: the worktree path is too long for the token broker socket (over 103 bytes): ${BROKER_SOCKET}" >&2
+        exit 1
+    fi
+fi
 QA_DB="${QA_DIR}/dahlia.sqlite"
 QA_FILE_STORE="${QA_DIR}/FileStore"
 
@@ -190,7 +204,8 @@ SUPPORT_INPUTS=(
 SUPPORT_FILE_FINGERPRINT="$(fingerprint "${SUPPORT_INPUTS[@]}")"
 SUPPORT_FINGERPRINT="$(
     {
-        printf '%s\0' "$SUPPORT_FILE_FINGERPRINT" "$SIGN_IDENTITY" "${GOOGLE_CLIENT_ID:-}" "${GOOGLE_CLIENT_SECRET:-}" \
+        printf '%s\0' "$SUPPORT_FILE_FINGERPRINT" "$SIGN_IDENTITY" "$DEVELOPMENT_DIR" \
+            "${GOOGLE_CLIENT_ID:-}" "${GOOGLE_CLIENT_SECRET:-}" \
             "${DAHLIA_CLOUD_URL:-}" "${DAHLIA_CLOUD_OAUTH_CLIENT_ID:-}" \
             "${SENTRY_DSN:-}" "${TELEMETRYDECK_APP_ID:-}"
     } | shasum -a 256
@@ -224,7 +239,7 @@ finish_build() {
         exit 0
     fi
 
-    echo "=== Running ${APP_NAME} (development profile) ==="
+    echo "=== Running ${APP_NAME} (development profile: ${QA_DIR}) ==="
     local lsregister="/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister"
     if [ -x "$lsregister" ]; then
         "$lsregister" -f "$APP_BUNDLE" >/dev/null 2>&1 || true
@@ -291,6 +306,9 @@ if [ "$("${HELPERS}/codex" --version)" != "codex-cli ${CODEX_VERSION}" ]; then
 fi
 cp "Resources/Info.plist" "${CONTENTS}/Info.plist"
 /usr/libexec/PlistBuddy -c "Add :DAHLIA_RUNTIME_PROFILE string development" "${CONTENTS}/Info.plist"
+if [ -n "$DEVELOPMENT_DIR" ]; then
+    plutil -insert DAHLIA_DEVELOPMENT_DIRECTORY -string "$DEVELOPMENT_DIR" "${CONTENTS}/Info.plist"
+fi
 cp -R "Resources/en.lproj" "Resources/ja.lproj" "${CONTENTS}/Resources/"
 configure_google_calendar_plist "${CONTENTS}/Info.plist"
 configure_dahlia_cloud_plist "${CONTENTS}/Info.plist"

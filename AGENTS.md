@@ -97,7 +97,7 @@ Update versions only during desktop release preparation. Follow [Desktop Release
 ```bash
 swift build                            # Debug build
 swift run Dahlia                       # Unsigned debug run; development profile
-./scripts/run-dev.sh                   # Debug + codesign; preferred for full-feature testing
+./scripts/run-dev.sh                   # Debug + codesign; preferred for full-feature testing; one development profile per worktree
 ./scripts/build-app.sh                 # Release configuration, development profile; do not launch production builds locally
 swift test --experimental-maximum-parallelization-width 4 # Full test suite; matches CI
 swift test --filter SummaryServiceTests # Example targeted suite

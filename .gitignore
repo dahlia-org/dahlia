@@ -11,6 +11,7 @@ DerivedData/
 .DS_Store
 .env.local
 .data/
+.dahlia/
 .dev.vars*
 .wrangler/
 node_modules/
