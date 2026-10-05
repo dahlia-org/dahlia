@@ -308,9 +308,16 @@ exec /usr/bin/sqlite3 "$@"
             **qa_environment)
     production.close()
 
+    long_worktree = root.parent / ("w" * 100)
+    shutil.copytree(worktree, long_worktree, symlinks=True, ignore=shutil.ignore_patterns(
+        "Dahlia.app", "run-dev", ".dahlia"))
+    run("too long for the token broker socket", success=False, checkout=long_worktree)
+    assert not (long_worktree / "Dahlia.app").exists(), "a worktree whose broker cannot bind must not be built"
+
 
 if __name__ == "__main__":
-    with tempfile.TemporaryDirectory(prefix="dahlia-dev-tests-") as directory:
+    # The worktree fixture's broker socket path must fit in sun_path, which the default macOS TMPDIR exceeds.
+    with tempfile.TemporaryDirectory(prefix="dahlia-dev-tests-", dir="/tmp") as directory:
         root = Path(directory)
         check_fingerprints(root)
         check_packaging(root / "repo with spaces")

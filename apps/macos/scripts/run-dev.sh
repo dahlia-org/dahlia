@@ -55,6 +55,12 @@ DEVELOPMENT_DIR=""
 if [ -f .git ] && [[ "$(sed -n 's/^gitdir:[[:space:]]*//p' .git)" =~ /worktrees/[^/]+/?$ ]]; then
     DEVELOPMENT_DIR="$(pwd -P)/.dahlia"
     QA_DIR="$DEVELOPMENT_DIR"
+    # sockaddr_un.sun_path holds 103 bytes plus NUL; images.sock has the same length.
+    BROKER_SOCKET="${DEVELOPMENT_DIR}/TokenBroker/broker.sock"
+    if (( $(printf '%s' "$BROKER_SOCKET" | wc -c) > 103 )); then
+        echo "error: the worktree path is too long for the token broker socket (over 103 bytes): ${BROKER_SOCKET}" >&2
+        exit 1
+    fi
 fi
 QA_DB="${QA_DIR}/dahlia.sqlite"
 QA_FILE_STORE="${QA_DIR}/FileStore"
