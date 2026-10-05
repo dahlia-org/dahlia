@@ -115,7 +115,7 @@ Stop an app only by the PID you captured when launching it; `run-dev.sh` `exec`s
 - The requested outcome and all applicable repository instructions are satisfied.
 - Swift changes pass `swift build`, behavior changes pass targeted tests, and broader changes run `swift test --experimental-maximum-parallelization-width 4` when warranted. Swift source changes also pass `CI=true ./scripts/lint.sh`.
 - Confirm from the test summary—not only exit code 0—that the intended tests actually ran.
-- Changes to public behavior, settings, or schemas include the corresponding tests, localization, and documentation. When a documented contract or decision changes, rewrite or remove the affected text instead of appending a new account. Do not add field lists, control-flow narration, or PR summaries.
+- Changes to public behavior, settings, or schemas include the corresponding tests, localization, and documentation. When a documented contract or decision changes, rewrite or remove the affected text instead of appending a new account. Keep contracts such as allowlists, schemas, and required ordering current, but do not restate implementation details the code already records or add per-PR summaries.
 - A user-reachable behavior change covers every surface it applies to. Decide each item below, and in the final report name the surfaces you changed and those you deliberately left out:
   - Clients: the macOS app, Private Web, and the Electron alpha, which share `packages/ui`.
   - Accounts: Local Accounts and Server Accounts.
