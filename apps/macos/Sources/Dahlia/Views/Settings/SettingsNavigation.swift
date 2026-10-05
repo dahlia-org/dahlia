@@ -19,6 +19,8 @@ enum SettingsNavigation {
             .general
         case .dahliaAccounts, .accountPreferences, .macInference, .modelProvider, .aiSummary, .instructions, .mcp:
             .accountsAndWorkspaces
+        case .workspacePreferences:
+            .workspace
         default:
             selection
         }

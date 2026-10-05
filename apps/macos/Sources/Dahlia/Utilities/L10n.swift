@@ -16,7 +16,6 @@ enum L10n { // swiftlint:disable:this type_body_length
     static var workspaceSettings: String { String(localized: "settings.organization.workspaceSettings", bundle: bundle) }
     static var searchSettings: String { String(localized: "settings.organization.searchSettings", bundle: bundle) }
     static var settingsAccountIntro: String { String(localized: "settings.organization.settingsAccountIntro", bundle: bundle) }
-    static var settingsWorkspaceIntro: String { String(localized: "settings.organization.settingsWorkspaceIntro", bundle: bundle) }
     static var settingsWorkspaceManagementIntro: String { String(
         localized: "settings.organization.settingsWorkspaceManagementIntro",
         bundle: bundle
@@ -1600,7 +1599,7 @@ enum L10n { // swiftlint:disable:this type_body_length
         bundle: bundle
     ) }
     static var workingLanguagesSetupDescription: String { String(
-        localized: "Choose the languages Dahlia should recognize. Set the AI output language in each workspace's settings.",
+        localized: "Choose the languages Dahlia should recognize. Set the AI output language in Manage Workspaces.",
         bundle: bundle
     ) }
     static var recognitionAndOCRLanguages: String { String(localized: "Recognition and OCR Languages", bundle: bundle) }
@@ -2413,6 +2412,7 @@ enum L10n { // swiftlint:disable:this type_body_length
     static var account: String { String(localized: "Account", bundle: bundle) }
     static var selectedAccount: String { String(localized: "Selected Account", bundle: bundle) }
     static var switchAccount: String { String(localized: "Switch Account", bundle: bundle) }
+    static var selectedWorkspace: String { String(localized: "Selected Workspace", bundle: bundle) }
     static var localAccountModelProvider: String { String(localized: "Local Account Model Provider", bundle: bundle) }
     static var aiAccountDescription: String { String(
         localized: "Choose the model provider used by the Local Account.",

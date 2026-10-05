@@ -31,31 +31,6 @@ struct SettingsDetailView: View {
                                 .fixedSize(horizontal: false, vertical: true)
                         }
                         Spacer()
-                        if selection == .workspacePreferences {
-                            Menu {
-                                ForEach(workspaceManagementModel.workspaces) { workspace in
-                                    Button {
-                                        onSelectWorkspace(workspace)
-                                    } label: {
-                                        if workspace.id == appSettings.currentWorkspace?.id {
-                                            Label(workspace.name, systemImage: "checkmark")
-                                        } else {
-                                            Text(workspace.name)
-                                        }
-                                    }
-                                }
-                            } label: {
-                                Label(
-                                    "\(L10n.workspace): \(appSettings.currentWorkspace?.name ?? L10n.noWorkspaceSelected)",
-                                    systemImage: ProjectIcon.workspace.systemImageName
-                                )
-                            }
-                            .buttonStyle(.bordered)
-                            .disabled(!captionViewModel.canSwitchWorkspace || workspaceManagementModel.workspaces.isEmpty)
-                            .help(L10n.currentWorkspaceDescription)
-                            .accessibilityLabel(L10n.currentWorkspace)
-                            .accessibilityValue(appSettings.currentWorkspace?.name ?? L10n.noWorkspaceSelected)
-                        }
                         if selection == .general {
                             Button(L10n.initialSetup, action: mainWindowNavigation.openSetupTour)
                                 .buttonStyle(.dahlia())
@@ -87,7 +62,7 @@ struct SettingsDetailView: View {
                     controller: dahliaAccountController,
                     currentWorkspace: appSettings.currentWorkspace,
                     workspaces: workspaceManagementModel.workspaces,
-                    canSwitchAccount: captionViewModel.canSwitchWorkspace && !WorkspaceAISettingsModel.shared.isSwitchingRuntime,
+                    canSwitchAccount: canSwitchWorkspace,
                     onSelectWorkspace: onSelectWorkspace,
                     onShowSignIn: mainWindowNavigation.openDahliaSignIn
                 )
@@ -103,15 +78,18 @@ struct SettingsDetailView: View {
             .onChange(of: dahliaAccountController.connections) {
                 Task { await workspaceManagementModel.loadWorkspaces() }
             }
-        case .workspace:
+        case .workspace, .workspacePreferences:
             Form {
                 WorkspaceSettingsView(
                     appDatabase: appDatabase,
                     model: workspaceManagementModel,
                     currentWorkspace: appSettings.currentWorkspace,
                     accountConnections: dahliaAccountController.connections,
+                    canSwitchWorkspace: canSwitchWorkspace,
+                    onSelectWorkspace: onSelectWorkspace,
                     onUpdateWorkspace: updateCurrentWorkspaceIfNeeded
                 )
+                WorkspaceProcessingSettingsView()
             }
             .formStyle(.grouped)
             .onChange(of: workspaceManagementModel.workspaces.map { "\($0.id):\($0.accountConnectionId?.uuidString ?? "local")" }) {
@@ -127,8 +105,6 @@ struct SettingsDetailView: View {
             )
         case .search:
             SearchSettingsView(database: appDatabase)
-        case .workspacePreferences:
-            WorkspaceProcessingSettingsView()
         case .transcription:
             TranscriptionSettingsView()
         case .liveSubtitles:
@@ -152,13 +128,16 @@ struct SettingsDetailView: View {
 
     private var scopeDescription: String {
         switch SettingsNavigation.visibleSelection(selection) {
-        case .workspacePreferences: L10n.settingsWorkspaceIntro
         case .accountsAndWorkspaces: L10n.settingsAccountsIntro
         case .workspace: L10n.settingsWorkspaceManagementIntro
         case .backups: L10n.backupLocalWorkspacesOnly
         case .cloudStorage: L10n.settingsExportIntro
         default: L10n.thisMacSettingsDescription
         }
+    }
+
+    private var canSwitchWorkspace: Bool {
+        captionViewModel.canSwitchWorkspace && !WorkspaceAISettingsModel.shared.isSwitchingRuntime
     }
 
     private func updateCurrentWorkspaceIfNeeded(_ workspace: WorkspaceRecord) {

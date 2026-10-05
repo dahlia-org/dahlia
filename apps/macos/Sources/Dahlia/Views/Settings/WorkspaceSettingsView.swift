@@ -5,6 +5,8 @@ struct WorkspaceSettingsView: View {
     var model: WorkspaceManagementModel
     let currentWorkspace: WorkspaceRecord?
     let accountConnections: [DahliaAccountConnection]
+    let canSwitchWorkspace: Bool
+    let onSelectWorkspace: (WorkspaceRecord) -> Void
     let onUpdateWorkspace: (WorkspaceRecord) -> Void
 
     @State private var isShowingFolderPicker = false
@@ -91,53 +93,8 @@ struct WorkspaceSettingsView: View {
                 Label(L10n.noWorkspaces, systemImage: ProjectIcon.workspace.systemImageName)
                     .foregroundStyle(DahliaDesign.secondaryTextColor)
             } else {
-                ForEach(model.workspaces) { workspace in
-                    HStack {
-                        HStack {
-                            WorkspaceAppearanceButton(workspace: workspace) { appearance in
-                                guard let updated = await model.renameWorkspace(workspace, to: workspace.name, appearance: appearance)
-                                else { return false }
-                                if currentWorkspace?.id == updated.id { onUpdateWorkspace(updated) }
-                                return true
-                            }
-
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text(workspace.name)
-                                Text(workspace.path ?? L10n.noLocalExportFolder)
-                                    .font(.footnote)
-                                    .foregroundStyle(DahliaDesign.secondaryTextColor)
-                                    .lineLimit(1)
-                                    .truncationMode(.middle)
-                                    .textSelection(.enabled)
-                            }
-                        }
-                        .help(workspace.path ?? L10n.noLocalExportFolder)
-
-                        Spacer()
-
-                        WorkspaceAccountPicker(
-                            workspace: workspace,
-                            connections: accountConnections,
-                            onSelect: { await requestServerAdoption(for: workspace, connectionID: $0) }
-                        )
-                        .disabled(workspace.accountConnectionId != nil)
-                        if workspace.syncRecoveryState == "updateRequired" {
-                            Label(L10n.workspaceSyncUpdateRequired, systemImage: "exclamationmark.triangle")
-                                .font(.caption).foregroundStyle(.orange)
-                        } else if model.blockedSyncWorkspaceIDs.contains(workspace.id) {
-                            Image(systemName: "exclamationmark.triangle.fill")
-                                .foregroundStyle(.orange)
-                                .help(L10n.workspaceSyncConflict)
-                                .accessibilityLabel(L10n.workspaceSyncConflict)
-                        } else if workspace.syncRecoveryState != nil {
-                            Label(
-                                workspace.syncRecoveryState == "recovering" ? L10n.workspaceSyncRecovering : L10n.workspaceSyncRecoveryPending,
-                                systemImage: "arrow.triangle.2.circlepath"
-                            )
-                            .font(.caption).foregroundStyle(.secondary)
-                        }
-                        workspaceActions(for: workspace)
-                    }
+                ForEach(workspacesInCreationOrder) { workspace in
+                    workspaceRow(workspace)
                 }
             }
         } header: {
@@ -156,6 +113,96 @@ struct WorkspaceSettingsView: View {
                 Text(L10n.noWorkspacesDescription)
             }
         }
+    }
+
+    /// `model.workspaces` is ordered by last opened, which would reorder the list whenever the selection changes.
+    private var workspacesInCreationOrder: [WorkspaceRecord] {
+        model.workspaces.sorted { ($0.createdAt, $0.id.uuidString) < ($1.createdAt, $1.id.uuidString) }
+    }
+
+    private func workspaceRow(_ workspace: WorkspaceRecord) -> some View {
+        HStack(spacing: 0) {
+            WorkspaceAppearanceButton(workspace: workspace) { appearance in
+                guard let updated = await model.renameWorkspace(workspace, to: workspace.name, appearance: appearance)
+                else { return false }
+                if currentWorkspace?.id == updated.id { onUpdateWorkspace(updated) }
+                return true
+            }
+            .padding(.leading, 2)
+
+            selectionButton(for: workspace) {
+                VStack(alignment: .leading, spacing: 2) {
+                    HStack {
+                        Text(workspace.name)
+                        if workspace.id == currentWorkspace?.id {
+                            Image(systemName: "checkmark")
+                                .foregroundStyle(.tint)
+                                .accessibilityLabel(L10n.selectedWorkspace)
+                        }
+                    }
+                    Text(workspace.path ?? L10n.noLocalExportFolder)
+                        .font(.footnote)
+                        .foregroundStyle(DahliaDesign.secondaryTextColor)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                }
+            }
+            .help(workspace.path ?? L10n.noLocalExportFolder)
+
+            HStack {
+                WorkspaceAccountPicker(
+                    workspace: workspace,
+                    connections: accountConnections,
+                    onSelect: { await requestServerAdoption(for: workspace, connectionID: $0) }
+                )
+                .disabled(workspace.accountConnectionId != nil)
+                if workspace.syncRecoveryState == "updateRequired" {
+                    Label(L10n.workspaceSyncUpdateRequired, systemImage: "exclamationmark.triangle")
+                        .font(.caption).foregroundStyle(.orange)
+                } else if model.blockedSyncWorkspaceIDs.contains(workspace.id) {
+                    Image(systemName: "exclamationmark.triangle.fill")
+                        .foregroundStyle(.orange)
+                        .help(L10n.workspaceSyncConflict)
+                        .accessibilityLabel(L10n.workspaceSyncConflict)
+                } else if workspace.syncRecoveryState != nil {
+                    Label(
+                        workspace.syncRecoveryState == "recovering" ? L10n.workspaceSyncRecovering : L10n.workspaceSyncRecoveryPending,
+                        systemImage: "arrow.triangle.2.circlepath"
+                    )
+                    .font(.caption).foregroundStyle(.secondary)
+                }
+                workspaceActions(for: workspace)
+            }
+            .padding(.trailing, 8)
+            .padding(.vertical, 6)
+        }
+        .modifier(SettingsSelectableRowHoverModifier(isEnabled: canSelect(workspace)))
+    }
+
+    private func selectionButton(
+        for workspace: WorkspaceRecord,
+        @ViewBuilder label: () -> some View
+    ) -> some View {
+        let isSelected = workspace.id == currentWorkspace?.id
+        return Button {
+            if canSelect(workspace) { onSelectWorkspace(workspace) }
+        } label: {
+            label()
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.horizontal, 8)
+                .padding(.vertical, 6)
+                .contentShape(.rect(cornerRadius: DahliaDesign.Highlight.compactCornerRadius))
+        }
+        .buttonStyle(.plain)
+        .disabled(!canSelect(workspace) && !isSelected)
+        .accessibilityLabel(workspace.name)
+        .accessibilityValue(workspace.path ?? L10n.noLocalExportFolder)
+        .accessibilityHint(isSelected ? "" : L10n.switchWorkspace)
+        .accessibilityAddTraits(isSelected ? .isSelected : [])
+    }
+
+    private func canSelect(_ workspace: WorkspaceRecord) -> Bool {
+        canSwitchWorkspace && workspace.id != currentWorkspace?.id
     }
 
     private func showCreateAlert() {

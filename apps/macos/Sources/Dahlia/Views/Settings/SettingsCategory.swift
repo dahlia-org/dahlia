@@ -131,7 +131,7 @@ enum SettingsCategory: String, CaseIterable, Identifiable {
                 L10n.summaryModel,
                 "AI",
             ]
-        case .workspacePreferences:
+        case .workspace:
             [L10n.workspace, L10n.generatedContentLanguage, L10n.summaryOutputLanguage]
         case .macInference:
             [L10n.modelProvider, L10n.model, L10n.reasoningEffort, "AI", "ChatGPT", "Codex", "Databricks"]
