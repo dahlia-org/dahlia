@@ -11,7 +11,7 @@ const output = execFileSync(
 const events = output.trim().split("\n").filter(Boolean).map((line) => JSON.parse(line));
 const uploads = events.filter((event) => event.type === "start").flatMap((event) => event.put ?? []);
 assert.ok(
-  uploads.includes("deploy/databricks/notebooks/create_otel_tables.sql"),
+  uploads.includes("deploy/databricks/notebooks/create_otel_tables.py"),
   "The OTel notebook must be included in bundle sync uploads",
 );
 // The Server App deploys the repository root; it receives the workspace manifests, Server and shared UI only.

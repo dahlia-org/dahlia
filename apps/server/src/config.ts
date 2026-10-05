@@ -2,6 +2,7 @@ import { loadJobConfig, type JobConfig } from "./jobs/model";
 import { validateAuthSecret } from "./auth/secret";
 import { z } from "zod";
 import { encryptionConfig, type EncryptionConfig } from "./encryption/crypto";
+import { OTLP_SIGNALS, type OtlpSignal } from "./otel/otlp";
 
 import { UPSTREAM_MODEL_MAX_LENGTH } from "@dahlia-ai/ui/model/model-alias";
 
@@ -9,6 +10,18 @@ export type AuthProvider = "accounts" | "header";
 export type DatabaseType = "sqlite" | "postgres" | "lakebase" | "hyperdrive";
 export type AIBackend = "databricks" | "cloudflare" | "openai";
 export type StorageBackend = "databricks" | "local" | "r2" | "s3";
+export interface OtlpTarget {
+  url: string;
+  /** Lowercase header names; values are runtime secrets and never logged. */
+  headers: Record<string, string>;
+  /** Set by `DAHLIA_OTEL_AUTH=databricks`: a service-principal token scoped to this signal's Zerobus table. */
+  zerobus?: { workspaceId: string; table: string };
+}
+export interface OtelConfig {
+  /** OTLP/HTTP protobuf destinations from the standard `OTEL_EXPORTER_OTLP_*` variables; unset signals are not exported. */
+  exporters: Partial<Record<OtlpSignal, OtlpTarget>>;
+  serviceName: string;
+}
 /** @deprecated Use DatabaseType. */
 export type AuthDatabaseBackend = DatabaseType;
 
@@ -84,6 +97,8 @@ export interface AppConfig {
     dimensions: number;
   };
   captioningModel?: string;
+  /** OTLP forwarding and Server-log export; absent without an OTLP endpoint. */
+  otel?: OtelConfig;
 }
 
 const authProviderSchema = z.enum(["accounts", "header"]);
@@ -275,9 +290,10 @@ export function loadConfig(env: Record<string, string | undefined>): AppConfig {
   const captioningModel = env.DAHLIA_IMAGE_ANALYSIS_MODEL?.trim()
     ? z.string().max(UPSTREAM_MODEL_MAX_LENGTH).parse(env.DAHLIA_IMAGE_ANALYSIS_MODEL.trim())
     : undefined;
+  const otel = otelConfig(env);
   const databricksWorkspace = databricksWorkspaceConfig(
     env,
-    env.DAHLIA_HINDSIGHT_AUTH === "databricks" || storageBackend === "databricks" || (aiBackend === "databricks"
+    env.DAHLIA_HINDSIGHT_AUTH === "databricks" || storageBackend === "databricks" || Object.values(otel?.exporters ?? {}).some((target) => target.zerobus) || (aiBackend === "databricks"
       && Boolean(chatMemoryModel || searchEmbedding || captioningModel
         || env.DATABRICKS_CLIENT_ID?.trim() || env.DATABRICKS_CLIENT_SECRET?.trim())),
   );
@@ -333,6 +349,7 @@ export function loadConfig(env: Record<string, string | undefined>): AppConfig {
     chatMemoryModel,
     memoryMcpAccess: memoryMcpAccess as "off" | "read" | "write",
     hindsight: hindsightConfig(env),
+    otel,
   };
 
   if (config.searchEmbedding && !["databricks", "cloudflare"].includes(config.provider?.backend ?? "")) {
@@ -371,6 +388,45 @@ export function gatewayResource(config: Pick<AppConfig, "baseUrl">): string {
 
 export function mcpResource(config: Pick<AppConfig, "baseUrl">): string {
   return `${config.baseUrl}/mcp`;
+}
+
+function otlpHeaders(value: string | undefined, name: string): Record<string, string> {
+  return Object.fromEntries(csv(value).map((pair) => {
+    const separator = pair.indexOf("=");
+    if (separator <= 0) throw new Error(`${name} must be comma-separated key=value pairs`);
+    return [decodeURIComponent(pair.slice(0, separator).trim()).toLowerCase(), decodeURIComponent(pair.slice(separator + 1).trim())];
+  }));
+}
+
+/** The standard OTLP exporter variables: signal-specific endpoints are used as-is, the base endpoint gets `/v1/<signal>`. */
+function otelConfig(env: Record<string, string | undefined>): OtelConfig | undefined {
+  const auth = z.enum(["none", "databricks"]).parse(env.DAHLIA_OTEL_AUTH?.trim() || "none");
+  const base = env.OTEL_EXPORTER_OTLP_ENDPOINT?.trim().replace(/\/$/, "");
+  const exporters: OtelConfig["exporters"] = {};
+  for (const signal of OTLP_SIGNALS) {
+    const name = `OTEL_EXPORTER_OTLP_${signal.toUpperCase()}`;
+    const value = env[`${name}_ENDPOINT`]?.trim() || (base ? `${base}/v1/${signal}` : undefined);
+    if (!value) continue;
+    if ((env[`${name}_PROTOCOL`]?.trim() || env.OTEL_EXPORTER_OTLP_PROTOCOL?.trim() || "http/protobuf") !== "http/protobuf") {
+      throw new Error(`${name}_PROTOCOL must be http/protobuf`);
+    }
+    const url = new URL(value);
+    if (!["http:", "https:"].includes(url.protocol) || url.username || url.password) {
+      throw new Error(`The OTLP ${signal} endpoint must be an HTTP(S) URL without credentials`);
+    }
+    const headers = { ...otlpHeaders(env.OTEL_EXPORTER_OTLP_HEADERS, "OTEL_EXPORTER_OTLP_HEADERS"), ...otlpHeaders(env[`${name}_HEADERS`], `${name}_HEADERS`) };
+    const target: OtlpTarget = { url: url.toString(), headers };
+    if (auth === "databricks") {
+      const workspaceId = /^(\d+)\.zerobus\./.exec(url.hostname)?.[1];
+      const table = headers["x-databricks-zerobus-table-name"];
+      if (url.protocol !== "https:" || !workspaceId) throw new Error(`DAHLIA_OTEL_AUTH=databricks requires a https://<workspace-id>.zerobus.<region>.<cloud domain> ${signal} endpoint`);
+      if (!table || !/^[^.\s`]+\.[^.\s`]+\.[^.\s`]+$/.test(table)) throw new Error(`DAHLIA_OTEL_AUTH=databricks requires x-databricks-zerobus-table-name=<catalog>.<schema>.<table> in ${name}_HEADERS`);
+      target.zerobus = { workspaceId, table };
+    }
+    exporters[signal] = target;
+  }
+  if (!Object.keys(exporters).length) return undefined;
+  return { exporters, serviceName: env.OTEL_SERVICE_NAME?.trim() || "dahlia-server" };
 }
 
 function hindsightConfig(env: Record<string, string | undefined>): AppConfig["hindsight"] {

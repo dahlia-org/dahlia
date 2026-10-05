@@ -1,4 +1,5 @@
 import { setTimeout as delay } from "node:timers/promises";
+import { log } from "../otel/log";
 
 export class JobRunner {
   private readonly abort = new AbortController();
@@ -12,7 +13,7 @@ export class JobRunner {
       let idle = false;
       while (this.active.size < this.concurrency && !this.abort.signal.aborted && !idle) {
         const task = this.executor.processOne(this.abort.signal).then((processed) => { if (!processed) idle = true; })
-          .catch(() => { idle = true; if (!this.abort.signal.aborted) console.warn(JSON.stringify({ event: "job_dispatch_failed" })); })
+          .catch(() => { idle = true; if (!this.abort.signal.aborted) log("warn", "job_dispatch_failed"); })
           .finally(() => this.active.delete(task));
         this.active.add(task);
       }

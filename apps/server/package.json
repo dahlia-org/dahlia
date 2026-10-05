@@ -96,12 +96,14 @@
     "worker:dry-run": "pnpm run build:cloudflare && WRANGLER_WRITE_LOGS=false WRANGLER_SEND_METRICS=false wrangler deploy --dry-run --outdir dist/worker",
     "worker:types": "pnpm run ensure:wrangler && WRANGLER_WRITE_LOGS=false WRANGLER_SEND_METRICS=false wrangler types worker-configuration.d.ts",
     "openapi:generate": "node --import tsx scripts/generate-openapi.ts",
-    "openapi:check": "node --import tsx scripts/generate-openapi.ts --check"
+    "openapi:check": "node --import tsx scripts/generate-openapi.ts --check",
+    "otlp:generate": "pnpm --package=@bufbuild/buf@1.73.0 --package=@bufbuild/protoc-gen-es@2.15.0 dlx buf generate"
   },
   "dependencies": {
     "@better-auth/cimd": "1.7.1",
     "@better-auth/drizzle-adapter": "1.7.1",
     "@better-auth/oauth-provider": "1.7.1",
+    "@bufbuild/protobuf": "2.15.0",
     "@databricks/lakebase": "0.5.0",
     "@hono/node-server": "^2.1.0",
     "@hono/zod-openapi": "^1.6.2",

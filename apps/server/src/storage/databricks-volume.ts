@@ -1,6 +1,7 @@
 import type { DatabricksWorkspaceConfig } from "../config";
 import { DatabricksTokenError, DatabricksTokenProvider } from "../databricks/token";
 import { ObjectStorageError, type StorageReadMethod, type ObjectStorage } from "./storage";
+import { log } from "../otel/log";
 
 export class DatabricksVolumeObjectStorage implements ObjectStorage {
   private readonly tokens: DatabricksTokenProvider;
@@ -115,12 +116,5 @@ function logDatabricksStorageFailure(
   status?: number,
   requestId?: string,
 ): void {
-  console.error(JSON.stringify({
-    level: "error",
-    event: "databricks_object_storage_failed",
-    reason,
-    operation,
-    ...(status === undefined ? {} : { status }),
-    ...(requestId ? { requestId } : {}),
-  }));
+  log("error", "databricks_object_storage_failed", { reason, operation, status, requestId: requestId || undefined });
 }

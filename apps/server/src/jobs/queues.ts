@@ -11,6 +11,7 @@ import type { SearchIndexQueueStore } from "../search/index-store";
 import type { SearchEmbedder } from "../search/embedding";
 import type { JobStore } from "./store";
 import { createJobExecutor } from "./execute";
+import { log } from "../otel/log";
 
 export const jobMessageSchema = z.object({ action: z.literal("wake") }).strict();
 export type JobMessage = z.infer<typeof jobMessageSchema>;
@@ -32,7 +33,7 @@ export function createQueueJobs(bindings: WorkerJobBindings, stores: WorkerJobSt
   const executor = createJobExecutor({ ...stores, methods, syncStore, sync, captioner, embedder, memory, chatMemory, personalMemory });
   const notify = async () => {
     try { await bindings.DAHLIA_JOB_QUEUE?.send({ action: "wake" }); }
-    catch { console.warn(JSON.stringify({ event: "job_notification_failed" })); }
+    catch { log("warn", "job_notification_failed"); }
   };
   const processBatch = async (signal: AbortSignal) => {
     const results = await Promise.allSettled(Array.from({ length: concurrency }, () => executor.processOne(signal)));

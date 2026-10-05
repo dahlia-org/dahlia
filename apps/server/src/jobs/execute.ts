@@ -14,6 +14,7 @@ import type { ChatMemoryService } from "../agent/context-service";
 import { isRateLimited, RATE_LIMIT_COOLDOWN_MS } from "./rate-limit";
 import type { BackgroundJob, JobStore } from "./store";
 import type { JobKind } from "./model";
+import { log } from "../otel/log";
 
 export interface JobServices {
   queue: JobStore; summaryJobs: SummaryJobStore; methods: readonly SummaryMethod[];
@@ -98,12 +99,12 @@ export function createJobExecutor(services: JobServices) {
       try {
         await execute(job, AbortSignal.any([signal, AbortSignal.timeout(240_000)]));
         for (const item of job.batch) await services.queue.complete(item);
-        console.info(JSON.stringify({ event: "job_completed", kind: job.kind, durationMs: Date.now() - started,
-          waitMs: started - job.createdAt.getTime(), count: job.batch.length }));
+        log("info", "job_completed", { kind: job.kind, durationMs: Date.now() - started,
+          waitMs: started - job.createdAt.getTime(), count: job.batch.length });
       } catch {
         // On shutdown, leave the lease until expiry: an interrupted upstream may still be running.
         if (!signal.aborted) for (const item of job.batch) await services.queue.retry(item);
-        console.warn(JSON.stringify({ event: "job_failed", kind: job.kind }));
+        log("warn", "job_failed", { kind: job.kind });
       }
       return true;
     },

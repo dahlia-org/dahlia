@@ -29,6 +29,22 @@ describe("Worker initialization", () => {
       .toBe(graceHours === undefined ? 24 : Number(graceHours));
   });
 
+  it("forwards the OTLP exporter bindings", async () => {
+    await expect(initializeWorkerApp({
+      DAHLIA_AUTH_TYPE: "header", DAHLIA_STORAGE_BACKEND: "r2", DAHLIA_DATABASE_TYPE: "postgres",
+      DAHLIA_DATABASE_URL: "postgresql://dahlia.example/dahlia", DAHLIA_OTEL_AUTH: "databricks",
+      OTEL_EXPORTER_OTLP_ENDPOINT: "https://1234.zerobus.us-west-2.cloud.databricks.com", OTEL_SERVICE_NAME: "dahlia-worker",
+      OTEL_EXPORTER_OTLP_TRACES_HEADERS: "x-databricks-zerobus-table-name=dahlia.ops.dahlia_otel_spans",
+      OTEL_EXPORTER_OTLP_LOGS_HEADERS: "x-databricks-zerobus-table-name=dahlia.ops.dahlia_otel_logs",
+      OTEL_EXPORTER_OTLP_METRICS_ENDPOINT: "https://1234.zerobus.us-west-2.cloud.databricks.com/v1/metrics",
+      OTEL_EXPORTER_OTLP_METRICS_HEADERS: "x-databricks-zerobus-table-name=dahlia.ops.dahlia_otel_metrics",
+      DATABRICKS_HOST: "https://workspace.example", DATABRICKS_CLIENT_ID: "client", DATABRICKS_CLIENT_SECRET: "secret",
+    })).rejects.toThrow("seed failed");
+    const otel = vi.mocked(initializeDahliaAuth).mock.calls.at(-1)?.[0].otel;
+    expect([otel?.serviceName, otel?.exporters.metrics]).toEqual(["dahlia-worker", { url: "https://1234.zerobus.us-west-2.cloud.databricks.com/v1/metrics",
+      headers: { "x-databricks-zerobus-table-name": "dahlia.ops.dahlia_otel_metrics" }, zerobus: { workspaceId: "1234", table: "dahlia.ops.dahlia_otel_metrics" } }]);
+  });
+
   it.each([false, true])("requires an image transformer only for configured Memory images (binding: %s)", async (binding) => {
     const env = {
       DAHLIA_AUTH_TYPE: "header", DAHLIA_STORAGE_BACKEND: "r2", DAHLIA_DATABASE_TYPE: "postgres",

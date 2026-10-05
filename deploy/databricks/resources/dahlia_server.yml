@@ -65,6 +65,16 @@ resources:
             value: /Volumes/${resources.volumes.dahlia_storage.catalog_name}/${resources.volumes.dahlia_storage.schema_name}/${resources.volumes.dahlia_storage.name}
           - name: DAHLIA_DATABASE_TYPE
             value: lakebase
+          - name: DAHLIA_OTEL_AUTH
+            value: databricks
+          - name: OTEL_EXPORTER_OTLP_ENDPOINT
+            value: ${var.zerobus_endpoint}
+          - name: OTEL_EXPORTER_OTLP_TRACES_HEADERS
+            value: x-databricks-zerobus-table-name=${resources.schemas.ops_schema.catalog_name}.${resources.schemas.ops_schema.name}.${var.otel_table_prefix}_otel_spans
+          - name: OTEL_EXPORTER_OTLP_LOGS_HEADERS
+            value: x-databricks-zerobus-table-name=${resources.schemas.ops_schema.catalog_name}.${resources.schemas.ops_schema.name}.${var.otel_table_prefix}_otel_logs
+          - name: OTEL_EXPORTER_OTLP_METRICS_HEADERS
+            value: x-databricks-zerobus-table-name=${resources.schemas.ops_schema.catalog_name}.${resources.schemas.ops_schema.name}.${var.otel_table_prefix}_otel_metrics
           - name: DAHLIA_SEARCH_EMBEDDING_MODEL
             value: system.ai.qwen3-embedding-0-6b
           - name: DAHLIA_IMAGE_ANALYSIS_MODEL

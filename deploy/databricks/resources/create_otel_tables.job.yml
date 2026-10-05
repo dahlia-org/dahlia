@@ -1,13 +1,19 @@
 resources:
+  experiments:
+    otel_traces:
+      name: ${workspace.root_path}/dahlia-otel-traces
+
   jobs:
     create_otel_tables:
       name: dahlia-create-otel-tables-${bundle.target}
-      description: Create missing Zerobus OTel tables on demand.
+      description: Create the OTel tables through MLflow's Unity Catalog trace location on demand.
       max_concurrent_runs: 1
       tasks:
         - task_key: create_otel_tables
           notebook_task:
-            notebook_path: ../notebooks/create_otel_tables.sql
+            notebook_path: ../notebooks/create_otel_tables.py
             base_parameters:
               catalog: ${resources.schemas.ops_schema.catalog_name}
               ops_schema: ${resources.schemas.ops_schema.name}
+              table_prefix: ${var.otel_table_prefix}
+              experiment_id: ${resources.experiments.otel_traces.id}

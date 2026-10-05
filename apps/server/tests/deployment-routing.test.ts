@@ -326,6 +326,12 @@ describe("deployment routing", () => {
     expect(resource).toContain("name: DAHLIA_IMAGE_ANALYSIS_MODEL\n            value: system.ai.gpt-6-luna");
     expect(resource).not.toContain("DAHLIA_CAPTIONING_MODEL");
     expect(resource).not.toContain("service_principal_client_id");
+    // Zerobus export is opt-in until the OTel tables and their grants exist.
+    expect(bundle).toMatch(/zerobus_endpoint:[\s\S]*?default: ""/);
+    expect(resource).toContain("name: OTEL_EXPORTER_OTLP_ENDPOINT\n            value: ${var.zerobus_endpoint}");
+    for (const [signal, table] of [["TRACES", "spans"], ["LOGS", "logs"], ["METRICS", "metrics"]]) {
+      expect(resource).toContain(`name: OTEL_EXPORTER_OTLP_${signal}_HEADERS\n            value: x-databricks-zerobus-table-name=\${resources.schemas.ops_schema.catalog_name}.\${resources.schemas.ops_schema.name}.\${var.otel_table_prefix}_otel_${table}`);
+    }
     expect(bundle).toMatch(/prod:[\s\S]*?volumes:[\s\S]*?prevent_destroy: true/);
     expect(bundle).toMatch(/dev:[\s\S]*?purge_on_delete: true[\s\S]*?prod:/);
     expect(bundle).not.toContain("admin_email");

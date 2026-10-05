@@ -16,6 +16,7 @@ import { MeetingSyncService } from "../sync/service";
 import { createImageCaptioner } from "../image-analysis/captioner";
 
 import type { AppConfig } from "../config";
+import { createOtel } from "../otel/service";
 
 export function createNodeServices(config: AppConfig, poolMax?: number, storageConcurrency = NODE_STORAGE_OPERATION_CONCURRENCY) {
   const searchEmbedder = createSearchEmbedder(config);
@@ -46,6 +47,7 @@ export function createNodeServices(config: AppConfig, poolMax?: number, storageC
   const summaryMethods = [createTranscriptSummaryMethod(config, applicationStore.sync, syncService),
     createAudioSummaryMethod(config, applicationStore.sync, syncService)].filter((method) => method !== undefined);
   const summaryService = summaryMethods.length ? new SummaryService(applicationStore.sync, summaryMethods) : undefined;
+  const otel = createOtel(config);
 
-  return { applicationStore, searchEmbedder, objectStorage, searchTokenizer, captioner, syncService, workspaceMemory, personalMemory, chatMemory, summaryMethods, summaryService };
+  return { applicationStore, searchEmbedder, objectStorage, searchTokenizer, captioner, syncService, workspaceMemory, personalMemory, chatMemory, summaryMethods, summaryService, otel };
 }

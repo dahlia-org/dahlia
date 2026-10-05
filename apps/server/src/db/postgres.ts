@@ -1,5 +1,6 @@
 import { drizzle } from "drizzle-orm/node-postgres";
 import { Pool, type PoolConfig } from "pg";
+import { log } from "../otel/log";
 
 export const POSTGRES_MIGRATION_SCHEMA = "drizzle";
 export const POSTGRES_SEARCH_PATH = "app,auth,public";
@@ -33,7 +34,7 @@ export function createPostgresPool(config: string | PoolConfig, max: number): Po
   });
   // pg removes failed idle clients; handle the event so a disconnect cannot terminate the server.
   pool.on("error", () => {
-    console.error(JSON.stringify({ level: "error", event: "database_pool_idle_error" }));
+    log("error", "database_pool_idle_error");
   });
   return pool;
 }

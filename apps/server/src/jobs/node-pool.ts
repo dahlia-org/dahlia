@@ -1,12 +1,13 @@
 import { fork, type ChildProcess } from "node:child_process";
 import type { jobResources } from "./resources";
+import { log } from "../otel/log";
 
 export class JobPool {
   private readonly children: ChildProcess[] = [];
   private stopping = false;
   constructor(private readonly entry: URL, private readonly resources: ReturnType<typeof jobResources>, private readonly failed: () => void) {}
   async start() {
-    console.info(JSON.stringify({ event: "job_pool_starting", ...this.resources, totalPoolMax: this.resources.workers * this.resources.poolMax }));
+    log("info", "job_pool_starting", { ...this.resources, totalPoolMax: this.resources.workers * this.resources.poolMax });
     try {
       await Promise.all(Array.from({ length: this.resources.workers }, () => new Promise<void>((resolve, reject) => {
         const child = fork(this.entry, [], { env: { ...process.env, DAHLIA_JOB_CONCURRENCY: String(this.resources.concurrency) } });

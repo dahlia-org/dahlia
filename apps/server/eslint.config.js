@@ -2,7 +2,7 @@ import eslint from "@eslint/js";
 import tseslint from "typescript-eslint";
 
 export default tseslint.config(
-  { ignores: ["dist", "coverage", "node_modules", "worker-configuration.d.ts", "eslint.config.js", "scripts/**/*.mjs"] },
+  { ignores: ["dist", "coverage", "node_modules", "worker-configuration.d.ts", "eslint.config.js", "scripts/**/*.mjs", "src/otel/gen"] },
   eslint.configs.recommended,
   ...tseslint.configs.recommendedTypeChecked,
   {

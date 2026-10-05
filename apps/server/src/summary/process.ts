@@ -2,6 +2,7 @@ import type { MeetingSyncService } from "../sync/service";
 import { SyncTransactionError } from "../sync/store";
 import { SummaryError, type SummaryMethod, type SummaryStage } from "./model";
 import type { SummaryJobReference, SummaryJobStore } from "./store";
+import { log } from "../otel/log";
 
 export async function processSummaryJob(
   jobs: SummaryJobStore, methods: readonly SummaryMethod[], sync: MeetingSyncService,
@@ -11,7 +12,7 @@ export async function processSummaryJob(
   if (!job) return false;
   const startedAt = Date.now();
   let phase: SummaryStage = job.stage ?? (job.method === "audio" ? "generating" : "summarizing");
-  console.info(JSON.stringify({ level: "info", event: "summary_job_started", method: job.method, attempt: job.attempts }));
+  log("info", "summary_job_started", { method: job.method, attempt: job.attempts });
   const signal = AbortSignal.any([abortSignal, AbortSignal.timeout(240_000)]);
   const processingFailure = (error: unknown): never => {
     throw error instanceof SummaryError ? error : new SummaryError("summary_processing_failed", true);
@@ -36,8 +37,7 @@ export async function processSummaryJob(
       if (!saved) throw new SummaryError("summary_job_inactive");
       job.transcriptResult = { transcriptId: saved.id, version: String(saved.version) };
       if (transcriptionOnly) {
-        console.info(JSON.stringify({ level: "info", event: "summary_job_succeeded",
-          attempt: job.attempts, durationMs: Date.now() - startedAt }));
+        log("info", "summary_job_succeeded", { attempt: job.attempts, durationMs: Date.now() - startedAt });
         return true;
       }
     }
@@ -47,15 +47,14 @@ export async function processSummaryJob(
     const document = await generator.generate(job, signal).catch(processingFailure);
     await advance("saving");
     const saved = await sync.completeSummary({ userId: job.ownerUserId, source: "accounts" }, job, document, method);
-    console.info(JSON.stringify({ level: "info", event: saved ? "summary_job_succeeded" : "summary_job_lease_lost",
-      attempt: job.attempts, durationMs: Date.now() - startedAt }));
+    log("info", saved ? "summary_job_succeeded" : "summary_job_lease_lost", { attempt: job.attempts, durationMs: Date.now() - startedAt });
   } catch (error) {
     if (!(error instanceof SummaryError) && !(error instanceof SyncTransactionError && error.status < 500) && !signal.aborted) throw error;
     const failure = error instanceof SummaryError ? error : new SummaryError("summary_processing_failed", true);
-    console.warn(JSON.stringify({ level: "warn", event: "summary_job_failed", phase,
+    log("warn", "summary_job_failed", { phase,
       code: /^[a-z0-9_]{1,80}$/.test(failure.code) ? failure.code : "summary_processing_failed",
       attempt: job.attempts, retryable: failure.retryable, requestId: failure.requestId,
-      durationMs: Date.now() - startedAt }));
+      durationMs: Date.now() - startedAt });
     await jobs.fail(job, failure.code, failure.retryable);
   }
   return true;
