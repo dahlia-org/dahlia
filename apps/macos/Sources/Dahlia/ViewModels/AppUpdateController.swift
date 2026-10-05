@@ -10,6 +10,8 @@ final class AppUpdateController: NSObject, @MainActor SPUUpdaterDelegate {
     private static let updateInformationCheckInterval: Duration = .seconds(60 * 60)
 
     private(set) var availableVersion: String?
+    @ObservationIgnored private var isCheckingUpdateInformation = false
+    @ObservationIgnored private(set) var isUpdateDialogPending = false
 
     @ObservationIgnored private lazy var updaterController = SPUStandardUpdaterController(
         startingUpdater: false,
@@ -39,15 +41,32 @@ final class AppUpdateController: NSObject, @MainActor SPUUpdaterDelegate {
         }
     }
 
+    /// Sparkle ignores `checkForUpdates()` while the silent probe runs, so the click waits for that probe to finish.
     func showUpdateDialog() {
-        updater.checkForUpdates()
+        if isCheckingUpdateInformation {
+            isUpdateDialogPending = true
+        } else {
+            updater.checkForUpdates()
+        }
     }
 
-    private func checkForUpdateInformation() {
+    func checkForUpdateInformation() {
         guard !updater.sessionInProgress else {
             return
         }
+        isCheckingUpdateInformation = true
         updater.checkForUpdateInformation()
+    }
+
+    func updater(_ updater: SPUUpdater, didFinishUpdateCycleFor updateCheck: SPUUpdateCheck, error _: (any Error)?) {
+        guard updateCheck == .updateInformation else {
+            return
+        }
+        isCheckingUpdateInformation = false
+        if isUpdateDialogPending {
+            isUpdateDialogPending = false
+            updater.checkForUpdates()
+        }
     }
 
     func updater(_: SPUUpdater, didFindValidUpdate item: SUAppcastItem) {

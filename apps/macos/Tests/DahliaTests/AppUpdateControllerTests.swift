@@ -74,6 +74,30 @@ import Sparkle
         }
 
         @Test
+        func updateDialogRequestedDuringProbeWaitsForProbeToFinish() {
+            let controller = AppUpdateController(shouldStartUpdater: false)
+            controller.checkForUpdateInformation()
+
+            controller.showUpdateDialog()
+            #expect(controller.isUpdateDialogPending)
+
+            controller.updater(controller.updater, didFinishUpdateCycleFor: .updates, error: nil)
+            #expect(controller.isUpdateDialogPending)
+
+            controller.updater(controller.updater, didFinishUpdateCycleFor: .updateInformation, error: nil)
+            #expect(!controller.isUpdateDialogPending)
+        }
+
+        @Test
+        func updateDialogRequestedWithoutProbeIsNotDeferred() {
+            let controller = AppUpdateController(shouldStartUpdater: false)
+
+            controller.showUpdateDialog()
+
+            #expect(!controller.isUpdateDialogPending)
+        }
+
+        @Test
         func sparkleSchedulerStaysDisabled() throws {
             let infoPlistURL = URL(filePath: #filePath)
                 .deletingLastPathComponent()
