@@ -35,6 +35,8 @@ When the user asks to cut or publish a release, build and notarize the DMG by de
 
 Do not run notarization for a check, explanation, or preparation-only request. If the user supplies an already-notarized `Dahlia.dmg`, do not rebuild it; continue with the publishing script's validation. Do not claim notarization succeeded from submission alone; the script must staple and validate the ticket. If credentials are unavailable, stop and provide the command for the user to run.
 
+If notarization stalls or fails, read [references/troubleshooting.md](references/troubleshooting.md) before retrying. Distinguish local DMG checks, submission/upload, and Apple processing; preserve the signed artifact and all release validation gates.
+
 ## Publish
 
 Show both note files and the target version to the user. If publication has not already been authorized, obtain confirmation before publishing. An explicit publish request or `$release-dahlia-app --auto-approve` authorizes publication after all required gates; do not ask again for the same action. Then run:
