@@ -237,7 +237,7 @@ struct DahliaApp: App {
                 ServerAccountSettingsModel.shared.refreshAll()
                 Task { await meetingSyncWorker.applicationBecameActive() }
             }
-            .onChange(of: hasNoWorkspaces) { _, hasNoWorkspaces in
+            .onChange(of: hasNoWorkspaces, initial: true) { _, hasNoWorkspaces in
                 if hasNoWorkspaces, mainWindowNavigation.setupTourMode == nil {
                     mainWindowNavigation.presentInitialSetupTour()
                 }
