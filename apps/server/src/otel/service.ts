@@ -2,7 +2,7 @@ import type { AppConfig, DatabricksWorkspaceConfig, OtelConfig, OtlpTarget } fro
 import { DatabricksTokenProvider, tokenUntilAborted } from "../databricks/token";
 import { RequestError } from "../storage/upload";
 import { log, type LogFields, type LogLevel } from "./log";
-import { anyValue, logsProtobuf, OTLP_SIGNALS, otlpJsonToProtobuf, otlpResponseJson, type OtlpLogRecord, type OtlpSignal } from "./otlp";
+import { anyValue, logsProtobuf, OTLP_SIGNALS, otlpJsonToProtobuf, otlpResponseJson, otlpResponseProtobuf, type OtlpLogRecord, type OtlpSignal } from "./otlp";
 
 export const OTLP_MAX_REQUEST_BYTES = 4 * 1024 * 1024;
 /** Decompressed protobuf is forwarded without parsing; OTLP/JSON keeps the wire limit because it is parsed synchronously. */
@@ -149,7 +149,8 @@ export class OtelService {
       throw status === 400 ? new RequestError(400, "invalid_otlp_request") : new RequestError(503, "otel_unavailable");
     }
     // Relay the upstream response so senders see partial_success, in the encoding of their request.
-    return json ? Response.json(otlpResponseJson(signal, result)) : new Response(result, { headers: { "content-type": "application/x-protobuf" } });
+    return json ? Response.json(otlpResponseJson(signal, result))
+      : new Response(otlpResponseProtobuf(signal, result), { headers: { "content-type": "application/x-protobuf" } });
   }
 
   /** Buffers one server log record when logs are exported; export is best-effort and never awaited by the caller. */

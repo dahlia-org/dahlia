@@ -129,6 +129,10 @@ describe("OTLP/HTTP receiver", () => {
       expect(new Uint8Array(await partial.arrayBuffer())).toEqual(response);
       expect(await (await post("traces", JSON.stringify(traces), { "content-type": "application/json" })).json())
         .toEqual({ partialSuccess: { rejectedSpans: "2", errorMessage: "dropped" } });
+      // A 2xx body that is not an OTLP response becomes an empty response in either encoding.
+      response = new TextEncoder().encode("OK");
+      expect((await (await post("traces", bytes, protobuf)).arrayBuffer()).byteLength).toBe(0);
+      expect(await (await post("traces", JSON.stringify(traces), { "content-type": "application/json" })).json()).toEqual({});
 
       // Without a backend the routes do not exist.
       expect((await createApp({ config, authStore: store }).request("/api/v1/traces", { method: "POST", body: bytes, headers: { ...identity, ...protobuf } })).status).toBe(404);

@@ -36,12 +36,21 @@ export function otlpJsonToProtobuf(signal: OtlpSignal, json: string): Uint8Array
   }
 }
 
-/** OTLP/JSON of an upstream Export*ServiceResponse, so its partial_success reaches JSON senders; `{}` when unreadable. */
+// An upstream Export*ServiceResponse re-encoded for the sender, so its partial_success arrives in the request's encoding.
+// A 2xx body that is not an OTLP response becomes an empty response, which senders treat as full success.
 export function otlpResponseJson(signal: OtlpSignal, protobuf: Uint8Array): JsonValue {
   try {
     return toJson(responses[signal], fromBinary(responses[signal], protobuf));
   } catch {
     return {};
+  }
+}
+
+export function otlpResponseProtobuf(signal: OtlpSignal, protobuf: Uint8Array): Uint8Array<ArrayBuffer> {
+  try {
+    return toBinary(responses[signal], fromBinary(responses[signal], protobuf));
+  } catch {
+    return new Uint8Array();
   }
 }
 
