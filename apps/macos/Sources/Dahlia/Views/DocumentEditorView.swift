@@ -493,7 +493,7 @@ struct DocumentWebEditor: NSViewRepresentable {
             guard let coordinator, let view = coordinator.view else { return }
             try await coordinator.flush(view)
         }
-        if let url = Bundle.module.url(forResource: "document-editor", withExtension: "html") {
+        if let url = Bundle.appModule.url(forResource: "document-editor", withExtension: "html") {
             view.loadFileURL(url, allowingReadAccessTo: url.deletingLastPathComponent())
         }
         return view

@@ -20,7 +20,7 @@ public enum PublicIDWire {
 
     private static let contract: Contract = {
         do {
-            guard let url = Bundle.module.url(forResource: "PublicIDContract", withExtension: "json") else {
+            guard let url = Bundle.runtimeSupport.url(forResource: "PublicIDContract", withExtension: "json") else {
                 preconditionFailure("Missing public ID contract")
             }
             return try JSONDecoder().decode(Contract.self, from: Data(contentsOf: url))

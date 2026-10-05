@@ -36,6 +36,16 @@ validate_telemetrydeck_adapter "$telemetrydeck_mcp_adapter" "mcpHelper"
 echo "Telemetry policy: done"
 
 echo ""
+echo "=== Resource bundle policy ==="
+# SPM の Bundle.module は配布版 .app の Contents/Resources を探さず fatalError する。
+if grep -RnE 'Bundle\.module|bundle: \.module' apps/macos/Sources --include='*.swift' \
+    | grep -vE '/Bundle\+(AppModule|RuntimeSupport)\.swift:'; then
+    echo "error: use Bundle.appModule or Bundle.runtimeSupport instead of Bundle.module" >&2
+    exit 1
+fi
+echo "Resource bundle policy: done"
+
+echo ""
 echo "=== SwiftLint ==="
 if ! command -v swiftlint &>/dev/null; then
     if [[ "$is_ci" == "true" ]]; then
