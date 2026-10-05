@@ -90,10 +90,10 @@
             defer { try? FileManager.default.removeItem(at: root) }
             let socket = root.appending(path: "text.sock")
             let pages = Mutex(0)
-            let broker = DahliaImageBrokerServer(helperURL: brokerTestExecutableURL()) { _ in
+            let broker = DahliaImageBrokerServer(helperURL: brokerTestExecutableURL(), imageDeadline: .milliseconds(500)) { _ in
                 // Simulated healthy page latency; the aggregate exceeds both image IPC deadlines.
                 for _ in 0 ..< 3 {
-                    try await Task.sleep(for: .seconds(12))
+                    try await Task.sleep(for: .milliseconds(600))
                     pages.withLock { $0 += 1 }
                 }
                 return Data("complete transcript".utf8)
@@ -101,7 +101,9 @@
             try broker.start(socketURL: socket)
             defer { broker.stop() }
             let request = DahliaImageBrokerProtocol.Request(workspaceId: .v7(), text: .init(operation: .transcript, meetingId: .v7()))
-            let data = try await withBrokerClientThread { try DahliaImageBrokerProtocol.requestImage(request, socketURL: socket) }
+            let data = try await withBrokerClientThread {
+                try DahliaImageBrokerProtocol.requestImage(request, socketURL: socket, imageTimeout: 1)
+            }
             #expect(data == Data("complete transcript".utf8))
             #expect(pages.withLock { $0 } == 3)
         }

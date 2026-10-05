@@ -132,6 +132,7 @@ extension DahliaMCPServer {
 
     private func scopedRead(name: String, arguments: [String: Any], workspaceID: UUID) throws -> [String: Any] {
         let server = DahliaMCPServer(store: store.scoped(to: workspaceID))
+        server.transcriptWaitTimeout = transcriptWaitTimeout
         return try server.executeScopedTool(named: name, arguments: arguments)
     }
 

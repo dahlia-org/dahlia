@@ -63,7 +63,7 @@ import GRDB
             let decoded = try JSONDecoder.backupDecoder.decode(PendingDatabaseRestore.self, from: Data(contentsOf:
                 BackupService.pendingRestoreURL(applicationSupportURL: fixture.testRootURL)))
             #expect(decoded == marker)
-            let outcome = BackupRestoreStartupProcessor.applyPendingRestore(applicationSupportURL: fixture.testRootURL, databaseURL: databaseURL)
+            let outcome = await applyPendingRestoreOffMainActor(applicationSupportURL: fixture.testRootURL, databaseURL: databaseURL)
             guard case let .completed(results) = outcome,
                   results.allSatisfy({ $0.error == nil }) else { Issue.record("Mixed restore failed: \(outcome)")
                 return
@@ -93,7 +93,7 @@ import GRDB
                 _ = try await service.prepareRestore(from: generation, requests: metadata.workspaces.map {
                     WorkspaceBackupRestoreRequest(sourceWorkspaceId: $0.id, targetWorkspaceId: .v7(), mode: .newWorkspace, name: "Same")
                 })
-                let repeated = BackupRestoreStartupProcessor.applyPendingRestore(applicationSupportURL: fixture.testRootURL, databaseURL: databaseURL)
+                let repeated = await applyPendingRestoreOffMainActor(applicationSupportURL: fixture.testRootURL, databaseURL: databaseURL)
                 guard case let .completed(results) = repeated,
                       results.allSatisfy({ $0.error == nil }) else { Issue.record("Repeated restore failed: \(repeated)")
                     return
@@ -161,7 +161,7 @@ import GRDB
                 try FileManager.default.removeItem(at: directory)
                 try Data("blocks safety backup".utf8).write(to: directory)
             }
-            let outcome = BackupRestoreStartupProcessor.applyPendingRestore(applicationSupportURL: fixture.testRootURL, databaseURL: databaseURL)
+            let outcome = await applyPendingRestoreOffMainActor(applicationSupportURL: fixture.testRootURL, databaseURL: databaseURL)
             guard case let .completed(results) = outcome else { Issue.record("Expected per-workspace results: \(outcome)")
                 return
             }

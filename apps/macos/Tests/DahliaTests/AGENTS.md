@@ -36,6 +36,8 @@ Run the targeted suite first. Expand to the full suite for changes with broad ef
 - Treat an initial observation as baseline state when only later changes should trigger work. Test the initial value and a later change separately so delayed work cannot cancel unrelated operations.
 - Use `#require` before indexing asynchronous results. A missing event should fail the test, not crash the test process.
 - Keep polling deadlines bounded and assert the final state after the wait. Do not hide flakes with retries or longer timeouts.
+- Do not wait out a production deadline, timeout, or busy wait in real time. Inject a shorter duration that preserves the ordering the test proves.
+- All `@MainActor` suites share one executor in the parallel run. Run heavy synchronous database or file work from such a suite in `Task.detached` so it does not stall every other main-actor test.
 - Tests share process-wide state and run concurrently in CI. Restore global settings and avoid assumptions that unrelated suites are idle; production observers should suppress duplicate values when repeated notifications are valid.
 - When injecting a fake platform service, inject its capability providers too. A fake speech recognizer must not fall through to live Speech locale discovery, which can multiply XPC work under parallel tests.
 - Test Speech coordination through injected operations. Do not construct live Speech framework objects when the test only needs to exercise Dahlia's cancellation or coalescing state.

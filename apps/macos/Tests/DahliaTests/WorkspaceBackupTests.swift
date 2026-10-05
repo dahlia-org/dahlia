@@ -104,7 +104,7 @@ import GRDB
                 try db.execute(sql: "UPDATE workspaces SET name = 'Other changed after preparation' WHERE id = ?", arguments: [other.id])
             }
             try lateWriter.close()
-            let outcome = BackupRestoreStartupProcessor.applyPendingRestore(applicationSupportURL: fixture.testRootURL, databaseURL: databaseURL)
+            let outcome = await applyPendingRestoreOffMainActor(applicationSupportURL: fixture.testRootURL, databaseURL: databaseURL)
             guard case let .completed(results) = outcome, results.allSatisfy({ $0.error == nil }) else { Issue.record("Restore failed: \(outcome)")
                 return
             }
@@ -182,7 +182,7 @@ import GRDB
                 _ = try await service.prepareRestore(from: generation, requests: [WorkspaceBackupRestoreRequest(
                     sourceWorkspaceId: fixture.meeting.workspaceId, targetWorkspaceId: .v7(), mode: .newWorkspace, name: "Same name"
                 )])
-                let outcome = BackupRestoreStartupProcessor.applyPendingRestore(applicationSupportURL: fixture.testRootURL, databaseURL: databaseURL)
+                let outcome = await applyPendingRestoreOffMainActor(applicationSupportURL: fixture.testRootURL, databaseURL: databaseURL)
                 guard case let .completed(results) = outcome,
                       results.allSatisfy({ $0.error == nil }) else { Issue.record("Restore failed: \(outcome)")
                     return
@@ -245,7 +245,7 @@ import GRDB
             let backupDirectory = fixture.testRootURL.appending(path: BackupService.backupDirectoryName)
             try FileManager.default.removeItem(at: backupDirectory)
             try Data("blocks directory creation".utf8).write(to: backupDirectory)
-            let outcome = BackupRestoreStartupProcessor.applyPendingRestore(applicationSupportURL: fixture.testRootURL, databaseURL: databaseURL)
+            let outcome = await applyPendingRestoreOffMainActor(applicationSupportURL: fixture.testRootURL, databaseURL: databaseURL)
             guard case let .completed(results) = outcome, results.count == 1, results[0].error != nil else { Issue.record("Expected safety failure")
                 return
             }
@@ -312,7 +312,7 @@ import GRDB
             let live = try AppDatabaseManager(path: databaseURL.path)
             try fixture.database.dbQueue.backup(to: live.dbQueue)
             try live.close()
-            let outcome = BackupRestoreStartupProcessor.applyPendingRestore(applicationSupportURL: fixture.testRootURL, databaseURL: databaseURL)
+            let outcome = await applyPendingRestoreOffMainActor(applicationSupportURL: fixture.testRootURL, databaseURL: databaseURL)
             guard case let .completed(results) = outcome, results.count == 1,
                   results[0].error != nil else { Issue.record("Invalid hierarchy must fail, not omit rows")
                 return

@@ -18,10 +18,16 @@ final class DahliaImageBrokerServer: Sendable {
 
     private let state = Mutex(State())
     private let helperURL: URL
+    private let imageDeadline: DispatchTimeInterval
     private let resolver: Resolver
 
-    init(helperURL: URL = DahliaMCPBundle.expectedExecutableURL(), resolver: @escaping Resolver) {
+    init(
+        helperURL: URL = DahliaMCPBundle.expectedExecutableURL(),
+        imageDeadline: DispatchTimeInterval = .seconds(30),
+        resolver: @escaping Resolver
+    ) {
         self.helperURL = helperURL.resolvingSymlinksInPath()
+        self.imageDeadline = imageDeadline
         self.resolver = resolver
     }
 
@@ -149,7 +155,7 @@ final class DahliaImageBrokerServer: Sendable {
             // Text hydration has per-page network deadlines; its total duration depends on the transcript size.
             let deadline: DispatchTime = request.text?.operation == .touch
                 ? .now() + .seconds(2)
-                : request.text == nil ? .now() + .seconds(30) : .distantFuture
+                : request.text == nil ? .now() + imageDeadline : .distantFuture
             guard semaphore.wait(timeout: deadline) == .success else {
                 task.cancel()
                 throw ScreenshotContentError.unavailable

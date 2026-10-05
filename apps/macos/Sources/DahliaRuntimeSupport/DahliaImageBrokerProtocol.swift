@@ -42,12 +42,12 @@ public enum DahliaImageBrokerProtocol {
             .deletingLastPathComponent().appending(path: "images.sock")
     }
 
-    public static func requestImage(_ request: Request, socketURL: URL = socketURL()) throws -> Data {
+    public static func requestImage(_ request: Request, socketURL: URL = socketURL(), imageTimeout: Int = 35) throws -> Data {
         let descriptor = socket(AF_UNIX, SOCK_STREAM, 0)
         guard descriptor >= 0 else { throw POSIXError(.EIO) }
         defer { Darwin.close(descriptor) }
         // Full text uses the app's per-page network deadlines; keep request writes bounded.
-        let receiveTimeout = request.text?.operation == .touch ? 2 : request.text == nil ? 35 : 0
+        let receiveTimeout = request.text?.operation == .touch ? 2 : request.text == nil ? imageTimeout : 0
         try configure(descriptor, timeout: 35, receiveTimeout: receiveTimeout)
         var address = try DahliaTokenBrokerProtocol.unixAddress(path: socketURL.path)
         let connected = withUnsafePointer(to: &address) { pointer in

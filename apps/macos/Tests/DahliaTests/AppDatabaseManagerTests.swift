@@ -103,21 +103,24 @@ import os
         }
 
         @Test
-        func walContentionFallsBackToThePrimaryConnection() throws {
+        func walContentionFallsBackToThePrimaryConnection() async throws {
             let databaseDirectory = FileManager.default.temporaryDirectory
                 .appending(path: "dahlia-database-wal-contention-\(UUID.v7().uuidString)")
             let databaseURL = databaseDirectory.appending(path: "dahlia.sqlite")
             defer { try? FileManager.default.removeItem(at: databaseDirectory) }
 
             let lockingManager = try AppDatabaseManager(path: databaseURL.path)
-            try lockingManager.dbQueue.read { db in
-                _ = try Int.fetchOne(db, sql: "SELECT COUNT(*) FROM meetings")
-                let fallbackManager = try AppDatabaseManager(
-                    path: databaseURL.path,
-                    enablesConcurrentSearch: true
-                )
-                #expect(fallbackManager.searchDBQueue === fallbackManager.dbQueue)
-            }
+            // The fallback waits out the busy timeout; keep that wait off the shared main actor.
+            try await Task.detached {
+                try lockingManager.dbQueue.read { db in
+                    _ = try Int.fetchOne(db, sql: "SELECT COUNT(*) FROM meetings")
+                    let fallbackManager = try AppDatabaseManager(
+                        path: databaseURL.path,
+                        enablesConcurrentSearch: true
+                    )
+                    #expect(fallbackManager.searchDBQueue === fallbackManager.dbQueue)
+                }
+            }.value
         }
 
         @Test

@@ -3,6 +3,14 @@ import GRDB
 @testable import Dahlia
 
 #if canImport(Testing)
+    /// Restore is synchronous database work. Running it on a `@MainActor` suite's executor would
+    /// stall every other main-actor test in the parallel run.
+    func applyPendingRestoreOffMainActor(applicationSupportURL: URL, databaseURL: URL) async -> BackupRestoreStartupOutcome {
+        await Task.detached {
+            BackupRestoreStartupProcessor.applyPendingRestore(applicationSupportURL: applicationSupportURL, databaseURL: databaseURL)
+        }.value
+    }
+
     func extractedBackupDatabase(_ url: URL) throws -> URL {
         try BackupArchive.withExtracted(at: url) { directory, _ in
             let copy = url.deletingLastPathComponent().appending(path: "test-\(UUID.v7()).sqlite")
