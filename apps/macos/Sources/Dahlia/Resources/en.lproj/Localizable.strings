@@ -1751,6 +1751,7 @@
 "documentPublishConflict" = "These meetings already have shared Notes. Their private copies were retained.";
 "documentMigrationPrivate" = "Notes remain private on this Mac. After the move, publish them explicitly from Workspace settings to share them or include them in Server summaries.";
 "document.recovery.title" = "Preserved deleted paragraphs";
+"document.recovery.empty" = "There are no deleted paragraphs to restore.";
 "document.restore" = "Insert as new paragraphs";
 "document.editing" = "Editing: ";
 "document.keepLocal" = "Unsynced edits or private notes remain. Move this workspace to the Local Account to keep them.";

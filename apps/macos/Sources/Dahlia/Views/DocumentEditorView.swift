@@ -45,7 +45,7 @@ final class DocumentEditorModel {
     private var recoveryBefore: Int64?
     private var recoveryPages: [Int64?] = []
     var recoveryPrevious: Bool { !recoveryPages.isEmpty }
-    var fullRecoveryText: String?
+    var fullRecovery: (id: UUID, text: String)?
     private var recoveryTask: Task<Void, Never>?
     var people: [String] = []
     var recoveryText: [UUID: String] = [:]
@@ -313,7 +313,7 @@ final class DocumentEditorModel {
         recoveryTask = nil
         guard open, let meetingID else { recoveries = []
             recoveryText = [:]
-            fullRecoveryText = nil
+            fullRecovery = nil
             return
         }
         recoveryBefore = nil
@@ -335,7 +335,7 @@ final class DocumentEditorModel {
     }
 
     func nextRecoveryPage() {
-        fullRecoveryText = nil
+        fullRecovery = nil
         guard let next = recoveryNext else { return }
         recoveryPages.append(recoveryBefore)
         recoveryBefore = next
@@ -343,7 +343,7 @@ final class DocumentEditorModel {
     }
 
     func previousRecoveryPage() {
-        fullRecoveryText = nil
+        fullRecovery = nil
         guard !recoveryPages.isEmpty else { return }
         recoveryBefore = recoveryPages.removeLast()
         Task { await refreshRecoveries() }
@@ -354,7 +354,7 @@ final class DocumentEditorModel {
         Task {
             do {
                 let text = try await persistence.recoveryText(id: recovery.id)
-                if recoveryOpen, recoveryBefore == before { fullRecoveryText = text }
+                if recoveryOpen, recoveryBefore == before { fullRecovery = (recovery.id, text) }
             } catch { self.error = L10n.documentSaveFailed }
         }
     }
@@ -416,24 +416,6 @@ struct DocumentEditorView: View {
                 .padding(.horizontal, -DahliaDesign.tabContentInset)
             } else {
                 ProgressView().frame(maxWidth: .infinity, maxHeight: .infinity)
-            }
-            DisclosureGroup(L10n.documentRecoveryTitle, isExpanded: Binding(get: { model.recoveryOpen }, set: { model.setRecoveryOpen($0) })) {
-                HStack {
-                    Button(L10n.documentHistoryPrevious) { model.previousRecoveryPage() }.disabled(!model.recoveryPrevious)
-                    Button(L10n.documentHistoryNext) { model.nextRecoveryPage() }.disabled(model.recoveryNext == nil)
-                }
-                ScrollView {
-                    ForEach(model.recoveries, id: \.id) { recovery in
-                        VStack(alignment: .leading) {
-                            Text(model.recoveryText[recovery.id] ?? "").textSelection(.enabled)
-                            HStack {
-                                Button(L10n.documentHistoryFullText) { model.showRecovery(recovery) }
-                                if editable { Button(L10n.documentRestore) { model.restore(recovery) } }
-                            }
-                        }
-                    }
-                    if let text = model.fullRecoveryText { Text(text).textSelection(.enabled) }
-                }.frame(maxHeight: 160)
             }
         }
         .onAppear { onModelChange(model, true) }

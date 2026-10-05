@@ -10,6 +10,7 @@ struct MainDetailHeader<NavigationContent: View>: View {
     let textContentState: TextContentAvailability.State?
     let retryTextContent: () -> Void
     var notesEditorModel: DocumentEditorModel?
+    var onShowNotesHistory: () -> Void = {}
     @ViewBuilder let navigationContent: NavigationContent
 
     var body: some View {
@@ -31,6 +32,13 @@ struct MainDetailHeader<NavigationContent: View>: View {
                 }
             }
             .frame(width: DahliaDesign.windowHeaderControlSize)
+            if notesEditorModel?.meetingID != nil {
+                DahliaWindowHeaderIconButton(
+                    label: L10n.documentRecoveryTitle,
+                    systemImage: "clock.arrow.circlepath",
+                    action: onShowNotesHistory
+                )
+            }
             if reservesChatControl {
                 Color.clear
                     .frame(width: DahliaDesign.windowHeaderControlSize)

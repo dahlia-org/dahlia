@@ -1,8 +1,10 @@
 import { syncNotifications, type SyncNotifications } from "../api/sync-notifications";
 import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
-import { AlertTriangle } from "lucide-react";
+import { AlertTriangle, History } from "lucide-react";
+import { Tooltip } from "../components/Tooltip";
 import { Button } from "../components/ui/button";
+import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "../components/ui/dialog";
 import { Popover, PopoverContent, PopoverTrigger } from "../components/ui/popover";
 import { EditorContent, useEditor } from "@tiptap/react";
 import * as Y from "yjs";
@@ -407,19 +409,47 @@ function DocumentEditor({ controller, editable, statusSlot }: { controller: Brow
     {controller.people.length > 0 && <span className="max-w-48 truncate max-lg:hidden">{uiText("Editing: ", "編集中: ")}{controller.people.join(", ")}</span>}
     <NotesStatus status={syncStatus}
       error={limitError || controller.error} retry={controller.error ? () => { void controller.sync().catch(() => {}); } : undefined} />
+    <RecoveryHistory controller={controller} editable={editable} />
   </>;
   return <div className="space-y-3">
     {statusSlot ? createPortal(status, statusSlot) : <div className="flex items-center gap-3 text-xs" role="status">{status}</div>}
     {/* Clicking anywhere in the tall area below the text places the caret. `!` overrides the unlayered editor.css. */}
     <EditorContent editor={editor} className="[&_.tiptap]:min-h-[50vh]!" />
-    <details onToggle={(event) => { void controller.toggleRecoveries(event.currentTarget.open).catch(() => {}); }}><summary>{uiText("Preserved deleted paragraphs", "削除された段落の復元用コピー")}</summary>
-      <div className="flex gap-3"><button disabled={!controller.recoveryPrevious} className="underline hover:no-underline disabled:opacity-50" onClick={() => { void controller.previousRecoveryPage().catch(() => {}); }}>{uiText("Previous", "前へ")}</button><button disabled={!controller.recoveryNext} className="underline hover:no-underline disabled:opacity-50" onClick={() => { void controller.nextRecoveryPage().catch(() => {}); }}>{uiText("Next", "次へ")}</button></div>
-      {[...controller.recoveries.values()].map((recovery) => <div key={recovery.id} className="my-3 border-t pt-3"><pre className="whitespace-pre-wrap">{recovery.blocks.map((block) => block.text).join("\n").slice(0, 2000)}</pre>
-        <RecoveryText recovery={recovery} />
-        {editable && <button className="underline hover:no-underline" onClick={() => { void controller.restore(recovery).catch(() => {}); }}>{uiText("Insert as new paragraphs", "新しい段落として挿入")}</button>}
-      </div>)}
-    </details>
   </div>;
+}
+
+function RecoveryHistory({ controller, editable }: { controller: BrowserDocument; editable: boolean }) {
+  const [open, setOpen] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const title = uiText("Preserved deleted paragraphs", "削除された段落の復元用コピー");
+  const toggle = (value: boolean) => {
+    setOpen(value); setLoading(value);
+    void controller.toggleRecoveries(value).catch(() => {}).finally(() => setLoading(false));
+  };
+  const recoveries = [...controller.recoveries.values()];
+  return <Dialog open={open} onOpenChange={toggle}>
+    <Tooltip label={title}><DialogTrigger asChild>
+      <Button variant="ghost" size="icon" className="text-muted-foreground" aria-label={title}><History className="size-4" /></Button>
+    </DialogTrigger></Tooltip>
+    <DialogContent className="max-w-xl text-sm" aria-describedby={undefined}>
+      <DialogHeader><DialogTitle>{title}</DialogTitle></DialogHeader>
+      <div className="max-h-[55dvh] divide-y overflow-y-auto" aria-busy={loading}>
+        {!recoveries.length && <p className="py-4 text-muted-foreground" role="status">
+          {loading ? uiText("Loading…", "読み込み中…") : uiText("There are no deleted paragraphs to restore.", "復元できる削除済みの段落はありません。")}</p>}
+        {recoveries.map((recovery) => <div key={recovery.id} className="grid gap-2 py-3"><pre className="whitespace-pre-wrap break-words font-sans">{recovery.blocks.map((block) => block.text).join("\n").slice(0, 2000)}</pre>
+          <RecoveryText recovery={recovery} />
+          {editable && <div><Button variant="outline" size="sm" onClick={() => { toggle(false); void controller.restore(recovery).catch(() => {}); }}>{uiText("Insert as new paragraphs", "新しい段落として挿入")}</Button></div>}
+        </div>)}
+      </div>
+      <DialogFooter className="sm:justify-between">
+        <div className="flex gap-2">
+          <Button variant="outline" size="sm" disabled={!controller.recoveryPrevious} onClick={() => { void controller.previousRecoveryPage().catch(() => {}); }}>{uiText("Previous", "前へ")}</Button>
+          <Button variant="outline" size="sm" disabled={!controller.recoveryNext} onClick={() => { void controller.nextRecoveryPage().catch(() => {}); }}>{uiText("Next", "次へ")}</Button>
+        </div>
+        <Button size="sm" onClick={() => toggle(false)}>{uiText("Close", "閉じる")}</Button>
+      </DialogFooter>
+    </DialogContent>
+  </Dialog>;
 }
 
 function RecoveryText({ recovery }: { recovery: DocumentRecovery }) {
