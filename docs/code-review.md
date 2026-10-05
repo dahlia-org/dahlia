@@ -1,6 +1,6 @@
 # Dahlia コードレビューガイド
 
-この文書は、Codex managed review、ローカルの `codex review`、Claude の `/code-review`、実装後のセルフレビューで共有する。
+この文書は、Codex managed review、Pullfrog の PR review、ローカルの `codex review`、Claude の `/code-review`、実装後のセルフレビューで共有する。
 重大なレビュー規則は最も近い `AGENTS.md` の `## Code Review Rules`、技術的な正本は `ARCHITECTURE.md` と関連 ADR に置き、
 ここでは finding の採用基準とレビュー時の確認方法を定める。
 
@@ -50,6 +50,17 @@ finding がない場合は review surface の native contract で表す。fixed 
 findings list を返し、prose や追加 field を要求しない。文章を許すローカルまたは Claude review では finding がない旨を明記し、
 実行できなかった検証や手動確認などの residual risk を分けて報告する。
 
+## 承認の扱い
+
+PR を approve できる reviewer は、次のいずれかを含む PR を approve せず、該当する条件を review に明記して人の承認に回す。
+finding がない場合も同じ。
+
+- lint、format、型検査の抑制の追加または拡大
+- ユーザーから見える既定値の変更
+- database migration の追加または変更
+- telemetry field または SDK 呼び出しの追加
+- 依存の追加または更新
+
 ## Dahlia 固有のチェック
 
 ### 契約と変更範囲
@@ -59,6 +70,7 @@ findings list を返し、prose や追加 field を要求しない。文章を�
   逆方向の操作）で揃っているか。意図的に対象外とした surface は除き、別の surface から到達できる欠落を指摘する。
 - 新しい coordinator、store、repository、worker が既存 owner と責務を重複していないか。
 - target state と異なる実装を、現在の実装例だけを根拠に正当化していないか。
+- lint、format、型検査の抑制（`swiftlint:disable`、`swiftformat:disable`、`eslint-disable`、`@ts-expect-error`、設定ファイルでの rule 無効化や除外 path）を追加または拡大していないか。CI の判定を外す変更なので「CI が決定的に判定する問題」の除外には当たらない。最小範囲に限定した理由がなければ finding にする。
 
 ### Recording、Persistence、停止処理
 
