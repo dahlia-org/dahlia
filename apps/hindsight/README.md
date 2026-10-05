@@ -69,12 +69,13 @@ HTTP access log も無効です。ローカルで `hindsight-api` を直接起�
 | `HINDSIGHT_API_TEXT_SEARCH_EXTENSION` | `lakebase_text` | `tsvector` + `lakebase_bm25`、BM25関連度 |
 | `HINDSIGHT_API_VECTOR_EXTENSION` | `lakebase_vector` | `vector` + `lakebase_ann`、cosine距離 |
 | `HINDSIGHT_API_LLM_PROVIDER` | `databricks` | App service principalでAI GatewayのOpenAI互換`chat/completions`を呼び出す |
+| `HINDSIGHT_API_{処理}_LLM_PROVIDER` | `databricks-responses` | 同じ認証・既定URLでAI Gatewayの`responses`を呼び出す（上流 `openai-responses` 実装） |
 | `HINDSIGHT_API_EMBEDDINGS_PROVIDER` | `databricks` | 同じ認証でAI GatewayのOpenAI互換`embeddings`を呼び出す |
 | `LAKEBASE_ENDPOINT` | Databricks Apps resource binding | 設定時にApp service principalの短命DB credentialへ自動で切り替える |
 
 独立して指定できます。未指定時は upstream の `native` / `pgvector` のままです。
 既存のバックエンドも維持しています。Lakebase は PostgreSQL バックエンドでのみ利用できます。
-`databricks` provider の既定 URL は `${DATABRICKS_HOST}/ai-gateway/mlflow/v1` です。同じ workspace origin の別経路は
+`databricks` / `databricks-responses` provider の既定 URL は `${DATABRICKS_HOST}/ai-gateway/mlflow/v1` です。同じ workspace origin の別経路は
 upstream 標準の `HINDSIGHT_API_LLM_BASE_URL` と `HINDSIGHT_API_EMBEDDINGS_OPENAI_BASE_URL` で個別に上書きできます。
 外部の OpenAI 互換 URL には App service principal token を送らず、upstream の `openai` provider と API key を使用してください。
 
@@ -156,9 +157,9 @@ GitHubへ専用forkを公開する必要はありません。通常の起動で�
 - パッチ競合・依存解決失敗では現行のソース・固定情報・`pyproject.toml`・lockfileを変更しません。
   作業用チェックアウトに未保存の変更や未追跡ファイルがある場合も停止します。
 
-現在の基準は正式リリース **v0.10.1**、コミット
-`f8950b0c07d9e34c76493dba802bb309f0ce60fd` です。
-`pyproject.toml` の `hindsight-api-slim[local-ml]==0.10.1` と `uv.lock` で依存を固定しています。
+現在の基準は正式リリース **v0.10.2**、コミット
+`5fc4ce20917b916240cef27c212c387a177f115b` です。
+`pyproject.toml` の `hindsight-api-slim[local-ml]==0.10.2` と `uv.lock` で依存を固定しています。
 
 ### バージョンを更新する
 
@@ -201,9 +202,10 @@ uv sync --locked
 
 | ファイル | 必要な理由 |
 | --- | --- |
-| `engine/provider_auth.py` | `databricks` を API key 不要の provider として登録 |
-| `engine/llm_wrapper.py` | `databricks` を OpenAI 互換 provider として既存ディスパッチへ登録 |
-| `engine/providers/openai_compatible_llm.py` | App service principal の短命 OAuth token を各 LLM リクエストへ供給 |
+| `engine/provider_auth.py` | `databricks` / `databricks-responses` を API key 不要の provider として登録 |
+| `engine/llm_wrapper.py` | `databricks` を OpenAI 互換 provider、`databricks-responses` を Responses provider として既存ディスパッチへ登録 |
+| `engine/providers/openai_compatible_llm.py` | App service principal の短命 OAuth token を各 LLM リクエストへ供給し、AI Gateway の policy block を固定エラーにする |
+| `engine/providers/openai_responses_llm.py` | `databricks-responses` で同じ OAuth token・AI Gateway URL・policy block 判定を使う |
 | `engine/embeddings.py` | 同じ認証と AI Gateway URL を使う `databricks` embedding provider を登録。token は AsyncOpenAI が各リクエストの前に取得 |
 | `engine/vector_index_health.py` | 既存の索引健全性チェックが lakebase_ann を認識するための登録 |
 | `config.py` | 全文検索の選択値追加と PostgreSQL 以外での誤設定拒否。upstream の最小スコア契約テストも Lakebase の BM25 を検証する |
@@ -291,6 +293,13 @@ providerを明示すると上流のprovider別既定モデルが選ばれるた�
 未設定のRETAIN／REFLECT／CONSOLIDATIONは共通設定を、MENTAL_MODEL_REFRESHはREFLECTを継承する。
 独自routingやモデル名変換はない。OAuthは既存App service principal経路を使う。
 保守パッチはmental model refresh後の追加構造化呼び出しにもrefresh専用設定を適用する。
+
+Dahlia Appは `HINDSIGHT_API_REFLECT_LLM_PROVIDER=databricks-responses` と同じMODELを設定し、
+reflectと、それを継承するmental model refreshだけをResponses APIで呼び出す。
+`system.ai.gpt-6-luna` のChat Completionsはreasoningを無効にしない限りfunction toolsを拒否するため、
+tool呼び出しを伴う両処理はモデル既定のreasoningのままResponsesを使う。retainとconsolidationは
+Chat Completionsのまま。AI Gatewayのpolicy block（HTTP 200）は両経路とも再試行しない固定エラーにする。
+provider名はingestion policyに含まれるため、変更すると全bankの文書を再取り込みする。
 
 rerankerは `cross-encoder/mmarco-mMiniLMv2-L12-H384-v1` の重みrevision
 `1427fd652930e4ba29e8149678df786c240d8825` に固定した。起動時に既存の `huggingface_hub`

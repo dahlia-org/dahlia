@@ -191,6 +191,7 @@ async def exercise_logs():
             max_iterations=4,
             response_schema=SCHEMA,
             search_mental_models_fn=AsyncMock(),
+            read_mental_models_fn=AsyncMock(),
             search_observations_fn=AsyncMock(),
             recall_fn=AsyncMock(return_value={"memories": [{"id": "fact", "content": "DAHLIA_PRIVATE_MARKER_TOOL"}]}),
             expand_fn=AsyncMock(),

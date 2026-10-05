@@ -1,5 +1,6 @@
 """Phase 4 contracts against the pinned provider/engine; only synthetic content."""
 
+import json
 from dataclasses import replace
 from unittest.mock import AsyncMock
 
@@ -10,6 +11,7 @@ from hindsight_api.config import HindsightConfig
 from hindsight_api.engine.llm_interface import ProviderContentPolicyError
 from hindsight_api.engine.memory_engine import _is_non_retryable_task_error
 from hindsight_api.engine.providers.openai_compatible_llm import OpenAICompatibleLLM
+from hindsight_api.engine.providers.openai_responses_llm import OpenAIResponsesLLM
 
 from hindsight_lakebase.databricks import DatabricksOAuthTokenProvider
 from hindsight_lakebase.ingestion import ingestion_policy, operation_error_code
@@ -26,6 +28,7 @@ def test_policy_tracks_effective_settings_without_credentials():
         {"retain_mission": "Different mission"},
         {"retain_llm_model": "system.ai.synthetic"},
         {"retain_llm_reasoning_effort": "low"},
+        {"reflect_llm_provider": "databricks-responses"},
         {"entities_allow_free_form": False},
         {"retain_strategies": {"test": {"retain_chunk_size": 123}}, "retain_default_strategy": "test"},
     ):
@@ -92,6 +95,81 @@ async def test_databricks_policy_200_is_permanent_and_never_an_answer(monkeypatc
             == "memory_policy_blocked"
         )
         assert "SECRET" not in str(error.value)
+
+
+def _responses_reply(**extra):
+    return {
+        "id": "synthetic",
+        "object": "response",
+        "created_at": 0,
+        "model": "synthetic",
+        "status": "completed",
+        "output": [
+            {
+                "type": "function_call",
+                "id": "fc",
+                "call_id": "call",
+                "name": "done",
+                "arguments": '{"answer": "synthetic"}',
+                "status": "completed",
+            }
+        ],
+        "usage": {"input_tokens": 1, "output_tokens": 1, "total_tokens": 2},
+        **extra,
+    }
+
+
+@pytest.fixture
+def databricks_responses(monkeypatch):
+    monkeypatch.setenv("DATABRICKS_HOST", "https://workspace.example")
+    monkeypatch.setenv("DATABRICKS_CLIENT_ID", "synthetic")
+    monkeypatch.setenv("DATABRICKS_CLIENT_SECRET", "synthetic")
+    monkeypatch.setattr(DatabricksOAuthTokenProvider, "get_token_async", AsyncMock(return_value="synthetic"))
+    return OpenAIResponsesLLM(
+        provider="databricks-responses",
+        model="system.ai.gpt-6-luna",
+        api_key=None,
+        base_url=None,
+        reasoning_effort="medium",
+    )
+
+
+async def test_databricks_responses_tools_keep_reasoning(monkeypatch, databricks_responses):
+    requests = []
+
+    def respond(request):
+        requests.append(request)
+        return httpx.Response(200, json=_responses_reply())
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(respond)) as client:
+        monkeypatch.setattr(databricks_responses._client, "_client", client)
+        tool = {"type": "function", "function": {"name": "done", "parameters": {"type": "object"}}}
+        result = await databricks_responses.call_with_tools(
+            messages=[{"role": "user", "content": "synthetic"}], tools=[tool], temperature=0.9
+        )
+    assert [call.name for call in result.tool_calls] == ["done"]
+    assert str(requests[0].url) == "https://workspace.example/ai-gateway/mlflow/v1/responses"
+    assert requests[0].headers["authorization"] == "Bearer synthetic"
+    body = json.loads(requests[0].content)
+    assert body["reasoning"] == {"effort": "medium"} and body["tools"][0]["name"] == "done"
+    assert "temperature" not in body
+
+
+async def test_databricks_responses_policy_200_is_permanent(monkeypatch, databricks_responses):
+    requests = []
+
+    def respond(request):
+        requests.append(request)
+        return httpx.Response(200, json=_responses_reply(databricks_service_policy={"reason": "SECRET POLICY REASON"}))
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(respond)) as client:
+        monkeypatch.setattr(databricks_responses._client, "_client", client)
+        with pytest.raises(ProviderContentPolicyError, match="^memory_policy_blocked$") as error:
+            await databricks_responses.call_with_tools(
+                messages=[{"role": "user", "content": "synthetic"}], tools=[], max_retries=3
+            )
+    assert len(requests) == 1
+    assert _is_non_retryable_task_error(error.value)
 
 
 async def test_reprocess_preserves_caller_operation_id_and_forces_extraction():

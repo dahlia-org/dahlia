@@ -25,6 +25,12 @@ resources:
             value: databricks
           - name: HINDSIGHT_API_LLM_MODEL
             value: system.ai.gpt-6-luna
+          # Chat Completions rejects function tools unless reasoning is off; reflect and
+          # Knowledge Pages refresh call tools, so they use the Responses API instead.
+          - name: HINDSIGHT_API_REFLECT_LLM_PROVIDER
+            value: databricks-responses
+          - name: HINDSIGHT_API_REFLECT_LLM_MODEL
+            value: system.ai.gpt-6-luna
           # Retain and the VLM slot only; reflect and Knowledge Pages keep the model default.
           - name: HINDSIGHT_API_RETAIN_LLM_REASONING_EFFORT
             value: low

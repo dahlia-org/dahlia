@@ -74,13 +74,13 @@ def ingestion_policy(config, *, strategy=None, applied=False):
             {name: getattr(member, name, None) for name in ("provider", "model", "reasoning_effort")}
             for member in getattr(effective, f"{operation}llm_members", [])
         ]
-    recipe.update(version=2, image_policy=3, upstream="f8950b0c07d9e34c76493dba802bb309f0ce60fd", strategy=selected)
+    recipe.update(version=2, image_policy=3, upstream="5fc4ce20917b916240cef27c212c387a177f115b", strategy=selected)
     return hashlib.sha256(json.dumps(recipe, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
 
 
 def reject_service_policy(response, provider):
     """The documented HTTP-200 block envelope is not a generated assistant answer."""
-    if provider != "databricks":
+    if provider not in ("databricks", "databricks-responses"):
         return
     data = response if isinstance(response, dict) else response.model_dump()
     if data.get("databricks_service_policy") is not None:
