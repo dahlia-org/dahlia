@@ -1751,6 +1751,7 @@
 "documentPublishConflict" = "以下の会議には共有ノートがあるため取り込みませんでした。非公開コピーは保持しています。";
 "documentMigrationPrivate" = "ノートはこの Mac の非公開コピーとして保持します。共有や Server 要約への利用には、移行後に Workspace 設定から公開してください。";
 "document.recovery.title" = "削除された段落の復元用コピー";
+"document.recovery.empty" = "復元できる削除済みの段落はありません。";
 "document.restore" = "新しい段落として挿入";
 "document.editing" = "編集中: ";
 "document.keepLocal" = "未送信の編集や非公開のノートが残っています。Local Account へ移動して保全してください。";

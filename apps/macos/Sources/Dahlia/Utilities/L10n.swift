@@ -1124,6 +1124,7 @@ enum L10n { // swiftlint:disable:this type_body_length
     static var documentPrivateRecoverySaved: String { String(localized: "document.privateRecoverySaved", bundle: bundle) }
     static var documentKeepLocal: String { String(localized: "document.keepLocal", bundle: bundle) }
     static var documentRecoveryTitle: String { String(localized: "document.recovery.title", bundle: bundle) }
+    static var documentRecoveryEmpty: String { String(localized: "document.recovery.empty", bundle: bundle) }
     static var documentHistoryPrevious: String { String(localized: "documentHistoryPrevious", bundle: bundle) }
     static var documentHistoryNext: String { String(localized: "documentHistoryNext", bundle: bundle) }
     static var documentHistoryFullText: String { String(localized: "documentHistoryFullText", bundle: bundle) }

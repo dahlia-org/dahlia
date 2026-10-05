@@ -26,6 +26,7 @@ struct ContentView: View {
     @State private var projectPendingDeletion: ProjectOverviewItem?
     @State private var expandedScreenshot: ExpandedScreenshotPresentation?
     @State private var isSummaryGenerationConfirmationPresented = false
+    @State private var isNotesHistoryPresented = false
 
     var body: some View {
         let isShowingSettings = mainWindowNavigation.isShowingSettings
@@ -254,6 +255,11 @@ struct ContentView: View {
             isPresented: $isSummaryGenerationConfirmationPresented,
             viewModel: viewModel,
             sidebarViewModel: sidebarViewModel
+        )
+        .documentRecoveryHistoryPresentation(
+            isPresented: $isNotesHistoryPresented,
+            model: headerNotesEditorModel,
+            editable: sidebarViewModel.canEditCurrentWorkspace
         )
         .task(id: sidebarViewModel.currentWorkspace?.id) {
             await sidebarViewModel.refreshUnprocessedRecordings()
@@ -511,7 +517,8 @@ private extension ContentView {
                 syncState: headerMeetingTitle != nil ? viewModel.meetingSyncState : nil,
                 textContentState: headerMeetingTitle != nil ? viewModel.textContentState : nil,
                 retryTextContent: viewModel.retryTextContent,
-                notesEditorModel: headerMeetingTitle != nil && selectedDetailTab == .notes ? notesEditorModel : nil
+                notesEditorModel: headerNotesEditorModel,
+                onShowNotesHistory: { isNotesHistoryPresented = true }
             ) {
                 MainNavigationBreadcrumbs(
                     workspace: workspace,
@@ -545,6 +552,11 @@ private extension ContentView {
             return meeting.meetingName
         }
         return viewModel.hasDraftMeeting ? viewModel.draftMeetingTitle : nil
+    }
+
+    private var headerNotesEditorModel: DocumentEditorModel? {
+        guard !mainWindowNavigation.isShowingSettings, headerMeetingTitle != nil, selectedDetailTab == .notes else { return nil }
+        return notesEditorModel
     }
 
     private var headerProjectID: UUID? {
