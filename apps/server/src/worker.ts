@@ -29,6 +29,7 @@ import {
 import { loadConfig, type AppConfig } from "./config";
 import { connectPostgresUrl } from "./db/postgres";
 import { createIntlSearchTokenizer } from "./search/tokenizer";
+import { log } from "./otel/log";
 
 export interface RuntimeSecrets {
   DAHLIA_JOB_CONCURRENCY?: string;
@@ -67,6 +68,20 @@ export interface RuntimeSecrets {
   DAHLIA_STORAGE_LOCAL_PATH?: string;
   DAHLIA_STORAGE_S3_BUCKET?: string;
   DAHLIA_STORAGE_S3_ENDPOINT?: string;
+  DAHLIA_OTEL_AUTH?: string;
+  OTEL_EXPORTER_OTLP_ENDPOINT?: string;
+  OTEL_EXPORTER_OTLP_HEADERS?: string;
+  OTEL_EXPORTER_OTLP_PROTOCOL?: string;
+  OTEL_EXPORTER_OTLP_TRACES_ENDPOINT?: string;
+  OTEL_EXPORTER_OTLP_TRACES_HEADERS?: string;
+  OTEL_EXPORTER_OTLP_TRACES_PROTOCOL?: string;
+  OTEL_EXPORTER_OTLP_LOGS_ENDPOINT?: string;
+  OTEL_EXPORTER_OTLP_LOGS_HEADERS?: string;
+  OTEL_EXPORTER_OTLP_LOGS_PROTOCOL?: string;
+  OTEL_EXPORTER_OTLP_METRICS_ENDPOINT?: string;
+  OTEL_EXPORTER_OTLP_METRICS_HEADERS?: string;
+  OTEL_EXPORTER_OTLP_METRICS_PROTOCOL?: string;
+  OTEL_SERVICE_NAME?: string;
   AWS_ACCESS_KEY_ID?: string;
   AWS_REGION?: string;
   AWS_SECRET_ACCESS_KEY?: string;
@@ -159,6 +174,8 @@ export async function initializeWorkerApp(env: WorkerEnv): Promise<WorkerApp> {
     DAHLIA_STORAGE_LOCAL_PATH: env.DAHLIA_STORAGE_LOCAL_PATH,
     DAHLIA_STORAGE_S3_BUCKET: env.DAHLIA_STORAGE_S3_BUCKET,
     DAHLIA_STORAGE_S3_ENDPOINT: env.DAHLIA_STORAGE_S3_ENDPOINT,
+    DAHLIA_OTEL_AUTH: env.DAHLIA_OTEL_AUTH,
+    ...Object.fromEntries(Object.entries(env).filter(([name]) => name.startsWith("OTEL_"))) as Record<string, string | undefined>,
     AWS_ACCESS_KEY_ID: env.AWS_ACCESS_KEY_ID,
     AWS_REGION: env.AWS_REGION,
     AWS_SECRET_ACCESS_KEY: env.AWS_SECRET_ACCESS_KEY,
@@ -270,7 +287,7 @@ export function createWorkerHandler(initialize: WorkerAppInitializer = initializ
             await app.jobs.consume(message.body, AbortSignal.timeout(240_000));
             message.ack();
           } catch {
-            console.warn(JSON.stringify({ level: "warn", event: "queue_job_failed" }));
+            log("warn", "queue_job_failed");
             message.retry();
           }
         }

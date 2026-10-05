@@ -5,6 +5,7 @@ import { z } from "zod";
 import type { AppConfig } from "../config";
 import { createJobProvider } from "../ai-gateway/job-provider";
 import type { SyncScreenshotRecord } from "../sync/types";
+import { log } from "../otel/log";
 
 export const SUMMARY_IMAGE_LIMIT = 24;
 // Automatic capture only stores changed screens, so these bound an unusual meeting rather than a typical one.
@@ -72,7 +73,7 @@ export async function selectSummaryScreenshots(candidates: readonly SyncScreensh
   } catch (error) {
     signal.throwIfAborted();
     const code = timeout.aborted ? "timeout" : error instanceof PreselectionError ? error.code : "image_unavailable";
-    console.warn(JSON.stringify({ level: "warn", event: "summary_screenshot_preselection_failed", code }));
+    log("warn", "summary_screenshot_preselection_failed", { code });
     return { images: sampleEvenly(candidates, limit), method: "even" };
   }
 }

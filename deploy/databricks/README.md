@@ -94,12 +94,25 @@ protects this schema with `lifecycle.prevent_destroy: true`. If the schema alrea
 exists outside this bundle, bind the `ops_schema` resource before deployment.
 Deployments sharing a catalog must use a single schema owner/bundle arrangement.
 
-After deployment, manually run the unscheduled `create_otel_tables` job. It uses
-one SQL notebook on serverless Jobs compute; no SQL warehouse or additional
-libraries are required. The workspace must support serverless notebooks. The
-deployment principal needs `USE CATALOG` and `CREATE SCHEMA` on the catalog; the
-job's run-as principal needs `USE CATALOG`, `USE SCHEMA`, and `CREATE TABLE` on the
-destination schema (or equivalent ownership).
+Bundles have no Unity Catalog table resource, so the unscheduled `create_otel_tables`
+job creates the tables through MLflow's Unity Catalog trace location instead of
+hand-written DDL. Its Python notebook installs `mlflow[databricks]>=3.14` on serverless
+Jobs compute and calls `mlflow.set_experiment(experiment_id=..., trace_location=UnityCatalog(...))`
+for the bundle's `otel_traces` experiment. Databricks creates
+`<otel_table_prefix>_otel_spans`, `_otel_logs` and `_otel_metrics` (default prefix `dahlia`)
+with their current OTel schema and links the spans table to the experiment's Traces tab;
+the job fails if any of the three tables is missing afterwards. Reruns with the same
+location are idempotent; MLflow rejects linking the experiment to a different location.
+The Server writes through Zerobus, so the MLflow OTLP endpoint's ingestion limit does not apply.
+
+MLflow creates the tables through a SQL warehouse. The notebook picks a warehouse
+visible to the job's run-as principal (running first, then serverless; MLflow starts a
+stopped one). When none is visible, it creates a temporary 2X-Small serverless warehouse
+and deletes it after the tables are created.
+The deployment principal needs `USE CATALOG` and `CREATE SCHEMA` on the catalog; the
+job's run-as principal needs `USE CATALOG`, `USE SCHEMA` and `CREATE TABLE` on the
+destination schema (or equivalent ownership), plus `CAN USE` on the visible warehouses or,
+when none is visible, permission to create warehouses.
 
 Run these commands from `deploy/databricks`, using the same profile, target and
 variable overrides for deployment and execution:
@@ -111,30 +124,37 @@ databricks bundle deploy -t dev -p <profile> --var catalog=dahlia_dev,ops_schema
 databricks bundle run create_otel_tables -t dev -p <profile> --var catalog=dahlia_dev,ops_schema=ops
 ```
 
-The sync check uses an authenticated CLI dry-run to confirm the SQL notebook is
-included in uploads and that nothing outside the Server workspace, Hindsight and the
-notebooks is uploaded; it does not modify workspace files.
+The sync check uses an authenticated CLI dry-run to confirm the notebook is included
+in uploads and that nothing outside the Server workspace, Hindsight and the notebooks
+is uploaded; it does not modify workspace files. Use `-t prod` and the production
+catalog for production. Deployment only creates the schema, experiment and job; it
+does not run the job.
 
-Use `-t prod` and the production catalog for production. Deployment only creates
-the schema and job; it does not run this job. The job creates managed
-Delta tables `dahlia_otel_spans`, `dahlia_otel_logs`, and `dahlia_otel_metrics` using
-the [official Zerobus OTLP v2 definitions](https://docs.databricks.com/aws/en/ingestion/opentelemetry/configure),
-including clustering, `otel.schemaVersion=v2` and `delta.checkpointPolicy=classic`.
-Optional Variant shredding is not enabled.
+The Server App forwards its OTLP receivers' data and its own Server logs to these tables
+when `zerobus_endpoint` is set (default empty, no export). Zerobus requires explicit grants for
+the App service principal, so after the job has created the tables, grant them once
+with a principal that can manage the schema and tables (`USE CATALOG` normally comes
+from the App's Volume resource in the same catalog):
 
-Each statement uses `CREATE TABLE IF NOT EXISTS`: reruns preserve existing tables
-and data, including after partial failure. Existing table definitions are not
-validated or migrated by the job. SQL errors fail the run. Verify the first run
-with `DESCRIBE TABLE EXTENDED` and `SHOW TBLPROPERTIES` for all three tables,
-comparing columns/types and clustering with the linked definitions. In a test
-catalog, insert a synthetic row, rerun the job and confirm that row remains;
-repeat with a different `ops_schema` override to verify destination selection.
+```sql
+GRANT USE SCHEMA ON SCHEMA dahlia_dev.ops TO `<server-app-service-principal-client-id>`;
+GRANT SELECT, MODIFY ON TABLE dahlia_dev.ops.dahlia_otel_spans TO `<server-app-service-principal-client-id>`;
+GRANT SELECT, MODIFY ON TABLE dahlia_dev.ops.dahlia_otel_logs TO `<server-app-service-principal-client-id>`;
+GRANT SELECT, MODIFY ON TABLE dahlia_dev.ops.dahlia_otel_metrics TO `<server-app-service-principal-client-id>`;
+```
 
-Before sending OTLP, separately grant the sending service principal `USE CATALOG`,
-`USE SCHEMA`, and explicit `SELECT` and `MODIFY` on each table. Configure each
-signal's `x-databricks-zerobus-table-name` header with its fully qualified table
-name. This setup does not create credentials, grant sender access, configure a
-Collector, or enable telemetry emission.
+Then redeploy with the workspace's Zerobus endpoint:
+
+```bash
+databricks bundle deploy -t dev -p <profile> --var catalog=dahlia_dev,ops_schema=ops,zerobus_endpoint=https://<workspace-id>.zerobus.<region>.cloud.databricks.com
+```
+
+The App sets the standard `OTEL_EXPORTER_OTLP_ENDPOINT` to `zerobus_endpoint`, each signal's
+`x-databricks-zerobus-table-name` header to `<catalog>.<ops_schema>.<otel_table_prefix>_otel_*`,
+and `DAHLIA_OTEL_AUTH=databricks` so the Server requests a separate table-scoped token per signal; see the Server
+[OpenTelemetry](../../apps/server/README.md#opentelemetry-otlp) contract. Other senders
+can export OTLP to the App's `/api` endpoint, or directly to Zerobus with their own
+service principal, explicit grants, and the `x-databricks-zerobus-table-name` header.
 
 ## AI models
 

@@ -36,6 +36,8 @@ export class DatabricksTokenProvider {
   constructor(
     private readonly config: DatabricksTokenConfig,
     private readonly transport: typeof fetch = fetch,
+    /** Additional token request parameters, such as a Zerobus `resource` and `authorization_details`. */
+    private readonly parameters: Record<string, string> = {},
   ) {}
 
   async getToken(): Promise<string> {
@@ -58,7 +60,7 @@ export class DatabricksTokenProvider {
           authorization: `Basic ${btoa(`${this.config.clientId}:${this.config.clientSecret}`)}`,
           "content-type": "application/x-www-form-urlencoded",
         },
-        body: new URLSearchParams({ grant_type: "client_credentials", scope: "all-apis" }),
+        body: new URLSearchParams({ grant_type: "client_credentials", scope: "all-apis", ...this.parameters }),
         signal: AbortSignal.timeout(TOKEN_TIMEOUT_MS),
       });
     } catch {

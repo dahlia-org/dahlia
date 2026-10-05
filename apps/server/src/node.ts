@@ -11,10 +11,12 @@ import { createNodeServices } from "./jobs/node-services";
 import { JobPool } from "./jobs/node-pool";
 import { jobResources } from "./jobs/resources";
 import { loadJobConfig } from "./jobs/model";
+import { log, setLogSink } from "./otel/log";
 
 const config = loadConfig(process.env);
 const { applicationStore, searchEmbedder, objectStorage, searchTokenizer, captioner, syncService,
-  workspaceMemory, personalMemory, chatMemory, summaryService } = createNodeServices(config);
+  workspaceMemory, personalMemory, chatMemory, summaryService, otel } = createNodeServices(config);
+setLogSink(otel);
 const auth = await initializeDahliaAuth(config, applicationStore, config.authProvider === "accounts" ? [{
   plugins: [cimd({ fetchClientMetadataResource, metadataProfile: "mcp-2026-07-28" })],
 }] : []);
@@ -30,7 +32,7 @@ const pool = new JobPool(new URL(import.meta.url.endsWith(".ts") ? "./job-worker
 try {
   await pool.start();
   if (failedWorker) throw new Error("job_worker_start_failed");
-} catch (error) { await pool.stop(); await applicationStore.close?.(); throw error; }
+} catch (error) { await pool.stop(); await otel?.shutdown(); await applicationStore.close?.(); throw error; }
 const app = createApp({
   summaryService,
   workspaceMemory,
@@ -47,6 +49,7 @@ const app = createApp({
   searchTokenizer,
   searchEmbedder,
   screenshotTransformer: transformScreenshot,
+  otel,
 });
 
 if (!development) {
@@ -60,7 +63,7 @@ const server = serve({
   hostname: "0.0.0.0",
   port,
 }, (info) => {
-  console.info(`Dahlia Server is listening on ${info.address}:${info.port}`);
+  log("info", "server_listening", { address: info.address, port: info.port });
 });
 const sockets = new Set<Socket>();
 server.on("connection", (socket: Socket) => {
@@ -80,13 +83,14 @@ async function shutdown(): Promise<void> {
   deadline.unref();
   await Promise.all([closed, stoppedJobs]);
   clearTimeout(deadline);
+  await otel?.shutdown();
   await applicationStore.close?.();
   if (failedWorker) process.exitCode = 1;
 }
 
 function beginShutdown(): void {
   void shutdown().catch(() => {
-    console.error(JSON.stringify({ level: "error", event: "shutdown_failed" }));
+    log("error", "shutdown_failed");
     process.exitCode = 1;
   });
 }

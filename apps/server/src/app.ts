@@ -64,6 +64,8 @@ import type { SearchTokenizer } from "./search/tokenizer";
 import type { SearchEmbedder } from "./search/embedding";
 
 import { gatewayError, GatewayRequestError, GatewayService } from "./ai-gateway/service";
+import { createOtel, OTLP_MAX_REQUEST_BYTES, type OtelService } from "./otel/service";
+import { log } from "./otel/log";
 
 export const AUTH_MAX_REQUEST_BYTES = 64 * 1024;
 const SYNC_JSON_MAX_REQUEST_BYTES = 8 * 1024 * 1024;
@@ -86,6 +88,10 @@ const documentBodyLimit = bodyLimit({
 });
 const accountSettingsBodyLimit = bodyLimit({
   maxSize: 8 * 1024,
+  onError: (context) => context.json({ error: "request_too_large" }, 413),
+});
+const otlpBodyLimit = bodyLimit({
+  maxSize: OTLP_MAX_REQUEST_BYTES,
   onError: (context) => context.json({ error: "request_too_large" }, 413),
 });
 const aiChatBodyLimit = bodyLimit({
@@ -138,6 +144,8 @@ export interface AppDependencies {
   memoryGenerator?: MemoryGenerator;
   aiHistory?: AiHistoryService;
   chatMemory?: ChatMemoryService;
+  /** Defaults to the configured OTEL_EXPORTER_OTLP_* endpoints. */
+  otel?: OtelService;
   onSyncMutation?(ownerUserId: string, context: { waitUntil(task: Promise<unknown>): void }): void;
 }
 
@@ -210,6 +218,7 @@ export function createApp(dependencies: AppDependencies): DahliaServerApp & { ru
     return await store.ensureIdentityUser(resolved) ? resolved : null;
   });
   const gateway = new GatewayService(config, dependencies.fetch);
+  const otel = dependencies.otel ?? createOtel(config, dependencies.fetch);
   const sync = dependencies.syncService ?? new MeetingSyncService(
     store.sync,
     dependencies.objectStorage,
@@ -270,7 +279,7 @@ export function createApp(dependencies: AppDependencies): DahliaServerApp & { ru
       try {
         dependencies.onSyncMutation(owner, context.executionCtx);
       } catch {
-        console.warn(JSON.stringify({ level: "warn", event: "job_notification_failed" }));
+        log("warn", "job_notification_failed");
       }
     }
     const fileRead = ["GET", "HEAD"].includes(context.req.method)
@@ -1407,6 +1416,11 @@ export function createApp(dependencies: AppDependencies): DahliaServerApp & { ru
   });
   app.get("/api/v1/models", async (context) => context.json(await gateway.models(context.req.raw)));
   app.post("/api/v1/responses", async (context) => gateway.responses(context.req.raw, context.get("identity")));
+  // OTLP/HTTP receivers for `OTEL_EXPORTER_OTLP_ENDPOINT=<baseUrl>/api`, forwarded to the Server's own OTLP endpoints; authenticated like the Gateway.
+  if (otel) for (const signal of otel.signals) {
+    app.post(`/api/v1/${signal}`, otlpBodyLimit, async (context) =>
+      otel.receive(signal, context.req.raw.headers, await context.req.arrayBuffer(), context.req.raw.signal));
+  }
 
   const extensionStart = app.routes.length;
   for (const extension of extensions) extension.registerRoutes?.(app, services);
@@ -1464,7 +1478,7 @@ export function createApp(dependencies: AppDependencies): DahliaServerApp & { ru
     if (error instanceof SyncStoreUnavailableError || error instanceof EncryptionError) {
       return context.json({ error: error.message }, 503);
     }
-    console.error(JSON.stringify({ level: "error", event: "request_failed", route: requestRoute(context.req.path) }));
+    log("error", "request_failed", { route: requestRoute(context.req.path) });
     return context.json({ error: "internal_server_error" }, 500);
   });
 

@@ -1,0 +1,15 @@
+# Regenerate with `pnpm otlp:generate`; the generated code is committed under src/otel/gen.
+version: v2
+clean: true
+plugins:
+  - local: protoc-gen-es
+    out: src/otel/gen
+    opt: target=ts
+    include_imports: true
+inputs:
+  - git_repo: https://github.com/open-telemetry/opentelemetry-proto.git
+    tag: v1.8.0
+    paths:
+      - opentelemetry/proto/collector/trace/v1/trace_service.proto
+      - opentelemetry/proto/collector/logs/v1/logs_service.proto
+      - opentelemetry/proto/collector/metrics/v1/metrics_service.proto

@@ -37,6 +37,7 @@ import { decodeSyncCursor, encodeSyncCursor, SYNC_SNAPSHOT_ENTITIES, SyncTransac
 import { fileUploadSchema, filePatchSchema, fileResponse, fileStorageKey, fileVariantKey, imageContentTypes, type FileRecord } from "../files/model";
 import { SCREENSHOT_VARIANTS, screenshotVariantKey, type ScreenshotTransformer, type ScreenshotVariant } from "./screenshot-variants";
 import { meetingMetadata, metadataRecord, readTextContent, TEXT_CONTENT_VERSION } from "./text-content";
+import { log } from "../otel/log";
 
 function missingMeetingConflict(meetingId: string): SyncTransactionError {
   return new SyncTransactionError(409, "revision_conflict", [{
@@ -1289,11 +1290,7 @@ export class MeetingSyncService {
     const embeddingSignal = signal ? AbortSignal.any([signal, deadline.signal]) : deadline.signal;
     const embedding = this.embedder.embedQuery(query.sourceText, embeddingSignal).catch((error) => {
       if (!embeddingSignal.aborted) {
-        console.warn(JSON.stringify({
-          level: "warn",
-          event: "search_query_embedding_failed",
-          errorName: error instanceof Error ? error.name : "UnknownError",
-        }));
+        log("warn", "search_query_embedding_failed", { errorName: error instanceof Error ? error.name : "UnknownError" });
       }
       return undefined;
     });
@@ -1321,11 +1318,7 @@ export class MeetingSyncService {
         embedding: { model: this.embedder!.model, dimensions: this.embedder!.dimensions, vector },
       }));
     } catch (error) {
-      console.warn(JSON.stringify({
-        level: "warn",
-        event: "search_hybrid_query_failed",
-        errorName: error instanceof Error ? error.name : "UnknownError",
-      }));
+      log("warn", "search_hybrid_query_failed", { errorName: error instanceof Error ? error.name : "UnknownError" });
       return fallbackResult;
     }
   }

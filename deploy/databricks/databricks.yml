@@ -56,6 +56,12 @@ variables:
   ops_schema:
     description: Unity Catalog schema containing OTel tables.
     default: ops
+  otel_table_prefix:
+    description: Prefix of the <prefix>_otel_spans, _otel_logs and _otel_metrics tables in ops_schema.
+    default: dahlia
+  zerobus_endpoint:
+    description: Zerobus OTLP endpoint (https://<workspace-id>.zerobus.<region>.cloud.databricks.com); set after the OTel tables and grants exist. Empty disables export.
+    default: ""
   volume_name:
     description: Managed Volume used for stored content.
     default: storage
