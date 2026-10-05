@@ -72,6 +72,13 @@ jobs:
     name: Desktop Unit Tests
     runs-on: macos-26
     timeout-minutes: 30
+    env:
+      # Restore and save must list identical paths. While Package.resolved (part of the key) is
+      # unchanged, SwiftPM needs neither its git mirrors nor the unused Sentry xcframework variants.
+      SPM_CACHE_PATHS: |
+        .build
+        !.build/repositories
+        !.build/artifacts/sentry-cocoa/Sentry-*
 
     steps:
       - name: Checkout repository
@@ -89,7 +96,7 @@ jobs:
         id: cache
         uses: actions/cache/restore@v5
         with:
-          path: .build
+          path: ${{ env.SPM_CACHE_PATHS }}
           key: spm-${{ runner.os }}-${{ runner.arch }}-${{ steps.toolchain.outputs.hash }}-${{ hashFiles('Package.resolved') }}-${{ github.sha }}
           restore-keys: |
             spm-${{ runner.os }}-${{ runner.arch }}-${{ steps.toolchain.outputs.hash }}-${{ hashFiles('Package.resolved') }}-
@@ -113,10 +120,11 @@ jobs:
       - name: Verify generated API contract
         run: pnpm --filter @dahlia-ai/server openapi:check
 
+      # Checkout gives every source a new mtime. Content hashes let the restored build skip unchanged files.
       - name: Build package and tests
         run: |
           set -o pipefail
-          swift build --build-tests 2>&1 | tee build-output.log
+          swift build --build-tests -Xswiftc -enable-incremental-file-hashing 2>&1 | tee build-output.log
           if grep -Ei 'warning:.*(unsupported|not supported|skipping)' build-output.log; then
             exit 1
           fi
@@ -145,11 +153,11 @@ jobs:
       - name: Verify tests executed
         run: grep -Eq "Test run with [1-9][0-9]* tests" test-output.log
 
-      # Each entry is ~1.5 GB against a 10 GB repository limit. Pull requests restore the latest
+      # Each entry is ~1 GB against a 10 GB repository limit. Pull requests restore the latest
       # main cache but do not create short-lived entries that evict it.
       - name: Save SwiftPM build cache
         if: success() && github.ref == 'refs/heads/main'
         uses: actions/cache/save@v5
         with:
-          path: .build
+          path: ${{ env.SPM_CACHE_PATHS }}
           key: ${{ steps.cache.outputs.cache-primary-key }}

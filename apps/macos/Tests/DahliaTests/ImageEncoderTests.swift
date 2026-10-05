@@ -6,7 +6,8 @@ import Foundation
     import Testing
 
     struct ImageEncoderTests {
-        @Test(arguments: [(3400, 2200), (2200, 3400), (160, 80)])
+        // Just above the 1280 edge: unoptimized debug libwebp makes larger fixtures dominate the suite.
+        @Test(arguments: [(1700, 1100), (1100, 1700), (160, 80)])
         func aiInputPreservesAspectRatioWithoutEnlargement(size: (Int, Int)) throws {
             let context = try makeContext(width: size.0, height: size.1)
             let image = try #require(context.makeImage())

@@ -210,6 +210,8 @@ import Synchronization
                     touches.withLock { $0 += 1 }
                     return Data("{}".utf8)
                 })
+                // Long enough for several empty polls, which must not repeat the access-time touch.
+                server.transcriptWaitTimeout = .milliseconds(800)
                 let result = try server.executeTool(named: "get_meeting_transcript", arguments: [
                     "meeting_id": meetingID.uuidString, "after": token, "wait": true,
                 ])

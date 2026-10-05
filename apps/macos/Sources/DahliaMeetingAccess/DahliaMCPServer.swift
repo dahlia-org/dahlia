@@ -13,6 +13,7 @@ public final class DahliaMCPServer {
     private let telemetryOrigin: MCPUsageTelemetryEvent.Origin?
     private let usageTelemetryReporter: (MCPUsageTelemetryEvent) -> Void
     private var initialized = false
+    var transcriptWaitTimeout = Duration.seconds(25)
 
     public init(
         store: MeetingAccessStore,
@@ -404,7 +405,7 @@ public final class DahliaMCPServer {
         guard after == nil || cursor == nil else { throw ParameterError("after and cursor cannot be combined") }
         let limit = try integer(arguments, key: "limit") ?? 200
         let wait = try boolean(arguments, key: "wait") ?? false
-        let deadline = ContinuousClock.now.advanced(by: .seconds(wait ? 25 : 0))
+        let deadline = ContinuousClock.now.advanced(by: wait ? transcriptWaitTimeout : .zero)
         var recordAccess = true
         while true {
             let page = try store.transcript(

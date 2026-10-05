@@ -217,13 +217,11 @@ enum SyncJSON {
 
     static let decoder: JSONDecoder = {
         let decoder = JSONDecoder()
+        // Shared formatters: creating one per date dominated decoding large transcript snapshots.
+        let transcoder = SyncAPIDateTranscoder()
         decoder.dateDecodingStrategy = .custom { decoder in
             let value = try decoder.singleValueContainer().decode(String.self)
-            let formatter = ISO8601DateFormatter()
-            formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-            if let date = formatter.date(from: value) { return date }
-            formatter.formatOptions = [.withInternetDateTime]
-            if let date = formatter.date(from: value) { return date }
+            if let date = try? transcoder.decode(value) { return date }
             throw try DecodingError.dataCorruptedError(
                 in: decoder.singleValueContainer(),
                 debugDescription: "Invalid ISO-8601 date"
@@ -442,11 +440,12 @@ enum SyncTransactionRecorder {
                 """,
                 arguments: [workspaceId, operation.entity, operation.entityId]
             )
+            // CROSS JOIN probes the entity index; SQLite otherwise scans the Workspace backlog per operation.
             let preceding = try Row.fetchOne(
                 db,
                 sql: """
                 SELECT o.action, o.baseRevision FROM sync_operations o
-                JOIN sync_transactions t ON t.id = o.transactionId
+                CROSS JOIN sync_transactions t ON t.id = o.transactionId
                 WHERE t.workspace_id = ? AND o.entity = ? AND o.entityId = ?
                 ORDER BY t.sequence DESC, o.position DESC LIMIT 1
                 """,
