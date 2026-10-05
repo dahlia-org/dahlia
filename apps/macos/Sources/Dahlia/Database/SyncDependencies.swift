@@ -27,6 +27,7 @@ enum SyncDependencies {
                 arguments: [transactionId, resource, exclusive]
             )
             // Probe the resource index instead of scanning the Workspace's entire backlog per operation.
+            // CROSS JOIN pins that order; SQLite otherwise drives from the backlog's sequence index.
             let initialParent = try exclusive && Bool.fetchOne(
                 db,
                 sql: "SELECT EXISTS(SELECT 1 FROM sync_initial_entities WHERE resource = ? AND built = 0)",
@@ -36,7 +37,7 @@ enum SyncDependencies {
             let edge = initialParent ? "prior.id, ?" : "?, prior.id"
             try db.execute(sql: """
             INSERT OR IGNORE INTO sync_dependencies(transactionId, predecessorId)
-            SELECT \(edge) FROM sync_dependency_keys k JOIN sync_transactions prior ON prior.id = k.transactionId
+            SELECT \(edge) FROM sync_dependency_keys k CROSS JOIN sync_transactions prior ON prior.id = k.transactionId
             WHERE k.resource = ? \(mode) AND prior.workspace_id = ? AND prior.sequence < ?
             """, arguments: [transactionId, resource, workspaceId, sequence])
         }
