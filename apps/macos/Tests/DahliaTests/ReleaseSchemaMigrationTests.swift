@@ -8,7 +8,7 @@
 
     @MainActor
     struct ReleaseSchemaMigrationTests {
-        /// Migration identifiers shipped through v0.25.3, in registration order.
+        /// Migration identifiers shipped through v0.25.5, in registration order.
         /// Release preparation appends newly shipped identifiers. Never edit existing entries to make this pass:
         /// a mismatch means a shipped migration was renamed, reordered, or removed.
         private static let shippedMigrationIdentifiers = [

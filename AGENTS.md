@@ -61,7 +61,7 @@ Use these terms in code, docs, and reports. Older ADRs may use superseded names.
 - **Processing location**: `local` uses Apple Speech and the bundled Codex on the Mac; `remote` has the Server process saved recordings.
 - **Finalized transcript**: transcript segments durably saved in SQLite. Previews and live captions are not finalized.
 - **Projection**: display or derived data rebuilt from a durable source of truth, such as `TranscriptStore`, live captions, or the search index. Projections may be bounded, coalesced, or discarded under load.
-- **Document**: a collaborative Yjs document of kind `notes`, `summary`, or `general`. A Meeting's Notes are its `notes` Document.
+- **Document**: a collaborative Yjs document in a Workspace. A Meeting's Notes are its `notes` Document. The Summary is not a Document yet, even though the schema reserves a `summary` kind.
 
 ## Engineering Constraints
 
