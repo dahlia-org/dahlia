@@ -24,7 +24,6 @@ DMG_SPARKLE_PUBLIC_KEY=""
 DMG_SPARKLE_REQUIRES_SIGNED_FEED=""
 DMG_SPARKLE_VERIFIES_BEFORE_EXTRACTION=""
 DMG_SPARKLE_AUTOMATIC_CHECKS=""
-DMG_SPARKLE_CHECK_INTERVAL=""
 DMG_SPARKLE_AUTOMATIC_UPDATES=""
 DMG_SPARKLE_ALLOWS_AUTOMATIC_UPDATES=""
 
@@ -94,7 +93,6 @@ validate_dmg_versions() {
     DMG_SPARKLE_REQUIRES_SIGNED_FEED="$(/usr/libexec/PlistBuddy -c "Print :SURequireSignedFeed" "$app_info_plist")"
     DMG_SPARKLE_VERIFIES_BEFORE_EXTRACTION="$(/usr/libexec/PlistBuddy -c "Print :SUVerifyUpdateBeforeExtraction" "$app_info_plist")"
     DMG_SPARKLE_AUTOMATIC_CHECKS="$(/usr/libexec/PlistBuddy -c "Print :SUEnableAutomaticChecks" "$app_info_plist")"
-    DMG_SPARKLE_CHECK_INTERVAL="$(/usr/libexec/PlistBuddy -c "Print :SUScheduledCheckInterval" "$app_info_plist")"
     DMG_SPARKLE_AUTOMATIC_UPDATES="$(/usr/libexec/PlistBuddy -c "Print :SUAutomaticallyUpdate" "$app_info_plist")"
     DMG_SPARKLE_ALLOWS_AUTOMATIC_UPDATES="$(/usr/libexec/PlistBuddy -c "Print :SUAllowsAutomaticUpdates" "$app_info_plist")"
 
@@ -187,12 +185,8 @@ EOF
         echo "error: DMG must require a signed Sparkle feed and verify updates before extraction" >&2
         exit 1
     fi
-    if [ "$DMG_SPARKLE_AUTOMATIC_CHECKS" != "true" ]; then
-        echo "error: DMG must enable automatic Sparkle update checks" >&2
-        exit 1
-    fi
-    if [ "$DMG_SPARKLE_CHECK_INTERVAL" != "3600" ]; then
-        echo "error: DMG Sparkle update check interval is ${DMG_SPARKLE_CHECK_INTERVAL}, expected 3600" >&2
+    if [ "$DMG_SPARKLE_AUTOMATIC_CHECKS" != "false" ]; then
+        echo "error: DMG must disable Sparkle scheduled update checks; the app schedules its own update probes" >&2
         exit 1
     fi
     if [ "$DMG_SPARKLE_AUTOMATIC_UPDATES" != "false" ]; then

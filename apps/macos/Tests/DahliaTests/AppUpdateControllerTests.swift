@@ -7,38 +7,29 @@ import Sparkle
     @MainActor
     struct AppUpdateControllerTests {
         @Test
-        func delegatedScheduledUpdatePublishesBadge() {
+        func foundUpdatePublishesBadge() {
             let controller = AppUpdateController(shouldStartUpdater: false)
 
-            controller.recordAvailableUpdate(
-                version: "1.2.3",
-                isHandledByStandardUserDriver: false
-            )
+            controller.recordAvailableUpdate(version: "1.2.3")
 
             #expect(controller.availableVersion == "1.2.3")
             #expect(controller.isUpdateAvailable)
         }
 
         @Test
-        func standardUpdateDialogPublishesBadge() {
+        func laterFoundUpdateReplacesBadgeVersion() {
             let controller = AppUpdateController(shouldStartUpdater: false)
+            controller.recordAvailableUpdate(version: "1.2.3")
 
-            controller.recordAvailableUpdate(
-                version: "1.2.3",
-                isHandledByStandardUserDriver: true
-            )
+            controller.recordAvailableUpdate(version: "1.2.5")
 
-            #expect(controller.availableVersion == "1.2.3")
-            #expect(controller.isUpdateAvailable)
+            #expect(controller.availableVersion == "1.2.5")
         }
 
         @Test
         func dismissingUpdateDialogKeepsBadge() {
             let controller = AppUpdateController(shouldStartUpdater: false)
-            controller.recordAvailableUpdate(
-                version: "1.2.3",
-                isHandledByStandardUserDriver: false
-            )
+            controller.recordAvailableUpdate(version: "1.2.3")
 
             controller.recordUserChoice(.dismiss)
 
@@ -49,10 +40,7 @@ import Sparkle
         @Test
         func startingInstallationKeepsBadgeUntilRelaunch() {
             let controller = AppUpdateController(shouldStartUpdater: false)
-            controller.recordAvailableUpdate(
-                version: "1.2.3",
-                isHandledByStandardUserDriver: false
-            )
+            controller.recordAvailableUpdate(version: "1.2.3")
 
             controller.recordUserChoice(.install)
 
@@ -63,10 +51,7 @@ import Sparkle
         @Test
         func skippingUpdateClearsBadge() {
             let controller = AppUpdateController(shouldStartUpdater: false)
-            controller.recordAvailableUpdate(
-                version: "1.2.3",
-                isHandledByStandardUserDriver: false
-            )
+            controller.recordAvailableUpdate(version: "1.2.3")
 
             controller.recordUserChoice(.skip)
 
@@ -77,10 +62,7 @@ import Sparkle
         @Test
         func noUpdateResultClearsStaleBadge() {
             let controller = AppUpdateController(shouldStartUpdater: false)
-            controller.recordAvailableUpdate(
-                version: "1.2.3",
-                isHandledByStandardUserDriver: false
-            )
+            controller.recordAvailableUpdate(version: "1.2.3")
 
             controller.updaterDidNotFindUpdate(
                 controller.updater,
@@ -89,6 +71,42 @@ import Sparkle
 
             #expect(controller.availableVersion == nil)
             #expect(!controller.isUpdateAvailable)
+        }
+
+        @Test
+        func updateDialogRequestedDuringProbeWaitsForProbeToFinish() {
+            let controller = AppUpdateController(shouldStartUpdater: false)
+            controller.checkForUpdateInformation()
+
+            controller.showUpdateDialog()
+            #expect(controller.isUpdateDialogPending)
+
+            controller.updater(controller.updater, didFinishUpdateCycleFor: .updates, error: nil)
+            #expect(controller.isUpdateDialogPending)
+
+            controller.updater(controller.updater, didFinishUpdateCycleFor: .updateInformation, error: nil)
+            #expect(!controller.isUpdateDialogPending)
+        }
+
+        @Test
+        func updateDialogRequestedWithoutProbeIsNotDeferred() {
+            let controller = AppUpdateController(shouldStartUpdater: false)
+
+            controller.showUpdateDialog()
+
+            #expect(!controller.isUpdateDialogPending)
+        }
+
+        @Test
+        func sparkleSchedulerStaysDisabled() throws {
+            let infoPlistURL = URL(filePath: #filePath)
+                .deletingLastPathComponent()
+                .appending(path: "../../../../Resources/Info.plist")
+                .standardized
+            let infoPlist = try #require(NSDictionary(contentsOf: infoPlistURL))
+
+            #expect(infoPlist["SUEnableAutomaticChecks"] as? Bool == false)
+            #expect(infoPlist["SUScheduledCheckInterval"] == nil)
         }
     }
 #endif
