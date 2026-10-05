@@ -83,11 +83,7 @@ public struct TranscriptInfo: Codable, Equatable, Sendable {
     public var metadata: TranscriptMetadata?
 
     public static let activityWindow: TimeInterval = {
-        // App (Contents/MacOS) and bundled MCP (Contents/Helpers) share Contents/Resources.
-        let embeddedURL = Bundle.main.executableURL?.deletingLastPathComponent().deletingLastPathComponent()
-            .appendingPathComponent("Resources/Dahlia_DahliaRuntimeSupport.bundle")
-        let bundle = embeddedURL.flatMap(Bundle.init(url:)) ?? .module
-        guard let url = bundle.url(forResource: "TranscriptPolicy", withExtension: "json"),
+        guard let url = Bundle.runtimeSupport.url(forResource: "TranscriptPolicy", withExtension: "json"),
               let data = try? Data(contentsOf: url),
               let policy = try? JSONDecoder().decode([String: Double].self, from: data),
               let window = policy["activityWindowSeconds"] else {

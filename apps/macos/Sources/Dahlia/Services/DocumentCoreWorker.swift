@@ -164,7 +164,7 @@ final class DocumentCoreWorker: @unchecked Sendable {
         };
         globalThis.console = { log(){}, warn(){}, error(){} };
         """)
-        if let url = Bundle.module.url(forResource: "document-core", withExtension: "global.js"),
+        if let url = Bundle.appModule.url(forResource: "document-core", withExtension: "global.js"),
            let source = try? String(contentsOf: url, encoding: .utf8) {
             context.evaluateScript(source)
         }
