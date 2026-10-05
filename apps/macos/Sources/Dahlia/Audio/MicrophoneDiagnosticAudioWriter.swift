@@ -1,11 +1,10 @@
 @preconcurrency import AVFoundation
 import Foundation
-import os
 
 /// 診断中だけ raw / reference / processed PCM を一時 CAF に保存する。
 /// 書き込みは capture callback をブロックしない専用 serial queue で直列化する。
 final class MicrophoneDiagnosticAudioWriter: @unchecked Sendable {
-    private static let logger = Logger(subsystem: "com.dahlia", category: "MicrophoneDiagnosticAudio")
+    private static let logger = AppLogger(category: "MicrophoneDiagnosticAudio")
 
     let directoryURL: URL
     let rawAudioURL: URL?
@@ -114,7 +113,7 @@ final class MicrophoneDiagnosticAudioWriter: @unchecked Sendable {
         } catch {
             guard !didReportFailure else { return }
             didReportFailure = true
-            Self.logger.error("Failed to write diagnostic audio: \(error.localizedDescription, privacy: .public)")
+            Self.logger.error("Failed to write diagnostic audio: \(error.localizedDescription)")
             failureHandler?(error)
         }
     }

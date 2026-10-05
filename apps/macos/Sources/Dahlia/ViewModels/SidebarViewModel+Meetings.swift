@@ -1,6 +1,5 @@
 import Foundation
 import GRDB
-import OSLog
 
 extension SidebarViewModel {
     func meetingDescription(id meetingId: UUID, workspaceId: UUID) async -> String? {
@@ -74,7 +73,7 @@ extension SidebarViewModel {
         meetingListObservation = observation.start(
             in: dbQueue,
             onError: { [weak self] error in
-                sidebarViewModelLogger.error("Failed to load meeting sidebar: \(error, privacy: .public)")
+                sidebarViewModelLogger.error("Failed to load meeting sidebar: \(error)")
                 ErrorReportingService.capture(error, context: ["source": "meetingSidebarObservation"])
                 guard let self,
                       self.currentWorkspace?.id == workspaceId,
@@ -151,7 +150,7 @@ extension SidebarViewModel {
             } catch is CancellationError {
                 return
             } catch {
-                sidebarViewModelLogger.error("Failed to search meetings: \(error, privacy: .public)")
+                sidebarViewModelLogger.error("Failed to search meetings: \(error)")
                 ErrorReportingService.capture(error, context: ["source": "meetingSidebarSearch"])
                 guard let self,
                       self.currentWorkspace?.id == workspaceId,
@@ -185,7 +184,7 @@ extension SidebarViewModel {
         selectedMeetingObservation = observation.start(
             in: dbQueue,
             onError: { [weak self] error in
-                sidebarViewModelLogger.error("Failed to load selected meeting: \(error, privacy: .public)")
+                sidebarViewModelLogger.error("Failed to load selected meeting: \(error)")
                 ErrorReportingService.capture(error, context: ["source": "selectedMeetingObservation"])
                 guard let self,
                       self.currentWorkspace?.id == workspaceId,
@@ -220,7 +219,7 @@ extension SidebarViewModel {
         meetingReferencesObservation = observation.start(
             in: dbQueue,
             onError: { [weak self] error in
-                sidebarViewModelLogger.error("Failed to load meeting references: \(error, privacy: .public)")
+                sidebarViewModelLogger.error("Failed to load meeting references: \(error)")
                 ErrorReportingService.capture(error, context: ["source": "meetingReferenceObservation"])
                 guard let self,
                       self.currentWorkspace?.id == workspaceId,
@@ -458,7 +457,7 @@ extension SidebarViewModel {
             } catch is CancellationError {
                 return
             } catch {
-                sidebarViewModelLogger.error("Failed to load more meetings: \(error, privacy: .public)")
+                sidebarViewModelLogger.error("Failed to load more meetings: \(error)")
                 ErrorReportingService.capture(error, context: ["source": "meetingSidebarPage"])
                 guard let self,
                       self.currentWorkspace?.id == workspaceId,
@@ -502,7 +501,7 @@ extension SidebarViewModel {
             in: dbQueue,
             onError: { error in
                 sidebarViewModelLogger.error(
-                    "Failed to refresh additional meeting rows: \(error, privacy: .public)"
+                    "Failed to refresh additional meeting rows: \(error)"
                 )
                 ErrorReportingService.capture(
                     error,

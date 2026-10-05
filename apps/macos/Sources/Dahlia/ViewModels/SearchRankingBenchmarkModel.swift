@@ -1,9 +1,8 @@
 import Foundation
 import GRDB
 import Observation
-import OSLog
 
-private let benchmarkLogger = Logger(subsystem: "com.dahlia", category: "SearchRankingBenchmark")
+private let benchmarkLogger = AppLogger(category: "SearchRankingBenchmark")
 
 /// 実データの正解データでランキング設定を採点し、推奨する重みを提示する。
 @MainActor
@@ -130,7 +129,7 @@ final class SearchRankingBenchmarkModel {
                 self.phase = .idle
             } catch {
                 benchmarkLogger.error(
-                    "Search ranking benchmark failed: \(error.localizedDescription, privacy: .public)"
+                    "Search ranking benchmark failed: \(error.localizedDescription)"
                 )
                 guard let self, self.runGeneration == generation else { return }
                 self.errorMessage = error.localizedDescription

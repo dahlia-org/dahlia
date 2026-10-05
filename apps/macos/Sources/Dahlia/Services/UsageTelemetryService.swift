@@ -8,6 +8,7 @@ final class UsageTelemetryService {
     static let shared = UsageTelemetryService(client: TelemetryDeckClient())
 
     private static let appIDInfoKey = "TELEMETRYDECK_APP_ID"
+    private static let logger = AppLogger(category: "Usage")
 
     private let client: any UsageTelemetryClient
     private var startupTask: Task<Void, Never>?
@@ -34,6 +35,8 @@ final class UsageTelemetryService {
     }
 
     func record(_ event: UsageTelemetryEvent) {
+        // 許可済みの内容を含まない値なので、送信の有無にかかわらずローカルログにも残す。
+        Self.logger.notice("\(event.signalName) \(AppLogger.fields(event.parameters))")
         guard isEnabled else { return }
         client.signal(event.signalName, parameters: event.parameters, floatValue: event.floatValue)
     }

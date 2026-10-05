@@ -5,7 +5,6 @@ import DahliaMeetingAccess
 import DahliaRuntimeSupport
 import Foundation
 import GRDB
-import OSLog
 
 /// アプリ全体で単一の SQLite データベースを管理する。
 /// 正アプリは `Application Support/Dahlia`、`run-dev.sh` は分離した開発プロファイルに配置する。
@@ -22,7 +21,7 @@ final class AppDatabaseManager: Sendable {
             do {
                 try RetiredEmbeddingModelCleanup.remove(from: directory)
             } catch {
-                Logger(subsystem: "com.dahlia", category: "ModelCleanup")
+                AppLogger(category: "ModelCleanup")
                     .error("Retired embedding model cleanup failed; will retry on next launch")
             }
         }

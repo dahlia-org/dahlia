@@ -3,7 +3,7 @@ import Foundation
 import os
 
 final class MicrophoneCaptureDiagnostics: Sendable {
-    private static let logger = Logger(subsystem: "com.dahlia", category: "MicrophoneCapture")
+    private static let logger = AppLogger(category: "MicrophoneCapture")
     private static let maximumSnapshotCount = 200
 
     static let shared = MicrophoneCaptureDiagnostics()
@@ -147,9 +147,9 @@ final class MicrophoneCaptureDiagnostics: Sendable {
         let line = renderedLine(snapshot)
         switch snapshot.stage {
         case .attemptFailed, .unexpectedStop:
-            logger.error("\(line, privacy: .public)")
+            logger.error(line)
         default:
-            logger.notice("\(line, privacy: .public)")
+            logger.notice(line)
         }
     }
 

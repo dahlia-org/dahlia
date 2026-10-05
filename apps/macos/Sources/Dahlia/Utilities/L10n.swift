@@ -2642,7 +2642,7 @@ enum L10n { // swiftlint:disable:this type_body_length
     static var applicationLogs: String { String(localized: "Application Logs", bundle: bundle) }
     static var openApplicationLogs: String { String(localized: "Open Logs…", bundle: bundle) }
     static var applicationLogsDescription: String { String(
-        localized: "View Dahlia logs from the current app session. Private values remain redacted.",
+        localized: "View recent Dahlia logs, including earlier app sessions.",
         bundle: bundle
     ) }
     static var applicationLogsUnavailable: String { String(localized: "Logs Unavailable", bundle: bundle) }

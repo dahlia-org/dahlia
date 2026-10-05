@@ -1054,7 +1054,7 @@
 "Stop Monitoring" = "モニターを停止";
 "Application Logs" = "アプリケーションログ";
 "Open Logs…" = "ログを開く…";
-"View Dahlia logs from the current app session. Private values remain redacted." = "現在のアプリセッションに記録された Dahlia のログを表示します。非公開の値はマスクされたままです。";
+"View recent Dahlia logs, including earlier app sessions." = "以前のアプリセッションを含む、最近の Dahlia のログを表示します。";
 "Logs Unavailable" = "ログを取得できません";
 "No Logs" = "ログがありません";
 "New logs from this app session appear here automatically." = "このアプリセッションの新しいログが自動的に表示されます。";

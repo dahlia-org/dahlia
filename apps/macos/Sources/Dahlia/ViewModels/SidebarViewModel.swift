@@ -2,9 +2,8 @@ import DahliaRuntimeSupport
 import Foundation
 import GRDB
 import Observation
-import OSLog
 
-let sidebarViewModelLogger = Logger(subsystem: "com.dahlia", category: "SidebarViewModel")
+let sidebarViewModelLogger = AppLogger(category: "SidebarViewModel")
 
 /// サイドバーの状態管理。Workspace 内のミーティング一覧と設定画面で使う補助データを監視する。
 @Observable
@@ -544,7 +543,7 @@ final class SidebarViewModel {
         allProjectsObservation = observation.start(
             in: dbQueue,
             onError: { [weak self] error in
-                sidebarViewModelLogger.error("Failed to load project catalog: \(error, privacy: .public)")
+                sidebarViewModelLogger.error("Failed to load project catalog: \(error)")
                 ErrorReportingService.capture(error, context: ["source": "projectCatalogObservation"])
                 Task { @MainActor in
                     guard let self,

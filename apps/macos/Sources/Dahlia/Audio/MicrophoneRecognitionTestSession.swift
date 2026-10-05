@@ -320,7 +320,7 @@ actor MicrophoneRecognitionTestSession {
 
 /// 診断CAFとレベル表示を共通のraw/AEC処理へ接続する。
 private final class MicrophoneDiagnosticBufferPipeline: @unchecked Sendable {
-    private static let logger = Logger(subsystem: "com.dahlia", category: "MicrophoneRecognitionTest")
+    private static let logger = AppLogger(category: "MicrophoneRecognitionTest")
 
     let captureFormat: AVAudioFormat
     let processingLatency: TimeInterval?
