@@ -102,7 +102,7 @@
         }
 
         @Test
-        func automaticPresentationIsLimitedToNewUsers() {
+        func automaticPresentationIsLimitedToMissingWorkspacesOrUnfinishedSetup() {
             #expect(SetupTourPresentationPolicy.shouldPresentAutomatically(
                 storedVersion: 0,
                 hasLoadedWorkspaces: true,
@@ -113,10 +113,16 @@
                 hasLoadedWorkspaces: true,
                 hasRegisteredWorkspaces: true
             ))
-            #expect(!SetupTourPresentationPolicy.shouldPresentAutomatically(
+            #expect(SetupTourPresentationPolicy.shouldPresentAutomatically(
                 storedVersion: SetupTourPresentationPolicy.currentVersion,
                 hasLoadedWorkspaces: true,
                 hasRegisteredWorkspaces: false
+            ))
+            #expect(!SetupTourPresentationPolicy.shouldPresentAutomatically(
+                storedVersion: SetupTourPresentationPolicy.currentVersion,
+                hasLoadedWorkspaces: true,
+                hasRegisteredWorkspaces: true,
+                hasSavedProgress: true
             ))
             #expect(!SetupTourPresentationPolicy.shouldPresentAutomatically(
                 storedVersion: 0,
