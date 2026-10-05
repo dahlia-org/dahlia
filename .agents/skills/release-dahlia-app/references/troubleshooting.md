@@ -4,6 +4,17 @@ Use this reference when Dahlia signing, notarization, or publication fails or st
 
 The maintained notarization entrypoint is `.agents/skills/release-dahlia-app/scripts/notarize.sh`. The former `./scripts/notarize.sh` moved into this skill in PR #346. The default Keychain profile is `dahlia-notary`; `NOTARY_PROFILE` in the environment or `.env.local` can override it. Use the same profile throughout recovery.
 
+Before running recovery commands, resolve the profile once in the same Bash/Zsh terminal session at the repository root. This matches `notarize.sh`: `.env.local` is loaded before the default is applied, and its values take precedence over the inherited environment. Repeat this setup when opening a new terminal.
+
+```bash
+if [ -f .env.local ]; then
+    set -a
+    source .env.local
+    set +a
+fi
+NOTARY_PROFILE="${NOTARY_PROFILE:-dahlia-notary}"
+```
+
 ## Locate the stalled stage
 
 | Last output or observation | What to check next |
@@ -44,7 +55,7 @@ Check for a pending Keychain access dialog. Confirm credential access without ex
 
 ```bash
 DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer \
-  xcrun notarytool history --keychain-profile dahlia-notary
+  xcrun notarytool history --keychain-profile "$NOTARY_PROFILE"
 ```
 
 Successful history access does not prove that submission or S3 upload connectivity works. For HTTP 403 with an updated Apple agreement, have the Account Holder accept the agreement and confirm access after propagation; do not rotate working credentials as the first response.
@@ -54,7 +65,7 @@ After stopping the old submission and checking history for an existing submissio
 ```bash
 DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer \
   xcrun notarytool submit Dahlia.dmg \
-    --keychain-profile dahlia-notary --wait --verbose
+    --keychain-profile "$NOTARY_PROFILE" --wait --verbose
 ```
 
 For an upload connectivity issue, retry with `--no-s3-acceleration` added to that command, or test another network / without VPN where permitted. This option changes the upload route, not local DMG preflight. Do not use `--force` to bypass a failed preflight check. Inspect verbose logs locally and redact credentials or authentication data before sharing them.
@@ -62,14 +73,14 @@ For an upload connectivity issue, retry with `--no-s3-acceleration` added to tha
 If a submission ID already exists, inspect and wait on that ID instead of uploading again. Replace the quoted placeholder with the actual ID:
 
 ```bash
-xcrun notarytool info 'SUBMISSION_ID' --keychain-profile dahlia-notary
-xcrun notarytool wait 'SUBMISSION_ID' --keychain-profile dahlia-notary
+xcrun notarytool info 'SUBMISSION_ID' --keychain-profile "$NOTARY_PROFILE"
+xcrun notarytool wait 'SUBMISSION_ID' --keychain-profile "$NOTARY_PROFILE"
 ```
 
 For a completed rejection, obtain its diagnostic log:
 
 ```bash
-xcrun notarytool log 'SUBMISSION_ID' --keychain-profile dahlia-notary \
+xcrun notarytool log 'SUBMISSION_ID' --keychain-profile "$NOTARY_PROFILE" \
   .build/notarization-log.json
 ```
 
