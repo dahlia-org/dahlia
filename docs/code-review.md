@@ -20,10 +20,11 @@
 ## レビューの準備
 
 1. 変更されたファイルと実行経路を確認し、適用されるすべての `AGENTS.md` を読む。
-2. diff だけで判断せず、呼び出し元、状態の owner、失敗経路、関連テストを必要な範囲で確認する。
-3. `AGENTS.md` の Documentation Router から、変更に関係するアーキテクチャ節だけを読む。
-4. レビュー依頼は read-only として扱い、修正も明示的に依頼された場合だけ編集する。
-5. telemetry、analytics、Sentry、外部診断の変更では [`telemetry.md`](telemetry.md) を読み、許可外 field、内容・自由文・識別子、adapter 外の SDK 呼び出し、高頻度送信、送信待ち、ユーザー操作の成功への依存を確認する。
+2. PR 本文の surface、変更しない範囲、人の承認が必要な変更、未実施の検証を読み、主張を diff と照合する。本文で対象外や既知の制約とした項目は、Dahlia の契約に反する場合を除き finding にしない。
+3. diff だけで判断せず、呼び出し元、状態の owner、失敗経路、関連テストを必要な範囲で確認する。
+4. `AGENTS.md` の Documentation Router から、変更に関係するアーキテクチャ節だけを読む。
+5. レビュー依頼は read-only として扱い、修正も明示的に依頼された場合だけ編集する。
+6. telemetry、analytics、Sentry、外部診断の変更では [`telemetry.md`](telemetry.md) を読み、許可外 field、内容・自由文・識別子、adapter 外の SDK 呼び出し、高頻度送信、送信待ち、ユーザー操作の成功への依存を確認する。
 
 ## Finding の採用基準
 
