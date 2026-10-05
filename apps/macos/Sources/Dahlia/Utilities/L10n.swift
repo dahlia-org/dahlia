@@ -2648,7 +2648,7 @@ enum L10n { // swiftlint:disable:this type_body_length
     static var applicationLogsUnavailable: String { String(localized: "Logs Unavailable", bundle: bundle) }
     static var noApplicationLogs: String { String(localized: "No Logs", bundle: bundle) }
     static var noApplicationLogsDescription: String { String(
-        localized: "New logs from this app session appear here automatically.",
+        localized: "New logs appear here automatically.",
         bundle: bundle
     ) }
     static var searchApplicationLogs: String { String(localized: "Search logs…", bundle: bundle) }

@@ -98,8 +98,9 @@ final class ApplicationLogFile: @unchecked Sendable {
             queue.async { [self] in
                 var lines: [String] = []
                 for index in 0 ..< maximumFileCount where lines.count < limit {
-                    guard let text = try? String(contentsOf: fileURL(index), encoding: .utf8) else { continue }
-                    lines = text.split(separator: "\n").map(String.init) + lines
+                    // 書き込み途中で終了した行の壊れた UTF-8 でファイル全体を捨てないよう、置換文字で読む。
+                    guard let data = try? Data(contentsOf: fileURL(index)) else { continue }
+                    lines = String(decoding: data, as: UTF8.self).split(separator: "\n").map(String.init) + lines
                 }
                 continuation.resume(returning: Array(lines.suffix(limit)))
             }

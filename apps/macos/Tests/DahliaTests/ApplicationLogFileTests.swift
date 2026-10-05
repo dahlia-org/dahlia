@@ -34,6 +34,24 @@ import Foundation
             #expect(await file.recentLines(limit: 2).count == 2)
         }
 
+        @Test
+        func keepsReadableLinesWhenAFileHasInvalidUTF8() async throws {
+            let directory = temporaryDirectory()
+            defer { try? FileManager.default.removeItem(at: directory) }
+            try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+            // 前回プロセスが「エ」(E3 82 A8) の途中で終了した行を再現する。
+            let tornLine = Data("before crash\ntorn ".utf8) + Data([0xE3, 0x82]) + Data("\n".utf8)
+            try tornLine.write(to: directory.appending(path: "Dahlia.log"))
+            let file = ApplicationLogFile(directoryURL: directory)
+            file.start()
+
+            file.append("after relaunch", level: .notice, category: "Test")
+            let lines = await file.recentLines(limit: 10)
+
+            #expect(lines.first == "before crash")
+            #expect(lines.last?.hasSuffix("[NOTICE] [Test] after relaunch") == true)
+        }
+
         private func temporaryDirectory() -> URL {
             FileManager.default.temporaryDirectory.appending(path: "application-log-\(UUID.v7())", directoryHint: .isDirectory)
         }
