@@ -7,8 +7,8 @@ The production database is at `~/Library/Application Support/Dahlia/dahlia.sqlit
 ## Migration Invariants
 
 - Keep `migrator.eraseDatabaseOnSchemaChange = false`. Destructive schema resets are prohibited.
-- Do not change the name, order, or body of any registered `registerMigration`.
-- For a schema change, inspect the current final migration and append the required forward migrations named `v<next number>_<purpose>`. Never infer a fixed "next version" from documentation.
+- Do not change the name, order, or body of a migration that has shipped in a release; `shippedMigrationIdentifiers` in `ReleaseSchemaMigrationTests` lists them. Migrations registered after the latest release may be renamed, reordered, rewritten, or consolidated (for example with `merging:`) until they ship.
+- For a schema change, inspect the current final migration, then revise an unshipped migration or append forward migrations named `v<next number>_<purpose>`. Never infer a fixed "next version" from documentation.
 - Follow the existing `add...ColumnIfNeeded` pattern for added columns and keep migration work safe to rerun.
 - Prepare and test data-preserving table rebuilds on disposable databases within the requested schema change. If the intended migration would delete data or irreversibly change its meaning beyond the authorized request, present the proposed transformation, risks, and a non-destructive alternative before implementing that destructive change. Never apply a migration to production as incidental validation.
 

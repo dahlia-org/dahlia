@@ -8,6 +8,31 @@
 
     @MainActor
     struct ReleaseSchemaMigrationTests {
+        /// Migration identifiers shipped through v0.25.5, in registration order.
+        /// Release preparation appends newly shipped identifiers. Never edit existing entries to make this pass:
+        /// a mismatch means a shipped migration was renamed, reordered, or removed.
+        private static let shippedMigrationIdentifiers = [
+            "v3_googleDriveFolderSchema", "v4_instructionsSchema", "v5_summaryGoogleFileId", "v6_transcriptSegmentTranslation",
+            "v7_normalizeLegacyMeetingStatus", "v8_recordingSessions", "v9_summaryDocument", "v10_batchTranscription",
+            "v11_batchAudioStorageLocation", "v12_batchTranscriptionDiscard", "v13_summaryVaultRelativePath", "v14_projectDescription",
+            "v15_calendarEventIdentity", "v16_calendarEventURL", "v17_calendarEventIntegrity", "v18_segmentedRecordingAudio",
+            "v19_summaryExports", "v20_meetingDescription", "v21_removeLegacySummaryColumns", "v22_transcriptPagingIndex",
+            "v23_batchLanguageOptions", "v24_projectWorkspaceHierarchy", "v25_customerIntelligence", "v26_meetingSidebarPagingIndex",
+            "v27_customerIntelligenceWorkspace", "v28_customerIntelligenceTopicReferenceTimestamp", "v29_customerIntelligenceDirectCRUD",
+            "v30_organizationDescription", "v31_meetingConversationMetrics", "v32_transcriptAudioFeatures", "v33_sharedOrganizationDomains",
+            "v34_meetingRecordingStartedAt", "v35_searchDocuments", "v36_summarySearch", "v37_vectorSearch", "v38_screenshotOCRSearch",
+            "v39_dahliaAccountConnections", "v40_vaultAIAccounts", "v41_vaultAISettingsBackfill", "v42_localFirstSchema",
+            "v43_accountConnectionSyncDiscoveryError", "v44_workspaceAndTranscriptSchema", "v45_workspaceLiveTranscriptDraft",
+            "v46_workspacePersonalUser", "v47_orphanedRecordingRecoveryState", "v54_documentsSyncAndBackgroundJobs",
+            "v55_serverContentRetention",
+        ]
+
+        @Test
+        func shippedMigrationsKeepTheirIdentifiersAndOrder() {
+            let registered = AppDatabaseManager.migrator.migrations.prefix(Self.shippedMigrationIdentifiers.count)
+            #expect(Array(registered) == Self.shippedMigrationIdentifiers)
+        }
+
         private func insertLegacyWorkspace(_ workspace: WorkspaceRecord, in db: Database) throws {
             try db.execute(
                 sql: "INSERT INTO workspaces (id, name, createdAt, lastOpenedAt, generationSettings) VALUES (?, ?, ?, ?, ?)",

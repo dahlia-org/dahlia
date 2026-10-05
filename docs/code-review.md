@@ -55,6 +55,8 @@ findings list を返し、prose や追加 field を要求しない。文章を�
 ### 契約と変更範囲
 
 - 依頼された挙動以外の recording、transcription、settings、schema、MCP、backup 契約を変えていないか。
+- ユーザーが到達できる挙動の変更が、ルート `AGENTS.md` の Definition of Done に挙げた該当 surface（client、account、入口、MCP、
+  逆方向の操作）で揃っているか。意図的に対象外とした surface は除き、別の surface から到達できる欠落を指摘する。
 - 新しい coordinator、store、repository、worker が既存 owner と責務を重複していないか。
 - target state と異なる実装を、現在の実装例だけを根拠に正当化していないか。
 
@@ -95,7 +97,7 @@ MainActor stall、UI catch-up のうち影響する境界を検証する。
 
 ### Database とユーザーデータ
 
-- 登録済み migration の name、order、body を変更していないか。
+- リリース済み migration の name、order、body を変更していないか。未リリースの migration の改名、並べ替え、書き換え、統合は指摘しない。
 - released user の行、関係、識別子、意味を削除、再解釈、孤立させないか。
 - 新しい migration が直前 schema の既存行を保持し、空 DB への全 migration 適用にも成功するか。
 - UI または recording-critical path が同期 DB transaction を待たないか。

@@ -73,3 +73,7 @@ for continuous progress and latest-wins for replaceable projections. Never drop 
 
 - Run tests for the changed layer first. Recording-pipeline changes must cover start, stop, reconfiguration, per-source routing, and batch-persistence boundaries as applicable.
 - For UI changes, run a debug build and, when practical, inspect the affected screen in normal, empty, error, and disabled states.
+- For changes to UI projections, transcription-event routing, streaming chat rendering, or interactive image loading, also run
+  `apps/macos/scripts/test-responsiveness.sh`. When a new suite pins a contract in
+  [`UI and Interaction Responsiveness`](../../../../ARCHITECTURE.md#ui-and-interaction-responsiveness) or
+  [`Conformance Status`](../../../../ARCHITECTURE.md#conformance-status), add it to that script.
