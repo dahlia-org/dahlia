@@ -18,7 +18,7 @@ struct ScreenCaptureAudioBuffer: @unchecked Sendable {
 
 /// ScreenCaptureKit の microphone output から、AVAudioEngine を開かずにマイク PCM を取得する。
 final class ScreenCaptureMicrophoneManager: NSObject, @unchecked Sendable {
-    private static let logger = Logger(subsystem: "com.dahlia", category: "ScreenCaptureMicrophone")
+    private static let logger = AppLogger(category: "ScreenCaptureMicrophone")
 
     private struct HandlerState {
         var audioBuffer: (@Sendable (ScreenCaptureAudioBuffer) -> Void)?
@@ -174,7 +174,7 @@ final class ScreenCaptureMicrophoneManager: NSObject, @unchecked Sendable {
             targetFormat: targetFormat.diagnosticDescription,
             detail: "microphoneUIDConfigured=true systemAudioReference=\(capturesSystemAudio)"
         )
-        Self.logger.notice("ScreenCaptureKit microphone capture started; path=\(path.rawValue, privacy: .public)")
+        Self.logger.notice("ScreenCaptureKit microphone capture started; path=\(path.rawValue)")
 
         let hardwareDescription = AudioCaptureManager.deviceName(for: activeDeviceID) ?? "System default microphone"
         return AudioCaptureStartInfo(
@@ -227,7 +227,7 @@ final class ScreenCaptureMicrophoneManager: NSObject, @unchecked Sendable {
                 try await capture.stream.updateConfiguration(capture.configuration)
             } catch {
                 Self.logger.error(
-                    "Failed to disable system audio after AEC bypass: \(error.localizedDescription, privacy: .public)"
+                    "Failed to disable system audio after AEC bypass: \(error.localizedDescription)"
                 )
                 self?.systemAudioConversionState.withLock { $0 = ConversionState() }
             }

@@ -1,5 +1,4 @@
 import Foundation
-import os
 import Translation
 
 actor TranscriptTranslationService {
@@ -8,7 +7,7 @@ actor TranscriptTranslationService {
         let targetLanguageIdentifier: String
     }
 
-    private let logger = Logger(subsystem: "com.dahlia", category: "TranscriptTranslation")
+    private let logger = AppLogger(category: "TranscriptTranslation")
     private var availabilityStatuses: [LanguagePair: LanguageAvailability.Status] = [:]
 
     func translate(
@@ -33,7 +32,7 @@ actor TranscriptTranslationService {
             let response = try await session.translate(trimmedText)
             return response.targetText.nilIfBlank
         } catch {
-            logger.error("Translation failed: \(error.localizedDescription, privacy: .public)")
+            logger.error("Translation failed: \(error.localizedDescription)")
             return nil
         }
     }
@@ -52,8 +51,8 @@ actor TranscriptTranslationService {
         let status = await availability.status(from: source, to: target)
         availabilityStatuses[pair] = status
         if status == .unsupported {
-            logger.warning(
-                "Translation is unsupported for \(pair.sourceLanguageIdentifier, privacy: .public) -> \(pair.targetLanguageIdentifier, privacy: .public)"
+            logger.error(
+                "Translation is unsupported for \(pair.sourceLanguageIdentifier) -> \(pair.targetLanguageIdentifier)"
             )
         }
         return status != .unsupported

@@ -1054,10 +1054,10 @@
 "Stop Monitoring" = "Stop Monitoring";
 "Application Logs" = "Application Logs";
 "Open Logs…" = "Open Logs…";
-"View Dahlia logs from the current app session. Private values remain redacted." = "View Dahlia logs from the current app session. Private values remain redacted.";
+"View recent Dahlia logs, including earlier app sessions." = "View recent Dahlia logs, including earlier app sessions.";
 "Logs Unavailable" = "Logs Unavailable";
 "No Logs" = "No Logs";
-"New logs from this app session appear here automatically." = "New logs from this app session appear here automatically.";
+"New logs appear here automatically." = "New logs appear here automatically.";
 "Search logs…" = "Search logs…";
 "Refresh Logs" = "Refresh Logs";
 "Follow Latest Logs" = "Follow Latest Logs";

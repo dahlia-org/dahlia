@@ -3,7 +3,6 @@
 
 import DahliaRuntimeSupport
 import Foundation
-import OSLog
 
 actor CodexAppServerService {
     nonisolated static let defaultTransportTimeout = Duration.seconds(30)
@@ -144,7 +143,7 @@ actor CodexAppServerService {
     private let summaryTimeout: Duration
     private let chatTurnEventBufferLimit = 32
     let providerAuthenticationPreparation: ProviderAuthenticationPreparation
-    private let logger = Logger(subsystem: "com.dahlia", category: "CodexAppServer")
+    private let logger = AppLogger(category: "CodexAppServer")
     private var transport: (any CodexAppServerTransport)?
     private var readerTask: Task<Void, Never>?
     private var connectionGeneration = 0
@@ -1135,7 +1134,7 @@ private extension CodexAppServerService {
         let generationInputs: [CodexAppServerInput]
         if shouldOmitImages {
             let imageCount = request.inputs.count(where: \CodexAppServerInput.isImage)
-            logger.notice("Omitting \(imageCount, privacy: .public) screenshot image(s) for a text-only Codex model")
+            logger.notice("Omitting \(imageCount) screenshot image(s) for a text-only Codex model")
             generationInputs = request.inputs.filter { !$0.isImageRelated }
         } else {
             generationInputs = request.inputs

@@ -98,6 +98,7 @@ enum ErrorReportingService {
     }
 
     private static let dsnInfoKey = "SENTRY_DSN"
+    private static let logger = AppLogger(category: "ErrorReporting")
     private nonisolated(unsafe) static var isEnabled = false
 
     static func start() {
@@ -137,17 +138,22 @@ enum ErrorReportingService {
         }
     }
 
-    static func capture(_: Error, context: [String: String] = [:]) {
-        capture(context: context)
+    static func capture(_ error: Error, context: [String: String] = [:]) {
+        let error = error as NSError
+        capture(context: context, logFields: ["domain": error.domain, "code": String(error.code)])
     }
 
     static func captureSanitized(_ category: SanitizedCategory) {
         capture(context: ["source": category.rawValue])
     }
 
-    private static func capture(context: [String: String]) {
-        guard isEnabled else { return }
+    private static func capture(context: [String: String], logFields: [String: String] = [:]) {
         let sanitizedContext = sanitizedContext(context)
+        // source はコード中の定数なので、許可リスト外でもローカルログには残す。
+        var fields = sanitizedContext.merging(logFields) { $1 }
+        fields["source"] = context["source"] ?? "unknown"
+        logger.error(AppLogger.fields(fields))
+        guard isEnabled else { return }
         let category = sanitizedContext["source"] ?? "technical_error"
         SentrySDK.capture(error: sanitizedError(description: category)) { scope in
             for (key, value) in sanitizedContext {

@@ -8,13 +8,12 @@ import CoreMedia
 import DahliaMeetingAccess
 import DahliaRuntimeSupport
 import GRDB
-import os
 @preconcurrency import ScreenCaptureKit
 import Speech
 import SwiftUI
 import UniformTypeIdentifiers
 
-private let captionViewModelLogger = Logger(subsystem: "com.dahlia", category: "CaptionViewModel")
+private let captionViewModelLogger = AppLogger(category: "CaptionViewModel")
 
 struct SummaryGenerationRunnerInput {
     let promptContext: SummaryPromptContext
@@ -2381,7 +2380,7 @@ final class CaptionViewModel: ObservableObject {
             } catch is CancellationError {
                 return
             } catch {
-                captionViewModelLogger.error("Failed to load meeting \(meetingId): \(error)")
+                captionViewModelLogger.error("Failed to load meeting")
                 ErrorReportingService.capture(error, context: ["source": "loadMeeting"])
                 if !Task.isCancelled,
                    self.meetingLoadGeneration == generation,
@@ -5573,7 +5572,7 @@ final class CaptionViewModel: ObservableObject {
             }
             lastSavedNoteText = text
         } catch {
-            captionViewModelLogger.error("Failed to save note: \(error)")
+            captionViewModelLogger.error("Failed to save note domain=\((error as NSError).domain) code=\((error as NSError).code)")
         }
     }
 
@@ -5620,7 +5619,7 @@ final class CaptionViewModel: ObservableObject {
                             )
                         }.value
                     } catch {
-                        captionViewModelLogger.error("Failed to delete exported screenshots from the Workspace: \(error)")
+                        captionViewModelLogger.error("Failed to delete exported screenshots from the Workspace")
                         ErrorReportingService.capture(error, context: ["source": "deleteExportedScreenshots"])
                     }
                 }
@@ -5628,7 +5627,7 @@ final class CaptionViewModel: ObservableObject {
                 let deletedIds = Set(deletedScreenshots.map(\.id))
                 self.screenshotStore.remove(ids: deletedIds, meetingID: meetingId)
             } catch {
-                captionViewModelLogger.error("Failed to delete screenshots: \(error)")
+                captionViewModelLogger.error("Failed to delete screenshots")
                 ErrorReportingService.capture(error, context: ["source": "deleteScreenshots"])
             }
         }

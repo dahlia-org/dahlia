@@ -753,6 +753,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     .appending(path: ".process.lock")
             )
             Self.hasMutationOwnership = true
+            ApplicationLogFile.shared.start()
+            let info = Bundle.main.infoDictionary ?? [:]
+            AppLogger(category: "App").notice(
+                "Dahlia launched version=\(info["CFBundleShortVersionString"] ?? "unknown") " +
+                    "build=\(info["CFBundleVersion"] ?? "unknown") pid=\(ProcessInfo.processInfo.processIdentifier) " +
+                    "os=\(ProcessInfo.processInfo.operatingSystemVersionString)"
+            )
         } catch AdvisoryFileLockError.alreadyLocked {
             let alert = NSAlert()
             alert.alertStyle = .warning

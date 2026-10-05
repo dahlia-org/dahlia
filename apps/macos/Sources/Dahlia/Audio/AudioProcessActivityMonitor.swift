@@ -1,6 +1,5 @@
 import CoreAudio
 import Foundation
-import OSLog
 
 actor AudioProcessActivityMonitor {
     typealias RunningInputBundleIDsResult = Result<Set<String>, AudioProcessObjectQueries.QueryFailure>
@@ -57,7 +56,7 @@ actor AudioProcessActivityMonitor {
         }
     }
 
-    private static let logger = Logger(subsystem: "com.dahlia", category: "AudioProcessActivity")
+    private static let logger = AppLogger(category: "AudioProcessActivity")
     private static let failureLogInterval: Duration = .seconds(60)
 
     private let dependencies: Dependencies
@@ -469,12 +468,7 @@ private extension AudioProcessActivityMonitor {
         }
     }
 
-    private func log(_ message: String, level: OSLogType = .info) {
-        switch level {
-        case .error:
-            Self.logger.error("\(message, privacy: .public)")
-        default:
-            Self.logger.info("\(message, privacy: .public)")
-        }
+    private func log(_ message: String, level: AppLogger.Level = .info) {
+        Self.logger.log(message, level: level)
     }
 }

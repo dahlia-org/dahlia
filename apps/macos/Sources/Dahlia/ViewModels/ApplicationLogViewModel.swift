@@ -1,13 +1,11 @@
 import Foundation
 import Observation
-import OSLog
 
 @MainActor
 @Observable
 final class ApplicationLogViewModel {
     private nonisolated static let maximumEntryCount = 2000
     private static let pollingInterval = Duration.seconds(1)
-    private nonisolated static let subsystem = "com.dahlia"
 
     typealias LogLoader = @Sendable () async throws -> [String]
     typealias Sleeper = @Sendable (Duration) async throws -> Void
@@ -22,7 +20,7 @@ final class ApplicationLogViewModel {
 
     init(
         logLines: [String] = [],
-        loadLogs: @escaping LogLoader = ApplicationLogViewModel.loadCurrentProcessLogs,
+        loadLogs: @escaping LogLoader = ApplicationLogViewModel.loadFileLogs,
         sleep: @escaping Sleeper = { try await Task.sleep(for: $0) }
     ) {
         self.logLines = Array(logLines.suffix(Self.maximumEntryCount))
@@ -74,31 +72,7 @@ final class ApplicationLogViewModel {
         return matchingLines.joined(separator: "\n")
     }
 
-    nonisolated static func renderedLine(_ entry: OSLogEntryLog) -> String {
-        let timestamp = entry.date.formatted(.iso8601)
-        return "\(timestamp) [\(levelName(entry.level))] [\(entry.category)] \(entry.composedMessage)"
-    }
-
-    private nonisolated static func loadCurrentProcessLogs() async throws -> [String] {
-        let store = try OSLogStore(scope: .currentProcessIdentifier)
-        let predicate = NSPredicate(format: "subsystem == %@", Self.subsystem)
-        let entries = try store.getEntries(with: .reverse, matching: predicate)
-        return entries.lazy
-            .compactMap { $0 as? OSLogEntryLog }
-            .prefix(Self.maximumEntryCount)
-            .map(Self.renderedLine)
-            .reversed()
-    }
-
-    private nonisolated static func levelName(_ level: OSLogEntryLog.Level) -> String {
-        switch level {
-        case .debug: "DEBUG"
-        case .info: "INFO"
-        case .notice: "NOTICE"
-        case .error: "ERROR"
-        case .fault: "FAULT"
-        case .undefined: "DEFAULT"
-        @unknown default: "DEFAULT"
-        }
+    private nonisolated static func loadFileLogs() async -> [String] {
+        await ApplicationLogFile.shared.recentLines(limit: maximumEntryCount)
     }
 }
