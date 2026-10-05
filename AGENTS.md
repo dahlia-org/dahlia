@@ -75,7 +75,7 @@ Use these terms in code, docs, and reports. Older ADRs may use superseded names.
 
 ## Code Review Rules
 
-- Before reporting findings, read [`docs/code-review.md`](docs/code-review.md) and the architecture sections routed by the closest applicable `AGENTS.md`.
+- Before reporting findings or approving a pull request, read [`docs/code-review.md`](docs/code-review.md) and the architecture sections routed by the closest applicable `AGENTS.md`.
 - Report only actionable defects introduced or exposed by the change. Each finding must identify a reachable trigger, the concrete impact, and the violated Dahlia contract or missing validation. Do not report style, formatting, or other deterministic checks enforced by CI.
 - Prioritize recording and transcription integrity, released-user data, correctness, security, and sustained responsiveness. Do not trade durable or recording-critical data for UI performance; bound, coalesce, cancel, or rebuild only projection work whose source of truth is preserved.
 - Treat new telemetry fields and SDK calls as privacy and responsiveness changes. Reject values outside the telemetry policy and any path that can gate recording, persistence, or UI completion.
@@ -108,12 +108,14 @@ Use `run-dev.sh` for local app launches. Never invoke `build-app.sh --production
 
 `swift run Dahlia` is unsigned and cannot use the Data Protection Keychain. Use `./scripts/run-dev.sh` to verify Keychain or Touch ID behavior.
 
+Stop an app only by the PID you captured when launching it; `run-dev.sh` `exec`s the app, so its PID is the app's. Never use `killall`, `pkill`, or a PID found by matching a name or path. The production build and every worktree's development build share the process name `Dahlia`, so this can stop the user's production app mid-recording or another worktree's app, and agent processes can match the repository path.
+
 ## Definition of Done
 
 - The requested outcome and all applicable repository instructions are satisfied.
 - Swift changes pass `swift build`, behavior changes pass targeted tests, and broader changes run `swift test --experimental-maximum-parallelization-width 4` when warranted. Swift source changes also pass `CI=true ./scripts/lint.sh`.
 - Confirm from the test summary—not only exit code 0—that the intended tests actually ran.
-- Changes to public behavior, settings, or schemas include the corresponding tests, localization, and documentation.
+- Changes to public behavior, settings, or schemas include the corresponding tests, localization, and documentation. When a documented contract or decision changes, rewrite or remove the affected text instead of appending a new account. Keep contracts such as allowlists, schemas, and required ordering current, but do not restate implementation details the code already records or add per-PR summaries.
 - A user-reachable behavior change covers every surface it applies to. Decide each item below, and in the final report name the surfaces you changed and those you deliberately left out:
   - Clients: the macOS app, Private Web, and the Electron alpha, which share `packages/ui`.
   - Accounts: Local Accounts and Server Accounts.

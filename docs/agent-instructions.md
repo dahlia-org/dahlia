@@ -40,10 +40,10 @@ Edit と Write はリンク経由で書き込めず、`core.symlinks` が無効�
 
 ## レビュー指示の配置
 
-レビュー規則は、Codex managed review、ローカルの `codex review`、Claude の `/code-review`、実装後のセルフレビューで同じ正本を使う。
+レビュー規則は、Codex managed review、Pullfrog の PR review、ローカルの `codex review`、Claude の `/code-review`、実装後のセルフレビューで同じ正本を使う。
 
 - リポジトリ全体または subtree 固有の重大な制約: 最も近い `AGENTS.md` の `## Code Review Rules`
-- finding の採用基準、出力に必要な根拠、レビュー専用チェックリスト: `docs/code-review.md`
+- finding の採用基準、出力に必要な根拠、承認の条件、レビュー専用チェックリスト: `docs/code-review.md`
 - 機能の採否、scope の境界、AI と人の役割分担: `PRODUCT.md`
 - 現在の ownership、workload、failure mode、UI responsiveness の契約: `ARCHITECTURE.md`
 - 判断の経緯または既存決定の変更: 関連する ADR
