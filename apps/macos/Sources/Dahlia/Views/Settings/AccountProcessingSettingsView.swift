@@ -47,22 +47,17 @@ struct WorkspaceProcessingSettingsView: View {
     @Bindable private var workspaceSettings = WorkspaceAISettingsModel.shared
 
     var body: some View {
-        Form {
-            if let error = workspaceSettings.errorMessage {
-                Section { SettingsStatusMessage(text: error, systemImage: "exclamationmark.triangle", tint: .orange) }
-            }
-            if let workspace = settings.currentWorkspace {
-                Section(L10n.generatedContentLanguage) {
-                    Picker(L10n.summaryOutputLanguage, selection: $workspaceSettings.generationSettings.outputLanguage) {
-                        ForEach(SummaryLanguage.allCases) { Text($0.displayName).tag($0) }
-                    }
-                    Text(L10n.settingsOutputLanguageDescription).foregroundStyle(.secondary)
-                }
-                .disabled(!workspace.allowsWorkspaceManagement)
-            } else {
-                ContentUnavailableView(L10n.noWorkspaceSelected, systemImage: ProjectIcon.workspace.systemImageName)
-            }
+        if let error = workspaceSettings.errorMessage {
+            Section { SettingsStatusMessage(text: error, systemImage: "exclamationmark.triangle", tint: .orange) }
         }
-        .formStyle(.grouped)
+        if let workspace = settings.currentWorkspace {
+            Section(L10n.generatedContentLanguage) {
+                Picker(L10n.summaryOutputLanguage, selection: $workspaceSettings.generationSettings.outputLanguage) {
+                    ForEach(SummaryLanguage.allCases) { Text($0.displayName).tag($0) }
+                }
+                Text(L10n.settingsOutputLanguageDescription).foregroundStyle(.secondary)
+            }
+            .disabled(!workspace.allowsWorkspaceManagement)
+        }
     }
 }

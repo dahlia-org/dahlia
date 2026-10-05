@@ -3,8 +3,7 @@
 "settings.organization.workspaceSettings" = "ワークスペースの設定";
 "settings.organization.searchSettings" = "設定を検索";
 "settings.organization.settingsAccountIntro" = "選択中のアカウントのAI設定です。このMacでのみ適用され、同じアカウントのすべてのワークスペースで共通です。別のMacやWebには同期されません。";
-"settings.organization.settingsWorkspaceManagementIntro" = "ワークスペースの名前、所属アカウント、共有と書き出し先を管理します。";
-"settings.organization.settingsWorkspaceIntro" = "選択中のワークスペースで共有する出力言語を設定します。";
+"settings.organization.settingsWorkspaceManagementIntro" = "使用するワークスペースを切り替え、名前、所属アカウント、共有、書き出し先と、選択中のワークスペースの出力言語を管理します。";
 "settings.organization.settingsAccountsIntro" = "使用するアカウントを切り替え、選択中のアカウントの接続とAI設定を管理します。";
 "settings.organization.settingsExportIntro" = "サイドバーで選択中のアカウントの書き出し先を、このMacで設定します。";
 "settings.organization.settingsAccountSelectionDescription" = "編集対象を選んでも、開いているワークスペースは変わりません。";
@@ -1132,6 +1131,7 @@
 "Account" = "アカウント";
 "Selected Account" = "選択中のアカウント";
 "Switch Account" = "アカウントを切り替え";
+"Selected Workspace" = "選択中のワークスペース";
 "Local Account Model Provider" = "ローカルアカウントのモデルプロバイダー";
 "Choose the model provider used by the Local Account." = "ローカルアカウントで使用するモデルプロバイダーを選択します。";
 "This setting is shared by all Local Account workspaces. Dahlia Server and Cloud use hosted models automatically." = "この設定はローカルアカウントのすべてのワークスペースで共通です。Dahlia Server と Cloud は hosted モデルを自動的に使用します。";
@@ -1474,7 +1474,7 @@
 "Choose the AI account used by this Workspace." = "このワークスペースで使用するAIアカウントを選びます。";
 "This account is used by %lld Workspaces. Those Workspaces will use the Local Account, and this account's Codex and Google Drive connection data will be deleted." = "このアカウントは%lld個のワークスペースで使用されています。対象のワークスペースはローカルアカウントへ戻り、このアカウントのCodexデータとGoogle Drive連携情報は削除されます。";
 "Dahlia stores meeting data and generated files in a local Workspace." = "Dahliaはミーティングデータと生成ファイルをローカルのWorkspaceに保存します。";
-"Choose the languages Dahlia should recognize. Set the AI output language in each workspace's settings." = "Dahliaが認識する言語を選びます。AIの出力言語は各ワークスペースの設定で変更できます。";
+"Choose the languages Dahlia should recognize. Set the AI output language in Manage Workspaces." = "Dahliaが認識する言語を選びます。AIの出力言語は「ワークスペースを管理」で変更できます。";
 "Recognition and OCR Languages" = "認識・OCR対象の言語";
 "Primary Language" = "要約・画像説明の言語";
 "Used for summaries and screenshot captions." = "要約とスクリーンショットの画像説明に使用します。";

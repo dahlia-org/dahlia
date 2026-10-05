@@ -13,14 +13,13 @@ import Foundation
             #expect(SettingsNavigation.visibleSelection(.accountPreferences) == .accountsAndWorkspaces)
             #expect(SettingsNavigation.visibleSelection(.macInference) == .accountsAndWorkspaces)
             #expect(!SettingsGroup.workspace.categories.contains(.accountPreferences))
-            #expect(SettingsGroup.workspace.categories.contains(.workspacePreferences))
+            #expect(SettingsGroup.workspace.categories == [.workspace])
             #expect(!SettingsGroup.app.categories.contains(.macInference))
             #expect(SettingsCategory.accountPreferences.label == L10n.accountPreferences)
-            #expect(SettingsCategory.workspacePreferences.label == L10n.workspaceSettings)
-            #expect(SettingsNavigation.visibleSelection(.workspacePreferences) == .workspacePreferences)
-            #expect(SettingsCategory.workspacePreferences.matches(L10n.summaryOutputLanguage))
+            #expect(SettingsNavigation.visibleSelection(.workspacePreferences) == .workspace)
+            #expect(SettingsCategory.workspace.matches(L10n.summaryOutputLanguage))
             #expect(!SettingsCategory.accountPreferences.matches(L10n.summaryOutputLanguage))
-            #expect(!SettingsCategory.workspacePreferences.matches(L10n.automaticRecordingProcessing))
+            #expect(!SettingsCategory.workspace.matches(L10n.automaticRecordingProcessing))
         }
 
         @Test
@@ -28,6 +27,7 @@ import Foundation
             let groupedCategories = SettingsGroup.allCases.flatMap(\.categories)
             let hiddenCategories: Set<SettingsCategory> = [
                 .accountPreferences,
+                .workspacePreferences,
                 .macInference,
                 .dahliaAccounts,
                 .modelProvider,
@@ -134,8 +134,8 @@ import Foundation
             defaults.set(SettingsCategory.recordingStopDetection.rawValue, forKey: SettingsNavigation.selectedCategoryDefaultsKey)
             #expect(SettingsNavigation.savedSelection(in: defaults) == .general)
 
-            SettingsNavigation.saveSelection(.workspacePreferences, in: defaults)
-            #expect(SettingsNavigation.savedSelection(in: defaults) == .workspacePreferences)
+            defaults.set(SettingsCategory.workspacePreferences.rawValue, forKey: SettingsNavigation.selectedCategoryDefaultsKey)
+            #expect(SettingsNavigation.savedSelection(in: defaults) == .workspace)
         }
 
         @Test
@@ -155,6 +155,7 @@ import Foundation
             #expect(SettingsCategory.accountsAndWorkspaces.rawValue == "accountsAndWorkspaces")
             #expect(SettingsCategory.dahliaAccounts.rawValue == "dahliaAccounts")
             #expect(SettingsCategory.workspace.rawValue == "workspace")
+            #expect(SettingsCategory.workspacePreferences.rawValue == "workspacePreferences")
             #expect(SettingsCategory.liveSubtitles.rawValue == "liveSubtitles")
             #expect(SettingsCategory.recordingStopDetection.rawValue == "recordingStopDetection")
             #expect(SettingsCategory.cloudStorage.rawValue == "cloudStorage")

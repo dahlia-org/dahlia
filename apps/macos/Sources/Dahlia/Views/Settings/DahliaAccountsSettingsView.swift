@@ -40,7 +40,7 @@ struct DahliaAccountsSettingsView: View {
                     selectionMark(connectionID: nil)
                 }
             }
-            .modifier(AccountRowHoverModifier(isEnabled: workspaceToSelect(for: nil) != nil))
+            .modifier(SettingsSelectableRowHoverModifier(isEnabled: workspaceToSelect(for: nil) != nil))
             ForEach(controller.connections) { connection in
                 connectionRow(connection)
             }
@@ -88,6 +88,7 @@ struct DahliaAccountsSettingsView: View {
                     }
                 }
             }
+            .modifier(SettingsSelectableRowHoverModifier(isEnabled: workspaceToSelect(for: connection) != nil))
             Group {
                 if controller.isBusy(connectionID: connection.id) {
                     ProgressView()
@@ -113,7 +114,6 @@ struct DahliaAccountsSettingsView: View {
             .padding(.trailing, 8)
             .padding(.vertical, 6)
         }
-        .modifier(AccountRowHoverModifier(isEnabled: workspaceToSelect(for: connection) != nil))
     }
 
     private func selectionButton(
@@ -160,19 +160,5 @@ struct DahliaAccountsSettingsView: View {
                 .foregroundStyle(.tint)
                 .accessibilityLabel(L10n.selectedAccount)
         }
-    }
-}
-
-private struct AccountRowHoverModifier: ViewModifier {
-    let isEnabled: Bool
-    @State private var isHovered = false
-
-    func body(content: Content) -> some View {
-        content
-            .background(
-                isEnabled && isHovered ? DahliaDesign.sidebarHighlightColor : .clear,
-                in: .rect(cornerRadius: DahliaDesign.Highlight.compactCornerRadius)
-            )
-            .onHover { isHovered = $0 }
     }
 }
