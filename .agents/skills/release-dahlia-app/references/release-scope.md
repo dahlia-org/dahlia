@@ -8,3 +8,4 @@
 3. Determine one version increment from the complete release range. Apply [Desktop Release Versioning](../../../../docs/desktop-release-versioning.md); never infer a major version.
 4. Stop if a GitHub Release already exists for the target version. An existing target tag at `HEAD` is not the comparison base when that release is still unpublished.
 5. Update both version keys in `Resources/Info.plist` only during release preparation.
+6. If the release range registers new database migrations, append their identifiers in registration order to `shippedMigrationIdentifiers` in `apps/macos/Tests/DahliaTests/ReleaseSchemaMigrationTests.swift` and update the release version in its comment.

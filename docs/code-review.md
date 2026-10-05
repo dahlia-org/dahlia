@@ -55,6 +55,8 @@ findings list を返し、prose や追加 field を要求しない。文章を�
 ### 契約と変更範囲
 
 - 依頼された挙動以外の recording、transcription、settings、schema、MCP、backup 契約を変えていないか。
+- ユーザーが到達できる挙動の変更が、ルート `AGENTS.md` の Definition of Done に挙げた該当 surface（client、account、入口、MCP、
+  逆方向の操作）で揃っているか。意図的に対象外とした surface は除き、別の surface から到達できる欠落を指摘する。
 - 新しい coordinator、store、repository、worker が既存 owner と責務を重複していないか。
 - target state と異なる実装を、現在の実装例だけを根拠に正当化していないか。
 

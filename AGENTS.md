@@ -49,6 +49,20 @@ omission could cause data loss.
 A change that conflicts with a product tenet is not resolved by editing `PRODUCT.md` to match the change. Report the
 conflict, and update the tenet only through a new ADR that the user approves.
 
+## Glossary
+
+Use these terms in code, docs, and reports. Older ADRs may use superseded names.
+
+- **Local Account / Server Account**: a Local Account keeps its data only on the Mac. A Server Account belongs to a Dahlia Server, which holds the canonical records; Desktop SQLite is its offline working copy.
+- **Workspace** (formerly *Vault*): the container of Projects, Meetings, and files that belongs to one account. Every Server Workspace belongs to an Organization; a personal Workspace is the private Workspace of one Organization member.
+- **Project**: a database record in one Workspace, either a root or a subproject one level below it. Directories are derived Summary export destinations and never define Project identity or hierarchy.
+- **Meeting**: the record users browse; it collects recordings, the transcript, the Summary, Notes, and screenshots.
+- **Recording session**: one capture run within a Meeting. It fixes its processing location and settings when recording starts.
+- **Processing location**: `local` uses Apple Speech and the bundled Codex on the Mac; `remote` has the Server process saved recordings.
+- **Finalized transcript**: transcript segments durably saved in SQLite. Previews and live captions are not finalized.
+- **Projection**: display or derived data rebuilt from a durable source of truth, such as `TranscriptStore`, live captions, or the search index. Projections may be bounded, coalesced, or discarded under load.
+- **Document**: a collaborative Yjs document of kind `notes`, `summary`, or `general`. A Meeting's Notes are its `notes` Document.
+
 ## Engineering Constraints
 
 - **IMPORTANT:** Do not write overly defensive code. Always prefer simplicity over pathological complexity.
@@ -100,5 +114,11 @@ Use `run-dev.sh` for local app launches. Never invoke `build-app.sh --production
 - Swift changes pass `swift build`, behavior changes pass targeted tests, and broader changes run `swift test --experimental-maximum-parallelization-width 4` when warranted. Swift source changes also pass `CI=true ./scripts/lint.sh`.
 - Confirm from the test summary—not only exit code 0—that the intended tests actually ran.
 - Changes to public behavior, settings, or schemas include the corresponding tests, localization, and documentation.
+- A user-reachable behavior change covers every surface it applies to. Decide each item below, and in the final report name the surfaces you changed and those you deliberately left out:
+  - Clients: the macOS app, Private Web, and the Electron alpha, which share `packages/ui`.
+  - Accounts: Local Accounts and Server Accounts.
+  - Entry points: menu commands, keyboard shortcuts, Settings, context menus, and other views that expose the same operation.
+  - AI access: whether Local MCP (`dahlia-mcp`) or Server MCP needs the same capability. Route every transport through the same service method.
+  - Reverse paths: each new way in has a way out and a visible state, such as cancel, undo, disable, or restore.
 - Review the final diff against the applicable Code Review Rules for unintended changes and regressions.
 - If a check cannot run, report the exact command, reason, and next verification step. Do not describe an unverified check as passing.
