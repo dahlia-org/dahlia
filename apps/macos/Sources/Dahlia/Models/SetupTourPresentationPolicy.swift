@@ -18,7 +18,8 @@ enum SetupTourPresentationPolicy {
         hasRegisteredWorkspaces: Bool,
         hasSavedProgress: Bool = false
     ) -> Bool {
-        hasLoadedWorkspaces && (!hasRegisteredWorkspaces || hasSavedProgress) && storedVersion < currentVersion
+        // The completion flag lives in UserDefaults, which can outlive or be shared beyond the database.
+        hasLoadedWorkspaces && (!hasRegisteredWorkspaces || (hasSavedProgress && storedVersion < currentVersion))
     }
 
     static func markCompleted(in defaults: UserDefaults = .standard) {

@@ -528,6 +528,10 @@ struct DahliaApp: App {
             sidebarViewModel.clearMeetingSelection()
             viewModel.clearCurrentMeeting()
             showWorkspacePicker = true
+            if workspaceManagementModel.hasLoadedWorkspaces, workspaceManagementModel.workspaces.isEmpty,
+               mainWindowNavigation.setupTourMode == nil {
+                mainWindowNavigation.presentInitialSetupTour()
+            }
             return
         }
         AppSettings.shared.currentWorkspace = updated
