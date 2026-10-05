@@ -58,8 +58,6 @@ struct WorkspaceProcessingSettingsView: View {
                 Text(L10n.settingsOutputLanguageDescription).foregroundStyle(.secondary)
             }
             .disabled(!workspace.allowsWorkspaceManagement)
-        } else {
-            ContentUnavailableView(L10n.noWorkspaceSelected, systemImage: ProjectIcon.workspace.systemImageName)
         }
     }
 }

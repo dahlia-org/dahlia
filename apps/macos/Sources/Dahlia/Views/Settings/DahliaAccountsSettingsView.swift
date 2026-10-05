@@ -88,6 +88,7 @@ struct DahliaAccountsSettingsView: View {
                     }
                 }
             }
+            .modifier(SettingsSelectableRowHoverModifier(isEnabled: workspaceToSelect(for: connection) != nil))
             Group {
                 if controller.isBusy(connectionID: connection.id) {
                     ProgressView()
@@ -113,7 +114,6 @@ struct DahliaAccountsSettingsView: View {
             .padding(.trailing, 8)
             .padding(.vertical, 6)
         }
-        .modifier(SettingsSelectableRowHoverModifier(isEnabled: workspaceToSelect(for: connection) != nil))
     }
 
     private func selectionButton(

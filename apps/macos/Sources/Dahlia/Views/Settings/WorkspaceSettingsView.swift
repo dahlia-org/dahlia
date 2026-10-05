@@ -147,6 +147,7 @@ struct WorkspaceSettingsView: View {
                         .truncationMode(.middle)
                 }
             }
+            .modifier(SettingsSelectableRowHoverModifier(isEnabled: canSelect(workspace)))
             .help(workspace.path ?? L10n.noLocalExportFolder)
 
             HStack {
@@ -176,7 +177,6 @@ struct WorkspaceSettingsView: View {
             .padding(.trailing, 8)
             .padding(.vertical, 6)
         }
-        .modifier(SettingsSelectableRowHoverModifier(isEnabled: canSelect(workspace)))
     }
 
     private func selectionButton(
