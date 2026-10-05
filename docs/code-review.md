@@ -97,7 +97,7 @@ MainActor stall、UI catch-up のうち影響する境界を検証する。
 
 ### Database とユーザーデータ
 
-- 登録済み migration の name、order、body を変更していないか。
+- リリース済み migration の name、order、body を変更していないか。未リリースの migration の改名、並べ替え、書き換え、統合は指摘しない。
 - released user の行、関係、識別子、意味を削除、再解釈、孤立させないか。
 - 新しい migration が直前 schema の既存行を保持し、空 DB への全 migration 適用にも成功するか。
 - UI または recording-critical path が同期 DB transaction を待たないか。
