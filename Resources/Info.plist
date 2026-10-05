@@ -39,9 +39,7 @@
     <key>SUFeedURL</key>
     <string>https://github.com/dahlia-org/dahlia/releases/latest/download/appcast.xml</string>
     <key>SUEnableAutomaticChecks</key>
-    <true/>
-    <key>SUScheduledCheckInterval</key>
-    <integer>3600</integer>
+    <false/>
     <key>SUAutomaticallyUpdate</key>
     <false/>
     <key>SUAllowsAutomaticUpdates</key>

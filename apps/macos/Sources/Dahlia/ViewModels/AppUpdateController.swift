@@ -1,15 +1,20 @@
 import Observation
 import Sparkle
 
+/// Sparkle's scheduled driver keeps the appcast item it found until the user answers it, which blocks later checks
+/// and makes the update dialog offer a stale version. Dahlia therefore leaves Sparkle's scheduler disabled, probes the
+/// feed without UI for the badge, and lets the badge start a fresh user-initiated check.
 @MainActor
 @Observable
-final class AppUpdateController: NSObject, @MainActor SPUStandardUserDriverDelegate, @MainActor SPUUpdaterDelegate {
+final class AppUpdateController: NSObject, @MainActor SPUUpdaterDelegate {
+    private static let updateInformationCheckInterval: Duration = .seconds(60 * 60)
+
     private(set) var availableVersion: String?
 
     @ObservationIgnored private lazy var updaterController = SPUStandardUpdaterController(
         startingUpdater: false,
         updaterDelegate: self,
-        userDriverDelegate: self
+        userDriverDelegate: nil
     )
 
     var updater: SPUUpdater {
@@ -20,15 +25,17 @@ final class AppUpdateController: NSObject, @MainActor SPUStandardUserDriverDeleg
         availableVersion != nil
     }
 
-    var supportsGentleScheduledUpdateReminders: Bool {
-        true
-    }
-
     init(shouldStartUpdater: Bool = AppUpdatePolicy.shouldStartUpdater()) {
         super.init()
 
         if shouldStartUpdater {
             updaterController.startUpdater()
+            Task { [weak self] in
+                while !Task.isCancelled {
+                    self?.checkForUpdateInformation()
+                    try? await Task.sleep(for: Self.updateInformationCheckInterval)
+                }
+            }
         }
     }
 
@@ -36,22 +43,15 @@ final class AppUpdateController: NSObject, @MainActor SPUStandardUserDriverDeleg
         updater.checkForUpdates()
     }
 
-    func standardUserDriverShouldHandleShowingScheduledUpdate(
-        _: SUAppcastItem,
-        andInImmediateFocus _: Bool
-    ) -> Bool {
-        false
+    private func checkForUpdateInformation() {
+        guard !updater.sessionInProgress else {
+            return
+        }
+        updater.checkForUpdateInformation()
     }
 
-    func standardUserDriverWillHandleShowingUpdate(
-        _ handleShowingUpdate: Bool,
-        forUpdate update: SUAppcastItem,
-        state _: SPUUserUpdateState
-    ) {
-        recordAvailableUpdate(
-            version: update.displayVersionString,
-            isHandledByStandardUserDriver: handleShowingUpdate
-        )
+    func updater(_: SPUUpdater, didFindValidUpdate item: SUAppcastItem) {
+        recordAvailableUpdate(version: item.displayVersionString)
     }
 
     func updater(
@@ -67,7 +67,7 @@ final class AppUpdateController: NSObject, @MainActor SPUStandardUserDriverDeleg
         availableVersion = nil
     }
 
-    func recordAvailableUpdate(version: String, isHandledByStandardUserDriver _: Bool) {
+    func recordAvailableUpdate(version: String) {
         availableVersion = version
     }
 
