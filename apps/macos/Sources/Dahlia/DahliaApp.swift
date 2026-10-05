@@ -237,6 +237,11 @@ struct DahliaApp: App {
                 ServerAccountSettingsModel.shared.refreshAll()
                 Task { await meetingSyncWorker.applicationBecameActive() }
             }
+            .onChange(of: hasNoWorkspaces) { _, hasNoWorkspaces in
+                if hasNoWorkspaces, mainWindowNavigation.setupTourMode == nil {
+                    mainWindowNavigation.presentInitialSetupTour()
+                }
+            }
             .onChange(of: dahliaAccountController.connections) {
                 ServerAccountSettingsModel.shared.updateConnections(dahliaAccountController.connections)
                 Task {
@@ -341,6 +346,10 @@ struct DahliaApp: App {
             )
         }
         .menuBarExtraStyle(.menu)
+    }
+
+    private var hasNoWorkspaces: Bool {
+        workspaceManagementModel.hasLoadedWorkspaces && workspaceManagementModel.workspaces.isEmpty
     }
 
     private func finishLaunching() {
@@ -528,10 +537,6 @@ struct DahliaApp: App {
             sidebarViewModel.clearMeetingSelection()
             viewModel.clearCurrentMeeting()
             showWorkspacePicker = true
-            if workspaceManagementModel.hasLoadedWorkspaces, workspaceManagementModel.workspaces.isEmpty,
-               mainWindowNavigation.setupTourMode == nil {
-                mainWindowNavigation.presentInitialSetupTour()
-            }
             return
         }
         AppSettings.shared.currentWorkspace = updated
