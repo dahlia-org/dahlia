@@ -1,7 +1,8 @@
 import DahliaRuntimeSupport
 import Foundation
 
-/// スクリーンショットを Workspace の `_dahlia/screenshots/` フォルダに書き出すサービス。
+/// 以前 Workspace の `_dahlia/screenshots/` に書き出したスクリーンショットを扱う。
+/// 要約 Markdown はアプリ管理下の原本を参照するため、新たには書き出さない。
 enum ScreenshotExportService {
     static func screenshotsDirectoryURL(in workspaceURL: URL) -> URL {
         workspaceURL
@@ -10,39 +11,10 @@ enum ScreenshotExportService {
     }
 
     static func filename(for screenshot: MeetingScreenshotRecord) -> String {
-        SummaryScreenshotFilename.filename(
-            id: screenshot.id,
-            mimeType: screenshot.mimeType,
-            imageData: screenshot.imageData ?? Data()
-        )
+        "\(screenshot.id.uuidString).\(ImageEncoder.fileExtension(mimeType: screenshot.mimeType, data: screenshot.imageData ?? Data()))"
     }
 
-    /// スクリーンショットを `<workspace>/_dahlia/screenshots/<screenshotId>.<ext>` に書き出す。
-    /// DB の `imageData` をそのまま書き出す。
-    /// - Returns: workspace 相対パスの配列
-    static func exportScreenshots(
-        workspaceURL: URL,
-        screenshots: [MeetingScreenshotRecord]
-    ) throws -> [String] {
-        guard !screenshots.isEmpty else { return [] }
-
-        let dir = screenshotsDirectoryURL(in: workspaceURL)
-        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
-
-        var relativePaths: [String] = []
-
-        for screenshot in screenshots {
-            let filename = filename(for: screenshot)
-            let relativePath = "_dahlia/screenshots/\(filename)"
-            let fileURL = workspaceURL.appendingPathComponent(relativePath)
-            guard let bytes = screenshot.imageData else { throw ScreenshotContentError.unavailable }
-            try bytes.write(to: fileURL, options: .atomic)
-            relativePaths.append(relativePath)
-        }
-
-        return relativePaths
-    }
-
+    /// 削除したスクリーンショットの、以前書き出した複製を Workspace から取り除く。
     static func deleteExportedScreenshots(
         workspaceURL: URL,
         screenshots: [MeetingScreenshotRecord]

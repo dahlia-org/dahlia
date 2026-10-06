@@ -1,3 +1,4 @@
+import DahliaMeetingAccess
 import DahliaRuntimeSupport
 import Foundation
 
@@ -5,9 +6,10 @@ extension ObsidianMarkdownSummaryRenderer {
     /// アプリ側の `SummaryRenderContext` から共有レンダラーを呼ぶ。
     /// 描画そのものは `DahliaRuntimeSupport` にあり、MCP ヘルパーと同じ出力になる。
     static func render(document: SummaryDocument, context: SummaryRenderContext) -> SummaryMarkdownRenderResult {
-        var screenshotFilenames: [UUID: String] = [:]
-        for screenshot in context.screenshots where screenshotFilenames[screenshot.id] == nil {
-            screenshotFilenames[screenshot.id] = ScreenshotExportService.filename(for: screenshot)
+        var screenshotURLs: [UUID: URL] = [:]
+        for screenshot in context.screenshots where screenshotURLs[screenshot.id] == nil {
+            screenshotURLs[screenshot.id] = (screenshot.localReference ?? screenshot.remoteReference)
+                .flatMap(ScreenshotFileStore.originalFileURL(reference:))
         }
 
         return render(
@@ -15,7 +17,7 @@ extension ObsidianMarkdownSummaryRenderer {
             context: SummaryMarkdownRenderContext(
                 meetingId: context.meetingId,
                 createdAt: context.createdAt,
-                screenshotFilenames: screenshotFilenames
+                screenshotURLs: screenshotURLs
             ),
             actionItemsHeading: L10n.actionItems
         )

@@ -4059,11 +4059,6 @@ final class CaptionViewModel: ObservableObject {
                 }
             } catch { errorMessage = error.localizedDescription }
         }
-        await completeBatchRecording(
-            meetingId: meetingId,
-            workspaceURL: workspaceURL,
-            dbQueue: dbQueue
-        )
     }
 
     static func stoppedBatchRecordingFailureMessage(
@@ -4253,32 +4248,6 @@ final class CaptionViewModel: ObservableObject {
                 .fetchAll(db)
                 .map(\.id)
         }
-    }
-
-    private func completeBatchRecording(
-        meetingId: UUID?,
-        workspaceURL: URL?,
-        dbQueue: DatabaseQueue?
-    ) async {
-        if let workspaceURL, let meetingId, let dbQueue {
-            await exportBatchScreenshots(
-                workspaceURL: workspaceURL,
-                meetingId: meetingId,
-                dbQueue: dbQueue
-            )
-        }
-    }
-
-    private func exportBatchScreenshots(workspaceURL: URL, meetingId: UUID, dbQueue: DatabaseQueue) async {
-        let screenshots = await Task.detached(priority: .utility) {
-            let repository = MeetingRepository(dbQueue: dbQueue)
-            return (try? repository.fetchScreenshots(forMeetingId: meetingId)) ?? []
-        }.value
-        guard !screenshots.isEmpty else { return }
-        _ = await Task.detached(priority: .utility) {
-            guard let resolved = try? await ScreenshotContentProvider.shared.resolved(screenshots, dbQueue: dbQueue) else { return }
-            _ = try? ScreenshotExportService.exportScreenshots(workspaceURL: workspaceURL, screenshots: resolved)
-        }.value
     }
 
     private func mergedSegmentsForExport(
@@ -5387,7 +5356,7 @@ final class CaptionViewModel: ObservableObject {
         }
     }
 
-    /// 要約なしでファイル書き出しのみ実行する。
+    /// 要約なしで文字起こしの書き出しのみ実行する。メインアクター外で実行。
     private func exportFiles(
         workspaceURL: URL,
         meetingId: UUID,
@@ -5396,33 +5365,7 @@ final class CaptionViewModel: ObservableObject {
         segments: [TranscriptSegment],
         recordingSessions: [RecordingSessionTimeline]
     ) async {
-        var screenshots: [MeetingScreenshotRecord] = []
-        if let dbQueue = currentDbQueue {
-            let repo = MeetingRepository(dbQueue: dbQueue)
-            screenshots = (try? repo.fetchScreenshots(forMeetingId: meetingId)) ?? []
-        }
-        await exportTranscriptAndScreenshots(
-            workspaceURL: workspaceURL,
-            meetingId: meetingId,
-            projectName: projectName,
-            createdAt: createdAt,
-            segments: segments,
-            recordingSessions: recordingSessions,
-            screenshots: screenshots
-        )
-    }
-
-    /// transcript と screenshot をファイルに書き出す共通処理。メインアクター外で実行。
-    private func exportTranscriptAndScreenshots(
-        workspaceURL: URL,
-        meetingId: UUID,
-        projectName: String,
-        createdAt: Date,
-        segments: [TranscriptSegment],
-        recordingSessions: [RecordingSessionTimeline],
-        screenshots: [MeetingScreenshotRecord]
-    ) async {
-        async let transcriptPath = Task.detached {
+        _ = await Task.detached {
             try? TranscriptExportService.exportTranscript(
                 workspaceURL: workspaceURL,
                 meetingId: meetingId,
@@ -5432,15 +5375,6 @@ final class CaptionViewModel: ObservableObject {
                 recordingSessions: recordingSessions
             )
         }.value
-
-        async let screenshotExport: Void = Task.detached {
-            guard !screenshots.isEmpty else { return }
-            guard let resolved = try? await ScreenshotContentProvider.shared.resolved(screenshots) else { return }
-            _ = try? ScreenshotExportService.exportScreenshots(workspaceURL: workspaceURL, screenshots: resolved)
-        }.value
-
-        _ = await transcriptPath
-        _ = await screenshotExport
     }
 
     // MARK: - Screenshot

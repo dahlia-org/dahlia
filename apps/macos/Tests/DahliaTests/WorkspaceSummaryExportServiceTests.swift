@@ -29,10 +29,6 @@ import os
                 exportTranscript: { _, _, _, _, _, _ in
                     ranOnMainThread.withLock { $0 = $0 || Thread.isMainThread }
                     return ""
-                },
-                exportScreenshots: { _, _ in
-                    ranOnMainThread.withLock { $0 = $0 || Thread.isMainThread }
-                    return []
                 }
             )
 
@@ -61,7 +57,7 @@ import os
         }
 
         @Test
-        func exportSummaryBundleWritesSummaryTranscriptAndScreenshots() async throws {
+        func exportSummaryBundleWritesSummaryAndTranscriptWithoutCopyingScreenshots() async throws {
             let workspaceURL = FileManager.default.temporaryDirectory
                 .appendingPathComponent(UUID().uuidString, isDirectory: true)
             let projectURL = workspaceURL.appendingPathComponent("Project", isDirectory: true)
@@ -70,13 +66,6 @@ import os
             try FileManager.default.createDirectory(at: workspaceURL, withIntermediateDirectories: true)
 
             let meetingId = UUID()
-            let screenshot = MeetingScreenshotRecord(
-                id: UUID(),
-                meetingId: meetingId,
-                capturedAt: Date(timeIntervalSince1970: 0),
-                imageData: Data([0x89, 0x50, 0x4E, 0x47]),
-                mimeType: "image/png"
-            )
             let summaryMarkdown = """
             ---
             meeting_id: "\(meetingId.uuidString)"
@@ -97,7 +86,6 @@ import os
                         text: "hello"
                     ),
                 ],
-                screenshots: [screenshot],
                 summaryFileName: "summary.md",
                 summaryMarkdown: summaryMarkdown
             )
@@ -109,11 +97,7 @@ import os
             #expect(try String(contentsOf: summaryURL, encoding: .utf8) == summaryMarkdown)
             #expect(FileManager.default
                 .fileExists(atPath: workspaceURL.appendingPathComponent("_dahlia/transcripts/\(meetingId.uuidString).md").path))
-            #expect(
-                FileManager.default.fileExists(
-                    atPath: workspaceURL.appendingPathComponent("_dahlia/screenshots/\(screenshot.id.uuidString).png").path
-                )
-            )
+            #expect(!FileManager.default.fileExists(atPath: ScreenshotExportService.screenshotsDirectoryURL(in: workspaceURL).path))
         }
 
         @Test
@@ -192,7 +176,6 @@ import os
                 createdAt: Date(timeIntervalSince1970: 0),
                 projectName: "Test Project",
                 segments: [],
-                screenshots: [],
                 summaryFileName: "new-summary.md",
                 summaryMarkdown: summaryMarkdown
             )
@@ -220,7 +203,6 @@ import os
                 createdAt: Date(timeIntervalSince1970: 0),
                 projectName: "Test Project",
                 segments: [],
-                screenshots: [],
                 summaryFileName: "summary.md",
                 summaryMarkdown: "New"
             )
@@ -253,13 +235,11 @@ import os
                     createdAt: Date(timeIntervalSince1970: 0),
                     projectName: "Test Project",
                     segments: [],
-                    screenshots: [],
                     summaryFileName: "summary.md",
                     summaryMarkdown: "summary",
                     exportTranscript: { _, _, _, _, _, _ in
                         throw ExpectedError.transcriptFailed
                     },
-                    exportScreenshots: { _, _ in [] },
                     writeSummary: { fileURL, markdown in
                         try Data(markdown.utf8).write(to: fileURL, options: .atomic)
                         return fileURL
@@ -285,9 +265,10 @@ import os
                 imageData: Data([0x89, 0x50, 0x4E, 0x47]),
                 mimeType: "image/png"
             )
-            _ = try ScreenshotExportService.exportScreenshots(workspaceURL: workspaceURL, screenshots: [screenshot])
             let screenshotURL = ScreenshotExportService.screenshotsDirectoryURL(in: workspaceURL)
                 .appending(path: ScreenshotExportService.filename(for: screenshot))
+            try FileManager.default.createDirectory(at: screenshotURL.deletingLastPathComponent(), withIntermediateDirectories: true)
+            try screenshot.imageData?.write(to: screenshotURL)
 
             try ScreenshotExportService.deleteExportedScreenshots(
                 workspaceURL: workspaceURL,
