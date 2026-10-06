@@ -443,7 +443,7 @@
 "Adaptive Screenshot Interval" = "Adaptive Screenshot Interval";
 "Save a screenshot once the screen stops changing instead of checking at a fixed interval." = "Save a screenshot once the screen stops changing instead of checking at a fixed interval.";
 "Screenshot Interval" = "Screenshot Interval";
-"While most of the screen keeps moving, such as during full-screen video, Dahlia checks at this interval." = "While most of the screen keeps moving, such as during full-screen video, Dahlia checks at this interval.";
+"Dahlia checks gradual changes, and screens that mostly keep moving such as full-screen video, at this interval." = "Dahlia checks gradual changes, and screens that mostly keep moving such as full-screen video, at this interval.";
 "Dahlia checks the screen for changes at this interval." = "Dahlia checks the screen for changes at this interval.";
 "Screenshot Change Threshold" = "Screenshot Change Threshold";
 "Save a new screenshot when at least this much of the screen changes, ignoring moving areas such as camera video." = "Save a new screenshot when at least this much of the screen changes, ignoring moving areas such as camera video.";

@@ -307,7 +307,7 @@ import Foundation
         }
 
         @Test
-        func wholeScreenFallbackDefersToStillScreenDecision() throws {
+        func wholeScreenFallbackIsSavedOnceTheSettleTrackerTriggers() throws {
             let image = try makeSolidImage(width: 100, height: 80)
             let fingerprint = ScreenshotFingerprint(width: 1, height: 1, pixels: [0])
             let frame = PreparedScreenshotFrame(
@@ -315,10 +315,9 @@ import Foundation
                 fingerprint: fingerprint,
                 fingerprintsSharedContent: false
             )
-            let changedBaseline = ScreenshotFingerprint(width: 1, height: 1, pixels: [255])
 
-            #expect(!frame.shouldSave(after: changedBaseline, changeThresholdRatio: 0.05, stillScreenPassed: false))
-            #expect(frame.shouldSave(after: fingerprint, changeThresholdRatio: 0.05, stillScreenPassed: true))
+            // The last saved crop does not apply to a whole-screen fingerprint.
+            #expect(frame.shouldSave(after: fingerprint, changeThresholdRatio: 0.05))
         }
 
         @Test
@@ -331,12 +330,11 @@ import Foundation
                 fingerprintsSharedContent: true
             )
 
-            #expect(frame.shouldSave(after: nil, changeThresholdRatio: 0.05, stillScreenPassed: false))
-            #expect(!frame.shouldSave(after: fingerprint, changeThresholdRatio: 0.05, stillScreenPassed: true))
+            #expect(frame.shouldSave(after: nil, changeThresholdRatio: 0.05))
+            #expect(!frame.shouldSave(after: fingerprint, changeThresholdRatio: 0.05))
             #expect(frame.shouldSave(
                 after: ScreenshotFingerprint(width: 1, height: 1, pixels: [255]),
-                changeThresholdRatio: 0.05,
-                stillScreenPassed: false
+                changeThresholdRatio: 0.05
             ))
         }
 

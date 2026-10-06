@@ -1042,7 +1042,7 @@ enum L10n { // swiftlint:disable:this type_body_length
     ) }
     static var screenshotInterval: String { String(localized: "Screenshot Interval", bundle: bundle) }
     static var adaptiveScreenshotIntervalFallbackDescription: String { String(
-        localized: "While most of the screen keeps moving, such as during full-screen video, Dahlia checks at this interval.",
+        localized: "Dahlia checks gradual changes, and screens that mostly keep moving such as full-screen video, at this interval.",
         bundle: bundle
     ) }
     static var fixedScreenshotIntervalDescription: String { String(
