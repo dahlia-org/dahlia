@@ -46,6 +46,7 @@ export function resolveSummaryPreferences(
   }
   const settings: TranscriptSettings = {
     ...(preferences.imageAnalysis ? { imageAnalysis: preferences.imageAnalysis } : {}),
+    ...(preferences.screenshotSelection ? { screenshotSelection: preferences.screenshotSelection } : {}),
     model, reasoningEffort: reasoningEffort as TranscriptSettings["reasoningEffort"],
     detail: summaryStyleDetail(preferences.summary.style),
   };

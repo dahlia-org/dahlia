@@ -1790,3 +1790,7 @@
 "account.settings.imageAnalysisEnabled" = "Enable image analysis";
 
 "Controls how much reasoning Codex uses for each image." = "Controls how much reasoning Codex uses for each image.";
+"Screenshot usefulness model" = "Screenshot usefulness model";
+"Chooses the screenshots a summary receives, skipping duplicates and screens without shared material." = "Chooses the screenshots a summary receives, skipping duplicates and screens without shared material.";
+"Usefulness reasoning effort" = "Usefulness reasoning effort";
+"Controls how much reasoning Codex uses when choosing a summary's screenshots." = "Controls how much reasoning Codex uses when choosing a summary's screenshots.";

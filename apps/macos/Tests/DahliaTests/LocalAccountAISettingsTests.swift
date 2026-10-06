@@ -34,6 +34,30 @@
         }
 
         @Test
+        func screenshotSelectionSettingsRemainAccountLocalAndRoundTripServerSettings() throws {
+            let suite = "ScreenshotSelectionSettings-\(UUID())"
+            let defaults = try #require(UserDefaults(suiteName: suite))
+            defer { defaults.removePersistentDomain(forName: suite) }
+            let workspace = WorkspaceRecord(id: .v7(), path: nil, name: "Images", createdAt: .now, lastOpenedAt: .now)
+            var account = AccountInferenceSettings(workspace: workspace, defaults: defaults)
+            #expect(account.screenshotSelection == .init())
+            account.screenshotSelection = .init(model: "selection-model", reasoningEffort: "high")
+            account.save(connectionID: nil, defaults: defaults)
+            let restored = AccountInferenceSettings(workspace: workspace, defaults: defaults)
+            #expect(restored.generationSettings(outputLanguage: .en).screenshotSelection == account.screenshotSelection)
+
+            // Older servers reject the unknown key, so the default is not encoded; Server values survive a round trip.
+            let defaultJSON = try #require(JSONSerialization.jsonObject(with: JSONEncoder().encode(WorkspaceGenerationSettings())) as? [String: Any])
+            #expect(defaultJSON["screenshotSelection"] == nil)
+            let server = try JSONDecoder().decode(
+                WorkspaceGenerationSettings.self,
+                from: Data(#"{"screenshotSelection":{"model":"server-model"}}"#.utf8)
+            )
+            #expect(server.screenshotSelection == .init(model: "server-model"))
+            #expect(try JSONDecoder().decode(WorkspaceGenerationSettings.self, from: JSONEncoder().encode(server)) == server)
+        }
+
+        @Test
         func inferenceKeepsServerGatewayAndUsesAccountPreferencesWithSharedLanguage() async throws {
             let suiteName = "MacInferenceSettingsTests-\(UUID())"
             let defaults = try #require(UserDefaults(suiteName: suiteName))

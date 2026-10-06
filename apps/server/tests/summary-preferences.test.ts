@@ -1,5 +1,5 @@
 import { expect, it } from "vitest";
-import { workspaceGenerationSettingsSchema, DEFAULT_WORKSPACE_GENERATION_SETTINGS, summaryStyles, summaryStyleDetail } from "@dahlia-ai/ui/model/workspace-generation-settings";
+import { workspaceGenerationSettingsSchema, DEFAULT_WORKSPACE_GENERATION_SETTINGS, effectiveScreenshotSelection, summaryStyles, summaryStyleDetail, withScreenshotSelection } from "@dahlia-ai/ui/model/workspace-generation-settings";
 import { modelList } from "../src/ai-gateway/models";
 import { cloudflareModels } from "../src/ai-gateway/cloudflare";
 import { resolveSummaryPreferences } from "../src/summary/preferences";
@@ -94,10 +94,29 @@ it("uses separate audio and transcript-summary settings for two-stage generation
     });
 });
 
-it("captures image analysis choices and keeps legacy workspace settings valid", () => {
-  const preferences = { ...DEFAULT_WORKSPACE_GENERATION_SETTINGS, imageAnalysis: { enabled: false, model: "vision-model", reasoningEffort: "high" as const } };
-  expect(workspaceGenerationSettingsSchema.parse(preferences).imageAnalysis).toEqual(preferences.imageAnalysis);
-  expect(workspaceGenerationSettingsSchema.parse(DEFAULT_WORKSPACE_GENERATION_SETTINGS).imageAnalysis).toBeUndefined();
-  expect(resolveSummaryPreferences(preferences, { type: "transcript", version: "current" }, modelList([{ id: "system.ai.gemini-3-8-flash" }]), (id) => id).settings.imageAnalysis).toEqual(preferences.imageAnalysis);
+it("captures image analysis and screenshot selection choices and keeps legacy workspace settings valid", () => {
+  const preferences = { ...DEFAULT_WORKSPACE_GENERATION_SETTINGS, imageAnalysis: { enabled: false, model: "vision-model", reasoningEffort: "high" as const },
+    screenshotSelection: { model: "selection-model", reasoningEffort: "medium" as const } };
+  expect(workspaceGenerationSettingsSchema.parse(preferences)).toMatchObject({ imageAnalysis: preferences.imageAnalysis, screenshotSelection: preferences.screenshotSelection });
+  expect(workspaceGenerationSettingsSchema.parse(DEFAULT_WORKSPACE_GENERATION_SETTINGS)).not.toHaveProperty("imageAnalysis");
+  expect(workspaceGenerationSettingsSchema.parse(DEFAULT_WORKSPACE_GENERATION_SETTINGS)).not.toHaveProperty("screenshotSelection");
+  expect(resolveSummaryPreferences(preferences, { type: "transcript", version: "current" }, modelList([{ id: "system.ai.gemini-3-8-flash" }]), (id) => id).settings)
+    .toMatchObject({ imageAnalysis: preferences.imageAnalysis, screenshotSelection: preferences.screenshotSelection });
   expect(workspaceGenerationSettingsSchema.safeParse({ ...preferences, imageAnalysis: { enabled: true, model: " " } }).success).toBe(false);
+  expect(workspaceGenerationSettingsSchema.safeParse({ ...preferences, screenshotSelection: { model: "m", enabled: true } }).success).toBe(false);
+});
+
+it("keeps the legacy image analysis selection choice until the dedicated key is saved", () => {
+  const legacy = { ...DEFAULT_WORKSPACE_GENERATION_SETTINGS, imageAnalysis: { enabled: false, model: "legacy-model", reasoningEffort: "high" as const } };
+  expect(effectiveScreenshotSelection(legacy)).toEqual({ model: "legacy-model", reasoningEffort: "high" });
+  expect(effectiveScreenshotSelection({ ...legacy, screenshotSelection: {} })).toEqual({});
+  expect(effectiveScreenshotSelection(DEFAULT_WORKSPACE_GENERATION_SETTINGS)).toEqual({ model: undefined, reasoningEffort: undefined });
+  // Saving clears the legacy fields and keeps the toggle, so an absent key and {} stay equivalent across round trips.
+  const saved = withScreenshotSelection(legacy, {});
+  expect(saved).toMatchObject({ imageAnalysis: { enabled: false }, screenshotSelection: {} });
+  expect(saved.imageAnalysis).toEqual({ enabled: false });
+  expect(withScreenshotSelection(DEFAULT_WORKSPACE_GENERATION_SETTINGS, { model: "m" })).not.toHaveProperty("imageAnalysis");
+  expect(effectiveScreenshotSelection({ ...saved, screenshotSelection: undefined })).toEqual(effectiveScreenshotSelection(saved));
+  expect(workspaceGenerationSettingsSchema.parse(JSON.parse(JSON.stringify(withScreenshotSelection(legacy, { model: undefined, reasoningEffort: "low" }))))
+    .screenshotSelection).toEqual({ reasoningEffort: "low" });
 });

@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { loadConfig } from "../src/config";
-import { createScreenshotSelector, sampleEvenly, selectSummaryScreenshots, summaryScreenshotCandidates, type ScreenshotSelector } from "../src/summary/screenshot-selection";
+import { createScreenshotSelector, sampleEvenly, selectSummaryScreenshots, summaryScreenshotCandidates, summaryScreenshotSelector, type ScreenshotSelector } from "../src/summary/screenshot-selection";
 import type { SyncScreenshotRecord } from "../src/sync/types";
 
 const screenshot = (index: number, hash = String(index)): SyncScreenshotRecord => ({
@@ -117,5 +117,23 @@ describe("summary screenshot preselection", () => {
       await expect(selector.select(inputs, 24, signal())).rejects.toMatchObject({ code: "invalid_response" });
     }
     expect(createScreenshotSelector(loadConfig({ ...environment, DAHLIA_IMAGE_ANALYSIS_MODEL: "" }), transport)).toBeUndefined();
+  });
+
+  it("uses the captured screenshot selection model and effort unless image analysis is disabled", async () => {
+    const transport = vi.fn(async (url: RequestInfo | URL, init?: RequestInit) => {
+      if (String(url).endsWith("/token")) return Response.json({ access_token: "app-token", expires_in: 3600 });
+      const body = JSON.parse(String(init?.body)) as { reasoning: { effort: string }; model: string };
+      expect(body).toMatchObject({ model: "system.ai.selection-model", reasoning: { effort: "high" } });
+      return Response.json({ status: "completed", output: [{ type: "message", content: [{ type: "output_text", text: '{"indices":[1]}' }] }] });
+    });
+    const config = loadConfig(environment);
+    const settings = { imageAnalysis: { enabled: true, model: "ignored-analysis-model" }, screenshotSelection: { model: "system.ai.selection-model", reasoningEffort: "high" as const } };
+    expect(await summaryScreenshotSelector(config, settings, transport)!.select([{ data: new Uint8Array([1]), capturedAt: new Date(0) }], 24, signal())).toEqual([0]);
+    expect(transport).toHaveBeenCalled();
+    expect(summaryScreenshotSelector(config, { ...settings, imageAnalysis: { enabled: false } }, transport)).toBeUndefined();
+    // Jobs and workspaces saved before the dedicated key keep the selection choice made through image analysis.
+    const legacy = { imageAnalysis: { enabled: true, model: "system.ai.selection-model", reasoningEffort: "high" as const } };
+    expect(await summaryScreenshotSelector(config, legacy, transport)!.select([{ data: new Uint8Array([1]), capturedAt: new Date(0) }], 24, signal())).toEqual([0]);
+    expect(summaryScreenshotSelector(loadConfig({ ...environment, DAHLIA_IMAGE_ANALYSIS_MODEL: "" }), {}, transport)).toBeUndefined();
   });
 });

@@ -129,6 +129,7 @@ enum SettingsCategory: String, CaseIterable, Identifiable {
                 L10n.processingLocation,
                 L10n.automaticRecordingProcessing,
                 L10n.summaryModel,
+                L10n.screenshotSelectionModel,
                 "AI",
             ]
         case .workspace:

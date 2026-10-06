@@ -20,6 +20,14 @@ enum SummaryService {
         generationSettings: SummaryGenerationSettings? = nil
     ) async throws -> GeneratedSummary {
         let generationSettings = generationSettings ?? .current()
+        // Jobs persisted without captured preferences keep the input they had: every candidate.
+        let screenshots = if let preferences = generationSettings.workspacePreferences {
+            try await SummaryScreenshotSelection.select(
+                screenshots, settings: preferences, runtimeProvider: generationSettings.runtimeProvider
+            )
+        } else {
+            screenshots
+        }
 
         let systemPrompt = summaryGenerationInstructions(generationSettings: generationSettings)
         let inputs = try await makeCodexInputs(.init(

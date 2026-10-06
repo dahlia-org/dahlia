@@ -1790,3 +1790,7 @@
 "account.settings.imageAnalysisEnabled" = "画像解析を有効にする";
 
 "Controls how much reasoning Codex uses for each image." = "画像ごとに Codex が使用する推論の強度を設定します。";
+"Screenshot usefulness model" = "スクリーンショット判定モデル";
+"Chooses the screenshots a summary receives, skipping duplicates and screens without shared material." = "要約に渡すスクリーンショットを選びます。重複した画面や共有資料が写っていない画面は除きます。";
+"Usefulness reasoning effort" = "判定の推論強度";
+"Controls how much reasoning Codex uses when choosing a summary's screenshots." = "要約に渡すスクリーンショットを選ぶときに Codex が使用する推論の強度を設定します。";

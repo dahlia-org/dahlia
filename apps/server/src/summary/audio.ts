@@ -16,7 +16,7 @@ import { summaryResponseMetadataSchema } from "@dahlia-ai/ui/model/summary-metad
 import { resolveSummaryPreferences } from "./preferences";
 import { isAudioSummaryModel, isSummaryModel } from "@dahlia-ai/ui/model/summary-models";
 import { assertSummaryAccess, boundedBytes, collectSummaryInput, fingerprint, summaryImageContent, summaryInstructions, summaryXMLText } from "./transcript";
-import { createScreenshotSelector } from "./screenshot-selection";
+import { summaryScreenshotSelector } from "./screenshot-selection";
 
 interface AudioInput {
   recordingIndex: number; number: number; source: RecordingSource; startedAt: Date; endedAt: Date;
@@ -171,9 +171,7 @@ export function createAudioSummaryMethod(config: AppConfig, store: MeetingSyncSt
   async function generateAudio(job: SummaryJob, signal: AbortSignal, transcriptionOnly: boolean): Promise<{
     document?: SummaryGenerationResult; transcription?: GeneratedTranscript;
   }> {
-      const analysis = job.settings.imageAnalysis;
-      const selector = analysis?.enabled === false ? undefined
-        : createScreenshotSelector({ ...config, captioningModel: analysis?.model ?? config.captioningModel }, transport, analysis?.reasoningEffort);
+      const selector = summaryScreenshotSelector(config, job.settings, transport);
       let requestId: string | undefined;
       try {
         const identity = { userId: job.ownerUserId, source: "accounts" as const };

@@ -6,6 +6,8 @@ import type { AppConfig } from "../config";
 import { createJobProvider } from "../ai-gateway/job-provider";
 import type { SyncScreenshotRecord } from "../sync/types";
 import { log } from "../otel/log";
+import type { TranscriptSettings } from "./model";
+import { effectiveScreenshotSelection } from "@dahlia-ai/ui/model/workspace-generation-settings";
 
 export const SUMMARY_IMAGE_LIMIT = 24;
 // Automatic capture only stores changed screens, so these bound an unusual meeting rather than a typical one.
@@ -85,6 +87,14 @@ const responseSchema = z.object({
     content: z.array(z.object({ type: z.string(), text: z.string().optional() })).optional(),
   })),
 });
+
+/** Disabled image analysis skips selection; the captured selection settings override the deployment model and effort. */
+export function summaryScreenshotSelector(config: AppConfig, settings: Pick<TranscriptSettings, "imageAnalysis" | "screenshotSelection">,
+  transport: typeof fetch = fetch): ScreenshotSelector | undefined {
+  if (settings.imageAnalysis?.enabled === false) return undefined;
+  const selection = effectiveScreenshotSelection(settings);
+  return createScreenshotSelector({ ...config, captioningModel: selection.model ?? config.captioningModel }, transport, selection.reasoningEffort);
+}
 
 /** Uses the configured image analysis model; absent configuration keeps even sampling. */
 export function createScreenshotSelector(config: AppConfig, transport: typeof fetch = fetch, reasoningEffort = "low"): ScreenshotSelector | undefined {
