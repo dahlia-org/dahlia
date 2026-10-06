@@ -5090,7 +5090,16 @@ final class CaptionViewModel: ObservableObject {
             documentText = try await documents.prepare(meetingID: meetingId).projection.text
         } else { documentText = "" }
         let generatedSummary: SummaryService.GeneratedSummary = if let savedResult {
-            savedResult
+            // A saved result may come from an earlier app version, so its Markdown can embed screenshots the
+            // way that version exported them. Re-render it to embed the current originals.
+            SummaryService.GeneratedSummary(
+                document: savedResult.document,
+                fileName: savedResult.fileName,
+                markdown: ObsidianMarkdownSummaryRenderer.render(
+                    document: savedResult.document,
+                    context: SummaryRenderContext(meetingId: meetingId, createdAt: request.recordingStartedAt, screenshots: screenshots)
+                ).markdown
+            )
         } else { try await summaryGenerationRunner(SummaryGenerationRunnerInput(
             promptContext: SummaryPromptContext(
                 meetingId: meetingId,
