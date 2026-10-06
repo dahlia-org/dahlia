@@ -9,50 +9,75 @@ enum SummaryScreenshotSelection {
     static let candidateLimit = 240
     static let defaultReasoningEffort = "low"
     private static let maximumPixelSize = 480
+
     private static let logger = Logger(subsystem: "com.dahlia", category: "SummaryScreenshotSelection")
 
-    /// Disabled image analysis and selection failures keep every candidate, as earlier versions did.
-    /// An empty model selection means no screenshot shows shared material.
+    /// Disabled image analysis, selection failures and the time limit keep every candidate, as earlier versions did.
+    /// An empty model selection means no screenshot shows shared material. Cancellation still propagates.
+    /// Image reads and the model call share `timeout`, as on the Server, so a stalled selection cannot hold back the summary.
     static func select(
         _ candidates: [MeetingScreenshotRecord],
         settings: WorkspaceGenerationSettings,
         runtimeProvider: CodexRuntimeProvider,
         appServer: CodexAppServerService = .shared,
-        imageData: @Sendable (MeetingScreenshotRecord) async throws -> Data = {
+        timeout: Duration = .seconds(90),
+        imageData: @escaping @Sendable (MeetingScreenshotRecord) async throws -> Data = {
             try await ScreenshotContentProvider.shared.content(id: $0.id, variant: .thumbnail).data
         }
     ) async throws -> [MeetingScreenshotRecord] {
         guard settings.imageAnalysis.enabled, !candidates.isEmpty else { return candidates }
         let pool = spreadEvenly(candidates, limit: candidateLimit)
-        let start = pool[0].capturedAt
         do {
-            var inputs: [CodexAppServerInput] = []
-            for (index, screenshot) in pool.enumerated() {
-                try Task.checkCancellation()
-                let data = if let stored = screenshot.imageData { stored } else { try await imageData(screenshot) }
-                guard let image = CGImageDecoder.decode(data, maxPixelSize: maximumPixelSize),
-                      let encoded = ImageEncoder.encode(image)
-                else { throw SelectionError.imageUnavailable }
-                let elapsed = max(0, Int(screenshot.capturedAt.timeIntervalSince(start).rounded()))
-                inputs.append(.imageMetadata(#"<image index="\#(index + 1)" elapsed_seconds="\#(elapsed)"/>"#))
-                let mimeType = ImageEncoder.mimeType(for: encoded) ?? "image/webp"
-                inputs.append(.imageDataURI("data:\(mimeType);base64,\(encoded.base64EncodedString())"))
+            return try await withThrowingTaskGroup(of: [MeetingScreenshotRecord].self) { group in
+                group.addTask {
+                    try await selectWithModel(pool, settings: settings, runtimeProvider: runtimeProvider, appServer: appServer, imageData: imageData)
+                }
+                group.addTask {
+                    try await Task.sleep(for: timeout)
+                    throw SelectionError.timedOut
+                }
+                // Cancelling the model call also interrupts its Codex turn.
+                defer { group.cancelAll() }
+                guard let selected = try await group.next() else { throw SelectionError.timedOut }
+                return selected
             }
-            let response = try await appServer.generate(.init(
-                model: settings.screenshotSelection.model ?? CodexScreenshotAnalysisService.model,
-                requiresExactModel: true,
-                requiresImageInput: true,
-                reasoningEffort: settings.screenshotSelection.reasoningEffort ?? defaultReasoningEffort,
-                developerInstructions: instructions,
-                inputs: inputs,
-                outputSchema: outputSchema
-            ), expectedProvider: runtimeProvider)
-            return try selectedIndices(response, count: pool.count).map { pool[$0] }
         } catch {
             try Task.checkCancellation()
             logger.warning("Summary screenshot selection failed: \(String(describing: type(of: error)), privacy: .public)")
             return candidates
         }
+    }
+
+    private static func selectWithModel(
+        _ pool: [MeetingScreenshotRecord],
+        settings: WorkspaceGenerationSettings,
+        runtimeProvider: CodexRuntimeProvider,
+        appServer: CodexAppServerService,
+        imageData: @Sendable (MeetingScreenshotRecord) async throws -> Data
+    ) async throws -> [MeetingScreenshotRecord] {
+        let start = pool[0].capturedAt
+        var inputs: [CodexAppServerInput] = []
+        for (index, screenshot) in pool.enumerated() {
+            try Task.checkCancellation()
+            let data = if let stored = screenshot.imageData { stored } else { try await imageData(screenshot) }
+            guard let image = CGImageDecoder.decode(data, maxPixelSize: maximumPixelSize),
+                  let encoded = ImageEncoder.encode(image)
+            else { throw SelectionError.imageUnavailable }
+            let elapsed = max(0, Int(screenshot.capturedAt.timeIntervalSince(start).rounded()))
+            inputs.append(.imageMetadata(#"<image index="\#(index + 1)" elapsed_seconds="\#(elapsed)"/>"#))
+            let mimeType = ImageEncoder.mimeType(for: encoded) ?? "image/webp"
+            inputs.append(.imageDataURI("data:\(mimeType);base64,\(encoded.base64EncodedString())"))
+        }
+        let response = try await appServer.generate(.init(
+            model: settings.screenshotSelection.model ?? CodexScreenshotAnalysisService.model,
+            requiresExactModel: true,
+            requiresImageInput: true,
+            reasoningEffort: settings.screenshotSelection.reasoningEffort ?? defaultReasoningEffort,
+            developerInstructions: instructions,
+            inputs: inputs,
+            outputSchema: outputSchema
+        ), expectedProvider: runtimeProvider)
+        return try selectedIndices(response, count: pool.count).map { pool[$0] }
     }
 
     /// Zero-based indices in capture order. Rejects out-of-range indices and more than `limit` selections.
@@ -72,6 +97,7 @@ enum SummaryScreenshotSelection {
     private enum SelectionError: Error {
         case imageUnavailable
         case invalidResponse
+        case timedOut
     }
 
     private struct Response: Decodable {

@@ -76,6 +76,40 @@ import Foundation
         }
 
         @Test
+        func stalledSelectionKeepsEveryCandidateAfterTheTimeLimit() async throws {
+            let candidates = try Self.screenshots(2)
+            let transport = TestCodexAppServerTransport(mode: .generationBlocks, modelName: "selection-model")
+            let appServer = makeTestCodexAppServerService(transportFactory: { transport })
+
+            let selected = try await SummaryScreenshotSelection.select(
+                candidates, settings: Self.settings(), runtimeProvider: .chatGPTSubscription, appServer: appServer,
+                timeout: .milliseconds(200)
+            )
+
+            #expect(selected.map(\.id) == candidates.map(\.id))
+            await appServer.shutdown()
+        }
+
+        @Test
+        func cancellingTheSummaryCancelsSelectionAndInterruptsTheTurn() async throws {
+            let candidates = try Self.screenshots(2)
+            let transport = TestCodexAppServerTransport(mode: .generationBlocks, modelName: "selection-model")
+            let appServer = makeTestCodexAppServerService(transportFactory: { transport })
+            let selection = Task {
+                try await SummaryScreenshotSelection.select(
+                    candidates, settings: Self.settings(), runtimeProvider: .chatGPTSubscription, appServer: appServer
+                )
+            }
+
+            try await appServer.waitUntilActiveTurnCountForTesting(1)
+            selection.cancel()
+
+            await #expect(throws: CancellationError.self) { _ = try await selection.value }
+            await transport.waitUntilSent("turn/interrupt")
+            await appServer.shutdown()
+        }
+
+        @Test
         func validatesIndicesAndSpreadsLargePoolsEvenly() throws {
             #expect(try SummaryScreenshotSelection.selectedIndices(#"{"indices":[]}"#, count: 2).isEmpty)
             #expect(try SummaryScreenshotSelection.selectedIndices(#"{"indices":[2,1]}"#, count: 2) == [0, 1])
