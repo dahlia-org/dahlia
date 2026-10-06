@@ -721,8 +721,15 @@ actor AutomaticScreenshotCaptureService: AutomaticScreenshotCapturing {
             } catch {
                 return
             }
-            await self?.evaluateCapture(attempt: attempt)
+            await self?.settleCheckDidFire(attempt: attempt)
         }
+    }
+
+    /// An idle display may deliver no frame to schedule the next deadline, such as the interval that a gradual change
+    /// waits for after an earlier settle deadline, so the timer schedules it before evaluating.
+    private func settleCheckDidFire(attempt: AutomaticScreenshotCaptureAttempt) {
+        scheduleSettleCheck(after: .now, attempt: attempt)
+        evaluateCapture(attempt: attempt)
     }
 
     private func evaluateCapture(attempt: AutomaticScreenshotCaptureAttempt) {
