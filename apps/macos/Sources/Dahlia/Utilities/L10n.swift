@@ -1042,7 +1042,7 @@ enum L10n { // swiftlint:disable:this type_body_length
     ) }
     static var screenshotInterval: String { String(localized: "Screenshot Interval", bundle: bundle) }
     static var adaptiveScreenshotIntervalFallbackDescription: String { String(
-        localized: "While most of the screen keeps moving, such as during full-screen video, Dahlia checks at this interval.",
+        localized: "Dahlia checks gradual changes, and screens that mostly keep moving such as full-screen video, at this interval.",
         bundle: bundle
     ) }
     static var fixedScreenshotIntervalDescription: String { String(
@@ -2563,6 +2563,10 @@ enum L10n { // swiftlint:disable:this type_body_length
     static var converterCreationFailed: String { String(localized: "Failed to create audio format converter", bundle: bundle) }
     static var microphoneDenied: String { String(
         localized: "Microphone access denied. Please allow it in System Settings > Privacy & Security > Microphone.",
+        bundle: bundle
+    ) }
+    static var recordingWithoutMicrophonePermission: String { String(
+        localized: "Recording without the microphone because access is denied. Allow it in System Settings > Privacy & Security > Microphone, then turn the microphone off and select it again.",
         bundle: bundle
     ) }
     static var microphoneUnavailable: String { String(localized: "The selected microphone is unavailable", bundle: bundle) }

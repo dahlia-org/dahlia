@@ -79,42 +79,54 @@ enum ScreenshotChangeDetector {
     }
 }
 
-/// Tracks when each fingerprint pixel last moved so that adaptive captures compare only the still part of the screen.
-/// Continuously moving areas such as camera video never settle, so they neither trigger nor dilute such a capture.
+/// Tracks how each fingerprint pixel moves so that adaptive captures wait until the screen stops changing.
+/// Areas that keep changing, such as camera video, a moving cursor, or an animation, are live: they neither trigger,
+/// delay, nor add up to a capture.
 struct ScreenshotSettleTracker {
     static let settleDuration: Duration = .seconds(1)
+    /// A change that settled within this window counts as one change at once, such as a slide transition or a scroll,
+    /// and is saved right away instead of waiting for the interval.
+    private static let changeWindow: Duration = .seconds(3)
+    // ponytail: tuned on synthetic meetings with camera tiles, scrolling, and slides; retune with recorded fingerprints.
+    /// Small changes count toward making the pixels around them live, and the count fades over this time.
+    private static let liveMemory: Duration = .seconds(20)
+    private static let liveChangeCount = 3.0
+    /// A small change also counts for neighbors this close, so a camera tile is live even where each pixel rarely moves.
+    private static let liveRadius = 2
+    /// Motion without a settled moment for this long is live, like video, even when it changes much of the screen.
+    private static let continuousMotionLimit: Duration = .seconds(20)
 
+    private var width = 0
     private var anchors: [UInt8] = []
     private var changedAt: [ContinuousClock.Instant] = []
+    private var movingSince: [ContinuousClock.Instant] = []
+    private var smallChangeCounts: [Double] = []
+    private var ingestedAt: ContinuousClock.Instant?
     private var latestPixels: [UInt8] = []
     private var savedPixels: [UInt8]?
-    private var attemptedPixels: [UInt8]?
     private var lastCaptureAt: ContinuousClock.Instant?
     private var lastMostlySettledAt: ContinuousClock.Instant?
 
-    /// The reference a capture decision compares against.
-    enum Baseline {
-        /// The last saved frame, so small changes keep adding up until they reach the threshold.
-        case lastSaved
-        /// The last capture attempt, so the shared-content gate does not re-trigger on a change it already checked.
-        case lastAttempt
-    }
-
-    /// The references a capture leaves behind. Commit them only once the frame is saved or intentionally skipped,
+    /// The reference a capture leaves behind. Commit it only once the frame is saved or intentionally skipped,
     /// so a failed or discarded capture keeps its change pending.
     struct CaptureReference: Sendable {
         fileprivate let savedPixels: [UInt8]
-        fileprivate let attemptedPixels: [UInt8]
         fileprivate let capturedAt: ContinuousClock.Instant
     }
 
-    mutating func ingest(_ fingerprint: ScreenshotFingerprint, at now: ContinuousClock.Instant) {
+    mutating func ingest(
+        _ fingerprint: ScreenshotFingerprint,
+        at now: ContinuousClock.Instant,
+        changeThresholdRatio: Double
+    ) {
         let pixels = fingerprint.pixels
         if anchors.count != pixels.count {
+            width = fingerprint.width
             anchors = pixels
             changedAt = Array(repeating: now, count: pixels.count)
+            movingSince = changedAt
+            smallChangeCounts = Array(repeating: 0, count: pixels.count)
             savedPixels = nil
-            attemptedPixels = nil
             lastMostlySettledAt = now
         }
         // Sample before applying this frame: frames stop while the display is idle, so a gap means it was still.
@@ -122,102 +134,122 @@ struct ScreenshotSettleTracker {
             lastMostlySettledAt = now
         }
         // Comparing with the anchor instead of the previous frame keeps slow fades from looking settled.
-        for index in pixels.indices where ScreenshotChangeDetector.isChanged(anchors[index], pixels[index]) {
+        let changedIndices = pixels.indices.filter { ScreenshotChangeDetector.isChanged(anchors[$0], pixels[$0]) }
+        let decay = liveDecay(at: now)
+        for index in smallChangeCounts.indices {
+            smallChangeCounts[index] *= decay
+        }
+        // A change large enough to be saved by itself, such as a slide or a scroll step, is content. Only smaller
+        // changes repeating in one place, such as people moving in camera tiles, make that place live.
+        if Double(changedIndices.count) < changeThresholdRatio * Double(pixels.count) {
+            for index in neighborhood(of: changedIndices) {
+                smallChangeCounts[index] += 1
+            }
+        }
+        for index in changedIndices {
+            if isSettled(index, at: now) {
+                movingSince[index] = now
+            }
             anchors[index] = pixels[index]
             changedAt[index] = now
         }
+        ingestedAt = now
         latestPixels = pixels
     }
 
     /// When the next check falls due without a new frame: once the latest movement settles with an adaptive interval,
-    /// or once `interval` has passed since the last capture with a fixed one. Nil when it is already due by `now`.
+    /// or once `interval` has passed since the last capture. Nil when nothing falls due after `now`.
     func checkDeadline(
         after now: ContinuousClock.Instant,
         interval: Duration,
         isAdaptive: Bool
     ) -> ContinuousClock.Instant? {
-        let deadline = isAdaptive
-            ? changedAt.max().map { $0 + Self.settleDuration }
-            : lastCaptureAt.map { $0 + interval }
-        guard let deadline, deadline > now else { return nil }
-        return deadline
+        let settleDeadline = isAdaptive ? changedAt.max().map { $0 + Self.settleDuration } : nil
+        return [settleDeadline, lastCaptureAt.map { $0 + interval }]
+            .compactMap(\.self)
+            .filter { $0 > now }
+            .min()
     }
 
-    /// An adaptive interval waits for changes to settle and uses `interval` only as the fallback for a mostly
-    /// moving screen. A fixed interval compares the whole screen once `interval` has passed since the last capture.
+    /// An adaptive interval waits until everything except live areas stops moving, then captures a change that settled
+    /// at once. Changes that added up gradually, or that never stop moving, are checked once `interval` has passed.
+    /// A fixed interval compares the whole screen once `interval` has passed since the last capture.
     func shouldCapture(
         at now: ContinuousClock.Instant,
         interval: Duration,
         isAdaptive: Bool,
-        changeThresholdRatio: Double,
-        comparedWith baseline: Baseline
+        changeThresholdRatio: Double
     ) -> Bool {
         guard !latestPixels.isEmpty else { return false }
-        guard let reference = baseline == .lastSaved ? savedPixels : attemptedPixels,
-              let lastCaptureAt else { return true }
+        guard let savedPixels, let lastCaptureAt else { return true }
+        let decay = liveDecay(at: now)
+        var movingCount = 0
         var settledCount = 0
         var settledChangeCount = 0
+        var recentChangeCount = 0
         var changeCount = 0
         for index in latestPixels.indices {
-            let isChanged = ScreenshotChangeDetector.isChanged(reference[index], latestPixels[index])
+            let isChanged = ScreenshotChangeDetector.isChanged(savedPixels[index], latestPixels[index])
             if isChanged {
                 changeCount += 1
             }
-            if isSettled(index, at: now) {
-                settledCount += 1
-                if isChanged {
-                    settledChangeCount += 1
+            guard isAdaptive, !isLive(index, at: now, decay: decay) else { continue }
+            guard isSettled(index, at: now) else {
+                movingCount += 1
+                continue
+            }
+            settledCount += 1
+            if isChanged {
+                settledChangeCount += 1
+                if now - changedAt[index] < Self.changeWindow {
+                    recentChangeCount += 1
                 }
             }
         }
-        let wholeScreenChanged = Double(changeCount) / Double(latestPixels.count) >= changeThresholdRatio
+        let pixelCount = Double(latestPixels.count)
+        let wholeScreenChanged = Double(changeCount) / pixelCount >= changeThresholdRatio
+        let isIntervalDue = now - lastCaptureAt >= interval
         guard isAdaptive else {
-            return now - lastCaptureAt >= interval && wholeScreenChanged
+            return isIntervalDue && wholeScreenChanged
         }
         // The half-screen floor keeps small still areas, such as subtitles over video, from looking like a full change.
-        let settledArea = max(settledCount, latestPixels.count / 2)
-        if Double(settledChangeCount) / Double(settledArea) >= changeThresholdRatio {
-            return true
+        let settledArea = Double(max(settledCount, latestPixels.count / 2))
+        if Double(settledChangeCount) / settledArea >= changeThresholdRatio {
+            // Motion below the threshold, such as a cursor, cannot be a threshold-sized change by itself.
+            let isQuiet = Double(movingCount) < changeThresholdRatio * pixelCount
+            if isIntervalDue || (isQuiet && Double(recentChangeCount) / settledArea >= changeThresholdRatio) {
+                return true
+            }
         }
-        // ponytail: a fixed half-screen cutoff separates full-screen video from camera tiles; tune with real meetings.
         guard settledCount * 2 < latestPixels.count,
               let lastMostlySettledAt,
               now - lastMostlySettledAt >= interval,
-              now - lastCaptureAt >= interval else { return false }
+              isIntervalDue else { return false }
         return wholeScreenChanged
     }
 
     func captureReference(at now: ContinuousClock.Instant, isAdaptive: Bool) -> CaptureReference {
-        CaptureReference(
-            savedPixels: updated(savedPixels, at: now, isAdaptive: isAdaptive),
-            attemptedPixels: updated(attemptedPixels, at: now, isAdaptive: isAdaptive),
-            capturedAt: now
-        )
+        CaptureReference(savedPixels: updatedReference(at: now, isAdaptive: isAdaptive), capturedAt: now)
     }
 
-    /// Saved frames replace both baselines. Intentionally skipped frames replace only the last attempt,
-    /// so smaller changes keep adding up against the last saved frame.
-    mutating func commit(_ reference: CaptureReference, isSaved: Bool) {
-        attemptedPixels = reference.attemptedPixels
+    mutating func commit(_ reference: CaptureReference) {
+        savedPixels = reference.savedPixels
         lastCaptureAt = reference.capturedAt
-        if isSaved {
-            savedPixels = reference.savedPixels
-        }
     }
 
     /// Makes the next check capture unconditionally, as for the first frame. A save that fails after its
     /// reference was committed cannot be uncommitted precisely, so the current screen is captured again instead.
     mutating func forgetReferences() {
         savedPixels = nil
-        attemptedPixels = nil
     }
 
-    private func updated(_ reference: [UInt8]?, at now: ContinuousClock.Instant, isAdaptive: Bool) -> [UInt8] {
-        guard var reference else { return latestPixels }
-        // Pixels still moving keep their old reference so their final state is evaluated once they settle.
+    private func updatedReference(at now: ContinuousClock.Instant, isAdaptive: Bool) -> [UInt8] {
         // A fixed interval or a mostly moving screen is compared as a whole, so the whole frame becomes the reference.
-        let updatesAllPixels = !isAdaptive || isMostlyMoving(at: now)
-        for index in latestPixels.indices where updatesAllPixels || isSettled(index, at: now) {
+        guard var reference = savedPixels, isAdaptive, !isMostlyMoving(at: now) else { return latestPixels }
+        // Pixels still moving keep their old reference so their final state is evaluated once they settle.
+        // Live pixels follow the screen so that their changes never add up.
+        let decay = liveDecay(at: now)
+        for index in latestPixels.indices where isLive(index, at: now, decay: decay) || isSettled(index, at: now) {
             reference[index] = latestPixels[index]
         }
         return reference
@@ -227,7 +259,36 @@ struct ScreenshotSettleTracker {
         now - changedAt[index] >= Self.settleDuration
     }
 
+    /// Whether live or moving pixels cover most of the screen, as during full-screen video or a camera gallery.
     private func isMostlyMoving(at now: ContinuousClock.Instant) -> Bool {
-        changedAt.count(where: { now - $0 < Self.settleDuration }) * 2 > changedAt.count
+        let decay = liveDecay(at: now)
+        return changedAt.indices.count(where: { isLive($0, at: now, decay: decay) || !isSettled($0, at: now) }) * 2
+            > changedAt.count
+    }
+
+    private func isLive(_ index: Int, at now: ContinuousClock.Instant, decay: Double) -> Bool {
+        smallChangeCounts[index] * decay >= Self.liveChangeCount
+            || (!isSettled(index, at: now) && now - movingSince[index] >= Self.continuousMotionLimit)
+    }
+
+    /// The given pixels and those within `liveRadius` of them, each once.
+    private func neighborhood(of indices: [Int]) -> [Int] {
+        let height = changedAt.count / width
+        var isIncluded = [Bool](repeating: false, count: changedAt.count)
+        for index in indices {
+            let x = index % width
+            let y = index / width
+            for row in max(0, y - Self.liveRadius) ... min(height - 1, y + Self.liveRadius) {
+                for column in max(0, x - Self.liveRadius) ... min(width - 1, x + Self.liveRadius) {
+                    isIncluded[row * width + column] = true
+                }
+            }
+        }
+        return isIncluded.indices.filter { isIncluded[$0] }
+    }
+
+    private func liveDecay(at now: ContinuousClock.Instant) -> Double {
+        guard let ingestedAt else { return 1 }
+        return exp(-((now - ingestedAt) / Self.liveMemory))
     }
 }

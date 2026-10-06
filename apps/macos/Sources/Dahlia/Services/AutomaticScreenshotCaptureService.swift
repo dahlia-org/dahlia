@@ -292,15 +292,13 @@ struct PreparedScreenshotFrame: Sendable {
     /// Whether the fingerprint covers a detected shared-content crop instead of the whole screen.
     let fingerprintsSharedContent: Bool
 
-    /// A detected crop is compared with the last saved crop. Otherwise the settle tracker has already applied the
-    /// threshold; with an adaptive interval only to the still part of the screen, which keeps camera video out.
+    /// The settle tracker decides when to capture from the whole screen. A detected crop is also compared with the
+    /// last saved crop, so changes outside it, such as camera tiles, are not saved.
     func shouldSave(
         after lastSavedFingerprint: ScreenshotFingerprint?,
-        changeThresholdRatio: Double,
-        stillScreenPassed: Bool
+        changeThresholdRatio: Double
     ) -> Bool {
-        guard fingerprintsSharedContent else { return stillScreenPassed }
-        guard let lastSavedFingerprint else { return true }
+        guard fingerprintsSharedContent, let lastSavedFingerprint else { return true }
         return ScreenshotChangeDetector.isSignificantlyDifferent(
             lastSavedFingerprint,
             fingerprint,
@@ -472,11 +470,6 @@ actor AutomaticScreenshotFrameProcessor {
 /// Only capturing and deciding on a frame is exclusive; saved frames are encoded and persisted in capture order
 /// behind it, so the next change can be captured while the previous one is still being saved.
 actor AutomaticScreenshotCaptureService: AutomaticScreenshotCapturing {
-    /// With shared-content detection, any still change is checked against the threshold inside the detected crop.
-    /// The whole-screen fingerprint is coarser than the crop's, so even a single changed cell can matter. Each change
-    /// is checked once because skipped attempts advance the last-attempt baseline. The user threshold's 1% floor in
-    /// `normalized` deliberately does not apply here.
-    static let sharedContentGateRatio = Double.leastNonzeroMagnitude
     /// Each pending save holds a full-resolution image, so one may encode while one more waits behind it.
     private static let maximumPendingSaveCount = 2
 
@@ -696,10 +689,11 @@ actor AutomaticScreenshotCaptureService: AutomaticScreenshotCapturing {
         attempt: AutomaticScreenshotCaptureAttempt
     ) {
         guard lifecycle.accepts(attempt: attempt),
+              let request = desiredRequest,
               let image = frame.makeImage(),
               let fingerprint = ScreenshotChangeDetector.fingerprint(for: image) else { return }
         let now = ContinuousClock.now
-        settleTracker.ingest(fingerprint, at: now)
+        settleTracker.ingest(fingerprint, at: now, changeThresholdRatio: request.changeThresholdRatio)
         scheduleSettleCheck(after: now, attempt: attempt)
         evaluateCapture(attempt: attempt)
     }
@@ -727,8 +721,15 @@ actor AutomaticScreenshotCaptureService: AutomaticScreenshotCapturing {
             } catch {
                 return
             }
-            await self?.evaluateCapture(attempt: attempt)
+            await self?.settleCheckDidFire(attempt: attempt)
         }
+    }
+
+    /// An idle display may deliver no frame to schedule the next deadline, such as the interval that a gradual change
+    /// waits for after an earlier settle deadline, so the timer schedules it before evaluating.
+    private func settleCheckDidFire(attempt: AutomaticScreenshotCaptureAttempt) {
+        scheduleSettleCheck(after: .now, attempt: attempt)
+        evaluateCapture(attempt: attempt)
     }
 
     private func evaluateCapture(attempt: AutomaticScreenshotCaptureAttempt) {
@@ -744,42 +745,26 @@ actor AutomaticScreenshotCaptureService: AutomaticScreenshotCapturing {
             guard now >= failedCaptureRetryNotBefore else { return }
             self.failedCaptureRetryNotBefore = nil
         }
-        let interval = Duration.seconds(request.intervalSeconds)
-        let stillScreenPassed = settleTracker.shouldCapture(
+        guard settleTracker.shouldCapture(
             at: now,
-            interval: interval,
+            interval: .seconds(request.intervalSeconds),
             isAdaptive: request.usesAdaptiveInterval,
-            changeThresholdRatio: request.changeThresholdRatio,
-            comparedWith: .lastSaved
-        )
-        // Shared-content detection checks every new still change and leaves the save decision to the detected crop.
-        let triggers = request.detectsChangesInSharedContentOnly
-            ? settleTracker.shouldCapture(
-                at: now,
-                interval: interval,
-                isAdaptive: request.usesAdaptiveInterval,
-                changeThresholdRatio: Self.sharedContentGateRatio,
-                comparedWith: .lastAttempt
-            )
-            : stillScreenPassed
-        guard triggers else { return }
+            changeThresholdRatio: request.changeThresholdRatio
+        ) else { return }
         startProcessing(
             attempt: attempt,
-            stillScreenPassed: stillScreenPassed,
             reference: settleTracker.captureReference(at: now, isAdaptive: request.usesAdaptiveInterval)
         )
     }
 
     private func startProcessing(
         attempt: AutomaticScreenshotCaptureAttempt,
-        stillScreenPassed: Bool,
         reference: ScreenshotSettleTracker.CaptureReference
     ) {
         processingState.begin(attempt: attempt) { [weak self] operationID in
             Task(priority: .utility) {
                 guard let outcome = await self?.process(
                     attempt: attempt,
-                    stillScreenPassed: stillScreenPassed,
                     reference: reference
                 ) else { return }
                 await self?.finishProcessing(
@@ -794,7 +779,6 @@ actor AutomaticScreenshotCaptureService: AutomaticScreenshotCapturing {
     /// Captures and decides on one frame, then hands a saved frame to `enqueueSave`.
     private func process(
         attempt: AutomaticScreenshotCaptureAttempt,
-        stillScreenPassed: Bool,
         reference: ScreenshotSettleTracker.CaptureReference
     ) async -> AutomaticScreenshotCaptureOutcome {
         guard lifecycle.accepts(attempt: attempt),
@@ -827,15 +811,11 @@ actor AutomaticScreenshotCaptureService: AutomaticScreenshotCapturing {
               lifecycle.accepts(attempt: attempt),
               processingScopeMatches(request) else { return .discarded }
 
+        settleTracker.commit(reference)
         guard preparedFrame.shouldSave(
             after: lastSavedCropFingerprint,
-            changeThresholdRatio: request.changeThresholdRatio,
-            stillScreenPassed: stillScreenPassed
-        ) else {
-            settleTracker.commit(reference, isSaved: false)
-            return .skipped
-        }
-        settleTracker.commit(reference, isSaved: true)
+            changeThresholdRatio: request.changeThresholdRatio
+        ) else { return .skipped }
         if preparedFrame.fingerprintsSharedContent {
             lastSavedCropFingerprint = preparedFrame.fingerprint
         }

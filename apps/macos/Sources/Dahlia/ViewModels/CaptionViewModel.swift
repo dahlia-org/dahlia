@@ -749,7 +749,8 @@ final class CaptionViewModel: ObservableObject {
     private var recordingConfigurationTasks: [Int: Task<Void, Never>] = [:]
     private var nextRecordingConfigurationID = 0
     private var pendingRealtimeRecognitionFailure: (source: RecordingAudioSource?, message: String)?
-    private var pendingLiveSubtitleWarning: String?
+    /// Non-fatal warnings raised while starting, shown together once recording starts.
+    private var pendingStartWarnings: [String] = []
     private var startingMicrophoneSelection: MicrophoneSelection?
     private var startingSystemAudioEnabled: Bool?
     private var startingTranscriptionLocaleIdentifier: String?
@@ -3342,8 +3343,8 @@ final class CaptionViewModel: ObservableObject {
         startingTranscriptionLocaleIdentifier = nil
         startingLiveSubtitleLocaleIdentifier = nil
         isListening = true
-        errorMessage = pendingLiveSubtitleWarning
-        pendingLiveSubtitleWarning = nil
+        errorMessage = pendingStartWarnings.isEmpty ? nil : pendingStartWarnings.joined(separator: "\n")
+        pendingStartWarnings = []
         syncAutomaticScreenshotCaptureState()
     }
 
@@ -3511,7 +3512,7 @@ final class CaptionViewModel: ObservableObject {
         activeRecordingTelemetryContext = nil
         setActiveControllerSources([])
         pendingRealtimeRecognitionFailure = nil
-        pendingLiveSubtitleWarning = nil
+        pendingStartWarnings = []
         startingMicrophoneSelection = nil
         startingSystemAudioEnabled = nil
         startingTranscriptionLocaleIdentifier = nil
@@ -3650,7 +3651,7 @@ final class CaptionViewModel: ObservableObject {
         recordingLifecycle = .starting(recordingSessionId)
         activeRecordingTelemetryContext = nil
         pendingRealtimeRecognitionFailure = nil
-        pendingLiveSubtitleWarning = nil
+        pendingStartWarnings = []
         let transcriptionMode = TranscriptionMode.batch
         do {
             guard let workspace = try await dbQueue.read({ db in try WorkspaceRecord.fetchOne(db, key: workspaceId) }) else {
@@ -3896,7 +3897,7 @@ final class CaptionViewModel: ObservableObject {
         activeRecordingTelemetryContext = nil
         setActiveControllerSources([])
         pendingRealtimeRecognitionFailure = nil
-        pendingLiveSubtitleWarning = nil
+        pendingStartWarnings = []
         startingMicrophoneSelection = nil
         startingSystemAudioEnabled = nil
         startingTranscriptionLocaleIdentifier = nil
@@ -5665,9 +5666,14 @@ final class CaptionViewModel: ObservableObject {
             if plan.finalMode == .realtime {
                 pendingRealtimeRecognitionFailure = (source, message)
             } else {
-                pendingLiveSubtitleWarning = message
+                addPendingStartWarning(message)
             }
         }
+    }
+
+    private func addPendingStartWarning(_ message: String) {
+        guard !pendingStartWarnings.contains(message) else { return }
+        pendingStartWarnings.append(message)
     }
 
     private func controllerSourceConfiguration(
@@ -5699,7 +5705,7 @@ final class CaptionViewModel: ObservableObject {
             if isFatal {
                 pendingRealtimeRecognitionFailure = (source, message)
             } else {
-                pendingLiveSubtitleWarning = message
+                addPendingStartWarning(message)
             }
             return
         }

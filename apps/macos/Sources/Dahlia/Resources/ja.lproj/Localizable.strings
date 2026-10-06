@@ -443,7 +443,7 @@
 "Adaptive Screenshot Interval" = "取得間隔をアダプティブにする";
 "Save a screenshot once the screen stops changing instead of checking at a fixed interval." = "一定間隔ではなく、画面の変化が止まったときにスクリーンショットを保存します。";
 "Screenshot Interval" = "取得間隔";
-"While most of the screen keeps moving, such as during full-screen video, Dahlia checks at this interval." = "全画面の動画など画面の大半が動き続ける間は、この間隔で確認します。";
+"Dahlia checks gradual changes, and screens that mostly keep moving such as full-screen video, at this interval." = "少しずつ進む変化や、全画面の動画など画面の大半が動き続ける場合は、この間隔で確認します。";
 "Dahlia checks the screen for changes at this interval." = "この間隔で画面の変化を確認します。";
 "Screenshot Change Threshold" = "画面変化の閾値";
 "Save a new screenshot when at least this much of the screen changes, ignoring moving areas such as camera video." = "カメラ映像など動き続けている部分を除いた画面のうち、この割合以上が変化したときに新しいスクリーンショットを保存します。";
@@ -821,6 +821,7 @@
 "Invalid audio hardware format" = "無効なオーディオハードウェアフォーマットです";
 "Failed to create audio format converter" = "オーディオフォーマットコンバーターの作成に失敗しました";
 "Microphone access denied. Please allow it in System Settings > Privacy & Security > Microphone." = "マイクのアクセスが拒否されました。システム設定 > プライバシーとセキュリティ > マイク で許可してください";
+"Recording without the microphone because access is denied. Allow it in System Settings > Privacy & Security > Microphone, then turn the microphone off and select it again." = "マイクへのアクセスが許可されていないため、マイクなしで録音しています。システム設定 > プライバシーとセキュリティ > マイク で許可してから、マイクを一度オフにして選び直してください。";
 "The selected microphone is unavailable" = "選択したマイクは利用できません";
 "Speaker echo cancellation is unavailable" = "スピーカー回り込み除去を利用できません";
 "Speaker echo cancellation became unavailable. Recording continues with raw microphone audio." = "スピーカー回り込み除去を利用できなくなったため、マイクの raw 音声で録音を継続します。";

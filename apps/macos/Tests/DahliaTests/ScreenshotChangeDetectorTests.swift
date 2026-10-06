@@ -177,7 +177,7 @@ import CoreGraphics
         @Test
         func firstFrameIsCapturedImmediately() {
             var tracker = ScreenshotSettleTracker()
-            tracker.ingest(fingerprint { _ in 0 }, at: start)
+            ingest(&tracker, fingerprint { _, _ in 0 }, at: start)
 
             #expect(shouldCapture(tracker, at: start))
         }
@@ -186,14 +186,14 @@ import CoreGraphics
         func changeIsCapturedOnlyAfterItStopsMoving() throws {
             var tracker = capturedTracker()
             let changedAt = start + .seconds(5)
-            tracker.ingest(fingerprint { $0 < 30 ? 200 : 0 }, at: changedAt)
+            ingest(&tracker, fingerprint { x, y in isSlide(x, y) ? 200 : 0 }, at: changedAt)
 
             #expect(!shouldCapture(tracker, at: changedAt))
             let deadline = try #require(tracker.checkDeadline(after: changedAt, interval: maximumInterval, isAdaptive: true))
             #expect(deadline == changedAt + ScreenshotSettleTracker.settleDuration)
             #expect(shouldCapture(tracker, at: deadline))
 
-            tracker.commit(tracker.captureReference(at: deadline, isAdaptive: true), isSaved: true)
+            tracker.commit(tracker.captureReference(at: deadline, isAdaptive: true))
             #expect(!shouldCapture(tracker, at: deadline))
         }
 
@@ -201,14 +201,14 @@ import CoreGraphics
         func fixedIntervalComparesTheWholeScreenOncePerInterval() throws {
             var tracker = capturedTracker()
             let changedAt = start + maximumInterval - .milliseconds(500)
-            tracker.ingest(fingerprint { _ in 200 }, at: changedAt)
+            ingest(&tracker, fingerprint { _, _ in 200 }, at: changedAt)
 
             #expect(!shouldCapture(tracker, at: changedAt, isAdaptive: false))
             let deadline = try #require(tracker.checkDeadline(after: changedAt, interval: maximumInterval, isAdaptive: false))
             #expect(deadline == start + maximumInterval)
-            // The same state waits only for the settle with an adaptive interval.
+            // An adaptive interval checks again once the change settles.
             #expect(
-                tracker.checkDeadline(after: changedAt, interval: maximumInterval, isAdaptive: true)
+                tracker.checkDeadline(after: deadline, interval: maximumInterval, isAdaptive: true)
                     == changedAt + ScreenshotSettleTracker.settleDuration
             )
             // Only an adaptive interval waits for the change to settle.
@@ -216,7 +216,7 @@ import CoreGraphics
             #expect(shouldCapture(tracker, at: deadline, isAdaptive: false))
 
             // The whole frame becomes the reference, including pixels that had not settled.
-            tracker.commit(tracker.captureReference(at: deadline, isAdaptive: false), isSaved: true)
+            tracker.commit(tracker.captureReference(at: deadline, isAdaptive: false))
             #expect(!shouldCapture(tracker, at: deadline + maximumInterval, isAdaptive: false))
         }
 
@@ -224,14 +224,14 @@ import CoreGraphics
         func uncommittedCaptureKeepsChangePending() {
             var tracker = capturedTracker()
             let changedAt = start + .seconds(5)
-            tracker.ingest(fingerprint { $0 < 30 ? 200 : 0 }, at: changedAt)
+            ingest(&tracker, fingerprint { x, y in isSlide(x, y) ? 200 : 0 }, at: changedAt)
             let settledAt = changedAt + ScreenshotSettleTracker.settleDuration
 
             // A failed or discarded capture never commits its reference, so the change is retried.
             _ = tracker.captureReference(at: settledAt, isAdaptive: true)
             #expect(shouldCapture(tracker, at: settledAt))
 
-            tracker.commit(tracker.captureReference(at: settledAt, isAdaptive: true), isSaved: true)
+            tracker.commit(tracker.captureReference(at: settledAt, isAdaptive: true))
             #expect(!shouldCapture(tracker, at: settledAt))
         }
 
@@ -239,54 +239,10 @@ import CoreGraphics
         func forgottenReferencesCaptureTheUnchangedScreenAgain() {
             var tracker = capturedTracker()
             #expect(!shouldCapture(tracker, at: start + .seconds(5)))
-            #expect(!shouldCapture(tracker, at: start + .seconds(5), comparedWith: .lastAttempt))
 
             // A save that fails after its reference was committed must not leave the screen counted as captured.
             tracker.forgetReferences()
             #expect(shouldCapture(tracker, at: start + .seconds(5)))
-            #expect(shouldCapture(tracker, at: start + .seconds(5), comparedWith: .lastAttempt))
-        }
-
-        @Test
-        func skippedAttemptsKeepSmallChangesAddingUpAgainstLastSave() {
-            var tracker = capturedTracker()
-            // Each step changes 2% of the screen: enough for the 1% gate, not for the 5% save threshold.
-            var changed = 0
-            for step in 1 ... 3 {
-                changed += 2
-                let changedAt = start + .seconds(5 * step)
-                let limit = changed
-                tracker.ingest(fingerprint { $0 < limit ? 200 : 0 }, at: changedAt)
-                let settledAt = changedAt + ScreenshotSettleTracker.settleDuration
-
-                #expect(shouldCapture(tracker, at: settledAt, threshold: 0.01, comparedWith: .lastAttempt))
-                let passesSaveThreshold = shouldCapture(tracker, at: settledAt, threshold: 0.05)
-                #expect(passesSaveThreshold == (step == 3))
-                tracker.commit(tracker.captureReference(at: settledAt, isAdaptive: true), isSaved: passesSaveThreshold)
-                // The gate does not re-trigger on the change it just checked.
-                #expect(!shouldCapture(tracker, at: settledAt, threshold: 0.01, comparedWith: .lastAttempt))
-            }
-            #expect(!shouldCapture(tracker, at: start + .seconds(16), threshold: 0.05))
-        }
-
-        @Test
-        func sharedContentGateTriggersOnceForASingleStillCellChange() {
-            let gate = AutomaticScreenshotCaptureService.sharedContentGateRatio
-            let blank = ScreenshotFingerprint(width: 64, height: 36, pixels: Array(repeating: 0, count: 64 * 36))
-            var tracker = ScreenshotSettleTracker()
-            tracker.ingest(blank, at: start)
-            tracker.commit(tracker.captureReference(at: start, isAdaptive: true), isSaved: true)
-
-            // One cell is far below 1% of a full-size fingerprint, yet it may be a threshold-sized change in the crop.
-            var changed = blank.pixels
-            changed[0] = 200
-            let changedAt = start + .seconds(5)
-            tracker.ingest(ScreenshotFingerprint(width: 64, height: 36, pixels: changed), at: changedAt)
-            let settledAt = changedAt + ScreenshotSettleTracker.settleDuration
-
-            #expect(shouldCapture(tracker, at: settledAt, threshold: gate, comparedWith: .lastAttempt))
-            tracker.commit(tracker.captureReference(at: settledAt, isAdaptive: true), isSaved: false)
-            #expect(!shouldCapture(tracker, at: settledAt, threshold: gate, comparedWith: .lastAttempt))
         }
 
         @Test
@@ -294,44 +250,92 @@ import CoreGraphics
             var tracker = capturedTracker()
             // No frames arrive while the display is idle, then the whole screen changes at once.
             let changedAt = start + maximumInterval + .seconds(10)
-            tracker.ingest(fingerprint { _ in 200 }, at: changedAt)
+            ingest(&tracker, fingerprint { _, _ in 200 }, at: changedAt)
 
             #expect(!shouldCapture(tracker, at: changedAt))
             #expect(shouldCapture(tracker, at: changedAt + ScreenshotSettleTracker.settleDuration))
         }
 
         @Test
-        func changeStillMovingAtCaptureIsEvaluatedAgainOnceSettled() {
+        func captureWaitsUntilTheWholeChangeSettles() {
             var tracker = capturedTracker()
             let firstChangeAt = start + .seconds(5)
-            tracker.ingest(fingerprint { $0 < 30 ? 200 : 0 }, at: firstChangeAt)
+            ingest(&tracker, fingerprint { x, y in y < 12 && x < 32 ? 200 : 0 }, at: firstChangeAt)
             let nextChangeAt = firstChangeAt + .milliseconds(800)
-            tracker.ingest(fingerprint { $0 < 30 || $0 >= 50 ? 200 : 0 }, at: nextChangeAt)
+            ingest(&tracker, fingerprint { x, y in (y < 12 && x < 32) || (12 ..< 24).contains(y) ? 200 : 0 }, at: nextChangeAt)
 
-            let firstSettledAt = firstChangeAt + ScreenshotSettleTracker.settleDuration
-            #expect(shouldCapture(tracker, at: firstSettledAt))
-            tracker.commit(tracker.captureReference(at: firstSettledAt, isAdaptive: true), isSaved: true)
-
+            // The first part has settled, but a third of the screen is still moving.
+            #expect(!shouldCapture(tracker, at: firstChangeAt + ScreenshotSettleTracker.settleDuration))
             let nextSettledAt = nextChangeAt + ScreenshotSettleTracker.settleDuration
             #expect(!shouldCapture(tracker, at: nextSettledAt - .milliseconds(1)))
             #expect(shouldCapture(tracker, at: nextSettledAt))
         }
 
         @Test
-        func cameraAreaIsExcludedFromChangeRatio() {
-            var tracker = capturedTracker()
-            for step in 1 ... 10 {
-                let now = at(step: step)
-                tracker.ingest(fingerprint { movingPixel($0, step: step, below: 30) }, at: now)
-                #expect(!shouldCapture(tracker, at: now))
+        func scrollIsCapturedOnlyAfterItStops() {
+            // A shared document scrolls above sporadically moving camera tiles, as in a meeting window.
+            var cameras = CameraTiles(rows: 24 ..< 36)
+            var scroll = 0
+            let captures = captureTimes(through: .seconds(20)) { elapsed in
+                if elapsed > .seconds(5), elapsed <= .seconds(10) {
+                    scroll += 1
+                }
+                cameras.advance()
+                return fingerprint { x, y in
+                    y < 20 && x < 48 ? textLine(x, y + scroll) : cameras.pixel(x, y)
+                }
             }
 
-            // 15% of the whole screen, but more than 20% of the still part.
-            let slide: (Int) -> UInt8 = { (30 ..< 45).contains($0) ? 200 : 0 }
-            for step in 11 ... 13 {
-                tracker.ingest(fingerprint { max(movingPixel($0, step: step, below: 30), slide($0)) }, at: at(step: step))
+            // The first frame, then the scroll's final position once it has been still for the settle duration.
+            #expect(captures == [.zero, .seconds(11)])
+        }
+
+        @Test
+        func sporadicCameraMotionDoesNotAddUp() {
+            var cameras = CameraTiles(rows: 0 ..< 36)
+            let captures = captureTimes(through: .seconds(60)) { _ in
+                cameras.advance()
+                return fingerprint { x, y in cameras.pixel(x, y) }
             }
-            #expect(shouldCapture(tracker, at: at(step: 13)))
+
+            // A camera gallery is checked only at the interval, like a mostly moving screen.
+            #expect(captures.first == .zero)
+            #expect(zip(captures, captures.dropFirst()).allSatisfy { $1 - $0 >= maximumInterval })
+        }
+
+        @Test
+        func gradualChangesWaitForTheInterval() {
+            var tracker = capturedTracker()
+            // Each step changes a different 6% of the screen: none is a threshold-sized change by itself.
+            for step in 0 ..< 5 {
+                let limit = 2 * (step + 1)
+                ingest(&tracker, fingerprint { _, y in y < limit ? 200 : 0 }, at: start + .seconds(1 + 2 * step))
+            }
+
+            #expect(!shouldCapture(tracker, at: start + .seconds(12)))
+            #expect(tracker.checkDeadline(after: start + .seconds(12), interval: maximumInterval, isAdaptive: true)
+                == start + maximumInterval)
+            #expect(shouldCapture(tracker, at: start + maximumInterval))
+        }
+
+        @Test
+        func cameraAreaIsExcludedFromChangeRatio() {
+            var tracker = capturedTracker()
+            // Video changing this much at once is told apart from a scroll only once it has kept moving for a while.
+            let warmUp = 42
+            for step in 1 ... warmUp {
+                let now = at(step: step)
+                ingest(&tracker, fingerprint { _, y in y >= 24 ? flicker(step) : 0 }, at: now)
+                #expect(!shouldCapture(tracker, at: now))
+            }
+            tracker.commit(tracker.captureReference(at: at(step: warmUp), isAdaptive: true))
+
+            // 17% of the whole screen, but more than 20% of the still part.
+            let slide: (Int, Int) -> UInt8 = { x, y in y < 8 && x < 48 ? 200 : 0 }
+            for step in warmUp + 1 ... warmUp + 3 {
+                ingest(&tracker, fingerprint { x, y in y >= 24 ? flicker(step) : slide(x, y) }, at: at(step: step))
+            }
+            #expect(shouldCapture(tracker, at: at(step: warmUp + 3)))
         }
 
         @Test
@@ -339,7 +343,7 @@ import CoreGraphics
             var tracker = capturedTracker()
             for step in 1 ... 60 {
                 let now = at(step: step)
-                tracker.ingest(fingerprint { movingPixel($0, step: step, below: 30) }, at: now)
+                ingest(&tracker, fingerprint { _, y in y >= 24 ? flicker(step) : 0 }, at: now)
                 #expect(!shouldCapture(tracker, at: now))
             }
         }
@@ -350,21 +354,21 @@ import CoreGraphics
             let steps = Int(maximumInterval / .milliseconds(500))
             for step in 1 ..< steps {
                 let now = at(step: step)
-                tracker.ingest(fingerprint { movingPixel($0, step: step, below: 60) }, at: now)
+                ingest(&tracker, fingerprint { _, y in y < 24 ? flicker(step) : 0 }, at: now)
                 #expect(!shouldCapture(tracker, at: now))
             }
 
-            tracker.ingest(fingerprint { movingPixel($0, step: steps, below: 60) }, at: at(step: steps))
+            ingest(&tracker, fingerprint { _, y in y < 24 ? flicker(steps) : 0 }, at: at(step: steps))
             #expect(shouldCapture(tracker, at: at(step: steps)))
         }
 
         @Test
         func smallStillAreaOverMovingScreenIsNotAFullChange() {
             var tracker = capturedTracker()
-            let subtitle: (Int) -> UInt8 = { (80 ..< 88).contains($0) ? 200 : 0 }
-            for step in 1 ... 6 {
+            let subtitle: (Int, Int) -> UInt8 = { x, y in y == 34 && (20 ..< 44).contains(x) ? 200 : 0 }
+            for step in 1 ... 12 {
                 let now = at(step: step)
-                tracker.ingest(fingerprint { max(movingPixel($0, step: step, below: 80), subtitle($0)) }, at: now)
+                ingest(&tracker, fingerprint { x, y in y < 30 ? flicker(step) : subtitle(x, y) }, at: now)
                 #expect(!shouldCapture(tracker, at: now))
             }
         }
@@ -375,33 +379,40 @@ import CoreGraphics
             // Each frame moves less than the per-pixel difference, but the fade keeps accumulating.
             for step in 1 ... 20 {
                 let now = at(step: step)
-                tracker.ingest(fingerprint { _ in UInt8(step * 5) }, at: now)
+                ingest(&tracker, fingerprint { _, _ in UInt8(step * 5) }, at: now)
                 #expect(!shouldCapture(tracker, at: now))
             }
 
             #expect(shouldCapture(tracker, at: at(step: 20) + .seconds(1)))
         }
 
+        private func ingest(
+            _ tracker: inout ScreenshotSettleTracker,
+            _ fingerprint: ScreenshotFingerprint,
+            at now: ContinuousClock.Instant,
+            threshold: Double? = nil
+        ) {
+            tracker.ingest(fingerprint, at: now, changeThresholdRatio: threshold ?? self.threshold)
+        }
+
         private func shouldCapture(
             _ tracker: ScreenshotSettleTracker,
             at now: ContinuousClock.Instant,
             threshold: Double? = nil,
-            comparedWith baseline: ScreenshotSettleTracker.Baseline = .lastSaved,
             isAdaptive: Bool = true
         ) -> Bool {
             tracker.shouldCapture(
                 at: now,
                 interval: maximumInterval,
                 isAdaptive: isAdaptive,
-                changeThresholdRatio: threshold ?? self.threshold,
-                comparedWith: baseline
+                changeThresholdRatio: threshold ?? self.threshold
             )
         }
 
         private func capturedTracker() -> ScreenshotSettleTracker {
             var tracker = ScreenshotSettleTracker()
-            tracker.ingest(fingerprint { _ in 0 }, at: start)
-            tracker.commit(tracker.captureReference(at: start, isAdaptive: true), isSaved: true)
+            ingest(&tracker, fingerprint { _, _ in 0 }, at: start)
+            tracker.commit(tracker.captureReference(at: start, isAdaptive: true))
             return tracker
         }
 
@@ -409,13 +420,83 @@ import CoreGraphics
             start + .milliseconds(500 * step)
         }
 
-        /// Pixels below `limit` flicker like camera video; the rest stay still.
-        private func movingPixel(_ index: Int, step: Int, below limit: Int) -> UInt8 {
-            index < limit ? UInt8(step.isMultiple(of: 2) ? 100 : 200) : 0
+        /// A quarter of the screen far from the camera rows used below.
+        private func isSlide(_ x: Int, _ y: Int) -> Bool {
+            y < 12 && x < 48
         }
 
-        private func fingerprint(_ pixel: (Int) -> UInt8) -> ScreenshotFingerprint {
-            ScreenshotFingerprint(width: 10, height: 10, pixels: (0 ..< 100).map(pixel))
+        /// A value that flips every frame like camera video.
+        private func flicker(_ step: Int) -> UInt8 {
+            step.isMultiple(of: 2) ? 100 : 200
+        }
+
+        /// Feeds a 4 fps stream at the default 5% threshold, committing each capture, and returns when they happened.
+        private func captureTimes(
+            through duration: Duration,
+            frame: (_ elapsed: Duration) -> ScreenshotFingerprint
+        ) -> [Duration] {
+            var tracker = ScreenshotSettleTracker()
+            var captures: [Duration] = []
+            for step in 0 ... Int(duration / .milliseconds(250)) {
+                let elapsed = Duration.milliseconds(250 * step)
+                let now = start + elapsed
+                ingest(&tracker, frame(elapsed), at: now, threshold: 0.05)
+                if shouldCapture(tracker, at: now, threshold: 0.05) {
+                    captures.append(elapsed)
+                    tracker.commit(tracker.captureReference(at: now, isAdaptive: true))
+                }
+            }
+            return captures
+        }
+
+        /// Text lines of varying length with a blank line between paragraphs.
+        private func textLine(_ x: Int, _ line: Int) -> UInt8 {
+            !line.isMultiple(of: 3) && x < 6 + (line * 7919) % 40 ? 90 : 240
+        }
+
+        private func fingerprint(_ pixel: (_ x: Int, _ y: Int) -> UInt8) -> ScreenshotFingerprint {
+            let width = 64
+            let height = 36
+            return ScreenshotFingerprint(
+                width: width,
+                height: height,
+                pixels: (0 ..< width * height).map { pixel($0 % width, $0 / width) }
+            )
+        }
+    }
+
+    /// Eight camera tiles in which a few cells shift now and then, like people sitting in front of their cameras.
+    private struct CameraTiles {
+        private let rows: Range<Int>
+        private var pixels: [UInt8]
+        private var seed: UInt64 = 42
+
+        init(rows: Range<Int>) {
+            self.rows = rows
+            pixels = (0 ..< 64 * 36).map { UInt8(60 + ($0 * 37) % 120) }
+        }
+
+        mutating func advance() {
+            let tileHeight = rows.count / 2
+            for tile in 0 ..< 8 where random() < 0.15 {
+                let x = (tile % 4) * 16 + 4 + Int(random() * 8)
+                let y = rows.lowerBound + (tile / 4) * tileHeight + 1 + Int(random() * Double(max(1, tileHeight - 4)))
+                let shift = (random() < 0.5 ? -1 : 1) * (15 + Int(random() * 25))
+                for row in y ..< min(rows.upperBound, y + 3) {
+                    for column in x ..< x + 3 {
+                        pixels[row * 64 + column] = UInt8(clamping: Int(pixels[row * 64 + column]) + shift)
+                    }
+                }
+            }
+        }
+
+        func pixel(_ x: Int, _ y: Int) -> UInt8 {
+            pixels[y * 64 + x]
+        }
+
+        private mutating func random() -> Double {
+            seed = seed &* 6_364_136_223_846_793_005 &+ 1_442_695_040_888_963_407
+            return Double(seed >> 11) / Double(1 << 53)
         }
     }
 #endif
