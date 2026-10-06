@@ -149,9 +149,11 @@ Then redeploy with the workspace's Zerobus endpoint:
 databricks bundle deploy -t dev -p <profile> --var catalog=dahlia_dev,ops_schema=ops,zerobus_endpoint=https://<workspace-id>.zerobus.<region>.cloud.databricks.com
 ```
 
-The App sets the standard `OTEL_EXPORTER_OTLP_ENDPOINT` to `zerobus_endpoint`, each signal's
-`x-databricks-zerobus-table-name` header to `<catalog>.<ops_schema>.<otel_table_prefix>_otel_*`,
-and `DAHLIA_OTEL_AUTH=databricks` so the Server requests a separate table-scoped token per signal; see the Server
+The App sets the standard `OTEL_EXPORTER_OTLP_ENDPOINT` to `zerobus_endpoint` with a leading space,
+which the Server trims. This keeps the Apps deployment API's `value` present even when the endpoint
+is empty; an empty endpoint still disables export. Each signal's
+`x-databricks-zerobus-table-name` header is set to `<catalog>.<ops_schema>.<otel_table_prefix>_otel_*`,
+with `DAHLIA_OTEL_AUTH=databricks` so the Server requests a separate table-scoped token per signal; see the Server
 [OpenTelemetry](../../apps/server/README.md#opentelemetry-otlp) contract. Other senders
 can export OTLP to the App's `/api` endpoint, or directly to Zerobus with their own
 service principal, explicit grants, and the `x-databricks-zerobus-table-name` header.

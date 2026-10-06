@@ -1,0 +1,4 @@
+resources:
+  experiments:
+    otel_traces:
+      name: ${workspace.root_path}/dahlia-otel-traces

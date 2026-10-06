@@ -68,7 +68,8 @@ resources:
           - name: DAHLIA_OTEL_AUTH
             value: databricks
           - name: OTEL_EXPORTER_OTLP_ENDPOINT
-            value: ${var.zerobus_endpoint}
+            # Keep value nonempty for the Apps API; Server trims it before configuring export.
+            value: " ${var.zerobus_endpoint}"
           - name: OTEL_EXPORTER_OTLP_TRACES_HEADERS
             value: x-databricks-zerobus-table-name=${resources.schemas.ops_schema.catalog_name}.${resources.schemas.ops_schema.name}.${var.otel_table_prefix}_otel_spans
           - name: OTEL_EXPORTER_OTLP_LOGS_HEADERS
