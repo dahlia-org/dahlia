@@ -1739,6 +1739,11 @@ export interface components {
                     /** @enum {string} */
                     reasoningEffort?: "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max" | "ultra";
                 };
+                screenshotSelection?: {
+                    model?: string;
+                    /** @enum {string} */
+                    reasoningEffort?: "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max" | "ultra";
+                };
                 /** @enum {string} */
                 outputLanguage: "ja" | "en" | "zh" | "ko" | "fr" | "de" | "es";
                 processing: {
@@ -2108,6 +2113,11 @@ export interface components {
             generationSettings: {
                 imageAnalysis?: {
                     enabled: boolean;
+                    model?: string;
+                    /** @enum {string} */
+                    reasoningEffort?: "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max" | "ultra";
+                };
+                screenshotSelection?: {
                     model?: string;
                     /** @enum {string} */
                     reasoningEffort?: "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max" | "ultra";
@@ -2793,6 +2803,11 @@ export interface components {
                     /** @enum {string} */
                     reasoningEffort?: "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max" | "ultra";
                 };
+                screenshotSelection?: {
+                    model?: string;
+                    /** @enum {string} */
+                    reasoningEffort?: "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max" | "ultra";
+                };
                 /** @enum {string} */
                 detail: "low" | "medium" | "high" | "xhigh" | "max";
                 /** @enum {string} */
@@ -2929,6 +2944,11 @@ export interface components {
                             /** @enum {string} */
                             reasoningEffort?: "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max" | "ultra";
                         };
+                        screenshotSelection?: {
+                            model?: string;
+                            /** @enum {string} */
+                            reasoningEffort?: "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max" | "ultra";
+                        };
                         /** @enum {string} */
                         outputLanguage: "ja" | "en" | "zh" | "ko" | "fr" | "de" | "es";
                         processing: {
@@ -2981,6 +3001,11 @@ export interface components {
                     generationSettings?: {
                         imageAnalysis?: {
                             enabled: boolean;
+                            model?: string;
+                            /** @enum {string} */
+                            reasoningEffort?: "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max" | "ultra";
+                        };
+                        screenshotSelection?: {
                             model?: string;
                             /** @enum {string} */
                             reasoningEffort?: "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max" | "ultra";
@@ -5845,6 +5870,11 @@ export interface operations {
                             /** @enum {string} */
                             reasoningEffort?: "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max" | "ultra";
                         };
+                        screenshotSelection?: {
+                            model?: string;
+                            /** @enum {string} */
+                            reasoningEffort?: "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max" | "ultra";
+                        };
                         /** @enum {string} */
                         outputLanguage: "ja" | "en" | "zh" | "ko" | "fr" | "de" | "es";
                         processing: {
@@ -5935,6 +5965,11 @@ export interface operations {
                                 reasoningEffort: "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max" | "ultra";
                                 imageAnalysis?: {
                                     enabled: boolean;
+                                    model?: string;
+                                    /** @enum {string} */
+                                    reasoningEffort?: "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max" | "ultra";
+                                };
+                                screenshotSelection?: {
                                     model?: string;
                                     /** @enum {string} */
                                     reasoningEffort?: "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max" | "ultra";

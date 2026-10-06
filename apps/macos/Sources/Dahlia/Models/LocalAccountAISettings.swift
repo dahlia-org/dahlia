@@ -44,6 +44,12 @@ struct AccountInferenceSettings: Codable, Equatable, Sendable {
         set { savedImageAnalysis = newValue }
     }
 
+    private var savedScreenshotSelection: WorkspaceGenerationSettings.ScreenshotSelection?
+    var screenshotSelection: WorkspaceGenerationSettings.ScreenshotSelection {
+        get { savedScreenshotSelection ?? .init() }
+        set { savedScreenshotSelection = newValue }
+    }
+
     var automaticProcessing = true
     var liveTranscriptDraft = false
     var chatModelID = ""
@@ -73,6 +79,7 @@ struct AccountInferenceSettings: Codable, Equatable, Sendable {
 
     init(snapshot: WorkspaceAISettingsSnapshot) {
         imageAnalysis = snapshot.generationSettings.imageAnalysis
+        screenshotSelection = snapshot.generationSettings.screenshotSelection
         summary = snapshot.generationSettings.summary
         local = snapshot.generationSettings.local
         automaticProcessing = snapshot.generationSettings.automaticProcessing
@@ -92,6 +99,7 @@ struct AccountInferenceSettings: Codable, Equatable, Sendable {
             outputLanguage: outputLanguage,
             local: local,
             imageAnalysis: imageAnalysis,
+            screenshotSelection: screenshotSelection,
             automaticProcessing: automaticProcessing,
             liveTranscriptDraft: liveTranscriptDraft
         )

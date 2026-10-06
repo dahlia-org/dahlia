@@ -43,6 +43,12 @@ struct WorkspaceGenerationSettings: Codable, Equatable, Sendable {
         var reasoningEffort: String?
     }
 
+    /// Model that picks the screenshots a summary receives. It runs only while image analysis is enabled.
+    struct ScreenshotSelection: Codable, Equatable, Sendable {
+        var model: String?
+        var reasoningEffort: String?
+    }
+
     struct LocalProcessing: Codable, Equatable, Sendable {
         var model = "gpt-5.6-luna"
         var reasoningEffort = "high"
@@ -61,6 +67,7 @@ struct WorkspaceGenerationSettings: Codable, Equatable, Sendable {
     var outputLanguage: SummaryLanguage = .ja
     var local = LocalProcessing()
     var imageAnalysis = ImageAnalysis()
+    var screenshotSelection = ScreenshotSelection()
     var automaticProcessing = true
     var liveTranscriptDraft = false
     private(set) var legacyTranscription: LegacyTranscription?
@@ -71,6 +78,7 @@ struct WorkspaceGenerationSettings: Codable, Equatable, Sendable {
         outputLanguage: SummaryLanguage = .ja,
         local: LocalProcessing = LocalProcessing(),
         imageAnalysis: ImageAnalysis = ImageAnalysis(),
+        screenshotSelection: ScreenshotSelection = ScreenshotSelection(),
         automaticProcessing: Bool = true,
         liveTranscriptDraft: Bool = false
     ) {
@@ -79,12 +87,14 @@ struct WorkspaceGenerationSettings: Codable, Equatable, Sendable {
         self.outputLanguage = outputLanguage
         self.local = local
         self.imageAnalysis = imageAnalysis
+        self.screenshotSelection = screenshotSelection
         self.automaticProcessing = automaticProcessing
         self.liveTranscriptDraft = liveTranscriptDraft
     }
 
     private enum CodingKeys: String, CodingKey {
         case processing, summary, outputLanguage, local, automaticProcessing, liveTranscriptDraft, transcription, imageAnalysis
+        case screenshotSelection
     }
 
     init(from decoder: Decoder) throws {
@@ -94,6 +104,8 @@ struct WorkspaceGenerationSettings: Codable, Equatable, Sendable {
         outputLanguage = try values.decodeIfPresent(SummaryLanguage.self, forKey: .outputLanguage) ?? .ja
         local = try values.decodeIfPresent(LocalProcessing.self, forKey: .local) ?? LocalProcessing()
         imageAnalysis = try values.decodeIfPresent(ImageAnalysis.self, forKey: .imageAnalysis) ?? ImageAnalysis()
+        screenshotSelection = try values.decodeIfPresent(ScreenshotSelection.self, forKey: .screenshotSelection)
+            ?? ScreenshotSelection()
         automaticProcessing = try values.decodeIfPresent(Bool.self, forKey: .automaticProcessing) ?? true
         legacyTranscription = try values.decodeIfPresent(LegacyTranscription.self, forKey: .transcription)
         liveTranscriptDraft = try values.decodeIfPresent(Bool.self, forKey: .liveTranscriptDraft)
@@ -107,6 +119,10 @@ struct WorkspaceGenerationSettings: Codable, Equatable, Sendable {
         try values.encode(outputLanguage, forKey: .outputLanguage)
         try values.encode(local, forKey: .local)
         try values.encode(imageAnalysis, forKey: .imageAnalysis)
+        // Servers without this key reject it, so the default stays off the wire.
+        if screenshotSelection != ScreenshotSelection() {
+            try values.encode(screenshotSelection, forKey: .screenshotSelection)
+        }
         try values.encode(automaticProcessing, forKey: .automaticProcessing)
         if liveTranscriptDraft {
             try values.encode(true, forKey: .liveTranscriptDraft)
@@ -117,6 +133,7 @@ struct WorkspaceGenerationSettings: Codable, Equatable, Sendable {
         lhs.processing == rhs.processing && lhs.summary == rhs.summary && lhs.outputLanguage == rhs.outputLanguage
             && lhs.local == rhs.local && lhs.automaticProcessing == rhs.automaticProcessing
             && lhs.liveTranscriptDraft == rhs.liveTranscriptDraft && lhs.imageAnalysis == rhs.imageAnalysis
+            && lhs.screenshotSelection == rhs.screenshotSelection
     }
 
     mutating func setTranscriptSummaryModel(_ model: String?) {

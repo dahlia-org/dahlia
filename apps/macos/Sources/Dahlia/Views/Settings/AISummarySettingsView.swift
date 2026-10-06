@@ -2,8 +2,13 @@ import SwiftUI
 
 /// Device-local defaults for the selected account.
 struct LocalSummarySettingsRows: View {
+    enum Target {
+        case summary, imageAnalysis, screenshotSelection
+    }
+
     var canEdit = true
-    var imageAnalysis = false
+    /// Model and effort pairs that share one model catalog.
+    var targets: [Target] = [.summary]
     @Bindable private var workspaceSettings = WorkspaceAISettingsModel.shared
     @State private var catalog = CodexModelCatalog(service: .shared)
     @State private var retryTask: Task<Void, Never>?
@@ -13,32 +18,38 @@ struct LocalSummarySettingsRows: View {
             if catalog.isLoading {
                 LabeledContent(L10n.model) { ProgressView().controlSize(.small) }
             }
-            Picker(selection: modelSelection) {
-                if !catalog.models.contains(where: { $0.model == selectedModelID }) {
-                    Text(selectedModelID).tag(selectedModelID)
+            ForEach(targets, id: \.self) { target in
+                Picker(selection: modelSelection(target)) {
+                    let modelID = selectedModelID(target)
+                    if !catalog.models.contains(where: { $0.model == modelID }) {
+                        Text(modelID).tag(modelID)
+                    }
+                    ForEach(catalog.models.filter { target == .summary || $0.supportsImages }) { model in
+                        Text(model.displayName).tag(model.model)
+                    }
+                } label: {
+                    Text(target == .screenshotSelection ? L10n.screenshotSelectionModel : L10n.model)
+                    Text(target == .screenshotSelection ? L10n.screenshotSelectionModelDescription : L10n.codexModelDescription)
                 }
-                ForEach(catalog.models.filter { !imageAnalysis || $0.supportsImages }) { model in Text(model.displayName).tag(model.model) }
-            } label: {
-                Text(L10n.model)
-                Text(L10n.codexModelDescription)
-            }
-            .pickerStyle(.menu)
-            .disabled(!canEdit)
+                .pickerStyle(.menu)
+                .disabled(!canEdit)
 
-            Picker(selection: effortSelection) {
-                if !catalog.effortOptions(modelID: selectedModelID)
-                    .contains(where: { $0.reasoningEffort == selectedReasoningEffort }) {
-                    Text(selectedReasoningEffort).tag(selectedReasoningEffort)
+                Picker(selection: effortSelection(target)) {
+                    let effort = selectedReasoningEffort(target)
+                    let options = catalog.effortOptions(modelID: selectedModelID(target))
+                    if !options.contains(where: { $0.reasoningEffort == effort }) {
+                        Text(effort).tag(effort)
+                    }
+                    ForEach(options) { effort in
+                        Text(effort.displayName).tag(effort.reasoningEffort)
+                    }
+                } label: {
+                    Text(target == .screenshotSelection ? L10n.screenshotSelectionReasoningEffort : L10n.reasoningEffort)
+                    Text(reasoningEffortDescription(target))
                 }
-                ForEach(catalog.effortOptions(modelID: selectedModelID)) { effort in
-                    Text(effort.displayName).tag(effort.reasoningEffort)
-                }
-            } label: {
-                Text(L10n.reasoningEffort)
-                Text(imageAnalysis ? L10n.imageAnalysisReasoningEffortDescription : L10n.reasoningEffortDescription)
+                .pickerStyle(.menu)
+                .disabled(!canEdit)
             }
-            .pickerStyle(.menu)
-            .disabled(!canEdit)
 
             if let errorMessage = catalog.errorMessage {
                 SettingsStatusMessage(text: errorMessage, systemImage: "exclamationmark.triangle.fill", tint: .red)
@@ -62,49 +73,59 @@ struct LocalSummarySettingsRows: View {
         }
     }
 
-    private var selectedModelID: String {
-        get {
-            if imageAnalysis {
-                return workspaceSettings.generationSettings.imageAnalysis.model ?? CodexScreenshotAnalysisService.model
-            }
-            return workspaceSettings.summaryModelID
-        }
-        nonmutating set {
-            if imageAnalysis {
-                workspaceSettings.generationSettings.imageAnalysis.model = newValue
-            } else {
-                workspaceSettings.summaryModelID = newValue
-            }
+    private func reasoningEffortDescription(_ target: Target) -> String {
+        switch target {
+        case .summary: L10n.reasoningEffortDescription
+        case .imageAnalysis: L10n.imageAnalysisReasoningEffortDescription
+        case .screenshotSelection: L10n.screenshotSelectionReasoningEffortDescription
         }
     }
 
-    private var selectedReasoningEffort: String {
-        get {
-            if imageAnalysis {
-                return workspaceSettings.generationSettings.imageAnalysis.reasoningEffort ?? CodexScreenshotAnalysisService.reasoningEffort
-            }
-            return workspaceSettings.summaryReasoningEffort
-        }
-        nonmutating set {
-            if imageAnalysis {
-                workspaceSettings.generationSettings.imageAnalysis.reasoningEffort = newValue
-            } else {
-                workspaceSettings.summaryReasoningEffort = newValue
-            }
+    private func selectedModelID(_ target: Target) -> String {
+        let settings = workspaceSettings.generationSettings
+        return switch target {
+        case .summary: workspaceSettings.summaryModelID
+        case .imageAnalysis: settings.imageAnalysis.model ?? CodexScreenshotAnalysisService.model
+        case .screenshotSelection: settings.screenshotSelection.model ?? CodexScreenshotAnalysisService.model
         }
     }
 
-    private var effortSelection: Binding<String> {
-        Binding(get: { selectedReasoningEffort }, set: { selectedReasoningEffort = $0 })
+    private func selectedReasoningEffort(_ target: Target) -> String {
+        let settings = workspaceSettings.generationSettings
+        return switch target {
+        case .summary: workspaceSettings.summaryReasoningEffort
+        case .imageAnalysis: settings.imageAnalysis.reasoningEffort ?? CodexScreenshotAnalysisService.reasoningEffort
+        case .screenshotSelection: settings.screenshotSelection.reasoningEffort ?? SummaryScreenshotSelection.defaultReasoningEffort
+        }
     }
 
-    private var modelSelection: Binding<String> {
+    private func setModelID(_ modelID: String, for target: Target) {
+        switch target {
+        case .summary: workspaceSettings.summaryModelID = modelID
+        case .imageAnalysis: workspaceSettings.generationSettings.imageAnalysis.model = modelID
+        case .screenshotSelection: workspaceSettings.generationSettings.screenshotSelection.model = modelID
+        }
+    }
+
+    private func setReasoningEffort(_ effort: String, for target: Target) {
+        switch target {
+        case .summary: workspaceSettings.summaryReasoningEffort = effort
+        case .imageAnalysis: workspaceSettings.generationSettings.imageAnalysis.reasoningEffort = effort
+        case .screenshotSelection: workspaceSettings.generationSettings.screenshotSelection.reasoningEffort = effort
+        }
+    }
+
+    private func effortSelection(_ target: Target) -> Binding<String> {
+        Binding(get: { selectedReasoningEffort(target) }, set: { setReasoningEffort($0, for: target) })
+    }
+
+    private func modelSelection(_ target: Target) -> Binding<String> {
         Binding(
-            get: { selectedModelID },
+            get: { selectedModelID(target) },
             set: { modelID in
-                selectedModelID = modelID
-                if let effort = catalog.resolvedEffort(current: selectedReasoningEffort, modelID: modelID) {
-                    selectedReasoningEffort = effort
+                setModelID(modelID, for: target)
+                if let effort = catalog.resolvedEffort(current: selectedReasoningEffort(target), modelID: modelID) {
+                    setReasoningEffort(effort, for: target)
                 }
             }
         )

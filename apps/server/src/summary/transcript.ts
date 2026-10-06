@@ -12,7 +12,7 @@ import { GatewayRequestError } from "../ai-gateway/errors";
 import { sendOpenAIResponses } from "../ai-gateway/adapters";
 import { isSummaryModel } from "@dahlia-ai/ui/model/summary-models";
 import { SummaryError, summaryDocument, summaryResponseSchema, type SummaryMethod, type SummaryInput } from "./model";
-import { createScreenshotSelector, selectSummaryScreenshots, summaryScreenshotCandidates, type ScreenshotSelector } from "./screenshot-selection";
+import { selectSummaryScreenshots, summaryScreenshotCandidates, summaryScreenshotSelector, type ScreenshotSelector } from "./screenshot-selection";
 
 export async function fingerprint(value: unknown): Promise<string> {
   const hash = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(JSON.stringify(value)));
@@ -110,9 +110,7 @@ export function createTranscriptSummaryMethod(config: AppConfig, store: MeetingS
       }
     },
     async generate(job, signal) {
-      const analysis = job.settings.imageAnalysis;
-      const selector = analysis?.enabled === false ? undefined
-        : createScreenshotSelector({ ...config, captioningModel: analysis?.model ?? config.captioningModel }, transport, analysis?.reasoningEffort);
+      const selector = summaryScreenshotSelector(config, job.settings, transport);
       let requestId: string | undefined;
       try {
       const identity = { userId: job.ownerUserId, source: "accounts" as const };

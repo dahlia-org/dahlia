@@ -33,9 +33,21 @@ export const remoteProcessingSchema = z.object({
 export const processingSchema = z.object({ location: summaryModeSchema, remote: remoteProcessingSchema }).strict();
 const summarySchema = z.object({ style: summaryStyleSchema }).strict();
 export const imageAnalysisSettingsSchema = z.object({ enabled: z.boolean(), model: modelPreference.optional(), reasoningEffort: summaryModelSettingsSchema.shape.reasoningEffort.optional() }).strict();
-export const generationPreferencesSchema = z.object({ imageAnalysis: imageAnalysisSettingsSchema.optional(), outputLanguage: outputLanguageSchema, processing: processingSchema, summary: summarySchema }).strict();
+// Model that picks the screenshots a summary receives; image analysis must be enabled for it to run.
+export const screenshotSelectionSettingsSchema = z.object({ model: modelPreference.optional(), reasoningEffort: summaryModelSettingsSchema.shape.reasoningEffort.optional() }).strict();
+export const generationPreferencesSchema = z.object({ imageAnalysis: imageAnalysisSettingsSchema.optional(), screenshotSelection: screenshotSelectionSettingsSchema.optional(), outputLanguage: outputLanguageSchema, processing: processingSchema, summary: summarySchema }).strict();
 
 export type GenerationPreferences = z.infer<typeof generationPreferencesSchema>;
+type ScreenshotSelectionSettings = z.infer<typeof screenshotSelectionSettingsSchema>;
+type ScreenshotSelectionSource = Pick<GenerationPreferences, "imageAnalysis" | "screenshotSelection">;
+/** Settings saved before `screenshotSelection` existed chose the selection model and effort through `imageAnalysis`. */
+export function effectiveScreenshotSelection(settings: ScreenshotSelectionSource): ScreenshotSelectionSettings {
+  return settings.screenshotSelection ?? { model: settings.imageAnalysis?.model, reasoningEffort: settings.imageAnalysis?.reasoningEffort };
+}
+/** Clears the legacy `imageAnalysis` choice so an absent `screenshotSelection` and `{}` mean the same. */
+export function withScreenshotSelection<T extends ScreenshotSelectionSource>(settings: T, screenshotSelection: ScreenshotSelectionSettings): T {
+  return { ...settings, ...(settings.imageAnalysis && { imageAnalysis: { enabled: settings.imageAnalysis.enabled } }), screenshotSelection };
+}
 export const DEFAULT_GENERATION_PREFERENCES: GenerationPreferences = {
   outputLanguage: "ja",
   processing: { location: "local", remote: { workflow: "combined" } },

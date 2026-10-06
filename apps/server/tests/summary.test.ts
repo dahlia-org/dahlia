@@ -89,19 +89,42 @@ async function setup() {
 }
 
 describe("server summary jobs", () => {
-  it.each(["legacy", "preferences"])("captures workspace image analysis settings for %s requests", async (kind) => {
+  it.each(["legacy", "preferences"])("captures workspace image analysis and screenshot selection settings for %s requests", async (kind) => {
     const { store, method, service, workspaceId, meetingId } = await setup();
     try {
       const imageAnalysis = { enabled: false, model: "selected-vision-model" };
-      await updateGenerationSettings(store, owner, workspaceId, { imageAnalysis });
+      const screenshotSelection = { model: "selected-selection-model", reasoningEffort: "high" as const };
+      await updateGenerationSettings(store, owner, workspaceId, { imageAnalysis, screenshotSelection });
       method.resolvePreferences = async (preferences, input) => ({ settings: await method.captureSettings(preferences), input });
       const job = await service.start(owner, workspaceId, meetingId, kind === "legacy" ? { id: uuidV7() } : {
         id: uuidV7(), input: { type: "transcript", version: "current" },
-        preferences: { ...DEFAULT_GENERATION_PREFERENCES, imageAnalysis: { enabled: true, model: "request-model" } },
+        preferences: { ...DEFAULT_GENERATION_PREFERENCES, imageAnalysis: { enabled: true, model: "request-model" }, screenshotSelection: { model: "request-model" } },
       });
-      expect(job.settings.imageAnalysis).toEqual(imageAnalysis);
-      await updateGenerationSettings(store, owner, workspaceId, { imageAnalysis: { enabled: true } });
-      expect((await service.status(owner, workspaceId, meetingId))?.settings.imageAnalysis).toEqual(imageAnalysis);
+      expect(job.settings).toMatchObject({ imageAnalysis, screenshotSelection });
+      await updateGenerationSettings(store, owner, workspaceId, { imageAnalysis: { enabled: true }, screenshotSelection: {} });
+      expect((await service.status(owner, workspaceId, meetingId))?.settings).toMatchObject({ imageAnalysis, screenshotSelection });
+    } finally { await store.close?.(); }
+  });
+
+  it.each([
+    { name: "legacy image analysis choice", workspace: { imageAnalysis: { enabled: true, model: "legacy-vision-model" } },
+      request: { screenshotSelection: { model: "request-model" } },
+      expected: { imageAnalysis: { enabled: true, model: "legacy-vision-model" }, screenshotSelection: { model: "legacy-vision-model" } } },
+    { name: "dedicated selection only", workspace: { screenshotSelection: { model: "workspace-model" } },
+      request: { imageAnalysis: { enabled: false }, screenshotSelection: { model: "request-model" } },
+      expected: { imageAnalysis: { enabled: false }, screenshotSelection: { model: "workspace-model" } } },
+  ])("captures the Workspace's effective screenshot selection over a request's ($name)", async ({ workspace, request, expected }) => {
+    const { store, method, service, workspaceId, meetingId } = await setup();
+    try {
+      await updateGenerationSettings(store, owner, workspaceId, workspace);
+      // Like resolveSummaryPreferences, the method keeps the request's image analysis and screenshot selection.
+      method.resolvePreferences = async (preferences, input) => ({
+        settings: { ...await method.captureSettings(preferences), imageAnalysis: preferences.imageAnalysis, screenshotSelection: preferences.screenshotSelection }, input,
+      });
+      const job = await service.start(owner, workspaceId, meetingId, {
+        id: uuidV7(), input: { type: "transcript", version: "current" }, preferences: { ...DEFAULT_GENERATION_PREFERENCES, ...request },
+      });
+      expect(job.settings).toMatchObject(expected);
     } finally { await store.close?.(); }
   });
 

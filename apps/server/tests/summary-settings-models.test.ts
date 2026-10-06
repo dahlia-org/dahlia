@@ -382,8 +382,8 @@ it("keeps explicit server workflow defaults without automatic processing control
   expect(combined).not.toContain("Audio processing model");
   expect(combined).not.toContain("Transcript summary model");
   expect(combined).toContain('value="system.ai.gemini-3-8-flash"');
-  expect(combined).toContain("Image analysis model");
-  expect(combined).toContain("Image analysis reasoning effort");
+  expect(combined).toContain("Screenshot usefulness model");
+  expect(combined).toContain("Usefulness reasoning effort");
   expect(combined.indexOf("Summary generation")).toBeLessThan(combined.indexOf("Image analysis</legend>"));
   expect(combined).toContain("Enable image analysis");
   expect(combined).toContain('value="system.ai.gpt-5-6-luna"');
@@ -432,7 +432,7 @@ it.each(["editor", "viewer"])("renders shared settings read-only for %s", (role)
   expect(html).not.toContain("Only admins can change these defaults");
 });
 
-it.each([true, false])("uses Codex-composed image models only with advertised capability (%s)", (includeBundled) => {
+it.each([true, false])("uses Codex-composed screenshot selection models only with advertised capability (%s)", (includeBundled) => {
   const listed = modelList([{ id: "system.ai.kimi-k3" }]);
   const catalog = { ...listed, models: listed.models.filter(({ slug }) => slug === "system.ai.kimi-k3") };
   vi.mocked(useLiveJSON).mockImplementation((url) => ({
@@ -440,7 +440,7 @@ it.each([true, false])("uses Codex-composed image models only with advertised ca
       : typeof url === "object" && url.key.startsWith('["getCapabilities"')
         ? { ai: includeBundled ? { bundledModels: "codex" } : {}, meetingSummaryGeneration: { version: 2, sources: ["transcript"] } }
         : { role: "admin", generationSettings: { ...DEFAULT_WORKSPACE_GENERATION_SETTINGS,
-          imageAnalysis: { enabled: true, model: "gpt-6-luna", reasoningEffort: "low" } } },
+          imageAnalysis: { enabled: true }, screenshotSelection: { model: "gpt-6-luna", reasoningEffort: "low" } } },
     loading: false, refreshing: false, error: undefined, reload: vi.fn(), replace: vi.fn(),
   }));
   const html = renderToStaticMarkup(createElement(ServerSummarySettings, { workspaceId: "test", onSave: async () => {} }));
@@ -453,6 +453,21 @@ it.each([true, false])("uses Codex-composed image models only with advertised ca
     expect(image).not.toContain("GPT-6-Luna");
     expect(image).not.toContain('value="high"');
   }
+});
+
+it("shows a legacy image analysis selection model until the dedicated key is saved", () => {
+  vi.mocked(useLiveJSON).mockImplementation((url) => ({
+    data: url === "/api/v1/models" ? modelList([{ id: "system.ai.kimi-k3" }])
+      : typeof url === "object" && url.key.startsWith('["getCapabilities"')
+        ? { meetingSummaryGeneration: { version: 2, sources: ["transcript"] } }
+        : { role: "admin", generationSettings: { ...DEFAULT_WORKSPACE_GENERATION_SETTINGS,
+          imageAnalysis: { enabled: true, model: "legacy-vision-model", reasoningEffort: "medium" } } },
+    loading: false, refreshing: false, error: undefined, reload: vi.fn(), replace: vi.fn(),
+  }));
+  const html = renderToStaticMarkup(createElement(ServerSummarySettings, { workspaceId: "test", onSave: async () => {} }));
+  const image = html.slice(html.indexOf("Image analysis</legend>"));
+  expect(image).toContain('value="legacy-vision-model" selected');
+  expect(image).toContain('value="medium" selected');
 });
 
 it("does not offer bundled image choices when model discovery fails", () => {

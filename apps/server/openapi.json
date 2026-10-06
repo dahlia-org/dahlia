@@ -83,6 +83,30 @@
                 ],
                 "additionalProperties": false
               },
+              "screenshotSelection": {
+                "type": "object",
+                "properties": {
+                  "model": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 200
+                  },
+                  "reasoningEffort": {
+                    "type": "string",
+                    "enum": [
+                      "none",
+                      "minimal",
+                      "low",
+                      "medium",
+                      "high",
+                      "xhigh",
+                      "max",
+                      "ultra"
+                    ]
+                  }
+                },
+                "additionalProperties": false
+              },
               "outputLanguage": {
                 "type": "string",
                 "enum": [
@@ -1864,6 +1888,30 @@
                 "required": [
                   "enabled"
                 ],
+                "additionalProperties": false
+              },
+              "screenshotSelection": {
+                "type": "object",
+                "properties": {
+                  "model": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 200
+                  },
+                  "reasoningEffort": {
+                    "type": "string",
+                    "enum": [
+                      "none",
+                      "minimal",
+                      "low",
+                      "medium",
+                      "high",
+                      "xhigh",
+                      "max",
+                      "ultra"
+                    ]
+                  }
+                },
                 "additionalProperties": false
               },
               "outputLanguage": {
@@ -4921,6 +4969,30 @@
                 ],
                 "additionalProperties": false
               },
+              "screenshotSelection": {
+                "type": "object",
+                "properties": {
+                  "model": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 200
+                  },
+                  "reasoningEffort": {
+                    "type": "string",
+                    "enum": [
+                      "none",
+                      "minimal",
+                      "low",
+                      "medium",
+                      "high",
+                      "xhigh",
+                      "max",
+                      "ultra"
+                    ]
+                  }
+                },
+                "additionalProperties": false
+              },
               "detail": {
                 "type": "string",
                 "enum": [
@@ -5566,6 +5638,30 @@
                               ],
                               "additionalProperties": false
                             },
+                            "screenshotSelection": {
+                              "type": "object",
+                              "properties": {
+                                "model": {
+                                  "type": "string",
+                                  "minLength": 1,
+                                  "maxLength": 200
+                                },
+                                "reasoningEffort": {
+                                  "type": "string",
+                                  "enum": [
+                                    "none",
+                                    "minimal",
+                                    "low",
+                                    "medium",
+                                    "high",
+                                    "xhigh",
+                                    "max",
+                                    "ultra"
+                                  ]
+                                }
+                              },
+                              "additionalProperties": false
+                            },
                             "outputLanguage": {
                               "type": "string",
                               "enum": [
@@ -5878,6 +5974,30 @@
                               "required": [
                                 "enabled"
                               ],
+                              "additionalProperties": false
+                            },
+                            "screenshotSelection": {
+                              "type": "object",
+                              "properties": {
+                                "model": {
+                                  "type": "string",
+                                  "minLength": 1,
+                                  "maxLength": 200
+                                },
+                                "reasoningEffort": {
+                                  "type": "string",
+                                  "enum": [
+                                    "none",
+                                    "minimal",
+                                    "low",
+                                    "medium",
+                                    "high",
+                                    "xhigh",
+                                    "max",
+                                    "ultra"
+                                  ]
+                                }
+                              },
                               "additionalProperties": false
                             },
                             "outputLanguage": {
@@ -14133,6 +14253,30 @@
                             ],
                             "additionalProperties": false
                           },
+                          "screenshotSelection": {
+                            "type": "object",
+                            "properties": {
+                              "model": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 200
+                              },
+                              "reasoningEffort": {
+                                "type": "string",
+                                "enum": [
+                                  "none",
+                                  "minimal",
+                                  "low",
+                                  "medium",
+                                  "high",
+                                  "xhigh",
+                                  "max",
+                                  "ultra"
+                                ]
+                              }
+                            },
+                            "additionalProperties": false
+                          },
                           "outputLanguage": {
                             "type": "string",
                             "enum": [
@@ -14492,6 +14636,30 @@
                               "required": [
                                 "enabled"
                               ],
+                              "additionalProperties": false
+                            },
+                            "screenshotSelection": {
+                              "type": "object",
+                              "properties": {
+                                "model": {
+                                  "type": "string",
+                                  "minLength": 1,
+                                  "maxLength": 200
+                                },
+                                "reasoningEffort": {
+                                  "type": "string",
+                                  "enum": [
+                                    "none",
+                                    "minimal",
+                                    "low",
+                                    "medium",
+                                    "high",
+                                    "xhigh",
+                                    "max",
+                                    "ultra"
+                                  ]
+                                }
+                              },
                               "additionalProperties": false
                             },
                             "detail": {

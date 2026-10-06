@@ -28,7 +28,7 @@ struct AccountProcessingSettingsView: View {
                 }
                 Section(L10n.imageAnalysis) {
                     Toggle(L10n.imageAnalysisEnabled, isOn: $workspaceSettings.generationSettings.imageAnalysis.enabled)
-                    LocalSummarySettingsRows(imageAnalysis: true)
+                    LocalSummarySettingsRows(targets: [.imageAnalysis, .screenshotSelection])
                         .disabled(!workspaceSettings.generationSettings.imageAnalysis.enabled)
                 }
                 Section(L10n.settingsAfterRecording) {
