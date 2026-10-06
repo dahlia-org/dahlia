@@ -806,6 +806,48 @@
         }
     }
 
+    @MainActor
+    struct RecordingStartWarningTests {
+        @Test
+        func recordingStartShowsEveryWarningRaisedWhileStarting() async throws {
+            let database = try AppDatabaseManager(path: ":memory:")
+            let workspace: WorkspaceRecord = {
+                var value = WorkspaceRecord(id: .v7(), path: nil, name: "Test", createdAt: .now, lastOpenedAt: .now)
+                // The live transcript draft prepares a recognition model, whose failure is a second non-fatal warning.
+                value.generationSettings.liveTranscriptDraft = true
+                return value
+            }()
+            try await database.dbQueue.write { db in try workspace.insert(db) }
+            let probe = RecordingRuntimeProbe()
+            let controller = RecordingSessionController(
+                captureFactory: FakeAudioCaptureFactory(probe: probe, deniedPermissionSource: .microphone),
+                recognitionFactory: FakeRecognitionFactory(probe: probe, failureMode: .modelPreparation),
+                batchRecordingFactory: FakeBatchFactory(probe: probe)
+            )
+            let viewModel = CaptionViewModel(
+                recordingSessionController: controller,
+                audioHardwareQueryService: AudioHardwareQueryService(
+                    availableInputDevicesProvider: { [] }, defaultInputDeviceIDProvider: { nil },
+                    inputVolumeStateProvider: { _ in nil }, inputVolumeSetter: { _, _ in false }
+                ),
+                usageTelemetryReporter: { _ in }
+            )
+            viewModel.microphoneSelection = .device(42)
+            viewModel.isSystemAudioEnabled = true
+            viewModel.beginDraftMeeting(dbQueue: database.dbQueue, workspaceURL: nil)
+            await viewModel.startListening(dbQueue: database.dbQueue, projectURL: nil, workspaceId: workspace.id, projectId: nil, workspaceURL: nil)
+
+            #expect(viewModel.isListening)
+            #expect(!viewModel.isRecordingAudioSourceActive(.microphone))
+            #expect(viewModel.errorMessage == [
+                L10n.recordingWithoutMicrophonePermission,
+                FakeRuntimeError.recognitionModelPreparation.localizedDescription,
+            ].joined(separator: "\n"))
+            viewModel.stopListening()
+            #expect(await pollUntil { !viewModel.isRecordingLifecycleBusy })
+        }
+    }
+
     actor RecordingRuntimeProbe {
         enum Action: Equatable {
             case captureConfiguration(RecordingAudioSource, forcesEchoCancellation: Bool)
