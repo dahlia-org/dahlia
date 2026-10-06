@@ -2490,14 +2490,8 @@ enum L10n { // swiftlint:disable:this type_body_length
         String(localized: "Controls how much reasoning Codex uses for each image.", bundle: bundle)
     }
 
-    static var screenshotSelectionModel: String { String(localized: "Screenshot usefulness model", bundle: bundle) }
-    static var screenshotSelectionModelDescription: String { String(
-        localized: "Chooses the screenshots a summary receives, skipping duplicates and screens without shared material.",
-        bundle: bundle
-    ) }
-    static var screenshotSelectionReasoningEffort: String { String(localized: "Usefulness reasoning effort", bundle: bundle) }
-    static var screenshotSelectionReasoningEffortDescription: String { String(
-        localized: "Controls how much reasoning Codex uses when choosing a summary's screenshots.",
+    static var imageAnalysisModelDescription: String { String(
+        localized: "Used for searchable image text and captions, and for choosing useful screenshots before summary generation.",
         bundle: bundle
     ) }
 

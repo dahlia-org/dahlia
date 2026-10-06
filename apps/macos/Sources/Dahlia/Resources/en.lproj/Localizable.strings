@@ -1788,10 +1788,8 @@
 "sync.discardFileConfirmation" = "Discard sync changes for this file and its links in “%@”?";
 
 "account.settings.imageAnalysis" = "Image analysis";
-"account.settings.imageAnalysisEnabled" = "Enable image analysis";
+"account.settings.imageAnalysisEnabled" = "Enable image search";
 
 "Controls how much reasoning Codex uses for each image." = "Controls how much reasoning Codex uses for each image.";
-"Screenshot usefulness model" = "Screenshot usefulness model";
-"Chooses the screenshots a summary receives, skipping duplicates and screens without shared material." = "Chooses the screenshots a summary receives, skipping duplicates and screens without shared material.";
-"Usefulness reasoning effort" = "Usefulness reasoning effort";
-"Controls how much reasoning Codex uses when choosing a summary's screenshots." = "Controls how much reasoning Codex uses when choosing a summary's screenshots.";
+
+"Used for searchable image text and captions, and for choosing useful screenshots before summary generation." = "Used for searchable image text and captions, and for choosing useful screenshots before summary generation.";

@@ -24,8 +24,8 @@ import Foundation
         private static func settings(enabled: Bool = true) -> WorkspaceGenerationSettings {
             var settings = WorkspaceGenerationSettings()
             settings.imageAnalysis.enabled = enabled
-            settings.imageAnalysis.model = "ignored-analysis-model"
-            settings.screenshotSelection = .init(model: "selection-model", reasoningEffort: "high")
+            settings.imageAnalysis.model = "selection-model"
+            settings.imageAnalysis.reasoningEffort = "high"
             return settings
         }
 
@@ -61,7 +61,7 @@ import Foundation
         }
 
         @Test
-        func disabledImageAnalysisAndInvalidSelectionKeepEveryCandidate() async throws {
+        func imageSearchDisabledStillSelectsAndInvalidSelectionKeepsEveryCandidate() async throws {
             let candidates = try Self.screenshots(2)
             for (enabled, response) in [(false, #"{"indices":[1]}"#), (true, #"{"indices":[3]}"#)] {
                 let transport = TestCodexAppServerTransport(mode: .generationCompletes, modelName: "selection-model", generationResponse: response)
@@ -69,8 +69,8 @@ import Foundation
                 let selected = try await SummaryScreenshotSelection.select(
                     candidates, settings: Self.settings(enabled: enabled), runtimeProvider: .chatGPTSubscription, appServer: appServer
                 )
-                #expect(selected.map(\.id) == candidates.map(\.id))
-                #expect(await transport.messages().isEmpty == !enabled)
+                #expect(selected.map(\.id) == (enabled ? candidates.map(\.id) : [candidates[0].id]))
+                #expect(await !transport.messages().isEmpty)
                 await appServer.shutdown()
             }
         }

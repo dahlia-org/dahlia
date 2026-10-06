@@ -1,5 +1,5 @@
 import { expect, it } from "vitest";
-import { workspaceGenerationSettingsSchema, DEFAULT_WORKSPACE_GENERATION_SETTINGS, effectiveScreenshotSelection, summaryStyles, summaryStyleDetail, withScreenshotSelection } from "@dahlia-ai/ui/model/workspace-generation-settings";
+import { workspaceGenerationSettingsSchema, DEFAULT_WORKSPACE_GENERATION_SETTINGS, effectiveScreenshotSelection, summaryStyles, summaryStyleDetail, withImageAnalysis } from "@dahlia-ai/ui/model/workspace-generation-settings";
 import { modelList } from "../src/ai-gateway/models";
 import { cloudflareModels } from "../src/ai-gateway/cloudflare";
 import { resolveSummaryPreferences } from "../src/summary/preferences";
@@ -106,17 +106,15 @@ it("captures image analysis and screenshot selection choices and keeps legacy wo
   expect(workspaceGenerationSettingsSchema.safeParse({ ...preferences, screenshotSelection: { model: "m", enabled: true } }).success).toBe(false);
 });
 
-it("keeps the legacy image analysis selection choice until the dedicated key is saved", () => {
-  const legacy = { ...DEFAULT_WORKSPACE_GENERATION_SETTINGS, imageAnalysis: { enabled: false, model: "legacy-model", reasoningEffort: "high" as const } };
-  expect(effectiveScreenshotSelection(legacy)).toEqual({ model: "legacy-model", reasoningEffort: "high" });
-  expect(effectiveScreenshotSelection({ ...legacy, screenshotSelection: {} })).toEqual({});
-  expect(effectiveScreenshotSelection(DEFAULT_WORKSPACE_GENERATION_SETTINGS)).toEqual({ model: undefined, reasoningEffort: undefined });
-  // Saving clears the legacy fields and keeps the toggle, so an absent key and {} stay equivalent across round trips.
-  const saved = withScreenshotSelection(legacy, {});
-  expect(saved).toMatchObject({ imageAnalysis: { enabled: false }, screenshotSelection: {} });
+it("uses one image analysis pair and removes legacy selection settings on save", () => {
+  const settings = { ...DEFAULT_WORKSPACE_GENERATION_SETTINGS, imageAnalysis: { enabled: false, model: "analysis-model", reasoningEffort: "high" as const }, screenshotSelection: { model: "old-selection" } };
+  expect(effectiveScreenshotSelection(settings)).toEqual({ model: "analysis-model", reasoningEffort: "high" });
+  expect(effectiveScreenshotSelection({ ...settings, screenshotSelection: {} })).toEqual({ model: "analysis-model", reasoningEffort: "high" });
+  expect(effectiveScreenshotSelection(DEFAULT_WORKSPACE_GENERATION_SETTINGS)).toEqual({});
+  const saved = withImageAnalysis(settings, { enabled: false });
   expect(saved.imageAnalysis).toEqual({ enabled: false });
-  expect(withScreenshotSelection(DEFAULT_WORKSPACE_GENERATION_SETTINGS, { model: "m" })).not.toHaveProperty("imageAnalysis");
-  expect(effectiveScreenshotSelection({ ...saved, screenshotSelection: undefined })).toEqual(effectiveScreenshotSelection(saved));
-  expect(workspaceGenerationSettingsSchema.parse(JSON.parse(JSON.stringify(withScreenshotSelection(legacy, { model: undefined, reasoningEffort: "low" }))))
-    .screenshotSelection).toEqual({ reasoningEffort: "low" });
+  expect(saved).not.toHaveProperty("screenshotSelection");
+  expect(effectiveScreenshotSelection(saved)).toEqual({});
+  expect(workspaceGenerationSettingsSchema.parse(JSON.parse(JSON.stringify(withImageAnalysis(settings, { enabled: false, reasoningEffort: "low" }))))
+    .imageAnalysis).toEqual({ enabled: false, reasoningEffort: "low" });
 });

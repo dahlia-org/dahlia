@@ -1788,10 +1788,8 @@
 "sync.discardFileConfirmation" = "「%@」の該当ファイルと紐付けの同期変更を破棄しますか？";
 
 "account.settings.imageAnalysis" = "画像解析";
-"account.settings.imageAnalysisEnabled" = "画像解析を有効にする";
+"account.settings.imageAnalysisEnabled" = "画像検索を有効にする";
 
 "Controls how much reasoning Codex uses for each image." = "画像ごとに Codex が使用する推論の強度を設定します。";
-"Screenshot usefulness model" = "スクリーンショット判定モデル";
-"Chooses the screenshots a summary receives, skipping duplicates and screens without shared material." = "要約に渡すスクリーンショットを選びます。重複した画面や共有資料が写っていない画面は除きます。";
-"Usefulness reasoning effort" = "判定の推論強度";
-"Controls how much reasoning Codex uses when choosing a summary's screenshots." = "要約に渡すスクリーンショットを選ぶときに Codex が使用する推論の強度を設定します。";
+
+"Used for searchable image text and captions, and for choosing useful screenshots before summary generation." = "検索用の OCR・caption の生成と、要約前の有用なスクリーンショットの選別に共通で使用します。";

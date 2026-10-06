@@ -3,7 +3,7 @@ import SwiftUI
 /// Device-local defaults for the selected account.
 struct LocalSummarySettingsRows: View {
     enum Target {
-        case summary, imageAnalysis, screenshotSelection
+        case summary, imageAnalysis
     }
 
     var canEdit = true
@@ -28,8 +28,8 @@ struct LocalSummarySettingsRows: View {
                         Text(model.displayName).tag(model.model)
                     }
                 } label: {
-                    Text(target == .screenshotSelection ? L10n.screenshotSelectionModel : L10n.model)
-                    Text(target == .screenshotSelection ? L10n.screenshotSelectionModelDescription : L10n.codexModelDescription)
+                    Text(L10n.model)
+                    Text(target == .imageAnalysis ? L10n.imageAnalysisModelDescription : L10n.codexModelDescription)
                 }
                 .pickerStyle(.menu)
                 .disabled(!canEdit)
@@ -44,7 +44,7 @@ struct LocalSummarySettingsRows: View {
                         Text(effort.displayName).tag(effort.reasoningEffort)
                     }
                 } label: {
-                    Text(target == .screenshotSelection ? L10n.screenshotSelectionReasoningEffort : L10n.reasoningEffort)
+                    Text(L10n.reasoningEffort)
                     Text(reasoningEffortDescription(target))
                 }
                 .pickerStyle(.menu)
@@ -77,7 +77,6 @@ struct LocalSummarySettingsRows: View {
         switch target {
         case .summary: L10n.reasoningEffortDescription
         case .imageAnalysis: L10n.imageAnalysisReasoningEffortDescription
-        case .screenshotSelection: L10n.screenshotSelectionReasoningEffortDescription
         }
     }
 
@@ -86,7 +85,6 @@ struct LocalSummarySettingsRows: View {
         return switch target {
         case .summary: workspaceSettings.summaryModelID
         case .imageAnalysis: settings.imageAnalysis.model ?? CodexScreenshotAnalysisService.model
-        case .screenshotSelection: settings.screenshotSelection.model ?? CodexScreenshotAnalysisService.model
         }
     }
 
@@ -95,7 +93,6 @@ struct LocalSummarySettingsRows: View {
         return switch target {
         case .summary: workspaceSettings.summaryReasoningEffort
         case .imageAnalysis: settings.imageAnalysis.reasoningEffort ?? CodexScreenshotAnalysisService.reasoningEffort
-        case .screenshotSelection: settings.screenshotSelection.reasoningEffort ?? SummaryScreenshotSelection.defaultReasoningEffort
         }
     }
 
@@ -103,7 +100,6 @@ struct LocalSummarySettingsRows: View {
         switch target {
         case .summary: workspaceSettings.summaryModelID = modelID
         case .imageAnalysis: workspaceSettings.generationSettings.imageAnalysis.model = modelID
-        case .screenshotSelection: workspaceSettings.generationSettings.screenshotSelection.model = modelID
         }
     }
 
@@ -111,7 +107,6 @@ struct LocalSummarySettingsRows: View {
         switch target {
         case .summary: workspaceSettings.summaryReasoningEffort = effort
         case .imageAnalysis: workspaceSettings.generationSettings.imageAnalysis.reasoningEffort = effort
-        case .screenshotSelection: workspaceSettings.generationSettings.screenshotSelection.reasoningEffort = effort
         }
     }
 

@@ -25,7 +25,7 @@ enum SummaryScreenshotSelection {
             try await ScreenshotContentProvider.shared.content(id: $0.id, variant: .thumbnail).data
         }
     ) async throws -> [MeetingScreenshotRecord] {
-        guard settings.imageAnalysis.enabled, !candidates.isEmpty else { return candidates }
+        guard !candidates.isEmpty else { return candidates }
         let pool = spreadEvenly(candidates, limit: candidateLimit)
         do {
             return try await withThrowingTaskGroup(of: [MeetingScreenshotRecord].self) { group in
@@ -69,10 +69,10 @@ enum SummaryScreenshotSelection {
             inputs.append(.imageDataURI("data:\(mimeType);base64,\(encoded.base64EncodedString())"))
         }
         let response = try await appServer.generate(.init(
-            model: settings.screenshotSelection.model ?? CodexScreenshotAnalysisService.model,
+            model: settings.imageAnalysis.model ?? CodexScreenshotAnalysisService.model,
             requiresExactModel: true,
             requiresImageInput: true,
-            reasoningEffort: settings.screenshotSelection.reasoningEffort ?? defaultReasoningEffort,
+            reasoningEffort: settings.imageAnalysis.reasoningEffort ?? defaultReasoningEffort,
             developerInstructions: instructions,
             inputs: inputs,
             outputSchema: outputSchema

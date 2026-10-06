@@ -40,15 +40,21 @@ struct AccountInferenceSettings: Codable, Equatable, Sendable {
     var local = WorkspaceGenerationSettings.LocalProcessing()
     private var savedImageAnalysis: WorkspaceGenerationSettings.ImageAnalysis?
     var imageAnalysis: WorkspaceGenerationSettings.ImageAnalysis {
-        get { savedImageAnalysis ?? .init() }
-        set { savedImageAnalysis = newValue }
+        get {
+            var settings = savedImageAnalysis ?? .init()
+            if settings.model == nil, settings.reasoningEffort == nil {
+                settings.model = savedScreenshotSelection?.model
+                settings.reasoningEffort = savedScreenshotSelection?.reasoningEffort
+            }
+            return settings
+        }
+        set {
+            savedImageAnalysis = newValue
+            savedScreenshotSelection = nil
+        }
     }
 
     private var savedScreenshotSelection: WorkspaceGenerationSettings.ScreenshotSelection?
-    var screenshotSelection: WorkspaceGenerationSettings.ScreenshotSelection {
-        get { savedScreenshotSelection ?? .init() }
-        set { savedScreenshotSelection = newValue }
-    }
 
     var automaticProcessing = true
     var liveTranscriptDraft = false
@@ -65,6 +71,7 @@ struct AccountInferenceSettings: Codable, Equatable, Sendable {
             self = saved
             return
         }
+        imageAnalysis = workspace.generationSettings.imageAnalysis
         summary = workspace.generationSettings.summary
         local = workspace.generationSettings.local
         automaticProcessing = workspace.generationSettings.automaticProcessing
@@ -79,7 +86,6 @@ struct AccountInferenceSettings: Codable, Equatable, Sendable {
 
     init(snapshot: WorkspaceAISettingsSnapshot) {
         imageAnalysis = snapshot.generationSettings.imageAnalysis
-        screenshotSelection = snapshot.generationSettings.screenshotSelection
         summary = snapshot.generationSettings.summary
         local = snapshot.generationSettings.local
         automaticProcessing = snapshot.generationSettings.automaticProcessing
@@ -99,7 +105,6 @@ struct AccountInferenceSettings: Codable, Equatable, Sendable {
             outputLanguage: outputLanguage,
             local: local,
             imageAnalysis: imageAnalysis,
-            screenshotSelection: screenshotSelection,
             automaticProcessing: automaticProcessing,
             liveTranscriptDraft: liveTranscriptDraft
         )
