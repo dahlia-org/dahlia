@@ -191,7 +191,7 @@ TOKEN="$(databricks auth token --output json | jq -r .access_token)"
 
 curl -fsS \
   -H "Authorization: Bearer ${TOKEN}" \
-  https://<app-host>/api/session
+  https://<app-host>/api/v1/session
 
 curl -fsS \
   -H "Authorization: Bearer ${TOKEN}" \
