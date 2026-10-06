@@ -7,7 +7,7 @@ import type { AddressInfo } from "node:net";
 import { describe, expect, it, vi } from "vitest";
 
 import { createApp, mcpSetupAvailable } from "../src/app";
-import type { AppConfig } from "../src/config";
+import { loadConfig, type AppConfig } from "../src/config";
 import { createWorkerHandler, initializeWorkerApp } from "../src/worker";
 import viteConfig from "../vite.config";
 import { testStore } from "./test-store";
@@ -328,7 +328,20 @@ describe("deployment routing", () => {
     expect(resource).not.toContain("service_principal_client_id");
     // Zerobus export is opt-in until the OTel tables and their grants exist.
     expect(bundle).toMatch(/zerobus_endpoint:[\s\S]*?default: ""/);
-    expect(resource).toContain("name: OTEL_EXPORTER_OTLP_ENDPOINT\n            value: ${var.zerobus_endpoint}");
+    const endpointTemplate = resource.match(
+      /name: OTEL_EXPORTER_OTLP_ENDPOINT\n(?:\s*#.*\n)*\s*value: "([^"]*)"/,
+    )![1]!;
+    for (const endpoint of ["", "https://1234.zerobus.us-west-2.cloud.databricks.com"]) {
+      const value = endpointTemplate.replace("${var.zerobus_endpoint}", endpoint);
+      // The Apps SDK omits empty values from its deployment request.
+      expect(value.length).toBeGreaterThan(0);
+      const config = loadConfig({ DAHLIA_AUTH_TYPE: "header", DAHLIA_OTEL_AUTH: "databricks",
+        DATABRICKS_HOST: "https://workspace.example", DATABRICKS_CLIENT_ID: "client", DATABRICKS_CLIENT_SECRET: "secret",
+        OTEL_EXPORTER_OTLP_ENDPOINT: value,
+        OTEL_EXPORTER_OTLP_HEADERS: "x-databricks-zerobus-table-name=dahlia.ops.dahlia_otel_spans" });
+      if (endpoint) expect(config.otel?.exporters.traces?.url).toBe(`${endpoint}/v1/traces`);
+      else expect(config.otel).toBeUndefined();
+    }
     for (const [signal, table] of [["TRACES", "spans"], ["LOGS", "logs"], ["METRICS", "metrics"]]) {
       expect(resource).toContain(`name: OTEL_EXPORTER_OTLP_${signal}_HEADERS\n            value: x-databricks-zerobus-table-name=\${resources.schemas.ops_schema.catalog_name}.\${resources.schemas.ops_schema.name}.\${var.otel_table_prefix}_otel_${table}`);
     }
