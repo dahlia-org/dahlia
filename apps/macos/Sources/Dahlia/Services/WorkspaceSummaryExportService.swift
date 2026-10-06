@@ -22,7 +22,6 @@ enum WorkspaceSummaryExportService {
     }
 
     typealias TranscriptExporter = @Sendable (URL, UUID, String, Date, [TranscriptSegment], [RecordingSessionTimeline]) throws -> String
-    typealias ScreenshotExporter = @Sendable (URL, [MeetingScreenshotRecord]) throws -> [String]
     typealias SummaryWriter = @Sendable (URL, String) throws -> URL
 
     // The public export boundary mirrors the complete summary bundle payload.
@@ -36,7 +35,6 @@ enum WorkspaceSummaryExportService {
         projectName: String,
         segments: [TranscriptSegment],
         recordingSessions: [RecordingSessionTimeline] = [],
-        screenshots: [MeetingScreenshotRecord],
         summaryFileName: String,
         summaryMarkdown: String
     ) async throws -> URL {
@@ -49,11 +47,9 @@ enum WorkspaceSummaryExportService {
             projectName: projectName,
             segments: segments,
             recordingSessions: recordingSessions,
-            screenshots: screenshots,
             summaryFileName: summaryFileName,
             summaryMarkdown: summaryMarkdown,
             exportTranscript: TranscriptExportService.exportTranscript,
-            exportScreenshots: ScreenshotExportService.exportScreenshots,
             writeSummary: writeSummaryFile
         )
     }
@@ -69,11 +65,9 @@ enum WorkspaceSummaryExportService {
         projectName: String,
         segments: [TranscriptSegment],
         recordingSessions: [RecordingSessionTimeline] = [],
-        screenshots: [MeetingScreenshotRecord],
         summaryFileName: String,
         summaryMarkdown: String,
         exportTranscript: @escaping TranscriptExporter,
-        exportScreenshots: @escaping ScreenshotExporter,
         writeSummary: @escaping SummaryWriter
     ) async throws -> URL {
         let summaryFileURL = try resolveSummaryFileURL(
@@ -91,13 +85,6 @@ enum WorkspaceSummaryExportService {
             group.addTask {
                 _ = try exportTranscript(workspaceURL, meetingId, projectName, createdAt, segments, recordingSessions)
                 return nil
-            }
-            if !screenshots.isEmpty {
-                group.addTask {
-                    let resolved = try await ScreenshotContentProvider.shared.resolved(screenshots)
-                    _ = try exportScreenshots(workspaceURL, resolved)
-                    return nil
-                }
             }
 
             var exportedSummaryURL: URL?
@@ -129,8 +116,7 @@ enum WorkspaceSummaryExportService {
             segments: segments,
             recordingSessions: recordingSessions,
             screenshots: screenshots,
-            exportTranscript: TranscriptExportService.exportTranscript,
-            exportScreenshots: ScreenshotExportService.exportScreenshots
+            exportTranscript: TranscriptExportService.exportTranscript
         )
     }
 
@@ -144,8 +130,7 @@ enum WorkspaceSummaryExportService {
         segments: [TranscriptSegment],
         recordingSessions: [RecordingSessionTimeline],
         screenshots: [MeetingScreenshotRecord],
-        exportTranscript: @escaping TranscriptExporter,
-        exportScreenshots: @escaping ScreenshotExporter
+        exportTranscript: @escaping TranscriptExporter
     ) async throws {
         try await withThrowingTaskGroup(of: Void.self) { group in
             group.addTask {
@@ -158,10 +143,13 @@ enum WorkspaceSummaryExportService {
                     recordingSessions
                 )
             }
-            if !screenshots.isEmpty {
+            // The summary embeds FileStore originals, so fetch Server Account originals into that cache.
+            let remoteScreenshots = screenshots.filter { $0.remoteReference != nil }
+            if !remoteScreenshots.isEmpty {
                 group.addTask {
-                    let resolved = try await ScreenshotContentProvider.shared.resolved(screenshots)
-                    _ = try exportScreenshots(workspaceURL, resolved)
+                    for screenshot in remoteScreenshots {
+                        _ = try await ScreenshotContentProvider.shared.content(id: screenshot.id)
+                    }
                 }
             }
             try await group.waitForAll()

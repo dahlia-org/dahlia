@@ -265,7 +265,7 @@ extension MeetingAccessStore {
             return (nil, .fileMissing)
         }
 
-        let screenshotFilenames = try screenshotFilenames(
+        let screenshotURLs = try screenshotURLs(
             for: document.referencedScreenshotIds,
             meetingID: meetingID,
             in: db
@@ -275,7 +275,7 @@ extension MeetingAccessStore {
             context: SummaryMarkdownRenderContext(
                 meetingId: meetingID,
                 createdAt: createdAt,
-                screenshotFilenames: screenshotFilenames
+                screenshotURLs: screenshotURLs
             )
         )
 
@@ -291,12 +291,12 @@ extension MeetingAccessStore {
         return (write, .updated)
     }
 
-    /// Workspace へ書き出したスクリーンショットのファイル名。アプリの書き出し規則と一致させる。
-    private func screenshotFilenames(
+    /// 要約 Markdown が参照するアプリ管理下の原本。アプリの描画と同じ参照を使う。
+    private func screenshotURLs(
         for screenshotIDs: Set<UUID>,
         meetingID: UUID,
         in db: Database
-    ) throws -> [UUID: String] {
+    ) throws -> [UUID: URL] {
         guard !screenshotIDs.isEmpty else { return [:] }
         let placeholders = Array(repeating: "?", count: screenshotIDs.count).joined(separator: ", ")
         var arguments: StatementArguments = [meetingID, workspaceID]
@@ -304,7 +304,7 @@ extension MeetingAccessStore {
         let rows = try Row.fetchAll(
             db,
             sql: """
-            SELECT meeting_images.id, meeting_images.mimeType, meeting_images.imageData
+            SELECT meeting_images.id, coalesce(meeting_images.localReference, meeting_images.remoteReference) AS reference
             FROM meeting_images
             JOIN meetings ON meetings.id = meeting_images.meetingId
             WHERE meeting_images.meetingId = ? AND meetings.workspace_id = ?
@@ -313,18 +313,12 @@ extension MeetingAccessStore {
             arguments: arguments
         )
 
-        var filenames: [UUID: String] = [:]
+        var urls: [UUID: URL] = [:]
         for row in rows {
-            let id: UUID = row["id"]
-            let mimeType: String = row["mimeType"]
-            if let filename = SummaryScreenshotFilename.filename(id: id, mimeType: mimeType) {
-                filenames[id] = filename
-                continue
-            }
-            let data: Data = row["imageData"] ?? Data()
-            filenames[id] = SummaryScreenshotFilename.filename(id: id, mimeType: mimeType, imageData: data)
+            let reference: String? = row["reference"]
+            urls[row["id"]] = reference.flatMap(ScreenshotFileStore.originalFileURL(reference:))
         }
-        return filenames
+        return urls
     }
 
     private func containsSymbolicLink(_ fileURL: URL, workspaceURL: URL) throws -> Bool {

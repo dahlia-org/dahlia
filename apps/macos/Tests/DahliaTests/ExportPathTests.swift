@@ -107,30 +107,5 @@ import Foundation
             #expect(markdown.contains("###### 00:00:05\nbefore"))
             #expect(markdown.contains("###### 00:00:13\nafter"))
         }
-
-        @Test
-        func screenshotExportWritesIntoDahliaScreenshotsDirectory() throws {
-            let workspaceURL = FileManager.default.temporaryDirectory
-                .appendingPathComponent(UUID().uuidString, isDirectory: true)
-            defer { try? FileManager.default.removeItem(at: workspaceURL) }
-
-            try FileManager.default.createDirectory(at: workspaceURL, withIntermediateDirectories: true)
-
-            let screenshot = MeetingScreenshotRecord(
-                id: UUID(),
-                meetingId: UUID(),
-                capturedAt: Date(timeIntervalSince1970: 0),
-                imageData: Data([0x89, 0x50, 0x4E, 0x47]),
-                mimeType: "image/png"
-            )
-
-            let relativePaths = try ScreenshotExportService.exportScreenshots(
-                workspaceURL: workspaceURL,
-                screenshots: [screenshot]
-            )
-
-            #expect(relativePaths == ["_dahlia/screenshots/\(screenshot.id.uuidString).png"])
-            #expect(FileManager.default.fileExists(atPath: workspaceURL.appendingPathComponent(relativePaths[0]).path))
-        }
     }
 #endif

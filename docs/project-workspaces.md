@@ -82,6 +82,14 @@ retained export. A missing derived directory is a normal state, not a Project he
 Summary may overwrite that Meeting's stored file; a new export never overwrites an existing file and uses a stable
 Meeting UUID suffix when its preferred filename is already occupied.
 
+Summary Markdown embeds each screenshot by the absolute `file://` URL of its original in Dahlia's Application Support
+FileStore, so the paths are specific to one Mac. Exports do not copy screenshots into the Workspace. A screenshot with
+no stored original renders only its caption. For a Server Account the FileStore is a cache: summary generation fetches
+the Meeting's originals when it exports, but an original that was evicted, or first referenced through
+`update_meeting_summary` without being fetched on this Mac, shows nothing until Dahlia fetches it again, for example
+when the screenshot is opened. Copies that older versions wrote to `_dahlia/screenshots/` remain in place and are
+removed only when Dahlia deletes the screenshot.
+
 ## Workspace mutations
 
 Create validates the root-or-subproject parent contract and sibling uniqueness, then inserts only the Project record.

@@ -13,29 +13,16 @@ public struct SummaryMarkdownRenderResult: Equatable, Sendable {
 }
 
 /// Obsidian Markdown を描画するために必要な最小の文脈。
-/// アプリと MCP ヘルパーはスクリーンショットの表現が異なるため、ファイル名だけを受け取る。
+/// アプリと MCP ヘルパーはスクリーンショットの表現が異なるため、アプリ管理下の原本 URL だけを受け取る。
 public struct SummaryMarkdownRenderContext: Sendable {
     public let meetingId: UUID
     public let createdAt: Date
-    public let screenshotFilenames: [UUID: String]
+    public let screenshotURLs: [UUID: URL]
 
-    public init(meetingId: UUID, createdAt: Date, screenshotFilenames: [UUID: String] = [:]) {
+    public init(meetingId: UUID, createdAt: Date, screenshotURLs: [UUID: URL] = [:]) {
         self.meetingId = meetingId
         self.createdAt = createdAt
-        self.screenshotFilenames = screenshotFilenames
-    }
-}
-
-/// Workspace に書き出すスクリーンショットのファイル名規則。アプリと MCP ヘルパーで共有する。
-public enum SummaryScreenshotFilename {
-    /// mime type だけで拡張子が決まる場合のファイル名。決まらない場合は nil。
-    public static func filename(id: UUID, mimeType: String) -> String? {
-        ImageEncoder.fileExtension(for: mimeType).map { "\(id.uuidString).\($0)" }
-    }
-
-    /// 画像データの内容も見て拡張子を決めるファイル名。
-    public static func filename(id: UUID, mimeType: String, imageData: Data) -> String {
-        "\(id.uuidString).\(ImageEncoder.fileExtension(mimeType: mimeType, data: imageData))"
+        self.screenshotURLs = screenshotURLs
     }
 }
 
@@ -162,7 +149,12 @@ public enum ObsidianMarkdownSummaryRenderer {
                 placement: .separateParagraph
             )
         case let .image(screenshotId, caption):
-            let image = "![[\(screenshotFilename(for: screenshotId, context: context))]]"
+            guard let url = context.screenshotURLs[screenshotId] else {
+                rendered = renderSummaryText(caption, meetingId: meetingId, placement: .inline).summaryNilIfBlank
+                break
+            }
+            // Workspace へ複製せず、アプリ管理下の原本を参照する。
+            let image = "![](<\(url.absoluteString)>)"
             if caption.text.summaryNilIfBlank != nil {
                 rendered = "\(image)\n\n\(renderSummaryText(caption, meetingId: meetingId, placement: .inline))"
             } else {
@@ -228,10 +220,6 @@ public enum ObsidianMarkdownSummaryRenderer {
             .replacingOccurrences(of: "|", with: "/")
             .replacingOccurrences(of: "]", with: "")
             .summaryNilIfBlank ?? ""
-    }
-
-    private static func screenshotFilename(for screenshotId: UUID, context: SummaryMarkdownRenderContext) -> String {
-        context.screenshotFilenames[screenshotId] ?? screenshotId.uuidString
     }
 
     private static func escapeYAMLString(_ value: String) -> String {

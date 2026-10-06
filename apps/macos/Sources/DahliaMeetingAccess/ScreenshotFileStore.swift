@@ -9,6 +9,12 @@ public final class ScreenshotFileStore: Sendable {
         DahliaApplicationSupport.currentDirectoryURL.appending(path: "FileStore", directoryHint: .isDirectory)
     }
 
+    /// Where external tools such as Obsidian read an original. A Server Account original can be evicted and fetched again.
+    public static func originalFileURL(reference: String) -> URL? {
+        guard let source = try? JSONDecoder().decode(ScreenshotRemoteReference.self, from: Data(reference.utf8)) else { return nil }
+        return defaultDirectory.appending(path: source.cacheKey(variant: .original))
+    }
+
     private let directory: URL
     private let index: DatabaseQueue
     private let readOnly: Bool

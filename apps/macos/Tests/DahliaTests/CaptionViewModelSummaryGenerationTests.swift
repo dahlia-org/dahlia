@@ -424,14 +424,17 @@ import Synchronization
                     recordingSessionID: sessionID, jobID: id
                 )
             }
+            let screenshotID = UUID.v7()
+            let section = SummarySection(id: UUID.v7(), heading: "Summary", blocks: [.image(screenshotId: screenshotID, caption: SummaryText("Screen"))])
+            // Markdown saved by an earlier version that embedded Workspace copies; the restore must re-render it.
             let saved = SummaryService.GeneratedSummary(
-                document: SummaryDocument(title: "Saved", sections: []),
+                document: SummaryDocument(title: "Saved", sections: [section]),
                 fileName: "summary.md",
-                markdown: "Saved"
+                markdown: "## Summary\n\n![[\(screenshotID.uuidString).webp]]\n\nScreen"
             )
             let processing = RecordingProcessing(
                 id: id, automatic: true, liveDraft: false, localeIdentifier: "en_US", method: .transcript,
-                options: .init(exportOptions: .init(exportsToWorkspace: false, exportsToGoogleDocs: true)),
+                options: .init(exportOptions: .init(exportsToWorkspace: true, exportsToGoogleDocs: true)),
                 generationSettings: .current(), workspaceSettings: nil, sessionIDs: [sessionID], stage: .saving,
                 summaryExpectation: expected, generatedSummary: saved
             )
@@ -451,6 +454,8 @@ import Synchronization
             try #require(await waitUntil { exportCalls == 1 && !restored.isSummaryGenerating(meetingId: fixture.first.id) })
             #expect(generationCalls == 0)
             #expect(try await fixture.database.dbQueue.read { try RecordingProcessing.load(sessionID: sessionID, in: $0)?.stage } == .succeeded)
+            let markdown = try String(contentsOf: fixture.workspaceURL.appending(path: #require(try fixture.summaryPath(for: fixture.first.id))), encoding: .utf8)
+            #expect(!markdown.contains("![[") && markdown.contains("## Summary\n\nScreen"))
         }
 
         @Test

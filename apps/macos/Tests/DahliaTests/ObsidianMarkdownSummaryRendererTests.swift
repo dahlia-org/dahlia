@@ -1,3 +1,4 @@
+import DahliaMeetingAccess
 import Foundation
 @testable import Dahlia
 @testable import DahliaRuntimeSupport
@@ -18,13 +19,7 @@ import Foundation
             let meetingId = try #require(UUID(uuidString: "019E61FD-B5D6-7A04-AC25-4B820FE951E6"))
             let screenshotId = try #require(UUID(uuidString: "019E61FD-B5D6-7A04-AC25-4B820FE951E7"))
             let createdAt = Date(timeIntervalSince1970: 1_783_598_400)
-            let screenshot = MeetingScreenshotRecord(
-                id: screenshotId,
-                meetingId: meetingId,
-                capturedAt: createdAt,
-                imageData: Data(),
-                mimeType: "image/jpeg"
-            )
+            let screenshot = try storedScreenshot(id: screenshotId, meetingId: meetingId, capturedAt: createdAt)
             let document = SummaryDocument(
                 title: "Weekly Sync/Review",
                 sections: [
@@ -56,8 +51,9 @@ import Foundation
             #expect(rendered.markdown.contains("title: \"Weekly Sync/Review\""))
             #expect(rendered.markdown.contains("tags:\n  - team"))
             #expect(rendered.body.contains("[[\(meetingId.uuidString)#00:10:00|00:10:00]]"))
-            #expect(rendered.body.contains("![[\(screenshotId.uuidString).jpeg]]"))
-            #expect(rendered.body.contains("![[\(screenshotId.uuidString).jpeg]]\n\nScreen"))
+            let imageURL = ScreenshotFileStore.defaultDirectory
+                .appending(path: "local/files/\(screenshotId.uuidString.lowercased())/original")
+            #expect(rendered.body.contains("![](<\(imageURL.absoluteString)>)\n\nScreen"))
             #expect(rendered.body.contains("[[\(meetingId.uuidString)#00:11:00|00:11:00]]"))
             #expect(rendered.body.contains("## Action Items\n- [ ] Send **notes** (Aki)"))
             #expect(!rendered.body.contains("SQL(elements:"))
@@ -127,13 +123,7 @@ import Foundation
             let meetingId = UUID.v7()
             let screenshotId = try #require(UUID(uuidString: "019E61FD-B5D6-7A04-AC25-4B820FE951E6"))
             let createdAt = Date(timeIntervalSince1970: 1_783_598_400)
-            let screenshot = MeetingScreenshotRecord(
-                id: screenshotId,
-                meetingId: meetingId,
-                capturedAt: createdAt,
-                imageData: Data(),
-                mimeType: "image/jpeg"
-            )
+            let screenshot = try storedScreenshot(id: screenshotId, meetingId: meetingId, capturedAt: createdAt)
             let context = SummaryRenderContext(meetingId: meetingId, createdAt: createdAt, screenshots: [screenshot])
             let document = LegacyMarkdownSummaryParser.parse(
                 markdown: "## Summary\n\nSee ![[_dahlia/screenshots/\(screenshotId.uuidString).webp|Screen]]",
@@ -143,9 +133,44 @@ import Foundation
 
             let rendered = ObsidianMarkdownSummaryRenderer.render(document: document, context: context)
 
-            #expect(rendered.body.contains("![[\(screenshotId.uuidString).jpeg]]"))
+            #expect(rendered.body.contains("![](<file://"))
             #expect(rendered.body.contains("Screen"))
-            #expect(!rendered.body.contains(".webp"))
+            #expect(!rendered.body.contains("_dahlia/screenshots"))
+        }
+
+        @Test
+        func rendersCaptionWithoutEmbedWhenOriginalIsNotStored() {
+            let screenshotId = UUID.v7()
+            let document = SummaryDocument(
+                title: "Pending",
+                sections: [
+                    SummarySection(
+                        id: UUID.v7(),
+                        heading: "Summary",
+                        blocks: [.image(screenshotId: screenshotId, caption: SummaryText("Screen"))]
+                    ),
+                ]
+            )
+            let context = SummaryRenderContext(meetingId: UUID.v7(), createdAt: .now)
+
+            let rendered = ObsidianMarkdownSummaryRenderer.render(document: document, context: context)
+
+            #expect(rendered.body == "## Summary\n\nScreen")
+        }
+
+        private func storedScreenshot(id: UUID, meetingId: UUID, capturedAt: Date) throws -> MeetingScreenshotRecord {
+            try MeetingScreenshotRecord(
+                id: id,
+                meetingId: meetingId,
+                capturedAt: capturedAt,
+                mimeType: "image/webp",
+                localReference: ScreenshotRemoteReference(
+                    origin: "",
+                    accountConnectionId: nil,
+                    fileId: id,
+                    contentHash: String(repeating: "0", count: 64)
+                ).jsonString()
+            )
         }
     }
 #endif
