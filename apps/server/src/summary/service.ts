@@ -3,7 +3,7 @@ import { collectAudio } from "./audio";
 import type { IdentitySyncStore } from "../sync/types";
 import { canWriteWorkspace } from "../auth/workspace-permissions";
 import { z } from "zod";
-import { effectiveScreenshotSelection, generationPreferencesSchema, normalizeSummaryDetail, outputLanguageSchema, summaryModelSettingsSchema } from "@dahlia-ai/ui/model/workspace-generation-settings";
+import { effectiveScreenshotSelection, generationPreferencesSchema, normalizeSummaryDetail, outputLanguageSchema, summaryModelSettingsSchema, withImageAnalysis } from "@dahlia-ai/ui/model/workspace-generation-settings";
 
 import type { Identity } from "../auth/identity";
 import { RequestError } from "../storage/upload";
@@ -151,9 +151,13 @@ export class SummaryService {
       if (error instanceof SummaryError) throw new RequestError(error.retryable ? 503 : 400, error.code);
       throw error;
     }
-    if (settings.imageAnalysis) captured = { ...captured, imageAnalysis: settings.imageAnalysis };
-    // A legacy imageAnalysis model is the Workspace's selection choice too, so capture the resolved choice rather than mixing in a request's.
-    if (settings.imageAnalysis || settings.screenshotSelection) captured = { ...captured, screenshotSelection: effectiveScreenshotSelection(settings) };
+    // Capture one Workspace model/effort pair, including legacy selection-only settings.
+    if (settings.imageAnalysis || settings.screenshotSelection) {
+      captured = withImageAnalysis(captured, {
+        enabled: settings.imageAnalysis?.enabled ?? captured.imageAnalysis?.enabled ?? true,
+        ...effectiveScreenshotSelection(settings),
+      });
+    }
     return this.store.withIdentity(identity, async (scoped) => {
       await scoped.lockMeeting(workspaceId, meetingId, true);
       if (!canWriteWorkspace((await scoped.getWorkspace(workspaceId))?.role)) throw new RequestError(404, "summary_meeting_unavailable");

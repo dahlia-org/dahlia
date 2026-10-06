@@ -33,20 +33,33 @@ export const remoteProcessingSchema = z.object({
 export const processingSchema = z.object({ location: summaryModeSchema, remote: remoteProcessingSchema }).strict();
 const summarySchema = z.object({ style: summaryStyleSchema }).strict();
 export const imageAnalysisSettingsSchema = z.object({ enabled: z.boolean(), model: modelPreference.optional(), reasoningEffort: summaryModelSettingsSchema.shape.reasoningEffort.optional() }).strict();
-// Model that picks the screenshots a summary receives; image analysis must be enabled for it to run.
+// Legacy separate selection settings remain readable; new saves use imageAnalysis for both operations.
 export const screenshotSelectionSettingsSchema = z.object({ model: modelPreference.optional(), reasoningEffort: summaryModelSettingsSchema.shape.reasoningEffort.optional() }).strict();
 export const generationPreferencesSchema = z.object({ imageAnalysis: imageAnalysisSettingsSchema.optional(), screenshotSelection: screenshotSelectionSettingsSchema.optional(), outputLanguage: outputLanguageSchema, processing: processingSchema, summary: summarySchema }).strict();
 
 export type GenerationPreferences = z.infer<typeof generationPreferencesSchema>;
 type ScreenshotSelectionSettings = z.infer<typeof screenshotSelectionSettingsSchema>;
 type ScreenshotSelectionSource = Pick<GenerationPreferences, "imageAnalysis" | "screenshotSelection">;
-/** Settings saved before `screenshotSelection` existed chose the selection model and effort through `imageAnalysis`. */
+/** One model/effort pair for image search analysis and summary screenshot selection. */
 export function effectiveScreenshotSelection(settings: ScreenshotSelectionSource): ScreenshotSelectionSettings {
-  return settings.screenshotSelection ?? { model: settings.imageAnalysis?.model, reasoningEffort: settings.imageAnalysis?.reasoningEffort };
+  const analysis = settings.imageAnalysis;
+  return analysis?.model !== undefined || analysis?.reasoningEffort !== undefined
+    ? { model: analysis.model, reasoningEffort: analysis.reasoningEffort }
+    : settings.screenshotSelection ?? {};
 }
-/** Clears the legacy `imageAnalysis` choice so an absent `screenshotSelection` and `{}` mean the same. */
-export function withScreenshotSelection<T extends ScreenshotSelectionSource>(settings: T, screenshotSelection: ScreenshotSelectionSettings): T {
-  return { ...settings, ...(settings.imageAnalysis && { imageAnalysis: { enabled: settings.imageAnalysis.enabled } }), screenshotSelection };
+/** Saving the unified pair removes the old separate selection choice. */
+export function withImageAnalysis<T extends ScreenshotSelectionSource>(settings: T, analysis: z.infer<typeof imageAnalysisSettingsSchema>): T {
+  const next = { ...settings, imageAnalysis: analysis };
+  delete next.screenshotSelection;
+  return next;
+}
+/** Canonicalize legacy inputs at a new settings/job write without inventing absent image defaults. */
+export function normalizeImageAnalysis<T extends ScreenshotSelectionSource>(settings: T): T {
+  if (!settings.imageAnalysis && !settings.screenshotSelection) return settings;
+  return withImageAnalysis(settings, {
+    enabled: settings.imageAnalysis?.enabled ?? true,
+    ...effectiveScreenshotSelection(settings),
+  });
 }
 export const DEFAULT_GENERATION_PREFERENCES: GenerationPreferences = {
   outputLanguage: "ja",

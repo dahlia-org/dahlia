@@ -12,7 +12,7 @@ import { encodeId } from "../model/typeid";
 import { uuidV7 } from "../model/id";
 import { pickerModels } from "../model/chat-models";
 import type { GatewayModelList } from "../model/gateway-models";
-import { DEFAULT_WORKSPACE_GENERATION_SETTINGS, effectiveScreenshotSelection, summaryStyles, summaryStyleDetail, withScreenshotSelection, type WorkspaceGenerationSettings } from "../model/workspace-generation-settings";
+import { DEFAULT_WORKSPACE_GENERATION_SETTINGS, effectiveScreenshotSelection, normalizeImageAnalysis, summaryStyles, summaryStyleDetail, withImageAnalysis, type WorkspaceGenerationSettings } from "../model/workspace-generation-settings";
 type SummaryRequest = operations["startSummaryJob"]["requestBody"]["content"]["application/json"];
 import { isSummaryModel } from "../model/summary-models";
 import { CODEX_AUTO_REVIEW_ALIAS } from "../model/model-alias";
@@ -104,7 +104,7 @@ export function ServerSummarySettings({ workspaceId, onSave }: {
     if (!workspace) return;
     setSaving(true); setError(undefined);
     try {
-      await onSave(workspace, settings);
+      await onSave(workspace, normalizeImageAnalysis(settings));
       query.reload();
     } catch (error) { setError(error instanceof Error ? error.message : String(error)); }
     finally { setSaving(false); }
@@ -116,9 +116,8 @@ export function ServerSummarySettings({ workspaceId, onSave }: {
   </section>;
   const settings = workspace.generationSettings;
   const remote = settings.processing.remote;
-  const imageAnalysis = settings.imageAnalysis;
+  const imageSearchEnabled = settings.imageAnalysis?.enabled ?? true;
   const selection = effectiveScreenshotSelection(settings);
-  const imageControlsDisabled = catalog.loading || imageAnalysis?.enabled === false;
   const imageModels = catalog.data && pickerModels(catalog.data, capabilities.data?.ai?.bundledModels === "codex")
     .filter((entry) => entry.slug !== CODEX_AUTO_REVIEW_ALIAS && Array.isArray(entry.input_modalities) && entry.input_modalities.includes("image"));
   const imageEfforts = imageModels?.find((entry) => entry.slug === selection.model)?.supported_reasoning_levels
@@ -195,25 +194,27 @@ export function ServerSummarySettings({ workspaceId, onSave }: {
       <fieldset className="min-w-0 rounded-lg border bg-muted/30 p-4">
         <legend className="px-1 text-sm font-semibold">{uiText("Image analysis", "画像解析")}</legend>
         <label className="mb-4 flex items-center gap-2 text-sm">
-          <input className="h-4 w-4 shrink-0" type="checkbox" checked={imageAnalysis?.enabled ?? true}
-            onChange={(event) => void save({ ...settings, imageAnalysis: { ...imageAnalysis, enabled: event.target.checked } })} />
-          {uiText("Enable image analysis", "画像解析を有効にする")}
+          <input className="h-4 w-4 shrink-0" type="checkbox" checked={imageSearchEnabled}
+            onChange={(event) => void save(withImageAnalysis(settings, { ...selection, enabled: event.target.checked }))} />
+          {uiText("Enable image search for new Desktop accounts", "新しいDesktopアカウントの画像検索を有効にする")}
         </label>
-        <p className="mb-3">{uiText("Chooses the screenshots a summary receives, skipping duplicates and screens without shared material.",
-          "要約に渡すスクリーンショットを選びます。重複した画面や共有資料が写っていない画面は除きます。")}</p>
+        <p className="mb-3">{uiText("The image-search switch is inherited only when a Desktop account first sets up its preferences. Change image search for an existing account in Account Preferences on that Mac. Web does not generate OCR or captions.",
+          "画像検索のスイッチは、Desktopアカウントの初回設定時にのみ引き継がれます。既存アカウントの画像検索は、そのMacのアカウント設定で変更してください。Webでは OCR・caption を生成しません。")}</p>
+        <p className="mb-3">{uiText("This model and reasoning effort select useful screenshots before Web summary generation regardless of the switch. Desktop inherits them at first setup and uses them for OCR, captions, and summary screenshot selection.",
+          "このモデルと推論強度は、スイッチにかかわらずWeb要約前の画像選別に使用します。Desktopでは初回設定時に引き継ぎ、OCR・caption の生成と要約前の画像選別に共通で使用します。")}</p>
         <div className="grid gap-3 sm:grid-cols-[minmax(0,2fr)_minmax(0,1fr)]">
-          <label className="grid gap-1.5 text-sm">{uiText("Screenshot usefulness model", "スクリーンショット判定モデル")}
-            <Select value={selection.model ?? ""} disabled={imageControlsDisabled}
-              onValueChange={(model) => void save(withScreenshotSelection(settings, { model: model || undefined }))}>
+          <label className="grid gap-1.5 text-sm">{uiText("Model", "モデル")}
+            <Select value={selection.model ?? ""} disabled={catalog.loading}
+              onValueChange={(model) => void save(withImageAnalysis(settings, { enabled: imageSearchEnabled, model: model || undefined }))}>
               <option value="">{uiText("Server default", "サーバーの既定値")}</option>
               {selection.model && !imageModels?.some((entry) => entry.slug === selection.model)
                 && <option value={selection.model}>{selection.model}</option>}
               {imageModels?.map((entry) => <option key={entry.slug} value={entry.slug}>{entry.display_name}</option>)}
             </Select>
           </label>
-          <label className="grid gap-1.5 text-sm">{uiText("Usefulness reasoning effort", "判定の推論強度")}
-            <Select value={selection.reasoningEffort ?? ""} disabled={imageControlsDisabled}
-              onValueChange={(effort) => void save(withScreenshotSelection(settings, { ...selection, reasoningEffort: effort as typeof remote.reasoningEffort || undefined }))}>
+          <label className="grid gap-1.5 text-sm">{uiText("Reasoning effort", "推論強度")}
+            <Select value={selection.reasoningEffort ?? ""} disabled={catalog.loading}
+              onValueChange={(effort) => void save(withImageAnalysis(settings, { ...selection, enabled: imageSearchEnabled, reasoningEffort: effort as typeof remote.reasoningEffort || undefined }))}>
               <option value="">{uiText("Automatic", "自動")}</option>
               {selection.reasoningEffort && <option value={selection.reasoningEffort}>{selection.reasoningEffort}</option>}
               {imageEfforts?.map(({ effort }) => <option key={effort} value={effort}>{effort}</option>)}

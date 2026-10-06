@@ -2,6 +2,7 @@ import { createElement, type ComponentProps } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { expect, it, vi } from "vitest";
 import { loadTranscript, SummaryGenerationSurface, ServerSummarySettings } from "@dahlia-ai/ui/screens/SummaryGeneration";
+import { Select } from "@dahlia-ai/ui/components/Select";
 import { useLiveJSON } from "@dahlia-ai/ui/api/live-data";
 import { apiOperations as api } from "@dahlia-ai/ui/api/generated-operations";
 import { DEFAULT_WORKSPACE_GENERATION_SETTINGS } from "@dahlia-ai/ui/model/workspace-generation-settings";
@@ -57,8 +58,8 @@ it.each([[true, true], [false, false]] as const)("checks semantic transcript ava
 });
 
 // These tests inspect available choices; real picker interactions run in tests/browser/select.html.
-vi.mock("@dahlia-ai/ui/components/Select", () => ({ Select: ({ value, disabled, children }: ComponentProps<typeof import("@dahlia-ai/ui/components/Select").Select>) =>
-  createElement("select", { value, disabled, onChange: () => {} }, children) }));
+vi.mock("@dahlia-ai/ui/components/Select", () => ({ Select: vi.fn(({ value, disabled, children }: ComponentProps<typeof import("@dahlia-ai/ui/components/Select").Select>) =>
+  createElement("select", { value, disabled, onChange: () => {} }, children)) }));
 vi.mock("@dahlia-ai/ui/api/live-data", async (original) => ({ ...await original<typeof import("@dahlia-ai/ui/api/live-data")>(), useLiveJSON: vi.fn(), refreshData: vi.fn() }));
 vi.mock("@dahlia-ai/ui/api/api", async (original) => ({ ...await original<typeof import("@dahlia-ai/ui/api/api")>(), json: vi.fn(), uiText: (en: string) => en }));
 
@@ -382,10 +383,10 @@ it("keeps explicit server workflow defaults without automatic processing control
   expect(combined).not.toContain("Audio processing model");
   expect(combined).not.toContain("Transcript summary model");
   expect(combined).toContain('value="system.ai.gemini-3-8-flash"');
-  expect(combined).toContain("Screenshot usefulness model");
-  expect(combined).toContain("Usefulness reasoning effort");
+  expect(combined).toContain("Enable image search");
+  expect(combined).toContain("Reasoning effort");
   expect(combined.indexOf("Summary generation")).toBeLessThan(combined.indexOf("Image analysis</legend>"));
-  expect(combined).toContain("Enable image analysis");
+  expect(combined).not.toContain("Screenshot usefulness model");
   expect(combined).toContain('value="system.ai.gpt-5-6-luna"');
   expect(twoStage).toContain("Audio processing model");
   expect(twoStage).toContain("Transcript summary model");
@@ -455,19 +456,26 @@ it.each([true, false])("uses Codex-composed screenshot selection models only wit
   }
 });
 
-it("shows a legacy image analysis selection model until the dedicated key is saved", () => {
+it("keeps image model and reasoning controls enabled when image search is disabled", () => {
   vi.mocked(useLiveJSON).mockImplementation((url) => ({
     data: url === "/api/v1/models" ? modelList([{ id: "system.ai.kimi-k3" }])
       : typeof url === "object" && url.key.startsWith('["getCapabilities"')
         ? { meetingSummaryGeneration: { version: 2, sources: ["transcript"] } }
         : { role: "admin", generationSettings: { ...DEFAULT_WORKSPACE_GENERATION_SETTINGS,
-          imageAnalysis: { enabled: true, model: "legacy-vision-model", reasoningEffort: "medium" } } },
+          imageAnalysis: { enabled: false, model: "legacy-vision-model", reasoningEffort: "medium" }, screenshotSelection: { model: "ignored-legacy-model" } } },
     loading: false, refreshing: false, error: undefined, reload: vi.fn(), replace: vi.fn(),
   }));
   const html = renderToStaticMarkup(createElement(ServerSummarySettings, { workspaceId: "test", onSave: async () => {} }));
   const image = html.slice(html.indexOf("Image analysis</legend>"));
   expect(image).toContain('value="legacy-vision-model" selected');
   expect(image).toContain('value="medium" selected');
+  expect(image).not.toMatch(/<select[^>]*disabled/);
+  expect(image).not.toContain("ignored-legacy-model");
+  expect(image).toContain("Enable image search for new Desktop accounts");
+  expect(image).toContain("inherited only when a Desktop account first sets up its preferences");
+  expect(image).toContain("Change image search for an existing account in Account Preferences on that Mac.");
+  expect(image).toContain("Web does not generate OCR or captions.");
+  expect(image).toContain("regardless of the switch");
 });
 
 it("does not offer bundled image choices when model discovery fails", () => {
@@ -482,4 +490,29 @@ it("does not offer bundled image choices when model discovery fails", () => {
   const html = renderToStaticMarkup(createElement(ServerSummarySettings, { workspaceId: "test", onSave: async () => {} }));
   expect(html).not.toContain('value="gpt-6-luna"');
   expect(html).toContain("offline");
+});
+
+it("normalizes legacy image settings when saving only the output language", () => {
+  const workspace = { role: "admin", generationSettings: { ...DEFAULT_WORKSPACE_GENERATION_SETTINGS,
+    imageAnalysis: { enabled: false }, screenshotSelection: { model: "legacy-model", reasoningEffort: "high" as const } } };
+  vi.mocked(useLiveJSON).mockImplementation((url) => ({
+    data: typeof url === "object" && url.key.startsWith('["getCapabilities"') ? {}
+      : typeof url === "object" && url.key.startsWith('["getWorkspace"') ? workspace : undefined,
+    loading: false, refreshing: false, error: undefined, reload: vi.fn(), replace: vi.fn(),
+  }));
+  const select = vi.mocked(Select);
+  const original = select.getMockImplementation()!;
+  let changeLanguage: ((value: string) => void) | undefined;
+  select.mockImplementation((props) => {
+    if (props.value === "ja") changeLanguage = props.onValueChange;
+    return original(props);
+  });
+  try {
+    const onSave = vi.fn().mockResolvedValue(undefined);
+    renderToStaticMarkup(createElement(ServerSummarySettings, { workspaceId: "test", onSave }));
+    expect(changeLanguage).toBeDefined();
+    changeLanguage!("en");
+    expect(onSave).toHaveBeenCalledWith(workspace, { ...DEFAULT_WORKSPACE_GENERATION_SETTINGS, outputLanguage: "en",
+      imageAnalysis: { enabled: false, model: "legacy-model", reasoningEffort: "high" } });
+  } finally { select.mockImplementation(original); }
 });

@@ -88,10 +88,9 @@ const responseSchema = z.object({
   })),
 });
 
-/** Disabled image analysis skips selection; the captured selection settings override the deployment model and effort. */
+/** Screenshot selection uses image analysis settings regardless of the image search switch. */
 export function summaryScreenshotSelector(config: AppConfig, settings: Pick<TranscriptSettings, "imageAnalysis" | "screenshotSelection">,
   transport: typeof fetch = fetch): ScreenshotSelector | undefined {
-  if (settings.imageAnalysis?.enabled === false) return undefined;
   const selection = effectiveScreenshotSelection(settings);
   return createScreenshotSelector({ ...config, captioningModel: selection.model ?? config.captioningModel }, transport, selection.reasoningEffort);
 }

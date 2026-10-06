@@ -34,27 +34,35 @@
         }
 
         @Test
-        func screenshotSelectionSettingsRemainAccountLocalAndRoundTripServerSettings() throws {
-            let suite = "ScreenshotSelectionSettings-\(UUID())"
+        func legacySelectionSettingsMigrateToUnifiedImageAnalysis() throws {
+            let server = try JSONDecoder().decode(
+                WorkspaceGenerationSettings.self,
+                from: Data(#"{"imageAnalysis":{"enabled":false},"screenshotSelection":{"model":"server-model","reasoningEffort":"high"}}"#.utf8)
+            )
+            #expect(server.imageAnalysis == .init(enabled: false, model: "server-model", reasoningEffort: "high"))
+            let encoded = try JSONEncoder().encode(server)
+            let json = try #require(JSONSerialization.jsonObject(with: encoded) as? [String: Any])
+            #expect(json["screenshotSelection"] == nil)
+            #expect(try JSONDecoder().decode(WorkspaceGenerationSettings.self, from: encoded) == server)
+
+            let suite = "UnifiedImageSettings-\(UUID())"
             let defaults = try #require(UserDefaults(suiteName: suite))
             defer { defaults.removePersistentDomain(forName: suite) }
             let workspace = WorkspaceRecord(id: .v7(), path: nil, name: "Images", createdAt: .now, lastOpenedAt: .now)
-            var account = AccountInferenceSettings(workspace: workspace, defaults: defaults)
-            #expect(account.screenshotSelection == .init())
-            account.screenshotSelection = .init(model: "selection-model", reasoningEffort: "high")
-            account.save(connectionID: nil, defaults: defaults)
-            let restored = AccountInferenceSettings(workspace: workspace, defaults: defaults)
-            #expect(restored.generationSettings(outputLanguage: .en).screenshotSelection == account.screenshotSelection)
+            let account = AccountInferenceSettings(workspace: workspace, defaults: defaults)
+            var legacy = try #require(JSONSerialization.jsonObject(with: JSONEncoder().encode(account)) as? [String: Any])
+            legacy["savedImageAnalysis"] = ["enabled": false]
+            legacy["savedScreenshotSelection"] = ["model": "legacy-selection", "reasoningEffort": "high"]
+            var migrated = try JSONDecoder().decode(AccountInferenceSettings.self, from: JSONSerialization.data(withJSONObject: legacy))
+            #expect(migrated.imageAnalysis == .init(enabled: false, model: "legacy-selection", reasoningEffort: "high"))
+            migrated.imageAnalysis = .init(enabled: false, model: "unified-model", reasoningEffort: "low")
+            migrated.save(connectionID: nil, defaults: defaults)
+            #expect(AccountInferenceSettings(workspace: workspace, defaults: defaults).imageAnalysis == migrated.imageAnalysis)
 
-            // Older servers reject the unknown key, so the default is not encoded; Server values survive a round trip.
-            let defaultJSON = try #require(JSONSerialization.jsonObject(with: JSONEncoder().encode(WorkspaceGenerationSettings())) as? [String: Any])
-            #expect(defaultJSON["screenshotSelection"] == nil)
-            let server = try JSONDecoder().decode(
-                WorkspaceGenerationSettings.self,
-                from: Data(#"{"screenshotSelection":{"model":"server-model"}}"#.utf8)
-            )
-            #expect(server.screenshotSelection == .init(model: "server-model"))
-            #expect(try JSONDecoder().decode(WorkspaceGenerationSettings.self, from: JSONEncoder().encode(server)) == server)
+            legacy["savedImageAnalysis"] = ["enabled": true, "model": "analysis-model", "reasoningEffort": "low"]
+            let preferred = try JSONDecoder().decode(AccountInferenceSettings.self, from: JSONSerialization.data(withJSONObject: legacy))
+            #expect(preferred.imageAnalysis.model == "analysis-model")
+            #expect(preferred.imageAnalysis.reasoningEffort == "low")
         }
 
         @Test
@@ -316,12 +324,14 @@
             var latest = makeWorkspace(openedAt: Date(timeIntervalSince1970: 2))
             latest.summaryModelID = "latest-model"
             latest.chatModelID = "latest-chat"
+            latest.generationSettings.imageAnalysis = .init(enabled: false, model: "local-image", reasoningEffort: "high")
             latest.generationSettings.automaticProcessing = false
             latest.generationSettings.liveTranscriptDraft = true
             let connection = DahliaAccountConnectionRecord(id: .v7(), origin: "https://account.invalid", clientID: "test", createdAt: .now)
             var server = makeWorkspace(openedAt: Date(timeIntervalSince1970: 3))
             server.accountConnectionId = connection.id
             server.organizationId = .v7()
+            server.generationSettings.imageAnalysis = .init(enabled: false, model: "server-image", reasoningEffort: "low")
             try await database.dbQueue.write { [latest, server] db in
                 try connection.insert(db)
                 try older.insert(db)
@@ -334,11 +344,14 @@
             model.activate(workspace: older)
             #expect(model.summaryModelID == "latest-model")
             #expect(model.chatModelID == "latest-chat")
+            #expect(model.generationSettings.imageAnalysis == latest.generationSettings.imageAnalysis)
             #expect(!model.generationSettings.automaticProcessing)
             #expect(model.generationSettings.liveTranscriptDraft)
             model.generationSettings.liveTranscriptDraft = false
             model.summaryModelID = "changed-model"
             model.chatModelID = "changed-chat"
+            let changedImage = WorkspaceGenerationSettings.ImageAnalysis(enabled: true, model: "changed-image", reasoningEffort: "medium")
+            model.generationSettings.imageAnalysis = changedImage
             model.activate(workspace: latest)
             #expect(model.summaryModelID == "changed-model")
             #expect(!model.generationSettings.liveTranscriptDraft)
@@ -347,8 +360,10 @@
             }
             #expect(canonicalDraft == true)
             #expect(model.chatModelID == "changed-chat")
+            #expect(model.generationSettings.imageAnalysis == changedImage)
             model.activate(workspace: server)
             #expect(model.summaryModelID == server.summaryModelID)
+            #expect(model.generationSettings.imageAnalysis == server.generationSettings.imageAnalysis)
             #expect(model.generationSettings.automaticProcessing)
             model.summaryModelID = "server-model"
             model.generationSettings.liveTranscriptDraft = true
@@ -357,9 +372,11 @@
             let restored = WorkspaceAISettingsModel(setupDefaults: defaults, activateRuntime: { _ in })
             restored.activate(workspace: older)
             #expect(restored.summaryModelID == "changed-model")
+            #expect(restored.generationSettings.imageAnalysis == changedImage)
             #expect(!restored.generationSettings.liveTranscriptDraft)
             restored.activate(workspace: server)
             #expect(restored.summaryModelID == "server-model")
+            #expect(restored.generationSettings.imageAnalysis == server.generationSettings.imageAnalysis)
             #expect(restored.generationSettings.liveTranscriptDraft)
             // Clearing this Mac's preferences exposes the unchanged canonical defaults.
             defaults.removePersistentDomain(forName: suite)

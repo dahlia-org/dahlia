@@ -119,7 +119,7 @@ describe("summary screenshot preselection", () => {
     expect(createScreenshotSelector(loadConfig({ ...environment, DAHLIA_IMAGE_ANALYSIS_MODEL: "" }), transport)).toBeUndefined();
   });
 
-  it("uses the captured screenshot selection model and effort unless image analysis is disabled", async () => {
+  it("uses the unified model and effort even when image search is disabled", async () => {
     const transport = vi.fn(async (url: RequestInfo | URL, init?: RequestInit) => {
       if (String(url).endsWith("/token")) return Response.json({ access_token: "app-token", expires_in: 3600 });
       const body = JSON.parse(String(init?.body)) as { reasoning: { effort: string }; model: string };
@@ -127,12 +127,12 @@ describe("summary screenshot preselection", () => {
       return Response.json({ status: "completed", output: [{ type: "message", content: [{ type: "output_text", text: '{"indices":[1]}' }] }] });
     });
     const config = loadConfig(environment);
-    const settings = { imageAnalysis: { enabled: true, model: "ignored-analysis-model" }, screenshotSelection: { model: "system.ai.selection-model", reasoningEffort: "high" as const } };
+    const settings = { imageAnalysis: { enabled: true, model: "system.ai.selection-model", reasoningEffort: "high" as const }, screenshotSelection: { model: "ignored-legacy-model" } };
     expect(await summaryScreenshotSelector(config, settings, transport)!.select([{ data: new Uint8Array([1]), capturedAt: new Date(0) }], 24, signal())).toEqual([0]);
     expect(transport).toHaveBeenCalled();
-    expect(summaryScreenshotSelector(config, { ...settings, imageAnalysis: { enabled: false } }, transport)).toBeUndefined();
+    expect(await summaryScreenshotSelector(config, { ...settings, imageAnalysis: { ...settings.imageAnalysis, enabled: false } }, transport)!.select([{ data: new Uint8Array([1]), capturedAt: new Date(0) }], 24, signal())).toEqual([0]);
     // Jobs and workspaces saved before the dedicated key keep the selection choice made through image analysis.
-    const legacy = { imageAnalysis: { enabled: true, model: "system.ai.selection-model", reasoningEffort: "high" as const } };
+    const legacy = { imageAnalysis: { enabled: false }, screenshotSelection: { model: "system.ai.selection-model", reasoningEffort: "high" as const } };
     expect(await summaryScreenshotSelector(config, legacy, transport)!.select([{ data: new Uint8Array([1]), capturedAt: new Date(0) }], 24, signal())).toEqual([0]);
     expect(summaryScreenshotSelector(loadConfig({ ...environment, DAHLIA_IMAGE_ANALYSIS_MODEL: "" }), {}, transport)).toBeUndefined();
   });

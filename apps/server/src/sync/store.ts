@@ -6,7 +6,7 @@ import { createSyncLocks, type SyncLockMode } from "./locks";
 import { createDocumentStore } from "../documents/store";
 import { enqueueMemoryScope, enqueueMemorySource } from "../memory/enqueue";
 import { memoryDocumentId } from "../memory/ids";
-import { DEFAULT_WORKSPACE_GENERATION_SETTINGS, type WorkspaceGenerationSettings } from "@dahlia-ai/ui/model/workspace-generation-settings";
+import { DEFAULT_WORKSPACE_GENERATION_SETTINGS, normalizeImageAnalysis, type WorkspaceGenerationSettings } from "@dahlia-ai/ui/model/workspace-generation-settings";
 import type { CalendarEventSnapshot } from "./schemas";
 import { createContentEncryption } from "../encryption/store";
 import { readAuthorization, validateAuthorization } from "../auth/authorization";
@@ -2555,6 +2555,7 @@ function createIdentityStore(
       const queue = await enqueueJob(db, schema, `summary:${job.id}`, job.method === "audio" ? "audio-summary" : "summary",
         job.ownerUserId, `meeting:${job.meetingId}`, { id: job.id, ownerUserId: job.ownerUserId, workspaceId: job.workspaceId }, job.availableAt, false);
       if (!queue) throw new SyncTransactionError(409, "summary_id_reused");
+      job.settings = normalizeImageAnalysis(job.settings);
       const inserted = await db.insert(schema.summaryJob).values(await content.write(schema.summaryJob, { ...job, queueId: queue.id }))
         .onConflictDoNothing({ target: schema.summaryJob.id }).returning({ id: schema.summaryJob.id });
       if (!inserted.length) throw new SyncTransactionError(409, "summary_id_reused");
