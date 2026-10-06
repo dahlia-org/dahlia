@@ -821,6 +821,7 @@
 "Invalid audio hardware format" = "Invalid audio hardware format";
 "Failed to create audio format converter" = "Failed to create audio format converter";
 "Microphone access denied. Please allow it in System Settings > Privacy & Security > Microphone." = "Microphone access denied. Please allow it in System Settings > Privacy & Security > Microphone.";
+"Recording without the microphone because access is denied. Allow it in System Settings > Privacy & Security > Microphone, then turn the microphone off and select it again." = "Recording without the microphone because access is denied. Allow it in System Settings > Privacy & Security > Microphone, then turn the microphone off and select it again.";
 "The selected microphone is unavailable" = "The selected microphone is unavailable";
 "Speaker echo cancellation is unavailable" = "Speaker echo cancellation is unavailable";
 "Speaker echo cancellation became unavailable. Recording continues with raw microphone audio." = "Speaker echo cancellation became unavailable. Recording continues with raw microphone audio.";

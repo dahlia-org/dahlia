@@ -171,7 +171,7 @@ actor RecordingSessionController {
         guard case .idle = state else {
             throw RecordingSessionControllerError.sessionAlreadyActive
         }
-        let configurations = Self.uniqueSortedConfigurations(request.sources)
+        var configurations = Self.uniqueSortedConfigurations(request.sources)
         guard !configurations.isEmpty else {
             throw RecordingSessionControllerError.noAudioSource
         }
@@ -179,7 +179,13 @@ actor RecordingSessionController {
         var preparedRecognitions: [PreparedProgressiveRecognitionSession] = []
         do {
             for configuration in configurations {
-                try await captureFactory.requestPermission(for: configuration.source)
+                do {
+                    try await captureFactory.requestPermission(for: configuration.source)
+                } catch AudioCaptureError.microphonePermissionDenied where configurations.count > 1 {
+                    // The other sources still record, and the microphone shows as inactive until it is added again.
+                    configurations.removeAll { $0.source == configuration.source }
+                    await onRuntimeFailure(configuration.source, L10n.recordingWithoutMicrophonePermission, false)
+                }
             }
 
             var recognitionModelIsAvailable = request.plan.requiresLiveRecognition

@@ -159,6 +159,7 @@ Local Workspace の ready CAF は設定保持期間まで維持し、新しい M
 2. `TranscriptionSessionPlan` から live recognition、batch recording、streaming persistence の要否を決める。
 3. `TranscriptionEventPipeline` を開始し、`RecordingSessionController.prepare` が permission、recognition model、
    batch recording session、音源ごとの runtime を準備する。物理 capture はまだ開始しない。
+   マイク権限がなく他の音源がある場合は、マイクを除いて録音し、警告を表示する。マイクだけの場合は開始に失敗する。
 4. batch では音源ごとの最初の segment と range consumer を準備し、router に batch consumer を接続する。
 5. live recognition が必要な場合は音源ごとの認識器を開始し、router に一つの live worker を接続する。
 6. capture session を開始する。すべての必須開始処理が成功した後、UI lifecycle を recording に進める。

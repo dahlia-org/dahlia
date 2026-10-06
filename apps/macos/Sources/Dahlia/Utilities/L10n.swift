@@ -2554,6 +2554,10 @@ enum L10n { // swiftlint:disable:this type_body_length
         localized: "Microphone access denied. Please allow it in System Settings > Privacy & Security > Microphone.",
         bundle: bundle
     ) }
+    static var recordingWithoutMicrophonePermission: String { String(
+        localized: "Recording without the microphone because access is denied. Allow it in System Settings > Privacy & Security > Microphone, then turn the microphone off and select it again.",
+        bundle: bundle
+    ) }
     static var microphoneUnavailable: String { String(localized: "The selected microphone is unavailable", bundle: bundle) }
     static var echoCancellationUnavailable: String { String(localized: "Speaker echo cancellation is unavailable", bundle: bundle) }
     static var echoCancellationBypassed: String { String(
