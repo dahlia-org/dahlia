@@ -28,8 +28,21 @@ def test_text_setup_preserves_bm25_without_backfill(monkeypatch, method):
     monkeypatch.setattr(migrations, "create_engine", lambda *args, **kwargs: engine)
     migrations.ensure_text("postgresql://example/test", "tenant_a")
     sql = [str(call.args[0]) for call in conn.execute.call_args_list]
-    assert sum("DROP INDEX" in statement for statement in sql) == (2 if method == "gin" else 0)
-    assert not any(word in statement for statement in sql for word in ["UPDATE ", "CREATE INDEX", "COMMENT "])
+    # A missing BM25 index fails every full-text search, so startup always ensures both,
+    # after replacing the GIN index that the historical native migrations leave behind.
+    expected = []
+    for table in ("memory_units", "mental_models"):
+        if method == "gin":
+            expected.append(f'DROP INDEX "tenant_a"."idx_{table}_text_search"')
+        expected.append(
+            f'CREATE INDEX IF NOT EXISTS "idx_{table}_text_search" ON "tenant_a"."{table}" USING lakebase_bm25 (search_vector)'
+        )
+    assert [statement for statement in sql if "INDEX" in statement] == expected
+    assert [statement for statement in sql if "autovacuum" in statement] == [
+        f'ALTER TABLE "tenant_a"."{table}" SET (autovacuum_vacuum_insert_scale_factor = 0)'
+        for table in ("memory_units", "mental_models")
+    ]
+    assert not any(word in statement for statement in sql for word in ["UPDATE ", "COMMENT "])
     engine.dispose.assert_called_once()
 
 

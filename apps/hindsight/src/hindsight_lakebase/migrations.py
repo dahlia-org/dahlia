@@ -43,7 +43,8 @@ def ensure_text(database_url, schema=None):
                 # A normal tsvector lets Python supply the Japanese-tokenized text.
                 # DROP EXPRESSION preserves the column and is idempotent on restart.
                 conn.execute(text(f"ALTER TABLE {full} ALTER COLUMN search_vector DROP EXPRESSION IF EXISTS"))
-                index = f"{quoted(schema)}.{quoted('idx_' + table + '_text_search')}"
+                name = quoted("idx_" + table + "_text_search")
+                index = f"{quoted(schema)}.{name}"
                 method = conn.execute(
                     text(
                         "SELECT am.amname FROM pg_class c JOIN pg_am am ON am.oid = c.relam "
@@ -53,6 +54,11 @@ def ensure_text(database_url, schema=None):
                 ).scalar()
                 if method == "gin":
                     conn.execute(text(f"DROP INDEX {index}"))
+                # Searching without the index is a DB error, so build it even on an empty table. VACUUM
+                # refreshes BM25 statistics; Lakebase's recommended zero insert scale factor makes autovacuum
+                # do so after a fixed number of inserts (autovacuum_vacuum_insert_threshold) at any table size.
+                conn.execute(text(f"CREATE INDEX IF NOT EXISTS {name} ON {full} USING lakebase_bm25 (search_vector)"))
+                conn.execute(text(f"ALTER TABLE {full} SET (autovacuum_vacuum_insert_scale_factor = 0)"))
     finally:
         engine.dispose()
 
