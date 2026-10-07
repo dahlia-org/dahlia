@@ -38,6 +38,10 @@ def test_text_setup_preserves_bm25_without_backfill(monkeypatch, method):
             f'CREATE INDEX IF NOT EXISTS "idx_{table}_text_search" ON "tenant_a"."{table}" USING lakebase_bm25 (search_vector)'
         )
     assert [statement for statement in sql if "INDEX" in statement] == expected
+    assert [statement for statement in sql if "autovacuum" in statement] == [
+        f'ALTER TABLE "tenant_a"."{table}" SET (autovacuum_vacuum_insert_scale_factor = 0)'
+        for table in ("memory_units", "mental_models")
+    ]
     assert not any(word in statement for statement in sql for word in ["UPDATE ", "COMMENT "])
     engine.dispose.assert_called_once()
 

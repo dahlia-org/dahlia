@@ -225,14 +225,16 @@ async def test_lakebase_lifecycle_search_isolation_and_rollback(monkeypatch):
 
             from hindsight_lakebase import text
 
+            # Startup builds both BM25 indexes while the tables are still empty.
+            for table in text.TABLES:
+                assert await raw.fetchval("SELECT to_regclass($1)", f"{schema}.idx_{table}_text_search")
             conn = PostgresConnection(raw)
             await raw.execute(f"INSERT INTO {schema}.banks(bank_id) VALUES ('a'), ('b')")
             first = await insert_fact(conn, "a", "日本語検索を実装する")
             await insert_fact(conn, "a", "日本語検索とベクトル検索を検証する")
             await insert_fact(conn, "b", "日本語検索を実装する")
-            await raw.execute(
-                f"CREATE INDEX idx_memory_units_text_search ON {schema}.memory_units USING lakebase_bm25 (search_vector)"
-            )
+            # VACUUM refreshes the statistics of the index built on the empty table.
+            await raw.execute(f"VACUUM {schema}.memory_units")
             # Force an inherited limit that used to cut candidates before caller filtering.
             await raw.execute("SET lakebase_bm25.default_limit = 1")
             result = await retrieve_semantic_bm25_combined_sql(conn, "[1,0,0]", "検索", "a", ["world"], 5)

@@ -87,8 +87,10 @@ upstream 標準の `HINDSIGHT_API_LLM_BASE_URL` と `HINDSIGHT_API_EMBEDDINGS_OP
 BM25 索引 `idx_memory_units_text_search` / `idx_mental_models_text_search` は App 起動時の migration で作成します。
 索引がないと全文検索が DB エラーになるため、空のテーブルでも作成します。
 [Lakebase の仕様](https://docs.databricks.com/aws/en/oltp/projects/lakebase-text)では BM25 の統計は索引作成時に計算され、
-VACUUM で更新されます。空のテーブルに作った索引の統計は autovacuum が更新します。大量に登録した直後は手動で
-`VACUUM hindsight.memory_units;` を実行すると、統計をすぐに反映できます。スキーマ名は実際の設定に合わせます。
+VACUUM で更新されます。同仕様の推奨に従い両テーブルに `autovacuum_vacuum_insert_scale_factor = 0` を設定し、
+テーブルの大きさによらず一定件数（`autovacuum_vacuum_insert_threshold`、既定 1000）の登録ごとに autovacuum が統計を更新します。
+空のテーブルに作った索引も同じです。大量に登録した直後や、初期の少量データですぐに統計を反映したい場合は、
+`VACUUM hindsight.memory_units;` を手動で実行します。スキーマ名は実際の設定に合わせます。
 
 BM25 の距離を昇順に評価し、上位層には正の関連度として返します。ゼロ一致は除外します。
 bank・tenant・タグ・日時・スコア閾値の条件は既存SQL内に保持し、RRF と reranking は変更していません。
