@@ -291,6 +291,58 @@ import CoreGraphics
         }
 
         @Test
+        func slideShownAgainIsNotCapturedTwice() {
+            // Slides flipped back and forth, three seconds each: A, B, A, B, C, A, C.
+            let order = [0, 1, 0, 1, 2, 0, 2]
+            let captures = captureTimes(through: .seconds(20)) { elapsed in
+                let slide = order[Int(elapsed / .seconds(3))]
+                return fingerprint { x, y in (x / 8 + y / 6 + slide).isMultiple(of: 3) ? 200 : 40 }
+            }
+
+            // Each slide once, when it first settles.
+            #expect(captures == [.zero, .seconds(4), .seconds(13)])
+        }
+
+        @Test
+        func screenShownAgainIsCapturedOnlyOnceItChanges() {
+            var tracker = capturedTracker()
+            let otherAt = start + .seconds(5)
+            ingest(&tracker, fingerprint { _, _ in 200 }, at: otherAt)
+            let otherCapturedAt = otherAt + ScreenshotSettleTracker.settleDuration
+            #expect(shouldCapture(tracker, at: otherCapturedAt))
+            tracker.commit(tracker.captureReference(at: otherCapturedAt, isAdaptive: true))
+
+            // The first screen returns. It was saved already, so the interval does not save it again.
+            ingest(&tracker, fingerprint { _, _ in 0 }, at: start + .seconds(10))
+            #expect(!shouldCapture(tracker, at: start + .seconds(11)))
+            let intervalDueAt = otherCapturedAt + maximumInterval
+            #expect(!shouldCapture(tracker, at: intervalDueAt))
+
+            // Gradual edits to it are saved once they add up to the threshold.
+            for step in 0 ..< 4 {
+                let limit = 2 * (step + 1)
+                ingest(&tracker, fingerprint { _, y in y < limit ? 200 : 0 }, at: intervalDueAt + .seconds(1 + 2 * step))
+            }
+            #expect(!shouldCapture(tracker, at: intervalDueAt + .seconds(7)))
+            #expect(shouldCapture(tracker, at: intervalDueAt + .seconds(8)))
+        }
+
+        @Test
+        func forgottenReferencesCaptureAScreenShownAgain() {
+            var tracker = capturedTracker()
+            let otherAt = start + .seconds(5)
+            ingest(&tracker, fingerprint { _, _ in 200 }, at: otherAt)
+            tracker.commit(tracker.captureReference(at: otherAt + .seconds(1), isAdaptive: true))
+            tracker.forgetReferences()
+            tracker.commit(tracker.captureReference(at: otherAt + .seconds(2), isAdaptive: true))
+
+            // The first screen's save may be the one that failed, so it no longer counts as saved.
+            let returnedAt = start + .seconds(10)
+            ingest(&tracker, fingerprint { _, _ in 0 }, at: returnedAt)
+            #expect(shouldCapture(tracker, at: returnedAt + ScreenshotSettleTracker.settleDuration))
+        }
+
+        @Test
         func sporadicCameraMotionDoesNotAddUp() {
             var cameras = CameraTiles(rows: 0 ..< 36)
             let captures = captureTimes(through: .seconds(60)) { _ in

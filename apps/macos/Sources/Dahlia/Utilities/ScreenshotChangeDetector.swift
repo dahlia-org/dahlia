@@ -95,6 +95,10 @@ struct ScreenshotSettleTracker {
     private static let liveRadius = 2
     /// Motion without a settled moment for this long is live, like video, even when it changes much of the screen.
     private static let continuousMotionLimit: Duration = .seconds(20)
+    // ponytail: a screen last captured more than this many captures ago is saved again; raise if long decks repeat.
+    /// How many recent captures are kept so that a screen shown again, such as a slide revisited after others, is not
+    /// saved twice.
+    private static let savedFrameLimit = 100
 
     private var width = 0
     private var anchors: [UInt8] = []
@@ -104,6 +108,7 @@ struct ScreenshotSettleTracker {
     private var ingestedAt: ContinuousClock.Instant?
     private var latestPixels: [UInt8] = []
     private var savedPixels: [UInt8]?
+    private var savedFrames: [[UInt8]] = []
     private var lastCaptureAt: ContinuousClock.Instant?
     private var lastMostlySettledAt: ContinuousClock.Instant?
 
@@ -111,6 +116,7 @@ struct ScreenshotSettleTracker {
     /// so a failed or discarded capture keeps its change pending.
     struct CaptureReference: Sendable {
         fileprivate let savedPixels: [UInt8]
+        fileprivate let frame: [UInt8]
         fileprivate let capturedAt: ContinuousClock.Instant
     }
 
@@ -127,6 +133,7 @@ struct ScreenshotSettleTracker {
             movingSince = changedAt
             smallChangeCounts = Array(repeating: 0, count: pixels.count)
             savedPixels = nil
+            savedFrames = []
             lastMostlySettledAt = now
         }
         // Sample before applying this frame: frames stop while the display is idle, so a gap means it was still.
@@ -173,6 +180,7 @@ struct ScreenshotSettleTracker {
 
     /// An adaptive interval waits until everything except live areas stops moving, then captures a change that settled
     /// at once. Changes that added up gradually, or that never stop moving, are checked once `interval` has passed.
+    /// A settled change that matches a recent capture, such as a slide shown again after others, is not captured again.
     /// A fixed interval compares the whole screen once `interval` has passed since the last capture.
     func shouldCapture(
         at now: ContinuousClock.Instant,
@@ -184,7 +192,7 @@ struct ScreenshotSettleTracker {
         guard let savedPixels, let lastCaptureAt else { return true }
         let decay = liveDecay(at: now)
         var movingCount = 0
-        var settledCount = 0
+        var settledIndices: [Int] = []
         var settledChangeCount = 0
         var recentChangeCount = 0
         var changeCount = 0
@@ -198,7 +206,7 @@ struct ScreenshotSettleTracker {
                 movingCount += 1
                 continue
             }
-            settledCount += 1
+            settledIndices.append(index)
             if isChanged {
                 settledChangeCount += 1
                 if now - changedAt[index] < Self.changeWindow {
@@ -213,15 +221,20 @@ struct ScreenshotSettleTracker {
             return isIntervalDue && wholeScreenChanged
         }
         // The half-screen floor keeps small still areas, such as subtitles over video, from looking like a full change.
-        let settledArea = Double(max(settledCount, latestPixels.count / 2))
+        let settledArea = Double(max(settledIndices.count, latestPixels.count / 2))
         if Double(settledChangeCount) / settledArea >= changeThresholdRatio {
             // Motion below the threshold, such as a cursor, cannot be a threshold-sized change by itself.
             let isQuiet = Double(movingCount) < changeThresholdRatio * pixelCount
             if isIntervalDue || (isQuiet && Double(recentChangeCount) / settledArea >= changeThresholdRatio) {
-                return true
+                return !savedFrames.contains { frame in
+                    let frameChangeCount = settledIndices.count(where: {
+                        ScreenshotChangeDetector.isChanged(frame[$0], latestPixels[$0])
+                    })
+                    return Double(frameChangeCount) / settledArea < changeThresholdRatio
+                }
             }
         }
-        guard settledCount * 2 < latestPixels.count,
+        guard settledIndices.count * 2 < latestPixels.count,
               let lastMostlySettledAt,
               now - lastMostlySettledAt >= interval,
               isIntervalDue else { return false }
@@ -229,18 +242,27 @@ struct ScreenshotSettleTracker {
     }
 
     func captureReference(at now: ContinuousClock.Instant, isAdaptive: Bool) -> CaptureReference {
-        CaptureReference(savedPixels: updatedReference(at: now, isAdaptive: isAdaptive), capturedAt: now)
+        CaptureReference(
+            savedPixels: updatedReference(at: now, isAdaptive: isAdaptive),
+            frame: latestPixels,
+            capturedAt: now
+        )
     }
 
     mutating func commit(_ reference: CaptureReference) {
         savedPixels = reference.savedPixels
         lastCaptureAt = reference.capturedAt
+        savedFrames.append(reference.frame)
+        if savedFrames.count > Self.savedFrameLimit {
+            savedFrames.removeFirst()
+        }
     }
 
     /// Makes the next check capture unconditionally, as for the first frame. A save that fails after its
     /// reference was committed cannot be uncommitted precisely, so the current screen is captured again instead.
     mutating func forgetReferences() {
         savedPixels = nil
+        savedFrames = []
     }
 
     private func updatedReference(at now: ContinuousClock.Instant, isAdaptive: Bool) -> [UInt8] {
