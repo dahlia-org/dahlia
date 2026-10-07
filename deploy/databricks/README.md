@@ -70,7 +70,7 @@ Hindsight's `databricks` model provider derives the OpenAI-compatible base URL f
 
 To compare retrieval settings on real data without changing it, run the operator-only evaluation harness described in [`apps/hindsight/README.md`](../../apps/hindsight/README.md#検索品質の評価). It clones a bank, prints aggregate numbers only, and deletes the clone.
 
-Lakebase requires each `lakebase_bm25` index to be created after its table contains data. After Hindsight first writes `memory_units` or `mental_models`, create that table's index with the SQL in [`apps/hindsight/README.md`](../../apps/hindsight/README.md) before using full-text recall.
+Hindsight creates the `lakebase_bm25` indexes on `memory_units` and `mental_models` during its startup migration, even while they are empty; autovacuum refreshes their BM25 statistics. See [`apps/hindsight/README.md`](../../apps/hindsight/README.md).
 
 Lakebase Search enablement is managed manually. The bundle has no `postdeploy` hook: with `lifecycle.started: true`, that hook would run after App deployment and would be too late to establish the startup prerequisite.
 
