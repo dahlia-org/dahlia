@@ -1051,7 +1051,7 @@ enum L10n { // swiftlint:disable:this type_body_length
     ) }
     static var screenshotChangeThreshold: String { String(localized: "Screenshot Change Threshold", bundle: bundle) }
     static var adaptiveScreenshotChangeThresholdDescription: String { String(
-        localized: "Save a new screenshot when at least this much of the screen changes, ignoring moving areas such as camera video.",
+        localized: "Save a new screenshot when at least this much of the screen differs from every recent screenshot, ignoring moving areas such as camera video.",
         bundle: bundle
     ) }
     static var fixedScreenshotChangeThresholdDescription: String { String(

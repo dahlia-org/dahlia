@@ -313,7 +313,8 @@ import Foundation
             let frame = PreparedScreenshotFrame(
                 imageToEncode: image,
                 fingerprint: fingerprint,
-                fingerprintsSharedContent: false
+                fingerprintsSharedContent: false,
+                screenFingerprint: fingerprint
             )
 
             // The last saved crop does not apply to a whole-screen fingerprint.
@@ -327,7 +328,8 @@ import Foundation
             let frame = PreparedScreenshotFrame(
                 imageToEncode: image,
                 fingerprint: fingerprint,
-                fingerprintsSharedContent: true
+                fingerprintsSharedContent: true,
+                screenFingerprint: fingerprint
             )
 
             #expect(frame.shouldSave(after: nil, changeThresholdRatio: 0.05))
