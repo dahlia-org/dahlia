@@ -291,7 +291,7 @@ import CoreGraphics
         }
 
         @Test
-        func slideShownAgainIsNotCapturedTwice() {
+        func slideShownAgainIsNotSavedTwice() {
             // Slides flipped back and forth, three seconds each: A, B, A, B, C, A, C.
             let order = [0, 1, 0, 1, 2, 0, 2]
             let captures = captureTimes(through: .seconds(20)) { elapsed in
@@ -304,18 +304,19 @@ import CoreGraphics
         }
 
         @Test
-        func screenShownAgainIsCapturedOnlyOnceItChanges() {
+        func screenShownAgainIsSavedOnlyOnceItChanges() {
             var tracker = capturedTracker()
-            let otherAt = start + .seconds(5)
-            ingest(&tracker, fingerprint { _, _ in 200 }, at: otherAt)
-            let otherCapturedAt = otherAt + ScreenshotSettleTracker.settleDuration
-            #expect(shouldCapture(tracker, at: otherCapturedAt))
-            tracker.commit(tracker.captureReference(at: otherCapturedAt, isAdaptive: true))
+            let other = fingerprint { _, _ in 200 }
+            ingest(&tracker, other, at: start + .seconds(5))
+            #expect(save(&tracker, other, at: start + .seconds(6)))
 
-            // The first screen returns. It was saved already, so the interval does not save it again.
-            ingest(&tracker, fingerprint { _, _ in 0 }, at: start + .seconds(10))
-            #expect(!shouldCapture(tracker, at: start + .seconds(11)))
-            let intervalDueAt = otherCapturedAt + maximumInterval
+            // The first screen returns. It was saved already, and skipping it moves the reference to it.
+            let first = fingerprint { _, _ in 0 }
+            let returnedAt = start + .seconds(10)
+            ingest(&tracker, first, at: returnedAt)
+            #expect(shouldCapture(tracker, at: returnedAt + .seconds(1)))
+            #expect(!save(&tracker, first, at: returnedAt + .seconds(1)))
+            let intervalDueAt = returnedAt + .seconds(1) + maximumInterval
             #expect(!shouldCapture(tracker, at: intervalDueAt))
 
             // Gradual edits to it are saved once they add up to the threshold.
@@ -325,21 +326,52 @@ import CoreGraphics
             }
             #expect(!shouldCapture(tracker, at: intervalDueAt + .seconds(7)))
             #expect(shouldCapture(tracker, at: intervalDueAt + .seconds(8)))
+            #expect(save(&tracker, fingerprint { _, y in y < 8 ? 200 : 0 }, at: intervalDueAt + .seconds(8)))
         }
 
         @Test
-        func forgottenReferencesCaptureAScreenShownAgain() {
+        func screenThatChangedDuringTheCaptureIsNotRememberedAsSaved() {
             var tracker = capturedTracker()
-            let otherAt = start + .seconds(5)
-            ingest(&tracker, fingerprint { _, _ in 200 }, at: otherAt)
-            tracker.commit(tracker.captureReference(at: otherAt + .seconds(1), isAdaptive: true))
-            tracker.forgetReferences()
-            tracker.commit(tracker.captureReference(at: otherAt + .seconds(2), isAdaptive: true))
+            let other = fingerprint { _, _ in 200 }
+            let next = fingerprint { x, _ in x < 32 ? 100 : 200 }
+            ingest(&tracker, other, at: start + .seconds(5))
+            // The capture decided for `other` shows `next`, which appeared while it ran.
+            #expect(save(&tracker, next, at: start + .seconds(6)))
+            ingest(&tracker, next, at: start + .seconds(6))
 
+            // `next` is not saved twice, and `other` is still saved when it returns.
+            #expect(shouldCapture(tracker, at: start + .seconds(7)))
+            #expect(!save(&tracker, next, at: start + .seconds(7)))
+            ingest(&tracker, other, at: start + .seconds(10))
+            #expect(shouldCapture(tracker, at: start + .seconds(11)))
+            #expect(save(&tracker, other, at: start + .seconds(11)))
+        }
+
+        @Test
+        func mostlyMovingScreenIsNeverTreatedAsSavedAlready() {
+            var tracker = capturedTracker()
+            for step in 1 ... 4 {
+                ingest(&tracker, fingerprint { _, y in y < 24 ? flicker(step) : 0 }, at: at(step: step))
+            }
+
+            // Video covers two thirds of the screen; the still third matches the saved screen.
+            #expect(save(&tracker, fingerprint { _, _ in 0 }, at: at(step: 4)))
+        }
+
+        @Test
+        func forgottenReferencesSaveAScreenShownAgain() {
+            var tracker = capturedTracker()
+            let other = fingerprint { _, _ in 200 }
+            ingest(&tracker, other, at: start + .seconds(5))
+            #expect(save(&tracker, other, at: start + .seconds(6)))
             // The first screen's save may be the one that failed, so it no longer counts as saved.
-            let returnedAt = start + .seconds(10)
-            ingest(&tracker, fingerprint { _, _ in 0 }, at: returnedAt)
-            #expect(shouldCapture(tracker, at: returnedAt + ScreenshotSettleTracker.settleDuration))
+            tracker.forgetReferences()
+            #expect(save(&tracker, other, at: start + .seconds(7)))
+
+            let first = fingerprint { _, _ in 0 }
+            ingest(&tracker, first, at: start + .seconds(10))
+            #expect(shouldCapture(tracker, at: start + .seconds(11)))
+            #expect(save(&tracker, first, at: start + .seconds(11)))
         }
 
         @Test
@@ -463,9 +495,29 @@ import CoreGraphics
 
         private func capturedTracker() -> ScreenshotSettleTracker {
             var tracker = ScreenshotSettleTracker()
-            ingest(&tracker, fingerprint { _, _ in 0 }, at: start)
-            tracker.commit(tracker.captureReference(at: start, isAdaptive: true))
+            let screen = fingerprint { _, _ in 0 }
+            ingest(&tracker, screen, at: start)
+            _ = save(&tracker, screen, at: start)
             return tracker
+        }
+
+        /// Commits a capture whose image shows `screen`, as the capture service does, and returns whether it was saved
+        /// rather than skipped as a recently saved screen.
+        private func save(
+            _ tracker: inout ScreenshotSettleTracker,
+            _ screen: ScreenshotFingerprint,
+            at now: ContinuousClock.Instant,
+            threshold: Double? = nil
+        ) -> Bool {
+            let reference = tracker.captureReference(at: now, isAdaptive: true)
+            tracker.commit(reference)
+            guard !tracker.matchesSavedScreen(
+                screen,
+                reference: reference,
+                changeThresholdRatio: threshold ?? self.threshold
+            ) else { return false }
+            tracker.rememberSavedScreen(screen)
+            return true
         }
 
         private func at(step: Int) -> ContinuousClock.Instant {
@@ -482,7 +534,8 @@ import CoreGraphics
             step.isMultiple(of: 2) ? 100 : 200
         }
 
-        /// Feeds a 4 fps stream at the default 5% threshold, committing each capture, and returns when they happened.
+        /// Feeds a 4 fps stream at the default 5% threshold, capturing as the service does, and returns when screenshots
+        /// were saved.
         private func captureTimes(
             through duration: Duration,
             frame: (_ elapsed: Duration) -> ScreenshotFingerprint
@@ -492,10 +545,10 @@ import CoreGraphics
             for step in 0 ... Int(duration / .milliseconds(250)) {
                 let elapsed = Duration.milliseconds(250 * step)
                 let now = start + elapsed
-                ingest(&tracker, frame(elapsed), at: now, threshold: 0.05)
-                if shouldCapture(tracker, at: now, threshold: 0.05) {
+                let screen = frame(elapsed)
+                ingest(&tracker, screen, at: now, threshold: 0.05)
+                if shouldCapture(tracker, at: now, threshold: 0.05), save(&tracker, screen, at: now, threshold: 0.05) {
                     captures.append(elapsed)
-                    tracker.commit(tracker.captureReference(at: now, isAdaptive: true))
                 }
             }
             return captures

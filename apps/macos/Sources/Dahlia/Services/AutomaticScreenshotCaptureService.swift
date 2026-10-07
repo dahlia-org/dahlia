@@ -291,6 +291,8 @@ struct PreparedScreenshotFrame: Sendable {
     let fingerprint: ScreenshotFingerprint
     /// Whether the fingerprint covers a detected shared-content crop instead of the whole screen.
     let fingerprintsSharedContent: Bool
+    /// The whole captured screen, compared with recently saved screens.
+    let screenFingerprint: ScreenshotFingerprint
 
     /// The settle tracker decides when to capture from the whole screen. A detected crop is also compared with the
     /// last saved crop, so changes outside it, such as camera tiles, are not saved.
@@ -355,16 +357,19 @@ actor AutomaticScreenshotFrameProcessor {
             detectsChangesInSharedContentOnly: detectsChangesInSharedContentOnly,
             cropsToSharedContent: cropsToSharedContent
         )
+        let fingerprintsSharedContent = detectsChangesInSharedContentOnly && sharedContentImage != nil
         let startedAt = ContinuousClock.now
         let state = ScreenshotCaptureMetrics.signposter.beginInterval("Fingerprint")
         let fingerprint = ScreenshotChangeDetector.fingerprint(for: selectedImages.fingerprint)
+        let screenFingerprint = fingerprintsSharedContent ? ScreenshotChangeDetector.fingerprint(for: image) : fingerprint
         ScreenshotCaptureMetrics.signposter.endInterval("Fingerprint", state)
         ScreenshotCaptureMetrics.recordSlowStage(.fingerprint, startedAt: startedAt)
-        guard !Task.isCancelled, let fingerprint else { return nil }
+        guard !Task.isCancelled, let fingerprint, let screenFingerprint else { return nil }
         return PreparedScreenshotFrame(
             imageToEncode: selectedImages.encoding,
             fingerprint: fingerprint,
-            fingerprintsSharedContent: detectsChangesInSharedContentOnly && sharedContentImage != nil
+            fingerprintsSharedContent: fingerprintsSharedContent,
+            screenFingerprint: screenFingerprint
         )
     }
 
@@ -812,10 +817,17 @@ actor AutomaticScreenshotCaptureService: AutomaticScreenshotCapturing {
               processingScopeMatches(request) else { return .discarded }
 
         settleTracker.commit(reference)
+        // A screen shown again, such as a slide revisited after others, is saved only once.
+        guard !settleTracker.matchesSavedScreen(
+            preparedFrame.screenFingerprint,
+            reference: reference,
+            changeThresholdRatio: request.changeThresholdRatio
+        ) else { return .skipped }
         guard preparedFrame.shouldSave(
             after: lastSavedCropFingerprint,
             changeThresholdRatio: request.changeThresholdRatio
         ) else { return .skipped }
+        settleTracker.rememberSavedScreen(preparedFrame.screenFingerprint)
         if preparedFrame.fingerprintsSharedContent {
             lastSavedCropFingerprint = preparedFrame.fingerprint
         }
