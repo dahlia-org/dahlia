@@ -15,6 +15,10 @@
         @Test
         func descriptionKeepsPlainTextAngleBracketsAndDropsTruncatedTag() {
             #expect(MenuBarCalendarEventRow.descriptionText("x < 5 and y > 3") == "x < 5 and y > 3")
+            #expect(
+                MenuBarCalendarEventRow.descriptionText("Join Teams<https://teams.microsoft.com/l/meetup-join/1> or <mailto:help@example.com>", maxWidth: 200)
+                    == "Join Teams https://teams.microsoft.com/l/meetup-join/1 or mailto:help@example.com"
+            )
 
             let truncatedInsideTag = "Agenda" + String(repeating: "<span></span>", count: 400)
             #expect(MenuBarCalendarEventRow.descriptionText(truncatedInsideTag) == "Agenda")

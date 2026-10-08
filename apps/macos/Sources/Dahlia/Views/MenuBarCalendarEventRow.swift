@@ -115,13 +115,16 @@ struct MenuBarCalendarEventRow: View {
 
     /// メニューは長い行を折り返さず幅を広げるため、表示幅で改行し行数も制限する。
     static func descriptionText(_ description: String, maxWidth: Int = 56, maxLines: Int = 12) -> String? {
-        var source = String(description.prefix(4000))
-        // 上限で切れたタグの断片を表示しない。
-        if description.count > source.count, let tagStart = source.lastIndex(of: "<"), !source[tagStart...].contains(">") {
+        let bounded = description.prefix(4000)
+        var source = String(bounded)
+        // 上限で切れたタグの断片を表示しない。巨大なメモでも全文を数えないよう終端位置で判定する。
+        if bounded.endIndex < description.endIndex, let tagStart = source.lastIndex(of: "<"), !source[tagStart...].contains(">") {
             source.removeSubrange(tagStart...)
         }
         // `<` の直後が英字のものだけをタグとみなし、プレーンテキストの `a < b` は残す。
+        // Outlook がメモに書く `<https://…>` のような山括弧付きリンクはタグではないので URL を残す。
         let plainText = source
+            .replacingOccurrences(of: "<((?:https?|mailto):[^<>\\s]+)>", with: " $1 ", options: [.regularExpression, .caseInsensitive])
             .replacingOccurrences(of: "<br\\s*/?>|</(p|div|li|tr|h[1-6])>", with: "\n", options: [.regularExpression, .caseInsensitive])
             .replacingOccurrences(of: "</?[a-z][^>]*>", with: " ", options: [.regularExpression, .caseInsensitive])
             .replacing("&nbsp;", with: " ")
