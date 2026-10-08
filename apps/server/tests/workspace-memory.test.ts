@@ -23,6 +23,9 @@ const owner: Identity = { userId: testUserID("memory-owner"), source: "header" }
 const viewer: Identity = { userId: testUserID("memory-viewer"), source: "header" };
 const workspaceId = "019d4a00-0000-7000-8000-000000000100";
 const directories: string[] = [];
+// Upstream sanitize_text runs before the document body is stored.
+// eslint-disable-next-line no-control-regex -- mirrors the upstream control-character pattern.
+const hindsightText = (text: string) => text.replace(/[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]|[\ud800-\udfff]/gu, "");
 afterEach(() => { vi.useRealTimers(); directories.splice(0).forEach((path) => rmSync(path, { recursive: true, force: true })); });
 async function setup(images = false) {
   const directory = mkdtempSync(join(tmpdir(), "dahlia-memory-")); directories.push(directory);
@@ -83,8 +86,8 @@ async function setup(images = false) {
             stored.push({ id: hash.slice(0, 12), hash, kind: "image", media_type: block.source.media_type, byte_size: bytes.length });
           }
         }
-        attachments.set(item.document_id, stored); retained.set(item.document_id, text);
-      } else { attachments.delete(item.document_id); retained.set(item.document_id, item.content); } operations.set(String(body.operation_id), failingItems.has(item.document_id) ? "failed" : "completed");
+        attachments.set(item.document_id, stored); retained.set(item.document_id, hindsightText(text));
+      } else { attachments.delete(item.document_id); retained.set(item.document_id, hindsightText(item.content)); } operations.set(String(body.operation_id), failingItems.has(item.document_id) ? "failed" : "completed");
       if (loseAcknowledgement) { loseAcknowledgement = false; throw new Error("lost acknowledgement"); }
       return Response.json({ operation_id: body.operation_id });
     }
@@ -143,10 +146,10 @@ async function setup(images = false) {
     loseNextAcknowledgement: () => { loseAcknowledgement = true; } };
 }
 
-async function screenshotFixture(f: Awaited<ReturnType<typeof setup>>) {
+async function screenshotFixture(f: Awaited<ReturnType<typeof setup>>, description = "") {
   const meetingId = uuidV7(), fileId = uuidV7(), screenshotId = uuidV7(), now = new Date();
   await f.commit([{ entity: "meeting", action: "create", entityId: meetingId, baseRevision: null,
-    data: { projectId: null, name: "Synthetic", description: "", status: "READY", duration: 60,
+    data: { projectId: null, name: "Synthetic", description, status: "READY", duration: 60,
       recordingStartedAt: now.toISOString(), createdAt: now.toISOString(), updatedAt: now.toISOString() } }]);
   const hash = await contentHash("synthetic-pixels");
   const shot = { screenshotId, fileId, meetingId, workspaceId, capturedAt: now, contentType: "image/webp", storageKey: "unused",
@@ -326,6 +329,19 @@ describe("Workspace memory", () => {
       expect(f.retained.get(id)).not.toBe(text);
       expect(f.retained.get(id)).toContain(shot.capturedAt.toISOString());
       expect((await f.memory.canonicalSource(owner, workspaceId, id, new AbortController().signal))?.source).toEqual(after.source);
+    } finally { await f.close(); }
+  });
+
+  it.each([false, true])("indexes text containing control characters that Hindsight drops (images: %s)", async (images) => {
+    const f = await setup(images);
+    try {
+      const { meetingId, shot } = await screenshotFixture(f, "Agenda\u0007 \u001b[31mred\u001b[0m");
+      shot.ocrText = "Bookmarks\n\u0013\n\u001b[0m";
+      await f.memory.configure(owner, workspaceId, true, images); await f.ready();
+      const documentId = encodeId("meeting", meetingId);
+      expect(await f.memory.status(owner, workspaceId)).toMatchObject({ status: "ready", skippedCount: 0 });
+      expect(await f.app.memory!.document(workspaceId, documentId)).toBeDefined();
+      expect(f.retained.get(documentId)).toContain("Agenda red");
     } finally { await f.close(); }
   });
 

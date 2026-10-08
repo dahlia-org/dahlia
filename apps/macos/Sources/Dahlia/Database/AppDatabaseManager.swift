@@ -149,6 +149,24 @@ final class AppDatabaseManager: Sendable {
                 )
             }
         }
+        // Degenerate image analysis saved control characters. Local Accounts only: Server copies follow their canonical record.
+        // The file_text_bodies triggers requeue search indexing for each cleaned screenshot.
+        migrator.registerMigration("v56_screenshotTextControlCharacters") { db in
+            guard try db.tableExists("file_text_bodies") else { return }
+            let pattern = "*[\u{01}-\u{08}\u{0B}\u{0C}\u{0E}-\u{1F}\u{7F}]*"
+            let rows = try Row.fetchAll(db, sql: """
+            SELECT t.fileId, t.ocrText, t.caption FROM file_text_bodies t
+            JOIN files f ON f.id = t.fileId JOIN workspaces w ON w.id = f.workspace_id
+            WHERE w.accountConnectionId IS NULL AND (t.ocrText GLOB ? OR t.caption GLOB ?)
+            """, arguments: [pattern, pattern])
+            for row in rows {
+                try db.execute(sql: "UPDATE file_text_bodies SET ocrText = ?, caption = ? WHERE fileId = ?", arguments: [
+                    (row["ocrText"] as String?).map(ScreenshotAnalysis.normalizedOCRText),
+                    (row["caption"] as String?).map(ScreenshotAnalysis.normalizedCaption),
+                    row["fileId"] as UUID,
+                ])
+            }
+        }
 
         return migrator
     }()

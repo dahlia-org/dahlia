@@ -7,6 +7,13 @@ export const fileMetadataLimits = {
   postgres: { ocrText: 65_536, caption: 2_048 },
 } as const;
 
+// Degenerate image analysis can repeat these until the length limit. Hindsight also drops the control
+// characters and lone surrogates before storing a document, so its stored text matches what Dahlia sent.
+export function stripControlCharacters(text: string) {
+  // eslint-disable-next-line no-control-regex -- matching control characters is the purpose.
+  return text.replace(/\x1b\[[0-?]*[ -/]*[@-~]|[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]|[\ud800-\udfff]/gu, "");
+}
+
 export function codePointLimitedString(schema: z.ZodString, maxLength: number) {
   return schema.refine((value) => {
     const iterator = value[Symbol.iterator]();

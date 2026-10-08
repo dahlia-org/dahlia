@@ -133,6 +133,31 @@ import Foundation
         }
 
         @Test
+        func dropsControlCharactersAndTerminalEscapesFromDegenerateOutput() async throws {
+            let screenshotID = UUID.v7()
+            let response = #"""
+            {"screenshots":[{"screenshot_id":"\#(screenshotID)",
+              "ocr_text":"Maps\n\u0007\n\u001b[0m\n\u001b[0m\n","caption":"A \u0013browser\nwindow"}]}
+            """#
+            let transport = TestCodexAppServerTransport(
+                mode: .generationCompletes,
+                modelName: CodexScreenshotAnalysisService.model,
+                generationResponse: response
+            )
+            let appServer = makeTestCodexAppServerService(
+                transportFactory: { transport },
+                runtimeProviderResolver: { .chatGPTSubscription }
+            )
+
+            let results = try await CodexScreenshotAnalysisService(appServer: appServer).analyze([
+                ScreenshotAnalysisInput(id: screenshotID, imageData: Data([1]), mimeType: "image/png", runtimeProvider: .chatGPTSubscription),
+            ])
+
+            #expect(results == [ScreenshotAnalysis(screenshotID: screenshotID, ocrText: "Maps", caption: "A browser window")])
+            await appServer.shutdown()
+        }
+
+        @Test
         func rejectsMultipleScreenshots() async {
             let analyzer = CodexScreenshotAnalysisService()
 

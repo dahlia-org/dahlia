@@ -15,6 +15,36 @@ struct ScreenshotAnalysis: Equatable, Sendable {
     let screenshotID: UUID
     let ocrText: String
     let caption: String
+
+    static func normalizedOCRText(_ text: String) -> String {
+        SyncValidationLimits.prefix(
+            visibleText(text).trimmingCharacters(in: .whitespacesAndNewlines),
+            maxCodePointCount: SyncValidationLimits.fileOCRText
+        )
+    }
+
+    static func normalizedCaption(_ text: String) -> String {
+        SyncValidationLimits.prefix(
+            visibleText(text)
+                .split(whereSeparator: \.isNewline)
+                .joined(separator: " ")
+                .trimmingCharacters(in: .whitespacesAndNewlines),
+            maxCodePointCount: SyncValidationLimits.fileCaption
+        )
+    }
+
+    /// A degenerate response can repeat control characters or terminal escape sequences up to the length limit.
+    private static func visibleText(_ text: String) -> String {
+        var scalars = String.UnicodeScalarView()
+        scalars.append(contentsOf: text.replacing(#/\u{1B}\[[0-?]*[ -\/]*[@-~]/#, with: "").unicodeScalars.filter { scalar in
+            switch scalar.value {
+            case 0x09, 0x0A, 0x0D: true
+            case 0 ..< 0x20, 0x7F: false
+            default: true
+            }
+        })
+        return String(scalars)
+    }
 }
 
 protocol ScreenshotAnalyzing: Sendable {
@@ -62,17 +92,8 @@ actor CodexScreenshotAnalysisService: ScreenshotAnalyzing {
         let results = decoded.screenshots.map {
             ScreenshotAnalysis(
                 screenshotID: $0.screenshotID,
-                ocrText: SyncValidationLimits.prefix(
-                    $0.ocrText.trimmingCharacters(in: .whitespacesAndNewlines),
-                    maxCodePointCount: SyncValidationLimits.fileOCRText
-                ),
-                caption: SyncValidationLimits.prefix(
-                    $0.caption
-                        .split(whereSeparator: \.isNewline)
-                        .joined(separator: " ")
-                        .trimmingCharacters(in: .whitespacesAndNewlines),
-                    maxCodePointCount: SyncValidationLimits.fileCaption
-                )
+                ocrText: ScreenshotAnalysis.normalizedOCRText($0.ocrText),
+                caption: ScreenshotAnalysis.normalizedCaption($0.caption)
             )
         }
         guard results.allSatisfy({ !$0.caption.isEmpty }) else {
@@ -109,7 +130,7 @@ actor CodexScreenshotAnalysisService: ScreenshotAnalyzing {
         For each screenshot, return exactly one item associated with its <screenshot_id>.
         ocr_text must faithfully transcribe all visible text in its original language and preserve useful line breaks.
         Omit icons and other non-text graphics instead of approximating them with emoji or symbols, but transcribe legible words inside logos or graphics.
-        Never add text that is not legible in the image.
+        Never add text that is not legible in the image. Never output control characters or terminal escape sequences.
         caption must describe the visible situation and important content in one or two concise sentences in \(captionLanguage).
         Do not use Markdown and do not infer facts that are not visible in the image.
         """
