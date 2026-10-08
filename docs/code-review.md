@@ -20,7 +20,7 @@
 ## レビューの準備
 
 1. 変更されたファイルと実行経路を確認し、適用されるすべての `AGENTS.md` を読む。
-2. PR 本文がある場合は、surface、変更しない範囲、人の承認が必要な変更、未実施の検証を読み、主張を diff と照合する。本文で既知の制約とした項目でも、採用基準を満たす欠陥は finding にする。
+2. PR 本文がある場合は、`Key decisions`、`Surfaces`、`Unchanged`、`Needs human approval`、`Verification` の `Not done` を読み、主張を diff と照合する。本文で既知の制約とした項目でも、採用基準を満たす欠陥は finding にする。
 3. diff だけで判断せず、呼び出し元、状態の owner、失敗経路、関連テストを必要な範囲で確認する。
 4. `AGENTS.md` の Documentation Router から、変更に関係するアーキテクチャ節だけを読む。
 5. レビュー依頼は read-only として扱い、修正も明示的に依頼された場合だけ編集する。
