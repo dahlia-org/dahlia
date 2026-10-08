@@ -53,8 +53,9 @@ findings list を返し、prose や追加 field を要求しない。文章を�
 
 ## 承認の扱い
 
-PR を approve できる reviewer は、次のいずれかを含む PR を approve せず、該当する条件を review に明記して人の承認に回す。
-finding がない場合も同じ。
+PR を approve できる reviewer（Pullfrog などの AI reviewer を含む）は、採用基準を満たす未解決の finding がなければ approve する。
+次のいずれかを含む PR は、その approve に加えて人の approve を必要とする。reviewer は該当する条件を review に明記し、
+自分の approve を人の approve の代わりとして扱わない。
 
 - lint、format、型検査の抑制の追加または拡大
 - ユーザーから見える既定値の変更
