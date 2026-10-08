@@ -25,6 +25,7 @@ struct CalendarEvent: Identifiable, Equatable, Codable {
     let isAttending: Bool
     let isOutOfOffice: Bool
     let participants: [CalendarParticipant]
+    let location: String?
     let conferenceURI: URL?
     let url: URL?
 
@@ -47,6 +48,7 @@ struct CalendarEvent: Identifiable, Equatable, Codable {
         isAttending: Bool = false,
         isOutOfOffice: Bool = false,
         participants: [CalendarParticipant] = [],
+        location: String? = nil,
         conferenceURI: URL?,
         url: URL? = nil
     ) {
@@ -68,6 +70,7 @@ struct CalendarEvent: Identifiable, Equatable, Codable {
         self.isAttending = isAttending && !isDeclined
         self.isOutOfOffice = isOutOfOffice || Self.titleIndicatesOutOfOffice(title)
         self.participants = participants
+        self.location = location?.nilIfBlank
         self.conferenceURI = conferenceURI
         self.url = url
     }
@@ -81,6 +84,16 @@ extension CalendarEvent {
     var resolvedMeetingTitle: String {
         let trimmedTitle = title.trimmingCharacters(in: .whitespacesAndNewlines)
         return trimmedTitle.isEmpty ? L10n.newMeeting : trimmedTitle
+    }
+
+    /// 場所欄に既に含まれている会議室は重複表示しない。メールアドレスのない会議室は統合されずに残るため、名前でも重複を除く。
+    var meetingRoomNames: [String] {
+        var seenNames: Set<String> = []
+        return participants
+            .filter { $0.kind == .room || $0.kind == .resource }
+            .compactMap { CalendarAttendeeNormalizer.displayName($0.displayName) }
+            .filter { location?.localizedCaseInsensitiveContains($0) != true }
+            .filter { seenNames.insert($0).inserted }
     }
 
     static func titleIndicatesOutOfOffice(_ title: String) -> Bool {
@@ -148,6 +161,7 @@ private extension CalendarEvent {
             isAttending: isAttending || fallback.isAttending,
             isOutOfOffice: isOutOfOffice || fallback.isOutOfOffice,
             participants: mergedParticipants(with: fallback.participants),
+            location: location ?? fallback.location,
             conferenceURI: conferenceURI ?? fallback.conferenceURI,
             url: url ?? fallback.url
         )
@@ -193,6 +207,7 @@ extension CalendarEvent {
         case isAttending
         case isOutOfOffice
         case participants
+        case location
         case conferenceURI
         case url
     }
@@ -225,6 +240,7 @@ extension CalendarEvent {
         let decodedIsOutOfOffice = try container.decodeIfPresent(Bool.self, forKey: .isOutOfOffice) ?? false
         isOutOfOffice = decodedIsOutOfOffice || Self.titleIndicatesOutOfOffice(title)
         participants = try container.decodeIfPresent([CalendarParticipant].self, forKey: .participants) ?? []
+        location = try container.decodeIfPresent(String.self, forKey: .location)
         conferenceURI = try container.decodeIfPresent(URL.self, forKey: .conferenceURI)
             ?? legacyContainer.decodeIfPresent(URL.self, forKey: .meetingURL)
         url = try container.decodeIfPresent(URL.self, forKey: .url)

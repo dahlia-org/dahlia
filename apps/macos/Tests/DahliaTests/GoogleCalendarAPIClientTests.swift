@@ -203,6 +203,40 @@ import Foundation
             #expect(transformed?.isAttending == true)
         }
 
+        @Test
+        func eventPayloadExposesLocationAndRoomsMissingFromIt() throws {
+            let data = Data("""
+            {
+              "items": [
+                {
+                  "id": "room-meeting",
+                  "location": " Tokyo-15F-Shinjuku (6) [VC] ",
+                  "start": { "dateTime": "2026-04-17T01:00:00Z" },
+                  "end": { "dateTime": "2026-04-17T02:00:00Z" },
+                  "attendees": [
+                    { "email": "me@example.com", "self": true, "responseStatus": "accepted" },
+                    { "email": "room1@resource.calendar.google.com", "displayName": "Tokyo-15F-Shinjuku (6) [VC]", "resource": true },
+                    { "email": "room2@resource.calendar.google.com", "displayName": "Tokyo-15F-Ginza (4)", "resource": true },
+                    { "displayName": "Tokyo-15F-Ginza (4)", "resource": true },
+                    { "email": "room3@resource.calendar.google.com", "resource": true },
+                    { "email": "colleague@example.com", "displayName": "Colleague" }
+                  ]
+                }
+              ]
+            }
+            """.utf8)
+
+            let response = try JSONDecoder().decode(GoogleCalendarAPIClient.EventListResponse.self, from: data)
+            let item = try #require(response.items.first)
+            let event = try #require(try GoogleCalendarAPIClient.makeEvent(
+                from: item,
+                calendarItem: CalendarListItem(id: "primary", title: "Primary", colorHex: nil, isPrimary: true)
+            ))
+
+            #expect(event.location == "Tokyo-15F-Shinjuku (6) [VC]")
+            #expect(event.meetingRoomNames == ["Tokyo-15F-Ginza (4)"])
+        }
+
         @Test(arguments: [
             ", \"organizer\": { \"self\": true }",
             "",

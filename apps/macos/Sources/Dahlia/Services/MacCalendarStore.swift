@@ -436,6 +436,7 @@ actor EventKitMacCalendarEventStore: MacCalendarEventStoreProviding {
                 || event.attendees?.first(where: \.isCurrentUser)?.participantStatus == .accepted,
             isOutOfOffice: event.availability == .unavailable,
             participants: calendarParticipants(from: event),
+            location: event.location,
             conferenceURI: CalendarConferenceURIExtractor.conferenceURI(
                 url: event.url,
                 textFields: [event.notes, event.location]

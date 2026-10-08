@@ -2854,6 +2854,7 @@ enum L10n { // swiftlint:disable:this type_body_length
     static var menuBarJoinMeetingWithRecording: String { String(localized: "Join Meeting (with recording)", bundle: bundle) }
     static var menuBarJoinMeeting: String { String(localized: "Join Meeting", bundle: bundle) }
     static var menuBarShowEventInCalendar: String { String(localized: "Show Event in Calendar", bundle: bundle) }
+    static var menuBarEventDetails: String { String(localized: "Event Details", bundle: bundle) }
     static var calendarAttending: String { String(localized: "Attending", bundle: bundle) }
 
     // MARK: - Meeting Detection

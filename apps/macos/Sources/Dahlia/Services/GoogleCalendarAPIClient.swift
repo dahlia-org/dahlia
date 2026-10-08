@@ -150,6 +150,7 @@ final class GoogleCalendarAPIClient: GoogleCalendarAPIClientProviding {
             isAttending: item.isCurrentUserAttending,
             isOutOfOffice: item.eventType == "outOfOffice",
             participants: item.calendarParticipants,
+            location: item.location,
             conferenceURI: conferenceURI(for: item),
             url: absoluteURL(from: item.htmlLink)
         )
@@ -407,6 +408,7 @@ extension GoogleCalendarAPIClient {
         let id: String
         let summary: String?
         let description: String?
+        let location: String?
         let iCalUID: String?
         let htmlLink: String?
         let hangoutLink: String?
@@ -423,6 +425,7 @@ extension GoogleCalendarAPIClient {
             id: String,
             summary: String?,
             description: String?,
+            location: String? = nil,
             iCalUID: String?,
             htmlLink: String?,
             hangoutLink: String?,
@@ -438,6 +441,7 @@ extension GoogleCalendarAPIClient {
             self.id = id
             self.summary = summary
             self.description = description
+            self.location = location
             self.iCalUID = iCalUID
             self.htmlLink = htmlLink
             self.hangoutLink = hangoutLink
