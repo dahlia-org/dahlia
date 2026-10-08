@@ -19,7 +19,8 @@ export interface ImageAnalysisInput extends ImageAnalysisClaim {
 
 export const IMAGE_ANALYSIS_REASON_LIMIT = fileMetadataLimits.api.informativeReason;
 export const imageAnalysisSchema = z.object({
-  ocr_text: codePointLimitedString(z.string().overwrite(stripControlCharacters).trim(), fileMetadataLimits.api.ocrText),
+  // Trailing whitespace is what remains of a degenerate control-character loop; leading indentation is content.
+  ocr_text: codePointLimitedString(z.string().overwrite((text) => stripControlCharacters(text).trimEnd()), fileMetadataLimits.api.ocrText),
   caption: codePointLimitedString(z.string().overwrite(stripControlCharacters).trim().min(1), fileMetadataLimits.api.caption),
   informative: z.boolean(),
   // Why the screenshot is not informative; empty when it is.

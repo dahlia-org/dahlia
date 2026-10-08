@@ -38,12 +38,12 @@ describe("server image captioning", () => {
   });
 
   it("drops control characters and terminal escape sequences that degenerate output repeats", async () => {
-    const output = { ocr_text: `Maps\n${"\u0007\n\u001b[0m\n".repeat(3)}`, caption: "A \u0013browser", informative: false, reason: "\u001b[1mDesktop\u001b[0m" };
+    const output = { ocr_text: `  Maps\n${"\u0007\n\u001b[0m\n".repeat(3)}`, caption: "A \u0013browser", informative: false, reason: "\u001b[1mDesktop\u001b[0m" };
     const transport = vi.fn(async (url: RequestInfo | URL) => String(url).endsWith("/token")
       ? Response.json({ access_token: "app-token", expires_in: 3600 })
       : Response.json({ status: "completed", output: [{ type: "message", content: [{ type: "output_text", text: JSON.stringify(output) }] }] }));
     expect(await createImageCaptioner(loadConfig(environment), transport)!.analyze(new Uint8Array(), { outputLanguage: "en" }))
-      .toEqual({ ocr_text: "Maps", caption: "A browser", informative: false, reason: "Desktop" });
+      .toEqual({ ocr_text: "  Maps", caption: "A browser", informative: false, reason: "Desktop" });
   });
 
   it.each([429, 503, 400, 403])("classifies HTTP %s without exposing response content", async (status) => {
