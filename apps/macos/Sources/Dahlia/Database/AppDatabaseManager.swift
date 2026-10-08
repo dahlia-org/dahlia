@@ -154,17 +154,22 @@ final class AppDatabaseManager: Sendable {
         migrator.registerMigration("v56_screenshotTextControlCharacters") { db in
             guard try db.tableExists("file_text_bodies") else { return }
             let pattern = "*[\u{01}-\u{08}\u{0B}\u{0C}\u{0E}-\u{1F}\u{7F}]*"
-            let rows = try Row.fetchAll(db, sql: """
-            SELECT t.fileId, t.ocrText, t.caption FROM file_text_bodies t
-            JOIN files f ON f.id = t.fileId JOIN workspaces w ON w.id = f.workspace_id
-            WHERE w.accountConnectionId IS NULL AND (t.ocrText GLOB ? OR t.caption GLOB ?)
-            """, arguments: [pattern, pattern])
-            for row in rows {
-                try db.execute(sql: "UPDATE file_text_bodies SET ocrText = ?, caption = ? WHERE fileId = ?", arguments: [
-                    (row["ocrText"] as String?).map(ScreenshotAnalysis.normalizedOCRText),
-                    (row["caption"] as String?).map(ScreenshotAnalysis.normalizedCaption),
-                    row["fileId"] as UUID,
-                ])
+            let columns: [(name: String, normalize: (String) -> String)] = [
+                ("ocrText", ScreenshotAnalysis.normalizedOCRText),
+                ("caption", ScreenshotAnalysis.normalizedCaption),
+            ]
+            for column in columns {
+                let rows = try Row.fetchAll(db, sql: """
+                SELECT t.fileId, t.\(column.name) AS text FROM file_text_bodies t
+                JOIN files f ON f.id = t.fileId JOIN workspaces w ON w.id = f.workspace_id
+                WHERE w.accountConnectionId IS NULL AND t.\(column.name) GLOB ?
+                """, arguments: [pattern])
+                for row in rows {
+                    try db.execute(
+                        sql: "UPDATE file_text_bodies SET \(column.name) = ? WHERE fileId = ?",
+                        arguments: [column.normalize(row["text"]), row["fileId"] as UUID]
+                    )
+                }
             }
         }
 

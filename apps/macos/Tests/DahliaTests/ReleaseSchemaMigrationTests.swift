@@ -473,14 +473,14 @@
             let degenerate = "Maps\n\u{07}\n\u{1B}[0m\n\u{1B}[0m"
             let localShot = screenshot(in: localMeeting, ocrText: degenerate, caption: "A \u{13}browser")
             let serverShot = screenshot(in: serverMeeting, ocrText: degenerate, caption: "A \u{13}browser")
-            let cleanShot = screenshot(in: localMeeting, ocrText: "  Keep\n\tlayout  ", caption: "Clean")
+            let dirtyCaptionShot = screenshot(in: localMeeting, ocrText: "  Keep\n\tlayout  ", caption: "Clean\u{07}")
             try queue.write { db in
                 try connection.insert(db)
                 try local.insert(db)
                 try server.insert(db)
                 try localMeeting.insert(db)
                 try serverMeeting.insert(db)
-                for shot in [localShot, serverShot, cleanShot] {
+                for shot in [localShot, serverShot, dirtyCaptionShot] {
                     try shot.insert(db)
                 }
                 try db.execute(sql: "DELETE FROM jobs_background")
@@ -496,9 +496,11 @@
                 let untouched = try #require(try text(serverShot.id))
                 #expect(untouched["ocrText"] as String? == degenerate)
                 #expect(untouched["caption"] as String? == "A \u{13}browser")
-                #expect(try text(cleanShot.id)?["ocrText"] as String? == "  Keep\n\tlayout  ")
+                let captionOnly = try #require(try text(dirtyCaptionShot.id))
+                #expect(captionOnly["ocrText"] as String? == "  Keep\n\tlayout  ")
+                #expect(captionOnly["caption"] as String? == "Clean")
                 let reindexed = try UUID.fetchAll(db, sql: "SELECT targetKey FROM jobs_background WHERE targetKind = 'screenshot'")
-                #expect(reindexed == [localShot.id])
+                #expect(Set(reindexed) == [localShot.id, dirtyCaptionShot.id])
             }
         }
 
