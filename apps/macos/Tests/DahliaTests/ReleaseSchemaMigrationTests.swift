@@ -436,12 +436,71 @@
                 "v47_orphanedRecordingRecoveryState",
                 "v54_documentsSyncAndBackgroundJobs",
                 "v55_serverContentRetention",
+                "v56_screenshotTextControlCharacters",
             ])
             try database.dbQueue.read { db throws in
                 #expect(try Row.fetchAll(db, sql: "PRAGMA foreign_key_check").isEmpty)
                 #expect(try !db.columns(in: "workspaces").contains { $0.name == "appearance" })
                 #expect(try !db.columns(in: "projects").contains { $0.name == "appearance" })
                 #expect(try AppDatabaseManager.hasExpectedCurrentSchema(db))
+            }
+        }
+
+        @Test
+        func screenshotTextMigrationCleansOnlyLocalAccountControlCharacters() throws {
+            let queue = try DatabaseQueue(configuration: AppDatabaseManager.configuration())
+            try AppDatabaseManager.migrator.migrate(queue, upTo: "v55_serverContentRetention")
+            let connection = DahliaAccountConnectionRecord(
+                id: .v7(), origin: "https://server.example.com", clientID: "desktop", createdAt: .now
+            )
+            let local = WorkspaceRecord(id: .v7(), path: nil, name: "Local", createdAt: .now, lastOpenedAt: .now)
+            let server = WorkspaceRecord(
+                id: .v7(), path: nil, name: "Server", createdAt: .now, lastOpenedAt: .now,
+                accountConnectionId: connection.id, organizationId: .v7(), syncRole: "admin"
+            )
+            let localMeeting = MeetingRecord(
+                id: .v7(), workspaceId: local.id, projectId: nil, name: "Local", description: "", createdAt: .now, updatedAt: .now
+            )
+            let serverMeeting = MeetingRecord(
+                id: .v7(), workspaceId: server.id, projectId: nil, name: "Server", description: "", createdAt: .now, updatedAt: .now
+            )
+            func screenshot(in meeting: MeetingRecord, ocrText: String, caption: String) -> MeetingScreenshotRecord {
+                MeetingScreenshotRecord(
+                    id: .v7(), meetingId: meeting.id, sessionId: nil, capturedAt: .now, imageData: nil, mimeType: "image/webp",
+                    ocrText: ocrText, caption: caption, contentHash: "hash", contentLength: 1, localReference: "local"
+                )
+            }
+            let degenerate = "Maps\n\u{07}\n\u{1B}[0m\n\u{1B}[0m"
+            let localShot = screenshot(in: localMeeting, ocrText: degenerate, caption: "A \u{13}browser")
+            let serverShot = screenshot(in: serverMeeting, ocrText: degenerate, caption: "A \u{13}browser")
+            let dirtyCaptionShot = screenshot(in: localMeeting, ocrText: "  Keep\n\tlayout  ", caption: "Clean\u{07}")
+            try queue.write { db in
+                try connection.insert(db)
+                try local.insert(db)
+                try server.insert(db)
+                try localMeeting.insert(db)
+                try serverMeeting.insert(db)
+                for shot in [localShot, serverShot, dirtyCaptionShot] {
+                    try shot.insert(db)
+                }
+                try db.execute(sql: "DELETE FROM jobs_background")
+            }
+
+            try AppDatabaseManager.migrator.migrate(queue)
+
+            try queue.read { db throws in
+                let text = { (id: UUID) in try Row.fetchOne(db, sql: "SELECT ocrText, caption FROM file_text_bodies WHERE fileId = ?", arguments: [id]) }
+                let cleaned = try #require(try text(localShot.id))
+                #expect(cleaned["ocrText"] as String? == "Maps")
+                #expect(cleaned["caption"] as String? == "A browser")
+                let untouched = try #require(try text(serverShot.id))
+                #expect(untouched["ocrText"] as String? == degenerate)
+                #expect(untouched["caption"] as String? == "A \u{13}browser")
+                let captionOnly = try #require(try text(dirtyCaptionShot.id))
+                #expect(captionOnly["ocrText"] as String? == "  Keep\n\tlayout  ")
+                #expect(captionOnly["caption"] as String? == "Clean")
+                let reindexed = try UUID.fetchAll(db, sql: "SELECT targetKey FROM jobs_background WHERE targetKind = 'screenshot'")
+                #expect(Set(reindexed) == [localShot.id, dirtyCaptionShot.id])
             }
         }
 

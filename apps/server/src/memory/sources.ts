@@ -1,4 +1,5 @@
 import type { Identity } from "../auth/identity";
+import { stripControlCharacters } from "../files/model";
 import type { MeetingSyncService } from "../sync/service";
 import { HindsightError } from "./errors";
 import type { MemoryDocument } from "./model";
@@ -11,7 +12,7 @@ export async function contentHash(content: string) {
 }
 export function noteDocument(note: SharedMemory, personal = false): MemoryDocument {
   return { id: memoryDocumentId("shared", note.id), source: { kind: "shared", id: note.id, revision: String(note.revision), projectId: null },
-    content: `${personal ? "Private user memory" : "User-registered shared information"} (not independently verified):\n${note.content}`, timestamp: note.updatedAt.toISOString() };
+    content: `${personal ? "Private user memory" : "User-registered shared information"} (not independently verified):\n${stripControlCharacters(note.content)}`, timestamp: note.updatedAt.toISOString() };
 }
 export async function meetingDocument(sync: MeetingSyncService, identity: Identity, workspaceId: string, meetingId: string,
   signal: AbortSignal): Promise<MemoryDocument | null> {
@@ -51,9 +52,11 @@ export async function meetingDocument(sync: MeetingSyncService, identity: Identi
     }
     cursor = page.nextCursor;
   } while (cursor);
-  const content = parts.join("\n\n");
+  // Hindsight stores the body without these characters; document verification compares that text.
+  const texts = parts.map(stripControlCharacters);
+  const content = texts.join("\n\n");
   let offset = 0;
-  const blocks = parts.map((part, index) => {
+  const blocks = texts.map((part, index) => {
     const start = offset;
     offset += part.length + 2;
     return { start, end: start + part.length, marker: markers.get(index) };

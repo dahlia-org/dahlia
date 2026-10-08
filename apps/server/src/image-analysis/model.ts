@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { codePointLimitedString, fileMetadataLimits, type FileRecord } from "../files/model";
+import { codePointLimitedString, fileMetadataLimits, stripControlCharacters, type FileRecord } from "../files/model";
 
 export interface ImageAnalysisClaim {
   queue?: import("../jobs/store").BackgroundJob;
@@ -19,11 +19,12 @@ export interface ImageAnalysisInput extends ImageAnalysisClaim {
 
 export const IMAGE_ANALYSIS_REASON_LIMIT = fileMetadataLimits.api.informativeReason;
 export const imageAnalysisSchema = z.object({
-  ocr_text: codePointLimitedString(z.string(), fileMetadataLimits.api.ocrText),
-  caption: codePointLimitedString(z.string().trim().min(1), fileMetadataLimits.api.caption),
+  // Trailing whitespace is what remains of a degenerate control-character loop; leading indentation is content.
+  ocr_text: codePointLimitedString(z.string().overwrite((text) => stripControlCharacters(text).trimEnd()), fileMetadataLimits.api.ocrText),
+  caption: codePointLimitedString(z.string().overwrite(stripControlCharacters).trim().min(1), fileMetadataLimits.api.caption),
   informative: z.boolean(),
   // Why the screenshot is not informative; empty when it is.
-  reason: codePointLimitedString(z.string().trim(), IMAGE_ANALYSIS_REASON_LIMIT),
+  reason: codePointLimitedString(z.string().overwrite(stripControlCharacters).trim(), IMAGE_ANALYSIS_REASON_LIMIT),
 }).strict().refine((analysis) => analysis.informative || analysis.reason !== "", { path: ["reason"] });
 export type ImageAnalysis = z.infer<typeof imageAnalysisSchema>;
 
