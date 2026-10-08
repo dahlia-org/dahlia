@@ -1,74 +1,77 @@
 <!--
-reviewer（AI を含む）は diff とリポジトリを読めますが、会話、外部リンク先、画像、手動確認の結果は読めません。
-差分から分からない意図、範囲の判断、検証の事実を簡潔に記載してください。diff の要約やファイル一覧は不要です。
-各見出しは残し、該当しない項目には「該当なし」と記載してください。
-レビュー対応で挙動や検証結果が変わったら、本文も更新してください。
+Reviewers, including AI reviewers, read the diff and the repository but not your conversation, linked pages, images, or manual check results.
+Write what they cannot get from the diff: intent, scope decisions, and verification facts. Do not summarize the diff or list files.
+- Keep every heading and field label so reviewers can find them. Write "N/A" when one does not apply.
+- One fact per bullet. Describe behavior, not code the diff already shows.
+- Write only what you confirmed. Label anything you inferred but did not check as an assumption.
+- Update this description when review changes the behavior or the verification results.
 -->
 
-## 目的
+## Why
 
-<!-- 解決する問題、必要になった理由、期待するユーザーへの結果。 -->
-
--
-
-## 変更内容
-
-<!-- 挙動や契約（schema、設定、API、MCP、保存形式など）の変更を中心に記載します。 -->
+<!-- The problem, why it needs solving, and the result users should see. -->
 
 -
 
-## レビューガイド
+## What changes
+
+<!-- Behavior and contract changes (schemas, migrations, settings and defaults, APIs, MCP tools, storage formats), written as before → after. -->
+
+-
+
+## Review guide
 
 <!--
-- surface: AGENTS.md の Definition of Done の surface（client、account、入口、MCP、逆方向の操作）のうち、変更したものと、意図的に対象外としたもの（理由）。
-- 変更しない範囲: この PR が変えないと保証する挙動や契約。
+- Start here: the file and symbol where the main path begins, so the reviewer can trace it.
+- Key decisions: each non-obvious choice, the constraint behind it and how you confirmed that constraint, and the alternative you rejected.
+- Surfaces: for each surface in the AGENTS.md Definition of Done (clients, accounts, entry points, AI access, reverse paths), whether it changed or was deliberately left out, and why.
+- Unchanged: behavior and contracts this PR guarantees it does not change.
+- Focus: the risks or open questions you want the reviewer to check.
 -->
 
-- 確認の起点:
-- 重要な判断・制約:
-- surface:
-- 変更しない範囲:
-- 特に確認してほしい点:
+- Start here:
+- Key decisions:
+- Surfaces:
+- Unchanged:
+- Focus:
 
-## 検証
+## Verification
 
 <!--
-実際に実行したコマンドまたは手順と、suite 名・テスト件数などの具体的な結果を記載します。
-テストを追加しただけの場合は「実行済み」に含めないでください。
-bug fix では、修正前に失敗し修正後に通ることを確認した test または再現手順を記載します。
+List only what you actually ran: the command or steps and a concrete result, such as suite names, test counts, or observed behavior. A test you added but did not run does not count.
+For a bug fix, name the test or reproduction that failed before the fix and passes after it.
 -->
 
-### 実行済み
+### Done
 
 -
 
-### 未実施
+### Not done
 
-<!-- 未実施の確認、その理由、次に必要な確認。すべて実施済みなら「なし」。 -->
+<!-- Each check you skipped or could not run, why, and the next step to verify it. "None" if everything ran. -->
 
 -
 
-## 影響とリスク
+## Impact and risk
 
 <!--
-影響するユーザー挙動、録音・文字起こし、データベース、設定、MCP・バックアップ、
-telemetry・外部通信、互換性、既知の制約、復旧方法のうち該当する内容を記載します。
-人の承認が必要な変更は docs/code-review.md の「承認の扱い」の条件のうち該当するもの。なければ「なし」。
+Cover whichever apply: user-visible behavior, recording and transcription, the database, settings, MCP and backups, telemetry and external network calls, compatibility, and known limits.
+Needs human approval: the conditions under "承認の扱い" in docs/code-review.md that this PR meets, or "None".
 -->
 
-- 人の承認が必要な変更:
-- 影響する範囲:
-- 残るリスク・既知の制約:
-- 問題発生時の復旧方法:
+- Needs human approval:
+- Affected areas:
+- Remaining risks and known limits:
+- Recovery if it goes wrong:
 
-## UI の確認
+## UI check
 
-<!-- UI 変更では before / after の画像に加え、手動確認した状態・操作を文章で記載します。変更がなければ「該当なし」。 -->
+<!-- For UI changes, add before/after screenshots and also describe in text the states and interactions you checked by hand. "N/A" if there is no UI change. -->
 
 -
 
-## 関連情報
+## Related
 
-<!-- 例: Closes #123、関連 PR、設計文書。外部リンク先の内容で判断に必要なものは本文に要約します。該当しなければ「なし」。 -->
+<!-- For example: Closes #123, related PRs, design docs. Summarize anything from a linked page that the review depends on. "None" if nothing applies. -->
 
 -
