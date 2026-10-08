@@ -70,12 +70,14 @@ import Foundation
                 platform: CalendarEventPlatform.macOSCalendar,
                 recurrenceId: recurrenceId,
                 description: "Join the weekly planning call",
+                location: "Room A",
                 conferenceURI: conferenceURI
             )
             let expected = makeEvent(
                 platform: CalendarEventPlatform.googleCalendar,
                 recurrenceId: recurrenceId,
                 description: macEvent.description,
+                location: macEvent.location,
                 conferenceURI: conferenceURI,
                 url: eventURL
             )
@@ -142,6 +144,7 @@ import Foundation
         startDate: Date = Date(timeIntervalSince1970: 1_776_387_600),
         description: String = "",
         participants: [CalendarParticipant] = [],
+        location: String? = nil,
         conferenceURI: URL? = nil,
         url: URL? = nil
     ) -> CalendarEvent {
@@ -160,6 +163,7 @@ import Foundation
             endDate: startDate.addingTimeInterval(3600),
             isAllDay: false,
             participants: participants,
+            location: location,
             conferenceURI: conferenceURI,
             url: url
         )
