@@ -127,8 +127,7 @@
             await databaseEntered.wait()
 
             let earlier = Task { @MainActor in await store.loadEarlier() }
-            await Task.yield()
-            #expect(store.isLoadingPage)
+            try await waitUntilLoadingPage(store)
             #expect(await !store.loadEarliest())
             releaseDatabase.signal()
 
@@ -161,7 +160,7 @@
             await databaseEntered.wait()
 
             let earliest = Task { @MainActor in await store.loadEarliest() }
-            await Task.yield()
+            try await waitUntilLoadingPage(store)
             let live = TranscriptSegment(startTime: .now, text: "not yet persisted", isConfirmed: true)
             store.addSegment(live)
             releaseDatabase.signal()
@@ -671,6 +670,15 @@
             }
         }
         return PagingFixture(database: database, meetingId: meetingId, orderedIds: orderedIds)
+    }
+
+    @MainActor
+    private func waitUntilLoadingPage(_ store: TranscriptStore) async throws {
+        let deadline = ContinuousClock.now + .seconds(5)
+        while !store.isLoadingPage {
+            try #require(ContinuousClock.now < deadline)
+            try await Task.sleep(for: .milliseconds(1))
+        }
     }
 
     private func deterministicUUID(_ value: Int) -> UUID {
