@@ -151,6 +151,8 @@ final class TranscriptStore: ObservableObject { // swiftlint:disable:this type_b
     @discardableResult
     func loadEarliest() async -> Bool {
         guard hasEarlierSegments else { return false }
+        // Live segments arriving from here on stay deferred instead of landing in the window being replaced.
+        isFollowingLatest = false
         if isLoadingPage {
             needsEarliestLoad = true
             return false
@@ -428,14 +430,12 @@ final class TranscriptStore: ObservableObject { // swiftlint:disable:this type_b
         isFollowingLatest = true
     }
 
-    /// Segments added during the load lie past this page and reload from SQLite with later pages.
+    /// Deferred live segments and their newer-content signal survive until a latest reload merges them.
     private func applyEarliestPage(_ page: TranscriptPage) {
-        deferredConfirmedSegments.removeAll()
         segments = (page.segments + segments.filter { !$0.isConfirmed }).sorted(by: Self.precedes)
         hasEarlierSegments = false
-        hasLaterSegments = page.hasLater
-        hasNewerSegments = false
-        isFollowingLatest = !page.hasLater
+        hasLaterSegments = page.hasLater || !deferredConfirmedSegments.isEmpty
+        isFollowingLatest = !hasLaterSegments
     }
 
     private func mergeEarlierPage(

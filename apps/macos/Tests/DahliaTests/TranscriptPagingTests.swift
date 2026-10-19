@@ -139,6 +139,42 @@
         }
 
         @Test
+        func loadEarliestKeepsLiveSegmentThatArrivesDuringQuery() async throws {
+            let fixture = try makePagingFixture(segmentCount: 1000)
+            let repository = MeetingRepository(dbQueue: fixture.database.dbQueue)
+            let store = TranscriptStore()
+            try store.configurePaging(
+                meetingId: fixture.meetingId,
+                loader: TranscriptPageLoader(dbQueue: fixture.database.dbQueue),
+                initialPage: repository.fetchTranscriptPage(
+                    forMeetingId: fixture.meetingId, direction: .latest, limit: TranscriptStore.initialPageSize
+                )
+            )
+            let databaseEntered = AsyncPagingGate()
+            let releaseDatabase = DispatchSemaphore(value: 0)
+            let blocker = Task.detached {
+                try await fixture.database.dbQueue.write { _ in
+                    Task { await databaseEntered.open() }
+                    releaseDatabase.wait()
+                }
+            }
+            await databaseEntered.wait()
+
+            let earliest = Task { @MainActor in await store.loadEarliest() }
+            await Task.yield()
+            let live = TranscriptSegment(startTime: .now, text: "not yet persisted", isConfirmed: true)
+            store.addSegment(live)
+            releaseDatabase.signal()
+
+            #expect(await earliest.value)
+            try await blocker.value
+            #expect(store.segments.map(\.id) == Array(fixture.orderedIds.prefix(TranscriptStore.initialPageSize)))
+            #expect(store.hasNewerSegments && store.hasLaterSegments)
+            #expect(await store.reloadLatest())
+            #expect(store.segments.last?.id == live.id)
+        }
+
+        @Test
         func pagingFiltersUnconfirmedAndOtherMeetingsAndReportsPageEdges() throws {
             let fixture = try makePagingFixture(segmentCount: 3)
             let otherMeetingId = UUID.v7()
