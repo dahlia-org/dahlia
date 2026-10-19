@@ -14,15 +14,20 @@ struct TranscriptTabView<Header: View, Footer: View>: View {
     @State private var isFollowingLatest = false
     @State private var pageLoadTask: Task<Void, Never>?
 
+    private var showsTranscriptContent: Bool {
+        !store.isLoadingInitialPage && !(store.segments.isEmpty && store.pageLoadError == nil)
+    }
+
     var body: some View {
         ScrollView {
-            VStack(spacing: 0) {
+            // The rows must stay direct children of the scroll content's only lazy stack. Measuring a nested
+            // LazyVStack from an eager VStack re-estimates its height on every placement and can hang the main thread.
+            LazyVStack(spacing: 0) {
                 header
                 if store.isLoadingInitialPage {
                     ProgressView()
                         .frame(maxWidth: .infinity, minHeight: 280)
-                } else if store.segments.isEmpty,
-                          store.pageLoadError == nil {
+                } else if !showsTranscriptContent {
                     ContentUnavailableView {
                         Label(L10n.transcript, systemImage: "waveform.badge.microphone")
                     } description: {
@@ -30,10 +35,32 @@ struct TranscriptTabView<Header: View, Footer: View>: View {
                     }
                     .frame(maxWidth: .infinity, minHeight: 280)
                 } else {
-                    transcriptContent
+                    transcriptBanners
+                    Color.clear.frame(height: DahliaDesign.tabContentInset)
+                    let timeBase = store.timeBase
+                    let recordingSessions = store.recordingSessions
+                    ForEach(store.segments) { segment in
+                        TranscriptRowView(
+                            segment: segment,
+                            timestamp: Formatters.elapsedHHmmss(
+                                at: segment.startTime,
+                                sessionId: segment.sessionId,
+                                sessions: recordingSessions,
+                                fallbackTimeBase: timeBase
+                            ),
+                            showsTranslatedText: showsTranslatedText,
+                            allowsTextSelection: allowsTextSelection
+                        )
+                        .equatable()
+                        .padding(.horizontal, DahliaDesign.tabContentInset)
+                        .padding(.bottom, rowSpacing)
+                        .id(segment.id)
+                    }
+                    Color.clear.frame(height: DahliaDesign.tabContentInset - rowSpacing)
                 }
                 footer
             }
+            .scrollTargetLayout()
             .frame(maxWidth: DahliaDesign.mainContentMaxWidth)
             .frame(maxWidth: .infinity)
         }
@@ -41,12 +68,21 @@ struct TranscriptTabView<Header: View, Footer: View>: View {
         .onScrollTargetVisibilityChange(idType: TranscriptSegment.ID.self, threshold: 0.1) { ids in
             updateVisibleSegments(ids)
         }
+        .onChange(of: showsTranscriptContent, initial: true) { _, shows in
+            if shows { showStart() }
+        }
+        .onChange(of: store.latestConfirmedID) { _, _ in
+            guard isFollowingLatest, !store.hasLaterSegments else { return }
+            scrollToLatest(in: &scrollPosition)
+        }
         .onDisappear {
             pageLoadTask?.cancel()
         }
     }
 
-    private var transcriptContent: some View {
+    private var rowSpacing: CGFloat { 2 }
+
+    private var transcriptBanners: some View {
         VStack(spacing: 0) {
             if let pageLoadError = store.pageLoadError {
                 HStack(spacing: 8) {
@@ -80,33 +116,6 @@ struct TranscriptTabView<Header: View, Footer: View>: View {
                 }
                 .buttonStyle(.borderless)
                 .padding(.vertical, 6)
-            }
-
-            LazyVStack(alignment: .leading, spacing: 2) {
-                let timeBase = store.timeBase
-                let recordingSessions = store.recordingSessions
-                ForEach(store.segments) { segment in
-                    TranscriptRowView(
-                        segment: segment,
-                        timestamp: Formatters.elapsedHHmmss(
-                            at: segment.startTime,
-                            sessionId: segment.sessionId,
-                            sessions: recordingSessions,
-                            fallbackTimeBase: timeBase
-                        ),
-                        showsTranslatedText: showsTranslatedText,
-                        allowsTextSelection: allowsTextSelection
-                    )
-                    .equatable()
-                    .id(segment.id)
-                }
-            }
-            .scrollTargetLayout()
-            .padding(DahliaDesign.tabContentInset)
-            .onAppear(perform: showStart)
-            .onChange(of: store.latestConfirmedID) { _, _ in
-                guard isFollowingLatest, !store.hasLaterSegments else { return }
-                scrollToLatest(in: &scrollPosition)
             }
         }
     }
