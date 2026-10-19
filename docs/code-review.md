@@ -57,7 +57,7 @@ PR を approve できる reviewer は、次のいずれかを含む PR を appro
 finding がない場合も同じ。
 
 - lint、format、型検査の抑制の追加または拡大
-- ユーザーから見える既定値の変更
+- 設定項目の既定値の変更（初期スクロール位置や余白など、設定を持たない UI の初期状態は含まない）
 - database migration の追加または変更
 - telemetry field または SDK 呼び出しの追加
 - 依存の追加または更新
