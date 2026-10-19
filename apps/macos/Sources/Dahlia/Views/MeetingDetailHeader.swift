@@ -47,6 +47,13 @@ private struct MeetingNameHeader: View {
                         try? await Task.sleep(for: .milliseconds(50))
                         isFocused = true
                     }
+                    // The transcript tab builds this header lazily, so scrolling far away removes the editor
+                    // without a focus change. Treat that like a blur instead of dropping the typed name on return.
+                    .onDisappear {
+                        if isEditing {
+                            onCommit()
+                        }
+                    }
             } else {
                 HStack(spacing: 4) {
                     Button(action: onBeginEditing) {
