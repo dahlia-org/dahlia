@@ -20,6 +20,7 @@ final class TranscriptStore: ObservableObject { // swiftlint:disable:this type_b
         case earlier
         case later
         case latest
+        case earliest
         case visible
     }
 
@@ -55,6 +56,7 @@ final class TranscriptStore: ObservableObject { // swiftlint:disable:this type_b
     private var failedPageLoad: FailedPageLoad?
     private var pendingLatestReloadWaiters: [CheckedContinuation<Bool, Never>] = []
     private var needsVisibleReload = false
+    private var needsEarliestLoad = false
     private var deferredConfirmedSegments: [UUID: TranscriptSegment] = [:]
 
     // MARK: - Unconfirmed Segment Throttle (per source)
@@ -145,6 +147,17 @@ final class TranscriptStore: ObservableObject { // swiftlint:disable:this type_b
         return await loadPage(.after(cursor), failure: .later)
     }
 
+    /// Replace the window with the start of the transcript so the tab can open at its top.
+    @discardableResult
+    func loadEarliest() async -> Bool {
+        guard hasEarlierSegments else { return false }
+        if isLoadingPage {
+            needsEarliestLoad = true
+            return false
+        }
+        return await loadPage(.earliest, failure: .earliest)
+    }
+
     @discardableResult
     func reloadLatest() async -> Bool {
         await requestLatestReload()
@@ -177,6 +190,8 @@ final class TranscriptStore: ObservableObject { // swiftlint:disable:this type_b
             await loadLater()
         case .latest:
             await reloadLatest()
+        case .earliest:
+            await loadEarliest()
         case .visible:
             await reloadVisible()
         case nil:
@@ -334,7 +349,7 @@ final class TranscriptStore: ObservableObject { // swiftlint:disable:this type_b
         let didLoad: Bool
         do {
             let limit: Int = switch direction {
-            case .latest: Self.initialPageSize
+            case .latest, .earliest: Self.initialPageSize
             case .startingAt: max(confirmedSegmentCount, Self.pageSize)
             case .before, .after: Self.pageSize
             }
@@ -357,6 +372,8 @@ final class TranscriptStore: ObservableObject { // swiftlint:disable:this type_b
                     applyLatestPage(page, preservingExistingProjection: projectionChangedDuringLoad)
                     hasLaterSegments = page.hasLater
                     isFollowingLatest = false
+                case .earliest:
+                    applyEarliestPage(page)
                 }
                 didLoad = true
             } else {
@@ -376,6 +393,10 @@ final class TranscriptStore: ObservableObject { // swiftlint:disable:this type_b
             isLoadingPage = false
             isLoadingInitialPage = false
             await performPendingLatestReloadIfNeeded()
+            if needsEarliestLoad {
+                needsEarliestLoad = false
+                await loadEarliest()
+            }
             if needsVisibleReload {
                 needsVisibleReload = false
                 await reloadVisible()
@@ -405,6 +426,16 @@ final class TranscriptStore: ObservableObject { // swiftlint:disable:this type_b
         hasLaterSegments = false
         hasNewerSegments = false
         isFollowingLatest = true
+    }
+
+    /// Segments added during the load lie past this page and reload from SQLite with later pages.
+    private func applyEarliestPage(_ page: TranscriptPage) {
+        deferredConfirmedSegments.removeAll()
+        segments = (page.segments + segments.filter { !$0.isConfirmed }).sorted(by: Self.precedes)
+        hasEarlierSegments = false
+        hasLaterSegments = page.hasLater
+        hasNewerSegments = false
+        isFollowingLatest = !page.hasLater
     }
 
     private func mergeEarlierPage(
@@ -454,6 +485,7 @@ final class TranscriptStore: ObservableObject { // swiftlint:disable:this type_b
 
     private func cancelPendingLatestReloads() {
         needsVisibleReload = false
+        needsEarliestLoad = false
         let waiters = pendingLatestReloadWaiters
         pendingLatestReloadWaiters.removeAll()
         waiters.forEach { $0.resume(returning: false) }

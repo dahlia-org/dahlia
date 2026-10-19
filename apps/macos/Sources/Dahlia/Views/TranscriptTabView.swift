@@ -11,7 +11,7 @@ struct TranscriptTabView<Header: View, Footer: View>: View {
     @ViewBuilder let footer: Footer
 
     @State private var scrollPosition = ScrollPosition(idType: TranscriptSegment.ID.self)
-    @State private var isFollowingLatest = true
+    @State private var isFollowingLatest = false
     @State private var pageLoadTask: Task<Void, Never>?
 
     var body: some View {
@@ -103,13 +103,22 @@ struct TranscriptTabView<Header: View, Footer: View>: View {
             }
             .scrollTargetLayout()
             .padding(DahliaDesign.tabContentInset)
-            .onAppear {
-                scrollToLatest(in: &scrollPosition)
-            }
+            .onAppear(perform: showStart)
             .onChange(of: store.latestConfirmedID) { _, _ in
                 guard isFollowingLatest, !store.hasLaterSegments else { return }
                 scrollToLatest(in: &scrollPosition)
             }
+        }
+    }
+
+    /// Open at the page top like the other tabs instead of jumping to the latest segment.
+    private func showStart() {
+        isFollowingLatest = false
+        scrollPosition.scrollTo(edge: .top)
+        guard store.hasEarlierSegments, pageLoadTask == nil else { return }
+        pageLoadTask = Task { @MainActor in
+            await store.loadEarliest()
+            pageLoadTask = nil
         }
     }
 

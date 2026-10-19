@@ -973,6 +973,14 @@ final class MeetingRepository {
                 hasLater = false
                 records = Array(fetched.prefix(pageLimit).reversed())
 
+            case .earliest:
+                let fetched = try TextContentAccess.transcript(
+                    meetingId: meetingId, confirmedOnly: true, limit: fetchLimit, in: db
+                )
+                hasEarlier = false
+                hasLater = fetched.count > pageLimit
+                records = Array(fetched.prefix(pageLimit))
+
             case let .before(cursor):
                 let fetched = try TextContentAccess.transcript(
                     meetingId: meetingId, order: .reverse,

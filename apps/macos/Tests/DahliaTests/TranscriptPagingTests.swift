@@ -82,6 +82,63 @@
         }
 
         @Test
+        func loadEarliestReplacesLatestWindowWithTranscriptStart() async throws {
+            let fixture = try makePagingFixture(segmentCount: 1000)
+            let repository = MeetingRepository(dbQueue: fixture.database.dbQueue)
+            let store = TranscriptStore()
+            try store.configurePaging(
+                meetingId: fixture.meetingId,
+                loader: TranscriptPageLoader(dbQueue: fixture.database.dbQueue),
+                initialPage: repository.fetchTranscriptPage(
+                    forMeetingId: fixture.meetingId, direction: .latest, limit: TranscriptStore.initialPageSize
+                )
+            )
+            #expect(await store.loadEarliest())
+            #expect(store.segments.map(\.id) == Array(fixture.orderedIds.prefix(TranscriptStore.initialPageSize)))
+            #expect(!store.hasEarlierSegments && store.hasLaterSegments)
+            #expect(await !store.loadEarliest())
+
+            let latest = TranscriptSegment(startTime: .now, text: "live", isConfirmed: true)
+            store.addSegment(latest)
+            #expect(!store.segments.contains { $0.id == latest.id })
+            #expect(store.hasNewerSegments)
+        }
+
+        @Test
+        func loadEarliestRequestedDuringInFlightPageRunsAfterIt() async throws {
+            let fixture = try makePagingFixture(segmentCount: 1000)
+            let repository = MeetingRepository(dbQueue: fixture.database.dbQueue)
+            let store = TranscriptStore()
+            try store.configurePaging(
+                meetingId: fixture.meetingId,
+                loader: TranscriptPageLoader(dbQueue: fixture.database.dbQueue),
+                initialPage: repository.fetchTranscriptPage(
+                    forMeetingId: fixture.meetingId, direction: .latest, limit: TranscriptStore.initialPageSize
+                )
+            )
+            let databaseEntered = AsyncPagingGate()
+            let releaseDatabase = DispatchSemaphore(value: 0)
+            let blocker = Task.detached {
+                try await fixture.database.dbQueue.write { _ in
+                    Task { await databaseEntered.open() }
+                    releaseDatabase.wait()
+                }
+            }
+            await databaseEntered.wait()
+
+            let earlier = Task { @MainActor in await store.loadEarlier() }
+            await Task.yield()
+            #expect(store.isLoadingPage)
+            #expect(await !store.loadEarliest())
+            releaseDatabase.signal()
+
+            #expect(await earlier.value)
+            try await blocker.value
+            #expect(store.segments.map(\.id) == Array(fixture.orderedIds.prefix(TranscriptStore.initialPageSize)))
+            #expect(!store.hasEarlierSegments)
+        }
+
+        @Test
         func pagingFiltersUnconfirmedAndOtherMeetingsAndReportsPageEdges() throws {
             let fixture = try makePagingFixture(segmentCount: 3)
             let otherMeetingId = UUID.v7()

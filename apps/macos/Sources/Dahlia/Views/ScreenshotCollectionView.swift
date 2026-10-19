@@ -45,6 +45,8 @@ struct ScreenshotCollectionView: NSViewRepresentable {
         scrollView.hasVerticalScroller = true
         scrollView.hasHorizontalScroller = false
         scrollView.autohidesScrollers = true
+        // detailTopPadding already clears the window header, so skip AppKit's titlebar inset.
+        scrollView.automaticallyAdjustsContentInsets = false
         collectionView.frame = scrollView.contentView.bounds
         scrollView.documentView = collectionView
 
