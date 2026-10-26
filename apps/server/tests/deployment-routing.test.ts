@@ -126,12 +126,14 @@ describe("deployment routing", () => {
   });
 
   it("uses the canonical App URL for proxy-backed MCP setup", async () => {
-    const app = createApp({ config: { ...headerConfig, databricksAppUrl: "https://dahlia.aws.databricksapps.com" }, authStore: testStore() });
+    const config = { ...headerConfig, databricksAppUrl: "https://dahlia.aws.databricksapps.com", databricksHost: "https://workspace.example" };
+    const app = createApp({ config, authStore: testStore() });
     expect(await (await app.request("/api/auth/mode")).json()).toEqual({
       provider: "header",
       mcp: {
         url: "https://dahlia.example/mcp",
         proxyUrl: "https://dahlia.aws.databricksapps.com/mcp",
+        workspaceUrl: "https://workspace.example",
         databricksProxy: true,
         available: true,
       },

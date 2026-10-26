@@ -10,7 +10,7 @@ export type MCPClient = "mcpJSON" | "claude" | "codex";
 
 type MCPSettings = { url: string; available: boolean } & (
   { databricksProxy: false; proxyUrl?: never }
-  | { databricksProxy: true; proxyUrl: string }
+  | { databricksProxy: true; proxyUrl: string; workspaceUrl: string }
 );
 
 interface MCPConnectionInfo { mcp: MCPSettings }
@@ -21,12 +21,14 @@ export function parseMCPConnectionInfo(value: unknown): MCPConnectionInfo {
     && "databricksProxy" in mcp && typeof mcp.databricksProxy === "boolean"
     && "available" in mcp && typeof mcp.available === "boolean") {
     const proxyUrl = "proxyUrl" in mcp ? mcp.proxyUrl : undefined;
+    const workspaceUrl = "workspaceUrl" in mcp ? mcp.workspaceUrl : undefined;
     try {
       const protocol = new URL(mcp.url).protocol;
       if (!["http:", "https:"].includes(protocol)) throw new Error();
       if (!mcp.databricksProxy) return { mcp: { url: mcp.url, databricksProxy: false, available: mcp.available } };
-      if (typeof proxyUrl === "string" && ["http:", "https:"].includes(new URL(proxyUrl).protocol)) {
-        return { mcp: { url: mcp.url, proxyUrl, databricksProxy: true, available: mcp.available } };
+      if (typeof proxyUrl === "string" && ["http:", "https:"].includes(new URL(proxyUrl).protocol)
+        && typeof workspaceUrl === "string" && ["http:", "https:"].includes(new URL(workspaceUrl).protocol)) {
+        return { mcp: { url: mcp.url, proxyUrl, workspaceUrl, databricksProxy: true, available: mcp.available } };
       }
     } catch { /* Report the same invalid-response error below. */ }
   }
@@ -46,13 +48,13 @@ export function mcpConnectionOutput(client: MCPClient, mcp: MCPConnectionInfo["m
     return JSON.stringify({
       mcpServers: {
         dahlia: mcp.databricksProxy
-          ? { type: "stdio", command: "uvx", args: ["uc-mcp-proxy", "--url", url, "--profile", normalizedProfile] }
+          ? { type: "stdio", command: "ug", args: ["mcp-proxy", "--url", url, "--host", mcp.workspaceUrl, "--profile", normalizedProfile] }
           : http,
       },
     }, null, 2);
   }
   if (mcp.databricksProxy) {
-    const command = `uvx uc-mcp-proxy --url ${shellArgument(url)} --profile ${shellArgument(normalizedProfile)}`;
+    const command = `ug mcp-proxy --url ${shellArgument(url)} --host ${shellArgument(mcp.workspaceUrl)} --profile ${shellArgument(normalizedProfile)}`;
     return client === "claude"
       ? `claude mcp add --scope user dahlia -- ${command}`
       : `codex mcp add dahlia -- ${command}`;
@@ -120,8 +122,8 @@ export function MCPConnectionDialog({ onClose, memory = false }: { onClose: () =
       {connection?.mcp.databricksProxy && <div className="grid gap-1 rounded-lg border bg-muted/50 p-3 text-sm">
         <strong>{uiText("Databricks Apps authentication", "Databricks Apps の認証")}</strong>
         <span className="leading-6 text-muted-foreground">{uiText(
-          "This deployment connects through uvx uc-mcp-proxy. Install uv and configure a Databricks CLI profile first; an expired OAuth profile opens browser login automatically.",
-          "この環境では uvx uc-mcp-proxy を経由します。事前に uv を用意し、Databricks CLI プロファイルを設定してください。OAuth の期限切れ時はブラウザ認証が自動で開きます。",
+          "This deployment connects through ug mcp-proxy. First install ug with uv tool install git+https://github.com/databricks/unity-gateway and configure a Databricks CLI profile for this workspace. When its OAuth login expires, run databricks auth login again.",
+          "この環境では ug mcp-proxy を経由します。事前に uv tool install git+https://github.com/databricks/unity-gateway で ug をインストールし、このワークスペースの Databricks CLI プロファイルを設定してください。OAuth の期限が切れたら databricks auth login を再実行してください。",
         )}</span>
       </div>}
       {mcpUnavailable && <div className="grid gap-1 rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm" role="status">

@@ -75,6 +75,8 @@ export interface AppConfig {
   lakebaseDatabase?: LakebaseDatabaseConfig;
   baseUrl: string;
   databricksAppUrl?: string;
+  /** Workspace origin of the Databricks App, used by `ug mcp-proxy --host`. */
+  databricksHost?: string;
   signOutUrl?: string;
   provider?: ProviderConfig;
   googleClientId?: string;
@@ -196,14 +198,18 @@ function loadLakebaseDatabase(
   };
 }
 
+function databricksHost(value: string): string {
+  const host = validateBaseUrl(value.includes("://") ? value : `https://${value}`, "DATABRICKS_HOST");
+  if (new URL(host).pathname !== "/") throw new Error("DATABRICKS_HOST must be a workspace origin without a path");
+  return host;
+}
+
 function databricksWorkspaceConfig(
   env: Record<string, string | undefined>,
   requiredForUse: boolean,
 ): DatabricksWorkspaceConfig | undefined {
   if (!requiredForUse) return undefined;
-  const hostValue = required(env, "DATABRICKS_HOST");
-  const host = validateBaseUrl(hostValue.includes("://") ? hostValue : `https://${hostValue}`, "DATABRICKS_HOST");
-  if (new URL(host).pathname !== "/") throw new Error("DATABRICKS_HOST must be a workspace origin without a path");
+  const host = databricksHost(required(env, "DATABRICKS_HOST"));
   return {
     host,
     clientId: required(env, "DATABRICKS_CLIENT_ID"),
@@ -218,10 +224,7 @@ function providerConfig(
   databricks: DatabricksWorkspaceConfig | undefined,
 ): ProviderConfig | undefined {
   if (backend === "databricks") {
-    const hostValue = required(env, "DATABRICKS_HOST");
-    const host = databricks?.host
-      ?? validateBaseUrl(hostValue.includes("://") ? hostValue : `https://${hostValue}`, "DATABRICKS_HOST");
-    if (new URL(host).pathname !== "/") throw new Error("DATABRICKS_HOST must be a workspace origin without a path");
+    const host = databricks?.host ?? databricksHost(required(env, "DATABRICKS_HOST"));
     return {
       backend,
       baseUrl: `${host}/ai-gateway/codex/v1`,
@@ -329,6 +332,7 @@ export function loadConfig(env: Record<string, string | undefined>): AppConfig {
     lakebaseDatabase: loadLakebaseDatabase(env, databaseType),
     baseUrl,
     databricksAppUrl: databricksAppUrl ? validateBaseUrl(databricksAppUrl, "DATABRICKS_APP_URL") : undefined,
+    databricksHost: databricksAppUrl && env.DATABRICKS_HOST?.trim() ? databricksHost(env.DATABRICKS_HOST.trim()) : undefined,
     signOutUrl,
     provider: providerConfig(env, aiBackend, databricksWorkspace),
     oauthRedirectUris: csv(env.DAHLIA_OAUTH_REDIRECT_URIS),
