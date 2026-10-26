@@ -415,7 +415,7 @@ describe("desktop-style meeting layout", () => {
   it("generates direct and Databricks proxy MCP client settings", () => {
     const url = "https://dahlia.aws.databricksapps.com/mcp";
     const direct = { url, databricksProxy: false, available: true } as const;
-    const proxy = { url: "https://dahlia.example/mcp", proxyUrl: url, databricksProxy: true, available: true } as const;
+    const proxy = { url: "https://dahlia.example/mcp", proxyUrl: url, workspaceUrl: "https://workspace.example", databricksProxy: true, available: true } as const;
     expect(mcpConnectionOutput("codex", direct, "DEFAULT", "share")).toContain("codex mcp login dahlia --scopes mcp:read,mcp:memory:write");
     expect(mcpConnectionOutput("codex", direct, "DEFAULT", "read")).toContain("codex mcp login dahlia --scopes mcp:read,mcp:memory:read");
     for (const mode of ["read", "share"] as const) {
@@ -428,21 +428,22 @@ describe("desktop-style meeting layout", () => {
     expect(mcpConnectionOutput("claude", direct)).toBe(`claude mcp add --scope user --transport http dahlia '${url}'`);
     expect(JSON.parse(mcpConnectionOutput("mcpJSON", direct))).toEqual({ mcpServers: { dahlia: { type: "http", url } } });
     expect(mcpConnectionOutput("codex", proxy, "team profile"))
-      .toContain(`uvx uc-mcp-proxy --url '${url}' --profile 'team profile'`);
+      .toContain(`ug mcp-proxy --url '${url}' --host 'https://workspace.example' --profile 'team profile'`);
     expect(JSON.parse(mcpConnectionOutput("mcpJSON", proxy, "team"))).toEqual({
-      mcpServers: { dahlia: { type: "stdio", command: "uvx", args: ["uc-mcp-proxy", "--url", url, "--profile", "team"] } },
+      mcpServers: { dahlia: { type: "stdio", command: "ug", args: ["mcp-proxy", "--url", url, "--host", "https://workspace.example", "--profile", "team"] } },
     });
   });
 
   it("validates MCP settings before rendering client commands", () => {
     const settings = { mcp: { url: "https://dahlia.example/mcp", databricksProxy: false, available: true } };
     expect(parseMCPConnectionInfo(settings)).toEqual(settings);
-    expect(parseMCPConnectionInfo({ mcp: { ...settings.mcp, databricksProxy: true, proxyUrl: "https://dahlia.aws.databricksapps.com/mcp" } }))
-      .toMatchObject({ mcp: { url: settings.mcp.url, proxyUrl: "https://dahlia.aws.databricksapps.com/mcp" } });
+    const proxy = { ...settings.mcp, databricksProxy: true, proxyUrl: "https://dahlia.aws.databricksapps.com/mcp", workspaceUrl: "https://workspace.example" };
+    expect(parseMCPConnectionInfo({ mcp: proxy })).toEqual({ mcp: proxy });
     expect(() => parseMCPConnectionInfo({ provider: "header" })).toThrow("invalid MCP settings");
     expect(() => parseMCPConnectionInfo({ mcp: { ...settings.mcp, url: "javascript:alert(1)" } })).toThrow("invalid MCP settings");
     expect(() => parseMCPConnectionInfo({ mcp: { ...settings.mcp, databricksProxy: true } })).toThrow("invalid MCP settings");
-    expect(() => parseMCPConnectionInfo({ mcp: { ...settings.mcp, databricksProxy: true, proxyUrl: "javascript:alert(1)" } })).toThrow("invalid MCP settings");
+    expect(() => parseMCPConnectionInfo({ mcp: { ...proxy, proxyUrl: "javascript:alert(1)" } })).toThrow("invalid MCP settings");
+    expect(() => parseMCPConnectionInfo({ mcp: { ...proxy, workspaceUrl: undefined } })).toThrow("invalid MCP settings");
   });
 
   it("omits unsupported sign-out and sharing sections for proxy accounts", () => {

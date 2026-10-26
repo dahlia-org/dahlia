@@ -84,7 +84,7 @@ window.fetch = async (input, init) => {
   });
   if (url.pathname === "/api/v1/models") return Response.json({ data: [{ id: "gpt-5.4", display_name: "GPT-5.4" }], models: [{ slug: "gpt-5.4", supported_reasoning_levels: [{ effort: "medium" }], default_reasoning_level: "medium" }] });
   if (url.pathname === "/api/v1/capabilities") return Response.json(previewMode ? { meetingSummaryGeneration: { version: 1, sources: ["transcript"] } } : {});
-  if (url.pathname === "/api/auth/mode") return Response.json({ provider: "header", mcp: { url: "https://dahlia.example/mcp", proxyUrl: "https://dahlia.aws.databricksapps.com/mcp", databricksProxy: true, available: true } });
+  if (url.pathname === "/api/auth/mode") return Response.json({ provider: "header", mcp: { url: "https://dahlia.example/mcp", proxyUrl: "https://dahlia.aws.databricksapps.com/mcp", workspaceUrl: "https://workspace.example", databricksProxy: true, available: true } });
   if (url.pathname === "/api/v1/session") return Response.json({ user: { id: "browser-fixture", name: previewMode ? "Yuki Tanaka" : "Tester", email: "yuki@example.com" },  capabilities: { sync: true, sharing: true, sessions: false, admin: false } });
   if (url.pathname === "/api/auth/organization/list") return Response.json([{ id: "o1", name: previewMode ? (ja ? "ダリア製品チーム" : "Dahlia Product Team") : "Test Organization", slug: "test-organization" }]);
   if (url.pathname === "/api/v1/organizations") return Response.json({ items: [{ id: "o1", name: "Test Organization" }], nextCursor: null });
@@ -326,7 +326,7 @@ async function run() {
   await until(() => document.querySelector('[role="menu"]'));
   assert(!document.querySelector('[role="menu"] a[href^="/workspaces"]'), "Workspace navigation leaked into the account menu");
   menuItem("Connect with MCP").click();
-  await until(() => document.querySelector('[role="dialog"] pre')?.textContent?.includes("uc-mcp-proxy"));
+  await until(() => document.querySelector('[role="dialog"] pre')?.textContent?.includes("mcp-proxy"));
   assert(document.querySelector('[role="dialog"]')?.textContent?.includes("Databricks Apps authentication"), "Databricks Apps guidance is missing");
   assert(document.querySelector('[role="dialog"] [role="tab"][aria-selected="true"]')?.textContent === "mcp.json", "MCP client selection must use tab semantics");
   const profile = document.querySelector<HTMLInputElement>('[role="dialog"] input')!;
