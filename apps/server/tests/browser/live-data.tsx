@@ -7,6 +7,7 @@ import { App, SyncedMeeting } from "@dahlia-ai/ui";
 import { DetailTabs } from "@dahlia-ai/ui/screens/MeetingContent";
 import { refreshData } from "@dahlia-ai/ui/api/live-data";
 import { encodeId } from "@dahlia-ai/ui/model/typeid";
+import { DEFAULT_WORKSPACE_GENERATION_SETTINGS } from "@dahlia-ai/ui/model/workspace-generation-settings";
 import "@dahlia-ai/ui/styles.css";
 
 const previewMode = new URLSearchParams(location.search).has("preview");
@@ -40,7 +41,7 @@ let omittedFile: number | undefined;
 const filePageSize = navigationTest ? 2 : 12;
 let sharingEnabled = false;
 let meetingName = previewMode ? (ja ? "新しいオンボーディング体験のデザインレビュー" : "Design review: a better first-run experience") : "Recording meeting";
-const workspace = { workspaceId, organizationId: "o1", organizationName: previewMode ? (ja ? "ダリア製品チーム" : "Dahlia Product Team") : "Test Organization", name: previewMode ? (ja ? "プロダクト開発" : "Product & design") : "Test Workspace", role: "admin", hasResources: true, meetingDeletionGraceDays: 30, revision: 1, createdAt: "2026-09-07T00:00:00Z" };
+const workspace = { workspaceId, organizationId: "o1", organizationName: previewMode ? (ja ? "ダリア製品チーム" : "Dahlia Product Team") : "Test Organization", name: previewMode ? (ja ? "プロダクト開発" : "Product & design") : "Test Workspace", role: "admin", hasResources: true, meetingDeletionGraceDays: 30, generationSettings: DEFAULT_WORKSPACE_GENERATION_SETTINGS, revision: 1, createdAt: "2026-09-07T00:00:00Z" };
 const workspaces = [workspace];
 const projects = Array.from({ length: previewMode ? 4 : 40 }, (_, index) => ({ projectId: projectId(index), workspaceId, parentProjectId: null as string | null, name: previewMode ? [ja ? "デザインレビュー" : "Design reviews", ja ? "リサーチ" : "Research", ja ? "リリース計画" : "Release planning", ja ? "チーム定例" : "Team meetings"][index]! : `Project ${index}`, path: previewMode ? [ja ? "デザインレビュー" : "Design reviews", ja ? "リサーチ" : "Research", ja ? "リリース計画" : "Release planning", ja ? "チーム定例" : "Team meetings"][index]! : `Project ${index}`, revision: 1, directMeetingCount: 0, subtreeMeetingCount: 0 }));
 const previewSummary = {
@@ -128,11 +129,12 @@ window.fetch = async (input, init) => {
   }
   if (url.pathname.startsWith(`${base}/meetings/`)) return Response.json(meeting(url.pathname.split("/").at(-1)!));
   if (url.pathname === "/api/v1/transactions") {
-    const body: { id: string; operations: { entity: string; action: string; entityId: string; baseRevision?: number; data: { name?: string; preservePermissions?: boolean; icon?: string; color?: string; parentProjectId?: string | null } }[] } = await request.json();
+    const body: { id: string; operations: { entity: string; action: string; entityId: string; baseRevision?: number; data: { name?: string; preservePermissions?: boolean; force?: boolean; icon?: string; color?: string; parentProjectId?: string | null } }[] } = await request.json();
     for (const op of body.operations) {
       if (op.entity === "workspace" && op.action === "update") Object.assign(workspace, op.data);
       if (op.entity === "workspace" && op.action === "reset") {
         assert(op.baseRevision === workspace.revision && op.data.preservePermissions === false, "Workspace deletion must check revision and remove permissions");
+        assert(op.data.force === workspace.hasResources, "Workspace deletion must force only when resources remain");
         workspaces.splice(workspaces.findIndex((v) => v.workspaceId === op.entityId), 1);
       }
       if (op.entity === "meeting") meetingName = op.data.name!;
@@ -683,12 +685,18 @@ async function run() {
     && [...document.querySelectorAll('[role="tab"]')].some((tab) => tab.textContent === "Settings"));
   selectTab("Settings");
   await until(() => [...document.querySelectorAll("button")].some((b) => b.textContent === "Delete Workspace"));
-  assert(button("Delete Workspace").disabled, "Nonempty Workspace allowed deletion");
+  button("Delete Workspace").click();
+  await until(() => document.querySelector('.action-dialog [data-confirm]')?.textContent === "Delete all content");
+  document.querySelector<HTMLButtonElement>('.action-dialog [data-cancel]')!.click();
+  await until(() => !document.querySelector('.action-dialog'));
   workspace.hasResources = false;
+  const detailReads = requests.filter((url) => url === base).length;
   notify();
-  await until(() => !button("Delete Workspace").disabled);
+  await until(() => requests.filter((url) => url === base).length > detailReads);
+  await new Promise((resolve) => setTimeout(resolve, 50));
   button("Delete Workspace").click();
   await until(() => document.querySelector('.action-dialog [data-confirm]'));
+  assert(document.querySelector('.action-dialog [data-confirm]')!.textContent === "Delete Workspace", "Empty Workspace deletion used the forced confirmation");
   assert(workspaces.some((v) => v.workspaceId === workspaceId), "Opening confirmation deleted the Workspace");
   failures.set("/api/v1/transactions", 409);
   document.querySelector<HTMLButtonElement>('.action-dialog [data-confirm]')!.click();

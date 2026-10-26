@@ -268,13 +268,16 @@ export function WorkspaceMeetings({ session, workspaceId, serverAI = true }: { s
   };
   const deleteWorkspace = () => {
     if (!workspace || workspace.role !== "admin") return;
+    const force = workspace.hasResources !== false;
     openDialog({
-      title: uiText("Delete Workspace?", "ワークスペースを削除しますか？"),
-      description: uiText(`Delete the empty Workspace “${workspace.name}”? This cannot be undone.`, `空のワークスペース「${workspace.name}」を削除します。この操作は取り消せません。`),
-      confirmLabel: uiText("Delete Workspace", "ワークスペースを削除"), destructive: true,
+      title: force ? uiText("Delete Workspace and all content?", "ワークスペースとすべての内容を削除しますか？") : uiText("Delete Workspace?", "ワークスペースを削除しますか？"),
+      description: force
+        ? uiText(`Permanently delete “${workspace.name}” and all its Projects, meetings, files and recordings, including meetings in the trash. This cannot be undone.`, `「${workspace.name}」と、配下のすべてのプロジェクト・ミーティング・ファイル・録音（ごみ箱内のミーティングを含む）を削除します。この操作は取り消せません。`)
+        : uiText(`Delete the empty Workspace “${workspace.name}”? This cannot be undone.`, `空のワークスペース「${workspace.name}」を削除します。この操作は取り消せません。`),
+      confirmLabel: force ? uiText("Delete all content", "すべて削除") : uiText("Delete Workspace", "ワークスペースを削除"), destructive: true,
       onSubmit: async () => {
         await commitSyncTransaction(workspaceId, [{ entity: "workspace", action: "reset", entityId: workspaceId,
-          baseRevision: workspace.revision, data: { preservePermissions: false } }], setRecovering);
+          baseRevision: workspace.revision, data: { preservePermissions: false, force } }], setRecovering);
         navigateDashboard("/dashboard");
       },
     });
@@ -339,8 +342,8 @@ export function WorkspaceMeetings({ session, workspaceId, serverAI = true }: { s
         {workspace && <WorkspaceMemory key={`memory-${workspaceId}`} workspaceId={workspaceId} role={workspace.role} />}
         {workspace?.role === "admin" && <WorkspaceTransfer workspace={workspace} />}
         {workspace?.role === "admin" && !personal && <section className="workspace-settings"><h2>{uiText("Delete Workspace", "ワークスペースを削除")}</h2>
-          <div className="collection-heading"><p>{uiText("Only empty Workspaces can be deleted. Transfer resources or wait for meetings in the trash to be permanently deleted.", "空のワークスペースのみ削除できます。ごみ箱内のミーティングを含むリソースが残っている場合は、先に移管または削除完了を待ってください。")}</p>
-          <button className="secondary danger-button" disabled={workspace.hasResources !== false} onClick={deleteWorkspace}>{uiText("Delete Workspace", "ワークスペースを削除")}</button></div>
+          <div className="collection-heading"><p>{uiText("Deleting a Workspace also permanently deletes all its Projects, meetings, files and recordings, including meetings in the trash.", "ワークスペースを削除すると、ごみ箱内のミーティングを含む、配下のすべてのプロジェクト・ミーティング・ファイル・録音も完全に削除されます。")}</p>
+          <button className="secondary danger-button" onClick={deleteWorkspace}>{uiText("Delete Workspace", "ワークスペースを削除")}</button></div>
         </section>}
       </> },
     ]} />}

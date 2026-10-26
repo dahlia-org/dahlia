@@ -6268,6 +6268,9 @@
                       "properties": {
                         "preservePermissions": {
                           "type": "boolean"
+                        },
+                        "force": {
+                          "type": "boolean"
                         }
                       },
                       "additionalProperties": false

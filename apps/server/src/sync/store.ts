@@ -1820,7 +1820,7 @@ function createIdentityStore(
             }], operation.id);
           }
           await assertRevision(transaction, "workspace", operation.entityId, operation.baseRevision);
-          if (data.preservePermissions !== true) {
+          if (data.preservePermissions !== true && data.force !== true) {
             const [content] = await db.select({ id: schema.syncedWorkspace.workspaceId }).from(schema.syncedWorkspace)
               .where(and(adminWorkspace(transaction.workspaceId), workspaceHasResources(schema.syncedWorkspace.workspaceId))).limit(1);
             if (content) throw new SyncTransactionError(409, "workspace_not_empty", [], operation.id);
