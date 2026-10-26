@@ -279,8 +279,9 @@ describe("Workspace memory", () => {
       const result = await f.memory.search(owner, workspaceId, "diagram", false, new AbortController().signal);
       expect(result.sources[0]!.images).toHaveLength(1);
       expect(result.sources[0]!.canonicalExcerpt).toContain("OCR-MARKER");
+      // A text-derived fact from an image chunk still cites its meeting.
       f.facts.set(fact.id, { ...fact, attachments: [] });
-      expect((await f.memory.search(owner, workspaceId, "diagram", false, new AbortController().signal)).sources).toEqual([]);
+      expect((await f.memory.search(owner, workspaceId, "diagram", false, new AbortController().signal)).sources).toHaveLength(1);
       const readFileContent = f.sync.readFileContent.bind(f.sync);
       if (failure === "checksum") shot.contentHash = "0".repeat(64);
       else {

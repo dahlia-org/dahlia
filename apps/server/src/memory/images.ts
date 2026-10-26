@@ -34,8 +34,7 @@ export function validImageLineage(document: MemoryDocument, attachments: z.infer
   if (images?.entries.some((entry) => entry.documentId !== document.id)) return false;
   if (images && metadata?.dahlia_image_manifest !== canonicalJson(images)) return false;
   const context = metadata?.dahlia_image_context;
-  // A multimodal extraction without an explicit fact edge cannot establish image provenance.
-  if (Array.isArray(context) && context.length && !attachments?.length) return false;
+  // Images are optional: a fact without attachments is text-derived even when its chunk carried images.
   if (images?.entries.length && !Array.isArray(context)) return false;
   if (Array.isArray(context) && context.some((id) => !images?.entries.some((entry) => entry.attachmentId === id))) return false;
   return (attachments ?? []).every((attachment) => images?.entries.some((entry) => entry.documentId === document.id
