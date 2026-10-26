@@ -146,6 +146,30 @@ describe("AI chat boundary", () => {
     } finally { vi.unstubAllGlobals(); vi.restoreAllMocks(); }
   });
 
+  it("offers one memory search path and explains that saved notes are not all memory", async () => {
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    const transport = vi.fn<typeof fetch>(async () => { throw new Error("captured"); });
+    vi.stubGlobal("fetch", transport);
+    try {
+      const config = { provider: { backend: "openai", baseUrl: "https://provider.example/v1", apiKey: "test" },
+        baseUrl: "https://dahlia.example", foundationModels: ["test"] } as AppConfig;
+      const gateway = { models: async () => ({ data: [{ id: "test", display_name: "Test" }],
+        models: [{ slug: "test", display_name: "Test", supported_in_api: true, visibility: "list", default_reasoning_level: "low",
+          supported_reasoning_levels: [{ effort: "low", description: "Fast" }] }] }) } as unknown as GatewayService;
+      const service = createAiService(config, gateway, createMeetingTools({} as MeetingSyncService), transport, {} as never, {} as never);
+      const run = service.stream({ workspaceId, model: "test", reasoningEffort: "low", messages: [{ role: "user", content: "What do you remember?" }] },
+        identity, new Request("https://dahlia.example/api/v1/chat"));
+      await expect(run[Symbol.asyncIterator]().next()).rejects.toThrow("captured");
+      const body = JSON.parse(String(transport.mock.calls[0]![1]?.body)) as { tools: Array<{ name: string; description?: string }>; input: Array<{ role?: string; content?: unknown }> };
+      const names = body.tools.map(({ name }) => name);
+      expect(names).toEqual(expect.arrayContaining(["recall_memory", "reflect_memory", "list_memories", "list_knowledge_pages"]));
+      expect(names).not.toContain("recall_workspace_memory");
+      expect(names).not.toContain("reflect_workspace_memory");
+      expect(body.tools.find(({ name }) => name === "list_memories")!.description).toContain("An empty list does not mean memory is empty");
+      expect(JSON.stringify(body.input)).toContain("never report memory as empty from it");
+    } finally { vi.unstubAllGlobals(); vi.restoreAllMocks(); }
+  });
+
   it("uses the configured OpenAI Responses endpoint and credentials", async () => {
     const logged = vi.spyOn(console, "error").mockImplementation(() => {});
     const transport = vi.fn(async (_input: RequestInfo | URL, _init?: RequestInit) => {

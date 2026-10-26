@@ -1,5 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { createMemoryTools } from "../src/memory/tools";
+import { createDahliaMemoryTools } from "../src/memory/dahlia-tools";
+import type { DahliaMemory } from "../src/memory/dahlia";
 import { HindsightError } from "../src/memory/hindsight";
 import type { WorkspaceMemoryService } from "../src/memory/service";
 import { meetingRequestContext } from "../src/agent/tools";
@@ -83,6 +85,19 @@ describe("shared memory tools", () => {
       expect(result).not.toHaveProperty("isError");
       expect(JSON.stringify(result)).toContain("memory_encrypted_workspace_unsupported");
     }
+  });
+  it("keeps Dahlia Memory reads nonfatal in an encrypted Workspace while writes still fail", async () => {
+    const unsupported = () => Promise.reject(new RequestError(409, "memory_encrypted_workspace_unsupported"));
+    const tools = createDahliaMemoryTools({ search: unsupported, save: unsupported, pages: { list: unsupported } } as unknown as DahliaMemory);
+    const context = { requestContext: meetingRequestContext(identity, workspaceId), abortSignal: signal } as never;
+    const reads = [[tools.recall_memory, { scope: "auto", query: "Decisions" }], [tools.reflect_memory, { scope: "auto", query: "Decisions" }],
+      [tools.list_knowledge_pages, { workspaceId: encodeId("workspace", workspaceId) }]] as const;
+    for (const [read, args] of reads) {
+      expect(await read.execute!(args as never, context)).toMatchObject({ unavailable: true, code: "memory_encrypted_workspace_unsupported" });
+    }
+    if (!("save_memory" in tools)) throw new Error("writable tools expected");
+    await expect(tools.save_memory.execute!({ scope: "personal", id: encodeId("sharedMemory", uuidV7()), content: "x", revision: 0 }, context))
+      .rejects.toThrow("memory_encrypted_workspace_unsupported");
   });
   it("advertises memory only when configured and the dedicated memory scope is granted", async () => {
     const { tools } = fixture();
