@@ -7,6 +7,8 @@ import type { WorkspaceMemoryService } from "./service";
 import { HindsightError } from "./hindsight";
 import { memorySearchOptions } from "./dahlia";
 
+export const memoryUnavailableInstruction = "Tell the user memory is unavailable; continue with the canonical meeting tools. Never claim there are no relevant meetings based on this failure.";
+
 export function createMemoryTools(memory: WorkspaceMemoryService) {
   const { project, after, before, depth } = memorySearchOptions;
   const base = { workspace_id: publicIdSchema("workspace"), query: z.string().min(1).max(4000) };
@@ -34,7 +36,7 @@ export function createMemoryTools(memory: WorkspaceMemoryService) {
         const unsupported = error instanceof RequestError && error.status === 409 && error.code === "memory_encrypted_workspace_unsupported";
         if (signal.aborted || (error instanceof RequestError && !unsupported)) throw error;
         return { unavailable: true, code: error instanceof HindsightError || unsupported ? error.code : "memory_unavailable",
-          instruction: "Tell the user memory is unavailable; continue with the canonical meeting tools. Never claim there are no relevant meetings based on this failure." };
+          instruction: memoryUnavailableInstruction };
       }
     },
   }), mcpSchema, (input) => ({ project_id: null, after: null, before: null, depth: null, ...input }));
