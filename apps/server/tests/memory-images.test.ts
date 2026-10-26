@@ -142,12 +142,13 @@ describe("Memory inline screenshots", () => {
     f.readFileContent.mockImplementation(async () => { f.files.clear(); return { upstream: new Response("image-0") }; });
     await expect(f.prepare()).rejects.toMatchObject({ code: "memory_image_changed" });
   });
-  it("requires structured image edges from the same document and rejects OCR-only provenance", async () => {
+  it("requires image edges to match the same document and accepts text-derived facts from image chunks", async () => {
     const f = await fixture(1), sent = await f.prepare(), entry = sent.source.images!.entries[0]!;
     const attachment = { id: entry.attachmentId, hash: entry.hash, byte_size: entry.bytes, kind: "image" as const, media_type: "image/webp" as const };
     const metadata = { dahlia_image_manifest: canonicalJson(sent.source.images), dahlia_image_context: [entry.attachmentId] };
     expect(validImageLineage(sent, [attachment], metadata)).toBe(true);
-    expect(validImageLineage(sent, [], metadata)).toBe(false);
+    expect(validImageLineage(sent, [], metadata)).toBe(true);
+    expect(validImageLineage(sent, [], { ...metadata, dahlia_image_context: ["0".repeat(12)] })).toBe(false);
     expect(validImageLineage(sent, [attachment], {})).toBe(false);
     expect(validImageLineage(sent, [{ ...attachment, hash: "0".repeat(64) }], metadata)).toBe(false);
     expect(validImageLineage(sent, [], { ...metadata, dahlia_image_context: [] })).toBe(true);
