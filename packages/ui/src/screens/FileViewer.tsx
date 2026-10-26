@@ -102,8 +102,8 @@ export function FileViewer({ fileId, separateTab = false, capturedAt, onClose, o
   const infoLabel = uiText("Image information", "画像情報");
   const copyLabel = uiText("Copy image", "画像をコピー");
   const downloadLabel = uiText("Download", "ダウンロード");
-  const actionClass = "grid size-11 place-items-center rounded-full bg-white text-zinc-900 shadow-lg outline-none hover:bg-zinc-100 focus-visible:ring-3 focus-visible:ring-blue-300 disabled:cursor-default disabled:opacity-50";
-  const navigationClass = "absolute top-1/2 z-10 grid size-11 -translate-y-1/2 place-items-center rounded-full bg-white text-3xl leading-none text-zinc-900 shadow-lg outline-none hover:bg-zinc-100 focus-visible:ring-3 focus-visible:ring-blue-300 disabled:cursor-default disabled:opacity-35";
+  const actionClass = "inline-flex size-11 items-center justify-center rounded-full bg-white text-zinc-900 shadow-lg outline-none hover:bg-zinc-100 focus-visible:ring-3 focus-visible:ring-blue-300 disabled:cursor-default disabled:opacity-50";
+  const navigationClass = "absolute top-1/2 z-10 grid size-11 -translate-y-1/2 place-items-center rounded-full bg-white text-zinc-900 shadow-lg outline-none hover:bg-zinc-100 focus-visible:ring-3 focus-visible:ring-blue-300 disabled:cursor-default disabled:opacity-35";
   return <section className={`relative grid h-full min-h-75 grid-cols-1 grid-rows-[64px_minmax(0,1fr)_64px] gap-3 bg-zinc-800 p-3 text-white sm:px-6${infoOpen && file ? " lg:grid-cols-[minmax(0,1fr)_320px]" : ""}`} aria-label={uiText("File preview", "ファイルプレビュー")}
     onClick={closeOnBackdropClick}>
     <header className="col-span-full flex items-start justify-end gap-2" onClick={closeOnBackdropClick}>
@@ -112,14 +112,14 @@ export function FileViewer({ fileId, separateTab = false, capturedAt, onClose, o
       {file && <Tooltip label={downloadLabel}><a className={actionClass} aria-label={downloadLabel} href={content} download={file.name}><ViewerIcon path="M12 3v13m-5-5 5 5 5-5M5 20h14" /></a></Tooltip>}
       {onClose && <Tooltip label={uiText("Close", "閉じる")}><button autoFocus className={actionClass} aria-label={uiText("Close", "閉じる")} onClick={onClose}><ViewerIcon path="m6 6 12 12M18 6 6 18" /></button></Tooltip>}
     </header>
-    <div className="relative col-start-1 row-start-2 flex min-h-0 min-w-0 overflow-auto" onClick={closeOnBackdropClick}>
+    <div className={`relative col-start-1 row-start-2 flex min-h-0 min-w-0 overflow-auto${onPrevious || onNext ? " px-14" : ""}`} onClick={closeOnBackdropClick}>
       {query.error && <p className="absolute inset-x-0 top-0 z-10 bg-zinc-800 p-6 text-sm text-red-200" role="alert">{uiText("Unable to load this file. It may have been deleted or access has changed.", "ファイルを読み込めません。削除されたか、アクセス権が変更された可能性があります。")} <button className="underline" onClick={query.reload}>{uiText("Retry", "再試行")}</button></p>}
       {!file && !query.error && <p className="m-auto text-sm text-zinc-300">{uiText("Loading…", "読み込み中…")}</p>}
       {file && <div className="m-auto shrink-0" style={{ width: `${zoom}%`, height: `${zoom}%` }}>{preview}</div>}
     </div>
     {(onPrevious || onNext) && <>
-      <button className={`${navigationClass} left-2 sm:left-6`} aria-label={uiText("Previous image", "前の画像")} disabled={!onPrevious} onClick={onPrevious}>‹</button>
-      <button className={`${navigationClass} right-2 sm:right-6${infoOpen && file ? " lg:right-[356px]" : ""}`} aria-label={uiText("Next image", "次の画像")} disabled={!onNext} onClick={onNext}>›</button>
+      <button className={`${navigationClass} left-2 sm:left-6`} aria-label={uiText("Previous image", "前の画像")} disabled={!onPrevious} onClick={onPrevious}><ViewerIcon path="m15 6-6 6 6 6" /></button>
+      <button className={`${navigationClass} right-2 sm:right-6${infoOpen && file ? " lg:right-[356px]" : ""}`} aria-label={uiText("Next image", "次の画像")} disabled={!onNext} onClick={onNext}><ViewerIcon path="m9 6 6 6-6 6" /></button>
     </>}
     {infoOpen && file && <aside className="col-start-1 row-start-2 z-10 min-h-0 w-[min(320px,85%)] justify-self-end overflow-auto rounded-xl border bg-white p-4 text-[13px] leading-5 text-zinc-900 shadow-xl lg:col-start-2 lg:w-auto lg:shadow-none" aria-label={infoLabel}>
       <h2 className="mb-3 font-semibold">{infoLabel}</h2>
