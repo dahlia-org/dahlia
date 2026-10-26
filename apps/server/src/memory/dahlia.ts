@@ -164,6 +164,17 @@ export class DahliaMemory {
       targets = [];
       if (route.target !== "workspace" || !workspace) targets.push({ scope: "personal" });
       if (workspace && route.target !== "personal") targets.push({ scope: "workspace", workspaceId: input.workspaceId });
+      // A scope whose analysis is off must not make the other scope's results look unavailable.
+      // Keep it only when its saved notes match literally, the same fallback it would return.
+      const analyzed = await Promise.all(targets.map(async (target) => {
+        const { engine, store, id } = await this.resolve(identity, target);
+        return Boolean(engine && (await store.status(identity.userId, id))?.enabled);
+      }));
+      if (analyzed.some(Boolean)) {
+        const kept = await Promise.all(targets.map(async (target, index) => analyzed[index]
+          || (await this.list(identity, { ...target, query: input.query })).items.length > 0));
+        targets = targets.filter((_, index) => kept[index]);
+      }
     }
     const completed = await Promise.all(targets.map(async (target) => {
       const { engine, store, id } = await this.resolve(identity, target);

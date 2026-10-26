@@ -167,6 +167,16 @@ describe("Dahlia Memory", () => {
       const result = await f.memory.search(f.owner, { scope: "auto", workspaceId: f.workspaceId, query: "question" }, false, signal);
       expect(result.searchedScopes.map((s) => s.scope)).toEqual(["personal", "workspace"]);
       expect((await f.memory.search(f.owner, { scope: "auto", query: "question" }, false, signal)).searchedScopes).toEqual([{ scope: "personal" }]);
+      // Personal analysis is off, so it must not report the enabled Workspace bank as unavailable.
+      await f.memory.configure(f.owner, { scope: "workspace", workspaceId: f.workspaceId, enabled: true });
+      const workspaceOnly = await f.memory.search(f.owner, { scope: "auto", workspaceId: f.workspaceId, query: "question" }, false, signal);
+      expect(workspaceOnly.searchedScopes).toEqual([{ scope: "workspace", workspaceId: f.workspaceId }]);
+      expect(workspaceOnly.results.map((r) => r.scope)).toEqual(["workspace"]);
+      // Saved personal notes still return their literal fallback without analysis.
+      await f.memory.save(f.owner, f.note("Open question about pricing"));
+      const withNotes = await f.memory.search(f.owner, { scope: "auto", workspaceId: f.workspaceId, query: "question" }, false, signal);
+      expect(withNotes.searchedScopes.map((s) => s.scope)).toEqual(["personal", "workspace"]);
+      expect(withNotes.results[0]!.result).toMatchObject({ unavailable: true, canonical: { items: [expect.objectContaining({ content: "Open question about pricing" })] } });
       await expect(f.memory.save(f.stranger, { ...input, scope: "workspace", explicit: true })).rejects.toMatchObject({ status: 404 });
       const calls = f.generate.mock.calls.length;
       await f.memory.list(f.owner, { scope: "personal" });
@@ -243,6 +253,8 @@ describe("Dahlia Memory", () => {
         return { sources: [], hypothesis: null, coverage: "ready" };
       } } as unknown as WorkspaceMemoryService;
       const memory = new DahliaMemory(f.memory.stores, f.sync, { personal: f.personal, workspace });
+      // auto skips a disabled bank when another is enabled; with both off it still searches both.
+      if (action !== "unconfigured") await f.memory.configure(f.owner, { scope: "workspace", workspaceId: f.workspaceId, enabled: true });
       const found = await memory.search(f.owner, { scope: "auto", workspaceId: f.workspaceId, query: "lesson" }, true, signal);
       const result = found.results[0]!.result;
       expect(result).toMatchObject({ unavailable: true });
