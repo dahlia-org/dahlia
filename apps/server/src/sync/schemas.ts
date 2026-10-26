@@ -129,7 +129,7 @@ export const transactionDataSchemas = {
   ]),
   "workspace:create": z.object({ meetingDeletionGraceDays: meetingDeletionGraceDaysSchema.optional(), generationSettings: workspaceGenerationSettingsSchema.optional(), organizationId: uuidSchema, encryption: z.enum(["none", "server"]).optional(), ...appearanceFields, name: z.string().trim().min(1), createdAt: dateSchema }).strict(),
   "workspace:update": z.object({ meetingDeletionGraceDays: meetingDeletionGraceDaysSchema.optional(), generationSettings: workspaceGenerationSettingsSchema.optional(), encryption: z.enum(["none", "server"]).optional(), ...appearanceFields, name: z.string().trim().min(1) }).strict(),
-  "workspace:reset": z.object({ preservePermissions: z.boolean().optional() }).strict(),
+  "workspace:reset": z.object({ preservePermissions: z.boolean().optional(), force: z.boolean().optional() }).strict(),
   "project:create": z.object({ ...appearanceFields, parentProjectId: uuidSchema.nullable(), name: projectNameSchema, description: z.string().max(20_000).default(""), projectType: projectTypeSchema.nullable(), createdAt: dateSchema }).strict().refine((data) => data.parentProjectId === null || (data.icon == null && data.color == null), { message: "Child projects inherit their parent appearance", path: ["icon"] }),
   "project:update": z.object({ ...appearanceFields, parentProjectId: uuidSchema.nullable(), name: projectNameSchema, description: z.string().max(20_000).default(""), projectType: projectTypeSchema.nullable() }).strict().refine((data) => data.parentProjectId === null || (data.icon == null && data.color == null), { message: "Child projects inherit their parent appearance", path: ["icon"] }),
   "project:delete": z.object({}).strict(),

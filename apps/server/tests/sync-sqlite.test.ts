@@ -979,6 +979,23 @@ describe("SQLite canonical sync", () => {
     await store.close?.();
   });
 
+  it("force-deletes a Workspace with its Projects, meetings and Files", async () => {
+    const { store, databasePath } = await setup();
+    await createWorkspace(store);
+    await commit(store, owner, transaction(freshId(), [
+      { id: freshId(), entity: "project", action: "create", entityId: projectId, baseRevision: null, data: projectData("Kept") },
+      { id: freshId(), entity: "meeting", action: "create", entityId: meetingId, baseRevision: null, data: { ...meetingData(), projectId } },
+    ]));
+    const db = new DatabaseSync(databasePath);
+    db.prepare("INSERT INTO files (file_id, workspace_id, uri, size, content_type, checksum, name, metadata) VALUES (?, ?, ?, 0, 'text/plain', '', 'staged', '{}')").run(freshId(), workspaceId, "pending");
+    await commit(store, owner, transaction(freshId(), [{ id: freshId(), entity: "workspace", action: "reset", entityId: workspaceId, baseRevision: 1, data: { preservePermissions: false, force: true } }]));
+    expect(await store.sync.withIdentity(owner, (sync) => sync.getWorkspace(workspaceId))).toBeNull();
+    for (const table of ["projects", "meetings", "files"]) expect(db.prepare(`SELECT count(*) AS count FROM ${table}`).get(), table).toMatchObject({ count: 0 });
+    expect(db.prepare("SELECT count(*) AS count FROM jobs_queue WHERE kind = 'storage-delete'").get()).toMatchObject({ count: 1 });
+    db.close();
+    await store.close?.();
+  });
+
   it("keeps content-free history after physical meeting deletion and removes it with the Workspace", async () => {
     const { store, databasePath } = await setup();
     await createWorkspace(store);

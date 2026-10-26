@@ -3056,6 +3056,7 @@ export interface components {
                 baseRevision: number | null;
                 data: {
                     preservePermissions?: boolean;
+                    force?: boolean;
                 };
             } | {
                 id: string;
