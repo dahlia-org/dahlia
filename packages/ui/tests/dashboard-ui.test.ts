@@ -524,7 +524,7 @@ describe("dashboard navigation", () => {
     expect(html).not.toContain("Continue with Google");
   });
 
-  it("uses advertised thumbnails for browsing and preserves the original link", () => {
+  it("uses advertised thumbnails and shows only the image and capture time", () => {
     const file = { id: "file", workspaceId: "workspace", name: "image.png", size: 1, checksum: "hash", revision: 1, createdAt: "2026-09-07T00:00:00Z", updatedAt: "2026-09-07T00:00:00Z", contentType: "image/png", metadata: { source: "screenshot" as const },
       variants: { thumb_480: "/small", thumb_1280: "/medium", thumb_1568: "/preview", thumb_1920: "/large" } };
     const capturedAt = "2026-09-07T00:00:00Z";
@@ -532,8 +532,7 @@ describe("dashboard navigation", () => {
     expect(html).toContain('src="/small"');
     expect(html).toContain('href="/o/file"');
     expect(html).not.toContain('target="_blank"');
-    expect(html).toContain('href="/api/v1/files/file/content"');
-    expect(html).toContain("Download original");
+    expect(html).not.toContain("Download original");
     expect(html).toContain(`dateTime="${capturedAt}"`);
     const portable = renderToStaticMarkup(createElement(ScreenshotFigure, { file: { ...file, variants: {} } }));
     expect(portable).toContain('src="/api/v1/files/file/content"');

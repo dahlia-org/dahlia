@@ -155,10 +155,10 @@
   .meeting-description summary { @apply cursor-pointer; }
   .meeting-description p, .project-description { @apply whitespace-pre-wrap break-words leading-7; }
 
-  .screenshot-grid { @apply grid grid-cols-2 gap-3 max-sm:grid-cols-1; }
-  .screenshot-grid figure { @apply m-0 overflow-hidden rounded-lg border p-3; }
+  .screenshot-grid { @apply grid grid-cols-[repeat(auto-fill,minmax(160px,1fr))] gap-3; }
+  .screenshot-grid figure { @apply m-0 overflow-hidden rounded-lg bg-muted/50 p-1.5; }
   .screenshot-grid img { @apply block aspect-[16/10] w-full rounded-md bg-muted object-contain; }
-  .screenshot-grid figcaption { @apply mt-2 line-clamp-3 text-xs leading-5 text-muted-foreground; }
+  .screenshot-grid time { @apply mt-1.5 block px-0.5 text-xs text-muted-foreground; }
 
   .account-settings { @apply my-4 grid max-w-3xl gap-5 rounded-xl border p-5; }
   .account-settings > label { @apply grid grid-cols-[minmax(130px,.65fr)_minmax(0,1fr)] items-center gap-3 text-sm max-sm:grid-cols-1; }
