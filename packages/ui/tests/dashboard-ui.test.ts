@@ -5,6 +5,7 @@ import { encodeId } from "../src/model/typeid";
 import { apiUrls } from "../src/api/generated-operations";
 import { SummaryHistory } from "../src/screens/SummaryHistory";
 import { RecordingIndicator } from "../src/screens/RecordingIndicator";
+import { RecordingAudio } from "../src/screens/Meeting";
 import { projectAncestors, selectedSidebarWorkspace, Sidebar, SidebarProvider } from "../src/screens/Sidebar";
 import { readFileSync } from "node:fs";
 import { createElement } from "react";
@@ -312,8 +313,8 @@ describe("desktop-style meeting layout", () => {
 
   it("orders meeting tabs like Desktop", () => {
     vi.stubGlobal("navigator", { language: "ja-JP" });
-    const html = renderToStaticMarkup(createElement(MeetingTabs, { summary: "", notes: "Notes body", screenshots: "", transcript: "" }));
-    expect([...html.matchAll(/role="tab"[^>]*>([^<]+)</g)].map((match) => match[1])).toEqual(["要約", "ノート", "スクリーンショット", "文字起こし"]);
+    const html = renderToStaticMarkup(createElement(MeetingTabs, { summary: "", notes: "Notes body", screenshots: "", transcript: "", recordings: "Recordings body" }));
+    expect([...html.matchAll(/role="tab"[^>]*>([^<]+)</g)].map((match) => match[1])).toEqual(["要約", "ノート", "スクリーンショット", "文字起こし", "録音"]);
   });
 
   it("groups account actions in the footer and keeps Workspace navigation in the sidebar", () => {
@@ -537,6 +538,14 @@ describe("dashboard navigation", () => {
     const portable = renderToStaticMarkup(createElement(ScreenshotFigure, { file: { ...file, variants: {} } }));
     expect(portable).toContain('src="/api/v1/files/file/content"');
     expect(portable).not.toContain("/large");
+  });
+  it("streams recording audio on demand and names downloads per meeting, recording, and source", () => {
+    vi.stubGlobal("navigator", { language: "en" });
+    const html = renderToStaticMarkup(createElement(RecordingAudio, { meetingId: "mtg_1", recordingId: 2, source: "system" }));
+    expect(html).toContain('src="/api/v1/meetings/mtg_1/recordings/2/audio/system"');
+    expect(html).toContain('preload="none"');
+    expect(html).toContain('download="mtg_1-2-system.m4a"');
+    expect(html).toContain("System audio");
   });
   it("previews images but never embeds active file content, and removes inaccessible previews", () => {
     vi.stubGlobal("navigator", { language: "en" });

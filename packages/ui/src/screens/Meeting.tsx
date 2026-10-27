@@ -2,7 +2,7 @@ import { objectPath } from "../model/object-url";
 import { MeetingNotes } from "./Documents";
 import { apiUrls } from "../api/generated-operations";
 import { apiQuery, liveDataEvent, useLiveJSON, useLivePage } from "../api/live-data";
-import { type operations } from "../api/generated-api";
+import { type components, type operations } from "../api/generated-api";
 import { AppearanceIcon, collectionAppearance, projectAppearance } from "./AppearancePicker";
 import { useActionDialog } from "./ActionDialog";
 import { TranscriptHistory } from "./TranscriptHistory";
@@ -79,6 +79,40 @@ function MeetingScreenshots({ meetingId }: { meetingId: string }) {
       {loadingScreenshots ? uiText("Loading…", "読み込み中…") : uiText("Load more", "さらに表示")}
     </button>}
   </>;
+}
+type Recording = components["schemas"]["Recording"];
+function MeetingRecordings({ meetingId }: { meetingId: string }) {
+  const recordingsQuery = useLivePage<Recording>(apiQuery("listRecordings", { params: { path: { meetingId } } }));
+  const recordings = recordingsQuery.data?.items;
+  return <>
+    <DataError error={recordingsQuery.error} retry={recordingsQuery.reload} />
+    {recordings?.length === 0 && <p className="content-empty">{uiText("No recordings", "録音はありません")}</p>}
+    <ul className="grid list-none gap-3 p-0">
+      {recordings?.map((recording) => <li key={recording.id} className="panel grid gap-3">
+        <time className="text-sm font-medium" dateTime={recording.startedAt}>
+          {new Date(recording.startedAt).toLocaleString()} – {new Date(recording.endedAt).toLocaleTimeString()}
+        </time>
+        {(["mic", "system"] as const).filter((source) => recording.audio[source]).map((source) =>
+          <RecordingAudio key={source} meetingId={meetingId} recordingId={recording.id} source={source} />)}
+      </li>)}
+    </ul>
+    {recordingsQuery.data?.nextCursor && <button className="secondary load-more" disabled={recordingsQuery.loadingMore} onClick={recordingsQuery.loadMore}>
+      {recordingsQuery.loadingMore ? uiText("Loading…", "読み込み中…") : uiText("Load more", "さらに表示")}
+    </button>}
+  </>;
+}
+export function RecordingAudio({ meetingId, recordingId, source }: { meetingId: string; recordingId: number; source: "mic" | "system" }) {
+  const [failed, setFailed] = useState(false);
+  const label = source === "mic" ? uiText("Microphone", "マイク") : uiText("System audio", "システム音声");
+  const url = apiUrls.getRecordingContent({ params: { path: { meetingId, recordingId: String(recordingId), source } } });
+  return <div className="grid gap-1">
+    <span className="text-xs text-muted-foreground">{label}</span>
+    {failed ? <div className="flex items-center gap-3">
+      <span role="alert" className="text-sm text-destructive">{uiText("Unable to load recording.", "録音を読み込めませんでした。")}</span>
+      <button className="secondary" onClick={() => setFailed(false)}>{uiText("Retry", "再試行")}</button>
+    </div> : <audio controls preload="none" src={url} className="w-full" aria-label={label} onError={() => setFailed(true)} />}
+    <a className="text-xs" href={url} download={`${meetingId}-${recordingId}-${source}.m4a`}>{uiText("Download", "ダウンロード")}</a>
+  </div>;
 }
 export function SyncedMeeting({ workspaceId, meetingId, resolvedMeeting, publicOrigin, serverAI = true }: { workspaceId: string; meetingId: string; resolvedMeeting?: SyncedMeetingInfo; publicOrigin?: string; serverAI?: boolean }) {
   const { dialog, openDialog } = useActionDialog();
@@ -196,6 +230,7 @@ export function SyncedMeeting({ workspaceId, meetingId, resolvedMeeting, publicO
         </>}
         screenshots={<MeetingScreenshots key={meetingId} meetingId={meetingId} />}
         transcript={<TranscriptHistory key={meetingId} meetingId={meetingId} timeBase={meeting.recordingStartedAt ?? meeting.createdAt} />}
+        recordings={<MeetingRecordings key={meetingId} meetingId={meetingId} />}
       />}
     </article>
   );
