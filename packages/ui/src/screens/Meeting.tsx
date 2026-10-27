@@ -213,7 +213,7 @@ export function ScreenshotFigure({ file, capturedAt, onOpen }: {
     return () => { for (const event of events) window.removeEventListener(event, retry); };
   }, []);
   const original = apiUrls.getFileContent({ params: { path: { fileId: file.id } } });
-  return <figure className="panel">
+  return <figure>
     <FileLink fileId={file.id} capturedAt={capturedAt} onOpen={onOpen} label={uiText("Open screenshot", "スクリーンショットを開く")}>
       {failed ? <span role="alert">{uiText("Unable to load screenshot.", "スクリーンショットを読み込めませんでした。")}</span> : <img
         src={file.variants?.thumb_480 ?? original}
@@ -223,8 +223,6 @@ export function ScreenshotFigure({ file, capturedAt, onOpen }: {
       />}
     </FileLink>
     {failed && <button className="secondary" onClick={() => setFailed(false)}>{uiText("Retry", "再試行")}</button>}
-    {capturedAt && <time className="mt-3 block text-xs text-muted-foreground" dateTime={capturedAt}>{new Date(capturedAt).toLocaleTimeString()}</time>}
-    {(file.metadata.caption || file.metadata.ocrText) && <figcaption>{file.metadata.caption || file.metadata.ocrText}</figcaption>}
-    <a href={original} download>{uiText("Download original", "原本をダウンロード")}</a>
+    {capturedAt && <time dateTime={capturedAt}>{new Date(capturedAt).toLocaleTimeString()}</time>}
   </figure>;
 }

@@ -422,7 +422,7 @@ async function run() {
   const sessionReads = requests.filter((url) => url === "/api/v1/session").length;
   caption = "Updated caption"; summary = "Updated summary"; transcript = "Updated transcript"; fileCount = 4;
   for (let index = 0; index < 20; index++) notify();
-  await until(() => document.querySelectorAll(".screenshot-grid figure").length === 4 && document.querySelector("figcaption")?.textContent === caption);
+  await until(() => document.querySelectorAll(".screenshot-grid figure").length === 4 && document.querySelector(".screenshot-grid img")?.getAttribute("alt") === caption);
   assert(selectedTab() === "Screenshots", "Tab changed on invalidation");
   assert(tab === button("Screenshots") && img === document.querySelector(".screenshot-grid img"), "Existing tab/image DOM replaced");
   assert(row === document.querySelector(`aside a[href="/o/${primaryMeetingId}"]`), "Sidebar row remounted");
@@ -494,7 +494,7 @@ async function run() {
   const mainScroll = window.scrollY;
   assert(mainScroll > 0, "Main scroll fixture did not scroll");
   caption = "Reconnected"; notify("open");
-  await until(() => document.querySelector("figcaption")?.textContent === caption);
+  await until(() => document.querySelector(".screenshot-grid img")?.getAttribute("alt") === caption);
   assert(document.querySelectorAll(".screenshot-grid figure").length === 24, "Loaded range collapsed");
   assert(window.scrollY === mainScroll, `Main scrolled from ${mainScroll} to ${window.scrollY}`);
   fileCount = 13; caption = "After deletion"; notify();
