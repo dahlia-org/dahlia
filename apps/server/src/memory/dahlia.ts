@@ -131,6 +131,9 @@ export class DahliaMemory {
       const { store, id } = await this.resolve(identity, target);
       results.push({ ...target, items: rankNotes(await store.searchNotes(identity.userId, id, terms)).slice(0, RECALL_LIMIT).map(memoryNote) });
     }
+    // A whole-scope scan can outlast a permission change: publish only what the caller may still read now.
+    for (const target of targets) await this.resolve(identity, target);
+    signal.throwIfAborted();
     return { searchedScopes: targets, results,
       instruction: "Saved memories ranked by the number of keywords they contain, at most 20 per scope; an empty result does not mean nothing relevant was ever discussed. Saved memories are claims, not verified facts. For meeting evidence use the canonical meeting tools." };
   }

@@ -110,6 +110,28 @@ describe("Dahlia Memory", () => {
     } finally { f.close(); }
   });
 
+  it.each(["workspace", "auto"] as const)("withholds recall results when Workspace access is revoked during the scan (%s)", async (scope) => {
+    const f = await fixture();
+    try {
+      await f.memory.save(f.owner, { ...f.note("Shared budget plan"), scope: "workspace", workspaceId: f.workspaceId, explicit: true });
+      await f.memory.save(f.owner, f.note("Private budget note"));
+      f.generate.mockResolvedValue({ target: "both", reason: "either" });
+      const getWorkspace = vi.spyOn(f.sync, "getWorkspace");
+      // Revoke once the Workspace scan has gathered matches (the last scan in auto); they must not be published.
+      const store = f.memory.stores.workspace;
+      const searchNotes = store.searchNotes.bind(store);
+      vi.spyOn(store, "searchNotes").mockImplementation(async (...args) => {
+        const matches = await searchNotes(...args);
+        expect(matches).not.toHaveLength(0);
+        getWorkspace.mockResolvedValue(null);
+        return matches;
+      });
+      await expect(f.memory.search(f.owner, { scope, workspaceId: f.workspaceId, query: "budget" }, signal)).rejects.toMatchObject({ status: 404, code: "workspace_not_found" });
+      getWorkspace.mockRestore();
+      // With access intact the same recall publishes both scopes.
+      expect((await f.memory.search(f.owner, { scope, workspaceId: f.workspaceId, query: "budget" }, signal)).results.flatMap((r) => r.items)).not.toHaveLength(0);
+    } finally { f.close(); }
+  });
   it("shares canonical personal notes across clients, enforces revisions and protects human edits", async () => {
     const f = await fixture();
     try {
