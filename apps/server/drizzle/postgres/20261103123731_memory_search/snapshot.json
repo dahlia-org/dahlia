@@ -1,7 +1,7 @@
 {
   "version": "8",
   "dialect": "postgres",
-  "id": "f3daed2a-c40d-4c1b-9527-91df1172363f",
+  "id": "842354c6-0acd-460e-a38a-9fdc67d01ca5",
   "prevIds": [
     "0f1adcd7-639b-4c3e-b8a3-9c8feaa03051"
   ],
@@ -1752,6 +1752,19 @@
       "table": "personal_memory_chunks"
     },
     {
+      "type": "integer",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "memory_revision",
+      "entityType": "columns",
+      "schema": "search",
+      "table": "personal_memory_chunks"
+    },
+    {
       "type": "text",
       "typeSchema": null,
       "notNull": true,
@@ -2587,6 +2600,19 @@
       "generated": null,
       "identity": null,
       "name": "workspace_id",
+      "entityType": "columns",
+      "schema": "search",
+      "table": "shared_memory_chunks"
+    },
+    {
+      "type": "integer",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "memory_revision",
       "entityType": "columns",
       "schema": "search",
       "table": "shared_memory_chunks"

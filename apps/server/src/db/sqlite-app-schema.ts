@@ -558,6 +558,7 @@ const memoryChunkColumns = (parent: () => AnySQLiteColumn, scopeColumn: string) 
   memoryId: text("memory_id").notNull().references(parent, { onDelete: "cascade" }),
   chunkNo: integer("chunk_no").notNull(),
   scopeId: text(scopeColumn).notNull(),
+  memoryRevision: integer("memory_revision").notNull(),
   chunkText: text("chunk_text").notNull(),
   searchText: text("search_text").default("").notNull(),
   analyzer: text("analyzer").notNull(),

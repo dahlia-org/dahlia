@@ -1,7 +1,7 @@
 {
   "version": "7",
   "dialect": "sqlite",
-  "id": "a5c69b8e-bbbe-4f3c-bb0f-d16adddb2982",
+  "id": "075ade3e-6b7b-4251-8f74-317bb96649ce",
   "prevIds": [
     "c8f8915e-c54a-47ee-bd77-81de9a7a49b9"
   ],
@@ -3191,6 +3191,16 @@
       "table": "personal_memory_chunks"
     },
     {
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "memory_revision",
+      "entityType": "columns",
+      "table": "personal_memory_chunks"
+    },
+    {
       "type": "text",
       "notNull": true,
       "autoincrement": false,
@@ -3737,6 +3747,16 @@
       "default": null,
       "generated": null,
       "name": "workspace_id",
+      "entityType": "columns",
+      "table": "shared_memory_chunks"
+    },
+    {
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "memory_revision",
       "entityType": "columns",
       "table": "shared_memory_chunks"
     },

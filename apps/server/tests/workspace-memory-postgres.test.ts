@@ -140,6 +140,81 @@ describe.runIf(url)("Workspace memory PostgreSQL RLS", () => {
     expect(await memory.reconcilePage(workspaceId, intl)).toBeUndefined();
     expect((await memory.recall(owner.userId, workspaceId, "予算", intl, 20)).map((row) => row.id)).toEqual([budget.id]);
   });
+  it.each(["personal", "workspace"] as const)("does not let an analyzer rebuild overwrite a concurrent save (%s)", async (kind) => {
+    const concurrent = connectPostgresUrl(url!, 4);
+    const { db, pool } = concurrent;
+    const app = createPostgresAuthStore(db, "postgres");
+    const owner: Identity = { userId: uuidV7(), source: "header" };
+    await seedPostgresIdentity(app, url!, owner);
+    let scopeId = owner.userId;
+    if (kind === "workspace") {
+      scopeId = uuidV7();
+      await new MeetingSyncService(app.sync).commitTransaction(owner, { schemaVersion: 3, workspaceId: scopeId, id: uuidV7(), createdAt: new Date().toISOString(),
+        operations: [{ id: uuidV7(), entity: "workspace", action: "create", entityId: scopeId, baseRevision: null,
+          data: { organizationId: testOrganizationID, name: "Rebuild race", createdAt: new Date().toISOString() } }] });
+    }
+    const memory = kind === "personal" ? app.personalMemory! : app.memory!;
+    const table = kind === "personal" ? "personal_memory_chunks" : "shared_memory_chunks";
+    const intl = applicationAnalyzer((await import("../src/search/tokenizer")).createIntlSearchTokenizer());
+    const note = await memory.saveNote(owner.userId, scopeId, { id: uuidV7(), revision: 0, content: "古い予算の記録" }, "human", false, intl);
+    const blocker = await pool.connect();
+    let rebuilding: Promise<unknown> | undefined, saving: Promise<unknown> | undefined;
+    try {
+      // Hold the rebuild after it read the old content and before it writes the old chunks.
+      await blocker.query(`CREATE FUNCTION pg_temp.rebuild_barrier() RETURNS trigger LANGUAGE plpgsql AS $$
+        BEGIN IF NEW.chunk_text LIKE '%古い%' AND NEW.analyzer = TG_ARGV[0] THEN PERFORM pg_advisory_xact_lock(899179); END IF; RETURN NEW; END $$`);
+      await blocker.query(`CREATE TRIGGER rebuild_barrier BEFORE INSERT ON search.${table} FOR EACH ROW EXECUTE FUNCTION pg_temp.rebuild_barrier('${lindera.id}')`);
+      await blocker.query("SELECT pg_advisory_lock(899179)");
+      rebuilding = memory.reconcilePage(scopeId, lindera);
+      await vi.waitFor(async () => {
+        expect((await pool.query("SELECT 1 FROM pg_locks WHERE locktype = 'advisory' AND objid = 899179 AND NOT granted")).rowCount).toBe(1);
+      });
+      saving = memory.saveNote(owner.userId, scopeId, { id: note.id, revision: 1, content: "新しい休暇の記録" }, "human", false, lindera);
+      // The save must wait for the rebuild instead of committing underneath it.
+      await vi.waitFor(async () => {
+        expect((await pool.query("SELECT 1 FROM pg_locks WHERE locktype = 'advisory' AND NOT granted AND objid <> 899179")).rowCount).toBeGreaterThan(0);
+      });
+      await blocker.query("SELECT pg_advisory_unlock(899179)");
+      await rebuilding; await saving;
+      const ids = (query: string) => memory.recall(owner.userId, scopeId, query, lindera, 20).then((rows) => rows.map((row) => row.id));
+      expect(await ids("休暇")).toEqual([note.id]);
+      expect(await ids("古い")).toEqual([]);
+      // Reconciling again keeps the projection consistent.
+      await memory.reconcilePage(scopeId, lindera);
+      expect(await ids("休暇")).toEqual([note.id]);
+      expect(await ids("古い")).toEqual([]);
+      // A projection left stale by an earlier version (old text, older revision, current analyzer) is repaired too.
+      await db.transaction(async (tx) => {
+        await tx.execute(kind === "personal" ? sql`select set_config('app.user_id', ${owner.userId}, true)`
+          : sql`select set_config('app.maintenance', 'search', true), set_config('app.maintenance_workspace_id', ${scopeId}, true)`);
+        await tx.execute(sql`update ${sql.raw(`search.${table}`)} set chunk_text = '古い予算の記録', search_text = '古い', search_vector = to_tsvector('simple', '古い'),
+          memory_revision = memory_revision - 1 where memory_id = ${note.id}`);
+      });
+      expect(await ids("古い")).toEqual([note.id]);
+      await memory.reconcilePage(scopeId, lindera);
+      expect(await ids("休暇")).toEqual([note.id]);
+      expect(await ids("古い")).toEqual([]);
+    } finally {
+      await blocker.query("SELECT pg_advisory_unlock(899179)");
+      await Promise.allSettled([rebuilding, saving]);
+      await blocker.query(`DROP TRIGGER IF EXISTS rebuild_barrier ON search.${table}`);
+      await blocker.query("DROP FUNCTION IF EXISTS pg_temp.rebuild_barrier()");
+      blocker.release();
+      await concurrent.close();
+    }
+  });
+  it("splits unbroken Japanese runs over the parser token limit for a database-side analyzer", async () => {
+    const { db } = connection!;
+    const app = createPostgresAuthStore(db, "postgres");
+    const owner: Identity = { userId: uuidV7(), source: "header" };
+    await seedPostgresIdentity(app, url!, owner);
+    // PostgreSQL's parser skips tokens over 2,047 bytes like Lakebase's; the simple configuration stands in for tokenizer_japanese.
+    const databaseSide = { id: "test-database-side/simple", config: "simple", matchAll: false };
+    const run = ["ア", "か", "ア"].map((char) => char.repeat(600));
+    const memory = app.personalMemory!;
+    const note = await memory.saveNote(owner.userId, owner.userId, { id: uuidV7(), revision: 0, content: run.join("") }, "human", false, databaseSide);
+    expect((await memory.recall(owner.userId, owner.userId, run[1]!, databaseSide, 20)).map((row) => row.id)).toEqual([note.id]);
+  });
   it("serializes a pending save against purge", async () => {
     const concurrent = connectPostgresUrl(url!, 4);
     const { db, pool } = concurrent;

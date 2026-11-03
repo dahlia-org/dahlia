@@ -21,7 +21,8 @@ export function applicationAnalyzer(tokenizer: SearchTokenizer = createIntlSearc
 
 function lakebaseAnalyzer(version: string): SearchAnalyzer {
   // The version is part of the ID: ALTER EXTENSION UPDATE does not regenerate stored tsvectors.
-  return { id: `lakebase_tokenizer@${version}/tokenizer_japanese`, config: LAKEBASE_JAPANESE_CONFIG, matchAll: false };
+  // "/runs2000": long unbroken runs are split before parsing (see parserSafe).
+  return { id: `lakebase_tokenizer@${version}/tokenizer_japanese/runs2000`, config: LAKEBASE_JAPANESE_CONFIG, matchAll: false };
 }
 /** Prefers lakebase_tokenizer on Lakebase when it is installed in public (version checked once); otherwise the application analyzer. */
 export function analyzerResolver(lakebase: boolean, extensionVersion: () => Promise<string | undefined>) {
@@ -39,7 +40,42 @@ export const LAKEBASE_TOKENIZER_VERSION_SQL = `SELECT e.extversion FROM pg_exten
 
 /** Input for to_tsvector(analyzer.config, ...) at index and query time. */
 export function analyzerInput(analyzer: SearchAnalyzer, text: string): string {
-  return analyzer.tokenizer ? analyzer.tokenizer.tokenize(text).join(" ") : text;
+  return analyzer.tokenizer ? analyzer.tokenizer.tokenize(text).join(" ") : parserSafe(text);
+}
+
+// PostgreSQL skips parser tokens over 2,047 bytes (Lakebase: 2,046) before any dictionary sees them; stay below with a margin.
+export const PARSER_TOKEN_MAX_BYTES = 2_000;
+const encoder = new TextEncoder();
+const byteLength = (text: string) => encoder.encode(text).byteLength;
+const script = (char: string) => /\p{Script=Han}/u.test(char) ? "han" : /\p{Script=Hiragana}/u.test(char) ? "hiragana"
+  : /\p{Script=Katakana}/u.test(char) ? "katakana" : "other";
+/**
+ * Splits runs without whitespace or punctuation that exceed the parser's token limit with spaces, so database-side
+ * analyzers still see long Japanese text. Cuts prefer the last change of script in the second half of a window
+ * (for example 予算の|説明), which keeps most words whole; a word can still be cut where a run has no such change.
+ */
+export function parserSafe(text: string, maxBytes = PARSER_TOKEN_MAX_BYTES): string {
+  return text.replace(/[^\s\p{P}\p{S}]+/gu, (run) => {
+    const pieces: string[] = [];
+    let rest = run;
+    while (byteLength(rest) > maxBytes) {
+      const chars: string[] = [];
+      let bytes = 0;
+      for (const char of rest) {
+        if (bytes + byteLength(char) > maxBytes) break;
+        bytes += byteLength(char); chars.push(char);
+      }
+      let cut = chars.length;
+      for (let index = chars.length - 1; index > chars.length / 2; index--) {
+        if (script(chars[index - 1]!) !== script(chars[index]!)) { cut = index; break; }
+      }
+      const piece = chars.slice(0, cut).join("");
+      pieces.push(piece);
+      rest = rest.slice(piece.length);
+    }
+    pieces.push(rest);
+    return pieces.join(" ");
+  });
 }
 /** Query tokens for the application analyzer, bounded like meeting search. */
 export function queryTokens(analyzer: SearchAnalyzer, query: string): string[] {
@@ -55,7 +91,6 @@ export function fts5Query(tokens: readonly string[], matchAll: boolean): string 
   return tokens.map((token) => `"${token.replaceAll('"', '""')}"`).join(matchAll ? " AND " : " OR ");
 }
 
-const encoder = new TextEncoder();
 export async function contentHash(text: string): Promise<string> {
   const digest = await crypto.subtle.digest("SHA-256", encoder.encode(text));
   return [...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, "0")).join("");

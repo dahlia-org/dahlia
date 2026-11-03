@@ -133,4 +133,27 @@ describe.runIf(url)("Saved chat hybrid search", () => {
       await history.delete(stranger, strangerThread.id).catch(() => undefined);
     }
   });
+  it("splits unbroken Japanese runs over the parser token limit in saved chats", async () => {
+    const { db, pool } = connection!;
+    const app = createPostgresAuthStore(db, "postgres");
+    const owner: Identity = { userId: uuidV7(), source: "header" };
+    await seedPostgresIdentity(app, url!, owner);
+    const workspaceId = uuidV7();
+    await new MeetingSyncService(app.sync).commitTransaction(owner, { schemaVersion: 3, workspaceId, id: uuidV7(), createdAt: new Date().toISOString(), operations: [{
+      id: uuidV7(), entity: "workspace", action: "create", entityId: workspaceId, baseRevision: null,
+      data: { organizationId: testOrganizationID, name: "Long runs", createdAt: new Date().toISOString() } }] });
+    const history = createAiHistoryService(pool);
+    const sessions = createSessionSearchStore(pool, "postgres");
+    // The simple configuration stands in for tokenizer_japanese; PostgreSQL's parser has the same token limit.
+    const databaseSide = { id: "test-database-side/simple", config: "simple", matchAll: false };
+    const thread = await history.create(owner, workspaceId, "Long run");
+    const run = ["ア", "か", "ア"].map((char) => char.repeat(600));
+    const message: MastraDBMessage = { id: uuidV7(), threadId: thread.id, resourceId: owner.userId, createdAt: new Date(), role: "assistant",
+      content: { format: 2, parts: [{ type: "text", text: run.join("") }] } };
+    try {
+      await history.memory(owner).saveMessages({ messages: [message] });
+      expect(await sessions.index(owner.userId, thread.id, databaseSide)).toBeUndefined();
+      expect((await sessions.search(owner, run[1]!, [workspaceId], databaseSide, 10)).hits.map((hit) => hit.messageId)).toEqual([message.id]);
+    } finally { await history.delete(owner, thread.id); }
+  });
 });

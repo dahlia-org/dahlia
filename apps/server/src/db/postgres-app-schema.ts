@@ -753,6 +753,8 @@ const memoryChunkColumns = (parent: () => AnyPgColumn, scopeColumn: string) => (
   memoryId: uuid("memory_id").notNull().references(parent, { onDelete: "cascade" }),
   chunkNo: integer("chunk_no").notNull(),
   scopeId: uuid(scopeColumn).notNull(),
+  // The canonical revision these chunks were built from; chunks are current only when it and the analyzer match.
+  memoryRevision: integer("memory_revision").notNull(),
   chunkText: text("chunk_text").notNull(),
   searchText: text("search_text").default("").notNull(),
   searchVector: tsvector("search_vector"),

@@ -2,6 +2,7 @@ import { and, asc, eq, exists, gt, gte, inArray, isNull, ne, notExists, or, sql,
 import type { NodePgDatabase } from "drizzle-orm/node-postgres";
 import type * as pg from "../db/auth-schema";
 import { enqueueJob, payloadField } from "../jobs/state";
+import { lockAuthorization } from "../auth/authorization";
 import { chunkText } from "../search/chunk";
 import {
   analyzerInput, contentHash, cosineSimilarity, decodeFloat32, encodeFloat32, fts5Query, lexemeQuery, queryTokens, type SearchAnalyzer,
@@ -17,7 +18,7 @@ type Note = typeof pg.sharedMemory.$inferSelect;
 /** Strings a lexical query matches against: the analyzer's query lexemes. */
 async function queryLexemes(tx: NodePgDatabase, backend: SearchBackend, analyzer: SearchAnalyzer, query: string): Promise<string[]> {
   if (backend === "sqlite") return queryTokens(analyzer, query);
-  const input = analyzer.tokenizer ? queryTokens(analyzer, query).join(" ") : query;
+  const input = analyzer.tokenizer ? queryTokens(analyzer, query).join(" ") : analyzerInput(analyzer, query);
   if (!input) return [];
   // The index side applies the same configuration, so query lexemes match stored lexemes exactly.
   const result = await tx.execute<{ lexeme: string }>(sql`SELECT lexeme FROM unnest(to_tsvector(${analyzer.config}::regconfig, ${input}))
@@ -25,8 +26,8 @@ async function queryLexemes(tx: NodePgDatabase, backend: SearchBackend, analyzer
   return result.rows.map((row) => row.lexeme);
 }
 
-function searchVectorSql(analyzer: SearchAnalyzer, chunkTextValue: string, searchText: string): SQL {
-  return analyzer.tokenizer ? sql`to_tsvector('simple', ${searchText})` : sql`to_tsvector(${analyzer.config}::regconfig, ${chunkTextValue})`;
+function searchVectorSql(analyzer: SearchAnalyzer, text: string): SQL {
+  return sql`to_tsvector(${analyzer.config}::regconfig, ${analyzerInput(analyzer, text)})`;
 }
 
 /** Search projection of one Memory store table; every function runs inside the caller's authorized transaction. */
@@ -40,23 +41,26 @@ export function memoryProjection(schema: Schema, backend: SearchBackend, persona
   // A chunk the provider rejected keeps the model with a NULL vector: processed, word search only until its text changes.
   const embeddingStale = (embedding: EmbeddingConfig) => and(ne(chunks.chunkText, ""), or(isNull(chunks.embeddingModel),
     ne(chunks.embeddingModel, embedding.model), sql`${isPostgres ? sql`cardinality(${chunks.embedding})` : sql`length(${chunks.embedding}) / 4`} <> ${embedding.dimensions}`));
+  // Chunks are current only when built by this analyzer from the canonical revision.
   const hasCurrentChunk = (tx: NodePgDatabase, analyzer: SearchAnalyzer) => tx.select({ value: sql`1` }).from(chunks)
-    .where(and(eq(chunks.memoryId, notes.id), eq(chunks.analyzer, analyzer.id)));
+    .where(and(eq(chunks.memoryId, notes.id), eq(chunks.analyzer, analyzer.id), eq(chunks.memoryRevision, notes.revision)));
 
   /** Rewrites the memory's chunks unless they already match its content and the analyzer; queues embeddings for new text. */
-  async function index(tx: NodePgDatabase, note: Pick<Note, "id" | "scopeId" | "content">, analyzer: SearchAnalyzer, embedding?: EmbeddingConfig) {
+  // Callers hold the mutation lock (saveNote and reconcilePage), so the content they pass is the canonical one.
+  async function index(tx: NodePgDatabase, note: Pick<Note, "id" | "scopeId" | "content" | "revision">, analyzer: SearchAnalyzer, embedding?: EmbeddingConfig) {
     const hash = await contentHash(note.content);
-    const [current] = await tx.select({ analyzer: chunks.analyzer, contentHash: chunks.contentHash }).from(chunks)
+    const [current] = await tx.select({ analyzer: chunks.analyzer, contentHash: chunks.contentHash, revision: chunks.memoryRevision }).from(chunks)
       .where(eq(chunks.memoryId, note.id)).limit(1);
-    if (current?.analyzer === analyzer.id && current.contentHash === hash) return;
+    if (current?.analyzer === analyzer.id && current.revision === note.revision && current.contentHash === hash) return;
     const pieces = chunkText(note.content);
     await tx.delete(chunks).where(and(eq(chunks.memoryId, note.id), gte(chunks.chunkNo, pieces.length)));
     await tx.insert(chunks).values(pieces.map((text, chunkNo) => {
       const searchText = analyzer.tokenizer ? analyzerInput(analyzer, text) : "";
-      return { memoryId: note.id, chunkNo, scopeId: note.scopeId, chunkText: text, searchText, analyzer: analyzer.id, contentHash: hash,
-        ...(isPostgres ? { searchVector: searchVectorSql(analyzer, text, searchText) as never } : {}) };
+      return { memoryId: note.id, chunkNo, scopeId: note.scopeId, memoryRevision: note.revision, chunkText: text, searchText, analyzer: analyzer.id,
+        contentHash: hash, ...(isPostgres ? { searchVector: searchVectorSql(analyzer, text) as never } : {}) };
     })).onConflictDoUpdate({ target: [chunks.memoryId, chunks.chunkNo], set: {
       chunkText: sql`excluded.chunk_text`, searchText: sql`excluded.search_text`, analyzer: sql`excluded.analyzer`, contentHash: sql`excluded.content_hash`,
+      memoryRevision: sql`excluded.memory_revision`,
       ...(isPostgres ? { searchVector: sql`excluded.search_vector` } : {}),
       // A vector depends on its chunk text only, so an analyzer change keeps it.
       embedding: sql`CASE WHEN ${chunks.chunkText} = excluded.chunk_text THEN ${chunks.embedding} END`,
@@ -171,9 +175,17 @@ export function memoryProjection(schema: Schema, backend: SearchBackend, persona
         inArray(q.status, ["pending", "processing"]), embedding ? eq(payloadField(schema, "model"), embedding.model) : undefined));
       const needsEmbedding = embedding ? and(notExists(queued), exists(tx.select({ value: sql`1` }).from(chunks)
         .where(and(eq(chunks.memoryId, notes.id), embeddingStale(embedding))))) : sql`false`;
-      const page = await tx.select({ id: notes.id, scopeId: notes.scopeId, content: notes.content, indexed: sql<unknown>`${exists(hasCurrentChunk(tx, analyzer))}` })
+      const read = () => tx.select({ id: notes.id, scopeId: notes.scopeId, content: notes.content, revision: notes.revision,
+        indexed: sql<unknown>`${exists(hasCurrentChunk(tx, analyzer))}` })
         .from(notes).where(and(eq(notes.scopeId, scopeId), or(notExists(hasCurrentChunk(tx, analyzer)), needsEmbedding), after ? gt(notes.id, after) : undefined))
         .orderBy(asc(notes.id)).limit(100);
+      let page = await read();
+      // A rewrite takes saveNote's mutation lock and rereads the canonical rows under it, so a save committed after
+      // the first read is not overwritten with older content, and later saves wait for this page.
+      if (page.some((note) => !note.indexed)) {
+        await lockAuthorization(tx, schema, isPostgres);
+        page = await read();
+      }
       for (const note of page) {
         if (!note.indexed) await index(tx, note, analyzer, embedding);
         // The job embeds only stale chunks, so queueing it after a same-content rewrite costs one claim.

@@ -55,6 +55,7 @@ export function createSessionSearchStore(pool: Pool, backend: Exclude<SearchBack
           await client.query("DELETE FROM agent.session_search_chunks WHERE message_id = $1 AND chunk_no >= $2", [row.id, pieces.length]);
           for (const [chunkNo, chunk] of pieces.entries()) {
             const searchText = current.tokenizer ? analyzerInput(current, chunk) : "";
+            const parserInput = analyzerInput(current, chunk);
             // A vector depends on its chunk text only, so an analyzer change keeps it.
             await client.query(`INSERT INTO agent.session_search_chunks AS c (message_id, chunk_no, thread_id, user_id, workspace_id, role, created_at,
               chunk_text, search_text, search_vector, analyzer, content_hash)
@@ -64,7 +65,7 @@ export function createSessionSearchStore(pool: Pool, backend: Exclude<SearchBack
                 embedding = CASE WHEN c.chunk_text = EXCLUDED.chunk_text THEN c.embedding END,
                 embedding_model = CASE WHEN c.chunk_text = EXCLUDED.chunk_text THEN c.embedding_model END`,
             [row.id, chunkNo, threadId, userId, thread.workspaceId, row.role, row.createdAt, chunk, searchText,
-              current.config, current.tokenizer ? searchText : chunk, current.id, hash]);
+              current.config, parserInput, current.id, hash]);
           }
         }
         return rows.length === INDEX_PAGE ? rows.at(-1)!.id : undefined;
@@ -107,7 +108,7 @@ export function createSessionSearchStore(pool: Pool, backend: Exclude<SearchBack
       if (!workspaceIds.length) return { hits: [], partial: false };
       const current = await analyzer(application);
       return withIdentityTransaction(pool, identity, async (client) => {
-        const input = current.tokenizer ? queryTokens(current, query).join(" ") : query;
+        const input = current.tokenizer ? queryTokens(current, query).join(" ") : analyzerInput(current, query);
         const lexemes = input ? (await client.query<{ lexeme: string }>(`SELECT lexeme FROM unnest(to_tsvector($1::regconfig, $2))
           ORDER BY positions[1] NULLS LAST, lexeme LIMIT 16`, [current.config, input])).rows.map((row) => row.lexeme) : [];
         const scope = "user_id = $1 AND workspace_id = ANY($2::uuid[]) AND EXISTS (SELECT 1 FROM agent.mastra_threads t WHERE t.id = thread_id AND t.metadata->>'kind' = 'dahlia-chat')";
