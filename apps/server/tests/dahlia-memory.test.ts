@@ -197,15 +197,32 @@ describe("Dahlia Memory", () => {
       await f.drain();
       expect((await f.memory.search(f.owner, { scope: "personal", query: "費用" }, signal)).results[0]!.items.map((item) => item.id)).toEqual([note.id]);
       expect(base.documents.flat()).toEqual(["猫の名前はタマ", "予算は100万円"]);
-      // A provider that rejects every input marks the job failed; the memory stays findable by its words.
-      const rejecting = fakeEmbedder({ async embedDocuments() { throw new SearchEmbeddingError("embedding_http_400", false); } });
+      // A provider outage defers the job without a retry limit and keeps word search.
       const other = f.note("休暇の申請方法");
       await f.memory.save(f.owner, other);
-      const failed = (await f.app.jobs.claim(["memory-index"]))!;
-      await processMemoryIndexJob({ queue: f.app.jobs, analyzer: lindera, memory: f.memory.stores, embedder: rejecting }, failed, signal);
+      const unavailable = fakeEmbedder({ async embedDocuments() { throw new SearchEmbeddingError("embedding_http_503", true); } });
+      for (let attempt = 0; attempt < 4; attempt++) {
+        const deferred = (await f.app.jobs.claim(["memory-index"]))!;
+        await processMemoryIndexJob({ queue: f.app.jobs, analyzer: lindera, memory: f.memory.stores, embedder: unavailable }, deferred, signal);
+        await f.app.jobs.complete(deferred);
+        const { DatabaseSync } = await import("node:sqlite");
+        const database = new DatabaseSync(f.file);
+        try {
+          expect(database.prepare("SELECT status, last_error FROM jobs_queue WHERE dedupe_key = ?").get(`memory-index:personal:${decodeId("sharedMemory", other.id)}`))
+            .toEqual({ status: "pending", last_error: "embedding_http_503" });
+          database.prepare("UPDATE jobs_queue SET available_at = 0 WHERE dedupe_key = ?").run(`memory-index:personal:${decodeId("sharedMemory", other.id)}`);
+        } finally { database.close(); }
+      }
+      // A provider that rejects the input records the chunk without a vector: processed, findable by its words, not retried.
+      const rejecting = fakeEmbedder({ async embedDocuments() { throw new SearchEmbeddingError("embedding_http_400", false); } });
+      const rejected = (await f.app.jobs.claim(["memory-index"]))!;
+      await processMemoryIndexJob({ queue: f.app.jobs, analyzer: lindera, memory: f.memory.stores, embedder: rejecting }, rejected, signal);
+      await f.app.jobs.complete(rejected);
       expect(await f.app.jobs.claim(["memory-index"])).toBeNull();
+      expect(await f.memory.stores.personal.pendingEmbeddings(f.owner.userId, decodeId("sharedMemory", other.id), { model: embedder.model, dimensions: 32 })).toEqual([]);
       expect((await f.memory.search(f.owner, { scope: "personal", query: "休暇" }, signal)).results[0]!.items.map((item) => item.id)).toEqual([other.id, note.id]);
-      expect(await f.memory.stores.personal.pendingEmbeddings(f.owner.userId, decodeId("sharedMemory", other.id), { model: embedder.model, dimensions: 32 })).toHaveLength(1);
+      expect(await f.memory.stores.personal.reconcilePage(f.owner.userId, lindera)).toBeUndefined();
+      expect(await f.app.jobs.claim(["memory-index"])).toBeNull();
     } finally { f.close(); }
   });
   it("finds memories indexed by another analyzer through the canonical text until reconciliation rewrites them", async () => {
@@ -223,6 +240,21 @@ describe("Dahlia Memory", () => {
         expect(database.prepare("SELECT analyzer FROM personal_memory_chunks WHERE memory_id = ?").all(old.id)).toEqual([{ analyzer: lindera.id }]);
       } finally { database.close(); }
       expect(await ids("設定を見直したい")).toEqual([old.id]);
+    } finally { f.close(); }
+  });
+  it("relaxes the Worker analyzer's all-terms match when a sentence matches nothing", async () => {
+    const f = await fixture();
+    try {
+      const intl = applicationAnalyzer(createIntlSearchTokenizer());
+      const memory = new DahliaMemory(f.memory.stores, f.sync, undefined, intl);
+      const budget = f.note("2027年度予算は500万円");
+      const both = f.note("2027年の予算は未定");
+      await memory.save(f.owner, budget); await memory.save(f.owner, both); await memory.save(f.owner, f.note("昼食の注文"));
+      const ids = async (query: string) => (await memory.search(f.owner, { scope: "personal", query }, signal)).results[0]!.items.map((item) => item.id);
+      // Every term matches only the second memory, so no relaxation happens.
+      expect(await ids("2027年の予算")).toEqual([both.id]);
+      // No memory contains every word of the question; any-term matching still ranks the budget memories first.
+      expect((await ids("2027年の予算はいくら？")).slice(0, 2).toSorted()).toEqual([budget.id, both.id].toSorted());
     } finally { f.close(); }
   });
 

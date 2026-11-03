@@ -51,6 +51,7 @@ export function toolStepLabel(name: string): string {
   if (name === "write_plan") return uiText("Update plan", "計画を更新");
   if (name === "read_plan") return uiText("Read plan", "計画を確認");
   if (name === "submit_plan") return uiText("Submit plan", "計画を提出");
+  if (name === "search_chat_history") return uiText("Search chats", "チャットを検索");
   if (/^(save|delete|update)_\w*memory/.test(name)) return uiText("Update memory", "メモリーを更新");
   if (/memor|knowledge|recall/.test(name)) return uiText("Read memory", "メモリーを参照");
   return uiText(`Run ${name}`, `${name} を実行`);

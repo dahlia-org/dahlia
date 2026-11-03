@@ -68,6 +68,10 @@ export function createJobStore(database: PostgresDatabase | SQLiteDatabase | Nod
     async retry(job: BackgroundJob, deferred?: { delayMs: number; errorCode: string }) {
       await db.transaction((tx) => retryJob(tx, schema, job, deferred));
     },
+    /** Retries later without spending the dispatch budget; attempts keep growing the caller's backoff. */
+    async defer(job: BackgroundJob, errorCode: string, delayMs: number) {
+      await db.transaction((tx) => settleJob(tx, schema, job, { status: "pending", lastError: errorCode, availableAt: new Date(Date.now() + delayMs) }));
+    },
     async fail(job: BackgroundJob, errorCode: string) {
       await db.transaction((tx) => settleJob(tx, schema, job, { status: "failed", lastError: errorCode }));
     },

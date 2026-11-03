@@ -418,6 +418,7 @@ async function roleSupportsRls(db: PostgresDatabase): Promise<boolean> {
       "jobs.summary",
       "app.summaries",
       "app.shared_memories",
+      "search.shared_memory_chunks",
     ];
     const secured = (await client.query<{ count: number }>(`
       select count(*)::integer as count

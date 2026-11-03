@@ -63,7 +63,7 @@ export function createMemoryStore(database: PostgresDatabase | SQLiteDatabase | 
     },
     pendingEmbeddings: (scopeId: string, memoryId: string, config: EmbeddingConfig) =>
       maintenance(scopeId, (tx) => projection.pending(tx, memoryId, config)),
-    saveEmbeddings: (scopeId: string, memoryId: string, model: string, rows: Array<PendingChunk & { vector: number[] }>) =>
+    saveEmbeddings: (scopeId: string, memoryId: string, model: string, rows: Array<PendingChunk & { vector?: number[] }>) =>
       maintenance(scopeId, (tx) => projection.saveEmbeddings(tx, memoryId, model, rows)),
     async reconcilePage(scopeId: string, application: SearchAnalyzer, after?: string) {
       const current = await analyzer(application);

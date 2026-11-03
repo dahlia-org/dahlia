@@ -50,8 +50,8 @@ it.runIf(process.env.TEST_MIGRATION_DATABASE_URL)("creates the complete PostgreS
     expect(protectedTables.rows.map((row) => row.relname)).toEqual([
       "ai_thread_runs", "document_presence", "document_recoveries", "document_updates", "documents", "documents", "files", "knowledge_pages", "live_contexts", "mastra_messages",
       "mastra_observational_memory", "mastra_resources", "mastra_thread_state", "mastra_threads", "mastra_workflow_snapshot", "meeting_attachments",
-      "meeting_events", "meetings", "personal_memories", "projects",
-      "recordings", "shared_memories", "summaries", "summary", "transaction_receipts",
+      "meeting_events", "meetings", "personal_memories", "personal_memory_chunks", "projects",
+      "recordings", "session_search_chunks", "shared_memories", "shared_memory_chunks", "summaries", "summary", "transaction_receipts",
       "transcript_patch_chunks", "transcript_segments", "transcripts", "workspace_keys", "workspace_transfers", "workspaces",
     ]);
     expect(protectedTables.rows.every((row) => row.relforcerowsecurity === true)).toBe(true);

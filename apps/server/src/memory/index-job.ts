@@ -39,10 +39,10 @@ export async function processMemoryIndexJob(services: MemoryIndexServices, job: 
   await embed(services, job, pending, (rows) => store.saveEmbeddings(payload.scopeId!, payload.documentId!, config.model, rows), signal);
 }
 
-// Returns whether every chunk was embedded. Lexical search keeps working meanwhile: retryable failures back off,
-// rejected input stays failed until the content changes.
+// Returns whether the chunks were processed. Word search keeps working meanwhile: retryable failures back off without
+// a retry limit, like meeting embeddings; a rejected chunk is saved without a vector until its text changes.
 async function embed<T extends { text: string }>(services: MemoryIndexServices, job: BackgroundJob, pending: T[],
-  save: (rows: Array<T & { vector: number[] }>) => Promise<void>, signal: AbortSignal): Promise<boolean> {
+  save: (rows: Array<T & { vector?: number[] }>) => Promise<void>, signal: AbortSignal): Promise<boolean> {
   if (!pending.length) return true;
   let vectors: Array<number[] | undefined>;
   try {
@@ -52,12 +52,10 @@ async function embed<T extends { text: string }>(services: MemoryIndexServices, 
     if (!error.retryable) await services.queue.fail(job, error.code);
     else {
       if (isRateLimited(error.code)) await services.queue.cooldown("memory-index", Date.now() + RATE_LIMIT_COOLDOWN_MS);
-      await services.queue.retry(job, { delayMs: Math.min(15 * 60_000, 1_000 * 2 ** Math.min(job.attempts, 10)), errorCode: error.code });
+      await services.queue.defer(job, error.code, Math.min(15 * 60_000, 1_000 * 2 ** Math.min(job.attempts, 10)));
     }
     return false;
   }
-  await save(pending.flatMap((chunk, index) => vectors[index] ? [{ ...chunk, vector: vectors[index] }] : []));
-  if (vectors.every(Boolean)) return true;
-  await services.queue.fail(job, "embedding_input_rejected");
-  return false;
+  await save(pending.map((chunk, index) => ({ ...chunk, vector: vectors[index] })));
+  return true;
 }

@@ -37,7 +37,8 @@ export function memoryProjection(schema: Schema, backend: SearchBackend, persona
   const table = personal ? "personal_memory_chunks" : "shared_memory_chunks";
   const source = personal ? "personal" as const : "workspace" as const;
   const jobKey = (id: string) => `memory-index:${source}:${id}`;
-  const embeddingStale = (embedding: EmbeddingConfig) => and(ne(chunks.chunkText, ""), or(isNull(chunks.embedding), isNull(chunks.embeddingModel),
+  // A chunk the provider rejected keeps the model with a NULL vector: processed, word search only until its text changes.
+  const embeddingStale = (embedding: EmbeddingConfig) => and(ne(chunks.chunkText, ""), or(isNull(chunks.embeddingModel),
     ne(chunks.embeddingModel, embedding.model), sql`${isPostgres ? sql`cardinality(${chunks.embedding})` : sql`length(${chunks.embedding}) / 4`} <> ${embedding.dimensions}`));
   const hasCurrentChunk = (tx: NodePgDatabase, analyzer: SearchAnalyzer) => tx.select({ value: sql`1` }).from(chunks)
     .where(and(eq(chunks.memoryId, notes.id), eq(chunks.analyzer, analyzer.id)));
@@ -60,16 +61,23 @@ export function memoryProjection(schema: Schema, backend: SearchBackend, persona
 
   async function lexicalIds(tx: NodePgDatabase, scopeId: string, analyzer: SearchAnalyzer, lexemes: string[]): Promise<string[]> {
     if (!lexemes.length) return [];
+    const ids = await matchingIds(tx, scopeId, analyzer, lexemes, analyzer.matchAll);
+    // An analyzer without stop words requires every term, which a sentence rarely meets; then any term may match.
+    return ids.length || !analyzer.matchAll || lexemes.length < 2 ? ids : matchingIds(tx, scopeId, analyzer, lexemes, false);
+  }
+
+  async function matchingIds(tx: NodePgDatabase, scopeId: string, analyzer: SearchAnalyzer, lexemes: string[], matchAll: boolean): Promise<string[]> {
     const scope = and(eq(chunks.scopeId, scopeId), eq(chunks.analyzer, analyzer.id));
     if (!isPostgres) {
       const fts = sql.identifier(`${table}_fts`);
+      const match = fts5Query(lexemes, matchAll);
       const rows = await tx.select({ id: chunks.memoryId }).from(chunks)
-        .where(and(scope, sql`${chunks}.rowid IN (SELECT rowid FROM ${fts} WHERE ${fts} MATCH ${fts5Query(lexemes, analyzer.matchAll)})`))
-        .orderBy(sql`(SELECT bm25(${fts}) FROM ${fts} WHERE rowid = ${chunks}.rowid AND ${fts} MATCH ${fts5Query(lexemes, analyzer.matchAll)})`, asc(chunks.memoryId))
+        .where(and(scope, sql`${chunks}.rowid IN (SELECT rowid FROM ${fts} WHERE ${fts} MATCH ${match})`))
+        .orderBy(sql`(SELECT bm25(${fts}) FROM ${fts} WHERE rowid = ${chunks}.rowid AND ${fts} MATCH ${match})`, asc(chunks.memoryId))
         .limit(SEARCH_CANDIDATE_LIMIT);
       return [...new Set(rows.map((row) => row.id))];
     }
-    const query = sql`${lexemeQuery(lexemes, analyzer.matchAll)}::tsquery`;
+    const query = sql`${lexemeQuery(lexemes, matchAll)}::tsquery`;
     let rank: SQL;
     if (backend === "lakebase") {
       // Mirrors meeting search: score every row that passes the filter instead of a BM25 index scan.
@@ -92,6 +100,8 @@ export function memoryProjection(schema: Schema, backend: SearchBackend, persona
         .sort((left, right) => right.similarity - left.similarity || left.id.localeCompare(right.id))
         .slice(0, SEARCH_CANDIDATE_LIMIT).map(({ id }) => id))];
     }
+    // Like meeting search: keep scanning the HNSW index until the scope filter yields enough rows.
+    if (backend === "postgres") await tx.execute(sql`select set_config('hnsw.iterative_scan', 'strict_order', true)`);
     const type = sql.raw(`public.vector(${embedding.dimensions})`);
     const distance = sql`${chunks.embedding}::${type} <=> ${JSON.stringify(embedding.vector)}::${type}`;
     const rows = await tx.select({ id: chunks.memoryId }).from(chunks).where(current)
@@ -137,18 +147,21 @@ export function memoryProjection(schema: Schema, backend: SearchBackend, persona
       return (await tx.select({ chunkNo: chunks.chunkNo, text: chunks.chunkText, hash: chunks.contentHash }).from(chunks)
         .where(and(eq(chunks.memoryId, memoryId), embeddingStale(embedding))).orderBy(asc(chunks.chunkNo)));
     },
-    async saveEmbeddings(tx: NodePgDatabase, memoryId: string, model: string, rows: Array<PendingChunk & { vector: number[] }>) {
+    /** vector undefined records a chunk the provider rejected. */
+    async saveEmbeddings(tx: NodePgDatabase, memoryId: string, model: string, rows: Array<PendingChunk & { vector?: number[] }>) {
       for (const row of rows) {
+        const embedding = row.vector && (isPostgres ? row.vector : encodeFloat32(row.vector));
         // The content hash discards a vector computed for text that changed meanwhile.
-        await tx.update(chunks).set({ embedding: (isPostgres ? row.vector : encodeFloat32(row.vector)) as never, embeddingModel: model })
+        await tx.update(chunks).set({ embedding: (embedding ?? null) as never, embeddingModel: model })
           .where(and(eq(chunks.memoryId, memoryId), eq(chunks.chunkNo, row.chunkNo), eq(chunks.contentHash, row.hash)));
       }
     },
     /** Rebuilds chunks of another analyzer and queues missing embeddings, 100 memories at a time. */
     async reconcilePage(tx: NodePgDatabase, scopeId: string, analyzer: SearchAnalyzer, embedding: EmbeddingConfig | undefined, after?: string) {
       const q = schema.backgroundJob;
+      // A pending or running job for the current model will embed it; failed rows are revived.
       const queued = tx.select({ value: sql`1` }).from(q).where(and(eq(q.dedupeKey, sql`${`memory-index:${source}:`} || ${notes.id}`),
-        embedding ? eq(payloadField(schema, "model"), embedding.model) : undefined));
+        inArray(q.status, ["pending", "processing"]), embedding ? eq(payloadField(schema, "model"), embedding.model) : undefined));
       const needsEmbedding = embedding ? and(notExists(queued), exists(tx.select({ value: sql`1` }).from(chunks)
         .where(and(eq(chunks.memoryId, notes.id), embeddingStale(embedding))))) : sql`false`;
       const page = await tx.select({ id: notes.id, scopeId: notes.scopeId, content: notes.content, indexed: sql<unknown>`${exists(hasCurrentChunk(tx, analyzer))}` })

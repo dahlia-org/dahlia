@@ -13,8 +13,9 @@ import { connectPostgresUrl } from "../src/db/postgres";
 import { createJobStore } from "../src/jobs/store";
 import { defaultJobLimits } from "../src/jobs/model";
 import { processMemoryIndexJob } from "../src/memory/index-job";
-import type { SearchEmbedder } from "../src/search/embedding";
+import { SearchEmbeddingError, type SearchEmbedder } from "../src/search/embedding";
 import { applicationAnalyzer } from "../src/search/lexical";
+import { chunkText } from "../src/search/chunk";
 import { createNodeSearchTokenizer } from "../src/search/node-tokenizer";
 import { createIntlSearchTokenizer } from "../src/search/tokenizer";
 import { MeetingSyncService } from "../src/sync/service";
@@ -77,8 +78,27 @@ describe.runIf(url)("Saved chat hybrid search", () => {
       expect(answer!.context.map((message) => message.text)).toEqual(["来週の出張について相談したい", "ありがとう、その金額で進めます"]);
       expect(found.instruction).toContain("meaning");
       expect(found.instruction).not.toContain("not indexed");
+      // A long answer shows the chunk that matched, not its opening chunk.
+      const longText = `${"前置きの説明です。".repeat(400)}\n\n結論として出張の宿泊先は大阪の駅前にしました。`;
+      const longChunks = chunkText(longText);
+      expect(longChunks).toHaveLength(2);
+      const long: MastraDBMessage = { id: uuidV7(), threadId: thread.id, resourceId: owner.userId, createdAt: new Date(start + 10), role: "assistant",
+        content: { format: 2, parts: [{ type: "text", text: longText }] } };
+      await history.memory(owner).saveMessages({ messages: [long] });
+      // A chunk the provider rejects is recorded without a vector and does not stop the remaining chunks.
+      const rejectFirst: SearchEmbedder = { ...embedder, async embedDocuments(input) {
+        if (input.includes(longChunks[0]!)) throw new SearchEmbeddingError("embedding_http_400", false);
+        return embedder.embedDocuments(input);
+      } };
+      await sessions.enqueue(owner, thread.id);
+      const longJob = (await queue.claim(["memory-index"], [`memory-index:session:${thread.id}`]))!;
+      await processMemoryIndexJob({ queue, analyzer: lindera, sessions, embedder: rejectFirst }, longJob, signal);
+      await queue.complete(longJob);
+      expect(await sessions.pendingEmbeddings(owner.userId, thread.id, { model: embedder.model, dimensions: 32 }, 10)).toEqual([]);
+      const hotel = (await sessions.search(owner, "宿泊先", [workspaceId], lindera, 10)).hits;
+      expect(hotel.map((hit) => [hit.messageId, hit.text])).toEqual([[long.id, longChunks[1]]]);
       // Words alone, without embeddings: Japanese sentences match by tokens.
-      expect((await sessions.search(owner, "出張について", [workspaceId], lindera, 10)).hits.map((hit) => hit.messageId)).toEqual([messages[0]!.id]);
+      expect((await sessions.search(owner, "出張について", [workspaceId], lindera, 10)).hits.map((hit) => hit.messageId).toSorted()).toEqual([messages[0]!.id, long.id].toSorted());
       // Owner-only: the stranger's chat in the same Workspace never appears, and RLS hides the projection rows.
       expect(found.results.flatMap((result) => [result.text, ...result.context.map((message) => message.text)])).not.toContain("予算の秘密");
       expect((await pool.query("SELECT * FROM agent.session_search_chunks WHERE thread_id = $1", [thread.id])).rows).toEqual([]);
