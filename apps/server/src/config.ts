@@ -63,7 +63,6 @@ export interface S3StorageConfig {
 export interface AppConfig {
   chatMemoryModel?: string;
   memoryMcpAccess?: "off" | "read" | "write";
-  hindsight?: { url: string; auth: "none" | "bearer" | "databricks"; apiKey?: string; images?: import("./memory/images").ImageSettings };
   encryption?: EncryptionConfig;
   authProvider: AuthProvider;
   authHeader: string;
@@ -247,9 +246,6 @@ function providerConfig(
 }
 
 export function loadConfig(env: Record<string, string | undefined>): AppConfig {
-  if (env.DAHLIA_HINDSIGHT_BANK_PREFIX !== undefined) {
-    throw new Error("DAHLIA_HINDSIGHT_BANK_PREFIX is no longer supported; remove it and use a dedicated Hindsight endpoint and storage for each environment");
-  }
   if (env.DAHLIA_ADMIN_EMAIL?.trim()) {
     throw new Error("DAHLIA_ADMIN_EMAIL is no longer supported; the first user becomes administrator");
   }
@@ -296,7 +292,7 @@ export function loadConfig(env: Record<string, string | undefined>): AppConfig {
   const otel = otelConfig(env);
   const databricksWorkspace = databricksWorkspaceConfig(
     env,
-    env.DAHLIA_HINDSIGHT_AUTH === "databricks" || storageBackend === "databricks" || Object.values(otel?.exporters ?? {}).some((target) => target.zerobus) || (aiBackend === "databricks"
+    storageBackend === "databricks" || Object.values(otel?.exporters ?? {}).some((target) => target.zerobus) || (aiBackend === "databricks"
       && Boolean(chatMemoryModel || searchEmbedding || captioningModel
         || env.DATABRICKS_CLIENT_ID?.trim() || env.DATABRICKS_CLIENT_SECRET?.trim())),
   );
@@ -352,7 +348,6 @@ export function loadConfig(env: Record<string, string | undefined>): AppConfig {
     captioningModel,
     chatMemoryModel,
     memoryMcpAccess: memoryMcpAccess as "off" | "read" | "write",
-    hindsight: hindsightConfig(env),
     otel,
   };
 
@@ -432,24 +427,4 @@ function otelConfig(env: Record<string, string | undefined>): OtelConfig | undef
   }
   if (!Object.keys(exporters).length) return undefined;
   return { exporters, serviceName: env.OTEL_SERVICE_NAME?.trim() || "dahlia-server" };
-}
-
-function hindsightConfig(env: Record<string, string | undefined>): AppConfig["hindsight"] {
-  if (!env.DAHLIA_HINDSIGHT_URL?.trim()) {
-    if (env.DAHLIA_HINDSIGHT_AUTH || env.DAHLIA_HINDSIGHT_API_KEY) throw new Error("DAHLIA_HINDSIGHT_URL is required");
-    return undefined;
-  }
-  const auth = z.enum(["none", "bearer", "databricks"]).parse(required(env, "DAHLIA_HINDSIGHT_AUTH"));
-  const url = validateBaseUrl(required(env, "DAHLIA_HINDSIGHT_URL"), "DAHLIA_HINDSIGHT_URL");
-  const parsed = new URL(url);
-  if (parsed.username || parsed.password || parsed.search || parsed.hash || (auth !== "none" && parsed.protocol !== "https:")) throw new Error("Invalid Hindsight URL");
-  if (auth !== "bearer" && env.DAHLIA_HINDSIGHT_API_KEY) throw new Error("Hindsight API key requires bearer authentication");
-  return { url: url.replace(/\/$/, ""), auth,
-    apiKey: auth === "bearer" ? required(env, "DAHLIA_HINDSIGHT_API_KEY") : undefined,
-    images: env.DAHLIA_MEMORY_IMAGE_MODEL?.trim() ? {
-      model: env.DAHLIA_MEMORY_IMAGE_MODEL.trim(),
-      maxCount: z.coerce.number().int().min(1).max(32).parse(env.DAHLIA_MEMORY_IMAGE_MAX_COUNT ?? 8),
-      maxBytes: z.coerce.number().int().min(1).max(32 * 1024 * 1024).parse(env.DAHLIA_MEMORY_IMAGE_MAX_BYTES ?? 8 * 1024 * 1024),
-      longEdge: z.enum(["480", "1280", "1568", "1920"]).transform(Number).parse(env.DAHLIA_MEMORY_IMAGE_LONG_EDGE ?? "1568") as 480 | 1280 | 1568 | 1920,
-    } : undefined };
 }

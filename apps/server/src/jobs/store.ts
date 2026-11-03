@@ -27,8 +27,9 @@ export function createJobStore(database: PostgresDatabase | SQLiteDatabase | Nod
         const now = new Date();
         await tx.delete(jobs).where(and(eq(jobs.status, "cancelled"), eq(jobs.retainCancelled, false),
           or(sql`${jobs.leaseUntil} IS NULL`, lte(jobs.leaseUntil, now))));
-        const active = await tx.select({ kind: jobs.kind, target: jobs.target, lease: jobs.lease }).from(jobs)
-          .where(gt(jobs.leaseUntil, now));
+        // Leased rows of retired kinds (e.g. Hindsight memory) may remain after an upgrade; they occupy no group.
+        const active = (await tx.select({ kind: jobs.kind, target: jobs.target, lease: jobs.lease }).from(jobs)
+          .where(gt(jobs.leaseUntil, now))).filter((job) => job.kind in groupsForJob);
         const allowed = kinds.filter((kind) => groupsForJob[kind].every((group) =>
           (state!.cooldowns[group] ?? 0) <= now.getTime()
           && new Set(active.filter((job) => groupsForJob[job.kind].includes(group)).map((job) => job.lease)).size < limits[group]));

@@ -45,30 +45,6 @@ describe("Worker initialization", () => {
       headers: { "x-databricks-zerobus-table-name": "dahlia.ops.dahlia_otel_metrics" }, zerobus: { workspaceId: "1234", table: "dahlia.ops.dahlia_otel_metrics" } }]);
   });
 
-  it.each([false, true])("requires an image transformer only for configured Memory images (binding: %s)", async (binding) => {
-    const env = {
-      DAHLIA_AUTH_TYPE: "header", DAHLIA_STORAGE_BACKEND: "r2", DAHLIA_DATABASE_TYPE: "postgres",
-      DAHLIA_DATABASE_URL: "postgresql://dahlia.example/dahlia", DAHLIA_HINDSIGHT_URL: "https://memory.example/api",
-      DAHLIA_HINDSIGHT_AUTH: "none",
-      DAHLIA_JOB_QUEUE: { send: vi.fn(), sendBatch: vi.fn() },
-      ...(binding ? { IMAGES: { input: vi.fn() } } : {}),
-    };
-    await expect(initializeWorkerApp({ ...env, DAHLIA_MEMORY_IMAGE_MODEL: "system.ai.gpt-6-luna" }))
-      .rejects.toThrow(binding ? "seed failed" : "Memory image ingestion requires the IMAGES binding");
-    expect(vi.mocked(connectPostgresUrl)).toHaveBeenCalledTimes(binding ? 1 : 0);
-    await expect(initializeWorkerApp(env)).rejects.toThrow("seed failed");
-  });
-
-  it.each(["", " ", "old-prefix"])("rejects the removed bank prefix before opening the database (%j)", async (prefix) => {
-    // Removed bindings may remain in a deployed Worker even though they are no longer in RuntimeSecrets.
-    const env = { DAHLIA_HINDSIGHT_BANK_PREFIX: prefix, DAHLIA_AUTH_TYPE: "header" };
-    await expect(initializeWorkerApp(env)).rejects.toThrow(
-      "DAHLIA_HINDSIGHT_BANK_PREFIX is no longer supported; remove it and use a dedicated Hindsight endpoint and storage for each environment",
-    );
-    expect(close).not.toHaveBeenCalled();
-    expect(vi.mocked(connectPostgresUrl)).not.toHaveBeenCalled();
-  });
-
   it.each([undefined, "0", "1"])("forwards signup policy %s and closes PostgreSQL when authentication initialization fails", async (signupPolicy) => {
     await expect(initializeWorkerApp({
       DAHLIA_ENCRYPTION_MASTER_KEY_3: btoa(String.fromCharCode(...new Uint8Array(32).fill(3))),

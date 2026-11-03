@@ -5,7 +5,7 @@ import type { components } from "../api/generated-api";
 import type { AiInteraction, AiResume } from "../model/ai-interaction";
 import { ChatMarkdown, StreamingChatMarkdown } from "./ChatMarkdown";
 import { WorkingMemoryEditor, LiveChatContext } from "./ChatMemory";
-import { WorkspaceMemory, SaveSharedMemory } from "./WorkspaceMemory";
+import { SaveSharedMemory } from "./WorkspaceMemory";
 import { Brain, BriefcaseBusiness, Ellipsis, LoaderCircle, Plus, Send, Sparkles, Square, Trash2, Wrench } from "lucide-react";
 import { useEffect, useRef, useState, type KeyboardEvent, type MouseEvent } from "react";
 import { createPortal } from "react-dom";
@@ -123,7 +123,6 @@ export function AiChat({ requestedThreadId }: { requestedThreadId?: string }) {
   const { chatHistoryTarget, workspaces, setChatWorkspaceId } = useSidebar();
   const [models, setModels] = useState<AiModel[]>([]);
   const [workspaceId, setWorkspaceId] = useState("");
-  const [memoryWorkspace, setMemoryWorkspace] = useState("");
   const [model, setModel] = useState("");
   const [reasoningEffort, setReasoningEffort] = useState<ReasoningEffort | "">("");
   const [messages, setMessages] = useState<Message[]>([]);
@@ -594,9 +593,8 @@ export function AiChat({ requestedThreadId }: { requestedThreadId?: string }) {
     </div> : <>
       <div className="ai-transcript" ref={transcript}>
         {hasEarlierMessages && <button className="secondary" disabled={openingThread || pending} onClick={() => void loadEarlierMessages()}>{uiText("Load earlier messages", "以前のメッセージを読み込む")}</button>}
-        {selectedWorkspace && <WorkspaceMemory key={workspaceId} workspaceId={workspaceId} role={selectedWorkspace.role} onEnabledWorkspace={setMemoryWorkspace} compact />}
         {messages.map((message, index) => <article className={`ai-message ${message.role}`} key={message.id || index}>{message.role === "assistant" ? <ChatMarkdown content={message.content} /> : message.content}
-          {message.role === "assistant" && memoryWorkspace === workspaceId && selectedWorkspace && selectedWorkspace.role !== "viewer" && !pending && <SaveSharedMemory key={workspaceId} workspaceId={workspaceId} workspaceName={selectedWorkspace.name} model={model} content={message.content} question={messages.slice(0, index).findLast(item => item.role === "user")?.content} />}
+          {message.role === "assistant" && selectedWorkspace && selectedWorkspace.role !== "viewer" && selectedWorkspace.encryption !== "server" && !pending && <SaveSharedMemory key={workspaceId} workspaceId={workspaceId} workspaceName={selectedWorkspace.name} model={model} content={message.content} question={messages.slice(0, index).findLast(item => item.role === "user")?.content} />}
         </article>)}
         {usedTools.length > 0 && <ul className="ai-tools" aria-label={uiText("Tools used", "使用したツール")}>
           {usedTools.map((step, index) => <li key={index}><Wrench aria-hidden="true" />{toolStepLabel(step.name)}</li>)}

@@ -2263,31 +2263,6 @@
       "request": "pass"
     },
     {
-      "path": "/api/v1/user/memory/reflect",
-      "methods": [
-        "POST"
-      ],
-      "response": "pass",
-      "request": "pass"
-    },
-    {
-      "path": "/api/v1/user/memory/analysis/status",
-      "methods": [
-        "GET",
-        "HEAD"
-      ],
-      "response": "pass",
-      "request": "pass"
-    },
-    {
-      "path": "/api/v1/user/memory/analysis/settings",
-      "methods": [
-        "PATCH"
-      ],
-      "response": "pass",
-      "request": "pass"
-    },
-    {
       "path": "/api/v1/workspaces/:workspaceId/memory/notes",
       "methods": [
         "GET",
@@ -2338,65 +2313,9 @@
       "request": "pass"
     },
     {
-      "path": "/api/v1/workspaces/:workspaceId/memory/reflect",
-      "methods": [
-        "POST"
-      ],
-      "response": "pass",
-      "request": "pass"
-    },
-    {
-      "path": "/api/v1/workspaces/:workspaceId/memory/analysis/status",
-      "methods": [
-        "GET",
-        "HEAD"
-      ],
-      "response": "pass",
-      "request": "pass"
-    },
-    {
-      "path": "/api/v1/workspaces/:workspaceId/memory/analysis/settings",
-      "methods": [
-        "PATCH"
-      ],
-      "response": "pass",
-      "request": "pass"
-    },
-    {
       "path": "/api/v1/workspaces/:workspace/memory",
       "methods": [
         "DELETE"
-      ],
-      "response": "pass"
-    },
-    {
-      "path": "/api/v1/workspaces/:workspaceId/memory/pages",
-      "methods": [
-        "GET",
-        "HEAD"
-      ],
-      "response": "pass"
-    },
-    {
-      "path": "/api/v1/workspaces/:workspaceId/memory/pages/:pageId",
-      "methods": [
-        "GET",
-        "HEAD"
-      ],
-      "response": "pass"
-    },
-    {
-      "path": "/api/v1/workspaces/:workspaceId/memory/pages/:pageId/export",
-      "methods": [
-        "GET",
-        "HEAD"
-      ],
-      "response": "pass"
-    },
-    {
-      "path": "/api/v1/workspaces/:workspaceId/memory/pages/:pageId/refresh",
-      "methods": [
-        "POST"
       ],
       "response": "pass"
     },

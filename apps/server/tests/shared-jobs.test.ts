@@ -1,3 +1,4 @@
+import { z } from "zod";
 import { drizzle } from "drizzle-orm/sqlite-proxy";
 import type { NodePgDatabase } from "drizzle-orm/node-postgres";
 import { eq } from "drizzle-orm";
@@ -39,22 +40,31 @@ async function fixture() {
 
 }
 describe("shared durable dispatch", () => {
+  it("keeps claiming after an upgrade leaves a leased or pending job of a retired kind", async () => {
+    const { queue, db } = await fixture();
+    const insert = db.prepare("INSERT INTO jobs_queue (id, dedupe_key, kind, owner, target, payload, status, available_at, created_at, lease, lease_until) VALUES (?, ?, 'workspace-memory', 'owner', 'scope', '{}', ?, 0, 0, ?, ?)");
+    insert.run("retired-leased", "workspace-memory:a", "processing", "lease", Date.now() + 300_000);
+    insert.run("retired-pending", "workspace-memory:b", "pending", null, null);
+    await queue.enqueue("memory", "chat-memory", "owner", "memory", testJobPayload("chat-memory"));
+    expect((await queue.claim(["chat-memory"]))!.dedupeKey).toBe("memory");
+    expect(db.prepare("SELECT status FROM jobs_queue WHERE id = 'retired-pending'").get()).toEqual({ status: "pending" });
+  });
   it("lets waiting memory run ahead of an older image after its retry becomes due", async () => {
     const { queue, db } = await fixture();
     await queue.enqueue("image", "image", "owner", "file", testJobPayload("image"));
-    await queue.enqueue("memory", "workspace-memory", "owner", "memory", testJobPayload("workspace-memory"));
+    await queue.enqueue("memory", "chat-memory", "owner", "memory", testJobPayload("chat-memory"));
     db.exec("UPDATE jobs_queue SET created_at = CASE WHEN dedupe_key = 'image' THEN 1000 ELSE 2000 END, available_at = 0");
-    const image = (await queue.claim(["image", "workspace-memory"]))!;
+    const image = (await queue.claim(["image", "chat-memory"]))!;
     expect(image.dedupeKey).toBe("image");
     await queue.reschedule(image, image.payload, 0);
-    expect((await queue.claim(["image", "workspace-memory"]))!.dedupeKey).toBe("memory");
+    expect((await queue.claim(["image", "chat-memory"]))!.dedupeKey).toBe("memory");
   });
   it("runs memory before rechecking an older image whose source is not ready", async () => {
     const { queue, db } = await fixture();
     vi.useFakeTimers();
     await queue.enqueue("image", "image", "owner", "file", { ...testJobPayload("image"), model: "model" });
-    const memoryPayload = testJobPayload("workspace-memory");
-    await queue.enqueue("memory", "workspace-memory", "owner", "memory", memoryPayload);
+    const memoryPayload = testJobPayload("chat-memory");
+    await queue.enqueue("memory", "chat-memory", "owner", "memory", memoryPayload);
     db.exec("UPDATE jobs_queue SET created_at = CASE WHEN dedupe_key = 'image' THEN 1000 ELSE 2000 END");
     const claim = vi.fn(async (_model: string, job: import("../src/jobs/store").BackgroundJob) => {
       await queue.retry(job, { delayMs: 60_000, errorCode: "job_source_not_ready" });
@@ -62,13 +72,13 @@ describe("shared durable dispatch", () => {
     }), step = vi.fn().mockResolvedValue(undefined);
     const executor = createJobExecutor({ queue,
       summaryJobs: {} as never, methods: [], sync: {} as never, syncStore: {} as never,
-      imageAnalysis: { claim } as never, captioner: { model: "model" } as never, memory: { step } as never });
+      imageAnalysis: { claim } as never, captioner: { model: "model" } as never, chatMemory: { step } as never });
     const signal = new AbortController().signal;
     await executor.processOne(signal);
     expect(claim).toHaveBeenCalledOnce();
     vi.setSystemTime(Date.now() + 2_000);
     await executor.processOne(signal);
-    expect(step).toHaveBeenCalledWith(memoryPayload.scopeId, expect.any(AbortSignal), expect.objectContaining({ kind: "workspace-memory" }));
+    expect(step).toHaveBeenCalledWith(expect.any(String), memoryPayload.ownerUserId, expect.any(AbortSignal), expect.objectContaining({ kind: "chat-memory" }));
     expect(claim).toHaveBeenCalledOnce();
     expect(await executor.processOne(signal)).toBe(false);
     vi.setSystemTime(Date.now() + 60_000);
@@ -236,20 +246,20 @@ describe("shared durable dispatch", () => {
   it("waits past each five-minute lease before infrastructure retries reach the DLQ", async () => {
     const { queue } = await fixture();
     vi.useFakeTimers();
-    await queue.enqueue("memory", "workspace-memory", "owner", "memory", testJobPayload("workspace-memory"));
-    const first = (await queue.claim(["workspace-memory"]))!;
+    await queue.enqueue("memory", "chat-memory", "owner", "memory", testJobPayload("chat-memory"));
+    const first = (await queue.claim(["chat-memory"]))!;
     await queue.retry(first);
     vi.setSystemTime(Date.now() + 6_000);
-    expect(await queue.claim(["workspace-memory"])).toBeNull();
+    expect(await queue.claim(["chat-memory"])).toBeNull();
     vi.setSystemTime(first.leaseUntil.getTime() + 1_000);
-    const second = (await queue.claim(["workspace-memory"]))!;
+    const second = (await queue.claim(["chat-memory"]))!;
     expect(second.dispatchAttempts).toBe(2);
     await queue.retry(second);
     vi.setSystemTime(second.leaseUntil.getTime() + 1_000);
-    const third = (await queue.claim(["workspace-memory"]))!;
+    const third = (await queue.claim(["chat-memory"]))!;
     expect(third.dispatchAttempts).toBe(3);
     await queue.retry(third);
-    expect(await queue.nextDelay(["workspace-memory"])).toBeUndefined();
+    expect(await queue.nextDelay(["chat-memory"])).toBeUndefined();
   });
   it("shares throttling across kinds using the same summary budget", async () => {
     const { queue } = await fixture();
@@ -284,7 +294,9 @@ describe("resource configuration", () => {
   it("validates overrides", () => {
     expect(loadJobConfig({ DAHLIA_JOB_WORKERS: "2", DAHLIA_JOB_CONCURRENCY: "8", DAHLIA_JOB_LIMITS: '{"summary":16}' }))
       .toMatchObject({ workers: 2, concurrency: 8, limits: { summary: 16 } });
-    for (const env of [{ DAHLIA_JOB_WORKERS: "0" }, { DAHLIA_JOB_CONCURRENCY: "9" }, { DAHLIA_JOB_LIMITS: '{"unknown":1}' }]) expect(() => loadJobConfig(env)).toThrow();
+    for (const env of [{ DAHLIA_JOB_WORKERS: "0" }, { DAHLIA_JOB_CONCURRENCY: "9" }, { DAHLIA_JOB_LIMITS: '{"unknown":1}' }, { DAHLIA_JOB_LIMITS: "null" }]) expect(() => loadJobConfig(env)).toThrow(z.ZodError);
+    // Settings written for the retired Hindsight memory group keep starting; the value has no effect.
+    expect(loadJobConfig({ DAHLIA_JOB_LIMITS: '{"memory":1,"summary":4}' }).limits).toEqual({ ...defaultJobLimits, summary: 4 });
   });
   it("bounds async execution and drains admitted work on shutdown", async () => {
     let active = 0, maximum = 0, started!: () => void, finish!: () => void;

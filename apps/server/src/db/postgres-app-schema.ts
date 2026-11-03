@@ -652,7 +652,8 @@ export const workspaceKey = cryptoSchema.table("workspace_keys", {
   pgPolicy("workspace_key_write", { for: "all", using: sql`"app"."current_identity_can_write_workspace"(${table.workspaceId}) OR current_setting('app.maintenance', true) = 'rotation'`, withCheck: sql`"app"."current_identity_can_write_workspace"(${table.workspaceId}) OR current_setting('app.maintenance', true) = 'rotation'` }),
 ]).enableRLS();
 
-// Content-free coordination metadata deliberately survives Workspace deletion for remote cleanup.
+// Retired Hindsight projection tables (workspace/personal memory state, source jobs, documents, knowledge_pages).
+// Unused since the Dahlia Memory store; kept so existing databases and rollback stay intact. Drop only via an approved forward migration.
 export const workspaceMemoryState = jobsSchema.table("workspace_memory_state", {
   scopeId: uuid("workspace_id").primaryKey(),
   enabled: boolean("enabled").default(false).notNull(),
@@ -664,23 +665,22 @@ export const workspaceMemoryState = jobsSchema.table("workspace_memory_state", {
   status: text("status").default("pending").notNull(),
   purge: boolean("purge").default(false).notNull(),
   reconcile: boolean("reconcile").default(true).notNull(),
-  progress: jsonb("progress").$type<import("../memory/model").MemoryProgress>(),
+  progress: jsonb("progress"),
 });
 
-// Durable, content-free per-source work. In-flight operations survive newer edits.
 export const memorySourceJob = jobsSchema.table("memory_source_jobs", {
   scopeId: uuid("workspace_id").notNull(),
   documentId: text("document_id").notNull(),
   kind: text("kind").$type<"meeting" | "shared">().notNull(),
   sourceId: uuid("source_id").notNull(),
   generation: integer("generation").default(1).notNull(),
-  operation: jsonb("operation").$type<import("../memory/model").MemoryOperation>(),
+  operation: jsonb("operation"),
 }, (table) => [primaryKey({ columns: [table.scopeId, table.documentId] })]);
 
 export const memoryDocument = jobsSchema.table("memory_documents", {
   scopeId: uuid("workspace_id").notNull(),
   documentId: text("document_id").notNull(),
-  source: jsonb("source").$type<import("../memory/model").MemorySource>().notNull(),
+  source: jsonb("source").notNull(),
   contentHash: text("content_hash").notNull(),
   ingestionFingerprint: text("ingestion_fingerprint"),
   generation: integer("generation").notNull(),
@@ -699,7 +699,6 @@ export const sharedMemory = appSchema.table("shared_memories", {
   pgPolicy("shared_memory_write", { for: "all", using: sql`"app"."current_identity_can_write_workspace"(${table.scopeId})`, withCheck: sql`"app"."current_identity_can_write_workspace"(${table.scopeId})` }),
 ]).enableRLS();
 
-// Content-free coordination metadata deliberately survives user deletion for remote cleanup.
 export const personalMemoryState = jobsSchema.table("personal_memory_state", {
   scopeId: uuid("user_id").primaryKey(),
   enabled: boolean("enabled").default(false).notNull(),
@@ -710,23 +709,22 @@ export const personalMemoryState = jobsSchema.table("personal_memory_state", {
   status: text("status").default("pending").notNull(),
   purge: boolean("purge").default(false).notNull(),
   reconcile: boolean("reconcile").default(true).notNull(),
-  progress: jsonb("progress").$type<import("../memory/model").MemoryProgress>(),
+  progress: jsonb("progress"),
 });
 
-// Durable, content-free per-source work. In-flight operations survive newer edits.
 export const personalMemorySourceJob = jobsSchema.table("personal_memory_source_jobs", {
   scopeId: uuid("user_id").notNull(),
   documentId: text("document_id").notNull(),
   kind: text("kind").$type<"meeting" | "shared">().notNull(),
   sourceId: uuid("source_id").notNull(),
   generation: integer("generation").default(1).notNull(),
-  operation: jsonb("operation").$type<import("../memory/model").MemoryOperation>(),
+  operation: jsonb("operation"),
 }, (table) => [primaryKey({ columns: [table.scopeId, table.documentId] })]);
 
 export const personalMemoryDocument = jobsSchema.table("personal_memory_documents", {
   scopeId: uuid("user_id").notNull(),
   documentId: text("document_id").notNull(),
-  source: jsonb("source").$type<import("../memory/model").MemorySource>().notNull(),
+  source: jsonb("source").notNull(),
   contentHash: text("content_hash").notNull(),
   ingestionFingerprint: text("ingestion_fingerprint"),
   generation: integer("generation").notNull(),
@@ -745,17 +743,17 @@ export const personalMemory = appSchema.table("personal_memories", {
     withCheck: sql`${table.scopeId} = nullif(current_setting('app.user_id', true), '')::uuid` }),
 ]).enableRLS();
 
-// Rebuildable publication snapshots; all reads still validate current canonical evidence.
+// Retired Hindsight Knowledge Pages; see workspaceMemoryState.
 export const knowledgePage = searchSchema.table("knowledge_pages", {
   scopeId: uuid("workspace_id").notNull().references(() => syncedWorkspace.workspaceId, { onDelete: "cascade" }),
   id: text("id").notNull(),
   projectId: uuid("project_id"),
   generation: integer("generation").default(0).notNull(),
-  snapshot: jsonb("snapshot").$type<import("../memory/pages-model").PageSnapshot>(),
-  status: text("status").$type<import("../memory/pages-model").PageStatus>().default("generating").notNull(),
+  snapshot: jsonb("snapshot"),
+  status: text("status").default("generating").notNull(),
   requestVersion: integer("request_version").default(0).notNull(),
   completedVersion: integer("completed_version").default(0).notNull(),
-  operation: jsonb("operation").$type<import("../memory/pages-model").PageOperation>(),
+  operation: jsonb("operation"),
 }, (table) => [primaryKey({ columns: [table.scopeId, table.id] }),
   pgPolicy("knowledge_page_read", { for: "select", using: sql`"app"."current_identity_can_read_workspace"(${table.scopeId})` }),
   pgPolicy("knowledge_page_write", { for: "all", using: sql`"app"."current_identity_can_admin_workspace"(${table.scopeId})`, withCheck: sql`"app"."current_identity_can_admin_workspace"(${table.scopeId})` }),

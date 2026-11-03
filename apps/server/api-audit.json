@@ -1179,39 +1179,6 @@
       ]
     },
     {
-      "operationId": "personalMemoryReflect",
-      "method": "POST",
-      "path": "/api/v1/user/memory/reflect",
-      "classification": "modified",
-      "previous": "none",
-      "reason": "Personal canonical memory reflect in an owner-scoped URL",
-      "consumers": [
-        "Private Web"
-      ]
-    },
-    {
-      "operationId": "personalMemoryStatus",
-      "method": "GET",
-      "path": "/api/v1/user/memory/analysis/status",
-      "classification": "modified",
-      "previous": "none",
-      "reason": "Personal canonical memory status in an owner-scoped URL",
-      "consumers": [
-        "Private Web"
-      ]
-    },
-    {
-      "operationId": "personalMemoryConfigure",
-      "method": "PATCH",
-      "path": "/api/v1/user/memory/analysis/settings",
-      "classification": "modified",
-      "previous": "none",
-      "reason": "Personal canonical memory configure in an owner-scoped URL",
-      "consumers": [
-        "Private Web"
-      ]
-    },
-    {
       "operationId": "workspaceMemoryList",
       "method": "GET",
       "path": "/api/v1/workspaces/{workspaceId}/memory/notes",
@@ -1267,39 +1234,6 @@
       ]
     },
     {
-      "operationId": "workspaceMemoryReflect",
-      "method": "POST",
-      "path": "/api/v1/workspaces/{workspaceId}/memory/reflect",
-      "classification": "modified",
-      "previous": "none",
-      "reason": "Workspace canonical memory reflect in an owner-scoped URL",
-      "consumers": [
-        "Private Web"
-      ]
-    },
-    {
-      "operationId": "workspaceMemoryStatus",
-      "method": "GET",
-      "path": "/api/v1/workspaces/{workspaceId}/memory/analysis/status",
-      "classification": "modified",
-      "previous": "none",
-      "reason": "Workspace canonical memory status in an owner-scoped URL",
-      "consumers": [
-        "Private Web"
-      ]
-    },
-    {
-      "operationId": "workspaceMemoryConfigure",
-      "method": "PATCH",
-      "path": "/api/v1/workspaces/{workspaceId}/memory/analysis/settings",
-      "classification": "modified",
-      "previous": "none",
-      "reason": "Workspace canonical memory configure in an owner-scoped URL",
-      "consumers": [
-        "Private Web"
-      ]
-    },
-    {
       "operationId": "personalMemoryUpdate",
       "method": "PATCH",
       "path": "/api/v1/user/memory/notes/{noteId}",
@@ -1319,50 +1253,6 @@
       "reason": "Edit a saved note with revision checking",
       "consumers": [
         "Private Web"
-      ]
-    },
-    {
-      "operationId": "listKnowledgePages",
-      "method": "GET",
-      "path": "/api/v1/workspaces/{workspaceId}/memory/pages",
-      "classification": "modified",
-      "previous": "new public contract",
-      "reason": "Standard generated pages with complete current canonical provenance validation; regeneration is admin-only",
-      "consumers": [
-        "packages/ui/src/screens/KnowledgePages.tsx"
-      ]
-    },
-    {
-      "operationId": "getKnowledgePage",
-      "method": "GET",
-      "path": "/api/v1/workspaces/{workspaceId}/memory/pages/{pageId}",
-      "classification": "modified",
-      "previous": "new public contract",
-      "reason": "Standard generated pages with complete current canonical provenance validation; regeneration is admin-only",
-      "consumers": [
-        "packages/ui/src/screens/KnowledgePages.tsx"
-      ]
-    },
-    {
-      "operationId": "exportKnowledgePage",
-      "method": "GET",
-      "path": "/api/v1/workspaces/{workspaceId}/memory/pages/{pageId}/export",
-      "classification": "modified",
-      "previous": "new public contract",
-      "reason": "Standard generated pages with complete current canonical provenance validation; regeneration is admin-only",
-      "consumers": [
-        "packages/ui/src/screens/KnowledgePages.tsx"
-      ]
-    },
-    {
-      "operationId": "refreshKnowledgePage",
-      "method": "POST",
-      "path": "/api/v1/workspaces/{workspaceId}/memory/pages/{pageId}/refresh",
-      "classification": "modified",
-      "previous": "new public contract",
-      "reason": "Standard generated pages with complete current canonical provenance validation; regeneration is admin-only",
-      "consumers": [
-        "packages/ui/src/screens/KnowledgePages.tsx"
       ]
     },
     {
@@ -2399,13 +2289,10 @@
       "list_memories",
       "get_memory",
       "recall_memory",
-      "reflect_memory",
       "get_working_memory",
       "update_working_memory",
       "save_memory",
-      "delete_memory",
-      "list_knowledge_pages",
-      "get_knowledge_page"
+      "delete_memory"
     ],
     "authorization": "Each call checks its capability scope and current Workspace access. Dahlia Memory reads require mcp:memory:read; writes require mcp:memory:write and current scope authorization."
   },

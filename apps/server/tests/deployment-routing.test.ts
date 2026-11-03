@@ -258,10 +258,9 @@ describe("deployment routing", () => {
     expect(guardedJobIds.toSorted()).toEqual(validationJobIds.toSorted());
   });
 
-  it("deploys separate Server and Hindsight Apps backed by one Lakebase database", () => {
+  it("deploys one Server App backed by its Lakebase database, without Hindsight", () => {
     const bundle = readText("../../../deploy/databricks/databricks.yml");
     const resource = readText("../../../deploy/databricks/resources/dahlia_server.yml");
-    const hindsight = readText("../../../deploy/databricks/resources/hindsight.app.yml");
     expect(resource).toMatch(/name: DAHLIA_AUTH_PROVIDER_ID\s+value: databricks/);
     expect(resource).toMatch(/name: DAHLIA_SIGNOUT_URL\s+value: \/\.auth\/sign_out/);
     const serverPackage = JSON.parse(readText("../package.json")) as {
@@ -295,11 +294,11 @@ describe("deployment routing", () => {
     expect(bundle).toContain('databricks_cli_version: ">= 1.4.0"');
     expect(bundle).toContain("engine: direct");
     expect(resource).toContain("lifecycle:\n        started: true");
-    expect(hindsight).toContain("lifecycle:\n        started: true");
-    expect(bundle).toContain("- ../../apps/hindsight");
-    expect(bundle).toContain("../../apps/hindsight/.upstream/hindsight-api-slim/**");
-    expect(bundle).toContain("prebuild: \"cd ../../apps/hindsight && uv run --no-project scripts/sync_upstream.py\"");
-    expect(bundle).toMatch(/hindsight_schema:[\s\S]*?default: hindsight/);
+    expect(exists("../../../deploy/databricks/resources/hindsight.app.yml")).toBe(false);
+    // Ignored local leftovers (.upstream) may survive in old checkouts; tracked sources must be gone.
+    for (const path of ["AGENTS.md", "pyproject.toml", "scripts"]) expect(exists(`../../hindsight/${path}`)).toBe(false);
+    for (const text of [bundle, resource]) expect(text.toLowerCase()).not.toContain("hindsight");
+    expect(resource).not.toContain("DAHLIA_MEMORY_IMAGE_MODEL");
     expect(bundle).not.toContain("app_name:");
     expect(bundle).toContain("database_project_id: dahlia-db-dev");
     expect(bundle).not.toContain("codex_auto_review_model");
@@ -381,36 +380,6 @@ describe("deployment routing", () => {
     expect(resource).not.toContain("postgres_roles:");
     expect(resource).not.toContain("postgres_databases:");
     expect(resource).toContain("/databases/databricks-postgres");
-    expect(resource).toContain("value: ${resources.apps.hindsight.url}/api");
-    expect(resource).toContain("name: DAHLIA_HINDSIGHT_AUTH\n            value: databricks");
-    expect(hindsight).toContain("name: HINDSIGHT_API_BASE_PATH\n            value: /api");
-    expect(hindsight).toContain("name: dahlia-hindsight-${bundle.target}");
-    expect(hindsight).toContain("source_code_path: ../../../apps/hindsight");
-    expect(exists("../../hindsight/requirements.txt")).toBe(true);
-    expect(exists("../../hindsight/scripts/start_databricks.py")).toBe(true);
-    expect(hindsight).toContain("name: HINDSIGHT_API_DATABASE_SCHEMA\n            value: ${var.hindsight_schema}");
-    expect(hindsight).toContain("name: HINDSIGHT_API_TEXT_SEARCH_EXTENSION\n            value: lakebase_text");
-    expect(hindsight).toContain("name: HINDSIGHT_API_VECTOR_EXTENSION\n            value: lakebase_vector");
-    expect(hindsight).toContain("name: HINDSIGHT_API_LLM_PROVIDER\n            value: databricks");
-    expect(hindsight).toContain("name: HINDSIGHT_API_EMBEDDINGS_PROVIDER\n            value: databricks");
-    expect(hindsight).toContain("name: LAKEBASE_ENDPOINT\n            value_from: postgres");
-    expect(hindsight).not.toContain("HINDSIGHT_API_DATABASE_PASSWORD_PROVIDER");
-    expect(hindsight).toContain("name: HINDSIGHT_API_LLM_MODEL\n            value: system.ai.gpt-6-luna");
-    expect(hindsight).toContain("system.ai.qwen3-embedding-0-6b");
-    expect(hindsight).toContain("name: HINDSIGHT_API_EMBEDDINGS_OPENAI_DIMENSIONS\n            value: ${var.search_embedding_dimensions}");
-    // Local cross-encoder reranking runs inside the Hindsight App on CPU, not on Model Serving.
-    expect(hindsight).toContain("      compute_size: LARGE\n");
-    expect(hindsight).toContain("name: HINDSIGHT_API_RERANKER_PROVIDER\n            value: local");
-    expect(hindsight).toContain("name: HINDSIGHT_API_RERANKER_LOCAL_MODEL\n            value: cross-encoder/mmarco-mMiniLMv2-L12-H384-v1");
-    expect(hindsight).toContain('name: HINDSIGHT_API_RERANKER_LOCAL_FORCE_CPU\n            value: "true"');
-    expect(hindsight).not.toContain("flashrank");
-    for (const [level, candidates] of [["low", 50], ["mid", 100], ["high", 300]] as const) {
-      expect(hindsight).toContain(`name: HINDSIGHT_API_RERANKER_MAX_CANDIDATES_${level.toUpperCase()}\n            value: \${var.reranker_max_candidates_${level}}`);
-      expect(bundle).toMatch(new RegExp(`reranker_max_candidates_${level}:[\\s\\S]*?default: "${candidates}"`));
-    }
-    expect(hindsight).not.toMatch(/API_KEY|secret:|value_from: openai-api-key|user_api_scopes/);
-    expect(bundle).not.toContain("hindsight_openai_secret");
-    expect(hindsight).toContain("${resources.postgres_projects.dahlia_database_project.id}/branches/production/databases/databricks-postgres");
     expect(serverPackage.name).toBe("@dahlia-ai/server");
     expect(serverPackage.exports).toHaveProperty(".");
     expect(serverPackage.exports).toHaveProperty("./client");

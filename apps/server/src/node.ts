@@ -15,7 +15,7 @@ import { log, setLogSink } from "./otel/log";
 
 const config = loadConfig(process.env);
 const { applicationStore, searchEmbedder, objectStorage, searchTokenizer, captioner, syncService,
-  workspaceMemory, personalMemory, chatMemory, summaryService, otel } = createNodeServices(config);
+  chatMemory, summaryService, otel } = createNodeServices(config);
 setLogSink(otel);
 const auth = await initializeDahliaAuth(config, applicationStore, config.authProvider === "accounts" ? [{
   plugins: [cimd({ fetchClientMetadataResource, metadataProfile: "mcp-2026-07-28" })],
@@ -35,8 +35,6 @@ try {
 } catch (error) { await pool.stop(); await otel?.shutdown(); await applicationStore.close?.(); throw error; }
 const app = createApp({
   summaryService,
-  workspaceMemory,
-  personalMemory,
   chatMemory,
   config,
   auth,

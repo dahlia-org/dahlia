@@ -466,7 +466,8 @@ export const workspaceKey = sqliteTable("workspace_keys", {
   createdAt: sqliteTimestamp("created_at").default(sql`(unixepoch() * 1000)`).notNull(),
 });
 
-// Content-free coordination metadata deliberately survives Workspace deletion for remote cleanup.
+// Retired Hindsight projection tables (workspace/personal memory state, source jobs, documents, knowledge_pages).
+// Unused since the Dahlia Memory store; kept so existing databases and rollback stay intact. Drop only via an approved forward migration.
 export const workspaceMemoryState = sqliteTable("workspace_memory_state", {
   scopeId: text("workspace_id").primaryKey(),
   enabled: integer("enabled", { mode: "boolean" }).default(false).notNull(),
@@ -478,23 +479,22 @@ export const workspaceMemoryState = sqliteTable("workspace_memory_state", {
   status: text("status").default("pending").notNull(),
   purge: integer("purge", { mode: "boolean" }).default(false).notNull(),
   reconcile: integer("reconcile", { mode: "boolean" }).default(true).notNull(),
-  progress: text("progress", { mode: "json" }).$type<import("../memory/model").MemoryProgress>(),
+  progress: text("progress", { mode: "json" }),
 });
 
-// Durable, content-free per-source work. In-flight operations survive newer edits.
 export const memorySourceJob = sqliteTable("memory_source_jobs", {
   scopeId: text("workspace_id").notNull(),
   documentId: text("document_id").notNull(),
   kind: text("kind").$type<"meeting" | "shared">().notNull(),
   sourceId: text("source_id").notNull(),
   generation: integer("generation").default(1).notNull(),
-  operation: text("operation", { mode: "json" }).$type<import("../memory/model").MemoryOperation>(),
+  operation: text("operation", { mode: "json" }),
 }, (table) => [primaryKey({ columns: [table.scopeId, table.documentId] })]);
 
 export const memoryDocument = sqliteTable("memory_documents", {
   scopeId: text("workspace_id").notNull(),
   documentId: text("document_id").notNull(),
-  source: text("source", { mode: "json" }).$type<import("../memory/model").MemorySource>().notNull(),
+  source: text("source", { mode: "json" }).notNull(),
   contentHash: text("content_hash").notNull(),
   ingestionFingerprint: text("ingestion_fingerprint"),
   generation: integer("generation").notNull(),
@@ -511,7 +511,6 @@ export const sharedMemory = sqliteTable("shared_memories", {
 }, (table) => [index("shared_memories_workspace_idx").on(table.scopeId),
 ]);
 
-// Content-free coordination metadata deliberately survives user deletion for remote cleanup.
 export const personalMemoryState = sqliteTable("personal_memory_state", {
   scopeId: text("user_id").primaryKey(),
   enabled: integer("enabled", { mode: "boolean" }).default(false).notNull(),
@@ -522,23 +521,22 @@ export const personalMemoryState = sqliteTable("personal_memory_state", {
   status: text("status").default("pending").notNull(),
   purge: integer("purge", { mode: "boolean" }).default(false).notNull(),
   reconcile: integer("reconcile", { mode: "boolean" }).default(true).notNull(),
-  progress: text("progress", { mode: "json" }).$type<import("../memory/model").MemoryProgress>(),
+  progress: text("progress", { mode: "json" }),
 });
 
-// Durable, content-free per-source work. In-flight operations survive newer edits.
 export const personalMemorySourceJob = sqliteTable("personal_memory_source_jobs", {
   scopeId: text("user_id").notNull(),
   documentId: text("document_id").notNull(),
   kind: text("kind").$type<"meeting" | "shared">().notNull(),
   sourceId: text("source_id").notNull(),
   generation: integer("generation").default(1).notNull(),
-  operation: text("operation", { mode: "json" }).$type<import("../memory/model").MemoryOperation>(),
+  operation: text("operation", { mode: "json" }),
 }, (table) => [primaryKey({ columns: [table.scopeId, table.documentId] })]);
 
 export const personalMemoryDocument = sqliteTable("personal_memory_documents", {
   scopeId: text("user_id").notNull(),
   documentId: text("document_id").notNull(),
-  source: text("source", { mode: "json" }).$type<import("../memory/model").MemorySource>().notNull(),
+  source: text("source", { mode: "json" }).notNull(),
   contentHash: text("content_hash").notNull(),
   ingestionFingerprint: text("ingestion_fingerprint"),
   generation: integer("generation").notNull(),
@@ -555,17 +553,17 @@ export const personalMemory = sqliteTable("personal_memories", {
 }, (table) => [index("personal_memories_user_idx").on(table.scopeId),
 ]);
 
-// Rebuildable publication snapshots; all reads still validate current canonical evidence.
+// Retired Hindsight Knowledge Pages; see workspaceMemoryState.
 export const knowledgePage = sqliteTable("knowledge_pages", {
   scopeId: text("workspace_id").notNull().references(() => syncedWorkspace.workspaceId, { onDelete: "cascade" }),
   id: text("id").notNull(),
   projectId: text("project_id"),
   generation: integer("generation").default(0).notNull(),
-  snapshot: text("snapshot", { mode: "json" }).$type<import("../memory/pages-model").PageSnapshot>(),
-  status: text("status").$type<import("../memory/pages-model").PageStatus>().default("generating").notNull(),
+  snapshot: text("snapshot", { mode: "json" }),
+  status: text("status").default("generating").notNull(),
   requestVersion: integer("request_version").default(0).notNull(),
   completedVersion: integer("completed_version").default(0).notNull(),
-  operation: text("operation", { mode: "json" }).$type<import("../memory/pages-model").PageOperation>(),
+  operation: text("operation", { mode: "json" }),
 }, (table) => [primaryKey({ columns: [table.scopeId, table.id] })]);
 
 

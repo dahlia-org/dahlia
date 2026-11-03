@@ -1,7 +1,6 @@
 import { createDahliaMemoryTools, type DahliaMemoryTool } from "./memory/dahlia-tools";
 import type { DahliaMemory } from "./memory/dahlia";
 import type { ChatMemoryStore } from "./agent/context-store";
-import type { MemoryTools } from "./memory/tools";
 import { decodeId, encodeId } from "@dahlia-ai/ui/model/typeid";
 import { wireValue, wireURL, wireCursor } from "./public-wire";
 import {
@@ -26,7 +25,6 @@ export function createServerMcpHandler(
   sync?: MeetingSyncService,
   authorize?: (request: Request) => Promise<void>,
   meetingTools?: MeetingTools,
-  memoryTools?: MemoryTools,
   dahliaMemory?: DahliaMemory,
   workingMemory?: ChatMemoryStore,
 ) {
@@ -95,13 +93,6 @@ export function createServerMcpHandler(
       ));
     }
 
-    if (memoryTools && hasApiScope(authInfo?.scopes ?? [], MEMORY_READ_SCOPE)) {
-      for (const tool of Object.values(memoryTools)) registerMastraTool(server, tool, identity, requestInfo?.signal, async () => {
-        if (requestInfo) await authorize?.(requestInfo);
-        if (authInfo?.expiresAt !== undefined && authInfo.expiresAt <= Date.now() / 1000) throw new RequestError(401, "token_expired");
-      });
-    }
-
     if (dahliaMemory && hasApiScope(authInfo?.scopes ?? [], MEMORY_READ_SCOPE)) {
       for (const tool of Object.values(createDahliaMemoryTools(dahliaMemory, hasApiScope(authInfo?.scopes ?? [], MEMORY_WRITE_SCOPE), workingMemory))) {
         if (!tool) continue;
@@ -117,7 +108,7 @@ export function createServerMcpHandler(
 
 export function registerMastraTool(
   server: McpServer,
-  tool: MeetingTools[keyof MeetingTools] | MemoryTools[keyof MemoryTools] | DahliaMemoryTool,
+  tool: MeetingTools[keyof MeetingTools] | DahliaMemoryTool,
   identity: Identity,
   requestSignal?: AbortSignal,
   authorize?: () => Promise<void>,

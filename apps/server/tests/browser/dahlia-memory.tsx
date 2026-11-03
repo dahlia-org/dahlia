@@ -11,15 +11,13 @@ const writes: Array<{ scope: string; workspaceId?: string; explicit: boolean }> 
 let failSave = false;
 let linkedFailure: number | undefined, workspaceRevoked = false;
 let purges = 0;
-let imageSettings: { enabled: boolean; imagesEnabled: boolean } | undefined;
 window.fetch = async (input, init) => {
   const request = input instanceof Request ? input : new Request(new URL(input, location.origin), init);
   const path = new URL(request.url).pathname;
   if (path === "/api/v1/user/memory/working") return Response.json({ revision: 0, automatic: true, capacityReached: false, manual: "", learned: "" });
   if (path.endsWith("/projects")) return Response.json({ items: [] });
-  if (path.endsWith("/pages")) return Response.json({ items: [], nextCursor: null });
   if (path.endsWith("/scopes")) return Response.json({ scopes: [{ scope: "personal", name: "Personal", writable: true }, { scope: "workspace", workspaceId: "team", name: "Team", writable: true }, { scope: "workspace", workspaceId: "other", name: "Other team", writable: true }] });
-  const body: { content: string; id: string; revision: number; explicit: boolean; enabled?: boolean; imagesEnabled?: boolean } = ["POST", "PATCH"].includes(request.method) ? await request.json() : { content: "", id: "", revision: Number(new URL(request.url).searchParams.get("revision")), explicit: false };
+  const body: { content: string; id: string; revision: number; explicit: boolean; query?: string } = ["POST", "PATCH"].includes(request.method) ? await request.json() : { content: "", id: "", revision: Number(new URL(request.url).searchParams.get("revision")), explicit: false };
   if (request.method === "PATCH" || request.method === "DELETE") body.id = path.split("/").at(-1)!;
   if (request.method === "DELETE") body.explicit = new URL(request.url).searchParams.get("explicit") === "true";
   const key = path.startsWith("/api/v1/user/") ? "personal" : path.split("/")[4]!;
@@ -34,16 +32,14 @@ window.fetch = async (input, init) => {
     return memory ? Response.json({ memory }) : Response.json({ error: "memory_not_found" }, { status: 404 });
   }
   if (path.endsWith("/notes") && request.method === "GET") return Response.json({ items: rows[key], nextCursor: null });
-  if (path.endsWith("/analysis/settings")) { imageSettings = { enabled: body.enabled ?? false, imagesEnabled: body.imagesEnabled ?? false }; return Response.json({ ...imageSettings, imagesAvailable: true, status: "indexing", skippedCount: 0 }); }
-  if (path.endsWith("/status")) return Response.json(imageSettings ? { ...imageSettings, imagesAvailable: true, status: "ready", skippedCount: 0 } : { enabled: false, status: "unavailable", skippedCount: 0 });
-  if (path.endsWith("/memory") && request.method === "DELETE") { purges++; rows[key] = []; return Response.json({ status: "deleting" }); }
+  if (path.endsWith("/memory") && request.method === "DELETE") { purges++; rows[key] = []; return Response.json({ deleted: true }); }
+  if (path.endsWith("/recall")) return Response.json({ results: [{ scope: "workspace", workspaceId: key, items: rows[key]!.filter((note) => note.content.toLowerCase().includes(body.query!.toLowerCase())) }] });
   if (path.includes("/notes") && ["POST", "PATCH"].includes(request.method)) {
     if (failSave) return Response.json({ error: "memory_revision_conflict" }, { status: 409 });
     writes.push({ ...body, scope: key === "personal" ? "personal" : "workspace", workspaceId: key }); rows[key] = [...rows[key]!.filter((n) => n.id !== body.id), { ...body, protected: true, revision: body.revision + 1, updatedAt: new Date().toISOString() }];
     return Response.json({ saved: true });
   }
   if (request.method === "DELETE") { writes.push({ ...body, scope: key === "personal" ? "personal" : "workspace", workspaceId: key }); rows[key] = rows[key]!.filter((n) => n.id !== body.id); return Response.json({ deleted: true }); }
-  if (path.endsWith("/reflect")) return Response.json({ results: [{ result: { hypothesis: "Possible lesson", claims: [{ text: "Possible lesson", citations: [{ factId: "fact", sourceIndexes: [0] }] }], reflectionStatus: "partial", coverage: "partial", sources: [{ id: "test", canonicalExcerpt: "Verified source", truncated: false }] } }] });
   throw new Error(`Unexpected test path ${path}`);
 };
 const button = (label: string) => [...document.querySelectorAll<HTMLButtonElement>("button")].find((b) => b.textContent === label)!;
@@ -78,18 +74,18 @@ async function run() {
   const scope = document.querySelector("select")!; scope.value = "team"; scope.dispatchEvent(new Event("change", { bubbles: true }));
   await until(() => document.body.textContent.includes("Team · Shared") && button("Delete"));
   const query = document.querySelector<HTMLInputElement>("section form input")!; text(query, "lesson");
-  await until(() => !button("Insights").disabled); button("Insights").click();
-  await until(() => document.body.textContent.includes("Verified source"));
-  assert(document.body.textContent.includes("Source-backed hypotheses · verify claims"), "Hypothesis not labelled");
-  assert(document.querySelector('a[href="#memory-source-0-0"]') && document.getElementById("memory-source-0-0"), "Claim source link missing");
-  if (new URLSearchParams(location.search).has("preview")) { document.getElementById("result")!.textContent = "PASS: claim-to-source link"; return; }
+  assert(!button("Insights"), "Retired reflection is still offered");
+  await until(() => !button("Related memories").disabled); button("Related memories").click();
+  await until(() => document.body.textContent.includes("Related memories · keyword matches"));
+  assert(document.querySelector('[aria-label="Related memories"]')!.textContent.includes(rows.team![0]!.content), "Recall result missing");
+  if (new URLSearchParams(location.search).has("preview")) { document.getElementById("result")!.textContent = "PASS: related memories"; return; }
   button("Delete").click(); await until(() => document.querySelector("[data-confirm]"));
   (document.querySelector("[data-confirm]") as HTMLButtonElement).click();
   await until(() => !document.querySelector("[role=dialog]") && rows.team!.length === 0);
   assert(writes.every((w) => w.explicit), "Missing explicit confirmation");
   root.render(<WorkspaceMemory workspaceId="team" role="admin" />);
-  await until(() => document.body.textContent.includes("Analysis is not configured"));
-  assert(!button("Enable") && button("Erase memories"), "Analysis availability incorrectly gated memory purge");
+  await until(() => button("Erase memories"));
+  assert(!document.querySelector('[role="switch"]'), "Retired analysis settings are still shown");
   button("Erase memories").click(); await until(() => document.querySelector("[data-confirm]"));
   (document.querySelector("[data-confirm]") as HTMLButtonElement).click();
   await until(() => purges === 1);
@@ -115,18 +111,7 @@ async function run() {
   linkedFailure = undefined; workspaceRevoked = false;
   root.render(<DahliaMemoryPage key="recovery" />);
   await until(() => document.body.textContent.includes("Surviving canonical note"));
-  imageSettings = { enabled: true, imagesEnabled: false };
-  root.render(<WorkspaceMemory workspaceId="team" role="admin" />);
-  const imagesSwitch = () => document.querySelector<HTMLButtonElement>('button[role="switch"][id$="-images"]');
-  await until(() => imagesSwitch() && !imagesSwitch()!.disabled);
-  imagesSwitch()!.click(); await until(() => document.querySelector("[data-confirm]"));
-  (document.querySelector("[data-confirm]") as HTMLButtonElement).click();
-  await until(() => imagesSwitch()?.getAttribute("aria-checked") === "true");
-  assert(imageSettings.imagesEnabled, "Admin opt-in was not sent");
-  root.render(<WorkspaceMemory workspaceId="team" role="viewer" />);
-  await until(() => !imagesSwitch());
-  assert(!document.querySelector('[role="switch"]'), "Viewer can change analysis settings");
   history.replaceState({}, "", location.pathname);
-  document.getElementById("result")!.textContent = "PASS: image admin opt-in/viewer boundary, scope, conflict preservation, sharing, sources, deletion, purge, canonical deep links, missing note, authorization failures and recovery";
+  document.getElementById("result")!.textContent = "PASS: scope, conflict preservation, sharing, related memories, deletion, purge, canonical deep links, missing note, authorization failures and recovery";
 }
 void run().catch((error: unknown) => { document.getElementById("result")!.textContent = `FAIL: ${String(error)}`; });
