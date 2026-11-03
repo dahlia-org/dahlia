@@ -176,7 +176,8 @@ export function memoryProjection(schema: Schema, backend: SearchBackend, persona
         .orderBy(asc(notes.id)).limit(100);
       for (const note of page) {
         if (!note.indexed) await index(tx, note, analyzer, embedding);
-        else if (embedding) await enqueueJob(tx, schema, jobKey(note.id), "memory-index", note.scopeId, `memory:${note.id}`,
+        // The job embeds only stale chunks, so queueing it after a same-content rewrite costs one claim.
+        if (embedding) await enqueueJob(tx, schema, jobKey(note.id), "memory-index", note.scopeId, `memory:${note.id}`,
           { source, scopeId: note.scopeId, documentId: note.id, ...embedding });
       }
       return page.length === 100 ? page.at(-1)!.id : undefined;

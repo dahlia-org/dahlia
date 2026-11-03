@@ -32,7 +32,10 @@ export function analyzerResolver(lakebase: boolean, extensionVersion: () => Prom
     return installed ? lakebaseAnalyzer(installed) : application;
   };
 }
-export const LAKEBASE_TOKENIZER_VERSION_SQL = "SELECT e.extversion FROM pg_extension e JOIN pg_namespace n ON n.oid = e.extnamespace WHERE e.extname = 'lakebase_tokenizer' AND n.nspname = 'public'";
+// Uses the tokenizer only when its configuration resolves, so a renamed or missing configuration never breaks saves.
+export const LAKEBASE_TOKENIZER_VERSION_SQL = `SELECT e.extversion FROM pg_extension e JOIN pg_namespace n ON n.oid = e.extnamespace
+  WHERE e.extname = 'lakebase_tokenizer' AND n.nspname = 'public' AND EXISTS (SELECT 1 FROM pg_ts_config c
+    JOIN pg_namespace cn ON cn.oid = c.cfgnamespace WHERE cn.nspname = 'public' AND c.cfgname = 'tokenizer_japanese')`;
 
 /** Input for to_tsvector(analyzer.config, ...) at index and query time. */
 export function analyzerInput(analyzer: SearchAnalyzer, text: string): string {

@@ -136,9 +136,14 @@ export function createSessionSearchStore(pool: Pool, backend: Exclude<SearchBack
         }
         // Each message shows its best-ranked chunk across both lists (lexical first on a tie).
         const best = new Map<string, { chunkNo: number; rank: number }>();
-        for (const list of [lexical, semantic]) list.forEach((hit, rank) => {
-          if ((best.get(hit.messageId)?.rank ?? Infinity) > rank) best.set(hit.messageId, { chunkNo: hit.chunkNo, rank });
-        });
+        for (const list of [lexical, semantic]) {
+          const seen = new Set<string>();
+          for (const hit of list) {
+            if (seen.has(hit.messageId)) continue;
+            seen.add(hit.messageId);
+            if ((best.get(hit.messageId)?.rank ?? Infinity) > seen.size) best.set(hit.messageId, { chunkNo: hit.chunkNo, rank: seen.size });
+          }
+        }
         const ids = reciprocalRankFusion([...new Set(lexical.map((hit) => hit.messageId))], [...new Set(semantic.map((hit) => hit.messageId))])
           .slice(0, limit).map(({ documentId }) => documentId);
         // Lexical results are partial while messages of this thread set lack chunks of the current analyzer.

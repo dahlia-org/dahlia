@@ -189,6 +189,13 @@ describe("PostgreSQL migrations", () => {
       const statements = query.mock.calls.map(([statement]) => statement);
       expect(statements.some((statement) => statement.includes("extension_schema_mismatch") && statement.includes("'lakebase_tokenizer'"))).toBe(installs);
     }
+    // A listed tokenizer that cannot be installed still lets migration continue on Lindera.
+    const failing = vi.fn(async (statement: string) => {
+      if (statement.includes("'lakebase_tokenizer'") && statement.includes("CREATE EXTENSION")) throw new Error("permission denied");
+      return { rows: statement.includes("pg_available_extensions") ? [{ schema: null }] : [] };
+    });
+    await expect(ensureSearchIndexes({ query: failing } as never, { databaseType: "lakebase" } as AppConfig)).resolves.toBeUndefined();
+    expect(failing.mock.calls.some(([statement]) => statement.includes("USING lakebase_bm25"))).toBe(true);
   });
 
   it("installs only the Lakebase text extension when semantic search is disabled", async () => {

@@ -158,8 +158,11 @@ export async function ensureSearchIndexes(pool: Pick<Pool, "query">, config: App
     // The Japanese analyzer is optional: without it in public, Memory and chat chunks use the Node Lindera tokens (see search ADR).
     const tokenizer = (await pool.query<{ schema: string | null }>(`SELECT n.nspname AS schema FROM pg_available_extensions a
       LEFT JOIN pg_extension e ON e.extname = a.name LEFT JOIN pg_namespace n ON n.oid = e.extnamespace WHERE a.name = 'lakebase_tokenizer'`)).rows[0];
-    if (tokenizer && (tokenizer.schema === null || tokenizer.schema === "public")) await ensurePublicExtensions(pool, ["lakebase_tokenizer"]);
-    else log("warn", "search_japanese_tokenizer_unavailable", { analyzer: "lindera", reason: tokenizer ? "schema" : "unavailable" });
+    let reason = tokenizer ? "schema" : "unavailable";
+    if (tokenizer && (tokenizer.schema === null || tokenizer.schema === "public")) {
+      try { await ensurePublicExtensions(pool, ["lakebase_tokenizer"]); reason = ""; } catch { reason = "install_failed"; }
+    }
+    if (reason) log("warn", "search_japanese_tokenizer_unavailable", { analyzer: "lindera", reason });
     await pool.query(
       "CREATE INDEX IF NOT EXISTS search_documents_search_bm25 ON search.documents USING lakebase_bm25 (search_vector)",
     );
