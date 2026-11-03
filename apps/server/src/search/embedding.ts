@@ -12,7 +12,8 @@ export interface SearchEmbedder {
   readonly model: string;
   readonly dimensions: number;
   embedDocuments(input: string[], signal?: AbortSignal): Promise<number[][]>;
-  embedQuery(input: string, signal?: AbortSignal): Promise<number[]>;
+  /** instruction defaults to the meeting search task. */
+  embedQuery(input: string, signal?: AbortSignal, instruction?: string): Promise<number[]>;
 }
 
 export class SearchEmbeddingError extends Error {
@@ -129,8 +130,8 @@ export function createSearchEmbedder(
       }
       return request(input, undefined, signal);
     },
-    async embedQuery(input, signal) {
-      return (await request([input], QUERY_INSTRUCTION, signal))[0]!;
+    async embedQuery(input, signal, instruction = QUERY_INSTRUCTION) {
+      return (await request([input], instruction, signal))[0]!;
     },
   };
 }

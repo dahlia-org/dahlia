@@ -5,7 +5,7 @@ import { log } from "../otel/log";
 export const POSTGRES_MIGRATION_SCHEMA = "drizzle";
 export const POSTGRES_SEARCH_PATH = "app,auth,public";
 
-type PostgresExtension = "vector" | "pg_trgm" | "lakebase_text" | "lakebase_vector";
+type PostgresExtension = "vector" | "pg_trgm" | "lakebase_text" | "lakebase_vector" | "lakebase_tokenizer";
 
 export async function ensurePublicExtensions(database: Pick<Pool, "query">, extensions: readonly PostgresExtension[]): Promise<void> {
   if (!extensions.length) return;

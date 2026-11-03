@@ -172,13 +172,18 @@ try {
     }
 
     const agentFiles = serverMigrationManifest.postgres.files.filter((file) => file.includes("postgres-agent/"));
-    if (agentFiles.length !== 2) throw new Error("Agent migrations must contain only the unreleased baseline and RLS enforcement");
+    if (agentFiles.length !== 4) throw new Error("Agent migrations must contain the baseline, RLS enforcement and the chat search projection");
     const agentSql = await Promise.all(agentFiles.map((file) => readFile(new URL(import.meta.resolve("@dahlia-ai/server/migrations/" + file.slice("drizzle/".length))), "utf8")));
     for (const table of ["mastra_thread_state", "mastra_workflow_snapshot"]) {
       if (!agentSql.some((content) => content.includes('CREATE TABLE "agent"."' + table + '"'))
         || !agentSql.some((content) => content.includes("agent." + table + " FORCE ROW LEVEL SECURITY"))) {
         throw new Error("Missing built-in tool persistence or owner RLS: " + table);
       }
+    }
+    if (!agentSql.some((content) => content.includes('"agent"."session_search_chunks" FORCE ROW LEVEL SECURITY'))) throw new Error("Missing chat search projection RLS");
+    const memorySearchRls = await readFile(new URL("./drizzle/postgres/20261103123800_memory_search_support/migration.sql", packageUrl), "utf8");
+    for (const table of ['"search"."personal_memory_chunks"', '"search"."shared_memory_chunks"']) {
+      if (!memorySearchRls.includes(table + " FORCE ROW LEVEL SECURITY")) throw new Error("Missing memory search projection RLS: " + table);
     }
     const databasePath = fileURLToPath(new URL("./auth.sqlite", import.meta.url));
     const store = createNodeAuthStore({
@@ -204,6 +209,7 @@ try {
     }
     const personalColumns = database.prepare("PRAGMA table_info(personal_memories)").all().map((column) => column.name);
     if (!["user_id", "content", "revision", "protected"].every((column) => personalColumns.includes(column))) throw new Error("Missing canonical personal memory schema");
+    if (!database.prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'personal_memory_chunks_fts'").get()) throw new Error("Missing memory search projection");
     const memoryStateColumns = database.prepare("PRAGMA table_info(workspace_memory_state)").all().map((column) => column.name);
     if (!["reconcile", "images_enabled"].every((column) => memoryStateColumns.includes(column))) {
       throw new Error("Memory reconciliation schema is missing from the package");

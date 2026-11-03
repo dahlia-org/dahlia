@@ -1,5 +1,8 @@
 import { afterAll, describe, expect, it, vi } from "vitest";
-import { sql } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
+import * as schema from "../src/db/auth-schema";
+import { applicationAnalyzer } from "../src/search/lexical";
+import { createNodeSearchTokenizer } from "../src/search/node-tokenizer";
 import { createPostgresAuthStore } from "../src/auth/store";
 import { connectPostgresUrl } from "../src/db/postgres";
 import { MeetingSyncService } from "../src/sync/service";
@@ -8,6 +11,7 @@ import { seedPostgresIdentity, testOrganizationID } from "./public-test-client";
 import type { Identity } from "../src/auth/identity";
 
 const url = process.env.TEST_DATABASE_URL;
+const lindera = applicationAnalyzer(createNodeSearchTokenizer());
 const connection = url ? connectPostgresUrl(url, 1) : undefined;
 afterAll(async () => connection?.close());
 describe.runIf(url)("Workspace memory PostgreSQL RLS", () => {
@@ -53,7 +57,7 @@ describe.runIf(url)("Workspace memory PostgreSQL RLS", () => {
       data: { organizationId: testOrganizationID, name: "Memory RLS", createdAt: new Date().toISOString() },
     }] });
     const memory = app.memory!;
-    const note = await memory.saveNote(owner.userId, workspaceId, { id: uuidV7(), content: "Private Workspace evidence", revision: 0 });
+    const note = await memory.saveNote(owner.userId, workspaceId, { id: uuidV7(), content: "Private Workspace evidence", revision: 0 }, "human", false, lindera);
     await expect(memory.listNotes(stranger.userId, workspaceId)).rejects.toMatchObject({ status: 404 });
     expect((await memory.listNotes(owner.userId, workspaceId))[0]?.id).toBe(note.id);
     expect((await pool.query("SELECT * FROM app.shared_memories WHERE id = $1", [note.id])).rows).toEqual([]);
@@ -65,14 +69,74 @@ describe.runIf(url)("Workspace memory PostgreSQL RLS", () => {
       expect((await tx.execute(sql`select id from app.shared_memories where id = ${note.id}`)).rows).toHaveLength(1);
     });
     expect((await pool.query("SELECT * FROM app.shared_memories WHERE id = $1", [note.id])).rows).toEqual([]);
-    expect((await memory.searchNotes(owner.userId, workspaceId, ["evidence"])).map((row) => row.note.id)).toEqual([note.id]);
-    // PostgreSQL lower() alone would leave full-width and half-width kana unmatched.
-    const variant = await memory.saveNote(owner.userId, workspaceId, { id: uuidV7(), content: "ＡＰＩとｶﾀｶﾅの共有メモ", revision: 0 });
-    for (const term of ["api", "カタカナ"]) expect((await memory.searchNotes(owner.userId, workspaceId, [term])).map((row) => row.note.id)).toEqual([variant.id]);
+    const recall = (userId: string, query: string) => memory.recall(userId, workspaceId, query, lindera, 20).then((rows) => rows.map((row) => row.id));
+    expect(await recall(owner.userId, "evidence")).toEqual([note.id]);
+    // The tokenizer applies NFKC, so full-width and half-width kana match like their normal forms.
+    const variant = await memory.saveNote(owner.userId, workspaceId, { id: uuidV7(), content: "ＡＰＩとｶﾀｶﾅの共有メモ", revision: 0 }, "human", false, lindera);
+    for (const term of ["api", "カタカナ", "カタカナの共有について"]) expect(await recall(owner.userId, term)).toEqual([variant.id]);
     await memory.deleteNote(owner.userId, workspaceId, variant.id, 1);
-    await expect(memory.searchNotes(stranger.userId, workspaceId, ["evidence"])).rejects.toMatchObject({ status: 404 });
-    await memory.saveNote(owner.userId, workspaceId, { id: note.id, revision: 1, content: "Updated evidence" });
+    await expect(memory.recall(stranger.userId, workspaceId, "evidence", lindera, 20)).rejects.toMatchObject({ status: 404 });
+    // The projection is FORCE RLS like the canonical table; a pool without identity sees no chunks.
+    const chunkState = await pool.query("SELECT relname, relforcerowsecurity FROM pg_class WHERE oid IN ('search.shared_memory_chunks'::regclass, 'search.personal_memory_chunks'::regclass) ORDER BY relname");
+    expect(chunkState.rows).toEqual([{ relname: "personal_memory_chunks", relforcerowsecurity: true }, { relname: "shared_memory_chunks", relforcerowsecurity: true }]);
+    expect((await pool.query("SELECT * FROM search.shared_memory_chunks WHERE memory_id = $1", [note.id])).rows).toEqual([]);
+    await db.transaction(async (tx) => {
+      await tx.execute(sql`select set_config('app.user_id', ${stranger.userId}, true)`);
+      expect((await tx.execute(sql`select memory_id from search.shared_memory_chunks where memory_id = ${note.id}`)).rows).toEqual([]);
+    });
+    // A viewer can recall but not change shared memories or their chunks.
+    await db.insert(schema.syncedWorkspacePermission).values({ workspaceId, principalType: "user", principalId: stranger.userId, role: "viewer", grantedByUserId: owner.userId });
+    expect(await recall(stranger.userId, "evidence")).toEqual([note.id]);
+    await expect(memory.saveNote(stranger.userId, workspaceId, { id: uuidV7(), content: "viewer write", revision: 0 })).rejects.toMatchObject({ status: 404 });
+    await db.transaction(async (tx) => {
+      await tx.execute(sql`select set_config('app.user_id', ${stranger.userId}, true)`);
+      expect((await tx.execute(sql`update search.shared_memory_chunks set chunk_text = 'x' where memory_id = ${note.id} returning memory_id`)).rows).toEqual([]);
+    });
+    await db.delete(schema.syncedWorkspacePermission).where(and(eq(schema.syncedWorkspacePermission.workspaceId, workspaceId), eq(schema.syncedWorkspacePermission.principalId, stranger.userId)));
+    await expect(memory.recall(stranger.userId, workspaceId, "evidence", lindera, 20)).rejects.toMatchObject({ status: 404 });
+    await memory.saveNote(owner.userId, workspaceId, { id: note.id, revision: 1, content: "Updated evidence" }, "human", false, lindera);
     await memory.deleteNote(owner.userId, workspaceId, note.id, 2);
+  });
+  it("ranks Japanese chunks with pgvector and rebuilds them under Workspace search maintenance", async () => {
+    const { db } = connection!;
+    const embedding = { model: "test-embedding", dimensions: 32 };
+    const app = createPostgresAuthStore(db, "postgres", embedding);
+    const owner: Identity = { userId: uuidV7(), source: "header" };
+    await seedPostgresIdentity(app, url!, owner);
+    const workspaceId = uuidV7();
+    await new MeetingSyncService(app.sync).commitTransaction(owner, { schemaVersion: 3, workspaceId, id: uuidV7(), createdAt: new Date().toISOString(), operations: [{
+      id: uuidV7(), entity: "workspace", action: "create", entityId: workspaceId, baseRevision: null,
+      data: { organizationId: testOrganizationID, name: "Hybrid memory", createdAt: new Date().toISOString() } }] });
+    const memory = app.memory!;
+    const axis = (index: number) => Array.from({ length: 32 }, (_, i) => i === index ? 1 : 0.01);
+    const budget = await memory.saveNote(owner.userId, workspaceId, { id: uuidV7(), content: "来期の予算は300万円で確定した", revision: 0 }, "human", false, lindera);
+    const lunch = await memory.saveNote(owner.userId, workspaceId, { id: uuidV7(), content: "Lunch order", revision: 0 }, "human", false, lindera);
+    const queued = await db.select().from(schema.backgroundJob).where(eq(schema.backgroundJob.dedupeKey, `memory-index:workspace:${budget.id}`));
+    expect(queued[0]?.payload).toMatchObject({ source: "workspace", scopeId: workspaceId, documentId: budget.id, ...embedding });
+    for (const [note, vector] of [[budget, axis(0)], [lunch, axis(1)]] as const) {
+      const pending = await memory.pendingEmbeddings(workspaceId, note.id, embedding);
+      expect(pending).toHaveLength(1);
+      // Maintenance writes ignore a vector computed for an older text.
+      await memory.saveEmbeddings(workspaceId, note.id, embedding.model, [{ ...pending[0]!, hash: "stale", vector }]);
+      expect(await memory.pendingEmbeddings(workspaceId, note.id, embedding)).toHaveLength(1);
+      await memory.saveEmbeddings(workspaceId, note.id, embedding.model, [{ ...pending[0]!, vector }]);
+      expect(await memory.pendingEmbeddings(workspaceId, note.id, embedding)).toEqual([]);
+    }
+    const ids = (query: string, vector?: number[]) => memory.recall(owner.userId, workspaceId, query, lindera, 20, vector).then((rows) => rows.map((row) => row.id));
+    expect(await ids("予算はいくらで確定しましたか")).toEqual([budget.id]);
+    expect(await ids("cost", axis(0))).toEqual([budget.id, lunch.id]);
+    // A word match plus a weaker vector match outranks a vector-only match.
+    expect(await ids("lunch", axis(0))).toEqual([lunch.id, budget.id]);
+    // Another model's vectors are not used, and reconciliation queues the current model.
+    const other = createPostgresAuthStore(db, "postgres", { model: "next-model", dimensions: 32 }).memory!;
+    expect(await other.recall(owner.userId, workspaceId, "cost", lindera, 20, axis(0))).toEqual([]);
+    await other.reconcilePage(workspaceId, lindera);
+    expect((await db.select().from(schema.backgroundJob).where(eq(schema.backgroundJob.dedupeKey, `memory-index:workspace:${budget.id}`)))[0]?.payload)
+      .toMatchObject({ model: "next-model" });
+    // An analyzer change rewrites chunks through the Workspace maintenance context, without a user identity.
+    const intl = applicationAnalyzer((await import("../src/search/tokenizer")).createIntlSearchTokenizer());
+    expect(await memory.reconcilePage(workspaceId, intl)).toBeUndefined();
+    expect((await memory.recall(owner.userId, workspaceId, "予算", intl, 20)).map((row) => row.id)).toEqual([budget.id]);
   });
   it("serializes a pending save against purge", async () => {
     const concurrent = connectPostgresUrl(url!, 4);

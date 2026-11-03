@@ -28,7 +28,23 @@
 
 ### 検索
 
-`recall_memory` と `/recall` は保存メモリーだけを対象にしたキーワード検索である。`query` は呼び出し側が選ぶ空白区切りのキーワードで、文として解析しない。キーワードを NFKC と小文字化で正規化し（全角英字・半角カナ・大文字小文字を同一視する）、重複を除いて最大 16 個使う。各 scope の全メモリーを同じ正規化で部分一致させ、含むキーワードの数、次に `updatedAt` の順に並べて最大 20 件返す。文から内容語を推定する方式（文字数・文字種の規則、出現頻度による重み付け）は、助詞の混入や 1 文字の名詞の欠落を規則ごとに別の形で生んだため採らない。文のまま渡すと一致しにくいので、ツール説明、内蔵 Agent の指示、Web の入力欄でキーワード入力を求める。SQL の `lower()` は NFKC を適用できず、SQLite は ASCII しか小文字化しないため、照合は DB ではなくアプリケーションで行う。意味検索ではないため、結果が空でも関連する会議がないことを意味しない。保存メモリー数がキーワード検索の限界を超えたら、ベクトル索引の追加を検討する。
+`recall_memory` と `/recall` は保存メモリーだけを対象にした、全文検索とベクトル検索の hybrid 検索である。`query` は質問文・文・キーワードのいずれでもよく（4,000 文字以内）、配置の analyzer で最大 16 語に分解する。Node と Lakebase は日本語を形態素解析し、助詞などの機能語を検索語にせず、どれかの語を含む記録を候補にする。Workers は単語分割だけで機能語を除けないため、全語を含む記録だけを語の候補にし、文の取りこぼしは意味検索で補う。各 scope で語の一致（上位 100 chunk）と、embedding を設定した配置では意味の近さ（上位 100 chunk）を求め、記録ごとに最良の chunk にまとめてから RRF（k=60）で統合し、最大 20 件を返す。ベクトル候補に類似度の下限はなく、結果は絞り込みではなく順位である。結果が空でも、関連する会議がないことを意味しない。正本の行は返却直前に読み、返却前に scope の権限を再確認する。応答の型は変えず、`instruction` で意味検索を使えたかを示す。`list_memories` の `query` は従来どおり、整理用途の文字どおりの部分一致である。
+
+索引は正本から再構築できる chunk projection（[Memory と保存チャットの検索 projection](search.md#memory-と保存チャットの検索-projection2026-11-03)）に置き、正本の保存・更新と同じ transaction で書き換える。embedding は非同期で、provider を待たない。projection を持たない行（配置や analyzer の変更直後で、まだ再構築されていない行）は、正本を NFKC・小文字化した部分一致で語の検索に加える。
+
+2026-11-03 までの方式（呼び出し側が選ぶ空白区切りのキーワードを部分一致し、含む数で並べる）は廃止した。文から内容語を規則で推定する方式を不採用とした理由（助詞の混入や 1 文字名詞の欠落）は、辞書を持つ形態素解析器の採用で解消する。意味検索を廃止した Hindsight の理由は外部サービスと上流パッチの運用負担であり、Dahlia の DB 内に置く再構築可能な projection はその負担を持たない。
+
+### 保存チャットの検索（Session store）
+
+保存チャットの正本は Mastra 標準の `agent.mastra_threads` / `agent.mastra_messages` のままとし、Mastra の保存、Working Memory、Observational Memory、前後のメッセージ取得（`listMessages` の `include`）をそのまま使う。Mastra の semantic recall（dense vector だけで、本文を vector metadata に複製し、削除が `memory.deleteThread` に限られる）と knowledge domain（experimental で、PostgreSQL の語検索が LIKE）は検索層に採らない。代わりに Memory と同じ方式の chunk projection（`agent.session_search_chunks`）を run の終了後に job で作る。
+
+内蔵 Agent だけが読み取り専用の `search_chat_history` を使える。対象は呼び出した本人の `dahlia-chat` thread のうち、現在のチャットの Workspace に属し、その Workspace を現在読めるものに限る。結果は該当メッセージ、その thread のタイトル、前後 1 件ずつのメッセージで、検証済みの事実ではない。索引が未作成の thread があるときは、語の検索が不完全であることを `instruction` で示す。Server MCP と Desktop のローカル MCP（`dahlia-mcp`）には公開しない。チャット本文を外部クライアントへ出す読み取り口は、別途の判断とする。
+
+### 検索のための送信範囲（2026-11-03、ユーザー承認済み）
+
+embedding を設定した配置（Databricks では Unity AI Gateway 経由の `system.ai.qwen3-embedding-0-6b`）では、次の本文を App service principal の権限で embedding endpoint へ送る。保存メモリーの本文（個人・共有）、`dahlia-chat` の user / assistant メッセージ本文、memory recall と `search_chat_history` の query 原文。会議検索の送信範囲（要約、OCR、caption、query）に加わる。送るのは 8,000 bytes 以内の chunk で、文書側に instruction は付けず、query には memory 用と chat 用の instruction を付ける。instruction と query の合計が 8,000 bytes を超える query は送らず、語の検索だけにする。Dahlia は返された vector だけを projection に保存し、query を保存・log しない。暗号化 Workspace は従来どおりメモリーと保存チャットを扱わない（409）ため、送信対象にもならない。
+
+運用者は、App service principal が embedding model を呼べる権限と、Gateway 側の usage tracking / payload logging（inference table）の設定を確認する。payload logging を有効にすると、送信した本文は Gateway 側に保存される。公式資料に記載のない endpoint の挙動は、2026-11-03 に開発用 workspace でユーザー token と合成テキストだけを送って確かめた。`dimensions`（256 を指定すると 256 次元）と `instruction`（Qwen3 の `Instruct: …\nQuery:` 前置きとほぼ同じ vector、cosine 0.999）は効き、20 件の batch も受け付け、32,768 token を超える入力は 400 で拒否した（切り詰めない）。日本語の繰り返し文では 1 token がおよそ 2.3 bytes で、8,000 bytes の chunk は上限より十分小さい。App service principal の OAuth、429 の頻度、batch の上限、payload logging の有無は確認していない。
 
 ### 外部の整理処理
 
@@ -47,13 +63,13 @@
 | `search.knowledge_pages`（Knowledge Pages の公開記録） | 使わない。既存 DB の表は同様に残す |
 | Hindsight bank（`hindsight` schema の事実・観察・mental model） | 使わない。Lakebase の `hindsight` schema は削除しない |
 | `jobs.queue` の `workspace-memory` / `personal-memory` ジョブと `DAHLIA_JOB_LIMITS` の `memory` | 実行しない。残った行は取得対象外で、上限計算にも数えない。設定に残った `memory` キーは無視して起動を妨げない |
-| recall（意味検索・reranker・出典抜粋の検証） | 意味検索は廃止し、保存メモリーの NFKC 正規化したキーワード検索に置き換える。会議は対象外で、根拠は会議ツールで確認する |
+| recall（意味検索・reranker・出典抜粋の検証） | Dahlia の DB 内の projection による hybrid 検索（日本語 tokenizer の全文検索と embedding）に置き換える。reranker と出典抜粋の検証は持たない。会議は対象外で、根拠は会議ツールで確認する |
 | reflect（出典付き仮説）、Knowledge Pages、画像取り込み、分析の有効化・状態・再試行 | 廃止。仮説や要約は外部クライアントが必要に応じて作り、保存メモリーとして書き戻す |
 | `DAHLIA_HINDSIGHT_*`、`DAHLIA_MEMORY_IMAGE_*`、Databricks の Hindsight App と `apps/hindsight` | 削除。旧環境変数は無視する |
 
-これは Hindsight の機能の同等移植ではない。意味検索、会議からの自動学習、reflect、Knowledge Pages、画像取り込みは廃止であり、Dahlia 内に代替を持たない。
+これは Hindsight の機能の同等移植ではない。会議からの自動学習、reflect、Knowledge Pages、画像取り込みは廃止であり、Dahlia 内に代替を持たない。意味検索は保存メモリーと保存チャットに限り、Dahlia の DB 内の projection として持つ（[検索](#検索)）。
 
-Mastra の標準 Memory は thread と resource に紐づく会話の記憶（会話履歴、意味想起、Working Memory、Observational Memory）である。ID・revision・Workspace 共有・外部クライアントからの書き込みを持つ記録の保存先ではない。そのため Memory store は既存の DB の表とし、Mastra は tools と Working Memory で使う。Mastra の semantic recall や PgVector は PostgreSQL 専用で、別の埋め込み索引の取り込みを必要とするため、今回は採らない。
+Mastra の標準 Memory は thread と resource に紐づく会話の記憶（会話履歴、意味想起、Working Memory、Observational Memory）である。ID・revision・Workspace 共有・外部クライアントからの書き込みを持つ記録の保存先ではない。そのため Memory store は既存の DB の表とし、Mastra は tools、保存チャット、Working Memory で使う。Mastra の semantic recall や PgVector は dense vector だけで語の検索を持たず、PostgreSQL 専用のため、検索層には採らない（[保存チャットの検索](#保存チャットの検索session-store)）。
 
 ## 移行と切り戻し
 
@@ -63,4 +79,4 @@ Databricks では、このバージョンの `bundle deploy` が Hindsight App �
 
 退役表、残ったジョブ行、`hindsight` schema の削除は不可逆なので別の操作とし、明示的な承認を得て、切り戻しが不要になってから行う。表の削除は Drizzle schema から退役表を外して生成した forward migration で行い、`hindsight` schema は Lakebase で運用者が削除する。
 
-検証: 保存・取得・更新・revision 競合・検索・削除・統合（新規保存と元の削除）を MCP 経由で確認するテスト、SQLite の再接続後の永続性、PostgreSQL の FORCE RLS と全削除の直列化、退役 kind のジョブ行が残った queue での取得を、それぞれ使い捨ての DB で確かめる。
+検証: 保存・取得・更新・revision 競合・hybrid 検索・削除・統合（新規保存と元の削除）を MCP 経由で確認するテスト、SQLite の再接続後の永続性、PostgreSQL の FORCE RLS と全削除の直列化、退役 kind のジョブ行が残った queue での取得を、それぞれ使い捨ての DB で確かめる。

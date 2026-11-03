@@ -47,7 +47,7 @@ SELECT name FROM pg_available_extensions
 WHERE name IN ('lakebase_text', 'lakebase_vector');
 ```
 
-Both rows must be present. The App migrations install the extensions when they start. See [Enable Lakebase Search](https://docs.databricks.com/aws/en/oltp/projects/lakebase-search#enable-lakebase-search).
+Both rows must be present. The App migrations install the extensions when they start. Also check for `lakebase_tokenizer`: when it is listed, migrations install it into `public` and Dahlia Memory and saved chat search tokenize Japanese with `public.tokenizer_japanese`; when it is not, they use the Server's Lindera tokenizer and log `search_japanese_tokenizer_unavailable` at migration. See [Lakebase tokenizer](https://docs.databricks.com/aws/en/oltp/projects/lakebase-tokenizer). See [Enable Lakebase Search](https://docs.databricks.com/aws/en/oltp/projects/lakebase-search#enable-lakebase-search).
 
 Run from `deploy/databricks`, using the same profile and variable overrides for every command:
 
@@ -78,7 +78,7 @@ SELECT to_regnamespace('auth') AS auth_schema,
 
 Both columns must be non-null. A successful authenticated header request also proves the table is usable because Dahlia projects that identity into `auth.user` before handling the request.
 
-Dahlia installs `lakebase_text` and creates the unified BM25 index during migration. When an embedding model is configured it also installs `lakebase_vector` and creates a dimension- and model-specific `lakebase_ann` index. Failure to load either configured capability stops migration instead of silently changing search semantics. Grant the App service principal query permission on the embedding model. After the Desktop completes the first full Vault synchronization, run `VACUUM search.documents;` against the application database so BM25 corpus statistics include the uploaded rows.
+Dahlia installs `lakebase_text` and creates the unified BM25 index during migration. When an embedding model is configured it also installs `lakebase_vector` and creates a dimension- and model-specific `lakebase_ann` index. Failure to load either configured capability stops migration instead of silently changing search semantics. Grant the App service principal query permission on the embedding model. After the Desktop completes the first full Vault synchronization, run `VACUUM search.documents;` against the application database so BM25 corpus statistics include the uploaded rows. After the first Memory and chat backfill (the hourly reconciliation after deploying this version), also run `VACUUM search.personal_memory_chunks, search.shared_memory_chunks, agent.session_search_chunks;`. A later `ALTER EXTENSION lakebase_tokenizer UPDATE` changes the analyzer ID, and reconciliation rewrites those chunks.
 
 ## OTel tables
 
@@ -185,5 +185,5 @@ Confirm `/api/v1/models` includes `system.ai.gpt-6-sol` and `system.ai.gpt-6-lun
 
 - Trust the configured email header (default `X-Forwarded-Email`) and display name `X-Forwarded-Preferred-Username` only behind the Databricks Apps proxy. `X-Forwarded-User` is not used for identification.
 - `X-Forwarded-Access-Token` is trusted only behind the Databricks Apps proxy, preferred as the Responses upstream Bearer credential, and never persisted or logged. If absent, Responses uses a short-lived App service principal token. Model discovery uses the same upstream credential preference.
-- Responses request and response content is streamed without being persisted or logged. Synchronized summary, OCR, caption text, and search query text may be sent to the configured embedding model; only the resulting rebuildable vectors are persisted, and request content is not logged.
+- Responses request and response content is streamed without being persisted or logged. Synchronized summary, OCR, caption text, saved Dahlia Memory text, saved Dahlia AI chat messages, and search query text may be sent to the configured embedding model through the App service principal; only the resulting rebuildable vectors are persisted, and request content is not logged by Dahlia. Check the AI Gateway usage tracking and payload logging (inference table) settings for the embedding endpoint: payload logging stores the sent text on the Databricks side.
 - `/healthz` is process liveness only; anonymous external access is not guaranteed.

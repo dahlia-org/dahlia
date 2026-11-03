@@ -16,6 +16,7 @@ import { postgresMigrations, serverMigrationManifest, type PostgresMigrationDire
 import { SEARCH_FIELDS } from "@dahlia-ai/ui/model/search-settings";
 import { STORAGE_OPERATION_CONCURRENCY } from "../sync/schemas";
 import { createPostgresPool, ensurePublicExtensions, POSTGRES_MIGRATION_SCHEMA } from "./postgres";
+import { log } from "../otel/log";
 
 export type PostgresDatabase = NodePgDatabase & { $client: Pool };
 export type SQLiteDatabase = SQLiteAsyncDatabase<"sync" | "async", unknown>;
@@ -145,35 +146,50 @@ export async function migrateApplicationDatabase(
   }
 }
 
+// Memory and chat search projections, indexed like search.documents.
+const CHUNK_TABLES = ["search.personal_memory_chunks", "search.shared_memory_chunks", "agent.session_search_chunks"] as const;
+
 export async function ensureSearchIndexes(pool: Pick<Pool, "query">, config: AppConfig): Promise<void> {
   const embedding = config.searchEmbedding;
   if (config.databaseType === "lakebase") {
     await ensurePublicExtensions(pool, embedding
       ? ["vector", "lakebase_text", "lakebase_vector"]
       : ["lakebase_text"]);
+    // The Japanese analyzer is optional: without it Memory and chat chunks use the Node Lindera tokens (see search ADR).
+    if ((await pool.query("SELECT 1 FROM pg_available_extensions WHERE name = 'lakebase_tokenizer'")).rowCount) {
+      await ensurePublicExtensions(pool, ["lakebase_tokenizer"]);
+    } else log("warn", "search_japanese_tokenizer_unavailable", { analyzer: "lindera" });
     await pool.query(
       "CREATE INDEX IF NOT EXISTS search_documents_search_bm25 ON search.documents USING lakebase_bm25 (search_vector)",
     );
     for (const field of SEARCH_FIELDS) {
       await pool.query(`CREATE INDEX IF NOT EXISTS search_documents_${field}_bm25 ON search.documents USING lakebase_bm25 (${field}_vector) WITH (k1 = 1.2, b = 0.75)`);
     }
+    for (const table of CHUNK_TABLES) {
+      await pool.query(`CREATE INDEX IF NOT EXISTS ${table.split(".")[1]}_bm25 ON ${table} USING lakebase_bm25 (search_vector)`);
+    }
   } else if (config.databaseType === "postgres") {
     await pool.query(
       "CREATE INDEX IF NOT EXISTS search_documents_search_gin ON search.documents USING gin (search_vector)",
     );
+    for (const table of CHUNK_TABLES) {
+      await pool.query(`CREATE INDEX IF NOT EXISTS ${table.split(".")[1]}_gin ON ${table} USING gin (search_vector)`);
+    }
   }
   if (!embedding || (config.databaseType !== "postgres" && config.databaseType !== "lakebase")) return;
   if (config.databaseType === "postgres") await ensurePublicExtensions(pool, ["vector"]);
   const modelLiteral = (await pool.query<{ value: string }>("select quote_literal($1) as value", [embedding.model])).rows[0]!.value;
   const suffix = createHash("sha256").update(embedding.model).digest("hex").slice(0, 8);
   const method = config.databaseType === "lakebase" ? "lakebase_ann" : "hnsw";
-  const indexName = `search_documents_${method}_${embedding.dimensions}_${suffix}`;
-  await pool.query(`
-    CREATE INDEX IF NOT EXISTS ${indexName}
-    ON search.documents USING ${method}
-      ((embedding::public.vector(${embedding.dimensions})) public.vector_cosine_ops)
-    WHERE embedding_model = ${modelLiteral} AND cardinality(embedding) = ${embedding.dimensions}
-  `);
+  for (const table of ["search.documents", ...CHUNK_TABLES]) {
+    const name = table === "search.documents" ? "search_documents" : table.split(".")[1];
+    await pool.query(`
+      CREATE INDEX IF NOT EXISTS ${name}_${method}_${embedding.dimensions}_${suffix}
+      ON ${table} USING ${method}
+        ((embedding::public.vector(${embedding.dimensions})) public.vector_cosine_ops)
+      WHERE embedding_model = ${modelLiteral} AND cardinality(embedding) = ${embedding.dimensions}
+    `);
+  }
 }
 
 /** @deprecated Use connectApplicationDatabase. */

@@ -147,7 +147,8 @@ Dahlia の scope 外であり、妨げない。
   ([正本とアカウント境界](docs/adr/shared/sync.md#正本とアカウント境界), [同期対象とモデル](docs/adr/shared/sync.md#同期対象とモデル), [Transaction と競合](docs/adr/shared/sync.md#transaction-と競合))。Server WorkspaceはOrganizationが所有し、明示したuser / organization / teamのadmin・editor・viewer権限で共同利用する。Organization所属だけでは内容へのアクセスを与えない。信頼済みHeaderと確認済みGoogleメールはドメインごとの参加方式（招待のみ・承認制・自動参加）に従う。初回登録では一致するすべての自動参加組織へmemberとして参加し、既存ユーザーは本人操作で参加・申請する。共有メールドメインは対象外。Organizationの作成・削除はServer管理者に限定し、クラウド向けの明示設定時のみサインアップで通常Organizationを自動作成する。各Organizationへの参加時には本人用Workspaceを作成する
   ([共有境界](docs/adr/server/sharing-and-administration.md#共有境界))。サインインだけではローカルWorkspaceをServerアカウントへ移さず、ユーザーがWorkspace単位で明示的に移行する。ServerアカウントのWorkspaceは常時同期し、サインアウト時はServer recordを残したままローカルworking copyを削除するかローカルアカウントへ移す。
 - Server の任意 Hybrid 検索は同期済み summary、OCR、AI caption と検索時の query 原文を設定済み embedding
-  provider へ送信できる。Dahlia は query 原文を保存・ログ出力しない。
+  provider へ送信できる。Dahlia Memory の保存メモリー本文と保存チャットの本文も、その検索のために同じ provider へ送信できる
+  ([検索のための送信範囲](docs/adr/server/dahlia-memory.md#検索のための送信範囲2026-11-03ユーザー承認済み))。Dahlia は query 原文を保存・ログ出力しない。
   vector は再生成可能な projection とし、未設定、再構築中、障害時も全文検索へ縮退してローカルの中核機能を妨げない
   ([Hybrid 検索](docs/adr/server/search.md#hybrid-検索))。
 - 外部依存は付加機能に閉じ込め、未設定または失敗時も中核が動作する degradation を設計に含める。

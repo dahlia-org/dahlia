@@ -41,6 +41,7 @@ const app = createApp({
   mcpSupportsCimd: config.authProvider === "accounts",
   authStore: applicationStore,
   aiHistory: applicationStore.aiHistory,
+  sessionSearch: applicationStore.sessionSearch,
   syncService,
   imageAnalysisEnabled: captioner !== undefined,
   objectStorage,

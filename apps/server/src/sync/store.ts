@@ -48,6 +48,7 @@ import type { Identity } from "../auth/identity";
 import type { AppConfig } from "../config";
 import type { PostgresDatabase, SQLiteDatabase } from "../db/client";
 import { reciprocalRankFusion, SEARCH_CANDIDATE_LIMIT } from "../search/ranking";
+import { cosineSimilarity, decodeFloat32 } from "../search/lexical";
 import * as postgresSchema from "../db/auth-schema";
 import * as sqliteSchema from "../db/sqlite-schema";
 import type {
@@ -3250,27 +3251,4 @@ function screenshotSelection(schema: SyncSchema) {
     caption: schema.syncedScreenshot.caption,
     revision: schema.syncedScreenshot.revision,
   };
-}
-
-function decodeFloat32(value: unknown): number[] {
-  if (!(value instanceof Uint8Array) && !(value instanceof ArrayBuffer)) return [];
-  const bytes = value instanceof Uint8Array
-    ? new Uint8Array(value.buffer, value.byteOffset, value.byteLength)
-    : new Uint8Array(value);
-  if (bytes.byteLength % 4 !== 0) return [];
-  const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
-  return Array.from({ length: bytes.byteLength / 4 }, (_, index) => view.getFloat32(index * 4, true));
-}
-
-function cosineSimilarity(left: readonly number[], right: readonly number[]): number {
-  if (left.length !== right.length || left.length === 0) return Number.NaN;
-  let dot = 0;
-  let leftNorm = 0;
-  let rightNorm = 0;
-  for (let index = 0; index < left.length; index++) {
-    dot += left[index]! * right[index]!;
-    leftNorm += left[index]! ** 2;
-    rightNorm += right[index]! ** 2;
-  }
-  return leftNorm && rightNorm ? dot / Math.sqrt(leftNorm * rightNorm) : Number.NaN;
 }

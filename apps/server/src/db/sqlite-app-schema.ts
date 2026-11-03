@@ -5,7 +5,7 @@ import type { SummaryMetadata } from "@dahlia-ai/ui/model/summary-metadata";
 import type { SummaryJob } from "../summary/model";
 import type { RecordingRecord } from "../recordings/model";
 import { sql } from "drizzle-orm";
-import { blob, check, foreignKey, index, integer, primaryKey, real, sqliteTable, sqliteView, text, unique, uniqueIndex } from "drizzle-orm/sqlite-core";
+import { type AnySQLiteColumn, blob, check, foreignKey, index, integer, primaryKey, real, sqliteTable, sqliteView, text, unique, uniqueIndex } from "drizzle-orm/sqlite-core";
 
 import type { FileMetadata } from "../files/model";
 import { DEFAULT_SEARCH_SETTINGS, type SearchSettings } from "@dahlia-ai/ui/model/search-settings";
@@ -551,6 +551,27 @@ export const personalMemory = sqliteTable("personal_memories", {
   revision: integer("revision").default(1).notNull(),
   updatedAt: sqliteTimestamp("updated_at").notNull(),
 }, (table) => [index("personal_memories_user_idx").on(table.scopeId),
+]);
+
+// Rebuildable Dahlia Memory search projection; FTS5 indexes search_text (see the runtime support migration).
+const memoryChunkColumns = (parent: () => AnySQLiteColumn, scopeColumn: string) => ({
+  memoryId: text("memory_id").notNull().references(parent, { onDelete: "cascade" }),
+  chunkNo: integer("chunk_no").notNull(),
+  scopeId: text(scopeColumn).notNull(),
+  chunkText: text("chunk_text").notNull(),
+  searchText: text("search_text").default("").notNull(),
+  analyzer: text("analyzer").notNull(),
+  contentHash: text("content_hash").notNull(),
+  embedding: blob("embedding", { mode: "buffer" }),
+  embeddingModel: text("embedding_model"),
+});
+export const personalMemoryChunk = sqliteTable("personal_memory_chunks", memoryChunkColumns(() => personalMemory.id, "user_id"), (table) => [
+  primaryKey({ columns: [table.memoryId, table.chunkNo] }),
+  index("personal_memory_chunks_user_idx").on(table.scopeId),
+]);
+export const sharedMemoryChunk = sqliteTable("shared_memory_chunks", memoryChunkColumns(() => sharedMemory.id, "workspace_id"), (table) => [
+  primaryKey({ columns: [table.memoryId, table.chunkNo] }),
+  index("shared_memory_chunks_workspace_idx").on(table.scopeId),
 ]);
 
 // Retired Hindsight Knowledge Pages; see workspaceMemoryState.

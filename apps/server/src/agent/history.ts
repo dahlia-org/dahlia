@@ -73,7 +73,7 @@ function threadValue(thread: { id: string; title?: string; metadata?: Record<str
     createdAt: thread.createdAt.toISOString(), updatedAt: thread.updatedAt.toISOString() };
 }
 
-function messageText(content: MastraDBMessage["content"]): string {
+export function messageText(content: MastraDBMessage["content"]): string {
   return content.parts.filter((part): part is Extract<typeof part, { type: "text" }> => part.type === "text")
     .map((part) => part.text).join("");
 }

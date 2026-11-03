@@ -143,8 +143,8 @@ export function createPostgresApplicationStore(
     organizations,
     syncEvents,
     searchSettings: createSearchSettingsStore(db, true),
-    memory: createMemoryStore(db, true),
-    personalMemory: createMemoryStore(db, true, true),
+    memory: createMemoryStore(db, true, false, searchBackend, searchEmbedding),
+    personalMemory: createMemoryStore(db, true, true, searchBackend, searchEmbedding),
     sync: createPostgresMeetingSyncStore(db, searchBackend, searchEmbedding, encryption, () => syncEvents.publish("domain"), documentDeletionGraceHours),
     async resolveHeaderUser(identity) {
       const email = headerIdentityValue({ localSingleUser }, identity.email ?? identity.userId);
@@ -374,8 +374,8 @@ export function createSqliteApplicationStore(
     organizations,
     syncEvents,
     searchSettings: createSearchSettingsStore(db, false),
-    memory: createMemoryStore(db, false),
-    personalMemory: createMemoryStore(db, false, true),
+    memory: createMemoryStore(db, false, false, "sqlite", searchEmbedding),
+    personalMemory: createMemoryStore(db, false, true, "sqlite", searchEmbedding),
     sync: createSqliteMeetingSyncStore(db, searchEmbedding, encryption, () => syncEvents.publish("domain"), documentDeletionGraceHours),
     async resolveHeaderUser(identity) {
       const email = headerIdentityValue({ localSingleUser }, identity.email ?? identity.userId);

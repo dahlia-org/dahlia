@@ -4242,7 +4242,7 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": {
-                    /** @description Space-separated keywords, not a sentence; the first 16 distinct keywords are used. Each matches saved memories that contain it, ignoring case and full/half width. */
+                    /** @description A question, sentence or keywords. Matches words (Japanese is tokenized; up to 16 terms are used) and, when embeddings are configured, meaning. */
                     query: string;
                 };
             };
@@ -4422,7 +4422,7 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": {
-                    /** @description Space-separated keywords, not a sentence; the first 16 distinct keywords are used. Each matches saved memories that contain it, ignoring case and full/half width. */
+                    /** @description A question, sentence or keywords. Matches words (Japanese is tokenized; up to 16 terms are used) and, when embeddings are configured, meaning. */
                     query: string;
                 };
             };

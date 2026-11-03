@@ -170,11 +170,24 @@ describe("PostgreSQL migrations", () => {
     expect(statements.some((statement) => statement.includes(`USING ${method}`)
       && statement.includes("embedding::public.vector(32)")
       && statement.includes("public.vector_cosine_ops"))).toBe(true);
+    for (const table of ["search.personal_memory_chunks", "search.shared_memory_chunks", "agent.session_search_chunks"]) {
+      expect(statements.some((statement) => statement.includes(`ON ${table} USING ${method}`))).toBe(true);
+      expect(statements.some((statement) => statement.includes(`ON ${table} USING ${databaseType === "lakebase" ? "lakebase_bm25" : "gin"}`))).toBe(true);
+    }
     if (databaseType === "lakebase") {
       expect(extensionStatement).toContain("'vector', 'lakebase_text', 'lakebase_vector'");
       expect(statements.some((statement) => statement.includes("USING lakebase_bm25"))).toBe(true);
     } else {
       expect(statements.some((statement) => statement.includes("USING gin"))).toBe(true);
+    }
+  });
+
+  it("installs lakebase_tokenizer into public only when Lakebase offers it", async () => {
+    for (const available of [true, false]) {
+      const query = vi.fn(async (statement: string) => ({ rows: [], rowCount: statement.includes("pg_available_extensions") && available ? 1 : 0 }));
+      await ensureSearchIndexes({ query } as never, { databaseType: "lakebase" } as AppConfig);
+      const statements = query.mock.calls.map(([statement]) => statement);
+      expect(statements.some((statement) => statement.includes("extension_schema_mismatch") && statement.includes("'lakebase_tokenizer'"))).toBe(available);
     }
   });
 

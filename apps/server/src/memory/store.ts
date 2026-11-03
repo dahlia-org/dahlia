@@ -6,18 +6,28 @@ import * as sqlite from "../db/sqlite-schema";
 import { workspacePermissions } from "../auth/workspace-permissions";
 import { lockAuthorization } from "../auth/authorization";
 import { RequestError } from "../storage/upload";
+import { analyzerResolver, applicationAnalyzer, LAKEBASE_TOKENIZER_VERSION_SQL, type SearchAnalyzer } from "../search/lexical";
+import { memoryProjection, type EmbeddingConfig, type PendingChunk, type SearchBackend } from "./search";
 
 export type SharedMemory = typeof pg.sharedMemory.$inferSelect;
 export type MemoryStore = ReturnType<typeof createMemoryStore>;
 
-// Matches the search tokenizer, so full-width, half-width kana and case variants compare equal.
-export const normalizeMemoryText = (text: string) => text.normalize("NFKC").toLowerCase();
-
 // Dahlia Memory store: the canonical saved memories of one personal or Workspace scope.
-export function createMemoryStore(database: PostgresDatabase | SQLiteDatabase | NodePgDatabase, isPostgres: boolean, personal = false) {
+export function createMemoryStore(database: PostgresDatabase | SQLiteDatabase | NodePgDatabase, isPostgres: boolean, personal = false,
+  backend: SearchBackend = isPostgres ? "postgres" : "sqlite", embedding?: EmbeddingConfig) {
   const db = database as NodePgDatabase;
   const schema = (isPostgres ? pg : sqlite) as typeof pg;
   const notes = personal ? schema.personalMemory : schema.sharedMemory;
+  const projection = memoryProjection(schema, backend, personal);
+  // lakebase_tokenizer when installed, otherwise the runtime's tokenizer.
+  const analyzer = analyzerResolver(backend === "lakebase", async () =>
+    (await db.execute<{ extversion: string }>(sql.raw(LAKEBASE_TOKENIZER_VERSION_SQL))).rows[0]?.extversion);
+  // Background maintenance of one scope's projection, without a user identity for Workspaces.
+  const maintenance = <T>(scopeId: string, fn: (tx: NodePgDatabase) => Promise<T>) => db.transaction(async (tx) => {
+    if (isPostgres) await tx.execute(personal ? sql`select set_config('app.user_id', ${scopeId}, true)`
+      : sql`select set_config('app.maintenance', 'search', true), set_config('app.maintenance_workspace_id', ${scopeId}, true)`);
+    return fn(tx);
+  });
   const contains = (term: string) => isPostgres ? sql`strpos(lower(${notes.content}), lower(${term})) > 0` : sql`instr(lower(${notes.content}), lower(${term})) > 0`;
   const scoped = <T>(userId: string, scopeId: string, role: "read" | "write" | "admin", fn: (tx: NodePgDatabase) => Promise<T>) =>
     db.transaction(async (tx) => {
@@ -45,30 +55,27 @@ export function createMemoryStore(database: PostgresDatabase | SQLiteDatabase | 
       return scoped(userId, scopeId, "read", (tx) => tx.select().from(notes).where(and(eq(notes.scopeId, scopeId),
         query ? contains(query) : undefined, after ? gt(notes.id, after) : undefined)).orderBy(asc(notes.id)).limit(100));
     },
-    // Every memory of the scope containing any (normalized) term, with the terms it contains. SQL lower() cannot apply
-    // NFKC (and SQLite folds ASCII only), so matching runs here.
-    // shortcut: scans the whole scope in pages; add a normalized, indexed column when scopes reach tens of thousands of memories.
-    async searchNotes(userId: string, scopeId: string, terms: string[]) {
-      return scoped(userId, scopeId, "read", async (tx) => {
-        const matches: Array<{ note: SharedMemory; terms: string[] }> = [];
-        for (let after: string | undefined; ;) {
-          const page = await tx.select().from(notes).where(and(eq(notes.scopeId, scopeId), after ? gt(notes.id, after) : undefined))
-            .orderBy(asc(notes.id)).limit(500);
-          for (const note of page) {
-            const text = normalizeMemoryText(note.content);
-            const found = terms.filter((term) => text.includes(term));
-            if (found.length) matches.push({ note, terms: found });
-          }
-          if (page.length < 500) return matches;
-          after = page.at(-1)!.id;
-        }
-      });
+    /** Hybrid recall over the scope's search projection; embedding carries the shared query vector. */
+    async recall(userId: string, scopeId: string, query: string, application: SearchAnalyzer, limit: number, vector?: number[]) {
+      const current = await analyzer(application);
+      return scoped(userId, scopeId, "read", (tx) => projection.search(tx, scopeId, query, current, limit,
+        vector && embedding ? { ...embedding, vector } : undefined));
+    },
+    pendingEmbeddings: (scopeId: string, memoryId: string, config: EmbeddingConfig) =>
+      maintenance(scopeId, (tx) => projection.pending(tx, memoryId, config)),
+    saveEmbeddings: (scopeId: string, memoryId: string, model: string, rows: Array<PendingChunk & { vector: number[] }>) =>
+      maintenance(scopeId, (tx) => projection.saveEmbeddings(tx, memoryId, model, rows)),
+    async reconcilePage(scopeId: string, application: SearchAnalyzer, after?: string) {
+      const current = await analyzer(application);
+      return maintenance(scopeId, (tx) => projection.reconcilePage(tx, scopeId, current, embedding, after));
     },
     async getNote(userId: string, scopeId: string, id: string) {
       return scoped(userId, scopeId, "read", async (tx) => (await tx.select().from(notes)
         .where(and(eq(notes.scopeId, scopeId), eq(notes.id, id))))[0] ?? null);
     },
-    async saveNote(userId: string, scopeId: string, input: { id: string; revision: number; content: string }, actor: "human" | "agent" = "human", explicit = false) {
+    async saveNote(userId: string, scopeId: string, input: { id: string; revision: number; content: string },
+      actor: "human" | "agent" = "human", explicit = false, application = applicationAnalyzer()) {
+      const current = await analyzer(application);
       return scoped(userId, scopeId, "write", async (tx) => {
         const [existing] = await tx.select().from(notes).where(eq(notes.id, input.id));
         if (existing && existing.scopeId !== scopeId) throw new RequestError(409, "memory_revision_conflict");
@@ -84,6 +91,8 @@ export function createMemoryStore(database: PostgresDatabase | SQLiteDatabase | 
             .where(and(eq(notes.id, input.id), eq(notes.scopeId, scopeId), eq(notes.revision, input.revision))).returning();
         }
         if (!result) throw new RequestError(409, "memory_revision_conflict");
+        // The projection commits with the memory; embeddings follow asynchronously.
+        await projection.index(tx, result, current, embedding);
         return result;
       });
     },

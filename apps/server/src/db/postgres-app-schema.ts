@@ -72,6 +72,9 @@ export const serverSettings = appSchema.table("server_settings", {
 
 const governanceWorkspace = (workspaceId: AnyPgColumn) => sql`current_setting('app.maintenance', true) = 'governance-delete' AND ${workspaceId} = nullif(current_setting('app.maintenance_workspace_id', true), '')::uuid`;
 
+// Search projection maintenance for one Workspace, without a user identity.
+const searchMaintenance = (scopeId: AnyPgColumn) => sql`(current_setting('app.maintenance', true) = 'search' AND ${scopeId} = nullif(current_setting('app.maintenance_workspace_id', true), '')::uuid)`;
+
 const meetingRetentionWorkspace = (workspaceId: AnyPgColumn) => sql`current_setting('app.maintenance', true) = 'meeting-retention' AND ${workspaceId} = nullif(current_setting('app.maintenance_workspace_id', true), '')::uuid`;
 
 // Keep the Workspace SELECT policy independent of the helpers that query Workspaces.
@@ -695,7 +698,8 @@ export const sharedMemory = appSchema.table("shared_memories", {
   revision: integer("revision").default(1).notNull(),
   updatedAt: timestamp("updated_at").notNull(),
 }, (table) => [index("shared_memories_workspace_idx").on(table.scopeId),
-  pgPolicy("shared_memory_read", { for: "select", using: sql`"app"."current_identity_can_read_workspace"(${table.scopeId})` }),
+  // Search maintenance rebuilds shared memory chunks without a user identity.
+  pgPolicy("shared_memory_read", { for: "select", using: sql`"app"."current_identity_can_read_workspace"(${table.scopeId}) OR ${searchMaintenance(table.scopeId)}` }),
   pgPolicy("shared_memory_write", { for: "all", using: sql`"app"."current_identity_can_write_workspace"(${table.scopeId})`, withCheck: sql`"app"."current_identity_can_write_workspace"(${table.scopeId})` }),
 ]).enableRLS();
 
@@ -741,6 +745,38 @@ export const personalMemory = appSchema.table("personal_memories", {
 }, (table) => [index("personal_memories_user_idx").on(table.scopeId),
   pgPolicy("personal_memory_owner", { for: "all", using: sql`${table.scopeId} = nullif(current_setting('app.user_id', true), '')::uuid`,
     withCheck: sql`${table.scopeId} = nullif(current_setting('app.user_id', true), '')::uuid` }),
+]).enableRLS();
+
+// Rebuildable Dahlia Memory search projection: the chunks of one saved memory, replaced in the memory's transaction.
+// search_vector is written by SQL with the deployment's text search configuration (see src/memory/search.ts).
+const memoryChunkColumns = (parent: () => AnyPgColumn, scopeColumn: string) => ({
+  memoryId: uuid("memory_id").notNull().references(parent, { onDelete: "cascade" }),
+  chunkNo: integer("chunk_no").notNull(),
+  scopeId: uuid(scopeColumn).notNull(),
+  chunkText: text("chunk_text").notNull(),
+  searchText: text("search_text").default("").notNull(),
+  searchVector: tsvector("search_vector"),
+  analyzer: text("analyzer").notNull(),
+  contentHash: text("content_hash").notNull(),
+  embedding: real("embedding").array(),
+  embeddingModel: text("embedding_model"),
+});
+
+export const personalMemoryChunk = searchSchema.table("personal_memory_chunks", memoryChunkColumns(() => personalMemory.id, "user_id"), (table) => [
+  primaryKey({ columns: [table.memoryId, table.chunkNo] }),
+  index("personal_memory_chunks_user_idx").on(table.scopeId),
+  check("personal_memory_chunks_embedding_check", sql`${table.embedding} IS NULL OR cardinality(${table.embedding}) BETWEEN 32 AND 1024`),
+  pgPolicy("personal_memory_chunk_owner", { for: "all", using: sql`${table.scopeId} = nullif(current_setting('app.user_id', true), '')::uuid`,
+    withCheck: sql`${table.scopeId} = nullif(current_setting('app.user_id', true), '')::uuid` }),
+]).enableRLS();
+
+export const sharedMemoryChunk = searchSchema.table("shared_memory_chunks", memoryChunkColumns(() => sharedMemory.id, "workspace_id"), (table) => [
+  primaryKey({ columns: [table.memoryId, table.chunkNo] }),
+  index("shared_memory_chunks_workspace_idx").on(table.scopeId),
+  check("shared_memory_chunks_embedding_check", sql`${table.embedding} IS NULL OR cardinality(${table.embedding}) BETWEEN 32 AND 1024`),
+  pgPolicy("shared_memory_chunk_read", { for: "select", using: sql`"app"."current_identity_can_read_workspace"(${table.scopeId}) OR ${searchMaintenance(table.scopeId)}` }),
+  pgPolicy("shared_memory_chunk_write", { for: "all", using: sql`"app"."current_identity_can_write_workspace"(${table.scopeId}) OR ${searchMaintenance(table.scopeId)}`,
+    withCheck: sql`"app"."current_identity_can_write_workspace"(${table.scopeId}) OR ${searchMaintenance(table.scopeId)}` }),
 ]).enableRLS();
 
 // Retired Hindsight Knowledge Pages; see workspaceMemoryState.

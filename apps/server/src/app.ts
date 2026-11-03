@@ -1,6 +1,8 @@
 import { SyncEvents, documentEventKey, notesEventKey } from "./sync/events";
 import { decodeId, encodeId as documentUserID } from "@dahlia-ai/ui/model/typeid";
 import * as DocumentContracts from "./documents/model";
+import { applicationAnalyzer } from "./search/lexical";
+import type { SessionSearchStore } from "./agent/session-search";
 import { DahliaMemory, memoryListSchema, memoryGetSchema, memorySaveSchema, memoryRecallBodySchema } from "./memory/dahlia";
 import { createMemoryGenerator, type MemoryGenerator, type ChatMemoryService } from "./agent/context-service";
 import { workingMemoryEditSchema, liveSelectionSchema } from "./agent/context-model";
@@ -138,6 +140,8 @@ export interface AppDependencies {
   aiService?: AiService;
   memoryGenerator?: MemoryGenerator;
   aiHistory?: AiHistoryService;
+  /** Search projection of saved chats; requires aiHistory. */
+  sessionSearch?: SessionSearchStore;
   chatMemory?: ChatMemoryService;
   /** Defaults to the configured OTEL_EXPORTER_OTLP_* endpoints. */
   otel?: OtelService;
@@ -226,10 +230,13 @@ export function createApp(dependencies: AppDependencies): DahliaServerApp & { ru
   );
   const conversationAnalytics = new ConversationAnalyticsService(store.sync);
   const meetingTools = createMeetingTools(sync);
+  const searchAnalyzer = applicationAnalyzer(dependencies.searchTokenizer);
   const dahliaMemory = store.memory && store.personalMemory ? new DahliaMemory({ personal: store.personalMemory, workspace: store.memory }, sync,
-    dependencies.memoryGenerator ?? (config.chatMemoryModel ? createMemoryGenerator(config) : undefined)) : undefined;
-  const ai = dependencies.aiService ?? createAiService(config, gateway, meetingTools, dependencies.fetch, dahliaMemory, dependencies.chatMemory?.store);
+    dependencies.memoryGenerator ?? (config.chatMemoryModel ? createMemoryGenerator(config) : undefined), searchAnalyzer, dependencies.searchEmbedder) : undefined;
   const aiHistory = dependencies.aiHistory;
+  const sessionSearch = dependencies.sessionSearch && aiHistory ? { sessions: dependencies.sessionSearch, history: aiHistory, sync,
+    analyzer: searchAnalyzer, embedder: dependencies.searchEmbedder } : undefined;
+  const ai = dependencies.aiService ?? createAiService(config, gateway, meetingTools, dependencies.fetch, dahliaMemory, dependencies.chatMemory?.store, sessionSearch);
   const mcp = createServerMcpHandler(config, sync, async (request) => {
     if (config.authProvider === "accounts") await identities.verifyMcpAccessToken(request);
     else await identities.fromMcpHeader(request);
@@ -499,6 +506,8 @@ export function createApp(dependencies: AppDependencies): DahliaServerApp & { ru
             }
           } catch { console.warn(JSON.stringify({ event: "working_memory_enqueue_failed" })); }
         }
+        // Mastra has stored the run's messages; the search projection follows asynchronously.
+        await dependencies.sessionSearch?.enqueue(identity, threadId).catch(() => log("warn", "chat_search_enqueue_failed"));
         await aiHistory.finishRun(identity, threadId, runId).catch(() => undefined);
       }
       if (!stream.aborted) await stream.writeSSE({ event: "done", data: "{}" });

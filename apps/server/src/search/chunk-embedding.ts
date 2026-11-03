@@ -1,0 +1,62 @@
+import { chunkText } from "./chunk";
+import {
+  SearchEmbeddingError, SEARCH_EMBEDDING_BATCH_MAX_BYTES, SEARCH_EMBEDDING_BATCH_SIZE, type SearchEmbedder,
+} from "./embedding";
+
+// Statuses that reject the input itself; a smaller input may pass.
+const INPUT_REJECTED = new Set(["embedding_http_400", "embedding_http_413", "embedding_http_422", "embedding_input_too_large"]);
+const MIN_SPLIT_BYTES = 2_000;
+const MAX_SPLIT_DEPTH = 2;
+const encoder = new TextEncoder();
+
+/**
+ * Embeds chunk texts in bounded batches. A rejected batch is retried one text at a time; a rejected text is split in
+ * halves (at most twice, never below 2,000 bytes) and represented by the normalized mean of its parts.
+ * Returns undefined for a text that is still rejected. Throws retryable SearchEmbeddingErrors.
+ */
+export async function embedChunks(embedder: SearchEmbedder, texts: readonly string[], signal?: AbortSignal): Promise<Array<number[] | undefined>> {
+  const result = new Array<number[] | undefined>(texts.length);
+  let batch: number[] = [], bytes = 0;
+  const flush = async () => {
+    if (!batch.length) return;
+    const indexes = batch;
+    batch = []; bytes = 0;
+    try {
+      const vectors = await embedder.embedDocuments(indexes.map((index) => texts[index]!), signal);
+      indexes.forEach((index, position) => { result[index] = vectors[position]; });
+    } catch (error) {
+      if (!rejected(error)) throw error;
+      for (const index of indexes) result[index] = await single(embedder, texts[index]!, 0, signal);
+    }
+  };
+  for (const [index, text] of texts.entries()) {
+    const size = encoder.encode(text).byteLength;
+    if (batch.length === SEARCH_EMBEDDING_BATCH_SIZE || bytes + size > SEARCH_EMBEDDING_BATCH_MAX_BYTES) await flush();
+    batch.push(index); bytes += size;
+  }
+  await flush();
+  return result;
+}
+
+function rejected(error: unknown): boolean {
+  return error instanceof SearchEmbeddingError && !error.retryable && INPUT_REJECTED.has(error.code);
+}
+
+async function single(embedder: SearchEmbedder, text: string, depth: number, signal?: AbortSignal): Promise<number[] | undefined> {
+  try {
+    return (await embedder.embedDocuments([text], signal))[0];
+  } catch (error) {
+    if (!rejected(error)) throw error;
+    const half = Math.ceil(encoder.encode(text).byteLength / 2);
+    if (depth >= MAX_SPLIT_DEPTH || half < MIN_SPLIT_BYTES) return undefined;
+    const parts: number[][] = [];
+    for (const part of chunkText(text, half)) {
+      const vector = await single(embedder, part, depth + 1, signal);
+      if (!vector) return undefined;
+      parts.push(vector);
+    }
+    const mean = parts[0]!.map((_, dimension) => parts.reduce((sum, vector) => sum + vector[dimension]!, 0) / parts.length);
+    const norm = Math.hypot(...mean);
+    return norm ? mean.map((value) => value / norm) : undefined;
+  }
+}

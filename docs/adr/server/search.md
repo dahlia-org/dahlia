@@ -33,6 +33,19 @@ Lakebase Search と有効にした vector extension は operator が準備する
 Node / Worker は tokenizer と vector capability が異なり、同じ DB の runtime 変更には再同期または projection 全再構築が必要。初期の LIKE 検索と各 canonical row 内の検索列は、再生成境界と非同期 vector 処理を共有する統合 projection に置き換えた。
 
 
+## Memory と保存チャットの検索 projection（2026-11-03）
+
+Dahlia Memory の保存メモリーと保存チャット（[Dahlia Memory](dahlia-memory.md#検索)）は、会議と同じく正本から再構築できる projection で検索する。表は `search.personal_memory_chunks`、`search.shared_memory_chunks`（正本へ ON DELETE CASCADE）、PostgreSQL 系だけの `agent.session_search_chunks`（`mastra_messages` と `mastra_threads` へ cascade）で、SQLite は memory の 2 表を FTS5 外部 content と trigger で持つ。PostgreSQL の RLS は正本と同じ所有者・Workspace 関数で FORCE する。共有メモリーの再構築は Workspace の search maintenance context で行うため、`app.shared_memories` の read policy にも同じ context を加えた。chunk 本文は projection 内だけの複製で、queue には ID・model・dimensions だけを置く。
+
+- chunk: 段落、改行、文末、UTF-8 の文字境界の順で切り、8,000 bytes 以内、重なりなし。byte と token は同一視しない。
+- 同期: 保存メモリーは正本と同じ transaction で chunk を全置換し、内容 hash が変われば embedding を捨てて `memory-index` job を積む。チャットは Mastra が書くため run 終了後に thread 単位の job を積み、job が tokenize と embedding を行う。漏れ、analyzer の変更、model の変更は毎時の reconcile（`memory` は user ごとの個人メモリーとチャット、`workspace-memory` は Workspace ごと）が直す。`memory-index` は `search` group の上限と 429 cooldown を共有する。
+- analyzer: 1 つの DB は 1 つの analyzer で索引し、query も同じ analyzer で分解する。行に analyzer ID を保存し、一致しない行は語の検索に使わない（vector は analyzer に依存しないので使い続ける）。Lakebase で `lakebase_tokenizer` が `pg_available_extensions` にあれば migration が `public` に入れ、`public.tokenizer_japanese` で DB 側が tokenize する（ID は `lakebase_tokenizer@<extversion>/tokenizer_japanese`。ALTER EXTENSION UPDATE は保存済み tsvector を作り直さないため版を含める）。無ければ起動を止めず、警告 log `search_japanese_tokenizer_unavailable` を出して Node の Lindera token を `simple` 設定で索引する。会議検索の `lakebase_text` / `lakebase_vector` は従来どおり必須で、読込失敗は migration を止める。素の PostgreSQL と SQLite も Lindera、Workers は `Intl.Segmenter`（全語 AND）を使う。runtime を変えた DB は、新しい runtime の reconcile が全行を自分の analyzer で作り直す。
+- 語の検索: query の語は `to_tsvector(<analyzer の設定>, query)` の lexeme（最大 16）を引用符付きの tsquery にしたもので、index 側の lexeme と一致する。PostgreSQL は GIN と `ts_rank_cd`（IDF なし）、Lakebase は BM25 index と `<@> to_bm25query(array_to_tsvector(lexemes), index)`、SQLite は FTS5 の bm25 で並べる。Lakebase は会議検索と同じく BM25 index scan を transaction 内で止め、絞り込んだ全候補を採点する。
+- 意味検索: 文書は instruction なし、query は memory 用・chat 用の固定 instruction 付きで、要求ごとに 1 回だけ embedding し全 scope で共有する。model と dimensions が設定と一致する行だけを使い、partial HNSW / `lakebase_ann` を chunk 表ごとに作る。query embedding の失敗・期限（2 秒）・予算超過は語の検索だけに縮退する。
+- 文書側の失敗: 429・5xx・timeout は backoff と group cooldown で再試行する。400 / 413 / 422 で batch を拒否されたら 1 件ずつ送り直し、それでも拒否された chunk は最大 2 回半分に分けて（2,000 bytes 未満にはしない）各部分の vector の正規化平均を使う。なお拒否されたら job を failed にし、内容が変わるまで語の検索だけで引ける。
+
+Lakebase の `lakebase_tokenizer` を `public` に入れたときの設定名、日本語設定と `lakebase_bm25` / `to_bm25query` の組み合わせ、`array_to_tsvector` で作った query の BM25 採点は公式例がなく、実環境で未検証である。BM25 の corpus 統計は index 作成時に計算されるため、初回の取り込み後に `VACUUM search.personal_memory_chunks, search.shared_memory_chunks, agent.session_search_chunks;` を実行する。
+
 ## 共通検索 API とクライアント切替（2026-09-08）
 
 `POST /api/v1/search` を Desktop Server account・Web・Server MCP `search` の共通検索とする。検索語は `query: string` のみ。必須 `vaultId`、省略時空の query、任意 kind／子孫を含む projectId／タイムゾーン付き from・to／種類ごと既定50・最大100の limit を受け取る。trim後500 UTF-16コード単位、16 KiB body、厳密な型と期間を既存の認証境界で検証する。日付は meeting 作成日時、screenshot 撮影日時の開始以上・終了未満。project は名前・階層パスの NFKC 小文字化した各語を AND 検索し、所属する子孫会議の更新順で返す。日付指定時は該当期間に作成された会議を持つ project に限る。
