@@ -9,7 +9,7 @@ type PostgresExtension = "vector" | "pg_trgm" | "lakebase_text" | "lakebase_vect
 
 export async function ensurePublicExtensions(database: Pick<Pool, "query">, extensions: readonly PostgresExtension[]): Promise<void> {
   if (!extensions.length) return;
-  // Serialize Dahlia and Hindsight bootstrap extension installation.
+  // Serialize concurrent bootstrap extension installation.
   await database.query(`DO $$
     DECLARE extension_name text; extension_schema text;
     BEGIN

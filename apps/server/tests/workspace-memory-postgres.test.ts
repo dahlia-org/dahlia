@@ -6,12 +6,6 @@ import { MeetingSyncService } from "../src/sync/service";
 import { uuidV7 } from "@dahlia-ai/ui/model/id";
 import { seedPostgresIdentity, testOrganizationID } from "./public-test-client";
 import type { Identity } from "../src/auth/identity";
-import type { AppConfig } from "../src/config";
-import { WorkspaceMemoryService } from "../src/memory/service";
-import { ingestionPolicy } from "../src/memory/ingestion";
-import { standardModel } from "../src/memory/pages-model";
-import { noteDocument } from "../src/memory/sources";
-import { encodeId } from "@dahlia-ai/ui/model/typeid";
 
 const url = process.env.TEST_DATABASE_URL;
 const connection = url ? connectPostgresUrl(url, 1) : undefined;
@@ -26,7 +20,7 @@ describe.runIf(url)("Workspace memory PostgreSQL RLS", () => {
     const stranger: Identity = { userId: uuidV7(), source: "header" };
     await seedPostgresIdentity(app, url!, owner); await seedPostgresIdentity(app, url!, stranger);
     const memory = app.personalMemory!;
-    const note = await memory.saveNote(owner.userId, owner.userId, { id: uuidV7(), revision: 0, content: "Private lesson" }, "human", true, true);
+    const note = await memory.saveNote(owner.userId, owner.userId, { id: uuidV7(), revision: 0, content: "Private lesson" }, "human", true);
     expect(await memory.getNote(owner.userId, owner.userId, note.id)).toMatchObject({ content: "Private lesson", protected: true });
     await expect(memory.listNotes(stranger.userId, owner.userId)).rejects.toMatchObject({ status: 404 });
     expect(await memory.listNotes(stranger.userId, stranger.userId)).toEqual([]);
@@ -45,7 +39,7 @@ describe.runIf(url)("Workspace memory PostgreSQL RLS", () => {
     await expect(pool.query("INSERT INTO app.personal_memories (id, user_id, created_by, content, updated_at) VALUES ($1,$2,$2,'forbidden',now())", [uuidV7(), owner.userId])).rejects.toThrow();
     await memory.deleteNote(owner.userId, owner.userId, note.id, 1);
   });
-  it("isolates content, resolves a live worker admin and clears transaction-local identity on a shared pool", async () => {
+  it("isolates Workspace memories and clears transaction-local identity on a shared pool", async () => {
     const { db, pool } = connection!;
     const roles = await pool.query<{ rolsuper: boolean; rolbypassrls: boolean }>("SELECT rolsuper, rolbypassrls FROM pg_roles WHERE rolname = current_user");
     expect(roles.rows[0]).toEqual({ rolsuper: false, rolbypassrls: false });
@@ -59,18 +53,7 @@ describe.runIf(url)("Workspace memory PostgreSQL RLS", () => {
       data: { organizationId: testOrganizationID, name: "Memory RLS", createdAt: new Date().toISOString() },
     }] });
     const memory = app.memory!;
-    await memory.configure(owner.userId, workspaceId, `dahlia_${encodeId("workspace", workspaceId)}`, true);
-    expect((await memory.status(owner.userId, workspaceId))?.imagesEnabled).toBe(false);
-    await memory.configure(owner.userId, workspaceId, `dahlia_${encodeId("workspace", workspaceId)}`, true, true);
-    const imageState = await memory.status(owner.userId, workspaceId);
-    expect(imageState).toMatchObject({ imagesEnabled: true, reconcile: true });
-    await memory.configure(owner.userId, workspaceId, `dahlia_${encodeId("workspace", workspaceId)}`, true);
-    expect((await memory.status(owner.userId, workspaceId))?.imagesEnabled).toBe(true);
-    await expect(memory.configure(stranger.userId, workspaceId, `dahlia_${encodeId("workspace", workspaceId)}`, true, false)).rejects.toMatchObject({ status: 404 });
-    await memory.configure(owner.userId, workspaceId, `dahlia_${encodeId("workspace", workspaceId)}`, true, false);
     const note = await memory.saveNote(owner.userId, workspaceId, { id: uuidV7(), content: "Private Workspace evidence", revision: 0 });
-    expect(await memory.exists(workspaceId)).toBe(true);
-    expect(await memory.workerUser(workspaceId)).toBe(owner.userId);
     await expect(memory.listNotes(stranger.userId, workspaceId)).rejects.toMatchObject({ status: 404 });
     expect((await memory.listNotes(owner.userId, workspaceId))[0]?.id).toBe(note.id);
     expect((await pool.query("SELECT * FROM app.shared_memories WHERE id = $1", [note.id])).rows).toEqual([]);
@@ -82,65 +65,16 @@ describe.runIf(url)("Workspace memory PostgreSQL RLS", () => {
       expect((await tx.execute(sql`select id from app.shared_memories where id = ${note.id}`)).rows).toHaveLength(1);
     });
     expect((await pool.query("SELECT * FROM app.shared_memories WHERE id = $1", [note.id])).rows).toEqual([]);
-    await memory.ensurePages(owner.userId, workspaceId);
-    expect((await memory.pages(owner.userId, workspaceId)).map((page) => page.id)).toEqual(["workspace-insights"]);
-    await expect(memory.pages(stranger.userId, workspaceId)).rejects.toMatchObject({ status: 404 });
-    const pageRls = await pool.query("SELECT relrowsecurity, relforcerowsecurity FROM pg_class WHERE oid = 'search.knowledge_pages'::regclass");
-    expect(pageRls.rows[0]).toEqual({ relrowsecurity: true, relforcerowsecurity: true });
-    expect((await pool.query("SELECT * FROM search.knowledge_pages")).rows).toEqual([]);
-    await db.transaction(async (tx) => {
-      await tx.execute(sql`select set_config('app.user_id', ${stranger.userId}, true)`);
-      expect((await tx.execute(sql`select * from search.knowledge_pages where workspace_id = ${workspaceId}`)).rows).toEqual([]);
-      expect((await tx.execute(sql`update search.knowledge_pages set status = 'ready' where workspace_id = ${workspaceId} returning id`)).rows).toEqual([]);
-    });
-    await db.transaction(async (tx) => {
-      await tx.execute(sql`select set_config('app.user_id', ${owner.userId}, true)`);
-      expect((await tx.execute(sql`select id from search.knowledge_pages where workspace_id = ${workspaceId}`)).rows).toHaveLength(1);
-      await tx.execute(sql`update jobs.workspace_memory_state set reconcile = false, indexed_generation = generation where workspace_id = ${workspaceId}`);
-      await tx.execute(sql`update search.knowledge_pages set status = 'ready', generation = (select generation from jobs.workspace_memory_state where workspace_id = ${workspaceId}) where workspace_id = ${workspaceId}`);
-    });
-    const publicationGeneration = (await memory.status(owner.userId, workspaceId))!.generation;
-    expect(await memory.publications(owner.userId, workspaceId, publicationGeneration, ["workspace-insights"])).toHaveLength(1);
-    await expect(memory.publications(stranger.userId, workspaceId, publicationGeneration, ["workspace-insights"])).rejects.toMatchObject({ status: 404 });
-    await memory.requestPage(owner.userId, workspaceId, "workspace-insights");
-    expect(await memory.publications(owner.userId, workspaceId, publicationGeneration, ["workspace-insights"])).toEqual([]);
-    // Exercise a real JSONB publication round trip; PostgreSQL reorders object keys.
-    await db.transaction(async (tx) => {
-      await tx.execute(sql`select set_config('app.user_id', ${owner.userId}, true)`);
-      await tx.execute(sql`update jobs.workspace_memory_state set progress = ${JSON.stringify({ entityPolicy: 1, reflectionPolicy: 1, phase: "delta", upstreamPolicy: "a".repeat(64), ingestionPolicy: await ingestionPolicy("a".repeat(64)) })}::jsonb where workspace_id = ${workspaceId}`);
-      await tx.execute(sql`update search.knowledge_pages set completed_version = request_version where workspace_id = ${workspaceId}`);
-    });
-    const engine = new WorkspaceMemoryService({ hindsight: { url: "https://synthetic.example", auth: "none" } } as AppConfig, memory, sync, app.sync);
-    const definition = standardModel(null), cutoff = new Date().toISOString(), factId = uuidV7(), document = noteDocument(note);
-    const current = (await memory.status(owner.userId, workspaceId))!;
-    const model = { ...definition, bank_id: current.bankId, content: "Synthetic page", last_refreshed_at: cutoff, is_stale: false,
-      reflect_response: { based_on: { world: [{ id: factId, text: "Synthetic fact" }] }, dahlia_generation: {
-        cutoff, source_query: definition.source_query, tags: definition.tags, trigger: definition.trigger, max_tokens: definition.max_tokens } } };
-    vi.spyOn(engine.client, "ingestionPolicy").mockResolvedValue("a".repeat(64));
-    vi.spyOn(engine.client, "bank").mockReturnValue(current.bankId);
-    vi.spyOn(engine.client, "model").mockResolvedValue(model);
-    vi.spyOn(engine.client, "pageFact").mockResolvedValue({ id: factId, text: "Synthetic fact", type: "world", state: "valid",
-      updated_at: cutoff, document_id: document.id, source_memory_ids: [], metadata: { source_kind: "shared", source_id: note.id, source_revision: "1", dahlia_ingestion_policy: "a".repeat(64) } });
-    vi.spyOn(engine, "canonicalSource").mockResolvedValue(document);
-    const job = (await memory.claim(workspaceId))!, signal = new AbortController().signal;
-    await engine.pages.step(owner, job, signal);
-    await memory.release(job);
-    expect((await memory.page(owner.userId, workspaceId, definition.id))!.snapshot).toBeTruthy();
-    expect(await engine.pages.get(owner, { workspaceId: encodeId("workspace", workspaceId), pageId: definition.id }, signal)).toMatchObject({ status: "ready", body: "Synthetic page" });
-    const pending = (await memory.pending(workspaceId))!;
-    await memory.setOperation(pending, { id: uuidV7(), generation: pending.generation,
-      source: { kind: "shared", id: note.id, revision: "1", projectId: null }, contentHash: "hash", attempts: 0 });
+    expect((await memory.searchNotes(owner.userId, workspaceId, ["evidence"])).map((row) => row.note.id)).toEqual([note.id]);
+    // PostgreSQL lower() alone would leave full-width and half-width kana unmatched.
+    const variant = await memory.saveNote(owner.userId, workspaceId, { id: uuidV7(), content: "ＡＰＩとｶﾀｶﾅの共有メモ", revision: 0 });
+    for (const term of ["api", "カタカナ"]) expect((await memory.searchNotes(owner.userId, workspaceId, [term])).map((row) => row.note.id)).toEqual([variant.id]);
+    await memory.deleteNote(owner.userId, workspaceId, variant.id, 1);
+    await expect(memory.searchNotes(stranger.userId, workspaceId, ["evidence"])).rejects.toMatchObject({ status: 404 });
     await memory.saveNote(owner.userId, workspaceId, { id: note.id, revision: 1, content: "Updated evidence" });
-    expect((await memory.pending(workspaceId))!.operation?.generation).toBe(pending.generation);
-    await memory.finishSource(pending);
-    const updated = (await memory.pending(workspaceId))!;
-    expect(updated.generation).toBe(pending.generation + 1);
-    expect(updated.operation).toBeNull();
-    await memory.finishSource(updated);
-    expect(await memory.pending(workspaceId)).toBeUndefined();
     await memory.deleteNote(owner.userId, workspaceId, note.id, 2);
   });
-  it.each(["purge", "pause"])("serializes a pending save against %s and rejects late retries", async (action) => {
+  it("serializes a pending save against purge", async () => {
     const concurrent = connectPostgresUrl(url!, 4);
     const { db, pool } = concurrent;
     const app = createPostgresAuthStore(db, "postgres");
@@ -151,8 +85,7 @@ describe.runIf(url)("Workspace memory PostgreSQL RLS", () => {
       id: uuidV7(), createdAt: new Date().toISOString(), operations: [{ id: uuidV7(), entity: "workspace",
         action: "create", entityId: workspaceId, baseRevision: null,
         data: { organizationId: testOrganizationID, name: "Concurrent memory", createdAt: new Date().toISOString() } }] });
-    const memory = app.memory!, bankId = `dahlia_${encodeId("workspace", workspaceId)}`;
-    await memory.configure(owner.userId, workspaceId, bankId, true);
+    const memory = app.memory!;
     const blocker = await pool.connect();
     const input = { id: noteId, revision: 0, content: "Confirmed shared note" };
     let saving: Promise<unknown> | undefined, changing: Promise<unknown> | undefined;
@@ -166,20 +99,14 @@ describe.runIf(url)("Workspace memory PostgreSQL RLS", () => {
       await vi.waitFor(async () => {
         expect((await pool.query("SELECT 1 FROM pg_locks WHERE locktype = 'advisory' AND objid = 899178 AND NOT granted")).rowCount).toBe(1);
       });
-      changing = action === "purge" ? memory.purge(owner.userId, workspaceId)
-        : memory.configure(owner.userId, workspaceId, bankId, false);
-      // Both lifecycle operations must wait for the canonical write, not commit ahead of it.
+      changing = memory.purge(owner.userId, workspaceId);
+      // Purge must wait for the canonical write, not commit ahead of it and leave the late note behind.
       await vi.waitFor(async () => {
         expect((await pool.query("SELECT 1 FROM pg_locks WHERE locktype = 'advisory' AND NOT granted AND objid <> 899178")).rowCount).toBeGreaterThan(0);
       });
       await blocker.query("SELECT pg_advisory_unlock(899178)");
       await saving; await changing;
-      expect(await memory.listNotes(owner.userId, workspaceId)).toHaveLength(action === "purge" ? 0 : 1);
-      await expect(memory.saveNote(owner.userId, workspaceId, input)).rejects.toMatchObject({ status: 409 });
-      if (action === "pause") {
-        await memory.configure(owner.userId, workspaceId, bankId, true);
-        expect((await memory.saveNote(owner.userId, workspaceId, input)).revision).toBe(1);
-      }
+      expect(await memory.listNotes(owner.userId, workspaceId)).toHaveLength(0);
     } finally {
       await blocker.query("SELECT pg_advisory_unlock(899178)");
       await Promise.allSettled([saving, changing]);

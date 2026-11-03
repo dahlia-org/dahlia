@@ -52,13 +52,14 @@ let deferDraft = false;
 let finishDraft: (() => void) | undefined;
 let draftSignal: AbortSignal | undefined;
 let savedContent: string | undefined;
+let encryptedB = false;
 globalThis.fetch = async (input, init) => {
   const url = new URL(typeof input === "string" ? input : input instanceof URL ? input : input.url, location.href);
   const path = url.pathname;
   const method = init?.method ?? (input instanceof Request ? input.method : "GET");
   if (path === "/api/v1/session") return Response.json({ user: { id: "user", name: "Tester" },
     capabilities: { admin: true, sessions: false, sharing: false, sync: true, ai: aiAvailable } });
-  if (path === "/api/v1/workspaces") return Response.json({ items: [{ workspaceId, name: "Workspace", encryption: "none" }, { workspaceId: workspaceB, name: "Workspace B", encryption: "none" }], nextCursor: null });
+  if (path === "/api/v1/workspaces") return Response.json({ items: [{ workspaceId, name: "Workspace", encryption: "none" }, { workspaceId: workspaceB, name: "Workspace B", encryption: encryptedB ? "server" : "none" }], nextCursor: null });
   if (path.endsWith("/search")) { searchScopes.push(path.split("/")[4]!); return Response.json({ meetings: [], screenshots: [], projects: [], limited: { meetings: false, screenshots: false, projects: false } }); }
   if (path.endsWith("/projects") || path.endsWith("/meetings")) return Response.json({ items: [], nextCursor: null });
   if (path === "/api/v1/responses") {
@@ -72,7 +73,6 @@ globalThis.fetch = async (input, init) => {
     return failDraft ? failure(502) : draftResponse("Generated shared note");
   }
   if (path.endsWith("/memory/notes") && method === "POST") { savedContent = (await (input instanceof Request ? input.clone() : new Request(url, init)).json<{ content: string }>()).content; return Response.json({ saved: true }); }
-  if (path.endsWith("/memory/analysis/status")) return Response.json({ enabled: true, status: "ready", errorCode: null, skippedCount: 0, skippedSources: [] });
   if (path === "/api/v1/capabilities") return Response.json({ ai: { version: 1 } });
   if (path === "/api/v1/models") return Response.json({ data: [{ id: "model", display_name: "Model" }],
     models: [{ slug: "model", display_name: "Model", supported_in_api: true, visibility: "list",
@@ -267,8 +267,13 @@ async function run() {
   await until(() => location.pathname === pathB && messages() === "Saved B", "forward to B");
   assert(Number(sends) === 2, "History navigation resubmitted a message");
   assert(document.querySelector(".ai-message.assistant strong")?.textContent === "Saved B", "Saved reply did not render Markdown");
+  assert(document.querySelector('.ai-message.assistant button[title="Share this answer to Workspace memory"]'), "Share action missing in a plaintext Workspace");
+  encryptedB = true;
   reload();
   await until(() => messages() === "Saved B", "reload deep link");
+  // Memory never stores encrypted Workspace content, so the share action must not be offered there.
+  assert(!document.querySelector('.ai-message.assistant button[title="Share this answer to Workspace memory"]'), "Share action offered in an encrypted Workspace");
+  encryptedB = false;
   deferList = true;
   reload();
   await until(() => messages() === "Saved B" && deferredLists.length, "detail before first history page");
@@ -387,6 +392,6 @@ async function run() {
   click('.page-header a[href="/memory"]');
   await until(() => location.pathname === "/memory" && document.querySelector("h1")?.textContent === "Dahlia Memory", "Memory reachable without AI");
   document.body.dataset.testResult = "passed";
-  document.getElementById("result")!.textContent = "PASS: chat-scoped search and loading races, Memory without AI, creation/generation failure, URL adoption, uninterrupted stream, native links, Back/Forward, reload, late first-page merge, list failure, missing/forbidden/invalid IDs, retry, stale results, navigation abort, deletion, history readiness recovery, deletion after navigation";
+  document.getElementById("result")!.textContent = "PASS: chat-scoped search and loading races, Memory without AI, no memory sharing in encrypted Workspaces, creation/generation failure, URL adoption, uninterrupted stream, native links, Back/Forward, reload, late first-page merge, list failure, missing/forbidden/invalid IDs, retry, stale results, navigation abort, deletion, history readiness recovery, deletion after navigation";
 }
 void run().catch((error: unknown) => { document.body.dataset.testResult = "failed"; document.getElementById("result")!.textContent = `FAIL: ${String(error)}`; });

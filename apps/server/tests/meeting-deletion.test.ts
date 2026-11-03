@@ -293,7 +293,7 @@ describe("meeting trash", () => {
       else if (runtime === "direct") await sync.drainStorageDeletes(undefined, (await store.jobs.claim(["storage-delete"]))!);
       else await createQueueJobs({ DAHLIA_JOB_QUEUE: { send: vi.fn(), sendBatch: vi.fn() } },
         { queue: store.jobs, summaryJobs: store.summaryJobs, imageAnalysis: store.imageAnalysis!, searchIndex: store.searchIndex! },
-        store.sync, sync, [], undefined, undefined, undefined, undefined, undefined, 1).consume({ action: "wake" }, signal);
+        store.sync, sync, [], undefined, undefined, undefined, 1).consume({ action: "wake" }, signal);
     };
     for (let attempt = 1; attempt <= 3; attempt++) {
       raw.prepare("UPDATE jobs_queue SET available_at = 0 WHERE id = ?").run(id);

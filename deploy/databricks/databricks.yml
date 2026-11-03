@@ -7,10 +7,8 @@ include:
   - resources/*.yml
 
 sync:
-  include:
-    - ../../apps/hindsight/.upstream/hindsight-api-slim/**
   # The Server App deploys the repository root and builds its pnpm workspace there.
-  # Upload only the root manifests, Server, shared UI, Hindsight and the setup notebooks.
+  # Upload only the root manifests, Server, shared UI and the setup notebooks.
   paths:
     - ../../package.json
     - ../../pnpm-workspace.yaml
@@ -18,13 +16,10 @@ sync:
     - ../../turbo.json
     - ../../apps/server
     - ../../packages/ui
-    - ../../apps/hindsight
     - notebooks
 
 experimental:
   skip_name_prefix_for_schema: true
-  scripts:
-    prebuild: "cd ../../apps/hindsight && uv run --no-project scripts/sync_upstream.py"
 
 variables:
   database_project_id:
@@ -38,21 +33,6 @@ variables:
   app_schema:
     description: Unity Catalog schema containing Dahlia Server storage.
     default: app
-  hindsight_schema:
-    description: PostgreSQL schema containing Hindsight data.
-    default: hindsight
-  reranker_max_candidates_low:
-    description: Hindsight reranker candidate cap for low-budget recall (Dahlia depth quick).
-    default: "50"
-  reranker_max_candidates_mid:
-    description: Hindsight reranker candidate cap for mid-budget recall (Dahlia depth normal).
-    default: "100"
-  reranker_max_candidates_high:
-    description: Hindsight reranker candidate cap for high-budget recall (Dahlia depth deep).
-    default: "300"
-  memory_image_model:
-    description: Explicit Databricks VLM for opt-in Workspace screenshots.
-    default: system.ai.gpt-6-luna
   ops_schema:
     description: Unity Catalog schema containing OTel tables.
     default: ops

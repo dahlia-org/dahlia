@@ -329,74 +329,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/v1/workspaces/{workspaceId}/memory/pages": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** List validated standard Knowledge Pages; literal search, 20 per page */
-        get: operations["listKnowledgePages"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/workspaces/{workspaceId}/memory/pages/{pageId}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** Read a generated summary and canonical sources; unavailable pages omit all generated content */
-        get: operations["getKnowledgePage"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/workspaces/{workspaceId}/memory/pages/{pageId}/export": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** Export currently validated generated text and canonical source links as Markdown */
-        get: operations["exportKnowledgePage"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/workspaces/{workspaceId}/memory/pages/{pageId}/refresh": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /** Queue standard page regeneration; Workspace admin only; no custom content or prompt */
-        post: operations["refreshKnowledgePage"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/api/v1/user/memory/scopes": {
         parameters: {
             query?: never;
@@ -421,7 +353,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** List saved notes; independent of analysis */
+        /** List saved memories in creation order; 100 per page */
         get: operations["personalMemoryList"];
         put?: never;
         /** Create a saved note with revision zero */
@@ -460,63 +392,12 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Recall related memories */
+        /** Find saved memories ranked by keyword overlap */
         post: operations["personalMemoryRecall"];
         delete?: never;
         options?: never;
         head?: never;
         patch?: never;
-        trace?: never;
-    };
-    "/api/v1/user/memory/reflect": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /** Reflect on memories with sources */
-        post: operations["personalMemoryReflect"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/user/memory/analysis/status": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** Read analysis availability and ingestion status */
-        get: operations["personalMemoryStatus"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/user/memory/analysis/settings": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        /** Enable, pause or retry personal analysis; owner only */
-        patch: operations["personalMemoryConfigure"];
         trace?: never;
     };
     "/api/v1/workspaces/{workspaceId}/memory/notes": {
@@ -526,7 +407,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** List saved notes; independent of analysis */
+        /** List saved memories in creation order; 100 per page */
         get: operations["workspaceMemoryList"];
         put?: never;
         /** Create a saved note with revision zero */
@@ -565,63 +446,12 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Recall related memories */
+        /** Find saved memories ranked by keyword overlap */
         post: operations["workspaceMemoryRecall"];
         delete?: never;
         options?: never;
         head?: never;
         patch?: never;
-        trace?: never;
-    };
-    "/api/v1/workspaces/{workspaceId}/memory/reflect": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /** Reflect on memories with sources */
-        post: operations["workspaceMemoryReflect"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/workspaces/{workspaceId}/memory/analysis/status": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** Read analysis availability and ingestion status */
-        get: operations["workspaceMemoryStatus"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/workspaces/{workspaceId}/memory/analysis/settings": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        /** Enable, pause or retry analysis; Workspace admin only */
-        patch: operations["workspaceMemoryConfigure"];
         trace?: never;
     };
     "/api/v1/workspaces/{workspaceId}/memory": {
@@ -634,7 +464,7 @@ export interface paths {
         get?: never;
         put?: never;
         post?: never;
-        /** Disable analysis and delete all shared notes and the Hindsight bank; preserves meetings; admin only */
+        /** Delete all shared memories; preserves meetings; admin only */
         delete: operations["purgeWorkspaceMemory"];
         options?: never;
         head?: never;
@@ -2479,46 +2309,6 @@ export interface components {
                 };
             };
         };
-        KnowledgePageList: {
-            items: components["schemas"]["KnowledgePage"][];
-            nextCursor: string | null;
-        };
-        KnowledgePage: {
-            id: string;
-            workspaceId: string;
-            projectId: string | null;
-            title: string;
-            /** @enum {string} */
-            status: "ready" | "generating" | "stale" | "source_invalid" | "paused" | "unavailable" | "error" | "no_sources";
-            /** @enum {string} */
-            coverage: "ready" | "partial" | "updating";
-            skippedCount: number;
-            canRefresh: boolean;
-            generatedAt: string | null;
-            body: string | null;
-            snippet: string | null;
-            sources: {
-                /** @enum {string} */
-                kind: "meeting" | "shared";
-                id: string;
-                revision: string;
-                href: string;
-                images?: {
-                    screenshotId: string;
-                    fileId: string;
-                    checksum: string;
-                    href: string;
-                }[];
-                imageCoverage?: {
-                    selected: number;
-                    eligible: number;
-                    omitted: number;
-                };
-                canonicalExcerpt: string;
-                truncated: boolean;
-            }[];
-            instruction: string;
-        };
         DahliaMemoryResult: {
             items?: components["schemas"]["DahliaMemoryNote"][];
             nextCursor?: string | null;
@@ -2547,73 +2337,9 @@ export interface components {
                 /** @enum {string} */
                 scope: "personal" | "workspace";
                 workspaceId?: string;
-                result: {
-                    sources?: {
-                        kind: string;
-                        id: string;
-                        revision: string;
-                        meeting_id: string | null;
-                        workspace_id: string | null;
-                        /** @enum {string} */
-                        scope: "personal" | "workspace";
-                        canonicalExcerpt: string;
-                        truncated: boolean;
-                        images?: {
-                            screenshotId: string;
-                            fileId: string;
-                            checksum: string;
-                            href: string;
-                        }[];
-                        imageCoverage?: {
-                            selected: number;
-                            eligible: number;
-                            omitted: number;
-                        };
-                    }[];
-                    hypothesis?: string | null;
-                    coverage?: string;
-                    skippedCount?: number;
-                    skippedSources?: {
-                        source: string;
-                        code: string;
-                    }[];
-                    claims?: {
-                        text: string;
-                        citations: {
-                            factId: string;
-                            /** @description Zero-based indexes into this result's sources; lineage does not prove the claim is true. */
-                            sourceIndexes: number[];
-                        }[];
-                    }[];
-                    /** @enum {string} */
-                    reflectionStatus?: "not_requested" | "ready" | "partial" | "invalid_references" | "missing_output" | "structured_error" | "invalid_output" | "empty" | "temporal_unavailable" | "updating";
-                    reflectionUsage?: {
-                        inputTokens: number;
-                        outputTokens: number;
-                    } | null;
-                    unavailable?: boolean;
-                    code?: string;
-                    instruction?: string;
-                    canonical?: {
-                        /** @enum {string} */
-                        scope: "personal" | "workspace";
-                        workspaceId?: string;
-                        items: components["schemas"]["DahliaMemoryNote"][];
-                        nextCursor: string | null;
-                    };
-                };
+                items: components["schemas"]["DahliaMemoryNote"][];
             }[];
-            imagesEnabled?: boolean;
-            imagesAvailable?: boolean;
-            enabled?: boolean;
-            status?: string;
-            errorCode?: string | null;
-            attempts?: number;
-            skippedCount?: number;
-            skippedSources?: {
-                source: string;
-                code: string;
-            }[];
+            instruction?: string;
         };
         DahliaMemoryNote: {
             id: string;
@@ -4342,108 +4068,6 @@ export interface operations {
             default: components["responses"]["Problem"];
         };
     };
-    listKnowledgePages: {
-        parameters: {
-            query?: {
-                projectId?: string;
-                query?: string;
-                after?: string;
-            };
-            header?: never;
-            path: {
-                workspaceId: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["KnowledgePageList"];
-                };
-            };
-            default: components["responses"]["Problem"];
-        };
-    };
-    getKnowledgePage: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                workspaceId: string;
-                pageId: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["KnowledgePage"];
-                };
-            };
-            default: components["responses"]["Problem"];
-        };
-    };
-    exportKnowledgePage: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                workspaceId: string;
-                pageId: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Validated Markdown download */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "text/markdown": string;
-                };
-            };
-            default: components["responses"]["Problem"];
-        };
-    };
-    refreshKnowledgePage: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                workspaceId: string;
-                pageId: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful response */
-            202: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        /** @enum {string} */
-                        status: "generating";
-                    };
-                };
-            };
-            default: components["responses"]["Problem"];
-        };
-    };
     memoryScopes: {
         parameters: {
             query?: never;
@@ -4618,112 +4242,8 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": {
+                    /** @description Space-separated keywords, not a sentence; the first 16 distinct keywords are used. Each matches saved memories that contain it, ignoring case and full/half width. */
                     query: string;
-                    /**
-                     * Format: date-time
-                     * @description ISO datetime. Ranks memories dated at or after it higher; memories outside the period are still returned.
-                     */
-                    after?: string;
-                    /**
-                     * Format: date-time
-                     * @description ISO datetime. Ranks memories dated at or before it higher; memories outside the period are still returned.
-                     */
-                    before?: string;
-                    /**
-                     * @description Retrieval effort; normal by default. deep is slower but considers more candidates.
-                     * @enum {string}
-                     */
-                    depth?: "quick" | "normal" | "deep";
-                };
-            };
-        };
-        responses: {
-            /** @description Successful response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["DahliaMemoryResult"];
-                };
-            };
-            default: components["responses"]["Problem"];
-        };
-    };
-    personalMemoryReflect: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": {
-                    query: string;
-                    /**
-                     * Format: date-time
-                     * @description ISO datetime. Ranks memories dated at or after it higher; memories outside the period are still returned.
-                     */
-                    after?: string;
-                    /**
-                     * Format: date-time
-                     * @description ISO datetime. Ranks memories dated at or before it higher; memories outside the period are still returned.
-                     */
-                    before?: string;
-                    /**
-                     * @description Retrieval effort; normal by default. deep is slower but considers more candidates.
-                     * @enum {string}
-                     */
-                    depth?: "quick" | "normal" | "deep";
-                };
-            };
-        };
-        responses: {
-            /** @description Successful response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["DahliaMemoryResult"];
-                };
-            };
-            default: components["responses"]["Problem"];
-        };
-    };
-    personalMemoryStatus: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["DahliaMemoryResult"];
-                };
-            };
-            default: components["responses"]["Problem"];
-        };
-    };
-    personalMemoryConfigure: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": {
-                    enabled: boolean;
                 };
             };
         };
@@ -4902,123 +4422,8 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": {
+                    /** @description Space-separated keywords, not a sentence; the first 16 distinct keywords are used. Each matches saved memories that contain it, ignoring case and full/half width. */
                     query: string;
-                    /** @description An existing Project TypeID; searches only that Project's Workspace memory. Never invent a value. */
-                    projectId?: string;
-                    /**
-                     * Format: date-time
-                     * @description ISO datetime. Ranks memories dated at or after it higher; memories outside the period are still returned.
-                     */
-                    after?: string;
-                    /**
-                     * Format: date-time
-                     * @description ISO datetime. Ranks memories dated at or before it higher; memories outside the period are still returned.
-                     */
-                    before?: string;
-                    /**
-                     * @description Retrieval effort; normal by default. deep is slower but considers more candidates.
-                     * @enum {string}
-                     */
-                    depth?: "quick" | "normal" | "deep";
-                };
-            };
-        };
-        responses: {
-            /** @description Successful response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["DahliaMemoryResult"];
-                };
-            };
-            default: components["responses"]["Problem"];
-        };
-    };
-    workspaceMemoryReflect: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                workspaceId: string;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": {
-                    query: string;
-                    /** @description An existing Project TypeID; searches only that Project's Workspace memory. Never invent a value. */
-                    projectId?: string;
-                    /**
-                     * Format: date-time
-                     * @description ISO datetime. Ranks memories dated at or after it higher; memories outside the period are still returned.
-                     */
-                    after?: string;
-                    /**
-                     * Format: date-time
-                     * @description ISO datetime. Ranks memories dated at or before it higher; memories outside the period are still returned.
-                     */
-                    before?: string;
-                    /**
-                     * @description Retrieval effort; normal by default. deep is slower but considers more candidates.
-                     * @enum {string}
-                     */
-                    depth?: "quick" | "normal" | "deep";
-                };
-            };
-        };
-        responses: {
-            /** @description Successful response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["DahliaMemoryResult"];
-                };
-            };
-            default: components["responses"]["Problem"];
-        };
-    };
-    workspaceMemoryStatus: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                workspaceId: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["DahliaMemoryResult"];
-                };
-            };
-            default: components["responses"]["Problem"];
-        };
-    };
-    workspaceMemoryConfigure: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                workspaceId: string;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": {
-                    enabled: boolean;
-                    imagesEnabled?: boolean;
                 };
             };
         };
@@ -5047,14 +4452,14 @@ export interface operations {
         requestBody?: never;
         responses: {
             /** @description Successful response */
-            202: {
+            200: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
                     "application/json": {
-                        /** @enum {string} */
-                        status: "deleting";
+                        /** @enum {boolean} */
+                        deleted: true;
                     };
                 };
             };

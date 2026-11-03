@@ -1,6 +1,5 @@
 import { z } from "zod";
 import type { ChatMemoryService } from "../agent/context-service";
-import type { WorkspaceMemoryService } from "../memory/service";
 import type { MeetingSyncStore } from "../sync/types";
 import type { MeetingSyncService } from "../sync/service";
 import type { SummaryMethod } from "../summary/model";
@@ -28,9 +27,9 @@ export interface WorkerJobStores {
 }
 export function createQueueJobs(bindings: WorkerJobBindings, stores: WorkerJobStores,
   syncStore: MeetingSyncStore, sync: MeetingSyncService, methods: readonly SummaryMethod[],
-  captioner?: ImageCaptioner, embedder?: SearchEmbedder, memory?: WorkspaceMemoryService,
-  chatMemory?: ChatMemoryService, personalMemory?: WorkspaceMemoryService, concurrency = 4) {
-  const executor = createJobExecutor({ ...stores, methods, syncStore, sync, captioner, embedder, memory, chatMemory, personalMemory });
+  captioner?: ImageCaptioner, embedder?: SearchEmbedder,
+  chatMemory?: ChatMemoryService, concurrency = 4) {
+  const executor = createJobExecutor({ ...stores, methods, syncStore, sync, captioner, embedder, chatMemory });
   const notify = async () => {
     try { await bindings.DAHLIA_JOB_QUEUE?.send({ action: "wake" }); }
     catch { log("warn", "job_notification_failed"); }

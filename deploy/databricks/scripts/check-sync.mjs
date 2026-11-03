@@ -18,6 +18,6 @@ assert.ok(
 for (const file of ["package.json", "pnpm-workspace.yaml", "pnpm-lock.yaml", "turbo.json", "apps/server/package.json", "packages/ui/package.json"]) {
   assert.ok(uploads.includes(file), `${file} must be included in bundle sync uploads`);
 }
-const unrelated = uploads.filter((file) => !/^(?:package\.json|pnpm-workspace\.yaml|pnpm-lock\.yaml|turbo\.json|apps\/(?:server|hindsight)\/|packages\/ui\/|deploy\/databricks\/notebooks\/)/.test(file));
-assert.deepEqual(unrelated, [], "Bundle sync must not upload files outside the Server workspace, Hindsight and notebooks");
-console.log("Bundle sync uploads the OTel notebook and only the Server workspace, Hindsight and notebook files.");
+const unrelated = uploads.filter((file) => !/^(?:package\.json|pnpm-workspace\.yaml|pnpm-lock\.yaml|turbo\.json|apps\/server\/|packages\/ui\/|deploy\/databricks\/notebooks\/)/.test(file));
+assert.deepEqual(unrelated, [], "Bundle sync must not upload files outside the Server workspace and notebooks");
+console.log("Bundle sync uploads the OTel notebook and only the Server workspace and notebook files.");

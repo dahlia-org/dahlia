@@ -333,6 +333,12 @@ describe("configuration", () => {
     })).toThrow("must use HTTPS");
   });
 
+  it("starts with settings left from the retired Hindsight memory", () => {
+    const config = loadConfig({ ...accounts, DAHLIA_HINDSIGHT_URL: "https://memory.example/api", DAHLIA_HINDSIGHT_AUTH: "bearer",
+      DAHLIA_HINDSIGHT_API_KEY: "x", DAHLIA_HINDSIGHT_BANK_PREFIX: "old", DAHLIA_MEMORY_IMAGE_MODEL: "m", DAHLIA_JOB_LIMITS: '{"memory":1}' });
+    expect(config).not.toHaveProperty("hindsight");
+  });
+
   it("rejects the retired administrator environment variable", () => {
     expect(() => loadConfig({ ...accounts, DAHLIA_ADMIN_EMAIL: "admin@example.com" }))
       .toThrow("DAHLIA_ADMIN_EMAIL is no longer supported");

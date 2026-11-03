@@ -9,7 +9,6 @@ import type { SearchEmbedder } from "../search/embedding";
 import { processSearchIndexBatch } from "../search/process";
 import type { MeetingSyncService } from "../sync/service";
 import type { MeetingSyncStore } from "../sync/types";
-import type { WorkspaceMemoryService } from "../memory/service";
 import type { ChatMemoryService } from "../agent/context-service";
 import { isRateLimited, RATE_LIMIT_COOLDOWN_MS } from "./rate-limit";
 import type { BackgroundJob, JobStore } from "./store";
@@ -21,15 +20,13 @@ export interface JobServices {
   imageAnalysis?: ImageAnalysisQueueStore; captioner?: ImageCaptioner;
   searchIndex?: SearchIndexQueueStore; embedder?: SearchEmbedder;
   sync: MeetingSyncService; syncStore: MeetingSyncStore;
-  memory?: WorkspaceMemoryService; personalMemory?: WorkspaceMemoryService; chatMemory?: ChatMemoryService;
+  chatMemory?: ChatMemoryService;
 }
 export function createJobExecutor(services: JobServices) {
   const kinds: JobKind[] = ["maintenance", "storage-delete", "reconcile"];
   for (const method of services.methods) kinds.push(method.id === "audio" ? "audio-summary" : "summary");
   if (services.imageAnalysis && services.captioner) kinds.push("image");
   if (services.searchIndex && services.embedder) kinds.push("search");
-  if (services.memory) kinds.push("workspace-memory");
-  if (services.personalMemory) kinds.push("personal-memory");
   if (services.chatMemory) kinds.push("chat-memory");
   const cooldown = async (kind: JobKind, code?: string) => {
     if (code && isRateLimited(code)) await services.queue.cooldown(kind, Date.now() + RATE_LIMIT_COOLDOWN_MS);
@@ -52,9 +49,6 @@ export function createJobExecutor(services: JobServices) {
         await processSearchIndexBatch({ ...services.searchIndex!, retry: async (claim, code, at) => {
           await services.searchIndex!.retry(claim, code, at); await cooldown("search", code);
         } }, services.embedder!, signal, job.batch);
-        break;
-      case "workspace-memory": case "personal-memory":
-        await (job.kind === "workspace-memory" ? services.memory! : services.personalMemory!).step(payload.scopeId!, signal, job);
         break;
       case "chat-memory": await services.chatMemory!.step(job.dedupeKey.slice("chat-memory:".length), payload.ownerUserId!, signal, job); break;
       case "storage-delete": await services.sync.drainStorageDeletes(payload.storageKey, job); break;

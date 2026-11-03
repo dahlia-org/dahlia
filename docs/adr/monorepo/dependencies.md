@@ -20,7 +20,7 @@ Documents の Desktop 同梱資材は `packages/ui` の pinned Yjs / Tiptap / Pr
 
 - UI: `pnpm --filter @dahlia-ai/ui check`（Documents 資材、lint、型、UI テスト）。Server: `apps/server` の `pnpm check`（OpenAPI、lint、型、Server テスト、package、Worker dry-run）。root の `pnpm check` は全 package を順に実行する。
 - CI は root の lockfile をキャッシュし、Server 系の job は `--filter @dahlia-ai/server...` で Server と UI だけを install する。
-- Databricks Apps の Server は repository root を source とし、DAB の `sync.paths` で root manifest、lockfile、`turbo.json`、`apps/server`、`packages/ui`（と Hindsight、setup notebook）だけを upload する。Apps はそこで `pnpm install --frozen-lockfile` と root の `pnpm run build` を実行し、`corepack pnpm --filter @dahlia-ai/server start:databricks` で起動する。`pnpm test:package` は同じ Server workspace のファイルを一時 directory へ写して install・build し、pack した artifact を workspace 外で検証する。
+- Databricks Apps の Server は repository root を source とし、DAB の `sync.paths` で root manifest、lockfile、`turbo.json`、`apps/server`、`packages/ui`（と setup notebook）だけを upload する。Apps はそこで `pnpm install --frozen-lockfile` と root の `pnpm run build` を実行し、`corepack pnpm --filter @dahlia-ai/server start:databricks` で起動する。`pnpm test:package` は同じ Server workspace のファイルを一時 directory へ写して install・build し、pack した artifact を workspace 外で検証する。
 - Electron alpha（[`apps/desktop`](../desktop/electron-alpha.md)）は `electron` 44.4.5 を固定し、バイナリは初回起動時に取得する（`allowBuilds: electron: false`）。CI は Server と別の `electron-ci.yml` で lint・型・テスト・build を実行する。Databricks の staging と Server の container には含めない。
 - Container は repository root を context とし（`docker build -f apps/server/Dockerfile .`）、`pnpm deploy --prod` の出力だけを runtime image に入れる。
 

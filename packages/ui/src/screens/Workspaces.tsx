@@ -339,7 +339,8 @@ export function WorkspaceMeetings({ session, workspaceId, serverAI = true }: { s
         {serverAI && workspace && <ServerSummarySettings key={`generation-${workspaceId}`} workspaceId={workspaceId} onSave={(current, generationSettings) =>
           commitSyncTransaction(workspaceId, [{ entity: "workspace", action: "update", entityId: workspaceId,
             baseRevision: current.revision, data: { name: current.name, generationSettings } }], setRecovering)} />}
-        {workspace && <WorkspaceMemory key={`memory-${workspaceId}`} workspaceId={workspaceId} role={workspace.role} />}
+        {/* Encrypted content is never copied into plaintext memory; the Server rejects every memory operation there. */}
+        {workspace && workspace.encryption !== "server" && <WorkspaceMemory key={`memory-${workspaceId}`} workspaceId={workspaceId} role={workspace.role} />}
         {workspace?.role === "admin" && <WorkspaceTransfer workspace={workspace} />}
         {workspace?.role === "admin" && !personal && <section className="workspace-settings"><h2>{uiText("Delete Workspace", "ワークスペースを削除")}</h2>
           <div className="collection-heading"><p>{uiText("Deleting a Workspace also permanently deletes all its Projects, meetings, files and recordings, including meetings in the trash.", "ワークスペースを削除すると、ごみ箱内のミーティングを含む、配下のすべてのプロジェクト・ミーティング・ファイル・録音も完全に削除されます。")}</p>

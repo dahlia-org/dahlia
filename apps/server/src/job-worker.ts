@@ -13,7 +13,7 @@ setLogSink(s.otel);
 const runner = new JobRunner(createJobExecutor({ queue: s.applicationStore.jobs, summaryJobs: s.applicationStore.summaryJobs,
   methods: s.summaryMethods, imageAnalysis: s.applicationStore.imageAnalysis, captioner: s.captioner,
   searchIndex: s.applicationStore.searchIndex, embedder: s.searchEmbedder, sync: s.syncService, syncStore: s.applicationStore.sync,
-  memory: s.workspaceMemory, personalMemory: s.personalMemory, chatMemory: s.chatMemory }), resources.concurrency);
+  chatMemory: s.chatMemory }), resources.concurrency);
 let stopping = false;
 async function stop() {
   if (stopping) return;

@@ -24,19 +24,19 @@ describe.runIf(url)("PostgreSQL shared job dispatch without RLS bypass", () => {
   it("lets waiting memory precede deferred source work and retains exhausted work in the DLQ", async () => {
     const sourceId = `${prefix}:source`, memoryId = `${prefix}:memory`;
     await jobs!.enqueue(sourceId, "summary", prefix, sourceId, testJobPayload("summary"), new Date(0));
-    await jobs!.enqueue(memoryId, "workspace-memory", prefix, memoryId, testJobPayload("workspace-memory"), new Date(0));
+    await jobs!.enqueue(memoryId, "chat-memory", prefix, memoryId, testJobPayload("chat-memory"), new Date(0));
     await connection!.db.execute(sql`update jobs.queue set created_at = case when dedupe_key = ${sourceId} then timestamp '2000-01-01' else timestamp '2000-01-02' end where dedupe_key in (${sourceId}, ${memoryId})`);
-    const source = (await jobs!.claim(["summary", "workspace-memory"]))!;
+    const source = (await jobs!.claim(["summary", "chat-memory"]))!;
     expect(source.dedupeKey).toBe(sourceId);
     await jobs!.retry(source, { delayMs: 0, errorCode: "job_source_not_ready" });
-    const memory = (await jobs!.claim(["summary", "workspace-memory"]))!;
+    const memory = (await jobs!.claim(["summary", "chat-memory"]))!;
     expect(memory.dedupeKey).toBe(memoryId);
     await jobs!.complete(memory);
     await connection!.db.execute(sql`update jobs.queue set dispatch_attempts = 2, available_at = timestamp '2000-01-01' where dedupe_key = ${sourceId}`);
     await jobs!.retry((await jobs!.claim(["summary"]))!, { delayMs: 0, errorCode: "job_source_not_ready" });
     expect((await connection!.db.execute(sql`select status, attempts, dispatch_attempts, last_error from jobs.queue where dedupe_key = ${sourceId}`)).rows)
       .toEqual([{ status: "failed", attempts: 0, dispatch_attempts: 3, last_error: "job_source_not_ready" }]);
-    expect(await jobs!.claim(["summary", "workspace-memory"])).toBeNull();
+    expect(await jobs!.claim(["summary", "chat-memory"])).toBeNull();
   });
   it.each([
     ["summary", "cancel"], ["search", "cancel"], ["image", "replace"], ["image", "repair"],

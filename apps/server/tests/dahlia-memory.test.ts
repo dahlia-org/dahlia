@@ -1,7 +1,6 @@
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { DatabaseSync } from "node:sqlite";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createNodeApplicationStore } from "../src/auth/node-store";
 import { createApp } from "../src/app";
@@ -10,8 +9,8 @@ import { createServerMcpHandler } from "../src/mcp";
 import type { AppConfig } from "../src/config";
 import type { MemoryGenerator } from "../src/agent/context-service";
 import { MeetingSyncService } from "../src/sync/service";
-import { WorkspaceMemoryService } from "../src/memory/service";
-import { DahliaMemory, memorySaveSchema } from "../src/memory/dahlia";
+import { DahliaMemory, memoryResultSchema, memorySaveSchema, rankNotes, recallTerms } from "../src/memory/dahlia";
+import type { z } from "zod";
 import { routeMemory } from "../src/memory/router";
 import { createDahliaMemoryTools } from "../src/memory/dahlia-tools";
 import { meetingRequestContext } from "../src/agent/tools";
@@ -27,8 +26,7 @@ async function fixture() {
   const directory = mkdtempSync(join(tmpdir(), "dahlia-personal-memory-")); directories.push(directory);
   const file = join(directory, "test.sqlite");
   const config: AppConfig = { authProvider: "header", authHeader: "X-Forwarded-Email", databaseType: "sqlite", databaseUrl: `file:${file}`,
-    baseUrl: "http://localhost:5173", oauthRedirectUris: [], maxRequestBytes: 1024 * 1024,
-    hindsight: { url: "https://memory.example", auth: "bearer", apiKey: "test" } };
+    baseUrl: "http://localhost:5173", oauthRedirectUris: [], maxRequestBytes: 1024 * 1024 };
   const app = createNodeApplicationStore(config); await app.migrate();
   const owner = { userId: uuidV7(), email: "memory-owner@example.com", source: "header" as const };
   const stranger = { userId: uuidV7(), email: "memory-stranger@example.com", source: "header" as const };
@@ -38,83 +36,87 @@ async function fixture() {
     id: uuidV7(), entity: "workspace", action: "create", entityId: workspace, baseRevision: null,
     data: { organizationId: testOrganizationID, name: "Team", createdAt: new Date().toISOString() },
   }] });
-  const documents = new Map<string, Map<string, string>>();
-  const metadata = new Map<string, Record<string, string>>();
-  const transport = vi.fn<typeof fetch>(async (input, init) => {
-    const path = new URL(String(input)).pathname;
-    const bank = path.split("/banks/")[1]!.split("/")[0]!;
-    const docs = documents.get(bank) ?? new Map<string, string>(); documents.set(bank, docs);
-    const body = (init?.body ? JSON.parse(String(init.body)) : {}) as { items: Array<{ document_id: string; content: string; metadata: Record<string, string> }>; operation_id: string };
-    if (path.endsWith("/config")) return Response.json({ bank_id: bank, dahlia_ingestion_policy: "a".repeat(64) });
-    if (path.endsWith("/memories") && init?.method === "POST") { for (const item of body.items) { docs.set(item.document_id, item.content); metadata.set(`${bank}/${item.document_id}`, { ...item.metadata, dahlia_ingestion_policy: "a".repeat(64) }); } return Response.json({ operation_id: body.operation_id }); }
-    if (path.includes("/operations/")) return Response.json({ status: "completed" });
-    if (path.endsWith("/memories/recall")) return Response.json({ results: [...docs].map(([id, text]) => ({ id, text, document_id: id })) });
-    if (path.endsWith("/reflect")) return Response.json({ text: "UNVERIFIED RAW ANSWER", structured_output: { claims: [{ text: "Hypothesis", factIds: [...docs.keys()] }] }, based_on: { memories: [...docs.keys()].map((id) => ({ id, text: "claim" })), mental_models: [] } });
-    if (path.includes("/memories/")) return Response.json({ document_id: path.split("/").at(-1), state: "valid" });
-    if (path.endsWith("/mental-models") && init?.method === "POST") return Response.json({ operation_id: uuidV7() });
-    if (path.endsWith("/mental-models")) return Response.json({ items: [] });
-    if (path.includes("/mental-models/")) return Response.json({}, { status: 404 });
-    if (path.includes("/documents/") && init?.method === "GET") {
-      const id = path.split("/").at(-1)!;
-      return docs.has(id) ? Response.json({ id, bank_id: bank, original_text: docs.get(id), memory_unit_count: 1,
-        retain_params: { metadata: metadata.get(`${bank}/${id}`) } }) : new Response(null, { status: 404 });
-    }
-    if (path.endsWith("/reprocess")) return Response.json({ operation_id: new URL(String(input)).searchParams.get("operation_id") });
-    if (path.includes("/documents/") && init?.method === "DELETE") { docs.delete(path.split("/").at(-1)!); return new Response(null, { status: 204 }); }
-    if (init?.method === "DELETE") { docs.clear(); return new Response(null, { status: 204 }); }
-    throw new Error("Unexpected mock operation");
-  });
-  const personal = new WorkspaceMemoryService(config, app.personalMemory!, sync, app.sync, transport);
-  const shared = new WorkspaceMemoryService(config, app.memory!, sync, app.sync, transport);
   const generate = vi.fn().mockResolvedValue({ target: "personal", reason: "personal_preference" });
-  const memory = new DahliaMemory({ personal: app.personalMemory!, workspace: app.memory! }, sync, { personal, workspace: shared }, generate as MemoryGenerator);
-  const db = new DatabaseSync(file);
-  const tick = async () => { db.exec("UPDATE jobs_queue SET available_at = 0 WHERE kind = 'personal-memory'"); await personal.step(owner.userId, signal); };
-  const ready = async () => { for (let i = 0; i < 60; i++) { await tick(); if ((await personal.status(owner, owner.userId)).status === "ready") return; } throw new Error("Memory did not settle"); };
+  const memory = new DahliaMemory({ personal: app.personalMemory!, workspace: app.memory! }, sync, generate as MemoryGenerator);
+  let closed = false;
   const note = (content: string) => ({ ...memorySaveSchema.parse({ scope: "personal", id: encodeId("sharedMemory", uuidV7()), revision: 0, content }), scope: "personal" as const });
-  return { app, config, owner, stranger, workspaceId: encodeId("workspace", workspace), sync, memory, personal, shared, generate, note, db, ready, tick, documents, transport,
-    close: () => { db.close(); void app.close?.(); } };
+  return { app, config, file, owner, stranger, workspaceId: encodeId("workspace", workspace), sync, memory, generate, note,
+    close: () => { if (!closed) { closed = true; void app.close?.(); } } };
 }
 
 describe("Dahlia Memory", () => {
-  it("keeps personal and shared notes with the same UUID in their authenticated banks", async () => {
+  it("keeps personal and shared notes with the same UUID in their own scopes", async () => {
     const f = await fixture();
     try {
-      const input = f.note("Private evidence"), workspace = decodeId("workspace", f.workspaceId);
+      const input = f.note("Private evidence");
       await f.memory.save(f.owner, input);
       await f.memory.save(f.owner, { ...input, scope: "workspace", workspaceId: f.workspaceId, content: "Shared evidence", explicit: true });
-      await f.memory.configure(f.owner, { scope: "personal", enabled: true });
-      await f.memory.configure(f.owner, { scope: "workspace", workspaceId: f.workspaceId, enabled: true });
-      await f.ready();
-      for (let i = 0; i < 60; i++) {
-        f.db.exec("UPDATE jobs_queue SET available_at = 0 WHERE kind = 'workspace-memory'");
-        await f.shared.step(workspace, signal);
-        if ((await f.shared.status(f.owner, workspace)).status === "ready") break;
-      }
-      expect((await f.shared.status(f.owner, workspace)).status).toBe("ready");
-      const personalBank = `dahlia_${encodeId("user", f.owner.userId)}`, sharedBank = `dahlia_${f.workspaceId}`;
-      expect([...f.documents.get(personalBank)!.keys()]).toEqual([input.id]);
-      expect([...f.documents.get(sharedBank)!.keys()]).toEqual([input.id]);
-      expect(f.documents.get(personalBank)!.get(input.id)).toContain("Private evidence");
-      expect(f.documents.get(sharedBank)!.get(input.id)).toContain("Shared evidence");
-      const personalResult = (await f.memory.search(f.owner, { scope: "personal", query: "evidence" }, false, signal)).results[0]!.result;
-      if (!("sources" in personalResult)) throw new Error("Expected canonical personal sources");
-      const personalSource = personalResult.sources[0]!;
-      expect(personalSource.id).toBe(input.id);
-      expect(personalSource.canonicalExcerpt).toContain("Private evidence");
+      const personal = await f.memory.search(f.owner, { scope: "personal", query: "evidence" }, signal);
+      expect(personal.results).toEqual([{ scope: "personal", items: [expect.objectContaining({ id: input.id, content: "Private evidence" })] }]);
+      const shared = await f.memory.search(f.owner, { scope: "workspace", workspaceId: f.workspaceId, query: "evidence" }, signal);
+      expect(shared.results[0]!.items.map((item) => item.content)).toEqual(["Shared evidence"]);
       await expect(f.memory.get(f.stranger, input)).rejects.toMatchObject({ code: "memory_not_found" });
       await expect(f.memory.get(f.stranger, { ...input, scope: "workspace", workspaceId: f.workspaceId })).rejects.toMatchObject({ status: 404 });
+      await expect(f.memory.search(f.stranger, { scope: "workspace", workspaceId: f.workspaceId, query: "evidence" }, signal)).rejects.toMatchObject({ status: 404 });
+      expect((await f.memory.search(f.stranger, { scope: "personal", query: "evidence" }, signal)).results[0]!.items).toEqual([]);
+    } finally { f.close(); }
+  });
+  it("matches full-width, half-width kana and case variants on every page of a scope, within the result limit", async () => {
+    const f = await fixture();
+    try {
+      const store = f.memory.stores.personal;
+      const add = (content: string) => store.saveNote(f.owner.userId, f.owner.userId, { id: uuidV7(), revision: 0, content }, "agent");
+      const width = await add("ＡＰＩの設定を見直す");
+      const kana = await add("ｶﾀｶﾅで書いた要件");
+      // More than one 500-row page, with the oldest match on the first page and filler after it.
+      for (let i = 0; i < 520; i++) await add(`filler ${i}`);
+      for (let i = 0; i < 25; i++) await add(`api follow-up ${i}`);
+      await f.memory.save(f.owner, { ...f.note("Shared API note"), scope: "workspace", workspaceId: f.workspaceId, explicit: true });
+      const ids = async (query: string) => (await f.memory.search(f.owner, { scope: "personal", query }, signal)).results[0]!.items.map((item) => decodeId("sharedMemory", item.id));
+      expect(await ids("カタカナ")).toEqual([kana.id]);
+      expect(await ids("ｶﾀｶﾅ")).toEqual([kana.id]);
+      const api = await ids("API");
+      expect(api).toHaveLength(20);
+      expect((await ids("ＡＰＩ 設定"))[0]).toBe(width.id);
+      expect((await f.memory.search(f.owner, { scope: "personal", query: "設定を見直す" }, signal)).results[0]!.items.map((item) => item.content)).toEqual(["ＡＰＩの設定を見直す"]);
+      expect((await f.memory.search(f.owner, { scope: "personal", query: "Shared" }, signal)).results[0]!.items).toEqual([]);
+      const cat = await add("猫に餌をあげる時間");
+      expect(await ids("猫 餌")).toEqual([cat.id]);
+    } finally { f.close(); }
+  });
+  it("ranks recall by distinct keyword overlap, then recency, and survives a reopened database", async () => {
+    const f = await fixture();
+    try {
+      // Keywords are the caller's space-separated words, normalized; nothing is inferred from a sentence.
+      expect(recallTerms("Pricing　決定 pricing ")).toEqual(["pricing", "決定"]);
+      expect(recallTerms("猫 餌")).toEqual(["猫", "餌"]);
+      expect(recallTerms("책 추천")).toEqual(["책", "추천"]);
+      for (const content of ["Pricing decision for Q3", "Old pricing note", "Unrelated lunch order", "PRICING decision follow-up"]) await f.memory.save(f.owner, f.note(content));
+      const found = await f.memory.search(f.owner, { scope: "personal", query: "pricing decision" }, signal);
+      expect(found.results[0]!.items.map((item) => item.content)).toEqual(["PRICING decision follow-up", "Pricing decision for Q3", "Old pricing note"]);
+      expect(rankNotes([])).toEqual([]);
+      // Function words are never invented as terms, so they cannot outrank the memory with the content keyword.
+      for (let i = 0; i < 6; i++) await f.memory.save(f.owner, f.note(`会議について確認してください ${i}`));
+      const budget = f.note("予算は300万円");
+      await f.memory.save(f.owner, budget);
+      expect((await f.memory.search(f.owner, { scope: "personal", query: "プロジェクト 予算" }, signal)).results[0]!.items.map((item) => item.id)).toEqual([budget.id]);
+      f.close();
+      // A fresh store over the same file proves the memories are durable, not process state.
+      const reopened = createNodeApplicationStore(f.config); await reopened.migrate();
+      try {
+        const memory = new DahliaMemory({ personal: reopened.personalMemory!, workspace: reopened.memory! }, new MeetingSyncService(reopened.sync));
+        expect((await memory.list(f.owner, { scope: "personal" })).items).toHaveLength(11);
+      } finally { await reopened.close?.(); }
     } finally { f.close(); }
   });
 
-  it("shares canonical personal notes across clients, enforces revisions and protects human edits without Hindsight", async () => {
+  it("shares canonical personal notes across clients, enforces revisions and protects human edits", async () => {
     const f = await fixture();
     try {
-      const memory = new DahliaMemory(f.memory.stores, f.sync, {});
+      const memory = new DahliaMemory(f.memory.stores, f.sync);
       const input = f.note("Prefer concise answers 100% of the time");
       const impersonated = { ...f.owner, impersonated: true };
       await expect(memory.save(impersonated, input)).rejects.toMatchObject({ code: "impersonation_read_only" });
-      await expect(memory.configure(impersonated, { scope: "personal", enabled: true })).rejects.toMatchObject({ status: 403 });
       await expect(memory.delete(impersonated, { ...input, revision: 1, explicit: true })).rejects.toMatchObject({ status: 403 });
       const saved = await memory.save(f.owner, input);
       expect(saved).toMatchObject({ saved: true, scope: "personal", memory: { revision: 1, protected: false } });
@@ -125,10 +127,10 @@ describe("Dahlia Memory", () => {
       await memory.save(f.owner, { ...input, revision: 1, content: "Human correction", explicit: true }, "human");
       await expect(memory.save(f.owner, { ...input, revision: 2, content: "Automatic overwrite" })).rejects.toMatchObject({ code: "memory_human_edit_protected" });
       await expect(memory.save(f.owner, { ...input, revision: 1, content: "Stale", explicit: true })).rejects.toMatchObject({ code: "memory_revision_conflict" });
-      const result = await memory.search(f.owner, { scope: "personal", workspaceId: f.workspaceId, query: "Human" }, false, signal);
+      const result = await memory.search(f.owner, { scope: "personal", workspaceId: f.workspaceId, query: "Human" }, signal);
       expect(result.searchedScopes).toEqual([{ scope: "personal" }]);
       expect(result.results[0]).not.toHaveProperty("workspaceId");
-      expect(result.results[0]!.result).toMatchObject({ unavailable: true, canonical: { items: [{ content: "Human correction" }] } });
+      expect(result.results[0]!.items).toMatchObject([{ content: "Human correction", revision: 2, protected: true }]);
       await memory.delete(f.owner, { ...input, revision: 2, explicit: true });
       expect((await memory.list(f.owner, { scope: "personal" })).items).toEqual([]);
     } finally { f.close(); }
@@ -139,7 +141,7 @@ describe("Dahlia Memory", () => {
       const store = f.memory.stores[scope];
       const scopeId = scope === "personal" ? f.owner.userId : decodeId("workspace", f.workspaceId);
       const input = { id: uuidV7(), revision: 0, content: "Original" };
-      const save = (value: typeof input, actor: "human" | "agent") => store.saveNote(f.owner.userId, scopeId, value, actor, false, true);
+      const save = (value: typeof input, actor: "human" | "agent") => store.saveNote(f.owner.userId, scopeId, value, actor, false);
       await save(input, "agent");
       const edit = { ...input, revision: 1, content: "Same correction" };
       const automatic = await save(edit, "agent");
@@ -164,19 +166,13 @@ describe("Dahlia Memory", () => {
       expect(await f.memory.save(f.owner, { ...input, explicit: true })).toMatchObject({ saved: false, suggestedScope: "both" });
       f.generate.mockRejectedValue(new Error("provider failed"));
       expect(await f.memory.save(f.owner, input)).toMatchObject({ saved: false, suggestedScope: "uncertain" });
-      const result = await f.memory.search(f.owner, { scope: "auto", workspaceId: f.workspaceId, query: "question" }, false, signal);
+      const result = await f.memory.search(f.owner, { scope: "auto", workspaceId: f.workspaceId, query: "question" }, signal);
       expect(result.searchedScopes.map((s) => s.scope)).toEqual(["personal", "workspace"]);
-      expect((await f.memory.search(f.owner, { scope: "auto", query: "question" }, false, signal)).searchedScopes).toEqual([{ scope: "personal" }]);
-      // Personal analysis is off, so it must not report the enabled Workspace bank as unavailable.
-      await f.memory.configure(f.owner, { scope: "workspace", workspaceId: f.workspaceId, enabled: true });
-      const workspaceOnly = await f.memory.search(f.owner, { scope: "auto", workspaceId: f.workspaceId, query: "question" }, false, signal);
+      expect((await f.memory.search(f.owner, { scope: "auto", query: "question" }, signal)).searchedScopes).toEqual([{ scope: "personal" }]);
+      f.generate.mockResolvedValue({ target: "workspace", reason: "team_decision" });
+      const workspaceOnly = await f.memory.search(f.owner, { scope: "auto", workspaceId: f.workspaceId, query: "decision" }, signal);
       expect(workspaceOnly.searchedScopes).toEqual([{ scope: "workspace", workspaceId: f.workspaceId }]);
-      expect(workspaceOnly.results.map((r) => r.scope)).toEqual(["workspace"]);
-      // Saved personal notes still return their literal fallback without analysis.
-      await f.memory.save(f.owner, f.note("Open question about pricing"));
-      const withNotes = await f.memory.search(f.owner, { scope: "auto", workspaceId: f.workspaceId, query: "question" }, false, signal);
-      expect(withNotes.searchedScopes.map((s) => s.scope)).toEqual(["personal", "workspace"]);
-      expect(withNotes.results[0]!.result).toMatchObject({ unavailable: true, canonical: { items: [expect.objectContaining({ content: "Open question about pricing" })] } });
+      expect(workspaceOnly.results).toMatchObject([{ scope: "workspace", items: [{ content: "Team decision" }] }]);
       await expect(f.memory.save(f.stranger, { ...input, scope: "workspace", explicit: true })).rejects.toMatchObject({ status: 404 });
       const calls = f.generate.mock.calls.length;
       await f.memory.list(f.owner, { scope: "personal" });
@@ -185,148 +181,12 @@ describe("Dahlia Memory", () => {
       await expect(f.memory.save(f.owner, { ...input, revision: 1 })).rejects.toMatchObject({ code: "memory_update_scope_required" });
     } finally { f.close(); }
   });
-  it("searches a Project only in its explicitly supplied Workspace", async () => {
-    const f = await fixture();
-    try {
-      const projectId = uuidV7(), now = new Date().toISOString();
-      await f.sync.commitTransaction(f.owner, { schemaVersion: 3, workspaceId: decodeId("workspace", f.workspaceId), id: uuidV7(), createdAt: now, operations: [{
-        id: uuidV7(), entity: "project", action: "create", entityId: projectId, baseRevision: null,
-        data: { name: "Launch", parentProjectId: null, projectType: null, description: "", createdAt: now } }] });
-      const project = encodeId("project", projectId);
-      await f.memory.save(f.owner, { ...f.note("x unrelated shared note"), scope: "workspace", workspaceId: f.workspaceId, explicit: true });
-      for (const memory of [f.memory, new DahliaMemory(f.memory.stores, f.sync, {})]) {
-        const fallback = await memory.search(f.owner, { scope: "auto", workspaceId: f.workspaceId, projectId: project, query: "x" }, true, signal);
-        expect(fallback.results[0]!.result).toMatchObject({ unavailable: true, canonical: { items: [], nextCursor: null } });
-        expect(fallback.results[0]!.result.instruction).toContain("canonical meeting tools");
-      }
-      expect(f.generate).not.toHaveBeenCalled();
-      await expect(f.memory.search(f.owner, { scope: "auto", projectId: project, query: "x" }, false, signal))
-        .rejects.toMatchObject({ status: 400, code: "memory_workspace_required" });
-      await expect(f.memory.search(f.owner, { scope: "personal", workspaceId: f.workspaceId, projectId: project, query: "x" }, false, signal))
-        .rejects.toMatchObject({ status: 400, code: "memory_project_scope_invalid" });
-      const search = vi.spyOn(f.shared, "search");
-      const calls = f.generate.mock.calls.length;
-      const found = await f.memory.search(f.owner, { scope: "auto", workspaceId: f.workspaceId, projectId: project, query: "x", depth: "deep" }, false, signal);
-      expect(found.searchedScopes).toEqual([{ scope: "workspace", workspaceId: f.workspaceId }]);
-      expect(f.generate.mock.calls).toHaveLength(calls);
-      expect(search).toHaveBeenCalledWith(f.owner, decodeId("workspace", f.workspaceId), "x", false, signal, { projectId, depth: "deep" });
-      // The answer does not depend on whether analysis is configured.
-      for (const memory of [f.memory, new DahliaMemory(f.memory.stores, f.sync, {})]) {
-        await expect(memory.search(f.owner, { scope: "workspace", workspaceId: f.workspaceId, projectId: encodeId("project", uuidV7()), query: "x" }, false, signal))
-          .rejects.toMatchObject({ status: 404, code: "project_not_found" });
-      }
-      await expect(f.memory.search(f.stranger, { scope: "workspace", workspaceId: f.workspaceId, projectId: project, query: "x" }, false, signal))
-        .rejects.toMatchObject({ status: 404, code: "workspace_not_found" });
-    } finally { f.close(); }
-  });
-  it("rechecks Workspace permission after a multi-bank search completes", async () => {
-    const f = await fixture();
-    try {
-      const getWorkspace = vi.spyOn(f.sync, "getWorkspace");
-      const memory = new DahliaMemory(f.memory.stores, f.sync, { workspace: { search: async () => {
-        getWorkspace.mockResolvedValue(null);
-        return { sources: [], hypothesis: null, coverage: "ready" };
-      } } as unknown as WorkspaceMemoryService });
-      await expect(memory.search(f.owner, { scope: "auto", workspaceId: f.workspaceId, query: "x" }, false, signal)).rejects.toMatchObject({ status: 404 });
-    } finally { f.close(); }
-  });
-  it.each(["edit", "delete", "pause", "unconfigured"])("revalidates an earlier bank after a slower search during %s", async (action) => {
-    const f = await fixture();
-    try {
-      const input = f.note("Original lesson");
-      await f.memory.save(f.owner, input);
-      if (action !== "unconfigured") {
-        await f.memory.configure(f.owner, { scope: "personal", enabled: true });
-        await f.ready();
-      }
-      let personalFinished!: () => void;
-      const finished = new Promise<void>((resolve) => { personalFinished = resolve; });
-      const search = f.personal.search.bind(f.personal);
-      vi.spyOn(f.personal, "search").mockImplementation(async (...args) => {
-        try { return await search(...args); } finally { personalFinished(); }
-      });
-      const workspace = { search: async () => {
-        await finished;
-        if (action === "pause") await f.memory.configure(f.owner, { scope: "personal", enabled: false });
-        else if (action === "edit") await f.memory.save(f.owner, { ...input, revision: 1, content: "Corrected lesson" });
-        else await f.memory.delete(f.owner, { ...input, revision: 1, explicit: true });
-        return { sources: [], hypothesis: null, coverage: "ready" };
-      } } as unknown as WorkspaceMemoryService;
-      const memory = new DahliaMemory(f.memory.stores, f.sync, { personal: f.personal, workspace });
-      // auto skips a disabled bank when another is enabled; with both off it still searches both.
-      if (action !== "unconfigured") await f.memory.configure(f.owner, { scope: "workspace", workspaceId: f.workspaceId, enabled: true });
-      const found = await memory.search(f.owner, { scope: "auto", workspaceId: f.workspaceId, query: "lesson" }, true, signal);
-      const result = found.results[0]!.result;
-      expect(result).toMatchObject({ unavailable: true });
-      expect(result).not.toHaveProperty("sources");
-      expect(result).not.toHaveProperty("hypothesis");
-      expect(result).toMatchObject({ canonical: { items: action === "delete" || action === "unconfigured" ? [] : [
-        expect.objectContaining({ content: action === "edit" ? "Corrected lesson" : "Original lesson" }),
-      ] } });
-    } finally { f.close(); }
-  });
-  it("indexes personal memory separately and excludes edited/deleted sources before cleanup completes", async () => {
-    const f = await fixture();
-    try {
-      const input = f.note("Original private lesson");
-      await f.memory.save(f.owner, input);
-      await f.memory.configure(f.owner, { scope: "personal", enabled: true });
-      await f.ready();
-      const bank = `dahlia_${encodeId("user", f.owner.userId)}`;
-      expect([...f.documents.keys()]).toEqual([bank]);
-      for (const reflect of [false, true]) {
-        const found = await f.memory.search(f.owner, { scope: "personal", workspaceId: f.workspaceId, query: "lesson" }, reflect, signal);
-        expect(found.searchedScopes).toEqual([{ scope: "personal" }]);
-        expect(found.results[0]).not.toHaveProperty("workspaceId");
-        expect(found.results[0]!.result).toMatchObject({ sources: [{ scope: "personal", workspace_id: null }] });
-      }
-      expect((await f.personal.search(f.owner, f.owner.userId, "lesson", true, signal))).toMatchObject({ sources: [{ scope: "personal", workspace_id: null }], hypothesis: "Hypothesis" });
-      await f.memory.save(f.owner, { ...input, revision: 1, content: "New private lesson" });
-      expect((await f.personal.search(f.owner, f.owner.userId, "lesson", true, signal)).sources).toEqual([]);
-      await f.ready();
-      expect((await f.personal.search(f.owner, f.owner.userId, "lesson", false, signal)).sources[0]!.canonicalExcerpt).toContain("New private lesson");
-      await f.memory.delete(f.owner, { ...input, revision: 2, explicit: true });
-      expect((await f.personal.search(f.owner, f.owner.userId, "lesson", true, signal)).sources).toEqual([]);
-      await f.ready(); expect(f.documents.get(bank)?.size).toBe(0);
-      await expect(f.personal.search(f.stranger, f.owner.userId, "lesson", false, signal)).rejects.toMatchObject({ status: 404 });
-    } finally { f.close(); }
-  });
-  it("reports a failed Hindsight reflection as unavailable and falls back to canonical notes", async () => {
-    const f = await fixture();
-    try {
-      await f.memory.save(f.owner, f.note("Private lesson about reviews"));
-      await f.memory.configure(f.owner, { scope: "personal", enabled: true });
-      await f.ready();
-      // Hindsight 0.10 fails the whole reflection with HTTP 500 when one of its retrieval tools fails.
-      const hindsight = f.transport.getMockImplementation()!;
-      f.transport.mockImplementation(async (input, init) => new URL(String(input)).pathname.endsWith("/reflect")
-        ? Response.json({ detail: "reflect tool failed" }, { status: 500 }) : hindsight(input, init));
-      await expect(f.personal.search(f.owner, f.owner.userId, "lesson", true, signal)).rejects.toMatchObject({ code: "memory_upstream_failed", status: 500 });
-      const found = await f.memory.search(f.owner, { scope: "personal", query: "lesson" }, true, signal);
-      expect(found.results[0]!.result).toMatchObject({ unavailable: true, code: "memory_upstream_failed",
-        canonical: { scope: "personal", items: [{ content: "Private lesson about reviews" }] } });
-      expect(found.results[0]!.result).not.toHaveProperty("hypothesis");
-      const recalled = await f.memory.search(f.owner, { scope: "personal", query: "lesson" }, false, signal);
-      expect(recalled.results[0]!.result).toMatchObject({ sources: [{ scope: "personal" }], hypothesis: null });
-    } finally { f.close(); }
-  });
-  it("keeps personal cleanup work after account deletion", async () => {
-    const f = await fixture();
-    try {
-      await f.memory.save(f.stranger, f.note("Private"));
-      await f.personal.configure(f.stranger, f.stranger.userId, true); for (let i = 0; i < 30; i++) { f.db.exec("UPDATE jobs_queue SET available_at = 0 WHERE kind = 'personal-memory'"); await f.personal.step(f.stranger.userId, signal); }
-      f.db.prepare('DELETE FROM "user" WHERE id = ?').run(f.stranger.userId);
-      f.db.exec("UPDATE jobs_queue SET available_at = 0 WHERE kind = 'personal-memory'"); await f.personal.step(f.stranger.userId, signal);
-      expect(f.documents.get(`dahlia_${encodeId("user", f.stranger.userId)}`)?.size).toBe(0);
-      expect(f.db.prepare("SELECT * FROM personal_memory_state").all()).toEqual([]);
-    } finally { f.close(); }
-  });
   it("requires dedicated scopes for MCP and shares the same tools with the internal agent", async () => {
     const f = await fixture();
     try {
       const workingMemory = { settings: async () => ({ revision: 0, automatic: true, capacityReached: false, manual: "A private note", learned: "" }),
         editSettings: async (_identity: unknown, input: { content?: string }) => ({ revision: 1, automatic: true, capacityReached: false, manual: input.content ?? "", learned: "" }) };
-      const handler = createServerMcpHandler(f.config, f.sync, undefined, undefined, undefined, f.memory, workingMemory as never);
+      const handler = createServerMcpHandler(f.config, f.sync, undefined, undefined, f.memory, workingMemory as never);
       const list = async (scopes: string[]) => {
         const response = await handler.fetch(new Request("http://localhost:5173/mcp", { method: "POST", headers: { "Mcp-Method": "tools/list", "MCP-Protocol-Version": "2026-07-28", "Content-Type": "application/json", Accept: "application/json, text/event-stream" },
           body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/list", params: { _meta: { "io.modelcontextprotocol/clientCapabilities": {}, "io.modelcontextprotocol/clientInfo": { name: "test", version: "1" }, "io.modelcontextprotocol/protocolVersion": "2026-07-28" } } }) }), { authInfo: { token: "test", clientId: "test", scopes, extra: { identity: f.owner } } });
@@ -338,11 +198,7 @@ describe("Dahlia Memory", () => {
       expect(read).not.toContain('"save_memory"'); expect(read).not.toContain('"update_working_memory"');
       const write = await list([MEMORY_WRITE_SCOPE]);
       expect(write).toContain('"save_memory"');
-      for (const value of [read, write]) {
-        expect(value).toContain('"list_knowledge_pages"'); expect(value).toContain('"get_knowledge_page"');
-        expect(value).not.toContain('"refresh_knowledge_page"'); expect(value).not.toContain('"update_knowledge_page"');
-      }
-      expect(await list(["mcp"])).not.toContain('"get_knowledge_page"');
+      for (const value of [read, write]) for (const removed of ["reflect_memory", "list_knowledge_pages", "get_knowledge_page", "recall_workspace_memory"]) expect(value).not.toContain(`"${removed}"`);
       expect(write).toContain('"update_working_memory"');
       const listed = JSON.parse(write) as { result: { tools: Array<{ name: string; inputSchema: { type: string; oneOf: Array<{ properties: Record<string, unknown> }> } }> } };
       const editSchema = listed.result.tools.find((tool) => tool.name === "update_working_memory")!.inputSchema;
@@ -361,8 +217,6 @@ describe("Dahlia Memory", () => {
         const value: { result?: { isError?: boolean; content: Array<{ text: string }> }; error?: unknown } = await response.json();
         return value;
       };
-      expect((await call([MEMORY_READ_SCOPE], "get_knowledge_page", { workspaceId: f.workspaceId, pageId: "workspace-insights" })).result?.content[0]?.text).toContain('"body":null');
-      expect((await call([MEMORY_WRITE_SCOPE], "refresh_knowledge_page", { workspaceId: f.workspaceId, pageId: "workspace-insights" })).error).toBeDefined();
       const wireNote = f.note("From remote MCP");
       expect((await call([MEMORY_READ_SCOPE], "get_working_memory", {})).result?.content[0]?.text).toContain("A private note");
       expect((await call([MEMORY_READ_SCOPE], "update_working_memory", { section: "manual", content: "changed", revision: 0, explicit: true })).error).toBeDefined();
@@ -371,11 +225,22 @@ describe("Dahlia Memory", () => {
       expect(extra.error ?? extra.result?.isError).toBeTruthy();
       expect((await call([MEMORY_WRITE_SCOPE], "update_working_memory", { section: "settings", automatic: false, revision: 1, explicit: true })).result?.isError).not.toBe(true);
       expect((await call([MEMORY_READ_SCOPE], "save_memory", wireNote)).error).toBeDefined();
-      expect((await call([MEMORY_WRITE_SCOPE], "save_memory", wireNote)).result?.content[0]?.text).toContain('"saved":true');
-      const expired = await call([MEMORY_WRITE_SCOPE], "delete_memory", { ...wireNote, revision: 1, explicit: true }, 1);
+      const text = (value: Awaited<ReturnType<typeof call>>) => JSON.parse(value.result!.content[0]!.text) as z.infer<typeof memoryResultSchema>;
+      // External client lifecycle: write, read back, recall, update with revision, consolidate (save merged, delete originals).
+      expect(text(await call([MEMORY_WRITE_SCOPE], "save_memory", wireNote))).toMatchObject({ saved: true, memory: { id: wireNote.id, revision: 1, protected: false } });
+      expect(text(await call([MEMORY_READ_SCOPE], "get_memory", { scope: "personal", id: wireNote.id }))).toMatchObject({ memory: { content: "From remote MCP" } });
+      expect(text(await call([MEMORY_READ_SCOPE], "recall_memory", { scope: "personal", query: "remote" })).results![0]!.items).toMatchObject([{ id: wireNote.id }]);
+      expect(text(await call([MEMORY_WRITE_SCOPE], "save_memory", { ...wireNote, revision: 1, content: "From remote MCP, updated" }))).toMatchObject({ memory: { revision: 2 } });
+      expect((await call([MEMORY_WRITE_SCOPE], "save_memory", { ...wireNote, revision: 1, content: "Stale" })).result).toMatchObject({ isError: true, content: [{ text: "memory_revision_conflict" }] });
+      const expired = await call([MEMORY_WRITE_SCOPE], "delete_memory", { scope: "personal", id: wireNote.id, revision: 2, explicit: true }, 1);
       expect(expired.error ?? expired.result?.isError).toBeTruthy();
-      expect((await f.memory.get(f.owner, wireNote)).memory.content).toBe("From remote MCP");
-      await f.memory.delete(f.owner, { ...wireNote, revision: 1, explicit: true });
+      expect((await call([MEMORY_READ_SCOPE], "delete_memory", { scope: "personal", id: wireNote.id, revision: 2, explicit: true })).error).toBeDefined();
+      const merged = f.note("Merged remote lesson");
+      expect(text(await call([MEMORY_WRITE_SCOPE], "save_memory", { ...merged, explicit: true }))).toMatchObject({ saved: true });
+      expect(text(await call([MEMORY_WRITE_SCOPE], "delete_memory", { scope: "personal", id: wireNote.id, revision: 2, explicit: true }))).toMatchObject({ deleted: true });
+      expect(text(await call([MEMORY_READ_SCOPE], "list_memories", { scope: "personal" })).items!.map((item) => item.content)).toEqual(["Merged remote lesson"]);
+      await expect(f.memory.get(f.owner, wireNote)).rejects.toMatchObject({ code: "memory_not_found" });
+      await f.memory.delete(f.owner, { ...merged, revision: 1, explicit: true });
       const tools = createDahliaMemoryTools(f.memory);
       const input = f.note("From Claude Code");
       if (!("save_memory" in tools)) throw new Error("Missing write tool");
@@ -463,7 +328,7 @@ describe("Dahlia Memory", () => {
   it("accepts only UUIDv7 memory IDs at the shared save boundary", () => {
     const input = { scope: "personal", content: "x", revision: 0 };
     expect(memorySaveSchema.safeParse({ ...input, id: encodeId("sharedMemory", uuidV7()) }).success).toBe(true);
-    for (const extra of [{ projectId: encodeId("project", uuidV7()) }, { depth: "deep" }, { after: "2026-01-01T00:00:00Z" }]) {
+    for (const extra of [{ projectId: encodeId("project", uuidV7()) }, { depth: "deep" }]) {
       expect(memorySaveSchema.safeParse({ ...input, id: encodeId("sharedMemory", uuidV7()), ...extra }).success).toBe(false);
     }
     for (const id of ["smem_invalid", encodeId("meeting", uuidV7()),
@@ -472,10 +337,10 @@ describe("Dahlia Memory", () => {
       expect(memorySaveSchema.safeParse({ ...input, id }).success).toBe(false);
     }
   });
-  it.each(["node", "worker"])("exposes canonical Web memory without analysis (%s)", async (runtime) => {
+  it.each(["node", "worker"])("exposes canonical Web memory (%s)", async (runtime) => {
     const f = await fixture();
     try {
-      const application = createApp({ config: { ...f.config, hindsight: undefined }, authStore: f.app });
+      const application = createApp({ config: f.config, authStore: f.app });
       const worker = createWorkerHandler(async () => application);
       const fetchWorker = worker.fetch!.bind(worker) as unknown as (request: Request, env: Cloudflare.Env, context: ExecutionContext) => Promise<Response>;
       const app = { request: (path: string, init: RequestInit) => runtime === "node" ? application.request(path, init)
@@ -489,7 +354,7 @@ describe("Dahlia Memory", () => {
         expect((await request("/notes", "POST", save, f.owner.email, workspaceId)).status).toBe(200);
         expect(await (await request("/notes", "GET", undefined, f.owner.email, workspaceId)).json()).toMatchObject({ items: [{ content: "Web memory", protected: true }] });
         expect(await (await request(`/notes/${input.id}`, "GET", undefined, f.owner.email, workspaceId)).json()).toMatchObject({ memory: { revision: 1 } });
-        const edit = { content: "Edited while analysis is off", revision: 1, explicit: true };
+        const edit = { content: "Edited on the Web", revision: 1, explicit: true };
         expect((await request(`/notes/${input.id}`, "PATCH", edit, f.owner.email, workspaceId)).status).toBe(200);
         expect((await request(`/notes/${input.id}`, "PATCH", { ...edit, content: "Stale update" }, f.owner.email, workspaceId)).status).toBe(409);
         expect((await request(`/notes/${input.id}`, "PATCH", { ...edit, revision: 0 }, f.owner.email, workspaceId)).status).toBe(400);
@@ -499,25 +364,17 @@ describe("Dahlia Memory", () => {
         if (workspaceId) {
           expect((await request("/notes", "POST", save, f.owner.email, workspaceId)).status).toBe(200);
           expect((await request("", "DELETE", undefined, f.stranger.email, workspaceId)).status).toBe(404);
-          expect((await request("", "DELETE", undefined, f.owner.email, workspaceId)).status).toBe(202);
+          expect(await (await request("", "DELETE", undefined, f.owner.email, workspaceId)).json()).toEqual({ deleted: true });
           expect(await (await request("/notes", "GET", undefined, f.owner.email, workspaceId)).json()).toMatchObject({ items: [] });
         }
         expect((await request("/notes", "POST", { ...save, scope: "personal" }, f.owner.email, workspaceId)).status).toBe(400);
         expect((await request("/notes?scope=personal", "GET", undefined, f.owner.email, workspaceId)).status).toBe(400);
-        expect((await request("/analysis/status", "GET", undefined, f.owner.email, workspaceId)).status).toBe(200);
+        for (const removed of ["/analysis/status", "/reflect", "/pages"]) expect((await request(removed, removed === "/reflect" ? "POST" : "GET", removed === "/reflect" ? { query: "x" } : undefined, f.owner.email, workspaceId)).status).toBe(404);
         expect((await request("/save", "POST", save, f.owner.email, workspaceId)).status).toBe(404);
         expect((await request("/notes", "PUT", save, f.owner.email, workspaceId)).status).toBe(405);
       }
-      const projectId = encodeId("project", uuidV7());
-      expect((await request("/recall", "POST", { query: "memory", projectId })).status).toBe(400);
-      expect((await request("/reflect", "POST", { query: "memory", depth: "deep", after: "2026-01-01T00:00:00Z" })).status).toBe(200);
-      expect((await request("/recall", "POST", { query: "memory", projectId }, f.owner.email, f.workspaceId)).status).toBe(404);
-      expect((await request("/recall", "POST", { query: "memory", before: "yesterday" }, f.owner.email, f.workspaceId)).status).toBe(400);
-      for (const workspace of [undefined, f.workspaceId]) {
-        const invalid = await request("/reflect", "POST", { query: "memory", after: "2026-02-01T00:00:00Z", before: "2026-01-01T00:00:00Z" }, f.owner.email, workspace);
-        expect(invalid.status).toBe(400);
-        expect(await invalid.json()).toMatchObject({ code: "memory_time_range_invalid" });
-      }
+      expect(await (await request("/recall", "POST", { query: "memory" })).json()).toMatchObject({ results: [{ scope: "personal", items: [] }] });
+      expect((await request("/recall", "POST", { query: "memory", projectId: encodeId("project", uuidV7()) })).status).toBe(400);
       expect(await (await request("/notes", "GET", undefined, f.stranger.email)).json()).toMatchObject({ items: [] });
       expect((await request("/notes", "GET", undefined, f.stranger.email, f.workspaceId)).status).toBe(404);
       expect((await app.request("/api/v1/memory/auto/save", { method: "POST", headers: { "Content-Type": "application/json", "X-Forwarded-Email": f.owner.email }, body: JSON.stringify(input) })).status).toBe(404);

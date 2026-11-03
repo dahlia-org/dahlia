@@ -4,8 +4,6 @@ import { defaultJobLimits } from "../jobs/model";
 import { beginSyncTiming } from "./diagnostics";
 import { createSyncLocks, type SyncLockMode } from "./locks";
 import { createDocumentStore } from "../documents/store";
-import { enqueueMemoryScope, enqueueMemorySource } from "../memory/enqueue";
-import { memoryDocumentId } from "../memory/ids";
 import { DEFAULT_WORKSPACE_GENERATION_SETTINGS, normalizeImageAnalysis, type WorkspaceGenerationSettings } from "@dahlia-ai/ui/model/workspace-generation-settings";
 import type { CalendarEventSnapshot } from "./schemas";
 import { createContentEncryption } from "../encryption/store";
@@ -787,7 +785,6 @@ function createIdentityStore(
     }
     const movedJobs = await db.select().from(schema.backgroundJob).where(eq(payloadField(schema, "workspaceId", true), sourceWorkspaceId));
     for (const job of movedJobs) await db.update(schema.backgroundJob).set({ payload: { ...job.payload, workspaceId: destinationWorkspaceId } }).where(eq(schema.backgroundJob.id, job.id));
-    for (const meeting of meetings) await enqueueMemoryMeeting(sourceWorkspaceId, meeting.id);
     // Transcript and summary history follows the unchanged meeting ID. Object keys never change.
     const id = uuidV7();
     const [result] = await db.insert(transfers).values({
@@ -1312,56 +1309,12 @@ function createIdentityStore(
     return appendChanges(transaction, [{ entity, entityId, action, revision }]);
   }
 
-  async function enqueueMemoryMeeting(workspaceId: string, meetingId: string) {
-    const m = schema.syncedMeeting;
-    const [meeting] = await db.select({ status: m.status, active: m.active, deletedAt: m.deletedAt,
-      deletingAt: m.deletingAt, isRecording: meetingSelection(schema, false).isRecording }).from(m)
-      .where(and(eq(m.workspaceId, workspaceId), eq(m.meetingId, meetingId)));
-    const d = schema.memoryDocument, j = schema.memorySourceJob;
-    const documentId = memoryDocumentId("meeting", meetingId);
-    const indexed = await db.select({ id: d.documentId }).from(d).where(and(eq(d.scopeId, workspaceId), eq(d.documentId, documentId))).limit(1);
-    const pending = await db.select({ id: j.documentId }).from(j).where(and(eq(j.scopeId, workspaceId), eq(j.documentId, documentId))).limit(1);
-    const eligible = meeting?.active && !meeting.deletedAt && !meeting.deletingAt && meeting.status === "READY" && !meeting.isRecording;
-    if (!indexed.length && !pending.length && !eligible) {
-      const [memory] = await db.select({ progress: schema.workspaceMemoryState.progress }).from(schema.workspaceMemoryState)
-        .where(eq(schema.workspaceMemoryState.scopeId, workspaceId));
-      if (!memory?.progress?.failures?.[documentId]) return;
-    }
-    await enqueueMemorySource(db, schema, workspaceId, "meeting", meetingId);
-  }
-
-  async function enqueueMemoryChanges(workspaceId: string, changes: PendingSyncChange[]) {
-    const [memory] = await db.select({ purge: schema.workspaceMemoryState.purge }).from(schema.workspaceMemoryState)
-      .where(eq(schema.workspaceMemoryState.scopeId, workspaceId));
-    if (!memory || memory.purge) return;
-    const meetings = new Set<string>();
-    for (const change of changes) {
-      if (["meeting", "summary", "transcript"].includes(change.entity)) meetings.add(change.entityId);
-      else if (change.entity === "project") {
-        const rows = await db.select({ id: schema.syncedMeeting.meetingId }).from(schema.syncedMeeting)
-          .where(and(eq(schema.syncedMeeting.workspaceId, workspaceId), eq(schema.syncedMeeting.projectId, change.entityId)));
-        rows.forEach((row) => meetings.add(row.id));
-      } else if (change.entity === "file" || change.entity === "meeting_attachment") {
-        const a = schema.meetingAttachment;
-        const rows = await db.select({ id: a.meetingId }).from(a).where(and(eq(a.workspaceId, workspaceId),
-          change.entity === "file" ? eq(a.fileId, change.entityId) : eq(a.id, change.entityId)));
-        rows.forEach((row) => meetings.add(row.id));
-      } else if (change.entity === "workspace" && change.action === "reset") {
-        await db.update(schema.workspaceMemoryState).set({ reconcile: true, generation: sql`${schema.workspaceMemoryState.generation} + 1`,
-          status: "pending" }).where(eq(schema.workspaceMemoryState.scopeId, workspaceId));
-        await enqueueMemoryScope(db, schema, workspaceId);
-      }
-    }
-    for (const meetingId of meetings) await enqueueMemoryMeeting(workspaceId, meetingId);
-  }
-
   async function appendChanges(
     transaction: SyncTransaction,
     changes: PendingSyncChange[],
   ): Promise<number> {
     // Sequence allocation is serialized only after the expensive canonical writes finish.
     await locks.publication(transaction.workspaceId, "exclusive");
-    await enqueueMemoryChanges(transaction.workspaceId, changes);
     let cursor: number | undefined;
     for (const batch of batches(changes, 100)) {
       const inserted = await db.insert(schema.syncChange).values(batch.map((change) => ({
@@ -2186,7 +2139,6 @@ function createIdentityStore(
             eq(schema.meetingAttachment.workspaceId, transaction.workspaceId)));
           await cancelJobs(db, schema, eq(schema.backgroundJob.dedupeKey, `search:${transaction.workspaceId}:${operation.entityId}`));
           await db.delete(schema.searchDocument).where(and(eq(schema.searchDocument.workspaceId, transaction.workspaceId), eq(schema.searchDocument.documentId, operation.entityId)));
-          await enqueueMemoryMeeting(transaction.workspaceId, String(previous.record!.meetingId));
           recordChange("meeting_attachment", operation.entityId, "delete", null);
           const fileId = String(previous.record!.fileId);
           if (!(await canonicalRecord("file", transaction.workspaceId, fileId)).record) {

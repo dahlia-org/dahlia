@@ -1,5 +1,4 @@
 import { ChatMemoryService, createMemoryGenerator } from "../agent/context-service";
-import { WorkspaceMemoryService } from "../memory/service";
 import { createAudioSummaryMethod } from "../summary/audio";
 import { createTranscriptSummaryMethod } from "../summary/transcript";
 import { SummaryService } from "../summary/service";
@@ -41,13 +40,11 @@ export function createNodeServices(config: AppConfig, poolMax?: number, storageC
     searchEmbedder, transformScreenshot,
     config.storageBackend === "databricks" ? config.storageDatabricksVolumePath : undefined,
     false, captioner?.model, storageConcurrency);
-  const workspaceMemory = config.hindsight && applicationStore.memory ? new WorkspaceMemoryService(config, applicationStore.memory, syncService, applicationStore.sync) : undefined;
-  const personalMemory = config.hindsight && applicationStore.personalMemory ? new WorkspaceMemoryService(config, applicationStore.personalMemory, syncService, applicationStore.sync) : undefined;
   const chatMemory = applicationStore.chatMemoryStore ? new ChatMemoryService(applicationStore.chatMemoryStore, syncService, createMemoryGenerator(config)) : undefined;
   const summaryMethods = [createTranscriptSummaryMethod(config, applicationStore.sync, syncService),
     createAudioSummaryMethod(config, applicationStore.sync, syncService)].filter((method) => method !== undefined);
   const summaryService = summaryMethods.length ? new SummaryService(applicationStore.sync, summaryMethods) : undefined;
   const otel = createOtel(config);
 
-  return { applicationStore, searchEmbedder, objectStorage, searchTokenizer, captioner, syncService, workspaceMemory, personalMemory, chatMemory, summaryMethods, summaryService, otel };
+  return { applicationStore, searchEmbedder, objectStorage, searchTokenizer, captioner, syncService, chatMemory, summaryMethods, summaryService, otel };
 }

@@ -146,7 +146,7 @@ describe("AI chat boundary", () => {
     } finally { vi.unstubAllGlobals(); vi.restoreAllMocks(); }
   });
 
-  it("offers one memory search path and explains that saved notes are not all memory", async () => {
+  it("offers one memory search path and keeps memories distinct from meetings", async () => {
     vi.spyOn(console, "error").mockImplementation(() => {});
     const transport = vi.fn<typeof fetch>(async () => { throw new Error("captured"); });
     vi.stubGlobal("fetch", transport);
@@ -162,11 +162,10 @@ describe("AI chat boundary", () => {
       await expect(run[Symbol.asyncIterator]().next()).rejects.toThrow("captured");
       const body = JSON.parse(String(transport.mock.calls[0]![1]?.body)) as { tools: Array<{ name: string; description?: string }>; input: Array<{ role?: string; content?: unknown }> };
       const names = body.tools.map(({ name }) => name);
-      expect(names).toEqual(expect.arrayContaining(["recall_memory", "reflect_memory", "list_memories", "list_knowledge_pages"]));
-      expect(names).not.toContain("recall_workspace_memory");
-      expect(names).not.toContain("reflect_workspace_memory");
-      expect(body.tools.find(({ name }) => name === "list_memories")!.description).toContain("An empty list does not mean memory is empty");
-      expect(JSON.stringify(body.input)).toContain("never report memory as empty from it");
+      expect(names).toEqual(expect.arrayContaining(["recall_memory", "list_memories", "save_memory", "delete_memory"]));
+      for (const removed of ["reflect_memory", "list_knowledge_pages", "recall_workspace_memory", "reflect_workspace_memory"]) expect(names).not.toContain(removed);
+      expect(body.tools.find(({ name }) => name === "list_memories")!.description).toContain("Meetings are not memories");
+      expect(JSON.stringify(body.input)).toContain("an empty memory result says nothing about meetings");
     } finally { vi.unstubAllGlobals(); vi.restoreAllMocks(); }
   });
 

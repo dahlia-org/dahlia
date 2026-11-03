@@ -1,24 +1,27 @@
 import { z } from "zod";
 
-export const jobKinds = ["summary", "audio-summary", "image", "search", "workspace-memory", "personal-memory", "chat-memory", "storage-delete", "maintenance", "reconcile"] as const;
+export const jobKinds = ["summary", "audio-summary", "image", "search", "chat-memory", "storage-delete", "maintenance", "reconcile"] as const;
 export type JobKind = typeof jobKinds[number];
-export const jobGroups = ["summary", "audio", "image", "search", "memory", "chat", "storage"] as const;
+export const jobGroups = ["summary", "audio", "image", "search", "chat", "storage"] as const;
 export type JobGroup = typeof jobGroups[number];
 export type JobLimits = Record<JobGroup, number>;
-export const defaultJobLimits: JobLimits = { summary: 8, audio: 2, image: 4, search: 1, memory: 1, chat: 1, storage: 1 };
+export const defaultJobLimits: JobLimits = { summary: 8, audio: 2, image: 4, search: 1, chat: 1, storage: 1 };
 export const groupsForJob: Record<JobKind, readonly JobGroup[]> = {
   summary: ["summary"], "audio-summary": ["summary", "audio"], image: ["image"], search: ["search"],
-  "workspace-memory": ["memory"], "personal-memory": ["memory"], "chat-memory": ["chat"],
+  "chat-memory": ["chat"],
   "storage-delete": ["storage"], maintenance: ["storage"], reconcile: ["storage"],
 };
 export interface JobConfig { workers: "auto" | number; concurrency: "auto" | number; limits: JobLimits }
 const autoNumber = (max = Number.MAX_SAFE_INTEGER) => z.union([z.literal("auto"), z.coerce.number().int().min(1).max(max)]);
 export function loadJobConfig(env: Record<string, string | undefined>): JobConfig {
+  // The retired Hindsight "memory" group may remain in deployed settings; ignore it so they still start.
+  const limits: unknown = JSON.parse(env.DAHLIA_JOB_LIMITS || "{}");
+  if (limits && typeof limits === "object") delete (limits as Record<string, unknown>).memory;
   return {
     workers: autoNumber().parse(env.DAHLIA_JOB_WORKERS?.trim() || "auto"),
     concurrency: autoNumber(8).parse(env.DAHLIA_JOB_CONCURRENCY?.trim() || "auto"),
     limits: { ...defaultJobLimits, ...z.partialRecord(z.enum(jobGroups), z.number().int().positive().max(Number.MAX_SAFE_INTEGER))
-      .parse(JSON.parse(env.DAHLIA_JOB_LIMITS || "{}")) },
+      .parse(limits) },
   };
 }
 export interface JobPayload { id?: string; ownerUserId?: string; workspaceId?: string; documentId?: string;
@@ -35,8 +38,6 @@ export const jobPayloadSchema = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("search"), payload: z.object({ workspaceId: id, documentId: id,
     model: z.string().min(1), dimensions: z.number().int().min(32).max(1024) }) }),
   z.object({ kind: z.literal("storage-delete"), payload: z.object({ storageKey: z.string().min(1) }) }),
-  z.object({ kind: z.literal("workspace-memory"), payload: z.object({ scopeId: id }) }),
-  z.object({ kind: z.literal("personal-memory"), payload: z.object({ scopeId: id }) }),
   z.object({ kind: z.literal("chat-memory"), payload: z.discriminatedUnion("memoryKind", [
     z.object({ memoryKind: z.literal("working"), threadId: z.string().min(1), ownerUserId: id,
       messageId: z.string().min(1), revision: z.number().int().nonnegative() }),

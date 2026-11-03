@@ -1,4 +1,3 @@
-import { imageCoverageSchema, imageReferenceSchema } from "./images";
 import { z } from "@hono/zod-openapi";
 import type { Identity } from "../auth/identity";
 import type { MemoryGenerator } from "../agent/context-service";
@@ -6,11 +5,8 @@ import type { MeetingSyncService } from "../sync/service";
 import { RequestError } from "../storage/upload";
 import { decodeId, encodeId } from "@dahlia-ai/ui/model/typeid";
 import { publicIdSchema } from "../agent/tools";
-import type { MemoryStore } from "./store";
-import { temporalWindow, type WorkspaceMemoryService } from "./service";
-import { HindsightError } from "./hindsight";
-import { reflectionStatusSchema } from "./reflection";
-import { KnowledgePages } from "./pages";
+import { SEARCH_QUERY_MAX_TOKENS } from "../search/tokenizer";
+import { normalizeMemoryText, type MemoryStore } from "./store";
 import { routeMemory } from "./router";
 
 const scope = z.enum(["personal", "workspace"]);
@@ -19,25 +15,16 @@ export const memoryScopeSchema = z.object({ scope, workspaceId }).strict();
 export const memoryListSchema = memoryScopeSchema.extend({ after: publicIdSchema("sharedMemory").optional(), query: z.string().trim().max(4000).optional() });
 export const memoryGetSchema = memoryScopeSchema.extend({ id: publicIdSchema("sharedMemory") });
 const memoryTargetSchema = z.object({ scope: z.enum(["personal", "workspace", "auto"]).default("auto"), workspaceId }).strict();
-// Shared by the Dahlia Memory tools and the Workspace memory tools.
-export const memorySearchOptions = {
-  project: publicIdSchema("project").describe("An existing Project TypeID; searches only that Project's Workspace memory. Never invent a value."),
-  after: z.iso.datetime({ offset: true }).describe("ISO datetime. Ranks memories dated at or after it higher; memories outside the period are still returned."),
-  before: z.iso.datetime({ offset: true }).describe("ISO datetime. Ranks memories dated at or before it higher; memories outside the period are still returned."),
-  depth: z.enum(["quick", "normal", "deep"]).describe("Retrieval effort; normal by default. deep is slower but considers more candidates."),
-};
-export const memorySearchSchema = memoryTargetSchema.extend({ query: z.string().trim().min(1).max(4000),
-  projectId: memorySearchOptions.project.optional(), after: memorySearchOptions.after.optional(),
-  before: memorySearchOptions.before.optional(), depth: memorySearchOptions.depth.optional() });
-export const personalMemorySearchSchema = memorySearchSchema.omit({ scope: true, workspaceId: true, projectId: true });
-export const workspaceMemorySearchSchema = memorySearchSchema.omit({ scope: true, workspaceId: true });
+export const memorySearchSchema = memoryTargetSchema.extend({ query: z.string().trim().min(1).max(4000)
+  .describe("Space-separated keywords, not a sentence; the first 16 distinct keywords are used. Each matches saved memories that contain it, ignoring case and full/half width.") });
+// HTTP recall bodies: the owner comes from the URL, never the body.
+export const memoryRecallBodySchema = memorySearchSchema.omit({ scope: true, workspaceId: true });
 const newMemoryId = publicIdSchema("sharedMemory").refine((id) => {
   try { return z.uuidv7().safeParse(decodeId("sharedMemory", id)).success; } catch { return false; }
 }, "Memory IDs must contain a UUIDv7");
 export const memorySaveSchema = memoryTargetSchema.extend({ id: newMemoryId,
   content: z.string().trim().min(1).max(16_000), revision: z.number().int().nonnegative(), explicit: z.boolean().default(false) });
 export const memoryDeleteSchema = memoryGetSchema.extend({ revision: z.number().int().positive(), explicit: z.literal(true) });
-export const memoryConfigureSchema = memoryScopeSchema.extend({ enabled: z.boolean(), imagesEnabled: z.boolean().optional() });
 export type MemoryScope = z.infer<typeof memoryScopeSchema>;
 const noteSchema = z.object({ id: publicIdSchema("sharedMemory"), content: z.string(), revision: z.number(), updatedAt: z.iso.datetime(), protected: z.boolean() }).openapi("DahliaMemoryNote");
 const scopeResult = memoryScopeSchema.extend({ name: z.string(), writable: z.boolean() });
@@ -46,38 +33,33 @@ export const memoryResultSchema = z.object({
   memory: noteSchema.optional(), scope: scope.optional(), workspaceId, saved: z.boolean().optional(), deleted: z.boolean().optional(),
   suggestedScope: z.enum(["personal", "workspace", "both", "uncertain"]).optional(), reason: z.string().optional(),
   scopes: z.array(scopeResult).optional(), searchedScopes: z.array(memoryScopeSchema).optional(),
-  results: z.array(z.object({ scope, workspaceId, result: z.object({
-    sources: z.array(z.object({ kind: z.string(), id: z.string(), revision: z.string(), meeting_id: z.string().nullable(), workspace_id: z.string().nullable(), scope, canonicalExcerpt: z.string(), truncated: z.boolean(), images: z.array(imageReferenceSchema).optional(), imageCoverage: imageCoverageSchema.optional() })).optional(),
-    hypothesis: z.string().nullable().optional(), coverage: z.string().optional(), skippedCount: z.number().optional(),
-    skippedSources: z.array(z.object({ source: z.string(), code: z.string() })).optional(),
-    claims: z.array(z.object({ text: z.string(), citations: z.array(z.object({ factId: z.string(),
-      sourceIndexes: z.array(z.number().int().nonnegative()).describe("Zero-based indexes into this result's sources; lineage does not prove the claim is true."),
-    })) })).optional(),
-    reflectionStatus: reflectionStatusSchema.optional(),
-    reflectionUsage: z.object({ inputTokens: z.number().int().nonnegative(), outputTokens: z.number().int().nonnegative() }).nullable().optional(),
-    unavailable: z.boolean().optional(), code: z.string().optional(), instruction: z.string().optional(),
-    canonical: z.object({ scope, workspaceId, items: z.array(noteSchema), nextCursor: z.string().nullable() }).optional(),
-  }) })).optional(),
-  imagesEnabled: z.boolean().optional(), imagesAvailable: z.boolean().optional(),
-  enabled: z.boolean().optional(), status: z.string().optional(), errorCode: z.string().nullable().optional(),
-  attempts: z.number().optional(), skippedCount: z.number().optional(), skippedSources: z.array(z.object({ source: z.string(), code: z.string() })).optional(),
+  results: z.array(z.object({ scope, workspaceId, items: z.array(noteSchema) })).optional(),
+  instruction: z.string().optional(),
 }).openapi("DahliaMemoryResult");
 
+const RECALL_LIMIT = 20;
+// shortcut: substring keyword match, no embeddings; add a vector index when saved memories outgrow keyword recall.
+// The caller chooses the keywords: parsing a sentence into content words cannot be done reliably here.
+export function recallTerms(query: string) {
+  return [...new Set(normalizeMemoryText(query).split(/\s+/u).filter(Boolean))].slice(0, SEARCH_QUERY_MAX_TOKENS);
+}
+export function rankNotes(matches: Awaited<ReturnType<MemoryStore["searchNotes"]>>) {
+  // UUIDv7 IDs break updatedAt ties by creation order, keeping the ranking deterministic.
+  return matches.toSorted((a, b) => b.terms.length - a.terms.length || b.note.updatedAt.getTime() - a.note.updatedAt.getTime()
+    || (a.note.id < b.note.id ? 1 : a.note.id > b.note.id ? -1 : 0)).map(({ note }) => note);
+}
+
 export class DahliaMemory {
-  readonly pages: KnowledgePages;
-  constructor(readonly stores: { personal: MemoryStore; workspace: MemoryStore }, readonly sync: MeetingSyncService,
-    readonly engines: { personal?: WorkspaceMemoryService; workspace?: WorkspaceMemoryService }, readonly generate?: MemoryGenerator) {
-    this.pages = new KnowledgePages(engines.workspace, stores.workspace, sync);
-  }
+  constructor(readonly stores: { personal: MemoryStore; workspace: MemoryStore }, readonly sync: MeetingSyncService, readonly generate?: MemoryGenerator) {}
   private async resolve(identity: Identity, input: MemoryScope) {
     if (input.scope === "personal") {
       // A workspace can be supplied as topic context, but never changes personal ownership.
       if (input.workspaceId) await this.workspace(identity, input.workspaceId);
-      return { store: this.stores.personal, id: identity.userId, engine: this.engines.personal };
+      return { store: this.stores.personal, id: identity.userId };
     }
     if (!input.workspaceId) throw new RequestError(400, "memory_workspace_required");
     const workspace = await this.workspace(identity, input.workspaceId);
-    return { store: this.stores.workspace, id: workspace.workspaceId, engine: this.engines.workspace };
+    return { store: this.stores.workspace, id: workspace.workspaceId };
   }
   private async workspace(identity: Identity, id: string) {
     const workspace = await this.sync.getWorkspace(identity, decodeId("workspace", id));
@@ -121,7 +103,7 @@ export class DahliaMemory {
     const { store, id } = await this.resolve(identity, { ...input, scope: target });
     await authorize?.();
     signal.throwIfAborted();
-    const note = await store.saveNote(identity.userId, id, { ...input, id: decodeId("sharedMemory", input.id) }, actor, input.explicit, true);
+    const note = await store.saveNote(identity.userId, id, { ...input, id: decodeId("sharedMemory", input.id) }, actor, input.explicit);
     return { saved: true, ...resultScope({ scope: target, workspaceId: input.workspaceId }), memory: memoryNote(note) };
   }
   async delete(identity: Identity, input: z.infer<typeof memoryDeleteSchema>, authorize?: () => Promise<void>) {
@@ -131,32 +113,9 @@ export class DahliaMemory {
     await store.deleteNote(identity.userId, id, decodeId("sharedMemory", input.id), input.revision);
     return { deleted: true, ...resultScope(input) };
   }
-  async status(identity: Identity, input: MemoryScope) {
-    const { store, id, engine } = await this.resolve(identity, input);
-    if (engine) return engine.status(identity, id);
-    await store.status(identity.userId, id);
-    return { enabled: false, status: "unavailable", errorCode: "memory_analysis_unconfigured", attempts: 0, skippedCount: 0, skippedSources: [] };
-  }
-  async configure(identity: Identity, input: z.infer<typeof memoryConfigureSchema>) {
-    if (identity.impersonated) throw new RequestError(403, "impersonation_read_only");
-    const { id, engine } = await this.resolve(identity, input);
-    if (!engine) throw new RequestError(409, "memory_analysis_unconfigured");
-    await engine.configure(identity, id, input.enabled, input.imagesEnabled);
-    return this.status(identity, input);
-  }
-  async search(identity: Identity, input: z.infer<typeof memorySearchSchema>, reflect: boolean, signal: AbortSignal) {
-    temporalWindow(input);
-    if (input.projectId && input.scope === "personal") throw new RequestError(400, "memory_project_scope_invalid");
-    if (input.projectId && !input.workspaceId) throw new RequestError(400, "memory_workspace_required");
-    const options = { projectId: input.projectId ? decodeId("project", input.projectId) : undefined, after: input.after, before: input.before, depth: input.depth };
-    // Checked here as well as by the engine so the answer does not depend on whether analysis is configured.
-    if (options.projectId && !await this.sync.getProject(identity, (await this.workspace(identity, input.workspaceId!)).workspaceId, options.projectId)) {
-      throw new RequestError(404, "project_not_found");
-    }
+  async search(identity: Identity, input: z.infer<typeof memorySearchSchema>, signal: AbortSignal) {
     let targets: MemoryScope[];
     if (input.scope !== "auto") targets = [resultScope({ scope: input.scope, workspaceId: input.workspaceId })];
-    // A Project belongs to one Workspace, so the Router has nothing to choose.
-    else if (input.projectId) targets = [{ scope: "workspace", workspaceId: input.workspaceId }];
     else {
       const workspace = input.workspaceId ? await this.workspace(identity, input.workspaceId) : undefined;
       const route = await routeMemory(this.generate, identity, "read", input.query,
@@ -164,57 +123,16 @@ export class DahliaMemory {
       targets = [];
       if (route.target !== "workspace" || !workspace) targets.push({ scope: "personal" });
       if (workspace && route.target !== "personal") targets.push({ scope: "workspace", workspaceId: input.workspaceId });
-      // A scope whose analysis is off must not make the other scope's results look unavailable.
-      // Keep it only when its saved notes match literally, the same fallback it would return.
-      const analyzed = await Promise.all(targets.map(async (target) => {
-        const { engine, store, id } = await this.resolve(identity, target);
-        return Boolean(engine && (await store.status(identity.userId, id))?.enabled);
-      }));
-      if (analyzed.some(Boolean)) {
-        const kept = await Promise.all(targets.map(async (target, index) => analyzed[index]
-          || (await this.list(identity, { ...target, query: input.query })).items.length > 0));
-        targets = targets.filter((_, index) => kept[index]);
-      }
     }
-    const completed = await Promise.all(targets.map(async (target) => {
-      const { engine, store, id } = await this.resolve(identity, target);
-      const state = await store.status(identity.userId, id);
-      try {
-        if (!engine) throw new HindsightError("memory_analysis_unconfigured");
-        const result = await engine.search(identity, id, input.query, reflect, signal, options);
-        return { target, state, code: undefined, result: { ...result, sources: result.sources.map((source) => ({ ...source,
-          id: encodeId(source.kind === "meeting" ? "meeting" : "sharedMemory", source.id) })) } };
-      } catch (error) {
-        signal.throwIfAborted();
-        if (error instanceof RequestError) throw error;
-        return { target, state, result: undefined, code: error instanceof HindsightError ? error.code : "memory_unavailable" };
-      }
-    }));
+    const terms = recallTerms(input.query);
     const results = [];
-    // A slower bank must not extend another bank's source validity or authorization lifetime.
-    for (const { target, state, result, code } of completed) {
+    for (const target of targets) {
       signal.throwIfAborted();
-      const { store, id, engine } = await this.resolve(identity, target);
-      let policyMatches = false;
-      if (result && state && engine) {
-        try { policyMatches = await engine.policyCurrent(state, signal); }
-        catch { signal.throwIfAborted(); }
-      }
-      const current = await store.status(identity.userId, id);
-      const unchanged = state && current && current.generation === state.generation
-        && current.bankId === state.bankId && current.enabled && !current.purge;
-      if (result && unchanged && policyMatches) {
-        results.push({ ...target, result });
-        continue;
-      }
-      results.push({ ...target, result: {
-        unavailable: true, code: code ?? "memory_source_changed",
-        // Read canonical fallback only after all external searches have finished.
-        canonical: input.projectId ? { ...target, items: [], nextCursor: null } : await this.list(identity, { ...target, query: input.query }),
-        instruction: input.projectId ? "Analysis is unavailable. Shared notes do not belong to a Project, so none are included. Use canonical meeting tools filtered by this Project; an empty fallback does not mean no matching meetings exist." : "Analysis is unavailable. These are literal text matches only, not complete semantic recall.",
-      } });
+      const { store, id } = await this.resolve(identity, target);
+      results.push({ ...target, items: rankNotes(await store.searchNotes(identity.userId, id, terms)).slice(0, RECALL_LIMIT).map(memoryNote) });
     }
-    return { searchedScopes: targets, results };
+    return { searchedScopes: targets, results,
+      instruction: "Saved memories ranked by the number of keywords they contain, at most 20 per scope; an empty result does not mean nothing relevant was ever discussed. Saved memories are claims, not verified facts. For meeting evidence use the canonical meeting tools." };
   }
 }
 // Personal topic context must not appear as shared ownership in the response.

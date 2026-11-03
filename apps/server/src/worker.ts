@@ -2,7 +2,6 @@ import { createJobStore } from "./jobs/store";
 import { defaultJobLimits } from "./jobs/model";
 import { ChatMemoryStore } from "./agent/context-store";
 import { ChatMemoryService, createMemoryGenerator } from "./agent/context-service";
-import { WorkspaceMemoryService } from "./memory/service";
 import { createSummaryJobStore } from "./summary/store";
 import { createImageAnalysisStore } from "./image-analysis/store";
 import { createPostgresSearchIndexStore } from "./search/index-store";
@@ -37,14 +36,7 @@ export interface RuntimeSecrets {
   DAHLIA_DOCUMENT_DELETION_GRACE_HOURS?: string;
   DAHLIA_CHAT_MEMORY_MODEL?: string;
   DAHLIA_MEMORY_MCP_ACCESS?: string;
-  DAHLIA_HINDSIGHT_URL?: string;
-  DAHLIA_MEMORY_IMAGE_MODEL?: string;
-  DAHLIA_MEMORY_IMAGE_MAX_COUNT?: string;
-  DAHLIA_MEMORY_IMAGE_MAX_BYTES?: string;
-  DAHLIA_MEMORY_IMAGE_LONG_EDGE?: string;
 
-  DAHLIA_HINDSIGHT_AUTH?: string;
-  DAHLIA_HINDSIGHT_API_KEY?: string;
   [key: `DAHLIA_ENCRYPTION_MASTER_KEY_${string}`]: string | undefined;
   DAHLIA_ENCRYPTION_ACTIVE_KEY_ID?: string;
   DAHLIA_AUTH_SECRET?: string;
@@ -137,16 +129,7 @@ export async function initializeWorkerApp(env: WorkerEnv): Promise<WorkerApp> {
     DAHLIA_JOB_CONCURRENCY: env.DAHLIA_JOB_CONCURRENCY,
     DAHLIA_JOB_LIMITS: env.DAHLIA_JOB_LIMITS,
     DAHLIA_DOCUMENT_DELETION_GRACE_HOURS: env.DAHLIA_DOCUMENT_DELETION_GRACE_HOURS,
-    DAHLIA_HINDSIGHT_URL: env.DAHLIA_HINDSIGHT_URL,
-    DAHLIA_MEMORY_IMAGE_MODEL: env.DAHLIA_MEMORY_IMAGE_MODEL,
-    DAHLIA_MEMORY_IMAGE_MAX_COUNT: env.DAHLIA_MEMORY_IMAGE_MAX_COUNT,
-    DAHLIA_MEMORY_IMAGE_MAX_BYTES: env.DAHLIA_MEMORY_IMAGE_MAX_BYTES,
-    DAHLIA_MEMORY_IMAGE_LONG_EDGE: env.DAHLIA_MEMORY_IMAGE_LONG_EDGE,
 
-    DAHLIA_HINDSIGHT_AUTH: env.DAHLIA_HINDSIGHT_AUTH,
-    DAHLIA_HINDSIGHT_API_KEY: env.DAHLIA_HINDSIGHT_API_KEY,
-    // Forward a removed binding only for loadConfig's rejection; it is not a supported setting.
-    ...Object.fromEntries(Object.entries(env).filter(([name]) => name === "DAHLIA_HINDSIGHT_BANK_PREFIX")) as Record<string, string | undefined>,
     ...Object.fromEntries(Object.entries(env).filter(([name]) => name.startsWith("DAHLIA_ENCRYPTION_MASTER_KEY_"))) as Record<string, string | undefined>,
     DAHLIA_ENCRYPTION_ACTIVE_KEY_ID: env.DAHLIA_ENCRYPTION_ACTIVE_KEY_ID,
     DAHLIA_AUTH_SECRET: env.DAHLIA_AUTH_SECRET,
@@ -191,7 +174,6 @@ export async function initializeWorkerApp(env: WorkerEnv): Promise<WorkerApp> {
     OPENAI_API_KEY: env.OPENAI_API_KEY,
     OPENAI_BASE_URL: env.OPENAI_BASE_URL,
   });
-  if (config.hindsight?.images && !env.IMAGES) throw new Error("Memory image ingestion requires the IMAGES binding");
   const applicationStore = createWorkerApplicationStore(config, env);
   try {
     if (config.storageBackend === "local" || config.storageBackend === "databricks") {
@@ -216,14 +198,12 @@ export async function initializeWorkerApp(env: WorkerEnv): Promise<WorkerApp> {
       createAudioSummaryMethod(config, applicationStore.sync, syncService),
     ].filter((method) => method !== undefined);
     if (summaryMethods.length && !env.IMAGES) throw new Error("Summary jobs require the IMAGES binding");
-    const personalMemory = config.hindsight && applicationStore.personalMemory ? new WorkspaceMemoryService(config, applicationStore.personalMemory, syncService, applicationStore.sync) : undefined;
-    const workspaceMemory = config.hindsight && applicationStore.memory ? new WorkspaceMemoryService(config, applicationStore.memory, syncService, applicationStore.sync) : undefined;
     const chatMemory = applicationStore.chatMemoryStore ? new ChatMemoryService(applicationStore.chatMemoryStore, syncService, createMemoryGenerator(config)) : undefined;
     const jobs = createQueueJobs(env, applicationStore.jobs, applicationStore.sync,
-      syncService, summaryMethods, captioner, searchEmbedder, workspaceMemory, chatMemory, personalMemory,
+      syncService, summaryMethods, captioner, searchEmbedder, chatMemory,
       config.jobs?.concurrency === "auto" ? 4 : config.jobs?.concurrency ?? 4);
     const app = createApp({
-      workspaceMemory, personalMemory, chatMemory, config, auth, authStore: applicationStore, aiHistory: applicationStore.aiHistory, objectStorage, searchTokenizer, searchEmbedder, screenshotTransformer, syncService,
+      chatMemory, config, auth, authStore: applicationStore, aiHistory: applicationStore.aiHistory, objectStorage, searchTokenizer, searchEmbedder, screenshotTransformer, syncService,
       mcpSupportsCimd: false,
       summaryService: summaryMethods.length ? new SummaryService(applicationStore.sync, summaryMethods) : undefined,
       imageAnalysisEnabled: captioner !== undefined,

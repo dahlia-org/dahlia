@@ -107,23 +107,13 @@ All listed operations use the generated Web and Desktop clients where a bundled 
 | personalMemorySave | modified | POST `/api/v1/user/memory/notes` | `none` | Personal canonical memory save in an owner-scoped URL | Private Web |
 | personalMemoryDelete | modified | DELETE `/api/v1/user/memory/notes/{noteId}` | `none` | Personal canonical memory delete in an owner-scoped URL | Private Web |
 | personalMemoryRecall | modified | POST `/api/v1/user/memory/recall` | `none` | Personal canonical memory recall in an owner-scoped URL | Private Web |
-| personalMemoryReflect | modified | POST `/api/v1/user/memory/reflect` | `none` | Personal canonical memory reflect in an owner-scoped URL | Private Web |
-| personalMemoryStatus | modified | GET `/api/v1/user/memory/analysis/status` | `none` | Personal canonical memory status in an owner-scoped URL | Private Web |
-| personalMemoryConfigure | modified | PATCH `/api/v1/user/memory/analysis/settings` | `none` | Personal canonical memory configure in an owner-scoped URL | Private Web |
 | workspaceMemoryList | modified | GET `/api/v1/workspaces/{workspaceId}/memory/notes` | `none` | Workspace canonical memory list in an owner-scoped URL | Private Web |
 | workspaceMemoryGet | modified | GET `/api/v1/workspaces/{workspaceId}/memory/notes/{noteId}` | `none` | Workspace canonical memory get in an owner-scoped URL | Private Web |
 | workspaceMemorySave | modified | POST `/api/v1/workspaces/{workspaceId}/memory/notes` | `none` | Workspace canonical memory save in an owner-scoped URL | Private Web |
 | workspaceMemoryDelete | modified | DELETE `/api/v1/workspaces/{workspaceId}/memory/notes/{noteId}` | `none` | Workspace canonical memory delete in an owner-scoped URL | Private Web |
 | workspaceMemoryRecall | modified | POST `/api/v1/workspaces/{workspaceId}/memory/recall` | `none` | Workspace canonical memory recall in an owner-scoped URL | Private Web |
-| workspaceMemoryReflect | modified | POST `/api/v1/workspaces/{workspaceId}/memory/reflect` | `none` | Workspace canonical memory reflect in an owner-scoped URL | Private Web |
-| workspaceMemoryStatus | modified | GET `/api/v1/workspaces/{workspaceId}/memory/analysis/status` | `none` | Workspace canonical memory status in an owner-scoped URL | Private Web |
-| workspaceMemoryConfigure | modified | PATCH `/api/v1/workspaces/{workspaceId}/memory/analysis/settings` | `none` | Workspace canonical memory configure in an owner-scoped URL | Private Web |
 | personalMemoryUpdate | modified | PATCH `/api/v1/user/memory/notes/{noteId}` | `none` | Edit a saved note with revision checking | Private Web |
 | workspaceMemoryUpdate | modified | PATCH `/api/v1/workspaces/{workspaceId}/memory/notes/{noteId}` | `none` | Edit a saved note with revision checking | Private Web |
-| listKnowledgePages | modified | GET `/api/v1/workspaces/{workspaceId}/memory/pages` | `new public contract` | Standard generated pages with complete current canonical provenance validation; regeneration is admin-only | packages/ui/src/screens/KnowledgePages.tsx |
-| getKnowledgePage | modified | GET `/api/v1/workspaces/{workspaceId}/memory/pages/{pageId}` | `new public contract` | Standard generated pages with complete current canonical provenance validation; regeneration is admin-only | packages/ui/src/screens/KnowledgePages.tsx |
-| exportKnowledgePage | modified | GET `/api/v1/workspaces/{workspaceId}/memory/pages/{pageId}/export` | `new public contract` | Standard generated pages with complete current canonical provenance validation; regeneration is admin-only | packages/ui/src/screens/KnowledgePages.tsx |
-| refreshKnowledgePage | modified | POST `/api/v1/workspaces/{workspaceId}/memory/pages/{pageId}/refresh` | `new public contract` | Standard generated pages with complete current canonical provenance validation; regeneration is admin-only | packages/ui/src/screens/KnowledgePages.tsx |
 | getDocument | modified | GET `/api/v1/workspaces/{workspaceId}/documents/{documentId}` | `new public contract` | Read the canonical document without creating it | packages/ui/src/screens/Documents.tsx<br>apps/macos/Sources/Dahlia/Services/DocumentSyncService.swift |
 | listDocuments | modified | GET `/api/v1/workspaces/{workspaceId}/documents` | `new public contract` | List document revisions independently of domain sync | packages/ui/src/screens/Documents.tsx<br>apps/macos/Sources/Dahlia/Services/DocumentSyncService.swift |
 | initializeDocument | modified | POST `/api/v1/workspaces/{workspaceId}/documents/{documentId}` | `new public contract` | Initialize on first edit; explicit legacy import only into an unedited document | packages/ui/src/screens/Documents.tsx<br>apps/macos/Sources/Dahlia/Services/DocumentSyncService.swift |
@@ -269,7 +259,7 @@ These concrete endpoints preserve Better Auth/OAuth/OIDC, OpenAI and MCP formats
 | headMcpScreenshot | HEAD `/mcp/resources/workspaces/{workspaceId}/meetings/{meetingId}/screenshots/{screenshotId}/content` | MCP resource HTTP bytes | current Workspace read permission and MCP read scope |
 | signInHeader | POST `/api/auth/header/sign-in` | Better Auth | header |
 
-MCP methods: tools/list, tools/call. Tools: search, query_meetings, query_projects, get_project, get_meeting, get_meeting_transcript, query_screenshots, get_meeting_screenshots, list_memory_scopes, list_memories, get_memory, recall_memory, reflect_memory, get_working_memory, update_working_memory, save_memory, delete_memory, list_knowledge_pages, get_knowledge_page. Each call checks its capability scope and current Workspace access. Dahlia Memory reads require mcp:memory:read; writes require mcp:memory:write and current scope authorization.
+MCP methods: tools/list, tools/call. Tools: search, query_meetings, query_projects, get_project, get_meeting, get_meeting_transcript, query_screenshots, get_meeting_screenshots, list_memory_scopes, list_memories, get_memory, recall_memory, get_working_memory, update_working_memory, save_memory, delete_memory. Each call checks its capability scope and current Workspace access. Dahlia Memory reads require mcp:memory:read; writes require mcp:memory:write and current scope authorization.
 
 ## Dispatch and fallbacks
 
