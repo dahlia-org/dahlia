@@ -1,6 +1,8 @@
 import type { AppConfig } from "../config";
 import { createJobProvider } from "../ai-gateway/job-provider";
 import { DatabricksTokenError } from "../databricks/token";
+import { QUERY_EMBEDDING_DEADLINE_MS } from "../sync/schemas";
+import { log } from "../otel/log";
 
 export const SEARCH_EMBEDDING_BATCH_SIZE = 16;
 export const SEARCH_EMBEDDING_DOCUMENT_MAX_BYTES = 64 * 1024;
@@ -14,6 +16,20 @@ export interface SearchEmbedder {
   embedDocuments(input: string[], signal?: AbortSignal): Promise<number[][]>;
   /** instruction defaults to the meeting search task. */
   embedQuery(input: string, signal?: AbortSignal, instruction?: string): Promise<number[]>;
+}
+
+// Memory and chat queries stay within one chunk's budget, instruction included.
+const CHUNK_QUERY_MAX_BYTES = 8_000;
+/** Embeds a Memory or chat query within the query deadline; undefined means word search only. */
+export async function embedChunkQuery(embedder: SearchEmbedder | undefined, query: string, instruction: string, signal: AbortSignal, event: string) {
+  if (!embedder || new TextEncoder().encode(`${instruction}\n${query}`).byteLength > CHUNK_QUERY_MAX_BYTES) return undefined;
+  try {
+    return await embedder.embedQuery(query, AbortSignal.any([signal, AbortSignal.timeout(QUERY_EMBEDDING_DEADLINE_MS)]), instruction);
+  } catch (error) {
+    signal.throwIfAborted();
+    log("warn", event, { errorName: error instanceof Error ? error.name : "UnknownError" });
+    return undefined;
+  }
 }
 
 export class SearchEmbeddingError extends Error {

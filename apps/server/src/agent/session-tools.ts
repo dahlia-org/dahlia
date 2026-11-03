@@ -2,12 +2,10 @@ import type { RequestContext } from "@mastra/core/request-context";
 import { createTool } from "@mastra/core/tools";
 import { z } from "zod";
 import type { Identity } from "../auth/identity";
-import type { SearchEmbedder } from "../search/embedding";
+import { embedChunkQuery, type SearchEmbedder } from "../search/embedding";
 import type { SearchAnalyzer } from "../search/lexical";
 import type { MeetingSyncService } from "../sync/service";
-import { QUERY_EMBEDDING_DEADLINE_MS } from "../sync/schemas";
 import { RequestError } from "../storage/upload";
-import { log } from "../otel/log";
 import type { AiHistoryService } from "./history";
 import { messageText } from "./history";
 import type { SessionSearchStore } from "./session-search";
@@ -15,7 +13,6 @@ import type { MeetingToolContext } from "./tools";
 
 export const SESSION_QUERY_INSTRUCTION = "Given a question or keywords, retrieve past chat messages that are relevant.";
 const RESULT_LIMIT = 10;
-const QUERY_EMBEDDING_MAX_BYTES = 8_000;
 export const chatHistorySearchSchema = z.object({ query: z.string().trim().min(1).max(4000)
   .describe("A question, sentence or keywords; Japanese is tokenized and up to 16 terms are used.") }).strict();
 
@@ -27,15 +24,7 @@ export interface SessionSearchDependencies {
 export async function searchChatHistory(deps: SessionSearchDependencies, identity: Identity, workspaceId: string, query: string, signal: AbortSignal) {
   // Chats of a Workspace the caller can no longer read are excluded.
   if (!await deps.sync.getWorkspace(identity, workspaceId)) throw new RequestError(404, "workspace_not_found");
-  let vector: number[] | undefined;
-  if (deps.embedder && new TextEncoder().encode(`${SESSION_QUERY_INSTRUCTION}\n${query}`).byteLength <= QUERY_EMBEDDING_MAX_BYTES) {
-    vector = await deps.embedder.embedQuery(query, AbortSignal.any([signal, AbortSignal.timeout(QUERY_EMBEDDING_DEADLINE_MS)]), SESSION_QUERY_INSTRUCTION)
-      .catch((error: unknown) => {
-        signal.throwIfAborted();
-        log("warn", "chat_history_query_embedding_failed", { errorName: error instanceof Error ? error.name : "UnknownError" });
-        return undefined;
-      });
-  }
+  const vector = await embedChunkQuery(deps.embedder, query, SESSION_QUERY_INSTRUCTION, signal, "chat_history_query_embedding_failed");
   const { hits, partial } = await deps.sessions.search(identity, query, [workspaceId], deps.analyzer, RESULT_LIMIT, vector);
   // Mastra's standard message reads supply the surrounding conversation.
   const memory = await deps.history.memory(identity).storage.getStore("memory");

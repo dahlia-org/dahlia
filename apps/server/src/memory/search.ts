@@ -15,7 +15,7 @@ type Schema = typeof pg;
 type Note = typeof pg.sharedMemory.$inferSelect;
 
 /** Strings a lexical query matches against: the analyzer's query lexemes. */
-export async function queryLexemes(tx: NodePgDatabase, backend: SearchBackend, analyzer: SearchAnalyzer, query: string): Promise<string[]> {
+async function queryLexemes(tx: NodePgDatabase, backend: SearchBackend, analyzer: SearchAnalyzer, query: string): Promise<string[]> {
   if (backend === "sqlite") return queryTokens(analyzer, query);
   const input = analyzer.tokenizer ? queryTokens(analyzer, query).join(" ") : query;
   if (!input) return [];
@@ -25,7 +25,7 @@ export async function queryLexemes(tx: NodePgDatabase, backend: SearchBackend, a
   return result.rows.map((row) => row.lexeme);
 }
 
-export function searchVectorSql(analyzer: SearchAnalyzer, chunkTextValue: string, searchText: string): SQL {
+function searchVectorSql(analyzer: SearchAnalyzer, chunkTextValue: string, searchText: string): SQL {
   return analyzer.tokenizer ? sql`to_tsvector('simple', ${searchText})` : sql`to_tsvector(${analyzer.config}::regconfig, ${chunkTextValue})`;
 }
 
@@ -155,7 +155,7 @@ export function memoryProjection(schema: Schema, backend: SearchBackend, persona
         .from(notes).where(and(eq(notes.scopeId, scopeId), or(notExists(hasCurrentChunk(tx, analyzer)), needsEmbedding), after ? gt(notes.id, after) : undefined))
         .orderBy(asc(notes.id)).limit(100);
       for (const note of page) {
-        if (!note.indexed || note.indexed === 0) await index(tx, note, analyzer, embedding);
+        if (!note.indexed) await index(tx, note, analyzer, embedding);
         else if (embedding) await enqueueJob(tx, schema, jobKey(note.id), "memory-index", note.scopeId, `memory:${note.id}`,
           { source, scopeId: note.scopeId, documentId: note.id, ...embedding });
       }

@@ -6,9 +6,7 @@ import { RequestError } from "../storage/upload";
 import { decodeId, encodeId } from "@dahlia-ai/ui/model/typeid";
 import { publicIdSchema } from "../agent/tools";
 import { applicationAnalyzer, type SearchAnalyzer } from "../search/lexical";
-import type { SearchEmbedder } from "../search/embedding";
-import { QUERY_EMBEDDING_DEADLINE_MS } from "../sync/schemas";
-import { log } from "../otel/log";
+import { embedChunkQuery, type SearchEmbedder } from "../search/embedding";
 import type { MemoryStore } from "./store";
 import { routeMemory } from "./router";
 
@@ -43,22 +41,10 @@ export const memoryResultSchema = z.object({
 const RECALL_LIMIT = 20;
 // Qwen3 embedding queries take a task instruction; documents are embedded without one.
 export const MEMORY_QUERY_INSTRUCTION = "Given a question or keywords, retrieve saved Dahlia memories that are relevant.";
-const QUERY_EMBEDDING_MAX_BYTES = 8_000;
 
 export class DahliaMemory {
   constructor(readonly stores: { personal: MemoryStore; workspace: MemoryStore }, readonly sync: MeetingSyncService, readonly generate?: MemoryGenerator,
     readonly analyzer: SearchAnalyzer = applicationAnalyzer(), readonly embedder?: SearchEmbedder) {}
-  // One query vector shared by every searched scope; undefined (lexical only) when unavailable or over the input budget.
-  private async queryVector(query: string, signal: AbortSignal) {
-    if (!this.embedder || new TextEncoder().encode(`${MEMORY_QUERY_INSTRUCTION}\n${query}`).byteLength > QUERY_EMBEDDING_MAX_BYTES) return undefined;
-    try {
-      return await this.embedder.embedQuery(query, AbortSignal.any([signal, AbortSignal.timeout(QUERY_EMBEDDING_DEADLINE_MS)]), MEMORY_QUERY_INSTRUCTION);
-    } catch (error) {
-      signal.throwIfAborted();
-      log("warn", "memory_query_embedding_failed", { errorName: error instanceof Error ? error.name : "UnknownError" });
-      return undefined;
-    }
-  }
   private async resolve(identity: Identity, input: MemoryScope) {
     if (input.scope === "personal") {
       // A workspace can be supplied as topic context, but never changes personal ownership.
@@ -134,7 +120,8 @@ export class DahliaMemory {
     }
     const resolved = [];
     for (const target of targets) resolved.push(await this.resolve(identity, target));
-    const vector = await this.queryVector(input.query, signal);
+    // One query vector shared by every searched scope.
+    const vector = await embedChunkQuery(this.embedder, input.query, MEMORY_QUERY_INSTRUCTION, signal, "memory_query_embedding_failed");
     const results = [];
     for (const [index, target] of targets.entries()) {
       signal.throwIfAborted();
