@@ -159,6 +159,13 @@ describe("Dahlia Memory", () => {
       expect(await ids("予算")).toEqual([cat.id]);
       await f.drain();
       expect((await ids("vacation"))[0]).toBe(budget.id);
+      // An analyzer change rewrites words but keeps the vectors of unchanged text.
+      const documents = embedder.documents.length;
+      await f.memory.stores.personal.reconcilePage(f.owner.userId, applicationAnalyzer(createIntlSearchTokenizer()));
+      await f.drain();
+      expect(embedder.documents).toHaveLength(documents);
+      await f.memory.stores.personal.reconcilePage(f.owner.userId, lindera);
+      expect((await ids("vacation"))[0]).toBe(budget.id);
       // Query embedding failures keep word search.
       f.memory.embedder!.embedQuery = async () => { throw new SearchEmbeddingError("embedding_http_503", true); };
       const degraded = await f.memory.search(f.owner, { scope: "personal", query: "休暇" }, signal);
@@ -214,7 +221,19 @@ describe("Dahlia Memory", () => {
         } finally { database.close(); }
       }
       // A provider that rejects the input records the chunk without a vector: processed, findable by its words, not retried.
-      const rejecting = fakeEmbedder({ async embedDocuments() { throw new SearchEmbeddingError("embedding_http_400", false); } });
+      const rejecting = fakeEmbedder({ async embedDocuments(input) {
+        if (input[0] !== ".") throw new SearchEmbeddingError("embedding_http_400", false);
+        return base.embedDocuments(input);
+      } });
+      // A configuration fault (even a minimal input is rejected) fails the job without recording the text as rejected;
+      // hourly reconciliation queues it again.
+      const misconfigured = fakeEmbedder({ async embedDocuments() { throw new SearchEmbeddingError("embedding_http_400", false); } });
+      const faulted = (await f.app.jobs.claim(["memory-index"]))!;
+      await processMemoryIndexJob({ queue: f.app.jobs, analyzer: lindera, memory: f.memory.stores, embedder: misconfigured }, faulted, signal);
+      await f.app.jobs.complete(faulted);
+      expect(await f.app.jobs.claim(["memory-index"])).toBeNull();
+      expect(await f.memory.stores.personal.pendingEmbeddings(f.owner.userId, decodeId("sharedMemory", other.id), { model: embedder.model, dimensions: 32 })).toHaveLength(1);
+      await f.memory.stores.personal.reconcilePage(f.owner.userId, lindera);
       const rejected = (await f.app.jobs.claim(["memory-index"]))!;
       await processMemoryIndexJob({ queue: f.app.jobs, analyzer: lindera, memory: f.memory.stores, embedder: rejecting }, rejected, signal);
       await f.app.jobs.complete(rejected);
@@ -233,7 +252,7 @@ describe("Dahlia Memory", () => {
       abort?.throwIfAborted();
       // Rejects whole batches, as a per-request token limit would; the job then sends one chunk at a time.
       if (input.length > 1) throw new SearchEmbeddingError("embedding_http_413", false);
-      if (++singles === 2) controller.abort();
+      if (input[0] !== "." && ++singles === 2) controller.abort();
       return base.embedDocuments(input);
     } });
     const f = await fixture(embedder);

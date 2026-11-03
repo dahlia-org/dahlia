@@ -1,4 +1,4 @@
-import { and, asc, eq, exists, gt, inArray, isNull, ne, notExists, or, sql, type SQL } from "drizzle-orm";
+import { and, asc, eq, exists, gt, gte, inArray, isNull, ne, notExists, or, sql, type SQL } from "drizzle-orm";
 import type { NodePgDatabase } from "drizzle-orm/node-postgres";
 import type * as pg from "../db/auth-schema";
 import { enqueueJob, payloadField } from "../jobs/state";
@@ -43,19 +43,26 @@ export function memoryProjection(schema: Schema, backend: SearchBackend, persona
   const hasCurrentChunk = (tx: NodePgDatabase, analyzer: SearchAnalyzer) => tx.select({ value: sql`1` }).from(chunks)
     .where(and(eq(chunks.memoryId, notes.id), eq(chunks.analyzer, analyzer.id)));
 
-  /** Replaces the memory's chunks unless they already match its content and the analyzer; queues their embeddings. */
+  /** Rewrites the memory's chunks unless they already match its content and the analyzer; queues embeddings for new text. */
   async function index(tx: NodePgDatabase, note: Pick<Note, "id" | "scopeId" | "content">, analyzer: SearchAnalyzer, embedding?: EmbeddingConfig) {
     const hash = await contentHash(note.content);
     const [current] = await tx.select({ analyzer: chunks.analyzer, contentHash: chunks.contentHash }).from(chunks)
       .where(eq(chunks.memoryId, note.id)).limit(1);
     if (current?.analyzer === analyzer.id && current.contentHash === hash) return;
-    await tx.delete(chunks).where(eq(chunks.memoryId, note.id));
-    await tx.insert(chunks).values(chunkText(note.content).map((text, chunkNo) => {
+    const pieces = chunkText(note.content);
+    await tx.delete(chunks).where(and(eq(chunks.memoryId, note.id), gte(chunks.chunkNo, pieces.length)));
+    await tx.insert(chunks).values(pieces.map((text, chunkNo) => {
       const searchText = analyzer.tokenizer ? analyzerInput(analyzer, text) : "";
       return { memoryId: note.id, chunkNo, scopeId: note.scopeId, chunkText: text, searchText, analyzer: analyzer.id, contentHash: hash,
         ...(isPostgres ? { searchVector: searchVectorSql(analyzer, text, searchText) as never } : {}) };
-    }));
-    if (embedding) await enqueueJob(tx, schema, jobKey(note.id), "memory-index", note.scopeId, `memory:${note.id}`,
+    })).onConflictDoUpdate({ target: [chunks.memoryId, chunks.chunkNo], set: {
+      chunkText: sql`excluded.chunk_text`, searchText: sql`excluded.search_text`, analyzer: sql`excluded.analyzer`, contentHash: sql`excluded.content_hash`,
+      ...(isPostgres ? { searchVector: sql`excluded.search_vector` } : {}),
+      // A vector depends on its chunk text only, so an analyzer change keeps it.
+      embedding: sql`CASE WHEN ${chunks.chunkText} = excluded.chunk_text THEN ${chunks.embedding} END`,
+      embeddingModel: sql`CASE WHEN ${chunks.chunkText} = excluded.chunk_text THEN ${chunks.embeddingModel} END`,
+    } });
+    if (embedding && current?.contentHash !== hash) await enqueueJob(tx, schema, jobKey(note.id), "memory-index", note.scopeId, `memory:${note.id}`,
       { source, scopeId: note.scopeId, documentId: note.id, ...embedding });
   }
 

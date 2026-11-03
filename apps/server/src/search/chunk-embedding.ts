@@ -12,12 +12,19 @@ const encoder = new TextEncoder();
 /**
  * Embeds chunk texts in bounded batches. A rejected batch is retried one text at a time; a rejected text is split in
  * halves (at most twice, never below 2,000 bytes) and represented by the normalized mean of its parts.
- * Returns undefined for a text that is still rejected. Throws retryable SearchEmbeddingErrors.
+ * Returns undefined for a text that is still rejected. Throws retryable SearchEmbeddingErrors, and the rejection itself
+ * when a minimal input is rejected too: then the request or configuration is at fault, not the text.
  * onResult receives each text's result before the next request, so a caller can persist progress an abort would lose.
  */
 export async function embedChunks(embedder: SearchEmbedder, texts: readonly string[], signal?: AbortSignal,
   onResult: (index: number, vector: number[] | undefined) => Promise<void> = async () => {}): Promise<Array<number[] | undefined>> {
   const result = new Array<number[] | undefined>(texts.length);
+  let probe: Promise<void> | undefined;
+  // Checked once, at the first rejection.
+  const textAtFault = (error: unknown) => {
+    if (!rejected(error)) throw error;
+    return probe ??= embedder.embedDocuments(["."], signal).then(() => undefined);
+  };
   let batch: number[] = [], bytes = 0;
   const flush = async () => {
     if (!batch.length) return;
@@ -27,9 +34,9 @@ export async function embedChunks(embedder: SearchEmbedder, texts: readonly stri
       const vectors = await embedder.embedDocuments(indexes.map((index) => texts[index]!), signal);
       for (const [position, index] of indexes.entries()) { result[index] = vectors[position]; await onResult(index, result[index]); }
     } catch (error) {
-      if (!rejected(error)) throw error;
+      await textAtFault(error);
       for (const index of indexes) {
-        result[index] = await single(embedder, texts[index]!, 0, signal);
+        result[index] = await single(embedder, texts[index]!, 0, textAtFault, signal);
         await onResult(index, result[index]);
       }
     }
@@ -47,16 +54,17 @@ function rejected(error: unknown): boolean {
   return error instanceof SearchEmbeddingError && !error.retryable && INPUT_REJECTED.has(error.code);
 }
 
-async function single(embedder: SearchEmbedder, text: string, depth: number, signal?: AbortSignal): Promise<number[] | undefined> {
+async function single(embedder: SearchEmbedder, text: string, depth: number, textAtFault: (error: unknown) => Promise<void>,
+  signal?: AbortSignal): Promise<number[] | undefined> {
   try {
     return (await embedder.embedDocuments([text], signal))[0];
   } catch (error) {
-    if (!rejected(error)) throw error;
+    await textAtFault(error);
     const half = Math.ceil(encoder.encode(text).byteLength / 2);
     if (depth >= MAX_SPLIT_DEPTH || half < MIN_SPLIT_BYTES) return undefined;
     const parts: number[][] = [];
     for (const part of chunkText(text, half)) {
-      const vector = await single(embedder, part, depth + 1, signal);
+      const vector = await single(embedder, part, depth + 1, textAtFault, signal);
       if (!vector) return undefined;
       parts.push(vector);
     }

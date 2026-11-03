@@ -50,13 +50,19 @@ export function createSessionSearchStore(pool: Pool, backend: Exclude<SearchBack
           try { text = messageText(JSON.parse(row.content) as MastraDBMessage["content"]); } catch { /* non-text message */ }
           const hash = await contentHash(text);
           if (row.analyzer === current.id && row.hash === hash) continue;
-          await client.query("DELETE FROM agent.session_search_chunks WHERE message_id = $1", [row.id]);
           // Messages without text keep one empty chunk, so reconciliation sees them as indexed.
-          for (const [chunkNo, chunk] of (text ? chunkText(text) : [""]).entries()) {
+          const pieces = text ? chunkText(text) : [""];
+          await client.query("DELETE FROM agent.session_search_chunks WHERE message_id = $1 AND chunk_no >= $2", [row.id, pieces.length]);
+          for (const [chunkNo, chunk] of pieces.entries()) {
             const searchText = current.tokenizer ? analyzerInput(current, chunk) : "";
-            await client.query(`INSERT INTO agent.session_search_chunks (message_id, chunk_no, thread_id, user_id, workspace_id, role, created_at,
+            // A vector depends on its chunk text only, so an analyzer change keeps it.
+            await client.query(`INSERT INTO agent.session_search_chunks AS c (message_id, chunk_no, thread_id, user_id, workspace_id, role, created_at,
               chunk_text, search_text, search_vector, analyzer, content_hash)
-              VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, to_tsvector($10::regconfig, $11), $12, $13)`,
+              VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, to_tsvector($10::regconfig, $11), $12, $13)
+              ON CONFLICT (message_id, chunk_no) DO UPDATE SET chunk_text = EXCLUDED.chunk_text, search_text = EXCLUDED.search_text,
+                search_vector = EXCLUDED.search_vector, analyzer = EXCLUDED.analyzer, content_hash = EXCLUDED.content_hash,
+                embedding = CASE WHEN c.chunk_text = EXCLUDED.chunk_text THEN c.embedding END,
+                embedding_model = CASE WHEN c.chunk_text = EXCLUDED.chunk_text THEN c.embedding_model END`,
             [row.id, chunkNo, threadId, userId, thread.workspaceId, row.role, row.createdAt, chunk, searchText,
               current.config, current.tokenizer ? searchText : chunk, current.id, hash]);
           }

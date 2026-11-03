@@ -182,12 +182,12 @@ describe("PostgreSQL migrations", () => {
     }
   });
 
-  it("installs lakebase_tokenizer into public only when Lakebase offers it", async () => {
-    for (const available of [true, false]) {
-      const query = vi.fn(async (statement: string) => ({ rows: [], rowCount: statement.includes("pg_available_extensions") && available ? 1 : 0 }));
+  it("installs lakebase_tokenizer into public only when Lakebase offers it and no other schema holds it", async () => {
+    for (const [rows, installs] of [[[{ schema: null }], true], [[{ schema: "public" }], true], [[{ schema: "tokenizer_ext" }], false], [[], false]] as const) {
+      const query = vi.fn(async (statement: string) => ({ rows: statement.includes("pg_available_extensions") ? rows : [] }));
       await ensureSearchIndexes({ query } as never, { databaseType: "lakebase" } as AppConfig);
       const statements = query.mock.calls.map(([statement]) => statement);
-      expect(statements.some((statement) => statement.includes("extension_schema_mismatch") && statement.includes("'lakebase_tokenizer'"))).toBe(available);
+      expect(statements.some((statement) => statement.includes("extension_schema_mismatch") && statement.includes("'lakebase_tokenizer'"))).toBe(installs);
     }
   });
 

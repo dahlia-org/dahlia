@@ -116,6 +116,8 @@ describe.runIf(url)("Saved chat hybrid search", () => {
       await processMemoryIndexJob({ queue, analyzer: intl, sessions }, requeued, signal);
       await queue.complete(requeued);
       expect(await sessions.search(owner, "予算", [workspaceId], intl, 10)).toMatchObject({ partial: false, hits: [{ messageId: messages[1]!.id }] });
+      // The rewrite kept the vectors of unchanged text.
+      expect(await sessions.pendingEmbeddings(owner.userId, thread.id, { model: embedder.model, dimensions: 32 }, 10)).toEqual([]);
       // Deleting the chat removes its projection.
       expect(await history.delete(owner, thread.id)).toBe("deleted");
       expect((await db.select().from(schema.backgroundJob).where(eq(schema.backgroundJob.dedupeKey, `memory-index:session:${thread.id}`)))).toEqual([]);

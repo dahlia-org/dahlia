@@ -41,10 +41,21 @@ describe("search chunks", () => {
     expect(vectors[0]).toEqual([1, 0]);
     expect(vectors[1]![0]).toBeCloseTo(Math.SQRT1_2);
     expect(vectors[1]![1]).toBeCloseTo(Math.SQRT1_2);
-    expect(calls.map((call) => call.length)).toEqual([2, 1, 1, 1, 1]);
-    // Below the minimum split size the text stays without a vector (lexical only).
-    const rejecting: SearchEmbedder = { ...embedder, async embedDocuments() { throw new SearchEmbeddingError("embedding_http_400", false); } };
-    expect(await embedChunks(rejecting, ["x".repeat(3_000)])).toEqual([undefined]);
+    // The batch, one endpoint check with a minimal input, then single texts and halves.
+    expect(calls.map((call) => call.length)).toEqual([2, 1, 1, 1, 1, 1]);
+    expect(calls[1]).toEqual(["."]);
+    // Below the minimum split size a rejected text stays without a vector (word search only).
+    const rejectsLong: SearchEmbedder = { ...embedder, async embedDocuments(input) {
+      if (bytes(input[0]!) >= 3_000) throw new SearchEmbeddingError("embedding_http_400", false);
+      return input.map(() => [1, 0]);
+    } };
+    expect(await embedChunks(rejectsLong, ["x".repeat(3_000)])).toEqual([undefined]);
+    // When even the minimal input is rejected, the request or configuration is at fault: nothing is recorded as rejected.
+    const misconfigured: SearchEmbedder = { ...embedder, async embedDocuments() { throw new SearchEmbeddingError("embedding_http_400", false); } };
+    const results: unknown[] = [];
+    await expect(embedChunks(misconfigured, ["a", "b"], undefined, async (_index, vector) => { results.push(vector); }))
+      .rejects.toMatchObject({ code: "embedding_http_400" });
+    expect(results).toEqual([]);
     // Rate limits and timeouts are retried by the job, never split.
     const limited: SearchEmbedder = { ...embedder, async embedDocuments() { throw new SearchEmbeddingError("embedding_http_429", true); } };
     await expect(embedChunks(limited, ["x"])).rejects.toMatchObject({ code: "embedding_http_429" });
@@ -59,7 +70,7 @@ describe("search chunks", () => {
       async embedDocuments(input, signal) {
         signal?.throwIfAborted();
         if (input.length > 1) throw new SearchEmbeddingError("embedding_http_413", false);
-        if (++singles === 2) controller.abort();
+        if (input[0] !== "." && ++singles === 2) controller.abort();
         return [[1, 0]];
       } };
     const saved: number[] = [];

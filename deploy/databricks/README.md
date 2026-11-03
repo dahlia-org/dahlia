@@ -47,7 +47,7 @@ SELECT name FROM pg_available_extensions
 WHERE name IN ('lakebase_text', 'lakebase_vector');
 ```
 
-Both rows must be present. The App migrations install the extensions when they start. Also check for `lakebase_tokenizer`: when it is listed, migrations install it into `public` and Dahlia Memory and saved chat search tokenize Japanese with `public.tokenizer_japanese`; when it is not, they use the Server's Lindera tokenizer and log `search_japanese_tokenizer_unavailable` at migration. See [Lakebase tokenizer](https://docs.databricks.com/aws/en/oltp/projects/lakebase-tokenizer). See [Enable Lakebase Search](https://docs.databricks.com/aws/en/oltp/projects/lakebase-search#enable-lakebase-search).
+Both rows must be present. The App migrations install the extensions when they start. Also check for `lakebase_tokenizer`: when it is listed, migrations install it into `public` and Dahlia Memory and saved chat search tokenize Japanese with `public.tokenizer_japanese`; when it is not, or it is installed in another schema (such as the `tokenizer_ext` of the Databricks examples), they use the Server's Lindera tokenizer and log `search_japanese_tokenizer_unavailable` at migration. To use it from another schema, move it with `ALTER EXTENSION lakebase_tokenizer SET SCHEMA public` and restart the App. See [Lakebase tokenizer](https://docs.databricks.com/aws/en/oltp/projects/lakebase-tokenizer). See [Enable Lakebase Search](https://docs.databricks.com/aws/en/oltp/projects/lakebase-search#enable-lakebase-search).
 
 Run from `deploy/databricks`, using the same profile and variable overrides for every command:
 
