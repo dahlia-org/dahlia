@@ -44,9 +44,10 @@ export async function processMemoryIndexJob(services: MemoryIndexServices, job: 
 async function embed<T extends { text: string }>(services: MemoryIndexServices, job: BackgroundJob, pending: T[],
   save: (rows: Array<T & { vector?: number[] }>) => Promise<void>, signal: AbortSignal): Promise<boolean> {
   if (!pending.length) return true;
-  let vectors: Array<number[] | undefined>;
   try {
-    vectors = await embedChunks(services.embedder!, pending.map((chunk) => chunk.text), signal);
+    // Each result is saved before the next request, so a retry after the job deadline resumes where this one stopped.
+    await embedChunks(services.embedder!, pending.map((chunk) => chunk.text), signal,
+      (index, vector) => save([{ ...pending[index]!, vector }]));
   } catch (error) {
     if (!(error instanceof SearchEmbeddingError)) throw error;
     if (!error.retryable) await services.queue.fail(job, error.code);
@@ -56,6 +57,5 @@ async function embed<T extends { text: string }>(services: MemoryIndexServices, 
     }
     return false;
   }
-  await save(pending.map((chunk, index) => ({ ...chunk, vector: vectors[index] })));
   return true;
 }

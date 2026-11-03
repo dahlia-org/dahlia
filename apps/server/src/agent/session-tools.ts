@@ -28,15 +28,14 @@ export async function searchChatHistory(deps: SessionSearchDependencies, identit
   const { hits, partial } = await deps.sessions.search(identity, query, [workspaceId], deps.analyzer, RESULT_LIMIT, vector);
   // Mastra's standard message reads supply the surrounding conversation.
   const memory = await deps.history.memory(identity).storage.getStore("memory");
-  const results = [];
-  for (const hit of hits) {
-    signal.throwIfAborted();
+  const results = await Promise.all(hits.map(async (hit) => {
     const window = await memory?.listMessages({ threadId: hit.threadId, resourceId: identity.userId, perPage: 0,
       include: [{ id: hit.messageId, threadId: hit.threadId, withPreviousMessages: 1, withNextMessages: 1 }] });
-    results.push({ threadId: hit.threadId, title: hit.title, messageId: hit.messageId, role: hit.role, createdAt: hit.createdAt.toISOString(),
+    return { threadId: hit.threadId, title: hit.title, messageId: hit.messageId, role: hit.role, createdAt: hit.createdAt.toISOString(),
       text: hit.text, context: (window?.messages ?? []).filter((message) => message.id !== hit.messageId && ["user", "assistant"].includes(message.role))
-        .map((message) => ({ role: message.role, text: messageText(message.content).slice(0, 2_000), createdAt: new Date(message.createdAt).toISOString() })) });
-  }
+        .map((message) => ({ role: message.role, text: messageText(message.content).slice(0, 2_000), createdAt: new Date(message.createdAt).toISOString() })) };
+  }));
+  signal.throwIfAborted();
   // Ranking can outlast a permission change: publish only what the caller may still read now.
   if (!await deps.sync.getWorkspace(identity, workspaceId)) throw new RequestError(404, "workspace_not_found");
   return { results, instruction: `Past chat messages of this Workspace ranked by ${vector ? "word and meaning similarity" : "word matches only (meaning search is unavailable)"}${

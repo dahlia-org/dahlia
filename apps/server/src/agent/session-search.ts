@@ -87,7 +87,7 @@ export function createSessionSearchStore(pool: Pool, backend: Exclude<SearchBack
             AND q.status IN ('pending', 'processing') AND q.payload->>'model' = $3))` : "";
         if (embedding) values.push(embedding.model, embedding.dimensions);
         const { rows } = await client.query<{ id: string }>(`SELECT t.id FROM agent.mastra_threads t
-          WHERE t.metadata->>'kind' = 'dahlia-chat' AND ($2::text IS NULL OR t.id > $2) AND (EXISTS (SELECT 1 FROM agent.mastra_messages m
+          WHERE t.metadata->>'kind' = 'dahlia-chat' AND t.metadata->>'workspaceId' IS NOT NULL AND ($2::text IS NULL OR t.id > $2) AND (EXISTS (SELECT 1 FROM agent.mastra_messages m
             WHERE m.thread_id = t.id AND m.role IN ('user', 'assistant') AND NOT EXISTS (SELECT 1 FROM agent.session_search_chunks c
               WHERE c.message_id = m.id AND c.analyzer = $1)) ${stale})
           ORDER BY t.id LIMIT 100`, values);
@@ -128,9 +128,11 @@ export function createSessionSearchStore(pool: Pool, backend: Exclude<SearchBack
             ORDER BY embedding::${type} <=> $5::${type}, message_id LIMIT ${SEARCH_CANDIDATE_LIMIT}`,
           [identity.userId, workspaceIds, embedding.model, embedding.dimensions, JSON.stringify(vector)])).rows;
         }
-        // Each message's best-ranked chunk is the one shown.
-        const best = new Map<string, number>();
-        for (const hit of [...lexical, ...semantic]) if (!best.has(hit.messageId)) best.set(hit.messageId, hit.chunkNo);
+        // Each message shows its best-ranked chunk across both lists (lexical first on a tie).
+        const best = new Map<string, { chunkNo: number; rank: number }>();
+        for (const list of [lexical, semantic]) list.forEach((hit, rank) => {
+          if ((best.get(hit.messageId)?.rank ?? Infinity) > rank) best.set(hit.messageId, { chunkNo: hit.chunkNo, rank });
+        });
         const ids = reciprocalRankFusion([...new Set(lexical.map((hit) => hit.messageId))], [...new Set(semantic.map((hit) => hit.messageId))])
           .slice(0, limit).map(({ documentId }) => documentId);
         // Lexical results are partial while messages of this thread set lack chunks of the current analyzer.
@@ -144,7 +146,7 @@ export function createSessionSearchStore(pool: Pool, backend: Exclude<SearchBack
           c.workspace_id AS "workspaceId", c.message_id AS "messageId", c.role, c.created_at AS "createdAt", c.chunk_text AS text
           FROM agent.session_search_chunks c JOIN agent.mastra_threads t ON t.id = c.thread_id
           JOIN unnest($1::text[], $2::integer[]) AS best(message_id, chunk_no) ON best.message_id = c.message_id AND best.chunk_no = c.chunk_no`,
-        [ids, ids.map((id) => best.get(id)!)]);
+        [ids, ids.map((id) => best.get(id)!.chunkNo)]);
         const byId = new Map(rows.map((row) => [row.messageId, row]));
         return { hits: ids.flatMap((id) => byId.get(id) ?? []), partial: Boolean(gap?.partial) };
       });

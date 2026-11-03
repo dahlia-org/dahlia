@@ -52,6 +52,21 @@ describe("search chunks", () => {
     await expect(embedChunks(timeout, ["x"])).rejects.toMatchObject({ retryable: true });
   });
 
+  it("reports each result before the next request, so an abort keeps the finished ones", async () => {
+    const controller = new AbortController();
+    let singles = 0;
+    const embedder: SearchEmbedder = { model: "m", dimensions: 2, embedQuery: vi.fn(),
+      async embedDocuments(input, signal) {
+        signal?.throwIfAborted();
+        if (input.length > 1) throw new SearchEmbeddingError("embedding_http_413", false);
+        if (++singles === 2) controller.abort();
+        return [[1, 0]];
+      } };
+    const saved: number[] = [];
+    await expect(embedChunks(embedder, ["a", "b", "c", "d"], controller.signal, async (index) => { saved.push(index); })).rejects.toThrow();
+    expect(saved).toEqual([0, 1]);
+  });
+
   it("keeps batches within the provider limits", async () => {
     const sizes: number[] = [];
     const embedder: SearchEmbedder = { model: "m", dimensions: 2, embedQuery: vi.fn(),

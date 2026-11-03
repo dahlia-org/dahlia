@@ -225,6 +225,30 @@ describe("Dahlia Memory", () => {
       expect(await f.app.jobs.claim(["memory-index"])).toBeNull();
     } finally { f.close(); }
   });
+  it("saves each embedded chunk before the next request, so a job deadline keeps the finished ones", async () => {
+    const base = fakeEmbedder();
+    const controller = new AbortController();
+    let singles = 0;
+    const embedder = fakeEmbedder({ async embedDocuments(input, abort) {
+      abort?.throwIfAborted();
+      // Rejects whole batches, as a per-request token limit would; the job then sends one chunk at a time.
+      if (input.length > 1) throw new SearchEmbeddingError("embedding_http_413", false);
+      if (++singles === 2) controller.abort();
+      return base.embedDocuments(input);
+    } });
+    const f = await fixture(embedder);
+    try {
+      const note = f.note(Array.from({ length: 6 }, (_, i) => `${"予算の説明。".repeat(400)}${i}`).join("\n\n").slice(0, 16_000));
+      await f.memory.save(f.owner, note);
+      const config = { model: embedder.model, dimensions: 32 };
+      const memoryId = decodeId("sharedMemory", note.id);
+      const before = (await f.memory.stores.personal.pendingEmbeddings(f.owner.userId, memoryId, config)).length;
+      expect(before).toBeGreaterThan(2);
+      const job = (await f.app.jobs.claim(["memory-index"]))!;
+      await expect(processMemoryIndexJob({ queue: f.app.jobs, analyzer: lindera, memory: f.memory.stores, embedder }, job, controller.signal)).rejects.toThrow();
+      expect(await f.memory.stores.personal.pendingEmbeddings(f.owner.userId, memoryId, config)).toHaveLength(before - 2);
+    } finally { f.close(); }
+  });
   it("finds memories indexed by another analyzer through the canonical text until reconciliation rewrites them", async () => {
     const f = await fixture();
     try {

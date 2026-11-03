@@ -13,8 +13,10 @@ const encoder = new TextEncoder();
  * Embeds chunk texts in bounded batches. A rejected batch is retried one text at a time; a rejected text is split in
  * halves (at most twice, never below 2,000 bytes) and represented by the normalized mean of its parts.
  * Returns undefined for a text that is still rejected. Throws retryable SearchEmbeddingErrors.
+ * onResult receives each text's result before the next request, so a caller can persist progress an abort would lose.
  */
-export async function embedChunks(embedder: SearchEmbedder, texts: readonly string[], signal?: AbortSignal): Promise<Array<number[] | undefined>> {
+export async function embedChunks(embedder: SearchEmbedder, texts: readonly string[], signal?: AbortSignal,
+  onResult: (index: number, vector: number[] | undefined) => Promise<void> = async () => {}): Promise<Array<number[] | undefined>> {
   const result = new Array<number[] | undefined>(texts.length);
   let batch: number[] = [], bytes = 0;
   const flush = async () => {
@@ -23,10 +25,13 @@ export async function embedChunks(embedder: SearchEmbedder, texts: readonly stri
     batch = []; bytes = 0;
     try {
       const vectors = await embedder.embedDocuments(indexes.map((index) => texts[index]!), signal);
-      indexes.forEach((index, position) => { result[index] = vectors[position]; });
+      for (const [position, index] of indexes.entries()) { result[index] = vectors[position]; await onResult(index, result[index]); }
     } catch (error) {
       if (!rejected(error)) throw error;
-      for (const index of indexes) result[index] = await single(embedder, texts[index]!, 0, signal);
+      for (const index of indexes) {
+        result[index] = await single(embedder, texts[index]!, 0, signal);
+        await onResult(index, result[index]);
+      }
     }
   };
   for (const [index, text] of texts.entries()) {
