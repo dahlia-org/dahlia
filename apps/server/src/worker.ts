@@ -28,6 +28,8 @@ import {
 import { loadConfig, type AppConfig } from "./config";
 import { connectPostgresUrl } from "./db/postgres";
 import { createIntlSearchTokenizer } from "./search/tokenizer";
+import { applicationAnalyzer } from "./search/lexical";
+import { createSessionSearchStore, type SessionSearchStore } from "./agent/session-search";
 import { log } from "./otel/log";
 
 export interface RuntimeSecrets {
@@ -106,7 +108,7 @@ const healthApp = new Hono();
 healthApp.use("*", secureHeaders());
 healthApp.get("/healthz", (context) => context.json({ status: "ok" }));
 
-function createWorkerApplicationStore(config: AppConfig, env: WorkerEnv): ApplicationStore & { jobs: WorkerJobStores; aiHistory: AiHistoryService; chatMemoryStore?: ChatMemoryStore } {
+function createWorkerApplicationStore(config: AppConfig, env: WorkerEnv): ApplicationStore & { jobs: WorkerJobStores; aiHistory: AiHistoryService; sessionSearch: SessionSearchStore; chatMemoryStore?: ChatMemoryStore } {
   if (config.databaseType === "hyperdrive" && !env.HYPERDRIVE) throw new Error("The HYPERDRIVE binding is required");
   const url = config.databaseType === "hyperdrive" ? env.HYPERDRIVE!.connectionString
     : config.databaseType === "postgres" ? config.databaseUrl : undefined;
@@ -114,6 +116,7 @@ function createWorkerApplicationStore(config: AppConfig, env: WorkerEnv): Applic
   const connection = connectPostgresUrl(url, 5);
   return { ...createPostgresApplicationStore(connection.db, "postgres", config.searchEmbedding, config.encryption, config.authProviderId, config.localSingleUser, config.autoCreateOrgOnSignup, undefined, config.documentDeletionGraceHours), close: connection.close,
     aiHistory: createAiHistoryService(connection.pool),
+    sessionSearch: createSessionSearchStore(connection.pool, "postgres", config.searchEmbedding),
     chatMemoryStore: config.chatMemoryModel ? new ChatMemoryStore(connection.pool) : undefined,
     jobs: {
       queue: createJobStore(connection.db, true, config.jobs?.limits ?? defaultJobLimits),
@@ -201,9 +204,11 @@ export async function initializeWorkerApp(env: WorkerEnv): Promise<WorkerApp> {
     const chatMemory = applicationStore.chatMemoryStore ? new ChatMemoryService(applicationStore.chatMemoryStore, syncService, createMemoryGenerator(config)) : undefined;
     const jobs = createQueueJobs(env, applicationStore.jobs, applicationStore.sync,
       syncService, summaryMethods, captioner, searchEmbedder, chatMemory,
-      config.jobs?.concurrency === "auto" ? 4 : config.jobs?.concurrency ?? 4);
+      config.jobs?.concurrency === "auto" ? 4 : config.jobs?.concurrency ?? 4,
+      { analyzer: applicationAnalyzer(searchTokenizer), memory: { personal: applicationStore.personalMemory!, workspace: applicationStore.memory! },
+        sessions: applicationStore.sessionSearch });
     const app = createApp({
-      chatMemory, config, auth, authStore: applicationStore, aiHistory: applicationStore.aiHistory, objectStorage, searchTokenizer, searchEmbedder, screenshotTransformer, syncService,
+      chatMemory, config, auth, authStore: applicationStore, aiHistory: applicationStore.aiHistory, sessionSearch: applicationStore.sessionSearch, objectStorage, searchTokenizer, searchEmbedder, screenshotTransformer, syncService,
       mcpSupportsCimd: false,
       summaryService: summaryMethods.length ? new SummaryService(applicationStore.sync, summaryMethods) : undefined,
       imageAnalysisEnabled: captioner !== undefined,

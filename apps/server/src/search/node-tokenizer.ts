@@ -1,6 +1,6 @@
 import { TokenizerBuilder } from "lindera-wasm-ipadic-nodejs";
 
-import type { SearchTokenizer } from "./tokenizer";
+import { SEARCH_ANALYZER_CONFIG_HASH, type SearchTokenizer } from "./tokenizer";
 
 const STOP_TAGS = [
   ["接続詞", "*"],
@@ -40,6 +40,7 @@ function buildTokenizer(): SearchTokenizer {
   builder.appendTokenFilter("lowercase", {});
   const tokenizer = builder.build();
   return {
+    analyzer: `lindera-ipadic@${SEARCH_ANALYZER_CONFIG_HASH.slice(0, 12)}`,
     tokenize(text) {
       return tokenizer.tokenize(text).flatMap((token) => {
         if (STOP_TAGS.some((tag) => tag.every((part, index) => part === "*" || token.details[index] === part))) {

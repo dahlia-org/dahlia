@@ -4,6 +4,10 @@ export const SEARCH_ANALYZER_CONFIG_HASH = "e4e5d5c88f88895432fe3ec7e98b00ee2f05
 
 export interface SearchTokenizer {
   tokenize(text: string): string[];
+  /** Stored with Memory and chat chunks; index and query must use the same analyzer. */
+  readonly analyzer?: string;
+  /** Require every query token (the Worker segmenter has no base forms or stop words). */
+  readonly matchAll?: boolean;
 }
 
 export interface SearchQuery {
@@ -15,6 +19,8 @@ export interface SearchQuery {
 export function createIntlSearchTokenizer(): SearchTokenizer {
   const segmenter = new Intl.Segmenter("ja", { granularity: "word" });
   return {
+    analyzer: "intl-segmenter",
+    matchAll: true,
     tokenize(text) {
       return [...segmenter.segment(text.normalize("NFKC").toLowerCase())]
         .filter((segment) => segment.isWordLike)

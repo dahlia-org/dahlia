@@ -5,8 +5,9 @@ import type { MeetingSyncService } from "../sync/service";
 import { RequestError } from "../storage/upload";
 import { decodeId, encodeId } from "@dahlia-ai/ui/model/typeid";
 import { publicIdSchema } from "../agent/tools";
-import { SEARCH_QUERY_MAX_TOKENS } from "../search/tokenizer";
-import { normalizeMemoryText, type MemoryStore } from "./store";
+import { applicationAnalyzer, type SearchAnalyzer } from "../search/lexical";
+import { embedChunkQuery, type SearchEmbedder } from "../search/embedding";
+import type { MemoryStore } from "./store";
 import { routeMemory } from "./router";
 
 const scope = z.enum(["personal", "workspace"]);
@@ -16,7 +17,7 @@ export const memoryListSchema = memoryScopeSchema.extend({ after: publicIdSchema
 export const memoryGetSchema = memoryScopeSchema.extend({ id: publicIdSchema("sharedMemory") });
 const memoryTargetSchema = z.object({ scope: z.enum(["personal", "workspace", "auto"]).default("auto"), workspaceId }).strict();
 export const memorySearchSchema = memoryTargetSchema.extend({ query: z.string().trim().min(1).max(4000)
-  .describe("Space-separated keywords, not a sentence; the first 16 distinct keywords are used. Each matches saved memories that contain it, ignoring case and full/half width.") });
+  .describe("A question, sentence or keywords. Matches words (Japanese is tokenized; up to 16 terms are used) and, when embeddings are configured, meaning.") });
 // HTTP recall bodies: the owner comes from the URL, never the body.
 export const memoryRecallBodySchema = memorySearchSchema.omit({ scope: true, workspaceId: true });
 const newMemoryId = publicIdSchema("sharedMemory").refine((id) => {
@@ -38,19 +39,12 @@ export const memoryResultSchema = z.object({
 }).openapi("DahliaMemoryResult");
 
 const RECALL_LIMIT = 20;
-// shortcut: substring keyword match, no embeddings; add a vector index when saved memories outgrow keyword recall.
-// The caller chooses the keywords: parsing a sentence into content words cannot be done reliably here.
-export function recallTerms(query: string) {
-  return [...new Set(normalizeMemoryText(query).split(/\s+/u).filter(Boolean))].slice(0, SEARCH_QUERY_MAX_TOKENS);
-}
-export function rankNotes(matches: Awaited<ReturnType<MemoryStore["searchNotes"]>>) {
-  // UUIDv7 IDs break updatedAt ties by creation order, keeping the ranking deterministic.
-  return matches.toSorted((a, b) => b.terms.length - a.terms.length || b.note.updatedAt.getTime() - a.note.updatedAt.getTime()
-    || (a.note.id < b.note.id ? 1 : a.note.id > b.note.id ? -1 : 0)).map(({ note }) => note);
-}
+// Qwen3 embedding queries take a task instruction; documents are embedded without one.
+export const MEMORY_QUERY_INSTRUCTION = "Given a question or keywords, retrieve saved Dahlia memories that are relevant.";
 
 export class DahliaMemory {
-  constructor(readonly stores: { personal: MemoryStore; workspace: MemoryStore }, readonly sync: MeetingSyncService, readonly generate?: MemoryGenerator) {}
+  constructor(readonly stores: { personal: MemoryStore; workspace: MemoryStore }, readonly sync: MeetingSyncService, readonly generate?: MemoryGenerator,
+    readonly analyzer: SearchAnalyzer = applicationAnalyzer(), readonly embedder?: SearchEmbedder) {}
   private async resolve(identity: Identity, input: MemoryScope) {
     if (input.scope === "personal") {
       // A workspace can be supplied as topic context, but never changes personal ownership.
@@ -103,7 +97,7 @@ export class DahliaMemory {
     const { store, id } = await this.resolve(identity, { ...input, scope: target });
     await authorize?.();
     signal.throwIfAborted();
-    const note = await store.saveNote(identity.userId, id, { ...input, id: decodeId("sharedMemory", input.id) }, actor, input.explicit);
+    const note = await store.saveNote(identity.userId, id, { ...input, id: decodeId("sharedMemory", input.id) }, actor, input.explicit, this.analyzer);
     return { saved: true, ...resultScope({ scope: target, workspaceId: input.workspaceId }), memory: memoryNote(note) };
   }
   async delete(identity: Identity, input: z.infer<typeof memoryDeleteSchema>, authorize?: () => Promise<void>) {
@@ -124,18 +118,21 @@ export class DahliaMemory {
       if (route.target !== "workspace" || !workspace) targets.push({ scope: "personal" });
       if (workspace && route.target !== "personal") targets.push({ scope: "workspace", workspaceId: input.workspaceId });
     }
-    const terms = recallTerms(input.query);
+    const resolved = [];
+    for (const target of targets) resolved.push(await this.resolve(identity, target));
+    // One query vector shared by every searched scope.
+    const vector = await embedChunkQuery(this.embedder, input.query, MEMORY_QUERY_INSTRUCTION, signal, "memory_query_embedding_failed");
     const results = [];
-    for (const target of targets) {
+    for (const [index, target] of targets.entries()) {
       signal.throwIfAborted();
-      const { store, id } = await this.resolve(identity, target);
-      results.push({ ...target, items: rankNotes(await store.searchNotes(identity.userId, id, terms)).slice(0, RECALL_LIMIT).map(memoryNote) });
+      const { store, id } = resolved[index]!;
+      results.push({ ...target, items: (await store.recall(identity.userId, id, input.query, this.analyzer, RECALL_LIMIT, vector)).map(memoryNote) });
     }
-    // A whole-scope scan can outlast a permission change: publish only what the caller may still read now.
+    // Ranking can outlast a permission change: publish only what the caller may still read now.
     for (const target of targets) await this.resolve(identity, target);
     signal.throwIfAborted();
     return { searchedScopes: targets, results,
-      instruction: "Saved memories ranked by the number of keywords they contain, at most 20 per scope; an empty result does not mean nothing relevant was ever discussed. Saved memories are claims, not verified facts. For meeting evidence use the canonical meeting tools." };
+      instruction: `Saved memories ranked by ${vector ? "word and meaning similarity" : "word matches only (meaning search is unavailable)"}, at most 20 per scope; an empty result does not mean nothing relevant was ever discussed. Saved memories are claims, not verified facts. For meeting evidence use the canonical meeting tools.` };
   }
 }
 // Personal topic context must not appear as shared ownership in the response.

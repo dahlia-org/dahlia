@@ -15,6 +15,7 @@ import { migrate as migrateSqlite } from "drizzle-orm/sqlite-proxy/migrator";
 
 import type { AppConfig } from "../config";
 import { createAiHistoryService, type AiHistoryService } from "../agent/history";
+import { createSessionSearchStore, type SessionSearchStore } from "../agent/session-search";
 import { connectApplicationDatabase, migrateApplicationDatabase } from "../db/client";
 import {
   postgresMigrations,
@@ -32,6 +33,7 @@ import { createImageAnalysisStore, type ImageAnalysisQueueStore } from "../image
 export interface NodeApplicationStore extends ApplicationStore {
   jobs: JobStore;
   aiHistory?: AiHistoryService;
+  sessionSearch?: SessionSearchStore;
   chatMemoryStore?: ChatMemoryStore;
   migrate(): Promise<void>;
   rotateEncryptionKeys(apply: boolean): Promise<{ checked: number; pending: number; rotated: number }>;
@@ -62,6 +64,7 @@ export function createNodeApplicationStore(
       ),
       jobs: createJobStore(connection.db, true, config.jobs?.limits ?? defaultJobLimits),
       aiHistory: createAiHistoryService(connection.pool),
+      sessionSearch: createSessionSearchStore(connection.pool, config.databaseType, config.searchEmbedding),
       chatMemoryStore: config.chatMemoryModel ? new ChatMemoryStore(connection.pool) : undefined,
       migrate: () => migrateApplicationDatabase(
         config,

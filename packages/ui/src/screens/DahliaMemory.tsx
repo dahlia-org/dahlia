@@ -137,10 +137,10 @@ function MemoryPanel({ scope, scopes }: { scope: Scope; scopes: Scope[] }) {
       <Button variant="outline" disabled={busy}>{uiText("Text search", "本文検索")}</Button>
       <Button variant="outline" type="button" disabled={busy || !query.trim()} onClick={() => void search("recall")}>{uiText("Related memories", "関連する記憶")}</Button>
     </form>
-    <p id={searchHint} className="text-xs text-muted-foreground">{uiText("Text search finds memories containing the typed text as one phrase. Related memories finds memories containing any of the space-separated keywords.", "本文検索は入力した文字列をひと続きで含む記憶を探します。関連する記憶は、スペースで区切ったキーワードのどれかを含む記憶を探します。")}</p>
+    <p id={searchHint} className="text-xs text-muted-foreground">{uiText("Text search finds memories containing the typed text as one phrase. Related memories accepts a question or keywords and ranks memories by matching words and, when the Server has embeddings configured, by meaning.", "本文検索は入力した文字列をひと続きで含む記憶を探します。関連する記憶は質問文やキーワードを受け付け、一致する語と（Server で埋め込みが設定されていれば）意味の近さで並べます。")}</p>
     {related && <section className="panel grid gap-2" aria-label={uiText("Related memories", "関連する記憶")}>
-      <h3>{uiText("Related memories · keyword matches", "関連する記憶 · キーワード一致")}</h3>
-      {!related.length && <p>{uiText("No saved memory matched these keywords.", "キーワードに一致する記憶はありません。")}</p>}
+      <h3>{uiText("Related memories · best matches first", "関連する記憶 · 関連度順")}</h3>
+      {!related.length && <p>{uiText("No related saved memory was found.", "関連する記憶は見つかりませんでした。")}</p>}
       {related.map((note) => <p key={note.id} className="whitespace-pre-wrap">{note.content}</p>)}
     </section>}
     {!notes.length && <p>{uiText("No saved memories in this list.", "この一覧に記憶はありません。")}</p>}

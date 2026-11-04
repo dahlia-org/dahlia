@@ -10,6 +10,7 @@ import { processSearchIndexBatch } from "../search/process";
 import type { MeetingSyncService } from "../sync/service";
 import type { MeetingSyncStore } from "../sync/types";
 import type { ChatMemoryService } from "../agent/context-service";
+import { processMemoryIndexJob, type MemoryIndexServices } from "../memory/index-job";
 import { isRateLimited, RATE_LIMIT_COOLDOWN_MS } from "./rate-limit";
 import type { BackgroundJob, JobStore } from "./store";
 import type { JobKind } from "./model";
@@ -21,6 +22,8 @@ export interface JobServices {
   searchIndex?: SearchIndexQueueStore; embedder?: SearchEmbedder;
   sync: MeetingSyncService; syncStore: MeetingSyncStore;
   chatMemory?: ChatMemoryService;
+  /** Dahlia Memory and saved chat search projections. */
+  memoryIndex?: Omit<MemoryIndexServices, "queue" | "embedder">;
 }
 export function createJobExecutor(services: JobServices) {
   const kinds: JobKind[] = ["maintenance", "storage-delete", "reconcile"];
@@ -28,6 +31,8 @@ export function createJobExecutor(services: JobServices) {
   if (services.imageAnalysis && services.captioner) kinds.push("image");
   if (services.searchIndex && services.embedder) kinds.push("search");
   if (services.chatMemory) kinds.push("chat-memory");
+  const memoryIndex = services.memoryIndex && { ...services.memoryIndex, queue: services.queue, embedder: services.embedder };
+  if (memoryIndex && (memoryIndex.sessions || (memoryIndex.memory && memoryIndex.embedder))) kinds.push("memory-index");
   const cooldown = async (kind: JobKind, code?: string) => {
     if (code && isRateLimited(code)) await services.queue.cooldown(kind, Date.now() + RATE_LIMIT_COOLDOWN_MS);
   };
@@ -50,6 +55,7 @@ export function createJobExecutor(services: JobServices) {
           await services.searchIndex!.retry(claim, code, at); await cooldown("search", code);
         } }, services.embedder!, signal, job.batch);
         break;
+      case "memory-index": await processMemoryIndexJob(memoryIndex!, job, signal); break;
       case "chat-memory": await services.chatMemory!.step(job.dedupeKey.slice("chat-memory:".length), payload.ownerUserId!, signal, job); break;
       case "storage-delete": await services.sync.drainStorageDeletes(payload.storageKey, job); break;
       case "maintenance": {
@@ -65,7 +71,8 @@ export function createJobExecutor(services: JobServices) {
       }
       case "reconcile": {
         const kind = payload.kind!;
-        if ((kind === "image" && !services.captioner) || (kind === "search" && !services.embedder)) {
+        if ((kind === "image" && !services.captioner) || (kind === "search" && !services.embedder)
+          || (kind === "workspace-memory" && !memoryIndex?.memory) || (kind === "memory" && !memoryIndex)) {
           await services.queue.reschedule(job, payload, 3_600_000); break;
         }
         if (payload.phase === "scopes") {
@@ -76,7 +83,9 @@ export function createJobExecutor(services: JobServices) {
           await services.queue.reschedule(job, { kind, phase: "scopes", after: hasMore ? scopes.at(-1) : undefined }, hasMore ? 0 : 3_600_000);
         } else {
           const after = kind === "image" ? await services.imageAnalysis!.reconcilePage(services.captioner!.model, payload.scopeId!, payload.after)
-            : await services.searchIndex!.reconcilePage(services.embedder!.model, services.embedder!.dimensions, payload.scopeId!, payload.after);
+            : kind === "search" ? await services.searchIndex!.reconcilePage(services.embedder!.model, services.embedder!.dimensions, payload.scopeId!, payload.after)
+            : kind === "workspace-memory" ? await memoryIndex!.memory!.workspace.reconcilePage(payload.scopeId!, memoryIndex!.analyzer, payload.after)
+            : await reconcileUser(memoryIndex!, payload.scopeId!, payload.after);
           if (after) await services.queue.reschedule(job, { ...payload, after }, 0);
         }
         break;
@@ -103,4 +112,14 @@ export function createJobExecutor(services: JobServices) {
       return true;
     },
   };
+}
+
+// A user's personal memories ("p:" cursor), then saved chats ("s:" cursor).
+async function reconcileUser(services: Omit<MemoryIndexServices, "queue">, userId: string, after = "p:") {
+  if (after.startsWith("p:")) {
+    const next = services.memory ? await services.memory.personal.reconcilePage(userId, services.analyzer, after.slice(2) || undefined) : undefined;
+    return next ? `p:${next}` : services.sessions ? "s:" : undefined;
+  }
+  const next = await services.sessions?.reconcilePage(userId, services.analyzer, after.slice(2) || undefined);
+  return next ? `s:${next}` : undefined;
 }

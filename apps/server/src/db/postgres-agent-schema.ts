@@ -1,5 +1,5 @@
 import { syncedMeeting } from "./postgres-app-schema";
-import { boolean, integer, uuid, index, jsonb, pgPolicy, pgSchema, primaryKey, text, timestamp, type AnyPgColumn } from "drizzle-orm/pg-core";
+import { boolean, check, customType, integer, uuid, index, jsonb, pgPolicy, pgSchema, primaryKey, real, text, timestamp, type AnyPgColumn } from "drizzle-orm/pg-core";
 import { sql } from "drizzle-orm";
 
 export const agentSchema = pgSchema("agent");
@@ -141,4 +141,31 @@ export const agentLiveContexts = agentSchema.table("live_contexts", {
 }, (table) => [pgPolicy("agent_live_reader", { for: "all",
   using: sql`EXISTS (SELECT 1 FROM app.meetings m WHERE m.meeting_id = ${table.meetingId} AND m.deleted_at IS NULL AND m.deleting_at IS NULL AND app.current_identity_can_read_workspace(m.workspace_id))`,
   withCheck: sql`EXISTS (SELECT 1 FROM app.meetings m WHERE m.meeting_id = ${table.meetingId} AND m.deleted_at IS NULL AND m.deleting_at IS NULL AND app.current_identity_can_read_workspace(m.workspace_id))` }),
+]).enableRLS();
+
+const tsvector = customType<{ data: string }>({ dataType: () => "tsvector" });
+// Rebuildable chat search projection of dahlia-chat messages, written by the session index job after a run.
+// content_hash is the message text hash; search_vector is written by SQL with the deployment's text search configuration.
+export const sessionSearchChunks = agentSchema.table("session_search_chunks", {
+  messageId: text("message_id").notNull().references(() => agentMessages.id, { onDelete: "cascade" }),
+  chunkNo: integer("chunk_no").notNull(),
+  threadId: text("thread_id").notNull().references(() => agentThreads.id, { onDelete: "cascade" }),
+  userId: text("user_id").notNull(),
+  workspaceId: uuid("workspace_id").notNull(),
+  role: text("role").notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull(),
+  chunkText: text("chunk_text").notNull(),
+  searchText: text("search_text").default("").notNull(),
+  searchVector: tsvector("search_vector"),
+  analyzer: text("analyzer").notNull(),
+  contentHash: text("content_hash").notNull(),
+  embedding: real("embedding").array(),
+  embeddingModel: text("embedding_model"),
+}, (table) => [
+  primaryKey({ columns: [table.messageId, table.chunkNo] }),
+  index("agent_session_search_chunks_user_idx").on(table.userId, table.workspaceId),
+  index("agent_session_search_chunks_thread_idx").on(table.threadId),
+  check("agent_session_search_chunks_embedding_check", sql`${table.embedding} IS NULL OR cardinality(${table.embedding}) BETWEEN 32 AND 1024`),
+  pgPolicy("agent_session_search_owner", { for: "all", using: sql`${table.userId} = ${currentUser} AND ${ownedThread(table.threadId)}`,
+    withCheck: sql`${table.userId} = ${currentUser} AND ${ownedThread(table.threadId)}` }),
 ]).enableRLS();

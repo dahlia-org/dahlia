@@ -76,7 +76,7 @@ async function run() {
   const query = document.querySelector<HTMLInputElement>("section form input")!; text(query, "lesson");
   assert(!button("Insights"), "Retired reflection is still offered");
   await until(() => !button("Related memories").disabled); button("Related memories").click();
-  await until(() => document.body.textContent.includes("Related memories · keyword matches"));
+  await until(() => document.body.textContent.includes("Related memories · best matches first"));
   assert(document.querySelector('[aria-label="Related memories"]')!.textContent.includes(rows.team![0]!.content), "Recall result missing");
   if (new URLSearchParams(location.search).has("preview")) { document.getElementById("result")!.textContent = "PASS: related memories"; return; }
   button("Delete").click(); await until(() => document.querySelector("[data-confirm]"));

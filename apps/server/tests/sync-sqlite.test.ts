@@ -866,7 +866,7 @@ describe("SQLite canonical sync", () => {
       await scheduled({ scheduledTime: Date.UTC(2026, 8, 30, 12, 0) } as ScheduledController, {} as Cloudflare.Env,
         { waitUntil: (task: Promise<unknown>) => pending.push(task) } as unknown as ExecutionContext);
       await Promise.all(pending);
-      for (let i = 0; i < 4; i++) await jobs.consume({ action: "wake" }, new AbortController().signal);
+      for (let i = 0; i < 6; i++) await jobs.consume({ action: "wake" }, new AbortController().signal);
     };
     await maintain();
     expect(await storage.exists(`meetings/${meetingId}/recordings/audio_system_01.m4a`)).toBe(false);

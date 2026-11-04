@@ -9,7 +9,13 @@ import { createServerMcpHandler } from "../src/mcp";
 import type { AppConfig } from "../src/config";
 import type { MemoryGenerator } from "../src/agent/context-service";
 import { MeetingSyncService } from "../src/sync/service";
-import { DahliaMemory, memoryResultSchema, memorySaveSchema, rankNotes, recallTerms } from "../src/memory/dahlia";
+import { DahliaMemory, memoryResultSchema, memorySaveSchema } from "../src/memory/dahlia";
+import { applicationAnalyzer } from "../src/search/lexical";
+import { createNodeSearchTokenizer } from "../src/search/node-tokenizer";
+import { createIntlSearchTokenizer } from "../src/search/tokenizer";
+import type { SearchEmbedder } from "../src/search/embedding";
+import { SearchEmbeddingError } from "../src/search/embedding";
+import { processMemoryIndexJob } from "../src/memory/index-job";
 import type { z } from "zod";
 import { routeMemory } from "../src/memory/router";
 import { createDahliaMemoryTools } from "../src/memory/dahlia-tools";
@@ -20,13 +26,25 @@ import { uuidV7 } from "@dahlia-ai/ui/model/id";
 import { seedHeaderIdentity, testOrganizationID } from "./public-test-client";
 
 const signal = new AbortController().signal;
+const lindera = applicationAnalyzer(createNodeSearchTokenizer());
+// Deterministic 32-dimension "meaning": each concept word sets one axis, so synonyms share a direction.
+const CONCEPTS = [["猫", "ねこ", "kitty"], ["予算", "budget", "費用"], ["休暇", "vacation"]];
+function fakeEmbedder(overrides: Partial<SearchEmbedder> = {}): SearchEmbedder & { documents: string[][] } {
+  const vector = (text: string) => Array.from({ length: 32 }, (_, axis) => axis < CONCEPTS.length
+    ? (CONCEPTS[axis]!.some((word) => text.toLowerCase().includes(word)) ? 1 : 0) : axis === 31 ? 0.01 : 0);
+  const documents: string[][] = [];
+  return { model: "test-embedding", dimensions: 32, documents,
+    async embedDocuments(input) { documents.push([...input]); return input.map(vector); },
+    async embedQuery(input) { return vector(input); }, ...overrides };
+}
 const directories: string[] = [];
 afterEach(() => { directories.splice(0).forEach((path) => rmSync(path, { recursive: true, force: true })); });
-async function fixture() {
+async function fixture(embedder?: SearchEmbedder) {
   const directory = mkdtempSync(join(tmpdir(), "dahlia-personal-memory-")); directories.push(directory);
   const file = join(directory, "test.sqlite");
   const config: AppConfig = { authProvider: "header", authHeader: "X-Forwarded-Email", databaseType: "sqlite", databaseUrl: `file:${file}`,
-    baseUrl: "http://localhost:5173", oauthRedirectUris: [], maxRequestBytes: 1024 * 1024 };
+    baseUrl: "http://localhost:5173", oauthRedirectUris: [], maxRequestBytes: 1024 * 1024,
+    ...(embedder ? { searchEmbedding: { model: embedder.model, dimensions: embedder.dimensions } } : {}) };
   const app = createNodeApplicationStore(config); await app.migrate();
   const owner = { userId: uuidV7(), email: "memory-owner@example.com", source: "header" as const };
   const stranger = { userId: uuidV7(), email: "memory-stranger@example.com", source: "header" as const };
@@ -37,10 +55,17 @@ async function fixture() {
     data: { organizationId: testOrganizationID, name: "Team", createdAt: new Date().toISOString() },
   }] });
   const generate = vi.fn().mockResolvedValue({ target: "personal", reason: "personal_preference" });
-  const memory = new DahliaMemory({ personal: app.personalMemory!, workspace: app.memory! }, sync, generate as MemoryGenerator);
+  const memory = new DahliaMemory({ personal: app.personalMemory!, workspace: app.memory! }, sync, generate as MemoryGenerator, lindera, embedder);
+  // Runs queued embedding jobs the way the job runner does.
+  const drain = async () => {
+    for (let job; (job = await app.jobs.claim(["memory-index"]));) {
+      await processMemoryIndexJob({ queue: app.jobs, analyzer: lindera, memory: memory.stores, embedder }, job, signal);
+      await app.jobs.complete(job);
+    }
+  };
   let closed = false;
   const note = (content: string) => ({ ...memorySaveSchema.parse({ scope: "personal", id: encodeId("sharedMemory", uuidV7()), revision: 0, content }), scope: "personal" as const });
-  return { app, config, file, owner, stranger, workspaceId: encodeId("workspace", workspace), sync, memory, generate, note,
+  return { app, config, file, owner, stranger, workspaceId: encodeId("workspace", workspace), sync, memory, generate, note, drain,
     close: () => { if (!closed) { closed = true; void app.close?.(); } } };
 }
 
@@ -65,7 +90,7 @@ describe("Dahlia Memory", () => {
     const f = await fixture();
     try {
       const store = f.memory.stores.personal;
-      const add = (content: string) => store.saveNote(f.owner.userId, f.owner.userId, { id: uuidV7(), revision: 0, content }, "agent");
+      const add = (content: string) => store.saveNote(f.owner.userId, f.owner.userId, { id: uuidV7(), revision: 0, content }, "agent", false, lindera);
       const width = await add("ＡＰＩの設定を見直す");
       const kana = await add("ｶﾀｶﾅで書いた要件");
       // More than one 500-row page, with the oldest match on the first page and filler after it.
@@ -84,29 +109,195 @@ describe("Dahlia Memory", () => {
       expect(await ids("猫 餌")).toEqual([cat.id]);
     } finally { f.close(); }
   });
-  it("ranks recall by distinct keyword overlap, then recency, and survives a reopened database", async () => {
+  it("ranks Japanese sentences and keywords by matched words, and survives a reopened database", async () => {
     const f = await fixture();
     try {
-      // Keywords are the caller's space-separated words, normalized; nothing is inferred from a sentence.
-      expect(recallTerms("Pricing　決定 pricing ")).toEqual(["pricing", "決定"]);
-      expect(recallTerms("猫 餌")).toEqual(["猫", "餌"]);
-      expect(recallTerms("책 추천")).toEqual(["책", "추천"]);
       for (const content of ["Pricing decision for Q3", "Old pricing note", "Unrelated lunch order", "PRICING decision follow-up"]) await f.memory.save(f.owner, f.note(content));
-      const found = await f.memory.search(f.owner, { scope: "personal", query: "pricing decision" }, signal);
-      expect(found.results[0]!.items.map((item) => item.content)).toEqual(["PRICING decision follow-up", "Pricing decision for Q3", "Old pricing note"]);
-      expect(rankNotes([])).toEqual([]);
-      // Function words are never invented as terms, so they cannot outrank the memory with the content keyword.
+      const found = (await f.memory.search(f.owner, { scope: "personal", query: "pricing decision" }, signal)).results[0]!.items.map((item) => item.content);
+      // Memories with both words outrank the one with a single word; unrelated memories never appear.
+      expect(found.slice(0, 2).toSorted()).toEqual(["PRICING decision follow-up", "Pricing decision for Q3"]);
+      expect(found.slice(2)).toEqual(["Old pricing note"]);
+      // Particles and function words are not query terms, so they cannot outrank the memory with the content word.
       for (let i = 0; i < 6; i++) await f.memory.save(f.owner, f.note(`会議について確認してください ${i}`));
       const budget = f.note("予算は300万円");
       await f.memory.save(f.owner, budget);
-      expect((await f.memory.search(f.owner, { scope: "personal", query: "プロジェクト 予算" }, signal)).results[0]!.items.map((item) => item.id)).toEqual([budget.id]);
+      for (const query of ["プロジェクト 予算", "プロジェクトの予算について教えてください"]) {
+        expect((await f.memory.search(f.owner, { scope: "personal", query }, signal)).results[0]!.items.map((item) => item.id)).toEqual([budget.id]);
+      }
+      const result = await f.memory.search(f.owner, { scope: "personal", query: "予算" }, signal);
+      expect(result.instruction).toContain("word matches only");
       f.close();
       // A fresh store over the same file proves the memories are durable, not process state.
       const reopened = createNodeApplicationStore(f.config); await reopened.migrate();
       try {
-        const memory = new DahliaMemory({ personal: reopened.personalMemory!, workspace: reopened.memory! }, new MeetingSyncService(reopened.sync));
+        const memory = new DahliaMemory({ personal: reopened.personalMemory!, workspace: reopened.memory! }, new MeetingSyncService(reopened.sync), undefined, lindera);
         expect((await memory.list(f.owner, { scope: "personal" })).items).toHaveLength(11);
+        expect((await memory.search(f.owner, { scope: "personal", query: "予算" }, signal)).results[0]!.items.map((item) => item.id)).toEqual([budget.id]);
       } finally { await reopened.close?.(); }
+    } finally { f.close(); }
+  });
+  it("fuses word and meaning matches, keeps embeddings in sync with edits and deletion, and degrades to words", async () => {
+    const embedder = fakeEmbedder();
+    const f = await fixture(embedder);
+    try {
+      const cat = f.note("ねこの世話は朝7時");
+      const budget = f.note("費用の上限は300万円");
+      await f.memory.save(f.owner, cat); await f.memory.save(f.owner, budget);
+      const ids = async (query: string) => (await f.memory.search(f.owner, { scope: "personal", query }, signal)).results[0]!.items.map((item) => item.id);
+      // Before the embedding job runs only word matches exist.
+      expect(await ids("猫の世話")).toEqual([cat.id]);
+      expect(await ids("予算")).toEqual([]);
+      await f.drain();
+      expect(embedder.documents.flat().toSorted()).toEqual(["ねこの世話は朝7時", "費用の上限は300万円"]);
+      // "予算" shares no word with the memory but the same meaning. Vector candidates have no similarity cut-off,
+      // so other embedded memories follow in rank order.
+      expect(await ids("予算")).toEqual([budget.id, cat.id]);
+      expect(await ids("猫の世話")).toEqual([cat.id, budget.id]);
+      expect((await f.memory.search(f.owner, { scope: "personal", query: "予算" }, signal)).instruction).toContain("meaning");
+      // An edit replaces chunks and their vector in the same transaction, and re-embeds asynchronously.
+      await f.memory.save(f.owner, { ...budget, revision: 1, content: "休暇は8月", explicit: true });
+      expect(await ids("予算")).toEqual([cat.id]);
+      await f.drain();
+      expect((await ids("vacation"))[0]).toBe(budget.id);
+      // An analyzer change rewrites words but keeps the vectors of unchanged text.
+      const documents = embedder.documents.length;
+      await f.memory.stores.personal.reconcilePage(f.owner.userId, applicationAnalyzer(createIntlSearchTokenizer()));
+      await f.drain();
+      expect(embedder.documents).toHaveLength(documents);
+      await f.memory.stores.personal.reconcilePage(f.owner.userId, lindera);
+      expect((await ids("vacation"))[0]).toBe(budget.id);
+      // Query embedding failures keep word search.
+      f.memory.embedder!.embedQuery = async () => { throw new SearchEmbeddingError("embedding_http_503", true); };
+      const degraded = await f.memory.search(f.owner, { scope: "personal", query: "休暇" }, signal);
+      expect(degraded.results[0]!.items.map((item) => item.id)).toEqual([budget.id]);
+      expect(degraded.results[0]!.items[0]!.content).toBe("休暇は8月");
+      expect(degraded.instruction).toContain("word matches only");
+      // Deletion and Workspace purge remove the projection with the canonical rows.
+      await f.memory.delete(f.owner, { ...cat, revision: 1, explicit: true });
+      await f.memory.save(f.owner, { ...f.note("共有の予算メモ"), scope: "workspace", workspaceId: f.workspaceId, explicit: true });
+      await f.memory.stores.workspace.purge(f.owner.userId, decodeId("workspace", f.workspaceId));
+      const { DatabaseSync } = await import("node:sqlite");
+      const database = new DatabaseSync(f.file);
+      try {
+        expect(database.prepare("SELECT count(*) AS count FROM personal_memory_chunks WHERE memory_id = ?").get(decodeId("sharedMemory", cat.id))).toEqual({ count: 0 });
+        expect(database.prepare("SELECT count(*) AS count FROM shared_memory_chunks").get()).toEqual({ count: 0 });
+      } finally { database.close(); }
+    } finally { f.close(); }
+  });
+  it("discards a vector computed for content that changed meanwhile and leaves rejected input lexical", async () => {
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => { release = resolve; });
+    const base = fakeEmbedder();
+    const embedder = fakeEmbedder({ async embedDocuments(input) { await gate; return base.embedDocuments(input); } });
+    const f = await fixture(embedder);
+    try {
+      const note = f.note("猫の名前はタマ");
+      await f.memory.save(f.owner, note);
+      const job = (await f.app.jobs.claim(["memory-index"]))!;
+      const running = processMemoryIndexJob({ queue: f.app.jobs, analyzer: lindera, memory: f.memory.stores, embedder }, job, signal);
+      await new Promise((resolve) => setTimeout(resolve, 20));
+      await f.memory.save(f.owner, { ...note, revision: 1, content: "予算は100万円", explicit: true });
+      release(); await running; await f.app.jobs.complete(job);
+      const scopeId = f.owner.userId;
+      const pending = await f.memory.stores.personal.pendingEmbeddings(scopeId, decodeId("sharedMemory", note.id), { model: embedder.model, dimensions: 32 });
+      expect(pending.map((chunk) => chunk.text)).toEqual(["予算は100万円"]);
+      await f.drain();
+      expect((await f.memory.search(f.owner, { scope: "personal", query: "費用" }, signal)).results[0]!.items.map((item) => item.id)).toEqual([note.id]);
+      expect(base.documents.flat()).toEqual(["猫の名前はタマ", "予算は100万円"]);
+      // A provider outage defers the job without a retry limit and keeps word search.
+      const other = f.note("休暇の申請方法");
+      await f.memory.save(f.owner, other);
+      const unavailable = fakeEmbedder({ async embedDocuments() { throw new SearchEmbeddingError("embedding_http_503", true); } });
+      for (let attempt = 0; attempt < 4; attempt++) {
+        const deferred = (await f.app.jobs.claim(["memory-index"]))!;
+        await processMemoryIndexJob({ queue: f.app.jobs, analyzer: lindera, memory: f.memory.stores, embedder: unavailable }, deferred, signal);
+        await f.app.jobs.complete(deferred);
+        const { DatabaseSync } = await import("node:sqlite");
+        const database = new DatabaseSync(f.file);
+        try {
+          expect(database.prepare("SELECT status, last_error FROM jobs_queue WHERE dedupe_key = ?").get(`memory-index:personal:${decodeId("sharedMemory", other.id)}`))
+            .toEqual({ status: "pending", last_error: "embedding_http_503" });
+          database.prepare("UPDATE jobs_queue SET available_at = 0 WHERE dedupe_key = ?").run(`memory-index:personal:${decodeId("sharedMemory", other.id)}`);
+        } finally { database.close(); }
+      }
+      // A provider that rejects the input records the chunk without a vector: processed, findable by its words, not retried.
+      const rejecting = fakeEmbedder({ async embedDocuments(input) {
+        if (input[0] !== ".") throw new SearchEmbeddingError("embedding_http_400", false);
+        return base.embedDocuments(input);
+      } });
+      // A configuration fault (even a minimal input is rejected) fails the job without recording the text as rejected;
+      // hourly reconciliation queues it again.
+      const misconfigured = fakeEmbedder({ async embedDocuments() { throw new SearchEmbeddingError("embedding_http_400", false); } });
+      const faulted = (await f.app.jobs.claim(["memory-index"]))!;
+      await processMemoryIndexJob({ queue: f.app.jobs, analyzer: lindera, memory: f.memory.stores, embedder: misconfigured }, faulted, signal);
+      await f.app.jobs.complete(faulted);
+      expect(await f.app.jobs.claim(["memory-index"])).toBeNull();
+      expect(await f.memory.stores.personal.pendingEmbeddings(f.owner.userId, decodeId("sharedMemory", other.id), { model: embedder.model, dimensions: 32 })).toHaveLength(1);
+      await f.memory.stores.personal.reconcilePage(f.owner.userId, lindera);
+      const rejected = (await f.app.jobs.claim(["memory-index"]))!;
+      await processMemoryIndexJob({ queue: f.app.jobs, analyzer: lindera, memory: f.memory.stores, embedder: rejecting }, rejected, signal);
+      await f.app.jobs.complete(rejected);
+      expect(await f.app.jobs.claim(["memory-index"])).toBeNull();
+      expect(await f.memory.stores.personal.pendingEmbeddings(f.owner.userId, decodeId("sharedMemory", other.id), { model: embedder.model, dimensions: 32 })).toEqual([]);
+      expect((await f.memory.search(f.owner, { scope: "personal", query: "休暇" }, signal)).results[0]!.items.map((item) => item.id)).toEqual([other.id, note.id]);
+      expect(await f.memory.stores.personal.reconcilePage(f.owner.userId, lindera)).toBeUndefined();
+      expect(await f.app.jobs.claim(["memory-index"])).toBeNull();
+    } finally { f.close(); }
+  });
+  it("saves each embedded chunk before the next request, so a job deadline keeps the finished ones", async () => {
+    const base = fakeEmbedder();
+    const controller = new AbortController();
+    let singles = 0;
+    const embedder = fakeEmbedder({ async embedDocuments(input, abort) {
+      abort?.throwIfAborted();
+      // Rejects whole batches, as a per-request token limit would; the job then sends one chunk at a time.
+      if (input.length > 1) throw new SearchEmbeddingError("embedding_http_413", false);
+      if (input[0] !== "." && ++singles === 2) controller.abort();
+      return base.embedDocuments(input);
+    } });
+    const f = await fixture(embedder);
+    try {
+      const note = f.note(Array.from({ length: 6 }, (_, i) => `${"予算の説明。".repeat(400)}${i}`).join("\n\n").slice(0, 16_000));
+      await f.memory.save(f.owner, note);
+      const config = { model: embedder.model, dimensions: 32 };
+      const memoryId = decodeId("sharedMemory", note.id);
+      const before = (await f.memory.stores.personal.pendingEmbeddings(f.owner.userId, memoryId, config)).length;
+      expect(before).toBeGreaterThan(2);
+      const job = (await f.app.jobs.claim(["memory-index"]))!;
+      await expect(processMemoryIndexJob({ queue: f.app.jobs, analyzer: lindera, memory: f.memory.stores, embedder }, job, controller.signal)).rejects.toThrow();
+      expect(await f.memory.stores.personal.pendingEmbeddings(f.owner.userId, memoryId, config)).toHaveLength(before - 2);
+    } finally { f.close(); }
+  });
+  it("finds memories indexed by another analyzer through the canonical text until reconciliation rewrites them", async () => {
+    const f = await fixture();
+    try {
+      const store = f.memory.stores.personal;
+      const intl = applicationAnalyzer(createIntlSearchTokenizer());
+      const old = await store.saveNote(f.owner.userId, f.owner.userId, { id: uuidV7(), revision: 0, content: "ＡＰＩの設定を見直す" }, "agent", false, intl);
+      const ids = async (query: string) => (await f.memory.search(f.owner, { scope: "personal", query }, signal)).results[0]!.items.map((item) => decodeId("sharedMemory", item.id));
+      expect(await ids("api")).toEqual([old.id]);
+      expect(await store.reconcilePage(f.owner.userId, lindera)).toBeUndefined();
+      const { DatabaseSync } = await import("node:sqlite");
+      const database = new DatabaseSync(f.file);
+      try {
+        expect(database.prepare("SELECT analyzer FROM personal_memory_chunks WHERE memory_id = ?").all(old.id)).toEqual([{ analyzer: lindera.id }]);
+      } finally { database.close(); }
+      expect(await ids("設定を見直したい")).toEqual([old.id]);
+    } finally { f.close(); }
+  });
+  it("relaxes the Worker analyzer's all-terms match when a sentence matches nothing", async () => {
+    const f = await fixture();
+    try {
+      const intl = applicationAnalyzer(createIntlSearchTokenizer());
+      const memory = new DahliaMemory(f.memory.stores, f.sync, undefined, intl);
+      const budget = f.note("2027年度予算は500万円");
+      const both = f.note("2027年の予算は未定");
+      await memory.save(f.owner, budget); await memory.save(f.owner, both); await memory.save(f.owner, f.note("昼食の注文"));
+      const ids = async (query: string) => (await memory.search(f.owner, { scope: "personal", query }, signal)).results[0]!.items.map((item) => item.id);
+      // Every term matches only the second memory, so no relaxation happens.
+      expect(await ids("2027年の予算")).toEqual([both.id]);
+      // No memory contains every word of the question; any-term matching still ranks the budget memories first.
+      expect((await ids("2027年の予算はいくら？")).slice(0, 2).toSorted()).toEqual([budget.id, both.id].toSorted());
     } finally { f.close(); }
   });
 
@@ -119,9 +310,9 @@ describe("Dahlia Memory", () => {
       const getWorkspace = vi.spyOn(f.sync, "getWorkspace");
       // Revoke once the Workspace scan has gathered matches (the last scan in auto); they must not be published.
       const store = f.memory.stores.workspace;
-      const searchNotes = store.searchNotes.bind(store);
-      vi.spyOn(store, "searchNotes").mockImplementation(async (...args) => {
-        const matches = await searchNotes(...args);
+      const recall = store.recall.bind(store);
+      vi.spyOn(store, "recall").mockImplementation(async (...args) => {
+        const matches = await recall(...args);
         expect(matches).not.toHaveLength(0);
         getWorkspace.mockResolvedValue(null);
         return matches;

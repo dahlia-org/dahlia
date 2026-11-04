@@ -9,7 +9,7 @@ describe("AI chat tool labels", () => {
       "save_memory", "delete_memory", "update_working_memory",
       "get_working_memory", "get_memory", "list_memories", "list_memory_scopes", "recall_memory", "reflect_memory",
       "recall_workspace_memory", "reflect_workspace_memory", "list_knowledge_pages", "get_knowledge_page", "recall",
-      "task_update",
+      "search_chat_history", "task_update",
     ].map((name) => [name, toolStepLabel(name)]));
     expect(labels).toEqual({
       query_meetings: "Search meetings", get_meeting: "Read meeting", get_meeting_transcript: "Read transcript",
@@ -19,7 +19,7 @@ describe("AI chat tool labels", () => {
       get_working_memory: "Read memory", get_memory: "Read memory", list_memories: "Read memory", list_memory_scopes: "Read memory",
       recall_memory: "Read memory", reflect_memory: "Read memory", recall_workspace_memory: "Read memory",
       reflect_workspace_memory: "Read memory", list_knowledge_pages: "Read memory", get_knowledge_page: "Read memory", recall: "Read memory",
-      task_update: "Run task_update",
+      search_chat_history: "Search chats", task_update: "Run task_update",
     });
   });
 });

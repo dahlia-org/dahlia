@@ -5,7 +5,7 @@ import * as pg from "../db/auth-schema";
 import * as sqlite from "../db/sqlite-schema";
 import { enqueueJob, retryJob, settleJob } from "./state";
 import { uuidV7 } from "@dahlia-ai/ui/model/id";
-import { groupsForJob, JOB_LEASE_MS, jobKinds, jobPayloadSchema, type JobKind, type JobLimits, type JobPayload } from "./model";
+import { groupsForJob, JOB_LEASE_MS, jobKinds, jobPayloadSchema, reconcileKinds, type JobKind, type JobLimits, type JobPayload, type ReconcileKind } from "./model";
 
 export type BackgroundJob = typeof pg.backgroundJob.$inferSelect;
 export type JobStore = ReturnType<typeof createJobStore>;
@@ -68,6 +68,13 @@ export function createJobStore(database: PostgresDatabase | SQLiteDatabase | Nod
     async retry(job: BackgroundJob, deferred?: { delayMs: number; errorCode: string }) {
       await db.transaction((tx) => retryJob(tx, schema, job, deferred));
     },
+    /** Retries later without spending the dispatch budget; attempts keep growing the caller's backoff. */
+    async defer(job: BackgroundJob, errorCode: string, delayMs: number) {
+      await db.transaction((tx) => settleJob(tx, schema, job, { status: "pending", lastError: errorCode, availableAt: new Date(Date.now() + delayMs) }));
+    },
+    async fail(job: BackgroundJob, errorCode: string) {
+      await db.transaction((tx) => settleJob(tx, schema, job, { status: "failed", lastError: errorCode }));
+    },
     async reschedule(job: BackgroundJob, payload: JobPayload, delayMs: number) {
       payload = jobPayloadSchema.parse({ kind: job.kind, payload }).payload;
       await db.transaction((tx) => settleJob(tx, schema, job, { payload, status: "pending", attempts: 0,
@@ -85,12 +92,12 @@ export function createJobStore(database: PostgresDatabase | SQLiteDatabase | Nod
     },
     async scheduleMaintenance() {
       await this.enqueue("maintenance", "maintenance", "", "maintenance", {});
-      for (const kind of ["image", "search"] as const) {
+      for (const kind of reconcileKinds) {
         await this.enqueue(`reconcile:${kind}`, "reconcile", "", `reconcile:${kind}`, { kind, phase: "scopes" });
       }
     },
-    async listScopes(kind: "image" | "search", after?: string) {
-      if (kind === "image") return (await db.select({ id: schema.user.id }).from(schema.user)
+    async listScopes(kind: ReconcileKind, after?: string) {
+      if (kind === "image" || kind === "memory") return (await db.select({ id: schema.user.id }).from(schema.user)
         .where(after ? gt(schema.user.id, after) : undefined).orderBy(asc(schema.user.id)).limit(100)).map((row) => row.id);
       const scopes = schema.syncedWorkspacePermission;
       return (await db.selectDistinct({ id: scopes.workspaceId }).from(scopes).where(after ? gt(scopes.workspaceId, after) : undefined)

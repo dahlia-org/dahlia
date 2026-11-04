@@ -9,7 +9,7 @@ import type { ImageCaptioner } from "../image-analysis/captioner";
 import type { SearchIndexQueueStore } from "../search/index-store";
 import type { SearchEmbedder } from "../search/embedding";
 import type { JobStore } from "./store";
-import { createJobExecutor } from "./execute";
+import { createJobExecutor, type JobServices } from "./execute";
 import { log } from "../otel/log";
 
 export const jobMessageSchema = z.object({ action: z.literal("wake") }).strict();
@@ -28,8 +28,8 @@ export interface WorkerJobStores {
 export function createQueueJobs(bindings: WorkerJobBindings, stores: WorkerJobStores,
   syncStore: MeetingSyncStore, sync: MeetingSyncService, methods: readonly SummaryMethod[],
   captioner?: ImageCaptioner, embedder?: SearchEmbedder,
-  chatMemory?: ChatMemoryService, concurrency = 4) {
-  const executor = createJobExecutor({ ...stores, methods, syncStore, sync, captioner, embedder, chatMemory });
+  chatMemory?: ChatMemoryService, concurrency = 4, memoryIndex?: JobServices["memoryIndex"]) {
+  const executor = createJobExecutor({ ...stores, methods, syncStore, sync, captioner, embedder, chatMemory, memoryIndex });
   const notify = async () => {
     try { await bindings.DAHLIA_JOB_QUEUE?.send({ action: "wake" }); }
     catch { log("warn", "job_notification_failed"); }

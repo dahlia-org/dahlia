@@ -5,6 +5,7 @@ import { createNodeServices } from "./jobs/node-services";
 import { createJobExecutor } from "./jobs/execute";
 import { JobRunner } from "./jobs/node-runner";
 import { setLogSink } from "./otel/log";
+import { applicationAnalyzer } from "./search/lexical";
 
 const config = loadConfig(process.env);
 const resources = jobResources(config.jobs ?? loadJobConfig({}));
@@ -13,7 +14,8 @@ setLogSink(s.otel);
 const runner = new JobRunner(createJobExecutor({ queue: s.applicationStore.jobs, summaryJobs: s.applicationStore.summaryJobs,
   methods: s.summaryMethods, imageAnalysis: s.applicationStore.imageAnalysis, captioner: s.captioner,
   searchIndex: s.applicationStore.searchIndex, embedder: s.searchEmbedder, sync: s.syncService, syncStore: s.applicationStore.sync,
-  chatMemory: s.chatMemory }), resources.concurrency);
+  chatMemory: s.chatMemory, memoryIndex: { analyzer: applicationAnalyzer(s.searchTokenizer),
+    memory: { personal: s.applicationStore.personalMemory!, workspace: s.applicationStore.memory! }, sessions: s.applicationStore.sessionSearch } }), resources.concurrency);
 let stopping = false;
 async function stop() {
   if (stopping) return;
