@@ -36,6 +36,9 @@ export function analyzerResolver(lakebase: boolean, extensionVersion: () => Prom
   };
 }
 export const LAKEBASE_TOKENIZER_VERSION_SQL = "SELECT extversion FROM pg_extension WHERE extname = 'lakebase_tokenizer'";
+/** Rows only when the schema-qualified text search configuration $1 exists (PostgreSQL has no to_regconfig). */
+export const TEXT_SEARCH_CONFIG_SQL = `SELECT 1 FROM pg_ts_config c JOIN pg_namespace n ON n.oid = c.cfgnamespace
+  WHERE format('%s.%s', n.nspname, c.cfgname) = $1`;
 
 /** Input for to_tsvector(analyzer.config, ...) at index and query time. */
 export function analyzerInput(analyzer: SearchAnalyzer, text: string): string {

@@ -1,7 +1,7 @@
 import { afterAll, describe, expect, it, vi } from "vitest";
 import { and, eq, sql } from "drizzle-orm";
 import * as schema from "../src/db/auth-schema";
-import { applicationAnalyzer, LAKEBASE_TOKENIZER_VERSION_SQL } from "../src/search/lexical";
+import { applicationAnalyzer, LAKEBASE_JAPANESE_CONFIG, LAKEBASE_TOKENIZER_VERSION_SQL, TEXT_SEARCH_CONFIG_SQL } from "../src/search/lexical";
 import { createNodeSearchTokenizer } from "../src/search/node-tokenizer";
 import { createPostgresAuthStore } from "../src/auth/store";
 import { connectPostgresUrl } from "../src/db/postgres";
@@ -77,8 +77,10 @@ describe.runIf(url)("Workspace memory PostgreSQL RLS", () => {
     await memory.deleteNote(owner.userId, workspaceId, variant.id, 1);
     await expect(memory.recall(stranger.userId, workspaceId, "evidence", lindera, 20)).rejects.toMatchObject({ status: 404 });
     // The projection is FORCE RLS like the canonical table; a pool without identity sees no chunks.
-    // The tokenizer check is valid SQL and selects nothing without lakebase_tokenizer.
+    // The tokenizer checks are valid SQL and select nothing without lakebase_tokenizer.
     expect((await pool.query(LAKEBASE_TOKENIZER_VERSION_SQL)).rows).toEqual([]);
+    expect((await pool.query(TEXT_SEARCH_CONFIG_SQL, [LAKEBASE_JAPANESE_CONFIG])).rows).toEqual([]);
+    expect((await pool.query(TEXT_SEARCH_CONFIG_SQL, ["pg_catalog.simple"])).rows).toHaveLength(1);
     const chunkState = await pool.query("SELECT relname, relforcerowsecurity FROM pg_class WHERE oid IN ('search.shared_memory_chunks'::regclass, 'search.personal_memory_chunks'::regclass) ORDER BY relname");
     expect(chunkState.rows).toEqual([{ relname: "personal_memory_chunks", relforcerowsecurity: true }, { relname: "shared_memory_chunks", relforcerowsecurity: true }]);
     expect((await pool.query("SELECT * FROM search.shared_memory_chunks WHERE memory_id = $1", [note.id])).rows).toEqual([]);

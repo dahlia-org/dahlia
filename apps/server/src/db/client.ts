@@ -16,7 +16,7 @@ import { postgresMigrations, serverMigrationManifest, type PostgresMigrationDire
 import { SEARCH_FIELDS } from "@dahlia-ai/ui/model/search-settings";
 import { STORAGE_OPERATION_CONCURRENCY } from "../sync/schemas";
 import { createPostgresPool, ensurePublicExtensions, POSTGRES_MIGRATION_SCHEMA } from "./postgres";
-import { LAKEBASE_JAPANESE_CONFIG } from "../search/lexical";
+import { LAKEBASE_JAPANESE_CONFIG, TEXT_SEARCH_CONFIG_SQL } from "../search/lexical";
 
 export type PostgresDatabase = NodePgDatabase & { $client: Pool };
 export type SQLiteDatabase = SQLiteAsyncDatabase<"sync" | "async", unknown>;
@@ -156,8 +156,7 @@ export async function ensureSearchIndexes(pool: Pick<Pool, "query">, config: App
       ? ["vector", "lakebase_text", "lakebase_vector", "lakebase_tokenizer"]
       : ["lakebase_text", "lakebase_tokenizer"]);
     // CREATE EXTENSION IF NOT EXISTS keeps an older installed version, and tokenizer_japanese arrived in 0.2.0.
-    const [tokenizer] = (await pool.query<{ config: string | null }>("SELECT to_regconfig($1) AS config", [LAKEBASE_JAPANESE_CONFIG])).rows;
-    if (!tokenizer?.config) throw new Error(`lakebase_tokenizer_outdated: ${LAKEBASE_JAPANESE_CONFIG} is missing; run ALTER EXTENSION lakebase_tokenizer UPDATE`);
+    if (!(await pool.query(TEXT_SEARCH_CONFIG_SQL, [LAKEBASE_JAPANESE_CONFIG])).rows.length) throw new Error(`lakebase_tokenizer_outdated: ${LAKEBASE_JAPANESE_CONFIG} is missing; run ALTER EXTENSION lakebase_tokenizer UPDATE`);
     await pool.query(
       "CREATE INDEX IF NOT EXISTS search_documents_search_bm25 ON search.documents USING lakebase_bm25 (search_vector)",
     );

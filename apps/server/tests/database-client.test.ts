@@ -159,7 +159,7 @@ describe("PostgreSQL migrations", () => {
   ] as const)("uses the native %s vector extension and index", async (databaseType, extension, method) => {
     const query = vi.fn(async (statement: string) => statement.startsWith("select quote_literal")
       ? { rows: [{ value: "'model'" }] }
-      : { rows: statement.includes("to_regconfig") ? [{ config: "tokenizer_japanese" }] : [] });
+      : { rows: statement.includes("pg_ts_config") ? [{ "?column?": 1 }] : [] });
     await ensureSearchIndexes({ query } as never, {
       databaseType,
       searchEmbedding: { model: "model", dimensions: 32 },
@@ -190,13 +190,13 @@ describe("PostgreSQL migrations", () => {
     await expect(ensureSearchIndexes({ query: failing } as never, { databaseType: "lakebase" } as AppConfig)).rejects.toThrow("permission denied");
     expect(failing.mock.calls[0]![0]).toContain("'lakebase_text', 'lakebase_tokenizer'");
     // An older installed version without tokenizer_japanese also stops migration, before any index is created.
-    const outdated = vi.fn(async (statement: string) => ({ rows: statement.includes("to_regconfig") ? [{ config: null }] : [] }));
+    const outdated = vi.fn<(statement: string) => Promise<{ rows: never[] }>>(async () => ({ rows: [] }));
     await expect(ensureSearchIndexes({ query: outdated } as never, { databaseType: "lakebase" } as AppConfig)).rejects.toThrow("lakebase_tokenizer_outdated");
     expect(outdated.mock.calls.some(([statement]) => statement.includes("lakebase_bm25"))).toBe(false);
   });
 
   it("installs only the Lakebase text extension when semantic search is disabled", async () => {
-    const query = vi.fn(async (statement: string) => ({ rows: statement.includes("to_regconfig") ? [{ config: "tokenizer_japanese" }] : [] }));
+    const query = vi.fn(async (statement: string) => ({ rows: statement.includes("pg_ts_config") ? [{ "?column?": 1 }] : [] }));
     await ensureSearchIndexes({ query } as never, { databaseType: "lakebase" } as AppConfig);
     const extensionStatement = query.mock.calls.map(([statement]) => statement)
       .find((statement) => statement.includes("extension_schema_mismatch"))!;
