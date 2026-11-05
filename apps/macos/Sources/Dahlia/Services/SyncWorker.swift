@@ -771,6 +771,8 @@ actor SyncWorker {
     }
 
     func retryPull(workspaceId: UUID, connectionId: UUID) async throws {
+        // An explicit retry checks the Server now instead of waiting out the update-required interval.
+        updateRequiredWorkspaces[workspaceId] = nil
         do {
             _ = try await pullRemoteChanges(workspaceId: workspaceId, connectionId: connectionId)
         } catch TextContentError.changed {
@@ -926,7 +928,8 @@ actor SyncWorker {
         }
         let recoveryState = try await dbQueue
             .read { try String.fetchOne($0, sql: "SELECT syncRecoveryState FROM workspaces WHERE id = ?", arguments: [target.workspaceId]) }
-        if recoveryState == "updateRequired" {
+        // A pull that read its target before a push latched update-required must not clear that newer state.
+        if recoveryState == "updateRequired", !updateRequiredRecently(target.workspaceId) {
             try await dbQueue.write { db in
                 try db.execute(
                     sql: "UPDATE workspaces SET syncRecoveryState = NULL WHERE id = ? AND accountConnectionId = ?",
@@ -1091,6 +1094,10 @@ actor SyncWorker {
         }
         await workspacesDidChange()
         return true
+    }
+
+    private func updateRequiredRecently(_ workspaceId: UUID) -> Bool {
+        updateRequiredWorkspaces[workspaceId].map { $0 > .now - updateRequiredRetryInterval } ?? false
     }
 
     private func setRecoveryState(_ state: String, target: SyncTarget, resetCursor: Bool = false) async throws {
@@ -1576,8 +1583,7 @@ actor SyncWorker {
     }
 
     private func pullTargets() async throws -> [SyncTarget] {
-        let retryBefore = ContinuousClock.now - updateRequiredRetryInterval
-        let updateRequiredWorkspaces = Set(updateRequiredWorkspaces.filter { $0.value > retryBefore }.keys)
+        let updateRequiredWorkspaces = Set(updateRequiredWorkspaces.keys.filter(updateRequiredRecently))
         return try await dbQueue.read { db in
             try Row.fetchAll(
                 db,

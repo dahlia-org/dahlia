@@ -1811,6 +1811,56 @@
         }
 
         @Test(.timeLimit(.minutes(1)))
+        func pullAfterAPushUpgradeRequirementKeepsItUntilAnExplicitRetry() async throws {
+            let fixture = try Fixture()
+            _ = try await fixture.queue.write { db in
+                let workspace = try #require(try WorkspaceRecord.fetchOne(db, key: fixture.workspaceId))
+                try db.execute(
+                    sql: "INSERT INTO sync_entity_state VALUES (?, 'workspace', ?, 1)",
+                    arguments: [fixture.workspaceId, fixture.workspaceId]
+                )
+                return try SyncTransactionRecorder.record(
+                    workspaceId: fixture.workspaceId,
+                    operations: [SyncInitialSnapshotBuilder.workspaceOperation(workspace, action: .update)],
+                    in: db
+                )
+            }
+            let emptyChanges = Data(#"{"items":[],"cursor":"before","highWaterCursor":"before","hasMore":false}"#.utf8)
+            let client = fixture.client { request in
+                let path = request.url!.path
+                if path.hasSuffix("capabilities") {
+                    return (200, [:], Data(#"{"documents":{"version":1},"sync":{"version":7}}"#.utf8))
+                }
+                if path.hasSuffix("changes") { return (200, [:], emptyChanges) }
+                if path == "/api/v1/workspaces" { return (503, [:], Data()) }
+                if path == "/api/v1/transactions" { return (426, [:], Data(#"{"code":"sync_upgrade_required"}"#.utf8)) }
+                return (404, [:], Data())
+            }
+            defer { ImageURLProtocol.remove(origin: fixture.origin) }
+            let recoveryStates = ValueObservation.tracking { db in
+                try String.fetchOne(db, sql: "SELECT syncRecoveryState FROM workspaces WHERE id = ?", arguments: [fixture.workspaceId])
+            }.values(in: fixture.queue)
+            let worker = SyncWorker(dbQueue: fixture.queue, apiClient: client)
+            await worker.drain()
+            for try await state in recoveryStates where state == "updateRequired" {
+                break
+            }
+            await worker.stop()
+            func recoveryState() async throws -> String? {
+                try await fixture.queue.read {
+                    try String.fetchOne($0, sql: "SELECT syncRecoveryState FROM workspaces WHERE id = ?", arguments: [fixture.workspaceId])
+                }
+            }
+
+            // A pull whose capability check passes must not clear the requirement a push just recorded.
+            _ = try await worker.pullRemoteChanges(workspaceId: fixture.workspaceId, connectionId: fixture.connectionId)
+            #expect(try await recoveryState() == "updateRequired")
+
+            try await worker.retryPull(workspaceId: fixture.workspaceId, connectionId: fixture.connectionId)
+            #expect(try await recoveryState() == nil)
+        }
+
+        @Test(.timeLimit(.minutes(1)))
         func pushUpgradeRequirementPreservesTheQueueAndCanResumeAfterUpdate() async throws {
             let fixture = try Fixture()
             let recordedTransactionId = try await fixture.queue.write { db in
