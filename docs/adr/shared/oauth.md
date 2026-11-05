@@ -6,7 +6,7 @@
 
 通常 Server と Databricks Apps で同じ discovery-driven public client を使う。Apps の前段 proxy が認証と `CAN USE` を強制するため、その境界を Server 内 OAuth で迂回しない。
 
-- protected-resource / authorization-server metadata を discovery し、Authorization Code、S256 PKCE、state、resource、callback `http://localhost:8020` を使う。scope は token 交換と refresh でも再送する。
+- protected-resource / authorization-server metadata を discovery し、Authorization Code、S256 PKCE、state、resource、callback は `http://localhost:8020` から `8040` のうち待受できた最初のポートを使う。scope は token 交換と refresh でも再送する。
 - 事前登録した public client `databricks-cli` を共用し、`DAHLIA_CLOUD_OAUTH_CLIENT_ID` は deployment override とする。Desktop に secret を配布しない。`DAHLIA_CLOUD_URL` は既定 URL で、未設定でも手動 Server URL とローカル機能を使える。
 - 通常 Server は userinfo、endpoint がない Apps は App audience token による `/api/session` で proxy 確定 identity を取得する。CLI profile や広い workspace 権限を前提にしない。
 - 単一 actor が token、rotating refresh token、期限、resource、issuer、client ID、scope、利用者を所有する。Keychain credential は origin と client ID が一致する場合だけ再利用し、同時 refresh を集約する。新 credential の保存成功前に公開しない。

@@ -5,6 +5,9 @@
     @testable import Dahlia
 
     struct DahliaCloudServiceTests {
+        /// A non-first port proves the token exchange reuses the redirect URI the browser step chose.
+        static let redirectURI = "http://localhost:8031"
+
         @Test
         func invalidConfigurationIsDisabled() {
             let values: [(String?, String?)] = [
@@ -70,7 +73,7 @@
         }
 
         @Test
-        func authorizationRequestUsesFixedCallbackPKCEStateAndResource() throws {
+        func authorizationRequestUsesGivenCallbackPKCEStateAndResource() throws {
             let configuration = try #require(DahliaCloudConfiguration.make(
                 urlString: "https://cloud.example.com",
                 clientID: "desktop-client"
@@ -78,6 +81,7 @@
             let url = try DahliaCloudService.authorizationURL(
                 endpoint: #require(URL(string: "https://accounts.example.com/authorize")),
                 configuration: configuration,
+                redirectURI: Self.redirectURI,
                 resource: "https://cloud.example.com/api/v1",
                 scopes: ["openid", "offline_access"],
                 state: "state-value",
@@ -87,7 +91,7 @@
                     .queryItems?.map { ($0.name, $0.value) }))
 
             #expect(values["client_id"] == "desktop-client")
-            #expect(values["redirect_uri"] == "http://localhost:8020")
+            #expect(values["redirect_uri"] == Self.redirectURI)
             #expect(values["resource"] == "https://cloud.example.com/api/v1")
             #expect(values["code_challenge_method"] == "S256")
             #expect(values["code_challenge"] == "challenge-value")
@@ -136,17 +140,29 @@
         }
 
         @Test
-        func fixedCallbackPortConflictFailsBeforeBrowserAuthorization() async throws {
+        func callbackPortConflictMovesDatabricksToNextFreePortUntilAllAreTaken() async throws {
             let port = try #require(NWEndpoint.Port(rawValue: 8020))
             let first = try? await OAuthLoopbackRedirectServer(port: port, callbackPath: "/")
 
             await #expect(throws: (any Error).self) {
                 _ = try await OAuthLoopbackRedirectServer(port: port, callbackPath: "/")
             }
+            // One test owns these fixed ports so parallel tests cannot release one mid-check.
+            var held = first.map { [$0] } ?? []
+            let next = try await DatabricksOAuthService.makeCallbackServer()
+            held.append(next.server)
+            let nextPort = try #require(URL(string: next.redirectURI)?.port)
+            #expect(next.redirectURI == "http://localhost:\(nextPort)")
+            #expect((8021 ... 8040).contains(nextPort))
+            for rawPort in OAuthLoopbackRedirectServer.databricksCallbackPorts {
+                if let server = try? await OAuthLoopbackRedirectServer(port: NWEndpoint.Port(rawValue: rawPort)!, callbackPath: "/") {
+                    held.append(server)
+                }
+            }
             await #expect(throws: DatabricksOAuthError.callbackUnavailable) {
                 _ = try await DatabricksOAuthService.makeCallbackServer()
             }
-            _ = first
+            _ = held
         }
 
         @Test
@@ -183,6 +199,11 @@
             let authorizationURL = try #require(recorder.authorizationURL)
             #expect(URLComponents(url: authorizationURL, resolvingAgainstBaseURL: false)?.queryItems?
                 .first(where: { $0.name == "client_id" })?.value == "databricks-cli")
+            #expect(URLComponents(url: authorizationURL, resolvingAgainstBaseURL: false)?.queryItems?
+                .first(where: { $0.name == "redirect_uri" })?.value == Self.redirectURI)
+            let tokenBody = try #require(recorder.tokenRequestBody)
+            let tokenForm = try #require(URLComponents(string: "?" + tokenBody)?.queryItems)
+            #expect(tokenForm.first(where: { $0.name == "redirect_uri" })?.value == Self.redirectURI)
             let scope = URLComponents(url: authorizationURL, resolvingAgainstBaseURL: false)?.queryItems?
                 .first(where: { $0.name == "scope" })?.value ?? ""
             #expect(scope.contains("openid"))
@@ -707,11 +728,12 @@
             let configuration = URLSessionConfiguration.ephemeral
             configuration.protocolClasses = [CloudURLProtocol.self]
             CloudURLProtocol.register(recorder, in: configuration)
-            let authorizationHandler = authorize ?? { url in
+            let authorizationHandler = authorize ?? { authorizationURL in
+                let url = try authorizationURL(Self.redirectURI)
                 recorder.authorizationURL = url
                 let state = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems?
                     .first(where: { $0.name == "state" })?.value ?? ""
-                return URL(string: "http://127.0.0.1:8020/?code=authorization-code&state=\(state)")!
+                return (URL(string: "http://127.0.0.1/?code=authorization-code&state=\(state)")!, Self.redirectURI)
             }
             return DahliaCloudService(
                 configuration: DahliaCloudConfiguration.make(

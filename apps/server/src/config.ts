@@ -374,12 +374,15 @@ export function loadConfig(env: Record<string, string | undefined>): AppConfig {
     config.googleClientId = required(env, "GOOGLE_CLIENT_ID");
     config.googleClientSecret = required(env, "GOOGLE_CLIENT_SECRET");
     if (config.oauthRedirectUris.length === 0) {
-      config.oauthRedirectUris = ["http://127.0.0.1:1455/oauth/callback", "http://localhost:8020"];
+      config.oauthRedirectUris = ["http://127.0.0.1:1455/oauth/callback", ...DESKTOP_REDIRECT_URIS];
     }
   }
 
   return config;
 }
+
+/** Desktop listens on the first free port in 8020–8040 for the `databricks-cli` callback. */
+const DESKTOP_REDIRECT_URIS = Array.from({ length: 21 }, (_, index) => `http://localhost:${8020 + index}`);
 
 export function gatewayResource(config: Pick<AppConfig, "baseUrl">): string {
   return `${config.baseUrl}/api/v1`;

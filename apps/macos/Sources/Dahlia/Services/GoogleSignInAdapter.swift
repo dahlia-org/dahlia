@@ -1018,3 +1018,22 @@ extension Notification.Name {
     static let googleCalendarSessionDidChange = Notification.Name("GoogleCalendarSessionDidChangeNotification")
     static let googleDriveSessionDidChange = Notification.Name("GoogleDriveSessionDidChangeNotification")
 }
+
+/// Builds the authorization URL for a loopback redirect URI, then returns the callback and the redirect URI it used.
+typealias OAuthLoopbackAuthorization = @Sendable (_ authorizationURL: @Sendable (_ redirectURI: String) throws -> URL) async throws
+    -> (callback: URL, redirectURI: String)
+
+extension OAuthLoopbackRedirectServer {
+    /// The shared `databricks-cli` public client accepts a localhost redirect URI on each of these ports.
+    static let databricksCallbackPorts: ClosedRange<UInt16> = 8020 ... 8040
+
+    /// Listens on the first free Databricks callback port, or returns nil when every port is taken.
+    static func listenOnFreeDatabricksPort() async -> (server: OAuthLoopbackRedirectServer, redirectURI: String)? {
+        for port in databricksCallbackPorts {
+            if let server = try? await OAuthLoopbackRedirectServer(port: NWEndpoint.Port(rawValue: port)!, callbackPath: "/") {
+                return (server, "http://localhost:\(port)")
+            }
+        }
+        return nil
+    }
+}
