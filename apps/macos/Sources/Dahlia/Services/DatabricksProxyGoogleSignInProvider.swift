@@ -73,12 +73,10 @@ final class DatabricksProxyGoogleSignInProvider: GoogleSignInProviding {
     func restorePreviousSignIn() async throws -> GoogleSession {
         guard let connection else { return try await direct.restorePreviousSignIn() }
         guard isConnected(connection) else { throw GoogleSignInError.noPreviousSignIn }
+        // A status code cannot tell a revoked grant from a forwarded Google rate limit, so restore keeps the sign-in
+        // and surfaces the failure; Connect re-checks without a browser while the grant exists, and Disconnect forgets it.
         do {
-            guard let session = try await proxySessionIfAuthorized(for: connection, interactive: false) else {
-                userDefaults.removeObject(forKey: Self.connectedKey(for: connection))
-                throw GoogleSignInError.noPreviousSignIn
-            }
-            return session
+            return try await proxySession(for: connection, interactive: false)
         } catch DahliaCloudError.noCredential {
             // The Databricks credential is gone, not the Google grant: stay signed out until the user reconnects.
             throw GoogleSignInError.noPreviousSignIn
@@ -172,8 +170,8 @@ final class DatabricksProxyGoogleSignInProvider: GoogleSignInProviding {
         return session(resolved)
     }
 
-    // shortcut: the proxy's exact status for a user without a Google grant is unverified, so credential-shaped
-    // statuses (400 "Invalid Token", 401, 403) count as "not authorized"; 404 (no connection) and others surface. Narrow once observed.
+    // shortcut: the proxy's exact status for a user without a Google grant is unverified, so during sign-in only,
+    // credential-shaped statuses (400 "Invalid Token", 401, 403) mean "not granted yet"; others surface. Narrow once observed.
     static func isNotAuthorized(_ error: GoogleCalendarAPIError) -> Bool {
         if case let .httpError(statusCode, _) = error { return [400, 401, 403].contains(statusCode) }
         return false

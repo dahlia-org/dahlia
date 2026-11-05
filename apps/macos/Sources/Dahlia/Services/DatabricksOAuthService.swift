@@ -14,13 +14,15 @@ actor DatabricksOAuthService {
     private final class Pending: Sendable {
         let task: Task<String, Error>
         let loginOnly: Bool
+        let interactive: Bool
         let generation: UUID
         /// nil closes registration before the last waiter cancels the task outside the lock.
         private let waiters: Mutex<Set<UUID>?>
 
-        init(task: Task<String, Error>, loginOnly: Bool, generation: UUID, waiter: UUID) {
+        init(task: Task<String, Error>, loginOnly: Bool, interactive: Bool, generation: UUID, waiter: UUID) {
             self.task = task
             self.loginOnly = loginOnly
+            self.interactive = interactive
             self.generation = generation
             waiters = Mutex([waiter])
         }
@@ -72,6 +74,8 @@ actor DatabricksOAuthService {
         if let connection = try currentConnection() {
             guard connection.host == url.absoluteString else { throw DatabricksOAuthError.workspaceAlreadyConnected }
             _ = try await accessToken(connectionID: connection.id, forceRefresh: true, loginOnly: true)
+            // A repaired credential lets Google Calendar retry a proxy restore that failed on the old one.
+            NotificationCenter.default.post(name: .databricksConnectionDidChange, object: nil)
             return connection
         }
         let connection = DatabricksConnection(id: .v7(), host: url.absoluteString)
@@ -116,6 +120,21 @@ actor DatabricksOAuthService {
                 if pending?.generation == operation.generation { pending = nil }
                 return try await accessToken(connectionID: connectionID, forceRefresh: forceRefresh, loginOnly: true)
             }
+            if interactive, !operation.interactive {
+                // An unattended refresh must not deny this caller the browser login it may need.
+                do {
+                    let token = try await waitForToken(operation, waiter: waiter)
+                    try Task.checkCancellation()
+                    _ = try self.connection(id: connectionID)
+                    return token
+                } catch is CancellationError {
+                    throw CancellationError()
+                } catch {
+                    try Task.checkCancellation()
+                    if pending?.generation == operation.generation { pending = nil }
+                    return try await accessToken(connectionID: connectionID, forceRefresh: true, loginOnly: loginOnly)
+                }
+            }
             let token = try await waitForToken(operation, waiter: waiter)
             try Task.checkCancellation()
             _ = try self.connection(id: connectionID)
@@ -149,7 +168,7 @@ actor DatabricksOAuthService {
             try self.storage.saveCredential(connectionID, updated)
             return updated.accessToken
         }
-        let operation = Pending(task: task, loginOnly: loginOnly, generation: generation, waiter: waiter)
+        let operation = Pending(task: task, loginOnly: loginOnly, interactive: interactive, generation: generation, waiter: waiter)
         pending = operation
         let token = try await waitForToken(operation, waiter: waiter)
         try Task.checkCancellation()

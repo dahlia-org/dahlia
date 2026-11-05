@@ -97,19 +97,18 @@ import Synchronization
         }
 
         @Test
-        func unauthorizedProxyOnRestoreForgetsTheSignIn() async throws {
+        func forwardedRateLimitOnRestoreKeepsTheSignIn() async throws {
             let defaults = makeDefaults()
             defaults.set(true, forKey: DatabricksProxyGoogleSignInProvider.connectedKey(for: connection))
-            let provider = makeProvider(
-                connection: connection,
-                direct: FakeDirectProvider(),
-                userDefaults: defaults,
-                apiClient: FakeAPIClient(result: .failure(GoogleCalendarAPIError.httpError(statusCode: 401, detail: "")))
-            )
+            let apiClient = FakeAPIClient(result: .failure(GoogleCalendarAPIError.httpError(statusCode: 403, detail: "userRateLimitExceeded")))
+            let provider = makeProvider(connection: connection, direct: FakeDirectProvider(), userDefaults: defaults, apiClient: apiClient)
 
-            await #expect(throws: GoogleSignInError.self) { try await provider.restorePreviousSignIn() }
+            await #expect(throws: GoogleCalendarAPIError.self) { try await provider.restorePreviousSignIn() }
 
-            #expect(defaults.bool(forKey: DatabricksProxyGoogleSignInProvider.connectedKey(for: connection)) == false)
+            #expect(defaults.bool(forKey: DatabricksProxyGoogleSignInProvider.connectedKey(for: connection)))
+            #expect(await provider.hasPreviousSignIn)
+            apiClient.result = .success([CalendarListItem(id: "me@example.com", title: "me@example.com", colorHex: nil, isPrimary: true)])
+            #expect(try await provider.restorePreviousSignIn().account.id == "me@example.com")
         }
 
         @Test
@@ -216,7 +215,7 @@ import Synchronization
 
     @MainActor
     private final class FakeAPIClient: GoogleCalendarAPIClientProviding {
-        private let result: Result<[CalendarListItem], Error>
+        var result: Result<[CalendarListItem], Error>
         private(set) var sessions: [GoogleSession] = []
 
         init(result: Result<[CalendarListItem], Error>) { self.result = result }
