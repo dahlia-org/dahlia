@@ -433,8 +433,13 @@ actor DahliaCloudService {
         guard (200 ..< 300).contains(response.statusCode) else {
             throw DahliaCloudError.tokenRequestFailed(response.statusCode)
         }
-        guard let payload = try? JSONDecoder().decode(CloudTokenPayload.self, from: data),
-              !payload.accessToken.isEmpty,
+        guard let payload = try? JSONDecoder().decode(CloudTokenPayload.self, from: data) else {
+            // A captive portal or proxy answers with a non-JSON page, a gateway failure callers may retry.
+            // A JSON body from the authorization server that is not a token response stays a rejection.
+            guard (try? JSONSerialization.jsonObject(with: data)) is [String: Any] else { throw DahliaCloudError.tokenRequestFailed(502) }
+            throw DahliaCloudError.invalidTokenResponse
+        }
+        guard !payload.accessToken.isEmpty,
               payload.tokenType.caseInsensitiveCompare("Bearer") == .orderedSame,
               payload.expiresIn > 0
         else {

@@ -259,6 +259,44 @@
         }
 
         @Test
+        func reconnectReleasesOnlyTransportBackoff() async throws {
+            let (database, workspace) = try await syncedDatabase()
+            let projectIDs = [UUID.v7(), UUID.v7()]
+            for projectID in projectIDs {
+                _ = try await database.dbQueue.write { db in
+                    try SyncTransactionRecorder.record(
+                        workspaceId: workspace.id,
+                        operations: [.init(entity: .project, action: .delete, entityId: projectID)],
+                        in: db
+                    )
+                }
+            }
+            let network = try #require(try await SyncTransactionQueue.claim(dbQueue: database.dbQueue))
+            let server = try #require(try await SyncTransactionQueue.claim(dbQueue: database.dbQueue, excluding: [network.id]))
+            try await SyncTransactionQueue.retry(network, code: "network", dbQueue: database.dbQueue)
+            try await SyncTransactionQueue.retry(server, code: "http_503", dbQueue: database.dbQueue)
+            // Pin both backoffs far ahead so a slow test host cannot let either expire on its own.
+            try await database.dbQueue.write { db in
+                try db.execute(sql: "UPDATE sync_transactions SET availableAt = ?", arguments: [Date().addingTimeInterval(3600)])
+            }
+            let connectionId = try #require(try await database.dbQueue.read {
+                try UUID.fetchOne($0, sql: "SELECT connectionId FROM sync_transactions WHERE id = ?", arguments: [network.id])
+            })
+
+            try await SyncTransactionQueue.retryNetworkFailuresNow(connectionId: connectionId, dbQueue: database.dbQueue)
+
+            try await database.dbQueue.read { db throws in
+                // A margin absorbs timestamp rounding between the write and this read.
+                let now = Date().addingTimeInterval(60)
+                let availability = try Dictionary(uniqueKeysWithValues: Row.fetchAll(
+                    db, sql: "SELECT id, availableAt FROM sync_transactions"
+                ).map { ($0["id"] as UUID, ($0["availableAt"] as Date) <= now) })
+                #expect(availability[network.id] == true)
+                #expect(availability[server.id] == false)
+            }
+        }
+
+        @Test
         func releasingACancelledClaimPreservesItsUncertainAttemptAndOriginalIdentity() async throws {
             let (database, workspace) = try await syncedDatabase()
             _ = try await database.dbQueue.write { db in

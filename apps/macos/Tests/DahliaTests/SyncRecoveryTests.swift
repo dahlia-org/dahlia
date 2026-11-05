@@ -1,6 +1,7 @@
 #if canImport(Testing)
     import DahliaRuntimeSupport
     import Foundation
+    import GRDB
     import Testing
     @testable import Dahlia
 
@@ -25,7 +26,10 @@
         }
 
         @Test
-        func queueFailureDispositionRetriesOnlyTransportErrors() {
+        func queueFailureDispositionRetriesOnlyTransientErrors() {
+            #expect(SyncWorker.localQueueFailureDisposition(DatabaseError(resultCode: .SQLITE_BUSY)) == .retry)
+            #expect(SyncWorker.localQueueFailureDisposition(DatabaseError(resultCode: .SQLITE_FULL)) == .retry)
+            #expect(SyncWorker.localQueueFailureDisposition(DatabaseError(resultCode: .SQLITE_CONSTRAINT)) == .block("local_sync_failed"))
             #expect(SyncWorker.localQueueFailureDisposition(CancellationError()) == .ignore)
             #expect(SyncWorker.localQueueFailureDisposition(URLError(.cancelled)) == .ignore)
             #expect(SyncWorker.localQueueFailureDisposition(URLError(.timedOut)) == .retry)
@@ -61,6 +65,10 @@
                 (DahliaCloudError.tokenRequestFailed(400), 401),
                 (DahliaCloudError.tokenRequestFailed(403), 401),
                 (DahliaCloudError.tokenRequestFailed(503), 503),
+                (DahliaCloudError.tokenRequestFailed(408), 408),
+                (DahliaCloudError.tokenRequestFailed(429), 429),
+                (DahliaCloudError.tokenRequestFailed(0), 503),
+                (DahliaCloudError.tokenRequestFailed(502), 502),
                 (DahliaCloudError.invalidTokenResponse, 401),
                 (DecodingError.dataCorrupted(.init(codingPath: [], debugDescription: "stored credential")), 401),
             ]
@@ -71,8 +79,8 @@
                     Issue.record("Expected token failure")
                 } catch let error as SyncHTTPError {
                     #expect(error.status == expectedStatus)
-                    #expect(error.blockedReason == (expectedStatus == 503 ? nil : .authorization))
-                    #expect(error.isRetryable == (expectedStatus == 503))
+                    #expect(error.blockedReason == (expectedStatus == 401 ? .authorization : nil))
+                    #expect(error.isRetryable == (expectedStatus != 401))
                 }
             }
         }

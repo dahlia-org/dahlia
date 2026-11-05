@@ -58,7 +58,7 @@ import type { ObjectStorage } from "./storage/storage";
 import { createServerMcpHandler, MCP_MAX_REQUEST_BYTES } from "./mcp";
 import { MeetingSyncService } from "./sync/service";
 import { SCREENSHOT_VARIANTS, type ScreenshotVariant, type ScreenshotTransformer } from "./sync/screenshot-variants";
-import { encodeSyncCursor, decodeSyncCursor, SyncStoreUnavailableError, SyncTransactionError } from "./sync/store";
+import { encodeSyncCursor, decodeSyncCursor, isRetryableDatabaseError, SyncStoreUnavailableError, SyncTransactionError } from "./sync/store";
 import type { SearchTokenizer } from "./search/tokenizer";
 import type { SearchEmbedder } from "./search/embedding";
 
@@ -1451,6 +1451,8 @@ export function createApp(dependencies: AppDependencies): DahliaServerApp & { ru
     if (error instanceof SyncStoreUnavailableError || error instanceof EncryptionError) {
       return context.json({ error: error.message }, 503);
     }
+    // The driver message can contain query parameters, so only a fixed code leaves the Server.
+    if (isRetryableDatabaseError(error)) return context.json({ error: "database_busy" }, 503);
     log("error", "request_failed", { route: requestRoute(context.req.path) });
     return context.json({ error: "internal_server_error" }, 500);
   });

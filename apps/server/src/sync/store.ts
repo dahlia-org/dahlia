@@ -111,6 +111,8 @@ export function createPostgresMeetingSyncStore(
         try {
           await transaction.execute(sql`select set_config('app.user_id', ${identity.userId}, true)`);
           await transaction.execute(sql`select set_config('app.sharing_enabled', 'true', true)`);
+          // Bound advisory-lock waits so one long holder cannot pin the pool; the 503 is retried by clients.
+          await transaction.execute(sql`select set_config('lock_timeout', ${SYNC_LOCK_TIMEOUT}, true)`);
           if (searchBackend === "lakebase") {
             await transaction.execute(sql`select set_config('lakebase_bm25.prefilter', 'on', true)`);
           } else if (searchBackend === "postgres" && embeddingConfig) {
@@ -168,6 +170,17 @@ export function createSqliteMeetingSyncStore(
       return result;
     },
   };
+}
+
+const SYNC_LOCK_TIMEOUT = "30s";
+const SYNC_RESOURCE_LOCK_OPERATION_LIMIT = 64;
+
+/** Lock timeouts, deadlocks and serialization failures roll back the whole transaction and are safe to retry. */
+export function isRetryableDatabaseError(error: unknown): boolean {
+  for (let current = error; current instanceof Error; current = current.cause) {
+    if (["40001", "40P01", "55P03"].includes(String((current as { code?: unknown }).code))) return true;
+  }
+  return false;
 }
 
 export class SyncStoreUnavailableError extends Error {
@@ -645,8 +658,13 @@ function createIdentityStore(
   const lockedTransactions = new Set<string>();
   async function lockTransaction(transaction: SyncTransaction) {
     if (lockedTransactions.has(transaction.id)) return;
-    const workspaceOperation = transaction.operations.some((operation) => operation.entity === "workspace");
-    await lockWorkspace(transaction.workspaceId, true, workspaceOperation ? "authorization" : "domain");
+    const workspaceOperations = transaction.operations.filter((operation) => operation.entity === "workspace");
+    let mode: "authorization" | "lifecycle" | "domain" = "domain";
+    // Create and reset change grants; an ordinary update stays exclusive only within its own Workspace.
+    if (workspaceOperations.some((operation) => operation.action !== "update")) mode = "authorization";
+    // Per-resource locks grow with the batch and can exhaust the PostgreSQL lock table; a bulk batch locks its Workspace instead.
+    else if (workspaceOperations.length || transaction.operations.length > SYNC_RESOURCE_LOCK_OPERATION_LIMIT) mode = "lifecycle";
+    await lockWorkspace(transaction.workspaceId, true, mode);
     if (!exclusiveWorkspaces.has(transaction.workspaceId)) await lockCurrentResources(transaction);
     lockedTransactions.add(transaction.id);
   }
@@ -2304,6 +2322,8 @@ function createIdentityStore(
       .where(and(readable(schema.syncedWorkspace.workspaceId), eq(schema.syncedWorkspace.workspaceId, workspaceId))).limit(1);
     const [history] = await db.select({ id: schema.syncWorkspaceState.workspaceId }).from(schema.syncWorkspaceState).where(and(eq(schema.syncWorkspaceState.workspaceId, workspaceId), readableHistory(schema.syncWorkspaceState.workspaceId))).limit(1);
     if (!workspace && !history) throw new SyncTransactionError(404, "workspace_not_found");
+    // A cursor beyond the ledger comes from a restored or replaced Server; recover instead of skipping changes.
+    if (after > await latestChangeSequence(workspaceId)) throw new SyncTransactionError(410, "sync_cursor_expired");
     const [latestReset] = await db.select({
       sequence: schema.syncChange.sequence,
       revision: schema.syncChange.revision,

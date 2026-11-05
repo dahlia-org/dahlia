@@ -265,6 +265,25 @@
             #expect(store.saveCount == 0)
         }
 
+        @Test(arguments: [
+            ("<html>Sign in to the network</html>", DahliaCloudError.tokenRequestFailed(502)),
+            (#"{"access_token":"new-access","token_type":"Bearer","expires_in":"3600"}"#, DahliaCloudError.invalidTokenResponse),
+        ])
+        func refreshSeparatesAProxyPageFromAMalformedTokenResponse(body: String, expected: DahliaCloudError) async throws {
+            let oldCredential = makeCredential(expirationDate: .distantPast)
+            let store = CloudCredentialStoreFake(credential: oldCredential)
+            let service = makeService(
+                recorder: CloudRequestRecorder(mode: .refresh, tokenBody: body),
+                store: store
+            )
+
+            await #expect(throws: expected) {
+                try await service.validAccessToken()
+            }
+            #expect(store.credential == oldCredential)
+            #expect(store.saveCount == 0)
+        }
+
         @Test
         func refreshRejectsScopesThatLoseAllAPIsWithoutReplacingCredential() async throws {
             let oldCredential = makeCredential(expirationDate: .distantPast)
@@ -858,6 +877,7 @@
         let mode: Mode
         let tokenScope: String?
         let tokenAccessToken: String?
+        let tokenBody: String?
         let tokenStatusCode: Int
         let revocationStatusCode: Int
         let tokenResponseGate: CloudTokenResponseGate?
@@ -873,6 +893,7 @@
             mode: Mode,
             tokenScope: String? = nil,
             tokenAccessToken: String? = nil,
+            tokenBody: String? = nil,
             tokenStatusCode: Int = 200,
             revocationStatusCode: Int = 200,
             tokenResponseGate: CloudTokenResponseGate? = nil,
@@ -882,6 +903,7 @@
             self.mode = mode
             self.tokenScope = tokenScope
             self.tokenAccessToken = tokenAccessToken
+            self.tokenBody = tokenBody
             self.tokenStatusCode = tokenStatusCode
             self.revocationStatusCode = revocationStatusCode
             self.tokenResponseGate = tokenResponseGate
@@ -928,6 +950,8 @@
                     userInfo
                 )\(revocation)}
                 """
+            case "/token" where tokenBody != nil:
+                body = tokenBody ?? ""
             case "/token":
                 let scope = tokenScope.map { ",\"scope\":\"\($0)\"" } ?? ""
                 let accessToken = tokenAccessToken ?? (mode == .refresh ? "new-access" : "signed-access")

@@ -1,5 +1,6 @@
 import DahliaRuntimeSupport
 import Foundation
+import GRDB
 
 private let retryableSyncTransportCodes: Set<URLError.Code> = [
     .timedOut,
@@ -22,6 +23,9 @@ private let retryableSyncTransportCodes: Set<URLError.Code> = [
 extension SyncWorker {
     nonisolated static func localQueueFailureDisposition(_ error: any Error) -> LocalQueueFailureDisposition {
         if error is CancellationError { return .ignore }
+        // Contention or a full disk can interrupt the local ACK after a Server commit; retrying resolves the original ID.
+        if let error = error as? DatabaseError,
+           [.SQLITE_BUSY, .SQLITE_LOCKED, .SQLITE_IOERR, .SQLITE_FULL].contains(error.resultCode) { return .retry }
         if let error = error as? URLError {
             if error.code == .cancelled { return .ignore }
             if retryableSyncTransportCodes.contains(error.code) { return .retry }

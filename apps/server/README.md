@@ -168,7 +168,7 @@ SHA-256 framing is UTF-8 `decimalByteLength:bytes` per field, with `-:` for null
 
 ### Sync history retention and recovery
 
-The change ledger is sync-only and guarantees 90 days of delta recovery. `app.sync_workspace_state` retains the latest sequence and the pruned boundary even when every change has been deleted. Every delta page checks that boundary and returns `410 sync_cursor_expired` for an expired cursor.
+The change ledger is sync-only and guarantees 90 days of delta recovery. `app.sync_workspace_state` retains the latest sequence and the pruned boundary even when every change has been deleted. Every delta page checks that boundary and returns `410 sync_cursor_expired` for an expired cursor, and for a cursor beyond the latest sequence, such as one kept across a Server restore.
 
 New devices and expired clients use `GET /api/v1/workspaces/{workspaceId}/snapshot`. It returns `{ items, startCursor, nextCursor }`, with at most 100 canonical `{ entity, id, revision, record }` items ordered by entity and ID. Item serialization is capped at 8 MiB per page (plus envelope overhead); a single larger record is returned alone to guarantee progress. Records are loaded incrementally, including at most one look-ahead record. Pass `nextCursor` as `cursor` and preserve `startCursor` on subsequent pages. Fetch existing transcript and screenshot endpoints for their bodies. After enumeration, fetch delta pages from `startCursor` with a fixed high-water boundary and merge their changes/deletions before removing absent local records. A `410` during enumeration or catch-up requires a fresh snapshot. Each page reauthorizes current Workspace access; this is not a transaction held open across requests.
 

@@ -75,6 +75,7 @@ Server内部の`captureSyncTimings()`は明示的なローカル計測だけに�
 - 通常の更新は認可・Workspace lifecycle を共有取得する。旧 Server の domain 排他との互換用に domain キーも共有取得する。会議の本文・metadata、file、recording session、Project の親子関係を対象 ID ごとに保護し、必要な旧・新の関係を一度に昇順取得する。取得後に所属が変わっていた場合は `503 sync_target_changed` で immutable request を再試行する。途中でロックを追加・昇格して所属変更を追わない。
 - 会議の作成・削除・復元は親 lifecycle を排他、通常更新と Documents は共有にする。Documents は会議の本文更新ロックを取得しない。Workspace の削除・reset・移管、認可変更の排他と RLS は維持する。
 - canonical 更新の終了後に短い Workspace publication 排他を取得し、Memory キューの無効化、change sequence の採番、delta ledger、latest cursor、receipt を同じ DB transaction で確定する。差分・snapshot は publication 共有で読む。採番後に別の transaction が先に commit して cursor が未公開変更を飛び越す状態を防ぐ。重い本文更新全体を Workspace 単位に直列化しない。
+- 認可の全体キーを排他取得するのは Workspace の作成・reset など権限が変わる操作だけとし、Workspace の名前・設定の更新は自 Workspace の lifecycle 排他にとどめる。操作が64件を超える transaction は資源ごとのロックを取らず Workspace lifecycle を排他取得し、PostgreSQL の lock table を使い切らない。同期 transaction のロック待ちは30秒で打ち切り、ロック待ち超過・deadlock・直列化失敗は `503 database_busy` として client に再試行させる。
 - delta GET から録音 staging の期限切れ清掃を除き、既存の storage maintenance sweep で実行する。
 - アップロード要求時の期限切れ staging 清掃は、既存の domain gate を排他、Workspace lifecycle を共有で取得する。清掃と domain の予約・確定は競合させるが、Documents は待たせない。清掃対象は file 最大25件・recording 最大100件に制限する。定期 maintenance の Workspace 排他は維持する。
 - transcript chunk の要求時は、同じ Workspace で期限切れ staging がある最大100会議とアップロード先をまとめてロックして清掃する。別会議で放置された patch も後続アップロードで回収し、fresh な chunk と別 Workspace は残す。Workspace 全体の排他へ戻さず、ロック取得後に対象を追加しない。
