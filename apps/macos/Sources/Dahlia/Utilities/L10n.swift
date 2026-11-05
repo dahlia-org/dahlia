@@ -2273,6 +2273,14 @@ enum L10n { // swiftlint:disable:this type_body_length
         localized: "Google Calendar HTTP \(code): \(detail)",
         bundle: bundle
     ) }
+    static var googleCalendarOpenDatabricksConnectionPage: String { String(
+        localized: "Open Connection Page in Databricks",
+        bundle: bundle
+    ) }
+    static func googleCalendarDatabricksProxyError(_ message: String) -> String { String(
+        localized: "Databricks connection: \(message)",
+        bundle: bundle
+    ) }
     static func googleCalendarInvalidDate(_ value: String) -> String { String(
         localized: "Could not parse Google Calendar date: \(value)",
         bundle: bundle

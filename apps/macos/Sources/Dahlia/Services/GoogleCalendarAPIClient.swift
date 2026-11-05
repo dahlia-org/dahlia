@@ -3,6 +3,8 @@ import Foundation
 enum GoogleCalendarAPIError: LocalizedError {
     case invalidResponse
     case httpError(statusCode: Int, detail: String)
+    /// A Unity Catalog failure that the Databricks connection proxy returns as an HTTP 200 JSON-RPC error.
+    case proxyError(errorCode: String, message: String)
     case invalidCalendarDate(String)
 
     var errorDescription: String? {
@@ -11,9 +13,53 @@ enum GoogleCalendarAPIError: LocalizedError {
             L10n.googleCalendarUnexpectedResponse
         case let .httpError(statusCode, detail):
             L10n.googleCalendarHTTPError(statusCode, detail)
+        case let .proxyError(_, message):
+            L10n.googleCalendarDatabricksProxyError(message)
         case let .invalidCalendarDate(value):
             L10n.googleCalendarInvalidDate(value)
         }
+    }
+
+    /// Google's own error body (`{"error":{"code":…,"message":…}}`), which the Databricks proxy forwards unchanged;
+    /// Databricks' errors are `{"error_code":…}` or plain text.
+    var isGoogleError: Bool {
+        guard case let .httpError(_, detail) = self else { return false }
+        return (try? JSONDecoder().decode(GoogleErrorBody.self, from: Data(detail.utf8))) != nil
+    }
+}
+
+private struct GoogleErrorBody: Decodable {
+    struct Failure: Decodable {
+        let code: Int
+    }
+
+    let error: Failure
+}
+
+private struct DatabricksErrorBody: Decodable {
+    let errorCode: String
+    let message: String?
+
+    private enum CodingKeys: String, CodingKey {
+        case errorCode = "error_code"
+        case message
+    }
+}
+
+/// `{"jsonrpc":"2.0","error":{"code":-32600,"message":"{\"error_code\":\"UNAUTHENTICATED\",\"message\":\"…\"}"}}`
+/// (observed 2026-11-06 for a user without a Google credential on the connection).
+private struct ProxyErrorEnvelope: Decodable {
+    struct Failure: Decodable {
+        let message: String?
+    }
+
+    let jsonrpc: String
+    let error: Failure
+
+    var apiError: GoogleCalendarAPIError {
+        let message = error.message ?? ""
+        let body = try? JSONDecoder().decode(DatabricksErrorBody.self, from: Data(message.utf8))
+        return .proxyError(errorCode: body?.errorCode ?? "", message: body?.message ?? message)
     }
 }
 
@@ -249,6 +295,11 @@ final class GoogleCalendarAPIClient: GoogleCalendarAPIClientProviding {
         let (data, response) = try await session.data(for: request)
         guard let httpResponse = response as? HTTPURLResponse else {
             throw GoogleCalendarAPIError.invalidResponse
+        }
+        // The Databricks proxy reports Unity Catalog failures as JSON-RPC errors (seen with HTTP 200), and responses
+        // decode leniently (a missing `items` is an empty list), so catch them before the status check and decoding.
+        if url.host() != googleAPIBaseURL.host(), let envelope = try? JSONDecoder().decode(ProxyErrorEnvelope.self, from: data) {
+            throw envelope.apiError
         }
         guard (200 ... 299).contains(httpResponse.statusCode) else {
             let detail = String(data: data, encoding: .utf8) ?? ""

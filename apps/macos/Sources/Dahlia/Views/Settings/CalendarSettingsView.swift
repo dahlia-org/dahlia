@@ -156,6 +156,13 @@ struct CalendarSettingsView: View {
 
             if let message = googleCalendarStore.lastErrorMessage {
                 calendarErrorMessage(message)
+                // Whether re-granting fixes the error is the user's call; the connection page is where they can.
+                if let connectionPageURL = googleCalendarStore.databricksConnectionPageURL {
+                    Button(L10n.googleCalendarOpenDatabricksConnectionPage) {
+                        NSWorkspace.shared.open(connectionPageURL)
+                    }
+                    .buttonStyle(.dahlia())
+                }
             }
         } header: {
             Text(L10n.googleCalendar)
@@ -202,24 +209,34 @@ struct CalendarSettingsView: View {
     @ViewBuilder
     private var googleActionButton: some View {
         if !googleCalendarStore.isAuthorized {
-            Button(L10n.googleCalendarConnect) {
-                if googleCalendarStore.usesDatabricksProxy {
-                    Task { await googleCalendarStore.signIn() }
-                } else {
-                    googleOAuthConsent.request(.calendar)
+            HStack {
+                // The Databricks route restores on every launch until Disconnect opts out, even while it fails.
+                if googleCalendarStore.restoresThroughDatabricksProxy {
+                    googleDisconnectButton
                 }
+                Button(L10n.googleCalendarConnect) {
+                    if googleCalendarStore.usesDatabricksProxy {
+                        Task { await googleCalendarStore.signIn() }
+                    } else {
+                        googleOAuthConsent.request(.calendar)
+                    }
+                }
+                .buttonStyle(.dahlia(.primary))
+                .disabled(!googleCalendarStore.isConfigured || googleCalendarStore.isBusy)
             }
-            .buttonStyle(.dahlia(.primary))
-            .disabled(!googleCalendarStore.isConfigured || googleCalendarStore.isBusy)
         } else {
-            Button(L10n.googleCalendarDisconnect) {
-                Task {
-                    await googleCalendarStore.disconnect()
-                }
-            }
-            .buttonStyle(.dahlia())
-            .disabled(!googleCalendarStore.isConfigured || googleCalendarStore.isBusy)
+            googleDisconnectButton
         }
+    }
+
+    private var googleDisconnectButton: some View {
+        Button(L10n.googleCalendarDisconnect) {
+            Task {
+                await googleCalendarStore.disconnect()
+            }
+        }
+        .buttonStyle(.dahlia())
+        .disabled(!googleCalendarStore.isConfigured || googleCalendarStore.isBusy)
     }
 
     private var googleAccountSubtitle: String {

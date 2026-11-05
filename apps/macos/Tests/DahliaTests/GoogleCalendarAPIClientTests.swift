@@ -37,6 +37,66 @@ import Foundation
         }
 
         @Test
+        func databricksProxyJSONRPCErrorIsNotReadAsAnEmptyCalendarList() async throws {
+            let configuration = URLSessionConfiguration.ephemeral
+            configuration.protocolClasses = [ProxyNoGrantURLProtocol.self]
+            let client = GoogleCalendarAPIClient(session: URLSession(configuration: configuration))
+            func session(_ apiBaseURL: URL) -> GoogleSession {
+                GoogleSession(
+                    account: GoogleCalendarAccount(id: "1", displayName: "Test", email: ""),
+                    accessToken: "token",
+                    grantedScopes: GoogleOAuthScope.calendar,
+                    apiBaseURL: apiBaseURL
+                )
+            }
+            let proxy = URL(string: "https://example.cloud.databricks.com/api/2.0/unity-catalog/connections/system_ai_agent_google_calendar/proxy/")!
+
+            let error = await #expect(throws: GoogleCalendarAPIError.self) {
+                try await client.fetchCalendarList(session: session(proxy))
+            }
+
+            #expect(error.map(DatabricksProxyGoogleSignInProvider.isNotAuthorized) == true)
+            #expect(error?.errorDescription?.contains("Please login first") == true)
+
+            let forbiddenConfiguration = URLSessionConfiguration.ephemeral
+            forbiddenConfiguration.protocolClasses = [ProxyNoGrantForbiddenURLProtocol.self]
+            let forbiddenClient = GoogleCalendarAPIClient(session: URLSession(configuration: forbiddenConfiguration))
+            let rejected = await #expect(throws: GoogleCalendarAPIError.self) {
+                try await forbiddenClient.fetchCalendarList(session: session(proxy))
+            }
+            #expect(rejected.map(DatabricksProxyGoogleSignInProvider.isNotAuthorized) == true)
+            #expect(try await client.fetchCalendarList(session: session(GoogleCalendarAPIClient.googleAPIBaseURL)).isEmpty)
+        }
+
+        @Test
+        func googleErrorBodySeparatesForwardedGoogleErrorsFromDatabricksRejections() {
+            let missingConnection = GoogleCalendarAPIError.httpError(
+                statusCode: 404,
+                detail: #"{"error_code":"RESOURCE_DOES_NOT_EXIST","message":"Connection 'x' does not exist."}"#
+            )
+            let googleRateLimit = GoogleCalendarAPIError.httpError(
+                statusCode: 403,
+                detail: #"{"error":{"code":403,"message":"Rate Limit Exceeded","errors":[{"reason":"rateLimitExceeded"}]}}"#
+            )
+
+            #expect(!missingConnection.isGoogleError)
+            #expect(googleRateLimit.isGoogleError)
+            #expect(!GoogleCalendarAPIError.httpError(statusCode: 400, detail: "Unable to load OAuth Config").isGoogleError)
+            for error in [missingConnection, .httpError(statusCode: 400, detail: "Unable to load OAuth Config")] {
+                #expect(DatabricksProxyGoogleSignInProvider.isUnusableRoute(error))
+            }
+            #expect(!DatabricksProxyGoogleSignInProvider.isUnusableRoute(googleRateLimit))
+            for statusCode in [408, 429] {
+                #expect(!DatabricksProxyGoogleSignInProvider.isUnusableRoute(GoogleCalendarAPIError.httpError(statusCode: statusCode, detail: "")))
+            }
+            let googleRevokedGrant = GoogleCalendarAPIError.httpError(
+                statusCode: 401,
+                detail: #"{"error":{"code":401,"message":"Request had invalid authentication credentials."}}"#
+            )
+            #expect(!DatabricksProxyGoogleSignInProvider.isUnusableRoute(googleRevokedGrant))
+        }
+
+        @Test
         func fetchUpcomingEventsFiltersEventTypesAcrossPagesWithoutRepeatedQueryParameters() async throws {
             // Excluded types fill the first page, so the supported meeting arrives only on the next page.
             let firstPage = Data("""
@@ -376,6 +436,36 @@ private func makeRecordingSession(recorder: RequestRecorderURLProtocol) -> URLSe
     let configuration = URLSessionConfiguration.ephemeral
     configuration.protocolClasses = [RecordingURLProtocol.self]
     return URLSession(configuration: configuration)
+}
+
+/// Replays the proxy's response for a user without a Google credential (captured 2026-11-06, identity redacted).
+private class ProxyNoGrantURLProtocol: URLProtocol, @unchecked Sendable {
+    class var statusCode: Int { 200 }
+
+    override static func canInit(with _: URLRequest) -> Bool {
+        true
+    }
+
+    override static func canonicalRequest(for request: URLRequest) -> URLRequest {
+        request
+    }
+
+    override func startLoading() {
+        let response = HTTPURLResponse(url: request.url!, statusCode: Self.statusCode, httpVersion: nil, headerFields: nil)!
+        let body = #"{"jsonrpc":"2.0","error":{"code":-32600,"message":"{\"error_code\":\"UNAUTHENTICATED\",\"message\":\"Credential for user identity('1')"#
+            + #" is not found for the connection 'system_ai_agent_google_calendar'."#
+            + #" Please login first to the connection by visiting https://example.cloud.databricks.com/explore/connections/x\"}"}}"#
+        client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
+        client?.urlProtocol(self, didLoad: Data(body.utf8))
+        client?.urlProtocolDidFinishLoading(self)
+    }
+
+    override func stopLoading() {}
+}
+
+/// Observed as 200; another status must still read as a proxy error rather than a forwarded Google error.
+private final class ProxyNoGrantForbiddenURLProtocol: ProxyNoGrantURLProtocol, @unchecked Sendable {
+    override static var statusCode: Int { 403 }
 }
 
 private final class RecordingURLProtocol: URLProtocol, @unchecked Sendable {
