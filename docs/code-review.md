@@ -20,7 +20,7 @@
 ## レビューの準備
 
 1. 変更されたファイルと実行経路を確認し、適用されるすべての `AGENTS.md` を読む。
-2. PR 本文がある場合は、`Key decisions`、`Surfaces`、`Unchanged`、`Needs human approval`、`Verification` の `Not done` を読み、主張を diff と照合する。本文で既知の制約とした項目でも、採用基準を満たす欠陥は finding にする。
+2. PR 本文がある場合は、`Key decisions`、`Surfaces`、`Unchanged`、`Verification` の `Not done` を読み、主張を diff と照合する。本文で既知の制約とした項目でも、採用基準を満たす欠陥は finding にする。
 3. diff だけで判断せず、呼び出し元、状態の owner、失敗経路、関連テストを必要な範囲で確認する。
 4. `AGENTS.md` の Documentation Router から、変更に関係するアーキテクチャ節だけを読む。
 5. レビュー依頼は read-only として扱い、修正も明示的に依頼された場合だけ編集する。
@@ -51,17 +51,6 @@ finding がない場合は review surface の native contract で表す。fixed 
 findings list を返し、prose や追加 field を要求しない。文章を許すローカルまたは Claude review では finding がない旨を明記し、
 実行できなかった検証や手動確認などの residual risk を分けて報告する。
 
-## 承認の扱い
-
-PR を approve できる reviewer は、次のいずれかを含む PR を approve せず、該当する条件を review に明記して人の承認に回す。
-finding がない場合も同じ。
-
-- lint、format、型検査の抑制の追加または拡大
-- 設定項目の既定値の変更（初期スクロール位置や余白など、設定を持たない UI の初期状態は含まない）
-- database migration の追加または変更
-- telemetry field または SDK 呼び出しの追加
-- 依存の追加または更新
-
 ## Dahlia 固有のチェック
 
 ### 契約と変更範囲
@@ -71,6 +60,7 @@ finding がない場合も同じ。
   逆方向の操作）で揃っているか。意図的に対象外とした surface は除き、別の surface から到達できる欠落を指摘する。
 - 新しい coordinator、store、repository、worker が既存 owner と責務を重複していないか。
 - target state と異なる実装を、現在の実装例だけを根拠に正当化していないか。
+- 依存の追加または更新、設定項目の既定値の変更、telemetry field または SDK 呼び出しの追加が依頼範囲に含まれ、PR 本文の `Key decisions` で説明されているか。依頼に含まれない場合は finding にする。設定を持たない UI の初期状態（初期スクロール位置や余白など）は既定値の変更に含まない。
 - lint、format、型検査の抑制（`swiftlint:disable`、`swiftformat:disable`、`eslint-disable`、`@ts-expect-error`、設定ファイルでの rule 無効化や除外 path）を追加または拡大していないか。CI の判定を外す変更なので「CI が決定的に判定する問題」の除外には当たらない。最小範囲に限定した理由がなければ finding にする。
 
 ### Recording、Persistence、停止処理

@@ -56,10 +56,8 @@ For a bug fix, name the test or reproduction that failed before the fix and pass
 
 <!--
 Cover whichever apply: user-visible behavior, recording and transcription, the database, settings, MCP and backups, telemetry and external network calls, compatibility, and known limits.
-Needs human approval: the conditions under "承認の扱い" in docs/code-review.md that this PR meets, or "None".
 -->
 
-- Needs human approval:
 - Affected areas:
 - Remaining risks and known limits:
 - Recovery if it goes wrong:
