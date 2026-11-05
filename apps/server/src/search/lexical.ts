@@ -1,11 +1,11 @@
 import { createIntlSearchTokenizer, SEARCH_QUERY_MAX_TOKENS, type SearchTokenizer } from "./tokenizer";
 
-// Lakebase's built-in Japanese configuration; Dahlia installs lakebase_tokenizer into public like its other extensions.
+// Lakebase's built-in Japanese configuration; migration installs lakebase_tokenizer into public like the other extensions.
 export const LAKEBASE_JAPANESE_CONFIG = "public.tokenizer_japanese";
 
 /**
  * The analyzer of Memory and chat chunks. tokenizer set: the application tokenizes and PostgreSQL indexes the tokens with
- * the simple configuration (SQLite: FTS5). tokenizer unset: PostgreSQL tokenizes chunk_text with `config`.
+ * the simple configuration (SQLite: FTS5). tokenizer unset (Lakebase): the database tokenizes chunk_text with `config`.
  * One database uses one analyzer; rows written by another one are rebuilt by reconciliation.
  */
 export interface SearchAnalyzer {
@@ -24,19 +24,18 @@ function lakebaseAnalyzer(version: string): SearchAnalyzer {
   // "/runs2000": long unbroken runs are split before parsing (see parserSafe).
   return { id: `lakebase_tokenizer@${version}/tokenizer_japanese/runs2000`, config: LAKEBASE_JAPANESE_CONFIG, matchAll: false };
 }
-/** Prefers lakebase_tokenizer on Lakebase when it is installed in public (version checked once); otherwise the application analyzer. */
+/** lakebase_tokenizer on Lakebase, where migration installs it (version read once per process); otherwise the application analyzer. */
 export function analyzerResolver(lakebase: boolean, extensionVersion: () => Promise<string | undefined>) {
-  let version: Promise<string | undefined> | undefined;
+  let version: Promise<string> | undefined;
   return async (application: SearchAnalyzer): Promise<SearchAnalyzer> => {
     if (!lakebase) return application;
-    const installed = await (version ??= extensionVersion().catch((error: unknown) => { version = undefined; throw error; }));
-    return installed ? lakebaseAnalyzer(installed) : application;
+    return lakebaseAnalyzer(await (version ??= extensionVersion().then((installed) => {
+      if (!installed) throw new Error("search_japanese_tokenizer_unavailable");
+      return installed;
+    }).catch((error: unknown) => { version = undefined; throw error; })));
   };
 }
-// Uses the tokenizer only when its configuration resolves, so a renamed or missing configuration never breaks saves.
-export const LAKEBASE_TOKENIZER_VERSION_SQL = `SELECT e.extversion FROM pg_extension e JOIN pg_namespace n ON n.oid = e.extnamespace
-  WHERE e.extname = 'lakebase_tokenizer' AND n.nspname = 'public' AND EXISTS (SELECT 1 FROM pg_ts_config c
-    JOIN pg_namespace cn ON cn.oid = c.cfgnamespace WHERE cn.nspname = 'public' AND c.cfgname = 'tokenizer_japanese')`;
+export const LAKEBASE_TOKENIZER_VERSION_SQL = "SELECT extversion FROM pg_extension WHERE extname = 'lakebase_tokenizer'";
 
 /** Input for to_tsvector(analyzer.config, ...) at index and query time. */
 export function analyzerInput(analyzer: SearchAnalyzer, text: string): string {
@@ -76,6 +75,18 @@ export function parserSafe(text: string, maxBytes = PARSER_TOKEN_MAX_BYTES): str
     pieces.push(rest);
     return pieces.join(" ");
   });
+}
+/**
+ * Meeting search on Lakebase: the database tokenizes documents and queries with LAKEBASE_JAPANESE_CONFIG, so text passes
+ * whole. Text without letters or digits has no terms, like the application tokenizers.
+ */
+export function createLakebaseSearchTokenizer(): SearchTokenizer {
+  return {
+    tokenize(text) {
+      const value = parserSafe(text.trim());
+      return /[\p{L}\p{N}]/u.test(value) ? [value] : [];
+    },
+  };
 }
 /** Query tokens for the application analyzer, bounded like meeting search. */
 export function queryTokens(analyzer: SearchAnalyzer, query: string): string[] {

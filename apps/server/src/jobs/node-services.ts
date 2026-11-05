@@ -8,6 +8,7 @@ import { NODE_STORAGE_OPERATION_CONCURRENCY } from "../db/client";
 import { DatabricksVolumeObjectStorage } from "../storage/databricks-volume";
 import { LocalObjectStorage } from "../storage/local";
 import { S3ObjectStorage } from "../storage/s3";
+import { createLakebaseSearchTokenizer } from "../search/lexical";
 import { createNodeSearchTokenizer } from "../search/node-tokenizer";
 import { createSearchEmbedder } from "../search/embedding";
 import { transformScreenshot } from "../sync/node-screenshot-transformer";
@@ -36,7 +37,9 @@ export function createNodeServices(config: AppConfig, poolMax?: number, storageC
   }
   const searchTokenizer = createNodeSearchTokenizer();
   const captioner = createImageCaptioner(config);
-  const syncService = new MeetingSyncService(applicationStore.sync, objectStorage, searchTokenizer,
+  // Meeting search: Lakebase tokenizes in the database; other databases index the Lindera tokens.
+  const syncService = new MeetingSyncService(applicationStore.sync, objectStorage,
+    config.databaseType === "lakebase" ? createLakebaseSearchTokenizer() : searchTokenizer,
     searchEmbedder, transformScreenshot,
     config.storageBackend === "databricks" ? config.storageDatabricksVolumePath : undefined,
     false, captioner?.model, storageConcurrency);

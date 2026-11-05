@@ -48,7 +48,7 @@ import type { Identity } from "../auth/identity";
 import type { AppConfig } from "../config";
 import type { PostgresDatabase, SQLiteDatabase } from "../db/client";
 import { reciprocalRankFusion, SEARCH_CANDIDATE_LIMIT } from "../search/ranking";
-import { cosineSimilarity, decodeFloat32 } from "../search/lexical";
+import { cosineSimilarity, decodeFloat32, LAKEBASE_JAPANESE_CONFIG } from "../search/lexical";
 import * as postgresSchema from "../db/auth-schema";
 import * as sqliteSchema from "../db/sqlite-schema";
 import type {
@@ -480,6 +480,9 @@ function createIdentityStore(
   documentDeletionGraceHours?: number,
 ): IdentitySyncStore {
   const userPrincipalId = identity.userId;
+  // PostgreSQL vectors of search.documents: Lakebase tokenizes in the database; elsewhere the text holds the application's tokens.
+  const searchConfig = searchBackend === "lakebase" ? LAKEBASE_JAPANESE_CONFIG : "simple";
+  const searchVector = (text: string | undefined) => sql`to_tsvector(${searchConfig}::regconfig, ${text ?? ""})`;
   let searchSettings: Promise<SearchSettings> | undefined;
   const content = createContentEncryption(db, schema, userPrincipalId, encryption, (workspace) => readable(workspace));
   const { admin: adminAccess, write: writeAccess, read: readable, role: workspaceRole, matchingPrincipal } = workspacePermissions(db, schema, userPrincipalId);
@@ -923,6 +926,10 @@ function createIdentityStore(
         kind: input.kind,
         searchText: input.searchText,
         ...input.searchFields,
+        ...searchBackend !== "sqlite" && {
+          searchVector: searchVector(input.searchText),
+          ...Object.fromEntries(SEARCH_FIELDS.map((field) => [`${field}Vector`, searchVector(input.searchFields?.[`${field}Text`])])),
+        },
         embeddingContentHash: input.embeddingContentHash,
         updatedAt: now,
       }))).onConflictDoUpdate({
@@ -932,6 +939,10 @@ function createIdentityStore(
           kind: sql`excluded.kind`,
           searchText: sql`excluded.search_text`,
           ...Object.fromEntries(SEARCH_FIELDS.map((field) => [`${field}Text`, sql`excluded.${sql.identifier(`${field}_text`)}`])),
+          ...searchBackend !== "sqlite" && {
+            searchVector: sql`excluded.search_vector`,
+            ...Object.fromEntries(SEARCH_FIELDS.map((field) => [`${field}Vector`, sql`excluded.${sql.identifier(`${field}_vector`)}`])),
+          },
           embedding: sql`CASE WHEN ${schema.searchDocument.embeddingContentHash} = excluded.embedding_content_hash THEN ${schema.searchDocument.embedding} ELSE NULL END`,
           embeddingModel: sql`CASE WHEN ${schema.searchDocument.embeddingContentHash} = excluded.embedding_content_hash THEN ${schema.searchDocument.embeddingModel} ELSE NULL END`,
           embeddingContentHash: sql`excluded.embedding_content_hash`,
@@ -977,7 +988,7 @@ function createIdentityStore(
     }
     const vector = schema.searchDocument.searchVector;
     if (!vector) throw new Error("search_vector_not_configured");
-    const tsquery = sql`plainto_tsquery('simple', ${query.text})`;
+    const tsquery = sql`plainto_tsquery(${searchConfig}::regconfig, ${query.text})`;
     // Score each matching term even when the AND query spans different fields.
     const rankQuery = sql.join(query.tokens.map((token) => sql`plainto_tsquery('simple', ${token})`), sql` || `);
     return {
@@ -986,7 +997,7 @@ function createIdentityStore(
         const fieldVector = schema.searchDocument[`${field}Vector`];
         if (!fieldVector) throw new Error("search_vector_not_configured");
         const score = searchBackend === "lakebase"
-          ? sql`${fieldVector} <@> to_bm25query(to_tsvector('simple', ${query.text}), ${`search.search_documents_${field}_bm25`}::regclass)`
+          ? sql`${fieldVector} <@> to_bm25query(${searchVector(query.text)}, ${`search.search_documents_${field}_bm25`}::regclass)`
           : sql`-ts_rank_cd(${fieldVector}, (${rankQuery}))`;
         return sql`${weights[field]} * (${score})`;
       }), sql` + `)})`,

@@ -77,7 +77,7 @@ describe.runIf(url)("Workspace memory PostgreSQL RLS", () => {
     await memory.deleteNote(owner.userId, workspaceId, variant.id, 1);
     await expect(memory.recall(stranger.userId, workspaceId, "evidence", lindera, 20)).rejects.toMatchObject({ status: 404 });
     // The projection is FORCE RLS like the canonical table; a pool without identity sees no chunks.
-    // The tokenizer check is valid SQL and selects nothing without lakebase_tokenizer and its configuration.
+    // The tokenizer check is valid SQL and selects nothing without lakebase_tokenizer.
     expect((await pool.query(LAKEBASE_TOKENIZER_VERSION_SQL)).rows).toEqual([]);
     const chunkState = await pool.query("SELECT relname, relforcerowsecurity FROM pg_class WHERE oid IN ('search.shared_memory_chunks'::regclass, 'search.personal_memory_chunks'::regclass) ORDER BY relname");
     expect(chunkState.rows).toEqual([{ relname: "personal_memory_chunks", relforcerowsecurity: true }, { relname: "shared_memory_chunks", relforcerowsecurity: true }]);
