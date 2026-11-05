@@ -123,6 +123,7 @@ export function AiChat({ requestedThreadId }: { requestedThreadId?: string }) {
   const { dialog, openDialog } = useActionDialog();
   const { chatHistoryTarget, workspaces, setChatWorkspaceId } = useSidebar();
   const [models, setModels] = useState<AiModel[]>([]);
+  const [modelsLoaded, setModelsLoaded] = useState(false);
   const [workspaceId, setWorkspaceId] = useState("");
   const [model, setModel] = useState("");
   const [reasoningEffort, setReasoningEffort] = useState<ReasoningEffort | "">("");
@@ -164,7 +165,7 @@ export function AiChat({ requestedThreadId }: { requestedThreadId?: string }) {
     const publish = () => {
       if (!catalog || request.signal.aborted) return;
       const items = chatModels(catalog, includeBundled);
-      setModels(items); setModel((current) => current || items[0]?.id || "");
+      setModels(items); setModel((current) => current || items[0]?.id || ""); setModelsLoaded(true);
     };
     void json<GatewayModelList>("/api/v1/models", { signal: request.signal }, { notifyMutation: false })
       .then((result) => { catalog = result; publish(); })
@@ -523,6 +524,7 @@ export function AiChat({ requestedThreadId }: { requestedThreadId?: string }) {
     {persistentHistory && threadId && <LiveChatContext key={threadId} threadId={threadId} workspaceId={workspaceId} disabled={pending} />}
     <textarea aria-label={uiText("Message", "メッセージ")} placeholder={uiText("Ask about your meetings…", "ミーティングについて質問…")} rows={messages.length ? 2 : 4}
       value={draft} disabled={pending || openingThread || !historyReady} onChange={(event) => setDraft(event.target.value)} onKeyDown={keyDown} />
+    {modelsLoaded && !models.length && <p className="text-sm text-muted-foreground" role="status">{uiText("No AI models are available to your account.", "このアカウントで利用できる AI モデルがありません。")}</p>}
     <div className="ai-composer-controls">
       <ComposerPicker kind="workspace" label={uiText("Choose Workspace", "ワークスペースを選択")}
         value={workspaceId} options={workspaceOptions} disabled={locked || pending} onValueChange={setWorkspaceId} />

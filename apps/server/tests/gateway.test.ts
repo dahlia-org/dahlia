@@ -113,40 +113,37 @@ describe("AI Gateway", () => {
     expect(new Headers(transport.mock.calls[0]![1]?.headers).get("authorization")).toBe("Bearer obo");
   });
 
-  it.each(["/api/v1/session", "/api/v1/capabilities"])("keeps %s available when platform model discovery fails", async (path) => {
+  it.each(["/api/v1/session", "/api/v1/capabilities"])("answers %s from configuration without model discovery", async (path) => {
+    const transport = vi.fn<GatewayFetch>(async () => new Response("unavailable", { status: 503 }));
     const store = testStore();
     store.sync.isAvailable = async () => true;
-    const app = createApp({ config: databricksConfig, authStore: store,
-      fetch: async () => new Response("unavailable", { status: 503 }) });
+    const app = createApp({ config: databricksConfig, authStore: store, fetch: transport });
     const response = await app.request(path, {
       headers: { "X-Forwarded-Email": "real@example.com", "x-forwarded-access-token": "obo" },
     });
     expect(response.status).toBe(200);
-    const body: unknown = await response.json();
-    expect(body).toMatchObject(path.endsWith("session") ? { capabilities: { sync: true, ai: false } } : { sync: { version: 7 } });
+    expect(await response.json()).toMatchObject(path.endsWith("session")
+      ? { capabilities: { sync: true, ai: true } } : { sync: { version: 7 }, ai: { version: 1, bundledModels: "codex" } });
+    expect(transport).not.toHaveBeenCalled();
   });
 
-  it.each(["/api/v1/session", "/api/v1/capabilities"])("bounds stalled discovery for %s", async (path) => {
+  it("bounds stalled model discovery", async () => {
     const timeout = new AbortController();
     const timeoutSpy = vi.spyOn(AbortSignal, "timeout").mockReturnValue(timeout.signal);
-    const store = testStore();
-    store.sync.isAvailable = async () => true;
     let started!: () => void;
     const fetching = new Promise<void>((resolve) => { started = resolve; });
-    const app = createApp({ config: databricksConfig, authStore: store, fetch: async (_url, init) => {
+    const app = createApp({ config: databricksConfig, authStore: testStore(), fetch: async (_url, init) => {
       started();
       return new Promise<Response>((_resolve, reject) => {
         init?.signal?.addEventListener("abort", () => reject(new DOMException("Discovery aborted", "AbortError")), { once: true });
       });
     } });
     try {
-      const pending = app.request(path, { headers: { "X-Forwarded-Email": "real@example.com", "x-forwarded-access-token": "obo" } });
+      const pending = app.request("/api/v1/models", { headers: { "X-Forwarded-Email": "real@example.com", "x-forwarded-access-token": "obo" } });
       await fetching;
       expect(timeoutSpy).toHaveBeenCalledWith(10_000);
       timeout.abort(new DOMException("Discovery timed out", "TimeoutError"));
-      const response = await pending;
-      expect(response.status).toBe(200);
-      expect(await response.json()).toMatchObject(path.endsWith("session") ? { capabilities: { sync: true, ai: false } } : { sync: { version: 7 } });
+      expect((await pending).ok).toBe(false);
     } finally { timeoutSpy.mockRestore(); }
   });
 

@@ -357,7 +357,7 @@ export function createApp(dependencies: AppDependencies): DahliaServerApp & { ru
       sessions: auth !== undefined,
       sync: syncAvailable,
       sharing: true,
-      ai: syncAvailable && (await ai.models(context.req.raw.signal, context.req.raw.headers).catch(() => [])).length > 0,
+      ai: syncAvailable && ai.configured,
     };
     for (const extension of extensions) {
       const additions = await extension.sessionCapabilities?.(identity) ?? {};
@@ -899,7 +899,7 @@ export function createApp(dependencies: AppDependencies): DahliaServerApp & { ru
       meetingEvents: { version: 1 },
       search: { version: 1 },
       conversationAnalytics: { version: 1 },
-      ...((await ai.models(context.req.raw.signal, context.req.raw.headers).catch(() => [])).length
+      ...(ai.configured
         ? { ai: { version: 1, ...(config.provider?.backend === "databricks" ? { bundledModels: "codex" as const } : {}) } } : {}),
       ...(sources.length ? {
         meetingSummaryGeneration: {

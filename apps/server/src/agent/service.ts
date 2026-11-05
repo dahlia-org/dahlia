@@ -72,6 +72,8 @@ export type AiChatEvent = { type: "text"; text: string }
   | { type: "done" };
 
 export interface AiService {
+  /** Server configuration enables chat; per-user model access is decided by discovery in the chat screen. */
+  readonly configured: boolean;
   models(signal?: AbortSignal, headers?: Headers): Promise<AiModel[]>;
   stream(input: AiChatInput, identity: Identity, request: Request, availableModels?: AiModel[]): AsyncIterable<AiChatEvent>;
 }
@@ -88,14 +90,17 @@ export function createAiService(
   const databricksTokens = config.provider?.backend === "databricks" && config.databricksWorkspace
     ? new DatabricksTokenProvider(config.databricksWorkspace, transport)
     : undefined;
+  const provider = config.provider?.backend === "databricks" || config.foundationModels?.length ? config.provider : undefined;
+  const configured = provider !== undefined;
   const models = async (signal?: AbortSignal, headers?: Headers) => {
-    if (!config.provider || (config.provider.backend !== "databricks" && !config.foundationModels?.length)) return [];
+    if (!provider) return [];
     const catalog = await gateway.models(new Request(config.baseUrl, { signal, headers }));
-    return chatModels(catalog, config.provider.backend === "databricks");
+    return chatModels(catalog, provider.backend === "databricks");
   };
   // Page-only chats stay in RAM and may expire on restart or Worker eviction.
   const sessions = new Map<string, { history: AgentHistory; workspaceId: string; expiresAt: number; active: boolean }>();
   return {
+    configured,
     models,
     async *stream(input, identity, request, availableModels) {
       const catalog = availableModels ?? await models(request.signal, request.headers);

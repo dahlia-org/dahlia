@@ -15,15 +15,20 @@ export class SyncNotifications {
   private readonly notes = new Map<string, Subscription>();
   private readonly domain = new Set<(reconnected: boolean) => void>();
   private timer: ReturnType<typeof setTimeout> | undefined;
+  // Last domain cursor from a connection that has had no error since opening; a replacement resumes from it.
+  private cursor: string | undefined;
+  private healthy = false;
   connected = false;
 
   private bind(user: string) {
     if (this.user === user) return;
     this.closeConnection();
     this.notes.clear(); this.domain.clear(); this.user = user;
+    this.cursor = undefined; this.healthy = false;
   }
   subscribeDomain(user: string, listener: (reconnected: boolean) => void) {
-    this.bind(user); this.domain.add(listener); this.replace();
+    // A new domain listener needs its initial full read, so its connection never resumes.
+    this.bind(user); this.domain.add(listener); this.healthy = false; this.replace();
     return () => { if (this.user !== user) return; this.domain.delete(listener); this.replace(); };
   }
   subscribeNotes(user: string, workspaceId: string, meetingId: string, listener: (hint?: Hint) => void) {
@@ -58,25 +63,31 @@ export class SyncNotifications {
     // Close immediately: queued events from a removed subscription cannot reach a closed view.
     this.closeConnection();
     clearTimeout(this.timer);
-    if (!this.domain.size && !this.notes.size) return;
+    if (!this.domain.size && !this.notes.size) { this.healthy = false; return; }
     this.timer = setTimeout(() => this.open(), 0);
   }
   private open() {
     this.timer = undefined;
-    const query = { user: this.user!, tab: this.tab,
+    const resume = this.healthy ? this.cursor : undefined;
+    const query = { user: this.user!, tab: this.tab, ...(resume ? { cursor: resume } : {}),
       notes: JSON.stringify([...this.notes.values()].map(({ workspaceId, meetingId }) => ({ workspaceId, meetingId }))) };
     const source = new EventSource(apiUrls.getEvents({ params: { query } }));
     this.source = source;
     source.addEventListener("open", () => {
       if (this.source !== source) return;
-      this.connected = true;
-      for (const listener of this.domain) listener(true);
+      // A replacement of a healthy connection is not a reconnect: the Server sends an
+      // invalidation only for changes after `resume`, so the gap needs no full reread.
+      const replaced = resume !== undefined && this.healthy;
+      this.connected = true; this.healthy = true;
+      if (!replaced) for (const listener of this.domain) listener(true);
       // Initial/reconnect reads occur after subscribing, covering the replacement gap.
       for (const subscription of this.notes.values()) for (const listener of subscription.listeners) listener();
     });
-    source.addEventListener("error", () => { if (this.source === source) this.connected = false; });
-    source.addEventListener("invalidation", () => {
-      if (this.source === source) for (const listener of this.domain) listener(false);
+    source.addEventListener("error", () => { if (this.source === source) { this.connected = false; this.healthy = false; } });
+    source.addEventListener("invalidation", (event) => {
+      if (this.source !== source) return;
+      if (event.lastEventId) this.cursor = event.lastEventId;
+      for (const listener of this.domain) listener(false);
     });
     source.addEventListener("document", (event) => {
       if (this.source !== source) return;
