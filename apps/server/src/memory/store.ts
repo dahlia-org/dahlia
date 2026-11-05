@@ -7,6 +7,7 @@ import { workspacePermissions } from "../auth/workspace-permissions";
 import { lockAuthorization } from "../auth/authorization";
 import { RequestError } from "../storage/upload";
 import { analyzerResolver, applicationAnalyzer, LAKEBASE_TOKENIZER_VERSION_SQL, type SearchAnalyzer } from "../search/lexical";
+import type { MemoryType } from "./memory-type";
 import { memoryProjection, type EmbeddingConfig, type PendingChunk, type SearchBackend } from "./search";
 
 export type SharedMemory = typeof pg.sharedMemory.$inferSelect;
@@ -51,15 +52,15 @@ export function createMemoryStore(database: PostgresDatabase | SQLiteDatabase | 
     async purge(userId: string, scopeId: string) {
       await scoped(userId, scopeId, "admin", (tx) => tx.delete(notes).where(eq(notes.scopeId, scopeId)));
     },
-    async listNotes(userId: string, scopeId: string, after?: string, query?: string) {
+    async listNotes(userId: string, scopeId: string, after?: string, query?: string, type?: MemoryType) {
       return scoped(userId, scopeId, "read", (tx) => tx.select().from(notes).where(and(eq(notes.scopeId, scopeId),
-        query ? contains(query) : undefined, after ? gt(notes.id, after) : undefined)).orderBy(asc(notes.id)).limit(100));
+        query ? contains(query) : undefined, type ? eq(notes.type, type) : undefined, after ? gt(notes.id, after) : undefined)).orderBy(asc(notes.id)).limit(100));
     },
     /** Hybrid recall over the scope's search projection; embedding carries the shared query vector. */
-    async recall(userId: string, scopeId: string, query: string, application: SearchAnalyzer, limit: number, vector?: number[]) {
+    async recall(userId: string, scopeId: string, query: string, application: SearchAnalyzer, limit: number, vector?: number[], type?: MemoryType) {
       const current = await analyzer(application);
       return scoped(userId, scopeId, "read", (tx) => projection.search(tx, scopeId, query, current, limit,
-        vector && embedding ? { ...embedding, vector } : undefined));
+        vector && embedding ? { ...embedding, vector } : undefined, type));
     },
     pendingEmbeddings: (scopeId: string, memoryId: string, config: EmbeddingConfig) =>
       maintenance(scopeId, (tx) => projection.pending(tx, memoryId, config)),
@@ -73,21 +74,22 @@ export function createMemoryStore(database: PostgresDatabase | SQLiteDatabase | 
       return scoped(userId, scopeId, "read", async (tx) => (await tx.select().from(notes)
         .where(and(eq(notes.scopeId, scopeId), eq(notes.id, id))))[0] ?? null);
     },
-    async saveNote(userId: string, scopeId: string, input: { id: string; revision: number; content: string },
+    async saveNote(userId: string, scopeId: string, input: { id: string; revision: number; content: string; type?: MemoryType },
       actor: "human" | "agent" = "human", explicit = false, application = applicationAnalyzer()) {
       const current = await analyzer(application);
       return scoped(userId, scopeId, "write", async (tx) => {
         const [existing] = await tx.select().from(notes).where(eq(notes.id, input.id));
         if (existing && existing.scopeId !== scopeId) throw new RequestError(409, "memory_revision_conflict");
         if (actor === "agent" && existing?.protected && !explicit) throw new RequestError(409, "memory_human_edit_protected");
-        if (existing?.content === input.content && existing.revision === input.revision + 1
+        const type = input.type ?? existing?.type ?? "notes";
+        if (existing?.content === input.content && existing.type === type && existing.revision === input.revision + 1
           && (actor !== "human" || existing.protected)) return existing;
         let result: SharedMemory | undefined;
         if (input.revision === 0) {
-          [result] = await tx.insert(notes).values({ id: input.id, scopeId, createdBy: userId, content: input.content, protected: actor === "human", updatedAt: new Date() })
+          [result] = await tx.insert(notes).values({ id: input.id, scopeId, createdBy: userId, content: input.content, type, protected: actor === "human", updatedAt: new Date() })
             .onConflictDoNothing().returning();
         } else {
-          [result] = await tx.update(notes).set({ content: input.content, revision: input.revision + 1, protected: actor === "human" || existing?.protected === true, updatedAt: new Date() })
+          [result] = await tx.update(notes).set({ content: input.content, type, revision: input.revision + 1, protected: actor === "human" || existing?.protected === true, updatedAt: new Date() })
             .where(and(eq(notes.id, input.id), eq(notes.scopeId, scopeId), eq(notes.revision, input.revision))).returning();
         }
         if (!result) throw new RequestError(409, "memory_revision_conflict");

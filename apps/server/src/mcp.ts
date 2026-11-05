@@ -1,4 +1,4 @@
-import { createDahliaMemoryTools, type DahliaMemoryTool } from "./memory/dahlia-tools";
+import { createDahliaMemoryTools, DAHLIA_MEMORY_INSTRUCTIONS, type DahliaMemoryTool } from "./memory/dahlia-tools";
 import type { DahliaMemory } from "./memory/dahlia";
 import type { ChatMemoryStore } from "./agent/context-store";
 import { decodeId, encodeId } from "@dahlia-ai/ui/model/typeid";
@@ -30,7 +30,8 @@ export function createServerMcpHandler(
 ) {
   return createMcpHandler(({ authInfo, requestInfo }) => {
     const identity = mcpIdentity(authInfo);
-    const server = new McpServer({ name: "Dahlia Server", version: "0.1.0" });
+    const memoryTools = dahliaMemory && hasApiScope(authInfo?.scopes ?? [], MEMORY_READ_SCOPE);
+    const server = new McpServer({ name: "Dahlia Server", version: "0.1.0" }, memoryTools ? { instructions: DAHLIA_MEMORY_INSTRUCTIONS } : undefined);
 
     if (sync && hasApiScope(authInfo?.scopes ?? [], MCP_READ_SCOPE)) {
       const sharedMeetingTools = meetingTools ?? createMeetingTools(sync);
@@ -93,7 +94,7 @@ export function createServerMcpHandler(
       ));
     }
 
-    if (dahliaMemory && hasApiScope(authInfo?.scopes ?? [], MEMORY_READ_SCOPE)) {
+    if (memoryTools) {
       for (const tool of Object.values(createDahliaMemoryTools(dahliaMemory, hasApiScope(authInfo?.scopes ?? [], MEMORY_WRITE_SCOPE), workingMemory))) {
         if (!tool) continue;
         registerMastraTool(server, tool, identity, requestInfo?.signal, async () => {

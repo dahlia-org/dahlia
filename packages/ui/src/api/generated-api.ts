@@ -392,7 +392,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Find saved memories ranked by keyword overlap */
+        /** Find saved memories ranked by matching words and meaning; optional type filter */
         post: operations["personalMemoryRecall"];
         delete?: never;
         options?: never;
@@ -446,7 +446,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Find saved memories ranked by keyword overlap */
+        /** Find saved memories ranked by matching words and meaning; optional type filter */
         post: operations["workspaceMemoryRecall"];
         delete?: never;
         options?: never;
@@ -2318,9 +2318,6 @@ export interface components {
             workspaceId?: string;
             saved?: boolean;
             deleted?: boolean;
-            /** @enum {string} */
-            suggestedScope?: "personal" | "workspace" | "both" | "uncertain";
-            reason?: string;
             scopes?: {
                 /** @enum {string} */
                 scope: "personal" | "workspace";
@@ -2338,11 +2335,18 @@ export interface components {
                 scope: "personal" | "workspace";
                 workspaceId?: string;
                 items: components["schemas"]["DahliaMemoryNote"][];
+                /** @enum {boolean} */
+                truncated?: true;
             }[];
             instruction?: string;
         };
         DahliaMemoryNote: {
             id: string;
+            /**
+             * @description profile: who the user is (role, background). preference: how they want things done. work: projects, decisions, customers and their status. people: colleagues, customer contacts and relationships. notes: anything else worth keeping.
+             * @enum {string}
+             */
+            type: "profile" | "preference" | "work" | "people" | "notes";
             content: string;
             revision: number;
             /** Format: date-time */
@@ -4094,6 +4098,8 @@ export interface operations {
             query?: {
                 after?: string;
                 query?: string;
+                /** @description profile: who the user is (role, background). preference: how they want things done. work: projects, decisions, customers and their status. people: colleagues, customer contacts and relationships. notes: anything else worth keeping. */
+                type?: "profile" | "preference" | "work" | "people" | "notes";
             };
             header?: {
                 /** @description Expected authenticated public user ID. A mismatch rejects the request before reading or writing document content. */
@@ -4130,6 +4136,11 @@ export interface operations {
             content: {
                 "application/json": {
                     id: string;
+                    /**
+                     * @description profile: who the user is (role, background). preference: how they want things done. work: projects, decisions, customers and their status. people: colleagues, customer contacts and relationships. notes: anything else worth keeping.
+                     * @enum {string}
+                     */
+                    type?: "profile" | "preference" | "work" | "people" | "notes";
                     content: string;
                     /** @enum {number} */
                     revision: 0;
@@ -4212,6 +4223,11 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": {
+                    /**
+                     * @description profile: who the user is (role, background). preference: how they want things done. work: projects, decisions, customers and their status. people: colleagues, customer contacts and relationships. notes: anything else worth keeping.
+                     * @enum {string}
+                     */
+                    type?: "profile" | "preference" | "work" | "people" | "notes";
                     content: string;
                     revision: number;
                     /** @enum {boolean} */
@@ -4244,6 +4260,11 @@ export interface operations {
                 "application/json": {
                     /** @description A question, sentence or keywords. Matches words (Japanese is tokenized; up to 16 terms are used) and, when embeddings are configured, meaning. */
                     query: string;
+                    /**
+                     * @description profile: who the user is (role, background). preference: how they want things done. work: projects, decisions, customers and their status. people: colleagues, customer contacts and relationships. notes: anything else worth keeping.
+                     * @enum {string}
+                     */
+                    type?: "profile" | "preference" | "work" | "people" | "notes";
                 };
             };
         };
@@ -4265,6 +4286,8 @@ export interface operations {
             query?: {
                 after?: string;
                 query?: string;
+                /** @description profile: who the user is (role, background). preference: how they want things done. work: projects, decisions, customers and their status. people: colleagues, customer contacts and relationships. notes: anything else worth keeping. */
+                type?: "profile" | "preference" | "work" | "people" | "notes";
             };
             header?: {
                 /** @description Expected authenticated public user ID. A mismatch rejects the request before reading or writing document content. */
@@ -4305,6 +4328,11 @@ export interface operations {
             content: {
                 "application/json": {
                     id: string;
+                    /**
+                     * @description profile: who the user is (role, background). preference: how they want things done. work: projects, decisions, customers and their status. people: colleagues, customer contacts and relationships. notes: anything else worth keeping.
+                     * @enum {string}
+                     */
+                    type?: "profile" | "preference" | "work" | "people" | "notes";
                     content: string;
                     /** @enum {number} */
                     revision: 0;
@@ -4390,6 +4418,11 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": {
+                    /**
+                     * @description profile: who the user is (role, background). preference: how they want things done. work: projects, decisions, customers and their status. people: colleagues, customer contacts and relationships. notes: anything else worth keeping.
+                     * @enum {string}
+                     */
+                    type?: "profile" | "preference" | "work" | "people" | "notes";
                     content: string;
                     revision: number;
                     /** @enum {boolean} */
@@ -4424,6 +4457,11 @@ export interface operations {
                 "application/json": {
                     /** @description A question, sentence or keywords. Matches words (Japanese is tokenized; up to 16 terms are used) and, when embeddings are configured, meaning. */
                     query: string;
+                    /**
+                     * @description profile: who the user is (role, background). preference: how they want things done. work: projects, decisions, customers and their status. people: colleagues, customer contacts and relationships. notes: anything else worth keeping.
+                     * @enum {string}
+                     */
+                    type?: "profile" | "preference" | "work" | "people" | "notes";
                 };
             };
         };

@@ -69,7 +69,7 @@ describe.runIf(url)("Workspace memory PostgreSQL RLS", () => {
       expect((await tx.execute(sql`select id from app.shared_memories where id = ${note.id}`)).rows).toHaveLength(1);
     });
     expect((await pool.query("SELECT * FROM app.shared_memories WHERE id = $1", [note.id])).rows).toEqual([]);
-    const recall = (userId: string, query: string) => memory.recall(userId, workspaceId, query, lindera, 20).then((rows) => rows.map((row) => row.id));
+    const recall = (userId: string, query: string) => memory.recall(userId, workspaceId, query, lindera, 20).then(({ hits }) => hits.map((row) => row.id));
     expect(await recall(owner.userId, "evidence")).toEqual([note.id]);
     // The tokenizer applies NFKC, so full-width and half-width kana match like their normal forms.
     const variant = await memory.saveNote(owner.userId, workspaceId, { id: uuidV7(), content: "ＡＰＩとｶﾀｶﾅの共有メモ", revision: 0 }, "human", false, lindera);
@@ -124,21 +124,21 @@ describe.runIf(url)("Workspace memory PostgreSQL RLS", () => {
       await memory.saveEmbeddings(workspaceId, note.id, embedding.model, [{ ...pending[0]!, vector }]);
       expect(await memory.pendingEmbeddings(workspaceId, note.id, embedding)).toEqual([]);
     }
-    const ids = (query: string, vector?: number[]) => memory.recall(owner.userId, workspaceId, query, lindera, 20, vector).then((rows) => rows.map((row) => row.id));
+    const ids = (query: string, vector?: number[]) => memory.recall(owner.userId, workspaceId, query, lindera, 20, vector).then(({ hits }) => hits.map((row) => row.id));
     expect(await ids("予算はいくらで確定しましたか")).toEqual([budget.id]);
     expect(await ids("cost", axis(0))).toEqual([budget.id, lunch.id]);
     // A word match plus a weaker vector match outranks a vector-only match.
     expect(await ids("lunch", axis(0))).toEqual([lunch.id, budget.id]);
     // Another model's vectors are not used, and reconciliation queues the current model.
     const other = createPostgresAuthStore(db, "postgres", { model: "next-model", dimensions: 32 }).memory!;
-    expect(await other.recall(owner.userId, workspaceId, "cost", lindera, 20, axis(0))).toEqual([]);
+    expect((await other.recall(owner.userId, workspaceId, "cost", lindera, 20, axis(0))).hits).toEqual([]);
     await other.reconcilePage(workspaceId, lindera);
     expect((await db.select().from(schema.backgroundJob).where(eq(schema.backgroundJob.dedupeKey, `memory-index:workspace:${budget.id}`)))[0]?.payload)
       .toMatchObject({ model: "next-model" });
     // An analyzer change rewrites chunks through the Workspace maintenance context, without a user identity.
     const intl = applicationAnalyzer((await import("../src/search/tokenizer")).createIntlSearchTokenizer());
     expect(await memory.reconcilePage(workspaceId, intl)).toBeUndefined();
-    expect((await memory.recall(owner.userId, workspaceId, "予算", intl, 20)).map((row) => row.id)).toEqual([budget.id]);
+    expect((await memory.recall(owner.userId, workspaceId, "予算", intl, 20)).hits.map((row) => row.id)).toEqual([budget.id]);
   });
   it.each(["personal", "workspace"] as const)("does not let an analyzer rebuild overwrite a concurrent save (%s)", async (kind) => {
     const concurrent = connectPostgresUrl(url!, 4);
@@ -176,7 +176,7 @@ describe.runIf(url)("Workspace memory PostgreSQL RLS", () => {
       });
       await blocker.query("SELECT pg_advisory_unlock(899179)");
       await rebuilding; await saving;
-      const ids = (query: string) => memory.recall(owner.userId, scopeId, query, lindera, 20).then((rows) => rows.map((row) => row.id));
+      const ids = (query: string) => memory.recall(owner.userId, scopeId, query, lindera, 20).then(({ hits }) => hits.map((row) => row.id));
       expect(await ids("休暇")).toEqual([note.id]);
       expect(await ids("古い")).toEqual([]);
       // Reconciling again keeps the projection consistent.
@@ -213,7 +213,7 @@ describe.runIf(url)("Workspace memory PostgreSQL RLS", () => {
     const run = ["ア", "か", "ア"].map((char) => char.repeat(600));
     const memory = app.personalMemory!;
     const note = await memory.saveNote(owner.userId, owner.userId, { id: uuidV7(), revision: 0, content: run.join("") }, "human", false, databaseSide);
-    expect((await memory.recall(owner.userId, owner.userId, run[1]!, databaseSide, 20)).map((row) => row.id)).toEqual([note.id]);
+    expect((await memory.recall(owner.userId, owner.userId, run[1]!, databaseSide, 20)).hits.map((row) => row.id)).toEqual([note.id]);
   });
   it("serializes a pending save against purge", async () => {
     const concurrent = connectPostgresUrl(url!, 4);

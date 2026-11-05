@@ -7,6 +7,7 @@ import { chunkText } from "../search/chunk";
 import {
   analyzerInput, contentHash, cosineSimilarity, decodeFloat32, encodeFloat32, fts5Query, lexemeQuery, queryTokens, type SearchAnalyzer,
 } from "../search/lexical";
+import type { MemoryType } from "./memory-type";
 import { reciprocalRankFusion, SEARCH_CANDIDATE_LIMIT } from "../search/ranking";
 
 export type SearchBackend = "postgres" | "lakebase" | "sqlite";
@@ -70,15 +71,19 @@ export function memoryProjection(schema: Schema, backend: SearchBackend, persona
       { source, scopeId: note.scopeId, documentId: note.id, ...embedding });
   }
 
-  async function lexicalIds(tx: NodePgDatabase, scopeId: string, analyzer: SearchAnalyzer, lexemes: string[]): Promise<string[]> {
+  // Chunks carry no type, so a type filter restricts them to the scope's memories of that type.
+  const ofType = (tx: NodePgDatabase, scopeId: string, type?: MemoryType) => type
+    ? inArray(chunks.memoryId, tx.select({ id: notes.id }).from(notes).where(and(eq(notes.scopeId, scopeId), eq(notes.type, type)))) : undefined;
+
+  async function lexicalIds(tx: NodePgDatabase, scopeId: string, analyzer: SearchAnalyzer, lexemes: string[], type?: MemoryType): Promise<string[]> {
     if (!lexemes.length) return [];
-    const ids = await matchingIds(tx, scopeId, analyzer, lexemes, analyzer.matchAll);
+    const ids = await matchingIds(tx, scopeId, analyzer, lexemes, analyzer.matchAll, type);
     // An analyzer without stop words requires every term, which a sentence rarely meets; then any term may match.
-    return ids.length || !analyzer.matchAll || lexemes.length < 2 ? ids : matchingIds(tx, scopeId, analyzer, lexemes, false);
+    return ids.length || !analyzer.matchAll || lexemes.length < 2 ? ids : matchingIds(tx, scopeId, analyzer, lexemes, false, type);
   }
 
-  async function matchingIds(tx: NodePgDatabase, scopeId: string, analyzer: SearchAnalyzer, lexemes: string[], matchAll: boolean): Promise<string[]> {
-    const scope = and(eq(chunks.scopeId, scopeId), eq(chunks.analyzer, analyzer.id));
+  async function matchingIds(tx: NodePgDatabase, scopeId: string, analyzer: SearchAnalyzer, lexemes: string[], matchAll: boolean, type?: MemoryType): Promise<string[]> {
+    const scope = and(eq(chunks.scopeId, scopeId), eq(chunks.analyzer, analyzer.id), ofType(tx, scopeId, type));
     if (!isPostgres) {
       const fts = sql.identifier(`${table}_fts`);
       const match = fts5Query(lexemes, matchAll);
@@ -100,8 +105,8 @@ export function memoryProjection(schema: Schema, backend: SearchBackend, persona
     return [...new Set(rows.map((row) => row.id))];
   }
 
-  async function vectorIds(tx: NodePgDatabase, scopeId: string, embedding: EmbeddingConfig & { vector: number[] }): Promise<string[]> {
-    const current = and(eq(chunks.scopeId, scopeId), eq(chunks.embeddingModel, embedding.model), ne(chunks.chunkText, ""),
+  async function vectorIds(tx: NodePgDatabase, scopeId: string, embedding: EmbeddingConfig & { vector: number[] }, type?: MemoryType): Promise<string[]> {
+    const current = and(eq(chunks.scopeId, scopeId), eq(chunks.embeddingModel, embedding.model), ne(chunks.chunkText, ""), ofType(tx, scopeId, type),
       sql`${isPostgres ? sql`cardinality(${chunks.embedding})` : sql`length(${chunks.embedding}) / 4`} = ${embedding.dimensions}`);
     if (!isPostgres) {
       // shortcut: exact cosine over the scope's chunks; SQLite has no vector index.
@@ -113,19 +118,19 @@ export function memoryProjection(schema: Schema, backend: SearchBackend, persona
     }
     // Like meeting search: keep scanning the HNSW index until the scope filter yields enough rows.
     if (backend === "postgres") await tx.execute(sql`select set_config('hnsw.iterative_scan', 'strict_order', true)`);
-    const type = sql.raw(`public.vector(${embedding.dimensions})`);
-    const distance = sql`${chunks.embedding}::${type} <=> ${JSON.stringify(embedding.vector)}::${type}`;
+    const vectorType = sql.raw(`public.vector(${embedding.dimensions})`);
+    const distance = sql`${chunks.embedding}::${vectorType} <=> ${JSON.stringify(embedding.vector)}::${vectorType}`;
     const rows = await tx.select({ id: chunks.memoryId }).from(chunks).where(current)
       .orderBy(distance, asc(chunks.memoryId)).limit(SEARCH_CANDIDATE_LIMIT);
     return [...new Set(rows.map((row) => row.id))];
   }
 
   // Memories without chunks of the current analyzer (before reconciliation) fall back to the canonical substring match.
-  async function unindexedIds(tx: NodePgDatabase, scopeId: string, analyzer: SearchAnalyzer, terms: string[]): Promise<string[]> {
+  async function unindexedIds(tx: NodePgDatabase, scopeId: string, analyzer: SearchAnalyzer, terms: string[], type?: MemoryType): Promise<string[]> {
     const matches: Array<{ id: string; count: number; updatedAt: Date }> = [];
     for (let after: string | undefined; ;) {
       const page = await tx.select({ id: notes.id, content: notes.content, updatedAt: notes.updatedAt }).from(notes)
-        .where(and(eq(notes.scopeId, scopeId), notExists(hasCurrentChunk(tx, analyzer)), after ? gt(notes.id, after) : undefined))
+        .where(and(eq(notes.scopeId, scopeId), type ? eq(notes.type, type) : undefined, notExists(hasCurrentChunk(tx, analyzer)), after ? gt(notes.id, after) : undefined))
         .orderBy(asc(notes.id)).limit(500);
       for (const note of page) {
         const text = note.content.normalize("NFKC").toLowerCase();
@@ -143,16 +148,19 @@ export function memoryProjection(schema: Schema, backend: SearchBackend, persona
     index,
     /** Hybrid recall: lexical and vector candidates per best chunk, fused with RRF, then the canonical rows. */
     async search(tx: NodePgDatabase, scopeId: string, query: string, analyzer: SearchAnalyzer, limit: number,
-      embedding?: EmbeddingConfig & { vector: number[] }): Promise<Note[]> {
+      embedding?: EmbeddingConfig & { vector: number[] }, type?: MemoryType): Promise<{ hits: Array<Note & { score: number; ftsRank: number }>; more: boolean }> {
       const lexemes = await queryLexemes(tx, backend, analyzer, query);
       const terms = [...new Set([...lexemes, ...query.normalize("NFKC").toLowerCase().split(/\s+/u).filter(Boolean)])].slice(0, 32);
-      const lexical = [...new Set([...await lexicalIds(tx, scopeId, analyzer, lexemes), ...await unindexedIds(tx, scopeId, analyzer, terms)])];
-      const vector = embedding ? await vectorIds(tx, scopeId, embedding) : [];
-      const ids = reciprocalRankFusion(lexical, vector).slice(0, limit).map(({ documentId }) => documentId);
-      if (!ids.length) return [];
-      const rows = await tx.select().from(notes).where(and(eq(notes.scopeId, scopeId), inArray(notes.id, ids)));
+      const lexical = [...new Set([...await lexicalIds(tx, scopeId, analyzer, lexemes, type), ...await unindexedIds(tx, scopeId, analyzer, terms, type)])];
+      const vector = embedding ? await vectorIds(tx, scopeId, embedding, type) : [];
+      const fused = reciprocalRankFusion(lexical, vector);
+      // Whether matches were cut comes from the candidates, not from the rows that survive a concurrent delete.
+      const ranked = fused.slice(0, limit), more = fused.length > limit;
+      if (!ranked.length) return { hits: [], more };
+      const rows = await tx.select().from(notes).where(and(eq(notes.scopeId, scopeId), inArray(notes.id, ranked.map(({ documentId }) => documentId))));
       const byId = new Map(rows.map((row) => [row.id, row]));
-      return ids.flatMap((id) => byId.get(id) ?? []);
+      // Fused scores come from ranks within this scope only; they order this scope, not scopes against each other.
+      return { hits: ranked.flatMap(({ documentId, score, ftsRank }) => { const row = byId.get(documentId); return row ? [{ ...row, score, ftsRank }] : []; }), more };
     },
     async pending(tx: NodePgDatabase, memoryId: string, embedding: EmbeddingConfig): Promise<PendingChunk[]> {
       return (await tx.select({ chunkNo: chunks.chunkNo, text: chunks.chunkText, hash: chunks.contentHash }).from(chunks)
