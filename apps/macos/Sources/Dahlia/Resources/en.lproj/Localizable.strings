@@ -1724,6 +1724,11 @@
 "Select a Server Workspace" = "Select a Server Workspace";
 "Select an Organization" = "Select an Organization";
 "Reload destinations" = "Reload destinations";
+"Checking the import destination…" = "Checking the import destination…";
+"Preparing screenshots…" = "Preparing screenshots…";
+"Creating a backup…" = "Creating a backup…";
+"Checking against the Server…" = "Checking against the Server…";
+"Finishing the import…" = "Finishing the import…";
 "A backup is saved before importing. Existing Workspace settings stay unchanged. The original Local Workspace remains available." = "A backup is saved before importing. Existing Workspace settings stay unchanged. The original Local Workspace remains available.";
 "Import" = "Import";
 

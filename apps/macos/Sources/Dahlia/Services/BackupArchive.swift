@@ -3,8 +3,8 @@ import CryptoKit
 import Foundation
 import System
 
-struct BackupArchiveManifest: Codable, Sendable {
-    struct Entry: Codable, Sendable {
+struct BackupArchiveManifest: Codable, Equatable, Sendable {
+    struct Entry: Codable, Equatable, Sendable {
         let path: String
         let size: Int64
         let checksum: String
@@ -26,7 +26,8 @@ enum BackupArchive {
         return try file.read(upToCount: 16) != Data("SQLite format 3\0".utf8)
     }
 
-    static func create(directory: URL, metadata: BackupMetadata, paths: [String], at destination: URL) throws {
+    @discardableResult
+    static func create(directory: URL, metadata: BackupMetadata, paths: [String], at destination: URL) throws -> BackupArchiveManifest {
         let entries = try paths.map { path in
             let url = directory.appending(path: path)
             return try BackupArchiveManifest.Entry(
@@ -69,6 +70,16 @@ enum BackupArchive {
         let handle = try FileHandle(forWritingTo: destination)
         defer { try? handle.close() }
         try handle.synchronize()
+        return manifest
+    }
+
+    /// Checks every entry's size and checksum by streaming, without writing the contents to disk.
+    static func verify(at url: URL, matches expected: BackupArchiveManifest) throws {
+        try withReader(url) { stream in
+            let manifest = try readManifest(from: stream)
+            guard manifest == expected else { throw BackupServiceError.invalidBackup }
+            try readEntries(from: stream, manifest: manifest, into: nil)
+        }
     }
 
     static func readManifest(at url: URL) throws -> BackupArchiveManifest {
@@ -81,34 +92,41 @@ enum BackupArchive {
         defer { try? FileManager.default.removeItem(at: directory) }
         let manifest = try withReader(url) { stream in
             let manifest = try readManifest(from: stream)
-            var remaining = Dictionary(uniqueKeysWithValues: manifest.entries.map { ($0.path, $0) })
-            while let header = try stream.readHeader() {
-                let (path, size) = try regularFile(header)
-                guard let entry = remaining.removeValue(forKey: path), size == entry.size else { throw BackupServiceError.invalidBackup }
+            try readEntries(from: stream, manifest: manifest, into: directory)
+            return manifest
+        }
+        return try body(directory, manifest)
+    }
+
+    private static func readEntries(from stream: ArchiveStream, manifest: BackupArchiveManifest, into directory: URL?) throws {
+        var remaining = Dictionary(uniqueKeysWithValues: manifest.entries.map { ($0.path, $0) })
+        while let header = try stream.readHeader() {
+            let (path, size) = try regularFile(header)
+            guard let entry = remaining.removeValue(forKey: path), size == entry.size else { throw BackupServiceError.invalidBackup }
+            var handle: FileHandle?
+            if let directory {
                 let output = directory.appending(path: path)
                 try FileManager.default.createDirectory(at: output.deletingLastPathComponent(), withIntermediateDirectories: true)
                 guard FileManager.default.createFile(atPath: output.path, contents: nil, attributes: [.posixPermissions: 0o600]) else {
                     throw BackupServiceError.invalidBackup
                 }
-                let handle = try FileHandle(forWritingTo: output)
-                defer { try? handle.close() }
-                var digest = SHA256()
-                var unread = size
-                while unread > 0 {
-                    var chunk = Data(count: Int(min(unread, 1_048_576)))
-                    try chunk.withUnsafeMutableBytes { try stream.readBlob(key: dataKey, into: $0) }
-                    digest.update(data: chunk)
-                    try handle.write(contentsOf: chunk)
-                    unread -= Int64(chunk.count)
-                }
-                let checksum = "SHA-256:" + digest.finalize().map { String(format: "%02x", $0) }.joined()
-                guard checksum == entry.checksum else { throw BackupServiceError.invalidBackup }
-                try handle.synchronize()
+                handle = try FileHandle(forWritingTo: output)
             }
-            guard remaining.isEmpty else { throw BackupServiceError.invalidBackup }
-            return manifest
+            defer { try? handle?.close() }
+            var digest = SHA256()
+            var unread = size
+            while unread > 0 {
+                var chunk = Data(count: Int(min(unread, 1_048_576)))
+                try chunk.withUnsafeMutableBytes { try stream.readBlob(key: dataKey, into: $0) }
+                digest.update(data: chunk)
+                try handle?.write(contentsOf: chunk)
+                unread -= Int64(chunk.count)
+            }
+            let checksum = "SHA-256:" + digest.finalize().map { String(format: "%02x", $0) }.joined()
+            guard checksum == entry.checksum else { throw BackupServiceError.invalidBackup }
+            try handle?.synchronize()
         }
-        return try body(directory, manifest)
+        guard remaining.isEmpty else { throw BackupServiceError.invalidBackup }
     }
 
     private static func readManifest(from stream: ArchiveStream) throws -> BackupArchiveManifest {

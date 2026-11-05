@@ -4,6 +4,7 @@ import SwiftUI
 struct WorkspaceImportView: View {
     let pending: PendingWorkspaceServerAdoption
     let isBusy: Bool
+    let step: LocalWorkspaceImport.Step?
     let onCancel: () -> Void
     let onReload: () async -> Void
     let onImport: (UUID?, UUID?, String?, Bool) async -> Void
@@ -79,7 +80,12 @@ struct WorkspaceImportView: View {
                         .disabled(useExisting ? destinationId == nil || (destinationId == pending.workspace.id && !reconnectExisting) :
                             !canImportToNewWorkspace)
                 }
-                if isBusy { ProgressView().controlSize(.small) }
+                if isBusy {
+                    HStack(spacing: 8) {
+                        ProgressView().controlSize(.small)
+                        if let step { Text(step.label).foregroundStyle(.secondary) }
+                    }
+                }
             }
             .padding(24)
             .frame(width: 520)

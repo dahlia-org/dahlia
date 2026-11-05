@@ -3370,5 +3370,10 @@ extension L10n {
         bundle: bundle
     ) }
     static var workspaceImportStart: String { String(localized: "Import", bundle: bundle) }
+    static var workspaceImportStepDestination: String { String(localized: "Checking the import destination…", bundle: bundle) }
+    static var workspaceImportStepScreenshots: String { String(localized: "Preparing screenshots…", bundle: bundle) }
+    static var workspaceImportStepBackup: String { String(localized: "Creating a backup…", bundle: bundle) }
+    static var workspaceImportStepServer: String { String(localized: "Checking against the Server…", bundle: bundle) }
+    static var workspaceImportStepCommit: String { String(localized: "Finishing the import…", bundle: bundle) }
 
 }

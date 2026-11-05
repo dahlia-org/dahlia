@@ -31,6 +31,7 @@ final class WorkspaceManagementModel {
     private(set) var isRemovingWorkspace = false
     private(set) var isRenamingWorkspace = false
     private(set) var updatingWorkspaceAccountID: UUID?
+    private(set) var serverAdoptionStep: LocalWorkspaceImport.Step?
     var isShowingError = false
 
     private var appDatabase: AppDatabaseManager?
@@ -366,7 +367,11 @@ final class WorkspaceManagementModel {
     ) async -> WorkspaceRecord? {
         guard updatingWorkspaceAccountID == nil, let repository else { return nil }
         updatingWorkspaceAccountID = pending.workspace.id
-        defer { updatingWorkspaceAccountID = nil }
+        serverAdoptionStep = .destination
+        defer {
+            updatingWorkspaceAccountID = nil
+            serverAdoptionStep = nil
+        }
         do {
             let api = SyncAPIClient(session: .shared)
             let connection = pending.connection.record
@@ -390,7 +395,8 @@ final class WorkspaceManagementModel {
             let updated = try await LocalWorkspaceImport.run(
                 sourceId: pending.workspace.id, destination: destination, dbQueue: repository.dbQueue,
                 backup: backup, api: api, replaceServerImageAnalysis: false,
-                reconnectExisting: reconnectExisting
+                reconnectExisting: reconnectExisting,
+                progress: { [weak self] in self?.serverAdoptionStep = $0 }
             )
             pendingServerAdoption = nil
             await loadWorkspaces()

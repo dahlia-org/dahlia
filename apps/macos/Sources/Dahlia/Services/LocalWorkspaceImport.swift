@@ -14,6 +14,20 @@ enum LocalWorkspaceImportError: LocalizedError {
 }
 
 enum LocalWorkspaceImport {
+    enum Step: Sendable {
+        case destination, screenshots, backup, server, commit
+
+        var label: String {
+            switch self {
+            case .destination: L10n.workspaceImportStepDestination
+            case .screenshots: L10n.workspaceImportStepScreenshots
+            case .backup: L10n.workspaceImportStepBackup
+            case .server: L10n.workspaceImportStepServer
+            case .commit: L10n.workspaceImportStepCommit
+            }
+        }
+    }
+
     static func createDestination(
         sourceId: UUID,
         organizationId: UUID,
@@ -53,7 +67,8 @@ enum LocalWorkspaceImport {
         api: SyncAPIClient = SyncAPIClient(session: .shared),
         replaceServerImageAnalysis: Bool = false,
         reconnectExisting: Bool = false,
-        screenshots: ScreenshotContentProvider = .shared
+        screenshots: ScreenshotContentProvider = .shared,
+        progress: @MainActor @Sendable (Step) -> Void = { _ in }
     ) async throws -> WorkspaceRecord {
         guard sourceId != destination.workspaceId || reconnectExisting else { throw LocalWorkspaceImportError.collision }
         let connection = try await dbQueue.read { db in
@@ -66,6 +81,7 @@ enum LocalWorkspaceImport {
         if !reconnectExisting {
             try await worker.synchronizeForTransfer(workspaceId: destination.workspaceId, connectionId: destination.connectionId)
         }
+        await progress(.screenshots)
         screenshots.retainOriginals(workspaceIds: [sourceId], dbQueue: dbQueue)
         defer { screenshots.releaseOriginals(workspaceIds: [sourceId], dbQueue: dbQueue) }
         let files = try await screenshots.prepareAccountTransfer(workspaceId: sourceId, connectionId: connection.id, dbQueue: dbQueue)
@@ -78,7 +94,9 @@ enum LocalWorkspaceImport {
             )
         }
         do {
+            await progress(.backup)
             let generation = try await backup.createGeneration(workspaceIds: [sourceId])
+            await progress(.server)
             let reconnection = reconnectExisting
                 ? try await worker.reconnectionSnapshot(workspaceId: destination.workspaceId, connectionId: connection.id, origin: origin) : nil
             let snapshot: SyncResetSnapshot = if let reconnection {
@@ -91,6 +109,7 @@ enum LocalWorkspaceImport {
                 ["admin", "editor"].contains(current.role), current.organizationId == destination.organizationId else {
                 throw LocalWorkspaceImportError.unavailable
             }
+            await progress(.commit)
             return try await dbQueue.write { db in
                 guard try fence.isCurrent(in: db),
                       let currentConnection = try DahliaAccountConnectionRecord.fetchOne(db, key: connection.id),

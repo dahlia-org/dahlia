@@ -245,52 +245,24 @@ actor BackupService {
         let generationID = UUID.v7()
         let temporaryURL = directoryURL.appending(path: ".\(generationID).tmp.sqlite")
         defer { try? manager.removeItem(at: temporaryURL) }
-        let snapshotURL = directoryURL.appending(path: ".\(generationID).source.sqlite")
-        defer { try? manager.removeItem(at: snapshotURL) }
-        let snapshot = try DatabaseQueue(path: snapshotURL.path, configuration: AppDatabaseManager.configuration())
-        defer { try? snapshot.close() }
-        try manager.setAttributes([.posixPermissions: 0o600], ofItemAtPath: snapshotURL.path)
-        try dbQueue.backup(to: snapshot)
-        try snapshot.writeWithoutTransaction { db in
-            _ = try String.fetchOne(db, sql: "PRAGMA journal_mode = DELETE")
+        // A WAL reader keeps one consistent snapshot without blocking the live writer, so skip the full-database copy.
+        // The WAL path never touches `dbQueue`, whose serial queue would wait behind the app's own writes.
+        var snapshotURL: URL?
+        if !usesWAL(path: dbQueue.path) {
+            let url = directoryURL.appending(path: ".\(generationID).source.sqlite")
+            snapshotURL = url
+            let snapshot = try DatabaseQueue(path: url.path, configuration: AppDatabaseManager.configuration())
+            defer { try? snapshot.close() }
+            try manager.setAttributes([.posixPermissions: 0o600], ofItemAtPath: url.path)
+            try dbQueue.backup(to: snapshot)
+            try snapshot.close()
         }
-        try snapshot.close()
+        defer { if let snapshotURL { try? manager.removeItem(at: snapshotURL) } }
+        let sourcePath = snapshotURL?.path ?? dbQueue.path
         let destination = try AppDatabaseManager(path: temporaryURL.path)
         defer { try? destination.close() }
         try destination.dbQueue.writeWithoutTransaction { db in
-            try db.execute(sql: "ATTACH DATABASE ? AS backup_source", arguments: [snapshotURL.path])
-        }
-        let metadata = try destination.dbQueue.write { db in
-            var workspaces: [BackupWorkspace] = []
-            for workspaceId in workspaceIds.sorted(by: { $0.uuidString < $1.uuidString }) {
-                guard let workspace = try WorkspaceRecord.fetchOne(
-                    db,
-                    sql: "SELECT * FROM backup_source.workspaces WHERE id = ?",
-                    arguments: [workspaceId]
-                ) else {
-                    throw BackupServiceError.invalidBackup
-                }
-                guard workspace.accountConnectionId == nil, workspace.syncRole == nil, workspace.syncConfirmedConnectionId == nil else {
-                    throw BackupServiceError.localWorkspacesOnly
-                }
-                let unresolved = try Self.unresolvedAudioCount(in: db, workspaceId: workspaceId, schema: "backup_source.")
-                guard unresolved == 0 else { throw BackupServiceError.unresolvedAudio(unresolved) }
-                try WorkspaceBackupTransfer.copy(
-                    workspaceId: workspaceId, in: db,
-                    destinationWorkspace: WorkspaceBackupTransfer.portableWorkspace(workspace), remapIDs: false
-                )
-                workspaces.append(BackupWorkspace(id: workspace.id, name: workspace.name))
-            }
-            let metadata = BackupMetadata(
-                formatVersion: BackupMetadata.currentFormatVersion, generationId: generationID, createdAt: .now,
-                schemaVersion: AppDatabaseManager.currentSchemaVersion,
-                migrationIdentifier: AppDatabaseManager.currentMigrationIdentifier,
-                appVersion: appVersion, appBuild: appBuild, reason: reason, workspaces: workspaces
-            )
-            try clearSearchIndex(in: db)
-            try writeMetadata(metadata, in: db)
-            try WorkspaceBackupTransfer.validateIntegrity(in: db)
-            return metadata
+            try db.execute(sql: "ATTACH DATABASE ? AS backup_source", arguments: [sourcePath])
         }
         let archiveDirectory = directoryURL.appending(path: ".\(generationID).archive")
         try manager.createDirectory(at: archiveDirectory, withIntermediateDirectories: false, attributes: [.posixPermissions: 0o700])
@@ -298,47 +270,95 @@ actor BackupService {
         let storeDirectory = fileStoreDirectory ?? URL(filePath: dbQueue.path).deletingLastPathComponent().appending(path: "FileStore")
         let originals = try? ScreenshotFileStore(directory: storeDirectory, readOnly: true)
         var paths = ["database.sqlite"]
-        try destination.dbQueue.read { db in
-            for workspaceId in workspaceIds {
-                let rows = try Row.fetchCursor(db, sql: """
-                SELECT f.*, b.imageData AS legacyBytes FROM backup_source.files f
-                LEFT JOIN backup_source.file_migration_content b ON b.fileId = f.id WHERE f.workspace_id = ? ORDER BY f.id
-                """, arguments: [workspaceId])
-                while let row = try rows.next() {
-                    let file = try FileRecord(row: row)
-                    let bytes: Data
-                    if let legacy: Data = row["legacyBytes"] {
-                        bytes = legacy
-                    } else {
-                        guard let reference = file.localReference,
-                              let content = try originals?.read(
-                                  JSONDecoder().decode(ScreenshotRemoteReference.self, from: Data(reference.utf8)),
-                                  variant: .original
-                              ) else {
-                            throw ScreenshotContentError.unavailable
-                        }
-                        bytes = content.data
+        // DEFERRED, not GRDB's default IMMEDIATE: IMMEDIATE would also write-lock the attached source, the live database on the WAL path.
+        // The file rows share this transaction, so they come from the same source snapshot as the copied rows.
+        var metadata: BackupMetadata?
+        try destination.dbQueue.writeWithoutTransaction { db in
+            try db.inTransaction(.deferred) {
+                var workspaces: [BackupWorkspace] = []
+                for workspaceId in workspaceIds.sorted(by: { $0.uuidString < $1.uuidString }) {
+                    guard let workspace = try WorkspaceRecord.fetchOne(
+                        db,
+                        sql: "SELECT * FROM backup_source.workspaces WHERE id = ?",
+                        arguments: [workspaceId]
+                    ) else {
+                        throw BackupServiceError.invalidBackup
                     }
-                    guard Int64(bytes.count) == file.size,
-                          ScreenshotRemoteReference.digest(bytes) == file.contentHash else { throw ScreenshotContentError.integrityFailure }
-                    let path = "files/\(file.id.uuidString.lowercased())/original"
-                    let output = archiveDirectory.appending(path: path)
-                    try manager.createDirectory(at: output.deletingLastPathComponent(), withIntermediateDirectories: true)
-                    try bytes.write(to: output, options: .atomic)
-                    paths.append(path)
+                    guard workspace.accountConnectionId == nil, workspace.syncRole == nil, workspace.syncConfirmedConnectionId == nil else {
+                        throw BackupServiceError.localWorkspacesOnly
+                    }
+                    let unresolved = try Self.unresolvedAudioCount(in: db, workspaceId: workspaceId, schema: "backup_source.")
+                    guard unresolved == 0 else { throw BackupServiceError.unresolvedAudio(unresolved) }
+                    try WorkspaceBackupTransfer.copy(
+                        workspaceId: workspaceId, in: db,
+                        destinationWorkspace: WorkspaceBackupTransfer.portableWorkspace(workspace), remapIDs: false
+                    )
+                    workspaces.append(BackupWorkspace(id: workspace.id, name: workspace.name))
                 }
+                let generated = BackupMetadata(
+                    formatVersion: BackupMetadata.currentFormatVersion, generationId: generationID, createdAt: .now,
+                    schemaVersion: AppDatabaseManager.currentSchemaVersion,
+                    migrationIdentifier: AppDatabaseManager.currentMigrationIdentifier,
+                    appVersion: appVersion, appBuild: appBuild, reason: reason, workspaces: workspaces
+                )
+                try clearSearchIndex(in: db)
+                try writeMetadata(generated, in: db)
+                try WorkspaceBackupTransfer.validateIntegrity(in: db)
+                for workspaceId in workspaceIds {
+                    let rows = try Row.fetchCursor(db, sql: """
+                    SELECT f.*, b.imageData AS legacyBytes FROM backup_source.files f
+                    LEFT JOIN backup_source.file_migration_content b ON b.fileId = f.id WHERE f.workspace_id = ? ORDER BY f.id
+                    """, arguments: [workspaceId])
+                    while let row = try rows.next() {
+                        let file = try FileRecord(row: row)
+                        let bytes: Data
+                        if let legacy: Data = row["legacyBytes"] {
+                            bytes = legacy
+                        } else {
+                            guard let reference = file.localReference,
+                                  let content = try originals?.read(
+                                      JSONDecoder().decode(ScreenshotRemoteReference.self, from: Data(reference.utf8)),
+                                      variant: .original
+                                  ) else {
+                                throw ScreenshotContentError.unavailable
+                            }
+                            bytes = content.data
+                        }
+                        guard Int64(bytes.count) == file.size,
+                              ScreenshotRemoteReference.digest(bytes) == file.contentHash else { throw ScreenshotContentError.integrityFailure }
+                        let path = "files/\(file.id.uuidString.lowercased())/original"
+                        let output = archiveDirectory.appending(path: path)
+                        try manager.createDirectory(at: output.deletingLastPathComponent(), withIntermediateDirectories: true)
+                        try bytes.write(to: output, options: .atomic)
+                        paths.append(path)
+                    }
+                }
+                metadata = generated
+                return .commit
             }
         }
+        guard let metadata else { throw BackupServiceError.invalidBackup }
         try destination.close()
-        try manager.moveItem(at: temporaryURL, to: archiveDirectory.appending(path: "database.sqlite"))
+        let databaseURL = archiveDirectory.appending(path: "database.sqlite")
+        try manager.moveItem(at: temporaryURL, to: databaseURL)
         let temporaryArchive = directoryURL.appending(path: ".\(generationID).tmp.\(BackupArchive.pathExtension)")
         defer { try? manager.removeItem(at: temporaryArchive) }
-        let persistedMetadata = try readAndValidateMetadata(at: archiveDirectory.appending(path: "database.sqlite"))
-        try BackupArchive.create(directory: archiveDirectory, metadata: persistedMetadata, paths: paths, at: temporaryArchive)
+        let validatedMetadata = try readAndValidateMetadata(at: databaseURL)
+        let manifest = try BackupArchive.create(directory: archiveDirectory, metadata: validatedMetadata, paths: paths, at: temporaryArchive)
+        try validateArchiveFiles(databaseURL: databaseURL, manifest: manifest)
+        // The database above was already validated; re-read only the written bytes instead of extracting the archive.
+        try BackupArchive.verify(at: temporaryArchive, matches: manifest)
         let url = directoryURL.appending(path: "Dahlia-\(metadata.generationId).\(BackupArchive.pathExtension)")
-        let validatedMetadata = try readAndValidateMetadata(at: temporaryArchive)
         try manager.moveItem(at: temporaryArchive, to: url)
         return BackupGeneration(fileURL: url, metadata: validatedMetadata, fileSize: fileSize(at: url), validationError: nil)
+    }
+
+    /// Header bytes 18–19 are 2 in WAL mode; anything unreadable takes the snapshot-copy path.
+    private nonisolated static func usesWAL(path: String) -> Bool {
+        guard let handle = FileHandle(forReadingAtPath: path) else { return false }
+        defer { try? handle.close() }
+        guard let header = try? handle.read(upToCount: 20), header.count == 20 else { return false }
+        return header[18] == 2 && header[19] == 2
     }
 
     private nonisolated static func clearSearchIndex(in db: Database) throws {
@@ -454,6 +474,25 @@ actor BackupService {
         try readMetadata(at: url, validateIntegrity: true)
     }
 
+    private nonisolated static func validateArchiveFiles(databaseURL: URL, manifest: BackupArchiveManifest) throws {
+        var config = Configuration()
+        config.readonly = true
+        let database = try DatabaseQueue(path: databaseURL.path, configuration: config)
+        defer { try? database.close() }
+        try database.read { db in
+            let files = try FileRecord.fetchAll(db)
+            guard manifest.entries.count == files.count + 1,
+                  try Int.fetchOne(db, sql: "SELECT count(*) FROM file_migration_content") == 0
+            else { throw BackupServiceError.invalidBackup }
+            let entries = Dictionary(uniqueKeysWithValues: manifest.entries.map { ($0.path, $0) })
+            for file in files {
+                guard let entry = entries["files/\(file.id.uuidString.lowercased())/original"],
+                      entry.size == file.size, entry.checksum == file.checksum, file.uri == nil,
+                      file.localReference == nil, file.remoteReference == nil else { throw BackupServiceError.invalidBackup }
+            }
+        }
+    }
+
     private nonisolated static func readMetadata(
         at url: URL,
         validateIntegrity shouldValidateIntegrity: Bool
@@ -464,22 +503,7 @@ actor BackupService {
                 let databaseURL = directory.appending(path: "database.sqlite")
                 let metadata = try readMetadata(at: databaseURL, validateIntegrity: true)
                 guard metadata == manifest.metadata else { throw BackupServiceError.invalidBackup }
-                var config = Configuration()
-                config.readonly = true
-                let database = try DatabaseQueue(path: databaseURL.path, configuration: config)
-                defer { try? database.close() }
-                try database.read { db in
-                    let files = try FileRecord.fetchAll(db)
-                    guard manifest.entries.count == files.count + 1,
-                          try Int.fetchOne(db, sql: "SELECT count(*) FROM file_migration_content") == 0
-                    else { throw BackupServiceError.invalidBackup }
-                    let entries = Dictionary(uniqueKeysWithValues: manifest.entries.map { ($0.path, $0) })
-                    for file in files {
-                        guard let entry = entries["files/\(file.id.uuidString.lowercased())/original"],
-                              entry.size == file.size, entry.checksum == file.checksum, file.uri == nil,
-                              file.localReference == nil, file.remoteReference == nil else { throw BackupServiceError.invalidBackup }
-                    }
-                }
+                try validateArchiveFiles(databaseURL: databaseURL, manifest: manifest)
                 return metadata
             }
         }

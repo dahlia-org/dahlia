@@ -1724,6 +1724,11 @@
 "Select a Server Workspace" = "Server Workspaceを選択";
 "Select an Organization" = "Organizationを選択";
 "Reload destinations" = "候補を再読み込み";
+"Checking the import destination…" = "取り込み先を確認中…";
+"Preparing screenshots…" = "スクリーンショットを準備中…";
+"Creating a backup…" = "バックアップを作成中…";
+"Checking against the Server…" = "Serverの内容と照合中…";
+"Finishing the import…" = "取り込みを確定中…";
 "A backup is saved before importing. Existing Workspace settings stay unchanged. The original Local Workspace remains available." = "取り込み前にバックアップを作成します。既存Workspaceの設定は保持し、元のLocal Workspaceも残します。";
 "Import" = "取り込む";
 

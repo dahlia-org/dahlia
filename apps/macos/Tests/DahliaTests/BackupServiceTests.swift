@@ -32,6 +32,35 @@ import GRDB
         }
 
         @Test
+        func walGenerationReadsACommittedSnapshotWhileTheLiveWriterHoldsItsLock() async throws {
+            let rootURL = FileManager.default.temporaryDirectory
+                .appending(path: "dahlia-wal-locked-backup-\(UUID.v7().uuidString)", directoryHint: .isDirectory)
+            defer { try? FileManager.default.removeItem(at: rootURL) }
+            let databaseURL = rootURL.appending(path: "live.sqlite")
+            let live = try AppDatabaseManager(path: databaseURL.path, enablesConcurrentSearch: true)
+            defer { try? live.close() }
+            let workspace = makeWorkspace(name: "Committed", path: rootURL.appending(path: "Workspace").path)
+            try await live.dbQueue.write { try workspace.insert($0) }
+            let dbQueue = live.dbQueue
+            // The app's own queue is mid-write for the whole backup, as with a sync apply or an index batch.
+            // A backup that write-locks the source or waits on that queue cannot finish.
+            let generation = try await Task.detached {
+                var generation: BackupGeneration?
+                try dbQueue.inTransaction(.immediate) { db in
+                    try db.execute(sql: "UPDATE workspaces SET name = 'Uncommitted' WHERE id = ?", arguments: [workspace.id])
+                    generation = try BackupService.createGeneration(
+                        workspaceIds: [workspace.id], dbQueue: dbQueue, directoryURL: rootURL.appending(path: "Backups"),
+                        reason: .manual, appVersion: "test", appBuild: "0"
+                    )
+                    return .rollback
+                }
+                return generation
+            }.value
+
+            #expect(generation?.metadata?.workspaces.map(\.name) == ["Committed"])
+        }
+
+        @Test
         // swiftlint:disable:next function_body_length
         func generationEmbedsSchemaAndRemovesAudioReferences() async throws {
             let fixture = try BatchAudioTestFixture(

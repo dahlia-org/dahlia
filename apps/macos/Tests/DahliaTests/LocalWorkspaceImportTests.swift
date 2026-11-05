@@ -558,6 +558,7 @@
             ])
             let connectionId = fixture.connection.id
             let unrelatedWriteCompleted = Mutex(false)
+            let steps = Mutex<[LocalWorkspaceImport.Step]>([])
             ImageURLProtocol.register(origin: fixture.connection.origin) { request in
                 switch request.url!.lastPathComponent {
                 case "capabilities": return (200, [:], Data(#"{"documents":{"version":1},"sync":{"version":7}}"#.utf8))
@@ -604,8 +605,10 @@
                 api: api,
                 replaceServerImageAnalysis: true,
                 reconnectExisting: reconnect,
-                screenshots: screenshots
+                screenshots: screenshots,
+                progress: { step in steps.withLock { $0.append(step) } }
             )
+            #expect(steps.withLock { $0 } == [.screenshots, .backup, .server, .commit])
             try await SyncInitialSnapshotBuilder.enqueuePending(dbQueue: queue, screenshotContent: screenshots)
             #expect(unrelatedWriteCompleted.withLock { $0 })
             let record = try #require(try await queue.read { try LocalWorkspaceImportRecord.fetchOne($0) })
@@ -741,7 +744,7 @@
         init(role: String) throws {
             directory = FileManager.default.temporaryDirectory.appending(path: UUID.v7().uuidString)
             try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-            database = try AppDatabaseManager(path: directory.appending(path: "import.sqlite").path)
+            database = try AppDatabaseManager(path: directory.appending(path: "import.sqlite").path, enablesConcurrentSearch: true)
             connection = .init(id: .v7(), origin: "https://\(UUID.v7().uuidString.lowercased()).invalid", clientID: "test", createdAt: .now)
             source = .init(id: .v7(), path: "/tmp/local-import-source", name: "Local settings", createdAt: .now, lastOpenedAt: .now)
             target = .init(
