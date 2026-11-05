@@ -155,6 +155,7 @@ struct DahliaApp: App {
                 if let pending = workspaceManagementModel.pendingServerAdoption {
                     WorkspaceImportView(
                         pending: pending, isBusy: workspaceManagementModel.updatingWorkspaceAccountID != nil,
+                        step: workspaceManagementModel.serverAdoptionStep,
                         onCancel: cancelServerAdoption,
                         onReload: { await workspaceManagementModel.reloadServerAdoption() },
                         onImport: { destinationId, organizationId, workspaceName, reconnectExisting in

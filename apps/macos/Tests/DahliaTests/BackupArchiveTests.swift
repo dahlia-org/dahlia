@@ -39,8 +39,11 @@ import Foundation
             default: break
             }
             let archive = root.appending(path: "test.dahliabackup")
-            try BackupArchive.create(directory: directory, metadata: metadata, paths: paths, at: archive)
+            let created = try BackupArchive.create(directory: directory, metadata: metadata, paths: paths, at: archive)
             if kind == "valid" {
+                try BackupArchive.verify(at: archive, matches: created)
+                let otherManifest = BackupArchiveManifest(metadata: created.metadata, entries: Array(created.entries.prefix(1)))
+                #expect(throws: BackupServiceError.invalidBackup) { try BackupArchive.verify(at: archive, matches: otherManifest) }
                 try BackupArchive.withExtracted(at: archive) { extracted, manifest throws in
                     #expect(manifest.metadata == metadata)
                     #expect(manifest.entries.count == 2)
@@ -50,6 +53,7 @@ import Foundation
                 truncated.removeLast(min(128, truncated.count / 2))
                 try truncated.write(to: archive)
                 #expect(throws: (any Error).self) { try BackupArchive.withExtracted(at: archive) { _, _ in } }
+                #expect(throws: (any Error).self) { try BackupArchive.verify(at: archive, matches: created) }
             } else {
                 #expect(throws: BackupServiceError.invalidBackup) { try BackupArchive.withExtracted(at: archive) { _, _ in } }
                 #expect(try Data(contentsOf: root.appending(path: "outside")) == Data([1]))
