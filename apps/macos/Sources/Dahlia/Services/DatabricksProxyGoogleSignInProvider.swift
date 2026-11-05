@@ -2,14 +2,15 @@ import AppKit
 import Foundation
 
 /// Routes Google Calendar through the Databricks Unity Catalog connection proxy when a Databricks
-/// connection exists, and falls back to the direct Google OAuth adapter otherwise.
+/// connection exists, and falls back to the direct Google OAuth adapter otherwise. The Google grant lives in
+/// Databricks and is the source of truth: Dahlia restores whenever the proxy answers, unless the user disconnected.
 @MainActor
 final class DatabricksProxyGoogleSignInProvider: GoogleSignInProviding {
     static let connectionName = "system_ai_agent_google_calendar"
-    /// Set per connection only after the user completed a proxy sign-in, so a Databricks connection alone never
-    /// triggers Google calls and a re-added workspace starts signed out.
-    static func connectedKey(for connection: DatabricksConnection) -> String {
-        "googleCalendarDatabricksProxyConnected.\(connection.id.uuidString)"
+    /// Set per connection by Disconnect and cleared by Connect. The grant is shared with other Databricks agents,
+    /// so Disconnect stops Dahlia's use without revoking it; a re-added workspace (new id) restores again.
+    static func disconnectedKey(for connection: DatabricksConnection) -> String {
+        "googleCalendarDatabricksProxyDisconnected.\(connection.id.uuidString)"
     }
 
     private let direct: any GoogleSignInProviding
@@ -55,16 +56,24 @@ final class DatabricksProxyGoogleSignInProvider: GoogleSignInProviding {
 
     var isProxyActive: Bool { connection != nil }
 
+    /// Where the user grants or fixes Google access for the active Databricks connection.
+    var connectionPageURL: URL? { connection.map(Self.signInPageURL) }
+
     var isConfigured: Bool { isProxyActive || direct.isConfigured }
 
-    private func isConnected(_ connection: DatabricksConnection) -> Bool {
-        userDefaults.bool(forKey: Self.connectedKey(for: connection))
+    private func isDisconnected(_ connection: DatabricksConnection) -> Bool {
+        userDefaults.bool(forKey: Self.disconnectedKey(for: connection))
+    }
+
+    /// True while Dahlia restores through the proxy on every launch, whether or not that currently succeeds.
+    var restoresThroughProxy: Bool {
+        connection.map { !isDisconnected($0) } ?? false
     }
 
     var hasPreviousSignIn: Bool {
         get async {
             guard let connection else { return await direct.hasPreviousSignIn }
-            return isConnected(connection)
+            return !isDisconnected(connection)
         }
     }
 
@@ -72,13 +81,12 @@ final class DatabricksProxyGoogleSignInProvider: GoogleSignInProviding {
 
     func restorePreviousSignIn() async throws -> GoogleSession {
         guard let connection else { return try await direct.restorePreviousSignIn() }
-        guard isConnected(connection) else { throw GoogleSignInError.noPreviousSignIn }
-        // A status code cannot tell a revoked grant from a forwarded Google rate limit, so restore keeps the sign-in
-        // and surfaces the failure; Connect re-checks without a browser while the grant exists, and Disconnect forgets it.
+        guard !isDisconnected(connection) else { throw GoogleSignInError.noPreviousSignIn }
         do {
             return try await proxySession(for: connection, interactive: false)
-        } catch DahliaCloudError.noCredential {
-            // The Databricks credential is gone, not the Google grant: stay signed out until the user reconnects.
+        } catch let error where Self.isUnusableRoute(error) {
+            // Restore runs for every Databricks connection, including users who never chose Calendar through it, so a
+            // route this user cannot use stays signed out quietly; Connect's pre-check then reports why.
             throw GoogleSignInError.noPreviousSignIn
         }
     }
@@ -88,6 +96,7 @@ final class DatabricksProxyGoogleSignInProvider: GoogleSignInProviding {
             return try await direct.signIn(withPresentingWindow: window, requestedScopes: requestedScopes)
         }
         // Only this pre-check may open the Databricks login; every later token use is unattended.
+        // Only a missing Google credential opens the page; any other error surfaces, and Settings then offers the page.
         if let session = try await proxySessionIfAuthorized(for: connection, interactive: true) {
             return markConnected(session, for: connection)
         }
@@ -96,40 +105,33 @@ final class DatabricksProxyGoogleSignInProvider: GoogleSignInProviding {
         guard NSWorkspace.shared.open(Self.signInPageURL(for: connection)) else {
             throw DahliaCloudError.browserCouldNotOpen
         }
-        // The proxy has no callback, so poll for up to 3 minutes until Databricks reports a Google authorization.
-        // Transient failures keep polling; the last one is reported only if the deadline passes.
-        var lastError: Error = GoogleSignInError.authorizationTimedOut
+        // The proxy has no callback, so poll for up to 3 minutes while Databricks reports no Google credential.
+        // Any other failure (e.g. 400 "Unable to load OAuth Config" on a vanity host) ends the wait and is shown.
         for _ in 0 ..< 60 {
             try await Task.sleep(for: .seconds(3))
-            do {
-                if let session = try await proxySessionIfAuthorized(for: connection) {
-                    NSApp.activate(ignoringOtherApps: true)
-                    return markConnected(session, for: connection)
-                }
-            } catch is CancellationError {
-                throw CancellationError()
-            } catch {
-                lastError = error
+            if let session = try await proxySessionIfAuthorized(for: connection) {
+                NSApp.activate(ignoringOtherApps: true)
+                return markConnected(session, for: connection)
             }
         }
-        throw lastError
+        throw GoogleSignInError.authorizationTimedOut
     }
 
     func refreshCurrentSession() async throws -> GoogleSession? {
         guard let connection else { return try await direct.refreshCurrentSession() }
-        guard isConnected(connection) else { return nil }
+        guard !isDisconnected(connection) else { return nil }
         return try await proxySession(for: connection, account: cachedAccount, interactive: false)
     }
 
     func disconnect() async throws {
         guard let connection else { return try await direct.disconnect() }
         // The Google grant stays in Databricks; revoke it on the connection page.
-        userDefaults.removeObject(forKey: Self.connectedKey(for: connection))
+        userDefaults.set(true, forKey: Self.disconnectedKey(for: connection))
         cachedAccount = nil
     }
 
     private func markConnected(_ session: GoogleSession, for connection: DatabricksConnection) -> GoogleSession {
-        userDefaults.set(true, forKey: Self.connectedKey(for: connection))
+        userDefaults.removeObject(forKey: Self.disconnectedKey(for: connection))
         NotificationCenter.default.post(name: sessionDidChangeNotification, object: nil)
         return session
     }
@@ -170,10 +172,34 @@ final class DatabricksProxyGoogleSignInProvider: GoogleSignInProviding {
         return session(resolved)
     }
 
-    // shortcut: the proxy's exact status for a user without a Google grant is unverified, so during sign-in only,
-    // credential-shaped statuses (400 "Invalid Token", 401, 403) mean "not granted yet"; others surface. Narrow once observed.
+    /// A route Databricks rejected for this user: no Databricks credential, a Databricks token request rejected with a
+    /// 4xx, a proxy JSON-RPC error, or a non-transient 4xx whose body is not Google's (404 RESOURCE_DOES_NOT_EXIST for a missing connection,
+    /// 401/403 for a bad token, 400 on a vanity host). Google's forwarded errors, rate limits, 5xx, and network
+    /// failures surface.
+    static func isUnusableRoute(_ error: Error) -> Bool {
+        switch error {
+        case DahliaCloudError.noCredential:
+            true
+        case let DahliaCloudError.tokenRequestFailed(statusCode):
+            isClientError(statusCode)
+        case GoogleCalendarAPIError.proxyError:
+            true
+        case let error as GoogleCalendarAPIError:
+            if case let .httpError(statusCode, _) = error { isClientError(statusCode) && !error.isGoogleError } else { false }
+        default:
+            false
+        }
+    }
+
+    private static func isClientError(_ statusCode: Int) -> Bool {
+        (400 ..< 500).contains(statusCode) && ![408, 429].contains(statusCode)
+    }
+
+    /// Unity Catalog has no Google credential for this user on the connection. Observed 2026-11-06: HTTP 200 with a
+    /// JSON-RPC error whose error_code is UNAUTHENTICATED ("Credential for user identity('…') is not found for the
+    /// connection '…'. Please login first …"). Bad Databricks tokens are real HTTP 401/403 and never match.
     static func isNotAuthorized(_ error: GoogleCalendarAPIError) -> Bool {
-        if case let .httpError(statusCode, _) = error { return [400, 401, 403].contains(statusCode) }
+        if case .proxyError(errorCode: "UNAUTHENTICATED", _) = error { return true }
         return false
     }
 }

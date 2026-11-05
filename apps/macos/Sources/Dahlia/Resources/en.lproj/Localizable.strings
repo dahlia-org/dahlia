@@ -738,6 +738,8 @@
 "Untitled event" = "Untitled event";
 "Unexpected response from Google Calendar" = "Unexpected response from Google Calendar";
 "Google Calendar HTTP %lld: %@" = "Google Calendar HTTP %lld: %@";
+"Databricks connection: %@" = "Databricks connection: %@";
+"Open Connection Page in Databricks" = "Open Connection Page in Databricks";
 "Could not parse Google Calendar date: %@" = "Could not parse Google Calendar date: %@";
 
 /* Workspace Picker */

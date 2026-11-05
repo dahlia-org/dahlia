@@ -40,6 +40,15 @@ final class GoogleCalendarStore: ObservableObject {
         (signInProvider as? DatabricksProxyGoogleSignInProvider)?.isProxyActive == true
     }
 
+    var databricksConnectionPageURL: URL? {
+        (signInProvider as? DatabricksProxyGoogleSignInProvider)?.connectionPageURL
+    }
+
+    /// Disconnect stays available while this is true, even when the proxy route is failing or not yet granted.
+    var restoresThroughDatabricksProxy: Bool {
+        (signInProvider as? DatabricksProxyGoogleSignInProvider)?.restoresThroughProxy == true
+    }
+
     private let signInProvider: any GoogleSignInProviding
     private let apiClient: any GoogleCalendarAPIClientProviding
     private let userDefaults: UserDefaults
@@ -354,6 +363,14 @@ final class GoogleCalendarStore: ObservableObject {
     }
 
     private func handle(_ error: Error) {
+        // A Google credential revoked on the Databricks connection page surfaces on whichever proxy request runs next;
+        // it ends the session rather than failing it, so Connect starts the Databricks sign-in again.
+        if let error = error as? GoogleCalendarAPIError, DatabricksProxyGoogleSignInProvider.isNotAuthorized(error) {
+            clearRuntimeState(clearSelection: false)
+            if lastErrorMessage != nil { lastErrorMessage = nil }
+            state = .signedOut
+            return
+        }
         lastErrorMessage = GoogleAuthErrorFormatter.message(for: error, defaultMessage: L10n.googleCalendarUnexpectedResponse)
         state = .failed
         ErrorReportingService.captureSanitized(.googleCalendar)

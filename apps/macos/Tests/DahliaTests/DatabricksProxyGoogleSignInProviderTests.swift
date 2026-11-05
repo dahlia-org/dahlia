@@ -23,14 +23,20 @@ import Synchronization
         }
 
         @Test
-        func credentialErrorsMeanNoGoogleAuthorization() {
-            for code in [400, 401, 403] {
-                #expect(DatabricksProxyGoogleSignInProvider.isNotAuthorized(.httpError(statusCode: code, detail: "")))
+        func onlyUCMissingCredentialMeansNoGoogleAuthorization() {
+            #expect(DatabricksProxyGoogleSignInProvider.isNotAuthorized(Self.noGrant))
+            // Observed on 2026-11-05: a bad Databricks token on a workspace host and on a vanity alias, and an alias that
+            // cannot load the connection's OAuth config. A forwarded Google rate limit must surface too.
+            for error in [
+                Self.databricksError(403, "403", "Invalid access token. [ReqId: x]"),
+                Self.databricksError(401, "401", "Credential was not sent or was of an unsupported type for this API."),
+                GoogleCalendarAPIError.httpError(statusCode: 400, detail: "Unable to load OAuth Config"),
+                Self.googleRateLimit,
+                GoogleCalendarAPIError.proxyError(errorCode: "PERMISSION_DENIED", message: "No USE CONNECTION"),
+                .invalidResponse,
+            ] {
+                #expect(!DatabricksProxyGoogleSignInProvider.isNotAuthorized(error))
             }
-            for code in [404, 429, 500] {
-                #expect(!DatabricksProxyGoogleSignInProvider.isNotAuthorized(.httpError(statusCode: code, detail: "")))
-            }
-            #expect(!DatabricksProxyGoogleSignInProvider.isNotAuthorized(.invalidResponse))
         }
 
         @Test
@@ -40,6 +46,7 @@ import Synchronization
 
             #expect(provider.isConfigured == false)
             #expect(provider.isProxyActive == false)
+            #expect(provider.restoresThroughProxy == false)
             #expect(await provider.hasPreviousSignIn == true)
             _ = try await provider.restorePreviousSignIn()
             try await provider.disconnect()
@@ -48,15 +55,62 @@ import Synchronization
         }
 
         @Test
-        func databricksConnectionAloneDoesNotCountAsGoogleSignIn() async throws {
-            let direct = FakeDirectProvider(isConfigured: false, hasPreviousSignIn: true)
-            let provider = makeProvider(connection: connection, direct: direct)
+        func databricksConnectionRestoresWhateverTheProxyGrants() async throws {
+            let direct = FakeDirectProvider(isConfigured: false, hasPreviousSignIn: false)
+            let apiClient = FakeAPIClient(result: .success([Self.primaryCalendar]))
+            let provider = makeProvider(connection: connection, direct: direct, apiClient: apiClient)
 
             #expect(provider.isConfigured)
-            #expect(await provider.hasPreviousSignIn == false)
-            await #expect(throws: GoogleSignInError.self) { try await provider.restorePreviousSignIn() }
-            #expect(try await provider.refreshCurrentSession() == nil)
+            #expect(await provider.hasPreviousSignIn)
+            #expect(try await provider.restorePreviousSignIn().account.id == "me@example.com")
             #expect(direct.restoreCallCount == 0)
+        }
+
+        @Test
+        func restoreWithoutGoogleGrantStaysSignedOutWithoutError() async throws {
+            let provider = makeProvider(connection: connection, direct: FakeDirectProvider(), apiClient: FakeAPIClient(result: .failure(Self.noGrant)))
+
+            let error = await #expect(throws: GoogleSignInError.self) { try await provider.restorePreviousSignIn() }
+            #expect(error?.errorDescription == L10n.googleAccountNoPreviousSession)
+        }
+
+        @Test
+        func restoreLeavesAnUnusableRouteSignedOut() async throws {
+            for error in [
+                Self.databricksError(404, "RESOURCE_DOES_NOT_EXIST", "Connection 'system_ai_agent_google_calendar' does not exist."),
+                Self.databricksError(403, "PERMISSION_DENIED", "User does not have USE CONNECTION"),
+                Self.databricksError(401, "401", "Credential was not sent or was of an unsupported type for this API."),
+                GoogleCalendarAPIError.httpError(statusCode: 400, detail: "Unable to load OAuth Config"),
+            ] {
+                let provider = makeProvider(connection: connection, direct: FakeDirectProvider(), apiClient: FakeAPIClient(result: .failure(error)))
+
+                let thrown = await #expect(throws: GoogleSignInError.self) { try await provider.restorePreviousSignIn() }
+                #expect(thrown?.errorDescription == L10n.googleAccountNoPreviousSession)
+            }
+            #expect(DatabricksProxyGoogleSignInProvider.isUnusableRoute(DahliaCloudError.tokenRequestFailed(400)))
+            #expect(!DatabricksProxyGoogleSignInProvider.isUnusableRoute(DahliaCloudError.tokenRequestFailed(503)))
+        }
+
+        @Test
+        func signInSurfacesGoogleErrorsWithoutOpeningTheBrowser() async throws {
+            let apiClient = FakeAPIClient(result: .failure(Self.googleRateLimit))
+            let provider = makeProvider(connection: connection, direct: FakeDirectProvider(), apiClient: apiClient)
+
+            await #expect(throws: GoogleCalendarAPIError.self) {
+                try await provider.signIn(withPresentingWindow: NSWindow(), requestedScopes: GoogleOAuthScope.calendar)
+            }
+            #expect(apiClient.sessions.count == 1)
+        }
+
+        @Test
+        func signInWithExistingGrantSkipsTheBrowser() async throws {
+            let apiClient = FakeAPIClient(result: .success([Self.primaryCalendar]))
+            let provider = makeProvider(connection: connection, direct: FakeDirectProvider(), apiClient: apiClient)
+
+            let session = try await provider.signIn(withPresentingWindow: NSWindow(), requestedScopes: GoogleOAuthScope.calendar)
+
+            #expect(session.account.id == "me@example.com")
+            #expect(apiClient.sessions.count == 1)
         }
 
         @Test
@@ -65,11 +119,9 @@ import Synchronization
             memory.state.withLock { $0.credentials[connection.id] = Self.credential }
             let service = DatabricksOAuthService(storage: memory.storage) { _ in throw CancellationError() }
             let direct = FakeDirectProvider()
-            let defaults = makeDefaults()
-            defaults.set(true, forKey: DatabricksProxyGoogleSignInProvider.connectedKey(for: connection))
             let provider = DatabricksProxyGoogleSignInProvider(
                 direct: direct, oauth: service, storage: memory.storage,
-                apiClient: FakeAPIClient(result: .success([])), userDefaults: defaults
+                apiClient: FakeAPIClient(result: .success([])), userDefaults: makeDefaults()
             )
             _ = try await provider.restorePreviousSignIn()
             let (posts, continuation) = AsyncStream.makeStream(of: Void.self)
@@ -86,40 +138,24 @@ import Synchronization
         }
 
         @Test
-        func connectedFlagIsScopedToTheConnection() async throws {
-            let defaults = makeDefaults()
-            defaults.set(true, forKey: DatabricksProxyGoogleSignInProvider.connectedKey(for: connection))
-            let other = DatabricksConnection(id: UUID(), host: connection.host)
-            let provider = makeProvider(connection: other, direct: FakeDirectProvider(), userDefaults: defaults)
-
-            #expect(await provider.hasPreviousSignIn == false)
-            #expect(try await provider.refreshCurrentSession() == nil)
-        }
-
-        @Test
-        func forwardedRateLimitOnRestoreKeepsTheSignIn() async throws {
-            let defaults = makeDefaults()
-            defaults.set(true, forKey: DatabricksProxyGoogleSignInProvider.connectedKey(for: connection))
-            let apiClient = FakeAPIClient(result: .failure(GoogleCalendarAPIError.httpError(statusCode: 403, detail: "userRateLimitExceeded")))
-            let provider = makeProvider(connection: connection, direct: FakeDirectProvider(), userDefaults: defaults, apiClient: apiClient)
+        func forwardedGoogleRateLimitOnRestoreSurfacesAndRetries() async throws {
+            let apiClient = FakeAPIClient(result: .failure(Self.googleRateLimit))
+            let provider = makeProvider(connection: connection, direct: FakeDirectProvider(), apiClient: apiClient)
 
             await #expect(throws: GoogleCalendarAPIError.self) { try await provider.restorePreviousSignIn() }
 
-            #expect(defaults.bool(forKey: DatabricksProxyGoogleSignInProvider.connectedKey(for: connection)))
             #expect(await provider.hasPreviousSignIn)
-            apiClient.result = .success([CalendarListItem(id: "me@example.com", title: "me@example.com", colorHex: nil, isPrimary: true)])
+            apiClient.result = .success([Self.primaryCalendar])
             #expect(try await provider.restorePreviousSignIn().account.id == "me@example.com")
         }
 
         @Test
         func restoreResolvesAccountFromPrimaryCalendarAndProxyBaseURL() async throws {
-            let defaults = makeDefaults()
-            defaults.set(true, forKey: DatabricksProxyGoogleSignInProvider.connectedKey(for: connection))
             let apiClient = FakeAPIClient(result: .success([
                 CalendarListItem(id: "other@example.com", title: "Other", colorHex: nil, isPrimary: false),
                 CalendarListItem(id: "me@example.com", title: "me@example.com", colorHex: nil, isPrimary: true),
             ]))
-            let provider = makeProvider(connection: connection, direct: FakeDirectProvider(), userDefaults: defaults, apiClient: apiClient)
+            let provider = makeProvider(connection: connection, direct: FakeDirectProvider(), apiClient: apiClient)
 
             let session = try await provider.restorePreviousSignIn()
 
@@ -131,8 +167,6 @@ import Synchronization
 
         @Test
         func restoreWithoutDatabricksCredentialNeverOpensTheBrowser() async throws {
-            let defaults = makeDefaults()
-            defaults.set(true, forKey: DatabricksProxyGoogleSignInProvider.connectedKey(for: connection))
             let memory = DatabricksTestStorage(connection: connection)
             let authorized = Mutex(false)
             let service = DatabricksOAuthService(storage: memory.storage) { _ in
@@ -141,23 +175,19 @@ import Synchronization
             }
             let provider = DatabricksProxyGoogleSignInProvider(
                 direct: FakeDirectProvider(), oauth: service, storage: memory.storage,
-                apiClient: FakeAPIClient(result: .success([])), userDefaults: defaults
+                apiClient: FakeAPIClient(result: .success([])), userDefaults: makeDefaults()
             )
 
-            await #expect(throws: GoogleSignInError.self) { try await provider.restorePreviousSignIn() }
+            let error = await #expect(throws: GoogleSignInError.self) { try await provider.restorePreviousSignIn() }
+            #expect(error?.errorDescription == L10n.googleAccountNoPreviousSession)
 
             #expect(authorized.withLock { $0 } == false)
-            #expect(defaults.bool(forKey: DatabricksProxyGoogleSignInProvider.connectedKey(for: connection)))
         }
 
         @Test
         func refreshReusesTheResolvedAccountWithoutRefetchingCalendars() async throws {
-            let defaults = makeDefaults()
-            defaults.set(true, forKey: DatabricksProxyGoogleSignInProvider.connectedKey(for: connection))
-            let apiClient = FakeAPIClient(result: .success([
-                CalendarListItem(id: "me@example.com", title: "me@example.com", colorHex: nil, isPrimary: true),
-            ]))
-            let provider = makeProvider(connection: connection, direct: FakeDirectProvider(), userDefaults: defaults, apiClient: apiClient)
+            let apiClient = FakeAPIClient(result: .success([Self.primaryCalendar]))
+            let provider = makeProvider(connection: connection, direct: FakeDirectProvider(), apiClient: apiClient)
 
             let restored = try await provider.restorePreviousSignIn()
             let refreshed = try await provider.refreshCurrentSession()
@@ -167,16 +197,55 @@ import Synchronization
         }
 
         @Test
-        func disconnectForgetsProxySignInOnly() async throws {
+        func disconnectStopsProxyUseUntilConnectAndKeepsTheDirectSession() async throws {
             let defaults = makeDefaults()
-            defaults.set(true, forKey: DatabricksProxyGoogleSignInProvider.connectedKey(for: connection))
             let direct = FakeDirectProvider()
-            let provider = makeProvider(connection: connection, direct: direct, userDefaults: defaults)
+            let apiClient = FakeAPIClient(result: .success([Self.primaryCalendar]))
+            let provider = makeProvider(connection: connection, direct: direct, userDefaults: defaults, apiClient: apiClient)
 
+            #expect(provider.restoresThroughProxy)
             try await provider.disconnect()
 
-            #expect(defaults.bool(forKey: DatabricksProxyGoogleSignInProvider.connectedKey(for: connection)) == false)
             #expect(direct.disconnectCallCount == 0)
+            #expect(provider.restoresThroughProxy == false)
+            #expect(await provider.hasPreviousSignIn == false)
+            let error = await #expect(throws: GoogleSignInError.self) { try await provider.restorePreviousSignIn() }
+            #expect(error?.errorDescription == L10n.googleAccountNoPreviousSession)
+            #expect(try await provider.refreshCurrentSession() == nil)
+            #expect(apiClient.sessions.isEmpty)
+
+            _ = try await provider.signIn(withPresentingWindow: NSWindow(), requestedScopes: GoogleOAuthScope.calendar)
+
+            #expect(await provider.hasPreviousSignIn)
+            #expect(provider.restoresThroughProxy)
+            #expect(defaults.object(forKey: DatabricksProxyGoogleSignInProvider.disconnectedKey(for: connection)) == nil)
+        }
+
+        @Test
+        func disconnectIsScopedToTheConnection() async throws {
+            let defaults = makeDefaults()
+            defaults.set(true, forKey: DatabricksProxyGoogleSignInProvider.disconnectedKey(for: connection))
+            let readded = DatabricksConnection(id: UUID(), host: connection.host)
+            let provider = makeProvider(connection: readded, direct: FakeDirectProvider(), userDefaults: defaults)
+
+            #expect(await provider.hasPreviousSignIn)
+        }
+
+        private static let primaryCalendar = CalendarListItem(id: "me@example.com", title: "me@example.com", colorHex: nil, isPrimary: true)
+
+        /// The proxy's HTTP 200 JSON-RPC error for a user without a Google credential (observed 2026-11-06).
+        private static let noGrant = GoogleCalendarAPIError.proxyError(
+            errorCode: "UNAUTHENTICATED",
+            message: "Credential for user identity('1') is not found for the connection 'system_ai_agent_google_calendar'. Please login first."
+        )
+
+        private static let googleRateLimit = GoogleCalendarAPIError.httpError(
+            statusCode: 403,
+            detail: #"{"error":{"code":403,"message":"Rate Limit Exceeded","errors":[{"reason":"userRateLimitExceeded"}]}}"#
+        )
+
+        private static func databricksError(_ statusCode: Int, _ errorCode: String, _ message: String) -> GoogleCalendarAPIError {
+            .httpError(statusCode: statusCode, detail: #"{"error_code":"\#(errorCode)","message":"\#(message)"}"#)
         }
 
         private static let credential = DatabricksOAuthCredential(

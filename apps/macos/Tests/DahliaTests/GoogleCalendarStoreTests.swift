@@ -207,6 +207,33 @@ import Foundation
         }
 
         @Test
+        func revokedDatabricksGoogleCredentialOnRefreshSignsOutWithoutError() async {
+            let defaults = isolatedUserDefaults()
+            seedSelectedCalendars(["primary"], defaults: defaults)
+            let apiClient = ControllableGoogleCalendarAPIClient(initialEvents: [fixtureEvent])
+            let store = GoogleCalendarStore(
+                signInProvider: MockGoogleCalendarSignInProvider(hasPreviousSignIn: true),
+                apiClient: apiClient,
+                userDefaults: defaults,
+                now: { fixtureNow }
+            )
+            await store.restoreSessionIfNeeded()
+
+            let refresh = Task { await store.refreshIfNeeded(force: true) }
+            await apiClient.waitForFetchEventsCallCount(2)
+            apiClient.failPendingRequest(at: 0, with: GoogleCalendarAPIError.proxyError(
+                errorCode: "UNAUTHENTICATED",
+                message: "Credential for user identity('1') is not found for the connection 'system_ai_agent_google_calendar'."
+            ))
+            await refresh.value
+
+            #expect(store.state == .signedOut)
+            #expect(!store.isAuthorized)
+            #expect(store.lastErrorMessage == nil)
+            #expect(store.selectedCalendarIDs == ["primary"])
+        }
+
+        @Test
         func retryAfterCachedRefreshFailureShowsLoading() async {
             let defaults = isolatedUserDefaults()
             seedSelectedCalendars(["primary"], defaults: defaults)
@@ -828,8 +855,8 @@ private final class ControllableGoogleCalendarAPIClient: GoogleCalendarAPIClient
         pendingRequests.remove(at: index).resume(returning: events)
     }
 
-    func failPendingRequest(at index: Int) {
-        pendingRequests.remove(at: index).resume(throwing: CalendarRefreshTestError.requestFailed)
+    func failPendingRequest(at index: Int, with error: any Error = CalendarRefreshTestError.requestFailed) {
+        pendingRequests.remove(at: index).resume(throwing: error)
     }
 }
 
