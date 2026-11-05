@@ -103,9 +103,9 @@ final class GoogleCalendarAPIClient: GoogleCalendarAPIClientProviding {
         var events: [CalendarEvent] = []
         for (calendarItem, data) in fetchResults {
             let response = try JSONDecoder().decode(EventListResponse.self, from: data)
-            let calendarEvents = try response.items.compactMap {
-                try Self.makeEvent(from: $0, calendarItem: calendarItem, calendar: calendarRef)
-            }
+            let calendarEvents = try response.items
+                .filter { Self.includedEventTypesForUpcomingEvents.contains($0.eventType ?? "default") }
+                .compactMap { try Self.makeEvent(from: $0, calendarItem: calendarItem, calendar: calendarRef) }
             events.append(contentsOf: calendarEvents)
         }
 
@@ -221,9 +221,7 @@ final class GoogleCalendarAPIClient: GoogleCalendarAPIClientProviding {
             URLQueryItem(name: "timeMin", value: now.ISO8601Format()),
             URLQueryItem(name: "timeMax", value: intervalEnd.ISO8601Format()),
             URLQueryItem(name: "maxResults", value: "250"),
-        ] + Self.includedEventTypesForUpcomingEvents.map { eventType in
-            URLQueryItem(name: "eventTypes", value: eventType)
-        }
+        ]
 
         let url = try Self.url(from: queryComponents)
         return try await authorizedGet(url: url, accessToken: googleSession.accessToken, session: session)
@@ -268,7 +266,9 @@ final class GoogleCalendarAPIClient: GoogleCalendarAPIClientProviding {
 }
 
 extension GoogleCalendarAPIClient {
-    private static let includedEventTypesForUpcomingEvents = [
+    /// Filtered after decoding: the Databricks connection proxy forwards only the last of repeated query parameters,
+    /// so `eventTypes=a&eventTypes=b` would reach Google as `eventTypes=b`.
+    private static let includedEventTypesForUpcomingEvents: Set = [
         "default",
         "focusTime",
         "fromGmail",

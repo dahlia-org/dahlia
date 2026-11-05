@@ -37,12 +37,27 @@ import Foundation
         }
 
         @Test
-        func fetchUpcomingEventsRequestsOnlySupportedEventTypes() async throws {
-            let requestRecorder = RequestRecorderURLProtocol()
+        func fetchUpcomingEventsFiltersEventTypesWithoutRepeatedQueryParameters() async throws {
+            let requestRecorder = RequestRecorderURLProtocol(responseBody: Data("""
+            {
+              "items": [
+                { "id": "meeting", "eventType": "default",
+                  "start": { "dateTime": "2026-04-17T01:00:00Z" }, "end": { "dateTime": "2026-04-17T02:00:00Z" } },
+                { "id": "ooo", "eventType": "outOfOffice",
+                  "start": { "dateTime": "2026-04-17T02:00:00Z" }, "end": { "dateTime": "2026-04-17T03:00:00Z" } },
+                { "id": "office", "eventType": "workingLocation",
+                  "start": { "date": "2026-04-17" }, "end": { "date": "2026-04-18" } },
+                { "id": "bday", "eventType": "birthday", "recurringEventId": "bday-series",
+                  "start": { "date": "2026-04-17" }, "end": { "date": "2026-04-18" } },
+                { "id": "untyped",
+                  "start": { "dateTime": "2026-04-17T03:00:00Z" }, "end": { "dateTime": "2026-04-17T04:00:00Z" } }
+              ]
+            }
+            """.utf8))
             let session = makeRecordingSession(recorder: requestRecorder)
             let client = GoogleCalendarAPIClient(session: session, calendar: Calendar(identifier: .gregorian))
 
-            _ = try await client.fetchUpcomingEvents(
+            let events = try await client.fetchUpcomingEvents(
                 session: GoogleSession(
                     account: GoogleCalendarAccount(id: "1", displayName: "Test", email: "test@example.com"),
                     accessToken: "token",
@@ -63,11 +78,9 @@ import Foundation
             let request = try #require(requestRecorder.lastRequest)
             let url = try #require(request.url)
             let queryItems = try #require(URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems)
-            let eventTypes = queryItems
-                .filter { $0.name == "eventTypes" }
-                .compactMap(\.value)
-
-            #expect(Set(eventTypes) == Set(["default", "focusTime", "fromGmail", "outOfOffice"]))
+            // The Databricks connection proxy forwards only the last of repeated query parameters.
+            #expect(!queryItems.contains { $0.name == "eventTypes" })
+            #expect(events.map(\.platformId) == ["meeting", "ooo", "untyped"])
         }
 
         @Test
@@ -326,6 +339,11 @@ import Foundation
 private final class RequestRecorderURLProtocol: @unchecked Sendable {
     private let lock = NSLock()
     private var storedRequest: URLRequest?
+    let responseBody: Data
+
+    init(responseBody: Data) {
+        self.responseBody = responseBody
+    }
 
     var lastRequest: URLRequest? {
         lock.withLock { storedRequest }
@@ -366,7 +384,7 @@ private final class RecordingURLProtocol: URLProtocol, @unchecked Sendable {
             httpVersion: nil,
             headerFields: ["Content-Type": "application/json"]
         )!
-        let data = Data(#"{"items":[]}"#.utf8)
+        let data = Self.recorder?.responseBody ?? Data()
 
         client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
         client?.urlProtocol(self, didLoad: data)
