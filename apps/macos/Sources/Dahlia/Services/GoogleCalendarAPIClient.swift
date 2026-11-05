@@ -77,23 +77,23 @@ final class GoogleCalendarAPIClient: GoogleCalendarAPIClientProviding {
         let calendarRef = calendar
 
         let fetchResults = try await withThrowingTaskGroup(
-            of: (CalendarListItem, Data).self,
-            returning: [(CalendarListItem, Data)].self
+            of: (CalendarListItem, [EventItem]).self,
+            returning: [(CalendarListItem, [EventItem])].self
         ) { group in
             for calendarItem in calendars {
                 group.addTask {
-                    let data = try await Self.requestEvents(
+                    let items = try await Self.requestEvents(
                         for: calendarItem,
                         googleSession: googleSession,
                         now: now,
                         intervalEnd: intervalEnd,
                         session: self.session
                     )
-                    return (calendarItem, data)
+                    return (calendarItem, items)
                 }
             }
 
-            var results: [(CalendarListItem, Data)] = []
+            var results: [(CalendarListItem, [EventItem])] = []
             for try await result in group {
                 results.append(result)
             }
@@ -101,11 +101,10 @@ final class GoogleCalendarAPIClient: GoogleCalendarAPIClientProviding {
         }
 
         var events: [CalendarEvent] = []
-        for (calendarItem, data) in fetchResults {
-            let response = try JSONDecoder().decode(EventListResponse.self, from: data)
-            let calendarEvents = try response.items.compactMap {
-                try Self.makeEvent(from: $0, calendarItem: calendarItem, calendar: calendarRef)
-            }
+        for (calendarItem, items) in fetchResults {
+            let calendarEvents = try items
+                .filter { Self.includedEventTypesForUpcomingEvents.contains($0.eventType ?? "default") }
+                .compactMap { try Self.makeEvent(from: $0, calendarItem: calendarItem, calendar: calendarRef) }
             events.append(contentsOf: calendarEvents)
         }
 
@@ -204,7 +203,7 @@ final class GoogleCalendarAPIClient: GoogleCalendarAPIClientProviding {
         now: Date,
         intervalEnd: Date,
         session: URLSession
-    ) async throws -> Data {
+    ) async throws -> [EventItem] {
         guard let encodedCalendarID = calendarItem.id.addingPercentEncoding(withAllowedCharacters: .calendarAPIPathComponentAllowed),
               let components = URLComponents(
                   string: googleSession.apiBaseURL.absoluteString + "calendar/v3/calendars/\(encodedCalendarID)/events"
@@ -214,19 +213,27 @@ final class GoogleCalendarAPIClient: GoogleCalendarAPIClientProviding {
         }
 
         var queryComponents = components
-        queryComponents.queryItems = [
+        let queryItems = [
             URLQueryItem(name: "singleEvents", value: "true"),
             URLQueryItem(name: "orderBy", value: "startTime"),
             URLQueryItem(name: "showDeleted", value: "false"),
             URLQueryItem(name: "timeMin", value: now.ISO8601Format()),
             URLQueryItem(name: "timeMax", value: intervalEnd.ISO8601Format()),
             URLQueryItem(name: "maxResults", value: "250"),
-        ] + Self.includedEventTypesForUpcomingEvents.map { eventType in
-            URLQueryItem(name: "eventTypes", value: eventType)
-        }
+        ]
 
-        let url = try Self.url(from: queryComponents)
-        return try await authorizedGet(url: url, accessToken: googleSession.accessToken, session: session)
+        // Event types are filtered after decoding, so excluded types can fill a page; follow every page.
+        var items: [EventItem] = []
+        var pageToken: String?
+        repeat {
+            queryComponents.queryItems = queryItems + (pageToken.map { [URLQueryItem(name: "pageToken", value: $0)] } ?? [])
+            let url = try Self.url(from: queryComponents)
+            let data = try await authorizedGet(url: url, accessToken: googleSession.accessToken, session: session)
+            let response = try JSONDecoder().decode(EventListResponse.self, from: data)
+            items += response.items
+            pageToken = response.nextPageToken
+        } while pageToken != nil
+        return items
     }
 
     private func request(url: URL, accessToken: String) async throws -> Data {
@@ -268,7 +275,9 @@ final class GoogleCalendarAPIClient: GoogleCalendarAPIClientProviding {
 }
 
 extension GoogleCalendarAPIClient {
-    private static let includedEventTypesForUpcomingEvents = [
+    /// Filtered after decoding: the Databricks connection proxy forwards only the last of repeated query parameters,
+    /// so `eventTypes=a&eventTypes=b` would reach Google as `eventTypes=b`.
+    private static let includedEventTypesForUpcomingEvents: Set = [
         "default",
         "focusTime",
         "fromGmail",
@@ -318,6 +327,7 @@ extension GoogleCalendarAPIClient {
 
     struct EventListResponse: Decodable {
         let items: [EventItem]
+        let nextPageToken: String?
     }
 
     struct EventItem: Decodable {
