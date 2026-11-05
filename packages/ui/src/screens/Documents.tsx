@@ -329,8 +329,7 @@ export class BrowserDocument {
 }
 
 async function openDocument(workspaceId: string, meetingId: string): Promise<{ controller: BrowserDocument; release: () => void }> {
-  const identity = await api.getSession({});
-  const capabilities = await api.getCapabilities({});
+  const [identity, capabilities] = await Promise.all([api.getSession({}), api.getCapabilities({})]);
   if (capabilities.documents?.version !== 3) throw new Error(uiText("This server does not support this Notes version.", "このサーバーはこのバージョンのノートに対応していません。"));
   const key = `${identity.user.id}/${workspaceId}/${meetingId}`;
   let controller = sessions.get(key);

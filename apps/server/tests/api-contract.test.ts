@@ -18,6 +18,7 @@ const identityHeaders = { "x-forwarded-email": "owner@example.com", "x-forwarded
 
 describe.each(["node", "worker"])("v1 HTTP contract (%s)", (runtime) => {
   const aiService: AiService = {
+    configured: true,
     models: async () => ["test-model", "error-model"].map((id) => ({
       id, displayName: id === "test-model" ? "Test model" : "Error model", defaultReasoningEffort: "medium" as const,
       supportedReasoningEfforts: [{ effort: "low" as const, description: "Fast" }, { effort: "medium" as const, description: "Balanced" }],
@@ -140,11 +141,12 @@ describe.each(["node", "worker"])("v1 HTTP contract (%s)", (runtime) => {
     expect((await send("/api/v1/chat/models")).status).not.toBe(200);
     available = false;
     expect((await send("/api/v1/models")).status).toBe(503);
-    expect(await (await send("/api/v1/capabilities")).json()).not.toHaveProperty("ai");
+    // Feature discovery follows configuration; the chat screen reports unavailable models.
+    expect(await (await send("/api/v1/capabilities")).json()).toHaveProperty("ai", { version: 1, bundledModels: "codex" });
   });
 
-  it("does not publish AI capability without an Agent-compatible model", async () => {
-    const send = fixture(true, { ...aiService, models: async () => [] });
+  it("does not publish AI capability without a configured AI provider", async () => {
+    const send = fixture(true, { ...aiService, configured: false, models: async () => [] });
     const session: { capabilities: Record<string, boolean> } = await (await send("/api/v1/session")).json();
     expect(session.capabilities.ai).toBe(false);
     expect(await (await send("/api/v1/models")).json()).toMatchObject({ object: "list", data: [] });

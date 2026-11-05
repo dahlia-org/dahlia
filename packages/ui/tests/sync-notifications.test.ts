@@ -80,3 +80,72 @@ it("preserves active account listeners against stale Notes consumers and allows 
   expect(new URL(Source.instances.at(-1)!.url, "http://localhost").searchParams.get("user")).toBe("other");
   stopReused(); expect(vi.getTimerCount()).toBe(0);
 });
+
+it("resumes a healthy connection from its cursor when Notes subscriptions change", async () => {
+  const tab = setup(), domain = vi.fn();
+  const params = (source: Source) => new URL(source.url, "http://localhost").searchParams;
+  const invalidate = (source: Source, cursor: string) => source.dispatchEvent(new MessageEvent("invalidation", { data: JSON.stringify({ cursor }), lastEventId: cursor }));
+  const stopDomain = tab.subscribeDomain("user", domain);
+  await vi.advanceTimersByTimeAsync(0);
+  const initial = Source.instances.at(-1)!;
+  expect(params(initial).get("cursor")).toBeNull();
+  initial.dispatchEvent(new Event("open")); invalidate(initial, "c1");
+  expect(domain.mock.calls).toEqual([[true], [false]]);
+  domain.mockClear();
+
+  // A domain listener joining a healthy connection still gets its initial full read.
+  const late = vi.fn(), stopLate = tab.subscribeDomain("user", late);
+  await vi.advanceTimersByTimeAsync(0);
+  const joined = Source.instances.at(-1)!;
+  expect(params(joined).get("cursor")).toBeNull();
+  joined.dispatchEvent(new Event("open")); invalidate(joined, "c1");
+  expect(late).toHaveBeenCalledWith(true);
+  stopLate(); await vi.advanceTimersByTimeAsync(0);
+  Source.instances.at(-1)!.dispatchEvent(new Event("open"));
+  domain.mockClear();
+
+  const stopNote = tab.subscribeNotes("user", "workspace", "meeting", () => {});
+  await vi.advanceTimersByTimeAsync(0);
+  const replacement = Source.instances.at(-1)!;
+  expect(params(replacement).get("cursor")).toBe("c1");
+  replacement.dispatchEvent(new Event("open"));
+  expect(domain).not.toHaveBeenCalled();
+  invalidate(replacement, "c2"); expect(domain).toHaveBeenCalledWith(false);
+  domain.mockClear();
+
+  // A connection error is a real reconnect: read everything again.
+  replacement.dispatchEvent(new Event("error")); replacement.dispatchEvent(new Event("open"));
+  expect(domain).toHaveBeenCalledWith(true);
+  domain.mockClear();
+  replacement.dispatchEvent(new Event("error"));
+  stopNote(); await vi.advanceTimersByTimeAsync(0);
+  const afterError = Source.instances.at(-1)!;
+  expect(params(afterError).get("cursor")).toBeNull();
+  afterError.dispatchEvent(new Event("open")); expect(domain).toHaveBeenCalledWith(true);
+  stopDomain(); expect(vi.getTimerCount()).toBe(0);
+});
+
+it("rereads everything when a replacement has no cursor yet or fails before opening", async () => {
+  const tab = setup(), domain = vi.fn();
+  const params = (source: Source) => new URL(source.url, "http://localhost").searchParams;
+  const stopDomain = tab.subscribeDomain("user", domain);
+  await vi.advanceTimersByTimeAsync(0);
+  Source.instances.at(-1)!.dispatchEvent(new Event("open"));
+  domain.mockClear();
+  // Healthy but no invalidation received yet: nothing to resume from.
+  const stopFirst = tab.subscribeNotes("user", "workspace", "first", () => {});
+  await vi.advanceTimersByTimeAsync(0);
+  const noCursor = Source.instances.at(-1)!;
+  expect(params(noCursor).get("cursor")).toBeNull();
+  noCursor.dispatchEvent(new Event("open")); expect(domain).toHaveBeenCalledWith(true);
+  noCursor.dispatchEvent(new MessageEvent("invalidation", { data: "{}", lastEventId: "c1" }));
+  domain.mockClear();
+  // A resuming replacement that errors before opening is a reconnect.
+  const stopSecond = tab.subscribeNotes("user", "workspace", "second", () => {});
+  await vi.advanceTimersByTimeAsync(0);
+  const failed = Source.instances.at(-1)!;
+  expect(params(failed).get("cursor")).toBe("c1");
+  failed.dispatchEvent(new Event("error")); failed.dispatchEvent(new Event("open"));
+  expect(domain).toHaveBeenCalledWith(true);
+  stopSecond(); stopFirst(); stopDomain(); await vi.advanceTimersByTimeAsync(0); expect(vi.getTimerCount()).toBe(0);
+});
