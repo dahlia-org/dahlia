@@ -2,6 +2,7 @@
 Vendor/DahliaLinderaSources/target/
 .codex-tmp/
 .codex/review-loop/
+.review/
 .swiftpm/
 *.app
 Dahlia.zip
