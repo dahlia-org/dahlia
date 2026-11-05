@@ -174,6 +174,7 @@ export const meetingEvent = sqliteTable("meeting_events", {
 }, (table) => [
   index("meeting_events_meeting_time_idx").on(table.workspaceId, table.meetingId, table.occurredAt, table.id),
   index("meeting_events_session_idx").on(table.workspaceId, table.sessionId),
+  index("meeting_events_owner_idx").on(table.ownerUserId),
   check("meeting_events_kind_check", sql`${table.kind} IN ('meeting_created', 'meeting_updated', 'meeting_deleted', 'tag_added', 'tag_removed', 'recording_started', 'recording_ended', 'segment_rotated')`),
   check("meeting_events_source_check", sql`${table.audioSource} IN ('mic', 'system')`),
 ]);
@@ -269,7 +270,6 @@ export const syncedFile = sqliteTable("files", {
   updatedAt: sqliteTimestamp("updated_at").default(sql`(cast(unixepoch('subsecond') * 1000 as integer))`).notNull(),
 }, (table) => [
   unique("files_workspace_file_unique").on(table.workspaceId, table.fileId),
-  index("files_workspace_file_idx").on(table.workspaceId, table.fileId),
   check("files_offset_check", sql`${table.offset} = 0`),
   check("files_size_check", sql`${table.size} >= 0`)
 ]);
@@ -361,8 +361,8 @@ export const searchDocument = sqliteTable("search_documents", {
   }).onDelete("cascade"),
   check("search_document_embedding_dimensions_check", sql`${table.embedding} IS NULL OR (length(${table.embedding}) BETWEEN 128 AND 4096 AND length(${table.embedding}) % 4 = 0)`),
   check("search_document_kind_check", sql`${table.kind} IN ('meeting', 'screenshot')`),
-  index("search_document_workspace_kind_meeting_document_idx")
-    .on(table.workspaceId, table.kind, table.meetingId, table.documentId),
+  index("search_document_workspace_meeting_kind_document_idx")
+    .on(table.workspaceId, table.meetingId, table.kind, table.documentId),
 ]);
 
 
@@ -379,6 +379,7 @@ export const syncTransactionReceipt = sqliteTable("transaction_receipts", {
 }, (table) => [
   foreignKey({ columns: [table.ownerUserId], foreignColumns: [authUser.id] }).onDelete("cascade"),
   index("transaction_receipt_owner_created_idx").on(table.ownerUserId, table.createdAt),
+  index("transaction_receipt_owner_workspace_idx").on(table.ownerUserId, table.workspaceId),
 ]);
 
 export const syncChange = sqliteTable("sync_changes", {
@@ -429,6 +430,8 @@ export const summaryJob = sqliteTable("jobs_summary", {
   requestHash: text("request_hash").notNull(),
 }, (table) => [
   index("summary_job_owner_created_idx").on(table.ownerUserId, table.createdAt),
+  index("summary_job_meeting_created_idx").on(table.meetingId, table.createdAt, table.id),
+  index("summary_job_workspace_idx").on(table.workspaceId),
 ]);
 
 export const summary = sqliteTable("summaries", {
@@ -531,11 +534,11 @@ export const document = sqliteTable("documents", {
   encryptedPayload: text("encrypted_payload"),
   createdAt: sqliteTimestamp("created_at").notNull(),
   updatedAt: sqliteTimestamp("updated_at").notNull(),
-}, (table) => [unique("document_workspace_id_unique").on(table.workspaceId, table.id), foreignKey({ name: "document_parent_workspace_fk", columns: [table.workspaceId, table.meetingId], foreignColumns: [syncedMeeting.workspaceId, syncedMeeting.meetingId] }).onDelete("cascade").onUpdate("cascade"), uniqueIndex("document_meeting_notes_unique").on(table.meetingId).where(sql`${table.kind} = 'notes'`), check("document_kind", sql`${table.kind} IN ('notes', 'summary', 'general') AND (${table.kind} != 'notes' OR ${table.meetingId} IS NOT NULL)`), check("document_watermarks", sql`${table.projectionRevision} = ${table.revision} AND ${table.checkpointRevision} <= ${table.revision}`)]);
+}, (table) => [unique("document_workspace_id_unique").on(table.workspaceId, table.id), foreignKey({ name: "document_parent_workspace_fk", columns: [table.workspaceId, table.meetingId], foreignColumns: [syncedMeeting.workspaceId, syncedMeeting.meetingId] }).onDelete("cascade").onUpdate("cascade"), uniqueIndex("document_meeting_notes_unique").on(table.meetingId).where(sql`${table.kind} = 'notes'`), index("document_meeting_idx").on(table.meetingId), check("document_kind", sql`${table.kind} IN ('notes', 'summary', 'general') AND (${table.kind} != 'notes' OR ${table.meetingId} IS NOT NULL)`), check("document_watermarks", sql`${table.projectionRevision} = ${table.revision} AND ${table.checkpointRevision} <= ${table.revision}`)]);
 
 export const documentUpdate = sqliteTable("document_updates", {
   documentId: text("document_id").notNull().references(() => document.id, { onDelete: "cascade" }),
-  workspaceId: text("workspace_id").notNull().references(() => syncedWorkspace.workspaceId, { onDelete: "cascade" }),
+  workspaceId: text("workspace_id").notNull(),
   revision: integer("revision").notNull(),
   update: text("update").notNull(),
   encryptedPayload: text("encrypted_payload"),
@@ -545,7 +548,7 @@ export const documentUpdate = sqliteTable("document_updates", {
 export const documentRecovery = sqliteTable("document_recoveries", {
   id: text("id").primaryKey(),
   documentId: text("document_id").notNull().references(() => document.id, { onDelete: "cascade" }),
-  workspaceId: text("workspace_id").notNull().references(() => syncedWorkspace.workspaceId, { onDelete: "cascade" }),
+  workspaceId: text("workspace_id").notNull(),
   sequence: integer("sequence").notNull(),
   blocks: text("blocks", { mode: "json" }).$type<import("@dahlia-ai/ui/documents/core").DocumentBlock[]>().notNull(),
   reason: text("reason").$type<"deleted" | "concurrent_delete">().notNull(),
@@ -583,7 +586,8 @@ export const backgroundJob = sqliteTable("jobs_queue", {
 }, (table) => [
   uniqueIndex("jobs_queue_active_summary_idx").on(table.target).where(sql`${table.kind} IN ('summary', 'audio-summary') AND ${table.status} IN ('pending', 'processing')`),
   index("jobs_queue_due_idx").on(table.status, table.availableAt, table.owner, table.createdAt),
-  index("jobs_queue_lease_idx").on(table.status, table.leaseUntil, table.target),
+  index("jobs_queue_leased_idx").on(table.leaseUntil).where(sql`${table.leaseUntil} IS NOT NULL`),
+  index("jobs_queue_target_idx").on(table.target),
   check("jobs_queue_status_check", sql`${table.status} IN ('pending', 'processing', 'succeeded', 'failed', 'cancelled')`),
 ]);
 

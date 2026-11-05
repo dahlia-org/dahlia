@@ -803,12 +803,13 @@ function createIdentityStore(
     }
     for (const table of [schema.syncedProject, schema.syncedMeeting, schema.syncedFile,
       schema.meetingAttachment, schema.meetingEvent, schema.transcriptPatchChunk, schema.searchDocument,
-      schema.summaryJob, schema.document, schema.documentUpdate, schema.documentRecovery, schema.documentPresence]) {
+      schema.summaryJob, schema.document]) {
       await db.update(table).set({ workspaceId: destinationWorkspaceId }).where(eq(table.workspaceId, sourceWorkspaceId));
     }
     const movedJobs = await db.select().from(schema.backgroundJob).where(eq(payloadField(schema, "workspaceId", true), sourceWorkspaceId));
     for (const job of movedJobs) await db.update(schema.backgroundJob).set({ payload: { ...job.payload, workspaceId: destinationWorkspaceId } }).where(eq(schema.backgroundJob.id, job.id));
-    // Transcript and summary history follows the unchanged meeting ID. Object keys never change.
+    // Transcript and summary history follows the unchanged meeting ID; Document history follows its Document through ON UPDATE CASCADE.
+    // Object keys never change.
     const id = uuidV7();
     const [result] = await db.insert(transfers).values({
       id, ownerUserId: userPrincipalId, idempotencyKey: request.idempotencyKey, requestHash: request.requestHash,

@@ -485,8 +485,10 @@ CREATE TABLE "app"."workspace_transfers" (
 ALTER TABLE "app"."workspace_transfers" ENABLE ROW LEVEL SECURITY;--> statement-breakpoint
 CREATE UNIQUE INDEX "jobs_queue_active_summary_idx" ON "jobs"."queue" ("target") WHERE "kind" IN ('summary', 'audio-summary') AND "status" IN ('pending', 'processing');--> statement-breakpoint
 CREATE INDEX "jobs_queue_due_idx" ON "jobs"."queue" ("status","available_at","owner","created_at");--> statement-breakpoint
-CREATE INDEX "jobs_queue_lease_idx" ON "jobs"."queue" ("status","lease_until","target");--> statement-breakpoint
+CREATE INDEX "jobs_queue_leased_idx" ON "jobs"."queue" ("lease_until") WHERE "lease_until" IS NOT NULL;--> statement-breakpoint
+CREATE INDEX "jobs_queue_target_idx" ON "jobs"."queue" ("target");--> statement-breakpoint
 CREATE UNIQUE INDEX "document_meeting_notes_unique" ON "app"."documents" ("meeting_id") WHERE "kind" = 'notes';--> statement-breakpoint
+CREATE INDEX "document_meeting_idx" ON "app"."documents" ("meeting_id");--> statement-breakpoint
 CREATE INDEX "document_presence_document_expiry" ON "app"."document_presence" ("document_id","expires_at");--> statement-breakpoint
 CREATE INDEX "document_presence_workspace_expiry" ON "app"."document_presence" ("workspace_id","expires_at");--> statement-breakpoint
 CREATE UNIQUE INDEX "document_recoveries_document_cursor" ON "app"."document_recoveries" ("document_id","sequence");--> statement-breakpoint
@@ -494,18 +496,21 @@ CREATE INDEX "meeting_attachments_file_idx" ON "app"."meeting_attachments" ("fil
 CREATE INDEX "meeting_attachments_workspace_meeting_id_idx" ON "app"."meeting_attachments" ("workspace_id","meeting_id","id");--> statement-breakpoint
 CREATE INDEX "meeting_events_meeting_time_idx" ON "app"."meeting_events" ("workspace_id","meeting_id","occurred_at","id");--> statement-breakpoint
 CREATE INDEX "meeting_events_session_idx" ON "app"."meeting_events" ("workspace_id","session_id");--> statement-breakpoint
+CREATE INDEX "meeting_events_owner_idx" ON "app"."meeting_events" ("owner_user_id");--> statement-breakpoint
 CREATE INDEX "organization_domains_domain_idx" ON "app"."organization_domains" ("domain");--> statement-breakpoint
 CREATE UNIQUE INDEX "organization_join_requests_pending_idx" ON "app"."organization_join_requests" ("organization_id","user_id") WHERE "status" = 'pending';--> statement-breakpoint
 CREATE INDEX "organization_join_requests_user_idx" ON "app"."organization_join_requests" ("user_id");--> statement-breakpoint
 CREATE INDEX "personal_memories_user_idx" ON "app"."personal_memories" ("user_id");--> statement-breakpoint
 CREATE INDEX "personal_memory_chunks_user_idx" ON "search"."personal_memory_chunks" ("user_id");--> statement-breakpoint
-CREATE INDEX "search_document_workspace_kind_meeting_document_idx" ON "search"."documents" ("workspace_id","kind","meeting_id","document_id");--> statement-breakpoint
+CREATE INDEX "search_document_workspace_meeting_kind_document_idx" ON "search"."documents" ("workspace_id","meeting_id","kind","document_id");--> statement-breakpoint
 CREATE INDEX "shared_memories_workspace_idx" ON "app"."shared_memories" ("workspace_id");--> statement-breakpoint
 CREATE INDEX "shared_memory_chunks_workspace_idx" ON "search"."shared_memory_chunks" ("workspace_id");--> statement-breakpoint
 CREATE INDEX "summary_job_owner_created_idx" ON "jobs"."summary" ("owner_user_id","created_at");--> statement-breakpoint
+CREATE INDEX "summary_job_meeting_created_idx" ON "jobs"."summary" ("meeting_id","created_at","id");--> statement-breakpoint
+CREATE INDEX "summary_job_workspace_idx" ON "jobs"."summary" ("workspace_id");--> statement-breakpoint
 CREATE INDEX "sync_change_workspace_sequence_idx" ON "app"."sync_changes" ("workspace_id","sequence");--> statement-breakpoint
 CREATE INDEX "transaction_receipt_owner_created_idx" ON "app"."transaction_receipts" ("owner_user_id","created_at");--> statement-breakpoint
-CREATE INDEX "files_workspace_file_idx" ON "app"."files" ("workspace_id","file_id");--> statement-breakpoint
+CREATE INDEX "transaction_receipt_owner_workspace_idx" ON "app"."transaction_receipts" ("owner_user_id","workspace_id");--> statement-breakpoint
 CREATE INDEX "meetings_workspace_deleted_idx" ON "app"."meetings" ("workspace_id","deleted_at","meeting_id");--> statement-breakpoint
 CREATE INDEX "meetings_workspace_project_live_created_idx" ON "app"."meetings" ("workspace_id","project_id","active","deleted_at","deleting_at","created_at","meeting_id");--> statement-breakpoint
 CREATE INDEX "meetings_calendar_event_idx" ON "app"."meetings" ("ical_uid","recurrence_id");--> statement-breakpoint
@@ -525,10 +530,8 @@ ALTER TABLE "app"."document_presence" ADD CONSTRAINT "document_presence_workspac
 ALTER TABLE "app"."document_presence" ADD CONSTRAINT "document_presence_user_id_user_id_fkey" FOREIGN KEY ("user_id") REFERENCES "auth"."user"("id") ON DELETE CASCADE;--> statement-breakpoint
 ALTER TABLE "app"."document_presence" ADD CONSTRAINT "documentPresence_workspace_fk" FOREIGN KEY ("workspace_id","document_id") REFERENCES "app"."documents"("workspace_id","id") ON DELETE CASCADE ON UPDATE CASCADE;--> statement-breakpoint
 ALTER TABLE "app"."document_recoveries" ADD CONSTRAINT "document_recoveries_document_id_documents_id_fkey" FOREIGN KEY ("document_id") REFERENCES "app"."documents"("id") ON DELETE CASCADE;--> statement-breakpoint
-ALTER TABLE "app"."document_recoveries" ADD CONSTRAINT "document_recoveries_workspace_id_workspaces_workspace_id_fkey" FOREIGN KEY ("workspace_id") REFERENCES "app"."workspaces"("workspace_id") ON DELETE CASCADE;--> statement-breakpoint
 ALTER TABLE "app"."document_recoveries" ADD CONSTRAINT "documentRecovery_workspace_fk" FOREIGN KEY ("workspace_id","document_id") REFERENCES "app"."documents"("workspace_id","id") ON DELETE CASCADE ON UPDATE CASCADE;--> statement-breakpoint
 ALTER TABLE "app"."document_updates" ADD CONSTRAINT "document_updates_document_id_documents_id_fkey" FOREIGN KEY ("document_id") REFERENCES "app"."documents"("id") ON DELETE CASCADE;--> statement-breakpoint
-ALTER TABLE "app"."document_updates" ADD CONSTRAINT "document_updates_workspace_id_workspaces_workspace_id_fkey" FOREIGN KEY ("workspace_id") REFERENCES "app"."workspaces"("workspace_id") ON DELETE CASCADE;--> statement-breakpoint
 ALTER TABLE "app"."document_updates" ADD CONSTRAINT "documentUpdate_workspace_fk" FOREIGN KEY ("workspace_id","document_id") REFERENCES "app"."documents"("workspace_id","id") ON DELETE CASCADE ON UPDATE CASCADE;--> statement-breakpoint
 ALTER TABLE "app"."meeting_attachments" ADD CONSTRAINT "meeting_attachments_vQf2DeRIoS0x_fkey" FOREIGN KEY ("workspace_id","meeting_id") REFERENCES "app"."meetings"("workspace_id","meeting_id") ON DELETE CASCADE;--> statement-breakpoint
 ALTER TABLE "app"."meeting_attachments" ADD CONSTRAINT "meeting_attachments_hqOEFenFD03M_fkey" FOREIGN KEY ("workspace_id","file_id") REFERENCES "app"."files"("workspace_id","file_id");--> statement-breakpoint

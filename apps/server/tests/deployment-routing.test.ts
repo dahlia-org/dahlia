@@ -432,7 +432,7 @@ describe("deployment routing", () => {
     expect(postgres).not.toContain('CREATE TABLE "app"."user"');
     expect(postgres).toContain("ROW LEVEL SECURITY");
     expect(postgres).toContain("CREATE POLICY");
-    expect(postgres).toContain('"current_identity_can_read_workspace"');
+    expect(postgres).toContain('"current_identity_workspace_ids"');
     expect(readFileSync(new URL("../drizzle/postgres/20260912180000_runtime_support/migration.sql", import.meta.url), "utf8")).toContain("FROM auth.team_member");
     expect(postgres).not.toContain("header_deployment");
     expect(sqlite).toContain("team_member_user_team_idx");

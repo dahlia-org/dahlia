@@ -318,7 +318,6 @@ CREATE TABLE `document_recoveries` (
 	`encrypted_payload` text,
 	`created_at` integer NOT NULL,
 	CONSTRAINT `fk_document_recoveries_document_id_documents_id_fk` FOREIGN KEY (`document_id`) REFERENCES `documents`(`id`) ON DELETE CASCADE,
-	CONSTRAINT `fk_document_recoveries_workspace_id_workspaces_workspace_id_fk` FOREIGN KEY (`workspace_id`) REFERENCES `workspaces`(`workspace_id`) ON DELETE CASCADE,
 	CONSTRAINT `documentRecovery_workspace_fk` FOREIGN KEY (`workspace_id`,`document_id`) REFERENCES `documents`(`workspace_id`,`id`) ON UPDATE CASCADE ON DELETE CASCADE
 );
 --> statement-breakpoint
@@ -331,7 +330,6 @@ CREATE TABLE `document_updates` (
 	`created_at` integer NOT NULL,
 	CONSTRAINT `document_updates_pk` PRIMARY KEY(`document_id`, `revision`),
 	CONSTRAINT `fk_document_updates_document_id_documents_id_fk` FOREIGN KEY (`document_id`) REFERENCES `documents`(`id`) ON DELETE CASCADE,
-	CONSTRAINT `fk_document_updates_workspace_id_workspaces_workspace_id_fk` FOREIGN KEY (`workspace_id`) REFERENCES `workspaces`(`workspace_id`) ON DELETE CASCADE,
 	CONSTRAINT `documentUpdate_workspace_fk` FOREIGN KEY (`workspace_id`,`document_id`) REFERENCES `documents`(`workspace_id`,`id`) ON UPDATE CASCADE ON DELETE CASCADE
 );
 --> statement-breakpoint
@@ -765,8 +763,10 @@ CREATE INDEX `teamMember_userId_idx` ON `team_member` (`user_id`);--> statement-
 CREATE INDEX `verification_identifier_idx` ON `verification` (`identifier`);--> statement-breakpoint
 CREATE UNIQUE INDEX `jobs_queue_active_summary_idx` ON `jobs_queue` (`target`) WHERE "jobs_queue"."kind" IN ('summary', 'audio-summary') AND "jobs_queue"."status" IN ('pending', 'processing');--> statement-breakpoint
 CREATE INDEX `jobs_queue_due_idx` ON `jobs_queue` (`status`,`available_at`,`owner`,`created_at`);--> statement-breakpoint
-CREATE INDEX `jobs_queue_lease_idx` ON `jobs_queue` (`status`,`lease_until`,`target`);--> statement-breakpoint
+CREATE INDEX `jobs_queue_leased_idx` ON `jobs_queue` (`lease_until`) WHERE "jobs_queue"."lease_until" IS NOT NULL;--> statement-breakpoint
+CREATE INDEX `jobs_queue_target_idx` ON `jobs_queue` (`target`);--> statement-breakpoint
 CREATE UNIQUE INDEX `document_meeting_notes_unique` ON `documents` (`meeting_id`) WHERE "documents"."kind" = 'notes';--> statement-breakpoint
+CREATE INDEX `document_meeting_idx` ON `documents` (`meeting_id`);--> statement-breakpoint
 CREATE INDEX `document_presence_document_expiry` ON `document_presence` (`document_id`,`expires_at`);--> statement-breakpoint
 CREATE INDEX `document_presence_workspace_expiry` ON `document_presence` (`workspace_id`,`expires_at`);--> statement-breakpoint
 CREATE UNIQUE INDEX `document_recoveries_document_cursor` ON `document_recoveries` (`document_id`,`sequence`);--> statement-breakpoint
@@ -774,18 +774,21 @@ CREATE INDEX `meeting_attachments_file_idx` ON `meeting_attachments` (`file_id`)
 CREATE INDEX `meeting_attachments_workspace_meeting_id_idx` ON `meeting_attachments` (`workspace_id`,`meeting_id`,`id`);--> statement-breakpoint
 CREATE INDEX `meeting_events_meeting_time_idx` ON `meeting_events` (`workspace_id`,`meeting_id`,`occurred_at`,`id`);--> statement-breakpoint
 CREATE INDEX `meeting_events_session_idx` ON `meeting_events` (`workspace_id`,`session_id`);--> statement-breakpoint
+CREATE INDEX `meeting_events_owner_idx` ON `meeting_events` (`owner_user_id`);--> statement-breakpoint
 CREATE INDEX `organization_domains_domain_idx` ON `organization_domains` (`domain`);--> statement-breakpoint
 CREATE UNIQUE INDEX `organization_join_requests_pending_idx` ON `organization_join_requests` (`organization_id`,`user_id`) WHERE "organization_join_requests"."status" = 'pending';--> statement-breakpoint
 CREATE INDEX `organization_join_requests_user_idx` ON `organization_join_requests` (`user_id`);--> statement-breakpoint
 CREATE INDEX `personal_memories_user_idx` ON `personal_memories` (`user_id`);--> statement-breakpoint
 CREATE INDEX `personal_memory_chunks_user_idx` ON `personal_memory_chunks` (`user_id`);--> statement-breakpoint
-CREATE INDEX `search_document_workspace_kind_meeting_document_idx` ON `search_documents` (`workspace_id`,`kind`,`meeting_id`,`document_id`);--> statement-breakpoint
+CREATE INDEX `search_document_workspace_meeting_kind_document_idx` ON `search_documents` (`workspace_id`,`meeting_id`,`kind`,`document_id`);--> statement-breakpoint
 CREATE INDEX `shared_memories_workspace_idx` ON `shared_memories` (`workspace_id`);--> statement-breakpoint
 CREATE INDEX `shared_memory_chunks_workspace_idx` ON `shared_memory_chunks` (`workspace_id`);--> statement-breakpoint
 CREATE INDEX `summary_job_owner_created_idx` ON `jobs_summary` (`owner_user_id`,`created_at`);--> statement-breakpoint
+CREATE INDEX `summary_job_meeting_created_idx` ON `jobs_summary` (`meeting_id`,`created_at`,`id`);--> statement-breakpoint
+CREATE INDEX `summary_job_workspace_idx` ON `jobs_summary` (`workspace_id`);--> statement-breakpoint
 CREATE INDEX `sync_change_workspace_sequence_idx` ON `sync_changes` (`workspace_id`,`sequence`);--> statement-breakpoint
 CREATE INDEX `transaction_receipt_owner_created_idx` ON `transaction_receipts` (`owner_user_id`,`created_at`);--> statement-breakpoint
-CREATE INDEX `files_workspace_file_idx` ON `files` (`workspace_id`,`file_id`);--> statement-breakpoint
+CREATE INDEX `transaction_receipt_owner_workspace_idx` ON `transaction_receipts` (`owner_user_id`,`workspace_id`);--> statement-breakpoint
 CREATE INDEX `meetings_workspace_deleted_idx` ON `meetings` (`workspace_id`,`deleted_at`,`meeting_id`);--> statement-breakpoint
 CREATE INDEX `meetings_workspace_project_live_created_idx` ON `meetings` (`workspace_id`,`project_id`,`active`,`deleted_at`,`deleting_at`,`created_at`,`meeting_id`);--> statement-breakpoint
 CREATE INDEX `meetings_calendar_event_idx` ON `meetings` (`ical_uid`,`recurrence_id`);--> statement-breakpoint
