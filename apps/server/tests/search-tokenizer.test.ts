@@ -3,9 +3,11 @@ import { readFileSync } from "node:fs";
 
 import { describe, expect, it } from "vitest";
 
+import { analyzerResolver, applicationAnalyzer, createLakebaseSearchTokenizer } from "../src/search/lexical";
 import { createNodeSearchTokenizer } from "../src/search/node-tokenizer";
 import {
   createIntlSearchTokenizer,
+  createSearchText,
   parseSearchQuery,
   SEARCH_ANALYZER_CONFIG_HASH,
   SearchQueryError,
@@ -21,6 +23,26 @@ describe("server search tokenization", () => {
     expect(tokenizer.tokenize("Ｌｉｎｄｅｒａで話した")).toEqual(["lindera", "話す"]);
     expect(tokenizer.tokenize("百二十三個のコンピューター")).toEqual(["123個", "コンピュータ"]);
     expect(tokenizer.tokenize("１２３個")).toEqual(["123個"]);
+  });
+
+  it("leaves Lakebase meeting text whole for the database tokenizer", () => {
+    const tokenizer = createLakebaseSearchTokenizer();
+    expect(createSearchText(tokenizer, ["予算の説明", null, "Search"])).toBe("予算の説明\nSearch");
+    expect(parseSearchQuery(tokenizer, " 予算の説明 ")).toEqual({ text: "予算の説明", tokens: ["予算の説明"], sourceText: "予算の説明" });
+    // Runs the parser would drop are split.
+    expect(tokenizer.tokenize("あ".repeat(700))[0]).toContain(" ");
+    // Without letters or digits there is nothing to search, so no lexical or semantic search runs.
+    expect(parseSearchQuery(tokenizer, " ?！ ")?.tokens).toEqual([]);
+    expect(createSearchText(tokenizer, ["---"])).toBe("");
+  });
+
+  it("requires lakebase_tokenizer on Lakebase and retries a failed version read", async () => {
+    const application = applicationAnalyzer(createIntlSearchTokenizer());
+    const versions = [undefined, "0.2.0"];
+    const resolve = analyzerResolver(true, async () => versions.shift());
+    await expect(resolve(application)).rejects.toThrow("search_japanese_tokenizer_unavailable");
+    expect((await resolve(application)).id).toBe("lakebase_tokenizer@0.2.0/tokenizer_japanese/runs2000");
+    expect(await analyzerResolver(false, async () => "0.2.0")(application)).toBe(application);
   });
 
   it("uses the Worker-safe segmenter for mixed Japanese and English", () => {

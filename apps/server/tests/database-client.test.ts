@@ -159,7 +159,7 @@ describe("PostgreSQL migrations", () => {
   ] as const)("uses the native %s vector extension and index", async (databaseType, extension, method) => {
     const query = vi.fn(async (statement: string) => statement.startsWith("select quote_literal")
       ? { rows: [{ value: "'model'" }] }
-      : { rows: [] });
+      : { rows: statement.includes("pg_ts_config") ? [{ "?column?": 1 }] : [] });
     await ensureSearchIndexes({ query } as never, {
       databaseType,
       searchEmbedding: { model: "model", dimensions: 32 },
@@ -175,31 +175,28 @@ describe("PostgreSQL migrations", () => {
       expect(statements.some((statement) => statement.includes(`ON ${table} USING ${databaseType === "lakebase" ? "lakebase_bm25" : "gin"}`))).toBe(true);
     }
     if (databaseType === "lakebase") {
-      expect(extensionStatement).toContain("'vector', 'lakebase_text', 'lakebase_vector'");
+      expect(extensionStatement).toContain("'vector', 'lakebase_text', 'lakebase_vector', 'lakebase_tokenizer'");
       expect(statements.some((statement) => statement.includes("USING lakebase_bm25"))).toBe(true);
     } else {
       expect(statements.some((statement) => statement.includes("USING gin"))).toBe(true);
     }
   });
 
-  it("installs lakebase_tokenizer into public only when Lakebase offers it and no other schema holds it", async () => {
-    for (const [rows, installs] of [[[{ schema: null }], true], [[{ schema: "public" }], true], [[{ schema: "tokenizer_ext" }], false], [[], false]] as const) {
-      const query = vi.fn(async (statement: string) => ({ rows: statement.includes("pg_available_extensions") ? rows : [] }));
-      await ensureSearchIndexes({ query } as never, { databaseType: "lakebase" } as AppConfig);
-      const statements = query.mock.calls.map(([statement]) => statement);
-      expect(statements.some((statement) => statement.includes("extension_schema_mismatch") && statement.includes("'lakebase_tokenizer'"))).toBe(installs);
-    }
-    // A listed tokenizer that cannot be installed still lets migration continue on Lindera.
+  it("requires lakebase_tokenizer on Lakebase like the other search extensions", async () => {
     const failing = vi.fn(async (statement: string) => {
-      if (statement.includes("'lakebase_tokenizer'") && statement.includes("CREATE EXTENSION")) throw new Error("permission denied");
-      return { rows: statement.includes("pg_available_extensions") ? [{ schema: null }] : [] };
+      if (statement.includes("CREATE EXTENSION")) throw new Error("permission denied");
+      return { rows: [] };
     });
-    await expect(ensureSearchIndexes({ query: failing } as never, { databaseType: "lakebase" } as AppConfig)).resolves.toBeUndefined();
-    expect(failing.mock.calls.some(([statement]) => statement.includes("USING lakebase_bm25"))).toBe(true);
+    await expect(ensureSearchIndexes({ query: failing } as never, { databaseType: "lakebase" } as AppConfig)).rejects.toThrow("permission denied");
+    expect(failing.mock.calls[0]![0]).toContain("'lakebase_text', 'lakebase_tokenizer'");
+    // An older installed version without tokenizer_japanese also stops migration, before any index is created.
+    const outdated = vi.fn<(statement: string) => Promise<{ rows: never[] }>>(async () => ({ rows: [] }));
+    await expect(ensureSearchIndexes({ query: outdated } as never, { databaseType: "lakebase" } as AppConfig)).rejects.toThrow("lakebase_tokenizer_outdated");
+    expect(outdated.mock.calls.some(([statement]) => statement.includes("lakebase_bm25"))).toBe(false);
   });
 
   it("installs only the Lakebase text extension when semantic search is disabled", async () => {
-    const query = vi.fn<(statement: string) => Promise<{ rows: never[] }>>(async () => ({ rows: [] }));
+    const query = vi.fn(async (statement: string) => ({ rows: statement.includes("pg_ts_config") ? [{ "?column?": 1 }] : [] }));
     await ensureSearchIndexes({ query } as never, { databaseType: "lakebase" } as AppConfig);
     const extensionStatement = query.mock.calls.map(([statement]) => statement)
       .find((statement) => statement.includes("extension_schema_mismatch"))!;
@@ -253,7 +250,9 @@ describe("PostgreSQL migrations", () => {
     expect(sql).not.toContain('CREATE TABLE "jobs"."search_index"');
     expect(sql).toContain('CREATE TABLE "jobs"."queue"');
     expect(sql).toContain('"search_text" text DEFAULT \'\' NOT NULL');
-    expect(sql).toContain("tsvector GENERATED ALWAYS AS (to_tsvector('simple', search_text)) STORED");
+    // The sync store writes the vectors with each database's search configuration.
+    expect(sql).toContain('"search_vector" tsvector,');
+    expect(sql).not.toContain("GENERATED ALWAYS AS (to_tsvector");
     expect(sql).toContain('"embedding" real[]');
     expect(sql).toContain('"workspace_id" uuid');
     expect(sql).not.toContain("vault");

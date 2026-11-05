@@ -1702,10 +1702,7 @@
       "notNull": false,
       "dimensions": 0,
       "default": null,
-      "generated": {
-        "as": "to_tsvector('simple', title_text)",
-        "type": "stored"
-      },
+      "generated": null,
       "identity": null,
       "name": "title_vector",
       "entityType": "columns",
@@ -1718,10 +1715,7 @@
       "notNull": false,
       "dimensions": 0,
       "default": null,
-      "generated": {
-        "as": "to_tsvector('simple', tags_text)",
-        "type": "stored"
-      },
+      "generated": null,
       "identity": null,
       "name": "tags_vector",
       "entityType": "columns",
@@ -1734,10 +1728,7 @@
       "notNull": false,
       "dimensions": 0,
       "default": null,
-      "generated": {
-        "as": "to_tsvector('simple', description_text)",
-        "type": "stored"
-      },
+      "generated": null,
       "identity": null,
       "name": "description_vector",
       "entityType": "columns",
@@ -1750,10 +1741,7 @@
       "notNull": false,
       "dimensions": 0,
       "default": null,
-      "generated": {
-        "as": "to_tsvector('simple', summary_text)",
-        "type": "stored"
-      },
+      "generated": null,
       "identity": null,
       "name": "summary_vector",
       "entityType": "columns",
@@ -1766,10 +1754,7 @@
       "notNull": false,
       "dimensions": 0,
       "default": null,
-      "generated": {
-        "as": "to_tsvector('simple', ocr_text)",
-        "type": "stored"
-      },
+      "generated": null,
       "identity": null,
       "name": "ocr_vector",
       "entityType": "columns",
@@ -1782,10 +1767,7 @@
       "notNull": false,
       "dimensions": 0,
       "default": null,
-      "generated": {
-        "as": "to_tsvector('simple', caption_text)",
-        "type": "stored"
-      },
+      "generated": null,
       "identity": null,
       "name": "caption_vector",
       "entityType": "columns",
@@ -1798,10 +1780,7 @@
       "notNull": false,
       "dimensions": 0,
       "default": null,
-      "generated": {
-        "as": "to_tsvector('simple', search_text)",
-        "type": "stored"
-      },
+      "generated": null,
       "identity": null,
       "name": "search_vector",
       "entityType": "columns",

@@ -16,7 +16,7 @@ import { postgresMigrations, serverMigrationManifest, type PostgresMigrationDire
 import { SEARCH_FIELDS } from "@dahlia-ai/ui/model/search-settings";
 import { STORAGE_OPERATION_CONCURRENCY } from "../sync/schemas";
 import { createPostgresPool, ensurePublicExtensions, POSTGRES_MIGRATION_SCHEMA } from "./postgres";
-import { log } from "../otel/log";
+import { LAKEBASE_JAPANESE_CONFIG, TEXT_SEARCH_CONFIG_SQL } from "../search/lexical";
 
 export type PostgresDatabase = NodePgDatabase & { $client: Pool };
 export type SQLiteDatabase = SQLiteAsyncDatabase<"sync" | "async", unknown>;
@@ -153,16 +153,10 @@ export async function ensureSearchIndexes(pool: Pick<Pool, "query">, config: App
   const embedding = config.searchEmbedding;
   if (config.databaseType === "lakebase") {
     await ensurePublicExtensions(pool, embedding
-      ? ["vector", "lakebase_text", "lakebase_vector"]
-      : ["lakebase_text"]);
-    // The Japanese analyzer is optional: without it in public, Memory and chat chunks use the Node Lindera tokens (see search ADR).
-    const tokenizer = (await pool.query<{ schema: string | null }>(`SELECT n.nspname AS schema FROM pg_available_extensions a
-      LEFT JOIN pg_extension e ON e.extname = a.name LEFT JOIN pg_namespace n ON n.oid = e.extnamespace WHERE a.name = 'lakebase_tokenizer'`)).rows[0];
-    let reason = tokenizer ? "schema" : "unavailable";
-    if (tokenizer && (tokenizer.schema === null || tokenizer.schema === "public")) {
-      try { await ensurePublicExtensions(pool, ["lakebase_tokenizer"]); reason = ""; } catch { reason = "install_failed"; }
-    }
-    if (reason) log("warn", "search_japanese_tokenizer_unavailable", { analyzer: "lindera", reason });
+      ? ["vector", "lakebase_text", "lakebase_vector", "lakebase_tokenizer"]
+      : ["lakebase_text", "lakebase_tokenizer"]);
+    // CREATE EXTENSION IF NOT EXISTS keeps an older installed version, and tokenizer_japanese arrived in 0.2.0.
+    if (!(await pool.query(TEXT_SEARCH_CONFIG_SQL, [LAKEBASE_JAPANESE_CONFIG])).rows.length) throw new Error(`lakebase_tokenizer_outdated: ${LAKEBASE_JAPANESE_CONFIG} is missing; run ALTER EXTENSION lakebase_tokenizer UPDATE`);
     await pool.query(
       "CREATE INDEX IF NOT EXISTS search_documents_search_bm25 ON search.documents USING lakebase_bm25 (search_vector)",
     );

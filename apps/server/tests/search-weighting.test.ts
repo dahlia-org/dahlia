@@ -11,6 +11,7 @@ import { Pool } from "pg";
 import { drizzle } from "drizzle-orm/node-postgres";
 import { createPostgresMeetingSyncStore } from "../src/sync/store";
 import { ensureSearchIndexes } from "../src/db/client";
+import { createLakebaseSearchTokenizer } from "../src/search/lexical";
 
 const resources: Array<{ store: NodeApplicationStore; directory: string }> = [];
 afterEach(async () => {
@@ -50,7 +51,7 @@ describe.each(["sqlite", "postgres", "lakebase"] as const)("%s weighted search",
     await store.addAdminUser(`${externalId}@example.test`);
     const testOrganizationID = (await store.organizations.create(owner, { name: "Search", slug: `search-${uuidV7()}`, initialOwnerUserId: userId })).id;
     const workspaceId = uuidV7();
-    const service = new MeetingSyncService(store.sync);
+    const service = new MeetingSyncService(store.sync, undefined, backend === "lakebase" ? createLakebaseSearchTokenizer() : undefined);
     const commit = (operations: Array<Record<string, unknown>>) => service.commitTransaction(owner, {
       schemaVersion: 3, id: uuidV7(), workspaceId, createdAt: new Date().toISOString(),
       operations: operations.map((operation) => ({ ...operation, id: uuidV7() })),

@@ -20,7 +20,7 @@ export function createMemoryStore(database: PostgresDatabase | SQLiteDatabase | 
   const schema = (isPostgres ? pg : sqlite) as typeof pg;
   const notes = personal ? schema.personalMemory : schema.sharedMemory;
   const projection = memoryProjection(schema, backend, personal);
-  // lakebase_tokenizer when installed, otherwise the runtime's tokenizer.
+  // lakebase_tokenizer on Lakebase (installed by migration), otherwise the runtime's tokenizer.
   const analyzer = analyzerResolver(backend === "lakebase", async () =>
     (await db.execute<{ extversion: string }>(sql.raw(LAKEBASE_TOKENIZER_VERSION_SQL))).rows[0]?.extversion);
   // Background maintenance of one scope's projection, without a user identity for Workspaces.
