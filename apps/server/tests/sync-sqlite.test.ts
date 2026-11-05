@@ -423,6 +423,17 @@ describe("SQLite canonical sync", () => {
     for (let index = 0; index < 5000; index++) meeting.run(freshId(), workspaceId, now.getTime(), now.getTime());
     const file = database.prepare("INSERT INTO files (file_id, workspace_id, uri, size, content_type, checksum, name, metadata, active, uploaded_at, revision) VALUES (?, ?, ?, 1, 'text/plain', ?, 'file', ?, 1, ?, 1)");
     for (let index = 0; index < 1000; index++) { const id = freshId(); file.run(id, workspaceId, `files/${id}/original`, `SHA-256:${"a".repeat(64)}`, JSON.stringify({ source: "file" }), now.getTime()); }
+    // Document history moves only through ON UPDATE CASCADE: from the meeting for meeting Documents, from the Document otherwise.
+    const notesMeeting = freshId(), notesId = freshId(), generalId = freshId();
+    meeting.run(notesMeeting, workspaceId, now.getTime(), now.getTime());
+    const document = database.prepare("INSERT INTO documents (id, workspace_id, meeting_id, kind, generation, checkpoint, text, created_at, updated_at) VALUES (?, ?, ?, ?, ?, '', '', ?, ?)");
+    document.run(notesId, workspaceId, notesMeeting, "notes", freshId(), now.getTime(), now.getTime());
+    document.run(generalId, workspaceId, null, "general", freshId(), now.getTime(), now.getTime());
+    for (const id of [notesId, generalId]) {
+      database.prepare("INSERT INTO document_updates (document_id, workspace_id, revision, \"update\", created_at) VALUES (?, ?, 1, '', ?)").run(id, workspaceId, now.getTime());
+      database.prepare("INSERT INTO document_recoveries (id, document_id, workspace_id, sequence, blocks, reason, created_at) VALUES (?, ?, ?, 1, '[]', 'deleted', ?)").run(freshId(), id, workspaceId, now.getTime());
+      database.prepare("INSERT INTO document_presence (id, document_id, workspace_id, user_id, expires_at) VALUES (?, ?, ?, ?, ?)").run(freshId(), id, workspaceId, owner.userId, now.getTime());
+    }
     database.exec("COMMIT");
     const before = database.prepare("SELECT file_id, uri, checksum FROM files ORDER BY file_id").all();
     const started = performance.now();
@@ -430,10 +441,13 @@ describe("SQLite canonical sync", () => {
       audienceHash: (await sync.workspaceTransferAudience(workspaceId, destinationWorkspaceId)).audienceHash,
       sourceRevision: 1, destinationRevision: 1, idempotencyKey: freshId(), requestHash: freshId() }));
     console.info(`Workspace transfer: 5000 meetings + 1000 files in ${Math.round(performance.now() - started)} ms (disposable SQLite)`);
-    expect(result.manifest.meetings).toHaveLength(5000);
+    expect(result.manifest.meetings).toHaveLength(5001);
     expect(result.manifest.files).toHaveLength(1000);
     expect(database.prepare("SELECT file_id, uri, checksum FROM files ORDER BY file_id").all()).toEqual(before);
-    expect(database.prepare("SELECT count(*) AS count FROM meetings WHERE workspace_id = ?").get(destinationWorkspaceId)).toMatchObject({ count: 5000 });
+    expect(database.prepare("SELECT count(*) AS count FROM meetings WHERE workspace_id = ?").get(destinationWorkspaceId)).toMatchObject({ count: 5001 });
+    for (const table of ["documents", "document_updates", "document_recoveries", "document_presence"]) {
+      expect(database.prepare(`SELECT workspace_id FROM ${table} ORDER BY workspace_id`).all()).toEqual([{ workspace_id: destinationWorkspaceId }, { workspace_id: destinationWorkspaceId }]);
+    }
     expect(database.prepare("PRAGMA foreign_key_check").all()).toEqual([]);
     database.close();
     await store.close?.();

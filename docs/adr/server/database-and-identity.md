@@ -52,6 +52,8 @@ PostgreSQL は既存の生成 Auth baseline → application initial → runtime_
 
 2026-11-05: ユーザー承認により、Dahlia Memory の検索 projection（`20261103123731_memory_search` / `20261103123733_memory_search` とその support）、保存メモリーの `type` 列、Hindsight の退役表の削除を、PostgreSQL / SQLite の initial と runtime_support に統合した。application の ledger は再び initial → runtime_support の 2 本である。memory chunk の FORCE RLS（PostgreSQL）と FTS5 trigger（SQLite）は runtime_support に置く。Agent の ledger は変更しない。旧 baseline を適用済みの DB は自動変換せず、新しい空の DB を使う。
 
+2026-11-06: ユーザー承認により、大規模データ向けの index と RLS の変更を PostgreSQL / SQLite の initial と runtime_support に統合した。RLS は `app.current_identity_workspace_ids(capability)` を非相関の scalar subquery で呼び、文ごとに1回（InitPlan）だけ評価する。`workspace_id` を持たない transcript・segment・summary・recording は、親の主キーで Workspace を引く相関 scalar subquery で判定する。EXISTS と異なり読める全親の hash 走査に変換されないため、コストは読む行数に比例する。従来の行ごとの関数呼び出しと、policy 内 EXISTS に親表の RLS が重なる評価は、長い文字起こしの読み込みを Meeting 総数に比例させていた。`workspace_id` の重複保持は、Workspace 移管で全 segment を書き換えるため採用しない。外部キーの連鎖削除と移管更新に使う index（`jobs.summary` の meeting / Workspace、`documents.meeting_id`、`meeting_events.owner_user_id`、receipt の owner と Workspace、`jobs.queue` の target と lease 中の行）を追加し、`files` の重複 index と、`documents` への複合外部キーと重複する `document_updates` / `document_recoveries` の Workspace 外部キーを削除した。既存開発 DB への forward migration は提供せず、新しい baseline を使うには DB を再作成する。
+
 ## Header identity
 
 proxy は client-supplied identity header を除去・上書きし、Server への直接到達を防ぐ。Server 側の CIDR 判定で代替しない。
@@ -68,7 +70,7 @@ Header mode で管理者がユーザーを事前作成する場合も、作成 t
 
 `workspace_permissions` のprincipalは `user | organization | team`、roleは `admin | editor | viewer`。有効roleはAdminを最優先とし、内容書込とWorkspace管理を別predicateで評価する。Team権限はTeamと親Organizationの両membershipが必要。Organization所属だけではWorkspaceアクセスを与えない。
 
-PostgreSQL / Lakebaseはtransaction-local `app.user_id` と現在membershipをRLS / FORCE RLSで評価し、SQLiteも同じアプリpredicateを使う。permission自体へのRLSは自己参照再帰を避けて設定せず、認可済みstore以外へ公開しない。組織・Team・permission変更は共通アプリ検査と変更を一つのtransactionに含める。PostgreSQLは共通advisory lock、SQLiteはwriter transactionで同時変更を直列化し、最後のowner/member/Adminを守る。DBには形・参照整合性・RLS・FTSだけを置き、Organizationライフサイクルの業務ロジックをtriggerにしない。
+PostgreSQL / Lakebaseはtransaction-local `app.user_id` と現在membershipをRLS / FORCE RLSで評価し、policyは読める・書ける・管理できるWorkspace IDの配列を文ごとに1回求めて各行の `workspace_id` と照合する。SQLiteも同じアプリpredicateを使う。permission自体へのRLSは自己参照再帰を避けて設定せず、認可済みstore以外へ公開しない。組織・Team・permission変更は共通アプリ検査と変更を一つのtransactionに含める。PostgreSQLは共通advisory lock、SQLiteはwriter transactionで同時変更を直列化し、最後のowner/member/Adminを守る。DBには形・参照整合性・RLS・FTSだけを置き、Organizationライフサイクルの業務ロジックをtriggerにしない。
 
 ## 経緯と制約
 

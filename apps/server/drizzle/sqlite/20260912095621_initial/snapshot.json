@@ -5443,21 +5443,6 @@
     },
     {
       "columns": [
-        "workspace_id"
-      ],
-      "tableTo": "workspaces",
-      "columnsTo": [
-        "workspace_id"
-      ],
-      "onUpdate": "NO ACTION",
-      "onDelete": "CASCADE",
-      "nameExplicit": false,
-      "name": "fk_document_recoveries_workspace_id_workspaces_workspace_id_fk",
-      "entityType": "fks",
-      "table": "document_recoveries"
-    },
-    {
-      "columns": [
         "workspace_id",
         "document_id"
       ],
@@ -5485,21 +5470,6 @@
       "onDelete": "CASCADE",
       "nameExplicit": false,
       "name": "fk_document_updates_document_id_documents_id_fk",
-      "entityType": "fks",
-      "table": "document_updates"
-    },
-    {
-      "columns": [
-        "workspace_id"
-      ],
-      "tableTo": "workspaces",
-      "columnsTo": [
-        "workspace_id"
-      ],
-      "onUpdate": "NO ACTION",
-      "onDelete": "CASCADE",
-      "nameExplicit": false,
-      "name": "fk_document_updates_workspace_id_workspaces_workspace_id_fk",
       "entityType": "fks",
       "table": "document_updates"
     },
@@ -6908,13 +6878,19 @@
     {
       "columns": [
         {
-          "value": "status",
-          "isExpression": false
-        },
-        {
           "value": "lease_until",
           "isExpression": false
-        },
+        }
+      ],
+      "isUnique": false,
+      "where": "\"jobs_queue\".\"lease_until\" IS NOT NULL",
+      "origin": "manual",
+      "name": "jobs_queue_leased_idx",
+      "entityType": "indexes",
+      "table": "jobs_queue"
+    },
+    {
+      "columns": [
         {
           "value": "target",
           "isExpression": false
@@ -6923,7 +6899,7 @@
       "isUnique": false,
       "where": null,
       "origin": "manual",
-      "name": "jobs_queue_lease_idx",
+      "name": "jobs_queue_target_idx",
       "entityType": "indexes",
       "table": "jobs_queue"
     },
@@ -6938,6 +6914,20 @@
       "where": "\"documents\".\"kind\" = 'notes'",
       "origin": "manual",
       "name": "document_meeting_notes_unique",
+      "entityType": "indexes",
+      "table": "documents"
+    },
+    {
+      "columns": [
+        {
+          "value": "meeting_id",
+          "isExpression": false
+        }
+      ],
+      "isUnique": false,
+      "where": null,
+      "origin": "manual",
+      "name": "document_meeting_idx",
       "entityType": "indexes",
       "table": "documents"
     },
@@ -7078,6 +7068,20 @@
     {
       "columns": [
         {
+          "value": "owner_user_id",
+          "isExpression": false
+        }
+      ],
+      "isUnique": false,
+      "where": null,
+      "origin": "manual",
+      "name": "meeting_events_owner_idx",
+      "entityType": "indexes",
+      "table": "meeting_events"
+    },
+    {
+      "columns": [
+        {
           "value": "domain",
           "isExpression": false
         }
@@ -7156,11 +7160,11 @@
           "isExpression": false
         },
         {
-          "value": "kind",
+          "value": "meeting_id",
           "isExpression": false
         },
         {
-          "value": "meeting_id",
+          "value": "kind",
           "isExpression": false
         },
         {
@@ -7171,7 +7175,7 @@
       "isUnique": false,
       "where": null,
       "origin": "manual",
-      "name": "search_document_workspace_kind_meeting_document_idx",
+      "name": "search_document_workspace_meeting_kind_document_idx",
       "entityType": "indexes",
       "table": "search_documents"
     },
@@ -7224,6 +7228,42 @@
     {
       "columns": [
         {
+          "value": "meeting_id",
+          "isExpression": false
+        },
+        {
+          "value": "created_at",
+          "isExpression": false
+        },
+        {
+          "value": "id",
+          "isExpression": false
+        }
+      ],
+      "isUnique": false,
+      "where": null,
+      "origin": "manual",
+      "name": "summary_job_meeting_created_idx",
+      "entityType": "indexes",
+      "table": "jobs_summary"
+    },
+    {
+      "columns": [
+        {
+          "value": "workspace_id",
+          "isExpression": false
+        }
+      ],
+      "isUnique": false,
+      "where": null,
+      "origin": "manual",
+      "name": "summary_job_workspace_idx",
+      "entityType": "indexes",
+      "table": "jobs_summary"
+    },
+    {
+      "columns": [
+        {
           "value": "workspace_id",
           "isExpression": false
         },
@@ -7260,20 +7300,20 @@
     {
       "columns": [
         {
-          "value": "workspace_id",
+          "value": "owner_user_id",
           "isExpression": false
         },
         {
-          "value": "file_id",
+          "value": "workspace_id",
           "isExpression": false
         }
       ],
       "isUnique": false,
       "where": null,
       "origin": "manual",
-      "name": "files_workspace_file_idx",
+      "name": "transaction_receipt_owner_workspace_idx",
       "entityType": "indexes",
-      "table": "files"
+      "table": "transaction_receipts"
     },
     {
       "columns": [

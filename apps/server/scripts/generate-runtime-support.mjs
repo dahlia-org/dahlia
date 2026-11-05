@@ -10,16 +10,23 @@ for (const dialect of ["postgres", "sqlite"]) {
   const pg = dialect === "postgres";
   const stmts = [];
   if (pg) {
-    for (const [capability, roles] of [['read', "'admin', 'editor', 'viewer'"], ['write', "'admin', 'editor'"], ['admin', "'admin'"]]) {
+    // Policies call this through an uncorrelated scalar subquery, so it runs once per statement (an InitPlan), not once per row.
+    stmts.push(`CREATE FUNCTION app.current_identity_workspace_ids(capability text) RETURNS uuid[] LANGUAGE sql STABLE AS $$
+        WITH me AS (SELECT nullif(current_setting('app.user_id', true), '')::uuid AS id),
+        principals AS (
+          SELECT 'user'::text AS type, me.id FROM me
+          UNION ALL SELECT 'organization', m.organization_id FROM auth.member m, me WHERE m.user_id = me.id
+          UNION ALL SELECT 'team', tm.team_id FROM auth.team_member tm JOIN auth.team t ON t.id = tm.team_id
+            JOIN auth.member m ON m.organization_id = t.organization_id AND m.user_id = tm.user_id, me WHERE tm.user_id = me.id)
+        SELECT coalesce(array_agg(DISTINCT p.workspace_id), '{}') FROM app.workspace_permissions p
+        JOIN principals ON principals.type = p.principal_type AND principals.id = p.principal_id
+        JOIN app.workspaces w ON w.workspace_id = p.workspace_id, me
+        WHERE p.role = ANY (CASE capability WHEN 'admin' THEN ARRAY['admin'] WHEN 'write' THEN ARRAY['admin', 'editor'] ELSE ARRAY['admin', 'editor', 'viewer'] END)
+        AND (w.personal_user_id IS NULL OR (w.personal_user_id = me.id
+          AND EXISTS (SELECT 1 FROM auth.member m WHERE m.organization_id = w.organization_id AND m.user_id = w.personal_user_id))); $$;`);
+    for (const capability of ['read', 'write', 'admin']) {
       stmts.push(`CREATE FUNCTION app.current_identity_can_${capability}_workspace(target_workspace_id uuid) RETURNS boolean LANGUAGE sql STABLE AS $$
-        SELECT EXISTS (SELECT 1 FROM app.workspace_permissions p JOIN app.workspaces w ON w.workspace_id = p.workspace_id
-        WHERE (w.personal_user_id IS NULL OR (w.personal_user_id = nullif(current_setting('app.user_id', true), '')::uuid
-          AND EXISTS (SELECT 1 FROM auth.member m WHERE m.organization_id = w.organization_id AND m.user_id = w.personal_user_id)))
-        AND p.workspace_id = target_workspace_id AND p.role IN (${roles}) AND (
-          (p.principal_type = 'user' AND p.principal_id = nullif(current_setting('app.user_id', true), '')::uuid)
-          OR (p.principal_type = 'organization' AND EXISTS (SELECT 1 FROM auth.member m WHERE m.organization_id = p.principal_id AND m.user_id = nullif(current_setting('app.user_id', true), '')::uuid))
-          OR (p.principal_type = 'team' AND EXISTS (SELECT 1 FROM auth.team_member tm JOIN auth.team t ON t.id = tm.team_id JOIN auth.member m ON m.organization_id = t.organization_id AND m.user_id = tm.user_id
-            WHERE tm.team_id = p.principal_id AND tm.user_id = nullif(current_setting('app.user_id', true), '')::uuid)))); $$;`);
+        SELECT target_workspace_id = ANY (app.current_identity_workspace_ids('${capability}')); $$;`);
     }
   }
   const directory = `drizzle/${dialect}`;
