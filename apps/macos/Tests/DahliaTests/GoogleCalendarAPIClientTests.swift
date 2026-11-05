@@ -37,12 +37,12 @@ import Foundation
         }
 
         @Test
-        func fetchUpcomingEventsFiltersEventTypesWithoutRepeatedQueryParameters() async throws {
-            let requestRecorder = RequestRecorderURLProtocol(responseBody: Data("""
+        func fetchUpcomingEventsFiltersEventTypesAcrossPagesWithoutRepeatedQueryParameters() async throws {
+            // Excluded types fill the first page, so the supported meeting arrives only on the next page.
+            let firstPage = Data("""
             {
+              "nextPageToken": "page-2",
               "items": [
-                { "id": "meeting", "eventType": "default",
-                  "start": { "dateTime": "2026-04-17T01:00:00Z" }, "end": { "dateTime": "2026-04-17T02:00:00Z" } },
                 { "id": "ooo", "eventType": "outOfOffice",
                   "start": { "dateTime": "2026-04-17T02:00:00Z" }, "end": { "dateTime": "2026-04-17T03:00:00Z" } },
                 { "id": "office", "eventType": "workingLocation",
@@ -53,7 +53,16 @@ import Foundation
                   "start": { "dateTime": "2026-04-17T03:00:00Z" }, "end": { "dateTime": "2026-04-17T04:00:00Z" } }
               ]
             }
-            """.utf8))
+            """.utf8)
+            let secondPage = Data("""
+            {
+              "items": [
+                { "id": "meeting", "eventType": "default",
+                  "start": { "dateTime": "2026-04-17T01:00:00Z" }, "end": { "dateTime": "2026-04-17T02:00:00Z" } }
+              ]
+            }
+            """.utf8)
+            let requestRecorder = RequestRecorderURLProtocol(responseBodiesByPageToken: ["": firstPage, "page-2": secondPage])
             let session = makeRecordingSession(recorder: requestRecorder)
             let client = GoogleCalendarAPIClient(session: session, calendar: Calendar(identifier: .gregorian))
 
@@ -75,11 +84,13 @@ import Foundation
                 daysAhead: 7
             )
 
-            let request = try #require(requestRecorder.lastRequest)
-            let url = try #require(request.url)
-            let queryItems = try #require(URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems)
+            let queryItemsByRequest = try requestRecorder.requests.map { request in
+                let url = try #require(request.url)
+                return try #require(URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems)
+            }
+            #expect(queryItemsByRequest.map { $0.first { $0.name == "pageToken" }?.value } == [nil, "page-2"])
             // The Databricks connection proxy forwards only the last of repeated query parameters.
-            #expect(!queryItems.contains { $0.name == "eventTypes" })
+            #expect(queryItemsByRequest.allSatisfy { !$0.contains { $0.name == "eventTypes" } })
             #expect(events.map(\.platformId) == ["meeting", "ooo", "untyped"])
         }
 
@@ -338,21 +349,24 @@ import Foundation
 
 private final class RequestRecorderURLProtocol: @unchecked Sendable {
     private let lock = NSLock()
-    private var storedRequest: URLRequest?
-    let responseBody: Data
+    private var storedRequests: [URLRequest] = []
+    private let responseBodiesByPageToken: [String: Data]
 
-    init(responseBody: Data) {
-        self.responseBody = responseBody
+    init(responseBodiesByPageToken: [String: Data]) {
+        self.responseBodiesByPageToken = responseBodiesByPageToken
     }
 
-    var lastRequest: URLRequest? {
-        lock.withLock { storedRequest }
+    var requests: [URLRequest] {
+        lock.withLock { storedRequests }
     }
 
-    func record(_ request: URLRequest) {
-        lock.withLock {
-            storedRequest = request
-        }
+    /// Records the request and returns the body for its `pageToken`, or for the first page when it has none.
+    func record(_ request: URLRequest) -> Data {
+        lock.withLock { storedRequests.append(request) }
+        let pageToken = request.url
+            .flatMap { URLComponents(url: $0, resolvingAgainstBaseURL: false)?.queryItems }?
+            .first { $0.name == "pageToken" }?.value
+        return responseBodiesByPageToken[pageToken ?? ""] ?? Data()
     }
 }
 
@@ -376,7 +390,6 @@ private final class RecordingURLProtocol: URLProtocol, @unchecked Sendable {
     }
 
     override func startLoading() {
-        Self.recorder?.record(request)
 
         let response = HTTPURLResponse(
             url: request.url ?? URL(string: "https://example.com")!,
@@ -384,7 +397,7 @@ private final class RecordingURLProtocol: URLProtocol, @unchecked Sendable {
             httpVersion: nil,
             headerFields: ["Content-Type": "application/json"]
         )!
-        let data = Self.recorder?.responseBody ?? Data()
+        let data = Self.recorder?.record(request) ?? Data()
 
         client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
         client?.urlProtocol(self, didLoad: data)
