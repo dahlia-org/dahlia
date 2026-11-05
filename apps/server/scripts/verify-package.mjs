@@ -103,7 +103,7 @@ try {
     if ([SummaryService, JobRunner, createTranscriptSummaryMethod, createAudioSummaryMethod].some((value) => typeof value !== "function")) throw new Error("Missing Node summary API");
     if (typeof server.createApp !== "function" || typeof App !== "function") throw new Error("Package API is incomplete");
     const runtimeRls = await readFile(new URL("./drizzle/postgres/20260912180000_runtime_support/migration.sql", new URL(import.meta.resolve("@dahlia-ai/server/package.json"))), "utf8");
-    for (const table of ['"app"."shared_memories"', '"app"."personal_memories"', '"search"."knowledge_pages"']) {
+    for (const table of ['"app"."shared_memories"', '"app"."personal_memories"', '"search"."personal_memory_chunks"', '"search"."shared_memory_chunks"']) {
       if (!runtimeRls.includes(table + " FORCE ROW LEVEL SECURITY")) throw new Error("Missing memory RLS enforcement: " + table);
     }
     for (const name of ["DatabricksBackend", "OpenAIBackend", "CloudflareBackend"]) {
@@ -181,10 +181,6 @@ try {
       }
     }
     if (!agentSql.some((content) => content.includes('"agent"."session_search_chunks" FORCE ROW LEVEL SECURITY'))) throw new Error("Missing chat search projection RLS");
-    const memorySearchRls = await readFile(new URL("./drizzle/postgres/20261103123800_memory_search_support/migration.sql", packageUrl), "utf8");
-    for (const table of ['"search"."personal_memory_chunks"', '"search"."shared_memory_chunks"']) {
-      if (!memorySearchRls.includes(table + " FORCE ROW LEVEL SECURITY")) throw new Error("Missing memory search projection RLS: " + table);
-    }
     const databasePath = fileURLToPath(new URL("./auth.sqlite", import.meta.url));
     const store = createNodeAuthStore({
       authProvider: "header",
@@ -203,17 +199,9 @@ try {
     if (!["ical_uid", "recurrence_id", "calendar_event"].every((column) => meetingColumns.includes(column))) {
       throw new Error("Calendar identity migration is missing");
     }
-    const memoryColumns = database.prepare("PRAGMA table_info(memory_source_jobs)").all().map((column) => column.name);
-    if (!["workspace_id", "document_id", "kind", "source_id", "generation", "operation"].every((column) => memoryColumns.includes(column))) {
-      throw new Error("Incremental memory schema is missing from the package");
-    }
     const personalColumns = database.prepare("PRAGMA table_info(personal_memories)").all().map((column) => column.name);
-    if (!["user_id", "content", "revision", "protected"].every((column) => personalColumns.includes(column))) throw new Error("Missing canonical personal memory schema");
+    if (!["user_id", "content", "type", "revision", "protected"].every((column) => personalColumns.includes(column))) throw new Error("Missing canonical personal memory schema");
     if (!database.prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'personal_memory_chunks_fts'").get()) throw new Error("Missing memory search projection");
-    const memoryStateColumns = database.prepare("PRAGMA table_info(workspace_memory_state)").all().map((column) => column.name);
-    if (!["reconcile", "images_enabled"].every((column) => memoryStateColumns.includes(column))) {
-      throw new Error("Memory reconciliation schema is missing from the package");
-    }
     database.close();
     await store.close?.();
     if (applied.length !== serverMigrationManifest.sqlite.files.length || applied.at(-1)?.name !== serverMigrationManifest.sqlite.files.at(-1).split("/").at(-2)) {

@@ -1,3 +1,4 @@
+import type { MemoryType } from "../memory/memory-type";
 import { DEFAULT_WORKSPACE_GENERATION_SETTINGS, type WorkspaceGenerationSettings } from "@dahlia-ai/ui/model/workspace-generation-settings";
 import type { CalendarEventSnapshot } from "../sync/schemas";
 import type { TranscriptMetadata } from "../sync/transcript";
@@ -655,45 +656,12 @@ export const workspaceKey = cryptoSchema.table("workspace_keys", {
   pgPolicy("workspace_key_write", { for: "all", using: sql`"app"."current_identity_can_write_workspace"(${table.workspaceId}) OR current_setting('app.maintenance', true) = 'rotation'`, withCheck: sql`"app"."current_identity_can_write_workspace"(${table.workspaceId}) OR current_setting('app.maintenance', true) = 'rotation'` }),
 ]).enableRLS();
 
-// Retired Hindsight projection tables (workspace/personal memory state, source jobs, documents, knowledge_pages).
-// Unused since the Dahlia Memory store; kept so existing databases and rollback stay intact. Drop only via an approved forward migration.
-export const workspaceMemoryState = jobsSchema.table("workspace_memory_state", {
-  scopeId: uuid("workspace_id").primaryKey(),
-  enabled: boolean("enabled").default(false).notNull(),
-  imagesEnabled: boolean("images_enabled").default(false).notNull(),
-  requestedBy: uuid("requested_by").notNull(),
-  bankId: text("bank_id").notNull(),
-  generation: integer("generation").default(1).notNull(),
-  indexedGeneration: integer("indexed_generation").default(0).notNull(),
-  status: text("status").default("pending").notNull(),
-  purge: boolean("purge").default(false).notNull(),
-  reconcile: boolean("reconcile").default(true).notNull(),
-  progress: jsonb("progress"),
-});
-
-export const memorySourceJob = jobsSchema.table("memory_source_jobs", {
-  scopeId: uuid("workspace_id").notNull(),
-  documentId: text("document_id").notNull(),
-  kind: text("kind").$type<"meeting" | "shared">().notNull(),
-  sourceId: uuid("source_id").notNull(),
-  generation: integer("generation").default(1).notNull(),
-  operation: jsonb("operation"),
-}, (table) => [primaryKey({ columns: [table.scopeId, table.documentId] })]);
-
-export const memoryDocument = jobsSchema.table("memory_documents", {
-  scopeId: uuid("workspace_id").notNull(),
-  documentId: text("document_id").notNull(),
-  source: jsonb("source").notNull(),
-  contentHash: text("content_hash").notNull(),
-  ingestionFingerprint: text("ingestion_fingerprint"),
-  generation: integer("generation").notNull(),
-}, (table) => [primaryKey({ columns: [table.scopeId, table.documentId] })]);
-
 export const sharedMemory = appSchema.table("shared_memories", {
   id: uuid("id").primaryKey(),
   scopeId: uuid("workspace_id").notNull().references(() => syncedWorkspace.workspaceId, { onDelete: "cascade" }),
   createdBy: uuid("created_by").notNull(),
   content: text("content").notNull(),
+  type: text("type").$type<MemoryType>().notNull(),
   protected: boolean("protected").default(true).notNull(),
   revision: integer("revision").default(1).notNull(),
   updatedAt: timestamp("updated_at").notNull(),
@@ -703,42 +671,12 @@ export const sharedMemory = appSchema.table("shared_memories", {
   pgPolicy("shared_memory_write", { for: "all", using: sql`"app"."current_identity_can_write_workspace"(${table.scopeId})`, withCheck: sql`"app"."current_identity_can_write_workspace"(${table.scopeId})` }),
 ]).enableRLS();
 
-export const personalMemoryState = jobsSchema.table("personal_memory_state", {
-  scopeId: uuid("user_id").primaryKey(),
-  enabled: boolean("enabled").default(false).notNull(),
-  requestedBy: uuid("requested_by").notNull(),
-  bankId: text("bank_id").notNull(),
-  generation: integer("generation").default(1).notNull(),
-  indexedGeneration: integer("indexed_generation").default(0).notNull(),
-  status: text("status").default("pending").notNull(),
-  purge: boolean("purge").default(false).notNull(),
-  reconcile: boolean("reconcile").default(true).notNull(),
-  progress: jsonb("progress"),
-});
-
-export const personalMemorySourceJob = jobsSchema.table("personal_memory_source_jobs", {
-  scopeId: uuid("user_id").notNull(),
-  documentId: text("document_id").notNull(),
-  kind: text("kind").$type<"meeting" | "shared">().notNull(),
-  sourceId: uuid("source_id").notNull(),
-  generation: integer("generation").default(1).notNull(),
-  operation: jsonb("operation"),
-}, (table) => [primaryKey({ columns: [table.scopeId, table.documentId] })]);
-
-export const personalMemoryDocument = jobsSchema.table("personal_memory_documents", {
-  scopeId: uuid("user_id").notNull(),
-  documentId: text("document_id").notNull(),
-  source: jsonb("source").notNull(),
-  contentHash: text("content_hash").notNull(),
-  ingestionFingerprint: text("ingestion_fingerprint"),
-  generation: integer("generation").notNull(),
-}, (table) => [primaryKey({ columns: [table.scopeId, table.documentId] })]);
-
 export const personalMemory = appSchema.table("personal_memories", {
   id: uuid("id").primaryKey(),
   scopeId: uuid("user_id").notNull().references(() => authUser.id, { onDelete: "cascade" }),
   createdBy: uuid("created_by").notNull(),
   content: text("content").notNull(),
+  type: text("type").$type<MemoryType>().notNull(),
   protected: boolean("protected").default(true).notNull(),
   revision: integer("revision").default(1).notNull(),
   updatedAt: timestamp("updated_at").notNull(),
@@ -781,21 +719,6 @@ export const sharedMemoryChunk = searchSchema.table("shared_memory_chunks", memo
     withCheck: sql`"app"."current_identity_can_write_workspace"(${table.scopeId}) OR ${searchMaintenance(table.scopeId)}` }),
 ]).enableRLS();
 
-// Retired Hindsight Knowledge Pages; see workspaceMemoryState.
-export const knowledgePage = searchSchema.table("knowledge_pages", {
-  scopeId: uuid("workspace_id").notNull().references(() => syncedWorkspace.workspaceId, { onDelete: "cascade" }),
-  id: text("id").notNull(),
-  projectId: uuid("project_id"),
-  generation: integer("generation").default(0).notNull(),
-  snapshot: jsonb("snapshot"),
-  status: text("status").default("generating").notNull(),
-  requestVersion: integer("request_version").default(0).notNull(),
-  completedVersion: integer("completed_version").default(0).notNull(),
-  operation: jsonb("operation"),
-}, (table) => [primaryKey({ columns: [table.scopeId, table.id] }),
-  pgPolicy("knowledge_page_read", { for: "select", using: sql`"app"."current_identity_can_read_workspace"(${table.scopeId})` }),
-  pgPolicy("knowledge_page_write", { for: "all", using: sql`"app"."current_identity_can_admin_workspace"(${table.scopeId})`, withCheck: sql`"app"."current_identity_can_admin_workspace"(${table.scopeId})` }),
-]).enableRLS();
 
 function documentPolicies(name: string, workspaceId: AnyPgColumn) {
   return [

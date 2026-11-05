@@ -66,7 +66,8 @@ END $$;--> statement-breakpoint
 ALTER TABLE "crypto"."workspace_keys" FORCE ROW LEVEL SECURITY;--> statement-breakpoint
 ALTER TABLE "app"."shared_memories" FORCE ROW LEVEL SECURITY;--> statement-breakpoint
 ALTER TABLE "app"."personal_memories" FORCE ROW LEVEL SECURITY;--> statement-breakpoint
-ALTER TABLE "search"."knowledge_pages" FORCE ROW LEVEL SECURITY;--> statement-breakpoint
+ALTER TABLE "search"."personal_memory_chunks" FORCE ROW LEVEL SECURITY;--> statement-breakpoint
+ALTER TABLE "search"."shared_memory_chunks" FORCE ROW LEVEL SECURITY;--> statement-breakpoint
 
 ALTER TABLE "app"."documents" FORCE ROW LEVEL SECURITY;--> statement-breakpoint
 ALTER TABLE "app"."document_updates" FORCE ROW LEVEL SECURITY;--> statement-breakpoint
@@ -106,10 +107,6 @@ CREATE POLICY "document_update_update" ON "app"."document_updates" FOR UPDATE US
 --> statement-breakpoint
 CREATE POLICY "document_update_delete" ON "app"."document_updates" FOR DELETE USING ("app"."current_identity_can_write_workspace"("app"."document_updates"."workspace_id") OR (current_setting('app.maintenance', true) = 'governance-delete' AND "app"."document_updates"."workspace_id" = nullif(current_setting('app.maintenance_workspace_id', true), '')::uuid) OR (current_setting('app.maintenance', true) = 'meeting-retention' AND "app"."document_updates"."workspace_id" = nullif(current_setting('app.maintenance_workspace_id', true), '')::uuid));
 --> statement-breakpoint
-CREATE POLICY "knowledge_page_read" ON "search"."knowledge_pages" FOR SELECT USING ("app"."current_identity_can_read_workspace"("search"."knowledge_pages"."workspace_id"));
---> statement-breakpoint
-CREATE POLICY "knowledge_page_write" ON "search"."knowledge_pages" FOR ALL USING ("app"."current_identity_can_admin_workspace"("search"."knowledge_pages"."workspace_id")) WITH CHECK ("app"."current_identity_can_admin_workspace"("search"."knowledge_pages"."workspace_id"));
---> statement-breakpoint
 CREATE POLICY "meeting_attachment_select" ON "app"."meeting_attachments" FOR SELECT USING ((current_setting('app.maintenance', true) = 'meeting-retention' AND "app"."meeting_attachments"."workspace_id" = nullif(current_setting('app.maintenance_workspace_id', true), '')::uuid) OR "app"."current_identity_can_read_workspace"("app"."meeting_attachments"."workspace_id") OR (current_setting('app.maintenance', true) = 'search' AND "app"."meeting_attachments"."workspace_id" = nullif(current_setting('app.maintenance_workspace_id', true), '')::uuid) OR current_setting('app.maintenance', true) IN ('retention', 'rotation') OR EXISTS (SELECT 1 FROM "app"."transaction_receipts" r WHERE r.workspace_id = "app"."meeting_attachments"."workspace_id" AND r.owner_user_id = nullif(current_setting('app.user_id', true), '')::uuid));
 --> statement-breakpoint
 CREATE POLICY "meeting_attachment_write" ON "app"."meeting_attachments" FOR ALL USING ("app"."current_identity_can_write_workspace"("app"."meeting_attachments"."workspace_id")) WITH CHECK ("app"."current_identity_can_write_workspace"("app"."meeting_attachments"."workspace_id"));
@@ -122,13 +119,19 @@ CREATE POLICY "meeting_event_write" ON "app"."meeting_events" FOR ALL USING ("ap
 --> statement-breakpoint
 CREATE POLICY "personal_memory_owner" ON "app"."personal_memories" FOR ALL USING ("app"."personal_memories"."user_id" = nullif(current_setting('app.user_id', true), '')::uuid) WITH CHECK ("app"."personal_memories"."user_id" = nullif(current_setting('app.user_id', true), '')::uuid);
 --> statement-breakpoint
+CREATE POLICY "personal_memory_chunk_owner" ON "search"."personal_memory_chunks" FOR ALL USING ("search"."personal_memory_chunks"."user_id" = nullif(current_setting('app.user_id', true), '')::uuid) WITH CHECK ("search"."personal_memory_chunks"."user_id" = nullif(current_setting('app.user_id', true), '')::uuid);
+--> statement-breakpoint
 CREATE POLICY "search_document_select" ON "search"."documents" FOR SELECT USING ("app"."current_identity_can_read_workspace"("search"."documents"."workspace_id") OR (current_setting('app.maintenance', true) = 'search' AND "search"."documents"."workspace_id" = nullif(current_setting('app.maintenance_workspace_id', true), '')::uuid));
 --> statement-breakpoint
 CREATE POLICY "search_document_write" ON "search"."documents" FOR ALL USING ("app"."current_identity_can_write_workspace"("search"."documents"."workspace_id") OR (current_setting('app.maintenance', true) = 'search' AND "search"."documents"."workspace_id" = nullif(current_setting('app.maintenance_workspace_id', true), '')::uuid)) WITH CHECK ("app"."current_identity_can_write_workspace"("search"."documents"."workspace_id") OR (current_setting('app.maintenance', true) = 'search' AND "search"."documents"."workspace_id" = nullif(current_setting('app.maintenance_workspace_id', true), '')::uuid));
 --> statement-breakpoint
-CREATE POLICY "shared_memory_read" ON "app"."shared_memories" FOR SELECT USING ("app"."current_identity_can_read_workspace"("app"."shared_memories"."workspace_id"));
+CREATE POLICY "shared_memory_read" ON "app"."shared_memories" FOR SELECT USING ("app"."current_identity_can_read_workspace"("app"."shared_memories"."workspace_id") OR (current_setting('app.maintenance', true) = 'search' AND "app"."shared_memories"."workspace_id" = nullif(current_setting('app.maintenance_workspace_id', true), '')::uuid));
 --> statement-breakpoint
 CREATE POLICY "shared_memory_write" ON "app"."shared_memories" FOR ALL USING ("app"."current_identity_can_write_workspace"("app"."shared_memories"."workspace_id")) WITH CHECK ("app"."current_identity_can_write_workspace"("app"."shared_memories"."workspace_id"));
+--> statement-breakpoint
+CREATE POLICY "shared_memory_chunk_read" ON "search"."shared_memory_chunks" FOR SELECT USING ("app"."current_identity_can_read_workspace"("search"."shared_memory_chunks"."workspace_id") OR (current_setting('app.maintenance', true) = 'search' AND "search"."shared_memory_chunks"."workspace_id" = nullif(current_setting('app.maintenance_workspace_id', true), '')::uuid));
+--> statement-breakpoint
+CREATE POLICY "shared_memory_chunk_write" ON "search"."shared_memory_chunks" FOR ALL USING ("app"."current_identity_can_write_workspace"("search"."shared_memory_chunks"."workspace_id") OR (current_setting('app.maintenance', true) = 'search' AND "search"."shared_memory_chunks"."workspace_id" = nullif(current_setting('app.maintenance_workspace_id', true), '')::uuid)) WITH CHECK ("app"."current_identity_can_write_workspace"("search"."shared_memory_chunks"."workspace_id") OR (current_setting('app.maintenance', true) = 'search' AND "search"."shared_memory_chunks"."workspace_id" = nullif(current_setting('app.maintenance_workspace_id', true), '')::uuid));
 --> statement-breakpoint
 CREATE POLICY "summary_select" ON "app"."summaries" FOR SELECT USING (EXISTS (SELECT 1 FROM "app"."meetings" m WHERE m.meeting_id = "app"."summaries"."meeting_id" AND "app"."current_identity_can_read_workspace"(m.workspace_id)));
 --> statement-breakpoint

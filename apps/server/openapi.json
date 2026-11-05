@@ -3538,18 +3538,6 @@
           "deleted": {
             "type": "boolean"
           },
-          "suggestedScope": {
-            "type": "string",
-            "enum": [
-              "personal",
-              "workspace",
-              "both",
-              "uncertain"
-            ]
-          },
-          "reason": {
-            "type": "string"
-          },
           "scopes": {
             "type": "array",
             "items": {
@@ -3625,6 +3613,12 @@
                   "items": {
                     "$ref": "#/components/schemas/DahliaMemoryNote"
                   }
+                },
+                "truncated": {
+                  "type": "boolean",
+                  "enum": [
+                    true
+                  ]
                 }
               },
               "required": [
@@ -3645,6 +3639,17 @@
             "type": "string",
             "pattern": "^smem_[0-7][0-9abcdefghjkmnpqrstvwxyz]{25}$"
           },
+          "type": {
+            "type": "string",
+            "enum": [
+              "profile",
+              "preference",
+              "work",
+              "people",
+              "notes"
+            ],
+            "description": "profile: who the user is (role, background). preference: how they want things done. work: projects, decisions, customers and their status. people: colleagues, customer contacts and relationships. notes: anything else worth keeping."
+          },
           "content": {
             "type": "string"
           },
@@ -3661,6 +3666,7 @@
         },
         "required": [
           "id",
+          "type",
           "content",
           "revision",
           "updatedAt",
@@ -10111,6 +10117,23 @@
           {
             "schema": {
               "type": "string",
+              "enum": [
+                "profile",
+                "preference",
+                "work",
+                "people",
+                "notes"
+              ],
+              "description": "profile: who the user is (role, background). preference: how they want things done. work: projects, decisions, customers and their status. people: colleagues, customer contacts and relationships. notes: anything else worth keeping."
+            },
+            "required": false,
+            "description": "profile: who the user is (role, background). preference: how they want things done. work: projects, decisions, customers and their status. people: colleagues, customer contacts and relationships. notes: anything else worth keeping.",
+            "name": "type",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
               "description": "Expected authenticated public user ID. A mismatch rejects the request before reading or writing document content."
             },
             "required": false,
@@ -10171,6 +10194,17 @@
                   "id": {
                     "type": "string",
                     "pattern": "^smem_[0-7][0-9abcdefghjkmnpqrstvwxyz]{25}$"
+                  },
+                  "type": {
+                    "type": "string",
+                    "enum": [
+                      "profile",
+                      "preference",
+                      "work",
+                      "people",
+                      "notes"
+                    ],
+                    "description": "profile: who the user is (role, background). preference: how they want things done. work: projects, decisions, customers and their status. people: colleagues, customer contacts and relationships. notes: anything else worth keeping."
                   },
                   "content": {
                     "type": "string",
@@ -10292,6 +10326,17 @@
               "schema": {
                 "type": "object",
                 "properties": {
+                  "type": {
+                    "type": "string",
+                    "enum": [
+                      "profile",
+                      "preference",
+                      "work",
+                      "people",
+                      "notes"
+                    ],
+                    "description": "profile: who the user is (role, background). preference: how they want things done. work: projects, decisions, customers and their status. people: colleagues, customer contacts and relationships. notes: anything else worth keeping."
+                  },
                   "content": {
                     "type": "string",
                     "minLength": 1,
@@ -10399,7 +10444,7 @@
     "/api/v1/user/memory/recall": {
       "post": {
         "operationId": "personalMemoryRecall",
-        "summary": "Find saved memories ranked by keyword overlap",
+        "summary": "Find saved memories ranked by matching words and meaning; optional type filter",
         "tags": [
           "user"
         ],
@@ -10423,6 +10468,17 @@
                     "minLength": 1,
                     "maxLength": 4000,
                     "description": "A question, sentence or keywords. Matches words (Japanese is tokenized; up to 16 terms are used) and, when embeddings are configured, meaning."
+                  },
+                  "type": {
+                    "type": "string",
+                    "enum": [
+                      "profile",
+                      "preference",
+                      "work",
+                      "people",
+                      "notes"
+                    ],
+                    "description": "profile: who the user is (role, background). preference: how they want things done. work: projects, decisions, customers and their status. people: colleagues, customer contacts and relationships. notes: anything else worth keeping."
                   }
                 },
                 "required": [
@@ -10491,6 +10547,23 @@
             },
             "required": false,
             "name": "query",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "profile",
+                "preference",
+                "work",
+                "people",
+                "notes"
+              ],
+              "description": "profile: who the user is (role, background). preference: how they want things done. work: projects, decisions, customers and their status. people: colleagues, customer contacts and relationships. notes: anything else worth keeping."
+            },
+            "required": false,
+            "description": "profile: who the user is (role, background). preference: how they want things done. work: projects, decisions, customers and their status. people: colleagues, customer contacts and relationships. notes: anything else worth keeping.",
+            "name": "type",
             "in": "query"
           },
           {
@@ -10565,6 +10638,17 @@
                   "id": {
                     "type": "string",
                     "pattern": "^smem_[0-7][0-9abcdefghjkmnpqrstvwxyz]{25}$"
+                  },
+                  "type": {
+                    "type": "string",
+                    "enum": [
+                      "profile",
+                      "preference",
+                      "work",
+                      "people",
+                      "notes"
+                    ],
+                    "description": "profile: who the user is (role, background). preference: how they want things done. work: projects, decisions, customers and their status. people: colleagues, customer contacts and relationships. notes: anything else worth keeping."
                   },
                   "content": {
                     "type": "string",
@@ -10704,6 +10788,17 @@
               "schema": {
                 "type": "object",
                 "properties": {
+                  "type": {
+                    "type": "string",
+                    "enum": [
+                      "profile",
+                      "preference",
+                      "work",
+                      "people",
+                      "notes"
+                    ],
+                    "description": "profile: who the user is (role, background). preference: how they want things done. work: projects, decisions, customers and their status. people: colleagues, customer contacts and relationships. notes: anything else worth keeping."
+                  },
                   "content": {
                     "type": "string",
                     "minLength": 1,
@@ -10820,7 +10915,7 @@
     "/api/v1/workspaces/{workspaceId}/memory/recall": {
       "post": {
         "operationId": "workspaceMemoryRecall",
-        "summary": "Find saved memories ranked by keyword overlap",
+        "summary": "Find saved memories ranked by matching words and meaning; optional type filter",
         "tags": [
           "workspaces"
         ],
@@ -10855,6 +10950,17 @@
                     "minLength": 1,
                     "maxLength": 4000,
                     "description": "A question, sentence or keywords. Matches words (Japanese is tokenized; up to 16 terms are used) and, when embeddings are configured, meaning."
+                  },
+                  "type": {
+                    "type": "string",
+                    "enum": [
+                      "profile",
+                      "preference",
+                      "work",
+                      "people",
+                      "notes"
+                    ],
+                    "description": "profile: who the user is (role, background). preference: how they want things done. work: projects, decisions, customers and their status. people: colleagues, customer contacts and relationships. notes: anything else worth keeping."
                   }
                 },
                 "required": [
