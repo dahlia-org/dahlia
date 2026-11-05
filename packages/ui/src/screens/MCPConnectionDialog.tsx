@@ -145,8 +145,8 @@ export function MCPConnectionDialog({ onClose, memory = false }: { onClose: () =
       {error ? <p className="text-sm text-destructive" role="alert">{error}</p> : !canConfigure ? null : connection ? <>
         <pre className="max-h-64 overflow-auto whitespace-pre-wrap rounded-lg bg-zinc-950 p-4 text-xs leading-5 text-zinc-100"><code>{output}</code></pre>
         {memory && <p className="text-xs text-muted-foreground">{memoryMode === "read" ? uiText(
-          "Client instruction: Read get_working_memory and recall_memory when relevant. Do not call update_working_memory, save_memory or delete_memory.",
-          "クライアント指示例: 必要に応じて get_working_memory と recall_memory を参照する。update_working_memory、save_memory、delete_memory は呼ばない。",
+          "Client instruction: Read get_working_memory and search_memories when relevant. Do not call update_working_memory, save_memory or delete_memory.",
+          "クライアント指示例: 必要に応じて get_working_memory と search_memories を参照する。update_working_memory、save_memory、delete_memory は呼ばない。",
         ) : uiText(
           "Client instruction: Read Dahlia Memory when relevant. Save only concise durable personal lessons after a conversation; never save full transcripts or secrets. Update Working Memory, share to a Workspace or delete only on my explicit request.",
           "クライアント指示例: 必要に応じて Dahlia Memory を参照する。会話後は長く役立つ簡潔な個人の学びだけ保存し、全文や秘密情報は保存しない。Working Memory の更新、Workspace への共有、削除は私の明示的な依頼がある場合だけ行う。",

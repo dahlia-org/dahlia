@@ -4,8 +4,8 @@ import { WorkspaceMemory } from "@dahlia-ai/ui/screens/WorkspaceMemory";
 import { DahliaMemoryPage } from "@dahlia-ai/ui/screens/DahliaMemory";
 import "@dahlia-ai/ui/styles.css";
 Object.defineProperty(navigator, "language", { value: "en-US", configurable: true });
-type Note = { id: string; content: string; revision: number; protected: boolean; updatedAt: string };
-const rows: Record<string, Note[]> = { personal: [{ id: "test", content: "Private lesson", revision: 1, protected: true, updatedAt: new Date().toISOString() }], team: [], other: [] };
+type Note = { id: string; type?: string; content: string; revision: number; protected: boolean; updatedAt: string };
+const rows: Record<string, Note[]> = { personal: [{ id: "test", type: "preference", content: "Private lesson", revision: 1, protected: true, updatedAt: new Date().toISOString() }], team: [], other: [] };
 const linkedReads: string[] = [];
 const writes: Array<{ scope: string; workspaceId?: string; explicit: boolean }> = [];
 let failSave = false;
@@ -17,7 +17,7 @@ window.fetch = async (input, init) => {
   if (path === "/api/v1/user/memory/working") return Response.json({ revision: 0, automatic: true, capacityReached: false, manual: "", learned: "" });
   if (path.endsWith("/projects")) return Response.json({ items: [] });
   if (path.endsWith("/scopes")) return Response.json({ scopes: [{ scope: "personal", name: "Personal", writable: true }, { scope: "workspace", workspaceId: "team", name: "Team", writable: true }, { scope: "workspace", workspaceId: "other", name: "Other team", writable: true }] });
-  const body: { content: string; id: string; revision: number; explicit: boolean; query?: string } = ["POST", "PATCH"].includes(request.method) ? await request.json() : { content: "", id: "", revision: Number(new URL(request.url).searchParams.get("revision")), explicit: false };
+  const body: { type?: string; content: string; id: string; revision: number; explicit: boolean; query?: string } = ["POST", "PATCH"].includes(request.method) ? await request.json() : { content: "", id: "", revision: Number(new URL(request.url).searchParams.get("revision")), explicit: false };
   if (request.method === "PATCH" || request.method === "DELETE") body.id = path.split("/").at(-1)!;
   if (request.method === "DELETE") body.explicit = new URL(request.url).searchParams.get("explicit") === "true";
   const key = path.startsWith("/api/v1/user/") ? "personal" : path.split("/")[4]!;
@@ -58,6 +58,7 @@ root.render(<DahliaMemoryPage />);
 async function run() {
   await until(() => button("Edit"));
   assert(document.body.textContent.includes("Personal · Only you"), "Private audience missing");
+  assert(document.body.textContent.includes("Preference · "), "Memory type label missing");
   button("Edit").click(); await until(() => document.querySelector("textarea"));
   text(document.querySelector("textarea")!, "Corrected private lesson");
   failSave = true; await until(() => !button("Save").disabled); button("Save").click();
@@ -71,6 +72,7 @@ async function run() {
   assert(rows.team!.length === 0, "Sharing occurred before confirmation");
   button("Save").click(); await until(() => !document.querySelector("[role=dialog]"));
   assert(rows.personal!.length === 1 && Number(rows.team!.length) === 1, "Copy changed source");
+  assert(rows.team![0]!.type === "preference", "Shared copy lost the memory type");
   const scope = document.querySelector("select")!; scope.value = "team"; scope.dispatchEvent(new Event("change", { bubbles: true }));
   await until(() => document.body.textContent.includes("Team · Shared") && button("Delete"));
   const query = document.querySelector<HTMLInputElement>("section form input")!; text(query, "lesson");

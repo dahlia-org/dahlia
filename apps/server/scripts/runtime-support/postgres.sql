@@ -36,7 +36,8 @@ END $$;--> statement-breakpoint
 ALTER TABLE "crypto"."workspace_keys" FORCE ROW LEVEL SECURITY;--> statement-breakpoint
 ALTER TABLE "app"."shared_memories" FORCE ROW LEVEL SECURITY;--> statement-breakpoint
 ALTER TABLE "app"."personal_memories" FORCE ROW LEVEL SECURITY;--> statement-breakpoint
-ALTER TABLE "search"."knowledge_pages" FORCE ROW LEVEL SECURITY;--> statement-breakpoint
+ALTER TABLE "search"."personal_memory_chunks" FORCE ROW LEVEL SECURITY;--> statement-breakpoint
+ALTER TABLE "search"."shared_memory_chunks" FORCE ROW LEVEL SECURITY;--> statement-breakpoint
 
 ALTER TABLE "app"."documents" FORCE ROW LEVEL SECURITY;--> statement-breakpoint
 ALTER TABLE "app"."document_updates" FORCE ROW LEVEL SECURITY;--> statement-breakpoint

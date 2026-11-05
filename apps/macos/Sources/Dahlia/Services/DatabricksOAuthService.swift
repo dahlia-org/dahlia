@@ -1,18 +1,16 @@
 import AppKit
 import CryptoKit
 import Foundation
-import Network
 import Synchronization
 
 actor DatabricksOAuthService {
     static let shared = DatabricksOAuthService()
     static let clientID = "databricks-cli"
-    static let redirectURI = "http://localhost:8020"
     static let scope = "offline_access all-apis"
 
     private let session: URLSession
     private let storage: DatabricksOAuthStorage
-    private let authorize: @Sendable (URL) async throws -> URL
+    private let authorize: OAuthLoopbackAuthorization
     private final class Pending: Sendable {
         let task: Task<String, Error>
         let loginOnly: Bool
@@ -53,7 +51,7 @@ actor DatabricksOAuthService {
     init(
         session: URLSession = URLSession(configuration: .ephemeral, delegate: OAuthNoRedirectDelegate(), delegateQueue: nil),
         storage: DatabricksOAuthStorage = .local(),
-        authorize: @escaping @Sendable (URL) async throws -> URL = DatabricksOAuthService.authorizeInBrowser
+        authorize: @escaping OAuthLoopbackAuthorization = DatabricksOAuthService.authorizeInBrowser
     ) {
         self.session = session
         self.storage = storage
@@ -185,20 +183,23 @@ actor DatabricksOAuthService {
         let verifier = Self.randomString(byteCount: 64)
         let challenge = Self.base64URL(Data(SHA256.hash(data: Data(verifier.utf8))))
         let state = Self.randomString(byteCount: 32)
-        var url = URLComponents(url: endpoints.authorizationEndpoint, resolvingAgainstBaseURL: false)!
-        url.queryItems = [
-            .init(name: "response_type", value: "code"), .init(name: "client_id", value: Self.clientID),
-            .init(name: "redirect_uri", value: Self.redirectURI), .init(name: "scope", value: Self.scope),
-            .init(name: "state", value: state), .init(name: "code_challenge", value: challenge),
-            .init(name: "code_challenge_method", value: "S256"),
-        ]
-        let callback = try await authorize(url.url!)
+        let authorizationEndpoint = endpoints.authorizationEndpoint
+        let (callback, redirectURI) = try await authorize { redirectURI in
+            var url = URLComponents(url: authorizationEndpoint, resolvingAgainstBaseURL: false)!
+            url.queryItems = [
+                .init(name: "response_type", value: "code"), .init(name: "client_id", value: Self.clientID),
+                .init(name: "redirect_uri", value: redirectURI), .init(name: "scope", value: Self.scope),
+                .init(name: "state", value: state), .init(name: "code_challenge", value: challenge),
+                .init(name: "code_challenge_method", value: "S256"),
+            ]
+            return url.url!
+        }
         try Task.checkCancellation()
-        // The loopback parser returns a normalized URL without a port; the listener owns port 8020.
+        // The loopback parser returns a normalized URL without a port; the listener owns the redirect port.
         let code = try DahliaCloudService.authorizationCode(from: callback, expectedState: state)
         return try await requestToken(endpoint: endpoints.tokenEndpoint, workspace: connection.host, parameters: [
             "grant_type": "authorization_code", "code": code, "client_id": Self.clientID,
-            "redirect_uri": Self.redirectURI, "code_verifier": verifier,
+            "redirect_uri": redirectURI, "code_verifier": verifier,
         ])
     }
 
@@ -282,20 +283,22 @@ actor DatabricksOAuthService {
         base64URL(Data((0 ..< byteCount).map { _ in UInt8.random(in: .min ... .max) }))
     }
 
-    static func makeCallbackServer() async throws -> OAuthLoopbackRedirectServer {
-        do {
-            return try await OAuthLoopbackRedirectServer(port: NWEndpoint.Port(rawValue: 8020)!, callbackPath: "/")
-        } catch {
+    static func makeCallbackServer() async throws -> (server: OAuthLoopbackRedirectServer, redirectURI: String) {
+        guard let callback = await OAuthLoopbackRedirectServer.listenOnFreeDatabricksPort() else {
             throw DatabricksOAuthError.callbackUnavailable
         }
+        return callback
     }
 
-    private static func authorizeInBrowser(_ url: URL) async throws -> URL {
-        let server = try await makeCallbackServer()
+    private static func authorizeInBrowser(
+        _ authorizationURL: @Sendable (_ redirectURI: String) throws -> URL
+    ) async throws -> (callback: URL, redirectURI: String) {
+        let (server, redirectURI) = try await makeCallbackServer()
         try Task.checkCancellation()
+        let url = try authorizationURL(redirectURI)
         let opened = await MainActor.run { NSWorkspace.shared.open(url) }
         guard opened else { throw DahliaCloudError.browserCouldNotOpen }
-        return try await callbackURL(from: server)
+        return try await (callbackURL(from: server), redirectURI)
     }
 
     static func callbackURL(from server: OAuthLoopbackRedirectServer) async throws -> URL {

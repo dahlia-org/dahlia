@@ -3319,7 +3319,7 @@ extension L10n {
         bundle: bundle
     ) }
     static var databricksCallbackUnavailable: String { String(
-        localized: "Cannot listen on localhost:8020. Close the other sign-in and retry.",
+        localized: "Cannot listen on any of localhost ports 8020–8040. Close the other sign-ins and retry.",
         bundle: bundle
     ) }
     static var databricksReconnectRequired: String { String(

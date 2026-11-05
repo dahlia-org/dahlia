@@ -41,7 +41,10 @@ describe("configuration", () => {
       databaseUrl: "file:.data/dahlia-auth.sqlite",
       baseUrl: "http://localhost:5173",
       signOutUrl: "/sign-in",
-      oauthRedirectUris: ["http://127.0.0.1:1455/oauth/callback", "http://localhost:8020"],
+      oauthRedirectUris: [
+        "http://127.0.0.1:1455/oauth/callback",
+        ...Array.from({ length: 21 }, (_, index) => `http://localhost:${8020 + index}`),
+      ],
       storageBackend: "local",
       storageLocalPath: ".data/storage",
       foundationModels: [],

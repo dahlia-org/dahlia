@@ -50,6 +50,8 @@ PostgreSQL は既存の生成 Auth baseline → application initial → runtime_
 
 2026-09-30: ユーザー承認により、バックグラウンドジョブの取得を登録ユーザー数から切り離す変更も未リリース baseline に統合した。`jobs.summary` の部分 index `summary_job_due_idx`（pending / processing の `owner_user_id, available_at`）と `jobs.image_analysis` の `image_analysis_job_owner_idx` を PostgreSQL / SQLite の initial と snapshot に加え、要約 worker が期限到来ジョブのある所有者だけを列挙する SELECT 専用 policy `summary_job_dispatch_select`（`app.maintenance = 'summary-dispatch'` かつ pending / processing）を runtime_support に生成した。取得・更新は従来どおり所有者 identity の policy で行う。個別の forward migration は撤回し、デプロイ済み環境がないため既存 DB への適用手順は用意しない。
 
+2026-11-05: ユーザー承認により、Dahlia Memory の検索 projection（`20261103123731_memory_search` / `20261103123733_memory_search` とその support）、保存メモリーの `type` 列、Hindsight の退役表の削除を、PostgreSQL / SQLite の initial と runtime_support に統合した。application の ledger は再び initial → runtime_support の 2 本である。memory chunk の FORCE RLS（PostgreSQL）と FTS5 trigger（SQLite）は runtime_support に置く。Agent の ledger は変更しない。旧 baseline を適用済みの DB は自動変換せず、新しい空の DB を使う。
+
 ## Header identity
 
 proxy は client-supplied identity header を除去・上書きし、Server への直接到達を防ぐ。Server 側の CIDR 判定で代替しない。

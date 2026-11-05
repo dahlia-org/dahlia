@@ -2288,7 +2288,7 @@
       "list_memory_scopes",
       "list_memories",
       "get_memory",
-      "recall_memory",
+      "search_memories",
       "get_working_memory",
       "update_working_memory",
       "save_memory",

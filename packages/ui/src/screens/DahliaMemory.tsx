@@ -37,6 +37,11 @@ const memoryRequest = <T,>(scope: Scope, operation: "list" | "save" | "delete" |
   return json<T>(`${owner}/memory/${path}${read && query.size ? `?${query}` : ""}`, { method, ...(read ? {} : { body: JSON.stringify(data) }), signal }, { notifyMutation: ["save", "delete"].includes(operation) });
 };
 const scopeKey = (scope: Scope) => scope.workspaceId ?? "personal";
+const typeLabel = (type: Note["type"]) => ({
+  profile: uiText("Profile", "プロフィール"), preference: uiText("Preference", "好み"), work: uiText("Work", "仕事"),
+  people: uiText("People", "人物"), notes: uiText("Notes", "メモ"),
+})[type];
+const memoryTypes: Note["type"][] = ["profile", "preference", "work", "people", "notes"];
 export function DahliaMemoryPage() {
   const [connection, setConnection] = useState(false);
   const [scopes, setScopes] = useState<Scope[]>([]), [selected, setSelected] = useState(() => new URLSearchParams(location.search).get("workspaceId") ?? "personal"), [error, setError] = useState(false);
@@ -96,9 +101,11 @@ function MemoryPanel({ scope, scopes }: { scope: Scope; scopes: Scope[] }) {
     openDialog({
       title: existing ? uiText("Edit memory", "記憶を編集") : uiText("Save memory", "記憶を保存"),
       description: destination.scope === "personal" ? uiText("Only you can read this memory.", "この記憶は自分だけが読めます。") : uiText(`Share with members of ${destination.name}.`, `${destination.name} のメンバーに共有します。`),
-      confirmLabel: uiText("Save", "保存"), fields: [{ name: "content", label: uiText("Memory", "記憶"), value: note?.content ?? "", multiline: true, required: true }],
-      onSubmit: async ({ content }) => {
-        await memoryRequest(destination, "save", { content,
+      confirmLabel: uiText("Save", "保存"), fields: [
+        { name: "type", label: uiText("Type", "種類"), value: note?.type ?? "notes", options: memoryTypes.map((type) => ({ value: type, label: typeLabel(type) })) },
+        { name: "content", label: uiText("Memory", "記憶"), value: note?.content ?? "", multiline: true, required: true }],
+      onSubmit: async ({ type, content }) => {
+        await memoryRequest(destination, "save", { type, content,
           id, revision: existing ? existing.revision : 0, explicit: true });
         setReload((v) => v + 1);
       },
@@ -146,7 +153,7 @@ function MemoryPanel({ scope, scopes }: { scope: Scope; scopes: Scope[] }) {
     {!notes.length && <p>{uiText("No saved memories in this list.", "この一覧に記憶はありません。")}</p>}
     {notes.map((note) => <article key={note.id} id={`note-${note.id}`} className="panel grid gap-2">
       <p className="whitespace-pre-wrap">{note.content}</p>
-      <small>{new Date(note.updatedAt).toLocaleString()} · {note.protected ? uiText("Human edited", "ユーザーが編集") : uiText("AI saved", "AI が保存")}</small>
+      <small>{typeLabel(note.type)} · {new Date(note.updatedAt).toLocaleString()} · {note.protected ? uiText("Human edited", "ユーザーが編集") : uiText("AI saved", "AI が保存")}</small>
       {scope.writable && <div className="flex flex-wrap items-end gap-2"><Button variant="outline" onClick={() => edit(note)}>{uiText("Edit", "編集")}</Button><Button variant="outline" onClick={() => remove(note)}>{uiText("Delete", "削除")}</Button>
         {scope.scope === "personal" && scopes.some((s) => s.scope === "workspace" && s.writable) && <label className="grid gap-1 text-sm">{uiText("Share a copy", "コピーを共有")}<select className="rounded-md border bg-background px-3 py-2" value="" onChange={(e) => { const destination = scopes.find((s) => scopeKey(s) === e.target.value); if (destination) edit(note, destination); }}>
           <option value="">{uiText("Choose Workspace", "Workspace を選択")}</option>{scopes.filter((s) => s.scope === "workspace" && s.writable).map((s) => <option key={s.workspaceId} value={s.workspaceId}>{s.name}</option>)}

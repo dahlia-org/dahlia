@@ -3,7 +3,6 @@ import CryptoKit
 import DahliaRuntimeSupport
 import DahliaServerAPI
 import Foundation
-import Network
 
 struct DahliaCloudConfiguration: Equatable, Sendable {
     static let urlKey = "DAHLIA_CLOUD_URL"
@@ -184,9 +183,8 @@ enum DahliaCloudError: LocalizedError, Equatable {
 }
 
 actor DahliaCloudService {
-    typealias AuthorizationHandler = @Sendable (URL) async throws -> URL
+    typealias AuthorizationHandler = OAuthLoopbackAuthorization
 
-    private static let redirectURL = URL(string: "http://localhost:8020")!
     private static let refreshLeeway: TimeInterval = 60
     private static let identityScopes = ["openid", "profile", "email", "offline_access"]
 
@@ -229,15 +227,18 @@ actor DahliaCloudService {
             ? Set(["all-apis", "offline_access"])
             : Set(discovery.protectedResource.scopesSupported ?? [])
             .union(Self.identityScopes)
-        let authorizationURL = try Self.authorizationURL(
-            endpoint: discovery.authorizationServer.authorizationEndpoint,
-            configuration: configuration,
-            resource: discovery.protectedResource.resource,
-            scopes: scopes,
-            state: state,
-            codeChallenge: pkce.challenge
-        )
-        let callback = try await authorize(authorizationURL)
+        let configuration = configuration
+        let (callback, redirectURI) = try await authorize { redirectURI in
+            try Self.authorizationURL(
+                endpoint: discovery.authorizationServer.authorizationEndpoint,
+                configuration: configuration,
+                redirectURI: redirectURI,
+                resource: discovery.protectedResource.resource,
+                scopes: scopes,
+                state: state,
+                codeChallenge: pkce.challenge
+            )
+        }
         let code = try Self.authorizationCode(from: callback, expectedState: state)
         let token = try await requestToken(
             endpoint: discovery.authorizationServer.tokenEndpoint,
@@ -246,7 +247,7 @@ actor DahliaCloudService {
                 "code": code,
                 "code_verifier": pkce.verifier,
                 "grant_type": "authorization_code",
-                "redirect_uri": Self.redirectURL.absoluteString,
+                "redirect_uri": redirectURI,
                 "resource": discovery.protectedResource.resource,
                 "scope": scopes.sorted().joined(separator: " "),
             ],
@@ -527,6 +528,7 @@ actor DahliaCloudService {
     static func authorizationURL(
         endpoint: URL,
         configuration: DahliaCloudConfiguration,
+        redirectURI: String,
         resource: String,
         scopes: Set<String>,
         state: String,
@@ -537,7 +539,7 @@ actor DahliaCloudService {
         }
         components.queryItems = [
             .init(name: "client_id", value: configuration.clientID),
-            .init(name: "redirect_uri", value: redirectURL.absoluteString),
+            .init(name: "redirect_uri", value: redirectURI),
             .init(name: "response_type", value: "code"),
             .init(name: "scope", value: scopes.sorted().joined(separator: " ")),
             .init(name: "resource", value: resource),
@@ -599,21 +601,21 @@ actor DahliaCloudService {
         return value.addingPercentEncoding(withAllowedCharacters: allowed) ?? value
     }
 
-    private static func authorizeInBrowser(_ url: URL) async throws -> URL {
-        let port = NWEndpoint.Port(rawValue: 8020)!
-        let server: OAuthLoopbackRedirectServer
-        do {
-            server = try await OAuthLoopbackRedirectServer(port: port, callbackPath: "/")
-        } catch {
+    private static func authorizeInBrowser(
+        _ authorizationURL: @Sendable (_ redirectURI: String) throws -> URL
+    ) async throws -> (callback: URL, redirectURI: String) {
+        guard let callback = await OAuthLoopbackRedirectServer.listenOnFreeDatabricksPort() else {
             throw DahliaCloudError.browserCouldNotOpen
         }
+        let (server, redirectURI) = callback
+        let url = try authorizationURL(redirectURI)
         let opened = await MainActor.run {
             NSApp.activate(ignoringOtherApps: true)
             return NSWorkspace.shared.open(url)
         }
         guard opened else { throw DahliaCloudError.browserCouldNotOpen }
         do {
-            return try await server.waitForCallback()
+            return try await (server.waitForCallback(), redirectURI)
         } catch is CancellationError {
             throw CancellationError()
         } catch GoogleSignInError.authorizationTimedOut {

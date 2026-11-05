@@ -26,7 +26,7 @@ model discovery と生成は同じ root provider を使い、別の provider 専
 
 2026-09-10: 直接 Databricks provider は CLI への依存を廃止し、Desktop が U2M OAuth を実行する。既存 CLI 設定・token cache は参照しない。利用者は Workspace URL を入力し、ブラウザで再サインインする。
 
-public client は `databricks-cli`、redirect URI は `http://localhost:8020`、scope は `offline_access all-apis` に固定する。64 バイトの PKCE verifier と S256、state を使い、8020 が使用中なら別ポートへ変更せず失敗を表示する。Workspace discovery の authorization / token endpoint を検証し、取得不能・不正なら同一 Workspace の `/oidc/v1/authorize` と `/oidc/v1/token` を使う。Dahlia Server の resource / userinfo フローとは分離する。
+public client は `databricks-cli`、scope は `offline_access all-apis` に固定する。redirect URI は `http://localhost:8020` から `8040` のうち待受できた最初のポートを使い、すべて使用中なら失敗を表示する。64 バイトの PKCE verifier と S256、state を使う。Workspace discovery の authorization / token endpoint を検証し、取得不能・不正なら同一 Workspace の `/oidc/v1/authorize` と `/oidc/v1/token` を使う。Dahlia Server の resource / userinfo フローとは分離する。
 
 Databricks 接続は HTTPS Workspace origin と認証境界用 UUID をこの Mac に1件だけ保存する。表示名・接続一覧・選択は持たず、Codex 設定は常に `model_providers.databricks` を使う。同じ Workspace は再認証し、別 Workspace への変更はサインアウト後に行う。従来の `databricksProfile` 設定値は新しい接続の UUID を保持する互換フィールドとして使い、CLI profile 名には解決しない。旧 Vault 列と登録済み migration は保持する。credential は実行環境と接続 ID ごとの Keychain に保存し、refresh rotation の保存失敗では新 token を公開しない。サインアウトは選択接続と local credential を削除し、進行中更新の結果を拒否する。
 

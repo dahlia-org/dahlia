@@ -20,7 +20,7 @@ function fixture() {
 describe("shared memory tools", () => {
   it("uses one tool for Mastra and MCP with invocation-scoped identity, Workspace and cancellation", async () => {
     const { search, tools } = fixture();
-    const tool = tools.recall_memory;
+    const tool = tools.search_memories;
     expect(tool.mcp?.annotations?.readOnlyHint).toBe(true);
     await tool.execute!(input, { requestContext: meetingRequestContext(identity, workspaceId), abortSignal: signal } as never);
     expect(search).toHaveBeenLastCalledWith(identity, { ...input, scope: "workspace" }, signal);
@@ -46,7 +46,7 @@ describe("shared memory tools", () => {
     const unsupported = () => Promise.reject(new RequestError(409, "memory_encrypted_workspace_unsupported"));
     const tools = createDahliaMemoryTools({ search: unsupported, save: unsupported, list: unsupported } as unknown as DahliaMemory);
     const context = { requestContext: meetingRequestContext(identity, workspaceId), abortSignal: signal } as never;
-    const reads = [[tools.recall_memory, { scope: "auto", query: "Decisions" }], [tools.list_memories, { scope: "workspace" }]] as const;
+    const reads = [[tools.search_memories, { scope: "all", query: "Decisions" }], [tools.list_memories, { scope: "workspace" }]] as const;
     for (const [read, args] of reads) {
       expect(await read.execute!(args as never, context)).toMatchObject({ unavailable: true, code: "memory_encrypted_workspace_unsupported" });
       let handler!: (input: unknown, context: unknown) => Promise<unknown>;
@@ -59,25 +59,29 @@ describe("shared memory tools", () => {
   });
   it("advertises memory only when configured and the dedicated memory scope is granted", async () => {
     const { memory } = fixture();
-    const list = async (configured: boolean, scopes: string[]) => {
+    const rpc = async (configured: boolean, scopes: string[], method: string) => {
       const handler = createServerMcpHandler({} as AppConfig, {} as MeetingSyncService, undefined, undefined, configured ? memory : undefined);
-      const body = JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/list", params: {
+      const body = JSON.stringify({ jsonrpc: "2.0", id: 1, method, params: {
         _meta: { "io.modelcontextprotocol/clientCapabilities": {}, "io.modelcontextprotocol/clientInfo": { name: "test", version: "1" },
           "io.modelcontextprotocol/protocolVersion": "2026-07-28" },
       } });
       const response = await handler.fetch(new Request("https://test.invalid/mcp", { method: "POST", body,
         headers: { "content-type": "application/json", "content-length": String(new TextEncoder().encode(body).length),
-          "mcp-method": "tools/list", "mcp-protocol-version": "2026-07-28" } }),
+          "mcp-method": method, "mcp-protocol-version": "2026-07-28" } }),
       { authInfo: { token: "", clientId: "test", scopes, extra: { identity } } });
-      const value: { result?: { tools: Array<{ name: string }> }; error?: unknown } = await response.json();
-      // A server without any tool rejects tools/list.
-      return value.result?.tools.map((tool) => tool.name) ?? [];
+      const value: { result?: { tools?: Array<{ name: string }>; instructions?: string }; error?: unknown } = await response.json();
+      return value;
     };
-    for (const scope of ["mcp", "mcp:read"]) expect(await list(true, [scope])).not.toContain("recall_memory");
-    const reads = ["list_memory_scopes", "list_memories", "get_memory", "recall_memory"];
+    // A server without any tool rejects tools/list.
+    const list = async (configured: boolean, scopes: string[]) => (await rpc(configured, scopes, "tools/list")).result?.tools?.map((tool) => tool.name) ?? [];
+    for (const scope of ["mcp", "mcp:read"]) expect(await list(true, [scope])).not.toContain("search_memories");
+    const reads = ["list_memory_scopes", "list_memories", "get_memory", "search_memories"];
     expect(await list(true, ["mcp:memory:read"])).toEqual(reads);
     expect(await list(true, ["mcp:memory:write"])).toEqual([...reads, "save_memory", "delete_memory"]);
-    expect(await list(false, ["mcp:memory:write"])).not.toContain("recall_memory");
-    expect(await list(true, [])).not.toContain("recall_memory");
+    expect(await list(false, ["mcp:memory:write"])).not.toContain("search_memories");
+    expect(await list(true, [])).not.toContain("search_memories");
+    // The memory guide reaches clients at discovery, only with memory access.
+    expect((await rpc(true, ["mcp:memory:read"], "server/discover")).result?.instructions).toContain("search_memories");
+    expect((await rpc(true, ["mcp:read"], "server/discover")).result).not.toHaveProperty("instructions");
   });
 });

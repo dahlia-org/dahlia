@@ -7,7 +7,6 @@ import { createApp } from "../src/app";
 import { createWorkerHandler } from "../src/worker";
 import { createServerMcpHandler } from "../src/mcp";
 import type { AppConfig } from "../src/config";
-import type { MemoryGenerator } from "../src/agent/context-service";
 import { MeetingSyncService } from "../src/sync/service";
 import { DahliaMemory, memoryResultSchema, memorySaveSchema } from "../src/memory/dahlia";
 import { applicationAnalyzer } from "../src/search/lexical";
@@ -16,8 +15,9 @@ import { createIntlSearchTokenizer } from "../src/search/tokenizer";
 import type { SearchEmbedder } from "../src/search/embedding";
 import { SearchEmbeddingError } from "../src/search/embedding";
 import { processMemoryIndexJob } from "../src/memory/index-job";
+import type { MemoryStore } from "../src/memory/store";
+import { RequestError } from "../src/storage/upload";
 import type { z } from "zod";
-import { routeMemory } from "../src/memory/router";
 import { createDahliaMemoryTools } from "../src/memory/dahlia-tools";
 import { meetingRequestContext } from "../src/agent/tools";
 import { MEMORY_READ_SCOPE, MEMORY_WRITE_SCOPE } from "../src/auth/scopes";
@@ -54,8 +54,7 @@ async function fixture(embedder?: SearchEmbedder) {
     id: uuidV7(), entity: "workspace", action: "create", entityId: workspace, baseRevision: null,
     data: { organizationId: testOrganizationID, name: "Team", createdAt: new Date().toISOString() },
   }] });
-  const generate = vi.fn().mockResolvedValue({ target: "personal", reason: "personal_preference" });
-  const memory = new DahliaMemory({ personal: app.personalMemory!, workspace: app.memory! }, sync, generate as MemoryGenerator, lindera, embedder);
+  const memory = new DahliaMemory({ personal: app.personalMemory!, workspace: app.memory! }, sync, lindera, embedder);
   // Runs queued embedding jobs the way the job runner does.
   const drain = async () => {
     for (let job; (job = await app.jobs.claim(["memory-index"]));) {
@@ -65,7 +64,7 @@ async function fixture(embedder?: SearchEmbedder) {
   };
   let closed = false;
   const note = (content: string) => ({ ...memorySaveSchema.parse({ scope: "personal", id: encodeId("sharedMemory", uuidV7()), revision: 0, content }), scope: "personal" as const });
-  return { app, config, file, owner, stranger, workspaceId: encodeId("workspace", workspace), sync, memory, generate, note, drain,
+  return { app, config, file, owner, stranger, workspaceId: encodeId("workspace", workspace), sync, memory, note, drain,
     close: () => { if (!closed) { closed = true; void app.close?.(); } } };
 }
 
@@ -130,7 +129,7 @@ describe("Dahlia Memory", () => {
       // A fresh store over the same file proves the memories are durable, not process state.
       const reopened = createNodeApplicationStore(f.config); await reopened.migrate();
       try {
-        const memory = new DahliaMemory({ personal: reopened.personalMemory!, workspace: reopened.memory! }, new MeetingSyncService(reopened.sync), undefined, lindera);
+        const memory = new DahliaMemory({ personal: reopened.personalMemory!, workspace: reopened.memory! }, new MeetingSyncService(reopened.sync), lindera);
         expect((await memory.list(f.owner, { scope: "personal" })).items).toHaveLength(11);
         expect((await memory.search(f.owner, { scope: "personal", query: "予算" }, signal)).results[0]!.items.map((item) => item.id)).toEqual([budget.id]);
       } finally { await reopened.close?.(); }
@@ -289,7 +288,7 @@ describe("Dahlia Memory", () => {
     const f = await fixture();
     try {
       const intl = applicationAnalyzer(createIntlSearchTokenizer());
-      const memory = new DahliaMemory(f.memory.stores, f.sync, undefined, intl);
+      const memory = new DahliaMemory(f.memory.stores, f.sync, intl);
       const budget = f.note("2027年度予算は500万円");
       const both = f.note("2027年の予算は未定");
       await memory.save(f.owner, budget); await memory.save(f.owner, both); await memory.save(f.owner, f.note("昼食の注文"));
@@ -301,19 +300,18 @@ describe("Dahlia Memory", () => {
     } finally { f.close(); }
   });
 
-  it.each(["workspace", "auto"] as const)("withholds recall results when Workspace access is revoked during the scan (%s)", async (scope) => {
+  it.each(["workspace", "all"] as const)("withholds recall results when Workspace access is revoked during the scan (%s)", async (scope) => {
     const f = await fixture();
     try {
       await f.memory.save(f.owner, { ...f.note("Shared budget plan"), scope: "workspace", workspaceId: f.workspaceId, explicit: true });
       await f.memory.save(f.owner, f.note("Private budget note"));
-      f.generate.mockResolvedValue({ target: "both", reason: "either" });
       const getWorkspace = vi.spyOn(f.sync, "getWorkspace");
-      // Revoke once the Workspace scan has gathered matches (the last scan in auto); they must not be published.
+      // Revoke once the Workspace scan has gathered matches (the last scan in all); they must not be published.
       const store = f.memory.stores.workspace;
       const recall = store.recall.bind(store);
       vi.spyOn(store, "recall").mockImplementation(async (...args) => {
         const matches = await recall(...args);
-        expect(matches).not.toHaveLength(0);
+        expect(matches.hits).not.toHaveLength(0);
         getWorkspace.mockResolvedValue(null);
         return matches;
       });
@@ -322,6 +320,53 @@ describe("Dahlia Memory", () => {
       // With access intact the same recall publishes both scopes.
       expect((await f.memory.search(f.owner, { scope, workspaceId: f.workspaceId, query: "budget" }, signal)).results.flatMap((r) => r.items)).not.toHaveLength(0);
     } finally { f.close(); }
+  });
+  it("caps a search of every Workspace in total and drops only a Workspace revoked during the scan", async () => {
+    const f = await fixture();
+    try {
+      for (let i = 0; i < 15; i++) await f.memory.save(f.owner, f.note(`Private budget note ${i}`));
+      for (let i = 0; i < 10; i++) await f.memory.save(f.owner, { ...f.note(`Shared budget plan ${i}`), scope: "workspace", workspaceId: f.workspaceId, explicit: true });
+      const capped = await f.memory.search(f.owner, { scope: "all", query: "budget" }, signal);
+      expect(capped.results.map((result) => [result.items.length, result.truncated])).toEqual([[10, true], [10, undefined]]);
+      expect(capped.instruction).toContain("truncated");
+      // A single scope cut by the store itself is marked too.
+      for (let i = 15; i < 25; i++) await f.memory.save(f.owner, f.note(`Private budget note ${i}`));
+      expect((await f.memory.search(f.owner, { scope: "personal", query: "budget" }, signal)).results.map((result) => [result.items.length, result.truncated])).toEqual([[20, true]]);
+      const getWorkspace = vi.spyOn(f.sync, "getWorkspace");
+      const store = f.memory.stores.workspace;
+      const recall = store.recall.bind(store);
+      vi.spyOn(store, "recall").mockImplementation(async (...args) => { const matches = await recall(...args); getWorkspace.mockResolvedValue(null); return matches; });
+      const revoked = await f.memory.search(f.owner, { scope: "all", query: "budget" }, signal);
+      expect(revoked.searchedScopes).toEqual([{ scope: "personal" }]);
+      expect(revoked.results.map((result) => result.items.length)).toEqual([20]);
+    } finally { f.close(); }
+  });
+  it("ranks a search of every Workspace by fused score across scopes and skips a Workspace lost during recall", async () => {
+    const owner = { userId: uuidV7(), source: "header" as const }, workspaces = Array.from({ length: 25 }, () => uuidV7());
+    const sync = { listWorkspaces: async () => workspaces.map((workspaceId) => ({ workspaceId, name: "Team", role: "viewer", encryption: "none" })),
+      getWorkspace: async (_identity: unknown, workspaceId: string) => ({ workspaceId, encryption: "none" }) } as unknown as MeetingSyncService;
+    const hit = (score: number, ftsRank: number) => ({ id: uuidV7(), type: "notes" as const, content: "x", revision: 1, updatedAt: new Date(), protected: false, score, ftsRank });
+    // Every scope has a meaning-only neighbour; only the 23rd Workspace also matches the words.
+    const exact = hit(2 / 61, 1);
+    const recall = async (_userId: string, scopeId: string) => {
+      if (scopeId === workspaces[3]) throw new RequestError(404, "workspace_not_found");
+      // The 6th Workspace's store cut its matches even though fewer rows came back (for example after a concurrent delete).
+      return { hits: scopeId === workspaces[22] ? [exact] : [hit(1 / 61, Number.POSITIVE_INFINITY)], more: scopeId === workspaces[5] };
+    };
+    const store = { recall } as unknown as MemoryStore;
+    const result = await new DahliaMemory({ personal: store, workspace: store }, sync).search(owner, { scope: "all", query: "budget" }, signal);
+    const items = result.results.flatMap((scope) => scope.items);
+    expect(items).toHaveLength(20);
+    expect(items.map((item) => item.id)).toContain(encodeId("sharedMemory", exact.id));
+    expect(result.searchedScopes).toHaveLength(25);
+    // Equal ranks keep scope order, and the cut scopes say so, including one the store cut.
+    const truncated = result.results.filter((scope) => scope.truncated);
+    expect(truncated).toHaveLength(6);
+    expect(truncated[0]).toMatchObject({ workspaceId: encodeId("workspace", workspaces[5]!), items: [{}] });
+    expect(result.searchedScopes).not.toContainEqual({ scope: "workspace", workspaceId: encodeId("workspace", workspaces[3]!) });
+    // A named Workspace still fails when it is lost.
+    await expect(new DahliaMemory({ personal: store, workspace: store }, sync)
+      .search(owner, { scope: "workspace", workspaceId: encodeId("workspace", workspaces[3]!), query: "budget" }, signal)).rejects.toMatchObject({ status: 404 });
   });
   it("shares canonical personal notes across clients, enforces revisions and protects human edits", async () => {
     const f = await fixture();
@@ -367,31 +412,32 @@ describe("Dahlia Memory", () => {
       await expect(save({ ...confirmed, revision: 3, content: "Automatic overwrite" }, "agent")).rejects.toMatchObject({ code: "memory_human_edit_protected" });
     } finally { f.close(); }
   });
-  it("routes only within context and never treats a workspace suggestion as sharing permission", async () => {
+  it("saves typed memories to personal by default, filters by type and searches readable Workspaces without routing", async () => {
     const f = await fixture();
     try {
-      const input = { ...f.note("Team decision"), scope: "auto" as const, workspaceId: f.workspaceId };
-      f.generate.mockResolvedValue({ target: "workspace", reason: "team_decision" });
-      expect(await f.memory.save(f.owner, input)).toMatchObject({ saved: false, suggestedScope: "workspace" });
-      expect((await f.memory.list(f.owner, { scope: "workspace", workspaceId: f.workspaceId })).items).toEqual([]);
-      expect(await f.memory.save(f.owner, { ...input, explicit: true })).toMatchObject({ saved: true, scope: "workspace" });
-      f.generate.mockResolvedValue({ target: "both", reason: "mixed" });
-      expect(await f.memory.save(f.owner, { ...input, explicit: true })).toMatchObject({ saved: false, suggestedScope: "both" });
-      f.generate.mockRejectedValue(new Error("provider failed"));
-      expect(await f.memory.save(f.owner, input)).toMatchObject({ saved: false, suggestedScope: "uncertain" });
-      const result = await f.memory.search(f.owner, { scope: "auto", workspaceId: f.workspaceId, query: "question" }, signal);
-      expect(result.searchedScopes.map((s) => s.scope)).toEqual(["personal", "workspace"]);
-      expect((await f.memory.search(f.owner, { scope: "auto", query: "question" }, signal)).searchedScopes).toEqual([{ scope: "personal" }]);
-      f.generate.mockResolvedValue({ target: "workspace", reason: "team_decision" });
-      const workspaceOnly = await f.memory.search(f.owner, { scope: "auto", workspaceId: f.workspaceId, query: "decision" }, signal);
-      expect(workspaceOnly.searchedScopes).toEqual([{ scope: "workspace", workspaceId: f.workspaceId }]);
-      expect(workspaceOnly.results).toMatchObject([{ scope: "workspace", items: [{ content: "Team decision" }] }]);
-      await expect(f.memory.save(f.stranger, { ...input, scope: "workspace", explicit: true })).rejects.toMatchObject({ status: 404 });
-      const calls = f.generate.mock.calls.length;
-      await f.memory.list(f.owner, { scope: "personal" });
-      await f.memory.save(f.owner, f.note("Explicit personal"));
-      expect(f.generate.mock.calls).toHaveLength(calls);
-      await expect(f.memory.save(f.owner, { ...input, revision: 1 })).rejects.toMatchObject({ code: "memory_update_scope_required" });
+      const preference = { ...f.note("Answer budget questions in Japanese"), type: "preference" as const };
+      expect(await f.memory.save(f.owner, preference)).toMatchObject({ saved: true, scope: "personal", memory: { type: "preference" } });
+      const plain = f.note("Budget review moved to Friday");
+      expect(await f.memory.save(f.owner, plain)).toMatchObject({ scope: "personal", memory: { type: "notes" } });
+      const team = { ...f.note("Team budget decision"), scope: "workspace" as const, workspaceId: f.workspaceId, type: "work" as const };
+      await expect(f.memory.save(f.owner, team)).rejects.toMatchObject({ code: "memory_sharing_confirmation_required" });
+      await expect(f.memory.save(f.stranger, { ...team, explicit: true })).rejects.toMatchObject({ status: 404 });
+      await f.memory.save(f.owner, { ...team, explicit: true });
+      expect((await f.memory.list(f.owner, { scope: "personal", type: "preference" })).items.map((item) => item.id)).toEqual([preference.id]);
+      const typed = await f.memory.search(f.owner, { scope: "all", workspaceId: f.workspaceId, query: "budget", type: "preference" }, signal);
+      expect(typed.results.map((result) => result.items.map((item) => item.id))).toEqual([[preference.id], []]);
+      const all = await f.memory.search(f.owner, { scope: "all", workspaceId: f.workspaceId, query: "budget" }, signal);
+      expect(all.searchedScopes).toEqual([{ scope: "personal" }, { scope: "workspace", workspaceId: f.workspaceId }]);
+      expect(all.results[1]!.items).toMatchObject([{ content: "Team budget decision", type: "work" }]);
+      // Without a Workspace, all spans every Workspace the caller can read, and nothing else.
+      const everywhere = await f.memory.search(f.owner, { scope: "all", query: "budget" }, signal);
+      expect(everywhere.searchedScopes).toEqual([{ scope: "personal" }, { scope: "workspace", workspaceId: f.workspaceId }]);
+      expect(everywhere.results[1]!.items.map((item) => item.content)).toEqual(["Team budget decision"]);
+      expect((await f.memory.search(f.stranger, { scope: "all", query: "budget" }, signal)).searchedScopes).toEqual([{ scope: "personal" }]);
+      // An update without a type keeps it; an explicit type changes it.
+      expect(await f.memory.save(f.owner, { ...preference, type: undefined, revision: 1, content: "Answer budget questions in English" })).toMatchObject({ memory: { type: "preference", revision: 2 } });
+      expect(await f.memory.save(f.owner, { ...plain, type: "work", revision: 1 })).toMatchObject({ memory: { type: "work", revision: 2 } });
+      expect(memorySaveSchema.safeParse({ ...plain, type: "customer" }).success).toBe(false);
     } finally { f.close(); }
   });
   it("requires dedicated scopes for MCP and shares the same tools with the internal agent", async () => {
@@ -430,7 +476,7 @@ describe("Dahlia Memory", () => {
         const value: { result?: { isError?: boolean; content: Array<{ text: string }> }; error?: unknown } = await response.json();
         return value;
       };
-      const wireNote = f.note("From remote MCP");
+      const wireNote = { ...f.note("From remote MCP"), type: "preference" as const };
       expect((await call([MEMORY_READ_SCOPE], "get_working_memory", {})).result?.content[0]?.text).toContain("A private note");
       expect((await call([MEMORY_READ_SCOPE], "update_working_memory", { section: "manual", content: "changed", revision: 0, explicit: true })).error).toBeDefined();
       expect((await call([MEMORY_WRITE_SCOPE], "update_working_memory", { section: "manual", content: "changed", revision: 0, explicit: true })).result?.content[0]?.text).toContain("changed");
@@ -440,9 +486,9 @@ describe("Dahlia Memory", () => {
       expect((await call([MEMORY_READ_SCOPE], "save_memory", wireNote)).error).toBeDefined();
       const text = (value: Awaited<ReturnType<typeof call>>) => JSON.parse(value.result!.content[0]!.text) as z.infer<typeof memoryResultSchema>;
       // External client lifecycle: write, read back, recall, update with revision, consolidate (save merged, delete originals).
-      expect(text(await call([MEMORY_WRITE_SCOPE], "save_memory", wireNote))).toMatchObject({ saved: true, memory: { id: wireNote.id, revision: 1, protected: false } });
+      expect(text(await call([MEMORY_WRITE_SCOPE], "save_memory", wireNote))).toMatchObject({ saved: true, memory: { id: wireNote.id, type: "preference", revision: 1, protected: false } });
       expect(text(await call([MEMORY_READ_SCOPE], "get_memory", { scope: "personal", id: wireNote.id }))).toMatchObject({ memory: { content: "From remote MCP" } });
-      expect(text(await call([MEMORY_READ_SCOPE], "recall_memory", { scope: "personal", query: "remote" })).results![0]!.items).toMatchObject([{ id: wireNote.id }]);
+      expect(text(await call([MEMORY_READ_SCOPE], "search_memories", { scope: "personal", query: "remote", type: "preference" })).results![0]!.items).toMatchObject([{ id: wireNote.id }]);
       expect(text(await call([MEMORY_WRITE_SCOPE], "save_memory", { ...wireNote, revision: 1, content: "From remote MCP, updated" }))).toMatchObject({ memory: { revision: 2 } });
       expect((await call([MEMORY_WRITE_SCOPE], "save_memory", { ...wireNote, revision: 1, content: "Stale" })).result).toMatchObject({ isError: true, content: [{ text: "memory_revision_conflict" }] });
       const expired = await call([MEMORY_WRITE_SCOPE], "delete_memory", { scope: "personal", id: wireNote.id, revision: 2, explicit: true }, 1);
@@ -481,7 +527,7 @@ describe("Dahlia Memory", () => {
       expect(editSettings).toHaveBeenCalledTimes(3);
     } finally { f.close(); }
   });
-  it.each(["route", "explicit-save", "delete", "cancel"])("checks authorization immediately before mutation after %s", async (action) => {
+  it.each(["explicit-save", "delete", "cancel"])("checks authorization immediately before mutation after %s", async (action) => {
     const f = await fixture();
     try {
       const tools = createDahliaMemoryTools(f.memory);
@@ -490,27 +536,20 @@ describe("Dahlia Memory", () => {
       const controller = new AbortController();
       const authorize = async () => { if (!authorized) throw new Error("token_expired"); };
       const context = { requestContext: meetingRequestContext(f.owner, undefined, authorize), abortSignal: controller.signal } as never;
-      const note = f.note("Must not commit");
-      if (action === "route" || action === "cancel") {
-        f.generate.mockImplementation(async () => {
-          if (action === "cancel") controller.abort(); else authorized = false;
-          return { target: "personal", reason: "preference" };
-        });
-        await expect(tools.save_memory.execute!({ ...note, scope: "auto" }, context)).rejects.toThrow();
-        await expect(f.memory.get(f.owner, note)).rejects.toMatchObject({ code: "memory_not_found" });
-      } else {
-        const input = { ...note, scope: "workspace" as const, workspaceId: f.workspaceId, explicit: true };
-        if (action === "delete") await f.memory.save(f.owner, input);
-        const getWorkspace = f.sync.getWorkspace.bind(f.sync);
-        const lookup = vi.spyOn(f.sync, "getWorkspace").mockImplementation(async (...args) => {
-          const result = await getWorkspace(...args); authorized = false; return result;
-        });
-        const call = action === "delete" ? tools.delete_memory.execute!({ scope: input.scope, workspaceId: input.workspaceId, id: input.id, revision: 1, explicit: true }, context) : tools.save_memory.execute!(input, context);
-        await expect(call).rejects.toThrow("token_expired");
-        lookup.mockRestore();
-        if (action === "delete") expect((await f.memory.get(f.owner, input)).memory.revision).toBe(1);
-        else await expect(f.memory.get(f.owner, input)).rejects.toMatchObject({ code: "memory_not_found" });
-      }
+      const input = { ...f.note("Must not commit"), scope: "workspace" as const, workspaceId: f.workspaceId, explicit: true };
+      if (action === "delete") await f.memory.save(f.owner, input);
+      const getWorkspace = f.sync.getWorkspace.bind(f.sync);
+      // Authorization expires (or the call is cancelled) after the Workspace lookup, just before the write.
+      const lookup = vi.spyOn(f.sync, "getWorkspace").mockImplementation(async (...args) => {
+        const result = await getWorkspace(...args);
+        if (action === "cancel") controller.abort(); else authorized = false;
+        return result;
+      });
+      const call = action === "delete" ? tools.delete_memory.execute!({ scope: input.scope, workspaceId: input.workspaceId, id: input.id, revision: 1, explicit: true }, context) : tools.save_memory.execute!(input, context);
+      await expect(call).rejects.toThrow(action === "cancel" ? undefined : "token_expired");
+      lookup.mockRestore();
+      if (action === "delete") expect((await f.memory.get(f.owner, input)).memory.revision).toBe(1);
+      else await expect(f.memory.get(f.owner, input)).rejects.toMatchObject({ code: "memory_not_found" });
     } finally { f.close(); }
   });
   it.each(["save", "delete"])("acknowledges a committed %s even if authorization expires afterward", async (action) => {
@@ -562,13 +601,14 @@ describe("Dahlia Memory", () => {
       const request = (path: string, method = "GET", value?: unknown, email = f.owner.email, workspaceId?: string) => app.request(workspaceId
         ? `/api/v1/workspaces/${workspaceId}/memory${path}` : `/api/v1/user/memory${path}`,
       { method, headers: { "Content-Type": "application/json", "X-Forwarded-Email": email }, ...(value === undefined ? {} : { body: JSON.stringify(value) }) });
-      const save = { id: input.id, content: input.content, revision: 0, explicit: true };
+      const save = { id: input.id, content: input.content, type: "people", revision: 0, explicit: true };
       for (const workspaceId of [undefined, f.workspaceId]) {
         expect((await request("/notes", "POST", save, f.owner.email, workspaceId)).status).toBe(200);
-        expect(await (await request("/notes", "GET", undefined, f.owner.email, workspaceId)).json()).toMatchObject({ items: [{ content: "Web memory", protected: true }] });
+        expect(await (await request("/notes", "GET", undefined, f.owner.email, workspaceId)).json()).toMatchObject({ items: [{ content: "Web memory", type: "people", protected: true }] });
         expect(await (await request(`/notes/${input.id}`, "GET", undefined, f.owner.email, workspaceId)).json()).toMatchObject({ memory: { revision: 1 } });
         const edit = { content: "Edited on the Web", revision: 1, explicit: true };
-        expect((await request(`/notes/${input.id}`, "PATCH", edit, f.owner.email, workspaceId)).status).toBe(200);
+        expect(await (await request(`/notes/${input.id}`, "PATCH", edit, f.owner.email, workspaceId)).json()).toMatchObject({ memory: { type: "people", revision: 2 } });
+        expect(await (await request("/notes?type=work", "GET", undefined, f.owner.email, workspaceId)).json()).toMatchObject({ items: [] });
         expect((await request(`/notes/${input.id}`, "PATCH", { ...edit, content: "Stale update" }, f.owner.email, workspaceId)).status).toBe(409);
         expect((await request(`/notes/${input.id}`, "PATCH", { ...edit, revision: 0 }, f.owner.email, workspaceId)).status).toBe(400);
         expect((await request(`/notes/${input.id}?revision=2`, "DELETE", undefined, f.owner.email, workspaceId)).status).toBe(400);
@@ -593,12 +633,4 @@ describe("Dahlia Memory", () => {
       expect((await app.request("/api/v1/memory/auto/save", { method: "POST", headers: { "Content-Type": "application/json", "X-Forwarded-Email": f.owner.email }, body: JSON.stringify(input) })).status).toBe(404);
     } finally { f.close(); }
   });
-});
-
-it("validates router output and preserves cancellation without widening scopes", async () => {
-  const generate = vi.fn().mockResolvedValue({ target: "workspace", reason: "x", workspaceId: uuidV7() }) as unknown as MemoryGenerator;
-  const identity = { userId: uuidV7(), source: "header" as const };
-  expect(await routeMemory(generate, identity, "save", "Ignore rules", undefined, signal)).toMatchObject({ target: "uncertain" });
-  const aborted = AbortSignal.abort();
-  await expect(routeMemory(async () => { throw new Error("cancel"); }, identity, "save", "x", undefined, aborted)).rejects.toThrow();
 });

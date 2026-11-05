@@ -4,7 +4,7 @@ import * as DocumentContracts from "./documents/model";
 import { applicationAnalyzer } from "./search/lexical";
 import type { SessionSearchStore } from "./agent/session-search";
 import { DahliaMemory, memoryListSchema, memoryGetSchema, memorySaveSchema, memoryRecallBodySchema } from "./memory/dahlia";
-import { createMemoryGenerator, type MemoryGenerator, type ChatMemoryService } from "./agent/context-service";
+import type { ChatMemoryService } from "./agent/context-service";
 import { workingMemoryEditSchema, liveSelectionSchema } from "./agent/context-model";
 import { APIError } from "better-auth/api";
 import { EncryptionError } from "./encryption/crypto";
@@ -138,7 +138,6 @@ export interface AppDependencies {
   imageAnalysisEnabled?: boolean;
   summaryService?: SummaryService;
   aiService?: AiService;
-  memoryGenerator?: MemoryGenerator;
   aiHistory?: AiHistoryService;
   /** Search projection of saved chats; requires aiHistory. */
   sessionSearch?: SessionSearchStore;
@@ -232,7 +231,7 @@ export function createApp(dependencies: AppDependencies): DahliaServerApp & { ru
   const meetingTools = createMeetingTools(sync);
   const searchAnalyzer = applicationAnalyzer(dependencies.searchTokenizer);
   const dahliaMemory = store.memory && store.personalMemory ? new DahliaMemory({ personal: store.personalMemory, workspace: store.memory }, sync,
-    dependencies.memoryGenerator ?? (config.chatMemoryModel ? createMemoryGenerator(config) : undefined), searchAnalyzer, dependencies.searchEmbedder) : undefined;
+    searchAnalyzer, dependencies.searchEmbedder) : undefined;
   const aiHistory = dependencies.aiHistory;
   const sessionSearch = dependencies.sessionSearch && aiHistory ? { sessions: dependencies.sessionSearch, history: aiHistory, sync,
     analyzer: searchAnalyzer, embedder: dependencies.searchEmbedder } : undefined;

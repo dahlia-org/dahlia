@@ -1,3 +1,4 @@
+import type { MemoryType } from "../memory/memory-type";
 import { DEFAULT_WORKSPACE_GENERATION_SETTINGS, type WorkspaceGenerationSettings } from "@dahlia-ai/ui/model/workspace-generation-settings";
 import type { CalendarEventSnapshot } from "../sync/schemas";
 import type { TranscriptMetadata } from "../sync/transcript";
@@ -466,87 +467,24 @@ export const workspaceKey = sqliteTable("workspace_keys", {
   createdAt: sqliteTimestamp("created_at").default(sql`(unixepoch() * 1000)`).notNull(),
 });
 
-// Retired Hindsight projection tables (workspace/personal memory state, source jobs, documents, knowledge_pages).
-// Unused since the Dahlia Memory store; kept so existing databases and rollback stay intact. Drop only via an approved forward migration.
-export const workspaceMemoryState = sqliteTable("workspace_memory_state", {
-  scopeId: text("workspace_id").primaryKey(),
-  enabled: integer("enabled", { mode: "boolean" }).default(false).notNull(),
-  imagesEnabled: integer("images_enabled", { mode: "boolean" }).default(false).notNull(),
-  requestedBy: text("requested_by").notNull(),
-  bankId: text("bank_id").notNull(),
-  generation: integer("generation").default(1).notNull(),
-  indexedGeneration: integer("indexed_generation").default(0).notNull(),
-  status: text("status").default("pending").notNull(),
-  purge: integer("purge", { mode: "boolean" }).default(false).notNull(),
-  reconcile: integer("reconcile", { mode: "boolean" }).default(true).notNull(),
-  progress: text("progress", { mode: "json" }),
-});
-
-export const memorySourceJob = sqliteTable("memory_source_jobs", {
-  scopeId: text("workspace_id").notNull(),
-  documentId: text("document_id").notNull(),
-  kind: text("kind").$type<"meeting" | "shared">().notNull(),
-  sourceId: text("source_id").notNull(),
-  generation: integer("generation").default(1).notNull(),
-  operation: text("operation", { mode: "json" }),
-}, (table) => [primaryKey({ columns: [table.scopeId, table.documentId] })]);
-
-export const memoryDocument = sqliteTable("memory_documents", {
-  scopeId: text("workspace_id").notNull(),
-  documentId: text("document_id").notNull(),
-  source: text("source", { mode: "json" }).notNull(),
-  contentHash: text("content_hash").notNull(),
-  ingestionFingerprint: text("ingestion_fingerprint"),
-  generation: integer("generation").notNull(),
-}, (table) => [primaryKey({ columns: [table.scopeId, table.documentId] })]);
-
 export const sharedMemory = sqliteTable("shared_memories", {
   id: text("id").primaryKey(),
   scopeId: text("workspace_id").notNull().references(() => syncedWorkspace.workspaceId, { onDelete: "cascade" }),
   createdBy: text("created_by").notNull(),
   content: text("content").notNull(),
+  type: text("type").$type<MemoryType>().notNull(),
   protected: integer("protected", { mode: "boolean" }).default(true).notNull(),
   revision: integer("revision").default(1).notNull(),
   updatedAt: sqliteTimestamp("updated_at").notNull(),
 }, (table) => [index("shared_memories_workspace_idx").on(table.scopeId),
 ]);
 
-export const personalMemoryState = sqliteTable("personal_memory_state", {
-  scopeId: text("user_id").primaryKey(),
-  enabled: integer("enabled", { mode: "boolean" }).default(false).notNull(),
-  requestedBy: text("requested_by").notNull(),
-  bankId: text("bank_id").notNull(),
-  generation: integer("generation").default(1).notNull(),
-  indexedGeneration: integer("indexed_generation").default(0).notNull(),
-  status: text("status").default("pending").notNull(),
-  purge: integer("purge", { mode: "boolean" }).default(false).notNull(),
-  reconcile: integer("reconcile", { mode: "boolean" }).default(true).notNull(),
-  progress: text("progress", { mode: "json" }),
-});
-
-export const personalMemorySourceJob = sqliteTable("personal_memory_source_jobs", {
-  scopeId: text("user_id").notNull(),
-  documentId: text("document_id").notNull(),
-  kind: text("kind").$type<"meeting" | "shared">().notNull(),
-  sourceId: text("source_id").notNull(),
-  generation: integer("generation").default(1).notNull(),
-  operation: text("operation", { mode: "json" }),
-}, (table) => [primaryKey({ columns: [table.scopeId, table.documentId] })]);
-
-export const personalMemoryDocument = sqliteTable("personal_memory_documents", {
-  scopeId: text("user_id").notNull(),
-  documentId: text("document_id").notNull(),
-  source: text("source", { mode: "json" }).notNull(),
-  contentHash: text("content_hash").notNull(),
-  ingestionFingerprint: text("ingestion_fingerprint"),
-  generation: integer("generation").notNull(),
-}, (table) => [primaryKey({ columns: [table.scopeId, table.documentId] })]);
-
 export const personalMemory = sqliteTable("personal_memories", {
   id: text("id").primaryKey(),
   scopeId: text("user_id").notNull().references(() => authUser.id, { onDelete: "cascade" }),
   createdBy: text("created_by").notNull(),
   content: text("content").notNull(),
+  type: text("type").$type<MemoryType>().notNull(),
   protected: integer("protected", { mode: "boolean" }).default(true).notNull(),
   revision: integer("revision").default(1).notNull(),
   updatedAt: sqliteTimestamp("updated_at").notNull(),
@@ -575,18 +513,6 @@ export const sharedMemoryChunk = sqliteTable("shared_memory_chunks", memoryChunk
   index("shared_memory_chunks_workspace_idx").on(table.scopeId),
 ]);
 
-// Retired Hindsight Knowledge Pages; see workspaceMemoryState.
-export const knowledgePage = sqliteTable("knowledge_pages", {
-  scopeId: text("workspace_id").notNull().references(() => syncedWorkspace.workspaceId, { onDelete: "cascade" }),
-  id: text("id").notNull(),
-  projectId: text("project_id"),
-  generation: integer("generation").default(0).notNull(),
-  snapshot: text("snapshot", { mode: "json" }),
-  status: text("status").default("generating").notNull(),
-  requestVersion: integer("request_version").default(0).notNull(),
-  completedVersion: integer("completed_version").default(0).notNull(),
-  operation: text("operation", { mode: "json" }),
-}, (table) => [primaryKey({ columns: [table.scopeId, table.id] })]);
 
 
 export const document = sqliteTable("documents", {

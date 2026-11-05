@@ -87,20 +87,6 @@ CREATE TABLE "jobs"."dispatch" (
 	"cooldowns" jsonb NOT NULL
 );
 --> statement-breakpoint
-CREATE TABLE "search"."knowledge_pages" (
-	"workspace_id" uuid,
-	"id" text,
-	"project_id" uuid,
-	"generation" integer DEFAULT 0 NOT NULL,
-	"snapshot" jsonb,
-	"status" text DEFAULT 'generating' NOT NULL,
-	"request_version" integer DEFAULT 0 NOT NULL,
-	"completed_version" integer DEFAULT 0 NOT NULL,
-	"operation" jsonb,
-	CONSTRAINT "knowledge_pages_pkey" PRIMARY KEY("workspace_id","id")
-);
---> statement-breakpoint
-ALTER TABLE "search"."knowledge_pages" ENABLE ROW LEVEL SECURITY;--> statement-breakpoint
 CREATE TABLE "app"."meeting_attachments" (
 	"id" uuid PRIMARY KEY,
 	"workspace_id" uuid NOT NULL,
@@ -132,26 +118,6 @@ CREATE TABLE "app"."meeting_events" (
 );
 --> statement-breakpoint
 ALTER TABLE "app"."meeting_events" ENABLE ROW LEVEL SECURITY;--> statement-breakpoint
-CREATE TABLE "jobs"."memory_documents" (
-	"workspace_id" uuid,
-	"document_id" text,
-	"source" jsonb NOT NULL,
-	"content_hash" text NOT NULL,
-	"ingestion_fingerprint" text,
-	"generation" integer NOT NULL,
-	CONSTRAINT "memory_documents_pkey" PRIMARY KEY("workspace_id","document_id")
-);
---> statement-breakpoint
-CREATE TABLE "jobs"."memory_source_jobs" (
-	"workspace_id" uuid,
-	"document_id" text,
-	"kind" text NOT NULL,
-	"source_id" uuid NOT NULL,
-	"generation" integer DEFAULT 1 NOT NULL,
-	"operation" jsonb,
-	CONSTRAINT "memory_source_jobs_pkey" PRIMARY KEY("workspace_id","document_id")
-);
---> statement-breakpoint
 CREATE TABLE "app"."organization_domains" (
 	"organization_id" uuid,
 	"domain" text,
@@ -176,45 +142,30 @@ CREATE TABLE "app"."personal_memories" (
 	"user_id" uuid NOT NULL,
 	"created_by" uuid NOT NULL,
 	"content" text NOT NULL,
+	"type" text NOT NULL,
 	"protected" boolean DEFAULT true NOT NULL,
 	"revision" integer DEFAULT 1 NOT NULL,
 	"updated_at" timestamp NOT NULL
 );
 --> statement-breakpoint
 ALTER TABLE "app"."personal_memories" ENABLE ROW LEVEL SECURITY;--> statement-breakpoint
-CREATE TABLE "jobs"."personal_memory_documents" (
-	"user_id" uuid,
-	"document_id" text,
-	"source" jsonb NOT NULL,
+CREATE TABLE "search"."personal_memory_chunks" (
+	"memory_id" uuid,
+	"chunk_no" integer,
+	"user_id" uuid NOT NULL,
+	"memory_revision" integer NOT NULL,
+	"chunk_text" text NOT NULL,
+	"search_text" text DEFAULT '' NOT NULL,
+	"search_vector" tsvector,
+	"analyzer" text NOT NULL,
 	"content_hash" text NOT NULL,
-	"ingestion_fingerprint" text,
-	"generation" integer NOT NULL,
-	CONSTRAINT "personal_memory_documents_pkey" PRIMARY KEY("user_id","document_id")
+	"embedding" real[],
+	"embedding_model" text,
+	CONSTRAINT "personal_memory_chunks_pkey" PRIMARY KEY("memory_id","chunk_no"),
+	CONSTRAINT "personal_memory_chunks_embedding_check" CHECK ("embedding" IS NULL OR cardinality("embedding") BETWEEN 32 AND 1024)
 );
 --> statement-breakpoint
-CREATE TABLE "jobs"."personal_memory_source_jobs" (
-	"user_id" uuid,
-	"document_id" text,
-	"kind" text NOT NULL,
-	"source_id" uuid NOT NULL,
-	"generation" integer DEFAULT 1 NOT NULL,
-	"operation" jsonb,
-	CONSTRAINT "personal_memory_source_jobs_pkey" PRIMARY KEY("user_id","document_id")
-);
---> statement-breakpoint
-CREATE TABLE "jobs"."personal_memory_state" (
-	"user_id" uuid PRIMARY KEY,
-	"enabled" boolean DEFAULT false NOT NULL,
-	"requested_by" uuid NOT NULL,
-	"bank_id" text NOT NULL,
-	"generation" integer DEFAULT 1 NOT NULL,
-	"indexed_generation" integer DEFAULT 0 NOT NULL,
-	"status" text DEFAULT 'pending' NOT NULL,
-	"purge" boolean DEFAULT false NOT NULL,
-	"reconcile" boolean DEFAULT true NOT NULL,
-	"progress" jsonb
-);
---> statement-breakpoint
+ALTER TABLE "search"."personal_memory_chunks" ENABLE ROW LEVEL SECURITY;--> statement-breakpoint
 CREATE TABLE "search"."documents" (
 	"document_id" uuid,
 	"workspace_id" uuid,
@@ -255,12 +206,30 @@ CREATE TABLE "app"."shared_memories" (
 	"workspace_id" uuid NOT NULL,
 	"created_by" uuid NOT NULL,
 	"content" text NOT NULL,
+	"type" text NOT NULL,
 	"protected" boolean DEFAULT true NOT NULL,
 	"revision" integer DEFAULT 1 NOT NULL,
 	"updated_at" timestamp NOT NULL
 );
 --> statement-breakpoint
 ALTER TABLE "app"."shared_memories" ENABLE ROW LEVEL SECURITY;--> statement-breakpoint
+CREATE TABLE "search"."shared_memory_chunks" (
+	"memory_id" uuid,
+	"chunk_no" integer,
+	"workspace_id" uuid NOT NULL,
+	"memory_revision" integer NOT NULL,
+	"chunk_text" text NOT NULL,
+	"search_text" text DEFAULT '' NOT NULL,
+	"search_vector" tsvector,
+	"analyzer" text NOT NULL,
+	"content_hash" text NOT NULL,
+	"embedding" real[],
+	"embedding_model" text,
+	CONSTRAINT "shared_memory_chunks_pkey" PRIMARY KEY("memory_id","chunk_no"),
+	CONSTRAINT "shared_memory_chunks_embedding_check" CHECK ("embedding" IS NULL OR cardinality("embedding") BETWEEN 32 AND 1024)
+);
+--> statement-breakpoint
+ALTER TABLE "search"."shared_memory_chunks" ENABLE ROW LEVEL SECURITY;--> statement-breakpoint
 CREATE TABLE "app"."summaries" (
 	"encrypted_payload" text,
 	"id" uuid PRIMARY KEY,
@@ -501,20 +470,6 @@ CREATE TABLE "crypto"."workspace_keys" (
 );
 --> statement-breakpoint
 ALTER TABLE "crypto"."workspace_keys" ENABLE ROW LEVEL SECURITY;--> statement-breakpoint
-CREATE TABLE "jobs"."workspace_memory_state" (
-	"workspace_id" uuid PRIMARY KEY,
-	"enabled" boolean DEFAULT false NOT NULL,
-	"images_enabled" boolean DEFAULT false NOT NULL,
-	"requested_by" uuid NOT NULL,
-	"bank_id" text NOT NULL,
-	"generation" integer DEFAULT 1 NOT NULL,
-	"indexed_generation" integer DEFAULT 0 NOT NULL,
-	"status" text DEFAULT 'pending' NOT NULL,
-	"purge" boolean DEFAULT false NOT NULL,
-	"reconcile" boolean DEFAULT true NOT NULL,
-	"progress" jsonb
-);
---> statement-breakpoint
 CREATE TABLE "app"."workspace_transfers" (
 	"sequence" bigserial PRIMARY KEY,
 	"id" uuid NOT NULL UNIQUE,
@@ -543,8 +498,10 @@ CREATE INDEX "organization_domains_domain_idx" ON "app"."organization_domains" (
 CREATE UNIQUE INDEX "organization_join_requests_pending_idx" ON "app"."organization_join_requests" ("organization_id","user_id") WHERE "status" = 'pending';--> statement-breakpoint
 CREATE INDEX "organization_join_requests_user_idx" ON "app"."organization_join_requests" ("user_id");--> statement-breakpoint
 CREATE INDEX "personal_memories_user_idx" ON "app"."personal_memories" ("user_id");--> statement-breakpoint
+CREATE INDEX "personal_memory_chunks_user_idx" ON "search"."personal_memory_chunks" ("user_id");--> statement-breakpoint
 CREATE INDEX "search_document_workspace_kind_meeting_document_idx" ON "search"."documents" ("workspace_id","kind","meeting_id","document_id");--> statement-breakpoint
 CREATE INDEX "shared_memories_workspace_idx" ON "app"."shared_memories" ("workspace_id");--> statement-breakpoint
+CREATE INDEX "shared_memory_chunks_workspace_idx" ON "search"."shared_memory_chunks" ("workspace_id");--> statement-breakpoint
 CREATE INDEX "summary_job_owner_created_idx" ON "jobs"."summary" ("owner_user_id","created_at");--> statement-breakpoint
 CREATE INDEX "sync_change_workspace_sequence_idx" ON "app"."sync_changes" ("workspace_id","sequence");--> statement-breakpoint
 CREATE INDEX "transaction_receipt_owner_created_idx" ON "app"."transaction_receipts" ("owner_user_id","created_at");--> statement-breakpoint
@@ -573,7 +530,6 @@ ALTER TABLE "app"."document_recoveries" ADD CONSTRAINT "documentRecovery_workspa
 ALTER TABLE "app"."document_updates" ADD CONSTRAINT "document_updates_document_id_documents_id_fkey" FOREIGN KEY ("document_id") REFERENCES "app"."documents"("id") ON DELETE CASCADE;--> statement-breakpoint
 ALTER TABLE "app"."document_updates" ADD CONSTRAINT "document_updates_workspace_id_workspaces_workspace_id_fkey" FOREIGN KEY ("workspace_id") REFERENCES "app"."workspaces"("workspace_id") ON DELETE CASCADE;--> statement-breakpoint
 ALTER TABLE "app"."document_updates" ADD CONSTRAINT "documentUpdate_workspace_fk" FOREIGN KEY ("workspace_id","document_id") REFERENCES "app"."documents"("workspace_id","id") ON DELETE CASCADE ON UPDATE CASCADE;--> statement-breakpoint
-ALTER TABLE "search"."knowledge_pages" ADD CONSTRAINT "knowledge_pages_workspace_id_workspaces_workspace_id_fkey" FOREIGN KEY ("workspace_id") REFERENCES "app"."workspaces"("workspace_id") ON DELETE CASCADE;--> statement-breakpoint
 ALTER TABLE "app"."meeting_attachments" ADD CONSTRAINT "meeting_attachments_vQf2DeRIoS0x_fkey" FOREIGN KEY ("workspace_id","meeting_id") REFERENCES "app"."meetings"("workspace_id","meeting_id") ON DELETE CASCADE;--> statement-breakpoint
 ALTER TABLE "app"."meeting_attachments" ADD CONSTRAINT "meeting_attachments_hqOEFenFD03M_fkey" FOREIGN KEY ("workspace_id","file_id") REFERENCES "app"."files"("workspace_id","file_id");--> statement-breakpoint
 ALTER TABLE "app"."meeting_events" ADD CONSTRAINT "meeting_events_workspace_id_workspaces_workspace_id_fkey" FOREIGN KEY ("workspace_id") REFERENCES "app"."workspaces"("workspace_id") ON DELETE CASCADE;--> statement-breakpoint
@@ -583,8 +539,10 @@ ALTER TABLE "app"."organization_join_requests" ADD CONSTRAINT "organization_join
 ALTER TABLE "app"."organization_join_requests" ADD CONSTRAINT "organization_join_requests_user_id_user_id_fkey" FOREIGN KEY ("user_id") REFERENCES "auth"."user"("id") ON DELETE CASCADE;--> statement-breakpoint
 ALTER TABLE "app"."organization_join_requests" ADD CONSTRAINT "organization_join_requests_resolved_by_user_id_fkey" FOREIGN KEY ("resolved_by") REFERENCES "auth"."user"("id") ON DELETE SET NULL;--> statement-breakpoint
 ALTER TABLE "app"."personal_memories" ADD CONSTRAINT "personal_memories_user_id_user_id_fkey" FOREIGN KEY ("user_id") REFERENCES "auth"."user"("id") ON DELETE CASCADE;--> statement-breakpoint
+ALTER TABLE "search"."personal_memory_chunks" ADD CONSTRAINT "personal_memory_chunks_memory_id_personal_memories_id_fkey" FOREIGN KEY ("memory_id") REFERENCES "app"."personal_memories"("id") ON DELETE CASCADE;--> statement-breakpoint
 ALTER TABLE "search"."documents" ADD CONSTRAINT "search_document_meeting_fk" FOREIGN KEY ("workspace_id","meeting_id") REFERENCES "app"."meetings"("workspace_id","meeting_id") ON DELETE CASCADE;--> statement-breakpoint
 ALTER TABLE "app"."shared_memories" ADD CONSTRAINT "shared_memories_workspace_id_workspaces_workspace_id_fkey" FOREIGN KEY ("workspace_id") REFERENCES "app"."workspaces"("workspace_id") ON DELETE CASCADE;--> statement-breakpoint
+ALTER TABLE "search"."shared_memory_chunks" ADD CONSTRAINT "shared_memory_chunks_memory_id_shared_memories_id_fkey" FOREIGN KEY ("memory_id") REFERENCES "app"."shared_memories"("id") ON DELETE CASCADE;--> statement-breakpoint
 ALTER TABLE "app"."summaries" ADD CONSTRAINT "summaries_meeting_id_meetings_meeting_id_fkey" FOREIGN KEY ("meeting_id") REFERENCES "app"."meetings"("meeting_id") ON DELETE CASCADE;--> statement-breakpoint
 ALTER TABLE "jobs"."summary" ADD CONSTRAINT "summary_queue_id_queue_id_fkey" FOREIGN KEY ("queue_id") REFERENCES "jobs"."queue"("id") ON DELETE CASCADE;--> statement-breakpoint
 ALTER TABLE "jobs"."summary" ADD CONSTRAINT "jobs_summary_workspace_id_workspaces_workspace_id_fkey" FOREIGN KEY ("workspace_id") REFERENCES "app"."workspaces"("workspace_id") ON DELETE CASCADE;--> statement-breakpoint
