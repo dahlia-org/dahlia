@@ -134,7 +134,7 @@ v41 以前の BLOB はファイルの検証と参照切り替えが成功した�
 
 ## 90日保持と正本からの復帰（2026-09-06）
 
-change ledger は同期専用として90日の差分復帰を保証し、それ以前と新規端末は正本 snapshot を取得する。Workspace ごとの最新 sequence と削除済み境界を永続化し、境界更新と履歴削除を同一 transaction にする。delta の全ページが境界を検査し、期限切れは `410 sync_cursor_expired` とする。
+change ledger は同期専用として90日の差分復帰を保証し、それ以前と新規端末は正本 snapshot を取得する。Workspace ごとの最新 sequence と削除済み境界を永続化し、境界更新と履歴削除を同一 transaction にする。delta の全ページが境界を検査し、期限切れと最新 sequence を超える cursor（Server の復元後に残った cursor など）は `410 sync_cursor_expired` とする。
 
 snapshot は entity / ID の keyset pagination と開始 cursor を返す。複数リクエストを跨ぐ DB transaction は持たず、開始 cursor 以降の delta で追加・更新・削除を補正する。開始 cursor が期限切れなら再取得する。Desktop は内容を一時 SQLite に退避し、取得と補正の完了後に既存 remote applier で適用する。未送信 queue がある間は適用せず、編集・接続変更の永続 generation と録音状態を各適用 transaction で検査する。不一致なら削除照合・checkpoint 確定を保留する。内容書き込みはページで区切り、全体の内容をメモリに展開しない。Project と照合用 ID は既存 applier の metadata 集合を再利用する。
 
@@ -153,7 +153,7 @@ metadata の Record は本文を持たず、本文を含む読取結果とは型
 
 capabilities は `{ "sync": { "version": 4 }, "meetingEvents": { "version": 1 } }` のように機能別の対応 version を返す。`sync: { version: 4 }` は transaction schema 2、snapshot / delta 復旧、receipt 解決、metadata 同期と本文の個別取得を含む同期契約を表す。`meetingEvents: { version: 1 }` は会議イベントの受付契約を表す。entity revision や payload schema の version とは区別する。非対応の機能はフィールドを省略し、atomic sync 非対応の store は全機能を省いた `200 {}` を返す。認証・運用エラーは通常のエラーとして返す。クライアントは未知のフィールドを無視する。旧フィールドと旧ルートは維持しない。
 
-`GET /api/v1/capabilities` の `sync: { version: 4 }` を確認する。snapshot / changes は常に meeting の重複 summary と検索用本文、summary document、file の OCR / caption、transcript 本文を省く。content query と contentMode response は廃止する。非対応では `updateRequired` を表示し、既存本文を保持して同期・解放を止める。transaction schema 2 は維持する。要約本文は既存の meeting 配下の summary/latest、文字起こしは meeting 配下の transcript/latest または transcript/{version} を使う。履歴番号 version と同期用 syncRevision は分離する。file は個別 metadata JSON から OCR / caption（nullable）と revision を1回で取得し、ID・Workspace・checksum・同期済み revision と保存直前の編集保護を照合する。版が違えば通常同期後に1回再取得し、不一致や失敗では旧本文と未取得状態を保持する。依存取得は metadata のみ反映し、本文補完から confirmed revision を更新しない。不要となった text/file は削除する。
+`GET /api/v1/capabilities` の `sync: { version: 4 }` を確認する。snapshot / changes は常に meeting の重複 summary と検索用本文、summary document、file の OCR / caption、transcript 本文を省く。content query と contentMode response は廃止する。非対応では `updateRequired` を表示し、既存本文を保持して同期・解放を止める。受信は60秒ごとに capability を再確認し、Server の更新後は再起動なしで再開する。transaction schema 2 は維持する。要約本文は既存の meeting 配下の summary/latest、文字起こしは meeting 配下の transcript/latest または transcript/{version} を使う。履歴番号 version と同期用 syncRevision は分離する。file は個別 metadata JSON から OCR / caption（nullable）と revision を1回で取得し、ID・Workspace・checksum・同期済み revision と保存直前の編集保護を照合する。版が違えば通常同期後に1回再取得し、不一致や失敗では旧本文と未取得状態を保持する。依存取得は metadata のみ反映し、本文補完から confirmed revision を更新しない。不要となった text/file は削除する。
 
 GET /files/{fileId} は原本、HEAD は同じ認可で原本の存在・HTTP header を確認する。HEAD は本文を送らず、各 storage の HEAD / stat を再利用する。アプリの metadata を独自 HTTP header に移さない。
 

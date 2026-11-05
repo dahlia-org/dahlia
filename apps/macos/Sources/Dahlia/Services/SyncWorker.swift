@@ -13,8 +13,6 @@ actor SyncWorker {
         case block(String)
     }
 
-    private static let transcriptChunkSize = 500
-    private static let transcriptChunkMaximumBytes = 6 * 1024 * 1024
     private static let transcriptPatchItemLimit = 50000
     private static let transcriptPatchMaximumChunks = 100
 
@@ -46,7 +44,9 @@ actor SyncWorker {
     var relocationResults: [RelocationKey: Date] = [:]
     var relocationRequests: [RelocationKey: (id: UUID, task: Task<WorkspaceRelocation, Error>)] = [:]
     private var knownCapabilities: [UUID: ServerCapabilities] = [:]
-    private var updateRequiredWorkspaces: Set<UUID> = []
+    /// Pull skips an update-required Workspace only until the next check, so a Server upgrade resumes without a relaunch.
+    private var updateRequiredWorkspaces: [UUID: ContinuousClock.Instant] = [:]
+    private let updateRequiredRetryInterval: Duration
     private struct PullKey: Hashable { let database: ObjectIdentifier
         let workspaceId: UUID
     }
@@ -60,9 +60,11 @@ actor SyncWorker {
         apiClient: SyncAPIClient? = nil,
         screenshotContent: ScreenshotContentProvider = .shared,
         meetingContent: MeetingContentProvider = .shared,
+        updateRequiredRetryInterval: Duration = .seconds(60),
         workspacesDidChange: @escaping @MainActor @Sendable () async -> Void = {}
     ) {
         self.dbQueue = dbQueue
+        self.updateRequiredRetryInterval = updateRequiredRetryInterval
         self.session = session
         self.apiClient = apiClient ?? SyncAPIClient(session: session)
         self.screenshotContent = screenshotContent
@@ -232,7 +234,14 @@ actor SyncWorker {
 
     private func processClaim(_ transaction: SyncQueuedTransaction) async throws {
         do {
-            try await screenshotContent.migrateLegacyImages(workspaceId: transaction.workspaceId, dbQueue: dbQueue)
+            do {
+                try await screenshotContent.migrateLegacyImages(workspaceId: transaction.workspaceId, dbQueue: dbQueue)
+            } catch is CancellationError {
+                throw CancellationError()
+            } catch where !transaction.operations.contains(where: { $0.entity == .file }) {
+                // One unreadable legacy image must not block unrelated transactions in its Workspace.
+                ErrorReportingService.capture(error, context: ["source": "syncLegacyImages"])
+            }
             if let response = try await push(transaction) {
                 try await SyncTransactionQueue.complete(transaction, response: response, dbQueue: dbQueue)
             }
@@ -254,7 +263,7 @@ actor SyncWorker {
                 return
             }
             if error.status == 426 {
-                updateRequiredWorkspaces.insert(transaction.workspaceId)
+                updateRequiredWorkspaces[transaction.workspaceId] = .now
                 let response = String(decoding: SyncTransactionQueue.problemData(
                     code: error.code ?? "sync_upgrade_required",
                     status: error.status
@@ -397,21 +406,27 @@ actor SyncWorker {
         }
         let body = try await transactionBody(transaction, origin: target, stageAttachments: false)
         let typedBody = try SyncJSON.decoder.decode(Components.Schemas.Transaction.self, from: body)
-        if transaction.attempts > 1 {
-            let resolved = try await sendData(
-                origin: target,
-                connectionId: transaction.connectionId,
-                upgradeOnMissing: true,
-                preservingJSONBody: body
-            ) {
-                try await $0.resolveTransaction(body: .json(typedBody)).ok.body.json
+        func resolve() async throws -> SyncTransactionResponse? {
+            let (resolution, resolved) = try await readingServerAnswer {
+                let resolved = try await sendData(
+                    origin: target,
+                    connectionId: transaction.connectionId,
+                    upgradeOnMissing: true,
+                    preservingJSONBody: body
+                ) {
+                    try await $0.resolveTransaction(body: .json(typedBody)).ok.body.json
+                }
+                return try (SyncJSON.decoder.decode(SyncTransactionResolution.self, from: resolved), resolved)
             }
-            let resolution = try SyncJSON.decoder.decode(SyncTransactionResolution.self, from: resolved)
             guard resolution.id == transaction.id else { throw SyncTransactionQueueError.invalidReceipt }
             if resolution.status == "committed" {
-                return try SyncJSON.decoder.decode(SyncTransactionResponse.self, from: resolved)
+                return try await readingServerAnswer { try SyncJSON.decoder.decode(SyncTransactionResponse.self, from: resolved) }
             }
             guard resolution.status == "unknown" else { throw SyncTransactionQueueError.invalidReceipt }
+            return nil
+        }
+        if transaction.attempts > 1 {
+            if let committed = try await resolve() { return committed }
             // Claims with uncertain responses may bypass predecessors solely to resolve
             // their original receipt. An unknown result is not permission to commit early.
             if try await !dbQueue.read({ try SyncTransactionQueue.prerequisitesReady(transaction, in: $0) }) {
@@ -434,18 +449,37 @@ actor SyncWorker {
         guard try await dbQueue.read({ db in
             try SyncTransactionQueue.isCurrentForCommit(transaction, in: db)
         }) else { throw CancellationError() }
-        let data: Data
         do {
-            data = try await sendData(origin: target, connectionId: transaction.connectionId, preservingJSONBody: body) {
-                try await $0.commitTransaction(body: .json(typedBody)).ok.body.json
+            return try await readingServerAnswer {
+                let data = try await sendData(origin: target, connectionId: transaction.connectionId, preservingJSONBody: body) {
+                    try await $0.commitTransaction(body: .json(typedBody)).ok.body.json
+                }
+                return try SyncJSON.decoder.decode(SyncTransactionResponse.self, from: data)
             }
         } catch let error as SyncHTTPError {
+            if error.status == 410, error.code == "transaction_receipt_expired" {
+                // The Server committed this request earlier; only resolve returns its compact receipt.
+                guard let committed = try await resolve() else { throw SyncTransactionQueueError.invalidReceipt }
+                return committed
+            }
             if [403, 404, 409].contains(error.status) {
                 _ = try await reconcileRelocations(workspaceId: transaction.workspaceId, connectionId: transaction.connectionId, origin: target)
             }
             throw error
         }
-        return try SyncJSON.decoder.decode(SyncTransactionResponse.self, from: data)
+    }
+
+    /// The commit may already have reached the Server, so a reply this client cannot read must not block the request.
+    /// Retrying makes the next attempt ask the Server again under the same request ID.
+    private func readingServerAnswer<T>(_ exchange: () async throws -> T) async throws -> T {
+        do {
+            return try await exchange()
+        } catch let error as SyncHTTPError {
+            throw error
+        } catch {
+            guard case .block = Self.localQueueFailureDisposition(error) else { throw error }
+            throw SyncHTTPError(status: 502, body: SyncTransactionQueue.problemData(code: "invalid_sync_response", status: 502))
+        }
     }
 
     private func transactionBody(
@@ -597,83 +631,6 @@ actor SyncWorker {
         ))
     }
 
-    static func transcriptChunks(
-        _ snapshot: SyncTranscriptPatchSnapshot
-    ) throws -> [(body: TranscriptChunkBody, data: Data)] {
-        let segments = snapshot.segments.map {
-            TranscriptChunkBody.Segment(
-                segmentId: $0.segmentId,
-                startedAt: $0.startTime,
-                endedAt: $0.endTime,
-                text: $0.text,
-                createdAt: $0.createdAt,
-                audioSource: $0.audioSource,
-                speakerLabel: $0.speakerLabel
-            )
-        }
-        var segmentOffset = 0
-        var deletionOffset = 0
-        var chunks: [(body: TranscriptChunkBody, data: Data)] = []
-        repeat {
-            let segmentEnd = min(segmentOffset + transcriptChunkSize, segments.count)
-            let deletionEnd = min(deletionOffset + transcriptChunkSize, snapshot.deletions.count)
-            let combined = TranscriptChunkBody(
-                segments: Array(segments[segmentOffset ..< segmentEnd]),
-                deletions: Array(snapshot.deletions[deletionOffset ..< deletionEnd])
-            )
-            let combinedData = try SyncJSON.encoder.encode(combined)
-            if combinedData.count <= transcriptChunkMaximumBytes {
-                chunks.append((combined, combinedData))
-                segmentOffset = segmentEnd
-                deletionOffset = deletionEnd
-                continue
-            }
-
-            if segmentOffset < segmentEnd {
-                let chunk = try largestTranscriptChunk(maximumCount: segmentEnd - segmentOffset) { count in
-                    TranscriptChunkBody(
-                        segments: Array(segments[segmentOffset ..< segmentOffset + count]),
-                        deletions: []
-                    )
-                }
-                chunks.append(chunk)
-                segmentOffset += chunk.body.segments.count
-            } else {
-                let chunk = try largestTranscriptChunk(maximumCount: deletionEnd - deletionOffset) { count in
-                    TranscriptChunkBody(
-                        segments: [],
-                        deletions: Array(snapshot.deletions[deletionOffset ..< deletionOffset + count])
-                    )
-                }
-                chunks.append(chunk)
-                deletionOffset += chunk.body.deletions.count
-            }
-        } while segmentOffset < segments.count || deletionOffset < snapshot.deletions.count || chunks.isEmpty
-        return chunks
-    }
-
-    private static func largestTranscriptChunk(
-        maximumCount: Int,
-        body: (Int) -> TranscriptChunkBody
-    ) throws -> (body: TranscriptChunkBody, data: Data) {
-        var lower = 1
-        var upper = maximumCount
-        var result: (body: TranscriptChunkBody, data: Data)?
-        while lower <= upper {
-            let count = (lower + upper) / 2
-            let candidate = body(count)
-            let data = try SyncJSON.encoder.encode(candidate)
-            if data.count <= transcriptChunkMaximumBytes {
-                result = (candidate, data)
-                lower = count + 1
-            } else {
-                upper = count - 1
-            }
-        }
-        guard let result else { throw SyncTransactionQueueError.invalidReceipt }
-        return result
-    }
-
     func pullRemoteChanges(workspaceId: UUID, connectionId: UUID, schedulesMaintenance: Bool = true) async throws -> Bool {
         guard let target = try await pullTarget(workspaceId: workspaceId, connectionId: connectionId) else {
             throw TextContentError.changed
@@ -814,6 +771,8 @@ actor SyncWorker {
     }
 
     func retryPull(workspaceId: UUID, connectionId: UUID) async throws {
+        // An explicit retry checks the Server now instead of waiting out the update-required interval.
+        updateRequiredWorkspaces[workspaceId] = nil
         do {
             _ = try await pullRemoteChanges(workspaceId: workspaceId, connectionId: connectionId)
         } catch TextContentError.changed {
@@ -969,7 +928,8 @@ actor SyncWorker {
         }
         let recoveryState = try await dbQueue
             .read { try String.fetchOne($0, sql: "SELECT syncRecoveryState FROM workspaces WHERE id = ?", arguments: [target.workspaceId]) }
-        if recoveryState == "updateRequired" {
+        // A pull that read its target before a push latched update-required must not clear that newer state.
+        if recoveryState == "updateRequired", !updateRequiredRecently(target.workspaceId) {
             try await dbQueue.write { db in
                 try db.execute(
                     sql: "UPDATE workspaces SET syncRecoveryState = NULL WHERE id = ? AND accountConnectionId = ?",
@@ -1136,9 +1096,13 @@ actor SyncWorker {
         return true
     }
 
+    private func updateRequiredRecently(_ workspaceId: UUID) -> Bool {
+        updateRequiredWorkspaces[workspaceId].map { $0 > .now - updateRequiredRetryInterval } ?? false
+    }
+
     private func setRecoveryState(_ state: String, target: SyncTarget, resetCursor: Bool = false) async throws {
         if state == "updateRequired" {
-            updateRequiredWorkspaces.insert(target.workspaceId)
+            updateRequiredWorkspaces[target.workspaceId] = .now
         }
         try await dbQueue.write { db in
             guard try SyncTransactionQueue.matchesExpectedConnection(
@@ -1619,7 +1583,7 @@ actor SyncWorker {
     }
 
     private func pullTargets() async throws -> [SyncTarget] {
-        let updateRequiredWorkspaces = updateRequiredWorkspaces
+        let updateRequiredWorkspaces = Set(updateRequiredWorkspaces.keys.filter(updateRequiredRecently))
         return try await dbQueue.read { db in
             try Row.fetchAll(
                 db,
@@ -1678,12 +1642,29 @@ actor SyncWorker {
     }
 
     private func consumeEvents(connectionId: UUID, origin: URL) async {
+        // Only a connection that follows a failed connect shows the Server came back; a routine close does not.
+        var recovering = true
         while !Task.isCancelled {
+            let body: HTTPBody
             do {
-                let body = try await apiClient.perform(origin: origin, connectionId: connectionId) {
+                body = try await apiClient.perform(origin: origin, connectionId: connectionId) {
                     try await $0.getEvents().ok.body.textEventStream
                 }
+            } catch is CancellationError {
+                return
+            } catch {
+                recovering = true
+                try? await Task.sleep(for: .seconds(5))
+                continue
+            }
+            do {
                 _ = await MainActor.run { ServerAccountSettingsModel.shared.refresh(connectionID: connectionId) }
+                if recovering {
+                    // The Server is reachable again; do not wait out transport backoff.
+                    try await SyncTransactionQueue.retryNetworkFailuresNow(connectionId: connectionId, dbQueue: dbQueue)
+                    drain()
+                    recovering = false
+                }
                 try await pullRemoteChanges()
                 for try await event in body.asDecodedServerSentEvents() {
                     try Task.checkCancellation()
@@ -1691,6 +1672,8 @@ actor SyncWorker {
                         try await pullRemoteChanges()
                     }
                 }
+                // A proxy or shutting-down Server can close the stream at once; never reconnect in a tight loop.
+                try await Task.sleep(for: .seconds(5))
             } catch is CancellationError {
                 return
             } catch {

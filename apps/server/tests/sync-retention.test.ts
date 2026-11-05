@@ -13,7 +13,7 @@ import type { AppConfig } from "../src/config";
 import { pruneSyncHistory } from "../src/sync/retention";
 import { TextContentDigest } from "../src/sync/text-content";
 import { MeetingSyncService } from "../src/sync/service";
-import { decodeSyncCursor, SYNC_HISTORY_RETENTION_MS, SYNC_SNAPSHOT_PAGE_BYTES } from "../src/sync/store";
+import { decodeSyncCursor, encodeSyncCursor, isRetryableDatabaseError, SYNC_HISTORY_RETENTION_MS, SYNC_SNAPSHOT_PAGE_BYTES } from "../src/sync/store";
 import type { SyncTransactionOperation } from "../src/sync/types";
 
 const owner: Identity = { userId: testUserID("retention-owner"),  source: "header" };
@@ -129,6 +129,14 @@ describe("sync history retention", () => {
     },
   );
 
+  it("retries only transient PostgreSQL failures, including when the driver error is wrapped", () => {
+    const pg = (code: string) => Object.assign(new Error("canceling statement due to lock timeout"), { code });
+    expect(isRetryableDatabaseError(pg("55P03"))).toBe(true);
+    expect(isRetryableDatabaseError(new Error("Failed query", { cause: pg("40P01") }))).toBe(true);
+    expect(isRetryableDatabaseError(pg("23505"))).toBe(false);
+    expect(isRetryableDatabaseError("55P03")).toBe(false);
+  });
+
   it("rolls back a failed SQLite prune and drains a ledger across bounded batches", async () => {
     const { store, raw, workspaceId, receipt } = await setup();
     const insert = raw.prepare("INSERT INTO sync_changes(workspace_id, entity, entity_id, action, revision, transaction_id) VALUES (?, 'workspace', ?, 'upsert', 1, ?)");
@@ -187,6 +195,8 @@ describe("sync history retention", () => {
     expect(await service.latestCursor(owner)).toBe(receipt.cursor);
     await expect(service.listChanges(owner, workspaceId)).rejects.toMatchObject({ status: 410, code: "sync_cursor_expired" });
     expect(await service.listChanges(owner, workspaceId, receipt.cursor)).toMatchObject({ items: [], cursor: receipt.cursor, hasMore: false });
+    await expect(service.listChanges(owner, workspaceId, encodeSyncCursor(decodeSyncCursor(receipt.cursor) + 1)))
+      .rejects.toMatchObject({ status: 410, code: "sync_cursor_expired" });
     const snapshot = await service.listSnapshot(owner, workspaceId);
     expect(snapshot).toMatchObject({ startCursor: receipt.cursor, nextCursor: null, items: [{ entity: "workspace", id: workspaceId }] });
     const next = await service.commitTransaction(owner, body(workspaceId, [{

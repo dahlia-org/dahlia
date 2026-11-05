@@ -34,10 +34,11 @@ struct SyncAPIClient: Sendable {
         } catch DahliaCloudError.noCredential {
             throw SyncHTTPError(status: 401, body: Data(#"{"code":"sign_in_required"}"#.utf8))
         } catch let DahliaCloudError.tokenRequestFailed(status) {
-            guard !(400 ..< 500).contains(status) else {
+            // Only a definitive rejection of the refresh token needs sign-in; throttling and outages must retry.
+            guard !(400 ..< 500).contains(status) || [408, 425, 429].contains(status) else {
                 throw SyncHTTPError(status: 401, body: Data(#"{"code":"sign_in_required"}"#.utf8))
             }
-            throw SyncHTTPError(status: status, body: Data(#"{"code":"token_request_failed"}"#.utf8))
+            throw SyncHTTPError(status: status == 0 ? 503 : status, body: Data(#"{"code":"token_request_failed"}"#.utf8))
         } catch is CancellationError {
             throw CancellationError()
         } catch let error as URLError {

@@ -1666,6 +1666,201 @@
         }
 
         @Test(.timeLimit(.minutes(1)))
+        func updateRequiredPullRecoversInTheSameWorkerAfterServerUpdate() async throws {
+            let fixture = try Fixture()
+            let serverReady = Mutex(false)
+            let changes = Data(#"{"items":[],"cursor":"after","highWaterCursor":"after","hasMore":false}"#.utf8)
+            let client = fixture.client { request in
+                let path = request.url!.path
+                if path.hasSuffix("capabilities") {
+                    return (200, [:], Data(#"{"documents":{"version":1},"sync":{"version":7}}"#.utf8))
+                }
+                if path == "/api/v1/workspaces" { return (200, [:], Data(#"{"items":[]}"#.utf8)) }
+                return serverReady.withLock { $0 } ? (200, [:], changes) :
+                    (426, [:], Data(#"{"code":"sync_update_required"}"#.utf8))
+            }
+            defer { ImageURLProtocol.remove(origin: fixture.origin) }
+            let worker = SyncWorker(dbQueue: fixture.queue, apiClient: client, updateRequiredRetryInterval: .zero)
+
+            await #expect(throws: SyncHTTPError.self) {
+                try await worker.retryPull(workspaceId: fixture.workspaceId, connectionId: fixture.connectionId)
+            }
+            serverReady.withLock { $0 = true }
+            let recovery = ValueObservation.tracking { db -> (String?, String?) in
+                guard let workspace = try WorkspaceRecord.fetchOne(db, key: fixture.workspaceId) else { return (nil, nil) }
+                return (workspace.syncRecoveryState, workspace.syncPullErrorJSON)
+            }.values(in: fixture.queue)
+            await worker.drain()
+            for try await state in recovery where state.0 == nil && state.1 == nil {
+                break
+            }
+            await worker.stop()
+        }
+
+        @Test(.timeLimit(.minutes(1)), arguments: [
+            ("/api/v1/transactions", "text/html", "<html>Sign in to the network</html>"),
+            ("/api/v1/transactions", "application/json", #"{"id":"not-a-receipt"}"#),
+            ("/api/v1/transactions/resolve", "text/html", "<html>Sign in to the network</html>"),
+            ("/api/v1/transactions/resolve", "application/json", #"{"id":"not-a-resolution"}"#),
+        ])
+        func unreadableServerAnswerRetriesInsteadOfBlocking(endpoint: String, contentType: String, response: String) async throws {
+            let fixture = try Fixture()
+            let recordedTransactionId = try await fixture.queue.write { db in
+                let workspace = try #require(try WorkspaceRecord.fetchOne(db, key: fixture.workspaceId))
+                try db.execute(
+                    sql: "INSERT INTO sync_entity_state VALUES (?, 'workspace', ?, 1)",
+                    arguments: [fixture.workspaceId, fixture.workspaceId]
+                )
+                return try SyncTransactionRecorder.record(
+                    workspaceId: fixture.workspaceId,
+                    operations: [SyncInitialSnapshotBuilder.workspaceOperation(workspace, action: .update)],
+                    in: db
+                )
+            }
+            let transactionId = try #require(recordedTransactionId)
+            let resolving = endpoint.hasSuffix("/resolve")
+            if resolving {
+                // An earlier attempt with an unknown outcome makes this claim resolve before it commits.
+                try await fixture.queue.write { db in
+                    try db.execute(sql: "UPDATE sync_transactions SET attempts = 1 WHERE id = ?", arguments: [transactionId])
+                }
+            }
+            let emptyChanges = Data(#"{"items":[],"cursor":"before","highWaterCursor":"before","hasMore":false}"#.utf8)
+            let client = fixture.client { request in
+                let path = request.url!.path
+                if path.hasSuffix("capabilities") {
+                    return (200, [:], Data(#"{"documents":{"version":1},"sync":{"version":7}}"#.utf8))
+                }
+                if path.hasSuffix("changes") { return (200, [:], emptyChanges) }
+                if path == "/api/v1/workspaces" { return (503, [:], Data()) }
+                if path == endpoint { return (200, ["Content-Type": contentType], Data(response.utf8)) }
+                return (404, [:], Data())
+            }
+            defer { ImageURLProtocol.remove(origin: fixture.origin) }
+            let responses = ValueObservation.tracking { db in
+                try String.fetchOne(db, sql: "SELECT serverResponseJSON FROM sync_transactions WHERE id = ?", arguments: [transactionId])
+            }.values(in: fixture.queue)
+            let worker = SyncWorker(dbQueue: fixture.queue, apiClient: client)
+            await worker.drain()
+            for try await response in responses where response != nil {
+                break
+            }
+            await worker.stop()
+
+            try await fixture.queue.read { db throws in
+                let row = try #require(try Row.fetchOne(
+                    db,
+                    sql: "SELECT blockedReason, attempts, serverResponseJSON FROM sync_transactions WHERE id = ?",
+                    arguments: [transactionId]
+                ))
+                // The Server may have committed it, so the next attempt must resolve the original ID rather than block.
+                #expect(row["blockedReason"] as String? == nil)
+                #expect(row["attempts"] as Int == (resolving ? 2 : 1))
+                let problem = try #require(JSONSerialization.jsonObject(with: Data((row["serverResponseJSON"] as String).utf8)) as? [String: Any])
+                #expect(problem["code"] as? String == "http_502")
+            }
+        }
+
+        @Test(.timeLimit(.minutes(1)))
+        func expiredCommitReceiptCompletesThroughResolve() async throws {
+            let fixture = try Fixture()
+            let recordedTransactionId = try await fixture.queue.write { db in
+                let workspace = try #require(try WorkspaceRecord.fetchOne(db, key: fixture.workspaceId))
+                try db.execute(
+                    sql: "INSERT INTO sync_entity_state VALUES (?, 'workspace', ?, 1)",
+                    arguments: [fixture.workspaceId, fixture.workspaceId]
+                )
+                return try SyncTransactionRecorder.record(
+                    workspaceId: fixture.workspaceId,
+                    operations: [SyncInitialSnapshotBuilder.workspaceOperation(workspace, action: .update)],
+                    in: db
+                )
+            }
+            let transactionId = try #require(recordedTransactionId)
+            let emptyChanges = Data(#"{"items":[],"cursor":"before","highWaterCursor":"before","hasMore":false}"#.utf8)
+            let receipt = try JSONSerialization.data(withJSONObject: [
+                "id": transactionId.uuidString,
+                "status": "committed",
+                "receipt": "compact",
+                "cursor": "after",
+                "records": [["entity": "workspace", "id": fixture.workspaceId.uuidString, "revision": 2, "record": NSNull()]],
+            ])
+            let client = fixture.client { request in
+                let path = request.url!.path
+                if path.hasSuffix("capabilities") {
+                    return (200, [:], Data(#"{"documents":{"version":1},"sync":{"version":7}}"#.utf8))
+                }
+                if path.hasSuffix("changes") { return (200, [:], emptyChanges) }
+                if path == "/api/v1/workspaces" { return (503, [:], Data()) }
+                if path.hasSuffix("/resolve") { return (200, [:], receipt) }
+                if path == "/api/v1/transactions" {
+                    return (410, [:], Data(#"{"code":"transaction_receipt_expired"}"#.utf8))
+                }
+                return (404, [:], Data())
+            }
+            defer { ImageURLProtocol.remove(origin: fixture.origin) }
+            let pendingCounts = ValueObservation.tracking { db in
+                try Int.fetchOne(db, sql: "SELECT count(*) FROM sync_transactions WHERE id = ?", arguments: [transactionId]) ?? 0
+            }.values(in: fixture.queue)
+            let worker = SyncWorker(dbQueue: fixture.queue, apiClient: client)
+            await worker.drain()
+            for try await count in pendingCounts where count == 0 {
+                break
+            }
+            await worker.stop()
+        }
+
+        @Test(.timeLimit(.minutes(1)))
+        func pullAfterAPushUpgradeRequirementKeepsItUntilAnExplicitRetry() async throws {
+            let fixture = try Fixture()
+            _ = try await fixture.queue.write { db in
+                let workspace = try #require(try WorkspaceRecord.fetchOne(db, key: fixture.workspaceId))
+                try db.execute(
+                    sql: "INSERT INTO sync_entity_state VALUES (?, 'workspace', ?, 1)",
+                    arguments: [fixture.workspaceId, fixture.workspaceId]
+                )
+                return try SyncTransactionRecorder.record(
+                    workspaceId: fixture.workspaceId,
+                    operations: [SyncInitialSnapshotBuilder.workspaceOperation(workspace, action: .update)],
+                    in: db
+                )
+            }
+            let emptyChanges = Data(#"{"items":[],"cursor":"before","highWaterCursor":"before","hasMore":false}"#.utf8)
+            let client = fixture.client { request in
+                let path = request.url!.path
+                if path.hasSuffix("capabilities") {
+                    return (200, [:], Data(#"{"documents":{"version":1},"sync":{"version":7}}"#.utf8))
+                }
+                if path.hasSuffix("changes") { return (200, [:], emptyChanges) }
+                if path == "/api/v1/workspaces" { return (503, [:], Data()) }
+                if path == "/api/v1/transactions" { return (426, [:], Data(#"{"code":"sync_upgrade_required"}"#.utf8)) }
+                return (404, [:], Data())
+            }
+            defer { ImageURLProtocol.remove(origin: fixture.origin) }
+            let recoveryStates = ValueObservation.tracking { db in
+                try String.fetchOne(db, sql: "SELECT syncRecoveryState FROM workspaces WHERE id = ?", arguments: [fixture.workspaceId])
+            }.values(in: fixture.queue)
+            let worker = SyncWorker(dbQueue: fixture.queue, apiClient: client)
+            await worker.drain()
+            for try await state in recoveryStates where state == "updateRequired" {
+                break
+            }
+            await worker.stop()
+            func recoveryState() async throws -> String? {
+                try await fixture.queue.read {
+                    try String.fetchOne($0, sql: "SELECT syncRecoveryState FROM workspaces WHERE id = ?", arguments: [fixture.workspaceId])
+                }
+            }
+
+            // A pull whose capability check passes must not clear the requirement a push just recorded.
+            _ = try await worker.pullRemoteChanges(workspaceId: fixture.workspaceId, connectionId: fixture.connectionId)
+            #expect(try await recoveryState() == "updateRequired")
+
+            try await worker.retryPull(workspaceId: fixture.workspaceId, connectionId: fixture.connectionId)
+            #expect(try await recoveryState() == nil)
+        }
+
+        @Test(.timeLimit(.minutes(1)))
         func pushUpgradeRequirementPreservesTheQueueAndCanResumeAfterUpdate() async throws {
             let fixture = try Fixture()
             let recordedTransactionId = try await fixture.queue.write { db in

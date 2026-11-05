@@ -1293,6 +1293,21 @@ enum SyncTransactionQueue {
         }
     }
 
+    /// Server-side failures keep their backoff; only transport failures are retried as soon as the Server is reachable.
+    static func retryNetworkFailuresNow(connectionId: UUID, dbQueue: DatabaseQueue) async throws {
+        try await dbQueue.write { db in
+            let now = Date()
+            try db.execute(
+                sql: """
+                UPDATE sync_transactions SET availableAt = ?
+                WHERE connectionId = ? AND blockedReason IS NULL AND leaseExpiresAt IS NULL AND availableAt > ?
+                  AND json_extract(serverResponseJSON, '$.code') = 'network'
+                """,
+                arguments: [now, connectionId, now]
+            )
+        }
+    }
+
     static func retryAuthorizationBlocks(connectionId: UUID, dbQueue: DatabaseQueue) async throws {
         try await dbQueue.write { db in
             try db.execute(

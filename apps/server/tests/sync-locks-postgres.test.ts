@@ -189,3 +189,41 @@ it.runIf(process.env.TEST_SYNC_LOCKS_DATABASE_URL)("Notes bypass the domain lane
     await blocker.query("ROLLBACK"); await blocker.end(); await store.close?.(); core.destroy();
   }
 }, 20_000);
+
+it.runIf(process.env.TEST_SYNC_LOCKS_DATABASE_URL)("a Workspace update stays within its Workspace and lock waits are bounded", async () => {
+  const url = process.env.TEST_SYNC_LOCKS_DATABASE_URL!;
+  const store = createNodeApplicationStore({ authProvider: "header", authHeader: "X-Forwarded-Email", databaseType: "postgres",
+    databaseUrl: url, baseUrl: "http://localhost:5173", oauthRedirectUris: [], maxRequestBytes: 1_048_576 });
+  const owner = { userId: uuidV7(), source: "header" as const };
+  const slowWorkspace = uuidV7(), otherWorkspace = uuidV7();
+  const create = (workspaceId: string) => ({ id: uuidV7(), schemaVersion: 3, workspaceId, createdAt: new Date().toISOString(), operations: [
+    { id: uuidV7(), entity: "workspace", action: "create", entityId: workspaceId, baseRevision: null,
+      data: { organizationId: testOrganizationID, name: "Lock scope", encryption: "none", createdAt: new Date().toISOString() } },
+  ] });
+  const rename = (workspaceId: string, name: string) => ({ id: uuidV7(), schemaVersion: 3, workspaceId, createdAt: new Date(), requestHash: uuidV7(),
+    operations: [{ id: uuidV7(), entity: "workspace", action: "update", entityId: workspaceId, baseRevision: 1, data: { name } }] });
+  let release!: () => void, announce!: () => void;
+  const ready = new Promise<void>((resolve) => { announce = resolve; });
+  const gate = new Promise<void>((resolve) => { release = resolve; });
+  let slow: Promise<unknown> | undefined;
+  try {
+    await seedPostgresIdentity(store, url, owner);
+    const sync = new MeetingSyncService(store.sync);
+    await sync.commitTransaction(owner, create(slowWorkspace));
+    await sync.commitTransaction(owner, create(otherWorkspace));
+    const request = rename(slowWorkspace, "Slow");
+    slow = store.sync.withIdentity(owner, async (s) => {
+      await s.resolveTransaction(request as Parameters<typeof s.resolveTransaction>[0]);
+      announce(); await gate;
+      return s.commitTransaction(request as Parameters<typeof s.commitTransaction>[0]);
+    });
+    await ready;
+    // Before the fix a Workspace update held the global authorization key exclusively and stalled every tenant.
+    const other = store.sync.withIdentity(owner, (s) => s.commitTransaction(rename(otherWorkspace, "Other") as Parameters<typeof s.commitTransaction>[0]));
+    let timer: ReturnType<typeof setTimeout>;
+    await Promise.race([other, new Promise<never>((_, reject) => { timer = setTimeout(() => reject(new Error("blocked_by_other_workspace")), 3000); })])
+      .finally(() => clearTimeout(timer));
+  } finally {
+    release(); await slow?.catch(() => undefined); await store.close?.();
+  }
+}, 20_000);
