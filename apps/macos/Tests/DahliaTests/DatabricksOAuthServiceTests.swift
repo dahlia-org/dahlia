@@ -210,6 +210,39 @@
             #expect(logins.withLock { $0 } == 1)
         }
 
+        @Test func unattendedCallerDoesNotKeepCancelledInteractiveLoginAlive() async throws {
+            let connection = DatabricksConnection(id: UUID(), host: Self.host)
+            let memory = DatabricksTestStorage(connection: connection)
+            memory.state.withLock { $0.credentials[connection.id] = credential() }
+            let (loginStarted, startedContinuation) = AsyncStream.makeStream(of: Void.self)
+            let (gate, _) = AsyncStream.makeStream(of: Void.self)
+            let logins = Mutex(0)
+            let session = makeSession { request in
+                request.url!.path.contains(".well-known") ? (404, "") : (200, Self.token)
+            }
+            defer { session.invalidateAndCancel() }
+            let service = DatabricksOAuthService(session: session, storage: memory.storage, authorize: browser { url in
+                logins.withLock { $0 += 1 }
+                startedContinuation.yield()
+                // Stays in the browser until cancelled; the gate is never opened.
+                for await _ in gate {}
+                try Task.checkCancellation()
+                return URL(string: "http://127.0.0.1/?code=code&state=\(query(url)["state"]!)")!
+            })
+
+            let interactive = Task { try await service.accessToken(connectionID: connection.id, loginOnly: true) }
+            var started = loginStarted.makeAsyncIterator()
+            _ = await started.next()
+            let unattended = Task { try await service.accessToken(connectionID: connection.id, interactive: false) }
+            interactive.cancel()
+
+            await #expect(throws: CancellationError.self) { try await interactive.value }
+            // Whether it observed the cancelled login or arrived after it, the unattended caller finishes without a login.
+            let result = await unattended.result
+            if case let .success(token) = result { #expect(token == "old-access") }
+            #expect(logins.withLock { $0 } == 1)
+        }
+
         @Test func reauthenticatingExistingConnectionNotifiesObservers() async throws {
             let connection = DatabricksConnection(id: UUID(), host: Self.host)
             let memory = DatabricksTestStorage(connection: connection)

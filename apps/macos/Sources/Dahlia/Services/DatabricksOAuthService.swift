@@ -112,6 +112,13 @@ actor DatabricksOAuthService {
         let connection = try connection(id: connectionID)
         try Task.checkCancellation()
         let waiter = UUID()
+        if !interactive, let operation = pending, operation.interactive, !operation.isFinished {
+            // Observe an interactive operation without holding it: only interactive callers keep a browser login alive.
+            let token = try await waitForToken(operation, waiter: nil)
+            try Task.checkCancellation()
+            _ = try self.connection(id: connectionID)
+            return token
+        }
         if let operation = pending, operation.addWaiter(waiter) {
             if loginOnly, !operation.loginOnly {
                 // An explicit sign-in must still open the browser after a pending refresh.
@@ -176,9 +183,10 @@ actor DatabricksOAuthService {
         return token
     }
 
-    private func waitForToken(_ operation: Pending, waiter: UUID) async throws -> String {
+    /// A nil `waiter` observes the operation without keeping it from being cancelled.
+    private func waitForToken(_ operation: Pending, waiter: UUID?) async throws -> String {
         defer {
-            operation.removeWaiter(waiter)
+            if let waiter { operation.removeWaiter(waiter) }
             if pending?.generation == operation.generation, operation.isFinished {
                 pending = nil
             }
@@ -194,7 +202,7 @@ actor DatabricksOAuthService {
                 return try result.get()
             }
             throw CancellationError()
-        } onCancel: { operation.removeWaiter(waiter) }
+        } onCancel: { if let waiter { operation.removeWaiter(waiter) } }
     }
 
     private func login(_ connection: DatabricksConnection) async throws -> DatabricksOAuthCredential {
