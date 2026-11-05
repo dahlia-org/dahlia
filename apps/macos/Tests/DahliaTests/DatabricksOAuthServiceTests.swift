@@ -33,6 +33,8 @@
     @Suite(.serialized)
     struct DatabricksOAuthServiceTests {
         static let host = "https://workspace.example.com"
+        /// A non-first port proves the token exchange reuses the redirect URI the browser step chose.
+        static let redirectURI = "http://localhost:8022"
         static let token = #"{"access_token":"access","refresh_token":"refresh","token_type":"Bearer","expires_in":3600}"#
 
         @Test @MainActor func restoresSelectionAfterCancellationFollowingConnectionSave() async throws {
@@ -47,9 +49,9 @@
                 request.url!.path.contains(".well-known") ? (404, "") : (200, Self.token)
             }
             defer { session.invalidateAndCancel() }
-            let service = DatabricksOAuthService(session: session, storage: storage) { url in
+            let service = DatabricksOAuthService(session: session, storage: storage, authorize: browser { url in
                 URL(string: "http://127.0.0.1/?code=code&state=\(query(url)["state"]!)")!
-            }
+            })
             let controller = DatabricksAccountController(service: service)
             let signIn = Task { await controller.signIn(workspaceURL: Self.host) }
             #expect(await signIn.value == nil)
@@ -78,7 +80,7 @@
                 let values = form(request)
                 #expect(values["client_id"] == "databricks-cli")
                 #expect(values["grant_type"] == "authorization_code")
-                #expect(values["redirect_uri"] == "http://localhost:8020")
+                #expect(values["redirect_uri"] == Self.redirectURI)
                 #expect(values["code"] == "code")
                 let verifier = try #require(values["code_verifier"])
                 #expect(verifier.count == 86)
@@ -90,16 +92,16 @@
                 return (200, Self.token)
             }
             defer { session.invalidateAndCancel() }
-            let service = DatabricksOAuthService(session: session, storage: memory.storage) { url in
+            let service = DatabricksOAuthService(session: session, storage: memory.storage, authorize: browser { url in
                 let values = query(url)
                 #expect(url.path == (discovery ? "/custom/authorize" : "/oidc/v1/authorize"))
                 #expect(values["scope"] == "offline_access all-apis")
                 #expect(values["code_challenge_method"] == "S256")
                 #expect(values["response_type"] == "code")
-                #expect(values["redirect_uri"] == "http://localhost:8020")
+                #expect(values["redirect_uri"] == Self.redirectURI)
                 challenge.withLock { $0 = values["code_challenge"]! }
                 return URL(string: "http://127.0.0.1/?code=code&state=\(values["state"]!)")!
-            }
+            })
             let connection = try await service.signIn(workspaceURL: Self.host)
             #expect(try await service.accessToken(connectionID: connection.id) == "access")
             #expect(requestCount.withLock { $0 } == 2)
@@ -110,9 +112,9 @@
             let session = makeSession { _ in (404, "") }
             defer { session.invalidateAndCancel() }
             let memory = DatabricksTestStorage()
-            let service = DatabricksOAuthService(session: session, storage: memory.storage) { _ in
+            let service = DatabricksOAuthService(session: session, storage: memory.storage, authorize: browser { _ in
                 URL(string: "http://127.0.0.1/?code=code&state=wrong")!
-            }
+            })
             await #expect(throws: DahliaCloudError.stateMismatch) {
                 try await service.signIn(workspaceURL: Self.host)
             }
@@ -145,10 +147,10 @@
                 return form(request)["grant_type"] == "refresh_token" ? (400, "") : (200, Self.token)
             }
             defer { session.invalidateAndCancel() }
-            let service = DatabricksOAuthService(session: session, storage: memory.storage) { url in
+            let service = DatabricksOAuthService(session: session, storage: memory.storage, authorize: browser { url in
                 logins.withLock { $0 += 1 }
                 return URL(string: "http://127.0.0.1/?code=code&state=\(query(url)["state"]!)")!
-            }
+            })
             #expect(try await service.accessToken(connectionID: connection.id, forceRefresh: true) == "access")
             #expect(logins.withLock { $0 } == 1)
         }
@@ -161,10 +163,10 @@
             }
             let session = makeSession { _ in (200, Self.token) }
             defer { session.invalidateAndCancel() }
-            let service = DatabricksOAuthService(session: session, storage: memory.storage) { _ in
+            let service = DatabricksOAuthService(session: session, storage: memory.storage, authorize: browser { _ in
                 Issue.record("Storage failures must not trigger a browser login")
                 throw CancellationError()
-            }
+            })
             await #expect(throws: DahliaCloudError.credentialStorageFailed) {
                 try await service.accessToken(connectionID: connection.id, forceRefresh: true)
             }
@@ -187,11 +189,11 @@
                 request.url!.path.contains(".well-known") ? (404, "") : (200, Self.token)
             }
             defer { session.invalidateAndCancel() }
-            let service = DatabricksOAuthService(session: session, storage: storage) { url in
+            let service = DatabricksOAuthService(session: session, storage: storage, authorize: browser { url in
                 logins.withLock { $0 += 1 }
                 await gate.wait()
                 return URL(string: "http://127.0.0.1/?code=code&state=\(query(url)["state"]!)")!
-            }
+            })
             let first = Task { try await service.accessToken(connectionID: connection.id, forceRefresh: true) }
             let second = Task { try await service.accessToken(connectionID: connection.id, forceRefresh: true) }
             var iterator = reads.makeAsyncIterator()
@@ -214,11 +216,11 @@
                 request.url!.path.contains(".well-known") ? (404, "") : (200, Self.token)
             }
             defer { session.invalidateAndCancel() }
-            let service = DatabricksOAuthService(session: session, storage: memory.storage) { url in
+            let service = DatabricksOAuthService(session: session, storage: memory.storage, authorize: browser { url in
                 continuation.yield(())
                 await gate.wait() // Deliberately finish even if the caller cancels.
                 return URL(string: "http://127.0.0.1/?code=code&state=\(query(url)["state"]!)")!
-            }
+            })
             let task = Task { try await service.accessToken(connectionID: connection.id) }
             var iterator = entered.makeAsyncIterator()
             _ = await iterator.next()
@@ -246,9 +248,9 @@
                 request.url!.path.contains(".well-known") ? (404, "") : (200, payload)
             }
             defer { session.invalidateAndCancel() }
-            let service = DatabricksOAuthService(session: session, storage: memory.storage) { url in
+            let service = DatabricksOAuthService(session: session, storage: memory.storage, authorize: browser { url in
                 URL(string: "http://127.0.0.1/?code=code&state=\(query(url)["state"]!)")!
-            }
+            })
             await #expect(throws: DahliaCloudError.invalidTokenResponse) {
                 try await service.signIn(workspaceURL: Self.host)
             }
@@ -269,10 +271,10 @@
                 return (200, Self.token)
             }
             defer { session.invalidateAndCancel() }
-            let service = DatabricksOAuthService(session: session, storage: memory.storage) { url in
+            let service = DatabricksOAuthService(session: session, storage: memory.storage, authorize: browser { url in
                 #expect(url.host == "workspace.example.com")
                 return URL(string: "http://127.0.0.1/?code=code&state=\(query(url)["state"]!)")!
-            }
+            })
             _ = try await service.signIn(workspaceURL: Self.host)
         }
 
@@ -301,10 +303,10 @@
                 return (200, Self.token)
             }
             defer { session.invalidateAndCancel() }
-            let service = DatabricksOAuthService(session: session, storage: storage) { _ in
+            let service = DatabricksOAuthService(session: session, storage: storage, authorize: browser { _ in
                 Issue.record("Cancelling a waiter must not start browser authentication")
                 throw CancellationError()
-            }
+            })
             let original = Task { try await service.accessToken(connectionID: connection.id, forceRefresh: true) }
             var requestIterator = requests.makeAsyncIterator()
             _ = await requestIterator.next()
@@ -341,10 +343,10 @@
                 request.url!.path.contains(".well-known") ? (404, "") : (200, Self.token)
             }
             defer { session.invalidateAndCancel() }
-            let service = DatabricksOAuthService(session: session, storage: storage) { url in
+            let service = DatabricksOAuthService(session: session, storage: storage, authorize: browser { url in
                 await gate.wait()
                 return URL(string: "http://127.0.0.1/?code=code&state=\(query(url)["state"]!)")!
-            }
+            })
             let original = Task { try await service.accessToken(connectionID: connection.id) }
             var iterator = reads.makeAsyncIterator()
             _ = await iterator.next()
@@ -382,10 +384,10 @@
                 return (200, Self.token)
             }
             defer { session.invalidateAndCancel() }
-            let service = DatabricksOAuthService(session: session, storage: storage) { url in
+            let service = DatabricksOAuthService(session: session, storage: storage, authorize: browser { url in
                 logins.withLock { $0 += 1 }
                 return URL(string: "http://127.0.0.1/?code=code&state=\(query(url)["state"]!)")!
-            }
+            })
             let refresh = Task { try await service.accessToken(connectionID: connection.id, forceRefresh: true) }
             var requestIterator = requests.makeAsyncIterator()
             _ = await requestIterator.next()
@@ -426,10 +428,10 @@
                 request.url!.path.contains(".well-known") ? (404, "") : (200, Self.token)
             }
             defer { session.invalidateAndCancel() }
-            let service = DatabricksOAuthService(session: session, storage: memory.storage) { url in
+            let service = DatabricksOAuthService(session: session, storage: memory.storage, authorize: browser { url in
                 logins.withLock { $0 += 1 }
                 return URL(string: "http://127.0.0.1/?code=code&state=\(query(url)["state"]!)")!
-            }
+            })
             let first = try await service.signIn(workspaceURL: Self.host)
             await #expect(throws: DatabricksOAuthError.workspaceAlreadyConnected) {
                 try await service.signIn(workspaceURL: "https://other.example.com")
@@ -447,6 +449,12 @@
                 try await service.accessToken(connectionID: first.id)
             }
             #expect(memory.state.withLock { $0.credentials.count } == 1)
+        }
+
+        private func browser(
+            _ callback: @escaping @Sendable (URL) async throws -> URL
+        ) -> OAuthLoopbackAuthorization {
+            { authorizationURL in try await (callback(authorizationURL(Self.redirectURI)), Self.redirectURI) }
         }
 
         private func credential() -> DatabricksOAuthCredential {

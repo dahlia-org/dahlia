@@ -1658,7 +1658,7 @@
 
 "Dahlia securely stores this workspace sign-in on this Mac." = "ワークスペースの認証情報をこの Mac に安全に保存します。";
 
-"Cannot listen on localhost:8020. Close the other sign-in and retry." = "localhost:8020 で待受できません。ほかのサインインを終了して再試行してください。";
+"Cannot listen on any of localhost ports 8020–8040. Close the other sign-ins and retry." = "localhost のポート 8020〜8040 のいずれでも待受できません。ほかのサインインを終了して再試行してください。";
 
 "Enter your workspace URL and sign in again to replace the old CLI connection." = "従来の CLI 接続を置き換えるため、ワークスペース URL を入力して再度サインインしてください。";
 
