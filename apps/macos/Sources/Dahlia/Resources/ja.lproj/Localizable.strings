@@ -672,6 +672,8 @@
 "Only selected calendars are shown on Home." = "選択したカレンダーのみを Home に表示します。";
 "Connect" = "接続";
 "Disconnect" = "切断";
+"Sign in with Google in your Databricks workspace. The browser opens the connection page; Dahlia connects once you finish." = "Databricks ワークスペースで Google にサインインします。ブラウザで接続ページが開き、完了すると Dahlia が接続します。";
+"Connected through your Databricks workspace. To revoke access, open the connection page in Databricks." = "Databricks ワークスペース経由で接続しています。アクセスを取り消すには Databricks の接続ページを開いてください。";
 "Sign in with Google to load your upcoming schedule." = "Google にサインインして今後の予定を読み込みます。";
 "Connected" = "接続済み";
 "No Google account connected" = "Google アカウント未接続";

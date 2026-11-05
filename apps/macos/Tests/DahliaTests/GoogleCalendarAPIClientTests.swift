@@ -43,7 +43,11 @@ import Foundation
             let client = GoogleCalendarAPIClient(session: session, calendar: Calendar(identifier: .gregorian))
 
             _ = try await client.fetchUpcomingEvents(
-                accessToken: "token",
+                session: GoogleSession(
+                    account: GoogleCalendarAccount(id: "1", displayName: "Test", email: "test@example.com"),
+                    accessToken: "token",
+                    grantedScopes: GoogleOAuthScope.calendar
+                ),
                 calendars: [
                     CalendarListItem(
                         id: "primary",

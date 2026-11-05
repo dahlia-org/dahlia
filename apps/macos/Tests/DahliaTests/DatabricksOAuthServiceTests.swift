@@ -155,6 +155,117 @@
             #expect(logins.withLock { $0 } == 1)
         }
 
+        @Test func nonInteractiveRefreshFailureThrowsWithoutLogin() async throws {
+            let connection = DatabricksConnection(id: UUID(), host: Self.host)
+            let memory = DatabricksTestStorage(connection: connection)
+            memory.state.withLock { $0.credentials[connection.id] = credential() }
+            let logins = Mutex(0)
+            let session = makeSession { request in
+                form(request)["grant_type"] == "refresh_token" ? (400, "") : (200, Self.token)
+            }
+            defer { session.invalidateAndCancel() }
+            let service = DatabricksOAuthService(session: session, storage: memory.storage, authorize: browser { url in
+                logins.withLock { $0 += 1 }
+                return URL(string: "http://127.0.0.1/?code=code&state=\(query(url)["state"]!)")!
+            })
+            await #expect(throws: Error.self) {
+                try await service.accessToken(connectionID: connection.id, forceRefresh: true, interactive: false)
+            }
+            #expect(logins.withLock { $0 } == 0)
+        }
+
+        @Test func interactiveCallerJoiningFailedUnattendedRefreshStillLogsIn() async throws {
+            let connection = DatabricksConnection(id: UUID(), host: Self.host)
+            let memory = DatabricksTestStorage(connection: connection)
+            memory.state.withLock { $0.credentials[connection.id] = credential() }
+            let (refreshStarted, startedContinuation) = AsyncStream.makeStream(of: Void.self)
+            let (gate, gateContinuation) = AsyncStream.makeStream(of: Void.self)
+            let refreshes = Mutex(0)
+            let logins = Mutex(0)
+            let session = makeSession { request in
+                if request.url!.path.contains(".well-known") { return (404, "") }
+                guard form(request)["grant_type"] == "refresh_token" else { return (200, Self.token) }
+                if refreshes.withLock({ $0 += 1; return $0 }) == 1 {
+                    startedContinuation.yield()
+                    for await _ in gate { break }
+                }
+                return (400, "")
+            }
+            defer { session.invalidateAndCancel() }
+            let service = DatabricksOAuthService(session: session, storage: memory.storage, authorize: browser { url in
+                logins.withLock { $0 += 1 }
+                return URL(string: "http://127.0.0.1/?code=code&state=\(query(url)["state"]!)")!
+            })
+
+            let unattended = Task { try await service.accessToken(connectionID: connection.id, forceRefresh: true, interactive: false) }
+            var started = refreshStarted.makeAsyncIterator()
+            _ = await started.next()
+            // The unattended refresh is suspended in its request, so this caller normally joins the pending operation,
+            // which is the case that used to fail. Either ordering must end in exactly one interactive login.
+            let interactive = Task { try await service.accessToken(connectionID: connection.id, forceRefresh: true) }
+            gateContinuation.yield()
+
+            await #expect(throws: Error.self) { try await unattended.value }
+            #expect(try await interactive.value == "access")
+            #expect(logins.withLock { $0 } == 1)
+        }
+
+        @Test func unattendedCallerDoesNotKeepCancelledInteractiveLoginAlive() async throws {
+            let connection = DatabricksConnection(id: UUID(), host: Self.host)
+            let memory = DatabricksTestStorage(connection: connection)
+            memory.state.withLock { $0.credentials[connection.id] = credential() }
+            let (loginStarted, startedContinuation) = AsyncStream.makeStream(of: Void.self)
+            let (gate, _) = AsyncStream.makeStream(of: Void.self)
+            let logins = Mutex(0)
+            let session = makeSession { request in
+                request.url!.path.contains(".well-known") ? (404, "") : (200, Self.token)
+            }
+            defer { session.invalidateAndCancel() }
+            let service = DatabricksOAuthService(session: session, storage: memory.storage, authorize: browser { url in
+                logins.withLock { $0 += 1 }
+                startedContinuation.yield()
+                // Stays in the browser until cancelled; the gate is never opened.
+                for await _ in gate {}
+                try Task.checkCancellation()
+                return URL(string: "http://127.0.0.1/?code=code&state=\(query(url)["state"]!)")!
+            })
+
+            let interactive = Task { try await service.accessToken(connectionID: connection.id, loginOnly: true) }
+            var started = loginStarted.makeAsyncIterator()
+            _ = await started.next()
+            let unattended = Task { try await service.accessToken(connectionID: connection.id, interactive: false) }
+            interactive.cancel()
+
+            await #expect(throws: CancellationError.self) { try await interactive.value }
+            // Whether it observed the cancelled login or arrived after it, the unattended caller finishes without a login.
+            let result = await unattended.result
+            if case let .success(token) = result { #expect(token == "old-access") }
+            #expect(logins.withLock { $0 } == 1)
+        }
+
+        @Test func reauthenticatingExistingConnectionNotifiesObservers() async throws {
+            let connection = DatabricksConnection(id: UUID(), host: Self.host)
+            let memory = DatabricksTestStorage(connection: connection)
+            memory.state.withLock { $0.credentials[connection.id] = credential() }
+            let session = makeSession { request in
+                request.url!.path.contains(".well-known") ? (404, "") : (200, Self.token)
+            }
+            defer { session.invalidateAndCancel() }
+            let service = DatabricksOAuthService(session: session, storage: memory.storage, authorize: browser { url in
+                URL(string: "http://127.0.0.1/?code=code&state=\(query(url)["state"]!)")!
+            })
+            let (posts, continuation) = AsyncStream.makeStream(of: Void.self)
+            let token = NotificationCenter.default.addObserver(
+                forName: .databricksConnectionDidChange, object: nil, queue: nil
+            ) { _ in continuation.yield() }
+            defer { NotificationCenter.default.removeObserver(token) }
+
+            #expect(try await service.signIn(workspaceURL: Self.host) == connection)
+
+            var iterator = posts.makeAsyncIterator()
+            #expect(await iterator.next() != nil)
+        }
+
         @Test func keychainFailureDoesNotPublishNewTokenOrStartLogin() async throws {
             let connection = DatabricksConnection(id: UUID(), host: Self.host)
             let memory = DatabricksTestStorage(connection: connection)

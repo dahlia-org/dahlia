@@ -36,6 +36,10 @@ final class GoogleCalendarStore: ObservableObject {
         state == .loading
     }
 
+    var usesDatabricksProxy: Bool {
+        (signInProvider as? DatabricksProxyGoogleSignInProvider)?.isProxyActive == true
+    }
+
     private let signInProvider: any GoogleSignInProviding
     private let apiClient: any GoogleCalendarAPIClientProviding
     private let userDefaults: UserDefaults
@@ -54,7 +58,7 @@ final class GoogleCalendarStore: ObservableObject {
     private var refreshTaskID: UUID?
 
     init(
-        signInProvider: any GoogleSignInProviding = GoogleSignInAdapter(sessionKind: .calendar),
+        signInProvider: any GoogleSignInProviding = DatabricksProxyGoogleSignInProvider(),
         apiClient: any GoogleCalendarAPIClientProviding = GoogleCalendarAPIClient(),
         userDefaults: UserDefaults = .standard,
         now: @escaping () -> Date = Date.init,
@@ -249,7 +253,7 @@ final class GoogleCalendarStore: ObservableObject {
             if account != session.account { account = session.account }
             let selectedCalendars = availableCalendars.filter { selectedCalendarIDs.contains($0.id) }
             let events = try await apiClient.fetchUpcomingEvents(
-                accessToken: session.accessToken,
+                session: session,
                 calendars: selectedCalendars,
                 now: now(),
                 daysAhead: daysAhead
@@ -311,7 +315,7 @@ final class GoogleCalendarStore: ObservableObject {
             return
         }
 
-        let calendars = try await apiClient.fetchCalendarList(accessToken: session.accessToken)
+        let calendars = try await apiClient.fetchCalendarList(session: session)
         guard isCurrentRefresh(generation) else { return }
         if availableCalendars != calendars { availableCalendars = calendars }
         pruneSelectedCalendars()
