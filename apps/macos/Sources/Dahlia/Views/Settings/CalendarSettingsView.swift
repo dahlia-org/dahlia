@@ -203,7 +203,11 @@ struct CalendarSettingsView: View {
     private var googleActionButton: some View {
         if !googleCalendarStore.isAuthorized {
             Button(L10n.googleCalendarConnect) {
-                googleOAuthConsent.request(.calendar)
+                if googleCalendarStore.usesDatabricksProxy {
+                    Task { await googleCalendarStore.signIn() }
+                } else {
+                    googleOAuthConsent.request(.calendar)
+                }
             }
             .buttonStyle(.dahlia(.primary))
             .disabled(!googleCalendarStore.isConfigured || googleCalendarStore.isBusy)
@@ -221,6 +225,12 @@ struct CalendarSettingsView: View {
     private var googleAccountSubtitle: String {
         if !googleCalendarStore.isConfigured {
             return L10n.googleCalendarClientIDMissingMessage
+        }
+
+        if googleCalendarStore.usesDatabricksProxy {
+            return googleCalendarStore.isAuthorized
+                ? L10n.googleCalendarDatabricksConnected
+                : L10n.googleCalendarDatabricksConnectDescription
         }
 
         if let account = googleCalendarStore.account, googleCalendarStore.isAuthorized {

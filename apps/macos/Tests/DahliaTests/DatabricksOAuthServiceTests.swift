@@ -153,6 +153,25 @@
             #expect(logins.withLock { $0 } == 1)
         }
 
+        @Test func nonInteractiveRefreshFailureThrowsWithoutLogin() async throws {
+            let connection = DatabricksConnection(id: UUID(), host: Self.host)
+            let memory = DatabricksTestStorage(connection: connection)
+            memory.state.withLock { $0.credentials[connection.id] = credential() }
+            let logins = Mutex(0)
+            let session = makeSession { request in
+                form(request)["grant_type"] == "refresh_token" ? (400, "") : (200, Self.token)
+            }
+            defer { session.invalidateAndCancel() }
+            let service = DatabricksOAuthService(session: session, storage: memory.storage) { url in
+                logins.withLock { $0 += 1 }
+                return URL(string: "http://127.0.0.1/?code=code&state=\(query(url)["state"]!)")!
+            }
+            await #expect(throws: Error.self) {
+                try await service.accessToken(connectionID: connection.id, forceRefresh: true, interactive: false)
+            }
+            #expect(logins.withLock { $0 } == 0)
+        }
+
         @Test func keychainFailureDoesNotPublishNewTokenOrStartLogin() async throws {
             let connection = DatabricksConnection(id: UUID(), host: Self.host)
             let memory = DatabricksTestStorage(connection: connection)

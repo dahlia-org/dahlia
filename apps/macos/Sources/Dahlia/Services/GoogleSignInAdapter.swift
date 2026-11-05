@@ -7,6 +7,8 @@ struct GoogleSession: Equatable {
     let account: GoogleCalendarAccount
     let accessToken: String
     let grantedScopes: Set<String>
+    /// Google API origin, or a Databricks Unity Catalog connection proxy that forwards to it.
+    var apiBaseURL = GoogleCalendarAPIClient.googleAPIBaseURL
 
     func hasScopes(_ scopes: Set<String>) -> Bool {
         scopes.isSubset(of: grantedScopes)

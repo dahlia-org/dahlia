@@ -19,9 +19,9 @@ enum GoogleCalendarAPIError: LocalizedError {
 
 @MainActor
 protocol GoogleCalendarAPIClientProviding: AnyObject {
-    func fetchCalendarList(accessToken: String) async throws -> [CalendarListItem]
+    func fetchCalendarList(session: GoogleSession) async throws -> [CalendarListItem]
     func fetchUpcomingEvents(
-        accessToken: String,
+        session: GoogleSession,
         calendars: [CalendarListItem],
         now: Date,
         daysAhead: Int
@@ -30,6 +30,8 @@ protocol GoogleCalendarAPIClientProviding: AnyObject {
 
 @MainActor
 final class GoogleCalendarAPIClient: GoogleCalendarAPIClientProviding {
+    nonisolated static let googleAPIBaseURL = URL(string: "https://www.googleapis.com/")!
+
     private let session: URLSession
     private let calendar: Calendar
 
@@ -38,14 +40,14 @@ final class GoogleCalendarAPIClient: GoogleCalendarAPIClientProviding {
         self.calendar = calendar
     }
 
-    func fetchCalendarList(accessToken: String) async throws -> [CalendarListItem] {
-        var components = URLComponents(string: "https://www.googleapis.com/calendar/v3/users/me/calendarList")
+    func fetchCalendarList(session googleSession: GoogleSession) async throws -> [CalendarListItem] {
+        var components = URLComponents(string: googleSession.apiBaseURL.absoluteString + "calendar/v3/users/me/calendarList")
         components?.queryItems = [
             URLQueryItem(name: "minAccessRole", value: "reader"),
             URLQueryItem(name: "showDeleted", value: "false"),
         ]
 
-        let data = try await request(url: Self.url(from: components), accessToken: accessToken)
+        let data = try await request(url: Self.url(from: components), accessToken: googleSession.accessToken)
         let response = try JSONDecoder().decode(CalendarListResponse.self, from: data)
         return response.items
             .filter { !$0.deleted }
@@ -66,7 +68,7 @@ final class GoogleCalendarAPIClient: GoogleCalendarAPIClientProviding {
     }
 
     func fetchUpcomingEvents(
-        accessToken: String,
+        session googleSession: GoogleSession,
         calendars: [CalendarListItem],
         now: Date,
         daysAhead: Int = 7
@@ -82,7 +84,7 @@ final class GoogleCalendarAPIClient: GoogleCalendarAPIClientProviding {
                 group.addTask {
                     let data = try await Self.requestEvents(
                         for: calendarItem,
-                        accessToken: accessToken,
+                        googleSession: googleSession,
                         now: now,
                         intervalEnd: intervalEnd,
                         session: self.session
@@ -198,14 +200,14 @@ final class GoogleCalendarAPIClient: GoogleCalendarAPIClientProviding {
 
     private static func requestEvents(
         for calendarItem: CalendarListItem,
-        accessToken: String,
+        googleSession: GoogleSession,
         now: Date,
         intervalEnd: Date,
         session: URLSession
     ) async throws -> Data {
         guard let encodedCalendarID = calendarItem.id.addingPercentEncoding(withAllowedCharacters: .calendarAPIPathComponentAllowed),
               let components = URLComponents(
-                  string: "https://www.googleapis.com/calendar/v3/calendars/\(encodedCalendarID)/events"
+                  string: googleSession.apiBaseURL.absoluteString + "calendar/v3/calendars/\(encodedCalendarID)/events"
               )
         else {
             throw GoogleCalendarAPIError.invalidResponse
@@ -224,7 +226,7 @@ final class GoogleCalendarAPIClient: GoogleCalendarAPIClientProviding {
         }
 
         let url = try Self.url(from: queryComponents)
-        return try await authorizedGet(url: url, accessToken: accessToken, session: session)
+        return try await authorizedGet(url: url, accessToken: googleSession.accessToken, session: session)
     }
 
     private func request(url: URL, accessToken: String) async throws -> Data {

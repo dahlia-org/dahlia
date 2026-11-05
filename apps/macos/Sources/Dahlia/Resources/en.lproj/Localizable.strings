@@ -672,6 +672,8 @@
 "Only selected calendars are shown on Home." = "Only selected calendars are shown on Home.";
 "Connect" = "Connect";
 "Disconnect" = "Disconnect";
+"Sign in with Google in your Databricks workspace. The browser opens the connection page; Dahlia connects once you finish." = "Sign in with Google in your Databricks workspace. The browser opens the connection page; Dahlia connects once you finish.";
+"Connected through your Databricks workspace. To revoke access, open the connection page in Databricks." = "Connected through your Databricks workspace. To revoke access, open the connection page in Databricks.";
 "Sign in with Google to load your upcoming schedule." = "Sign in with Google to load your upcoming schedule.";
 "Connected" = "Connected";
 "No Google account connected" = "No Google account connected";

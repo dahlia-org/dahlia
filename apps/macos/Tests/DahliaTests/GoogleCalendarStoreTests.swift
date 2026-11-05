@@ -752,12 +752,12 @@ private final class MockGoogleCalendarAPIClient: GoogleCalendarAPIClientProvidin
         self.eventsResult = eventsResult ?? .success(events)
     }
 
-    func fetchCalendarList(accessToken _: String) async throws -> [CalendarListItem] {
+    func fetchCalendarList(session _: GoogleSession) async throws -> [CalendarListItem] {
         try calendarsResult.get()
     }
 
     func fetchUpcomingEvents(
-        accessToken _: String,
+        session _: GoogleSession,
         calendars _: [CalendarListItem],
         now _: Date,
         daysAhead _: Int
@@ -780,7 +780,7 @@ private final class ControllableGoogleCalendarAPIClient: GoogleCalendarAPIClient
         self.suspendsCalendarList = suspendsCalendarList
     }
 
-    func fetchCalendarList(accessToken _: String) async throws -> [CalendarListItem] {
+    func fetchCalendarList(session _: GoogleSession) async throws -> [CalendarListItem] {
         if suspendsCalendarList {
             await withCheckedContinuation { continuation in
                 calendarListContinuation = continuation
@@ -791,7 +791,7 @@ private final class ControllableGoogleCalendarAPIClient: GoogleCalendarAPIClient
     }
 
     func fetchUpcomingEvents(
-        accessToken _: String,
+        session _: GoogleSession,
         calendars _: [CalendarListItem],
         now _: Date,
         daysAhead _: Int

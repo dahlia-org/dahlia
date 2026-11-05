@@ -2054,6 +2054,14 @@ enum L10n { // swiftlint:disable:this type_body_length
         localized: "Sign in with Google to load your upcoming schedule.",
         bundle: bundle
     ) }
+    static var googleCalendarDatabricksConnectDescription: String { String(
+        localized: "Sign in with Google in your Databricks workspace. The browser opens the connection page; Dahlia connects once you finish.",
+        bundle: bundle
+    ) }
+    static var googleCalendarDatabricksConnected: String { String(
+        localized: "Connected through your Databricks workspace. To revoke access, open the connection page in Databricks.",
+        bundle: bundle
+    ) }
     static var googleCalendarConnected: String { String(localized: "Connected", bundle: bundle) }
     static var googleCalendarNotConnected: String { String(localized: "No Google account connected", bundle: bundle) }
     static var googleDriveConnect: String { googleCalendarConnect }

@@ -86,6 +86,7 @@ actor DatabricksOAuthService {
             try? storage.deleteCredential(connection.id)
             throw error
         }
+        NotificationCenter.default.post(name: .databricksConnectionDidChange, object: nil)
         return connection
     }
 
@@ -96,9 +97,16 @@ actor DatabricksOAuthService {
         pending = nil
         try storage.deleteCredential(connectionID)
         try storage.saveConnection(nil)
+        NotificationCenter.default.post(name: .databricksConnectionDidChange, object: nil)
     }
 
-    func accessToken(connectionID: UUID, forceRefresh: Bool = false, loginOnly: Bool = false) async throws -> String {
+    /// `interactive: false` never opens the browser: a missing or unrefreshable credential throws instead.
+    func accessToken(
+        connectionID: UUID,
+        forceRefresh: Bool = false,
+        loginOnly: Bool = false,
+        interactive: Bool = true
+    ) async throws -> String {
         let connection = try connection(id: connectionID)
         try Task.checkCancellation()
         let waiter = UUID()
@@ -130,9 +138,11 @@ actor DatabricksOAuthService {
                     ], previousRefreshToken: old.refreshToken)
                 } catch is CancellationError { throw CancellationError() } catch {
                     try Task.checkCancellation()
+                    guard interactive else { throw error }
                     updated = try await self.login(connection)
                 }
             } else {
+                guard interactive else { throw DahliaCloudError.noCredential }
                 updated = try await self.login(connection)
             }
             try Task.checkCancellation()
@@ -297,6 +307,10 @@ actor DatabricksOAuthService {
             throw DatabricksOAuthError.invalidAuthorizationResponse
         }
     }
+}
+
+extension Notification.Name {
+    static let databricksConnectionDidChange = Notification.Name("DatabricksConnectionDidChangeNotification")
 }
 
 enum DatabricksOAuthError: LocalizedError, Equatable {
