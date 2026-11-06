@@ -11,7 +11,7 @@ struct CodexChatApprovalMethodButton: View {
         Button(session.selectedApprovalMethod.title, systemImage: session.selectedApprovalMethod.systemImage, action: togglePanel)
             .buttonStyle(.plain)
             .font(.callout)
-            .foregroundStyle(session.selectedApprovalMethod == .fullAccess ? Color.orange : DahliaDesign.secondaryTextColor)
+            .foregroundStyle(DahliaDesign.secondaryTextColor)
             .lineLimit(1)
             .padding(.horizontal, 10)
             .frame(height: CodexChatDesign.controlSize)

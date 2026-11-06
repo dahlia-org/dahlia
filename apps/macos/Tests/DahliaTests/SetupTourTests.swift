@@ -285,6 +285,16 @@
         }
 
         @Test
+        func choosingADatabricksAccountDoesNotKeepTheLocalWorkspace() {
+            let workspace = WorkspaceRecord(id: .v7(), path: nil, name: "Default", createdAt: .now, lastOpenedAt: .now)
+            let model = SetupTourModel(mode: .manual, currentWorkspace: workspace)
+
+            model.selectAccountConnection(nil, databricks: .v7())
+
+            #expect(!model.keepsOriginalWorkspace)
+        }
+
+        @Test
         func pathlessWorkspaceSelectionSurvivesInterruptedInitialTour() throws {
             let suiteName = "SetupTourPathlessProgressTests-\(UUID())"
             let defaults = try #require(UserDefaults(suiteName: suiteName))

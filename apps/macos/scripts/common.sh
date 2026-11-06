@@ -258,6 +258,35 @@ embed_lindera_licenses() {
     cp "${project_dir}/Vendor/DahliaLindera-THIRD-PARTY-NOTICES.txt" "${destination_dir}/THIRD-PARTY-NOTICES.txt"
 }
 
+# The Pi executable looks up its package files (wasm, themes, native module) next to itself.
+embed_pi_helper() {
+    local contents="$1"
+
+    mkdir -p "${contents}/Resources/Licenses/Pi"
+    cp -R ".build/pi-helper/pi" "${contents}/Resources/pi"
+    cp ".build/pi-helper/LICENSE" "${contents}/Resources/Licenses/Pi/LICENSE"
+    cp ".build/pi-helper/NOTICE.txt" "${contents}/Resources/Licenses/Pi/NOTICE.txt"
+    if [ "$(lipo -archs "${contents}/Resources/pi/pi")" != "arm64" ]; then
+        echo "error: bundled Pi must contain only arm64" >&2
+        return 1
+    fi
+}
+
+codesign_pi_helper() {
+    local contents="$1"
+    local entitlements="$2"
+    local pi_path="${contents}/Resources/pi/pi"
+
+    codesign_path "${contents}/Resources/pi/native/darwin/prebuilds/darwin-arm64/darwin-platform.node"
+    codesign --remove-signature "$pi_path"
+    codesign_path "$pi_path" --entitlements "$entitlements"
+    codesign --verify --strict --verbose=2 "$pi_path"
+    if ! has_boolean_entitlement "$pi_path" "com.apple.security.cs.allow-jit"; then
+        echo "error: bundled Pi must allow JIT under the hardened runtime" >&2
+        return 1
+    fi
+}
+
 has_entitlements() {
     local entitlements_path="$1"
 

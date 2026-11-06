@@ -57,22 +57,15 @@ struct SettingsDetailView: View {
         case .general, .language, .appearance, .recordingStopDetection:
             GeneralSettingsView()
         case .accountsAndWorkspaces, .dahliaAccounts, .accountPreferences, .macInference, .modelProvider, .aiSummary, .mcp:
+            // Accounts are chosen from the sidebar's account menu; this page holds the open account's model settings.
             Form {
-                DahliaAccountsSettingsView(
-                    controller: dahliaAccountController,
-                    currentWorkspace: appSettings.currentWorkspace,
-                    workspaces: workspaceManagementModel.workspaces,
-                    canSwitchAccount: canSwitchWorkspace,
-                    onSelectWorkspace: onSelectWorkspace,
-                    onShowSignIn: mainWindowNavigation.openDahliaSignIn
-                )
                 Group {
                     if appSettings.currentWorkspace != nil, WorkspaceAISettingsModel.shared.isLocalAccount {
                         AccountSettingsView()
                     }
                     AccountProcessingSettingsView()
                 }
-                .id(appSettings.currentWorkspace?.accountConnectionId)
+                .id(appSettings.currentWorkspace.map(WorkspaceAccountChoice.init))
             }
             .formStyle(.grouped)
             .onChange(of: dahliaAccountController.connections) {

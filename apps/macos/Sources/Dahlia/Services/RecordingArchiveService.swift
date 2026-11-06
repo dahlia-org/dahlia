@@ -44,7 +44,7 @@ actor RecordingArchiveService {
             SELECT a.*, c.origin FROM recording_archives a
             JOIN recording_sessions s ON s.id = a.sessionId
             JOIN workspaces v ON v.id = a.workspace_id
-            LEFT JOIN dahlia_account_connections c ON c.id = a.connectionId
+            LEFT JOIN accounts c ON c.id = a.connectionId
             WHERE (a.state IN ('pending', 'failed', 'syncing')
                    OR a.state = 'saved' AND EXISTS (SELECT 1 FROM recording_audio_segments
                        WHERE recordingSessionId = a.sessionId AND state IN ('ready', 'purgePending')))
@@ -310,7 +310,7 @@ actor RecordingArchiveService {
             if archive.connectionId == nil { return Target(archive: archive, origin: nil) }
             guard let originString = try String.fetchOne(
                 db,
-                sql: "SELECT origin FROM dahlia_account_connections WHERE id = ?",
+                sql: "SELECT origin FROM accounts WHERE id = ?",
                 arguments: [archive.connectionId]
             ),
                 let origin = URL(string: originString) else { throw RecordingAudioStoreError.storageUnavailable }

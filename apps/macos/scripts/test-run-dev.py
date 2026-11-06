@@ -55,7 +55,7 @@ def check_packaging(root):
     scripts.mkdir(parents=True)
     for name in ("run-dev.sh", "common.sh", "dev-build-fingerprint.py"):
         shutil.copy2(SCRIPTS / name, scripts / name)
-    write(scripts / "build-codex.sh", '''#!/bin/bash
+    write(scripts / "build-pi.sh", '''#!/bin/bash
 case "${1:-}" in
     --print-version) echo 0.0.0 ;;
     --validate-only) echo helper-validate >> "$DEV_TEST_LOG" ;;
@@ -98,13 +98,13 @@ exec /usr/bin/sqlite3 "$@"
     executable = root / ".build/debug/Dahlia"
     write(executable, "#!/bin/bash\nexit 0\n", True)
     write(root / ".build/debug/dahlia-mcp", "#!/bin/bash\nexit 0\n", True)
-    write(root / ".build/debug/auth-helper", "#!/bin/bash\nexit 0\n", True)
     for name in ("Dahlia_Dahlia.bundle", "Dahlia_DahliaRuntimeSupport.bundle", "TelemetryDeck_TelemetryDeck.bundle"):
         write(root / ".build/debug" / name / "resource", "resource")
-    for name in ("codex", "codex-code-mode-host"):
-        write(root / ".build/codex-helper" / name, "#!/bin/bash\necho codex-cli 0.0.0\n", True)
+    write(root / ".build/pi-helper/pi/pi", "#!/bin/bash\necho 0.0.0\n", True)
+    write(root / ".build/pi-helper/pi/native/darwin/prebuilds/darwin-arm64/darwin-platform.node", "binary")
+    write(root / ".build/pi-helper/pi/package.json", "{}")
     for name in ("LICENSE", "NOTICE.txt"):
-        write(root / ".build/codex-helper" / name, "license")
+        write(root / ".build/pi-helper" / name, "license")
     for name in ("argmax-oss-swift/LICENSE", "argmax-oss-swift/NOTICES", "SwiftSDK/LICENSE",
                  "libwebp-Xcode/LICENSE", "libwebp-Xcode/libwebp/COPYING",
                  "libwebp-Xcode/libwebp/PATENTS", "libwebp-Xcode/libwebp/AUTHORS"):
@@ -146,7 +146,7 @@ exec /usr/bin/sqlite3 "$@"
     run("Reusing signed")
 
     for name, content in (
-        ("CodexHelper.entitlements",
+        ("PiHelper.entitlements",
          '<?xml version="1.0"?><plist version="1.0"><dict><key>com.apple.security.cs.allow-jit</key><true/></dict></plist>'),
         ("Resources/en.lproj/Localizable.strings", "changed"),
         ("apps/macos/Sources/Dahlia/Resources/Assets.xcassets/AppIcon.appiconset/AppIcon.png", "changed"),
@@ -166,11 +166,12 @@ exec /usr/bin/sqlite3 "$@"
     with (root / "Dahlia.app/Contents/Info.plist").open("rb") as plist_file:
         assert plistlib.load(plist_file)["DAHLIA_RUNTIME_PROFILE"] == "development"
 
-    auth_helper = root / "Dahlia.app/Contents/Helpers/auth-helper"
-    assert auth_helper.exists(), "auth-helper must be bundled"
-    assert "# signature" in auth_helper.read_text(), "auth-helper must be signed"
+    pi = root / "Dahlia.app/Contents/Resources/pi/pi"
+    assert pi.exists(), "Pi must be bundled"
+    assert "# signature" in pi.read_text(), "Pi must be signed"
+    assert (root / "Dahlia.app/Contents/Resources/Licenses/Pi/NOTICE.txt").exists(), "Pi notices must be bundled"
 
-    write(root / "Dahlia.app/Contents/Helpers/codex", "damaged")
+    write(pi, "damaged")
     run("Assembling")
     run("Reusing signed", success=False, DEV_TEST_VERIFY_FAIL="1")
     run("Reusing signed")

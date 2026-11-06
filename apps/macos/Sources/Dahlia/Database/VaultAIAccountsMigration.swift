@@ -4,7 +4,7 @@ enum VaultAIAccountsMigration {
     static func migrate(in db: Database) throws {
         guard try db.tableExists("vaults") else { return }
         try addColumnIfNeeded("accountConnectionId", type: .blob, in: db) { column in
-            column.references(DahliaAccountConnectionRecord.databaseTableName, onDelete: .setNull)
+            column.references("dahlia_account_connections", onDelete: .setNull)
         }
         try addColumnIfNeeded("localAIProvider", type: .text, in: db) { column in
             column.notNull().defaults(to: AIAccountProvider.chatGPTSubscription.rawValue)

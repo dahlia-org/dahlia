@@ -79,7 +79,7 @@ struct WorkspaceSetupStepView: View {
                 }
             } else {
                 VStack(spacing: 0) {
-                    ForEach(workspaceManagementModel.workspaces.filter { $0.accountConnectionId == model.selectedAccountConnectionID }) { workspace in
+                    ForEach(workspaceManagementModel.workspaces.filter(model.belongsToSelectedAccount)) { workspace in
                         HStack {
                             Label(workspace.name, systemImage: ProjectIcon.workspace.systemImageName)
                             Spacer()

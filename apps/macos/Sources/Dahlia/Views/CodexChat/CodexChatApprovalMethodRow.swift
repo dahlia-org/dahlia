@@ -20,7 +20,7 @@ struct CodexChatApprovalMethodRow: View {
                         .font(.body)
                     Text(method.description)
                         .font(.callout)
-                        .foregroundStyle(method == .fullAccess ? Color.orange : DahliaDesign.optionalTextColor)
+                        .foregroundStyle(DahliaDesign.optionalTextColor)
                         .lineLimit(1)
                 }
 
@@ -32,7 +32,7 @@ struct CodexChatApprovalMethodRow: View {
                         .accessibilityHidden(true)
                 }
             }
-            .foregroundStyle(method == .fullAccess ? Color.orange : DahliaDesign.primaryTextColor)
+            .foregroundStyle(DahliaDesign.primaryTextColor)
             .padding(.horizontal, 10)
             .padding(.vertical, 8)
             .contentShape(Rectangle())

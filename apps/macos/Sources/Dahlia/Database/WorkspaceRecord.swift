@@ -28,6 +28,8 @@ struct WorkspaceRecord: Codable, FetchableRecord, PersistableRecord, Identifiabl
     var createdAt: Date
     var lastOpenedAt: Date
     var accountConnectionId: UUID?
+    /// The Databricks account that lists this local workspace. It shares the Local Account's storage and never syncs.
+    var databricksConnectionId: UUID?
     var localAIProvider: String = AIAccountProvider.chatGPTSubscription.rawValue
     var databricksProfile = ""
     var generationSettings = WorkspaceGenerationSettings()
@@ -65,8 +67,14 @@ struct WorkspaceRecord: Codable, FetchableRecord, PersistableRecord, Identifiabl
 }
 
 extension WorkspaceRecord {
+    /// Whether two workspaces are listed under the same account (Local, Databricks, or one Dahlia account).
+    func belongsToSameAccount(as other: WorkspaceRecord) -> Bool {
+        accountConnectionId == other.accountConnectionId && databricksConnectionId == other.databricksConnectionId
+    }
+
     mutating func moveToLocalAccount() {
         accountConnectionId = nil
+        databricksConnectionId = nil
         organizationId = nil
         personalUserId = nil
         syncRole = nil

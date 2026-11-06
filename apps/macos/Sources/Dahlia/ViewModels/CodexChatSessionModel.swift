@@ -108,7 +108,7 @@ final class CodexChatSessionModel: Identifiable {
         modelID: String? = nil,
         effort: String? = nil,
         approvalMethod: CodexChatApprovalMethod? = nil,
-        service: any CodexChatServicing = CodexChatService.shared,
+        service: any CodexChatServicing = PiChatService.shared,
         settings: AppSettings = .shared,
         workspaceSettings: WorkspaceAISettingsModel = .shared,
         runtimeProviderResolver: @escaping @Sendable () -> CodexRuntimeProvider = {
@@ -129,7 +129,7 @@ final class CodexChatSessionModel: Identifiable {
         self.messages = messages
         self.selectedModelID = modelID ?? (usesWorkspaceSettings ? workspaceSettings.chatModelID : settings.codexChatModelID)
         self.selectedEffort = effort ?? (usesWorkspaceSettings ? workspaceSettings.chatReasoningEffort : settings.codexChatReasoningEffort)
-        self.selectedApprovalMethod = approvalMethod ?? .autoReview
+        self.selectedApprovalMethod = approvalMethod ?? .ask
         self.needsRestore = backendThreadID != nil && messages.isEmpty && approvalMethod == nil
         self.service = service
         self.settings = settings
@@ -1024,7 +1024,8 @@ extension CodexChatSessionModel {
     private func resolveSelections() {
         guard !models.isEmpty else { return }
         if !models.contains(where: { $0.model == selectedModelID }) {
-            selectedModelID = models.first(where: \CodexModel.isDefault)?.model ?? models[0].model
+            let request = CodexAppServerRequest(model: selectedModelID, developerInstructions: "", inputs: [], outputSchema: Data())
+            selectedModelID = (try? PiRuntimeService.resolvedModel(for: request, in: models))?.model ?? models[0].model
         }
         resolveEffort()
     }

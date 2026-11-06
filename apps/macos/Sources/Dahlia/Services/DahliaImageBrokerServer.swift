@@ -123,11 +123,24 @@ final class DahliaImageBrokerServer: Sendable {
         }
     }
 
+    private static func peerExecutableURL(descriptor: Int32) -> URL? {
+        var peerPID: pid_t = 0
+        var peerPIDLength = socklen_t(MemoryLayout<pid_t>.size)
+        guard getsockopt(descriptor, SOL_LOCAL, LOCAL_PEERPID, &peerPID, &peerPIDLength) == 0 else { return nil }
+        var path = [CChar](repeating: 0, count: Int(PATH_MAX))
+        let pathLength = proc_pidpath(peerPID, &path, UInt32(path.count))
+        guard pathLength > 0 else { return nil }
+        return URL(filePath: String(
+            decoding: path.prefix(Int(pathLength)).map { UInt8(bitPattern: $0) },
+            as: UTF8.self
+        ))
+    }
+
     private func handle(_ descriptor: Int32) {
         var uid: uid_t = 0
         var gid: gid_t = 0
         guard getpeereid(descriptor, &uid, &gid) == 0, uid == getuid(),
-              DahliaTokenBrokerAuthorization.resolveClient(descriptor: descriptor)?.executableURL.resolvingSymlinksInPath() == helperURL
+              Self.peerExecutableURL(descriptor: descriptor)?.resolvingSymlinksInPath() == helperURL
         else { return }
         do {
             try DahliaImageBrokerProtocol.configure(descriptor, timeout: 2)

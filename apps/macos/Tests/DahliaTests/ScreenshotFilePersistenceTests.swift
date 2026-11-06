@@ -221,7 +221,7 @@
             }
             try await queue.write { db in
                 try db.execute(
-                    sql: "UPDATE dahlia_account_connections SET origin = ? WHERE id = ?",
+                    sql: "UPDATE accounts SET origin = ? WHERE id = ?",
                     arguments: ["https://changed.example.test", fixture.connection.id]
                 )
             }

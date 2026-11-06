@@ -9,8 +9,8 @@ macOS ネイティブのリアルタイム文字起こしアプリです。マ�
 - **デュアル音声キャプチャ** — ScreenCaptureKit でマイクとシステム音声を同時に録音し、内蔵マイクではスピーカー回り込みを除去
 - **オンデバイス文字起こし** — Apple Speech フレームワークによるリアルタイム音声認識
 - **バッチ言語自動判定** — WhisperKit で録音ファイルごとの言語を判定し、Apple Speech で文字起こし
-- **Codex 要約** — 同梱 Codex app-server を使った構造化された要約の生成（オプション）
-- **任意の Dahlia Server** — provider credential を利用者へ配布せず、同梱 Codex 用の認証付き Responses Gateway をセルフホスト。公式マネージド版は Dahlia Cloud として提供
+- **AI 要約** — 同梱 Pi を使った構造化された要約の生成（オプション）
+- **任意の Dahlia Server** — provider credential を利用者へ配布せず、同梱 Pi 用の認証付き Responses Gateway をセルフホスト。公式マネージド版は Dahlia Cloud として提供
 - **AI 議事録アクセス** — Workspace 固定のローカル MCP から議事録を探索し、明示的な `--write` 指定時だけ Project の再整理と要約の訂正を許可
 - **プロジェクト管理** — DB を正本とするルート／サブ Project 階層でミーティングを整理
 - **会話分析（ベータ）** — 確定済みのマイク・システム音声の文字起こしから、発話速度、発話時間のバランス、会話占有率、同時発話を比較
@@ -33,11 +33,11 @@ macOS ネイティブのリアルタイム文字起こしアプリです。マ�
 
 新規インストールでは、Dahlia が `Documents/Dahlia` を作成して `Default` というワークスペースとして登録し、自動的に開きます。既存のワークスペース登録は維持されます。自動設定に失敗した場合はワークスペース管理画面が表示され、フォルダを手動で選択できます。
 
-Dahlia は、同梱 Codex の状態と認証を他の Codex アプリや Codex CLI から分離して管理します。**設定 → アカウント → アカウント管理**でローカルアカウントを選ぶと、モデルプロバイダーを設定できます。ChatGPT Subscription を選ぶか、Databricks ワークスペースの HTTPS URL を入力してブラウザでサインインします。
+Dahlia は、同梱 Pi の状態と認証を、利用者自身の Pi や Codex から分離して管理します。**設定 → アカウント → モデル設定**でローカルアカウントを選ぶと、モデルプロバイダーを設定できます。ローカルアカウントは OpenAI (ChatGPT subscription) と Anthropic (Claude Pro/Max) に、片方でも両方でもブラウザでサインインでき、モデルの選択肢には両方のモデルが並びます。アカウントメニューのサインインから HTTPS URL を入れて接続した Databricks ワークスペースは、それぞれ別の Databricks アカウントになり、Databricks のロゴ、ワークスペースのホスト名、メールアドレス付きで表示されます。Databricks アカウントはそのワークスペースの AI Gateway のモデルだけを使い、自分の Workspace を持ち、データは同期せずこの Mac に保存します。Workspace はアカウントのあいだで移せ、Databricks ワークスペースを切断するとその Workspace はローカルアカウントに戻ります。セットアップとアカウントメニューのサインインでは Databricks ワークスペースとローカルアカウントだけを選べ、Dahlia Cloud・Server のサインインは当面表示しません（既存の接続は使えます）。チャットがこの Mac で読めるのは現在のワークスペースのフォルダーと Dahlia のスキルだけで、コマンドの実行やファイルの変更はできません。Codex を使っていた以前の版の ChatGPT サインインは引き継がれないので、サインインし直してください。
 
-設定は適用範囲ごとに分かれています。**アカウント → アカウント管理**では、アカウントの切替と選択中のアカウントの設定を1ページで行います。一覧の下に適用対象のアカウント名と、要約スタイル、モデル、推論強度、ライブ初版、録音後の自動処理を表示します。ローカルアカウントではモデルプロバイダーと認証の設定も表示します。設定はこのMac内で同じアカウントの全ワークスペースに適用し、別のMacやWebには同期しません。**ワークスペース → ワークスペースの設定**には共有する出力言語を置き、編集対象のワークスペースを切り替えられます。Apple Speechの言語など端末共通の設定は**このMac**にあります。設定検索ではページ名と項目名で検索でき、旧アカウント設定画面へのリンクは「アカウント管理」へ移動します。
+設定は適用範囲ごとに分かれています。**アカウント → モデル設定**には、選択中のアカウントのモデルプロバイダーと、要約スタイル、モデル、推論強度、ライブ初版、録音後の自動処理を表示します。設定はこのMac内で同じアカウントの全ワークスペースに適用し、別のMacやWebには同期しません。**ワークスペース → ワークスペースの設定**には共有する出力言語を置き、編集対象のワークスペースを切り替えられます。Apple Speechの言語など端末共通の設定は**このMac**にあります。設定検索ではページ名と項目名で検索でき、旧アカウント設定画面へのリンクは「モデル設定」へ移動します。
 
-サイドバー下部にはアカウント名と同期状態を表示します。アカウントはアカウントメニューまたは設定の「アカウント管理」一覧の行をクリックして切り替え、ワークスペースの切替は画面ヘッダーのワークスペース名から行います。ワークスペースの管理は設定から行います。
+サイドバー下部にはアカウント名と同期状態を表示します。アカウントはサイドバー下部（設定画面にも表示）のアカウントメニューで切り替え、ワークスペースの切替は画面ヘッダーのワークスペース名から行います。ワークスペースの管理は設定から行います。
 
 バッチ文字起こしの自動判定を初めて使うときは、固定リビジョンの多言語 WhisperKit `tiny` モデルと tokenizer を取得し、Dahlia の Application Support ディレクトリへキャッシュします。言語判定と文字起こしはデバイス上で行い、録音音声はアップロードしません。
 
@@ -67,7 +67,7 @@ MCP 設定を読み直した Codex で `XcodeListWindows` → `XcodeGlob` → `R
 ## ビルド & 実行
 
 ```bash
-# デバッグビルド・実行（署名なし、同梱 Codex 要約は利用不可）
+# デバッグビルド・実行（署名なし、同梱 Pi 要約は利用不可）
 swift build && swift run Dahlia
 
 # コード署名付きデバッグビルド（Data Protection Keychain が有効）
@@ -103,7 +103,7 @@ swift test
 ./scripts/lint.sh
 ```
 
-> **注意:** `swift run Dahlia` には同梱 Codex ヘルパーがなく、Data Protection Keychain も使用できません。フル機能には `run-dev.sh` を使用してください。`run-dev.sh` は開発プロファイルを使用し、DB、録音復旧ファイル、Codex 状態、broker ソケット、プロセスロックを正アプリから分離します。main checkout では `~/Library/Application Support/Dahlia-Development` を、linked Git worktree では worktree ごとに gitignore 済みの `.dahlia` フォルダを使うため、migration の異なるブランチが同じ DB を開くことはありません。worktree のパスが長すぎてこのフォルダの broker ソケットパスが上限（103 バイト）を超える場合、`run-dev.sh` はエラーで停止します。このフォルダは `git worktree remove` で worktree と一緒に削除され、`git clean -X` でも削除されます。worktree の中にあるため、そこで作業するコーディングエージェントからは `--copy-production` でコピーしたデータも含めて読めます。アプリはこの選択を `Info.plist` に埋め込み、登録した MCP コマンドを含む同梱ヘルパーも同じファイルを読みます。使用中のフォルダは起動時の `=== Running Dahlia (development profile: …) ===` 行で確認できます。Keychain 項目と Databricks 接続設定はすべての開発版で共有します。アプリバンドル用スクリプトの初回実行時は、固定した Codex の公式 GitHub Release を `aarch64-apple-darwin` 向けに取得し、SHA-256 を検証して `.build` 配下へキャッシュします。
+> **注意:** `swift run Dahlia` には同梱 Pi ヘルパーがなく、Data Protection Keychain も使用できません。フル機能には `run-dev.sh` を使用してください。`run-dev.sh` は開発プロファイルを使用し、DB、録音復旧ファイル、Pi 状態、broker ソケット、プロセスロックを正アプリから分離します。main checkout では `~/Library/Application Support/Dahlia-Development` を、linked Git worktree では worktree ごとに gitignore 済みの `.dahlia` フォルダを使うため、migration の異なるブランチが同じ DB を開くことはありません。worktree のパスが長すぎてこのフォルダの broker ソケットパスが上限（103 バイト）を超える場合、`run-dev.sh` はエラーで停止します。このフォルダは `git worktree remove` で worktree と一緒に削除され、`git clean -X` でも削除されます。worktree の中にあるため、そこで作業するコーディングエージェントからは `--copy-production` でコピーしたデータも含めて読めます。アプリはこの選択を `Info.plist` に埋め込み、登録した MCP コマンドを含む同梱ヘルパーも同じファイルを読みます。使用中のフォルダは起動時の `=== Running Dahlia (development profile: …) ===` 行で確認できます。Keychain 項目と Databricks 接続設定はすべての開発版で共有します。アプリバンドル用スクリプトの初回実行時は、固定した Pi の公式 GitHub Release を `darwin-arm64` 向けに取得し、SHA-256 を検証して `.build` 配下へキャッシュします。
 
 `run-dev.sh` は内容ベースのキャッシュを `.build/run-dev` に保存します。変更がなければ署名済みアプリを再利用し、Swift 実行ファイルだけが変わった場合は同梱資材を保ってアプリだけを再署名します。資材・署名設定の変更、バンドルの欠損・改変時は完全に組み立て直し、どの経路でも起動前に署名を検証します。更新対象の開発版が動作中なら停止するため、録音を終了してアプリを閉じてから再実行してください。`--settings` は初回セットアップ完了後に保存済みの設定カテゴリを開きます。会議選択や編集中の内容を復元するオプションではありません。
 
@@ -211,7 +211,7 @@ apps/
 │       ├── Audio/          # 音声キャプチャ（マイク & システム）
 │       ├── Database/       # GRDB モデル、マイグレーション、リポジトリ
 │       ├── Models/         # ドメインモデル
-│       ├── Services/       # Codex app-server、Workspace 同期、会議検出、Keychain
+│       ├── Services/       # Pi runtime、Workspace 同期、会議検出、Keychain
 │       ├── Speech/         # 音声認識パイプライン
 │       ├── Utilities/      # ヘルパー（UUID v7、ローカライゼーション等）
 │       ├── ViewModels/     # CaptionViewModel、SidebarViewModel

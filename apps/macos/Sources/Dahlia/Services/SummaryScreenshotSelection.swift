@@ -19,7 +19,7 @@ enum SummaryScreenshotSelection {
         _ candidates: [MeetingScreenshotRecord],
         settings: WorkspaceGenerationSettings,
         runtimeProvider: CodexRuntimeProvider,
-        appServer: CodexAppServerService = .shared,
+        appServer: PiRuntimeService = .shared,
         timeout: Duration = .seconds(90),
         imageData: @escaping @Sendable (MeetingScreenshotRecord) async throws -> Data = {
             try await ScreenshotContentProvider.shared.content(id: $0.id, variant: .thumbnail).data
@@ -52,7 +52,7 @@ enum SummaryScreenshotSelection {
         _ pool: [MeetingScreenshotRecord],
         settings: WorkspaceGenerationSettings,
         runtimeProvider: CodexRuntimeProvider,
-        appServer: CodexAppServerService,
+        appServer: PiRuntimeService,
         imageData: @Sendable (MeetingScreenshotRecord) async throws -> Data
     ) async throws -> [MeetingScreenshotRecord] {
         let start = pool[0].capturedAt
@@ -68,8 +68,13 @@ enum SummaryScreenshotSelection {
             let mimeType = ImageEncoder.mimeType(for: encoded) ?? "image/webp"
             inputs.append(.imageDataURI("data:\(mimeType);base64,\(encoded.base64EncodedString())"))
         }
+        let model = if let model = settings.imageAnalysis.model {
+            model
+        } else {
+            try await CodexScreenshotAnalysisService.defaultModel(in: appServer.models())
+        }
         let response = try await appServer.generate(.init(
-            model: settings.imageAnalysis.model ?? CodexScreenshotAnalysisService.model,
+            model: model,
             requiresExactModel: true,
             requiresImageInput: true,
             reasoningEffort: settings.imageAnalysis.reasoningEffort ?? defaultReasoningEffort,

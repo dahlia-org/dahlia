@@ -954,7 +954,7 @@ import Synchronization
                 reasoningEffort: "high",
                 detailLevelInstruction: SummaryDetailLevel.concise.instruction,
                 languageDisplayName: "Japanese",
-                runtimeProvider: .databricks(profile: "source-profile"),
+                runtimeProvider: .local,
                 workspaceID: fixture.workspace.id,
                 workspacePreferences: fixture.workspace.generationSettings
             )

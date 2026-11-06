@@ -67,12 +67,12 @@ import Foundation
 
             session.sendDraft()
             await waitUntil { contextProvider.isWaiting }
-            session.selectApprovalMethod(.fullAccess)
+            session.selectApprovalMethod(.autoReview)
             contextProvider.resume()
             await waitUntil { !session.isGenerating }
 
             #expect(await service.turnApprovalMethods == [.ask])
-            #expect(session.selectedApprovalMethod == .fullAccess)
+            #expect(session.selectedApprovalMethod == .autoReview)
         }
 
         private static func session(

@@ -12,6 +12,7 @@ actor DatabricksOAuthService {
     private let storage: DatabricksOAuthStorage
     private let authorize: OAuthLoopbackAuthorization
     private final class Pending: Sendable {
+        let connectionID: UUID
         let task: Task<String, Error>
         let loginOnly: Bool
         let interactive: Bool
@@ -19,7 +20,8 @@ actor DatabricksOAuthService {
         /// nil closes registration before the last waiter cancels the task outside the lock.
         private let waiters: Mutex<Set<UUID>?>
 
-        init(task: Task<String, Error>, loginOnly: Bool, interactive: Bool, generation: UUID, waiter: UUID) {
+        init(connectionID: UUID, task: Task<String, Error>, loginOnly: Bool, interactive: Bool, generation: UUID, waiter: UUID) {
+            self.connectionID = connectionID
             self.task = task
             self.loginOnly = loginOnly
             self.interactive = interactive
@@ -47,8 +49,9 @@ actor DatabricksOAuthService {
         }
     }
 
-    private var pending: Pending?
-    private var generation = UUID()
+    /// One token operation per workspace at a time.
+    private var pending: [UUID: Pending] = [:]
+    private var generations: [UUID: UUID] = [:]
 
     init(
         session: URLSession = URLSession(configuration: .ephemeral, delegate: OAuthNoRedirectDelegate(), delegateQueue: nil),
@@ -60,19 +63,48 @@ actor DatabricksOAuthService {
         self.authorize = authorize
     }
 
-    func currentConnection() throws -> DatabricksConnection? { try storage.loadConnection() }
+    /// Connected workspaces, oldest first. Each one is its own Databricks account.
+    func connections() throws -> [DatabricksConnection] { try storage.loadConnections() }
+
+    /// The oldest connected workspace, which Google Calendar's Databricks proxy uses.
+    func currentConnection() throws -> DatabricksConnection? { try connections().first }
+
+    /// The HTTPS origin of a Databricks workspace, without path, query, or credentials.
+    nonisolated func normalizedWorkspaceURL(_ value: String?) throws -> URL {
+        guard let value = value?.nilIfBlank,
+              var components = URLComponents(string: value),
+              components.scheme?.lowercased() == "https",
+              components.host != nil,
+              components.user == nil,
+              components.password == nil,
+              components.query == nil,
+              components.fragment == nil,
+              components.path.isEmpty || components.path == "/"
+        else {
+            throw CodexConfigurationError.invalidDatabricksWorkspaceURL
+        }
+        components.scheme = "https"
+        components.host = components.host?.lowercased()
+        if components.port == 443 {
+            components.port = nil
+        }
+        components.path = ""
+        guard let url = components.url else {
+            throw CodexConfigurationError.invalidDatabricksWorkspaceURL
+        }
+        return url
+    }
 
     func connection(id: UUID) throws -> DatabricksConnection {
-        guard let connection = try currentConnection(), connection.id == id else {
+        guard let connection = try connections().first(where: { $0.id == id }) else {
             throw DahliaCloudError.noCredential
         }
         return connection
     }
 
     func signIn(workspaceURL: String) async throws -> DatabricksConnection {
-        let url = try CodexConfigurationManager().normalizedDatabricksWorkspaceURL(workspaceURL)
-        if let connection = try currentConnection() {
-            guard connection.host == url.absoluteString else { throw DatabricksOAuthError.workspaceAlreadyConnected }
+        let url = try normalizedWorkspaceURL(workspaceURL)
+        if let connection = try connections().first(where: { $0.host == url.absoluteString }) {
             _ = try await accessToken(connectionID: connection.id, forceRefresh: true, loginOnly: true)
             // A repaired credential lets Google Calendar retry a proxy restore that failed on the old one.
             NotificationCenter.default.post(name: .databricksConnectionDidChange, object: nil)
@@ -81,10 +113,11 @@ actor DatabricksOAuthService {
         let connection = DatabricksConnection(id: .v7(), host: url.absoluteString)
         let credential = try await login(connection)
         try Task.checkCancellation()
-        // Publish the sole connection only after its credential is durable.
-        guard try currentConnection() == nil else { throw DatabricksOAuthError.workspaceAlreadyConnected }
+        // Publish the connection only after its credential is durable.
+        let existing = try connections()
+        guard !existing.contains(where: { $0.host == connection.host }) else { throw DatabricksOAuthError.workspaceAlreadyConnected }
         try storage.saveCredential(connection.id, credential)
-        do { try storage.saveConnection(connection) } catch {
+        do { try storage.saveConnections(existing + [connection]) } catch {
             try? storage.deleteCredential(connection.id)
             throw error
         }
@@ -92,13 +125,39 @@ actor DatabricksOAuthService {
         return connection
     }
 
+    /// The connection with its user's email and workspace ID, fetched once from SCIM `Me` and saved with it.
+    func identifiedConnection(id: UUID) async throws -> DatabricksConnection? {
+        guard var connection = try connections().first(where: { $0.id == id }) else { return nil }
+        guard connection.email == nil else { return connection }
+        let token = try await accessToken(connectionID: connection.id, interactive: false)
+        var request = try URLRequest(
+            url: normalizedWorkspaceURL(connection.host).appending(path: "api/2.0/preview/scim/v2/Me"),
+            timeoutInterval: 30
+        )
+        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        let (data, response) = try await session.data(for: request)
+        guard let response = response as? HTTPURLResponse, response.statusCode == 200 else {
+            throw URLError(.badServerResponse)
+        }
+        struct SCIMUser: Decodable { let userName: String? }
+        connection.email = try JSONDecoder().decode(SCIMUser.self, from: data).userName
+        connection.workspaceID = response.value(forHTTPHeaderField: "x-databricks-org-id")
+        // A sign-out during the request leaves nothing to update.
+        var all = try connections()
+        guard let index = all.firstIndex(where: { $0.id == connection.id }) else { return nil }
+        all[index] = connection
+        try storage.saveConnections(all)
+        return connection
+    }
+
     func remove(connectionID: UUID) throws {
         _ = try connection(id: connectionID)
-        generation = UUID()
-        pending?.task.cancel()
-        pending = nil
+        generations[connectionID] = UUID()
+        pending[connectionID]?.task.cancel()
+        pending[connectionID] = nil
+        // The row goes first, so a failed write leaves a listed account that still works.
+        try storage.saveConnections(connections().filter { $0.id != connectionID })
         try storage.deleteCredential(connectionID)
-        try storage.saveConnection(nil)
         NotificationCenter.default.post(name: .databricksConnectionDidChange, object: nil)
     }
 
@@ -112,19 +171,19 @@ actor DatabricksOAuthService {
         let connection = try connection(id: connectionID)
         try Task.checkCancellation()
         let waiter = UUID()
-        if !interactive, let operation = pending, operation.interactive, !operation.isFinished {
+        if !interactive, let operation = pending[connectionID], operation.interactive, !operation.isFinished {
             // Observe an interactive operation without holding it: only interactive callers keep a browser login alive.
             let token = try await waitForToken(operation, waiter: nil)
             try Task.checkCancellation()
             _ = try self.connection(id: connectionID)
             return token
         }
-        if let operation = pending, operation.addWaiter(waiter) {
+        if let operation = pending[connectionID], operation.addWaiter(waiter) {
             if loginOnly, !operation.loginOnly {
                 // An explicit sign-in must still open the browser after a pending refresh.
                 _ = try? await waitForToken(operation, waiter: waiter)
                 try Task.checkCancellation()
-                if pending?.generation == operation.generation { pending = nil }
+                if pending[connectionID]?.generation == operation.generation { pending[connectionID] = nil }
                 return try await accessToken(connectionID: connectionID, forceRefresh: forceRefresh, loginOnly: true)
             }
             if interactive, !operation.interactive {
@@ -138,7 +197,7 @@ actor DatabricksOAuthService {
                     throw CancellationError()
                 } catch {
                     try Task.checkCancellation()
-                    if pending?.generation == operation.generation { pending = nil }
+                    if pending[connectionID]?.generation == operation.generation { pending[connectionID] = nil }
                     return try await accessToken(connectionID: connectionID, forceRefresh: true, loginOnly: loginOnly)
                 }
             }
@@ -152,7 +211,7 @@ actor DatabricksOAuthService {
             return old.accessToken
         }
         let generation = UUID()
-        self.generation = generation
+        generations[connectionID] = generation
         let task = Task {
             let updated: DatabricksOAuthCredential
             if !loginOnly, let old {
@@ -170,13 +229,15 @@ actor DatabricksOAuthService {
                 updated = try await self.login(connection)
             }
             try Task.checkCancellation()
-            guard self.generation == generation else { throw CancellationError() }
+            guard self.generations[connectionID] == generation else { throw CancellationError() }
             _ = try self.connection(id: connectionID)
             try self.storage.saveCredential(connectionID, updated)
             return updated.accessToken
         }
-        let operation = Pending(task: task, loginOnly: loginOnly, interactive: interactive, generation: generation, waiter: waiter)
-        pending = operation
+        let operation = Pending(
+            connectionID: connectionID, task: task, loginOnly: loginOnly, interactive: interactive, generation: generation, waiter: waiter
+        )
+        pending[connectionID] = operation
         let token = try await waitForToken(operation, waiter: waiter)
         try Task.checkCancellation()
         _ = try self.connection(id: connectionID)
@@ -187,8 +248,8 @@ actor DatabricksOAuthService {
     private func waitForToken(_ operation: Pending, waiter: UUID?) async throws -> String {
         defer {
             if let waiter { operation.removeWaiter(waiter) }
-            if pending?.generation == operation.generation, operation.isFinished {
-                pending = nil
+            if pending[operation.connectionID]?.generation == operation.generation, operation.isFinished {
+                pending[operation.connectionID] = nil
             }
         }
         return try await withTaskCancellationHandler {
@@ -240,7 +301,7 @@ actor DatabricksOAuthService {
     }
 
     private func discover(workspace: String) async throws -> Endpoints {
-        let host = try CodexConfigurationManager().normalizedDatabricksWorkspaceURL(workspace)
+        let host = try normalizedWorkspaceURL(workspace)
         do {
             let (data, response) = try await session.data(for: URLRequest(
                 url: host.appending(path: "oidc/.well-known/oauth-authorization-server"),

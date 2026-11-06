@@ -24,9 +24,12 @@ struct MainSidebarFooterView: View {
                 connections: signedInConnections,
                 currentConnectionID: connection?.id,
                 isLocalAccount: workspaceAISettings.isLocalAccount,
-                isLocalAccountAvailable: workspaces.contains { $0.accountConnectionId == nil },
+                databricksAccounts: workspaceAISettings.databricksConnections,
+                currentDatabricksAccountID: workspaceAISettings.isDatabricksAccount
+                    ? workspaceAISettings.databricksAccountConnectionID : nil,
                 onOpenSettings: showSettings,
                 onSelectAccount: selectAccount,
+                onSelectDatabricksAccount: { selectLocalAccount(databricks: $0) },
                 onAccountAction: accountAction
             )
             .disabled(workspaceAISettings.isSwitchingRuntime)
@@ -93,12 +96,16 @@ struct MainSidebarFooterView: View {
             } else {
                 dahliaAccountController.startReauthentication(connectionID: connection.id)
             }
+        } else if workspaceAISettings.isDatabricksAccount {
+            // Its workspaces return to the Local Account, which then opens.
+            Task { await workspaceAISettings.signOutOfDatabricksAccount() }
         } else {
             mainWindowNavigation.openDahliaSignIn()
         }
     }
 
     private func selectAccount(_ connection: DahliaAccountConnection?) {
+        guard connection != nil else { return selectLocalAccount(databricks: nil) }
         guard let workspace = Self.workspaceToSelect(
             from: workspaces,
             currentWorkspace: currentWorkspace,
@@ -107,9 +114,44 @@ struct MainSidebarFooterView: View {
         onSelectWorkspace(workspace)
     }
 
-    static func workspaces(_ workspaces: [WorkspaceRecord], linkedTo connectionID: UUID?) -> [WorkspaceRecord] {
+    private func selectLocalAccount(databricks: UUID?) {
+        Self.selectLocalAccount(
+            databricks: databricks,
+            workspaces: workspaces,
+            currentWorkspace: currentWorkspace,
+            onSelectWorkspace: onSelectWorkspace
+        )
+    }
+
+    /// The Local Account and each Databricks account (`databricks`, a connected workspace) open their own workspaces;
+    /// each gets its first one on first use. All keep their data on this Mac.
+    static func selectLocalAccount(
+        databricks: UUID?,
+        workspaces: [WorkspaceRecord],
+        currentWorkspace: WorkspaceRecord?,
+        onSelectWorkspace: @escaping (WorkspaceRecord) -> Void
+    ) {
+        if let workspace = workspaceToSelect(
+            from: workspaces, currentWorkspace: currentWorkspace, connectionID: nil, databricks: databricks
+        ) {
+            onSelectWorkspace(workspace)
+            return
+        }
+        guard Self.workspaces(workspaces, linkedTo: nil, databricks: databricks).isEmpty else { return }
+        Task { @MainActor in
+            if let workspace = await WorkspaceAISettingsModel.shared.accountWorkspace(databricksConnectionID: databricks) {
+                onSelectWorkspace(workspace)
+            }
+        }
+    }
+
+    static func workspaces(
+        _ workspaces: [WorkspaceRecord],
+        linkedTo connectionID: UUID?,
+        databricks: UUID? = nil
+    ) -> [WorkspaceRecord] {
         workspaces
-            .filter { $0.accountConnectionId == connectionID }
+            .filter { $0.accountConnectionId == connectionID && $0.databricksConnectionId == databricks }
             .sorted {
                 ($0.createdAt, $0.id.uuidString) < ($1.createdAt, $1.id.uuidString)
             }
@@ -118,9 +160,13 @@ struct MainSidebarFooterView: View {
     static func workspaceToSelect(
         from workspaces: [WorkspaceRecord],
         currentWorkspace: WorkspaceRecord?,
-        connectionID: UUID?
+        connectionID: UUID?,
+        databricks: UUID? = nil
     ) -> WorkspaceRecord? {
-        guard currentWorkspace == nil || currentWorkspace?.accountConnectionId != connectionID else { return nil }
-        return Self.workspaces(workspaces, linkedTo: connectionID).first
+        // The listed copy is current; the open workspace's copy may predate a move between accounts.
+        let current = currentWorkspace.flatMap { open in workspaces.first { $0.id == open.id } } ?? currentWorkspace
+        guard current.map({ $0.accountConnectionId != connectionID || $0.databricksConnectionId != databricks }) ?? true
+        else { return nil }
+        return Self.workspaces(workspaces, linkedTo: connectionID, databricks: databricks).first
     }
 }

@@ -335,7 +335,7 @@ import GRDB
                 #expect(workspace.syncRole == nil)
                 #expect(workspace.syncConfirmedConnectionId == nil)
                 #expect(workspace.syncPullCursor == nil)
-                for table in ["dahlia_account_connections", "sync_transactions", "sync_operations", "search_documents", "recording_audio_segments"] {
+                for table in ["accounts", "sync_transactions", "sync_operations", "search_documents", "recording_audio_segments"] {
                     #expect(try Int.fetchOne(db, sql: "SELECT COUNT(*) FROM \(table)") == 0)
                 }
             }

@@ -818,7 +818,7 @@
         @Test
         func tenThousandMetadataRowsPrefetchOnlyTwentyRecentMeetings() async throws {
             let (queue, workspaceId, _) = try database()
-            let origin = try await queue.read { try #require(try String.fetchOne($0, sql: "SELECT origin FROM dahlia_account_connections")) }
+            let origin = try await queue.read { try #require(try String.fetchOne($0, sql: "SELECT origin FROM accounts")) }
             try await queue.write { db in
                 try db.execute(sql: "DELETE FROM meetings")
                 try db.execute(sql: "UPDATE workspaces SET syncPullCursor = 'ready'")
@@ -1730,7 +1730,7 @@
                     """,
                     arguments: [segmentId, meetingId, Date(timeIntervalSince1970: 1_767_225_600)]
                 )
-                return try #require(try String.fetchOne(db, sql: "SELECT origin FROM dahlia_account_connections"))
+                return try #require(try String.fetchOne(db, sql: "SELECT origin FROM accounts"))
             }
             let manifest: [String: Any] = [
                 "formatVersion": 1, "version": 1,

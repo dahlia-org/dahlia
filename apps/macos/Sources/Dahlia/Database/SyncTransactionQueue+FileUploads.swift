@@ -20,7 +20,7 @@ struct SyncFileUpload: Equatable, Sendable {
             SELECT 1 FROM sync_operations o
             JOIN sync_transactions t ON t.id = o.transactionId
             JOIN workspaces v ON v.id = t.workspace_id
-            JOIN dahlia_account_connections c ON c.id = t.connectionId
+            JOIN accounts c ON c.id = t.connectionId
             WHERE o.id = ? AND t.id = ? AND t.workspace_id = ? AND t.connectionId = ?
               AND c.origin = ? AND v.accountConnectionId = t.connectionId
               AND v.syncConfirmedConnectionId = t.connectionId

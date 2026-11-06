@@ -5,23 +5,29 @@
 
     @MainActor
     struct DatabricksAccountControllerTests {
-        @Test func loadsAndRemovesTheWorkspaceConnection() async {
+        @Test func removesOnlyTheChosenWorkspace() async throws {
             let first = DatabricksConnection(id: UUID(), host: "https://one.example.com")
-            let memory = DatabricksTestStorage(connection: first)
-            let controller = DatabricksAccountController(service: DatabricksOAuthService(storage: memory.storage))
-            await controller.load()
-            #expect(controller.connection == first)
-            #expect(await controller.remove(first.id))
-            #expect(controller.connection == nil)
+            let second = DatabricksConnection(id: UUID(), host: "https://two.example.com")
+            let memory = DatabricksTestStorage()
+            memory.state.withLock { $0.connections = [first, second] }
+            let service = DatabricksOAuthService(storage: memory.storage)
+            let controller = DatabricksAccountController(service: service)
+
+            _ = controller
+            try await service.remove(connectionID: first.id)
+
+            #expect(try await service.connections() == [second])
+            #expect(try await service.currentConnection() == second)
         }
 
-        @Test func invalidWorkspaceDoesNotChangeExistingConnections() async {
+        @Test func invalidWorkspaceDoesNotChangeExistingConnections() async throws {
             let memory = DatabricksTestStorage()
-            let controller = DatabricksAccountController(service: DatabricksOAuthService(storage: memory.storage))
+            let service = DatabricksOAuthService(storage: memory.storage)
+            let controller = DatabricksAccountController(service: service)
             #expect(await controller.signIn(workspaceURL: "http://example.com") == nil)
             #expect(controller.errorMessage != nil)
             #expect(!controller.isBusy)
-            #expect(controller.connection == nil)
+            #expect(try await service.connections().isEmpty)
         }
     }
 #endif

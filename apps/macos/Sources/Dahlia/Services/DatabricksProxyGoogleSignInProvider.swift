@@ -51,7 +51,7 @@ final class DatabricksProxyGoogleSignInProvider: GoogleSignInProviding {
     }
 
     private var connection: DatabricksConnection? {
-        try? storage.loadConnection()
+        try? storage.loadConnections().first
     }
 
     var isProxyActive: Bool { connection != nil }

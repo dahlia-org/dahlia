@@ -54,16 +54,20 @@ struct LocalSummarySettingsRows: View {
             if let errorMessage = catalog.errorMessage {
                 SettingsStatusMessage(text: errorMessage, systemImage: "exclamationmark.triangle.fill", tint: .red)
             }
-            if catalog.canRetry { Button(L10n.retry, action: reload).disabled(catalog.isLoading) }
+            if catalog.canRetry { Button(L10n.retry) { reload() }.disabled(catalog.isLoading) }
         }
-        .task(id: modelCatalogContext) { await loadModels(forceRefresh: true, context: modelCatalogContext) }
+        .task(id: modelCatalogContext) { await loadModels(forceRefresh: false, context: modelCatalogContext) }
+        // A sign-in or sign-out elsewhere already cleared Pi's cache, so a plain load lists the new models.
+        .onReceive(NotificationCenter.default.publisher(for: PiRuntimeService.modelsDidChange).receive(on: RunLoop.main)) { _ in
+            reload(forceRefresh: false)
+        }
         .onDisappear { retryTask?.cancel() }
     }
 
-    private func reload() {
+    private func reload(forceRefresh: Bool = true) {
         retryTask?.cancel()
         let context = modelCatalogContext
-        retryTask = Task { await loadModels(forceRefresh: true, context: context) }
+        retryTask = Task { await loadModels(forceRefresh: forceRefresh, context: context) }
     }
 
     private func loadModels(forceRefresh: Bool, context: CodexRuntimeProvider) async {
@@ -80,12 +84,14 @@ struct LocalSummarySettingsRows: View {
         }
     }
 
+    /// The saved model, shown as its Pi model when a Codex-era name maps to one. A missing model keeps its saved value.
     private func selectedModelID(_ target: Target) -> String {
         let settings = workspaceSettings.generationSettings
-        return switch target {
+        let saved = switch target {
         case .summary: workspaceSettings.summaryModelID
-        case .imageAnalysis: settings.imageAnalysis.model ?? CodexScreenshotAnalysisService.model
+        case .imageAnalysis: settings.imageAnalysis.model ?? CodexScreenshotAnalysisService.defaultModel(in: catalog.models)
         }
+        return PiRuntimeService.matchingModel(saved, in: catalog.models)?.model ?? saved
     }
 
     private func selectedReasoningEffort(_ target: Target) -> String {
@@ -129,8 +135,7 @@ struct LocalSummarySettingsRows: View {
     private var modelCatalogContext: CodexRuntimeProvider {
         CodexRuntimeProvider(
             accountConnectionID: workspaceSettings.accountConnectionID,
-            localProvider: workspaceSettings.localProvider,
-            databricksProfile: workspaceSettings.databricksProfile
+            databricksConnectionID: workspaceSettings.databricksAccountConnectionID
         )
     }
 }

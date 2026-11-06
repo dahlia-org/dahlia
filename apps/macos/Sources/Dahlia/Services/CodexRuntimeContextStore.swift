@@ -6,10 +6,12 @@ final class CodexRuntimeContextStore: Sendable {
     static let shared = CodexRuntimeContextStore()
 
     private struct State: Sendable {
-        var provider = CodexRuntimeProvider.chatGPTSubscription
+        var provider = CodexRuntimeProvider.local
         var requestedProvider: CodexRuntimeProvider?
         var isConfigured = false
         var isActivating = false
+        /// Accounts removed while the app runs. Work captured for one fails instead of waiting for it to return.
+        var removedProviders: Set<CodexRuntimeProvider> = []
     }
 
     private let state = Mutex(State())
@@ -28,6 +30,11 @@ final class CodexRuntimeContextStore: Sendable {
             $0.isConfigured = false
             $0.isActivating = true
         }
+        NotificationCenter.default.post(name: Self.didChange, object: nil)
+    }
+
+    func accountRemoved(_ provider: CodexRuntimeProvider) {
+        state.withLock { _ = $0.removedProviders.insert(provider) }
         NotificationCenter.default.post(name: Self.didChange, object: nil)
     }
 
@@ -62,9 +69,8 @@ final class CodexRuntimeContextStore: Sendable {
 
     private func isActive(_ expected: CodexRuntimeProvider) throws -> Bool {
         let current = state.withLock { $0 }
-        guard let requested = current.requestedProvider,
-              requested.accountConnectionID == expected.accountConnectionID else { return false }
-        guard requested == expected else { throw CodexConfigurationError.providerChanged(expected.displayName) }
+        if current.removedProviders.contains(expected) { throw CodexConfigurationError.providerChanged(expected.displayName) }
+        guard current.requestedProvider == expected else { return false }
         guard !current.isActivating else { return false }
         guard current.isConfigured, current.provider == expected else { throw CodexConfigurationError.accountNotReady }
         return true

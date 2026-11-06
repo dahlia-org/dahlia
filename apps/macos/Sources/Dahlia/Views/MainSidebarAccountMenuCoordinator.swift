@@ -4,7 +4,10 @@ import SwiftUI
 struct MainSidebarAccountSelection {
     let connectionID: UUID?
     let isLocal: Bool
-    let isLocalAvailable: Bool
+    /// Connected Databricks workspaces, each listed as its own account after the Local Account.
+    var databricksAccounts: [DatabricksConnection] = []
+    /// The open Databricks account; `isLocal` stays true for it, since its data is on this Mac.
+    var currentDatabricksID: UUID?
 }
 
 @MainActor
@@ -14,9 +17,11 @@ final class MainSidebarAccountMenuCoordinator: NSObject {
     private var connections: [DahliaAccountConnection]
     private var currentConnectionID: UUID?
     private var isLocalAccount: Bool
-    private var isLocalAccountAvailable: Bool
+    private var databricksAccounts: [DatabricksConnection] = []
+    private var currentDatabricksID: UUID?
     private var onOpenSettings: (SettingsCategory?) -> Void
     private var onSelectAccount: (DahliaAccountConnection?) -> Void
+    private var onSelectDatabricksAccount: (UUID) -> Void
     private var onAccountAction: () -> Void
     var openURL: (URL) -> Bool = { NSWorkspace.shared.open($0) }
     private let navigation = MainSidebarAccountMenuNavigationState()
@@ -32,14 +37,17 @@ final class MainSidebarAccountMenuCoordinator: NSObject {
         accountSelection: MainSidebarAccountSelection,
         onOpenSettings: @escaping (SettingsCategory?) -> Void,
         onSelectAccount: @escaping (DahliaAccountConnection?) -> Void,
+        onSelectDatabricksAccount: @escaping (UUID) -> Void = { _ in },
         onAccountAction: @escaping () -> Void
     ) {
         self.connections = connections
         currentConnectionID = accountSelection.connectionID
         isLocalAccount = accountSelection.isLocal
-        isLocalAccountAvailable = accountSelection.isLocalAvailable
+        databricksAccounts = accountSelection.databricksAccounts
+        currentDatabricksID = accountSelection.currentDatabricksID
         self.onOpenSettings = onOpenSettings
         self.onSelectAccount = onSelectAccount
+        self.onSelectDatabricksAccount = onSelectDatabricksAccount
         self.onAccountAction = onAccountAction
     }
 
@@ -52,14 +60,17 @@ final class MainSidebarAccountMenuCoordinator: NSObject {
         accountSelection: MainSidebarAccountSelection,
         onOpenSettings: @escaping (SettingsCategory?) -> Void,
         onSelectAccount: @escaping (DahliaAccountConnection?) -> Void,
+        onSelectDatabricksAccount: @escaping (UUID) -> Void = { _ in },
         onAccountAction: @escaping () -> Void
     ) {
         self.connections = connections
         currentConnectionID = accountSelection.connectionID
         isLocalAccount = accountSelection.isLocal
-        isLocalAccountAvailable = accountSelection.isLocalAvailable
+        databricksAccounts = accountSelection.databricksAccounts
+        currentDatabricksID = accountSelection.currentDatabricksID
         self.onOpenSettings = onOpenSettings
         self.onSelectAccount = onSelectAccount
+        self.onSelectDatabricksAccount = onSelectDatabricksAccount
         self.onAccountAction = onAccountAction
     }
 
@@ -89,7 +100,8 @@ final class MainSidebarAccountMenuCoordinator: NSObject {
                 connections: connections,
                 currentConnectionID: currentConnectionID,
                 isLocalAccount: isLocalAccount,
-                isLocalAccountAvailable: isLocalAccountAvailable,
+                databricksAccounts: databricksAccounts,
+                currentDatabricksID: currentDatabricksID,
                 onShowLanguages: { [weak self] in self?.presentLanguageMenu(anchorMinY: $0) },
                 onShowAccountDetails: { [weak self] connection, minY in
                     self?.presentAccountDetails(connection, anchorMinY: minY)
@@ -97,6 +109,7 @@ final class MainSidebarAccountMenuCoordinator: NSObject {
                 onDismissSubmenu: { [weak self] in self?.closeSubmenu() },
                 onOpenSettings: { [weak self] in self?.openSettings(category: $0) },
                 onSelectAccount: { [weak self] in self?.selectAccount($0) },
+                onSelectDatabricksAccount: { [weak self] in self?.selectDatabricksAccount($0) },
                 onAccountAction: { [weak self] in self?.performAccountAction() }
             )
         }
@@ -221,8 +234,14 @@ final class MainSidebarAccountMenuCoordinator: NSObject {
 
     private func selectAccount(_ connection: DahliaAccountConnection?) {
         dismissMenu()
-        guard connection?.id != currentConnectionID else { return }
+        guard connection?.id != currentConnectionID || (connection == nil && currentDatabricksID != nil) else { return }
         onSelectAccount(connection)
+    }
+
+    private func selectDatabricksAccount(_ id: UUID) {
+        dismissMenu()
+        guard id != currentDatabricksID else { return }
+        onSelectDatabricksAccount(id)
     }
 
     private func closeSubmenu() {
@@ -482,8 +501,12 @@ extension MainSidebarAccountMenuCoordinator {
             selectAccount(connections[selection])
             return
         }
+        if databricksIndices.contains(selection) {
+            selectDatabricksAccount(databricksAccounts[selection - databricksIndices.lowerBound].id)
+            return
+        }
         if selection == connections.count {
-            guard isLocalAccountAvailable else { return }
+            // Choosing the Local Account opens its `Default` workspace when it has none.
             selectAccount(nil)
             return
         }
@@ -509,7 +532,11 @@ extension MainSidebarAccountMenuCoordinator {
         switch navigation.activeMenu {
         case .root:
             let titles = connections.map(\.displayName) + [L10n.localAccount]
-                + [L10n.language, L10n.settings, hasCurrentConnection ? L10n.signOut : L10n.dahliaSignIn]
+                + databricksAccounts.map { "\(L10n.databricks), \($0.accountLabel)" } + [
+                    L10n.language,
+                    L10n.settings,
+                    hasCurrentConnection || currentDatabricksID != nil ? L10n.signOut : L10n.dahliaSignIn,
+                ]
             title = navigation.rootSelection.flatMap { titles.indices.contains($0) ? titles[$0] : nil }
         case .accountDetails:
             title = L10n.syncProgress
@@ -538,11 +565,12 @@ extension MainSidebarAccountMenuCoordinator {
         connections.contains { $0.id == currentConnectionID }
     }
 
-    var menuOffset: Int { connections.count + 1 }
+    var menuOffset: Int { connections.count + 1 + databricksAccounts.count }
+    /// Databricks accounts follow the Local Account and create their first workspace when chosen.
+    private var databricksIndices: Range<Int> { connections.count + 1 ..< menuOffset }
 
     private func isRootIndexEnabled(_ index: Int) -> Bool {
         if connections.indices.contains(index) { return connections[index].workspaceCount > 0 }
-        if index == connections.count { return isLocalAccountAvailable }
         return true
     }
 

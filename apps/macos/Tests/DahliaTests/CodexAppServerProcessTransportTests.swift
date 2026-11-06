@@ -190,38 +190,38 @@ import Foundation
         }
 
         @Test
-        func lineBeyondFourMiBLimitFailsClosed() async throws {
+        func lineBeyondFourMiBLimitIsDroppedAndReadingContinues() async throws {
+            // Pi's `agent_end` repeats a whole run; dropping it must not lose the small line after it.
             let transport = try CodexAppServerProcessTransport(
                 executableURL: URL(fileURLWithPath: "/bin/sh"),
                 arguments: [
                     "-c",
-                    "{ dd if=/dev/zero bs=1048576 count=4 2>/dev/null; printf '\\000'; } | tr '\\000' a",
+                    "{ dd if=/dev/zero bs=1048576 count=4 2>/dev/null; printf '\\000\\n'; } | tr '\\000' a; "
+                        + "printf '{\\\"type\\\":\\\"agent_settled\\\"}\\n'",
                 ]
             )
 
-            await #expect(throws: CodexAppServerError.outputLineTooLarge) {
-                _ = try await transport.receiveLine()
-            }
+            let line = try #require(await transport.receiveLine())
+            #expect(String(bytes: line, encoding: .utf8) == #"{"type":"agent_settled"}"#)
             await transport.close()
         }
 
         @Test
-        func lineBeyondSentLineAllowanceFailsClosed() async throws {
+        func lineBeyondSentLineAllowanceIsDropped() async throws {
             let baseMaximumOutputLineBytes = 64
             let transport = try CodexAppServerProcessTransport(
                 executableURL: URL(fileURLWithPath: "/bin/sh"),
                 arguments: [
                     "-c",
                     "head -c 8 >/dev/null; "
-                        + "dd if=/dev/zero bs=72 count=1 2>/dev/null",
+                        + "dd if=/dev/zero bs=72 count=1 2>/dev/null; printf '\\nok\\n'",
                 ],
                 baseMaximumOutputLineBytes: baseMaximumOutputLineBytes
             )
 
             try await transport.sendLine(Data("request".utf8))
-            await #expect(throws: CodexAppServerError.outputLineTooLarge) {
-                _ = try await transport.receiveLine()
-            }
+            let line = try #require(await transport.receiveLine())
+            #expect(line == Data("ok".utf8))
             await transport.close()
         }
 

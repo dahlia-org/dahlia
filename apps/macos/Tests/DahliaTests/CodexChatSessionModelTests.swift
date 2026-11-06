@@ -8,8 +8,9 @@ import Foundation
     @MainActor
     struct CodexChatSessionModelTests {
         @Test
-        func newTasksDefaultToAutoReviewAndPreserveExplicitSelections() {
-            #expect(CodexChatSessionModel().selectedApprovalMethod == .autoReview)
+        func newTasksAskForApprovalAndPreserveExplicitSelections() {
+            // Pi has no review step, so the other mode changes Dahlia data without asking; new chats must ask.
+            #expect(CodexChatSessionModel().selectedApprovalMethod == .ask)
             for method in CodexChatApprovalMethod.allCases {
                 #expect(CodexChatSessionModel(approvalMethod: method).selectedApprovalMethod == method)
             }
@@ -24,13 +25,13 @@ import Foundation
                 service: service
             )
 
-            session.selectApprovalMethod(.fullAccess)
+            session.selectApprovalMethod(.autoReview)
             session.selectApprovalMethod(.ask)
-            session.selectApprovalMethod(.fullAccess)
-            await waitUntilAsync { await service.approvalMethodUpdates.last == .fullAccess }
+            session.selectApprovalMethod(.autoReview)
+            await waitUntilAsync { await service.approvalMethodUpdates.last == .autoReview }
 
-            #expect(session.selectedApprovalMethod == .fullAccess)
-            #expect(await service.approvalMethodUpdates == [.fullAccess])
+            #expect(session.selectedApprovalMethod == .autoReview)
+            #expect(await service.approvalMethodUpdates == [.autoReview])
         }
 
         @Test
@@ -48,12 +49,12 @@ import Foundation
             session.sendDraft()
             await waitUntilAsync { await service.isSendWaiting }
 
-            session.selectApprovalMethod(.fullAccess)
+            session.selectApprovalMethod(.autoReview)
             await service.resumeDelayedSend()
-            await waitUntilAsync { await service.completedApprovalMethodUpdates.last == .fullAccess }
+            await waitUntilAsync { await service.completedApprovalMethodUpdates.last == .autoReview }
 
             #expect(await service.turnApprovalMethods == [.ask])
-            #expect(session.selectedApprovalMethod == .fullAccess)
+            #expect(session.selectedApprovalMethod == .autoReview)
             session.stop()
             await waitUntil { !session.isGenerating }
         }
@@ -88,7 +89,7 @@ import Foundation
             session.draft = "Question"
             session.sendDraft()
             await waitUntil { !session.isGenerating }
-            session.selectApprovalMethod(.fullAccess)
+            session.selectApprovalMethod(.autoReview)
             await waitUntil { session.hasApprovalMethodUpdateFailure }
 
             session.retry()
@@ -114,7 +115,7 @@ import Foundation
             session.draft = "Initial question"
             session.sendDraft()
             await waitUntil { !session.isGenerating }
-            session.selectApprovalMethod(.fullAccess)
+            session.selectApprovalMethod(.autoReview)
             await waitUntil { session.hasApprovalMethodUpdateFailure }
             session.enqueueManualInput(CodexChatManualSubmission(text: "Queued question", images: []))
 
@@ -124,7 +125,7 @@ import Foundation
             #expect(!session.hasApprovalMethodUpdateFailure)
             #expect(session.errorMessage == nil)
             #expect(await service.sentTextBlocks == [["Initial question"], ["Queued question"]])
-            #expect(await service.approvalMethodUpdates == [.fullAccess])
+            #expect(await service.approvalMethodUpdates == [.autoReview])
         }
 
         @Test
@@ -141,7 +142,7 @@ import Foundation
                 service: service,
                 settings: settings
             )
-            session.selectApprovalMethod(.fullAccess)
+            session.selectApprovalMethod(.autoReview)
             await waitUntil { session.hasApprovalMethodUpdateFailure }
 
             session.draft = "Question"
@@ -156,7 +157,7 @@ import Foundation
             await waitUntil { !session.isGenerating }
 
             #expect(session.hasApprovalMethodUpdateFailure)
-            #expect(await service.approvalMethodUpdates == [.fullAccess])
+            #expect(await service.approvalMethodUpdates == [.autoReview])
         }
 
         @Test
@@ -170,17 +171,17 @@ import Foundation
                 approvalMethod: .ask,
                 service: service
             )
-            session.selectApprovalMethod(.fullAccess)
+            session.selectApprovalMethod(.autoReview)
             await waitUntilAsync { await service.isApprovalMethodUpdateWaiting }
 
             session.release()
             await service.resumeDelayedApprovalMethodUpdate()
-            await waitUntilAsync { await service.completedApprovalMethodUpdates == [.fullAccess] }
+            await waitUntilAsync { await service.completedApprovalMethodUpdates == [.autoReview] }
         }
 
         @Test
         func restoredTaskRestoresItsApprovalMethod() async {
-            let service = TestCodexChatService(mode: .complete, restoredApprovalMethod: .fullAccess)
+            let service = TestCodexChatService(mode: .complete, restoredApprovalMethod: .autoReview)
             let settings = AppSettings()
             let workspace = Self.testWorkspace()
             settings.currentWorkspace = workspace
@@ -194,7 +195,7 @@ import Foundation
 
             await session.restore()
 
-            #expect(session.selectedApprovalMethod == .fullAccess)
+            #expect(session.selectedApprovalMethod == .autoReview)
         }
 
         @Test
@@ -202,7 +203,7 @@ import Foundation
             let service = TestCodexChatService(
                 mode: .complete,
                 delaysLoad: true,
-                restoredApprovalMethod: .fullAccess
+                restoredApprovalMethod: .autoReview
             )
             let settings = AppSettings()
             let workspace = Self.testWorkspace()
@@ -250,7 +251,7 @@ import Foundation
             let restoreTask = Task { await session.restore() }
             await waitUntilAsync { await service.isLoadWaiting }
 
-            #expect(session.selectedApprovalMethod == .autoReview)
+            #expect(session.selectedApprovalMethod == .ask)
 
             await service.resumeDelayedLoad()
             await restoreTask.value
@@ -292,7 +293,7 @@ import Foundation
         func failedRestoreKeepsSendingDisabledUntilRetryRestoresPermissions() async {
             let service = TestCodexChatService(
                 mode: .complete,
-                restoredApprovalMethod: .fullAccess,
+                restoredApprovalMethod: .autoReview,
                 resumeErrors: [.invalidProtocolResponse]
             )
             let settings = AppSettings()
@@ -332,7 +333,7 @@ import Foundation
             let session = CodexChatSessionModel(
                 workspaceID: workspace.id,
                 backendThreadID: "thread-1",
-                approvalMethod: .fullAccess,
+                approvalMethod: .autoReview,
                 service: service,
                 settings: settings
             )
@@ -363,7 +364,7 @@ import Foundation
 
         @Test
         func telemetryCountsManualPromptsWithoutCountingRetries() async {
-            let service = TestCodexChatService(mode: .complete, restoredApprovalMethod: .fullAccess)
+            let service = TestCodexChatService(mode: .complete, restoredApprovalMethod: .autoReview)
             let settings = AppSettings()
             settings.currentWorkspace = Self.testWorkspace()
             var events: [UsageTelemetryEvent] = []

@@ -128,7 +128,7 @@ actor ServerSummaryService {
             guard let meeting = try MeetingRecord.fetchOne(db, key: meetingID),
                   let workspace = try WorkspaceRecord.fetchOne(db, key: meeting.workspaceId) else { throw Failure.unavailable }
             guard let connectionID = workspace.accountConnectionId else { return nil }
-            guard let origin = try String.fetchOne(db, sql: "SELECT origin FROM dahlia_account_connections WHERE id = ?", arguments: [connectionID])
+            guard let origin = try String.fetchOne(db, sql: "SELECT origin FROM accounts WHERE id = ?", arguments: [connectionID])
             else {
                 throw Failure.unavailable
             }

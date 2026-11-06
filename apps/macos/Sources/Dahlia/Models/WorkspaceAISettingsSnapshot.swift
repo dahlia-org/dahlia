@@ -3,6 +3,8 @@ import Foundation
 struct WorkspaceAISettingsSnapshot: Equatable, Sendable {
     let workspaceID: UUID
     var accountConnectionID: UUID?
+    /// The Databricks account the workspace belongs to; nil for the Local Account.
+    var databricksConnectionID: UUID?
     var localProvider: AIAccountProvider
     var databricksProfile: String
     var generationSettings: WorkspaceGenerationSettings
@@ -10,11 +12,6 @@ struct WorkspaceAISettingsSnapshot: Equatable, Sendable {
     var summaryReasoningEffort: String { generationSettings.local.reasoningEffort }
     var chatModelID: String
     var chatReasoningEffort: String
-
-    func apply(to workspace: inout WorkspaceRecord) {
-        workspace.accountConnectionId = accountConnectionID
-        applyAISettings(to: &workspace)
-    }
 
     func applyAISettings(to workspace: inout WorkspaceRecord) {
         workspace.generationSettings.outputLanguage = generationSettings.outputLanguage
@@ -27,6 +24,7 @@ extension WorkspaceAISettingsSnapshot {
         let account = AccountInferenceSettings(workspace: workspace, defaults: defaults)
         workspaceID = workspace.id
         accountConnectionID = workspace.accountConnectionId
+        databricksConnectionID = workspace.databricksConnectionId
         localProvider = localAccountSettings.provider
         databricksProfile = localAccountSettings.databricksProfile
         generationSettings = account.generationSettings(outputLanguage: workspace.generationSettings.outputLanguage)

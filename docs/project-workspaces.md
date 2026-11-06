@@ -117,7 +117,7 @@ Transcript provenance uses `rec_` for recording-session IDs. Desktop storage ret
 
 `dahlia-mcp --workspace-id <ws_TypeID>` is read-only. Adding the sole capability flag, `--write`, publishes update tools.
 Full-Workspace in-app chat starts the helper with `--write`; summary-generation threads disable MCP tools.
-The in-app chat presets its skills in Dahlia's private `CODEX_HOME` and enables skill instructions for chat threads.
+The in-app chat loads its preset skills from the app bundle into each Pi chat process.
 Summary-generation threads keep skills disabled. `projects-optimizer` owns Project structure, Project descriptions, and
 Meeting-to-Project assignments.
 That preset also curates each Project's `description` from the Meetings assigned to it, because summary generation

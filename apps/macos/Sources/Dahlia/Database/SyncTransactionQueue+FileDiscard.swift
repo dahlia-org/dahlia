@@ -18,7 +18,7 @@ extension SyncTransactionQueue {
         let rows = try Row.fetchAll(db, sql: """
         SELECT o.id, o.entityId, o.payloadJSON, t.connectionId, c.origin FROM sync_operations o
         JOIN sync_transactions t ON t.id = o.transactionId
-        JOIN dahlia_account_connections c ON c.id = t.connectionId
+        JOIN accounts c ON c.id = t.connectionId
         WHERE t.workspace_id = ? AND t.blockedReason = 'validation' AND t.leaseExpiresAt IS NULL
           AND json_extract(t.serverResponseJSON, '$.code') = 'file_content_missing'
           AND json_extract(t.serverResponseJSON, '$.status') = 422

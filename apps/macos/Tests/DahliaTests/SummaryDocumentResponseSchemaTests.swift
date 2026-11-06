@@ -62,5 +62,34 @@ import Foundation
             #expect(document.title == "Legacy")
             #expect(document.description.isEmpty)
         }
+
+        @Test
+        func blocksWithoutTheirInapplicableFieldsStillDecode() throws {
+            // Claude and Gemini see the schema only in the prompt and may leave out fields a block does not use.
+            let response = """
+            {"title":"T","description":"D","sections":[{"heading":"H","blocks":[
+              {"type":"paragraph","content":{"text":"Body","transcript_ref":null}},
+              {"type":"bulleted_list","items":[{"text":"One","transcript_ref":null}]}
+            ]},{"heading":"Empty"}],"action_items":[{"title":"Send deck"}]}
+            """
+
+            let decoded = try JSONDecoder().decode(SummaryDocumentResponse.self, from: Data(response.utf8))
+
+            let blocks = try #require(decoded.sections.first?.blocks)
+            #expect(blocks.map(\.type) == ["paragraph", "bulleted_list"])
+            #expect(blocks[0].content.text == "Body" && blocks[0].items.isEmpty && blocks[0].imageId.isEmpty)
+            #expect(blocks[1].content.text.isEmpty && blocks[1].items.map(\.checked) == [false])
+            #expect(decoded.sections.last?.blocks.isEmpty == true)
+            #expect(decoded.tags.isEmpty && decoded.actionItems == [SummaryActionItem(title: "Send deck", assignee: "")])
+            // A block without the field its type carries text in still fails, instead of saving an empty summary.
+            for block in [#"{}"#, #"{"type":"paragraph","text":"Body"}"#, #"{"type":"checklist"}"#] {
+                #expect(throws: DecodingError.self) {
+                    try JSONDecoder().decode(
+                        SummaryDocumentResponse.self,
+                        from: Data(#"{"title":"T","sections":[{"heading":"H","blocks":[\#(block)]}]}"#.utf8)
+                    )
+                }
+            }
+        }
     }
 #endif

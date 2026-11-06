@@ -2,7 +2,6 @@ import SwiftUI
 
 struct SetupCompletionStepView: View {
     @ObservedObject private var settings = AppSettings.shared
-    @Bindable private var workspaceSettings = WorkspaceAISettingsModel.shared
     @Environment(\.scenePhase) private var scenePhase
     @State private var permissionModel = PermissionGuideModel()
     var model: SetupTourModel
@@ -20,9 +19,7 @@ struct SetupCompletionStepView: View {
                         identifiers: settings.enabledLanguageIdentifiers
                     )
                 )
-                if model.selectedAccountConnectionID == nil {
-                    LabeledContent(L10n.modelProvider, value: workspaceSettings.localProvider.displayName)
-                } else {
+                if model.selectedAccountConnectionID != nil {
                     LabeledContent(L10n.dahliaAccount, value: L10n.connected)
                 }
             }

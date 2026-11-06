@@ -171,6 +171,7 @@ enum BackupRestoreStartupProcessor {
                     if let target {
                         restoredWorkspace.path = target.path
                         restoredWorkspace.accountConnectionId = target.accountConnectionId
+                        restoredWorkspace.databricksConnectionId = target.databricksConnectionId
                         restoredWorkspace.localAIProvider = target.localAIProvider
                         restoredWorkspace.databricksProfile = target.databricksProfile
                         restoredWorkspace.summaryModelID = target.summaryModelID

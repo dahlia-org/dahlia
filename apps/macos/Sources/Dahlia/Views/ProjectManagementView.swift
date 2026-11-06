@@ -58,7 +58,15 @@ struct ProjectManagementView<Header: View>: View {
                 SettingsSidebarView(
                     selection: $mainWindowNavigation.settingsCategory,
                     onReturnToApp: mainWindowNavigation.dismissSettings
-                )
+                ) {
+                    MainSidebarBottomArea(
+                        viewModel: captionViewModel,
+                        sidebarViewModel: sidebarViewModel,
+                        recordingCoordinator: recordingCoordinator,
+                        updateController: updateController,
+                        onSelectWorkspace: onSelectWorkspace
+                    )
+                }
             }
         } detail: {
             MainWindowPaneContent(isShowingSettings: isShowingSettings) {

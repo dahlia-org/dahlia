@@ -180,6 +180,7 @@ enum LocalWorkspaceImport {
         }
         if sourceId == target.id {
             target.accountConnectionId = destination.connectionId
+            target.databricksConnectionId = nil
             target.organizationId = destination.organizationId
             target.personalUserId = destination.personalUserId
             target.syncRole = destination.role

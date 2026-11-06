@@ -1,5 +1,7 @@
 # Codex runtime と stdio
 
+2026-11-06: 実行方式・認証・承認の現行方針は[内蔵 Pi runtime](pi-runtime.md)を優先する。以下は採択時点の履歴。
+
 対象: Desktop 内蔵 Codex。採択: 2026-07-15〜08-03。Dahlia Server とは別の子 process。
 
 ## 所有境界

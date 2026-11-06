@@ -319,7 +319,7 @@
                 #expect(workspace.accountConnectionId == nil && workspace.organizationId == nil && workspace.syncRole == nil && workspace
                     .syncConfirmedConnectionId == nil)
                 let connection = try #require(try DahliaAccountConnectionRecord.fetchOne(db, key: connectionID))
-                #expect(connection.syncDiscoveryErrorJSON == nil)
+                #expect(connection.kind == DahliaAccountConnectionRecord.dahliaKind)
                 #expect(workspace.syncPullErrorJSON == nil)
                 #expect(try Int.fetchOne(db, sql: "SELECT syncMutationGeneration FROM workspaces WHERE id = ?", arguments: [workspaceID]) == 0)
                 #expect(try Int.fetchOne(db, sql: "SELECT syncMeetingEventsVersion FROM workspaces WHERE id = ?", arguments: [workspaceID]) == 0)
@@ -402,7 +402,7 @@
             try DevelopmentSchemaHistory.migrator(for: prior).migrate(queue)
             let workspaceID = UUID.v7(), documentID = UUID.v7(), recoveryID = UUID.v7()
             try queue.write { db in
-                try WorkspaceRecord(id: workspaceID, path: nil, name: "Development", createdAt: .now, lastOpenedAt: .now).insert(db)
+                try WorkspaceRecord(id: workspaceID, path: nil, name: "Development", createdAt: .now, lastOpenedAt: .now).insertIntoLegacySchema(db)
                 try db.execute(sql: """
                 INSERT INTO documents(id, workspace_id, kind, checkpoint, createdAt, updatedAt)
                 VALUES (?, ?, 'general', 'AAA=', ?, ?);
@@ -438,6 +438,7 @@
                 "v54_documentsSyncAndBackgroundJobs",
                 "v55_serverContentRetention",
                 "v56_screenshotTextControlCharacters",
+                "v57_accountsTable",
             ])
             try database.dbQueue.read { db throws in
                 #expect(try Row.fetchAll(db, sql: "PRAGMA foreign_key_check").isEmpty)
@@ -445,6 +446,80 @@
                 #expect(try !db.columns(in: "projects").contains { $0.name == "appearance" })
                 #expect(try AppDatabaseManager.hasExpectedCurrentSchema(db))
             }
+        }
+
+        @Test
+        func accountsMigrationKeepsConnectionsAndRewritesEveryReference() throws {
+            let queue = try DatabaseQueue(configuration: AppDatabaseManager.configuration())
+            try AppDatabaseManager.migrator.migrate(queue, upTo: "v56_screenshotTextControlCharacters")
+            let id = UUID.v7()
+            let connectionID = UUID.v7()
+            try queue.write { db in
+                try db.execute(
+                    sql: "INSERT INTO dahlia_account_connections (id, origin, clientID, createdAt) VALUES (?, 'https://server.example.com', 'desktop', ?)",
+                    arguments: [connectionID, Date.now]
+                )
+                try db.execute(
+                    sql: "INSERT INTO workspaces (id, name, createdAt, lastOpenedAt, chatModelID) VALUES (?, 'Preserved', ?, ?, 'model')",
+                    arguments: [id, Date.now, Date.now]
+                )
+            }
+
+            try AppDatabaseManager.migrator.migrate(queue)
+
+            try queue.write { db in
+                let workspace = try #require(try WorkspaceRecord.fetchOne(db, key: id))
+                #expect(workspace.name == "Preserved" && workspace.chatModelID == "model")
+                #expect(workspace.accountConnectionId == nil && workspace.databricksConnectionId == nil)
+                let connection = try #require(try DahliaAccountConnectionRecord.fetchOne(db, key: connectionID))
+                #expect(connection.origin == "https://server.example.com" && connection.kind == DahliaAccountConnectionRecord.dahliaKind)
+                try Self.expectNoReferenceToTheConnectionsTable(in: db)
+                // Inserting a workspace checks its foreign keys, which failed while they named the old table.
+                let databricks = DahliaAccountConnectionRecord(
+                    DatabricksConnection(id: .v7(), host: "https://dbc-1.cloud.databricks.com"), createdAt: .now
+                )
+                try databricks.insert(db)
+                try WorkspaceRecord(
+                    id: .v7(), path: nil, name: "New", createdAt: .now, lastOpenedAt: .now, databricksConnectionId: databricks.id
+                ).insert(db)
+                #expect(try AppDatabaseManager.hasExpectedCurrentSchema(db))
+            }
+        }
+
+        @Test
+        func developmentDatabaseFromTheFirstAccountsMigrationIsRepaired() throws {
+            let queue = try DatabaseQueue(configuration: AppDatabaseManager.configuration())
+            try AppDatabaseManager.migrator.migrate(queue, upTo: "v56_screenshotTextControlCharacters")
+            // The first `v57_accounts` renamed the table with the legacy behavior and foreign keys off, as GRDB runs
+            // migrations, leaving references to the old name. Foreign keys only turn off outside a transaction.
+            try queue.writeWithoutTransaction { db in
+                try db.execute(sql: """
+                PRAGMA foreign_keys = OFF;
+                PRAGMA legacy_alter_table = ON;
+                ALTER TABLE dahlia_account_connections RENAME TO accounts;
+                ALTER TABLE accounts DROP COLUMN syncDiscoveryErrorJSON;
+                ALTER TABLE accounts ADD COLUMN kind TEXT NOT NULL DEFAULT 'dahlia';
+                ALTER TABLE accounts ADD COLUMN email TEXT;
+                ALTER TABLE accounts ADD COLUMN workspaceID TEXT;
+                ALTER TABLE workspaces ADD COLUMN databricksConnectionId BLOB REFERENCES accounts(id) ON DELETE SET NULL;
+                PRAGMA legacy_alter_table = OFF;
+                PRAGMA foreign_keys = ON;
+                INSERT INTO grdb_migrations (identifier) VALUES ('v57_accounts');
+                """)
+                #expect(try String.fetchAll(db, sql: "SELECT name FROM sqlite_master WHERE sql LIKE '%dahlia_account_connections%'").contains("workspaces"))
+            }
+
+            try AppDatabaseManager.migrator.migrate(queue)
+
+            try queue.write { db in
+                try Self.expectNoReferenceToTheConnectionsTable(in: db)
+                try WorkspaceRecord(id: .v7(), path: nil, name: "New", createdAt: .now, lastOpenedAt: .now).insert(db)
+                #expect(try AppDatabaseManager.hasExpectedCurrentSchema(db))
+            }
+        }
+
+        private static func expectNoReferenceToTheConnectionsTable(in db: Database) throws {
+            #expect(try String.fetchAll(db, sql: "SELECT name FROM sqlite_master WHERE sql LIKE '%dahlia_account_connections%'").isEmpty)
         }
 
         @Test
@@ -476,9 +551,13 @@
             let serverShot = screenshot(in: serverMeeting, ocrText: degenerate, caption: "A \u{13}browser")
             let dirtyCaptionShot = screenshot(in: localMeeting, ocrText: "  Keep\n\tlayout  ", caption: "Clean\u{07}")
             try queue.write { db in
-                try connection.insert(db)
-                try local.insert(db)
-                try server.insert(db)
+                // Before `v57_accountsTable`, accounts were `dahlia_account_connections`.
+                try db.execute(
+                    sql: "INSERT INTO dahlia_account_connections (id, origin, clientID, createdAt) VALUES (?, ?, ?, ?)",
+                    arguments: [connection.id, connection.origin, connection.clientID, connection.createdAt]
+                )
+                try local.insertIntoLegacySchema(db)
+                try server.insertIntoLegacySchema(db)
                 try localMeeting.insert(db)
                 try serverMeeting.insert(db)
                 for shot in [localShot, serverShot, dirtyCaptionShot] {
@@ -507,6 +586,7 @@
 
         @Test
         func previouslyAppliedV42GetsAccountConnectionSyncDiscoveryErrorColumn() throws {
+            // v43 re-adds the column; `v57_accountsTable` later drops it with the rest of the discovery cache.
             let queue = try DatabaseQueue(configuration: AppDatabaseManager.configuration())
             try AppDatabaseManager.migrator.migrate(queue, upTo: "v42_localFirstSchema")
             let connectionID = UUID.v7()
@@ -518,11 +598,12 @@
                 )
             }
 
-            try AppDatabaseManager.migrator.migrate(queue)
+            try AppDatabaseManager.migrator.migrate(queue, upTo: "v43_accountConnectionSyncDiscoveryError")
 
             try queue.read { db throws in
                 #expect(try db.columns(in: "dahlia_account_connections").contains { $0.name == "syncDiscoveryErrorJSON" })
-                #expect(try DahliaAccountConnectionRecord.fetchOne(db, key: connectionID)?.origin == "https://example.com")
+                #expect(try String.fetchOne(db, sql: "SELECT origin FROM dahlia_account_connections WHERE id = ?", arguments: [connectionID])
+                    == "https://example.com")
             }
         }
 

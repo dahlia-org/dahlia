@@ -1,52 +1,27 @@
 import SwiftUI
 
+/// Model providers of the open account. The Local Account uses the OpenAI and Anthropic subscriptions, signed in
+/// independently; a Databricks account uses its workspace's Unity AI Gateway.
 struct AccountSettingsView: View {
-    @Bindable private var workspaceSettings = WorkspaceAISettingsModel.shared
-    @State private var chatGPTController = CodexAccountController()
-    @State private var databricksController = DatabricksAccountController()
+    @State private var workspaceSettings = WorkspaceAISettingsModel.shared
+    @State private var openAIController = CodexAccountController(subscription: .openai)
+    @State private var anthropicController = CodexAccountController(subscription: .anthropic)
 
     var body: some View {
-        switch workspaceSettings.localProvider {
-        case .chatGPTSubscription:
-            ChatGPTAccountSettingsView(
-                controller: chatGPTController,
-                title: L10n.modelProvider,
-                footer: localProviderDescription
-            ) {
-                providerPicker
+        Section {
+            if workspaceSettings.isDatabricksAccount {
+                // The account itself signs out from the account menu.
+                Label {
+                    Text(L10n.unityGateway)
+                } icon: {
+                    Image.databricksLogo.resizable().scaledToFit().frame(width: 16, height: 16)
+                }
+            } else {
+                SubscriptionAccountSettingsView(controller: openAIController)
+                SubscriptionAccountSettingsView(controller: anthropicController)
             }
-        case .databricks:
-            DatabricksAccountSettingsView(
-                controller: databricksController,
-                title: L10n.modelProvider,
-                footer: localProviderDescription
-            ) {
-                providerPicker
-            }
-        }
-
-    }
-
-    private var providerPicker: some View {
-        DahliaMenuPicker(
-            title: L10n.modelProvider,
-            selection: $workspaceSettings.localProvider,
-            options: AIAccountProvider.allCases,
-            label: \.displayName
-        )
-        .disabled(
-            chatGPTController.isBusy
-                || databricksController.isBusy
-                || (workspaceSettings.isLocalAccount && workspaceSettings.isSwitchingRuntime)
-        )
-    }
-
-    private var localProviderDescription: String {
-        switch workspaceSettings.localProvider {
-        case .chatGPTSubscription:
-            L10n.codexAccountDescription
-        case .databricks:
-            L10n.databricksCodexDescription
+        } header: {
+            Text(L10n.modelProvider)
         }
     }
 }

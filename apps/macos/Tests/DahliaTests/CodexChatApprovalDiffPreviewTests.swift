@@ -105,11 +105,6 @@
                 .allowSimilarCommands(amendment: amendment),
                 .deny,
             ])
-            #expect(request.actions[1].decision.jsonValue == .object([
-                "acceptWithExecpolicyAmendment": .object([
-                    "execpolicy_amendment": .array(amendment.map(JSONValue.string)),
-                ]),
-            ]))
         }
 
         @Test

@@ -20,7 +20,7 @@ final class CodexChatCoordinator {
     @ObservationIgnored private var historyGeneration = 0
 
     init(
-        service: any CodexChatServicing = CodexChatService.shared,
+        service: any CodexChatServicing = PiChatService.shared,
         settings: AppSettings = .shared
     ) {
         self.service = service

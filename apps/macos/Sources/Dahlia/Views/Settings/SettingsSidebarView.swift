@@ -1,11 +1,20 @@
 import SwiftUI
 
-struct SettingsSidebarView: View {
+/// `footer` keeps the main sidebar's account footer, and so the account menu, while Settings is open.
+struct SettingsSidebarView<Footer: View>: View {
     @Binding var selection: SettingsCategory
     let onReturnToApp: () -> Void
+    @ViewBuilder var footer: Footer
     @State private var searchText = ""
 
     var body: some View {
+        VStack(spacing: 0) {
+            categoryList
+            footer
+        }
+    }
+
+    private var categoryList: some View {
         List(selection: $selection) {
             Button(action: onReturnToApp) {
                 MainSidebarNavigationLabel(
@@ -45,5 +54,11 @@ struct SettingsSidebarView: View {
         }
         .listStyle(.sidebar)
         .scrollContentBackground(.hidden)
+    }
+}
+
+extension SettingsSidebarView where Footer == EmptyView {
+    init(selection: Binding<SettingsCategory>, onReturnToApp: @escaping () -> Void) {
+        self.init(selection: selection, onReturnToApp: onReturnToApp) { EmptyView() }
     }
 }

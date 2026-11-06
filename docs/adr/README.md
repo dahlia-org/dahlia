@@ -4,11 +4,11 @@
 
 対象・テーマごとに、採択した設計、その理由、制約と変更の経緯をまとめる。採択は実装・rollout・検証の完了を意味しない。現在の構成と適合状況は [ARCHITECTURE.md](../../ARCHITECTURE.md)、Server の API・運用は [Server README](../../apps/server/README.md)、機能の採否は [PRODUCT.md](../../PRODUCT.md) を参照する。文書全体の入口は [Documentation](../README.md)。
 
-`Codex app-server` は Desktop の内蔵子プロセスであり、Dahlia Server とは別物。
+内蔵 Pi（旧 `Codex app-server`）は Desktop の子プロセスであり、Dahlia Server とは別物。
 
 ## Desktop
 
-macOS、ローカル SQLite、録音、UI、内蔵 Codex / local MCP。
+macOS、ローカル SQLite、録音、UI、内蔵 Pi / local MCP。
 
 - [サマリーの構造と更新](desktop/summary.md)
 - [録音ストレージと保存期間](desktop/recording-storage.md)
@@ -19,7 +19,8 @@ macOS、ローカル SQLite、録音、UI、内蔵 Codex / local MCP。
 - [Local MCP と Project 階層](desktop/local-mcp-and-projects.md)
 - [顧客情報の正準モデルと更新（廃止済み）](desktop/customer-intelligence.md)
 - [内蔵 AI skill と context](desktop/ai-skills-and-context.md)
-- [Codex runtime と stdio](desktop/codex-runtime.md)
+- [内蔵 Pi runtime](desktop/pi-runtime.md)
+- [Codex runtime と stdio（Pi へ置換済み）](desktop/codex-runtime.md)
 - [Desktop の認証と account 分離](desktop/accounts.md)
 - [チャットの書き込みと承認](desktop/chat-approval.md)
 - [匿名 telemetry](desktop/telemetry.md)

@@ -73,7 +73,7 @@ struct FileRecord: Codable, FetchableRecord, PersistableRecord, Sendable {
               let metadata = value.metadata, let sourceType = FileMetadata.Source(rawValue: metadata.source.rawValue), let name = value.name,
               let createdAt = value.createdAt, let updatedAt = value.updatedAt,
               let row = try Row.fetchOne(db, sql: """
-              SELECT c.id, c.origin FROM workspaces v JOIN dahlia_account_connections c ON c.id = v.accountConnectionId
+              SELECT c.id, c.origin FROM workspaces v JOIN accounts c ON c.id = v.accountConnectionId
               WHERE v.id = ?
               """, arguments: [workspaceId]) else { throw SyncTransactionQueueError.invalidReceipt }
         let existing = try Self.fetchOne(db, key: id)

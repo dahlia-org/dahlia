@@ -6,6 +6,26 @@
 
     @MainActor
     struct MainSidebarAccountMenuTests {
+        @Test(arguments: [false, true])
+        func menuButtonFollowsTheFootersDisabledState(disabled: Bool) throws {
+            // The footer is disabled while recording; the AppKit button must not open the account menu then.
+            let host = NSHostingView(rootView: MainSidebarAccountMenuButton(
+                connections: [],
+                currentConnectionID: nil,
+                isLocalAccount: true,
+                onOpenSettings: { _ in },
+                onSelectAccount: { _ in },
+                onAccountAction: {}
+            ).disabled(disabled))
+            host.frame = NSRect(x: 0, y: 0, width: 240, height: 44)
+            host.layoutSubtreeIfNeeded()
+
+            func button(in view: NSView) -> MainSidebarAccountButton? {
+                (view as? MainSidebarAccountButton) ?? view.subviews.lazy.compactMap(button(in:)).first
+            }
+            #expect(try #require(button(in: host)).isEnabled == !disabled)
+        }
+
         @Test
         func panelWidthIncludesItsPadding() {
             let panel = MainSidebarAccountMenuPanel(width: 180) {
@@ -316,7 +336,7 @@
             let connections = [makeConnection(origin: "https://server.example.com", isCloud: false)]
             let coordinator = MainSidebarAccountMenuCoordinator(
                 connections: connections,
-                accountSelection: .init(connectionID: nil, isLocal: true, isLocalAvailable: true),
+                accountSelection: .init(connectionID: nil, isLocal: true),
                 onOpenSettings: { _ in }, onSelectAccount: { _ in }, onAccountAction: {}
             )
             coordinator.button = button
@@ -371,8 +391,7 @@
                 connections: [cloud, server],
                 accountSelection: MainSidebarAccountSelection(
                     connectionID: cloud.id,
-                    isLocal: false,
-                    isLocalAvailable: true
+                    isLocal: false
                 ),
                 onOpenSettings: { _ in },
                 onSelectAccount: {
@@ -404,6 +423,78 @@
         }
 
         @Test
+        func databricksFooterShowsTheWorkspaceOverTheEmailAndTheMenuCombinesThem() {
+            var connection = DatabricksConnection(id: UUID(), host: "https://dbc-1.cloud.databricks.com")
+            #expect(MainSidebarAccountMenuButton.databricksFooterLines(connection) == ("dbc-1", nil))
+            #expect(connection.accountLabel == "dbc-1")
+            connection.email = "me@example.com"
+            #expect(MainSidebarAccountMenuButton.databricksFooterLines(connection) == ("dbc-1", "me@example.com"))
+            #expect(connection.accountLabel == "dbc-1 (me@example.com)")
+            #expect(MainSidebarAccountMenuButton.databricksFooterLines(nil) == (L10n.databricks, nil))
+        }
+
+        @Test
+        func localAndDatabricksAccountsListTheirOwnWorkspaces() {
+            var local = WorkspaceRecord(id: .v7(), path: nil, name: "Local", createdAt: .distantPast, lastOpenedAt: .now)
+            var databricks = WorkspaceRecord(
+                id: .v7(), path: nil, name: "Databricks", createdAt: .now, lastOpenedAt: .now, databricksConnectionId: .v7()
+            )
+            #expect(MainSidebarFooterView.workspaces([databricks, local], linkedTo: nil) == [local])
+            let account = databricks.databricksConnectionId
+            #expect(MainSidebarFooterView.workspaces([databricks, local], linkedTo: nil, databricks: account) == [databricks])
+            #expect(MainSidebarFooterView.workspaces([databricks, local], linkedTo: nil, databricks: .v7()).isEmpty)
+            #expect(MainSidebarFooterView.workspaceToSelect(
+                from: [local, databricks], currentWorkspace: local, connectionID: nil, databricks: account
+            ) == databricks)
+            #expect(MainSidebarFooterView.workspaceToSelect(from: [local, databricks], currentWorkspace: local, connectionID: nil) == nil)
+
+            // The listed copy wins over an open workspace that has since moved to the Databricks account.
+            let staleOpen = local
+            local.databricksConnectionId = databricks.databricksConnectionId
+            databricks.databricksConnectionId = nil
+            #expect(MainSidebarFooterView.workspaceToSelect(
+                from: [local, databricks], currentWorkspace: staleOpen, connectionID: nil
+            ) == databricks)
+        }
+
+        @Test
+        func keyboardSwitchesBetweenTheLocalAndDatabricksAccounts() {
+            var selections: [String] = []
+            let first = DatabricksConnection(id: UUID(), host: "https://one.example.com")
+            let second = DatabricksConnection(id: UUID(), host: "https://two.example.com")
+            func coordinator(current: UUID?) -> MainSidebarAccountMenuCoordinator {
+                MainSidebarAccountMenuCoordinator(
+                    connections: [],
+                    accountSelection: MainSidebarAccountSelection(
+                        connectionID: nil, isLocal: true,
+                        databricksAccounts: [first, second], currentDatabricksID: current
+                    ),
+                    onOpenSettings: { _ in selections.append("settings") },
+                    onSelectAccount: { selections.append($0 == nil ? "local" : "server") },
+                    onSelectDatabricksAccount: { selections.append($0 == first.id ? "first" : "second") },
+                    onAccountAction: {}
+                )
+            }
+
+            // Each activation closes the menu, so every selection starts again from the first row.
+            func activate(_ coordinator: MainSidebarAccountMenuCoordinator, row: Int) {
+                for _ in 0...row { coordinator.moveSelection(1) }
+                coordinator.activateSelection()
+            }
+            let local = coordinator(current: nil)
+            activate(local, row: 0)
+            activate(local, row: 1)
+            activate(local, row: 2)
+            let databricks = coordinator(current: first.id)
+            activate(databricks, row: 0)
+            activate(databricks, row: 1)
+            activate(databricks, row: 4)
+
+            // Choosing the current account does nothing; the rows after the Databricks accounts keep their actions.
+            #expect(selections == ["first", "second", "local", "settings"])
+        }
+
+        @Test
         func keyboardSelectionSkipsAccountsWithoutWorkspaces() {
             let unavailable = makeConnection(origin: "https://unused.example.com", isCloud: false, workspaceCount: 0)
             let available = makeConnection(origin: "https://used.example.com", isCloud: false)
@@ -412,8 +503,7 @@
                 connections: [unavailable, available],
                 accountSelection: MainSidebarAccountSelection(
                     connectionID: nil,
-                    isLocal: true,
-                    isLocalAvailable: true
+                    isLocal: true
                 ),
                 onOpenSettings: { _ in },
                 onSelectAccount: { selectedConnectionID = $0?.id },
@@ -433,7 +523,7 @@
             var accountActions = 0
             let coordinator = MainSidebarAccountMenuCoordinator(
                 connections: [],
-                accountSelection: .init(connectionID: nil, isLocal: true, isLocalAvailable: true),
+                accountSelection: .init(connectionID: nil, isLocal: true),
                 onOpenSettings: { openedCategories.append($0) },
                 onSelectAccount: { _ in selectedAccount = true },
                 onAccountAction: { accountActions += 1 }

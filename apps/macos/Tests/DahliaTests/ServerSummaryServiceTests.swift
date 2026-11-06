@@ -167,7 +167,7 @@ import DahliaRuntimeSupport
                     reasoningEffort: "medium",
                     detailLevelInstruction: "detail",
                     languageDisplayName: "Japanese",
-                    runtimeProvider: .chatGPTSubscription
+                    runtimeProvider: .local
                 ),
                 workspaceSettings: workspaceSettings
             )
@@ -526,7 +526,7 @@ import DahliaRuntimeSupport
                     reasoningEffort: "low",
                     detailLevelInstruction: "detail",
                     languageDisplayName: "Japanese",
-                    runtimeProvider: .chatGPTSubscription
+                    runtimeProvider: .local
                 ),
                 workspaceSettings: settings
             )

@@ -75,7 +75,21 @@
             #expect(processing.workspaceSettings?.processing.location == .remote)
             #expect(processing.serverRequest?.model == "gemini")
             #expect(processing.generationSettings.modelID == "saved-model")
-            #expect(processing.generationSettings.runtimeProvider == .chatGPTSubscription)
+            #expect(processing.generationSettings.runtimeProvider == .local)
+        }
+
+        @Test
+        func runtimeProviderKeepsEachAccountAndReadsCodexEraLocalProviders() throws {
+            let id = UUID()
+            for provider in [CodexRuntimeProvider.local, .databricks(connectionID: id), .dahlia(connectionID: id)] {
+                let data = try JSONEncoder().encode(provider)
+                #expect(try JSONDecoder().decode(CodexRuntimeProvider.self, from: data) == provider)
+            }
+            // A Codex-era Databricks profile ran under the Local Account; the Databricks account is a new key.
+            let legacy = Data(#"{"databricks":{"profile":"DEFAULT"}}"#.utf8)
+            #expect(try JSONDecoder().decode(CodexRuntimeProvider.self, from: legacy) == .local)
+            #expect(try String(decoding: JSONEncoder().encode(CodexRuntimeProvider.databricks(connectionID: id)), as: UTF8.self)
+                .contains("databricksWorkspace"))
         }
 
         @Test
@@ -424,7 +438,7 @@
                     reasoningEffort: "low",
                     detailLevelInstruction: SummaryDetailLevel.max.instruction,
                     languageDisplayName: "English",
-                    runtimeProvider: .chatGPTSubscription
+                    runtimeProvider: .local
                 ),
                 workspaceSettings: workspaceSettings
             )

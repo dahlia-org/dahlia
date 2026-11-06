@@ -140,7 +140,7 @@ import GRDB
             )
             let meeting = MeetingRecord(id: .v7(), workspaceId: workspace.id, name: "Saved", createdAt: .now, updatedAt: .now)
             try queue.write { db in
-                try workspace.insert(db)
+                try workspace.insertIntoLegacySchema(db)
                 try meeting.insert(db)
             }
             let original = try queue.read { try WorkspaceRecord.fetchOne($0, key: workspace.id) }
@@ -162,14 +162,14 @@ import GRDB
             let manager = try AppDatabaseManager(path: ":memory:")
             let workspace = WorkspaceRecord(id: .v7(), path: "/tmp/output", name: "Recovered", createdAt: .now, lastOpenedAt: .now)
             try manager.dbQueue.write { db in
-                try workspace.insert(db)
+                try workspace.insertIntoLegacySchema(db)
                 try OrphanedRecordingRecoveryRecord(workspaceId: workspace.id).insert(db)
                 // A missing or Server-owned parent must not allow a partial commit.
                 let unavailableID = UUID.v7()
                 if serverOwned {
                     let connectionID = UUID.v7()
                     try db.execute(sql: """
-                    INSERT INTO dahlia_account_connections(id, origin, clientID, createdAt) VALUES (?, 'https://example.com', 'desktop', ?);
+                    INSERT INTO accounts(id, origin, clientID, createdAt) VALUES (?, 'https://example.com', 'desktop', ?);
                     INSERT INTO workspaces(id, name, createdAt, lastOpenedAt, accountConnectionId, organizationId)
                     VALUES (?, 'Server workspace', ?, ?, ?, ?);
                     """, arguments: [connectionID, Date.now, unavailableID, Date.now, Date.now, connectionID, UUID.v7()])

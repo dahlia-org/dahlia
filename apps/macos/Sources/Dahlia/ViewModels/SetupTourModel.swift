@@ -17,6 +17,9 @@ final class SetupTourModel {
     private(set) var selectedExistingWorkspaceID: UUID?
     private(set) var didSelectWorkspaceLocation = false
     private(set) var selectedAccountConnectionID: UUID?
+    /// The Databricks account: local data listed under the connected Databricks workspace.
+    /// shortcut: not saved with setup progress, so a relaunch mid-tour resumes with the Local Account; save it if that matters.
+    private(set) var selectedDatabricksConnectionID: UUID?
     private(set) var isAccountSelectionConfirmed: Bool
     private let progressDefaults: UserDefaults?
     private(set) var isPreparingWorkspace = false
@@ -32,6 +35,7 @@ final class SetupTourModel {
         self.mode = mode
         originalWorkspace = currentWorkspace
         selectedAccountConnectionID = currentWorkspace?.accountConnectionId
+        selectedDatabricksConnectionID = currentWorkspace?.databricksConnectionId
         isAccountSelectionConfirmed = currentWorkspace.map { workspace in
             guard let connectionID = workspace.accountConnectionId else { return true }
             return signedInAccountConnectionIDs.contains(connectionID)
@@ -81,12 +85,14 @@ final class SetupTourModel {
     var visibleSteps: [SetupTourStep] {
         SetupTourStep.allCases.filter {
             (mode != .initial || $0 != .workspace)
-                && (selectedAccountConnectionID == nil || $0 != .modelProvider)
+                // A Databricks account signs in during account selection and uses only its gateways.
+                && ((selectedAccountConnectionID == nil && selectedDatabricksConnectionID == nil) || $0 != .modelProvider)
         }
     }
 
-    func selectAccountConnection(_ connectionID: UUID?) {
-        if connectionID != selectedAccountConnectionID {
+    /// `databricks` chooses a connected Databricks workspace's account instead of the Local Account.
+    func selectAccountConnection(_ connectionID: UUID?, databricks: UUID? = nil) {
+        if connectionID != selectedAccountConnectionID || databricks != selectedDatabricksConnectionID {
             preparationGeneration += 1
             preparationTask?.cancel()
             preparationTask = nil
@@ -97,6 +103,7 @@ final class SetupTourModel {
             }
         }
         selectedAccountConnectionID = connectionID
+        selectedDatabricksConnectionID = connectionID == nil ? databricks : nil
         isAccountSelectionConfirmed = true
         errorMessage = nil
         persistProgress()
@@ -120,7 +127,7 @@ final class SetupTourModel {
         guard generation == preparationGeneration else { return nil }
         preparationTask = nil
         isPreparingWorkspace = false
-        guard let workspace, workspace.accountConnectionId == selectedAccountConnectionID else { return nil }
+        guard let workspace, belongsToSelectedAccount(workspace) else { return nil }
         selectExistingWorkspace(workspace)
         return workspace
     }
@@ -147,13 +154,18 @@ final class SetupTourModel {
     }
 
     func selectExistingWorkspace(_ workspace: WorkspaceRecord) {
-        guard workspace.accountConnectionId == selectedAccountConnectionID else { return }
+        guard belongsToSelectedAccount(workspace) else { return }
         selectedExistingWorkspaceID = workspace.id
         selectedWorkspaceName = nil
         didSelectWorkspaceLocation = true
         isWorkspaceLocationConfirmed = true
         errorMessage = nil
         persistProgress()
+    }
+
+    func belongsToSelectedAccount(_ workspace: WorkspaceRecord) -> Bool {
+        workspace.accountConnectionId == selectedAccountConnectionID
+            && workspace.databricksConnectionId == selectedDatabricksConnectionID
     }
 
     func confirmWorkspaceSelection() {
@@ -163,7 +175,8 @@ final class SetupTourModel {
     }
 
     var keepsOriginalWorkspace: Bool {
-        guard let originalWorkspace else { return false }
+        // Choosing another account in the tour opens that account's workspace instead.
+        guard let originalWorkspace, belongsToSelectedAccount(originalWorkspace) else { return false }
         if let selectedExistingWorkspaceID { return selectedExistingWorkspaceID == originalWorkspace.id }
         return selectedWorkspaceName == nil && (!didSelectWorkspaceLocation
             || originalWorkspace.url?.standardizedFileURL == selectedWorkspaceURL.standardizedFileURL

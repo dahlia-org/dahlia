@@ -213,7 +213,7 @@ actor ScreenshotContentProvider {
         let connection = try await credentials.read { db in
             try DahliaAccountConnectionRecord.fetchOne(
                 db,
-                sql: "SELECT * FROM dahlia_account_connections WHERE id = ? AND origin = ?",
+                sql: "SELECT * FROM accounts WHERE id = ? AND origin = ?",
                 arguments: [source.accountConnectionId, source.origin]
             )
         }

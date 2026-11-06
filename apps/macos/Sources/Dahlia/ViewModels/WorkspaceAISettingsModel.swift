@@ -19,8 +19,25 @@ final class WorkspaceAISettingsModel {
         didSet { persistLocalAccountSettingsIfChanged(oldValue, localProvider) }
     }
 
+    /// Kept for released settings. The open workspace's `databricksConnectionId` now chooses the Databricks account.
     var databricksProfile: String {
         didSet { persistLocalAccountSettingsIfChanged(oldValue, databricksProfile) }
+    }
+
+    /// Connected Databricks workspaces, oldest first. Each one is a Databricks account with its own workspaces.
+    private(set) var databricksConnections: [DatabricksConnection] = []
+
+    /// The Databricks account of the open workspace. It lists only its workspace's AI Gateway models; the Local Account
+    /// lists only the subscriptions'.
+    private(set) var databricksAccountConnectionID: UUID? {
+        didSet {
+            guard oldValue != databricksAccountConnectionID else { return }
+            NotificationCenter.default.post(name: PiRuntimeService.modelsDidChange, object: nil)
+        }
+    }
+
+    var isDatabricksAccount: Bool {
+        isLocalAccount && databricksAccountConnectionID != nil
     }
 
     var generationSettings = WorkspaceGenerationSettings() {
@@ -51,15 +68,19 @@ final class WorkspaceAISettingsModel {
     @ObservationIgnored private var runtimeTask: Task<Bool, Never>?
     @ObservationIgnored private let setupDefaults: UserDefaults
     @ObservationIgnored private let activateRuntime: @Sendable (WorkspaceAISettingsSnapshot) async throws -> Void
+    @ObservationIgnored private let databricksService: DatabricksOAuthService
+    @ObservationIgnored private var databricksObserver: NSObjectProtocol?
 
     init(
         setupDefaults: UserDefaults = .standard,
         activateRuntime: @escaping @Sendable (WorkspaceAISettingsSnapshot) async throws -> Void = {
             try await CodexRuntimeContextCoordinator.shared.activate($0)
-        }
+        },
+        databricksService: DatabricksOAuthService = .shared
     ) {
         self.setupDefaults = setupDefaults
         self.activateRuntime = activateRuntime
+        self.databricksService = databricksService
         accountConnectionID = nil
         let localSettings = LocalAccountAISettings(defaults: setupDefaults)
         let restoresSetupDraft = !setupDefaults.bool(forKey: LocalAccountAISettings.migrationKey)
@@ -73,6 +94,11 @@ final class WorkspaceAISettingsModel {
         }
         chatModelID = ""
         chatReasoningEffort = CodexReasoningEffortOption.defaultValue
+        databricksObserver = NotificationCenter.default.addObserver(
+            forName: .databricksConnectionDidChange, object: nil, queue: .main
+        ) { [weak self] _ in
+            MainActor.assumeIsolated { Task { await self?.reloadDatabricksConnections() } }
+        }
     }
 
     var snapshot: WorkspaceAISettingsSnapshot? {
@@ -84,6 +110,7 @@ final class WorkspaceAISettingsModel {
         WorkspaceAISettingsSnapshot(
             workspaceID: workspaceID,
             accountConnectionID: accountConnectionID,
+            databricksConnectionID: databricksAccountConnectionID,
             localProvider: localProvider,
             databricksProfile: databricksProfile,
             generationSettings: workspaceID == self.workspaceID ? generationSettings : WorkspaceGenerationSettings(),
@@ -106,6 +133,50 @@ final class WorkspaceAISettingsModel {
     func configure(dbQueue: DatabaseQueue) {
         self.dbQueue = dbQueue
         observeWorkspace()
+        Task { await reloadDatabricksConnections() }
+    }
+
+    /// Lists the connected Databricks workspaces with their user and workspace ID. A removed account's workspaces
+    /// return to the Local Account through the `accounts` foreign key.
+    func reloadDatabricksConnections() async {
+        let service = databricksService
+        guard let connections = try? await service.connections() else { return }
+        databricksConnections = connections
+        for connection in connections where connection.email == nil {
+            guard let identified = try? await service.identifiedConnection(id: connection.id),
+                  let index = databricksConnections.firstIndex(where: { $0.id == identified.id }) else { continue }
+            databricksConnections[index] = identified
+        }
+    }
+
+    /// Removes the open Databricks account's workspace connection. Its workspaces return to the Local Account.
+    func signOutOfDatabricksAccount() async {
+        guard let connectionID = databricksAccountConnectionID else { return }
+        do {
+            // Its workspaces are the Local Account's now. Its folder, with its chats, stays.
+            try await databricksService.remove(connectionID: connectionID)
+            CodexRuntimeContextStore.shared.accountRemoved(.databricks(connectionID: connectionID))
+            setupDefaults.removeObject(forKey: AccountInferenceSettings.key(connectionID: nil, databricksConnectionID: connectionID))
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+    }
+
+    /// The Local Account's (nil) or a Databricks account's workspace to open, created on first use so the account
+    /// always has one.
+    func accountWorkspace(databricksConnectionID connectionID: UUID?) async -> WorkspaceRecord? {
+        guard let dbQueue else { return nil }
+        var created = WorkspaceRecord(
+            id: .v7(), path: nil, name: WorkspaceManagementModel.initialWorkspaceName, createdAt: .now, lastOpenedAt: .distantPast,
+            databricksConnectionId: connectionID
+        )
+        snapshot(for: created.id).applyAISettings(to: &created)
+        do {
+            return try await MeetingRepository(dbQueue: dbQueue).accountWorkspace(databricksConnectionID: connectionID, creating: created)
+        } catch {
+            errorMessage = error.localizedDescription
+            return nil
+        }
     }
 
     func inheritLocalAccountSettings(from dbQueue: DatabaseQueue) async throws {
@@ -125,10 +196,15 @@ final class WorkspaceAISettingsModel {
             try WorkspaceRecord.order(Column("lastOpenedAt").desc, Column("createdAt").desc).fetchAll(db)
         }
         for workspace in workspaces {
-            let key = AccountInferenceSettings.key(connectionID: workspace.accountConnectionId)
+            let key = AccountInferenceSettings.key(
+                connectionID: workspace.accountConnectionId, databricksConnectionID: workspace.databricksConnectionId
+            )
             guard setupDefaults.data(forKey: key) == nil else { continue }
-            AccountInferenceSettings(workspace: workspace, defaults: setupDefaults)
-                .save(connectionID: workspace.accountConnectionId, defaults: setupDefaults)
+            AccountInferenceSettings(workspace: workspace, defaults: setupDefaults).save(
+                connectionID: workspace.accountConnectionId,
+                databricksConnectionID: workspace.databricksConnectionId,
+                defaults: setupDefaults
+            )
         }
     }
 
@@ -136,7 +212,7 @@ final class WorkspaceAISettingsModel {
         activationGeneration += 1
         errorMessage = nil
         apply(WorkspaceAISettingsSnapshot(workspace: workspace, localAccountSettings: localAccountSettings, defaults: setupDefaults))
-        if let snapshot { AccountInferenceSettings(snapshot: snapshot).save(connectionID: snapshot.accountConnectionID, defaults: setupDefaults) }
+        if let snapshot { saveAccountSettings(snapshot) }
         observeWorkspace()
         scheduleRuntimeActivation()
     }
@@ -174,6 +250,7 @@ final class WorkspaceAISettingsModel {
                 }), self.activationGeneration == generation, self.persistenceGeneration == savedGeneration,
                 self.workspaceID == workspaceID else { return }
                 let changedAccount = self.accountConnectionID != workspace.accountConnectionId
+                    || self.databricksAccountConnectionID != workspace.databricksConnectionId
                 self.apply(WorkspaceAISettingsSnapshot(
                     workspace: workspace,
                     localAccountSettings: self.localAccountSettings,
@@ -191,15 +268,22 @@ final class WorkspaceAISettingsModel {
         isApplying = true
         workspaceID = settings.workspaceID
         accountConnectionID = settings.accountConnectionID
+        databricksAccountConnectionID = settings.databricksConnectionID
         generationSettings = settings.generationSettings
         chatModelID = settings.chatModelID
         chatReasoningEffort = settings.chatReasoningEffort
         isApplying = false
     }
 
+    private func saveAccountSettings(_ snapshot: WorkspaceAISettingsSnapshot) {
+        AccountInferenceSettings(snapshot: snapshot).save(
+            connectionID: snapshot.accountConnectionID, databricksConnectionID: snapshot.databricksConnectionID, defaults: setupDefaults
+        )
+    }
+
     private func persistIfChanged<T: Equatable>(_ oldValue: T, _ newValue: T, persistsWorkspace: Bool = false) {
         guard oldValue != newValue, !isApplying, let snapshot else { return }
-        AccountInferenceSettings(snapshot: snapshot).save(connectionID: snapshot.accountConnectionID, defaults: setupDefaults)
+        saveAccountSettings(snapshot)
         guard persistsWorkspace, let dbQueue else { return }
         errorMessage = nil
         persistenceGeneration += 1

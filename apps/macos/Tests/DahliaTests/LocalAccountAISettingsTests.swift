@@ -66,6 +66,34 @@
         }
 
         @Test
+        func databricksAccountFollowsTheOpenWorkspace() throws {
+            let suiteName = "DatabricksAccountTests-\(UUID())"
+            let defaults = try #require(UserDefaults(suiteName: suiteName))
+            defer { defaults.removePersistentDomain(forName: suiteName) }
+            let model = WorkspaceAISettingsModel(setupDefaults: defaults, activateRuntime: { _ in })
+            let connectionID = UUID()
+            var databricks = makeWorkspace(openedAt: .now)
+            databricks.databricksConnectionId = connectionID
+
+            model.activate(workspace: databricks)
+            #expect(model.isDatabricksAccount)
+            #expect(model.databricksAccountConnectionID == connectionID)
+            let snapshot = try #require(model.snapshot)
+            #expect(CodexRuntimeProvider(
+                accountConnectionID: snapshot.accountConnectionID, databricksConnectionID: snapshot.databricksConnectionID
+            ) == .databricks(connectionID: connectionID))
+            // Each account keeps its own model, so switching never carries a Databricks model to the Local Account.
+            model.summaryModelID = "databricks/system.ai.claude"
+            #expect(defaults.data(forKey: AccountInferenceSettings.key(connectionID: nil, databricksConnectionID: connectionID)) != nil)
+
+            model.activate(workspace: makeWorkspace(openedAt: .now))
+            #expect(!model.isDatabricksAccount)
+            #expect(model.summaryModelID != "databricks/system.ai.claude")
+            model.activate(workspace: databricks)
+            #expect(model.summaryModelID == "databricks/system.ai.claude")
+        }
+
+        @Test
         func inferenceKeepsServerGatewayAndUsesAccountPreferencesWithSharedLanguage() async throws {
             let suiteName = "MacInferenceSettingsTests-\(UUID())"
             let defaults = try #require(UserDefaults(suiteName: suiteName))

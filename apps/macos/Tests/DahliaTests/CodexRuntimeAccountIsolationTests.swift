@@ -5,36 +5,11 @@ import Testing
 
 @MainActor
 struct CodexRuntimeAccountIsolationTests {
-    @Test(arguments: [
-        (CodexRuntimeProvider.chatGPTSubscription, CodexRuntimeProvider.databricks(profile: "first")),
-        (.databricks(profile: "first"), .chatGPTSubscription),
-        (.databricks(profile: "first"), .databricks(profile: "second")),
-    ])
-    func capturedLocalProviderFailsAfterSettingsChange(expected: CodexRuntimeProvider, active: CodexRuntimeProvider) async {
-        let store = CodexRuntimeContextStore()
-        store.apply(active)
-        var finished = false
-        var failure: CodexConfigurationError?
-        let waiter = Task {
-            defer { finished = true }
-            do {
-                try await store.waitUntilActive(expected)
-            } catch {
-                failure = error as? CodexConfigurationError
-            }
-        }
-        let completed = await pollUntil { finished }
-        waiter.cancel()
-        await waiter.value
-        #expect(completed)
-        #expect(failure == .providerChanged(expected.displayName))
-    }
-
     @Test(arguments: [false, true])
     func selectedProviderWaitsForActivationResult(fails: Bool) async {
         let store = CodexRuntimeContextStore()
-        store.apply(.chatGPTSubscription)
-        let expected = CodexRuntimeProvider.databricks(profile: "next")
+        store.apply(.local)
+        let expected = CodexRuntimeProvider.local
         store.beginActivation(expected)
         var started = false
         var finished = false
@@ -67,11 +42,12 @@ struct CodexRuntimeAccountIsolationTests {
         }
     }
 
-    @Test(arguments: ["activate", "cancel", "replace"])
-    func inactiveAccountWaitHandlesReturnCancellationAndStaleSettings(action: String) async {
+    @Test(arguments: ["activate", "cancel", "remove"])
+    func inactiveAccountWaitHandlesReturnCancellationAndRemoval(action: String) async {
         let store = CodexRuntimeContextStore()
-        store.apply(.dahlia(connectionID: .v7()))
-        let expected = CodexRuntimeProvider.chatGPTSubscription
+        store.apply(.local)
+        // A summary recorded in a Databricks account waits until that account is open again.
+        let expected = CodexRuntimeProvider.databricks(connectionID: .v7())
         var started = false
         var finished = false
         var failure: (any Error)?
@@ -90,10 +66,11 @@ struct CodexRuntimeAccountIsolationTests {
         case "activate":
             store.beginActivation(expected)
             store.apply(expected)
-        case "cancel":
-            waiter.cancel()
+        case "remove":
+            // Signed out: it can never come back, so the wait fails instead of hanging.
+            store.accountRemoved(expected)
         default:
-            store.beginActivation(.databricks(profile: "changed-while-away"))
+            waiter.cancel()
         }
         let completed = await pollUntil { finished }
         waiter.cancel()
@@ -101,8 +78,8 @@ struct CodexRuntimeAccountIsolationTests {
         #expect(completed)
         switch action {
         case "activate": #expect(failure == nil)
-        case "cancel": #expect(failure is CancellationError)
-        default: #expect(failure as? CodexConfigurationError == .providerChanged(expected.displayName))
+        case "remove": #expect(failure as? CodexConfigurationError == .providerChanged(expected.displayName))
+        default: #expect(failure is CancellationError)
         }
     }
 
@@ -144,7 +121,7 @@ struct CodexRuntimeAccountIsolationTests {
     @Test
     func existingChatDoesNotSendAfterRuntimeProviderChanges() async {
         let service = TestCodexChatService(mode: .complete)
-        let provider = Mutex(CodexRuntimeProvider.chatGPTSubscription)
+        let provider = Mutex(CodexRuntimeProvider.local)
         let settings = AppSettings()
         settings.currentWorkspace = WorkspaceRecord(
             id: .v7(),
@@ -160,158 +137,107 @@ struct CodexRuntimeAccountIsolationTests {
         )
         await session.prepare()
 
-        provider.withLock { $0 = .databricks(profile: "WORK") }
+        provider.withLock { $0 = .dahlia(connectionID: .v7()) }
         session.draft = "Do not send this"
         session.sendDraft()
         #expect(await pollUntil { session.errorMessage != nil })
 
-        #expect(session.errorMessage == L10n.codexChatProviderChanged(L10n.chatGPTSubscription))
+        #expect(session.errorMessage == L10n.codexChatProviderChanged(L10n.localAccount))
         #expect(await service.sentTextBlocks.isEmpty)
     }
 
     @Test
-    func contextChangingReloadRetriesAfterCancelledReload() async throws {
-        let first = TestCodexAppServerTransport(mode: .generationBlocks)
-        let second = TestCodexAppServerTransport(mode: .models)
-        let transports = Mutex([first, second])
-        let appliedContext = Mutex(false)
-        let service = makeTestCodexAppServerService(transportFactory: {
-            transports.withLock { $0.removeFirst() }
-        })
-        let generation = Task {
-            try await service.generate(.init(
-                model: nil,
-                developerInstructions: "Summarize.",
-                inputs: [.text("Transcript")],
-                outputSchema: Data(#"{"type":"object"}"#.utf8)
-            ))
-        }
-        await service.waitUntilActiveTurnForTesting()
-        let cancelledReload = Task { try await service.reloadConfiguration() }
-        await service.waitUntilConfigurationReloadIsWaitingForTesting()
-        let contextReload = Task {
-            try await service.reloadConfiguration {
-                appliedContext.withLock { $0 = true }
-            }
-        }
-
-        cancelledReload.cancel()
-        await #expect(throws: CancellationError.self) { try await cancelledReload.value }
-        await completeGeneration(on: first)
-
-        _ = try await generation.value
-        try await contextReload.value
-        #expect(appliedContext.withLock { $0 })
-        #expect(await first.isClosed)
-        #expect(await !second.isClosed)
-        await service.shutdown()
-    }
-
-    @Test
-    func providerSwitchCancelsGenerationAndStartsNextProcessOnDemand() async throws {
-        let rootURL = FileManager.default.temporaryDirectory
-            .appending(path: "dahlia-codex-context-\(UUID().uuidString)", directoryHint: .isDirectory)
-        defer { try? FileManager.default.removeItem(at: rootURL) }
-        let locator = ApplicationSupportCodexHomeLocator(applicationSupportURL: rootURL)
-        let configurationManager = CodexConfigurationManager(homeLocator: locator)
+    func databricksAccountStopsRunningLocalPiAndWritesItsGateways() async throws {
         let connection = DatabricksConnection(id: UUID(), host: "https://dbc.example.com")
         let memory = DatabricksTestStorage(connection: connection)
         let databricksClient = DatabricksOAuthService(storage: memory.storage)
-        let first = TestCodexAppServerTransport(mode: .generationBlocks)
-        let second = TestCodexAppServerTransport(mode: .models)
-        let transports = Mutex([first, second])
-        let service = makeTestCodexAppServerService {
-            transports.withLock { $0.removeFirst() }
+        let log = TestPiTransportLog()
+        let pi = TestPiRuntime { options in
+            let transport = options.mode == .control
+                ? TestPiTransport(reply: TestPiRuntime.modelsReply([TestPiTransport.model(provider: "openai", id: "gpt-test")]))
+                : TestPiTransport()
+            log.append(transport)
+            return transport
         }
-        let contextStore = CodexRuntimeContextStore()
-        contextStore.apply(.chatGPTSubscription)
+        defer { try? FileManager.default.removeItem(at: pi.rootURL) }
+        let locator = PiAgentDirectoryLocator(applicationSupportURL: pi.rootURL)
         let coordinator = CodexRuntimeContextCoordinator(
-            configurationManager: configurationManager,
+            agentLocator: locator,
             databricksClient: databricksClient,
-            service: service,
-            contextStore: contextStore
+            service: pi.service,
+            contextStore: pi.contextStore
         )
-        let localWorkspace = WorkspaceRecord(
-            id: .v7(),
-            path: "/tmp/local-context",
-            name: "Local",
-            createdAt: .now,
-            lastOpenedAt: .now
-        )
-        var databricksWorkspace = localWorkspace
-        databricksWorkspace.id = .v7()
-        databricksWorkspace.localProvider = .databricks
-        databricksWorkspace.databricksProfile = connection.id.uuidString
         let generation = Task {
-            try await service.generate(.init(
+            try await pi.service.generate(.init(
                 model: nil,
                 developerInstructions: "Summarize.",
                 inputs: [.text("Transcript")],
                 outputSchema: Data(#"{"type":"object"}"#.utf8)
             ))
         }
-        await service.waitUntilActiveTurnForTesting()
-        let databricksActivation = Task {
-            try await coordinator.activate(WorkspaceAISettingsSnapshot(
-                workspace: databricksWorkspace,
-                localAccountSettings: .init(provider: .databricks, databricksProfile: connection.id.uuidString)
-            ))
-        }
-        try await databricksActivation.value
-        await #expect(throws: CancellationError.self) { try await generation.value }
-        #expect(await first.isClosed)
-        #expect(transports.withLock { $0.count } == 1)
-        #expect(contextStore.provider == .databricks(profile: connection.id.uuidString))
+        let summary = await log.transport(at: 1)
+        _ = await summary.command("prompt")
 
-        try await coordinator.activate(WorkspaceAISettingsSnapshot(
-            workspace: localWorkspace,
-            localAccountSettings: .init(provider: .chatGPTSubscription, databricksProfile: "")
-        ))
-        #expect(transports.withLock { $0.count } == 1)
-        _ = try await service.models()
-        #expect(transports.withLock { $0.count } == 0)
-        try await coordinator.activate(provider: .chatGPTSubscription)
-        #expect(await !second.isClosed)
-        let configuration = try String(
-            contentsOf: locator.homeURL().appending(path: "config.toml"),
-            encoding: .utf8
-        )
-        #expect(configuration.contains(#"model_provider = "openai""#))
-        #expect(contextStore.provider == .chatGPTSubscription)
+        let databricks = CodexRuntimeProvider.databricks(connectionID: connection.id)
+        try await coordinator.activate(provider: databricks)
+
+        await #expect(throws: CancellationError.self) { try await generation.value }
+        #expect(await summary.isClosed)
+        #expect(pi.contextStore.provider == databricks)
+        // The Databricks account's own Pi directory lists its gateways; the Local Account's lists none.
+        let models = try String(contentsOf: locator.agentURL(for: databricks).appending(path: "models.json"), encoding: .utf8)
+        #expect(models.contains("https:\\/\\/dbc.example.com\\/ai-gateway\\/codex\\/v1") || models
+            .contains("https://dbc.example.com/ai-gateway/codex/v1"))
+
+        // The same account keeps the running configuration; the Local Account lists no gateways.
+        try await coordinator.activate(provider: databricks)
+        #expect(log.all.count == 2)
+        try await coordinator.activate(provider: .local)
+        let localModels = try String(contentsOf: locator.agentURL(for: .local).appending(path: "models.json"), encoding: .utf8)
+        #expect(localModels == #"{"providers":{}}"#)
+        #expect(pi.contextStore.provider == .local)
         let unavailable = CodexRuntimeProvider.dahlia(connectionID: .v7())
         await #expect(throws: CodexConfigurationError.accountNotReady) {
             try await coordinator.activate(provider: unavailable)
         }
-        #expect(!contextStore.isConfigured)
-        await #expect(throws: CodexConfigurationError.accountNotReady) {
-            try await contextStore.waitUntilActive(unavailable)
-        }
-        try await coordinator.activate(provider: .chatGPTSubscription)
-        #expect(contextStore.isConfigured)
-        await service.shutdown()
+        #expect(!pi.contextStore.isConfigured)
+        try await coordinator.activate(provider: .local)
+        #expect(pi.contextStore.isConfigured)
     }
 
-    private func completeGeneration(on transport: TestCodexAppServerTransport) async {
-        await transport.sendFromServer(.object([
-            "method": .string("item/completed"),
-            "params": .object([
-                "threadId": .string("thread-1"),
-                "turnId": .string("turn-1"),
-                "item": .object([
-                    "type": .string("agentMessage"),
-                    "text": .string(#"{"status":"ok"}"#),
-                ]),
-            ]),
-        ]))
-        await transport.sendFromServer(.object([
-            "method": .string("turn/completed"),
-            "params": .object([
-                "threadId": .string("thread-1"),
-                "turn": .object([
-                    "id": .string("turn-1"),
-                    "status": .string("completed"),
-                ]),
-            ]),
-        ]))
+    @Test
+    func dahliaAccountActivatesWithoutReachingItsServer() async throws {
+        let pi = TestPiRuntime { _ in TestPiTransport() }
+        defer { try? FileManager.default.removeItem(at: pi.rootURL) }
+        let database = try AppDatabaseManager(path: ":memory:")
+        let connectionID = UUID.v7()
+        try await database.dbQueue.write { db in
+            try DahliaAccountConnectionRecord(
+                id: connectionID, origin: "https://offline.dahlia.test", clientID: "test", createdAt: .now
+            ).insert(db)
+        }
+        let locator = PiAgentDirectoryLocator(applicationSupportURL: pi.rootURL)
+        let coordinator = CodexRuntimeContextCoordinator(
+            agentLocator: locator,
+            databricksClient: DatabricksOAuthService(storage: DatabricksTestStorage(connection: nil).storage),
+            service: pi.service,
+            contextStore: pi.contextStore
+        )
+        await coordinator.configure(dbQueue: database.dbQueue)
+        let modelsURL = try locator.agentURL(for: .dahlia(connectionID: connectionID)).appending(path: "models.json")
+
+        // Activation records the Server URL without any network request; models are fetched when listed.
+        try await coordinator.activate(provider: .dahlia(connectionID: connectionID))
+
+        #expect(pi.contextStore.provider == .dahlia(connectionID: connectionID))
+        let written = try String(contentsOf: modelsURL, encoding: .utf8)
+        #expect(written.contains(#""models":[]"#))
+        #expect(PiProviderConfiguration.dahliaBaseURL(agentURL: modelsURL.deletingLastPathComponent())?.absoluteString
+            == "https://offline.dahlia.test/api/v1")
+        try Data(#"{"providers":{"dahlia":{"baseUrl":"https://offline.dahlia.test/api/v1","models":[{"id":"kept"}]}}}"#.utf8)
+            .write(to: modelsURL)
+        try await coordinator.activate(provider: .local)
+        try await coordinator.activate(provider: .dahlia(connectionID: connectionID))
+        #expect(try String(contentsOf: modelsURL, encoding: .utf8).contains("kept"))
     }
 }

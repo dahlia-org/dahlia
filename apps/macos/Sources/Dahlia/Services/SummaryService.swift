@@ -1,7 +1,7 @@
 import DahliaRuntimeSupport
 import Foundation
 
-/// Codex app-server で文字起こしを要約し、Obsidian 互換の Markdown を生成するサービス。
+/// 内蔵 Pi で文字起こしを要約し、Obsidian 互換の Markdown を生成するサービス。
 enum SummaryService {
     struct GeneratedSummary: Codable, Sendable {
         let document: SummaryDocument
@@ -38,13 +38,15 @@ enum SummaryService {
             recordingSessions: recordingSessions
         ))
 
-        let service = CodexAppServerService.shared
+        let service = PiRuntimeService.shared
         guard CodexRuntimeContextStore.shared.provider == generationSettings.runtimeProvider else {
             throw CodexConfigurationError.providerChanged(generationSettings.runtimeProvider.displayName)
         }
         let models = try await service.models()
-        let selected = models.first { $0.model == generationSettings.modelID }
-            ?? models.first(where: \.isDefault) ?? models.first
+        let selected = try? PiRuntimeService.resolvedModel(
+            for: .init(model: generationSettings.modelID, developerInstructions: "", inputs: [], outputSchema: Data()),
+            in: models
+        )
         let effort = selected?.supportedReasoningEfforts.contains { $0.reasoningEffort == generationSettings.reasoningEffort } == true
             ? generationSettings.reasoningEffort : selected?.defaultReasoningEffort ?? generationSettings.reasoningEffort
         let responseText = try await service.generate(.init(
@@ -61,7 +63,11 @@ enum SummaryService {
             createdAt: promptContext.recordedAt,
             screenshots: screenshots
         )
-        var document = decodeSummaryDocument(from: responseText, context: context)
+        // Not every provider enforces the schema, so a non-conforming reply fails instead of becoming Markdown.
+        guard let response = try? JSONDecoder().decode(SummaryDocumentResponse.self, from: Data(responseText.utf8)) else {
+            throw CodexAppServerError.invalidProtocolResponse
+        }
+        var document = document(from: response, context: context)
         document.tags = resolvedTags(document.tags)
         document.metadata = SummaryMetadata(
             generatedBy: "local_codex",
