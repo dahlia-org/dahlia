@@ -97,7 +97,12 @@ final class WorkspaceAISettingsModel {
         databricksObserver = NotificationCenter.default.addObserver(
             forName: .databricksConnectionDidChange, object: nil, queue: .main
         ) { [weak self] _ in
-            MainActor.assumeIsolated { Task { await self?.reloadDatabricksConnections() } }
+            MainActor.assumeIsolated {
+                Task {
+                    guard let self else { return }
+                    await self.reloadDatabricksConnections()
+                }
+            }
         }
     }
 
