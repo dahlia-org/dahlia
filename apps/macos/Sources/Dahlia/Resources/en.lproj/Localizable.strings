@@ -4,7 +4,7 @@
 "settings.organization.searchSettings" = "Search settings";
 "settings.organization.settingsAccountIntro" = "AI settings for the selected account. They apply only on this Mac across all workspaces in the account, and do not sync to other Macs or the web.";
 "settings.organization.settingsWorkspaceManagementIntro" = "Switch workspaces, manage their names, account membership, sharing, and export folders, and set the selected workspace's output language.";
-"settings.organization.settingsAccountsIntro" = "Switch accounts and manage the selected account's connection and AI settings.";
+"settings.organization.settingsAccountsIntro" = "Manage the model providers and AI settings of the selected account. Switch accounts from the account menu at the bottom of the sidebar.";
 "settings.organization.settingsExportIntro" = "Configure export destinations on this Mac for the account selected in the sidebar.";
 "settings.organization.settingsAccountSelectionDescription" = "Choosing an account here does not switch your open workspace.";
 "settings.organization.settingsLoading" = "Loading settings…";
@@ -538,7 +538,7 @@
 "Calendar" = "Calendar";
 "Model" = "Model";
 "Reasoning Effort" = "Reasoning Effort";
-"Controls how much reasoning Codex uses for each summary." = "Controls how much reasoning Codex uses for each summary.";
+"Controls how much reasoning Pi uses for each summary." = "Controls how much reasoning Pi uses for each summary.";
 "Summary Output" = "Summary Output";
 "Detail Level" = "Detail Level";
 "Event Play-by-Play" = "Event Play-by-Play";
@@ -563,6 +563,7 @@
 "Dahlia Server" = "Dahlia Server";
 "%@ - %@" = "%@ - %@";
 "Dahlia Server is not configured." = "Dahlia Server is not configured.";
+"Signed in" = "Signed in";
 "Not signed in" = "Not signed in";
 "Waiting for browser sign-in…" = "Waiting for browser sign-in…";
 "Sign In" = "Sign In";
@@ -585,7 +586,6 @@
 "Sign in with the same Dahlia account, or add a new connection." = "Sign in with the same Dahlia account, or add a new connection.";
 "Resolve this connection's Server Workspaces before removing it." = "Resolve this connection's Server Workspaces before removing it.";
 "Choose what to do with this account's local Workspaces before signing out." = "Choose what to do with this account's local Workspaces before signing out.";
-"Manage the Local Account and sign-ins to Dahlia Cloud and Server." = "Manage the Local Account and sign-ins to Dahlia Cloud and Server.";
 "%lld Dahlia accounts" = "%lld Dahlia accounts";
 "Sign In Again" = "Sign In Again";
 "Sign-in required" = "Sign-in required";
@@ -600,8 +600,6 @@
 "Move %@ to this Server?" = "Move %@ to this Server?";
 "A Workspace with the same ID exists on the Server. Member access uses the Server version; owners can choose which version to use if records conflict." = "A Workspace with the same ID exists on the Server. Member access uses the Server version; owners can choose which version to use if records conflict.";
 "This Workspace will move from the Local Account to the Server and synchronize automatically. Its working copy remains on this Mac." = "This Workspace will move from the Local Account to the Server and synchronize automatically. Its working copy remains on this Mac.";
-"Remove Dahlia connection %@?" = "Remove Dahlia connection %@?";
-"The connection will be removed. Local meeting data will not be deleted." = "The connection will be removed. Local meeting data will not be deleted.";
 "Signed in as %@" = "Signed in as %@";
 "Dahlia request failed (HTTP %lld)." = "Dahlia request failed (HTTP %lld).";
 "Coming Soon" = "Coming Soon";
@@ -780,7 +778,7 @@
 "App Languages" = "App Languages";
 "Limits languages shown for transcription and live subtitles, automatic language detection, and screenshot text extraction." = "Limits languages shown for transcription and live subtitles, automatic language detection, and screenshot text extraction.";
 "Screenshot Text Languages" = "Screenshot Text Languages";
-"Codex uses the app languages selected in Language settings as hints when extracting screenshot text." = "Codex uses the app languages selected in Language settings as hints when extracting screenshot text.";
+"Pi uses the app languages selected in Language settings as hints when extracting screenshot text." = "Pi uses the app languages selected in Language settings as hints when extracting screenshot text.";
 "Open Language Settings" = "Open Language Settings";
 "Recorded Languages" = "Languages used while recording";
 "Transcription Language" = "Transcription Language";
@@ -1117,40 +1115,32 @@
 "Preparing speech recognition…" = "Preparing speech recognition…";
 "Listening" = "Listening";
 "Stopped" = "Stopped";
-"The bundled Codex helper is unavailable. Run Dahlia with scripts/run-dev.sh or install a signed app build." = "The bundled Codex helper is unavailable. Run Dahlia with scripts/run-dev.sh or install a signed app build.";
-"Could not start Codex: %@" = "Could not start Codex: %@";
-"Codex is not signed in. Open Accounts and Workspaces in Settings and sign in, then try again." = "Codex is not signed in. Open Accounts and Workspaces in Settings and sign in, then try again.";
-"Codex sign-in failed: %@" = "Codex sign-in failed: %@";
-"Codex sign-in failed." = "Codex sign-in failed.";
-"Could not open the Codex sign-in page." = "Could not open the Codex sign-in page.";
-"Codex app-server exited unexpectedly." = "Codex app-server exited unexpectedly.";
-"Codex app-server exited unexpectedly: %@" = "Codex app-server exited unexpectedly: %@";
-"Codex did not respond in time (%@). Try again." = "Codex did not respond in time (%@). Try again.";
-"Codex returned an invalid response." = "Codex returned an invalid response.";
-"Codex returned an output line larger than Dahlia's safety limit." = "Codex returned an output line larger than Dahlia's safety limit.";
-"Codex request failed: %@" = "Codex request failed: %@";
-"Codex could not complete the request." = "Codex could not complete the request.";
-"Codex generation was interrupted." = "Codex generation was interrupted.";
+"The bundled Pi helper is unavailable. Run Dahlia with scripts/run-dev.sh or install a signed app build." = "The bundled Pi helper is unavailable. Run Dahlia with scripts/run-dev.sh or install a signed app build.";
+"Could not start Pi: %@" = "Could not start Pi: %@";
+"Pi is not signed in. Open Accounts and Workspaces in Settings and sign in, then try again." = "Pi is not signed in. Open Accounts and Workspaces in Settings and sign in, then try again.";
+"Pi sign-in failed: %@" = "Pi sign-in failed: %@";
+"Pi sign-in failed." = "Pi sign-in failed.";
+"Could not open the Pi sign-in page." = "Could not open the Pi sign-in page.";
+"Pi exited unexpectedly." = "Pi exited unexpectedly.";
+"Pi exited unexpectedly: %@" = "Pi exited unexpectedly: %@";
+"Pi did not respond in time (%@). Try again." = "Pi did not respond in time (%@). Try again.";
+"Pi returned an invalid response." = "Pi returned an invalid response.";
+"Pi request failed: %@" = "Pi request failed: %@";
+"Pi could not complete the request." = "Pi could not complete the request.";
+"Pi generation was interrupted." = "Pi generation was interrupted.";
 "The AI backend was restarted to stop an unconfirmed operation safely." = "The AI backend was restarted to stop an unconfirmed operation safely.";
 "This approval request is no longer pending." = "This approval request is no longer pending.";
-"Unknown Codex app-server error." = "Unknown Codex app-server error.";
 "Account" = "Account";
-"Selected Account" = "Selected Account";
-"Switch Account" = "Switch Account";
 "Selected Workspace" = "Selected Workspace";
 "Local Account Model Provider" = "Local Account Model Provider";
 "Choose the model provider used by the Local Account." = "Choose the model provider used by the Local Account.";
 "This setting is shared by all Local Account workspaces. Dahlia Server and Cloud use hosted models automatically." = "This setting is shared by all Local Account workspaces. Dahlia Server and Cloud use hosted models automatically.";
 "ChatGPT Subscription" = "ChatGPT Subscription";
 "Databricks" = "Databricks";
-"Codex Account" = "Codex Account";
-"Codex app-server" = "Codex app-server";
-"Dahlia stores a separate Codex sign-in for this app. Signing in opens your browser." = "Dahlia stores a separate Codex sign-in for this app. Signing in opens your browser.";
-"Signed in to Codex" = "Signed in to Codex";
-"Signed in to Codex as %@" = "Signed in to Codex as %@";
-"Not signed in to Codex" = "Not signed in to Codex";
-"Codex does not require sign-in" = "Codex does not require sign-in";
+"Unity Gateway" = "Unity Gateway";
+"Pi" = "Pi";
 "Sign in with ChatGPT" = "Sign in with ChatGPT";
+"Sign in with Claude" = "Sign in with Claude";
 "Waiting for browser sign-in…" = "Waiting for browser sign-in…";
 "Cancel Sign-In" = "Cancel Sign-In";
 "Sign Out" = "Sign Out";
@@ -1165,20 +1155,18 @@
 "Dahlia could not control Terminal. The installation command was copied and Terminal was opened. Paste the command and press Return." = "Dahlia could not control Terminal. The installation command was copied and Terminal was opened. Paste the command and press Return.";
 "Enter a valid HTTPS Databricks workspace root URL." = "Enter a valid HTTPS Databricks workspace root URL.";
 "Databricks Workspace URL" = "Databricks Workspace URL";
-"Enter the HTTPS URL of the workspace used by Codex." = "Enter the HTTPS URL of the workspace used by Codex.";
+"Enter the HTTPS URL of the workspace used by Pi." = "Enter the HTTPS URL of the workspace used by Pi.";
 "https://your-workspace.cloud.databricks.com" = "https://your-workspace.cloud.databricks.com";
 "Create New Profile" = "Create New Profile";
 "Sign in with Databricks" = "Sign in with Databricks";
 "Databricks Workspace ID" = "Databricks Workspace ID";
 "Workspace ID unavailable from profile" = "Workspace ID unavailable from profile";
-"Codex Configuration" = "Codex Configuration";
-"Could not update the Codex configuration: %@" = "Could not update the Codex configuration: %@";
-"Codex is configured for Databricks" = "Codex is configured for Databricks";
+"Could not update the Pi configuration: %@" = "Could not update the Pi configuration: %@";
 "The selected AI account is not ready. Open Accounts and Workspaces in Settings and finish its configuration." = "The selected AI account is not ready. Open Accounts and Workspaces in Settings and finish its configuration.";
 "This chat uses %@. Start a new chat to use the current account." = "This chat uses %@. Start a new chat to use the current account.";
-"Codex returned no available models. Try again." = "Codex returned no available models. Try again.";
-"Models are loaded from the bundled Codex app-server." = "Models are loaded from the bundled Codex app-server.";
-"The saved model is used when available; otherwise Codex's default model is selected." = "The saved model is used when available; otherwise Codex's default model is selected.";
+"Pi returned no available models. Try again." = "Pi returned no available models. Try again.";
+"Models are loaded from the bundled Pi." = "Models are loaded from the bundled Pi.";
+"The saved model is used when available; otherwise the first available model is selected." = "The saved model is used when available; otherwise the first available model is selected.";
 
 /* Codex Chat */
 "Chat" = "Chat";
@@ -1322,7 +1310,6 @@
 "Updated" = "Updated";
 "Ascending" = "Ascending";
 "Descending" = "Descending";
-"Remove" = "Remove";
 "Conversation Analytics" = "Conversation Analytics";
 "BETA" = "BETA";
 "Analysis is waiting for transcription" = "Analysis is waiting for transcription";
@@ -1459,11 +1446,9 @@
 "Approval method" = "How should ChatGPT actions be approved?";
 "Change permissions" = "Change permissions";
 "Ask for approval" = "Ask for approval";
-"Always ask before editing files outside the workspace or using the internet." = "Always ask to edit external files and use the internet";
+"Ask before changing Dahlia data. Chat cannot run commands or change files on this Mac." = "Ask before changing Dahlia data. Chat cannot run commands or change files on this Mac.";
 "Review approvals" = "Approve for me";
-"Ask only when an operation is detected as potentially unsafe." = "Only ask for actions detected as potentially unsafe";
-"Full access" = "Full access";
-"Allow unrestricted access to the internet and all files on this Mac." = "Unrestricted access to the internet and any file on your computer";
+"Change Dahlia data without asking. Chat cannot run commands or change files on this Mac." = "Change Dahlia data without asking. Chat cannot run commands or change files on this Mac.";
 "Could not update the approval method: %@" = "Could not update the approval method: %@";
 "Set Up Dahlia" = "Set Up Dahlia";
 "Version %@" = "Version %@";
@@ -1475,18 +1460,17 @@
 "Start Dahlia" = "Start Dahlia";
 "Local Account" = "Local Account";
 "Continue with Local Account" = "Continue with Local Account";
+"Use the Local Account, or connect a Databricks workspace to use its account. Both keep their data on this Mac." = "Use the Local Account, or connect a Databricks workspace to use its account. Both keep their data on this Mac.";
 "Or continue without signing in" = "Or continue without signing in";
 "Switching AI account…" = "Switching AI account…";
 "Choose the AI account used by this Workspace." = "Choose the AI account used by this Workspace.";
-"This account is used by %lld Workspaces. Those Workspaces will use the Local Account, and this account's Codex and Google Drive connection data will be deleted." = "This account is used by %lld Workspaces. Those Workspaces will use the Local Account, and this account's Codex and Google Drive connection data will be deleted.";
 "Dahlia stores meeting data and generated files in a local Workspace." = "Dahlia stores meeting data and generated files in a local Workspace.";
 "Choose the languages Dahlia should recognize. Set the AI output language in Manage Workspaces." = "Choose the languages Dahlia should recognize. Set the AI output language in Manage Workspaces.";
 "Recognition and OCR Languages" = "Recognition and OCR Languages";
 "Primary Language" = "Summary & Image Caption Language";
 "Used for summaries and screenshot captions." = "Used for summaries and screenshot captions.";
 "Summaries and Image Captions" = "Summaries and Image Captions";
-"Choose the model provider used for summaries and other AI features." = "Choose the model provider used for summaries and other AI features.";
-"Use your ChatGPT account." = "Use your ChatGPT account.";
+"Sign in to the model providers used for summaries and other AI features. You can use several at once." = "Sign in to the model providers used for summaries and other AI features. You can use several at once.";
 "Allow access to the audio sources Dahlia records. You can continue and grant access later." = "Allow access to the audio sources Dahlia records. You can continue and grant access later.";
 "Calendar (Optional)" = "Calendar (Optional)";
 "Connect a calendar to see upcoming meetings in Dahlia. You can set this up later." = "Connect a calendar to see upcoming meetings in Dahlia. You can set this up later.";
@@ -1660,11 +1644,9 @@
 
 
 
-"Dahlia securely stores this workspace sign-in on this Mac." = "Dahlia securely stores this workspace sign-in on this Mac.";
 
 "Cannot listen on any of localhost ports 8020–8040. Close the other sign-ins and retry." = "Cannot listen on any of localhost ports 8020–8040. Close the other sign-ins and retry.";
 
-"Enter your workspace URL and sign in again to replace the old CLI connection." = "Enter your workspace URL and sign in again to replace the old CLI connection.";
 
 "Databricks sign-in timed out. Please sign in again." = "Databricks sign-in timed out. Please sign in again.";
 
@@ -1745,7 +1727,7 @@
 "summary.source.useSaved" = "Use the saved transcript";
 "summary.source.useSaved.description" = "Generate from the copy saved on this Mac without fetching the latest server version. It may be outdated. Select this when working offline.";
 
-"settings.serverConnections" = "Account management";
+"settings.serverConnections" = "Model settings";
 
 "recovery.recordings" = "Recovered Recordings";
 "recovery.recording" = "Recovered Recording";
@@ -1800,6 +1782,6 @@
 "account.settings.imageAnalysis" = "Image analysis";
 "account.settings.imageAnalysisEnabled" = "Enable image search";
 
-"Controls how much reasoning Codex uses for each image." = "Controls how much reasoning Codex uses for each image.";
+"Controls how much reasoning Pi uses for each image." = "Controls how much reasoning Pi uses for each image.";
 
 "Used for searchable image text and captions, and for choosing useful screenshots before summary generation." = "Used for searchable image text and captions, and for choosing useful screenshots before summary generation.";

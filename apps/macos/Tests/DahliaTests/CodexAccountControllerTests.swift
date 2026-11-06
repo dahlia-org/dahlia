@@ -1,3 +1,4 @@
+import DahliaRuntimeSupport
 import Foundation
 import os
 @testable import Dahlia
@@ -7,146 +8,88 @@ import os
 
     @MainActor
     struct CodexAccountControllerTests {
-        @Test
-        func explicitSignInOpensBrowserAndRefreshesAccount() async {
-            let transport = TestCodexAppServerTransport(mode: .loginCompletes)
-            let service = makeTestCodexAppServerService(transportFactory: { transport })
-            let urlOpener = TestCodexLoginURLOpener()
-            let authenticationChanged = OSAllocatedUnfairLock(initialState: false)
-            let controller = CodexAccountController(
-                service: service,
-                urlOpener: urlOpener,
-                authenticationDidChange: { authenticationChanged.withLock { $0 = true } }
-            )
+        /// Sign-in emits Pi's authorization URL and then succeeds; afterwards the provider lists one model.
+        private static func runtime(provider: String, signedIn: OSAllocatedUnfairLock<Bool>) -> TestPiRuntime {
+            TestPiRuntime { _ in
+                TestPiTransport { command in
+                    guard let id = command["id"] else { return [] }
+                    switch command["type"]?.stringValue {
+                    case "get_available_models":
+                        let models = signedIn.withLock { $0 } ? [TestPiTransport.model(provider: provider, id: "model")] : []
+                        return [TestPiTransport.response(id: id, data: .object(["models": .array(models)]))]
+                    case "prompt":
+                        let message = command["message"]?.stringValue ?? ""
+                        if message.hasPrefix("/dahlia-login") {
+                            signedIn.withLock { $0 = true }
+                            return [
+                                TestPiTransport.notify("dahlia:auth_url https://auth.example.com/\(provider)"),
+                                TestPiTransport.notify("dahlia:login_succeeded"),
+                            ]
+                        }
+                        signedIn.withLock { $0 = false }
+                        return [TestPiTransport.response(id: id, data: .object(["disposition": .string("handled")]))]
+                    default:
+                        return [TestPiTransport.response(id: id)]
+                    }
+                }
+            }
+        }
 
+        @Test(arguments: PiSubscription.allCases)
+        func explicitSignInOpensBrowserAndRefreshesAccount(subscription: PiSubscription) async throws {
+            let piProvider = subscription.rawValue
+            let signedIn = OSAllocatedUnfairLock(initialState: false)
+            let pi = Self.runtime(provider: piProvider, signedIn: signedIn)
+            let urlOpener = TestCodexLoginURLOpener()
+            let controller = CodexAccountController(subscription: subscription, service: pi.service, urlOpener: urlOpener)
+
+            await controller.activate()
+            #expect(controller.accountStatus?.isAuthenticated == false)
             await controller.signIn()
 
-            #expect(urlOpener.openedURLs == [URL(string: "https://chatgpt.com/auth/test")])
+            #expect(urlOpener.openedURLs == [URL(string: "https://auth.example.com/\(piProvider)")])
             #expect(controller.accountStatus?.isAuthenticated == true)
             #expect(controller.errorMessage == nil)
-            #expect(authenticationChanged.withLock { $0 })
-            await service.shutdown()
+            let login = try #require(pi.launches.all.first { $0.environment["DAHLIA_PI_DEVICE_ID"] != nil })
+            #expect(login.mode == .control)
         }
 
         @Test
-        func browserOpenFailureCancelsLoginAndShowsRetryableError() async {
-            let transport = TestCodexAppServerTransport(mode: .loginBlocks)
-            let service = makeTestCodexAppServerService(transportFactory: { transport })
-            let urlOpener = TestCodexLoginURLOpener(result: false)
-            let controller = CodexAccountController(
-                service: service, urlOpener: urlOpener, authenticationDidChange: {}
-            )
+        func browserOpenFailureStopsSignInAndShowsRetryableError() async {
+            let pi = Self.runtime(provider: "openai", signedIn: OSAllocatedUnfairLock(initialState: false))
+            let controller = CodexAccountController(subscription: .openai, service: pi.service, urlOpener: TestCodexLoginURLOpener(result: false))
 
             await controller.signIn()
 
             #expect(controller.errorMessage == L10n.codexLoginPageCouldNotOpen)
-            #expect(await transport.messages().contains {
-                $0.objectValue?["method"]?.stringValue == "account/login/cancel"
-            })
-            #expect(await !(transport.isClosed))
-            await service.shutdown()
+            #expect(!controller.isBusy)
         }
 
         @Test
-        func activatingChatGPTLoadsLocalStatusWithoutRequiringTheActiveWorkspaceRuntime() async {
-            let service = CodexAppServerService(
-                transportFactory: { TestCodexAppServerTransport(mode: .models) },
-                configurationReadiness: { false }
-            )
-            let authenticationChanged = OSAllocatedUnfairLock(initialState: false)
-            let controller = CodexAccountController(
-                service: service,
-                authenticationDidChange: { authenticationChanged.withLock { $0 = true } }
-            )
+        func signOutRefreshesTheAccount() async {
+            let signedIn = OSAllocatedUnfairLock(initialState: true)
+            let pi = Self.runtime(provider: "openai", signedIn: signedIn)
+            let controller = CodexAccountController(subscription: .openai, service: pi.service, urlOpener: TestCodexLoginURLOpener())
 
-            await controller.activateChatGPTSubscription()
-
+            await controller.activate()
             #expect(controller.accountStatus?.isAuthenticated == true)
-            #expect(controller.errorMessage == nil)
-            #expect(!authenticationChanged.withLock { $0 })
-            await service.shutdown()
-        }
-
-        @Test
-        func signOutRefreshesTheLocalRuntime() async {
-            let service = makeTestCodexAppServerService(transportFactory: {
-                TestCodexAppServerTransport(mode: .models)
-            })
-            let authenticationChanged = OSAllocatedUnfairLock(initialState: false)
-            let controller = CodexAccountController(service: service, authenticationDidChange: {
-                authenticationChanged.withLock { $0 = true }
-            })
-
             await controller.signOut()
 
-            #expect(authenticationChanged.withLock { $0 })
+            #expect(controller.accountStatus?.isAuthenticated == false)
             #expect(controller.errorMessage == nil)
-            await service.shutdown()
         }
 
-        @Test(arguments: [
-            CodexRuntimeProvider.chatGPTSubscription,
-            .databricks(profile: "WORK"),
-            .dahlia(connectionID: UUID.v7()),
-        ])
-        func authenticationChangesOnlyReloadAnActiveChatGPTRuntime(_ provider: CodexRuntimeProvider) async throws {
-            let first = TestCodexAppServerTransport(mode: .models)
-            let second = TestCodexAppServerTransport(mode: .models)
-            let transports = OSAllocatedUnfairLock(initialState: [first, second])
-            let service = makeTestCodexAppServerService {
-                transports.withLock { $0.removeFirst() }
-            }
-            let contextStore = CodexRuntimeContextStore()
-            contextStore.apply(provider)
-            _ = try await service.accountStatus()
+        @Test
+        func eachSubscriptionReportsOnlyItsOwnModels() async {
+            let pi = Self.runtime(provider: "anthropic", signedIn: OSAllocatedUnfairLock(initialState: true))
+            let openAI = CodexAccountController(subscription: .openai, service: pi.service, urlOpener: TestCodexLoginURLOpener())
+            let anthropic = CodexAccountController(subscription: .anthropic, service: pi.service, urlOpener: TestCodexLoginURLOpener())
 
-            try await CodexAccountController.reloadLocalRuntimeAfterAuthenticationChange(
-                contextStore: contextStore, service: service
-            )
+            await openAI.activate()
+            await anthropic.activate()
 
-            #expect(await first.isClosed == (provider == .chatGPTSubscription))
-            #expect(contextStore.provider == provider)
-            await service.shutdown()
-        }
-
-        @Test(.timeLimit(.minutes(1)), arguments: [false, true])
-        func committedAuthenticationReloadsBeforeStatusRefreshDespiteViewCancellation(signsIn: Bool) async {
-            let transport = TestCodexAppServerTransport(mode: signsIn ? .loginCompletes : .models)
-            let service = makeTestCodexAppServerService(transportFactory: { transport })
-            let reloadStarted = AsyncStream.makeStream(of: Void.self)
-            let finishReload = AsyncStream.makeStream(of: Void.self)
-            let reloaded = OSAllocatedUnfairLock(initialState: false)
-            let controller = CodexAccountController(
-                service: service,
-                urlOpener: TestCodexLoginURLOpener(),
-                authenticationDidChange: {
-                    let lastMethod = await transport.messages().last?.objectValue?["method"]?.stringValue
-                    #expect(lastMethod == (signsIn ? "account/login/start" : "account/logout"))
-                    reloadStarted.continuation.yield()
-                    for await _ in finishReload.stream {
-                        break
-                    }
-                    try Task.checkCancellation()
-                    reloaded.withLock { $0 = true }
-                }
-            )
-            let action = Task {
-                if signsIn {
-                    await controller.signIn()
-                } else {
-                    await controller.signOut()
-                }
-            }
-            for await _ in reloadStarted.stream {
-                break
-            }
-
-            action.cancel()
-            finishReload.continuation.yield()
-            await action.value
-
-            #expect(reloaded.withLock { $0 })
-            await service.shutdown()
+            #expect(openAI.accountStatus?.isAuthenticated == false)
+            #expect(anthropic.accountStatus?.isAuthenticated == true)
         }
     }
 #endif

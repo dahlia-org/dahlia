@@ -302,7 +302,7 @@
                     workspace.syncRole = "admin"
                     workspace.syncConfirmedConnectionId = connection.id
                 }
-                try workspace.insert(db)
+                try workspace.insertIntoLegacySchema(db)
                 try MeetingRecord(id: meetingID, workspaceId: workspaceID, name: "Meeting", createdAt: .now, updatedAt: .now).insert(db)
                 if server {
                     try db.execute(
@@ -375,7 +375,7 @@
         @Test(.timeLimit(.minutes(1))) func fixedSendWindowDoesNotRestartAndFlushBypassesIt() async throws {
             let (queue, _, meetingID) = try seed(server: true)
             let origin = "https://window-\(UUID.v7().uuidString.lowercased()).invalid"
-            try await queue.write { try $0.execute(sql: "UPDATE dahlia_account_connections SET origin = ?", arguments: [origin]) }
+            try await queue.write { try $0.execute(sql: "UPDATE accounts SET origin = ?", arguments: [origin]) }
             let calls = Mutex(0)
             ImageURLProtocol.register(origin: origin) { request in
                 if request.url!.path.hasSuffix("/capabilities") { return (200, [:], Data(#"{"documents":{"version":3}}"#.utf8)) }
@@ -552,7 +552,7 @@
             try await persistence.receive(document: document, update: shared, generation: originalGeneration, revision: 1, validate: { _ in })
             try await persistence.append(meetingID: meetingID, update: pending, local: true)
             let origin = "https://rejected-generation-\(UUID.v7().uuidString.lowercased()).invalid"
-            try await queue.write { try $0.execute(sql: "UPDATE dahlia_account_connections SET origin = ?", arguments: [origin]) }
+            try await queue.write { try $0.execute(sql: "UPDATE accounts SET origin = ?", arguments: [origin]) }
             let calls = Mutex(0), uploads = Mutex<[Bool]>([])
             let restored = try JSONSerialization.data(withJSONObject: ["document": [
                 "id": document.id.uuidString, "workspaceId": workspaceID.uuidString, "meetingId": meetingID.uuidString,
@@ -602,7 +602,7 @@
             try await persistence.append(meetingID: meetingID, update: pending, local: true)
             let origin = "https://viewer-\(UUID.v7().uuidString.lowercased()).invalid"
             try await queue.write { db in
-                try db.execute(sql: "UPDATE dahlia_account_connections SET origin = ?", arguments: [origin])
+                try db.execute(sql: "UPDATE accounts SET origin = ?", arguments: [origin])
                 try db.execute(sql: "UPDATE workspaces SET syncRole = 'viewer' WHERE id = ?", arguments: [workspaceID])
                 try DocumentRecoveryRecord(id: .v7(), documentId: document.id, blocksJSON: "[]", reason: "deleted", pending: true, createdAt: .now)
                     .insert(db)
@@ -811,7 +811,7 @@
             }
             let workspaceID = UUID.v7(), meetingID = UUID.v7(), recoveryID = UUID.v7(), copyID = UUID.v7(), date = Date()
             try queue.write { db in
-                try WorkspaceRecord(id: workspaceID, name: "Old", createdAt: date, lastOpenedAt: date).insert(db)
+                try WorkspaceRecord(id: workspaceID, name: "Old", createdAt: date, lastOpenedAt: date).insertIntoLegacySchema(db)
                 try MeetingRecord(id: meetingID, workspaceId: workspaceID, name: "Old", createdAt: date, updatedAt: date).insert(db)
                 try db.execute(
                     sql: "INSERT INTO documents(id, meetingId, checkpoint, text, createdAt, updatedAt) VALUES (?, ?, 'AAA=', 'old projection', ?, ?)",
@@ -880,7 +880,7 @@
             let persistence = DocumentPersistence(dbQueue: queue)
             let state = try await persistence.legacyImport(text: "general")
             try await queue.write { db in
-                try WorkspaceRecord(id: other, name: "Other", createdAt: .now, lastOpenedAt: .now).insert(db)
+                try WorkspaceRecord(id: other, name: "Other", createdAt: .now, lastOpenedAt: .now).insertIntoLegacySchema(db)
                 try DocumentRecord(
                     id: generalID,
                     workspaceId: workspaceID,
@@ -943,7 +943,7 @@
             let persistence = DocumentPersistence(dbQueue: queue)
             let checkpoint = try await persistence.legacyImport(text: "見出し\n\n本文\n")
             let origin = "https://documents-\(UUID.v7().uuidString.lowercased()).invalid"
-            try await queue.write { try $0.execute(sql: "UPDATE dahlia_account_connections SET origin = ?", arguments: [origin]) }
+            try await queue.write { try $0.execute(sql: "UPDATE accounts SET origin = ?", arguments: [origin]) }
             let body = try JSONSerialization.data(withJSONObject: ["document": [
                 "id": UUID.v7().uuidString, "workspaceId": workspaceID.uuidString, "meetingId": meetingID.uuidString,
                 "kind": "notes", "title": "", "schemaVersion": 2, "generation": UUID.v7().uuidString, "revision": 1,
@@ -974,7 +974,7 @@
             let (queue, workspaceID, meetingID) = try seed(server: true)
             let persistence = DocumentPersistence(dbQueue: queue), canonicalID = UUID.v7(), generation = UUID.v7()
             let origin = "https://documents-\(UUID.v7().uuidString.lowercased()).invalid"
-            try await queue.write { try $0.execute(sql: "UPDATE dahlia_account_connections SET origin = ?", arguments: [origin]) }
+            try await queue.write { try $0.execute(sql: "UPDATE accounts SET origin = ?", arguments: [origin]) }
             try await persistence.append(meetingID: meetingID, update: persistence.legacyImport(text: "offline input"), local: true)
             let proposed = try #require(try await queue.read { try DocumentRecord.notes(in: $0, meetingID: meetingID)?.id })
             let response = try JSONSerialization.data(withJSONObject: ["document": [
@@ -1022,11 +1022,11 @@
             let checkpoint = try await persistence.legacyImport(text: "Independent body")
             let origin = "https://general-\(UUID.v7().uuidString.lowercased()).invalid"
             try await queue.write { db in
-                try db.execute(sql: "UPDATE dahlia_account_connections SET origin = ?", arguments: [origin])
+                try db.execute(sql: "UPDATE accounts SET origin = ?", arguments: [origin])
                 if alreadyCached {
                     var oldWorkspace = try #require(try WorkspaceRecord.fetchOne(db, key: workspaceID))
                     oldWorkspace.id = oldWorkspaceID
-                    try oldWorkspace.insert(db)
+                    try oldWorkspace.insertIntoLegacySchema(db)
                     try DocumentRecord(
                         id: id, workspaceId: oldWorkspaceID, meetingId: nil, kind: "general", title: "Independent title",
                         revision: 1, generation: generation, checkpoint: checkpoint, text: "Independent body",
@@ -1087,7 +1087,7 @@
             let pending = try await persistence.legacyImport(text: "pending edit")
             let origin = "https://relocated-\(UUID.v7().uuidString.lowercased()).invalid"
             let organizationID = try await queue.write { db in
-                try db.execute(sql: "UPDATE dahlia_account_connections SET origin = ?", arguments: [origin])
+                try db.execute(sql: "UPDATE accounts SET origin = ?", arguments: [origin])
                 try DocumentRecord(
                     id: id, workspaceId: sourceID, meetingId: nil, kind: "general", title: "Independent",
                     revision: 1, generation: generation, checkpoint: checkpoint, text: "shared", createdAt: .now, updatedAt: .now
@@ -1195,7 +1195,7 @@
             let checkpoint = try await persistence.legacyImport(text: "Retained body")
             let origin = "https://missing-\(UUID.v7().uuidString.lowercased()).invalid"
             try await queue.write { db in
-                try db.execute(sql: "UPDATE dahlia_account_connections SET origin = ?", arguments: [origin])
+                try db.execute(sql: "UPDATE accounts SET origin = ?", arguments: [origin])
                 try DocumentRecord(
                     id: id, workspaceId: workspaceID, meetingId: nil, kind: "general", title: "Document",
                     revision: 1, generation: generation, checkpoint: checkpoint, text: "Retained body", createdAt: .now, updatedAt: .now
@@ -1260,7 +1260,7 @@
             let persistence = DocumentPersistence(dbQueue: queue), generation = UUID.v7()
             let origin = "https://retry-\(UUID.v7().uuidString.lowercased()).invalid"
             try await queue.write { db in
-                try db.execute(sql: "UPDATE dahlia_account_connections SET origin = ?", arguments: [origin])
+                try db.execute(sql: "UPDATE accounts SET origin = ?", arguments: [origin])
                 try db.execute(sql: "UPDATE workspaces SET syncPullCursor = 'ready' WHERE id = ?", arguments: [workspaceID])
                 try DocumentRecord(
                     id: .v7(), workspaceId: workspaceID, meetingId: meetingID, generation: generation,
@@ -1339,7 +1339,7 @@
             let workspace = WorkspaceRecord(id: .v7(), name: "Test", createdAt: .now, lastOpenedAt: .now)
             let meetingID = UUID.v7()
             try await queue.write { db in
-                try workspace.insert(db)
+                try workspace.insertIntoLegacySchema(db)
                 try MeetingRecord(id: meetingID, workspaceId: workspace.id, name: "Test", createdAt: .now, updatedAt: .now).insert(db)
             }
             let model = DocumentEditorModel(dbQueue: queue, meetingID: meetingID, resolveMeeting: { nil })
@@ -1365,7 +1365,7 @@
             let workspace = WorkspaceRecord(id: .v7(), name: "Test", createdAt: .now, lastOpenedAt: .now)
             let meetingID = UUID.v7()
             try await queue.write { db in
-                try workspace.insert(db)
+                try workspace.insertIntoLegacySchema(db)
                 try MeetingRecord(id: meetingID, workspaceId: workspace.id, name: "Test", createdAt: .now, updatedAt: .now).insert(db)
                 try db
                     .execute(
@@ -1497,7 +1497,7 @@
             let meetingID = UUID.v7()
             let text = oversized ? String(repeating: "x", count: 2_000_001) : "# literal\r\n\n旧 Notes\n"
             try await queue.write { db in
-                try workspace.insert(db)
+                try workspace.insertIntoLegacySchema(db)
                 try MeetingRecord(id: meetingID, workspaceId: workspace.id, name: "Legacy", createdAt: .now, updatedAt: .now).insert(db)
                 try MeetingNoteRecord(meetingId: meetingID, text: text, createdAt: .now, updatedAt: .now).insert(db)
                 if !oversized {
@@ -1529,7 +1529,7 @@
         @Test func transientDraftResolutionRestoresCausalHistoryAndLaterEditing() async throws {
             let queue = try AppDatabaseManager(path: ":memory:").dbQueue
             let workspace = WorkspaceRecord(id: .v7(), name: "Local", createdAt: .now, lastOpenedAt: .now), draftID = UUID.v7()
-            try await queue.write { try workspace.insert($0) }
+            try await queue.write { try workspace.insertIntoLegacySchema($0) }
             let resolved = Mutex(false)
             let model = DocumentEditorModel(
                 dbQueue: queue, meetingID: nil, orphan: .init(workspaceID: workspace.id, meetingID: draftID, name: "Draft"),
@@ -1569,7 +1569,7 @@
             let workspace = WorkspaceRecord(id: .v7(), name: "Original", createdAt: .now, lastOpenedAt: .now)
             let draftID = UUID.v7()
             try await queue.write { db in
-                try workspace.insert(db)
+                try workspace.insertIntoLegacySchema(db)
                 try db
                     .execute(
                         sql: "CREATE TRIGGER fail_archive BEFORE INSERT ON document_local_archives BEGIN SELECT RAISE(ABORT, 'fixture disk error'); END"
@@ -1606,7 +1606,7 @@
             let workspace = WorkspaceRecord(id: .v7(), name: "Test", createdAt: .now, lastOpenedAt: .now)
             let meetingID = UUID.v7()
             try await queue.write { db in
-                try workspace.insert(db)
+                try workspace.insertIntoLegacySchema(db)
                 try MeetingRecord(id: meetingID, workspaceId: workspace.id, name: "Test", createdAt: .now, updatedAt: .now).insert(db)
                 try db
                     .execute(

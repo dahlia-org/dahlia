@@ -94,7 +94,7 @@ struct SummaryGenerationConfirmationView: View {
                     }
                     if let error = modelError {
                         SettingsStatusMessage(text: error, systemImage: "exclamationmark.triangle", tint: .orange)
-                        Button(L10n.retry) { Task { await loadModels() } }
+                        Button(L10n.retry) { Task { await loadModels(forceRefresh: true) } }
                     }
                 }
 
@@ -147,8 +147,7 @@ struct SummaryGenerationConfirmationView: View {
 
     private var defaultModel: String {
         let saved = sourceAvailability?.generationSettings?.local.model ?? ""
-        return catalog.models.contains(where: { $0.model == saved }) ? saved
-            : catalog.models.first(where: \.isDefault)?.model ?? catalog.models.first?.model ?? saved
+        return catalog.resolvedSelection(current: saved) ?? saved
     }
 
     private var modelIDs: [String] { catalog.models.map(\.model) }
@@ -189,9 +188,9 @@ struct SummaryGenerationConfirmationView: View {
         catalog.errorMessage
     }
 
-    private func loadModels() async {
+    private func loadModels(forceRefresh: Bool = false) async {
         guard sourceAvailability != nil else { return }
-        await catalog.load(forceRefresh: true) {
+        await catalog.load(forceRefresh: forceRefresh) {
             guard await WorkspaceAISettingsModel.shared.waitForRuntimeContext() else { throw CodexConfigurationError.accountNotReady }
         }
     }

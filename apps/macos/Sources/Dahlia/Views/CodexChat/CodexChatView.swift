@@ -93,6 +93,9 @@ struct CodexChatView: View {
         }
         .background(.background)
         .task(id: session.id) { await prepare() }
+        .onReceive(NotificationCenter.default.publisher(for: PiRuntimeService.modelsDidChange).receive(on: RunLoop.main)) { _ in
+            Task { await session.prepare(forceRefresh: true) }
+        }
         .onChange(of: meetingReferences) {
             updateMeetingCatalog()
         }

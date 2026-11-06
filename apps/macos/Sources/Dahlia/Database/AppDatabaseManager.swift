@@ -172,6 +172,49 @@ final class AppDatabaseManager: Sendable {
                 }
             }
         }
+        // One table for every signed-in account: Dahlia Servers (`kind = 'dahlia'`, the former connections) and
+        // Databricks workspaces. The discovery error cache goes with the paused sync release. A Databricks account's
+        // workspaces keep `accountConnectionId` nil, so they never sync, and return to the Local Account with the account.
+        // Development builds that ran `v57_accounts` renamed the table without rewriting the tables that reference it.
+        migrator.registerMigration("v57_accountsTable", merging: ["v57_accounts"]) { db, applied in
+            let legacyAlter = try Bool.fetchOne(db, sql: "PRAGMA legacy_alter_table") ?? false
+            // OFF makes SQLite rewrite the foreign keys that name the renamed table. It also checks every trigger, so
+            // they are set aside and recreated unchanged, as `WorkspaceNamingMigration` does; a failure rolls back.
+            try db.execute(sql: "PRAGMA legacy_alter_table = OFF")
+            defer { try? db.execute(sql: "PRAGMA legacy_alter_table = \(legacyAlter ? "ON" : "OFF")") }
+            let triggers = try Row.fetchAll(db, sql: "SELECT name, sql FROM sqlite_master WHERE type = 'trigger'")
+            for trigger in triggers {
+                let name: String = trigger["name"]
+                try db.execute(sql: "DROP TRIGGER \(name.quotedDatabaseIdentifier)")
+            }
+            if applied.contains("v57_accounts") {
+                // Renaming away and back rewrites every reference; the result matches a fresh database's schema text.
+                try db.execute(sql: """
+                ALTER TABLE accounts RENAME TO dahlia_account_connections;
+                ALTER TABLE dahlia_account_connections RENAME TO accounts;
+                """)
+            } else {
+                // Tests of early schemas run every migration on a database with only some tables.
+                if try db.tableExists("dahlia_account_connections") {
+                    try db.execute(sql: """
+                    ALTER TABLE dahlia_account_connections RENAME TO accounts;
+                    ALTER TABLE accounts DROP COLUMN syncDiscoveryErrorJSON;
+                    ALTER TABLE accounts ADD COLUMN kind TEXT NOT NULL DEFAULT 'dahlia';
+                    ALTER TABLE accounts ADD COLUMN email TEXT;
+                    ALTER TABLE accounts ADD COLUMN workspaceID TEXT;
+                    """)
+                }
+                if try db.tableExists("workspaces") {
+                    // Quoted like SQLite writes a renamed table, so every upgrade path ends with the same schema text.
+                    try db.execute(sql: """
+                    ALTER TABLE workspaces ADD COLUMN databricksConnectionId BLOB REFERENCES "accounts"(id) ON DELETE SET NULL
+                    """)
+                }
+            }
+            for trigger in triggers {
+                if let sql: String = trigger["sql"] { try db.execute(sql: sql) }
+            }
+        }
 
         return migrator
     }()

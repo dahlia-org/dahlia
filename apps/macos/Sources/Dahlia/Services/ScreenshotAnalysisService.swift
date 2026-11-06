@@ -52,13 +52,18 @@ protocol ScreenshotAnalyzing: Sendable {
 }
 
 actor CodexScreenshotAnalysisService: ScreenshotAnalyzing {
-    static let model = "gpt-6-luna"
+    /// Light image models, in order of preference, for an account with no saved image-analysis model.
+    static let defaultModels = ["gpt-6-luna", "claude-haiku-5-5"]
+
+    static func defaultModel(in models: [CodexModel]) -> String {
+        defaultModels.lazy.compactMap { PiRuntimeService.matchingModel($0, in: models)?.model }.first ?? defaultModels[0]
+    }
 
     static let reasoningEffort = "low"
     static let maximumBatchSize = 1
 
-    private let appServer: CodexAppServerService
-    init(appServer: CodexAppServerService = .shared) {
+    private let appServer: PiRuntimeService
+    init(appServer: PiRuntimeService = .shared) {
         self.appServer = appServer
     }
 
@@ -68,8 +73,9 @@ actor CodexScreenshotAnalysisService: ScreenshotAnalyzing {
         }
         try Task.checkCancellation()
         let inputs = try await Self.codexInputs(for: screenshots)
+        let model = if let model = screenshots[0].model { model } else { try await Self.defaultModel(in: appServer.models()) }
         let response = try await appServer.generate(.init(
-            model: screenshots[0].model ?? Self.model,
+            model: model,
             requiresExactModel: true,
             requiresImageInput: true,
             reasoningEffort: screenshots[0].reasoningEffort ?? Self.reasoningEffort,

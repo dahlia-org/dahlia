@@ -128,7 +128,7 @@ actor DocumentSyncService {
             guard let meeting = try MeetingRecord.fetchOne(db, key: meetingID),
                   let workspace = try WorkspaceRecord.fetchOne(db, key: meeting.workspaceId),
                   let connectionID = workspace.accountConnectionId else { return nil }
-            guard let origin = try String.fetchOne(db, sql: "SELECT origin FROM dahlia_account_connections WHERE id = ?", arguments: [connectionID])
+            guard let origin = try String.fetchOne(db, sql: "SELECT origin FROM accounts WHERE id = ?", arguments: [connectionID])
                 .flatMap(URL.init(string:)),
                 let generation = try Int64
                 .fetchOne(db, sql: "SELECT syncLifecycleGeneration FROM workspaces WHERE id = ?", arguments: [workspace.id])
@@ -550,7 +550,7 @@ actor DocumentSyncService {
                   let connection = try await dbQueue.read({ db -> (URL, Int64)? in
                       guard let origin = try String.fetchOne(
                           db,
-                          sql: "SELECT origin FROM dahlia_account_connections WHERE id = ?",
+                          sql: "SELECT origin FROM accounts WHERE id = ?",
                           arguments: [connectionID]
                       ).flatMap(URL.init(string:)),
                           let generation = try Int64.fetchOne(
@@ -632,7 +632,7 @@ actor DocumentSyncService {
             let rows = try Row.fetchAll(db, sql: """
             SELECT d.id, d.meetingId, d.kind, d.workspace_id, w.accountConnectionId, w.syncLifecycleGeneration, c.origin
             FROM documents d JOIN workspaces w ON w.id = d.workspace_id
-              JOIN dahlia_account_connections c ON c.id = w.accountConnectionId
+              JOIN accounts c ON c.id = w.accountConnectionId
             WHERE w.accountConnectionId = w.syncConfirmedConnectionId AND w.syncRecoveryState IS NULL
               AND (EXISTS(SELECT 1 FROM document_updates WHERE documentId = d.id AND pending = 1)
                 OR EXISTS(SELECT 1 FROM document_recoveries WHERE documentId = d.id AND pending = 1))

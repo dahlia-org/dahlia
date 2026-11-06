@@ -58,7 +58,7 @@ final class DahliaCloudAccountController {
 
     let defaultConfiguration: DahliaCloudConfiguration?
     private let serviceFactory: ServiceFactory
-    private let codexHomeLocator: ApplicationSupportCodexHomeLocator
+    private let agentLocator: PiAgentDirectoryLocator
     private var services: [UUID: DahliaCloudService] = [:]
     @ObservationIgnored weak var syncWorker: SyncWorker?
     private var repository: MeetingRepository?
@@ -70,10 +70,10 @@ final class DahliaCloudAccountController {
     init(
         configuration: DahliaCloudConfiguration? = .current,
         serviceFactory: ServiceFactory? = nil,
-        codexHomeLocator: ApplicationSupportCodexHomeLocator = ApplicationSupportCodexHomeLocator()
+        agentLocator: PiAgentDirectoryLocator = PiAgentDirectoryLocator()
     ) {
         defaultConfiguration = configuration
-        self.codexHomeLocator = codexHomeLocator
+        self.agentLocator = agentLocator
         self.serviceFactory = serviceFactory ?? { id, configuration in
             DahliaCloudService(
                 configuration: configuration,
@@ -130,7 +130,7 @@ final class DahliaCloudAccountController {
                 let observation = try await queue.write { _ in
                     DatabaseRegionObservation(
                         tracking: WorkspaceRecord.all(),
-                        DahliaAccountConnectionRecord.all(),
+                        DahliaAccountConnectionRecord.dahliaServers,
                         Table<Row>("sync_transactions"),
                         Table<Row>("sync_operations"),
                         Table<Row>("sync_content_state"),
@@ -566,7 +566,8 @@ final class DahliaCloudAccountController {
             try await GoogleSignInAdapter.deleteDriveSession(scope: .dahlia(connectionID))
             AppSettings.shared.clearGoogleDriveExportFolder(scope: .dahlia(connectionID))
             try await repository.deleteDahliaAccountConnection(id: connectionID)
-            try codexHomeLocator.removeHome(connectionID: connectionID)
+            CodexRuntimeContextStore.shared.accountRemoved(.dahlia(connectionID: connectionID))
+            try agentLocator.removeAccountDirectory(connectionID: connectionID)
             services.removeValue(forKey: connectionID)
             await DahliaCloudTokenServiceRegistry.shared.remove(connectionID: connectionID)
             guard isCurrentOperation(generation) else { return }
@@ -589,7 +590,7 @@ final class DahliaCloudAccountController {
 
     private func reloadCodexAuthenticationIfActive(_ connectionID: UUID) async throws {
         guard WorkspaceAISettingsModel.shared.accountConnectionID == connectionID else { return }
-        try await CodexAppServerService.shared.reloadConfiguration()
+        try await PiRuntimeService.shared.reloadConfiguration()
     }
 
     private func configuration(for record: DahliaAccountConnectionRecord) -> DahliaCloudConfiguration? {

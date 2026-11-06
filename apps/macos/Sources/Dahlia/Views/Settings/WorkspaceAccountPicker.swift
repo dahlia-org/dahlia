@@ -1,30 +1,47 @@
 import SwiftUI
 
+/// The account a workspace is listed under. Local and Databricks workspaces keep their data on this Mac.
+enum WorkspaceAccountChoice: Hashable {
+    case local
+    case databricks(UUID)
+    case dahlia(UUID)
+
+    init(_ workspace: WorkspaceRecord) {
+        self = workspace.accountConnectionId.map(Self.dahlia) ?? workspace.databricksConnectionId.map(Self.databricks) ?? .local
+    }
+}
+
 struct WorkspaceAccountPicker: View {
     let workspace: WorkspaceRecord
     let connections: [DahliaAccountConnection]
-    let onSelect: (UUID?) async -> UUID?
+    let databricksAccounts: [DatabricksConnection]
+    let onSelect: (WorkspaceAccountChoice) async -> WorkspaceAccountChoice
 
-    @State private var selection: UUID?
+    @State private var selection: WorkspaceAccountChoice
     @State private var updateTask: Task<Void, Never>?
     @State private var suppressNextChange = false
 
     init(
         workspace: WorkspaceRecord,
         connections: [DahliaAccountConnection],
-        onSelect: @escaping (UUID?) async -> UUID?
+        databricksAccounts: [DatabricksConnection],
+        onSelect: @escaping (WorkspaceAccountChoice) async -> WorkspaceAccountChoice
     ) {
         self.workspace = workspace
         self.connections = connections
+        self.databricksAccounts = databricksAccounts
         self.onSelect = onSelect
-        _selection = State(initialValue: workspace.accountConnectionId)
+        _selection = State(initialValue: WorkspaceAccountChoice(workspace))
     }
 
     var body: some View {
         Picker(L10n.account, selection: $selection) {
-            Text(L10n.localAccount).tag(UUID?.none)
+            Text(L10n.localAccount).tag(WorkspaceAccountChoice.local)
+            ForEach(databricksAccounts) { account in
+                Text("\(L10n.databricks) · \(account.accountLabel)").tag(WorkspaceAccountChoice.databricks(account.id))
+            }
             ForEach(connections) { connection in
-                Text(accountLabel(connection)).tag(Optional(connection.id))
+                Text(accountLabel(connection)).tag(WorkspaceAccountChoice.dahlia(connection.id))
                     .disabled(!connection.isSignedIn || !connection.supportsWorkspaceSync)
             }
         }
@@ -47,12 +64,12 @@ struct WorkspaceAccountPicker: View {
                 updateTask = nil
             }
         }
-        .onChange(of: workspace.accountConnectionId) { _, connectionID in
+        .onChange(of: WorkspaceAccountChoice(workspace)) { _, choice in
             updateTask?.cancel()
             updateTask = nil
-            if selection != connectionID {
+            if selection != choice {
                 suppressNextChange = true
-                selection = connectionID
+                selection = choice
             }
         }
         .onDisappear {

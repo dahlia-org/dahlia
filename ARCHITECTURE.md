@@ -24,7 +24,7 @@ source of truth、再生成可能性、実測値に基づいて target state を
 | 範囲 | 適用先 |
 | --- | --- |
 | Reliability Scope、Execution Context、UI、Failure / Overload、Conformance / Remediation | Desktop の録音・保存・応答性。Server の可用性や process crash 耐性の保証へ一般化しない |
-| Runtime Data Flow のローカル処理 | Desktop / local MCP / 内蔵 Codex app-server |
+| Runtime Data Flow のローカル処理 | Desktop / local MCP / 内蔵 Pi |
 | Runtime Data Flow の Server・同期・認証境界 | Desktop と Server。API・運用の詳細は [Server README](apps/server/README.md) |
 | Electron alpha（`apps/desktop`） | Server オンライン専用の開発用クライアント。録音・ローカル保存を持たず、Reliability Scope の保証対象外。構成は [Electron README](apps/desktop/README.md) |
 | 設計判断の履歴 | [対象別 ADR](docs/adr/README.md)。Accepted と実装・検証完了は別 |
@@ -133,12 +133,12 @@ Desktopはemailと表示名だけを保存し、Serverは旧Desktopがattendees�
 空配列は参加者だけを消去し、`calendarEvent: null`はCalendar Eventスナップショット全体を消去する。
 廃止した顧客インテリジェンスの判断は[履歴ADR](docs/adr/desktop/customer-intelligence.md)に残す。
 
-任意の Dahlia Server runtime は内蔵 Codex の provider transport を所有し、macOS の録音・文字起こし critical path には入らない。
+任意の Dahlia Server runtime は内蔵 Pi の provider transport を所有し、macOS の録音・文字起こし critical path には入らない。
 macOS の Dahlia アカウントは Workspace の所有者ではなく、アプリ共有の接続として SQLite に登録する。OAuth credential と remote identity は
 接続 UUID ごとに Keychain が所有し、token 利用側は connection ID を明示する。sign-out は選択した接続の credential を削除し、Server record を残したまま local working copy の削除または Local Account への移動を選ぶ。Workspace は AI provider
-利用のために任意の接続を参照し、接続ごとの private `CODEX_HOME` を使う。サインインだけでは Local Workspace を移さず、Workspace 単位の明示移行を要求する。Server-managed Workspace は常時同期し、独立した同期 toggle は持たない。ローカルアカウントだけが
-ChatGPT Subscription または Databricks AI Gateway を使い、Dahlia アカウントは接続先の Gateway を使う。この境界は
-[Codex account context](docs/adr/desktop/accounts.md#codex-account-context)を正本とする。
+利用のために任意の接続を参照し、接続ごとの private Pi agent directory を使う。サインインだけでは Local Workspace を移さず、Workspace 単位の明示移行を要求する。Server-managed Workspace は常時同期し、独立した同期 toggle は持たない。ローカルアカウントは
+OpenAI (ChatGPT subscription) と Anthropic (Claude Pro/Max)、接続した Databricks workspace ごとの Databricks アカウント（自分の Workspace を持ち同期なし）はその AI Gateway を使い、Dahlia アカウントは接続先の Gateway を使う。この境界は
+[内蔵 Pi runtime](docs/adr/desktop/pi-runtime.md#provider)を正本とする。
 Better Auth、Gateway 管理 metadata、meeting sync は単一の Drizzle application database を共有する。PostgreSQL は生成済み認証 table を
 `auth`、Dahlia 所有の全テーブルを `app` schema に置き、参照は `app → auth` の方向とする。
 `DAHLIA_DATABASE_TYPE` は `sqlite`、`postgres`、`lakebase`、`hyperdrive` から選び、SQLite／PostgreSQL の接続先は
@@ -152,7 +152,7 @@ Responses request は上限内で検証し、upstream response body は streamin
 Databricks request tags には認証済み user ID を付与する。Model Alias テーブル・store 型・CRUD と管理画面・API は廃止する ([Backend モデル契約](docs/adr/server/gateway.md#backend-モデル契約))。
 
 ```text
-Dahlia macOS / bundled Codex 0.159.3
+Dahlia macOS / bundled Pi 1.5.0
     ↓ authenticated OpenAI Responses request
 /api/v1
     ├─ Better Auth OAuth access token
@@ -208,8 +208,8 @@ Server は meeting の名前・説明・summary 表示本文と screenshot の O
 その他の PostgreSQL は pgvector、SQLite は exact cosine を使う。query 時は FTS と vector の上位候補を
 RRF で統合し、embedding の未設定・未完成・障害時は FTS に縮退する。transcript と内部識別子は Server 検索対象に含めず、
 すべての検索 query は `workspace_id` 経由の permission／RLS を通す。D1 adapterは削除し、WorkerはPostgreSQL／Hyperdriveを使用する。
-Desktopで作成した画像はアカウントを問わずMacのCodex app-serverでOCR・captionを生成し、結果を同期する。Serverは同期や不足データの巡回から画像解析を開始しない。旧版で受付済みのジョブだけ既存の認可・lease・revision検証で処理する。
-AI設定はこのMac内でアカウント別に保存し、Workspaceの既定出力言語だけを共有する。文字起こし・要約の実行場所は[操作元の契約](docs/adr/shared/account-scoped-desktop-inference.md)に従う。Desktopの選択中アカウントだけCodexを動かし、別アカウントへ切り替えると旧プロセスを停止する。
+Desktopで作成した画像はアカウントを問わずMacの内蔵 Pi でOCR・captionを生成し、結果を同期する。Serverは同期や不足データの巡回から画像解析を開始しない。旧版で受付済みのジョブだけ既存の認可・lease・revision検証で処理する。
+AI設定はこのMac内でアカウント別に保存し、Workspaceの既定出力言語だけを共有する。文字起こし・要約の実行場所は[操作元の契約](docs/adr/shared/account-scoped-desktop-inference.md)に従う。Desktopの選択中アカウントだけ Pi を動かし、別アカウントへ切り替えると旧プロセスを停止する。
 翻訳文、音声、SQLite file、note、tag、calendar、
 Project は階層参照と meeting 絞り込みのためだけに同期し、Server の全文・vector projection へは含めない。transcript の `audio_source` は `mic`／`system` の収録経路、nullable な `speaker_label` は将来の話者分離ラベルとし、音声特徴量は同期しない。runtime と data boundary の判断は次を正本とする。
 
@@ -304,7 +304,7 @@ UI projection を破棄しても、durable source of truth は変更しない。
 
 Databricks DAB の既存受付済み画像解析とWeb要約内の画像選別は `system.ai.gpt-6-luna` を使う。Desktop の画像解析も既定モデルを GPT 6 Luna とし、GPT 5.6 Luna は旧クライアントとの互換用に Gateway の公開モデル一覧へ残す。
 
-全文検索は `search_documents` registry と contentless `search_documents_fts` を再構築可能な projection として扱う。meeting metadata、構造化 summary の本文、project、全 screenshot の検出文字と画像説明を索引し、summary の metadata・内部識別子と文字起こし・翻訳文は対象にしない。ミーティング自由文検索はアプリと MCP のどちらも title、description、summary、calendar、tags を対象とし、project path は Project 専用検索と明示的な Project 絞り込みだけに使う。画像解析の正本は `file_text_bodies.ocrText` と `file_text_bodies.caption` に保存し、meeting_attachments insert trigger は coalesce 可能な `screenshotAnalysis` job の upsert だけを行う。utility-priority の `BackgroundJobWorker` actor は Codex app-server にアカウント設定の画像解析モデル（既定 `gpt-6-luna`。Databricks / Dahlia Account でもCodexの合成モデル一覧にあるOpenAI IDを使用）、推論強度もアカウント設定（既定 `low`）を使い1枚ずつ最大2並行で送り、正本保存、Lindera tokenization、FTS 更新を一つの複合 job として処理する。画像検索を無効にしたアカウントでは新たな OCR・caption の生成を実行せず、既存の本文を保持する。値の欠如だけでは解析中と表示しない。指定モデルへフォールバックせず、Codex の未設定、未認証、モデル利用不可では並行処理を停止し、試行回数を消費せず job を queue に残す。Indexer は録音開始前に停止して録音終了後に再開し、録音中は画像解析を含む projection work を実行しない。screenshot は meeting 検索結果へ統合せず、同じ検索画面と MCP の独立した結果として返す。要約生成には従来どおり画像を渡し、抽出結果を代替入力にしない。画像検索の有効・無効にかかわらず、要約前に OCR・caption と共通の画像解析モデル・推論強度（アカウント設定、既定 `gpt-6-luna`、`low`）で候補の縮小画像を解析し、共有資料の重複しない最大24枚に絞る。読み込みと判定は合わせて90秒で打ち切り、失敗・時間切れでは全候補を渡す。初期構築・再構築中は不完全な結果を返さず検索 unavailable とし、索引の遅延や failure は録音、確定文字起こし、正本 metadata と summary の commit を待たせない。
+全文検索は `search_documents` registry と contentless `search_documents_fts` を再構築可能な projection として扱う。meeting metadata、構造化 summary の本文、project、全 screenshot の検出文字と画像説明を索引し、summary の metadata・内部識別子と文字起こし・翻訳文は対象にしない。ミーティング自由文検索はアプリと MCP のどちらも title、description、summary、calendar、tags を対象とし、project path は Project 専用検索と明示的な Project 絞り込みだけに使う。画像解析の正本は `file_text_bodies.ocrText` と `file_text_bodies.caption` に保存し、meeting_attachments insert trigger は coalesce 可能な `screenshotAnalysis` job の upsert だけを行う。utility-priority の `BackgroundJobWorker` actor は内蔵 Pi にアカウント設定の画像解析モデル（既定 `gpt-6-luna`、Claude Subscription は `claude-haiku-5-5`。Codex 時代の ID は Pi のモデル ID の末尾一致で解決する）、推論強度もアカウント設定（既定 `low`）を使い1枚ずつ最大2並行で送り、正本保存、Lindera tokenization、FTS 更新を一つの複合 job として処理する。画像検索を無効にしたアカウントでは新たな OCR・caption の生成を実行せず、既存の本文を保持する。値の欠如だけでは解析中と表示しない。指定モデルへフォールバックせず、Pi の未設定、未認証、モデル利用不可では並行処理を停止し、試行回数を消費せず job を queue に残す。Indexer は録音開始前に停止して録音終了後に再開し、録音中は画像解析を含む projection work を実行しない。screenshot は meeting 検索結果へ統合せず、同じ検索画面と MCP の独立した結果として返す。要約生成には従来どおり画像を渡し、抽出結果を代替入力にしない。画像検索の有効・無効にかかわらず、要約前に OCR・caption と共通の画像解析モデル・推論強度（アカウント設定、既定 `gpt-6-luna`、`low`）で候補の縮小画像を解析し、共有資料の重複しない最大24枚に絞る。読み込みと判定は合わせて90秒で打ち切り、失敗・時間切れでは全候補を渡す。初期構築・再構築中は不完全な結果を返さず検索 unavailable とし、索引の遅延や failure は録音、確定文字起こし、正本 metadata と summary の commit を待たせない。
 
 Desktop 検索は旧 Advanced 相当の全文検索に統一し、Simple／Neural とモード切替を廃止した。Gemma 推論、モデル取得、vector worker は実行しない。追加 migration で vector 検索を無効化し、専用 trigger を撤去する。互換性のため旧 schema、既存 vector と job は保持する。起動時に現在のアプリプロファイルの `Models/EmbeddingGemma` だけをバックグラウンド削除し、失敗時は次回起動で再試行する。Server Account の主検索は capabilities の `search: { version: 1 }` により `POST /api/v1/search` の共通順位へ切り替え、未同期の端末内結果を別枠で表示する。オフライン・旧 Server・metadata 同期待ち・タグ指定・複数 Project 指定は端末内検索と明示する。Web と Server MCP は同じ service を使う。上位100件は全件完了としない。旧 GET FTS ページングは local content broker と既存クライアントの全件探索用に維持する。
 

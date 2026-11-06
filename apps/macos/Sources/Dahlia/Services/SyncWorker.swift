@@ -696,7 +696,7 @@ actor SyncWorker {
     }
 
     private func performCloudWorkspaceDiscovery() async throws {
-        let connections = try await dbQueue.read { try DahliaAccountConnectionRecord.fetchAll($0) }
+        let connections = try await dbQueue.read { try DahliaAccountConnectionRecord.dahliaServers.fetchAll($0) }
         for connection in connections where !suspendedDiscoveryConnections.contains(connection.id) {
             do {
                 try await performCloudWorkspaceDiscovery(connection)
@@ -724,12 +724,7 @@ actor SyncWorker {
             let workspaces = try await CloudWorkspaceDiscovery.fetch(connection: connection, apiClient: apiClient)
             guard !suspendedDiscoveryConnections.contains(connection.id) else { return }
             let changed = try await dbQueue.write { db in
-                try MeetingRepository.registerDiscoveredCloudWorkspaces(
-                    workspaces,
-                    connection: connection,
-                    clearingDiscoveryIncident: true,
-                    in: db
-                )
+                try MeetingRepository.registerDiscoveredCloudWorkspaces(workspaces, connection: connection, in: db)
             }
             if changed {
                 await workspacesDidChange()
@@ -740,9 +735,6 @@ actor SyncWorker {
             throw CancellationError()
         } catch {
             // A failed listing is not evidence of deletion or lost access.
-            if !suspendedDiscoveryConnections.contains(connection.id) {
-                try? await recordDiscoveryIncident(error, connectionId: connection.id)
-            }
             throw error
         }
     }
@@ -1563,10 +1555,10 @@ actor SyncWorker {
                 db,
                 sql: """
                 SELECT workspaces.id, workspaces.syncConfirmedConnectionId, workspaces.syncPullCursor,
-                    workspaces.syncMutationGeneration, workspaces.syncLifecycleGeneration, dahlia_account_connections.origin
+                    workspaces.syncMutationGeneration, workspaces.syncLifecycleGeneration, accounts.origin
                 FROM workspaces
-                JOIN dahlia_account_connections
-                  ON dahlia_account_connections.id = workspaces.syncConfirmedConnectionId
+                JOIN accounts
+                  ON accounts.id = workspaces.syncConfirmedConnectionId
                 WHERE workspaces.id = ? AND workspaces.accountConnectionId = ?
                   AND workspaces.syncConfirmedConnectionId = ?
                 """,
@@ -1590,10 +1582,10 @@ actor SyncWorker {
                 sql: """
                 SELECT workspaces.id, workspaces.syncConfirmedConnectionId, workspaces.syncPullCursor, workspaces.syncMutationGeneration, workspaces.syncLifecycleGeneration,
                     workspaces.syncRecoveryState,
-                    dahlia_account_connections.origin
+                    accounts.origin
                 FROM workspaces
-                JOIN dahlia_account_connections
-                  ON dahlia_account_connections.id = workspaces.syncConfirmedConnectionId
+                JOIN accounts
+                  ON accounts.id = workspaces.syncConfirmedConnectionId
                 WHERE workspaces.accountConnectionId = workspaces.syncConfirmedConnectionId
                   AND (
                     (workspaces.syncPullCursor IS NOT NULL AND workspaces.syncRecoveryState IS NULL)
@@ -1631,7 +1623,7 @@ actor SyncWorker {
         }
         eventTasks.removeAll()
         let connections = await (try? dbQueue.read { db in
-            try DahliaAccountConnectionRecord.fetchAll(db)
+            try DahliaAccountConnectionRecord.dahliaServers.fetchAll(db)
         }) ?? []
         for connection in connections where eventTasks[connection.id] == nil {
             guard let origin = URL(string: connection.origin) else { continue }
@@ -1685,16 +1677,6 @@ actor SyncWorker {
     private func connection(id: UUID) async throws -> URL? {
         try await dbQueue.read { db in
             try DahliaAccountConnectionRecord.fetchOne(db, key: id).flatMap { URL(string: $0.origin) }
-        }
-    }
-
-    private func recordDiscoveryIncident(_ error: any Error, connectionId: UUID) async throws {
-        guard let json = SyncIncident(stage: .discovery, error: error).jsonString else { return }
-        try await dbQueue.write { db in
-            try db.execute(
-                sql: "UPDATE dahlia_account_connections SET syncDiscoveryErrorJSON = ? WHERE id = ?",
-                arguments: [json, connectionId]
-            )
         }
     }
 

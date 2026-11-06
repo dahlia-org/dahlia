@@ -12,7 +12,7 @@ extension MeetingContentProvider {
         static func read(workspaceId: UUID, in db: Database) throws -> Self? {
             guard let row = try Row.fetchOne(db, sql: """
             SELECT v.accountConnectionId, c.origin, v.syncMutationGeneration
-            FROM workspaces v JOIN dahlia_account_connections c ON c.id = v.accountConnectionId
+            FROM workspaces v JOIN accounts c ON c.id = v.accountConnectionId
             WHERE v.id = ? AND v.syncConfirmedConnectionId = v.accountConnectionId
             """, arguments: [workspaceId]) else { return nil }
             return Self(connectionId: row["accountConnectionId"], origin: row["origin"], generation: row["syncMutationGeneration"])

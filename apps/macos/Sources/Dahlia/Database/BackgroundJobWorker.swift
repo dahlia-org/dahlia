@@ -663,11 +663,7 @@ private extension BackgroundJobWorker {
                     id: screenshot.id,
                     imageData: screenshot.imageData,
                     mimeType: screenshot.mimeType,
-                    runtimeProvider: CodexRuntimeProvider(
-                        accountConnectionID: workspace.accountConnectionId,
-                        localProvider: localSettings.provider,
-                        databricksProfile: localSettings.databricksProfile
-                    ),
+                    runtimeProvider: CodexRuntimeProvider(workspace: workspace),
                     outputLanguage: outputLanguage,
                     model: analysis.model,
                     reasoningEffort: analysis.reasoningEffort

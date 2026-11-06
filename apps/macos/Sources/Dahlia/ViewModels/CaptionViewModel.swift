@@ -4819,7 +4819,7 @@ final class CaptionViewModel: ObservableObject {
         } else {
             request.generationSettings = SummaryGenerationSettings.current(workspace: workspace).applying(options: request.options)
         }
-        guard request.generationSettings.runtimeProvider.accountConnectionID == workspace.accountConnectionId else {
+        guard request.generationSettings.runtimeProvider == CodexRuntimeProvider(workspace: workspace) else {
             throw CodexConfigurationError.accountNotReady
         }
         return request

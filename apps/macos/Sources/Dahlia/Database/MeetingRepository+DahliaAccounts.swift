@@ -4,7 +4,7 @@ import GRDB
 extension MeetingRepository {
     nonisolated func fetchDahliaAccountConnections() async throws -> [DahliaAccountConnectionRecord] {
         try await dbQueue.read { db in
-            try DahliaAccountConnectionRecord
+            try DahliaAccountConnectionRecord.dahliaServers
                 .order(Column("createdAt"))
                 .fetchAll(db)
         }

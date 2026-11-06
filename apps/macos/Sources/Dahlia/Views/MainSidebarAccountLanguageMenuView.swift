@@ -15,6 +15,7 @@ struct MainSidebarAccountLanguageMenuView: View {
                     selectionState: language == settings.appLanguage,
                     isEnabled: language != settings.appLanguage,
                     isKeyboardHighlighted: navigation.activeMenu == .languages && navigation.submenuSelection == index,
+                    showsHelp: false,
                     onHoverStart: { navigation.selectSubmenu(index) },
                     action: { select(language) }
                 )

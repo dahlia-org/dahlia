@@ -132,9 +132,11 @@ struct SetupTourView: View {
                 onContinue: continueTour
             )
         }
-        .task(id: model.isAccountSelectionConfirmed ? model.selectedAccountConnectionID?.uuidString ?? "local" : nil) {
-            guard model.mode == .initial, model.isAccountSelectionConfirmed else { return }
-            _ = await prepareInitialWorkspace()
+        .task(id: model.isAccountSelectionConfirmed
+            ? model.selectedAccountConnectionID?.uuidString ?? model.selectedDatabricksConnectionID.map { "databricks.\($0)" } ?? "local"
+            : nil) {
+                guard model.mode == .initial, model.isAccountSelectionConfirmed else { return }
+                _ = await prepareInitialWorkspace()
         }
         .id(settings.appLanguage)
         .background(Color(nsColor: .windowBackgroundColor))
@@ -148,18 +150,11 @@ struct SetupTourView: View {
     private var stepContent: some View {
         switch model.currentStep {
         case .account:
-            DahliaServerSignInView(
-                cloudConfiguration: accountController.defaultConfiguration,
-                allowsCloudSignIn: true,
-                isBusy: accountController.isBusy,
-                isSigningIn: accountController.isSigningIn,
-                errorMessage: accountController.errorMessage,
-                onCancel: accountController.cancelAccountTask,
-                onSignIn: selectOrSignInToDahlia,
-                cloudActionTitle: existingCloudConnection.map {
-                    "\($0.displayName) · \(L10n.dahliaCloud)"
-                },
+            // Dahlia Cloud and Server sign-in are hidden for now; existing connections stay usable from Settings.
+            DatabricksSignInView(
                 isEmbedded: true,
+                onCancel: {},
+                onContinueWithDatabricks: continueWithDatabricks,
                 onContinueLocally: continueWithLocalAccount
             )
         case .workspace:
@@ -196,25 +191,9 @@ struct SetupTourView: View {
         model.advance()
     }
 
-    private func selectOrSignInToDahlia(_ configuration: DahliaCloudConfiguration) {
-        if let connection = accountController.signedInConnection(matching: configuration) {
-            model.selectAccountConnection(connection.id)
-            model.advance()
-        } else {
-            signInToDahlia(configuration)
-        }
-    }
-
-    private func signInToDahlia(_ configuration: DahliaCloudConfiguration) {
-        guard let task = accountController.startSignIn(configuration: configuration) else { return }
-        Task { @MainActor in
-            await task.value
-            guard model.currentStep == .account,
-                  accountController.errorMessage == nil,
-                  let connection = accountController.completedSignInConnection(matching: configuration) else { return }
-            model.selectAccountConnection(connection.id)
-            model.advance()
-        }
+    private func continueWithDatabricks(_ connectionID: UUID) {
+        model.selectAccountConnection(nil, databricks: connectionID)
+        model.advance()
     }
 
     private var canContinue: Bool {
@@ -230,13 +209,13 @@ struct SetupTourView: View {
         mainWindowNavigation.dismissSetupTour()
     }
 
-    private var existingCloudConnection: DahliaAccountConnection? {
-        guard let configuration = accountController.defaultConfiguration else { return nil }
-        return accountController.signedInConnection(matching: configuration)
-    }
-
     private func prepareInitialWorkspace() async -> WorkspaceRecord? {
         let connectionID = model.selectedAccountConnectionID
+        if let databricks = model.selectedDatabricksConnectionID {
+            return await model.prepareInitialWorkspace {
+                await WorkspaceAISettingsModel.shared.accountWorkspace(databricksConnectionID: databricks)
+            }
+        }
         return await model.prepareInitialWorkspace {
             let workspace = await workspaceManagementModel.resolveInitialWorkspace(accountConnectionID: connectionID) {
                 guard let syncWorker = accountController.syncWorker else { throw DahliaCloudError.notConfigured }
@@ -262,14 +241,19 @@ struct SetupTourView: View {
             let workspace: WorkspaceRecord? = if model.mode == .initial {
                 await prepareInitialWorkspace()
             } else if let selectedID = model.selectedExistingWorkspaceID {
-                workspaceManagementModel.workspaces.first { $0.id == selectedID && $0.accountConnectionId == model.selectedAccountConnectionID }
+                workspaceManagementModel.workspaces.first { $0.id == selectedID && model.belongsToSelectedAccount($0) }
             } else if let originalWorkspace = model.originalWorkspace,
                       model.keepsOriginalWorkspace {
                 originalWorkspace
+            } else if !model.didSelectWorkspaceLocation, model.selectedAccountConnectionID == nil {
+                // The suggested folder is the original workspace's; another account opens its own workspace instead.
+                await WorkspaceAISettingsModel.shared.accountWorkspace(databricksConnectionID: model.selectedDatabricksConnectionID)
             } else if let name = model.selectedWorkspaceName {
-                await workspaceManagementModel.createWorkspace(named: name)
+                await workspaceManagementModel.createWorkspace(named: name, databricksConnectionID: model.selectedDatabricksConnectionID)
             } else {
-                await workspaceManagementModel.createWorkspace(at: model.selectedWorkspaceURL)
+                await workspaceManagementModel.createWorkspace(
+                    at: model.selectedWorkspaceURL, databricksConnectionID: model.selectedDatabricksConnectionID
+                )
             }
             guard let workspace else {
                 workspaceManagementModel.isShowingError = false

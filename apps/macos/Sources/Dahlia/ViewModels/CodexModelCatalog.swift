@@ -10,9 +10,9 @@ final class CodexModelCatalog {
     private(set) var errorMessage: String?
     @ObservationIgnored private var loadGeneration = 0
 
-    private let service: CodexAppServerService
+    private let service: PiRuntimeService
 
-    init(service: CodexAppServerService = .shared) {
+    init(service: PiRuntimeService = .shared) {
         self.service = service
     }
 
@@ -53,10 +53,8 @@ final class CodexModelCatalog {
 
     func resolvedSelection(current: String) -> String? {
         let current = current.trimmingCharacters(in: .whitespacesAndNewlines)
-        if models.contains(where: { $0.model == current }) {
-            return current
-        }
-        return models.first(where: \CodexModel.isDefault)?.model ?? models.first?.model
+        let request = CodexAppServerRequest(model: current, developerInstructions: "", inputs: [], outputSchema: Data())
+        return (try? PiRuntimeService.resolvedModel(for: request, in: models))?.model
     }
 
     func selectionToPersist(current: String) -> String? {

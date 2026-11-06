@@ -1,6 +1,6 @@
 # Desktop の認証と account 分離
 
-2026-10-02: 実行場所、AI設定スコープ、Codex切替の現行方針は[アカウント別Desktop推論](../shared/account-scoped-desktop-inference.md)を優先する。以下は採択時点の履歴。
+2026-10-02: 実行場所、AI設定スコープ、Codex切替の現行方針は[アカウント別Desktop推論](../shared/account-scoped-desktop-inference.md)を優先する。2026-11-06: CODEX_HOME・auth-helper・token broker は[内蔵 Pi runtime](pi-runtime.md)で置き換えた。以下は採択時点の履歴。
 
 対象: Desktop。採択: 2026-08-04〜09-01。Server account の移行・サインアウト時のデータ扱いは、後続の [同期契約](../shared/sync.md#正本とアカウント境界) を優先する。
 
@@ -14,13 +14,19 @@ sign-out は remote revocation を試みた後、結果にかかわらず local 
 
 ## Codex account context
 
-Vault の nullable connection ID は nil を Local Account とし、削除時は SET NULL。Local Account だけが ChatGPT Subscription / 直接 Databricks provider を選べ、Dahlia account はその Server の Gateway を使う。
+Vault の nullable connection ID は nil を Local Account とし、削除時は SET NULL。Local Account は OpenAI / Anthropic の subscription を、Databricks アカウントはその workspace の Gateway を、Dahlia account はその Server の Gateway を使う。
 
 Local Account は既存の `Application Support/Dahlia/Codex`、Dahlia account は接続 UUID ごとの private CODEX_HOME を使う。生成用の単一 app-server は context 切替時に新規操作を待たせ、進行中操作を drain して対象 home で再起動する。ローカルの認証管理だけは既存サービスの別インスタンスを使い、Local Account の home と OpenAI provider に固定する。設定画面を開いても生成用の context・設定ファイル・Server の token broker 認可を変更しない。認証変更後は ChatGPT を実行中の場合だけ生成用サービスを再読込する。
 
 model discovery と生成は同じ root provider を使い、別の provider 専用 model cache を持たない。Dahlia token は既存 service actor から private local broker / Codex auth command へ動的に渡し、config・環境変数・log に保存しない。provider と Databricks 接続 ID はアプリ設定に保存する Local Account 共通設定とし、設定画面・セットアップ・生成・画像解析が同じ値を使う。Local処理のsummary model / effortもLocal Account共通設定とし、初回のみ最後に開いた Local Account の Vault から引き継ぐ。該当 Vault がなければ従来のアプリ設定を使う。旧 Vault のsummary列は互換性のため保持するが、新規summaryの設定や実行先判定には使わない。chat model / effort は引き続き Vault に保存する。同一 origin の複数 remote account 切替は対象外。
 
-アカウント一覧は Local Account を常時含め、現在の Vault の所属アカウントにチェックを表示する。モデルプロバイダー設定は常に Local Account を対象とし、Dahlia Server / Cloud の hosted provider は設定項目として表示しない。
+アカウントの切替はサイドバー下部のアカウントメニュー（設定画面にも表示）で行い、設定の「モデル設定」は開いているアカウントの provider と AI 設定だけを示す。アカウントメニューは Local Account を常時含め、その次に接続した Databricks workspace ごとの Databricks アカウント（ロゴと「ホスト名の先頭 (メールアドレス)」。フッターはホスト名の先頭とメールアドレスの2段）を並べ、現在のアカウントにチェックを表示する。
+Databricks の接続は複数持て、OAuth の token 処理は接続ごとに独立する。接続は `accounts` テーブル（`kind = 'databricks'`、clientID は `databricks-cli`）に置く。0.29 までの UserDefaults の接続と Keychain の credential は起動時に削除して引き継がず、ユーザーには再サインインを案内する（Vault とデータは Local Account に残る）。Google Calendar の Databricks proxy は先頭の接続を使う。
+Databricks アカウントの Vault は `workspaces.databricksConnectionId` に接続 ID を持ち、`accountConnectionId` は nil のままなので、データはこの Mac にあり Server と同期しない。Pi の agent directory はアカウントごとに分け（`accounts/<accounts.id>/pi`）、実行アカウントは `CodexRuntimeProvider.databricks(connectionID:)`（録音処理には `databricksWorkspace` キーで保存）として Local と区別する。切替は Dahlia account と同じく Pi の process を閉じ、そのアカウントの `models.json` に workspace の Gateway を書く。
+モデルは開いているアカウントのものだけを使う。Local Account は OpenAI / Anthropic、Databricks アカウントはその workspace の Gateway で、設定にもそれぞれの provider だけを表示する。要約・チャットのモデル選択はアカウントごと（`accountInferenceSettings.databricks.<接続 ID>`）に保存し、録音後の処理は録音したアカウントに戻るまで待つ。
+Vault は Local と各 Databricks アカウントのあいだで移せ、Databricks アカウントの選択中に作った Vault はその配下になる。最初に選んだときに Vault がなければ `Default` を 1 つ作る（Local Account の初回も `Default`）。Databricks workspace を切断すると、外部キーの SET NULL でその Vault は Local Account に戻る。チャットの履歴はモデルと同じくアカウントに属し（[内蔵 Pi runtime](pi-runtime.md#チャットの実行と承認)）、Vault を移しても移動先へは移さない。
+アカウントメニューのサインインでは、接続済みかどうかにかかわらず URL を入れて workspace を追加する（接続済みの URL は再認証になる）。セットアップのアカウント選択とアカウントメニューのサインインは、従来のモーダルの形で Databricks workspace への接続と Local Account だけを示し、Dahlia Cloud / Server のサインインは当面表示しない。既存の接続は使えるが、接続の削除の導線もないため、サインインを戻すときに足す。Databricks をデータの正本にする場合は、別の ADR で同期を設計する。
+モデルプロバイダー設定は Local / Databricks アカウントを対象とし、Dahlia Server / Cloud の hosted provider は設定項目として表示しない。
 
 ## ChatGPT と Databricks Workspace OAuth
 

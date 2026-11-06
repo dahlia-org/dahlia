@@ -1,6 +1,9 @@
 import DahliaRuntimeSupport
 import Foundation
 
+/// Providers that see the schema only in the prompt (Claude, Gemini) may leave out fields that are empty for them, so
+/// decoding requires only what carries the summary: the title, each section's heading, each block's type and the field
+/// its type carries text in, item text, and action item titles. Every other field takes its empty value when missing.
 struct SummaryDocumentResponse: Decodable {
     let title: String
     let description: String
@@ -11,6 +14,22 @@ struct SummaryDocumentResponse: Decodable {
     struct SectionDTO: Decodable {
         let heading: String
         let blocks: [BlockDTO]
+
+        init(from decoder: any Decoder) throws {
+            let container = try decoder.container(keyedBy: CodingKeys.self)
+            heading = try container.decode(String.self, forKey: .heading)
+            blocks = try container.decodeIfPresent([BlockDTO].self, forKey: .blocks) ?? []
+        }
+
+        private enum CodingKeys: String, CodingKey {
+            case heading
+            case blocks
+        }
+    }
+
+    private struct ActionItemDTO: Decodable {
+        let title: String
+        let assignee: String?
     }
 
     struct BlockDTO: Decodable {
@@ -28,6 +47,25 @@ struct SummaryDocumentResponse: Decodable {
             case items
             case language
             case imageId = "image_id"
+        }
+
+        init(from decoder: any Decoder) throws {
+            let container = try decoder.container(keyedBy: CodingKeys.self)
+            type = try container.decode(String.self, forKey: .type)
+            let isList = ["bulleted_list", "numbered_list", "checklist"].contains(type)
+            level = try container.decodeIfPresent(Int.self, forKey: .level) ?? 0
+            content = if isList || type == "image" {
+                try container.decodeIfPresent(TextDTO.self, forKey: .content) ?? TextDTO(text: "", transcriptRef: nil)
+            } else {
+                try container.decode(TextDTO.self, forKey: .content)
+            }
+            items = if isList {
+                try container.decode([ItemDTO].self, forKey: .items)
+            } else {
+                try container.decodeIfPresent([ItemDTO].self, forKey: .items) ?? []
+            }
+            language = try container.decodeIfPresent(String.self, forKey: .language) ?? ""
+            imageId = try container.decodeIfPresent(String.self, forKey: .imageId) ?? ""
         }
     }
 
@@ -50,6 +88,13 @@ struct SummaryDocumentResponse: Decodable {
             case text
             case transcriptRef = "transcript_ref"
             case checked
+        }
+
+        init(from decoder: any Decoder) throws {
+            let container = try decoder.container(keyedBy: CodingKeys.self)
+            text = try container.decode(String.self, forKey: .text)
+            transcriptRef = try container.decodeIfPresent(String.self, forKey: .transcriptRef)
+            checked = try container.decodeIfPresent(Bool.self, forKey: .checked) ?? false
         }
     }
 
@@ -175,7 +220,8 @@ struct SummaryDocumentResponse: Decodable {
         title = try container.decode(String.self, forKey: .title)
         description = try container.decodeIfPresent(String.self, forKey: .description) ?? ""
         sections = try container.decode([SectionDTO].self, forKey: .sections)
-        tags = try container.decode([String].self, forKey: .tags)
-        actionItems = try container.decode([SummaryActionItem].self, forKey: .actionItems)
+        tags = try container.decodeIfPresent([String].self, forKey: .tags) ?? []
+        actionItems = try (container.decodeIfPresent([ActionItemDTO].self, forKey: .actionItems) ?? [])
+            .map { SummaryActionItem(title: $0.title, assignee: $0.assignee ?? "") }
     }
 }

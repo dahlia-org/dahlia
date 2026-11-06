@@ -84,13 +84,7 @@ struct WorkspaceSyncProgress: Identifiable, Equatable, Sendable {
 }
 
 struct AccountSyncProgress: Equatable, Sendable {
-    let discoveryIssue: SyncProgressIssue?
     let workspaces: [WorkspaceSyncProgress]
-
-    init(discoveryIssue: SyncProgressIssue? = nil, workspaces: [WorkspaceSyncProgress]) {
-        self.discoveryIssue = discoveryIssue
-        self.workspaces = workspaces
-    }
 
     var state: MeetingSyncState {
         if allIssues.contains(where: { $0.status == 401 || $0.status == 403 }) {
@@ -107,31 +101,19 @@ struct AccountSyncProgress: Equatable, Sendable {
     var remaining: Int { workspaces.reduce(0) { $0 + $1.remaining } }
 
     private var allIssues: [SyncProgressIssue] {
-        (discoveryIssue.map { [$0] } ?? []) + workspaces.flatMap(\.issues)
+        workspaces.flatMap(\.issues)
     }
 }
 
 extension MeetingRepository {
     /// Counts only immutable operation identifiers and recovery metadata, never transcript, summary, or image bodies.
     nonisolated static func fetchSyncProgress(in db: Database) throws -> [UUID: AccountSyncProgress] {
-        let connections = try DahliaAccountConnectionRecord.order(Column("createdAt"), Column("id")).fetchAll(db)
+        let connections = try DahliaAccountConnectionRecord.dahliaServers.order(Column("createdAt"), Column("id")).fetchAll(db)
         let workspaces = try WorkspaceRecord
             .filter(Column("accountConnectionId") != nil)
             .order(Column("createdAt"), Column("id"))
             .fetchAll(db)
-        var accounts = Dictionary(uniqueKeysWithValues: connections.map { connection in
-            let incident = SyncIncident(jsonString: connection.syncDiscoveryErrorJSON)
-            let issue = incident.map {
-                SyncProgressIssue(
-                    source: .discovery,
-                    status: $0.status,
-                    code: $0.code,
-                    target: nil,
-                    diagnostic: $0.diagnostic
-                )
-            }
-            return (connection.id, AccountSyncProgress(discoveryIssue: issue, workspaces: []))
-        })
+        var accounts = Dictionary(uniqueKeysWithValues: connections.map { ($0.id, AccountSyncProgress(workspaces: [])) })
 
         for workspace in workspaces {
             guard let connectionId = workspace.accountConnectionId else { continue }
@@ -261,7 +243,7 @@ extension MeetingRepository {
                 other: remaining["other", default: 0]
             )
             let existing = accounts[connectionId] ?? AccountSyncProgress(workspaces: [])
-            accounts[connectionId] = .init(discoveryIssue: existing.discoveryIssue, workspaces: existing.workspaces + [progress])
+            accounts[connectionId] = .init(workspaces: existing.workspaces + [progress])
         }
         return accounts
     }

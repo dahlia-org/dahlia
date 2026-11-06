@@ -351,7 +351,7 @@
                 )
                 let connection = try #require(try WorkspaceRecord.fetchOne(db, key: workspace)?.accountConnectionId)
                 try db.execute(
-                    sql: "UPDATE dahlia_account_connections SET origin = ? WHERE id = ?",
+                    sql: "UPDATE accounts SET origin = ? WHERE id = ?",
                     arguments: ["https://summary-priority-\(workspace.uuidString).invalid", connection]
                 )
                 return connection
@@ -500,7 +500,7 @@
             #expect(try await queue
                 .read { try String.fetchOne($0, sql: "SELECT syncPullCursor FROM workspaces WHERE id = ?", arguments: [workspace]) } == "before")
             let origin = "https://scoped-resolution-\(workspace.uuidString).invalid"
-            try await queue.write { try $0.execute(sql: "UPDATE dahlia_account_connections SET origin = ?", arguments: [origin]) }
+            try await queue.write { try $0.execute(sql: "UPDATE accounts SET origin = ?", arguments: [origin]) }
             let items: [[String: Any]] = deleted ? [] : [[
                 "entity": "meeting",
                 "id": accepted.uuidString,
@@ -919,8 +919,12 @@
             try DevelopmentSchemaHistory.migrator.migrate(queue, upTo: "v49_workspaceImportDestinations")
             let connection = UUID.v7(), workspace = UUID.v7(), transaction = UUID.v7()
             try queue.write { db in
-                try DahliaAccountConnectionRecord(id: connection, origin: "https://example.invalid", clientID: "test", createdAt: .now).insert(db)
-                try WorkspaceRecord(id: workspace, name: "Preserved", createdAt: .now, lastOpenedAt: .now).insert(db)
+                // Before `v57_accountsTable`, accounts were `dahlia_account_connections`.
+                try db.execute(
+                    sql: "INSERT INTO dahlia_account_connections (id, origin, clientID, createdAt) VALUES (?, 'https://example.invalid', 'test', ?)",
+                    arguments: [connection, Date.now]
+                )
+                try WorkspaceRecord(id: workspace, name: "Preserved", createdAt: .now, lastOpenedAt: .now).insertIntoLegacySchema(db)
                 try db.execute(
                     sql: "INSERT INTO sync_transactions(id, workspace_id, connectionId, createdAt, availableAt, attempts) VALUES (?, ?, ?, ?, ?, 1)",
                     arguments: [transaction, workspace, connection, Date(), Date()]

@@ -139,7 +139,7 @@ extension ScreenshotContentProvider {
                 SELECT o.id, o.entityId, o.attachmentMimeType, o.attachmentSHA256,
                     coalesce(o.attachmentBytes, b.imageData) AS bytes, c.id AS connectionId, c.origin
                 FROM sync_operations o JOIN sync_transactions t ON t.id = o.transactionId
-                JOIN dahlia_account_connections c ON c.id = t.connectionId
+                JOIN accounts c ON c.id = t.connectionId
                 LEFT JOIN file_migration_content b ON b.fileId = o.entityId
                 WHERE t.workspace_id = ? AND o.attachmentMimeType IS NOT NULL AND o.attachmentReference IS NULL
                 ORDER BY t.sequence, o.position LIMIT 1
@@ -188,7 +188,7 @@ extension ScreenshotContentProvider {
             let row = try Row.fetchOne(db, sql: """
             SELECT o.attachmentReference, o.attachmentMimeType, o.attachmentSHA256, c.id AS connectionId, c.origin
             FROM sync_operations o JOIN sync_transactions t ON t.id = o.transactionId
-            JOIN dahlia_account_connections c ON c.id = t.connectionId WHERE o.id = ?
+            JOIN accounts c ON c.id = t.connectionId WHERE o.id = ?
             """, arguments: [operationId])
             guard let row, let reference: String = row["attachmentReference"] else { throw ScreenshotContentError.unavailable }
             let source = try JSONDecoder().decode(ScreenshotRemoteReference.self, from: Data(reference.utf8))

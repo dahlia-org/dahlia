@@ -292,7 +292,6 @@ enum L10n { // swiftlint:disable:this type_body_length
     // MARK: - Common
 
     static var delete: String { String(localized: "Delete", bundle: bundle) }
-    static var remove: String { String(localized: "Remove", bundle: bundle) }
     static var removeProjectAssignment: String { String(localized: "Remove from Project", bundle: bundle) }
     static var rename: String { String(localized: "Rename", bundle: bundle) }
     static var recordingArchiveSaved: String { String(localized: "Recording Audio Saved", bundle: bundle) }
@@ -1610,11 +1609,9 @@ enum L10n { // swiftlint:disable:this type_body_length
     ) }
     static var summaryAndCaptionLanguage: String { String(localized: "Summaries and Image Captions", bundle: bundle) }
     static var modelProviderSetupDescription: String { String(
-        localized: "Choose the model provider used for summaries and other AI features.",
+        localized: "Sign in to the model providers used for summaries and other AI features. You can use several at once.",
         bundle: bundle
     ) }
-    static var chatGPTProviderDescription: String { String(localized: "Use your ChatGPT account.", bundle: bundle) }
-    static var databricksProviderDescription: String { String(localized: "Connect a Databricks workspace.", bundle: bundle) }
     static var audioPermissionSetupDescription: String { String(
         localized: "Allow access to the audio sources Dahlia records. You can continue and grant access later.",
         bundle: bundle
@@ -1672,6 +1669,10 @@ enum L10n { // swiftlint:disable:this type_body_length
     static var dahliaAccount: String { String(localized: "Dahlia Account", bundle: bundle) }
     static var localAccount: String { String(localized: "Local Account", bundle: bundle) }
     static var continueWithLocalAccount: String { String(localized: "Continue with Local Account", bundle: bundle) }
+    static var accountSetupDescription: String { String(
+        localized: "Use the Local Account, or connect a Databricks workspace to use its account. Both keep their data on this Mac.",
+        bundle: bundle
+    ) }
     static var orContinueWithoutSigningIn: String { String(localized: "Or continue without signing in", bundle: bundle) }
     static var connected: String { String(localized: "Connected", bundle: bundle) }
     static var switchingAIAccount: String { String(localized: "Switching AI account…", bundle: bundle) }
@@ -1722,10 +1723,6 @@ enum L10n { // swiftlint:disable:this type_body_length
         localized: "Choose what to do with this account's local Workspaces before signing out.",
         bundle: bundle
     ) }
-    static var dahliaAccountsDescription: String { String(
-        localized: "Manage the Local Account and sign-ins to Dahlia Cloud and Server.",
-        bundle: bundle
-    ) }
     static func dahliaAccountCount(_ count: Int) -> String { String(
         localized: "\(count) Dahlia accounts",
         bundle: bundle
@@ -1735,16 +1732,6 @@ enum L10n { // swiftlint:disable:this type_body_length
 
     static func signOutDahliaConnection(_ name: String) -> String {
         String(format: String(localized: "Sign out of %@?", bundle: bundle), name)
-    }
-
-    static func removeDahliaConnectionDescription(workspaceCount: Int) -> String {
-        String(
-            format: String(
-                localized: "This account is used by %lld Workspaces. Those Workspaces will use the Local Account, and this account's Codex and Google Drive connection data will be deleted.",
-                bundle: bundle
-            ),
-            workspaceCount
-        )
     }
 
     static var moveWorkspacesToLocalAndSignOut: String { String(
@@ -1782,15 +1769,6 @@ enum L10n { // swiftlint:disable:this type_body_length
             bundle: bundle
         )
     }
-
-    static func removeDahliaConnection(_ name: String) -> String {
-        String(format: String(localized: "Remove Dahlia connection %@?", bundle: bundle), name)
-    }
-
-    static var removeDahliaConnectionDescription: String { String(
-        localized: "The connection will be removed. Local meeting data will not be deleted.",
-        bundle: bundle
-    ) }
 
     static func dahliaSignedInAs(_ name: String) -> String {
         String(format: String(localized: "Signed in as %@", bundle: bundle), name)
@@ -2345,7 +2323,7 @@ enum L10n { // swiftlint:disable:this type_body_length
     ) }
     static var imageTextLanguages: String { String(localized: "Screenshot Text Languages", bundle: bundle) }
     static var imageTextLanguagesDescription: String { String(
-        localized: "Codex uses the app languages selected in Language settings as hints when extracting screenshot text.",
+        localized: "Pi uses the app languages selected in Language settings as hints when extracting screenshot text.",
         bundle: bundle
     ) }
     static var openLanguageSettings: String { String(localized: "Open Language Settings", bundle: bundle) }
@@ -2376,46 +2354,42 @@ enum L10n { // swiftlint:disable:this type_body_length
 
     static var model: String { String(localized: "Model", bundle: bundle) }
     static var codexHelperNotBundled: String { String(
-        localized: "The bundled Codex helper is unavailable. Run Dahlia with scripts/run-dev.sh or install a signed app build.",
+        localized: "The bundled Pi helper is unavailable. Run Dahlia with scripts/run-dev.sh or install a signed app build.",
         bundle: bundle
     ) }
     static func codexLaunchFailed(_ detail: String) -> String { String(
-        localized: "Could not start Codex: \(detail)",
+        localized: "Could not start Pi: \(detail)",
         bundle: bundle
     ) }
     static var codexNotLoggedIn: String { String(
-        localized: "Codex is not signed in. Open Accounts and Workspaces in Settings and sign in, then try again.",
+        localized: "Pi is not signed in. Open Accounts and Workspaces in Settings and sign in, then try again.",
         bundle: bundle
     ) }
     static func codexLoginFailed(_ detail: String) -> String { String(
-        localized: "Codex sign-in failed: \(detail)",
+        localized: "Pi sign-in failed: \(detail)",
         bundle: bundle
     ) }
-    static var codexLoginFailedWithoutDetail: String { String(localized: "Codex sign-in failed.", bundle: bundle) }
+    static var codexLoginFailedWithoutDetail: String { String(localized: "Pi sign-in failed.", bundle: bundle) }
     static var codexLoginPageCouldNotOpen: String { String(
-        localized: "Could not open the Codex sign-in page.",
+        localized: "Could not open the Pi sign-in page.",
         bundle: bundle
     ) }
-    static var codexProcessExited: String { String(localized: "Codex app-server exited unexpectedly.", bundle: bundle) }
+    static var codexProcessExited: String { String(localized: "Pi exited unexpectedly.", bundle: bundle) }
     static func codexProcessExitedWithDetail(_ detail: String) -> String { String(
-        localized: "Codex app-server exited unexpectedly: \(detail)",
+        localized: "Pi exited unexpectedly: \(detail)",
         bundle: bundle
     ) }
     static func codexRequestTimedOut(_ operation: String) -> String { String(
-        localized: "Codex did not respond in time (\(operation)). Try again.",
+        localized: "Pi did not respond in time (\(operation)). Try again.",
         bundle: bundle
     ) }
-    static var codexInvalidResponse: String { String(localized: "Codex returned an invalid response.", bundle: bundle) }
-    static var codexOutputLineTooLarge: String { String(
-        localized: "Codex returned an output line larger than Dahlia's safety limit.",
-        bundle: bundle
-    ) }
+    static var codexInvalidResponse: String { String(localized: "Pi returned an invalid response.", bundle: bundle) }
     static func codexRequestFailed(_ detail: String) -> String { String(
-        localized: "Codex request failed: \(detail)",
+        localized: "Pi request failed: \(detail)",
         bundle: bundle
     ) }
-    static var codexTurnFailed: String { String(localized: "Codex could not complete the request.", bundle: bundle) }
-    static var codexTurnInterrupted: String { String(localized: "Codex generation was interrupted.", bundle: bundle) }
+    static var codexTurnFailed: String { String(localized: "Pi could not complete the request.", bundle: bundle) }
+    static var codexTurnInterrupted: String { String(localized: "Pi generation was interrupted.", bundle: bundle) }
     static var codexBackendResetForSafety: String {
         String(localized: "The AI backend was restarted to stop an unconfirmed operation safely.", bundle: bundle)
     }
@@ -2424,10 +2398,7 @@ enum L10n { // swiftlint:disable:this type_body_length
         String(localized: "This approval request is no longer pending.", bundle: bundle)
     }
 
-    static var codexUnknownError: String { String(localized: "Unknown Codex app-server error.", bundle: bundle) }
     static var account: String { String(localized: "Account", bundle: bundle) }
-    static var selectedAccount: String { String(localized: "Selected Account", bundle: bundle) }
-    static var switchAccount: String { String(localized: "Switch Account", bundle: bundle) }
     static var selectedWorkspace: String { String(localized: "Selected Workspace", bundle: bundle) }
     static var localAccountModelProvider: String { String(localized: "Local Account Model Provider", bundle: bundle) }
     static var aiAccountDescription: String { String(
@@ -2441,19 +2412,10 @@ enum L10n { // swiftlint:disable:this type_body_length
 
     static var chatGPTSubscription: String { String(localized: "ChatGPT Subscription", bundle: bundle) }
     static var databricks: String { String(localized: "Databricks", bundle: bundle) }
-    static var codexAccount: String { String(localized: "Codex Account", bundle: bundle) }
-    static var codexAccountDescription: String { String(
-        localized: "Dahlia stores a separate Codex sign-in for this app. Signing in opens your browser.",
-        bundle: bundle
-    ) }
-    static var codexSignedIn: String { String(localized: "Signed in to Codex", bundle: bundle) }
-    static func codexSignedInAs(_ account: String) -> String { String(
-        localized: "Signed in to Codex as \(account)",
-        bundle: bundle
-    ) }
-    static var codexNotSignedIn: String { String(localized: "Not signed in to Codex", bundle: bundle) }
-    static var codexSignInNotRequired: String { String(localized: "Codex does not require sign-in", bundle: bundle) }
+    static var unityGateway: String { String(localized: "Unity Gateway", bundle: bundle) }
+    static var codexSignedIn: String { String(localized: "Signed in", bundle: bundle) }
     static var signInWithChatGPT: String { String(localized: "Sign in with ChatGPT", bundle: bundle) }
+    static var signInWithClaude: String { String(localized: "Sign in with Claude", bundle: bundle) }
     static var codexWaitingForBrowserSignIn: String { String(localized: "Waiting for browser sign-in…", bundle: bundle) }
     static var cancelSignIn: String { String(localized: "Cancel Sign-In", bundle: bundle) }
     static var signOut: String { String(localized: "Sign Out", bundle: bundle) }
@@ -2464,7 +2426,7 @@ enum L10n { // swiftlint:disable:this type_body_length
     ) }
     static var databricksWorkspaceURL: String { String(localized: "Databricks Workspace URL", bundle: bundle) }
     static var databricksWorkspaceURLDescription: String { String(
-        localized: "Enter the HTTPS URL of the workspace used by Codex.",
+        localized: "Enter the HTTPS URL of the workspace used by Pi.",
         bundle: bundle
     ) }
     static var databricksWorkspaceURLPlaceholder: String { String(
@@ -2478,12 +2440,10 @@ enum L10n { // swiftlint:disable:this type_body_length
         localized: "Workspace ID unavailable from profile",
         bundle: bundle
     ) }
-    static var codexConfiguration: String { String(localized: "Codex Configuration", bundle: bundle) }
     static func codexConfigurationUpdateFailed(_ detail: String) -> String { String(
-        localized: "Could not update the Codex configuration: \(detail)",
+        localized: "Could not update the Pi configuration: \(detail)",
         bundle: bundle
     ) }
-    static var databricksConfigured: String { String(localized: "Codex is configured for Databricks", bundle: bundle) }
     static var codexAccountConfigurationNotReady: String { String(
         localized: "The selected AI account is not ready. Open Accounts and Workspaces in Settings and finish its configuration.",
         bundle: bundle
@@ -2492,18 +2452,14 @@ enum L10n { // swiftlint:disable:this type_body_length
         localized: "This chat uses \(provider). Start a new chat to use the current account.",
         bundle: bundle
     ) }
-    static var databricksCodexDescription: String { String(
-        localized: "Dahlia securely stores this workspace sign-in on this Mac.",
-        bundle: bundle
-    ) }
-    static var codexNoModels: String { String(localized: "Codex returned no available models. Try again.", bundle: bundle) }
+    static var codexNoModels: String { String(localized: "Pi returned no available models. Try again.", bundle: bundle) }
     static var codexModelDescription: String { String(
-        localized: "Models are loaded from the bundled Codex app-server.",
+        localized: "Models are loaded from the bundled Pi.",
         bundle: bundle
     ) }
     static var reasoningEffort: String { String(localized: "Reasoning Effort", bundle: bundle) }
     static var imageAnalysisReasoningEffortDescription: String {
-        String(localized: "Controls how much reasoning Codex uses for each image.", bundle: bundle)
+        String(localized: "Controls how much reasoning Pi uses for each image.", bundle: bundle)
     }
 
     static var imageAnalysisModelDescription: String { String(
@@ -2512,7 +2468,7 @@ enum L10n { // swiftlint:disable:this type_body_length
     ) }
 
     static var reasoningEffortDescription: String { String(
-        localized: "Controls how much reasoning Codex uses for each summary.",
+        localized: "Controls how much reasoning Pi uses for each summary.",
         bundle: bundle
     ) }
     static var reasoningEffortNone: String { String(localized: "None", bundle: bundle) }
@@ -2524,7 +2480,7 @@ enum L10n { // swiftlint:disable:this type_body_length
     static var reasoningEffortMax: String { String(localized: "Max", bundle: bundle) }
     static var reasoningEffortUltra: String { String(localized: "Ultra", bundle: bundle) }
     static var codexSummaryModelFooter: String { String(
-        localized: "The saved model is used when available; otherwise Codex's default model is selected.",
+        localized: "The saved model is used when available; otherwise the first available model is selected.",
         bundle: bundle
     ) }
     static var summaryOutput: String { String(localized: "Summary Output", bundle: bundle) }
@@ -2991,18 +2947,12 @@ enum L10n { // swiftlint:disable:this type_body_length
     static var chatChangePermissions: String { String(localized: "Change permissions", bundle: bundle) }
     static var chatApprovalAsk: String { String(localized: "Ask for approval", bundle: bundle) }
     static var chatApprovalAskDescription: String { String(
-        localized: "Always ask before editing files outside the workspace or using the internet.",
+        localized: "Ask before changing Dahlia data. Chat cannot run commands or change files on this Mac.",
         bundle: bundle
     ) }
     static var chatApprovalAutoReview: String { String(localized: "Review approvals", bundle: bundle) }
     static var chatApprovalAutoReviewDescription: String { String(
-        localized: "Ask only when an operation is detected as potentially unsafe.",
-        bundle: bundle
-    ) }
-
-    static var chatApprovalFullAccess: String { String(localized: "Full access", bundle: bundle) }
-    static var chatApprovalFullAccessDescription: String { String(
-        localized: "Allow unrestricted access to the internet and all files on this Mac.",
+        localized: "Change Dahlia data without asking. Chat cannot run commands or change files on this Mac.",
         bundle: bundle
     ) }
 
@@ -3328,10 +3278,6 @@ extension L10n {
     ) }
     static var databricksCallbackUnavailable: String { String(
         localized: "Cannot listen on any of localhost ports 8020–8040. Close the other sign-ins and retry.",
-        bundle: bundle
-    ) }
-    static var databricksReconnectRequired: String { String(
-        localized: "Enter your workspace URL and sign in again to replace the old CLI connection.",
         bundle: bundle
     ) }
     static var workspaceAdmin: String { String(localized: "Workspace Admin", bundle: bundle) }

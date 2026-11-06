@@ -20,12 +20,12 @@ MCPのcalendar、summary、transcript、既存recordはuntrusted evidenceとし�
 
 ## 配布と実行境界
 
-Project presetはapplication resourceを`.copy`で同梱し、起動前に専用`CODEX_HOME/skills/<name>`へ同期する。statelessなapp-owned presetと旧preset名だけを置換し、古いfileを残さない。skills rootがsymlinkなら外部を変更せず起動失敗とし、同期失敗を「利用可能」と表示しない。`.process`によるbasename衝突を避ける。
+Project presetはapplication resourceを`.copy`で同梱し、チャットの Pi process に bundle 内の skill directory を `--skill` で渡す（2026-11-06。以前は専用`CODEX_HOME/skills/<name>`へ同期した）。ユーザーの skill は読み込まない。`.process`によるbasename衝突を避ける。
 
 chat は skills.include_instructions と Vault 固定の Dahlia `--write` MCP を使い、apps / hooks / memory / plugins / orchestrator / user MCP は無効。command / file access は [タスクの承認方針](chat-approval.md) に従い、初期の「preset 読込 command だけ」の制限と混同しない。[user HOME 継承](accounts.md#chatgpt-と-databricks-cli) で user skills が発見され得るため、MCP の Vault validation を最終 authority にする。
 
 ## 要約 context
 
-要約は過去 meeting を自動選択・取得せず、全 MCP / tool / skill を thread 単位で無効にする。Codex 全体の MCP 設定は書き換えない。structured output、temporary cwd、read-only / never を維持する。
+要約は過去 meeting を自動選択・取得せず、全 MCP / tool / skill を thread 単位で無効にする。Pi の MCP 設定は書き換えない。structured output、temporary cwd、read-only / never を維持する。
 
 初期の同一 calendar 系列の過去要約取得は利用が少なく context と追加 tool call を消費したため、meeting 限定 MCP と summary telemetry origin を廃止した。過去経緯の分析は chat / 外部 MCP から明示的に行う。通常の Vault-scoped MCP は維持する。

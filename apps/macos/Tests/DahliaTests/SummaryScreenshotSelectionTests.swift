@@ -29,84 +29,84 @@ import Foundation
             return settings
         }
 
+        private static let models = [TestPiTransport.model(provider: "openai", id: "other"), TestPiTransport.model(provider: "openai", id: "selection-model")]
+
+        /// Lists models, then accepts the prompt without ever finishing the run.
+        private static func stalled(log: TestPiTransportLog) -> TestPiRuntime {
+            TestPiRuntime { options in
+                let transport = options.mode == .control ? TestPiTransport(reply: TestPiRuntime.modelsReply(models)) : TestPiTransport()
+                log.append(transport)
+                return transport
+            }
+        }
+
         @Test
         func sendsLowResolutionCandidatesWithTheSelectionModelAndKeepsCaptureOrder() async throws {
             let candidates = try Self.screenshots(3)
-            let transport = TestCodexAppServerTransport(
-                mode: .generationCompletes, modelName: "selection-model", generationResponse: #"{"indices":[3,1,3]}"#
-            )
-            let appServer = makeTestCodexAppServerService(transportFactory: { transport })
+            let log = TestPiTransportLog()
+            let pi = TestPiRuntime.generating(models: Self.models, reply: #"{"indices":[3,1,3]}"#, log: log)
 
             let selected = try await SummaryScreenshotSelection.select(
-                candidates, settings: Self.settings(), runtimeProvider: .chatGPTSubscription, appServer: appServer
+                candidates, settings: Self.settings(), runtimeProvider: .local, appServer: pi.service
             )
 
             #expect(selected.map(\.id) == [candidates[0].id, candidates[2].id])
-            let messages = await transport.messages()
-            let thread = try #require(messages.first { $0.objectValue?["method"]?.stringValue == "thread/start" }?.objectValue?["params"]?.objectValue)
-            #expect(thread["model"] == .string("selection-model"))
-            #expect(thread["config"]?.objectValue?["model_reasoning_effort"] == .string("high"))
-            let input = try #require(messages.first { $0.objectValue?["method"]?.stringValue == "turn/start" }?
-                .objectValue?["params"]?.objectValue?["input"]?.arrayValue)
-            #expect(input.count == 6)
-            #expect(input.compactMap { $0.objectValue?["text"]?.stringValue }.last == #"<image index="3" elapsed_seconds="60"/>"#)
-            let uris = input.compactMap { $0.objectValue?["url"]?.stringValue }
-            #expect(uris.count == 3)
-            let uri = try #require(uris.first)
-            let base64 = try #require(uri.split(separator: ",", maxSplits: 1).last)
-            let payload = try #require(Data(base64Encoded: String(base64)))
+            #expect(pi.argument(after: "--model") == "openai/selection-model")
+            #expect(pi.argument(after: "--thinking") == "high")
+            let prompt = try #require(await log.all.last?.command("prompt"))
+            #expect(prompt["message"]?.stringValue?.hasSuffix(#"[Attached image 3] <image index="3" elapsed_seconds="60"/>"#) == true)
+            let images = try #require(prompt["images"]?.arrayValue)
+            #expect(images.count == 3)
+            let payload = try #require(Data(base64Encoded: images[0].objectValue?["data"]?.stringValue ?? ""))
             let size = try #require(ImageEncoder.pixelSize(of: payload))
             #expect(max(size.width, size.height) <= 480)
-            await appServer.shutdown()
         }
 
         @Test
         func imageSearchDisabledStillSelectsAndInvalidSelectionKeepsEveryCandidate() async throws {
             let candidates = try Self.screenshots(2)
             for (enabled, response) in [(false, #"{"indices":[1]}"#), (true, #"{"indices":[3]}"#)] {
-                let transport = TestCodexAppServerTransport(mode: .generationCompletes, modelName: "selection-model", generationResponse: response)
-                let appServer = makeTestCodexAppServerService(transportFactory: { transport })
+                let pi = TestPiRuntime.generating(models: Self.models, reply: response)
                 let selected = try await SummaryScreenshotSelection.select(
-                    candidates, settings: Self.settings(enabled: enabled), runtimeProvider: .chatGPTSubscription, appServer: appServer
+                    candidates, settings: Self.settings(enabled: enabled), runtimeProvider: .local, appServer: pi.service
                 )
                 #expect(selected.map(\.id) == (enabled ? candidates.map(\.id) : [candidates[0].id]))
-                #expect(await !transport.messages().isEmpty)
-                await appServer.shutdown()
+                #expect(pi.launches.all.contains { $0.mode == .summary })
             }
         }
 
         @Test
         func stalledSelectionKeepsEveryCandidateAfterTheTimeLimit() async throws {
             let candidates = try Self.screenshots(2)
-            let transport = TestCodexAppServerTransport(mode: .generationBlocks, modelName: "selection-model")
-            let appServer = makeTestCodexAppServerService(transportFactory: { transport })
+            let log = TestPiTransportLog()
+            let pi = Self.stalled(log: log)
 
             let selected = try await SummaryScreenshotSelection.select(
-                candidates, settings: Self.settings(), runtimeProvider: .chatGPTSubscription, appServer: appServer,
+                candidates, settings: Self.settings(), runtimeProvider: .local, appServer: pi.service,
                 timeout: .milliseconds(200)
             )
 
             #expect(selected.map(\.id) == candidates.map(\.id))
-            await appServer.shutdown()
+            #expect(await log.allClosed())
         }
 
         @Test
-        func cancellingTheSummaryCancelsSelectionAndInterruptsTheTurn() async throws {
+        func cancellingTheSummaryCancelsSelectionAndStopsPi() async throws {
             let candidates = try Self.screenshots(2)
-            let transport = TestCodexAppServerTransport(mode: .generationBlocks, modelName: "selection-model")
-            let appServer = makeTestCodexAppServerService(transportFactory: { transport })
+            let log = TestPiTransportLog()
+            let pi = Self.stalled(log: log)
             let selection = Task {
                 try await SummaryScreenshotSelection.select(
-                    candidates, settings: Self.settings(), runtimeProvider: .chatGPTSubscription, appServer: appServer
+                    candidates, settings: Self.settings(), runtimeProvider: .local, appServer: pi.service
                 )
             }
 
-            try await appServer.waitUntilActiveTurnCountForTesting(1)
+            let summary = await log.transport(at: 1)
+            _ = await summary.command("prompt")
             selection.cancel()
 
             await #expect(throws: CancellationError.self) { _ = try await selection.value }
-            await transport.waitUntilSent("turn/interrupt")
-            await appServer.shutdown()
+            #expect(await summary.isClosed)
         }
 
         @Test

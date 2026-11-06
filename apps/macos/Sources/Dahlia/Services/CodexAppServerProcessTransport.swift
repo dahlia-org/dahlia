@@ -16,6 +16,7 @@ actor CodexAppServerProcessTransport: CodexAppServerTransport {
     private var isErrorDrainStarted = false
     private var isErrorDrainFinished = false
     private var stdoutPending = Data()
+    private var isDiscardingOversizeLine = false
     private var outputLines: [Data] = []
     private var outputLineReadIndex = 0
     private var outputWaiter: (id: UUID, continuation: CheckedContinuation<Data?, any Error>)?
@@ -260,9 +261,7 @@ actor CodexAppServerProcessTransport: CodexAppServerTransport {
         while activeOutputReadID == readID {
             let snapshot = await relay.next()
             guard activeOutputReadID == readID else { return }
-            if !snapshot.data.isEmpty, !consumeStdout(snapshot.data) {
-                return
-            }
+            if !snapshot.data.isEmpty { consumeStdout(snapshot.data) }
             guard let errorCode = snapshot.terminalErrorCode else { continue }
             activeOutputReadID = nil
             if errorCode != 0 || snapshot.totalByteCount < Self.maximumOutputReadBytes {
@@ -273,43 +272,31 @@ actor CodexAppServerProcessTransport: CodexAppServerTransport {
         }
     }
 
-    private func consumeStdout(_ data: Data) -> Bool {
+    private func consumeStdout(_ data: Data) {
         var segmentStart = data.startIndex
         while let newline = data[segmentStart...].firstIndex(of: 0x0A) {
-            let fragment = data[segmentStart ..< newline]
-            guard appendToPendingLine(fragment) else { return false }
-            if !stdoutPending.isEmpty {
+            if !isDiscardingOversizeLine, appendToPendingLine(data[segmentStart ..< newline]), !stdoutPending.isEmpty {
                 let line = stdoutPending
                 stdoutPending = Data()
                 enqueueOutputLine(line)
             }
+            isDiscardingOversizeLine = false
             segmentStart = data.index(after: newline)
         }
-        return appendToPendingLine(data[segmentStart...])
+        if !isDiscardingOversizeLine { appendToPendingLine(data[segmentStart...]) }
     }
 
+    /// Pi repeats a whole run, images included, in its `turn_end` and `agent_end` events, which Dahlia never reads.
+    /// A line over the limit is therefore dropped through its newline instead of stopping the process; memory stays bounded.
+    @discardableResult
     private func appendToPendingLine(_ fragment: Data.SubSequence) -> Bool {
         guard fragment.count <= maximumOutputLineBytes - stdoutPending.count else {
-            failOutputLineTooLarge()
+            stdoutPending.removeAll(keepingCapacity: false)
+            isDiscardingOversizeLine = true
             return false
         }
         stdoutPending.append(contentsOf: fragment)
         return true
-    }
-
-    private func failOutputLineTooLarge() {
-        // The output can no longer be framed safely. Stop the shared connection without retaining
-        // or reporting any portion of the line.
-        let error = CodexAppServerError.outputLineTooLarge
-        activeOutputReadID = nil
-        outputChannel.close(flags: .stop)
-        stdoutPending.removeAll(keepingCapacity: false)
-        outputLines.removeAll(keepingCapacity: false)
-        outputLineReadIndex = 0
-        outputError = error
-        guard let waiter = outputWaiter else { return }
-        outputWaiter = nil
-        waiter.continuation.resume(throwing: error)
     }
 
     private func finishOutputRead(errorCode: Int32) async {

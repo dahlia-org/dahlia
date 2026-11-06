@@ -15,7 +15,7 @@ import GRDB
             try DevelopmentSchemaHistory.migrator.migrate(queue, upTo: "v51_scopedSyncReconciliation")
             let workspace = WorkspaceRecord(id: .v7(), path: nil, name: "Preserved", createdAt: .now, lastOpenedAt: .now)
             try queue.write { db throws in
-                try workspace.insert(db)
+                try workspace.insertIntoLegacySchema(db)
                 // GRDB's merged v52 registration replaced these five identifiers, not the released chain.
                 for identifier in [
                     "v47_documents",
@@ -69,7 +69,7 @@ import GRDB
             let connection = DahliaAccountConnectionRecord(id: .v7(), origin: "https://test.invalid", clientID: "test", createdAt: .now)
             try await database.dbQueue.write { db throws in
                 try connection.insert(db)
-                try workspace.insert(db)
+                try workspace.insertIntoLegacySchema(db)
                 try meeting.insert(db)
                 try session.insert(db)
                 try RecordingArchiveRecord(
@@ -117,8 +117,12 @@ import GRDB
             )
             let connection = DahliaAccountConnectionRecord(id: .v7(), origin: "https://test.invalid", clientID: "test", createdAt: .now)
             try queue.write { db throws in
-                try connection.insert(db)
-                try workspace.insert(db)
+                // Before `v57_accountsTable`, accounts were `dahlia_account_connections`.
+                try db.execute(
+                    sql: "INSERT INTO dahlia_account_connections (id, origin, clientID, createdAt) VALUES (?, ?, ?, ?)",
+                    arguments: [connection.id, connection.origin, connection.clientID, connection.createdAt]
+                )
+                try workspace.insertIntoLegacySchema(db)
                 try meeting.insert(db)
                 try session.insert(db)
                 try RecordingArchiveRecord(

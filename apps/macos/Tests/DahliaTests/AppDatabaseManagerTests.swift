@@ -20,8 +20,12 @@ import os
             let workspace = WorkspaceRecord(id: .v7(), path: nil, name: "Local", createdAt: .now, lastOpenedAt: .now)
             let meeting = MeetingRecord(id: .v7(), workspaceId: workspace.id, name: "Preserved", createdAt: .now, updatedAt: .now)
             try queue.write { db in
-                try connection.insert(db)
-                try workspace.insert(db)
+                // Before `v57_accountsTable`, accounts were `dahlia_account_connections`.
+                try db.execute(
+                    sql: "INSERT INTO dahlia_account_connections (id, origin, clientID, createdAt) VALUES (?, ?, ?, ?)",
+                    arguments: [connection.id, connection.origin, connection.clientID, connection.createdAt]
+                )
+                try workspace.insertIntoLegacySchema(db)
                 try meeting.insert(db)
             }
             let before = try queue.read { db in

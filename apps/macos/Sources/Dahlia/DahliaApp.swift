@@ -30,7 +30,6 @@ struct DahliaApp: App {
     @State private var chatCoordinator: CodexChatCoordinator
     @State private var workspaceManagementModel: WorkspaceManagementModel
     @State private var dahliaAccountController = DahliaCloudAccountController.shared
-    @State private var tokenBroker = DahliaTokenBrokerServer()
     @State private var imageBroker: DahliaImageBrokerServer?
     private let mainWindowNavigation: MainWindowNavigation
     @State private var appDatabase: AppDatabaseManager?
@@ -125,14 +124,14 @@ struct DahliaApp: App {
                 .accessibilityHidden(mainWindowNavigation.isShowingDahliaSignIn)
 
                 if mainWindowNavigation.isShowingDahliaSignIn {
-                    DahliaServerSignInView(
-                        cloudConfiguration: dahliaAccountController.defaultConfiguration,
-                        allowsCloudSignIn: dahliaAccountController.cloudConnection == nil,
-                        isBusy: dahliaAccountController.isBusy,
-                        isSigningIn: dahliaAccountController.isSigningIn,
-                        errorMessage: dahliaAccountController.errorMessage,
+                    // Dahlia Cloud and Server sign-in (`DahliaServerSignInView`) is hidden for now.
+                    DatabricksSignInView(
+                        showsLocalAccount: !workspaceManagementModel.workspaces.contains {
+                            $0.accountConnectionId == nil && $0.databricksConnectionId == nil
+                        },
                         onCancel: cancelDahliaSignIn,
-                        onSignIn: signInToDahlia
+                        onContinueWithDatabricks: { continueFromSignIn(databricks: $0) },
+                        onContinueLocally: { continueFromSignIn(databricks: nil) }
                     )
                 }
             }
@@ -373,6 +372,10 @@ struct DahliaApp: App {
         }
         AppDelegate.backupRestoreOutcome = restoreOutcome
         startup.show(.loadingWorkspaces)
+        AccountsDatabase.configure(db.dbQueue)
+        DatabricksOAuthStorage.removeLegacyConnections()
+        // Accounts are in the database now; listeners such as the Google Calendar proxy re-read them.
+        NotificationCenter.default.post(name: .databricksConnectionDidChange, object: nil)
         CalendarSourceCoordinator.shared.configure(dbQueue: db.dbQueue)
         try? await ScreenshotStorageMaintenance.compactAtStartup(dbQueue: db.dbQueue)
         appDatabase = db
@@ -401,12 +404,11 @@ struct DahliaApp: App {
         // Backup restore only changes local workspaces; existing canonical sync resumes normally.
         await meetingSyncWorker.start()
         do {
-            try tokenBroker.start()
             let imageBroker = DahliaImageBrokerServer(dbQueue: db.dbQueue)
             try imageBroker.start()
             self.imageBroker = imageBroker
         } catch {
-            ErrorReportingService.capture(error, context: ["source": "dahliaTokenBroker"])
+            ErrorReportingService.capture(error, context: ["source": "dahliaImageBroker"])
         }
         await db.searchIndexer.start()
         sidebarViewModel.setAppDatabase(db)
@@ -414,8 +416,7 @@ struct DahliaApp: App {
         viewModel.configureBatchTranscription(dbQueue: db.dbQueue) { [weak sidebarViewModel] in
             await sidebarViewModel?.refreshUnprocessedRecordings()
         }
-        appDelegate.terminationHandler = { [weak viewModel, weak db, weak tokenBroker, weak imageBroker, weak meetingSyncWorker] in
-            tokenBroker?.stop()
+        appDelegate.terminationHandler = { [weak viewModel, weak db, weak imageBroker, weak meetingSyncWorker] in
             imageBroker?.stop()
             await meetingSyncWorker?.stop()
             await db?.searchIndexer.stop()
@@ -462,7 +463,7 @@ struct DahliaApp: App {
         mainWindowNavigation.changeWorkspace(to: workspace.id)
         AppSettings.shared.currentWorkspace = workspace
         WorkspaceAISettingsModel.shared.activate(workspace: workspace)
-        chatCoordinator.activateWorkspace(workspace.id)
+        chatCoordinator.activateWorkspace(workspace)
         sidebarViewModel.setAppDatabase(db)
         if recordsLastOpened {
             Task { await workspaceManagementModel.markWorkspaceOpened(workspace) }
@@ -472,15 +473,15 @@ struct DahliaApp: App {
         return true
     }
 
-    private func signInToDahlia(_ configuration: DahliaCloudConfiguration) {
-        guard let task = dahliaAccountController.startSignIn(configuration: configuration) else { return }
-        Task { @MainActor in
-            await task.value
-            if dahliaAccountController.errorMessage == nil,
-               dahliaAccountController.completedSignInConnection(matching: configuration) != nil {
-                mainWindowNavigation.dismissDahliaSignIn()
-            }
-        }
+    /// `databricks` is the signed-in workspace's account to open; nil opens the Local Account.
+    private func continueFromSignIn(databricks: UUID?) {
+        mainWindowNavigation.dismissDahliaSignIn()
+        MainSidebarFooterView.selectLocalAccount(
+            databricks: databricks,
+            workspaces: workspaceManagementModel.workspaces,
+            currentWorkspace: AppSettings.shared.currentWorkspace,
+            onSelectWorkspace: { _ = openWorkspace($0) }
+        )
     }
 
     private func cancelDahliaSignIn() {
@@ -791,10 +792,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         UsageTelemetryService.shared.start()
         NSApplication.shared.setActivationPolicy(.regular)
         NSApplication.shared.activate(ignoringOtherApps: true)
-        Task {
-            // Connection errors are surfaced by the AI settings and summary actions.
-            try? await CodexAppServerService.shared.start()
-        }
     }
 
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
@@ -825,8 +822,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 alert.runModal()
                 return
             }
-            await CodexAppServerService.shared.shutdown()
-            await CodexAppServerService.localAccount.shutdown()
+            await PiRuntimeService.shared.shutdown()
             sender.reply(toApplicationShouldTerminate: true)
         }
         return .terminateLater

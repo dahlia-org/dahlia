@@ -154,9 +154,11 @@ struct WorkspaceSettingsView: View {
                 WorkspaceAccountPicker(
                     workspace: workspace,
                     connections: accountConnections,
-                    onSelect: { await requestServerAdoption(for: workspace, connectionID: $0) }
+                    databricksAccounts: WorkspaceAISettingsModel.shared.databricksConnections,
+                    onSelect: { await changeAccount(of: workspace, to: $0) }
                 )
-                .disabled(workspace.accountConnectionId != nil)
+                // A recording keeps the account it started with until it is processed.
+                .disabled(workspace.accountConnectionId != nil || !canSwitchWorkspace)
                 if workspace.syncRecoveryState == "updateRequired" {
                     Label(L10n.workspaceSyncUpdateRequired, systemImage: "exclamationmark.triangle")
                         .font(.caption).foregroundStyle(.orange)
@@ -266,7 +268,10 @@ struct WorkspaceSettingsView: View {
     private func createWorkspace() {
         let name = proposedName
         clearCreateRequest()
-        Task { _ = await model.createWorkspace(named: name) }
+        // A workspace added while using the Databricks account belongs to it.
+        let databricksConnectionID = WorkspaceAISettingsModel.shared.isDatabricksAccount
+            ? WorkspaceAISettingsModel.shared.databricksAccountConnectionID : nil
+        Task { _ = await model.createWorkspace(named: name, databricksConnectionID: databricksConnectionID) }
     }
 
     private func clearCreateRequest() {
@@ -303,11 +308,17 @@ struct WorkspaceSettingsView: View {
         }
     }
 
-    private func requestServerAdoption(for workspace: WorkspaceRecord, connectionID: UUID?) async -> UUID? {
-        guard let connectionID,
-              let connection = accountConnections.first(where: { $0.id == connectionID })
-        else { return workspace.accountConnectionId }
-        await model.requestServerAdoption(for: workspace, connection: connection)
-        return workspace.accountConnectionId
+    private func changeAccount(of workspace: WorkspaceRecord, to choice: WorkspaceAccountChoice) async -> WorkspaceAccountChoice {
+        switch choice {
+        case .local:
+            return await model.moveWorkspace(workspace, toDatabricks: nil) ? choice : WorkspaceAccountChoice(workspace)
+        case let .databricks(connectionID):
+            return await model.moveWorkspace(workspace, toDatabricks: connectionID) ? choice : WorkspaceAccountChoice(workspace)
+        case let .dahlia(connectionID):
+            if let connection = accountConnections.first(where: { $0.id == connectionID }) {
+                await model.requestServerAdoption(for: workspace, connection: connection)
+            }
+            return WorkspaceAccountChoice(workspace)
+        }
     }
 }

@@ -16,11 +16,16 @@
             let snapshot = try await fixture.reconnection(sameWorkspace: sameWorkspace)
             try await fixture.database.dbQueue.write { db throws in
                 let targetID = sameWorkspace ? fixture.source.id : fixture.target.id
+                // A workspace moved to a Databricks account leaves it when it reconnects to the Server.
+                let databricks = DatabricksConnection(id: .v7(), host: "https://example.cloud.databricks.com")
+                try DahliaAccountConnectionRecord(databricks, createdAt: .now).insert(db)
+                try db.execute(sql: "UPDATE workspaces SET databricksConnectionId = ? WHERE id = ?", arguments: [databricks.id, fixture.source.id])
                 _ = try fixture.commit(reconnection: snapshot, sameWorkspace: sameWorkspace, in: db)
                 #expect(try MeetingRecord.fetchOne(db, key: fixture.meeting.id)?.workspaceId == targetID)
                 #expect(try MeetingRecord.fetchOne(db, key: fixture.meeting.id)?.name == "Server meeting")
                 #expect(try WorkspaceRecord.fetchOne(db, key: targetID)?.syncPullCursor == (sameWorkspace ? "reconnected" : "complete"))
                 #expect(try WorkspaceRecord.fetchOne(db, key: targetID)?.accountConnectionId == fixture.connection.id)
+                if sameWorkspace { #expect(try WorkspaceRecord.fetchOne(db, key: targetID)?.databricksConnectionId == nil) }
                 #expect(try Int.fetchOne(db, sql: "SELECT count(*) FROM sync_operations WHERE entity IN ('project', 'meeting')") == 0)
                 #expect(try Int.fetchOne(db, sql: "SELECT count(*) FROM sync_operations") == 0)
                 #expect(try SummaryContent.fetchOne(db, key: fixture.meeting.id) == nil)
@@ -567,7 +572,7 @@
                     do {
                         try queue.write {
                             try $0.execute(
-                                sql: "UPDATE dahlia_account_connections SET syncDiscoveryErrorJSON = '{}' WHERE id = ?",
+                                sql: "UPDATE accounts SET clientID = clientID WHERE id = ?",
                                 arguments: [connectionId]
                             )
                             try $0.execute(

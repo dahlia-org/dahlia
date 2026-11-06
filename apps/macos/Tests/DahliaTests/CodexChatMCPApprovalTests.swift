@@ -77,21 +77,6 @@ import Foundation
         }
 
         @Test
-        func mismatchedQuestionIsRejected() {
-            var params = approvalParams(itemID: "item-1")
-            params["questions"] = .array([
-                .object([
-                    "header": .string("Approve app tool call?"),
-                    "id": .string("mcp_tool_call_approval_other-item"),
-                    "options": .array(approvalOptions),
-                    "question": .string("Allow the dahlia MCP server to run tool?"),
-                ]),
-            ])
-
-            #expect(CodexChatMCPApprovalPrompt(params: params) == nil)
-        }
-
-        @Test
         func bidirectionalControlsAreEscapedInArguments() throws {
             let request = try normalizedRequest(
                 arguments: .object(["description": .string("safe\u{202E}txt")])

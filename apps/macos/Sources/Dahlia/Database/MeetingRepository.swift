@@ -137,18 +137,11 @@ final class MeetingRepository {
     nonisolated static func registerDiscoveredCloudWorkspaces(
         _ cloudWorkspaces: [CloudWorkspaceRecord],
         connection: DahliaAccountConnectionRecord,
-        clearingDiscoveryIncident: Bool = false,
         in db: Database
     ) throws -> Bool {
         try Task.checkCancellation()
         guard let current = try DahliaAccountConnectionRecord.fetchOne(db, key: connection.id),
               current.origin == connection.origin, current.clientID == connection.clientID else { return false }
-        if clearingDiscoveryIncident {
-            try db.execute(
-                sql: "UPDATE dahlia_account_connections SET syncDiscoveryErrorJSON = NULL WHERE id = ?",
-                arguments: [connection.id]
-            )
-        }
         var changed = false
         for cloud in cloudWorkspaces where cloud.connectionId == connection.id {
             if var existing = try WorkspaceRecord.fetchOne(db, key: cloud.workspaceId) {
@@ -215,6 +208,32 @@ final class MeetingRepository {
                 arguments: [SummaryExportType.workspace.rawValue, id]
             )
             return workspace
+        }
+    }
+
+    /// Lists a local workspace under the Databricks account (or back under the Local Account). Never synced either way.
+    /// False when the workspace is no longer a Local or Databricks one, such as after a Server adopted it.
+    nonisolated func updateWorkspaceDatabricksConnection(id: UUID, connectionID: UUID?) async throws -> Bool {
+        try await dbQueue.write { db in
+            try db.execute(
+                sql: "UPDATE workspaces SET databricksConnectionId = ? WHERE id = ? AND accountConnectionId IS NULL",
+                arguments: [connectionID, id]
+            )
+            return db.changesCount > 0
+        }
+    }
+
+    /// The Local Account's (nil) or a Databricks account's oldest workspace, or `created` inserted when it has none.
+    nonisolated func accountWorkspace(databricksConnectionID connectionID: UUID?, creating created: WorkspaceRecord) async throws -> WorkspaceRecord {
+        try await dbQueue.write { db in
+            if let existing = try WorkspaceRecord
+                .filter(Column("databricksConnectionId") == connectionID && Column("accountConnectionId") == nil)
+                .order(Column("createdAt"), Column("id"))
+                .fetchOne(db) {
+                return existing
+            }
+            try created.insert(db)
+            return created
         }
     }
 

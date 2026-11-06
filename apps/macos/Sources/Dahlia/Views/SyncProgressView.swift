@@ -82,11 +82,7 @@ struct SyncProgressView: View {
     private var accountProgress: some View {
         LazyVStack(alignment: .leading, spacing: 8) {
             if let progress = controller.syncProgress[connection.id] {
-                if let issue = progress.discoveryIssue {
-                    SyncIssueView(issue: issue)
-                    recoveryButtons(for: issue, connection: connection, workspace: nil)
-                }
-                if progress.workspaces.isEmpty, progress.discoveryIssue == nil {
+                if progress.workspaces.isEmpty {
                     Label(L10n.syncFetching, systemImage: "arrow.triangle.2.circlepath")
                 }
                 ForEach(progress.workspaces) { workspace in

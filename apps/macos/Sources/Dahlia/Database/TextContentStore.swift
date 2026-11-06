@@ -23,7 +23,7 @@ enum TextContentStore {
         SELECT v.id, v.accountConnectionId, c.origin, v.syncMutationGeneration, s.confirmedRevision, \(entity == .file ? "p.checksum" :
             "NULL") AS checksum
         FROM \(parent) p JOIN workspaces v ON v.id = p.workspace_id
-        JOIN dahlia_account_connections c ON c.id = v.accountConnectionId
+        JOIN accounts c ON c.id = v.accountConnectionId
         LEFT JOIN sync_entity_state s ON s.workspace_id = v.id AND s.entity = ? AND s.entityId = p.id
         WHERE p.id = ? AND v.accountConnectionId = v.syncConfirmedConnectionId
         """, arguments: [entity.rawValue, id]) else { return nil }

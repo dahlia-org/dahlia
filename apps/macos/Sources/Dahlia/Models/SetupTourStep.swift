@@ -21,7 +21,7 @@ enum SetupTourStep: Int, CaseIterable, Identifiable {
 
     var title: String {
         switch self {
-        case .account: L10n.dahliaAccount
+        case .account: L10n.account
         case .workspace: L10n.workspace
         case .workingLanguages: L10n.workingLanguages
         case .permissions: L10n.permissions
@@ -33,7 +33,7 @@ enum SetupTourStep: Int, CaseIterable, Identifiable {
 
     var description: String {
         switch self {
-        case .account: L10n.dahliaSignInDescription
+        case .account: L10n.accountSetupDescription
         case .workspace: L10n.workspaceSetupDescription
         case .workingLanguages: L10n.workingLanguagesSetupDescription
         case .permissions: L10n.audioPermissionSetupDescription

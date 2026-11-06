@@ -5,7 +5,7 @@ APP_NAME="Dahlia"
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_DIR="$(cd "${SCRIPT_DIR}/../../.." && pwd)"
 ENTITLEMENTS_PATH="${PROJECT_DIR}/Dahlia.entitlements"
-CODEX_ENTITLEMENTS_PATH="${PROJECT_DIR}/CodexHelper.entitlements"
+PI_ENTITLEMENTS_PATH="${PROJECT_DIR}/PiHelper.entitlements"
 RUNTIME_PROFILE="development"
 
 if [ "$#" -gt 1 ]; then
@@ -37,8 +37,7 @@ export CLANG_MODULE_CACHE_PATH="${TMPDIR:-/tmp}/dahlia-clang-module-cache"
 mkdir -p "$CLANG_MODULE_CACHE_PATH"
 
 echo "=== Building ${APP_NAME} ==="
-bash "${SCRIPT_DIR}/build-codex.sh"
-CODEX_VERSION="$(bash "${SCRIPT_DIR}/build-codex.sh" --print-version)"
+bash "${SCRIPT_DIR}/build-pi.sh"
 # The current Swift Build engine flattens static XCFramework headers into one directory,
 # so DahliaAEC3 and DahliaLindera both try to produce include/module.modulemap.
 swift build --build-system native -c release --arch arm64
@@ -55,33 +54,12 @@ rm -rf "${APP_BUNDLE}"
 mkdir -p "${MACOS}"
 mkdir -p "${CONTENTS}/Resources"
 mkdir -p "${HELPERS}"
-mkdir -p "${CONTENTS}/Resources/Licenses/Codex"
 
 cp "${BUILD_DIR}/${APP_NAME}" "${MACOS}/${APP_NAME}"
 cp "${BUILD_DIR}/dahlia-mcp" "${HELPERS}/dahlia-mcp"
-cp "${BUILD_DIR}/auth-helper" "${HELPERS}/auth-helper"
-cp ".build/codex-helper/codex" "${HELPERS}/codex"
-cp ".build/codex-helper/codex-code-mode-host" "${HELPERS}/codex-code-mode-host"
-cp ".build/codex-helper/LICENSE" "${CONTENTS}/Resources/Licenses/Codex/LICENSE"
-cp ".build/codex-helper/NOTICE.txt" "${CONTENTS}/Resources/Licenses/Codex/NOTICE.txt"
-if [ "$(lipo -archs "${HELPERS}/codex")" != "arm64" ]; then
-    echo "error: bundled Codex must contain only arm64" >&2
-    exit 1
-fi
-if [ "$(lipo -archs "${HELPERS}/codex-code-mode-host")" != "arm64" ]; then
-    echo "error: bundled Codex code-mode host must contain only arm64" >&2
-    exit 1
-fi
+embed_pi_helper "$CONTENTS"
 if [ "$(lipo -archs "${HELPERS}/dahlia-mcp")" != "arm64" ]; then
     echo "error: bundled dahlia-mcp must contain only arm64" >&2
-    exit 1
-fi
-if [ "$(lipo -archs "${HELPERS}/auth-helper")" != "arm64" ]; then
-    echo "error: bundled auth-helper must contain only arm64" >&2
-    exit 1
-fi
-if [ "$("${HELPERS}/codex" --version)" != "codex-cli ${CODEX_VERSION}" ]; then
-    echo "error: bundled Codex must report exactly codex-cli ${CODEX_VERSION}" >&2
     exit 1
 fi
 cp "Resources/Info.plist" "${CONTENTS}/Info.plist"
@@ -131,26 +109,10 @@ fi
 codesign_path "${CONTENTS}/Resources/Dahlia_DahliaRuntimeSupport.bundle"
 codesign_sparkle_framework "${CONTENTS}/Frameworks/Sparkle.framework"
 
-codesign --remove-signature "${HELPERS}/codex"
-codesign_path "${HELPERS}/codex" --entitlements "$CODEX_ENTITLEMENTS_PATH"
-codesign --verify --strict --verbose=2 "${HELPERS}/codex"
-if ! has_boolean_entitlement "${HELPERS}/codex" "com.apple.security.cs.allow-jit"; then
-    echo "error: bundled Codex must allow JIT under the hardened runtime" >&2
-    exit 1
-fi
-codesign --remove-signature "${HELPERS}/codex-code-mode-host"
-codesign_path "${HELPERS}/codex-code-mode-host" --entitlements "$CODEX_ENTITLEMENTS_PATH"
-codesign --verify --strict --verbose=2 "${HELPERS}/codex-code-mode-host"
-if ! has_boolean_entitlement "${HELPERS}/codex-code-mode-host" "com.apple.security.cs.allow-jit"; then
-    echo "error: bundled Codex code-mode host must allow JIT under the hardened runtime" >&2
-    exit 1
-fi
+codesign_pi_helper "$CONTENTS" "$PI_ENTITLEMENTS_PATH"
 codesign --remove-signature "${HELPERS}/dahlia-mcp" 2>/dev/null || true
-codesign --remove-signature "${HELPERS}/auth-helper" 2>/dev/null || true
 codesign_path "${HELPERS}/dahlia-mcp"
-codesign_path "${HELPERS}/auth-helper"
 codesign --verify --strict --verbose=2 "${HELPERS}/dahlia-mcp"
-codesign --verify --strict --verbose=2 "${HELPERS}/auth-helper"
 
 if has_entitlements "$ENTITLEMENTS_PATH"; then
     codesign_path "${MACOS}/${APP_NAME}" --entitlements "$ENTITLEMENTS_PATH"

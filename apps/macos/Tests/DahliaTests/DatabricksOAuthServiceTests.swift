@@ -7,17 +7,22 @@
 
     final class DatabricksTestStorage: Sendable {
         struct State {
-            var connection: DatabricksConnection?
+            var connections: [DatabricksConnection] = []
+            /// The oldest connection, for tests of a single workspace.
+            var connection: DatabricksConnection? {
+                get { connections.first }
+                set { connections = newValue.map { [$0] } ?? [] }
+            }
             var credentials: [UUID: DatabricksOAuthCredential] = [:]
             var failSave = false
         }
 
         let state: Mutex<State>
-        init(connection: DatabricksConnection? = nil) { state = Mutex(State(connection: connection)) }
+        init(connection: DatabricksConnection? = nil) { state = Mutex(State(connections: connection.map { [$0] } ?? [])) }
         var storage: DatabricksOAuthStorage {
             DatabricksOAuthStorage(
-                loadConnection: { self.state.withLock { $0.connection } },
-                saveConnection: { connection in self.state.withLock { $0.connection = connection } },
+                loadConnections: { self.state.withLock { $0.connections } },
+                saveConnections: { connections in self.state.withLock { $0.connections = connections } },
                 loadCredential: { id in self.state.withLock { $0.credentials[id] } },
                 saveCredential: { id, token in
                     try self.state.withLock {
@@ -40,9 +45,9 @@
         @Test @MainActor func restoresSelectionAfterCancellationFollowingConnectionSave() async throws {
             let memory = DatabricksTestStorage()
             var storage = memory.storage
-            let save = storage.saveConnection
-            storage.saveConnection = { connection in
-                try save(connection)
+            let save = storage.saveConnections
+            storage.saveConnections = { connections in
+                try save(connections)
                 withUnsafeCurrentTask { $0?.cancel() }
             }
             let session = makeSession { request in
@@ -56,8 +61,7 @@
             let signIn = Task { await controller.signIn(workspaceURL: Self.host) }
             #expect(await signIn.value == nil)
             let saved = try #require(memory.state.withLock { $0.connection })
-            #expect(await controller.load() == saved.id.uuidString)
-            #expect(controller.connection == saved)
+            #expect(try await service.connections() == [saved])
         }
 
         @Test(arguments: [true, false])
@@ -119,6 +123,92 @@
                 try await service.signIn(workspaceURL: Self.host)
             }
             #expect(try await service.currentConnection() == nil)
+        }
+
+        @Test func connectionsAreDatabricksAccountsInTheDatabase() throws {
+            let database = try AppDatabaseManager(path: ":memory:")
+            let storage = DatabricksOAuthStorage.local(profile: .development) { database.dbQueue }
+            // Both rows can get the same millisecond createdAt, so the IDs must already sort in insertion order.
+            let ids = [UUID.v7(), UUID.v7()].sorted { $0.uuidString < $1.uuidString }
+            let first = DatabricksConnection(id: ids[0], host: Self.host)
+            var second = DatabricksConnection(id: ids[1], host: "https://other.example.com")
+
+            try storage.saveConnections([first, second])
+            #expect(try storage.loadConnections() == [first, second])
+            second.email = "me@example.com"
+            try storage.saveConnections([first, second])
+            #expect(try storage.loadConnections().last?.email == "me@example.com")
+            try storage.saveConnections([second])
+            #expect(try storage.loadConnections() == [second])
+            // The service and the Calendar proxy each hold a storage of the same database; neither reads a stale list.
+            let other = DatabricksOAuthStorage.local(profile: .development) { database.dbQueue }
+            second.email = "other@example.com"
+            try other.saveConnections([second])
+            #expect(try storage.loadConnections() == [second])
+            try database.dbQueue.read { db throws in
+                #expect(try DahliaAccountConnectionRecord.databricksWorkspaces.fetchAll(db).map(\.clientID) == ["databricks-cli"])
+                #expect(try DahliaAccountConnectionRecord.dahliaServers.fetchCount(db) == 0)
+            }
+        }
+
+        @Test func releasedSingleConnectionIsRemovedInsteadOfCarriedOver() throws {
+            let suiteName = "DatabricksStorageTests-\(UUID())"
+            let defaults = try #require(UserDefaults(suiteName: suiteName))
+            defer { defaults.removePersistentDomain(forName: suiteName) }
+            let legacy = DatabricksConnection(id: UUID(), host: Self.host)
+            try defaults.set(JSONEncoder().encode(legacy), forKey: "databricksOAuth.development.connection")
+            var deleted: [String] = []
+
+            DatabricksOAuthStorage.removeLegacyConnections(profile: .development, defaults: defaults) { deleted.append($0) }
+
+            #expect(deleted == ["databricksOAuth.development.\(legacy.id.uuidString)"])
+            #expect(defaults.data(forKey: "databricksOAuth.development.connection") == nil)
+        }
+
+        @Test func eachWorkspaceRefreshesItsOwnToken() async throws {
+            let first = DatabricksConnection(id: UUID(), host: Self.host)
+            let second = DatabricksConnection(id: UUID(), host: "https://other.example.com")
+            let memory = DatabricksTestStorage()
+            memory.state.withLock { state in
+                state.connections = [first, second]
+                for (connection, refresh) in [(first, "one"), (second, "two")] {
+                    state.credentials[connection.id] = DatabricksOAuthCredential(
+                        accessToken: "old", refreshToken: refresh, expirationDate: .distantPast,
+                        tokenEndpoint: URL(string: connection.host + "/oidc/v1/token")!
+                    )
+                }
+            }
+            let session = makeSession { request in
+                let refresh = form(request)["refresh_token"] ?? ""
+                return (200, #"{"access_token":"access-\#(refresh)","token_type":"Bearer","expires_in":3600}"#)
+            }
+            defer { session.invalidateAndCancel() }
+            let service = DatabricksOAuthService(session: session, storage: memory.storage)
+
+            async let one = service.accessToken(connectionID: first.id)
+            async let two = service.accessToken(connectionID: second.id)
+            #expect(try await [one, two] == ["access-one", "access-two"])
+        }
+
+        @Test func identityIsFetchedOnceAndSavedWithTheConnection() async throws {
+            let connection = DatabricksConnection(id: UUID(), host: Self.host)
+            let memory = DatabricksTestStorage(connection: connection)
+            memory.state.withLock { $0.credentials[connection.id] = credential() }
+            let requests = Mutex(0)
+            let session = makeSession { request in
+                requests.withLock { $0 += 1 }
+                #expect(request.url?.path == "/api/2.0/preview/scim/v2/Me")
+                #expect(request.value(forHTTPHeaderField: "Authorization") == "Bearer old-access")
+                return (200, #"{"userName":"me@example.com"}"#)
+            }
+            defer { session.invalidateAndCancel() }
+            let service = DatabricksOAuthService(session: session, storage: memory.storage)
+            #expect(connection.accountLabel == "workspace")
+
+            #expect(try await service.identifiedConnection(id: connection.id)?.accountLabel == "workspace (me@example.com)")
+            #expect(try await service.identifiedConnection(id: connection.id)?.workspaceID == "1234")
+            #expect(requests.withLock { $0 } == 1)
+            #expect(memory.state.withLock { $0.connection?.email } == "me@example.com")
         }
 
         @Test(arguments: [true, false])
@@ -290,9 +380,9 @@
             let (reads, continuation) = AsyncStream<Void>.makeStream()
             defer { continuation.finish() }
             var storage = memory.storage
-            storage.loadConnection = {
+            storage.loadConnections = {
                 continuation.yield(())
-                return memory.state.withLock { $0.connection }
+                return memory.state.withLock { $0.connections }
             }
             let gate = DatabricksAuthorizationGate()
             let logins = Mutex(0)
@@ -400,9 +490,9 @@
                 requestContinuation.finish()
             }
             var storage = memory.storage
-            storage.loadConnection = {
+            storage.loadConnections = {
                 continuation.yield(())
-                return memory.state.withLock { $0.connection }
+                return memory.state.withLock { $0.connections }
             }
             let releaseRefresh = DatabricksAuthorizationGate()
             let refreshCount = Mutex(0)
@@ -445,9 +535,9 @@
             let (reads, continuation) = AsyncStream<Void>.makeStream()
             defer { continuation.finish() }
             var storage = memory.storage
-            storage.loadConnection = {
+            storage.loadConnections = {
                 continuation.yield(())
-                return memory.state.withLock { $0.connection }
+                return memory.state.withLock { $0.connections }
             }
             let gate = DatabricksAuthorizationGate()
             let session = makeSession { request in
@@ -477,9 +567,9 @@
             let (reads, continuation) = AsyncStream<Void>.makeStream()
             defer { continuation.finish() }
             var storage = memory.storage
-            storage.loadConnection = {
+            storage.loadConnections = {
                 continuation.yield(())
-                return memory.state.withLock { $0.connection }
+                return memory.state.withLock { $0.connections }
             }
             let releaseRefresh = DatabricksAuthorizationGate()
             let (requests, requestContinuation) = AsyncStream<Void>.makeStream()
@@ -532,7 +622,7 @@
             await #expect(throws: CancellationError.self) { try await task.value }
         }
 
-        @Test func oneWorkspaceRequiresSignOutBeforeSwitching() async throws {
+        @Test func workspacesAreAddedAndRemovedIndependently() async throws {
             let memory = DatabricksTestStorage()
             let logins = Mutex(0)
             let session = makeSession { request in
@@ -544,17 +634,16 @@
                 return URL(string: "http://127.0.0.1/?code=code&state=\(query(url)["state"]!)")!
             })
             let first = try await service.signIn(workspaceURL: Self.host)
-            await #expect(throws: DatabricksOAuthError.workspaceAlreadyConnected) {
-                try await service.signIn(workspaceURL: "https://other.example.com")
-            }
-            #expect(logins.withLock { $0 } == 1)
-            #expect(try await service.currentConnection() == first)
+            let second = try await service.signIn(workspaceURL: "https://other.example.com")
+            #expect(logins.withLock { $0 } == 2)
+            #expect(second.id != first.id)
+            #expect(try await service.connections() == [first, second])
+            // Signing in to a connected URL again refreshes it instead of adding a second connection.
+            #expect(try await service.signIn(workspaceURL: Self.host) == first)
+            #expect(try await service.connections().count == 2)
             #expect(try await service.accessToken(connectionID: first.id) == "access")
             try await service.remove(connectionID: first.id)
-            #expect(try await service.currentConnection() == nil)
-            #expect(memory.state.withLock { $0.credentials.isEmpty })
-            let second = try await service.signIn(workspaceURL: "https://other.example.com")
-            #expect(second.id != first.id)
+            #expect(try await service.connections() == [second])
             #expect(try await service.currentConnection() == second)
             await #expect(throws: DahliaCloudError.noCredential) {
                 try await service.accessToken(connectionID: first.id)
@@ -619,7 +708,9 @@
                     try Task.checkCancellation()
                     client?.urlProtocol(
                         self,
-                        didReceive: HTTPURLResponse(url: request.url!, statusCode: status, httpVersion: nil, headerFields: nil)!,
+                        didReceive: HTTPURLResponse(
+                            url: request.url!, statusCode: status, httpVersion: nil, headerFields: ["x-databricks-org-id": "1234"]
+                        )!,
                         cacheStoragePolicy: .notAllowed
                     )
                     client?.urlProtocol(self, didLoad: Data(body.utf8))

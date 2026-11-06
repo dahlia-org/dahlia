@@ -27,11 +27,7 @@ struct SummaryGenerationSettings: Codable, Equatable, Sendable {
             reasoningEffort: preferences.local.reasoningEffort,
             detailLevelInstruction: (detailLevel ?? preferences.summary.detailLevel).instruction,
             languageDisplayName: preferences.outputLanguage.displayName,
-            runtimeProvider: CodexRuntimeProvider(
-                accountConnectionID: workspace?.accountConnectionId,
-                localProvider: workspaceAISettings.localProvider,
-                databricksProfile: workspaceAISettings.databricksProfile
-            ),
+            runtimeProvider: CodexRuntimeProvider(workspace: workspace),
             accountConnectionID: workspace?.accountConnectionId,
             workspaceID: workspace?.id,
             workspacePreferences: preferences

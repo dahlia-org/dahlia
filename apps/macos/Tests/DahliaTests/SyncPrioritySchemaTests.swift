@@ -11,7 +11,7 @@
             try DevelopmentSchemaHistory.migrator.migrate(queue, upTo: "v50_syncPriority")
             let id = UUID.v7()
             try queue.write { db in
-                try WorkspaceRecord(id: id, name: "Local", createdAt: .now, lastOpenedAt: .now).insert(db)
+                try WorkspaceRecord(id: id, name: "Local", createdAt: .now, lastOpenedAt: .now).insertIntoLegacySchema(db)
             }
             try AppDatabaseManager.migrator.migrate(queue)
             try queue.read { db throws in
@@ -34,7 +34,7 @@
             let workspace = UUID.v7(), meeting = UUID.v7(), document = UUID.v7()
             let hasDocuments = version != "v47_orphanedRecordingRecoveryState"
             try queue.write { db in
-                try WorkspaceRecord(id: workspace, name: "Retained", createdAt: .now, lastOpenedAt: .now).insert(db)
+                try WorkspaceRecord(id: workspace, name: "Retained", createdAt: .now, lastOpenedAt: .now).insertIntoLegacySchema(db)
                 try MeetingRecord(id: meeting, workspaceId: workspace, name: "Meeting", createdAt: .now, updatedAt: .now).insert(db)
                 try MeetingNoteRecord(meetingId: meeting, text: "private legacy\nNotes", createdAt: .now, updatedAt: .now).insert(db)
                 if hasDocuments {
@@ -71,7 +71,7 @@
             let workspace = UUID.v7()
             let entries = try String(decoding: JSONEncoder().encode([BackupWorkspace(id: workspace, name: "Retained")]), as: UTF8.self)
             try queue.write { db in
-                try WorkspaceRecord(id: workspace, name: "Retained", createdAt: .now, lastOpenedAt: .now).insert(db)
+                try WorkspaceRecord(id: workspace, name: "Retained", createdAt: .now, lastOpenedAt: .now).insertIntoLegacySchema(db)
                 try db.execute(sql: """
                 CREATE TABLE dahlia_backup_metadata (
                     formatVersion INTEGER, generationId TEXT, createdAt DATETIME, schemaVersion INTEGER,

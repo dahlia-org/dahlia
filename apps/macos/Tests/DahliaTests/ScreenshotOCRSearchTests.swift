@@ -25,7 +25,7 @@ import Synchronization
                 dbQueue: database.dbQueue,
                 screenshotAnalyzer: analyzer,
                 inferenceSettingsResolver: { _ in captured },
-                runtimeProviderResolver: { .chatGPTSubscription },
+                runtimeProviderResolver: { .local },
                 localAccountSettingsResolver: { .init(provider: .chatGPTSubscription, databricksProfile: "") }
             )
             let meeting = makeMeeting(workspaceID: workspace.id)
@@ -368,7 +368,7 @@ import Synchronization
                             )
                         }
                     } catch { Issue.record(error) }
-                    return .chatGPTSubscription
+                    return .local
                 },
                 localAccountSettingsResolver: { .init(provider: .chatGPTSubscription, databricksProfile: "") }
             )
@@ -376,7 +376,7 @@ import Synchronization
             await indexer.drain()
 
             #expect(await analyzer.runtimeProviders[screenshot.id] == nil)
-            #expect(await analyzer.runtimeProviders[localScreenshot.id] == .chatGPTSubscription)
+            #expect(await analyzer.runtimeProviders[localScreenshot.id] == .local)
             try await database.dbQueue.read { db throws in
                 #expect(try WorkspaceRecord.fetchOne(db, key: workspaceID)?.accountConnectionId == nil)
                 #expect(try MeetingScreenshotRecord.fetchOne(db, key: screenshot.id)?.ocrText == nil)
@@ -505,7 +505,7 @@ import Synchronization
             let database = try AppDatabaseManager(
                 path: ":memory:",
                 screenshotAnalyzer: analyzer,
-                screenshotRuntimeProviderResolver: { .databricks(profile: "WORK") },
+                screenshotRuntimeProviderResolver: { .local },
                 localAccountSettingsResolver: { .init(provider: .databricks, databricksProfile: "WORK") }
             )
             let workspace = {
@@ -613,8 +613,8 @@ import Synchronization
             #expect(screenshotPage.items.first?.meetingID == meeting.id)
             #expect(screenshotPage.items.first?.meetingDescription == "検索対象のミーティング説明")
             #expect(meetingPage.items.isEmpty)
-            #expect(await analyzer.runtimeProviders[screenshot.id] == .databricks(profile: "WORK"))
-            #expect(await analyzer.runtimeProviders[localScreenshot.id] == .databricks(profile: "WORK"))
+            #expect(await analyzer.runtimeProviders[screenshot.id] == .local)
+            #expect(await analyzer.runtimeProviders[localScreenshot.id] == .local)
             #expect(await analyzer.runtimeProviders[hostedScreenshot.id] == nil)
             #expect(try await database.dbQueue.read { db in
                 try MeetingScreenshotRecord.fetchOne(db, key: localScreenshot.id)?.ocrText
@@ -1302,7 +1302,7 @@ import Synchronization
             try AppDatabaseManager(
                 path: ":memory:",
                 screenshotAnalyzer: screenshotAnalyzer,
-                screenshotRuntimeProviderResolver: { .chatGPTSubscription },
+                screenshotRuntimeProviderResolver: { .local },
                 localAccountSettingsResolver: { .init(provider: .chatGPTSubscription, databricksProfile: "") }
             )
         }
@@ -1342,7 +1342,7 @@ import Synchronization
         func analyze(_ screenshots: [ScreenshotAnalysisInput]) async throws -> [ScreenshotAnalysis] {
             for screenshot in screenshots {
                 runtimeProviders[screenshot.id] = screenshot.runtimeProvider
-                models.append(screenshot.model ?? CodexScreenshotAnalysisService.model)
+                models.append(screenshot.model ?? CodexScreenshotAnalysisService.defaultModels[0])
             }
             return screenshots.map {
                 ScreenshotAnalysis(screenshotID: $0.id, ocrText: text, caption: "画像の説明")
@@ -1454,7 +1454,7 @@ import Synchronization
                 if screenshots[0].id == failingID {
                     await withCheckedContinuation { failureWaiter = $0 }
                     isFirstWave = false
-                    throw CodexAppServerError.requestedModelUnavailable(CodexScreenshotAnalysisService.model)
+                    throw CodexAppServerError.requestedModelUnavailable(CodexScreenshotAnalysisService.defaultModels[0])
                 }
                 do {
                     try await Task.sleep(for: .seconds(60))

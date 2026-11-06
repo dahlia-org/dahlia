@@ -19,7 +19,7 @@ import Foundation
             let meetingID = UUID.v7()
             let screenshotID = UUID.v7()
             let analysis = try await CodexScreenshotAnalysisService.codexInputs(for: [
-                ScreenshotAnalysisInput(id: screenshotID, imageData: data, mimeType: "image/webp", runtimeProvider: .chatGPTSubscription),
+                ScreenshotAnalysisInput(id: screenshotID, imageData: data, mimeType: "image/webp", runtimeProvider: .local),
             ])
             let summary = try await SummaryService.makeCodexInputs(.init(
                 promptContext: .init(meetingId: meetingID, recordedAt: .now, calendarEvent: nil, projectName: nil, projectDescription: nil),
@@ -50,7 +50,7 @@ import Foundation
                         id: .v7(),
                         imageData: Data([1]),
                         mimeType: "image/png",
-                        runtimeProvider: .chatGPTSubscription
+                        runtimeProvider: .local
                     ),
                 ])
             }
@@ -62,11 +62,11 @@ import Foundation
         }
 
         @Test(arguments: [
-            (CodexRuntimeProvider.chatGPTSubscription, nil as String?, "gpt-6-luna", nil as String?),
-            (.databricks(profile: "test"), nil, "gpt-6-luna", nil),
-            (.dahlia(connectionID: .v7()), nil, "gpt-6-luna", nil),
-            (.chatGPTSubscription, "gpt-5.6-luna", "gpt-5.6-luna", "high"),
-            (.dahlia(connectionID: .v7()), "gpt-6-sol", "gpt-6-sol", "high"),
+            (CodexRuntimeProvider.local, nil as String?, "openai/gpt-6-luna", nil as String?),
+            (.databricks(connectionID: .v7()), nil, "databricks/system.ai.gpt-6-luna", nil),
+            (.dahlia(connectionID: .v7()), nil, "dahlia/gpt-6-luna", nil),
+            (.local, "openai/gpt-5.6-luna", "openai/gpt-5.6-luna", "high"),
+            (.dahlia(connectionID: .v7()), "dahlia/gpt-6-sol", "dahlia/gpt-6-sol", "high"),
         ])
         func sendsOneStructuredLunaRequestForOneScreenshot(
             provider: CodexRuntimeProvider,
@@ -80,56 +80,37 @@ import Foundation
               {"screenshot_id":"\(screenshotID)","ocr_text":"Visible text","caption":"Visible caption"}
             ]}
             """
-            let transport = TestCodexAppServerTransport(
-                mode: .generationCompletes,
-                modelName: expectedModel,
-                generationResponse: response
+            let models = [expectedModel, "\(expectedModel.split(separator: "/")[0])/other-model"].map { reference in
+                let parts = reference.split(separator: "/", maxSplits: 1).map(String.init)
+                return TestPiTransport.model(provider: parts[0], id: parts[1])
+            }
+            let log = TestPiTransportLog()
+            let pi = TestPiRuntime.generating(provider: provider, models: models.reversed(), reply: response, log: log)
+            let analyzer = CodexScreenshotAnalysisService(appServer: pi.service)
+            let input = ScreenshotAnalysisInput(
+                id: screenshotID,
+                imageData: Data([1]),
+                mimeType: "image/png",
+                runtimeProvider: provider, outputLanguage: .en, model: configuredModel,
+                reasoningEffort: effort
             )
-            let appServer = makeTestCodexAppServerService(
-                transportFactory: { transport },
-                runtimeProviderResolver: { provider }
-            )
-            let analyzer = CodexScreenshotAnalysisService(appServer: appServer)
 
-            let results = try await analyzer.analyze([
-                ScreenshotAnalysisInput(
-                    id: screenshotID,
-                    imageData: Data([1]),
-                    mimeType: "image/png",
-                    runtimeProvider: provider, outputLanguage: .en, model: configuredModel,
-                    reasoningEffort: effort
-                ),
-            ])
+            let results = try await analyzer.analyze([input])
 
             #expect(results.map(\.screenshotID) == [screenshotID])
             #expect(results.map(\.ocrText) == ["Visible text"])
             #expect(results.map(\.caption) == ["Visible caption"])
-            _ = try await analyzer.analyze([
-                ScreenshotAnalysisInput(
-                    id: screenshotID,
-                    imageData: Data([1]),
-                    mimeType: "image/png",
-                    runtimeProvider: provider, outputLanguage: .en, model: configuredModel,
-                    reasoningEffort: effort
-                ),
-            ])
-            let messages = await transport.messages()
-            #expect(messages.count(where: { $0.objectValue?["method"]?.stringValue == "model/list" }) == 1)
-            let threadParams = try #require(messages.first {
-                $0.objectValue?["method"]?.stringValue == "thread/start"
-            }?.objectValue?["params"]?.objectValue)
-            #expect(threadParams["model"] == .string(expectedModel))
-            let instructions = try #require(threadParams["developerInstructions"]?.stringValue)
+            _ = try await analyzer.analyze([input])
+            #expect(pi.launches.all.count(where: { $0.mode == .control }) == 1)
+            #expect(pi.argument(after: "--model") == expectedModel)
+            #expect(pi.argument(after: "--thinking") == effort ?? "low")
+            let instructions = try #require(pi.argument(after: "--system-prompt"))
             #expect(instructions.contains("in English."))
             #expect(instructions.contains("in its original language"))
             #expect(!instructions.contains("Expected text languages"))
-            #expect(threadParams["config"]?.objectValue?["model_reasoning_effort"] == .string(effort ?? "low"))
-            let turnParams = try #require(messages.first {
-                $0.objectValue?["method"]?.stringValue == "turn/start"
-            }?.objectValue?["params"]?.objectValue)
-            #expect(turnParams["input"]?.arrayValue?.count == 2)
-            #expect(turnParams["outputSchema"]?.objectValue?["required"] == .array([.string("screenshots")]))
-            await appServer.shutdown()
+            #expect(instructions.contains(#""required":["screenshots"]"#))
+            let prompt = await log.all.last?.command("prompt")
+            #expect(prompt?["images"]?.arrayValue?.count == 1)
         }
 
         @Test
@@ -139,22 +120,13 @@ import Foundation
             {"screenshots":[{"screenshot_id":"\#(screenshotID)",
               "ocr_text":"Maps\n\u0007\n\u001b[0m\n\u001b[0m\n","caption":"A \u0013browser\nwindow"}]}
             """#
-            let transport = TestCodexAppServerTransport(
-                mode: .generationCompletes,
-                modelName: CodexScreenshotAnalysisService.model,
-                generationResponse: response
-            )
-            let appServer = makeTestCodexAppServerService(
-                transportFactory: { transport },
-                runtimeProviderResolver: { .chatGPTSubscription }
-            )
+            let pi = TestPiRuntime.generating(models: [TestPiTransport.model(provider: "openai", id: "gpt-6-luna")], reply: response)
 
-            let results = try await CodexScreenshotAnalysisService(appServer: appServer).analyze([
-                ScreenshotAnalysisInput(id: screenshotID, imageData: Data([1]), mimeType: "image/png", runtimeProvider: .chatGPTSubscription),
+            let results = try await CodexScreenshotAnalysisService(appServer: pi.service).analyze([
+                ScreenshotAnalysisInput(id: screenshotID, imageData: Data([1]), mimeType: "image/png", runtimeProvider: .local),
             ])
 
             #expect(results == [ScreenshotAnalysis(screenshotID: screenshotID, ocrText: "Maps", caption: "A browser window")])
-            await appServer.shutdown()
         }
 
         @Test
@@ -167,13 +139,13 @@ import Foundation
                         id: .v7(),
                         imageData: Data([1]),
                         mimeType: "image/png",
-                        runtimeProvider: .chatGPTSubscription
+                        runtimeProvider: .local
                     ),
                     ScreenshotAnalysisInput(
                         id: .v7(),
                         imageData: Data([2]),
                         mimeType: "image/png",
-                        runtimeProvider: .chatGPTSubscription
+                        runtimeProvider: .local
                     ),
                 ])
             }
@@ -187,13 +159,8 @@ import Foundation
               {"screenshot_id":"\(screenshotID)","ocr_text":"Visible text","caption":"   "}
             ]}
             """
-            let transport = TestCodexAppServerTransport(
-                mode: .generationCompletes,
-                modelName: CodexScreenshotAnalysisService.model,
-                generationResponse: response
-            )
-            let appServer = makeTestCodexAppServerService(transportFactory: { transport })
-            let analyzer = CodexScreenshotAnalysisService(appServer: appServer)
+            let pi = TestPiRuntime.generating(models: [TestPiTransport.model(provider: "openai", id: "gpt-6-luna")], reply: response)
+            let analyzer = CodexScreenshotAnalysisService(appServer: pi.service)
 
             await #expect(throws: ScreenshotAnalysisError.invalidResponse) {
                 _ = try await analyzer.analyze([
@@ -201,11 +168,10 @@ import Foundation
                         id: screenshotID,
                         imageData: Data([1]),
                         mimeType: "image/png",
-                        runtimeProvider: .chatGPTSubscription
+                        runtimeProvider: .local
                     ),
                 ])
             }
-            await appServer.shutdown()
         }
     }
 #endif

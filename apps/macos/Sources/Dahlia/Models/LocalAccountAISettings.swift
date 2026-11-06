@@ -13,7 +13,7 @@ struct LocalAccountAISettings: Equatable, Sendable {
     var databricksProfile: String
 
     var runtimeProvider: CodexRuntimeProvider {
-        .init(accountConnectionID: nil, localProvider: provider, databricksProfile: databricksProfile)
+        .local
     }
 
     init(provider: AIAccountProvider, databricksProfile: String) {
@@ -61,13 +61,15 @@ struct AccountInferenceSettings: Codable, Equatable, Sendable {
     var chatModelID = ""
     var chatReasoningEffort = CodexReasoningEffortOption.defaultValue
 
-    static func key(connectionID: UUID?) -> String {
-        "accountInferenceSettings." + (connectionID?.uuidString.lowercased() ?? "local")
+    /// One key per account: a Dahlia account, a Databricks account (`databricks.<id>`), or the Local Account.
+    static func key(connectionID: UUID?, databricksConnectionID: UUID? = nil) -> String {
+        "accountInferenceSettings." + (connectionID?.uuidString.lowercased()
+            ?? databricksConnectionID.map { "databricks." + $0.uuidString.lowercased() } ?? "local")
     }
 
     init(workspace: WorkspaceRecord, defaults: UserDefaults = .standard) {
-        if let data = defaults.data(forKey: Self.key(connectionID: workspace.accountConnectionId)),
-           let saved = try? JSONDecoder().decode(Self.self, from: data) {
+        let key = Self.key(connectionID: workspace.accountConnectionId, databricksConnectionID: workspace.databricksConnectionId)
+        if let data = defaults.data(forKey: key), let saved = try? JSONDecoder().decode(Self.self, from: data) {
             self = saved
             return
         }
@@ -78,7 +80,8 @@ struct AccountInferenceSettings: Codable, Equatable, Sendable {
         liveTranscriptDraft = workspace.generationSettings.liveTranscriptDraft
         chatModelID = workspace.chatModelID
         chatReasoningEffort = workspace.chatReasoningEffort
-        if workspace.accountConnectionId == nil {
+        // Releases before per-account settings kept the Local Account's summary model in app defaults.
+        if workspace.accountConnectionId == nil, workspace.databricksConnectionId == nil {
             local.model = defaults.string(forKey: LocalAccountAISettings.summaryModelKey) ?? local.model
             local.reasoningEffort = defaults.string(forKey: LocalAccountAISettings.summaryReasoningEffortKey) ?? local.reasoningEffort
         }
@@ -94,9 +97,9 @@ struct AccountInferenceSettings: Codable, Equatable, Sendable {
         chatReasoningEffort = snapshot.chatReasoningEffort
     }
 
-    func save(connectionID: UUID?, defaults: UserDefaults = .standard) {
+    func save(connectionID: UUID?, databricksConnectionID: UUID? = nil, defaults: UserDefaults = .standard) {
         guard let data = try? JSONEncoder().encode(self) else { return }
-        defaults.set(data, forKey: Self.key(connectionID: connectionID))
+        defaults.set(data, forKey: Self.key(connectionID: connectionID, databricksConnectionID: databricksConnectionID))
     }
 
     func generationSettings(outputLanguage: SummaryLanguage) -> WorkspaceGenerationSettings {

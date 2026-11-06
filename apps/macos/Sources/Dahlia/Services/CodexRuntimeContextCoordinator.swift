@@ -6,21 +6,21 @@ actor CodexRuntimeContextCoordinator {
     static let shared = CodexRuntimeContextCoordinator()
 
     private var repository: MeetingRepository?
-    private let configurationManager: CodexConfigurationManager
+    private let agentLocator: PiAgentDirectoryLocator
     private let databricksClient: DatabricksOAuthService
-    private let service: CodexAppServerService
+    private let service: PiRuntimeService
     private let contextStore: CodexRuntimeContextStore
     private var configuredProvider: CodexRuntimeProvider?
     private var requestedProvider: CodexRuntimeProvider?
     private var activationGeneration = 0
 
     init(
-        configurationManager: CodexConfigurationManager = CodexConfigurationManager(),
+        agentLocator: PiAgentDirectoryLocator = PiAgentDirectoryLocator(),
         databricksClient: DatabricksOAuthService = .shared,
-        service: CodexAppServerService = .shared,
+        service: PiRuntimeService = .shared,
         contextStore: CodexRuntimeContextStore = .shared
     ) {
-        self.configurationManager = configurationManager
+        self.agentLocator = agentLocator
         self.databricksClient = databricksClient
         self.service = service
         self.contextStore = contextStore
@@ -31,12 +31,10 @@ actor CodexRuntimeContextCoordinator {
     }
 
     func activate(_ settings: WorkspaceAISettingsSnapshot) async throws {
-        let provider = CodexRuntimeProvider(
+        try await activate(provider: CodexRuntimeProvider(
             accountConnectionID: settings.accountConnectionID,
-            localProvider: settings.localProvider,
-            databricksProfile: settings.databricksProfile
-        )
-        try await activate(provider: provider)
+            databricksConnectionID: settings.databricksConnectionID
+        ))
     }
 
     func activate(provider: CodexRuntimeProvider) async throws {
@@ -53,7 +51,7 @@ actor CodexRuntimeContextCoordinator {
         do {
             try await service.reloadConfiguration(applyingContext: {
                 try await self.configure(provider: provider, generation: generation)
-            }, interruptActiveOperations: true, startImmediately: false)
+            }, interruptActiveOperations: true)
         } catch {
             if generation == activationGeneration { contextStore.activationFailed() }
             throw error
@@ -64,26 +62,29 @@ actor CodexRuntimeContextCoordinator {
         try Task.checkCancellation()
         guard generation == activationGeneration else { throw CancellationError() }
 
+        let agentURL = try agentLocator.agentURL(for: provider)
+        // nil keeps the account's existing models.json.
+        let providers: [String: JSONValue]?
         switch provider {
         case let .dahlia(connectionID):
-            guard let record = try await repository?.fetchDahliaAccountConnection(id: connectionID) else {
-                throw CodexConfigurationError.accountNotReady
-            }
-            let helperURL = try AuthHelperBundle.executableURL()
-            _ = try await configurationManager.configureDahlia(
-                connectionID: connectionID,
-                origin: record.origin,
-                helperURL: helperURL,
-                runtimeProfile: DahliaApplicationSupport.profile()
+            guard let record = try await repository?.fetchDahliaAccountConnection(id: connectionID),
+                  let baseURL = URL(string: record.origin)?.appending(path: "api/v1")
+            else { throw CodexConfigurationError.accountNotReady }
+            // Activation needs no network: the catalog is fetched when models are listed (PiRuntimeService.models).
+            providers = PiProviderConfiguration.dahliaBaseURL(agentURL: agentURL) == baseURL
+                ? nil
+                : try PiProviderConfiguration.dahliaProvider(baseURL: baseURL, catalog: .object(["data": .array([])]))
+        case .local:
+            // Subscriptions use Pi's built-in catalog.
+            providers = [:]
+        case let .databricks(connectionID):
+            // The bundled routes are paths; this account's own Pi directory gets them on its workspace's host.
+            let connection = try await databricksClient.connection(id: connectionID)
+            providers = try PiProviderConfiguration.databricksProviders(
+                workspaceURL: databricksClient.normalizedWorkspaceURL(connection.host)
             )
-        case .chatGPTSubscription:
-            _ = try await configurationManager.configureChatGPTSubscription()
-        case let .databricks(profileName):
-            guard let id = UUID(uuidString: profileName),
-                  let profile = try await databricksClient.currentConnection(), profile.id == id
-            else { throw CodexConfigurationError.databricksProfileRequired }
-            _ = try await configurationManager.configureDatabricks(profile: profile)
         }
+        if let providers { try PiProviderConfiguration.write(providers, agentURL: agentURL) }
         configuredProvider = provider
         try Task.checkCancellation()
         guard generation == activationGeneration else { throw CancellationError() }

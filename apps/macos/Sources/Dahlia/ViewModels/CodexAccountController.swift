@@ -1,51 +1,42 @@
 import Foundation
 import Observation
 
+/// Sign-in for one Local Account subscription through Pi's own OAuth flow. Each subscription signs in independently.
 @MainActor
 @Observable
 final class CodexAccountController {
-    private(set) var accountStatus: CodexAppServerService.AccountStatus?
+    let subscription: PiSubscription
+    private(set) var accountStatus: PiRuntimeService.AccountStatus?
     private(set) var isCheckingStatus = false
     private(set) var isSigningIn = false
     private(set) var isSigningOut = false
     private(set) var errorMessage: String?
 
-    private let service: CodexAppServerService
+    private let service: PiRuntimeService
     private let urlOpener: any CodexLoginURLOpening
-    private let authenticationDidChange: @MainActor @Sendable () async throws -> Void
 
     init(
-        service: CodexAppServerService = .localAccount,
-        urlOpener: any CodexLoginURLOpening = WorkspaceCodexLoginURLOpener(),
-        authenticationDidChange: @escaping @MainActor @Sendable () async throws -> Void = {
-            try await CodexAccountController.reloadLocalRuntimeAfterAuthenticationChange()
-        }
+        subscription: PiSubscription,
+        service: PiRuntimeService = .shared,
+        urlOpener: any CodexLoginURLOpening = WorkspaceCodexLoginURLOpener()
     ) {
+        self.subscription = subscription
         self.service = service
         self.urlOpener = urlOpener
-        self.authenticationDidChange = authenticationDidChange
     }
 
     var isBusy: Bool {
         isCheckingStatus || isSigningIn || isSigningOut
     }
 
-    static func reloadLocalRuntimeAfterAuthenticationChange(
-        contextStore: CodexRuntimeContextStore = .shared,
-        service: CodexAppServerService = .shared
-    ) async throws {
-        guard contextStore.isConfigured, contextStore.provider == .chatGPTSubscription else { return }
-        try await service.reloadConfiguration()
-    }
-
-    func activateChatGPTSubscription() async {
+    func activate() async {
         isCheckingStatus = true
         errorMessage = nil
         defer { isCheckingStatus = false }
 
         do {
             try Task.checkCancellation()
-            accountStatus = try await service.accountStatus(forceRefresh: true)
+            accountStatus = try await service.accountStatus(for: subscription)
             try Task.checkCancellation()
         } catch is CancellationError {
             // SwiftUI cancels this operation when the settings screen disappears.
@@ -62,20 +53,12 @@ final class CodexAccountController {
         defer { isSigningIn = false }
 
         do {
-            let session = try await service.startChatGPTLogin()
-            if Task.isCancelled {
-                let service = service
-                Task { try? await service.cancelLogin(loginID: session.id) }
-                throw CancellationError()
+            try await service.signIn(subscription) { url in
+                await self.openLoginURL(url)
             }
-            guard urlOpener.open(session.authorizationURL) else {
-                try? await service.cancelLogin(loginID: session.id)
-                throw CodexAppServerError.loginPageCouldNotOpen
-            }
-            try await service.waitForLoginCompletion(loginID: session.id)
-            try await refreshAfterAuthenticationChange()
+            accountStatus = try await service.accountStatus(for: subscription)
         } catch is CancellationError {
-            // Cancelling the task also cancels the pending app-server login attempt.
+            // Cancelling the task closes Pi and its pending sign-in.
         } catch {
             errorMessage = error.localizedDescription
         }
@@ -88,8 +71,8 @@ final class CodexAccountController {
         defer { isSigningOut = false }
 
         do {
-            try await service.logout()
-            try await refreshAfterAuthenticationChange()
+            try await service.signOut(subscription)
+            accountStatus = try await service.accountStatus(for: subscription)
         } catch is CancellationError {
             // SwiftUI cancels this operation when the settings screen disappears.
         } catch {
@@ -97,10 +80,7 @@ final class CodexAccountController {
         }
     }
 
-    private func refreshAfterAuthenticationChange() async throws {
-        // Credentials have changed; closing settings must not cancel runtime invalidation.
-        let authenticationDidChange = authenticationDidChange
-        try await Task { try await authenticationDidChange() }.value
-        accountStatus = try await service.accountStatus(forceRefresh: true)
+    private func openLoginURL(_ url: URL) -> Bool {
+        urlOpener.open(url)
     }
 }

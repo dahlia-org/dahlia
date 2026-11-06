@@ -15,6 +15,7 @@ import GRDB
             let second = try addWorkspace(to: fixture, name: "Same")
             let skipped = try addWorkspace(to: fixture, name: "Same")
             let other = try addWorkspace(to: fixture, name: "Excluded")
+            let databricks = DatabricksConnection(id: .v7(), host: "https://example.cloud.databricks.com")
             try await fixture.database.dbQueue.write { db in
                 try db.execute(sql: "INSERT INTO tags(name, colorHex, createdAt) VALUES ('Shared', '#000000', ?)", arguments: [fixture.now])
                 let tagId = db.lastInsertedRowID
@@ -23,6 +24,12 @@ import GRDB
                 }
                 let connection = DahliaAccountConnectionRecord(id: .v7(), origin: "https://example.invalid", clientID: "test", createdAt: fixture.now)
                 try connection.insert(db)
+                // The overwritten workspace belongs to a Databricks account and stays there.
+                try DahliaAccountConnectionRecord(databricks, createdAt: fixture.now).insert(db)
+                try db.execute(
+                    sql: "UPDATE workspaces SET databricksConnectionId = ? WHERE id = ?",
+                    arguments: [databricks.id, fixture.meeting.workspaceId]
+                )
                 try db.execute(
                     sql: "UPDATE workspaces SET accountConnectionId = ?, organizationId = COALESCE(organizationId, id), syncRole = 'admin', syncPullCursor = 'keep' WHERE id = ?",
                     arguments: [connection.id, other.workspace.id]
@@ -44,7 +51,7 @@ import GRDB
                 #expect(try MeetingRecord.fetchCount(db) == 3)
                 #expect(try Int.fetchOne(db, sql: "SELECT COUNT(*) FROM tags") == 1)
                 #expect(try Int.fetchOne(db, sql: "SELECT COUNT(*) FROM meeting_tags") == 2)
-                #expect(try Int.fetchOne(db, sql: "SELECT COUNT(*) FROM dahlia_account_connections") == 0)
+                #expect(try Int.fetchOne(db, sql: "SELECT COUNT(*) FROM accounts") == 0)
                 #expect(try Int.fetchOne(db, sql: "SELECT COUNT(*) FROM sync_transactions") == 0)
             }
             try backup.close()
@@ -72,6 +79,7 @@ import GRDB
             try await result.dbQueue.read { db throws in
                 #expect(try WorkspaceRecord.fetchCount(db) == 5)
                 #expect(try MeetingRecord.fetchOne(db, key: fixture.meeting.id)?.name == fixture.meeting.name)
+                #expect(try WorkspaceRecord.fetchOne(db, key: fixture.meeting.workspaceId)?.databricksConnectionId == databricks.id)
                 for meeting in [second.meeting, skipped.meeting, other.meeting] {
                     #expect(try MeetingRecord.fetchOne(db, key: meeting.id)?.name == "Changed")
                 }

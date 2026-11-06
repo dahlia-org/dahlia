@@ -99,7 +99,15 @@ struct ContentView: View {
                             SettingsSidebarView(
                                 selection: $mainWindowNavigation.settingsCategory,
                                 onReturnToApp: mainWindowNavigation.dismissSettings
-                            )
+                            ) {
+                                MainSidebarBottomArea(
+                                    viewModel: viewModel,
+                                    sidebarViewModel: sidebarViewModel,
+                                    recordingCoordinator: recordingCoordinator,
+                                    updateController: updateController,
+                                    onSelectWorkspace: onSelectWorkspace
+                                )
+                            }
                         }
                     } detail: {
                         MainWindowPaneContent(isShowingSettings: isShowingSettings) {
@@ -264,6 +272,7 @@ struct ContentView: View {
         .task(id: sidebarViewModel.currentWorkspace?.id) {
             await sidebarViewModel.refreshUnprocessedRecordings()
         }
+        .onChange(of: currentWorkspaceAccount, reopenChatForAccountChange)
         .onChange(of: sidebarViewModel.currentWorkspace?.id) {
             isShowingChatHistory = false
             dismissChatConfiguration()
@@ -443,6 +452,20 @@ private extension ContentView {
         openWindow(id: WindowID.codexChat, value: sessionID)
     }
 
+    private var currentWorkspaceAccount: WorkspaceAccountChoice? {
+        sidebarViewModel.currentWorkspace.map(WorkspaceAccountChoice.init)
+    }
+
+    /// The open workspace moved to another account: reopen its chat once that account's runtime is active.
+    private func reopenChatForAccountChange() {
+        guard let workspaceID = sidebarViewModel.currentWorkspace?.id else { return }
+        Task {
+            _ = await WorkspaceAISettingsModel.shared.waitForRuntimeContext()
+            guard let current = sidebarViewModel.currentWorkspace, current.id == workspaceID else { return }
+            chatCoordinator.activateWorkspace(current)
+        }
+    }
+
     private func syncChatContext() {
         if isShowingFullScreenChat {
             chatCoordinator.enterFullScreen(workspaceID: sidebarViewModel.currentWorkspace?.id)
@@ -522,7 +545,9 @@ private extension ContentView {
             ) {
                 MainNavigationBreadcrumbs(
                     workspace: workspace,
-                    workspaces: workspaceManagementModel.workspaces.filter { $0.accountConnectionId == workspace.accountConnectionId },
+                    workspaces: workspaceManagementModel.workspaces.filter {
+                        $0.belongsToSameAccount(as: workspaceManagementModel.workspaces.first { $0.id == workspace.id } ?? workspace)
+                    },
                     projects: sidebarViewModel.projectItemsByID,
                     projectID: headerProjectID,
                     meetingTitle: headerMeetingTitle,

@@ -229,7 +229,7 @@
                 checkpoint: "AAA=", createdAt: old, updatedAt: old
             )
             try queue.write { db in
-                try workspace.insert(db)
+                try workspace.insertIntoLegacySchema(db)
                 try meeting.insert(db)
                 try document.insert(db)
                 try SummaryRecord(meetingId: meeting.id, title: "Preserved", createdAt: old).insert(db)

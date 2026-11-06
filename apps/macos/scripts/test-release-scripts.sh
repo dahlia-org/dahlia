@@ -522,20 +522,16 @@ test_telemetrydeck_configuration_and_embedding() {
     expect_failure embed_telemetrydeck_resources "$fake_project" "$build_dir" "$contents_dir"
 }
 
-test_codex_code_mode_host_packaging() {
+test_pi_packaging() {
     local build_script
 
     for build_script in \
         "${DESKTOP_SCRIPTS_DIR}/build-app.sh" \
         "${DESKTOP_SCRIPTS_DIR}/run-dev.sh"; do
-        grep -Fq \
-            'cp ".build/codex-helper/codex-code-mode-host" "${HELPERS}/codex-code-mode-host"' \
-            "$build_script" \
-            || fail "$(basename "$build_script") does not embed the Codex code-mode host"
-        grep -Fq \
-            'codesign_path "${HELPERS}/codex-code-mode-host" --entitlements "$CODEX_ENTITLEMENTS_PATH"' \
-            "$build_script" \
-            || fail "$(basename "$build_script") does not sign the Codex code-mode host"
+        grep -Fq 'embed_pi_helper "$CONTENTS"' "$build_script" \
+            || fail "$(basename "$build_script") does not embed Pi"
+        grep -Fq 'codesign_pi_helper "$CONTENTS" "$PI_ENTITLEMENTS_PATH"' "$build_script" \
+            || fail "$(basename "$build_script") does not sign Pi"
     done
 }
 
@@ -647,7 +643,7 @@ test_whisperkit_license_embedding_validation
 test_lindera_license_embedding_validation
 test_webp_license_embedding_validation
 test_telemetrydeck_configuration_and_embedding
-test_codex_code_mode_host_packaging
+test_pi_packaging
 test_release_build_uses_native_build_system
 test_release_build_profile_is_safe_by_default
 test_telemetrydeck_adapter_allowlist

@@ -123,7 +123,7 @@ OS やストレージ自体の障害は現時点の保証対象外であり、�
 - 連携先が増えるほど価値が上がる、という前提を採らない。連携数ではなく、一次データの質と辿りやすさで価値を測る。
 
 **許容する例外**: 操作が限定的で疎結合な入出力は許容する。ファイル書き出し、要約のエクスポート、カレンダーからの
-読み取りのように、失敗しても録音と文字起こしに影響しない一方向の境界を保つこと。内蔵 Codex の任意の model-provider
+読み取りのように、失敗しても録音と文字起こしに影響しない一方向の境界を保つこと。内蔵 Pi の任意の model-provider
 transport は業務システム統合ではなく、既存の AI 付加機能の接続境界として扱う
 ([Gateway 境界](docs/adr/server/gateway.md#gateway-境界))。
 
@@ -155,8 +155,8 @@ Dahlia の scope 外であり、妨げない。
 - 認証やアカウント設定を中核機能の前提にしない。
 
 **許容する例外**: 疎結合な付加機能は外部依存を持ってよい。Google Calendar と EventKit の読み取り、Google Docs や
-Drive への書き出し、Codex による要約生成、Sparkle の更新確認、Sentry の障害報告、TelemetryDeck の匿名利用計測、
-バッチ自動言語判定の初回モデル取得、Serverアカウントのcloud-backed working copyと明示的な権限による共同編集、Webから明示的に開始した保存済み録音のServer処理がこれにあたる。ServerアカウントのCodexがそのDahlia Server Gatewayを使う場合も
+Drive への書き出し、内蔵 Pi による要約生成、Sparkle の更新確認、Sentry の障害報告、TelemetryDeck の匿名利用計測、
+バッチ自動言語判定の初回モデル取得、Serverアカウントのcloud-backed working copyと明示的な権限による共同編集、Webから明示的に開始した保存済み録音のServer処理がこれにあたる。Serverアカウントの内蔵 Pi がそのDahlia Server Gatewayを使う場合も
 同じ境界に置き、いずれも中核の前提条件にしない。
 
 **誤読しやすい点**: 「スタンドアローン」は「オフライン専用」ではない。外部機能を持つこと自体は否定せず、

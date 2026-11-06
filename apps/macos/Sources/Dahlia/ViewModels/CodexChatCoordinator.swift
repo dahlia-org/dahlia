@@ -18,9 +18,10 @@ final class CodexChatCoordinator {
     @ObservationIgnored private let settings: AppSettings
     @ObservationIgnored private let contextProvider: CodexChatContextProvider
     @ObservationIgnored private var historyGeneration = 0
+    @ObservationIgnored private var dockedAccount: WorkspaceAccountChoice?
 
     init(
-        service: any CodexChatServicing = CodexChatService.shared,
+        service: any CodexChatServicing = PiChatService.shared,
         settings: AppSettings = .shared
     ) {
         self.service = service
@@ -71,12 +72,21 @@ final class CodexChatCoordinator {
         Task { await refreshHistory() }
     }
 
-    func activateWorkspace(_ workspaceID: UUID) {
-        guard dockedSession.workspaceID != workspaceID else { return }
-        for session in sessions.values where session.workspaceID != workspaceID && session.hasPendingGenerationWork {
+    /// Opens the workspace's chat, and opens it again when the workspace moves to another account: history and models
+    /// belong to the account, so the old account's thread and model must not stay on screen.
+    func activateWorkspace(_ workspace: WorkspaceRecord) {
+        let workspaceID = workspace.id
+        let account = WorkspaceAccountChoice(workspace)
+        let changesAccount = dockedAccount.map { $0 != account } ?? false
+        dockedAccount = account
+        guard dockedSession.workspaceID != workspaceID || changesAccount else { return }
+        for session in sessions.values where (session.workspaceID != workspaceID || changesAccount) && session.hasPendingGenerationWork {
             session.release()
         }
-        contextProvider.update(workspaceID: workspaceID, meetingID: nil, projectID: nil, draftMeeting: nil, dbQueue: nil)
+        // The selected meeting or project stays on screen when only the account changes, so the chat keeps it.
+        if dockedSession.workspaceID != workspaceID {
+            contextProvider.update(workspaceID: workspaceID, meetingID: nil, projectID: nil, draftMeeting: nil, dbQueue: nil)
+        }
         let session = makeSession(workspaceID: workspaceID)
         replaceDockedSession(
             with: session,
