@@ -91,5 +91,25 @@ import Foundation
                 }
             }
         }
+
+        @Test
+        func aReplyWithoutTitleOrContentFailsInsteadOfReplacingTheSummary() throws {
+            let context = SummaryRenderContext(meetingId: .v7(), createdAt: .now, screenshots: [])
+            for reply in [
+                #"{"title":"","sections":[]}"#,
+                #"{"title":"T","sections":[]}"#,
+                #"{"title":"","sections":[{"heading":"H","blocks":[{"type":"paragraph","content":{"text":"Body"}}]}]}"#,
+                #"{"title":"T","sections":[{"heading":"H","blocks":[{"type":"paragraph","content":{"text":"  "}}]}]}"#,
+            ] {
+                #expect(throws: CodexAppServerError.emptyResponse) {
+                    try SummaryService.generatedDocument(from: reply, context: context)
+                }
+            }
+            let document = try SummaryService.generatedDocument(
+                from: #"{"title":"T","sections":[{"heading":"H","blocks":[{"type":"paragraph","content":{"text":"Body"}}]}]}"#,
+                context: context
+            )
+            #expect(document.title == "T" && document.sections.first?.blocks.isEmpty == false)
+        }
     }
 #endif

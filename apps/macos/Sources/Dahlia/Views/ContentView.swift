@@ -272,6 +272,7 @@ struct ContentView: View {
         .task(id: sidebarViewModel.currentWorkspace?.id) {
             await sidebarViewModel.refreshUnprocessedRecordings()
         }
+        .onChange(of: currentWorkspaceAccount, reopenChatForAccountChange)
         .onChange(of: sidebarViewModel.currentWorkspace?.id) {
             isShowingChatHistory = false
             dismissChatConfiguration()
@@ -449,6 +450,20 @@ private extension ContentView {
 
     private func openDetachedChat(_ sessionID: CodexChatSessionID) {
         openWindow(id: WindowID.codexChat, value: sessionID)
+    }
+
+    private var currentWorkspaceAccount: WorkspaceAccountChoice? {
+        sidebarViewModel.currentWorkspace.map(WorkspaceAccountChoice.init)
+    }
+
+    /// The open workspace moved to another account: reopen its chat once that account's runtime is active.
+    private func reopenChatForAccountChange() {
+        guard let workspaceID = sidebarViewModel.currentWorkspace?.id else { return }
+        Task {
+            _ = await WorkspaceAISettingsModel.shared.waitForRuntimeContext()
+            guard let current = sidebarViewModel.currentWorkspace, current.id == workspaceID else { return }
+            chatCoordinator.activateWorkspace(current)
+        }
     }
 
     private func syncChatContext() {

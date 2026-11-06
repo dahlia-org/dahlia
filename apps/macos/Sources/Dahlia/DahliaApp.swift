@@ -463,7 +463,7 @@ struct DahliaApp: App {
         mainWindowNavigation.changeWorkspace(to: workspace.id)
         AppSettings.shared.currentWorkspace = workspace
         WorkspaceAISettingsModel.shared.activate(workspace: workspace)
-        chatCoordinator.activateWorkspace(workspace.id)
+        chatCoordinator.activateWorkspace(workspace)
         sidebarViewModel.setAppDatabase(db)
         if recordsLastOpened {
             Task { await workspaceManagementModel.markWorkspaceOpened(workspace) }

@@ -63,11 +63,7 @@ enum SummaryService {
             createdAt: promptContext.recordedAt,
             screenshots: screenshots
         )
-        // Not every provider enforces the schema, so a non-conforming reply fails instead of becoming Markdown.
-        guard let response = try? JSONDecoder().decode(SummaryDocumentResponse.self, from: Data(responseText.utf8)) else {
-            throw CodexAppServerError.invalidProtocolResponse
-        }
-        var document = document(from: response, context: context)
+        var document = try generatedDocument(from: responseText, context: context)
         document.tags = resolvedTags(document.tags)
         document.metadata = SummaryMetadata(
             generatedBy: "local_codex",
@@ -126,6 +122,19 @@ enum SummaryService {
         }
 
         return LegacyMarkdownSummaryParser.parse(markdown: responseText, context: context)
+    }
+
+    static func generatedDocument(from responseText: String, context: SummaryRenderContext) throws -> SummaryDocument {
+        // Not every provider enforces the schema, so a non-conforming reply fails instead of becoming Markdown.
+        guard let response = try? JSONDecoder().decode(SummaryDocumentResponse.self, from: Data(responseText.utf8)) else {
+            throw CodexAppServerError.invalidProtocolResponse
+        }
+        let document = document(from: response, context: context)
+        // A reply without a title or any section content would replace the saved summary with an empty one.
+        guard !document.title.isEmpty, document.sections.contains(where: { !$0.blocks.isEmpty }) else {
+            throw CodexAppServerError.emptyResponse
+        }
+        return document
     }
 
     private static func document(from response: SummaryDocumentResponse, context: SummaryRenderContext) -> SummaryDocument {

@@ -16,6 +16,8 @@ actor PiRPCConnection {
     private var failure: (any Error)?
     private var bridgeError: (any Error)?
     private var readerTask: Task<Void, Never>?
+    /// Answers in progress, cancelled when the process goes away so a token login or approval does not outlive it.
+    private var bridgeTasks: [String: Task<Void, Never>] = [:]
 
     init(transport: any CodexAppServerTransport, bridge: @escaping Bridge) {
         self.transport = transport
@@ -115,7 +117,8 @@ actor PiRPCConnection {
             let payload = record["placeholder"]?.stringValue
                 .flatMap { try? JSONDecoder().decode(JSONValue.self, from: Data($0.utf8)) } ?? .null
             let bridge = bridge
-            Task {
+            bridgeTasks[id] = Task {
+                defer { self.bridgeTasks[id] = nil }
                 do {
                     try await self.respond(id: id, value: bridge(method, payload))
                 } catch {
@@ -147,6 +150,8 @@ actor PiRPCConnection {
             continuation.finish(throwing: error)
         }
         pending.removeAll()
+        bridgeTasks.values.forEach { $0.cancel() }
+        bridgeTasks.removeAll()
         eventContinuation.finish(throwing: error)
     }
 

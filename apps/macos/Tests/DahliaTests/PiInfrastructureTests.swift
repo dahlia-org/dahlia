@@ -39,6 +39,33 @@ import Foundation
             await transport.close()
         }
 
+        @Test(.timeLimit(.minutes(1)))
+        func closingAConnectionCancelsItsPendingBridgeAnswer() async throws {
+            // A Databricks token request can be waiting on a browser login; closing Pi must release it.
+            let transport = TestPiTransport { _ in [] }
+            let (started, startedContinuation) = AsyncStream<Void>.makeStream()
+            let (cancelled, cancelledContinuation) = AsyncStream<Void>.makeStream()
+            let connection = PiRPCConnection(transport: transport) { _, _ in
+                startedContinuation.yield()
+                await withTaskCancellationHandler {
+                    // Stands in for a browser login that never completes.
+                    try? await Task.sleep(for: .seconds(3600))
+                } onCancel: {
+                    cancelledContinuation.yield()
+                }
+                throw CancellationError()
+            }
+            await connection.start()
+            await transport.emit(TestPiTransport.bridgeRequest(id: "token-1", method: "token", payload: .object([:])))
+            var startedIterator = started.makeAsyncIterator()
+            _ = await startedIterator.next()
+
+            await connection.close()
+
+            var cancelledIterator = cancelled.makeAsyncIterator()
+            _ = await cancelledIterator.next()
+        }
+
         @Test
         func agentDirectoriesArePrivateAndSeparatedByAccount() throws {
             let rootURL = FileManager.default.temporaryDirectory

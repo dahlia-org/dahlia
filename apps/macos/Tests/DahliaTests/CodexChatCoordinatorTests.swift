@@ -207,7 +207,7 @@ import Foundation
 
             let newWorkspace = Self.workspace(name: "New Background")
             settings.currentWorkspace = newWorkspace
-            coordinator.activateWorkspace(newWorkspace.id)
+            coordinator.activateWorkspace(newWorkspace)
 
             await waitUntil { await MainActor.run { !backgroundSession.isGenerating } }
             await waitUntil { await service.interruptCount == 1 }
@@ -413,7 +413,7 @@ import Foundation
             )
             settings.currentWorkspace = workspace
             coordinator.hideDocked()
-            coordinator.activateWorkspace(workspace.id)
+            coordinator.activateWorkspace(workspace)
 
             await coordinator.refreshHistory()
             #expect(coordinator.historyError != nil)
@@ -435,12 +435,33 @@ import Foundation
             let oldRefresh = Task { await coordinator.refreshHistory() }
             await waitUntil { await service.hasBlockedRequest }
             settings.currentWorkspace = newWorkspace
-            coordinator.activateWorkspace(newWorkspace.id)
+            coordinator.activateWorkspace(newWorkspace)
             await coordinator.refreshHistory()
             await service.releaseBlockedRequest()
             await oldRefresh.value
 
             #expect(coordinator.history.map(\.id) == ["history-\(newWorkspace.id.uuidString)"])
+        }
+
+        @Test
+        func movingTheOpenWorkspaceToAnotherAccountReopensItsChat() {
+            let settings = AppSettings()
+            var workspace = Self.workspace(name: "Moved")
+            settings.currentWorkspace = workspace
+            let coordinator = CodexChatCoordinator(service: CoordinatorTestCodexChatService(), settings: settings)
+            coordinator.activateWorkspace(workspace)
+            let localSession = coordinator.dockedSession.id
+
+            coordinator.activateWorkspace(workspace)
+            #expect(coordinator.dockedSession.id == localSession)
+
+            // History and models belong to the account, so the Local Account's session must not stay open.
+            workspace.databricksConnectionId = .v7()
+            settings.currentWorkspace = workspace
+            coordinator.activateWorkspace(workspace)
+            #expect(coordinator.dockedSession.id != localSession)
+            #expect(coordinator.dockedSession.workspaceID == workspace.id)
+            #expect(coordinator.history.isEmpty)
         }
 
         @Test
