@@ -83,7 +83,10 @@ final class CodexChatCoordinator {
         for session in sessions.values where (session.workspaceID != workspaceID || changesAccount) && session.hasPendingGenerationWork {
             session.release()
         }
-        contextProvider.update(workspaceID: workspaceID, meetingID: nil, projectID: nil, draftMeeting: nil, dbQueue: nil)
+        // The selected meeting or project stays on screen when only the account changes, so the chat keeps it.
+        if dockedSession.workspaceID != workspaceID {
+            contextProvider.update(workspaceID: workspaceID, meetingID: nil, projectID: nil, draftMeeting: nil, dbQueue: nil)
+        }
         let session = makeSession(workspaceID: workspaceID)
         replaceDockedSession(
             with: session,

@@ -465,6 +465,33 @@ import Foundation
         }
 
         @Test
+        func movingTheOpenWorkspaceToAnotherAccountKeepsTheSelectedMeetingInContext() async {
+            let service = CoordinatorTestCodexChatService()
+            let settings = AppSettings()
+            var workspace = Self.workspace(name: "Moved Context")
+            settings.currentWorkspace = workspace
+            let coordinator = CodexChatCoordinator(service: service, settings: settings)
+            coordinator.activateWorkspace(workspace)
+            coordinator.updateCurrentContext(
+                workspaceID: workspace.id,
+                meetingID: nil,
+                draftMeeting: DraftMeeting(id: UUID.v7(), title: "Still selected"),
+                dbQueue: nil
+            )
+
+            // The meeting is still on screen, so no selection change would restore the context.
+            workspace.databricksConnectionId = .v7()
+            settings.currentWorkspace = workspace
+            coordinator.activateWorkspace(workspace)
+            coordinator.dockedSession.draft = "Question"
+            coordinator.dockedSession.sendDraft()
+            await waitUntil { await MainActor.run { !coordinator.dockedSession.isGenerating } }
+
+            let contexts = await service.sentTextBlocks.map { CodexChatPromptCodec.decodeTextBlocks($0).context }
+            #expect(contexts.map { $0?.meetingName } == ["Still selected"])
+        }
+
+        @Test
         func dockedAndDetachedSessionsShareLatestScreenContext() async throws {
             let service = CoordinatorTestCodexChatService()
             let settings = AppSettings()
