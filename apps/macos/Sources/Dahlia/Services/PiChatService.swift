@@ -241,6 +241,9 @@ actor PiChatService: CodexChatServicing {
         } catch {
             if sessions[threadID]?.turn?.id == turn.id { sessions[threadID]?.turn = nil }
             continuation.finish(throwing: error)
+            // Stopped before Pi acknowledged the prompt, which it may already be running with no turn left to stop it.
+            // Closing ends that run; the next turn reopens the thread from its session file.
+            if error is CancellationError { await runtime.close(connection) }
             throw error
         }
         continuation.yield(.started(turnID: turn.wireID))

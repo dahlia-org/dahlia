@@ -183,6 +183,51 @@ import Foundation
             }
         }
 
+        @Test(.timeLimit(.minutes(1)))
+        func stoppingBeforeThePromptIsAcknowledgedClosesItsPiProcess() async throws {
+            let log = TestPiTransportLog()
+            let pi = TestPiRuntime { options in
+                let transport = options.mode == .chat
+                    ? TestPiTransport { command in
+                        // Pi never acknowledges the first process's prompt; every other command succeeds.
+                        guard let id = command["id"], command["type"]?.stringValue != "prompt" || log.all.count > 1 else { return [] }
+                        let started = TestPiTransport.response(id: id, data: .object(["disposition": .string("started")]))
+                        return command["type"]?.stringValue == "prompt"
+                            ? [started, TestPiTransport.assistantEnd("next"), TestPiTransport.settled()] : [started]
+                    }
+                    : TestPiTransport(reply: TestPiRuntime.modelsReply([TestPiTransport.model(provider: "openai", id: "gpt-test")]))
+                if options.mode == .chat { log.append(transport) }
+                return transport
+            }
+            let chat = PiChatService(
+                runtime: pi.service,
+                workspaceLocator: ApplicationSupportCodexChatWorkspaceLocator(applicationSupportURL: pi.rootURL),
+                agentLocator: PiAgentDirectoryLocator(applicationSupportURL: pi.rootURL),
+                mcpExecutableURL: URL(filePath: "/usr/bin/true")
+            )
+            let thread = try await chat.startThread(model: nil, effort: "medium", workspaceID: .v7())
+            _ = await chat.acquireThreadLease(threadID: thread.id)
+
+            let stopped = Task {
+                try await chat.beginTurn(
+                    threadID: thread.id, inputs: [.text("hi")], model: nil, effort: "medium",
+                    approvalMethod: .ask, expectedProvider: nil
+                )
+            }
+            let first = await log.transport(at: 0)
+            _ = await first.command("prompt")
+            stopped.cancel()
+            _ = try? await stopped.value
+
+            #expect(await first.isClosed)
+            let next = try await chat.beginTurn(
+                threadID: thread.id, inputs: [.text("again")], model: nil, effort: "medium",
+                approvalMethod: .ask, expectedProvider: nil
+            )
+            for try await _ in next.events {}
+            #expect(log.all.count == 2)
+        }
+
         @Test
         func turnReopensTheThreadAfterItsPiProcessExits() async throws {
             let log = TestPiTransportLog()

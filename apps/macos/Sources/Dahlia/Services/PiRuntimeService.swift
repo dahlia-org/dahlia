@@ -71,6 +71,11 @@ actor PiRuntimeService {
         chatBridge: ChatBridge? = nil
     ) async throws -> PiRPCConnection {
         guard !isShuttingDown else { throw CancellationError() }
+        // Work of an account being left must not start Pi after the switch drained its processes. The Local
+        // Account's control processes (subscription sign-in and status) run whichever account is open.
+        if let requested = contextStore.requestedProvider, requested != provider, options.mode != .control || provider != .local {
+            throw CodexConfigurationError.providerChanged(provider.displayName)
+        }
         let agentURL = try agentLocator.agentURL(for: provider)
         let transport = try launcher(options, provider, agentURL)
         let tokenResolver = tokenResolver

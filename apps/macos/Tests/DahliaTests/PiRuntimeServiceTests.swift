@@ -318,6 +318,26 @@ import os
         }
 
         @Test
+        func anAccountBeingLeftCannotStartPiButLocalSignInStillCan() async throws {
+            let pi = TestPiRuntime { _ in TestPiTransport() }
+            let cwd = FileManager.default.temporaryDirectory
+            let databricks = CodexRuntimeProvider.databricks(connectionID: .v7())
+            // The switch to Databricks has begun, so the Local Account's delayed work must not launch Pi now.
+            pi.contextStore.beginActivation(databricks)
+
+            await #expect(throws: CodexConfigurationError.providerChanged(CodexRuntimeProvider.local.displayName)) {
+                try await pi.service.connect(.init(mode: .summary, cwd: cwd), provider: .local)
+            }
+            await #expect(throws: CodexConfigurationError.self) {
+                try await pi.service.connect(.init(mode: .control, cwd: cwd), provider: .dahlia(connectionID: .v7()))
+            }
+            let signIn = try await pi.service.connect(.init(mode: .control, cwd: cwd), provider: .local)
+            let summary = try await pi.service.connect(.init(mode: .summary, cwd: cwd), provider: databricks)
+            await pi.service.close(signIn)
+            await pi.service.close(summary)
+        }
+
+        @Test
         func signOutClosesLocalProcessesAndKeepsOtherAccounts() async throws {
             let log = TestPiTransportLog()
             let pi = TestPiRuntime { _ in
@@ -326,9 +346,14 @@ import os
                 return transport
             }
             let cwd = FileManager.default.temporaryDirectory
-            let local = try await pi.service.connect(.init(mode: .chat, cwd: cwd), provider: .local)
-            let dahlia = try await pi.service.connect(.init(mode: .chat, cwd: cwd), provider: .dahlia(connectionID: .v7()))
-            let databricks = try await pi.service.connect(.init(mode: .chat, cwd: cwd), provider: .databricks(connectionID: .v7()))
+            // Each account's process starts while that account is open; switching does not close these test processes.
+            func connect(_ provider: CodexRuntimeProvider) async throws -> PiRPCConnection {
+                pi.contextStore.apply(provider)
+                return try await pi.service.connect(.init(mode: .chat, cwd: cwd), provider: provider)
+            }
+            let dahlia = try await connect(.dahlia(connectionID: .v7()))
+            let databricks = try await connect(.databricks(connectionID: .v7()))
+            let local = try await connect(.local)
 
             try await pi.service.signOut(.openai)
 

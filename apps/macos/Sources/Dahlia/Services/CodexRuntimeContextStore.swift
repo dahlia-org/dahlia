@@ -24,6 +24,11 @@ final class CodexRuntimeContextStore: Sendable {
         state.withLock(\.isConfigured)
     }
 
+    /// The account being activated or active; set before an account switch closes the old account's processes.
+    var requestedProvider: CodexRuntimeProvider? {
+        state.withLock(\.requestedProvider)
+    }
+
     func beginActivation(_ provider: CodexRuntimeProvider) {
         state.withLock {
             $0.requestedProvider = provider
