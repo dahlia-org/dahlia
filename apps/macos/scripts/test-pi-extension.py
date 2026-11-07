@@ -118,7 +118,8 @@ def gateway(script, requests):
     return server
 
 
-def run(pi, mode, script, arguments, environment, approval="accept", approval_mode="ask", api="openai-responses", mcp_servers=None):
+def run(pi, mode, script, arguments, environment, approval="accept", approval_mode="ask", api="openai-responses", mcp_servers=None,
+        compat=None):
     """Runs one prompt; returns the gateway requests, tool results, bridge calls, and whether ../outside.txt exists."""
     requests, tool_results, bridge = [], [], []
     server = gateway(script, requests)
@@ -136,7 +137,7 @@ def run(pi, mode, script, arguments, environment, approval="accept", approval_mo
                     "headers": {"Databricks-Ai-Gateway-Request-Tags": '{"source": "dahlia"}'},
                     "models": [{"id": "mock", "name": "Mock", "reasoning": True, "input": ["text"],
                                 "cost": {"input": 0, "output": 0, "cacheRead": 0, "cacheWrite": 0},
-                                "contextWindow": 100000, "maxTokens": 1000}]}
+                                "contextWindow": 100000, "maxTokens": 1000, **({"compat": compat} if compat else {})}]}
         (root / "agent/models.json").write_text(json.dumps({"providers": {"databricks": provider}}))
         env = dict(os.environ, PI_CODING_AGENT_DIR=str(root / "agent"), PI_OFFLINE="1", PI_SKIP_VERSION_CHECK="1",
                    PI_TELEMETRY="0", DAHLIA_PI_MODE=mode, DAHLIA_PI_BRIDGED_PROVIDERS="databricks",
@@ -174,17 +175,50 @@ def main():
     parser.add_argument("--pi", default="pi")
     pi = parser.parse_args().pi
 
+    # Keywords Claude or Gemini cannot take, and a property named like one, which must stay.
+    full_schema = {"type": "object", "additionalProperties": False, "required": ["a", "pattern"], "properties": {
+        "a": {"type": "string", "minLength": 1, "maxLength": 5, "pattern": "^x+$"},
+        "pattern": {"type": "array", "minItems": 1, "maxItems": 3, "items": {"type": "integer", "minimum": 0}}}}
+
+    claude_expected = dict(full_schema, properties={
+        "a": {"type": "string", "pattern": "^x+$"},
+        "pattern": {"type": "array", "minItems": 1, "items": {"type": "integer"}}})
+    gemini_expected = dict(full_schema, properties={
+        "a": {"type": "string"},
+        "pattern": {"type": "array", "minItems": 1, "maxItems": 3, "items": {"type": "integer", "minimum": 0}}})
+
+    # Where each API carries the enforced schema in the request body, and the schema it should carry there.
+    def openai_schema(body):
+        format_ = body.get("text", {}).get("format")
+        return format_ and format_["strict"] and format_["schema"]
+
+    def claude_schema(body):
+        format_ = body.get("output_config", {}).get("format")
+        # Pi's adaptive-thinking effort survives next to the format.
+        assert format_ is None or body["output_config"].get("effort") == "high", body.get("output_config")
+        return format_ and format_["type"] == "json_schema" and format_["schema"]
+
+    def gemini_schema(body):
+        config = body.get("generationConfig", {})
+        return config.get("responseJsonSchema") and config["responseMimeType"] == "application/json" and config["responseJsonSchema"]
+
+    routes = [("openai-responses", openai_schema, full_schema, None),
+              ("anthropic-messages", claude_schema, claude_expected, {"forceAdaptiveThinking": True}),
+              ("google-generative-ai", gemini_schema, gemini_expected, None)]
     with tempfile.NamedTemporaryFile("w", suffix=".json") as schema:
-        json.dump({"type": "object", "properties": {"a": {"type": "string"}}, "required": ["a"]}, schema)
+        json.dump(full_schema, schema)
         schema.flush()
-        for strict in ("1", "0"):
-            requests, _, bridge, _ = run(pi, "summary", [{"text": '{"a":"日本語"}'}], ["--no-session", "--no-tools"],
-                                             {"DAHLIA_PI_OUTPUT_SCHEMA": schema.name, "DAHLIA_PI_STRICT_SCHEMA": strict})
-            assert requests[0]["auth"] == "Bearer synthetic-token", requests[0]["auth"]
-            assert bridge[0] == ("token", {"provider": "databricks"}), bridge
-            format_ = requests[0]["body"].get("text", {}).get("format")
-            assert (format_ is not None) == (strict == "1"), format_
-            assert "tools" not in requests[0]["body"] or not requests[0]["body"]["tools"]
+        for api, sent_schema, expected, compat in routes:
+            for strict in ("1", "0"):
+                requests, _, bridge, _ = run(pi, "summary", [{"text": '{"a":"日本語"}'}],
+                                             ["--no-session", "--no-tools", "--thinking", "high"],
+                                             {"PI_OUTPUT_JSON_SCHEMA": schema.name, "PI_OUTPUT_STRICT_SCHEMA": strict},
+                                             api=api, compat=compat)
+                assert requests[0]["auth"] == "Bearer synthetic-token", requests[0]["auth"]
+                assert bridge[0] == ("token", {"provider": "databricks"}), bridge
+                body = requests[0]["body"]
+                assert sent_schema(body) == (expected if strict == "1" else None), (api, strict, body)
+                assert "tools" not in body or not body["tools"]
 
     with tempfile.NamedTemporaryFile("w", suffix=".py") as mcp:
         mcp.write(MCP_SERVER)
@@ -270,7 +304,7 @@ def main():
     assert "not available" in results[0] and "GATEWAY_OK" not in results[0], results
     server.shutdown()
     foreign_server.shutdown()
-    print("Pi extension tests passed (token bridge, strict schema, read-only chat, MCP approval, model APIs, gateway MCP)")
+    print("Pi extension tests passed (token bridge, strict schema on OpenAI/Claude/Gemini, read-only chat, MCP approval, model APIs, gateway MCP)")
 
 
 if __name__ == "__main__":

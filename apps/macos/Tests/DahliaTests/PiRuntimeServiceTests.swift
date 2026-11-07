@@ -58,7 +58,7 @@ import os
             #expect(launch.arguments.contains("--no-tools"))
             #expect(launch.arguments.contains("openai/gpt-test"))
             #expect(launch.arguments.contains("high"))
-            #expect(launch.environment["DAHLIA_PI_STRICT_SCHEMA"] == "1")
+            #expect(launch.environment["PI_OUTPUT_STRICT_SCHEMA"] == "1")
             #expect(try launch.arguments[#require(launch.arguments.firstIndex(of: "--system-prompt")) + 1].contains(#""required":["a"]"#))
             let prompt = await transports.all[1].command("prompt")
             #expect(prompt["message"]?.stringValue?.contains("[Attached image 1] <image_id>1</image_id>") == true)
@@ -136,7 +136,7 @@ import os
         }
 
         @Test
-        func textOnlyModelOmitsImagesAndClaudeSkipsStrictSchema() async throws {
+        func textOnlyModelOmitsImagesAndClaudeGetsStrictSchema() async throws {
             let transports = TestPiTransportLog()
             let pi = Self.runtime(
                 provider: .local,
@@ -153,8 +153,19 @@ import os
             #expect(prompt["images"] == nil)
             #expect(prompt["message"]?.stringValue == "t")
             let launch = try #require(pi.launches.all.first { $0.mode == .summary })
-            #expect(launch.environment["DAHLIA_PI_STRICT_SCHEMA"] == nil)
+            #expect(launch.environment["PI_OUTPUT_STRICT_SCHEMA"] == "1")
             #expect(launch.arguments.contains("anthropic/claude-test"))
+        }
+
+        @Test(arguments: [
+            ("openai/gpt-test", true), ("anthropic/claude-test", true), ("dahlia/any", true),
+            ("databricks/system.ai.gpt-6-luna", true), ("databricks/system.ai.claude-opus-5-5", true),
+            ("databricks/system.ai.gemini-4-argon", true),
+            // Databricks's MLflow route serves these as OpenAI Responses without strict schema support.
+            ("databricks/system.ai.glm-5-3", false), ("databricks/system.ai.kimi-k3", false),
+        ])
+        func strictSchemaCoversOpenAIClaudeAndGeminiButNotTheMLflowRoute(model: String, expected: Bool) {
+            #expect(PiRuntimeService.supportsStrictSchema(model: model) == expected)
         }
 
         @Test

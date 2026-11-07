@@ -317,8 +317,8 @@ actor PiRuntimeService {
             "--no-session", "--no-tools", "--system-prompt", instructions,
             "--model", model.model, "--thinking", Self.thinkingLevel(request.reasoningEffort),
         ]
-        var environment = ["DAHLIA_PI_OUTPUT_SCHEMA": schemaURL.path]
-        if Self.supportsStrictSchema(model: model.model) { environment["DAHLIA_PI_STRICT_SCHEMA"] = "1" }
+        var environment = ["PI_OUTPUT_JSON_SCHEMA": schemaURL.path]
+        if Self.supportsStrictSchema(model: model.model) { environment["PI_OUTPUT_STRICT_SCHEMA"] = "1" }
 
         let connection = try await connect(
             .init(mode: .summary, cwd: workURL, arguments: arguments, environment: environment),
@@ -363,10 +363,11 @@ actor PiRuntimeService {
         return models.first { $0.model.hasSuffix("/\(saved)") || $0.model.hasSuffix(".\(saved)") }
     }
 
-    /// Codex's strict `text.format` is known to work only on OpenAI Responses endpoints.
+    /// Models whose API the extension can make enforce the schema (OpenAI Responses, Claude Messages, Gemini).
     nonisolated static func supportsStrictSchema(model: String) -> Bool {
-        // A Databricks account's GPT models use the gateway's codex route; its other routes take no strict schema.
-        ["openai/", "dahlia/", "databricks/system.ai.gpt-"].contains { model.hasPrefix($0) }
+        // Databricks also serves other models (GLM, Kimi) as OpenAI Responses on its MLflow route, which takes no strict schema.
+        ["openai/", "anthropic/", "dahlia/", "databricks/system.ai.gpt-", "databricks/system.ai.claude-", "databricks/system.ai.gemini-"]
+            .contains { model.hasPrefix($0) }
     }
 
     nonisolated static func thinkingLevel(_ effort: String) -> String {

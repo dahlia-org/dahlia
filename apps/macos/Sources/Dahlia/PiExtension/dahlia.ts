@@ -15,8 +15,50 @@ const bridgedAPIs = {
   "google-generative-ai": googleGenerativeAIApi,
   "openai-responses": openAIResponsesApi,
 };
-const outputSchema = env.DAHLIA_PI_OUTPUT_SCHEMA ? JSON.parse(readFileSync(env.DAHLIA_PI_OUTPUT_SCHEMA, "utf8")) : undefined;
-const strictSchemaAPIs = new Set(["openai-responses", "openai-codex-responses"]);
+const outputSchema = env.PI_OUTPUT_JSON_SCHEMA ? JSON.parse(readFileSync(env.PI_OUTPUT_JSON_SCHEMA, "utf8")) : undefined;
+// Keywords each API rejects (Claude answers 400) or does not document; Dahlia validates the reply after decoding.
+const claudeUnsupported = new Set(["minLength", "maxLength", "minimum", "maximum", "exclusiveMinimum", "exclusiveMaximum", "multipleOf", "maxItems"]);
+const geminiUnsupported = new Set(["minLength", "maxLength", "pattern"]);
+
+// Removes schema keywords, but never property names that happen to spell one.
+function stripped(schema: any, drop: (key: string, value: any) => boolean, isPropertyMap = false): any {
+  if (Array.isArray(schema)) return schema.map((item) => stripped(item, drop));
+  if (typeof schema !== "object" || schema === null) return schema;
+  return Object.fromEntries(Object.entries(schema)
+    .filter(([key, value]) => isPropertyMap || !drop(key, value))
+    .map(([key, value]) => [key, stripped(value, drop, !isPropertyMap && ["properties", "$defs", "definitions"].includes(key))]));
+}
+
+// The request body change that enforces the schema, for each API that takes one.
+const strictSchemaPayload: Record<string, (payload: any) => any> = {
+  "openai-responses": openAIFormat,
+  "openai-codex-responses": openAIFormat,
+  // Claude also takes `minItems` 0 or 1 only. Pi may already set `output_config.effort`.
+  "anthropic-messages": (payload) => ({
+    ...payload,
+    output_config: {
+      ...(payload.output_config ?? {}),
+      format: {
+        type: "json_schema",
+        schema: stripped(outputSchema, (key, value) => claudeUnsupported.has(key) || (key === "minItems" && value > 1)),
+      },
+    },
+  }),
+  // Pi's Google SDK request: `config` becomes `generationConfig` on the wire.
+  "google-generative-ai": (payload) => ({
+    ...payload,
+    config: {
+      ...payload.config,
+      responseMimeType: "application/json",
+      responseJsonSchema: stripped(outputSchema, (key) => geminiUnsupported.has(key)),
+    },
+  }),
+};
+
+function openAIFormat(payload: any) {
+  const format = { type: "json_schema", name: "dahlia_output", strict: true, schema: outputSchema };
+  return { ...payload, text: { ...(payload.text ?? {}), format } };
+}
 const readOnlyDahliaTool = /^mcp__dahlia__(get|query|list|search)_/;
 // The MCP servers Dahlia registered for this chat (its own and the account's gateway MCPs); any other server is blocked.
 const chatMcpServers = new Set<string>(JSON.parse(env.DAHLIA_PI_MCP_SERVERS ?? "[]"));
@@ -71,10 +113,9 @@ export default function (pi: any) {
   }
 
   pi.on("before_provider_request", (event: any, ctx: any) => {
-    if (!outputSchema || env.DAHLIA_PI_STRICT_SCHEMA !== "1" || !strictSchemaAPIs.has(ctx.model?.api)) return;
-    const payload = event.payload as any;
-    const format = { type: "json_schema", name: "dahlia_output", strict: true, schema: outputSchema };
-    return { ...payload, text: { ...(payload.text ?? {}), format } };
+    const enforce = strictSchemaPayload[ctx.model?.api];
+    if (!outputSchema || env.PI_OUTPUT_STRICT_SCHEMA !== "1" || !enforce) return;
+    return enforce(event.payload);
   });
 
   if (mode === "chat") {
