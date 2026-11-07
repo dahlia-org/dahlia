@@ -23,6 +23,7 @@ macOS、ローカル SQLite、録音、UI、内蔵 Pi / local MCP。
 - [Codex runtime と stdio（Pi へ置換済み）](desktop/codex-runtime.md)
 - [Desktop の認証と account 分離](desktop/accounts.md)
 - [チャットの書き込みと承認](desktop/chat-approval.md)
+- [エージェントによる MCP 経由の外部サービス操作](desktop/agent-mcp-operations.md)
 - [匿名 telemetry](desktop/telemetry.md)
 - [ローカル全文検索と旧 Hybrid 検索](desktop/search.md)
 - [Electron アルファ版](desktop/electron-alpha.md)

@@ -1785,3 +1785,9 @@
 "Controls how much reasoning Pi uses for each image." = "画像ごとに Pi が使用する推論の強度を設定します。";
 
 "Used for searchable image text and captions, and for choosing useful screenshots before summary generation." = "検索用の OCR・caption の生成と、要約前の有用なスクリーンショットの選別に共通で使用します。";
+
+"settings.agents" = "エージェント";
+"settings.agents.intro" = "選択中のアカウントのチャットが使えるツールを管理します。";
+"settings.agents.unityGatewayMCPs" = "Unity AI Gateway の MCP";
+"settings.agents.unityGatewayMCPsDescription" = "オンにした MCP をチャットで使えます。Databricks アカウントのアクセストークンで Unity AI Gateway を経由して呼び出します。読み取り以外のツールは、チャットの承認方式に従って確認します。サービスへのサインインを求められたら、チャットに表示されるリンクから承認してください。変更は、このあと開いたチャットから反映されます。開いているチャットは、開き直すと反映されます。";
+"settings.agents.requiresDatabricks" = "Unity AI Gateway の MCP は Databricks アカウントで使えます。サイドバー下部のアカウントメニューで Databricks アカウントを開くと設定できます。";

@@ -51,6 +51,9 @@ actor DatabricksOAuthService {
 
     /// One token operation per workspace at a time.
     private var pending: [UUID: Pending] = [:]
+    /// Access tokens kept in memory so each Pi request skips the Keychain. Refresh tokens stay only in the Keychain:
+    /// they are read once per refresh, and holding them in memory would only widen their exposure.
+    private var accessTokens: [UUID: (token: String, expirationDate: Date)] = [:]
     private var generations: [UUID: UUID] = [:]
 
     init(
@@ -157,6 +160,7 @@ actor DatabricksOAuthService {
         pending[connectionID] = nil
         // The row goes first, so a failed write leaves a listed account that still works.
         try storage.saveConnections(connections().filter { $0.id != connectionID })
+        accessTokens[connectionID] = nil
         try storage.deleteCredential(connectionID)
         NotificationCenter.default.post(name: .databricksConnectionDidChange, object: nil)
     }
@@ -206,8 +210,12 @@ actor DatabricksOAuthService {
             _ = try self.connection(id: connectionID)
             return token
         }
+        if !loginOnly, !forceRefresh, let cached = accessTokens[connectionID], cached.expirationDate.timeIntervalSinceNow > 60 {
+            return cached.token
+        }
         let old = try storage.loadCredential(connectionID)
         if !loginOnly, !forceRefresh, let old, old.expirationDate.timeIntervalSinceNow > 60 {
+            accessTokens[connectionID] = (old.accessToken, old.expirationDate)
             return old.accessToken
         }
         let generation = UUID()
@@ -232,6 +240,7 @@ actor DatabricksOAuthService {
             guard self.generations[connectionID] == generation else { throw CancellationError() }
             _ = try self.connection(id: connectionID)
             try self.storage.saveCredential(connectionID, updated)
+            self.accessTokens[connectionID] = (updated.accessToken, updated.expirationDate)
             return updated.accessToken
         }
         let operation = Pending(

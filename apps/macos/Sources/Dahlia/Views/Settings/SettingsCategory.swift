@@ -4,6 +4,7 @@ import Foundation
 enum SettingsCategory: String, CaseIterable, Identifiable {
     case accountsAndWorkspaces
     case accountPreferences
+    case agents
     case workspacePreferences
     case macInference
     case general
@@ -34,6 +35,7 @@ enum SettingsCategory: String, CaseIterable, Identifiable {
         switch self {
         case .accountsAndWorkspaces: L10n.serverConnections
         case .accountPreferences: L10n.accountPreferences
+        case .agents: L10n.agents
         case .workspacePreferences: L10n.workspaceSettings
         case .macInference: L10n.macInferencePreferences
         case .general: L10n.general
@@ -64,6 +66,7 @@ enum SettingsCategory: String, CaseIterable, Identifiable {
         switch self {
         case .accountsAndWorkspaces: "sparkles"
         case .accountPreferences: "text.badge.star"
+        case .agents: "puzzlepiece.extension"
         case .workspacePreferences: "globe"
         case .macInference: "sparkles"
         case .general: "gearshape"
@@ -133,6 +136,8 @@ enum SettingsCategory: String, CaseIterable, Identifiable {
                 L10n.imageAnalysisEnabled,
                 "AI",
             ]
+        case .agents:
+            [L10n.unityGatewayMCPs, L10n.mcp, L10n.unityGateway, "Databricks"] + DatabricksGatewayMCP.allCases.map(\.displayName)
         case .workspace:
             [L10n.workspace, L10n.generatedContentLanguage, L10n.summaryOutputLanguage]
         case .macInference:

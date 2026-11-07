@@ -49,6 +49,8 @@ actor PiChatService: CodexChatServicing {
     private let workspaceLocator: any CodexChatWorkspaceLocating
     private let agentLocator: PiAgentDirectoryLocator
     private let mcpExecutableURL: URL?
+    private let enabledGatewayMCPs: @Sendable (UUID) -> [DatabricksGatewayMCP]
+    private let databricksWorkspaceURL: DatabricksWorkspaceURL
     private var sessions: [String: Session] = [:]
     private var opening: [String: Task<PiRPCConnection, any Error>] = [:]
     private var leases: [String: Set<UUID>] = [:]
@@ -63,13 +65,20 @@ actor PiChatService: CodexChatServicing {
         runtime: PiRuntimeService = .shared,
         workspaceLocator: any CodexChatWorkspaceLocating = ApplicationSupportCodexChatWorkspaceLocator(),
         agentLocator: PiAgentDirectoryLocator = PiAgentDirectoryLocator(),
-        mcpExecutableURL: URL? = nil
+        mcpExecutableURL: URL? = nil,
+        enabledGatewayMCPs: @escaping @Sendable (UUID) -> [DatabricksGatewayMCP] = { DatabricksGatewayMCP.enabled(connectionID: $0) },
+        databricksWorkspaceURL: @escaping DatabricksWorkspaceURL = PiChatService.databricksWorkspaceURL
     ) {
         self.runtime = runtime
         self.workspaceLocator = workspaceLocator
         self.agentLocator = agentLocator
         self.mcpExecutableURL = mcpExecutableURL
+        self.enabledGatewayMCPs = enabledGatewayMCPs
+        self.databricksWorkspaceURL = databricksWorkspaceURL
     }
+
+    /// The workspace origin of a Databricks account, whose Unity AI Gateway serves the MCPs.
+    typealias DatabricksWorkspaceURL = @Sendable (UUID) async throws -> URL
 
     func models(forceRefresh: Bool) async throws -> [CodexModel] {
         try await runtime.models(forceRefresh: forceRefresh)
@@ -354,10 +363,15 @@ actor PiChatService: CodexChatServicing {
             executableURL: mcpExecutableURL ?? DahliaMCPBundle.executableURL(),
             workspaceID: workspaceID
         )
+        // Pi reads mcp.json only when it starts, so settings changes reach the next process the account starts. `--tools`
+        // and the allowlist come from this same snapshot: a process that reads another thread's newer file stays limited to it.
+        let gatewayServers = try await gatewayMCPServers(provider)
+        try PiProviderConfiguration.writeMCPServers(gatewayServers, agentURL: agentLocator.agentURL(for: provider))
         // Read-only on this Mac. `--no-extensions` also drops Pi's MCP extension, and `--tools` declares only the MCP tools it names.
+        let tools = ["read", "ls", "mcp__dahlia__*"] + gatewayServers.keys.sorted().map { "mcp__\($0)__*" }
         var arguments = sessionArguments + [
             "-e", "builtin:mcp",
-            "--tools", "read,ls,mcp__dahlia__*",
+            "--tools", tools.joined(separator: ","),
             "--system-prompt", Self.systemPrompt,
         ]
         for skill in PiBundle.presetSkillURLs() {
@@ -373,6 +387,8 @@ actor PiChatService: CodexChatServicing {
                     "DAHLIA_PI_READABLE_ROOTS": String(decoding: JSONEncoder().encode(
                         [workspaceURL.path] + PiBundle.presetSkillURLs().map(\.path)
                     ), as: UTF8.self),
+                    // The only MCP servers whose tools chat may call; the extension blocks every other server.
+                    "DAHLIA_PI_MCP_SERVERS": String(decoding: JSONEncoder().encode(["dahlia"] + gatewayServers.keys.sorted()), as: UTF8.self),
                 ]
             ),
             provider: provider,
@@ -387,6 +403,19 @@ actor PiChatService: CodexChatServicing {
             _ = try? await connection.request("set_session_name", ["name": .string(name)])
         }
         return connection
+    }
+
+    /// The Unity AI Gateway MCPs the user enabled for a Databricks account; other accounts have none.
+    private func gatewayMCPServers(_ provider: CodexRuntimeProvider) async throws -> [String: JSONValue] {
+        guard case let .databricks(connectionID) = provider else { return [:] }
+        let enabled = enabledGatewayMCPs(connectionID)
+        guard !enabled.isEmpty else { return [:] }
+        return try await DatabricksGatewayMCP.piServers(enabled, workspaceURL: databricksWorkspaceURL(connectionID))
+    }
+
+    static func databricksWorkspaceURL(connectionID: UUID) async throws -> URL {
+        let databricks = DatabricksOAuthService.shared
+        return try await databricks.normalizedWorkspaceURL(databricks.connection(id: connectionID).host)
     }
 
     /// Closes the process once no chat view holds the thread and no turn runs.

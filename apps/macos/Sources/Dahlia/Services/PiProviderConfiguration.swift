@@ -27,7 +27,7 @@ extension CodexRuntimeProvider {
         }
     }
 
-    /// Providers whose bearer token Dahlia supplies for each request through the extension bridge.
+    /// Providers whose credential is the account's token, which the extension resolves through the bridge for each use.
     var piBridgedProviderIDs: [String] {
         switch self {
         case .local: []
@@ -36,16 +36,21 @@ extension CodexRuntimeProvider {
     }
 }
 
-/// Writes the account's `models.json`. Subscription providers use Pi's built-in catalog.
+/// Writes the account's `models.json` and `mcp.json`. Subscription providers use Pi's built-in catalog.
 enum PiProviderConfiguration {
     static let databricksProviderIDs = ["databricks"]
 
-    /// Placeholder key that marks the provider configured; the extension replaces the Authorization header.
-    private static let bridgedAPIKey = "dahlia"
-
     static func write(_ providers: [String: JSONValue], agentURL: URL) throws {
-        let data = try JSONEncoder().encode(JSONValue.object(["providers": .object(providers)]))
-        let url = agentURL.appending(path: "models.json")
+        try write(.object(["providers": .object(providers)]), to: agentURL.appending(path: "models.json"))
+    }
+
+    /// The account's MCP servers for Pi. They hold no credentials; an entry's `auth.provider` takes a bridged provider's.
+    static func writeMCPServers(_ servers: [String: JSONValue], agentURL: URL) throws {
+        try write(.object(["mcpServers": .object(servers)]), to: agentURL.appending(path: "mcp.json"))
+    }
+
+    private static func write(_ value: JSONValue, to url: URL) throws {
+        let data = try JSONEncoder().encode(value)
         guard FileManager.default.contents(atPath: url.path) != data else { return }
         try data.write(to: url, options: .atomic)
         try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: url.path)
@@ -65,7 +70,6 @@ enum PiProviderConfiguration {
                 model["baseUrl"] = .string(origin + path)
                 return .object(model)
             })
-            provider["apiKey"] = .string(bridgedAPIKey)
             provider["authHeader"] = .bool(true)
             provider["headers"] = .object(["Databricks-Ai-Gateway-Request-Tags": .string(#"{"source": "dahlia"}"#)])
             return .object(provider)
@@ -133,7 +137,6 @@ enum PiProviderConfiguration {
             "name": .string("Dahlia"),
             "baseUrl": .string(baseURL.absoluteString),
             "api": .string("openai-responses"),
-            "apiKey": .string(bridgedAPIKey),
             "authHeader": .bool(true),
             "models": .array(models),
         ])]

@@ -107,8 +107,8 @@ OS やストレージ自体の障害は現時点の保証対象外であり、�
 
 ### T4. 他サービスへの連携を Dahlia に実装せず、MCP で外部の AI とツールに任せる
 
-**主張**: Dahlia から外部サービスを操作する機能を増やさない。代わりに Workspace 単位で安全に読める interface を
-提供し、統合は外部の AI とツールに行わせる。
+**主張**: Dahlia 自身に外部サービスの統合を実装しない。代わりに Workspace 単位で安全に読める interface を
+提供し、外部サービスの操作は MCP を介したエージェント（外部の AI とツール、または Dahlia の内蔵チャット）に行わせる。
 
 **根拠**: 連携先ごとの認証、レート制限、スキーマ変更、権限モデルを Dahlia が抱えると、アプリの中核が外部サービスの
 都合で壊れる。統合の組み合わせは無限にあるが、データの提供口は一つでよい。
@@ -120,6 +120,8 @@ OS やストレージ自体の障害は現時点の保証対象外であり、�
   ([Workspace 境界](docs/adr/desktop/local-mcp-and-projects.md#workspace-境界), [Project の正本](docs/adr/desktop/local-mcp-and-projects.md#project-の正本))。
 - Dahlia Memory は個人 user UUID の領域を追加し、独立した権限で保存メモリーの変更を許可する。共有保存には明示的な指示と現在の Workspace 書き込み権限を必要とする ([Dahlia Memory](docs/adr/server/dahlia-memory.md))。
 - MCP が返す内容は untrusted data として扱い、指示として実行しない。
+- 内蔵チャットは MCP server の tool で外部サービスを読み書きしてよい。統合は MCP server が持ち、読み取り以外は
+  チャットの承認方式に従う（[エージェントによる MCP 経由の外部サービス操作](docs/adr/desktop/agent-mcp-operations.md)）。
 - 連携先が増えるほど価値が上がる、という前提を採らない。連携数ではなく、一次データの質と辿りやすさで価値を測る。
 
 **許容する例外**: 操作が限定的で疎結合な入出力は許容する。ファイル書き出し、要約のエクスポート、カレンダーからの

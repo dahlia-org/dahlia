@@ -211,6 +211,37 @@
             #expect(memory.state.withLock { $0.connection?.email } == "me@example.com")
         }
 
+        @Test func accessTokenStaysInMemoryAndOnlyARefreshReadsTheKeychain() async throws {
+            let connection = DatabricksConnection(id: UUID(), host: Self.host)
+            let memory = DatabricksTestStorage(connection: connection)
+            memory.state.withLock { $0.credentials[connection.id] = credential() }
+            let loads = Mutex(0)
+            var storage = memory.storage
+            let load = storage.loadCredential
+            storage.loadCredential = { id in
+                loads.withLock { $0 += 1 }
+                return try load(id)
+            }
+            let session = makeSession { request in
+                #expect(form(request)["refresh_token"] == "old-refresh")
+                return (200, Self.token)
+            }
+            defer { session.invalidateAndCancel() }
+            let service = DatabricksOAuthService(session: session, storage: storage)
+
+            #expect(try await service.accessToken(connectionID: connection.id) == "old-access")
+            #expect(try await service.accessToken(connectionID: connection.id) == "old-access")
+            #expect(loads.withLock { $0 } == 1)
+            // The refresh token comes from the Keychain; the refreshed access token replaces the cached one.
+            #expect(try await service.accessToken(connectionID: connection.id, forceRefresh: true) == "access")
+            #expect(loads.withLock { $0 } == 2)
+            #expect(try await service.accessToken(connectionID: connection.id) == "access")
+            #expect(loads.withLock { $0 } == 2)
+
+            try await service.remove(connectionID: connection.id)
+            await #expect(throws: DahliaCloudError.self) { try await service.accessToken(connectionID: connection.id) }
+        }
+
         @Test(arguments: [true, false])
         func refreshRotatesOrRetainsRefreshToken(rotates: Bool) async throws {
             let connection = DatabricksConnection(id: UUID(), host: Self.host)
