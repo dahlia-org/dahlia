@@ -43,9 +43,12 @@ private struct AgentGeneralSettingsView: View {
         }
         // Resolving checks the disk, so it runs off MainActor; Pi reads the saved path when each process starts.
         .task(id: piPath) {
-            resolvedCommand = await Task.detached {
+            let resolved = await Task.detached {
                 Result { try PiBundle.executableURL().path }.mapError { $0 as? CodexAppServerError ?? .piCommandNotFound(nil) }
             }.value
+            // An edit cancels this task, but the detached lookup still finishes; drop its now-stale result.
+            guard !Task.isCancelled else { return }
+            resolvedCommand = resolved
         }
     }
 }
