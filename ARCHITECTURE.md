@@ -152,7 +152,7 @@ Responses request は上限内で検証し、upstream response body は streamin
 Databricks request tags には認証済み user ID を付与する。Model Alias テーブル・store 型・CRUD と管理画面・API は廃止する ([Backend モデル契約](docs/adr/server/gateway.md#backend-モデル契約))。
 
 ```text
-Dahlia macOS / bundled Pi 1.5.0
+Dahlia macOS / installed Pi
     ↓ authenticated OpenAI Responses request
 /api/v1
     ├─ Better Auth OAuth access token

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
-"""Check Dahlia's Pi extension against the bundled Pi, a loopback model gateway, and loopback MCPs.
+"""Check Dahlia's Pi extension against an installed Pi, a loopback model gateway, and loopback MCPs.
 
-Usage: python3 apps/macos/scripts/test-pi-extension.py [--pi .build/pi-helper/pi/pi]
+Usage: python3 apps/macos/scripts/test-pi-extension.py [--pi /path/to/pi]  (default: pi on PATH)
 Uses an isolated agent directory and synthetic tokens; nothing leaves 127.0.0.1.
 """
 import argparse
@@ -171,7 +171,7 @@ def run(pi, mode, script, arguments, environment, approval="accept", approval_mo
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--pi", default=str(ROOT / ".build/pi-helper/pi/pi"))
+    parser.add_argument("--pi", default="pi")
     pi = parser.parse_args().pi
 
     with tempfile.NamedTemporaryFile("w", suffix=".json") as schema:

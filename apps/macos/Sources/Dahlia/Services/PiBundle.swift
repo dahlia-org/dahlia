@@ -1,14 +1,23 @@
 import DahliaRuntimeSupport
 import Foundation
 
-/// The pinned official Pi release that `build-pi.sh` places in `Contents/Resources/pi`.
+/// The user's installed `pi` command and the Dahlia resources (extension, skills) it runs with.
 enum PiBundle {
-    nonisolated static let version = "1.5.0"
+    /// Absolute path of the `pi` command set in Agents settings; empty searches for one.
+    nonisolated static let executablePathDefaultsKey = "piExecutablePath"
 
-    nonisolated static func executableURL(in bundle: Bundle = .main) throws -> URL {
-        let url = bundle.bundleURL.appending(path: "Contents/Resources/pi/pi")
-        guard FileManager.default.isExecutableFile(atPath: url.path) else {
-            throw CodexAppServerError.helperNotBundled
+    /// The command Dahlia runs: the path set in Settings, else `pi` on the search path.
+    nonisolated static func executableURL(defaults: UserDefaults = .standard) throws -> URL {
+        let configured = (defaults.string(forKey: executablePathDefaultsKey) ?? "").trimmingCharacters(in: .whitespaces)
+        guard configured.isEmpty else {
+            let path = (configured as NSString).expandingTildeInPath
+            guard CommandLineToolLocator.isExecutableFile(atPath: path) else {
+                throw CodexAppServerError.piCommandNotFound(path)
+            }
+            return URL(fileURLWithPath: path)
+        }
+        guard let url = CommandLineToolLocator.executableURL(named: "pi") else {
+            throw CodexAppServerError.piCommandNotFound(nil)
         }
         return url
     }

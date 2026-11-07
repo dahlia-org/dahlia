@@ -342,7 +342,7 @@ Server transcription automatically selects an audio-capable Gemini model and ret
 
 `GET /api/v1/capabilities` includes `meetingSummaryGeneration: { version: 2, sources: ["transcript", "audio"] }` when the runtime has registered those generators. Sources identify the accepted primary inputs: transcript or recorded audio, and both may also use images. Node supports the configured Databricks backend; PostgreSQL/Hyperdrive Workers advertise the capability when a supported backend, shared job Queue, and Images binding are configured. Unsupported backends omit it. An empty capabilities object also means summary generation is unsupported. There is no separate summary methods endpoint.
 
-Desktop always runs transcription on the Mac with Apple Speech and summaries through the bundled Pi agent. Local accounts use ChatGPT, Claude, or direct Databricks; Server accounts use their own Gateway. Changing accounts cancels active generation and stops the old process; the next request starts it with the selected account's existing home. Chat history stays scoped to that home.
+Desktop always runs transcription on the Mac with Apple Speech and summaries through the installed Pi agent. Local accounts use ChatGPT, Claude, or direct Databricks; Server accounts use their own Gateway. Changing accounts cancels active generation and stops the old process; the next request starts it with the selected account's existing home. Chat history stays scoped to that home.
 
 Web account settings manage account identity and sessions; they do not synchronize Desktop AI preferences. Web Workspace settings expose shared output language separately from Server generation defaults, and Web generation dialogs explicitly run on the Server with per-operation choices.
 

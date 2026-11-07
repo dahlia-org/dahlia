@@ -1,7 +1,7 @@
 import DahliaRuntimeSupport
 import Foundation
 
-/// Starts bundled Pi processes for the selected account. Each summary, model listing, and sign-in uses its
+/// Starts the installed Pi for the selected account. Each summary, model listing, and sign-in uses its
 /// own short-lived process; chat keeps one process per open thread (see `PiChatService`).
 actor PiRuntimeService {
     nonisolated static let summaryTimeout = Duration.seconds(610)
@@ -52,7 +52,7 @@ actor PiRuntimeService {
         configurationReadiness: @escaping @Sendable () async -> Bool = {
             await WorkspaceAISettingsModel.shared.waitForRuntimeContext()
         },
-        launcher: @escaping Launcher = PiRuntimeService.launchBundledPi,
+        launcher: @escaping Launcher = PiRuntimeService.launchPi,
         tokenResolver: @escaping TokenResolver = PiRuntimeService.resolveToken
     ) {
         self.agentLocator = agentLocator
@@ -469,7 +469,7 @@ actor PiRuntimeService {
 
     // MARK: Defaults
 
-    nonisolated static func launchBundledPi(
+    nonisolated static func launchPi(
         _ options: LaunchOptions,
         provider: CodexRuntimeProvider,
         agentURL: URL
@@ -478,7 +478,8 @@ actor PiRuntimeService {
         var environment = ProcessInfo.processInfo.environment.filter { key, _ in
             !key.hasSuffix("_API_KEY") && !key.hasSuffix("_AUTH_TOKEN") && !key.hasSuffix("_OAUTH_TOKEN") && !key.hasPrefix("PI_")
         }
-        environment["PATH"] = CommandLineToolLocator.searchPath(environment: environment)
+        let executableURL = try PiBundle.executableURL()
+        environment["PATH"] = CommandLineToolLocator.searchPath(for: executableURL, environment: environment)
         environment["PI_CODING_AGENT_DIR"] = agentURL.path
         environment["PI_OFFLINE"] = "1"
         environment["PI_SKIP_VERSION_CHECK"] = "1"
@@ -492,7 +493,7 @@ actor PiRuntimeService {
             "--no-skills", "--no-context-files", "--no-prompt-templates", "--no-themes", "--no-approve",
         ] + options.arguments
         return try CodexAppServerProcessTransport(
-            executableURL: PiBundle.executableURL(),
+            executableURL: executableURL,
             arguments: arguments,
             environment: environment,
             currentDirectoryURL: options.cwd

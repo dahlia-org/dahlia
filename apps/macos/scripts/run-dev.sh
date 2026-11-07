@@ -5,7 +5,6 @@ APP_NAME="Dahlia"
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_DIR="$(cd "${SCRIPT_DIR}/../../.." && pwd)"
 ENTITLEMENTS_PATH="${PROJECT_DIR}/Dahlia.entitlements"
-PI_ENTITLEMENTS_PATH="${PROJECT_DIR}/PiHelper.entitlements"
 
 source "${SCRIPT_DIR}/common.sh"
 
@@ -162,18 +161,6 @@ export CLANG_MODULE_CACHE_PATH="${TMPDIR:-/tmp}/dahlia-clang-module-cache"
 mkdir -p "$CLANG_MODULE_CACHE_PATH"
 
 echo "=== Building ${APP_NAME} (debug) ==="
-HELPER_INPUTS=(
-    "${SCRIPT_DIR}/build-pi.sh" "${SCRIPT_DIR}/common.sh" "${SCRIPT_DIR}/dev-build-fingerprint.py"
-    "$PI_ENTITLEMENTS_PATH" "Resources/Pi-LICENSE" "Resources/Pi-NOTICE.txt"
-    "apps/macos/Sources/Dahlia/Services/PiBundle.swift" ".build/pi-helper"
-)
-if [ -f "${CACHE_DIR}/helper.inputs" ] \
-    && [ "$(fingerprint "${HELPER_INPUTS[@]}")" = "$(cat "${CACHE_DIR}/helper.inputs")" ]; then
-    bash "${SCRIPT_DIR}/build-pi.sh" --validate-only
-else
-    bash "${SCRIPT_DIR}/build-pi.sh"
-    fingerprint "${HELPER_INPUTS[@]}" > "${CACHE_DIR}/helper.inputs"
-fi
 # The current Swift Build engine flattens static XCFramework headers into one directory,
 # so DahliaAEC3 and DahliaLindera both try to produce include/module.modulemap.
 swift build --build-system native --arch arm64
@@ -189,10 +176,10 @@ ICONSET_DIR="${CONTENTS}/Resources/AppIcon.iconset"
 # ponytail: support assets share one cache; split it if resource-heavy edits become common.
 SUPPORT_INPUTS=(
     "${SCRIPT_DIR}/run-dev.sh" "${SCRIPT_DIR}/common.sh" "${SCRIPT_DIR}/dev-build-fingerprint.py"
-    "$ENTITLEMENTS_PATH" "$PI_ENTITLEMENTS_PATH" "$ICON_SRC" "Resources"
+    "$ENTITLEMENTS_PATH" "$ICON_SRC" "Resources"
     "${BUILD_DIR}/dahlia-mcp" "${BUILD_DIR}/Dahlia_Dahlia.bundle"
     "${BUILD_DIR}/Dahlia_DahliaRuntimeSupport.bundle" "${BUILD_DIR}/TelemetryDeck_TelemetryDeck.bundle"
-    ".build/pi-helper" ".build/artifacts/sparkle/Sparkle"
+    ".build/artifacts/sparkle/Sparkle"
     ".build/checkouts/argmax-oss-swift/LICENSE" ".build/checkouts/argmax-oss-swift/NOTICES"
     ".build/checkouts/SwiftSDK/LICENSE" ".build/checkouts/libwebp-Xcode/LICENSE"
     ".build/checkouts/libwebp-Xcode/libwebp/COPYING" ".build/checkouts/libwebp-Xcode/libwebp/PATENTS"
@@ -277,7 +264,6 @@ mkdir -p "${HELPERS}"
 
 cp "${BUILD_DIR}/${APP_NAME}" "${MACOS}/${APP_NAME}"
 cp "${BUILD_DIR}/dahlia-mcp" "${HELPERS}/dahlia-mcp"
-embed_pi_helper "$CONTENTS"
 if [ "$(lipo -archs "${HELPERS}/dahlia-mcp")" != "arm64" ]; then
     echo "error: bundled dahlia-mcp must contain only arm64" >&2
     exit 1
@@ -327,7 +313,6 @@ fi
 codesign_path "${CONTENTS}/Resources/Dahlia_DahliaRuntimeSupport.bundle"
 codesign_sparkle_framework "${CONTENTS}/Frameworks/Sparkle.framework"
 
-codesign_pi_helper "$CONTENTS" "$PI_ENTITLEMENTS_PATH"
 codesign --remove-signature "${HELPERS}/dahlia-mcp" 2>/dev/null || true
 codesign_path "${HELPERS}/dahlia-mcp"
 codesign --verify --strict --verbose=2 "${HELPERS}/dahlia-mcp"

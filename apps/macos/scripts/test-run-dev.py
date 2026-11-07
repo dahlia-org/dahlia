@@ -55,13 +55,6 @@ def check_packaging(root):
     scripts.mkdir(parents=True)
     for name in ("run-dev.sh", "common.sh", "dev-build-fingerprint.py"):
         shutil.copy2(SCRIPTS / name, scripts / name)
-    write(scripts / "build-pi.sh", '''#!/bin/bash
-case "${1:-}" in
-    --print-version) echo 0.0.0 ;;
-    --validate-only) echo helper-validate >> "$DEV_TEST_LOG" ;;
-    *) echo helper-build >> "$DEV_TEST_LOG" ;;
-esac
-''')
     tools = root / "tools"
     write(tools / "swift", '#!/bin/bash\necho "swift $*" >> "$DEV_TEST_LOG"\n[[ "$*" != *--show-bin-path* ]] || echo "$PWD/.build/debug"\n', True)
     write(tools / "lipo", '#!/bin/bash\necho "${DEV_TEST_ARCH:-arm64}"\n', True)
@@ -100,11 +93,6 @@ exec /usr/bin/sqlite3 "$@"
     write(root / ".build/debug/dahlia-mcp", "#!/bin/bash\nexit 0\n", True)
     for name in ("Dahlia_Dahlia.bundle", "Dahlia_DahliaRuntimeSupport.bundle", "TelemetryDeck_TelemetryDeck.bundle"):
         write(root / ".build/debug" / name / "resource", "resource")
-    write(root / ".build/pi-helper/pi/pi", "#!/bin/bash\necho 0.0.0\n", True)
-    write(root / ".build/pi-helper/pi/native/darwin/prebuilds/darwin-arm64/darwin-platform.node", "binary")
-    write(root / ".build/pi-helper/pi/package.json", "{}")
-    for name in ("LICENSE", "NOTICE.txt"):
-        write(root / ".build/pi-helper" / name, "license")
     for name in ("argmax-oss-swift/LICENSE", "argmax-oss-swift/NOTICES", "SwiftSDK/LICENSE",
                  "libwebp-Xcode/LICENSE", "libwebp-Xcode/libwebp/COPYING",
                  "libwebp-Xcode/libwebp/PATENTS", "libwebp-Xcode/libwebp/AUTHORS"):
@@ -137,7 +125,7 @@ exec /usr/bin/sqlite3 "$@"
     assert "sips" in calls, "first build must assemble assets"
     assert calls.count("--build-system native") == 2, "run-dev must avoid Swift Build's XCFramework header collision"
     calls = run("Reusing signed")
-    assert "--force" not in calls and "sips" not in calls and "helper-build" not in calls
+    assert "--force" not in calls and "sips" not in calls
     assert "--verify --deep --strict" in calls, "cache hits must still verify the signed app"
 
     write(executable, "#!/bin/bash\n# changed UI\nexit 0\n", True)
@@ -146,8 +134,6 @@ exec /usr/bin/sqlite3 "$@"
     run("Reusing signed")
 
     for name, content in (
-        ("PiHelper.entitlements",
-         '<?xml version="1.0"?><plist version="1.0"><dict><key>com.apple.security.cs.allow-jit</key><true/></dict></plist>'),
         ("Resources/en.lproj/Localizable.strings", "changed"),
         ("apps/macos/Sources/Dahlia/Resources/Assets.xcassets/AppIcon.appiconset/AppIcon.png", "changed"),
     ):
@@ -166,12 +152,9 @@ exec /usr/bin/sqlite3 "$@"
     with (root / "Dahlia.app/Contents/Info.plist").open("rb") as plist_file:
         assert plistlib.load(plist_file)["DAHLIA_RUNTIME_PROFILE"] == "development"
 
-    pi = root / "Dahlia.app/Contents/Resources/pi/pi"
-    assert pi.exists(), "Pi must be bundled"
-    assert "# signature" in pi.read_text(), "Pi must be signed"
-    assert (root / "Dahlia.app/Contents/Resources/Licenses/Pi/NOTICE.txt").exists(), "Pi notices must be bundled"
+    assert not (root / "Dahlia.app/Contents/Resources/pi").exists(), "Pi must not be bundled"
 
-    write(pi, "damaged")
+    write(root / "Dahlia.app/Contents/Helpers/dahlia-mcp", "damaged")
     run("Assembling")
     run("Reusing signed", success=False, DEV_TEST_VERIFY_FAIL="1")
     run("Reusing signed")
