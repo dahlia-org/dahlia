@@ -1,3 +1,4 @@
+import DahliaRuntimeSupport
 import Foundation
 @testable import Dahlia
 
@@ -6,6 +7,31 @@ import Foundation
 
     @MainActor
     struct PiInfrastructureTests {
+        @Test
+        func gatewayMCPsAreEnabledPerDatabricksAccountAndPointAtTheGateway() throws {
+            let defaults = try #require(UserDefaults(suiteName: "PiInfrastructureTests.\(UUID())"))
+            let account = UUID()
+            let other = UUID()
+            defaults.set(true, forKey: DatabricksGatewayMCP.gmail.defaultsKey(connectionID: account))
+            defaults.set(true, forKey: DatabricksGatewayMCP.googleCalendar.defaultsKey(connectionID: account))
+            defaults.set(true, forKey: DatabricksGatewayMCP.slack.defaultsKey(connectionID: other))
+
+            let enabled = DatabricksGatewayMCP.enabled(connectionID: account, defaults: defaults)
+            #expect(enabled == [.gmail, .googleCalendar])
+            // Each entry takes the Databricks provider's credential; mcp.json itself holds none.
+            func entry(_ name: String) -> JSONValue {
+                .object([
+                    "url": .string("https://example.cloud.databricks.com/ai-gateway/mcp-services/system.ai.\(name)"),
+                    "exposure": .string("direct"),
+                    "auth": .object(["provider": .string("databricks")]),
+                ])
+            }
+            #expect(DatabricksGatewayMCP.piServers(enabled, workspaceURL: URL(string: "https://example.cloud.databricks.com")!) == [
+                "gmail": entry("gmail"),
+                "google_calendar": entry("google_calendar"),
+            ])
+        }
+
         @Test
         func processTransportDrainsStderrAndReadsFragmentedJSONLines() async throws {
             let command = "dd if=/dev/zero bs=32768 count=1 >&2 2>/dev/null; "
@@ -148,6 +174,7 @@ import Foundation
             #expect(Set(databricks.keys) == Set(PiProviderConfiguration.databricksProviderIDs))
             let provider = try #require(databricks["databricks"]?.objectValue)
             #expect(provider["authHeader"] == .bool(true))
+            #expect(provider["apiKey"] == nil)
             // Each model keeps its own gateway route, now on the workspace's host.
             let routes = Dictionary(
                 (provider["models"]?.arrayValue ?? []).compactMap(\.objectValue).map {

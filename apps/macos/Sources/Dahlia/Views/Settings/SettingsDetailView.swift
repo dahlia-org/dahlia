@@ -71,6 +71,9 @@ struct SettingsDetailView: View {
             .onChange(of: dahliaAccountController.connections) {
                 Task { await workspaceManagementModel.loadWorkspaces() }
             }
+        case .agents:
+            Form { AgentSettingsView() }
+                .formStyle(.grouped)
         case .workspace, .workspacePreferences:
             Form {
                 WorkspaceSettingsView(
@@ -122,6 +125,7 @@ struct SettingsDetailView: View {
     private var scopeDescription: String {
         switch SettingsNavigation.visibleSelection(selection) {
         case .accountsAndWorkspaces: L10n.settingsAccountsIntro
+        case .agents: L10n.settingsAgentsIntro
         case .workspace: L10n.settingsWorkspaceManagementIntro
         case .backups: L10n.backupLocalWorkspacesOnly
         case .cloudStorage: L10n.settingsExportIntro

@@ -19,7 +19,7 @@ Pi 本体は MIT、実行ファイルは Bun（JavaScriptCore / WebKit の LGPL-
 Pi の agent directory はアカウントごとに `Application Support/Dahlia/accounts/<local または accounts.id>/pi`（0700）。
 Local Account は `local`、Databricks アカウントと Dahlia account は `accounts` テーブルの ID を使う。`PI_OFFLINE`・`PI_SKIP_VERSION_CHECK`・`PI_TELEMETRY=0` と、
 extension・skill・context file・prompt template・theme・project trust の自動読込の無効化で起動し、
-Dahlia の extension（`PiExtension/dahlia.ts`）だけを `-e` で読み込む。チャットは Dahlia MCP のために Pi の `builtin:mcp` も読み込み、`--tools` に `mcp__dahlia__*` を含める。
+Dahlia の extension（`PiExtension/dahlia.ts`）だけを `-e` で読み込む。チャットは Dahlia MCP と Unity AI Gateway の MCP のために Pi の `builtin:mcp` も読み込み、`--tools` に `mcp__dahlia__*` と有効にした gateway MCP の `mcp__<name>__*` を含める。
 
 - 要約・画像解析・画像選別・モデル一覧・サインインは操作ごとに `pi --mode rpc --no-session --no-tools` を起動し、終了・取消・610秒期限で閉じる。自動再送はしない。
 - チャットは turn の開始時に thread ごとに1 process を起動し、turn 後はチャット画面が thread を開いている間だけ残す。履歴の表示や新規 thread の作成では起動しない。process が終了していれば次の turn で session file から開き直す。
@@ -27,6 +27,7 @@ Dahlia の extension（`PiExtension/dahlia.ts`）だけを `-e` で読み込む�
 - OpenAI / Anthropic のサインイン・サインアウトは Local Account の process だけを閉じる。Databricks アカウントのサインアウトでは、そのワークスペースが Local Account に戻り、agent directory（チャット履歴を含む）は残す。
 - stdout の1行は 4 MiB（送った最大行の分を加える）までとし、超えた行は改行まで捨てて読み続ける。Pi の `turn_end`・`agent_end` は run のメッセージを画像ごと繰り返すが、Dahlia は読まない。
 - Dahlia は RPC の extension UI（`ctx.ui.input("dahlia:<method>")`）でだけ extension と通信する。token は要求ごとに stdin で渡し、config・環境変数・log に残さない。
+- Databricks アカウントと Dahlia account の provider（`DAHLIA_PI_BRIDGED_PROVIDERS`）は、extension が pi-ai の `createProvider` で認証だけを持つ provider として登録し、使うたびに bridge の `token` で credential を解決する（モデルは `models.json` を重ねる。session 開始前の利用可否の確認には要求に使わない仮の値を返す）。`models.json` に key は書かない。MCP は `mcp.json` の項目の `auth.provider` でこの provider の credential を要求ごとに使う（Pi の文書にない項目で、Pi 更新時に回帰確認する）。
 
 ## Provider
 
@@ -61,19 +62,33 @@ JSON object として検証し、型で decode できない返答・拒否・空
 
 ## チャットの実行と承認
 
-チャットはこの Mac では読み取り専用とする。Pi に渡す tool は `read`・`ls`・`mcp__dahlia__*` だけで、bash・write・edit・grep・find はない。
+チャットはこの Mac では読み取り専用とする。Pi に渡す tool は `read`・`ls`・`mcp__dahlia__*` と、Databricks アカウントで有効にした Unity AI Gateway の MCP だけで、bash・write・edit・grep・find はない。
 `read` と `ls` は workspace と Dahlia の preset skill の folder（`DAHLIA_PI_READABLE_ROOTS`）の中だけを読める。extension は
 `@`・`~`・`file://`・相対 path を解決し、symlink と大文字小文字を実体の path に揃えてから範囲を確かめ、確かめた path を Pi に渡す。
 
-| 選択 | read / ls | Dahlia MCP |
-| --- | --- | --- |
-| 承認を求める | 範囲内は確認なし | 読み取り（`get`・`query`・`list`・`search`）以外は承認 |
-| 代わりに承認 | 範囲内は確認なし | 確認なし |
+| 選択 | read / ls | Dahlia MCP | Unity AI Gateway の MCP |
+| --- | --- | --- | --- |
+| 承認を求める | 範囲内は確認なし | 読み取り（`get`・`query`・`list`・`search`）以外は承認 | server が `readOnlyHint` を付けた tool 以外は承認 |
+| 代わりに承認 | 範囲内は確認なし | 確認なし | 確認なし |
+
+MCP の tool は、Dahlia がその chat に登録した server（Dahlia MCP と有効な gateway MCP。`DAHLIA_PI_MCP_SERVERS`）のものだけを通し、それ以外の server の tool は承認方式にかかわらず拒否する。承認の表示も、これらの server だけを承認できる。
 
 承認方式は Dahlia が保持し、extension は Dahlia MCP の変更 tool の呼び出しのたびに bridge で問い合わせる（turn 中の変更も次の呼び出しから効く。不明なら「承認を求める」）。
 Codex 時代のフルアクセスは提供しない。承認方式は Pi の session file に残さず、新しい thread も開き直した thread も「承認を求める」で始まる。
 承認の表示は既存の上限（20 KB など）で切り詰め、取消・停止は未応答の承認を cancel してから abort する。
 Codex の auto_review と web search、`request_user_input` は Pi にないため提供しない。
+
+### Unity AI Gateway の MCP
+
+採否は[エージェントによる MCP 経由の外部サービス操作](agent-mcp-operations.md)に従う。
+Databricks アカウントは、設定の「エージェント」で workspace の Unity AI Gateway の外部サービス MCP
+（`system.ai.gmail`・`google_calendar`・`google_drive`・`slack`・`github`・`atlassian`・`microsoft_365`）を
+アカウントごとに有効にできる（既定はすべて無効）。チャットの process を起動するたびに、Dahlia は有効な MCP を
+アカウントの agent directory の `mcp.json`（0600）に `<workspace>/ai-gateway/mcp-services/system.ai.<name>` の
+`url`・`exposure: "direct"`・`auth: { provider: "databricks" }` だけで書く（有効なものがなければ空）。credential は書かず、
+モデルと同じ Databricks OAuth token が要求ごとに付く。Pi の MCP OAuth（`mcp-auth.json`）は使わない。
+サービスへのサインインは MCP が返すリンクで行い、Dahlia は扱わない。Pi は `mcp.json` を起動時にだけ読むので、chat process は起動時の
+gateway MCP を覚え、turn の開始時に今の設定と違えば session file から開き直す（turn 中の process は閉じない）。Local Account と Dahlia account では使えない。
 
 履歴の正本は Pi の session file（実行アカウントの agent directory の `sessions/<Workspace ID>`）。モデルと同じくアカウントに属し、Workspace を別のアカウントへ移しても移さない。移動先では、そのアカウントでの履歴だけを表示する。Codex の rollout は表示せず、
 ファイルは削除しない。
@@ -81,5 +96,5 @@ Codex の auto_review と web search、`request_user_input` は Pi にないた�
 ## 検証
 
 fake transport で RPC の順序・失敗・取消を、`test-pi-extension.py` で実 Pi とローカル gateway の
-token bridge・strict schema・読み取り範囲・Dahlia MCP の承認を確認する。Pi 更新時は RPC event、extension API、
+token bridge（Anthropic・Gemini・OpenAI の各 API、`auth.provider` のない MCP と redirect 先に付かないこと）・strict schema・読み取り範囲・MCP の承認を確認する。Pi 更新時は RPC event、extension API、
 login の非公開 API、`text.format` の payload 形を回帰確認する。

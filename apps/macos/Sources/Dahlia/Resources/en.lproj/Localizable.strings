@@ -1785,3 +1785,9 @@
 "Controls how much reasoning Pi uses for each image." = "Controls how much reasoning Pi uses for each image.";
 
 "Used for searchable image text and captions, and for choosing useful screenshots before summary generation." = "Used for searchable image text and captions, and for choosing useful screenshots before summary generation.";
+
+"settings.agents" = "Agents";
+"settings.agents.intro" = "Manage the tools that the selected account's chat can use.";
+"settings.agents.unityGatewayMCPs" = "Unity AI Gateway MCPs";
+"settings.agents.unityGatewayMCPsDescription" = "Chat can use the MCPs you turn on. Dahlia calls them through Unity AI Gateway with the Databricks account's access token. Tools that do more than read follow chat's approval mode. If a service asks you to sign in, approve access from the link shown in chat. Changes apply from the next message.";
+"settings.agents.requiresDatabricks" = "Unity AI Gateway MCPs are available to Databricks accounts. Open a Databricks account from the account menu at the bottom of the sidebar to set them up.";

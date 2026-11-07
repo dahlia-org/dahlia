@@ -2413,6 +2413,11 @@ enum L10n { // swiftlint:disable:this type_body_length
     static var chatGPTSubscription: String { String(localized: "ChatGPT Subscription", bundle: bundle) }
     static var databricks: String { String(localized: "Databricks", bundle: bundle) }
     static var unityGateway: String { String(localized: "Unity Gateway", bundle: bundle) }
+    static var agents: String { String(localized: "settings.agents", bundle: bundle) }
+    static var settingsAgentsIntro: String { String(localized: "settings.agents.intro", bundle: bundle) }
+    static var unityGatewayMCPs: String { String(localized: "settings.agents.unityGatewayMCPs", bundle: bundle) }
+    static var unityGatewayMCPsDescription: String { String(localized: "settings.agents.unityGatewayMCPsDescription", bundle: bundle) }
+    static var agentMCPsRequireDatabricks: String { String(localized: "settings.agents.requiresDatabricks", bundle: bundle) }
     static var codexSignedIn: String { String(localized: "Signed in", bundle: bundle) }
     static var signInWithChatGPT: String { String(localized: "Sign in with ChatGPT", bundle: bundle) }
     static var signInWithClaude: String { String(localized: "Sign in with Claude", bundle: bundle) }

@@ -1,5 +1,6 @@
 import DahliaRuntimeSupport
 import Foundation
+import Synchronization
 @testable import Dahlia
 
 #if canImport(Testing)
@@ -85,6 +86,11 @@ import Foundation
             #expect(launch.environment["DAHLIA_PI_READABLE_ROOTS"]?.isEmpty == false)
             #expect(launch.arguments.contains("builtin:mcp"))
             #expect(launch.environment["DAHLIA_PI_MCP_COMMAND"]?.contains("--workspace-id") == true)
+            #expect(launch.environment["DAHLIA_PI_MCP_SERVERS"] == #"["dahlia"]"#)
+            // The Local Account has no gateway MCPs; its mcp.json lists none.
+            let mcpJSON = try PiAgentDirectoryLocator(applicationSupportURL: fixture.pi.rootURL)
+                .agentURL(for: .local).appending(path: "mcp.json")
+            #expect(FileManager.default.contents(atPath: mcpJSON.path) == Data(#"{"mcpServers":{}}"#.utf8))
         }
 
         @Test
@@ -231,7 +237,8 @@ import Foundation
         @Test
         func turnReopensTheThreadAfterItsPiProcessExits() async throws {
             let log = TestPiTransportLog()
-            let pi = TestPiRuntime { options in
+            let account = CodexRuntimeProvider.databricks(connectionID: UUID())
+            let pi = TestPiRuntime(provider: account) { options in
                 let transport = options.mode == .chat
                     ? TestPiTransport { command in
                         guard let id = command["id"] else { return [] }
@@ -240,21 +247,24 @@ import Foundation
                             && command["message"]?.stringValue?.hasPrefix("/") == false
                         return isUserPrompt ? [started, TestPiTransport.assistantEnd("again"), TestPiTransport.settled()] : [started]
                     }
-                    : TestPiTransport(reply: TestPiRuntime.modelsReply([TestPiTransport.model(provider: "openai", id: "gpt-test")]))
+                    : TestPiTransport(reply: TestPiRuntime.modelsReply([TestPiTransport.model(provider: "databricks", id: "gpt-test")]))
                 if options.mode == .chat { log.append(transport) }
                 return transport
             }
             let workspaceID = UUID.v7()
+            let enabled = Mutex<[DatabricksGatewayMCP]>([])
             let chat = PiChatService(
                 runtime: pi.service,
                 workspaceLocator: ApplicationSupportCodexChatWorkspaceLocator(applicationSupportURL: pi.rootURL),
                 agentLocator: PiAgentDirectoryLocator(applicationSupportURL: pi.rootURL),
-                mcpExecutableURL: URL(filePath: "/usr/bin/true")
+                mcpExecutableURL: URL(filePath: "/usr/bin/true"),
+                enabledGatewayMCPs: { _ in enabled.withLock { $0 } },
+                databricksWorkspaceURL: { _ in URL(string: "https://example.cloud.databricks.com")! }
             )
             let thread = try await chat.startThread(model: nil, effort: "medium", workspaceID: workspaceID)
             _ = await chat.acquireThreadLease(threadID: thread.id)
             let sessions = try PiAgentDirectoryLocator(applicationSupportURL: pi.rootURL)
-                .sessionsURL(for: .local, workspaceID: workspaceID)
+                .sessionsURL(for: account, workspaceID: workspaceID)
             let file = sessions.appending(path: "2026-01-01T00-00-00-000Z_\(thread.id).jsonl")
 
             let first = try await chat.beginTurn(
@@ -280,6 +290,28 @@ import Foundation
             #expect(log.all.count == 2)
             let reopened = try #require(pi.launches.all.last { $0.mode == .chat })
             #expect(reopened.arguments.contains { $0.hasSuffix("/" + file.lastPathComponent) })
+
+            // Unchanged gateway MCPs keep the process. Changed ones, even if they changed during a turn, reopen the
+            // thread from its session file at the next turn, because Pi reads mcp.json only when it starts.
+            func turn(_ text: String) async throws {
+                let handle = try await chat.beginTurn(
+                    threadID: thread.id, inputs: [.text(text)], model: nil, effort: "medium",
+                    approvalMethod: .autoReview, expectedProvider: nil
+                )
+                for try await _ in handle.events {}
+            }
+            try await turn("same settings")
+            #expect(log.all.count == 2)
+            enabled.withLock { $0 = [.gmail] }
+            try await turn("gmail on")
+            #expect(log.all.count == 3)
+            #expect(await log.all[1].isClosed)
+            let withGmail = try #require(pi.launches.all.last { $0.mode == .chat })
+            #expect(withGmail.arguments.contains("read,ls,mcp__dahlia__*,mcp__gmail__*"))
+            #expect(withGmail.environment["DAHLIA_PI_MCP_SERVERS"] == #"["dahlia","gmail"]"#)
+            #expect(withGmail.arguments.contains { $0.hasSuffix("/" + file.lastPathComponent) })
+            let mcpJSON = try PiAgentDirectoryLocator(applicationSupportURL: pi.rootURL).agentURL(for: account).appending(path: "mcp.json")
+            #expect(FileManager.default.contents(atPath: mcpJSON.path).map { String(decoding: $0, as: UTF8.self) }?.contains("system.ai.gmail") == true)
         }
 
         @Test

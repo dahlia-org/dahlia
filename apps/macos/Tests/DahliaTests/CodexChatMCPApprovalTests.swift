@@ -34,6 +34,17 @@ import Foundation
         }
 
         @Test
+        func gatewayMCPToolsAreApprovableAndUnknownServersFailClosed() throws {
+            let gmail = try normalizedRequest(server: "gmail", tool: "send_message")
+            #expect(gmail.reviewability == .ready)
+            #expect(gmail.actions == [.allowOnce, .deny])
+
+            let unknown = try normalizedRequest(server: "filesystem", tool: "write_file")
+            #expect(unknown.reviewability == .unsupported)
+            #expect(unknown.actions == [.deny])
+        }
+
+        @Test
         func additionalAccessIsFailClosed() throws {
             let request = try normalizedRequest(params: [
                 "itemId": .string("item-1"),
@@ -92,6 +103,7 @@ import Foundation
                 "itemId": .string("item-1"),
                 "reason": .string("Update one Project"),
             ],
+            server: String = "dahlia",
             tool: String = "update_project",
             arguments: JSONValue = .object([
                 "description": .string("Updated description"),
@@ -105,7 +117,7 @@ import Foundation
                 kind: .mcpToolCall,
                 fileChanges: [],
                 mcpToolCall: CodexChatApprovalNormalizer.boundedMCPToolCall(
-                    server: "dahlia",
+                    server: server,
                     tool: tool,
                     arguments: arguments
                 )
