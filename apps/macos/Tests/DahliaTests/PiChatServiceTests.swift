@@ -291,8 +291,7 @@ import Synchronization
             let reopened = try #require(pi.launches.all.last { $0.mode == .chat })
             #expect(reopened.arguments.contains { $0.hasSuffix("/" + file.lastPathComponent) })
 
-            // Unchanged gateway MCPs keep the process. Changed ones, even if they changed during a turn, reopen the
-            // thread from its session file at the next turn, because Pi reads mcp.json only when it starts.
+            // A settings change leaves the open process alone; the next process the thread starts uses the new MCPs.
             func turn(_ text: String) async throws {
                 let handle = try await chat.beginTurn(
                     threadID: thread.id, inputs: [.text(text)], model: nil, effort: "medium",
@@ -300,12 +299,12 @@ import Synchronization
                 )
                 for try await _ in handle.events {}
             }
-            try await turn("same settings")
-            #expect(log.all.count == 2)
             enabled.withLock { $0 = [.gmail] }
-            try await turn("gmail on")
+            try await turn("gmail on, same process")
+            #expect(log.all.count == 2)
+            try await pi.service.reloadConfiguration(interruptActiveOperations: true)
+            try await turn("gmail on, new process")
             #expect(log.all.count == 3)
-            #expect(await log.all[1].isClosed)
             let withGmail = try #require(pi.launches.all.last { $0.mode == .chat })
             #expect(withGmail.arguments.contains("read,ls,mcp__dahlia__*,mcp__gmail__*"))
             #expect(withGmail.environment["DAHLIA_PI_MCP_SERVERS"] == #"["dahlia","gmail"]"#)

@@ -30,8 +30,6 @@ actor PiChatService: CodexChatServicing {
         let processID: UUID
         let provider: CodexRuntimeProvider
         let connection: PiRPCConnection
-        /// The gateway MCPs written to mcp.json when the process started; Pi reads that file only then.
-        let mcpServers: [String: JSONValue]
         var approvalMethod: CodexChatApprovalMethod?
         var model: String?
         var effort: String?
@@ -314,20 +312,14 @@ actor PiChatService: CodexChatServicing {
 
     // MARK: Process
 
-    /// The thread's live process, reopening its session file when the process has exited or, between turns, when the
-    /// account's gateway MCPs changed since it started. Concurrent callers share one open.
+    /// The thread's live process, reopening its session file when the process has exited. Concurrent callers share one open.
     private func connection(threadID: String) async throws -> PiRPCConnection {
         if let session = sessions[threadID] {
-            let mcpServers = try await gatewayMCPServers(session.provider)
-            let isOpen = await session.connection.isOpen
-            // Read again after the awaits: another turn may have started on this process meanwhile. `startingTurns`
-            // counts this caller too, so more than one means another turn is still setting up on the process.
-            if let live = sessions[threadID], live.connection === session.connection {
-                let inUse = live.turn != nil || startingTurns[threadID, default: 0] > 1
-                if isOpen, inUse || live.mcpServers == mcpServers { return live.connection }
+            if await session.connection.isOpen { return session.connection }
+            if sessions[threadID]?.connection === session.connection {
                 sessions[threadID] = nil
-                finish(live.turn, error: CodexAppServerError.backendResetForSafety)
-                await runtime.close(live.connection)
+                finish(session.turn, error: CodexAppServerError.backendResetForSafety)
+                await runtime.close(session.connection)
             }
             return try await connection(threadID: threadID)
         }
@@ -371,6 +363,8 @@ actor PiChatService: CodexChatServicing {
             executableURL: mcpExecutableURL ?? DahliaMCPBundle.executableURL(),
             workspaceID: workspaceID
         )
+        // Pi reads mcp.json only when it starts, so settings changes reach the next process the account starts. `--tools`
+        // and the allowlist come from this same snapshot: a process that reads another thread's newer file stays limited to it.
         let gatewayServers = try await gatewayMCPServers(provider)
         try PiProviderConfiguration.writeMCPServers(gatewayServers, agentURL: agentLocator.agentURL(for: provider))
         // Read-only on this Mac. `--no-extensions` also drops Pi's MCP extension, and `--tools` declares only the MCP tools it names.
@@ -403,9 +397,7 @@ actor PiChatService: CodexChatServicing {
                 return await self.answer(method, payload: payload, threadID: threadID, processID: processID)
             }
         )
-        sessions[threadID] = Session(
-            processID: processID, provider: provider, connection: connection, mcpServers: gatewayServers, approvalMethod: .ask
-        )
+        sessions[threadID] = Session(processID: processID, provider: provider, connection: connection, approvalMethod: .ask)
         Task { await self.pump(threadID: threadID, processID: processID, connection: connection) }
         if let name = pendingNames.removeValue(forKey: threadID) {
             _ = try? await connection.request("set_session_name", ["name": .string(name)])
@@ -415,13 +407,10 @@ actor PiChatService: CodexChatServicing {
 
     /// The Unity AI Gateway MCPs the user enabled for a Databricks account; other accounts have none.
     private func gatewayMCPServers(_ provider: CodexRuntimeProvider) async throws -> [String: JSONValue] {
-        guard case let .databricks(connectionID) = provider,
-              !enabledGatewayMCPs(connectionID).isEmpty
-        else { return [:] }
-        let workspaceURL = try await databricksWorkspaceURL(connectionID)
-        // The toggles are read after the await so that `open`, which writes mcp.json without suspending, never writes
-        // settings older than another thread's write: Pi reads that shared file only when each process starts.
-        return DatabricksGatewayMCP.piServers(enabledGatewayMCPs(connectionID), workspaceURL: workspaceURL)
+        guard case let .databricks(connectionID) = provider else { return [:] }
+        let enabled = enabledGatewayMCPs(connectionID)
+        guard !enabled.isEmpty else { return [:] }
+        return try await DatabricksGatewayMCP.piServers(enabled, workspaceURL: databricksWorkspaceURL(connectionID))
     }
 
     static func databricksWorkspaceURL(connectionID: UUID) async throws -> URL {

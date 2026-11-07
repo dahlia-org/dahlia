@@ -32,7 +32,7 @@ private struct GatewayMCPToggle: View {
     }
 
     var body: some View {
-        // Chat reopens a thread's process with the new servers on its next message.
+        // Chat processes started after a change use the new servers; one already open keeps its own until it closes.
         Toggle(mcp.displayName, isOn: $isOn)
             .toggleStyle(.switch)
     }

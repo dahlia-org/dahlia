@@ -87,8 +87,10 @@ Databricks アカウントは、設定の「エージェント」で workspace �
 アカウントの agent directory の `mcp.json`（0600）に `<workspace>/ai-gateway/mcp-services/system.ai.<name>` の
 `url`・`exposure: "direct"`・`auth: { provider: "databricks" }` だけで書く（有効なものがなければ空）。credential は書かず、
 モデルと同じ Databricks OAuth token が要求ごとに付く。Pi の MCP OAuth（`mcp-auth.json`）は使わない。
-サービスへのサインインは MCP が返すリンクで行い、Dahlia は扱わない。Pi は `mcp.json` を起動時にだけ読むので、chat process は起動時の
-gateway MCP を覚え、turn の開始時に今の設定と違えば session file から開き直す（turn 中の process は閉じない）。Local Account と Dahlia account では使えない。
+サービスへのサインインは MCP が返すリンクで行い、Dahlia は扱わない。Pi は `mcp.json` を起動時にだけ読むので、設定の変更は
+その後に起動する chat process から効く。開いている thread の process は、閉じるまで前の設定のまま動く（遅れはユーザーが許容。2026-11-07）。
+`--tools` と `DAHLIA_PI_MCP_SERVERS` は process ごとに同じ時点の設定から作るので、別の thread が先に書いた新しい `mcp.json` を読んでも、
+その process で使える MCP は起動時の設定の範囲に留まる。Local Account と Dahlia account では使えない。
 
 履歴の正本は Pi の session file（実行アカウントの agent directory の `sessions/<Workspace ID>`）。モデルと同じくアカウントに属し、Workspace を別のアカウントへ移しても移さない。移動先では、そのアカウントでの履歴だけを表示する。Codex の rollout は表示せず、
 ファイルは削除しない。
