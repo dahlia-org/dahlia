@@ -71,9 +71,10 @@ JSON object として検証し、型で decode できない返答・拒否・空
 | 承認を求める | 範囲内は確認なし | 読み取り（`get`・`query`・`list`・`search`）以外は承認 | server が `readOnlyHint` を付けた tool 以外は承認 |
 | 代わりに承認 | 範囲内は確認なし | 確認なし | 確認なし |
 
-MCP の tool は、Dahlia がその chat に登録した server（Dahlia MCP と有効な gateway MCP。`DAHLIA_PI_MCP_SERVERS`）のものだけを通し、それ以外の server の tool は承認方式にかかわらず拒否する。承認の表示も、これらの server だけを承認できる。
+MCP の tool は、Dahlia がその chat に登録した server（Dahlia MCP と有効な gateway MCP。`DAHLIA_PI_MCP_SERVERS`）のものだけを通し、それ以外の server の tool は承認方式にかかわらず拒否する。承認の表示で承認できるのもこれらの server だけとする。
+gateway MCP の tool が読み取りかどうかは、server が付けた `readOnlyHint` をそのまま使う（2026-11-07 ユーザー承認）。
 
-承認方式は Dahlia が保持し、extension は Dahlia MCP の変更 tool の呼び出しのたびに bridge で問い合わせる（turn 中の変更も次の呼び出しから効く。不明なら「承認を求める」）。
+承認方式は Dahlia が保持する。extension は、表で承認が要る MCP tool（Dahlia MCP・gateway MCP とも）を呼ぶたびに bridge で承認方式を問い合わせる（turn 中の変更も次の呼び出しから効く。不明なら「承認を求める」）。
 Codex 時代のフルアクセスは提供しない。承認方式は Pi の session file に残さず、新しい thread も開き直した thread も「承認を求める」で始まる。
 承認の表示は既存の上限（20 KB など）で切り詰め、取消・停止は未応答の承認を cancel してから abort する。
 Codex の auto_review と web search、`request_user_input` は Pi にないため提供しない。
