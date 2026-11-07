@@ -72,8 +72,7 @@ struct SettingsDetailView: View {
                 Task { await workspaceManagementModel.loadWorkspaces() }
             }
         case .agents:
-            Form { AgentSettingsView() }
-                .formStyle(.grouped)
+            AgentSettingsView()
         case .workspace, .workspacePreferences:
             Form {
                 WorkspaceSettingsView(

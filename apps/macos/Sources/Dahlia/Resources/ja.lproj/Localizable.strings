@@ -1115,7 +1115,7 @@
 "Preparing speech recognition…" = "音声認識を準備中…";
 "Listening" = "認識中";
 "Stopped" = "停止中";
-"The bundled Pi helper is unavailable. Run Dahlia with scripts/run-dev.sh or install a signed app build." = "同梱 Pi ヘルパーを利用できません。scripts/run-dev.sh で起動するか、署名済みアプリをインストールしてください。";
+"Dahlia's helper files are unavailable. Run Dahlia with scripts/run-dev.sh or install a signed app build." = "Dahlia のヘルパーファイルを利用できません。scripts/run-dev.sh で起動するか、署名済みアプリをインストールしてください。";
 "Could not start Pi: %@" = "Pi を起動できませんでした: %@";
 "Pi is not signed in. Open Accounts and Workspaces in Settings and sign in, then try again." = "Pi にサインインしていません。設定の「アカウントとワークスペース」からサインインして、再試行してください。";
 "Pi sign-in failed: %@" = "Pi へのサインインに失敗しました: %@";
@@ -1165,7 +1165,7 @@
 "The selected AI account is not ready. Open Accounts and Workspaces in Settings and finish its configuration." = "選択した AI アカウントの準備が完了していません。設定の「アカウントとワークスペース」を開き、設定を完了してください。";
 "This chat uses %@. Start a new chat to use the current account." = "このチャットは %@ を使用しています。現在のアカウントを使用するには新しいチャットを開始してください。";
 "Pi returned no available models. Try again." = "Pi から利用可能なモデルが返されませんでした。再試行してください。";
-"Models are loaded from the bundled Pi." = "モデルは同梱 Pi から取得します。";
+"Models are loaded from Pi." = "モデルは Pi から取得します。";
 "The saved model is used when available; otherwise the first available model is selected." = "保存済みモデルが利用可能なら使用し、それ以外は一覧の先頭のモデルを選択します。";
 
 /* Codex Chat */
@@ -1787,7 +1787,16 @@
 "Used for searchable image text and captions, and for choosing useful screenshots before summary generation." = "検索用の OCR・caption の生成と、要約前の有用なスクリーンショットの選別に共通で使用します。";
 
 "settings.agents" = "エージェント";
-"settings.agents.intro" = "選択中のアカウントのチャットが使えるツールを管理します。";
+"settings.agents.intro" = "要約・画像解析・チャットを動かすエージェントを設定します。Pi コマンドはこの Mac 共通、MCP は選択中のアカウントごとの設定です。";
 "settings.agents.unityGatewayMCPs" = "Unity AI Gateway の MCP";
 "settings.agents.unityGatewayMCPsDescription" = "オンにした MCP をチャットで使えます。Databricks アカウントのアクセストークンで Unity AI Gateway を経由して呼び出します。読み取り以外のツールは、チャットの承認方式に従って確認します。サービスへのサインインを求められたら、チャットに表示されるリンクから承認してください。変更は、このあと開いたチャットから反映されます。開いているチャットは、開き直すと反映されます。";
 "settings.agents.requiresDatabricks" = "Unity AI Gateway の MCP は Databricks アカウントで使えます。サイドバー下部のアカウントメニューで Databricks アカウントを開くと設定できます。";
+"settings.agents.models" = "モデル";
+"settings.agents.modelsPlaceholder" = "エージェントのモデル設定は、今後ここに追加します。";
+"settings.agents.mcps" = "MCP";
+"settings.agents.piCommand" = "Pi コマンド";
+"settings.agents.piCommandAutomatic" = "自動で探す";
+"settings.agents.piCommandInUse" = "使用するコマンド";
+"settings.agents.piCommandDescription" = "pi コマンドの絶対パスを入力します。空欄のときは PATH、/opt/homebrew/bin、/usr/local/bin、~/.local/bin、~/bin から探します。要約・画像解析・チャットには Pi が必要です。変更は、このあと始める処理から反映されます。";
+"No executable pi command at %@. Check the path in Settings > Agents." = "%@ に実行できる pi コマンドがありません。設定の「エージェント」でパスを確認してください。";
+"The pi command was not found. Install Pi, or set its path in Settings > Agents." = "pi コマンドが見つかりません。Pi をインストールするか、設定の「エージェント」でパスを指定してください。";

@@ -1074,7 +1074,7 @@ private extension BackgroundJobWorker {
         if error is CodexConfigurationError { return true }
         guard let error = error as? CodexAppServerError else { return false }
         return switch error {
-        case .helperNotBundled, .notLoggedIn, .providerAuthenticationFailed, .requestedModelUnavailable:
+        case .helperNotBundled, .piCommandNotFound, .notLoggedIn, .providerAuthenticationFailed, .requestedModelUnavailable:
             true
         default:
             false

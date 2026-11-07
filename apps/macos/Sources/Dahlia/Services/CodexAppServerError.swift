@@ -2,6 +2,8 @@ import Foundation
 
 enum CodexAppServerError: LocalizedError, Equatable {
     case helperNotBundled
+    /// No `pi` at the path set in Settings, or none found on the search path when it is `nil`.
+    case piCommandNotFound(String?)
     case launchFailed(String)
     case notLoggedIn
     case loginFailed(String?)
@@ -21,6 +23,7 @@ enum CodexAppServerError: LocalizedError, Equatable {
     var errorDescription: String? {
         switch self {
         case .helperNotBundled: L10n.codexHelperNotBundled
+        case let .piCommandNotFound(path): path.map(L10n.piExecutableNotFound) ?? L10n.piCommandNotFound
         case let .launchFailed(detail): L10n.codexLaunchFailed(detail)
         case .notLoggedIn: L10n.codexNotLoggedIn
         case let .loginFailed(detail): detail.map(L10n.codexLoginFailed) ?? L10n.codexLoginFailedWithoutDetail

@@ -2354,7 +2354,7 @@ enum L10n { // swiftlint:disable:this type_body_length
 
     static var model: String { String(localized: "Model", bundle: bundle) }
     static var codexHelperNotBundled: String { String(
-        localized: "The bundled Pi helper is unavailable. Run Dahlia with scripts/run-dev.sh or install a signed app build.",
+        localized: "Dahlia's helper files are unavailable. Run Dahlia with scripts/run-dev.sh or install a signed app build.",
         bundle: bundle
     ) }
     static func codexLaunchFailed(_ detail: String) -> String { String(
@@ -2418,6 +2418,21 @@ enum L10n { // swiftlint:disable:this type_body_length
     static var unityGatewayMCPs: String { String(localized: "settings.agents.unityGatewayMCPs", bundle: bundle) }
     static var unityGatewayMCPsDescription: String { String(localized: "settings.agents.unityGatewayMCPsDescription", bundle: bundle) }
     static var agentMCPsRequireDatabricks: String { String(localized: "settings.agents.requiresDatabricks", bundle: bundle) }
+    static var agentModels: String { String(localized: "settings.agents.models", bundle: bundle) }
+    static var agentModelsPlaceholder: String { String(localized: "settings.agents.modelsPlaceholder", bundle: bundle) }
+    static var agentMCPs: String { String(localized: "settings.agents.mcps", bundle: bundle) }
+    static var piCommand: String { String(localized: "settings.agents.piCommand", bundle: bundle) }
+    static var piCommandAutomatic: String { String(localized: "settings.agents.piCommandAutomatic", bundle: bundle) }
+    static var piCommandInUse: String { String(localized: "settings.agents.piCommandInUse", bundle: bundle) }
+    static var piCommandDescription: String { String(localized: "settings.agents.piCommandDescription", bundle: bundle) }
+    static var piCommandNotFound: String { String(
+        localized: "The pi command was not found. Install Pi, or set its path in Settings > Agents.",
+        bundle: bundle
+    ) }
+    static func piExecutableNotFound(_ path: String) -> String { String(
+        localized: "No executable pi command at \(path). Check the path in Settings > Agents.",
+        bundle: bundle
+    ) }
     static var codexSignedIn: String { String(localized: "Signed in", bundle: bundle) }
     static var signInWithChatGPT: String { String(localized: "Sign in with ChatGPT", bundle: bundle) }
     static var signInWithClaude: String { String(localized: "Sign in with Claude", bundle: bundle) }
@@ -2459,7 +2474,7 @@ enum L10n { // swiftlint:disable:this type_body_length
     ) }
     static var codexNoModels: String { String(localized: "Pi returned no available models. Try again.", bundle: bundle) }
     static var codexModelDescription: String { String(
-        localized: "Models are loaded from the bundled Pi.",
+        localized: "Models are loaded from Pi.",
         bundle: bundle
     ) }
     static var reasoningEffort: String { String(localized: "Reasoning Effort", bundle: bundle) }

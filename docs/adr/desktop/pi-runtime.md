@@ -4,15 +4,14 @@
 [Codex runtime と stdio](codex-runtime.md)、[チャットの承認](chat-approval.md)の実行方式、
 [アカウント](accounts.md#codex-account-context)の CODEX_HOME・auth-helper・token broker を置き換える。
 
-## 同梱と配置
+## Pi の実行ファイル
 
-Pi 公式 release の `pi-darwin-arm64.tar.gz` を版と SHA-256 で固定し（`build-pi.sh`）、`Contents/Resources/pi/` に置く。
-Pi は package file（wasm・theme・native module）を実行ファイルの隣から読み、`Contents/Helpers` の非 Mach-O は
-bundle 署名を通らないためである。実行ファイルは upstream の ad-hoc 署名を外し、Developer ID・Hardened Runtime・
-allow-jit で署名する。外部 PATH、ユーザーの `~/.pi`、npm、Bun を使わない。
-
-Pi 本体は MIT、実行ファイルは Bun（JavaScriptCore / WebKit の LGPL-2 などを静的リンク）を含む。
-`Resources/Licenses/Pi/` に LICENSE と NOTICE を置く。LGPL の提供義務の満たし方は法務確認が残る。
+Dahlia は Pi を同梱せず、利用者がインストールした `pi` を使う（2026-11-07 にユーザー承認、同梱を廃止）。
+実行する `pi` は、エージェント設定の絶対パス、PATH 上の `pi` の順に選ぶ。Finder から開いたアプリは launchd の
+最小 PATH しか受け取らないため、PATH に `/opt/homebrew/bin`・`/usr/local/bin`・`~/.local/bin`・`~/bin` を加えて探す。
+指定したパスに実行ファイルがない、または見つからないときは `piCommandNotFound` で失敗し、要約・画像解析は
+未サインインと同じく保留にする。版は固定しないため、`dahlia.ts` が使う RPC と extension API の互換は
+Pi の更新時に `test-pi-extension.py` で確かめる。ユーザーの `~/.pi` は使わない。
 
 ## Process と境界
 

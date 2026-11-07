@@ -8,6 +8,41 @@ import Foundation
     @MainActor
     struct PiInfrastructureTests {
         @Test
+        func configuredPiCommandIsUsedAndAMissingOneFailsInsteadOfSearching() throws {
+            let defaults = try #require(UserDefaults(suiteName: "PiInfrastructureTests.\(UUID())"))
+            let directory = FileManager.default.temporaryDirectory.appending(path: "PiInfrastructureTests-\(UUID())")
+            try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+            defer { try? FileManager.default.removeItem(at: directory) }
+            let pi = directory.appending(path: "pi")
+            try Data("#!/bin/sh\n".utf8).write(to: pi)
+            try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: pi.path)
+
+            defaults.set(" \(pi.path) ", forKey: PiBundle.executablePathDefaultsKey)
+            #expect(try PiBundle.executableURL(defaults: defaults).path == pi.path)
+
+            // A missing file and a directory (which FileManager reports as executable) both fail instead of searching.
+            for path in [directory.appending(path: "missing").path, directory.path] {
+                defaults.set(path, forKey: PiBundle.executablePathDefaultsKey)
+                #expect(throws: CodexAppServerError.piCommandNotFound(path)) {
+                    try PiBundle.executableURL(defaults: defaults)
+                }
+            }
+        }
+
+        @Test
+        func piSearchPathStartsWithItsOwnDirectoryForNpmInstalls() {
+            let pi = URL(fileURLWithPath: "/Users/me/.nvm/versions/node/v24/bin/pi")
+            let path = CommandLineToolLocator.searchPath(
+                for: pi,
+                environment: ["PATH": "/usr/bin:/Users/me/.nvm/versions/node/v24/bin:/bin"]
+            ).split(separator: ":").map(String.init)
+
+            // `#!/usr/bin/env node` resolves the node beside pi even when Finder's launchd PATH lacks it.
+            #expect(path.prefix(3) == ["/Users/me/.nvm/versions/node/v24/bin", "/usr/bin", "/bin"])
+            #expect(path.contains("/opt/homebrew/bin"))
+        }
+
+        @Test
         func gatewayMCPsAreEnabledPerDatabricksAccountAndPointAtTheGateway() throws {
             let defaults = try #require(UserDefaults(suiteName: "PiInfrastructureTests.\(UUID())"))
             let account = UUID()

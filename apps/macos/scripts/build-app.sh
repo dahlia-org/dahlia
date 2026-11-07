@@ -5,7 +5,6 @@ APP_NAME="Dahlia"
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_DIR="$(cd "${SCRIPT_DIR}/../../.." && pwd)"
 ENTITLEMENTS_PATH="${PROJECT_DIR}/Dahlia.entitlements"
-PI_ENTITLEMENTS_PATH="${PROJECT_DIR}/PiHelper.entitlements"
 RUNTIME_PROFILE="development"
 
 if [ "$#" -gt 1 ]; then
@@ -37,7 +36,6 @@ export CLANG_MODULE_CACHE_PATH="${TMPDIR:-/tmp}/dahlia-clang-module-cache"
 mkdir -p "$CLANG_MODULE_CACHE_PATH"
 
 echo "=== Building ${APP_NAME} ==="
-bash "${SCRIPT_DIR}/build-pi.sh"
 # The current Swift Build engine flattens static XCFramework headers into one directory,
 # so DahliaAEC3 and DahliaLindera both try to produce include/module.modulemap.
 swift build --build-system native -c release --arch arm64
@@ -57,7 +55,6 @@ mkdir -p "${HELPERS}"
 
 cp "${BUILD_DIR}/${APP_NAME}" "${MACOS}/${APP_NAME}"
 cp "${BUILD_DIR}/dahlia-mcp" "${HELPERS}/dahlia-mcp"
-embed_pi_helper "$CONTENTS"
 if [ "$(lipo -archs "${HELPERS}/dahlia-mcp")" != "arm64" ]; then
     echo "error: bundled dahlia-mcp must contain only arm64" >&2
     exit 1
@@ -109,7 +106,6 @@ fi
 codesign_path "${CONTENTS}/Resources/Dahlia_DahliaRuntimeSupport.bundle"
 codesign_sparkle_framework "${CONTENTS}/Frameworks/Sparkle.framework"
 
-codesign_pi_helper "$CONTENTS" "$PI_ENTITLEMENTS_PATH"
 codesign --remove-signature "${HELPERS}/dahlia-mcp" 2>/dev/null || true
 codesign_path "${HELPERS}/dahlia-mcp"
 codesign --verify --strict --verbose=2 "${HELPERS}/dahlia-mcp"

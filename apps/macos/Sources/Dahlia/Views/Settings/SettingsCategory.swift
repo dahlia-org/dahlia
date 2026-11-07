@@ -137,7 +137,8 @@ enum SettingsCategory: String, CaseIterable, Identifiable {
                 "AI",
             ]
         case .agents:
-            [L10n.unityGatewayMCPs, L10n.mcp, L10n.unityGateway, "Databricks"] + DatabricksGatewayMCP.allCases.map(\.displayName)
+            [L10n.unityGatewayMCPs, L10n.mcp, L10n.unityGateway, "Databricks", L10n.piCommand, "Pi"]
+                + DatabricksGatewayMCP.allCases.map(\.displayName)
         case .workspace:
             [L10n.workspace, L10n.generatedContentLanguage, L10n.summaryOutputLanguage]
         case .macInference:
