@@ -149,7 +149,8 @@ enum SummaryService {
             .filter { !$0.heading.isEmpty || !$0.blocks.isEmpty }
 
         return SummaryDocument(
-            title: LegacyMarkdownSummaryParser.normalizeInlineMarkdown(response.title),
+            // The schema's length limits reach only OpenAI; Claude and Gemini are sent the schema without them.
+            title: String(LegacyMarkdownSummaryParser.normalizeInlineMarkdown(response.title).prefix(120)),
             description: normalizedDescription(response.description),
             sections: sections,
             tags: response.tags,

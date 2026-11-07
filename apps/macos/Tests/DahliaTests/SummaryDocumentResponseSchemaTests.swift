@@ -65,7 +65,7 @@ import Foundation
 
         @Test
         func blocksWithoutTheirInapplicableFieldsStillDecode() throws {
-            // Claude and Gemini see the schema only in the prompt and may leave out fields a block does not use.
+            // Models that see the schema only in the prompt (Databricks GLM and Kimi) may leave out fields a block does not use.
             let response = """
             {"title":"T","description":"D","sections":[{"heading":"H","blocks":[
               {"type":"paragraph","content":{"text":"Body","transcript_ref":null}},
@@ -110,6 +110,12 @@ import Foundation
                 context: context
             )
             #expect(document.title == "T" && document.sections.first?.blocks.isEmpty == false)
+            // Claude and Gemini get the schema without its length limits, so Dahlia caps the title itself.
+            let long = try SummaryService.generatedDocument(
+                from: #"{"title":"\#(String(repeating: "あ", count: 130))","sections":[{"heading":"H","blocks":[{"type":"paragraph","content":{"text":"Body"}}]}]}"#,
+                context: context
+            )
+            #expect(long.title == String(repeating: "あ", count: 120))
         }
     }
 #endif

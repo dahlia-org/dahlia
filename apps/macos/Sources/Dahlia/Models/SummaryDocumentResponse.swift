@@ -1,7 +1,7 @@
 import DahliaRuntimeSupport
 import Foundation
 
-/// Providers that see the schema only in the prompt (Claude, Gemini) may leave out fields that are empty for them, so
+/// Providers that see the schema only in the prompt (Databricks GLM and Kimi) may leave out fields that are empty for them, so
 /// decoding requires only what carries the summary: the title, each section's heading, each block's type and the field
 /// its type carries text in, item text, and action item titles. Every other field takes its empty value when missing.
 struct SummaryDocumentResponse: Decodable {

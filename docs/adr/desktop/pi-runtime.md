@@ -54,10 +54,20 @@ Sign in with ChatGPT 登録区分、Anthropic の第三者利用）はライセ�
 
 ## 構造化出力
 
-Pi は最終応答の JSON Schema を持たない。system prompt に schema を含め、OpenAI Responses の経路
-（ChatGPT・Dahlia・Databricks codex）だけ extension が `text.format`（strict）を付ける。Dahlia は返答を
-JSON object として検証し、型で decode できない返答・拒否・空・`stopReason` が `stop` 以外は生成失敗にする。
-要約の Markdown fallback には流さない。
+Pi は最終応答の JSON Schema を持たない。Dahlia は system prompt に schema を含め、schema を強制できる経路では
+extension がリクエスト本体に schema 指定を足す。Dahlia がモデル ID で経路を選び（ChatGPT・Claude Pro/Max・
+Dahlia・Databricks の GPT・Claude・Gemini）、extension が `ctx.model.api` ごとに形を決める。
+
+- OpenAI Responses: `text.format`（`json_schema`、strict）。schema はそのまま送る。
+- Claude Messages: `output_config.format`（`json_schema`）。Pi が付ける `output_config.effort` とマージする。
+  Claude が 400 で拒否する `minLength`・`maxLength`・数値範囲・`multipleOf`・`maxItems`・2 以上の `minItems` を外す。
+- Gemini（`google-generative-ai`）: `responseMimeType: application/json` と `responseJsonSchema`。対応表にない
+  `minLength`・`maxLength`・`pattern` を外す。
+
+Databricks の MLflow 経路（GLM・Kimi）は OpenAI Responses 形式でも strict schema を受け付けないので、prompt の
+schema だけで生成する。外した制約は Dahlia 側で守る（要約のタイトルと説明の長さ、タグの正規化、画像解析の件数と
+文字数）。Dahlia は返答を JSON object として検証し、型で decode できない返答・拒否・空・`stopReason` が `stop`
+以外は生成失敗にする。要約の Markdown fallback には流さない。
 
 ## チャットの実行と承認
 
