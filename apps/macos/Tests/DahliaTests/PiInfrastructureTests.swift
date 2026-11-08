@@ -1,3 +1,4 @@
+import CryptoKit
 import DahliaRuntimeSupport
 import Foundation
 @testable import Dahlia
@@ -17,16 +18,126 @@ import Foundation
             try Data("#!/bin/sh\n".utf8).write(to: pi)
             try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: pi.path)
 
-            defaults.set(" \(pi.path) ", forKey: PiBundle.executablePathDefaultsKey)
-            #expect(try PiBundle.executableURL(defaults: defaults).path == pi.path)
+            // Each account keeps its own path.
+            let account = CodexRuntimeProvider.databricks(connectionID: UUID())
+            defaults.set(" \(pi.path) ", forKey: PiBundle.executablePathDefaultsKey(for: account))
+            #expect(try PiBundle.executableURL(for: account, defaults: defaults).path == pi.path)
+            #expect((try? PiBundle.executableURL(for: .local, defaults: defaults))?.path != pi.path)
 
             // A missing file and a directory (which FileManager reports as executable) both fail instead of searching.
             for path in [directory.appending(path: "missing").path, directory.path] {
-                defaults.set(path, forKey: PiBundle.executablePathDefaultsKey)
+                defaults.set(path, forKey: PiBundle.executablePathDefaultsKey(for: account))
                 #expect(throws: CodexAppServerError.piCommandNotFound(path)) {
-                    try PiBundle.executableURL(defaults: defaults)
+                    try PiBundle.executableURL(for: account, defaults: defaults)
                 }
             }
+        }
+
+        @Test
+        func installerReplacesPiOnlyWithAVerifiedArchive() async throws {
+            // tar and file work runs off the main actor, which every @MainActor suite shares.
+            try await Task.detached { try Self.checkInstaller() }.value
+        }
+
+        private nonisolated static func checkInstaller() throws {
+            let root = FileManager.default.temporaryDirectory.appending(path: "PiInstallerTests-\(UUID())")
+            defer { try? FileManager.default.removeItem(at: root) }
+            func archive(version: String) throws -> (URL, String) {
+                let source = root.appending(path: "source-\(version)/pi")
+                try FileManager.default.createDirectory(at: source, withIntermediateDirectories: true)
+                try Data("#!/bin/sh\n".utf8).write(to: source.appending(path: "pi"))
+                try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: source.appending(path: "pi").path)
+                let url = root.appending(path: "pi-\(version).tar.gz")
+                let tar = Process()
+                tar.executableURL = URL(fileURLWithPath: "/usr/bin/tar")
+                tar.arguments = ["-czf", url.path, "-C", source.deletingLastPathComponent().path, "pi"]
+                try tar.run()
+                tar.waitUntilExit()
+                let digest = try SHA256.hash(data: Data(contentsOf: url)).map { String(format: "%02x", $0) }.joined()
+                return (url, digest)
+            }
+            let directory = root.appending(path: "Pi")
+            let entrypoint = directory.appending(path: "pi")
+            func releases() throws -> Set<String> {
+                try Set(FileManager.default.contentsOfDirectory(atPath: directory.appending(path: "releases").path))
+            }
+
+            let (first, firstDigest) = try archive(version: "1.0.0")
+            try PiInstaller.install(archive: first, sha256: firstDigest, version: "1.0.0", into: directory)
+            #expect(PiInstaller.installedVersion(in: directory) == "1.0.0")
+            #expect(try FileManager.default.destinationOfSymbolicLink(atPath: entrypoint.path) == "releases/1.0.0/pi")
+            #expect(CommandLineToolLocator.isExecutableFile(atPath: entrypoint.path))
+
+            // A checksum mismatch or a version that is not a folder name keeps the installed Pi.
+            let (second, secondDigest) = try archive(version: "1.1.0")
+            #expect(throws: PiInstallError.self) {
+                try PiInstaller.install(archive: second, sha256: firstDigest, version: "1.1.0", into: directory)
+            }
+            #expect(throws: PiInstallError.self) {
+                try PiInstaller.install(archive: second, sha256: secondDigest, version: "../1.1.0", into: directory)
+            }
+            #expect(PiInstaller.installedVersion(in: directory) == "1.0.0")
+
+            // The previous release stays for processes still running it; older ones are removed.
+            try PiInstaller.install(archive: second, sha256: secondDigest.uppercased(), version: "1.1.0", into: directory)
+            #expect(PiInstaller.installedVersion(in: directory) == "1.1.0")
+            #expect(try releases() == ["1.0.0", "1.1.0"])
+            let (third, thirdDigest) = try archive(version: "1.2.0")
+            try PiInstaller.install(archive: third, sha256: thirdDigest, version: "1.2.0", into: directory)
+            #expect(try releases() == ["1.1.0", "1.2.0"])
+
+            // Reinstalling the current release keeps the previous one, and a release folder another install already
+            // moved in stays in place.
+            let marker = directory.appending(path: "releases/1.2.0/marker")
+            try Data().write(to: marker)
+            try PiInstaller.install(archive: third, sha256: thirdDigest, version: "1.2.0", into: directory)
+            #expect(PiInstaller.installedVersion(in: directory) == "1.2.0")
+            #expect(try releases() == ["1.1.0", "1.2.0"])
+            #expect(FileManager.default.fileExists(atPath: marker.path))
+
+            // An install holds the folder's lock against every other open of it, in this process and others, so installs
+            // of different versions at once (Settings and `pi update`) cannot remove the release another just activated.
+            try PiInstaller.withInstallLock(in: directory) {
+                let other = open(directory.appending(path: ".lock").path, O_RDWR)
+                defer { close(other) }
+                #expect(flock(other, LOCK_EX | LOCK_NB) == -1 && errno == EWOULDBLOCK)
+            }
+            let archives = try ["2.0.0", "2.1.0", "2.2.0"].map { version in (version, try archive(version: version)) }
+            for _ in 0 ..< 10 {
+                DispatchQueue.concurrentPerform(iterations: archives.count) { index in
+                    let (version, (url, digest)) = archives[index]
+                    try? PiInstaller.install(archive: url, sha256: digest, version: version, into: directory)
+                }
+                #expect(CommandLineToolLocator.isExecutableFile(atPath: entrypoint.path))
+            }
+            #expect(try FileManager.default.contentsOfDirectory(atPath: directory.path).sorted() == [".lock", "pi", "releases"])
+        }
+
+        @Test
+        func releasesRunByAProcessAreFoundFromTheProcessTable() throws {
+            let releases = FileManager.default.temporaryDirectory.appending(path: "PiReleases-\(UUID())")
+            try FileManager.default.createDirectory(at: releases.appending(path: "1.0.0"), withIntermediateDirectories: true)
+            defer { try? FileManager.default.removeItem(at: releases) }
+            let real = try #require(realpath(releases.path, nil))
+            defer { free(real) }
+            let root = String(cString: real)
+            // Paths come from the process table as real paths; another folder's executable is not a release.
+            #expect(PiInstaller.releasesInUse(in: releases, executablePaths: [
+                "\(root)/1.0.0/pi", "\(root)/1.1.0/pi", "\(root)-other/2.0.0/pi", "/usr/bin/true",
+            ]) == ["1.0.0", "1.1.0"])
+            // The table includes this test process.
+            let own = try #require(realpath(CommandLine.arguments[0], nil))
+            defer { free(own) }
+            #expect(PiInstaller.runningExecutablePaths().contains(String(cString: own)))
+        }
+
+        @Test
+        func piReleaseDecodesGitHubFields() throws {
+            let json = #"{"tag_name":"v1.5.0","assets":[{"name":"pi-darwin-arm64.tar.gz","#
+                + #""browser_download_url":"https://github.com/a/b","digest":"sha256:ab"}]}"#
+            let release = try JSONDecoder().decode(PiInstaller.Release.self, from: Data(json.utf8))
+            #expect(release.version == "1.5.0")
+            #expect(release.assets.first?.digest == "sha256:ab")
         }
 
         @Test

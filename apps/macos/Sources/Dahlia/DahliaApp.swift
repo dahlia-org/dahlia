@@ -15,7 +15,6 @@ private enum MainWindowMetrics {
     static let defaultHeight: CGFloat = 740
 }
 
-@main
 struct DahliaApp: App {
     @Environment(\.scenePhase) private var scenePhase
     @NSApplicationDelegateAdaptor(AppDelegate.self) var appDelegate

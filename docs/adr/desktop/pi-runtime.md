@@ -7,10 +7,27 @@
 ## Pi の実行ファイル
 
 Dahlia は Pi を同梱せず、利用者がインストールした `pi` を使う（2026-11-07 にユーザー承認、同梱を廃止）。
-実行する `pi` は、エージェント設定の絶対パス、PATH 上の `pi` の順に選ぶ。Finder から開いたアプリは launchd の
+実行する `pi` は、アカウントのエージェント設定の絶対パス、なければ PATH 上の `pi` で、Pi の管理はパス指定を基本とする。絶対パスは実行アカウントごとに保存し（agent directory と同じ `local` またはアカウント ID で区別）、Dahlia がインストールする Pi は Mac に1つで全アカウントが共有する。Finder から開いたアプリは launchd の
 最小 PATH しか受け取らないため、PATH に `/opt/homebrew/bin`・`/usr/local/bin`・`~/.local/bin`・`~/bin` を加えて探す。
 指定したパスに実行ファイルがない、または見つからないときは `piCommandNotFound` で失敗し、要約・画像解析は
-未サインインと同じく保留にする。版は固定しないため、`dahlia.ts` が使う RPC と extension API の互換は
+未サインインと同じく保留にする。
+
+コマンドラインに不慣れな利用者の支援として、エージェント設定は `pi` が見つからないとき「Pi をインストール」を出し、
+インストールした Pi をそのアカウントのパスに設定する（2026-11-08 にユーザー承認）。Dahlia がインストールした Pi は自動では
+使わず、ほかのアカウントには「この Pi を使う」ボタンで、そのパスを選ぶかを問う。そのパスを使っているアカウントには
+「アップデートを確認」を出す。インストールも更新もボタンを押したときだけ GitHub の
+`earendil-works/pi` の latest release を取得し、`pi-darwin-arm64.tar.gz` を GitHub が示す SHA-256 で確かめてから
+`Application Support/<profile>/Pi/releases/<version>` に展開する。入口の `Pi/pi` は `releases/<version>/pi` への
+symlink で、一時 link の rename で張り替える。Pi は symlink を解決した実体の位置から resource を実行中も読むため、
+張り替えたあとは、新しい版、直前の版、process table（`proc_pidpath`）で動いている process の実行ファイルを含む版だけを残す。
+直前の版は、古い link を解決して起動の途中にある process のため。Pi の入れ替えと掃除は `Pi/.lock` の flock で
+process をまたいで1つずつ行う。展開済みの版はダウンロードしない。
+失敗しても入口は前の版を指したまま。release の `pi` は ad-hoc 署名のまま実行でき、Dahlia は署名し直さない。
+PATH 上の `pi`（npm・Homebrew など）は利用者のものとして更新しない。
+
+`Dahlia --install-pi [version]` は app を開かずに同じ手順で版を入れる（版を省くと latest）。GitHub の release の `pi` は
+自分では更新できないため、Dahlia の `Pi/pi` を PATH に置いてターミナルで使う人は、Pi 1.5.0 以降の `PI_SELF_UPDATE_COMMAND` に
+このコマンドを `{version}` 付きで設定する。Pi はこの変数をどの入れ方の `pi` にも使うので、別の `pi` が PATH の先にあるときは設定しない。Dahlia は利用者の shell 設定や `~/.pi` には書かない。版は固定しないため、`dahlia.ts` が使う RPC と extension API の互換は
 Pi の更新時に `test-pi-extension.py` で確かめる。ユーザーの `~/.pi` は使わない。
 
 ## Process と境界

@@ -479,7 +479,7 @@ actor PiRuntimeService {
         var environment = ProcessInfo.processInfo.environment.filter { key, _ in
             !key.hasSuffix("_API_KEY") && !key.hasSuffix("_AUTH_TOKEN") && !key.hasSuffix("_OAUTH_TOKEN") && !key.hasPrefix("PI_")
         }
-        let executableURL = try PiBundle.executableURL()
+        let executableURL = try PiBundle.executableURL(for: provider)
         environment["PATH"] = CommandLineToolLocator.searchPath(for: executableURL, environment: environment)
         environment["PI_CODING_AGENT_DIR"] = agentURL.path
         environment["PI_OFFLINE"] = "1"

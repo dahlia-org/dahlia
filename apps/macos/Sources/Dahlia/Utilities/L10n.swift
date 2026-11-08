@@ -2426,7 +2426,24 @@ enum L10n { // swiftlint:disable:this type_body_length
     static var piCommandInUse: String { String(localized: "settings.agents.piCommandInUse", bundle: bundle) }
     static var piCommandDescription: String { String(localized: "settings.agents.piCommandDescription", bundle: bundle) }
     static var piCommandNotFound: String { String(
-        localized: "The pi command was not found. Install Pi, or set its path in Settings > Agents.",
+        localized: "Pi is not installed. Install it, or set its path, in Settings > Agents.",
+        bundle: bundle
+    ) }
+    static var piNotInstalled: String { String(localized: "settings.agents.piNotInstalled", bundle: bundle) }
+    static var installPi: String { String(localized: "settings.agents.installPi", bundle: bundle) }
+    static var updatePi: String { String(localized: "settings.agents.updatePi", bundle: bundle) }
+    static var useInstalledPi: String { String(localized: "settings.agents.useInstalledPi", bundle: bundle) }
+    static func piInstalledVersion(_ version: String) -> String { String(
+        localized: "Pi \(version) installed by Dahlia",
+        bundle: bundle
+    ) }
+    static func piInstalled(_ version: String) -> String { String(localized: "Installed Pi \(version).", bundle: bundle) }
+    static func piUpToDate(_ version: String) -> String { String(
+        localized: "Pi \(version) is the latest version.",
+        bundle: bundle
+    ) }
+    static var piDownloadFailed: String { String(
+        localized: "Could not download Pi. Check your network connection and try again.",
         bundle: bundle
     ) }
     static func piExecutableNotFound(_ path: String) -> String { String(
