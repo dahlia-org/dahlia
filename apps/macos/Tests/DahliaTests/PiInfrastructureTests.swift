@@ -45,7 +45,8 @@ import Foundation
             func archive(version: String) throws -> (URL, String) {
                 let source = root.appending(path: "source-\(version)/pi")
                 try FileManager.default.createDirectory(at: source, withIntermediateDirectories: true)
-                try Data("#!/bin/sh\n".utf8).write(to: source.appending(path: "pi"))
+                // The version in the content keeps archives distinct; tar's whole-second mtimes alone may not.
+                try Data("#!/bin/sh\n# \(version)\n".utf8).write(to: source.appending(path: "pi"))
                 try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: source.appending(path: "pi").path)
                 let url = root.appending(path: "pi-\(version).tar.gz")
                 let tar = Process()
