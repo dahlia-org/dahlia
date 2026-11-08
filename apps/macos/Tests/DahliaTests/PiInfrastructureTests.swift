@@ -57,7 +57,7 @@ import Foundation
                 return (url, digest)
             }
             let directory = root.appending(path: "Pi")
-            let entrypoint = directory.appending(path: "pi")
+            let entrypoint = root.appending(path: "bin/pi")
             func releases() throws -> Set<String> {
                 try Set(FileManager.default.contentsOfDirectory(atPath: directory.appending(path: "releases").path))
             }
@@ -65,7 +65,7 @@ import Foundation
             let (first, firstDigest) = try archive(version: "1.0.0")
             try PiInstaller.install(archive: first, sha256: firstDigest, version: "1.0.0", into: directory)
             #expect(PiInstaller.installedVersion(in: directory) == "1.0.0")
-            #expect(try FileManager.default.destinationOfSymbolicLink(atPath: entrypoint.path) == "releases/1.0.0/pi")
+            #expect(try FileManager.default.destinationOfSymbolicLink(atPath: entrypoint.path) == "../Pi/releases/1.0.0/pi")
             #expect(CommandLineToolLocator.isExecutableFile(atPath: entrypoint.path))
 
             // A checksum mismatch or a version that is not a folder name keeps the installed Pi.
@@ -110,7 +110,11 @@ import Foundation
                 }
                 #expect(CommandLineToolLocator.isExecutableFile(atPath: entrypoint.path))
             }
-            #expect(try FileManager.default.contentsOfDirectory(atPath: directory.path).sorted() == [".lock", "pi", "releases"])
+            #expect(try FileManager.default.contentsOfDirectory(atPath: directory.path).sorted() == [".lock", "releases"])
+            #expect(try FileManager.default.contentsOfDirectory(atPath: root.appending(path: "bin").path).sorted() == ["pi", "pi-update"])
+            let update = root.appending(path: "bin/pi-update")
+            #expect(CommandLineToolLocator.isExecutableFile(atPath: update.path))
+            #expect(try String(contentsOf: update, encoding: .utf8).hasSuffix(" --install-pi \"$@\"\n"))
         }
 
         @Test

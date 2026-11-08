@@ -4,11 +4,15 @@ import Foundation
 
 /// Installs and updates Pi from its GitHub releases into Dahlia's folder, for Macs without a `pi` of their own.
 ///
-/// Each release is extracted to `releases/<version>/`, and the `pi` entrypoint is a symlink to the current release's
-/// executable. Pi resolves its resources from the link's target, so processes already running keep their release.
+/// Each release is extracted to `Pi/releases/<version>/`, and the entrypoint `bin/pi` beside the `Pi` folder is a symlink
+/// to the current release's executable; `bin` holds the commands Dahlia installs. Pi resolves its resources from the
+/// link's target, so processes already running keep their release.
 enum PiInstaller {
-    /// `Dahlia --install-pi [version]` installs a release from the command line, for `PI_SELF_UPDATE_COMMAND`.
+    /// `Dahlia --install-pi [version]` installs a release from the command line.
     static let commandLineFlag = "--install-pi"
+    /// `bin/pi-update [version]` runs `--install-pi` with this app. `PI_SELF_UPDATE_COMMAND` names it without a
+    /// path, since Pi splits that variable on spaces and `Application Support` has one.
+    static let updateCommandName = "pi-update"
     private static let releasesAPIURL = URL(string: "https://api.github.com/repos/earendil-works/pi/releases")!
     private static let assetName = "pi-darwin-arm64.tar.gz"
 
@@ -16,7 +20,7 @@ enum PiInstaller {
         DahliaApplicationSupport.currentDirectoryURL.appending(path: "Pi", directoryHint: .isDirectory)
     }
 
-    /// An account runs this once Agents settings sets it as the account's path.
+    /// `Application Support/<profile>/bin/pi`. An account runs it once Agents settings sets it as the account's path.
     static var executableURL: URL { entrypointURL(in: directoryURL) }
 
     struct Release: Decodable, Sendable {
@@ -47,8 +51,9 @@ enum PiInstaller {
     static func installedVersion(in directory: URL = directoryURL) -> String? {
         guard let target = try? FileManager.default.destinationOfSymbolicLink(atPath: entrypointURL(in: directory).path)
         else { return nil }
+        // The link reads `../Pi/releases/<version>/pi`.
         let components = target.split(separator: "/")
-        return components.count == 3 && components[0] == "releases" ? String(components[1]) : nil
+        return components.count >= 3 && components[components.count - 3] == "releases" ? String(components[components.count - 2]) : nil
     }
 
     /// The latest release, or the one tagged `v<version>`; a leading `v` in `version` is optional.
@@ -137,13 +142,20 @@ enum PiInstaller {
     /// current release removes nothing, since its previous release is not known.
     private static func activate(_ version: String, in directory: URL) throws {
         let previous = installedVersion(in: directory)
-        let link = directory.appending(path: ".pi-\(UUID().uuidString)")
-        try FileManager.default.createSymbolicLink(atPath: link.path, withDestinationPath: "releases/\(version)/pi")
-        guard rename(link.path, entrypointURL(in: directory).path) == 0 else {
+        let entrypoint = entrypointURL(in: directory)
+        try FileManager.default.createDirectory(at: entrypoint.deletingLastPathComponent(), withIntermediateDirectories: true)
+        // The temporary link sits beside the entrypoint so the rename stays in one directory.
+        let link = entrypoint.deletingLastPathComponent().appending(path: ".pi-\(UUID().uuidString)")
+        try FileManager.default.createSymbolicLink(
+            atPath: link.path,
+            withDestinationPath: "../\(directory.lastPathComponent)/releases/\(version)/pi"
+        )
+        guard rename(link.path, entrypoint.path) == 0 else {
             let error = POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO)
             try? FileManager.default.removeItem(at: link)
             throw error
         }
+        try writeUpdateCommand(in: entrypoint.deletingLastPathComponent())
         guard previous != version else { return }
         let releases = directory.appending(path: "releases", directoryHint: .isDirectory)
         let kept = releasesInUse(in: releases, executablePaths: runningExecutablePaths()).union([version, previous].compactMap(\.self))
@@ -172,7 +184,19 @@ enum PiInstaller {
         }
     }
 
-    private static func entrypointURL(in directory: URL) -> URL { directory.appending(path: "pi") }
+    /// Rewritten on every activation, so it follows the app when it moves.
+    private static func writeUpdateCommand(in bin: URL) throws {
+        guard let app = Bundle.main.executablePath else { return }
+        let quoted = "'" + app.replacingOccurrences(of: "'", with: "'\\''") + "'"
+        let url = bin.appending(path: updateCommandName)
+        try Data("#!/bin/sh\nexec \(quoted) \(commandLineFlag) \"$@\"\n".utf8).write(to: url, options: .atomic)
+        try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: url.path)
+    }
+
+    /// `bin/pi` beside the Pi folder.
+    private static func entrypointURL(in directory: URL) -> URL {
+        directory.deletingLastPathComponent().appending(path: "bin/pi")
+    }
 
     private static func releaseURL(_ version: String, in directory: URL) -> URL {
         directory.appending(path: "releases/\(version)", directoryHint: .isDirectory)
