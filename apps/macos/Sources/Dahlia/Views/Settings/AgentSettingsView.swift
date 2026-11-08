@@ -117,6 +117,7 @@ private struct AgentGeneralSettingsView: View {
 
     private func installLatestPi() async {
         installResult = nil
+        let pathAtStart = piPath
         do {
             let release = try await PiInstaller.release()
             if release.version == installedVersion {
@@ -125,8 +126,9 @@ private struct AgentGeneralSettingsView: View {
                 let isFirstInstall = installedVersion == nil
                 try await PiInstaller.install(release)
                 installResult = .success(L10n.piInstalled(release.version))
-                // Install is offered only when this account has no working pi, so it takes the one it asked for.
-                if isFirstInstall { piPath = PiInstaller.executableURL.path }
+                // Install is offered only when this account has no working pi, so it takes the one it asked for,
+                // unless the user chose another path while Pi was downloading.
+                if isFirstInstall, piPath == pathAtStart { piPath = PiInstaller.executableURL.path }
             }
         } catch {
             installResult = .failure(error)
