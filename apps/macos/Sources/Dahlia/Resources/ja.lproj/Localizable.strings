@@ -1787,7 +1787,7 @@
 "Used for searchable image text and captions, and for choosing useful screenshots before summary generation." = "検索用の OCR・caption の生成と、要約前の有用なスクリーンショットの選別に共通で使用します。";
 
 "settings.agents" = "エージェント";
-"settings.agents.intro" = "要約・画像解析・チャットを動かすエージェントを設定します。Pi コマンドはこの Mac 共通、MCP は選択中のアカウントごとの設定です。";
+"settings.agents.intro" = "要約・画像解析・チャットを動かすエージェントを設定します。Dahlia がインストールする Pi はこの Mac 共通、Pi コマンドのパスと MCP は選択中のアカウントごとの設定です。";
 "settings.agents.unityGatewayMCPs" = "Unity AI Gateway の MCP";
 "settings.agents.unityGatewayMCPsDescription" = "オンにした MCP をチャットで使えます。Databricks アカウントのアクセストークンで Unity AI Gateway を経由して呼び出します。読み取り以外のツールは、チャットの承認方式に従って確認します。サービスへのサインインを求められたら、チャットに表示されるリンクから承認してください。変更は、このあと開いたチャットから反映されます。開いているチャットは、開き直すと反映されます。";
 "settings.agents.requiresDatabricks" = "Unity AI Gateway の MCP は Databricks アカウントで使えます。サイドバー下部のアカウントメニューで Databricks アカウントを開くと設定できます。";
@@ -1797,6 +1797,14 @@
 "settings.agents.piCommand" = "Pi コマンド";
 "settings.agents.piCommandAutomatic" = "自動で探す";
 "settings.agents.piCommandInUse" = "使用するコマンド";
-"settings.agents.piCommandDescription" = "pi コマンドの絶対パスを入力します。空欄のときは PATH、/opt/homebrew/bin、/usr/local/bin、~/.local/bin、~/bin から探します。要約・画像解析・チャットには Pi が必要です。変更は、このあと始める処理から反映されます。";
+"settings.agents.piCommandDescription" = "pi コマンドの絶対パスを入力します。空欄のときは PATH、/opt/homebrew/bin、/usr/local/bin、~/.local/bin、~/bin から探します。見つからないときは「Pi をインストール」で GitHub の公式リリースをダウンロードし、このアカウントのパスに設定します。ほかのアカウントでは「この Pi を使う」で選べます。要約・画像解析・チャットには Pi が必要です。変更は、このあと始める処理から反映されます。";
 "No executable pi command at %@. Check the path in Settings > Agents." = "%@ に実行できる pi コマンドがありません。設定の「エージェント」でパスを確認してください。";
-"The pi command was not found. Install Pi, or set its path in Settings > Agents." = "pi コマンドが見つかりません。Pi をインストールするか、設定の「エージェント」でパスを指定してください。";
+"Pi is not installed. Install it, or set its path, in Settings > Agents." = "Pi がインストールされていません。設定の「エージェント」でインストールするか、パスを指定してください。";
+"settings.agents.piNotInstalled" = "Pi がインストールされていません";
+"settings.agents.installPi" = "Pi をインストール";
+"settings.agents.updatePi" = "アップデートを確認";
+"settings.agents.useInstalledPi" = "この Pi を使う";
+"Pi %@ installed by Dahlia" = "Dahlia がインストールした Pi %@";
+"Installed Pi %@." = "Pi %@ をインストールしました。";
+"Pi %@ is the latest version." = "Pi %@ は最新です。";
+"Could not download Pi. Check your network connection and try again." = "Pi をダウンロードできませんでした。ネットワーク接続を確認して、もう一度お試しください。";

@@ -3,12 +3,16 @@ import Foundation
 
 /// The user's installed `pi` command and the Dahlia resources (extension, skills) it runs with.
 enum PiBundle {
-    /// Absolute path of the `pi` command set in Agents settings; empty searches for one.
-    nonisolated static let executablePathDefaultsKey = "piExecutablePath"
+    /// The account's absolute path of the `pi` command set in Agents settings; empty searches for one.
+    nonisolated static func executablePathDefaultsKey(for provider: CodexRuntimeProvider) -> String {
+        "piExecutablePath.\(provider.accountKey)"
+    }
 
-    /// The command Dahlia runs: the path set in Settings, else `pi` on the search path.
-    nonisolated static func executableURL(defaults: UserDefaults = .standard) throws -> URL {
-        let configured = (defaults.string(forKey: executablePathDefaultsKey) ?? "").trimmingCharacters(in: .whitespaces)
+    /// The command the account runs: its path set in Settings, else `pi` on the search path. The Pi that Dahlia installs
+    /// is used only once Settings sets its path.
+    nonisolated static func executableURL(for provider: CodexRuntimeProvider, defaults: UserDefaults = .standard) throws -> URL {
+        let configured = (defaults.string(forKey: executablePathDefaultsKey(for: provider)) ?? "")
+            .trimmingCharacters(in: .whitespaces)
         guard configured.isEmpty else {
             let path = (configured as NSString).expandingTildeInPath
             guard CommandLineToolLocator.isExecutableFile(atPath: path) else {
@@ -67,11 +71,7 @@ struct PiAgentDirectoryLocator: Sendable {
     private var accountsURL: URL { rootURL.appending(path: "accounts", directoryHint: .isDirectory) }
 
     func accountURL(for provider: CodexRuntimeProvider) -> URL {
-        let name = switch provider {
-        case .local: "local"
-        case let .databricks(connectionID), let .dahlia(connectionID): connectionID.uuidString.lowercased()
-        }
-        return accountsURL.appending(path: name, directoryHint: .isDirectory)
+        accountsURL.appending(path: provider.accountKey, directoryHint: .isDirectory)
     }
 
     func agentURL(for provider: CodexRuntimeProvider) throws -> URL {
@@ -119,6 +119,16 @@ struct PiAgentDirectoryLocator: Sendable {
             try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: url.path)
         } catch {
             throw CodexAppServerError.launchFailed(error.localizedDescription)
+        }
+    }
+}
+
+extension CodexRuntimeProvider {
+    /// `local`, or the account's ID; names the account's folder and its per-account settings.
+    nonisolated var accountKey: String {
+        switch self {
+        case .local: "local"
+        case let .databricks(connectionID), let .dahlia(connectionID): connectionID.uuidString.lowercased()
         }
     }
 }
