@@ -67,7 +67,7 @@ struct MainSidebarAccountRootMenuView: View {
             ForEach(databricksAccounts.enumerated(), id: \.element.id) { offset, account in
                 let index = connections.count + 1 + offset
                 MainSidebarAccountMenuRow(
-                    title: account.accountLabel,
+                    title: L10n.unityGatewayHost(account.hostName),
                     image: .databricksLogo,
                     selectionState: account.id == currentDatabricksID,
                     isKeyboardHighlighted: navigation.activeMenu == .root && navigation.rootSelection == index,

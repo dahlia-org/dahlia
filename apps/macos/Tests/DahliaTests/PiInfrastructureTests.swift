@@ -31,6 +31,14 @@ import Foundation
                     try PiBundle.executableURL(for: account, defaults: defaults)
                 }
             }
+
+            // A command name is found on the search path; one that is nowhere fails with its name.
+            defaults.set("sh", forKey: PiBundle.executablePathDefaultsKey(for: account))
+            #expect(try PiBundle.executableURL(for: account, defaults: defaults).lastPathComponent == "sh")
+            defaults.set("dahlia-no-such-command", forKey: PiBundle.executablePathDefaultsKey(for: account))
+            #expect(throws: CodexAppServerError.piCommandNotFound("dahlia-no-such-command")) {
+                try PiBundle.executableURL(for: account, defaults: defaults)
+            }
         }
 
         @Test
@@ -138,11 +146,13 @@ import Foundation
 
         @Test
         func piReleaseDecodesGitHubFields() throws {
-            let json = #"{"tag_name":"v1.5.0","assets":[{"name":"pi-darwin-arm64.tar.gz","#
+            let json = #"{"tag_name":"v1.5.0","assets":[{"name":"pi-darwin-arm64.tar.gz","url":"https://api.github.com/a/1","#
                 + #""browser_download_url":"https://github.com/a/b","digest":"sha256:ab"}]}"#
             let release = try JSONDecoder().decode(PiInstaller.Release.self, from: Data(json.utf8))
             #expect(release.version == "1.5.0")
             #expect(release.assets.first?.digest == "sha256:ab")
+            // The installer downloads from the API's asset URL; github.com's download URL has answered HTTP 504.
+            #expect(release.assets.first?.url == URL(string: "https://api.github.com/a/1"))
         }
 
         @Test
@@ -159,28 +169,39 @@ import Foundation
         }
 
         @Test
-        func gatewayMCPsAreEnabledPerDatabricksAccountAndPointAtTheGateway() throws {
+        func registeredMCPServersArePerAccountAndShareTheirWorkspaceSignIn() throws {
             let defaults = try #require(UserDefaults(suiteName: "PiInfrastructureTests.\(UUID())"))
-            let account = UUID()
-            let other = UUID()
-            defaults.set(true, forKey: DatabricksGatewayMCP.gmail.defaultsKey(connectionID: account))
-            defaults.set(true, forKey: DatabricksGatewayMCP.googleCalendar.defaultsKey(connectionID: account))
-            defaults.set(true, forKey: DatabricksGatewayMCP.slack.defaultsKey(connectionID: other))
+            let account = CodexRuntimeProvider.databricks(connectionID: UUID())
+            let workspace = AgentMCPProvider(workspaceURL: URL(string: "https://example.cloud.databricks.com")!)
+            #expect(workspace.id == "example.cloud.databricks.com")
+            var settings = AgentMCPSettings(providers: [workspace])
+            #expect(settings.defaultName(for: "system.ai.slack") == "slack")
+            // Any service name becomes a tool-safe server name.
+            #expect(settings.defaultName(for: "main.default.My-Tool") == "my_tool")
+            settings.servers = [
+                AgentMCPServer(id: .v7(), name: "slack", providerID: workspace.id, service: "system.ai.slack"),
+                AgentMCPServer(id: .v7(), name: "work_mail", providerID: workspace.id, service: "system.ai.gmail"),
+            ]
+            settings.save(for: account, defaults: defaults)
 
-            let enabled = DatabricksGatewayMCP.enabled(connectionID: account, defaults: defaults)
-            #expect(enabled == [.gmail, .googleCalendar])
-            // Each entry takes the Databricks provider's credential; mcp.json itself holds none.
+            #expect(AgentMCPSettings.load(for: account, defaults: defaults) == settings)
+            #expect(AgentMCPSettings.load(for: .local, defaults: defaults) == AgentMCPSettings())
+            // A second Slack gets a numbered name; names are tool prefixes, so they stay unique and tool-safe.
+            #expect(settings.defaultName(for: "system.ai.slack") == "slack_2")
+            #expect(settings.defaultName(for: "system.ai.slack", taken: ["slack_2"]) == "slack_3")
+            #expect(settings.nameError("slack") == L10n.mcpServerNameTaken)
+            #expect(settings.nameError("dahlia") == L10n.mcpServerNameTaken)
+            #expect(settings.nameError("Slack-1") == L10n.mcpServerNameInvalid)
+            #expect(settings.nameError("slack_work") == nil)
+            // Both servers take the workspace's one sign-in; mcp.json itself holds no credential.
             func entry(_ name: String) -> JSONValue {
                 .object([
                     "url": .string("https://example.cloud.databricks.com/ai-gateway/mcp-services/system.ai.\(name)"),
                     "exposure": .string("direct"),
-                    "auth": .object(["provider": .string("databricks")]),
+                    "auth": .object(["provider": .string(workspace.id)]),
                 ])
             }
-            #expect(DatabricksGatewayMCP.piServers(enabled, workspaceURL: URL(string: "https://example.cloud.databricks.com")!) == [
-                "gmail": entry("gmail"),
-                "google_calendar": entry("google_calendar"),
-            ])
+            #expect(settings.piServers == ["slack": entry("slack"), "work_mail": entry("gmail")])
         }
 
         @Test

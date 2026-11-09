@@ -1,33 +1,107 @@
+import AppKit
 import SwiftUI
 
-/// Chat agent settings: the Pi command the open account runs, models, and the open account's MCPs.
+/// Chat agent settings for the open account: how it runs Pi and with which providers (General), models, and its MCP
+/// servers. The tabs look like the meeting page's.
 struct AgentSettingsView: View {
     @State private var workspaceSettings = WorkspaceAISettingsModel.shared
 
     var body: some View {
-        let provider = CodexRuntimeProvider(
+        let account = CodexRuntimeProvider(
             accountConnectionID: workspaceSettings.accountConnectionID,
             databricksConnectionID: workspaceSettings.databricksAccountConnectionID
         )
-        TabView {
-            Form { AgentGeneralSettingsView(provider: provider).id(provider) }
-                .formStyle(.grouped)
-                .tabItem { Text(L10n.general) }
-            // shortcut: placeholder until agent model settings are designed.
-            Form {
-                Section { Text(L10n.agentModelsPlaceholder).foregroundStyle(.secondary) }
-            }
-            .formStyle(.grouped)
-            .tabItem { Text(L10n.agentModels) }
-            Form { AgentMCPSettingsView() }
-                .formStyle(.grouped)
-                .tabItem { Text(L10n.agentMCPs) }
-        }
+        AgentSettingsTabs(account: account)
+            .id(account)
     }
 }
 
-/// The Pi path belongs to the account; the Pi that Dahlia installs is shared by every account on this Mac.
-private struct AgentGeneralSettingsView: View {
+private struct AgentSettingsTabs: View {
+    enum Tab: String, CaseIterable, Identifiable {
+        case general
+        case models
+        case mcps
+
+        var id: Self { self }
+
+        var label: String {
+            switch self {
+            case .general: L10n.general
+            case .models: L10n.agentModels
+            case .mcps: L10n.agentMCPs
+            }
+        }
+    }
+
+    let account: CodexRuntimeProvider
+    @Environment(MainWindowNavigation.self) private var navigation
+    @State private var selection = Tab.general
+    /// Shared by General's providers and the MCP tab, so a provider added in one shows in the other.
+    @State private var mcp: AgentMCPSettingsModel
+    @State private var launch: PiLaunchSettingsModel
+    /// The Local Account's subscriptions, which only it can sign in to.
+    @State private var subscriptions: [CodexAccountController]
+
+    init(account: CodexRuntimeProvider) {
+        self.account = account
+        _mcp = State(initialValue: AgentMCPSettingsModel(account: account))
+        _launch = State(initialValue: PiLaunchSettingsModel(account: account))
+        _subscriptions = State(initialValue: account == .local ? PiSubscription.allCases.map { CodexAccountController(subscription: $0) } : [])
+    }
+
+    var body: some View {
+        VStack(spacing: 0) {
+            // In a grouped form's header, the tabs share the column of the settings title and the sections below.
+            Form {
+                Section {
+                    EmptyView()
+                } header: {
+                    UnderlineTabBar(tabs: Tab.allCases, selection: $selection, label: \.label, accessibilityLabel: L10n.agents)
+                }
+            }
+            .formStyle(.grouped)
+            .fixedSize(horizontal: false, vertical: true)
+
+            switch selection {
+            case .general:
+                Form {
+                    AgentRuntimeSection(provider: account)
+                    AgentEnvironmentSection(model: launch)
+                    AgentProviderSection(account: account, model: mcp, subscriptions: subscriptions, onAdd: presentProviderRegistration)
+                }
+                .formStyle(.grouped)
+            case .models:
+                // shortcut: placeholder until agent model settings are designed.
+                Form {
+                    Section { Text(L10n.agentModelsPlaceholder).foregroundStyle(.secondary) }
+                }
+                .formStyle(.grouped)
+            case .mcps:
+                AgentMCPSettingsView(model: mcp, onAdd: presentMCPRegistration)
+            }
+        }
+        .task {
+            await mcp.refreshSignInState()
+            await mcp.loadAccountProvider()
+        }
+        .onDisappear { navigation.dismissSettingsModal() }
+    }
+
+    /// Modals cover the whole window, as the sign-in does.
+    private func presentProviderRegistration() {
+        navigation.presentSettingsModal(
+            AgentProviderRegistrationView(model: mcp, subscriptions: subscriptions, onClose: navigation.dismissSettingsModal)
+        )
+    }
+
+    private func presentMCPRegistration() {
+        navigation.presentSettingsModal(AgentMCPRegistrationView(onClose: navigation.dismissSettingsModal))
+    }
+}
+
+/// How the account runs Pi. The Pi command belongs to the account; the Pi that Dahlia installs is shared by every
+/// account on this Mac.
+private struct AgentRuntimeSection: View {
     let provider: CodexRuntimeProvider
     @AppStorage private var piPath: String
     @State private var resolvedCommand: Result<String, CodexAppServerError>?
@@ -39,12 +113,12 @@ private struct AgentGeneralSettingsView: View {
 
     init(provider: CodexRuntimeProvider) {
         self.provider = provider
-        _piPath = AppStorage(wrappedValue: "", PiBundle.executablePathDefaultsKey(for: provider))
+        _piPath = AppStorage(wrappedValue: PiBundle.defaultCommand, PiBundle.executablePathDefaultsKey(for: provider))
     }
 
     var body: some View {
         Section {
-            TextField(L10n.piCommand, text: $piPath, prompt: Text(L10n.piCommandAutomatic))
+            TextField(L10n.piCommand, text: $piPath, prompt: Text(PiBundle.defaultCommand))
             LabeledContent(L10n.piCommandInUse) {
                 switch resolvedCommand {
                 case let .success(path):
@@ -85,8 +159,8 @@ private struct AgentGeneralSettingsView: View {
             case nil:
                 EmptyView()
             }
-        } footer: {
-            Text(L10n.piCommandDescription)
+        } header: {
+            Text(L10n.agentRuntime)
         }
         .task(id: piPath) {
             await resolveCommand()
@@ -138,44 +212,498 @@ private struct AgentGeneralSettingsView: View {
     }
 }
 
-/// MCPs grouped by where they come from; only Unity Gateway exists today.
-private struct AgentMCPSettingsView: View {
-    @State private var workspaceSettings = WorkspaceAISettingsModel.shared
+/// Environment variables for every Pi process the account starts. Secret values go to the Keychain and are never shown.
+private struct AgentEnvironmentSection: View {
+    let model: PiLaunchSettingsModel
+    @State private var errorMessage: String?
 
     var body: some View {
-        if workspaceSettings.isDatabricksAccount, let connectionID = workspaceSettings.databricksAccountConnectionID {
-            Section {
-                ForEach(DatabricksGatewayMCP.allCases) { mcp in
-                    GatewayMCPToggle(mcp: mcp, connectionID: connectionID)
-                }
-            } header: {
-                Text(L10n.unityGateway)
-            } footer: {
-                Text(L10n.unityGatewayMCPsDescription)
+        Section {
+            ForEach(model.settings.variables) { variable in
+                AgentEnvironmentVariableRow(
+                    variable: variable,
+                    isStored: model.storedSecretIDs.contains(variable.id),
+                    model: model,
+                    onError: { errorMessage = $0 }
+                )
             }
-            .id(connectionID)
-        } else {
-            Section {
-                Text(L10n.agentMCPsRequireDatabricks).foregroundStyle(.secondary)
-            } header: {
-                Text(L10n.unityGateway)
+            if let errorMessage {
+                Label(errorMessage, systemImage: "exclamationmark.triangle.fill")
+                    .foregroundStyle(.orange)
+            }
+        } header: {
+            AgentSectionHeader(title: L10n.agentEnvironment) {
+                Button(L10n.agentAddVariable, systemImage: "plus") { model.addVariable() }
+            }
+        }
+        .task { await model.refreshStoredSecrets() }
+    }
+}
+
+private struct AgentEnvironmentVariableRow: View {
+    let variable: PiLaunchSettings.Variable
+    let isStored: Bool
+    let model: PiLaunchSettingsModel
+    let onError: (String?) -> Void
+    /// A new secret value, saved when the field is submitted or loses focus, then cleared.
+    @State private var secretValue = ""
+    @FocusState private var isSecretFocused: Bool
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            HStack {
+                TextField(
+                    L10n.agentVariableName,
+                    text: Binding { variable.name } set: { model.setName($0, of: variable.id) },
+                    prompt: Text("VARIABLE_NAME")
+                )
+                .labelsHidden()
+                .font(.body.monospaced())
+                if variable.isSecret {
+                    SecureField(
+                        L10n.agentVariableValue,
+                        text: $secretValue,
+                        prompt: Text(isStored ? L10n.agentSecretStored : L10n.agentVariableValue)
+                    )
+                    .labelsHidden()
+                    .focused($isSecretFocused)
+                    .onSubmit(saveSecret)
+                    .onChange(of: isSecretFocused) { _, focused in
+                        if !focused { saveSecret() }
+                    }
+                } else {
+                    TextField(
+                        L10n.agentVariableValue,
+                        text: Binding { variable.value ?? "" } set: { model.setValue($0, of: variable.id) },
+                        prompt: Text(L10n.agentVariableValue)
+                    )
+                    .labelsHidden()
+                }
+                Button(
+                    variable.isSecret ? L10n.agentVariableMakePlain : L10n.agentVariableMakeSecret,
+                    systemImage: variable.isSecret ? "lock.fill" : "lock.open"
+                ) {
+                    toggleSecret()
+                }
+                .labelStyle(.iconOnly)
+                .help(variable.isSecret ? L10n.agentVariableMakePlain : L10n.agentVariableMakeSecret)
+                Button(L10n.delete, systemImage: "xmark") {
+                    Task { await model.removeVariable(variable.id) }
+                }
+                .labelStyle(.iconOnly)
+                .help(L10n.delete)
+            }
+            if !variable.name.isEmpty, !PiLaunchSettings.isValidName(variable.name) {
+                Text(L10n.agentVariableNameInvalid)
+                    .font(.caption)
+                    .foregroundStyle(.red)
+            }
+        }
+    }
+
+    private func saveSecret() {
+        let value = secretValue
+        guard !value.isEmpty else { return }
+        secretValue = ""
+        Task {
+            do {
+                try await model.setSecretValue(value, of: variable.id)
+                onError(nil)
+            } catch {
+                onError(error.localizedDescription)
+            }
+        }
+    }
+
+    private func toggleSecret() {
+        Task {
+            do {
+                try await model.setSecret(!variable.isSecret, of: variable.id)
+                onError(nil)
+            } catch {
+                onError(error.localizedDescription)
             }
         }
     }
 }
 
-private struct GatewayMCPToggle: View {
-    let mcp: DatabricksGatewayMCP
-    @AppStorage private var isOn: Bool
+/// The providers the open account's agent can use, each with a badge for what it serves: the account's own sign-in,
+/// the subscriptions signed in to (Local Account), and the Databricks workspaces signed in to for MCP servers.
+private struct AgentProviderSection: View {
+    let account: CodexRuntimeProvider
+    let model: AgentMCPSettingsModel
+    let subscriptions: [CodexAccountController]
+    let onAdd: () -> Void
+    @State private var signInTask: Task<Void, Never>?
+    @State private var pendingRemoval: AgentMCPProvider?
 
-    init(mcp: DatabricksGatewayMCP, connectionID: UUID) {
-        self.mcp = mcp
-        _isOn = AppStorage(wrappedValue: false, mcp.defaultsKey(connectionID: connectionID))
+    private var signedInSubscriptions: [CodexAccountController] {
+        subscriptions.filter { $0.accountStatus?.isAuthenticated == true }
+    }
+
+    private var workspaces: [AgentMCPProvider] {
+        model.settings.providers.filter { !$0.isAccount }
     }
 
     var body: some View {
-        // Chat processes started after a change use the new servers; one already open keeps its own until it closes.
-        Toggle(mcp.displayName, isOn: $isOn)
-            .toggleStyle(.switch)
+        Section {
+            switch account {
+            case .local:
+                EmptyView()
+            case .databricks:
+                // The account signs in and out from the account menu.
+                // Until its workspace is known, the account's provider shows without a host.
+                AgentProviderRow(
+                    title: model.accountProvider.map { L10n.unityGatewayHost($0.host) } ?? L10n.databricksUnityGateway,
+                    icon: .databricksLogo,
+                    uses: [L10n.agentProviderModels, L10n.mcp]
+                ) {
+                    EmptyView()
+                }
+                // Dahlia does not know whether the account's own sign-in still holds, so the row shows no status.
+                .help(L10n.agentProviderAccountSignIn)
+            case .dahlia:
+                AgentProviderRow(
+                    title: L10n.dahliaAccount,
+                    icon: Image(nsImage: NSApplication.shared.applicationIconImage),
+                    uses: [L10n.agentProviderModels]
+                ) {
+                    EmptyView()
+                }
+                .help(L10n.agentProviderAccountSignIn)
+            }
+            ForEach(signedInSubscriptions, id: \.subscription) { controller in
+                AgentProviderRow(
+                    title: controller.subscription.displayName,
+                    icon: controller.subscription.logo,
+                    uses: [L10n.agentProviderModels]
+                ) {
+                    if controller.isSigningOut {
+                        ProgressView().controlSize(.small)
+                    } else {
+                        Text(L10n.codexSignedIn).foregroundStyle(.secondary)
+                    }
+                    AgentProviderActions {
+                        Button(L10n.signOut) { Task { await controller.signOut() } }
+                    }
+                    .disabled(controller.isBusy)
+                }
+            }
+            ForEach(workspaces) { provider in
+                AgentProviderRow(title: L10n.unityGatewayHost(provider.host), icon: .databricksLogo, uses: [L10n.mcp]) {
+                    if model.signingInProviderID == provider.id, signInTask != nil {
+                        ProgressView().controlSize(.small)
+                        Button(L10n.cancelSignIn) { signInTask?.cancel() }
+                    } else if model.isSignedIn(provider) {
+                        Text(L10n.codexSignedIn).foregroundStyle(.secondary)
+                    } else {
+                        Button(L10n.dahliaSignIn) { signIn(provider) }
+                            .disabled(model.isBusy)
+                    }
+                    AgentProviderActions {
+                        if model.isSignedIn(provider) {
+                            Button(L10n.signInAgain) { signIn(provider) }
+                        }
+                        Button(L10n.delete, role: .destructive) { pendingRemoval = provider }
+                    }
+                    .disabled(model.isBusy)
+                }
+            }
+            if account == .local, signedInSubscriptions.isEmpty, workspaces.isEmpty {
+                Text(L10n.agentProvidersEmpty).foregroundStyle(.secondary)
+            }
+            ForEach(subscriptions.compactMap(\.errorMessage) + [model.errorMessage].compactMap(\.self), id: \.self) { message in
+                Label(message, systemImage: "exclamationmark.triangle.fill")
+                    .foregroundStyle(.orange)
+            }
+        } header: {
+            AgentSectionHeader(title: L10n.agentProviders) {
+                Button(L10n.addProvider, systemImage: "plus", action: onAdd)
+                    .disabled(model.isBusy)
+            }
+        }
+        .confirmationDialog(
+            pendingRemoval.map { L10n.mcpRemoveWorkspace($0.host) } ?? "",
+            isPresented: Binding(get: { pendingRemoval != nil }, set: { if !$0 { pendingRemoval = nil } }),
+            titleVisibility: .visible
+        ) {
+            Button(L10n.delete, role: .destructive) {
+                guard let provider = pendingRemoval else { return }
+                pendingRemoval = nil
+                Task { await model.remove(provider) }
+            }
+            Button(L10n.cancel, role: .cancel) { pendingRemoval = nil }
+        } message: {
+            Text(L10n.mcpRemoveWorkspaceDescription)
+        }
+        .task {
+            for controller in subscriptions {
+                await controller.activate()
+            }
+        }
+        // A sign-in made elsewhere (setup tour or the add modal) updates the subscriptions too.
+        .onReceive(NotificationCenter.default.publisher(for: PiRuntimeService.modelsDidChange).receive(on: RunLoop.main)) { _ in
+            Task {
+                for controller in subscriptions where !controller.isBusy {
+                    await controller.activate()
+                }
+            }
+        }
+        .onDisappear { signInTask?.cancel() }
+    }
+
+    private func signIn(_ provider: AgentMCPProvider) {
+        model.errorMessage = nil
+        signInTask = Task {
+            do {
+                try await model.signIn(provider)
+            } catch is CancellationError {
+                // Cancelling closes Pi and its pending sign-in.
+            } catch {
+                model.errorMessage = error.localizedDescription
+            }
+            signInTask = nil
+        }
+    }
+}
+
+/// A section title with the section's add button beside it.
+private struct AgentSectionHeader<Action: View>: View {
+    let title: String
+    @ViewBuilder let action: Action
+
+    var body: some View {
+        HStack {
+            Text(title)
+            Spacer()
+            action
+        }
+    }
+}
+
+/// One provider: its logo and name with a badge for each use (models, MCP), and its status and actions.
+struct AgentProviderRow<Trailing: View>: View {
+    let title: String
+    let icon: Image
+    let uses: [String]
+    @ViewBuilder let trailing: Trailing
+
+    var body: some View {
+        LabeledContent {
+            HStack { trailing }
+        } label: {
+            Label {
+                HStack(spacing: 6) {
+                    Text(title)
+                    ForEach(uses, id: \.self) { use in
+                        Text(use)
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                            .dahliaChipSurface()
+                    }
+                }
+            } icon: {
+                icon.resizable().scaledToFit().frame(width: 16, height: 16)
+            }
+        }
+    }
+}
+
+/// A row's less frequent actions, as the workspace settings show them.
+struct AgentProviderActions<Content: View>: View {
+    @ViewBuilder let content: Content
+
+    var body: some View {
+        Menu(L10n.actions, systemImage: "ellipsis.circle") { content }
+            .labelStyle(.iconOnly)
+            .dahliaFixedSymbol()
+            .menuStyle(.borderlessButton)
+            .menuIndicator(.hidden)
+            .fixedSize()
+            .help(L10n.actions)
+    }
+}
+
+extension PiSubscription {
+    var logo: Image {
+        switch self {
+        case .openai: .openAILogo
+        case .anthropic: .anthropicLogo
+        }
+    }
+}
+
+/// The open account's MCP servers. Each Unity Gateway provider (the account's own and those added under General)
+/// expands to its services, each turned on or off with a switch; remote MCP servers are added with the modal.
+private struct AgentMCPSettingsView: View {
+    let model: AgentMCPSettingsModel
+    let onAdd: () -> Void
+    @State private var expandedProviderIDs: Set<String> = []
+    @State private var serviceSignIn: (service: String, task: Task<Void, Never>)?
+    /// Each provider's listing in progress, cancelled when the tab goes away.
+    @State private var listings: [String: Task<Void, Never>] = [:]
+    @State private var renaming: AgentMCPServer?
+    @State private var proposedName = ""
+
+    var body: some View {
+        Form {
+            ForEach(model.selectableProviders) { provider in
+                Section {
+                    DisclosureGroup(isExpanded: expansion(of: provider)) {
+                        services(of: provider)
+                    } label: {
+                        // One line reads better beside the disclosure arrow.
+                        AgentProviderRow(
+                            title: L10n.unityGatewayHost(provider.host),
+                            icon: .databricksLogo,
+                            uses: provider.isAccount ? [L10n.agentProviderModels, L10n.mcp] : [L10n.mcp]
+                        ) {
+                            Text(L10n.mcpEnabledCount(model.servers(of: provider).count))
+                                .foregroundStyle(.secondary)
+                        }
+                        // The whole row opens and closes the list, not just the arrow.
+                        .contentShape(.rect)
+                        .onTapGesture { expansion(of: provider).wrappedValue.toggle() }
+                        .accessibilityAddTraits(.isButton)
+                    }
+                }
+            }
+            Section {
+                if let errorMessage = model.errorMessage {
+                    Label(errorMessage, systemImage: "exclamationmark.triangle.fill")
+                        .foregroundStyle(.orange)
+                }
+                Button(L10n.addRemoteMCPServer, action: onAdd)
+            }
+        }
+        .formStyle(.grouped)
+        .alert(L10n.mcpRenameServer, isPresented: Binding(get: { renaming != nil }, set: { if !$0 { renaming = nil } })) {
+            TextField(L10n.mcpServerName, text: $proposedName)
+            Button(L10n.rename, action: rename)
+            Button(L10n.cancel, role: .cancel) { renaming = nil }
+        }
+        .onDisappear {
+            serviceSignIn?.task.cancel()
+            listings.values.forEach { $0.cancel() }
+        }
+    }
+
+    @ViewBuilder
+    private func services(of provider: AgentMCPProvider) -> some View {
+        let services = model.listedServices(of: provider)
+        if model.listingProviderIDs.contains(provider.id), services.isEmpty {
+            HStack {
+                ProgressView().controlSize(.small)
+                Text(L10n.mcpLoadingServices).foregroundStyle(.secondary)
+            }
+        }
+        if let error = model.listingErrors[provider.id] {
+            HStack {
+                Label(listingMessage(error, provider: provider), systemImage: "exclamationmark.triangle.fill")
+                    .foregroundStyle(.orange)
+                    .fixedSize(horizontal: false, vertical: true)
+                Spacer()
+                Button(L10n.retry) { list(provider) }
+            }
+        } else if !model.listingProviderIDs.contains(provider.id), services.isEmpty {
+            Text(L10n.mcpNoServices).foregroundStyle(.secondary)
+        }
+        ForEach(services, id: \.self) { service in
+            let server = model.servers(of: provider).first { $0.service == service }
+            LabeledContent {
+                Toggle(service, isOn: enabled(service, of: provider))
+                    .labelsHidden()
+                    .toggleStyle(.switch)
+                if serviceSignIn?.service == serviceKey(service, of: provider) {
+                    ProgressView().controlSize(.small)
+                    Button(L10n.cancel) { serviceSignIn?.task.cancel() }
+                } else {
+                    AgentProviderActions {
+                        if let server {
+                            Button(L10n.rename) {
+                                proposedName = server.name
+                                renaming = server
+                            }
+                        }
+                        // The service's own sign-in (GitHub, Slack, ...) at Unity Gateway, needed before its tools work.
+                        Button(L10n.mcpServiceSignIn) { signIn(to: service, of: provider) }
+                    }
+                    .disabled(serviceSignIn != nil)
+                }
+            } label: {
+                Text(server.map { L10n.mcpServiceWithServerName(service, $0.name) } ?? service)
+            }
+        }
+    }
+
+    /// Expanding lists the services again, showing the last list meanwhile.
+    private func expansion(of provider: AgentMCPProvider) -> Binding<Bool> {
+        Binding {
+            expandedProviderIDs.contains(provider.id)
+        } set: { isExpanded in
+            if isExpanded {
+                expandedProviderIDs.insert(provider.id)
+                list(provider)
+            } else {
+                expandedProviderIDs.remove(provider.id)
+            }
+        }
+    }
+
+    /// One listing per provider at a time; a listing already running serves this request too.
+    private func list(_ provider: AgentMCPProvider) {
+        guard listings[provider.id] == nil else { return }
+        listings[provider.id] = Task {
+            await model.refreshServices(of: provider)
+            listings[provider.id] = nil
+        }
+    }
+
+    private func enabled(_ service: String, of provider: AgentMCPProvider) -> Binding<Bool> {
+        Binding {
+            model.servers(of: provider).contains { $0.service == service }
+        } set: { isOn in
+            do {
+                try model.setService(service, enabled: isOn, of: provider)
+                model.errorMessage = nil
+            } catch {
+                model.errorMessage = error.localizedDescription
+            }
+        }
+    }
+
+    private func listingMessage(_ error: any Error, provider: AgentMCPProvider) -> String {
+        guard case .notLoggedIn = error as? CodexAppServerError else { return error.localizedDescription }
+        // The account signs in from the account menu; other providers sign in under General.
+        return provider.isAccount ? L10n.mcpAccountSignInRequired : L10n.mcpProviderSignInRequired
+    }
+
+    private func rename() {
+        guard let server = renaming else { return }
+        renaming = nil
+        do {
+            try model.rename(server, to: proposedName.trimmingCharacters(in: .whitespacesAndNewlines))
+            model.errorMessage = nil
+        } catch {
+            model.errorMessage = error.localizedDescription
+        }
+    }
+
+    private func serviceKey(_ service: String, of provider: AgentMCPProvider) -> String {
+        "\(provider.id)/\(service)"
+    }
+
+    private func signIn(to service: String, of provider: AgentMCPProvider) {
+        model.errorMessage = nil
+        serviceSignIn = (serviceKey(service, of: provider), Task {
+            do {
+                try await model.signInToService(service, of: provider)
+            } catch is CancellationError {
+                // Cancel, or leaving the tab, stops the browser sign-in.
+            } catch {
+                model.errorMessage = error.localizedDescription
+            }
+            serviceSignIn = nil
+        })
     }
 }

@@ -5,15 +5,13 @@ enum CodexChatApprovalNormalizer {
     static let fileLimit = 50
     private static let decisionLimit = 16
     private static let amendmentItemLimit = 50
-    /// The MCP servers Dahlia registers with chat: its own and the Unity AI Gateway MCPs. Any other server is unsupported.
-    private static let approvableMCPServers = Set(["dahlia"] + DatabricksGatewayMCP.allCases.map(\.rawValue))
-
     static func request(
         id: String,
         params: [String: JSONValue],
         kind: CodexChatApprovalRequest.Kind,
         fileChanges: [CodexChatApprovalRequest.FileChange],
         mcpToolCall: CodexChatMCPToolCall? = nil,
+        approvableMCPServers: Set<String> = ["dahlia"],
         sourceWasTruncated: Bool = false
     ) throws -> CodexChatApprovalRequest {
         let itemID = params["itemId"]?.stringValue
@@ -31,6 +29,7 @@ enum CodexChatApprovalNormalizer {
             || nonNullValue(params["additionalPermissions"])
             || nonNullValue(params["networkApprovalContext"])
             || nonEmptyArray(params["proposedNetworkPolicyAmendments"])
+            // Only servers Dahlia registered with the chat can be approved: its own and the user's registered MCPs.
             || (kind == .mcpToolCall && !approvableMCPServers.contains(mcpToolCall?.server ?? ""))
         let isTooLarge = sourceWasTruncated
             || mcpToolCall?.isTruncated == true

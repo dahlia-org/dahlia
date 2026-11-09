@@ -57,15 +57,11 @@ struct SettingsDetailView: View {
         case .general, .language, .appearance, .recordingStopDetection:
             GeneralSettingsView()
         case .accountsAndWorkspaces, .dahliaAccounts, .accountPreferences, .macInference, .modelProvider, .aiSummary, .mcp:
-            // Accounts are chosen from the sidebar's account menu; this page holds the open account's model settings.
+            // Accounts are chosen from the sidebar's account menu; this page holds the open account's model settings. Its
+            // providers, such as the Local Account's subscriptions, are under Agents.
             Form {
-                Group {
-                    if appSettings.currentWorkspace != nil, WorkspaceAISettingsModel.shared.isLocalAccount {
-                        AccountSettingsView()
-                    }
-                    AccountProcessingSettingsView()
-                }
-                .id(appSettings.currentWorkspace.map(WorkspaceAccountChoice.init))
+                AccountProcessingSettingsView()
+                    .id(appSettings.currentWorkspace.map(WorkspaceAccountChoice.init))
             }
             .formStyle(.grouped)
             .onChange(of: dahliaAccountController.connections) {

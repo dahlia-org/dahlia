@@ -5,6 +5,9 @@ Usage: python3 apps/macos/scripts/test-pi-extension.py [--pi /path/to/pi]  (defa
 Uses an isolated agent directory and synthetic tokens; nothing leaves 127.0.0.1.
 """
 import argparse
+import base64
+import hashlib
+import socket
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import json
 import os
@@ -12,10 +15,15 @@ from pathlib import Path
 import subprocess
 import tempfile
 import threading
+import urllib.parse
+import urllib.request
 
 ROOT = Path(__file__).resolve().parents[3]
 EXTENSION = ROOT / "apps/macos/Sources/Dahlia/PiExtension/dahlia.ts"
-CHAT_ARGUMENTS = ["--no-session", "-e", "builtin:mcp", "--tools", "read,ls,mcp__dahlia__*"]
+# Chat also loads the Databricks provider as its own extension, as Dahlia does.
+PROVIDER_EXTENSION = ROOT / "apps/macos/Sources/Dahlia/PiExtension/databricks-provider.ts"
+CHAT_EXTENSIONS = ["-e", "builtin:mcp", "-e", str(PROVIDER_EXTENSION)]
+CHAT_ARGUMENTS = ["--no-session", *CHAT_EXTENSIONS, "--tools", "read,ls,mcp__dahlia__*"]
 # A stand-in for dahlia-mcp with one read-only and one changing tool.
 MCP_SERVER = """
 import json, sys
@@ -78,6 +86,127 @@ def http_mcp(authorizations):
     return server
 
 
+def oidc(grants, client_id="databricks-cli", redirect=None, scopes=frozenset({"ai-gateway", "unity-catalog", "offline_access"}),
+         resources=None):
+    """A workspace's OIDC endpoints for the MCP sign-in: authorize answers at once, and token checks the client and PKCE.
+    `redirect` is the client's registered redirect URL; without one, the Databricks CLI's ports are accepted."""
+    verifiers = {}
+
+    class Handler(BaseHTTPRequestHandler):
+        def log_message(self, *_):
+            pass
+
+        def do_GET(self):
+            url = urllib.parse.urlparse(self.path)
+            query = dict(urllib.parse.parse_qsl(url.query))
+            if url.path == "/api/2.1/unity-catalog/mcp-services" and self.headers.get("Authorization") == "Bearer denied":
+                body = json.dumps({"error_code": "PERMISSION_DENIED", "message": "missing scope unity-catalog"}).encode()
+                self.send_response(403)
+                self.send_header("Content-Type", "application/json")
+                self.send_header("Content-Length", str(len(body)))
+                self.end_headers()
+                self.wfile.write(body)
+                return
+            if url.path == "/api/2.1/unity-catalog/mcp-services":
+                # Two pages; the sign-in's latest token must reach the listing.
+                # The workspace's own sign-in, or the account's bridged one.
+                assert self.headers.get("Authorization") in {f"Bearer mcp-access-{len(grants)}", "Bearer synthetic-token"}, \
+                    self.headers.get("Authorization")
+                assert query["parent"] == "schemas/system.ai" and query["view"] == "BASIC", query
+                services = ([{"name": "mcp-services/system.ai.slack"}, {"name": "mcp-services/system.ai.github"}], "next") \
+                    if "page_token" not in query else \
+                    ([{"name": "mcp-services/system.ai.gmail", "config": {"connection": {"status": "ACTIVE"}}},
+                      {"name": "mcp-services/system.ai.broken", "config": {"connection": {"status": "FAILED"}}},
+                      {"name": "mcp-services/main.default.other"}], None)
+                body = json.dumps({"mcp_services": services[0], **({"next_page_token": services[1]} if services[1] else {})}).encode()
+                self.send_response(200)
+                self.send_header("Content-Type", "application/json")
+                self.send_header("Content-Length", str(len(body)))
+                self.end_headers()
+                self.wfile.write(body)
+                return
+            assert url.path == "/oidc/v1/authorize", url.path
+            assert query["client_id"] == client_id, query
+            assert set(query["scope"].split()) == scopes and query["code_challenge_method"] == "S256", query
+            allowed = {redirect} if redirect else {f"http://localhost:{port}" for port in range(8020, 8041)}
+            assert query["redirect_uri"] in allowed, query
+            verifiers["code"] = query["code_challenge"]
+            if resources is not None:
+                resources.append(query.get("resource"))
+            self.send_response(302)
+            self.send_header("Location", query["redirect_uri"] + "?" + urllib.parse.urlencode({"code": "code", "state": query["state"]}))
+            self.send_header("Content-Length", "0")
+            self.end_headers()
+
+        def do_POST(self):
+            form = dict(urllib.parse.parse_qsl(self.rfile.read(int(self.headers["Content-Length"])).decode()))
+            assert self.path == "/oidc/v1/token" and form["client_id"] == client_id, (self.path, form)
+            grants.append(form["grant_type"])
+            if form["grant_type"] == "authorization_code":
+                challenge = base64.urlsafe_b64encode(hashlib.sha256(form["code_verifier"].encode()).digest()).rstrip(b"=").decode()
+                assert form["code"] == "code" and challenge == verifiers["code"], form
+            else:
+                assert form["refresh_token"] == "refresh-1", form
+            body = json.dumps({"access_token": f"mcp-access-{len(grants)}", "token_type": "Bearer", "expires_in": 3600,
+                               **({"refresh_token": "refresh-1"} if form["grant_type"] == "authorization_code" else {})}).encode()
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+
+    server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    return server
+
+
+def control(pi, command, auth=None, browser=False, environment=None, bridge_token="synthetic-token"):
+    """Runs one command in a control process that loads only dahlia.ts, as Dahlia's sign-in and listing do, opening
+    each auth URL when `browser`. Returns the `databricks:` notifications and auth.json afterward."""
+    with tempfile.TemporaryDirectory() as temporary:
+        agent = Path(temporary).resolve()
+        if auth is not None:
+            (agent / "auth.json").write_text(json.dumps(auth))
+        env = dict(os.environ, PI_CODING_AGENT_DIR=str(agent), PI_OFFLINE="1", PI_SKIP_VERSION_CHECK="1", PI_TELEMETRY="0",
+                   DAHLIA_PI_MODE="control", **(environment or {}))
+        process = subprocess.Popen(
+            [pi, "--mode", "rpc", "--no-extensions", "-e", str(EXTENSION), "--no-skills", "--no-context-files",
+             "--no-prompt-templates", "--no-themes", "--no-approve", "--no-session", "--no-tools"],
+            cwd=agent, env=env, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
+        process.stdin.write((json.dumps({"id": "p", "type": "prompt", "message": command}) + "\n").encode())
+        process.stdin.flush()
+        messages = []
+        for line in process.stdout:
+            record = json.loads(line)
+            # Dahlia answers the bridged provider's token request, as it does for the account's sign-in.
+            if record.get("type") == "extension_ui_request" and record.get("title") == "dahlia:token":
+                process.stdin.write((json.dumps({"type": "extension_ui_response", "id": record["id"],
+                                                 "value": json.dumps(bridge_token)}) + "\n").encode())
+                process.stdin.flush()
+                continue
+            message = record.get("message", "")
+            if not message.startswith("databricks:"):
+                continue
+            messages.append(message)
+            prefix, _, url = message.partition(" ")
+            if prefix.endswith("auth_url"):
+                if browser:
+                    # The browser: the authorize endpoint redirects to the extension's loopback callback.
+                    urllib.request.urlopen(url, timeout=10).read()
+            else:
+                break
+        process.stdin.close()
+        process.wait(timeout=20)
+        return messages, json.loads((agent / "auth.json").read_text())
+
+
+def mcp_login(pi, arguments):
+    """Signs in like Dahlia does: `/databricks-login`, which dahlia.ts imports from the provider module. Returns auth.json."""
+    messages, auth = control(pi, f"/databricks-login {arguments}", browser=True)
+    assert messages[-1] == "databricks:login_succeeded", messages
+    return auth
+
+
 def gateway(script, requests):
     """Answers each request with the next scripted text or tool call."""
     class Handler(BaseHTTPRequestHandler):
@@ -119,7 +248,7 @@ def gateway(script, requests):
 
 
 def run(pi, mode, script, arguments, environment, approval="accept", approval_mode="ask", api="openai-responses", mcp_servers=None,
-        compat=None):
+        compat=None, auth=None):
     """Runs one prompt; returns the gateway requests, tool results, bridge calls, and whether ../outside.txt exists."""
     requests, tool_results, bridge = [], [], []
     server = gateway(script, requests)
@@ -127,7 +256,7 @@ def run(pi, mode, script, arguments, environment, approval="accept", approval_mo
         root = Path(temporary).resolve()
         (root / "agent").mkdir()
         (root / "workspace").mkdir()
-        (root / "agent/auth.json").write_text('{"marker": "SECRET_MARKER"}')
+        (root / "agent/auth.json").write_text(json.dumps(auth or {"marker": "SECRET_MARKER"}))
         (root / "workspace/inside.txt").write_text("INSIDE_MARKER")
         (root / "workspace/link").symlink_to(root / "agent/auth.json")
         if mcp_servers is not None:
@@ -273,25 +402,73 @@ def main():
     assert all(request["auth"] is None for request in elsewhere), elsewhere
     other.shutdown()
 
-    # An mcp.json MCP that names the bridged provider in `auth.provider` gets its token per request and reaches the
-    # first prompt; one without it never does. Only read-only gateway tools skip approval.
+    # A registered MCP signs in to its workspace with the extension's OAuth flow, and Pi stores the credential. An
+    # mcp.json MCP that names that provider in `auth.provider` gets its token and reaches the first prompt; one without
+    # it never does. Only read-only gateway tools skip approval.
+    grants, resources = [], []
+    workspace = oidc(grants, resources=resources)
+    origin = f"http://127.0.0.1:{workspace.server_port}"
+    # The provider is the workspace host. The credential keeps the workspace and client, so any process refreshes it.
+    provider = f"127.0.0.1:{workspace.server_port}"
+    auth = mcp_login(pi, origin)
+    credential = auth[provider]
+    assert credential["type"] == "oauth" and credential["access"] == "mcp-access-1" and credential["refresh"] == "refresh-1", auth
+    assert (credential["origin"], credential["clientId"], credential["scopes"]) == (origin, "databricks-cli", "ai-gateway unity-catalog offline_access"), auth
+    assert grants == ["authorization_code"], grants
+
+    # Listing the workspace's MCP services takes the sign-in's token, follows pages, and keeps active system.ai ones.
+    messages, _ = control(pi, f"/databricks-mcp-services {origin}", auth=auth)
+    assert messages == ['databricks:mcp_services ["system.ai.github","system.ai.gmail","system.ai.slack"]'], messages
+    messages, _ = control(pi, f"/databricks-mcp-services {origin}", auth={})
+    assert messages == ["databricks:mcp_services_sign_in_required"], messages
+    # The account's own workspace lists with its bridged sign-in, which Dahlia holds.
+    messages, _ = control(pi, f"/databricks-mcp-services {origin} --provider databricks", auth={},
+                          environment={"DAHLIA_PI_BRIDGED_PROVIDERS": "databricks"})
+    assert messages == ['databricks:mcp_services ["system.ai.github","system.ai.gmail","system.ai.slack"]'], messages
+    # Signing in to a service's connection names the service as the resource and exchanges no code.
+    messages, _ = control(pi, f"/databricks-connection-login {origin} system.ai.github", auth={}, browser=True)
+    assert messages[-1] == "databricks:connection_login_succeeded", messages
+    assert resources == [None, f"{origin}/ai-gateway/mcp-services/system.ai.github"], resources
+    assert grants == ["authorization_code"], grants
+
+    # A refusal carries Databricks' reason, such as a missing scope.
+    messages, _ = control(pi, f"/databricks-mcp-services {origin} --provider databricks", auth={},
+                          environment={"DAHLIA_PI_BRIDGED_PROVIDERS": "databricks"}, bridge_token="denied")
+    assert messages == ["databricks:mcp_services_failed Listing MCP services failed (HTTP 403, PERMISSION_DENIED: missing scope unity-catalog)"], messages
+
+    # A client the organization registered signs in with its own ID and exact redirect URL.
+    with socket.socket() as probe:
+        probe.bind(("127.0.0.1", 0))
+        callback_port = probe.getsockname()[1]
+    redirect = f"http://localhost:{callback_port}/ai-devtools-workspace-oauth"
+    custom_grants = []
+    custom = oidc(custom_grants, client_id="custom-client", redirect=redirect, scopes={"all-apis", "offline_access"})
+    custom_origin = f"http://127.0.0.1:{custom.server_port}"
+    custom_auth = mcp_login(pi, f"{custom_origin} --client-id custom-client --redirect-url {redirect} --scopes offline_access,all-apis")
+    custom_credential = custom_auth[f"127.0.0.1:{custom.server_port}"]
+    assert (custom_credential["clientId"], custom_credential["redirectUrl"]) == ("custom-client", redirect), custom_auth
+    assert custom_grants == ["authorization_code"], custom_grants
+    custom.shutdown()
+
     authorizations, foreign = [], []
     server, foreign_server = http_mcp(authorizations), http_mcp(foreign)
     mcp_servers = {"gmail": {"url": f"http://127.0.0.1:{server.server_port}/mcp", "exposure": "direct",
-                             "auth": {"provider": "databricks"}},
+                             "auth": {"provider": provider}},
                    "foreign": {"url": f"http://127.0.0.1:{foreign_server.server_port}/mcp", "exposure": "direct"}}
-    arguments = ["--no-session", "-e", "builtin:mcp", "--tools", "read,ls,mcp__gmail__*"]
+    arguments = ["--no-session", *CHAT_EXTENSIONS, "--tools", "read,ls,mcp__gmail__*"]
 
-    def gateway_chat(*steps, arguments=arguments, **options):
+    def gateway_chat(*steps, arguments=arguments, auth=auth, **options):
         return run(pi, "chat", [*steps, {"text": "done"}], arguments, {"DAHLIA_PI_MCP_SERVERS": json.dumps(["gmail"])},
-                   mcp_servers=mcp_servers, **options)
+                   mcp_servers=mcp_servers, auth=auth, **options)
 
     requests, results, bridge, _ = gateway_chat({"tool": "mcp__gmail__search_messages"})
+    # With both extensions loaded, dahlia.ts still gets session_start: the model request carries the bridged token.
+    assert requests[0]["auth"] == "Bearer synthetic-token", requests[0]["auth"]
+    assert ("token", {"provider": "databricks"}) in bridge, bridge
     names = [tool.get("name") for tool in requests[0]["body"].get("tools", [])]
     assert {"mcp__gmail__search_messages", "mcp__gmail__send_message"} <= set(names), names
     assert "mcp__foreign__search_messages" not in names, names
-    assert authorizations and set(authorizations) == {"Bearer synthetic-token"}, authorizations
-    assert any(method == "token" and payload == {"provider": "databricks"} for method, payload in bridge), bridge
+    assert authorizations and set(authorizations) == {"Bearer mcp-access-1"}, authorizations
     assert foreign and set(foreign) == {None}, foreign
     assert results == ["GATEWAY_OK"] and not any(method == "approval" for method, _ in bridge), (results, bridge)
     _, results, bridge, _ = gateway_chat({"tool": "mcp__gmail__send_message"}, approval="decline")
@@ -300,11 +477,24 @@ def main():
     assert "declined" in results[0], results
     # A server Dahlia did not register stays blocked even if its tools get past --tools.
     _, results, bridge, _ = gateway_chat({"tool": "mcp__foreign__search_messages"}, approval_mode="autoReview",
-                                         arguments=["--no-session", "-e", "builtin:mcp", "--tools", "read,ls,mcp__gmail__*,mcp__foreign__*"])
+                                         arguments=["--no-session", *CHAT_EXTENSIONS, "--tools", "read,ls,mcp__gmail__*,mcp__foreign__*"])
     assert "not available" in results[0] and "GATEWAY_OK" not in results[0], results
+
+    # The sign-ins come from the provider extension, not dahlia.ts: without it, the MCP gets no token.
+    authorizations.clear()
+    gateway_chat({"tool": "mcp__gmail__search_messages"}, arguments=["--no-session", "-e", "builtin:mcp", "--tools", "read,ls,mcp__gmail__*"])
+    assert authorizations and set(authorizations) == {None}, authorizations
+
+    # An expired token is refreshed once with the stored refresh token, which Databricks may keep.
+    authorizations.clear()
+    expired = {provider: dict(credential, expires=1)}
+    _, results, _, _ = gateway_chat({"tool": "mcp__gmail__search_messages"}, auth=expired)
+    assert results == ["GATEWAY_OK"] and set(authorizations) == {"Bearer mcp-access-2"}, (results, authorizations)
+    assert grants == ["authorization_code", "refresh_token"], grants
     server.shutdown()
     foreign_server.shutdown()
-    print("Pi extension tests passed (token bridge, strict schema on OpenAI/Claude/Gemini, read-only chat, MCP approval, model APIs, gateway MCP)")
+    workspace.shutdown()
+    print("Pi extension tests passed (token bridge, strict schema on OpenAI/Claude/Gemini, read-only chat, MCP approval, model APIs, MCP sign-in and gateway MCP)")
 
 
 if __name__ == "__main__":

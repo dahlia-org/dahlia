@@ -5,6 +5,11 @@ import { readFileSync, realpathSync } from "node:fs";
 import { homedir } from "node:os";
 import { isAbsolute, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
+import {
+  registerDatabricksConnectionLoginCommand,
+  registerDatabricksLoginCommand,
+  registerDatabricksMCPServicesCommand,
+} from "./databricks-provider.ts";
 
 const env = process.env;
 const mode = env.DAHLIA_PI_MODE ?? "control";
@@ -60,7 +65,7 @@ function openAIFormat(payload: any) {
   return { ...payload, text: { ...(payload.text ?? {}), format } };
 }
 const readOnlyDahliaTool = /^mcp__dahlia__(get|query|list|search)_/;
-// The MCP servers Dahlia registered for this chat (its own and the account's gateway MCPs); any other server is blocked.
+// The MCP servers Dahlia registered for this chat (its own and the user's); any other server is blocked.
 const chatMcpServers = new Set<string>(JSON.parse(env.DAHLIA_PI_MCP_SERVERS ?? "[]"));
 
 // The on-disk path (case, symlinks) of an existing file, or undefined.
@@ -124,7 +129,7 @@ export default function (pi: any) {
       pi.registerMcpServer("dahlia", { command, args, exposure: "direct", description: "Dahlia meetings, projects, and workspaces" });
     }
 
-    // Chat is read-only on this Mac: `read` and `ls` within the readable roots, and MCP tools (Dahlia's and the gateway's).
+    // Chat is read-only on this Mac: `read` and `ls` within the readable roots, and MCP tools (Dahlia's and the user's).
     pi.on("tool_call", async (event: any, ctx: any) => {
       const name = event.toolName;
       if (name === "read" || name === "ls") {
@@ -158,6 +163,9 @@ export default function (pi: any) {
   }
 
   if (mode === "control") {
+    registerDatabricksLoginCommand(pi);
+    registerDatabricksMCPServicesCommand(pi);
+    registerDatabricksConnectionLoginCommand(pi);
     // ModelRegistry exposes no login API to extensions; Dahlia pins the Pi version this relies on.
     const runtime = (ctx: any) => ctx.modelRegistry.runtime;
 

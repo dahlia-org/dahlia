@@ -2,6 +2,7 @@ import DahliaRuntimeSupport
 import Foundation
 import GRDB
 import Observation
+import SwiftUI
 
 enum MainWindowLocation: Equatable {
     case upcomingSchedule
@@ -46,6 +47,8 @@ final class MainWindowNavigation {
     private(set) var hasInitializedNavigationHistory = false
     private(set) var isShowingSettings = false
     private(set) var isShowingDahliaSignIn = false
+    /// A settings modal card shown over the whole window, as the sign-in is.
+    private(set) var settingsModal: AnyView?
     private(set) var setupTourMode: SetupTourMode?
     private(set) var sidebarWidth: CGFloat
     private(set) var chatSidebarWidth: CGFloat
@@ -222,8 +225,17 @@ final class MainWindowNavigation {
         isShowingDahliaSignIn = false
     }
 
+    func presentSettingsModal(_ modal: some View) {
+        settingsModal = AnyView(modal)
+    }
+
+    func dismissSettingsModal() {
+        settingsModal = nil
+    }
+
     func dismissSettings() {
         dismissDahliaSignIn()
+        dismissSettingsModal()
         isShowingSettings = false
     }
 

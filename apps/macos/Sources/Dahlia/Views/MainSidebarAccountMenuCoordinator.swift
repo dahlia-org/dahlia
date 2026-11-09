@@ -532,7 +532,7 @@ extension MainSidebarAccountMenuCoordinator {
         switch navigation.activeMenu {
         case .root:
             let titles = connections.map(\.displayName) + [L10n.localAccount]
-                + databricksAccounts.map { "\(L10n.databricks), \($0.accountLabel)" } + [
+                + databricksAccounts.map { L10n.unityGatewayHost($0.hostName) } + [
                     L10n.language,
                     L10n.settings,
                     hasCurrentConnection || currentDatabricksID != nil ? L10n.signOut : L10n.dahliaSignIn,

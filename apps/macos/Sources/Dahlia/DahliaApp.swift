@@ -119,8 +119,12 @@ struct DahliaApp: App {
                         )
                     }
                 }
-                .disabled(mainWindowNavigation.isShowingDahliaSignIn)
-                .accessibilityHidden(mainWindowNavigation.isShowingDahliaSignIn)
+                .disabled(mainWindowNavigation.isShowingDahliaSignIn || mainWindowNavigation.settingsModal != nil)
+                .accessibilityHidden(mainWindowNavigation.isShowingDahliaSignIn || mainWindowNavigation.settingsModal != nil)
+
+                if let settingsModal = mainWindowNavigation.settingsModal {
+                    settingsModal
+                }
 
                 if mainWindowNavigation.isShowingDahliaSignIn {
                     // Dahlia Cloud and Server sign-in (`DahliaServerSignInView`) is hidden for now.

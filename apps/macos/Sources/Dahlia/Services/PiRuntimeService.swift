@@ -40,7 +40,7 @@ actor PiRuntimeService {
     private let configurationReadiness: @Sendable () async -> Bool
     private let launcher: Launcher
     private let tokenResolver: TokenResolver
-    private var connections: [ObjectIdentifier: (connection: PiRPCConnection, provider: CodexRuntimeProvider)] = [:]
+    private var connections: [ObjectIdentifier: (connection: PiRPCConnection, provider: CodexRuntimeProvider, mode: LaunchOptions.Mode)] = [:]
     private var cachedModels: [CodexRuntimeProvider: [CodexModel]] = [:]
     private var modelLoads: [CodexRuntimeProvider: (task: Task<[CodexModel], any Error>, waiters: Int)] = [:]
     private var modelGeneration = 0
@@ -97,7 +97,7 @@ actor PiRuntimeService {
                 throw CodexAppServerError.invalidProtocolResponse
             }
         }
-        connections[ObjectIdentifier(connection)] = (connection, provider)
+        connections[ObjectIdentifier(connection)] = (connection, provider, options.mode)
         await connection.start()
         return connection
     }
@@ -123,9 +123,9 @@ actor PiRuntimeService {
         await closeAll()
     }
 
-    /// Closes every running process, or only one account's, such as after its credentials changed.
-    private func closeAll(of provider: CodexRuntimeProvider? = nil) async {
-        let closing = connections.filter { provider == nil || $0.value.provider == provider }
+    /// Closes every running process, or only one account's (of one mode), such as after its credentials changed.
+    private func closeAll(of provider: CodexRuntimeProvider? = nil, mode: LaunchOptions.Mode? = nil) async {
+        let closing = connections.filter { (provider == nil || $0.value.provider == provider) && (mode == nil || $0.value.mode == mode) }
         for (key, entry) in closing {
             connections.removeValue(forKey: key)
             await entry.connection.close()
@@ -223,51 +223,168 @@ actor PiRuntimeService {
 
     /// Runs Pi's own OAuth flow. Cancelling the task closes Pi and its localhost callback server.
     func signIn(_ subscription: PiSubscription, openURL: @escaping @Sendable (URL) async -> Bool) async throws {
-        let providerID = subscription.rawValue
-        let provider = CodexRuntimeProvider.local
-        let cwd = try agentLocator.agentURL(for: .local)
-        let connection = try await connect(.init(
-            mode: .control,
-            cwd: cwd,
-            arguments: ["--no-session", "--no-tools"],
-            environment: ["DAHLIA_PI_DEVICE_ID": agentLocator.deviceID()]
-        ), provider: provider)
-        let result = await Result {
-            try await PiRPCConnection.withTimeout(Self.loginTimeout) {
-                let command = Task { try? await connection.request("prompt", ["message": .string("/dahlia-login \(providerID)")]) }
-                defer { command.cancel() }
-                for try await event in connection.events {
-                    guard let message = Self.notification(event) else { continue }
-                    if message.hasPrefix("dahlia:auth_url ") {
-                        guard let url = URL(string: String(message.dropFirst("dahlia:auth_url ".count))),
-                              url.scheme?.lowercased() == "https", url.host != nil
-                        else { throw CodexAppServerError.invalidProtocolResponse }
-                        guard await openURL(url) else { throw CodexAppServerError.loginPageCouldNotOpen }
-                    } else if message == "dahlia:login_succeeded" {
-                        return
-                    } else if message.hasPrefix("dahlia:login_failed") {
-                        throw CodexAppServerError.loginFailed(String(message.dropFirst("dahlia:login_failed".count)).nilIfBlank)
-                    }
-                }
-                throw CancellationError()
-            }
-        }
-        await close(connection)
-        try result.get()
+        try await login(
+            command: "/dahlia-login \(subscription.rawValue)",
+            notificationPrefix: "dahlia:",
+            account: .local,
+            environment: ["DAHLIA_PI_DEVICE_ID": agentLocator.deviceID()],
+            openURL: openURL
+        )
         await credentialsDidChange()
     }
 
     func signOut(_ subscription: PiSubscription) async throws {
-        let providerID = subscription.rawValue
-        let provider = CodexRuntimeProvider.local
-        let cwd = try agentLocator.agentURL(for: .local)
-        let connection = try await connect(.init(mode: .control, cwd: cwd, arguments: ["--no-session", "--no-tools"]), provider: provider)
+        try await logout(providerID: subscription.rawValue, account: .local)
+        await credentialsDidChange()
+    }
+
+    // MARK: MCP sign-in
+
+    /// Signs in to a Unity AI Gateway with the extension's `/databricks-login`; Pi keeps the credential in the account's
+    /// `auth.json`. Open chats stop, so the next turn starts a process that connects with it.
+    func signIn(
+        _ mcpProvider: AgentMCPProvider,
+        account: CodexRuntimeProvider,
+        openURL: @escaping @Sendable (URL) async -> Bool
+    ) async throws {
+        try await login(
+            command: "/databricks-login \(mcpProvider.workspaceURL.absoluteString)",
+            notificationPrefix: "databricks:",
+            account: account,
+            environment: [:],
+            openURL: openURL
+        )
+        await closeAll(of: account, mode: .chat)
+    }
+
+    /// Signs the user in to the connection behind an MCP service (GitHub behind `system.ai.github`, for example), which
+    /// the gateway needs before it serves the service's tools. The workspace's own sign-in stays as it is; open chats
+    /// stop so the next turn connects to the service again.
+    func signInToService(
+        _ service: String,
+        of mcpProvider: AgentMCPProvider,
+        account: CodexRuntimeProvider,
+        openURL: @escaping @Sendable (URL) async -> Bool
+    ) async throws {
+        try await login(
+            command: "/databricks-connection-login \(mcpProvider.workspaceURL.absoluteString) \(service)",
+            notificationPrefix: "databricks:connection_",
+            account: account,
+            environment: [:],
+            openURL: openURL
+        )
+        await closeAll(of: account, mode: .chat)
+    }
+
+    /// Removes what Pi and the user kept signed in for an account that signs out: its `auth.json` and its secret
+    /// environment variables. Its other files, such as chats, stay.
+    func removeCredentials(of account: CodexRuntimeProvider) async {
+        await closeAll(of: account)
+        if let url = try? agentLocator.agentURL(for: account).appending(path: "auth.json") {
+            try? FileManager.default.removeItem(at: url)
+        }
+        PiLaunchSettings.removeSecrets(for: account)
+    }
+
+    /// Pi removes a credential without its provider registered, so the generic sign-out serves MCP sign-ins too.
+    /// Open chats stop even if the sign-out fails, since the workspace's servers are no longer registered.
+    func signOut(_ mcpProvider: AgentMCPProvider, account: CodexRuntimeProvider) async throws {
+        do {
+            try await logout(providerID: mcpProvider.id, account: account)
+        } catch {
+            await closeAll(of: account, mode: .chat)
+            throw error
+        }
+        await closeAll(of: account, mode: .chat)
+    }
+
+    /// The Unity AI Gateway MCP services the sign-in can see, by full name. Pi lists them, so the token stays in Pi.
+    func mcpServices(_ mcpProvider: AgentMCPProvider, account: CodexRuntimeProvider) async throws -> [String] {
+        let cwd = try agentLocator.agentURL(for: account)
+        let connection = try await connect(.init(mode: .control, cwd: cwd, arguments: ["--no-session", "--no-tools"]), provider: account)
+        let command = "/databricks-mcp-services \(mcpProvider.listingArguments)"
+        let result = await Result {
+            // The extension stops listing after 60 seconds.
+            try await PiRPCConnection.withTimeout(.seconds(70)) {
+                let request = Task { try? await connection.request("prompt", ["message": .string(command)]) }
+                defer { request.cancel() }
+                for try await event in connection.events {
+                    guard let message = Self.notification(event) else { continue }
+                    if message.hasPrefix("databricks:mcp_services ") {
+                        return try JSONDecoder().decode([String].self, from: Data(message.dropFirst("databricks:mcp_services ".count).utf8))
+                    } else if message == "databricks:mcp_services_sign_in_required" {
+                        throw CodexAppServerError.notLoggedIn
+                    } else if message.hasPrefix("databricks:mcp_services_failed") {
+                        throw CodexAppServerError.rpcError(
+                            code: nil,
+                            message: String(message.dropFirst("databricks:mcp_services_failed".count)).trimmingCharacters(in: .whitespaces)
+                        )
+                    }
+                }
+                // The stream ends without an answer when Pi exits; only a cancelled caller stops quietly.
+                try Task.checkCancellation()
+                throw CodexAppServerError.processExited(nil)
+            }
+        }
+        await close(connection)
+        return try result.get()
+    }
+
+    /// Pi provider IDs with a stored credential in the account's `auth.json`. Only the keys are read.
+    func signedInProviderIDs(account: CodexRuntimeProvider) throws -> Set<String> {
+        let url = try agentLocator.agentURL(for: account).appending(path: "auth.json")
+        guard let data = FileManager.default.contents(atPath: url.path) else { return [] }
+        return Set(((try? JSONDecoder().decode(JSONValue.self, from: data))?.objectValue ?? [:]).keys)
+    }
+
+    /// Runs a sign-in command and follows its notifications: `<prefix>auth_url <url>`, then `<prefix>login_succeeded`
+    /// or `<prefix>login_failed <message>`.
+    private func login(
+        command: String,
+        notificationPrefix prefix: String,
+        account: CodexRuntimeProvider,
+        environment: [String: String],
+        openURL: @escaping @Sendable (URL) async -> Bool
+    ) async throws {
+        let cwd = try agentLocator.agentURL(for: account)
+        let connection = try await connect(
+            .init(mode: .control, cwd: cwd, arguments: ["--no-session", "--no-tools"], environment: environment),
+            provider: account
+        )
+        let result = await Result {
+            try await PiRPCConnection.withTimeout(Self.loginTimeout) {
+                let request = Task { try? await connection.request("prompt", ["message": .string(command)]) }
+                defer { request.cancel() }
+                for try await event in connection.events {
+                    guard let message = Self.notification(event) else { continue }
+                    if message.hasPrefix("\(prefix)auth_url ") {
+                        guard let url = URL(string: String(message.dropFirst("\(prefix)auth_url ".count))),
+                              url.scheme?.lowercased() == "https", url.host != nil
+                        else { throw CodexAppServerError.invalidProtocolResponse }
+                        guard await openURL(url) else { throw CodexAppServerError.loginPageCouldNotOpen }
+                    } else if message == "\(prefix)login_succeeded" {
+                        return
+                    } else if message.hasPrefix("\(prefix)login_failed") {
+                        throw CodexAppServerError.loginFailed(String(message.dropFirst("\(prefix)login_failed".count)).nilIfBlank)
+                    }
+                }
+                // The stream ends without an answer when Pi exits; only a cancelled caller stops quietly.
+                try Task.checkCancellation()
+                throw CodexAppServerError.processExited(nil)
+            }
+        }
+        await close(connection)
+        try result.get()
+    }
+
+    private func logout(providerID: String, account: CodexRuntimeProvider) async throws {
+        let cwd = try agentLocator.agentURL(for: account)
+        let connection = try await connect(.init(mode: .control, cwd: cwd, arguments: ["--no-session", "--no-tools"]), provider: account)
         let result = await Result {
             try await connection.request("prompt", ["message": .string("/dahlia-logout \(providerID)")], timeout: Self.controlTimeout)
         }
         await close(connection)
         _ = try result.get()
-        await credentialsDidChange()
     }
 
     /// Running chats reopen with the new credentials on their next turn, and model pickers reload.
@@ -479,6 +596,9 @@ actor PiRuntimeService {
         var environment = ProcessInfo.processInfo.environment.filter { key, _ in
             !key.hasSuffix("_API_KEY") && !key.hasSuffix("_AUTH_TOKEN") && !key.hasSuffix("_OAUTH_TOKEN") && !key.hasPrefix("PI_")
         }
+        // The user's variables for this account come before what Dahlia sets, which overrides them.
+        let launch = PiLaunchSettings.load(for: provider)
+        environment.merge(launch.environment { KeychainService.load(key: PiLaunchSettings.secretKey(for: provider, id: $0)) }) { $1 }
         let executableURL = try PiBundle.executableURL(for: provider)
         environment["PATH"] = CommandLineToolLocator.searchPath(for: executableURL, environment: environment)
         environment["PI_CODING_AGENT_DIR"] = agentURL.path

@@ -13,6 +13,11 @@ struct DatabricksConnection: Codable, Hashable, Identifiable, Sendable {
         return name.split(separator: ".").first.map(String.init) ?? name
     }
 
+    /// The workspace's host name, such as `dbc-a5d4177a-49dc.cloud.databricks.com`.
+    var hostName: String {
+        URL(string: host)?.host() ?? host
+    }
+
     /// "workspace (email)", or the workspace alone until the user is known.
     var accountLabel: String {
         email.map { "\(workspaceName) (\($0))" } ?? workspaceName
