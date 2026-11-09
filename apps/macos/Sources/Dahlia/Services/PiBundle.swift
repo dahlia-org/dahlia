@@ -9,12 +9,15 @@ enum PiBundle {
     }
 
     /// The command the account runs, as set in Settings: a path is used as it is, and a command name (`pi` when unset)
-    /// is found on the search path. The Pi that Dahlia installs is used only once Settings sets its path.
+    /// is found on the search path, including a PATH the account sets under Environment (secrets aside). The Pi that
+    /// Dahlia installs is used only once Settings sets its path.
     nonisolated static func executableURL(for provider: CodexRuntimeProvider, defaults: UserDefaults = .standard) throws -> URL {
         let configured = (defaults.string(forKey: executablePathDefaultsKey(for: provider)) ?? "")
             .trimmingCharacters(in: .whitespaces).nilIfBlank ?? defaultCommand
         guard configured.contains("/") || configured.hasPrefix("~") else {
-            guard let url = CommandLineToolLocator.executableURL(named: configured) else {
+            let environment = ProcessInfo.processInfo.environment
+                .merging(PiLaunchSettings.load(for: provider, defaults: defaults).environment { _ in nil }) { $1 }
+            guard let url = CommandLineToolLocator.executableURL(named: configured, environment: environment) else {
                 throw CodexAppServerError.piCommandNotFound(configured == defaultCommand ? nil : configured)
             }
             return url

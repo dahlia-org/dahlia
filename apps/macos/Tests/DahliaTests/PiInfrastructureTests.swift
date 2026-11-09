@@ -39,6 +39,11 @@ import Foundation
             #expect(throws: CodexAppServerError.piCommandNotFound("dahlia-no-such-command")) {
                 try PiBundle.executableURL(for: account, defaults: defaults)
             }
+
+            // A PATH the account sets under Environment is searched too, as the launched Pi sees it.
+            defaults.set("pi", forKey: PiBundle.executablePathDefaultsKey(for: account))
+            PiLaunchSettings(variables: [.init(id: UUID(), name: "PATH", value: directory.path)]).save(for: account, defaults: defaults)
+            #expect(try PiBundle.executableURL(for: account, defaults: defaults).path == pi.path)
         }
 
         @Test
