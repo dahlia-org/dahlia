@@ -9,12 +9,10 @@ import Foundation
     struct SettingsCategoryTests {
         @Test
         func accountAndWorkspacePreferencesHaveSeparateDestinations() {
-            #expect(SettingsGroup.account.categories == [.accountsAndWorkspaces, .agents])
+            #expect(SettingsGroup.account.categories == [.workspace, .accountsAndWorkspaces, .agents])
             #expect(SettingsCategory.agents.matches("Gmail"))
             #expect(SettingsNavigation.visibleSelection(.accountPreferences) == .accountsAndWorkspaces)
             #expect(SettingsNavigation.visibleSelection(.macInference) == .accountsAndWorkspaces)
-            #expect(!SettingsGroup.workspace.categories.contains(.accountPreferences))
-            #expect(SettingsGroup.workspace.categories == [.workspace])
             #expect(!SettingsGroup.app.categories.contains(.macInference))
             #expect(SettingsCategory.accountPreferences.label == L10n.accountPreferences)
             #expect(SettingsNavigation.visibleSelection(.workspacePreferences) == .workspace)

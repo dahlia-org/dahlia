@@ -3,7 +3,7 @@
 "settings.organization.workspaceSettings" = "ワークスペースの設定";
 "settings.organization.searchSettings" = "設定を検索";
 "settings.organization.settingsAccountIntro" = "選択中のアカウントのAI設定です。このMacでのみ適用され、同じアカウントのすべてのワークスペースで共通です。別のMacやWebには同期されません。";
-"settings.organization.settingsWorkspaceManagementIntro" = "使用するワークスペースを切り替え、名前、所属アカウント、共有、書き出し先と、選択中のワークスペースの出力言語を管理します。";
+"settings.organization.settingsWorkspaceManagementIntro" = "選択中のアカウントのワークスペースを切り替え、名前、所属アカウント、共有、書き出し先と、選択中のワークスペースの出力言語を管理します。";
 "settings.organization.settingsAccountsIntro" = "選択中のアカウントのモデルプロバイダーとAI設定を管理します。アカウントはサイドバー下部のアカウントメニューで切り替えます。";
 "settings.organization.settingsExportIntro" = "サイドバーで選択中のアカウントの書き出し先を、このMacで設定します。";
 "settings.organization.settingsAccountSelectionDescription" = "編集対象を選んでも、開いているワークスペースは変わりません。";
@@ -1728,7 +1728,7 @@
 "summary.source.useSaved" = "保存済みの文字起こしを使う";
 "summary.source.useSaved.description" = "サーバーの最新版を取得せず、このMacに保存された版から生成します。内容が古い可能性があります。オフライン時に選択できます。";
 
-"settings.serverConnections" = "モデル設定";
+"settings.serverConnections" = "推論（要約・画像解析）";
 
 "recovery.recordings" = "復旧した録音";
 "recovery.recording" = "復旧した録音";
