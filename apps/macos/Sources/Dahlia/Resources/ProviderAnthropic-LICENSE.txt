@@ -1,0 +1,8 @@
+Claude logo (Anthropic provider)
+Source: Font Awesome Free 7.3.1, svgs/brands/claude.svg (https://fontawesome.com)
+
+Icon licensed under the Creative Commons Attribution 4.0 International License (CC BY 4.0):
+https://creativecommons.org/licenses/by/4.0/
+
+Copyright 2026 Fonticons, Inc. The file keeps its license comment as Font Awesome's attribution.
+The Claude mark is a trademark of Anthropic, PBC; Dahlia shows it only to identify the provider.

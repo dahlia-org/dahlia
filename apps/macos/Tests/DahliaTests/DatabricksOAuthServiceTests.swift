@@ -42,6 +42,27 @@
         static let redirectURI = "http://localhost:8022"
         static let token = #"{"access_token":"access","refresh_token":"refresh","token_type":"Bearer","expires_in":3600}"#
 
+        @Test
+        func aWorkspaceLinkOrABareHostNormalizesToTheWorkspaceOrigin() throws {
+            let service = DatabricksOAuthService(storage: DatabricksOAuthStorage(
+                loadConnections: { [] }, saveConnections: { _ in }, loadCredential: { _ in nil }, saveCredential: { _, _ in },
+                deleteCredential: { _ in }
+            ))
+            for input in [
+                "https://dbc-a5d4177a-49dc.cloud.databricks.com/ml/ai-gateway?o=1965859176160743",
+                " HTTPS://DBC-a5d4177a-49dc.cloud.databricks.com:443/#notebook ",
+                "dbc-a5d4177a-49dc.cloud.databricks.com/",
+            ] {
+                #expect(try service.normalizedWorkspaceURL(input).absoluteString == "https://dbc-a5d4177a-49dc.cloud.databricks.com", "\(input)")
+            }
+            // Plain HTTP, credentials in the URL, and no host stay refused.
+            for input in ["http://dbc.cloud.databricks.com", "https://me:secret@dbc.cloud.databricks.com", "https://", " "] {
+                #expect(throws: CodexConfigurationError.invalidDatabricksWorkspaceURL, "\(input)") {
+                    try service.normalizedWorkspaceURL(input)
+                }
+            }
+        }
+
         @Test @MainActor func restoresSelectionAfterCancellationFollowingConnectionSave() async throws {
             let memory = DatabricksTestStorage()
             var storage = memory.storage

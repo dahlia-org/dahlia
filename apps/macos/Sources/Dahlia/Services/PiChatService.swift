@@ -34,6 +34,9 @@ actor PiChatService: CodexChatServicing {
         var model: String?
         var effort: String?
         var turn: Turn?
+        /// The MCP servers chat may call, and those Pi reported as needing sign-in during this process.
+        var mcpServers: Set<String> = []
+        var mcpServersNeedingSignIn: [String] = []
     }
 
     private struct Turn {
@@ -49,8 +52,7 @@ actor PiChatService: CodexChatServicing {
     private let workspaceLocator: any CodexChatWorkspaceLocating
     private let agentLocator: PiAgentDirectoryLocator
     private let mcpExecutableURL: URL?
-    private let enabledGatewayMCPs: @Sendable (UUID) -> [DatabricksGatewayMCP]
-    private let databricksWorkspaceURL: DatabricksWorkspaceURL
+    private let mcpSettings: @Sendable (CodexRuntimeProvider) -> AgentMCPSettings
     private var sessions: [String: Session] = [:]
     private var opening: [String: Task<PiRPCConnection, any Error>] = [:]
     private var leases: [String: Set<UUID>] = [:]
@@ -66,19 +68,14 @@ actor PiChatService: CodexChatServicing {
         workspaceLocator: any CodexChatWorkspaceLocating = ApplicationSupportCodexChatWorkspaceLocator(),
         agentLocator: PiAgentDirectoryLocator = PiAgentDirectoryLocator(),
         mcpExecutableURL: URL? = nil,
-        enabledGatewayMCPs: @escaping @Sendable (UUID) -> [DatabricksGatewayMCP] = { DatabricksGatewayMCP.enabled(connectionID: $0) },
-        databricksWorkspaceURL: @escaping DatabricksWorkspaceURL = PiChatService.databricksWorkspaceURL
+        mcpSettings: @escaping @Sendable (CodexRuntimeProvider) -> AgentMCPSettings = { AgentMCPSettings.load(for: $0) }
     ) {
         self.runtime = runtime
         self.workspaceLocator = workspaceLocator
         self.agentLocator = agentLocator
         self.mcpExecutableURL = mcpExecutableURL
-        self.enabledGatewayMCPs = enabledGatewayMCPs
-        self.databricksWorkspaceURL = databricksWorkspaceURL
+        self.mcpSettings = mcpSettings
     }
-
-    /// The workspace origin of a Databricks account, whose Unity AI Gateway serves the MCPs.
-    typealias DatabricksWorkspaceURL = @Sendable (UUID) async throws -> URL
 
     func models(forceRefresh: Bool) async throws -> [CodexModel] {
         try await runtime.models(forceRefresh: forceRefresh)
@@ -256,7 +253,30 @@ actor PiChatService: CodexChatServicing {
             throw error
         }
         continuation.yield(.started(turnID: turn.wireID))
+        // The process keeps a server that needed sign-in disconnected until it closes, so each turn repeats the report.
+        if let servers = sessions[threadID]?.mcpServersNeedingSignIn, !servers.isEmpty {
+            continuation.yield(.mcpSignInRequired(servers: servers))
+        }
         return CodexChatTurnHandle(id: turn.id, events: events, approvalMethod: approvalMethod)
+    }
+
+    /// Servers Pi reports as needing sign-in: its notice once servers connect, or a tool call that failed on it.
+    nonisolated static func mcpServersNeedingSignIn(_ event: [String: JSONValue]) -> [String] {
+        switch event["type"]?.stringValue {
+        case "extension_ui_request":
+            guard event["method"]?.stringValue == "notify", let message = event["message"]?.stringValue else { return [] }
+            return message.split(separator: "\n").compactMap { line in
+                line.wholeMatch(of: /\s+(.+): needs sign-in/).map { String($0.1) }
+            }
+        case "tool_execution_end":
+            guard event["isError"]?.boolValue == true else { return [] }
+            let texts = event["result"]?.objectValue?["content"]?.arrayValue?.compactMap { $0.objectValue?["text"]?.stringValue } ?? []
+            return texts.compactMap { text in
+                text.firstMatch(of: /MCP server "(.+?)" requires sign-in/).map { String($0.1) }
+            }
+        default:
+            return []
+        }
     }
 
     /// Takes effect at the next tool call, including during a running turn, because the extension asks for the mode each time.
@@ -365,12 +385,16 @@ actor PiChatService: CodexChatServicing {
         )
         // Pi reads mcp.json only when it starts, so settings changes reach the next process the account starts. `--tools`
         // and the allowlist come from this same snapshot: a process that reads another thread's newer file stays limited to it.
-        let gatewayServers = try await gatewayMCPServers(provider)
-        try PiProviderConfiguration.writeMCPServers(gatewayServers, agentURL: agentLocator.agentURL(for: provider))
+        let mcp = mcpSettings(provider)
+        let mcpServers = mcp.piServers
+        try PiProviderConfiguration.writeMCPServers(mcpServers, agentURL: agentLocator.agentURL(for: provider))
+        let serverNames = ["dahlia"] + mcpServers.keys.sorted()
         // Read-only on this Mac. `--no-extensions` also drops Pi's MCP extension, and `--tools` declares only the MCP tools it names.
-        let tools = ["read", "ls", "mcp__dahlia__*"] + gatewayServers.keys.sorted().map { "mcp__\($0)__*" }
-        var arguments = sessionArguments + [
+        let tools = ["read", "ls"] + serverNames.map { "mcp__\($0)__*" }
+        // The Databricks provider registers the sign-ins mcp.json names; only chat calls MCP servers.
+        var arguments = try sessionArguments + [
             "-e", "builtin:mcp",
+            "-e", PiBundle.resourceURL("databricks-provider.ts").path,
             "--tools", tools.joined(separator: ","),
             "--system-prompt", Self.systemPrompt,
         ]
@@ -388,7 +412,7 @@ actor PiChatService: CodexChatServicing {
                         [workspaceURL.path] + PiBundle.presetSkillURLs().map(\.path)
                     ), as: UTF8.self),
                     // The only MCP servers whose tools chat may call; the extension blocks every other server.
-                    "DAHLIA_PI_MCP_SERVERS": String(decoding: JSONEncoder().encode(["dahlia"] + gatewayServers.keys.sorted()), as: UTF8.self),
+                    "DAHLIA_PI_MCP_SERVERS": String(decoding: JSONEncoder().encode(serverNames), as: UTF8.self),
                 ]
             ),
             provider: provider,
@@ -397,25 +421,14 @@ actor PiChatService: CodexChatServicing {
                 return await self.answer(method, payload: payload, threadID: threadID, processID: processID)
             }
         )
-        sessions[threadID] = Session(processID: processID, provider: provider, connection: connection, approvalMethod: .ask)
+        sessions[threadID] = Session(
+            processID: processID, provider: provider, connection: connection, approvalMethod: .ask, mcpServers: Set(serverNames)
+        )
         Task { await self.pump(threadID: threadID, processID: processID, connection: connection) }
         if let name = pendingNames.removeValue(forKey: threadID) {
             _ = try? await connection.request("set_session_name", ["name": .string(name)])
         }
         return connection
-    }
-
-    /// The Unity AI Gateway MCPs the user enabled for a Databricks account; other accounts have none.
-    private func gatewayMCPServers(_ provider: CodexRuntimeProvider) async throws -> [String: JSONValue] {
-        guard case let .databricks(connectionID) = provider else { return [:] }
-        let enabled = enabledGatewayMCPs(connectionID)
-        guard !enabled.isEmpty else { return [:] }
-        return try await DatabricksGatewayMCP.piServers(enabled, workspaceURL: databricksWorkspaceURL(connectionID))
-    }
-
-    static func databricksWorkspaceURL(connectionID: UUID) async throws -> URL {
-        let databricks = DatabricksOAuthService.shared
-        return try await databricks.normalizedWorkspaceURL(databricks.connection(id: connectionID).host)
     }
 
     /// Closes the process once no chat view holds the thread and no turn runs.
@@ -447,9 +460,16 @@ actor PiChatService: CodexChatServicing {
 
     /// Events from a process that is no longer the thread's live process are dropped.
     private func handle(_ event: JSONValue, threadID: String, processID: UUID, bridgeError: (any Error)?) {
-        guard sessions[threadID]?.processID == processID,
-              var turn = sessions[threadID]?.turn,
-              let object = event.objectValue else { return }
+        guard sessions[threadID]?.processID == processID, let object = event.objectValue else { return }
+        // A tool's own error text could name any server; only the chat's registered servers are reported.
+        let needingSignIn = Self.mcpServersNeedingSignIn(object).filter { sessions[threadID]?.mcpServers.contains($0) == true }
+        if !needingSignIn.isEmpty, let known = sessions[threadID]?.mcpServersNeedingSignIn {
+            let servers = Array(Set(known + needingSignIn)).sorted()
+            sessions[threadID]?.mcpServersNeedingSignIn = servers
+            sessions[threadID]?.turn?.continuation.yield(.mcpSignInRequired(servers: servers))
+            return
+        }
+        guard var turn = sessions[threadID]?.turn else { return }
         let itemID = "\(turn.wireID)-\(turn.messageIndex)"
         switch object["type"]?.stringValue {
         case "message_update":
@@ -507,7 +527,8 @@ actor PiChatService: CodexChatServicing {
     }
 
     private func requestApproval(threadID: String, payload: JSONValue) async -> CodexChatApprovalDecision {
-        guard let request = Self.approvalRequest(id: UUID.v7().uuidString, payload: payload),
+        let mcpServers = sessions[threadID]?.mcpServers ?? []
+        guard let request = Self.approvalRequest(id: UUID.v7().uuidString, payload: payload, mcpServers: mcpServers),
               request.canApprove,
               let continuation = sessions[threadID]?.turn?.continuation
         else { return .decline }
@@ -575,7 +596,7 @@ actor PiChatService: CodexChatServicing {
         }
     }
 
-    nonisolated static func approvalRequest(id: String, payload: JSONValue) -> CodexChatApprovalRequest? {
+    nonisolated static func approvalRequest(id: String, payload: JSONValue, mcpServers: Set<String> = ["dahlia"]) -> CodexChatApprovalRequest? {
         guard let object = payload.objectValue else { return nil }
         switch object["kind"]?.stringValue {
         case "commandExecution":
@@ -615,7 +636,8 @@ actor PiChatService: CodexChatServicing {
                     server: server,
                     tool: tool,
                     arguments: object["arguments"] ?? .null
-                )
+                ),
+                approvableMCPServers: mcpServers
             )
         default:
             return nil

@@ -22,6 +22,8 @@ final class CodexChatSessionModel: Identifiable {
     var isGenerating = false
     var errorMessage: String?
     var noticeMessage: String?
+    /// MCP servers the open chat process cannot use until the user signs in; reported again at each turn.
+    var mcpServersNeedingSignIn: [String] = []
     private(set) var activeTurnID: String?
     private(set) var activeTurnHandleID: UUID?
     private(set) var pendingApprovals: [CodexChatApprovalRequest] = []
@@ -605,6 +607,7 @@ extension CodexChatSessionModel {
         switch event {
         case let .started(turnID):
             activeTurnID = turnID
+            mcpServersNeedingSignIn = []
             if isStopRequested, let backendThreadID {
                 Task { await service.interrupt(threadID: backendThreadID, turnID: turnID) }
             }
@@ -650,6 +653,8 @@ extension CodexChatSessionModel {
             activeOutputItemIDs.removeAll()
             isAwaitingTurnOutput = false
             activeTurnID = nil
+        case let .mcpSignInRequired(servers):
+            mcpServersNeedingSignIn = servers
         }
     }
 

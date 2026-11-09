@@ -29,7 +29,8 @@ import Synchronization
                 runtime: pi.service,
                 workspaceLocator: ApplicationSupportCodexChatWorkspaceLocator(applicationSupportURL: pi.rootURL),
                 agentLocator: PiAgentDirectoryLocator(applicationSupportURL: pi.rootURL),
-                mcpExecutableURL: URL(filePath: "/usr/bin/true")
+                mcpExecutableURL: URL(filePath: "/usr/bin/true"),
+                mcpSettings: { _ in AgentMCPSettings() }
             )
             Task {
                 // A user prompt starts the scripted turn; extension commands start with "/".
@@ -252,14 +253,13 @@ import Synchronization
                 return transport
             }
             let workspaceID = UUID.v7()
-            let enabled = Mutex<[DatabricksGatewayMCP]>([])
+            let registered = Mutex(AgentMCPSettings())
             let chat = PiChatService(
                 runtime: pi.service,
                 workspaceLocator: ApplicationSupportCodexChatWorkspaceLocator(applicationSupportURL: pi.rootURL),
                 agentLocator: PiAgentDirectoryLocator(applicationSupportURL: pi.rootURL),
                 mcpExecutableURL: URL(filePath: "/usr/bin/true"),
-                enabledGatewayMCPs: { _ in enabled.withLock { $0 } },
-                databricksWorkspaceURL: { _ in URL(string: "https://example.cloud.databricks.com")! }
+                mcpSettings: { _ in registered.withLock { $0 } }
             )
             let thread = try await chat.startThread(model: nil, effort: "medium", workspaceID: workspaceID)
             _ = await chat.acquireThreadLease(threadID: thread.id)
@@ -299,7 +299,11 @@ import Synchronization
                 )
                 for try await _ in handle.events {}
             }
-            enabled.withLock { $0 = [.gmail] }
+            let provider = AgentMCPProvider(workspaceURL: URL(string: "https://example.cloud.databricks.com")!)
+            registered.withLock {
+                $0.providers = [provider]
+                $0.servers = [AgentMCPServer(id: .v7(), name: "gmail", providerID: provider.id, service: "system.ai.gmail")]
+            }
             try await turn("gmail on, same process")
             #expect(log.all.count == 2)
             try await pi.service.reloadConfiguration(interruptActiveOperations: true)
@@ -307,10 +311,17 @@ import Synchronization
             #expect(log.all.count == 3)
             let withGmail = try #require(pi.launches.all.last { $0.mode == .chat })
             #expect(withGmail.arguments.contains("read,ls,mcp__dahlia__*,mcp__gmail__*"))
+            // Only chat loads the Databricks provider extension, which registers the sign-ins mcp.json names.
+            #expect(withGmail.arguments.contains { $0.hasSuffix("/PiExtension/databricks-provider.ts") })
+            #expect(pi.launches.all.filter { $0.mode != .chat }.allSatisfy { !$0.arguments.contains { $0.hasSuffix("databricks-provider.ts") } })
             #expect(withGmail.environment["DAHLIA_PI_MCP_SERVERS"] == #"["dahlia","gmail"]"#)
+            // The mcp.json entry names the workspace sign-in, which the extension registers from that file.
+            #expect(withGmail.environment["DAHLIA_PI_MCP_PROVIDERS"] == nil)
             #expect(withGmail.arguments.contains { $0.hasSuffix("/" + file.lastPathComponent) })
             let mcpJSON = try PiAgentDirectoryLocator(applicationSupportURL: pi.rootURL).agentURL(for: account).appending(path: "mcp.json")
-            #expect(FileManager.default.contents(atPath: mcpJSON.path).map { String(decoding: $0, as: UTF8.self) }?.contains("system.ai.gmail") == true)
+            let written = FileManager.default.contents(atPath: mcpJSON.path).map { String(decoding: $0, as: UTF8.self) } ?? ""
+            #expect(written.contains("system.ai.gmail"))
+            #expect(written.contains(#""provider":"example.cloud.databricks.com""#))
         }
 
         @Test
@@ -439,6 +450,78 @@ import Synchronization
             #expect(thread.messages.first?.images.count == 1)
             #expect(thread.messages.last?.text == "答え")
             #expect(thread.messages.last?.reasoning == "考え中")
+        }
+
+        @Test
+        func serversNeedingSignInAreReportedAtTheTurnAndAgainAtTheNextOne() async throws {
+            let prompts = Mutex(0)
+            let chatTransport = TestPiTransport { command in
+                guard let id = command["id"] else { return [] }
+                let started = TestPiTransport.response(id: id, data: .object(["disposition": .string("started")]))
+                guard command["type"]?.stringValue == "prompt" else { return [started] }
+                let first = prompts.withLock { count in
+                    count += 1
+                    return count == 1
+                }
+                let end = [TestPiTransport.assistantEnd("ok"), TestPiTransport.settled()]
+                guard first else { return [started] + end }
+                // Pi's notice once servers connect, then a tool call that failed on another server.
+                return [
+                    started,
+                    .object([
+                        "type": .string("extension_ui_request"), "id": .string("n"), "method": .string("notify"),
+                        "message": .string("MCP servers need attention:\n  slack: needs sign-in\n  foreign: needs sign-in\nRun /mcp to fix."),
+                    ]),
+                    .object([
+                        "type": .string("tool_execution_end"), "toolCallId": .string("c"), "toolName": .string("mcp__gmail__search"),
+                        "isError": .bool(true), "result": .object(["content": .array([.object([
+                            "type": .string("text"),
+                            "text": .string(#"MCP server "gmail" requires sign-in. Run /login mcp-example.cloud.databricks.com to sign in."#),
+                        ])])]),
+                    ]),
+                ] + end
+            }
+            let pi = TestPiRuntime { options in
+                options.mode == .chat
+                    ? chatTransport
+                    : TestPiTransport(reply: TestPiRuntime.modelsReply([TestPiTransport.model(provider: "openai", id: "gpt-test")]))
+            }
+            let chat = PiChatService(
+                runtime: pi.service,
+                workspaceLocator: ApplicationSupportCodexChatWorkspaceLocator(applicationSupportURL: pi.rootURL),
+                agentLocator: PiAgentDirectoryLocator(applicationSupportURL: pi.rootURL),
+                mcpExecutableURL: URL(filePath: "/usr/bin/true"),
+                mcpSettings: { _ in
+                    let workspace = AgentMCPProvider(workspaceURL: URL(string: "https://example.cloud.databricks.com")!)
+                    return AgentMCPSettings(providers: [workspace], servers: [
+                        AgentMCPServer(id: .v7(), name: "slack", providerID: workspace.id, service: "system.ai.slack"),
+                        AgentMCPServer(id: .v7(), name: "gmail", providerID: workspace.id, service: "system.ai.gmail"),
+                    ])
+                }
+            )
+            let thread = try await chat.startThread(model: "openai/gpt-test", effort: "medium", workspaceID: .v7())
+            _ = await chat.acquireThreadLease(threadID: thread.id)
+
+            func turn() async throws -> [CodexChatTurnEvent] {
+                let handle = try await chat.beginTurn(
+                    threadID: thread.id, inputs: [.text("Hi")], model: "openai/gpt-test", effort: "medium",
+                    approvalMethod: .autoReview, expectedProvider: .local
+                )
+                var events: [CodexChatTurnEvent] = []
+                for try await event in handle.events {
+                    events.append(event)
+                }
+                return events
+            }
+            let first = try await turn()
+            // `foreign` is not registered with this chat, so it is never reported.
+            #expect(first.contains(.mcpSignInRequired(servers: ["slack"])))
+            #expect(first.contains(.mcpSignInRequired(servers: ["gmail", "slack"])))
+            // The same process keeps both disconnected, so the next turn reports them right after it starts.
+            let second = try await turn()
+            // The chat clears the report at `.started`, so it must follow that event.
+            let started = try #require(second.firstIndex { if case .started = $0 { true } else { false } })
+            #expect(second.dropFirst(started + 1).first == .mcpSignInRequired(servers: ["gmail", "slack"]))
         }
 
         @Test

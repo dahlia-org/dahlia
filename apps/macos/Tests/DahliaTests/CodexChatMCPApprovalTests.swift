@@ -34,12 +34,12 @@ import Foundation
         }
 
         @Test
-        func gatewayMCPToolsAreApprovableAndUnknownServersFailClosed() throws {
-            let gmail = try normalizedRequest(server: "gmail", tool: "send_message")
+        func registeredMCPToolsAreApprovableAndUnknownServersFailClosed() throws {
+            let gmail = try normalizedRequest(server: "work_gmail", tool: "send_message", approvableMCPServers: ["dahlia", "work_gmail"])
             #expect(gmail.reviewability == .ready)
             #expect(gmail.actions == [.allowOnce, .deny])
 
-            let unknown = try normalizedRequest(server: "filesystem", tool: "write_file")
+            let unknown = try normalizedRequest(server: "filesystem", tool: "write_file", approvableMCPServers: ["dahlia", "work_gmail"])
             #expect(unknown.reviewability == .unsupported)
             #expect(unknown.actions == [.deny])
         }
@@ -105,6 +105,7 @@ import Foundation
             ],
             server: String = "dahlia",
             tool: String = "update_project",
+            approvableMCPServers: Set<String> = ["dahlia"],
             arguments: JSONValue = .object([
                 "description": .string("Updated description"),
                 "project_id": .string("AAAAAAAA-AAAA-AAAA-AAAA-AAAAAAAAAAAA"),
@@ -120,7 +121,8 @@ import Foundation
                     server: server,
                     tool: tool,
                     arguments: arguments
-                )
+                ),
+                approvableMCPServers: approvableMCPServers
             )
         }
 

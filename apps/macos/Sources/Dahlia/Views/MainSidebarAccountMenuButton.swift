@@ -37,6 +37,8 @@ struct MainSidebarAccountMenuButton: NSViewRepresentable {
         button.lineBreakMode = .byTruncatingTail
         button.cell?.usesSingleLineMode = false
         button.setContentHuggingPriority(.defaultLow, for: .horizontal)
+        // A long line (a workspace host) shrinks the button instead of pushing the help button out of the footer.
+        button.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
         context.coordinator.button = button
         configure(button)
         return button
@@ -111,10 +113,10 @@ struct MainSidebarAccountMenuButton: NSViewRepresentable {
         )
     }
 
-    /// A Databricks account's footer: the workspace over its user's email.
+    /// A Databricks account's footer: Unity Gateway over the workspace's host.
     static func databricksFooterLines(_ connection: DatabricksConnection?) -> (title: String, detail: String?) {
         guard let connection else { return (L10n.databricks, nil) }
-        return (connection.workspaceName, connection.email)
+        return (L10n.unityGateway, connection.hostName)
     }
 
     private static func sized(_ image: NSImage, to pointSize: CGFloat) -> NSImage {
@@ -138,6 +140,8 @@ struct MainSidebarAccountMenuButton: NSViewRepresentable {
         let paragraphStyle = NSMutableParagraphStyle()
         paragraphStyle.firstLineHeadIndent = 6
         paragraphStyle.headIndent = 6
+        // Each line ends in "…" when too long, rather than wrapping at a hyphen into a line the footer cannot show.
+        paragraphStyle.lineBreakMode = .byTruncatingTail
         result.addAttribute(.paragraphStyle, value: paragraphStyle, range: NSRange(location: 0, length: result.length))
         return result
     }

@@ -159,6 +159,7 @@ final class WorkspaceAISettingsModel {
             // Its workspaces are the Local Account's now. Its folder, with its chats, stays.
             try await databricksService.remove(connectionID: connectionID)
             CodexRuntimeContextStore.shared.accountRemoved(.databricks(connectionID: connectionID))
+            await PiRuntimeService.shared.removeCredentials(of: .databricks(connectionID: connectionID))
             setupDefaults.removeObject(forKey: AccountInferenceSettings.key(connectionID: nil, databricksConnectionID: connectionID))
         } catch {
             errorMessage = error.localizedDescription

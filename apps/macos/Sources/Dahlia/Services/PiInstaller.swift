@@ -26,14 +26,11 @@ enum PiInstaller {
     struct Release: Decodable, Sendable {
         struct Asset: Decodable, Sendable {
             let name: String
-            let browserDownloadURL: URL
+            /// The API's asset URL. It redirects to the file for `Accept: application/octet-stream`, where the
+            /// `browser_download_url` on github.com has answered HTTP 504.
+            let url: URL
             /// `sha256:<hex>`, computed by GitHub.
             let digest: String?
-
-            private enum CodingKeys: String, CodingKey {
-                case name, digest
-                case browserDownloadURL = "browser_download_url"
-            }
         }
 
         let tagName: String
@@ -75,7 +72,9 @@ enum PiInstaller {
               let digest = asset.digest, digest.hasPrefix("sha256:") else {
             throw PiInstallError.downloadFailed
         }
-        let (archive, response) = try await URLSession.shared.download(from: asset.browserDownloadURL)
+        var request = URLRequest(url: asset.url)
+        request.setValue("application/octet-stream", forHTTPHeaderField: "Accept")
+        let (archive, response) = try await URLSession.shared.download(for: request)
         defer { try? FileManager.default.removeItem(at: archive) }
         guard (response as? HTTPURLResponse)?.statusCode == 200 else { throw PiInstallError.downloadFailed }
         try install(archive: archive, sha256: String(digest.dropFirst("sha256:".count)), version: release.version, into: directory)

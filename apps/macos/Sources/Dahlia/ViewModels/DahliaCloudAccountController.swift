@@ -567,6 +567,7 @@ final class DahliaCloudAccountController {
             AppSettings.shared.clearGoogleDriveExportFolder(scope: .dahlia(connectionID))
             try await repository.deleteDahliaAccountConnection(id: connectionID)
             CodexRuntimeContextStore.shared.accountRemoved(.dahlia(connectionID: connectionID))
+            await Task.detached { PiLaunchSettings.removeSecrets(for: .dahlia(connectionID: connectionID)) }.value
             try agentLocator.removeAccountDirectory(connectionID: connectionID)
             services.removeValue(forKey: connectionID)
             await DahliaCloudTokenServiceRegistry.shared.remove(connectionID: connectionID)

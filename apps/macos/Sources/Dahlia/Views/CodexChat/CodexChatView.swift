@@ -113,6 +113,15 @@ struct CodexChatView: View {
 
     @ViewBuilder
     private var conversationControls: some View {
+        if !session.mcpServersNeedingSignIn.isEmpty {
+            Label(L10n.chatMCPSignInRequired(session.mcpServersNeedingSignIn.formatted(.list(type: .and))), systemImage: "key.fill")
+                .font(.body)
+                .foregroundStyle(DahliaDesign.secondaryTextColor)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.horizontal, CodexChatDesign.contentHorizontalPadding)
+                .padding(.vertical, 6)
+        }
+
         if let noticeMessage = session.noticeMessage {
             Label(noticeMessage, systemImage: "info.circle.fill")
                 .font(.body)

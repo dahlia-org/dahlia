@@ -2362,7 +2362,10 @@ enum L10n { // swiftlint:disable:this type_body_length
         bundle: bundle
     ) }
     static var codexNotLoggedIn: String { String(
-        localized: "Pi is not signed in. Open Accounts and Workspaces in Settings and sign in, then try again.",
+        localized: """
+        Pi is not signed in. Sign in under Settings > Agents > General > Providers (a Databricks or Dahlia account signs in \
+        from the account menu at the bottom of the sidebar), then try again.
+        """,
         bundle: bundle
     ) }
     static func codexLoginFailed(_ detail: String) -> String { String(
@@ -2416,15 +2419,72 @@ enum L10n { // swiftlint:disable:this type_body_length
     static var agents: String { String(localized: "settings.agents", bundle: bundle) }
     static var settingsAgentsIntro: String { String(localized: "settings.agents.intro", bundle: bundle) }
     static var unityGatewayMCPs: String { String(localized: "settings.agents.unityGatewayMCPs", bundle: bundle) }
-    static var unityGatewayMCPsDescription: String { String(localized: "settings.agents.unityGatewayMCPsDescription", bundle: bundle) }
-    static var agentMCPsRequireDatabricks: String { String(localized: "settings.agents.requiresDatabricks", bundle: bundle) }
+    static var databricksUnityGateway: String { String(localized: "settings.agents.databricksUnityGateway", bundle: bundle) }
+    static var mcpKindRemoteComingSoon: String { String(localized: "settings.agents.mcpKindRemoteComingSoon", bundle: bundle) }
+    static var mcpLoadingServices: String { String(localized: "settings.agents.mcpLoadingServices", bundle: bundle) }
+    static var mcpNoServices: String { String(localized: "settings.agents.mcpNoServices", bundle: bundle) }
+    static var mcpRemoveWorkspaceDescription: String { String(localized: "settings.agents.mcpRemoveWorkspaceDescription", bundle: bundle) }
+
+    static func mcpRemoveWorkspace(_ name: String) -> String {
+        String(localized: "settings.agents.mcpRemoveWorkspace \(name)", bundle: bundle)
+    }
+
+    static var mcpServerName: String { String(localized: "settings.agents.mcpServerName", bundle: bundle) }
+    static var mcpServerNameInvalid: String { String(localized: "settings.agents.mcpServerNameInvalid", bundle: bundle) }
+    static var mcpServerNameTaken: String { String(localized: "settings.agents.mcpServerNameTaken", bundle: bundle) }
+
+    static func chatMCPSignInRequired(_ servers: String) -> String {
+        String(localized: "chat.mcpSignInRequired \(servers)", bundle: bundle)
+    }
+
     static var agentModels: String { String(localized: "settings.agents.models", bundle: bundle) }
     static var agentModelsPlaceholder: String { String(localized: "settings.agents.modelsPlaceholder", bundle: bundle) }
+    static var agentRuntime: String { String(localized: "settings.agents.runtime", bundle: bundle) }
+    static var agentEnvironment: String { String(localized: "settings.agents.environment", bundle: bundle) }
+    static var agentAddVariable: String { String(localized: "settings.agents.addVariable", bundle: bundle) }
+    static var agentVariableName: String { String(localized: "settings.agents.variableName", bundle: bundle) }
+    static var agentVariableValue: String { String(localized: "settings.agents.variableValue", bundle: bundle) }
+    static var agentSecretStored: String { String(localized: "settings.agents.secretStored", bundle: bundle) }
+    static var agentVariableMakeSecret: String { String(localized: "settings.agents.variableMakeSecret", bundle: bundle) }
+    static var agentVariableMakePlain: String { String(localized: "settings.agents.variableMakePlain", bundle: bundle) }
+    static var agentVariableNameInvalid: String { String(localized: "settings.agents.variableNameInvalid", bundle: bundle) }
+    static var agentProviders: String { String(localized: "settings.agents.providers", bundle: bundle) }
+    static var agentProviderAccountSignIn: String { String(localized: "settings.agents.providerAccountSignIn", bundle: bundle) }
+    static var agentProviderModels: String { String(localized: "settings.agents.providerModels", bundle: bundle) }
+
+    static var mcpAccountSignInRequired: String { String(localized: "settings.agents.mcpAccountSignInRequired", bundle: bundle) }
+
+    static var addProvider: String { String(localized: "settings.agents.addProvider", bundle: bundle) }
+    static var addProviderTitle: String { String(localized: "settings.agents.addProviderTitle", bundle: bundle) }
+    static var agentProvidersEmpty: String { String(localized: "settings.agents.providersEmpty", bundle: bundle) }
+    static var signInAgain: String { String(localized: "settings.agents.signInAgain", bundle: bundle) }
+    static var mcpServiceSignIn: String { String(localized: "settings.agents.mcpServiceSignIn", bundle: bundle) }
+
+    static func agentProviderAdded(_ name: String) -> String {
+        String(localized: "settings.agents.providerAdded \(name)", bundle: bundle)
+    }
+
+    static var addRemoteMCPServer: String { String(localized: "settings.agents.addRemoteMCPServer", bundle: bundle) }
+    static var addRemoteMCPServerTitle: String { String(localized: "settings.agents.addRemoteMCPServerTitle", bundle: bundle) }
+    static var mcpRenameServer: String { String(localized: "settings.agents.mcpRenameServer", bundle: bundle) }
+    static var mcpProviderSignInRequired: String { String(localized: "settings.agents.mcpProviderSignInRequired", bundle: bundle) }
+    static var mcpWorkspaceIsAccount: String { String(localized: "settings.agents.mcpWorkspaceIsAccount", bundle: bundle) }
+
+    static func mcpEnabledCount(_ count: Int) -> String {
+        String(localized: "settings.agents.mcpEnabledCount \(count)", bundle: bundle)
+    }
+
+    static func mcpServiceWithServerName(_ service: String, _ name: String) -> String {
+        String(localized: "settings.agents.mcpServiceWithServerName \(service) \(name)", bundle: bundle)
+    }
+
+    static func unityGatewayHost(_ host: String) -> String {
+        String(localized: "settings.agents.unityGatewayHost \(host)", bundle: bundle)
+    }
+
     static var agentMCPs: String { String(localized: "settings.agents.mcps", bundle: bundle) }
     static var piCommand: String { String(localized: "settings.agents.piCommand", bundle: bundle) }
-    static var piCommandAutomatic: String { String(localized: "settings.agents.piCommandAutomatic", bundle: bundle) }
     static var piCommandInUse: String { String(localized: "settings.agents.piCommandInUse", bundle: bundle) }
-    static var piCommandDescription: String { String(localized: "settings.agents.piCommandDescription", bundle: bundle) }
     static var piCommandNotFound: String { String(
         localized: "Pi is not installed. Install it, or set its path, in Settings > Agents.",
         bundle: bundle
@@ -2461,6 +2521,7 @@ enum L10n { // swiftlint:disable:this type_body_length
         localized: "Enter a valid HTTPS Databricks workspace root URL.",
         bundle: bundle
     ) }
+    static var workspaceURL: String { String(localized: "settings.agents.workspaceURL", bundle: bundle) }
     static var databricksWorkspaceURL: String { String(localized: "Databricks Workspace URL", bundle: bundle) }
     static var databricksWorkspaceURLDescription: String { String(
         localized: "Enter the HTTPS URL of the workspace used by Pi.",
@@ -3006,6 +3067,7 @@ enum L10n { // swiftlint:disable:this type_body_length
     }
 
     static var openAISettings: String { String(localized: "Open Accounts and Workspaces Settings", bundle: bundle) }
+    static var openAgentSettings: String { String(localized: "chat.openAgentSettings", bundle: bundle) }
     static var chatModelLoading: String { String(localized: "Loading models…", bundle: bundle) }
     static var chatThreadRunning: String { String(localized: "Chat is running", bundle: bundle) }
     static var chatThreadWaitingForUser: String {

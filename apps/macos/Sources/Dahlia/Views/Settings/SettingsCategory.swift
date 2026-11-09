@@ -137,8 +137,22 @@ enum SettingsCategory: String, CaseIterable, Identifiable {
                 "AI",
             ]
         case .agents:
-            [L10n.unityGatewayMCPs, L10n.mcp, L10n.unityGateway, "Databricks", L10n.piCommand, "Pi"]
-                + DatabricksGatewayMCP.allCases.map(\.displayName)
+            // The services Unity AI Gateway commonly offers; a workspace lists its own when a server is added.
+            [
+                L10n.unityGatewayMCPs,
+                L10n.mcp,
+                L10n.unityGateway,
+                "Databricks",
+                L10n.piCommand,
+                "Pi",
+                L10n.agentProviders,
+                L10n.agentEnvironment,
+                "ChatGPT",
+                "OpenAI",
+                "Anthropic",
+                "Claude",
+            ]
+                + ["Gmail", "Google Calendar", "Google Drive", "Slack", "GitHub", "Atlassian", "Jira", "Confluence", "Microsoft 365"]
         case .workspace:
             [L10n.workspace, L10n.generatedContentLanguage, L10n.summaryOutputLanguage]
         case .macInference:

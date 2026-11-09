@@ -3,28 +3,33 @@ import Foundation
 
 /// The user's installed `pi` command and the Dahlia resources (extension, skills) it runs with.
 enum PiBundle {
-    /// The account's absolute path of the `pi` command set in Agents settings; empty searches for one.
+    /// The account's `pi` command set in Agents settings: a command name (`pi` by default) or a path.
     nonisolated static func executablePathDefaultsKey(for provider: CodexRuntimeProvider) -> String {
         "piExecutablePath.\(provider.accountKey)"
     }
 
-    /// The command the account runs: its path set in Settings, else `pi` on the search path. The Pi that Dahlia installs
-    /// is used only once Settings sets its path.
+    /// The command the account runs, as set in Settings: a path is used as it is, and a command name (`pi` when unset)
+    /// is found on the search path, including a PATH the account sets under Environment (secrets aside). The Pi that
+    /// Dahlia installs is used only once Settings sets its path.
     nonisolated static func executableURL(for provider: CodexRuntimeProvider, defaults: UserDefaults = .standard) throws -> URL {
         let configured = (defaults.string(forKey: executablePathDefaultsKey(for: provider)) ?? "")
-            .trimmingCharacters(in: .whitespaces)
-        guard configured.isEmpty else {
-            let path = (configured as NSString).expandingTildeInPath
-            guard CommandLineToolLocator.isExecutableFile(atPath: path) else {
-                throw CodexAppServerError.piCommandNotFound(path)
+            .trimmingCharacters(in: .whitespaces).nilIfBlank ?? defaultCommand
+        guard configured.contains("/") || configured.hasPrefix("~") else {
+            let environment = ProcessInfo.processInfo.environment
+                .merging(PiLaunchSettings.load(for: provider, defaults: defaults).environment { _ in nil }) { $1 }
+            guard let url = CommandLineToolLocator.executableURL(named: configured, environment: environment) else {
+                throw CodexAppServerError.piCommandNotFound(configured == defaultCommand ? nil : configured)
             }
-            return URL(fileURLWithPath: path)
+            return url
         }
-        guard let url = CommandLineToolLocator.executableURL(named: "pi") else {
-            throw CodexAppServerError.piCommandNotFound(nil)
+        let path = (configured as NSString).expandingTildeInPath
+        guard CommandLineToolLocator.isExecutableFile(atPath: path) else {
+            throw CodexAppServerError.piCommandNotFound(path)
         }
-        return url
+        return URL(fileURLWithPath: path)
     }
+
+    nonisolated static let defaultCommand = "pi"
 
     nonisolated static func resourceURL(_ name: String) throws -> URL {
         guard let url = Bundle.appModule.url(forResource: name, withExtension: nil, subdirectory: "PiExtension") else {

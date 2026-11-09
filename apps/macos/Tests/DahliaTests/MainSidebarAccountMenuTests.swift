@@ -132,6 +132,18 @@
         }
 
         @Test
+        func eachFooterLineEndsInAnEllipsisInsteadOfWrapping() throws {
+            let title = MainSidebarAccountMenuButton.footerTitle(
+                accountName: L10n.unityGateway,
+                syncSummary: "dbc-a5d4177a-49dc.cloud.databricks.com"
+            )
+            let hostLocation = (title.string as NSString).range(of: "dbc-").location
+            let style = try #require(title.attribute(.paragraphStyle, at: hostLocation, effectiveRange: nil) as? NSParagraphStyle)
+            // Wrapping broke the host at its hyphen into a line the footer has no room for.
+            #expect(style.lineBreakMode == .byTruncatingTail)
+        }
+
+        @Test
         func footerTitleShowsOnlyTheAccountWithoutSyncProgress() {
             let title = MainSidebarAccountMenuButton.footerTitle(
                 accountName: "Kazuki Matsuda"
@@ -423,12 +435,13 @@
         }
 
         @Test
-        func databricksFooterShowsTheWorkspaceOverTheEmailAndTheMenuCombinesThem() {
+        func databricksFooterShowsUnityGatewayOverTheHostAndTheMenuNamesTheHost() {
             var connection = DatabricksConnection(id: UUID(), host: "https://dbc-1.cloud.databricks.com")
-            #expect(MainSidebarAccountMenuButton.databricksFooterLines(connection) == ("dbc-1", nil))
-            #expect(connection.accountLabel == "dbc-1")
+            #expect(MainSidebarAccountMenuButton.databricksFooterLines(connection) == (L10n.unityGateway, "dbc-1.cloud.databricks.com"))
+            #expect(L10n.unityGatewayHost(connection.hostName) == "Unity Gateway (dbc-1.cloud.databricks.com)")
+            // The email no longer shows in the footer; the workspace settings' account picker still names it.
             connection.email = "me@example.com"
-            #expect(MainSidebarAccountMenuButton.databricksFooterLines(connection) == ("dbc-1", "me@example.com"))
+            #expect(MainSidebarAccountMenuButton.databricksFooterLines(connection) == (L10n.unityGateway, "dbc-1.cloud.databricks.com"))
             #expect(connection.accountLabel == "dbc-1 (me@example.com)")
             #expect(MainSidebarAccountMenuButton.databricksFooterLines(nil) == (L10n.databricks, nil))
         }

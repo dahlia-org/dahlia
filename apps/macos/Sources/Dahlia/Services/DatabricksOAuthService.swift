@@ -72,17 +72,15 @@ actor DatabricksOAuthService {
     /// The oldest connected workspace, which Google Calendar's Databricks proxy uses.
     func currentConnection() throws -> DatabricksConnection? { try connections().first }
 
-    /// The HTTPS origin of a Databricks workspace, without path, query, or credentials.
+    /// The HTTPS origin of a Databricks workspace. A link into the workspace (a page, `?o=<workspace ID>`) or a bare
+    /// host names the same workspace; another scheme or credentials in the URL are refused.
     nonisolated func normalizedWorkspaceURL(_ value: String?) throws -> URL {
-        guard let value = value?.nilIfBlank,
-              var components = URLComponents(string: value),
+        guard let value = value?.trimmingCharacters(in: .whitespacesAndNewlines).nilIfBlank,
+              var components = URLComponents(string: value.contains("://") ? value : "https://" + value),
               components.scheme?.lowercased() == "https",
-              components.host != nil,
+              components.host?.isEmpty == false,
               components.user == nil,
-              components.password == nil,
-              components.query == nil,
-              components.fragment == nil,
-              components.path.isEmpty || components.path == "/"
+              components.password == nil
         else {
             throw CodexConfigurationError.invalidDatabricksWorkspaceURL
         }
@@ -92,6 +90,8 @@ actor DatabricksOAuthService {
             components.port = nil
         }
         components.path = ""
+        components.query = nil
+        components.fragment = nil
         guard let url = components.url else {
             throw CodexConfigurationError.invalidDatabricksWorkspaceURL
         }
