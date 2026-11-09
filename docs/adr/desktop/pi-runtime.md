@@ -143,7 +143,7 @@ service 名の最後の部分（`system.ai.github` なら `github`）で、重�
 sign-in は workspace ごとに1つで、その workspace の server すべてが共有する。どの server を使っても同じ refresh token が更新される。
 Databricks provider（`PiExtension/databricks-provider.ts`）が sign-in を、モデルを持たない provider として登録する。いずれモデルにも使う
 provider で、モデルと MCP で workspace を分けられるようにするために Dahlia の extension と分けている。provider の ID は workspace の
-host（port があれば `:<port>` を付ける）で、同じ workspace をもう一度追加するとサインインし直し、provider は1つのまま使う。アカウント自身の workspace は追加させない。設定ではどの Databricks の provider も「Unity Gateway (ホスト名)」と1行で示し、表示名は持たない（2026-11-09 ユーザー承認）。
+host（port があれば `:<port>` を付ける）で、同じ workspace をもう一度追加するとサインインし直し、provider は1つのまま使う。アカウント自身の workspace は追加させない。チャットはドットで Pi 自身の provider と区別するので、ホスト名にドットのない URL も追加させない。設定ではどの Databricks の provider も「Unity Gateway (ホスト名)」と1行で示し、表示名は持たない（2026-11-09 ユーザー承認）。
 この provider の `auth.oauth` が workspace の `/oidc/v1/authorize`・`/oidc/v1/token` に対して PKCE の認可コードフローと refresh を行い、
 Pi がその credential を agent directory の `auth.json` に保存し、ロックの中で refresh する。credential には token と一緒に workspace の
 origin と client を保存するので、どの process も provider の ID だけで refresh できる。チャットでは `databricks-provider.ts` が単独の

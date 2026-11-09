@@ -230,6 +230,10 @@ import os
             await #expect(throws: CodexAppServerError.self) {
                 _ = try await model.addWorkspace(workspaceURL: "https://example.cloud.databricks.com")
             }
+            // A host without a dot could not be told from Pi's own providers in chat, so it is refused before sign-in.
+            await #expect(throws: CodexConfigurationError.invalidDatabricksWorkspaceURL) {
+                _ = try await model.addWorkspace(workspaceURL: "https://gateway")
+            }
             #expect(model.settings == AgentMCPSettings())
             #expect(AgentMCPSettings.load(for: Self.account, defaults: defaults) == AgentMCPSettings())
             #expect(!model.isBusy)
