@@ -89,7 +89,7 @@ struct WorkspaceSettingsView: View {
         Section {
             if model.isLoading, model.workspaces.isEmpty {
                 ProgressView(L10n.loadingWorkspaces)
-            } else if model.workspaces.isEmpty {
+            } else if workspacesInCreationOrder.isEmpty {
                 Label(L10n.noWorkspaces, systemImage: ProjectIcon.workspace.systemImageName)
                     .foregroundStyle(DahliaDesign.secondaryTextColor)
             } else {
@@ -103,21 +103,32 @@ struct WorkspaceSettingsView: View {
 
                 Spacer()
 
-                Button(L10n.addWorkspace, systemImage: "plus", action: showCreateAlert)
-                    .buttonStyle(.dahlia(.primary))
-                    .controlSize(.small)
-                    .help(L10n.workspaceNameDescription)
+                // A new workspace is local or Databricks; one created under a Server Account would leave this list.
+                if accountWorkspace?.accountConnectionId == nil {
+                    Button(L10n.addWorkspace, systemImage: "plus", action: showCreateAlert)
+                        .buttonStyle(.dahlia(.primary))
+                        .controlSize(.small)
+                        .help(L10n.workspaceNameDescription)
+                }
             }
         } footer: {
-            if model.workspaces.isEmpty, !model.isLoading {
+            if workspacesInCreationOrder.isEmpty, !model.isLoading {
                 Text(L10n.noWorkspacesDescription)
             }
         }
     }
 
-    /// `model.workspaces` is ordered by last opened, which would reorder the list whenever the selection changes.
+    /// The open workspace as the model last loaded it, so a move to another account changes the listed account.
+    private var accountWorkspace: WorkspaceRecord? {
+        currentWorkspace.map { current in model.workspaces.first { $0.id == current.id } ?? current }
+    }
+
+    /// Only the selected account's workspaces. `model.workspaces` is ordered by last opened, which would reorder the list
+    /// whenever the selection changes.
     private var workspacesInCreationOrder: [WorkspaceRecord] {
-        model.workspaces.sorted { ($0.createdAt, $0.id.uuidString) < ($1.createdAt, $1.id.uuidString) }
+        model.workspaces
+            .filter { workspace in accountWorkspace.map(workspace.belongsToSameAccount) ?? true }
+            .sorted { ($0.createdAt, $0.id.uuidString) < ($1.createdAt, $1.id.uuidString) }
     }
 
     private func workspaceRow(_ workspace: WorkspaceRecord) -> some View {
@@ -268,9 +279,8 @@ struct WorkspaceSettingsView: View {
     private func createWorkspace() {
         let name = proposedName
         clearCreateRequest()
-        // A workspace added while using the Databricks account belongs to it.
-        let databricksConnectionID = WorkspaceAISettingsModel.shared.isDatabricksAccount
-            ? WorkspaceAISettingsModel.shared.databricksAccountConnectionID : nil
+        // A workspace added while using the Databricks account belongs to it, so it stays in the listed account.
+        let databricksConnectionID = accountWorkspace?.databricksConnectionId
         Task { _ = await model.createWorkspace(named: name, databricksConnectionID: databricksConnectionID) }
     }
 
