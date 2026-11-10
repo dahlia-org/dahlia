@@ -25,17 +25,17 @@ struct MainSidebarChatHistorySection: View {
         .task(id: coordinator.dockedSessionID) {
             sidebarViewModel.loadMeetingReferencesIfNeeded()
             syncMeetingCatalog()
-            if coordinator.history.isEmpty { await coordinator.refreshHistory() }
+            if coordinator.history.isEmpty || coordinator.isDockedThreadMissingFromHistory {
+                await coordinator.refreshHistory()
+            }
         }
         // Titles name meetings through the docked session's catalog, which only a mounted chat view fills otherwise.
         .onChange(of: sidebarViewModel.meetingReferences) { syncMeetingCatalog() }
         .onChange(of: sidebarViewModel.isMeetingCatalogLoaded) { syncMeetingCatalog() }
-        // The coordinator refreshes only for background sessions, so the visible list picks up the current chat itself.
-        // Pi writes a new thread's session file only after its first reply, so wait for that turn to finish.
-        .onChange(of: DockedTurn(coordinator)) { old, new in
-            guard old.sessionID == new.sessionID, old.isGenerating, !new.isGenerating,
-                  let threadID = new.threadID,
-                  !coordinator.history.contains(where: { $0.id == threadID }) else { return }
+        // The coordinator refreshes only for background sessions, so the visible list picks up the current chat itself
+        // once its first reply has finished; Pi writes a new thread's session file only then.
+        .onChange(of: coordinator.isDockedThreadMissingFromHistory) { _, isMissing in
+            guard isMissing else { return }
             Task { await coordinator.refreshHistory() }
         }
 
@@ -92,19 +92,6 @@ struct MainSidebarChatHistorySection: View {
             }
             .buttonStyle(.plain)
         }
-    }
-}
-
-private struct DockedTurn: Equatable {
-    let sessionID: CodexChatSessionID
-    let threadID: String?
-    let isGenerating: Bool
-
-    @MainActor
-    init(_ coordinator: CodexChatCoordinator) {
-        sessionID = coordinator.dockedSessionID
-        threadID = coordinator.dockedSession.backendThreadID
-        isGenerating = coordinator.dockedSession.hasPendingGenerationWork
     }
 }
 

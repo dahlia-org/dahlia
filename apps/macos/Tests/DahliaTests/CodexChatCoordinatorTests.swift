@@ -397,6 +397,34 @@ import Foundation
         }
 
         @Test
+        func dockedThreadIsMissingFromCachedHistoryOnlyAfterItsTurnFinishes() async {
+            let service = CoordinatorTestCodexChatService(blocksTurn: true, listsStartedThread: true)
+            let settings = AppSettings()
+            settings.currentWorkspace = Self.workspace(name: "Hidden Start")
+            let coordinator = CodexChatCoordinator(service: service, settings: settings)
+            let session = coordinator.dockedSession
+            await coordinator.refreshHistory()
+            #expect(coordinator.history.map(\.id) == ["history-thread"])
+            #expect(!coordinator.isDockedThreadMissingFromHistory)
+
+            session.draft = "Question"
+            session.sendDraft()
+            await waitUntil { await MainActor.run { session.activeTurnID != nil } }
+            // Still generating: the service may not have saved the thread yet.
+            #expect(!coordinator.isDockedThreadMissingFromHistory)
+
+            // The reply finishes while no history list watches; the cached, nonempty history now lacks the thread.
+            await service.completeBlockedTurn()
+            await waitUntil { await MainActor.run { !session.hasPendingGenerationWork } }
+            #expect(coordinator.history.map(\.id) == ["history-thread"])
+            #expect(coordinator.isDockedThreadMissingFromHistory)
+
+            await coordinator.refreshHistory()
+            #expect(coordinator.history.map(\.id) == ["new-thread"])
+            #expect(!coordinator.isDockedThreadMissingFromHistory)
+        }
+
+        @Test
         func detachedThreadAppearsWhenItsBackendThreadStarts() async throws {
             let service = CoordinatorTestCodexChatService(
                 blocksTurn: true,

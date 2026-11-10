@@ -164,6 +164,16 @@ final class CodexChatCoordinator {
         return replacementID
     }
 
+    /// The docked chat's thread can be listed now (its turn finished, so the service has saved it) but `history` lacks it.
+    /// The coordinator does not refresh for the docked session, so a visible history list uses this to catch up,
+    /// including after the first reply finished while no list was on screen.
+    var isDockedThreadMissingFromHistory: Bool {
+        guard !isLoadingHistory,
+              let threadID = dockedSession.backendThreadID,
+              !dockedSession.hasPendingGenerationWork else { return false }
+        return !history.contains { $0.id == threadID }
+    }
+
     /// The detached window's session already showing `threadID`, if any; opening that thread brings its window forward.
     func detachedSessionID(showingThread threadID: String) -> CodexChatSessionID? {
         let workspaceID = dockedSession.workspaceID
