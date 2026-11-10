@@ -258,10 +258,13 @@ actor PiRuntimeService {
         let listing = gatewayListings[account]?[gateway.id] ?? Task { try await self.modelServices(gateway, account: account) }
         gatewayListings[account, default: [:]][gateway.id] = listing
         let result = await Result { try await listing.value }
-        // Superseded by an activation or sign-in, or already saved by a caller that joined it.
-        guard gatewayListings[account]?[gateway.id] == listing else { return }
-        gatewayListings[account]?[gateway.id] = nil
-        try PiProviderConfiguration.saveGatewayServices(result.get(), providerID: gateway.id, agentURL: agentURL)
+        let isCurrent = gatewayListings[account]?[gateway.id] == listing
+        if isCurrent { gatewayListings[account]?[gateway.id] = nil }
+        // Every caller that joined sees the listing's failure, such as a sign-in the Models tab must report.
+        let services = try result.get()
+        // Only the current listing saves: not one superseded by an activation or sign-in, nor a joined caller again.
+        guard isCurrent else { return }
+        try PiProviderConfiguration.saveGatewayServices(services, providerID: gateway.id, agentURL: agentURL)
     }
 
     /// The background listing of the account's gateways in this activation, for tests to await.

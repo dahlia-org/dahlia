@@ -261,8 +261,15 @@ import os
                     guard command["message"]?.stringValue?.hasPrefix("/databricks-model-services") == true,
                           let transport = current.withLock({ $0 })
                     else { return [TestPiTransport.response(id: id)] }
-                    // The test answers the listing once the Models tab is waiting too.
-                    count.withLock { $0 += 1 }
+                    // The test answers the first two listings once the Models tab is waiting too; a tab that starts its
+                    // own listing after the shared one ended is refused at once.
+                    let listing = count.withLock { value -> Int in
+                        value += 1
+                        return value
+                    }
+                    guard listing <= 2 else {
+                        return [TestPiTransport.response(id: id), TestPiTransport.notify("databricks:model_services_sign_in_required")]
+                    }
                     listed.yield((transport, id))
                     return []
                 }
@@ -286,6 +293,16 @@ import os
             #expect(models.map(\.id) == ["system.ai.kimi-k3"])
             await pi.service.gatewayRefresh(for: .local)?.value
             #expect(count.withLock { $0 } == 1)
+
+            // A failed listing reaches every caller that joined it, so the tab shows the sign-in it needs.
+            try await pi.service.reloadConfiguration()
+            try FileManager.default.removeItem(at: agentURL.appending(path: "gateway-models.json"))
+            _ = try await pi.service.models()
+            let (failing, failingID) = try #require(await iterator.next())
+            let failedTab = Task { try await pi.service.gatewayModels(for: .local, provider: workspace, forceRefresh: false) }
+            await failing.emit(TestPiTransport.response(id: failingID))
+            await failing.emit(TestPiTransport.notify("databricks:model_services_sign_in_required"))
+            await #expect(throws: CodexAppServerError.notLoggedIn) { try await failedTab.value }
         }
 
         @Test
