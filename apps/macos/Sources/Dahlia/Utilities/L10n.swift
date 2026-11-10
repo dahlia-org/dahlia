@@ -1593,10 +1593,6 @@ enum L10n { // swiftlint:disable:this type_body_length
     static var setupComplete: String { String(localized: "Setup Complete", bundle: bundle) }
     static var continueAction: String { String(localized: "Continue", bundle: bundle) }
     static var startDahlia: String { String(localized: "Start Dahlia", bundle: bundle) }
-    static var workspaceSetupDescription: String { String(
-        localized: "Dahlia stores meeting data and generated files in a local Workspace.",
-        bundle: bundle
-    ) }
     static var workingLanguagesSetupDescription: String { String(
         localized: "Choose the languages Dahlia should recognize. Set the AI output language in Manage Workspaces.",
         bundle: bundle
@@ -1609,7 +1605,7 @@ enum L10n { // swiftlint:disable:this type_body_length
     ) }
     static var summaryAndCaptionLanguage: String { String(localized: "Summaries and Image Captions", bundle: bundle) }
     static var modelProviderSetupDescription: String { String(
-        localized: "Sign in to the model providers used for summaries and other AI features. You can use several at once.",
+        localized: "setup.modelProviderDescription",
         bundle: bundle
     ) }
     static var audioPermissionSetupDescription: String { String(
@@ -1622,7 +1618,7 @@ enum L10n { // swiftlint:disable:this type_body_length
         bundle: bundle
     ) }
     static var setupCompletionDescription: String { String(
-        localized: "Review your choices, then create or open the selected Workspace.",
+        localized: "setup.completionDescription",
         bundle: bundle
     ) }
     static var setupSummary: String { String(localized: "Setup Summary", bundle: bundle) }
@@ -2272,11 +2268,9 @@ enum L10n { // swiftlint:disable:this type_body_length
     // MARK: - Workspace Picker
 
     static var createNewWorkspace: String { String(localized: "Create New Workspace", bundle: bundle) }
-    static var createNewWorkspaceDescription: String { String(localized: "Create a workspace without a local export folder.", bundle: bundle) }
     static var addWorkspace: String { String(localized: "Add Workspace", bundle: bundle) }
     static var registeredWorkspaces: String { String(localized: "Registered Workspaces", bundle: bundle) }
     static var openFolderAsWorkspace: String { String(localized: "Open Folder as Workspace", bundle: bundle) }
-    static var openFolderAsWorkspaceDescription: String { String(localized: "Select an existing folder to use as a workspace.", bundle: bundle) }
     static var removeWorkspace: String { String(localized: "Remove Workspace", bundle: bundle) }
     static var currentWorkspaceRemoveDescription: String { String(
         localized: "Open a different workspace before removing this one.",

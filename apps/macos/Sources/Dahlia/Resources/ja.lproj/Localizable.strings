@@ -742,11 +742,9 @@
 
 /* Workspace Picker */
 "Create New Workspace" = "ワークスペースを新規作成する";
-"Create a workspace without a local export folder." = "ローカルの書き出しフォルダを指定せずにワークスペースを作成します。";
 "Add Workspace" = "ワークスペースを追加";
 "Registered Workspaces" = "登録済みのワークスペース";
 "Open Folder as Workspace" = "ワークスペースとしてフォルダを開く";
-"Select an existing folder to use as a workspace." = "既存のフォルダを選択してワークスペースとして使用します。";
 "Remove Workspace" = "ワークスペースを登録解除";
 "Open a different workspace before removing this one." = "登録を解除するには、先に別のワークスペースを開いてください。";
 "Remove %@?" = "「%@」の登録を解除しますか？";
@@ -1465,17 +1463,16 @@
 "Or continue without signing in" = "またはログインせずに続ける";
 "Switching AI account…" = "AIアカウントを切り替えています…";
 "Choose the AI account used by this Workspace." = "このワークスペースで使用するAIアカウントを選びます。";
-"Dahlia stores meeting data and generated files in a local Workspace." = "Dahliaはミーティングデータと生成ファイルをローカルのWorkspaceに保存します。";
 "Choose the languages Dahlia should recognize. Set the AI output language in Manage Workspaces." = "Dahliaが認識する言語を選びます。AIの出力言語は「ワークスペースを管理」で変更できます。";
 "Recognition and OCR Languages" = "認識・OCR対象の言語";
 "Primary Language" = "要約・画像説明の言語";
 "Used for summaries and screenshot captions." = "要約とスクリーンショットの画像説明に使用します。";
 "Summaries and Image Captions" = "要約と画像説明";
-"Sign in to the model providers used for summaries and other AI features. You can use several at once." = "要約などのAI機能で使うモデルプロバイダーにサインインします。複数同時に使えます。";
+"setup.modelProviderDescription" = "要約などのAI機能で使うモデルプロバイダーにサインインします。複数同時に使えます。スキップすると要約などは使えませんが、後から設定の「エージェント」で設定できます。";
 "Allow access to the audio sources Dahlia records. You can continue and grant access later." = "Dahliaが録音するオーディオへのアクセスを許可します。後から許可することもできます。";
 "Calendar (Optional)" = "カレンダー（オプション）";
 "Connect a calendar to see upcoming meetings in Dahlia. You can set this up later." = "カレンダーを接続すると、Dahliaで今後のミーティングを確認できます。後から設定することもできます。";
-"Review your choices, then create or open the selected Workspace." = "選択内容を確認し、指定したWorkspaceを作成または開きます。";
+"setup.completionDescription" = "選択内容を確認して、Dahliaを始めます。";
 "Setup Summary" = "セットアップ内容";
 "Sync conflict" = "同期の競合";
 "Use Server Version" = "サーバー版を使用";

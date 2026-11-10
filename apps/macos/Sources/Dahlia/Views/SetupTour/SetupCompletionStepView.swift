@@ -5,7 +5,6 @@ struct SetupCompletionStepView: View {
     @Environment(\.scenePhase) private var scenePhase
     @State private var permissionModel = PermissionGuideModel()
     var model: SetupTourModel
-    let onReviewWorkspace: () -> Void
     let onReviewPermissions: () -> Void
     let onRetry: () -> Void
 
@@ -54,14 +53,9 @@ struct SetupCompletionStepView: View {
                         tint: .red
                     )
 
-                    if model.mode == .initial {
-                        Button(L10n.retry, action: onRetry)
-                            .buttonStyle(.dahlia())
-                            .disabled(model.isCompleting)
-                    } else {
-                        Button(L10n.edit, action: onReviewWorkspace)
-                            .buttonStyle(.dahlia())
-                    }
+                    Button(L10n.retry, action: onRetry)
+                        .buttonStyle(.dahlia())
+                        .disabled(model.isCompleting)
                 }
             }
         }
