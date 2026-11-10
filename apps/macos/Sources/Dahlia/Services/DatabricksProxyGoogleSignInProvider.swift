@@ -1,8 +1,8 @@
 import AppKit
 import Foundation
 
-/// Routes Google Calendar through the Databricks Unity Catalog connection proxy when a Databricks
-/// connection exists, and falls back to the direct Google OAuth adapter otherwise. The Google grant lives in
+/// Routes Google Calendar through the Databricks Unity Catalog connection proxy of the open Databricks account, and
+/// through the direct Google OAuth adapter for the Local and Dahlia accounts. The Google grant lives in
 /// Databricks and is the source of truth: Dahlia restores whenever the proxy answers, unless the user disconnected.
 @MainActor
 final class DatabricksProxyGoogleSignInProvider: GoogleSignInProviding {
@@ -18,7 +18,9 @@ final class DatabricksProxyGoogleSignInProvider: GoogleSignInProviding {
     private let storage: DatabricksOAuthStorage
     private let apiClient: any GoogleCalendarAPIClientProviding
     private let userDefaults: UserDefaults
-    private var cachedAccount: GoogleCalendarAccount?
+    private let openAccount: @MainActor () -> CodexRuntimeProvider
+    /// The Google identity resolved for one connection; another account's connection never reuses it.
+    private var cachedAccount: (connectionID: UUID, account: GoogleCalendarAccount)?
     private var connectionObserver: GoogleAuthSessionObserver?
 
     init(
@@ -26,14 +28,17 @@ final class DatabricksProxyGoogleSignInProvider: GoogleSignInProviding {
         oauth: DatabricksOAuthService = .shared,
         storage: DatabricksOAuthStorage = .local(),
         apiClient: any GoogleCalendarAPIClientProviding = GoogleCalendarAPIClient(),
-        userDefaults: UserDefaults = .standard
+        userDefaults: UserDefaults = .standard,
+        openAccount: @escaping @MainActor () -> CodexRuntimeProvider = { AppSettings.shared.calendarAccount }
     ) {
         self.direct = direct
         self.oauth = oauth
         self.storage = storage
         self.apiClient = apiClient
         self.userDefaults = userDefaults
-        // Adding or removing the Databricks connection changes the route; the store re-evaluates through its own notification.
+        self.openAccount = openAccount
+        // Adding or removing the Databricks connection changes the route; the store re-evaluates through its own
+        // notification. The store follows account switches itself.
         connectionObserver = GoogleAuthSessionObserver(notificationName: .databricksConnectionDidChange) { [weak self] _ in
             guard let self else { return }
             cachedAccount = nil
@@ -51,7 +56,8 @@ final class DatabricksProxyGoogleSignInProvider: GoogleSignInProviding {
     }
 
     private var connection: DatabricksConnection? {
-        try? storage.loadConnections().first
+        guard case let .databricks(connectionID) = openAccount() else { return nil }
+        return try? storage.loadConnections().first { $0.id == connectionID }
     }
 
     var isProxyActive: Bool { connection != nil }
@@ -120,7 +126,8 @@ final class DatabricksProxyGoogleSignInProvider: GoogleSignInProviding {
     func refreshCurrentSession() async throws -> GoogleSession? {
         guard let connection else { return try await direct.refreshCurrentSession() }
         guard !isDisconnected(connection) else { return nil }
-        return try await proxySession(for: connection, account: cachedAccount, interactive: false)
+        let account = cachedAccount.flatMap { $0.connectionID == connection.id ? $0.account : nil }
+        return try await proxySession(for: connection, account: account, interactive: false)
     }
 
     func disconnect() async throws {
@@ -168,7 +175,7 @@ final class DatabricksProxyGoogleSignInProvider: GoogleSignInProviding {
         let calendars = try await apiClient.fetchCalendarList(session: session(placeholder))
         let primary = calendars.first(where: \.isPrimary) ?? calendars.first
         let resolved = primary.map { GoogleCalendarAccount(id: $0.id, displayName: $0.title, email: "") } ?? placeholder
-        cachedAccount = resolved
+        cachedAccount = (connection.id, resolved)
         return session(resolved)
     }
 

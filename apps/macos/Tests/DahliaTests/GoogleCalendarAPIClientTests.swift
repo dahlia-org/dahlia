@@ -403,6 +403,31 @@ import Foundation
 
             #expect(GoogleCalendarAPIClient.conferenceURI(for: item)?.absoluteString == item.hangoutLink)
         }
+
+        /// An Outlook invite has no conferenceData; its Teams link is only in the description.
+        @Test
+        func conferenceURIFallsBackToMeetingLinkInDescription() {
+            let item = GoogleCalendarAPIClient.EventItem(
+                id: "google-event-id",
+                summary: "Customer sync",
+                description: """
+                Microsoft Teams meeting
+                Join: <a href="https://teams.microsoft.com/meet/123?p=abc&amp;anon=true">https://teams.microsoft.com/meet/123?p=abc&amp;anon=true</a>
+                Help: https://aka.ms/JoinTeamsMeeting
+                """,
+                location: "Microsoft Teams meeting",
+                iCalUID: "outlook@example.com",
+                htmlLink: nil,
+                hangoutLink: nil,
+                start: .init(date: nil, dateTime: "2026-11-12T06:00:00Z"),
+                end: .init(date: nil, dateTime: "2026-11-12T07:00:00Z"),
+                originalStartTime: nil,
+                conferenceData: nil,
+                eventType: nil
+            )
+
+            #expect(GoogleCalendarAPIClient.conferenceURI(for: item)?.absoluteString == "https://teams.microsoft.com/meet/123?p=abc&anon=true")
+        }
     }
 
 #endif

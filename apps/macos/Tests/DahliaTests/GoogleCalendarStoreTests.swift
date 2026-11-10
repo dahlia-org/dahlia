@@ -13,7 +13,8 @@ import Foundation
             let store = GoogleCalendarStore(
                 signInProvider: MockGoogleCalendarSignInProvider(isConfigured: false),
                 apiClient: MockGoogleCalendarAPIClient(),
-                userDefaults: isolatedUserDefaults()
+                userDefaults: isolatedUserDefaults(),
+                openAccount: { .local }
             )
 
             #expect(store.state == .unconfigured)
@@ -37,6 +38,7 @@ import Foundation
                 signInProvider: signInProvider,
                 apiClient: apiClient,
                 userDefaults: defaults,
+                openAccount: { .local },
                 now: { fixtureNow }
             )
 
@@ -65,6 +67,7 @@ import Foundation
                 ),
                 apiClient: apiClient,
                 userDefaults: defaults,
+                openAccount: { .local },
                 now: { fixtureNow }
             )
 
@@ -92,6 +95,7 @@ import Foundation
                 signInProvider: signInProvider,
                 apiClient: apiClient,
                 userDefaults: defaults,
+                openAccount: { .local },
                 now: { fixtureNow }
             )
             await store.restoreSessionIfNeeded()
@@ -124,6 +128,7 @@ import Foundation
                 ),
                 apiClient: apiClient,
                 userDefaults: defaults,
+                openAccount: { .local },
                 now: { fixtureNow },
                 refreshInterval: 0
             )
@@ -162,6 +167,7 @@ import Foundation
                 ),
                 apiClient: apiClient,
                 userDefaults: defaults,
+                openAccount: { .local },
                 now: { fixtureNow },
                 refreshInterval: 0
             )
@@ -197,6 +203,7 @@ import Foundation
                     eventsResult: .failure(CancellationError())
                 ),
                 userDefaults: defaults,
+                openAccount: { .local },
                 now: { fixtureNow }
             )
 
@@ -215,6 +222,7 @@ import Foundation
                 signInProvider: MockGoogleCalendarSignInProvider(hasPreviousSignIn: true),
                 apiClient: apiClient,
                 userDefaults: defaults,
+                openAccount: { .local },
                 now: { fixtureNow }
             )
             await store.restoreSessionIfNeeded()
@@ -246,6 +254,7 @@ import Foundation
                 ),
                 apiClient: apiClient,
                 userDefaults: defaults,
+                openAccount: { .local },
                 now: { fixtureNow }
             )
             await store.restoreSessionIfNeeded()
@@ -279,6 +288,7 @@ import Foundation
                 signInProvider: signInProvider,
                 apiClient: apiClient,
                 userDefaults: defaults,
+                openAccount: { .local },
                 now: { fixtureNow }
             )
             await store.restoreSessionIfNeeded()
@@ -311,6 +321,7 @@ import Foundation
                 signInProvider: signInProvider,
                 apiClient: apiClient,
                 userDefaults: defaults,
+                openAccount: { .local },
                 now: { fixtureNow }
             )
             await store.restoreSessionIfNeeded()
@@ -343,6 +354,7 @@ import Foundation
                 signInProvider: signInProvider,
                 apiClient: apiClient,
                 userDefaults: defaults,
+                openAccount: { .local },
                 now: { fixtureNow }
             )
 
@@ -373,7 +385,8 @@ import Foundation
             let store = GoogleCalendarStore(
                 signInProvider: signInProvider,
                 apiClient: MockGoogleCalendarAPIClient(),
-                userDefaults: isolatedUserDefaults()
+                userDefaults: isolatedUserDefaults(),
+                openAccount: { .local }
             )
 
             await store.restoreSessionIfNeeded()
@@ -394,6 +407,7 @@ import Foundation
                 signInProvider: signInProvider,
                 apiClient: apiClient,
                 userDefaults: isolatedUserDefaults(),
+                openAccount: { .local },
                 now: { fixtureNow }
             )
 
@@ -420,6 +434,7 @@ import Foundation
                 signInProvider: signInProvider,
                 apiClient: apiClient,
                 userDefaults: defaults,
+                openAccount: { .local },
                 now: { fixtureNow }
             )
 
@@ -450,6 +465,7 @@ import Foundation
                 signInProvider: signInProvider,
                 apiClient: apiClient,
                 userDefaults: defaults,
+                openAccount: { .local },
                 now: { fixtureNow }
             )
 
@@ -458,8 +474,62 @@ import Foundation
 
             #expect(store.selectedCalendarIDs == [secondaryCalendar.id])
 
-            let saved = defaults.string(forKey: GoogleCalendarStore.selectedCalendarIDsKey)
+            let saved = defaults.string(forKey: GoogleCalendarStore.selectedCalendarIDsKey(for: .local))
             #expect(saved?.contains(secondaryCalendar.id) == true)
+        }
+
+        /// Switching accounts changes the route, and each account keeps its own calendar selection; one without its own
+        /// starts from the selection saved before selections became per account.
+        @Test
+        func accountChangeLoadsTheNewAccountsSelectionAndRestoresItsRoute() async {
+            let defaults = isolatedUserDefaults()
+            let databricks = CodexRuntimeProvider.databricks(connectionID: UUID())
+            seedSelectedCalendars([primaryCalendar.id], defaults: defaults)
+            defaults.set("[\"\(secondaryCalendar.id)\"]", forKey: GoogleCalendarStore.selectedCalendarIDsKey(for: databricks))
+            var account = CodexRuntimeProvider.local
+            let signInProvider = MockGoogleCalendarSignInProvider(hasPreviousSignIn: true)
+            let store = GoogleCalendarStore(
+                signInProvider: signInProvider,
+                apiClient: MockGoogleCalendarAPIClient(calendars: [primaryCalendar, secondaryCalendar], events: []),
+                userDefaults: defaults,
+                openAccount: { account }
+            )
+            #expect(store.selectedCalendarIDs == [primaryCalendar.id])
+
+            account = databricks
+            NotificationCenter.default.post(name: .calendarAccountDidChange, object: nil)
+
+            #expect(store.selectedCalendarIDs == [secondaryCalendar.id])
+            #expect(await pollUntil { signInProvider.restoreCallCount == 1 })
+        }
+
+        /// A restore still running for the previous account must not publish its identity or calendars under the new one,
+        /// even when the switch arrives while that restore is suspended.
+        @Test
+        func accountChangeRejectsTheRestoreStillRunningForThePreviousAccount() async {
+            var account = CodexRuntimeProvider.local
+            let signInProvider = MockGoogleCalendarSignInProvider(hasPreviousSignIn: true, suspendsRestore: true)
+            let store = GoogleCalendarStore(
+                signInProvider: signInProvider,
+                apiClient: MockGoogleCalendarAPIClient(calendars: [primaryCalendar], events: []),
+                userDefaults: isolatedUserDefaults(),
+                openAccount: { account },
+                now: { fixtureNow }
+            )
+            let previousRestore = Task { await store.restoreSessionIfNeeded() }
+            #expect(await pollUntil { signInProvider.restoreCallCount == 1 })
+
+            account = .databricks(connectionID: UUID())
+            NotificationCenter.default.post(name: .calendarAccountDidChange, object: nil)
+            #expect(await pollUntil { signInProvider.restoreCallCount == 2 })
+            signInProvider.finishRestore()
+            await previousRestore.value
+
+            #expect(store.account == nil)
+            #expect(store.availableCalendars.isEmpty)
+
+            signInProvider.finishRestore()
+            #expect(await pollUntil { store.account == fixtureSession.account })
         }
 
         @Test
@@ -469,6 +539,7 @@ import Foundation
                 signInProvider: signInProvider,
                 apiClient: MockGoogleCalendarAPIClient(calendars: [primaryCalendar], events: []),
                 userDefaults: isolatedUserDefaults(),
+                openAccount: { .local },
                 now: { fixtureNow },
                 presentingWindowProvider: { NSWindow() }
             )
@@ -490,7 +561,8 @@ import Foundation
             let store = GoogleCalendarStore(
                 signInProvider: signInProvider,
                 apiClient: MockGoogleCalendarAPIClient(calendars: [primaryCalendar], events: []),
-                userDefaults: isolatedUserDefaults()
+                userDefaults: isolatedUserDefaults(),
+                openAccount: { .local }
             )
 
             NotificationCenter.default.post(name: ignoredNotification, object: nil)
@@ -514,6 +586,7 @@ import Foundation
                 signInProvider: signInProvider,
                 apiClient: MockGoogleCalendarAPIClient(calendars: [primaryCalendar], events: [fixtureEvent]),
                 userDefaults: defaults,
+                openAccount: { .local },
                 now: { fixtureNow },
                 presentingWindowProvider: { NSWindow() }
             )
@@ -707,6 +780,8 @@ private final class MockGoogleCalendarSignInProvider: GoogleSignInProviding {
     var refreshResult: Result<GoogleSession?, Error>
     private let suspendsDisconnect: Bool
     private var disconnectContinuation: CheckedContinuation<Void, Never>?
+    private let suspendsRestore: Bool
+    private var restoreContinuations: [CheckedContinuation<Void, Never>] = []
     private(set) var restoreCallCount = 0
     private(set) var disconnectCallCount = 0
     private(set) var signInRequestedScopes: [Set<String>] = []
@@ -714,11 +789,13 @@ private final class MockGoogleCalendarSignInProvider: GoogleSignInProviding {
     init(
         isConfigured: Bool = true,
         hasPreviousSignIn: Bool = false,
-        sessionDidChangeNotification: Notification.Name = .googleCalendarSessionDidChange,
+        // Unique per mock, so a live provider reacting to another suite's workspace switch cannot reach this store.
+        sessionDidChangeNotification: Notification.Name = Notification.Name("MockGoogleCalendarSignInProvider.\(UUID().uuidString)"),
         restoreResult: Result<GoogleSession, Error> = .success(fixtureSession),
         signInResult: Result<GoogleSession, Error> = .success(fixtureSession),
         refreshResult: Result<GoogleSession?, Error> = .success(fixtureSession),
-        suspendsDisconnect: Bool = false
+        suspendsDisconnect: Bool = false,
+        suspendsRestore: Bool = false
     ) {
         self.isConfigured = isConfigured
         self.hasPreviousSignIn = hasPreviousSignIn
@@ -727,11 +804,21 @@ private final class MockGoogleCalendarSignInProvider: GoogleSignInProviding {
         self.signInResult = signInResult
         self.refreshResult = refreshResult
         self.suspendsDisconnect = suspendsDisconnect
+        self.suspendsRestore = suspendsRestore
     }
 
     func restorePreviousSignIn() async throws -> GoogleSession {
         restoreCallCount += 1
+        if suspendsRestore {
+            await withCheckedContinuation { restoreContinuations.append($0) }
+        }
         return try restoreResult.get()
+    }
+
+    /// Resumes the oldest suspended restore.
+    func finishRestore() {
+        guard !restoreContinuations.isEmpty else { return }
+        restoreContinuations.removeFirst().resume()
     }
 
     func signIn(withPresentingWindow _: NSWindow, requestedScopes: Set<String>) async throws -> GoogleSession {

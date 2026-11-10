@@ -20,6 +20,7 @@ enum SettingsCategory: String, CaseIterable, Identifiable {
     case liveSubtitles
     case screenshots
     case calendar
+    case calendarDisplay
     case cloudStorage
     case modelProvider = "accounts"
     case aiSummary
@@ -51,6 +52,7 @@ enum SettingsCategory: String, CaseIterable, Identifiable {
         case .liveSubtitles: L10n.liveSubtitles
         case .screenshots: L10n.screenshots
         case .calendar: L10n.calendar
+        case .calendarDisplay: L10n.calendarDisplay
         case .cloudStorage: L10n.export
         case .modelProvider: L10n.modelProvider
         case .aiSummary: L10n.transcriptionAndSummary
@@ -82,6 +84,7 @@ enum SettingsCategory: String, CaseIterable, Identifiable {
         case .liveSubtitles: "captions.bubble"
         case .screenshots: "photo.on.rectangle.angled"
         case .calendar: "calendar"
+        case .calendarDisplay: "calendar.badge.clock"
         case .cloudStorage: "square.and.arrow.up"
         case .modelProvider: "sparkles"
         case .aiSummary: "list.bullet.clipboard"
@@ -177,7 +180,9 @@ enum SettingsCategory: String, CaseIterable, Identifiable {
                 L10n.sharedContent,
             ]
         case .calendar:
-            ["Google", L10n.macOSCalendar, L10n.calendarSources, L10n.menuBarCalendar, L10n.notifications]
+            ["Google", L10n.googleCalendar, L10n.macOSCalendar, L10n.calendarSources]
+        case .calendarDisplay:
+            [L10n.menuBarCalendar, L10n.meetingLinkApplications, L10n.calendarEventsToInclude, L10n.notifications]
         case .cloudStorage:
             ["Google", L10n.googleDrive, L10n.googleDriveExportFolder]
         case .accountsAndWorkspaces:

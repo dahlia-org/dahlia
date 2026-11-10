@@ -1629,6 +1629,7 @@ enum L10n { // swiftlint:disable:this type_body_length
     static var diagnostics: String { String(localized: "Diagnostics", bundle: bundle) }
     static var notifications: String { String(localized: "Notifications", bundle: bundle) }
     static var calendar: String { String(localized: "Calendar", bundle: bundle) }
+    static var calendarDisplay: String { String(localized: "Calendar Display", bundle: bundle) }
     static var cloudStorage: String { String(localized: "Cloud Storage", bundle: bundle) }
     static var developerSettings: String { String(localized: "Developer Settings", bundle: bundle) }
     static var workspace: String { String(localized: "Workspace", bundle: bundle) }
@@ -1940,7 +1941,7 @@ enum L10n { // swiftlint:disable:this type_body_length
     ) }
     static var calendarSources: String { String(localized: "Calendar Sources", bundle: bundle) }
     static var calendarSourcesDescription: String { String(
-        localized: "Choose which calendar services provide upcoming events.",
+        localized: "Each account chooses the calendar services that provide its upcoming events. A Databricks account reads Google Calendar through its workspace.",
         bundle: bundle
     ) }
     static var calendarEventsToInclude: String { String(localized: "Events to Include", bundle: bundle) }

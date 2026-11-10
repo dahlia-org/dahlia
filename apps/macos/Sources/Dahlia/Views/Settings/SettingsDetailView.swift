@@ -104,6 +104,8 @@ struct SettingsDetailView: View {
             ScreenshotSettingsView()
         case .calendar:
             CalendarSettingsView()
+        case .calendarDisplay:
+            CalendarDisplaySettingsView()
         case .cloudStorage:
             CloudStorageSettingsView()
         case .instructions:

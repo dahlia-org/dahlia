@@ -536,6 +536,7 @@
 "Diagnostics" = "診断";
 "Notifications" = "通知";
 "Calendar" = "カレンダー";
+"Calendar Display" = "カレンダー表示";
 "Model" = "モデル";
 "Reasoning Effort" = "推論の強度";
 "Controls how much reasoning Pi uses for each summary." = "要約ごとに Pi が使用する推論の強度を設定します。";
@@ -642,7 +643,7 @@
 "Calendar Source" = "カレンダーソース";
 "Choose which calendar service provides upcoming events." = "今後の予定を取得するカレンダーサービスを選びます。";
 "Calendar Sources" = "カレンダーソース";
-"Choose which calendar services provide upcoming events." = "今後の予定を取得するカレンダーサービスを選びます。";
+"Each account chooses the calendar services that provide its upcoming events. A Databricks account reads Google Calendar through its workspace." = "今後の予定を取得するカレンダーサービスはアカウントごとに選びます。Databricks アカウントは Google カレンダーをワークスペース経由で読み込みます。";
 "Events to Include" = "イベントを含める";
 "Turn on the event types to show in Home, the menu bar, and calendar notifications." = "Home、メニューバー、カレンダー通知に表示するイベントの種類をオンにします。";
 "All-day events" = "終日イベント";

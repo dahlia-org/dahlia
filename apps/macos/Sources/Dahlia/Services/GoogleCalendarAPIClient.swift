@@ -219,6 +219,13 @@ final class GoogleCalendarAPIClient: GoogleCalendarAPIClientProviding {
             ?? videoURIs.first
             ?? hangoutURI
             ?? entryPointURIs.first
+            // Invites from Outlook and other external organizers carry no conferenceData, only the link in the text,
+            // as macOS Calendar reads it.
+            // Google stores the description as HTML, so a link's `&` arrives as `&amp;`.
+            ?? CalendarConferenceURIExtractor.conferenceURI(
+                url: nil,
+                textFields: [item.description?.replacingOccurrences(of: "&amp;", with: "&"), item.location]
+            )
     }
 
     static func sortAndFilter(

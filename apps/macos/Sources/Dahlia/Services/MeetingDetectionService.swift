@@ -106,6 +106,7 @@ final class MeetingDetectionService: ObservableObject {
 
     private func observeSettings() {
         NotificationCenter.default.publisher(for: UserDefaults.didChangeNotification)
+            .merge(with: NotificationCenter.default.publisher(for: .calendarAccountDidChange))
             .debounce(for: .milliseconds(100), scheduler: DispatchQueue.main)
             .sink { [weak self] _ in
                 Task { @MainActor [weak self] in
@@ -147,7 +148,7 @@ final class MeetingDetectionService: ObservableObject {
             settings.automaticMeetingEndRecordingStopEnabled.description,
             settings.calendarEventMeetingNotificationsEnabled.description,
             settings.meetingNotificationPresentationRawValue,
-            settings.enabledCalendarSourcesJSON,
+            settings.enabledCalendarSources.map(\.rawValue).sorted().joined(separator: ","),
             settings.includesAllDayCalendarEvents.description,
             settings.includesCalendarEventsWithoutOtherAttendees.description,
             settings.includesCalendarEventsWithoutConferenceURI.description,
