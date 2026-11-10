@@ -743,11 +743,9 @@
 
 /* Workspace Picker */
 "Create New Workspace" = "Create New Workspace";
-"Create a workspace without a local export folder." = "Create a workspace without a local export folder.";
 "Add Workspace" = "Add Workspace";
 "Registered Workspaces" = "Registered Workspaces";
 "Open Folder as Workspace" = "Open Folder as Workspace";
-"Select an existing folder to use as a workspace." = "Select an existing folder to use as a workspace.";
 "Remove Workspace" = "Remove Workspace";
 "Open a different workspace before removing this one." = "Open a different workspace before removing this one.";
 "Remove %@?" = "Remove %@?";
@@ -1466,17 +1464,16 @@
 "Or continue without signing in" = "Or continue without signing in";
 "Switching AI account…" = "Switching AI account…";
 "Choose the AI account used by this Workspace." = "Choose the AI account used by this Workspace.";
-"Dahlia stores meeting data and generated files in a local Workspace." = "Dahlia stores meeting data and generated files in a local Workspace.";
 "Choose the languages Dahlia should recognize. Set the AI output language in Manage Workspaces." = "Choose the languages Dahlia should recognize. Set the AI output language in Manage Workspaces.";
 "Recognition and OCR Languages" = "Recognition and OCR Languages";
 "Primary Language" = "Summary & Image Caption Language";
 "Used for summaries and screenshot captions." = "Used for summaries and screenshot captions.";
 "Summaries and Image Captions" = "Summaries and Image Captions";
-"Sign in to the model providers used for summaries and other AI features. You can use several at once." = "Sign in to the model providers used for summaries and other AI features. You can use several at once.";
+"setup.modelProviderDescription" = "Sign in to the model providers used for summaries and other AI features. You can use several at once. If you skip this, summaries and other AI features stay unavailable until you set one up in Settings > Agents.";
 "Allow access to the audio sources Dahlia records. You can continue and grant access later." = "Allow access to the audio sources Dahlia records. You can continue and grant access later.";
 "Calendar (Optional)" = "Calendar (Optional)";
 "Connect a calendar to see upcoming meetings in Dahlia. You can set this up later." = "Connect a calendar to see upcoming meetings in Dahlia. You can set this up later.";
-"Review your choices, then create or open the selected Workspace." = "Review your choices, then create or open the selected Workspace.";
+"setup.completionDescription" = "Review your choices, then start Dahlia.";
 "Setup Summary" = "Setup Summary";
 "Sync conflict" = "Sync conflict";
 "Use Server Version" = "Use Server Version";

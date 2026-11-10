@@ -1,4 +1,3 @@
-import DahliaRuntimeSupport
 import Foundation
 import Observation
 
@@ -9,16 +8,10 @@ final class SetupTourModel {
     let originalWorkspace: WorkspaceRecord?
 
     private(set) var currentStep: SetupTourStep
-    private(set) var isWorkspaceLocationConfirmed: Bool
     private(set) var isCompleting = false
     private(set) var errorMessage: String?
-    private(set) var selectedWorkspaceURL: URL
-    private(set) var selectedWorkspaceName: String?
-    private(set) var selectedExistingWorkspaceID: UUID?
-    private(set) var didSelectWorkspaceLocation = false
     private(set) var selectedAccountConnectionID: UUID?
     /// The Databricks account: local data listed under the connected Databricks workspace.
-    /// shortcut: not saved with setup progress, so a relaunch mid-tour resumes with the Local Account; save it if that matters.
     private(set) var selectedDatabricksConnectionID: UUID?
     private(set) var isAccountSelectionConfirmed: Bool
     private let progressDefaults: UserDefaults?
@@ -41,34 +34,32 @@ final class SetupTourModel {
             return signedInAccountConnectionIDs.contains(connectionID)
         } ?? false
         self.progressDefaults = progressDefaults
+        currentStep = .account
 
         if mode == .initial, currentWorkspace == nil, let progressDefaults {
-            let restoredWorkspaceURL = SetupTourPresentationPolicy.restoredWorkspaceURL(in: progressDefaults)
-            let restoredWorkspaceConfirmed = restoredWorkspaceURL != nil
-                && SetupTourPresentationPolicy.isRestoredWorkspaceConfirmed(in: progressDefaults)
             let restoredStep = SetupTourPresentationPolicy.restoredStep(in: progressDefaults)
             let restoredConnectionID = SetupTourPresentationPolicy.restoredAccountConnectionID(in: progressDefaults)
             let restoredAccountConfirmed = SetupTourPresentationPolicy.isAccountSelectionConfirmed(in: progressDefaults)
+                // Databricks connections load after launch; one removed mid-tour fails at completion instead.
                 && (restoredConnectionID.map(signedInAccountConnectionIDs.contains) ?? true)
-            currentStep = if !restoredAccountConfirmed {
-                .account
-            } else if restoredStep == .workspace {
-                .workingLanguages
-            } else if restoredStep == .modelProvider, restoredConnectionID != nil {
-                .calendar
-            } else {
-                restoredStep
-            }
             selectedAccountConnectionID = restoredConnectionID
+            selectedDatabricksConnectionID = restoredConnectionID == nil
+                ? SetupTourPresentationPolicy.restoredDatabricksConnectionID(in: progressDefaults)
+                : nil
             isAccountSelectionConfirmed = restoredAccountConfirmed
-            selectedWorkspaceURL = restoredWorkspaceURL ?? WorkspaceManagementModel.defaultWorkspaceURL
-            selectedWorkspaceName = SetupTourPresentationPolicy.restoredWorkspaceName(in: progressDefaults)
-            isWorkspaceLocationConfirmed = restoredWorkspaceConfirmed
-        } else {
-            currentStep = .account
-            selectedWorkspaceURL = currentWorkspace?.url ?? WorkspaceManagementModel.defaultWorkspaceURL
-            selectedWorkspaceName = nil
-            isWorkspaceLocationConfirmed = currentWorkspace != nil
+            if restoredAccountConfirmed {
+                // An earlier release asked for model providers later, so its unfinished tour has not reached them yet.
+                let skippedModelProvider = SetupTourPresentationPolicy.hasProgressBeforeModelProviderMoved(in: progressDefaults)
+                    && [.workingLanguages, .permissions].contains(restoredStep)
+                    && visibleSteps.contains(.modelProvider)
+                currentStep = if skippedModelProvider {
+                    .modelProvider
+                } else if visibleSteps.contains(restoredStep) {
+                    restoredStep
+                } else {
+                    .workingLanguages
+                }
+            }
         }
     }
 
@@ -77,16 +68,13 @@ final class SetupTourModel {
     }
 
     var canContinue: Bool {
-        !isCompleting
-            && (currentStep != .account || isAccountSelectionConfirmed)
-            && (currentStep != .workspace || isWorkspaceLocationConfirmed)
+        !isCompleting && (currentStep != .account || isAccountSelectionConfirmed)
     }
 
     var visibleSteps: [SetupTourStep] {
         SetupTourStep.allCases.filter {
-            (mode != .initial || $0 != .workspace)
-                // A Databricks account signs in during account selection and uses only its gateways.
-                && ((selectedAccountConnectionID == nil && selectedDatabricksConnectionID == nil) || $0 != .modelProvider)
+            // A Dahlia or Databricks account signs in during account selection and uses only its own models.
+            (selectedAccountConnectionID == nil && selectedDatabricksConnectionID == nil) || $0 != .modelProvider
         }
     }
 
@@ -97,10 +85,6 @@ final class SetupTourModel {
             preparationTask?.cancel()
             preparationTask = nil
             isPreparingWorkspace = false
-            if mode == .initial || selectedExistingWorkspaceID != nil {
-                selectedExistingWorkspaceID = nil
-                isWorkspaceLocationConfirmed = false
-            }
         }
         selectedAccountConnectionID = connectionID
         selectedDatabricksConnectionID = connectionID == nil ? databricks : nil
@@ -128,39 +112,7 @@ final class SetupTourModel {
         preparationTask = nil
         isPreparingWorkspace = false
         guard let workspace, belongsToSelectedAccount(workspace) else { return nil }
-        selectExistingWorkspace(workspace)
         return workspace
-    }
-
-    func selectWorkspaceURL(_ url: URL) {
-        selectedExistingWorkspaceID = nil
-        selectedWorkspaceURL = url
-        selectedWorkspaceName = nil
-        didSelectWorkspaceLocation = true
-        isWorkspaceLocationConfirmed = originalWorkspace?.url?.standardizedFileURL == url.standardizedFileURL
-        errorMessage = nil
-        persistProgress()
-    }
-
-    func selectPathlessWorkspace(named name: String) {
-        guard let name = DahliaProjectName.normalizedName(name) else { return }
-        selectedExistingWorkspaceID = nil
-        selectedWorkspaceName = name
-        selectedWorkspaceURL = WorkspaceManagementModel.defaultWorkspaceURL
-        didSelectWorkspaceLocation = true
-        isWorkspaceLocationConfirmed = true
-        errorMessage = nil
-        persistProgress()
-    }
-
-    func selectExistingWorkspace(_ workspace: WorkspaceRecord) {
-        guard belongsToSelectedAccount(workspace) else { return }
-        selectedExistingWorkspaceID = workspace.id
-        selectedWorkspaceName = nil
-        didSelectWorkspaceLocation = true
-        isWorkspaceLocationConfirmed = true
-        errorMessage = nil
-        persistProgress()
     }
 
     func belongsToSelectedAccount(_ workspace: WorkspaceRecord) -> Bool {
@@ -168,19 +120,9 @@ final class SetupTourModel {
             && workspace.databricksConnectionId == selectedDatabricksConnectionID
     }
 
-    func confirmWorkspaceSelection() {
-        isWorkspaceLocationConfirmed = true
-        errorMessage = nil
-        persistProgress()
-    }
-
+    /// Choosing another account in the tour opens that account's workspace instead.
     var keepsOriginalWorkspace: Bool {
-        // Choosing another account in the tour opens that account's workspace instead.
-        guard let originalWorkspace, belongsToSelectedAccount(originalWorkspace) else { return false }
-        if let selectedExistingWorkspaceID { return selectedExistingWorkspaceID == originalWorkspace.id }
-        return selectedWorkspaceName == nil && (!didSelectWorkspaceLocation
-            || originalWorkspace.url?.standardizedFileURL == selectedWorkspaceURL.standardizedFileURL
-        )
+        originalWorkspace.map(belongsToSelectedAccount) ?? false
     }
 
     func advance() {
@@ -225,11 +167,8 @@ final class SetupTourModel {
         guard mode == .initial, let progressDefaults else { return }
         SetupTourPresentationPolicy.saveProgress(
             step: currentStep,
-            workspaceURL: selectedWorkspaceURL,
-            workspaceName: selectedWorkspaceName,
-            // Revalidate an automatically discovered selection after relaunch.
-            isWorkspaceConfirmed: isWorkspaceLocationConfirmed && selectedExistingWorkspaceID == nil,
             accountConnectionID: selectedAccountConnectionID,
+            databricksConnectionID: selectedDatabricksConnectionID,
             isAccountSelectionConfirmed: isAccountSelectionConfirmed,
             in: progressDefaults
         )

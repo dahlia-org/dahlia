@@ -11,7 +11,7 @@ struct SetupTourView: View {
     private let workspaceManagementModel: WorkspaceManagementModel
     private let canComplete: () -> Bool
     private let onComplete: (WorkspaceRecord, UUID?) async -> Bool
-    private let workspaceStepReferenceHeight: CGFloat = 476
+    private let stepReferenceHeight: CGFloat = 476
 
     init(
         mode: SetupTourMode,
@@ -40,6 +40,20 @@ struct SetupTourView: View {
                 Text(L10n.setupDahlia)
                     .font(.headline)
 
+                // Account-scoped settings, such as model providers and calendars, apply to this account.
+                if model.currentStep != .account, model.isAccountSelectionConfirmed {
+                    Label {
+                        Text(selectedAccountTitle)
+                    } icon: {
+                        selectedAccountIcon
+                    }
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                    .accessibilityElement(children: .ignore)
+                    .accessibilityLabel("\(L10n.account), \(selectedAccountTitle)")
+                }
+
                 Spacer()
             }
 
@@ -56,7 +70,7 @@ struct SetupTourView: View {
                         }
                         .frame(maxWidth: .infinity)
                         .padding(.horizontal, 40)
-                        .padding(.top, max((proxy.size.height - workspaceStepReferenceHeight) / 2, 32))
+                        .padding(.top, max((proxy.size.height - stepReferenceHeight) / 2, 32))
                         .padding(.bottom, 32)
                     }
 
@@ -160,8 +174,6 @@ struct SetupTourView: View {
                 onContinueWithDatabricks: continueWithDatabricks,
                 onContinueLocally: continueWithLocalAccount
             )
-        case .workspace:
-            WorkspaceSetupStepView(model: model, workspaceManagementModel: workspaceManagementModel)
         case .workingLanguages:
             WorkingLanguagesSetupStepView()
         case .permissions:
@@ -174,7 +186,6 @@ struct SetupTourView: View {
         case .completion:
             SetupCompletionStepView(
                 model: model,
-                onReviewWorkspace: { model.returnToStep(.workspace) },
                 onReviewPermissions: { model.returnToStep(.permissions) },
                 onRetry: completeTour
             )
@@ -248,34 +259,20 @@ struct SetupTourView: View {
                 model.finishCompletion(errorMessage: L10n.workspaceOperationFailed)
                 return
             }
+            // The account's Default workspace is created automatically, so the tour does not ask for one.
             let workspace: WorkspaceRecord? = if model.mode == .initial {
                 await prepareInitialWorkspace()
-            } else if let selectedID = model.selectedExistingWorkspaceID {
-                workspaceManagementModel.workspaces.first { $0.id == selectedID && model.belongsToSelectedAccount($0) }
-            } else if let originalWorkspace = model.originalWorkspace,
-                      model.keepsOriginalWorkspace {
+            } else if let originalWorkspace = model.originalWorkspace, model.keepsOriginalWorkspace {
                 originalWorkspace
-            } else if !model.didSelectWorkspaceLocation, model.selectedAccountConnectionID == nil {
-                // The suggested folder is the original workspace's; another account opens its own workspace instead.
-                await WorkspaceAISettingsModel.shared.accountWorkspace(databricksConnectionID: model.selectedDatabricksConnectionID)
-            } else if let name = model.selectedWorkspaceName {
-                await workspaceManagementModel.createWorkspace(named: name, databricksConnectionID: model.selectedDatabricksConnectionID)
             } else {
-                await workspaceManagementModel.createWorkspace(
-                    at: model.selectedWorkspaceURL, databricksConnectionID: model.selectedDatabricksConnectionID
-                )
+                // The account step offers only the Local and Databricks accounts, so another account is one of them.
+                await WorkspaceAISettingsModel.shared.accountWorkspace(databricksConnectionID: model.selectedDatabricksConnectionID)
             }
             guard let workspace else {
                 workspaceManagementModel.isShowingError = false
-                let errorMessage = workspaceManagementModel.errorMessage
-                let completionError = if model.mode == .initial {
-                    L10n.setupWorkspaceUnavailable
-                } else if errorMessage.isEmpty {
-                    L10n.workspaceOperationFailed
-                } else {
-                    errorMessage
-                }
-                model.finishCompletion(errorMessage: completionError)
+                model.finishCompletion(
+                    errorMessage: model.mode == .initial ? L10n.setupWorkspaceUnavailable : L10n.workspaceOperationFailed
+                )
                 return
             }
             guard await onComplete(workspace, model.selectedAccountConnectionID) else {
@@ -288,6 +285,28 @@ struct SetupTourView: View {
 
     private var requiresWorkspaceSwitch: Bool {
         !model.keepsOriginalWorkspace
+    }
+
+    private var selectedAccountTitle: String {
+        if let connectionID = model.selectedAccountConnectionID {
+            return accountController.connections.first { $0.id == connectionID }?.displayName ?? L10n.dahliaAccount
+        }
+        if let databricksID = model.selectedDatabricksConnectionID {
+            return WorkspaceAISettingsModel.shared.databricksConnections.first { $0.id == databricksID }
+                .map { L10n.unityGatewayHost($0.hostName) } ?? L10n.databricks
+        }
+        return L10n.localAccount
+    }
+
+    @ViewBuilder
+    private var selectedAccountIcon: some View {
+        if model.selectedAccountConnectionID != nil {
+            Image(systemName: "person.crop.circle")
+        } else if model.selectedDatabricksConnectionID != nil {
+            Image.databricksLogo.resizable().scaledToFit().frame(width: 16, height: 16)
+        } else {
+            Image(systemName: "person.2")
+        }
     }
 
 }

@@ -7,54 +7,35 @@
     @MainActor
     struct SetupTourTests {
         @Test
-        func selectsDiscoveredWorkspaceWithoutCreatingALocalWorkspace() throws {
-            let suiteName = "SetupDiscoveredWorkspace-\(UUID())"
+        func interruptedInitialTourRestoresItsDatabricksAccount() throws {
+            let suiteName = "SetupDatabricksProgress-\(UUID())"
             let defaults = try #require(UserDefaults(suiteName: suiteName))
             defer { defaults.removePersistentDomain(forName: suiteName) }
-            let connectionID = UUID.v7()
+            let databricksID = UUID.v7()
             let model = SetupTourModel(mode: .initial, currentWorkspace: nil, progressDefaults: defaults)
-            model.selectAccountConnection(connectionID)
+            model.selectAccountConnection(nil, databricks: databricksID)
             model.advance()
-            var workspace = WorkspaceRecord(id: .v7(), name: "Shared", createdAt: .now, lastOpenedAt: .distantPast)
-            workspace.accountConnectionId = connectionID
-            workspace.organizationId = workspace.accountConnectionId == nil ? nil : (workspace.organizationId ?? .v7())
-            model.selectExistingWorkspace(workspace)
-            #expect(model.selectedExistingWorkspaceID == workspace.id)
-            #expect(model.canContinue)
-            #expect(model.selectedWorkspaceName == nil)
-            #expect(!model.keepsOriginalWorkspace)
-            model.advance()
-            let restored = SetupTourModel(
-                mode: .initial,
-                currentWorkspace: nil,
-                signedInAccountConnectionIDs: [connectionID],
-                progressDefaults: defaults
-            )
-            #expect(restored.currentStep == .permissions)
-            #expect(!restored.isWorkspaceLocationConfirmed)
-            model.selectAccountConnection(nil)
-            #expect(model.selectedExistingWorkspaceID == nil)
-            #expect(!model.isWorkspaceLocationConfirmed)
+            #expect(model.currentStep == .workingLanguages)
+
+            let restored = SetupTourModel(mode: .initial, currentWorkspace: nil, progressDefaults: defaults)
+            #expect(restored.currentStep == .workingLanguages)
+            #expect(restored.selectedDatabricksConnectionID == databricksID)
+            #expect(restored.selectedAccountConnectionID == nil)
+            #expect(!restored.visibleSteps.contains(.modelProvider))
         }
 
         @Test
-        func initialTourSkipsWorkspaceAndRestoresLegacyWorkspaceStep() throws {
-            let suiteName = "SetupAutomaticWorkspace-\(UUID())"
+        func legacyWorkspaceStepRestoresAsAccountSelection() throws {
+            let suiteName = "SetupLegacyWorkspaceStep-\(UUID())"
             let defaults = try #require(UserDefaults(suiteName: suiteName))
             defer { defaults.removePersistentDomain(forName: suiteName) }
-            SetupTourPresentationPolicy.saveProgress(
-                step: .workspace,
-                workspaceURL: URL(filePath: "/tmp/Unused"),
-                isWorkspaceConfirmed: false,
-                isAccountSelectionConfirmed: true,
-                in: defaults
-            )
+            defaults.set(0, forKey: SetupTourPresentationPolicy.progressStepUserDefaultsKey)
+            defaults.set(true, forKey: SetupTourPresentationPolicy.accountSelectionConfirmedUserDefaultsKey)
+
             let model = SetupTourModel(mode: .initial, currentWorkspace: nil, progressDefaults: defaults)
-            #expect(model.currentStep == .workingLanguages)
-            #expect(!model.visibleSteps.contains(.workspace))
-            #expect(model.canContinue)
-            model.goBack()
+
             #expect(model.currentStep == .account)
+            #expect(model.canContinue)
         }
 
         @Test
@@ -67,7 +48,6 @@
             #expect(!model.isPreparingWorkspace)
             let workspace = WorkspaceRecord(id: .v7(), name: "Local", createdAt: .now, lastOpenedAt: .distantPast)
             #expect(await model.prepareInitialWorkspace { workspace }?.id == workspace.id)
-            #expect(model.selectedExistingWorkspaceID == workspace.id)
         }
 
         @Test
@@ -97,7 +77,6 @@
             try #require(finish).resume(returning: remote)
             let result = await preparing?.value
             #expect(result == nil)
-            #expect(model.selectedExistingWorkspaceID == nil)
             #expect(!model.isPreparingWorkspace)
         }
 
@@ -144,8 +123,8 @@
             defer { defaults.removePersistentDomain(forName: suiteName) }
             SetupTourPresentationPolicy.saveProgress(
                 step: .modelProvider,
-                workspaceURL: URL(filePath: "/tmp/Dahlia", directoryHint: .isDirectory),
-                isWorkspaceConfirmed: true,
+                databricksConnectionID: .v7(),
+                isAccountSelectionConfirmed: true,
                 in: defaults
             )
 
@@ -154,12 +133,11 @@
             #expect(defaults.integer(forKey: SetupTourPresentationPolicy.userDefaultsKey) ==
                 SetupTourPresentationPolicy.currentVersion)
             #expect(defaults.object(forKey: SetupTourPresentationPolicy.progressStepUserDefaultsKey) == nil)
-            #expect(defaults.object(forKey: SetupTourPresentationPolicy.workspacePathUserDefaultsKey) == nil)
-            #expect(defaults.object(forKey: SetupTourPresentationPolicy.workspaceNameUserDefaultsKey) == nil)
-            #expect(defaults.object(forKey: SetupTourPresentationPolicy.workspaceConfirmedUserDefaultsKey) == nil)
             #expect(defaults.object(forKey: SetupTourPresentationPolicy.providerUserDefaultsKey) == nil)
             #expect(defaults.object(forKey: SetupTourPresentationPolicy.databricksProfileUserDefaultsKey) == nil)
             #expect(defaults.object(forKey: SetupTourPresentationPolicy.accountConnectionIDUserDefaultsKey) == nil)
+            #expect(defaults.object(forKey: SetupTourPresentationPolicy.databricksConnectionIDUserDefaultsKey) == nil)
+            #expect(defaults.object(forKey: SetupTourPresentationPolicy.modelProviderFirstUserDefaultsKey) == nil)
             #expect(defaults.object(forKey: SetupTourPresentationPolicy.accountSelectionConfirmedUserDefaultsKey) == nil)
         }
 
@@ -168,12 +146,7 @@
             let suiteName = "SetupTourProviderProgressTests-\(UUID())"
             let defaults = try #require(UserDefaults(suiteName: suiteName))
             defer { defaults.removePersistentDomain(forName: suiteName) }
-            SetupTourPresentationPolicy.saveProgress(
-                step: .modelProvider,
-                workspaceURL: URL(filePath: "/tmp/Dahlia", directoryHint: .isDirectory),
-                isWorkspaceConfirmed: true,
-                in: defaults
-            )
+            SetupTourPresentationPolicy.saveProgress(step: .modelProvider, in: defaults)
             let draft = WorkspaceAISettingsModel(setupDefaults: defaults)
             draft.localProvider = .databricks
             draft.databricksProfile = "setup-profile"
@@ -185,23 +158,19 @@
         }
 
         @Test
-        func interruptedInitialTourRestoresItsStepAndWorkspace() throws {
+        func interruptedInitialTourRestoresItsStep() throws {
             let suiteName = "SetupTourProgressTests-\(UUID())"
             let defaults = try #require(UserDefaults(suiteName: suiteName))
             defer { defaults.removePersistentDomain(forName: suiteName) }
-            let selectedURL = URL(filePath: "/tmp/Selected Dahlia", directoryHint: .isDirectory)
             let model = SetupTourModel(mode: .initial, currentWorkspace: nil, progressDefaults: defaults)
 
             model.selectAccountConnection(nil)
             model.advance()
-            model.selectWorkspaceURL(selectedURL)
-            model.confirmWorkspaceSelection()
             model.advance()
 
             let restoredModel = SetupTourModel(mode: .initial, currentWorkspace: nil, progressDefaults: defaults)
-            #expect(restoredModel.currentStep == .permissions)
-            #expect(restoredModel.selectedWorkspaceURL == selectedURL)
-            #expect(restoredModel.isWorkspaceLocationConfirmed)
+            #expect(restoredModel.currentStep == .workingLanguages)
+            #expect(restoredModel.isAccountSelectionConfirmed)
         }
 
         @Test
@@ -236,7 +205,34 @@
         }
 
         @Test
-        func incompleteWorkspaceProgressKeepsTheRemainingSetupStep() throws {
+        func progressFromTheEarlierStepOrderResumesAtTheModelProviderStep() throws {
+            let suiteName = "SetupTourLegacyOrderTests-\(UUID())"
+            let defaults = try #require(UserDefaults(suiteName: suiteName))
+            defer { defaults.removePersistentDomain(forName: suiteName) }
+            // v0.29.0 saved these keys and asked for model providers after permissions.
+            defaults.set(SetupTourStep.permissions.rawValue, forKey: SetupTourPresentationPolicy.progressStepUserDefaultsKey)
+            defaults.set(true, forKey: SetupTourPresentationPolicy.accountSelectionConfirmedUserDefaultsKey)
+
+            let local = SetupTourModel(mode: .initial, currentWorkspace: nil, progressDefaults: defaults)
+            #expect(local.currentStep == .modelProvider)
+
+            let connectionID = UUID.v7()
+            defaults.set(connectionID.uuidString, forKey: SetupTourPresentationPolicy.accountConnectionIDUserDefaultsKey)
+            let dahlia = SetupTourModel(
+                mode: .initial,
+                currentWorkspace: nil,
+                signedInAccountConnectionIDs: [connectionID],
+                progressDefaults: defaults
+            )
+            #expect(dahlia.currentStep == .permissions)
+
+            SetupTourPresentationPolicy.saveProgress(step: .permissions, isAccountSelectionConfirmed: true, in: defaults)
+            let current = SetupTourModel(mode: .initial, currentWorkspace: nil, progressDefaults: defaults)
+            #expect(current.currentStep == .permissions)
+        }
+
+        @Test
+        func savedModelProviderStepIsRestoredForTheLocalAccount() throws {
             let suiteName = "SetupTourProgressTests-\(UUID())"
             let defaults = try #require(UserDefaults(suiteName: suiteName))
             defer { defaults.removePersistentDomain(forName: suiteName) }
@@ -246,32 +242,25 @@
             let restoredModel = SetupTourModel(mode: .initial, currentWorkspace: nil, progressDefaults: defaults)
 
             #expect(restoredModel.currentStep == .modelProvider)
-            #expect(!restoredModel.isWorkspaceLocationConfirmed)
         }
 
         @Test
-        func manualWorkspaceStepRequiresExplicitConfirmationBeforeAdvancing() {
-            let model = SetupTourModel(mode: .manual, currentWorkspace: nil)
+        func localAccountSetsUpModelProvidersFirstAndMaySkipThem() {
+            for mode in [SetupTourMode.initial, .manual] {
+                let model = SetupTourModel(mode: mode, currentWorkspace: nil)
 
-            model.selectAccountConnection(nil)
-            model.advance()
+                model.selectAccountConnection(nil)
+                model.advance()
 
-            #expect(model.currentStep == .workspace)
-            #expect(!model.isWorkspaceLocationConfirmed)
-            #expect(!model.canContinue)
-
-            model.advance()
-            #expect(model.currentStep == .workspace)
-
-            model.confirmWorkspaceSelection()
-            model.advance()
-
-            #expect(model.currentStep == .workingLanguages)
-            #expect(model.isWorkspaceLocationConfirmed)
+                #expect(model.currentStep == .modelProvider)
+                #expect(model.canContinue)
+                model.advance()
+                #expect(model.currentStep == .workingLanguages)
+            }
         }
 
         @Test
-        func pathlessCurrentWorkspaceIsKeptUntilAnotherLocationIsSelected() {
+        func manualTourKeepsTheOpenWorkspaceOfTheSelectedAccount() {
             let workspace = WorkspaceRecord(
                 id: .v7(), path: nil, name: "Cloud Workspace",
                 createdAt: .now, lastOpenedAt: .now
@@ -279,9 +268,8 @@
             let model = SetupTourModel(mode: .manual, currentWorkspace: workspace)
 
             #expect(model.keepsOriginalWorkspace)
-            model.selectWorkspaceURL(URL(filePath: "/tmp/Export", directoryHint: .isDirectory))
-            model.confirmWorkspaceSelection()
-            #expect(!model.keepsOriginalWorkspace)
+            model.selectAccountConnection(nil)
+            #expect(model.keepsOriginalWorkspace)
         }
 
         @Test
@@ -295,29 +283,12 @@
         }
 
         @Test
-        func pathlessWorkspaceSelectionSurvivesInterruptedInitialTour() throws {
-            let suiteName = "SetupTourPathlessProgressTests-\(UUID())"
-            let defaults = try #require(UserDefaults(suiteName: suiteName))
-            defer { defaults.removePersistentDomain(forName: suiteName) }
-            let model = SetupTourModel(mode: .initial, currentWorkspace: nil, progressDefaults: defaults)
-            model.selectAccountConnection(nil)
-            model.advance()
-            model.selectPathlessWorkspace(named: "Cloud Workspace")
-            model.advance()
-
-            let restored = SetupTourModel(mode: .initial, currentWorkspace: nil, progressDefaults: defaults)
-            #expect(restored.selectedWorkspaceName == "Cloud Workspace")
-            #expect(restored.isWorkspaceLocationConfirmed)
-        }
-
-        @Test
         func setupUsesTheRequestedConfigurationOrder() {
             #expect(SetupTourStep.allCases == [
                 .account,
-                .workspace,
+                .modelProvider,
                 .workingLanguages,
                 .permissions,
-                .modelProvider,
                 .calendar,
                 .completion,
             ])
@@ -331,7 +302,7 @@
             #expect(!model.canGoBack)
             model.selectAccountConnection(nil)
             model.advance()
-            #expect(model.currentStep == .workingLanguages)
+            #expect(model.currentStep == .modelProvider)
             #expect(model.canGoBack)
         }
 
@@ -383,37 +354,8 @@
             defer { defaults.removePersistentDomain(forName: suiteName) }
 
             #expect(!SetupTourPresentationPolicy.hasSavedProgress(in: defaults))
-            SetupTourPresentationPolicy.saveProgress(
-                step: .completion,
-                workspaceURL: URL(filePath: "/tmp/Dahlia", directoryHint: .isDirectory),
-                isWorkspaceConfirmed: true,
-                in: defaults
-            )
+            SetupTourPresentationPolicy.saveProgress(step: .completion, in: defaults)
             #expect(SetupTourPresentationPolicy.hasSavedProgress(in: defaults))
-        }
-
-        @Test
-        func selectingAnotherWorkspaceRequiresASecondConfirmation() {
-            let currentWorkspace = WorkspaceRecord(
-                id: .v7(),
-                path: "/tmp/Current",
-                name: "Current",
-                createdAt: .now,
-                lastOpenedAt: .now
-            )
-            let model = SetupTourModel(mode: .manual, currentWorkspace: currentWorkspace)
-
-            #expect(model.isWorkspaceLocationConfirmed)
-            #expect(model.currentStep == .account)
-            model.advance()
-            #expect(model.currentStep == .workspace)
-            #expect(model.canContinue)
-
-            model.selectWorkspaceURL(URL(filePath: "/tmp/Other", directoryHint: .isDirectory))
-
-            #expect(!model.isWorkspaceLocationConfirmed)
-            #expect(model.currentStep == .workspace)
-            #expect(!model.canContinue)
         }
 
         @Test
