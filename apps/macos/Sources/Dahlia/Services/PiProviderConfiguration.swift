@@ -178,6 +178,16 @@ enum PiProviderConfiguration {
         return models
     }
 
+    /// The account's choices with its own gateway kept usable: when none of that gateway's listed models is on (the
+    /// gateway stopped serving the one the account kept on), its default comes back on. Agents settings and
+    /// `models.json` read the same result.
+    static func effectiveChoices(_ choices: [String: Bool], for models: [DatabricksModel]) -> [String: Bool] {
+        guard models.first?.providerID == databricksProviderIDs[0], !models.contains(where: { $0.isOn(choices) }),
+              let fallback = models.first(where: \.isOnByDefault) ?? models.first
+        else { return choices }
+        return choices.merging([fallback.reference: true]) { $1 }
+    }
+
     /// A Unity AI Gateway provider with the models the account keeps on: the account's own `databricks`, whose
     /// credential is bridged, or a workspace added in Agents settings, whose OAuth sign-in Pi keeps. Each model names its
     /// gateway route (Anthropic, codex, MLflow, or Gemini); the provider's `baseUrl` records the workspace.
@@ -192,7 +202,7 @@ enum PiProviderConfiguration {
             "baseUrl": .string(workspaceURL.absoluteString),
             "authHeader": .bool(true),
             "headers": .object(["Databricks-Ai-Gateway-Request-Tags": .string(#"{"source": "dahlia"}"#)]),
-            "models": .array(models.filter { $0.isOn(choices) }.map { .object($0.definition) }),
+            "models": .array(models.filter { $0.isOn(effectiveChoices(choices, for: models)) }.map { .object($0.definition) }),
         ])]
     }
 

@@ -582,6 +582,31 @@ import Foundation
         }
 
         @Test
+        func theOwnGatewayKeepsAModelOnWhenTheOneKeptOnLeavesIt() throws {
+            let workspaceURL = try #require(URL(string: "https://example.cloud.databricks.com"))
+            let service = { (id: String, api: String) in
+                JSONValue.object(["name": .string("model-services/system.ai.\(id)"), "supported_api_types": .array([.string(api)])])
+            }
+            // Opus was kept on and Haiku turned off; then the gateway stops serving Opus.
+            let choices = ["databricks/system.ai.claude-opus-5-5": true, "databricks/system.ai.claude-haiku-5-5": false]
+            let models = try PiProviderConfiguration.databricksModels(
+                workspaceURL: workspaceURL,
+                services: [service("claude-haiku-5-5", "anthropic/v1/messages"), service("gpt-6-luna", "codex/v1/responses")]
+            )
+            let written = PiProviderConfiguration.databricksProviders(models, choices: choices, workspaceURL: workspaceURL)
+            let ids = (written["databricks"]?.objectValue?["models"]?.arrayValue ?? []).compactMap { $0.objectValue?["id"]?.stringValue }
+            #expect(ids == ["system.ai.claude-haiku-5-5"])
+            #expect(PiProviderConfiguration.effectiveChoices(choices, for: models)["databricks/system.ai.claude-haiku-5-5"] == true)
+            // An added workspace may keep every model off.
+            let added = try PiProviderConfiguration.databricksModels(
+                workspaceURL: workspaceURL,
+                services: [service("claude-haiku-5-5", "anthropic/v1/messages")],
+                providerID: "example.cloud.databricks.com"
+            )
+            #expect(PiProviderConfiguration.effectiveChoices([:], for: added).isEmpty)
+        }
+
+        @Test
         func gatewayModelNamesAreReadable() {
             #expect(PiProviderConfiguration.displayName("claude-sonnet-5-5") == "Claude Sonnet 5.5")
             #expect(PiProviderConfiguration.displayName("kimi-k3-1-pro") == "Kimi K3.1 Pro")

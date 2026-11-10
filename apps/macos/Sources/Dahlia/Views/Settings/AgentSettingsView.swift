@@ -555,7 +555,13 @@ private struct AgentModelSettingsView: View {
 
     /// Models on in the Databricks account's own gateway.
     private var ownOnCount: Int {
-        (models[PiProviderConfiguration.databricksProviderIDs[0]] ?? []).count(where: { $0.isOn(choices) })
+        let own = PiProviderConfiguration.databricksProviderIDs[0]
+        return (models[own] ?? []).count(where: { $0.isOn(shownChoices(own)) })
+    }
+
+    /// The switches as `models.json` applies them: an own gateway that lost the model kept on shows its default on.
+    private func shownChoices(_ providerID: String) -> [String: Bool] {
+        PiProviderConfiguration.effectiveChoices(choices, for: models[providerID] ?? [])
     }
 
     var body: some View {
@@ -583,7 +589,7 @@ private struct AgentModelSettingsView: View {
                             Text(L10n.codexNoModels).foregroundStyle(.secondary)
                         }
                         ForEach(providerModels, id: \.reference) { model in
-                            let isOn = model.isOn(choices)
+                            let isOn = model.isOn(shownChoices(provider.id))
                             LabeledContent {
                                 Toggle(model.name, isOn: on(model, of: provider))
                                     .labelsHidden()
@@ -602,7 +608,7 @@ private struct AgentModelSettingsView: View {
                     } label: {
                         AgentProviderRow(title: L10n.unityGatewayHost(provider.host), icon: .databricksLogo, uses: []) {
                             if !providerModels.isEmpty {
-                                Text(L10n.agentEnabledCount(providerModels.count(where: { $0.isOn(choices) })))
+                                Text(L10n.agentEnabledCount(providerModels.count(where: { $0.isOn(shownChoices(provider.id)) })))
                                     .foregroundStyle(.secondary)
                             }
                         }
@@ -664,7 +670,7 @@ private struct AgentModelSettingsView: View {
 
     private func on(_ model: PiProviderConfiguration.DatabricksModel, of provider: AgentMCPProvider) -> Binding<Bool> {
         Binding {
-            model.isOn(choices)
+            model.isOn(shownChoices(provider.id))
         } set: { isOn in
             choices[model.reference] = isOn
             AgentModelSettings.setModel(model.reference, on: isOn, for: account)

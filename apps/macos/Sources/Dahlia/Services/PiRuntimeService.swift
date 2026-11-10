@@ -51,6 +51,10 @@ actor PiRuntimeService {
     private var modelGeneration = 0
     /// Each account's background listing of its Unity AI Gateways in this activation (see `refreshGateways`).
     private var gatewayRefreshes: [CodexRuntimeProvider: Task<Void, Never>] = [:]
+    /// Each gateway's listing in flight, by account and provider ID. Every caller joins it, and only the listing still
+    /// registered here saves its answer: an activation or sign-in drops the registration, so an older answer that lands
+    /// after a newer listing started is discarded.
+    private var gatewayListings: [CodexRuntimeProvider: [String: Task<[JSONValue], any Error>]] = [:]
     private var isShuttingDown = false
 
     init(
@@ -130,6 +134,7 @@ actor PiRuntimeService {
         try await applyingContext?()
         // An activated account lists its gateways again.
         gatewayRefreshes.removeAll()
+        gatewayListings.removeAll()
         invalidateModels()
     }
 
@@ -240,16 +245,23 @@ actor PiRuntimeService {
         guard let agentURL = try? agentLocator.agentURL(for: account) else { return }
         let signedIn = (try? signedInProviderIDs(account: account)) ?? []
         let gateways = gateways(of: account, agentURL: agentURL).filter { $0.isAccount || signedIn.contains($0.id) }
-        await withTaskGroup(of: (String, [JSONValue]?).self) { group in
+        await withTaskGroup { group in
             for gateway in gateways {
-                group.addTask { await (gateway.id, try? self.modelServices(gateway, account: account)) }
-            }
-            for await (id, services) in group {
-                guard let services else { continue }
-                try? PiProviderConfiguration.saveGatewayServices(services, providerID: id, agentURL: agentURL)
+                group.addTask { try? await self.listGateway(gateway, account: account, agentURL: agentURL) }
             }
         }
         if (try? writeGateways(account)) == true { invalidateModels() }
+    }
+
+    /// Lists a gateway's models and saves the answer, joining a listing of the same gateway that is already running.
+    private func listGateway(_ gateway: AgentMCPProvider, account: CodexRuntimeProvider, agentURL: URL) async throws {
+        let listing = gatewayListings[account]?[gateway.id] ?? Task { try await self.modelServices(gateway, account: account) }
+        gatewayListings[account, default: [:]][gateway.id] = listing
+        let result = await Result { try await listing.value }
+        // Superseded by an activation or sign-in, or already saved by a caller that joined it.
+        guard gatewayListings[account]?[gateway.id] == listing else { return }
+        gatewayListings[account]?[gateway.id] = nil
+        try PiProviderConfiguration.saveGatewayServices(result.get(), providerID: gateway.id, agentURL: agentURL)
     }
 
     /// The background listing of the account's gateways in this activation, for tests to await.
@@ -266,11 +278,7 @@ actor PiRuntimeService {
     ) async throws -> [PiProviderConfiguration.DatabricksModel] {
         let agentURL = try agentLocator.agentURL(for: account)
         if forceRefresh || PiProviderConfiguration.gatewayServices(agentURL: agentURL)[provider.id] == nil {
-            try await PiProviderConfiguration.saveGatewayServices(
-                modelServices(provider, account: account),
-                providerID: provider.id,
-                agentURL: agentURL
-            )
+            try await listGateway(provider, account: account, agentURL: agentURL)
             if try writeGateways(account) { invalidateModels() }
         }
         return try PiProviderConfiguration.databricksModels(
@@ -379,6 +387,7 @@ actor PiRuntimeService {
         await closeAll(of: account, mode: .chat)
         // The workspace's models become available.
         gatewayRefreshes[account] = nil
+        gatewayListings[account]?[mcpProvider.id] = nil
         invalidateModels()
     }
 

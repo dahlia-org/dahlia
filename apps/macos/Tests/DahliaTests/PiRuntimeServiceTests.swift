@@ -244,6 +244,104 @@ import os
         }
 
         @Test
+        func theModelsTabJoinsAGatewayListingAlreadyRunning() async throws {
+            let workspace = try AgentMCPProvider(workspaceURL: #require(URL(string: "https://dbc-1.cloud.databricks.com")))
+            let (listings, listed) = AsyncStream<(TestPiTransport, JSONValue)>.makeStream()
+            let count = OSAllocatedUnfairLock(initialState: 0)
+            let pi = TestPiRuntime(gatewayWorkspaces: { _ in [workspace] }) { _ in
+                let current = OSAllocatedUnfairLock<TestPiTransport?>(initialState: nil)
+                let transport = TestPiTransport { command in
+                    guard let id = command["id"] else { return [] }
+                    if command["type"]?.stringValue == "get_available_models" {
+                        return [TestPiTransport.response(
+                            id: id,
+                            data: .object(["models": .array([TestPiTransport.model(provider: "openai", id: "gpt")])])
+                        )]
+                    }
+                    guard command["message"]?.stringValue?.hasPrefix("/databricks-model-services") == true,
+                          let transport = current.withLock({ $0 })
+                    else { return [TestPiTransport.response(id: id)] }
+                    // The test answers the listing once the Models tab is waiting too.
+                    count.withLock { $0 += 1 }
+                    listed.yield((transport, id))
+                    return []
+                }
+                current.withLock { $0 = transport }
+                return transport
+            }
+            defer { try? FileManager.default.removeItem(at: pi.rootURL) }
+            let agentURL = try PiAgentDirectoryLocator(applicationSupportURL: pi.rootURL).agentURL(for: .local)
+            try Data(#"{"dbc-1.cloud.databricks.com":{}}"#.utf8).write(to: agentURL.appending(path: "auth.json"))
+
+            // The first listing after activation starts the background listing; the tab opens while it runs.
+            _ = try await pi.service.models()
+            var iterator = listings.makeAsyncIterator()
+            let (transport, id) = try #require(await iterator.next())
+            let tab = Task { try await pi.service.gatewayModels(for: .local, provider: workspace, forceRefresh: false) }
+            let services = #"[{"name":"model-services/system.ai.kimi-k3","supported_api_types":["mlflow/v1/responses"]}]"#
+            await transport.emit(TestPiTransport.response(id: id))
+            await transport.emit(TestPiTransport.notify("databricks:model_services \(services)"))
+
+            let models = try await tab.value
+            #expect(models.map(\.id) == ["system.ai.kimi-k3"])
+            await pi.service.gatewayRefresh(for: .local)?.value
+            #expect(count.withLock { $0 } == 1)
+        }
+
+        @Test
+        func aListingSupersededByAnActivationSavesNothing() async throws {
+            let workspace = try AgentMCPProvider(workspaceURL: #require(URL(string: "https://dbc-1.cloud.databricks.com")))
+            let (listings, listed) = AsyncStream<(TestPiTransport, JSONValue)>.makeStream()
+            let pi = TestPiRuntime(gatewayWorkspaces: { _ in [workspace] }) { _ in
+                let current = OSAllocatedUnfairLock<TestPiTransport?>(initialState: nil)
+                let transport = TestPiTransport { command in
+                    guard let id = command["id"] else { return [] }
+                    if command["type"]?.stringValue == "get_available_models" {
+                        return [TestPiTransport.response(
+                            id: id,
+                            data: .object(["models": .array([TestPiTransport.model(provider: "openai", id: "gpt")])])
+                        )]
+                    }
+                    guard command["message"]?.stringValue?.hasPrefix("/databricks-model-services") == true,
+                          let transport = current.withLock({ $0 })
+                    else { return [TestPiTransport.response(id: id)] }
+                    listed.yield((transport, id))
+                    return []
+                }
+                current.withLock { $0 = transport }
+                return transport
+            }
+            defer { try? FileManager.default.removeItem(at: pi.rootURL) }
+            let agentURL = try PiAgentDirectoryLocator(applicationSupportURL: pi.rootURL).agentURL(for: .local)
+            try Data(#"{"dbc-1.cloud.databricks.com":{}}"#.utf8).write(to: agentURL.appending(path: "auth.json"))
+            let answer = { (model: String) in
+                TestPiTransport
+                    .notify(
+                        #"databricks:model_services [{"name":"model-services/system.ai.\#(model)","supported_api_types":["mlflow/v1/responses"]}]"#
+                    )
+            }
+            var iterator = listings.makeAsyncIterator()
+
+            // The first listing is held while the account is activated again and lists anew.
+            _ = try await pi.service.models()
+            let first = await pi.service.gatewayRefresh(for: .local)
+            let (older, olderID) = try #require(await iterator.next())
+            try await pi.service.reloadConfiguration()
+            _ = try await pi.service.models()
+            let (newer, newerID) = try #require(await iterator.next())
+            await newer.emit(TestPiTransport.response(id: newerID))
+            await newer.emit(answer("kimi-k3"))
+            await pi.service.gatewayRefresh(for: .local)?.value
+            // The older answer lands last and is discarded.
+            await older.emit(TestPiTransport.response(id: olderID))
+            await older.emit(answer("glm-5-3"))
+            await first?.value
+
+            let saved = PiProviderConfiguration.gatewayServices(agentURL: agentURL)[workspace.id]
+            #expect(saved?.first?.objectValue?["name"] == .string("model-services/system.ai.kimi-k3"))
+        }
+
+        @Test
         func modelListingsAndSwitchesNeverWaitForAGateway() async throws {
             let account = CodexRuntimeProvider.databricks(connectionID: .v7())
             let workspaceURL = try #require(URL(string: "https://own.cloud.databricks.com"))
