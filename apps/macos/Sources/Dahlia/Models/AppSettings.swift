@@ -49,7 +49,12 @@ enum CalendarSource: String, CaseIterable, Identifiable {
 
     static let defaultEnabledSources: Set<CalendarSource> = [.google]
     static let defaultEnabledSourcesJSON = "[\"google\"]"
+    /// The app-wide choice saved before sources became per account; read only as each account's default.
     nonisolated static let enabledSourcesUserDefaultsKey = "enabledCalendarSources"
+
+    nonisolated static func enabledSourcesUserDefaultsKey(for account: CodexRuntimeProvider) -> String {
+        "\(enabledSourcesUserDefaultsKey).\(account.accountKey)"
+    }
 
     var id: String { rawValue }
 
@@ -515,7 +520,24 @@ final class AppSettings: ObservableObject, GoogleDriveExportFolderSettingsProvid
     // MARK: - ワークスペース（ランタイム状態）
 
     /// 現在開いているワークスペース。DB の `workspaces` テーブルから選択される。
-    @Published var currentWorkspace: WorkspaceRecord?
+    @Published var currentWorkspace: WorkspaceRecord? {
+        didSet { postCalendarAccountChange(from: setupTourAccount ?? CodexRuntimeProvider(workspace: oldValue)) }
+    }
+
+    /// The account the setup tour is setting up. Its calendar step applies to that account before its workspace opens.
+    @Published var setupTourAccount: CodexRuntimeProvider? {
+        didSet { postCalendarAccountChange(from: oldValue ?? CodexRuntimeProvider(workspace: currentWorkspace)) }
+    }
+
+    /// The account whose calendar sources and Google Calendar route apply: the open one, or the one being set up.
+    var calendarAccount: CodexRuntimeProvider {
+        setupTourAccount ?? CodexRuntimeProvider(workspace: currentWorkspace)
+    }
+
+    private func postCalendarAccountChange(from previous: CodexRuntimeProvider) {
+        guard previous != calendarAccount else { return }
+        NotificationCenter.default.post(name: .calendarAccountDidChange, object: nil)
+    }
 
     /// 現在のワークスペースの URL。ワークスペース未選択時は nil。
     var workspaceURL: URL? {
@@ -542,8 +564,6 @@ final class AppSettings: ObservableObject, GoogleDriveExportFolderSettingsProvid
 
     // MARK: - カレンダー設定
 
-    @AppStorage("calendarSource") var calendarSourceRawValue = CalendarSource.google.rawValue
-    @AppStorage(CalendarSource.enabledSourcesUserDefaultsKey) var enabledCalendarSourcesJSON = CalendarSource.defaultEnabledSourcesJSON
     @AppStorage("includesAllDayCalendarEvents") var includesAllDayCalendarEvents = false
     @AppStorage("includesCalendarEventsWithoutOtherAttendees") var includesCalendarEventsWithoutOtherAttendees = true
     @AppStorage("includesCalendarEventsWithoutConferenceURI") var includesCalendarEventsWithoutConferenceURI = true
@@ -565,11 +585,6 @@ final class AppSettings: ObservableObject, GoogleDriveExportFolderSettingsProvid
     nonisolated static let googleOAuthClientIDOverrideUserDefaultsKey = "googleOAuthClientIDOverride"
     nonisolated static let googleOAuthClientSecretOverrideKey = "googleOAuthClientSecretOverride"
     @AppStorage(AppSettings.googleOAuthClientIDOverrideUserDefaultsKey) var googleOAuthClientIDOverride = ""
-
-    var calendarSource: CalendarSource {
-        get { CalendarSource(rawValue: calendarSourceRawValue) ?? .google }
-        set { calendarSourceRawValue = newValue.rawValue }
-    }
 
     var calendarEventFilter: CalendarEventFilter {
         CalendarEventFilter(
@@ -644,27 +659,29 @@ final class AppSettings: ObservableObject, GoogleDriveExportFolderSettingsProvid
         }
     }
 
+    /// The open account's calendar sources. An account that has not chosen yet keeps the choice this Mac made before
+    /// sources became per account (`enabledCalendarSources`, or the older single `calendarSource`).
     var enabledCalendarSources: Set<CalendarSource> {
-        get {
-            let hasStoredEnabledSources = UserDefaults.standard.object(forKey: CalendarSource.enabledSourcesUserDefaultsKey) != nil
+        get { Self.enabledCalendarSources(for: calendarAccount, in: .standard) }
+        set {
+            objectWillChange.send()
+            UserDefaults.standard.set(
+                Self.encodeCalendarSources(newValue),
+                forKey: CalendarSource.enabledSourcesUserDefaultsKey(for: calendarAccount)
+            )
+        }
+    }
 
-            if hasStoredEnabledSources,
-               let sources = Self.decodeCalendarSources(from: enabledCalendarSourcesJSON) {
+    nonisolated static func enabledCalendarSources(for account: CodexRuntimeProvider, in defaults: UserDefaults) -> Set<CalendarSource> {
+        for key in [CalendarSource.enabledSourcesUserDefaultsKey(for: account), CalendarSource.enabledSourcesUserDefaultsKey] {
+            if let json = defaults.string(forKey: key), let sources = decodeCalendarSources(from: json) {
                 return sources
             }
-
-            if !hasStoredEnabledSources, let legacySource = CalendarSource(rawValue: calendarSourceRawValue) {
-                return [legacySource]
-            }
-
-            return CalendarSource.defaultEnabledSources
         }
-        set {
-            enabledCalendarSourcesJSON = Self.encodeCalendarSources(newValue)
-            if let firstSource = CalendarSource.allCases.first(where: { newValue.contains($0) }) {
-                calendarSourceRawValue = firstSource.rawValue
-            }
+        if let legacySource = defaults.string(forKey: "calendarSource").flatMap(CalendarSource.init(rawValue:)) {
+            return [legacySource]
         }
+        return CalendarSource.defaultEnabledSources
     }
 
     func isCalendarSourceEnabled(_ source: CalendarSource) -> Bool {
@@ -681,7 +698,7 @@ final class AppSettings: ObservableObject, GoogleDriveExportFolderSettingsProvid
         enabledCalendarSources = sources
     }
 
-    private static func decodeCalendarSources(from json: String) -> Set<CalendarSource>? {
+    private nonisolated static func decodeCalendarSources(from json: String) -> Set<CalendarSource>? {
         guard !json.isEmpty,
               let data = json.data(using: .utf8),
               let rawValues = try? JSONDecoder().decode([String].self, from: data)
@@ -691,7 +708,7 @@ final class AppSettings: ObservableObject, GoogleDriveExportFolderSettingsProvid
         return Set(sources)
     }
 
-    private static func encodeCalendarSources(_ sources: Set<CalendarSource>) -> String {
+    private nonisolated static func encodeCalendarSources(_ sources: Set<CalendarSource>) -> String {
         let rawValues = CalendarSource.allCases
             .filter { sources.contains($0) }
             .map(\.rawValue)
@@ -970,12 +987,9 @@ extension UserDefaults {
     @objc dynamic var automaticScreenshotCropToSharedRegion: Bool {
         bool(forKey: AppSettings.automaticScreenshotSharedRegionCropKey)
     }
+}
 
-    @objc dynamic var calendarSource: String? {
-        string(forKey: "calendarSource")
-    }
-
-    @objc dynamic var enabledCalendarSources: String? {
-        string(forKey: CalendarSource.enabledSourcesUserDefaultsKey)
-    }
+extension Notification.Name {
+    /// The open workspace moved to another account, so calendar sources and the Google Calendar route may change.
+    static let calendarAccountDidChange = Notification.Name("CalendarAccountDidChangeNotification")
 }

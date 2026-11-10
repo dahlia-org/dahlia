@@ -1,9 +1,13 @@
 import SwiftUI
 
+/// The calendar sources of the open account, or of the account the setup tour is setting up. Settings that apply to
+/// the whole app are in `CalendarDisplaySettingsView`.
 struct CalendarSettingsView: View {
     @ObservedObject private var settings = AppSettings.shared
     @ObservedObject private var googleCalendarStore = GoogleCalendarStore.shared
     @ObservedObject private var macCalendarStore = MacCalendarStore.shared
+    @State private var workspaceSettings = WorkspaceAISettingsModel.shared
+    @State private var accountController = DahliaCloudAccountController.shared
     private let calendarSourceCoordinator = CalendarSourceCoordinator.shared
     private let showsOnlySourceSetup: Bool
     @State private var googleOAuthConsent = GoogleOAuthConsentState()
@@ -14,39 +18,6 @@ struct CalendarSettingsView: View {
 
     var body: some View {
         Form {
-            if !showsOnlySourceSetup {
-                Section {
-                    Toggle(isOn: $settings.menuBarCalendarEnabled) {
-                        Text(L10n.menuBarCalendarDisplay)
-                        Text(L10n.menuBarCalendarDisplayDescription)
-                    }
-                    .toggleStyle(.switch)
-
-                    Toggle(isOn: $settings.menuBarCalendarShowsEventTitle) {
-                        Text(L10n.menuBarCalendarEventTitle)
-                        Text(L10n.menuBarCalendarEventTitleDescription)
-                    }
-                    .toggleStyle(.switch)
-                    .disabled(!settings.menuBarCalendarEnabled)
-
-                    Toggle(isOn: $settings.menuBarCalendarShowsCountdown) {
-                        Text(L10n.menuBarCalendarCountdown)
-                        Text(L10n.menuBarCalendarCountdownDescription)
-                    }
-                    .toggleStyle(.switch)
-                    .disabled(!settings.menuBarCalendarEnabled)
-                } header: {
-                    Text(L10n.menuBarCalendar)
-                } footer: {
-                    Text(L10n.menuBarCalendarDescription)
-                }
-
-                MeetingLinkSettingsView()
-
-                CalendarEventFilterSettingsView(settings: settings)
-
-            }
-
             if showsOnlySourceSetup {
                 Section {
                     HStack(alignment: .top, spacing: 16) {
@@ -63,6 +34,7 @@ struct CalendarSettingsView: View {
                 }
             } else {
                 Section {
+                    LabeledContent(L10n.appliesToAccount, value: accountName)
                     ForEach([CalendarSource.macOS, .google]) { source in
                         Toggle(isOn: calendarSourceBinding(for: source)) {
                             Text(source.displayName)
@@ -121,7 +93,7 @@ struct CalendarSettingsView: View {
             }
             await refreshEnabledSources()
         }
-        .onChange(of: settings.enabledCalendarSourcesJSON) { _, _ in
+        .onChange(of: settings.enabledCalendarSources) { _, _ in
             Task {
                 await refreshEnabledSources(force: true)
             }
@@ -137,6 +109,17 @@ struct CalendarSettingsView: View {
     private var showsCalendarSelection: Bool {
         settings.isCalendarSourceEnabled(.macOS) && macCalendarStore.isAuthorized
             || settings.isCalendarSourceEnabled(.google) && googleCalendarStore.isAuthorized
+    }
+
+    private var accountName: String {
+        switch settings.calendarAccount {
+        case .local:
+            L10n.localAccount
+        case let .databricks(connectionID):
+            workspaceSettings.databricksConnections.first { $0.id == connectionID }?.accountLabel ?? L10n.databricks
+        case let .dahlia(connectionID):
+            accountController.connections.first { $0.id == connectionID }?.displayName ?? L10n.dahliaAccount
+        }
     }
 
     static func exclusiveSetupSource(from sources: Set<CalendarSource>) -> CalendarSource {

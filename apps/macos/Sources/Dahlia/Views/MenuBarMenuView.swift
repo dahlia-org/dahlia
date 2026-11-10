@@ -61,7 +61,7 @@ struct MenuBarMenuView: View {
         NSWorkspace.shared.open(eventURL)
     }
 
-    private func openCalendarSettings() {
-        mainWindowNavigation.openSettings(category: .calendar)
+    private func openCalendarSettings(_ category: SettingsCategory) {
+        mainWindowNavigation.openSettings(category: category)
     }
 }

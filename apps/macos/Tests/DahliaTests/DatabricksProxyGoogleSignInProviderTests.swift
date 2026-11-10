@@ -54,6 +54,36 @@ import Synchronization
             #expect(direct.disconnectCallCount == 1)
         }
 
+        /// The Local and Dahlia accounts sign in to Google directly even when a Databricks account exists on this Mac.
+        @Test
+        func otherAccountsUseDirectProviderBesideADatabricksConnection() async throws {
+            for account in [CodexRuntimeProvider.local, .dahlia(connectionID: UUID()), .databricks(connectionID: UUID())] {
+                let direct = FakeDirectProvider(isConfigured: true, hasPreviousSignIn: true)
+                let provider = makeProvider(connection: connection, direct: direct, account: account)
+
+                #expect(provider.isProxyActive == false)
+                _ = try await provider.restorePreviousSignIn()
+                #expect(direct.restoreCallCount == 1)
+            }
+        }
+
+        @Test
+        func switchingAccountNotifiesGoogleCalendarSession() async {
+            let direct = FakeDirectProvider()
+            let provider = makeProvider(connection: connection, direct: direct)
+            let (posts, continuation) = AsyncStream.makeStream(of: Void.self)
+            let token = NotificationCenter.default.addObserver(
+                forName: direct.sessionDidChangeNotification, object: nil, queue: .main
+            ) { _ in continuation.yield() }
+            defer { NotificationCenter.default.removeObserver(token) }
+
+            NotificationCenter.default.post(name: .calendarAccountDidChange, object: nil)
+
+            var iterator = posts.makeAsyncIterator()
+            let delivered = await iterator.next()
+            withExtendedLifetime(provider) { #expect(delivered != nil) }
+        }
+
         @Test
         func databricksConnectionRestoresWhateverTheProxyGrants() async throws {
             let direct = FakeDirectProvider(isConfigured: false, hasPreviousSignIn: false)
@@ -121,7 +151,8 @@ import Synchronization
             let direct = FakeDirectProvider()
             let provider = DatabricksProxyGoogleSignInProvider(
                 direct: direct, oauth: service, storage: memory.storage,
-                apiClient: FakeAPIClient(result: .success([])), userDefaults: makeDefaults()
+                apiClient: FakeAPIClient(result: .success([])), userDefaults: makeDefaults(),
+                openAccount: { [connection] in .databricks(connectionID: connection.id) }
             )
             _ = try await provider.restorePreviousSignIn()
             let (posts, continuation) = AsyncStream.makeStream(of: Void.self)
@@ -175,7 +206,8 @@ import Synchronization
             }
             let provider = DatabricksProxyGoogleSignInProvider(
                 direct: FakeDirectProvider(), oauth: service, storage: memory.storage,
-                apiClient: FakeAPIClient(result: .success([])), userDefaults: makeDefaults()
+                apiClient: FakeAPIClient(result: .success([])), userDefaults: makeDefaults(),
+                openAccount: { [connection] in .databricks(connectionID: connection.id) }
             )
 
             let error = await #expect(throws: GoogleSignInError.self) { try await provider.restorePreviousSignIn() }
@@ -266,8 +298,10 @@ import Synchronization
             connection: DatabricksConnection?,
             direct: FakeDirectProvider,
             userDefaults: UserDefaults? = nil,
-            apiClient: FakeAPIClient = FakeAPIClient(result: .success([]))
+            apiClient: FakeAPIClient = FakeAPIClient(result: .success([])),
+            account: CodexRuntimeProvider? = nil
         ) -> DatabricksProxyGoogleSignInProvider {
+            let account = account ?? connection.map { .databricks(connectionID: $0.id) } ?? .local
             let memory = DatabricksTestStorage(connection: connection)
             if let connection {
                 memory.state.withLock { $0.credentials[connection.id] = Self.credential }
@@ -277,7 +311,8 @@ import Synchronization
                 oauth: DatabricksOAuthService(storage: memory.storage) { _ in throw CancellationError() },
                 storage: memory.storage,
                 apiClient: apiClient,
-                userDefaults: userDefaults ?? makeDefaults()
+                userDefaults: userDefaults ?? makeDefaults(),
+                openAccount: { account }
             )
         }
     }

@@ -536,6 +536,7 @@
 "Diagnostics" = "Diagnostics";
 "Notifications" = "Notifications";
 "Calendar" = "Calendar";
+"Calendar Display" = "Calendar Display";
 "Model" = "Model";
 "Reasoning Effort" = "Reasoning Effort";
 "Controls how much reasoning Pi uses for each summary." = "Controls how much reasoning Pi uses for each summary.";
@@ -642,7 +643,7 @@
 "Calendar Source" = "Calendar Source";
 "Choose which calendar service provides upcoming events." = "Choose which calendar service provides upcoming events.";
 "Calendar Sources" = "Calendar Sources";
-"Choose which calendar services provide upcoming events." = "Choose which calendar services provide upcoming events.";
+"Each account chooses the calendar services that provide its upcoming events. A Databricks account reads Google Calendar through its workspace." = "Each account chooses the calendar services that provide its upcoming events. A Databricks account reads Google Calendar through its workspace.";
 "Events to Include" = "Events to Include";
 "Turn on the event types to show in Home, the menu bar, and calendar notifications." = "Turn on the event types to show in Home, the menu bar, and calendar notifications.";
 "All-day events" = "All-day events";

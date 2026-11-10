@@ -38,6 +38,25 @@ import Foundation
             #expect(!defaults.bool(forKey: "includesCalendarEventsWithoutConferenceURI"))
         }
 
+        /// Each account reads its own sources, then the app-wide choice saved before sources became per account.
+        @Test
+        func calendarSourcesArePerAccountAndInheritTheAppWideChoice() throws {
+            let suiteName = "CalendarEventFilterTests.\(UUID().uuidString)"
+            let defaults = try #require(UserDefaults(suiteName: suiteName))
+            defer { defaults.removePersistentDomain(forName: suiteName) }
+            let databricks = CodexRuntimeProvider.databricks(connectionID: UUID())
+
+            #expect(AppSettings.enabledCalendarSources(for: .local, in: defaults) == CalendarSource.defaultEnabledSources)
+            defaults.set("macOS", forKey: "calendarSource")
+            #expect(AppSettings.enabledCalendarSources(for: .local, in: defaults) == [.macOS])
+            defaults.set("[\"google\",\"macOS\"]", forKey: CalendarSource.enabledSourcesUserDefaultsKey)
+            #expect(AppSettings.enabledCalendarSources(for: databricks, in: defaults) == [.google, .macOS])
+            defaults.set("[\"google\"]", forKey: CalendarSource.enabledSourcesUserDefaultsKey(for: databricks))
+
+            #expect(AppSettings.enabledCalendarSources(for: databricks, in: defaults) == [.google])
+            #expect(AppSettings.enabledCalendarSources(for: .local, in: defaults) == [.google, .macOS])
+        }
+
         @Test
         func includesOptionalEventTypesWhenEnabled() {
             #expect(CalendarEventFilter(includesAllDayEvents: true).includes(makeEvent(isAllDay: true)))

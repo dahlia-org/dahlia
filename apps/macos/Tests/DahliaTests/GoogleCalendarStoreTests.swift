@@ -450,6 +450,7 @@ import Foundation
                 signInProvider: signInProvider,
                 apiClient: apiClient,
                 userDefaults: defaults,
+                openAccount: { .local },
                 now: { fixtureNow }
             )
 
@@ -458,8 +459,32 @@ import Foundation
 
             #expect(store.selectedCalendarIDs == [secondaryCalendar.id])
 
-            let saved = defaults.string(forKey: GoogleCalendarStore.selectedCalendarIDsKey)
+            let saved = defaults.string(forKey: GoogleCalendarStore.selectedCalendarIDsKey(for: .local))
             #expect(saved?.contains(secondaryCalendar.id) == true)
+        }
+
+        /// Switching accounts changes the route, and each account keeps its own calendar selection; one without its own
+        /// starts from the selection saved before selections became per account.
+        @Test
+        func sessionChangeLoadsTheOpenAccountsSelection() async {
+            let watchedNotification = Notification.Name("GoogleCalendarStoreTests.account.\(UUID().uuidString)")
+            let defaults = isolatedUserDefaults()
+            let databricks = CodexRuntimeProvider.databricks(connectionID: UUID())
+            seedSelectedCalendars([primaryCalendar.id], defaults: defaults)
+            defaults.set("[\"\(secondaryCalendar.id)\"]", forKey: GoogleCalendarStore.selectedCalendarIDsKey(for: databricks))
+            var account = CodexRuntimeProvider.local
+            let store = GoogleCalendarStore(
+                signInProvider: MockGoogleCalendarSignInProvider(sessionDidChangeNotification: watchedNotification),
+                apiClient: MockGoogleCalendarAPIClient(calendars: [primaryCalendar, secondaryCalendar], events: []),
+                userDefaults: defaults,
+                openAccount: { account }
+            )
+            #expect(store.selectedCalendarIDs == [primaryCalendar.id])
+
+            account = databricks
+            NotificationCenter.default.post(name: watchedNotification, object: nil)
+
+            #expect(await pollUntil { store.selectedCalendarIDs == [secondaryCalendar.id] })
         }
 
         @Test
@@ -714,7 +739,8 @@ private final class MockGoogleCalendarSignInProvider: GoogleSignInProviding {
     init(
         isConfigured: Bool = true,
         hasPreviousSignIn: Bool = false,
-        sessionDidChangeNotification: Notification.Name = .googleCalendarSessionDidChange,
+        // Unique per mock, so a live provider reacting to another suite's workspace switch cannot reach this store.
+        sessionDidChangeNotification: Notification.Name = Notification.Name("MockGoogleCalendarSignInProvider.\(UUID().uuidString)"),
         restoreResult: Result<GoogleSession, Error> = .success(fixtureSession),
         signInResult: Result<GoogleSession, Error> = .success(fixtureSession),
         refreshResult: Result<GoogleSession?, Error> = .success(fixtureSession),

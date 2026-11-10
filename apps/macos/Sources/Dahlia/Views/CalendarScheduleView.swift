@@ -32,7 +32,7 @@ struct CalendarScheduleView: View {
         .task {
             await refreshEnabledSources()
         }
-        .onChange(of: settings.enabledCalendarSourcesJSON) { _, _ in
+        .onChange(of: settings.enabledCalendarSources) { _, _ in
             Task {
                 await refreshEnabledSources(force: true)
             }
@@ -167,7 +167,7 @@ struct CalendarScheduleView: View {
                 title: L10n.calendarNoEventsMatchFiltersTitle,
                 message: L10n.calendarNoEventsMatchFiltersMessage,
                 actionTitle: L10n.settings,
-                action: openCalendarSettings
+                action: { mainWindowNavigation.openSettings(category: .calendarDisplay) }
             )
         } else if hasLoadedEnabledSource || !hasEnabledSourceStatusCard {
             statusCard(

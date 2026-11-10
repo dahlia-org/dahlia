@@ -7,7 +7,8 @@ struct MenuBarCalendarSectionView: View {
     let onJoinAndRecordEvent: (CalendarEvent) -> Void
     let onJoinEvent: (CalendarEvent) -> Void
     let onShowEventInCalendar: (CalendarEvent) -> Void
-    let onOpenCalendarSettings: () -> Void
+    /// Opens the settings page that holds what the status refers to: sources per account, or the app-wide filters.
+    let onOpenCalendarSettings: (SettingsCategory) -> Void
 
     @ObservedObject private var settings = AppSettings.shared
     @ObservedObject private var googleCalendarStore = GoogleCalendarStore.shared
@@ -33,15 +34,15 @@ struct MenuBarCalendarSectionView: View {
                 }
             } else if settings.enabledCalendarSources.isEmpty {
                 statusLabel(L10n.calendarNoSourcesEnabledTitle, systemImage: "calendar.badge.exclamationmark")
-                calendarSettingsButton
+                calendarSettingsButton(.calendar)
             } else if isLoading {
                 statusLabel(L10n.calendarLoading, systemImage: "arrow.triangle.2.circlepath")
             } else if let issueTitle = sourceIssueTitle {
                 statusLabel(issueTitle, systemImage: "calendar.badge.exclamationmark")
-                calendarSettingsButton
+                calendarSettingsButton(.calendar)
             } else if agenda.hasEventsExcludedByFilter {
                 statusLabel(L10n.calendarNoEventsMatchFiltersTitle, systemImage: "line.3.horizontal.decrease.circle")
-                calendarSettingsButton
+                calendarSettingsButton(.calendarDisplay)
             } else {
                 statusLabel(L10n.menuBarNoMoreEventsToday, systemImage: "calendar.badge.checkmark")
             }
@@ -53,8 +54,8 @@ struct MenuBarCalendarSectionView: View {
             .disabled(true)
     }
 
-    private var calendarSettingsButton: some View {
-        Button(L10n.menuBarOpenCalendarSettings, systemImage: "gearshape", action: onOpenCalendarSettings)
+    private func calendarSettingsButton(_ category: SettingsCategory) -> some View {
+        Button(L10n.menuBarOpenCalendarSettings, systemImage: "gearshape") { onOpenCalendarSettings(category) }
     }
 
     private var isLoading: Bool {

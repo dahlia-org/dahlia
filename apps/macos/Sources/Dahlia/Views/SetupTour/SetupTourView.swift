@@ -139,6 +139,9 @@ struct SetupTourView: View {
                 _ = await prepareInitialWorkspace()
         }
         .id(settings.appLanguage)
+        // Outside `.id`, so a language change does not clear the account mid-tour.
+        .onChange(of: tourAccount, initial: true) { _, account in settings.setupTourAccount = account }
+        .onDisappear { settings.setupTourAccount = nil }
         .background(Color(nsColor: .windowBackgroundColor))
         .accessibilityElement(children: .contain)
         .windowDismissBehavior(
@@ -184,6 +187,13 @@ struct SetupTourView: View {
         } else {
             model.advance()
         }
+    }
+
+    private var tourAccount: CodexRuntimeProvider {
+        CodexRuntimeProvider(
+            accountConnectionID: model.selectedAccountConnectionID,
+            databricksConnectionID: model.selectedDatabricksConnectionID
+        )
     }
 
     private func continueWithLocalAccount() {

@@ -9,7 +9,12 @@ import Foundation
     struct SettingsCategoryTests {
         @Test
         func accountAndWorkspacePreferencesHaveSeparateDestinations() {
-            #expect(SettingsGroup.account.categories == [.workspace, .accountsAndWorkspaces, .agents])
+            #expect(SettingsGroup.account.categories == [.workspace, .accountsAndWorkspaces, .agents, .calendar])
+            // Calendar sources are per account; how events are shown and opened applies to the whole app.
+            #expect(SettingsGroup.app.categories.contains(.calendarDisplay))
+            #expect(SettingsCategory.calendar.matches(L10n.calendarSources))
+            #expect(!SettingsCategory.calendar.matches(L10n.menuBarCalendar))
+            #expect(SettingsCategory.calendarDisplay.matches(L10n.meetingLinkApplications))
             #expect(SettingsCategory.agents.matches("Gmail"))
             #expect(SettingsNavigation.visibleSelection(.accountPreferences) == .accountsAndWorkspaces)
             #expect(SettingsNavigation.visibleSelection(.macInference) == .accountsAndWorkspaces)
