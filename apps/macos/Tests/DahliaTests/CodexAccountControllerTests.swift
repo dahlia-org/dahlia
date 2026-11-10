@@ -54,6 +54,61 @@ import os
             #expect(login.mode == .control)
         }
 
+        /// Once Pi has saved the credential, the sign-in leaves its waiting-for-browser phase, and a cancel from then on
+        /// still lets the new status arrive, so the saved sign-in never shows as signed out.
+        @Test
+        func cancelAfterTheBrowserStepKeepsTheSavedSignIn() async throws {
+            let signedIn = OSAllocatedUnfairLock(initialState: false)
+            let heldStatusRequest = OSAllocatedUnfairLock<JSONValue?>(initialState: nil)
+            let transports = TestPiTransportLog()
+            let pi = TestPiRuntime { _ in
+                let transport = TestPiTransport { command in
+                    guard let id = command["id"] else { return [] }
+                    switch command["type"]?.stringValue {
+                    case "get_available_models":
+                        // Hold the first listing after the browser step until the test has observed that phase.
+                        let holds = signedIn.withLock { $0 } && heldStatusRequest.withLock { held in
+                            guard held == nil else { return false }
+                            held = id
+                            return true
+                        }
+                        let models = signedIn.withLock { $0 } ? [TestPiTransport.model(provider: "openai", id: "model")] : []
+                        return holds ? [] : [TestPiTransport.response(id: id, data: .object(["models": .array(models)]))]
+                    case "prompt":
+                        signedIn.withLock { $0 = true }
+                        return [
+                            TestPiTransport.notify("dahlia:auth_url https://auth.example.com/openai"),
+                            TestPiTransport.notify("dahlia:login_succeeded"),
+                        ]
+                    default:
+                        return [TestPiTransport.response(id: id)]
+                    }
+                }
+                transports.append(transport)
+                return transport
+            }
+            let controller = CodexAccountController(subscription: .openai, service: pi.service, urlOpener: TestCodexLoginURLOpener())
+            let signIn = Task { await controller.signIn() }
+
+            let deadline = ContinuousClock.now + .seconds(10)
+            while heldStatusRequest.withLock({ $0 }) == nil, ContinuousClock.now < deadline {
+                try await Task.sleep(for: .milliseconds(10))
+            }
+            let heldID = try #require(heldStatusRequest.withLock { $0 })
+            #expect(!controller.isSigningIn)
+            #expect(controller.isCheckingStatus)
+            signIn.cancel()
+
+            let models = JSONValue.object(["models": .array([TestPiTransport.model(provider: "openai", id: "model")])])
+            for transport in transports.all where await transport.commands.contains(where: { $0["id"] == heldID }) {
+                await transport.emit(TestPiTransport.response(id: heldID, data: models))
+            }
+            await signIn.value
+
+            #expect(controller.accountStatus?.isAuthenticated == true)
+            #expect(!controller.isBusy)
+        }
+
         @Test
         func browserOpenFailureStopsSignInAndShowsRetryableError() async {
             let pi = Self.runtime(provider: "openai", signedIn: OSAllocatedUnfairLock(initialState: false))

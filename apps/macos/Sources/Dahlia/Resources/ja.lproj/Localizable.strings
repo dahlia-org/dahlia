@@ -658,6 +658,8 @@
 "Include out-of-office events and events whose title includes OOO or OOTO." = "不在として設定されたイベントと、タイトルに OOO または OOTO を含むイベントを含めます。";
 "Show events from Google Calendar." = "Google カレンダーの予定を表示します。";
 "Show events from the Calendar app on this Mac." = "この Mac のカレンダーアプリの予定を表示します。";
+"Use models with your ChatGPT account." = "ChatGPT アカウントでモデルを使います。";
+"Use models with your Claude subscription." = "Claude のサブスクリプションでモデルを使います。";
 "Upcoming schedule" = "今後の予定";
 "Show Upcoming Schedule" = "今後の予定を表示";
 "Auto-record" = "自動録音";
@@ -1138,8 +1140,6 @@
 "Databricks" = "Databricks";
 "Unity Gateway" = "Unity Gateway";
 "Pi" = "Pi";
-"Sign in with ChatGPT" = "ChatGPT でサインイン";
-"Sign in with Claude" = "Claude でサインイン";
 "Waiting for browser sign-in…" = "ブラウザでのサインインを待っています…";
 "Cancel Sign-In" = "サインインをキャンセル";
 "Sign Out" = "サインアウト";
