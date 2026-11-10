@@ -22,14 +22,17 @@ struct CalendarSettingsView: View {
                 Section {
                     HStack(alignment: .top, spacing: 16) {
                         ForEach([CalendarSource.macOS, .google]) { source in
-                            CalendarSourceChoiceCard(
-                                source: source,
+                            SetupChoiceCard(
+                                image: source.choiceCardImage,
+                                title: source.displayName,
+                                description: source.choiceCardDescription,
                                 isSelected: settings.enabledCalendarSources == [source]
                             ) {
                                 settings.enabledCalendarSources = [source]
                             }
                         }
                     }
+                    .fixedSize(horizontal: false, vertical: true)
                     .frame(maxWidth: .infinity)
                 }
             } else {

@@ -50,18 +50,24 @@ final class CodexAccountController {
         guard !isBusy else { return }
         isSigningIn = true
         errorMessage = nil
-        defer { isSigningIn = false }
 
         do {
             try await service.signIn(subscription) { url in
                 await self.openLoginURL(url)
             }
-            accountStatus = try await service.accountStatus(for: subscription)
         } catch is CancellationError {
             // Cancelling the task closes Pi and its pending sign-in.
+            isSigningIn = false
+            return
         } catch {
+            isSigningIn = false
             errorMessage = error.localizedDescription
+            return
         }
+        // Pi has saved the credential, so the new status is read even when the caller cancels from here on; otherwise
+        // the saved sign-in would show as signed out until something else refreshed it.
+        isSigningIn = false
+        await Task { await activate() }.value
     }
 
     func signOut() async {

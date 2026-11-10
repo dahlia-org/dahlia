@@ -658,6 +658,8 @@
 "Include out-of-office events and events whose title includes OOO or OOTO." = "Include out-of-office events and events whose title includes OOO or OOTO.";
 "Show events from Google Calendar." = "Show events from Google Calendar.";
 "Show events from the Calendar app on this Mac." = "Show events from the Calendar app on this Mac.";
+"Use models with your ChatGPT account." = "Use models with your ChatGPT account.";
+"Use models with your Claude subscription." = "Use models with your Claude subscription.";
 "Upcoming schedule" = "Upcoming events";
 "Show Upcoming Schedule" = "Show Upcoming Schedule";
 "Auto-record" = "Auto-record";
@@ -1138,8 +1140,6 @@
 "Databricks" = "Databricks";
 "Unity Gateway" = "Unity Gateway";
 "Pi" = "Pi";
-"Sign in with ChatGPT" = "Sign in with ChatGPT";
-"Sign in with Claude" = "Sign in with Claude";
 "Waiting for browser sign-in…" = "Waiting for browser sign-in…";
 "Cancel Sign-In" = "Cancel Sign-In";
 "Sign Out" = "Sign Out";

@@ -119,9 +119,11 @@ struct AgentProviderRegistrationView: View {
             guard let controller = subscriptions.first(where: { $0.subscription == subscription }) else { return }
             signInTask = Task {
                 await controller.signIn()
-                if controller.accountStatus?.isAuthenticated == true {
+                if Task.isCancelled {
+                    // Cancel has closed the modal already; a sign-in Pi saved still appears under Providers.
+                } else if controller.accountStatus?.isAuthenticated == true {
                     onClose()
-                } else if !Task.isCancelled {
+                } else {
                     errorMessage = controller.errorMessage
                 }
                 signInTask = nil

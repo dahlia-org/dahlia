@@ -1989,6 +1989,14 @@ enum L10n { // swiftlint:disable:this type_body_length
         localized: "Show events from the Calendar app on this Mac.",
         bundle: bundle
     ) }
+    static var openAISubscriptionSetupDescription: String { String(
+        localized: "Use models with your ChatGPT account.",
+        bundle: bundle
+    ) }
+    static var anthropicSubscriptionSetupDescription: String { String(
+        localized: "Use models with your Claude subscription.",
+        bundle: bundle
+    ) }
     static var calendarScheduleTitle: String { String(localized: "Upcoming schedule", bundle: bundle) }
     static var showUpcomingSchedule: String { String(localized: "Show Upcoming Schedule", bundle: bundle) }
     static var calendarAutoRecording: String { String(localized: "Auto-record", bundle: bundle) }
@@ -2530,8 +2538,6 @@ enum L10n { // swiftlint:disable:this type_body_length
         bundle: bundle
     ) }
     static var codexSignedIn: String { String(localized: "Signed in", bundle: bundle) }
-    static var signInWithChatGPT: String { String(localized: "Sign in with ChatGPT", bundle: bundle) }
-    static var signInWithClaude: String { String(localized: "Sign in with Claude", bundle: bundle) }
     static var codexWaitingForBrowserSignIn: String { String(localized: "Waiting for browser sign-in…", bundle: bundle) }
     static var cancelSignIn: String { String(localized: "Cancel Sign-In", bundle: bundle) }
     static var signOut: String { String(localized: "Sign Out", bundle: bundle) }
