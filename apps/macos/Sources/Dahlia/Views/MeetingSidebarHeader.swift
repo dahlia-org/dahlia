@@ -1,21 +1,23 @@
 import SwiftUI
 
 struct MeetingSidebarHeader: View {
-    @Binding var displayMode: MeetingSidebarDisplayMode
+    let title: String
     let isExpanded: Bool
-    let canCreateProject: Bool
     let onToggleExpansion: () -> Void
-    let onCreateProject: () -> Void
+    /// Shows a hover-revealed button that adds an item to the section, such as a project or a chat.
+    var addButtonTitle: String?
+    var addButtonSystemImage = "plus"
+    var canAdd = true
+    var onAdd: () -> Void = {}
 
     @State private var isHovered = false
-    @FocusState private var isMenuFocused: Bool
-    @FocusState private var isCreateProjectFocused: Bool
+    @FocusState private var isAddButtonFocused: Bool
 
     var body: some View {
         HStack {
             Button(action: onToggleExpansion) {
                 HStack(spacing: 5) {
-                    Text(displayMode == .chronological ? L10n.recent : L10n.project)
+                    Text(title)
                     Image(systemName: isExpanded ? "chevron.down" : "chevron.right")
                         .font(.caption)
                         .opacity(!isExpanded || isHovered ? 1 : 0)
@@ -28,21 +30,16 @@ struct MeetingSidebarHeader: View {
 
             Spacer()
 
-            HStack(spacing: 8) {
-                MeetingSidebarOrganizationMenu(displayMode: $displayMode)
-                    .focused($isMenuFocused)
-
-                if displayMode == .byProject {
-                    Button(L10n.newProject, systemImage: "plus", action: onCreateProject)
-                        .labelStyle(.iconOnly)
-                        .dahliaFixedSymbol()
-                        .buttonStyle(.plain)
-                        .focused($isCreateProjectFocused)
-                        .disabled(!canCreateProject)
-                        .help(L10n.newProject)
-                }
+            if let addButtonTitle {
+                Button(addButtonTitle, systemImage: addButtonSystemImage, action: onAdd)
+                    .labelStyle(.iconOnly)
+                    .dahliaFixedSymbol()
+                    .buttonStyle(.plain)
+                    .focused($isAddButtonFocused)
+                    .disabled(!canAdd)
+                    .help(addButtonTitle)
+                    .opacity(isHovered || isAddButtonFocused ? 1 : 0)
             }
-            .opacity(isHovered || isMenuFocused || isCreateProjectFocused ? 1 : 0)
         }
         .contentShape(.rect)
         .onHover { isHovered = $0 }

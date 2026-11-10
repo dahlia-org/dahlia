@@ -27,6 +27,41 @@ import GRDB
         }
 
         @Test
+        func visibleUpcomingEventsDropEventsThatEndedByTheGivenTimeAndKeepScheduleOrder() {
+            let start = Date(timeIntervalSince1970: 1_776_387_600)
+            let ended = event(id: "ended", platform: CalendarEventPlatform.googleCalendar, start: start, minutes: 30)
+            let later = event(
+                id: "later",
+                platform: CalendarEventPlatform.googleCalendar,
+                start: start.addingTimeInterval(7200),
+                minutes: 30
+            )
+            let inProgress = event(id: "in-progress", platform: CalendarEventPlatform.googleCalendar, start: start, minutes: 120)
+            let store = FakeCalendarEventSourceStore(source: .google, events: [later, ended, inProgress])
+            let coordinator = CalendarSourceCoordinator(stores: [store])
+            let filter = CalendarEventFilter(
+                includesAllDayEvents: true,
+                includesEventsWithoutOtherAttendees: true,
+                includesEventsWithoutConferenceURI: true,
+                includesDeclinedEvents: true,
+                includesOutOfOfficeEvents: true
+            )
+
+            let beforeStart = coordinator.visibleUpcomingEvents(for: [.google], filter: filter, now: start.addingTimeInterval(-60))
+            #expect(beforeStart.map(\.id) == ["ended", "in-progress", "later"])
+
+            let afterFirstEnds = coordinator.visibleUpcomingEvents(for: [.google], filter: filter, now: start.addingTimeInterval(1800))
+            #expect(afterFirstEnds.map(\.id) == ["in-progress", "later"])
+
+            #expect(coordinator.visibleUpcomingEvents(for: [.macOS], filter: filter, now: start).isEmpty)
+
+            // The schedule's "nothing matches your filters" check reads this list, so ended events must not count.
+            let afterAllEnd = start.addingTimeInterval(3 * 3600)
+            #expect(coordinator.upcomingEvents(for: [.google], now: afterAllEnd).isEmpty)
+            #expect(coordinator.upcomingEvents(for: [.google], now: start).map(\.id) == ["later", "ended", "in-progress"])
+        }
+
+        @Test
         func updatesOnlyWhenASourcePublishesChangedEvents() {
             let originalEvent = event(id: "original", platform: CalendarEventPlatform.googleCalendar)
             let updatedEvent = event(id: "updated", platform: CalendarEventPlatform.googleCalendar)
@@ -189,7 +224,9 @@ import GRDB
             id: String,
             platform: String,
             icalUid: String? = nil,
-            participants: [CalendarParticipant] = []
+            participants: [CalendarParticipant] = [],
+            start: Date = Date(timeIntervalSince1970: 1_776_387_600),
+            minutes: Double = 60
         ) -> CalendarEvent {
             CalendarEvent(
                 id: id,
@@ -201,8 +238,8 @@ import GRDB
                 title: id,
                 description: "",
                 icalUid: icalUid,
-                startDate: Date(timeIntervalSince1970: 1_776_387_600),
-                endDate: Date(timeIntervalSince1970: 1_776_391_200),
+                startDate: start,
+                endDate: start.addingTimeInterval(minutes * 60),
                 isAllDay: false,
                 participants: participants,
                 conferenceURI: nil

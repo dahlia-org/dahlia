@@ -71,6 +71,37 @@ final class CalendarSourceCoordinator: ObservableObject {
             .deduplicatedAcrossSources()
     }
 
+    /// Events from the enabled sources that have not ended by `now`. The stores drop ended events only when they fetch,
+    /// so every upcoming list, and every check of whether one is empty, takes the caller's clock through here.
+    func upcomingEvents(for enabledSources: Set<CalendarSource>, now: Date) -> [CalendarEvent] {
+        events(for: enabledSources).filter { $0.endDate > now }
+    }
+
+    /// Upcoming events that pass the user's event filter, in schedule order.
+    func visibleUpcomingEvents(
+        for enabledSources: Set<CalendarSource>,
+        filter: CalendarEventFilter,
+        now: Date
+    ) -> [CalendarEvent] {
+        upcomingEvents(for: enabledSources, now: now)
+            .filter(filter.includes)
+            .sorted { lhs, rhs in
+                if lhs.startDate != rhs.startDate {
+                    return lhs.startDate < rhs.startDate
+                }
+                if lhs.isAllDay != rhs.isAllDay {
+                    return lhs.isAllDay
+                }
+                if lhs.endDate != rhs.endDate {
+                    return lhs.endDate < rhs.endDate
+                }
+                if lhs.title != rhs.title {
+                    return lhs.title.localizedStandardCompare(rhs.title) == .orderedAscending
+                }
+                return lhs.id < rhs.id
+            }
+    }
+
     static func allSourcesAreLoaded(
         _ enabledSources: Set<CalendarSource>,
         loadedSources: Set<CalendarSource>

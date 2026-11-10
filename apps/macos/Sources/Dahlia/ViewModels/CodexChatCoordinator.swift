@@ -164,6 +164,14 @@ final class CodexChatCoordinator {
         return replacementID
     }
 
+    /// The detached window's session already showing `threadID`, if any; opening that thread brings its window forward.
+    func detachedSessionID(showingThread threadID: String) -> CodexChatSessionID? {
+        let workspaceID = dockedSession.workspaceID
+        return sessions.values.first {
+            $0.backendThreadID == threadID && $0.workspaceID == workspaceID && detachedSessionIDs.contains($0.id)
+        }?.id
+    }
+
     func openHistoryThread(
         _ thread: CodexChatThreadSummary,
         showDockedSidebar: Bool = true

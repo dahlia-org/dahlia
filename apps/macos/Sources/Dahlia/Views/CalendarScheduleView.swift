@@ -221,27 +221,15 @@ struct CalendarScheduleView: View {
     }
 
     private var upcomingEventsFromEnabledSources: [CalendarEvent] {
-        calendarSourceCoordinator.events(for: settings.enabledCalendarSources)
+        calendarSourceCoordinator.upcomingEvents(for: settings.enabledCalendarSources, now: .now)
     }
 
     private var visibleUpcomingEvents: [CalendarEvent] {
-        upcomingEventsFromEnabledSources
-            .filter(settings.calendarEventFilter.includes)
-            .sorted { lhs, rhs in
-                if lhs.startDate != rhs.startDate {
-                    return lhs.startDate < rhs.startDate
-                }
-                if lhs.isAllDay != rhs.isAllDay {
-                    return lhs.isAllDay
-                }
-                if lhs.endDate != rhs.endDate {
-                    return lhs.endDate < rhs.endDate
-                }
-                if lhs.title != rhs.title {
-                    return lhs.title.localizedStandardCompare(rhs.title) == .orderedAscending
-                }
-                return lhs.id < rhs.id
-            }
+        calendarSourceCoordinator.visibleUpcomingEvents(
+            for: settings.enabledCalendarSources,
+            filter: settings.calendarEventFilter,
+            now: .now
+        )
     }
 
     private var isAnyEnabledSourceLoading: Bool {

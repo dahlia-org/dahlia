@@ -31,7 +31,8 @@ struct DahliaWindowHeaderHelpOverlay: View {
             buttonFrame: helpController.helpButtonFrame,
             helpSize: helpSize,
             containerOrigin: containerOrigin,
-            windowBounds: helpController.windowBounds
+            windowBounds: helpController.windowBounds,
+            placesBelow: helpController.helpPlacesBelow
         )
     }
 }

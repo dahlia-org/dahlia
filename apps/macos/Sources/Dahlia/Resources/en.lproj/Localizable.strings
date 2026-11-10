@@ -158,6 +158,8 @@
 "Good morning" = "Good morning";
 "Good afternoon" = "Good afternoon";
 "Good evening" = "Good evening";
+"Upcoming events" = "Upcoming events";
+"Show all" = "Show all";
 "Meetings" = "Meetings";
 "List" = "List";
 "Project Detail Display" = "Project Detail Display";
@@ -169,9 +171,6 @@
 "The selected project is no longer available." = "The selected project is no longer available.";
 "Recent" = "Recent";
 "Projects" = "Projects";
-"Organize Sidebar" = "Organize Sidebar";
-"Chronological" = "Chronological";
-"Group by Project" = "Group by Project";
 "Pinned" = "Pinned";
 "Project Options" = "Project Options";
 "Pin Project" = "Pin Project";
@@ -387,7 +386,6 @@
 "Could Not Load Meetings" = "Could Not Load Meetings";
 "Search to find older meetings." = "Search to find older meetings.";
 "Refine your search to find older meetings." = "Refine your search to find older meetings.";
-"Create a meeting to start building your history." = "Create a meeting to start building your history.";
 "Delete %lld meetings?" = "Delete %lld meetings?";
 "Delete this meeting and all its data permanently, including its transcript and Dahlia-managed audio. This cannot be undone." = "Delete this meeting and all its data permanently, including its transcript and Dahlia-managed audio. This cannot be undone.";
 "Delete %lld meetings and all their data permanently, including transcripts and Dahlia-managed audio. This cannot be undone." = "Delete %lld meetings and all their data permanently, including transcripts and Dahlia-managed audio. This cannot be undone.";
@@ -654,7 +652,6 @@
 "Use models with your ChatGPT account." = "Use models with your ChatGPT account.";
 "Use models with your Claude subscription." = "Use models with your Claude subscription.";
 "Upcoming schedule" = "Upcoming events";
-"Show Upcoming Schedule" = "Show Upcoming Schedule";
 "Auto-record" = "Auto-record";
 "Auto-record scheduled" = "Auto-record scheduled";
 "Automatically start recording when this event begins." = "Automatically start recording when this event begins.";

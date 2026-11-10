@@ -26,6 +26,7 @@ final class DahliaWindowHeaderHelpController {
     private(set) var helpLabel = ""
     private(set) var helpShortcut: String?
     private(set) var helpButtonFrame: CGRect = .zero
+    private(set) var helpPlacesBelow = false
 
     @ObservationIgnored private let displayDelay: Duration
     @ObservationIgnored private let immediateSwitchWindow: Duration
@@ -78,11 +79,13 @@ final class DahliaWindowHeaderHelpController {
         for id: UUID,
         label: String,
         shortcut: String?,
-        buttonFrame: CGRect
+        buttonFrame: CGRect,
+        placesBelow: Bool = false
     ) {
         helpLabel = label
         helpShortcut = shortcut
         helpButtonFrame = buttonFrame
+        helpPlacesBelow = placesBelow
         hoverBegan(for: id)
     }
 

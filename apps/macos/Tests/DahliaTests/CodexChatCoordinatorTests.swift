@@ -265,6 +265,9 @@ import Foundation
             #expect(coordinator.session(for: selectedID)?.backendThreadID == thread.id)
             #expect(coordinator.dockedSessionID == originalDockedID)
             #expect(!coordinator.isDockedVisible)
+            // The sidebar checks this before switching the main area, so a detached thread leaves it alone.
+            #expect(coordinator.detachedSessionID(showingThread: thread.id) == selectedID)
+            #expect(coordinator.detachedSessionID(showingThread: "other-thread") == nil)
         }
 
         @Test
