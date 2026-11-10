@@ -163,11 +163,14 @@ import GRDB
                 forMeetingId: context.meeting.id,
                 relativePath: "Acme/Existing.md"
             )
-            #expect(try context.repo.updateSummaryGoogleFileId(
-                forMeetingId: context.meeting.id,
-                googleFileId: "old-google-file",
-                expectedDocument: oldDocument
-            ))
+            try context.repo.dbQueue.write { db in
+                try SummaryExportRecord.setURL(
+                    SummaryExportRecord.googleDocsURL(fileId: "old-google-file"),
+                    meetingId: context.meeting.id,
+                    type: .googleDocs,
+                    in: db
+                )
+            }
             let document = SummaryDocument(
                 title: "Updated",
                 sections: [SummarySection(id: .v7(), heading: "Summary", blocks: [.paragraph("New body")])],
@@ -207,11 +210,14 @@ import GRDB
                 forMeetingId: context.meeting.id,
                 relativePath: "Acme/Summary.md"
             )
-            #expect(try context.repo.updateSummaryGoogleFileId(
-                forMeetingId: context.meeting.id,
-                googleFileId: "google-123",
-                expectedDocument: document
-            ))
+            try context.repo.dbQueue.write { db in
+                try SummaryExportRecord.setURL(
+                    SummaryExportRecord.googleDocsURL(fileId: "google-123"),
+                    meetingId: context.meeting.id,
+                    type: .googleDocs,
+                    in: db
+                )
+            }
 
             let workspace = try context.repo.fetchSummaryExport(
                 forMeetingId: context.meeting.id,
@@ -239,34 +245,6 @@ import GRDB
                 forMeetingId: context.meeting.id,
                 type: .googleDocs
             )?.googleDocumentID == "google-123")
-        }
-
-        @Test
-        func rejectsGoogleDocsAssociationWhenSummaryChangedDuringExport() throws {
-            let context = try makeRepositoryContext()
-            let exportedDocument = SummaryDocument(title: "Exported", sections: [])
-            try context.repo.applyGeneratedSummary(
-                toMeetingId: context.meeting.id,
-                document: exportedDocument,
-                tags: []
-            )
-            let expectedDocument = try exportedDocument.databaseJSONString()
-
-            try context.repo.applyGeneratedSummary(
-                toMeetingId: context.meeting.id,
-                document: SummaryDocument(title: "Corrected while exporting", sections: []),
-                tags: []
-            )
-
-            #expect(try !context.repo.updateSummaryGoogleFileId(
-                forMeetingId: context.meeting.id,
-                googleFileId: "stale-google-document",
-                expectedDocument: expectedDocument
-            ))
-            #expect(try context.repo.fetchSummaryExport(
-                forMeetingId: context.meeting.id,
-                type: .googleDocs
-            ) == nil)
         }
 
         @Test

@@ -24,7 +24,7 @@ query は2文字以上、最大16 token、最後だけ prefix。field を跨い�
 
 重み付き BM25 を単一スコアとし、同点は日時降順・ID。各 field の重みは0〜10、0は一致対象からも除外、全0 / 不正設定は既定に戻す。seed と残り token にも同じ filter を使う。match field は表示ページだけで判定する。調整は query 時なので再索引不要。
 
-重みは UserDefaults の policy を呼出引数で渡し、開発者設定に preset / slider を置く。preset は重みから導出する。MCP は既定重みだけを使い app 設定を読まないため、app と順位が異なり得る。旧 Simple は比較用 metadata LIKE として一文字・語中一致に対応していたが、2026-09 に廃止した。
+重みは UserDefaults の policy を呼出引数で渡し、設定の「検索」に preset / slider を置く。preset は重みから導出する。MCP は既定重みだけを使い app 設定を読まないため、app と順位が異なり得る。旧 Simple は比較用 metadata LIKE として一文字・語中一致に対応していたが、2026-09 に廃止した。
 
 ## 旧 Neural 検索（2026-09 廃止）
 

@@ -7,14 +7,14 @@ import Foundation
     @MainActor
     struct SummaryProgressStateTests {
         @Test
-        func waitsForGoogleDocsExportToReachTerminalState() {
+        func waitsForWorkspaceExportToReachTerminalState() {
             let state = SummaryProgressState()
             state.summaryGeneration = .completed
-            state.workspaceExport = .skipped
+            state.workspaceExport = .running
 
             #expect(!state.isAllDone)
 
-            state.googleDocsExport = .completed
+            state.workspaceExport = .completed
 
             #expect(state.isAllDone)
         }
@@ -26,14 +26,12 @@ import Foundation
 
             first.progress.summaryGeneration = .failed("offline")
             first.progress.workspaceExport = .failed("offline")
-            first.progress.googleDocsExport = .failed("offline")
             second.progress.summaryGeneration = .running
 
             #expect(first.hasFailure)
             #expect(first.isFinished)
             #expect(first.progress.summaryGeneration.failureMessage == "offline")
             #expect(first.progress.workspaceExport.failureMessage == "offline")
-            #expect(first.progress.googleDocsExport.failureMessage == "offline")
             #expect(!second.hasFailure)
             #expect(second.progress.summaryGeneration.failureMessage == nil)
         }
@@ -47,7 +45,6 @@ import Foundation
             )
             job.progress.summaryGeneration = .completed
             job.progress.workspaceExport = .skipped
-            job.progress.googleDocsExport = .skipped
 
             #expect(!job.isFinished)
 

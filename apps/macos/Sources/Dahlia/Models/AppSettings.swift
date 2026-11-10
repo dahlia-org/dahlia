@@ -84,7 +84,7 @@ typealias TranscriptionLanguageScope = AppLanguageScope
 
 /// アプリ設定の一元管理。@AppStorage で UserDefaults に永続化。
 @MainActor
-final class AppSettings: ObservableObject, GoogleDriveExportFolderSettingsProviding {
+final class AppSettings: ObservableObject {
     static let shared = AppSettings()
     nonisolated static let automaticScreenshotIntervalOptions = [
         5,
@@ -108,7 +108,6 @@ final class AppSettings: ObservableObject, GoogleDriveExportFolderSettingsProvid
         "automaticScreenshotCropToSharedRegion"
     nonisolated static let generateSummaryAfterBatchTranscriptionUserDefaultsKey = "generateSummaryAfterBatchTranscription"
     nonisolated static let exportBatchSummaryToWorkspaceUserDefaultsKey = "exportBatchSummaryToWorkspace"
-    nonisolated static let exportBatchSummaryToGoogleDocsUserDefaultsKey = "exportBatchSummaryToGoogleDocs"
     nonisolated static let transcriptionLanguageScopeUserDefaultsKey = "transcriptionLanguageScope"
     nonisolated static let appLanguageScopeUserDefaultsKey = "appLanguageScope"
     nonisolated static let enabledLanguageIdentifiersUserDefaultsKey = "enabledLanguageIdentifiers"
@@ -133,8 +132,6 @@ final class AppSettings: ObservableObject, GoogleDriveExportFolderSettingsProvid
     nonisolated static let teamsMeetingLinkOpenTargetUserDefaultsKey = "teamsMeetingLinkOpenTarget"
     nonisolated static let slackMeetingLinkOpenTargetUserDefaultsKey = "slackMeetingLinkOpenTarget"
     nonisolated static let defaultConversationAnalyticsBetaEnabled = false
-    nonisolated static let defaultGoogleDriveExportFolderName = "Dahlia"
-    private nonisolated static let legacyGoogleDriveExportFolderName = "Meeting Notes"
     fileprivate nonisolated static let defaultAutomaticScreenshotIntervalSeconds = 20
     fileprivate nonisolated static let defaultAutomaticScreenshotChangeThresholdPercent = 5
 
@@ -143,7 +140,7 @@ final class AppSettings: ObservableObject, GoogleDriveExportFolderSettingsProvid
         Self.migrateLiveSubtitleLocaleSetting(in: .standard)
         Self.migrateAppLanguageSettings(in: .standard)
         Self.migrateBatchAudioRetentionPeriodSetting(in: .standard)
-        migrateGoogleDriveExportFolderSetting()
+        Self.removeRetiredSettings(in: .standard)
         meetingNotificationPresentationRawValue = meetingNotificationPresentation.rawValue
         batchTranscriptionStallTimeoutRawValue = batchTranscriptionStallTimeout.rawValue
     }
@@ -152,6 +149,22 @@ final class AppSettings: ObservableObject, GoogleDriveExportFolderSettingsProvid
         guard defaults.object(forKey: batchAudioRetentionPeriodUserDefaultsKey) == nil,
               defaults.object(forKey: legacyRetainAudioAfterBatchTranscriptionUserDefaultsKey) as? Bool == true else { return }
         defaults.set(BatchAudioRetentionPeriod.forever.rawValue, forKey: batchAudioRetentionPeriodUserDefaultsKey)
+    }
+
+    /// Settings of the retired Google Drive export and Google OAuth client override.
+    nonisolated static let retiredSettingKeys = [
+        "googleOAuthClientIDOverride",
+        "exportBatchSummaryToGoogleDocs",
+        "googleDriveExportFolderName",
+        "googleDriveExportFolderID",
+        "googleDriveExportFolderAccountID",
+        "googleDriveExportFoldersByAccountScope",
+    ]
+
+    nonisolated static func removeRetiredSettings(in defaults: UserDefaults) {
+        for key in retiredSettingKeys {
+            defaults.removeObject(forKey: key)
+        }
     }
 
     // MARK: - ベータ機能
@@ -166,108 +179,6 @@ final class AppSettings: ObservableObject, GoogleDriveExportFolderSettingsProvid
     var appLanguage: AppLanguage {
         get { AppLanguage(rawValue: appLanguageRawValue) ?? .system }
         set { appLanguageRawValue = newValue.rawValue }
-    }
-
-    // MARK: - Google Drive
-
-    /// 変更可能だった試用版の保存先 ID を固定の書き出し先として再利用しないため、フォルダ名も照合する。
-    @AppStorage("googleDriveExportFolderName") private var storedGoogleDriveExportFolderName = AppSettings.defaultGoogleDriveExportFolderName
-    @AppStorage("googleDriveExportFolderID") private var googleDriveExportFolderID = ""
-    @AppStorage("googleDriveExportFolderAccountID") private var googleDriveExportFolderAccountID = ""
-    @AppStorage("googleDriveExportFoldersByAccountScope") private var googleDriveExportFoldersByAccountScope = "{}"
-
-    private struct GoogleDriveExportFolder: Codable {
-        let id: String
-        let accountID: String
-        let name: String
-    }
-
-    func googleDriveExportFolderID(forAccountID accountID: String, scope: AppAccountScope) -> String? {
-        guard let folder = googleDriveExportFolders[scope.storageKey], folder.accountID == accountID else { return nil }
-        return Self.validatedGoogleDriveExportFolderID(
-            storedID: folder.id,
-            storedAccountID: folder.accountID,
-            storedFolderName: folder.name,
-            accountID: accountID
-        )
-    }
-
-    func googleDriveExportFolderName(forAccountID accountID: String, scope: AppAccountScope = .local) -> String? {
-        guard googleDriveExportFolderID(forAccountID: accountID, scope: scope) != nil else { return nil }
-        return googleDriveExportFolders[scope.storageKey]?.name
-    }
-
-    nonisolated static func validatedGoogleDriveExportFolderID(
-        storedID: String,
-        storedAccountID: String,
-        storedFolderName: String,
-        accountID: String
-    ) -> String? {
-        let isManagedFolder = storedFolderName == defaultGoogleDriveExportFolderName
-            || storedFolderName == legacyGoogleDriveExportFolderName
-        guard storedAccountID == accountID, isManagedFolder else { return nil }
-        return storedID.nilIfBlank
-    }
-
-    func googleDriveExportFolderURL(forAccountID accountID: String, scope: AppAccountScope = .local) -> URL? {
-        guard let folderID = googleDriveExportFolderID(forAccountID: accountID, scope: scope) else { return nil }
-        return Self.googleDriveExportFolderURL(folderID: folderID)
-    }
-
-    nonisolated static func googleDriveExportFolderURL(folderID: String) -> URL? {
-        guard !folderID.isEmpty,
-              let baseURL = URL(string: "https://drive.google.com/drive/folders") else { return nil }
-        return baseURL.appending(path: folderID)
-    }
-
-    func setGoogleDriveExportFolder(
-        id: String,
-        accountID: String,
-        scope: AppAccountScope
-    ) {
-        var folders = googleDriveExportFolders
-        folders[scope.storageKey] = GoogleDriveExportFolder(
-            id: id,
-            accountID: accountID,
-            name: Self.defaultGoogleDriveExportFolderName
-        )
-        googleDriveExportFolders = folders
-    }
-
-    func clearGoogleDriveExportFolderID(forAccountID accountID: String, scope: AppAccountScope) {
-        guard googleDriveExportFolders[scope.storageKey]?.accountID == accountID else { return }
-        clearGoogleDriveExportFolder(scope: scope)
-    }
-
-    func clearGoogleDriveExportFolder(scope: AppAccountScope) {
-        var folders = googleDriveExportFolders
-        folders.removeValue(forKey: scope.storageKey)
-        googleDriveExportFolders = folders
-    }
-
-    private var googleDriveExportFolders: [String: GoogleDriveExportFolder] {
-        get {
-            guard let data = googleDriveExportFoldersByAccountScope.data(using: .utf8) else { return [:] }
-            return (try? JSONDecoder().decode([String: GoogleDriveExportFolder].self, from: data)) ?? [:]
-        }
-        set {
-            guard let data = try? JSONEncoder().encode(newValue),
-                  let value = String(data: data, encoding: .utf8) else { return }
-            googleDriveExportFoldersByAccountScope = value
-        }
-    }
-
-    private func migrateGoogleDriveExportFolderSetting() {
-        guard googleDriveExportFolders.isEmpty,
-              let id = Self.validatedGoogleDriveExportFolderID(
-                  storedID: googleDriveExportFolderID,
-                  storedAccountID: googleDriveExportFolderAccountID,
-                  storedFolderName: storedGoogleDriveExportFolderName,
-                  accountID: googleDriveExportFolderAccountID
-              ) else { return }
-        setGoogleDriveExportFolder(id: id, accountID: googleDriveExportFolderAccountID, scope: .local)
-        googleDriveExportFolderID = ""
-        googleDriveExportFolderAccountID = ""
     }
 
     // MARK: - 音声認識設定
@@ -293,7 +204,6 @@ final class AppSettings: ObservableObject, GoogleDriveExportFolderSettingsProvid
 
     @AppStorage(AppSettings.generateSummaryAfterBatchTranscriptionUserDefaultsKey) var generateSummaryAfterBatchTranscription = false
     @AppStorage(AppSettings.exportBatchSummaryToWorkspaceUserDefaultsKey) var exportBatchSummaryToWorkspace = true
-    @AppStorage(AppSettings.exportBatchSummaryToGoogleDocsUserDefaultsKey) var exportBatchSummaryToGoogleDocs = false
     @AppStorage(AppSettings.liveSubtitleTranslationEnabledKey) var liveSubtitleTranslationEnabled = true
     @AppStorage(AppSettings.liveSubtitleTranslationTargetLanguageKey) var liveSubtitleTranslationTargetLanguage =
         TranscriptTranslationLanguage.defaultIdentifier
@@ -322,10 +232,7 @@ final class AppSettings: ObservableObject, GoogleDriveExportFolderSettingsProvid
 
     func batchSummaryGenerationOptions() -> SummaryGenerationOptions {
         SummaryGenerationOptions(
-            exportOptions: SummaryExportOptions(
-                exportsToWorkspace: exportBatchSummaryToWorkspace,
-                exportsToGoogleDocs: exportBatchSummaryToGoogleDocs
-            )
+            exportOptions: SummaryExportOptions(exportsToWorkspace: exportBatchSummaryToWorkspace)
         )
     }
 
@@ -582,9 +489,6 @@ final class AppSettings: ObservableObject, GoogleDriveExportFolderSettingsProvid
     var teamsMeetingLinkOpenTargetRawValue = MeetingLinkOpenTarget.inheritGlobal.rawValue
     @AppStorage(AppSettings.slackMeetingLinkOpenTargetUserDefaultsKey)
     var slackMeetingLinkOpenTargetRawValue = MeetingLinkOpenTarget.inheritGlobal.rawValue
-    nonisolated static let googleOAuthClientIDOverrideUserDefaultsKey = "googleOAuthClientIDOverride"
-    nonisolated static let googleOAuthClientSecretOverrideKey = "googleOAuthClientSecretOverride"
-    @AppStorage(AppSettings.googleOAuthClientIDOverrideUserDefaultsKey) var googleOAuthClientIDOverride = ""
 
     var calendarEventFilter: CalendarEventFilter {
         CalendarEventFilter(
@@ -720,24 +624,6 @@ final class AppSettings: ObservableObject, GoogleDriveExportFolderSettingsProvid
         }
 
         return json
-    }
-
-    /// Google OAuth client secret override（Keychain に保存）。
-    var googleOAuthClientSecretOverride: String {
-        get { KeychainService.load(key: Self.googleOAuthClientSecretOverrideKey) ?? "" }
-        set {
-            let trimmed = newValue.trimmingCharacters(in: .whitespacesAndNewlines)
-            if trimmed.isEmpty {
-                KeychainService.delete(key: Self.googleOAuthClientSecretOverrideKey)
-            } else {
-                do {
-                    try KeychainService.save(key: Self.googleOAuthClientSecretOverrideKey, value: trimmed)
-                } catch {
-                    print("[KeychainService] Failed to save Google OAuth client secret override: \(error)")
-                }
-            }
-            objectWillChange.send()
-        }
     }
 
     // MARK: - LLM 設定

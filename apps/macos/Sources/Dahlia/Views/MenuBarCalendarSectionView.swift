@@ -42,7 +42,7 @@ struct MenuBarCalendarSectionView: View {
                 calendarSettingsButton(.calendar)
             } else if agenda.hasEventsExcludedByFilter {
                 statusLabel(L10n.calendarNoEventsMatchFiltersTitle, systemImage: "line.3.horizontal.decrease.circle")
-                calendarSettingsButton(.calendarDisplay)
+                calendarSettingsButton(.eventDisplay)
             } else {
                 statusLabel(L10n.menuBarNoMoreEventsToday, systemImage: "calendar.badge.checkmark")
             }

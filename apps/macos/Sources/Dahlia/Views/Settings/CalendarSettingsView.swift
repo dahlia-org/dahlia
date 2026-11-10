@@ -1,7 +1,7 @@
 import SwiftUI
 
 /// The calendar sources of the open account, or of the account the setup tour is setting up. Settings that apply to
-/// the whole app are in `CalendarDisplaySettingsView`.
+/// the whole app are in `AppearanceSettingsView` and `MeetingLinkSettingsView`.
 struct CalendarSettingsView: View {
     @ObservedObject private var settings = AppSettings.shared
     @ObservedObject private var googleCalendarStore = GoogleCalendarStore.shared

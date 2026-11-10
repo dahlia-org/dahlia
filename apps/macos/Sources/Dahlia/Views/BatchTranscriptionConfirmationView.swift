@@ -18,7 +18,6 @@ struct BatchTranscriptionConfirmationView: View {
     @State private var generateSummaryAfterBatchTranscription: Bool
     @State private var summaryDetailLevel: SummaryDetailLevel?
     @State private var exportBatchSummaryToWorkspace: Bool
-    @State private var exportBatchSummaryToGoogleDocs: Bool
     @State private var selectedProjectId: UUID?
     @State private var errorMessage: String?
 
@@ -55,7 +54,6 @@ struct BatchTranscriptionConfirmationView: View {
         _generateSummaryAfterBatchTranscription = State(initialValue: initiallyGeneratesSummary)
         _summaryDetailLevel = State(initialValue: summaryGenerationOptions.detailLevel)
         _exportBatchSummaryToWorkspace = State(initialValue: summaryGenerationOptions.exportOptions.exportsToWorkspace)
-        _exportBatchSummaryToGoogleDocs = State(initialValue: summaryGenerationOptions.exportOptions.exportsToGoogleDocs)
         _selectedProjectId = State(initialValue: initialProjectId)
         _errorMessage = State(initialValue: initialErrorMessage)
     }
@@ -83,7 +81,6 @@ struct BatchTranscriptionConfirmationView: View {
                 generateSummaryAfterBatchTranscription: $generateSummaryAfterBatchTranscription,
                 summaryDetailLevel: $summaryDetailLevel,
                 exportBatchSummaryToWorkspace: $exportBatchSummaryToWorkspace,
-                exportBatchSummaryToGoogleDocs: $exportBatchSummaryToGoogleDocs,
                 projects: projects,
                 selectedProjectId: $selectedProjectId,
                 processingMethod: processingMethod,
@@ -125,7 +122,6 @@ struct BatchTranscriptionConfirmationView: View {
         )
         .onChange(of: generateSummaryAfterBatchTranscription) { _, _ in persistSummaryPreferencesIfNeeded() }
         .onChange(of: exportBatchSummaryToWorkspace) { _, _ in persistSummaryPreferencesIfNeeded() }
-        .onChange(of: exportBatchSummaryToGoogleDocs) { _, _ in persistSummaryPreferencesIfNeeded() }
     }
 
     private var confirmationText: (title: String, description: String) {
@@ -159,10 +155,7 @@ struct BatchTranscriptionConfirmationView: View {
 
     private func startTranscription() {
         let summaryOptions = SummaryGenerationOptions(
-            exportOptions: SummaryExportOptions(
-                exportsToWorkspace: exportBatchSummaryToWorkspace,
-                exportsToGoogleDocs: exportBatchSummaryToGoogleDocs
-            ),
+            exportOptions: SummaryExportOptions(exportsToWorkspace: exportBatchSummaryToWorkspace),
             detailLevel: summaryDetailLevel
         )
         errorMessage = onStart(
@@ -178,6 +171,5 @@ struct BatchTranscriptionConfirmationView: View {
         let settings = AppSettings.shared
         if processingMethod == nil { settings.generateSummaryAfterBatchTranscription = generateSummaryAfterBatchTranscription }
         settings.exportBatchSummaryToWorkspace = exportBatchSummaryToWorkspace
-        settings.exportBatchSummaryToGoogleDocs = exportBatchSummaryToGoogleDocs
     }
 }

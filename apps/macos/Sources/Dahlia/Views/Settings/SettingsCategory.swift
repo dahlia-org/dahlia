@@ -11,6 +11,8 @@ enum SettingsCategory: String, CaseIterable, Identifiable {
     case dahliaAccounts
     case language
     case appearance
+    /// Opens Appearance on its Event Display tab.
+    case eventDisplay
     case workspace
     case permissions
     case backups
@@ -20,14 +22,12 @@ enum SettingsCategory: String, CaseIterable, Identifiable {
     case liveSubtitles
     case screenshots
     case calendar
-    case calendarDisplay
-    case cloudStorage
+    case meetingLinks
     case modelProvider = "accounts"
     case aiSummary
     case mcp
     case instructions
     case betaFeatures
-    case developer
     case audioDiagnostics
 
     var id: String { rawValue }
@@ -43,6 +43,7 @@ enum SettingsCategory: String, CaseIterable, Identifiable {
         case .dahliaAccounts: L10n.dahliaAccount
         case .language: L10n.language
         case .appearance: L10n.appearance
+        case .eventDisplay: L10n.appearanceEventDisplay
         case .workspace: L10n.manageWorkspaces
         case .permissions: L10n.permissions
         case .backups: L10n.backups
@@ -52,46 +53,43 @@ enum SettingsCategory: String, CaseIterable, Identifiable {
         case .liveSubtitles: L10n.liveSubtitles
         case .screenshots: L10n.screenshots
         case .calendar: L10n.calendar
-        case .calendarDisplay: L10n.calendarDisplay
-        case .cloudStorage: L10n.export
+        case .meetingLinks: L10n.meetingLinks
         case .modelProvider: L10n.modelProvider
         case .aiSummary: L10n.transcriptionAndSummary
         case .mcp: L10n.mcp
         case .instructions: L10n.instructions
         case .betaFeatures: L10n.betaFeatures
-        case .developer: L10n.developerSettings
         case .audioDiagnostics: L10n.diagnostics
         }
     }
 
     var systemImage: String {
         switch self {
-        case .accountsAndWorkspaces: "sparkles"
+        case .accountsAndWorkspaces: "brain"
         case .accountPreferences: "text.badge.star"
-        case .agents: "puzzlepiece.extension"
+        case .agents: "sparkles"
         case .workspacePreferences: "globe"
         case .macInference: "sparkles"
         case .general: "gearshape"
         case .dahliaAccounts: "person.crop.circle"
         case .language: "globe"
         case .appearance: "sun.max"
+        case .eventDisplay: "calendar"
         case .workspace: ProjectIcon.workspace.systemImageName
         case .permissions: "hand.raised"
         case .backups: "externaldrive.badge.timemachine"
         case .search: "magnifyingglass"
-        case .transcription: "waveform"
+        case .transcription: "waveform.and.mic"
         case .recordingStopDetection: "stop.circle"
         case .liveSubtitles: "captions.bubble"
         case .screenshots: "photo.on.rectangle.angled"
         case .calendar: "calendar"
-        case .calendarDisplay: "calendar.badge.clock"
-        case .cloudStorage: "square.and.arrow.up"
+        case .meetingLinks: "link"
         case .modelProvider: "sparkles"
         case .aiSummary: "list.bullet.clipboard"
         case .mcp: "network"
         case .instructions: "list.bullet.clipboard"
         case .betaFeatures: "testtube.2"
-        case .developer: "wrench.and.screwdriver"
         case .audioDiagnostics: "stethoscope"
         }
     }
@@ -109,13 +107,10 @@ enum SettingsCategory: String, CaseIterable, Identifiable {
         case .general:
             [
                 L10n.language,
-                L10n.appearance,
-                L10n.appLanguage,
                 L10n.appLanguages,
                 L10n.notifications,
                 L10n.meetingNotifications,
                 L10n.notificationConditions,
-                L10n.sidebarDisplayStyle,
                 L10n.audioInput,
                 L10n.externalMicrophoneEchoCancellation,
                 L10n.automaticRecordingStop,
@@ -181,10 +176,19 @@ enum SettingsCategory: String, CaseIterable, Identifiable {
             ]
         case .calendar:
             ["Google", L10n.googleCalendar, L10n.macOSCalendar, L10n.calendarSources]
-        case .calendarDisplay:
-            [L10n.menuBarCalendar, L10n.meetingLinkApplications, L10n.calendarEventsToInclude, L10n.notifications]
-        case .cloudStorage:
-            ["Google", L10n.googleDrive, L10n.googleDriveExportFolder]
+        case .appearance:
+            [
+                L10n.display,
+                L10n.appLanguage,
+                L10n.sidebarDisplayStyle,
+                L10n.appearanceMenuBar,
+                L10n.menuBarCalendar,
+                L10n.appearanceEventDisplay,
+                L10n.calendar,
+                L10n.calendarEventsToInclude,
+            ]
+        case .meetingLinks:
+            [L10n.meetingLinkApplications, L10n.meetingLinkServiceOverrides, "Google Meet", "Zoom", "Teams", "Slack"]
         case .accountsAndWorkspaces:
             [L10n.accountPreferences, L10n.macInferencePreferences]
                 + Self.accountPreferences.searchTerms + Self.macInference.searchTerms

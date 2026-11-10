@@ -26,9 +26,6 @@ enum ErrorReportingService {
         "downloadScreenshot",
         "folderImport",
         "google_calendar_error",
-        "google_docs_export_error",
-        "google_drive_error",
-        "google_drive_export_folder_error",
         "liveTranscription",
         "loadMeeting",
         "loadWorkspaces",
@@ -80,9 +77,6 @@ enum ErrorReportingService {
 
     enum SanitizedCategory: String {
         case googleCalendar = "google_calendar_error"
-        case googleDrive = "google_drive_error"
-        case googleDriveExportFolder = "google_drive_export_folder_error"
-        case googleDocsExport = "google_docs_export_error"
         case meetingConversationMetrics = "meeting_conversation_metrics_error"
     }
 

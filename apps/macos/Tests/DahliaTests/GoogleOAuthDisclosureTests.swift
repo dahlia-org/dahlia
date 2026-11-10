@@ -20,23 +20,14 @@ import Foundation
         }
 
         @Test
-        func eachServiceExplainsItsOwnAccessUseSharingAndDeletion() {
-            let calendar = GoogleOAuthDisclosure.calendar
-            let drive = GoogleOAuthDisclosure.drive
-
-            for disclosure in [calendar, drive] {
-                #expect(!disclosure.title.isEmpty)
-                #expect(!disclosure.overview.isEmpty)
-                #expect(!disclosure.accessedData.isEmpty)
-                #expect(!disclosure.useAndStorage.isEmpty)
-                #expect(!disclosure.externalSharing.isEmpty)
-                #expect(!disclosure.deletion.isEmpty)
-            }
-
-            #expect(calendar.overview != drive.overview)
-            #expect(calendar.accessedData != drive.accessedData)
-            #expect(calendar.externalSharing != drive.externalSharing)
-            #expect(calendar.deletion != drive.deletion)
+        func calendarExplainsItsAccessUseSharingAndDeletion() {
+            let disclosure = GoogleOAuthDisclosure.calendar
+            #expect(!disclosure.title.isEmpty)
+            #expect(!disclosure.overview.isEmpty)
+            #expect(!disclosure.accessedData.isEmpty)
+            #expect(!disclosure.useAndStorage.isEmpty)
+            #expect(!disclosure.externalSharing.isEmpty)
+            #expect(!disclosure.deletion.isEmpty)
         }
 
         @Test
@@ -55,9 +46,9 @@ import Foundation
             let consentAfterCancel = state.consumeConsent()
             #expect(!consentAfterCancel)
 
-            state.request(.drive)
+            state.request(.calendar)
             state.grantConsent()
-            #expect(state.pendingDisclosure == .drive)
+            #expect(state.pendingDisclosure == .calendar)
             let firstConsent = state.consumeConsent()
             let secondConsent = state.consumeConsent()
             #expect(firstConsent)

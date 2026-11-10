@@ -1,28 +1,12 @@
 import SwiftUI
 
-/// Mac-wide appearance, language, and notification preferences.
+/// Mac-wide language, notification, recording, and retention preferences. How the app looks is in `AppearanceSettingsView`.
 struct GeneralSettingsView: View {
     private static let initialRetentionDays = 30
     @ObservedObject private var settings = AppSettings.shared
-    @AppStorage(AppSettings.meetingSidebarRowStyleUserDefaultsKey)
-    private var meetingSidebarRowStyle = MeetingSidebarRowStyle.standard.rawValue
 
     var body: some View {
         Form {
-            Section(L10n.display) {
-                DahliaMenuPicker(
-                    title: L10n.appLanguage,
-                    selection: $settings.appLanguage,
-                    options: AppLanguage.allCases,
-                    label: \.displayName
-                )
-                DahliaSegmentedPicker(
-                    title: L10n.sidebarDisplayStyle,
-                    selection: $meetingSidebarRowStyle,
-                    options: MeetingSidebarRowStyle.allCases.map(\.rawValue)
-                ) { MeetingSidebarRowStyle.resolved(rawValue: $0).label }
-            }
-
             Section {
                 AppLanguageSelectionRow()
             } header: {
@@ -116,8 +100,5 @@ struct GeneralSettingsView: View {
             }
         }
         .formStyle(.grouped)
-        .onAppear {
-            meetingSidebarRowStyle = MeetingSidebarRowStyle.resolved(rawValue: meetingSidebarRowStyle).rawValue
-        }
     }
 }

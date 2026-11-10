@@ -136,14 +136,8 @@ private struct SummaryHeaderButtonModifier: ViewModifier {
 }
 
 private struct SummarySharePopover: View {
-    @Environment(MainWindowNavigation.self) private var mainWindowNavigation
+    @Environment(CodexChatCoordinator.self) private var chatCoordinator
     @ObservedObject var viewModel: CaptionViewModel
-    @ObservedObject private var driveStore = GoogleDriveStore.shared
-    @ObservedObject private var settings = AppSettings.shared
-    @State private var workspaceSettings = WorkspaceAISettingsModel.shared
-    @State private var isGoogleDocsExportRunning = false
-    @State private var exportFolderAlertMessage = ""
-    @State private var isShowingExportFolderAlert = false
     let dismiss: () -> Void
 
     private var title: String {
@@ -178,13 +172,8 @@ private struct SummarySharePopover: View {
                 .padding(.horizontal, 20)
 
             VStack(spacing: 2) {
-                SummarySharePopoverRow(
-                    title: L10n.exportToGoogleDocs,
-                    systemImage: "doc.badge.arrow.up",
-                    isDisabled: isGoogleDocsExportRunning || driveStore.isBusy || !canExportToGoogleDocs,
-                    isLoading: isGoogleDocsExportRunning || driveStore.isBusy
-                ) {
-                    exportToGoogleDocs()
+                SummarySharePopoverRow(title: L10n.exportToGoogleDriveWithDahliaAI, systemImage: "doc.badge.arrow.up") {
+                    exportToGoogleDrive()
                 }
                 SummarySharePopoverRow(title: L10n.copySummaryForGoogleDocs, systemImage: "doc.richtext") {
                     copySummary(for: .googleDocs)
@@ -192,47 +181,12 @@ private struct SummarySharePopover: View {
                 SummarySharePopoverRow(title: L10n.copySummaryForSlack, systemImage: "message") {
                     copySummary(for: .slack)
                 }
-                if needsGoogleDriveSetup {
-                    SummarySharePopoverRow(
-                        title: L10n.openCloudStorageSettings,
-                        systemImage: "gearshape"
-                    ) {
-                        openCloudStorageSettings()
-                    }
-                }
             }
             .padding(.horizontal, 12)
             .padding(.vertical, 10)
-
-            if let errorMessage = googleDocsErrorMessage {
-                Text(errorMessage)
-                    .font(.callout)
-                    .foregroundStyle(.red)
-                    .padding(.horizontal, 20)
-                    .padding(.bottom, 10)
-            }
         }
         .frame(width: 320)
         .padding(.vertical, 8)
-        .onAppear {
-            guard let message = driveStore.exportFolderErrorMessage else { return }
-            exportFolderAlertMessage = message
-            isShowingExportFolderAlert = true
-        }
-        .task(id: workspaceSettings.accountConnectionID) {
-            await driveStore.activate(scope: AppAccountScope(connectionID: workspaceSettings.accountConnectionID))
-        }
-        .onChange(of: driveStore.exportFolderErrorMessage) { _, message in
-            guard let message else { return }
-            exportFolderAlertMessage = message
-            isShowingExportFolderAlert = true
-        }
-        .alert(L10n.googleDriveExportFolderConfigurationFailed, isPresented: $isShowingExportFolderAlert) {
-            Button(L10n.close, role: .cancel) {}
-            Button(L10n.openCloudStorageSettings, action: openCloudStorageSettings)
-        } message: {
-            Text(exportFolderAlertMessage)
-        }
     }
 
     private func copySummary(for destination: SummaryShareRenderer.Destination) {
@@ -240,38 +194,9 @@ private struct SummarySharePopover: View {
         dismiss()
     }
 
-    private var googleDocsErrorMessage: String? {
-        viewModel.googleDocsExportError ?? driveStore.exportFolderErrorMessage ?? driveStore.lastErrorMessage
-    }
-
-    private var canExportToGoogleDocs: Bool {
-        guard driveStore.isAuthorized,
-              driveStore.exportFolderErrorMessage == nil,
-              let accountID = driveStore.account?.id else { return false }
-        return settings.googleDriveExportFolderID(
-            forAccountID: accountID,
-            scope: AppAccountScope(connectionID: workspaceSettings.accountConnectionID)
-        ) != nil
-    }
-
-    private var needsGoogleDriveSetup: Bool {
-        !driveStore.isBusy && !canExportToGoogleDocs
-    }
-
-    private func exportToGoogleDocs() {
-        guard !isGoogleDocsExportRunning else { return }
-        isGoogleDocsExportRunning = true
-        Task { @MainActor in
-            defer { isGoogleDocsExportRunning = false }
-            guard canExportToGoogleDocs else { return }
-            if await viewModel.exportCurrentSummaryToGoogleDocs() {
-                dismiss()
-            }
-        }
-    }
-
-    private func openCloudStorageSettings() {
-        mainWindowNavigation.openSettings(category: .cloudStorage)
+    /// Dahlia AI writes the document through the account's Google Drive MCP.
+    private func exportToGoogleDrive() {
+        chatCoordinator.sendInNewDockedChat(L10n.exportToGoogleDrivePrompt)
         dismiss()
     }
 }
@@ -279,24 +204,16 @@ private struct SummarySharePopover: View {
 private struct SummarySharePopoverRow: View {
     let title: String
     let systemImage: String
-    var isDisabled = false
-    var isLoading = false
     let action: () -> Void
     @State private var isHovering = false
 
     var body: some View {
         Button(action: action) {
             HStack(spacing: 14) {
-                if isLoading {
-                    ProgressView()
-                        .controlSize(.small)
-                        .frame(width: 22)
-                } else {
-                    Image(systemName: systemImage)
-                        .font(.system(size: 18))
-                        .foregroundStyle(DahliaDesign.secondaryTextColor)
-                        .frame(width: 22)
-                }
+                Image(systemName: systemImage)
+                    .font(.system(size: 18))
+                    .foregroundStyle(DahliaDesign.secondaryTextColor)
+                    .frame(width: 22)
                 Text(title)
                     .font(.body)
                 Spacer(minLength: 0)
@@ -310,7 +227,6 @@ private struct SummarySharePopoverRow: View {
             }
         }
         .buttonStyle(.plain)
-        .disabled(isDisabled)
         .onHover { isHovering = $0 }
     }
 }

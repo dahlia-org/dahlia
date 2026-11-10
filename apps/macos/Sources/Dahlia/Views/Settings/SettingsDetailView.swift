@@ -54,8 +54,10 @@ struct SettingsDetailView: View {
     @ViewBuilder
     private var selectedSettings: some View {
         switch selection {
-        case .general, .language, .appearance, .recordingStopDetection:
+        case .general, .language, .recordingStopDetection:
             GeneralSettingsView()
+        case .appearance, .eventDisplay:
+            AppearanceSettingsView()
         case .accountsAndWorkspaces, .dahliaAccounts, .accountPreferences, .macInference, .modelProvider, .aiSummary, .mcp:
             // Accounts are chosen from the sidebar's account menu; this page holds the open account's model settings. Its
             // providers, such as the Local Account's subscriptions, are under Agents.
@@ -104,16 +106,12 @@ struct SettingsDetailView: View {
             ScreenshotSettingsView()
         case .calendar:
             CalendarSettingsView()
-        case .calendarDisplay:
-            CalendarDisplaySettingsView()
-        case .cloudStorage:
-            CloudStorageSettingsView()
+        case .meetingLinks:
+            MeetingLinkSettingsView()
         case .instructions:
             InstructionsSettingsView(sidebarViewModel: sidebarViewModel)
         case .betaFeatures:
             BetaFeaturesSettingsView()
-        case .developer:
-            DeveloperSettingsView()
         case .audioDiagnostics:
             DebugSettingsView()
         }
@@ -125,7 +123,6 @@ struct SettingsDetailView: View {
         case .agents: L10n.settingsAgentsIntro
         case .workspace: L10n.settingsWorkspaceManagementIntro
         case .backups: L10n.backupLocalWorkspacesOnly
-        case .cloudStorage: L10n.settingsExportIntro
         default: L10n.thisMacSettingsDescription
         }
     }

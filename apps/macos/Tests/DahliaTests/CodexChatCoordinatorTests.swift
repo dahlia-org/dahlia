@@ -12,11 +12,33 @@ import Foundation
             let coordinator = CodexChatCoordinator(service: service)
             let previousID = coordinator.dockedSessionID
 
+            coordinator.showsHistory = true
             coordinator.newDockedChat()
 
+            #expect(!coordinator.showsHistory)
             #expect(coordinator.dockedSessionID != previousID)
             #expect(coordinator.session(for: previousID) == nil)
             #expect(coordinator.sessions.count == 1)
+        }
+
+        @Test
+        func sendingInNewDockedChatShowsItAndSubmitsThePrompt() async {
+            let service = CoordinatorTestCodexChatService()
+            let settings = AppSettings()
+            settings.currentWorkspace = Self.workspace(name: "Share")
+            let coordinator = CodexChatCoordinator(service: service, settings: settings)
+            let previousID = coordinator.dockedSessionID
+            coordinator.showsHistory = true
+
+            coordinator.sendInNewDockedChat("Export the summary")
+
+            #expect(coordinator.isDockedVisible)
+            #expect(!coordinator.showsHistory)
+            #expect(coordinator.dockedSessionID != previousID)
+            // Submitted at the click, so the context is the meeting selected then, not after models load.
+            #expect(coordinator.dockedSession.isGenerating)
+            await waitUntil { await !service.sentTextBlocks.isEmpty }
+            #expect(await service.sentTextBlocks.first?.joined().contains("Export the summary") == true)
         }
 
         @Test

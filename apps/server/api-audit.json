@@ -618,7 +618,7 @@
       "previous": "/api/v1/workspaces/{workspaceId}/files",
       "reason": "Committed files by ID; 200 per page",
       "consumers": [
-        "apps/macos/Sources/Dahlia/Services/GoogleDriveAPIClient.swift"
+        "public API; no bundled caller"
       ]
     },
     {

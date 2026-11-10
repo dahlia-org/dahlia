@@ -156,8 +156,8 @@ Dahlia の scope 外であり、妨げない。
 - 外部依存は付加機能に閉じ込め、未設定または失敗時も中核が動作する degradation を設計に含める。
 - 認証やアカウント設定を中核機能の前提にしない。
 
-**許容する例外**: 疎結合な付加機能は外部依存を持ってよい。Google Calendar と EventKit の読み取り、Google Docs や
-Drive への書き出し、内蔵 Pi による要約生成、Sparkle の更新確認、Sentry の障害報告、TelemetryDeck の匿名利用計測、
+**許容する例外**: 疎結合な付加機能は外部依存を持ってよい。Google Calendar と EventKit の読み取り、Dahlia AI
+（内蔵 Pi と MCP）による Google Drive への書き出し、内蔵 Pi による要約生成、Sparkle の更新確認、Sentry の障害報告、TelemetryDeck の匿名利用計測、
 バッチ自動言語判定の初回モデル取得、Serverアカウントのcloud-backed working copyと明示的な権限による共同編集、Webから明示的に開始した保存済み録音のServer処理がこれにあたる。Serverアカウントの内蔵 Pi がそのDahlia Server Gatewayを使う場合も
 同じ境界に置き、いずれも中核の前提条件にしない。
 

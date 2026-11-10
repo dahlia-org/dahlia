@@ -30,7 +30,7 @@
                 viewModel: viewModel,
                 sidebarViewModel: sidebarViewModel,
                 recordingCoordinator: recordingCoordinator
-            ).environment(navigation))
+            ).environment(navigation).environment(CodexChatCoordinator(service: TestCodexChatService(mode: .complete))))
             hostingView.frame = NSRect(x: 0, y: 0, width: 900, height: 700)
             hostingView.layoutSubtreeIfNeeded()
             #expect(await pollUntil { state.detailAppearanceCount == 1 && state.notesEditorModel != nil })

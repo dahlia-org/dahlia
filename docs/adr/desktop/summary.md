@@ -20,12 +20,12 @@ AST / renderer / file locator は `DahliaRuntimeSupport` で app と helper が�
 - 保存済み document 文字列の SHA-256 を `summary_document_version` とし、更新時に expected version を要求する。別 writer の採番漏れを避け、再生成との衝突も検出する。Server transaction revision とは別の local MCP CAS 契約。
 - Vault lock / prevalidation の後、既存 `summary_exports` の Vault path だけを更新する。未 export のファイルは作らず、title が変わっても rename しない。
 - file を先に書き、DB transaction 失敗時は元内容へ補償する。補償失敗は `workspaceRollbackFailed` として表面化する。
-- Google Docs を自動更新せず、`stale_exports: google_docs` を返す。app 不在でも Vault Markdown は helper が更新し、app は跨 process 通知で summary を再読込する。GRDB observation だけに依存しない。
+- 過去に書き出した Google Docs は自動更新せず、`stale_exports: google_docs` を返す。app 不在でも Vault Markdown は helper が更新し、app は跨 process 通知で summary を再読込する。GRDB observation だけに依存しない。
 
 ## 理由と制約
 
 Markdown 再パース、LLM DTO の直接保存、inline transcript metadata は出力先と内部モデルを結合するため却下した。中間層は増えるが同じ構造と renderer を共有できる。Obsidian の参照位置は旧 inline link と完全一致しない。
 
-新規 summary 作成、MCP による filename 変更、Google Docs の自動追随はこの訂正契約に含めない。RTF ベースの [Google Docs renderer](../../../apps/macos/Sources/Dahlia/Services/SummaryRendering/GoogleDocsSummaryRenderer.swift) は実装済みで、`GoogleDocsSummaryExportService.exportSummary` から使用する。将来候補は Slack renderer と Google Docs の部分更新 renderer であり、既存の全体 export と区別する。具体的な型は [SummaryDocument](../../../apps/macos/Sources/DahliaRuntimeSupport/SummaryDocument.swift)、出力は [共有 renderer](../../../apps/macos/Sources/DahliaRuntimeSupport/ObsidianMarkdownSummaryRenderer.swift) を参照し、型定義を文書へ複製しない。
+新規 summary 作成、MCP による filename 変更、Google Docs の自動追随はこの訂正契約に含めない。app の Google Drive API による Google Docs export は 2026-11-11 に廃止した。Drive への書き出しは、共有メニューから Dahlia AI に依頼し、アカウントの Google Drive MCP が行う。app は Drive の OAuth token・書き出し先 folder・export 履歴を新たに持たず、残っていた Drive token は起動時とアカウント削除時に Keychain から消す。過去の `google_docs` export 記録は読み取り専用で残し、「ブラウザで開く」とこの `stale_exports` だけに使う。具体的な型は [SummaryDocument](../../../apps/macos/Sources/DahliaRuntimeSupport/SummaryDocument.swift)、出力は [共有 renderer](../../../apps/macos/Sources/DahliaRuntimeSupport/ObsidianMarkdownSummaryRenderer.swift) を参照し、型定義を文書へ複製しない。
 
 Server の `summaries` は全世代を保持するが、Desktop の `summaries`（header）と `summary_bodies`（解放可能な本文）は最新のローカル保存を担う。Server との対称性のために物理スキーマを変更しない。latest の `version` はコンテンツ世代、`revision` は同期・本文取得検証用とし、ローカル MCP の本文 hash CAS とも区別する。

@@ -9,7 +9,6 @@ struct BatchTranscriptionOptionsForm: View {
     @Binding var generateSummaryAfterBatchTranscription: Bool
     @Binding var summaryDetailLevel: SummaryDetailLevel?
     @Binding var exportBatchSummaryToWorkspace: Bool
-    @Binding var exportBatchSummaryToGoogleDocs: Bool
     let projects: [FlatProjectRow]
     @Binding var selectedProjectId: UUID?
     var processingMethod: RecordingProcessingMethod?
@@ -78,7 +77,6 @@ struct BatchTranscriptionOptionsForm: View {
                     SummaryGenerationOptionsControls(
                         detailLevel: $summaryDetailLevel,
                         exportsToWorkspace: $exportBatchSummaryToWorkspace,
-                        exportsToGoogleDocs: $exportBatchSummaryToGoogleDocs,
                         isEnabled: processingMethod != nil || generateSummaryAfterBatchTranscription,
                         usesServerSummary: usesServerSummary
                     )

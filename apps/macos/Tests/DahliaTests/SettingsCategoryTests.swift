@@ -11,10 +11,16 @@ import Foundation
         func accountAndWorkspacePreferencesHaveSeparateDestinations() {
             #expect(SettingsGroup.account.categories == [.workspace, .accountsAndWorkspaces, .agents, .calendar])
             // Calendar sources are per account; how events are shown and opened applies to the whole app.
-            #expect(SettingsGroup.app.categories.contains(.calendarDisplay))
+            #expect(SettingsGroup.app.categories.contains(.appearance))
+            #expect(SettingsGroup.app.categories.contains(.meetingLinks))
             #expect(SettingsCategory.calendar.matches(L10n.calendarSources))
             #expect(!SettingsCategory.calendar.matches(L10n.menuBarCalendar))
-            #expect(SettingsCategory.calendarDisplay.matches(L10n.meetingLinkApplications))
+            #expect(SettingsCategory.appearance.matches(L10n.menuBarCalendar))
+            #expect(SettingsCategory.appearance.matches(L10n.calendarEventsToInclude))
+            #expect(SettingsCategory.appearance.matches(L10n.appearanceEventDisplay))
+            #expect(SettingsCategory.appearance.matches(L10n.appearanceMenuBar))
+            #expect(SettingsCategory.meetingLinks.matches(L10n.meetingLinkApplications))
+            #expect(!SettingsCategory.appearance.matches(L10n.meetingLinkApplications))
             #expect(SettingsCategory.agents.matches("Gmail"))
             #expect(SettingsNavigation.visibleSelection(.accountPreferences) == .accountsAndWorkspaces)
             #expect(SettingsNavigation.visibleSelection(.macInference) == .accountsAndWorkspaces)
@@ -39,8 +45,8 @@ import Foundation
                 .instructions,
                 .mcp,
                 .language,
-                .appearance,
                 .recordingStopDetection,
+                .eventDisplay,
             ]
             let expectedCategories = SettingsCategory.allCases.filter { !hiddenCategories.contains($0) }
 
@@ -74,7 +80,8 @@ import Foundation
         @Test
         func everySelectionResolvesToAnAccessibleDestination() {
             #expect(SettingsNavigation.visibleSelection(.language) == .general)
-            #expect(SettingsNavigation.visibleSelection(.appearance) == .general)
+            #expect(SettingsNavigation.visibleSelection(.appearance) == .appearance)
+            #expect(SettingsNavigation.visibleSelection(.eventDisplay) == .appearance)
             #expect(SettingsNavigation.visibleSelection(.recordingStopDetection) == .general)
             #expect(SettingsNavigation.visibleSelection(.instructions) == .accountsAndWorkspaces)
             #expect(SettingsNavigation.visibleSelection(.mcp) == .accountsAndWorkspaces)
@@ -92,7 +99,9 @@ import Foundation
 
         @Test
         func searchFindsControlsAndDoesNotDependOnTechnicalCategoryNames() {
-            #expect(SettingsCategory.general.matches(L10n.appLanguage))
+            #expect(SettingsCategory.appearance.matches(L10n.appLanguage))
+            #expect(SettingsCategory.appearance.matches(L10n.sidebarDisplayStyle))
+            #expect(SettingsCategory.general.matches(L10n.appLanguages))
             #expect(SettingsCategory.transcription.matches(L10n.batchAudioRetentionPeriod))
             #expect(!SettingsCategory.transcription.matches(L10n.liveTranscriptDraft))
             #expect(!SettingsCategory.transcription.matches(L10n.transcriptionModel))
@@ -105,7 +114,7 @@ import Foundation
             #expect(SettingsCategory.general.matches(L10n.forever))
             #expect(SettingsCategory.liveSubtitles.matches(L10n.translationTargetLanguage))
             #expect(SettingsCategory.accountsAndWorkspaces.matches("  chatGPT \n "))
-            #expect(SettingsCategory.cloudStorage.matches("google"))
+            #expect(SettingsCategory.calendar.matches("google"))
             #expect(SettingsCategory.accountsAndWorkspaces.matches(L10n.automaticRecordingProcessing))
             #expect(SettingsCategory.accountsAndWorkspaces.matches(L10n.accountPreferences))
             #expect(SettingsCategory.accountsAndWorkspaces.matches(L10n.summaryStyle))
@@ -147,14 +156,30 @@ import Foundation
         }
 
         @Test
+        func retiredGoogleSettingsAreRemoved() throws {
+            let suiteName = "SettingsCategoryTests.\(UUID.v7())"
+            let defaults = try #require(UserDefaults(suiteName: suiteName))
+            defer { defaults.removePersistentDomain(forName: suiteName) }
+            for key in AppSettings.retiredSettingKeys {
+                defaults.set("value", forKey: key)
+            }
+            defaults.set(true, forKey: AppSettings.exportBatchSummaryToWorkspaceUserDefaultsKey)
+
+            AppSettings.removeRetiredSettings(in: defaults)
+
+            #expect(AppSettings.retiredSettingKeys.allSatisfy { defaults.object(forKey: $0) == nil })
+            #expect(defaults.bool(forKey: AppSettings.exportBatchSummaryToWorkspaceUserDefaultsKey))
+        }
+
+        @Test
         func saveSelectionPersistsVisibleCategory() throws {
             let suiteName = "SettingsCategoryTests.\(UUID.v7())"
             let defaults = try #require(UserDefaults(suiteName: suiteName))
             defer { defaults.removePersistentDomain(forName: suiteName) }
 
-            SettingsNavigation.saveSelection(.cloudStorage, in: defaults)
+            SettingsNavigation.saveSelection(.meetingLinks, in: defaults)
 
-            #expect(defaults.string(forKey: SettingsNavigation.selectedCategoryDefaultsKey) == SettingsCategory.cloudStorage.rawValue)
+            #expect(defaults.string(forKey: SettingsNavigation.selectedCategoryDefaultsKey) == SettingsCategory.meetingLinks.rawValue)
         }
 
         @Test
@@ -166,7 +191,6 @@ import Foundation
             #expect(SettingsCategory.workspacePreferences.rawValue == "workspacePreferences")
             #expect(SettingsCategory.liveSubtitles.rawValue == "liveSubtitles")
             #expect(SettingsCategory.recordingStopDetection.rawValue == "recordingStopDetection")
-            #expect(SettingsCategory.cloudStorage.rawValue == "cloudStorage")
             #expect(SettingsCategory.mcp.rawValue == "mcp")
             #expect(SettingsCategory.audioDiagnostics.rawValue == "audioDiagnostics")
         }
@@ -178,14 +202,12 @@ import Foundation
         }
 
         @Test
-        func settingsCopyNamesTheInstructionAndHidesEnvironmentVariables() {
+        func settingsCopyNamesTheInstructionAndLocalAccount() {
             let instructionName = "Weekly review"
 
             #expect(L10n.deleteInstructionConfirmation(instructionName).contains(instructionName))
             #expect(L10n.aiAccountDescription.contains(L10n.localAccount))
             #expect(L10n.aiAccountSettingsDescription.contains(L10n.localAccount))
-            #expect(!L10n.googleOAuthClientIDOverrideDescription.contains("GOOGLE_CLIENT_ID"))
-            #expect(!L10n.googleOAuthClientSecretOverrideDescription.contains("GOOGLE_CLIENT_SECRET"))
         }
 
         @MainActor

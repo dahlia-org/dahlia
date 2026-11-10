@@ -21,7 +21,6 @@ enum L10n { // swiftlint:disable:this type_body_length
         bundle: bundle
     ) }
     static var settingsAccountsIntro: String { String(localized: "settings.organization.settingsAccountsIntro", bundle: bundle) }
-    static var settingsExportIntro: String { String(localized: "settings.organization.settingsExportIntro", bundle: bundle) }
     static var settingsAccountSelectionDescription: String { String(
         localized: "settings.organization.settingsAccountSelectionDescription",
         bundle: bundle
@@ -1288,14 +1287,6 @@ enum L10n { // swiftlint:disable:this type_body_length
         localized: "Write the generated summary and related files to the current Workspace.",
         bundle: bundle
     ) }
-    static var exportBatchSummaryToGoogleDocs: String { String(
-        localized: "Export Summary to Google Docs",
-        bundle: bundle
-    ) }
-    static var exportBatchSummaryToGoogleDocsDescription: String { String(
-        localized: "Export the generated summary to the configured Google Docs folder.",
-        bundle: bundle
-    ) }
     static var later: String { String(localized: "Later", bundle: bundle) }
     static var discardFailedBatchRecording: String { String(localized: "Discard Failed Recording", bundle: bundle) }
     static var discardFailedBatchRecordingConfirmation: String { String(localized: "Discard this failed recording?", bundle: bundle) }
@@ -1575,7 +1566,6 @@ enum L10n { // swiftlint:disable:this type_body_length
     }
 
     static var app: String { String(localized: "App", bundle: bundle) }
-    static var integrations: String { String(localized: "Integrations", bundle: bundle) }
     static var ai: String { String(localized: "AI", bundle: bundle) }
     static var advanced: String { String(localized: "Advanced", bundle: bundle) }
     static var modelProvider: String { String(localized: "Model Provider", bundle: bundle) }
@@ -1625,9 +1615,8 @@ enum L10n { // swiftlint:disable:this type_body_length
     static var diagnostics: String { String(localized: "Diagnostics", bundle: bundle) }
     static var notifications: String { String(localized: "Notifications", bundle: bundle) }
     static var calendar: String { String(localized: "Calendar", bundle: bundle) }
-    static var calendarDisplay: String { String(localized: "Calendar Display", bundle: bundle) }
+    static var meetingLinks: String { String(localized: "Meeting Links", bundle: bundle) }
     static var cloudStorage: String { String(localized: "Cloud Storage", bundle: bundle) }
-    static var developerSettings: String { String(localized: "Developer Settings", bundle: bundle) }
     static var workspace: String { String(localized: "Workspace", bundle: bundle) }
     static var currentWorkspace: String { String(localized: "Current Workspace", bundle: bundle) }
     static var mcp: String { String(localized: "MCP", bundle: bundle) }
@@ -1824,6 +1813,8 @@ enum L10n { // swiftlint:disable:this type_body_length
     }
 
     static var appearance: String { String(localized: "Appearance", bundle: bundle) }
+    static var appearanceMenuBar: String { String(localized: "settings.appearance.menuBar", bundle: bundle) }
+    static var appearanceEventDisplay: String { String(localized: "settings.appearance.eventDisplay", bundle: bundle) }
     static var display: String { String(localized: "Display", bundle: bundle) }
     static var meetingSidebar: String { String(localized: "Meeting Sidebar", bundle: bundle) }
     static var sidebarDisplayStyle: String { String(localized: "Sidebar Display Style", bundle: bundle) }
@@ -1910,24 +1901,6 @@ enum L10n { // swiftlint:disable:this type_body_length
         localized: "Turn on live subtitle translation to choose a target language.",
         bundle: bundle
     ) }
-    static var developerSettingsDescription: String { String(
-        localized: "Configure these only when your organization requires a company-managed Google OAuth client. Otherwise, leave them blank to use the app defaults.",
-        bundle: bundle
-    ) }
-    static var googleOAuthClientIDOverride: String { String(localized: "Google OAuth Client ID", bundle: bundle) }
-    static var googleOAuthClientIDOverrideDescription: String { String(
-        localized: "Leave blank to use the app's default client ID.",
-        bundle: bundle
-    ) }
-    static var googleOAuthClientSecretOverride: String { String(localized: "Google OAuth Client Secret", bundle: bundle) }
-    static var googleOAuthClientSecretOverrideDescription: String { String(
-        localized: "Optional. Stored securely in Keychain. Leave blank to use the app's default client secret.",
-        bundle: bundle
-    ) }
-    static var googleOAuthOverrideReconnectNotice: String { String(
-        localized: "Reconnect Google services after changing OAuth credentials.",
-        bundle: bundle
-    ) }
     static var googleCalendar: String { String(localized: "Google Calendar", bundle: bundle) }
     static var macOSCalendar: String { String(localized: "macOS Calendar", bundle: bundle) }
     static var calendarSource: String { String(localized: "Calendar Source", bundle: bundle) }
@@ -2010,7 +1983,6 @@ enum L10n { // swiftlint:disable:this type_body_length
         String(localized: "Calendar event: \(title)", bundle: bundle)
     }
 
-    static var googleDrive: String { String(localized: "Google Drive", bundle: bundle) }
     static var notion: String { String(localized: "Notion", bundle: bundle) }
     static var notionExportDescription: String { String(localized: "Export summaries to Notion.", bundle: bundle) }
     static var googleCalendarSettingsDescription: String { String(
@@ -2019,10 +1991,6 @@ enum L10n { // swiftlint:disable:this type_body_length
     ) }
     static var macOSCalendarSettingsDescription: String { String(
         localized: "Use events from the Calendar app on this Mac.",
-        bundle: bundle
-    ) }
-    static var googleDocsSettingsDescription: String { String(
-        localized: "The Google Drive connection is saved for the current Dahlia or Local Account. Export summaries, including images, to Google Docs from the Share menu.",
         bundle: bundle
     ) }
     static var googleCalendarDisplayCalendars: String { String(localized: "Display Calendars", bundle: bundle) }
@@ -2047,23 +2015,10 @@ enum L10n { // swiftlint:disable:this type_body_length
     ) }
     static var googleCalendarConnected: String { String(localized: "Connected", bundle: bundle) }
     static var googleCalendarNotConnected: String { String(localized: "No Google account connected", bundle: bundle) }
-    static var googleDriveConnect: String { googleCalendarConnect }
-    static var googleDriveDisconnect: String { googleCalendarDisconnect }
-    static var googleDocsConnectDescription: String { String(
-        localized: "Sign in with Google to export summaries to Google Docs.",
-        bundle: bundle
-    ) }
     static var googleCalendarOAuthDisclosureTitle: String { String(localized: "Connect Google Calendar", bundle: bundle) }
-    static var googleDriveOAuthDisclosureTitle: String { String(localized: "Connect Google Drive", bundle: bundle) }
     static var googleCalendarOAuthDisclosureOverview: String { String(
         localized: """
         Dahlia requests read-only access to your Google account and the upcoming events in calendars you choose.
-        """,
-        bundle: bundle
-    ) }
-    static var googleDriveOAuthDisclosureOverview: String { String(
-        localized: """
-        Dahlia requests access only to the Google Drive files and folders it creates or that you explicitly use with Dahlia.
         """,
         bundle: bundle
     ) }
@@ -2071,13 +2026,6 @@ enum L10n { // swiftlint:disable:this type_body_length
     static var googleCalendarOAuthDisclosureAccess: String { String(
         localized: """
         Your Google account name and email address, calendar names, and event titles, descriptions, dates, attendance status, and meeting links.
-        """,
-        bundle: bundle
-    ) }
-    static var googleDriveOAuthDisclosureAccess: String { String(
-        localized: """
-        Your Google account name and email address, a Dahlia folder, and Google Docs summaries created by Dahlia. \
-        Other Drive files are not accessible to Dahlia.
         """,
         bundle: bundle
     ) }
@@ -2090,14 +2038,6 @@ enum L10n { // swiftlint:disable:this type_body_length
         """,
         bundle: bundle
     ) }
-    static var googleDriveOAuthDisclosureUseAndStorage: String { String(
-        localized: """
-        OAuth tokens and your account ID, name, and email address are stored in Keychain. \
-        The export folder and account IDs are stored in local settings. \
-        Exported document URLs and IDs are stored with the related meeting and in any database backups you create.
-        """,
-        bundle: bundle
-    ) }
     static var googleOAuthDisclosureExternalSharing: String { String(localized: "External Sharing", bundle: bundle) }
     static var googleCalendarOAuthDisclosureExternalSharing: String { String(
         localized: """
@@ -2107,50 +2047,16 @@ enum L10n { // swiftlint:disable:this type_body_length
         """,
         bundle: bundle
     ) }
-    static var googleDriveOAuthDisclosureExternalSharing: String { String(
-        localized: """
-        When you request an export, the summary and included images are sent directly from this Mac to Google Drive. \
-        Dahlia does not send unrelated Drive content to an AI provider or developer server.
-        """,
-        bundle: bundle
-    ) }
     static var googleOAuthDisclosureManageAndDelete: String { String(localized: "Manage and Delete", bundle: bundle) }
     static var googleCalendarOAuthDisclosureDeletion: String { String(
         localized: """
         Disconnecting Calendar removes only its local OAuth session and saved calendar selection identifiers. \
-        It does not disconnect Drive. \
         Delete linked meetings to remove saved calendar details from the active database, and delete database backups separately.
-        """,
-        bundle: bundle
-    ) }
-    static var googleDriveOAuthDisclosureDeletion: String { String(
-        localized: """
-        Disconnecting Drive removes only its local OAuth session and saved export-folder identifiers. \
-        It does not disconnect Calendar. \
-        Exported documents remain in Drive; delete them there, and delete related meetings and database backups to remove local document references.
         """,
         bundle: bundle
     ) }
     static var viewPrivacyPolicy: String { String(localized: "View Privacy Policy", bundle: bundle) }
     static var continueToGoogle: String { String(localized: "Continue to Google", bundle: bundle) }
-    static var googleDocsConnected: String { String(localized: "Google Docs connected", bundle: bundle) }
-    static var googleDocsNotConnected: String { googleCalendarNotConnected }
-    static var googleDriveExportFolder: String { String(localized: "Export Folder", bundle: bundle) }
-    static var openInGoogleDrive: String { String(localized: "Open in Google Drive", bundle: bundle) }
-    static var myDrive: String { String(localized: "My Drive", bundle: bundle) }
-    static var googleDriveExportDestinationDescription: String { String(
-        localized: "On first connection, Dahlia creates a Dahlia folder directly under My Drive and exports Google Docs into it. The export destination is fixed to this folder.",
-        bundle: bundle
-    ) }
-    static var googleDriveExportFolderNotConfigured: String { String(
-        localized: "The Google Drive export folder has not been configured.",
-        bundle: bundle
-    ) }
-    static var googleDriveExportFolderConfigurationFailed: String { String(
-        localized: "Could not configure the Google Drive export folder.",
-        bundle: bundle
-    ) }
-    static var openCloudStorageSettings: String { String(localized: "Open Cloud Storage Settings", bundle: bundle) }
     static var googleCalendarNoCalendars: String { String(localized: "No calendars are available for this Google account.", bundle: bundle) }
     static var macOSCalendarNoCalendars: String { String(localized: "No calendars are available in macOS Calendar.", bundle: bundle) }
     static var calendarLoading: String { String(localized: "Loading calendars…", bundle: bundle) }
@@ -2161,7 +2067,7 @@ enum L10n { // swiftlint:disable:this type_body_length
     static var calendarAllDay: String { googleCalendarAllDay }
     static var googleCalendarClientIDMissingTitle: String { String(localized: "Google Calendar is not configured", bundle: bundle) }
     static var googleCalendarClientIDMissingMessage: String { String(
-        localized: "Set a Google OAuth client ID in Developer Settings before connecting Google Calendar.",
+        localized: "This build of Dahlia has no Google OAuth client ID, so it can't connect Google Calendar.",
         bundle: bundle
     ) }
     static var googleCalendarSignInRequiredTitle: String { String(localized: "Connect Google Calendar", bundle: bundle) }
@@ -2225,11 +2131,11 @@ enum L10n { // swiftlint:disable:this type_body_length
         bundle: bundle
     ) }
     static var googleCalendarClientSecretMissingMessage: String { String(
-        localized: "This Google OAuth client requires a client secret. Enter the value from Google Cloud Console in Developer Settings and relaunch Dahlia.",
+        localized: "This Google OAuth client requires a client secret, which this build of Dahlia doesn't include.",
         bundle: bundle
     ) }
     static var googleAccountClientIDMissingMessage: String { String(
-        localized: "Set a Google OAuth client ID in Developer Settings before connecting Google services.",
+        localized: "This build of Dahlia has no Google OAuth client ID, so it can't connect Google services.",
         bundle: bundle
     ) }
     static var googleAccountClientSecretMissingMessage: String { googleCalendarClientSecretMissingMessage }
@@ -2266,11 +2172,6 @@ enum L10n { // swiftlint:disable:this type_body_length
     ) }
     static func googleCalendarInvalidDate(_ value: String) -> String { String(
         localized: "Could not parse Google Calendar date: \(value)",
-        bundle: bundle
-    ) }
-    static var googleDriveUnexpectedResponse: String { String(localized: "Unexpected response from Google Drive", bundle: bundle) }
-    static func googleDriveHTTPError(_ code: Int, _ detail: String) -> String { String(
-        localized: "Google Drive HTTP \(code): \(detail)",
         bundle: bundle
     ) }
 
@@ -2635,11 +2536,10 @@ enum L10n { // swiftlint:disable:this type_body_length
     static var generateSummary: String { String(localized: "Generate Summary", bundle: bundle) }
     static var share: String { String(localized: "Share", bundle: bundle) }
     static var shareSummary: String { String(localized: "Share Summary", bundle: bundle) }
-    static var exportToGoogleDocs: String { String(localized: "Export to Google Docs", bundle: bundle) }
-    static var googleDocsExportFailed: String { String(localized: "Could not export the summary to Google Docs.", bundle: bundle) }
+    static var exportToGoogleDriveWithDahliaAI: String { String(localized: "share.exportToGoogleDrive", bundle: bundle) }
+    static var exportToGoogleDrivePrompt: String { String(localized: "share.exportToGoogleDrivePrompt", bundle: bundle) }
     static var copySummaryForGoogleDocs: String { String(localized: "Copy for Google Docs", bundle: bundle) }
     static var copySummaryForSlack: String { String(localized: "Copy for Slack", bundle: bundle) }
-    static var restoreAppDefaults: String { String(localized: "Restore App Defaults", bundle: bundle) }
 
     // MARK: - Error Messages (Audio)
 
@@ -2875,7 +2775,7 @@ enum L10n { // swiftlint:disable:this type_body_length
     static var menuBarQuitDahlia: String { String(localized: "Quit Dahlia", bundle: bundle) }
     static var menuBarCalendar: String { String(localized: "Menu Bar Calendar", bundle: bundle) }
     static var menuBarCalendarDescription: String { String(
-        localized: "Choose which event details appear in the menu bar. Calendar selection and event filters above are shared.",
+        localized: "Choose which event details appear in the menu bar. It shows events from the calendars chosen under Account > Calendar, filtered on the Event Display tab.",
         bundle: bundle
     ) }
     static var menuBarCalendarDisplay: String { String(localized: "Show today's events", bundle: bundle) }

@@ -94,22 +94,21 @@
         func mergingCombinesExports() {
             let merged = SummaryGenerationOptions.merging([
                 SummaryGenerationOptions(
-                    exportOptions: SummaryExportOptions(exportsToWorkspace: true, exportsToGoogleDocs: false),
+                    exportOptions: SummaryExportOptions(exportsToWorkspace: true),
                     detailLevel: .standard
                 ),
                 SummaryGenerationOptions(
-                    exportOptions: SummaryExportOptions(exportsToWorkspace: false, exportsToGoogleDocs: true),
+                    exportOptions: SummaryExportOptions(exportsToWorkspace: false),
                     detailLevel: .eventSession
                 ),
                 SummaryGenerationOptions(
-                    exportOptions: SummaryExportOptions(exportsToWorkspace: false, exportsToGoogleDocs: false),
+                    exportOptions: SummaryExportOptions(exportsToWorkspace: false),
                     detailLevel: .detailed
                 ),
             ])
 
             #expect(merged.exportOptions == SummaryExportOptions(
-                exportsToWorkspace: true,
-                exportsToGoogleDocs: true
+                exportsToWorkspace: true
             ))
             #expect(merged.detailLevel == .eventSession)
         }

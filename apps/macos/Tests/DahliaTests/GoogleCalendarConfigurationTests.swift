@@ -17,46 +17,15 @@ import Security
 
         @Test
         func clientIDIsReadFromEnvironment() {
-            withTemporaryGoogleOAuthOverrides {
-                withTemporaryEnvironmentValue("GOOGLE_CLIENT_ID", value: "client-id-from-env") {
-                    #expect(GoogleCalendarConfiguration.clientID == "client-id-from-env")
-                }
-            }
-        }
-
-        @Test
-        func clientIDOverrideIsPreferredOverEnvironment() {
-            withTemporaryGoogleOAuthOverrides(clientID: "client-id-from-settings") {
-                withTemporaryEnvironmentValue("GOOGLE_CLIENT_ID", value: "client-id-from-env") {
-                    #expect(GoogleCalendarConfiguration.clientID == "client-id-from-settings")
-                }
-            }
-        }
-
-        @Test
-        func blankClientIDOverrideFallsBackToEnvironment() {
-            withTemporaryGoogleOAuthOverrides(clientID: "   ") {
-                withTemporaryEnvironmentValue("GOOGLE_CLIENT_ID", value: "client-id-from-env") {
-                    #expect(GoogleCalendarConfiguration.clientID == "client-id-from-env")
-                }
+            withTemporaryEnvironmentValue("GOOGLE_CLIENT_ID", value: "client-id-from-env") {
+                #expect(GoogleCalendarConfiguration.clientID == "client-id-from-env")
             }
         }
 
         @Test
         func clientSecretIsReadFromEnvironment() {
-            withTemporaryGoogleOAuthOverrides {
-                withTemporaryEnvironmentValue("GOOGLE_CLIENT_SECRET", value: "secret-from-env") {
-                    #expect(GoogleCalendarConfiguration.clientSecret == "secret-from-env")
-                }
-            }
-        }
-
-        @Test
-        func clientSecretOverrideIsPreferredOverEnvironment() {
-            withTemporaryGoogleOAuthOverrides(clientSecret: "secret-from-settings") {
-                withTemporaryEnvironmentValue("GOOGLE_CLIENT_SECRET", value: "secret-from-env") {
-                    #expect(GoogleCalendarConfiguration.clientSecret == "secret-from-settings")
-                }
+            withTemporaryEnvironmentValue("GOOGLE_CLIENT_SECRET", value: "secret-from-env") {
+                #expect(GoogleCalendarConfiguration.clientSecret == "secret-from-env")
             }
         }
 
@@ -74,19 +43,25 @@ import Security
         }
 
         @Test
-        func googleAuthSessionKindsUseSeparateStorageAndNotifications() throws {
-            let connectionID = try #require(UUID(uuidString: "11111111-1111-1111-1111-111111111111"))
+        func calendarSessionKeepsItsStoredKeyAndNotification() {
             #expect(GoogleAuthSessionKind.calendar.keychainKey == "googleCalendarOAuthSession")
-            #expect(GoogleAuthSessionKind.drive(.local).keychainKey == "googleDriveOAuthSession.local")
-            #expect(
-                GoogleAuthSessionKind.drive(.dahlia(connectionID)).keychainKey
-                    == "googleDriveOAuthSession.dahlia.11111111-1111-1111-1111-111111111111"
-            )
             #expect(GoogleAuthSessionKind.calendar.sessionDidChangeNotification == .googleCalendarSessionDidChange)
-            #expect(
-                GoogleAuthSessionKind.drive(.local).sessionDidChangeNotification
-                    != GoogleAuthSessionKind.drive(.dahlia(connectionID)).sessionDidChangeNotification
+        }
+
+        @Test
+        func authorizationRequestsOnlyCalendarScopesWithoutEarlierGrants() throws {
+            let url = GoogleSignInAdapter.makeAuthorizationURL(
+                clientID: "client-id",
+                redirectURL: try #require(URL(string: "http://127.0.0.1:8080/callback")),
+                codeChallenge: "challenge",
+                state: "state",
+                scopes: GoogleOAuthScope.authorizationScopes(for: GoogleOAuthScope.calendar)
             )
+            let items = try #require(URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems)
+
+            #expect(!items.contains { $0.name == "include_granted_scopes" })
+            let scopes = try #require(items.first { $0.name == "scope" }?.value)
+            #expect(Set(scopes.split(separator: " ").map(String.init)) == GoogleOAuthScope.base.union(GoogleOAuthScope.calendar))
         }
 
         @Test
@@ -141,41 +116,6 @@ import Security
             await worker.finishDisconnect(for: .calendar)
             let (_, currentGeneration) = await worker.snapshot(for: .calendar) {}
             #expect(await worker.performIfCurrent(for: .calendar, generation: currentGeneration) {})
-        }
-
-        @Test
-        func googleKeychainWorkerKeepsOtherSessionCurrentDuringDisconnect() async {
-            let worker = GoogleKeychainWorker()
-            let (_, calendarGeneration) = await worker.snapshot(for: .calendar) {}
-            let (_, driveGeneration) = await worker.snapshot(for: .drive(.local)) {}
-
-            await worker.beginDisconnect(for: .calendar)
-
-            #expect(await worker.performIfCurrent(for: .calendar, generation: calendarGeneration) {} == false)
-            #expect(await worker.performIfCurrent(for: .drive(.local), generation: driveGeneration) {})
-            #expect(await worker.isCurrent(for: .drive(.local), generation: driveGeneration))
-
-            await worker.finishDisconnect(for: .calendar)
-        }
-
-        @Test
-        func disconnectSuppressionIsScopedPerGoogleService() throws {
-            let connectionID = try #require(UUID(uuidString: "11111111-1111-1111-1111-111111111111"))
-            let calendarKey = GoogleSignInAdapter.disconnectPendingUserDefaultsKey(for: .calendar)
-            let driveKey = GoogleSignInAdapter.disconnectPendingUserDefaultsKey(for: .drive(.local))
-            let otherDriveKey = GoogleSignInAdapter.disconnectPendingUserDefaultsKey(
-                for: .drive(.dahlia(connectionID))
-            )
-
-            #expect(calendarKey != driveKey)
-            #expect(driveKey != otherDriveKey)
-            #expect(GoogleSignInAdapter.disconnectPendingUserDefaultsKeys(for: .drive(.local)) == [
-                driveKey,
-                "googleOAuthDisconnectPending.googleDriveOAuthSession",
-            ])
-            #expect(GoogleSignInAdapter.disconnectPendingUserDefaultsKeys(for: .drive(.dahlia(connectionID))) == [otherDriveKey])
-            #expect(GoogleSignInAdapter.shouldRestoreStoredSession(disconnectPending: false, hasStoredSession: true))
-            #expect(GoogleSignInAdapter.shouldRestoreStoredSession(disconnectPending: true, hasStoredSession: true) == false)
         }
 
         @Test
@@ -258,50 +198,4 @@ private func withTemporaryEnvironmentValue(_ key: String, value: String, operati
         }
     }
     operation()
-}
-
-private func withTemporaryGoogleOAuthOverrides(
-    clientID: String? = nil,
-    clientSecret: String? = nil,
-    operation: () -> Void
-) {
-    withTemporaryUserDefaultsValue(AppSettings.googleOAuthClientIDOverrideUserDefaultsKey, value: clientID) {
-        withTemporaryKeychainValue(AppSettings.googleOAuthClientSecretOverrideKey, value: clientSecret) {
-            operation()
-        }
-    }
-}
-
-private func withTemporaryUserDefaultsValue(_ key: String, value: String?, operation: () -> Void) {
-    let original = UserDefaults.standard.object(forKey: key)
-    if let value {
-        UserDefaults.standard.set(value, forKey: key)
-    } else {
-        UserDefaults.standard.removeObject(forKey: key)
-    }
-    defer {
-        if let original {
-            UserDefaults.standard.set(original, forKey: key)
-        } else {
-            UserDefaults.standard.removeObject(forKey: key)
-        }
-    }
-    operation()
-}
-
-private func withTemporaryKeychainValue(_ key: String, value: String?, operation: () -> Void) {
-    let original = KeychainService.load(key: key)
-    setTemporaryKeychainValue(key: key, value: value)
-    defer {
-        setTemporaryKeychainValue(key: key, value: original)
-    }
-    operation()
-}
-
-private func setTemporaryKeychainValue(key: String, value: String?) {
-    if let value {
-        try? KeychainService.save(key: key, value: value)
-    } else {
-        KeychainService.delete(key: key)
-    }
 }

@@ -130,9 +130,6 @@ private struct SummaryGenerationJobProgressView: View {
             if !job.progress.workspaceExport.isSkipped {
                 SummaryProgressStepRow(label: L10n.exportBatchSummaryToWorkspace, status: job.progress.workspaceExport)
             }
-            if !job.progress.googleDocsExport.isSkipped {
-                SummaryProgressStepRow(label: L10n.exportBatchSummaryToGoogleDocs, status: job.progress.googleDocsExport)
-            }
         }
         .padding(10)
         .frame(maxWidth: .infinity, alignment: .leading)

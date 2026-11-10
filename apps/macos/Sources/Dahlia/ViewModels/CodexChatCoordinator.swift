@@ -13,6 +13,8 @@ final class CodexChatCoordinator {
     private(set) var detachedSessionIDs: Set<CodexChatSessionID> = []
     private(set) var dockedSessionID: CodexChatSessionID
     var isDockedVisible = false
+    /// Whether the docked chat shows its history list. A docked chat that replaces the shown one closes it.
+    var showsHistory = false
 
     @ObservationIgnored private let service: any CodexChatServicing
     @ObservationIgnored private let settings: AppSettings
@@ -124,6 +126,15 @@ final class CodexChatCoordinator {
         replaceDockedSession(with: session, isVisible: showDockedSidebar)
         Task { await session.prepare() }
         Task { await refreshHistory() }
+    }
+
+    /// Shows a new docked chat and sends `prompt` with the selected meeting as its context.
+    func sendInNewDockedChat(_ prompt: String) {
+        newDockedChat()
+        let session = dockedSession
+        // Submit now, before models load (the composer also allows this), so the context is the meeting selected at the click.
+        session.submit(prompt)
+        if session.isGenerating { session.usageTelemetryReporter(.aiChatPromptSubmitted) }
     }
 
     func popOutDocked() -> CodexChatSessionID {
@@ -283,6 +294,7 @@ final class CodexChatCoordinator {
         sessions[session.id] = session
         dockedSessionID = session.id
         isDockedVisible = isVisible
+        showsHistory = false
         removeSessionIfUnused(
             previousID,
             preservesGeneratingSession: preservesGeneratingPreviousSession

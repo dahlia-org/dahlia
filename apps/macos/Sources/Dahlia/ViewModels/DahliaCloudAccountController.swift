@@ -563,8 +563,7 @@ final class DahliaCloudAccountController {
                 }
             }
             try await service(for: connection.record).deleteLocalCredential()
-            try await GoogleSignInAdapter.deleteDriveSession(scope: .dahlia(connectionID))
-            AppSettings.shared.clearGoogleDriveExportFolder(scope: .dahlia(connectionID))
+            await Task.detached { GoogleSignInAdapter.deleteRetiredCredentials(scopes: [.dahlia(connectionID)]) }.value
             try await repository.deleteDahliaAccountConnection(id: connectionID)
             CodexRuntimeContextStore.shared.accountRemoved(.dahlia(connectionID: connectionID))
             await Task.detached { PiLaunchSettings.removeSecrets(for: .dahlia(connectionID: connectionID)) }.value
