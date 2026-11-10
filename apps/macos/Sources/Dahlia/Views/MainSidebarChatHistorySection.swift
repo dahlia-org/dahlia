@@ -30,10 +30,12 @@ struct MainSidebarChatHistorySection: View {
         // Titles name meetings through the docked session's catalog, which only a mounted chat view fills otherwise.
         .onChange(of: sidebarViewModel.meetingReferences) { syncMeetingCatalog() }
         .onChange(of: sidebarViewModel.isMeetingCatalogLoaded) { syncMeetingCatalog() }
-        // The coordinator refreshes only for background threads, so the visible list picks up the current chat's new thread.
-        // Only a start in the same session counts; switching to a session that already has a thread is not a new thread.
-        .onChange(of: DockedThreadStart(coordinator)) { old, new in
-            guard old.sessionID == new.sessionID, !old.didStart, new.didStart else { return }
+        // The coordinator refreshes only for background sessions, so the visible list picks up the current chat itself.
+        // Pi writes a new thread's session file only after its first reply, so wait for that turn to finish.
+        .onChange(of: DockedTurn(coordinator)) { old, new in
+            guard old.sessionID == new.sessionID, old.isGenerating, !new.isGenerating,
+                  let threadID = new.threadID,
+                  !coordinator.history.contains(where: { $0.id == threadID }) else { return }
             Task { await coordinator.refreshHistory() }
         }
 
@@ -93,14 +95,16 @@ struct MainSidebarChatHistorySection: View {
     }
 }
 
-private struct DockedThreadStart: Equatable {
+private struct DockedTurn: Equatable {
     let sessionID: CodexChatSessionID
-    let didStart: Bool
+    let threadID: String?
+    let isGenerating: Bool
 
     @MainActor
     init(_ coordinator: CodexChatCoordinator) {
         sessionID = coordinator.dockedSessionID
-        didStart = coordinator.dockedSession.didStartBackendThread
+        threadID = coordinator.dockedSession.backendThreadID
+        isGenerating = coordinator.dockedSession.hasPendingGenerationWork
     }
 }
 
