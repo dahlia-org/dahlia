@@ -49,6 +49,13 @@ private struct AgentSettingsTabs: View {
         _subscriptions = State(initialValue: account == .local ? PiSubscription.allCases.map { CodexAccountController(subscription: $0) } : [])
     }
 
+    /// Models are set only for Unity AI Gateways: a Databricks account's own and the workspaces added under General.
+    /// Subscriptions and the Dahlia Server list their own.
+    private var tabs: [Tab] {
+        if case .databricks = account { return Tab.allCases }
+        return mcp.settings.providers.contains { !$0.isAccount } ? Tab.allCases : Tab.allCases.filter { $0 != .models }
+    }
+
     var body: some View {
         VStack(spacing: 0) {
             // In a grouped form's header, the tabs share the column of the settings title and the sections below.
@@ -56,7 +63,7 @@ private struct AgentSettingsTabs: View {
                 Section {
                     EmptyView()
                 } header: {
-                    UnderlineTabBar(tabs: Tab.allCases, selection: $selection, label: \.label, accessibilityLabel: L10n.agents)
+                    UnderlineTabBar(tabs: tabs, selection: $selection, label: \.label, accessibilityLabel: L10n.agents)
                 }
             }
             .formStyle(.grouped)
@@ -71,11 +78,7 @@ private struct AgentSettingsTabs: View {
                 }
                 .formStyle(.grouped)
             case .models:
-                // shortcut: placeholder until agent model settings are designed.
-                Form {
-                    Section { Text(L10n.agentModelsPlaceholder).foregroundStyle(.secondary) }
-                }
-                .formStyle(.grouped)
+                AgentModelSettingsView(account: account, mcp: mcp)
             case .mcps:
                 AgentMCPSettingsView(model: mcp, onAdd: presentMCPRegistration)
             }
@@ -84,6 +87,8 @@ private struct AgentSettingsTabs: View {
             await mcp.refreshSignInState()
             await mcp.loadAccountProvider()
         }
+        // Removing the last added workspace takes the Models tab away.
+        .onChange(of: tabs) { if !tabs.contains(selection) { selection = .general } }
         .onDisappear { navigation.dismissSettingsModal() }
     }
 
@@ -390,7 +395,7 @@ private struct AgentProviderSection: View {
                 }
             }
             ForEach(workspaces) { provider in
-                AgentProviderRow(title: L10n.unityGatewayHost(provider.host), icon: .databricksLogo, uses: [L10n.mcp]) {
+                AgentProviderRow(title: L10n.unityGatewayHost(provider.host), icon: .databricksLogo, uses: [L10n.agentProviderModels, L10n.mcp]) {
                     if model.signingInProviderID == provider.id, signInTask != nil {
                         ProgressView().controlSize(.small)
                         Button(L10n.cancelSignIn) { signInTask?.cancel() }
@@ -533,6 +538,218 @@ extension PiSubscription {
     }
 }
 
+/// The account's Unity AI Gateway models, under each gateway's provider row as the MCP tab groups services: the
+/// Databricks account's own gateway and the workspaces added under General. Each model turns on or off with a switch;
+/// only those turned on go to the account's `models.json`, so Pi, and with it the chat, summary, and image analysis model
+/// pickers, knows only them.
+private struct AgentModelSettingsView: View {
+    let account: CodexRuntimeProvider
+    let mcp: AgentMCPSettingsModel
+    private let service = PiRuntimeService.shared
+    /// Each provider's models by provider ID, as last listed.
+    @State private var models: [String: [PiProviderConfiguration.DatabricksModel]] = [:]
+    @State private var choices: [String: Bool] = [:]
+    @State private var loadingProviderIDs: Set<String> = []
+    @State private var errors: [String: String] = [:]
+    @State private var expandedProviderIDs: Set<String> = []
+
+    /// Models on in the Databricks account's own gateway.
+    private var ownOnCount: Int {
+        let own = PiProviderConfiguration.databricksProviderIDs[0]
+        return (models[own] ?? []).count(where: { $0.isOn(shownChoices(own)) })
+    }
+
+    /// The switches as `models.json` applies them: an own gateway that lost the model kept on shows its default on.
+    private func shownChoices(_ providerID: String) -> [String: Bool] {
+        PiProviderConfiguration.effectiveChoices(choices, for: models[providerID] ?? [])
+    }
+
+    var body: some View {
+        Form {
+            ForEach(mcp.selectableProviders) { provider in
+                let providerModels = models[provider.id] ?? []
+                Section {
+                    DisclosureGroup(isExpanded: expansion(of: provider)) {
+                        if loadingProviderIDs.contains(provider.id), providerModels.isEmpty {
+                            HStack {
+                                ProgressView().controlSize(.small)
+                                Text(L10n.chatModelLoading).foregroundStyle(.secondary)
+                            }
+                        }
+                        if let error = errors[provider.id] {
+                            HStack {
+                                Label(error, systemImage: "exclamationmark.triangle.fill")
+                                    .foregroundStyle(.orange)
+                                    .fixedSize(horizontal: false, vertical: true)
+                                Spacer()
+                                Button(L10n.retry) { Task { await load(provider, forceRefresh: true) } }
+                                    .disabled(loadingProviderIDs.contains(provider.id))
+                            }
+                        } else if !loadingProviderIDs.contains(provider.id), providerModels.isEmpty {
+                            Text(L10n.codexNoModels).foregroundStyle(.secondary)
+                        }
+                        ForEach(providerModels, id: \.reference) { model in
+                            let isOn = model.isOn(shownChoices(provider.id))
+                            LabeledContent {
+                                Toggle(model.name, isOn: on(model, of: provider))
+                                    .labelsHidden()
+                                    .toggleStyle(.switch)
+                                    // A chat needs a model, so a Databricks account keeps one on in its own gateway:
+                                    // its other models come from workspaces that can be removed.
+                                    .disabled(isOn && provider.isAccount && ownOnCount == 1)
+                            } label: {
+                                HStack(spacing: 4) {
+                                    // A model turned off reads fainter.
+                                    Text(model.name).foregroundStyle(isOn ? .primary : .secondary)
+                                    AgentModelDetailsButton(model: model)
+                                }
+                            }
+                        }
+                    } label: {
+                        AgentProviderRow(title: L10n.unityGatewayHost(provider.host), icon: .databricksLogo, uses: []) {
+                            if !providerModels.isEmpty {
+                                Text(L10n.agentEnabledCount(providerModels.count(where: { $0.isOn(shownChoices(provider.id)) })))
+                                    .foregroundStyle(.secondary)
+                            }
+                        }
+                        // The whole row opens and closes the list, not just the arrow.
+                        .contentShape(.rect)
+                        .onTapGesture { expansion(of: provider).wrappedValue.toggle() }
+                        .accessibilityAddTraits(.isButton)
+                    }
+                }
+            }
+        }
+        .formStyle(.grouped)
+        // The account's own workspace is found after the tab opens.
+        .task(id: mcp.selectableProviders) {
+            choices = AgentModelSettings.choices(for: account)
+            await withTaskGroup { group in
+                for provider in mcp.selectableProviders where models[provider.id] == nil {
+                    group.addTask { await load(provider, forceRefresh: false) }
+                }
+            }
+        }
+        // A background listing saved a gateway's new answer; the saved lists read with no network.
+        .onReceive(NotificationCenter.default.publisher(for: PiRuntimeService.modelsDidChange).receive(on: RunLoop.main)) { _ in
+            Task {
+                for provider in mcp.selectableProviders where models[provider.id] != nil {
+                    await load(provider, forceRefresh: false)
+                }
+            }
+        }
+    }
+
+    /// Lists the gateway's models; the last list serves until `forceRefresh`.
+    private func load(_ provider: AgentMCPProvider, forceRefresh: Bool) async {
+        loadingProviderIDs.insert(provider.id)
+        defer { loadingProviderIDs.remove(provider.id) }
+        do {
+            models[provider.id] = try await service.gatewayModels(for: account, provider: provider, forceRefresh: forceRefresh)
+            errors[provider.id] = nil
+        } catch is CancellationError {
+            // Leaving the tab stops the listing.
+        } catch {
+            errors[provider.id] = message(error, provider: provider)
+        }
+    }
+
+    private func message(_ error: any Error, provider: AgentMCPProvider) -> String {
+        guard case .notLoggedIn = error as? CodexAppServerError else { return error.localizedDescription }
+        // The account signs in from the account menu; other providers sign in under General.
+        return provider.isAccount ? L10n.mcpAccountSignInRequired : L10n.mcpProviderSignInRequired
+    }
+
+    private func expansion(of provider: AgentMCPProvider) -> Binding<Bool> {
+        Binding {
+            expandedProviderIDs.contains(provider.id)
+        } set: { isExpanded in
+            if isExpanded { expandedProviderIDs.insert(provider.id) } else { expandedProviderIDs.remove(provider.id) }
+        }
+    }
+
+    private func on(_ model: PiProviderConfiguration.DatabricksModel, of provider: AgentMCPProvider) -> Binding<Bool> {
+        Binding {
+            model.isOn(shownChoices(provider.id))
+        } set: { isOn in
+            choices[model.reference] = isOn
+            AgentModelSettings.setModel(model.reference, on: isOn, for: account)
+            Task {
+                do {
+                    try await service.applyGatewayModelChoices(for: account)
+                    errors[provider.id] = nil
+                } catch {
+                    errors[provider.id] = message(error, provider: provider)
+                }
+            }
+        }
+    }
+}
+
+/// An info mark that shows, on hover, what `models.json` gives Pi for the model: its ID, API, endpoint, limits, and price.
+private struct AgentModelDetailsButton: View {
+    let model: PiProviderConfiguration.DatabricksModel
+    @State private var isPresented = false
+
+    var body: some View {
+        // Hovering shows it; a click, the keyboard, or VoiceOver opens it too.
+        Button { isPresented.toggle() } label: {
+            Image(systemName: "info.circle")
+                .dahliaFixedSymbol()
+                .imageScale(.small)
+                .foregroundStyle(DahliaDesign.secondaryTextColor)
+                .contentShape(.rect)
+        }
+        .buttonStyle(.plain)
+        .onHover { isPresented = $0 }
+        .popover(isPresented: $isPresented, arrowEdge: .bottom) {
+            Grid(alignment: .leadingFirstTextBaseline, horizontalSpacing: 12, verticalSpacing: 6) {
+                ForEach(rows, id: \.label) { row in
+                    GridRow {
+                        Text(row.label).foregroundStyle(.secondary)
+                        Text(row.value)
+                    }
+                }
+            }
+            .padding(12)
+        }
+        .accessibilityLabel(L10n.agentModelDetails)
+    }
+
+    private var rows: [(label: String, value: String)] {
+        let definition = model.definition
+        let cost = definition["cost"]?.objectValue ?? [:]
+        let efforts = PiProviderConfiguration.reasoningEfforts(model: definition)
+        var rows: [(label: String, value: String)] = [
+            (L10n.agentModelID, model.id),
+            (L10n.agentModelAPI, definition["api"]?.stringValue ?? ""),
+            (L10n.agentModelEndpoint, definition["baseUrl"]?.stringValue ?? ""),
+            (L10n.agentModelContextWindow, tokens(definition["contextWindow"])),
+            (L10n.agentModelMaxOutput, tokens(definition["maxTokens"])),
+            (L10n.agentModelInput, (definition["input"]?.arrayValue ?? []).compactMap(\.stringValue).joined(separator: ", ")),
+            (L10n.agentModelReasoning, efforts.isEmpty ? L10n.agentModelReasoningNone : efforts.joined(separator: ", ")),
+            (L10n.agentModelPrice, price(cost)),
+        ]
+        for tier in cost["tiers"]?.arrayValue?.compactMap(\.objectValue) ?? [] {
+            rows.append((L10n.agentModelPriceTier(tokenCount(tier["inputTokensAbove"])), price(tier)))
+        }
+        return rows
+    }
+
+    private func tokenCount(_ value: JSONValue?) -> String {
+        value?.intValue?.formatted() ?? "-"
+    }
+
+    private func tokens(_ value: JSONValue?) -> String {
+        L10n.agentModelTokens(tokenCount(value))
+    }
+
+    private func price(_ cost: [String: JSONValue]) -> String {
+        let value = { (key: String) in cost[key].flatMap { if case let .number(number) = $0 { number.formatted() } else { nil } } ?? "-" }
+        return L10n.agentModelPriceValue(value("input"), value("output"), value("cacheRead"), value("cacheWrite"))
+    }
+}
+
 /// The open account's MCP servers. Each Unity Gateway provider (the account's own and those added under General)
 /// expands to its services, each turned on or off with a switch; remote MCP servers are added with the modal.
 private struct AgentMCPSettingsView: View {
@@ -556,9 +773,9 @@ private struct AgentMCPSettingsView: View {
                         AgentProviderRow(
                             title: L10n.unityGatewayHost(provider.host),
                             icon: .databricksLogo,
-                            uses: provider.isAccount ? [L10n.agentProviderModels, L10n.mcp] : [L10n.mcp]
+                            uses: [L10n.agentProviderModels, L10n.mcp]
                         ) {
-                            Text(L10n.mcpEnabledCount(model.servers(of: provider).count))
+                            Text(L10n.agentEnabledCount(model.servers(of: provider).count))
                                 .foregroundStyle(.secondary)
                         }
                         // The whole row opens and closes the list, not just the arrow.

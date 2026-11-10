@@ -1,5 +1,6 @@
 import DahliaRuntimeSupport
 import Foundation
+import os
 
 /// Starts the installed Pi for the selected account. Each summary, model listing, and sign-in uses its
 /// own short-lived process; chat keeps one process per open thread (see `PiChatService`).
@@ -12,6 +13,8 @@ actor PiRuntimeService {
 
     /// Posted when listed models may have changed (sign-in, sign-out, account switch); model pickers reload.
     nonisolated static let modelsDidChange = Notification.Name("DahliaPiModelsDidChange")
+    /// Counts those changes, so a chat that was hidden when one was posted lists again when it shows.
+    nonisolated static let modelsGeneration = OSAllocatedUnfairLock(initialState: 0)
 
     struct LaunchOptions: Sendable {
         enum Mode: String, Sendable {
@@ -40,10 +43,18 @@ actor PiRuntimeService {
     private let configurationReadiness: @Sendable () async -> Bool
     private let launcher: Launcher
     private let tokenResolver: TokenResolver
+    private let modelChoices: @Sendable (CodexRuntimeProvider) -> [String: Bool]
+    private let gatewayWorkspaces: @Sendable (CodexRuntimeProvider) -> [AgentMCPProvider]
     private var connections: [ObjectIdentifier: (connection: PiRPCConnection, provider: CodexRuntimeProvider, mode: LaunchOptions.Mode)] = [:]
     private var cachedModels: [CodexRuntimeProvider: [CodexModel]] = [:]
     private var modelLoads: [CodexRuntimeProvider: (task: Task<[CodexModel], any Error>, waiters: Int)] = [:]
     private var modelGeneration = 0
+    /// Each account's background listing of its Unity AI Gateways in this activation (see `refreshGateways`).
+    private var gatewayRefreshes: [CodexRuntimeProvider: Task<Void, Never>] = [:]
+    /// Each gateway's listing in flight, by account and provider ID. Every caller joins it, and only the listing still
+    /// registered here saves its answer: an activation or sign-in drops the registration, so an older answer that lands
+    /// after a newer listing started is discarded.
+    private var gatewayListings: [CodexRuntimeProvider: [String: Task<[JSONValue], any Error>]] = [:]
     private var isShuttingDown = false
 
     init(
@@ -53,13 +64,19 @@ actor PiRuntimeService {
             await WorkspaceAISettingsModel.shared.waitForRuntimeContext()
         },
         launcher: @escaping Launcher = PiRuntimeService.launchPi,
-        tokenResolver: @escaping TokenResolver = PiRuntimeService.resolveToken
+        tokenResolver: @escaping TokenResolver = PiRuntimeService.resolveToken,
+        modelChoices: @escaping @Sendable (CodexRuntimeProvider) -> [String: Bool] = { AgentModelSettings.choices(for: $0) },
+        gatewayWorkspaces: @escaping @Sendable (CodexRuntimeProvider) -> [AgentMCPProvider] = {
+            AgentMCPSettings.load(for: $0).providers.filter { !$0.isAccount }
+        }
     ) {
         self.agentLocator = agentLocator
         self.contextStore = contextStore
         self.configurationReadiness = configurationReadiness
         self.launcher = launcher
         self.tokenResolver = tokenResolver
+        self.modelChoices = modelChoices
+        self.gatewayWorkspaces = gatewayWorkspaces
     }
 
     // MARK: Lifecycle
@@ -115,6 +132,9 @@ actor PiRuntimeService {
         guard !isShuttingDown else { throw CancellationError() }
         if interruptActiveOperations { await closeAll() }
         try await applyingContext?()
+        // An activated account lists its gateways again.
+        gatewayRefreshes.removeAll()
+        gatewayListings.removeAll()
         invalidateModels()
     }
 
@@ -153,14 +173,19 @@ actor PiRuntimeService {
     }
 
     /// One Pi listing per account at a time, joined by every caller and cancelled when every caller is. A listing
-    /// that started before an invalidation is not cached, and an empty list (nothing signed in, Server unreachable)
-    /// is listed again next time.
+    /// that started before an invalidation (a sign-in, a model switch in Agents settings) is neither cached nor
+    /// returned: its callers list again, so a slower old listing cannot replace a newer one. An empty list (nothing
+    /// signed in, Server unreachable) is listed again next time.
     private func listedModels(_ provider: CodexRuntimeProvider, forceRefresh: Bool) async throws -> [CodexModel] {
         if !forceRefresh, let cached = cachedModels[provider] { return cached }
         let generation = modelGeneration
         let load = modelLoads[provider]?.task ?? Task {
             if case .dahlia = provider { await self.refreshDahliaCatalog(provider) }
             return try await self.availableModels(provider: provider)
+        }
+        // Only the open account lists its gateways; the Local Account's subscription status lists it while another is open.
+        if gatewayRefreshes[provider] == nil, contextStore.provider == provider {
+            gatewayRefreshes[provider] = Task { await self.refreshGateways(provider) }
         }
         modelLoads[provider] = (load, (modelLoads[provider]?.waiters ?? 0) + 1)
         let result = await withTaskCancellationHandler {
@@ -169,6 +194,9 @@ actor PiRuntimeService {
             Task { await self.leaveModelLoad(load, provider: provider) }
         }
         if modelLoads[provider]?.task == load { modelLoads[provider] = nil }
+        if generation != modelGeneration, !Task.isCancelled, contextStore.provider == provider {
+            return try await listedModels(provider, forceRefresh: false)
+        }
         let models = try result.get()
         if generation == modelGeneration, !models.isEmpty { cachedModels[provider] = models }
         return models
@@ -187,6 +215,7 @@ actor PiRuntimeService {
         cachedModels.removeAll()
         modelLoads.removeAll()
         modelGeneration += 1
+        Self.modelsGeneration.withLock { $0 += 1 }
         NotificationCenter.default.post(name: Self.modelsDidChange, object: nil)
     }
 
@@ -201,16 +230,120 @@ actor PiRuntimeService {
         try? PiProviderConfiguration.write(providers, agentURL: agentURL)
     }
 
+    // MARK: Unity AI Gateway models
+
+    /// The account's gateways: a Databricks account's own, then the workspaces added in Agents settings.
+    private func gateways(of account: CodexRuntimeProvider, agentURL: URL) -> [AgentMCPProvider] {
+        let own = if case .databricks = account { PiProviderConfiguration.databricksWorkspaceURL(agentURL: agentURL) } else { URL?.none }
+        return (own.map { [.account(workspaceURL: $0)] } ?? []) + gatewayWorkspaces(account)
+    }
+
+    /// Lists each signed-in gateway's models in Unity Catalog in the background, once per activation or sign-in, so new
+    /// ones appear without an app update. Model listings never wait for it: they read `models.json`, and when a gateway's
+    /// answer changes `models.json`, model pickers reload. A gateway that does not answer keeps its saved list.
+    private func refreshGateways(_ account: CodexRuntimeProvider) async {
+        guard let agentURL = try? agentLocator.agentURL(for: account) else { return }
+        let signedIn = (try? signedInProviderIDs(account: account)) ?? []
+        let gateways = gateways(of: account, agentURL: agentURL).filter { $0.isAccount || signedIn.contains($0.id) }
+        await withTaskGroup { group in
+            for gateway in gateways {
+                group.addTask { try? await self.listGateway(gateway, account: account, agentURL: agentURL) }
+            }
+        }
+        if (try? writeGateways(account)) == true { invalidateModels() }
+    }
+
+    /// Lists a gateway's models and saves the answer, joining a listing of the same gateway that is already running.
+    private func listGateway(_ gateway: AgentMCPProvider, account: CodexRuntimeProvider, agentURL: URL) async throws {
+        let listing = gatewayListings[account]?[gateway.id] ?? Task { try await self.modelServices(gateway, account: account) }
+        gatewayListings[account, default: [:]][gateway.id] = listing
+        let result = await Result { try await listing.value }
+        let isCurrent = gatewayListings[account]?[gateway.id] == listing
+        if isCurrent { gatewayListings[account]?[gateway.id] = nil }
+        // Every caller that joined sees the listing's failure, such as a sign-in the Models tab must report.
+        let services = try result.get()
+        // Only the current listing saves: not one superseded by an activation or sign-in, nor a joined caller again.
+        guard isCurrent else { return }
+        try PiProviderConfiguration.saveGatewayServices(services, providerID: gateway.id, agentURL: agentURL)
+    }
+
+    /// The background listing of the account's gateways in this activation, for tests to await.
+    func gatewayRefresh(for account: CodexRuntimeProvider) -> Task<Void, Never>? {
+        gatewayRefreshes[account]
+    }
+
+    /// A gateway's models for Agents settings, on and off, from its saved list; it is listed first when it has none yet
+    /// or Agents settings retries. `models.json`, and so Pi, holds only those turned on.
+    func gatewayModels(
+        for account: CodexRuntimeProvider,
+        provider: AgentMCPProvider,
+        forceRefresh: Bool
+    ) async throws -> [PiProviderConfiguration.DatabricksModel] {
+        let agentURL = try agentLocator.agentURL(for: account)
+        if forceRefresh || PiProviderConfiguration.gatewayServices(agentURL: agentURL)[provider.id] == nil {
+            try await listGateway(provider, account: account, agentURL: agentURL)
+            if try writeGateways(account) { invalidateModels() }
+        }
+        return try PiProviderConfiguration.databricksModels(
+            workspaceURL: provider.workspaceURL,
+            services: PiProviderConfiguration.gatewayServices(agentURL: agentURL)[provider.id],
+            providerID: provider.id
+        )
+    }
+
+    /// Applies a switch from Agents settings: `models.json` takes the account's choices from the saved lists, with no
+    /// network, and model pickers reload.
+    func applyGatewayModelChoices(for account: CodexRuntimeProvider) throws {
+        try writeGateways(account)
+        invalidateModels()
+    }
+
+    /// Writes every gateway's models turned on to `models.json` from its saved list (the bundled one before it first
+    /// answers), and drops workspaces no longer added. A gateway with every model off keeps its provider (the workspace
+    /// and sign-in) without models. Returns whether a gateway's entry changed.
+    @discardableResult
+    private func writeGateways(_ account: CodexRuntimeProvider) throws -> Bool {
+        let agentURL = try agentLocator.agentURL(for: account)
+        let saved = PiProviderConfiguration.gatewayServices(agentURL: agentURL)
+        let choices = modelChoices(account)
+        var providers: [String: JSONValue] = [:]
+        for gateway in gateways(of: account, agentURL: agentURL) {
+            let models = try PiProviderConfiguration.databricksModels(
+                workspaceURL: gateway.workspaceURL,
+                services: saved[gateway.id],
+                providerID: gateway.id
+            )
+            providers.merge(PiProviderConfiguration.databricksProviders(
+                models,
+                choices: choices,
+                workspaceURL: gateway.workspaceURL,
+                providerID: gateway.id
+            )) { $1 }
+        }
+        var changed = false
+        try PiProviderConfiguration.updateProviders(agentURL: agentURL) { current in
+            let isGateway = { (id: String) in PiProviderConfiguration.isAddedWorkspace(id) || id == PiProviderConfiguration.databricksProviderIDs[0] }
+            changed = current.filter { isGateway($0.key) } != providers
+            current = current.filter { !isGateway($0.key) }.merging(providers) { $1 }
+        }
+        return changed
+    }
+
     private func availableModels(provider: CodexRuntimeProvider) async throws -> [CodexModel] {
         let cwd = try agentLocator.agentURL(for: provider)
         let connection = try await connect(.init(mode: .control, cwd: cwd, arguments: ["--no-session", "--no-tools"]), provider: provider)
         let result = await Result { try await connection.request("get_available_models", timeout: Self.controlTimeout) }
         await close(connection)
         let providerIDs = Set(provider.piProviderIDs)
-        return try (result.get().objectValue?["models"]?.arrayValue ?? [])
+        let models = try (result.get().objectValue?["models"]?.arrayValue ?? [])
             .compactMap(\.objectValue)
-            .filter { $0["provider"]?.stringValue.map(providerIDs.contains) == true }
+            // A workspace added in Agents settings is named by its host, the only provider IDs with a dot.
+            .filter { $0["provider"]?.stringValue.map { providerIDs.contains($0) || PiProviderConfiguration.isAddedWorkspace($0) } == true }
             .compactMap(PiProviderConfiguration.codexModel)
+        // The account's own providers come first, so every "first available model" fallback (summary, chat, image
+        // analysis) stays on them rather than on another organization's gateway the user did not name.
+        let isAdded = { (model: CodexModel) in PiProviderConfiguration.isAddedWorkspace(model.model.prefix { $0 != "/" }) }
+        return models.filter { !isAdded($0) } + models.filter(isAdded)
     }
 
     // MARK: Subscription sign-in (Local Account only)
@@ -255,6 +388,10 @@ actor PiRuntimeService {
             openURL: openURL
         )
         await closeAll(of: account, mode: .chat)
+        // The workspace's models become available.
+        gatewayRefreshes[account] = nil
+        gatewayListings[account]?[mcpProvider.id] = nil
+        invalidateModels()
     }
 
     /// Signs the user in to the connection behind an MCP service (GitHub behind `system.ai.github`, for example), which
@@ -293,16 +430,44 @@ actor PiRuntimeService {
             try await logout(providerID: mcpProvider.id, account: account)
         } catch {
             await closeAll(of: account, mode: .chat)
+            invalidateModels()
             throw error
         }
         await closeAll(of: account, mode: .chat)
+        invalidateModels()
     }
 
     /// The Unity AI Gateway MCP services the sign-in can see, by full name. Pi lists them, so the token stays in Pi.
     func mcpServices(_ mcpProvider: AgentMCPProvider, account: CodexRuntimeProvider) async throws -> [String] {
+        try await listing(
+            [String].self,
+            command: "/databricks-mcp-services \(mcpProvider.listingArguments)",
+            notification: "databricks:mcp_services",
+            account: account
+        )
+    }
+
+    /// The Unity AI Gateway model services the sign-in can see, as Unity Catalog lists them. Pi lists them, so the
+    /// token stays in Pi.
+    func modelServices(_ mcpProvider: AgentMCPProvider, account: CodexRuntimeProvider) async throws -> [JSONValue] {
+        try await listing(
+            [JSONValue].self,
+            command: "/databricks-model-services \(mcpProvider.listingArguments)",
+            notification: "databricks:model_services",
+            account: account
+        )
+    }
+
+    /// Runs a listing command and follows its notifications: `<name> <JSON>`, `<name>_sign_in_required`, or
+    /// `<name>_failed <message>`.
+    private func listing<Value: Decodable & Sendable>(
+        _: Value.Type,
+        command: String,
+        notification name: String,
+        account: CodexRuntimeProvider
+    ) async throws -> Value {
         let cwd = try agentLocator.agentURL(for: account)
         let connection = try await connect(.init(mode: .control, cwd: cwd, arguments: ["--no-session", "--no-tools"]), provider: account)
-        let command = "/databricks-mcp-services \(mcpProvider.listingArguments)"
         let result = await Result {
             // The extension stops listing after 60 seconds.
             try await PiRPCConnection.withTimeout(.seconds(70)) {
@@ -310,14 +475,14 @@ actor PiRuntimeService {
                 defer { request.cancel() }
                 for try await event in connection.events {
                     guard let message = Self.notification(event) else { continue }
-                    if message.hasPrefix("databricks:mcp_services ") {
-                        return try JSONDecoder().decode([String].self, from: Data(message.dropFirst("databricks:mcp_services ".count).utf8))
-                    } else if message == "databricks:mcp_services_sign_in_required" {
+                    if message.hasPrefix("\(name) ") {
+                        return try JSONDecoder().decode(Value.self, from: Data(message.dropFirst(name.count + 1).utf8))
+                    } else if message == "\(name)_sign_in_required" {
                         throw CodexAppServerError.notLoggedIn
-                    } else if message.hasPrefix("databricks:mcp_services_failed") {
+                    } else if message.hasPrefix("\(name)_failed") {
                         throw CodexAppServerError.rpcError(
                             code: nil,
-                            message: String(message.dropFirst("databricks:mcp_services_failed".count)).trimmingCharacters(in: .whitespaces)
+                            message: String(message.dropFirst("\(name)_failed".count)).trimmingCharacters(in: .whitespaces)
                         )
                     }
                 }
@@ -459,13 +624,19 @@ actor PiRuntimeService {
     /// Matches a `provider/id` reference exactly, or a Codex-era bare model name by its ID suffix
     /// (`gpt-6-luna` → `openai/gpt-6-luna` or `…/system.ai.gpt-6-luna`). An exact-model request whose model is
     /// missing fails as unavailable; any other request falls back to the first suitable model.
+    /// Picks a model the user did not name: among the account's own providers whenever one fits, and only then among the
+    /// workspaces added in Agents settings, which serve another organization's gateway.
+    nonisolated static func ownProvidersFirst<Value>(_ models: [CodexModel], _ pick: ([CodexModel]) -> Value?) -> Value? {
+        pick(models.filter { !PiProviderConfiguration.isAddedWorkspace($0.model.prefix { $0 != "/" }) }) ?? pick(models)
+    }
+
     nonisolated static func resolvedModel(for request: CodexAppServerRequest, in models: [CodexModel]) throws -> CodexModel {
         let suitable = request.requiresImageInput ? models.filter(\.supportsImages) : models
         if let requested = request.model?.nilIfBlank {
             if let match = matchingModel(requested, in: suitable) { return match }
             if request.requiresExactModel { throw CodexAppServerError.requestedModelUnavailable(requested) }
         }
-        guard let fallback = suitable.first else {
+        guard let fallback = ownProvidersFirst(suitable, \.first) else {
             throw CodexAppServerError.requestedModelUnavailable(request.model ?? "")
         }
         return fallback
@@ -477,14 +648,17 @@ actor PiRuntimeService {
         guard !saved.isEmpty else { return nil }
         if let exact = models.first(where: { $0.model == saved }) { return exact }
         guard !saved.contains("/") else { return nil }
-        return models.first { $0.model.hasSuffix("/\(saved)") || $0.model.hasSuffix(".\(saved)") }
+        return ownProvidersFirst(models.filter { $0.model.hasSuffix("/\(saved)") || $0.model.hasSuffix(".\(saved)") }, \.first)
     }
 
     /// Models whose API the extension can make enforce the schema (OpenAI Responses, Claude Messages, Gemini).
     nonisolated static func supportsStrictSchema(model: String) -> Bool {
-        // Databricks also serves other models (GLM, Kimi) as OpenAI Responses on its MLflow route, which takes no strict schema.
-        ["openai/", "anthropic/", "dahlia/", "databricks/system.ai.gpt-", "databricks/system.ai.claude-", "databricks/system.ai.gemini-"]
-            .contains { model.hasPrefix($0) }
+        if ["openai/", "anthropic/", "dahlia/"].contains(where: { model.hasPrefix($0) }) { return true }
+        // A Unity AI Gateway (the account's own `databricks`, or a workspace added by host) also serves other models (GLM,
+        // Kimi) as OpenAI Responses on its MLflow route, which takes no strict schema.
+        let parts = model.split(separator: "/", maxSplits: 1)
+        guard parts.count == 2, parts[0] == "databricks" || PiProviderConfiguration.isAddedWorkspace(parts[0]) else { return false }
+        return ["system.ai.gpt-", "system.ai.claude-", "system.ai.gemini-"].contains { parts[1].hasPrefix($0) }
     }
 
     nonisolated static func thinkingLevel(_ effort: String) -> String {

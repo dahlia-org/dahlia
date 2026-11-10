@@ -11,8 +11,7 @@ struct CodexChatConfigurationOverlay: View {
             if isPresented {
                 CodexChatConfigurationPanel(
                     session: session,
-                    showsModels: $showsModels,
-                    onDismiss: dismiss
+                    showsModels: $showsModels
                 )
                 .codexChatDismissOnOutsideClick(perform: dismiss)
                 .padding(.trailing, 16)

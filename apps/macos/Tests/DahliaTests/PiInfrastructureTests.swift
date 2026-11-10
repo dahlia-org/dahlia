@@ -116,7 +116,7 @@ import Foundation
                 defer { close(other) }
                 #expect(flock(other, LOCK_EX | LOCK_NB) == -1 && errno == EWOULDBLOCK)
             }
-            let archives = try ["2.0.0", "2.1.0", "2.2.0"].map { version in (version, try archive(version: version)) }
+            let archives = try ["2.0.0", "2.1.0", "2.2.0"].map { version in try (version, archive(version: version)) }
             for _ in 0 ..< 10 {
                 DispatchQueue.concurrentPerform(iterations: archives.count) { index in
                     let (version, (url, digest)) = archives[index]
@@ -177,7 +177,7 @@ import Foundation
         func registeredMCPServersArePerAccountAndShareTheirWorkspaceSignIn() throws {
             let defaults = try #require(UserDefaults(suiteName: "PiInfrastructureTests.\(UUID())"))
             let account = CodexRuntimeProvider.databricks(connectionID: UUID())
-            let workspace = AgentMCPProvider(workspaceURL: URL(string: "https://example.cloud.databricks.com")!)
+            let workspace = try AgentMCPProvider(workspaceURL: #require(URL(string: "https://example.cloud.databricks.com")))
             #expect(workspace.id == "example.cloud.databricks.com")
             var settings = AgentMCPSettings(providers: [workspace])
             #expect(settings.defaultName(for: "system.ai.slack") == "slack")
@@ -198,7 +198,7 @@ import Foundation
             #expect(settings.nameError("dahlia") == L10n.mcpServerNameTaken)
             #expect(settings.nameError("Slack-1") == L10n.mcpServerNameInvalid)
             #expect(settings.nameError("slack_work") == nil)
-            // Both servers take the workspace's one sign-in; mcp.json itself holds no credential.
+            /// Both servers take the workspace's one sign-in; mcp.json itself holds no credential.
             func entry(_ name: String) -> JSONValue {
                 .object([
                     "url": .string("https://example.cloud.databricks.com/ai-gateway/mcp-services/system.ai.\(name)"),
@@ -243,7 +243,7 @@ import Foundation
         }
 
         @Test(.timeLimit(.minutes(1)))
-        func closingAConnectionCancelsItsPendingBridgeAnswer() async throws {
+        func closingAConnectionCancelsItsPendingBridgeAnswer() async {
             // A Databricks token request can be waiting on a browser login; closing Pi must release it.
             let transport = TestPiTransport { _ in [] }
             let (started, startedContinuation) = AsyncStream<Void>.makeStream()
@@ -313,10 +313,29 @@ import Foundation
             let databricks = try locator.sessionsURL(for: .databricks(connectionID: databricksID), workspaceID: workspaceID)
 
             // The same workspace under another account starts with that account's own (empty) history.
-            #expect(local == rootURL.appending(path: "Dahlia/accounts/local/pi/sessions/\(workspaceID.uuidString.lowercased())", directoryHint: .isDirectory))
+            #expect(local == rootURL.appending(
+                path: "Dahlia/accounts/local/pi/sessions/\(workspaceID.uuidString.lowercased())",
+                directoryHint: .isDirectory
+            ))
             #expect(databricks.path.hasSuffix("accounts/\(databricksID.uuidString.lowercased())/pi/sessions/\(workspaceID.uuidString.lowercased())"))
             let attributes = try FileManager.default.attributesOfItem(atPath: databricks.path)
             #expect((attributes[.posixPermissions] as? NSNumber)?.intValue == 0o700)
+        }
+
+        @Test
+        func gatewayModelChoicesAreKeptPerAccount() throws {
+            let suite = "dahlia-agent-models-test-\(UUID().uuidString)"
+            let defaults = try #require(UserDefaults(suiteName: suite))
+            defer { defaults.removePersistentDomain(forName: suite) }
+            let account = CodexRuntimeProvider.databricks(connectionID: .v7())
+
+            AgentModelSettings.setModel("databricks/system.ai.gpt-6-luna", on: false, for: account, defaults: defaults)
+            AgentModelSettings.setModel("dbc-1.cloud.databricks.com/system.ai.gpt-6-luna", on: true, for: account, defaults: defaults)
+
+            #expect(AgentModelSettings.choices(for: account, defaults: defaults) == [
+                "databricks/system.ai.gpt-6-luna": false, "dbc-1.cloud.databricks.com/system.ai.gpt-6-luna": true,
+            ])
+            #expect(AgentModelSettings.choices(for: .databricks(connectionID: .v7()), defaults: defaults).isEmpty)
         }
 
         @Test
@@ -345,18 +364,22 @@ import Foundation
 
         @Test
         func databricksAndDahliaModelsBecomePiProviders() throws {
+            let workspaceURL = try #require(URL(string: "https://example.cloud.databricks.com"))
             let databricks = try PiProviderConfiguration.databricksProviders(
-                workspaceURL: #require(URL(string: "https://example.cloud.databricks.com"))
+                PiProviderConfiguration.databricksModels(workspaceURL: workspaceURL),
+                choices: [:],
+                workspaceURL: workspaceURL
             )
             #expect(Set(databricks.keys) == Set(PiProviderConfiguration.databricksProviderIDs))
             let provider = try #require(databricks["databricks"]?.objectValue)
+            #expect(provider["baseUrl"] == .string("https://example.cloud.databricks.com"))
             #expect(provider["authHeader"] == .bool(true))
             #expect(provider["apiKey"] == nil)
+            // A Databricks account starts with only Haiku on.
+            #expect((provider["models"]?.arrayValue ?? []).compactMap { $0.objectValue?["id"]?.stringValue } == ["system.ai.claude-haiku-5-5"])
             // Each model keeps its own gateway route, now on the workspace's host.
-            let routes = Dictionary(
-                (provider["models"]?.arrayValue ?? []).compactMap(\.objectValue).map {
-                    ($0["id"]?.stringValue ?? "", $0["baseUrl"]?.stringValue ?? "")
-                },
+            let routes = try Dictionary(
+                PiProviderConfiguration.databricksModels(workspaceURL: workspaceURL).map { ($0.id, $0.definition["baseUrl"]?.stringValue ?? "") },
                 uniquingKeysWith: { first, _ in first }
             )
             #expect(routes["system.ai.claude-opus-5-5"] == "https://example.cloud.databricks.com/ai-gateway/anthropic")
@@ -379,6 +402,216 @@ import Foundation
             let converted = try #require(PiProviderConfiguration.codexModel(model.merging(["provider": .string("dahlia")]) { $1 }))
             #expect(converted.supportedReasoningEfforts.map(\.reasoningEffort) == ["low", "high"])
             #expect(!converted.supportsImages)
+        }
+
+        @Test
+        func databricksGatewayModelsTakeTemplates() throws {
+            let services = try JSONDecoder().decode(JSONValue.self, from: Data(#"""
+            [
+              {"name":"model-services/system.ai.claude-haiku-5-5","supported_api_types":["anthropic/v1/messages"],
+               "capabilities":{"function_calling":true,"image_input":true}},
+              {"name":"model-services/system.ai.claude-opus-6","supported_api_types":["mlflow/v1/responses","anthropic/v1/messages"],
+               "capabilities":{"function_calling":true,"image_input":true}},
+              {"name":"model-services/system.ai.claude-opus-5-5","supported_api_types":["anthropic/v1/messages"],
+               "capabilities":{"function_calling":true,"image_input":true}},
+              {"name":"model-services/system.ai.claude-opus-4-8","supported_api_types":["anthropic/v1/messages"],
+               "capabilities":{"function_calling":true,"image_input":true}},
+              {"name":"model-services/system.ai.gpt-7-1-luna","supported_api_types":["codex/v1/responses"],
+               "capabilities":{"function_calling":true,"image_input":true}},
+              {"name":"model-services/system.ai.gpt-7-luna","supported_api_types":["codex/v1/responses"],
+               "capabilities":{"function_calling":true,"image_input":true}},
+              {"name":"model-services/system.ai.glm-5-3","supported_api_types":["mlflow/v1/responses"],
+               "capabilities":{"function_calling":true,"image_input":true}},
+              {"name":"model-services/system.ai.glm-6","supported_api_types":["mlflow/v1/responses"],
+               "capabilities":{"function_calling":true,"image_input":false}},
+              {"name":"model-services/system.ai.gemini-4-argon","supported_api_types":["gemini/v1/generateContent"],
+               "capabilities":{"function_calling":true,"image_input":true}},
+              {"name":"model-services/system.ai.gemini-4-image","supported_api_types":["gemini/v1/generateContent"],
+               "capabilities":{"function_calling":false,"image_input":true}},
+              {"name":"model-services/system.ai.gemini-5-flash","supported_api_types":["mlflow/v1/chat/completions"],
+               "capabilities":{"function_calling":true,"image_input":true}},
+              {"name":"model-services/system.ai.deepseek-v5","supported_api_types":["mlflow/v1/responses"],
+               "capabilities":{"function_calling":true,"image_input":true}}
+            ]
+            """#.utf8)).arrayValue
+            let workspaceURL = try #require(URL(string: "https://example.cloud.databricks.com"))
+            let gatewayModels = try PiProviderConfiguration.databricksModels(workspaceURL: workspaceURL, services: services)
+            let byID = Dictionary(gatewayModels.map { ($0.id, $0.definition) }, uniquingKeysWith: { first, _ in first })
+
+            // Families follow the template order; listed models keep their order, and new ones follow by ID, descending.
+            // Models with no template, no route the gateway serves, or no tool calls are not listed.
+            #expect(gatewayModels.map(\.id) == [
+                "system.ai.claude-opus-5-5", "system.ai.claude-haiku-5-5", "system.ai.claude-opus-6", "system.ai.claude-opus-4-8",
+                "system.ai.gpt-7-luna", "system.ai.gpt-7-1-luna",
+                "system.ai.glm-5-3", "system.ai.glm-6",
+                "system.ai.gemini-4-argon",
+            ])
+            // Only Haiku starts on; the account's switches decide what `models.json`, and so Pi, lists.
+            #expect(gatewayModels.filter(\.isOnByDefault).map(\.id) == ["system.ai.claude-haiku-5-5"])
+            let written = PiProviderConfiguration.databricksProviders(
+                gatewayModels,
+                choices: ["databricks/system.ai.claude-opus-4-8": true, "databricks/system.ai.glm-6": false],
+                workspaceURL: workspaceURL
+            )
+            let writtenIDs = (written["databricks"]?.objectValue?["models"]?.arrayValue ?? []).compactMap { $0.objectValue?["id"]?.stringValue }
+            #expect(writtenIDs == ["system.ai.claude-haiku-5-5", "system.ai.claude-opus-4-8"])
+            // A new model takes its family's and group's templates, with a generated name and the workspace's route.
+            let opus = try #require(byID["system.ai.claude-opus-6"])
+            #expect(opus["name"] == .string("Claude Opus 6"))
+            #expect(opus["api"] == .string("anthropic-messages"))
+            #expect(opus["baseUrl"] == .string("https://example.cloud.databricks.com/ai-gateway/anthropic"))
+            #expect(opus["contextWindow"] == .number(1_000_000))
+            #expect(opus["cost"]?.objectValue?["input"] == .number(4))
+            #expect(opus["match"] == nil && opus["gatewayApi"] == nil && opus["hidden"] == nil)
+            let luna = try #require(byID["system.ai.gpt-7-1-luna"])
+            #expect(luna["name"] == .string("GPT 7.1 Luna"))
+            #expect(luna["thinkingLevelMap"]?.objectValue?["off"] == .string("none"))
+            #expect(luna["cost"]?.objectValue?["input"] == .number(0.1))
+            // The gateway's image input replaces the template's; a model's own entry replaces both.
+            #expect(byID["system.ai.glm-6"]?["input"] == .array([.string("text")]))
+            #expect(byID["system.ai.glm-5-3"]?["input"] == .array([.string("text")]))
+            #expect(byID["system.ai.gemini-4-argon"]?["reasoning"] == .bool(false))
+            #expect(byID["system.ai.gemini-4-argon"]?["cost"]?.objectValue?["input"] == .number(2))
+        }
+
+        @Test
+        func addedWorkspacesAreModelProvidersBesideTheAccountsOwn() throws {
+            let rootURL = FileManager.default.temporaryDirectory.appending(
+                path: "dahlia-gateway-test-\(UUID().uuidString)",
+                directoryHint: .isDirectory
+            )
+            try FileManager.default.createDirectory(at: rootURL, withIntermediateDirectories: true)
+            defer { try? FileManager.default.removeItem(at: rootURL) }
+            let own = try #require(URL(string: "https://own.cloud.databricks.com"))
+            let added = try AgentMCPProvider(workspaceURL: #require(URL(string: "https://dbc-1.cloud.databricks.com")))
+
+            let models = try PiProviderConfiguration.databricksModels(workspaceURL: added.workspaceURL, providerID: added.id)
+            let opus = try #require(models.first { $0.id == "system.ai.claude-opus-5-5" })
+            // Pi and the saved switches name the model by the workspace; pickers tell the gateways apart by its host.
+            #expect(opus.reference == "dbc-1.cloud.databricks.com/system.ai.claude-opus-5-5")
+            #expect(opus.name == "Claude Opus 5.5")
+            #expect(opus.definition["name"] == .string("Claude Opus 5.5 (dbc-1)"))
+            #expect(opus.definition["baseUrl"] == .string("https://dbc-1.cloud.databricks.com/ai-gateway/anthropic"))
+            // An added workspace starts with every model off, Haiku too.
+            #expect(models.allSatisfy { !$0.isOn([:]) })
+            #expect(opus.isOn(["dbc-1.cloud.databricks.com/system.ai.claude-opus-5-5": true]))
+            #expect(!opus.isOn(["databricks/system.ai.claude-opus-5-5": true]))
+
+            // Each gateway writes its own provider and keeps the others in models.json.
+            try PiProviderConfiguration.write(
+                PiProviderConfiguration.databricksProviders(
+                    PiProviderConfiguration.databricksModels(workspaceURL: own),
+                    choices: [:],
+                    workspaceURL: own
+                ),
+                agentURL: rootURL
+            )
+            try PiProviderConfiguration.write(
+                PiProviderConfiguration.databricksProviders(models, choices: [:], workspaceURL: added.workspaceURL, providerID: added.id),
+                agentURL: rootURL
+            )
+            #expect(PiProviderConfiguration.databricksWorkspaceURL(agentURL: rootURL) == own)
+            let data = try Data(contentsOf: rootURL.appending(path: "models.json"))
+            let providers = try #require(JSONDecoder().decode(JSONValue.self, from: data).objectValue?["providers"]?.objectValue)
+            #expect(Set(providers.keys) == ["databricks", "dbc-1.cloud.databricks.com"])
+            #expect(providers["dbc-1.cloud.databricks.com"]?.objectValue?["authHeader"] == .bool(true))
+        }
+
+        @Test
+        func databricksAccountStartsWithAModelEvenWithoutHaiku() throws {
+            let services: [JSONValue] = [
+                .object([
+                    "name": .string("model-services/system.ai.gpt-6-luna"),
+                    "supported_api_types": .array([.string("codex/v1/responses")]),
+                ]),
+                .object([
+                    "name": .string("model-services/system.ai.claude-opus-5-5"),
+                    "supported_api_types": .array([.string("anthropic/v1/messages")]),
+                ]),
+            ]
+            let workspaceURL = try #require(URL(string: "https://example.cloud.databricks.com"))
+            // The gateway serves no Haiku, so its first model starts on; an added workspace still starts with none.
+            let own = try PiProviderConfiguration.databricksModels(workspaceURL: workspaceURL, services: services)
+            let onByDefault = own.filter(\.isOnByDefault).map(\.id)
+            #expect(onByDefault == ["system.ai.claude-opus-5-5"])
+            let added = try PiProviderConfiguration.databricksModels(
+                workspaceURL: workspaceURL,
+                services: services,
+                providerID: "example.cloud.databricks.com"
+            )
+            let addedOn = added.filter(\.isOnByDefault)
+            #expect(addedOn.isEmpty)
+        }
+
+        @Test
+        func aGatewayAnswerWithNoModelKeepsTheSavedList() throws {
+            let agentURL = FileManager.default.temporaryDirectory.appending(
+                path: "dahlia-gateway-saved-\(UUID().uuidString)",
+                directoryHint: .isDirectory
+            )
+            try FileManager.default.createDirectory(at: agentURL, withIntermediateDirectories: true)
+            defer { try? FileManager.default.removeItem(at: agentURL) }
+            let haiku: [JSONValue] = [.object([
+                "name": .string("model-services/system.ai.claude-haiku-5-5"),
+                "supported_api_types": .array([.string("anthropic/v1/messages")]),
+            ])]
+
+            try PiProviderConfiguration.saveGatewayServices(haiku, providerID: "databricks", agentURL: agentURL)
+            // A sign-in that cannot browse system.ai answers with no model, or only with services no template routes
+            // (embeddings); the account keeps the models it had.
+            try PiProviderConfiguration.saveGatewayServices([], providerID: "databricks", agentURL: agentURL)
+            try PiProviderConfiguration.saveGatewayServices(
+                [.object([
+                    "name": .string("model-services/system.ai.gte-large-en"),
+                    "supported_api_types": .array([.string("mlflow/v1/embeddings")]),
+                ])],
+                providerID: "databricks",
+                agentURL: agentURL
+            )
+            #expect(PiProviderConfiguration.gatewayServices(agentURL: agentURL) == ["databricks": haiku])
+        }
+
+        @Test
+        func aServiceThatLeavesOutItsAPITypesServesAnyRoute() throws {
+            let services: [JSONValue] = [.object(["name": .string("model-services/system.ai.claude-opus-6")])]
+            let models = try PiProviderConfiguration.databricksModels(
+                workspaceURL: #require(URL(string: "https://example.cloud.databricks.com")),
+                services: services
+            )
+            #expect(models.map(\.id) == ["system.ai.claude-opus-6"])
+        }
+
+        @Test
+        func theOwnGatewayKeepsAModelOnWhenTheOneKeptOnLeavesIt() throws {
+            let workspaceURL = try #require(URL(string: "https://example.cloud.databricks.com"))
+            let service = { (id: String, api: String) in
+                JSONValue.object(["name": .string("model-services/system.ai.\(id)"), "supported_api_types": .array([.string(api)])])
+            }
+            // Opus was kept on and Haiku turned off; then the gateway stops serving Opus.
+            let choices = ["databricks/system.ai.claude-opus-5-5": true, "databricks/system.ai.claude-haiku-5-5": false]
+            let models = try PiProviderConfiguration.databricksModels(
+                workspaceURL: workspaceURL,
+                services: [service("claude-haiku-5-5", "anthropic/v1/messages"), service("gpt-6-luna", "codex/v1/responses")]
+            )
+            let written = PiProviderConfiguration.databricksProviders(models, choices: choices, workspaceURL: workspaceURL)
+            let ids = (written["databricks"]?.objectValue?["models"]?.arrayValue ?? []).compactMap { $0.objectValue?["id"]?.stringValue }
+            #expect(ids == ["system.ai.claude-haiku-5-5"])
+            #expect(PiProviderConfiguration.effectiveChoices(choices, for: models)["databricks/system.ai.claude-haiku-5-5"] == true)
+            // An added workspace may keep every model off.
+            let added = try PiProviderConfiguration.databricksModels(
+                workspaceURL: workspaceURL,
+                services: [service("claude-haiku-5-5", "anthropic/v1/messages")],
+                providerID: "example.cloud.databricks.com"
+            )
+            #expect(PiProviderConfiguration.effectiveChoices([:], for: added).isEmpty)
+        }
+
+        @Test
+        func gatewayModelNamesAreReadable() {
+            #expect(PiProviderConfiguration.displayName("claude-sonnet-5-5") == "Claude Sonnet 5.5")
+            #expect(PiProviderConfiguration.displayName("kimi-k3-1-pro") == "Kimi K3.1 Pro")
+            #expect(PiProviderConfiguration.displayName("glm-5-3-flash") == "GLM 5.3 Flash")
+            #expect(PiProviderConfiguration.displayName("gemini-4-argon") == "Gemini 4 Argon")
         }
 
         @Test

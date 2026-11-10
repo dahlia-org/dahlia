@@ -3,6 +3,7 @@ import SwiftUI
 struct CodexChatConfigurationRow: View {
     let title: String
     let isSelected: Bool
+    var isEnabled = true
     var leadingSystemImage: String?
     var trailingSystemImage: String?
     let action: () -> Void
@@ -21,7 +22,7 @@ struct CodexChatConfigurationRow: View {
 
                 Text(title)
                     .font(.body)
-                    .foregroundStyle(DahliaDesign.primaryTextColor)
+                    .foregroundStyle(isEnabled ? DahliaDesign.primaryTextColor : DahliaDesign.optionalTextColor)
                     .lineLimit(1)
                     .minimumScaleFactor(0.8)
 
@@ -39,8 +40,9 @@ struct CodexChatConfigurationRow: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+        .disabled(!isEnabled)
         .background(
-            isHovering || isSelected ? DahliaDesign.contentHighlightColor : .clear,
+            isHovering && isEnabled || isSelected ? DahliaDesign.contentHighlightColor : .clear,
             in: .rect(corners: .concentric(
                 minimum: .fixed(DahliaDesign.Highlight.regularCornerRadius)
             ))

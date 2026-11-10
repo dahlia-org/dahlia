@@ -91,6 +91,7 @@ final class CodexChatSessionModel: Identifiable {
     @ObservationIgnored private let workspaceSettings: WorkspaceAISettingsModel
     @ObservationIgnored private let runtimeProviderResolver: @Sendable () -> CodexRuntimeProvider
     @ObservationIgnored private var preparedRuntimeProvider: CodexRuntimeProvider?
+    @ObservationIgnored private var preparedModelsGeneration: Int?
 
     var hasPendingGenerationWork: Bool {
         let hasReachablePendingInput = !pendingManualInputs.isEmpty
@@ -148,7 +149,13 @@ final class CodexChatSessionModel: Identifiable {
             errorMessage = CodexConfigurationError.providerChanged(preparedRuntimeProvider.displayName).localizedDescription
             return
         }
-        guard models.isEmpty || forceRefresh || preparedRuntimeProvider != runtimeProvider else { return }
+        // A chat that was hidden when the models changed (it missed `modelsDidChange`) lists the new ones when it shows.
+        let modelsGeneration = PiRuntimeService.modelsGeneration.withLock { $0 }
+        guard models.isEmpty
+            || forceRefresh
+            || preparedRuntimeProvider != runtimeProvider
+            || preparedModelsGeneration != modelsGeneration
+        else { return }
         isLoading = true
         errorMessage = nil
         defer {
@@ -160,6 +167,7 @@ final class CodexChatSessionModel: Identifiable {
             guard runtimeProvider == runtimeProviderResolver() else { return }
             models = loadedModels
             preparedRuntimeProvider = runtimeProvider
+            preparedModelsGeneration = modelsGeneration
             resolveSelections()
         } catch is CancellationError {
             return
@@ -1030,7 +1038,8 @@ extension CodexChatSessionModel {
         guard !models.isEmpty else { return }
         if !models.contains(where: { $0.model == selectedModelID }) {
             let request = CodexAppServerRequest(model: selectedModelID, developerInstructions: "", inputs: [], outputSchema: Data())
-            selectedModelID = (try? PiRuntimeService.resolvedModel(for: request, in: models))?.model ?? models[0].model
+            selectedModelID = (try? PiRuntimeService.resolvedModel(for: request, in: models))?.model
+                ?? PiRuntimeService.ownProvidersFirst(models, \.first)?.model ?? models[0].model
         }
         resolveEffort()
     }

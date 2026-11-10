@@ -55,8 +55,16 @@ actor CodexScreenshotAnalysisService: ScreenshotAnalyzing {
     /// Light image models, in order of preference, for an account with no saved image-analysis model.
     static let defaultModels = ["gpt-6-luna", "claude-haiku-5-5"]
 
+    /// A Databricks account's gateway default comes first; when none of the preferred models is listed (Haiku turned
+    /// off), the first listed model that takes images serves. The account's own providers are searched before added
+    /// workspaces, so a preference only another organization's gateway serves never wins over the account's own model.
     static func defaultModel(in models: [CodexModel]) -> String {
-        defaultModels.lazy.compactMap { PiRuntimeService.matchingModel($0, in: models)?.model }.first ?? defaultModels[0]
+        // Image analysis needs a model that takes images, so a preference the gateway lists as text-only is passed over.
+        PiRuntimeService.ownProvidersFirst(models.filter(\.supportsImages)) { candidates in
+            ([PiProviderConfiguration.databricksDefaultModel] + defaultModels).lazy
+                .compactMap { PiRuntimeService.matchingModel($0, in: candidates)?.model }.first
+                ?? candidates.first?.model
+        } ?? defaultModels[0]
     }
 
     static let reasoningEffort = "low"

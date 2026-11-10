@@ -43,9 +43,8 @@ Pi の更新時に `test-pi-extension.py` で確かめる。ユーザーの `~/.
 Pi の agent directory はアカウントごとに `Application Support/Dahlia/accounts/<local または accounts.id>/pi`（0700）。
 Local Account は `local`、Databricks アカウントと Dahlia account は `accounts` テーブルの ID を使う。`PI_OFFLINE`・`PI_SKIP_VERSION_CHECK`・`PI_TELEMETRY=0` と、
 extension・skill・context file・prompt template・theme・project trust の自動読込の無効化で起動し、
-Dahlia の extension（`PiExtension/dahlia.ts`）を `-e` で読み込む。チャットは Dahlia MCP と登録した MCP server のために Pi の `builtin:mcp` と、
-Databricks provider の extension（`PiExtension/databricks-provider.ts`）も読み込み、`--tools` に `mcp__dahlia__*` と登録した server の
-`mcp__<name>__*` を含める。control と summary は Databricks provider の extension を読み込まない。
+Dahlia の extension（`PiExtension/dahlia.ts`）を `-e` で読み込む。チャットは Dahlia MCP と登録した MCP server のために Pi の `builtin:mcp` も
+読み込み、`--tools` に `mcp__dahlia__*` と登録した server の `mcp__<name>__*` を含める。
 
 - 要約・画像解析・画像選別・モデル一覧・サインインは操作ごとに `pi --mode rpc --no-session --no-tools` を起動し、終了・取消・610秒期限で閉じる。自動再送はしない。
 - チャットは turn の開始時に thread ごとに1 process を起動し、turn 後はチャット画面が thread を開いている間だけ残す。履歴の表示や新規 thread の作成では起動しない。process が終了していれば次の turn で session file から開き直す。
@@ -54,15 +53,16 @@ Databricks provider の extension（`PiExtension/databricks-provider.ts`）も�
 - stdout の1行は 4 MiB（送った最大行の分を加える）までとし、超えた行は改行まで捨てて読み続ける。Pi の `turn_end`・`agent_end` は run のメッセージを画像ごと繰り返すが、Dahlia は読まない。
 - Dahlia は RPC の extension UI（`ctx.ui.input("dahlia:<method>")`）でだけ extension と通信する。token は要求ごとに stdin で渡し、config・環境変数・log に残さない。
 - Databricks アカウントと Dahlia account の provider（`DAHLIA_PI_BRIDGED_PROVIDERS`）は、extension が pi-ai の `createProvider` で認証だけを持つ provider として登録し、使うたびに bridge の `token` で credential を解決する（モデルは `models.json` を重ねる。session 開始前の利用可否の確認には要求に使わない仮の値を返す）。`models.json` に key は書かない。
-- MCP server の sign-in は、extension がモデルを持たない OAuth の provider として登録する（[Unity AI Gateway の MCP](#unity-ai-gateway-の-mcp)）。`mcp.json` の項目は `auth.provider` でその credential を要求ごとに使う（Pi の文書にない項目で、Pi 更新時に回帰確認する）。
+- Unity AI Gateway の sign-in は、extension が OAuth の provider として登録する（[Unity AI Gateway の MCP](#unity-ai-gateway-の-mcp)）。モデルは Dahlia が `models.json` に書く。`mcp.json` の項目は `auth.provider` でその credential を要求ごとに使う（Pi の文書にない項目で、Pi 更新時に回帰確認する）。
 
 ## Provider
 
 Local Account は OpenAI と Anthropic に別々にサインインでき、サインイン済みの両方のモデルをまとめて一覧に出す。サインインは
 「エージェント」>「一般」の「プロバイダー」で行う（セットアップツアーにも残す）。「プロバイダー」には、アカウント自身のサインインと、
-サインイン済みのサブスクリプション、MCP 用の Databricks を並べ、それぞれに使い道（「モデル」「MCP」）のバッジを付ける。サブスクリプションと
+サインイン済みのサブスクリプション、追加した Databricks を並べ、それぞれに使い道（「モデル」「MCP」）のバッジを付ける（Databricks は両方）。サブスクリプションと
 Databricks は「プロバイダーを追加」のモーダルで選んで追加する（サブスクリプションは Local Account だけ）。設定のモーダルは窓全体に重ねる。Databricks アカウント（接続した workspace ごとに1つ）は
-自分の agent directory を持ち、実行アカウント `databricks(connectionID:)` として、その workspace の Gateway のモデルだけを一覧に出す。どのモデルを出すかは実行アカウントの provider ID で決まる（[アカウント](accounts.md#codex-account-context)）。
+自分の agent directory を持ち、実行アカウント `databricks(connectionID:)` として、その workspace の Gateway のモデルを一覧に出す。どのモデルを出すかは実行アカウントの provider ID で決まり（[アカウント](accounts.md#codex-account-context)）、
+どのアカウントでも「プロバイダー」に追加した Databricks の workspace（ID がホスト名でドットを含む provider）のモデルも加わる。
 表示名は Pi の名前に合わせる（`openai` は「OpenAI (ChatGPT subscription)」。「ChatGPT Plus/Pro」は Pi の旧 `openai-codex` の名前）。Dahlia account は自分の Server の provider だけを使う。
 
 | 表示名 | Pi provider | 認証 |
@@ -70,14 +70,55 @@ Databricks は「プロバイダーを追加」のモーダルで選んで追加
 | OpenAI (ChatGPT subscription) | `openai`（Sign in with ChatGPT、agent 名 `Dahlia`） | Pi の OAuth。端末 ID は Local agent directory |
 | Anthropic (Claude Pro/Max) | `anthropic` | Pi の OAuth |
 | Databricks | `databricks`（各モデルが Unity AI Gateway の経路を持つ: Claude は anthropic、GPT は codex、GLM・Kimi は mlflow、Gemini は gemini） | その Databricks アカウントの Desktop OAuth を bridge |
+| Unity Gateway (ホスト名) | 追加した workspace のホスト名（経路は `databricks` と同じ。モデル名にホスト名の先頭の部分を付ける） | Pi の OAuth（[Unity AI Gateway の MCP](#unity-ai-gateway-の-mcp) と同じ sign-in） |
 | Dahlia account | `dahlia`（Server の `/api/v1/responses`） | Dahlia token を bridge |
 
-Databricks のモデル一覧は `PiExtension/databricks-models.json` に同梱する。Dahlia account は切替時に Server の URL だけを記録し（network 不要）、
+Databricks のモデル一覧は Unity Catalog の `/api/2.1/unity-catalog/model-services?parent=schemas/system.ai` から作るので、
+Gateway に追加されたモデルはアプリの更新なしで出る。一覧は extension の `/databricks-model-services` が Pi の中で取り（アカウント自身の
+Gateway は `--provider databricks` で bridge した sign-in を使う）、token は Pi の外に出ない。各 Gateway が最後に答えた一覧は agent directory の
+`gateway-models.json` に provider ごとに保存し、`models.json` はいつもこの保存した一覧とスイッチから作る（まだ答えていない Gateway は同梱の
+`models` で代える）。アカウントの切替とスイッチの切り替えは network を使わず、保存した一覧から書く。一覧の取得はアカウントの切替後に最初に
+モデルを一覧するとき（と workspace へのサインイン後）に、サインイン済みの Gateway をまとめてバックグラウンドで1回だけ行い、モデル一覧は
+それを待たない。取得で `models.json` の Gateway の項目が変わったときだけキャッシュを捨てて `DahliaPiModelsDidChange` を通知し、モデル選択が
+読み直す。同じ Gateway の取得が同時に走るときは1つにまとめ、切替やサインインの後に始まった取得があればそれ以前の取得の結果は保存しない。
+答えなかった Gateway と、テンプレートで使えるモデルを1つも返さなかった Gateway（system.ai を見られない sign-in、embedding だけの応答など）は
+保存した一覧を保つ。
+Pi は起動時にしか `models.json` を読まないので、開いているチャットの process が知らないモデルを選ぶと（`set_model` が失敗すると）、ターンを
+始める前にそのスレッドを session file から開き直し、そのターンのアカウントと承認方式のまま選び直す。「モデル」タブは保存した一覧を表示し、まだない Gateway と再試行のときだけ取得を待つ。この API は単価・コンテキスト長・推論レベルを返さないため、同梱の
+`PiExtension/databricks-models.json` のテンプレートで補う。`templates` は `system.ai.` を除いた名前に glob（`claude-*`、`gpt-*-luna`）で当て、
+当たったものをファイル順に重ね、Gateway が返す画像入力、`models` のモデル個別の値の順に上書きする（各段はトップレベルの項目ごとに置き換える）。
+テンプレートの経路（`baseUrl` と、Gateway の `supported_api_types` に要る `gatewayApi`）がないモデルと tool を呼べないモデルは出さない。
+並びは最初に当たったテンプレート、`models` の順、ID の降順。provider の `baseUrl` に workspace を記録する（各モデルは自分の経路で上書きする）。
+Dahlia account は切替時に Server の URL だけを記録し（network 不要）、
 モデル一覧の取得時に `/api/v1/models` を `models.json` に変換する。取得に失敗したら直前の一覧を保ち、空の一覧はキャッシュしない。
 一覧は account ごとに1つの Pi 起動を同時の呼び出し元すべてで共有し、全員が取り消したときだけ止める。サインイン・サインアウト・
-アカウント切替はキャッシュを捨て（それ以前に始まった取得の結果も保存しない）、`DahliaPiModelsDidChange` を通知する。
-設定・要約の確認・チャットのモデル選択はその通知で読み直す。画面を開くだけではキャッシュを使い、再試行だけが取得し直す。モデルは `provider/id` で保存し、Codex 時代の
-裸のモデル名は ID の末尾一致で移行する。見つからなければ保存値を変えず、その要求だけ先頭の利用可能モデルを使う。
+アカウント切替・「モデル」タブの切り替えはキャッシュを捨て、`DahliaPiModelsDidChange` を通知する。それ以前に始まった取得の結果は
+保存も返却もせず、その呼び出し元は取得し直す（遅れて終わった古い一覧が新しい一覧を上書きしない）。設定・要約の確認・チャットのモデル選択は
+その通知で読み直し、通知の時に表示されていなかったチャットは次に表示されたときに読み直す。画面を開くだけではキャッシュを使い、再試行だけが取得し直す。
+チャットのモデル選択はモデルをプロバイダーごとにまとめ、プロバイダー名の下に並べる（workspace のモデル名に付けたホスト名は省く）。
+応答性能の選択は、モデルによらず Pi の推論レベル（`none`〜`max`）をすべて並べ、モデルが受け付けないものを選べなくして高さを保つ。
+モデルや応答性能を選んでも選択の画面は閉じず、外側のクリックか Esc で閉じる。モデルは `provider/id` で保存し、Codex 時代の
+裸のモデル名は ID の末尾一致で移行する。モデルの一覧はアカウント自身の provider を「プロバイダー」に追加した workspace より先に並べるので、
+裸の名前の照合も「先頭の利用可能モデル」への切り替えも、利用者が名指ししていない別組織の Gateway を選ばない。見つからなければ保存値を変えず、その要求だけ先頭の利用可能モデルを使う。
+
+追加した workspace のモデルも、アカウント自身の Gateway と同じテンプレートで Unity Catalog の一覧から作り、その provider の項目として
+`models.json` に書く（一覧を取るのはサインイン済みの workspace だけ）。`models.json` を書くたびに Gateway の項目をまとめて作り直し、
+「プロバイダー」から外したときも書き直すので、外した workspace の項目は（サインアウトに失敗しても）すぐに消え、Gateway 以外の項目（Dahlia account の `dahlia`）は残る。
+
+「エージェント」>「モデル」タブは Unity Gateway があるアカウント（Databricks アカウントか、Databricks を追加したアカウント）にだけ出し、
+Gateway ごとのモデルを「MCP」タブと同じくプロバイダーの行の下に折りたたんで並べ、モデルごとのスイッチでオン・オフする。
+サブスクリプションと Dahlia account のモデルは対象外。Pi の `models.json` には
+モデルごとの有効・無効の項目がなく（`settings.json` の `enabledModels` は起動時の選択と切替の範囲だけで、`get_available_models` からは外さない）、
+タブは実質的に `models.json` の編集画面になる。オンのモデルだけを `models.json` に書くので、Pi が知るのもチャット・要約・画像解析が選べるのもそれだけになる。
+選択は `provider/id` ごとに app defaults（`agentGatewayModels.<account>`）に記録し、選択のないモデルは既定に従う。既定はオフで、Databricks アカウント
+自身の Gateway の、`models` で `onByDefault` を付けたモデル（Claude Haiku 5.5）だけがオン（その Gateway が Haiku を出さないときは先頭のモデル）。オンにしていたモデルを Gateway が出さなくなって自身の Gateway で
+オンが1つもなくなるときは、この既定のモデルをオンとして扱い、設定の表示と `models.json` は同じ結果を使う。「プロバイダー」に追加した workspace は
+すべてオフで始まる。Databricks アカウントの要約の既定モデルも、保存した設定がなければ同じ Haiku
+（`databricks/system.ai.claude-haiku-5-5`）にする。画像解析はモデルを保存せず、一覧にある Haiku を最優先で選び、Haiku をオフにすると次の候補（Luna、なければ画像を受け付ける最初のモデル）を使う。切り替えると保存した一覧から
+`models.json` を書き直してキャッシュを捨て、`DahliaPiModelsDidChange` を通知する。チャットにはモデルが要るので、Databricks アカウントは自身の Gateway で最後の1つをオフにできない（追加した workspace は外せるので
+数えない。Local・Dahlia account はほかのモデルを持つので制限しない）。
+すべてオフにした Gateway は、モデルのない provider として `models.json` に残す（workspace と sign-in のため）。オフにしたモデルが保存されていた要約・チャットは先頭の利用可能モデルを使い、画像解析は保存したモデルが
+見つからないとして失敗する。
 
 サインインは extension の `/dahlia-login` が Pi の login を呼ぶ。Pi の extension API に login がないため
 非公開の `modelRegistry.runtime` を使い、Pi 更新時に回帰確認する。subscription の利用条件（OpenAI の
@@ -141,18 +182,18 @@ Unity Gateway の MCP は登録の操作を要さない（2026-11-09 ユーザ�
 service 名の最後の部分（`system.ai.github` なら `github`）で、重複するときは番号を付ける。名前は各 service の「…」メニューで変える。同じアカウントで複数の workspace を登録できる。
 
 sign-in は workspace ごとに1つで、その workspace の server すべてが共有する。どの server を使っても同じ refresh token が更新される。
-Databricks provider（`PiExtension/databricks-provider.ts`）が sign-in を、モデルを持たない provider として登録する。いずれモデルにも使う
-provider で、モデルと MCP で workspace を分けられるようにするために Dahlia の extension と分けている。provider の ID は workspace の
+Databricks provider（`PiExtension/databricks-provider.ts`）が sign-in を provider として登録する。provider 自体はモデルを持たず、
+モデルは Dahlia が `models.json` に書く（Gateway の 3 つの API を持つ）。provider の ID は workspace の
 host（port があれば `:<port>` を付ける）で、同じ workspace をもう一度追加するとサインインし直し、provider は1つのまま使う。アカウント自身の workspace は追加させない。チャットはドットで Pi 自身の provider と区別するので、ホスト名にドットのない URL も追加させない。設定ではどの Databricks の provider も「Unity Gateway (ホスト名)」と1行で示し、表示名は持たない（2026-11-09 ユーザー承認）。
 この provider の `auth.oauth` が workspace の `/oidc/v1/authorize`・`/oidc/v1/token` に対して PKCE の認可コードフローと refresh を行い、
 Pi がその credential を agent directory の `auth.json` に保存し、ロックの中で refresh する。credential には token と一緒に workspace の
-origin と client を保存するので、どの process も provider の ID だけで refresh できる。チャットでは `databricks-provider.ts` が単独の
-extension として読み込まれ、default export が起動時に `mcp.json` の `auth.provider` のうちドットを含む値（Pi 自身の provider の ID にはない）を
-provider として登録する。Dahlia は provider の一覧を環境変数で渡さない。provider の定義と sign-in の処理は named export で、`/databricks-login`
-は `dahlia.ts` の control 用の分岐がそれを import して登録する。
+origin と client を保存するので、どの process も provider の ID だけで refresh できる。`dahlia.ts` がどの process でも
+`registerDatabricksProviders` を呼び、起動時に `mcp.json` の `auth.provider` と `models.json` の provider のうちドットを含む ID
+（Pi 自身の provider の ID にはない）を provider として登録する。Dahlia は provider の一覧を環境変数で渡さない。`/databricks-login`・
+`/databricks-mcp-services`・`/databricks-model-services` は `dahlia.ts` の control 用の分岐が import して登録する。
 client の既定は Databricks CLI の公開 client `databricks-cli`（redirect は `http://localhost:<8020〜8040>`）で、Pi が自身の
 Client ID Metadata Document を公開したらそれに置き換える（2026-11-09 ユーザー承認）。scope は `ai-gateway unity-catalog offline_access`（MCP の呼び出しに `ai-gateway`、MCP service の一覧が Unity Catalog の API なので
-`unity-catalog`。2026-11-09 ユーザー承認）。一覧が拒まれたときは、Databricks が返す `error_code` と `message` をエラーに含める。
+`unity-catalog`。モデルの呼び出しと一覧も同じ scope で足りる。2026-11-09 ユーザー承認）。一覧が拒まれたときは、Databricks が返す `error_code` と `message` をエラーに含める。
 client は利用者に選ばせず、databricks-cli に固定する（2026-11-09 ユーザー承認）。組織が登録した client（Isaac など）が要るときのため、
 extension の `/databricks-login` は `--client-id`・`--redirect-url`・`--scopes` も
 受け付ける。`resource` は送らない。Pi の MCP OAuth（`mcp-auth.json`）は server 名と URL ごとに credential を分けるので使わない。

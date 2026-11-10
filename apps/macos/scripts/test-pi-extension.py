@@ -20,9 +20,8 @@ import urllib.request
 
 ROOT = Path(__file__).resolve().parents[3]
 EXTENSION = ROOT / "apps/macos/Sources/Dahlia/PiExtension/dahlia.ts"
-# Chat also loads the Databricks provider as its own extension, as Dahlia does.
-PROVIDER_EXTENSION = ROOT / "apps/macos/Sources/Dahlia/PiExtension/databricks-provider.ts"
-CHAT_EXTENSIONS = ["-e", "builtin:mcp", "-e", str(PROVIDER_EXTENSION)]
+# dahlia.ts registers the Unity AI Gateway sign-ins in every process, so chat adds only Pi's MCP extension, as Dahlia does.
+CHAT_EXTENSIONS = ["-e", "builtin:mcp"]
 CHAT_ARGUMENTS = ["--no-session", *CHAT_EXTENSIONS, "--tools", "read,ls,mcp__dahlia__*"]
 # A stand-in for dahlia-mcp with one read-only and one changing tool.
 MCP_SERVER = """
@@ -102,6 +101,20 @@ def oidc(grants, client_id="databricks-cli", redirect=None, scopes=frozenset({"a
             if url.path == "/api/2.1/unity-catalog/mcp-services" and self.headers.get("Authorization") == "Bearer denied":
                 body = json.dumps({"error_code": "PERMISSION_DENIED", "message": "missing scope unity-catalog"}).encode()
                 self.send_response(403)
+                self.send_header("Content-Type", "application/json")
+                self.send_header("Content-Length", str(len(body)))
+                self.end_headers()
+                self.wfile.write(body)
+                return
+            if url.path == "/api/2.1/unity-catalog/model-services":
+                # One page of the gateway's model services, which Dahlia turns into models.json through its templates.
+                assert self.headers.get("Authorization") in {f"Bearer mcp-access-{len(grants)}", "Bearer synthetic-token"}, \
+                    self.headers.get("Authorization")
+                assert query["parent"] == "schemas/system.ai", query
+                body = json.dumps({"model_services": [{
+                    "name": "model-services/system.ai.claude-haiku-5-5", "supported_api_types": ["anthropic/v1/messages"],
+                    "capabilities": {"function_calling": True, "image_input": True}, "config": {"routing": {}}}]}).encode()
+                self.send_response(200)
                 self.send_header("Content-Type", "application/json")
                 self.send_header("Content-Length", str(len(body)))
                 self.end_headers()
@@ -198,6 +211,19 @@ def control(pi, command, auth=None, browser=False, environment=None, bridge_toke
         process.stdin.close()
         process.wait(timeout=20)
         return messages, json.loads((agent / "auth.json").read_text())
+
+
+def list_models(pi, auth, providers):
+    """`pi --list-models` with Dahlia's extension, auth.json, and these models.json providers, as `provider model` lines."""
+    with tempfile.TemporaryDirectory() as temporary:
+        agent = Path(temporary).resolve()
+        (agent / "auth.json").write_text(json.dumps(auth))
+        (agent / "models.json").write_text(json.dumps({"providers": providers}))
+        env = dict(os.environ, PI_CODING_AGENT_DIR=str(agent), PI_OFFLINE="1", PI_SKIP_VERSION_CHECK="1", PI_TELEMETRY="0",
+                   DAHLIA_PI_MODE="control")
+        output = subprocess.run([pi, "--no-extensions", "-e", str(EXTENSION), "--list-models"], cwd=agent, env=env,
+                                capture_output=True, text=True, timeout=60).stdout
+        return [" ".join(line.split()[:2]) for line in output.splitlines()[1:]]
 
 
 def mcp_login(pi, arguments):
@@ -385,9 +411,9 @@ def main():
         assert results == ["MCP_OK"] and not any(method == "approval" for method, _ in bridge), (results, bridge)
 
     # Every model API Dahlia configures for a bridged provider gets the account's token.
-    # The Databricks catalog's APIs, plus the Dahlia Server's (OpenAI Responses).
+    # The Databricks templates' APIs, plus the Dahlia Server's (OpenAI Responses).
     catalog = json.loads((ROOT / "apps/macos/Sources/Dahlia/PiExtension/databricks-models.json").read_text())
-    apis = {model["api"] for provider in catalog.values() for model in provider["models"]} | {"openai-responses"}
+    apis = {template["api"] for template in catalog["templates"] if "api" in template} | {"openai-responses"}
     for api in sorted(apis):
         requests, _, _, _ = run(pi, "summary", [{"text": "{}"}], ["--no-session", "--no-tools"], {}, api=api)
         assert requests and requests[0]["auth"] == "Bearer synthetic-token", (api, requests[:1])
@@ -425,6 +451,23 @@ def main():
     messages, _ = control(pi, f"/databricks-mcp-services {origin} --provider databricks", auth={},
                           environment={"DAHLIA_PI_BRIDGED_PROVIDERS": "databricks"})
     assert messages == ['databricks:mcp_services ["system.ai.github","system.ai.gmail","system.ai.slack"]'], messages
+    # Listing the gateway's models keeps only what Dahlia reads (the name, API types, and capabilities), for the
+    # workspace's sign-in or the account's bridged one.
+    haiku = {"name": "model-services/system.ai.claude-haiku-5-5", "supported_api_types": ["anthropic/v1/messages"],
+             "capabilities": {"function_calling": True, "image_input": True}}
+    messages, _ = control(pi, f"/databricks-model-services {origin}", auth=auth)
+    assert [json.loads(message.partition(" ")[2]) for message in messages] == [[haiku]], messages
+    messages, _ = control(pi, f"/databricks-model-services {origin} --provider databricks", auth={},
+                          environment={"DAHLIA_PI_BRIDGED_PROVIDERS": "databricks"})
+    assert [json.loads(message.partition(" ")[2]) for message in messages] == [[haiku]], messages
+    messages, _ = control(pi, f"/databricks-model-services {origin}", auth={})
+    assert messages == ["databricks:model_services_sign_in_required"], messages
+    # A workspace's models in models.json belong to its sign-in's provider, which dahlia.ts registers from that file.
+    listed = list_models(pi, auth, {provider: {"name": provider, "baseUrl": origin, "authHeader": True, "models": [{
+        "id": "system.ai.claude-haiku-5-5", "name": "Claude Haiku 5.5", "api": "anthropic-messages",
+        "baseUrl": f"{origin}/ai-gateway/anthropic", "input": ["text", "image"],
+        "cost": {"input": 0, "output": 0, "cacheRead": 0, "cacheWrite": 0}}]}})
+    assert f"{provider} system.ai.claude-haiku-5-5" in listed, listed
     # Signing in to a service's connection names the service as the resource and exchanges no code.
     messages, _ = control(pi, f"/databricks-connection-login {origin} system.ai.github", auth={}, browser=True)
     assert messages[-1] == "databricks:connection_login_succeeded", messages
@@ -480,11 +523,6 @@ def main():
                                          arguments=["--no-session", *CHAT_EXTENSIONS, "--tools", "read,ls,mcp__gmail__*,mcp__foreign__*"])
     assert "not available" in results[0] and "GATEWAY_OK" not in results[0], results
 
-    # The sign-ins come from the provider extension, not dahlia.ts: without it, the MCP gets no token.
-    authorizations.clear()
-    gateway_chat({"tool": "mcp__gmail__search_messages"}, arguments=["--no-session", "-e", "builtin:mcp", "--tools", "read,ls,mcp__gmail__*"])
-    assert authorizations and set(authorizations) == {None}, authorizations
-
     # An expired token is refreshed once with the stored refresh token, which Databricks may keep.
     authorizations.clear()
     expired = {provider: dict(credential, expires=1)}
@@ -494,7 +532,7 @@ def main():
     server.shutdown()
     foreign_server.shutdown()
     workspace.shutdown()
-    print("Pi extension tests passed (token bridge, strict schema on OpenAI/Claude/Gemini, read-only chat, MCP approval, model APIs, MCP sign-in and gateway MCP)")
+    print("Pi extension tests passed (token bridge, strict schema on OpenAI/Claude/Gemini, read-only chat, MCP approval, model APIs, MCP sign-in, gateway models, and gateway MCP)")
 
 
 if __name__ == "__main__":

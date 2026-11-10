@@ -38,7 +38,8 @@ struct WorkspaceAccountPicker: View {
         Picker(L10n.account, selection: $selection) {
             Text(L10n.localAccount).tag(WorkspaceAccountChoice.local)
             ForEach(databricksAccounts) { account in
-                Text("\(L10n.databricks) · \(account.accountLabel)").tag(WorkspaceAccountChoice.databricks(account.id))
+                // Named as the Agents settings name its gateway.
+                Text(L10n.unityGatewayHost(account.hostName)).tag(WorkspaceAccountChoice.databricks(account.id))
             }
             ForEach(connections) { connection in
                 Text(accountLabel(connection)).tag(WorkspaceAccountChoice.dahlia(connection.id))

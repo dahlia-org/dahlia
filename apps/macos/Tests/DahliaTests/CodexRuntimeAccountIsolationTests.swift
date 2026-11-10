@@ -186,8 +186,8 @@ struct CodexRuntimeAccountIsolationTests {
         #expect(pi.contextStore.provider == databricks)
         // The Databricks account's own Pi directory lists its gateways; the Local Account's lists none.
         let models = try String(contentsOf: locator.agentURL(for: databricks).appending(path: "models.json"), encoding: .utf8)
-        #expect(models.contains("https:\\/\\/dbc.example.com\\/ai-gateway\\/codex\\/v1") || models
-            .contains("https://dbc.example.com/ai-gateway/codex/v1"))
+        #expect(models.contains("https:\\/\\/dbc.example.com\\/ai-gateway\\/anthropic") || models
+            .contains("https://dbc.example.com/ai-gateway/anthropic"))
 
         // The same account keeps the running configuration; the Local Account lists no gateways.
         try await coordinator.activate(provider: databricks)

@@ -95,6 +95,68 @@ import Synchronization
         }
 
         @Test
+        func aModelTurnedOnAfterTheProcessStartedReopensTheThread() async throws {
+            let launches = Atomic<Int>(0)
+            let reopened = TestPiTransportLog()
+            let pi = TestPiRuntime { options in
+                guard options.mode == .chat else {
+                    return TestPiTransport(reply: TestPiRuntime.modelsReply([
+                        TestPiTransport.model(provider: "openai", id: "gpt-test"),
+                        TestPiTransport.model(provider: "openai", id: "gpt-new"),
+                    ]))
+                }
+                // The first process read models.json before `gpt-new` was turned on; the reopened one knows it.
+                let isFirst = launches.add(1, ordering: .relaxed).newValue == 1
+                let transport = TestPiTransport { command in
+                    guard let id = command["id"] else { return [] }
+                    if isFirst, command["type"]?.stringValue == "set_model" {
+                        return [.object([
+                            "type": .string("response"), "id": id, "command": .string("set_model"), "success": .bool(false),
+                            "error": .string("Model not found: openai/gpt-new"),
+                        ])]
+                    }
+                    if command["type"]?.stringValue == "prompt", command["message"]?.stringValue?.hasPrefix("/") == false {
+                        return [TestPiTransport.response(id: id, data: .object(["disposition": .string("started")]))]
+                    }
+                    return [TestPiTransport.response(id: id)]
+                }
+                if !isFirst { reopened.append(transport) }
+                return transport
+            }
+            let chat = PiChatService(
+                runtime: pi.service,
+                workspaceLocator: ApplicationSupportCodexChatWorkspaceLocator(applicationSupportURL: pi.rootURL),
+                agentLocator: PiAgentDirectoryLocator(applicationSupportURL: pi.rootURL),
+                mcpExecutableURL: URL(filePath: "/usr/bin/true"),
+                mcpSettings: { _ in AgentMCPSettings() }
+            )
+            let thread = try await chat.startThread(model: "openai/gpt-test", effort: "medium", workspaceID: .v7())
+            _ = await chat.acquireThreadLease(threadID: thread.id)
+
+            let handle = try await chat.beginTurn(
+                threadID: thread.id,
+                inputs: [.text("Hi")],
+                model: "openai/gpt-new",
+                effort: "medium",
+                approvalMethod: .autoReview,
+                expectedProvider: .local
+            )
+            // The reopened process runs the turn with the approval method the turn asked for.
+            let process = await reopened.transport(at: 0)
+            await process.emit(TestPiTransport.bridgeRequest(id: "m1", method: "approvalMode", payload: .object([:])))
+            #expect(await process.command { $0["id"]?.stringValue == "m1" }["value"]?.stringValue == #""autoReview""#)
+            await process.emit(TestPiTransport.assistantEnd("Hello"))
+            await process.emit(TestPiTransport.settled())
+            var events: [CodexChatTurnEvent] = []
+            for try await event in handle.events {
+                events.append(event)
+            }
+
+            #expect(events.last == .completed(itemID: nil, text: nil))
+            #expect(pi.launches.all.count(where: { $0.mode == .chat }) == 2)
+        }
+
+        @Test
         func askModeRoutesApprovalsToTheUserAndAnswersPi() async throws {
             let fixture = Self.fixture { transport in
                 await transport.emit(TestPiTransport.bridgeRequest(id: "ui-7", method: "approval", payload: .object([
@@ -291,7 +353,7 @@ import Synchronization
             let reopened = try #require(pi.launches.all.last { $0.mode == .chat })
             #expect(reopened.arguments.contains { $0.hasSuffix("/" + file.lastPathComponent) })
 
-            // A settings change leaves the open process alone; the next process the thread starts uses the new MCPs.
+            /// A settings change leaves the open process alone; the next process the thread starts uses the new MCPs.
             func turn(_ text: String) async throws {
                 let handle = try await chat.beginTurn(
                     threadID: thread.id, inputs: [.text(text)], model: nil, effort: "medium",
@@ -299,7 +361,7 @@ import Synchronization
                 )
                 for try await _ in handle.events {}
             }
-            let provider = AgentMCPProvider(workspaceURL: URL(string: "https://example.cloud.databricks.com")!)
+            let provider = try AgentMCPProvider(workspaceURL: #require(URL(string: "https://example.cloud.databricks.com")))
             registered.withLock {
                 $0.providers = [provider]
                 $0.servers = [AgentMCPServer(id: .v7(), name: "gmail", providerID: provider.id, service: "system.ai.gmail")]
@@ -311,9 +373,8 @@ import Synchronization
             #expect(log.all.count == 3)
             let withGmail = try #require(pi.launches.all.last { $0.mode == .chat })
             #expect(withGmail.arguments.contains("read,ls,mcp__dahlia__*,mcp__gmail__*"))
-            // Only chat loads the Databricks provider extension, which registers the sign-ins mcp.json names.
-            #expect(withGmail.arguments.contains { $0.hasSuffix("/PiExtension/databricks-provider.ts") })
-            #expect(pi.launches.all.filter { $0.mode != .chat }.allSatisfy { !$0.arguments.contains { $0.hasSuffix("databricks-provider.ts") } })
+            // Dahlia's extension registers the sign-ins mcp.json names in every process; none loads the provider file on its own.
+            #expect(pi.launches.all.allSatisfy { !$0.arguments.contains { $0.hasSuffix("databricks-provider.ts") } })
             #expect(withGmail.environment["DAHLIA_PI_MCP_SERVERS"] == #"["dahlia","gmail"]"#)
             // The mcp.json entry names the workspace sign-in, which the extension registers from that file.
             #expect(withGmail.environment["DAHLIA_PI_MCP_PROVIDERS"] == nil)

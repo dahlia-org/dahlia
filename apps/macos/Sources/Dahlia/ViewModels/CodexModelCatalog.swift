@@ -96,6 +96,6 @@ final class CodexModelCatalog {
     private func resolvedModel(modelID: String) -> CodexModel? {
         models.first(where: { $0.model == modelID })
             ?? models.first(where: \CodexModel.isDefault)
-            ?? models.first
+            ?? PiRuntimeService.ownProvidersFirst(models, \.first)
     }
 }

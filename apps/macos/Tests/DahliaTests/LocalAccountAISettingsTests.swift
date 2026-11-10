@@ -34,6 +34,57 @@
         }
 
         @Test
+        func databricksAccountStartsWithItsGatewaysDefaultModel() throws {
+            let suite = "DatabricksDefaults-\(UUID())"
+            let defaults = try #require(UserDefaults(suiteName: suite))
+            defer { defaults.removePersistentDomain(forName: suite) }
+            let databricks = WorkspaceRecord(
+                id: .v7(), path: nil, name: "Databricks", createdAt: .now, lastOpenedAt: .now, databricksConnectionId: .v7()
+            )
+            let account = AccountInferenceSettings(workspace: databricks, defaults: defaults)
+            #expect(account.local.model == "databricks/system.ai.claude-haiku-5-5")
+            // Image analysis saves no model: it prefers Haiku while Haiku is on, and another listed model once it is off.
+            #expect(account.imageAnalysis.model == nil)
+            let model = { (reference: String) in
+                CodexModel(
+                    id: reference, model: reference, displayName: reference, description: "", hidden: false, isDefault: false,
+                    supportedReasoningEfforts: [], defaultReasoningEffort: "low", inputModalities: ["text", "image"]
+                )
+            }
+            let haiku = model("databricks/system.ai.claude-haiku-5-5")
+            let luna = model("databricks/system.ai.gpt-6-luna")
+            #expect(CodexScreenshotAnalysisService.defaultModel(in: [luna, haiku]) == haiku.model)
+            #expect(CodexScreenshotAnalysisService.defaultModel(in: [luna]) == luna.model)
+            // With Haiku turned off and no preferred model on, the first listed model that takes images serves.
+            let opus = model("databricks/system.ai.claude-opus-5-5")
+            #expect(CodexScreenshotAnalysisService.defaultModel(in: [opus]) == opus.model)
+            // A bare preference resolves to the account's own provider before a workspace added in Agents settings.
+            let workspaceLuna = model("dbc-1.cloud.databricks.com/system.ai.gpt-6-luna")
+            let subscriptionLuna = model("openai/gpt-6-luna")
+            #expect(CodexScreenshotAnalysisService.defaultModel(in: [workspaceLuna, subscriptionLuna]) == subscriptionLuna.model)
+            #expect(PiRuntimeService.matchingModel("gpt-6-luna", in: [workspaceLuna]) == workspaceLuna)
+            // A later preference the account's own provider serves wins over an earlier one only a workspace serves.
+            let subscriptionHaiku = model("anthropic/claude-haiku-5-5")
+            #expect(CodexScreenshotAnalysisService.defaultModel(in: [workspaceLuna, subscriptionHaiku]) == subscriptionHaiku.model)
+            #expect(CodexScreenshotAnalysisService.defaultModel(in: [workspaceLuna, opus]) == opus.model)
+            // A preferred model the gateway lists as text-only is passed over for one that takes images.
+            let textHaiku = CodexModel(
+                id: haiku.model, model: haiku.model, displayName: haiku.model, description: "", hidden: false, isDefault: false,
+                supportedReasoningEfforts: [], defaultReasoningEffort: "low", inputModalities: ["text"]
+            )
+            #expect(CodexScreenshotAnalysisService.defaultModel(in: [textHaiku, opus]) == opus.model)
+            // With no listed default, the bare preference stays, not a Databricks model another account cannot have.
+            #expect(CodexScreenshotAnalysisService.defaultModel(in: []) == "gpt-6-luna")
+
+            // A model the workspace already chose stays, and other accounts keep their defaults.
+            var chosen = databricks
+            chosen.generationSettings.local.model = "databricks/system.ai.claude-opus-5-5"
+            #expect(AccountInferenceSettings(workspace: chosen, defaults: defaults).local.model == "databricks/system.ai.claude-opus-5-5")
+            let local = WorkspaceRecord(id: .v7(), path: nil, name: "Local", createdAt: .now, lastOpenedAt: .now)
+            #expect(AccountInferenceSettings(workspace: local, defaults: defaults).imageAnalysis.model == nil)
+        }
+
+        @Test
         func legacySelectionSettingsMigrateToUnifiedImageAnalysis() throws {
             let server = try JSONDecoder().decode(
                 WorkspaceGenerationSettings.self,

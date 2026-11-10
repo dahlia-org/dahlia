@@ -2438,7 +2438,30 @@ enum L10n { // swiftlint:disable:this type_body_length
     }
 
     static var agentModels: String { String(localized: "settings.agents.models", bundle: bundle) }
-    static var agentModelsPlaceholder: String { String(localized: "settings.agents.modelsPlaceholder", bundle: bundle) }
+    static var agentModelDetails: String { String(localized: "settings.agents.modelDetails", bundle: bundle) }
+    static var agentModelID: String { String(localized: "settings.agents.modelID", bundle: bundle) }
+    static var agentModelAPI: String { String(localized: "settings.agents.modelAPI", bundle: bundle) }
+    static var agentModelEndpoint: String { String(localized: "settings.agents.modelEndpoint", bundle: bundle) }
+    static var agentModelContextWindow: String { String(localized: "settings.agents.modelContextWindow", bundle: bundle) }
+    static var agentModelMaxOutput: String { String(localized: "settings.agents.modelMaxOutput", bundle: bundle) }
+    static var agentModelInput: String { String(localized: "settings.agents.modelInput", bundle: bundle) }
+    static var agentModelReasoning: String { String(localized: "settings.agents.modelReasoning", bundle: bundle) }
+    static var agentModelReasoningNone: String { String(localized: "settings.agents.modelReasoningNone", bundle: bundle) }
+    static var agentModelPrice: String { String(localized: "settings.agents.modelPrice", bundle: bundle) }
+
+    static func agentModelTokens(_ count: String) -> String {
+        String(localized: "settings.agents.modelTokens \(count)", bundle: bundle)
+    }
+
+    /// USD per million tokens: input, output, cache read, and cache write.
+    static func agentModelPriceValue(_ input: String, _ output: String, _ cacheRead: String, _ cacheWrite: String) -> String {
+        String(localized: "settings.agents.modelPriceValue \(input) \(output) \(cacheRead) \(cacheWrite)", bundle: bundle)
+    }
+
+    static func agentModelPriceTier(_ count: String) -> String {
+        String(localized: "settings.agents.modelPriceTier \(count)", bundle: bundle)
+    }
+
     static var agentRuntime: String { String(localized: "settings.agents.runtime", bundle: bundle) }
     static var agentEnvironment: String { String(localized: "settings.agents.environment", bundle: bundle) }
     static var agentAddVariable: String { String(localized: "settings.agents.addVariable", bundle: bundle) }
@@ -2470,8 +2493,9 @@ enum L10n { // swiftlint:disable:this type_body_length
     static var mcpProviderSignInRequired: String { String(localized: "settings.agents.mcpProviderSignInRequired", bundle: bundle) }
     static var mcpWorkspaceIsAccount: String { String(localized: "settings.agents.mcpWorkspaceIsAccount", bundle: bundle) }
 
-    static func mcpEnabledCount(_ count: Int) -> String {
-        String(localized: "settings.agents.mcpEnabledCount \(count)", bundle: bundle)
+    /// MCP services or models turned on.
+    static func agentEnabledCount(_ count: Int) -> String {
+        String(localized: "settings.agents.enabledCount \(count)", bundle: bundle)
     }
 
     static func mcpServiceWithServerName(_ service: String, _ name: String) -> String {

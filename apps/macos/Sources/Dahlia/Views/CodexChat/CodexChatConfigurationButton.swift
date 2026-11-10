@@ -26,8 +26,7 @@ struct CodexChatConfigurationButton: View {
                 if externalPresentation == nil, isPresented {
                     CodexChatConfigurationPanel(
                         session: session,
-                        showsModels: $showsModels,
-                        onDismiss: dismissConfiguration
+                        showsModels: $showsModels
                     )
                     .codexChatDismissOnOutsideClick(perform: dismissConfiguration)
                     .offset(

@@ -1,10 +1,11 @@
-// The Databricks provider: Unity AI Gateway sign-ins, for MCP servers today. As its own extension, it registers the
-// sign-ins that mcp.json names; Dahlia's extension imports the sign-in command for its control process.
-// Each sign-in is a Pi provider without models whose OAuth credential Pi stores in auth.json and refreshes; an mcp.json
-// entry takes it through `auth.provider`. The provider ID is the workspace host, and the credential also carries the
-// workspace origin and OAuth client, so any process can refresh it by ID alone. Pi never starts a sign-in by itself:
-// a server whose credential cannot be refreshed needs `/databricks-login` again.
-import { createProvider, openAIResponsesApi } from "@earendil-works/pi-ai";
+// The Databricks provider: Unity AI Gateway sign-ins, for MCP servers and models. Dahlia's extension registers the
+// sign-ins in every process and imports the commands for its control process.
+// Each sign-in is a Pi provider whose OAuth credential Pi stores in auth.json and refreshes; an mcp.json entry takes it
+// through `auth.provider`, and its models come from models.json, which Dahlia writes from the gateway's model list. The
+// provider ID is the workspace host, and the credential also carries the workspace origin and OAuth client, so any
+// process can refresh it by ID alone. Pi never starts a sign-in by itself: a server or model whose credential cannot be
+// refreshed needs `/databricks-login` again.
+import { anthropicMessagesApi, createProvider, googleGenerativeAIApi, openAIResponsesApi } from "@earendil-works/pi-ai";
 import { createHash, randomBytes } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { createServer, type Server } from "node:http";
@@ -24,16 +25,20 @@ export type Credential = { type: "oauth"; access: string; refresh: string; expir
 
 const base64url = (bytes: Buffer) => bytes.toString("base64url");
 
-// Registers the sign-ins that mcp.json names. Pi's own provider IDs have no dot; a workspace host does.
-export default function registerDatabricksMCPProviders(pi: any) {
+// Registers the sign-ins that mcp.json or models.json names. Pi's own provider IDs have no dot; a workspace host does.
+export function registerDatabricksProviders(pi: any) {
   const directory = process.env.PI_CODING_AGENT_DIR ?? join(homedir(), ".pi", "agent");
-  let servers: any[];
-  try {
-    servers = Object.values(JSON.parse(readFileSync(join(directory, "mcp.json"), "utf8")).mcpServers ?? {});
-  } catch {
-    return;
-  }
-  const ids = new Set(servers.map((server) => server?.auth?.provider).filter((id) => typeof id === "string" && id.includes(".")));
+  const read = (file: string) => {
+    try {
+      return JSON.parse(readFileSync(join(directory, file), "utf8"));
+    } catch {
+      return undefined;
+    }
+  };
+  const ids = new Set([
+    ...Object.values(read("mcp.json")?.mcpServers ?? {}).map((server: any) => server?.auth?.provider),
+    ...Object.keys(read("models.json")?.providers ?? {}),
+  ].filter((id) => typeof id === "string" && id.includes(".")));
   for (const id of ids) pi.registerProvider(provider(id));
 }
 
@@ -70,8 +75,31 @@ export function registerDatabricksLoginCommand(pi: any) {
 // or `databricks:mcp_services_failed <message>`. The sign-in is the workspace's own, or `--provider`'s, such as the
 // account's bridged provider. The token stays in this process.
 export function registerDatabricksMCPServicesCommand(pi: any) {
-  pi.registerCommand("databricks-mcp-services", {
-    description: "List a Databricks workspace's Unity AI Gateway MCP services",
+  registerListingCommand(pi, "databricks-mcp-services", "List a Databricks workspace's Unity AI Gateway MCP services", "mcp_services",
+    (origin, token, signal) => listMCPServices(origin, token, signal));
+}
+
+// `/databricks-model-services <workspace URL> [--provider <id>]` lists the Unity AI Gateway model services in
+// `system.ai` that a sign-in can see, as `databricks:model_services <JSON array of {name, supported_api_types,
+// capabilities}>`, `databricks:model_services_sign_in_required`, or `databricks:model_services_failed <message>`. The
+// sign-in is chosen as for `/databricks-mcp-services`, and the token stays in this process.
+export function registerDatabricksModelServicesCommand(pi: any) {
+  registerListingCommand(pi, "databricks-model-services", "List a Databricks workspace's Unity AI Gateway models", "model_services",
+    async (origin, token, signal) => (await listServices(origin, "model-services", "model services", token, signal))
+      .map(({ name, supported_api_types, capabilities }: any) => ({ name, supported_api_types, capabilities })));
+}
+
+// A command `<name> <workspace URL> [--provider <id>]` that lists with the sign-in's token and notifies
+// `databricks:<notification> <JSON>`, `databricks:<notification>_sign_in_required`, or `databricks:<notification>_failed <message>`.
+function registerListingCommand(
+  pi: any,
+  name: string,
+  description: string,
+  notification: string,
+  list: (origin: string, token: string, signal: AbortSignal) => Promise<unknown>,
+) {
+  pi.registerCommand(name, {
+    description,
     handler: async (args: string, ctx: any) => {
       try {
         const [workspace = "", option, providerId] = args.trim().split(/\s+/);
@@ -81,10 +109,10 @@ export function registerDatabricksMCPServicesCommand(pi: any) {
         // Refreshing reads the workspace and client from the stored credential, so the provider needs only its ID.
         if (!ctx.modelRegistry.getRegisteredProviderIds().includes(id)) ctx.modelRegistry.registerProvider(provider(id));
         const token = await ctx.modelRegistry.getApiKeyForProvider(id);
-        if (!token) return void ctx.ui.notify("databricks:mcp_services_sign_in_required");
-        ctx.ui.notify(`databricks:mcp_services ${JSON.stringify(await listMCPServices(origin, token, AbortSignal.timeout(60_000)))}`);
+        if (!token) return void ctx.ui.notify(`databricks:${notification}_sign_in_required`);
+        ctx.ui.notify(`databricks:${notification} ${JSON.stringify(await list(origin, token, AbortSignal.timeout(60_000)))}`);
       } catch (error: any) {
-        ctx.ui.notify(`databricks:mcp_services_failed ${error?.message ?? String(error)}`, "error");
+        ctx.ui.notify(`databricks:${notification}_failed ${error?.message ?? String(error)}`, "error");
       }
     },
   });
@@ -94,27 +122,43 @@ export function registerDatabricksMCPServicesCommand(pi: any) {
 // listed: finding them walks every catalog and schema.
 export async function listMCPServices(origin: string, token: string, signal: AbortSignal): Promise<string[]> {
   const names = new Set<string>();
+  for (const service of await listServices(origin, "mcp-services", "MCP services", token, signal, { view: "BASIC" })) {
+    const name = typeof service?.name === "string" ? service.name.replace(/^mcp-services\//, "") : "";
+    const status = service?.config?.connection?.status;
+    if (name.startsWith("system.ai.") && (status === undefined || status === "ACTIVE")) names.add(name);
+  }
+  return [...names].sort();
+}
+
+// Every page of a Unity Catalog service list under `system.ai` (`mcp-services` or `model-services`); `label` names it in
+// errors.
+async function listServices(
+  origin: string,
+  path: string,
+  label: string,
+  token: string,
+  signal: AbortSignal,
+  query: Record<string, string> = {},
+): Promise<any[]> {
+  const services: any[] = [];
   let pageToken: string | undefined;
   for (let page = 0; page < 100; page++) {
-    const url = new URL(`${origin}/api/2.1/unity-catalog/mcp-services`);
-    url.search = new URLSearchParams({ parent: "schemas/system.ai", view: "BASIC", ...(pageToken ? { page_token: pageToken } : {}) }).toString();
+    const url = new URL(`${origin}/api/2.1/unity-catalog/${path}`);
+    url.search = new URLSearchParams({ parent: "schemas/system.ai", ...query, ...(pageToken ? { page_token: pageToken } : {}) }).toString();
     const response = await fetch(url, { headers: { authorization: `Bearer ${token}` }, redirect: "error", signal });
     if (!response.ok) {
       // Databricks explains a refusal, such as a missing scope, in the body.
       const detail: any = await response.json().catch(() => undefined);
       const reason = [detail?.error_code, detail?.message].filter((part) => typeof part === "string").join(": ");
-      throw new Error(`Listing MCP services failed (HTTP ${response.status}${reason ? `, ${reason}` : ""})`);
+      throw new Error(`Listing ${label} failed (HTTP ${response.status}${reason ? `, ${reason}` : ""})`);
     }
     const body: any = await response.json();
-    for (const service of body.mcp_services ?? []) {
-      const name = typeof service?.name === "string" ? service.name.replace(/^mcp-services\//, "") : "";
-      const status = service?.config?.connection?.status;
-      if (name.startsWith("system.ai.") && (status === undefined || status === "ACTIVE")) names.add(name);
-    }
+    // The list's key is the path's (`mcp_services`, `model_services`).
+    services.push(...(body[path.replace("-", "_")] ?? []));
     pageToken = body.next_page_token || undefined;
     if (!pageToken) break;
   }
-  return [...names].sort();
+  return services;
 }
 
 // `/databricks-connection-login <workspace URL> <MCP service> [--client-id <id>]` signs the user in to the service's
@@ -179,8 +223,12 @@ export function provider(id: string, signIn?: { origin: string; client: Client }
     id,
     name: id,
     models: [],
-    // Pi requires an implementation; no model of this provider ever streams.
-    api: { "openai-responses": openAIResponsesApi },
+    // The APIs of the gateway routes that Dahlia writes to models.json (Anthropic, Gemini, codex, and MLflow).
+    api: {
+      "anthropic-messages": anthropicMessagesApi,
+      "google-generative-ai": googleGenerativeAIApi,
+      "openai-responses": openAIResponsesApi,
+    },
     auth: {
       oauth: {
         name: `Unity AI Gateway (${id})`,
