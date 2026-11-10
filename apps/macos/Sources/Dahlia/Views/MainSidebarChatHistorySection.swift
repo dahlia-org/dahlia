@@ -25,17 +25,16 @@ struct MainSidebarChatHistorySection: View {
         .task(id: coordinator.dockedSessionID) {
             sidebarViewModel.loadMeetingReferencesIfNeeded()
             syncMeetingCatalog()
-            if coordinator.history.isEmpty || coordinator.isDockedThreadMissingFromHistory {
+            if coordinator.history.isEmpty || coordinator.isHistoryStale {
                 await coordinator.refreshHistory()
             }
         }
         // Titles name meetings through the docked session's catalog, which only a mounted chat view fills otherwise.
         .onChange(of: sidebarViewModel.meetingReferences) { syncMeetingCatalog() }
         .onChange(of: sidebarViewModel.isMeetingCatalogLoaded) { syncMeetingCatalog() }
-        // The coordinator refreshes only for background sessions, so the visible list picks up the current chat itself
-        // once its first reply has finished; Pi writes a new thread's session file only then.
-        .onChange(of: coordinator.isDockedThreadMissingFromHistory) { _, isMissing in
-            guard isMissing else { return }
+        // The coordinator marks history stale, without refreshing, when the current chat's new thread becomes listable.
+        .onChange(of: coordinator.isHistoryStale) { _, isStale in
+            guard isStale else { return }
             Task { await coordinator.refreshHistory() }
         }
 
