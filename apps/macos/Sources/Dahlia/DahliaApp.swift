@@ -117,6 +117,7 @@ struct DahliaApp: App {
                             workspaceManagementModel: workspaceManagementModel,
                             onSelectWorkspace: { workspace in openWorkspace(workspace) }
                         )
+                        .environment(chatCoordinator)
                     }
                 }
                 .disabled(mainWindowNavigation.isShowingDahliaSignIn || mainWindowNavigation.settingsModal != nil)
@@ -358,11 +359,10 @@ struct DahliaApp: App {
     private func finishLaunching() {
         guard let appDatabase else { return }
         configureMeetingDetection(in: appDatabase)
+        let accountScopes = [AppAccountScope.local] + dahliaAccountController.connections.map { .dahlia($0.id) }
+        Task.detached { GoogleSignInAdapter.deleteRetiredCredentials(scopes: accountScopes) }
         Task {
-            let settings = AppSettings.shared
-            async let driveRestore: Void = GoogleDriveStore.shared.restoreSessionIfNeeded()
-            await CalendarSourceCoordinator.shared.refreshEnabledSources(settings.enabledCalendarSources)
-            await driveRestore
+            await CalendarSourceCoordinator.shared.refreshEnabledSources(AppSettings.shared.enabledCalendarSources)
         }
     }
 

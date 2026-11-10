@@ -660,13 +660,14 @@ import GRDB
                 context: context,
                 writeFile: true
             )
-            let summary = try context.repository.fetchSummary(forMeetingId: meeting.id)
-            let expectedDocument = try #require(summary).document
-            #expect(try context.repository.updateSummaryGoogleFileId(
-                forMeetingId: meeting.id,
-                googleFileId: "google-document-id",
-                expectedDocument: expectedDocument
-            ))
+            try context.repository.dbQueue.write { db in
+                try SummaryExportRecord.setURL(
+                    SummaryExportRecord.googleDocsURL(fileId: "google-document-id"),
+                    meetingId: meeting.id,
+                    type: .googleDocs,
+                    in: db
+                )
+            }
 
             try context.service.moveMeeting(id: meeting.id, toProjectId: destination.id)
             let movedMeeting = try context.database.dbQueue.read { db in

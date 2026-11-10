@@ -52,6 +52,8 @@ final class MainWindowNavigation {
     private(set) var setupTourMode: SetupTourMode?
     private(set) var sidebarWidth: CGFloat
     private(set) var chatSidebarWidth: CGFloat
+    /// The Appearance page's tab, kept here so a link can open the tab it names.
+    var appearanceTab = AppearanceSettingsView.Tab.general
     var settingsCategory: SettingsCategory {
         didSet {
             SettingsNavigation.saveSelection(settingsCategory, in: settingsDefaults)
@@ -210,6 +212,7 @@ final class MainWindowNavigation {
 
     func openSettings(category: SettingsCategory? = nil) {
         if let category {
+            if category == .eventDisplay { appearanceTab = .eventDisplay }
             settingsCategory = SettingsNavigation.visibleSelection(category)
         }
         isShowingSettings = true

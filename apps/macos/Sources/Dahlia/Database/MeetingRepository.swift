@@ -1128,27 +1128,6 @@ final class MeetingRepository {
         }
     }
 
-    func updateSummaryGoogleFileId(
-        forMeetingId meetingId: UUID,
-        googleFileId: String?,
-        expectedDocument: String
-    ) throws -> Bool {
-        try dbQueue.write { db in
-            guard let summary = try SummaryContent.fetchOne(db, key: meetingId),
-                  try summary.loadDocument().databaseJSONString() == expectedDocument else { return false }
-            let googleDocsURL = googleFileId?.nilIfBlank.flatMap { fileId in
-                SummaryExportRecord.googleDocsURL(fileId: fileId)
-            }
-            try SummaryExportRecord.setURL(
-                googleDocsURL,
-                meetingId: meetingId,
-                type: .googleDocs,
-                in: db
-            )
-            return true
-        }
-    }
-
     nonisolated func updateSummaryWorkspaceRelativePath(forMeetingId meetingId: UUID, relativePath: String?) throws {
         try dbQueue.write { db in
             guard try SummaryRecord.filter(Column("meetingId") == meetingId).fetchCount(db) > 0 else { return }

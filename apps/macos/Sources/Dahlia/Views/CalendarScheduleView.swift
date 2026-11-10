@@ -167,7 +167,7 @@ struct CalendarScheduleView: View {
                 title: L10n.calendarNoEventsMatchFiltersTitle,
                 message: L10n.calendarNoEventsMatchFiltersMessage,
                 actionTitle: L10n.settings,
-                action: { mainWindowNavigation.openSettings(category: .calendarDisplay) }
+                action: { mainWindowNavigation.openSettings(category: .eventDisplay) }
             )
         } else if hasLoadedEnabledSource || !hasEnabledSourceStatusCard {
             statusCard(

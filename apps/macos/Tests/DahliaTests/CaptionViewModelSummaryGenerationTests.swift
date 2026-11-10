@@ -111,7 +111,7 @@ import Synchronization
             for sessionID in [firstSessionID, secondSessionID] {
                 let processing = RecordingProcessing(
                     id: .v7(), automatic: true, liveDraft: false, localeIdentifier: "en_US", method: .transcript,
-                    options: .init(exportOptions: .init(exportsToWorkspace: false, exportsToGoogleDocs: false)),
+                    options: .init(exportOptions: .init(exportsToWorkspace: false)),
                     generationSettings: .current(), workspaceSettings: nil,
                     sessionIDs: [sessionID], stage: .failed, error: "Original failure", failureDismissed: true
                 )
@@ -316,7 +316,7 @@ import Synchronization
             let viewModel = CaptionViewModel(summaryGenerationRunner: runner.run)
             await fixture.select(fixture.first, in: viewModel, note: "note")
             let sessionID = try fixture.insertRecordingSession(for: fixture.first, offset: 0)
-            let options = SummaryGenerationOptions(exportOptions: .init(exportsToWorkspace: false, exportsToGoogleDocs: false))
+            let options = SummaryGenerationOptions(exportOptions: .init(exportsToWorkspace: false))
             let id = UUID.v7()
             // A saved Server request retains its ID on result-sync retry. Use the local runner to gate cleanup.
             let processing = RecordingProcessing(
@@ -357,17 +357,15 @@ import Synchronization
             let fixture = try SummaryGenerationFixture()
             defer { fixture.removeFiles() }
             let runner = BlockingSummaryRunner()
-            var exportCalls = 0
-            let viewModel = CaptionViewModel(summaryGenerationRunner: runner.run, googleDocsSummaryExporter: { _, _, _ in
-                exportCalls += 1
-                if exportCalls == 1 { throw URLError(.networkConnectionLost) }
-                return "exported-file"
-            })
+            let viewModel = CaptionViewModel(summaryGenerationRunner: runner.run)
             await fixture.select(fixture.first, in: viewModel, note: "note")
             let sessionID = try fixture.insertRecordingSession(for: fixture.first, offset: 0)
             let options = SummaryGenerationOptions(
-                exportOptions: .init(exportsToWorkspace: false, exportsToGoogleDocs: true), detailLevel: .detailed
+                exportOptions: .init(exportsToWorkspace: true), detailLevel: .detailed
             )
+            // A file where the workspace folder belongs makes the first export fail.
+            try FileManager.default.removeItem(at: fixture.workspaceURL)
+            try Data().write(to: fixture.workspaceURL)
             let processing = RecordingProcessing(
                 id: .v7(), automatic: true, liveDraft: false, localeIdentifier: "en_US", method: .transcript,
                 options: options, generationSettings: .current(detailLevel: .detailed), workspaceSettings: nil,
@@ -385,7 +383,9 @@ import Synchronization
             try #require(await waitUntil { !viewModel.isSummaryGenerating(meetingId: fixture.first.id) })
             let job = try #require(viewModel.summaryGenerationJobs.first)
             #expect(job.hasFailure)
-            #expect(exportCalls == 1)
+            #expect(try fixture.summaryPath(for: fixture.first.id) == nil)
+            try FileManager.default.removeItem(at: fixture.workspaceURL)
+            try FileManager.default.createDirectory(at: fixture.workspaceURL, withIntermediateDirectories: true)
             #expect(try await fixture.database.dbQueue.read { try RecordingProcessing.load(sessionID: sessionID, in: $0)?.summaryApplied } == true)
             #expect(try await fixture.database.dbQueue.read { try RecordingProcessing.load(sessionID: sessionID, in: $0)?.stage } == .failed)
             if edited {
@@ -394,10 +394,7 @@ import Synchronization
                 )
             }
             let before = try await fixture.database.dbQueue.read { try MeetingRecord.fetchOne($0, key: fixture.first.id)?.updatedAt }
-            let retryModel = restarting ? CaptionViewModel(summaryGenerationRunner: runner.run, googleDocsSummaryExporter: { _, _, _ in
-                exportCalls += 1
-                return "exported-file"
-            }) : viewModel
+            let retryModel = restarting ? CaptionViewModel(summaryGenerationRunner: runner.run) : viewModel
             if restarting { try await retryModel.restoreRecordingProcessingForTesting(dbQueue: fixture.database.dbQueue) }
             let retryJob = try #require(retryModel.summaryGenerationJobs.first)
             retryJob.retry?()
@@ -406,7 +403,7 @@ import Synchronization
                     && !retryModel.isSummaryGenerating(meetingId: fixture.first.id)
             })
             #expect(runner.calls.count == 1)
-            #expect(exportCalls == (edited ? 1 : 2))
+            #expect(try (fixture.summaryPath(for: fixture.first.id) != nil) == !edited)
             #expect(try fixture.summary(for: fixture.first.id)?.title == (edited ? "Edited" : "Published"))
             #expect(try await fixture.database.dbQueue.read { try MeetingRecord.fetchOne($0, key: fixture.first.id)?.updatedAt } == before)
         }
@@ -434,7 +431,7 @@ import Synchronization
             )
             let processing = RecordingProcessing(
                 id: id, automatic: true, liveDraft: false, localeIdentifier: "en_US", method: .transcript,
-                options: .init(exportOptions: .init(exportsToWorkspace: true, exportsToGoogleDocs: true)),
+                options: .init(exportOptions: .init(exportsToWorkspace: true)),
                 generationSettings: .current(), workspaceSettings: nil, sessionIDs: [sessionID], stage: .saving,
                 summaryExpectation: expected, generatedSummary: saved
             )
@@ -443,15 +440,13 @@ import Synchronization
                 toMeetingId: fixture.first.id, document: saved.document, tags: [], expectation: expected
             )
             var generationCalls = 0
-            var exportCalls = 0
             let restored = CaptionViewModel(summaryGenerationRunner: { _ in generationCalls += 1
                 return saved
-            }, googleDocsSummaryExporter: { _, _, _ in
-                exportCalls += 1
-                return "restored-file"
             })
             try await restored.restoreRecordingProcessingForTesting(dbQueue: fixture.database.dbQueue)
-            try #require(await waitUntil { exportCalls == 1 && !restored.isSummaryGenerating(meetingId: fixture.first.id) })
+            try #require(await waitUntil {
+                (try? fixture.summaryPath(for: fixture.first.id)) != nil && !restored.isSummaryGenerating(meetingId: fixture.first.id)
+            })
             #expect(generationCalls == 0)
             #expect(try await fixture.database.dbQueue.read { try RecordingProcessing.load(sessionID: sessionID, in: $0)?.stage } == .succeeded)
             let markdown = try String(contentsOf: fixture.workspaceURL.appending(path: #require(try fixture.summaryPath(for: fixture.first.id))), encoding: .utf8)
@@ -507,7 +502,7 @@ import Synchronization
                 summaryDocumentLoader: loader.load
             )
             let options = SummaryGenerationOptions(
-                exportOptions: SummaryExportOptions(exportsToWorkspace: false, exportsToGoogleDocs: false)
+                exportOptions: SummaryExportOptions(exportsToWorkspace: false)
             )
 
             await fixture.select(fixture.first, in: viewModel, note: "note")
@@ -521,43 +516,6 @@ import Synchronization
 
             loader.complete(document: SummaryDocument(title: "Stale", sections: []))
             #expect(await waitUntil { viewModel.currentSummaryDocument?.title == "Generated" })
-        }
-
-        @Test
-        func googleDocsExportDoesNotAttachToASummaryChangedDuringUpload() async throws {
-            let fixture = try SummaryGenerationFixture()
-            defer { fixture.removeFiles() }
-            let exporter = BlockingGoogleDocsSummaryExporter()
-            let viewModel = CaptionViewModel(googleDocsSummaryExporter: exporter.export)
-            let repository = MeetingRepository(dbQueue: fixture.database.dbQueue)
-            try repository.applyGeneratedSummary(
-                toMeetingId: fixture.first.id,
-                document: SummaryDocument(title: "Original", sections: []),
-                tags: []
-            )
-            await fixture.select(fixture.first, in: viewModel, note: "note")
-            #expect(await waitUntil { viewModel.currentSummaryDocument?.title == "Original" })
-
-            let export = Task { await viewModel.exportCurrentSummaryToGoogleDocs() }
-            await exporter.waitForCall()
-            try repository.applyGeneratedSummary(
-                toMeetingId: fixture.first.id,
-                document: SummaryDocument(title: "Corrected", sections: []),
-                tags: []
-            )
-            exporter.complete(fileId: "stale-file")
-
-            let exported = await export.value
-            #expect(!exported)
-            let googleExport = try await fixture.database.dbQueue.read { db in
-                try SummaryExportRecord.fetchOne(
-                    meetingId: fixture.first.id,
-                    type: .googleDocs,
-                    in: db
-                )
-            }
-            #expect(googleExport == nil)
-            #expect(try repository.fetchSummary(forMeetingId: fixture.first.id)?.loadDocument().title == "Corrected")
         }
 
         @Test
@@ -587,7 +545,7 @@ import Synchronization
             let viewModel = CaptionViewModel(summaryGenerationRunner: runner.run)
             let project = try fixture.insertProject(name: "Selected", description: "Selected context")
             let options = SummaryGenerationOptions(
-                exportOptions: SummaryExportOptions(exportsToWorkspace: false, exportsToGoogleDocs: false)
+                exportOptions: SummaryExportOptions(exportsToWorkspace: false)
             )
 
             await fixture.select(fixture.first, in: viewModel, note: "note")
@@ -620,7 +578,7 @@ import Synchronization
                 dbQueue: fixture.database.dbQueue,
                 workspaceURL: fixture.workspaceURL,
                 options: SummaryGenerationOptions(
-                    exportOptions: SummaryExportOptions(exportsToWorkspace: false, exportsToGoogleDocs: false)
+                    exportOptions: SummaryExportOptions(exportsToWorkspace: false)
                 )
             )
             try await runner.waitForCallCount(1)
@@ -638,7 +596,7 @@ import Synchronization
             let viewModel = CaptionViewModel(summaryGenerationRunner: runner.run)
             let project = try fixture.insertProject(name: "Original", description: "")
             let options = SummaryGenerationOptions(
-                exportOptions: SummaryExportOptions(exportsToWorkspace: true, exportsToGoogleDocs: false)
+                exportOptions: SummaryExportOptions(exportsToWorkspace: true)
             )
             await fixture.select(fixture.first, in: viewModel, note: "note")
             #expect(viewModel.assignCurrentMeetingProject(project.id) == nil)
@@ -682,7 +640,7 @@ import Synchronization
                 relativePath: "Project/Existing.md"
             )
             let options = SummaryGenerationOptions(
-                exportOptions: SummaryExportOptions(exportsToWorkspace: true, exportsToGoogleDocs: false)
+                exportOptions: SummaryExportOptions(exportsToWorkspace: true)
             )
 
             await fixture.select(fixture.first, in: viewModel, note: "note")
@@ -740,7 +698,7 @@ import Synchronization
             try fixture.assign(fixture.first, to: project)
             let sessionID = try fixture.insertRecordingSession(for: fixture.first, offset: 0)
             let options = SummaryGenerationOptions(
-                exportOptions: SummaryExportOptions(exportsToWorkspace: false, exportsToGoogleDocs: false),
+                exportOptions: SummaryExportOptions(exportsToWorkspace: false),
                 detailLevel: .eventSession
             )
 
@@ -785,7 +743,7 @@ import Synchronization
             let viewModel = CaptionViewModel(summaryGenerationRunner: runner.run)
             let meetingIDs: Set<UUID> = [fixture.first.id, fixture.second.id]
             let options = SummaryGenerationOptions(
-                exportOptions: SummaryExportOptions(exportsToWorkspace: false, exportsToGoogleDocs: false),
+                exportOptions: SummaryExportOptions(exportsToWorkspace: false),
                 detailLevel: .standard
             )
 
@@ -822,7 +780,7 @@ import Synchronization
             let viewModel = CaptionViewModel(summaryGenerationRunner: runner.run)
             let meetingIDs: Set<UUID> = [fixture.first.id, fixture.second.id]
             let options = SummaryGenerationOptions(
-                exportOptions: SummaryExportOptions(exportsToWorkspace: false, exportsToGoogleDocs: false)
+                exportOptions: SummaryExportOptions(exportsToWorkspace: false)
             )
 
             await fixture.select(fixture.first, in: viewModel, note: "first")
@@ -853,7 +811,7 @@ import Synchronization
             let runner = BlockingSummaryRunner()
             let viewModel = CaptionViewModel(summaryGenerationRunner: runner.run)
             let options = SummaryGenerationOptions(
-                exportOptions: SummaryExportOptions(exportsToWorkspace: false, exportsToGoogleDocs: false)
+                exportOptions: SummaryExportOptions(exportsToWorkspace: false)
             )
 
             await fixture.select(fixture.first, in: viewModel, note: "first note")
@@ -900,7 +858,7 @@ import Synchronization
                 summaryJobSleeper: sleeper.sleep
             )
             let options = SummaryGenerationOptions(
-                exportOptions: SummaryExportOptions(exportsToWorkspace: false, exportsToGoogleDocs: false),
+                exportOptions: SummaryExportOptions(exportsToWorkspace: false),
                 detailLevel: .eventSession,
                 overrides: .init(model: "frozen-model", reasoningEffort: "high")
             )
@@ -946,7 +904,7 @@ import Synchronization
             let runner = BlockingSummaryRunner()
             let viewModel = CaptionViewModel(summaryGenerationRunner: runner.run)
             let options = SummaryGenerationOptions(
-                exportOptions: SummaryExportOptions(exportsToWorkspace: false, exportsToGoogleDocs: false)
+                exportOptions: SummaryExportOptions(exportsToWorkspace: false)
             )
             let sessionID = UUID.v7()
             let sourceSettings = SummaryGenerationSettings(
@@ -986,14 +944,14 @@ import Synchronization
             let runner = BlockingSummaryRunner()
             let viewModel = CaptionViewModel(summaryGenerationRunner: runner.run)
             let manualOptions = SummaryGenerationOptions(
-                exportOptions: SummaryExportOptions(exportsToWorkspace: false, exportsToGoogleDocs: false)
+                exportOptions: SummaryExportOptions(exportsToWorkspace: false)
             )
             let eventOptions = SummaryGenerationOptions(
-                exportOptions: SummaryExportOptions(exportsToWorkspace: false, exportsToGoogleDocs: false),
+                exportOptions: SummaryExportOptions(exportsToWorkspace: false),
                 detailLevel: .eventSession
             )
             let conciseOptions = SummaryGenerationOptions(
-                exportOptions: SummaryExportOptions(exportsToWorkspace: false, exportsToGoogleDocs: false),
+                exportOptions: SummaryExportOptions(exportsToWorkspace: false),
                 detailLevel: .concise
             )
             await fixture.select(fixture.first, in: viewModel, note: "manual")
@@ -1066,7 +1024,7 @@ import Synchronization
             let runner = BlockingSummaryRunner()
             let viewModel = CaptionViewModel(summaryGenerationRunner: runner.run)
             let options = SummaryGenerationOptions(
-                exportOptions: SummaryExportOptions(exportsToWorkspace: false, exportsToGoogleDocs: false)
+                exportOptions: SummaryExportOptions(exportsToWorkspace: false)
             )
             let originalSessionID = try #require(UUID(uuidString: "00000000-0000-0000-0000-000000000001"))
             let destinationSessionID = try #require(UUID(uuidString: "00000000-0000-0000-0000-000000000002"))
@@ -1131,15 +1089,15 @@ import Synchronization
             let runner = BlockingSummaryRunner()
             let viewModel = CaptionViewModel(summaryGenerationRunner: runner.run)
             let eventOptions = SummaryGenerationOptions(
-                exportOptions: SummaryExportOptions(exportsToWorkspace: true, exportsToGoogleDocs: false),
+                exportOptions: SummaryExportOptions(exportsToWorkspace: true),
                 detailLevel: .eventSession
             )
             let sameContextOptions = SummaryGenerationOptions(
-                exportOptions: SummaryExportOptions(exportsToWorkspace: false, exportsToGoogleDocs: true),
+                exportOptions: SummaryExportOptions(exportsToWorkspace: false),
                 detailLevel: .concise
             )
             let otherContextOptions = SummaryGenerationOptions(
-                exportOptions: SummaryExportOptions(exportsToWorkspace: false, exportsToGoogleDocs: false),
+                exportOptions: SummaryExportOptions(exportsToWorkspace: false),
                 detailLevel: .concise
             )
             let activeSessionID = try original.insertRecordingSession(for: original.first, offset: 0)
@@ -1223,13 +1181,11 @@ import Synchronization
             let failedJob = try #require(viewModel.summaryGenerationJobs.first { $0.id == failedJobID })
             #expect(failedJob.isFinished)
             #expect(failedJob.progress.workspaceExport.isSkipped)
-            #expect(failedJob.progress.googleDocsExport.isSkipped)
             #expect(runner.calls[1].settings.detailLevelInstruction == SummaryDetailLevel.concise.instruction)
             let otherContextJob = try #require(viewModel.summaryGenerationJobs.first {
                 if case .running = $0.progress.summaryGeneration { true } else { false }
             })
             #expect(otherContextJob.progress.workspaceExport.isSkipped)
-            #expect(otherContextJob.progress.googleDocsExport.isSkipped)
 
             await viewModel.handleBatchTranscriptionUpdate(.init(
                 meetingId: original.first.id,
@@ -1243,7 +1199,6 @@ import Synchronization
                 if case .running = $0.progress.summaryGeneration { true } else { false }
             })
             #expect(!sameContextJob.progress.workspaceExport.isSkipped)
-            #expect(!sameContextJob.progress.googleDocsExport.isSkipped)
             runner.fail(meetingID: original.first.id)
             #expect(await waitUntil { !viewModel.isSummaryGenerating(meetingId: original.first.id) })
 
@@ -1257,7 +1212,6 @@ import Synchronization
                 if case .running = $0.progress.summaryGeneration { true } else { false }
             })
             #expect(otherMeetingJob.progress.workspaceExport.isSkipped)
-            #expect(otherMeetingJob.progress.googleDocsExport.isSkipped)
             runner.fail(meetingID: original.second.id)
             #expect(await waitUntil { !viewModel.isSummaryGenerating(meetingId: original.second.id) })
         }
@@ -1282,7 +1236,7 @@ import Synchronization
             let viewModel = CaptionViewModel(summaryGenerationRunner: runner.run)
             let sessionID = UUID.v7()
             let options = SummaryGenerationOptions(
-                exportOptions: SummaryExportOptions(exportsToWorkspace: false, exportsToGoogleDocs: false)
+                exportOptions: SummaryExportOptions(exportsToWorkspace: false)
             )
             viewModel.registerPendingBatchSummaryForTesting(
                 sessionID: sessionID,
@@ -1321,7 +1275,7 @@ import Synchronization
                 sessionID: firstSessionID,
                 meetingID: fixture.first.id,
                 options: SummaryGenerationOptions(
-                    exportOptions: SummaryExportOptions(exportsToWorkspace: true, exportsToGoogleDocs: false),
+                    exportOptions: SummaryExportOptions(exportsToWorkspace: true),
                     detailLevel: .eventSession
                 ),
                 dbQueue: fixture.database.dbQueue,
@@ -1337,7 +1291,7 @@ import Synchronization
                 sessionID: secondSessionID,
                 meetingID: fixture.first.id,
                 options: SummaryGenerationOptions(
-                    exportOptions: SummaryExportOptions(exportsToWorkspace: false, exportsToGoogleDocs: true),
+                    exportOptions: SummaryExportOptions(exportsToWorkspace: false),
                     detailLevel: .concise
                 ),
                 dbQueue: fixture.database.dbQueue,
@@ -1360,7 +1314,6 @@ import Synchronization
                 if case .running = $0.progress.summaryGeneration { true } else { false }
             })
             #expect(!job.progress.workspaceExport.isSkipped)
-            #expect(!job.progress.googleDocsExport.isSkipped)
             runner.fail(meetingID: fixture.first.id)
             #expect(await waitUntil { !viewModel.isSummaryGenerating(meetingId: fixture.first.id) })
         }
@@ -1376,7 +1329,7 @@ import Synchronization
                 sessionID: sessionID,
                 meetingID: missingMeetingID,
                 options: SummaryGenerationOptions(
-                    exportOptions: SummaryExportOptions(exportsToWorkspace: false, exportsToGoogleDocs: false)
+                    exportOptions: SummaryExportOptions(exportsToWorkspace: false)
                 ),
                 dbQueue: fixture.database.dbQueue,
                 workspaceURL: fixture.workspaceURL
@@ -1408,7 +1361,7 @@ import Synchronization
             let viewModel = CaptionViewModel(summaryGenerationRunner: runner.run)
             let project = try original.insertProject(name: "Original Project", description: "Original context")
             let options = SummaryGenerationOptions(
-                exportOptions: SummaryExportOptions(exportsToWorkspace: false, exportsToGoogleDocs: false)
+                exportOptions: SummaryExportOptions(exportsToWorkspace: false)
             )
             await original.select(original.first, in: viewModel, note: "original")
             let sessionID = try original.insertRecordingSession(for: original.first, offset: 0)
@@ -1471,7 +1424,7 @@ import Synchronization
             defer { fixture.removeFiles() }
             let runner = BlockingSummaryRunner()
             let viewModel = CaptionViewModel(summaryGenerationRunner: runner.run)
-            let options = SummaryGenerationOptions(exportOptions: .init(exportsToWorkspace: false, exportsToGoogleDocs: false), detailLevel: .concise)
+            let options = SummaryGenerationOptions(exportOptions: .init(exportsToWorkspace: false), detailLevel: .concise)
             await fixture.select(fixture.first, in: viewModel, note: "note")
             #expect(viewModel.triggerManualSummary(options: .init(exportOptions: options.exportOptions, detailLevel: .max)))
             try #require(await waitUntil { runner.calls.count == 1 })
@@ -1603,30 +1556,6 @@ import Synchronization
 
         func complete(document: SummaryDocument?) {
             continuation?.resume(returning: document)
-            continuation = nil
-        }
-    }
-
-    @MainActor
-    private final class BlockingGoogleDocsSummaryExporter {
-        private var continuation: CheckedContinuation<String, Never>?
-        private var callWaiter: CheckedContinuation<Void, Never>?
-
-        func export(_: SummaryDocument, _: SummaryRenderContext, _: String) async throws -> String {
-            await withCheckedContinuation { continuation in
-                self.continuation = continuation
-                callWaiter?.resume()
-                callWaiter = nil
-            }
-        }
-
-        func waitForCall() async {
-            if continuation != nil { return }
-            await withCheckedContinuation { callWaiter = $0 }
-        }
-
-        func complete(fileId: String) {
-            continuation?.resume(returning: fileId)
             continuation = nil
         }
     }

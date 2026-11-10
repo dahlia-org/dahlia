@@ -2,7 +2,6 @@ import SwiftUI
 
 enum GoogleOAuthDisclosure: String, Identifiable {
     case calendar
-    case drive
 
     nonisolated static let privacyPolicyURL = URL(string: "https://dahlia-ai.org/privacy/")!
     nonisolated static let japanesePrivacyPolicyURL = URL(string: "https://dahlia-ai.org/ja/privacy/")!
@@ -13,59 +12,17 @@ enum GoogleOAuthDisclosure: String, Identifiable {
 
     var id: String { rawValue }
 
-    var title: String {
-        switch self {
-        case .calendar:
-            L10n.googleCalendarOAuthDisclosureTitle
-        case .drive:
-            L10n.googleDriveOAuthDisclosureTitle
-        }
-    }
+    var title: String { L10n.googleCalendarOAuthDisclosureTitle }
 
-    var overview: String {
-        switch self {
-        case .calendar:
-            L10n.googleCalendarOAuthDisclosureOverview
-        case .drive:
-            L10n.googleDriveOAuthDisclosureOverview
-        }
-    }
+    var overview: String { L10n.googleCalendarOAuthDisclosureOverview }
 
-    var accessedData: String {
-        switch self {
-        case .calendar:
-            L10n.googleCalendarOAuthDisclosureAccess
-        case .drive:
-            L10n.googleDriveOAuthDisclosureAccess
-        }
-    }
+    var accessedData: String { L10n.googleCalendarOAuthDisclosureAccess }
 
-    var useAndStorage: String {
-        switch self {
-        case .calendar:
-            L10n.googleCalendarOAuthDisclosureUseAndStorage
-        case .drive:
-            L10n.googleDriveOAuthDisclosureUseAndStorage
-        }
-    }
+    var useAndStorage: String { L10n.googleCalendarOAuthDisclosureUseAndStorage }
 
-    var externalSharing: String {
-        switch self {
-        case .calendar:
-            L10n.googleCalendarOAuthDisclosureExternalSharing
-        case .drive:
-            L10n.googleDriveOAuthDisclosureExternalSharing
-        }
-    }
+    var externalSharing: String { L10n.googleCalendarOAuthDisclosureExternalSharing }
 
-    var deletion: String {
-        switch self {
-        case .calendar:
-            L10n.googleCalendarOAuthDisclosureDeletion
-        case .drive:
-            L10n.googleDriveOAuthDisclosureDeletion
-        }
-    }
+    var deletion: String { L10n.googleCalendarOAuthDisclosureDeletion }
 }
 
 struct GoogleOAuthConsentState {

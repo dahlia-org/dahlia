@@ -5,7 +5,6 @@
 "settings.organization.settingsAccountIntro" = "選択中のアカウントのAI設定です。このMacでのみ適用され、同じアカウントのすべてのワークスペースで共通です。別のMacやWebには同期されません。";
 "settings.organization.settingsWorkspaceManagementIntro" = "選択中のアカウントのワークスペースを切り替え、名前、所属アカウント、共有、書き出し先と、選択中のワークスペースの出力言語を管理します。";
 "settings.organization.settingsAccountsIntro" = "選択中のアカウントのモデルプロバイダーとAI設定を管理します。アカウントはサイドバー下部のアカウントメニューで切り替えます。";
-"settings.organization.settingsExportIntro" = "サイドバーで選択中のアカウントの書き出し先を、このMacで設定します。";
 "settings.organization.settingsAccountSelectionDescription" = "編集対象を選んでも、開いているワークスペースは変わりません。";
 "settings.organization.settingsLoading" = "設定を読み込み中…";
 "settings.organization.settingsApplyNextGeneration" = "変更は自動保存され、次回の生成から適用されます。";
@@ -529,14 +528,13 @@
 "Update Available" = "アップデートあり";
 "Dahlia %@ is available. Click to view the update." = "Dahlia %@ を利用できます。クリックしてアップデートを確認します。";
 "App" = "アプリ";
-"Integrations" = "連携";
 "AI" = "AI";
 "Advanced" = "詳細";
 "Model Provider" = "モデルプロバイダー";
 "Diagnostics" = "診断";
 "Notifications" = "通知";
 "Calendar" = "カレンダー";
-"Calendar Display" = "カレンダー表示";
+"Meeting Links" = "会議リンク";
 "Model" = "モデル";
 "Reasoning Effort" = "推論の強度";
 "Controls how much reasoning Pi uses for each summary." = "要約ごとに Pi が使用する推論の強度を設定します。";
@@ -556,7 +554,6 @@
 "Extra High" = "非常に高い";
 "Max" = "最大";
 "Ultra" = "ウルトラ";
-"Developer Settings" = "開発者設定";
 "Workspace" = "ワークスペース";
 "Accounts and Workspaces" = "アカウントとワークスペース";
 "Dahlia Account" = "Dahlia アカウント";
@@ -614,6 +611,8 @@
 "Open the account menu." = "アカウントメニューを開きます。";
 "No workspace selected" = "ワークスペースが選択されていません";
 "Appearance" = "外観";
+"settings.appearance.menuBar" = "メニューバー";
+"settings.appearance.eventDisplay" = "予定の表示";
 "Display" = "表示";
 "Typography" = "文字";
 "Font Size" = "フォントサイズ";
@@ -632,12 +631,6 @@
 "Choose which language translated live subtitles should use." = "翻訳したライブ字幕に使う言語を選びます。";
 "Translation is automatically disabled when the target language matches the transcription language." = "翻訳先の言語が文字起こし言語と同じ場合、翻訳は自動的に無効になります。";
 "Translation is automatically disabled when the target language matches the live subtitle language." = "翻訳先の言語がライブ字幕の言語と同じ場合、翻訳は自動的に無効になります。";
-"Configure these only when your organization requires a company-managed Google OAuth client. Otherwise, leave them blank to use the app defaults." = "会社のポリシーで自社管理の Google OAuth クライアントを使用する必要がある場合にのみ設定してください。通常は空欄のまま、アプリ規定の設定を使用できます。";
-"Google OAuth Client ID" = "Google OAuth クライアント ID";
-"Leave blank to use the app's default client ID." = "空欄の場合は、アプリ規定のクライアント ID を使用します。";
-"Google OAuth Client Secret" = "Google OAuth クライアントシークレット";
-"Optional. Stored securely in Keychain. Leave blank to use the app's default client secret." = "任意です。Keychain に安全に保存されます。空欄の場合は、アプリ規定のクライアントシークレットを使用します。";
-"Reconnect Google services after changing OAuth credentials." = "OAuth 認証情報を変更した後は Google サービスを再接続してください。";
 "Google Calendar" = "Google カレンダー";
 "macOS Calendar" = "macOS カレンダー";
 "Calendar Source" = "カレンダーソース";
@@ -688,23 +681,17 @@
 "Join" = "参加";
 "All day" = "終日";
 "Google Calendar is not configured" = "Google カレンダーが未設定です";
-"Set a Google OAuth client ID in Developer Settings before connecting Google Calendar." = "Google カレンダーを接続する前に、開発者設定で Google OAuth クライアント ID を設定してください。";
+"This build of Dahlia has no Google OAuth client ID, so it can't connect Google Calendar." = "このビルドの Dahlia には Google OAuth クライアント ID が設定されていないため、Google カレンダーに接続できません。";
 "Connect Google Calendar" = "Google カレンダーを接続";
-"Connect Google Drive" = "Google Drive を接続";
 "Dahlia requests read-only access to your Google account and the upcoming events in calendars you choose." = "Dahlia は、Google アカウントと、選択したカレンダーの今後の予定への読み取り専用アクセスを要求します。";
-"Dahlia requests access only to the Google Drive files and folders it creates or that you explicitly use with Dahlia." = "Dahlia は、Dahlia が作成した、またはユーザーが Dahlia で明示的に使用した Google Drive のファイルとフォルダだけへのアクセスを要求します。";
 "Data Dahlia Accesses" = "Dahlia がアクセスするデータ";
 "Your Google account name and email address, calendar names, and event titles, descriptions, dates, attendance status, and meeting links." = "Google アカウントの名前とメールアドレス、カレンダー名、予定のタイトル、説明、日時、参加状態、会議リンクです。";
-"Your Google account name and email address, a Dahlia folder, and Google Docs summaries created by Dahlia. Other Drive files are not accessible to Dahlia." = "Google アカウントの名前とメールアドレス、Dahlia フォルダ、Dahlia が作成した Google Docs の要約です。Dahlia はその他の Drive ファイルにアクセスできません。";
 "How Dahlia Uses and Stores It" = "利用方法と保存場所";
 "OAuth tokens and your account ID, name, and email address are stored in Keychain. Upcoming events are shown in Dahlia. Auto-recording stores the selected event occurrence identifier and its start and end dates in local settings until the recording attempt or event end. Linked event details are stored in the local meeting database and any database backups you create while a saved meeting refers to them." = "OAuth トークンとアカウント ID、名前、メールアドレスは Keychain に保存します。今後の予定を Dahlia に表示します。自動録音を有効にした開催回の識別子と開始・終了日時は、録音開始を試みるか予定が終了するまでローカル設定に保存します。関連付けた予定の詳細は、その予定を参照する会議がある間、ローカル会議 DB とユーザーが作成した DB バックアップに保存します。";
-"OAuth tokens and your account ID, name, and email address are stored in Keychain. The export folder and account IDs are stored in local settings. Exported document URLs and IDs are stored with the related meeting and in any database backups you create." = "OAuth トークンとアカウント ID、名前、メールアドレスは Keychain に保存します。書き出しフォルダとアカウント ID はローカル設定に、書き出した文書の URL と ID は関連する会議およびユーザーが作成した DB バックアップに保存します。";
 "External Sharing" = "外部への送信";
 "When you generate a summary, enable automatic summary generation, or use AI chat, the linked event's title, description, and dates may be sent to the AI provider you configured. Dahlia does not use Google data to train general-purpose AI models." = "要約を生成する場合、自動要約を有効にした場合、または AI チャットを使用する場合、関連付けた予定のタイトル、説明、日時を設定済み AI プロバイダーへ送信することがあります。Dahlia は Google データを汎用 AI モデルの学習に利用しません。";
-"When you request an export, the summary and included images are sent directly from this Mac to Google Drive. Dahlia does not send unrelated Drive content to an AI provider or developer server." = "ユーザーが書き出しを要求すると、要約と含まれる画像をこの Mac から Google Drive へ直接送信します。Dahlia は無関係な Drive の内容を AI プロバイダーや開発者のサーバーへ送りません。";
 "Manage and Delete" = "管理と削除";
-"Disconnecting Calendar removes only its local OAuth session and saved calendar selection identifiers. It does not disconnect Drive. Delete linked meetings to remove saved calendar details from the active database, and delete database backups separately." = "Calendar の接続を解除すると、Calendar のローカル OAuth セッションと保存したカレンダー選択識別子だけが削除されます。Drive の接続は解除されません。保存済み予定の詳細は関連する会議を削除すると使用中の DB から消えます。DB バックアップは別途削除してください。";
-"Disconnecting Drive removes only its local OAuth session and saved export-folder identifiers. It does not disconnect Calendar. Exported documents remain in Drive; delete them there, and delete related meetings and database backups to remove local document references." = "Drive の接続を解除すると、Drive のローカル OAuth セッションと保存した書き出しフォルダ識別子だけが削除されます。Calendar の接続は解除されません。書き出した文書は Drive に残るため Drive 上で削除し、ローカルの文書参照は関連する会議と DB バックアップを削除してください。";
+"Disconnecting Calendar removes only its local OAuth session and saved calendar selection identifiers. Delete linked meetings to remove saved calendar details from the active database, and delete database backups separately." = "Calendar の接続を解除すると、Calendar のローカル OAuth セッションと保存したカレンダー選択識別子だけが削除されます。保存済み予定の詳細は関連する会議を削除すると使用中の DB から消えます。DB バックアップは別途削除してください。";
 "View Privacy Policy" = "プライバシーポリシーを表示";
 "Continue to Google" = "Google に進む";
 "Connect Google Calendar from Settings to show your upcoming events on Home." = "Home に予定を表示するには設定画面から Google カレンダーを接続してください。";
@@ -733,7 +720,7 @@
 "Untitled calendar" = "タイトル未設定のカレンダー";
 "No window is available to present Google sign-in." = "Google サインインを表示できるウィンドウがありません。";
 "No previous Google Calendar session was found." = "以前の Google カレンダーセッションは見つかりませんでした。";
-"This Google OAuth client requires a client secret. Enter the value from Google Cloud Console in Developer Settings and relaunch Dahlia." = "この Google OAuth クライアントにはクライアントシークレットが必要です。Google Cloud Console の値を開発者設定に入力し、Dahlia を再起動してください。";
+"This Google OAuth client requires a client secret, which this build of Dahlia doesn't include." = "この Google OAuth クライアントにはクライアントシークレットが必要ですが、このビルドの Dahlia には含まれていません。";
 "Google sign-in could not access Keychain. Rebuild the app with ./scripts/run-dev.sh so it is code signed with the required Keychain entitlements." = "Google サインインが Keychain にアクセスできませんでした。必要な Keychain entitlement 付きでコード署名されるよう、./scripts/run-dev.sh でアプリを作り直してください。";
 "Google Account" = "Google アカウント";
 "Untitled event" = "タイトル未設定";
@@ -805,13 +792,12 @@
 "Generate Summary" = "要約を生成";
 "Share" = "共有";
 "Share Summary" = "要約を共有";
-"Export to Google Docs" = "Google Docs に書き出す";
-"Could not export the summary to Google Docs." = "要約を Google Docs に書き出せませんでした。";
+"share.exportToGoogleDrive" = "Dahlia AI で Google Drive に書き出す";
+"share.exportToGoogleDrivePrompt" = "この会議の要約を Google ドキュメントとして Google Drive に書き出してください。見出し、箇条書き、アクションアイテムの構成を保ち、作成したドキュメントのリンクを教えてください。Google Drive のツールが使えない場合は、設定の「AI エージェント」>「一般」の「プロバイダー」で Google Drive の MCP がある Databricks ワークスペースを追加し、「MCP」タブで Google Drive をオンにするよう案内してください。";
 "Copy for Google Docs" = "Google Docs 用にコピー";
 "Copy for Slack" = "Slack 用にコピー";
 "Summary Prompt" = "要約プロンプト";
 "Reset to Default" = "デフォルトに戻す";
-"Restore App Defaults" = "アプリ規定に戻す";
 "Summary Template" = "要約テンプレート";
 "Open in Editor" = "エディタで開く";
 "Open Templates Folder" = "テンプレートフォルダを開く";
@@ -872,7 +858,7 @@
 "Settings..." = "設定...";
 "Quit Dahlia" = "Dahlia を終了";
 "Menu Bar Calendar" = "メニューバーのカレンダー";
-"Choose which event details appear in the menu bar. Calendar selection and event filters above are shared." = "メニューバーに表示する予定の詳細を選びます。表示するカレンダーと予定のフィルタは上の設定を共有します。";
+"Choose which event details appear in the menu bar. It shows events from the calendars chosen under Account > Calendar, filtered on the Event Display tab." = "メニューバーに表示する予定の詳細を選びます。表示する予定は、アカウントの「カレンダー」で選んだカレンダーと「予定の表示」タブのフィルタに従います。";
 "Show today's events" = "今日の予定を表示";
 "Show ongoing and upcoming events in the menu bar menu." = "進行中と今後の予定をメニューバーのメニューに表示します。";
 "Event title" = "予定のタイトル";
@@ -934,27 +920,14 @@
 
 /* Keychain */
 "Cloud Storage" = "Cloud Storage";
-"Google Drive" = "Google Drive";
 "Notion" = "Notion";
 "Export summaries to Notion." = "要約を Notion に書き出します。";
-"The Google Drive connection is saved for the current Dahlia or Local Account. Export summaries, including images, to Google Docs from the Share menu." = "Google Drive 連携は現在の Dahlia またはローカルアカウントごとに保存されます。共有メニューから画像を含む要約を Google Docs に書き出せます。";
-"Sign in with Google to export summaries to Google Docs." = "Google にサインインして要約を Google Docs に書き出します。";
-"Google Docs connected" = "Google Docs 接続済み";
-"Export Folder" = "書き出しフォルダ";
-"Open in Google Drive" = "Google Drive で開く";
-"My Drive" = "マイドライブ";
-"On first connection, Dahlia creates a Dahlia folder directly under My Drive and exports Google Docs into it. The export destination is fixed to this folder." = "初回接続時にマイドライブ直下へ Dahlia フォルダを作成し、Google Docs を書き出します。書き出し先はこのフォルダに固定されます。";
-"The Google Drive export folder has not been configured." = "Google Drive の書き出しフォルダが設定されていません。";
-"Could not configure the Google Drive export folder." = "Google Drive の書き出しフォルダを設定できませんでした。";
-"Open Cloud Storage Settings" = "Cloud Storage 設定を開く";
 "No previous Google session was found." = "以前の Google セッションは見つかりませんでした。";
 "Google sign-in timed out. Please try again." = "Google サインインがタイムアウトしました。もう一度お試しください。";
-"Set a Google OAuth client ID in Developer Settings before connecting Google services." = "Google サービスを接続する前に、開発者設定で Google OAuth クライアント ID を設定してください。";
+"This build of Dahlia has no Google OAuth client ID, so it can't connect Google services." = "このビルドの Dahlia には Google OAuth クライアント ID が設定されていないため、Google サービスに接続できません。";
 "Unexpected response from Google" = "Google から予期しないレスポンスが返されました";
 "Google HTTP %lld: %@" = "Google HTTP %lld: %@";
 "Google account connected, but Calendar access has not been granted yet." = "Google アカウントは接続済みですが、カレンダー権限はまだ付与されていません。";
-"Unexpected response from Google Drive" = "Google Drive から予期しないレスポンスが返されました";
-"Google Drive HTTP %lld: %@" = "Google Drive HTTP %lld: %@";
 
 /* Batch Transcription */
 "Transcription Method" = "文字起こし方式";
@@ -1025,8 +998,6 @@
 "Each selected meeting is regenerated independently. Existing summaries are replaced only after generation succeeds." = "選択したミーティングごとに要約を再生成します。既存の要約は、再生成に成功した場合のみ置き換えられます。";
 "Export Summary to Workspace" = "要約を Workspace へ書き出す";
 "Write the generated summary and related files to the current Workspace." = "生成した要約と関連ファイルを現在の Workspace へ書き出します。";
-"Export Summary to Google Docs" = "要約を Google Docs へ書き出す";
-"Export the generated summary to the configured Google Docs folder." = "生成した要約を設定済みの Google Docs フォルダへ書き出します。";
 "Later" = "あとで";
 "Discard Failed Recording" = "失敗した録音を破棄";
 "Discard this failed recording?" = "失敗した録音を破棄しますか？";
@@ -1118,7 +1089,7 @@
 "Stopped" = "停止中";
 "Dahlia's helper files are unavailable. Run Dahlia with scripts/run-dev.sh or install a signed app build." = "Dahlia のヘルパーファイルを利用できません。scripts/run-dev.sh で起動するか、署名済みアプリをインストールしてください。";
 "Could not start Pi: %@" = "Pi を起動できませんでした: %@";
-"Pi is not signed in. Sign in under Settings > Agents > General > Providers (a Databricks or Dahlia account signs in from the account menu at the bottom of the sidebar), then try again." = "Pi にサインインしていません。設定の「エージェント」>「一般」の「プロバイダー」でサインインして（Databricks アカウントと Dahlia account はサイドバー下部のアカウントメニューから）、再試行してください。";
+"Pi is not signed in. Sign in under Settings > Agents > General > Providers (a Databricks or Dahlia account signs in from the account menu at the bottom of the sidebar), then try again." = "Pi にサインインしていません。設定の「AI エージェント」>「一般」の「プロバイダー」でサインインして（Databricks アカウントと Dahlia account はサイドバー下部のアカウントメニューから）、再試行してください。";
 "Pi sign-in failed: %@" = "Pi へのサインインに失敗しました: %@";
 "Pi sign-in failed." = "Pi へのサインインに失敗しました。";
 "Could not open the Pi sign-in page." = "Pi のサインインページを開けませんでした。";
@@ -1212,7 +1183,7 @@
 "This request is too large to review completely, so it cannot be approved." = "このリクエストは全体を確認するには大きすぎるため、許可できません。";
 "This request asks for permissions outside the allowed workspace and cannot be approved." = "許可されたワークスペース外の権限を求めているため、この要求は許可できません。";
 "Open Accounts and Workspaces Settings" = "アカウントとワークスペースを開く";
-"chat.openAgentSettings" = "エージェントの設定を開く";
+"chat.openAgentSettings" = "AI エージェントの設定を開く";
 "Loading models…" = "モデルを読み込み中…";
 "Chat is running" = "チャットを実行中";
 "Waiting for your response or approval" = "回答または承認を待っています";
@@ -1469,7 +1440,7 @@
 "Primary Language" = "要約・画像説明の言語";
 "Used for summaries and screenshot captions." = "要約とスクリーンショットの画像説明に使用します。";
 "Summaries and Image Captions" = "要約と画像説明";
-"setup.modelProviderDescription" = "要約などのAI機能で使うモデルプロバイダーにサインインします。複数同時に使えます。スキップすると要約などは使えませんが、後から設定の「エージェント」で設定できます。";
+"setup.modelProviderDescription" = "要約などのAI機能で使うモデルプロバイダーにサインインします。複数同時に使えます。スキップすると要約などは使えませんが、後から設定の「AI エージェント」で設定できます。";
 "Allow access to the audio sources Dahlia records. You can continue and grant access later." = "Dahliaが録音するオーディオへのアクセスを許可します。後から許可することもできます。";
 "Calendar (Optional)" = "カレンダー（オプション）";
 "Connect a calendar to see upcoming meetings in Dahlia. You can set this up later." = "カレンダーを接続すると、Dahliaで今後のミーティングを確認できます。後から設定することもできます。";
@@ -1785,7 +1756,7 @@
 
 "Used for searchable image text and captions, and for choosing useful screenshots before summary generation." = "検索用の OCR・caption の生成と、要約前の有用なスクリーンショットの選別に共通で使用します。";
 
-"settings.agents" = "エージェント";
+"settings.agents" = "AI エージェント";
 "settings.agents.intro" = "要約・画像解析・チャットを動かすエージェントの設定です。選択中のアカウントごとに保存します。";
 "settings.agents.unityGatewayMCPs" = "Unity AI Gateway の MCP";
 "settings.agents.models" = "モデル";
@@ -1840,11 +1811,11 @@
 "settings.agents.mcpServerName" = "サーバー名";
 "settings.agents.mcpServerNameInvalid" = "サーバー名には英小文字・数字・_ を40文字まで使えます。";
 "settings.agents.mcpServerNameTaken" = "このサーバー名はすでに使われています。";
-"chat.mcpSignInRequired %@" = "%@ を使うにはサインインが必要です。設定の「エージェント」>「一般」の「プロバイダー」でサインインし直してください（アカウント自身のワークスペースは、サイドバー下部のアカウントメニューから）。";
+"chat.mcpSignInRequired %@" = "%@ を使うにはサインインが必要です。設定の「AI エージェント」>「一般」の「プロバイダー」でサインインし直してください（アカウント自身のワークスペースは、サイドバー下部のアカウントメニューから）。";
 "settings.agents.piCommand" = "Pi コマンド";
 "settings.agents.piCommandInUse" = "使用するコマンド";
-"No executable pi command at %@. Check the path in Settings > Agents." = "%@ に実行できる pi コマンドがありません。設定の「エージェント」でパスを確認してください。";
-"Pi is not installed. Install it, or set its path, in Settings > Agents." = "Pi がインストールされていません。設定の「エージェント」でインストールするか、パスを指定してください。";
+"No executable pi command at %@. Check the path in Settings > Agents." = "%@ に実行できる pi コマンドがありません。設定の「AI エージェント」でパスを確認してください。";
+"Pi is not installed. Install it, or set its path, in Settings > Agents." = "Pi がインストールされていません。設定の「AI エージェント」でインストールするか、パスを指定してください。";
 "settings.agents.piNotInstalled" = "Pi がインストールされていません";
 "settings.agents.installPi" = "Pi をインストール";
 "settings.agents.updatePi" = "アップデートを確認";

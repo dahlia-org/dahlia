@@ -24,7 +24,7 @@ import GRDB
                 usageTelemetryReporter: { events.append($0) }
             )
             let options = SummaryGenerationOptions(
-                exportOptions: .init(exportsToWorkspace: false, exportsToGoogleDocs: false)
+                exportOptions: .init(exportsToWorkspace: false)
             )
 
             await fixture.select(fixture.first, in: viewModel, note: "note")
@@ -48,7 +48,7 @@ import GRDB
                 usageTelemetryReporter: { events.append($0) }
             )
             let options = SummaryGenerationOptions(
-                exportOptions: .init(exportsToWorkspace: true, exportsToGoogleDocs: false)
+                exportOptions: .init(exportsToWorkspace: true)
             )
 
             await fixture.select(fixture.first, in: viewModel, note: "note")

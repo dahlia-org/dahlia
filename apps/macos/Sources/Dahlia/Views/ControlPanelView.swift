@@ -40,6 +40,7 @@ struct ControlPanelView: View {
     @Binding var expandedScreenshot: ExpandedScreenshotPresentation?
 
     @Environment(MainWindowNavigation.self) private var mainWindowNavigation
+    @Environment(CodexChatCoordinator.self) private var chatCoordinator
     @Environment(\.locale) private var locale
     @ObservedObject private var appSettings = AppSettings.shared
     @State private var screenshotMinimumWidth = ScreenshotGridSizing.defaultMinimumWidth
@@ -259,10 +260,6 @@ struct ControlPanelView: View {
             if let summaryError = viewModel.summaryError {
                 detailErrorBanner(message: summaryError, tint: .red)
             }
-
-            if let googleDocsExportError = viewModel.googleDocsExportError {
-                detailErrorBanner(message: googleDocsExportError, tint: .orange)
-            }
         }
     }
 
@@ -348,8 +345,9 @@ struct ControlPanelView: View {
     private var screenshotsTabContent: some View {
         ScreenshotTabContentView(
             screenshotStore: viewModel.screenshotStore,
-            pageHeader: AnyView(pageHeader.environment(mainWindowNavigation).environment(\.locale, locale)),
-            pageFooter: AnyView(pageFooter.environment(mainWindowNavigation).environment(\.locale, locale)),
+            // The collection hosts these in AppKit, which does not inherit the SwiftUI environment.
+            pageHeader: AnyView(pageHeader.environment(mainWindowNavigation).environment(chatCoordinator).environment(\.locale, locale)),
+            pageFooter: AnyView(pageFooter.environment(mainWindowNavigation).environment(chatCoordinator).environment(\.locale, locale)),
             meetingID: viewModel.currentMeetingId,
             recordingSessions: viewModel.store.recordingSessions,
             fallbackTimeBase: screenshotTimeBase,

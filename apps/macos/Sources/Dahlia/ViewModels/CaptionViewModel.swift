@@ -26,12 +26,7 @@ struct SummaryGenerationRunnerInput {
 
 typealias SummaryGenerationRunner = @MainActor (SummaryGenerationRunnerInput) async throws -> SummaryService.GeneratedSummary
 typealias SummaryJobSleeper = @Sendable (Duration) async throws -> Void
-typealias SummaryGoogleDocsExporter = @MainActor (SummaryDocument, SummaryRenderContext, String) async throws -> String
 typealias SummaryDocumentLoader = @MainActor (UUID, DatabaseQueue) async throws -> SummaryDocument?
-
-private enum SummaryExternalExportError: Error {
-    case summaryChanged
-}
 
 /// 録音中のナビゲーション時に保持する録音コンテキスト。
 private struct RecordingContext {
@@ -230,7 +225,6 @@ final class CaptionViewModel: ObservableObject {
     private var pendingBatchSummaryRequestsBySessionId: [UUID: PendingBatchSummaryRequest] = [:]
     private var batchSummaryContextsBySessionId: [UUID: BatchSummaryContext] = [:]
     @Published private var summaryErrorsByMeetingId: [UUID: String] = [:]
-    @Published private var googleDocsExportErrorsByMeetingId: [UUID: String] = [:]
     var isSummaryGenerating: Bool {
         currentMeetingId.map(isSummaryGenerating(meetingId:)) ?? false
     }
@@ -239,13 +233,6 @@ final class CaptionViewModel: ObservableObject {
         currentMeetingId.flatMap { summaryErrorsByMeetingId[$0] }
     }
 
-    var googleDocsExportError: String? {
-        currentMeetingId.flatMap { googleDocsExportErrorsByMeetingId[$0] }
-    }
-
-    private var isExportingCurrentSummaryToGoogleDocs = false
-    private var isGoogleDocsExportBusy = false
-    private var googleDocsExportWaiters: [CheckedContinuation<Void, Never>] = []
     @Published var lastSummaryURL: URL?
     @Published var currentSummaryGoogleFileId: String?
     @Published var currentSummaryDocument: SummaryDocument?
@@ -457,58 +444,6 @@ final class CaptionViewModel: ObservableObject {
             } catch {
                 self?.errorMessage = L10n.screenshotDownloadFailed(error.localizedDescription)
             }
-        }
-    }
-
-    @discardableResult
-    func exportCurrentSummaryToGoogleDocs() async -> Bool {
-        guard !isExportingCurrentSummaryToGoogleDocs,
-              let document = currentSummaryDocument,
-              let meetingId = currentMeetingId,
-              canShareCurrentSummary else { return false }
-
-        isExportingCurrentSummaryToGoogleDocs = true
-        googleDocsExportErrorsByMeetingId.removeValue(forKey: meetingId)
-        defer { isExportingCurrentSummaryToGoogleDocs = false }
-        usageTelemetryReporter(.export(.started, destination: .googleDocs, trigger: .manual))
-
-        let context = SummaryRenderContext(
-            meetingId: meetingId,
-            createdAt: store.timeBase,
-            screenshots: screenshotStore.records,
-            accountScope: AppAccountScope(connectionID: WorkspaceAISettingsModel.shared.accountConnectionID)
-        )
-        let fileName = lastSummaryURL?.lastPathComponent
-            ?? "\(document.title.nilIfBlank ?? L10n.summary).rtf"
-        let dbQueue = currentDbQueue
-
-        do {
-            let expectedDocument = try document.databaseJSONString()
-            let fileId = try await exportSummaryToGoogleDocs(
-                document: document,
-                context: context,
-                fileName: fileName
-            )
-            try persistGoogleDocsFileId(
-                fileId,
-                meetingId: meetingId,
-                expectedDocument: expectedDocument,
-                dbQueue: dbQueue
-            )
-            if let url = URL(string: "https://docs.google.com/document/d/\(fileId)/edit") {
-                NSWorkspace.shared.open(url)
-            }
-            usageTelemetryReporter(.export(.completed, destination: .googleDocs, trigger: .manual))
-            return true
-        } catch {
-            let message = GoogleAuthErrorFormatter.message(
-                for: error,
-                defaultMessage: L10n.googleDocsExportFailed
-            )
-            googleDocsExportErrorsByMeetingId[meetingId] = message
-            ErrorReportingService.captureSanitized(.googleDocsExport)
-            usageTelemetryReporter(.export(.failed(.export), destination: .googleDocs, trigger: .manual))
-            return false
         }
     }
 
@@ -783,7 +718,6 @@ final class CaptionViewModel: ObservableObject {
     private let automaticScreenshotCaptureControl: AutomaticScreenshotCaptureControl
     private let summaryGenerationRunner: SummaryGenerationRunner
     private let summaryJobSleeper: SummaryJobSleeper
-    private let googleDocsSummaryExporter: SummaryGoogleDocsExporter
     private let summaryDocumentLoader: SummaryDocumentLoader
     private let usageTelemetryReporter: UsageTelemetryReporter
 
@@ -816,13 +750,6 @@ final class CaptionViewModel: ObservableObject {
             )
         },
         summaryJobSleeper: @escaping SummaryJobSleeper = { try await Task.sleep(for: $0) },
-        googleDocsSummaryExporter: @escaping SummaryGoogleDocsExporter = { document, context, fileName in
-            try await GoogleDocsSummaryExportService.exportSummary(
-                document: document,
-                context: context,
-                fileName: fileName
-            )
-        },
         summaryDocumentLoader: @escaping SummaryDocumentLoader = { meetingId, dbQueue in
             try await MeetingContentProvider.shared.withContent(meetingId: meetingId, entities: [.summary], dbQueue: dbQueue) {
                 try await dbQueue.read { db in
@@ -841,7 +768,6 @@ final class CaptionViewModel: ObservableObject {
         )
         self.summaryGenerationRunner = summaryGenerationRunner
         self.summaryJobSleeper = summaryJobSleeper
-        self.googleDocsSummaryExporter = googleDocsSummaryExporter
         self.summaryDocumentLoader = summaryDocumentLoader
         self.usageTelemetryReporter = usageTelemetryReporter
         bindStoreSegments()
@@ -1047,7 +973,6 @@ final class CaptionViewModel: ObservableObject {
                     job.progress.summaryGeneration = job.isCancelled ? .skipped : .failed(processing.error ?? L10n.serverSummaryFailed)
                 }
                 job.progress.workspaceExport = .skipped
-                job.progress.googleDocsExport = .skipped
                 if let stage = processing.failedStage { job.showStage(stage.rawValue) }
                 configureRecordingProcessingActions(job: job, dbQueue: dbQueue, workspaceURL: workspaceURL)
                 summaryGenerationJobs.append(job)
@@ -1784,7 +1709,6 @@ final class CaptionViewModel: ObservableObject {
         job.progress.transcriptionProgress = nil
         job.progress.summaryGeneration = .skipped
         job.progress.workspaceExport = .skipped
-        job.progress.googleDocsExport = .skipped
     }
 
     func discardFailedBatchTranscription() {
@@ -3564,10 +3488,8 @@ final class CaptionViewModel: ObservableObject {
         let preferences = AccountInferenceSettings(workspace: workspace)
             .generationSettings(outputLanguage: workspace.generationSettings.outputLanguage)
         let options = SummaryGenerationOptions(
-            exportOptions: .init(
-                exportsToWorkspace: AppSettings.shared.exportBatchSummaryToWorkspace,
-                exportsToGoogleDocs: AppSettings.shared.exportBatchSummaryToGoogleDocs
-            ), detailLevel: preferences.summary.detailLevel
+            exportOptions: .init(exportsToWorkspace: AppSettings.shared.exportBatchSummaryToWorkspace),
+            detailLevel: preferences.summary.detailLevel
         )
         let generationSettings = SummaryGenerationSettings.current(detailLevel: options.detailLevel, workspace: workspace)
         let method: RecordingProcessingMethod = .transcript
@@ -4553,7 +4475,6 @@ final class CaptionViewModel: ObservableObject {
         let hasRemainingFailure = summaryGenerationJobs.contains { $0.meetingId == job.meetingId && $0.hasFailure }
         if !hasRemainingFailure, !isSummaryGenerating(meetingId: job.meetingId) {
             summaryErrorsByMeetingId.removeValue(forKey: job.meetingId)
-            googleDocsExportErrorsByMeetingId.removeValue(forKey: job.meetingId)
         }
     }
 
@@ -4758,7 +4679,6 @@ final class CaptionViewModel: ObservableObject {
         let job = SummaryGenerationJob(meetingId: meetingId, meetingName: meetingName)
         job.progress.summaryGeneration = .failed(message)
         job.progress.workspaceExport = .skipped
-        job.progress.googleDocsExport = .skipped
         summaryGenerationJobs.append(job)
         summaryErrorsByMeetingId[meetingId] = message
     }
@@ -4790,7 +4710,6 @@ final class CaptionViewModel: ObservableObject {
             if let sessionID = job.recordingSessionID { recordBatchTranscriptionTelemetry(.queued(sessionId: sessionID)) }
         } else {
             summaryErrorsByMeetingId.removeValue(forKey: request.meetingId)
-            googleDocsExportErrorsByMeetingId.removeValue(forKey: request.meetingId)
             summaryGeneratingMeetingIDs.insert(request.meetingId)
             if currentMeetingId == request.meetingId { lastSummaryURL = nil }
             usageTelemetryReporter(.summary(.started, trigger: request.telemetryTrigger))
@@ -4912,7 +4831,7 @@ final class CaptionViewModel: ObservableObject {
             )
             try await updateRecordingProcessing(
                 job: job, dbQueue: request.dbQueue, stage: job.hasFailure ? .failed : .succeeded,
-                error: job.progress.workspaceExport.failureMessage ?? job.progress.googleDocsExport.failureMessage
+                error: job.progress.workspaceExport.failureMessage
             )
         } catch {
             await failSummaryGeneration(
@@ -4955,7 +4874,6 @@ final class CaptionViewModel: ObservableObject {
                         job.progress.transcription = .skipped
                         job.progress.summaryGeneration = .skipped
                         job.progress.workspaceExport = .skipped
-                        job.progress.googleDocsExport = .skipped
                         self.removePendingBatchSummaryFlow(for: sessionID, removesJobFromDisplay: false)
                         self.activeBatchTelemetrySessionIDs.remove(sessionID)
                         return
@@ -4970,7 +4888,6 @@ final class CaptionViewModel: ObservableObject {
                     job.progress.transcription = .skipped
                     job.progress.summaryGeneration = .skipped
                     job.progress.workspaceExport = .skipped
-                    job.progress.googleDocsExport = .skipped
                     self.removePendingBatchSummaryFlow(for: sessionID, removesJobFromDisplay: false)
                 } catch { self.errorMessage = error.localizedDescription }
             }
@@ -5199,42 +5116,6 @@ final class CaptionViewModel: ObservableObject {
         } else if exportOptions.exportsToWorkspace {
             job.progress.workspaceExport = .skipped
         }
-
-        if exportOptions.exportsToGoogleDocs {
-            usageTelemetryReporter(.export(.started, destination: .googleDocs, trigger: .summaryGeneration))
-            job.progress.googleDocsExport = .running
-            do {
-                let fileId = try await exportSummaryToGoogleDocs(
-                    document: generatedSummary.document,
-                    context: SummaryRenderContext(
-                        meetingId: meetingId,
-                        createdAt: request.recordingStartedAt,
-                        screenshots: screenshots,
-                        accountScope: AppAccountScope(
-                            connectionID: request.generationSettings.sourceAccountConnectionID
-                        )
-                    ),
-                    fileName: generatedSummary.fileName
-                )
-                try persistGoogleDocsFileId(
-                    fileId,
-                    meetingId: meetingId,
-                    expectedDocument: generatedSummary.document.databaseJSONString(),
-                    dbQueue: request.dbQueue
-                )
-                job.progress.googleDocsExport = .completed
-                usageTelemetryReporter(.export(.completed, destination: .googleDocs, trigger: .summaryGeneration))
-            } catch {
-                let message = GoogleAuthErrorFormatter.message(
-                    for: error,
-                    defaultMessage: L10n.googleDocsExportFailed
-                )
-                job.progress.googleDocsExport = .failed(message)
-                googleDocsExportErrorsByMeetingId[meetingId] = message
-                ErrorReportingService.captureSanitized(.googleDocsExport)
-                usageTelemetryReporter(.export(.failed(.export), destination: .googleDocs, trigger: .summaryGeneration))
-            }
-        }
     }
 
     private func failSummaryGeneration(
@@ -5254,7 +5135,6 @@ final class CaptionViewModel: ObservableObject {
             job.progress.summaryGeneration = .failed(message)
         }
         job.progress.workspaceExport = .skipped
-        job.progress.googleDocsExport = .skipped
     }
 
     private func finishSummaryGeneration(
@@ -5296,62 +5176,6 @@ final class CaptionViewModel: ObservableObject {
                 precedingAutomaticRequest: request.telemetryTrigger == .automaticAfterBatch ? request : nil
             )
         }
-    }
-
-    private func persistGoogleDocsFileId(
-        _ fileId: String,
-        meetingId: UUID,
-        expectedDocument: String,
-        dbQueue: DatabaseQueue?
-    ) throws {
-        let summaryIsCurrent = if let dbQueue {
-            try MeetingRepository(dbQueue: dbQueue).updateSummaryGoogleFileId(
-                forMeetingId: meetingId,
-                googleFileId: fileId,
-                expectedDocument: expectedDocument
-            )
-        } else {
-            try currentMeetingId == meetingId
-                && currentSummaryDocument?.databaseJSONString() == expectedDocument
-        }
-        guard summaryIsCurrent else { throw SummaryExternalExportError.summaryChanged }
-        if currentMeetingId == meetingId {
-            currentSummaryGoogleFileId = fileId
-        }
-    }
-
-    private func exportSummaryToGoogleDocs(
-        document: SummaryDocument,
-        context: SummaryRenderContext,
-        fileName: String
-    ) async throws -> String {
-        await acquireGoogleDocsExport()
-        defer { releaseGoogleDocsExport() }
-        let screenshots = try await ScreenshotContentProvider.shared.resolved(
-            context.screenshots.filter { document.referencedScreenshotIds.contains($0.id) }
-        )
-        let resolved = SummaryRenderContext(
-            meetingId: context.meetingId, createdAt: context.createdAt, screenshots: screenshots, accountScope: context.accountScope
-        )
-        return try await googleDocsSummaryExporter(document, resolved, fileName)
-    }
-
-    private func acquireGoogleDocsExport() async {
-        if !isGoogleDocsExportBusy {
-            isGoogleDocsExportBusy = true
-            return
-        }
-        await withCheckedContinuation { continuation in
-            googleDocsExportWaiters.append(continuation)
-        }
-    }
-
-    private func releaseGoogleDocsExport() {
-        guard !googleDocsExportWaiters.isEmpty else {
-            isGoogleDocsExportBusy = false
-            return
-        }
-        googleDocsExportWaiters.removeFirst().resume()
     }
 
     nonisolated static func shouldCaptureSummaryGenerationError(_ error: any Error) -> Bool {

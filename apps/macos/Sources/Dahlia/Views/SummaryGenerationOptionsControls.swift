@@ -3,7 +3,6 @@ import SwiftUI
 struct SummaryGenerationOptionsControls: View {
     @Binding var detailLevel: SummaryDetailLevel?
     @Binding var exportsToWorkspace: Bool
-    @Binding var exportsToGoogleDocs: Bool
     let isEnabled: Bool
     let usesServerSummary: Bool
 
@@ -24,13 +23,6 @@ struct SummaryGenerationOptionsControls: View {
             Toggle(isOn: $exportsToWorkspace) {
                 Text(L10n.exportBatchSummaryToWorkspace)
                 Text(L10n.exportBatchSummaryToWorkspaceDescription)
-            }
-            .toggleStyle(.checkbox)
-            .disabled(!isEnabled)
-
-            Toggle(isOn: $exportsToGoogleDocs) {
-                Text(L10n.exportBatchSummaryToGoogleDocs)
-                Text(L10n.exportBatchSummaryToGoogleDocsDescription)
             }
             .toggleStyle(.checkbox)
             .disabled(!isEnabled)

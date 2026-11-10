@@ -7,7 +7,6 @@ enum GoogleCalendarConfiguration {
 
     static var clientID: String? {
         firstNonEmptyValue([
-            UserDefaults.standard.string(forKey: AppSettings.googleOAuthClientIDOverrideUserDefaultsKey),
             infoDictionaryValue(forKey: clientIDKey),
             infoDictionaryValue(forKey: legacyClientIDKey),
             ProcessInfo.processInfo.environment[clientIDKey],
@@ -16,7 +15,6 @@ enum GoogleCalendarConfiguration {
 
     static var clientSecret: String? {
         firstNonEmptyValue([
-            KeychainService.load(key: AppSettings.googleOAuthClientSecretOverrideKey),
             infoDictionaryValue(forKey: clientSecretKey),
             ProcessInfo.processInfo.environment[clientSecretKey],
         ])

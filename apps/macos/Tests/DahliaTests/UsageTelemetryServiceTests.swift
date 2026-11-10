@@ -56,7 +56,7 @@ import Foundation
             ))
             service.record(.export(
                 .completed,
-                destination: .googleDocs,
+                destination: .workspace,
                 trigger: .summaryGeneration
             ))
 
@@ -74,7 +74,7 @@ import Foundation
                 .init(
                     name: "Dahlia.Export.completed",
                     parameters: [
-                        "destination": "googleDocs",
+                        "destination": "vault",
                         "trigger": "summaryGeneration",
                     ],
                     floatValue: nil
@@ -109,7 +109,6 @@ import Foundation
             #expect(UsageTelemetryEvent.ExportTrigger.allCases.map(\.rawValue) == ["manual", "summaryGeneration"])
             #expect(UsageTelemetryEvent.ExportDestination.allCases.map(\.rawValue) == [
                 "vault",
-                "googleDocs",
                 "localFiles",
             ])
         }

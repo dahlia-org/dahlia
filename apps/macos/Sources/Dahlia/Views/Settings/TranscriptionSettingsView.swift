@@ -34,11 +34,6 @@ struct TranscriptionSettingsView: View {
                     Text(L10n.exportBatchSummaryToWorkspaceDescription)
                 }
                 .toggleStyle(.switch)
-                Toggle(isOn: $settings.exportBatchSummaryToGoogleDocs) {
-                    Text(L10n.exportBatchSummaryToGoogleDocs)
-                    Text(L10n.exportBatchSummaryToGoogleDocsDescription)
-                }
-                .toggleStyle(.switch)
             } header: {
                 Text(L10n.settingsAfterRecording)
             }

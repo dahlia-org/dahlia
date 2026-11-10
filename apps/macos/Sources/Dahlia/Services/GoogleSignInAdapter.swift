@@ -25,9 +25,6 @@ enum GoogleOAuthScope {
         "https://www.googleapis.com/auth/calendar.calendarlist.readonly",
         "https://www.googleapis.com/auth/calendar.events.readonly",
     ]
-    static let drive: Set = [
-        "https://www.googleapis.com/auth/drive.file",
-    ]
 
     static func authorizationScopes(for requestedScopes: Set<String>) -> Set<String> {
         base.union(requestedScopes)
@@ -36,40 +33,17 @@ enum GoogleOAuthScope {
 
 enum GoogleAuthSessionKind: Hashable, Sendable {
     case calendar
-    case drive(AppAccountScope = .local)
 
-    var keychainKey: String {
-        switch self {
-        case .calendar:
-            "googleCalendarOAuthSession"
-        case let .drive(scope):
-            "googleDriveOAuthSession.\(scope.storageKey)"
-        }
-    }
+    var keychainKey: String { "googleCalendarOAuthSession" }
 
-    var serviceScopes: Set<String> {
-        switch self {
-        case .calendar:
-            GoogleOAuthScope.calendar
-        case .drive:
-            GoogleOAuthScope.drive
-        }
-    }
+    var serviceScopes: Set<String> { GoogleOAuthScope.calendar }
 
-    var sessionDidChangeNotification: Notification.Name {
-        switch self {
-        case .calendar:
-            .googleCalendarSessionDidChange
-        case let .drive(scope):
-            Notification.Name("\(Notification.Name.googleDriveSessionDidChange.rawValue).\(scope.storageKey)")
-        }
-    }
+    var sessionDidChangeNotification: Notification.Name { .googleCalendarSessionDidChange }
 
     fileprivate func canAdoptLegacySession(_ session: StoredGoogleSession) -> Bool {
-        // 旧実装は Calendar/Drive のスコープを 1 つのセッションに union して保存していたため、
-        // 完全一致ではなく「このサービスのスコープを含むか」で採用可否を判定する。
-        guard self == .calendar || self == .drive(.local) else { return false }
-        return serviceScopes.isSubset(of: session.grantedScopes)
+        // 旧実装は複数サービスのスコープを 1 つのセッションに union して保存していたため、
+        // 完全一致ではなく「Calendar のスコープを含むか」で採用可否を判定する。
+        serviceScopes.isSubset(of: session.grantedScopes)
     }
 }
 
@@ -196,7 +170,8 @@ protocol GoogleSignInProviding: AnyObject {
 @MainActor
 final class GoogleSignInAdapter: NSObject, GoogleSignInProviding {
     private nonisolated static let legacyKeychainKey = "googleOAuthSession"
-    private nonisolated static let legacyDriveKeychainKey = "googleDriveOAuthSession"
+    /// Keychain keys of the retired Google Drive export: the per-account key is `<prefix>.<scope>`.
+    private nonisolated static let retiredDriveKeychainKey = "googleDriveOAuthSession"
     private nonisolated static let keychainWorker = GoogleKeychainWorker()
     private static let disconnectPendingUserDefaultsKeyPrefix = "googleOAuthDisconnectPending"
     private static let authorizationEndpoint = URL(string: "https://accounts.google.com/o/oauth2/v2/auth")!
@@ -360,11 +335,6 @@ final class GoogleSignInAdapter: NSObject, GoogleSignInProviding {
                 return StoredGoogleSessionLookup(session: session, keychainKey: sessionKind.keychainKey)
             }
 
-            if sessionKind == .drive(.local),
-               let session = loadStoredSession(key: legacyDriveKeychainKey) {
-                return StoredGoogleSessionLookup(session: session, keychainKey: legacyDriveKeychainKey)
-            }
-
             guard let legacySession = loadStoredSession(key: legacyKeychainKey),
                   sessionKind.canAdoptLegacySession(legacySession)
             else {
@@ -398,19 +368,7 @@ final class GoogleSignInAdapter: NSObject, GoogleSignInProviding {
         let operation: @Sendable () -> Void = {
             saveStoredSession(session, key: key)
             guard let lookup else { return }
-            if lookup.keychainKey == legacyDriveKeychainKey {
-                KeychainService.delete(key: legacyDriveKeychainKey)
-                return
-            }
             guard lookup.keychainKey == legacyKeychainKey else { return }
-
-            // 旧セッションは Calendar/Drive 共用のため、削除前にもう一方へ複製する。
-            for kind in [GoogleAuthSessionKind.calendar, .drive(.local)]
-                where kind != sessionKind
-                && kind.canAdoptLegacySession(lookup.session)
-                && loadStoredSession(key: kind.keychainKey) == nil {
-                saveStoredSession(lookup.session, key: kind.keychainKey)
-            }
             KeychainService.delete(key: legacyKeychainKey)
         }
         return await keychainWorker.performIfCurrent(for: sessionKind, generation: generation, operation)
@@ -456,36 +414,20 @@ final class GoogleSignInAdapter: NSObject, GoogleSignInProviding {
     }
 
     static func disconnectPendingUserDefaultsKeys(for kind: GoogleAuthSessionKind) -> [String] {
-        let current = disconnectPendingUserDefaultsKey(for: kind)
-        guard kind == .drive(.local) else { return [current] }
-        return [current, "\(disconnectPendingUserDefaultsKeyPrefix).\(legacyDriveKeychainKey)"]
+        [disconnectPendingUserDefaultsKey(for: kind)]
     }
 
     static func shouldRestoreStoredSession(disconnectPending: Bool, hasStoredSession: Bool) -> Bool {
         !disconnectPending && hasStoredSession
     }
 
-    static func deleteDriveSession(scope: AppAccountScope) async throws {
-        let kind = GoogleAuthSessionKind.drive(scope)
-        markDisconnectPending(for: kind)
-        await keychainWorker.beginDisconnect(for: kind)
-        let deletionError: Error?
-        do {
-            try await keychainWorker.perform {
-                try KeychainService.deleteOrThrow(key: kind.keychainKey)
-            }
-            deletionError = nil
-        } catch {
-            deletionError = error
-        }
-        await keychainWorker.finishDisconnect(for: kind)
-        NotificationCenter.default.post(
-            name: kind.sessionDidChangeNotification,
-            object: GoogleAuthSessionChangeReason.disconnected
-        )
-        if let deletionError { throw deletionError }
-        for key in disconnectPendingUserDefaultsKeys(for: kind) {
-            UserDefaults.standard.removeObject(forKey: key)
+    /// Removes the Drive tokens the retired Google Drive export stored for `scopes`, and the retired OAuth client
+    /// secret override.
+    nonisolated static func deleteRetiredCredentials(scopes: [AppAccountScope]) {
+        KeychainService.delete(key: "googleOAuthClientSecretOverride")
+        KeychainService.delete(key: retiredDriveKeychainKey)
+        for scope in scopes {
+            KeychainService.delete(key: "\(retiredDriveKeychainKey).\(scope.storageKey)")
         }
     }
 
@@ -636,7 +578,7 @@ final class GoogleSignInAdapter: NSObject, GoogleSignInProviding {
         )
     }
 
-    private static func makeAuthorizationURL(
+    static func makeAuthorizationURL(
         clientID: String,
         redirectURL: URL,
         codeChallenge: String,
@@ -650,7 +592,7 @@ final class GoogleSignInAdapter: NSObject, GoogleSignInProviding {
             .init(name: "response_type", value: "code"),
             .init(name: "scope", value: scopes.sorted().joined(separator: " ")),
             .init(name: "access_type", value: "offline"),
-            .init(name: "include_granted_scopes", value: "true"),
+            // No `include_granted_scopes`: a Drive grant from the retired export must not ride along on Calendar tokens.
             .init(name: "prompt", value: "consent"),
             .init(name: "code_challenge", value: codeChallenge),
             .init(name: "code_challenge_method", value: "S256"),
@@ -1018,7 +960,6 @@ final class OAuthLoopbackRedirectServer: @unchecked Sendable {
 
 extension Notification.Name {
     static let googleCalendarSessionDidChange = Notification.Name("GoogleCalendarSessionDidChangeNotification")
-    static let googleDriveSessionDidChange = Notification.Name("GoogleDriveSessionDidChangeNotification")
 }
 
 /// Builds the authorization URL for a loopback redirect URI, then returns the callback and the redirect URI it used.

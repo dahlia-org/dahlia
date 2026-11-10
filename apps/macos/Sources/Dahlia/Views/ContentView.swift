@@ -7,7 +7,7 @@ struct ContentView: View {
     var updateController: AppUpdateController
     var sidebarViewModel: SidebarViewModel
     let recordingCoordinator: RecordingCoordinator
-    var chatCoordinator: CodexChatCoordinator
+    @Bindable var chatCoordinator: CodexChatCoordinator
     @Bindable var mainWindowNavigation: MainWindowNavigation
     let appDatabase: AppDatabaseManager?
     var workspaceManagementModel: WorkspaceManagementModel
@@ -17,7 +17,6 @@ struct ContentView: View {
     @Environment(\.openWindow) private var openWindow
     @State private var isSidebarVisible = true
     @State private var isShowingUnprocessedRecordings = false
-    @State private var isShowingChatHistory = false
     @State private var isShowingChatConfiguration = false
     @State private var notesEditorModel: DocumentEditorModel?
     @State private var selectedDetailTab: DetailTab = .summary
@@ -115,7 +114,7 @@ struct ContentView: View {
                                 CodexChatSidebarView(
                                     coordinator: chatCoordinator,
                                     sidebarViewModel: sidebarViewModel,
-                                    showsHistory: $isShowingChatHistory,
+                                    showsHistory: $chatCoordinator.showsHistory,
                                     showsConfiguration: $isShowingChatConfiguration,
                                     isFullScreen: true,
                                     headerLeadingInset: isSidebarVisible ? 0 : mainWindowNavigation.sidebarWidth,
@@ -175,7 +174,7 @@ struct ContentView: View {
             CodexChatSidebarView(
                 coordinator: chatCoordinator,
                 sidebarViewModel: sidebarViewModel,
-                showsHistory: $isShowingChatHistory,
+                showsHistory: $chatCoordinator.showsHistory,
                 showsConfiguration: $isShowingChatConfiguration,
                 isFullScreen: false,
                 onShowFullScreen: showFullScreenChat,
@@ -274,7 +273,7 @@ struct ContentView: View {
         }
         .onChange(of: currentWorkspaceAccount, reopenChatForAccountChange)
         .onChange(of: sidebarViewModel.currentWorkspace?.id) {
-            isShowingChatHistory = false
+            chatCoordinator.showsHistory = false
             dismissChatConfiguration()
             searchModel.resetForWorkspaceChange(using: sidebarViewModel)
             syncChatContext()
@@ -388,7 +387,7 @@ private extension ContentView {
 
     private func toggleChat() {
         if chatCoordinator.isDockedVisible {
-            isShowingChatHistory = false
+            chatCoordinator.showsHistory = false
             dismissChatConfiguration()
             chatCoordinator.hideDocked()
         } else {
@@ -408,7 +407,6 @@ private extension ContentView {
     }
 
     private func popOutDockedChat() {
-        isShowingChatHistory = false
         dismissChatConfiguration()
         openDetachedChat(chatCoordinator.popOutDocked())
     }

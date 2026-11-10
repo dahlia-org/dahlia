@@ -2,7 +2,6 @@ import SwiftUI
 
 struct SummaryGenerationConfirmationView: View {
     @State private var exportsToWorkspace = SummaryExportOptions.manual.exportsToWorkspace
-    @State private var exportsToGoogleDocs = SummaryExportOptions.manual.exportsToGoogleDocs
     @State private var detailLevel: SummaryDetailLevel?
     @State private var selectedProjectId: UUID?
     @State private var selectedSource: SummaryGenerationSource?
@@ -106,7 +105,6 @@ struct SummaryGenerationConfirmationView: View {
                     SummaryGenerationOptionsControls(
                         detailLevel: $detailLevel,
                         exportsToWorkspace: $exportsToWorkspace,
-                        exportsToGoogleDocs: $exportsToGoogleDocs,
                         isEnabled: true,
                         usesServerSummary: false
                     )
@@ -197,10 +195,7 @@ struct SummaryGenerationConfirmationView: View {
 
     private func generateSummary() {
         errorMessage = onGenerate(SummaryGenerationOptions(
-            exportOptions: SummaryExportOptions(
-                exportsToWorkspace: exportsToWorkspace,
-                exportsToGoogleDocs: exportsToGoogleDocs
-            ),
+            exportOptions: SummaryExportOptions(exportsToWorkspace: exportsToWorkspace),
             detailLevel: detailLevel,
             source: selectedSource,
             overrides: overrides

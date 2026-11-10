@@ -28,6 +28,21 @@
         }
 
         @Test
+        func eventDisplayLinkOpensAppearanceOnItsTab() {
+            let navigation = MainWindowNavigation(openMainWindow: {}, initialSettingsCategory: .general)
+            #expect(navigation.appearanceTab == .general)
+
+            navigation.openSettings(category: .eventDisplay)
+
+            #expect(navigation.settingsCategory == .appearance)
+            #expect(navigation.appearanceTab == .eventDisplay)
+
+            navigation.openSettings(category: .appearance)
+
+            #expect(navigation.appearanceTab == .eventDisplay)
+        }
+
+        @Test
         func openingSettingsPublishesPresentationBeforeOpeningMainWindow() {
             var observedPresentation = false
             var navigation: MainWindowNavigation?

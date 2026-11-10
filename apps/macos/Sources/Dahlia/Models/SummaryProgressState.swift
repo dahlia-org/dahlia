@@ -53,7 +53,6 @@ final class SummaryProgressState {
     }
 
     var workspaceExport: StepStatus = .pending
-    var googleDocsExport: StepStatus = .pending
     var summaryGeneration: StepStatus = .pending
     var transcription: StepStatus = .skipped
     var transcriptionProgress: Double?
@@ -61,7 +60,6 @@ final class SummaryProgressState {
     /// 全ステップが完了・失敗・スキップのいずれかに到達したか。
     var isAllDone: Bool {
         workspaceExport.isTerminal
-            && googleDocsExport.isTerminal
             && summaryGeneration.isTerminal
             && transcription.isTerminal
     }
