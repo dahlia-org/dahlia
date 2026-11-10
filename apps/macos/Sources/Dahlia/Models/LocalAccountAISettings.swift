@@ -80,6 +80,11 @@ struct AccountInferenceSettings: Codable, Equatable, Sendable {
         liveTranscriptDraft = workspace.generationSettings.liveTranscriptDraft
         chatModelID = workspace.chatModelID
         chatReasoningEffort = workspace.chatReasoningEffort
+        if workspace.accountConnectionId == nil, workspace.databricksConnectionId != nil {
+            // A Databricks account starts with only its gateway's default model on, so its summaries use it. Image
+            // analysis keeps no saved model and prefers the same one (`CodexScreenshotAnalysisService.defaultModel`).
+            if local.model == WorkspaceGenerationSettings.LocalProcessing().model { local.model = PiProviderConfiguration.databricksDefaultModel }
+        }
         // Releases before per-account settings kept the Local Account's summary model in app defaults.
         if workspace.accountConnectionId == nil, workspace.databricksConnectionId == nil {
             local.model = defaults.string(forKey: LocalAccountAISettings.summaryModelKey) ?? local.model

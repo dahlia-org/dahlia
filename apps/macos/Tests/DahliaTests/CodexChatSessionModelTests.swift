@@ -17,6 +17,20 @@ import Foundation
         }
 
         @Test
+        func chatHiddenWhenModelsChangedListsThemAgain() async {
+            let service = TestCodexChatService(mode: .complete)
+            let session = CodexChatSessionModel(service: service)
+            await session.prepare()
+            let listings = await service.modelListings
+
+            // `modelsDidChange` reaches only shown chats; this one prepares when it shows again.
+            PiRuntimeService.modelsGeneration.withLock { $0 += 1 }
+            await session.prepare()
+
+            #expect(await service.modelListings == listings + 1)
+        }
+
+        @Test
         func approvalMethodSelectionUpdatesAnExistingTask() async {
             let service = TestCodexChatService(mode: .complete)
             let session = CodexChatSessionModel(
@@ -1254,8 +1268,11 @@ import Foundation
             self.resumeErrors = resumeErrors
         }
 
+        private(set) var modelListings = 0
+
         func models(forceRefresh _: Bool) async throws -> [CodexModel] {
-            [Self.model]
+            modelListings += 1
+            return [Self.model]
         }
 
         func listThreads(cursor _: String?, workspaceID _: UUID) async throws -> CodexChatThreadPage {

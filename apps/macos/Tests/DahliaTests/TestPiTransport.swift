@@ -148,6 +148,8 @@ struct TestPiRuntime {
     init(
         provider: CodexRuntimeProvider = .local,
         tokenResolver: @escaping PiRuntimeService.TokenResolver = { _ in "test-token" },
+        modelChoices: @escaping @Sendable (CodexRuntimeProvider) -> [String: Bool] = { _ in [:] },
+        gatewayWorkspaces: @escaping @Sendable (CodexRuntimeProvider) -> [AgentMCPProvider] = { _ in [] },
         transport: @escaping @Sendable (PiRuntimeService.LaunchOptions) -> TestPiTransport
     ) {
         let rootURL = FileManager.default.temporaryDirectory
@@ -166,7 +168,9 @@ struct TestPiRuntime {
                 launches.append(options)
                 return transport(options)
             },
-            tokenResolver: tokenResolver
+            tokenResolver: tokenResolver,
+            modelChoices: modelChoices,
+            gatewayWorkspaces: gatewayWorkspaces
         )
     }
 

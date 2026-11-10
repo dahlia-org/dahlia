@@ -95,7 +95,7 @@ import os
             #expect(model.signedInProviderIDs == [provider.id])
 
             // Removing a server keeps the sign-in; removing the workspace signs out and removes its servers.
-            model.remove(try #require(model.settings.servers.first))
+            try model.remove(#require(model.settings.servers.first))
             #expect(!commands.withLock { $0 }.contains { $0.hasPrefix("/dahlia-logout") })
             await model.remove(provider)
             #expect(commands.withLock { $0 }.last == "/dahlia-logout example.cloud.databricks.com")
@@ -114,12 +114,15 @@ import os
             let (model, defaults) = try Self.model(Self.runtime(commands: commands))
             await model.loadAccountProvider()
             let account = try #require(model.accountProvider)
-            let workspace = AgentMCPProvider(workspaceURL: URL(string: "https://example.cloud.databricks.com")!)
+            let workspace = try AgentMCPProvider(workspaceURL: #require(URL(string: "https://example.cloud.databricks.com")))
 
             // The listing is kept, so a reopened model shows it before listing again.
             await model.refreshServices(of: account)
             #expect(model.listedServices(of: account) == ["system.ai.github", "system.ai.slack"])
-            #expect(AgentMCPSettings.load(for: Self.account, defaults: defaults).listedServices?["databricks"] == ["system.ai.github", "system.ai.slack"])
+            #expect(AgentMCPSettings.load(for: Self.account, defaults: defaults).listedServices?["databricks"] == [
+                "system.ai.github",
+                "system.ai.slack",
+            ])
 
             // The same service on two providers gets numbered names; turning one off removes only its server.
             try model.setService("system.ai.github", enabled: true, of: account)
@@ -148,7 +151,7 @@ import os
             let commands = OSAllocatedUnfairLock<[String]>(initialState: [])
             let urlOpener = TestCodexLoginURLOpener()
             let (model, _) = try Self.model(Self.runtime(commands: commands), urlOpener: urlOpener)
-            let provider = AgentMCPProvider(workspaceURL: URL(string: "https://example.cloud.databricks.com")!)
+            let provider = try AgentMCPProvider(workspaceURL: #require(URL(string: "https://example.cloud.databricks.com")))
 
             try await model.signInToService("system.ai.github", of: provider)
             #expect(commands.withLock { $0 } == ["/databricks-connection-login https://example.cloud.databricks.com system.ai.github"])
@@ -159,7 +162,7 @@ import os
         func listingWithoutASignInAsksForOne() async throws {
             let pi = Self.runtime(services: nil, commands: OSAllocatedUnfairLock(initialState: []))
             let (model, _) = try Self.model(pi)
-            let provider = AgentMCPProvider(workspaceURL: URL(string: "https://example.cloud.databricks.com")!)
+            let provider = try AgentMCPProvider(workspaceURL: #require(URL(string: "https://example.cloud.databricks.com")))
 
             await #expect(throws: CodexAppServerError.notLoggedIn) { try await model.services(of: provider) }
         }
@@ -189,7 +192,7 @@ import os
                 "auth": .object(["provider": .string("databricks")]),
             ]))
             // Its last server takes the workspace with it, and nothing signs out.
-            model.remove(try #require(model.settings.servers.first))
+            try model.remove(#require(model.settings.servers.first))
             #expect(model.settings == AgentMCPSettings())
             #expect(commands.withLock { $0 }.count == 1)
         }
@@ -201,10 +204,18 @@ import os
             let provider = try await model.addWorkspace(workspaceURL: "https://example.cloud.databricks.com")
             try model.addServers(["system.ai.github": "github"], to: provider)
 
+            let agentURL = try PiAgentDirectoryLocator(applicationSupportURL: pi.rootURL).agentURL(for: Self.account)
+            try PiProviderConfiguration.write([provider.id: .object(["models": .array([])])], agentURL: agentURL)
+            let generation = PiRuntimeService.modelsGeneration.withLock { $0 }
             await model.remove(provider)
+            // Its models.json entry goes with it, so Pi lists none of its models even with the credential kept.
+            let written = try JSONDecoder().decode(JSONValue.self, from: Data(contentsOf: agentURL.appending(path: "models.json")))
+            #expect(written.objectValue?["providers"]?.objectValue?[provider.id] == nil)
             #expect(model.settings.providers.isEmpty && model.settings.servers.isEmpty)
             #expect(AgentMCPSettings.load(for: Self.account, defaults: defaults).providers.isEmpty)
             #expect(model.errorMessage != nil)
+            // The removed workspace's models leave the pickers even though Pi could not sign out.
+            #expect(PiRuntimeService.modelsGeneration.withLock { $0 } > generation)
             #expect(!model.isBusy)
         }
 
@@ -213,7 +224,7 @@ import os
             let transport = TestPiTransport()
             let pi = TestPiRuntime(provider: Self.account) { _ in transport }
             let (model, _) = try Self.model(pi)
-            let provider = AgentMCPProvider(workspaceURL: URL(string: "https://example.cloud.databricks.com")!)
+            let provider = try AgentMCPProvider(workspaceURL: #require(URL(string: "https://example.cloud.databricks.com")))
 
             async let listing: Void = model.refreshServices(of: provider)
             _ = await transport.command { $0["message"]?.stringValue?.hasPrefix("/databricks-mcp-services") == true }

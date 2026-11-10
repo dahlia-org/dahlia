@@ -194,6 +194,8 @@ final class AgentMCPSettingsModel {
         settings.providers.removeAll { $0.id == provider.id }
         settings.listedServices?[provider.id] = nil
         settings.save(for: account, defaults: defaults)
+        // Its models leave models.json now, even if the sign-out below fails and its credential stays.
+        try? await service.applyGatewayModelChoices(for: account)
         do {
             try await service.signOut(provider, account: account)
         } catch {

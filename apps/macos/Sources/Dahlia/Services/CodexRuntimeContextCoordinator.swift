@@ -63,7 +63,7 @@ actor CodexRuntimeContextCoordinator {
         guard generation == activationGeneration else { throw CancellationError() }
 
         let agentURL = try agentLocator.agentURL(for: provider)
-        // nil keeps the account's existing models.json.
+        // Each account's own provider; nil keeps it as recorded. Workspaces added in Agents settings keep their entries.
         let providers: [String: JSONValue]?
         switch provider {
         case let .dahlia(connectionID):
@@ -75,13 +75,20 @@ actor CodexRuntimeContextCoordinator {
                 ? nil
                 : try PiProviderConfiguration.dahliaProvider(baseURL: baseURL, catalog: .object(["data": .array([])]))
         case .local:
-            // Subscriptions use Pi's built-in catalog.
+            // Subscriptions use Pi's built-in catalog; workspaces added in Agents settings keep their entries.
             providers = [:]
         case let .databricks(connectionID):
-            // The bundled routes are paths; this account's own Pi directory gets them on its workspace's host.
+            // The routes are paths; this account's own Pi directory gets them on its workspace's host, with the models
+            // turned on in Agents settings, from the gateway's saved list (the bundled one before it first answers).
             let connection = try await databricksClient.connection(id: connectionID)
+            let workspaceURL = try databricksClient.normalizedWorkspaceURL(connection.host)
             providers = try PiProviderConfiguration.databricksProviders(
-                workspaceURL: databricksClient.normalizedWorkspaceURL(connection.host)
+                PiProviderConfiguration.databricksModels(
+                    workspaceURL: workspaceURL,
+                    services: PiProviderConfiguration.gatewayServices(agentURL: agentURL)[PiProviderConfiguration.databricksProviderIDs[0]]
+                ),
+                choices: AgentModelSettings.choices(for: provider),
+                workspaceURL: workspaceURL
             )
         }
         if let providers { try PiProviderConfiguration.write(providers, agentURL: agentURL) }

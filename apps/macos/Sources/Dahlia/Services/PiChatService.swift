@@ -202,7 +202,7 @@ actor PiChatService: CodexChatServicing {
         approvalMethod: CodexChatApprovalMethod,
         expectedProvider: CodexRuntimeProvider?
     ) async throws -> CodexChatTurnHandle {
-        let connection = try await connection(threadID: threadID)
+        var connection = try await connection(threadID: threadID)
         let session = try live(threadID, connection)
         if let expectedProvider, expectedProvider != session.provider {
             throw CodexConfigurationError.providerChanged(expectedProvider.displayName)
@@ -215,10 +215,24 @@ actor PiChatService: CodexChatServicing {
             try live(threadID, connection)
         }
         if let model = requestedModel, model != sessions[threadID]?.model, let slash = model.firstIndex(of: "/") {
-            _ = try await connection.request("set_model", [
+            let parameters: [String: JSONValue] = [
                 "provider": .string(String(model[..<slash])),
                 "modelId": .string(String(model[model.index(after: slash)...])),
-            ])
+            ]
+            do {
+                _ = try await connection.request("set_model", parameters)
+            } catch CodexAppServerError.rpcError {
+                // Pi read models.json when this process started, before the model was turned on in Agents settings or
+                // a gateway listed it. No turn runs yet, so the thread reopens from its session file with the current list.
+                await closeSession(threadID)
+                connection = try await self.connection(threadID: threadID)
+                // The reopened session starts from defaults: this turn's account and approval method apply to it too.
+                if let expectedProvider, try expectedProvider != live(threadID, connection).provider {
+                    throw CodexConfigurationError.providerChanged(expectedProvider.displayName)
+                }
+                sessions[threadID]?.approvalMethod = approvalMethod
+                _ = try await connection.request("set_model", parameters)
+            }
             try live(threadID, connection)
             sessions[threadID]?.model = model
         }
@@ -391,10 +405,9 @@ actor PiChatService: CodexChatServicing {
         let serverNames = ["dahlia"] + mcpServers.keys.sorted()
         // Read-only on this Mac. `--no-extensions` also drops Pi's MCP extension, and `--tools` declares only the MCP tools it names.
         let tools = ["read", "ls"] + serverNames.map { "mcp__\($0)__*" }
-        // The Databricks provider registers the sign-ins mcp.json names; only chat calls MCP servers.
+        // Only chat calls MCP servers; Dahlia's extension registers the sign-ins mcp.json names.
         var arguments = try sessionArguments + [
             "-e", "builtin:mcp",
-            "-e", PiBundle.resourceURL("databricks-provider.ts").path,
             "--tools", tools.joined(separator: ","),
             "--system-prompt", Self.systemPrompt,
         ]

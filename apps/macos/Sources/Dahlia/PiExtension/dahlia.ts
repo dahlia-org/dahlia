@@ -9,6 +9,8 @@ import {
   registerDatabricksConnectionLoginCommand,
   registerDatabricksLoginCommand,
   registerDatabricksMCPServicesCommand,
+  registerDatabricksModelServicesCommand,
+  registerDatabricksProviders,
 } from "./databricks-provider.ts";
 
 const env = process.env;
@@ -117,6 +119,9 @@ export default function (pi: any) {
     }));
   }
 
+  // Unity AI Gateway sign-ins serve chat's MCP servers and every process's models.
+  registerDatabricksProviders(pi);
+
   pi.on("before_provider_request", (event: any, ctx: any) => {
     const enforce = strictSchemaPayload[ctx.model?.api];
     if (!outputSchema || env.PI_OUTPUT_STRICT_SCHEMA !== "1" || !enforce) return;
@@ -165,6 +170,7 @@ export default function (pi: any) {
   if (mode === "control") {
     registerDatabricksLoginCommand(pi);
     registerDatabricksMCPServicesCommand(pi);
+    registerDatabricksModelServicesCommand(pi);
     registerDatabricksConnectionLoginCommand(pi);
     // ModelRegistry exposes no login API to extensions; Dahlia pins the Pi version this relies on.
     const runtime = (ctx: any) => ctx.modelRegistry.runtime;
