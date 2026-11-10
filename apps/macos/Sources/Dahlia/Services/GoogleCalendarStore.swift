@@ -71,6 +71,7 @@ final class GoogleCalendarStore: ObservableObject {
     private var isDisconnecting = false
     private var isLoadingAccountData = false
     private var authChangeObserver: GoogleAuthSessionObserver?
+    private var accountChangeObserver: AnyCancellable?
     private var refreshGeneration: UInt64 = 0
     private var refreshTask: Task<Void, Never>?
     private var refreshTaskID: UUID?
@@ -100,6 +101,9 @@ final class GoogleCalendarStore: ObservableObject {
         authChangeObserver = GoogleAuthSessionObserver(notificationName: sessionDidChangeNotification) { [weak self] forceSignOut in
             await self?.handleAuthSessionChanged(forceSignOut: forceSignOut)
         }
+        // Delivered synchronously as the account changes, not queued behind a session change still restoring.
+        accountChangeObserver = NotificationCenter.default.publisher(for: .calendarAccountDidChange)
+            .sink { [weak self] _ in self?.switchToOpenAccountIfChanged() }
     }
 
     func restoreSessionIfNeeded() async {
@@ -428,16 +432,21 @@ final class GoogleCalendarStore: ObservableObject {
         }
     }
 
+    /// The route changes with the account: drop the previous account's session, calendars, events, and every load still
+    /// running for it before any of them can publish, then restore with the new account's selection and route.
+    private func switchToOpenAccountIfChanged() {
+        let currentAccount = openAccount()
+        guard currentAccount != selectionAccount else { return }
+        clearRuntimeState(clearSelection: false)
+        selectionAccount = currentAccount
+        selectedCalendarIDs = Self.loadSelectedCalendarIDs(from: userDefaults, account: selectionAccount)
+        didAttemptRestore = false
+        recomputeState()
+        Task { await restoreSessionIfNeeded() }
+    }
+
     private func handleAuthSessionChanged(forceSignOut: Bool) async {
         didAttemptRestore = false
-        // The route changes with the open account: drop the previous account's session, calendars, events, and any load
-        // still running for it, and use the new account's selection.
-        let currentAccount = openAccount()
-        if currentAccount != selectionAccount {
-            clearRuntimeState(clearSelection: false)
-            selectionAccount = currentAccount
-            selectedCalendarIDs = Self.loadSelectedCalendarIDs(from: userDefaults, account: selectionAccount)
-        }
         guard !isDisconnecting else { return }
         guard !forceSignOut, await signInProvider.hasPreviousSignIn else {
             clearRuntimeState(clearSelection: forceSignOut)

@@ -19,8 +19,9 @@ final class DatabricksProxyGoogleSignInProvider: GoogleSignInProviding {
     private let apiClient: any GoogleCalendarAPIClientProviding
     private let userDefaults: UserDefaults
     private let openAccount: @MainActor () -> CodexRuntimeProvider
-    private var cachedAccount: GoogleCalendarAccount?
-    private var routeObservers: [GoogleAuthSessionObserver] = []
+    /// The Google identity resolved for one connection; another account's connection never reuses it.
+    private var cachedAccount: (connectionID: UUID, account: GoogleCalendarAccount)?
+    private var connectionObserver: GoogleAuthSessionObserver?
 
     init(
         direct: any GoogleSignInProviding = GoogleSignInAdapter(sessionKind: .calendar),
@@ -36,14 +37,12 @@ final class DatabricksProxyGoogleSignInProvider: GoogleSignInProviding {
         self.apiClient = apiClient
         self.userDefaults = userDefaults
         self.openAccount = openAccount
-        // Switching accounts or removing the Databricks connection changes the route; the store re-evaluates through its
-        // own notification.
-        routeObservers = [Notification.Name.databricksConnectionDidChange, .calendarAccountDidChange].map {
-            GoogleAuthSessionObserver(notificationName: $0) { [weak self] _ in
-                guard let self else { return }
-                cachedAccount = nil
-                NotificationCenter.default.post(name: sessionDidChangeNotification, object: nil)
-            }
+        // Adding or removing the Databricks connection changes the route; the store re-evaluates through its own
+        // notification. The store follows account switches itself.
+        connectionObserver = GoogleAuthSessionObserver(notificationName: .databricksConnectionDidChange) { [weak self] _ in
+            guard let self else { return }
+            cachedAccount = nil
+            NotificationCenter.default.post(name: sessionDidChangeNotification, object: nil)
         }
     }
 
@@ -127,7 +126,8 @@ final class DatabricksProxyGoogleSignInProvider: GoogleSignInProviding {
     func refreshCurrentSession() async throws -> GoogleSession? {
         guard let connection else { return try await direct.refreshCurrentSession() }
         guard !isDisconnected(connection) else { return nil }
-        return try await proxySession(for: connection, account: cachedAccount, interactive: false)
+        let account = cachedAccount.flatMap { $0.connectionID == connection.id ? $0.account : nil }
+        return try await proxySession(for: connection, account: account, interactive: false)
     }
 
     func disconnect() async throws {
@@ -175,8 +175,7 @@ final class DatabricksProxyGoogleSignInProvider: GoogleSignInProviding {
         let calendars = try await apiClient.fetchCalendarList(session: session(placeholder))
         let primary = calendars.first(where: \.isPrimary) ?? calendars.first
         let resolved = primary.map { GoogleCalendarAccount(id: $0.id, displayName: $0.title, email: "") } ?? placeholder
-        // A switch to another account during the fetch must not leave this account's identity cached for that one.
-        if self.connection?.id == connection.id { cachedAccount = resolved }
+        cachedAccount = (connection.id, resolved)
         return session(resolved)
     }
 

@@ -68,23 +68,6 @@ import Synchronization
         }
 
         @Test
-        func switchingAccountNotifiesGoogleCalendarSession() async {
-            let direct = FakeDirectProvider()
-            let provider = makeProvider(connection: connection, direct: direct)
-            let (posts, continuation) = AsyncStream.makeStream(of: Void.self)
-            let token = NotificationCenter.default.addObserver(
-                forName: direct.sessionDidChangeNotification, object: nil, queue: .main
-            ) { _ in continuation.yield() }
-            defer { NotificationCenter.default.removeObserver(token) }
-
-            NotificationCenter.default.post(name: .calendarAccountDidChange, object: nil)
-
-            var iterator = posts.makeAsyncIterator()
-            let delivered = await iterator.next()
-            withExtendedLifetime(provider) { #expect(delivered != nil) }
-        }
-
-        @Test
         func databricksConnectionRestoresWhateverTheProxyGrants() async throws {
             let direct = FakeDirectProvider(isConfigured: false, hasPreviousSignIn: false)
             let apiClient = FakeAPIClient(result: .success([Self.primaryCalendar]))
