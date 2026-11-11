@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// The apps that open meeting links from the calendar, notifications, and meetings, for the whole app.
+/// The apps that open meeting links from the calendar, notifications, and meetings, for the open account.
 struct MeetingLinkSettingsView: View {
     @ObservedObject private var settings = AppSettings.shared
     @State private var catalog = MeetingLinkApplicationCatalog.empty

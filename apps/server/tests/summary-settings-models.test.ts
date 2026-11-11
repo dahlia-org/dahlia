@@ -383,7 +383,7 @@ it("keeps explicit server workflow defaults without automatic processing control
   expect(combined).not.toContain("Audio processing model");
   expect(combined).not.toContain("Transcript summary model");
   expect(combined).toContain('value="system.ai.gemini-3-8-flash"');
-  expect(combined).toContain("Enable image search");
+  expect(combined).toContain("Enable image analysis");
   expect(combined).toContain("Reasoning effort");
   expect(combined.indexOf("Summary generation")).toBeLessThan(combined.indexOf("Image analysis</legend>"));
   expect(combined).not.toContain("Screenshot usefulness model");
@@ -471,9 +471,9 @@ it("keeps image model and reasoning controls enabled when image search is disabl
   expect(image).toContain('value="medium" selected');
   expect(image).not.toMatch(/<select[^>]*disabled/);
   expect(image).not.toContain("ignored-legacy-model");
-  expect(image).toContain("Enable image search for new Desktop accounts");
+  expect(image).toContain("Enable image analysis for new Desktop accounts");
   expect(image).toContain("inherited only when a Desktop account first sets up its preferences");
-  expect(image).toContain("Change image search for an existing account in Account Preferences on that Mac.");
+  expect(image).toContain("Change image analysis for an existing account in Account Preferences on that Mac.");
   expect(image).toContain("Web does not generate OCR or captions.");
   expect(image).toContain("regardless of the switch");
 });

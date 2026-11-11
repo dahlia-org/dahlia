@@ -1,9 +1,10 @@
 import Speech
 import SwiftUI
 
-/// このMac固有の文字起こし設定。
+/// 選択中のアカウントの文字起こし設定。
 struct TranscriptionSettingsView: View {
     @ObservedObject private var settings = AppSettings.shared
+    @Bindable private var workspaceSettings = WorkspaceAISettingsModel.shared
     @State private var supportedLocales: [Locale] = []
     @State private var isLoadingLocales = true
 
@@ -30,7 +31,26 @@ struct TranscriptionSettingsView: View {
                     .font(.dahliaSectionHeader)
             }
 
+            if let error = workspaceSettings.errorMessage {
+                Section { SettingsStatusMessage(text: error, systemImage: "exclamationmark.triangle", tint: .orange) }
+            }
+
+            // Saved with the account's AI settings, which need an open workspace.
+            if settings.currentWorkspace != nil {
+                Section {
+                    Toggle(L10n.liveTranscriptDraft, isOn: $workspaceSettings.generationSettings.liveTranscriptDraft)
+                        .toggleStyle(.switch)
+                } header: {
+                    Text(L10n.settingsDuringRecording)
+                        .font(.dahliaSectionHeader)
+                }
+            }
+
             Section {
+                if settings.currentWorkspace != nil {
+                    Toggle(L10n.automaticRecordingProcessing, isOn: $workspaceSettings.generationSettings.automaticProcessing)
+                        .toggleStyle(.switch)
+                }
                 Toggle(isOn: $settings.exportBatchSummaryToWorkspace) {
                     Text(L10n.exportBatchSummaryToWorkspace)
                     Text(L10n.exportBatchSummaryToWorkspaceDescription)
@@ -38,6 +58,17 @@ struct TranscriptionSettingsView: View {
                 .toggleStyle(.switch)
             } header: {
                 Text(L10n.settingsAfterRecording)
+                    .font(.dahliaSectionHeader)
+            }
+
+            Section {
+                Toggle(isOn: $settings.automaticMeetingEndRecordingStopEnabled) {
+                    Text(L10n.automaticMeetingEndRecordingStop)
+                    Text(L10n.automaticMeetingEndRecordingStopDescription)
+                }
+                .toggleStyle(.switch)
+            } header: {
+                Text(L10n.recordingStopDetection)
                     .font(.dahliaSectionHeader)
             }
 

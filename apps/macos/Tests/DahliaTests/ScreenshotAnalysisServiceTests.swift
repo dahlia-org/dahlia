@@ -62,17 +62,16 @@ import Foundation
         }
 
         @Test(arguments: [
-            (CodexRuntimeProvider.local, nil as String?, "openai/gpt-6-luna", nil as String?),
-            (.databricks(connectionID: .v7()), nil, "databricks/system.ai.gpt-6-luna", nil),
-            (.dahlia(connectionID: .v7()), nil, "dahlia/gpt-6-luna", nil),
-            (.local, "openai/gpt-5.6-luna", "openai/gpt-5.6-luna", "high"),
-            (.dahlia(connectionID: .v7()), "dahlia/gpt-6-sol", "dahlia/gpt-6-sol", "high"),
+            (CodexRuntimeProvider.local, nil as String?, "openai/gpt-6-luna"),
+            (.databricks(connectionID: .v7()), nil, "databricks/system.ai.gpt-6-luna"),
+            (.dahlia(connectionID: .v7()), nil, "dahlia/gpt-6-luna"),
+            (.local, "openai/gpt-5.6-luna", "openai/gpt-5.6-luna"),
+            (.dahlia(connectionID: .v7()), "dahlia/gpt-6-sol", "dahlia/gpt-6-sol"),
         ])
         func sendsOneStructuredLunaRequestForOneScreenshot(
             provider: CodexRuntimeProvider,
             configuredModel: String?,
-            expectedModel: String,
-            effort: String?
+            expectedModel: String
         ) async throws {
             let screenshotID = try #require(UUID(uuidString: "00000000-0000-0000-0000-000000000001"))
             let response = """
@@ -91,8 +90,7 @@ import Foundation
                 id: screenshotID,
                 imageData: Data([1]),
                 mimeType: "image/png",
-                runtimeProvider: provider, outputLanguage: .en, model: configuredModel,
-                reasoningEffort: effort
+                runtimeProvider: provider, outputLanguage: .en, model: configuredModel
             )
 
             let results = try await analyzer.analyze([input])
@@ -103,7 +101,7 @@ import Foundation
             _ = try await analyzer.analyze([input])
             #expect(pi.launches.all.count(where: { $0.mode == .control }) == 1)
             #expect(pi.argument(after: "--model") == expectedModel)
-            #expect(pi.argument(after: "--thinking") == effort ?? "low")
+            #expect(pi.argument(after: "--thinking") == "low")
             let instructions = try #require(pi.argument(after: "--system-prompt"))
             #expect(instructions.contains("in English."))
             #expect(instructions.contains("in its original language"))

@@ -15,7 +15,7 @@ enum SettingsNavigation {
 
     static func visibleSelection(_ selection: SettingsCategory) -> SettingsCategory {
         switch selection {
-        case .language, .recordingStopDetection:
+        case .language:
             .general
         case .accountsAndWorkspaces, .dahliaAccounts, .accountPreferences, .macInference, .modelProvider, .aiSummary, .instructions, .mcp:
             .agents
@@ -23,6 +23,8 @@ enum SettingsNavigation {
             .workspace
         case .eventDisplay:
             .appearance
+        case .transcription, .recordingStopDetection, .liveSubtitles, .screenshots, .meetingLinks:
+            .meetings
         default:
             selection
         }

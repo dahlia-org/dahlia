@@ -16,6 +16,9 @@ struct CodexChatView: View {
     let reservesWindowControls: Bool
     let headerLeadingInset: CGFloat
     let contentMaxWidth: CGFloat?
+    /// The side panel leaves out the title and keeps a new chat's composer at the bottom, as in a conversation. Elsewhere a
+    /// new chat centers its composer under a welcome.
+    var isSidePanel = false
 
     @Environment(MainWindowNavigation.self) private var navigation
     @State private var dismissedIntegrationsSessionID: CodexChatSessionID?
@@ -33,13 +36,14 @@ struct CodexChatView: View {
                 onPopOut: onPopOut,
                 reservesSidebarToggle: reservesSidebarToggle,
                 reservesWindowControls: reservesWindowControls,
-                leadingInset: headerLeadingInset
+                leadingInset: headerLeadingInset,
+                showsTitle: !isSidePanel
             )
             .zIndex(1)
 
             GeometryReader { geometry in
                 VStack(spacing: 0) {
-                    if showsEmptyState && !showsHistory {
+                    if showsWelcome {
                         Spacer(minLength: 12)
                     }
 
@@ -54,10 +58,16 @@ struct CodexChatView: View {
                             onOpenThread: openHistoryThread,
                             onLoadMore: loadMoreHistory
                         )
-                    } else if showsEmptyState {
+                    } else if showsWelcome {
                         CodexChatWelcomeHeader(showsIcon: geometry.size.height >= 480)
                             .padding(.horizontal, 20)
                             .padding(.bottom, 24)
+                    } else if showsEmptyState {
+                        // The side panel lists the shortcuts and recent chats above its bottom composer.
+                        Spacer(minLength: 12)
+                        emptyState
+                            .frame(maxHeight: geometry.size.height * 0.4)
+                            .padding(.bottom, 12)
                     } else {
                         CodexChatConversationView(
                             conversationID: session.id,
@@ -85,7 +95,7 @@ struct CodexChatView: View {
                         conversationControls
                     }
 
-                    if showsEmptyState, !showsHistory {
+                    if showsWelcome {
                         if dismissedIntegrationsSessionID != session.id {
                             CodexChatAppIntegrationsView(
                                 onOpenSettings: { navigation.openAgentSettings(tab: .mcps) },
@@ -95,24 +105,13 @@ struct CodexChatView: View {
                             .padding(.bottom, 18)
                         }
 
-                        CodexChatEmptyStateView(
-                            hasRecentThreads: !coordinator.history.isEmpty,
-                            showsProjectOrganizationShortcut: session.showsProjectOrganizationShortcut,
-                            isProjectOrganizationShortcutEnabled: session.canSendProjectOrganizationShortcut,
-                            onOrganizeRecentMeetingsAndProjects: { session.sendProjectOrganizationShortcut() },
-                            meetingReviewShortcutTitle: session.showsMeetingReviewShortcut
-                                ? CodexChatMeetingReviewShortcut.title
-                                : nil,
-                            isMeetingReviewShortcutEnabled: session.canSendMeetingReviewShortcut,
-                            onReviewMeeting: session.sendMeetingReviewShortcut,
-                            onShowAll: showHistory
-                        )
-                        .frame(maxHeight: geometry.size.height * 0.28)
+                        emptyState
+                            .frame(maxHeight: geometry.size.height * 0.28)
 
                         Spacer(minLength: 12)
                     }
                 }
-                .frame(maxWidth: showsEmptyState && !showsHistory ? 720 : (contentMaxWidth ?? .infinity))
+                .frame(maxWidth: showsWelcome ? 720 : (contentMaxWidth ?? .infinity))
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
             .coordinateSpace(name: CodexChatAddPanelLayout.coordinateSpaceName)
@@ -189,6 +188,25 @@ struct CodexChatView: View {
 
     private var showsEmptyState: Bool {
         session.messages.isEmpty && !session.showsStandaloneThinking
+    }
+
+    private var emptyState: some View {
+        CodexChatEmptyStateView(
+            hasRecentThreads: !coordinator.history.isEmpty,
+            showsProjectOrganizationShortcut: session.showsProjectOrganizationShortcut,
+            isProjectOrganizationShortcutEnabled: session.canSendProjectOrganizationShortcut,
+            onOrganizeRecentMeetingsAndProjects: { session.sendProjectOrganizationShortcut() },
+            meetingReviewShortcutTitle: session.showsMeetingReviewShortcut
+                ? CodexChatMeetingReviewShortcut.title
+                : nil,
+            isMeetingReviewShortcutEnabled: session.canSendMeetingReviewShortcut,
+            onReviewMeeting: session.sendMeetingReviewShortcut,
+            onShowAll: showHistory
+        )
+    }
+
+    private var showsWelcome: Bool {
+        !isSidePanel && showsEmptyState && !showsHistory
     }
 
     private func prepare() async {

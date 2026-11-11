@@ -665,8 +665,7 @@ private extension BackgroundJobWorker {
                     mimeType: screenshot.mimeType,
                     runtimeProvider: CodexRuntimeProvider(workspace: workspace),
                     outputLanguage: outputLanguage,
-                    model: analysis.model,
-                    reasoningEffort: analysis.reasoningEffort
+                    model: analysis.model
                 )
             }
             return (inputs, serverConnectionIDs)

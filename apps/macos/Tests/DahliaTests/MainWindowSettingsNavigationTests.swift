@@ -94,6 +94,24 @@
             #expect(navigation.agentSettingsTab == .imageAnalysis)
         }
 
+        @Test
+        func formerRecordingPagesOpenTheirMeetingsTab() {
+            let navigation = MainWindowNavigation(openMainWindow: {}, initialSettingsCategory: .general)
+            navigation.openSettings(category: .screenshots)
+            #expect(navigation.settingsCategory == .meetings)
+            #expect(navigation.meetingSettingsTab == .screenshots)
+
+            navigation.openSettings(category: .liveSubtitles)
+            #expect(navigation.meetingSettingsTab == .liveSubtitles)
+
+            navigation.openSettings(category: .recordingStopDetection)
+            #expect(navigation.meetingSettingsTab == .transcription)
+
+            navigation.openSettings(category: .meetingLinks)
+            #expect(navigation.settingsCategory == .meetings)
+            #expect(navigation.meetingSettingsTab == .meetingLinks)
+        }
+
         @Test(arguments: [SettingsCategory.agents, .modelProvider, .macInference, .dahliaAccounts])
         func setupLinksOpenGeneralFromEveryAITab(category: SettingsCategory) {
             let navigation = MainWindowNavigation(openMainWindow: {}, initialSettingsCategory: .general)

@@ -41,7 +41,7 @@
 "settings.preferences.transcribeThenSummarizeDescription" = "For automatic processing after recording, Gemini transcribes the audio first, then creates the summary from that transcript.";
 "settings.preferences.combinedTranscriptionSummaryDescription" = "For automatic processing after recording, Gemini creates the summary directly from the audio and produces a transcript in the same process.";
 "settings.preferences.serverTranscriptionLanguageDescription" = "Gemini detects the spoken language while transcribing. No language setting is required.";
-"settings.preferences.appleSpeechSettingsScopeDescription" = "Apple Speech language settings apply to every workspace transcribed locally on this Mac.";
+"settings.preferences.appleSpeechSettingsScopeDescription" = "The language Apple Speech transcribes. Applies to every workspace in the selected account.";
 "settings.preferences.summaryModel" = "Summary model";
 "settings.preferences.audioProcessingModel" = "Audio processing model";
 "settings.preferences.audioProcessingReasoningEffort" = "Audio processing reasoning effort";
@@ -620,6 +620,11 @@
 "Sidebar Display Style" = "Sidebar Display Style";
 "Controls how meetings appear in the sidebar." = "Controls how meetings appear in the sidebar.";
 "App Language" = "App Language";
+"appearance.textSize" = "Text Size";
+"appearance.textSize.description" = "The size of text throughout the app.";
+"appearance.textSize.footer" = "Some open views use the new text size after you reopen them or restart the app.";
+"appearance.textSize.points %lld" = "%lld pt";
+"appearance.textSize.default %lld" = "%lld pt (Default)";
 "Set the display language for the app." = "Set the display language for the app.";
 "Follow System" = "Follow System";
 "Choose one or both conditions. Calendar notifications use events from enabled calendar sources." = "Choose one or both conditions. Calendar notifications use events from enabled calendar sources.";
@@ -790,7 +795,7 @@
 "Generate Summary" = "Generate Summary";
 "Share" = "Share";
 "Share Summary" = "Share Summary";
-"share.exportToGoogleDrive" = "Export to Google Drive with Dahlia AI";
+"share.exportToGoogleDrive" = "Export to Google Drive";
 "share.exportToGoogleDrivePrompt" = "Export this meeting's summary to Google Drive as a Google Doc. Keep its headings, bullet lists, and action items, and give me the link to the document you create. If no Google Drive tool is available, tell me to add a Databricks workspace that offers the Google Drive MCP under Settings > Dahlia AI > General > Providers, then turn on Google Drive on the MCP tab.";
 "Copy for Google Docs" = "Copy for Google Docs";
 "Copy for Slack" = "Copy for Slack";
@@ -844,7 +849,6 @@
 /* Sidebar Footer */
 "Switch Workspace" = "Switch Workspace";
 "MCP Settings" = "MCP Settings";
-"Manage Workspaces" = "Manage Workspaces";
 "Manage Projects..." = "Manage Projects...";
 "Settings" = "Settings";
 "Help" = "Help";
@@ -856,7 +860,7 @@
 "Settings..." = "Settings...";
 "Quit Dahlia" = "Quit Dahlia";
 "Menu Bar Calendar" = "Menu Bar Calendar";
-"Choose which event details appear in the menu bar. It shows events from the calendars chosen under Account > Calendar, filtered on the Event Display tab." = "Choose which event details appear in the menu bar. It shows events from the calendars chosen under Account > Calendar, filtered on the Event Display tab.";
+"Choose which event details appear in the menu bar. It shows events from the calendars chosen under Account > Calendar, filtered on the Event Display tab." = "Choose which event details appear in the menu bar. It shows events from the calendars chosen under Features > Calendar, filtered on the Event Display tab.";
 "Show today's events" = "Show today's events";
 "Show ongoing and upcoming events in the menu bar menu." = "Show ongoing and upcoming events in the menu bar menu.";
 "Event title" = "Event title";
@@ -1436,7 +1440,7 @@
 "Or continue without signing in" = "Or continue without signing in";
 "Switching AI account…" = "Switching AI account…";
 "Choose the AI account used by this Workspace." = "Choose the AI account used by this Workspace.";
-"Choose the languages Dahlia should recognize. Set the AI output language in Manage Workspaces." = "Choose the languages Dahlia should recognize. Set the AI output language in Manage Workspaces.";
+"Choose the languages Dahlia should recognize. Set the AI output language in Manage Workspaces." = "Choose the languages Dahlia should recognize. Set the AI output language in Workspace settings.";
 "Recognition and OCR Languages" = "Recognition and OCR Languages";
 "Primary Language" = "Summary & Image Caption Language";
 "Used for summaries and screenshot captions." = "Used for summaries and screenshot captions.";
@@ -1751,14 +1755,17 @@
 "sync.discardFileConfirmation" = "Discard sync changes for this file and its links in “%@”?";
 
 "account.settings.imageAnalysis" = "Image analysis";
-"account.settings.imageAnalysisEnabled" = "Enable image search";
+"account.settings.imageAnalysisEnabled" = "Enable image analysis";
 
-"Controls how much reasoning Pi uses for each image." = "Controls how much reasoning Pi uses for each image.";
 
 "Used for searchable image text and captions, and for choosing useful screenshots before summary generation." = "Used for searchable image text and captions, and for choosing useful screenshots before summary generation.";
 
 "settings.agents" = "Dahlia AI";
 "settings.agents.intro" = "Configure summaries, image analysis, and chat for the selected account on this Mac.";
+"settings.group.features" = "Features";
+"Dahlia MCP" = "Dahlia MCP";
+"settings.meetings.intro" = "Configure transcription, live subtitles, screenshots, and meeting links for the selected account on this Mac.";
+"settings.dahliaMCP.intro" = "Set up the MCP server that lets AI agents such as Claude Code and Codex read your Dahlia meetings.";
 "settings.agents.unityGatewayMCPs" = "Unity AI Gateway MCPs";
 "settings.agents.models" = "Models";
 "settings.agents.modelDetails" = "Model Details";

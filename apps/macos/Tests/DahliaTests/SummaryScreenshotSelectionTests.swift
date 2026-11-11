@@ -52,7 +52,8 @@ import Foundation
 
             #expect(selected.map(\.id) == [candidates[0].id, candidates[2].id])
             #expect(pi.argument(after: "--model") == "openai/selection-model")
-            #expect(pi.argument(after: "--thinking") == "high")
+            // A saved effort from an earlier release is ignored.
+            #expect(pi.argument(after: "--thinking") == "low")
             let prompt = try #require(await log.all.last?.command("prompt"))
             #expect(prompt["message"]?.stringValue?.hasSuffix(#"[Attached image 3] <image index="3" elapsed_seconds="60"/>"#) == true)
             let images = try #require(prompt["images"]?.arrayValue)

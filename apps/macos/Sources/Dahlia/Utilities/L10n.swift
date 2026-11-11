@@ -1616,6 +1616,7 @@ enum L10n { // swiftlint:disable:this type_body_length
     static var workspace: String { String(localized: "Workspace", bundle: bundle) }
     static var currentWorkspace: String { String(localized: "Current Workspace", bundle: bundle) }
     static var mcp: String { String(localized: "MCP", bundle: bundle) }
+    static var dahliaMCP: String { String(localized: "Dahlia MCP", bundle: bundle) }
     static var copyCommand: String { String(localized: "Copy Command", bundle: bundle) }
     static var copyMeetingID: String { String(localized: "Copy meeting_id", bundle: bundle) }
     static var copyMeetingIDHint: String { String(localized: "Copies meeting_id to the clipboard", bundle: bundle) }
@@ -1821,6 +1822,11 @@ enum L10n { // swiftlint:disable:this type_body_length
     static var standard: String { String(localized: "Standard", bundle: bundle) }
     static var compact: String { String(localized: "Compact", bundle: bundle) }
     static var appLanguage: String { String(localized: "App Language", bundle: bundle) }
+    static var textSize: String { String(localized: "appearance.textSize", bundle: bundle) }
+    static var textSizeDescription: String { String(localized: "appearance.textSize.description", bundle: bundle) }
+    static var textSizeFooter: String { String(localized: "appearance.textSize.footer", bundle: bundle) }
+    static func textSizePoints(_ size: Int) -> String { String(localized: "appearance.textSize.points \(size)", bundle: bundle) }
+    static func defaultTextSize(_ size: Int) -> String { String(localized: "appearance.textSize.default \(size)", bundle: bundle) }
     static var appLanguageDescription: String { String(localized: "Set the display language for the app.", bundle: bundle) }
     static var followSystem: String { String(localized: "Follow System", bundle: bundle) }
     static var notificationSettingsDescription: String { String(
@@ -2301,6 +2307,7 @@ enum L10n { // swiftlint:disable:this type_body_length
     }
 
     static var account: String { String(localized: "Account", bundle: bundle) }
+    static var features: String { String(localized: "settings.group.features", bundle: bundle) }
     static var selectedWorkspace: String { String(localized: "Selected Workspace", bundle: bundle) }
     static var localAccountModelProvider: String { String(localized: "Local Account Model Provider", bundle: bundle) }
     static var aiAccountDescription: String { String(
@@ -2319,6 +2326,8 @@ enum L10n { // swiftlint:disable:this type_body_length
     static var settingsDataProtectionIntro: String { String(localized: "settings.dataProtection.intro", bundle: bundle) }
     static var agents: String { String(localized: "settings.agents", bundle: bundle) }
     static var settingsAgentsIntro: String { String(localized: "settings.agents.intro", bundle: bundle) }
+    static var settingsMeetingsIntro: String { String(localized: "settings.meetings.intro", bundle: bundle) }
+    static var settingsDahliaMCPIntro: String { String(localized: "settings.dahliaMCP.intro", bundle: bundle) }
     static var unityGatewayMCPs: String { String(localized: "settings.agents.unityGatewayMCPs", bundle: bundle) }
     static var databricksUnityGateway: String { String(localized: "settings.agents.databricksUnityGateway", bundle: bundle) }
     static var mcpKindRemoteComingSoon: String { String(localized: "settings.agents.mcpKindRemoteComingSoon", bundle: bundle) }
@@ -2482,9 +2491,6 @@ enum L10n { // swiftlint:disable:this type_body_length
         bundle: bundle
     ) }
     static var reasoningEffort: String { String(localized: "Reasoning Effort", bundle: bundle) }
-    static var imageAnalysisReasoningEffortDescription: String {
-        String(localized: "Controls how much reasoning Pi uses for each image.", bundle: bundle)
-    }
 
     static var imageAnalysisModelDescription: String { String(
         localized: "Used for searchable image text and captions, and for choosing useful screenshots before summary generation.",
@@ -2536,7 +2542,7 @@ enum L10n { // swiftlint:disable:this type_body_length
     static var generateSummary: String { String(localized: "Generate Summary", bundle: bundle) }
     static var share: String { String(localized: "Share", bundle: bundle) }
     static var shareSummary: String { String(localized: "Share Summary", bundle: bundle) }
-    static var exportToGoogleDriveWithDahliaAI: String { String(localized: "share.exportToGoogleDrive", bundle: bundle) }
+    static var exportToGoogleDrive: String { String(localized: "share.exportToGoogleDrive", bundle: bundle) }
     static var exportToGoogleDrivePrompt: String { String(localized: "share.exportToGoogleDrivePrompt", bundle: bundle) }
     static var copySummaryForGoogleDocs: String { String(localized: "Copy for Google Docs", bundle: bundle) }
     static var copySummaryForSlack: String { String(localized: "Copy for Slack", bundle: bundle) }
@@ -2759,7 +2765,6 @@ enum L10n { // swiftlint:disable:this type_body_length
 
     static var switchWorkspace: String { String(localized: "Switch Workspace", bundle: bundle) }
     static var mcpSettings: String { String(localized: "MCP Settings", bundle: bundle) }
-    static var manageWorkspaces: String { String(localized: "Manage Workspaces", bundle: bundle) }
     static var manageProjects: String { String(localized: "Manage Projects...", bundle: bundle) }
     static var settings: String { String(localized: "Settings", bundle: bundle) }
     static var help: String { String(localized: "Help", bundle: bundle) }

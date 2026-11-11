@@ -23,6 +23,7 @@ struct AppearanceSettingsView: View {
     @ObservedObject private var settings = AppSettings.shared
     @AppStorage(AppSettings.meetingSidebarRowStyleUserDefaultsKey)
     private var meetingSidebarRowStyle = MeetingSidebarRowStyle.standard.rawValue
+    @AppStorage(DahliaTypography.baseSizeUserDefaultsKey) private var textSize = Int(DahliaTypography.defaultBaseSize)
     @Environment(MainWindowNavigation.self) private var navigation
 
     var body: some View {
@@ -63,11 +64,19 @@ struct AppearanceSettingsView: View {
                 options: AppLanguage.allCases,
                 label: \.displayName
             )
+            DahliaMenuPicker(
+                title: L10n.textSize,
+                description: L10n.textSizeDescription,
+                selection: $textSize,
+                options: DahliaTypography.baseSizeOptions
+            ) { $0 == Int(DahliaTypography.defaultBaseSize) ? L10n.defaultTextSize($0) : L10n.textSizePoints($0) }
             DahliaSegmentedPicker(
                 title: L10n.sidebarDisplayStyle,
                 selection: $meetingSidebarRowStyle,
                 options: MeetingSidebarRowStyle.allCases.map(\.rawValue)
             ) { MeetingSidebarRowStyle.resolved(rawValue: $0).label }
+        } footer: {
+            Text(L10n.textSizeFooter)
         }
     }
 

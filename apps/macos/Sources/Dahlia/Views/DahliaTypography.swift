@@ -3,8 +3,18 @@ import SwiftUI
 
 enum DahliaTypography {
     static let defaultBaseSize: CGFloat = 14
+    static let baseSizeUserDefaultsKey = "interfaceTextSize"
+    static let baseSizeOptions = [12, 13, 14, 15, 16, 17, 18]
 
-    static func size(offset: CGFloat = 0, relativeTo baseSize: CGFloat = defaultBaseSize) -> CGFloat {
+    /// The text size chosen in Appearance. Read from defaults, as `L10n` reads the language, so every style follows it.
+    static var baseSize: CGFloat { baseSize(in: .standard) }
+
+    static func baseSize(in defaults: UserDefaults) -> CGFloat {
+        let stored = defaults.integer(forKey: baseSizeUserDefaultsKey)
+        return baseSizeOptions.contains(stored) ? CGFloat(stored) : defaultBaseSize
+    }
+
+    static func size(offset: CGFloat = 0, relativeTo baseSize: CGFloat = Self.baseSize) -> CGFloat {
         baseSize + offset
     }
 }
@@ -28,6 +38,9 @@ extension NSFont {
 }
 
 private struct DahliaAppearanceModifier: ViewModifier {
+    /// Re-applies the inherited body font when the text size changes.
+    @AppStorage(DahliaTypography.baseSizeUserDefaultsKey) private var baseSize = Int(DahliaTypography.defaultBaseSize)
+
     func body(content: Content) -> some View {
         content
             .font(.dahliaBody)

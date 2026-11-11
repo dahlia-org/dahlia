@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// Mac-wide language, notification, and recording preferences. How the app looks is in `AppearanceSettingsView`.
+/// Mac-wide language, notification, and audio input preferences. How the app looks is in `AppearanceSettingsView`.
 struct GeneralSettingsView: View {
     @ObservedObject private var settings = AppSettings.shared
 
@@ -63,17 +63,6 @@ struct GeneralSettingsView: View {
                         Text(L10n.enableMeetingNotificationsToChooseConditions)
                     }
                 }
-            }
-
-            Section {
-                Toggle(isOn: $settings.automaticMeetingEndRecordingStopEnabled) {
-                    Text(L10n.automaticMeetingEndRecordingStop)
-                    Text(L10n.automaticMeetingEndRecordingStopDescription)
-                }
-                .toggleStyle(.switch)
-            } header: {
-                Text(L10n.recordingStopDetection)
-                    .font(.dahliaSectionHeader)
             }
 
             Section {

@@ -722,6 +722,7 @@ final class CaptionViewModel: ObservableObject {
     private let usageTelemetryReporter: UsageTelemetryReporter
 
     private func updateCanBeginRecording() {
+        AppSettings.shared.holdsMeetingSettings = isRecordingLifecycleBusy
         let updatedValue = recordingLifecycle == .idle
             && !isRecordingStartPending
             && !isFinalizingRecording
@@ -787,7 +788,6 @@ final class CaptionViewModel: ObservableObject {
 
         transcriptionLocaleCancellable = UserDefaults.standard
             .publisher(for: \.transcriptionLocale)
-            .compactMap(\.self)
             .removeDuplicates()
             .receive(on: RunLoop.main)
             .sink { [weak self] localeIdentifier in
@@ -804,7 +804,6 @@ final class CaptionViewModel: ObservableObject {
 
         liveSubtitleLocaleCancellable = UserDefaults.standard
             .publisher(for: \.liveSubtitleLocale)
-            .compactMap(\.self)
             .removeDuplicates()
             .receive(on: RunLoop.main)
             .sink { [weak self] localeIdentifier in

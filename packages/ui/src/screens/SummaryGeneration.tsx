@@ -196,12 +196,12 @@ export function ServerSummarySettings({ workspaceId, onSave }: {
         <label className="mb-4 flex items-center gap-2 text-sm">
           <input className="h-4 w-4 shrink-0" type="checkbox" checked={imageSearchEnabled}
             onChange={(event) => void save(withImageAnalysis(settings, { ...selection, enabled: event.target.checked }))} />
-          {uiText("Enable image search for new Desktop accounts", "新しいDesktopアカウントの画像検索を有効にする")}
+          {uiText("Enable image analysis for new Desktop accounts", "新しいDesktopアカウントの画像解析を有効にする")}
         </label>
-        <p className="mb-3">{uiText("The image-search switch is inherited only when a Desktop account first sets up its preferences. Change image search for an existing account in Account Preferences on that Mac. Web does not generate OCR or captions.",
-          "画像検索のスイッチは、Desktopアカウントの初回設定時にのみ引き継がれます。既存アカウントの画像検索は、そのMacのアカウント設定で変更してください。Webでは OCR・caption を生成しません。")}</p>
-        <p className="mb-3">{uiText("This model and reasoning effort select useful screenshots before Web summary generation regardless of the switch. Desktop inherits them at first setup and uses them for OCR, captions, and summary screenshot selection.",
-          "このモデルと推論強度は、スイッチにかかわらずWeb要約前の画像選別に使用します。Desktopでは初回設定時に引き継ぎ、OCR・caption の生成と要約前の画像選別に共通で使用します。")}</p>
+        <p className="mb-3">{uiText("The image-analysis switch is inherited only when a Desktop account first sets up its preferences. Change image analysis for an existing account in Account Preferences on that Mac. Web does not generate OCR or captions.",
+          "画像解析のスイッチは、Desktopアカウントの初回設定時にのみ引き継がれます。既存アカウントの画像解析は、そのMacのアカウント設定で変更してください。Webでは OCR・caption を生成しません。")}</p>
+        <p className="mb-3">{uiText("This model and reasoning effort select useful screenshots before Web summary generation regardless of the switch. Desktop inherits only the model at first setup and uses it with low reasoning effort for OCR, captions, and summary screenshot selection.",
+          "このモデルと推論強度は、スイッチにかかわらずWeb要約前の画像選別に使用します。Desktopでは初回設定時にモデルだけを引き継ぎ、推論強度 low で OCR・caption の生成と要約前の画像選別に使用します。")}</p>
         <div className="grid gap-3 sm:grid-cols-[minmax(0,2fr)_minmax(0,1fr)]">
           <label className="grid gap-1.5 text-sm">{uiText("Model", "モデル")}
             <Select value={selection.model ?? ""} disabled={catalog.loading}

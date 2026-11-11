@@ -200,7 +200,8 @@ struct ContentView: View {
             }
         }
         .overlay(alignment: .bottomTrailing) {
-            if chatCoordinator.isDockedVisible || isShowingFullScreenChat {
+            // The side panel's composer sits at the window's bottom-trailing corner; the full-screen chat anchors its own panel.
+            if chatCoordinator.isDockedVisible, !isShowingFullScreenChat {
                 CodexChatConfigurationOverlay(
                     session: chatCoordinator.dockedSession,
                     isPresented: $isShowingChatConfiguration
@@ -388,6 +389,8 @@ private extension ContentView {
     }
 
     private func restoreFullScreenChatPresentation() {
+        // The side panel's picker overlay is hidden in full screen, which anchors its own.
+        dismissChatConfiguration()
         isSidebarVisible = true
         chatCoordinator.enterFullScreen(workspaceID: sidebarViewModel.currentWorkspace?.id)
         sidebarViewModel.clearMeetingSelection()

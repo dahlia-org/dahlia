@@ -41,7 +41,7 @@
 "settings.preferences.transcribeThenSummarizeDescription" = "録音後の自動処理では、Geminiが先に音声を文字起こしし、その文字起こしから要約を作成します。";
 "settings.preferences.combinedTranscriptionSummaryDescription" = "録音後の自動処理では、Geminiが音声から直接要約し、同じ処理内で文字起こしも作成します。";
 "settings.preferences.serverTranscriptionLanguageDescription" = "Geminiが文字起こしの処理中に発話言語を判定するため、言語設定は不要です。";
-"settings.preferences.appleSpeechSettingsScopeDescription" = "Apple Speechの言語設定は、このMacでローカル文字起こしを行うすべてのワークスペースで共通です。";
+"settings.preferences.appleSpeechSettingsScopeDescription" = "Apple Speech で文字起こしする言語です。選択中のアカウントのワークスペースすべてに適用されます。";
 "settings.preferences.summaryModel" = "要約モデル";
 "settings.preferences.audioProcessingModel" = "音声処理モデル";
 "settings.preferences.audioProcessingReasoningEffort" = "音声処理の推論強度";
@@ -620,6 +620,11 @@
 "Sidebar Display Style" = "サイドバーの表示スタイル";
 "Controls how meetings appear in the sidebar." = "サイドバーに表示する会議の見た目を設定します。";
 "App Language" = "表示言語";
+"appearance.textSize" = "文字サイズ";
+"appearance.textSize.description" = "アプリ全体の文字の大きさです。";
+"appearance.textSize.footer" = "開いている画面の一部は、表示し直すかアプリを再起動すると新しい文字サイズになります。";
+"appearance.textSize.points %lld" = "%lld pt";
+"appearance.textSize.default %lld" = "%lld pt（標準）";
 "Set the display language for the app." = "アプリの表示言語を設定します。";
 "Follow System" = "システムに従う";
 "Choose one or both conditions. Calendar notifications use events from enabled calendar sources." = "1つまたは両方の条件を選択できます。カレンダー通知には、有効なカレンダーソースの予定が使用されます。";
@@ -790,7 +795,7 @@
 "Generate Summary" = "要約を生成";
 "Share" = "共有";
 "Share Summary" = "要約を共有";
-"share.exportToGoogleDrive" = "Dahlia AI で Google Drive に書き出す";
+"share.exportToGoogleDrive" = "Google Drive へ書き出す";
 "share.exportToGoogleDrivePrompt" = "この会議の要約を Google ドキュメントとして Google Drive に書き出してください。見出し、箇条書き、アクションアイテムの構成を保ち、作成したドキュメントのリンクを教えてください。Google Drive のツールが使えない場合は、設定の「Dahlia AI」>「一般」の「プロバイダー」で Google Drive の MCP がある Databricks ワークスペースを追加し、「MCP」タブで Google Drive をオンにするよう案内してください。";
 "Copy for Google Docs" = "Google Docs 用にコピー";
 "Copy for Slack" = "Slack 用にコピー";
@@ -844,7 +849,6 @@
 /* Sidebar Footer */
 "Switch Workspace" = "ワークスペースを切り替え";
 "MCP Settings" = "MCP の設定";
-"Manage Workspaces" = "ワークスペースの管理";
 "Manage Projects..." = "プロジェクトを管理...";
 "Settings" = "設定";
 "Help" = "ヘルプ";
@@ -856,7 +860,7 @@
 "Settings..." = "設定...";
 "Quit Dahlia" = "Dahlia を終了";
 "Menu Bar Calendar" = "メニューバーのカレンダー";
-"Choose which event details appear in the menu bar. It shows events from the calendars chosen under Account > Calendar, filtered on the Event Display tab." = "メニューバーに表示する予定の詳細を選びます。表示する予定は、アカウントの「カレンダー」で選んだカレンダーと「予定の表示」タブのフィルタに従います。";
+"Choose which event details appear in the menu bar. It shows events from the calendars chosen under Account > Calendar, filtered on the Event Display tab." = "メニューバーに表示する予定の詳細を選びます。表示する予定は、「機能」の「カレンダー」で選んだカレンダーと「予定の表示」タブのフィルタに従います。";
 "Show today's events" = "今日の予定を表示";
 "Show ongoing and upcoming events in the menu bar menu." = "進行中と今後の予定をメニューバーのメニューに表示します。";
 "Event title" = "予定のタイトル";
@@ -1436,7 +1440,7 @@
 "Or continue without signing in" = "またはログインせずに続ける";
 "Switching AI account…" = "AIアカウントを切り替えています…";
 "Choose the AI account used by this Workspace." = "このワークスペースで使用するAIアカウントを選びます。";
-"Choose the languages Dahlia should recognize. Set the AI output language in Manage Workspaces." = "Dahliaが認識する言語を選びます。AIの出力言語は「ワークスペースの管理」で変更できます。";
+"Choose the languages Dahlia should recognize. Set the AI output language in Manage Workspaces." = "Dahliaが認識する言語を選びます。AIの出力言語は「ワークスペース」で変更できます。";
 "Recognition and OCR Languages" = "認識・OCR対象の言語";
 "Primary Language" = "要約・画像説明の言語";
 "Used for summaries and screenshot captions." = "要約とスクリーンショットの画像説明に使用します。";
@@ -1751,14 +1755,17 @@
 "sync.discardFileConfirmation" = "「%@」の該当ファイルと紐付けの同期変更を破棄しますか？";
 
 "account.settings.imageAnalysis" = "画像解析";
-"account.settings.imageAnalysisEnabled" = "画像検索を有効にする";
+"account.settings.imageAnalysisEnabled" = "画像解析を有効にする";
 
-"Controls how much reasoning Pi uses for each image." = "画像ごとに Pi が使用する推論の強度を設定します。";
 
 "Used for searchable image text and captions, and for choosing useful screenshots before summary generation." = "検索用の OCR・caption の生成と、要約前の有用なスクリーンショットの選別に共通で使用します。";
 
 "settings.agents" = "Dahlia AI";
 "settings.agents.intro" = "要約・画像解析・チャットの設定です。選択中のアカウントごとに、このMacに保存します。";
+"settings.group.features" = "機能";
+"Dahlia MCP" = "Dahlia MCP";
+"settings.meetings.intro" = "文字起こし・ライブ字幕・スクリーンショット・会議リンクの設定です。選択中のアカウントごとに、このMacに保存します。";
+"settings.dahliaMCP.intro" = "Claude Code や Codex などの AI エージェントに Dahlia のミーティングを読み取らせる MCP サーバーの設定方法です。";
 "settings.agents.unityGatewayMCPs" = "Unity AI Gateway の MCP";
 "settings.agents.models" = "モデル";
 "settings.agents.modelDetails" = "モデルの詳細";

@@ -56,6 +56,7 @@ final class MainWindowNavigation {
     /// Settings tabs kept here so links can open the tab they name.
     var agentSettingsTab = AgentSettingsView.Tab.general
     var appearanceTab = AppearanceSettingsView.Tab.general
+    var meetingSettingsTab = MeetingSettingsView.Tab.transcription
     var settingsCategory: SettingsCategory {
         didSet {
             SettingsNavigation.saveSelection(settingsCategory, in: settingsDefaults)
@@ -213,6 +214,14 @@ final class MainWindowNavigation {
             switch category {
             case .eventDisplay:
                 appearanceTab = .eventDisplay
+            case .transcription, .recordingStopDetection:
+                meetingSettingsTab = .transcription
+            case .liveSubtitles:
+                meetingSettingsTab = .liveSubtitles
+            case .screenshots:
+                meetingSettingsTab = .screenshots
+            case .meetingLinks:
+                meetingSettingsTab = .meetingLinks
             case .agents, .modelProvider, .macInference, .dahliaAccounts:
                 agentSettingsTab = .general
             case .aiSummary, .accountPreferences, .accountsAndWorkspaces:

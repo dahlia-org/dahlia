@@ -9,17 +9,17 @@ import Foundation
     struct SettingsCategoryTests {
         @Test
         func accountAndWorkspacePreferencesHaveSeparateDestinations() {
-            #expect(SettingsGroup.account.categories == [.workspace, .agents, .calendar])
-            // Calendar sources are per account; how events are shown and opened applies to the whole app.
+            #expect(SettingsGroup.features.categories == [.workspace, .meetings, .agents, .dahliaMCP, .calendar])
+            // Calendar sources and meeting links are per account; how events are shown applies to the whole app.
             #expect(SettingsGroup.app.categories.contains(.appearance))
-            #expect(SettingsGroup.app.categories.contains(.meetingLinks))
+            #expect(SettingsNavigation.visibleSelection(.meetingLinks) == .meetings)
             #expect(SettingsCategory.calendar.matches(L10n.calendarSources))
             #expect(!SettingsCategory.calendar.matches(L10n.menuBarCalendar))
             #expect(SettingsCategory.appearance.matches(L10n.menuBarCalendar))
             #expect(SettingsCategory.appearance.matches(L10n.calendarEventsToInclude))
             #expect(SettingsCategory.appearance.matches(L10n.appearanceEventDisplay))
             #expect(SettingsCategory.appearance.matches(L10n.appearanceMenuBar))
-            #expect(SettingsCategory.meetingLinks.matches(L10n.meetingLinkApplications))
+            #expect(SettingsCategory.meetings.matches(L10n.meetingLinkApplications))
             #expect(!SettingsCategory.appearance.matches(L10n.meetingLinkApplications))
             #expect(SettingsCategory.agents.matches("Gmail"))
             #expect(SettingsNavigation.visibleSelection(.accountPreferences) == .agents)
@@ -30,6 +30,9 @@ import Foundation
             #expect(SettingsCategory.workspace.matches(L10n.summaryOutputLanguage))
             #expect(!SettingsCategory.accountPreferences.matches(L10n.summaryOutputLanguage))
             #expect(!SettingsCategory.workspace.matches(L10n.automaticRecordingProcessing))
+            #expect(SettingsCategory.meetings.matches(L10n.automaticRecordingProcessing))
+            #expect(!SettingsCategory.agents.matches(L10n.automaticRecordingProcessing))
+            #expect(SettingsCategory.meetings.matches(L10n.screenshotInterval))
         }
 
         @Test
@@ -48,6 +51,10 @@ import Foundation
                 .language,
                 .recordingStopDetection,
                 .eventDisplay,
+                .transcription,
+                .liveSubtitles,
+                .screenshots,
+                .meetingLinks,
             ]
             let expectedCategories = SettingsCategory.allCases.filter { !hiddenCategories.contains($0) }
 
@@ -83,7 +90,7 @@ import Foundation
             #expect(SettingsNavigation.visibleSelection(.language) == .general)
             #expect(SettingsNavigation.visibleSelection(.appearance) == .appearance)
             #expect(SettingsNavigation.visibleSelection(.eventDisplay) == .appearance)
-            #expect(SettingsNavigation.visibleSelection(.recordingStopDetection) == .general)
+            #expect(SettingsNavigation.visibleSelection(.recordingStopDetection) == .meetings)
             #expect(SettingsNavigation.visibleSelection(.instructions) == .agents)
             #expect(SettingsNavigation.visibleSelection(.mcp) == .agents)
             #expect(SettingsNavigation.visibleSelection(.aiSummary) == .agents)
@@ -91,6 +98,7 @@ import Foundation
             #expect(SettingsNavigation.visibleSelection(.workspace) == .workspace)
             #expect(SettingsNavigation.visibleSelection(.modelProvider) == .agents)
             #expect(SettingsNavigation.visibleSelection(.calendar) == .calendar)
+            #expect(SettingsNavigation.visibleSelection(.screenshots) == .meetings)
 
             let visible = Set(SettingsGroup.allCases.flatMap(\.categories))
             for category in SettingsCategory.allCases {
@@ -103,16 +111,17 @@ import Foundation
             #expect(SettingsCategory.appearance.matches(L10n.appLanguage))
             #expect(SettingsCategory.appearance.matches(L10n.sidebarDisplayStyle))
             #expect(SettingsCategory.general.matches(L10n.appLanguages))
-            #expect(!SettingsCategory.transcription.matches(L10n.batchAudioRetentionPeriod))
+            #expect(!SettingsCategory.meetings.matches(L10n.batchAudioRetentionPeriod))
             #expect(SettingsCategory.backups.matches(L10n.batchAudioRetentionPeriod))
             #expect(SettingsCategory.backups.matches(L10n.batchTranscriptionStallTimeout))
             #expect(SettingsCategory.backups.matches(L10n.backups))
             #expect(SettingsCategory.backups.matches(L10n.screenshotCacheLimit))
-            #expect(!SettingsCategory.screenshots.matches(L10n.screenshotCacheLimit))
-            #expect(!SettingsCategory.transcription.matches(L10n.liveTranscriptDraft))
-            #expect(SettingsCategory.transcription.matches(L10n.transcriptionModel))
-            #expect(SettingsCategory.agents.matches(L10n.liveTranscriptDraft))
-            #expect(SettingsCategory.general.matches(L10n.automaticRecordingStop))
+            #expect(!SettingsCategory.meetings.matches(L10n.screenshotCacheLimit))
+            #expect(SettingsCategory.meetings.matches(L10n.liveTranscriptDraft))
+            #expect(SettingsCategory.meetings.matches(L10n.transcriptionModel))
+            #expect(!SettingsCategory.agents.matches(L10n.liveTranscriptDraft))
+            #expect(!SettingsCategory.general.matches(L10n.automaticRecordingStop))
+            #expect(SettingsCategory.meetings.matches(L10n.automaticMeetingEndRecordingStop))
             #expect(SettingsCategory.general.matches(L10n.externalMicrophoneEchoCancellation))
             #expect(!SettingsCategory.general.matches(L10n.serverContentRetention))
             #expect(SettingsCategory.backups.matches(L10n.serverContentRetention))
@@ -120,10 +129,9 @@ import Foundation
             #expect(SettingsCategory.backups.matches(L10n.serverContentRetentionDays))
             #expect(!SettingsCategory.general.matches(L10n.forever))
             #expect(SettingsCategory.backups.matches(L10n.forever))
-            #expect(SettingsCategory.liveSubtitles.matches(L10n.translationTargetLanguage))
+            #expect(SettingsCategory.meetings.matches(L10n.translationTargetLanguage))
             #expect(SettingsCategory.agents.matches("  chatGPT \n "))
             #expect(SettingsCategory.calendar.matches("google"))
-            #expect(SettingsCategory.agents.matches(L10n.automaticRecordingProcessing))
             #expect(SettingsCategory.agents.matches(L10n.summaryStyle))
             #expect(SettingsCategory.accountPreferences.matches(L10n.imageAnalysis))
             #expect(SettingsCategory.accountPreferences.matches(L10n.imageAnalysisEnabled))
@@ -156,7 +164,7 @@ import Foundation
             }
 
             defaults.set(SettingsCategory.recordingStopDetection.rawValue, forKey: SettingsNavigation.selectedCategoryDefaultsKey)
-            #expect(SettingsNavigation.savedSelection(in: defaults) == .general)
+            #expect(SettingsNavigation.savedSelection(in: defaults) == .meetings)
 
             defaults.set(SettingsCategory.workspacePreferences.rawValue, forKey: SettingsNavigation.selectedCategoryDefaultsKey)
             #expect(SettingsNavigation.savedSelection(in: defaults) == .workspace)
@@ -186,7 +194,7 @@ import Foundation
 
             SettingsNavigation.saveSelection(.meetingLinks, in: defaults)
 
-            #expect(defaults.string(forKey: SettingsNavigation.selectedCategoryDefaultsKey) == SettingsCategory.meetingLinks.rawValue)
+            #expect(defaults.string(forKey: SettingsNavigation.selectedCategoryDefaultsKey) == SettingsCategory.meetings.rawValue)
         }
 
         @Test

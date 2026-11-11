@@ -34,21 +34,24 @@ struct LocalSummarySettingsRows: View {
                 .pickerStyle(.menu)
                 .disabled(!canEdit)
 
-                Picker(selection: effortSelection(target)) {
-                    let effort = selectedReasoningEffort(target)
-                    let options = catalog.effortOptions(modelID: selectedModelID(target))
-                    if !options.contains(where: { $0.reasoningEffort == effort }) {
-                        Text(effort).font(.dahliaBody).tag(effort)
+                // Image analysis always uses `CodexScreenshotAnalysisService.reasoningEffort`.
+                if target == .summary {
+                    Picker(selection: $workspaceSettings.summaryReasoningEffort) {
+                        let effort = workspaceSettings.summaryReasoningEffort
+                        let options = catalog.effortOptions(modelID: selectedModelID(target))
+                        if !options.contains(where: { $0.reasoningEffort == effort }) {
+                            Text(effort).font(.dahliaBody).tag(effort)
+                        }
+                        ForEach(options) { effort in
+                            Text(effort.displayName).font(.dahliaBody).tag(effort.reasoningEffort)
+                        }
+                    } label: {
+                        Text(L10n.reasoningEffort)
+                        Text(L10n.reasoningEffortDescription)
                     }
-                    ForEach(options) { effort in
-                        Text(effort.displayName).font(.dahliaBody).tag(effort.reasoningEffort)
-                    }
-                } label: {
-                    Text(L10n.reasoningEffort)
-                    Text(reasoningEffortDescription(target))
+                    .pickerStyle(.menu)
+                    .disabled(!canEdit)
                 }
-                .pickerStyle(.menu)
-                .disabled(!canEdit)
             }
 
             if let errorMessage = catalog.errorMessage {
@@ -77,13 +80,6 @@ struct LocalSummarySettingsRows: View {
         }
     }
 
-    private func reasoningEffortDescription(_ target: Target) -> String {
-        switch target {
-        case .summary: L10n.reasoningEffortDescription
-        case .imageAnalysis: L10n.imageAnalysisReasoningEffortDescription
-        }
-    }
-
     /// The saved model, shown as its Pi model when a Codex-era name maps to one. A missing model keeps its saved value.
     private func selectedModelID(_ target: Target) -> String {
         let settings = workspaceSettings.generationSettings
@@ -94,14 +90,6 @@ struct LocalSummarySettingsRows: View {
         return PiRuntimeService.matchingModel(saved, in: catalog.models)?.model ?? saved
     }
 
-    private func selectedReasoningEffort(_ target: Target) -> String {
-        let settings = workspaceSettings.generationSettings
-        return switch target {
-        case .summary: workspaceSettings.summaryReasoningEffort
-        case .imageAnalysis: settings.imageAnalysis.reasoningEffort ?? CodexScreenshotAnalysisService.reasoningEffort
-        }
-    }
-
     private func setModelID(_ modelID: String, for target: Target) {
         switch target {
         case .summary: workspaceSettings.summaryModelID = modelID
@@ -109,24 +97,14 @@ struct LocalSummarySettingsRows: View {
         }
     }
 
-    private func setReasoningEffort(_ effort: String, for target: Target) {
-        switch target {
-        case .summary: workspaceSettings.summaryReasoningEffort = effort
-        case .imageAnalysis: workspaceSettings.generationSettings.imageAnalysis.reasoningEffort = effort
-        }
-    }
-
-    private func effortSelection(_ target: Target) -> Binding<String> {
-        Binding(get: { selectedReasoningEffort(target) }, set: { setReasoningEffort($0, for: target) })
-    }
-
     private func modelSelection(_ target: Target) -> Binding<String> {
         Binding(
             get: { selectedModelID(target) },
             set: { modelID in
                 setModelID(modelID, for: target)
-                if let effort = catalog.resolvedEffort(current: selectedReasoningEffort(target), modelID: modelID) {
-                    setReasoningEffort(effort, for: target)
+                if target == .summary,
+                   let effort = catalog.resolvedEffort(current: workspaceSettings.summaryReasoningEffort, modelID: modelID) {
+                    workspaceSettings.summaryReasoningEffort = effort
                 }
             }
         )

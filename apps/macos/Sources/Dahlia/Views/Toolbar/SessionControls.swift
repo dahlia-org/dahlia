@@ -172,14 +172,14 @@ private struct SummarySharePopover: View {
                 .padding(.horizontal, 20)
 
             VStack(spacing: 2) {
-                SummarySharePopoverRow(title: L10n.exportToGoogleDriveWithDahliaAI, systemImage: "doc.badge.arrow.up") {
-                    exportToGoogleDrive()
-                }
                 SummarySharePopoverRow(title: L10n.copySummaryForGoogleDocs, systemImage: "doc.richtext") {
                     copySummary(for: .googleDocs)
                 }
                 SummarySharePopoverRow(title: L10n.copySummaryForSlack, systemImage: "message") {
                     copySummary(for: .slack)
+                }
+                SummarySharePopoverRow(title: L10n.exportToGoogleDrive, systemImage: "doc.badge.arrow.up") {
+                    exportToGoogleDrive()
                 }
             }
             .padding(.horizontal, 12)

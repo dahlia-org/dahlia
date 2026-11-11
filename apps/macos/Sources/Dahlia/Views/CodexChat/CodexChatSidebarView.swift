@@ -19,7 +19,7 @@ struct CodexChatSidebarView: View {
             meetingCatalogWorkspaceID: sidebarViewModel.currentWorkspace?.id,
             isMeetingCatalogLoaded: sidebarViewModel.isMeetingCatalogLoaded,
             showsHistory: $showsHistory,
-            configurationPresentation: $showsConfiguration,
+            configurationPresentation: isFullScreen ? nil : $showsConfiguration,
             onNewChat: startNewChat,
             onOpenHistory: openHistory,
             onShowFullScreen: onShowFullScreen,
@@ -27,7 +27,8 @@ struct CodexChatSidebarView: View {
             reservesSidebarToggle: !isFullScreen,
             reservesWindowControls: false,
             headerLeadingInset: headerLeadingInset,
-            contentMaxWidth: isFullScreen ? DahliaDesign.mainContentMaxWidth : nil
+            contentMaxWidth: isFullScreen ? DahliaDesign.mainContentMaxWidth : nil,
+            isSidePanel: !isFullScreen
         )
         .task(id: sidebarViewModel.currentWorkspace?.id) {
             sidebarViewModel.loadMeetingReferencesIfNeeded()
