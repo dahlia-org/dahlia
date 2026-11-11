@@ -768,11 +768,12 @@ private struct AgentModelDetailsButton: View {
 }
 
 /// The open account's MCP servers. Each Unity Gateway provider (the account's own and those added under General)
-/// expands to its services, each turned on or off with a switch; remote MCP servers are added with the modal.
+/// lists its services, each turned on or off with a switch; remote MCP servers are added with the modal.
 private struct AgentMCPSettingsView: View {
     let model: AgentMCPSettingsModel
     let onAdd: () -> Void
-    @State private var expandedProviderIDs: Set<String> = []
+    @State private var collapsedProviderIDs: Set<String> = []
+    @State private var query = ""
     @State private var serviceSignIn: (service: String, task: Task<Void, Never>)?
     /// Each provider's listing in progress, cancelled when the tab goes away.
     @State private var listings: [String: Task<Void, Never>] = [:]
@@ -781,17 +782,22 @@ private struct AgentMCPSettingsView: View {
 
     var body: some View {
         Form {
+            Section {
+                if model.selectableProviders.isEmpty {
+                    Text(L10n.mcpNoProviders).foregroundStyle(.secondary)
+                } else {
+                    TextField(L10n.search, text: $query, prompt: Text(L10n.mcpSearchPrompt))
+                        .labelsHidden()
+                }
+            } footer: {
+                Text(L10n.mcpSettingsDescription)
+            }
             ForEach(model.selectableProviders) { provider in
                 Section {
                     DisclosureGroup(isExpanded: expansion(of: provider)) {
                         services(of: provider)
                     } label: {
-                        // One line reads better beside the disclosure arrow.
-                        AgentProviderRow(
-                            title: L10n.unityGatewayHost(provider.host),
-                            icon: .databricksLogo,
-                            uses: [L10n.agentProviderModels, L10n.mcp]
-                        ) {
+                        AgentProviderRow(title: L10n.unityGatewayHost(provider.host), icon: .databricksLogo, uses: []) {
                             Text(L10n.agentEnabledCount(model.servers(of: provider).count))
                                 .foregroundStyle(.secondary)
                         }
@@ -812,6 +818,10 @@ private struct AgentMCPSettingsView: View {
         }
         .formStyle(.grouped)
         .font(.dahliaBody)
+        // The account's own workspace is found after the tab opens.
+        .task(id: model.selectableProviders) {
+            model.selectableProviders.forEach(list)
+        }
         .alert(L10n.mcpRenameServer, isPresented: Binding(get: { renaming != nil }, set: { if !$0 { renaming = nil } })) {
             TextField(L10n.mcpServerName, text: $proposedName)
             Button(L10n.rename, action: rename)
@@ -843,10 +853,11 @@ private struct AgentMCPSettingsView: View {
         } else if !model.listingProviderIDs.contains(provider.id), services.isEmpty {
             Text(L10n.mcpNoServices).foregroundStyle(.secondary)
         }
-        ForEach(services, id: \.self) { service in
+        ForEach(services.filter(matchesQuery), id: \.self) { service in
             let server = model.servers(of: provider).first { $0.service == service }
+            let name = AgentMCPServer.displayName(for: service)
             LabeledContent {
-                Toggle(service, isOn: enabled(service, of: provider))
+                Toggle(name, isOn: enabled(service, of: provider))
                     .labelsHidden()
                     .toggleStyle(.switch)
                 if serviceSignIn?.service == serviceKey(service, of: provider) {
@@ -866,22 +877,48 @@ private struct AgentMCPSettingsView: View {
                     .disabled(serviceSignIn != nil)
                 }
             } label: {
-                Text(server.map { L10n.mcpServiceWithServerName(service, $0.name) } ?? service)
+                Label {
+                    // A service turned off reads fainter.
+                    Text(name).foregroundStyle(server == nil ? .secondary : .primary)
+                } icon: {
+                    logo(for: service).resizable().scaledToFit().frame(width: 16, height: 16)
+                }
+                // The full service name, and the server name that prefixes its tools once it is on.
+                .help(server.map { L10n.mcpServiceWithServerName(service, $0.name) } ?? service)
             }
         }
     }
 
-    /// Expanding lists the services again, showing the last list meanwhile.
+    private func matchesQuery(_ service: String) -> Bool {
+        let query = query.trimmingCharacters(in: .whitespaces)
+        return query.isEmpty || service.localizedCaseInsensitiveContains(query)
+            || AgentMCPServer.displayName(for: service).localizedCaseInsensitiveContains(query)
+    }
+
+    /// The service's brand logo by keyword; services with no brand of their own show a symbol.
+    private func logo(for service: String) -> Image {
+        let name = service.lowercased()
+        let logos = [
+            ("slack", "IntegrationSlack"), ("gmail", "IntegrationGmail"), ("drive", "IntegrationGoogleDrive"),
+            ("github", "IntegrationGitHub"), ("atlassian", "IntegrationAtlassian"), ("jira", "IntegrationAtlassian"),
+            ("confluence", "IntegrationAtlassian"), ("calendar", "IntegrationGoogleCalendar"),
+            ("microsoft", "IntegrationMicrosoft365"), ("genie", "IntegrationGenie"), ("sql", "IntegrationDBSQL"),
+        ]
+        if let logo = logos.first(where: { name.contains($0.0) }), let image = Bundle.appModule.image(forResource: logo.1) {
+            // The GitHub mark is black, so it takes the text color to show in dark mode.
+            return Image(nsImage: image).renderingMode(logo.1 == "IntegrationGitHub" ? .template : .original)
+        }
+        if name.contains("search") { return Image(systemName: "magnifyingglass") }
+        if name.contains("sandbox") { return Image(systemName: "shippingbox") }
+        return Image(systemName: "puzzlepiece.extension")
+    }
+
+    /// Lists open until closed, so the switches show without a click.
     private func expansion(of provider: AgentMCPProvider) -> Binding<Bool> {
         Binding {
-            expandedProviderIDs.contains(provider.id)
+            !collapsedProviderIDs.contains(provider.id)
         } set: { isExpanded in
-            if isExpanded {
-                expandedProviderIDs.insert(provider.id)
-                list(provider)
-            } else {
-                expandedProviderIDs.remove(provider.id)
-            }
+            if isExpanded { collapsedProviderIDs.remove(provider.id) } else { collapsedProviderIDs.insert(provider.id) }
         }
     }
 

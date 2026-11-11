@@ -234,6 +234,14 @@ import os
         }
 
         @Test
+        func servicesShowReadableNames() {
+            #expect(AgentMCPServer.displayName(for: "system.ai.google_calendar") == "Google Calendar")
+            #expect(AgentMCPServer.displayName(for: "system.ai.genie_one_mcp") == "Genie One MCP")
+            #expect(AgentMCPServer.displayName(for: "system.ai.github") == "GitHub")
+            #expect(AgentMCPServer.displayName(for: "system.ai.microsoft_365") == "Microsoft 365")
+        }
+
+        @Test
         func aFailedSignInSavesNothing() async throws {
             let pi = Self.runtime(succeeds: false, commands: OSAllocatedUnfairLock(initialState: []))
             let (model, defaults) = try Self.model(pi)

@@ -1795,6 +1795,9 @@
 "settings.agents.providerAdded %@" = "%@ (added)";
 "settings.agents.addRemoteMCPServer" = "Add Remote MCP Server…";
 "settings.agents.addRemoteMCPServerTitle" = "Add Remote MCP Server";
+"settings.agents.mcpSettingsDescription" = "Chats opened from now on can use the tools of each MCP turned on. If a service such as GitHub or Slack needs its own sign-in, choose Sign In from the row's “…” menu.";
+"settings.agents.mcpSearchPrompt" = "Search MCPs";
+"settings.agents.mcpNoProviders" = "Add a Databricks workspace under Providers on the General tab to turn on its Unity AI Gateway MCPs here.";
 "settings.agents.mcpRenameServer" = "Rename Server";
 "settings.agents.mcpProviderSignInRequired" = "Sign-in required. Sign in again under Providers on the General tab.";
 "settings.agents.mcpWorkspaceIsAccount" = "This is the account's own workspace. Its MCPs are already available.";

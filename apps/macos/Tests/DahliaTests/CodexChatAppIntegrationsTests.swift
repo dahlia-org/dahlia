@@ -31,7 +31,10 @@
             #expect(settingsOpened == 1)
         }
 
-        @Test(arguments: ["IntegrationSlack", "IntegrationGmail", "IntegrationGoogleDrive", "IntegrationGitHub", "IntegrationAtlassian"])
+        @Test(arguments: [
+            "IntegrationSlack", "IntegrationGmail", "IntegrationGoogleDrive", "IntegrationGitHub", "IntegrationAtlassian",
+            "IntegrationGoogleCalendar", "IntegrationMicrosoft365", "IntegrationGenie", "IntegrationDBSQL",
+        ])
         func bundledAppIconsCanBeLoaded(name: String) throws {
             let image = try #require(Bundle.appModule.image(forResource: name))
             #expect(image.isValid)
