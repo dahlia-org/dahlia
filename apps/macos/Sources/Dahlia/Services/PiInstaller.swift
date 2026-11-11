@@ -20,7 +20,7 @@ enum PiInstaller {
         DahliaApplicationSupport.currentDirectoryURL.appending(path: "Pi", directoryHint: .isDirectory)
     }
 
-    /// `Application Support/<profile>/bin/pi`. An account runs it once Agents settings sets it as the account's path.
+    /// `Application Support/<profile>/bin/pi`. Accounts run it when Dahlia-managed Pi is enabled in Settings.
     static var executableURL: URL { entrypointURL(in: directoryURL) }
 
     struct Release: Decodable, Sendable {

@@ -9,41 +9,67 @@ import Foundation
     @MainActor
     struct PiInfrastructureTests {
         @Test
-        func configuredPiCommandIsUsedAndAMissingOneFailsInsteadOfSearching() throws {
-            let defaults = try #require(UserDefaults(suiteName: "PiInfrastructureTests.\(UUID())"))
-            let directory = FileManager.default.temporaryDirectory.appending(path: "PiInfrastructureTests-\(UUID())")
-            try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-            defer { try? FileManager.default.removeItem(at: directory) }
-            let pi = directory.appending(path: "pi")
-            try Data("#!/bin/sh\n".utf8).write(to: pi)
-            try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: pi.path)
-
-            // Each account keeps its own path.
-            let account = CodexRuntimeProvider.databricks(connectionID: UUID())
-            defaults.set(" \(pi.path) ", forKey: PiBundle.executablePathDefaultsKey(for: account))
-            #expect(try PiBundle.executableURL(for: account, defaults: defaults).path == pi.path)
-            #expect((try? PiBundle.executableURL(for: .local, defaults: defaults))?.path != pi.path)
-
-            // A missing file and a directory (which FileManager reports as executable) both fail instead of searching.
-            for path in [directory.appending(path: "missing").path, directory.path] {
-                defaults.set(path, forKey: PiBundle.executablePathDefaultsKey(for: account))
-                #expect(throws: CodexAppServerError.piCommandNotFound(path)) {
-                    try PiBundle.executableURL(for: account, defaults: defaults)
+        func piSelectionUsesManagedInstallationOrAccountPATH() async throws {
+            try await Task.detached {
+                let suite = "PiInfrastructureTests.\(UUID())"
+                let defaults = try #require(UserDefaults(suiteName: suite))
+                defer { defaults.removePersistentDomain(forName: suite) }
+                let directory = FileManager.default.temporaryDirectory.appending(path: suite)
+                try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+                defer { try? FileManager.default.removeItem(at: directory) }
+                let pathPi = directory.appending(path: "pi")
+                let managedPi = directory.appending(path: "managed-pi")
+                for url in [pathPi, managedPi] {
+                    try Data("#!/bin/sh\n".utf8).write(to: url)
+                    try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: url.path)
                 }
-            }
+                let accounts: [CodexRuntimeProvider] = [.local, .databricks(connectionID: UUID()), .dahlia(connectionID: UUID())]
+                for account in accounts {
+                    PiLaunchSettings(variables: [.init(id: UUID(), name: "PATH", value: directory.path)])
+                        .save(for: account, defaults: defaults)
+                    #expect(!PiBundle.usesManagedPi(for: account, defaults: defaults))
+                    defaults.set("/old/custom/pi", forKey: "piExecutablePath.\(account.accountKey)")
+                    #expect(try PiBundle.executableURL(for: account, defaults: defaults, managedExecutableURL: managedPi) == pathPi)
+                }
+                let key = PiBundle.useManagedPiDefaultsKey(for: accounts[1])
+                defaults.set(true, forKey: key)
+                #expect(try PiBundle.executableURL(for: accounts[1], defaults: defaults, managedExecutableURL: managedPi) == managedPi)
+                #expect(try PiBundle.executableURL(for: .local, defaults: defaults, managedExecutableURL: managedPi) == pathPi)
 
-            // A command name is found on the search path; one that is nowhere fails with its name.
-            defaults.set("sh", forKey: PiBundle.executablePathDefaultsKey(for: account))
-            #expect(try PiBundle.executableURL(for: account, defaults: defaults).lastPathComponent == "sh")
-            defaults.set("dahlia-no-such-command", forKey: PiBundle.executablePathDefaultsKey(for: account))
-            #expect(throws: CodexAppServerError.piCommandNotFound("dahlia-no-such-command")) {
-                try PiBundle.executableURL(for: account, defaults: defaults)
-            }
+                // Managed mode must fail when missing or a directory, even with a working pi on PATH.
+                try FileManager.default.removeItem(at: managedPi)
+                #expect(throws: CodexAppServerError.piCommandNotFound(managedPi.path)) {
+                    try PiBundle.executableURL(for: accounts[1], defaults: defaults, managedExecutableURL: managedPi)
+                }
+                try FileManager.default.createDirectory(at: managedPi, withIntermediateDirectories: true)
+                #expect(throws: CodexAppServerError.piCommandNotFound(managedPi.path)) {
+                    try PiBundle.executableURL(for: accounts[1], defaults: defaults, managedExecutableURL: managedPi)
+                }
+                defaults.set(false, forKey: key)
+                #expect(try PiBundle.executableURL(for: accounts[1], defaults: defaults, managedExecutableURL: managedPi) == pathPi)
+            }.value
+        }
 
-            // A PATH the account sets under Environment is searched too, as the launched Pi sees it.
-            defaults.set("pi", forKey: PiBundle.executablePathDefaultsKey(for: account))
-            PiLaunchSettings(variables: [.init(id: UUID(), name: "PATH", value: directory.path)]).save(for: account, defaults: defaults)
-            #expect(try PiBundle.executableURL(for: account, defaults: defaults).path == pi.path)
+        @Test
+        func legacyPiSelectionPreservesOnlyManagedPathAndExplicitToggleWins() throws {
+            let suite = "PiInfrastructureTests.\(UUID())"
+            let defaults = try #require(UserDefaults(suiteName: suite))
+            defer { defaults.removePersistentDomain(forName: suite) }
+            let account = CodexRuntimeProvider.local
+            let managed = URL(fileURLWithPath: "/test/Dahlia/bin/pi")
+            let legacyKey = "piExecutablePath.\(account.accountKey)"
+            for legacy in ["pi", "/custom/bin/pi", "sh", ""] {
+                defaults.set(legacy, forKey: legacyKey)
+                #expect(!PiBundle.usesManagedPi(for: account, defaults: defaults, managedExecutableURL: managed))
+            }
+            defaults.set(" \(managed.path) ", forKey: legacyKey)
+            #expect(PiBundle.usesManagedPi(for: account, defaults: defaults, managedExecutableURL: managed))
+            #expect(!PiBundle.usesManagedPi(for: .dahlia(connectionID: UUID()), defaults: defaults, managedExecutableURL: managed))
+            defaults.set(false, forKey: PiBundle.useManagedPiDefaultsKey(for: account))
+            #expect(!PiBundle.usesManagedPi(for: account, defaults: defaults, managedExecutableURL: managed))
+            defaults.set("/custom/bin/pi", forKey: legacyKey)
+            defaults.set(true, forKey: PiBundle.useManagedPiDefaultsKey(for: account))
+            #expect(PiBundle.usesManagedPi(for: account, defaults: defaults, managedExecutableURL: managed))
         }
 
         @Test

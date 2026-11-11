@@ -3,33 +3,42 @@ import Foundation
 
 /// The user's installed `pi` command and the Dahlia resources (extension, skills) it runs with.
 enum PiBundle {
-    /// The account's `pi` command set in Agents settings: a command name (`pi` by default) or a path.
-    nonisolated static func executablePathDefaultsKey(for provider: CodexRuntimeProvider) -> String {
-        "piExecutablePath.\(provider.accountKey)"
+    nonisolated static func useManagedPiDefaultsKey(for provider: CodexRuntimeProvider) -> String {
+        "useManagedPi.\(provider.accountKey)"
     }
 
-    /// The command the account runs, as set in Settings: a path is used as it is, and a command name (`pi` when unset)
-    /// is found on the search path, including a PATH the account sets under Environment (secrets aside). The Pi that
-    /// Dahlia installs is used only once Settings sets its path.
-    nonisolated static func executableURL(for provider: CodexRuntimeProvider, defaults: UserDefaults = .standard) throws -> URL {
-        let configured = (defaults.string(forKey: executablePathDefaultsKey(for: provider)) ?? "")
-            .trimmingCharacters(in: .whitespaces).nilIfBlank ?? defaultCommand
-        guard configured.contains("/") || configured.hasPrefix("~") else {
-            let environment = ProcessInfo.processInfo.environment
-                .merging(PiLaunchSettings.load(for: provider, defaults: defaults).environment { _ in nil }) { $1 }
-            guard let url = CommandLineToolLocator.executableURL(named: configured, environment: environment) else {
-                throw CodexAppServerError.piCommandNotFound(configured == defaultCommand ? nil : configured)
+    /// Preserve accounts that already selected Dahlia's installation; other old paths become PATH discovery.
+    nonisolated static func usesManagedPi(
+        for provider: CodexRuntimeProvider,
+        defaults: UserDefaults = .standard,
+        managedExecutableURL: URL = PiInstaller.executableURL
+    ) -> Bool {
+        let key = useManagedPiDefaultsKey(for: provider)
+        if defaults.object(forKey: key) != nil { return defaults.bool(forKey: key) }
+        let legacyPath = defaults.string(forKey: "piExecutablePath.\(provider.accountKey)")?
+            .trimmingCharacters(in: .whitespaces)
+        return legacyPath == managedExecutableURL.path
+    }
+
+    /// Every Pi process uses the account's managed installation or discovers `pi` on its launch PATH.
+    nonisolated static func executableURL(
+        for provider: CodexRuntimeProvider,
+        defaults: UserDefaults = .standard,
+        managedExecutableURL: URL = PiInstaller.executableURL
+    ) throws -> URL {
+        if usesManagedPi(for: provider, defaults: defaults, managedExecutableURL: managedExecutableURL) {
+            guard CommandLineToolLocator.isExecutableFile(atPath: managedExecutableURL.path) else {
+                throw CodexAppServerError.piCommandNotFound(managedExecutableURL.path)
             }
-            return url
+            return managedExecutableURL
         }
-        let path = (configured as NSString).expandingTildeInPath
-        guard CommandLineToolLocator.isExecutableFile(atPath: path) else {
-            throw CodexAppServerError.piCommandNotFound(path)
+        let environment = ProcessInfo.processInfo.environment
+            .merging(PiLaunchSettings.load(for: provider, defaults: defaults).environment { _ in nil }) { $1 }
+        guard let url = CommandLineToolLocator.executableURL(named: "pi", environment: environment) else {
+            throw CodexAppServerError.piCommandNotFound(nil)
         }
-        return URL(fileURLWithPath: path)
+        return url
     }
-
-    nonisolated static let defaultCommand = "pi"
 
     nonisolated static func resourceURL(_ name: String) throws -> URL {
         guard let url = Bundle.appModule.url(forResource: name, withExtension: nil, subdirectory: "PiExtension") else {
