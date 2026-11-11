@@ -135,7 +135,8 @@ final class AppSettings: ObservableObject {
     fileprivate nonisolated static let defaultAutomaticScreenshotIntervalSeconds = 20
     fileprivate nonisolated static let defaultAutomaticScreenshotChangeThresholdPercent = 5
 
-    init() {
+    init(meetingSettingsDefaults: UserDefaults = .standard) {
+        self.meetingSettingsDefaults = meetingSettingsDefaults
         Self.migrateCalendarEventFilterSettings(in: .standard)
         Self.migrateLiveSubtitleLocaleSetting(in: .standard)
         Self.migrateAppLanguageSettings(in: .standard)
@@ -319,6 +320,18 @@ final class AppSettings: ObservableObject {
         slackMeetingLinkOpenTargetUserDefaultsKey,
     ]
     nonisolated static let meetingSettingsAccountUserDefaultsKey = "meetingSettingsAccount"
+    private let meetingSettingsDefaults: UserDefaults
+
+    /// Set while a recording starts, runs, or finalizes. An account change meanwhile, such as a sign-out moving the open
+    /// workspace to the Local Account, switches the meeting settings only when it ends, so the recording keeps its own.
+    var holdsMeetingSettings = false {
+        didSet { if oldValue, !holdsMeetingSettings { switchMeetingSettingsToCurrentAccount() } }
+    }
+
+    private func switchMeetingSettingsToCurrentAccount() {
+        guard !holdsMeetingSettings, let currentWorkspace else { return }
+        Self.switchMeetingSettings(to: CodexRuntimeProvider(workspace: currentWorkspace), in: meetingSettingsDefaults)
+    }
 
     nonisolated static func meetingSettingsUserDefaultsKey(for accountKey: String) -> String {
         "meetingSettings.\(accountKey)"
@@ -476,7 +489,7 @@ final class AppSettings: ObservableObject {
     /// 現在開いているワークスペース。DB の `workspaces` テーブルから選択される。
     @Published var currentWorkspace: WorkspaceRecord? {
         didSet {
-            if let currentWorkspace { Self.switchMeetingSettings(to: CodexRuntimeProvider(workspace: currentWorkspace), in: .standard) }
+            switchMeetingSettingsToCurrentAccount()
             postCalendarAccountChange(from: setupTourAccount ?? CodexRuntimeProvider(workspace: oldValue))
         }
     }

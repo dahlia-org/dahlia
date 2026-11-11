@@ -722,6 +722,7 @@ final class CaptionViewModel: ObservableObject {
     private let usageTelemetryReporter: UsageTelemetryReporter
 
     private func updateCanBeginRecording() {
+        AppSettings.shared.holdsMeetingSettings = isRecordingLifecycleBusy
         let updatedValue = recordingLifecycle == .idle
             && !isRecordingStartPending
             && !isFinalizingRecording

@@ -37,6 +37,33 @@
         }
 
         @Test
+        @MainActor
+        func anAccountChangeDuringARecordingWaitsUntilTheRecordingEnds() throws {
+            let suiteName = "AccountMeetingSettingsTests-\(UUID().uuidString)"
+            let defaults = try #require(UserDefaults(suiteName: suiteName))
+            defer { defaults.removePersistentDomain(forName: suiteName) }
+            let localeKey = AppSettings.transcriptionLocaleUserDefaultsKey
+            let settings = AppSettings(meetingSettingsDefaults: defaults)
+            var workspace = WorkspaceRecord(id: .v7(), path: nil, name: "Server", createdAt: .now, lastOpenedAt: .now)
+            workspace.accountConnectionId = UUID()
+            settings.currentWorkspace = workspace
+            defaults.set("en_US", forKey: localeKey)
+            AppSettings.switchMeetingSettings(to: .local, in: defaults)
+            defaults.set("ja_JP", forKey: localeKey)
+            AppSettings.switchMeetingSettings(to: CodexRuntimeProvider(workspace: workspace), in: defaults)
+            #expect(defaults.string(forKey: localeKey) == "en_US")
+
+            // A sign-out moves the open workspace to the Local Account while a recording runs.
+            settings.holdsMeetingSettings = true
+            workspace.accountConnectionId = nil
+            settings.currentWorkspace = workspace
+            #expect(defaults.string(forKey: localeKey) == "en_US")
+
+            settings.holdsMeetingSettings = false
+            #expect(defaults.string(forKey: localeKey) == "ja_JP")
+        }
+
+        @Test
         func clearingTheLocaleKeyNotifiesObserversWithTheDefault() throws {
             let suiteName = "AccountMeetingSettingsTests-\(UUID().uuidString)"
             let defaults = try #require(UserDefaults(suiteName: suiteName))
