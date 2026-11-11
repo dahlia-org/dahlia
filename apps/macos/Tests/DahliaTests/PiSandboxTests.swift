@@ -104,7 +104,10 @@ import Foundation
             let home = "/Users/u"
             func root(_ path: String) -> String { PiSandbox.installRoot(of: URL(fileURLWithPath: path), home: home) }
             #expect(root("/Users/u/.nvm/versions/node/v24/lib/node_modules/@earendil-works/pi/dist/cli.js") == "/Users/u/.nvm/versions/node/v24")
-            #expect(root("/Users/u/node_modules/pi/dist/cli.js") == "/Users/u/node_modules/pi/dist")
+            // Installed in the home folder itself: the whole `node_modules`, where its dependencies sit beside it.
+            #expect(root("/Users/u/node_modules/pi/dist/cli.js") == "/Users/u/node_modules")
+            #expect(root("/Users/u/lib/node_modules/pi/dist/cli.js") == "/Users/u/lib/node_modules")
+
         }
 
         @Test

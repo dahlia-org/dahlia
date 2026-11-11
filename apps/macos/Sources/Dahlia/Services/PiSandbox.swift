@@ -41,15 +41,17 @@ enum PiSandbox {
         return try ["/usr/bin/sandbox-exec", "-f", PiBundle.resourceURL("pi.sb").path] + parameters.flatMap { ["-D", "\($0)=\($1)"] }
     }
 
-    /// What an installed Pi runs from: its folder, or for an npm package the prefix that holds it and its `node`.
+    /// What an installed Pi runs from: its folder, or for an npm package the prefix that holds it, its dependencies,
+    /// and its `node`.
     nonisolated static func installRoot(of executableURL: URL, home: String = NSHomeDirectory()) -> String {
         let path = realPath(executableURL)
         let folder = (path as NSString).deletingLastPathComponent
         guard let modules = path.range(of: "/node_modules/") else { return folder }
         let prefix = String(path[..<modules.lowerBound])
         let root = prefix.hasSuffix("/lib") ? String(prefix.dropLast(4)) : prefix
-        // A package installed in the home folder itself must not close the whole home, working folder included.
-        return (home + "/").hasPrefix(root + "/") ? folder : root
+        // A package installed in the home folder itself must not close the whole home, working folder included;
+        // its `node_modules` still holds everything Pi loads, hoisted dependencies too.
+        return (home + "/").hasPrefix(root + "/") ? prefix + "/node_modules" : root
     }
 
     /// Seatbelt matches resolved paths, and Foundation's resolution drops `/private`. A missing path stays as written.
