@@ -1791,14 +1791,10 @@
 "settings.agents.addProviderTitle" = "Add Provider";
 "settings.agents.providersEmpty" = "No providers yet.";
 "settings.agents.signInAgain" = "Sign In Again";
-"settings.agents.mcpServiceSignIn" = "Sign In";
 "settings.agents.providerAdded %@" = "%@ (added)";
-"settings.agents.addRemoteMCPServer" = "Add Remote MCP Server…";
-"settings.agents.addRemoteMCPServerTitle" = "Add Remote MCP Server";
-"settings.agents.mcpSettingsDescription" = "Chats opened from now on can use the tools of each MCP turned on. If a service such as GitHub or Slack needs its own sign-in, choose Sign In from the row's “…” menu.";
+"settings.agents.mcpSettingsDescription" = "Chats opened from now on can use the tools of each MCP turned on. If a service such as GitHub or Slack needs its own sign-in, choose Sign In on its card.";
 "settings.agents.mcpSearchPrompt" = "Search MCPs";
 "settings.agents.mcpNoProviders" = "Add a Databricks workspace under Providers on the General tab to turn on its Unity AI Gateway MCPs here.";
-"settings.agents.mcpRenameServer" = "Rename Server";
 "settings.agents.mcpProviderSignInRequired" = "Sign-in required. Sign in again under Providers on the General tab.";
 "settings.agents.mcpWorkspaceIsAccount" = "This is the account's own workspace. Its MCPs are already available.";
 "settings.agents.enabledCount %lld" = "%lld on";
@@ -1807,12 +1803,10 @@
 "settings.agents.workspaceURL" = "Workspace URL";
 "settings.agents.mcps" = "MCPs";
 "settings.agents.databricksUnityGateway" = "Databricks (Unity Gateway)";
-"settings.agents.mcpKindRemoteComingSoon" = "Registering remote MCP servers is coming later.";
 "settings.agents.mcpLoadingServices" = "Loading Unity AI Gateway MCPs…";
 "settings.agents.mcpNoServices" = "This workspace's Unity AI Gateway (system.ai) has no MCPs you can use.";
 "settings.agents.mcpRemoveWorkspaceDescription" = "Signs out of this workspace and deletes every MCP server registered on it.";
 "settings.agents.mcpRemoveWorkspace %@" = "Delete “%@”?";
-"settings.agents.mcpServerName" = "Server name";
 "settings.agents.mcpServerNameInvalid" = "Use up to 40 lowercase letters, digits, and _ in the server name.";
 "settings.agents.mcpServerNameTaken" = "Another server already has this name.";
 "chat.mcpSignInRequired %@" = "%@ needs sign-in. Sign in again under Settings > Dahlia AI > General > Providers (for the account's own workspace, from the account menu at the bottom of the sidebar).";
@@ -1834,3 +1828,15 @@
 
 "settings.dataProtection" = "Data Protection";
 "settings.dataProtection.intro" = "Manage data retention and recovery on this Mac. Backups cover Local Account workspaces.";
+
+"settings.agents.mcpServiceSignedIn" = "Signed in to this service.";
+"settings.agents.mcpServiceSignInRequired" = "Sign in to this service (sign-in required).";
+"settings.agents.mcpServiceSignInUnknown" = "Sign in to this service (status unconfirmed).";
+
+"settings.agents.mcpAddService" = "Add MCP Server";
+
+"settings.agents.mcpServiceName" = "Service name";
+
+"settings.agents.mcpServiceNameHelp" = "Enter catalog.schema.service, such as main.default.notion.";
+
+"settings.agents.mcpServiceNameInvalid" = "Enter three names separated by dots (catalog.schema.service), using letters, digits, _ or -.";

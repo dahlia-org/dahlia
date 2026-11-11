@@ -171,15 +171,15 @@ workspace と MCP の workspace が異なることが多いため、MCP 用の w
 しない。この workspace は最初の server と一緒に保存し、最後の server を外すと消す。登録は Local Account・Databricks
 アカウント・Dahlia account のどれでもでき、アカウントごとに app defaults（`agentMCPs.<local またはアカウント ID>`）に保存する。
 Unity Gateway の MCP は登録の操作を要さない（2026-11-09 ユーザー承認）。「MCP」タブは、アカウント自身の workspace と「プロバイダー」で
-追加した Databricks をすべて並べ、展開すると、その MCP service をスイッチで並べる。オンにすると server を登録し、オフにすると外す。
-「リモート MCP サーバーを追加」のモーダルはリモート MCP server (URL) 専用で、未実装なので「今後対応」とだけ示す。
+追加した Databricks を折りたたみ可能な見出しとして並べ、その下に MCP service を2列のカードで表示する。一覧は中央の設定カラムに収め、カードには名前と API の `comment` を表示し、検索は説明も対象にする。各 MCP service のカード右上にトグルを置き、有効な MCP だけ、その左に小型の円形の認証表示と処理中のキャンセルを表示する。プロバイダーのサインインは「一般」の「プロバイダー」で行う。オンにすると server を登録し、オフにすると外す。
+各 provider のすべてのサービスカードの後に「MCP サーバーを追加」カードを置く。`main.default.notion` のような完全名を入力すると有効なカードとして追加し、無効化後も一覧に残す。追加用カードは常に最後に表示する。
 
 並べる MCP service は、その workspace の Unity AI Gateway が sign-in に見せるもの（`system.ai` の下で状態が ACTIVE のもの。
 `GET /api/2.1/unity-catalog/mcp-services`）と、登録済みの service である。最後に取った一覧を設定に残して展開したときに先に示し、展開する
 たびに取り直す。取り直しに失敗しても前の一覧を残し、失敗を示す。一覧は token を持つ Pi が control process の `/databricks-mcp-services <workspace URL>`
-で取り、Dahlia には名前だけを返す。`system.ai` 以外の schema は、全 catalog と schema をたどる必要があるので一覧に出さない。server 名は tool
+で取り、Dahlia には名前と `comment` を返す。説明も最後の一覧とともに保存し、取得失敗時は保持する。`system.ai` 以外の schema は自動列挙せず、完全名で登録した有効な service だけを個別の GET API で取得する。server 名は tool
 名の接頭辞（`mcp__<name>__`）になるので、英小文字・数字・`_` の40文字までとし、アカウントの中で重複させず、`dahlia` を使わない。既定は
-service 名の最後の部分（`system.ai.github` なら `github`）で、重複するときは番号を付ける。名前は各 service の「…」メニューで変える。同じアカウントで複数の workspace を登録できる。
+service 名の最後の部分（`system.ai.github` なら `github`）で、重複するときは番号を付ける。名前は自動で割り当て、設定からの変更は提供しない。同じアカウントで複数の workspace を登録できる。
 
 sign-in は workspace ごとに1つで、その workspace の server すべてが共有する。どの server を使っても同じ refresh token が更新される。
 Databricks provider（`PiExtension/databricks-provider.ts`）が sign-in を provider として登録する。provider 自体はモデルを持たず、
@@ -205,7 +205,8 @@ sign-in は利用者の操作でだけ始める。workspace を登録すると�
 チャットは Pi の通知（接続後の notice と、sign-in を求める tool の失敗）を thread の process ごとに覚え、turn のたびに「設定でサインインし直す」
 よう表示する。Pi は `auth.provider` の server を sign-in の後に自動で接続し直さないため、sign-in が終わるとそのアカウントのチャットの process
 を閉じ、次の turn で開き直す。設定は `auth.json` の key だけを読んでサインイン済みかを示す。server を削除しても sign-in は残し、workspace を削除すると、その server もまとめて消してから `/dahlia-logout <provider>` で credential を消す（Pi は provider が登録されていなくても消せる。Pi が動かず消せなくても登録は消し、失敗を示す）。MCP の裏にある
-サービスの接続（GitHub など、利用者ごとの OAuth）へのサインインは、「MCP」タブの各 service の「…」メニューの「サインイン」で始める。
+サービスの接続（GitHub など、利用者ごとの OAuth）へのサインインは、「MCP」タブの各 service のカード右上のサインインアイコンで始める。
+Databricks SQL・Sandbox・Genie One・Web Search（`system.ai.dbsql`・`sandbox`・`genie_one_mcp`・`web_search`）は workspace のサインインを使うので、追加認証の表示と状態確認の対象にしない。接続先の認証状態は、有効化している追加認証対象の MCP だけを対象に、Beta の `GET /api/2.1/unity-catalog/mcp-services/<service>/user-credentials` で一覧取得時・有効化時・サインイン完了後に確認する（`--enabled` で対象の service 名だけを Pi に渡す）。`provisioning_info.state` が `ACTIVE` のときだけクリック操作のない円形の緑のチェックバッジを表示し、それ以外の状態または `NOT_FOUND` はサインインが必要として示す。API 非対応・権限不足・通信失敗は未確認として表示する。未認証・未確認のときは円形のサインインボタンを表示し、無効な MCP には認証表示を出さない。無効化したら進行中のサインインも取り消す。状態は Pi から列挙結果に添え、token や有効期限は渡さず、アプリ終了後に再利用する設定にも保存しない。トグルはその MCP の利用設定を表し、認証状態とは独立する。
 control process の `/databricks-connection-login <workspace URL> <service>` が、その service の URL を `resource`（RFC 8707）
 に付けた認可要求をブラウザで開き、workspace が接続のサインインを済ませてから返す認可コードは token に交換しない（workspace の sign-in は
 そのまま）。終わるとそのアカウントのチャットの process を閉じ、次の turn で接続し直す。MCP が返すリンクからのサインインもそのまま使える。

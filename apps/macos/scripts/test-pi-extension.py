@@ -86,7 +86,7 @@ def http_mcp(authorizations):
 
 
 def oidc(grants, client_id="databricks-cli", redirect=None, scopes=frozenset({"ai-gateway", "unity-catalog", "offline_access"}),
-         resources=None):
+         resources=None, credential_requests=None, metadata_response=None):
     """A workspace's OIDC endpoints for the MCP sign-in: authorize answers at once, and token checks the client and PKCE.
     `redirect` is the client's registered redirect URL; without one, the Databricks CLI's ports are accepted."""
     verifiers = {}
@@ -101,6 +101,35 @@ def oidc(grants, client_id="databricks-cli", redirect=None, scopes=frozenset({"a
             if url.path == "/api/2.1/unity-catalog/mcp-services" and self.headers.get("Authorization") == "Bearer denied":
                 body = json.dumps({"error_code": "PERMISSION_DENIED", "message": "missing scope unity-catalog"}).encode()
                 self.send_response(403)
+                self.send_header("Content-Type", "application/json")
+                self.send_header("Content-Length", str(len(body)))
+                self.end_headers()
+                self.wfile.write(body)
+                return
+            if url.path.startswith("/api/2.1/unity-catalog/mcp-services/") and url.path.endswith("/user-credentials"):
+                assert self.headers.get("Authorization") in {f"Bearer mcp-access-{len(grants)}", "Bearer synthetic-token"}
+                service = url.path.split("/")[-2]
+                if credential_requests is not None:
+                    credential_requests.append(service)
+                status, data = {
+                    "main.default.notion": (200, {"provisioning_info": {"state": "ACTIVE"}}),
+                    "system.ai.github": (200, {"provisioning_info": {"state": "ACTIVE"}, "options": {"access_token_expiration": "2030-01-01T00:00:00Z"}}),
+                    "system.ai.gmail": (200, {"provisioning_info": {"state": "FAILED"}}),
+                    "system.ai.slack": (404, {"error_code": "NOT_FOUND"}),
+                    "system.ai.atlassian": (403, {"error_code": "PERMISSION_DENIED"}),
+                    "system.ai.unsupported": (404, {"error_code": "ENDPOINT_NOT_FOUND"}),
+                }[service]
+                body = json.dumps(data).encode()
+                self.send_response(status)
+                self.send_header("Content-Type", "application/json")
+                self.send_header("Content-Length", str(len(body)))
+                self.end_headers()
+                self.wfile.write(body)
+                return
+            if url.path == "/api/2.1/unity-catalog/mcp-services/main.default.notion":
+                assert self.headers.get("Authorization") in {f"Bearer mcp-access-{len(grants)}", "Bearer synthetic-token"}
+                body = json.dumps(metadata_response["body"]).encode()
+                self.send_response(metadata_response["status"])
                 self.send_header("Content-Type", "application/json")
                 self.send_header("Content-Length", str(len(body)))
                 self.end_headers()
@@ -126,7 +155,7 @@ def oidc(grants, client_id="databricks-cli", redirect=None, scopes=frozenset({"a
                 assert self.headers.get("Authorization") in {f"Bearer mcp-access-{len(grants)}", "Bearer synthetic-token"}, \
                     self.headers.get("Authorization")
                 assert query["parent"] == "schemas/system.ai" and query["view"] == "BASIC", query
-                services = ([{"name": "mcp-services/system.ai.slack"}, {"name": "mcp-services/system.ai.github"}], "next") \
+                services = ([{"name": "mcp-services/system.ai.atlassian"}, {"name": "mcp-services/system.ai.unsupported"}, {"name": "mcp-services/system.ai.slack"}, {"name": "mcp-services/system.ai.github", "comment": "Search repositories"}], "next") \
                     if "page_token" not in query else \
                     ([{"name": "mcp-services/system.ai.gmail", "config": {"connection": {"status": "ACTIVE"}}},
                       {"name": "mcp-services/system.ai.broken", "config": {"connection": {"status": "FAILED"}}},
@@ -432,7 +461,9 @@ def main():
     # mcp.json MCP that names that provider in `auth.provider` gets its token and reaches the first prompt; one without
     # it never does. Only read-only gateway tools skip approval.
     grants, resources = [], []
-    workspace = oidc(grants, resources=resources)
+    credential_requests = []
+    metadata_response = {"status": 200, "body": {"name": "mcp-services/main.default.notion", "comment": "Search Notion pages"}}
+    workspace = oidc(grants, resources=resources, credential_requests=credential_requests, metadata_response=metadata_response)
     origin = f"http://127.0.0.1:{workspace.server_port}"
     # The provider is the workspace host. The credential keeps the workspace and client, so any process refreshes it.
     provider = f"127.0.0.1:{workspace.server_port}"
@@ -442,15 +473,39 @@ def main():
     assert (credential["origin"], credential["clientId"], credential["scopes"]) == (origin, "databricks-cli", "ai-gateway unity-catalog offline_access"), auth
     assert grants == ["authorization_code"], grants
 
-    # Listing the workspace's MCP services takes the sign-in's token, follows pages, and keeps active system.ai ones.
+    # Listing follows pages and checks credentials only for explicitly enabled services.
+    enabled_services = "system.ai.github,system.ai.gmail,system.ai.slack,system.ai.atlassian,system.ai.unsupported"
+    messages, _ = control(pi, f"/databricks-mcp-services {origin} --enabled {enabled_services}", auth=auth)
+    assert messages == ['databricks:mcp_services [{"name":"system.ai.atlassian","signInState":"unknown"},{"name":"system.ai.github","comment":"Search repositories","signInState":"signedIn"},{"name":"system.ai.gmail","signInState":"signInRequired"},{"name":"system.ai.slack","signInState":"signInRequired"},{"name":"system.ai.unsupported","signInState":"unknown"}]'], messages
+    assert set(credential_requests) == set(enabled_services.split(",")), credential_requests
+    credential_requests.clear()
     messages, _ = control(pi, f"/databricks-mcp-services {origin}", auth=auth)
-    assert messages == ['databricks:mcp_services ["system.ai.github","system.ai.gmail","system.ai.slack"]'], messages
+    assert credential_requests == [], credential_requests
+    assert all(service["signInState"] == "unknown" for service in json.loads(messages[0].partition(" ")[2])), messages
+    messages, _ = control(pi, f"/databricks-mcp-services {origin} --enabled system.ai.github", auth=auth)
+    assert credential_requests == ["system.ai.github"], credential_requests
+    assert [service["name"] for service in json.loads(messages[0].partition(" ")[2]) if service["signInState"] == "signedIn"] == ["system.ai.github"]
+    credential_requests.clear()
+    messages, _ = control(pi, f"/databricks-mcp-services {origin} --enabled main.default.notion", auth=auth)
+    assert credential_requests == ["main.default.notion"], credential_requests
+    services = json.loads(messages[0].partition(" ")[2])
+    assert services[0] == {"name": "main.default.notion", "comment": "Search Notion pages", "signInState": "signedIn"}, services
+    assert all(service["signInState"] == "unknown" for service in services[1:]), services
+    for status in [403, 500]:
+        metadata_response.update(status=status, body={"error_code": "UNAVAILABLE"})
+        messages, _ = control(pi, f"/databricks-mcp-services {origin} --enabled main.default.notion", auth=auth)
+        service = json.loads(messages[0].partition(" ")[2])[0]
+        assert service == {"name": "main.default.notion", "metadataUnavailable": True, "signInState": "signedIn"}, service
+    metadata_response.update(status=200, body={"name": "mcp-services/main.default.notion"})
+    messages, _ = control(pi, f"/databricks-mcp-services {origin} --enabled main.default.notion", auth=auth)
+    service = json.loads(messages[0].partition(" ")[2])[0]
+    assert service == {"name": "main.default.notion", "signInState": "signedIn"}, service
     messages, _ = control(pi, f"/databricks-mcp-services {origin}", auth={})
     assert messages == ["databricks:mcp_services_sign_in_required"], messages
     # The account's own workspace lists with its bridged sign-in, which Dahlia holds.
-    messages, _ = control(pi, f"/databricks-mcp-services {origin} --provider databricks", auth={},
+    messages, _ = control(pi, f"/databricks-mcp-services {origin} --provider databricks --enabled {enabled_services}", auth={},
                           environment={"DAHLIA_PI_BRIDGED_PROVIDERS": "databricks"})
-    assert messages == ['databricks:mcp_services ["system.ai.github","system.ai.gmail","system.ai.slack"]'], messages
+    assert messages == ['databricks:mcp_services [{"name":"system.ai.atlassian","signInState":"unknown"},{"name":"system.ai.github","comment":"Search repositories","signInState":"signedIn"},{"name":"system.ai.gmail","signInState":"signInRequired"},{"name":"system.ai.slack","signInState":"signInRequired"},{"name":"system.ai.unsupported","signInState":"unknown"}]'], messages
     # Listing the gateway's models keeps only what Dahlia reads (the name, API types, and capabilities), for the
     # workspace's sign-in or the account's bridged one.
     haiku = {"name": "model-services/system.ai.claude-haiku-5-5", "supported_api_types": ["anthropic/v1/messages"],
@@ -475,7 +530,7 @@ def main():
     assert grants == ["authorization_code"], grants
 
     # A refusal carries Databricks' reason, such as a missing scope.
-    messages, _ = control(pi, f"/databricks-mcp-services {origin} --provider databricks", auth={},
+    messages, _ = control(pi, f"/databricks-mcp-services {origin} --provider databricks --enabled {enabled_services}", auth={},
                           environment={"DAHLIA_PI_BRIDGED_PROVIDERS": "databricks"}, bridge_token="denied")
     assert messages == ["databricks:mcp_services_failed Listing MCP services failed (HTTP 403, PERMISSION_DENIED: missing scope unity-catalog)"], messages
 
