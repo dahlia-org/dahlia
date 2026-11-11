@@ -28,8 +28,19 @@ struct MainSidebarUpcomingEventRow: View {
     private var showsActions: Bool { isHovered || focusedControl != nil || isVoiceOverEnabled }
 
     var body: some View {
-        HStack(spacing: 8) {
+        ZStack {
+            // Leave Join and options in front of a full-row native selection control.
             Button(action: onSelect) {
+                Color.clear
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .contentShape(.rect)
+            }
+            .buttonStyle(.plain)
+            .focused($focusedControl, equals: .event)
+            .accessibilityLabel(accessibilityLabel)
+            .accessibilityAddTraits(isSelected ? .isSelected : [])
+
+            HStack(spacing: 8) {
                 HStack(spacing: 8) {
                     Group {
                         if isAutoRecordingEnabled {
@@ -50,83 +61,81 @@ struct MainSidebarUpcomingEventRow: View {
                 }
                 .frame(maxWidth: .infinity, minHeight: 28, alignment: .leading)
                 .contentShape(.rect)
-            }
-            .buttonStyle(.plain)
-            .focused($focusedControl, equals: .event)
-            .accessibilityLabel(accessibilityLabel)
-            .accessibilityAddTraits(isSelected ? .isSelected : [])
+                .allowsHitTesting(false)
+                .accessibilityHidden(true)
 
-            ZStack(alignment: .trailing) {
-                Text(timeText)
-                    .font(.dahliaSecondary)
-                    .monospacedDigit()
-                    .foregroundStyle(DahliaDesign.sidebarSecondaryTextColor)
-                    .lineLimit(1)
-                    .opacity(showsActions ? 0 : 1)
-                    .accessibilityHidden(true)
+                ZStack(alignment: .trailing) {
+                    Text(timeText)
+                        .font(.dahliaSecondary)
+                        .monospacedDigit()
+                        .foregroundStyle(DahliaDesign.sidebarSecondaryTextColor)
+                        .lineLimit(1)
+                        .opacity(showsActions ? 0 : 1)
+                        .accessibilityHidden(true)
+                        .allowsHitTesting(false)
 
-                HStack(spacing: 4) {
-                    if event.conferenceURI != nil {
-                        Button(action: onJoin) {
-                            Text(L10n.join)
-                                .padding(.horizontal, 6)
-                                .frame(height: 24)
-                                .foregroundStyle(isJoinHovered && canStartRecording
-                                    ? DahliaDesign.sidebarPrimaryTextColor
-                                    : DahliaDesign.sidebarSecondaryTextColor)
+                    HStack(spacing: 4) {
+                        if event.conferenceURI != nil {
+                            Button(action: onJoin) {
+                                Text(L10n.join)
+                                    .padding(.horizontal, 6)
+                                    .frame(height: 24)
+                                    .foregroundStyle(isJoinHovered && canStartRecording
+                                        ? DahliaDesign.sidebarPrimaryTextColor
+                                        : DahliaDesign.sidebarSecondaryTextColor)
+                                    .background(
+                                        isJoinHovered && canStartRecording ? DahliaDesign.sidebarHighlightColor : .clear,
+                                        in: .rect(cornerRadius: DahliaDesign.Highlight.compactCornerRadius)
+                                    )
+                                    .contentShape(.rect(cornerRadius: DahliaDesign.Highlight.compactCornerRadius))
+                            }
+                            .buttonStyle(.plain)
+                            .focused($focusedControl, equals: .join)
+                            .disabled(!canStartRecording)
+                            .onHover { isJoinHovered = $0 }
+                            .help(L10n.joinAndStartRecording)
+                            .accessibilityLabel(L10n.joinAndStartRecording)
+                        }
+
+                        Menu {
+                            CalendarEventMenuContent(
+                                event: event,
+                                canJoinAndRecord: event.conferenceURI != nil && canStartRecording,
+                                canJoin: event.conferenceURI != nil,
+                                canShowInCalendar: event.url != nil,
+                                isAutoRecordingEnabled: isAutoRecordingEnabled,
+                                onJoinAndRecord: onJoin,
+                                onJoin: onOpenMeetingLink,
+                                onShowInCalendar: { if let url = event.url { openURL(url) } },
+                                onSetAutoRecording: onSetAutoRecording
+                            )
+                        } label: {
+                            Label(L10n.calendarEventOptions, systemImage: "ellipsis")
+                                .labelStyle(.iconOnly)
+                                .frame(width: 24, height: 24)
+                                .foregroundStyle(isOptionsHovered ? DahliaDesign.sidebarPrimaryTextColor : DahliaDesign.sidebarSecondaryTextColor)
                                 .background(
-                                    isJoinHovered && canStartRecording ? DahliaDesign.sidebarHighlightColor : .clear,
+                                    isOptionsHovered ? DahliaDesign.sidebarHighlightColor : .clear,
                                     in: .rect(cornerRadius: DahliaDesign.Highlight.compactCornerRadius)
                                 )
                                 .contentShape(.rect(cornerRadius: DahliaDesign.Highlight.compactCornerRadius))
                         }
+                        .focused($focusedControl, equals: .options)
+                        .menuStyle(.button)
                         .buttonStyle(.plain)
-                        .focused($focusedControl, equals: .join)
-                        .disabled(!canStartRecording)
-                        .onHover { isJoinHovered = $0 }
-                        .help(L10n.joinAndStartRecording)
-                        .accessibilityLabel(L10n.joinAndStartRecording)
+                        .menuIndicator(.hidden)
+                        .fixedSize()
+                        .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { optionsFrame = $0 }
+                        .onHover(perform: updateOptionsHover)
+                        .onDisappear { helpController.hoverEnded(for: optionsHelpID) }
+                        .accessibilityHint(L10n.menuBarEventDetails)
                     }
-
-                    Menu {
-                        CalendarEventMenuContent(
-                            event: event,
-                            canJoinAndRecord: event.conferenceURI != nil && canStartRecording,
-                            canJoin: event.conferenceURI != nil,
-                            canShowInCalendar: event.url != nil,
-                            isAutoRecordingEnabled: isAutoRecordingEnabled,
-                            onJoinAndRecord: onJoin,
-                            onJoin: onOpenMeetingLink,
-                            onShowInCalendar: { if let url = event.url { openURL(url) } },
-                            onSetAutoRecording: onSetAutoRecording
-                        )
-                    } label: {
-                        Label(L10n.calendarEventOptions, systemImage: "ellipsis")
-                            .labelStyle(.iconOnly)
-                            .frame(width: 24, height: 24)
-                            .foregroundStyle(isOptionsHovered ? DahliaDesign.sidebarPrimaryTextColor : DahliaDesign.sidebarSecondaryTextColor)
-                            .background(
-                                isOptionsHovered ? DahliaDesign.sidebarHighlightColor : .clear,
-                                in: .rect(cornerRadius: DahliaDesign.Highlight.compactCornerRadius)
-                            )
-                            .contentShape(.rect(cornerRadius: DahliaDesign.Highlight.compactCornerRadius))
-                    }
-                    .focused($focusedControl, equals: .options)
-                    .menuStyle(.button)
-                    .buttonStyle(.plain)
-                    .menuIndicator(.hidden)
-                    .fixedSize()
-                    .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { optionsFrame = $0 }
-                    .onHover(perform: updateOptionsHover)
-                    .onDisappear { helpController.hoverEnded(for: optionsHelpID) }
-                    .accessibilityHint(L10n.menuBarEventDetails)
+                    .opacity(showsActions ? 1 : 0)
+                    .allowsHitTesting(showsActions)
                 }
-                .opacity(showsActions ? 1 : 0)
-                .allowsHitTesting(showsActions)
             }
         }
         .frame(maxWidth: .infinity, minHeight: 28, alignment: .leading)
-        .contentShape(.rect)
         .modifier(SidebarNavigationRowModifier(isSelected: isSelected))
         .onHover { isHovered = $0 }
         .accessibilityElement(children: .contain)
