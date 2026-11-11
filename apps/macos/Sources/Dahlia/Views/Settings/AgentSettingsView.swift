@@ -122,6 +122,7 @@ private struct AgentSettingsTabs: View {
 private struct AgentRuntimeSection: View {
     let provider: CodexRuntimeProvider
     @AppStorage private var piPath: String
+    @AppStorage private var workingDirectory: String
     @State private var resolvedCommand: Result<String, CodexAppServerError>?
     /// The version of the Pi that Dahlia installed, and whether this account runs it.
     @State private var installedVersion: String?
@@ -132,6 +133,7 @@ private struct AgentRuntimeSection: View {
     init(provider: CodexRuntimeProvider) {
         self.provider = provider
         _piPath = AppStorage(wrappedValue: PiBundle.defaultCommand, PiBundle.executablePathDefaultsKey(for: provider))
+        _workingDirectory = AppStorage(wrappedValue: "", PiWorkingDirectory.defaultsKey(for: provider))
     }
 
     var body: some View {
@@ -177,6 +179,8 @@ private struct AgentRuntimeSection: View {
             case nil:
                 EmptyView()
             }
+            TextField(L10n.agentWorkingDirectory, text: $workingDirectory, prompt: Text(PiWorkingDirectory.defaultPath))
+                .help(L10n.agentWorkingDirectoryHelp)
         } header: {
             Text(L10n.agentRuntime)
                 .font(.dahliaSectionHeader)

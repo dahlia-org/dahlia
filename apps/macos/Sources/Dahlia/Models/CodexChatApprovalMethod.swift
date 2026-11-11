@@ -1,6 +1,6 @@
 import Foundation
 
-/// Whether chat asks before changing Dahlia data. Chat cannot run commands or change files on this Mac.
+/// Whether chat asks before changing Dahlia data. Commands and file changes in the working folder are never asked about.
 enum CodexChatApprovalMethod: String, CaseIterable, Identifiable, Sendable {
     case ask
     case autoReview

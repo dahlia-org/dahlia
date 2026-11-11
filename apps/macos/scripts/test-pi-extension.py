@@ -8,9 +8,11 @@ import argparse
 import base64
 import hashlib
 import socket
+import sqlite3
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import json
 import os
+import re
 from pathlib import Path
 import subprocess
 import tempfile
@@ -22,7 +24,18 @@ ROOT = Path(__file__).resolve().parents[3]
 EXTENSION = ROOT / "apps/macos/Sources/Dahlia/PiExtension/dahlia.ts"
 # dahlia.ts registers the Unity AI Gateway sign-ins in every process, so chat adds only Pi's MCP extension, as Dahlia does.
 CHAT_EXTENSIONS = ["-e", "builtin:mcp"]
-CHAT_ARGUMENTS = ["--no-session", *CHAT_EXTENSIONS, "--tools", "read,ls,mcp__dahlia__*"]
+CHAT_ARGUMENTS = ["--no-session", *CHAT_EXTENSIONS, "--tools", "read,ls,write,edit,bash,mcp__dahlia__*"]
+SANDBOX = EXTENSION.with_name("pi.sb")
+
+
+def sandbox(root):
+    """The command prefix that runs chat's commands and file operations under Dahlia's Seatbelt profile, as `PiSandbox` does."""
+    parameters = {"WORK": root / "workspace", "TMP": root / "tmp", "PI_TMP": root / "pi-tmp", "AGENT": root / "agent",
+                  "APP_SUPPORT": root / "support", "RELEASED_APP_SUPPORT": root / "released", "PI": root / "pi",
+                  "RESOURCES": EXTENSION.parent,
+                  "SKILLS": root / "skills", "FILE_STORE": root / "FileStore", "DATABASE": root / "dahlia.sqlite"}
+    defines = [arg for key, value in parameters.items() for arg in ("-D", f"{key}={os.path.realpath(value)}")]
+    return ["/usr/bin/sandbox-exec", "-f", str(SANDBOX), *defines]
 # A stand-in for dahlia-mcp with one read-only and one changing tool.
 MCP_SERVER = """
 import json, sys
@@ -312,7 +325,19 @@ def run(pi, mode, script, arguments, environment, approval="accept", approval_mo
         (root / "agent").mkdir()
         (root / "workspace").mkdir()
         (root / "agent/auth.json").write_text(json.dumps(auth or {"marker": "SECRET_MARKER"}))
+        with sqlite3.connect(root / "dahlia.sqlite") as database:
+            database.execute("CREATE TABLE debug (value TEXT)")
+            database.execute("INSERT INTO debug VALUES ('SQLITE_MARKER')")
         (root / "workspace/inside.txt").write_text("INSIDE_MARKER")
+        (root / "workspace/pixel.png").write_bytes(base64.b64decode(
+            "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=="))
+        # Project-local Pi configuration that chat could have written must never start anything.
+        (root / "workspace/.pi").mkdir()
+        (root / "workspace/.pi/mcp.json").write_text(json.dumps(
+            {"mcpServers": {"planted": {"command": "/usr/bin/touch", "args": [str(root / "outside.txt")]}}}))
+        for folder in ("tmp", "pi-tmp", "skills"):
+            (root / folder).mkdir()
+        (root / "skills/SKILL.md").write_text("SKILL_MARKER")
         (root / "workspace/link").symlink_to(root / "agent/auth.json")
         if mcp_servers is not None:
             (root / "agent/mcp.json").write_text(json.dumps({"mcpServers": mcp_servers}))
@@ -325,7 +350,9 @@ def run(pi, mode, script, arguments, environment, approval="accept", approval_mo
         (root / "agent/models.json").write_text(json.dumps({"providers": {"databricks": provider}}))
         env = dict(os.environ, PI_CODING_AGENT_DIR=str(root / "agent"), PI_OFFLINE="1", PI_SKIP_VERSION_CHECK="1",
                    PI_TELEMETRY="0", DAHLIA_PI_MODE=mode, DAHLIA_PI_BRIDGED_PROVIDERS="databricks",
-                   DAHLIA_PI_READABLE_ROOTS=json.dumps([str(root / "workspace")]), **environment)
+                   DAHLIA_PI_SANDBOX=json.dumps(sandbox(root)), DAHLIA_PI_SANDBOX_HIDDEN_ENV=json.dumps(["USER_SECRET"]),
+                   DAHLIA_PI_SANDBOX_TMPDIR=str(root / "tmp"), TMPDIR=str(root / "pi-tmp"),
+                   USER_SECRET="ENV_SECRET_MARKER", **environment)
         process = subprocess.Popen(
             [pi, "--mode", "rpc", "--no-extensions", "-e", str(EXTENSION), "--no-skills", "--no-context-files",
              "--no-prompt-templates", "--no-themes", "--no-approve", "--model", "databricks/mock", *arguments],
@@ -350,7 +377,7 @@ def run(pi, mode, script, arguments, environment, approval="accept", approval_mo
         process.stdin.close()
         process.wait(timeout=20)
         server.shutdown()
-        outside_written = (root / "outside.txt").exists()
+        outside_written = (root / "outside.txt").exists() or "CHANGED" in (root / "agent/auth.json").read_text()
     return requests, tool_results, bridge, outside_written
 
 
@@ -415,18 +442,63 @@ def main():
 
         requests, results, _, _ = chat({"tool": "read", "args": {"path": "inside.txt"}})
         names = [tool.get("name") for tool in requests[0]["body"].get("tools", [])]
-        assert {"read", "ls", "mcp__dahlia__get_meeting"} <= set(names) and "bash" not in names, names
+        assert {"read", "ls", "bash", "mcp__dahlia__get_meeting"} <= set(names), names
         assert "INSIDE_MARKER" in results[0], results
+        # Dahlia's skills are readable, and an image is still recognized when read through the sandbox.
+        _, results, _, _ = chat({"tool": "read", "args": {"path": "../skills/SKILL.md"}}, {"tool": "read", "args": {"path": "pixel.png"}})
+        assert "SKILL_MARKER" in results[0] and "image/png" in results[1], results
+
+        # Listing runs in the sandbox too: a folder is marked, and folders outside the workspace are not listed.
+        _, results, _, _ = chat({"tool": "bash", "args": {"command": "mkdir sub"}}, {"tool": "ls", "args": {"path": "."}},
+                                {"tool": "ls", "args": {"path": "../agent"}}, {"tool": "ls", "args": {"path": "~"}})
+        assert "sub/" in results[1] and "inside.txt" in results[1], results
+        assert "auth.json" not in results[2] and "Library" not in results[3], results
 
         # Every spelling of a path outside the workspace stays unreadable, including a symlink out of it.
-        for tool, path in [("read", "../agent/auth.json"), ("read", "@../agent/auth.json"), ("read", "~"),
-                           ("read", "link"), ("ls", ".."), ("ls", "~")]:
-            _, results, _, _ = chat({"tool": tool, "args": {"path": path}})
-            assert "can read only" in results[0] and "SECRET_MARKER" not in results[0], (tool, path, results)
+        for path in ["../agent/auth.json", "@../agent/auth.json", "~/.zshrc", "link", "../tmp/../agent/auth.json"]:
+            _, results, _, _ = chat({"tool": "read", "args": {"path": path}})
+            assert "SECRET_MARKER" not in results[0] and ("not permitted" in results[0] or "Cannot read" in results[0]), (path, results)
 
-        # Tools outside the list never run, even when the model calls them.
-        _, _, _, outside = chat({"tool": "bash", "args": {"command": "echo x > ../outside.txt"}})
-        assert not outside
+        # Chat changes files only in its working folder; a new file's folders are made on the way.
+        _, results, _, _ = chat({"tool": "write", "args": {"path": "notes/new.txt", "content": "WRITTEN"}},
+                                {"tool": "edit", "args": {"path": "notes/new.txt", "edits": [{"oldText": "WRITTEN", "newText": "EDITED"}]}},
+                                {"tool": "read", "args": {"path": "notes/new.txt"}})
+        assert "EDITED" in results[2], results
+        for tool, args in [("write", {"path": "../outside.txt", "content": "CHANGED"}),
+                           ("write", {"path": "link", "content": "CHANGED"}),
+                           ("write", {"path": "../agent/new/outside.txt", "content": "CHANGED"}),
+                           ("edit", {"path": "../agent/auth.json", "edits": [{"oldText": "SECRET_MARKER", "newText": "CHANGED"}]})]:
+            _, results, _, outside = chat({"tool": tool, "args": args})
+            assert not outside and ("not permitted" in results[0] or "Cannot read" in results[0]), (tool, args, results)
+        # A link a command makes to a file that does not exist yet cannot carry a write out of the working folder.
+        _, results, _, outside = chat({"tool": "bash", "args": {"command": "ln -s ../outside.txt dangling"}},
+                                      {"tool": "write", "args": {"path": "dangling", "content": "CHANGED"}})
+        assert not outside and "not permitted" in results[1], results
+        # A refused write larger than a pipe buffer fails like any other and leaves Pi running; git works without the real home.
+        _, results, _, outside = chat({"tool": "write", "args": {"path": "../outside.txt", "content": "CHANGED" * 100000}},
+                                      {"tool": "bash", "args": {"command": "yes | head -c 400000; git init -q . && echo GIT_OK"}})
+        assert not outside and "not permitted" in results[0] and "GIT_OK" in results[1], results
+        # Pi saves a long output in chat's temporary folder, where the sandboxed read can open it.
+        log = re.search(r"Full output: (\S+/pi-tmp/[^\]\s]+)", results[1])
+        assert log, results[1][-300:]
+        # Pi loads its transpiled extensions from its own temporary folder, so chat reads that folder but never writes it.
+        _, results, _, _ = chat({"tool": "bash", "args": {"command": "ls $TMPDIR/../pi-tmp/jiti && echo x > $TMPDIR/../pi-tmp/jiti/planted.mjs"}})
+        assert "dahlia" in results[0] and "not permitted" in results[0], results
+
+        # Bash actually executes, including sqlite3 and a quoted here-document, inside the Seatbelt write boundary.
+        _, results, bridge, _ = chat({"tool": "bash", "args": {"command": "echo BASH_MARKER > bash.txt && cat bash.txt"}},
+                                     {"tool": "bash", "args": {"command": "sqlite3 -readonly ../dahlia.sqlite 'SELECT value FROM debug'"}})
+        assert "BASH_MARKER" in results[0] and "SQLITE_MARKER" in results[1], results
+        assert not any(method == "approval" for method, _ in bridge), bridge
+        _, results, _, outside = chat({"tool": "bash", "args": {"command": "echo x > ../outside.txt"}},
+                                      {"tool": "bash", "args": {"command": "sqlite3 ../dahlia.sqlite 'DELETE FROM debug'"}},
+                                      {"tool": "bash", "args": {"command": "sqlite3 -readonly ../dahlia.sqlite 'SELECT value FROM debug'"}})
+        assert not outside and "SQLITE_MARKER" in results[2], results
+        assert "readonly" in results[1].lower() or "authorization denied" in results[1].lower(), results
+        # Pi is outside the sandbox, so a command reads neither Pi's sign-ins nor the user's secret variables.
+        _, results, _, _ = chat({"tool": "bash", "args": {"command": "cat ../agent/auth.json; env; cat <<'END'\nit's $HOME\nEND"}})
+        assert "it's $HOME" in results[0] and "PI_CODING_AGENT_DIR" in results[0], results
+        assert "SECRET_MARKER" not in results[0], results
 
         _, results, bridge, _ = chat({"tool": "mcp__dahlia__get_meeting"})
         assert results == ["MCP_OK"] and not any(method == "approval" for method, _ in bridge), (results, bridge)
@@ -553,7 +625,7 @@ def main():
     mcp_servers = {"gmail": {"url": f"http://127.0.0.1:{server.server_port}/mcp", "exposure": "direct",
                              "auth": {"provider": provider}},
                    "foreign": {"url": f"http://127.0.0.1:{foreign_server.server_port}/mcp", "exposure": "direct"}}
-    arguments = ["--no-session", *CHAT_EXTENSIONS, "--tools", "read,ls,mcp__gmail__*"]
+    arguments = ["--no-session", *CHAT_EXTENSIONS, "--tools", "read,mcp__gmail__*"]
 
     def gateway_chat(*steps, arguments=arguments, auth=auth, **options):
         return run(pi, "chat", [*steps, {"text": "done"}], arguments, {"DAHLIA_PI_MCP_SERVERS": json.dumps(["gmail"])},
@@ -575,7 +647,7 @@ def main():
     assert "declined" in results[0], results
     # A server Dahlia did not register stays blocked even if its tools get past --tools.
     _, results, bridge, _ = gateway_chat({"tool": "mcp__foreign__search_messages"}, approval_mode="autoReview",
-                                         arguments=["--no-session", *CHAT_EXTENSIONS, "--tools", "read,ls,mcp__gmail__*,mcp__foreign__*"])
+                                         arguments=["--no-session", *CHAT_EXTENSIONS, "--tools", "read,mcp__gmail__*,mcp__foreign__*"])
     assert "not available" in results[0] and "GATEWAY_OK" not in results[0], results
 
     # An expired token is refreshed once with the stored refresh token, which Databricks may keep.
@@ -587,7 +659,7 @@ def main():
     server.shutdown()
     foreign_server.shutdown()
     workspace.shutdown()
-    print("Pi extension tests passed (token bridge, strict schema on OpenAI/Claude/Gemini, read-only chat, MCP approval, model APIs, MCP sign-in, gateway models, and gateway MCP)")
+    print("Pi extension tests passed (token bridge, strict schema on OpenAI/Claude/Gemini, sandboxed chat and bash/sqlite3, MCP approval, model APIs, MCP sign-in, gateway models, and gateway MCP)")
 
 
 if __name__ == "__main__":

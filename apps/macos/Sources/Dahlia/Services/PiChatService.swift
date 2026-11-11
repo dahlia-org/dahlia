@@ -1,3 +1,4 @@
+import DahliaMeetingAccess
 import DahliaRuntimeSupport
 import Foundation
 
@@ -22,7 +23,9 @@ actor PiChatService: CodexChatServicing {
     Then use get_meeting for a selected meeting's summary.
     Call get_meeting_transcript only when the original wording or detail is needed.
     Use Dahlia's preset skills when the user's request matches their descriptions; read a selected skill's SKILL.md with the read tool.
-    You cannot run commands or change files on this Mac. You can read only the current folder and Dahlia's skills.
+    The read, ls, write, edit, and bash tools run under Apple Seatbelt. Only the current folder is writable; Dahlia's
+    screenshots, database, and skills are read-only. Other user files are inaccessible. Network access is allowed.
+    Use sqlite3 -readonly to inspect Dahlia's database for debugging.
     """
 
     /// One live Pi process for a thread. The thread itself lives in its session file and outlives the process.
@@ -49,7 +52,8 @@ actor PiChatService: CodexChatServicing {
     }
 
     private let runtime: PiRuntimeService
-    private let workspaceLocator: any CodexChatWorkspaceLocating
+    private let workingDirectory: PiWorkingDirectory
+    private let piExecutableURL: @Sendable (CodexRuntimeProvider) throws -> URL
     private let agentLocator: PiAgentDirectoryLocator
     private let mcpExecutableURL: URL?
     private let mcpSettings: @Sendable (CodexRuntimeProvider) -> AgentMCPSettings
@@ -65,13 +69,15 @@ actor PiChatService: CodexChatServicing {
 
     init(
         runtime: PiRuntimeService = .shared,
-        workspaceLocator: any CodexChatWorkspaceLocating = ApplicationSupportCodexChatWorkspaceLocator(),
+        workingDirectory: PiWorkingDirectory = PiWorkingDirectory(),
+        piExecutableURL: @escaping @Sendable (CodexRuntimeProvider) throws -> URL = { try PiBundle.executableURL(for: $0) },
         agentLocator: PiAgentDirectoryLocator = PiAgentDirectoryLocator(),
         mcpExecutableURL: URL? = nil,
         mcpSettings: @escaping @Sendable (CodexRuntimeProvider) -> AgentMCPSettings = { AgentMCPSettings.load(for: $0) }
     ) {
         self.runtime = runtime
-        self.workspaceLocator = workspaceLocator
+        self.workingDirectory = workingDirectory
+        self.piExecutableURL = piExecutableURL
         self.agentLocator = agentLocator
         self.mcpExecutableURL = mcpExecutableURL
         self.mcpSettings = mcpSettings
@@ -373,7 +379,7 @@ actor PiChatService: CodexChatServicing {
             guard let workspaceID = UUID(uuidString: url.deletingLastPathComponent().lastPathComponent) else {
                 throw CodexAppServerError.rpcError(code: nil, message: "thread not found")
             }
-            return try await self.open(threadID: threadID, workspaceID: workspaceID, sessionArguments: ["--session", url.path])
+            return try await self.open(threadID: threadID, workspaceID: workspaceID, sessionFile: url, sessionArguments: ["--session", url.path])
         }
         opening[threadID] = task
         defer { opening[threadID] = nil }
@@ -389,27 +395,44 @@ actor PiChatService: CodexChatServicing {
         return session
     }
 
-    private func open(threadID: String, workspaceID: UUID, sessionArguments: [String]) async throws -> PiRPCConnection {
+    private func open(
+        threadID: String, workspaceID: UUID, sessionFile: URL? = nil, sessionArguments: [String]
+    ) async throws -> PiRPCConnection {
         let processID = UUID.v7()
         let provider = try await runtime.currentProvider()
-        let workspaceURL = try workspaceLocator.workspaceURL(workspaceID: workspaceID)
+        let workURL = try workingDirectory.url(for: provider)
+        let piURL = try piExecutableURL(provider)
+        let environment = ProcessInfo.processInfo.environment
+            .merging(PiLaunchSettings.load(for: provider).environment { _ in nil }) { $1 }
+        guard !PiWorkingDirectory.holdsCommands(
+            workURL, searchPath: CommandLineToolLocator.searchPath(for: piURL, environment: environment)
+        ) else { throw CodexAppServerError.launchFailed(L10n.agentWorkingDirectoryNotAllowed) }
+        // Pi runs a thread in the folder its session file names, so an older thread moves to the folder set now.
+        if let sessionFile { try PiChatSessionFiles.setWorkingDirectory(workURL, in: sessionFile) }
         let mcpCommand = try Self.mcpCommand(
             executableURL: mcpExecutableURL ?? DahliaMCPBundle.executableURL(),
             workspaceID: workspaceID
         )
+        // Sandboxed commands get Pi's environment without the values the user marked secret.
+        let secretNames = PiLaunchSettings.load(for: provider).variables.filter(\.isSecret).map(\.name)
+        let dataPaths = """
+
+        Dahlia's database: \(MeetingAccessStore.defaultDatabaseURL.path)
+        Dahlia's screenshots: \(ScreenshotFileStore.defaultDirectory.path)
+        """
         // Pi reads mcp.json only when it starts, so settings changes reach the next process the account starts. `--tools`
         // and the allowlist come from this same snapshot: a process that reads another thread's newer file stays limited to it.
         let mcp = mcpSettings(provider)
         let mcpServers = mcp.piServers
         try PiProviderConfiguration.writeMCPServers(mcpServers, agentURL: agentLocator.agentURL(for: provider))
         let serverNames = ["dahlia"] + mcpServers.keys.sorted()
-        // Read-only on this Mac. `--no-extensions` also drops Pi's MCP extension, and `--tools` declares only the MCP tools it names.
-        let tools = ["read", "ls"] + serverNames.map { "mcp__\($0)__*" }
+        // `--no-extensions` also drops Pi's MCP extension; explicitly enable it and the tools chat may call.
+        let tools = ["read", "ls", "write", "edit", "bash"] + serverNames.map { "mcp__\($0)__*" }
         // Only chat calls MCP servers; Dahlia's extension registers the sign-ins mcp.json names.
         var arguments = try sessionArguments + [
             "-e", "builtin:mcp",
             "--tools", tools.joined(separator: ","),
-            "--system-prompt", Self.systemPrompt,
+            "--system-prompt", Self.systemPrompt + dataPaths,
         ]
         for skill in PiBundle.presetSkillURLs() {
             arguments += ["--skill", skill.path]
@@ -417,13 +440,19 @@ actor PiChatService: CodexChatServicing {
         let connection = try await runtime.connect(
             .init(
                 mode: .chat,
-                cwd: workspaceURL,
+                cwd: workURL,
                 arguments: arguments,
                 environment: [
                     "DAHLIA_PI_MCP_COMMAND": String(decoding: JSONEncoder().encode(mcpCommand), as: UTF8.self),
-                    "DAHLIA_PI_READABLE_ROOTS": String(decoding: JSONEncoder().encode(
-                        [workspaceURL.path] + PiBundle.presetSkillURLs().map(\.path)
+                    "DAHLIA_PI_SANDBOX": String(decoding: JSONEncoder().encode(
+                        PiSandbox.command(
+                            cwd: workURL, agentURL: agentLocator.agentURL(for: provider),
+                            piExecutableURL: piURL
+                        )
                     ), as: UTF8.self),
+                    "DAHLIA_PI_SANDBOX_HIDDEN_ENV": String(decoding: JSONEncoder().encode(secretNames), as: UTF8.self),
+                    "DAHLIA_PI_SANDBOX_TMPDIR": PiSandbox.temporaryDirectory.path,
+                    "TMPDIR": PiSandbox.piTemporaryDirectory.path,
                     // The only MCP servers whose tools chat may call; the extension blocks every other server.
                     "DAHLIA_PI_MCP_SERVERS": String(decoding: JSONEncoder().encode(serverNames), as: UTF8.self),
                 ]
