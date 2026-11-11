@@ -31,7 +31,7 @@ struct SettingsSidebarView<Footer: View>: View {
                 let categories = group.categories.filter { $0.matches(searchText) }
                 if !categories.isEmpty {
                     Text(group.label)
-                        .font(.body)
+                        .font(.dahliaSectionHeader)
                         .foregroundStyle(DahliaDesign.sidebarSecondaryTextColor)
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .listRowInsets(.init(top: 8, leading: 16, bottom: 2, trailing: 16))

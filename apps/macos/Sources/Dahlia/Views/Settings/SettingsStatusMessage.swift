@@ -13,7 +13,7 @@ struct SettingsStatusMessage: View {
                 Text(text)
                 if let detail {
                     Text(detail)
-                        .font(.subheadline)
+                        .font(.dahliaBody)
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
                         .truncationMode(.middle)
@@ -23,7 +23,7 @@ struct SettingsStatusMessage: View {
         } icon: {
             Image(systemName: systemImage)
         }
-        .font(.body)
+        .font(.dahliaBody)
         .foregroundStyle(tint)
         .frame(maxWidth: .infinity, alignment: .leading)
         .accessibilityElement(children: .combine)

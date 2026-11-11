@@ -49,7 +49,7 @@
             #expect(hasAgendaFont)
             #expect(agendaColor == DahliaDesign.primaryTextNSColor)
             guard let agendaFont else { return }
-            #expect(agendaFont.pointSize == NSFont.preferredFont(forTextStyle: .body).pointSize)
+            #expect(agendaFont.pointSize == 14)
             let isAgendaBold = agendaFont.fontDescriptor.symbolicTraits.contains(.bold)
             #expect(isAgendaBold)
             let link = try #require(attributed.runs.compactMap(\.link).first)

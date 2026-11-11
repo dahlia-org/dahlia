@@ -1,10 +1,54 @@
 #if canImport(Testing)
-    import Foundation
+    import AppKit
     import Testing
     @testable import Dahlia
 
     @MainActor
+    @Suite(.serialized)
     struct DahliaWindowHeaderHelpControllerTests {
+        @Test
+        func clickingDismissesVisibleHelp() async throws {
+            let controller = DahliaWindowHeaderHelpController(
+                displayDelay: .zero,
+                timeline: DahliaWindowHeaderHelpTimeline()
+            )
+            let id = UUID.v7()
+            controller.hoverBegan(for: id)
+            #expect(await pollUntil { controller.visibleHelpID == id })
+
+            try click()
+
+            #expect(controller.visibleHelpID == nil)
+            controller.hoverBegan(for: id)
+            #expect(controller.visibleHelpID == id)
+            controller.dismissAll()
+        }
+
+        @Test
+        func clickingCancelsPendingHelp() async throws {
+            let sleeper = HeaderHelpTestSleeper()
+            let controller = DahliaWindowHeaderHelpController(
+                sleep: sleeper.sleep,
+                timeline: DahliaWindowHeaderHelpTimeline()
+            )
+            controller.hoverBegan(for: UUID.v7())
+            #expect(await pollUntil { sleeper.requestedDuration != nil })
+
+            try click()
+            sleeper.resume()
+            #expect(await pollUntil { sleeper.didReturnFromSleep })
+
+            #expect(controller.visibleHelpID == nil)
+        }
+
+        private func click() throws {
+            let event = try #require(NSEvent.mouseEvent(
+                with: .leftMouseDown, location: .zero, modifierFlags: [], timestamp: 0,
+                windowNumber: 0, context: nil, eventNumber: 1, clickCount: 1, pressure: 1
+            ))
+            NSApplication.shared.sendEvent(event)
+        }
+
         @Test
         func storesContainerOverlayPresentation() {
             let controller = DahliaWindowHeaderHelpController(timeline: DahliaWindowHeaderHelpTimeline())

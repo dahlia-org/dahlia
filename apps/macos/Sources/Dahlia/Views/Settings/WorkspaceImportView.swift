@@ -28,19 +28,20 @@ struct WorkspaceImportView: View {
             .focusable(false)
             .accessibilityHidden(true)
             VStack(alignment: .leading, spacing: 16) {
-                Text(L10n.workspaceImportDestination).font(.title2)
-                Text(pending.workspace.name).font(.headline)
+                Text(L10n.workspaceImportDestination).font(.dahliaTitle2)
+                Text(pending.workspace.name).font(.dahliaHeadline)
                 Text(L10n.documentMigrationPrivate).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
                 Text(L10n.workspaceImportDescription).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
                 Picker(L10n.workspaceImportDestination, selection: $useExisting) {
-                    Text(L10n.workspaceImportExisting).tag(true)
-                    Text(L10n.workspaceImportNew).tag(false)
+                    Text(L10n.workspaceImportExisting).font(.dahliaBody).tag(true)
+                    Text(L10n.workspaceImportNew).font(.dahliaBody).tag(false)
                 }.pickerStyle(.segmented)
                 if useExisting {
                     Picker(L10n.workspaceImportExisting, selection: $destinationId) {
-                        Text(L10n.workspaceImportSelectWorkspace).tag(nil as UUID?)
+                        Text(L10n.workspaceImportSelectWorkspace).font(.dahliaBody).tag(nil as UUID?)
                         ForEach(destinations) { workspace in
                             Text(destinationLabel(for: workspace))
+                                .font(.dahliaBody)
                                 .tag(Optional(workspace.workspaceId))
                         }
                     }
@@ -57,9 +58,9 @@ struct WorkspaceImportView: View {
                     }
                 } else {
                     Picker(L10n.workspaceImportOrganization, selection: $organizationId) {
-                        Text(L10n.workspaceImportSelectOrganization).tag(nil as UUID?)
+                        Text(L10n.workspaceImportSelectOrganization).font(.dahliaBody).tag(nil as UUID?)
                         ForEach(pending.organizations, id: \.id) { organization in
-                            Text(organization.name).tag(UUID(uuidString: organization.id))
+                            Text(organization.name).font(.dahliaBody).tag(UUID(uuidString: organization.id))
                         }
                     }
                     LabeledContent(L10n.workspaceName) {

@@ -417,14 +417,14 @@ private struct LiveSubtitleEntryView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             Text(entry.primaryText)
-                .font(.title3)
+                .font(.dahliaTitle3)
                 .foregroundStyle(entry.isConfirmed ? .white : .white.opacity(0.7))
                 .lineLimit(3)
                 .multilineTextAlignment(.leading)
 
             if let secondaryText = entry.secondaryText {
                 Text(secondaryText)
-                    .font(.body)
+                    .font(.dahliaBody)
                     .foregroundStyle(Color(nsColor: .systemCyan))
                     .lineLimit(3)
                     .multilineTextAlignment(.leading)

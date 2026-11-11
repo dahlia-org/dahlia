@@ -13,10 +13,12 @@ struct BetaFeaturesSettingsView: View {
                 .toggleStyle(.switch)
             } header: {
                 Text(L10n.betaFeatures)
+                    .font(.dahliaSectionHeader)
             } footer: {
                 Text(L10n.betaFeaturesDescription)
             }
         }
         .formStyle(.grouped)
+        .font(.dahliaBody)
     }
 }

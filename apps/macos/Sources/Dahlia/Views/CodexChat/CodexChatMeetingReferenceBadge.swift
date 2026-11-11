@@ -5,7 +5,7 @@ struct CodexChatMeetingReferenceBadge: View {
 
     var body: some View {
         Label(name, systemImage: "calendar")
-            .font(.caption2)
+            .font(.dahliaSecondary)
             .lineLimit(1)
             .frame(maxWidth: 240, alignment: .leading)
             .padding(.horizontal, 8)

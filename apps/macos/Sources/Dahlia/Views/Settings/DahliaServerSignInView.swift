@@ -36,7 +36,7 @@ struct DahliaServerSignInView: View {
                         .frame(width: 64, height: 64)
                         .accessibilityHidden(true)
                     Text(L10n.dahlia)
-                        .font(.largeTitle)
+                        .font(.dahliaLargeTitle)
                         .bold()
                         .accessibilityAddTraits(.isHeader)
                 }
@@ -77,7 +77,7 @@ struct DahliaServerSignInView: View {
                         ZStack {
                             Divider()
                             Text(L10n.orConnectToServer)
-                                .font(.caption)
+                                .font(.dahliaSecondary)
                                 .foregroundStyle(.secondary)
                                 .padding(.horizontal)
                                 .background(.background)
@@ -86,7 +86,7 @@ struct DahliaServerSignInView: View {
 
                     VStack(alignment: .leading, spacing: 8) {
                         Text(L10n.serverURL)
-                            .font(.body)
+                            .font(.dahliaBody)
                         TextField("https://dahlia.example.com", text: $serverURL)
                             .textContentType(.URL)
                             .onSubmit(connect)
@@ -105,7 +105,7 @@ struct DahliaServerSignInView: View {
                         ZStack {
                             Divider()
                             Text(L10n.orContinueWithoutSigningIn)
-                                .font(.caption)
+                                .font(.dahliaSecondary)
                                 .foregroundStyle(.secondary)
                                 .padding(.horizontal)
                                 .background(.background)

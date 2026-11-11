@@ -1,0 +1,90 @@
+#if canImport(Testing)
+    import AppKit
+    import SwiftUI
+    import Testing
+    @testable import Dahlia
+
+    @MainActor
+    struct CodexChatAddPanelTests {
+        @Test(arguments: [CGSize(width: 700, height: 600), CGSize(width: 320, height: 360)])
+        func addMenuDoesNotMoveComposerAndOpensMCPSettings(size: CGSize) async throws {
+            let suite = "CodexChatAddPanelTests.\(UUID())"
+            let defaults = try #require(UserDefaults(suiteName: suite))
+            defer { defaults.removePersistentDomain(forName: suite) }
+            AgentMCPSettings(servers: [
+                AgentMCPServer(id: .v7(), name: "github", providerID: "workspace.example.com", service: "system.ai.github"),
+                AgentMCPServer(id: .v7(), name: "slack", providerID: "workspace.example.com", service: "system.ai.slack"),
+            ]).save(for: .local, defaults: defaults)
+            let navigation = MainWindowNavigation(openMainWindow: {}, initialSettingsCategory: .general, settingsDefaults: defaults)
+            let session = CodexChatSessionModel(service: TestCodexChatService(mode: .complete), runtimeProviderResolver: { .local })
+            let composer = CodexChatComposer(session: session, configurationPresentation: nil, mcpSettingsDefaults: defaults)
+            let measurement = NSHostingView(rootView: composer.environment(navigation))
+            measurement.frame.size.width = size.width
+            let composerHeight = measurement.fittingSize.height
+            let host = NSHostingView(rootView: VStack(spacing: 0) {
+                Spacer(minLength: 0)
+                composer
+                Spacer(minLength: 0)
+            }
+            .frame(width: size.width, height: size.height)
+            .coordinateSpace(name: CodexChatAddPanelLayout.coordinateSpaceName)
+            .environment(navigation))
+            host.frame = NSRect(origin: .zero, size: size)
+            let window = NSWindow(contentRect: host.frame, styleMask: .titled, backing: .buffered, defer: false)
+            window.isReleasedWhenClosed = false
+            window.contentView = host
+            defer { window.close() }
+            window.makeKeyAndOrderFront(nil)
+            host.layoutSubtreeIfNeeded()
+            window.displayIfNeeded()
+            let editor = try #require(textEditor(in: host))
+            let editorFrame = host.convert(editor.bounds, from: editor)
+            let plusCenterY = (size.height - composerHeight) / 2 + 21
+
+            try click(CGPoint(x: 21, y: plusCenterY), in: window)
+            host.layoutSubtreeIfNeeded()
+            window.displayIfNeeded()
+            #expect(host.convert(editor.bounds, from: editor) == editorFrame)
+            try snapshot(host, name: "menu-\(Int(size.width))")
+
+            // Three 30-point rows, 2-point gaps, and 10-point panel padding.
+            try click(CGPoint(x: 100, y: plusCenterY - 112), in: window)
+            host.layoutSubtreeIfNeeded()
+            window.displayIfNeeded()
+            #expect(host.convert(editor.bounds, from: editor) == editorFrame)
+            try snapshot(host, name: "servers-\(Int(size.width))")
+
+            // The server list may flip above the button in the compact window.
+            let bounds = CGRect(x: -6, y: -(size.height - plusCenterY - 15), width: size.width, height: size.height)
+            let panelHeight = min(180, CodexChatAddPanelLayout.maximumHeight(windowBounds: bounds))
+            let offset = CodexChatAddPanelLayout.offset(panelSize: CGSize(width: 280, height: panelHeight), windowBounds: bounds)
+            let settingsY = plusCenterY + 15 - offset.height - panelHeight + 25
+            try click(CGPoint(x: 100, y: settingsY), in: window)
+            #expect(await pollUntil(timeout: .seconds(2)) { navigation.isShowingSettings })
+            #expect(navigation.settingsCategory == .agents)
+            #expect(navigation.agentSettingsTab == .mcps)
+        }
+
+        private func textEditor(in view: NSView) -> NSTextView? {
+            (view as? NSTextView) ?? view.subviews.lazy.compactMap(textEditor(in:)).first
+        }
+
+        private func click(_ point: CGPoint, in window: NSWindow) throws {
+            for type in [NSEvent.EventType.leftMouseDown, .leftMouseUp] {
+                let event = try #require(NSEvent.mouseEvent(
+                    with: type, location: point, modifierFlags: [], timestamp: ProcessInfo.processInfo.systemUptime,
+                    windowNumber: window.windowNumber, context: nil, eventNumber: 1, clickCount: 1, pressure: type == .leftMouseDown ? 1 : 0
+                ))
+                window.sendEvent(event)
+            }
+        }
+
+        private func snapshot(_ host: NSView, name: String) throws {
+            guard let directory = ProcessInfo.processInfo.environment["DAHLIA_CHAT_ADD_PANEL_SNAPSHOTS"] else { return }
+            let bitmap = try #require(host.bitmapImageRepForCachingDisplay(in: host.bounds))
+            host.cacheDisplay(in: host.bounds, to: bitmap)
+            let data = try #require(bitmap.representation(using: .png, properties: [:]))
+            try data.write(to: URL(fileURLWithPath: directory).appending(path: "\(name).png"))
+        }
+    }
+#endif

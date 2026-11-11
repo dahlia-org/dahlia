@@ -29,7 +29,7 @@ struct ProjectAppearancePicker: View {
         Button(action: { appearance.color = color }, label: {
             Label(color.localizedName, systemImage: "circle.fill")
                 .labelStyle(.iconOnly)
-                .font(.title2)
+                .font(.dahliaTitle2)
                 .foregroundStyle(color.color)
                 .frame(width: 44, height: 40)
                 .overlay {
@@ -39,7 +39,7 @@ struct ProjectAppearancePicker: View {
                 .overlay(alignment: .bottomTrailing) {
                     if appearance.color == color {
                         Image(systemName: "checkmark.circle.fill")
-                            .font(.caption)
+                            .font(.dahliaSecondary)
                             .symbolRenderingMode(.palette)
                             .foregroundStyle(Color.accentColor, Color(nsColor: .windowBackgroundColor))
                     }
@@ -53,7 +53,7 @@ struct ProjectAppearancePicker: View {
         Button(action: { appearance.icon = icon }, label: {
             Label(icon.localizedName, systemImage: icon.systemImageName)
                 .labelStyle(.iconOnly)
-                .font(.title3)
+                .font(.dahliaTitle3)
                 .foregroundStyle(appearance.color.color)
                 .frame(width: 44, height: 40)
                 .background(

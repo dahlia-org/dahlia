@@ -8,7 +8,7 @@ struct DocumentRecoveryHistoryView: View {
     var body: some View {
         VStack(spacing: 0) {
             Text(L10n.documentRecoveryTitle)
-                .font(.headline)
+                .font(.dahliaHeadline)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding([.horizontal, .top], 20)
                 .padding(.bottom, 12)

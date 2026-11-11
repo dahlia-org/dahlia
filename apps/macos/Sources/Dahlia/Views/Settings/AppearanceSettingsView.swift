@@ -37,6 +37,7 @@ struct AppearanceSettingsView: View {
                 }
             }
             .formStyle(.grouped)
+            .font(.dahliaBody)
             .fixedSize(horizontal: false, vertical: true)
 
             Form {
@@ -47,6 +48,7 @@ struct AppearanceSettingsView: View {
                 }
             }
             .formStyle(.grouped)
+            .font(.dahliaBody)
         }
         .onAppear {
             meetingSidebarRowStyle = MeetingSidebarRowStyle.resolved(rawValue: meetingSidebarRowStyle).rawValue
@@ -92,6 +94,7 @@ struct AppearanceSettingsView: View {
             .disabled(!settings.menuBarCalendarEnabled)
         } header: {
             Text(L10n.menuBarCalendar)
+                .font(.dahliaSectionHeader)
         } footer: {
             Text(L10n.menuBarCalendarDescription)
         }

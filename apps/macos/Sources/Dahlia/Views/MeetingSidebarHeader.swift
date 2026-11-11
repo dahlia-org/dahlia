@@ -19,12 +19,12 @@ struct MeetingSidebarHeader: View {
                 HStack(spacing: 5) {
                     Text(title)
                     Image(systemName: isExpanded ? "chevron.down" : "chevron.right")
-                        .font(.caption)
+                        .font(.dahliaSecondary)
                         .opacity(!isExpanded || isHovered ? 1 : 0)
                 }
             }
             .buttonStyle(.plain)
-            .font(.body)
+            .font(.dahliaSectionHeader)
             .accessibilityAddTraits(.isHeader)
             .accessibilityHint(isExpanded ? L10n.collapse : L10n.expand)
 

@@ -9,7 +9,7 @@ struct UnprocessedRecordingsView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 22) {
             Text(L10n.unprocessedRecordings)
-                .font(.title)
+                .font(.dahliaTitle)
                 .accessibilityAddTraits(.isHeader)
 
             Group {

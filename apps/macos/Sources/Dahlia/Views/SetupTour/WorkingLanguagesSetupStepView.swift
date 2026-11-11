@@ -7,6 +7,7 @@ struct WorkingLanguagesSetupStepView: View {
                 AppLanguageSelectionRow()
             } header: {
                 Text(L10n.recognitionAndOCRLanguages)
+                    .font(.dahliaSectionHeader)
             } footer: {
                 Text(L10n.appLanguagesDescription)
             }

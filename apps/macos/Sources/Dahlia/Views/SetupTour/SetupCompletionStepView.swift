@@ -10,7 +10,7 @@ struct SetupCompletionStepView: View {
 
     var body: some View {
         Form {
-            Section(L10n.setupSummary) {
+            Section {
                 LabeledContent(
                     L10n.languageRange,
                     value: AppLanguageSelectionRow.selectionSummary(
@@ -21,9 +21,12 @@ struct SetupCompletionStepView: View {
                 if model.selectedAccountConnectionID != nil {
                     LabeledContent(L10n.dahliaAccount, value: L10n.connected)
                 }
+            } header: {
+                Text(L10n.setupSummary)
+                    .font(.dahliaSectionHeader)
             }
 
-            Section(L10n.permissions) {
+            Section {
                 ForEach(PermissionSetupStepView.permissions) { permission in
                     LabeledContent(permission.title) {
                         HStack {
@@ -37,6 +40,9 @@ struct SetupCompletionStepView: View {
                         }
                     }
                 }
+            } header: {
+                Text(L10n.permissions)
+                    .font(.dahliaSectionHeader)
             }
 
             if model.mode == .initial, model.isPreparingWorkspace {

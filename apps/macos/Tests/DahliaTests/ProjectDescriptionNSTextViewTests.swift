@@ -40,7 +40,7 @@
 
             let textView = try #require(hostingView.firstDescendant(ofType: ProjectDescriptionNSTextView.self))
             #expect(textView.isEditable)
-            #expect(textView.font?.pointSize == NSFont.preferredFont(forTextStyle: .body).pointSize)
+            #expect(textView.font?.pointSize == 14)
 
             hostingView.rootView = ProjectDescriptionTextViewFixture(model: model).disabled(true)
             hostingView.layoutSubtreeIfNeeded()

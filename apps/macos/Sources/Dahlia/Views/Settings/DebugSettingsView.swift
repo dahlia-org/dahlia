@@ -14,6 +14,7 @@ struct DebugSettingsView: View {
                 )
             } header: {
                 Text(L10n.audioProcessActivityMonitor)
+                    .font(.dahliaSectionHeader)
             } footer: {
                 Text(L10n.audioProcessActivityMonitorDescription)
             }
@@ -26,6 +27,7 @@ struct DebugSettingsView: View {
                 )
             } header: {
                 Text(L10n.audioRecognitionTest)
+                    .font(.dahliaSectionHeader)
             } footer: {
                 Text(L10n.audioRecognitionTestDescription)
             }
@@ -38,11 +40,13 @@ struct DebugSettingsView: View {
                 )
             } header: {
                 Text(L10n.applicationLogs)
+                    .font(.dahliaSectionHeader)
             } footer: {
                 Text(L10n.applicationLogsDescription)
             }
         }
         .formStyle(.grouped)
+        .font(.dahliaBody)
         .task {
             isAudioProcessMonitorRunning = await AudioProcessActivityMonitor.shared.isMonitoring()
         }

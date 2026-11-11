@@ -22,10 +22,10 @@ struct LocalSummarySettingsRows: View {
                 Picker(selection: modelSelection(target)) {
                     let modelID = selectedModelID(target)
                     if !catalog.models.contains(where: { $0.model == modelID }) {
-                        Text(modelID).tag(modelID)
+                        Text(modelID).font(.dahliaBody).tag(modelID)
                     }
                     ForEach(catalog.models.filter { target == .summary || $0.supportsImages }) { model in
-                        Text(model.displayName).tag(model.model)
+                        Text(model.displayName).font(.dahliaBody).tag(model.model)
                     }
                 } label: {
                     Text(L10n.model)
@@ -38,10 +38,10 @@ struct LocalSummarySettingsRows: View {
                     let effort = selectedReasoningEffort(target)
                     let options = catalog.effortOptions(modelID: selectedModelID(target))
                     if !options.contains(where: { $0.reasoningEffort == effort }) {
-                        Text(effort).tag(effort)
+                        Text(effort).font(.dahliaBody).tag(effort)
                     }
                     ForEach(options) { effort in
-                        Text(effort.displayName).tag(effort.reasoningEffort)
+                        Text(effort.displayName).font(.dahliaBody).tag(effort.reasoningEffort)
                     }
                 } label: {
                     Text(L10n.reasoningEffort)

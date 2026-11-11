@@ -27,7 +27,7 @@ struct CodexChatApprovalButton: View {
                         .onHover(perform: showHelpOnHover)
                         .popover(isPresented: $isHelpPresented, arrowEdge: .bottom) {
                             Text(helpText)
-                                .font(.body)
+                                .font(.dahliaBody)
                                 .padding(12)
                         }
                         .accessibilityLabel(helpText)

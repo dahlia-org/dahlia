@@ -1,46 +1,48 @@
 import SwiftUI
 
 struct CodexChatEmptyStateView: View {
-    let recentThreads: [CodexChatThreadSummary]
-    let meetingNamesByID: [UUID: String]
+    let hasRecentThreads: Bool
     let showsProjectOrganizationShortcut: Bool
     let isProjectOrganizationShortcutEnabled: Bool
     let onOrganizeRecentMeetingsAndProjects: () -> Void
     let meetingReviewShortcutTitle: String?
     let isMeetingReviewShortcutEnabled: Bool
-    let activityForThread: (String) -> CodexChatThreadActivity?
     let onReviewMeeting: () -> Void
-    let onOpenThread: (CodexChatThreadSummary) -> Void
     let onShowAll: () -> Void
 
     @State private var hoveredPreset: Preset?
+    @State private var hoveredHistory = false
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            Spacer(minLength: 40)
-
-            VStack(alignment: .leading, spacing: 28) {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 16) {
                 if showsProjectOrganizationShortcut || meetingReviewShortcutTitle != nil {
                     presetSection
                 }
 
-                if !recentThreads.isEmpty {
-                    recentChatsSection
+                if hasRecentThreads {
+                    Button(action: onShowAll) {
+                        Label(L10n.recentChats, systemImage: "clock.arrow.circlepath")
+                            .font(.dahliaBody)
+                            .padding(.horizontal, 12)
+                            .padding(.vertical, 7)
+                            .contentShape(.rect)
+                    }
+                    .buttonStyle(.plain)
+                    .foregroundStyle(DahliaDesign.secondaryTextColor)
+                    .background(hoveredHistory ? DahliaDesign.contentHighlightColor : .clear, in: .rect(cornerRadius: 8))
+                    .onHover { hoveredHistory = $0 }
                 }
             }
+            .padding(.horizontal, CodexChatDesign.contentHorizontalPadding)
+            .frame(maxWidth: .infinity, alignment: .leading)
         }
-        .padding(.horizontal, CodexChatDesign.contentHorizontalPadding)
-        .padding(.bottom, 22)
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .scrollBounceBehavior(.basedOnSize)
     }
 
     private var presetSection: some View {
         VStack(alignment: .leading, spacing: 10) {
-            Text(L10n.chatPresets)
-                .font(.body)
-                .foregroundStyle(DahliaDesign.optionalTextColor)
-
-            VStack(alignment: .leading, spacing: 8) {
+            LazyVGrid(columns: [GridItem(.adaptive(minimum: 260), alignment: .leading)], alignment: .leading, spacing: 8) {
                 if showsProjectOrganizationShortcut {
                     presetButton(
                         CodexChatProjectOrganizationShortcut.title,
@@ -70,18 +72,20 @@ struct CodexChatEmptyStateView: View {
     ) -> some View {
         Button(action: action) {
             Label(title, systemImage: "sparkles")
-                .font(.body)
+                .font(.dahliaBody)
                 .lineLimit(2)
                 .fixedSize(horizontal: false, vertical: true)
                 .padding(.horizontal, 12)
                 .padding(.vertical, 7)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .contentShape(.rect(cornerRadius: 8))
         }
         .buttonStyle(.plain)
         .background(
             hoveredPreset == preset && isEnabled
                 ? DahliaDesign.chipHoverColor
                 : DahliaDesign.contentHighlightColor,
-            in: Capsule()
+            in: .rect(cornerRadius: 8)
         )
         .onHover { hovering in
             if hovering {
@@ -91,35 +95,6 @@ struct CodexChatEmptyStateView: View {
             }
         }
         .disabled(!isEnabled)
-    }
-
-    private var recentChatsSection: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            Text(L10n.recentChats)
-                .font(.body)
-                .foregroundStyle(DahliaDesign.optionalTextColor)
-
-            VStack(spacing: 0) {
-                ForEach(recentThreads) { thread in
-                    Button {
-                        onOpenThread(thread)
-                    } label: {
-                        CodexChatThreadRow(
-                            thread: thread,
-                            meetingNamesByID: meetingNamesByID,
-                            activity: activityForThread(thread.id)
-                        )
-                    }
-                    .buttonStyle(.plain)
-                    .foregroundStyle(DahliaDesign.secondaryTextColor)
-                }
-            }
-
-            Button(L10n.chatShowAll, action: onShowAll)
-                .buttonStyle(.plain)
-                .foregroundStyle(DahliaDesign.optionalTextColor)
-                .padding(.top, 4)
-        }
     }
 
     private enum Preset {

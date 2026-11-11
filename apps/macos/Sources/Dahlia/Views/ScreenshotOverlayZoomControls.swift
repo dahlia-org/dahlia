@@ -21,7 +21,7 @@ struct ScreenshotOverlayZoomControls: View {
             .onHover { isZoomOutHovered = $0 }
 
             Text(zoom, format: .percent.precision(.fractionLength(0)))
-                .font(.callout)
+                .font(.dahliaBody)
                 .monospacedDigit()
                 .frame(minWidth: 52)
 

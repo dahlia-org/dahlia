@@ -32,7 +32,7 @@ enum CalendarEventDescriptionFormatter {
               ) else {
             return NSAttributedString(
                 string: description,
-                attributes: [.font: NSFont.preferredFont(forTextStyle: .body)]
+                attributes: [.font: NSFont.dahliaBody]
             )
         }
 
@@ -80,7 +80,7 @@ enum CalendarEventDescriptionFormatter {
     }
 
     private static func styledHTML(_ html: String) -> String {
-        let pointSize = NSFont.preferredFont(forTextStyle: .body).pointSize
+        let pointSize = NSFont.dahliaBody.pointSize
         return "<style>body { font-family: -apple-system; font-size: \(pointSize)px; }</style>\(html)"
     }
 

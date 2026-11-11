@@ -29,7 +29,7 @@ struct ProjectDetailDisplayModePicker: View {
             controlSize: 22,
             action: { onChange(mode) }
         )
-        .font(.callout)
+        .font(.dahliaBody)
         .foregroundStyle(isSelected ? .primary : .secondary)
         .frame(width: 28, height: 22)
         .background(isSelected ? Color(nsColor: .controlBackgroundColor) : .clear, in: Capsule())

@@ -53,7 +53,7 @@ private struct ScreenshotOverlayControlButton: View {
             // グリフの矩形しか反応せず、chevron のような細い記号は押しにくい。
             Label(title, systemImage: systemImage)
                 .labelStyle(.iconOnly)
-                .font(.title3)
+                .font(.dahliaTitle3)
                 .foregroundStyle(.black)
                 .frame(width: 44, height: 44)
                 .background(

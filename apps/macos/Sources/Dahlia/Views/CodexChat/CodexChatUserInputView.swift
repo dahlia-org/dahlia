@@ -13,9 +13,9 @@ struct CodexChatUserInputView: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 12) {
                     Text(request.header)
-                        .font(.body.weight(.semibold))
+                        .font(.dahliaBody.weight(.semibold))
                     Text(request.question)
-                        .font(.body)
+                        .font(.dahliaBody)
 
                     ForEach(request.options) { option in
                         Button {
@@ -23,9 +23,9 @@ struct CodexChatUserInputView: View {
                         } label: {
                             VStack(alignment: .leading, spacing: 3) {
                                 Text(option.label)
-                                    .font(.body.weight(.medium))
+                                    .font(.dahliaBody.weight(.medium))
                                 Text(option.description)
-                                    .font(.caption)
+                                    .font(.dahliaSecondary)
                                     .foregroundStyle(DahliaDesign.secondaryTextColor)
                             }
                             .frame(maxWidth: .infinity, alignment: .leading)

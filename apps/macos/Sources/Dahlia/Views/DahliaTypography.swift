@@ -1,9 +1,36 @@
+import AppKit
 import SwiftUI
+
+enum DahliaTypography {
+    static let defaultBaseSize: CGFloat = 14
+
+    static func size(offset: CGFloat = 0, relativeTo baseSize: CGFloat = defaultBaseSize) -> CGFloat {
+        baseSize + offset
+    }
+}
+
+extension Font {
+    static var dahliaBody: Font { .system(size: DahliaTypography.size()) }
+    static var dahliaHeadline: Font { .dahliaBody.bold() }
+    static var dahliaSecondary: Font { .system(size: DahliaTypography.size(offset: -2)) }
+    static var dahliaSectionHeader: Font { .dahliaSecondary.weight(.medium) }
+    static var dahliaTitle3: Font { .system(size: DahliaTypography.size(offset: 1)) }
+    static var dahliaTitle2: Font { .system(size: DahliaTypography.size(offset: 3)) }
+    static var dahliaTitle: Font { .system(size: DahliaTypography.size(offset: 8)) }
+    static var dahliaLargeTitle: Font { .system(size: DahliaTypography.size(offset: 12)) }
+}
+
+extension NSFont {
+    static var dahliaBody: NSFont { .systemFont(ofSize: DahliaTypography.size()) }
+    static var dahliaHeadline: NSFont { .boldSystemFont(ofSize: DahliaTypography.size()) }
+    static var dahliaSecondary: NSFont { .systemFont(ofSize: DahliaTypography.size(offset: -2)) }
+    static var dahliaTitle3: NSFont { .systemFont(ofSize: DahliaTypography.size(offset: 1)) }
+}
 
 private struct DahliaAppearanceModifier: ViewModifier {
     func body(content: Content) -> some View {
         content
-            .font(.body)
+            .font(.dahliaBody)
             .foregroundStyle(DahliaDesign.primaryTextColor)
             .labelStyle(DahliaFixedSymbolLabelStyle())
             .buttonBorderShape(.roundedRectangle(radius: DahliaDesign.Button.cornerRadius))
@@ -40,6 +67,6 @@ extension View {
     }
 
     func dahliaFixedSymbol() -> some View {
-        font(.body)
+        font(.dahliaBody)
     }
 }

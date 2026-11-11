@@ -48,7 +48,7 @@ struct ProjectDetailListView: View {
                             .padding()
                     } else if isLimited {
                         Text(L10n.projectMeetingLimitReached)
-                            .font(.footnote)
+                            .font(.dahliaSecondary)
                             .foregroundStyle(.secondary)
                             .padding()
                     }

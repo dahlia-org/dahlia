@@ -32,7 +32,7 @@ struct ProjectCatalogView: View {
 
         VStack(alignment: .leading, spacing: 24) {
             Text(L10n.projects)
-                .font(.title)
+                .font(.dahliaTitle)
                 .accessibilityAddTraits(.isHeader)
 
             TextField(L10n.searchProjects, text: $searchText)

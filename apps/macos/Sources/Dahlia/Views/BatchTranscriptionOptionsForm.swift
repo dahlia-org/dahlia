@@ -18,7 +18,7 @@ struct BatchTranscriptionOptionsForm: View {
     var body: some View {
         Form {
             if isRetranscription {
-                Section(L10n.retranscription) {
+                Section {
                     LabeledContent(
                         L10n.processingMethod,
                         value: usesServerSummary ? L10n.retranscriptionGemini : L10n.retranscriptionAppleSpeech
@@ -29,24 +29,30 @@ struct BatchTranscriptionOptionsForm: View {
                         .foregroundStyle(.secondary)
                     Text(L10n.retranscriptionKeepsSummary)
                         .foregroundStyle(.secondary)
+                } header: {
+                    Text(L10n.retranscription)
+                        .font(.dahliaSectionHeader)
                 }
             } else if let processingMethod {
                 Section { LabeledContent(L10n.processingMethod, value: processingMethod.displayName) }
             }
             if !isRetranscription, processingMethod == nil || processingMethod == .transcript {
-                Section(L10n.transcription) {
+                Section {
                     Picker(L10n.language, selection: $languageSelection) {
                         if allowsRecordedLanguageSelection {
                             Text(L10n.recordedLanguages)
+                                .font(.dahliaBody)
                                 .tag(BatchTranscriptionLanguageSelection.recorded)
                         }
 
                         Text(L10n.auto)
+                            .font(.dahliaBody)
                             .tag(BatchTranscriptionLanguageSelection.automatic)
                             .disabled(automaticLanguageLocales.isEmpty)
 
                         ForEach(locales, id: \.identifier) { locale in
                             Text(displayName(for: locale))
+                                .font(.dahliaBody)
                                 .tag(BatchTranscriptionLanguageSelection.manual(localeIdentifier: locale.identifier))
                         }
                     }
@@ -59,11 +65,14 @@ struct BatchTranscriptionOptionsForm: View {
                         )
                     }
 
+                } header: {
+                    Text(L10n.transcription)
+                        .font(.dahliaSectionHeader)
                 }
 
             }
             if !isRetranscription {
-                Section(L10n.summaryAndExport) {
+                Section {
                     SummaryProjectPicker(projects: projects, selection: $selectedProjectId)
 
                     if processingMethod == nil {
@@ -80,6 +89,9 @@ struct BatchTranscriptionOptionsForm: View {
                         isEnabled: processingMethod != nil || generateSummaryAfterBatchTranscription,
                         usesServerSummary: usesServerSummary
                     )
+                } header: {
+                    Text(L10n.summaryAndExport)
+                        .font(.dahliaSectionHeader)
                 }
             }
         }

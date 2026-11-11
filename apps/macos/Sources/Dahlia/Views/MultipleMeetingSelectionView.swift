@@ -9,11 +9,11 @@ struct MultipleMeetingSelectionView: View {
     var body: some View {
         VStack(spacing: 18) {
             Image(systemName: "checklist")
-                .font(.system(size: 42, weight: .regular))
+                .font(.system(size: DahliaTypography.size(offset: 28), weight: .regular))
                 .foregroundStyle(DahliaDesign.secondaryTextColor)
 
             Text(L10n.selectedCount(sidebarViewModel.selectedMeetingIds.count))
-                .font(.title2)
+                .font(.dahliaTitle2)
 
             HStack(spacing: 10) {
                 Button(

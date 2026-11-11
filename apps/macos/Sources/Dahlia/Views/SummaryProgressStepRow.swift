@@ -36,13 +36,13 @@ struct SummaryProgressStepRow: View {
                 .accessibilityHidden(true)
 
                 Text(label)
-                    .font(.callout)
+                    .font(.dahliaBody)
                     .foregroundStyle(textColor)
             }
 
             if let failureMessage = status.failureMessage {
                 Text(failureMessage)
-                    .font(.footnote)
+                    .font(.dahliaSecondary)
                     .foregroundStyle(.red)
                     .lineLimit(2)
                     .padding(.leading, 22)

@@ -35,7 +35,7 @@ struct ProjectDescriptionTextView: NSViewRepresentable {
         )
         textView.delegate = context.coordinator
         textView.string = text
-        textView.font = .preferredFont(forTextStyle: .body)
+        textView.font = .dahliaBody
         textView.textColor = DahliaDesign.primaryTextNSColor
         textView.drawsBackground = false
         textView.isRichText = false
@@ -57,7 +57,7 @@ struct ProjectDescriptionTextView: NSViewRepresentable {
         guard let textView = scrollView.documentView as? ProjectDescriptionNSTextView else { return }
         _ = dynamicTypeSize
         textView.isEditable = isEnabled
-        textView.font = .preferredFont(forTextStyle: .body)
+        textView.font = .dahliaBody
         guard textView.string != text,
               !textView.hasMarkedText()
         else { return }

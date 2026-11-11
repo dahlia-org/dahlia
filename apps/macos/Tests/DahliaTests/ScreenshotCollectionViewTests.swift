@@ -94,7 +94,7 @@ import Foundation
                     .compactMap { $0 as? NSTextField }
                     .first { $0.stringValue == "00:00:01" }
             )
-            #expect(timestampLabel.font?.pointSize == NSFont.preferredFont(forTextStyle: .caption1).pointSize)
+            #expect(timestampLabel.font?.pointSize == 12)
         }
 
         @Test

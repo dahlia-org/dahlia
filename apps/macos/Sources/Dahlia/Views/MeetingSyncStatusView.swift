@@ -21,7 +21,7 @@ struct MeetingSyncStatusView: View {
                 )
         }
         .labelStyle(.iconOnly)
-        .font(.caption)
+        .font(.dahliaSecondary)
         .foregroundStyle(.secondary)
         .dahliaHoverHelp(label: state.title, bounds: helpBounds)
         .accessibilityLabel(state.title)

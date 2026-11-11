@@ -62,7 +62,7 @@ struct BatchTranscriptionConfirmationView: View {
         VStack(spacing: 0) {
             VStack(alignment: .leading, spacing: 6) {
                 Text(confirmationText.title)
-                    .font(.headline)
+                    .font(.dahliaHeadline)
 
                 Text(confirmationText.description)
                     .foregroundStyle(DahliaDesign.secondaryTextColor)
@@ -90,7 +90,7 @@ struct BatchTranscriptionConfirmationView: View {
 
             if let errorMessage {
                 Label(errorMessage, systemImage: "exclamationmark.triangle.fill")
-                    .font(.body)
+                    .font(.dahliaBody)
                     .foregroundStyle(.red)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(.horizontal, 20)

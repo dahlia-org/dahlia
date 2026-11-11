@@ -22,7 +22,7 @@ struct MicrophoneInputVolumeControl: View {
         .popover(isPresented: $isPresented, arrowEdge: .bottom) {
             VStack(alignment: .leading, spacing: 12) {
                 Text(L10n.builtInMicrophoneInputVolume)
-                    .font(.headline)
+                    .font(.dahliaHeadline)
 
                 if isLoading {
                     ProgressView()
@@ -51,12 +51,12 @@ struct MicrophoneInputVolumeControl: View {
                 }
 
                 Text(L10n.builtInMicrophoneInputVolumeDescription)
-                    .font(.footnote)
+                    .font(.dahliaSecondary)
                     .foregroundStyle(.secondary)
 
                 if let errorMessage {
                     Text(errorMessage)
-                        .font(.footnote)
+                        .font(.dahliaSecondary)
                         .foregroundStyle(.red)
                 }
 

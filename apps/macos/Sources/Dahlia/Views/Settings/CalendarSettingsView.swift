@@ -47,6 +47,7 @@ struct CalendarSettingsView: View {
                     }
                 } header: {
                     Text(L10n.calendarSources)
+                        .font(.dahliaSectionHeader)
                 } footer: {
                     Text(L10n.calendarSourcesDescription)
                 }
@@ -85,6 +86,7 @@ struct CalendarSettingsView: View {
                     }
                 } header: {
                     Text(L10n.googleCalendarDisplayCalendars)
+                        .font(.dahliaSectionHeader)
                 } footer: {
                     Text(L10n.googleCalendarDisplayCalendarsDescription)
                 }
@@ -107,6 +109,7 @@ struct CalendarSettingsView: View {
             }
         }
         .formStyle(.grouped)
+        .font(.dahliaBody)
     }
 
     private var showsCalendarSelection: Bool {
@@ -152,6 +155,7 @@ struct CalendarSettingsView: View {
             }
         } header: {
             Text(L10n.googleCalendar)
+                .font(.dahliaSectionHeader)
         } footer: {
             if !showsOnlySourceSetup {
                 Text(L10n.googleCalendarSettingsDescription)
@@ -168,6 +172,7 @@ struct CalendarSettingsView: View {
             }
         } header: {
             Text(L10n.macOSCalendar)
+                .font(.dahliaSectionHeader)
         } footer: {
             if !showsOnlySourceSetup {
                 Text(L10n.macOSCalendarSettingsDescription)

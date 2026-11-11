@@ -38,7 +38,7 @@ struct SetupTourView: View {
         VStack(spacing: 0) {
             DahliaWindowHeader(reservesWindowControls: true) {
                 Text(L10n.setupDahlia)
-                    .font(.headline)
+                    .font(.dahliaHeadline)
 
                 // Account-scoped settings, such as model providers and calendars, apply to this account.
                 if model.currentStep != .account, model.isAccountSelectionConfirmed {
@@ -47,7 +47,7 @@ struct SetupTourView: View {
                     } icon: {
                         selectedAccountIcon
                     }
-                    .font(.callout)
+                    .font(.dahliaBody)
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
                     .accessibilityElement(children: .ignore)
@@ -92,9 +92,9 @@ struct SetupTourView: View {
                                 Image(systemName: "globe")
                                 Text(settings.appLanguage.displayName)
                                 Image(systemName: "chevron.down")
-                                    .font(.caption2)
+                                    .font(.dahliaSecondary)
                             }
-                            .font(.callout)
+                            .font(.dahliaBody)
                             .padding(.horizontal, 9)
                             .frame(minHeight: DahliaDesign.windowHeaderControlSize)
                             .contentShape(.rect)
@@ -114,7 +114,7 @@ struct SetupTourView: View {
                             Button(action: dismissTour) {
                                 Label(L10n.close, systemImage: "xmark")
                                     .labelStyle(.iconOnly)
-                                    .font(.body)
+                                    .font(.dahliaBody)
                                     .frame(
                                         width: DahliaDesign.windowHeaderControlSize,
                                         height: DahliaDesign.windowHeaderControlSize

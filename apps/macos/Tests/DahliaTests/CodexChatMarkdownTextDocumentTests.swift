@@ -103,9 +103,9 @@
             }
 
             #expect(try font(for: "Page heading").pointSize == NSFont.preferredFont(forTextStyle: .title3).pointSize)
-            #expect(try font(for: "Section heading").pointSize == NSFont.preferredFont(forTextStyle: .headline).pointSize)
-            #expect(try font(for: "Body").pointSize == NSFont.preferredFont(forTextStyle: .body).pointSize)
-            #expect(try font(for: "Quote").pointSize == NSFont.preferredFont(forTextStyle: .body).pointSize)
+            #expect(try font(for: "Section heading").pointSize == 14)
+            #expect(try font(for: "Body").pointSize == 14)
+            #expect(try font(for: "Quote").pointSize == 14)
             #expect(try NSFontManager.shared.traits(of: font(for: "Page heading")).contains(.boldFontMask) == false)
             #expect(try NSFontManager.shared.traits(of: font(for: "Section heading")).contains(.boldFontMask))
 
@@ -147,7 +147,7 @@
             ) as? NSParagraphStyle
             #expect(tableCellStyle?.textBlocks.first is NSTextTableBlock)
             let tableCellFont = document.attribute(.font, at: tableCellRange.location, effectiveRange: nil) as? NSFont
-            #expect(tableCellFont?.pointSize == NSFont.preferredFont(forTextStyle: .body).pointSize)
+            #expect(tableCellFont?.pointSize == 14)
 
             let headerRange = source.range(of: "Item")
             let headerFont = document.attribute(.font, at: headerRange.location, effectiveRange: nil) as? NSFont
@@ -206,7 +206,7 @@
             textView.setBlocks(blocks, dynamicTypeSize: .large)
 
             let font = textView.attributedString().attribute(.font, at: 0, effectiveRange: nil) as? NSFont
-            #expect(font?.pointSize == NSFont.preferredFont(forTextStyle: .body).pointSize)
+            #expect(font?.pointSize == 14)
             #expect(textView.attributedString().attribute(marker, at: 0, effectiveRange: nil) == nil)
         }
 

@@ -6,13 +6,13 @@ struct SetupTourStepHeaderView: View {
     var body: some View {
         VStack(spacing: 8) {
             Text(step.title)
-                .font(.largeTitle)
+                .font(.dahliaLargeTitle)
                 .bold()
                 .multilineTextAlignment(.center)
                 .accessibilityAddTraits(.isHeader)
 
             Text(step.description)
-                .font(.title3)
+                .font(.dahliaTitle3)
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
                 .fixedSize(horizontal: false, vertical: true)

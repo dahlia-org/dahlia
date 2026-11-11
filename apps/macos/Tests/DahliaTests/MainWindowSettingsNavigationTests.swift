@@ -28,6 +28,39 @@
         }
 
         @Test
+        func appIntegrationsOpensMCPSettingsAndPreservesChat() throws {
+            let suite = "MainWindowSettingsNavigationTests.\(UUID())"
+            let defaults = try #require(UserDefaults(suiteName: suite))
+            defer { defaults.removePersistentDomain(forName: suite) }
+            var observedTab: AgentSettingsView.Tab?
+            var observedCategory: SettingsCategory?
+            var navigation: MainWindowNavigation?
+            let subject = MainWindowNavigation(
+                openMainWindow: {
+                    observedTab = navigation?.agentSettingsTab
+                    observedCategory = navigation?.settingsCategory
+                },
+                initialSettingsCategory: .general,
+                settingsDefaults: defaults
+            )
+            navigation = subject
+            subject.recordNavigation(to: .chat)
+            subject.agentSettingsTab = .models
+
+            subject.openAgentSettings(tab: .mcps)
+
+            #expect(subject.isShowingSettings)
+            #expect(observedTab == .mcps)
+            #expect(observedCategory == .agents)
+            #expect(subject.currentLocation == .chat)
+
+            subject.dismissSettings()
+
+            #expect(!subject.isShowingSettings)
+            #expect(subject.currentLocation == .chat)
+        }
+
+        @Test
         func eventDisplayLinkOpensAppearanceOnItsTab() {
             let navigation = MainWindowNavigation(openMainWindow: {}, initialSettingsCategory: .general)
             #expect(navigation.appearanceTab == .general)
@@ -114,7 +147,7 @@
             navigation.recordNavigation(to: .projects)
             navigation.openSettings()
 
-            navigation.openUnprocessedRecordingsFromSettings()
+            navigation.openUnprocessedRecordings()
 
             #expect(!navigation.isShowingSettings)
             #expect(navigation.section == .meetings)

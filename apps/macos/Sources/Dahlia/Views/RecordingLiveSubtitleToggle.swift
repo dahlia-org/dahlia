@@ -9,13 +9,13 @@ struct RecordingLiveSubtitleToggle: View {
     var body: some View {
         HStack(spacing: 6) {
             Image(systemName: "text.bubble")
-                .font(.caption)
+                .font(.dahliaSecondary)
                 .foregroundStyle(DahliaDesign.secondaryTextColor)
                 .frame(width: 14)
                 .accessibilityHidden(true)
 
             Text(L10n.subtitles)
-                .font(.footnote.weight(.semibold))
+                .font(.dahliaSecondary.weight(.semibold))
                 .foregroundStyle(DahliaDesign.primaryTextColor)
                 .frame(width: 58, alignment: .leading)
                 .lineLimit(1)
@@ -36,14 +36,14 @@ struct RecordingLiveSubtitleToggle: View {
             } label: {
                 HStack(spacing: 6) {
                     Text(selectedLanguageName)
-                        .font(.footnote)
+                        .font(.dahliaSecondary)
                         .foregroundStyle(DahliaDesign.secondaryTextColor)
                         .lineLimit(1)
                         .truncationMode(.middle)
                         .frame(maxWidth: .infinity, alignment: .leading)
 
                     Image(systemName: "chevron.down")
-                        .font(.caption2.weight(.semibold))
+                        .font(.dahliaSecondary.weight(.semibold))
                         .foregroundStyle(DahliaDesign.optionalTextColor)
                 }
             }

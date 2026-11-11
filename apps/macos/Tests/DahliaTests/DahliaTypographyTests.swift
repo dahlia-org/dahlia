@@ -8,6 +8,32 @@ import SwiftUI
 
     struct DahliaTypographyTests {
         @Test
+        @MainActor
+        func interfaceStylesResolveTo14And12PointsInSwiftUIAndAppKit() {
+            let context = EnvironmentValues().fontResolutionContext
+            #expect(Font.dahliaBody.resolve(in: context).pointSize == 14)
+            #expect(Font.dahliaHeadline.resolve(in: context).pointSize == 14)
+            #expect(Font.dahliaSectionHeader.resolve(in: context).pointSize == 12)
+            #expect(Font.dahliaSecondary.resolve(in: context).pointSize == 12)
+            #expect(Font.dahliaTitle3.resolve(in: context).pointSize == 15)
+            #expect(Font.dahliaTitle2.resolve(in: context).pointSize == 17)
+            #expect(Font.dahliaTitle.resolve(in: context).pointSize == 22)
+            #expect(Font.dahliaLargeTitle.resolve(in: context).pointSize == 26)
+            #expect(NSFont.dahliaBody.pointSize == 14)
+            #expect(NSFont.dahliaHeadline.pointSize == 14)
+            #expect(NSFont.dahliaSecondary.pointSize == 12)
+            #expect(NSFont.dahliaTitle3.pointSize == 15)
+            #expect(NSFontManager.shared.traits(of: .dahliaHeadline).contains(.boldFontMask))
+        }
+
+        @Test(arguments: [CGFloat(12), 14, 18])
+        func sizesFollowTheBaseWhilePreservingTheirOffsets(baseSize: CGFloat) {
+            #expect(DahliaTypography.size(relativeTo: baseSize) == baseSize)
+            #expect(DahliaTypography.size(offset: -2, relativeTo: baseSize) == baseSize - 2)
+            #expect(DahliaTypography.size(offset: 8, relativeTo: baseSize) == baseSize + 8)
+        }
+
+        @Test
         func meetingSidebarRowStyleDefaultsToStandard() {
             #expect(MeetingSidebarRowStyle.resolved(rawValue: "standard") == .standard)
             #expect(MeetingSidebarRowStyle.resolved(rawValue: "compact") == .compact)

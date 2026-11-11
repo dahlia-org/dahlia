@@ -68,7 +68,7 @@ struct MainNavigationBreadcrumbs: View {
             }
         }
         .environment(hoverSession)
-        .font(.body)
+        .font(.dahliaBody)
         .foregroundStyle(.secondary)
         .frame(maxWidth: .infinity, alignment: .leading)
     }

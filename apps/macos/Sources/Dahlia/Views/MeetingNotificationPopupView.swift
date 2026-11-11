@@ -18,7 +18,7 @@ struct MeetingNotificationPopupView: View {
                         .accessibilityHidden(true)
 
                     Text(L10n.meetingNotification)
-                        .font(.title)
+                        .font(.dahliaTitle)
                         .bold()
                 }
 
@@ -26,24 +26,24 @@ struct MeetingNotificationPopupView: View {
 
                 VStack(alignment: .leading, spacing: 10) {
                     Text(popup.title)
-                        .font(.largeTitle)
+                        .font(.dahliaLargeTitle)
                         .bold()
                         .lineLimit(3)
 
                     if let subtitle = popup.subtitle {
                         Label(subtitle, systemImage: "calendar")
-                            .font(.title2)
+                            .font(.dahliaTitle2)
                             .foregroundStyle(.secondary)
                             .lineLimit(2)
                     }
 
                     Text(popup.body)
-                        .font(.title2)
+                        .font(.dahliaTitle2)
                         .foregroundStyle(.secondary)
 
                     if let description = popup.calendarDescription {
                         Text(description)
-                            .font(.title3)
+                            .font(.dahliaTitle3)
                             .foregroundStyle(.secondary)
                             .lineLimit(4)
                     }
@@ -72,7 +72,7 @@ struct MeetingNotificationPopupView: View {
                 onAction(.close)
             }
             .labelStyle(.iconOnly)
-            .font(.title2.bold())
+            .font(.dahliaTitle2.bold())
             .frame(width: 44, height: 44)
             .background(Color.primary.opacity(isCloseHovered ? 0.16 : 0.08), in: Circle())
             .buttonStyle(.plain)

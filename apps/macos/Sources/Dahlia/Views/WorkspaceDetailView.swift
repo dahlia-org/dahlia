@@ -11,7 +11,7 @@ struct WorkspaceDetailView: View {
     var body: some View {
         if let workspace {
             Form {
-                Section(L10n.workspaceDetails) {
+                Section {
                     LabeledContent(L10n.workspaceName, value: workspace.name)
                     LabeledContent(L10n.location) {
                         Text(workspace.path ?? L10n.noLocalExportFolder)
@@ -29,6 +29,9 @@ struct WorkspaceDetailView: View {
                             Text(L10n.currentWorkspaceRemoveDescription)
                         }
                     }
+                } header: {
+                    Text(L10n.workspaceDetails)
+                        .font(.dahliaSectionHeader)
                 }
 
                 Section {

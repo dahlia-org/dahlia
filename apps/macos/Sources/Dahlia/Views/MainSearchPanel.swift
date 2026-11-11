@@ -25,7 +25,7 @@ struct MainSearchPanel: View {
                         .accessibilityHidden(true)
                     TextField(L10n.searchMeetingsAndProjects, text: $model.inputText)
                         .textFieldStyle(.plain)
-                        .font(.headline)
+                        .font(.dahliaHeadline)
                         .focused($isSearchFocused)
                         .onSubmit(activateSelectionOrSubmit)
                     if !model.inputText.isEmpty || !model.tokens.isEmpty {
@@ -46,10 +46,10 @@ struct MainSearchPanel: View {
                     }
                     HStack(spacing: 2) {
                         Picker(L10n.serverSearchKind, selection: $model.resultKind) {
-                            Text(L10n.serverSearchAllKinds).tag("")
-                            Text(L10n.meetings).tag("meeting")
-                            Text(L10n.screenshots).tag("screenshot")
-                            Text(L10n.projects).tag("project")
+                            Text(L10n.serverSearchAllKinds).font(.dahliaBody).tag("")
+                            Text(L10n.meetings).font(.dahliaBody).tag("meeting")
+                            Text(L10n.screenshots).font(.dahliaBody).tag("screenshot")
+                            Text(L10n.projects).font(.dahliaBody).tag("project")
                         }
                         .labelsHidden()
                         .fixedSize()
@@ -184,7 +184,7 @@ struct MainSearchPanel: View {
     private var searchContent: some View {
         if let coverage = model.searchCoverage {
             HStack {
-                Text(coverage).font(.caption).foregroundStyle(.secondary)
+                Text(coverage).font(.dahliaSecondary).foregroundStyle(.secondary)
                 if model.serverSearchFailed {
                     Button(L10n.retry) { model.retryServerSearch(using: sidebarViewModel) }
                         .buttonStyle(.borderless)
@@ -326,7 +326,7 @@ struct MainSearchPanel: View {
 
     private func sectionHeader(_ title: String) -> some View {
         Text(title)
-            .font(.body)
+            .font(.dahliaSectionHeader)
             .foregroundStyle(DahliaDesign.secondaryTextColor)
             .padding(.horizontal, 12)
             .padding(.vertical, 6)

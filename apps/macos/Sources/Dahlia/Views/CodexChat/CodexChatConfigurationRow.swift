@@ -21,7 +21,7 @@ struct CodexChatConfigurationRow: View {
                 }
 
                 Text(title)
-                    .font(.body)
+                    .font(.dahliaBody)
                     .foregroundStyle(isEnabled ? DahliaDesign.primaryTextColor : DahliaDesign.optionalTextColor)
                     .lineLimit(1)
                     .minimumScaleFactor(0.8)

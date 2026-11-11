@@ -22,11 +22,11 @@ struct SettingsDetailView: View {
                     HStack(alignment: .top) {
                         VStack(alignment: .leading, spacing: 4) {
                             Text(SettingsNavigation.visibleSelection(selection).label)
-                                .font(.title2)
+                                .font(.dahliaHeadline)
                                 .foregroundStyle(.primary)
                                 .accessibilityAddTraits(.isHeader)
                             Text(scopeDescription)
-                                .font(.callout)
+                                .font(.dahliaBody)
                                 .foregroundStyle(.secondary)
                                 .fixedSize(horizontal: false, vertical: true)
                         }
@@ -39,6 +39,7 @@ struct SettingsDetailView: View {
                 }
             }
             .formStyle(.grouped)
+            .font(.dahliaBody)
             .fixedSize(horizontal: false, vertical: true)
             .frame(minHeight: 90)
             .padding(.top, DahliaDesign.windowHeaderHeight)
@@ -66,6 +67,7 @@ struct SettingsDetailView: View {
                     .id(appSettings.currentWorkspace.map(WorkspaceAccountChoice.init))
             }
             .formStyle(.grouped)
+            .font(.dahliaBody)
             .onChange(of: dahliaAccountController.connections) {
                 Task { await workspaceManagementModel.loadWorkspaces() }
             }
@@ -85,6 +87,7 @@ struct SettingsDetailView: View {
                 WorkspaceProcessingSettingsView()
             }
             .formStyle(.grouped)
+            .font(.dahliaBody)
             .onChange(of: workspaceManagementModel.workspaces.map { "\($0.id):\($0.accountConnectionId?.uuidString ?? "local")" }) {
                 Task { await dahliaAccountController.reload() }
             }

@@ -14,7 +14,7 @@ struct CalendarEventPopoverContent: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 8) {
                 Label(title, systemImage: "calendar")
-                    .font(.headline)
+                    .font(.dahliaHeadline)
 
                 Text(dateText)
                     .foregroundStyle(DahliaDesign.secondaryTextColor)

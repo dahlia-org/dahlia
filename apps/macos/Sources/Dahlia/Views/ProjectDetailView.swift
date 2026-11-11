@@ -88,10 +88,10 @@ struct ProjectDetailView: View {
 
             HStack(spacing: 12) {
                 ProjectAppearanceIcon(appearance: appearance)
-                    .font(.title2)
+                    .font(.dahliaTitle2)
 
                 Text(project.projectDisplayName)
-                    .font(.title)
+                    .font(.dahliaTitle)
                     .lineLimit(1)
                     .truncationMode(.middle)
                     .accessibilityAddTraits(.isHeader)

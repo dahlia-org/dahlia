@@ -66,7 +66,7 @@ struct WorkspacePickerView: View {
                 VStack(spacing: 0) {
                     DahliaWindowHeader {
                         Text(selectedWorkspace?.name ?? L10n.workspaceDetails)
-                            .font(.headline)
+                            .font(.dahliaHeadline)
                             .lineLimit(1)
 
                         Spacer(minLength: 12)
@@ -136,7 +136,7 @@ struct WorkspacePickerView: View {
               let workspace = model.workspaces.first(where: { $0.id == workspaceID }) else { return }
         openWorkspace(workspace)
         guard sidebarViewModel.currentWorkspace?.id == workspaceID else { return }
-        mainWindowNavigation.openUnprocessedRecordingsFromSettings()
+        mainWindowNavigation.openUnprocessedRecordings()
     }
 
     private func updateSidebarWidth(_ width: CGFloat) {

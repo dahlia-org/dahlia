@@ -14,7 +14,7 @@ struct ProjectCatalogHeader: View {
             Color.clear
                 .frame(width: 80, height: 1)
         }
-        .font(.subheadline)
+        .font(.dahliaSectionHeader)
         .foregroundStyle(.secondary)
         .padding(.horizontal, 12)
         .padding(.vertical, 10)

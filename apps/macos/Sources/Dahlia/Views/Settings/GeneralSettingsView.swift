@@ -11,6 +11,7 @@ struct GeneralSettingsView: View {
                 AppLanguageSelectionRow()
             } header: {
                 Text(L10n.appLanguages)
+                    .font(.dahliaSectionHeader)
             } footer: {
                 Text(L10n.appLanguagesDescription)
             }
@@ -25,6 +26,7 @@ struct GeneralSettingsView: View {
                 Picker(selection: $settings.meetingNotificationPresentation) {
                     ForEach(MeetingNotificationPresentation.allCases) { presentation in
                         Text(presentation.displayName)
+                            .font(.dahliaBody)
                             .tag(presentation)
                     }
                 } label: {
@@ -54,6 +56,7 @@ struct GeneralSettingsView: View {
                 .disabled(!settings.meetingDetectionEnabled)
             } header: {
                 Text(L10n.notifications)
+                    .font(.dahliaSectionHeader)
             } footer: {
                 VStack(alignment: .leading) {
                     Text(L10n.notificationSettingsDescription)
@@ -63,21 +66,27 @@ struct GeneralSettingsView: View {
                 }
             }
 
-            Section(L10n.recordingStopDetection) {
+            Section {
                 Toggle(isOn: $settings.automaticMeetingEndRecordingStopEnabled) {
                     Text(L10n.automaticMeetingEndRecordingStop)
                     Text(L10n.automaticMeetingEndRecordingStopDescription)
                 }
                 .toggleStyle(.switch)
+            } header: {
+                Text(L10n.recordingStopDetection)
+                    .font(.dahliaSectionHeader)
             }
 
-            Section(L10n.audioInput) {
+            Section {
                 Toggle(isOn: $settings.forceEchoCancellationForExternalMicrophone) {
                     Text(L10n.externalMicrophoneEchoCancellation)
                     Text(L10n.externalMicrophoneEchoCancellationDescription)
                 }
                 .toggleStyle(.switch)
                 Text(L10n.builtInMicrophoneEchoCancellationDescription).foregroundStyle(.secondary)
+            } header: {
+                Text(L10n.audioInput)
+                    .font(.dahliaSectionHeader)
             }
 
             Section {
@@ -95,10 +104,12 @@ struct GeneralSettingsView: View {
                 }
             } header: {
                 Text(L10n.serverContentRetention)
+                    .font(.dahliaSectionHeader)
             } footer: {
                 Text(L10n.serverContentRetentionDescription)
             }
         }
         .formStyle(.grouped)
+        .font(.dahliaBody)
     }
 }

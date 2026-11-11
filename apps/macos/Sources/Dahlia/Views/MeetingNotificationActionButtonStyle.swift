@@ -7,7 +7,7 @@ struct MeetingNotificationActionButtonStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
         let shape = RoundedRectangle(cornerRadius: 16)
         return configuration.label
-            .font(.title2)
+            .font(.dahliaTitle2)
             .bold()
             .foregroundStyle(.white)
             .padding(.horizontal, 28)

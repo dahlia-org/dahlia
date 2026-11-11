@@ -8,7 +8,7 @@ struct MCPJSONSampleView: View {
     var body: some View {
         VStack(alignment: .leading) {
             Text(sample)
-                .font(.body.monospaced())
+                .font(.dahliaBody.monospaced())
                 .textSelection(.enabled)
                 .multilineTextAlignment(.leading)
 

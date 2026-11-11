@@ -9,14 +9,14 @@ struct CodexChatModelPickerPanel: View {
         ScrollView {
             LazyVStack(alignment: .leading, spacing: CodexChatDesign.configurationRowSpacing) {
                 Text(L10n.model)
-                    .font(.body)
+                    .font(.dahliaBody)
                     .foregroundStyle(DahliaDesign.optionalTextColor)
                     .padding(.horizontal, 8)
                     .padding(.bottom, 2)
 
                 ForEach(groups, id: \.providerID) { group in
                     Text(title(of: group.providerID))
-                        .font(.caption)
+                        .font(.dahliaSecondary)
                         .foregroundStyle(DahliaDesign.optionalTextColor)
                         .lineLimit(1)
                         // The workspace name leads the host, so the cloud domain is what gets cut.

@@ -177,7 +177,7 @@ extension ScreenshotCollectionView {
                 referencedScreenshotIDs: parent.referencedScreenshotIDs,
                 isDeletionDisabled: parent.isDeletionDisabled,
                 timestampCacheGeneration: timestampCacheGeneration,
-                metadataFontSize: NSFont.preferredFont(forTextStyle: .caption1).pointSize
+                metadataFontSize: NSFont.dahliaSecondary.pointSize
             )
             if Self.requiresVisibleItemUpdate(previous: lastPresentationState, current: presentationState) {
                 reconfigureVisibleItems(in: collectionView)

@@ -13,11 +13,11 @@ struct CalendarEventMetadataButton: View {
         Button(action: togglePresentation) {
             Label {
                 Text(text)
-                    .font(.caption2.weight(.medium))
+                    .font(.dahliaSecondary.weight(.medium))
                     .lineLimit(1)
             } icon: {
                 Image(systemName: "calendar")
-                    .font(.caption2)
+                    .font(.dahliaSecondary)
             }
             .frame(minHeight: 16)
             .foregroundStyle(DahliaDesign.secondaryTextColor)

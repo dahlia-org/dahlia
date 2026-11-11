@@ -11,7 +11,7 @@ struct TranscriptionSettingsView: View {
 
     var body: some View {
         Form {
-            Section(L10n.transcription) {
+            Section {
                 DahliaMenuPicker(
                     title: L10n.transcriptionLanguage,
                     description: L10n.appleSpeechSettingsScopeDescription,
@@ -26,6 +26,9 @@ struct TranscriptionSettingsView: View {
                         : Locale(identifier: identifier).localizedString(forIdentifier: identifier) ?? identifier
                 }
                 .disabled(isLoadingLocales)
+            } header: {
+                Text(L10n.transcription)
+                    .font(.dahliaSectionHeader)
             }
 
             Section {
@@ -36,6 +39,7 @@ struct TranscriptionSettingsView: View {
                 .toggleStyle(.switch)
             } header: {
                 Text(L10n.settingsAfterRecording)
+                    .font(.dahliaSectionHeader)
             }
 
             Section {
@@ -55,9 +59,11 @@ struct TranscriptionSettingsView: View {
                 )
             } header: {
                 Text(L10n.transcriptionRecoverySettings)
+                    .font(.dahliaSectionHeader)
             }
         }
         .formStyle(.grouped)
+        .font(.dahliaBody)
         .confirmationDialog(
             L10n.shortenBatchAudioRetentionPeriodTitle,
             isPresented: $isShowingAudioRetentionConfirmation,

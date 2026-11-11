@@ -37,7 +37,7 @@ private struct MainSidebarTabButton: View {
                         .lineLimit(1)
                 }
             }
-            .font(.body)
+            .font(.dahliaBody)
             .foregroundStyle(DahliaDesign.sidebarPrimaryTextColor)
             .padding(.horizontal, 8)
             .frame(minHeight: 28)

@@ -13,7 +13,7 @@ struct CodexChatHistoryView: View {
     var body: some View {
         ScrollView {
             LazyVStack(alignment: .leading, spacing: 0) {
-                Button(L10n.newChat, systemImage: "square.and.pencil", action: onNewChat)
+                Button(L10n.newChat, systemImage: "plus.message", action: onNewChat)
                     .buttonStyle(.plain)
                     .foregroundStyle(DahliaDesign.secondaryTextColor)
                     .padding(.vertical, 12)

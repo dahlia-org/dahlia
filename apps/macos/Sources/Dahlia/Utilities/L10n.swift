@@ -475,6 +475,7 @@ enum L10n { // swiftlint:disable:this type_body_length
 
     static var home: String { String(localized: "Home", bundle: bundle) }
     static var meetings: String { String(localized: "Meetings", bundle: bundle) }
+    static var calendarEventOptions: String { String(localized: "Event Options", bundle: bundle) }
     static var upcomingEvents: String { String(localized: "Upcoming events", bundle: bundle) }
     static var showAll: String { String(localized: "Show all", bundle: bundle) }
     static var recent: String { String(localized: "Recent", bundle: bundle) }
@@ -2840,9 +2841,11 @@ enum L10n { // swiftlint:disable:this type_body_length
         String(localized: "\(minutes) min", bundle: bundle)
     }
 
-    static var menuBarJoinMeetingWithRecording: String { String(localized: "Join Meeting (with recording)", bundle: bundle) }
-    static var menuBarJoinMeeting: String { String(localized: "Join Meeting", bundle: bundle) }
-    static var menuBarShowEventInCalendar: String { String(localized: "Show Event in Calendar", bundle: bundle) }
+    static func joinMeetingService(_ service: String) -> String {
+        String(format: String(localized: "Join %@", bundle: bundle), locale: .current, service)
+    }
+
+    static var calendarOpenInCalendar: String { String(localized: "Open in Calendar", bundle: bundle) }
     static var menuBarEventDetails: String { String(localized: "Event Details", bundle: bundle) }
     static var calendarAttending: String { String(localized: "Attending", bundle: bundle) }
 
@@ -2881,8 +2884,14 @@ enum L10n { // swiftlint:disable:this type_body_length
     // MARK: - Codex Chat
 
     static var chat: String { String(localized: "Chat", bundle: bundle) }
+    static var dahliaAI: String { String(localized: "Dahlia AI", bundle: bundle) }
     static var newChat: String { String(localized: "New chat", bundle: bundle) }
     static var chatHistory: String { String(localized: "Chat history", bundle: bundle) }
+    static var chatWelcomeTitle: String { String(localized: "How can I help?", bundle: bundle) }
+    static var chatMCPServers: String { String(localized: "MCP servers", bundle: bundle) }
+    static var chatNoMCPServers: String { String(localized: "No MCP servers registered.", bundle: bundle) }
+    static var chatAppIntegrations: String { String(localized: "App integrations", bundle: bundle) }
+    static var chatConfigureAppIntegrations: String { String(localized: "Configure app integrations", bundle: bundle) }
     static var recentChats: String { String(localized: "Recent chats", bundle: bundle) }
     static var noRecentChats: String { String(localized: "No recent chats", bundle: bundle) }
     static var loadMore: String { String(localized: "Load more", bundle: bundle) }

@@ -18,7 +18,7 @@ struct ProjectDetailToolbar: View {
 
             if displayMode == .calendar {
                 Text(displayedMonth, format: .dateTime.year().month(.wide))
-                    .font(.title2)
+                    .font(.dahliaTitle2)
                     .accessibilityAddTraits(.isHeader)
 
                 Button(L10n.previousMonth, systemImage: "arrow.backward") { moveMonth(by: -1) }

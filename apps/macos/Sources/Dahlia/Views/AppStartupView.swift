@@ -19,7 +19,7 @@ struct AppStartupView: View {
                     .accessibilityHidden(true)
 
                 Text(L10n.dahlia)
-                    .font(.largeTitle.bold())
+                    .font(.dahliaLargeTitle.bold())
                     .accessibilityAddTraits(.isHeader)
 
                 switch state {
@@ -28,18 +28,18 @@ struct AppStartupView: View {
                         .controlSize(.large)
                         .accessibilityLabel(title(for: phase))
                     Text(title(for: phase))
-                        .font(.title2)
+                        .font(.dahliaTitle2)
                     Text(phase == .restoring || phase == .updating ? L10n.startupDataWait : L10n.startupWait)
                         .foregroundStyle(.secondary)
                 case let .failed(details, canContinue):
                     Label(canContinue ? L10n.startupRestoreFailed : L10n.startupFailed, systemImage: "exclamationmark.triangle")
-                        .font(.title2)
+                        .font(.dahliaTitle2)
                         .accessibilityAddTraits(.isHeader)
                     Text(canContinue ? L10n.startupRestoreFailureHelp : L10n.startupFailureHelp)
                         .foregroundStyle(.secondary)
                     ScrollView {
                         Text(details)
-                            .font(.callout)
+                            .font(.dahliaBody)
                             .textSelection(.enabled)
                             .multilineTextAlignment(.leading)
                             .frame(maxWidth: .infinity, alignment: .leading)

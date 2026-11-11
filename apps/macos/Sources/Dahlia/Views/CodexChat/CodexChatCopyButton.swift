@@ -15,7 +15,7 @@ struct CodexChatCopyButton: View {
                 .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .font(.caption)
+        .font(.dahliaSecondary)
         .foregroundStyle(DahliaDesign.optionalTextColor)
         .help(title)
     }

@@ -75,13 +75,15 @@ struct ProjectDeletionDialog: View {
                     }
 
                     if meetingCount > 0 {
-                        Section(L10n.meetingHandling) {
+                        Section {
                             Picker(L10n.meetingHandling, selection: $deletesMeetings) {
                                 if !moveDestinations.isEmpty {
                                     Text(L10n.moveMeetingsBeforeDeletingProject)
+                                        .font(.dahliaBody)
                                         .tag(false)
                                 }
                                 Text(L10n.deleteMeetingsWithProject)
+                                    .font(.dahliaBody)
                                     .tag(true)
                             }
                             .pickerStyle(.radioGroup)
@@ -90,6 +92,7 @@ struct ProjectDeletionDialog: View {
                                 Picker(L10n.moveMeetingsTo, selection: $selectedDestinationId) {
                                     ForEach(moveDestinations) { destination in
                                         Text(destination.projectName)
+                                            .font(.dahliaBody)
                                             .tag(destination.projectId as UUID?)
                                     }
                                 }
@@ -103,6 +106,9 @@ struct ProjectDeletionDialog: View {
                                 Text(L10n.deleteExportedSummariesHelp)
                                     .foregroundStyle(DahliaDesign.secondaryTextColor)
                             }
+                        } header: {
+                            Text(L10n.meetingHandling)
+                                .font(.dahliaSectionHeader)
                         }
                     }
                 }

@@ -40,7 +40,7 @@ struct MainSidebarAccountMenuRow: View {
                     VStack(alignment: .leading, spacing: 2) {
                         Text(title).lineLimit(1)
                         if let subtitle {
-                            Text(subtitle).font(.footnote).foregroundStyle(.secondary).lineLimit(1)
+                            Text(subtitle).font(.dahliaSecondary).foregroundStyle(.secondary).lineLimit(1)
                         }
                     }
                 } else {
@@ -49,7 +49,7 @@ struct MainSidebarAccountMenuRow: View {
                             .lineLimit(1)
                         if let subtitle {
                             Text(subtitle)
-                                .font(.footnote)
+                                .font(.dahliaSecondary)
                                 .foregroundStyle(.secondary)
                                 .lineLimit(1)
                         }
@@ -60,7 +60,7 @@ struct MainSidebarAccountMenuRow: View {
 
                 if showsDisclosure {
                     Image(systemName: "chevron.right")
-                        .font(.caption)
+                        .font(.dahliaSecondary)
                         .foregroundStyle(DahliaDesign.secondaryTextColor)
                         .accessibilityHidden(true)
                 } else if let selectionState {
@@ -82,7 +82,7 @@ struct MainSidebarAccountMenuRow: View {
                     minimum: .fixed(DahliaDesign.Highlight.compactCornerRadius)
                 ))
             )
-            .font(.body.bold())
+            .font(.dahliaBody.bold())
             .foregroundStyle(DahliaDesign.sidebarPrimaryTextColor)
         }
         .buttonStyle(.plain)

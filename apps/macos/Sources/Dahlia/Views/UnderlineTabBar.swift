@@ -24,10 +24,10 @@ struct UnderlineTabBar<Tab: Hashable & Identifiable>: View {
                     } label: {
                         ZStack {
                             Text(label(tab))
-                                .font(.body.weight(.semibold))
+                                .font(.dahliaBody.weight(.semibold))
                                 .hidden()
                             Text(label(tab))
-                                .font(isSelected ? .body.weight(.semibold) : .body)
+                                .font(isSelected ? .dahliaBody.weight(.semibold) : .dahliaBody)
                         }
                         .padding(.horizontal, DahliaDesign.tabHorizontalPadding)
                         .padding(.vertical, DahliaDesign.tabVerticalPadding)

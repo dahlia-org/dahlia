@@ -397,7 +397,7 @@ struct DocumentEditorView: View {
                 DisclosureGroup(L10n.documentPrivateLegacy) {
                     Text(model.legacyText).textSelection(.enabled).frame(maxWidth: .infinity, alignment: .leading)
                 }
-                .font(.callout)
+                .font(.dahliaBody)
             }
             if model.ready {
                 DocumentWebEditor(

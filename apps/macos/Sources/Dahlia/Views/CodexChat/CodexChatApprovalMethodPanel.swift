@@ -9,7 +9,7 @@ struct CodexChatApprovalMethodPanel: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
             Text(L10n.chatApprovalMethod)
-                .font(.body)
+                .font(.dahliaBody)
                 .foregroundStyle(DahliaDesign.optionalTextColor)
                 .padding(.horizontal, 10)
                 .padding(.bottom, 2)
@@ -37,12 +37,11 @@ enum CodexChatApprovalMethodPanelLayout {
     static let windowInset: CGFloat = 16
 
     static var preferredWidth: CGFloat {
-        let bodyFont = NSFont.preferredFont(forTextStyle: .body)
-        let calloutFont = NSFont.preferredFont(forTextStyle: .callout)
+        let font = NSFont.dahliaBody
         let widestTextWidth = CodexChatApprovalMethod.allCases.reduce(0) { width, method in
             let methodWidth = max(
-                textWidth(method.title, font: bodyFont),
-                textWidth(method.description, font: calloutFont)
+                textWidth(method.title, font: font),
+                textWidth(method.description, font: font)
             )
             return max(width, methodWidth)
         }

@@ -63,7 +63,6 @@ struct ContentView: View {
                             isShowingChat: isShowingFullScreenChat,
                             onNewChat: startNewFullScreenChat,
                             onOpenChatThread: openFullScreenChatThread,
-                            isShowingUnprocessedRecordings: isShowingUnprocessedRecordings,
                             onShowUnprocessedRecordings: showUnprocessedRecordings,
                             onCreateProject: presentProjectCreation,
                             onOpenProject: handleMeetingSidebarProjectAction,
@@ -79,7 +78,8 @@ struct ContentView: View {
                                 sidebarViewModel: sidebarViewModel,
                                 recordingCoordinator: recordingCoordinator,
                                 updateController: updateController,
-                                onSelectWorkspace: onSelectWorkspace
+                                onSelectWorkspace: onSelectWorkspace,
+                                onShowUnprocessedRecordings: showUnprocessedRecordings
                             )
                         }
                     }
@@ -624,7 +624,8 @@ private extension ContentView {
         } else {
             CalendarScheduleView(
                 onSelectEvent: recordingCoordinator.openCalendarEvent,
-                onJoinEvent: recordingCoordinator.openMeetingLink
+                onJoinEvent: recordingCoordinator.joinCalendarEventAndStartRecording,
+                canStartRecording: recordingCoordinator.canStartNewMeeting
             )
         }
     }
@@ -654,7 +655,7 @@ private extension ContentView {
     }
 
     private func showUnprocessedRecordings() {
-        mainWindowNavigation.recordNavigation(to: .unprocessedRecordings)
+        mainWindowNavigation.openUnprocessedRecordings()
         displayUnprocessedRecordings()
     }
 
@@ -664,8 +665,7 @@ private extension ContentView {
             onSelectWorkspace(workspace)
             guard sidebarViewModel.currentWorkspace?.id == workspaceID else { return }
         }
-        mainWindowNavigation.openUnprocessedRecordingsFromSettings()
-        displayUnprocessedRecordings()
+        showUnprocessedRecordings()
     }
 
     private func displayUpcomingSchedule() {

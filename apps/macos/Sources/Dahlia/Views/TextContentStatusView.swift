@@ -8,7 +8,7 @@ struct TextContentStatusView: View {
     var body: some View {
         HStack(spacing: 4) {
             if state == .loading { ProgressView().controlSize(.mini) }
-            Text(title).font(.caption).foregroundStyle(.secondary)
+            Text(title).font(.dahliaSecondary).foregroundStyle(.secondary)
             if [.missing, .failed, .stale].contains(state) {
                 Button(action: retry) { Image(systemName: "arrow.clockwise") }
                     .buttonStyle(.borderless)

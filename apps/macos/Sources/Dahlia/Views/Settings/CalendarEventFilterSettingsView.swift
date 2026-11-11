@@ -36,6 +36,7 @@ struct CalendarEventFilterSettingsView: View {
             .toggleStyle(.checkbox)
         } header: {
             Text(L10n.calendarEventsToInclude)
+                .font(.dahliaSectionHeader)
         } footer: {
             Text(L10n.calendarEventsToIncludeDescription)
         }

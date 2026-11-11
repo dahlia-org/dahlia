@@ -53,7 +53,8 @@ final class MainWindowNavigation {
     private(set) var setupTourMode: SetupTourMode?
     private(set) var sidebarWidth: CGFloat
     private(set) var chatSidebarWidth: CGFloat
-    /// The Appearance page's tab, kept here so a link can open the tab it names.
+    /// Settings tabs kept here so links can open the tab they name.
+    var agentSettingsTab = AgentSettingsView.Tab.general
     var appearanceTab = AppearanceSettingsView.Tab.general
     var settingsCategory: SettingsCategory {
         didSet {
@@ -225,6 +226,11 @@ final class MainWindowNavigation {
         isShowingDahliaSignIn = false
     }
 
+    func openAgentSettings(tab: AgentSettingsView.Tab) {
+        agentSettingsTab = tab
+        openSettings(category: .agents)
+    }
+
     func presentSettingsModal(_ modal: some View) {
         settingsModal = AnyView(modal)
     }
@@ -262,7 +268,7 @@ final class MainWindowNavigation {
         isShowingSettings = returnsToSettings
     }
 
-    func openUnprocessedRecordingsFromSettings() {
+    func openUnprocessedRecordings() {
         recordNavigation(to: .unprocessedRecordings)
         dismissSettings()
     }

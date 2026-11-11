@@ -8,12 +8,13 @@ struct DahliaMenuPicker<Value: Hashable>: View {
     let label: (Value) -> String
 
     var body: some View {
+        // Native pickers need a font on each option to style the selected title; the inherited font alone is ignored.
         Picker(selection: $selection) {
             if !options.contains(selection) {
-                Text(label(selection)).tag(selection).disabled(true)
+                Text(label(selection)).font(.dahliaBody).tag(selection).disabled(true)
             }
             ForEach(options, id: \.self) { option in
-                Text(label(option)).tag(option)
+                Text(label(option)).font(.dahliaBody).tag(option)
             }
         } label: {
             Text(title)
@@ -22,5 +23,6 @@ struct DahliaMenuPicker<Value: Hashable>: View {
             }
         }
         .pickerStyle(.menu)
+        .font(.dahliaBody)
     }
 }

@@ -5,7 +5,7 @@ struct ProjectCalendarNavigationControl: ViewModifier {
 
     func body(content: Content) -> some View {
         content
-            .font(.callout)
+            .font(.dahliaBody)
             .foregroundStyle(.secondary)
             .buttonStyle(.plain)
             .padding(.horizontal, 8)

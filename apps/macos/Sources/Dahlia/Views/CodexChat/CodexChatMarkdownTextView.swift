@@ -24,7 +24,7 @@ struct CodexChatMarkdownTextView: NSViewRepresentable {
 
         return CGSize(
             width: width,
-            height: max(measuredHeight, NSFont.preferredFont(forTextStyle: .body).pointSize)
+            height: max(measuredHeight, NSFont.dahliaBody.pointSize)
         )
     }
 }
@@ -359,10 +359,9 @@ enum CodexChatMarkdownTextDocument {
         to document: NSMutableAttributedString
     ) {
         let range = append(text, to: document)
-        let textStyle: NSFont.TextStyle = level == 1 ? .title3 : .headline
         document.addAttribute(
             .font,
-            value: NSFont.preferredFont(forTextStyle: textStyle),
+            value: level == 1 ? NSFont.dahliaTitle3 : NSFont.dahliaHeadline,
             range: range
         )
         applyParagraphStyle(to: document, range: range)
@@ -457,7 +456,7 @@ enum CodexChatMarkdownTextDocument {
         to document: NSMutableAttributedString
     ) {
         let range = append(AttributedString(text), to: document)
-        let bodyFont = NSFont.preferredFont(forTextStyle: .body)
+        let bodyFont = NSFont.dahliaBody
         document.addAttribute(
             .font,
             value: NSFont.monospacedSystemFont(ofSize: bodyFont.pointSize, weight: .regular),
@@ -500,7 +499,7 @@ enum CodexChatMarkdownTextDocument {
     ) {
         document.addAttribute(
             .font,
-            value: NSFont.preferredFont(forTextStyle: .body),
+            value: NSFont.dahliaBody,
             range: range
         )
     }
@@ -514,7 +513,7 @@ enum CodexChatMarkdownTextDocument {
             guard let rawValue = value as? NSNumber else { return }
             let intent = InlinePresentationIntent(rawValue: rawValue.uintValue)
             let currentFont = document.attribute(.font, at: range.location, effectiveRange: nil) as? NSFont
-                ?? NSFont.preferredFont(forTextStyle: .body)
+                ?? NSFont.dahliaBody
             var font = currentFont
 
             if intent.contains(.code) {

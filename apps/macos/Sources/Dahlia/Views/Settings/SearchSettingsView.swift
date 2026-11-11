@@ -44,6 +44,7 @@ struct SearchSettingsView: View {
                 }
             } header: {
                 Text(L10n.fullTextSearch)
+                    .font(.dahliaSectionHeader)
             } footer: {
                 Text(L10n.searchIndexDescription)
             }
@@ -68,11 +69,11 @@ struct SearchSettingsView: View {
                 if isAdvancedSettingsExpanded {
                     VStack(alignment: .leading) {
                         Text(L10n.searchRanking)
-                            .font(.headline)
+                            .font(.dahliaHeadline)
 
                         Picker(L10n.searchRankingPreset, selection: rankingPresetBinding) {
                             ForEach(MeetingSearchRankingPreset.allCases) { preset in
-                                Text(preset.displayName).tag(preset)
+                                Text(preset.displayName).font(.dahliaBody).tag(preset)
                             }
                         }
 
@@ -112,6 +113,7 @@ struct SearchSettingsView: View {
             }
         }
         .formStyle(.grouped)
+        .font(.dahliaBody)
         .onAppear {
             isAdvancedSettingsExpanded = false
             benchmark.loadStoredJudgments(workspaceID: settings.currentWorkspace?.id)
@@ -127,7 +129,7 @@ struct SearchSettingsView: View {
     private var benchmarkHeader: some View {
         HStack {
             Text(L10n.searchBenchmark)
-                .font(.headline)
+                .font(.dahliaHeadline)
             if benchmark.isRunning {
                 ProgressView()
                     .controlSize(.small)

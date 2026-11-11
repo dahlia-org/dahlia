@@ -27,7 +27,7 @@ struct CodexChatContextDivider: View {
                 .frame(height: 1)
                 .accessibilityHidden(true)
         }
-        .font(.body)
+        .font(.dahliaBody)
         .foregroundStyle(DahliaDesign.secondaryTextColor)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(accessibilityLabel)

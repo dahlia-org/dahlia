@@ -100,6 +100,7 @@ struct WorkspaceSettingsView: View {
         } header: {
             HStack {
                 Text(L10n.workspace)
+                    .font(.dahliaSectionHeader)
 
                 Spacer()
 
@@ -152,7 +153,7 @@ struct WorkspaceSettingsView: View {
                         }
                     }
                     Text(workspace.path ?? L10n.noLocalExportFolder)
-                        .font(.footnote)
+                        .font(.dahliaSecondary)
                         .foregroundStyle(DahliaDesign.secondaryTextColor)
                         .lineLimit(1)
                         .truncationMode(.middle)
@@ -172,7 +173,7 @@ struct WorkspaceSettingsView: View {
                 .disabled(workspace.accountConnectionId != nil || !canSwitchWorkspace)
                 if workspace.syncRecoveryState == "updateRequired" {
                     Label(L10n.workspaceSyncUpdateRequired, systemImage: "exclamationmark.triangle")
-                        .font(.caption).foregroundStyle(.orange)
+                        .font(.dahliaSecondary).foregroundStyle(.orange)
                 } else if model.blockedSyncWorkspaceIDs.contains(workspace.id) {
                     Image(systemName: "exclamationmark.triangle.fill")
                         .foregroundStyle(.orange)
@@ -183,7 +184,7 @@ struct WorkspaceSettingsView: View {
                         workspace.syncRecoveryState == "recovering" ? L10n.workspaceSyncRecovering : L10n.workspaceSyncRecoveryPending,
                         systemImage: "arrow.triangle.2.circlepath"
                     )
-                    .font(.caption).foregroundStyle(.secondary)
+                    .font(.dahliaSecondary).foregroundStyle(.secondary)
                 }
                 workspaceActions(for: workspace)
             }

@@ -17,9 +17,9 @@ struct CodexChatApprovalMethodRow: View {
 
                 VStack(alignment: .leading, spacing: 2) {
                     Text(method.title)
-                        .font(.body)
+                        .font(.dahliaBody)
                     Text(method.description)
-                        .font(.callout)
+                        .font(.dahliaBody)
                         .foregroundStyle(DahliaDesign.optionalTextColor)
                         .lineLimit(1)
                 }
