@@ -1,11 +1,12 @@
 import AppKit
 import SwiftUI
 
-/// Chat agent settings for the open account: how it runs Pi and with which providers (General), models, and its MCP
-/// servers. The tabs look like the meeting page's.
+/// AI settings for the open account: Pi, providers, generation preferences, models, and MCP servers.
 struct AgentSettingsView: View {
     enum Tab: String, CaseIterable, Identifiable {
         case general
+        case summary
+        case imageAnalysis
         case models
         case mcps
 
@@ -14,6 +15,8 @@ struct AgentSettingsView: View {
         var label: String {
             switch self {
             case .general: L10n.general
+            case .summary: L10n.settingsSummaryOutput
+            case .imageAnalysis: L10n.imageAnalysis
             case .models: L10n.agentModels
             case .mcps: L10n.agentMCPs
             }
@@ -78,6 +81,12 @@ private struct AgentSettingsTabs: View {
                     AgentRuntimeSection(provider: account)
                     AgentEnvironmentSection(model: launch)
                     AgentProviderSection(account: account, model: mcp, subscriptions: subscriptions, onAdd: presentProviderRegistration)
+                }
+                .formStyle(.grouped)
+                .font(.dahliaBody)
+            case .summary, .imageAnalysis:
+                Form {
+                    AccountProcessingSettingsView(target: navigation.agentSettingsTab == .summary ? .summary : .imageAnalysis)
                 }
                 .formStyle(.grouped)
                 .font(.dahliaBody)

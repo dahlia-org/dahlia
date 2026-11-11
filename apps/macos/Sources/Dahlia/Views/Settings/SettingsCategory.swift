@@ -46,7 +46,7 @@ enum SettingsCategory: String, CaseIterable, Identifiable {
         case .eventDisplay: L10n.appearanceEventDisplay
         case .workspace: L10n.manageWorkspaces
         case .permissions: L10n.permissions
-        case .backups: L10n.backups
+        case .backups: L10n.dataProtection
         case .search: L10n.search
         case .transcription: L10n.transcription
         case .recordingStopDetection: L10n.recordingStopDetection
@@ -77,7 +77,7 @@ enum SettingsCategory: String, CaseIterable, Identifiable {
         case .eventDisplay: "calendar"
         case .workspace: ProjectIcon.workspace.systemImageName
         case .permissions: "hand.raised"
-        case .backups: "externaldrive.badge.timemachine"
+        case .backups: "lock.shield"
         case .search: "magnifyingglass"
         case .transcription: "waveform.and.mic"
         case .recordingStopDetection: "stop.circle"
@@ -115,15 +115,11 @@ enum SettingsCategory: String, CaseIterable, Identifiable {
                 L10n.externalMicrophoneEchoCancellation,
                 L10n.automaticRecordingStop,
                 L10n.automaticMeetingEndRecordingStop,
-                L10n.serverContentRetention,
-                L10n.serverContentRetentionDays,
-                L10n.forever,
             ]
         case .accountPreferences:
             [
                 L10n.settingsSummaryOutput,
                 L10n.liveTranscriptDraft,
-                L10n.transcriptionModel,
                 L10n.summaryStyle,
                 L10n.model,
                 L10n.reasoningEffort,
@@ -150,6 +146,7 @@ enum SettingsCategory: String, CaseIterable, Identifiable {
                 "Anthropic",
                 "Claude",
             ]
+                + Self.accountPreferences.searchTerms + Self.macInference.searchTerms
                 + ["Gmail", "Google Calendar", "Google Drive", "Slack", "GitHub", "Atlassian", "Jira", "Confluence", "Microsoft 365"]
         case .workspace:
             [L10n.workspace, L10n.generatedContentLanguage, L10n.summaryOutputLanguage]
@@ -160,8 +157,7 @@ enum SettingsCategory: String, CaseIterable, Identifiable {
                 L10n.transcription,
                 L10n.transcriptionLanguage,
                 L10n.automaticDetectionLanguagesTitle,
-                L10n.batchAudioRetentionPeriod,
-                L10n.batchTranscriptionStallTimeout,
+                L10n.transcriptionModel,
                 L10n.export,
             ]
         case .liveSubtitles:
@@ -169,7 +165,6 @@ enum SettingsCategory: String, CaseIterable, Identifiable {
         case .screenshots:
             [
                 L10n.automaticScreenshots,
-                L10n.screenshotCacheLimit,
                 L10n.adaptiveScreenshotInterval,
                 L10n.screenshotInterval,
                 L10n.sharedContent,
@@ -193,7 +188,19 @@ enum SettingsCategory: String, CaseIterable, Identifiable {
             [L10n.accountPreferences, L10n.macInferencePreferences]
                 + Self.accountPreferences.searchTerms + Self.macInference.searchTerms
         case .backups:
-            [L10n.workspace, L10n.createBackup, L10n.importBackup, L10n.restoreBackup]
+            [
+                L10n.screenshotCacheLimit,
+                L10n.backups,
+                L10n.workspace,
+                L10n.createBackup,
+                L10n.importBackup,
+                L10n.restoreBackup,
+                L10n.serverContentRetention,
+                L10n.serverContentRetentionDays,
+                L10n.forever,
+                L10n.batchAudioRetentionPeriod,
+                L10n.batchTranscriptionStallTimeout,
+            ]
         case .search:
             [L10n.fullTextSearch, L10n.searchRanking, L10n.rebuildFullTextSearch]
         default: []

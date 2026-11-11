@@ -17,8 +17,8 @@ enum SettingsNavigation {
         switch selection {
         case .language, .recordingStopDetection:
             .general
-        case .dahliaAccounts, .accountPreferences, .macInference, .modelProvider, .aiSummary, .instructions, .mcp:
-            .accountsAndWorkspaces
+        case .accountsAndWorkspaces, .dahliaAccounts, .accountPreferences, .macInference, .modelProvider, .aiSummary, .instructions, .mcp:
+            .agents
         case .workspacePreferences:
             .workspace
         case .eventDisplay:

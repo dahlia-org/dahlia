@@ -48,7 +48,7 @@ struct SettingsDetailView: View {
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
         .onChange(of: selection) { _, selection in
-            if selection != .accountsAndWorkspaces { mainWindowNavigation.dismissDahliaSignIn() }
+            if selection != .agents { mainWindowNavigation.dismissDahliaSignIn() }
         }
     }
 
@@ -59,20 +59,11 @@ struct SettingsDetailView: View {
             GeneralSettingsView()
         case .appearance, .eventDisplay:
             AppearanceSettingsView()
-        case .accountsAndWorkspaces, .dahliaAccounts, .accountPreferences, .macInference, .modelProvider, .aiSummary, .mcp:
-            // Accounts are chosen from the sidebar's account menu; this page holds the open account's model settings. Its
-            // providers, such as the Local Account's subscriptions, are under Agents.
-            Form {
-                AccountProcessingSettingsView()
-                    .id(appSettings.currentWorkspace.map(WorkspaceAccountChoice.init))
-            }
-            .formStyle(.grouped)
-            .font(.dahliaBody)
-            .onChange(of: dahliaAccountController.connections) {
-                Task { await workspaceManagementModel.loadWorkspaces() }
-            }
-        case .agents:
+        case .accountsAndWorkspaces, .dahliaAccounts, .accountPreferences, .macInference, .modelProvider, .aiSummary, .mcp, .agents:
             AgentSettingsView()
+                .onChange(of: dahliaAccountController.connections) {
+                    Task { await workspaceManagementModel.loadWorkspaces() }
+                }
         case .workspace, .workspacePreferences:
             Form {
                 WorkspaceSettingsView(
@@ -94,7 +85,7 @@ struct SettingsDetailView: View {
         case .permissions:
             PermissionSettingsView()
         case .backups:
-            BackupSettingsView(
+            DataProtectionSettingsView(
                 dbQueue: sidebarViewModel.dbQueue,
                 captionViewModel: captionViewModel,
                 onShowUnprocessedRecordings: onShowUnprocessedRecordings
@@ -125,7 +116,7 @@ struct SettingsDetailView: View {
         case .accountsAndWorkspaces: L10n.settingsAccountsIntro
         case .agents: L10n.settingsAgentsIntro
         case .workspace: L10n.settingsWorkspaceManagementIntro
-        case .backups: L10n.backupLocalWorkspacesOnly
+        case .backups: L10n.settingsDataProtectionIntro
         default: L10n.thisMacSettingsDescription
         }
     }

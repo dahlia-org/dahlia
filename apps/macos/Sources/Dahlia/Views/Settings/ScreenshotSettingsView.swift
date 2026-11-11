@@ -1,10 +1,8 @@
-import DahliaMeetingAccess
 import SwiftUI
 
 /// 設定画面「スクリーンショット」タブ。自動スクリーンショット取得を管理する。
 struct ScreenshotSettingsView: View {
     @ObservedObject private var settings = AppSettings.shared
-    @AppStorage(ScreenshotFileStore.budgetDefaultsKey) private var screenshotCacheGiB = 2
 
     var body: some View {
         Form {
@@ -64,20 +62,8 @@ struct ScreenshotSettingsView: View {
                 Text(L10n.sharedContentDetectionFallbackDescription)
             }
 
-            Section {
-                Picker(L10n.screenshotCacheLimit, selection: $screenshotCacheGiB) {
-                    ForEach([1, 2, 5, 10], id: \.self) { size in
-                        Text("\(size) GiB").font(.dahliaBody).tag(size)
-                    }
-                }
-            } footer: {
-                Text(L10n.screenshotCacheDescription)
-            }
         }
         .formStyle(.grouped)
         .font(.dahliaBody)
-        .task(id: screenshotCacheGiB) {
-            await ScreenshotContentProvider.shared.trimCache()
-        }
     }
 }

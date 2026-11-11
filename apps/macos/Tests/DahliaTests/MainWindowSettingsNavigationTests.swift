@@ -76,6 +76,36 @@
         }
 
         @Test
+        func inferenceAndMCPLinksOpenDahliaAITabs() {
+            let navigation = MainWindowNavigation(openMainWindow: {}, initialSettingsCategory: .general)
+            navigation.openSettings(category: .accountsAndWorkspaces)
+            #expect(navigation.settingsCategory == .agents)
+            #expect(navigation.agentSettingsTab == .summary)
+
+            navigation.openSettings(category: .mcp)
+            #expect(navigation.settingsCategory == .agents)
+            #expect(navigation.agentSettingsTab == .mcps)
+
+            navigation.openSettings(category: .aiSummary)
+            #expect(navigation.agentSettingsTab == .summary)
+
+            navigation.agentSettingsTab = .imageAnalysis
+            navigation.openSettings()
+            #expect(navigation.agentSettingsTab == .imageAnalysis)
+        }
+
+        @Test(arguments: [SettingsCategory.agents, .modelProvider, .macInference, .dahliaAccounts])
+        func setupLinksOpenGeneralFromEveryAITab(category: SettingsCategory) {
+            let navigation = MainWindowNavigation(openMainWindow: {}, initialSettingsCategory: .general)
+            for previousTab in AgentSettingsView.Tab.allCases {
+                navigation.agentSettingsTab = previousTab
+                navigation.openSettings(category: category)
+                #expect(navigation.settingsCategory == .agents)
+                #expect(navigation.agentSettingsTab == .general)
+            }
+        }
+
+        @Test
         func openingSettingsPublishesPresentationBeforeOpeningMainWindow() {
             var observedPresentation = false
             var navigation: MainWindowNavigation?

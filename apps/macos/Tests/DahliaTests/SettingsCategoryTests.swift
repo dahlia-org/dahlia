@@ -9,7 +9,7 @@ import Foundation
     struct SettingsCategoryTests {
         @Test
         func accountAndWorkspacePreferencesHaveSeparateDestinations() {
-            #expect(SettingsGroup.account.categories == [.workspace, .accountsAndWorkspaces, .agents, .calendar])
+            #expect(SettingsGroup.account.categories == [.workspace, .agents, .calendar])
             // Calendar sources are per account; how events are shown and opened applies to the whole app.
             #expect(SettingsGroup.app.categories.contains(.appearance))
             #expect(SettingsGroup.app.categories.contains(.meetingLinks))
@@ -22,8 +22,8 @@ import Foundation
             #expect(SettingsCategory.meetingLinks.matches(L10n.meetingLinkApplications))
             #expect(!SettingsCategory.appearance.matches(L10n.meetingLinkApplications))
             #expect(SettingsCategory.agents.matches("Gmail"))
-            #expect(SettingsNavigation.visibleSelection(.accountPreferences) == .accountsAndWorkspaces)
-            #expect(SettingsNavigation.visibleSelection(.macInference) == .accountsAndWorkspaces)
+            #expect(SettingsNavigation.visibleSelection(.accountPreferences) == .agents)
+            #expect(SettingsNavigation.visibleSelection(.macInference) == .agents)
             #expect(!SettingsGroup.app.categories.contains(.macInference))
             #expect(SettingsCategory.accountPreferences.label == L10n.accountPreferences)
             #expect(SettingsNavigation.visibleSelection(.workspacePreferences) == .workspace)
@@ -36,6 +36,7 @@ import Foundation
         func groupsContainEveryCategoryOnce() {
             let groupedCategories = SettingsGroup.allCases.flatMap(\.categories)
             let hiddenCategories: Set<SettingsCategory> = [
+                .accountsAndWorkspaces,
                 .accountPreferences,
                 .workspacePreferences,
                 .macInference,
@@ -83,12 +84,12 @@ import Foundation
             #expect(SettingsNavigation.visibleSelection(.appearance) == .appearance)
             #expect(SettingsNavigation.visibleSelection(.eventDisplay) == .appearance)
             #expect(SettingsNavigation.visibleSelection(.recordingStopDetection) == .general)
-            #expect(SettingsNavigation.visibleSelection(.instructions) == .accountsAndWorkspaces)
-            #expect(SettingsNavigation.visibleSelection(.mcp) == .accountsAndWorkspaces)
-            #expect(SettingsNavigation.visibleSelection(.aiSummary) == .accountsAndWorkspaces)
-            #expect(SettingsNavigation.visibleSelection(.dahliaAccounts) == .accountsAndWorkspaces)
+            #expect(SettingsNavigation.visibleSelection(.instructions) == .agents)
+            #expect(SettingsNavigation.visibleSelection(.mcp) == .agents)
+            #expect(SettingsNavigation.visibleSelection(.aiSummary) == .agents)
+            #expect(SettingsNavigation.visibleSelection(.dahliaAccounts) == .agents)
             #expect(SettingsNavigation.visibleSelection(.workspace) == .workspace)
-            #expect(SettingsNavigation.visibleSelection(.modelProvider) == .accountsAndWorkspaces)
+            #expect(SettingsNavigation.visibleSelection(.modelProvider) == .agents)
             #expect(SettingsNavigation.visibleSelection(.calendar) == .calendar)
 
             let visible = Set(SettingsGroup.allCases.flatMap(\.categories))
@@ -102,30 +103,36 @@ import Foundation
             #expect(SettingsCategory.appearance.matches(L10n.appLanguage))
             #expect(SettingsCategory.appearance.matches(L10n.sidebarDisplayStyle))
             #expect(SettingsCategory.general.matches(L10n.appLanguages))
-            #expect(SettingsCategory.transcription.matches(L10n.batchAudioRetentionPeriod))
+            #expect(!SettingsCategory.transcription.matches(L10n.batchAudioRetentionPeriod))
+            #expect(SettingsCategory.backups.matches(L10n.batchAudioRetentionPeriod))
+            #expect(SettingsCategory.backups.matches(L10n.batchTranscriptionStallTimeout))
+            #expect(SettingsCategory.backups.matches(L10n.backups))
+            #expect(SettingsCategory.backups.matches(L10n.screenshotCacheLimit))
+            #expect(!SettingsCategory.screenshots.matches(L10n.screenshotCacheLimit))
             #expect(!SettingsCategory.transcription.matches(L10n.liveTranscriptDraft))
-            #expect(!SettingsCategory.transcription.matches(L10n.transcriptionModel))
-            #expect(SettingsCategory.accountsAndWorkspaces.matches(L10n.liveTranscriptDraft))
-            #expect(SettingsCategory.accountsAndWorkspaces.matches(L10n.transcriptionModel))
+            #expect(SettingsCategory.transcription.matches(L10n.transcriptionModel))
+            #expect(SettingsCategory.agents.matches(L10n.liveTranscriptDraft))
             #expect(SettingsCategory.general.matches(L10n.automaticRecordingStop))
             #expect(SettingsCategory.general.matches(L10n.externalMicrophoneEchoCancellation))
-            #expect(SettingsCategory.general.matches(L10n.serverContentRetention))
-            #expect(SettingsCategory.general.matches(L10n.serverContentRetentionDays))
-            #expect(SettingsCategory.general.matches(L10n.forever))
+            #expect(!SettingsCategory.general.matches(L10n.serverContentRetention))
+            #expect(SettingsCategory.backups.matches(L10n.serverContentRetention))
+            #expect(!SettingsCategory.general.matches(L10n.serverContentRetentionDays))
+            #expect(SettingsCategory.backups.matches(L10n.serverContentRetentionDays))
+            #expect(!SettingsCategory.general.matches(L10n.forever))
+            #expect(SettingsCategory.backups.matches(L10n.forever))
             #expect(SettingsCategory.liveSubtitles.matches(L10n.translationTargetLanguage))
-            #expect(SettingsCategory.accountsAndWorkspaces.matches("  chatGPT \n "))
+            #expect(SettingsCategory.agents.matches("  chatGPT \n "))
             #expect(SettingsCategory.calendar.matches("google"))
-            #expect(SettingsCategory.accountsAndWorkspaces.matches(L10n.automaticRecordingProcessing))
-            #expect(SettingsCategory.accountsAndWorkspaces.matches(L10n.accountPreferences))
-            #expect(SettingsCategory.accountsAndWorkspaces.matches(L10n.summaryStyle))
+            #expect(SettingsCategory.agents.matches(L10n.automaticRecordingProcessing))
+            #expect(SettingsCategory.agents.matches(L10n.summaryStyle))
             #expect(SettingsCategory.accountPreferences.matches(L10n.imageAnalysis))
             #expect(SettingsCategory.accountPreferences.matches(L10n.imageAnalysisEnabled))
-            #expect(SettingsCategory.accountsAndWorkspaces.matches(L10n.imageAnalysis))
-            #expect(SettingsCategory.accountsAndWorkspaces.matches(L10n.imageAnalysisEnabled))
-            #expect(SettingsCategory.accountsAndWorkspaces.matches(L10n.modelProvider))
+            #expect(SettingsCategory.agents.matches(L10n.imageAnalysis))
+            #expect(SettingsCategory.agents.matches(L10n.imageAnalysisEnabled))
+            #expect(SettingsCategory.agents.matches(L10n.modelProvider))
             #expect(SettingsCategory.general.matches(" \n "))
             #expect(!SettingsCategory.general.matches("not-a-setting"))
-            #expect(!SettingsCategory.accountsAndWorkspaces.matches("ChatGPT not-a-setting"))
+            #expect(!SettingsCategory.agents.matches("ChatGPT not-a-setting"))
         }
 
         @Test
@@ -138,14 +145,14 @@ import Foundation
 
             defaults.set(SettingsCategory.instructions.rawValue, forKey: SettingsNavigation.selectedCategoryDefaultsKey)
 
-            #expect(SettingsNavigation.savedSelection(in: defaults) == .accountsAndWorkspaces)
+            #expect(SettingsNavigation.savedSelection(in: defaults) == .agents)
 
             defaults.set(SettingsCategory.dahliaAccounts.rawValue, forKey: SettingsNavigation.selectedCategoryDefaultsKey)
-            #expect(SettingsNavigation.savedSelection(in: defaults) == .accountsAndWorkspaces)
+            #expect(SettingsNavigation.savedSelection(in: defaults) == .agents)
 
             for category in [SettingsCategory.accountPreferences, .macInference, .modelProvider] {
                 defaults.set(category.rawValue, forKey: SettingsNavigation.selectedCategoryDefaultsKey)
-                #expect(SettingsNavigation.savedSelection(in: defaults) == .accountsAndWorkspaces)
+                #expect(SettingsNavigation.savedSelection(in: defaults) == .agents)
             }
 
             defaults.set(SettingsCategory.recordingStopDetection.rawValue, forKey: SettingsNavigation.selectedCategoryDefaultsKey)
