@@ -53,6 +53,7 @@ actor PiChatService: CodexChatServicing {
 
     private let runtime: PiRuntimeService
     private let workingDirectory: PiWorkingDirectory
+    private let piExecutableURL: @Sendable (CodexRuntimeProvider) throws -> URL
     private let agentLocator: PiAgentDirectoryLocator
     private let mcpExecutableURL: URL?
     private let mcpSettings: @Sendable (CodexRuntimeProvider) -> AgentMCPSettings
@@ -69,12 +70,14 @@ actor PiChatService: CodexChatServicing {
     init(
         runtime: PiRuntimeService = .shared,
         workingDirectory: PiWorkingDirectory = PiWorkingDirectory(),
+        piExecutableURL: @escaping @Sendable (CodexRuntimeProvider) throws -> URL = { try PiBundle.executableURL(for: $0) },
         agentLocator: PiAgentDirectoryLocator = PiAgentDirectoryLocator(),
         mcpExecutableURL: URL? = nil,
         mcpSettings: @escaping @Sendable (CodexRuntimeProvider) -> AgentMCPSettings = { AgentMCPSettings.load(for: $0) }
     ) {
         self.runtime = runtime
         self.workingDirectory = workingDirectory
+        self.piExecutableURL = piExecutableURL
         self.agentLocator = agentLocator
         self.mcpExecutableURL = mcpExecutableURL
         self.mcpSettings = mcpSettings
@@ -398,7 +401,7 @@ actor PiChatService: CodexChatServicing {
         let processID = UUID.v7()
         let provider = try await runtime.currentProvider()
         let workURL = try workingDirectory.url(for: provider)
-        let piURL = try PiBundle.executableURL(for: provider)
+        let piURL = try piExecutableURL(provider)
         let environment = ProcessInfo.processInfo.environment
             .merging(PiLaunchSettings.load(for: provider).environment { _ in nil }) { $1 }
         guard !PiWorkingDirectory.holdsCommands(

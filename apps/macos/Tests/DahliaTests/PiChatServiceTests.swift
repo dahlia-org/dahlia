@@ -28,6 +28,8 @@ import Synchronization
             let chat = PiChatService(
                 runtime: pi.service,
                 workingDirectory: PiWorkingDirectory(override: pi.rootURL.appending(path: "work")),
+                // The test machine may have no pi; the launcher is a stand-in anyway.
+                piExecutableURL: { _ in URL(fileURLWithPath: "/bin/sh") },
                 agentLocator: PiAgentDirectoryLocator(applicationSupportURL: pi.rootURL),
                 mcpExecutableURL: URL(filePath: "/usr/bin/true"),
                 mcpSettings: { _ in AgentMCPSettings() }
@@ -129,6 +131,8 @@ import Synchronization
             let chat = PiChatService(
                 runtime: pi.service,
                 workingDirectory: PiWorkingDirectory(override: pi.rootURL.appending(path: "work")),
+                // The test machine may have no pi; the launcher is a stand-in anyway.
+                piExecutableURL: { _ in URL(fileURLWithPath: "/bin/sh") },
                 agentLocator: PiAgentDirectoryLocator(applicationSupportURL: pi.rootURL),
                 mcpExecutableURL: URL(filePath: "/usr/bin/true"),
                 mcpSettings: { _ in AgentMCPSettings() }
@@ -274,6 +278,8 @@ import Synchronization
             let chat = PiChatService(
                 runtime: pi.service,
                 workingDirectory: PiWorkingDirectory(override: pi.rootURL.appending(path: "work")),
+                // The test machine may have no pi; the launcher is a stand-in anyway.
+                piExecutableURL: { _ in URL(fileURLWithPath: "/bin/sh") },
                 agentLocator: PiAgentDirectoryLocator(applicationSupportURL: pi.rootURL),
                 mcpExecutableURL: URL(filePath: "/usr/bin/true")
             )
@@ -322,6 +328,8 @@ import Synchronization
             let chat = PiChatService(
                 runtime: pi.service,
                 workingDirectory: PiWorkingDirectory(override: pi.rootURL.appending(path: "work")),
+                // The test machine may have no pi; the launcher is a stand-in anyway.
+                piExecutableURL: { _ in URL(fileURLWithPath: "/bin/sh") },
                 agentLocator: PiAgentDirectoryLocator(applicationSupportURL: pi.rootURL),
                 mcpExecutableURL: URL(filePath: "/usr/bin/true"),
                 mcpSettings: { _ in registered.withLock { $0 } }
@@ -432,6 +440,8 @@ import Synchronization
             let chat = PiChatService(
                 runtime: pi.service,
                 workingDirectory: PiWorkingDirectory(override: pi.rootURL.appending(path: "work")),
+                // The test machine may have no pi; the launcher is a stand-in anyway.
+                piExecutableURL: { _ in URL(fileURLWithPath: "/bin/sh") },
                 agentLocator: PiAgentDirectoryLocator(applicationSupportURL: pi.rootURL),
                 mcpExecutableURL: URL(filePath: "/usr/bin/true")
             )
@@ -559,6 +569,8 @@ import Synchronization
             let chat = PiChatService(
                 runtime: pi.service,
                 workingDirectory: PiWorkingDirectory(override: pi.rootURL.appending(path: "work")),
+                // The test machine may have no pi; the launcher is a stand-in anyway.
+                piExecutableURL: { _ in URL(fileURLWithPath: "/bin/sh") },
                 agentLocator: PiAgentDirectoryLocator(applicationSupportURL: pi.rootURL),
                 mcpExecutableURL: URL(filePath: "/usr/bin/true"),
                 mcpSettings: { _ in
