@@ -63,6 +63,7 @@ struct MainSidebarUpcomingEventsSection: View {
                     onOpenMeetingLink: { onOpenMeetingLink(event) },
                     onSetAutoRecording: { calendarAutoRecordingStore.setEnabled($0, for: event) }
                 )
+                .listRowInsets(.vertical, 1.5)
                 .listRowSeparator(.hidden)
             }
 
@@ -75,6 +76,7 @@ struct MainSidebarUpcomingEventsSection: View {
                 .font(.dahliaBody)
             }
             .buttonStyle(.plain)
+            .listRowInsets(.vertical, 1.5)
             .listRowSeparator(.hidden)
             .help(L10n.calendarScheduleTitle)
             .accessibilityAddTraits(isShowingSchedule ? .isSelected : [])
