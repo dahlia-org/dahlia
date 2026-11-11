@@ -1826,7 +1826,7 @@
 "settings.agents.piCommand" = "Pi コマンド";
 "settings.agents.piCommandInUse" = "使用するコマンド";
 "settings.agents.workingDirectory" = "作業フォルダ";
-"settings.agents.workingDirectory.notAllowed" = "作業フォルダには、ホームフォルダとライブラリの外にあるフォルダ、またはホームフォルダの中のフォルダを、フルパスか ~ で始まるパスで指定してください。";
+"settings.agents.workingDirectory.notAllowed" = "作業フォルダには、フルパスか ~ で始まるパスを指定してください。ホームフォルダ自身、それを含むフォルダ、ライブラリの中、コマンドの置き場所（PATH のフォルダ）を含むフォルダは指定できません。";
 "settings.agents.workingDirectory.help" = "Dahlia AI がチャットでファイルを作成・変更できる、この Mac 上のただ一つのフォルダです。変更は次に始めるチャットの処理から反映されます。";
 "No executable pi command at %@. Check the path in Settings > Agents." = "%@ に実行できる pi コマンドがありません。設定の「Dahlia AI」でパスを確認してください。";
 "Pi is not installed. Install it, or set its path, in Settings > Agents." = "Pi がインストールされていません。設定の「Dahlia AI」でインストールするか、パスを指定してください。";

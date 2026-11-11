@@ -22,6 +22,16 @@ struct PiWorkingDirectory: Sendable {
             && folder != library && !folder.hasPrefix(library + "/")
     }
 
+    /// Whether the folder is, or contains, a folder on the search path Pi is found and started with. Chat could
+    /// replace `pi` there, or put a command in front of the one Pi means to run, and it would run outside the sandbox.
+    nonisolated static func holdsCommands(_ folder: URL, searchPath: String) -> Bool {
+        let folder = PiSandbox.realPath(folder)
+        return searchPath.split(separator: ":").contains { entry in
+            let entry = PiSandbox.realPath(URL(fileURLWithPath: String(entry)))
+            return entry == folder || entry.hasPrefix(folder + "/")
+        }
+    }
+
     /// Tests keep chat out of the home folder.
     var override: URL?
 

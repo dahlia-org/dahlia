@@ -172,7 +172,7 @@ schema だけで生成する。外した制約は Dahlia 側で守る（要約�
 
 チャットは作業フォルダで動く（2026-11-11 ユーザー承認）。作業フォルダは「エージェント」>「一般」でアカウントごとに設定し（`piWorkingDirectory.<local またはアカウント ID>`）、
 既定は `~/Dahlia`（development profile は `~/Dahlia-Development`）。チャットが自由に書けるので、sandbox の外で実行されるもの（shell の設定、ホームの下に入れた tool と Pi、app の設定）を含むフォルダは指定できない:
-ホームフォルダ自身、それを含むフォルダ、`~/Library` とその中、相対 path は、チャットの起動時に拒否する。`~/Documents` は macOS がアクセス許可を求め、iCloud に同期されうるので使わない。フォルダはなければ作る。
+ホームフォルダ自身、それを含むフォルダ、`~/Library` とその中、相対 path、Pi を探して起動するときの PATH の folder を含むフォルダ（`pi` を置き換えたり、`node` より先に見つかるコマンドを置いたりできる）は、チャットの起動時に拒否する。`~/Documents` は macOS がアクセス許可を求め、iCloud に同期されうるので使わない。フォルダはなければ作る。
 Pi は thread を session file の header の `cwd` で動かすので、Dahlia は thread を開き直す前に header の `cwd` を今の作業フォルダに書き換える。設定の変更は次に起動する chat process から効く。
 以前の `Application Support/<profile>/CodexChatWorkspace/<Workspace ID>` は使わず、削除もしない。
 

@@ -1826,7 +1826,7 @@
 "settings.agents.piCommand" = "Pi command";
 "settings.agents.piCommandInUse" = "Command in use";
 "settings.agents.workingDirectory" = "Working folder";
-"settings.agents.workingDirectory.notAllowed" = "Set the working folder to a full path, or one that starts with ~, that is neither the home folder, a folder that contains it, nor inside Library.";
+"settings.agents.workingDirectory.notAllowed" = "Set the working folder to a full path, or one that starts with ~. It cannot be the home folder, a folder that contains it, inside Library, or a folder that holds commands (a PATH folder).";
 "settings.agents.workingDirectory.help" = "The only folder on this Mac where Dahlia AI can create and change files in chat. A change applies to chat processes started afterward.";
 "No executable pi command at %@. Check the path in Settings > Agents." = "No executable pi command at %@. Check the path in Settings > Dahlia AI.";
 "Pi is not installed. Install it, or set its path, in Settings > Agents." = "Pi is not installed. Install it, or set its path, in Settings > Dahlia AI.";

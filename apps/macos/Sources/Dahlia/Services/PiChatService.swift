@@ -398,6 +398,12 @@ actor PiChatService: CodexChatServicing {
         let processID = UUID.v7()
         let provider = try await runtime.currentProvider()
         let workURL = try workingDirectory.url(for: provider)
+        let piURL = try PiBundle.executableURL(for: provider)
+        let environment = ProcessInfo.processInfo.environment
+            .merging(PiLaunchSettings.load(for: provider).environment { _ in nil }) { $1 }
+        guard !PiWorkingDirectory.holdsCommands(
+            workURL, searchPath: CommandLineToolLocator.searchPath(for: piURL, environment: environment)
+        ) else { throw CodexAppServerError.launchFailed(L10n.agentWorkingDirectoryNotAllowed) }
         // Pi runs a thread in the folder its session file names, so an older thread moves to the folder set now.
         if let sessionFile { try PiChatSessionFiles.setWorkingDirectory(workURL, in: sessionFile) }
         let mcpCommand = try Self.mcpCommand(
@@ -438,7 +444,7 @@ actor PiChatService: CodexChatServicing {
                     "DAHLIA_PI_SANDBOX": String(decoding: JSONEncoder().encode(
                         PiSandbox.command(
                             cwd: workURL, agentURL: agentLocator.agentURL(for: provider),
-                            piExecutableURL: PiBundle.executableURL(for: provider)
+                            piExecutableURL: piURL
                         )
                     ), as: UTF8.self),
                     "DAHLIA_PI_SANDBOX_HIDDEN_ENV": String(decoding: JSONEncoder().encode(secretNames), as: UTF8.self),

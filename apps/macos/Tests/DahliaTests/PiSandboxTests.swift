@@ -116,6 +116,12 @@ import Foundation
             #expect(!allowed("/Users/u/Library") && !allowed("/Users/u/Library/Application Support/Dahlia"))
             #expect(!allowed("/Users/u/Dahlia/../../u") && !allowed("Dahlia"))
 
+            // A folder that holds commands Dahlia starts outside the sandbox: chat could replace `pi` or shadow `node`.
+            let tools = URL(fileURLWithPath: "/usr/local")
+            #expect(PiWorkingDirectory.holdsCommands(tools, searchPath: "/opt/x/bin:/usr/local/bin"))
+            #expect(PiWorkingDirectory.holdsCommands(tools.appending(path: "bin"), searchPath: "/usr/local/bin"))
+            #expect(!PiWorkingDirectory.holdsCommands(tools.appending(path: "share"), searchPath: "/opt/x/bin:/usr/local/bin"))
+
             // The folder is judged again as the path Seatbelt will see, so a link to a refused folder is refused too.
             let defaults = try #require(UserDefaults(suiteName: "PiSandboxTests.\(UUID())"))
             let link = FileManager.default.temporaryDirectory.appending(path: "PiSandboxTests-\(UUID())")
