@@ -58,6 +58,7 @@ actor PiChatService: CodexChatServicing {
     private let piExecutableURL: @Sendable (CodexRuntimeProvider) throws -> URL
     private let agentLocator: PiAgentDirectoryLocator
     private let mcpExecutableURL: URL?
+    private let reviewModel: @Sendable (CodexRuntimeProvider) -> String
     private let mcpSettings: @Sendable (CodexRuntimeProvider) -> AgentMCPSettings
     private var sessions: [String: Session] = [:]
     private var opening: [String: Task<PiRPCConnection, any Error>] = [:]
@@ -75,6 +76,7 @@ actor PiChatService: CodexChatServicing {
         piExecutableURL: @escaping @Sendable (CodexRuntimeProvider) throws -> URL = { try PiBundle.executableURL(for: $0) },
         agentLocator: PiAgentDirectoryLocator = PiAgentDirectoryLocator(),
         mcpExecutableURL: URL? = nil,
+        reviewModel: @escaping @Sendable (CodexRuntimeProvider) -> String = { AgentAutoReviewSettings.model(for: $0) },
         mcpSettings: @escaping @Sendable (CodexRuntimeProvider) -> AgentMCPSettings = { AgentMCPSettings.load(for: $0) }
     ) {
         self.runtime = runtime
@@ -83,6 +85,7 @@ actor PiChatService: CodexChatServicing {
         self.agentLocator = agentLocator
         self.mcpExecutableURL = mcpExecutableURL
         self.mcpSettings = mcpSettings
+        self.reviewModel = reviewModel
     }
 
     func models(forceRefresh: Bool) async throws -> [CodexModel] {
@@ -590,6 +593,10 @@ actor PiChatService: CodexChatServicing {
 
     private func answer(_ method: String, payload: JSONValue, threadID: String, processID: UUID) async -> JSONValue {
         let isLive = sessions[threadID]?.processID == processID
+        if method == "reviewModel" {
+            guard isLive, let provider = sessions[threadID]?.provider else { return .string("") }
+            return .string(reviewModel(provider))
+        }
         if method == "approvalMode" {
             // Fail closed when the process no longer owns the thread.
             return .string(isLive ? sessions[threadID]?.approvalMethod?.rawValue ?? "ask" : "ask")
@@ -701,7 +708,10 @@ actor PiChatService: CodexChatServicing {
             guard let server = object["server"]?.stringValue, let tool = object["tool"]?.stringValue else { return nil }
             return try? CodexChatApprovalNormalizer.request(
                 id: id,
-                params: ["availableDecisions": .array([.string("accept"), .string("decline")])],
+                params: [
+                    "availableDecisions": .array([.string("accept"), .string("decline")]),
+                    "reason": object["reason"] ?? .null,
+                ],
                 kind: .mcpToolCall,
                 fileChanges: [],
                 mcpToolCall: CodexChatApprovalNormalizer.boundedMCPToolCall(

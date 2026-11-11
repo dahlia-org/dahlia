@@ -1419,12 +1419,7 @@
 "Search index ready" = "Ready";
 "Search index failed" = "Unavailable";
 "Search index error format" = "Indexing error: %@";
-"Approval method" = "How should ChatGPT actions be approved?";
 "Change permissions" = "Change permissions";
-"Ask for approval" = "Ask for approval";
-"Ask before changing Dahlia data. Chat runs commands and changes files in its working folder without asking." = "Ask before changing Dahlia data. Chat runs commands and changes files in its working folder without asking.";
-"Review approvals" = "Approve for me";
-"Change Dahlia data without asking. Chat also runs commands and changes files in its working folder without asking." = "Change Dahlia data without asking. Chat also runs commands and changes files in its working folder without asking.";
 "Could not update the approval method: %@" = "Could not update the approval method: %@";
 "Set Up Dahlia" = "Set Up Dahlia";
 "Version %@" = "Version %@";
@@ -1808,7 +1803,7 @@
 "settings.agents.mcpServiceWithServerName %@ %@" = "%1$@ (%2$@)";
 "settings.agents.unityGatewayHost %@" = "Unity Gateway (%@)";
 "settings.agents.workspaceURL" = "Workspace URL";
-"settings.agents.mcps" = "MCPs";
+"settings.agents.mcps" = "Connector";
 "settings.agents.databricksUnityGateway" = "Databricks (Unity Gateway)";
 "settings.agents.mcpLoadingServices" = "Loading Unity AI Gateway MCPs…";
 "settings.agents.mcpNoServices" = "This workspace's Unity AI Gateway (system.ai) has no MCPs you can use.";
@@ -1832,8 +1827,6 @@
 "Pi %@ is the latest version." = "Pi %@ is the latest version.";
 "Could not download Pi. Check your network connection and try again." = "Could not download Pi. Check your network connection and try again.";
 
-"MCP servers" = "MCP servers";
-"No MCP servers registered." = "No MCP servers registered.";
 
 "settings.dataProtection" = "Data Protection";
 "settings.dataProtection.intro" = "Manage data retention and recovery on this Mac. Backups cover Local Account workspaces.";
@@ -1849,6 +1842,22 @@
 "settings.agents.mcpServiceNameHelp" = "Enter catalog.schema.service, such as main.default.notion.";
 
 "settings.agents.mcpServiceNameInvalid" = "Enter three names separated by dots (catalog.schema.service), using letters, digits, _ or -.";
+"Always ask" = "Always ask";
+"Ask with AI" = "Ask with AI";
+"Skip all approvals" = "Skip all approvals";
+"Confirm before making changes or sending content." = "Confirm before making changes or sending content.";
+"Ask only about potentially unsafe actions." = "Ask only about potentially unsafe actions.";
+"Run without asking. Use with caution." = "Run without asking. Use with caution.";
+"File operations run in a sandbox and cannot access files outside the allowed scope." = "File operations run in a sandbox and cannot access files outside the allowed scope.";
+"Approval method" = "How should MCP actions be approved?";
+
+"Auto review" = "Auto review";
+"Reviewer model" = "Reviewer model";
+"Same as chat" = "Same as chat";
+"Used when AI reviews MCP actions. Reviews send chat history and the planned action to this model and incur additional usage. Changes apply to the next review." = "Used when AI reviews MCP actions. Reviews send chat history and the planned action to this model and incur additional usage. Changes apply to the next review.";
+
+"No connectors registered." = "No connectors registered.";
+"Connector settings" = "Connector settings";
 
 "chat.toolRunning %@" = "Running %@…";
 "chat.toolSucceeded %@" = "%@ completed. Waiting for a response…";

@@ -2,11 +2,13 @@ import CoreGraphics
 
 enum CodexChatAddPanelLayout {
     static let coordinateSpaceName = "CodexChatContent"
+    static let submenuSpacing: CGFloat = 4
     private static let inset: CGFloat = 8
     private static let below: CGFloat = CodexChatDesign.controlSize + CodexChatDesign.floatingPanelSpacing
 
-    static func width(windowBounds: CGRect) -> CGFloat {
-        windowBounds.width > 0 ? min(280, windowBounds.width - inset * 2) : 280
+    static func width(windowBounds: CGRect, showsSubmenu: Bool = false) -> CGFloat {
+        let availableWidth = windowBounds.width > 0 ? max(0, windowBounds.width - inset * 2) : 564
+        return min(280, showsSubmenu ? max(0, availableWidth - submenuSpacing) / 2 : availableWidth)
     }
 
     static func maximumHeight(windowBounds: CGRect) -> CGFloat {

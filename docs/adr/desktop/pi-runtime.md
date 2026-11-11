@@ -72,7 +72,7 @@ extension は `read`・`ls`・`write`・`edit`・`bash` を Pi の `create*Tool`
 sandbox の引数は Dahlia が `DAHLIA_PI_SANDBOX` で渡す。引数がないとき、または呼ばれる tool が Pi の built-in のまま（extension の登録が置き換えていない）のときは、5つの tool を拒否する。
 本当のホームは読めないので、`git` などの設定は一時フォルダに置かれ、ホームの下に入れた tool（uv・nvm・pyenv など）は sandbox の中では動かない。sandbox の中の環境からは、利用者が「環境変数」で秘密にした変数（`DAHLIA_PI_SANDBOX_HIDDEN_ENV`）を除く。
 作業フォルダはチャットが書けるので、Pi がそこから設定を読まないことが前提になる。Pi は `--no-approve` で project の設定（`.pi/mcp.json` など）を無視する。
-Dahlia MCP は Pi の子のままで、コマンドは SQLite に書けず MCP にも届かないので、Dahlia のデータの変更は承認を通る MCP の tool だけが行う。
+Dahlia MCP は Pi の子のままで、コマンドは SQLite に書けず MCP にも届かないので、Dahlia のデータの変更は上記の承認方式に従う MCP の tool だけが行う。
 Pi の codemode（未有効）の script は Pi の process 内の QuickJS で動き、file system も network も持たない。script が呼ぶ tool には同じ制限（Seatbelt と MCP の承認）が掛かる。
 
 - 要約・画像解析・画像選別・モデル一覧・サインインは操作ごとに `pi --mode rpc --no-session --no-tools` を起動し、終了・取消・610秒期限で閉じる。自動再送はしない。
@@ -134,11 +134,11 @@ Dahlia account は切替時に Server の URL だけを記録し（network 不�
 `models.json` に書く（一覧を取るのはサインイン済みの workspace だけ）。`models.json` を書くたびに Gateway の項目をまとめて作り直し、
 「プロバイダー」から外したときも書き直すので、外した workspace の項目は（サインアウトに失敗しても）すぐに消え、Gateway 以外の項目（Dahlia account の `dahlia`）は残る。
 
-「エージェント」>「モデル」タブは Unity Gateway があるアカウント（Databricks アカウントか、Databricks を追加したアカウント）にだけ出し、
-Gateway ごとのモデルを「MCP」タブと同じくプロバイダーの行の下に折りたたんで並べ、モデルごとのスイッチでオン・オフする。
+「エージェント」>「モデル」タブは全アカウントに表示し、Auto review の審査モデルを選べる。
+Unity Gateway があるアカウント（Databricks アカウントか、Databricks を追加したアカウント）では、Gateway ごとのモデルも「コネクター」タブと同じくプロバイダーの行の下に折りたたんで並べ、モデルごとのスイッチでオン・オフする。
 サブスクリプションと Dahlia account のモデルは対象外。Pi の `models.json` には
 モデルごとの有効・無効の項目がなく（`settings.json` の `enabledModels` は起動時の選択と切替の範囲だけで、`get_available_models` からは外さない）、
-タブは実質的に `models.json` の編集画面になる。オンのモデルだけを `models.json` に書くので、Pi が知るのもチャット・要約・画像解析が選べるのもそれだけになる。
+この有効・無効の設定は `models.json` を編集する。オンのモデルだけを `models.json` に書くので、Pi が知るのもチャット・要約・画像解析が選べるのもそれだけになる。
 選択は `provider/id` ごとに app defaults（`agentGatewayModels.<account>`）に記録し、選択のないモデルは既定に従う。既定はオフで、Databricks アカウント
 自身の Gateway の、`models` で `onByDefault` を付けたモデル（Claude Haiku 5.5）だけがオン（その Gateway が Haiku を出さないときは先頭のモデル）。オンにしていたモデルを Gateway が出さなくなって自身の Gateway で
 オンが1つもなくなるときは、この既定のモデルをオンとして扱い、設定の表示と `models.json` は同じ結果を使う。「プロバイダー」に追加した workspace は
@@ -182,30 +182,44 @@ Pi に渡す tool は `read`・`ls`・`write`・`edit`・`bash`・`mcp__dahlia__
 5つの tool の範囲は上の Seatbelt の表のとおりで、範囲内は確認なしで動く。system prompt には SQLite と画像の保存先の path を含め、`sqlite3 -readonly` で参照できる。
 実行中のターンでは、直近の tool 名と実行中・完了・失敗・アクセス不可の状態を入力欄の上に表示し、終了結果の受信後はモデルの応答待ちと明示する。引数と出力本文はこの状態表示に含めず、回答本文の受信またはターン終了時に消す。アクセス制限を受けた同じ path の再試行や sandbox の回避をせず、制約を説明して参照可能な情報から続けるよう system prompt で指示する。
 
-| 選択 | read / ls / write / edit / bash | Dahlia MCP | Unity AI Gateway の MCP |
-| --- | --- | --- | --- |
-| 承認を求める | 範囲内は確認なし | 読み取り（`get`・`query`・`list`・`search`）以外は承認 | server が `readOnlyHint` を付けた tool 以外は承認 |
-| 代わりに承認 | 範囲内は確認なし | 確認なし | 確認なし |
+| 選択 | read / ls / write / edit / bash | 登録済み MCP の変更操作 |
+| --- | --- | --- |
+| 常に確認する（Supervised） | Seatbelt の範囲内は確認なし | 毎回ユーザーに確認 |
+| AIにより確認する（Auto review） | 同上 | `pi-auto-review` が審査し、許可できない操作・審査失敗はユーザーに確認。critical 判定は実行を拒否 |
+| すべての承認をスキップ（Full access） | 同上 | 確認なし |
 
-MCP の tool は、Dahlia がその chat に登録した server（Dahlia MCP とアカウントに登録した server。`DAHLIA_PI_MCP_SERVERS`）のものだけを通し、それ以外の server の tool は承認方式にかかわらず拒否する。承認の表示で承認できるのもこれらの server だけとする。
-gateway MCP の tool が読み取りかどうかは、server が付けた `readOnlyHint` をそのまま使う（2026-11-07 ユーザー承認）。
+2026-11-12: MCP の承認を上の3段階にする。Full access でも Seatbelt を解除せず、ファイルやコマンドのアクセス範囲は広がらない。
+MCP の tool は Dahlia がその chat に登録した server（Dahlia MCP とアカウントに登録した server。`DAHLIA_PI_MCP_SERVERS`）だけを通し、
+それ以外はどの選択でも拒否する。Dahlia MCP の `get`・`query`・`list`・`search` と、gateway MCP の `readOnlyHint` が true の tool は確認・審査なし。
+MCP の読み取り結果も untrusted data として扱う。
 
-承認方式は Dahlia が保持する。extension は、表で承認が要る MCP tool（Dahlia MCP・gateway MCP とも）を呼ぶたびに bridge で承認方式を問い合わせる（turn 中の変更も次の呼び出しから効く。不明なら「承認を求める」）。
-Codex 時代のフルアクセスは提供しない。承認方式は Pi の session file に残さず、新しい thread も開き直した thread も「承認を求める」で始まる。
+`pi-auto-review` はコミット `b7822c1a1cdc52513a0d1f5bd342288a005fbdd2` のソース・package metadata・MIT license を
+`PiExtension/pi-auto-review` にそのまま同梱する。既定 extension は登録せず、Dahlia の MCP gate が公開された `review` 関数を使う。
+審査モデルは「エージェント」>「モデル」>「Auto review」で実行アカウントごとに指定し、`autoReviewModel.<local またはアカウント ID>` に保存する。
+空の選択（既定）は審査時点のチャットモデルを使う。変更は起動済みのチャットでも次の審査から効き、`PI_AUTO_REVIEW_MODEL` や Pi 側のモデル指定より優先する。
+既定の reasoning effort は high。審査は追加のモデル呼び出しになり、その provider に履歴と予定操作を渡す。任意の triage classifier は使わない。
+会議 context と live transcript は審査履歴でも user の承認として扱わない。予定操作が128,000文字を超えた場合も審査せずユーザーに確認し、
+既存の承認表示上限を超える操作は許可しない。審査の期限・再試行・取消は upstream に従う。否認・失敗の理由を承認画面で表示する。
+
+承認方式は Dahlia が保持し、extension は MCP の変更操作ごとに bridge で問い合わせる（turn 中の変更も次の呼び出しから効く。不明なら「常に確認する」）。
+Pi の session file に承認方式を保存しない。新しい thread も開き直した thread も「常に確認する」で始まり、確認省略を引き継がない。
 承認の表示は既存の上限（20 KB など）で切り詰め、取消・停止は未応答の承認を cancel してから abort する。
-Codex の auto_review と web search、`request_user_input` は Pi にないため提供しない。
+Codex の web search、`request_user_input` は Pi にないため提供しない。
+
+チャットの追加メニューも「コネクター」と表示し、選択時は元のメニューを残して右側に一覧と設定への入口を開く。
+狭い画面では両パネルの幅を調整し、外側クリックまたは Esc で閉じる。
 
 ### Unity AI Gateway の MCP
 
 採否は[エージェントによる MCP 経由の外部サービス操作](agent-mcp-operations.md)に従う。
-開いているアカウントに、「エージェント」>「一般」の「プロバイダー」で Databricks の workspace（sign-in）を追加し、「MCP」タブで
+開いているアカウントに、「エージェント」>「一般」の「プロバイダー」で Databricks の workspace（sign-in）を追加し、「コネクター」タブで
 その workspace の MCP server を登録する（2026-11-09 ユーザー承認）。「プロバイダー」には、アカウント自身のモデルのサインインも並べる。モデルの
 workspace と MCP の workspace が異なることが多いため、MCP 用の workspace はアカウントとは別にサインインする。Databricks アカウントでは、
 モデルと同じアカウント自身の workspace の MCP も選べ、その server は `auth.provider` にアカウントの bridged provider（`databricks`）を指定して
 アカウントの token を使う。一覧も `/databricks-mcp-services <URL> --provider databricks` でその token で取り、ここではサインインもサインアウトも
 しない。この workspace は最初の server と一緒に保存し、最後の server を外すと消す。登録は Local Account・Databricks
 アカウント・Dahlia account のどれでもでき、アカウントごとに app defaults（`agentMCPs.<local またはアカウント ID>`）に保存する。
-Unity Gateway の MCP は登録の操作を要さない（2026-11-09 ユーザー承認）。「MCP」タブは、アカウント自身の workspace と「プロバイダー」で
+Unity Gateway の MCP は登録の操作を要さない（2026-11-09 ユーザー承認）。「コネクター」タブは、アカウント自身の workspace と「プロバイダー」で
 追加した Databricks を折りたたみ可能な見出しとして並べ、その下に MCP service を2列のカードで表示する。一覧は中央の設定カラムに収め、カードには名前と API の `comment` を表示し、検索は説明も対象にする。各 MCP service のカード右上にトグルを置き、有効な MCP だけ、その左に小型の円形の認証表示と処理中のキャンセルを表示する。プロバイダーのサインインは「一般」の「プロバイダー」で行う。オンにすると server を登録し、オフにすると外す。
 各 provider のすべてのサービスカードの後に「MCP サーバーを追加」カードを置く。`main.default.notion` のような完全名を入力すると有効なカードとして追加し、無効化後も一覧に残す。追加用カードは常に最後に表示する。
 
@@ -240,7 +254,7 @@ sign-in は利用者の操作でだけ始める。workspace を登録すると�
 チャットは Pi の通知（接続後の notice と、sign-in を求める tool の失敗）を thread の process ごとに覚え、turn のたびに「設定でサインインし直す」
 よう表示する。Pi は `auth.provider` の server を sign-in の後に自動で接続し直さないため、sign-in が終わるとそのアカウントのチャットの process
 を閉じ、次の turn で開き直す。設定は `auth.json` の key だけを読んでサインイン済みかを示す。server を削除しても sign-in は残し、workspace を削除すると、その server もまとめて消してから `/dahlia-logout <provider>` で credential を消す（Pi は provider が登録されていなくても消せる。Pi が動かず消せなくても登録は消し、失敗を示す）。MCP の裏にある
-サービスの接続（GitHub など、利用者ごとの OAuth）へのサインインは、「MCP」タブの各 service のカード右上のサインインアイコンで始める。
+サービスの接続（GitHub など、利用者ごとの OAuth）へのサインインは、「コネクター」タブの各 service のカード右上のサインインアイコンで始める。
 Databricks SQL・Sandbox・Genie One・Web Search（`system.ai.dbsql`・`sandbox`・`genie_one_mcp`・`web_search`）は workspace のサインインを使うので、追加認証の表示と状態確認の対象にしない。接続先の認証状態は、有効化している追加認証対象の MCP だけを対象に、Beta の `GET /api/2.1/unity-catalog/mcp-services/<service>/user-credentials` で一覧取得時・有効化時・サインイン完了後に確認する（`--enabled` で対象の service 名だけを Pi に渡す）。`provisioning_info.state` が `ACTIVE` のときだけクリック操作のない円形の緑のチェックバッジを表示し、それ以外の状態または `NOT_FOUND` はサインインが必要として示す。API 非対応・権限不足・通信失敗は未確認として表示する。未認証・未確認のときは円形のサインインボタンを表示し、無効な MCP には認証表示を出さない。無効化したら進行中のサインインも取り消す。状態は Pi から列挙結果に添え、token や有効期限は渡さず、アプリ終了後に再利用する設定にも保存しない。トグルはその MCP の利用設定を表し、認証状態とは独立する。
 control process の `/databricks-connection-login <workspace URL> <service>` が、その service の URL を `resource`（RFC 8707）
 に付けた認可要求をブラウザで開き、workspace が接続のサインインを済ませてから返す認可コードは token に交換しない（workspace の sign-in は

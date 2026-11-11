@@ -4,6 +4,7 @@ import Foundation
 enum CodexChatApprovalMethod: String, CaseIterable, Identifiable, Sendable {
     case ask
     case autoReview
+    case fullAccess
 
     var id: String { rawValue }
 
@@ -11,6 +12,7 @@ enum CodexChatApprovalMethod: String, CaseIterable, Identifiable, Sendable {
         switch self {
         case .ask: L10n.chatApprovalAsk
         case .autoReview: L10n.chatApprovalAutoReview
+        case .fullAccess: L10n.chatApprovalFullAccess
         }
     }
 
@@ -18,6 +20,7 @@ enum CodexChatApprovalMethod: String, CaseIterable, Identifiable, Sendable {
         switch self {
         case .ask: L10n.chatApprovalAskDescription
         case .autoReview: L10n.chatApprovalAutoReviewDescription
+        case .fullAccess: L10n.chatApprovalFullAccessDescription
         }
     }
 
@@ -25,6 +28,7 @@ enum CodexChatApprovalMethod: String, CaseIterable, Identifiable, Sendable {
         switch self {
         case .ask: "hand.raised"
         case .autoReview: "checkmark.shield"
+        case .fullAccess: "exclamationmark.shield"
         }
     }
 }

@@ -33,7 +33,7 @@ actor PiRuntimeService {
         let isAuthenticated: Bool
     }
 
-    /// Answers the chat extension's `approval` and `approvalMode` requests.
+    /// Answers the chat extension's approval and reviewer-model requests.
     typealias ChatBridge = PiRPCConnection.Bridge
     typealias Launcher = @Sendable (LaunchOptions, CodexRuntimeProvider, URL) throws -> any CodexAppServerTransport
     typealias TokenResolver = @Sendable (CodexRuntimeProvider) async throws -> String
@@ -107,8 +107,8 @@ actor PiRuntimeService {
                     // Callers defer work and skip error reporting for this case, as they did for Codex's auth command.
                     throw CodexAppServerError.providerAuthenticationFailed(error.localizedDescription)
                 }
-            case "approval", "approvalMode":
-                guard let chatBridge else { return .string(method == "approval" ? "decline" : "ask") }
+            case "approval", "approvalMode", "reviewModel":
+                guard let chatBridge else { return .string(method == "approval" ? "decline" : method == "reviewModel" ? "" : "ask") }
                 return try await chatBridge(method, payload)
             default:
                 throw CodexAppServerError.invalidProtocolResponse
@@ -165,7 +165,7 @@ actor PiRuntimeService {
         try await models(for: currentProvider(), forceRefresh: forceRefresh)
     }
 
-    private func models(for provider: CodexRuntimeProvider, forceRefresh: Bool) async throws -> [CodexModel] {
+    func models(for provider: CodexRuntimeProvider, forceRefresh: Bool) async throws -> [CodexModel] {
         let models = try await listedModels(provider, forceRefresh: forceRefresh)
         if models.isEmpty, provider.accountConnectionID == nil { throw CodexAppServerError.notLoggedIn }
         guard contextStore.provider == provider else { throw CodexConfigurationError.providerChanged(provider.displayName) }

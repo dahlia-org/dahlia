@@ -21,6 +21,12 @@ struct CodexChatApprovalMethodPanel: View {
                     action: { select(method) }
                 )
             }
+
+            Text(L10n.chatApprovalSandboxScope)
+                .font(.dahliaSecondary)
+                .foregroundStyle(DahliaDesign.optionalTextColor)
+                .padding(.horizontal, 10)
+                .padding(.top, 6)
         }
         .padding(10)
         .frame(width: width, alignment: .leading)

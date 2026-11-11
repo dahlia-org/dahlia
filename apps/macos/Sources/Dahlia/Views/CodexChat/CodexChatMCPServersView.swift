@@ -2,18 +2,16 @@ import SwiftUI
 
 struct CodexChatMCPServersView: View {
     let settings: AgentMCPSettings
-    let onBack: () -> Void
     let onOpenSettings: () -> Void
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
-            CodexChatConfigurationRow(
-                title: L10n.chatMCPServers,
-                isSelected: false,
-                leadingSystemImage: "chevron.left",
-                action: onBack
-            )
-            .accessibilityLabel("\(L10n.back), \(L10n.chatMCPServers)")
+            Text(L10n.agentMCPs)
+                .font(.dahliaBody)
+                .foregroundStyle(DahliaDesign.secondaryTextColor)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .frame(height: CodexChatDesign.configurationRowHeight)
+                .padding(.horizontal, 10)
 
             if settings.servers.isEmpty {
                 Text(L10n.chatNoMCPServers)
@@ -45,7 +43,7 @@ struct CodexChatMCPServersView: View {
             }
 
             CodexChatConfigurationRow(
-                title: L10n.mcpSettings,
+                title: L10n.chatConnectorSettings,
                 isSelected: false,
                 leadingSystemImage: "gearshape",
                 action: onOpenSettings

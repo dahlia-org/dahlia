@@ -43,16 +43,19 @@ struct CodexChatComposer: View {
                 CodexChatComposerInputRow(
                     session: session,
                     configurationPresentation: configurationPresentation,
-                    addPanel: showsAddPanel ? CodexChatAddPanel(
-                        showsMeetingPicker: showsMeetingPicker,
-                        meetingReferences: suggestions,
-                        highlightedMeetingID: highlightedMeetingID,
-                        mcpSettings: mcpSettings,
-                        onAttachImages: showImageImporter,
-                        onAddMeetingReference: showMeetingPicker,
-                        onSelectMeeting: selectMeeting,
-                        onOpenMCPSettings: openMCPSettings
-                    ) : nil,
+                    addPanel: showsAddPanel ? { bounds in
+                        CodexChatAddPanel(
+                            windowBounds: bounds,
+                            showsMeetingPicker: showsMeetingPicker,
+                            meetingReferences: suggestions,
+                            highlightedMeetingID: highlightedMeetingID,
+                            mcpSettings: mcpSettings,
+                            onAttachImages: showImageImporter,
+                            onAddMeetingReference: showMeetingPicker,
+                            onSelectMeeting: selectMeeting,
+                            onOpenMCPSettings: openMCPSettings
+                        )
+                    } : nil,
                     onDismissAddPanel: dismissAddPanel,
                     isComposerFocused: $isComposerFocused,
                     onToggleAddPanel: toggleAddPanel,

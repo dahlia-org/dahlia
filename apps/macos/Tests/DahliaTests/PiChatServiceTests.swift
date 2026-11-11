@@ -32,6 +32,7 @@ import Synchronization
                 piExecutableURL: { _ in URL(fileURLWithPath: "/bin/sh") },
                 agentLocator: PiAgentDirectoryLocator(applicationSupportURL: pi.rootURL),
                 mcpExecutableURL: URL(filePath: "/usr/bin/true"),
+                reviewModel: { _ in "reviewer/test-model" },
                 mcpSettings: { _ in AgentMCPSettings() }
             )
             Task {
@@ -256,6 +257,12 @@ import Synchronization
             #expect(await mode("m1") == #""ask""#)
             _ = try await fixture.chat.updateApprovalMethod(threadID: thread.id, approvalMethod: .autoReview)
             #expect(await mode("m2") == #""autoReview""#)
+            _ = try await fixture.chat.updateApprovalMethod(threadID: thread.id, approvalMethod: .fullAccess)
+            #expect(await mode("m3") == #""fullAccess""#)
+            await fixture.chatTransport.emit(TestPiTransport.bridgeRequest(id: "review-model", method: "reviewModel", payload: .object([:])))
+            let modelResponse = await fixture.chatTransport.command { $0["id"]?.stringValue == "review-model" }
+            let modelValue = try #require(modelResponse["value"]?.stringValue)
+            #expect(try JSONDecoder().decode(String.self, from: Data(modelValue.utf8)) == "reviewer/test-model")
 
             let prompt = await fixture.chatTransport.command { $0["type"]?.stringValue == "prompt" }
             #expect(prompt["message"]?.stringValue == "/dahlia-approval autoReview")
@@ -440,7 +447,8 @@ import Synchronization
             let written = FileManager.default.contents(atPath: mcpJSON.path).map { String(decoding: $0, as: UTF8.self) } ?? ""
             #expect(written.contains("system.ai.gmail"))
             let entries = try JSONDecoder().decode(JSONValue.self, from: Data(written.utf8)).objectValue?["mcpServers"]?.objectValue
-            #expect(entries?["notion"]?.objectValue?["url"] == .string("https://example.cloud.databricks.com/ai-gateway/mcp-services/main.default.notion"))
+            #expect(entries?["notion"]?
+                .objectValue?["url"] == .string("https://example.cloud.databricks.com/ai-gateway/mcp-services/main.default.notion"))
             #expect(entries?["notion"]?.objectValue?["auth"]?.objectValue?["provider"] == .string(provider.id))
             #expect(written.contains(#""provider":"example.cloud.databricks.com""#))
         }
@@ -647,6 +655,18 @@ import Synchronization
             // The chat clears the report at `.started`, so it must follow that event.
             let started = try #require(second.firstIndex { if case .started = $0 { true } else { false } })
             #expect(second.dropFirst(started + 1).first == .mcpSignInRequired(servers: ["gmail", "slack"]))
+        }
+
+        @Test
+        func aiReviewReasonIsShownWithTheMCPCall() throws {
+            let request = try #require(PiChatService.approvalRequest(id: "review", payload: .object([
+                "kind": .string("mcpToolCall"), "server": .string("dahlia"),
+                "tool": .string("update_meeting"), "arguments": .object(["title": .string("New title")]),
+                "reason": .string("AI review requires your approval: external side effect"),
+            ])))
+            #expect(request.reason == "AI review requires your approval: external side effect")
+            #expect(request.mcpTool == "update_meeting")
+            #expect(request.canApprove)
         }
 
         @Test

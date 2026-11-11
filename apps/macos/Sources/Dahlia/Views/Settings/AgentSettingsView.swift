@@ -52,14 +52,6 @@ private struct AgentSettingsTabs: View {
         _subscriptions = State(initialValue: account == .local ? PiSubscription.allCases.map { CodexAccountController(subscription: $0) } : [])
     }
 
-    /// Models are set only for Unity AI Gateways: a Databricks account's own and the workspaces added under General.
-    /// Subscriptions and the Dahlia Server list their own.
-    private var tabs: [AgentSettingsView.Tab] {
-        if case .databricks = account { return AgentSettingsView.Tab.allCases }
-        return mcp.settings.providers.contains { !$0.isAccount } ? AgentSettingsView.Tab.allCases : AgentSettingsView.Tab.allCases
-            .filter { $0 != .models }
-    }
-
     var body: some View {
         @Bindable var navigation = navigation
         VStack(spacing: 0) {
@@ -68,7 +60,12 @@ private struct AgentSettingsTabs: View {
                 Section {
                     EmptyView()
                 } header: {
-                    UnderlineTabBar(tabs: tabs, selection: $navigation.agentSettingsTab, label: \.label, accessibilityLabel: L10n.agents)
+                    UnderlineTabBar(
+                        tabs: AgentSettingsView.Tab.allCases,
+                        selection: $navigation.agentSettingsTab,
+                        label: \.label,
+                        accessibilityLabel: L10n.agents
+                    )
                 }
             }
             .formStyle(.grouped)
@@ -100,8 +97,6 @@ private struct AgentSettingsTabs: View {
             await mcp.refreshSignInState()
             await mcp.loadAccountProvider()
         }
-        // Removing the last added workspace takes the Models tab away.
-        .onChange(of: tabs, initial: true) { if !tabs.contains(navigation.agentSettingsTab) { navigation.agentSettingsTab = .general } }
         .onDisappear { navigation.dismissSettingsModal() }
     }
 
@@ -588,6 +583,7 @@ private struct AgentModelSettingsView: View {
 
     var body: some View {
         Form {
+            AgentAutoReviewSettingsSection(account: account)
             ForEach(mcp.selectableProviders) { provider in
                 let providerModels = models[provider.id] ?? []
                 Section {

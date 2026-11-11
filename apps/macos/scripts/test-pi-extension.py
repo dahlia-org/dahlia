@@ -286,6 +286,14 @@ def gateway(script, requests):
             requests.append({"auth": self.headers.get("Authorization"),
                              "tags": self.headers.get("Databricks-Ai-Gateway-Request-Tags"), "body": body})
             step = script[min(len(requests) - 1, len(script) - 1)]
+            if "error" in step:
+                body = json.dumps({"error": {"message": step["error"]}}).encode()
+                self.send_response(401)
+                self.send_header("Content-Type", "application/json")
+                self.send_header("Content-Length", str(len(body)))
+                self.end_headers()
+                self.wfile.write(body)
+                return
             if "redirect" in step:
                 self.send_response(307)
                 self.send_header("Location", step["redirect"])
@@ -368,7 +376,7 @@ def run(pi, mode, script, arguments, environment, approval="accept", approval_mo
             if record.get("type") == "extension_ui_request" and record.get("title", "").startswith("dahlia:"):
                 method = record["title"].removeprefix("dahlia:")
                 bridge.append((method, json.loads(record["placeholder"])))
-                answers = {"token": "synthetic-token", "approvalMode": approval_mode, "approval": approval}
+                answers = {"token": "synthetic-token", "approvalMode": approval_mode, "reviewModel": "", "approval": approval}
                 send({"type": "extension_ui_response", "id": record["id"], "value": json.dumps(answers[method])})
             elif record.get("type") == "tool_execution_end":
                 tool_results.append("".join(part.get("text", "") for part in record["result"]["content"]))
@@ -508,8 +516,32 @@ def main():
         assert results == ["MCP_OK"], results
         _, results, _, _ = chat({"tool": "mcp__dahlia__update_meeting"}, approval="decline")
         assert "declined" in results[0], results
-        _, results, bridge, _ = chat({"tool": "mcp__dahlia__update_meeting"}, approval_mode="autoReview")
+        _, results, bridge, _ = chat({"tool": "mcp__dahlia__update_meeting"}, approval_mode="fullAccess")
         assert results == ["MCP_OK"] and not any(method == "approval" for method, _ in bridge), (results, bridge)
+
+        # Auto review uses the account's provider and a real review request before any MCP mutation.
+        for risk, outcome in [("low", "allow"), ("high", "deny"), ("critical", "deny"), ("unknown", "deny")]:
+            verdict = json.dumps({"risk_level": risk, "user_authorization": "low", "outcome": outcome, "rationale": "REVIEW_MARKER"})
+            steps = [{"tool": "mcp__dahlia__update_meeting", "args": {"title": "reviewed"}}, {"text": verdict}]
+            if risk == "unknown":
+                # A permanent failure (no retry) falls back to the human, never silently allows.
+                steps[1] = {"error": "invalid API key"}
+            requests, results, bridge, _ = chat(*steps, approval_mode="autoReview", approval="decline")
+            approvals = [payload for method, payload in bridge if method == "approval"]
+            assert len(requests) == 3, (risk, requests)
+            assert requests[1]["auth"] == "Bearer synthetic-token", requests[1]
+            assert "planned tool call" in json.dumps(requests[1]["body"]), requests[1]
+            assert requests[1]["body"]["text"]["format"]["type"] == "json_schema", requests[1]
+            if outcome == "allow":
+                assert results == ["MCP_OK"] and not approvals, (results, bridge)
+            elif risk == "critical":
+                assert "critical" in results[0] and not approvals, (results, bridge)
+            else:
+                assert "declined" in results[0] and approvals[0]["reason"].startswith("MCP AI review"), (results, bridge)
+        _, results, bridge, _ = chat({"tool": "mcp__dahlia__update_meeting"},
+                                    {"text": json.dumps({"risk_level": "high", "user_authorization": "low", "outcome": "deny", "rationale": "Ask the user"})},
+                                    approval_mode="autoReview", approval="accept")
+        assert results == ["MCP_OK"] and any(method == "approval" for method, _ in bridge), (results, bridge)
 
     # Every model API Dahlia configures for a bridged provider gets the account's token.
     # The Databricks templates' APIs, plus the Dahlia Server's (OpenAI Responses).
@@ -646,7 +678,7 @@ def main():
     assert [(p["server"], p["tool"]) for p in approvals] == [("gmail", "send_message")], bridge
     assert "declined" in results[0], results
     # A server Dahlia did not register stays blocked even if its tools get past --tools.
-    _, results, bridge, _ = gateway_chat({"tool": "mcp__foreign__search_messages"}, approval_mode="autoReview",
+    _, results, bridge, _ = gateway_chat({"tool": "mcp__foreign__search_messages"}, approval_mode="fullAccess",
                                          arguments=["--no-session", *CHAT_EXTENSIONS, "--tools", "read,mcp__gmail__*,mcp__foreign__*"])
     assert "not available" in results[0] and "GATEWAY_OK" not in results[0], results
 
