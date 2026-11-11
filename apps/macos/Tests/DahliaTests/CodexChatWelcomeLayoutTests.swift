@@ -6,6 +6,36 @@
 
     @MainActor
     struct CodexChatWelcomeLayoutTests {
+        @Test(arguments: [true, false])
+        func sidePanelKeepsTheNewChatComposerAtTheBottom(isSidePanel: Bool) throws {
+            let coordinator = CodexChatCoordinator(service: TestCodexChatService(mode: .complete), settings: AppSettings())
+            let view = CodexChatView(
+                session: coordinator.dockedSession,
+                coordinator: coordinator,
+                meetingReferences: [],
+                meetingCatalogWorkspaceID: nil,
+                isMeetingCatalogLoaded: true,
+                showsHistory: .constant(false),
+                onNewChat: {}, onOpenHistory: { _ in }, onShowFullScreen: nil, onPopOut: nil,
+                reservesSidebarToggle: false, reservesWindowControls: false, headerLeadingInset: 0,
+                contentMaxWidth: nil,
+                isSidePanel: isSidePanel
+            )
+            .environment(MainWindowNavigation(openMainWindow: {}, initialSettingsCategory: .general))
+            let host = NSHostingView(rootView: view)
+            host.frame = NSRect(x: 0, y: 0, width: 420, height: 800)
+            host.layoutSubtreeIfNeeded()
+
+            func textEditor(in view: NSView) -> NSTextView? {
+                (view as? NSTextView) ?? view.subviews.lazy.compactMap(textEditor(in:)).first
+            }
+            let editor = try #require(textEditor(in: host))
+            let frame = host.convert(editor.bounds, from: editor)
+            // AppKit's origin is at the bottom of a non-flipped host.
+            let distanceFromBottom = host.isFlipped ? host.bounds.maxY - frame.maxY : frame.minY
+            #expect((distanceFromBottom < 120) == isSidePanel)
+        }
+
         @Test(arguments: [CGSize(width: 1000, height: 760), CGSize(width: 420, height: 360), CGSize(width: 320, height: 600)], [false, true])
         func newChatKeepsTheComposerInsideItsViewport(size: CGSize, hasLongDraft: Bool) throws {
             let suite = "CodexChatWelcomeLayoutTests.\(UUID())"

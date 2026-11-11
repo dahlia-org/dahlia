@@ -34,6 +34,19 @@ import SwiftUI
         }
 
         @Test
+        func baseSizeFollowsTheAppearanceSettingAndIgnoresUnlistedSizes() throws {
+            let suiteName = "DahliaTypographyTests-\(UUID().uuidString)"
+            let defaults = try #require(UserDefaults(suiteName: suiteName))
+            defer { defaults.removePersistentDomain(forName: suiteName) }
+
+            #expect(DahliaTypography.baseSize(in: defaults) == 14)
+            defaults.set(17, forKey: DahliaTypography.baseSizeUserDefaultsKey)
+            #expect(DahliaTypography.baseSize(in: defaults) == 17)
+            defaults.set(40, forKey: DahliaTypography.baseSizeUserDefaultsKey)
+            #expect(DahliaTypography.baseSize(in: defaults) == 14)
+        }
+
+        @Test
         func meetingSidebarRowStyleDefaultsToStandard() {
             #expect(MeetingSidebarRowStyle.resolved(rawValue: "standard") == .standard)
             #expect(MeetingSidebarRowStyle.resolved(rawValue: "compact") == .compact)

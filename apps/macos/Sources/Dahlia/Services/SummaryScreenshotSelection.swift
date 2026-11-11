@@ -7,7 +7,6 @@ import OSLog
 enum SummaryScreenshotSelection {
     static let limit = 24
     static let candidateLimit = 240
-    static let defaultReasoningEffort = "low"
     private static let maximumPixelSize = 480
 
     private static let logger = Logger(subsystem: "com.dahlia", category: "SummaryScreenshotSelection")
@@ -77,7 +76,7 @@ enum SummaryScreenshotSelection {
             model: model,
             requiresExactModel: true,
             requiresImageInput: true,
-            reasoningEffort: settings.imageAnalysis.reasoningEffort ?? defaultReasoningEffort,
+            reasoningEffort: CodexScreenshotAnalysisService.reasoningEffort,
             developerInstructions: instructions,
             inputs: inputs,
             outputSchema: outputSchema

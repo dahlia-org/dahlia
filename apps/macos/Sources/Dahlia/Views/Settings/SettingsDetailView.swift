@@ -55,7 +55,7 @@ struct SettingsDetailView: View {
     @ViewBuilder
     private var selectedSettings: some View {
         switch selection {
-        case .general, .language, .recordingStopDetection:
+        case .general, .language:
             GeneralSettingsView()
         case .appearance, .eventDisplay:
             AppearanceSettingsView()
@@ -92,16 +92,12 @@ struct SettingsDetailView: View {
             )
         case .search:
             SearchSettingsView(database: appDatabase)
-        case .transcription:
-            TranscriptionSettingsView()
-        case .liveSubtitles:
-            LiveSubtitleSettingsView()
-        case .screenshots:
-            ScreenshotSettingsView()
+        case .meetings, .transcription, .recordingStopDetection, .liveSubtitles, .screenshots, .meetingLinks:
+            MeetingSettingsView()
+        case .dahliaMCP:
+            MCPSettingsView(workspaces: workspaceManagementModel.workspaces, currentWorkspace: appSettings.currentWorkspace)
         case .calendar:
             CalendarSettingsView()
-        case .meetingLinks:
-            MeetingLinkSettingsView()
         case .instructions:
             InstructionsSettingsView(sidebarViewModel: sidebarViewModel)
         case .betaFeatures:
@@ -115,6 +111,8 @@ struct SettingsDetailView: View {
         switch SettingsNavigation.visibleSelection(selection) {
         case .accountsAndWorkspaces: L10n.settingsAccountsIntro
         case .agents: L10n.settingsAgentsIntro
+        case .meetings: L10n.settingsMeetingsIntro
+        case .dahliaMCP: L10n.settingsDahliaMCPIntro
         case .workspace: L10n.settingsWorkspaceManagementIntro
         case .backups: L10n.settingsDataProtectionIntro
         default: L10n.thisMacSettingsDescription

@@ -23,18 +23,6 @@ struct AccountProcessingSettingsView: View {
                         Text(L10n.settingsSummaryOutput)
                             .font(.dahliaSectionHeader)
                     }
-                    Section {
-                        Toggle(L10n.liveTranscriptDraft, isOn: $workspaceSettings.generationSettings.liveTranscriptDraft)
-                    } header: {
-                        Text(L10n.settingsDuringRecording)
-                            .font(.dahliaSectionHeader)
-                    }
-                    Section {
-                        Toggle(L10n.automaticRecordingProcessing, isOn: $workspaceSettings.generationSettings.automaticProcessing)
-                    } header: {
-                        Text(L10n.settingsAfterRecording)
-                            .font(.dahliaSectionHeader)
-                    }
                 } else {
                     Section {
                         Toggle(L10n.imageAnalysisEnabled, isOn: $workspaceSettings.generationSettings.imageAnalysis.enabled)

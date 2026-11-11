@@ -292,6 +292,53 @@ final class AppSettings: ObservableObject {
         )
     }
 
+    // MARK: - アカウント別のミーティング設定
+
+    /// Meeting settings belong to an account. These keys hold the open account's values, which every reader and KVO
+    /// observer uses; switching accounts stashes them and restores the next account's.
+    nonisolated static let accountMeetingSettingKeys = [
+        transcriptionLocaleUserDefaultsKey,
+        automaticTranscriptionLanguageDetectionUserDefaultsKey,
+        exportBatchSummaryToWorkspaceUserDefaultsKey,
+        automaticMeetingEndRecordingStopUserDefaultsKey,
+        "liveSubtitleOverlayEnabled",
+        liveSubtitleLocaleUserDefaultsKey,
+        "liveSubtitleSourceMode",
+        "liveSubtitleOverlaySegmentCount",
+        liveSubtitleTranslationEnabledKey,
+        liveSubtitleTranslationTargetLanguageKey,
+        automaticScreenshotAdaptiveIntervalKey,
+        automaticScreenshotIntervalSecondsUserDefaultsKey,
+        automaticScreenshotChangeThresholdPercentUserDefaultsKey,
+        automaticScreenshotSharedRegionDetectionKey,
+        automaticScreenshotSharedRegionCropKey,
+        defaultMeetingLinkOpenTargetUserDefaultsKey,
+        googleMeetMeetingLinkOpenTargetUserDefaultsKey,
+        zoomMeetingLinkOpenTargetUserDefaultsKey,
+        teamsMeetingLinkOpenTargetUserDefaultsKey,
+        slackMeetingLinkOpenTargetUserDefaultsKey,
+    ]
+    nonisolated static let meetingSettingsAccountUserDefaultsKey = "meetingSettingsAccount"
+
+    nonisolated static func meetingSettingsUserDefaultsKey(for accountKey: String) -> String {
+        "meetingSettings.\(accountKey)"
+    }
+
+    /// An account opened for the first time starts from the previous account's values.
+    nonisolated static func switchMeetingSettings(to account: CodexRuntimeProvider, in defaults: UserDefaults) {
+        let owner = defaults.string(forKey: meetingSettingsAccountUserDefaultsKey)
+        guard owner != account.accountKey else { return }
+        defaults.set(account.accountKey, forKey: meetingSettingsAccountUserDefaultsKey)
+        // Before per-account meeting settings, the values belonged to whichever account opens first.
+        guard let owner else { return }
+        let current = accountMeetingSettingKeys.reduce(into: [String: Any]()) { $0[$1] = defaults.object(forKey: $1) }
+        defaults.set(current, forKey: meetingSettingsUserDefaultsKey(for: owner))
+        guard let saved = defaults.dictionary(forKey: meetingSettingsUserDefaultsKey(for: account.accountKey)) else { return }
+        for key in accountMeetingSettingKeys {
+            defaults.set(saved[key], forKey: key)
+        }
+    }
+
     nonisolated static func migrateLiveSubtitleLocaleSetting(in userDefaults: UserDefaults) {
         guard userDefaults.object(forKey: liveSubtitleLocaleUserDefaultsKey) == nil else { return }
         let localeIdentifier = userDefaults.string(forKey: transcriptionLocaleUserDefaultsKey) ?? Locale.current.identifier
@@ -428,7 +475,10 @@ final class AppSettings: ObservableObject {
 
     /// 現在開いているワークスペース。DB の `workspaces` テーブルから選択される。
     @Published var currentWorkspace: WorkspaceRecord? {
-        didSet { postCalendarAccountChange(from: setupTourAccount ?? CodexRuntimeProvider(workspace: oldValue)) }
+        didSet {
+            if let currentWorkspace { Self.switchMeetingSettings(to: CodexRuntimeProvider(workspace: currentWorkspace), in: .standard) }
+            postCalendarAccountChange(from: setupTourAccount ?? CodexRuntimeProvider(workspace: oldValue))
+        }
     }
 
     /// The account the setup tour is setting up. Its calendar step applies to that account before its workspace opens.
@@ -811,12 +861,13 @@ final class AppSettings: ObservableObject {
 
 extension UserDefaults {
     /// NOTE: KVO を正しく動作させるため、プロパティ名を UserDefaults キー名と一致させる
-    @objc dynamic var transcriptionLocale: String? {
-        string(forKey: AppSettings.transcriptionLocaleUserDefaultsKey)
+    /// Falls back to `AppSettings`' default, so observers follow an account switch that clears the key.
+    @objc dynamic var transcriptionLocale: String {
+        string(forKey: AppSettings.transcriptionLocaleUserDefaultsKey) ?? Locale.current.identifier
     }
 
-    @objc dynamic var liveSubtitleLocale: String? {
-        string(forKey: AppSettings.liveSubtitleLocaleUserDefaultsKey)
+    @objc dynamic var liveSubtitleLocale: String {
+        string(forKey: AppSettings.liveSubtitleLocaleUserDefaultsKey) ?? Locale.current.identifier
     }
 
     @objc dynamic var batchAudioRetentionPeriodDays: Int {

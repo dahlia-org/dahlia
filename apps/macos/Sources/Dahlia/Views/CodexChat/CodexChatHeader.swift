@@ -12,6 +12,7 @@ struct CodexChatHeader: View {
     let reservesSidebarToggle: Bool
     let reservesWindowControls: Bool
     let leadingInset: CGFloat
+    var showsTitle = true
 
     var body: some View {
         DahliaWindowHeader(reservesWindowControls: reservesWindowControls) {
@@ -29,25 +30,27 @@ struct CodexChatHeader: View {
                 )
             }
 
-            HStack(spacing: 8) {
-                Image(systemName: "message")
-                    .dahliaFixedSymbol()
-                    .accessibilityHidden(true)
-                Text(L10n.dahliaAI)
-                    .fixedSize()
-            }
-            .font(.dahliaBody)
-            .foregroundStyle(DahliaDesign.primaryTextColor)
+            if showsTitle {
+                HStack(spacing: 8) {
+                    Image(systemName: "message")
+                        .dahliaFixedSymbol()
+                        .accessibilityHidden(true)
+                    Text(L10n.dahliaAI)
+                        .fixedSize()
+                }
+                .font(.dahliaBody)
+                .foregroundStyle(DahliaDesign.primaryTextColor)
 
-            if showsHistory || hasConversation {
-                Text("/")
-                    .foregroundStyle(DahliaDesign.secondaryTextColor)
-                    .accessibilityHidden(true)
-                Text(showsHistory ? L10n.chatHistory : title)
-                    .font(.dahliaBody)
-                    .foregroundStyle(DahliaDesign.secondaryTextColor)
-                    .lineLimit(1)
-                    .layoutPriority(-1)
+                if showsHistory || hasConversation {
+                    Text("/")
+                        .foregroundStyle(DahliaDesign.secondaryTextColor)
+                        .accessibilityHidden(true)
+                    Text(showsHistory ? L10n.chatHistory : title)
+                        .font(.dahliaBody)
+                        .foregroundStyle(DahliaDesign.secondaryTextColor)
+                        .lineLimit(1)
+                        .layoutPriority(-1)
+                }
             }
 
             Spacer(minLength: 8)

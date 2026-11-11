@@ -8,7 +8,6 @@ struct ScreenshotAnalysisInput: Sendable {
     let runtimeProvider: CodexRuntimeProvider
     var outputLanguage: SummaryLanguage = .ja
     var model: String?
-    var reasoningEffort: String?
 }
 
 struct ScreenshotAnalysis: Equatable, Sendable {
@@ -67,6 +66,7 @@ actor CodexScreenshotAnalysisService: ScreenshotAnalyzing {
         } ?? defaultModels[0]
     }
 
+    /// Fixed for every account: the images need reading, not reasoning.
     static let reasoningEffort = "low"
     static let maximumBatchSize = 1
 
@@ -86,7 +86,7 @@ actor CodexScreenshotAnalysisService: ScreenshotAnalyzing {
             model: model,
             requiresExactModel: true,
             requiresImageInput: true,
-            reasoningEffort: screenshots[0].reasoningEffort ?? Self.reasoningEffort,
+            reasoningEffort: Self.reasoningEffort,
             developerInstructions: Self.instructions(
                 captionLanguage: screenshots[0].outputLanguage.displayName
             ),

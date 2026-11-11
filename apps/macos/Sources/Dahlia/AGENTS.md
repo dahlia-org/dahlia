@@ -56,7 +56,9 @@ for continuous progress and latest-wins for replaceable projections. Never drop 
   `.dahliaHeadline` for bold body text, `.dahliaSectionHeader` for section names (12 pt), and `.dahliaSecondary` for metadata,
   badges, tags, chips, and hover help (12 pt). AppKit text and measurements use the matching `NSFont` styles. Use `.dahliaTitle`, `.dahliaTitle2`,
   `.dahliaTitle3`, and `.dahliaLargeTitle` for larger content titles. Manage sizes as offsets from the default 14 pt base with
-  `DahliaTypography.size(offset:relativeTo:)`, including AppKit measurements; do not introduce independent absolute font sizes. Do not add independent size scales or global font-size settings without product approval.
+  `DahliaTypography.size(offset:relativeTo:)`, including AppKit measurements; do not introduce independent absolute font sizes. The base follows the
+  Appearance text size setting (`DahliaTypography.baseSize`, default 14 pt), so measure from the styles instead of assuming 14 pt. Do not add other size
+  scales or font-size settings without product approval.
 - Apply `.font(.dahliaBody)` directly to picker option text as well as its container; native menu pickers can otherwise render the selected title at the system default size.
 - Add UI strings as computed properties in `Utilities/L10n.swift`, then add the same key to both `Resources/ja.lproj` and `Resources/en.lproj`. Japanese is the primary localization.
 - Settings screens use `Form` with `.formStyle(.grouped)`, `Section`, `LabeledContent`, and standard controls. Do not add custom cards, custom rows, or fixed-width control frames. Use `.toggleStyle(.switch)` for toggles and `.checkbox` for multiple selection.

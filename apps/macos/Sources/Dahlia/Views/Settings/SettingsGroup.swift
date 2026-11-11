@@ -3,7 +3,7 @@ import Foundation
 /// サイドバーで設定項目をユーザーの目的別にまとめるグループ。
 enum SettingsGroup: CaseIterable, Identifiable {
     case app
-    case account
+    case features
     case advanced
 
     var id: Self { self }
@@ -11,15 +11,15 @@ enum SettingsGroup: CaseIterable, Identifiable {
     var label: String {
         switch self {
         case .app: L10n.thisMac
-        case .account: L10n.account
+        case .features: L10n.features
         case .advanced: L10n.advanced
         }
     }
 
     var categories: [SettingsCategory] {
         switch self {
-        case .app: [.general, .appearance, .transcription, .liveSubtitles, .screenshots, .meetingLinks, .permissions, .backups]
-        case .account: [.workspace, .agents, .calendar]
+        case .app: [.general, .appearance, .permissions, .backups]
+        case .features: [.workspace, .meetings, .agents, .dahliaMCP, .calendar]
         case .advanced: [.search, .betaFeatures, .audioDiagnostics]
         }
     }
