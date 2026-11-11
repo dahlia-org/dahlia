@@ -4,7 +4,6 @@ struct MeetingSidebarListGroupLabel: View {
     let title: String
     let isExpanded: Bool
     let onToggleExpansion: () -> Void
-    var textStyle: Font = .callout
 
     @State private var isHovered = false
 
@@ -14,7 +13,7 @@ struct MeetingSidebarListGroupLabel: View {
                 HStack(spacing: 5) {
                     Text(title)
                     Image(systemName: isExpanded ? "chevron.down" : "chevron.right")
-                        .font(.caption)
+                        .font(.dahliaSecondary)
                         .opacity(!isExpanded || isHovered ? 1 : 0)
                     Spacer()
                 }
@@ -23,7 +22,7 @@ struct MeetingSidebarListGroupLabel: View {
             .accessibilityAddTraits(.isHeader)
             .accessibilityHint(isExpanded ? L10n.collapse : L10n.expand)
         }
-        .font(textStyle)
+        .font(.dahliaSectionHeader)
         .foregroundStyle(DahliaDesign.sidebarSecondaryTextColor)
         .listRowSeparator(.hidden)
         .contentShape(.rect)

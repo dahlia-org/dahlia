@@ -38,7 +38,7 @@ struct MeetingSidebarRow: View {
             }
         }
         .padding(.leading, contentLeadingPadding)
-        .font(.body)
+        .font(.dahliaBody)
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.vertical, DahliaDesign.sidebarRowVerticalPadding)
         .padding(.horizontal, 5)
@@ -102,13 +102,13 @@ struct MeetingSidebarRow: View {
 
             HStack(spacing: 6) {
                 Text(timestampText)
-                    .font(.caption2.weight(.medium))
+                    .font(.dahliaSecondary.weight(.medium))
                     .monospacedDigit()
                     .foregroundStyle(DahliaDesign.sidebarSecondaryTextColor)
 
                 if showsProjectChip, let projectName = item.projectName?.nilIfBlank {
                     Text(projectName)
-                        .font(.caption2.weight(.medium))
+                        .font(.dahliaSecondary.weight(.medium))
                         .foregroundStyle(DahliaDesign.sidebarSecondaryTextColor)
                         .lineLimit(1)
                         .dahliaChipSurface(tint: projectTint)
@@ -189,7 +189,7 @@ struct MeetingSidebarRow: View {
                 .foregroundStyle(.secondary)
                 .lineLimit(1)
         }
-        .font(.caption)
+        .font(.dahliaSecondary)
         .accessibilityElement(children: .combine)
     }
 
@@ -253,7 +253,7 @@ private struct MeetingTimestampBadge: View {
 
     var body: some View {
         Text(text)
-            .font(.caption2.weight(.medium))
+            .font(.dahliaSecondary.weight(.medium))
             .monospacedDigit()
             .foregroundStyle(DahliaDesign.sidebarSecondaryTextColor)
             .fixedSize()

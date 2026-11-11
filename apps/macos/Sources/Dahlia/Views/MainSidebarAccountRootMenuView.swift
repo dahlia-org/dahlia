@@ -15,6 +15,8 @@ struct MainSidebarAccountRootMenuView: View {
     let onSelectAccount: (DahliaAccountConnection?) -> Void
     let onSelectDatabricksAccount: (UUID) -> Void
     let onAccountAction: () -> Void
+    var unprocessedRecordingCount = 0
+    let onShowUnprocessedRecordings: () -> Void
 
     @State private var accountController = DahliaCloudAccountController.shared
     @State private var pendingHoverTask: Task<Void, Never>?
@@ -23,7 +25,7 @@ struct MainSidebarAccountRootMenuView: View {
         VStack(spacing: 2) {
             if let currentAccount = currentConnection?.account {
                 Text(currentAccount.email ?? currentAccount.displayName)
-                    .font(.body)
+                    .font(.dahliaBody)
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
                     .frame(maxWidth: .infinity, alignment: .leading)
@@ -104,17 +106,28 @@ struct MainSidebarAccountRootMenuView: View {
                 action: { activate(index: menuOffset + 1, action: { onOpenSettings(nil) }) }
             )
 
+            MainSidebarAccountMenuRow(
+                title: L10n.unprocessedRecordings,
+                subtitle: unprocessedRecordingCount > 0 ? unprocessedRecordingCount.formatted() : nil,
+                image: Image(systemName: "waveform.badge.exclamationmark"),
+                isKeyboardHighlighted: navigation.activeMenu == .root && navigation.rootSelection == menuOffset + 2,
+                showsHelp: false,
+                onHoverStart: { hover(index: menuOffset + 2, opensSubmenu: false, action: onDismissSubmenu) },
+                onHoverEnd: cancelPendingHover,
+                action: { activate(index: menuOffset + 2, action: onShowUnprocessedRecordings) }
+            )
+
             Divider()
                 .padding(.vertical, 4)
 
             MainSidebarAccountMenuRow(
                 title: signsOut ? L10n.signOut : L10n.dahliaSignIn,
                 image: Image(systemName: signsOut ? "rectangle.portrait.and.arrow.right" : "person"),
-                isKeyboardHighlighted: navigation.activeMenu == .root && navigation.rootSelection == menuOffset + 2,
+                isKeyboardHighlighted: navigation.activeMenu == .root && navigation.rootSelection == menuOffset + 3,
                 showsHelp: false,
-                onHoverStart: { hover(index: menuOffset + 2, opensSubmenu: false, action: onDismissSubmenu) },
+                onHoverStart: { hover(index: menuOffset + 3, opensSubmenu: false, action: onDismissSubmenu) },
                 onHoverEnd: cancelPendingHover,
-                action: { activate(index: menuOffset + 2, action: onAccountAction) }
+                action: { activate(index: menuOffset + 3, action: onAccountAction) }
             )
         }
         .onDisappear(perform: cancelPendingHover)

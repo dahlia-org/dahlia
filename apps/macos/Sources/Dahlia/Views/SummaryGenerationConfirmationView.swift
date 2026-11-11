@@ -47,7 +47,7 @@ struct SummaryGenerationConfirmationView: View {
         VStack(spacing: 0) {
             VStack(alignment: .leading, spacing: 6) {
                 Text(title)
-                    .font(.headline)
+                    .font(.dahliaHeadline)
                 Text(description)
                     .foregroundStyle(DahliaDesign.secondaryTextColor)
                     .fixedSize(horizontal: false, vertical: true)
@@ -57,26 +57,30 @@ struct SummaryGenerationConfirmationView: View {
             .padding(.bottom, 8)
 
             Form {
-                Section(L10n.summaryGenerationSource) {
+                Section {
                     SummaryGenerationSourceStatus(
                         availability: sourceAvailability,
                         isLoading: isLoadingSources,
                         errorMessage: sourceErrorMessage
                     )
+                } header: {
+                    Text(L10n.summaryGenerationSource)
+                        .font(.dahliaSectionHeader)
                 }
 
-                Section(L10n.generationOverrides) {
+                Section {
                     LabeledContent(L10n.processingLocation, value: L10n.localProcessing)
                     Picker(L10n.summaryOutputLanguage, selection: $overrides.outputLanguage) {
-                        Text(L10n.workspaceGenerationDefault).tag(SummaryLanguage?.none)
-                        ForEach(SummaryLanguage.allCases) { Text($0.displayName).tag(Optional($0)) }
+                        Text(L10n.workspaceGenerationDefault).font(.dahliaBody).tag(SummaryLanguage?.none)
+                        ForEach(SummaryLanguage.allCases) { Text($0.displayName).font(.dahliaBody).tag(Optional($0)) }
                     }
                     Picker(L10n.summaryModel, selection: modelSelection) {
-                        Text("\(L10n.workspaceGenerationDefault) — \(modelName(defaultModel))").tag(String?.none)
+                        Text("\(L10n.workspaceGenerationDefault) — \(modelName(defaultModel))").font(.dahliaBody).tag(String?.none)
                         if let model = overrides.model, !model.isEmpty, !modelIDs.contains(model) {
-                            Text(isModelCatalogLoaded ? "\(model) — \(L10n.unavailableModelPreference)" : model).tag(Optional(model))
+                            Text(isModelCatalogLoaded ? "\(model) — \(L10n.unavailableModelPreference)" : model).font(.dahliaBody)
+                                .tag(Optional(model))
                         }
-                        ForEach(modelIDs, id: \.self) { id in Text(modelName(id)).tag(Optional(id)) }
+                        ForEach(modelIDs, id: \.self) { id in Text(modelName(id)).font(.dahliaBody).tag(Optional(id)) }
                     }
                     if isModelCatalogLoaded, !isModelAvailable {
                         SettingsStatusMessage(
@@ -85,19 +89,22 @@ struct SummaryGenerationConfirmationView: View {
                         )
                     }
                     Picker(L10n.reasoningEffort, selection: $overrides.reasoningEffort) {
-                        Text(L10n.workspaceGenerationDefault).tag(String?.none)
+                        Text(L10n.workspaceGenerationDefault).font(.dahliaBody).tag(String?.none)
                         if let effort = overrides.reasoningEffort, !effort.isEmpty, !effortOptions.contains(effort) {
-                            Text("\(effort) — \(L10n.checkModelPreference)").tag(Optional(effort))
+                            Text("\(effort) — \(L10n.checkModelPreference)").font(.dahliaBody).tag(Optional(effort))
                         }
-                        ForEach(effortOptions, id: \.self) { Text($0).tag(Optional($0)) }
+                        ForEach(effortOptions, id: \.self) { Text($0).font(.dahliaBody).tag(Optional($0)) }
                     }
                     if let error = modelError {
                         SettingsStatusMessage(text: error, systemImage: "exclamationmark.triangle", tint: .orange)
                         Button(L10n.retry) { Task { await loadModels(forceRefresh: true) } }
                     }
+                } header: {
+                    Text(L10n.generationOverrides)
+                        .font(.dahliaSectionHeader)
                 }
 
-                Section(L10n.summaryAndExport) {
+                Section {
                     if let projects {
                         SummaryProjectPicker(projects: projects, selection: $selectedProjectId)
                     }
@@ -108,13 +115,16 @@ struct SummaryGenerationConfirmationView: View {
                         isEnabled: true,
                         usesServerSummary: false
                     )
+                } header: {
+                    Text(L10n.summaryAndExport)
+                        .font(.dahliaSectionHeader)
                 }
             }
             .formStyle(.grouped)
 
             if let errorMessage {
                 Label(errorMessage, systemImage: "exclamationmark.triangle.fill")
-                    .font(.body)
+                    .font(.dahliaBody)
                     .foregroundStyle(.red)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(.horizontal, 20)

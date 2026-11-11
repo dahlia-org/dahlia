@@ -31,7 +31,7 @@ struct MainSidebarHelpMenuButton: NSViewRepresentable {
 
     private func configure(_ button: NSButton) {
         _ = dynamicTypeSize
-        let font = NSFont.preferredFont(forTextStyle: .body)
+        let font = NSFont.dahliaBody
         button.image = NSImage(
             systemSymbolName: "questionmark.circle",
             accessibilityDescription: L10n.help

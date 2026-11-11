@@ -23,6 +23,8 @@ final class MainSidebarAccountMenuCoordinator: NSObject {
     private var onSelectAccount: (DahliaAccountConnection?) -> Void
     private var onSelectDatabricksAccount: (UUID) -> Void
     private var onAccountAction: () -> Void
+    private var unprocessedRecordingCount: Int
+    private var onShowUnprocessedRecordings: () -> Void
     var openURL: (URL) -> Bool = { NSWorkspace.shared.open($0) }
     private let navigation = MainSidebarAccountMenuNavigationState()
     private var mainPanel: NSPanel?
@@ -38,7 +40,9 @@ final class MainSidebarAccountMenuCoordinator: NSObject {
         onOpenSettings: @escaping (SettingsCategory?) -> Void,
         onSelectAccount: @escaping (DahliaAccountConnection?) -> Void,
         onSelectDatabricksAccount: @escaping (UUID) -> Void = { _ in },
-        onAccountAction: @escaping () -> Void
+        onAccountAction: @escaping () -> Void,
+        unprocessedRecordingCount: Int = 0,
+        onShowUnprocessedRecordings: @escaping () -> Void
     ) {
         self.connections = connections
         currentConnectionID = accountSelection.connectionID
@@ -49,6 +53,8 @@ final class MainSidebarAccountMenuCoordinator: NSObject {
         self.onSelectAccount = onSelectAccount
         self.onSelectDatabricksAccount = onSelectDatabricksAccount
         self.onAccountAction = onAccountAction
+        self.unprocessedRecordingCount = unprocessedRecordingCount
+        self.onShowUnprocessedRecordings = onShowUnprocessedRecordings
     }
 
     static func shouldPassThroughKeyEvent(modifierFlags: NSEvent.ModifierFlags) -> Bool {
@@ -61,7 +67,9 @@ final class MainSidebarAccountMenuCoordinator: NSObject {
         onOpenSettings: @escaping (SettingsCategory?) -> Void,
         onSelectAccount: @escaping (DahliaAccountConnection?) -> Void,
         onSelectDatabricksAccount: @escaping (UUID) -> Void = { _ in },
-        onAccountAction: @escaping () -> Void
+        onAccountAction: @escaping () -> Void,
+        unprocessedRecordingCount: Int = 0,
+        onShowUnprocessedRecordings: @escaping () -> Void
     ) {
         self.connections = connections
         currentConnectionID = accountSelection.connectionID
@@ -72,6 +80,8 @@ final class MainSidebarAccountMenuCoordinator: NSObject {
         self.onSelectAccount = onSelectAccount
         self.onSelectDatabricksAccount = onSelectDatabricksAccount
         self.onAccountAction = onAccountAction
+        self.unprocessedRecordingCount = unprocessedRecordingCount
+        self.onShowUnprocessedRecordings = onShowUnprocessedRecordings
     }
 
     @objc
@@ -110,7 +120,9 @@ final class MainSidebarAccountMenuCoordinator: NSObject {
                 onOpenSettings: { [weak self] in self?.openSettings(category: $0) },
                 onSelectAccount: { [weak self] in self?.selectAccount($0) },
                 onSelectDatabricksAccount: { [weak self] in self?.selectDatabricksAccount($0) },
-                onAccountAction: { [weak self] in self?.performAccountAction() }
+                onAccountAction: { [weak self] in self?.performAccountAction() },
+                unprocessedRecordingCount: unprocessedRecordingCount,
+                onShowUnprocessedRecordings: { [weak self] in self?.showUnprocessedRecordings() }
             )
         }
         let panel = makePanel(content: content)
@@ -225,6 +237,11 @@ final class MainSidebarAccountMenuCoordinator: NSObject {
     private func openSettings(category: SettingsCategory? = nil) {
         dismissMenu()
         onOpenSettings(category)
+    }
+
+    private func showUnprocessedRecordings() {
+        dismissMenu()
+        onShowUnprocessedRecordings()
     }
 
     private func performAccountAction() {
@@ -462,7 +479,7 @@ extension MainSidebarAccountMenuCoordinator {
             navigation.rootSelection = MainSidebarAccountMenuNavigationState.nextEnabledIndex(
                 from: navigation.rootSelection,
                 direction: direction,
-                count: menuOffset + 3,
+                count: menuOffset + 4,
                 isEnabled: isRootIndexEnabled
             )
         case .accountDetails:
@@ -513,7 +530,8 @@ extension MainSidebarAccountMenuCoordinator {
         switch selection - menuOffset {
         case 0: presentLanguageMenu()
         case 1: openSettings(category: nil)
-        case 2: performAccountAction()
+        case 2: showUnprocessedRecordings()
+        case 3: performAccountAction()
         default: break
         }
     }
@@ -535,6 +553,7 @@ extension MainSidebarAccountMenuCoordinator {
                 + databricksAccounts.map { L10n.unityGatewayHost($0.hostName) } + [
                     L10n.language,
                     L10n.settings,
+                    L10n.unprocessedRecordings,
                     hasCurrentConnection || currentDatabricksID != nil ? L10n.signOut : L10n.dahliaSignIn,
                 ]
             title = navigation.rootSelection.flatMap { titles.indices.contains($0) ? titles[$0] : nil }

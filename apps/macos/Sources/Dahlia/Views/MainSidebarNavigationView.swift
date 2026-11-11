@@ -10,9 +10,6 @@ struct MainSidebarNavigationView: View {
     let canCreateProject: Bool
     let onCreateProject: () -> Void
     let onNewChat: () -> Void
-    let isShowingUnprocessedRecordings: Bool
-    let unprocessedRecordingCount: Int
-    let onShowUnprocessedRecordings: () -> Void
 
     var body: some View {
         VStack(spacing: 2) {
@@ -21,7 +18,7 @@ struct MainSidebarNavigationView: View {
                 .padding(.bottom, 6)
 
             switch selectedTab {
-            case .home, .meetings:
+            case .meetings:
                 MainSidebarMeetingNavigationRow(
                     canCreateMeeting: canCreateMeeting,
                     canStartQuickRecording: canStartQuickRecording,
@@ -29,19 +26,6 @@ struct MainSidebarNavigationView: View {
                     onStartQuickRecording: onStartQuickRecording
                 )
 
-                if selectedTab == .home {
-                    Button(action: onShowUnprocessedRecordings) {
-                        MainSidebarNavigationLabel(
-                            title: L10n.unprocessedRecordings,
-                            systemImage: "waveform.badge.exclamationmark",
-                            badgeCount: unprocessedRecordingCount,
-                            isSelected: isShowingUnprocessedRecordings
-                        )
-                    }
-                    .buttonStyle(.plain)
-                    .help(L10n.unprocessedRecordings)
-                    .accessibilityAddTraits(isShowingUnprocessedRecordings ? .isSelected : [])
-                }
             case .projects:
                 Button(action: onCreateProject) {
                     MainSidebarNavigationLabel(title: L10n.newProject, systemImage: "folder.badge.plus")
@@ -49,9 +33,10 @@ struct MainSidebarNavigationView: View {
                 .buttonStyle(.plain)
                 .disabled(!canCreateProject)
                 .help(L10n.newProject)
+
             case .chat:
                 Button(action: onNewChat) {
-                    MainSidebarNavigationLabel(title: L10n.newChat, systemImage: "plus.bubble")
+                    MainSidebarNavigationLabel(title: L10n.newChat, systemImage: "plus.message")
                 }
                 .buttonStyle(.plain)
                 .help(L10n.newChat)

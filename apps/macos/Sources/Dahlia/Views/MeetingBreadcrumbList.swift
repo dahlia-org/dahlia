@@ -29,10 +29,10 @@ struct MeetingBreadcrumbList: View {
                 if items.count < SidebarViewModel.maximumVisibleMeetings {
                     Button(L10n.loadMore) { pageRequest += 1 }
                 } else {
-                    Text(L10n.projectMeetingLimitReached).font(.footnote).foregroundStyle(.secondary)
+                    Text(L10n.projectMeetingLimitReached).font(.dahliaSecondary).foregroundStyle(.secondary)
                 }
             } else if items.isEmpty {
-                Text(L10n.noMeetingsInProject).font(.body).foregroundStyle(.secondary)
+                Text(L10n.noMeetingsInProject).font(.dahliaBody).foregroundStyle(.secondary)
             }
         }
         .task(id: pageRequest) {

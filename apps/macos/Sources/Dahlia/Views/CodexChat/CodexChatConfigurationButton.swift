@@ -11,7 +11,7 @@ struct CodexChatConfigurationButton: View {
     var body: some View {
         Button(configurationLabel, action: showConfiguration)
             .buttonStyle(.plain)
-            .font(.callout)
+            .font(.dahliaBody)
             .foregroundStyle(DahliaDesign.secondaryTextColor)
             .lineLimit(1)
             .padding(.horizontal, 10)

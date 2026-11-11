@@ -50,17 +50,18 @@ struct AgentProviderRegistrationView: View {
 
             VStack(alignment: .leading, spacing: 16) {
                 Text(L10n.addProviderTitle)
-                    .font(.title2)
+                    .font(.dahliaTitle2)
                     .accessibilityAddTraits(.isHeader)
                 Picker(L10n.agentProviders, selection: $kind) {
                     ForEach(subscriptions, id: \.subscription) { controller in
                         // A subscription that is signed in already is listed under Providers.
                         let isAdded = controller.accountStatus?.isAuthenticated == true
                         Text(isAdded ? L10n.agentProviderAdded(controller.subscription.displayName) : controller.subscription.displayName)
+                            .font(.dahliaBody)
                             .tag(Kind.subscription(controller.subscription))
                             .selectionDisabled(isAdded)
                     }
-                    Text(L10n.databricksUnityGateway).tag(Kind.databricks)
+                    Text(L10n.databricksUnityGateway).font(.dahliaBody).tag(Kind.databricks)
                 }
                 .disabled(signInTask != nil)
 

@@ -9,7 +9,7 @@ struct CodexChatMarkdownCodeBlockView: View {
             HStack {
                 if let language {
                     Text(language)
-                        .font(.footnote)
+                        .font(.dahliaSecondary)
                         .foregroundStyle(DahliaDesign.secondaryTextColor)
                 }
                 Spacer()
@@ -17,7 +17,7 @@ struct CodexChatMarkdownCodeBlockView: View {
             }
             ScrollView(.horizontal) {
                 Text(text)
-                    .font(.body.monospaced())
+                    .font(.dahliaBody.monospaced())
                     .textSelection(.enabled)
                     .padding(10)
             }

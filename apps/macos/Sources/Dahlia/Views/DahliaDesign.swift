@@ -235,7 +235,7 @@ private struct DahliaSidebarHoverCardModifier: ViewModifier {
 
     func body(content: Content) -> some View {
         content
-            .font(.callout)
+            .font(.dahliaBody)
             .foregroundStyle(.black.opacity(0.82))
             .padding(12)
             .frame(width: width, alignment: .leading)

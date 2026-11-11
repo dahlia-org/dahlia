@@ -17,6 +17,9 @@ struct CodexChatView: View {
     let headerLeadingInset: CGFloat
     let contentMaxWidth: CGFloat?
 
+    @Environment(MainWindowNavigation.self) private var navigation
+    @State private var dismissedIntegrationsSessionID: CodexChatSessionID?
+
     var body: some View {
         VStack(spacing: 0) {
             CodexChatHeader(
@@ -34,62 +37,85 @@ struct CodexChatView: View {
             )
             .zIndex(1)
 
-            VStack(spacing: 0) {
-                if showsHistory {
-                    CodexChatHistoryView(
-                        threads: coordinator.history,
-                        meetingNamesByID: session.meetingNamesByID,
-                        hasMore: coordinator.historyCursor != nil,
-                        isLoading: coordinator.isLoadingHistory,
-                        activityForThread: coordinator.activity(for:),
-                        onNewChat: startNewChat,
-                        onOpenThread: openHistoryThread,
-                        onLoadMore: loadMoreHistory
-                    )
-                } else if showsEmptyState {
-                    CodexChatEmptyStateView(
-                        recentThreads: Array(coordinator.history.prefix(3)),
-                        meetingNamesByID: session.meetingNamesByID,
-                        showsProjectOrganizationShortcut: session.showsProjectOrganizationShortcut,
-                        isProjectOrganizationShortcutEnabled: session.canSendProjectOrganizationShortcut,
-                        onOrganizeRecentMeetingsAndProjects: { session.sendProjectOrganizationShortcut() },
-                        meetingReviewShortcutTitle: session.showsMeetingReviewShortcut
-                            ? CodexChatMeetingReviewShortcut.title
-                            : nil,
-                        isMeetingReviewShortcutEnabled: session.canSendMeetingReviewShortcut,
-                        activityForThread: coordinator.activity(for:),
-                        onReviewMeeting: session.sendMeetingReviewShortcut,
-                        onOpenThread: openHistoryThread,
-                        onShowAll: showHistory
-                    )
-                } else {
-                    CodexChatConversationView(
-                        conversationID: session.id,
-                        messages: session.messages,
-                        showsStandaloneThinking: session.showsStandaloneThinking,
-                        meetingNamesByID: session.meetingNamesByID,
-                        meetingReferencesByID: session.meetingReferencesByID
-                    )
-                }
+            GeometryReader { geometry in
+                VStack(spacing: 0) {
+                    if showsEmptyState && !showsHistory {
+                        Spacer(minLength: 12)
+                    }
 
-                if let errorMessage = session.errorMessage {
-                    CodexChatErrorView(
-                        message: errorMessage,
-                        onRetry: session.hasRetryableSubmission ? session.retry : retryConnection
-                    )
-                } else if let historyError = coordinator.historyError, showsHistory || showsEmptyState {
-                    CodexChatErrorView(
-                        message: historyError,
-                        onRetry: retryHistory
-                    )
-                }
+                    if showsHistory {
+                        CodexChatHistoryView(
+                            threads: coordinator.history,
+                            meetingNamesByID: session.meetingNamesByID,
+                            hasMore: coordinator.historyCursor != nil,
+                            isLoading: coordinator.isLoadingHistory,
+                            activityForThread: coordinator.activity(for:),
+                            onNewChat: startNewChat,
+                            onOpenThread: openHistoryThread,
+                            onLoadMore: loadMoreHistory
+                        )
+                    } else if showsEmptyState {
+                        CodexChatWelcomeHeader(showsIcon: geometry.size.height >= 480)
+                            .padding(.horizontal, 20)
+                            .padding(.bottom, 24)
+                    } else {
+                        CodexChatConversationView(
+                            conversationID: session.id,
+                            messages: session.messages,
+                            showsStandaloneThinking: session.showsStandaloneThinking,
+                            meetingNamesByID: session.meetingNamesByID,
+                            meetingReferencesByID: session.meetingReferencesByID
+                        )
+                    }
 
-                if !showsHistory {
-                    conversationControls
+                    if let errorMessage = session.errorMessage {
+                        CodexChatErrorView(
+                            message: errorMessage,
+                            onRetry: session.hasRetryableSubmission ? session.retry : retryConnection
+                        )
+                    } else if let historyError = coordinator.historyError, showsHistory || showsEmptyState {
+                        CodexChatErrorView(
+                            message: historyError,
+                            onRetry: retryHistory
+                        )
+                    }
+
+                    if !showsHistory {
+                        // Keep one composer in the view tree, preserving focus and attachments when the first message is sent.
+                        conversationControls
+                    }
+
+                    if showsEmptyState, !showsHistory {
+                        if dismissedIntegrationsSessionID != session.id {
+                            CodexChatAppIntegrationsView(
+                                onOpenSettings: { navigation.openAgentSettings(tab: .mcps) },
+                                onDismiss: { dismissedIntegrationsSessionID = session.id }
+                            )
+                            .padding(.horizontal, CodexChatDesign.composerHorizontalPadding)
+                            .padding(.bottom, 18)
+                        }
+
+                        CodexChatEmptyStateView(
+                            hasRecentThreads: !coordinator.history.isEmpty,
+                            showsProjectOrganizationShortcut: session.showsProjectOrganizationShortcut,
+                            isProjectOrganizationShortcutEnabled: session.canSendProjectOrganizationShortcut,
+                            onOrganizeRecentMeetingsAndProjects: { session.sendProjectOrganizationShortcut() },
+                            meetingReviewShortcutTitle: session.showsMeetingReviewShortcut
+                                ? CodexChatMeetingReviewShortcut.title
+                                : nil,
+                            isMeetingReviewShortcutEnabled: session.canSendMeetingReviewShortcut,
+                            onReviewMeeting: session.sendMeetingReviewShortcut,
+                            onShowAll: showHistory
+                        )
+                        .frame(maxHeight: geometry.size.height * 0.28)
+
+                        Spacer(minLength: 12)
+                    }
                 }
+                .frame(maxWidth: showsEmptyState && !showsHistory ? 720 : (contentMaxWidth ?? .infinity))
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
-            .frame(maxWidth: contentMaxWidth ?? .infinity)
-            .frame(maxWidth: .infinity)
+            .coordinateSpace(name: CodexChatAddPanelLayout.coordinateSpaceName)
         }
         .background(.background)
         .task(id: session.id) { await prepare() }
@@ -115,7 +141,7 @@ struct CodexChatView: View {
     private var conversationControls: some View {
         if !session.mcpServersNeedingSignIn.isEmpty {
             Label(L10n.chatMCPSignInRequired(session.mcpServersNeedingSignIn.formatted(.list(type: .and))), systemImage: "key.fill")
-                .font(.body)
+                .font(.dahliaBody)
                 .foregroundStyle(DahliaDesign.secondaryTextColor)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(.horizontal, CodexChatDesign.contentHorizontalPadding)
@@ -124,7 +150,7 @@ struct CodexChatView: View {
 
         if let noticeMessage = session.noticeMessage {
             Label(noticeMessage, systemImage: "info.circle.fill")
-                .font(.body)
+                .font(.dahliaBody)
                 .foregroundStyle(DahliaDesign.secondaryTextColor)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(.horizontal, CodexChatDesign.contentHorizontalPadding)

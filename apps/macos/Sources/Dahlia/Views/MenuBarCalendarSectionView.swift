@@ -16,7 +16,7 @@ struct MenuBarCalendarSectionView: View {
     @ObservedObject private var calendarAutoRecordingStore = CalendarAutoRecordingStore.shared
 
     var body: some View {
-        Section(L10n.today) {
+        Section {
             if !settings.enabledCalendarSources.isEmpty, !agenda.events.isEmpty {
                 ForEach(agenda.events) { event in
                     MenuBarCalendarEventRow(
@@ -46,6 +46,9 @@ struct MenuBarCalendarSectionView: View {
             } else {
                 statusLabel(L10n.menuBarNoMoreEventsToday, systemImage: "calendar.badge.checkmark")
             }
+        } header: {
+            Text(L10n.today)
+                .font(.dahliaSectionHeader)
         }
     }
 

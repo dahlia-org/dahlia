@@ -74,14 +74,14 @@ struct MeetingProjectPicker: View {
         HStack(spacing: style == .compact ? 3 : 4) {
             ZStack {
                 Image(systemName: "folder")
-                    .font(.caption2)
+                    .font(.dahliaSecondary)
                     .foregroundStyle(DahliaDesign.secondaryTextColor)
                     .opacity(showsRemoveButton ? 0 : 1)
 
                 if hasProjectAssignment {
                     Button(action: clearProject) {
                         Image(systemName: "xmark")
-                            .font(.system(size: 8, weight: .bold))
+                            .font(.system(size: DahliaTypography.size(offset: -6), weight: .bold))
                             .foregroundStyle(DahliaDesign.secondaryTextColor)
                             .frame(minWidth: 16, minHeight: 16)
                             .contentShape(Rectangle())
@@ -123,11 +123,11 @@ struct MeetingProjectPicker: View {
             HStack(spacing: 4) {
                 if style == .regular {
                     Text(currentProjectName ?? L10n.noProject)
-                        .font(.caption2.weight(.medium))
+                        .font(.dahliaSecondary.weight(.medium))
                         .lineLimit(1)
                 }
                 Image(systemName: "chevron.down")
-                    .font(.system(size: 8, weight: .medium))
+                    .font(.system(size: DahliaTypography.size(offset: -6), weight: .medium))
             }
         }
         .buttonStyle(.plain)
@@ -190,7 +190,7 @@ struct MeetingProjectPicker: View {
                 VStack {
                     Spacer()
                     Text(emptyProjectMessage)
-                        .font(.body)
+                        .font(.dahliaBody)
                         .foregroundStyle(DahliaDesign.optionalTextColor)
                     Spacer()
                 }
@@ -213,11 +213,11 @@ struct MeetingProjectPicker: View {
         Button(action: action) {
             HStack(spacing: 8) {
                 Image(systemName: icon)
-                    .font(.body)
+                    .font(.dahliaBody)
                     .foregroundStyle(DahliaDesign.secondaryTextColor)
 
                 Text(name)
-                    .font(.body)
+                    .font(.dahliaBody)
                     .foregroundStyle(DahliaDesign.primaryTextColor)
                     .lineLimit(1)
 
@@ -225,7 +225,7 @@ struct MeetingProjectPicker: View {
 
                 if isSelected {
                     Image(systemName: "checkmark")
-                        .font(.caption.weight(.medium))
+                        .font(.dahliaSecondary.weight(.medium))
                         .foregroundStyle(DahliaDesign.secondaryTextColor)
                 }
             }

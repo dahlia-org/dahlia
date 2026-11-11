@@ -23,6 +23,7 @@ struct MeetingLinkSettingsView: View {
                 }
             } header: {
                 Text(L10n.meetingLinkApplications)
+                    .font(.dahliaSectionHeader)
             } footer: {
                 Text(L10n.meetingLinkApplicationsDescription)
             }
@@ -58,11 +59,13 @@ struct MeetingLinkSettingsView: View {
                 )
             } header: {
                 Text(L10n.meetingLinkServiceOverrides)
+                    .font(.dahliaSectionHeader)
             } footer: {
                 Text(L10n.meetingLinkServiceOverridesDescription)
             }
         }
         .formStyle(.grouped)
+        .font(.dahliaBody)
         .task {
             settings.normalizeMeetingLinkOpenTargets()
             catalog = await MeetingLinkApplicationCatalog.load()

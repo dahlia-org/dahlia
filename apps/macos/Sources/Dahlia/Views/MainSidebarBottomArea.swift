@@ -6,6 +6,7 @@ struct MainSidebarBottomArea: View {
     let recordingCoordinator: RecordingCoordinator
     var updateController: AppUpdateController
     let onSelectWorkspace: (WorkspaceRecord) -> Void
+    let onShowUnprocessedRecordings: () -> Void
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
@@ -15,7 +16,9 @@ struct MainSidebarBottomArea: View {
                 workspaces: sidebarViewModel.allWorkspaces,
                 currentWorkspace: sidebarViewModel.currentWorkspace,
                 updateController: updateController,
-                onSelectWorkspace: onSelectWorkspace
+                onSelectWorkspace: onSelectWorkspace,
+                unprocessedRecordingCount: sidebarViewModel.unprocessedRecordingItems.count,
+                onShowUnprocessedRecordings: onShowUnprocessedRecordings
             )
             .disabled(!viewModel.canSwitchWorkspace)
             .accessibilityHidden(viewModel.isListening)

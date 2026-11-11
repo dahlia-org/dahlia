@@ -75,7 +75,7 @@ struct InstructionsSettingsView: View {
         VStack(alignment: .leading, spacing: 0) {
             HStack(alignment: .firstTextBaseline) {
                 Text(L10n.instructions)
-                    .font(.title3)
+                    .font(.dahliaTitle3)
 
                 Spacer(minLength: 0)
 
@@ -115,11 +115,11 @@ struct InstructionsSettingsView: View {
                     VStack(alignment: .leading, spacing: 6) {
                         TextField(L10n.title, text: $draftName)
                             .textFieldStyle(.plain)
-                            .font(.title3)
+                            .font(.dahliaTitle3)
                             .focused($isNameFieldFocused)
 
                         Text(editorStatusText(for: selectedInstruction))
-                            .font(.body)
+                            .font(.dahliaBody)
                             .foregroundStyle(isInstructionTitleValid ? DahliaDesign.secondaryTextColor : Color.red)
                     }
 
@@ -149,7 +149,7 @@ struct InstructionsSettingsView: View {
                 Divider()
 
                 TextEditor(text: $draftContent)
-                    .font(.body)
+                    .font(.dahliaBody)
                     .scrollContentBackground(.hidden)
                     .padding(InstructionsEditorLayout.editorPadding)
                     .background(Color(nsColor: .textBackgroundColor))
@@ -191,14 +191,14 @@ struct InstructionsSettingsView: View {
 
                     if appSettings.selectedInstructionID == instruction.id {
                         Image(systemName: "checkmark.circle.fill")
-                            .font(.caption)
+                            .font(.dahliaSecondary)
                             .foregroundStyle(Color.accentColor)
                             .accessibilityLabel(L10n.summaryInstructionSelected)
                     }
                 }
 
                 Text(preview(for: instruction.content))
-                    .font(.callout)
+                    .font(.dahliaBody)
                     .foregroundStyle(DahliaDesign.secondaryTextColor)
                     .lineLimit(2)
             }

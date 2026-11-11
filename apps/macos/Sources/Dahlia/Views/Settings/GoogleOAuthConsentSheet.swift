@@ -64,18 +64,21 @@ struct GoogleOAuthConsentSheet: View {
                     Text(disclosure.accessedData)
                 } header: {
                     Text(L10n.googleOAuthDisclosureDataAccess)
+                        .font(.dahliaSectionHeader)
                 }
 
                 Section {
                     Text(disclosure.useAndStorage)
                 } header: {
                     Text(L10n.googleOAuthDisclosureUseAndStorage)
+                        .font(.dahliaSectionHeader)
                 }
 
                 Section {
                     Text(disclosure.externalSharing)
                 } header: {
                     Text(L10n.googleOAuthDisclosureExternalSharing)
+                        .font(.dahliaSectionHeader)
                 }
 
                 Section {
@@ -86,9 +89,11 @@ struct GoogleOAuthConsentSheet: View {
                     )
                 } header: {
                     Text(L10n.googleOAuthDisclosureManageAndDelete)
+                        .font(.dahliaSectionHeader)
                 }
             }
             .formStyle(.grouped)
+            .font(.dahliaBody)
 
             DahliaSheetActionBar {
                 Button(L10n.cancel) {

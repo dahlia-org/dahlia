@@ -24,7 +24,7 @@ struct DahliaWindowHeaderIconButton: View {
         showsHoverHighlight: Bool = true,
         presentsHelpInContainerOverlay: Bool = false,
         controlSize: CGFloat = DahliaDesign.windowHeaderControlSize,
-        symbolFont: Font = .body,
+        symbolFont: Font = .dahliaBody,
         action: @escaping () -> Void
     ) {
         self.label = label

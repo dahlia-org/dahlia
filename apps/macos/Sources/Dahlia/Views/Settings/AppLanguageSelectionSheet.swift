@@ -58,10 +58,12 @@ struct AppLanguageSelectionSheet: View {
                         }
                     } header: {
                         Text(L10n.selectedLanguages)
+                            .font(.dahliaSectionHeader)
                     }
                 }
             }
             .formStyle(.grouped)
+            .font(.dahliaBody)
 
             DahliaSheetActionBar {
                 Button(L10n.done, action: save)

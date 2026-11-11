@@ -35,7 +35,7 @@ struct ProjectDetailCalendarView: View {
 
             if isLimited {
                 Text(L10n.projectCalendarLimitReached)
-                    .font(.footnote)
+                    .font(.dahliaSecondary)
                     .foregroundStyle(.secondary)
             }
         }
@@ -60,7 +60,7 @@ struct ProjectDetailCalendarView: View {
         LazyVGrid(columns: columns, spacing: 0) {
             ForEach(rotatedWeekdaySymbols, id: \.self) { symbol in
                 Text(symbol)
-                    .font(.caption)
+                    .font(.dahliaSecondary)
                     .foregroundStyle(.secondary)
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 4)
@@ -83,7 +83,7 @@ struct ProjectDetailCalendarView: View {
     private func dayCell(_ day: ProjectCalendarDay) -> some View {
         VStack(alignment: .leading, spacing: 4) {
             Text(day.date, format: .dateTime.day())
-                .font(.caption)
+                .font(.dahliaSecondary)
                 .foregroundStyle(day.isInMonth ? .primary : .tertiary)
                 .accessibilityLabel(day.date.formatted(date: .long, time: .omitted))
 
@@ -99,7 +99,7 @@ struct ProjectDetailCalendarView: View {
                 Button(L10n.otherMeetings(day.hiddenMeetingCount)) {
                     selectedDay = day
                 }
-                .font(.caption2)
+                .font(.dahliaSecondary)
                 .buttonStyle(.plain)
                 .foregroundStyle(.secondary)
             }

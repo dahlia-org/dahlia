@@ -40,7 +40,7 @@ struct LiveSubtitleSettingsView: View {
 
                 Picker(selection: $settings.liveSubtitleOverlaySegmentCount) {
                     ForEach(1 ..< 6, id: \.self) { count in
-                        Text("\(count)").tag(count)
+                        Text("\(count)").font(.dahliaBody).tag(count)
                     }
                 } label: {
                     Text(L10n.liveSubtitleOverlaySegmentCount)
@@ -50,6 +50,7 @@ struct LiveSubtitleSettingsView: View {
                 .disabled(!settings.liveSubtitleOverlayEnabled)
             } header: {
                 Text(L10n.liveSubtitleOverlay)
+                    .font(.dahliaSectionHeader)
             } footer: {
                 if !settings.liveSubtitleOverlayEnabled {
                     Text(L10n.enableLiveSubtitlesToConfigure)
@@ -74,6 +75,7 @@ struct LiveSubtitleSettingsView: View {
                 .disabled(!settings.liveSubtitleTranslationEnabled || isLoadingLocales)
             } header: {
                 Text(L10n.liveSubtitleTranslation)
+                    .font(.dahliaSectionHeader)
             } footer: {
                 if !settings.liveSubtitleTranslationEnabled {
                     Text(L10n.enableLiveSubtitleTranslationToChooseLanguage)
@@ -83,6 +85,7 @@ struct LiveSubtitleSettingsView: View {
             }
         }
         .formStyle(.grouped)
+        .font(.dahliaBody)
         .task {
             supportedLocales = await SpeechSupportedLocales.load().sortedByLocalizedName()
             isLoadingLocales = false

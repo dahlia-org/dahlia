@@ -36,13 +36,13 @@ struct WorkspaceAccountPicker: View {
 
     var body: some View {
         Picker(L10n.account, selection: $selection) {
-            Text(L10n.localAccount).tag(WorkspaceAccountChoice.local)
+            Text(L10n.localAccount).font(.dahliaBody).tag(WorkspaceAccountChoice.local)
             ForEach(databricksAccounts) { account in
                 // Named as the Agents settings name its gateway.
-                Text(L10n.unityGatewayHost(account.hostName)).tag(WorkspaceAccountChoice.databricks(account.id))
+                Text(L10n.unityGatewayHost(account.hostName)).font(.dahliaBody).tag(WorkspaceAccountChoice.databricks(account.id))
             }
             ForEach(connections) { connection in
-                Text(accountLabel(connection)).tag(WorkspaceAccountChoice.dahlia(connection.id))
+                Text(accountLabel(connection)).font(.dahliaBody).tag(WorkspaceAccountChoice.dahlia(connection.id))
                     .disabled(!connection.isSignedIn || !connection.supportsWorkspaceSync)
             }
         }

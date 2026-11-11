@@ -15,9 +15,9 @@ struct ConversationAnalyticsSourceRow: View {
                 .accessibilityHidden(true)
             VStack(alignment: .leading, spacing: 2) {
                 Text(title)
-                    .font(.body)
+                    .font(.dahliaBody)
                 Text(facts)
-                    .font(.callout)
+                    .font(.dahliaBody)
                     .foregroundStyle(DahliaDesign.secondaryTextColor)
             }
             Spacer(minLength: 8)

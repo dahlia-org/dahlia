@@ -17,7 +17,7 @@ struct RecordButton: View {
     var body: some View {
         Button(label, systemImage: iconName, action: toggle)
             .labelStyle(.titleAndIcon)
-            .font(.title3)
+            .font(.dahliaTitle3)
             .buttonStyle(.borderedProminent)
             .controlSize(.large)
             .tint(.red)
@@ -123,7 +123,7 @@ private struct SummaryHeaderButtonModifier: ViewModifier {
     func body(content: Content) -> some View {
         content
             .labelStyle(.iconOnly)
-            .font(.title3)
+            .font(.dahliaTitle3)
             .buttonStyle(.plain)
             .frame(width: 32, height: 32)
             .contentShape(.rect)
@@ -151,17 +151,17 @@ private struct SummarySharePopover: View {
                     RoundedRectangle(cornerRadius: DahliaDesign.Highlight.regularCornerRadius)
                         .fill(Color.accentColor.opacity(0.12))
                     Image(systemName: "list.bullet.clipboard")
-                        .font(.system(size: 24, weight: .semibold))
+                        .font(.system(size: DahliaTypography.size(offset: 10), weight: .semibold))
                         .foregroundStyle(Color.accentColor)
                 }
                 .frame(width: 52, height: 52)
 
                 VStack(alignment: .leading, spacing: 2) {
                     Text(title)
-                        .font(.headline)
+                        .font(.dahliaHeadline)
                         .lineLimit(1)
                     Text(L10n.summary)
-                        .font(.body)
+                        .font(.dahliaBody)
                         .foregroundStyle(DahliaDesign.secondaryTextColor)
                 }
             }
@@ -211,11 +211,11 @@ private struct SummarySharePopoverRow: View {
         Button(action: action) {
             HStack(spacing: 14) {
                 Image(systemName: systemImage)
-                    .font(.system(size: 18))
+                    .font(.system(size: DahliaTypography.size(offset: 4)))
                     .foregroundStyle(DahliaDesign.secondaryTextColor)
                     .frame(width: 22)
                 Text(title)
-                    .font(.body)
+                    .font(.dahliaBody)
                 Spacer(minLength: 0)
             }
             .contentShape(Rectangle())

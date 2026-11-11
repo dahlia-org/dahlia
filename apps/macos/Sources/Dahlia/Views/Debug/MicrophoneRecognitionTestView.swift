@@ -9,9 +9,9 @@ struct MicrophoneRecognitionTestView: View {
         Form {
             Section {
                 Picker(L10n.microphone, selection: $model.selectedDeviceID) {
-                    Text(L10n.sameAsSystem).tag(nil as AudioDeviceID?)
+                    Text(L10n.sameAsSystem).font(.dahliaBody).tag(nil as AudioDeviceID?)
                     ForEach(model.devices) { device in
-                        Text(device.name).tag(Optional(device.id))
+                        Text(device.name).font(.dahliaBody).tag(Optional(device.id))
                     }
                 }
                 .disabled(model.isActive)
@@ -32,6 +32,7 @@ struct MicrophoneRecognitionTestView: View {
                 }
             } header: {
                 Text(L10n.audioRecognitionTest)
+                    .font(.dahliaSectionHeader)
             } footer: {
                 Text(model.capturePathDescription)
             }
@@ -47,12 +48,13 @@ struct MicrophoneRecognitionTestView: View {
                     }
                 } header: {
                     Text(L10n.microphoneCaptureLog)
+                        .font(.dahliaSectionHeader)
                 } footer: {
                     Text(L10n.microphoneCaptureLogDescription)
                 }
             }
 
-            Section(L10n.audioRecognitionTestStatus) {
+            Section {
                 LabeledContent(L10n.status, value: model.statusText)
 
                 LabeledContent(L10n.inputLevel) {
@@ -160,6 +162,9 @@ struct MicrophoneRecognitionTestView: View {
                         tint: .red
                     )
                 }
+            } header: {
+                Text(L10n.audioRecognitionTestStatus)
+                    .font(.dahliaSectionHeader)
             }
 
             if let diagnosticOutputDirectory = model.diagnosticOutputDirectory {
@@ -172,12 +177,13 @@ struct MicrophoneRecognitionTestView: View {
                     )
                 } header: {
                     Text(L10n.diagnosticAudioOutput)
+                        .font(.dahliaSectionHeader)
                 } footer: {
                     Text(model.diagnosticAudioOutputDescription)
                 }
             }
 
-            Section(L10n.recognizedText) {
+            Section {
                 if model.displayedTranscript.isEmpty {
                     Text(L10n.speakIntoSelectedMicrophone)
                         .foregroundStyle(DahliaDesign.secondaryTextColor)
@@ -185,6 +191,9 @@ struct MicrophoneRecognitionTestView: View {
                     Text(model.displayedTranscript)
                         .textSelection(.enabled)
                 }
+            } header: {
+                Text(L10n.recognizedText)
+                    .font(.dahliaSectionHeader)
             }
         }
         .formStyle(.grouped)

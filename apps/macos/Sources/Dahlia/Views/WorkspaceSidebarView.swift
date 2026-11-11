@@ -20,7 +20,7 @@ struct WorkspaceSidebarView: View {
         VStack(spacing: 0) {
             DahliaWindowHeader(reservesWindowControls: true) {
                 Text(L10n.workspace)
-                    .font(.headline)
+                    .font(.dahliaHeadline)
                     .lineLimit(1)
 
                 Spacer(minLength: 0)
@@ -70,7 +70,7 @@ struct WorkspaceSidebarView: View {
                             VStack(alignment: .leading) {
                                 Text(workspace.name)
                                 Text(workspace.path ?? L10n.noLocalExportFolder)
-                                    .font(.footnote)
+                                    .font(.dahliaSecondary)
                                     .foregroundStyle(DahliaDesign.secondaryTextColor)
                                     .lineLimit(1)
                                     .truncationMode(.middle)

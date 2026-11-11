@@ -67,9 +67,9 @@ struct MeetingMetadataBar: View {
         } label: {
             HStack(spacing: 4) {
                 Image(systemName: "tag.badge.plus")
-                    .font(.caption2)
+                    .font(.dahliaSecondary)
                 Text(L10n.addTag)
-                    .font(.caption2.weight(.medium))
+                    .font(.dahliaSecondary.weight(.medium))
             }
             .frame(minHeight: 16)
             .foregroundStyle(DahliaDesign.secondaryTextColor)
@@ -116,7 +116,7 @@ struct MeetingMetadataBar: View {
                 VStack {
                     Spacer()
                     Text(L10n.noResultsFound)
-                        .font(.body)
+                        .font(.dahliaBody)
                         .foregroundStyle(DahliaDesign.optionalTextColor)
                     Spacer()
                 }
@@ -137,7 +137,7 @@ struct MeetingMetadataBar: View {
             HStack(spacing: 6) {
                 if isNew {
                     Image(systemName: "plus")
-                        .font(.caption)
+                        .font(.dahliaSecondary)
                         .foregroundStyle(DahliaDesign.secondaryTextColor)
                 } else {
                     Circle()
@@ -145,7 +145,7 @@ struct MeetingMetadataBar: View {
                         .frame(width: 8, height: 8)
                 }
                 Text(name)
-                    .font(.body)
+                    .font(.dahliaBody)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             .contentShape(Rectangle())
@@ -178,11 +178,11 @@ private struct MeetingMetadataPill: View {
     var body: some View {
         Label {
             Text(text)
-                .font(.caption2.weight(.medium))
+                .font(.dahliaSecondary.weight(.medium))
                 .lineLimit(1)
         } icon: {
             Image(systemName: systemImage)
-                .font(.caption2)
+                .font(.dahliaSecondary)
         }
         .frame(minHeight: 16)
         .foregroundStyle(DahliaDesign.secondaryTextColor)
@@ -212,7 +212,7 @@ private struct TagChip: View {
 
                 Button(action: onRemove) {
                     Image(systemName: "xmark")
-                        .font(.system(size: 8, weight: .bold))
+                        .font(.system(size: DahliaTypography.size(offset: -6), weight: .bold))
                         .foregroundStyle(DahliaDesign.secondaryTextColor)
                         .frame(minWidth: 16, minHeight: 16)
                         .contentShape(Rectangle())
@@ -227,7 +227,7 @@ private struct TagChip: View {
             .frame(width: 16, height: 16)
 
             Text(tag.name)
-                .font(.caption2.weight(.medium))
+                .font(.dahliaSecondary.weight(.medium))
                 .foregroundStyle(DahliaDesign.secondaryTextColor)
                 .lineLimit(1)
         }

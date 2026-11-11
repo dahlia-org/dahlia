@@ -10,7 +10,7 @@ struct CodexChatApprovalMethodButton: View {
     var body: some View {
         Button(session.selectedApprovalMethod.title, systemImage: session.selectedApprovalMethod.systemImage, action: togglePanel)
             .buttonStyle(.plain)
-            .font(.callout)
+            .font(.dahliaBody)
             .foregroundStyle(DahliaDesign.secondaryTextColor)
             .lineLimit(1)
             .padding(.horizontal, 10)

@@ -17,7 +17,7 @@ struct ScreenshotSettingsView: View {
 
                 Picker(selection: $settings.automaticScreenshotIntervalSeconds) {
                     ForEach(AppSettings.automaticScreenshotIntervalOptions, id: \.self) { interval in
-                        Text(L10n.seconds(interval)).tag(interval)
+                        Text(L10n.seconds(interval)).font(.dahliaBody).tag(interval)
                     }
                 } label: {
                     Text(L10n.screenshotInterval)
@@ -29,7 +29,7 @@ struct ScreenshotSettingsView: View {
 
                 Picker(selection: $settings.automaticScreenshotChangeThresholdPercent) {
                     ForEach(AppSettings.automaticScreenshotChangeThresholdPercentOptions, id: \.self) { threshold in
-                        Text(L10n.percent(threshold)).tag(threshold)
+                        Text(L10n.percent(threshold)).font(.dahliaBody).tag(threshold)
                     }
                 } label: {
                     Text(L10n.screenshotChangeThreshold)
@@ -40,6 +40,7 @@ struct ScreenshotSettingsView: View {
                 .pickerStyle(.menu)
             } header: {
                 Text(L10n.automaticScreenshots)
+                    .font(.dahliaSectionHeader)
             } footer: {
                 Text(L10n.automaticScreenshotsDescription)
             }
@@ -58,6 +59,7 @@ struct ScreenshotSettingsView: View {
                 .toggleStyle(.switch)
             } header: {
                 Text(L10n.sharedContent)
+                    .font(.dahliaSectionHeader)
             } footer: {
                 Text(L10n.sharedContentDetectionFallbackDescription)
             }
@@ -65,7 +67,7 @@ struct ScreenshotSettingsView: View {
             Section {
                 Picker(L10n.screenshotCacheLimit, selection: $screenshotCacheGiB) {
                     ForEach([1, 2, 5, 10], id: \.self) { size in
-                        Text("\(size) GiB").tag(size)
+                        Text("\(size) GiB").font(.dahliaBody).tag(size)
                     }
                 }
             } footer: {
@@ -73,6 +75,7 @@ struct ScreenshotSettingsView: View {
             }
         }
         .formStyle(.grouped)
+        .font(.dahliaBody)
         .task(id: screenshotCacheGiB) {
             await ScreenshotContentProvider.shared.trimCache()
         }

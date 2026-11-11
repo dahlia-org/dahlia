@@ -15,8 +15,8 @@ struct DocumentPublicationView: View {
         ZStack {
             Color.black.opacity(0.25).ignoresSafeArea().onTapGesture { if !publishing { close() } }
             VStack(alignment: .leading, spacing: 16) {
-                Text(workspace.accountConnectionId == nil ? L10n.documentPrivateLegacy : L10n.documentPublishTitle).font(.title2)
-                Text(workspace.name).font(.headline)
+                Text(workspace.accountConnectionId == nil ? L10n.documentPrivateLegacy : L10n.documentPublishTitle).font(.dahliaTitle2)
+                Text(workspace.name).font(.dahliaHeadline)
                 if workspace.accountConnectionId != nil { Text(L10n.documentPublishAudience).fixedSize(horizontal: false, vertical: true) }
                 ScrollView {
                     VStack(alignment: .leading, spacing: 12) {

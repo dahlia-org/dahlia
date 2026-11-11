@@ -56,7 +56,7 @@ struct BackupSettingsView: View {
                         }
                     )) {
                         Text(workspace.name)
-                        Text(TypeID.encode(workspace.id, as: .workspace)).font(.caption).foregroundStyle(.secondary)
+                        Text(TypeID.encode(workspace.id, as: .workspace)).font(.dahliaSecondary).foregroundStyle(.secondary)
                     }
                     .toggleStyle(.checkbox)
                     .disabled(model.isBusy)
@@ -88,11 +88,12 @@ struct BackupSettingsView: View {
                 }
             } header: {
                 Text(L10n.workspaceBackup)
+                    .font(.dahliaSectionHeader)
             } footer: {
                 Text(L10n.workspaceBackupDescription + "\n" + L10n.backupLocalWorkspacesOnly)
             }
 
-            Section(L10n.backupGenerations) {
+            Section {
                 if model.generations.isEmpty {
                     ContentUnavailableView(
                         L10n.noBackups,
@@ -104,9 +105,13 @@ struct BackupSettingsView: View {
                         generationRow(generation)
                     }
                 }
+            } header: {
+                Text(L10n.backupGenerations)
+                    .font(.dahliaSectionHeader)
             }
         }
         .formStyle(.grouped)
+        .font(.dahliaBody)
         .task {
             model.selectedWorkspaceIds = Set([settings.currentWorkspace?.id].compactMap(\.self))
             while !Task.isCancelled {
@@ -146,7 +151,7 @@ struct BackupSettingsView: View {
                 .ignoresSafeArea()
                 .onTapGesture { if !model.isBusy { pendingRestoreGeneration = nil } }
             VStack(alignment: .leading, spacing: 16) {
-                Text(L10n.restoreBackupConfirmation).font(.headline)
+                Text(L10n.restoreBackupConfirmation).font(.dahliaHeadline)
                 ScrollView {
                     VStack(alignment: .leading, spacing: 16) {
                         ForEach($model.restoreSelections) { $selection in
@@ -156,7 +161,7 @@ struct BackupSettingsView: View {
                     }
                 }
                 .frame(maxHeight: 320)
-                Text(L10n.workspaceBackupRestoreDescription).font(.callout).foregroundStyle(.secondary)
+                Text(L10n.workspaceBackupRestoreDescription).font(.dahliaBody).foregroundStyle(.secondary)
                 if let error = model.errorMessage {
                     Text(error).foregroundStyle(.red)
                 }
@@ -191,19 +196,21 @@ struct BackupSettingsView: View {
         let workspace = selection.wrappedValue.workspace
         let canOverwrite = model.canOverwrite(workspaceId: workspace.id)
         return VStack(alignment: .leading, spacing: 8) {
-            Text(workspace.name).font(.headline)
-            Text(TypeID.encode(workspace.id, as: .workspace)).font(.caption).foregroundStyle(.secondary)
+            Text(workspace.name).font(.dahliaHeadline)
+            Text(TypeID.encode(workspace.id, as: .workspace)).font(.dahliaSecondary).foregroundStyle(.secondary)
             Picker(L10n.backupRestoreMode, selection: selection.mode) {
-                Text(L10n.backupSkipWorkspace).tag(nil as WorkspaceBackupRestoreRequest.Mode?)
-                Text(L10n.backupOverwriteOriginalWorkspace).tag(WorkspaceBackupRestoreRequest.Mode.overwrite as WorkspaceBackupRestoreRequest.Mode?)
+                Text(L10n.backupSkipWorkspace).font(.dahliaBody).tag(nil as WorkspaceBackupRestoreRequest.Mode?)
+                Text(L10n.backupOverwriteOriginalWorkspace).font(.dahliaBody)
+                    .tag(WorkspaceBackupRestoreRequest.Mode.overwrite as WorkspaceBackupRestoreRequest.Mode?)
                     .disabled(!canOverwrite)
-                Text(L10n.backupRestoreAsNewWorkspace).tag(WorkspaceBackupRestoreRequest.Mode.newWorkspace as WorkspaceBackupRestoreRequest.Mode?)
+                Text(L10n.backupRestoreAsNewWorkspace).font(.dahliaBody)
+                    .tag(WorkspaceBackupRestoreRequest.Mode.newWorkspace as WorkspaceBackupRestoreRequest.Mode?)
             }
             if selection.wrappedValue.mode == .newWorkspace {
                 TextField(L10n.workspaceName, text: selection.name)
             }
             if !canOverwrite {
-                Text(L10n.backupRestoreTargetUnavailable).font(.caption).foregroundStyle(.secondary)
+                Text(L10n.backupRestoreTargetUnavailable).font(.dahliaSecondary).foregroundStyle(.secondary)
             }
         }
     }
@@ -226,6 +233,7 @@ struct BackupSettingsView: View {
             }
         } header: {
             Text(L10n.unprocessedRecordings)
+                .font(.dahliaSectionHeader)
         } footer: {
             Text(L10n.unprocessedRecordingsDescription)
         }

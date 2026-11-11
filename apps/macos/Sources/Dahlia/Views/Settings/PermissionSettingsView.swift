@@ -60,6 +60,7 @@ struct PermissionSettingsView: View {
             }
         }
         .formStyle(.grouped)
+        .font(.dahliaBody)
         .onChange(of: scenePhase) { _, newPhase in
             guard newPhase == .active else { return }
             model.refresh()
@@ -82,14 +83,14 @@ private struct PermissionSettingsRow: View {
         if prominentLabel {
             HStack(alignment: .center, spacing: 16) {
                 Image(systemName: permission.systemImage)
-                    .font(.title)
+                    .font(.dahliaTitle)
                     .frame(width: 40)
                     .dahliaFixedSymbol()
 
                 VStack(alignment: .leading, spacing: 5) {
                     HStack(alignment: .firstTextBaseline, spacing: 10) {
                         Text(permission.title)
-                            .font(.title2)
+                            .font(.dahliaTitle2)
                             .bold()
                         Label(status.label, systemImage: status.systemImage)
                             .foregroundStyle(statusColor)

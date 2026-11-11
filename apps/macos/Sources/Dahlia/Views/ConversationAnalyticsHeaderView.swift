@@ -7,9 +7,9 @@ struct ConversationAnalyticsHeaderView: View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(alignment: .firstTextBaseline, spacing: 8) {
                 Text(L10n.conversationAnalytics)
-                    .font(.title2)
+                    .font(.dahliaTitle2)
                 Text(L10n.conversationAnalyticsBeta)
-                    .font(.caption.bold())
+                    .font(.dahliaSecondary.bold())
                     .foregroundStyle(.purple)
                     .padding(.horizontal, 7)
                     .padding(.vertical, 3)
@@ -21,7 +21,7 @@ struct ConversationAnalyticsHeaderView: View {
                         share.formatted(.percent.precision(.fractionLength(0)))
                     )
                 )
-                .font(.headline)
+                .font(.dahliaHeadline)
             }
         }
         .accessibilityElement(children: .combine)

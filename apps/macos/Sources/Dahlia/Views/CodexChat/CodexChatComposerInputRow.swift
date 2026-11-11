@@ -4,6 +4,8 @@ import SwiftUI
 struct CodexChatComposerInputRow: View {
     @Bindable var session: CodexChatSessionModel
     let configurationPresentation: Binding<Bool>?
+    let addPanel: CodexChatAddPanel?
+    let onDismissAddPanel: () -> Void
     @FocusState.Binding var isComposerFocused: Bool
     let onToggleAddPanel: () -> Void
     let onPasteImages: () -> Bool
@@ -13,6 +15,8 @@ struct CodexChatComposerInputRow: View {
     let onHover: (HoverPhase) -> Void
 
     @State private var isAddButtonHovered = false
+    @State private var windowBounds: CGRect = .zero
+    @State private var addPanelSize: CGSize = .zero
 
     var body: some View {
         VStack(spacing: 0) {
@@ -45,6 +49,26 @@ struct CodexChatComposerInputRow: View {
             .onHover { isAddButtonHovered = $0 }
             .dahliaHoverHelp(label: L10n.addToChat, shortcut: "@")
             .onExitCommand(perform: onExitCommand)
+            .onGeometryChange(for: CGRect.self) { geometry in
+                geometry.bounds(of: .named(CodexChatAddPanelLayout.coordinateSpaceName))
+                    ?? geometry.bounds(of: .named(DahliaWindowHeaderHelpLayout.windowCoordinateSpaceName)) ?? .zero
+            } action: { windowBounds = $0 }
+            .overlay(alignment: .topLeading) {
+                if let addPanel {
+                    addPanel
+                        .frame(width: CodexChatAddPanelLayout.width(windowBounds: windowBounds))
+                        .frame(maxHeight: CodexChatAddPanelLayout.maximumHeight(windowBounds: windowBounds))
+                        .fixedSize(horizontal: false, vertical: true)
+                        .onGeometryChange(for: CGSize.self) { $0.size } action: { addPanelSize = $0 }
+                        .codexChatDismissOnOutsideClick(perform: onDismissAddPanel)
+                        .offset(CodexChatAddPanelLayout.offset(panelSize: addPanelSize, windowBounds: windowBounds))
+                        .opacity(addPanelSize == .zero ? 0 : 1)
+                }
+            }
+            .onChange(of: addPanel != nil) { _, isPresented in
+                if !isPresented { addPanelSize = .zero }
+            }
+            .zIndex(addPanel == nil ? 0 : 1)
 
             CodexChatApprovalMethodButton(session: session)
 
@@ -99,7 +123,7 @@ struct CodexChatComposerTextEditor: View {
                 .lineLimit(Self.maximumLineCount)
             Text(verbatim: " \n ")
         }
-        .font(.body)
+        .font(.dahliaBody)
         .padding(.leading, 8)
         .padding(.vertical, 6)
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -108,7 +132,7 @@ struct CodexChatComposerTextEditor: View {
         .overlay(alignment: .topLeading) {
             ZStack(alignment: .topLeading) {
                 TextEditor(text: $text)
-                    .font(.body)
+                    .font(.dahliaBody)
                     .focused($isFocused)
                     .scrollContentBackground(.hidden)
                     .padding(.leading, 3)
@@ -125,7 +149,7 @@ struct CodexChatComposerTextEditor: View {
 
                 if Self.shouldShowPlaceholder(text: text, isFocused: isFocused) {
                     Text(L10n.messageDahliaAI)
-                        .font(.body)
+                        .font(.dahliaBody)
                         .foregroundStyle(DahliaDesign.optionalTextColor)
                         .padding(.leading, 8)
                         .padding(.top, 6)

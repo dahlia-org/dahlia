@@ -27,27 +27,39 @@ struct CodexChatHeader: View {
                     systemImage: "chevron.left",
                     action: onBack
                 )
-                Text(L10n.chatHistory)
-                    .font(.body)
-            } else {
-                if hasConversation {
-                    DahliaWindowHeaderIconButton(
-                        label: L10n.newChat,
-                        systemImage: "square.and.pencil",
-                        action: onNewChat
-                    )
-                    Divider()
-                        .frame(height: 16)
-                }
-                Text(title)
-                    .font(.body)
+            }
+
+            HStack(spacing: 8) {
+                Image(systemName: "message")
+                    .dahliaFixedSymbol()
+                    .accessibilityHidden(true)
+                Text(L10n.dahliaAI)
+                    .fixedSize()
+            }
+            .font(.dahliaBody)
+            .foregroundStyle(DahliaDesign.primaryTextColor)
+
+            if showsHistory || hasConversation {
+                Text("/")
+                    .foregroundStyle(DahliaDesign.secondaryTextColor)
+                    .accessibilityHidden(true)
+                Text(showsHistory ? L10n.chatHistory : title)
+                    .font(.dahliaBody)
                     .foregroundStyle(DahliaDesign.secondaryTextColor)
                     .lineLimit(1)
+                    .layoutPriority(-1)
             }
 
             Spacer(minLength: 8)
 
             if !showsHistory {
+                if hasConversation {
+                    DahliaWindowHeaderIconButton(
+                        label: L10n.newChat,
+                        systemImage: "plus.message",
+                        action: onNewChat
+                    )
+                }
                 DahliaWindowHeaderIconButton(
                     label: L10n.chatHistory,
                     systemImage: "clock.arrow.circlepath",

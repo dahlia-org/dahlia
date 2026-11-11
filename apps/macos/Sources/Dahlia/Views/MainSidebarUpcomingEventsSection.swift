@@ -12,6 +12,11 @@ struct MainSidebarUpcomingEventsSection: View {
     let openDraftEventID: String?
     let onSelectEvent: (CalendarEvent) -> Void
     let onShowSchedule: () -> Void
+    let canStartRecording: Bool
+    let onJoinEvent: (CalendarEvent) -> Void
+    let onOpenMeetingLink: (CalendarEvent) -> Void
+
+    @ObservedObject private var calendarAutoRecordingStore = CalendarAutoRecordingStore.shared
 
     @State private var isExpanded = true
     /// Ticks on each minute so ended events leave the list and the day labels stay current while the sidebar stays open.
@@ -47,11 +52,17 @@ struct MainSidebarUpcomingEventsSection: View {
 
         if isExpanded {
             ForEach(visibleEvents) { event in
-                Button { onSelectEvent(event) } label: {
-                    MainSidebarUpcomingEventRow(event: event, now: now, isSelected: event.id == openDraftEventID)
-                }
-                .buttonStyle(.plain)
-                .accessibilityAddTraits(event.id == openDraftEventID ? .isSelected : [])
+                MainSidebarUpcomingEventRow(
+                    event: event,
+                    now: now,
+                    isSelected: event.id == openDraftEventID,
+                    canStartRecording: canStartRecording,
+                    isAutoRecordingEnabled: calendarAutoRecordingStore.isEnabled(for: event),
+                    onSelect: { onSelectEvent(event) },
+                    onJoin: { onJoinEvent(event) },
+                    onOpenMeetingLink: { onOpenMeetingLink(event) },
+                    onSetAutoRecording: { calendarAutoRecordingStore.setEnabled($0, for: event) }
+                )
                 .listRowSeparator(.hidden)
             }
 
@@ -61,7 +72,7 @@ struct MainSidebarUpcomingEventsSection: View {
                     systemImage: "ellipsis",
                     isSelected: isShowingSchedule
                 )
-                .font(.callout)
+                .font(.dahliaBody)
             }
             .buttonStyle(.plain)
             .listRowSeparator(.hidden)
@@ -78,57 +89,5 @@ private extension MainSidebarUpcomingEventsSection {
             filter: settings.calendarEventFilter,
             now: now
         ).prefix(Self.maximumVisibleEvents))
-    }
-}
-
-private struct MainSidebarUpcomingEventRow: View {
-    let event: CalendarEvent
-    let now: Date
-    let isSelected: Bool
-
-    var body: some View {
-        HStack(spacing: 8) {
-            RoundedRectangle(cornerRadius: 2)
-                .fill(event.calendarColorHex.map(Color.init(hex:)) ?? Color.accentColor)
-                .frame(width: 8, height: 8)
-                .accessibilityHidden(true)
-
-            Text(event.title)
-                .lineLimit(1)
-
-            Spacer(minLength: 8)
-
-            Text(timeText)
-                .font(.caption)
-                .monospacedDigit()
-                .foregroundStyle(DahliaDesign.sidebarSecondaryTextColor)
-                .lineLimit(1)
-        }
-        .frame(maxWidth: .infinity, minHeight: 28, alignment: .leading)
-        .contentShape(.rect)
-        .modifier(SidebarNavigationRowModifier(isSelected: isSelected))
-        .accessibilityElement(children: .combine)
-    }
-
-    /// The day, relative to `now`, for any event not today, then the time ("All day" for all-day events).
-    private var timeText: String {
-        let calendar = Calendar.autoupdatingCurrent
-        let start = event.startDate.formatted(date: .omitted, time: .shortened)
-        // An event still in progress from an earlier day counts as today's, not as a past date.
-        let day = max(event.startDate, calendar.startOfDay(for: now))
-        let isToday = calendar.isDate(day, inSameDayAs: now)
-        let time = if event.isAllDay {
-            L10n.calendarAllDay
-        } else if isToday {
-            "\(start)–\(event.endDate.formatted(date: .omitted, time: .shortened))"
-        } else {
-            start
-        }
-        if isToday { return time }
-        if let tomorrow = calendar.date(byAdding: .day, value: 1, to: now),
-           calendar.isDate(day, inSameDayAs: tomorrow) {
-            return "\(L10n.tomorrow) \(time)"
-        }
-        return "\(day.formatted(.dateTime.month(.defaultDigits).day())) \(time)"
     }
 }

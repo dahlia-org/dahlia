@@ -21,7 +21,7 @@ struct ScreenshotSearchResultTile: View {
                     .clipShape(.rect(cornerRadius: DahliaDesign.Media.cornerRadius))
 
                 Text(result.capturedAt.formatted(date: .numeric, time: .shortened))
-                    .font(.footnote)
+                    .font(.dahliaSecondary)
                     .monospacedDigit()
                     .foregroundStyle(DahliaDesign.secondaryTextColor)
                     .lineLimit(1)

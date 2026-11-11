@@ -8,7 +8,7 @@ struct CodexChatApprovalView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
             Text(title)
-                .font(.body.weight(.medium))
+                .font(.dahliaBody.weight(.medium))
                 .foregroundStyle(DahliaDesign.secondaryTextColor)
 
             CodexChatApprovalDetails(request: request)

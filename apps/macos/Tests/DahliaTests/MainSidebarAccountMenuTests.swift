@@ -15,7 +15,8 @@
                 isLocalAccount: true,
                 onOpenSettings: { _ in },
                 onSelectAccount: { _ in },
-                onAccountAction: {}
+                onAccountAction: {},
+                onShowUnprocessedRecordings: {}
             ).disabled(disabled))
             host.frame = NSRect(x: 0, y: 0, width: 240, height: 44)
             host.layoutSubtreeIfNeeded()
@@ -160,7 +161,7 @@
                 at: accountRange.location,
                 effectiveRange: nil
             ) as? NSParagraphStyle
-            #expect(accountFont?.pointSize == NSFont.preferredFont(forTextStyle: .body).pointSize)
+            #expect(accountFont?.pointSize == 14)
             #expect(paragraphStyle?.firstLineHeadIndent == 6)
             #expect(paragraphStyle?.headIndent == 6)
         }
@@ -349,7 +350,8 @@
             let coordinator = MainSidebarAccountMenuCoordinator(
                 connections: connections,
                 accountSelection: .init(connectionID: nil, isLocal: true),
-                onOpenSettings: { _ in }, onSelectAccount: { _ in }, onAccountAction: {}
+                onOpenSettings: { _ in }, onSelectAccount: { _ in }, onAccountAction: {},
+                onShowUnprocessedRecordings: {}
             )
             coordinator.button = button
             var openedURLs: [URL] = []
@@ -410,7 +412,8 @@
                     didSelectAccount = true
                     selectedConnectionID = $0?.id
                 },
-                onAccountAction: { didManageAccounts = true }
+                onAccountAction: { didManageAccounts = true },
+                onShowUnprocessedRecordings: {}
             )
 
             coordinator.moveSelection(1)
@@ -485,13 +488,16 @@
                     onOpenSettings: { _ in selections.append("settings") },
                     onSelectAccount: { selections.append($0 == nil ? "local" : "server") },
                     onSelectDatabricksAccount: { selections.append($0 == first.id ? "first" : "second") },
-                    onAccountAction: {}
+                    onAccountAction: {},
+                    onShowUnprocessedRecordings: {}
                 )
             }
 
-            // Each activation closes the menu, so every selection starts again from the first row.
+            /// Each activation closes the menu, so every selection starts again from the first row.
             func activate(_ coordinator: MainSidebarAccountMenuCoordinator, row: Int) {
-                for _ in 0...row { coordinator.moveSelection(1) }
+                for _ in 0 ... row {
+                    coordinator.moveSelection(1)
+                }
                 coordinator.activateSelection()
             }
             let local = coordinator(current: nil)
@@ -520,7 +526,8 @@
                 ),
                 onOpenSettings: { _ in },
                 onSelectAccount: { selectedConnectionID = $0?.id },
-                onAccountAction: {}
+                onAccountAction: {},
+                onShowUnprocessedRecordings: {}
             )
 
             coordinator.moveSelection(1)
@@ -539,7 +546,8 @@
                 accountSelection: .init(connectionID: nil, isLocal: true),
                 onOpenSettings: { openedCategories.append($0) },
                 onSelectAccount: { _ in selectedAccount = true },
-                onAccountAction: { accountActions += 1 }
+                onAccountAction: { accountActions += 1 },
+                onShowUnprocessedRecordings: {}
             )
 
             coordinator.moveSelection(1)
@@ -556,6 +564,53 @@
             coordinator.activateSelection()
             #expect(accountActions == 1)
 
+        }
+
+        @Test(arguments: ["local", "server", "databricks"])
+        func keyboardOpensUnprocessedRecordingsAndDismissesMenu(account: String) {
+            let window = NSWindow(
+                contentRect: NSRect(x: 0, y: 0, width: 500, height: 500),
+                styleMask: [.titled], backing: .buffered, defer: false
+            )
+            window.isReleasedWhenClosed = false
+            let button = NSButton(frame: NSRect(x: 0, y: 0, width: 100, height: 30))
+            window.contentView?.addSubview(button)
+            let connections = account == "server" ? [makeConnection(origin: "https://server.example.com", isCloud: false)] : []
+            let databricksAccounts = account == "databricks" ? [DatabricksConnection(id: .v7(), host: "https://dbc.example.com")] : []
+            var openedRecordings = 0
+            var menuWasDismissed = false
+            let coordinator = MainSidebarAccountMenuCoordinator(
+                connections: connections,
+                accountSelection: .init(
+                    connectionID: connections.first?.id,
+                    isLocal: connections.isEmpty,
+                    databricksAccounts: databricksAccounts,
+                    currentDatabricksID: databricksAccounts.first?.id
+                ),
+                onOpenSettings: { _ in Issue.record("Opened Settings instead of unprocessed recordings") },
+                onSelectAccount: { _ in Issue.record("Switched accounts instead of opening unprocessed recordings") },
+                onAccountAction: { Issue.record("Performed account action instead of opening unprocessed recordings") },
+                unprocessedRecordingCount: 3,
+                onShowUnprocessedRecordings: {
+                    openedRecordings += 1
+                    menuWasDismissed = window.childWindows?.isEmpty ?? true
+                }
+            )
+            coordinator.button = button
+            defer {
+                coordinator.dismissMenu()
+                window.close()
+            }
+            coordinator.toggleMenu()
+            #expect(window.childWindows?.isEmpty == false)
+
+            for _ in 0 ... coordinator.menuOffset + 2 {
+                coordinator.moveSelection(1)
+            }
+            coordinator.activateSelection()
+
+            #expect(openedRecordings == 1)
+            #expect(menuWasDismissed)
         }
 
         private func makeConnection(origin: String, isCloud: Bool, workspaceCount: Int = 1) -> DahliaAccountConnection {

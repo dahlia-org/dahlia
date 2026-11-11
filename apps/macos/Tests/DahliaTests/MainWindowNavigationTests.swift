@@ -52,6 +52,8 @@
         func sidebarTabChangesOnlyTheSidebarAndNavigationNeverChangesIt() async {
             let navigation = MainWindowNavigation(openMainWindow: {})
             #expect(navigation.sidebarTab == .meetings)
+            #expect(MainSidebarTab.allCases == [.meetings, .projects, .chat])
+            #expect(MainSidebarTab.allCases.map(\.shortcutKey) == ["1", "2", "3"])
             #expect(navigation.meetingSidebarDisplayMode == .chronological)
 
             navigation.sidebarTab = .projects

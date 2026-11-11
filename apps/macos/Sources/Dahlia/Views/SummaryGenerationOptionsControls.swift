@@ -8,9 +8,9 @@ struct SummaryGenerationOptionsControls: View {
 
     var body: some View {
         Picker(selection: $detailLevel) {
-            Text(L10n.workspaceGenerationDefault).tag(SummaryDetailLevel?.none)
+            Text(L10n.workspaceGenerationDefault).font(.dahliaBody).tag(SummaryDetailLevel?.none)
             ForEach(SummaryDetailLevel.allCases) { level in
-                Text(level.displayName).tag(Optional(level))
+                Text(level.displayName).font(.dahliaBody).tag(Optional(level))
             }
         } label: {
             Text(L10n.summaryDetailLevel)

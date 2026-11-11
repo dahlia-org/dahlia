@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// Chat history rows for a sidebar `List`, shown on the Home and Chat tabs.
+/// Chat history rows for the Chat sidebar's `List`.
 struct MainSidebarChatHistorySection: View {
     var coordinator: CodexChatCoordinator
     var sidebarViewModel: SidebarViewModel
@@ -87,7 +87,7 @@ struct MainSidebarChatHistorySection: View {
                 Task { await coordinator.loadMoreHistory() }
             } label: {
                 MainSidebarNavigationLabel(title: L10n.loadMore, systemImage: "ellipsis")
-                    .font(.callout)
+                    .font(.dahliaBody)
             }
             .buttonStyle(.plain)
         }

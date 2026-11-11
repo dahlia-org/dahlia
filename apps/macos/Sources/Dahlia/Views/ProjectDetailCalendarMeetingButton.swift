@@ -12,7 +12,7 @@ struct ProjectDetailCalendarMeetingButton: View {
     var body: some View {
         Button(action: onOpen) {
             Text(item.displayTitle)
-                .font(.caption2)
+                .font(.dahliaSecondary)
                 .lineLimit(1)
                 .frame(maxWidth: .infinity, alignment: .leading)
         }

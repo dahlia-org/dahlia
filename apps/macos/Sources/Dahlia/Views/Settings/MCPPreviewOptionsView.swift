@@ -11,12 +11,12 @@ struct MCPPreviewOptionsView: View {
         HStack(alignment: .top) {
             VStack(alignment: .leading) {
                 Text(L10n.mcpClient)
-                    .font(.subheadline)
+                    .font(.dahliaBody)
                     .foregroundStyle(DahliaDesign.secondaryTextColor)
 
                 Picker(L10n.mcpClient, selection: $selectedClient) {
                     ForEach(MCPClient.allCases) { client in
-                        Text(client.displayName).tag(client)
+                        Text(client.displayName).font(.dahliaBody).tag(client)
                     }
                 }
                 .labelsHidden()
@@ -26,13 +26,14 @@ struct MCPPreviewOptionsView: View {
 
             VStack(alignment: .leading) {
                 Text(L10n.workspace)
-                    .font(.subheadline)
+                    .font(.dahliaBody)
                     .foregroundStyle(DahliaDesign.secondaryTextColor)
 
                 Picker(L10n.workspace, selection: $selectedWorkspaceID) {
-                    Text(L10n.mcpAllWorkspaces).tag(nil as UUID?)
+                    Text(L10n.mcpAllWorkspaces).font(.dahliaBody).tag(nil as UUID?)
                     ForEach(availableWorkspaces) { workspace in
                         Text(MCPWorkspaceDisplayName.resolve(for: workspace, among: availableWorkspaces))
+                            .font(.dahliaBody)
                             .tag(Optional(workspace.id))
                     }
                 }
@@ -43,7 +44,7 @@ struct MCPPreviewOptionsView: View {
 
             VStack(alignment: .leading) {
                 Text(L10n.mcpAllowWriteAccess)
-                    .font(.subheadline)
+                    .font(.dahliaBody)
                     .foregroundStyle(DahliaDesign.secondaryTextColor)
 
                 Toggle(L10n.mcpAllowWriteAccess, isOn: $isWriteEnabled)

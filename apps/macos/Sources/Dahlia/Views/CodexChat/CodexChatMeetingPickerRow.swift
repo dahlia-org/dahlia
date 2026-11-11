@@ -15,7 +15,7 @@ struct CodexChatMeetingPickerRow: View {
                 Text(reference.name)
                     .lineLimit(1)
                 Text(reference.recordingStartedAt, format: .dateTime.year().month(.abbreviated).day().hour().minute())
-                    .font(.footnote)
+                    .font(.dahliaSecondary)
                     .foregroundStyle(DahliaDesign.secondaryTextColor)
                     .lineLimit(1)
             }

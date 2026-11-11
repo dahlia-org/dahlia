@@ -9,7 +9,7 @@ struct ProjectEditorDescriptionField: View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 6) {
                 Label(L10n.projectDescription, systemImage: "text.alignleft")
-                    .font(.body)
+                    .font(.dahliaBody)
                     .bold()
 
                 Button(
@@ -23,7 +23,7 @@ struct ProjectEditorDescriptionField: View {
                 .help(L10n.projectDescriptionHelp)
                 .popover(isPresented: $isHelpPresented, arrowEdge: .bottom) {
                     Text(L10n.projectDescriptionHelp)
-                        .font(.body)
+                        .font(.dahliaBody)
                         .padding(12)
                 }
             }
@@ -34,7 +34,7 @@ struct ProjectEditorDescriptionField: View {
 
                 if description.isEmpty, !isFocused {
                     Text(L10n.projectDescriptionPlaceholder)
-                        .font(.body)
+                        .font(.dahliaBody)
                         .foregroundStyle(DahliaDesign.optionalTextColor)
                         .padding(.leading, 8)
                         .padding(.top, 6)

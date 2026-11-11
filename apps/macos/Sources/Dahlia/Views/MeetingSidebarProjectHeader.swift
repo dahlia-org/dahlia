@@ -28,7 +28,7 @@ struct MeetingSidebarProjectHeader: View {
                 } icon: {
                     ProjectAppearanceIcon(appearance: appearance)
                 }
-                .font(.callout)
+                .font(.dahliaBody)
                 .lineLimit(1)
                 .frame(maxWidth: .infinity, alignment: .leading)
             }

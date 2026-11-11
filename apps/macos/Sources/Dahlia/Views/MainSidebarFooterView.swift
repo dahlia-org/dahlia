@@ -7,6 +7,8 @@ struct MainSidebarFooterView: View {
     let currentWorkspace: WorkspaceRecord?
     var updateController: AppUpdateController
     let onSelectWorkspace: (WorkspaceRecord) -> Void
+    let unprocessedRecordingCount: Int
+    let onShowUnprocessedRecordings: () -> Void
 
     @State private var isAccountMenuHovered = false
     @State private var isHelpHovered = false
@@ -30,7 +32,9 @@ struct MainSidebarFooterView: View {
                 onOpenSettings: showSettings,
                 onSelectAccount: selectAccount,
                 onSelectDatabricksAccount: { selectLocalAccount(databricks: $0) },
-                onAccountAction: accountAction
+                onAccountAction: accountAction,
+                unprocessedRecordingCount: unprocessedRecordingCount,
+                onShowUnprocessedRecordings: onShowUnprocessedRecordings
             )
             .disabled(workspaceAISettings.isSwitchingRuntime)
             .frame(maxWidth: .infinity, alignment: .leading)

@@ -4,19 +4,6 @@ import SwiftUI
 /// Chat agent settings for the open account: how it runs Pi and with which providers (General), models, and its MCP
 /// servers. The tabs look like the meeting page's.
 struct AgentSettingsView: View {
-    @State private var workspaceSettings = WorkspaceAISettingsModel.shared
-
-    var body: some View {
-        let account = CodexRuntimeProvider(
-            accountConnectionID: workspaceSettings.accountConnectionID,
-            databricksConnectionID: workspaceSettings.databricksAccountConnectionID
-        )
-        AgentSettingsTabs(account: account)
-            .id(account)
-    }
-}
-
-private struct AgentSettingsTabs: View {
     enum Tab: String, CaseIterable, Identifiable {
         case general
         case models
@@ -33,9 +20,22 @@ private struct AgentSettingsTabs: View {
         }
     }
 
+    @State private var workspaceSettings = WorkspaceAISettingsModel.shared
+
+    var body: some View {
+        let account = CodexRuntimeProvider(
+            accountConnectionID: workspaceSettings.accountConnectionID,
+            databricksConnectionID: workspaceSettings.databricksAccountConnectionID
+        )
+        AgentSettingsTabs(account: account)
+            .id(account)
+    }
+}
+
+private struct AgentSettingsTabs: View {
+
     let account: CodexRuntimeProvider
     @Environment(MainWindowNavigation.self) private var navigation
-    @State private var selection = Tab.general
     /// Shared by General's providers and the MCP tab, so a provider added in one shows in the other.
     @State private var mcp: AgentMCPSettingsModel
     @State private var launch: PiLaunchSettingsModel
@@ -51,25 +51,28 @@ private struct AgentSettingsTabs: View {
 
     /// Models are set only for Unity AI Gateways: a Databricks account's own and the workspaces added under General.
     /// Subscriptions and the Dahlia Server list their own.
-    private var tabs: [Tab] {
-        if case .databricks = account { return Tab.allCases }
-        return mcp.settings.providers.contains { !$0.isAccount } ? Tab.allCases : Tab.allCases.filter { $0 != .models }
+    private var tabs: [AgentSettingsView.Tab] {
+        if case .databricks = account { return AgentSettingsView.Tab.allCases }
+        return mcp.settings.providers.contains { !$0.isAccount } ? AgentSettingsView.Tab.allCases : AgentSettingsView.Tab.allCases
+            .filter { $0 != .models }
     }
 
     var body: some View {
+        @Bindable var navigation = navigation
         VStack(spacing: 0) {
             // In a grouped form's header, the tabs share the column of the settings title and the sections below.
             Form {
                 Section {
                     EmptyView()
                 } header: {
-                    UnderlineTabBar(tabs: tabs, selection: $selection, label: \.label, accessibilityLabel: L10n.agents)
+                    UnderlineTabBar(tabs: tabs, selection: $navigation.agentSettingsTab, label: \.label, accessibilityLabel: L10n.agents)
                 }
             }
             .formStyle(.grouped)
+            .font(.dahliaBody)
             .fixedSize(horizontal: false, vertical: true)
 
-            switch selection {
+            switch navigation.agentSettingsTab {
             case .general:
                 Form {
                     AgentRuntimeSection(provider: account)
@@ -77,6 +80,7 @@ private struct AgentSettingsTabs: View {
                     AgentProviderSection(account: account, model: mcp, subscriptions: subscriptions, onAdd: presentProviderRegistration)
                 }
                 .formStyle(.grouped)
+                .font(.dahliaBody)
             case .models:
                 AgentModelSettingsView(account: account, mcp: mcp)
             case .mcps:
@@ -88,7 +92,7 @@ private struct AgentSettingsTabs: View {
             await mcp.loadAccountProvider()
         }
         // Removing the last added workspace takes the Models tab away.
-        .onChange(of: tabs) { if !tabs.contains(selection) { selection = .general } }
+        .onChange(of: tabs, initial: true) { if !tabs.contains(navigation.agentSettingsTab) { navigation.agentSettingsTab = .general } }
         .onDisappear { navigation.dismissSettingsModal() }
     }
 
@@ -166,6 +170,7 @@ private struct AgentRuntimeSection: View {
             }
         } header: {
             Text(L10n.agentRuntime)
+                .font(.dahliaSectionHeader)
         }
         .task(id: piPath) {
             await resolveCommand()
@@ -263,7 +268,7 @@ private struct AgentEnvironmentVariableRow: View {
                     prompt: Text("VARIABLE_NAME")
                 )
                 .labelsHidden()
-                .font(.body.monospaced())
+                .font(.dahliaBody.monospaced())
                 if variable.isSecret {
                     SecureField(
                         L10n.agentVariableValue,
@@ -300,7 +305,7 @@ private struct AgentEnvironmentVariableRow: View {
             }
             if !variable.name.isEmpty, !PiLaunchSettings.isValidName(variable.name) {
                 Text(L10n.agentVariableNameInvalid)
-                    .font(.caption)
+                    .font(.dahliaSecondary)
                     .foregroundStyle(.red)
             }
         }
@@ -480,8 +485,10 @@ private struct AgentSectionHeader<Action: View>: View {
     var body: some View {
         HStack {
             Text(title)
+                .font(.dahliaSectionHeader)
             Spacer()
             action
+                .font(.dahliaBody)
         }
     }
 }
@@ -502,7 +509,7 @@ struct AgentProviderRow<Trailing: View>: View {
                     Text(title)
                     ForEach(uses, id: \.self) { use in
                         Text(use)
-                            .font(.caption2)
+                            .font(.dahliaSecondary)
                             .foregroundStyle(.secondary)
                             .dahliaChipSurface()
                     }
@@ -621,6 +628,7 @@ private struct AgentModelSettingsView: View {
             }
         }
         .formStyle(.grouped)
+        .font(.dahliaBody)
         // The account's own workspace is found after the tab opens.
         .task(id: mcp.selectableProviders) {
             choices = AgentModelSettings.choices(for: account)
@@ -794,6 +802,7 @@ private struct AgentMCPSettingsView: View {
             }
         }
         .formStyle(.grouped)
+        .font(.dahliaBody)
         .alert(L10n.mcpRenameServer, isPresented: Binding(get: { renaming != nil }, set: { if !$0 { renaming = nil } })) {
             TextField(L10n.mcpServerName, text: $proposedName)
             Button(L10n.rename, action: rename)

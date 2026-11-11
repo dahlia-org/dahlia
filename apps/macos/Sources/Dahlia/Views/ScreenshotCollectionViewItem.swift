@@ -146,7 +146,7 @@ final class ScreenshotCollectionViewItem: NSCollectionViewItem {
         contentStack.distribution = .fill
 
         selectionImageView.translatesAutoresizingMaskIntoConstraints = false
-        selectionImageView.symbolConfiguration = NSImage.SymbolConfiguration(pointSize: 20, weight: .semibold)
+        selectionImageView.symbolConfiguration = NSImage.SymbolConfiguration(pointSize: DahliaTypography.size(offset: 6), weight: .semibold)
         selectionImageView.setAccessibilityElement(false)
 
         rootView.addSubview(contentStack)
@@ -204,7 +204,7 @@ final class ScreenshotCollectionViewItem: NSCollectionViewItem {
         representedImageIdentity = imageIdentity
         timestampLabel.stringValue = configuration.timestamp
         timestampLabel.toolTip = configuration.timestamp
-        timestampLabel.font = .preferredFont(forTextStyle: .caption1)
+        timestampLabel.font = .dahliaSecondary
         activationHandler = actions.activate
         copyHandler = actions.copy
         downloadHandler = actions.download
@@ -281,13 +281,13 @@ final class ScreenshotCollectionViewItem: NSCollectionViewItem {
     }
 
     private func configureMetadataControls() {
-        timestampLabel.font = .preferredFont(forTextStyle: .caption1)
+        timestampLabel.font = .dahliaSecondary
         timestampLabel.textColor = DahliaDesign.secondaryTextNSColor
         timestampLabel.lineBreakMode = .byTruncatingTail
 
         lockImageView.image = NSImage(systemSymbolName: "lock.fill", accessibilityDescription: L10n.screenshotUsedInSummary)
         lockImageView.contentTintColor = .secondaryLabelColor
-        lockImageView.symbolConfiguration = NSImage.SymbolConfiguration(pointSize: 12, weight: .regular)
+        lockImageView.symbolConfiguration = NSImage.SymbolConfiguration(pointSize: DahliaTypography.size(offset: -2), weight: .regular)
 
         configureIconButton(copyButton, symbolName: "doc.on.doc", label: L10n.copyImage, action: #selector(copyScreenshot))
         configureIconButton(downloadButton, symbolName: "arrow.down.circle", label: L10n.download, action: #selector(downloadScreenshot))

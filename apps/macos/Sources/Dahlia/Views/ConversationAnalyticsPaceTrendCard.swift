@@ -9,9 +9,9 @@ struct ConversationAnalyticsPaceTrendCard: View {
             .formatted(.number.precision(.fractionLength(0)))
         VStack(alignment: .leading, spacing: 12) {
             Text(L10n.conversationAnalyticsPaceTrend)
-                .font(.headline)
+                .font(.dahliaSectionHeader)
             Text(L10n.conversationAnalyticsPaceTrendDescription(bucketMinutes))
-                .font(.callout)
+                .font(.dahliaBody)
                 .foregroundStyle(DahliaDesign.secondaryTextColor)
             if metrics.paceSamples.isEmpty {
                 Text(L10n.conversationAnalyticsPaceTrendUnavailable)
@@ -67,7 +67,7 @@ struct ConversationAnalyticsPaceTrendCard: View {
                     L10n.conversationAnalyticsPaceTrendExcludesUnmeasurable,
                     systemImage: "approximately"
                 )
-                .font(.callout)
+                .font(.dahliaBody)
                 .foregroundStyle(DahliaDesign.secondaryTextColor)
             }
         }

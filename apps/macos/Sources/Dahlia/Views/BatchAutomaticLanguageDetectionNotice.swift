@@ -40,7 +40,7 @@ struct BatchAutomaticLanguageDetectionNotice: View {
                     .dahliaFixedSymbol()
             }
         }
-        .font(.body)
+        .font(.dahliaBody)
         .foregroundStyle(DahliaDesign.secondaryTextColor)
         .padding(.vertical, 4)
     }

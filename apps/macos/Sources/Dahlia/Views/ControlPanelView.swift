@@ -162,7 +162,7 @@ struct ControlPanelView: View {
                 .dahliaFixedSymbol()
                 .foregroundStyle(.orange)
             Text(message)
-                .font(.body)
+                .font(.dahliaBody)
                 .foregroundStyle(tint)
             Spacer()
         }
@@ -246,7 +246,7 @@ struct ControlPanelView: View {
                         Button(L10n.retry, action: viewModel.retryRecordingArchive)
                     }
                 }
-                .font(.caption)
+                .font(.dahliaSecondary)
                 .foregroundStyle(.secondary)
                 .padding(.horizontal, DahliaDesign.detailHorizontalPadding)
                 .padding(.vertical, 6)

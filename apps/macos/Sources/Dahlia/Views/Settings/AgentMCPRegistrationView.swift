@@ -16,7 +16,7 @@ struct AgentMCPRegistrationView: View {
 
             VStack(alignment: .leading, spacing: 16) {
                 Text(L10n.addRemoteMCPServerTitle)
-                    .font(.title2)
+                    .font(.dahliaTitle2)
                     .accessibilityAddTraits(.isHeader)
                 Text(L10n.mcpKindRemoteComingSoon)
                     .foregroundStyle(.secondary)

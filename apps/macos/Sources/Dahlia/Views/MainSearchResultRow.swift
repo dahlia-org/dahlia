@@ -25,14 +25,14 @@ struct MainSearchResultRow: View {
 
                 if let inlineDetail, !inlineDetail.isEmpty {
                     Text(inlineDetail)
-                        .font(.subheadline)
+                        .font(.dahliaBody)
                         .foregroundStyle(DahliaDesign.secondaryTextColor)
                         .lineLimit(1)
                 }
 
                 if let projectBadge, !projectBadge.isEmpty {
                     Text(projectBadge)
-                        .font(.caption2)
+                        .font(.dahliaSecondary)
                         .foregroundStyle(DahliaDesign.secondaryTextColor)
                         .lineLimit(1)
                         .dahliaChipSurface(tint: projectTint)
@@ -43,7 +43,7 @@ struct MainSearchResultRow: View {
 
                 if let dateText {
                     Text(dateText)
-                        .font(.footnote)
+                        .font(.dahliaSecondary)
                         .monospacedDigit()
                         .foregroundStyle(DahliaDesign.secondaryTextColor)
                         .fixedSize()
@@ -51,7 +51,7 @@ struct MainSearchResultRow: View {
 
                 if dateText != nil {
                     Text(shortcutNumber.map { "⌘\($0)" } ?? "⌘9")
-                        .font(.caption)
+                        .font(.dahliaSecondary)
                         .monospaced()
                         .foregroundStyle(DahliaDesign.secondaryTextColor)
                         .padding(.horizontal, 6)

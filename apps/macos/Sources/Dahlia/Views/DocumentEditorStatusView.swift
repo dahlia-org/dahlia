@@ -30,7 +30,7 @@ struct DocumentEditorStatusView: View {
                     }
                 }
             }
-            .font(.callout)
+            .font(.dahliaBody)
             .padding()
             .frame(width: 300, alignment: .leading)
         }

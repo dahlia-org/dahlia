@@ -14,6 +14,8 @@ struct MainSidebarAccountMenuButton: NSViewRepresentable {
     let onSelectAccount: (DahliaAccountConnection?) -> Void
     var onSelectDatabricksAccount: (UUID) -> Void = { _ in }
     let onAccountAction: () -> Void
+    var unprocessedRecordingCount = 0
+    let onShowUnprocessedRecordings: () -> Void
 
     func makeCoordinator() -> MainSidebarAccountMenuCoordinator {
         MainSidebarAccountMenuCoordinator(
@@ -22,7 +24,9 @@ struct MainSidebarAccountMenuButton: NSViewRepresentable {
             onOpenSettings: onOpenSettings,
             onSelectAccount: onSelectAccount,
             onSelectDatabricksAccount: onSelectDatabricksAccount,
-            onAccountAction: onAccountAction
+            onAccountAction: onAccountAction,
+            unprocessedRecordingCount: unprocessedRecordingCount,
+            onShowUnprocessedRecordings: onShowUnprocessedRecordings
         )
     }
 
@@ -53,7 +57,9 @@ struct MainSidebarAccountMenuButton: NSViewRepresentable {
             onOpenSettings: onOpenSettings,
             onSelectAccount: onSelectAccount,
             onSelectDatabricksAccount: onSelectDatabricksAccount,
-            onAccountAction: onAccountAction
+            onAccountAction: onAccountAction,
+            unprocessedRecordingCount: unprocessedRecordingCount,
+            onShowUnprocessedRecordings: onShowUnprocessedRecordings
         )
         configure(button)
     }
@@ -84,7 +90,7 @@ struct MainSidebarAccountMenuButton: NSViewRepresentable {
             accountName: accountTitle,
             syncSummary: progress?.state == .synced ? nil : syncTitle
         )
-        let font = NSFont.preferredFont(forTextStyle: .body)
+        let font = NSFont.dahliaBody
         if !isLocalAccount, let currentConnectionID {
             let state = accountController.syncStates[currentConnectionID] ?? .pending
             let icon = NSImage(systemSymbolName: state.symbol, accessibilityDescription: state.title)?
@@ -129,12 +135,12 @@ struct MainSidebarAccountMenuButton: NSViewRepresentable {
         let result = NSMutableAttributedString()
         result.append(NSAttributedString(
             string: accountName,
-            attributes: [.font: NSFont.preferredFont(forTextStyle: .body), .foregroundColor: NSColor.labelColor]
+            attributes: [.font: NSFont.dahliaBody, .foregroundColor: NSColor.labelColor]
         ))
         if let syncSummary {
             result.append(NSAttributedString(
                 string: "\n" + syncSummary,
-                attributes: [.font: NSFont.preferredFont(forTextStyle: .footnote), .foregroundColor: NSColor.secondaryLabelColor]
+                attributes: [.font: NSFont.dahliaSecondary, .foregroundColor: NSColor.secondaryLabelColor]
             ))
         }
         let paragraphStyle = NSMutableParagraphStyle()

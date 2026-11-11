@@ -29,11 +29,11 @@ struct BreadcrumbSwitcher<Options: View>: View {
                     .frame(maxWidth: arrowEdge == .bottom ? nil : .infinity, alignment: .leading)
                 if arrowEdge == .trailing {
                     Image(systemName: "chevron.right")
-                        .font(.caption)
+                        .font(.dahliaSecondary)
                         .accessibilityHidden(true)
                 }
             }
-            .font(arrowEdge == .trailing ? .body.bold() : .body)
+            .font(arrowEdge == .trailing ? .dahliaBody.bold() : .dahliaBody)
             .foregroundStyle(arrowEdge == .bottom ? Color.secondary : DahliaDesign.sidebarPrimaryTextColor)
             .padding(6)
             .contentShape(.rect)
@@ -65,7 +65,7 @@ struct BreadcrumbSwitcher<Options: View>: View {
                     VStack(alignment: .leading, spacing: 2) {
                         if let sectionTitle {
                             Text(sectionTitle)
-                                .font(.subheadline)
+                                .font(.dahliaBody)
                                 .foregroundStyle(.secondary)
                                 .padding(6)
                         }

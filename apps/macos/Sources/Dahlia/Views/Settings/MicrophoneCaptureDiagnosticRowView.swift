@@ -11,12 +11,12 @@ struct MicrophoneCaptureDiagnosticRowView: View {
                 Text(title)
                 Spacer()
                 Text(timestamp)
-                    .font(.footnote.monospaced())
+                    .font(.dahliaSecondary.monospaced())
                     .foregroundStyle(DahliaDesign.secondaryTextColor)
             }
 
             Text(details)
-                .font(.footnote.monospaced())
+                .font(.dahliaSecondary.monospaced())
                 .foregroundStyle(DahliaDesign.secondaryTextColor)
                 .textSelection(.enabled)
         }

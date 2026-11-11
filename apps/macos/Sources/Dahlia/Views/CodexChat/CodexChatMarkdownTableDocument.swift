@@ -48,7 +48,7 @@ extension CodexChatMarkdownTextDocument {
                 document.addAttribute(.paragraphStyle, value: style, range: range)
                 applyBodyFont(to: document, range: range)
                 if isHeaderRow {
-                    let font = NSFont.preferredFont(forTextStyle: .body)
+                    let font = NSFont.dahliaBody
                     document.addAttribute(
                         .font,
                         value: NSFontManager.shared.convert(font, toHaveTrait: .boldFontMask),

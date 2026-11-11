@@ -15,7 +15,7 @@ struct CodexChatThinkingIndicator: View {
                 }
             }
         }
-        .font(.body)
+        .font(.dahliaBody)
         .foregroundStyle(DahliaDesign.secondaryTextColor)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(L10n.chatThinking)

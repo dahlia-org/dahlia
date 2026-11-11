@@ -12,7 +12,6 @@ struct MeetingListSidebarView: View {
     let isShowingChat: Bool
     let onNewChat: () -> Void
     let onOpenChatThread: (CodexChatThreadSummary) -> Void
-    let isShowingUnprocessedRecordings: Bool
     let onShowUnprocessedRecordings: () -> Void
     let onCreateProject: () -> Void
     let onOpenProject: (UUID, ProjectNavigationIntent) -> Void
@@ -54,16 +53,10 @@ struct MeetingListSidebarView: View {
                 onStartQuickRecording: recordingCoordinator.startQuickRecording,
                 canCreateProject: canEdit,
                 onCreateProject: onCreateProject,
-                onNewChat: onNewChat,
-                isShowingUnprocessedRecordings: isShowingUnprocessedRecordings,
-                unprocessedRecordingCount: sidebarViewModel.unprocessedRecordingItems.count,
-                onShowUnprocessedRecordings: onShowUnprocessedRecordings
+                onNewChat: onNewChat
             )
-            if sidebarTab == .home || sidebarTab == .chat {
+            if sidebarTab == .chat {
                 List {
-                    if sidebarTab == .home {
-                        upcomingEventsSection
-                    }
                     MainSidebarChatHistorySection(
                         coordinator: chatCoordinator,
                         sidebarViewModel: sidebarViewModel,
@@ -84,10 +77,11 @@ struct MeetingListSidebarView: View {
                 sidebarViewModel: sidebarViewModel,
                 recordingCoordinator: recordingCoordinator,
                 updateController: updateController,
-                onSelectWorkspace: onSelectWorkspace
+                onSelectWorkspace: onSelectWorkspace,
+                onShowUnprocessedRecordings: onShowUnprocessedRecordings
             )
         }
-        .font(.callout)
+        .font(.dahliaBody)
         .foregroundStyle(DahliaDesign.sidebarPrimaryTextColor)
         .onDeleteCommand {
             // Only tabs that list meetings show the selection being deleted.
@@ -122,7 +116,10 @@ struct MeetingListSidebarView: View {
             isShowingSchedule: isShowingUpcomingSchedule,
             openDraftEventID: viewModel.draftMeeting?.linkedCalendarEvent?.id,
             onSelectEvent: recordingCoordinator.openCalendarEvent,
-            onShowSchedule: onShowUpcomingSchedule
+            onShowSchedule: onShowUpcomingSchedule,
+            canStartRecording: recordingCoordinator.canStartNewMeeting,
+            onJoinEvent: recordingCoordinator.joinCalendarEventAndStartRecording,
+            onOpenMeetingLink: recordingCoordinator.openMeetingLink
         )
     }
 
@@ -162,7 +159,7 @@ struct MeetingListSidebarView: View {
                         meetingRow(selectedMeeting)
                     } header: {
                         Text(sidebarViewModel.isSearchingMeetings ? L10n.selectedMeetingOutsideResults : L10n.selectedMeeting)
-                            .font(.subheadline)
+                            .font(.dahliaSectionHeader)
                     }
                 }
 
@@ -199,7 +196,7 @@ struct MeetingListSidebarView: View {
                             meetingRow(selectedMeeting)
                         } header: {
                             Text(sidebarViewModel.isSearchingMeetings ? L10n.selectedMeetingOutsideResults : L10n.selectedMeeting)
-                                .font(.subheadline)
+                                .font(.dahliaSectionHeader)
                         }
                     }
 
@@ -212,8 +209,7 @@ struct MeetingListSidebarView: View {
                     MeetingSidebarListGroupLabel(
                         title: L10n.recent,
                         isExpanded: isRecentSectionExpanded,
-                        onToggleExpansion: { isRecentSectionExpanded.toggle() },
-                        textStyle: .body
+                        onToggleExpansion: { isRecentSectionExpanded.toggle() }
                     )
                     if isRecentSectionExpanded {
                         projectSection(

@@ -158,7 +158,8 @@
 "Good morning" = "おはようございます";
 "Good afternoon" = "こんにちは";
 "Good evening" = "こんばんは";
-"Upcoming events" = "今後のイベント";
+"Event Options" = "予定のオプション";
+"Upcoming events" = "今後の予定";
 "Show all" = "すべて表示";
 "Meetings" = "ミーティング";
 "List" = "リスト";
@@ -888,10 +889,9 @@
 "%lld hr %lld min" = "%lld時間%lld分";
 "%lld hr" = "%lld時間";
 "%lld min" = "%lld分";
-"Join Meeting (with recording)" = "ミーティングに参加する（録音あり）";
-"Join Meeting" = "ミーティングに参加する";
-"Show Event in Calendar" = "イベントをカレンダーで表示する";
-"Event Details" = "イベント詳細";
+"Join %@" = "%@ に参加";
+"Open in Calendar" = "カレンダーで開く";
+"Event Details" = "予定の詳細";
 "Attending" = "参加予定";
 
 /* Search Modes */
@@ -1138,7 +1138,11 @@
 /* Codex Chat */
 "Chat" = "チャット";
 "New chat" = "新しいチャット";
+"Dahlia AI" = "Dahlia AI";
 "Chat history" = "チャット履歴";
+"How can I help?" = "何をお手伝いしましょうか？";
+"App integrations" = "アプリ連携";
+"Configure app integrations" = "アプリ連携を設定";
 "Recent chats" = "最近のチャット";
 "No recent chats" = "最近のチャットはありません";
 "Load more" = "さらに読み込む";
@@ -1821,3 +1825,6 @@
 "Installed Pi %@." = "Pi %@ をインストールしました。";
 "Pi %@ is the latest version." = "Pi %@ は最新です。";
 "Could not download Pi. Check your network connection and try again." = "Pi をダウンロードできませんでした。ネットワーク接続を確認して、もう一度お試しください。";
+
+"MCP servers" = "MCP サーバー";
+"No MCP servers registered." = "MCP サーバーが登録されていません。";

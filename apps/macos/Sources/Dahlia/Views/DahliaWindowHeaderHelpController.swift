@@ -1,4 +1,4 @@
-import Foundation
+import AppKit
 import Observation
 
 @MainActor
@@ -35,6 +35,7 @@ final class DahliaWindowHeaderHelpController {
     @ObservationIgnored private let timeline: DahliaWindowHeaderHelpTimeline
     @ObservationIgnored private var hoveredHelpID: UUID?
     @ObservationIgnored private var pendingPresentationTask: Task<Void, Never>?
+    @ObservationIgnored private var interactionMonitor: Any?
 
     init(
         displayDelay: Duration = .milliseconds(700),
@@ -50,9 +51,22 @@ final class DahliaWindowHeaderHelpController {
         self.timeline = timeline
     }
 
+    isolated deinit {
+        if let interactionMonitor { NSEvent.removeMonitor(interactionMonitor) }
+    }
+
     func hoverBegan(for id: UUID) {
         hoveredHelpID = id
         pendingPresentationTask?.cancel()
+        if interactionMonitor == nil {
+            // Native menus consume clicks before SwiftUI tap gestures can dismiss the help.
+            interactionMonitor = NSEvent.addLocalMonitorForEvents(
+                matching: [.leftMouseDown, .rightMouseDown, .otherMouseDown, .keyDown]
+            ) { [weak self] event in
+                self?.dismissAll()
+                return event
+            }
+        }
 
         let currentInstant = now()
         if timeline.shouldPresentImmediately(
@@ -97,17 +111,16 @@ final class DahliaWindowHeaderHelpController {
         hoveredHelpID = nil
         pendingPresentationTask?.cancel()
         pendingPresentationTask = nil
+        if let interactionMonitor {
+            NSEvent.removeMonitor(interactionMonitor)
+            self.interactionMonitor = nil
+        }
         dismissVisibleHelp()
     }
 
     func hoverEnded(for id: UUID) {
         guard hoveredHelpID == id else { return }
-        hoveredHelpID = nil
-        pendingPresentationTask?.cancel()
-        pendingPresentationTask = nil
-        if visibleHelpID == id {
-            dismissVisibleHelp()
-        }
+        dismissAll()
     }
 
     private func presentHelp(for id: UUID) {

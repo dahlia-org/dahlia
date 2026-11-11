@@ -11,12 +11,13 @@ struct CalendarScheduleView: View {
 
     let onSelectEvent: (CalendarEvent) -> Void
     let onJoinEvent: (CalendarEvent) -> Void
+    let canStartRecording: Bool
 
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 22) {
                 Text(L10n.calendarScheduleTitle)
-                    .font(.title)
+                    .font(.dahliaTitle)
                     .foregroundStyle(DahliaDesign.primaryTextColor)
                     .accessibilityAddTraits(.isHeader)
 
@@ -188,6 +189,7 @@ struct CalendarScheduleView: View {
                     section: section,
                     onSelectEvent: onSelectEvent,
                     onJoinEvent: onJoinEvent,
+                    canStartRecording: canStartRecording,
                     isAutoRecordingEnabled: calendarAutoRecordingStore.isEnabled,
                     onSetAutoRecording: { event, isEnabled in
                         calendarAutoRecordingStore.setEnabled(isEnabled, for: event)
@@ -259,11 +261,11 @@ struct CalendarScheduleView: View {
     ) -> some View {
         VStack(alignment: .leading, spacing: 12) {
             Text(title)
-                .font(.headline)
+                .font(.dahliaHeadline)
                 .foregroundStyle(DahliaDesign.primaryTextColor)
 
             Text(message)
-                .font(.body)
+                .font(.dahliaBody)
                 .foregroundStyle(DahliaDesign.secondaryTextColor)
 
             if let actionTitle, let action {
@@ -316,13 +318,14 @@ private struct CalendarScheduleSectionView: View {
     let section: CalendarScheduleEventSection
     let onSelectEvent: (CalendarEvent) -> Void
     let onJoinEvent: (CalendarEvent) -> Void
+    let canStartRecording: Bool
     let isAutoRecordingEnabled: (CalendarEvent) -> Bool
     let onSetAutoRecording: (CalendarEvent, Bool) -> Void
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             Text(section.title)
-                .font(.headline)
+                .font(.dahliaHeadline)
                 .foregroundStyle(DahliaDesign.secondaryTextColor)
 
             VStack(spacing: 8) {
@@ -333,6 +336,7 @@ private struct CalendarScheduleSectionView: View {
                         onJoin: event.conferenceURI.map { _ in
                             { onJoinEvent(event) }
                         },
+                        canStartRecording: canStartRecording,
                         isAutoRecordingEnabled: isAutoRecordingEnabled(event),
                         onSetAutoRecording: { onSetAutoRecording(event, $0) }
                     )
@@ -346,6 +350,7 @@ private struct CalendarScheduleEventRow: View {
     let event: CalendarEvent
     let onSelect: () -> Void
     let onJoin: (() -> Void)?
+    let canStartRecording: Bool
     let isAutoRecordingEnabled: Bool
     let onSetAutoRecording: (Bool) -> Void
 
@@ -362,12 +367,12 @@ private struct CalendarScheduleEventRow: View {
 
                     VStack(alignment: .leading, spacing: 4) {
                         Text(event.title)
-                            .font(.headline)
+                            .font(.dahliaHeadline)
                             .foregroundStyle(DahliaDesign.primaryTextColor)
                             .lineLimit(1)
 
                         Text(subtitle)
-                            .font(.body)
+                            .font(.dahliaBody)
                             .foregroundStyle(DahliaDesign.secondaryTextColor)
                             .lineLimit(1)
                     }
@@ -392,6 +397,9 @@ private struct CalendarScheduleEventRow: View {
                             .contentShape(Capsule())
                     }
                     .buttonStyle(.plain)
+                    .disabled(!canStartRecording)
+                    .help(L10n.joinAndStartRecording)
+                    .accessibilityLabel(L10n.joinAndStartRecording)
                     .animation(.easeOut(duration: 0.12), value: isJoinHovered)
                     .onHover { isJoinHovered = $0 }
                 }

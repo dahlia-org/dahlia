@@ -13,9 +13,11 @@ struct ProjectEditorHierarchyFields: View {
 
                 Picker(L10n.parentProject, selection: $parentProjectId) {
                     Text(L10n.workspaceRoot)
+                        .font(.dahliaBody)
                         .tag(nil as UUID?)
                     ForEach(parentProjects) { project in
                         Text(project.projectName)
+                            .font(.dahliaBody)
                             .tag(project.projectId as UUID?)
                     }
                 }
@@ -35,6 +37,7 @@ struct ProjectEditorHierarchyFields: View {
                     Picker(L10n.projectType, selection: $projectType) {
                         ForEach(ProjectType.allCases, id: \.self) { type in
                             Text(L10n.projectTypeName(type))
+                                .font(.dahliaBody)
                                 .tag(type)
                         }
                     }

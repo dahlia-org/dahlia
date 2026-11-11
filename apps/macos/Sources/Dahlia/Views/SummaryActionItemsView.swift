@@ -10,7 +10,7 @@ struct SummaryActionItemsView: View {
         if !displayableItems.isEmpty {
             VStack(alignment: .leading, spacing: DahliaDesign.blockSpacing) {
                 Text(L10n.actionItems)
-                    .font(.title2)
+                    .font(.dahliaTitle2)
                     .bold()
                     .fixedSize(horizontal: false, vertical: true)
 
@@ -29,11 +29,11 @@ struct SummaryActionItemsView: View {
 
                             if let assignee = item.assignee.nilIfBlank {
                                 Text("(\(assignee))")
-                                    .font(.callout)
+                                    .font(.dahliaBody)
                                     .foregroundStyle(DahliaDesign.secondaryTextColor)
                             }
                         }
-                        .font(.body)
+                        .font(.dahliaBody)
                         .accessibilityElement(children: .combine)
                     }
                 }

@@ -5,7 +5,7 @@ struct RecordingActivityIcon: View {
 
     var body: some View {
         Image(systemName: systemImage)
-            .font(.body)
+            .font(.dahliaBody)
             .symbolRenderingMode(.hierarchical)
             .foregroundStyle(.red)
             .frame(width: 18)

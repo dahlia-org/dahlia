@@ -12,7 +12,7 @@ struct ScreenshotOverlayInformationView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 12) {
                 Text(L10n.imageInformation)
-                    .font(.headline)
+                    .font(.dahliaHeadline)
 
                 VStack(alignment: .leading, spacing: 8) {
                     LabeledContent(L10n.capturedAt) {
@@ -31,13 +31,13 @@ struct ScreenshotOverlayInformationView: View {
                 Divider()
 
                 Text(L10n.imageDescription)
-                    .font(.headline)
+                    .font(.dahliaHeadline)
                 captionContent
 
                 Divider()
 
                 Text(L10n.detectedText)
-                    .font(.headline)
+                    .font(.dahliaHeadline)
                 ocrContent
             }
             .frame(maxWidth: .infinity, alignment: .leading)

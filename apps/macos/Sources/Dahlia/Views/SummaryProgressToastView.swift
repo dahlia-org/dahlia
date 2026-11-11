@@ -13,12 +13,12 @@ struct SummaryProgressToastView: View {
             HStack(spacing: 8) {
                 HStack(spacing: 6) {
                     Text(L10n.runningTasks)
-                        .font(.body)
+                        .font(.dahliaBody)
                         .bold()
                         .foregroundStyle(DahliaDesign.primaryTextColor)
 
                     Text(jobs.count, format: .number)
-                        .font(.caption2.weight(.semibold))
+                        .font(.dahliaSecondary.weight(.semibold))
                         .monospacedDigit()
                         .foregroundStyle(DahliaDesign.secondaryTextColor)
                         .padding(.horizontal, 6)
@@ -91,7 +91,7 @@ private struct SummaryGenerationJobProgressView: View {
         VStack(alignment: .leading, spacing: 6) {
             HStack(alignment: .firstTextBaseline, spacing: 8) {
                 Text(job.meetingName)
-                    .font(.callout.weight(.semibold))
+                    .font(.dahliaBody.weight(.semibold))
                     .lineLimit(1)
                 Spacer(minLength: 8)
                 if job.hasFailure || job.isCancelled, job.isFinished {
@@ -104,13 +104,13 @@ private struct SummaryGenerationJobProgressView: View {
             }
 
             if job.isCancelled {
-                Text(L10n.processingCancelled).font(.caption).foregroundStyle(.secondary)
+                Text(L10n.processingCancelled).font(.dahliaSecondary).foregroundStyle(.secondary)
             }
             if let retry = job.retry, job.isFinished, job.hasFailure || job.isCancelled {
                 Button(L10n.retry, action: retry).buttonStyle(.borderless)
             }
             if let stage = job.stageLabel {
-                Text(stage).font(.caption).foregroundStyle(.secondary)
+                Text(stage).font(.dahliaSecondary).foregroundStyle(.secondary)
                     .accessibilityAddTraits(.updatesFrequently)
             }
             if let cancel = job.cancel, !job.isFinished {

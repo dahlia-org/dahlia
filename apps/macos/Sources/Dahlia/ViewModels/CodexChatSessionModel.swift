@@ -143,6 +143,9 @@ final class CodexChatSessionModel: Identifiable {
         self.usageTelemetryReporter = usageTelemetryReporter
     }
 
+    /// Registration shortcuts follow the active account, as Agent settings does.
+    var runtimeProvider: CodexRuntimeProvider { runtimeProviderResolver() }
+
     func prepare(forceRefresh: Bool = false) async {
         let runtimeProvider = runtimeProviderResolver()
         if let preparedRuntimeProvider, preparedRuntimeProvider != runtimeProvider {

@@ -33,7 +33,7 @@ struct SetupChoiceCard: View {
                 VStack(alignment: .leading, spacing: 6) {
                     // A title may break its own line; a line too long for two lines shrinks instead of truncating.
                     Text(title)
-                        .font(.title3)
+                        .font(.dahliaTitle3)
                         .bold()
                         .lineLimit(2)
                         .minimumScaleFactor(0.8)
@@ -85,13 +85,13 @@ struct SetupChoiceCard: View {
             switch style {
             case .choice:
                 Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
-                    .font(.title2)
+                    .font(.dahliaTitle2)
                     .foregroundStyle(isSelected ? AnyShapeStyle(.tint) : AnyShapeStyle(.tertiary))
                     .dahliaFixedSymbol()
             case .action:
                 if isSelected {
                     Image(systemName: "checkmark.circle.fill")
-                        .font(.title2)
+                        .font(.dahliaTitle2)
                         .foregroundStyle(.green)
                         .dahliaFixedSymbol()
                 }

@@ -29,8 +29,8 @@ struct SyncProgressView: View {
         ScrollView {
             LazyVStack(alignment: .leading, spacing: 16) {
                 VStack(alignment: .leading, spacing: 6) {
-                    Text(connection.displayName).font(.headline).accessibilityAddTraits(.isHeader)
-                    Text(connection.origin).font(.footnote).foregroundStyle(.secondary).textSelection(.enabled)
+                    Text(connection.displayName).font(.dahliaHeadline).accessibilityAddTraits(.isHeader)
+                    Text(connection.origin).font(.dahliaSecondary).foregroundStyle(.secondary).textSelection(.enabled)
                     if let serverURL {
                         Button(L10n.syncOpenServer, systemImage: "safari") {
                             request(.openServer(serverURL))
@@ -40,7 +40,7 @@ struct SyncProgressView: View {
                     }
                 }
                 Divider()
-                Text(L10n.syncProgress).font(.headline).accessibilityAddTraits(.isHeader)
+                Text(L10n.syncProgress).font(.dahliaHeadline).accessibilityAddTraits(.isHeader)
                 if controller.syncProgressUnavailable {
                     Label(L10n.syncProgressUnavailable, systemImage: "exclamationmark.triangle")
                 }
@@ -229,7 +229,7 @@ struct WorkspaceSyncProgressView: View {
 
     var body: some View {
         LazyVStack(alignment: .leading, spacing: 6) {
-            Text(progress.name).font(.body.bold())
+            Text(progress.name).font(.dahliaBody.bold())
             HStack(spacing: 6) {
                 if progress.phase == .preparing {
                     ProgressView().controlSize(.small)
@@ -238,9 +238,9 @@ struct WorkspaceSyncProgressView: View {
                 }
                 Text(progress.phase.title)
             }
-            .font(.footnote)
+            .font(.dahliaSecondary)
             if progress.state == .recovering || progress.state == .updateRequired || progress.state == .relocationPaused {
-                Text(progress.state.title).font(.footnote).foregroundStyle(.secondary)
+                Text(progress.state.title).font(.dahliaSecondary).foregroundStyle(.secondary)
             }
             ForEach(progress.issues) { issue in
                 SyncIssueView(issue: issue)
@@ -277,7 +277,7 @@ struct WorkspaceSyncProgressView: View {
             LazyVStack(alignment: .leading, spacing: 4) {
                 ForEach(progress.recordingArchiveFailures) { failure in
                     VStack(alignment: .leading, spacing: 4) {
-                        Text(L10n.syncRecordingArchiveFailure(failure.meetingName)).font(.footnote)
+                        Text(L10n.syncRecordingArchiveFailure(failure.meetingName)).font(.dahliaSecondary)
                         if let code = failure.code {
                             LabeledContent(L10n.syncErrorCode, value: code).textSelection(.enabled)
                         }
@@ -296,7 +296,7 @@ struct WorkspaceSyncProgressView: View {
                 }
             }
         }
-        .font(.footnote)
+        .font(.dahliaSecondary)
         .frame(maxWidth: .infinity, alignment: .leading)
     }
 }

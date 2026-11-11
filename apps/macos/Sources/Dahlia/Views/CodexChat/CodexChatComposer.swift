@@ -5,6 +5,9 @@ import UniformTypeIdentifiers
 struct CodexChatComposer: View {
     @Bindable var session: CodexChatSessionModel
     let configurationPresentation: Binding<Bool>?
+    var mcpSettingsDefaults: UserDefaults = .standard
+    @Environment(MainWindowNavigation.self) private var navigation
+    @State private var mcpSettings = AgentMCPSettings()
     @State private var showsMeetingPicker = false
     @State private var meetingQuery = ""
     @State private var highlightedMeetingID: UUID?
@@ -17,18 +20,6 @@ struct CodexChatComposer: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: CodexChatDesign.floatingPanelSpacing) {
-            if showsAddPanel {
-                CodexChatAddPanel(
-                    showsMeetingPicker: showsMeetingPicker,
-                    meetingReferences: suggestions,
-                    highlightedMeetingID: highlightedMeetingID,
-                    onAttachImages: showImageImporter,
-                    onAddMeetingReference: showMeetingPicker,
-                    onSelectMeeting: selectMeeting
-                )
-                .codexChatDismissOnOutsideClick(perform: dismissAddPanel)
-            }
-
             VStack(alignment: .leading, spacing: 6) {
                 if !session.attachedImages.isEmpty {
                     CodexChatAttachmentStrip(
@@ -52,6 +43,17 @@ struct CodexChatComposer: View {
                 CodexChatComposerInputRow(
                     session: session,
                     configurationPresentation: configurationPresentation,
+                    addPanel: showsAddPanel ? CodexChatAddPanel(
+                        showsMeetingPicker: showsMeetingPicker,
+                        meetingReferences: suggestions,
+                        highlightedMeetingID: highlightedMeetingID,
+                        mcpSettings: mcpSettings,
+                        onAttachImages: showImageImporter,
+                        onAddMeetingReference: showMeetingPicker,
+                        onSelectMeeting: selectMeeting,
+                        onOpenMCPSettings: openMCPSettings
+                    ) : nil,
+                    onDismissAddPanel: dismissAddPanel,
                     isComposerFocused: $isComposerFocused,
                     onToggleAddPanel: toggleAddPanel,
                     onPasteImages: pasteImages,
@@ -68,7 +70,12 @@ struct CodexChatComposer: View {
             .shadow(color: .black.opacity(0.05), radius: 12, y: 3)
         }
         .zIndex(showsAddPanel ? 1 : 0)
-        .codexChatDismissOnOutsideClick(perform: dismissComposerFocus)
+        .background {
+            if !showsAddPanel {
+                CodexChatOutsideClickMonitor(onOutsideClick: dismissComposerFocus)
+            }
+        }
+        .onChange(of: session.id) { dismissAddPanel() }
         .onChange(of: session.draft, handleDraftChange)
         .onChange(of: session.availableMeetingReferences) {
             refreshSuggestionsIfPresented()
@@ -109,11 +116,17 @@ struct CodexChatComposer: View {
             dismissAddPanel()
             return
         }
+        mcpSettings = AgentMCPSettings.load(for: session.runtimeProvider, defaults: mcpSettingsDefaults)
         meetingQuery = ""
         highlightedMeetingID = nil
         consumesTrailingMentionOnSelection = false
         showsMeetingPicker = false
         showsAddPanel = true
+    }
+
+    private func openMCPSettings() {
+        dismissAddPanel()
+        navigation.openAgentSettings(tab: .mcps)
     }
 
     private func handleImageImport(_ result: Result<[URL], any Error>) {

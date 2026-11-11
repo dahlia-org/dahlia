@@ -36,7 +36,7 @@ struct DatabricksSignInView: View {
                         .frame(width: 64, height: 64)
                         .accessibilityHidden(true)
                     Text(L10n.dahlia)
-                        .font(.largeTitle)
+                        .font(.dahliaLargeTitle)
                         .bold()
                         .accessibilityAddTraits(.isHeader)
                 }
@@ -65,7 +65,7 @@ struct DatabricksSignInView: View {
                     // Signing in to an already connected workspace refreshes it and opens its account.
                     VStack(alignment: .leading, spacing: 8) {
                         Text(L10n.databricksWorkspaceURL)
-                            .font(.body)
+                            .font(.dahliaBody)
                         TextField(L10n.databricksWorkspaceURLPlaceholder, text: $workspaceURL)
                             .textContentType(.URL)
                             .onSubmit(signIn)
@@ -87,7 +87,7 @@ struct DatabricksSignInView: View {
                         ZStack {
                             Divider()
                             Text(L10n.orContinueWithoutSigningIn)
-                                .font(.caption)
+                                .font(.dahliaSecondary)
                                 .foregroundStyle(.secondary)
                                 .padding(.horizontal)
                                 .background(.background)

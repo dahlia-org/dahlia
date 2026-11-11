@@ -28,12 +28,13 @@ struct MCPSettingsView: View {
                 )
             } header: {
                 Text(L10n.mcpPreview)
+                    .font(.dahliaSectionHeader)
             } footer: {
                 Text(L10n.mcpFooter)
             }
 
             if let commands = commands(for: selectedWorkspace) {
-                Section(L10n.mcpConfigurationOutput) {
+                Section {
                     switch selectedClient {
                     case .codex, .claude:
                         if let command = commands.registrationCommand(for: selectedClient, writeEnabled: isWriteEnabled),
@@ -55,16 +56,23 @@ struct MCPSettingsView: View {
                             )
                         }
                     }
+                } header: {
+                    Text(L10n.mcpConfigurationOutput)
+                        .font(.dahliaSectionHeader)
                 }
             } else {
-                Section(L10n.mcpConfigurationOutput) {
+                Section {
                     Text(L10n.mcpHelperUnavailable)
                         .foregroundStyle(DahliaDesign.secondaryTextColor)
+                } header: {
+                    Text(L10n.mcpConfigurationOutput)
+                        .font(.dahliaSectionHeader)
                 }
             }
 
         }
         .formStyle(.grouped)
+        .font(.dahliaBody)
         .onAppear(perform: reconcileSelectedWorkspace)
         .onChange(of: workspaces) {
             reconcileSelectedWorkspace()

@@ -16,7 +16,7 @@ struct CodexChatConfigurationPanel: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: CodexChatDesign.configurationRowSpacing) {
                     Text(L10n.responsePerformance)
-                        .font(.body)
+                        .font(.dahliaBody)
                         .foregroundStyle(DahliaDesign.optionalTextColor)
                         .padding(.horizontal, 8)
                         .padding(.bottom, 2)

@@ -8,7 +8,7 @@ struct CodexChatApprovalDetails: View {
             LazyVStack(alignment: .leading, spacing: 12) {
                 if let reason = request.reason {
                     Text(reason)
-                        .font(.body)
+                        .font(.dahliaBody)
                 }
 
                 switch request.kind {
@@ -22,7 +22,7 @@ struct CodexChatApprovalDetails: View {
 
                 if request.reviewability != .ready {
                     Text(reviewabilityMessage)
-                        .font(.footnote)
+                        .font(.dahliaSecondary)
                         .foregroundStyle(DahliaDesign.secondaryTextColor)
                 }
             }
@@ -52,7 +52,7 @@ private struct CodexChatCommandApprovalDetails: View {
                 }
                 if let cwd = request.cwd {
                     Text(cwd)
-                        .font(.footnote.monospaced())
+                        .font(.dahliaSecondary.monospaced())
                         .foregroundStyle(DahliaDesign.secondaryTextColor)
                 }
             }
@@ -70,7 +70,7 @@ private struct CodexChatMCPApprovalDetails: View {
             VStack(alignment: .leading, spacing: 6) {
                 if let server = request.mcpServer, let tool = request.mcpTool {
                     Text("\(server).\(tool)")
-                        .font(.body.weight(.medium).monospaced())
+                        .font(.dahliaBody.weight(.medium).monospaced())
                 }
                 if let arguments = request.mcpArguments {
                     CodexChatMarkdownTextView(blocks: [.code(language: "json", text: arguments)])
@@ -90,7 +90,7 @@ private struct CodexChatFileApprovalDetails: View {
                 ForEach(request.fileChanges.enumerated(), id: \.offset) { _, change in
                     VStack(alignment: .leading, spacing: 4) {
                         Text(title(for: change))
-                            .font(.footnote.weight(.medium).monospaced())
+                            .font(.dahliaSecondary.weight(.medium).monospaced())
                         if !change.diff.isEmpty {
                             CodexChatMarkdownTextView(blocks: [.code(language: "diff", text: change.diff)])
                         }
@@ -98,7 +98,7 @@ private struct CodexChatFileApprovalDetails: View {
                 }
                 if let grantRoot = request.grantRoot {
                     Text(grantRoot)
-                        .font(.footnote.monospaced())
+                        .font(.dahliaSecondary.monospaced())
                         .foregroundStyle(DahliaDesign.secondaryTextColor)
                 }
             }
