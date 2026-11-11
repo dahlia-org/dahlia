@@ -10,6 +10,10 @@ final class CodexChatCoordinator {
     private(set) var historyCursor: String?
     private(set) var isLoadingHistory = false
     private(set) var historyError: String?
+    /// Set once when the docked chat's new thread finishes a turn without being listed. The coordinator does not refresh
+    /// for the docked session, so a visible history list refreshes while this is set. Any refresh clears it when it starts,
+    /// so a failed or still-missing result stays as it is instead of retriggering.
+    private(set) var isHistoryStale = false
     private(set) var detachedSessionIDs: Set<CodexChatSessionID> = []
     private(set) var dockedSessionID: CodexChatSessionID
     var isDockedVisible = false
@@ -164,6 +168,14 @@ final class CodexChatCoordinator {
         return replacementID
     }
 
+    /// The detached window's session already showing `threadID`, if any; opening that thread brings its window forward.
+    func detachedSessionID(showingThread threadID: String) -> CodexChatSessionID? {
+        let workspaceID = dockedSession.workspaceID
+        return sessions.values.first {
+            $0.backendThreadID == threadID && $0.workspaceID == workspaceID && detachedSessionIDs.contains($0.id)
+        }?.id
+    }
+
     func openHistoryThread(
         _ thread: CodexChatThreadSummary,
         showDockedSidebar: Bool = true
@@ -231,6 +243,7 @@ final class CodexChatCoordinator {
     }
 
     func refreshHistory() async {
+        isHistoryStale = false
         historyGeneration += 1
         let generation = historyGeneration
         history = []
@@ -327,9 +340,13 @@ final class CodexChatCoordinator {
             Task { await self.refreshHistory() }
         }
         session.setGenerationCompletionHandler { [weak self, weak session] in
-            guard let self, let session,
-                  self.removeSessionIfUnused(session.id)
-            else { return }
+            guard let self, let session else { return }
+            // Pi saves a new thread only after its first reply, so this is when the docked chat's thread becomes listable.
+            if session.id == self.dockedSessionID, session.didStartBackendThread,
+               let threadID = session.backendThreadID, !self.history.contains(where: { $0.id == threadID }) {
+                self.isHistoryStale = true
+            }
+            guard self.removeSessionIfUnused(session.id) else { return }
             Task { await self.refreshHistory() }
         }
     }

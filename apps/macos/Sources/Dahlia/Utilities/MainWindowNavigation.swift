@@ -36,13 +36,14 @@ final class MainWindowNavigation {
     static let shared = MainWindowNavigation()
 
     private static let historyLimit = 50
-    private static let meetingSidebarDisplayModeDefaultsKey = "meetingSidebarDisplayMode"
     private static let pinnedProjectIDsDefaultsKey = "meetingSidebarPinnedProjectIDs"
     private static let projectAppearancesDefaultsKey = "projectAppearances"
     private static let projectDetailDisplayModesDefaultsKey = "projectDetailDisplayModes"
 
     private(set) var section: MainWindowSection = .meetings
     private(set) var currentLocation: MainWindowLocation = .upcomingSchedule
+    /// Chosen only by the sidebar menu buttons; it changes what the sidebar lists, never the main area.
+    var sidebarTab: MainSidebarTab = .meetings
     private(set) var isNavigatingHistory = false
     private(set) var hasInitializedNavigationHistory = false
     private(set) var isShowingSettings = false
@@ -61,9 +62,7 @@ final class MainWindowNavigation {
     }
 
     var meetingSidebarDisplayMode: MeetingSidebarDisplayMode {
-        didSet {
-            settingsDefaults.set(meetingSidebarDisplayMode.rawValue, forKey: Self.meetingSidebarDisplayModeDefaultsKey)
-        }
+        sidebarTab == .projects ? .byProject : .chronological
     }
 
     private var pinnedProjectIDsByWorkspace: [String: [String]]
@@ -113,8 +112,6 @@ final class MainWindowNavigation {
                 == DahliaRuntimeProfile.development.rawValue
                 && launchEnvironment["DAHLIA_DEV_OPEN_SETTINGS"] == "1"
         #endif
-        meetingSidebarDisplayMode = settingsDefaults.string(forKey: Self.meetingSidebarDisplayModeDefaultsKey)
-            .flatMap(MeetingSidebarDisplayMode.init(rawValue:)) ?? .chronological
         pinnedProjectIDsByWorkspace = Self.loadPinnedProjectIDs(from: settingsDefaults)
         projectAppearancesByWorkspace = Self.loadProjectAppearances(from: settingsDefaults)
         projectDetailDisplayModesByWorkspace = Self.loadProjectDetailDisplayModes(from: settingsDefaults)

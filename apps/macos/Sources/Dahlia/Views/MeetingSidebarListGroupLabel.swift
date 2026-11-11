@@ -4,11 +4,9 @@ struct MeetingSidebarListGroupLabel: View {
     let title: String
     let isExpanded: Bool
     let onToggleExpansion: () -> Void
-    var displayMode: Binding<MeetingSidebarDisplayMode>?
     var textStyle: Font = .callout
 
     @State private var isHovered = false
-    @FocusState private var isMenuFocused: Bool
 
     var body: some View {
         HStack(spacing: 8) {
@@ -24,12 +22,6 @@ struct MeetingSidebarListGroupLabel: View {
             .buttonStyle(.plain)
             .accessibilityAddTraits(.isHeader)
             .accessibilityHint(isExpanded ? L10n.collapse : L10n.expand)
-
-            if let displayMode {
-                MeetingSidebarOrganizationMenu(displayMode: displayMode)
-                    .focused($isMenuFocused)
-                    .opacity(isHovered || isMenuFocused ? 1 : 0)
-            }
         }
         .font(textStyle)
         .foregroundStyle(DahliaDesign.sidebarSecondaryTextColor)

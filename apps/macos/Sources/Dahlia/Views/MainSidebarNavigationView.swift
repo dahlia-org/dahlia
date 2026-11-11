@@ -1,75 +1,61 @@
 import SwiftUI
 
 struct MainSidebarNavigationView: View {
-    @Binding var meetingSidebarDisplayMode: MeetingSidebarDisplayMode
+    let selectedTab: MainSidebarTab
+    let onSelectTab: (MainSidebarTab) -> Void
     let onCreateMeeting: () -> Void
     let canCreateMeeting: Bool
     let canStartQuickRecording: Bool
     let onStartQuickRecording: () -> Void
-    let isShowingUpcomingSchedule: Bool
-    let onShowUpcomingSchedule: () -> Void
-    let isShowingChat: Bool
-    let onShowChat: () -> Void
-    let isShowingProjects: Bool
-    let onShowProjects: () -> Void
     let canCreateProject: Bool
     let onCreateProject: () -> Void
+    let onNewChat: () -> Void
     let isShowingUnprocessedRecordings: Bool
     let unprocessedRecordingCount: Int
     let onShowUnprocessedRecordings: () -> Void
 
     var body: some View {
         VStack(spacing: 2) {
-            MainSidebarMeetingNavigationRow(
-                canCreateMeeting: canCreateMeeting,
-                canStartQuickRecording: canStartQuickRecording,
-                onCreateMeeting: onCreateMeeting,
-                onStartQuickRecording: onStartQuickRecording
-            )
+            MainSidebarTabBar(selection: selectedTab, onSelect: onSelectTab)
+                .padding(.horizontal, -6) // Line the button highlights up with the row highlights below.
+                .padding(.bottom, 6)
 
-            Button(action: onShowUpcomingSchedule) {
-                MainSidebarNavigationLabel(
-                    title: L10n.calendarScheduleTitle,
-                    systemImage: "calendar",
-                    isSelected: isShowingUpcomingSchedule
+            switch selectedTab {
+            case .home, .meetings:
+                MainSidebarMeetingNavigationRow(
+                    canCreateMeeting: canCreateMeeting,
+                    canStartQuickRecording: canStartQuickRecording,
+                    onCreateMeeting: onCreateMeeting,
+                    onStartQuickRecording: onStartQuickRecording
                 )
-            }
-            .buttonStyle(.plain)
-            .help(L10n.showUpcomingSchedule)
-            .accessibilityAddTraits(isShowingUpcomingSchedule ? .isSelected : [])
 
-            Button(action: onShowChat) {
-                MainSidebarNavigationLabel(
-                    title: L10n.chat,
-                    systemImage: "bubble.left.and.bubble.right",
-                    isSelected: isShowingChat
-                )
+                if selectedTab == .home {
+                    Button(action: onShowUnprocessedRecordings) {
+                        MainSidebarNavigationLabel(
+                            title: L10n.unprocessedRecordings,
+                            systemImage: "waveform.badge.exclamationmark",
+                            badgeCount: unprocessedRecordingCount,
+                            isSelected: isShowingUnprocessedRecordings
+                        )
+                    }
+                    .buttonStyle(.plain)
+                    .help(L10n.unprocessedRecordings)
+                    .accessibilityAddTraits(isShowingUnprocessedRecordings ? .isSelected : [])
+                }
+            case .projects:
+                Button(action: onCreateProject) {
+                    MainSidebarNavigationLabel(title: L10n.newProject, systemImage: "folder.badge.plus")
+                }
+                .buttonStyle(.plain)
+                .disabled(!canCreateProject)
+                .help(L10n.newProject)
+            case .chat:
+                Button(action: onNewChat) {
+                    MainSidebarNavigationLabel(title: L10n.newChat, systemImage: "plus.bubble")
+                }
+                .buttonStyle(.plain)
+                .help(L10n.newChat)
             }
-            .buttonStyle(.plain)
-            .help(L10n.chat)
-            .accessibilityAddTraits(isShowingChat ? .isSelected : [])
-
-            if meetingSidebarDisplayMode == .chronological {
-                MainSidebarProjectNavigationRow(
-                    displayMode: $meetingSidebarDisplayMode,
-                    isSelected: isShowingProjects,
-                    canCreateProject: canCreateProject,
-                    onOpen: onShowProjects,
-                    onCreateProject: onCreateProject
-                )
-            }
-
-            Button(action: onShowUnprocessedRecordings) {
-                MainSidebarNavigationLabel(
-                    title: L10n.unprocessedRecordings,
-                    systemImage: "waveform.badge.exclamationmark",
-                    badgeCount: unprocessedRecordingCount,
-                    isSelected: isShowingUnprocessedRecordings
-                )
-            }
-            .buttonStyle(.plain)
-            .help(L10n.unprocessedRecordings)
-            .accessibilityAddTraits(isShowingUnprocessedRecordings ? .isSelected : [])
         }
         .padding(.horizontal, 10)
         .padding(.vertical, DahliaDesign.sidebarNavigationVerticalPadding)

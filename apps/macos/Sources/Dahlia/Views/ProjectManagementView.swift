@@ -1,105 +1,25 @@
 import SwiftUI
 
-struct ProjectManagementView<Header: View>: View {
-    @Binding var isSidebarVisible: Bool
+/// The Projects section's detail pane: the project catalog, or one project's detail.
+struct ProjectManagementView: View {
     var sidebarViewModel: SidebarViewModel
     @ObservedObject var captionViewModel: CaptionViewModel
-    var updateController: AppUpdateController
     let recordingCoordinator: RecordingCoordinator
-    @Bindable var mainWindowNavigation: MainWindowNavigation
-    let appDatabase: AppDatabaseManager?
-    var workspaceManagementModel: WorkspaceManagementModel
-    let onShowUpcomingSchedule: () -> Void
-    let onShowChat: () -> Void
-    let onShowUnprocessedRecordings: () -> Void
+    var mainWindowNavigation: MainWindowNavigation
     let onCreateProject: () -> Void
     let onOpenProject: (UUID) -> Void
     let onOpenMeeting: (UUID) -> Void
     let onShowProjectCatalog: () -> Void
     let onEditProject: (ProjectOverviewItem) -> Void
     let onRequestProjectDeletion: (ProjectOverviewItem) -> Void
-    let onOpenSidebarProject: (UUID, ProjectNavigationIntent) -> Void
-    let onSelectWorkspace: (WorkspaceRecord) -> Void
-    @ViewBuilder let header: Header
 
     private var canEdit: Bool { sidebarViewModel.canEditCurrentWorkspace }
 
     var body: some View {
-        let isShowingSettings = mainWindowNavigation.isShowingSettings
-
-        MainSidebarSplitView(
-            width: mainWindowNavigation.sidebarWidth,
-            isVisible: isSidebarVisible || isShowingSettings,
-            onWidthChange: mainWindowNavigation.updateSidebarWidth
-        ) {
-            MainWindowPaneContent(
-                isShowingSettings: isShowingSettings,
-                settingsBackground: .sidebar
-            ) {
-                MeetingListSidebarView(
-                    viewModel: captionViewModel,
-                    updateController: updateController,
-                    sidebarViewModel: sidebarViewModel,
-                    mainWindowNavigation: mainWindowNavigation,
-                    recordingCoordinator: recordingCoordinator,
-                    isShowingUpcomingSchedule: false,
-                    onShowUpcomingSchedule: onShowUpcomingSchedule,
-                    isShowingChat: false,
-                    onShowChat: onShowChat,
-                    isShowingProjects: true,
-                    onShowProjects: onShowProjectCatalog,
-                    isShowingUnprocessedRecordings: false,
-                    onShowUnprocessedRecordings: onShowUnprocessedRecordings,
-                    onCreateProject: onCreateProject,
-                    onOpenProject: onOpenSidebarProject,
-                    onSelectWorkspace: onSelectWorkspace
-                )
-            } settingsContent: {
-                SettingsSidebarView(
-                    selection: $mainWindowNavigation.settingsCategory,
-                    onReturnToApp: mainWindowNavigation.dismissSettings
-                ) {
-                    MainSidebarBottomArea(
-                        viewModel: captionViewModel,
-                        sidebarViewModel: sidebarViewModel,
-                        recordingCoordinator: recordingCoordinator,
-                        updateController: updateController,
-                        onSelectWorkspace: onSelectWorkspace
-                    )
-                }
+        projectCatalog
+            .onChange(of: sidebarViewModel.allProjectItems) {
+                reconcileVisibleProject()
             }
-        } detail: {
-            MainWindowPaneContent(isShowingSettings: isShowingSettings) {
-                projectCatalog
-            } settingsContent: {
-                SettingsDetailView(
-                    selection: $mainWindowNavigation.settingsCategory,
-                    captionViewModel: captionViewModel,
-                    sidebarViewModel: sidebarViewModel,
-                    appDatabase: appDatabase,
-                    workspaceManagementModel: workspaceManagementModel,
-                    onSelectWorkspace: onSelectWorkspace,
-                    onShowUnprocessedRecordings: openUnprocessedRecordingsFromSettings
-                )
-            }
-            .mainDetailPane()
-            .overlay(alignment: .top) {
-                if !isShowingSettings { header }
-            }
-        }
-        .onChange(of: sidebarViewModel.allProjectItems) {
-            reconcileVisibleProject()
-        }
-    }
-
-    private func openUnprocessedRecordingsFromSettings(workspaceID: UUID) {
-        if sidebarViewModel.currentWorkspace?.id != workspaceID {
-            guard let workspace = workspaceManagementModel.workspaces.first(where: { $0.id == workspaceID }) else { return }
-            onSelectWorkspace(workspace)
-            guard sidebarViewModel.currentWorkspace?.id == workspaceID else { return }
-        }
-        onShowUnprocessedRecordings()
-        mainWindowNavigation.openUnprocessedRecordingsFromSettings()
     }
 
     @ViewBuilder

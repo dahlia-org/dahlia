@@ -1,6 +1,6 @@
 import Foundation
 
-enum MeetingSidebarDisplayMode: String, CaseIterable, Sendable {
+enum MeetingSidebarDisplayMode: Sendable {
     case chronological
     case byProject
 }

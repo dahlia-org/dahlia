@@ -49,6 +49,28 @@
         }
 
         @Test
+        func sidebarTabChangesOnlyTheSidebarAndNavigationNeverChangesIt() async {
+            let navigation = MainWindowNavigation(openMainWindow: {})
+            #expect(navigation.sidebarTab == .meetings)
+            #expect(navigation.meetingSidebarDisplayMode == .chronological)
+
+            navigation.sidebarTab = .projects
+            #expect(navigation.meetingSidebarDisplayMode == .byProject)
+            #expect(navigation.section == .meetings)
+            #expect(navigation.currentLocation == .upcomingSchedule)
+
+            navigation.sidebarTab = .chat
+            #expect(navigation.section == .meetings)
+            #expect(navigation.meetingSidebarDisplayMode == .chronological)
+
+            navigation.recordNavigation(to: .projects)
+            navigation.recordNavigation(to: .meeting(.v7()))
+            await navigateBack(navigation)
+            navigation.changeWorkspace(to: .v7())
+            #expect(navigation.sidebarTab == .chat)
+        }
+
+        @Test
         func navigatesBackwardAndForwardThroughChat() async {
             let navigation = MainWindowNavigation(openMainWindow: {})
             navigation.recordNavigation(to: .chat)
@@ -94,7 +116,7 @@
         }
 
         @Test
-        func persistsSidebarModeAndWorkspaceScopedPinOrder() throws {
+        func persistsWorkspaceScopedPinOrder() throws {
             let suiteName = "MainWindowNavigationTests-\(UUID.v7())"
             let defaults = try #require(UserDefaults(suiteName: suiteName))
             defer { defaults.removePersistentDomain(forName: suiteName) }
@@ -104,13 +126,11 @@
             let secondProject = UUID.v7()
             let navigation = MainWindowNavigation(openMainWindow: {}, settingsDefaults: defaults)
 
-            navigation.meetingSidebarDisplayMode = .byProject
             navigation.toggleProjectPin(firstProject, workspaceId: firstWorkspace)
             navigation.toggleProjectPin(secondProject, workspaceId: firstWorkspace)
             navigation.toggleProjectPin(firstProject, workspaceId: secondWorkspace)
 
             let restored = MainWindowNavigation(openMainWindow: {}, settingsDefaults: defaults)
-            #expect(restored.meetingSidebarDisplayMode == .byProject)
             #expect(restored.pinnedProjectIDs(workspaceId: firstWorkspace) == [secondProject, firstProject])
             #expect(restored.pinnedProjectIDs(workspaceId: secondWorkspace) == [firstProject])
         }

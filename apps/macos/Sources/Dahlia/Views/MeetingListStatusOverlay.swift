@@ -27,12 +27,6 @@ struct MeetingListStatusOverlay: View {
             } actions: {
                 Button(L10n.clearSearch, action: onClearSearch)
             }
-        } else if isEmpty {
-            ContentUnavailableView {
-                Label(L10n.noMeetingsYet, systemImage: "waveform")
-            } description: {
-                Text(L10n.createFirstMeetingDescription)
-            }
         }
     }
 }

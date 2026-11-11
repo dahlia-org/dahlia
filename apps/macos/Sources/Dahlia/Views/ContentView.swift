@@ -42,105 +42,92 @@ struct ContentView: View {
             onWidthChange: mainWindowNavigation.updateChatSidebarWidth
         ) {
             Group {
-                if mainWindowNavigation.section == .projects {
-                    ProjectManagementView(
-                        isSidebarVisible: $isSidebarVisible,
-                        sidebarViewModel: sidebarViewModel,
-                        captionViewModel: viewModel,
-                        updateController: updateController,
-                        recordingCoordinator: recordingCoordinator,
-                        mainWindowNavigation: mainWindowNavigation,
-                        appDatabase: appDatabase,
-                        workspaceManagementModel: workspaceManagementModel,
-                        onShowUpcomingSchedule: returnToCalendarSchedule,
-                        onShowChat: showFullScreenChat,
-                        onShowUnprocessedRecordings: showUnprocessedRecordings,
-                        onCreateProject: presentProjectCreation,
-                        onOpenProject: openProjectDetail,
-                        onOpenMeeting: openProjectMeeting,
-                        onShowProjectCatalog: showProjectCatalog,
-                        onEditProject: presentProjectEditor,
-                        onRequestProjectDeletion: { projectPendingDeletion = $0 },
-                        onOpenSidebarProject: handleMeetingSidebarProjectAction,
-                        onSelectWorkspace: onSelectWorkspace
+                MainSidebarSplitView(
+                    width: mainWindowNavigation.sidebarWidth,
+                    isVisible: isSidebarVisible || isShowingSettings,
+                    onWidthChange: mainWindowNavigation.updateSidebarWidth
+                ) {
+                    MainWindowPaneContent(
+                        isShowingSettings: isShowingSettings,
+                        settingsBackground: .sidebar
                     ) {
-                        mainDetailHeader
-                    }
-                } else {
-                    MainSidebarSplitView(
-                        width: mainWindowNavigation.sidebarWidth,
-                        isVisible: isSidebarVisible || isShowingSettings,
-                        onWidthChange: mainWindowNavigation.updateSidebarWidth
-                    ) {
-                        MainWindowPaneContent(
-                            isShowingSettings: isShowingSettings,
-                            settingsBackground: .sidebar
+                        MeetingListSidebarView(
+                            viewModel: viewModel,
+                            updateController: updateController,
+                            sidebarViewModel: sidebarViewModel,
+                            mainWindowNavigation: mainWindowNavigation,
+                            recordingCoordinator: recordingCoordinator,
+                            chatCoordinator: chatCoordinator,
+                            isShowingUpcomingSchedule: isShowingUpcomingSchedule,
+                            onShowUpcomingSchedule: returnToCalendarSchedule,
+                            isShowingChat: isShowingFullScreenChat,
+                            onNewChat: startNewFullScreenChat,
+                            onOpenChatThread: openFullScreenChatThread,
+                            isShowingUnprocessedRecordings: isShowingUnprocessedRecordings,
+                            onShowUnprocessedRecordings: showUnprocessedRecordings,
+                            onCreateProject: presentProjectCreation,
+                            onOpenProject: handleMeetingSidebarProjectAction,
+                            onSelectWorkspace: onSelectWorkspace
+                        )
+                    } settingsContent: {
+                        SettingsSidebarView(
+                            selection: $mainWindowNavigation.settingsCategory,
+                            onReturnToApp: mainWindowNavigation.dismissSettings
                         ) {
-                            MeetingListSidebarView(
+                            MainSidebarBottomArea(
                                 viewModel: viewModel,
-                                updateController: updateController,
                                 sidebarViewModel: sidebarViewModel,
-                                mainWindowNavigation: mainWindowNavigation,
                                 recordingCoordinator: recordingCoordinator,
-                                isShowingUpcomingSchedule: isShowingUpcomingSchedule,
-                                onShowUpcomingSchedule: returnToCalendarSchedule,
-                                isShowingChat: isShowingFullScreenChat,
-                                onShowChat: showFullScreenChat,
-                                isShowingProjects: false,
-                                onShowProjects: showProjectCatalog,
-                                isShowingUnprocessedRecordings: isShowingUnprocessedRecordings,
-                                onShowUnprocessedRecordings: showUnprocessedRecordings,
-                                onCreateProject: presentProjectCreation,
-                                onOpenProject: handleMeetingSidebarProjectAction,
+                                updateController: updateController,
                                 onSelectWorkspace: onSelectWorkspace
                             )
-                        } settingsContent: {
-                            SettingsSidebarView(
-                                selection: $mainWindowNavigation.settingsCategory,
-                                onReturnToApp: mainWindowNavigation.dismissSettings
-                            ) {
-                                MainSidebarBottomArea(
-                                    viewModel: viewModel,
-                                    sidebarViewModel: sidebarViewModel,
-                                    recordingCoordinator: recordingCoordinator,
-                                    updateController: updateController,
-                                    onSelectWorkspace: onSelectWorkspace
-                                )
-                            }
                         }
-                    } detail: {
-                        MainWindowPaneContent(isShowingSettings: isShowingSettings) {
-                            if isShowingFullScreenChat {
-                                CodexChatSidebarView(
-                                    coordinator: chatCoordinator,
-                                    sidebarViewModel: sidebarViewModel,
-                                    showsHistory: $chatCoordinator.showsHistory,
-                                    showsConfiguration: $isShowingChatConfiguration,
-                                    isFullScreen: true,
-                                    headerLeadingInset: isSidebarVisible ? 0 : mainWindowNavigation.sidebarWidth,
-                                    onShowFullScreen: nil,
-                                    onPopOut: popOutDockedChat,
-                                    onOpenDetachedSession: openDetachedChat
-                                )
-                            } else {
-                                detailView
-                            }
-                        } settingsContent: {
-                            SettingsDetailView(
-                                selection: $mainWindowNavigation.settingsCategory,
-                                captionViewModel: viewModel,
+                    }
+                } detail: {
+                    MainWindowPaneContent(isShowingSettings: isShowingSettings) {
+                        if mainWindowNavigation.section == .projects {
+                            ProjectManagementView(
                                 sidebarViewModel: sidebarViewModel,
-                                appDatabase: appDatabase,
-                                workspaceManagementModel: workspaceManagementModel,
-                                onSelectWorkspace: onSelectWorkspace,
-                                onShowUnprocessedRecordings: openUnprocessedRecordingsFromSettings
+                                captionViewModel: viewModel,
+                                recordingCoordinator: recordingCoordinator,
+                                mainWindowNavigation: mainWindowNavigation,
+                                onCreateProject: presentProjectCreation,
+                                onOpenProject: openProjectDetail,
+                                onOpenMeeting: openProjectMeeting,
+                                onShowProjectCatalog: showProjectCatalog,
+                                onEditProject: presentProjectEditor,
+                                onRequestProjectDeletion: { projectPendingDeletion = $0 }
                             )
+                        } else if isShowingFullScreenChat {
+                            CodexChatSidebarView(
+                                coordinator: chatCoordinator,
+                                sidebarViewModel: sidebarViewModel,
+                                showsHistory: $chatCoordinator.showsHistory,
+                                showsConfiguration: $isShowingChatConfiguration,
+                                isFullScreen: true,
+                                headerLeadingInset: isSidebarVisible ? 0 : mainWindowNavigation.sidebarWidth,
+                                onShowFullScreen: nil,
+                                onPopOut: popOutDockedChat,
+                                onOpenDetachedSession: openDetachedChat
+                            )
+                        } else {
+                            detailView
                         }
-                        .mainDetailPane()
-                        .overlay(alignment: .top) {
-                            if !isShowingSettings, !isShowingFullScreenChat {
-                                mainDetailHeader
-                            }
+                    } settingsContent: {
+                        SettingsDetailView(
+                            selection: $mainWindowNavigation.settingsCategory,
+                            captionViewModel: viewModel,
+                            sidebarViewModel: sidebarViewModel,
+                            appDatabase: appDatabase,
+                            workspaceManagementModel: workspaceManagementModel,
+                            onSelectWorkspace: onSelectWorkspace,
+                            onShowUnprocessedRecordings: openUnprocessedRecordingsFromSettings
+                        )
+                    }
+                    .mainDetailPane()
+                    .overlay(alignment: .top) {
+                        if !isShowingSettings, !isShowingFullScreenChat {
+                            mainDetailHeader
                         }
                     }
                 }
@@ -353,7 +340,7 @@ struct ContentView: View {
         .onChange(of: mainWindowNavigation.section) { _, section in
             switch section {
             case .projects:
-                prepareProjectManagement()
+                prepareSectionWithoutMeeting()
             case .meetings:
                 syncChatContext()
             case .chat:
@@ -404,6 +391,24 @@ private extension ContentView {
         isSidebarVisible = true
         chatCoordinator.enterFullScreen(workspaceID: sidebarViewModel.currentWorkspace?.id)
         sidebarViewModel.clearMeetingSelection()
+    }
+
+    private func startNewFullScreenChat() {
+        showFullScreenChat()
+        chatCoordinator.showsHistory = false
+        dismissChatConfiguration()
+        chatCoordinator.newDockedChat(showDockedSidebar: false)
+    }
+
+    private func openFullScreenChatThread(_ thread: CodexChatThreadSummary) {
+        // A thread already open in its own window comes forward there; the main area stays as it is.
+        if let detachedID = chatCoordinator.detachedSessionID(showingThread: thread.id) {
+            openDetachedChat(detachedID)
+            return
+        }
+        showFullScreenChat()
+        chatCoordinator.showsHistory = false
+        Task { _ = await chatCoordinator.openHistoryThread(thread, showDockedSidebar: false) }
     }
 
     private func popOutDockedChat() {
@@ -822,7 +827,7 @@ private extension ContentView {
             ?? project.projectName
     }
 
-    private func prepareProjectManagement() {
+    private func prepareSectionWithoutMeeting() {
         isShowingUnprocessedRecordings = false
         viewModel.clearCurrentMeetingForProjectNavigation()
         sidebarViewModel.clearMeetingSelection()
@@ -840,7 +845,7 @@ private extension ContentView {
             return
         }
         if mainWindowNavigation.section == .projects {
-            prepareProjectManagement()
+            prepareSectionWithoutMeeting()
             mainWindowNavigation.initializeNavigationHistoryIfNeeded(
                 to: .projects
             )

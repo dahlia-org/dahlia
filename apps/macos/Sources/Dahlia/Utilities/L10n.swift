@@ -475,6 +475,8 @@ enum L10n { // swiftlint:disable:this type_body_length
 
     static var home: String { String(localized: "Home", bundle: bundle) }
     static var meetings: String { String(localized: "Meetings", bundle: bundle) }
+    static var upcomingEvents: String { String(localized: "Upcoming events", bundle: bundle) }
+    static var showAll: String { String(localized: "Show all", bundle: bundle) }
     static var recent: String { String(localized: "Recent", bundle: bundle) }
     static var projects: String { String(localized: "Projects", bundle: bundle) }
     static var list: String { String(localized: "List", bundle: bundle) }
@@ -494,9 +496,6 @@ enum L10n { // swiftlint:disable:this type_body_length
         String(format: String(localized: "%lld more", bundle: bundle), locale: .current, count)
     }
 
-    static var sidebarOrganization: String { String(localized: "Organize Sidebar", bundle: bundle) }
-    static var chronological: String { String(localized: "Chronological", bundle: bundle) }
-    static var groupByProject: String { String(localized: "Group by Project", bundle: bundle) }
     static var pinned: String { String(localized: "Pinned", bundle: bundle) }
     static var projectOptions: String { String(localized: "Project Options", bundle: bundle) }
     static var pinProject: String { String(localized: "Pin Project", bundle: bundle) }
@@ -713,10 +712,6 @@ enum L10n { // swiftlint:disable:this type_body_length
     static var meetingListLoadFailed: String { String(localized: "Could Not Load Meetings", bundle: bundle) }
     static var searchForOlderMeetings: String { String(localized: "Search to find older meetings.", bundle: bundle) }
     static var refineMeetingSearch: String { String(localized: "Refine your search to find older meetings.", bundle: bundle) }
-    static var createFirstMeetingDescription: String { String(
-        localized: "Create a meeting to start building your history.",
-        bundle: bundle
-    ) }
 
     static func projectFilterHelp(_ projectName: String) -> String {
         String(format: String(localized: "Project: %@ (includes subprojects)", bundle: bundle), projectName)
@@ -1971,7 +1966,6 @@ enum L10n { // swiftlint:disable:this type_body_length
         bundle: bundle
     ) }
     static var calendarScheduleTitle: String { String(localized: "Upcoming schedule", bundle: bundle) }
-    static var showUpcomingSchedule: String { String(localized: "Show Upcoming Schedule", bundle: bundle) }
     static var calendarAutoRecording: String { String(localized: "Auto-record", bundle: bundle) }
     static var calendarAutoRecordingScheduled: String { String(localized: "Auto-record scheduled", bundle: bundle) }
     static var calendarAutoRecordingHelp: String { String(

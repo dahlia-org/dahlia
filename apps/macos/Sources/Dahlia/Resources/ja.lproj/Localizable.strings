@@ -154,10 +154,12 @@
 "Create New Meeting" = "新しいミーティング";
 "Quick Recording" = "クイック録音";
 "Quick recording %@" = "クイック録音 %1$@";
-"Home" = "Home";
+"Home" = "ホーム";
 "Good morning" = "おはようございます";
 "Good afternoon" = "こんにちは";
 "Good evening" = "こんばんは";
+"Upcoming events" = "今後のイベント";
+"Show all" = "すべて表示";
 "Meetings" = "ミーティング";
 "List" = "リスト";
 "Project Detail Display" = "プロジェクト詳細の表示";
@@ -169,9 +171,6 @@
 "The selected project is no longer available." = "選択したプロジェクトは利用できなくなりました。";
 "Recent" = "最近の項目";
 "Projects" = "プロジェクト";
-"Organize Sidebar" = "サイドバーを整理";
-"Chronological" = "時系列";
-"Group by Project" = "プロジェクト別";
 "Pinned" = "ピン留め";
 "Project Options" = "プロジェクトのオプション";
 "Pin Project" = "プロジェクトをピン留め";
@@ -387,7 +386,6 @@
 "Could Not Load Meetings" = "ミーティングを読み込めませんでした";
 "Search to find older meetings." = "過去のミーティングは検索して見つけられます。";
 "Refine your search to find older meetings." = "検索語を絞り込むと、さらに過去のミーティングを見つけられます。";
-"Create a meeting to start building your history." = "ミーティングを作成すると、ここに履歴が表示されます。";
 "Delete %lld meetings?" = "%lld件のミーティングを削除しますか？";
 "Delete this meeting and all its data permanently, including its transcript and Dahlia-managed audio. This cannot be undone." = "このミーティングと、文字起こしやDahliaが管理する音声を含むすべての関連データを完全に削除します。この操作は取り消せません。";
 "Delete %lld meetings and all their data permanently, including transcripts and Dahlia-managed audio. This cannot be undone." = "%lld件のミーティングと、文字起こしやDahliaが管理する音声を含むすべての関連データを完全に削除します。この操作は取り消せません。";
@@ -654,7 +652,6 @@
 "Use models with your ChatGPT account." = "ChatGPT アカウントでモデルを使います。";
 "Use models with your Claude subscription." = "Claude のサブスクリプションでモデルを使います。";
 "Upcoming schedule" = "今後の予定";
-"Show Upcoming Schedule" = "今後の予定を表示";
 "Auto-record" = "自動録音";
 "Auto-record scheduled" = "自動録音予約済み";
 "Automatically start recording when this event begins." = "この予定の開始時刻になったら自動的に録音を開始します。";

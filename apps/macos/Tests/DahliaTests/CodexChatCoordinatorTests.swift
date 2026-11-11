@@ -265,6 +265,9 @@ import Foundation
             #expect(coordinator.session(for: selectedID)?.backendThreadID == thread.id)
             #expect(coordinator.dockedSessionID == originalDockedID)
             #expect(!coordinator.isDockedVisible)
+            // The sidebar checks this before switching the main area, so a detached thread leaves it alone.
+            #expect(coordinator.detachedSessionID(showingThread: thread.id) == selectedID)
+            #expect(coordinator.detachedSessionID(showingThread: "other-thread") == nil)
         }
 
         @Test
@@ -391,6 +394,77 @@ import Foundation
 
             #expect(await service.historyRequests == 0)
             await service.completeBlockedTurn()
+        }
+
+        @Test
+        func dockedChatsFirstReplyMarksCachedHistoryStaleUntilARefreshStarts() async {
+            let service = CoordinatorTestCodexChatService(blocksTurn: true, listsStartedThread: true)
+            let settings = AppSettings()
+            settings.currentWorkspace = Self.workspace(name: "Hidden Start")
+            let coordinator = CodexChatCoordinator(service: service, settings: settings)
+            let session = coordinator.dockedSession
+            await coordinator.refreshHistory()
+            #expect(coordinator.history.map(\.id) == ["history-thread"])
+
+            session.draft = "Question"
+            session.sendDraft()
+            await waitUntil { await MainActor.run { session.activeTurnID != nil } }
+            // Still generating: the service may not have saved the thread yet.
+            #expect(!coordinator.isHistoryStale)
+
+            // The reply finishes while no history list watches; the cached, nonempty history lacks the thread.
+            await service.completeBlockedTurn()
+            await waitUntil { await MainActor.run { !session.hasPendingGenerationWork } }
+            #expect(coordinator.isHistoryStale)
+            #expect(await service.historyRequests == 1)
+
+            await coordinator.refreshHistory()
+            #expect(coordinator.history.map(\.id) == ["new-thread"])
+            #expect(!coordinator.isHistoryStale)
+        }
+
+        @Test
+        func staleHistoryClearsWhenItsRefreshStillOmitsOrFailsToListTheThread() async {
+            // The listing never includes the new thread (as when it is beyond the first page).
+            let service = CoordinatorTestCodexChatService(blocksTurn: true)
+            let settings = AppSettings()
+            settings.currentWorkspace = Self.workspace(name: "Unlisted")
+            let coordinator = CodexChatCoordinator(service: service, settings: settings)
+            let session = coordinator.dockedSession
+            await coordinator.refreshHistory()
+
+            session.draft = "Question"
+            session.sendDraft()
+            await waitUntil { await MainActor.run { session.activeTurnID != nil } }
+            await service.completeBlockedTurn()
+            await waitUntil { await MainActor.run { !session.hasPendingGenerationWork } }
+            #expect(coordinator.isHistoryStale)
+
+            // One catch-up refresh; its result, which still lacks the thread, must not ask for another.
+            await coordinator.refreshHistory()
+            #expect(coordinator.history.map(\.id) == ["history-thread"])
+            #expect(!coordinator.isHistoryStale)
+            #expect(await service.historyRequests == 2)
+        }
+
+        @Test
+        func staleHistoryStaysClearedWhenTheCatchUpRequestFails() async {
+            let service = CoordinatorTestCodexChatService(failFirstHistoryRequest: true, blocksTurn: true)
+            let settings = AppSettings()
+            settings.currentWorkspace = Self.workspace(name: "Failed Catch-up")
+            let coordinator = CodexChatCoordinator(service: service, settings: settings)
+            let session = coordinator.dockedSession
+
+            session.draft = "Question"
+            session.sendDraft()
+            await waitUntil { await MainActor.run { session.activeTurnID != nil } }
+            await service.completeBlockedTurn()
+            await waitUntil { await MainActor.run { !session.hasPendingGenerationWork } }
+            #expect(coordinator.isHistoryStale)
+
+            await coordinator.refreshHistory()
+            #expect(coordinator.historyError != nil)
+            #expect(!coordinator.isHistoryStale)
         }
 
         @Test

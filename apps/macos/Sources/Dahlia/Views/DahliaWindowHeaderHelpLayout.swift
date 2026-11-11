@@ -8,17 +8,19 @@ enum DahliaWindowHeaderHelpLayout {
     static func verticalOffset(
         buttonMinY: CGFloat,
         helpHeight: CGFloat,
-        buttonHeight: CGFloat = DahliaDesign.windowHeaderControlSize
+        buttonHeight: CGFloat = DahliaDesign.windowHeaderControlSize,
+        placesBelow: Bool = false
     ) -> CGFloat {
         let distance = (buttonHeight + helpHeight) / 2 + spacing
-        return buttonMinY >= helpHeight + spacing ? -distance : distance
+        return !placesBelow && buttonMinY >= helpHeight + spacing ? -distance : distance
     }
 
     static func origin(
         buttonFrame: CGRect,
         helpSize: CGSize,
         containerOrigin: CGPoint,
-        windowBounds: CGRect
+        windowBounds: CGRect,
+        placesBelow: Bool = false
     ) -> CGPoint {
         let centeredMinX = buttonFrame.midX - containerOrigin.x - helpSize.width / 2
         return CGPoint(
@@ -28,7 +30,12 @@ enum DahliaWindowHeaderHelpLayout {
                 windowBounds: windowBounds
             ),
             y: buttonFrame.midY - containerOrigin.y
-                + verticalOffset(buttonMinY: buttonFrame.minY, helpHeight: helpSize.height)
+                + verticalOffset(
+                    buttonMinY: buttonFrame.minY,
+                    helpHeight: helpSize.height,
+                    buttonHeight: placesBelow ? buttonFrame.height : DahliaDesign.windowHeaderControlSize,
+                    placesBelow: placesBelow
+                )
                 - helpSize.height / 2
         )
     }

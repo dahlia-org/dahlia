@@ -6,12 +6,12 @@ struct MeetingListSidebarView: View {
     var sidebarViewModel: SidebarViewModel
     @Bindable var mainWindowNavigation: MainWindowNavigation
     let recordingCoordinator: RecordingCoordinator
+    var chatCoordinator: CodexChatCoordinator
     let isShowingUpcomingSchedule: Bool
     let onShowUpcomingSchedule: () -> Void
     let isShowingChat: Bool
-    let onShowChat: () -> Void
-    let isShowingProjects: Bool
-    let onShowProjects: () -> Void
+    let onNewChat: () -> Void
+    let onOpenChatThread: (CodexChatThreadSummary) -> Void
     let isShowingUnprocessedRecordings: Bool
     let onShowUnprocessedRecordings: () -> Void
     let onCreateProject: () -> Void
@@ -46,160 +46,37 @@ struct MeetingListSidebarView: View {
     var body: some View {
         VStack(spacing: 0) {
             MainSidebarNavigationView(
-                meetingSidebarDisplayMode: $mainWindowNavigation.meetingSidebarDisplayMode,
+                selectedTab: sidebarTab,
+                onSelectTab: { mainWindowNavigation.sidebarTab = $0 },
                 onCreateMeeting: recordingCoordinator.createDraftMeeting,
                 canCreateMeeting: canEdit && !viewModel.isRecordingStartPending && !viewModel.isFinalizingRecording,
                 canStartQuickRecording: recordingCoordinator.canStartNewMeeting,
                 onStartQuickRecording: recordingCoordinator.startQuickRecording,
-                isShowingUpcomingSchedule: isShowingUpcomingSchedule,
-                onShowUpcomingSchedule: onShowUpcomingSchedule,
-                isShowingChat: isShowingChat,
-                onShowChat: onShowChat,
-                isShowingProjects: isShowingProjects,
-                onShowProjects: onShowProjects,
                 canCreateProject: canEdit,
                 onCreateProject: onCreateProject,
+                onNewChat: onNewChat,
                 isShowingUnprocessedRecordings: isShowingUnprocessedRecordings,
                 unprocessedRecordingCount: sidebarViewModel.unprocessedRecordingItems.count,
                 onShowUnprocessedRecordings: onShowUnprocessedRecordings
             )
-            List(selection: meetingSelection) {
-                if !pinnedProjectGroups.isEmpty {
-                    MeetingSidebarListGroupLabel(
-                        title: L10n.pinned,
-                        isExpanded: isPinnedSectionExpanded,
-                        onToggleExpansion: { isPinnedSectionExpanded.toggle() }
-                    )
-                    if isPinnedSectionExpanded {
-                        ForEach(pinnedProjectGroups) { group in
-                            projectSection(group, isPinned: true)
-                        }
+            if sidebarTab == .home || sidebarTab == .chat {
+                List {
+                    if sidebarTab == .home {
+                        upcomingEventsSection
                     }
-                }
-
-                MeetingSidebarHeader(
-                    displayMode: $mainWindowNavigation.meetingSidebarDisplayMode,
-                    isExpanded: primarySectionExpanded,
-                    canCreateProject: canEdit,
-                    onToggleExpansion: togglePrimarySection,
-                    onCreateProject: onCreateProject
-                )
-                .listRowSeparator(.hidden)
-
-                if mainWindowNavigation.meetingSidebarDisplayMode == .chronological,
-                   isRecentSectionExpanded {
-                    if let selectedMeeting = selectedMeetingOutsideVisibleItems {
-                        Section {
-                            meetingRow(selectedMeeting)
-                        } header: {
-                            Text(sidebarViewModel.isSearchingMeetings ? L10n.selectedMeetingOutsideResults : L10n.selectedMeeting)
-                                .font(.subheadline)
-                        }
-                    }
-
-                    ForEach(sidebarViewModel.displayedMeetingGroups) { group in
-                        MeetingSidebarListGroupLabel(
-                            title: group.title,
-                            isExpanded: !collapsedDateGroupIDs.contains(group.id),
-                            onToggleExpansion: { collapsedDateGroupIDs.toggle(group.id) }
-                        )
-                        if !collapsedDateGroupIDs.contains(group.id) {
-                            ForEach(group.meetings) { item in
-                                meetingRow(item)
-                            }
-                        }
-                    }
-
-                    MeetingListPaginationRow(
-                        error: sidebarViewModel.displayedMeetingListLoadError,
-                        hasItems: !sidebarViewModel.displayedMeetingItems.isEmpty,
-                        isLoadingMore: sidebarViewModel.isDisplayedMeetingListLoadingMore,
-                        hasMore: sidebarViewModel.hasMoreDisplayedMeetings,
-                        limitMessage: meetingListLimitMessage,
-                        loadTrigger: """
-                        meeting-page-\(sidebarViewModel.meetingSearchCriteria.identity)\
-                        -\(sidebarViewModel.displayedMeetingItems.count)
-                        """,
-                        onRetry: sidebarViewModel.retryDisplayedMeetingLoading,
-                        onLoadMore: sidebarViewModel.loadMoreDisplayedMeetings
-                    )
-                } else if mainWindowNavigation.meetingSidebarDisplayMode == .byProject {
-                    if isProjectSectionExpanded {
-                        if let selectedMeeting = selectedMeetingOutsideVisibleItems {
-                            Section {
-                                meetingRow(selectedMeeting)
-                            } header: {
-                                Text(sidebarViewModel.isSearchingMeetings ? L10n.selectedMeetingOutsideResults : L10n.selectedMeeting)
-                                    .font(.subheadline)
-                            }
-                        }
-
-                        ForEach(unpinnedProjectGroups) { group in
-                            projectSection(group, isPinned: false)
-                        }
-                    }
-
-                    if let unassignedProjectGroup {
-                        MeetingSidebarListGroupLabel(
-                            title: L10n.recent,
-                            isExpanded: isRecentSectionExpanded,
-                            onToggleExpansion: { isRecentSectionExpanded.toggle() },
-                            displayMode: $mainWindowNavigation.meetingSidebarDisplayMode,
-                            textStyle: .body
-                        )
-                        if isRecentSectionExpanded {
-                            projectSection(
-                                unassignedProjectGroup,
-                                isPinned: false,
-                                showsHeader: false,
-                                isExpanded: true
-                            )
-                        }
-                    }
-                }
-            }
-            .listStyle(.sidebar)
-            .contentMargins(.trailing, 12, for: .scrollContent)
-            .scrollContentBackground(.hidden)
-            .overlay {
-                if !hasExpandedContent {
-                    EmptyView()
-                } else if sidebarViewModel.displayedMeetingItems.isEmpty, sidebarViewModel.projectMeetingGroups.isEmpty,
-                          sidebarViewModel.allWorkspaces.first(where: { $0.id == sidebarViewModel.currentWorkspace?.id })?
-                          .isAwaitingInitialSync == true {
-                    ContentUnavailableView {
-                        Label(L10n.workspaceInitialSyncPending, systemImage: "arrow.triangle.2.circlepath")
-                    } description: {
-                        Text(L10n.workspaceInitialSyncPendingDescription)
-                    }
-                } else if mainWindowNavigation.meetingSidebarDisplayMode == .chronological {
-                    MeetingListStatusOverlay(
-                        isLoaded: sidebarViewModel.isDisplayedMeetingListLoaded,
-                        error: sidebarViewModel.displayedMeetingListLoadError,
-                        isEmpty: sidebarViewModel.displayedMeetingItems.isEmpty
-                            && pinnedProjectGroups.isEmpty,
-                        isSearching: sidebarViewModel.isSearchingMeetings,
-                        onRetry: sidebarViewModel.retryDisplayedMeetingLoading,
-                        onClearSearch: clearSearch
-                    )
-                } else {
-                    MeetingProjectListStatusOverlay(
-                        isLoaded: sidebarViewModel.isProjectMeetingProjectionLoaded
-                            && sidebarViewModel.isProjectCatalogLoaded,
-                        error: sidebarViewModel.projectMeetingProjectionLoadError
-                            ?? (sidebarViewModel.projectCatalogLoadFailed
-                                ? L10n.projectCatalogLoadFailedDescription
-                                : nil),
-                        isEmpty: sidebarViewModel.projectMeetingGroups.isEmpty,
-                        onRetry: {
-                            sidebarViewModel.retryProjectCatalogLoading()
-                            sidebarViewModel.retryProjectMeetingProjection()
-                        }
+                    MainSidebarChatHistorySection(
+                        coordinator: chatCoordinator,
+                        sidebarViewModel: sidebarViewModel,
+                        isShowingChat: isShowingChat,
+                        onNewChat: onNewChat,
+                        onOpenThread: onOpenChatThread
                     )
                 }
-            }
-            .contextMenu(forSelectionType: UUID.self) { selection in
-                if canEdit { contextMenu(for: selection) }
+                .listStyle(.sidebar)
+                .contentMargins(.trailing, 12, for: .scrollContent)
+                .scrollContentBackground(.hidden)
+            } else {
+                meetingList
             }
 
             MainSidebarBottomArea(
@@ -213,7 +90,9 @@ struct MeetingListSidebarView: View {
         .font(.callout)
         .foregroundStyle(DahliaDesign.sidebarPrimaryTextColor)
         .onDeleteCommand {
-            if canEdit { requestDeletion(of: sidebarViewModel.selectedMeetingIds) }
+            // Only tabs that list meetings show the selection being deleted.
+            guard canEdit, sidebarTab == .meetings || sidebarTab == .projects else { return }
+            requestDeletion(of: sidebarViewModel.selectedMeetingIds)
         }
         .onAppear {
             renderedMeetingSelection = sidebarViewModel.selectedMeetingIds
@@ -233,6 +112,162 @@ struct MeetingListSidebarView: View {
         }
         .meetingDeletionConfirmation(request: $pendingDeletion) { meetingIds in
             sidebarViewModel.deleteMeetings(ids: meetingIds)
+        }
+    }
+
+    private var sidebarTab: MainSidebarTab { mainWindowNavigation.sidebarTab }
+
+    private var upcomingEventsSection: some View {
+        MainSidebarUpcomingEventsSection(
+            isShowingSchedule: isShowingUpcomingSchedule,
+            openDraftEventID: viewModel.draftMeeting?.linkedCalendarEvent?.id,
+            onSelectEvent: recordingCoordinator.openCalendarEvent,
+            onShowSchedule: onShowUpcomingSchedule
+        )
+    }
+
+    private var meetingList: some View {
+        List(selection: meetingSelection) {
+            if sidebarTab == .meetings {
+                upcomingEventsSection
+            }
+
+            if !pinnedProjectGroups.isEmpty {
+                MeetingSidebarListGroupLabel(
+                    title: L10n.pinned,
+                    isExpanded: isPinnedSectionExpanded,
+                    onToggleExpansion: { isPinnedSectionExpanded.toggle() }
+                )
+                if isPinnedSectionExpanded {
+                    ForEach(pinnedProjectGroups) { group in
+                        projectSection(group, isPinned: true)
+                    }
+                }
+            }
+
+            MeetingSidebarHeader(
+                title: mainWindowNavigation.meetingSidebarDisplayMode == .chronological ? L10n.recent : L10n.project,
+                isExpanded: primarySectionExpanded,
+                onToggleExpansion: togglePrimarySection,
+                addButtonTitle: mainWindowNavigation.meetingSidebarDisplayMode == .byProject ? L10n.newProject : nil,
+                canAdd: canEdit,
+                onAdd: onCreateProject
+            )
+            .listRowSeparator(.hidden)
+
+            if mainWindowNavigation.meetingSidebarDisplayMode == .chronological,
+               isRecentSectionExpanded {
+                if let selectedMeeting = selectedMeetingOutsideVisibleItems {
+                    Section {
+                        meetingRow(selectedMeeting)
+                    } header: {
+                        Text(sidebarViewModel.isSearchingMeetings ? L10n.selectedMeetingOutsideResults : L10n.selectedMeeting)
+                            .font(.subheadline)
+                    }
+                }
+
+                ForEach(sidebarViewModel.displayedMeetingGroups) { group in
+                    MeetingSidebarListGroupLabel(
+                        title: group.title,
+                        isExpanded: !collapsedDateGroupIDs.contains(group.id),
+                        onToggleExpansion: { collapsedDateGroupIDs.toggle(group.id) }
+                    )
+                    if !collapsedDateGroupIDs.contains(group.id) {
+                        ForEach(group.meetings) { item in
+                            meetingRow(item)
+                        }
+                    }
+                }
+
+                MeetingListPaginationRow(
+                    error: sidebarViewModel.displayedMeetingListLoadError,
+                    hasItems: !sidebarViewModel.displayedMeetingItems.isEmpty,
+                    isLoadingMore: sidebarViewModel.isDisplayedMeetingListLoadingMore,
+                    hasMore: sidebarViewModel.hasMoreDisplayedMeetings,
+                    limitMessage: meetingListLimitMessage,
+                    loadTrigger: """
+                    meeting-page-\(sidebarViewModel.meetingSearchCriteria.identity)\
+                    -\(sidebarViewModel.displayedMeetingItems.count)
+                    """,
+                    onRetry: sidebarViewModel.retryDisplayedMeetingLoading,
+                    onLoadMore: sidebarViewModel.loadMoreDisplayedMeetings
+                )
+            } else if mainWindowNavigation.meetingSidebarDisplayMode == .byProject {
+                if isProjectSectionExpanded {
+                    if let selectedMeeting = selectedMeetingOutsideVisibleItems {
+                        Section {
+                            meetingRow(selectedMeeting)
+                        } header: {
+                            Text(sidebarViewModel.isSearchingMeetings ? L10n.selectedMeetingOutsideResults : L10n.selectedMeeting)
+                                .font(.subheadline)
+                        }
+                    }
+
+                    ForEach(unpinnedProjectGroups) { group in
+                        projectSection(group, isPinned: false)
+                    }
+                }
+
+                if let unassignedProjectGroup {
+                    MeetingSidebarListGroupLabel(
+                        title: L10n.recent,
+                        isExpanded: isRecentSectionExpanded,
+                        onToggleExpansion: { isRecentSectionExpanded.toggle() },
+                        textStyle: .body
+                    )
+                    if isRecentSectionExpanded {
+                        projectSection(
+                            unassignedProjectGroup,
+                            isPinned: false,
+                            showsHeader: false,
+                            isExpanded: true
+                        )
+                    }
+                }
+            }
+        }
+        .listStyle(.sidebar)
+        .contentMargins(.trailing, 12, for: .scrollContent)
+        .scrollContentBackground(.hidden)
+        .overlay {
+            if !hasExpandedContent {
+                EmptyView()
+            } else if sidebarViewModel.displayedMeetingItems.isEmpty, sidebarViewModel.projectMeetingGroups.isEmpty,
+                      sidebarViewModel.allWorkspaces.first(where: { $0.id == sidebarViewModel.currentWorkspace?.id })?
+                      .isAwaitingInitialSync == true {
+                ContentUnavailableView {
+                    Label(L10n.workspaceInitialSyncPending, systemImage: "arrow.triangle.2.circlepath")
+                } description: {
+                    Text(L10n.workspaceInitialSyncPendingDescription)
+                }
+            } else if mainWindowNavigation.meetingSidebarDisplayMode == .chronological {
+                MeetingListStatusOverlay(
+                    isLoaded: sidebarViewModel.isDisplayedMeetingListLoaded,
+                    error: sidebarViewModel.displayedMeetingListLoadError,
+                    isEmpty: sidebarViewModel.displayedMeetingItems.isEmpty
+                        && pinnedProjectGroups.isEmpty,
+                    isSearching: sidebarViewModel.isSearchingMeetings,
+                    onRetry: sidebarViewModel.retryDisplayedMeetingLoading,
+                    onClearSearch: clearSearch
+                )
+            } else {
+                MeetingProjectListStatusOverlay(
+                    isLoaded: sidebarViewModel.isProjectMeetingProjectionLoaded
+                        && sidebarViewModel.isProjectCatalogLoaded,
+                    error: sidebarViewModel.projectMeetingProjectionLoadError
+                        ?? (sidebarViewModel.projectCatalogLoadFailed
+                            ? L10n.projectCatalogLoadFailedDescription
+                            : nil),
+                    isEmpty: sidebarViewModel.projectMeetingGroups.isEmpty,
+                    onRetry: {
+                        sidebarViewModel.retryProjectCatalogLoading()
+                        sidebarViewModel.retryProjectMeetingProjection()
+                    }
+                )
+            }
+        }
+        .contextMenu(forSelectionType: UUID.self) { selection in
+            if canEdit { contextMenu(for: selection) }
         }
     }
 
