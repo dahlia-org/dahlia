@@ -13,6 +13,8 @@ import {
   registerDatabricksProviders,
 } from "./databricks-provider.ts";
 
+import { reviewMCP } from "./mcp-review.ts";
+
 const env = process.env;
 const mode = env.DAHLIA_PI_MODE ?? "control";
 const bridgedProviders = (env.DAHLIA_PI_BRIDGED_PROVIDERS ?? "").split(",").filter(Boolean);
@@ -195,12 +197,25 @@ export default function (pi: any) {
         const readOnly = server === "dahlia" ? readOnlyDahliaTool.test(name) : tool.annotations?.readOnlyHint === true;
         if (readOnly) return;
         // Dahlia owns the approval mode; asking per call applies a change made during the turn to the next tool.
-        if ((await bridge(ctx, "approvalMode", {})) === "autoReview") return;
+        const approvalMode = await bridge(ctx, "approvalMode", {});
+        if (approvalMode === "fullAccess") return;
+        let reason: string | undefined;
+        if (approvalMode === "autoReview") {
+          const model = await bridge(ctx, "reviewModel", {});
+          const verdict = await reviewMCP(ctx, name, event.input, model);
+          if (ctx.signal?.aborted) return { block: true, reason: "MCP AI review was cancelled." };
+          if (verdict.outcome === "allow" && verdict.risk !== "unknown") return;
+          if (verdict.risk === "critical") {
+            return { block: true, reason: `MCP AI review blocked a critical action: ${verdict.reason}` };
+          }
+          reason = `MCP AI review ${verdict.risk === "unknown" ? "failed" : "requires your approval"}: ${verdict.reason}`;
+        }
         const decision = await bridge(ctx, "approval", {
           kind: "mcpToolCall",
           server,
           tool: name.slice(`mcp__${server}__`.length),
           arguments: event.input,
+          reason,
         });
         if (decision !== "accept") return { block: true, reason: "The user declined this tool call." };
         return;

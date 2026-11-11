@@ -1,0 +1,45 @@
+{
+  "name": "@mats16/pi-auto-review",
+  "version": "0.1.0",
+  "description": "AI auto-review for pi tool calls, after Codex's: a reviewer model approves routine actions and sends risky ones back to the agent.",
+  "type": "module",
+  "license": "MIT",
+  "author": "mats16",
+  "homepage": "https://github.com/mats16/pi-auto-review#readme",
+  "bugs": "https://github.com/mats16/pi-auto-review/issues",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/mats16/pi-auto-review.git"
+  },
+  "keywords": [
+    "pi-package",
+    "pi",
+    "pi-coding-agent",
+    "approval",
+    "auto-review"
+  ],
+  "files": [
+    "index.ts",
+    "README.md",
+    "LICENSE"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
+  "engines": {
+    "node": ">=22.19.0"
+  },
+  "pi": {
+    "extensions": [
+      "./index.ts"
+    ]
+  },
+  "scripts": {
+    "test": "node --test",
+    "eval": "node --test --test-timeout=180000 review.eval.ts"
+  },
+  "peerDependencies": {
+    "@earendil-works/pi-ai": "*",
+    "@earendil-works/pi-coding-agent": "*"
+  }
+}

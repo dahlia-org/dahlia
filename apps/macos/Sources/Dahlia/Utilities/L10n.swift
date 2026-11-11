@@ -2917,8 +2917,8 @@ enum L10n { // swiftlint:disable:this type_body_length
     static var newChat: String { String(localized: "New chat", bundle: bundle) }
     static var chatHistory: String { String(localized: "Chat history", bundle: bundle) }
     static var chatWelcomeTitle: String { String(localized: "How can I help?", bundle: bundle) }
-    static var chatMCPServers: String { String(localized: "MCP servers", bundle: bundle) }
-    static var chatNoMCPServers: String { String(localized: "No MCP servers registered.", bundle: bundle) }
+    static var chatConnectorSettings: String { String(localized: "Connector settings", bundle: bundle) }
+    static var chatNoMCPServers: String { String(localized: "No connectors registered.", bundle: bundle) }
     static var chatAppIntegrations: String { String(localized: "App integrations", bundle: bundle) }
     static var chatConfigureAppIntegrations: String { String(localized: "Configure app integrations", bundle: bundle) }
     static var recentChats: String { String(localized: "Recent chats", bundle: bundle) }
@@ -2998,17 +2998,35 @@ enum L10n { // swiftlint:disable:this type_body_length
     static var chatApprovalDeny: String { String(localized: "Deny", bundle: bundle) }
     static var chatUserInputOther: String { String(localized: "Other", bundle: bundle) }
     static var chatUserInputSubmit: String { String(localized: "Submit", bundle: bundle) }
-    static var chatApprovalMethod: String { String(localized: "Approval method", bundle: bundle) }
-    static var chatChangePermissions: String { String(localized: "Change permissions", bundle: bundle) }
-    static var chatApprovalAsk: String { String(localized: "Ask for approval", bundle: bundle) }
-    static var chatApprovalAskDescription: String { String(
-        localized: "Ask before changing Dahlia data. Chat runs commands and changes files in its working folder without asking.",
+    static var autoReviewSettings: String { String(localized: "Auto review", bundle: bundle) }
+    static var autoReviewModel: String { String(localized: "Reviewer model", bundle: bundle) }
+    static var autoReviewUseChatModel: String { String(localized: "Same as chat", bundle: bundle) }
+    static var autoReviewSettingsDescription: String { String(
+        localized: "Used when AI reviews MCP actions. Reviews send chat history and the planned action to this model and incur additional usage. Changes apply to the next review.",
         bundle: bundle
     ) }
-    static var chatApprovalAutoReview: String { String(localized: "Review approvals", bundle: bundle) }
-    static var chatApprovalAutoReviewDescription: String { String(
-        localized: "Change Dahlia data without asking. Chat also runs commands and changes files in its working folder without asking.",
+
+    static var chatApprovalMethod: String { String(localized: "Approval method", bundle: bundle) }
+    static var chatChangePermissions: String { String(localized: "Change permissions", bundle: bundle) }
+    static var chatApprovalAsk: String { String(localized: "Always ask", bundle: bundle) }
+    static var chatApprovalAskDescription: String { String(
+        localized: "Confirm before making changes or sending content.",
         bundle: bundle
+    ) }
+    static var chatApprovalAutoReview: String { String(localized: "Ask with AI", bundle: bundle) }
+    static var chatApprovalAutoReviewDescription: String { String(
+        localized: "Ask only about potentially unsafe actions.",
+        bundle: bundle
+    ) }
+
+    static var chatApprovalFullAccess: String { String(localized: "Skip all approvals", bundle: bundle) }
+    static var chatApprovalFullAccessDescription: String { String(
+        localized: "Run without asking. Use with caution.",
+        bundle: bundle
+    ) }
+
+    static var chatApprovalSandboxScope: String { String(
+        localized: "File operations run in a sandbox and cannot access files outside the allowed scope.", bundle: bundle
     ) }
 
     static func chatApprovalUpdateFailed(_ detail: String) -> String { String(

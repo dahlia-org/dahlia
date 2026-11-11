@@ -17,6 +17,16 @@
             ).height == -122)
         }
 
+        @Test(arguments: [CGFloat(320), 700])
+        func connectorSubmenuFitsBesideTheOriginalMenu(windowWidth: CGFloat) {
+            let bounds = CGRect(x: -6, y: -200, width: windowWidth, height: 360)
+            let width = CodexChatAddPanelLayout.width(windowBounds: bounds, showsSubmenu: true)
+            let size = CGSize(width: width * 2 + CodexChatAddPanelLayout.submenuSpacing, height: 180)
+            let offset = CodexChatAddPanelLayout.offset(panelSize: size, windowBounds: bounds)
+            #expect(width > 0)
+            #expect(bounds.contains(CGRect(origin: CGPoint(x: offset.width, y: offset.height), size: size)))
+        }
+
         @Test
         func keepsPanelWithinNarrowWindowsAndBoundsTallLists() {
             let bounds = CGRect(x: -280, y: -200, width: 320, height: 360)

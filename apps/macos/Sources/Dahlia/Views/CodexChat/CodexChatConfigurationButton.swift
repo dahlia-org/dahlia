@@ -9,35 +9,38 @@ struct CodexChatConfigurationButton: View {
     @State private var showsModels = false
 
     var body: some View {
-        Button(configurationLabel, action: showConfiguration)
-            .buttonStyle(.plain)
-            .font(.dahliaBody)
-            .foregroundStyle(DahliaDesign.secondaryTextColor)
-            .lineLimit(1)
-            .padding(.horizontal, 10)
-            .frame(height: CodexChatDesign.controlSize)
-            .background(
-                isHovering || presentationIsActive ? DahliaDesign.contentHighlightColor : .clear,
-                in: Capsule()
-            )
-            .onHover { isHovering = $0 }
-            .dahliaHoverHelp(label: L10n.selectModel)
-            .overlay(alignment: .bottomTrailing) {
-                if externalPresentation == nil, isPresented {
-                    CodexChatConfigurationPanel(
-                        session: session,
-                        showsModels: $showsModels
-                    )
-                    .codexChatDismissOnOutsideClick(perform: dismissConfiguration)
-                    .offset(
-                        x: CodexChatDesign.controlSize,
-                        y: -(CodexChatDesign.controlSize + CodexChatDesign.floatingPanelSpacing)
-                    )
-                    .zIndex(1)
-                }
+        Button(action: showConfiguration) {
+            Text(configurationLabel)
+                .padding(.horizontal, 10)
+                .frame(height: CodexChatDesign.controlSize)
+                .contentShape(Capsule())
+        }
+        .buttonStyle(.plain)
+        .font(.dahliaBody)
+        .foregroundStyle(DahliaDesign.secondaryTextColor)
+        .lineLimit(1)
+        .background(
+            isHovering || presentationIsActive ? DahliaDesign.contentHighlightColor : .clear,
+            in: Capsule()
+        )
+        .onHover { isHovering = $0 }
+        .dahliaHoverHelp(label: L10n.selectModel)
+        .overlay(alignment: .bottomTrailing) {
+            if externalPresentation == nil, isPresented {
+                CodexChatConfigurationPanel(
+                    session: session,
+                    showsModels: $showsModels
+                )
+                .codexChatDismissOnOutsideClick(perform: dismissConfiguration)
+                .offset(
+                    x: CodexChatDesign.controlSize,
+                    y: -(CodexChatDesign.controlSize + CodexChatDesign.floatingPanelSpacing)
+                )
+                .zIndex(1)
             }
-            .onExitCommand(perform: dismissConfiguration)
-            .zIndex(presentationIsActive ? 1 : 0)
+        }
+        .onExitCommand(perform: dismissConfiguration)
+        .zIndex(presentationIsActive ? 1 : 0)
     }
 
     private var configurationLabel: String {

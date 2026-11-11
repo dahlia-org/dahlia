@@ -1419,12 +1419,7 @@
 "Search index ready" = "準備完了";
 "Search index failed" = "利用できません";
 "Search index error format" = "インデックス処理エラー: %@";
-"Approval method" = "アクションの承認方法";
 "Change permissions" = "権限を変更";
-"Ask for approval" = "承認を求める";
-"Ask before changing Dahlia data. Chat runs commands and changes files in its working folder without asking." = "Dahlia のデータを変更する前に確認を求めます。作業フォルダでのコマンドの実行やファイルの変更は確認なしで行います";
-"Review approvals" = "代わりに承認";
-"Change Dahlia data without asking. Chat also runs commands and changes files in its working folder without asking." = "Dahlia のデータを確認なしで変更します。作業フォルダでのコマンドの実行やファイルの変更も確認なしで行います";
 "Could not update the approval method: %@" = "承認方法を更新できませんでした: %@";
 "Set Up Dahlia" = "Dahliaをセットアップ";
 "Version %@" = "バージョン %@";
@@ -1808,7 +1803,7 @@
 "settings.agents.mcpServiceWithServerName %@ %@" = "%1$@ (%2$@)";
 "settings.agents.unityGatewayHost %@" = "Unity Gateway (%@)";
 "settings.agents.workspaceURL" = "ワークスペース URL";
-"settings.agents.mcps" = "MCP";
+"settings.agents.mcps" = "コネクター";
 "settings.agents.databricksUnityGateway" = "Databricks (Unity Gateway)";
 "settings.agents.mcpLoadingServices" = "Unity AI Gateway の MCP を読み込んでいます…";
 "settings.agents.mcpNoServices" = "このワークスペースの Unity AI Gateway（system.ai）に、使える MCP はありません。";
@@ -1832,8 +1827,6 @@
 "Pi %@ is the latest version." = "Pi %@ は最新です。";
 "Could not download Pi. Check your network connection and try again." = "Pi をダウンロードできませんでした。ネットワーク接続を確認して、もう一度お試しください。";
 
-"MCP servers" = "MCP サーバー";
-"No MCP servers registered." = "MCP サーバーが登録されていません。";
 
 "settings.dataProtection" = "データ保護";
 "settings.dataProtection.intro" = "このMacでのデータの保持と復旧を設定します。バックアップはローカルアカウントのワークスペースが対象です。";
@@ -1849,6 +1842,22 @@
 "settings.agents.mcpServiceNameHelp" = "main.default.notion のように catalog.schema.service で指定します。";
 
 "settings.agents.mcpServiceNameInvalid" = "catalog.schema.service の3つの名前を指定してください。各名前には英数字・_・- を使えます。";
+"Always ask" = "常に確認する";
+"Ask with AI" = "AIにより確認する";
+"Skip all approvals" = "すべての承認をスキップ";
+"Confirm before making changes or sending content." = "変更やコンテンツの送信を行う前に確認する";
+"Ask only about potentially unsafe actions." = "安全でない可能性のある操作のみ確認する";
+"Run without asking. Use with caution." = "確認せずに実行する。使用にはご注意ください。";
+"File operations run in a sandbox and cannot access files outside the allowed scope." = "ファイル操作はサンドボックス内に制限され、許可範囲外のファイルにはアクセスできません。";
+"Approval method" = "MCP の操作をどのように承認しますか？";
+
+"Auto review" = "Auto review";
+"Reviewer model" = "審査モデル";
+"Same as chat" = "チャットと同じモデル";
+"Used when AI reviews MCP actions. Reviews send chat history and the planned action to this model and incur additional usage. Changes apply to the next review." = "MCP の操作を AI が確認するときに使います。審査にはチャット履歴と予定操作を送信し、追加のモデル利用が発生します。変更は次の審査から適用されます。";
+
+"No connectors registered." = "コネクターが登録されていません。";
+"Connector settings" = "コネクターの設定";
 
 "chat.toolRunning %@" = "%@ を実行中…";
 "chat.toolSucceeded %@" = "%@ が完了しました。応答を待っています…";

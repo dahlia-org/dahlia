@@ -6,15 +6,16 @@
 
     @MainActor
     struct CodexChatAddPanelTests {
-        @Test(arguments: [CGSize(width: 700, height: 600), CGSize(width: 320, height: 360)])
-        func addMenuDoesNotMoveComposerAndOpensMCPSettings(size: CGSize) async throws {
+        @Test(arguments: [CGSize(width: 700, height: 600), CGSize(width: 320, height: 360)], [false, true])
+        func addMenuKeepsTheComposerInPlaceAndOpensConnectorsToTheRight(size: CGSize, isEmpty: Bool) async throws {
             let suite = "CodexChatAddPanelTests.\(UUID())"
             let defaults = try #require(UserDefaults(suiteName: suite))
             defer { defaults.removePersistentDomain(forName: suite) }
-            AgentMCPSettings(servers: [
+            let settings = AgentMCPSettings(servers: isEmpty ? [] : [
                 AgentMCPServer(id: .v7(), name: "github", providerID: "workspace.example.com", service: "system.ai.github"),
                 AgentMCPServer(id: .v7(), name: "slack", providerID: "workspace.example.com", service: "system.ai.slack"),
-            ]).save(for: .local, defaults: defaults)
+            ])
+            settings.save(for: .local, defaults: defaults)
             let navigation = MainWindowNavigation(openMainWindow: {}, initialSettingsCategory: .general, settingsDefaults: defaults)
             let session = CodexChatSessionModel(service: TestCodexChatService(mode: .complete), runtimeProviderResolver: { .local })
             let composer = CodexChatComposer(session: session, configurationPresentation: nil, mcpSettingsDefaults: defaults)
@@ -56,10 +57,17 @@
 
             // The server list may flip above the button in the compact window.
             let bounds = CGRect(x: -6, y: -(size.height - plusCenterY - 15), width: size.width, height: size.height)
-            let panelHeight = min(180, CodexChatAddPanelLayout.maximumHeight(windowBounds: bounds))
-            let offset = CodexChatAddPanelLayout.offset(panelSize: CGSize(width: 280, height: panelHeight), windowBounds: bounds)
+            let panelWidth = CodexChatAddPanelLayout.width(windowBounds: bounds, showsSubmenu: true)
+            let connectors = NSHostingView(rootView: CodexChatMCPServersView(settings: settings, onOpenSettings: {})
+                .frame(width: panelWidth)
+                .frame(maxHeight: CodexChatAddPanelLayout.maximumHeight(windowBounds: bounds))
+                .fixedSize(horizontal: false, vertical: true))
+            let panelHeight = max(114, connectors.fittingSize.height)
+            let combinedWidth = panelWidth * 2 + CodexChatAddPanelLayout.submenuSpacing
+            let offset = CodexChatAddPanelLayout.offset(panelSize: CGSize(width: combinedWidth, height: panelHeight), windowBounds: bounds)
+            let settingsX = 6 + offset.width + panelWidth + CodexChatAddPanelLayout.submenuSpacing + panelWidth / 2
             let settingsY = plusCenterY + 15 - offset.height - panelHeight + 25
-            try click(CGPoint(x: 100, y: settingsY), in: window)
+            try click(CGPoint(x: settingsX, y: settingsY), in: window)
             #expect(await pollUntil(timeout: .seconds(2)) { navigation.isShowingSettings })
             #expect(navigation.settingsCategory == .agents)
             #expect(navigation.agentSettingsTab == .mcps)

@@ -43,7 +43,7 @@ import Foundation
 
         @Test
         func newTasksAskForApprovalAndPreserveExplicitSelections() {
-            // Pi has no review step, so the other mode changes Dahlia data without asking; new chats must ask.
+            // Neither AI review nor skipping approval is selected implicitly for a new chat.
             #expect(CodexChatSessionModel().selectedApprovalMethod == .ask)
             for method in CodexChatApprovalMethod.allCases {
                 #expect(CodexChatSessionModel(approvalMethod: method).selectedApprovalMethod == method)

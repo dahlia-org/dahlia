@@ -4,7 +4,7 @@ import SwiftUI
 struct CodexChatComposerInputRow: View {
     @Bindable var session: CodexChatSessionModel
     let configurationPresentation: Binding<Bool>?
-    let addPanel: CodexChatAddPanel?
+    let addPanel: ((CGRect) -> CodexChatAddPanel)?
     let onDismissAddPanel: () -> Void
     @FocusState.Binding var isComposerFocused: Bool
     let onToggleAddPanel: () -> Void
@@ -55,9 +55,7 @@ struct CodexChatComposerInputRow: View {
             } action: { windowBounds = $0 }
             .overlay(alignment: .topLeading) {
                 if let addPanel {
-                    addPanel
-                        .frame(width: CodexChatAddPanelLayout.width(windowBounds: windowBounds))
-                        .frame(maxHeight: CodexChatAddPanelLayout.maximumHeight(windowBounds: windowBounds))
+                    addPanel(windowBounds)
                         .fixedSize(horizontal: false, vertical: true)
                         .onGeometryChange(for: CGSize.self) { $0.size } action: { addPanelSize = $0 }
                         .codexChatDismissOnOutsideClick(perform: onDismissAddPanel)

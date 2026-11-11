@@ -12,7 +12,7 @@ struct CodexChatApprovalMethodRow: View {
             HStack(alignment: .top, spacing: 10) {
                 Image(systemName: method.systemImage)
                     .dahliaFixedSymbol()
-                    .frame(width: 18)
+                    .frame(width: 20)
                     .accessibilityHidden(true)
 
                 VStack(alignment: .leading, spacing: 2) {
@@ -21,7 +21,6 @@ struct CodexChatApprovalMethodRow: View {
                     Text(method.description)
                         .font(.dahliaBody)
                         .foregroundStyle(DahliaDesign.optionalTextColor)
-                        .lineLimit(1)
                 }
 
                 Spacer(minLength: 8)
