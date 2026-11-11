@@ -436,7 +436,10 @@ actor PiChatService: CodexChatServicing {
                 environment: [
                     "DAHLIA_PI_MCP_COMMAND": String(decoding: JSONEncoder().encode(mcpCommand), as: UTF8.self),
                     "DAHLIA_PI_SANDBOX": String(decoding: JSONEncoder().encode(
-                        PiSandbox.command(cwd: workURL, agentURL: agentLocator.agentURL(for: provider))
+                        PiSandbox.command(
+                            cwd: workURL, agentURL: agentLocator.agentURL(for: provider),
+                            piExecutableURL: PiBundle.executableURL(for: provider)
+                        )
                     ), as: UTF8.self),
                     "DAHLIA_PI_SANDBOX_HIDDEN_ENV": String(decoding: JSONEncoder().encode(secretNames), as: UTF8.self),
                     "DAHLIA_PI_SANDBOX_TMPDIR": PiSandbox.temporaryDirectory.path,

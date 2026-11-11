@@ -41,6 +41,9 @@
 ; long output for chat, is only read: Pi loads code from it outside the sandbox.
 (allow file-read* file-write* (subpath (param "WORK")) (subpath (param "TMP")))
 (allow file-read* (subpath (param "PI_TMP")))
+; What runs outside the sandbox is never written, even when the working folder contains it: Pi's own temporary
+; folder, the installed Pi (with its node, for an npm package), and Dahlia's extension and skills.
+(deny file-write* (subpath (param "PI_TMP")) (subpath (param "PI")) (subpath (param "RESOURCES")))
 (allow file-write-data (literal "/dev/null") (literal "/dev/stdout") (literal "/dev/stderr") (regex #"^/dev/fd/"))
 
 ; Dahlia's own data (every account's sign-ins and history, recordings, backups) is out of reach whatever folder the

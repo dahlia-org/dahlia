@@ -31,7 +31,8 @@ SANDBOX = EXTENSION.with_name("pi.sb")
 def sandbox(root):
     """The command prefix that runs chat's commands and file operations under Dahlia's Seatbelt profile, as `PiSandbox` does."""
     parameters = {"WORK": root / "workspace", "TMP": root / "tmp", "PI_TMP": root / "pi-tmp", "AGENT": root / "agent",
-                  "APP_SUPPORT": root / "support", "RELEASED_APP_SUPPORT": root / "released",
+                  "APP_SUPPORT": root / "support", "RELEASED_APP_SUPPORT": root / "released", "PI": root / "pi",
+                  "RESOURCES": EXTENSION.parent,
                   "SKILLS": root / "skills", "FILE_STORE": root / "FileStore", "DATABASE": root / "dahlia.sqlite"}
     defines = [arg for key, value in parameters.items() for arg in ("-D", f"{key}={os.path.realpath(value)}")]
     return ["/usr/bin/sandbox-exec", "-f", str(SANDBOX), *defines]

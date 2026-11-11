@@ -7,9 +7,12 @@ import Foundation
 
     struct PiSandboxTests {
         /// Runs a shell command under the real profile and returns its exit status.
-        private func run(_ script: String, cwd: URL, agent: URL, support: URL? = nil) throws -> Int32 {
-            let sandbox = try support.map { try PiSandbox.command(cwd: cwd, agentURL: agent, applicationSupportURL: $0) }
-                ?? PiSandbox.command(cwd: cwd, agentURL: agent)
+        private func run(
+            _ script: String, cwd: URL, agent: URL, support: URL? = nil, pi: URL = URL(fileURLWithPath: "/bin/sh")
+        ) throws -> Int32 {
+            let sandbox = try support.map {
+                try PiSandbox.command(cwd: cwd, agentURL: agent, piExecutableURL: pi, applicationSupportURL: $0)
+            } ?? PiSandbox.command(cwd: cwd, agentURL: agent, piExecutableURL: pi)
             let command = sandbox + ["/bin/sh", "-c", script]
             let process = Process()
             process.executableURL = URL(fileURLWithPath: command[0])
@@ -38,6 +41,9 @@ import Foundation
             // Pi loads code from its own temporary folder, so a command only reads it.
             #expect(try run("ls '\(PiSandbox.piTemporaryDirectory.path)'", cwd: work, agent: agent) == 0)
             #expect(try run("echo x > '\(PiSandbox.piTemporaryDirectory.path)/planted'", cwd: work, agent: agent) != 0)
+            // Not even when the user works in a folder that contains it.
+            let temporary = FileManager.default.temporaryDirectory
+            #expect(try run("echo x > '\(PiSandbox.piTemporaryDirectory.path)/planted'", cwd: temporary, agent: agent) != 0)
             #expect(try run("echo x > ../outside.txt", cwd: work, agent: agent) != 0)
             #expect(!FileManager.default.fileExists(atPath: root.appending(path: "outside.txt").path))
             #expect(try run("ls ~", cwd: work, agent: agent) != 0)
@@ -79,6 +85,26 @@ import Foundation
             #expect(try run("echo x > '\(support.path)/planted'", cwd: work, agent: agent, support: support) != 0)
             // Every account's sign-ins are in there.
             #expect(try run("ls '\(support.path)/accounts'", cwd: work, agent: agent, support: support) != 0)
+        }
+
+        @Test
+        func piInstalledInsideTheWorkingFolderIsNotWritable() throws {
+            let work = FileManager.default.temporaryDirectory.appending(path: "PiSandboxTests-\(UUID())")
+            let bin = work.appending(path: "tools/bin")
+            try FileManager.default.createDirectory(at: bin, withIntermediateDirectories: true)
+            defer { try? FileManager.default.removeItem(at: work) }
+            let pi = bin.appending(path: "pi")
+            try Data("#!/bin/sh\n".utf8).write(to: pi)
+            let agent = work.appending(path: "none")
+
+            #expect(try run("echo x > in.txt", cwd: work, agent: agent, pi: pi) == 0)
+            #expect(try run("echo x >> tools/bin/pi || echo x > tools/bin/node", cwd: work, agent: agent, pi: pi) != 0)
+            #expect(try Data(contentsOf: pi) == Data("#!/bin/sh\n".utf8))
+
+            let home = "/Users/u"
+            func root(_ path: String) -> String { PiSandbox.installRoot(of: URL(fileURLWithPath: path), home: home) }
+            #expect(root("/Users/u/.nvm/versions/node/v24/lib/node_modules/@earendil-works/pi/dist/cli.js") == "/Users/u/.nvm/versions/node/v24")
+            #expect(root("/Users/u/node_modules/pi/dist/cli.js") == "/Users/u/node_modules/pi/dist")
         }
 
         @Test
