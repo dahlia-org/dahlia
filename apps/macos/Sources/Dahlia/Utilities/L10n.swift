@@ -2330,7 +2330,6 @@ enum L10n { // swiftlint:disable:this type_body_length
     static var settingsDahliaMCPIntro: String { String(localized: "settings.dahliaMCP.intro", bundle: bundle) }
     static var unityGatewayMCPs: String { String(localized: "settings.agents.unityGatewayMCPs", bundle: bundle) }
     static var databricksUnityGateway: String { String(localized: "settings.agents.databricksUnityGateway", bundle: bundle) }
-    static var mcpKindRemoteComingSoon: String { String(localized: "settings.agents.mcpKindRemoteComingSoon", bundle: bundle) }
     static var mcpLoadingServices: String { String(localized: "settings.agents.mcpLoadingServices", bundle: bundle) }
     static var mcpNoServices: String { String(localized: "settings.agents.mcpNoServices", bundle: bundle) }
     static var mcpRemoveWorkspaceDescription: String { String(localized: "settings.agents.mcpRemoveWorkspaceDescription", bundle: bundle) }
@@ -2339,7 +2338,10 @@ enum L10n { // swiftlint:disable:this type_body_length
         String(localized: "settings.agents.mcpRemoveWorkspace \(name)", bundle: bundle)
     }
 
-    static var mcpServerName: String { String(localized: "settings.agents.mcpServerName", bundle: bundle) }
+    static var mcpAddService: String { String(localized: "settings.agents.mcpAddService", bundle: bundle) }
+    static var mcpServiceName: String { String(localized: "settings.agents.mcpServiceName", bundle: bundle) }
+    static var mcpServiceNameHelp: String { String(localized: "settings.agents.mcpServiceNameHelp", bundle: bundle) }
+    static var mcpServiceNameInvalid: String { String(localized: "settings.agents.mcpServiceNameInvalid", bundle: bundle) }
     static var mcpServerNameInvalid: String { String(localized: "settings.agents.mcpServerNameInvalid", bundle: bundle) }
     static var mcpServerNameTaken: String { String(localized: "settings.agents.mcpServerNameTaken", bundle: bundle) }
 
@@ -2391,18 +2393,17 @@ enum L10n { // swiftlint:disable:this type_body_length
     static var addProviderTitle: String { String(localized: "settings.agents.addProviderTitle", bundle: bundle) }
     static var agentProvidersEmpty: String { String(localized: "settings.agents.providersEmpty", bundle: bundle) }
     static var signInAgain: String { String(localized: "settings.agents.signInAgain", bundle: bundle) }
-    static var mcpServiceSignIn: String { String(localized: "settings.agents.mcpServiceSignIn", bundle: bundle) }
+    static var mcpServiceSignedIn: String { String(localized: "settings.agents.mcpServiceSignedIn", bundle: bundle) }
+    static var mcpServiceSignInRequired: String { String(localized: "settings.agents.mcpServiceSignInRequired", bundle: bundle) }
+    static var mcpServiceSignInUnknown: String { String(localized: "settings.agents.mcpServiceSignInUnknown", bundle: bundle) }
 
     static func agentProviderAdded(_ name: String) -> String {
         String(localized: "settings.agents.providerAdded \(name)", bundle: bundle)
     }
 
-    static var addRemoteMCPServer: String { String(localized: "settings.agents.addRemoteMCPServer", bundle: bundle) }
-    static var addRemoteMCPServerTitle: String { String(localized: "settings.agents.addRemoteMCPServerTitle", bundle: bundle) }
     static var mcpSettingsDescription: String { String(localized: "settings.agents.mcpSettingsDescription", bundle: bundle) }
     static var mcpSearchPrompt: String { String(localized: "settings.agents.mcpSearchPrompt", bundle: bundle) }
     static var mcpNoProviders: String { String(localized: "settings.agents.mcpNoProviders", bundle: bundle) }
-    static var mcpRenameServer: String { String(localized: "settings.agents.mcpRenameServer", bundle: bundle) }
     static var mcpProviderSignInRequired: String { String(localized: "settings.agents.mcpProviderSignInRequired", bundle: bundle) }
     static var mcpWorkspaceIsAccount: String { String(localized: "settings.agents.mcpWorkspaceIsAccount", bundle: bundle) }
 

@@ -437,11 +437,16 @@ actor PiRuntimeService {
         invalidateModels()
     }
 
-    /// The Unity AI Gateway MCP services the sign-in can see, by full name. Pi lists them, so the token stays in Pi.
-    func mcpServices(_ mcpProvider: AgentMCPProvider, account: CodexRuntimeProvider) async throws -> [String] {
-        try await listing(
-            [String].self,
-            command: "/databricks-mcp-services \(mcpProvider.listingArguments)",
+    /// The visible Unity AI Gateway MCP services and descriptions. Pi lists them, so the token stays in Pi.
+    func mcpServices(
+        _ mcpProvider: AgentMCPProvider,
+        account: CodexRuntimeProvider,
+        enabledServices: [String] = []
+    ) async throws -> [AgentMCPService] {
+        let enabled = enabledServices.isEmpty ? "" : " --enabled \(enabledServices.joined(separator: ","))"
+        return try await listing(
+            [AgentMCPService].self,
+            command: "/databricks-mcp-services \(mcpProvider.listingArguments)\(enabled)",
             notification: "databricks:mcp_services",
             account: account
         )

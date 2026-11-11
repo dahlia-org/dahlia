@@ -71,12 +71,12 @@ export function registerDatabricksLoginCommand(pi: any) {
 }
 
 // `/databricks-mcp-services <workspace URL> [--provider <id>]` lists the Unity AI Gateway MCP services in `system.ai`
-// that a sign-in can see: `databricks:mcp_services <JSON array of full names>`, `databricks:mcp_services_sign_in_required`,
+// that a sign-in can see: `databricks:mcp_services <JSON array of {name, comment, signInState}>`, `databricks:mcp_services_sign_in_required`,
 // or `databricks:mcp_services_failed <message>`. The sign-in is the workspace's own, or `--provider`'s, such as the
 // account's bridged provider. The token stays in this process.
 export function registerDatabricksMCPServicesCommand(pi: any) {
   registerListingCommand(pi, "databricks-mcp-services", "List a Databricks workspace's Unity AI Gateway MCP services", "mcp_services",
-    (origin, token, signal) => listMCPServices(origin, token, signal));
+    (origin, token, signal, enabledServices) => listMCPServices(origin, token, signal, enabledServices));
 }
 
 // `/databricks-model-services <workspace URL> [--provider <id>]` lists the Unity AI Gateway model services in
@@ -96,21 +96,28 @@ function registerListingCommand(
   name: string,
   description: string,
   notification: string,
-  list: (origin: string, token: string, signal: AbortSignal) => Promise<unknown>,
+  list: (origin: string, token: string, signal: AbortSignal, enabledServices: string[]) => Promise<unknown>,
 ) {
   pi.registerCommand(name, {
     description,
     handler: async (args: string, ctx: any) => {
       try {
-        const [workspace = "", option, providerId] = args.trim().split(/\s+/);
-        if (option !== undefined && (option !== "--provider" || !providerId)) throw new Error(`Unknown or incomplete option: ${option}`);
+        const [workspace = "", ...rest] = args.trim().split(/\s+/);
+        const options = new Map<string, string>();
+        for (let index = 0; index < rest.length; index += 2) {
+          const [option, value] = [rest[index], rest[index + 1]];
+          if (!(option === "--provider" || (name === "databricks-mcp-services" && option === "--enabled")) || !value) {
+            throw new Error(`Unknown or incomplete option: ${option}`);
+          }
+          options.set(option, value);
+        }
         const origin = new URL(workspace).origin;
-        const id = providerId ?? new URL(origin).host;
+        const id = options.get("--provider") ?? new URL(origin).host;
         // Refreshing reads the workspace and client from the stored credential, so the provider needs only its ID.
         if (!ctx.modelRegistry.getRegisteredProviderIds().includes(id)) ctx.modelRegistry.registerProvider(provider(id));
         const token = await ctx.modelRegistry.getApiKeyForProvider(id);
         if (!token) return void ctx.ui.notify(`databricks:${notification}_sign_in_required`);
-        ctx.ui.notify(`databricks:${notification} ${JSON.stringify(await list(origin, token, AbortSignal.timeout(60_000)))}`);
+        ctx.ui.notify(`databricks:${notification} ${JSON.stringify(await list(origin, token, AbortSignal.timeout(60_000), options.get("--enabled")?.split(",") ?? []))}`);
       } catch (error: any) {
         ctx.ui.notify(`databricks:${notification}_failed ${error?.message ?? String(error)}`, "error");
       }
@@ -118,16 +125,57 @@ function registerListingCommand(
   });
 }
 
+// Credential checks are limited to the enabled services passed by Dahlia with `--enabled <name,name,...>`.
 // The active MCP services under `system.ai`, by full name such as `system.ai.github`. Services in other schemas are not
-// listed: finding them walks every catalog and schema.
-export async function listMCPServices(origin: string, token: string, signal: AbortSignal): Promise<string[]> {
-  const names = new Set<string>();
+// enumerated: explicitly enabled services in other schemas are fetched by their full name.
+type MCPService = { name: string; comment?: string; signInState: string; metadataUnavailable?: boolean };
+export async function listMCPServices(origin: string, token: string, signal: AbortSignal, enabledServices: string[] = []): Promise<MCPService[]> {
+  const services = new Map<string, MCPService>();
   for (const service of await listServices(origin, "mcp-services", "MCP services", token, signal, { view: "BASIC" })) {
     const name = typeof service?.name === "string" ? service.name.replace(/^mcp-services\//, "") : "";
     const status = service?.config?.connection?.status;
-    if (name.startsWith("system.ai.") && (status === undefined || status === "ACTIVE")) names.add(name);
+    if (name.startsWith("system.ai.") && (status === undefined || status === "ACTIVE")) {
+      services.set(name, { name, ...(typeof service.comment === "string" ? { comment: service.comment } : {}),
+        signInState: enabledServices.includes(name) ? await mcpServiceSignInState(origin, name, token, signal) : "unknown" });
+    }
   }
-  return [...names].sort();
+  for (const name of new Set(enabledServices.filter((name) => !name.startsWith("system.ai.")))) {
+    // Direct registration does not walk catalogs or schemas. A failed metadata lookup keeps the registered card.
+    let comment: string | undefined;
+    let metadataUnavailable = true;
+    try {
+      const response = await fetch(`${origin}/api/2.1/unity-catalog/mcp-services/${encodeURIComponent(name)}`, {
+        headers: { authorization: `Bearer ${token}` }, redirect: "error", signal,
+      });
+      if (response.ok) {
+        const body: any = await response.json();
+        if (typeof body?.comment === "string") comment = body.comment;
+        metadataUnavailable = false;
+      }
+    } catch (error) {
+      if (signal.aborted) throw error;
+    }
+    services.set(name, { name, ...(comment !== undefined ? { comment } : {}), ...(metadataUnavailable ? { metadataUnavailable: true } : {}),
+      signInState: await mcpServiceSignInState(origin, name, token, signal) });
+  }
+  return [...services.values()].sort((a, b) => a.name.localeCompare(b.name));
+}
+
+// Only ACTIVE confirms the caller has a usable per-user credential. An unavailable Beta endpoint or a refusal is
+// unknown, not proof the user is signed out. No tokens or expiry metadata leave Pi.
+async function mcpServiceSignInState(origin: string, name: string, token: string, signal: AbortSignal): Promise<string> {
+  try {
+    const response = await fetch(`${origin}/api/2.1/unity-catalog/mcp-services/${encodeURIComponent(name)}/user-credentials`, {
+      headers: { authorization: `Bearer ${token}` }, redirect: "error", signal,
+    });
+    const body: any = await response.json();
+    if (response.status === 404 && body?.error_code === "NOT_FOUND") return "signInRequired";
+    if (!response.ok || typeof body?.provisioning_info?.state !== "string") return "unknown";
+    return body.provisioning_info.state === "ACTIVE" ? "signedIn" : "signInRequired";
+  } catch (error) {
+    if (signal.aborted) throw error;
+    return "unknown";
+  }
 }
 
 // Every page of a Unity Catalog service list under `system.ai` (`mcp-services` or `model-services`); `label` names it in

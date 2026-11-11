@@ -1798,14 +1798,10 @@
 "settings.agents.addProviderTitle" = "プロバイダーを追加";
 "settings.agents.providersEmpty" = "プロバイダーはまだありません。";
 "settings.agents.signInAgain" = "サインインし直す";
-"settings.agents.mcpServiceSignIn" = "サインイン";
 "settings.agents.providerAdded %@" = "%@（追加済み）";
-"settings.agents.addRemoteMCPServer" = "リモート MCP サーバーを追加…";
-"settings.agents.addRemoteMCPServerTitle" = "リモート MCP サーバーを追加";
-"settings.agents.mcpSettingsDescription" = "オンにした MCP のツールを、次に開くチャットから使えます。GitHub や Slack などサービス側のサインインが必要なときは、行の「…」メニューから「サインイン」を選びます。";
+"settings.agents.mcpSettingsDescription" = "オンにした MCP のツールを、次に開くチャットから使えます。GitHub や Slack などサービス側のサインインが必要なときは、各カードの「サインイン」を押します。";
 "settings.agents.mcpSearchPrompt" = "MCP を検索";
 "settings.agents.mcpNoProviders" = "「一般」の「プロバイダー」で Databricks ワークスペースを追加すると、その Unity AI Gateway の MCP をここでオンにできます。";
-"settings.agents.mcpRenameServer" = "サーバー名を変更";
 "settings.agents.mcpProviderSignInRequired" = "サインインが必要です。「一般」の「プロバイダー」でサインインし直してください。";
 "settings.agents.mcpWorkspaceIsAccount" = "このワークスペースはアカウント自身のもので、MCP にもそのまま使えます。";
 "settings.agents.enabledCount %lld" = "%lld 件オン";
@@ -1814,12 +1810,10 @@
 "settings.agents.workspaceURL" = "ワークスペース URL";
 "settings.agents.mcps" = "MCP";
 "settings.agents.databricksUnityGateway" = "Databricks (Unity Gateway)";
-"settings.agents.mcpKindRemoteComingSoon" = "リモート MCP サーバーの登録は今後対応します。";
 "settings.agents.mcpLoadingServices" = "Unity AI Gateway の MCP を読み込んでいます…";
 "settings.agents.mcpNoServices" = "このワークスペースの Unity AI Gateway（system.ai）に、使える MCP はありません。";
 "settings.agents.mcpRemoveWorkspaceDescription" = "このワークスペースからサインアウトし、登録した MCP サーバーもすべて削除します。";
 "settings.agents.mcpRemoveWorkspace %@" = "「%@」を削除しますか？";
-"settings.agents.mcpServerName" = "サーバー名";
 "settings.agents.mcpServerNameInvalid" = "サーバー名には英小文字・数字・_ を40文字まで使えます。";
 "settings.agents.mcpServerNameTaken" = "このサーバー名はすでに使われています。";
 "chat.mcpSignInRequired %@" = "%@ を使うにはサインインが必要です。設定の「Dahlia AI」>「一般」の「プロバイダー」でサインインし直してください（アカウント自身のワークスペースは、サイドバー下部のアカウントメニューから）。";
@@ -1844,3 +1838,15 @@
 
 "settings.dataProtection" = "データ保護";
 "settings.dataProtection.intro" = "このMacでのデータの保持と復旧を設定します。バックアップはローカルアカウントのワークスペースが対象です。";
+
+"settings.agents.mcpServiceSignedIn" = "このサービスにサインイン済みです。";
+"settings.agents.mcpServiceSignInRequired" = "このサービスへのサインインが必要です。";
+"settings.agents.mcpServiceSignInUnknown" = "このサービスにサインイン（状態は未確認）。";
+
+"settings.agents.mcpAddService" = "MCP サーバーを追加";
+
+"settings.agents.mcpServiceName" = "サービス名";
+
+"settings.agents.mcpServiceNameHelp" = "main.default.notion のように catalog.schema.service で指定します。";
+
+"settings.agents.mcpServiceNameInvalid" = "catalog.schema.service の3つの名前を指定してください。各名前には英数字・_・- を使えます。";
