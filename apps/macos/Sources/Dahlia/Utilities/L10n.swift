@@ -2390,6 +2390,9 @@ enum L10n { // swiftlint:disable:this type_body_length
 
     static var addRemoteMCPServer: String { String(localized: "settings.agents.addRemoteMCPServer", bundle: bundle) }
     static var addRemoteMCPServerTitle: String { String(localized: "settings.agents.addRemoteMCPServerTitle", bundle: bundle) }
+    static var mcpSettingsDescription: String { String(localized: "settings.agents.mcpSettingsDescription", bundle: bundle) }
+    static var mcpSearchPrompt: String { String(localized: "settings.agents.mcpSearchPrompt", bundle: bundle) }
+    static var mcpNoProviders: String { String(localized: "settings.agents.mcpNoProviders", bundle: bundle) }
     static var mcpRenameServer: String { String(localized: "settings.agents.mcpRenameServer", bundle: bundle) }
     static var mcpProviderSignInRequired: String { String(localized: "settings.agents.mcpProviderSignInRequired", bundle: bundle) }
     static var mcpWorkspaceIsAccount: String { String(localized: "settings.agents.mcpWorkspaceIsAccount", bundle: bundle) }

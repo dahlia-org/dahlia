@@ -1,7 +1,14 @@
 App integration icons
 Source: https://github.com/simple-icons/simple-icons/tree/13.0.0/icons
-Icons: slack, gmail, googledrive, github, atlassian
+Icons: slack, github, atlassian
 Changes: brand-color fills added.
+
+The other integration icons are not from simple-icons:
+- IntegrationGmail.png, IntegrationGoogleDrive.png, IntegrationGoogleCalendar.png: Google's product icons, from
+  https://www.gstatic.com/images/branding/product/2x/{gmail,drive,calendar}_2020q4_48dp.png
+- IntegrationGenie.svg (GenieCodeIcon) and IntegrationDBSQL.svg (DatabaseIcon): @databricks/design-system 2.0.16
+  (ISC), dist/assets/icons. Changes: Databricks red fills added.
+- IntegrationMicrosoft365.svg: draws the four-square Microsoft mark in its brand colors.
 
 # CC0 1.0 Universal
 

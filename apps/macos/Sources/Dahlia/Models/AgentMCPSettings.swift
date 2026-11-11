@@ -11,6 +11,15 @@ struct AgentMCPServer: Codable, Hashable, Identifiable, Sendable {
     /// The Unity AI Gateway MCP service's full name, such as `system.ai.github`.
     let service: String
 
+    /// The service's last name part as Settings shows it: `Google Calendar` for `system.ai.google_calendar`.
+    static func displayName(for service: String) -> String {
+        let spellings = ["github": "GitHub", "dbsql": "DBSQL", "sql": "SQL", "mcp": "MCP", "ai": "AI"]
+        return (service.split(separator: ".").last ?? Substring(service))
+            .split(separator: "_")
+            .map { spellings[$0.lowercased()] ?? $0.capitalized }
+            .joined(separator: " ")
+    }
+
     func url(workspaceURL: URL) -> URL {
         workspaceURL.appending(path: "ai-gateway/mcp-services/\(service)")
     }
