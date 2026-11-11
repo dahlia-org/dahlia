@@ -6,6 +6,7 @@ enum CodexChatTurnEvent: Equatable {
     case completed(itemID: String?, text: String?)
     case reasoningDelta(itemID: String, summaryIndex: Int, text: String)
     case reasoningCompleted(itemID: String, text: String)
+    case toolActivity(CodexChatToolActivity)
     case approvalRequested(CodexChatApprovalRequest)
     case userInputRequested(CodexChatUserInputRequest)
     case approvalResolved(id: String)

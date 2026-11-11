@@ -2349,6 +2349,22 @@ enum L10n { // swiftlint:disable:this type_body_length
         String(localized: "chat.mcpSignInRequired \(servers)", bundle: bundle)
     }
 
+    static func chatToolRunning(_ name: String) -> String {
+        String(localized: "chat.toolRunning \(name)", bundle: bundle)
+    }
+
+    static func chatToolSucceeded(_ name: String) -> String {
+        String(localized: "chat.toolSucceeded \(name)", bundle: bundle)
+    }
+
+    static func chatToolFailed(_ name: String) -> String {
+        String(localized: "chat.toolFailed \(name)", bundle: bundle)
+    }
+
+    static func chatToolInaccessible(_ name: String) -> String {
+        String(localized: "chat.toolInaccessible \(name)", bundle: bundle)
+    }
+
     static var agentModels: String { String(localized: "settings.agents.models", bundle: bundle) }
     static var agentModelDetails: String { String(localized: "settings.agents.modelDetails", bundle: bundle) }
     static var agentModelID: String { String(localized: "settings.agents.modelID", bundle: bundle) }
