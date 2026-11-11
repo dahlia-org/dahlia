@@ -1422,9 +1422,9 @@
 "Approval method" = "アクションの承認方法";
 "Change permissions" = "権限を変更";
 "Ask for approval" = "承認を求める";
-"Ask before changing Dahlia data. Chat cannot run commands or change files on this Mac." = "Dahlia のデータを変更する前に確認を求めます。チャットはこの Mac でコマンドの実行やファイルの変更をしません";
+"Ask before changing Dahlia data. Chat runs commands and changes files in its working folder without asking." = "Dahlia のデータを変更する前に確認を求めます。作業フォルダでのコマンドの実行やファイルの変更は確認なしで行います";
 "Review approvals" = "代わりに承認";
-"Change Dahlia data without asking. Chat cannot run commands or change files on this Mac." = "Dahlia のデータを確認なしで変更します。チャットはこの Mac でコマンドの実行やファイルの変更をしません";
+"Change Dahlia data without asking. Chat also runs commands and changes files in its working folder without asking." = "Dahlia のデータを確認なしで変更します。作業フォルダでのコマンドの実行やファイルの変更も確認なしで行います";
 "Could not update the approval method: %@" = "承認方法を更新できませんでした: %@";
 "Set Up Dahlia" = "Dahliaをセットアップ";
 "Version %@" = "バージョン %@";
@@ -1825,6 +1825,9 @@
 "chat.mcpSignInRequired %@" = "%@ を使うにはサインインが必要です。設定の「Dahlia AI」>「一般」の「プロバイダー」でサインインし直してください（アカウント自身のワークスペースは、サイドバー下部のアカウントメニューから）。";
 "settings.agents.piCommand" = "Pi コマンド";
 "settings.agents.piCommandInUse" = "使用するコマンド";
+"settings.agents.workingDirectory" = "作業フォルダ";
+"settings.agents.workingDirectory.notAllowed" = "作業フォルダには、ホームフォルダとライブラリの外にあるフォルダ、またはホームフォルダの中のフォルダを、フルパスか ~ で始まるパスで指定してください。";
+"settings.agents.workingDirectory.help" = "Dahlia AI がチャットでファイルを作成・変更できる、この Mac 上のただ一つのフォルダです。変更は次に始めるチャットの処理から反映されます。";
 "No executable pi command at %@. Check the path in Settings > Agents." = "%@ に実行できる pi コマンドがありません。設定の「Dahlia AI」でパスを確認してください。";
 "Pi is not installed. Install it, or set its path, in Settings > Agents." = "Pi がインストールされていません。設定の「Dahlia AI」でインストールするか、パスを指定してください。";
 "settings.agents.piNotInstalled" = "Pi がインストールされていません";

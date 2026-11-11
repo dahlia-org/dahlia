@@ -1,0 +1,57 @@
+(version 1)
+; Apple Seatbelt profile for the commands chat runs with bash; processes they start inherit it. Pi itself runs outside
+; it, so commands cannot read Pi's sign-ins or reach its MCP servers. Seatbelt cannot nest, so Pi cannot be inside one too.
+; Dahlia passes each path as a parameter, resolved with realpath(3). A later rule overrides an earlier one.
+(deny default)
+
+(allow process-exec process-fork)
+(allow signal process-info* (target same-sandbox))
+(allow sysctl-read)
+
+; Network: everything over IP, this Mac's own services included; Seatbelt's address filter cannot keep those out
+; (an IPv4-mapped IPv6 address passes a localhost rule). Unix sockets could reach other apps' agents (ssh-agent,
+; Docker), so only DNS is reachable.
+(allow system-socket)
+(allow network*)
+(deny network-outbound (remote unix-socket))
+(allow network-outbound (literal "/private/var/run/mDNSResponder"))
+; Name lookup, proxy settings, and certificate trust.
+(allow mach-lookup
+  (global-name "com.apple.system.opendirectoryd.libinfo")
+  (global-name "com.apple.SystemConfiguration.configd")
+  (global-name "com.apple.SystemConfiguration.DNSConfiguration")
+  (global-name "com.apple.trustd.agent")
+  (global-name "com.apple.TrustEvaluationAgent"))
+
+; Read: the system and tools installed for every user, listed by name so nothing of the user's is readable by default.
+(allow file-read-metadata)
+(allow file-read*
+  (literal "/")
+  (subpath "/System") (subpath "/usr") (subpath "/bin") (subpath "/sbin")
+  (literal "/dev") (literal "/dev/null") (literal "/dev/zero") (literal "/dev/random") (literal "/dev/urandom") (subpath "/dev/fd")
+  (subpath "/Library/Developer") (subpath "/Library/Apple") (subpath "/Library/Frameworks")
+  (subpath "/Applications") (subpath "/opt")
+  (subpath "/private/etc") (subpath "/private/var/db/timezone") (subpath "/private/var/select")
+  (literal "/private/var/run/resolv.conf"))
+; Data and settings that local services keep in those places.
+(deny file-read*
+  (subpath "/opt/homebrew/var") (subpath "/opt/homebrew/etc") (subpath "/usr/local/var") (subpath "/usr/local/etc"))
+
+; The working folder and chat's temporary folder are read and written. Pi's own temporary folder, where it saves a
+; long output for chat, is only read: Pi loads code from it outside the sandbox.
+(allow file-read* file-write* (subpath (param "WORK")) (subpath (param "TMP")))
+(allow file-read* (subpath (param "PI_TMP")))
+(allow file-write-data (literal "/dev/null") (literal "/dev/stdout") (literal "/dev/stderr") (regex #"^/dev/fd/"))
+
+; Dahlia's own data (every account's sign-ins and history, recordings, backups) is out of reach whatever folder the
+; user chose to work in, except the skills, screenshots, and database, which are read.
+(deny file-read* file-write*
+  (subpath (param "APP_SUPPORT"))
+  (subpath (param "RELEASED_APP_SUPPORT"))
+  (subpath (param "AGENT")))
+(allow file-read*
+  (subpath (param "SKILLS"))
+  (subpath (param "FILE_STORE"))
+  (literal (param "DATABASE"))
+  (literal (string-append (param "DATABASE") "-wal"))
+  (literal (string-append (param "DATABASE") "-shm")))

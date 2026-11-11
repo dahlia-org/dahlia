@@ -8,6 +8,16 @@ enum PiChatSessionFiles {
         return files.first { $0.lastPathComponent.hasSuffix("_\(id).jsonl") }
     }
 
+    /// Rewrites the header's `cwd`, the folder Pi runs the session in, when it names another folder.
+    static func setWorkingDirectory(_ directory: URL, in url: URL) throws {
+        let data = try Data(contentsOf: url)
+        let headerEnd = data.firstIndex(of: UInt8(ascii: "\n")) ?? data.endIndex
+        guard var header = try? JSONDecoder().decode(JSONValue.self, from: data[..<headerEnd]).objectValue,
+              header["cwd"]?.stringValue != directory.path else { return }
+        header["cwd"] = .string(directory.path)
+        try (JSONEncoder().encode(JSONValue.object(header)) + data[headerEnd...]).write(to: url, options: .atomic)
+    }
+
     /// Newest first. The cursor is the last listed thread's modification time and file name, so a thread that
     /// becomes newer between pages is not listed twice and does not push another one out.
     static func page(in directory: URL, cursor: String?, limit: Int) throws -> CodexChatThreadPage {

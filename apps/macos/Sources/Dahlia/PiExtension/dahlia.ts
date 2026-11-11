@@ -1,10 +1,10 @@
 // Dahlia's Pi extension. Dahlia owns every policy decision; this file only forwards them to Pi.
 // Requests to Dahlia travel over the RPC extension-UI channel: `ctx.ui.input("dahlia:<method>", <JSON>)`.
+import { createBashTool, createEditTool, createLsTool, createReadTool, createWriteTool } from "@earendil-works/pi-coding-agent";
 import { anthropicMessagesApi, createProvider, googleGenerativeAIApi, openAIResponsesApi } from "@earendil-works/pi-ai";
-import { readFileSync, realpathSync } from "node:fs";
-import { homedir } from "node:os";
-import { isAbsolute, resolve, sep } from "node:path";
-import { fileURLToPath } from "node:url";
+import { execFile } from "node:child_process";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import {
   registerDatabricksConnectionLoginCommand,
   registerDatabricksLoginCommand,
@@ -70,27 +70,6 @@ const readOnlyDahliaTool = /^mcp__dahlia__(get|query|list|search)_/;
 // The MCP servers Dahlia registered for this chat (its own and the user's); any other server is blocked.
 const chatMcpServers = new Set<string>(JSON.parse(env.DAHLIA_PI_MCP_SERVERS ?? "[]"));
 
-// The on-disk path (case, symlinks) of an existing file, or undefined.
-function canonical(path: string): string | undefined {
-  try {
-    return realpathSync.native(path);
-  } catch {
-    return undefined;
-  }
-}
-
-// Chat may read only these folders (its workspace and Dahlia's preset skills).
-const readableRoots = (JSON.parse(env.DAHLIA_PI_READABLE_ROOTS ?? "[]") as string[]).flatMap((root) => canonical(root) ?? []);
-
-// Resolves a tool path the way a user means it (`@`, `~`, `file://`), then to its canonical form inside a readable root.
-function readablePath(raw: string, cwd: string): string | undefined {
-  let path = raw.trim().replace(/^@/, "");
-  if (path.startsWith("file://")) path = fileURLToPath(path);
-  if (path === "~" || path.startsWith("~/")) path = homedir() + path.slice(1);
-  const resolved = canonical(isAbsolute(path) ? path : resolve(cwd, path));
-  return resolved && readableRoots.some((root) => resolved === root || resolved.startsWith(root + sep)) ? resolved : undefined;
-}
-
 async function bridge(ctx: any, method: string, payload: unknown): Promise<any> {
   const value = await ctx.ui.input(`dahlia:${method}`, JSON.stringify(payload));
   if (value === undefined) throw new Error(`Dahlia did not answer ${method}`);
@@ -134,18 +113,82 @@ export default function (pi: any) {
       pi.registerMcpServer("dahlia", { command, args, exposure: "direct", description: "Dahlia meetings, projects, and workspaces" });
     }
 
-    // Chat is read-only on this Mac: `read` and `ls` within the readable roots, and MCP tools (Dahlia's and the user's).
+    // Everything chat does on this Mac's disk runs under Seatbelt (pi.sb): bash commands, and the file operations of
+    // `read`, `ls`, `write`, and `edit`, so the kernel decides each path as it is opened and a symlink cannot lead outside.
+    // Pi itself stays outside the sandbox, so nothing chat runs can read Pi's sign-ins or talk to its MCP servers.
+    const sandbox: string[] = JSON.parse(env.DAHLIA_PI_SANDBOX ?? "[]");
+    const hidden: string[] = JSON.parse(env.DAHLIA_PI_SANDBOX_HIDDEN_ENV ?? "[]");
+    const sandboxEnv = (env: NodeJS.ProcessEnv) => Object.fromEntries(Object.entries(env).filter(([key]) => !hidden.includes(key)));
+    // The real home and temporary folders are out of reach in the sandbox, which gets one folder of its own for both
+    // (tools such as git keep their settings there). They are set inside the sandbox only: the shell Pi starts a
+    // command with runs outside it, and Pi loads code from its own TMPDIR.
+    const home = env.DAHLIA_PI_SANDBOX_TMPDIR;
+    const inSandbox = (args: string[]) => [...sandbox, "/usr/bin/env", `HOME=${home}`, `TMPDIR=${home}`, ...args];
+    const sandboxed = (args: string[], input?: string) => new Promise<Buffer>((resolve, reject) => {
+      const options = { encoding: "buffer" as const, maxBuffer: 1 << 30, env: sandboxEnv(process.env) };
+      const [command, ...rest] = inSandbox(args);
+      const child = execFile(command, rest, options, (error, stdout, stderr) =>
+        error ? reject(new Error(stderr.toString().trim() || error.message)) : resolve(stdout));
+      // A command the sandbox stops exits without reading its input; the callback above reports that failure.
+      child.stdin?.on("error", () => {});
+      child.stdin?.end(input);
+    });
+    const files = {
+      readFile: (path: string) => sandboxed(["/bin/cat", "--", path]),
+      writeFile: async (path: string, content: string) => void await sandboxed(["/bin/sh", "-c", 'cat > "$1"', "sh", path], content),
+      mkdir: async (path: string) => void await sandboxed(["/bin/mkdir", "-p", "--", path]),
+      access: async (path: string) => void await sandboxed(["/bin/sh", "-c", '[ -r "$1" ] || { echo "Cannot read $1" >&2; exit 1; }', "sh", path]),
+      // Pi's own detection would open the file outside the sandbox.
+      detectImageMimeType: async (path: string) => {
+        const head = (await sandboxed(["/usr/bin/head", "-c", "12", "--", path])).toString("latin1");
+        if (head.startsWith("\x89PNG")) return "image/png";
+        if (head.startsWith("\xff\xd8\xff")) return "image/jpeg";
+        if (head.startsWith("GIF8")) return "image/gif";
+        return head.startsWith("RIFF") && head.slice(8) === "WEBP" ? "image/webp" : null;
+      },
+    };
+    // `ls -p` marks folders, so listing a folder also answers the `stat` Pi asks for each entry.
+    const folders = new Map<string, boolean>();
+    const succeeds = (args: string[]) => sandboxed(args).then(() => true, () => false);
+    const listing = {
+      exists: (path: string) => succeeds(["/bin/test", "-e", path]),
+      stat: async (path: string) => {
+        const isFolder = folders.get(path) ?? await succeeds(["/bin/test", "-d", path]);
+        return { isDirectory: () => isFolder };
+      },
+      readdir: async (path: string) => {
+        const entries = (await sandboxed(["/bin/ls", "-1Ap", "--", path])).toString().split("\n").filter(Boolean);
+        return entries.map((entry) => {
+          const name = entry.replace(/\/$/, "");
+          folders.set(join(path, name), entry.endsWith("/"));
+          return name;
+        });
+      },
+    };
+    const quoted = (word: string) => `'${word.replaceAll("'", `'\\''`)}'`;
+    if (sandbox.length > 0) {
+      pi.registerTool(createReadTool(process.cwd(), { operations: files }));
+      pi.registerTool(createLsTool(process.cwd(), { operations: listing }));
+      pi.registerTool(createWriteTool(process.cwd(), { operations: files }));
+      pi.registerTool(createEditTool(process.cwd(), { operations: files }));
+      pi.registerTool(createBashTool(process.cwd(), {
+        spawnHook: ({ command, cwd, env }: any) => ({
+          command: `exec ${inSandbox(["/bin/bash", "-c", command]).map(quoted).join(" ")}`,
+          cwd,
+          env: sandboxEnv(env),
+        }),
+      }));
+    }
+
     pi.on("tool_call", async (event: any, ctx: any) => {
       const name = event.toolName;
-      if (name === "read" || name === "ls") {
-        const path = readablePath(String(event.input.path ?? "."), ctx.cwd);
-        if (!path) return { block: true, reason: "Chat can read only its workspace and Dahlia's skills." };
-        // Pi then opens exactly the path that was checked.
-        event.input.path = path;
-        return;
+      const tool = pi.getAllTools().find((tool: any) => tool.name === name);
+      // These run under Seatbelt through the tools registered above, never as Pi's own tool of the same name.
+      if (["read", "ls", "write", "edit", "bash"].includes(name)) {
+        const isSandboxed = sandbox.length > 0 && tool?.sourceInfo?.source !== "builtin";
+        return isSandboxed ? undefined : { block: true, reason: "This tool is not available in Dahlia's chat." };
       }
 
-      const tool = pi.getAllTools().find((tool: any) => tool.name === name);
       // Pi lists an MCP tool under its server's namespace; the alias is the server name.
       const server: string | undefined = tool?.sourceInfo?.path === "builtin:mcp" ? tool.namespace?.aliases?.[0] : undefined;
       if (server && chatMcpServers.has(server)) {

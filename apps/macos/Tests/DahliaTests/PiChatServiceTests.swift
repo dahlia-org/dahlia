@@ -27,7 +27,7 @@ import Synchronization
             }
             let chat = PiChatService(
                 runtime: pi.service,
-                workspaceLocator: ApplicationSupportCodexChatWorkspaceLocator(applicationSupportURL: pi.rootURL),
+                workingDirectory: PiWorkingDirectory(override: pi.rootURL.appending(path: "work")),
                 agentLocator: PiAgentDirectoryLocator(applicationSupportURL: pi.rootURL),
                 mcpExecutableURL: URL(filePath: "/usr/bin/true"),
                 mcpSettings: { _ in AgentMCPSettings() }
@@ -83,10 +83,13 @@ import Synchronization
             #expect(thinking["level"]?.stringValue == "high")
             let launch = try #require(fixture.pi.launches.all.first { $0.mode == .chat })
             #expect(launch.arguments.contains("--session-id"))
-            #expect(launch.arguments.contains("read,ls,mcp__dahlia__*"))
-            #expect(launch.environment["DAHLIA_PI_READABLE_ROOTS"]?.isEmpty == false)
+            #expect(launch.arguments.contains("read,ls,write,edit,bash,mcp__dahlia__*"))
+            let work = fixture.pi.rootURL.appending(path: "work")
+            #expect(launch.cwd == work)
             #expect(launch.arguments.contains("builtin:mcp"))
             #expect(launch.environment["DAHLIA_PI_MCP_COMMAND"]?.contains("--workspace-id") == true)
+            // Commands and file tools run under Seatbelt, confined to the working folder.
+            #expect(launch.environment["DAHLIA_PI_SANDBOX"]?.contains("WORK=") == true)
             #expect(launch.environment["DAHLIA_PI_MCP_SERVERS"] == #"["dahlia"]"#)
             // The Local Account has no gateway MCPs; its mcp.json lists none.
             let mcpJSON = try PiAgentDirectoryLocator(applicationSupportURL: fixture.pi.rootURL)
@@ -125,7 +128,7 @@ import Synchronization
             }
             let chat = PiChatService(
                 runtime: pi.service,
-                workspaceLocator: ApplicationSupportCodexChatWorkspaceLocator(applicationSupportURL: pi.rootURL),
+                workingDirectory: PiWorkingDirectory(override: pi.rootURL.appending(path: "work")),
                 agentLocator: PiAgentDirectoryLocator(applicationSupportURL: pi.rootURL),
                 mcpExecutableURL: URL(filePath: "/usr/bin/true"),
                 mcpSettings: { _ in AgentMCPSettings() }
@@ -270,7 +273,7 @@ import Synchronization
             }
             let chat = PiChatService(
                 runtime: pi.service,
-                workspaceLocator: ApplicationSupportCodexChatWorkspaceLocator(applicationSupportURL: pi.rootURL),
+                workingDirectory: PiWorkingDirectory(override: pi.rootURL.appending(path: "work")),
                 agentLocator: PiAgentDirectoryLocator(applicationSupportURL: pi.rootURL),
                 mcpExecutableURL: URL(filePath: "/usr/bin/true")
             )
@@ -318,7 +321,7 @@ import Synchronization
             let registered = Mutex(AgentMCPSettings())
             let chat = PiChatService(
                 runtime: pi.service,
-                workspaceLocator: ApplicationSupportCodexChatWorkspaceLocator(applicationSupportURL: pi.rootURL),
+                workingDirectory: PiWorkingDirectory(override: pi.rootURL.appending(path: "work")),
                 agentLocator: PiAgentDirectoryLocator(applicationSupportURL: pi.rootURL),
                 mcpExecutableURL: URL(filePath: "/usr/bin/true"),
                 mcpSettings: { _ in registered.withLock { $0 } }
@@ -372,7 +375,7 @@ import Synchronization
             try await turn("gmail on, new process")
             #expect(log.all.count == 3)
             let withGmail = try #require(pi.launches.all.last { $0.mode == .chat })
-            #expect(withGmail.arguments.contains("read,ls,mcp__dahlia__*,mcp__gmail__*"))
+            #expect(withGmail.arguments.contains("read,ls,write,edit,bash,mcp__dahlia__*,mcp__gmail__*"))
             // Dahlia's extension registers the sign-ins mcp.json names in every process; none loads the provider file on its own.
             #expect(pi.launches.all.allSatisfy { !$0.arguments.contains { $0.hasSuffix("databricks-provider.ts") } })
             #expect(withGmail.environment["DAHLIA_PI_MCP_SERVERS"] == #"["dahlia","gmail"]"#)
@@ -422,7 +425,7 @@ import Synchronization
             }
             let chat = PiChatService(
                 runtime: pi.service,
-                workspaceLocator: ApplicationSupportCodexChatWorkspaceLocator(applicationSupportURL: pi.rootURL),
+                workingDirectory: PiWorkingDirectory(override: pi.rootURL.appending(path: "work")),
                 agentLocator: PiAgentDirectoryLocator(applicationSupportURL: pi.rootURL),
                 mcpExecutableURL: URL(filePath: "/usr/bin/true")
             )
@@ -549,7 +552,7 @@ import Synchronization
             }
             let chat = PiChatService(
                 runtime: pi.service,
-                workspaceLocator: ApplicationSupportCodexChatWorkspaceLocator(applicationSupportURL: pi.rootURL),
+                workingDirectory: PiWorkingDirectory(override: pi.rootURL.appending(path: "work")),
                 agentLocator: PiAgentDirectoryLocator(applicationSupportURL: pi.rootURL),
                 mcpExecutableURL: URL(filePath: "/usr/bin/true"),
                 mcpSettings: { _ in

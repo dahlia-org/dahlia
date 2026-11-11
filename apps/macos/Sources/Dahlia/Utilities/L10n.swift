@@ -2422,6 +2422,9 @@ enum L10n { // swiftlint:disable:this type_body_length
     static var agentMCPs: String { String(localized: "settings.agents.mcps", bundle: bundle) }
     static var piCommand: String { String(localized: "settings.agents.piCommand", bundle: bundle) }
     static var piCommandInUse: String { String(localized: "settings.agents.piCommandInUse", bundle: bundle) }
+    static var agentWorkingDirectory: String { String(localized: "settings.agents.workingDirectory", bundle: bundle) }
+    static var agentWorkingDirectoryHelp: String { String(localized: "settings.agents.workingDirectory.help", bundle: bundle) }
+    static var agentWorkingDirectoryNotAllowed: String { String(localized: "settings.agents.workingDirectory.notAllowed", bundle: bundle) }
     static var piCommandNotFound: String { String(
         localized: "Pi is not installed. Install it, or set its path, in Settings > Agents.",
         bundle: bundle
@@ -2983,12 +2986,12 @@ enum L10n { // swiftlint:disable:this type_body_length
     static var chatChangePermissions: String { String(localized: "Change permissions", bundle: bundle) }
     static var chatApprovalAsk: String { String(localized: "Ask for approval", bundle: bundle) }
     static var chatApprovalAskDescription: String { String(
-        localized: "Ask before changing Dahlia data. Chat cannot run commands or change files on this Mac.",
+        localized: "Ask before changing Dahlia data. Chat runs commands and changes files in its working folder without asking.",
         bundle: bundle
     ) }
     static var chatApprovalAutoReview: String { String(localized: "Review approvals", bundle: bundle) }
     static var chatApprovalAutoReviewDescription: String { String(
-        localized: "Change Dahlia data without asking. Chat cannot run commands or change files on this Mac.",
+        localized: "Change Dahlia data without asking. Chat also runs commands and changes files in its working folder without asking.",
         bundle: bundle
     ) }
 

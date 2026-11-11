@@ -46,6 +46,32 @@ extension・skill・context file・prompt template・theme・project trust の�
 Dahlia の extension（`PiExtension/dahlia.ts`）を `-e` で読み込む。チャットは Dahlia MCP と登録した MCP server のために Pi の `builtin:mcp` も
 読み込み、`--tools` に `mcp__dahlia__*` と登録した server の `mcp__<name>__*` を含める。
 
+チャットがこの Mac の disk に対して行うことは、すべて Apple Seatbelt（`/usr/bin/sandbox-exec` と `PiExtension/pi.sb`）の中で動く（2026-11-11 ユーザー承認）。対象は `bash` のコマンドと、
+`read`・`ls`・`write`・`edit` の file 操作で、起動される process も同じ制限を受け継ぐ。
+Pi 本体は sandbox の外で動かす。Seatbelt は入れ子にできず、Pi を中に入れるとコマンドも Pi と同じ権限になり、agent directory の sign-in を読めて MCP server を承認なしで呼べるためである（Codex・Claude Code と同じ形）。
+
+| 対象 | 許可 |
+| --- | --- |
+| 作業フォルダ、sandbox 用の一時フォルダ（`<一時フォルダ>/dahlia-chat`。sandbox の中の `TMPDIR` と `HOME`） | 読み書き |
+| チャットの Pi の一時フォルダ（`<一時フォルダ>/dahlia-pi`。Pi の `TMPDIR`） | 読み取りだけ。Pi が長い出力の全文をここに保存する。Pi は変換した extension もここから読み込むので、書き込みは許さない |
+| Dahlia の preset skill、画像の保存先（`FileStore`）、app の SQLite（`dahlia.sqlite` と `-wal`・`-shm`） | 読み取りだけ（画像と SQLite はデバッグ用） |
+| Dahlia の Application Support のそれ以外（全アカウントの agent directory、録音、backup。development build からは production のものも） | 読み書き不可（作業フォルダがこれを含んでいても） |
+| システムと全ユーザー向けの tool（`/System`・`/usr`・`/bin`・`/sbin`・`/Library/Developer`・`/Applications`・`/opt`・`/private/etc` など、`pi.sb` に名前で列挙） | 読み取りだけ。ただし local service の data と設定（`/opt/homebrew`・`/usr/local` の `var` と `etc`）は不可 |
+| それ以外すべて（ホーム、`/Volumes`、利用者の一時フォルダと cache など） | 読み書き不可（metadata は読める） |
+| IP の network | すべて許可（当面）。この Mac 自身の service（ブラウザの debug port、ローカルの DB）にも届く。Seatbelt の address の条件は IPv4-mapped IPv6（`::ffff:127.0.0.1`）を localhost として扱わないので、localhost だけを確実に閉じることはできない |
+| Unix socket | DNS（mDNSResponder）だけ。ssh-agent、Docker、Dahlia の broker には届かない |
+
+画像の保存先と SQLite は全 Workspace・全アカウントの内容を含む。Dahlia MCP の Workspace 境界（PRODUCT.md の T4）の外にある、デバッグ用の読み取りとしてユーザーが承認した例外である。
+network は開いているので、読める内容は外部に送信できる。
+
+extension は `read`・`ls`・`write`・`edit`・`bash` を Pi の `create*Tool` で登録し直す。file 操作（読み取り・一覧・書き込み・folder の作成・画像の判定）は `sandbox-exec` の中の `cat`・`ls`・`mkdir`・`head` で行い、
+`bash` は `spawnHook` でコマンドを包む。path は開くときに kernel が判定するので、コマンドが作った symlink や検査後の差し替えで範囲の外に出ることはない。extension は path を検査しない。
+sandbox の引数は Dahlia が `DAHLIA_PI_SANDBOX` で渡す。引数がないとき、または呼ばれる tool が Pi の built-in のまま（extension の登録が置き換えていない）のときは、5つの tool を拒否する。
+本当のホームは読めないので、`git` などの設定は一時フォルダに置かれ、ホームの下に入れた tool（uv・nvm・pyenv など）は sandbox の中では動かない。sandbox の中の環境からは、利用者が「環境変数」で秘密にした変数（`DAHLIA_PI_SANDBOX_HIDDEN_ENV`）を除く。
+作業フォルダはチャットが書けるので、Pi がそこから設定を読まないことが前提になる。Pi は `--no-approve` で project の設定（`.pi/mcp.json` など）を無視する。
+Dahlia MCP は Pi の子のままで、コマンドは SQLite に書けず MCP にも届かないので、Dahlia のデータの変更は承認を通る MCP の tool だけが行う。
+Pi の codemode（未有効）の script は Pi の process 内の QuickJS で動き、file system も network も持たない。script が呼ぶ tool には同じ制限（Seatbelt と MCP の承認）が掛かる。
+
 - 要約・画像解析・画像選別・モデル一覧・サインインは操作ごとに `pi --mode rpc --no-session --no-tools` を起動し、終了・取消・610秒期限で閉じる。自動再送はしない。
 - チャットは turn の開始時に thread ごとに1 process を起動し、turn 後はチャット画面が thread を開いている間だけ残す。履歴の表示や新規 thread の作成では起動しない。process が終了していれば次の turn で session file から開き直す。
 - アカウント切替は全 process を閉じ、切替先の agent directory の `models.json` を書き換える。実行中の要約は取消になり、次の操作で新しいアカウントの process を起動する。
@@ -143,11 +169,16 @@ schema だけで生成する。外した制約は Dahlia 側で守る（要約�
 
 ## チャットの実行と承認
 
-チャットはこの Mac では読み取り専用とする。Pi に渡す tool は `read`・`ls`・`mcp__dahlia__*` と、アカウントに登録した MCP server の tool だけで、bash・write・edit・grep・find はない。
-`read` と `ls` は workspace と Dahlia の preset skill の folder（`DAHLIA_PI_READABLE_ROOTS`）の中だけを読める。extension は
-`@`・`~`・`file://`・相対 path を解決し、symlink と大文字小文字を実体の path に揃えてから範囲を確かめ、確かめた path を Pi に渡す。
+チャットは作業フォルダで動く（2026-11-11 ユーザー承認）。作業フォルダは「エージェント」>「一般」でアカウントごとに設定し（`piWorkingDirectory.<local またはアカウント ID>`）、
+既定は `~/Dahlia`（development profile は `~/Dahlia-Development`）。チャットが自由に書けるので、sandbox の外で実行されるもの（shell の設定、ホームの下に入れた tool と Pi、app の設定）を含むフォルダは指定できない:
+ホームフォルダ自身、それを含むフォルダ、`~/Library` とその中、相対 path は、チャットの起動時に拒否する。`~/Documents` は macOS がアクセス許可を求め、iCloud に同期されうるので使わない。フォルダはなければ作る。
+Pi は thread を session file の header の `cwd` で動かすので、Dahlia は thread を開き直す前に header の `cwd` を今の作業フォルダに書き換える。設定の変更は次に起動する chat process から効く。
+以前の `Application Support/<profile>/CodexChatWorkspace/<Workspace ID>` は使わず、削除もしない。
 
-| 選択 | read / ls | Dahlia MCP | Unity AI Gateway の MCP |
+Pi に渡す tool は `read`・`ls`・`write`・`edit`・`bash`・`mcp__dahlia__*` と、アカウントに登録した MCP server の tool（2026-11-11 ユーザー承認）。`grep`・`find` は渡さない。
+5つの tool の範囲は上の Seatbelt の表のとおりで、範囲内は確認なしで動く。system prompt には SQLite と画像の保存先の path を含め、`sqlite3 -readonly` で参照できる。
+
+| 選択 | read / ls / write / edit / bash | Dahlia MCP | Unity AI Gateway の MCP |
 | --- | --- | --- | --- |
 | 承認を求める | 範囲内は確認なし | 読み取り（`get`・`query`・`list`・`search`）以外は承認 | server が `readOnlyHint` を付けた tool 以外は承認 |
 | 代わりに承認 | 範囲内は確認なし | 確認なし | 確認なし |
@@ -222,6 +253,7 @@ control process の `/databricks-connection-login <workspace URL> <service>` が
 ## 検証
 
 fake transport で RPC の順序・失敗・取消を、`test-pi-extension.py` で実 Pi とローカル gateway の
-token bridge（Anthropic・Gemini・OpenAI の各 API と redirect 先に付かないこと）・strict schema・読み取り範囲・MCP の承認と、ローカルの
+token bridge（Anthropic・Gemini・OpenAI の各 API と redirect 先に付かないこと）・strict schema・読み書きの範囲・MCP の承認と、ローカルの
 OIDC での MCP の sign-in（databricks-cli と、Redirect URL を登録した client）・token・refresh（`auth.provider` のない MCP に付かないこと）を確認する。Pi 更新時は RPC event、extension API、
-login の非公開 API、`text.format` の payload 形を回帰確認する。
+login の非公開 API、`text.format` の payload 形を回帰確認する。`test-pi-extension.py` は5つの tool を `pi.sb` の中で動かし、sign-in と秘密の環境変数が読めないこと、symlink で外に書けないことも確かめる。
+sandbox の境界（書き込み・ホームと agent directory と一時フォルダの読み取り・symlink・Unix socket）は `PiSandboxTests` が実際の `sandbox-exec` で確かめる。
