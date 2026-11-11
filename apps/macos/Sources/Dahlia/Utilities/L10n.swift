@@ -2421,19 +2421,18 @@ enum L10n { // swiftlint:disable:this type_body_length
     }
 
     static var agentMCPs: String { String(localized: "settings.agents.mcps", bundle: bundle) }
-    static var piCommand: String { String(localized: "settings.agents.piCommand", bundle: bundle) }
     static var piCommandInUse: String { String(localized: "settings.agents.piCommandInUse", bundle: bundle) }
     static var agentWorkingDirectory: String { String(localized: "settings.agents.workingDirectory", bundle: bundle) }
     static var agentWorkingDirectoryHelp: String { String(localized: "settings.agents.workingDirectory.help", bundle: bundle) }
     static var agentWorkingDirectoryNotAllowed: String { String(localized: "settings.agents.workingDirectory.notAllowed", bundle: bundle) }
     static var piCommandNotFound: String { String(
-        localized: "Pi is not installed. Install it, or set its path, in Settings > Agents.",
+        localized: "Pi was not found on PATH. Enable Dahlia-managed Pi in Settings > Dahlia AI to install it.",
         bundle: bundle
     ) }
     static var piNotInstalled: String { String(localized: "settings.agents.piNotInstalled", bundle: bundle) }
     static var installPi: String { String(localized: "settings.agents.installPi", bundle: bundle) }
     static var updatePi: String { String(localized: "settings.agents.updatePi", bundle: bundle) }
-    static var useInstalledPi: String { String(localized: "settings.agents.useInstalledPi", bundle: bundle) }
+    static var useManagedPi: String { String(localized: "settings.agents.useManagedPi", bundle: bundle) }
     static func piInstalledVersion(_ version: String) -> String { String(
         localized: "Pi \(version) installed by Dahlia",
         bundle: bundle
@@ -2448,7 +2447,7 @@ enum L10n { // swiftlint:disable:this type_body_length
         bundle: bundle
     ) }
     static func piExecutableNotFound(_ path: String) -> String { String(
-        localized: "No executable pi command at \(path). Check the path in Settings > Agents.",
+        localized: "No executable Pi at \(path). Install Pi in Settings > Dahlia AI.",
         bundle: bundle
     ) }
     static var codexSignedIn: String { String(localized: "Signed in", bundle: bundle) }

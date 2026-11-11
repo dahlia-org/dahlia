@@ -7,16 +7,18 @@
 ## Pi の実行ファイル
 
 Dahlia は Pi を同梱せず、利用者がインストールした `pi` を使う（2026-11-07 にユーザー承認、同梱を廃止）。
-実行する `pi` は、アカウントのエージェント設定の値で決まる。既定は `pi` で、`/` か `~` で始まる値はパスとしてそのまま使い、それ以外はコマンド名として
-下の場所から探す（2026-11-09 ユーザー承認）。Pi の管理はパス指定を基本とする。値は実行アカウントごとに保存し（agent directory と同じ `local` またはアカウント ID で区別）、Dahlia がインストールする Pi は Mac に1つで全アカウントが共有する。Finder から開いたアプリは launchd の
-最小 PATH しか受け取らないため、PATH に `/opt/homebrew/bin`・`/usr/local/bin`・`~/.local/bin`・`~/bin` を加えて探す。アカウントが「環境変数」で PATH を設定していれば、起動する Pi と同じく、その PATH で探す。
-指定したパスに実行ファイルがない、または見つからないときは `piCommandNotFound` で失敗し、要約・画像解析は
-未サインインと同じく保留にする。
+実行する `pi` は、Dahlia AI 設定の「アプリ管理下の Pi を使う」で切り替える（2026-11-12 ユーザー承認）。
+オフが既定で、PATH 上の `pi` を探索して表示・利用する。オンでは Dahlia がインストールした `bin/pi` のパスを表示・利用する。
+実行ファイルのパスやコマンド名は手入力させない。選択は実行アカウントごとに保存し（agent directory と同じ `local` またはアカウント ID で区別）、
+Dahlia がインストールする Pi はアプリプロファイルごとに全アカウントで共有する。以前のパス設定がその `bin/pi` を指していたアカウントはオンを引き継ぎ、
+それ以外の旧設定は PATH 探索に切り替える。明示的に切り替えたトグルは旧設定より優先する。
+Finder から開いたアプリは launchd の最小 PATH しか受け取らないため、PATH に `/opt/homebrew/bin`・`/usr/local/bin`・`~/.local/bin`・`~/bin` を加えて探す。
+アカウントが「環境変数」で PATH を設定していれば、起動する Pi と同じく、その PATH で探す。
+選択した Pi が見つからないときは `piCommandNotFound` で失敗し、別の Pi にはフォールバックせず、要約・画像解析は未サインインと同じく保留にする。
+切り替えは以後起動する Pi process に適用する。
 
-コマンドラインに不慣れな利用者の支援として、エージェント設定は `pi` が見つからないとき「Pi をインストール」を出し、
-インストールした Pi をそのアカウントのパスに設定する（2026-11-08 にユーザー承認）。Dahlia がインストールした Pi は自動では
-使わず、ほかのアカウントには「この Pi を使う」ボタンで、そのパスを選ぶかを問う。そのパスを使っているアカウントには
-「アップデートを確認」を出す。インストールも更新もボタンを押したときだけ GitHub の
+オンのとき、未インストールなら「Pi をインストール」、インストール済みなら「アップデートを確認」を出す。
+インストール・更新中にオフへ切り替えても、その選択は保持する。インストールも更新もボタンを押したときだけ GitHub の
 `earendil-works/pi` の latest release を取得し、`pi-darwin-arm64.tar.gz` を API の asset URL（`Accept: application/octet-stream`。github.com の `browser_download_url` は HTTP 504 を返したことがある）から取得し、GitHub が示す SHA-256 で確かめてから
 `Application Support/<profile>/Pi/releases/<version>` に展開する。Dahlia が入れるコマンドは `Application Support/<profile>/bin`
 に集め、入口の `bin/pi` は `../Pi/releases/<version>/pi` への symlink で、一時 link の rename で張り替える。Pi は symlink を解決した実体の位置から resource を実行中も読むため、

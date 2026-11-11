@@ -78,7 +78,7 @@ private struct AgentSettingsTabs: View {
             switch navigation.agentSettingsTab {
             case .general:
                 Form {
-                    AgentRuntimeSection(provider: account)
+                    AgentRuntimeSection(provider: account, searchPath: launch.settings.environment { _ in nil }["PATH"])
                     AgentEnvironmentSection(model: launch)
                     AgentProviderSection(account: account, model: mcp, subscriptions: subscriptions, onAdd: presentProviderRegistration)
                 }
@@ -117,56 +117,64 @@ private struct AgentSettingsTabs: View {
     }
 }
 
-/// How the account runs Pi. The Pi command belongs to the account; the Pi that Dahlia installs is shared by every
-/// account on this Mac.
+/// Each account chooses PATH discovery or the Pi installation shared by all accounts on this Mac.
 private struct AgentRuntimeSection: View {
     let provider: CodexRuntimeProvider
-    @AppStorage private var piPath: String
+    let searchPath: String?
+    @AppStorage private var useManagedPi: Bool
     @AppStorage private var workingDirectory: String
     @State private var resolvedCommand: Result<String, CodexAppServerError>?
-    /// The version of the Pi that Dahlia installed, and whether this account runs it.
+    /// The version of the Pi that Dahlia installed.
     @State private var installedVersion: String?
-    @State private var usesInstalledPi = false
     @State private var isInstalling = false
     @State private var installResult: Result<String, Error>?
 
-    init(provider: CodexRuntimeProvider) {
+    init(provider: CodexRuntimeProvider, searchPath: String?) {
         self.provider = provider
-        _piPath = AppStorage(wrappedValue: PiBundle.defaultCommand, PiBundle.executablePathDefaultsKey(for: provider))
+        self.searchPath = searchPath
+        _useManagedPi = AppStorage(wrappedValue: PiBundle.usesManagedPi(for: provider), PiBundle.useManagedPiDefaultsKey(for: provider))
         _workingDirectory = AppStorage(wrappedValue: "", PiWorkingDirectory.defaultsKey(for: provider))
     }
 
     var body: some View {
         Section {
-            TextField(L10n.piCommand, text: $piPath, prompt: Text(PiBundle.defaultCommand))
+            Toggle(L10n.useManagedPi, isOn: $useManagedPi)
+                .toggleStyle(.switch)
             LabeledContent(L10n.piCommandInUse) {
-                switch resolvedCommand {
-                case let .success(path):
-                    Text(path).textSelection(.enabled)
-                case let .failure(error):
-                    Label(error.localizedDescription, systemImage: "exclamationmark.triangle.fill")
-                        .foregroundStyle(.orange)
-                case nil:
-                    EmptyView()
-                }
-            }
-            // Installing helps users without a pi of their own; the installed Pi is used only once chosen as the path.
-            if let installedVersion {
-                LabeledContent(L10n.piInstalledVersion(installedVersion)) {
-                    if isInstalling {
-                        ProgressView().controlSize(.small)
-                    } else if usesInstalledPi {
-                        Button(L10n.updatePi) { startInstall() }
-                    } else {
-                        Button(L10n.useInstalledPi) { piPath = PiInstaller.executableURL.path }
+                if useManagedPi {
+                    Text(PiInstaller.executableURL.path).textSelection(.enabled)
+                } else {
+                    switch resolvedCommand {
+                    case let .success(path):
+                        Text(path).textSelection(.enabled)
+                    case let .failure(error):
+                        Label(error.localizedDescription, systemImage: "exclamationmark.triangle.fill")
+                            .foregroundStyle(.orange)
+                    case nil:
+                        EmptyView()
                     }
                 }
-            } else if case .failure = resolvedCommand {
-                LabeledContent(L10n.piNotInstalled) {
-                    if isInstalling {
-                        ProgressView().controlSize(.small)
-                    } else {
-                        Button(L10n.installPi) { startInstall() }
+            }
+            if useManagedPi, case let .failure(error) = resolvedCommand {
+                Label(error.localizedDescription, systemImage: "exclamationmark.triangle.fill")
+                    .foregroundStyle(.orange)
+            }
+            if useManagedPi {
+                if let installedVersion {
+                    LabeledContent(L10n.piInstalledVersion(installedVersion)) {
+                        if isInstalling {
+                            ProgressView().controlSize(.small)
+                        } else {
+                            Button(L10n.updatePi) { startInstall() }
+                        }
+                    }
+                } else {
+                    LabeledContent(L10n.piNotInstalled) {
+                        if isInstalling {
+                            ProgressView().controlSize(.small)
+                        } else {
+                            Button(L10n.installPi) { startInstall() }
+                        }
                     }
                 }
             }
@@ -185,25 +193,24 @@ private struct AgentRuntimeSection: View {
             Text(L10n.agentRuntime)
                 .font(.dahliaSectionHeader)
         }
-        .task(id: piPath) {
+        .task(id: [String(useManagedPi), searchPath ?? ""]) {
             await resolveCommand()
         }
     }
 
-    /// Resolving checks the disk, so it runs off MainActor; Pi reads the saved path when each process starts.
+    /// Resolving checks the disk off MainActor; each new Pi process reads the saved selection.
     private func resolveCommand() async {
-        let (resolved, version, usesInstalled) = await Task.detached { [provider] in
+        let selection = useManagedPi
+        let path = searchPath
+        resolvedCommand = nil
+        let (resolved, version) = await Task.detached { [provider] in
             let url = Result { try PiBundle.executableURL(for: provider) }
                 .mapError { $0 as? CodexAppServerError ?? .piCommandNotFound(nil) }
-            // A link on PATH to the Pi that Dahlia installed, as the README suggests, still counts as that Pi.
-            let usesInstalled = (try? url.get().resolvingSymlinksInPath()) == PiInstaller.executableURL.resolvingSymlinksInPath()
-            return (url.map(\.path), PiInstaller.installedVersion(), usesInstalled)
+            return (url.map(\.path), PiInstaller.installedVersion())
         }.value
-        // An edit cancels this task, but the detached lookup still finishes; drop its now-stale result.
-        guard !Task.isCancelled else { return }
+        guard !Task.isCancelled, useManagedPi == selection, searchPath == path else { return }
         resolvedCommand = resolved
         installedVersion = version
-        usesInstalledPi = usesInstalled
     }
 
     private func startInstall() {
@@ -214,18 +221,13 @@ private struct AgentRuntimeSection: View {
 
     private func installLatestPi() async {
         installResult = nil
-        let pathAtStart = piPath
         do {
             let release = try await PiInstaller.release()
             if release.version == installedVersion {
                 installResult = .success(L10n.piUpToDate(release.version))
             } else {
-                let isFirstInstall = installedVersion == nil
                 try await PiInstaller.install(release)
                 installResult = .success(L10n.piInstalled(release.version))
-                // Install is offered only when this account has no working pi, so it takes the one it asked for,
-                // unless the user chose another path while Pi was downloading.
-                if isFirstInstall, piPath == pathAtStart { piPath = PiInstaller.executableURL.path }
             }
         } catch {
             installResult = .failure(error)

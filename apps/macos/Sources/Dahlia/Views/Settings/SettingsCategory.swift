@@ -144,7 +144,7 @@ enum SettingsCategory: String, CaseIterable, Identifiable {
                 L10n.mcp,
                 L10n.unityGateway,
                 "Databricks",
-                L10n.piCommand,
+                L10n.useManagedPi,
                 "Pi",
                 L10n.agentProviders,
                 L10n.agentEnvironment,
