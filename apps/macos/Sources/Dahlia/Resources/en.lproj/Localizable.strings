@@ -1850,3 +1850,8 @@
 "settings.agents.mcpServiceNameHelp" = "Enter catalog.schema.service, such as main.default.notion.";
 
 "settings.agents.mcpServiceNameInvalid" = "Enter three names separated by dots (catalog.schema.service), using letters, digits, _ or -.";
+
+"chat.toolRunning %@" = "Running %@…";
+"chat.toolSucceeded %@" = "%@ completed. Waiting for a response…";
+"chat.toolFailed %@" = "%@ failed. Waiting for a response…";
+"chat.toolInaccessible %@" = "%@ could not access the requested resource. Waiting for a response…";

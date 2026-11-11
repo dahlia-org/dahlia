@@ -178,6 +178,7 @@ Pi は thread を session file の header の `cwd` で動かすので、Dahlia 
 
 Pi に渡す tool は `read`・`ls`・`write`・`edit`・`bash`・`mcp__dahlia__*` と、アカウントに登録した MCP server の tool（2026-11-11 ユーザー承認）。`grep`・`find` は渡さない。
 5つの tool の範囲は上の Seatbelt の表のとおりで、範囲内は確認なしで動く。system prompt には SQLite と画像の保存先の path を含め、`sqlite3 -readonly` で参照できる。
+実行中のターンでは、直近の tool 名と実行中・完了・失敗・アクセス不可の状態を入力欄の上に表示し、終了結果の受信後はモデルの応答待ちと明示する。引数と出力本文はこの状態表示に含めず、回答本文の受信またはターン終了時に消す。アクセス制限を受けた同じ path の再試行や sandbox の回避をせず、制約を説明して参照可能な情報から続けるよう system prompt で指示する。
 
 | 選択 | read / ls / write / edit / bash | Dahlia MCP | Unity AI Gateway の MCP |
 | --- | --- | --- | --- |

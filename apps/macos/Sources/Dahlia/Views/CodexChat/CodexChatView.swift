@@ -138,6 +138,15 @@ struct CodexChatView: View {
 
     @ViewBuilder
     private var conversationControls: some View {
+        if let activity = session.toolActivity {
+            Label(activity.text, systemImage: activity.symbol)
+                .font(.dahliaSecondary)
+                .foregroundStyle(DahliaDesign.secondaryTextColor)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.horizontal, CodexChatDesign.contentHorizontalPadding)
+                .padding(.vertical, 6)
+        }
+
         if !session.mcpServersNeedingSignIn.isEmpty {
             Label(L10n.chatMCPSignInRequired(session.mcpServersNeedingSignIn.formatted(.list(type: .and))), systemImage: "key.fill")
                 .font(.dahliaBody)

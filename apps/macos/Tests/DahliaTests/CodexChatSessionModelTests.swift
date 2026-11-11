@@ -8,6 +8,40 @@ import Foundation
     @MainActor
     struct CodexChatSessionModelTests {
         @Test
+        func toolActivityUpdatesDuringAWaitAndClearsAfterCompletionAndStop() async {
+            let service = TestCodexChatService(mode: .blockBeforeOutput)
+            let settings = AppSettings()
+            settings.currentWorkspace = Self.testWorkspace()
+            let session = CodexChatSessionModel(service: service, settings: settings)
+            for stop in [false, true] {
+                session.draft = "Inspect folder"
+                session.sendDraft()
+                await waitUntil { session.activeTurnID != nil }
+                #expect(session.toolActivity == nil)
+                let running = CodexChatToolActivity(name: "ls", status: .running)
+                await service.yieldBlockedEvent(.toolActivity(running))
+                await waitUntil { session.toolActivity == running }
+                #expect(session.isGenerating)
+
+                let denied = CodexChatToolActivity(name: "ls", status: .inaccessible)
+                await service.yieldBlockedEvent(.toolActivity(denied))
+                await waitUntil { session.toolActivity == denied }
+                #expect(session.isGenerating)
+                #expect(session.errorMessage == nil)
+
+                if stop {
+                    session.stop()
+                } else {
+                    await service.yieldBlockedEvent(.delta(itemID: "reply", text: "Access is restricted."))
+                    await waitUntil { session.toolActivity == nil }
+                    await service.completeBlockedTurn()
+                }
+                await waitUntil { !session.hasPendingGenerationWork }
+                #expect(session.toolActivity == nil)
+            }
+        }
+
+        @Test
         func newTasksAskForApprovalAndPreserveExplicitSelections() {
             // Pi has no review step, so the other mode changes Dahlia data without asking; new chats must ask.
             #expect(CodexChatSessionModel().selectedApprovalMethod == .ask)

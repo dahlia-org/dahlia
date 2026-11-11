@@ -25,6 +25,8 @@ actor PiChatService: CodexChatServicing {
     Use Dahlia's preset skills when the user's request matches their descriptions; read a selected skill's SKILL.md with the read tool.
     The read, ls, write, edit, and bash tools run under Apple Seatbelt. Only the current folder is writable; Dahlia's
     screenshots, database, and skills are read-only. Other user files are inaccessible. Network access is allowed.
+    If a tool reports an access restriction, do not retry the same inaccessible path or try to bypass the sandbox.
+    Promptly explain the restriction and continue with accessible sources, distinguishing verified facts from inference.
     Use sqlite3 -readonly to inspect Dahlia's database for debugging.
     """
 
@@ -299,6 +301,31 @@ actor PiChatService: CodexChatServicing {
         }
     }
 
+    nonisolated static func toolActivity(_ event: [String: JSONValue]) -> CodexChatToolActivity? {
+        guard let name = event["toolName"]?.stringValue else { return nil }
+        let status: CodexChatToolActivity.Status
+        switch event["type"]?.stringValue {
+        case "tool_execution_start":
+            status = .running
+        case "tool_execution_end":
+            if event["isError"]?.boolValue == true {
+                let content = event["result"]?.objectValue?["content"]?.arrayValue ?? []
+                let inaccessible = content.prefix(16).contains { block in
+                    guard let text = block.objectValue?["text"]?.stringValue else { return false }
+                    let message = text.prefix(4096).lowercased()
+                    return message.contains("operation not permitted") || message.contains("permission denied")
+                        || message.contains("cannot read ") || message.contains("eacces") || message.contains("eperm")
+                }
+                status = inaccessible ? .inaccessible : .failed
+            } else {
+                status = .succeeded
+            }
+        default:
+            return nil
+        }
+        return CodexChatToolActivity(name: String(name.prefix(128)), status: status)
+    }
+
     /// Takes effect at the next tool call, including during a running turn, because the extension asks for the mode each time.
     func updateApprovalMethod(threadID: String, approvalMethod: CodexChatApprovalMethod) async throws -> CodexChatApprovalMethod {
         sessions[threadID]?.approvalMethod = approvalMethod
@@ -503,6 +530,9 @@ actor PiChatService: CodexChatServicing {
     /// Events from a process that is no longer the thread's live process are dropped.
     private func handle(_ event: JSONValue, threadID: String, processID: UUID, bridgeError: (any Error)?) {
         guard sessions[threadID]?.processID == processID, let object = event.objectValue else { return }
+        if let activity = Self.toolActivity(object) {
+            sessions[threadID]?.turn?.continuation.yield(.toolActivity(activity))
+        }
         // A tool's own error text could name any server; only the chat's registered servers are reported.
         let needingSignIn = Self.mcpServersNeedingSignIn(object).filter { sessions[threadID]?.mcpServers.contains($0) == true }
         if !needingSignIn.isEmpty, let known = sessions[threadID]?.mcpServersNeedingSignIn {

@@ -24,6 +24,7 @@ final class CodexChatSessionModel: Identifiable {
     var noticeMessage: String?
     /// MCP servers the open chat process cannot use until the user signs in; reported again at each turn.
     var mcpServersNeedingSignIn: [String] = []
+    private(set) var toolActivity: CodexChatToolActivity?
     private(set) var activeTurnID: String?
     private(set) var activeTurnHandleID: UUID?
     private(set) var pendingApprovals: [CodexChatApprovalRequest] = []
@@ -615,6 +616,7 @@ extension CodexChatSessionModel {
         accumulator: CodexChatTurnAccumulator,
         updateLimiter: CodexChatStreamingUpdateLimiter
     ) {
+        if event.terminalCompletion != nil { toolActivity = nil }
         switch event {
         case let .started(turnID):
             activeTurnID = turnID
@@ -624,9 +626,11 @@ extension CodexChatSessionModel {
             }
             processPendingInputIfPossible()
         case let .delta(itemID, text):
+            if toolActivity != nil { toolActivity = nil }
             accumulator.appendResponseDelta(itemID: itemID, text: text)
             publishStreamingOutput(itemID: itemID, using: updateLimiter)
         case let .completed(itemID?, text):
+            if toolActivity != nil { toolActivity = nil }
             accumulator.completeResponse(itemID: itemID, text: text)
             completeStreamingOutput(itemID: itemID, using: updateLimiter)
         case .completed(itemID: nil, text: _):
@@ -640,6 +644,8 @@ extension CodexChatSessionModel {
         case let .reasoningCompleted(itemID, text):
             accumulator.completeReasoning(itemID: itemID, text: text)
             completeStreamingOutput(itemID: itemID, using: updateLimiter)
+        case let .toolActivity(activity):
+            toolActivity = activity
         case let .approvalRequested(request):
             updateLimiter.submit(force: true)
             if !pendingApprovals.contains(where: { $0.id == request.id }) {
@@ -747,6 +753,7 @@ extension CodexChatSessionModel {
     ) {
         guard activeSubmissionID == submissionID else { return }
         isGenerating = false
+        toolActivity = nil
         isPreparingTurn = false
         pendingApprovals.removeAll()
         pendingUserInput = nil

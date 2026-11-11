@@ -46,6 +46,49 @@ import Synchronization
         }
 
         @Test
+        func deniedToolReportsActivityAndTheTurnStillCompletes() async throws {
+            let fixture = Self.fixture { transport in
+                await transport.emit(.object([
+                    "type": .string("tool_execution_start"), "toolName": .string("bash"), "toolCallId": .string("c"),
+                ]))
+                await transport.emit(.object([
+                    "type": .string("tool_execution_end"), "toolName": .string("bash"), "toolCallId": .string("c"),
+                    "isError": .bool(true), "result": .object(["content": .array([.object([
+                        "type": .string("text"), "text": .string("ls: agent: Operation not permitted\nCommand exited with code 1"),
+                    ])])]),
+                ]))
+                await transport.emit(TestPiTransport.assistantEnd("Access was denied."))
+                await transport.emit(TestPiTransport.settled())
+            }
+            let thread = try await fixture.chat.startThread(model: nil, effort: "medium", workspaceID: .v7())
+            let handle = try await fixture.chat.beginTurn(
+                threadID: thread.id, inputs: [.text("inspect agent")], model: nil, effort: "medium",
+                approvalMethod: .ask, expectedProvider: nil
+            )
+            var events: [CodexChatTurnEvent] = []
+            for try await event in handle.events { events.append(event) }
+            #expect(events.contains(.toolActivity(.init(name: "bash", status: .running))))
+            #expect(events.contains(.toolActivity(.init(name: "bash", status: .inaccessible))))
+            #expect(events.contains { if case .completed(itemID: .some, text: "Access was denied.") = $0 { true } else { false } })
+            #expect(events.last == .completed(itemID: nil, text: nil))
+        }
+
+        @Test(arguments: [
+            (false, "Operation not permitted", CodexChatToolActivity.Status.succeeded),
+            (true, "Permission denied", .inaccessible),
+            (true, "Cannot read /agent/auth.json", .inaccessible),
+            (true, "ENOENT: file not found", .failed),
+        ])
+        func toolResultDistinguishesFailureFromOutput(isError: Bool, text: String, expected: CodexChatToolActivity.Status) {
+            let event: [String: JSONValue] = [
+                "type": .string("tool_execution_end"), "toolName": .string("read"), "isError": .bool(isError),
+                "result": .object(["content": .array([.object(["type": .string("text"), "text": .string(text)])])]),
+            ]
+            #expect(PiChatService.toolActivity(event) == .init(name: "read", status: expected))
+            #expect(PiChatService.toolActivity(["type": .string("message_end"), "toolName": .string("read")]) == nil)
+        }
+
+        @Test
         func turnStreamsTextAndReasoningThenCompletes() async throws {
             let fixture = Self.fixture { transport in
                 await transport.emit(.object(["type": .string("message_update"), "assistantMessageEvent": .object([

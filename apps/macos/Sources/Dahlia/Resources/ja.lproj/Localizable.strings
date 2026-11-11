@@ -1850,3 +1850,8 @@
 "settings.agents.mcpServiceNameHelp" = "main.default.notion のように catalog.schema.service で指定します。";
 
 "settings.agents.mcpServiceNameInvalid" = "catalog.schema.service の3つの名前を指定してください。各名前には英数字・_・- を使えます。";
+
+"chat.toolRunning %@" = "%@ を実行中…";
+"chat.toolSucceeded %@" = "%@ が完了しました。応答を待っています…";
+"chat.toolFailed %@" = "%@ が失敗しました。応答を待っています…";
+"chat.toolInaccessible %@" = "%@ でアクセスできませんでした。応答を待っています…";
