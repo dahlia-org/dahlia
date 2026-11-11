@@ -17,6 +17,9 @@ final class AgentMCPSettingsModel {
     /// Providers whose services are being listed, and the last listing's failure for each.
     private(set) var listingProviderIDs: Set<String> = []
     private(set) var listingErrors: [String: any Error] = [:]
+    private var pendingServiceRefreshIDs: Set<String> = []
+    /// Live credential states only; a saved catalog must not imply a current sign-in.
+    private var serviceSignInStates: [String: [String: AgentMCPService.SignInState]] = [:]
     var errorMessage: String?
 
     private let service: PiRuntimeService
@@ -95,6 +98,7 @@ final class AgentMCPSettingsModel {
 
     func signIn(_ provider: AgentMCPProvider) async throws {
         signingInProviderID = provider.id
+        serviceSignInStates[provider.id] = nil
         defer { signingInProviderID = nil }
         try await service.signIn(provider, account: account) { url in
             await self.openLoginURL(url)
@@ -111,35 +115,82 @@ final class AgentMCPSettingsModel {
         try await self.service.signInToService(service, of: provider, account: account) { url in
             await self.openLoginURL(url)
         }
+        await refreshServices(of: provider)
     }
 
     /// The MCP services the workspace's Unity AI Gateway offers this sign-in, by full name.
-    func services(of provider: AgentMCPProvider) async throws -> [String] {
-        try await service.mcpServices(provider, account: account)
+    func services(of provider: AgentMCPProvider) async throws -> [AgentMCPService] {
+        try await service.mcpServices(
+            provider,
+            account: account,
+            enabledServices: servers(of: provider).map(\.service).filter(AgentMCPService.requiresUserSignIn)
+        )
     }
 
     /// The provider's services as last listed, with any registered service the listing no longer shows.
     func listedServices(of provider: AgentMCPProvider) -> [String] {
-        Array(Set((settings.listedServices?[provider.id] ?? []) + servers(of: provider).map(\.service))).sorted()
+        Array(Set((settings.listedServices?[provider.id] ?? [])
+                + (settings.manualServices?[provider.id] ?? []) + servers(of: provider).map(\.service))).sorted()
+    }
+
+    func comment(for service: String, of provider: AgentMCPProvider) -> String? {
+        settings.serviceComments?[provider.id]?[service]
+    }
+
+    func signInState(for service: String, of provider: AgentMCPProvider) -> AgentMCPService.SignInState {
+        guard servers(of: provider).contains(where: { $0.service == service }) else { return .unknown }
+        return serviceSignInStates[provider.id]?[service] ?? .unknown
     }
 
     /// Lists the provider's services again and keeps the result; a failure keeps the last list and is reported.
     func refreshServices(of provider: AgentMCPProvider) async {
-        guard !listingProviderIDs.contains(provider.id) else { return }
-        listingProviderIDs.insert(provider.id)
-        defer { listingProviderIDs.remove(provider.id) }
-        do {
-            let services = try await self.services(of: provider)
-            // A workspace removed while it was listed keeps no list.
-            guard selectableProviders.contains(provider) else { return }
-            listingErrors[provider.id] = nil
-            settings.listedServices = (settings.listedServices ?? [:]).merging([provider.id: services]) { $1 }
-            settings.save(for: account, defaults: defaults)
-        } catch is CancellationError {
-            // Leaving the tab stops the listing; the last list stays.
-        } catch {
-            listingErrors[provider.id] = error
+        guard !listingProviderIDs.contains(provider.id) else {
+            pendingServiceRefreshIDs.insert(provider.id)
+            return
         }
+        listingProviderIDs.insert(provider.id)
+        defer {
+            listingProviderIDs.remove(provider.id)
+            pendingServiceRefreshIDs.remove(provider.id)
+        }
+        repeat {
+            pendingServiceRefreshIDs.remove(provider.id)
+            serviceSignInStates[provider.id] = nil
+            do {
+                let services = try await self.services(of: provider)
+                try Task.checkCancellation()
+                // A workspace removed while it was listed keeps no list.
+                guard selectableProviders.contains(provider) else { return }
+                listingErrors[provider.id] = nil
+                serviceSignInStates[provider.id] = Dictionary(uniqueKeysWithValues: services.map { ($0.name, $0.signInState ?? .unknown) })
+                settings.listedServices = (settings.listedServices ?? [:]).merging([provider.id: services.map(\.name).sorted()]) { $1 }
+                settings.serviceComments = (settings.serviceComments ?? [:]).merging([
+                    provider.id: services.reduce(into: settings.serviceComments?[provider.id] ?? [:]) { comments, service in
+                        if service.metadataUnavailable != true { comments[service.name] = service.comment?.nilIfBlank }
+                    },
+                ]) { $1 }
+                settings.save(for: account, defaults: defaults)
+            } catch is CancellationError {
+                // Leaving the tab stops the listing and any queued follow-up; the last list stays.
+                return
+            } catch {
+                listingErrors[provider.id] = error
+            }
+        } while pendingServiceRefreshIDs.contains(provider.id) && !Task.isCancelled
+    }
+
+    /// Registers an explicitly named Unity Catalog service without enumerating other schemas.
+    func addService(_ input: String, to provider: AgentMCPProvider) throws {
+        let service = input.trimmingCharacters(in: .whitespacesAndNewlines)
+        let parts = service.split(separator: ".", omittingEmptySubsequences: false)
+        guard parts.count == 3, parts.allSatisfy({ !$0.isEmpty && $0.count <= 255 && $0.wholeMatch(of: /[A-Za-z0-9_-]+/) != nil }) else {
+            throw AgentMCPSettingsError(message: L10n.mcpServiceNameInvalid)
+        }
+        try setService(service, enabled: true, of: provider)
+        var manual = settings.manualServices ?? [:]
+        manual[provider.id] = Array(Set((manual[provider.id] ?? []) + [service])).sorted()
+        settings.manualServices = manual
+        settings.save(for: account, defaults: defaults)
     }
 
     /// Turns a service on with a name of its own (`github`, then `github_2`, ...), or off, removing its server.
@@ -150,16 +201,6 @@ final class AgentMCPSettingsModel {
         } else if let server = servers(of: provider).first(where: { $0.service == service }) {
             remove(server)
         }
-    }
-
-    /// Renames a server, which changes its tools' prefix in chats opened afterward.
-    func rename(_ server: AgentMCPServer, to name: String) throws {
-        var renamed = settings
-        renamed.servers.removeAll { $0.id == server.id }
-        if let error = renamed.nameError(name) { throw AgentMCPSettingsError(message: error) }
-        guard let index = settings.servers.firstIndex(where: { $0.id == server.id }) else { return }
-        settings.servers[index].name = name
-        settings.save(for: account, defaults: defaults)
     }
 
     /// Registers servers on a workspace, keyed by service with each one's server name. Nothing is saved if a name is
@@ -193,6 +234,9 @@ final class AgentMCPSettingsModel {
         settings.servers.removeAll { $0.providerID == provider.id }
         settings.providers.removeAll { $0.id == provider.id }
         settings.listedServices?[provider.id] = nil
+        settings.serviceComments?[provider.id] = nil
+        settings.manualServices?[provider.id] = nil
+        serviceSignInStates[provider.id] = nil
         settings.save(for: account, defaults: defaults)
         // Its models leave models.json now, even if the sign-out below fails and its credential stays.
         try? await service.applyGatewayModelChoices(for: account)

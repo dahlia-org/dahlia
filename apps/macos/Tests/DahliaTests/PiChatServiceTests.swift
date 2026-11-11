@@ -364,7 +364,10 @@ import Synchronization
             let provider = try AgentMCPProvider(workspaceURL: #require(URL(string: "https://example.cloud.databricks.com")))
             registered.withLock {
                 $0.providers = [provider]
-                $0.servers = [AgentMCPServer(id: .v7(), name: "gmail", providerID: provider.id, service: "system.ai.gmail")]
+                $0.servers = [
+                    AgentMCPServer(id: .v7(), name: "gmail", providerID: provider.id, service: "system.ai.gmail"),
+                    AgentMCPServer(id: .v7(), name: "notion", providerID: provider.id, service: "main.default.notion"),
+                ]
             }
             try await turn("gmail on, same process")
             #expect(log.all.count == 2)
@@ -372,16 +375,19 @@ import Synchronization
             try await turn("gmail on, new process")
             #expect(log.all.count == 3)
             let withGmail = try #require(pi.launches.all.last { $0.mode == .chat })
-            #expect(withGmail.arguments.contains("read,ls,mcp__dahlia__*,mcp__gmail__*"))
+            #expect(withGmail.arguments.contains("read,ls,mcp__dahlia__*,mcp__gmail__*,mcp__notion__*"))
             // Dahlia's extension registers the sign-ins mcp.json names in every process; none loads the provider file on its own.
             #expect(pi.launches.all.allSatisfy { !$0.arguments.contains { $0.hasSuffix("databricks-provider.ts") } })
-            #expect(withGmail.environment["DAHLIA_PI_MCP_SERVERS"] == #"["dahlia","gmail"]"#)
+            #expect(withGmail.environment["DAHLIA_PI_MCP_SERVERS"] == #"["dahlia","gmail","notion"]"#)
             // The mcp.json entry names the workspace sign-in, which the extension registers from that file.
             #expect(withGmail.environment["DAHLIA_PI_MCP_PROVIDERS"] == nil)
             #expect(withGmail.arguments.contains { $0.hasSuffix("/" + file.lastPathComponent) })
             let mcpJSON = try PiAgentDirectoryLocator(applicationSupportURL: pi.rootURL).agentURL(for: account).appending(path: "mcp.json")
             let written = FileManager.default.contents(atPath: mcpJSON.path).map { String(decoding: $0, as: UTF8.self) } ?? ""
             #expect(written.contains("system.ai.gmail"))
+            let entries = try JSONDecoder().decode(JSONValue.self, from: Data(written.utf8)).objectValue?["mcpServers"]?.objectValue
+            #expect(entries?["notion"]?.objectValue?["url"] == .string("https://example.cloud.databricks.com/ai-gateway/mcp-services/main.default.notion"))
+            #expect(entries?["notion"]?.objectValue?["auth"]?.objectValue?["provider"] == .string(provider.id))
             #expect(written.contains(#""provider":"example.cloud.databricks.com""#))
         }
 

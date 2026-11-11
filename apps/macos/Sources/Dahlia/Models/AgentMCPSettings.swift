@@ -1,20 +1,23 @@
 import DahliaRuntimeSupport
 import Foundation
 
-/// An MCP server the user registered for an account's chat. Only Unity AI Gateway servers exist today.
+/// An MCP server the user registered for an account's chat. Unity AI Gateway servers share a provider.
 struct AgentMCPServer: Codable, Hashable, Identifiable, Sendable {
     let id: UUID
     /// Pi's server name, which also prefixes its tools (`mcp__<name>__`).
     var name: String
-    /// The sign-in the server uses. Servers on one workspace share it.
-    let providerID: String
-    /// The Unity AI Gateway MCP service's full name, such as `system.ai.github`.
+    /// The sign-in the server uses. Optional for compatibility with retired local tools.
+    let providerID: String?
+    /// The fully qualified Unity AI Gateway service name.
     let service: String
 
     /// The service's last name part as Settings shows it: `Google Calendar` for `system.ai.google_calendar`.
     static func displayName(for service: String) -> String {
+        let name = service.split(separator: ".").last ?? Substring(service)
+        let displayNames = ["dbsql": "Databricks SQL", "genie_one_mcp": "Genie One", "sandbox": "Databricks Sandbox"]
+        if let displayName = displayNames[name.lowercased()] { return displayName }
         let spellings = ["github": "GitHub", "dbsql": "DBSQL", "sql": "SQL", "mcp": "MCP", "ai": "AI"]
-        return (service.split(separator: ".").last ?? Substring(service))
+        return name
             .split(separator: "_")
             .map { spellings[$0.lowercased()] ?? $0.capitalized }
             .joined(separator: " ")
@@ -77,13 +80,24 @@ struct AgentMCPSettings: Codable, Equatable, Sendable {
     /// Each provider's MCP services as last listed, keyed by provider ID, so Settings shows them before listing again.
     /// Optional so settings saved before it still decode.
     var listedServices: [String: [String]]?
+    /// Descriptions from the last successful listing, keyed by provider ID and full service name.
+    var serviceComments: [String: [String: String]]?
+    /// Explicit full-name registrations remain visible even when disabled or absent from discovery.
+    var manualServices: [String: [String]]?
 
     static func defaultsKey(for account: CodexRuntimeProvider) -> String {
         "agentMCPs.\(account.accountKey)"
     }
 
     static func load(for account: CodexRuntimeProvider, defaults: UserDefaults = .standard) -> Self {
-        defaults.data(forKey: defaultsKey(for: account)).flatMap { try? JSONDecoder().decode(Self.self, from: $0) } ?? Self()
+        var settings = defaults.data(forKey: defaultsKey(for: account)).flatMap { try? JSONDecoder().decode(Self.self, from: $0) } ?? Self()
+        settings.servers.removeAll { $0.providerID == nil && $0.service == "lightpanda" }
+        if settings.manualServices == nil {
+            let manual = (settings.listedServices ?? [:]).mapValues { $0.filter { !$0.hasPrefix("system.ai.") } }
+                .filter { !$0.value.isEmpty }
+            if !manual.isEmpty { settings.manualServices = manual }
+        }
+        return settings
     }
 
     func save(for account: CodexRuntimeProvider, defaults: UserDefaults = .standard) {
@@ -115,10 +129,10 @@ struct AgentMCPSettings: Codable, Equatable, Sendable {
         return name
     }
 
-    /// `mcp.json` entries keyed by server name. Each takes its sign-in's credential through `auth.provider`.
+    /// `mcp.json` entries keyed by server name. Gateway servers use `auth.provider`.
     var piServers: [String: JSONValue] {
         servers.reduce(into: [:]) { entries, server in
-            guard let provider = provider(id: server.providerID) else { return }
+            guard let providerID = server.providerID, let provider = provider(id: providerID) else { return }
             entries[server.name] = .object([
                 "url": .string(server.url(workspaceURL: provider.workspaceURL).absoluteString),
                 "exposure": .string("direct"),
