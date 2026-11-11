@@ -791,7 +791,7 @@
 "Share" = "Share";
 "Share Summary" = "Share Summary";
 "share.exportToGoogleDrive" = "Export to Google Drive with Dahlia AI";
-"share.exportToGoogleDrivePrompt" = "Export this meeting's summary to Google Drive as a Google Doc. Keep its headings, bullet lists, and action items, and give me the link to the document you create. If no Google Drive tool is available, tell me to add a Databricks workspace that offers the Google Drive MCP under Settings > AI Agents > General > Providers, then turn on Google Drive on the MCP tab.";
+"share.exportToGoogleDrivePrompt" = "Export this meeting's summary to Google Drive as a Google Doc. Keep its headings, bullet lists, and action items, and give me the link to the document you create. If no Google Drive tool is available, tell me to add a Databricks workspace that offers the Google Drive MCP under Settings > Dahlia AI > General > Providers, then turn on Google Drive on the MCP tab.";
 "Copy for Google Docs" = "Copy for Google Docs";
 "Copy for Slack" = "Copy for Slack";
 "Summary Prompt" = "Summary Prompt";
@@ -1086,7 +1086,7 @@
 "Stopped" = "Stopped";
 "Dahlia's helper files are unavailable. Run Dahlia with scripts/run-dev.sh or install a signed app build." = "Dahlia's helper files are unavailable. Run Dahlia with scripts/run-dev.sh or install a signed app build.";
 "Could not start Pi: %@" = "Could not start Pi: %@";
-"Pi is not signed in. Sign in under Settings > Agents > General > Providers (a Databricks or Dahlia account signs in from the account menu at the bottom of the sidebar), then try again." = "Pi is not signed in. Sign in under Settings > AI Agents > General > Providers (a Databricks or Dahlia account signs in from the account menu at the bottom of the sidebar), then try again.";
+"Pi is not signed in. Sign in under Settings > Agents > General > Providers (a Databricks or Dahlia account signs in from the account menu at the bottom of the sidebar), then try again." = "Pi is not signed in. Sign in under Settings > Dahlia AI > General > Providers (a Databricks or Dahlia account signs in from the account menu at the bottom of the sidebar), then try again.";
 "Pi sign-in failed: %@" = "Pi sign-in failed: %@";
 "Pi sign-in failed." = "Pi sign-in failed.";
 "Could not open the Pi sign-in page." = "Could not open the Pi sign-in page.";
@@ -1184,7 +1184,7 @@
 "This request is too large to review completely, so it cannot be approved." = "This request is too large to review completely, so it cannot be approved.";
 "This request asks for permissions outside the allowed workspace and cannot be approved." = "This request asks for permissions outside the allowed workspace and cannot be approved.";
 "Open Accounts and Workspaces Settings" = "Open Accounts and Workspaces Settings";
-"chat.openAgentSettings" = "Open AI Agents Settings";
+"chat.openAgentSettings" = "Open Dahlia AI Settings";
 "Loading models…" = "Loading models…";
 "Chat is running" = "Chat is running";
 "Waiting for your response or approval" = "Waiting for your response or approval";
@@ -1441,7 +1441,7 @@
 "Primary Language" = "Summary & Image Caption Language";
 "Used for summaries and screenshot captions." = "Used for summaries and screenshot captions.";
 "Summaries and Image Captions" = "Summaries and Image Captions";
-"setup.modelProviderDescription" = "Sign in to the model providers used for summaries and other AI features. You can use several at once. If you skip this, summaries and other AI features stay unavailable until you set one up in Settings > AI Agents.";
+"setup.modelProviderDescription" = "Sign in to the model providers used for summaries and other AI features. You can use several at once. If you skip this, summaries and other AI features stay unavailable until you set one up in Settings > Dahlia AI.";
 "Allow access to the audio sources Dahlia records. You can continue and grant access later." = "Allow access to the audio sources Dahlia records. You can continue and grant access later.";
 "Calendar (Optional)" = "Calendar (Optional)";
 "Connect a calendar to see upcoming meetings in Dahlia. You can set this up later." = "Connect a calendar to see upcoming meetings in Dahlia. You can set this up later.";
@@ -1757,8 +1757,8 @@
 
 "Used for searchable image text and captions, and for choosing useful screenshots before summary generation." = "Used for searchable image text and captions, and for choosing useful screenshots before summary generation.";
 
-"settings.agents" = "AI Agents";
-"settings.agents.intro" = "Set up the agent that runs summaries, image analysis, and chat, for the selected account.";
+"settings.agents" = "Dahlia AI";
+"settings.agents.intro" = "Configure summaries, image analysis, and chat for the selected account on this Mac.";
 "settings.agents.unityGatewayMCPs" = "Unity AI Gateway MCPs";
 "settings.agents.models" = "Models";
 "settings.agents.modelDetails" = "Model Details";
@@ -1812,11 +1812,11 @@
 "settings.agents.mcpServerName" = "Server name";
 "settings.agents.mcpServerNameInvalid" = "Use up to 40 lowercase letters, digits, and _ in the server name.";
 "settings.agents.mcpServerNameTaken" = "Another server already has this name.";
-"chat.mcpSignInRequired %@" = "%@ needs sign-in. Sign in again under Settings > AI Agents > General > Providers (for the account's own workspace, from the account menu at the bottom of the sidebar).";
+"chat.mcpSignInRequired %@" = "%@ needs sign-in. Sign in again under Settings > Dahlia AI > General > Providers (for the account's own workspace, from the account menu at the bottom of the sidebar).";
 "settings.agents.piCommand" = "Pi command";
 "settings.agents.piCommandInUse" = "Command in use";
-"No executable pi command at %@. Check the path in Settings > Agents." = "No executable pi command at %@. Check the path in Settings > AI Agents.";
-"Pi is not installed. Install it, or set its path, in Settings > Agents." = "Pi is not installed. Install it, or set its path, in Settings > AI Agents.";
+"No executable pi command at %@. Check the path in Settings > Agents." = "No executable pi command at %@. Check the path in Settings > Dahlia AI.";
+"Pi is not installed. Install it, or set its path, in Settings > Agents." = "Pi is not installed. Install it, or set its path, in Settings > Dahlia AI.";
 "settings.agents.piNotInstalled" = "Pi is not installed";
 "settings.agents.installPi" = "Install Pi";
 "settings.agents.updatePi" = "Check for Updates";
@@ -1828,3 +1828,6 @@
 
 "MCP servers" = "MCP servers";
 "No MCP servers registered." = "No MCP servers registered.";
+
+"settings.dataProtection" = "Data Protection";
+"settings.dataProtection.intro" = "Manage data retention and recovery on this Mac. Backups cover Local Account workspaces.";

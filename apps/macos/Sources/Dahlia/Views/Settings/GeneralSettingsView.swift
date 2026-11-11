@@ -1,8 +1,7 @@
 import SwiftUI
 
-/// Mac-wide language, notification, recording, and retention preferences. How the app looks is in `AppearanceSettingsView`.
+/// Mac-wide language, notification, and recording preferences. How the app looks is in `AppearanceSettingsView`.
 struct GeneralSettingsView: View {
-    private static let initialRetentionDays = 30
     @ObservedObject private var settings = AppSettings.shared
 
     var body: some View {
@@ -89,25 +88,6 @@ struct GeneralSettingsView: View {
                     .font(.dahliaSectionHeader)
             }
 
-            Section {
-                Toggle(L10n.forever, isOn: Binding(
-                    get: { settings.serverContentRetentionDays == 0 },
-                    set: { settings.serverContentRetentionDays = $0 ? 0 : Self.initialRetentionDays }
-                ))
-                .toggleStyle(.switch)
-                LabeledContent(L10n.serverContentRetentionDays) {
-                    TextField(L10n.serverContentRetentionDays, value: Binding(
-                        get: { settings.serverContentRetentionDays == 0 ? Self.initialRetentionDays : settings.serverContentRetentionDays },
-                        set: { if $0 > 0 { settings.serverContentRetentionDays = $0 } }
-                    ), format: .number.grouping(.never))
-                        .disabled(settings.serverContentRetentionDays == 0)
-                }
-            } header: {
-                Text(L10n.serverContentRetention)
-                    .font(.dahliaSectionHeader)
-            } footer: {
-                Text(L10n.serverContentRetentionDescription)
-            }
         }
         .formStyle(.grouped)
         .font(.dahliaBody)

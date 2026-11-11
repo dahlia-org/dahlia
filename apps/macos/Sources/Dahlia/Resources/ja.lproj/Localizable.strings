@@ -791,7 +791,7 @@
 "Share" = "共有";
 "Share Summary" = "要約を共有";
 "share.exportToGoogleDrive" = "Dahlia AI で Google Drive に書き出す";
-"share.exportToGoogleDrivePrompt" = "この会議の要約を Google ドキュメントとして Google Drive に書き出してください。見出し、箇条書き、アクションアイテムの構成を保ち、作成したドキュメントのリンクを教えてください。Google Drive のツールが使えない場合は、設定の「AI エージェント」>「一般」の「プロバイダー」で Google Drive の MCP がある Databricks ワークスペースを追加し、「MCP」タブで Google Drive をオンにするよう案内してください。";
+"share.exportToGoogleDrivePrompt" = "この会議の要約を Google ドキュメントとして Google Drive に書き出してください。見出し、箇条書き、アクションアイテムの構成を保ち、作成したドキュメントのリンクを教えてください。Google Drive のツールが使えない場合は、設定の「Dahlia AI」>「一般」の「プロバイダー」で Google Drive の MCP がある Databricks ワークスペースを追加し、「MCP」タブで Google Drive をオンにするよう案内してください。";
 "Copy for Google Docs" = "Google Docs 用にコピー";
 "Copy for Slack" = "Slack 用にコピー";
 "Summary Prompt" = "要約プロンプト";
@@ -844,7 +844,7 @@
 /* Sidebar Footer */
 "Switch Workspace" = "ワークスペースを切り替え";
 "MCP Settings" = "MCP の設定";
-"Manage Workspaces" = "ワークスペースを管理";
+"Manage Workspaces" = "ワークスペースの管理";
 "Manage Projects..." = "プロジェクトを管理...";
 "Settings" = "設定";
 "Help" = "ヘルプ";
@@ -1086,7 +1086,7 @@
 "Stopped" = "停止中";
 "Dahlia's helper files are unavailable. Run Dahlia with scripts/run-dev.sh or install a signed app build." = "Dahlia のヘルパーファイルを利用できません。scripts/run-dev.sh で起動するか、署名済みアプリをインストールしてください。";
 "Could not start Pi: %@" = "Pi を起動できませんでした: %@";
-"Pi is not signed in. Sign in under Settings > Agents > General > Providers (a Databricks or Dahlia account signs in from the account menu at the bottom of the sidebar), then try again." = "Pi にサインインしていません。設定の「AI エージェント」>「一般」の「プロバイダー」でサインインして（Databricks アカウントと Dahlia account はサイドバー下部のアカウントメニューから）、再試行してください。";
+"Pi is not signed in. Sign in under Settings > Agents > General > Providers (a Databricks or Dahlia account signs in from the account menu at the bottom of the sidebar), then try again." = "Pi にサインインしていません。設定の「Dahlia AI」>「一般」の「プロバイダー」でサインインして（Databricks アカウントと Dahlia account はサイドバー下部のアカウントメニューから）、再試行してください。";
 "Pi sign-in failed: %@" = "Pi へのサインインに失敗しました: %@";
 "Pi sign-in failed." = "Pi へのサインインに失敗しました。";
 "Could not open the Pi sign-in page." = "Pi のサインインページを開けませんでした。";
@@ -1184,7 +1184,7 @@
 "This request is too large to review completely, so it cannot be approved." = "このリクエストは全体を確認するには大きすぎるため、許可できません。";
 "This request asks for permissions outside the allowed workspace and cannot be approved." = "許可されたワークスペース外の権限を求めているため、この要求は許可できません。";
 "Open Accounts and Workspaces Settings" = "アカウントとワークスペースを開く";
-"chat.openAgentSettings" = "AI エージェントの設定を開く";
+"chat.openAgentSettings" = "Dahlia AIの設定を開く";
 "Loading models…" = "モデルを読み込み中…";
 "Chat is running" = "チャットを実行中";
 "Waiting for your response or approval" = "回答または承認を待っています";
@@ -1436,12 +1436,12 @@
 "Or continue without signing in" = "またはログインせずに続ける";
 "Switching AI account…" = "AIアカウントを切り替えています…";
 "Choose the AI account used by this Workspace." = "このワークスペースで使用するAIアカウントを選びます。";
-"Choose the languages Dahlia should recognize. Set the AI output language in Manage Workspaces." = "Dahliaが認識する言語を選びます。AIの出力言語は「ワークスペースを管理」で変更できます。";
+"Choose the languages Dahlia should recognize. Set the AI output language in Manage Workspaces." = "Dahliaが認識する言語を選びます。AIの出力言語は「ワークスペースの管理」で変更できます。";
 "Recognition and OCR Languages" = "認識・OCR対象の言語";
 "Primary Language" = "要約・画像説明の言語";
 "Used for summaries and screenshot captions." = "要約とスクリーンショットの画像説明に使用します。";
 "Summaries and Image Captions" = "要約と画像説明";
-"setup.modelProviderDescription" = "要約などのAI機能で使うモデルプロバイダーにサインインします。複数同時に使えます。スキップすると要約などは使えませんが、後から設定の「AI エージェント」で設定できます。";
+"setup.modelProviderDescription" = "要約などのAI機能で使うモデルプロバイダーにサインインします。複数同時に使えます。スキップすると要約などは使えませんが、後から設定の「Dahlia AI」で設定できます。";
 "Allow access to the audio sources Dahlia records. You can continue and grant access later." = "Dahliaが録音するオーディオへのアクセスを許可します。後から許可することもできます。";
 "Calendar (Optional)" = "カレンダー（オプション）";
 "Connect a calendar to see upcoming meetings in Dahlia. You can set this up later." = "カレンダーを接続すると、Dahliaで今後のミーティングを確認できます。後から設定することもできます。";
@@ -1757,8 +1757,8 @@
 
 "Used for searchable image text and captions, and for choosing useful screenshots before summary generation." = "検索用の OCR・caption の生成と、要約前の有用なスクリーンショットの選別に共通で使用します。";
 
-"settings.agents" = "AI エージェント";
-"settings.agents.intro" = "要約・画像解析・チャットを動かすエージェントの設定です。選択中のアカウントごとに保存します。";
+"settings.agents" = "Dahlia AI";
+"settings.agents.intro" = "要約・画像解析・チャットの設定です。選択中のアカウントごとに、このMacに保存します。";
 "settings.agents.unityGatewayMCPs" = "Unity AI Gateway の MCP";
 "settings.agents.models" = "モデル";
 "settings.agents.modelDetails" = "モデルの詳細";
@@ -1812,11 +1812,11 @@
 "settings.agents.mcpServerName" = "サーバー名";
 "settings.agents.mcpServerNameInvalid" = "サーバー名には英小文字・数字・_ を40文字まで使えます。";
 "settings.agents.mcpServerNameTaken" = "このサーバー名はすでに使われています。";
-"chat.mcpSignInRequired %@" = "%@ を使うにはサインインが必要です。設定の「AI エージェント」>「一般」の「プロバイダー」でサインインし直してください（アカウント自身のワークスペースは、サイドバー下部のアカウントメニューから）。";
+"chat.mcpSignInRequired %@" = "%@ を使うにはサインインが必要です。設定の「Dahlia AI」>「一般」の「プロバイダー」でサインインし直してください（アカウント自身のワークスペースは、サイドバー下部のアカウントメニューから）。";
 "settings.agents.piCommand" = "Pi コマンド";
 "settings.agents.piCommandInUse" = "使用するコマンド";
-"No executable pi command at %@. Check the path in Settings > Agents." = "%@ に実行できる pi コマンドがありません。設定の「AI エージェント」でパスを確認してください。";
-"Pi is not installed. Install it, or set its path, in Settings > Agents." = "Pi がインストールされていません。設定の「AI エージェント」でインストールするか、パスを指定してください。";
+"No executable pi command at %@. Check the path in Settings > Agents." = "%@ に実行できる pi コマンドがありません。設定の「Dahlia AI」でパスを確認してください。";
+"Pi is not installed. Install it, or set its path, in Settings > Agents." = "Pi がインストールされていません。設定の「Dahlia AI」でインストールするか、パスを指定してください。";
 "settings.agents.piNotInstalled" = "Pi がインストールされていません";
 "settings.agents.installPi" = "Pi をインストール";
 "settings.agents.updatePi" = "アップデートを確認";
@@ -1828,3 +1828,6 @@
 
 "MCP servers" = "MCP サーバー";
 "No MCP servers registered." = "MCP サーバーが登録されていません。";
+
+"settings.dataProtection" = "データ保護";
+"settings.dataProtection.intro" = "このMacでのデータの保持と復旧を設定します。バックアップはローカルアカウントのワークスペースが対象です。";

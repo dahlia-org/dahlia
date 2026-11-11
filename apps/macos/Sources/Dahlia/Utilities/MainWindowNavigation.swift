@@ -208,11 +208,23 @@ final class MainWindowNavigation {
         openMainWindowWithoutActivation()
     }
 
-    func openSettings(category: SettingsCategory? = nil) {
+    func openSettings(category: SettingsCategory? = nil, agentTab: AgentSettingsView.Tab? = nil) {
         if let category {
-            if category == .eventDisplay { appearanceTab = .eventDisplay }
+            switch category {
+            case .eventDisplay:
+                appearanceTab = .eventDisplay
+            case .agents, .modelProvider, .macInference, .dahliaAccounts:
+                agentSettingsTab = .general
+            case .aiSummary, .accountPreferences, .accountsAndWorkspaces:
+                agentSettingsTab = .summary
+            case .mcp:
+                agentSettingsTab = .mcps
+            default:
+                break
+            }
             settingsCategory = SettingsNavigation.visibleSelection(category)
         }
+        if let agentTab { agentSettingsTab = agentTab }
         isShowingSettings = true
         openMainWindow()
     }
@@ -227,8 +239,7 @@ final class MainWindowNavigation {
     }
 
     func openAgentSettings(tab: AgentSettingsView.Tab) {
-        agentSettingsTab = tab
-        openSettings(category: .agents)
+        openSettings(category: .agents, agentTab: tab)
     }
 
     func presentSettingsModal(_ modal: some View) {
