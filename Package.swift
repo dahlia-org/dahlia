@@ -96,7 +96,7 @@ let package = Package(
                 "Database/AGENTS.md",
                 "Database/CLAUDE.md",
             ],
-            resources: [.process("Resources"), .copy("CodexSkills"), .copy("PiExtension")],
+            resources: [.process("Resources"), .copy("AgentSkills"), .copy("PiExtension")],
             linkerSettings: [
                 .linkedLibrary("c++"),
                 .linkedFramework("CoreFoundation"),

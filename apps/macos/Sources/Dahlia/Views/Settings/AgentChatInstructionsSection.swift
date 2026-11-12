@@ -4,14 +4,17 @@ struct AgentChatInstructionsSection: View {
     @AppStorage private var instructions: String
     @State private var isInfoPresented = false
 
-    init(account: CodexRuntimeProvider) {
-        _instructions = AppStorage(wrappedValue: "", AgentChatInstructions.defaultsKey(for: account))
+    init(account: CodexRuntimeProvider, defaults: UserDefaults = .standard) {
+        _instructions = AppStorage(wrappedValue: "", AgentChatInstructions.defaultsKey(for: account), store: defaults)
     }
 
     var body: some View {
         Section {
-            TextField(L10n.chatCustomInstructions, text: $instructions, axis: .vertical)
-                .lineLimit(5...)
+            TextEditor(text: $instructions)
+                .multilineTextAlignment(.leading)
+                .scrollContentBackground(.hidden)
+                .frame(minHeight: 100)
+                .accessibilityLabel(L10n.chatCustomInstructions)
         } header: {
             HStack {
                 Text(L10n.chatCustomInstructions).font(.dahliaSectionHeader)

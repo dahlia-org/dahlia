@@ -390,16 +390,19 @@ def run(pi, mode, script, arguments, environment, approval="accept", approval_mo
 
 
 def package_resources(pi):
-    """Real Pi resolves manifests and filters; only installed package skills/prompts reach chat."""
+    """Real Pi resolves manifests and filters; account skills and installed package skills/prompts reach chat and the skills tab."""
     with tempfile.TemporaryDirectory() as temporary:
         root = Path(temporary).resolve()
         agent, home = root / "agent", root / "home"
         package = agent / "git/example.com/tools"
-        for directory in (package / "skills/packaged", package / "prompts", home / ".agents/skills/unrelated"):
+        for directory in (agent / "skills/learned", package / "skills/packaged", package / "prompts", home / ".agents/skills/unrelated"):
             directory.mkdir(parents=True)
+        (agent / "skills/learned/SKILL.md").write_text("---\nname: learned\ndescription: Account skill\n---\nLearned instructions")
         (package / "skills/packaged/SKILL.md").write_text("---\nname: packaged\ndescription: Package skill\n---\nPackage instructions")
         (package / "prompts/package-prompt.md").write_text("Package prompt")
         (home / ".agents/skills/unrelated/SKILL.md").write_text("---\nname: unrelated\ndescription: Unrelated skill\n---\nPrivate instructions")
+        (agent / "skills/linked").symlink_to(home / ".agents/skills/unrelated", target_is_directory=True)
+        (agent / "skills/linked.md").symlink_to(home / ".agents/skills/unrelated/SKILL.md")
         marker = root / "extension-executed"
         (package / "extension.ts").write_text(
             'import { writeFileSync } from "node:fs"; export default () => writeFileSync('
@@ -423,15 +426,16 @@ def package_resources(pi):
             assert response.get("success"), response
             return {command["name"] for command in response["data"]["commands"]}
 
-        names = commands("chat")
-        assert "skill:packaged" in names and "package-prompt" in names, names
-        assert "skill:unrelated" not in names and not marker.exists(), names
+        for mode in ("chat", "skills"):
+            names = commands(mode)
+            assert {"skill:learned", "skill:packaged", "package-prompt"} <= names, names
+            assert "skill:unrelated" not in names and not marker.exists(), names
         for mode in ("control", "summary"):
             names = commands(mode)
-            assert "skill:packaged" not in names and "package-prompt" not in names and not marker.exists(), names
+            assert not {"skill:learned", "skill:packaged", "package-prompt"} & names and not marker.exists(), names
         (agent / "settings.json").write_text(json.dumps({"packages": [{"source": str(package), "skills": [], "prompts": []}]}))
         names = commands("chat")
-        assert "skill:packaged" not in names and "package-prompt" not in names, names
+        assert "skill:learned" in names and "skill:packaged" not in names and "package-prompt" not in names, names
         subprocess.run([pi, "remove", str(package), "--no-approve"], cwd=root, env=env,
                        capture_output=True, check=True, timeout=20)
         assert not json.loads((agent / "settings.json").read_text()).get("packages")

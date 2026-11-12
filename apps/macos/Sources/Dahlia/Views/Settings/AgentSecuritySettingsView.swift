@@ -21,6 +21,27 @@ struct AgentSecuritySettingsView: View {
                 Text(L10n.agentSecurity).font(.dahliaSectionHeader)
             }
             Section {
+                ForEach(model.defaultAccess.resources) { grant in
+                    defaultAccessRow(grant)
+                }
+                DisclosureGroup(L10n.agentFileAccessDahliaData) {
+                    Text(L10n.agentFileAccessDahliaDataHelp)
+                        .foregroundStyle(.secondary)
+                    ForEach(model.defaultAccess.data) { grant in
+                        defaultAccessRow(grant)
+                    }
+                }
+                DisclosureGroup(L10n.agentFileAccessSystemFolders) {
+                    ForEach(model.defaultAccess.system) { grant in
+                        defaultAccessRow(grant)
+                    }
+                }
+            } header: {
+                Text(L10n.agentFileAccessBuiltIn).font(.dahliaSectionHeader)
+            } footer: {
+                Text(L10n.agentFileAccessBuiltInHelp)
+            }
+            Section {
                 ForEach(model.settings.grants) { grant in
                     LabeledContent {
                         HStack {
@@ -61,6 +82,22 @@ struct AgentSecuritySettingsView: View {
         }
         .formStyle(.grouped)
         .font(.dahliaBody)
+        .task(id: workingDirectory) { await model.refreshDefaults(workingDirectory: workingDirectory) }
+    }
+
+    private func defaultAccessRow(_ grant: PiFileAccessSettings.Grant) -> some View {
+        LabeledContent {
+            Text(grant.access == .readWrite ? L10n.agentFileAccessReadWrite : L10n.agentFileAccessReadOnly)
+                .foregroundStyle(.secondary)
+        } label: {
+            Label {
+                Text((grant.path as NSString).abbreviatingWithTildeInPath)
+                    .textSelection(.enabled)
+                    .help(grant.path)
+            } icon: {
+                Image(systemName: grant.isDirectory ? "folder" : "doc")
+            }
+        }
     }
 
     private func accessBinding(for grant: PiFileAccessSettings.Grant) -> Binding<PiFileAccessSettings.Access> {

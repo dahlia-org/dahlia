@@ -13,15 +13,9 @@ struct AgentMCPSettingsView: View {
     var body: some View {
         ScrollView {
             LazyVStack(alignment: .leading, spacing: 24) {
-                VStack(alignment: .leading, spacing: 8) {
-                    TextField(L10n.search, text: $query, prompt: Text(L10n.mcpSearchPrompt))
-                        .textFieldStyle(.roundedBorder)
-                        .accessibilityLabel(L10n.search)
-                    Text(L10n.mcpSettingsDescription)
-                        .font(.dahliaSecondary)
-                        .foregroundStyle(.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
+                TextField(L10n.mcpSearchPrompt, text: $query, prompt: Text(L10n.mcpSearchPrompt))
+                    .textFieldStyle(.roundedBorder)
+                    .accessibilityLabel(L10n.mcpSearchPrompt)
                 ForEach(model.selectableProviders) { provider in
                     DisclosureGroup(isExpanded: expansion(of: provider)) {
                         services(of: provider)

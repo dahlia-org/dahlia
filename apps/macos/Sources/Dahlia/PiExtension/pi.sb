@@ -43,17 +43,19 @@
 (allow file-read* (subpath (param "PI_TMP")))
 ; Account-specific grants go before the protected runtime and account-data rules below.
 ; ADDITIONAL_FILE_ACCESS
-; What runs outside the sandbox is never written, even when the working folder contains it: Pi's own temporary
-; folder, the installed Pi (with its node, for an npm package), and Dahlia's extension and skills.
-(deny file-write* (subpath (param "PI_TMP")) (subpath (param "PI")) (subpath (param "RESOURCES")))
 (allow file-write-data (literal "/dev/null") (literal "/dev/stdout") (literal "/dev/stderr") (regex #"^/dev/fd/"))
 
 ; Dahlia's own data (every account's sign-ins and history, recordings, backups) is out of reach whatever folder the
-; user chose to work in, except the skills, screenshots, and database, which are read.
+; user chose to work in, except the account's writable skills and the read-only resources below.
 (deny file-read* file-write*
   (subpath (param "APP_SUPPORT"))
   (subpath (param "RELEASED_APP_SUPPORT"))
   (subpath (param "AGENT")))
+; Only this account's own skills are writable; credentials, settings, and installed code remain protected.
+(allow file-read* file-write* (subpath (string-append (param "AGENT") "/skills")))
+; Pi loads skill Markdown outside Seatbelt. Do not let chat redirect that loader to a protected file.
+(deny file-write-create
+  (require-all (vnode-type SYMLINK) (subpath (string-append (param "AGENT") "/skills"))))
 (allow file-read*
   (subpath (string-append (param "AGENT") "/npm"))
   (subpath (string-append (param "AGENT") "/git"))
@@ -62,3 +64,7 @@
   (literal (param "DATABASE"))
   (literal (string-append (param "DATABASE") "-wal"))
   (literal (string-append (param "DATABASE") "-shm")))
+
+; What runs outside Seatbelt is never written, even inside the working folder or account skills.
+(deny file-write* (subpath (param "PI_TMP")) (subpath (param "PI")) (subpath (param "RESOURCES")))
+; SHELL_STARTUP_PROTECTION

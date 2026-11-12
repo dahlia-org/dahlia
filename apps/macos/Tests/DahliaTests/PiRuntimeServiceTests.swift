@@ -7,6 +7,34 @@ import os
     import Testing
 
     struct PiRuntimeServiceTests {
+        @Test
+        func skillListingUsesPisRecognizedResourcesAndClosesItsProcess() async throws {
+            let transport = TestPiTransport { command in
+                guard let id = command["id"] else { return [] }
+                return [TestPiTransport.response(id: id, data: .object(["commands": .array([
+                    .object([
+                        "name": .string("skill:learned"),
+                        "description": .string("Learned skill"),
+                        "source": .string("skill"),
+                        "sourceInfo": .object(["path": .string("/account/skills/learned/SKILL.md")]),
+                    ]),
+                    .object(["name": .string("prompt"), "source": .string("prompt")]),
+                    .object(["name": .string("login"), "source": .string("extension")]),
+                ])]))]
+            }
+            let pi = TestPiRuntime { _ in transport }
+            defer { try? FileManager.default.removeItem(at: pi.rootURL) }
+            let skills = try await pi.service.skills(for: .local)
+            #expect(skills.map(\.name) == ["skill:learned"])
+            #expect(skills.first?.sourceInfo?.path == "/account/skills/learned/SKILL.md")
+            let launch = try #require(pi.launches.all.first)
+            #expect(launch.mode == .skills)
+            #expect(launch.arguments.contains("--no-tools"))
+            #expect(launch.arguments.contains("--no-session"))
+            #expect(launch.arguments.contains("--skill"))
+            #expect(await transport.isClosed)
+        }
+
         private static let schema = Data(#"{"type":"object","properties":{"a":{"type":"string"}},"required":["a"]}"#.utf8)
 
         private static func runtime(

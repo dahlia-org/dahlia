@@ -21,6 +21,7 @@ actor PiRuntimeService {
             case control
             case summary
             case chat
+            case skills
         }
 
         var mode: Mode
@@ -348,6 +349,21 @@ actor PiRuntimeService {
     }
 
     // MARK: Subscription sign-in (Local Account only)
+
+    /// Ask Pi's resource loader, so validation, package filters, and name collisions match a new chat.
+    func skills(for provider: CodexRuntimeProvider) async throws -> [CodexChatSlashCommand] {
+        let cwd = try agentLocator.agentURL(for: provider)
+        let arguments = ["--no-session", "--no-tools"] + PiBundle.presetSkillURLs().flatMap { ["--skill", $0.path] }
+        let connection = try await connect(.init(mode: .skills, cwd: cwd, arguments: arguments), provider: provider)
+        let result = await Result { try await connection.request("get_commands", timeout: Self.controlTimeout) }
+        await close(connection)
+        guard let commands = try result.get().objectValue?["commands"] else {
+            throw CodexAppServerError.invalidProtocolResponse
+        }
+        return try JSONDecoder().decode([CodexChatSlashCommand].self, from: JSONEncoder().encode(commands))
+            .filter { $0.source == "skill" }
+            .sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
+    }
 
     /// Signed in when Pi lists a model of that subscription; shares the cached or in-flight listing.
     func accountStatus(for subscription: PiSubscription) async throws -> AccountStatus {
@@ -813,6 +829,7 @@ actor PiRuntimeService {
         environment["DAHLIA_PI_MODE"] = options.mode.rawValue
         environment["DAHLIA_PI_BRIDGED_PROVIDERS"] = provider.piBridgedProviderIDs.joined(separator: ",")
         environment.merge(options.environment) { $1 }
+        try PiSandbox.validateSkillsSearchPath(agentURL: agentURL, searchPath: environment["PATH"] ?? "", cwd: options.cwd)
         if options.mode == .chat {
             let searchPath = environment["PATH"] ?? ""
             guard !PiWorkingDirectory.holdsCommands(options.cwd, searchPath: searchPath, cwd: options.cwd),

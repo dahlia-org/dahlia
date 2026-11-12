@@ -9,6 +9,16 @@ import Foundation
     @MainActor
     struct PiInfrastructureTests {
         @Test
+        func presetSkillsAreBundledInAgentSkills() throws {
+            let urls = PiBundle.presetSkillURLs()
+            #expect(urls.map(\.lastPathComponent).sorted() == ["meeting-reviewer", "projects-optimizer"])
+            for url in urls {
+                #expect(url.deletingLastPathComponent().lastPathComponent == "AgentSkills")
+                #expect(FileManager.default.fileExists(atPath: url.appending(path: "SKILL.md").path))
+            }
+        }
+
+        @Test
         func piSelectionUsesManagedInstallationOrAccountPATH() async throws {
             try await Task.detached {
                 let suite = "PiInfrastructureTests.\(UUID())"

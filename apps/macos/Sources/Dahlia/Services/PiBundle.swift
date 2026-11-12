@@ -49,7 +49,7 @@ enum PiBundle {
 
     nonisolated static func presetSkillURLs() -> [URL] {
         ["projects-optimizer", "meeting-reviewer"].compactMap {
-            Bundle.appModule.url(forResource: $0, withExtension: nil, subdirectory: "CodexSkills")
+            Bundle.appModule.url(forResource: $0, withExtension: nil, subdirectory: "AgentSkills")
         }
     }
 }
@@ -91,6 +91,7 @@ struct PiAgentDirectoryLocator: Sendable {
     func agentURL(for provider: CodexRuntimeProvider) throws -> URL {
         let url = accountURL(for: provider).appending(path: "pi", directoryHint: .isDirectory)
         try Self.createPrivateDirectory(url)
+        try Self.createPrivateDirectory(url.appending(path: "skills", directoryHint: .isDirectory))
         return url
     }
 

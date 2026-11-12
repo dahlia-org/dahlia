@@ -1794,8 +1794,7 @@
 "settings.agents.providersEmpty" = "プロバイダーはまだありません。";
 "settings.agents.signInAgain" = "サインインし直す";
 "settings.agents.providerAdded %@" = "%@（追加済み）";
-"settings.agents.mcpSettingsDescription" = "オンにした MCP のツールを、次に開くチャットから使えます。GitHub や Slack などサービス側のサインインが必要なときは、各カードの「サインイン」を押します。";
-"settings.agents.mcpSearchPrompt" = "MCP を検索";
+"settings.agents.mcpSearchPrompt" = "コネクタを検索";
 "settings.agents.mcpNoProviders" = "「モデル」の「プロバイダー」で Databricks ワークスペースを追加すると、その Unity AI Gateway の MCP をここでオンにできます。";
 "settings.agents.mcpProviderSignInRequired" = "サインインが必要です。「モデル」の「プロバイダー」でサインインし直してください。";
 "settings.agents.mcpWorkspaceIsAccount" = "このワークスペースはアカウント自身のもので、MCP にもそのまま使えます。";
@@ -1803,7 +1802,7 @@
 "settings.agents.mcpServiceWithServerName %@ %@" = "%1$@ (%2$@)";
 "settings.agents.unityGatewayHost %@" = "Unity Gateway (%@)";
 "settings.agents.workspaceURL" = "ワークスペース URL";
-"settings.agents.mcps" = "コネクター";
+"settings.agents.mcps" = "コネクタ";
 "settings.agents.databricksUnityGateway" = "Databricks (Unity Gateway)";
 "settings.agents.mcpLoadingServices" = "Unity AI Gateway の MCP を読み込んでいます…";
 "settings.agents.mcpNoServices" = "このワークスペースの Unity AI Gateway（system.ai）に、使える MCP はありません。";
@@ -1851,13 +1850,13 @@
 "File operations run in a sandbox and cannot access files outside the allowed scope." = "ファイル操作はサンドボックス内に制限され、許可範囲外のファイルにはアクセスできません。";
 "Approval method" = "MCP の操作をどのように承認しますか？";
 
-"Auto review" = "Auto review";
+"Auto review" = "AI による代理承認 (pi-auto-review)";
 "Reviewer model" = "審査モデル";
 "Same as chat" = "チャットと同じモデル";
 "Used when AI reviews MCP actions. Reviews send chat history and the planned action to this model and incur additional usage. Changes apply to the next review." = "MCP の操作を AI が確認するときに使います。審査にはチャット履歴と予定操作を送信し、追加のモデル利用が発生します。変更は次の審査から適用されます。";
 
-"No connectors registered." = "コネクターが登録されていません。";
-"Connector settings" = "コネクターの設定";
+"No connectors registered." = "コネクタが登録されていません。";
+"Connector settings" = "コネクタの設定";
 
 "chat.toolRunning %@" = "%@ を実行中…";
 "chat.toolSucceeded %@" = "%@ が完了しました。応答を待っています…";
@@ -1865,19 +1864,19 @@
 "chat.toolInaccessible %@" = "%@ でアクセスできませんでした。応答を待っています…";
 
 // Pi packages
-"settings.agents.packages" = "パッケージ";
-"settings.agents.packageCatalog" = "Pi のパッケージを探す";
-"settings.agents.packageSource" = "パッケージ名または Git URL";
+"settings.agents.packages" = "プラグイン";
+"settings.agents.packageCatalog" = "Pi のプラグインを探す";
+"settings.agents.packageSource" = "プラグイン名または Git URL";
 "settings.agents.packageInstall" = "インストール";
 "settings.agents.packageRemove" = "アンインストール";
-"settings.agents.packageHelp" = "このアカウントの Pi に追加します。カタログの npm: 名、または https://github.com/mats16/ai-desktools などの Git URL を入力してください。信頼できるパッケージだけをインストールしてください。 チャットでスキルとプロンプトを利用できます。拡張コードとテーマは読み込みません。";
+"settings.agents.packageHelp" = "このアカウントの Pi に追加します。カタログの npm: 名、または https://github.com/mats16/ai-desktools などの Git URL を入力してください。信頼できるプラグインだけをインストールしてください。 チャットでスキルとプロンプトを利用できます。拡張コードとテーマは読み込みません。";
 "settings.agents.packageChanged" = "変更は次に開始するチャットから適用されます。";
-"settings.agents.packagesEmpty" = "インストール済みのパッケージはありません。";
+"settings.agents.packagesEmpty" = "インストール済みのプラグインはありません。";
 "settings.agents.packagesInstalled" = "インストール済み";
 "settings.agents.packageInvalidSource" = "npm: で始まるパッケージ名、または Git URL を入力してください。";
-"settings.agents.packageBusy" = "このアカウントのパッケージを変更中です。完了後にもう一度お試しください。";
-"settings.agents.packageFailed" = "パッケージの変更に失敗しました。";
-"settings.agents.packageNoVersions" = "設定中の npm レジストリには、このパッケージの利用可能なバージョンがありません。パッケージ名、公開状況、レジストリの制限を確認してください。";
+"settings.agents.packageBusy" = "このアカウントのプラグインを変更中です。完了後にもう一度お試しください。";
+"settings.agents.packageFailed" = "プラグインの変更に失敗しました。";
+"settings.agents.packageNoVersions" = "設定中の npm レジストリには、このプラグインの利用可能なバージョンがありません。npm パッケージ名、公開状況、レジストリの制限を確認してください。";
 "settings.agents.packageErrorDetails" = "エラーの詳細";
 
 // AI chat slash completion
@@ -1898,7 +1897,7 @@
 "settings.agents.fileAccess.readWrite" = "読み書き";
 "settings.agents.fileAccess.add" = "ファイル・フォルダを追加…";
 "settings.agents.fileAccess.remove" = "アクセス許可を削除";
-"settings.agents.fileAccess.defaults" = "この Mac の現在のアカウントのチャットに適用します。作業フォルダは読み書き可能です。Dahlia の画像・データベース・スキルは読み取り専用です。";
+"settings.agents.fileAccess.defaults" = "この Mac の現在のアカウントのチャットに適用します。作業フォルダ・チャットの一時フォルダ・このアカウントのスキル保存先は読み書き可能です。既定の許可を下に表示します。";
 "settings.agents.fileAccess.help" = "追加・変更・削除は次のメッセージから反映されます。実行中の応答とコマンドは以前の許可で続行するため、すぐに停止する場合は応答をキャンセルしてください。フォルダの許可は配下すべてに適用します。Dahlia の認証情報・Pi 自体・シェルの起動ファイルへの制限は維持されます。読み取り可能な内容はネットワーク経由で送信できます。~ は一時ホームを指すため、追加したファイルは絶対パスで指定してください。";
 "settings.agents.shellStartupPathRequired" = "環境変数の BASH_ENV・ENV にはファイルのパスを直接指定してください。シェル式や ~ユーザー名 のパスは保護できません。";
 "settings.agents.fileAccess.changed" = "更新中にファイルアクセスの設定が変更されました。もう一度操作してください。";
@@ -1908,3 +1907,17 @@
 "settings.agents.customInstructions.details" = "カスタム指示について";
 "settings.agents.customInstructions.info" = "入力内容は、AI チャットの追加システムプロンプトとして、選択中の AI モデルへ送信されます。Dahlia の標準指示と結合して使われます。";
 "settings.agents.customInstructions.help" = "AI チャットへの指示を設定します。この Mac 内にアカウント別で保存され、新しいチャットや閉じて開き直したチャットに適用されます。空にすると解除できます。要約生成と画像解析には使いません。";
+
+"settings.agents.skills" = "スキル";
+"settings.agents.skills.empty" = "認識しているスキルはありません。";
+"settings.agents.skills.pathConflict" = "スキル保存先とその配下は PATH に指定できません。「Dahlia AI」>「一般」の環境変数から外してください。";
+"settings.agents.skills.help" = "新しいチャットプロセスが認識するスキルです。標準スキル、このアカウントが保存したスキル、プラグインのスキルを表示します。追加・変更後は更新してください。実行中のチャットには次のプロセス起動時に反映されます。";
+"settings.agents.fileAccess.builtIn" = "既定で許可されているフォルダ・ファイル";
+"settings.agents.fileAccess.builtInHelp" = "フォルダは配下を含みます。既定の許可は変更できません。システムの許可よりも、Pi の実行コード・Dahlia の保護データ・シェル起動ファイルの制限を優先します。/opt/homebrew と /usr/local の var・etc は読み取り不可です。表示には個別のデバイスファイルを含みません。";
+"settings.agents.fileAccess.dahliaData" = "Dahlia データ";
+"settings.agents.fileAccess.dahliaDataHelp" = "下記の画像フォルダと DB 関連ファイルだけを読み取れます。親フォルダには認証情報や設定もあるため、フォルダ全体は許可しません。";
+"settings.agents.fileAccess.systemFolders" = "システムフォルダ（読み取りのみ）";
+"settings.agents.skills.openFolder" = "フォルダを開く";
+"settings.agents.skills.details" = "詳細";
+"settings.agents.skills.openFolderFailed" = "スキルのフォルダを開けませんでした。再読み込みして保存先を確認してください。";
+"settings.agents.skills.contentUnavailable" = "このスキルの保存先を取得できないため、内容を表示できません。";

@@ -1,3 +1,4 @@
+import DahliaMeetingAccess
 import DahliaRuntimeSupport
 import Foundation
 @testable import Dahlia
@@ -6,6 +7,85 @@ import Foundation
     import Testing
 
     struct PiSandboxTests {
+        @Test
+        func defaultAccessGroupsKeepDahliaDataLimitedToImagesAndDatabaseFiles() throws {
+            let work = URL(fileURLWithPath: "/example/work")
+            let agent = URL(fileURLWithPath: "/example/accounts/local/pi")
+            let access = PiSandbox.defaultFileAccess(cwd: work, agentURL: agent)
+            #expect(access.resources.contains { $0.path == work.path && $0.access == .readWrite })
+            #expect(access.resources.contains { $0.path == agent.appending(path: "skills").path && $0.access == .readWrite })
+            let directories = access.data.filter(\.isDirectory)
+            #expect(directories.count == 1)
+            #expect(directories.first?.path == PiSandbox.realPath(ScreenshotFileStore.defaultDirectory))
+            #expect(access.data.filter { !$0.isDirectory }.map { URL(fileURLWithPath: $0.path).lastPathComponent }.sorted() == [
+                "dahlia.sqlite", "dahlia.sqlite-shm", "dahlia.sqlite-wal",
+            ])
+            #expect(access.data.allSatisfy { $0.access == .readOnly })
+            #expect(access.system.contains { $0.path == "/System" })
+            #expect(access.system.allSatisfy { $0.isDirectory && $0.access == .readOnly })
+        }
+
+        @Test(arguments: ["skills", "skills/bin", "skills/missing/bin"])
+        func sandboxConstructionRejectsSkillsCommandSearchPaths(_ entry: String) {
+            let root = FileManager.default.temporaryDirectory.appending(path: "PiSandboxSkillsPath-\(UUID())")
+            let agent = root.appending(path: "agent")
+            #expect(throws: CodexAppServerError.launchFailed(L10n.agentSkillsPathConflict)) {
+                try PiSandbox.command(
+                    cwd: agent, agentURL: agent, piExecutableURL: URL(fileURLWithPath: "/usr/bin/true"), searchPath: entry
+                )
+            }
+        }
+
+        @Test
+        func accountSkillsAreWritableWithoutExposingCredentialsOrOtherAccounts() throws {
+            let root = FileManager.default.temporaryDirectory.appending(path: "PiSandboxSkills-\(UUID())")
+            defer { try? FileManager.default.removeItem(at: root) }
+            let support = root.appending(path: "support")
+            let locator = PiAgentDirectoryLocator(applicationSupportURL: support)
+            let agent = try locator.agentURL(for: .local)
+            let other = try locator.agentURL(for: .dahlia(connectionID: UUID()))
+            let work = root.appending(path: "work")
+            try FileManager.default.createDirectory(at: work, withIntermediateDirectories: true)
+            let skills = agent.appending(path: "skills")
+            #expect(try run(
+                "mkdir '\(skills.path)/learned' && echo instructions > '\(skills.path)/learned/SKILL.md'",
+                cwd: work,
+                agent: agent,
+                support: support
+            ) == 0)
+            #expect(try run("cat '\(skills.path)/learned/SKILL.md'", cwd: work, agent: agent, support: support) == 0)
+            let startup = skills.appending(path: "startup.sh")
+            try Data("true".utf8).write(to: startup)
+            #expect(try run("echo changed > '\(startup.path)'", cwd: work, agent: agent, support: support, environment: ["BASH_ENV": startup.path]) !=
+                0)
+            let executable = skills.appending(path: "runtime/pi")
+            try FileManager.default.createDirectory(at: executable.deletingLastPathComponent(), withIntermediateDirectories: true)
+            try Data("runtime".utf8).write(to: executable)
+            #expect(try run("echo changed > '\(executable.path)'", cwd: work, agent: agent, support: support, pi: executable) != 0)
+            for name in ["auth.json", "settings.json", "models.json", "mcp.json"] {
+                let file = agent.appending(path: name)
+                try Data("secret".utf8).write(to: file)
+                #expect(try run("cat '\(file.path)'", cwd: work, agent: agent, support: support) != 0)
+                #expect(try run("echo changed > '\(file.path)'", cwd: work, agent: agent, support: support) != 0)
+            }
+            try FileManager.default.createSymbolicLink(
+                at: skills.appending(path: "credential-link"),
+                withDestinationURL: agent.appending(path: "auth.json")
+            )
+            #expect(try run("cat '\(skills.path)/credential-link'", cwd: work, agent: agent, support: support) != 0)
+            #expect(try run("echo changed > '\(skills.path)/credential-link'", cwd: work, agent: agent, support: support) != 0)
+            #expect(try run("ln -s '\(agent.path)/auth.json' '\(skills.path)/new-link'", cwd: work, agent: agent, support: support) != 0)
+            #expect(try run(
+                "ln -s '\(agent.path)/auth.json' moved-link && mv moved-link '\(skills.path)/moved-link'",
+                cwd: work,
+                agent: agent,
+                support: support
+            ) != 0)
+            #expect(try run("ln '\(agent.path)/auth.json' '\(skills.path)/hard-link'", cwd: work, agent: agent, support: support) != 0)
+            #expect(try run("echo changed > '\(other.path)/skills/SKILL.md'", cwd: work, agent: agent, support: support) != 0)
+            #expect(try run("rm -r '\(skills.path)/learned'", cwd: work, agent: agent, support: support) == 0)
+        }
+
         @Test
         func installedPackagesAreReadOnlyAndDoNotExposeAccountCredentials() throws {
             let root = FileManager.default.temporaryDirectory.appending(path: "PiSandboxTests-\(UUID())")

@@ -38,7 +38,7 @@ actor PiPackageService {
         defer { busyAccounts.remove(account) }
         let directory = try locator.agentURL(for: account)
         let executable = try PiBundle.executableURL(for: account)
-        let environment = Self.environment(account: account, directory: directory, executable: executable)
+        let environment = try Self.environment(account: account, directory: directory, executable: executable, launch: .load(for: account))
         try await Self.run(
             executable: executable,
             arguments: [installing ? "install" : "remove", source, "--no-approve"],
@@ -47,11 +47,13 @@ actor PiPackageService {
         )
     }
 
-    nonisolated static func environment(account: CodexRuntimeProvider, directory: URL, executable: URL) -> [String: String] {
+    nonisolated static func environment(
+        account: CodexRuntimeProvider, directory: URL, executable: URL, launch: PiLaunchSettings
+    ) throws -> [String: String] {
         var environment = ProcessInfo.processInfo.environment.filter { key, _ in
             !key.hasSuffix("_API_KEY") && !key.hasSuffix("_AUTH_TOKEN") && !key.hasSuffix("_OAUTH_TOKEN") && !key.hasPrefix("PI_")
         }
-        environment.merge(PiLaunchSettings.load(for: account).environment {
+        environment.merge(launch.environment {
             KeychainService.load(key: PiLaunchSettings.secretKey(for: account, id: $0))
         }) { $1 }
         environment["PATH"] = CommandLineToolLocator.searchPath(for: executable, environment: environment)
@@ -61,6 +63,7 @@ actor PiPackageService {
         environment["NO_COLOR"] = "1"
         environment["GIT_TERMINAL_PROMPT"] = "0"
         environment.removeValue(forKey: "PI_OFFLINE")
+        try PiSandbox.validateSkillsSearchPath(agentURL: directory, searchPath: environment["PATH"] ?? "", cwd: directory)
         return environment
     }
 

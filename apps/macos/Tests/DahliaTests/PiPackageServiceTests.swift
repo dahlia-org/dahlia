@@ -66,17 +66,30 @@ import Foundation
         }
 
         @Test
-        func packageCommandUsesTheChosenAccountAndCanDownload() {
+        func packageCommandUsesTheChosenAccountAndCanDownload() throws {
             let directory = URL(fileURLWithPath: "/tmp/package-account")
-            let environment = PiPackageService.environment(
+            let environment = try PiPackageService.environment(
                 account: .dahlia(connectionID: UUID()), directory: directory,
-                executable: URL(fileURLWithPath: "/opt/homebrew/bin/pi")
+                executable: URL(fileURLWithPath: "/opt/homebrew/bin/pi"), launch: .init()
             )
             #expect(environment["PI_CODING_AGENT_DIR"] == directory.path)
             #expect(environment["PI_OFFLINE"] == nil)
             #expect(environment["PI_TELEMETRY"] == "0")
             #expect(environment["GIT_TERMINAL_PROMPT"] == "0")
             #expect(environment["PATH"]?.contains("/opt/homebrew/bin") == true)
+        }
+
+        @Test(arguments: ["", "/bin"])
+        func packageCommandsRejectCommandSearchInsideWritableSkills(_ suffix: String) {
+            let directory = FileManager.default.temporaryDirectory.appending(path: "PiPackageSkillsPath-\(UUID())")
+            let path = directory.appending(path: "skills").path + suffix
+            let launch = PiLaunchSettings(variables: [.init(id: UUID(), name: "PATH", value: path + ":/usr/bin:/bin")])
+            #expect(throws: CodexAppServerError.launchFailed(L10n.agentSkillsPathConflict)) {
+                try PiPackageService.environment(
+                    account: .local, directory: directory,
+                    executable: URL(fileURLWithPath: "/usr/bin/true"), launch: launch
+                )
+            }
         }
 
         @Test

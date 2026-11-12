@@ -1794,8 +1794,7 @@
 "settings.agents.providersEmpty" = "No providers yet.";
 "settings.agents.signInAgain" = "Sign In Again";
 "settings.agents.providerAdded %@" = "%@ (added)";
-"settings.agents.mcpSettingsDescription" = "Chats opened from now on can use the tools of each MCP turned on. If a service such as GitHub or Slack needs its own sign-in, choose Sign In on its card.";
-"settings.agents.mcpSearchPrompt" = "Search MCPs";
+"settings.agents.mcpSearchPrompt" = "Search connectors";
 "settings.agents.mcpNoProviders" = "Add a Databricks workspace under Providers on the Models tab to turn on its Unity AI Gateway MCPs here.";
 "settings.agents.mcpProviderSignInRequired" = "Sign-in required. Sign in again under Providers on the Models tab.";
 "settings.agents.mcpWorkspaceIsAccount" = "This is the account's own workspace. Its MCPs are already available.";
@@ -1851,7 +1850,7 @@
 "File operations run in a sandbox and cannot access files outside the allowed scope." = "File operations run in a sandbox and cannot access files outside the allowed scope.";
 "Approval method" = "How should MCP actions be approved?";
 
-"Auto review" = "Auto review";
+"Auto review" = "AI approval (pi-auto-review)";
 "Reviewer model" = "Reviewer model";
 "Same as chat" = "Same as chat";
 "Used when AI reviews MCP actions. Reviews send chat history and the planned action to this model and incur additional usage. Changes apply to the next review." = "Used when AI reviews MCP actions. Reviews send chat history and the planned action to this model and incur additional usage. Changes apply to the next review.";
@@ -1865,19 +1864,19 @@
 "chat.toolInaccessible %@" = "%@ could not access the requested resource. Waiting for a response…";
 
 // Pi packages
-"settings.agents.packages" = "Packages";
-"settings.agents.packageCatalog" = "Browse Pi packages";
-"settings.agents.packageSource" = "Package name or Git URL";
+"settings.agents.packages" = "Plugins";
+"settings.agents.packageCatalog" = "Browse Pi plugins";
+"settings.agents.packageSource" = "Plugin name or Git URL";
 "settings.agents.packageInstall" = "Install";
 "settings.agents.packageRemove" = "Uninstall";
-"settings.agents.packageHelp" = "Install into this account’s Pi. Enter an npm: source from the catalog or a Git URL such as https://github.com/mats16/ai-desktools. Only install packages you trust. Chat can use skills and prompts. Extension code and themes are not loaded.";
+"settings.agents.packageHelp" = "Install into this account’s Pi. Enter an npm: source from the catalog or a Git URL such as https://github.com/mats16/ai-desktools. Only install plugins you trust. Chat can use skills and prompts. Extension code and themes are not loaded.";
 "settings.agents.packageChanged" = "Changes apply to the next chat you start.";
-"settings.agents.packagesEmpty" = "No packages installed.";
-"settings.agents.packagesInstalled" = "Installed packages";
+"settings.agents.packagesEmpty" = "No plugins installed.";
+"settings.agents.packagesInstalled" = "Installed plugins";
 "settings.agents.packageInvalidSource" = "Enter an npm: package source or a Git URL.";
-"settings.agents.packageBusy" = "Packages for this account are being changed. Try again when the operation finishes.";
-"settings.agents.packageFailed" = "Could not change the package.";
-"settings.agents.packageNoVersions" = "The configured npm registry has no available versions of this package. Check the package name, publication status, and registry restrictions.";
+"settings.agents.packageBusy" = "Plugins for this account are being changed. Try again when the operation finishes.";
+"settings.agents.packageFailed" = "Could not change the plugin.";
+"settings.agents.packageNoVersions" = "The configured npm registry has no available versions of this plugin. Check the package name, publication status, and registry restrictions.";
 "settings.agents.packageErrorDetails" = "Error details";
 
 // AI chat slash completion
@@ -1898,7 +1897,7 @@
 "settings.agents.fileAccess.readWrite" = "Read and write";
 "settings.agents.fileAccess.add" = "Add Files or Folders…";
 "settings.agents.fileAccess.remove" = "Remove access permission";
-"settings.agents.fileAccess.defaults" = "Applies to chat for the current account on this Mac. The working folder is readable and writable. Dahlia’s screenshots, database, and skills are read only.";
+"settings.agents.fileAccess.defaults" = "Applies to chat for the current account on this Mac. The working folder, chat scratch folder, and this account’s skills folder are readable and writable. Default permissions are listed below.";
 "settings.agents.fileAccess.help" = "Additions, changes, and removals apply from the next message. Running responses and commands retain their previous permissions; cancel the response to stop them now. Folder permissions include all descendants. Dahlia credentials, Pi itself, and shell startup files remain protected. Readable content can be sent over the network. Use absolute paths for added files because ~ refers to a temporary home.";
 "settings.agents.shellStartupPathRequired" = "Set BASH_ENV and ENV to literal file paths in Environment Variables. Shell expressions and ~user paths cannot be protected.";
 "settings.agents.fileAccess.changed" = "File access changed during this update. Please try again.";
@@ -1908,3 +1907,17 @@
 "settings.agents.customInstructions.details" = "About custom instructions";
 "settings.agents.customInstructions.info" = "Your input is sent to the selected AI model as an additional system prompt for AI chat. It is combined with Dahlia’s standard instructions.";
 "settings.agents.customInstructions.help" = "Instructions for AI chat, saved per account on this Mac. Applies to new chats and chats you close and reopen. Clear to disable. Not used for summary generation or image analysis.";
+
+"settings.agents.skills" = "Skills";
+"settings.agents.skills.empty" = "No skills recognized.";
+"settings.agents.skills.pathConflict" = "The skills folder and its descendants cannot be on PATH. Remove them from Environment Variables under Dahlia AI > General.";
+"settings.agents.skills.help" = "Skills recognized by a new chat process, including preset, account-created, and plugin skills. Refresh after changes. Running chats pick up changes when their process restarts.";
+"settings.agents.fileAccess.builtIn" = "Default folder and file access";
+"settings.agents.fileAccess.builtInHelp" = "Folder access includes descendants. Default permissions cannot be changed. Protected Pi runtime code, Dahlia data, and shell startup restrictions take precedence over system permissions. The var and etc directories under /opt/homebrew and /usr/local are unreadable. Individual device files are omitted.";
+"settings.agents.fileAccess.dahliaData" = "Dahlia data";
+"settings.agents.fileAccess.dahliaDataHelp" = "Only the image folder and database files below are readable. Their parent folder also contains credentials and settings, so access to the entire folder is not granted.";
+"settings.agents.fileAccess.systemFolders" = "System folders (read only)";
+"settings.agents.skills.openFolder" = "Open folder";
+"settings.agents.skills.details" = "Details";
+"settings.agents.skills.openFolderFailed" = "Could not open the skill folder. Reload to check its location.";
+"settings.agents.skills.contentUnavailable" = "The skill's location is unavailable, so its contents cannot be displayed.";

@@ -24,7 +24,9 @@ actor PiChatService: CodexChatServicing {
     Call get_meeting_transcript only when the original wording or detail is needed.
     Use Dahlia's preset skills when the user's request matches their descriptions; read a selected skill's SKILL.md with the read tool.
     The read, ls, write, edit, and bash tools run under Apple Seatbelt. The current folder is writable; Dahlia's
-    screenshots, database, and skills are read-only. Additional user-selected paths and their permissions are listed below.
+    screenshots, database, preset skills, and installed packages are read-only. Your account's own skills folder is
+    readable and writable: save reusable skills there as <skill-name>/SKILL.md. Newly saved skills load in a new chat process.
+    Additional user-selected paths and their permissions are listed below.
     Other user files are inaccessible. HOME is a scratch folder; use absolute paths for user-selected files.
     Network access is allowed.
     If a tool reports an access restriction, do not retry the same inaccessible path or try to bypass the sandbox.
@@ -476,10 +478,11 @@ actor PiChatService: CodexChatServicing {
         let accessDescription = fileAccess.grants.map {
             "\($0.access.rawValue) (\($0.isDirectory ? "directory and descendants" : "file only")): \($0.path)"
         }.joined(separator: "\n")
-        let dataPaths = """
+        let dataPaths = try """
 
         Dahlia's database: \(MeetingAccessStore.defaultDatabaseURL.path)
         Dahlia's screenshots: \(ScreenshotFileStore.defaultDirectory.path)
+        Your writable skills folder: \(agentLocator.agentURL(for: provider).appending(path: "skills").path)
         Additional file access (protected Dahlia data and runtime code remain restricted):
         \(accessDescription.isEmpty ? "None" : accessDescription)
         """
