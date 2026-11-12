@@ -47,6 +47,8 @@ struct SettingsDetailView: View {
             selectedSettings
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
+        .scrollContentBackground(.hidden)
+        .scrollEdgeEffectHidden()
         .onChange(of: selection) { _, selection in
             if selection != .agents { mainWindowNavigation.dismissDahliaSignIn() }
         }

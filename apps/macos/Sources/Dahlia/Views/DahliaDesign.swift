@@ -236,13 +236,13 @@ private struct DahliaSidebarHoverCardModifier: ViewModifier {
     func body(content: Content) -> some View {
         content
             .font(.dahliaBody)
-            .foregroundStyle(.black.opacity(0.82))
+            .foregroundStyle(DahliaDesign.primaryTextColor)
             .padding(12)
             .frame(width: width, alignment: .leading)
-            .background(.white, in: .rect(cornerRadius: DahliaDesign.HoverCard.cornerRadius))
+            .background(Color(nsColor: .windowBackgroundColor), in: .rect(cornerRadius: DahliaDesign.HoverCard.cornerRadius))
             .overlay {
                 RoundedRectangle(cornerRadius: DahliaDesign.HoverCard.cornerRadius)
-                    .stroke(.black.opacity(0.1), lineWidth: 0.5)
+                    .strokeBorder(.primary.opacity(0.2), lineWidth: 1)
             }
             .containerShape(.rect(cornerRadius: DahliaDesign.HoverCard.cornerRadius))
             .shadow(color: .black.opacity(0.18), radius: 8, y: 3)

@@ -123,9 +123,7 @@ struct DatabricksSignInView: View {
                         .padding(12)
                 }
             }
-            .background(isEmbedded ? Color.clear : Color(nsColor: .windowBackgroundColor))
-            .clipShape(.rect(cornerRadius: isEmbedded ? 0 : DahliaDesign.Card.regularCornerRadius))
-            .shadow(color: isEmbedded ? .clear : .black.opacity(0.24), radius: 28, y: 12)
+            .dahliaModalSurface(isEmbedded: isEmbedded)
         }
         .transition(.identity)
         .onDisappear { signInTask?.cancel() }

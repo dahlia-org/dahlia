@@ -18,7 +18,7 @@ struct MeetingSidebarHoverCard: View {
                 Spacer(minLength: 0)
 
                 Text(durationText)
-                    .foregroundStyle(.black.opacity(0.55))
+                    .foregroundStyle(DahliaDesign.secondaryTextColor)
                     .fixedSize()
             }
 
@@ -37,7 +37,7 @@ struct MeetingSidebarHoverCard: View {
             )
 
             Text(description.nilIfBlank ?? "—")
-                .foregroundStyle(.black.opacity(0.7))
+                .foregroundStyle(DahliaDesign.secondaryTextColor)
                 .lineLimit(Self.descriptionLineLimit)
         }
         .dahliaSidebarHoverCard()

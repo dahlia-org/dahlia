@@ -22,7 +22,7 @@ struct ScreenshotSearchHoverCard: View {
             )
 
             Text(result.meetingDescription)
-                .foregroundStyle(.black.opacity(0.7))
+                .foregroundStyle(DahliaDesign.secondaryTextColor)
                 .lineLimit(Self.descriptionLineLimit)
         }
         .dahliaSidebarHoverCard(width: MainSearchDesign.screenshotHoverCardWidth)

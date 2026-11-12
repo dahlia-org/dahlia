@@ -116,7 +116,8 @@ struct CodexChatView: View {
             }
             .coordinateSpace(name: CodexChatAddPanelLayout.coordinateSpaceName)
         }
-        .background(.background)
+        .background(Color(nsColor: .windowBackgroundColor))
+        .scrollEdgeEffectHidden()
         .task(id: session.id) { await prepare() }
         .onReceive(NotificationCenter.default.publisher(for: PiRuntimeService.modelsDidChange).receive(on: RunLoop.main)) { _ in
             Task { await session.prepare(forceRefresh: true) }
