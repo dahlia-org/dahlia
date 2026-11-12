@@ -1953,3 +1953,6 @@
 "Disconnect stops this read connection. Remove access in your Google Account to revoke the grant. Disconnecting does not delete local or Drive backups, or disconnect the separate MCP server." = "Disconnect stops this read connection. Remove access in your Google Account to revoke the grant. Disconnecting does not delete local or Drive backups, or disconnect the separate MCP server.";
 
 "Refresh Backups" = "Refresh Backups";
+
+"setup.piDescription" = "Pi is needed for AI features such as chat and summaries. Pi was not found. Install it under Dahlia’s management to continue setting up AI.";
+"setup.piSkipDescription" = "Choose Continue to set this up later. You can install Pi or change which Pi to use in Settings → Dahlia AI.";
