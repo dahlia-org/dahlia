@@ -796,7 +796,7 @@
 "Share" = "共有";
 "Share Summary" = "要約を共有";
 "share.exportToGoogleDrive" = "Google Drive へ書き出す";
-"share.exportToGoogleDrivePrompt" = "この会議の要約を Google ドキュメントとして Google Drive に書き出してください。見出し、箇条書き、アクションアイテムの構成を保ち、作成したドキュメントのリンクを教えてください。Google Drive のツールが使えない場合は、設定の「Dahlia AI」>「モデル」の「プロバイダー」で Google Drive の MCP がある Databricks ワークスペースを追加し、「MCP」タブで Google Drive をオンにするよう案内してください。";
+"share.exportToGoogleDrivePrompt" = "この会議の議事録を Google ドキュメントとして Google Drive に書き出してください。get_meeting で会議名・開始日時・要約を取得し、get_meeting_transcript で文字起こしの原文を全ページ取得してください。My Drive 直下の Meetings フォルダ（なければ作成）配下に、{meeting name} - YYYY/MM/DD HH:MM JST という名前の会議フォルダを作成し、その中に {meeting name} - YYYY/MM/DD HH:MM JST - Notes by Dahlia という名前の Google ドキュメントを作成してください。{meeting name} は会議名、日時は会議の開始日時を日本標準時（Asia/Tokyo）に変換した24時間表記とし、日付の / はフォルダ名・文書名の一部として扱ってください。同じ会議フォルダが既にあれば再利用してください。1つの Google ドキュメント内に2つのドキュメントタブを順番に作り、1つ目の「📝 メモ」には要約を、見出し・箇条書き・アクションアイテムの構成を保って記載してください。2つ目の「📖 文字起こし」には原文すべてを時系列順に、要約・省略・翻訳・言い換えをせず記載し、話者・時刻があれば保持してください。本文の見出しや別ファイルではなく Google ドキュメントのタブで分けてください。全文取得やタブの作成ができない場合は、その制約と未完了の内容を伝え、完了したと報告しないでください。作成したドキュメントのリンクを教えてください。Google Drive のツールが使えない場合は、設定の「Dahlia AI」>「モデル」の「プロバイダー」で Google Drive の MCP がある Databricks ワークスペースを追加し、「MCP」タブで Google Drive をオンにするよう案内してください。";
 "Copy for Google Docs" = "Google Docs 用にコピー";
 "Copy for Slack" = "Slack 用にコピー";
 "Summary Prompt" = "要約プロンプト";
