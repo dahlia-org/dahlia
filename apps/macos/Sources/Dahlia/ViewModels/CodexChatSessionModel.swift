@@ -134,7 +134,7 @@ final class CodexChatSessionModel: Identifiable {
         self.messages = messages
         self.selectedModelID = modelID ?? (usesWorkspaceSettings ? workspaceSettings.chatModelID : settings.codexChatModelID)
         self.selectedEffort = effort ?? (usesWorkspaceSettings ? workspaceSettings.chatReasoningEffort : settings.codexChatReasoningEffort)
-        self.selectedApprovalMethod = approvalMethod ?? .ask
+        self.selectedApprovalMethod = approvalMethod ?? .autoReview
         self.needsRestore = backendThreadID != nil && messages.isEmpty && approvalMethod == nil
         self.service = service
         self.settings = settings
@@ -923,7 +923,7 @@ extension CodexChatSessionModel {
     ) {
         syncedApprovalMethod = approvalMethod
         if approvalMethodSelectionGeneration == selectionGeneration {
-            selectedApprovalMethod = approvalMethod ?? .ask
+            selectedApprovalMethod = approvalMethod ?? .autoReview
         }
         synchronizeApprovalMethodIfNeeded()
     }

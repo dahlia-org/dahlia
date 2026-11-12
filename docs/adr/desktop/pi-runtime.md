@@ -205,7 +205,7 @@ MCP の読み取り結果も untrusted data として扱う。
 既存の承認表示上限を超える操作は許可しない。審査の期限・再試行・取消は upstream に従う。否認・失敗の理由を承認画面で表示する。
 
 承認方式は Dahlia が保持し、extension は MCP の変更操作ごとに bridge で問い合わせる（turn 中の変更も次の呼び出しから効く。不明なら「常に確認する」）。
-Pi の session file に承認方式を保存しない。新しい thread も開き直した thread も「常に確認する」で始まり、確認省略を引き継がない。
+Pi の session file に承認方式を保存しない。全アカウントで、新しい thread も開き直した thread も「AIにより確認する（Auto review）」を初期選択する。開いているチャットで明示的に選んだ承認方式は保持する。
 承認の表示は既存の上限（20 KB など）で切り詰め、取消・停止は未応答の承認を cancel してから abort する。
 Codex の web search、`request_user_input` は Pi にないため提供しない。
 
