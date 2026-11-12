@@ -75,6 +75,7 @@ final class CodexChatSessionModel: Identifiable {
     @ObservationIgnored var lastManualSubmission: CodexChatManualSubmission?
     var activeSteeringManualSubmission: CodexChatManualSubmission?
     @ObservationIgnored private var activeTurnSupportsImages: Bool?
+    @ObservationIgnored private var activeTurnIsCommand = false
     @ObservationIgnored var activeSubmissionID: UUID?
     @ObservationIgnored private var activeResponseID: String?
     @ObservationIgnored var activeOutputItemIDs: Set<String> = []
@@ -507,6 +508,7 @@ extension CodexChatSessionModel {
                 return false
             }
             activeTurnSupportsImages = selectedModelSupportsImages
+            activeTurnIsCommand = text?.hasPrefix("/") == true
             let inputs = makeAppServerInputs(
                 text: text,
                 context: context,
@@ -793,6 +795,7 @@ extension CodexChatSessionModel {
         respondingUserInputID = nil
         isStopRequested = false
         activeTurnSupportsImages = nil
+        activeTurnIsCommand = false
         activeSubmissionID = nil
         activeResponseID = nil
         turnTask = nil
@@ -1144,9 +1147,22 @@ extension CodexChatSessionModel {
     }
 
     func nextPendingSteerInput() -> CodexChatManualSubmission? {
-        guard let submission = pendingManualInputs.first,
+        guard !activeTurnIsCommand,
+              let submission = pendingManualInputs.first,
+              !submission.text.hasPrefix("/"),
               submission.images.isEmpty || activeTurnSupportsImages == true else { return nil }
         return pendingManualInputs.removeFirst()
+    }
+
+    var pendingCommand: CodexChatManualSubmission? {
+        pendingManualInputs.first { $0.text.hasPrefix("/") }
+    }
+
+    func cancelPendingCommand(_ command: CodexChatManualSubmission) {
+        guard let index = pendingManualInputs.firstIndex(of: command) else { return }
+        pendingManualInputs.remove(at: index)
+        processPendingInputIfPossible()
+        notifyGenerationCompletionIfIdle()
     }
 
     func steer(

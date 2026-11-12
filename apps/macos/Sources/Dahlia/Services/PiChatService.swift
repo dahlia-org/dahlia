@@ -105,16 +105,19 @@ actor PiChatService: CodexChatServicing {
             connection = try await open(threadID: temporaryID, workspaceID: workspaceID, sessionArguments: ["--no-session"])
             ownsConnection = true
         }
-        let result = await Result {
+        do {
             let response = try await connection.request("get_commands", timeout: .seconds(30))
             guard let commands = response.objectValue?["commands"] else {
                 throw CodexAppServerError.invalidProtocolResponse
             }
-            return try JSONDecoder().decode([CodexChatSlashCommand].self, from: JSONEncoder().encode(commands))
+            let decoded = try JSONDecoder().decode([CodexChatSlashCommand].self, from: JSONEncoder().encode(commands))
                 .sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
+            if ownsConnection { await closeSession(temporaryID) }
+            return decoded
+        } catch {
+            if ownsConnection { await closeSession(temporaryID) }
+            throw error
         }
-        if ownsConnection { await closeSession(temporaryID) }
-        return try result.get()
     }
 
     func listThreads(cursor: String?, workspaceID: UUID) async throws -> CodexChatThreadPage {

@@ -1887,3 +1887,5 @@
 
 "Chat notice expanded" = "展開中";
 "Chat notice collapsed" = "折りたたみ中";
+
+"Queued until the response finishes: %@" = "応答完了後に実行: %@";

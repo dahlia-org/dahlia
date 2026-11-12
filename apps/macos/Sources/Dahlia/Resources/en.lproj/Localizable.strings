@@ -1887,3 +1887,5 @@
 
 "Chat notice expanded" = "Expanded";
 "Chat notice collapsed" = "Collapsed";
+
+"Queued until the response finishes: %@" = "Queued until the response finishes: %@";
