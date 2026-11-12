@@ -305,14 +305,18 @@ final class GoogleCalendarAPIClient: GoogleCalendarAPIClientProviding {
         }
         // The Databricks proxy reports Unity Catalog failures as JSON-RPC errors (seen with HTTP 200), and responses
         // decode leniently (a missing `items` is an empty list), so catch them before the status check and decoding.
-        if url.host() != googleAPIBaseURL.host(), let envelope = try? JSONDecoder().decode(ProxyErrorEnvelope.self, from: data) {
-            throw envelope.apiError
-        }
+        try checkProxyError(in: data, url: url)
         guard (200 ... 299).contains(httpResponse.statusCode) else {
             let detail = String(data: data, encoding: .utf8) ?? ""
             throw GoogleCalendarAPIError.httpError(statusCode: httpResponse.statusCode, detail: detail)
         }
         return data
+    }
+
+    nonisolated static func checkProxyError(in data: Data, url: URL) throws {
+        if url.host() != googleAPIBaseURL.host(), let envelope = try? JSONDecoder().decode(ProxyErrorEnvelope.self, from: data) {
+            throw envelope.apiError
+        }
     }
 
     private static func url(from components: URLComponents?) throws -> URL {

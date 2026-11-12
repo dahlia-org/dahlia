@@ -58,11 +58,19 @@ struct GoogleDriveBackupClient: Sendable {
         var request = URLRequest(url: components.url!)
         request.setValue("Bearer \(session.accessToken)", forHTTPHeaderField: "Authorization")
         let (download, response) = try await urlSession.download(for: request)
-        guard let http = response as? HTTPURLResponse, http.statusCode == 200 else {
+        do {
+            // Inspect only a bounded prefix: successful archives can be much larger than memory.
+            let handle = try FileHandle(forReadingFrom: download)
+            defer { try? handle.close() }
+            try GoogleCalendarAPIClient.checkProxyError(in: handle.read(upToCount: 64 * 1024) ?? Data(), url: url)
+            guard let http = response as? HTTPURLResponse, http.statusCode == 200 else {
+                throw GoogleDriveBackupError.downloadFailed
+            }
+            return download
+        } catch {
             try? FileManager.default.removeItem(at: download)
-            throw GoogleDriveBackupError.downloadFailed
+            throw error
         }
-        return download
     }
 
     private func list(query: String, session: GoogleSession) async throws -> [GoogleDriveBackupFile] {

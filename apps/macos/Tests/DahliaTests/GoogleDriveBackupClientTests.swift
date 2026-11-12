@@ -42,6 +42,46 @@ import Foundation
             }
         }
 
+        @Test(arguments: [200, 403])
+        func downloadPreservesProxyAuthenticationErrors(status: Int) async throws {
+            let configuration = URLSessionConfiguration.ephemeral
+            configuration.protocolClasses = [DriveBackupURLProtocol.self]
+            let transport = URLSession(configuration: configuration)
+            defer { transport.invalidateAndCancel() }
+            let session = GoogleSession(
+                account: GoogleCalendarAccount(id: "test", displayName: "Test", email: ""),
+                accessToken: "download-proxy-error-\(status)", grantedScopes: GoogleOAuthScope.drive,
+                apiBaseURL: URL(string: "https://workspace.example/proxy/")!
+            )
+            let file = GoogleDriveBackupFile(id: "backup", name: "backup.tar.gz", size: nil, modifiedTime: nil)
+            let error = await #expect(throws: GoogleCalendarAPIError.self) {
+                try await GoogleDriveBackupClient(urlSession: transport).download(file, session: session)
+            }
+            guard case let .proxyError(code, message) = error else {
+                Issue.record("Expected the proxy authentication error, got \(String(describing: error))")
+                return
+            }
+            #expect(code == "UNAUTHENTICATED")
+            #expect(message == "Please login")
+        }
+
+        @Test(arguments: [false, true])
+        func downloadKeepsBinaryContents(proxy: Bool) async throws {
+            let configuration = URLSessionConfiguration.ephemeral
+            configuration.protocolClasses = [DriveBackupURLProtocol.self]
+            let transport = URLSession(configuration: configuration)
+            defer { transport.invalidateAndCancel() }
+            let session = GoogleSession(
+                account: GoogleCalendarAccount(id: "test", displayName: "Test", email: ""),
+                accessToken: "download-binary", grantedScopes: GoogleOAuthScope.drive,
+                apiBaseURL: URL(string: proxy ? "https://workspace.example/proxy/" : "https://www.googleapis.com/")!
+            )
+            let file = GoogleDriveBackupFile(id: "backup", name: "backup.tar.gz", size: nil, modifiedTime: nil)
+            let download = try await GoogleDriveBackupClient(urlSession: transport).download(file, session: session)
+            defer { try? FileManager.default.removeItem(at: download) }
+            #expect(try Data(contentsOf: download) == DriveBackupURLProtocol.binaryPayload)
+        }
+
         @Test
         @MainActor
         func directDriveScopeAndProxyAreSeparateFromCalendar() {
@@ -53,6 +93,7 @@ import Foundation
     }
 
     final class DriveBackupURLProtocol: URLProtocol, @unchecked Sendable {
+        static let binaryPayload = Data([0x1F, 0x8B]) + Data(repeating: 0xA5, count: 128 * 1024)
         override static func canInit(with _: URLRequest) -> Bool { true }
         override static func canonicalRequest(for request: URLRequest) -> URLRequest { request }
 
@@ -62,6 +103,20 @@ import Foundation
             let query = items.first { $0.name == "q" }?.value ?? ""
             #expect(request.httpMethod == "GET")
             let authorization = request.value(forHTTPHeaderField: "Authorization")
+            if items.first(where: { $0.name == "alt" })?.value == "media" {
+                #expect(url.path.hasSuffix("/drive/v3/files/backup"))
+                let isError = authorization?.hasPrefix("Bearer download-proxy-error-") == true
+                let status = authorization == "Bearer download-proxy-error-403" ? 403 : 200
+                let error = #"{"jsonrpc":"2.0","error":{"message":"{\"error_code\":\"UNAUTHENTICATED\",\"message\":\"Please login\"}"}}"#
+                client?.urlProtocol(
+                    self,
+                    didReceive: HTTPURLResponse(url: url, statusCode: status, httpVersion: nil, headerFields: nil)!,
+                    cacheStoragePolicy: .notAllowed
+                )
+                client?.urlProtocol(self, didLoad: isError ? Data(error.utf8) : Self.binaryPayload)
+                client?.urlProtocolDidFinishLoading(self)
+                return
+            }
             #expect(url.path.hasSuffix("/drive/v3/files"))
             #expect(query.contains("trashed = false"))
             #expect(items.first { $0.name == "corpora" }?.value == "user")
