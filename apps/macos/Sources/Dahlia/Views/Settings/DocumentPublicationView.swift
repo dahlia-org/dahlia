@@ -62,7 +62,7 @@ struct DocumentPublicationView: View {
             }
             .padding(24)
             .frame(width: 520)
-            .background(.background, in: RoundedRectangle(cornerRadius: 12))
+            .dahliaModalSurface()
         }
         .task {
             do {

@@ -186,9 +186,7 @@ struct BackupSettingsView: View {
             .disabled(model.isBusy)
             .padding(24)
             .frame(maxWidth: 520)
-            .background(Color(nsColor: .windowBackgroundColor))
-            .clipShape(.rect(cornerRadius: DahliaDesign.Card.regularCornerRadius))
-            .shadow(radius: 20)
+            .dahliaModalSurface()
         }
     }
 

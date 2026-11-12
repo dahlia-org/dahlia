@@ -29,7 +29,7 @@ struct CalendarScheduleView: View {
             .frame(maxWidth: DahliaDesign.mainContentMaxWidth, alignment: .leading)
             .frame(maxWidth: .infinity, alignment: .top)
         }
-        .background(.background)
+        .background(Color(nsColor: .windowBackgroundColor))
         .task {
             await refreshEnabledSources()
         }

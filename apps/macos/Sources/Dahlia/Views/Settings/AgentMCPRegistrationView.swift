@@ -46,9 +46,7 @@ struct AgentMCPRegistrationView: View {
             }
             .padding(24)
             .frame(width: 480)
-            .background(Color(nsColor: .windowBackgroundColor))
-            .clipShape(.rect(cornerRadius: DahliaDesign.Card.regularCornerRadius))
-            .shadow(color: .black.opacity(0.24), radius: 28, y: 12)
+            .dahliaModalSurface()
         }
         .transition(.identity)
         .onAppear { isFocused = true }

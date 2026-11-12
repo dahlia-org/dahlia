@@ -5,6 +5,34 @@
 
     @MainActor
     struct CodexChatMarkdownTextDocumentTests {
+        @Test func textUsesAdaptiveColorsAcrossBlockTypes() throws {
+            let document = CodexChatMarkdownTextDocument.attributedString(for: [
+                .heading(level: 1, text: AttributedString("Heading")),
+                .paragraph(AttributedString("Body")),
+                .unorderedList([AttributedString("Bullet")]),
+                .orderedList([CodexChatMarkdownRenderedOrderedItem(marker: "1.", text: AttributedString("Numbered"))]),
+                .table(CodexChatMarkdownRenderedTable(
+                    header: [AttributedString("Header")],
+                    rows: [[AttributedString("Cell")]],
+                    alignments: [.left]
+                )),
+                .blockquote(AttributedString("Quote")),
+                .code(language: nil, text: "Code"),
+            ])
+            let source = document.string as NSString
+            for text in ["Heading", "Body", "Bullet", "Numbered", "Header", "Cell", "Quote", "Code"] {
+                let range = source.range(of: text)
+                let color = try #require(document.attribute(.foregroundColor, at: range.location, effectiveRange: nil) as? NSColor)
+                #expect(color == (["Quote", "Code"].contains(text) ? DahliaDesign.secondaryTextNSColor : DahliaDesign.primaryTextNSColor))
+                for name in [NSAppearance.Name.aqua, .darkAqua] {
+                    let appearance = try #require(NSAppearance(named: name))
+                    appearance.performAsCurrentDrawingAppearance {
+                        #expect(color.usingColorSpace(.sRGB) != NSColor.windowBackgroundColor.usingColorSpace(.sRGB))
+                    }
+                }
+            }
+        }
+
         @Test func groupsAdjacentTextBlocksAroundCodeBlocks() {
             let blocks: [CodexChatMarkdownRenderedBlock] = [
                 .heading(level: 2, text: AttributedString("Heading")),

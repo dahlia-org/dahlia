@@ -32,10 +32,10 @@ struct ProjectSidebarHoverCard: View {
                 Button(pinActionLabel, systemImage: pinSystemImage, action: onTogglePin)
                     .labelStyle(.iconOnly)
                     .buttonStyle(.plain)
-                    .foregroundStyle(.black.opacity(0.55))
+                    .foregroundStyle(DahliaDesign.secondaryTextColor)
                     .padding(5)
                     .background(
-                        isPinHovered ? Color.black.opacity(0.08) : .clear,
+                        isPinHovered ? DahliaDesign.contentHighlightColor : .clear,
                         in: .rect(cornerRadius: DahliaDesign.Highlight.compactCornerRadius)
                     )
                     .contentShape(.rect(cornerRadius: DahliaDesign.Highlight.compactCornerRadius))
@@ -53,7 +53,7 @@ struct ProjectSidebarHoverCard: View {
                     .padding(.horizontal, 6)
                     .padding(.vertical, 4)
                     .background(
-                        isEditHovered ? Color.black.opacity(0.08) : .clear,
+                        isEditHovered ? DahliaDesign.contentHighlightColor : .clear,
                         in: .rect(cornerRadius: DahliaDesign.Highlight.compactCornerRadius)
                     )
                     .contentShape(.rect(cornerRadius: DahliaDesign.Highlight.compactCornerRadius))

@@ -283,6 +283,11 @@ enum CodexChatMarkdownTextDocument {
             append(block, to: document)
         }
 
+        document.enumerateAttribute(.foregroundColor, in: NSRange(location: 0, length: document.length)) { color, range, _ in
+            if color == nil {
+                document.addAttribute(.foregroundColor, value: DahliaDesign.primaryTextNSColor, range: range)
+            }
+        }
         applyInlinePresentationStyles(to: document)
         return Fragment(
             attributedString: document,

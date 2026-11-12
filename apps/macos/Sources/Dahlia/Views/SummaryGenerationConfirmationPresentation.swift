@@ -33,8 +33,7 @@ private struct SummaryGenerationConfirmationPresentationModifier: ViewModifier {
                     onCancel: dismiss,
                     onGenerate: generate
                 )
-                .clipShape(.rect(cornerRadius: DahliaDesign.Card.regularCornerRadius))
-                .shadow(color: .black.opacity(0.24), radius: 28, y: 12)
+                .dahliaModalSurface()
             }
         }
         .transition(.identity)
