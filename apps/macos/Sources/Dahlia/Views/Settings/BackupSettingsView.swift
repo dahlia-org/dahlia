@@ -10,6 +10,8 @@ enum BackupFileFormat {
 }
 
 struct BackupSettingsView: View {
+    @State private var drive = GoogleDriveBackupModel()
+    @State private var googleConsent = GoogleOAuthConsentState()
     @State private var model: BackupSettingsViewModel
     @State private var pendingDeleteGeneration: BackupGeneration?
     @State private var pendingRestoreGeneration: BackupGeneration?
@@ -32,6 +34,7 @@ struct BackupSettingsView: View {
 
     var body: some View {
         Form {
+            driveSection
             if !model.preflightItems.isEmpty {
                 unresolvedAudioSection
             }
@@ -106,12 +109,26 @@ struct BackupSettingsView: View {
                     }
                 }
             } header: {
-                Text(L10n.backupGenerations)
+                Text(L10n.backupLocalCopies)
                     .font(.dahliaSectionHeader)
             }
         }
         .formStyle(.grouped)
         .font(.dahliaBody)
+        .task(id: settings.calendarAccount) {
+            drive.resetForAccount()
+            await drive.refresh()
+        }
+        .overlay {
+            if let disclosure = googleConsent.pendingDisclosure {
+                ZStack {
+                    Color.black.opacity(0.3).ignoresSafeArea().onTapGesture { closeGoogleConsent() }
+                    GoogleOAuthConsentSheet(disclosure: disclosure, onClose: closeGoogleConsent) { googleConsent.grantConsent() }
+                        .frame(width: 520, height: 600)
+                        .dahliaModalSurface()
+                }
+            }
+        }
         .task {
             model.selectedWorkspaceIds = Set([settings.currentWorkspace?.id].compactMap(\.self))
             while !Task.isCancelled {
@@ -142,6 +159,71 @@ struct BackupSettingsView: View {
             if let generation = pendingRestoreGeneration {
                 restoreDialog(generation)
             }
+        }
+    }
+
+    private func closeGoogleConsent() {
+        googleConsent.pendingDisclosure = nil
+        guard googleConsent.consumeConsent() else { return }
+        Task { await drive.refresh(connect: true) }
+    }
+
+    private var driveSection: some View {
+        Section {
+            LabeledContent("Google Drive") {
+                HStack {
+                    if let account = drive.account { Text(account.displayName) }
+                    if drive.isBusy { ProgressView().controlSize(.small) }
+                    if drive.isAuthorized {
+                        Button(L10n.backupDriveRefresh) { Task { await drive.refresh() } }
+                            .buttonStyle(.dahlia())
+                    }
+                    if !drive.isAuthorized {
+                        Button(L10n.googleCalendarConnect) {
+                            if drive.usesDatabricksProxy {
+                                Task { await drive.refresh(connect: true) }
+                            } else {
+                                googleConsent.request(.drive)
+                            }
+                        }
+                        .buttonStyle(.dahlia())
+                        .disabled(!drive.isConfigured || drive.isBusy)
+                    }
+                    if drive.hasConnection {
+                        Button(L10n.googleCalendarDisconnect) { Task { await drive.disconnect() } }
+                            .buttonStyle(.dahlia())
+                            .disabled(drive.isBusy)
+                    }
+                }
+            }
+            if !drive.isConfigured {
+                Text(L10n.googleAccountClientIDMissingMessage).foregroundStyle(.secondary)
+            }
+            if let error = drive.errorMessage {
+                SettingsStatusMessage(text: error, systemImage: "exclamationmark.triangle", tint: .orange)
+                if let url = drive.connectionPageURL {
+                    Link(L10n.googleCalendarOpenDatabricksConnectionPage, destination: url)
+                }
+            }
+            if drive.isAuthorized, drive.files.isEmpty { Text(L10n.noBackups).foregroundStyle(.secondary) }
+            ForEach(drive.files) { file in
+                LabeledContent {
+                    Button(L10n.backupDriveDownload) {
+                        Task { await model.importDriveBackup(file, drive: drive) }
+                    }
+                    .buttonStyle(.dahlia())
+                    .disabled(drive.isBusy || model.isBusy)
+                } label: {
+                    Text(file.name)
+                    if let size = file.size.flatMap(Int64.init) {
+                        Text(ByteCountFormatter.string(fromByteCount: size, countStyle: .file)).foregroundStyle(.secondary)
+                    }
+                }
+            }
+        } header: {
+            Text(L10n.backupDriveTitle).font(.dahliaSectionHeader)
+        } footer: {
+            Text(L10n.backupDriveDescription)
         }
     }
 
@@ -327,7 +409,7 @@ struct BackupSettingsView: View {
 
     private func exportBackup(_ generation: BackupGeneration) {
         let panel = NSSavePanel()
-        panel.allowedContentTypes = [BackupFileFormat.contentType]
+        panel.allowedContentTypes = [UTType(filenameExtension: generation.fileURL.pathExtension) ?? .data]
         panel.nameFieldStringValue = generation.fileURL.lastPathComponent
         panel.begin { response in
             guard response == .OK, let url = panel.url else { return }

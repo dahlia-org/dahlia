@@ -24,7 +24,7 @@ import GRDB
             let queue = try DatabaseQueue(path: directory.appending(path: "database.sqlite").path, configuration: AppDatabaseManager.configuration())
             try queue.write(body)
             try queue.close()
-            let replacement = directory.appending(path: "edited.dahliabackup")
+            let replacement = directory.appending(path: "edited.tar.gz")
             try BackupArchive.create(directory: directory, metadata: manifest.metadata, paths: manifest.entries.map(\.path), at: replacement)
             try FileManager.default.removeItem(at: url)
             try FileManager.default.moveItem(at: replacement, to: url)

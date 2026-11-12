@@ -1,10 +1,17 @@
 import DahliaMeetingAccess
 import DahliaRuntimeSupport
 import Foundation
+import GRDB
 
 /// Chat on Pi. Each open thread owns one `pi --mode rpc` process; Pi's session file is the history source.
 actor PiChatService: CodexChatServicing {
     static let shared = PiChatService()
+
+    private var backupService: BackupService?
+
+    func configureBackup(dbQueue: DatabaseQueue, applicationSupportURL: URL = DahliaApplicationSupport.currentDirectoryURL) {
+        backupService = BackupService(dbQueue: dbQueue, applicationSupportURL: applicationSupportURL)
+    }
 
     nonisolated static let systemPrompt = """
     You are a conversational assistant inside Dahlia. Respond directly to the user's message in clear Markdown.
@@ -496,7 +503,7 @@ actor PiChatService: CodexChatServicing {
         try PiProviderConfiguration.writeMCPServers(mcpServers, agentURL: agentLocator.agentURL(for: provider))
         let serverNames = ["dahlia"] + mcpServers.keys.sorted()
         // `--no-extensions` also drops Pi's MCP extension; explicitly enable it and the tools chat may call.
-        let tools = ["read", "ls", "write", "edit", "bash"] + serverNames.map { "mcp__\($0)__*" }
+        let tools = ["read", "ls", "write", "edit", "bash", "dahlia_create_backup"] + serverNames.map { "mcp__\($0)__*" }
         // Only chat calls MCP servers; Dahlia's extension registers the sign-ins mcp.json names.
         var arguments = sessionArguments + [
             "-e", "builtin:mcp",
@@ -525,6 +532,9 @@ actor PiChatService: CodexChatServicing {
             provider: provider,
             chatBridge: { [weak self] method, payload in
                 guard let self else { return .string(method == "approval" ? "cancel" : "ask") }
+                if method == "createBackup" {
+                    return try await self.createBackup(threadID: threadID, processID: processID, workspaceID: workspaceID, directory: workURL)
+                }
                 return await self.answer(method, payload: payload, threadID: threadID, processID: processID)
             }
         )
@@ -630,6 +640,15 @@ actor PiChatService: CodexChatServicing {
             return
         }
         sessions[threadID]?.turn = turn
+    }
+
+    private func createBackup(threadID: String, processID: UUID, workspaceID: UUID, directory: URL) async throws -> JSONValue {
+        guard sessions[threadID]?.processID == processID, let backupService else { throw BackupServiceError.invalidBackup }
+        let generation = try await backupService.createGeneration(workspaceIds: [workspaceID])
+        guard sessions[threadID]?.processID == processID else { throw CancellationError() }
+        let destination = directory.appending(path: generation.fileURL.lastPathComponent)
+        try await backupService.exportGeneration(generation, to: destination)
+        return .object(["path": .string(destination.path), "workspace_id": .string(TypeID.encode(workspaceID, as: .workspace))])
     }
 
     private func answer(_ method: String, payload: JSONValue, threadID: String, processID: UUID) async -> JSONValue {

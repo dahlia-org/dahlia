@@ -4,10 +4,10 @@
 
 ## 世代と対象
 
-Local Account 配下の複数の保管庫を選択して一つの Apple Archive（`.dahliabackup`） を Application Support/Dahlia/Backups にユーザー削除まで保持する。自動で世代数を減らさない。
-形式 v4 の manifest と各 DB snapshot に元の保管庫 UUID・名前の一覧、世代 UUID、日時、schema / migration、app version/build、理由を埋め込む。
+Local Account 配下の複数の保管庫を選択して一つの gzip 圧縮 tar（`.tar.gz`） を Application Support/Dahlia/Backups にユーザー削除まで保持する。自動で世代数を減らさない。
+現行形式の manifest と各 DB snapshot に元の保管庫 UUID・名前の一覧、世代 UUID、日時、schema / migration、app version/build、理由を埋め込む。
 単一の DB snapshot から選択した全保管庫を抽出し、途中で失敗した世代は公開しない。
-旧形式 v1 は読み込み・復元に対応しない。旧世代は削除できる。v2 は一つの保管庫を含む世代として読み込む。
+現行 manifest を持つ tar.gz だけを読み込み・復元の対象とする。
 
 対象は選択した保管庫の DB 内データと参照関係。Project 階層、会議、文字起こし・翻訳、session timeline、要約、
 files の metadata、会議との紐付け、スクリーンショットの OCR / caption を含む。原本は `files/{fileId}/original`、DB は `database.sqlite` として格納し、`manifest.json` に各 entry のサイズと SHA-256 を記録する。
@@ -18,13 +18,28 @@ Server Account の保管庫を一つでも含む作成要求は世代を公開�
 音声本体・参照、Vault Markdown / 添付、端末の出力先、UserDefaults、アカウント接続、Keychain / token、同期キュー・カーソル、
 検索索引は含めない。対象保管庫に未文字起こし segmented audio があれば、文字起こしか明示破棄まで作成を拒否する。
 
+## Google Drive と内蔵 Pi
+
+設定のバックアップ一覧はマイドライブ直下の `Dahlia/Backup` から取得する。同名フォルダが複数ある場合は曖昧な宛先を選ばずエラーにする。
+Google Drive は Calendar と別の Keychain セッションで `drive.readonly` を認証する。Databricks アカウントでは Calendar と同じ
+Unity Gateway connection proxy を使い、接続名は `system_ai_agent_google_drive` とする。接続解除は Dahlia の読み取り利用を止め、Drive のファイルや別の MCP 接続は削除しない。
+
+アップロード・フォルダ作成・Drive 上の削除をアプリの Drive client に持たせない。内蔵 Pi の `workspace-backup` skill は現在のチャットの Local Workspace に限定した
+`dahlia_create_backup` tool を呼び、GUI と同じ `BackupService` の snapshot・原本収集・検証で作成する。Pi の作業フォルダに書き出したファイルを
+設定済み Google Drive MCP のローカルファイルアップロード機能で `My Drive/Dahlia/Backup` に配置する。外部書き込みは既存のチャット承認方針に従う。
+必要な MCP 機能がなければローカル作成とアップロード失敗を区別して報告する。Unity Gateway connection で書き込まない。
+
+Drive のファイルは選択時にダウンロードし、通常の import 検証を通してからローカルの復元用コピーへ追加する。
+ローカルで作成・import した世代と上書き前の安全バックアップは引き続き保持し、ネットワークなしでも復元できる。
+旧 Apple Archive（`.dahliabackup`）は一覧・import・復元の対象外とする。既存ファイル自体の削除・変換は行わない。
+
 ## Import と復元
 
 展開は隔離した作業ディレクトリで行い、manifest にない entry、重複、リンク、パス逸脱、サイズ超過、hash 不一致を拒否する。復元先の原本を検証・確定した後にだけ DB を置き換える。
 
 import は管理領域の一時 copy を integrity / metadata / schema / migration 履歴で検証して atomic に世代追加する。
 未知の形式・schema、改変、追加 trigger / view、integrity 不良を拒否する。
-既知の旧 schema を持つ v2 / v3 は、その migration 時点の schema と履歴を検証して受け入れる。
+既知の旧 schema は、その migration 時点の schema と履歴を検証して受け入れる。
 復元時に管理領域の作業コピーだけを現行 schema へ migration し、元の世代は変更しない。
 
 復元画面では含まれる保管庫を一覧表示し、各行で「復元しない」（初期値）または次の方法を選ぶ。
@@ -39,7 +54,6 @@ import は管理領域の一時 copy を integrity / metadata / schema / migrati
   接続、同期状態、出力先（要約の書き出し先参照を含む）は引き継がない。共有タグは名前で対応付け、既存タグや共有カレンダー情報は上書きしない。
 
 Server Account の保管庫への上書きは拒否する。復元による Server への操作・同期 transaction は生成しない。
-既存の対応済み v2 / v3 世代のローカル復元は維持するが、未リリースの旧 v45 に含まれた Server 画像参照は互換対象にしない。
 バックアップは原本を内包するため、復元時にクラウドから画像を取得しない。
 
 復元は再起動時、単一 process lock 取得後・通常 DB open 前に行う。録音・処理中には開始しない。

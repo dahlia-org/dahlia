@@ -7,8 +7,8 @@ import UniformTypeIdentifiers
     struct BackupFileFormatTests {
         @Test
         func contentTypeMatchesArchive() {
-            #expect(BackupFileFormat.pathExtension == "dahliabackup")
-            #expect(BackupFileFormat.contentType == UTType(filenameExtension: "dahliabackup"))
+            #expect(BackupFileFormat.pathExtension == "gz")
+            #expect(BackupFileFormat.contentType == UTType(filenameExtension: "gz"))
         }
     }
 #endif

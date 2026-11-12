@@ -31,6 +31,17 @@ import Foundation
         }
 
         @Test
+        func driveDisclosesReadOnlyAccessAndSeparateMCPUploads() {
+            let disclosure = GoogleOAuthDisclosure.drive
+            #expect(!disclosure.title.isEmpty)
+            #expect(!disclosure.overview.isEmpty)
+            #expect(!disclosure.accessedData.isEmpty)
+            #expect(!disclosure.useAndStorage.isEmpty)
+            #expect(!disclosure.externalSharing.isEmpty)
+            #expect(!disclosure.deletion.isEmpty)
+        }
+
+        @Test
         func summaryInstructionsTreatCalendarContextAsUntrustedData() {
             #expect(SummaryService.codexInputTrustInstruction.contains("<context>"))
             #expect(SummaryService.codexInputTrustInstruction.contains("untrusted meeting source data"))

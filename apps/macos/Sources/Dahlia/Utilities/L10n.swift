@@ -1432,6 +1432,50 @@ enum L10n { // swiftlint:disable:this type_body_length
         String(format: String(localized: "Workspaces: %d", bundle: bundle), count)
     }
 
+    static var backupDriveRefresh: String { String(localized: "Refresh Backups", bundle: bundle) }
+    static var backupDriveTitle: String { String(localized: "Google Drive Backups", bundle: bundle) }
+    static var backupLocalCopies: String { String(localized: "Local Recovery Copies", bundle: bundle) }
+    static var backupDriveDownload: String { String(localized: "Download for Restore", bundle: bundle) }
+    static var backupDriveDescription: String { String(
+        localized: """
+        Lists backups in My Drive/Dahlia/Backup. Ask Dahlia AI to create and upload a backup using Google Drive MCP. Drive access here is \
+        read-only; downloaded backups are verified before they appear in Local Recovery Copies.
+        """,
+        bundle: bundle
+    ) }
+    static var backupDriveAmbiguousFolder: String { String(
+        localized: "Multiple Dahlia/Backup folders were found in My Drive. Resolve duplicate folder names before loading backups.",
+        bundle: bundle
+    ) }
+    static var backupDriveDownloadFailed: String { String(
+        localized: "Could not download the Google Drive backup. Check the connection and try again.",
+        bundle: bundle
+    ) }
+    static var googleDriveOAuthDisclosureTitle: String { String(localized: "Connect Google Drive for Backups", bundle: bundle) }
+    static var googleDriveOAuthDisclosureOverview: String { String(
+        localized: "Dahlia reads backups from My Drive/Dahlia/Backup. This connection does not upload or delete files.",
+        bundle: bundle
+    ) }
+    static var googleDriveOAuthDisclosureAccess: String { String(
+        localized: "Google grants read-only access to Drive files. Dahlia uses folder and file metadata to find Dahlia/Backup and downloads the backups you select.",
+        bundle: bundle
+    ) }
+    static var googleDriveOAuthDisclosureUseAndStorage: String { String(
+        localized: "Downloaded backups are stored on this Mac and validated before restore. The authorization token is stored in Keychain separately from Google Calendar.",
+        bundle: bundle
+    ) }
+    static var googleDriveOAuthDisclosureExternalSharing: String { String(
+        localized: "Listing and downloading send requests to Google Drive. Uploads are a separate action by Dahlia AI through your configured MCP server and follow chat approval settings.",
+        bundle: bundle
+    ) }
+    static var googleDriveOAuthDisclosureDeletion: String { String(
+        localized: """
+        Disconnect stops this read connection. Remove access in your Google Account to revoke the grant. Disconnecting does not delete \
+        local or Drive backups, or disconnect the separate MCP server.
+        """,
+        bundle: bundle
+    ) }
+
     static var workspaceBackup: String { String(localized: "Workspace Backup", bundle: bundle) }
     static var backupLocalWorkspacesOnly: String { String(localized: "Only workspaces in the Local Account can be backed up.", bundle: bundle) }
     static var workspaceBackupDescription: String { String(

@@ -1927,3 +1927,29 @@
 
 "appearance.light" = "Light Mode";
 "appearance.dark" = "Dark Mode";
+
+"Google Drive Backups" = "Google Drive Backups";
+
+"Local Recovery Copies" = "Local Recovery Copies";
+
+"Download for Restore" = "Download for Restore";
+
+"Lists backups in My Drive/Dahlia/Backup. Ask Dahlia AI to create and upload a backup using Google Drive MCP. Drive access here is read-only; downloaded backups are verified before they appear in Local Recovery Copies." = "Lists backups in My Drive/Dahlia/Backup. Ask Dahlia AI to create and upload a backup using Google Drive MCP. Drive access here is read-only; downloaded backups are verified before they appear in Local Recovery Copies.";
+
+"Multiple Dahlia/Backup folders were found in My Drive. Resolve duplicate folder names before loading backups." = "Multiple Dahlia/Backup folders were found in My Drive. Resolve duplicate folder names before loading backups.";
+
+"Could not download the Google Drive backup. Check the connection and try again." = "Could not download the Google Drive backup. Check the connection and try again.";
+
+"Connect Google Drive for Backups" = "Connect Google Drive for Backups";
+
+"Dahlia reads backups from My Drive/Dahlia/Backup. This connection does not upload or delete files." = "Dahlia reads backups from My Drive/Dahlia/Backup. This connection does not upload or delete files.";
+
+"Google grants read-only access to Drive files. Dahlia uses folder and file metadata to find Dahlia/Backup and downloads the backups you select." = "Google grants read-only access to Drive files. Dahlia uses folder and file metadata to find Dahlia/Backup and downloads the backups you select.";
+
+"Downloaded backups are stored on this Mac and validated before restore. The authorization token is stored in Keychain separately from Google Calendar." = "Downloaded backups are stored on this Mac and validated before restore. The authorization token is stored in Keychain separately from Google Calendar.";
+
+"Listing and downloading send requests to Google Drive. Uploads are a separate action by Dahlia AI through your configured MCP server and follow chat approval settings." = "Listing and downloading send requests to Google Drive. Uploads are a separate action by Dahlia AI through your configured MCP server and follow chat approval settings.";
+
+"Disconnect stops this read connection. Remove access in your Google Account to revoke the grant. Disconnecting does not delete local or Drive backups, or disconnect the separate MCP server." = "Disconnect stops this read connection. Remove access in your Google Account to revoke the grant. Disconnecting does not delete local or Drive backups, or disconnect the separate MCP server.";
+
+"Refresh Backups" = "Refresh Backups";

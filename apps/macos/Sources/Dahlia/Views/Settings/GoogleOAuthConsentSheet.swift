@@ -2,6 +2,7 @@ import SwiftUI
 
 enum GoogleOAuthDisclosure: String, Identifiable {
     case calendar
+    case drive
 
     nonisolated static let privacyPolicyURL = URL(string: "https://dahlia-ai.org/privacy/")!
     nonisolated static let japanesePrivacyPolicyURL = URL(string: "https://dahlia-ai.org/ja/privacy/")!
@@ -12,17 +13,18 @@ enum GoogleOAuthDisclosure: String, Identifiable {
 
     var id: String { rawValue }
 
-    var title: String { L10n.googleCalendarOAuthDisclosureTitle }
+    var title: String { self == .drive ? L10n.googleDriveOAuthDisclosureTitle : L10n.googleCalendarOAuthDisclosureTitle }
 
-    var overview: String { L10n.googleCalendarOAuthDisclosureOverview }
+    var overview: String { self == .drive ? L10n.googleDriveOAuthDisclosureOverview : L10n.googleCalendarOAuthDisclosureOverview }
 
-    var accessedData: String { L10n.googleCalendarOAuthDisclosureAccess }
+    var accessedData: String { self == .drive ? L10n.googleDriveOAuthDisclosureAccess : L10n.googleCalendarOAuthDisclosureAccess }
 
-    var useAndStorage: String { L10n.googleCalendarOAuthDisclosureUseAndStorage }
+    var useAndStorage: String { self == .drive ? L10n.googleDriveOAuthDisclosureUseAndStorage : L10n.googleCalendarOAuthDisclosureUseAndStorage }
 
-    var externalSharing: String { L10n.googleCalendarOAuthDisclosureExternalSharing }
+    var externalSharing: String { self == .drive ? L10n.googleDriveOAuthDisclosureExternalSharing : L10n.googleCalendarOAuthDisclosureExternalSharing
+    }
 
-    var deletion: String { L10n.googleCalendarOAuthDisclosureDeletion }
+    var deletion: String { self == .drive ? L10n.googleDriveOAuthDisclosureDeletion : L10n.googleCalendarOAuthDisclosureDeletion }
 }
 
 struct GoogleOAuthConsentState {
@@ -46,10 +48,15 @@ struct GoogleOAuthConsentState {
 
 struct GoogleOAuthConsentSheet: View {
     let disclosure: GoogleOAuthDisclosure
+    var onClose: (() -> Void)?
     let onConsent: () -> Void
 
     @Environment(\.dismiss) private var dismiss
     @ObservedObject private var settings = AppSettings.shared
+
+    private func close() {
+        if let onClose { onClose() } else { dismiss() }
+    }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -97,12 +104,12 @@ struct GoogleOAuthConsentSheet: View {
 
             DahliaSheetActionBar {
                 Button(L10n.cancel) {
-                    dismiss()
+                    close()
                 }
                 .keyboardShortcut(.cancelAction)
                 Button(L10n.continueToGoogle) {
                     onConsent()
-                    dismiss()
+                    close()
                 }
                 .buttonStyle(.borderedProminent)
                 .keyboardShortcut(.defaultAction)
