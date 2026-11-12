@@ -7,6 +7,7 @@ final class PiFileAccessSettingsModel {
     let account: CodexRuntimeProvider
     private(set) var settings: PiFileAccessSettings
     private(set) var isUpdating = false
+    private(set) var defaultAccess: [PiFileAccessSettings.Grant] = []
     var errorMessage: String?
     private let defaults: UserDefaults
     private let secret: @Sendable (String) -> String?
@@ -35,6 +36,22 @@ final class PiFileAccessSettingsModel {
                 )
                 if !settings.grants.contains(where: { $0.path == path }) { settings.grants.append(grant) }
             }
+        }
+    }
+
+    func refreshDefaults(workingDirectory: String) async {
+        let account = account
+        do {
+            let paths = try await Task.detached {
+                let path = workingDirectory.trimmingCharacters(in: .whitespaces).nilIfBlank ?? PiWorkingDirectory.defaultPath
+                let cwd = URL(fileURLWithPath: (path as NSString).expandingTildeInPath, isDirectory: true)
+                return try PiSandbox.defaultFileAccess(cwd: cwd, agentURL: PiAgentDirectoryLocator().agentURL(for: account))
+            }.value
+            guard !Task.isCancelled else { return }
+            defaultAccess = paths
+        } catch {
+            guard !Task.isCancelled else { return }
+            errorMessage = error.localizedDescription
         }
     }
 

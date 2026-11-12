@@ -3,7 +3,7 @@
 import { createBashTool, createEditTool, createLsTool, createReadTool, createWriteTool, DefaultPackageManager, SettingsManager } from "@earendil-works/pi-coding-agent";
 import { anthropicMessagesApi, createProvider, googleGenerativeAIApi, openAIResponsesApi } from "@earendil-works/pi-ai";
 import { execFile } from "node:child_process";
-import { readFileSync } from "node:fs";
+import { lstatSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import {
   registerDatabricksConnectionLoginCommand,
@@ -78,6 +78,24 @@ async function bridge(ctx: any, method: string, payload: unknown): Promise<any> 
   return JSON.parse(value);
 }
 
+// Pi follows links while discovering skills outside Seatbelt. Only offer ordinary account skill files.
+function accountSkillPaths(directory: string, root = true): string[] {
+  try {
+    if (!lstatSync(directory).isDirectory()) return [];
+    const entries = readdirSync(directory, { withFileTypes: true });
+    if (entries.some((entry) => entry.name === "SKILL.md" && entry.isFile())) return [join(directory, "SKILL.md")];
+    return entries.flatMap((entry) => {
+      if (entry.name.startsWith(".") || entry.name === "node_modules" || entry.isSymbolicLink()) return [];
+      const path = join(directory, entry.name);
+      if (entry.isDirectory()) return accountSkillPaths(path, false);
+      return root && entry.isFile() && entry.name.endsWith(".md") ? [path] : [];
+    });
+  } catch (error: any) {
+    if (error.code === "ENOENT") return [];
+    throw error;
+  }
+}
+
 export default function (pi: any) {
   // A bridged provider's credential is Dahlia's token, resolved for each use: every model request, and every request
   // of an MCP whose mcp.json entry names the provider in `auth.provider`. Its models come from models.json.
@@ -109,8 +127,8 @@ export default function (pi: any) {
     return enforce(event.payload);
   });
 
-  if (mode === "chat") {
-    // Keep automatic discovery disabled (it includes ~/.agents/skills); contribute only this account's packages.
+  if (mode === "chat" || mode === "skills") {
+    // Keep automatic discovery disabled (it includes ~/.agents/skills); use only this account's resources.
     pi.on("resources_discover", async (event: any) => {
       const agentDir = env.PI_CODING_AGENT_DIR!;
       const settingsManager = SettingsManager.create(event.cwd, agentDir, { projectTrusted: false });
@@ -118,9 +136,11 @@ export default function (pi: any) {
       const paths = (entries: typeof resources.skills) => entries
         .filter((entry) => entry.enabled && entry.metadata.origin === "package" && entry.metadata.scope === "user")
         .map((entry) => entry.path);
-      return { skillPaths: paths(resources.skills), promptPaths: paths(resources.prompts) };
+      return { skillPaths: [...accountSkillPaths(join(agentDir, "skills")), ...paths(resources.skills)], promptPaths: paths(resources.prompts) };
     });
+  }
 
+  if (mode === "chat") {
     if (env.DAHLIA_PI_MCP_COMMAND) {
       const [command, ...args] = JSON.parse(env.DAHLIA_PI_MCP_COMMAND);
       pi.registerMcpServer("dahlia", { command, args, exposure: "direct", description: "Dahlia meetings, projects, and workspaces" });

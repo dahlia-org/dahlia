@@ -1898,7 +1898,7 @@
 "settings.agents.fileAccess.readWrite" = "読み書き";
 "settings.agents.fileAccess.add" = "ファイル・フォルダを追加…";
 "settings.agents.fileAccess.remove" = "アクセス許可を削除";
-"settings.agents.fileAccess.defaults" = "この Mac の現在のアカウントのチャットに適用します。作業フォルダは読み書き可能です。Dahlia の画像・データベース・スキルは読み取り専用です。";
+"settings.agents.fileAccess.defaults" = "この Mac の現在のアカウントのチャットに適用します。作業フォルダ・チャットの一時フォルダ・このアカウントのスキル保存先は読み書き可能です。既定の許可を下に表示します。";
 "settings.agents.fileAccess.help" = "追加・変更・削除は次のメッセージから反映されます。実行中の応答とコマンドは以前の許可で続行するため、すぐに停止する場合は応答をキャンセルしてください。フォルダの許可は配下すべてに適用します。Dahlia の認証情報・Pi 自体・シェルの起動ファイルへの制限は維持されます。読み取り可能な内容はネットワーク経由で送信できます。~ は一時ホームを指すため、追加したファイルは絶対パスで指定してください。";
 "settings.agents.shellStartupPathRequired" = "環境変数の BASH_ENV・ENV にはファイルのパスを直接指定してください。シェル式や ~ユーザー名 のパスは保護できません。";
 "settings.agents.fileAccess.changed" = "更新中にファイルアクセスの設定が変更されました。もう一度操作してください。";
@@ -1908,3 +1908,9 @@
 "settings.agents.customInstructions.details" = "カスタム指示について";
 "settings.agents.customInstructions.info" = "入力内容は、AI チャットの追加システムプロンプトとして、選択中の AI モデルへ送信されます。Dahlia の標準指示と結合して使われます。";
 "settings.agents.customInstructions.help" = "AI チャットへの指示を設定します。この Mac 内にアカウント別で保存され、新しいチャットや閉じて開き直したチャットに適用されます。空にすると解除できます。要約生成と画像解析には使いません。";
+
+"settings.agents.skills" = "スキル";
+"settings.agents.skills.empty" = "認識しているスキルはありません。";
+"settings.agents.skills.help" = "新しいチャットプロセスが認識するスキルです。標準スキル、このアカウントが保存したスキル、パッケージのスキルを表示します。追加・変更後は更新してください。実行中のチャットには次のプロセス起動時に反映されます。";
+"settings.agents.fileAccess.builtIn" = "既定で許可されているフォルダ・ファイル";
+"settings.agents.fileAccess.builtInHelp" = "フォルダは配下を含みます。既定の許可は変更できません。システムの許可よりも、Pi の実行コード・Dahlia の保護データ・シェル起動ファイルの制限を優先します。/opt/homebrew と /usr/local の var・etc は読み取り不可です。表示には個別のデバイスファイルを含みません。";

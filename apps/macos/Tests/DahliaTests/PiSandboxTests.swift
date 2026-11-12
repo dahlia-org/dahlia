@@ -7,6 +7,56 @@ import Foundation
 
     struct PiSandboxTests {
         @Test
+        func accountSkillsAreWritableWithoutExposingCredentialsOrOtherAccounts() throws {
+            let root = FileManager.default.temporaryDirectory.appending(path: "PiSandboxSkills-\(UUID())")
+            defer { try? FileManager.default.removeItem(at: root) }
+            let support = root.appending(path: "support")
+            let locator = PiAgentDirectoryLocator(applicationSupportURL: support)
+            let agent = try locator.agentURL(for: .local)
+            let other = try locator.agentURL(for: .dahlia(connectionID: UUID()))
+            let work = root.appending(path: "work")
+            try FileManager.default.createDirectory(at: work, withIntermediateDirectories: true)
+            let skills = agent.appending(path: "skills")
+            #expect(try run(
+                "mkdir '\(skills.path)/learned' && echo instructions > '\(skills.path)/learned/SKILL.md'",
+                cwd: work,
+                agent: agent,
+                support: support
+            ) == 0)
+            #expect(try run("cat '\(skills.path)/learned/SKILL.md'", cwd: work, agent: agent, support: support) == 0)
+            let startup = skills.appending(path: "startup.sh")
+            try Data("true".utf8).write(to: startup)
+            #expect(try run("echo changed > '\(startup.path)'", cwd: work, agent: agent, support: support, environment: ["BASH_ENV": startup.path]) !=
+                0)
+            let executable = skills.appending(path: "runtime/pi")
+            try FileManager.default.createDirectory(at: executable.deletingLastPathComponent(), withIntermediateDirectories: true)
+            try Data("runtime".utf8).write(to: executable)
+            #expect(try run("echo changed > '\(executable.path)'", cwd: work, agent: agent, support: support, pi: executable) != 0)
+            for name in ["auth.json", "settings.json", "models.json", "mcp.json"] {
+                let file = agent.appending(path: name)
+                try Data("secret".utf8).write(to: file)
+                #expect(try run("cat '\(file.path)'", cwd: work, agent: agent, support: support) != 0)
+                #expect(try run("echo changed > '\(file.path)'", cwd: work, agent: agent, support: support) != 0)
+            }
+            try FileManager.default.createSymbolicLink(
+                at: skills.appending(path: "credential-link"),
+                withDestinationURL: agent.appending(path: "auth.json")
+            )
+            #expect(try run("cat '\(skills.path)/credential-link'", cwd: work, agent: agent, support: support) != 0)
+            #expect(try run("echo changed > '\(skills.path)/credential-link'", cwd: work, agent: agent, support: support) != 0)
+            #expect(try run("ln -s '\(agent.path)/auth.json' '\(skills.path)/new-link'", cwd: work, agent: agent, support: support) != 0)
+            #expect(try run(
+                "ln -s '\(agent.path)/auth.json' moved-link && mv moved-link '\(skills.path)/moved-link'",
+                cwd: work,
+                agent: agent,
+                support: support
+            ) != 0)
+            #expect(try run("ln '\(agent.path)/auth.json' '\(skills.path)/hard-link'", cwd: work, agent: agent, support: support) != 0)
+            #expect(try run("echo changed > '\(other.path)/skills/SKILL.md'", cwd: work, agent: agent, support: support) != 0)
+            #expect(try run("rm -r '\(skills.path)/learned'", cwd: work, agent: agent, support: support) == 0)
+        }
+
+        @Test
         func installedPackagesAreReadOnlyAndDoNotExposeAccountCredentials() throws {
             let root = FileManager.default.temporaryDirectory.appending(path: "PiSandboxTests-\(UUID())")
             let agent = root.appending(path: "agent")

@@ -9,6 +9,7 @@ struct AgentSettingsView: View {
         case summary
         case imageAnalysis
         case packages
+        case skills
         case mcps
         case security
 
@@ -21,6 +22,7 @@ struct AgentSettingsView: View {
             case .imageAnalysis: L10n.imageAnalysis
             case .models: L10n.agentModels
             case .packages: L10n.agentPackages
+            case .skills: L10n.agentSkills
             case .mcps: L10n.agentMCPs
             case .security: L10n.agentSecurity
             }
@@ -97,6 +99,8 @@ private struct AgentSettingsTabs: View {
                 AgentModelSettingsView(account: account, mcp: mcp, subscriptions: subscriptions, onAdd: presentProviderRegistration)
             case .packages:
                 AgentPackageSettingsView(model: packages)
+            case .skills:
+                AgentSkillSettingsView(account: account)
             case .mcps:
                 AgentMCPSettingsView(model: mcp, onAdd: presentMCPRegistration)
             case .security:
@@ -513,7 +517,7 @@ private struct AgentProviderSection<Models: View>: View {
 }
 
 /// A section title with the section's add button beside it.
-private struct AgentSectionHeader<Action: View>: View {
+struct AgentSectionHeader<Action: View>: View {
     let title: String
     @ViewBuilder let action: Action
 

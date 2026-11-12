@@ -2452,6 +2452,11 @@ enum L10n { // swiftlint:disable:this type_body_length
 
     static var agentMCPs: String { String(localized: "settings.agents.mcps", bundle: bundle) }
     static var piCommandInUse: String { String(localized: "settings.agents.piCommandInUse", bundle: bundle) }
+    static var agentSkills: String { String(localized: "settings.agents.skills", bundle: bundle) }
+    static var agentSkillsEmpty: String { String(localized: "settings.agents.skills.empty", bundle: bundle) }
+    static var agentSkillsHelp: String { String(localized: "settings.agents.skills.help", bundle: bundle) }
+    static var agentFileAccessBuiltIn: String { String(localized: "settings.agents.fileAccess.builtIn", bundle: bundle) }
+    static var agentFileAccessBuiltInHelp: String { String(localized: "settings.agents.fileAccess.builtInHelp", bundle: bundle) }
     static var agentSecurity: String { String(localized: "settings.agents.security", bundle: bundle) }
     static var agentFileAccess: String { String(localized: "settings.agents.fileAccess", bundle: bundle) }
     static var agentFileAccessPermission: String { String(localized: "settings.agents.fileAccess.permission", bundle: bundle) }

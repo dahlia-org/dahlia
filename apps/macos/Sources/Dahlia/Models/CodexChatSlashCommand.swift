@@ -4,6 +4,11 @@ struct CodexChatSlashCommand: Decodable, Identifiable, Equatable, Sendable {
     let name: String
     let description: String?
     let source: String
+    var sourceInfo: SourceInfo?
+
+    struct SourceInfo: Decodable, Equatable, Sendable {
+        let path: String?
+    }
 
     var id: String { name }
 

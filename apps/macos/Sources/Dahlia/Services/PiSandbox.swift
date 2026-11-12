@@ -6,6 +6,35 @@ import Foundation
 /// (`PiExtension/pi.sb`): the working folder and explicit per-account grants are accessible, while runtime code
 /// and account data remain protected. Network access is allowed.
 enum PiSandbox {
+    /// User-visible defaults. System exceptions and protected runtime/data rules still take precedence.
+    nonisolated static func defaultFileAccess(cwd: URL, agentURL: URL) -> [PiFileAccessSettings.Grant] {
+        let writable = [cwd, temporaryDirectory, agentURL.appending(path: "skills")]
+        let readOnly = [piTemporaryDirectory, agentURL.appending(path: "npm"), agentURL.appending(path: "git")]
+            + PiBundle.presetSkillURLs()
+            + [ScreenshotFileStore.defaultDirectory]
+        let database = MeetingAccessStore.defaultDatabaseURL.path
+        let files = [database, database + "-wal", database + "-shm"]
+        // Keep the displayed system directories aligned with pi.sb; individual device files are omitted.
+        let system = [
+            "/System",
+            "/usr",
+            "/bin",
+            "/sbin",
+            "/Library/Developer",
+            "/Library/Apple",
+            "/Library/Frameworks",
+            "/Applications",
+            "/opt",
+            "/private/etc",
+            "/private/var/db/timezone",
+            "/private/var/select",
+        ]
+        return writable.map { .init(path: realPath($0), isDirectory: true, access: .readWrite) }
+            + readOnly.map { .init(path: realPath($0), isDirectory: true) }
+            + files.map { .init(path: $0, isDirectory: false) }
+            + system.map { .init(path: $0, isDirectory: true) }
+    }
+
     /// The sandbox's temporary and home folder; the user's own are out of reach there.
     nonisolated static let temporaryDirectory = FileManager.default.temporaryDirectory
         .appending(path: "dahlia-chat", directoryHint: .isDirectory)
@@ -53,13 +82,15 @@ enum PiSandbox {
             rules.append("(allow \(operations) (\(filter) (param \"\(parameter)\")))")
         }
         // WORK/TMP and additional grants must not make shell startup code writable.
+        var shellRules: [String] = []
         for (index, path) in try shellStartupPaths(home: home, environment: environment, cwd: cwd).enumerated() {
             let parameter = "SHELL_STARTUP_\(index)"
             arguments += ["-D", "\(parameter)=\(path)"]
-            rules.append("(deny file-write* (subpath (param \"\(parameter)\")))")
+            shellRules.append("(deny file-write* (subpath (param \"\(parameter)\")))")
         }
         let profile = try String(contentsOf: PiBundle.resourceURL("pi.sb"), encoding: .utf8)
             .replacingOccurrences(of: "; ADDITIONAL_FILE_ACCESS", with: rules.joined(separator: "\n"))
+            .replacingOccurrences(of: "; SHELL_STARTUP_PROTECTION", with: shellRules.joined(separator: "\n"))
         return ["/usr/bin/sandbox-exec", "-p", profile] + arguments
     }
 

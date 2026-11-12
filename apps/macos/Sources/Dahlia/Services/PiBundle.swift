@@ -91,6 +91,7 @@ struct PiAgentDirectoryLocator: Sendable {
     func agentURL(for provider: CodexRuntimeProvider) throws -> URL {
         let url = accountURL(for: provider).appending(path: "pi", directoryHint: .isDirectory)
         try Self.createPrivateDirectory(url)
+        try Self.createPrivateDirectory(url.appending(path: "skills", directoryHint: .isDirectory))
         return url
     }
 
