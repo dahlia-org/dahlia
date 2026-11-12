@@ -94,9 +94,8 @@ import Foundation
         }
 
         @Test
-        func newTasksAskForApprovalAndPreserveExplicitSelections() {
-            // Neither AI review nor skipping approval is selected implicitly for a new chat.
-            #expect(CodexChatSessionModel().selectedApprovalMethod == .ask)
+        func newTasksUseAutoReviewAndPreserveExplicitSelections() {
+            #expect(CodexChatSessionModel().selectedApprovalMethod == .autoReview)
             for method in CodexChatApprovalMethod.allCases {
                 #expect(CodexChatSessionModel(approvalMethod: method).selectedApprovalMethod == method)
             }
@@ -351,7 +350,7 @@ import Foundation
             let restoreTask = Task { await session.restore() }
             await waitUntilAsync { await service.isLoadWaiting }
 
-            #expect(session.selectedApprovalMethod == .ask)
+            #expect(session.selectedApprovalMethod == .autoReview)
 
             await service.resumeDelayedLoad()
             await restoreTask.value
@@ -425,7 +424,7 @@ import Foundation
         }
 
         @Test
-        func legacyTaskRestoresToAskAndPersistsTheSafeSetting() async {
+        func taskWithoutStoredApprovalMethodRestoresToAutoReview() async {
             let service = TestCodexChatService(mode: .complete)
             let settings = AppSettings()
             let workspace = Self.testWorkspace()
@@ -433,15 +432,14 @@ import Foundation
             let session = CodexChatSessionModel(
                 workspaceID: workspace.id,
                 backendThreadID: "thread-1",
-                approvalMethod: .autoReview,
                 service: service,
                 settings: settings
             )
 
             await session.restore()
-            await waitUntilAsync { await service.approvalMethodUpdates.last == .ask }
+            await waitUntilAsync { await service.approvalMethodUpdates.last == .autoReview }
 
-            #expect(session.selectedApprovalMethod == .ask)
+            #expect(session.selectedApprovalMethod == .autoReview)
         }
 
         @Test
@@ -516,6 +514,7 @@ import Foundation
             #expect(session.messages.last?.reasoning == "Considered the question")
             #expect(session.title == "Question")
             #expect(await service.sentTextBlocks == [["Question"]])
+            #expect(await service.turnApprovalMethods == [.autoReview])
             #expect(await service.threadNames == ["Question"])
         }
 
