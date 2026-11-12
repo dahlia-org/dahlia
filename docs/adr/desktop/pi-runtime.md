@@ -90,7 +90,7 @@ Pi の codemode（未有効）の script は Pi の process 内の QuickJS で�
 ## Provider
 
 Local Account は OpenAI と Anthropic に別々にサインインでき、サインイン済みの両方のモデルをまとめて一覧に出す。サインインは
-「エージェント」>「一般」の「プロバイダー」で行う（セットアップツアーにも残す）。「プロバイダー」には、アカウント自身のサインインと、
+「Dahlia AI」>「モデル」の「プロバイダー」で行う（セットアップツアーにも残す）。「プロバイダー」には、アカウント自身のサインインと、
 サインイン済みのサブスクリプション、追加した Databricks を並べ、それぞれに使い道（「モデル」「MCP」）のバッジを付ける（Databricks は両方）。サブスクリプションと
 Databricks は「プロバイダーを追加」のモーダルで選んで追加する（サブスクリプションは Local Account だけ）。設定のモーダルは窓全体に重ねる。Databricks アカウント（接続した workspace ごとに1つ）は
 自分の agent directory を持ち、実行アカウント `databricks(connectionID:)` として、その workspace の Gateway のモデルを一覧に出す。どのモデルを出すかは実行アカウントの provider ID で決まり（[アカウント](accounts.md#codex-account-context)）、
@@ -215,7 +215,7 @@ Codex の web search、`request_user_input` は Pi にないため提供しな�
 ### Unity AI Gateway の MCP
 
 採否は[エージェントによる MCP 経由の外部サービス操作](agent-mcp-operations.md)に従う。
-開いているアカウントに、「エージェント」>「一般」の「プロバイダー」で Databricks の workspace（sign-in）を追加し、「コネクター」タブで
+開いているアカウントに、「Dahlia AI」>「モデル」の「プロバイダー」で Databricks の workspace（sign-in）を追加し、「コネクター」タブで
 その workspace の MCP server を登録する（2026-11-09 ユーザー承認）。「プロバイダー」には、アカウント自身のモデルのサインインも並べる。モデルの
 workspace と MCP の workspace が異なることが多いため、MCP 用の workspace はアカウントとは別にサインインする。Databricks アカウントでは、
 モデルと同じアカウント自身の workspace の MCP も選べ、その server は `auth.provider` にアカウントの bridged provider（`databricks`）を指定して
@@ -223,7 +223,7 @@ workspace と MCP の workspace が異なることが多いため、MCP 用の w
 しない。この workspace は最初の server と一緒に保存し、最後の server を外すと消す。登録は Local Account・Databricks
 アカウント・Dahlia account のどれでもでき、アカウントごとに app defaults（`agentMCPs.<local またはアカウント ID>`）に保存する。
 Unity Gateway の MCP は登録の操作を要さない（2026-11-09 ユーザー承認）。「コネクター」タブは、アカウント自身の workspace と「プロバイダー」で
-追加した Databricks を折りたたみ可能な見出しとして並べ、その下に MCP service を2列のカードで表示する。一覧は中央の設定カラムに収め、カードには名前と API の `comment` を表示し、検索は説明も対象にする。各 MCP service のカード右上にトグルを置き、有効な MCP だけ、その左に小型の円形の認証表示と処理中のキャンセルを表示する。プロバイダーのサインインは「一般」の「プロバイダー」で行う。オンにすると server を登録し、オフにすると外す。
+追加した Databricks を折りたたみ可能な見出しとして並べ、その下に MCP service を2列のカードで表示する。一覧は中央の設定カラムに収め、カードには名前と API の `comment` を表示し、検索は説明も対象にする。各 MCP service のカード右上にトグルを置き、有効な MCP だけ、その左に小型の円形の認証表示と処理中のキャンセルを表示する。プロバイダーのサインインは「モデル」の「プロバイダー」で行う。オンにすると server を登録し、オフにすると外す。
 各 provider のすべてのサービスカードの後に「MCP サーバーを追加」カードを置く。`main.default.notion` のような完全名を入力すると有効なカードとして追加し、無効化後も一覧に残す。追加用カードは常に最後に表示する。
 
 並べる MCP service は、その workspace の Unity AI Gateway が sign-in に見せるもの（`system.ai` の下で状態が ACTIVE のもの。

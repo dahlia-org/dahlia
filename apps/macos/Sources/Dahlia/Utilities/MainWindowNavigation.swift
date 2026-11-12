@@ -222,8 +222,10 @@ final class MainWindowNavigation {
                 meetingSettingsTab = .screenshots
             case .meetingLinks:
                 meetingSettingsTab = .meetingLinks
-            case .agents, .modelProvider, .macInference, .dahliaAccounts:
+            case .agents, .macInference, .dahliaAccounts:
                 agentSettingsTab = .general
+            case .modelProvider:
+                agentSettingsTab = .models
             case .aiSummary, .accountPreferences, .accountsAndWorkspaces:
                 agentSettingsTab = .summary
             case .mcp:

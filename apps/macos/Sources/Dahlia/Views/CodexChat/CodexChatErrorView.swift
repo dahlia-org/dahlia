@@ -13,11 +13,12 @@ struct CodexChatErrorView: View {
                 .foregroundStyle(.red)
             HStack {
                 Button(L10n.retry, action: onRetry)
-                // The button opens the page the message names: Pi itself and its sign-ins are under Agents (not signed
-                // in, Pi not found); other errors concern the account's model settings.
+                // Pi installation lives under General; provider sign-in and models live under Models.
                 // shortcut: matches the page's name in the text; carry the error's kind here if a message names Agents
                 // for another reason.
-                if message.contains(L10n.agents) {
+                if message == L10n.codexNotLoggedIn {
+                    Button(L10n.openAgentSettings) { mainWindowNavigation.openAgentSettings(tab: .models) }
+                } else if message.contains(L10n.agents) {
                     Button(L10n.openAgentSettings) { mainWindowNavigation.openSettings(category: .agents) }
                 } else {
                     Button(L10n.openAISettings) { mainWindowNavigation.openSettings(category: .modelProvider) }
