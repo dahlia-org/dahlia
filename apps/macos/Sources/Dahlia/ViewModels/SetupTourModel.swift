@@ -9,6 +9,8 @@ final class SetupTourModel {
 
     private(set) var currentStep: SetupTourStep
     private(set) var isCompleting = false
+    private(set) var isCheckingPi = false
+    private(set) var needsPiSetup = false
     private(set) var errorMessage: String?
     private(set) var selectedAccountConnectionID: UUID?
     /// The Databricks account: local data listed under the connected Databricks workspace.
@@ -18,6 +20,7 @@ final class SetupTourModel {
     private(set) var isPreparingWorkspace = false
     @ObservationIgnored private var preparationTask: Task<WorkspaceRecord?, Never>?
     private var preparationGeneration = 0
+    private var accountSelectionGeneration = 0
 
     init(
         mode: SetupTourMode,
@@ -38,6 +41,7 @@ final class SetupTourModel {
 
         if mode == .initial, currentWorkspace == nil, let progressDefaults {
             let restoredStep = SetupTourPresentationPolicy.restoredStep(in: progressDefaults)
+            needsPiSetup = restoredStep == .pi
             let restoredConnectionID = SetupTourPresentationPolicy.restoredAccountConnectionID(in: progressDefaults)
             let restoredAccountConfirmed = SetupTourPresentationPolicy.isAccountSelectionConfirmed(in: progressDefaults)
                 // Databricks connections load after launch; one removed mid-tour fails at completion instead.
@@ -64,23 +68,45 @@ final class SetupTourModel {
     }
 
     var canGoBack: Bool {
-        currentStep != .account && !isCompleting
+        currentStep != .account && !isCompleting && !isCheckingPi
     }
 
     var canContinue: Bool {
-        !isCompleting && (currentStep != .account || isAccountSelectionConfirmed)
+        !isCompleting && !isCheckingPi && (currentStep != .account || isAccountSelectionConfirmed)
     }
 
     var visibleSteps: [SetupTourStep] {
         SetupTourStep.allCases.filter {
+            if $0 == .pi { return needsPiSetup }
             // A Dahlia or Databricks account signs in during account selection and uses only its own models.
-            (selectedAccountConnectionID == nil && selectedDatabricksConnectionID == nil) || $0 != .modelProvider
+            return (selectedAccountConnectionID == nil && selectedDatabricksConnectionID == nil) || $0 != .modelProvider
         }
+    }
+
+    /// Resolve the selected account's Pi before opening provider sign-in, which needs Pi itself.
+    func advanceFromAccount(
+        isPiAvailable: (CodexRuntimeProvider) async -> Bool = { account in
+            await Task.detached { (try? PiBundle.executableURL(for: account)) != nil }.value
+        }
+    ) async {
+        guard currentStep == .account, canContinue else { return }
+        let account = CodexRuntimeProvider(
+            accountConnectionID: selectedAccountConnectionID,
+            databricksConnectionID: selectedDatabricksConnectionID
+        )
+        let generation = accountSelectionGeneration
+        isCheckingPi = true
+        let available = await isPiAvailable(account)
+        isCheckingPi = false
+        guard !Task.isCancelled, generation == accountSelectionGeneration else { return }
+        needsPiSetup = !available
+        advance()
     }
 
     /// `databricks` chooses a connected Databricks workspace's account instead of the Local Account.
     func selectAccountConnection(_ connectionID: UUID?, databricks: UUID? = nil) {
         if connectionID != selectedAccountConnectionID || databricks != selectedDatabricksConnectionID {
+            accountSelectionGeneration += 1
             preparationGeneration += 1
             preparationTask?.cancel()
             preparationTask = nil

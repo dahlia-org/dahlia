@@ -6,10 +6,11 @@ enum SetupTourStep: Int, CaseIterable, Identifiable {
     case calendar = 4
     case completion = 5
     case account = 6
+    case pi = 7
 
     static let allCases: [Self] = [
         .account,
-        // The Local Account sets up its model providers right after it is chosen.
+        .pi,
         .modelProvider,
         .workingLanguages,
         .permissions,
@@ -22,6 +23,7 @@ enum SetupTourStep: Int, CaseIterable, Identifiable {
     var title: String {
         switch self {
         case .account: L10n.account
+        case .pi: L10n.installPi
         case .workingLanguages: L10n.workingLanguages
         case .permissions: L10n.permissions
         case .modelProvider: L10n.modelProvider
@@ -33,6 +35,7 @@ enum SetupTourStep: Int, CaseIterable, Identifiable {
     var description: String {
         switch self {
         case .account: L10n.accountSetupDescription
+        case .pi: L10n.piSetupDescription
         case .workingLanguages: L10n.workingLanguagesSetupDescription
         case .permissions: L10n.audioPermissionSetupDescription
         case .modelProvider: L10n.modelProviderSetupDescription

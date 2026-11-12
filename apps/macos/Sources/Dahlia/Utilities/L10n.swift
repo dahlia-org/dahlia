@@ -1635,6 +1635,8 @@ enum L10n { // swiftlint:disable:this type_body_length
     static var setupPreparingWorkspace: String { String(localized: "setup.preparingWorkspace", bundle: bundle) }
     static var setupWorkspaceUnavailable: String { String(localized: "setup.workspaceUnavailable", bundle: bundle) }
     static var setupComplete: String { String(localized: "Setup Complete", bundle: bundle) }
+    static var piSetupDescription: String { String(localized: "setup.piDescription", bundle: bundle) }
+    static var piSetupSkipDescription: String { String(localized: "setup.piSkipDescription", bundle: bundle) }
     static var continueAction: String { String(localized: "Continue", bundle: bundle) }
     static var startDahlia: String { String(localized: "Start Dahlia", bundle: bundle) }
     static var workingLanguagesSetupDescription: String { String(

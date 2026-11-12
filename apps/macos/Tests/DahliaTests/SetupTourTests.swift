@@ -7,6 +7,101 @@
     @MainActor
     struct SetupTourTests {
         @Test
+        func missingPiIsOfferedBeforeProvidersForEveryAccount() async {
+            for account in [CodexRuntimeProvider.local, .databricks(connectionID: .v7()), .dahlia(connectionID: .v7())] {
+                let model = SetupTourModel(mode: .initial, currentWorkspace: nil)
+                if case let .databricks(connectionID) = account {
+                    model.selectAccountConnection(nil, databricks: connectionID)
+                } else {
+                    model.selectAccountConnection(account.accountConnectionID)
+                }
+                await model.advanceFromAccount { selected in
+                    #expect(selected == account)
+                    #expect(model.isCheckingPi)
+                    #expect(!model.canContinue)
+                    return false
+                }
+                #expect(model.currentStep == .pi)
+                #expect(model.visibleSteps.prefix(2) == [.account, .pi])
+                #expect(model.canContinue)
+                model.advance()
+                #expect(model.currentStep == (account == .local ? .modelProvider : .workingLanguages))
+                model.goBack()
+                #expect(model.currentStep == .pi)
+            }
+        }
+
+        @Test
+        func availablePiSkipsInstallationForEveryAccount() async {
+            for account in [CodexRuntimeProvider.local, .databricks(connectionID: .v7()), .dahlia(connectionID: .v7())] {
+                let model = SetupTourModel(mode: .manual, currentWorkspace: nil)
+                if case let .databricks(connectionID) = account {
+                    model.selectAccountConnection(nil, databricks: connectionID)
+                } else {
+                    model.selectAccountConnection(account.accountConnectionID)
+                }
+                await model.advanceFromAccount { _ in true }
+                #expect(!model.visibleSteps.contains(.pi))
+                #expect(model.currentStep == (account == .local ? .modelProvider : .workingLanguages))
+            }
+        }
+
+        @Test
+        func piCheckRejectsAnAccountChangedWhileChecking() async {
+            let model = SetupTourModel(mode: .initial, currentWorkspace: nil)
+            model.selectAccountConnection(nil)
+            await model.advanceFromAccount { _ in
+                model.selectAccountConnection(nil, databricks: .v7())
+                return false
+            }
+            #expect(model.currentStep == .account)
+            #expect(!model.isCheckingPi)
+            await model.advanceFromAccount { _ in false }
+            #expect(model.currentStep == .pi)
+        }
+
+        @Test
+        func workspacePreparationDoesNotInvalidatePiDetection() async {
+            let model = SetupTourModel(mode: .initial, currentWorkspace: nil)
+            model.selectAccountConnection(nil)
+            await model.advanceFromAccount { _ in
+                _ = await model.prepareInitialWorkspace { nil }
+                return false
+            }
+            #expect(model.currentStep == .pi)
+        }
+
+        @Test
+        func cancelledPiDetectionStaysOnAccountSelection() async {
+            let model = SetupTourModel(mode: .initial, currentWorkspace: nil)
+            model.selectAccountConnection(nil)
+            let task = Task {
+                await model.advanceFromAccount { _ in
+                    withUnsafeCurrentTask { $0?.cancel() }
+                    return false
+                }
+            }
+            await task.value
+            #expect(model.currentStep == .account)
+            #expect(!model.isCheckingPi)
+        }
+
+        @Test
+        func interruptedPiSetupRestoresItsStep() async throws {
+            let suiteName = "SetupPiProgress-\(UUID())"
+            let defaults = try #require(UserDefaults(suiteName: suiteName))
+            defer { defaults.removePersistentDomain(forName: suiteName) }
+            let model = SetupTourModel(mode: .initial, currentWorkspace: nil, progressDefaults: defaults)
+            model.selectAccountConnection(nil)
+            await model.advanceFromAccount { _ in false }
+            let restored = SetupTourModel(mode: .initial, currentWorkspace: nil, progressDefaults: defaults)
+            #expect(restored.currentStep == .pi)
+            #expect(restored.visibleSteps.contains(.pi))
+            restored.advance()
+            #expect(restored.currentStep == .modelProvider)
+        }
+
+        @Test
         func interruptedInitialTourRestoresItsDatabricksAccount() throws {
             let suiteName = "SetupDatabricksProgress-\(UUID())"
             let defaults = try #require(UserDefaults(suiteName: suiteName))
@@ -286,6 +381,7 @@
         func setupUsesTheRequestedConfigurationOrder() {
             #expect(SetupTourStep.allCases == [
                 .account,
+                .pi,
                 .modelProvider,
                 .workingLanguages,
                 .permissions,

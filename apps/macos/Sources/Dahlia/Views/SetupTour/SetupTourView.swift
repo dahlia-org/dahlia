@@ -7,6 +7,8 @@ struct SetupTourView: View {
     @State private var accountController: DahliaCloudAccountController
     @State private var isLanguageMenuHovered = false
     @State private var isCloseHovered = false
+    @State private var isInstallingPi = false
+    @State private var accountAdvanceTask: Task<Void, Never>?
 
     private let workspaceManagementModel: WorkspaceManagementModel
     private let canComplete: () -> Bool
@@ -105,6 +107,7 @@ struct SetupTourView: View {
                         }
                         .buttonStyle(.plain)
                         .menuIndicator(.hidden)
+                        .disabled(isInstallingPi)
                         .fixedSize()
                         .onHover { isLanguageMenuHovered = $0 }
                         .accessibilityLabel(L10n.appLanguage)
@@ -128,7 +131,7 @@ struct SetupTourView: View {
                             )
                             .onHover { isCloseHovered = $0 }
                             .accessibilityLabel(L10n.close)
-                            .disabled(model.isCompleting)
+                            .disabled(model.isCompleting || isInstallingPi)
                         }
                     }
                     .padding(.top, 8)
@@ -139,7 +142,7 @@ struct SetupTourView: View {
             SetupTourActionBarView(
                 step: model.currentStep,
                 steps: model.visibleSteps,
-                canGoBack: model.canGoBack,
+                canGoBack: model.canGoBack && !isInstallingPi,
                 canContinue: canContinue,
                 isCompleting: model.isCompleting,
                 onBack: model.goBack,
@@ -155,11 +158,14 @@ struct SetupTourView: View {
         .id(settings.appLanguage)
         // Outside `.id`, so a language change does not clear the account mid-tour.
         .onChange(of: tourAccount, initial: true) { _, account in settings.setupTourAccount = account }
-        .onDisappear { settings.setupTourAccount = nil }
+        .onDisappear {
+            accountAdvanceTask?.cancel()
+            settings.setupTourAccount = nil
+        }
         .background(Color(nsColor: .windowBackgroundColor))
         .accessibilityElement(children: .contain)
         .windowDismissBehavior(
-            model.mode == .initial || model.isCompleting || accountController.isBusy ? .disabled : .automatic
+            model.mode == .initial || model.isCompleting || accountController.isBusy || isInstallingPi ? .disabled : .automatic
         )
     }
 
@@ -174,8 +180,15 @@ struct SetupTourView: View {
                 onContinueWithDatabricks: continueWithDatabricks,
                 onContinueLocally: continueWithLocalAccount
             )
+            .disabled(model.isCheckingPi)
+            .overlay {
+                if model.isCheckingPi { ProgressView() }
+            }
         case .workingLanguages:
             WorkingLanguagesSetupStepView()
+        case .pi:
+            PiSetupStepView(account: tourAccount, isInstalling: $isInstallingPi)
+                .id(tourAccount)
         case .permissions:
             PermissionSetupStepView()
         case .modelProvider:
@@ -195,6 +208,8 @@ struct SetupTourView: View {
     private func continueTour() {
         if model.currentStep == .completion {
             completeTour()
+        } else if model.currentStep == .account {
+            advanceFromAccount()
         } else {
             model.advance()
         }
@@ -209,16 +224,24 @@ struct SetupTourView: View {
 
     private func continueWithLocalAccount() {
         model.selectAccountConnection(nil)
-        model.advance()
+        advanceFromAccount()
     }
 
     private func continueWithDatabricks(_ connectionID: UUID) {
         model.selectAccountConnection(nil, databricks: connectionID)
-        model.advance()
+        advanceFromAccount()
+    }
+
+    private func advanceFromAccount() {
+        guard accountAdvanceTask == nil else { return }
+        accountAdvanceTask = Task {
+            await model.advanceFromAccount()
+            accountAdvanceTask = nil
+        }
     }
 
     private var canContinue: Bool {
-        guard model.canContinue else { return false }
+        guard model.canContinue, !isInstallingPi else { return false }
         guard model.currentStep != .account || !accountController.isBusy else { return false }
         guard model.currentStep == .workingLanguages,
               settings.appLanguageScope == .selected else { return true }
