@@ -2824,7 +2824,6 @@ enum L10n { // swiftlint:disable:this type_body_length
 
     static var switchWorkspace: String { String(localized: "Switch Workspace", bundle: bundle) }
     static var mcpSettings: String { String(localized: "MCP Settings", bundle: bundle) }
-    static var manageProjects: String { String(localized: "Manage Projects...", bundle: bundle) }
     static var settings: String { String(localized: "Settings", bundle: bundle) }
     static var help: String { String(localized: "Help", bundle: bundle) }
     static var feedback: String { String(localized: "Feedback", bundle: bundle) }
