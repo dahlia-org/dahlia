@@ -6,6 +6,27 @@ import Foundation
     import Testing
 
     struct PiSandboxTests {
+        @Test
+        func installedPackagesAreReadOnlyAndDoNotExposeAccountCredentials() throws {
+            let root = FileManager.default.temporaryDirectory.appending(path: "PiSandboxTests-\(UUID())")
+            let agent = root.appending(path: "agent")
+            for path in ["npm/node_modules/tools/skills", "git/github.com/team/tools/skills"] {
+                try FileManager.default.createDirectory(at: agent.appending(path: path), withIntermediateDirectories: true)
+                try Data("skill".utf8).write(to: agent.appending(path: path + "/SKILL.md"))
+            }
+            defer { try? FileManager.default.removeItem(at: root) }
+            try Data("secret".utf8).write(to: agent.appending(path: "auth.json"))
+            for path in ["npm/node_modules/tools/skills", "git/github.com/team/tools/skills"] {
+                let skill = agent.appending(path: path + "/SKILL.md").path
+                #expect(try run("cat '\(skill)'", cwd: root, agent: agent) == 0)
+                #expect(try run("echo changed > '\(skill)'", cwd: root, agent: agent) != 0)
+            }
+            let link = agent.appending(path: "npm/credential-link")
+            try FileManager.default.createSymbolicLink(at: link, withDestinationURL: agent.appending(path: "auth.json"))
+            #expect(try run("cat '\(link.path)'", cwd: root, agent: agent) != 0)
+            #expect(try run("cat '\(agent.path)/auth.json'", cwd: root, agent: agent) != 0)
+        }
+
         /// Runs a shell command under the real profile and returns its exit status.
         private func run(
             _ script: String, cwd: URL, agent: URL, support: URL? = nil, pi: URL = URL(fileURLWithPath: "/bin/sh")

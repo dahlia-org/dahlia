@@ -1863,3 +1863,19 @@
 "chat.toolSucceeded %@" = "%@ が完了しました。応答を待っています…";
 "chat.toolFailed %@" = "%@ が失敗しました。応答を待っています…";
 "chat.toolInaccessible %@" = "%@ でアクセスできませんでした。応答を待っています…";
+
+// Pi packages
+"settings.agents.packages" = "パッケージ";
+"settings.agents.packageCatalog" = "Pi のパッケージを探す";
+"settings.agents.packageSource" = "パッケージ名または Git URL";
+"settings.agents.packageInstall" = "インストール";
+"settings.agents.packageRemove" = "アンインストール";
+"settings.agents.packageHelp" = "このアカウントの Pi に追加します。カタログの npm: 名、または https://github.com/mats16/ai-desktools などの Git URL を入力してください。信頼できるパッケージだけをインストールしてください。 チャットでスキルとプロンプトを利用できます。拡張コードとテーマは読み込みません。";
+"settings.agents.packageChanged" = "変更は次に開始するチャットから適用されます。";
+"settings.agents.packagesEmpty" = "インストール済みのパッケージはありません。";
+"settings.agents.packagesInstalled" = "インストール済み";
+"settings.agents.packageInvalidSource" = "npm: で始まるパッケージ名、または Git URL を入力してください。";
+"settings.agents.packageBusy" = "このアカウントのパッケージを変更中です。完了後にもう一度お試しください。";
+"settings.agents.packageFailed" = "パッケージの変更に失敗しました。";
+"settings.agents.packageNoVersions" = "設定中の npm レジストリには、このパッケージの利用可能なバージョンがありません。パッケージ名、公開状況、レジストリの制限を確認してください。";
+"settings.agents.packageErrorDetails" = "エラーの詳細";

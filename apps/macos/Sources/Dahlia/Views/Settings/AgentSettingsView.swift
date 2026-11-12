@@ -8,6 +8,7 @@ struct AgentSettingsView: View {
         case summary
         case imageAnalysis
         case models
+        case packages
         case mcps
 
         var id: Self { self }
@@ -18,6 +19,7 @@ struct AgentSettingsView: View {
             case .summary: L10n.settingsSummaryOutput
             case .imageAnalysis: L10n.imageAnalysis
             case .models: L10n.agentModels
+            case .packages: L10n.agentPackages
             case .mcps: L10n.agentMCPs
             }
         }
@@ -42,6 +44,7 @@ private struct AgentSettingsTabs: View {
     /// Shared by General's providers and the MCP tab, so a provider added in one shows in the other.
     @State private var mcp: AgentMCPSettingsModel
     @State private var launch: PiLaunchSettingsModel
+    @State private var packages: PiPackageSettingsModel
     /// The Local Account's subscriptions, which only it can sign in to.
     @State private var subscriptions: [CodexAccountController]
 
@@ -49,6 +52,7 @@ private struct AgentSettingsTabs: View {
         self.account = account
         _mcp = State(initialValue: AgentMCPSettingsModel(account: account))
         _launch = State(initialValue: PiLaunchSettingsModel(account: account))
+        _packages = State(initialValue: PiPackageSettingsModel(account: account))
         _subscriptions = State(initialValue: account == .local ? PiSubscription.allCases.map { CodexAccountController(subscription: $0) } : [])
     }
 
@@ -89,6 +93,8 @@ private struct AgentSettingsTabs: View {
                 .font(.dahliaBody)
             case .models:
                 AgentModelSettingsView(account: account, mcp: mcp)
+            case .packages:
+                AgentPackageSettingsView(model: packages)
             case .mcps:
                 AgentMCPSettingsView(model: mcp, onAdd: presentMCPRegistration)
             }

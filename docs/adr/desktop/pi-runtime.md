@@ -44,7 +44,10 @@ Pi の更新時に `test-pi-extension.py` で確かめる。ユーザーの `~/.
 
 Pi の agent directory はアカウントごとに `Application Support/Dahlia/accounts/<local または accounts.id>/pi`（0700）。
 Local Account は `local`、Databricks アカウントと Dahlia account は `accounts` テーブルの ID を使う。`PI_OFFLINE`・`PI_SKIP_VERSION_CHECK`・`PI_TELEMETRY=0` と、
-extension・skill・context file・prompt template・theme・project trust の自動読込の無効化で起動し、
+extension・context file・theme・project trust の自動読込を無効化して起動する。チャットではアカウントに追加したパッケージの skill・prompt template を読み込む（2026-11-12 ユーザー承認）。要約・画像解析・control は skill・prompt template も無効にする。
+「Dahlia AI」>「パッケージ」から npm source または Git URL を Pi の `install`・`remove` で管理し、同じアカウントの `settings.json` を一覧の正本にする。変更は次に開始するチャット process から適用する。
+パッケージ操作はアカウントの Pi 選択と環境変数を使い、`PI_CODING_AGENT_DIR` は Dahlia のアカウント directory に固定する。`~/.pi` や project の設定には追加しない。拡張コードは無効のままとし、インストール元は利用者が信頼できるものを指定する。
+
 Dahlia の extension（`PiExtension/dahlia.ts`）を `-e` で読み込む。チャットは Dahlia MCP と登録した MCP server のために Pi の `builtin:mcp` も
 読み込み、`--tools` に `mcp__dahlia__*` と登録した server の `mcp__<name>__*` を含める。
 
@@ -57,7 +60,7 @@ Pi 本体は sandbox の外で動かす。Seatbelt は入れ子にできず、Pi
 | 作業フォルダ、sandbox 用の一時フォルダ（`<一時フォルダ>/dahlia-chat`。sandbox の中の `TMPDIR` と `HOME`） | 読み書き |
 | チャットの Pi の一時フォルダ（`<一時フォルダ>/dahlia-pi`。Pi の `TMPDIR`） | 読み取りだけ。Pi が長い出力の全文をここに保存する。Pi は変換した extension もここから読み込むので、書き込みは許さない |
 | sandbox の外で実行されるもの: インストールされた Pi（実行ファイルの実体の folder。npm package なら `node` を含む prefix）、Dahlia の extension と skill、上の Pi の一時フォルダ | 書き込み不可（作業フォルダがこれを含んでいても） |
-| Dahlia の preset skill、画像の保存先（`FileStore`）、app の SQLite（`dahlia.sqlite` と `-wal`・`-shm`） | 読み取りだけ（画像と SQLite はデバッグ用） |
+| Dahlia の preset skill、アカウントの Pi directory の `npm`・`git` 配下（インストール済みパッケージ）、画像の保存先（`FileStore`）、app の SQLite（`dahlia.sqlite` と `-wal`・`-shm`） | 読み取りだけ（画像と SQLite はデバッグ用） |
 | Dahlia の Application Support のそれ以外（全アカウントの agent directory、録音、backup。development build からは production のものも） | 読み書き不可（作業フォルダがこれを含んでいても） |
 | システムと全ユーザー向けの tool（`/System`・`/usr`・`/bin`・`/sbin`・`/Library/Developer`・`/Applications`・`/opt`・`/private/etc` など、`pi.sb` に名前で列挙） | 読み取りだけ。ただし local service の data と設定（`/opt/homebrew`・`/usr/local` の `var` と `etc`）は不可 |
 | それ以外すべて（ホーム、`/Volumes`、利用者の一時フォルダと cache など） | 読み書き不可（metadata は読める） |
