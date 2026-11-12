@@ -393,20 +393,25 @@ private struct RecordingSourcePopupButton<Value: Hashable>: NSViewRepresentable 
 
     func updateNSView(_ button: NSPopUpButton, context: Context) {
         context.coordinator.parent = self
-        button.removeAllItems()
+        let titles = items.map { item -> String? in
+            if case let .option(title, _) = item { title } else { nil }
+        }
+        if context.coordinator.renderedTitles != titles {
+            context.coordinator.renderedTitles = titles
+            button.removeAllItems()
 
-        var optionIndex = 0
-        for item in items {
-            switch item {
-            case let .option(title, _):
-                // addItem(withTitle:) は同名の既存項目を除去してしまうため、
-                // 同名ウィンドウ・同名マイクが共存できるよう NSMenuItem を直接追加する。
-                let menuItem = NSMenuItem(title: title, action: nil, keyEquivalent: "")
-                menuItem.tag = optionIndex
-                button.menu?.addItem(menuItem)
-                optionIndex += 1
-            case .divider:
-                button.menu?.addItem(.separator())
+            var optionIndex = 0
+            for title in titles {
+                if let title {
+                    // addItem(withTitle:) は同名の既存項目を除去してしまうため、
+                    // 同名ウィンドウ・同名マイクが共存できるよう NSMenuItem を直接追加する。
+                    let menuItem = NSMenuItem(title: title, action: nil, keyEquivalent: "")
+                    menuItem.tag = optionIndex
+                    button.menu?.addItem(menuItem)
+                    optionIndex += 1
+                } else {
+                    button.menu?.addItem(.separator())
+                }
             }
         }
 
@@ -417,6 +422,7 @@ private struct RecordingSourcePopupButton<Value: Hashable>: NSViewRepresentable 
 
     final class Coordinator: NSObject {
         var parent: RecordingSourcePopupButton
+        var renderedTitles: [String?]?
 
         init(parent: RecordingSourcePopupButton) {
             self.parent = parent

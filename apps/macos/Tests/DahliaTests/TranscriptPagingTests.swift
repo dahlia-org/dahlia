@@ -313,6 +313,41 @@
         }
 
         @Test
+        func latestReloadDropsPreviewWhoseFinalizedSegmentIsAlreadyPersisted() async throws {
+            let fixture = try makePagingFixture(segmentCount: 3)
+            let store = TranscriptStore()
+            store.configurePaging(
+                meetingId: fixture.meetingId,
+                loader: TranscriptPageLoader(dbQueue: fixture.database.dbQueue),
+                initialPage: TranscriptPage(segments: [], hasEarlier: false, hasLater: false)
+            )
+            // The durable lane committed the finalized segment while the UI lane still shows its preview.
+            let persistedID = try #require(fixture.orderedIds.last)
+            _ = store.updateUnconfirmedSegment(TranscriptSegment(
+                id: persistedID,
+                startTime: .now,
+                text: "preview",
+                isConfirmed: false,
+                audioSource: "mic"
+            ), forSource: "mic")
+
+            #expect(await store.reloadLatest())
+            #expect(Set(store.segments.map(\.id)).count == store.segments.count)
+            #expect(store.segments.first(where: { $0.id == persistedID })?.isConfirmed == true)
+
+            // A preview still queued behind the reload must not downgrade the finalized segment.
+            store.addSegment(TranscriptSegment(
+                id: persistedID,
+                startTime: .now,
+                text: "late preview",
+                isConfirmed: false,
+                audioSource: "mic"
+            ))
+            #expect(Set(store.segments.map(\.id)).count == store.segments.count)
+            #expect(store.segments.first(where: { $0.id == persistedID })?.isConfirmed == true)
+        }
+
+        @Test
         func compactionReloadWaitsForAnInFlightPageInsteadOfBeingDropped() async throws {
             let fixture = try makePagingFixture(segmentCount: 1000)
             let repository = MeetingRepository(dbQueue: fixture.database.dbQueue)

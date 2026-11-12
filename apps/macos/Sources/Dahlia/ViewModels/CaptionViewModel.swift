@@ -387,6 +387,7 @@ final class CaptionViewModel: ObservableObject {
 
     /// キャプチャ対象として選択可能なウィンドウ一覧。
     @Published var availableWindows: [ScreenshotWindowOption] = []
+    private var availableWindowsRefreshTask: Task<Void, Never>?
     /// スクリーンショット取得対象。未設定の場合はキャプチャしない。
     @Published var screenshotCaptureSource: ScreenshotCaptureSource = .none {
         didSet {
@@ -2836,10 +2837,16 @@ final class CaptionViewModel: ObservableObject {
                 guard let self, self.meetingSyncGeneration == generation,
                       self.currentMeetingId == meetingId else { return }
                 self.meetingSyncSnapshot = snapshot
-                self.recordingArchiveState = snapshot?.recordingArchiveState
-                self.meetingSyncState = snapshot?.state
+                // Every transcript commit re-runs this observation; publish only real changes so the window is not re-evaluated.
+                if self.recordingArchiveState != snapshot?.recordingArchiveState {
+                    self.recordingArchiveState = snapshot?.recordingArchiveState
+                }
+                if self.meetingSyncState != snapshot?.state {
+                    self.meetingSyncState = snapshot?.state
+                }
                 let states = snapshot?.content.filter { $0.entity != "file" } ?? []
-                self.textContentState = states.isEmpty ? nil : states.contains(where: { $0.fetchError == "deleted" }) ? .deleted
+                let textContentState: TextContentAvailability.State? = states.isEmpty ? nil
+                    : states.contains(where: { $0.fetchError == "deleted" }) ? .deleted
                     : states.contains(where: { $0.fetchError == "loading" }) ? .loading
                     : states.contains(where: { !$0.complete && $0.fetchError != nil }) ? .failed
                     : states.contains(where: { !$0.complete && $0.present }) ? .missing
@@ -2851,6 +2858,9 @@ final class CaptionViewModel: ObservableObject {
                             }) == true
                     }) ? .stale
                     : states.allSatisfy { !$0.present || ($0.entity == "transcript" && $0.complete && $0.contentCount == 0) } ? .empty : .ready
+                if self.textContentState != textContentState {
+                    self.textContentState = textContentState
+                }
                 self.refreshObservedMeetingContent()
             }
         )
@@ -5214,7 +5224,9 @@ final class CaptionViewModel: ObservableObject {
 
     /// キャプチャ対象のウィンドウ一覧を更新する。
     func refreshAvailableWindows() {
-        Task {
+        guard availableWindowsRefreshTask == nil else { return }
+        availableWindowsRefreshTask = Task {
+            defer { availableWindowsRefreshTask = nil }
             do {
                 let content = try await SCShareableContent.excludingDesktopWindows(true, onScreenWindowsOnly: false)
                 let myBundleID = Bundle.main.bundleIdentifier

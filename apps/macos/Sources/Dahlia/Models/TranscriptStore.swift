@@ -411,8 +411,9 @@ final class TranscriptStore: ObservableObject { // swiftlint:disable:this type_b
         _ page: TranscriptPage,
         preservingExistingProjection: Bool = false
     ) {
-        let previews = segments.filter { !$0.isConfirmed }
         var confirmedById = Dictionary(uniqueKeysWithValues: page.segments.map { ($0.id, $0) })
+        // The finalized segment can reach SQLite before the UI lane clears its preview.
+        let previews = segments.filter { !$0.isConfirmed && confirmedById[$0.id] == nil }
         if preservingExistingProjection {
             for segment in segments where segment.isConfirmed {
                 confirmedById[segment.id] = segment
@@ -432,7 +433,8 @@ final class TranscriptStore: ObservableObject { // swiftlint:disable:this type_b
 
     /// Deferred live segments and their newer-content signal survive until a latest reload merges them.
     private func applyEarliestPage(_ page: TranscriptPage) {
-        segments = (page.segments + segments.filter { !$0.isConfirmed }).sorted(by: Self.precedes)
+        let pageIDs = Set(page.segments.map(\.id))
+        segments = (page.segments + segments.filter { !$0.isConfirmed && !pageIDs.contains($0.id) }).sorted(by: Self.precedes)
         hasEarlierSegments = false
         hasLaterSegments = page.hasLater || !deferredConfirmedSegments.isEmpty
         isFollowingLatest = !hasLaterSegments
@@ -468,7 +470,7 @@ final class TranscriptStore: ObservableObject { // swiftlint:disable:this type_b
     ) {
         var byId = Dictionary(uniqueKeysWithValues: segments.map { ($0.id, $0) })
         for segment in incoming where segment.isConfirmed {
-            if !preservingExistingProjection || byId[segment.id] == nil {
+            if !preservingExistingProjection || byId[segment.id]?.isConfirmed != true {
                 byId[segment.id] = segment
             }
         }
@@ -521,7 +523,10 @@ final class TranscriptStore: ObservableObject { // swiftlint:disable:this type_b
 
     private func insertInTimeline(_ segment: TranscriptSegment) {
         if let existing = segments.firstIndex(where: { $0.id == segment.id }) {
-            segments[existing] = segment
+            // A preview shares its ID with its finalized segment; a late preview must not downgrade it.
+            if segment.isConfirmed || !segments[existing].isConfirmed {
+                segments[existing] = segment
+            }
             return
         }
         let insertionIndex = segments.firstIndex(where: { Self.precedes(segment, $0) }) ?? segments.endIndex

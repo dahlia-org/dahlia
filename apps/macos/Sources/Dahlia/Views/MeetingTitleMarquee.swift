@@ -23,6 +23,8 @@ struct MeetingTitleMarquee: View {
                         .truncationMode(.tail)
                 }
             }
+            // Measure a width that does not depend on the shown branch; a truncated title is narrower than its proposal.
+            .frame(maxWidth: .infinity, alignment: .leading)
             .onGeometryChange(for: CGFloat.self) { geometry in
                 geometry.size.width
             } action: { width in
