@@ -16,6 +16,14 @@ struct CodexChatComposer: View {
     @State private var isImageImporterPresented = false
     @State private var isImageDropTargeted = false
     @State private var showsAddPanel = false
+    @State private var showsSlashCommands = false
+    @State private var slashCommands: [CodexChatSlashCommand] = []
+    @State private var highlightedCommandID: String?
+    @State private var isLoadingCommands = false
+    @State private var commandError: String?
+    @State private var slashWindowBounds: CGRect = .zero
+    @State private var composerSize: CGSize = .zero
+    @State private var slashPanelSize: CGSize = .zero
     @FocusState private var isComposerFocused: Bool
 
     var body: some View {
@@ -62,8 +70,10 @@ struct CodexChatComposer: View {
                     onPasteImages: pasteImages,
                     onSubmit: handleSubmit,
                     onMoveCommand: handleMoveCommand,
-                    onExitCommand: dismissAddPanel,
-                    onHover: updateTextInputCursor
+                    onExitCommand: dismissPanels,
+                    onHover: updateTextInputCursor,
+                    onComplete: completeSlashCommand,
+                    handlesVerticalKeys: showsSlashCommands
                 )
             }
             .padding(CodexChatDesign.composerContentPadding)
@@ -72,13 +82,56 @@ struct CodexChatComposer: View {
             }
             .shadow(color: .black.opacity(0.05), radius: 12, y: 3)
         }
-        .zIndex(showsAddPanel ? 1 : 0)
+        .onGeometryChange(for: CGRect.self) { geometry in
+            geometry.bounds(of: .named(CodexChatAddPanelLayout.coordinateSpaceName))
+                ?? geometry.bounds(of: .named(DahliaWindowHeaderHelpLayout.windowCoordinateSpaceName)) ?? .zero
+        } action: { slashWindowBounds = $0 }
+        .onGeometryChange(for: CGSize.self) { $0.size } action: { composerSize = $0 }
+        .overlay(alignment: .topLeading) {
+            if showsSlashCommands {
+                CodexChatSlashCommandPicker(
+                    commands: commandSuggestions,
+                    highlightedID: highlightedCommandID,
+                    isLoading: isLoadingCommands,
+                    errorMessage: commandError,
+                    maximumHeight: CodexChatSlashCommandLayout.maximumHeight(in: slashWindowBounds, composerHeight: composerSize.height),
+                    onSelect: selectCommand
+                )
+                .frame(width: CodexChatSlashCommandLayout.width(in: slashWindowBounds))
+                .fixedSize(horizontal: false, vertical: true)
+                .onGeometryChange(for: CGSize.self) { $0.size } action: { slashPanelSize = $0 }
+                .codexChatDismissOnOutsideClick { showsSlashCommands = false }
+                .offset(CodexChatSlashCommandLayout.offset(panelSize: slashPanelSize, in: slashWindowBounds, composerHeight: composerSize.height))
+                .opacity(slashPanelSize == .zero ? 0 : 1)
+            }
+        }
+        .zIndex(showsAddPanel || showsSlashCommands ? 1 : 0)
         .background {
-            if !showsAddPanel {
+            if !showsAddPanel, !showsSlashCommands {
                 CodexChatOutsideClickMonitor(onOutsideClick: dismissComposerFocus)
             }
         }
-        .onChange(of: session.id) { dismissAddPanel() }
+        .onChange(of: session.id) { dismissPanels() }
+        .onAppear { handleDraftChange("", session.draft) }
+        .task(id: showsSlashCommands) {
+            guard showsSlashCommands else { return }
+            isLoadingCommands = true
+            commandError = nil
+            do {
+                let commands = try await session.slashCommands()
+                try Task.checkCancellation()
+                slashCommands = commands
+                highlightedCommandID = commandSuggestions.first?.id
+                isLoadingCommands = false
+            } catch is CancellationError {
+                return
+            } catch {
+                guard !Task.isCancelled else { return }
+                slashCommands = []
+                commandError = L10n.chatCommandsLoadFailed
+                isLoadingCommands = false
+            }
+        }
         .onChange(of: session.draft, handleDraftChange)
         .onChange(of: session.availableMeetingReferences) {
             refreshSuggestionsIfPresented()
@@ -115,6 +168,7 @@ struct CodexChatComposer: View {
     }
 
     private func toggleAddPanel() {
+        showsSlashCommands = false
         guard !showsAddPanel else {
             dismissAddPanel()
             return
@@ -166,6 +220,8 @@ struct CodexChatComposer: View {
     }
 
     private func handleSubmit() {
+        if completeSlashCommand() { return }
+        if showsSlashCommands, isLoadingCommands { return }
         if showsMeetingPicker,
            let highlightedMeetingID,
            let reference = suggestions.first(where: { $0.id == highlightedMeetingID }) {
@@ -186,6 +242,14 @@ struct CodexChatComposer: View {
     }
 
     private func handleDraftChange(_: String, _ newValue: String) {
+        if CodexChatSlashCommand.query(in: newValue) != nil {
+            dismissAddPanel()
+            if !showsSlashCommands { isLoadingCommands = true }
+            showsSlashCommands = true
+            highlightedCommandID = commandSuggestions.first?.id
+            return
+        }
+        showsSlashCommands = false
         guard let query = CodexChatMeetingReference.trailingMentionQuery(in: newValue) else {
             if showsMeetingPicker {
                 dismissAddPanel()
@@ -213,6 +277,30 @@ struct CodexChatComposer: View {
         meetingQuery = ""
         highlightedMeetingID = nil
         consumesTrailingMentionOnSelection = false
+    }
+
+    private func dismissPanels() {
+        dismissAddPanel()
+        showsSlashCommands = false
+    }
+
+    private var commandSuggestions: [CodexChatSlashCommand] {
+        guard let query = CodexChatSlashCommand.query(in: session.draft) else { return [] }
+        return CodexChatSlashCommand.suggestions(from: slashCommands, query: query)
+    }
+
+    private func selectCommand(_ command: CodexChatSlashCommand) {
+        session.draft = "/" + command.name + " "
+        showsSlashCommands = false
+        isComposerFocused = true
+    }
+
+    private func completeSlashCommand() -> Bool {
+        guard showsSlashCommands, !isLoadingCommands,
+              let command = commandSuggestions.first(where: { $0.id == highlightedCommandID })
+        else { return false }
+        selectCommand(command)
+        return true
     }
 
     private func selectMeeting(_ reference: CodexChatMeetingReference) {
@@ -244,6 +332,14 @@ struct CodexChatComposer: View {
     }
 
     private func handleMoveCommand(_ direction: MoveCommandDirection) {
+        if showsSlashCommands {
+            let commands = commandSuggestions
+            guard !commands.isEmpty, direction == .up || direction == .down else { return }
+            let index = commands.firstIndex { $0.id == highlightedCommandID } ?? 0
+            let offset = direction == .up ? -1 : 1
+            highlightedCommandID = commands[(index + offset + commands.count) % commands.count].id
+            return
+        }
         guard showsMeetingPicker, !suggestions.isEmpty else { return }
         switch direction {
         case .up:

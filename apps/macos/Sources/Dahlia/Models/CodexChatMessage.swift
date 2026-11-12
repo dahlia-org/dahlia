@@ -1,9 +1,10 @@
 import Foundation
 
 struct CodexChatMessage: Identifiable, Equatable {
-    enum Role {
+    enum Role: Equatable {
         case user
         case assistant
+        case notice(CodexChatNoticeLevel)
     }
 
     let id: String

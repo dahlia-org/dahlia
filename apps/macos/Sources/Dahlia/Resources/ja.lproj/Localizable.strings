@@ -1879,3 +1879,13 @@
 "settings.agents.packageFailed" = "パッケージの変更に失敗しました。";
 "settings.agents.packageNoVersions" = "設定中の npm レジストリには、このパッケージの利用可能なバージョンがありません。パッケージ名、公開状況、レジストリの制限を確認してください。";
 "settings.agents.packageErrorDetails" = "エラーの詳細";
+
+// AI chat slash completion
+"Commands and skills" = "コマンドとスキル";
+"No matching commands or skills." = "一致するコマンドやスキルがありません。";
+"Could not load commands. Type / again to retry." = "コマンドを取得できませんでした。/ を入力し直して再試行してください。";
+
+"Chat notice expanded" = "展開中";
+"Chat notice collapsed" = "折りたたみ中";
+
+"Queued until the response finishes: %@" = "応答完了後に実行: %@";

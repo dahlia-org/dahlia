@@ -79,7 +79,7 @@ Dahlia MCP は Pi の子のままで、コマンドは SQLite に書けず MCP �
 Pi の codemode（未有効）の script は Pi の process 内の QuickJS で動き、file system も network も持たない。script が呼ぶ tool には同じ制限（Seatbelt と MCP の承認）が掛かる。
 
 - 要約・画像解析・画像選別・モデル一覧・サインインは操作ごとに `pi --mode rpc --no-session --no-tools` を起動し、終了・取消・610秒期限で閉じる。自動再送はしない。
-- チャットは turn の開始時に thread ごとに1 process を起動し、turn 後はチャット画面が thread を開いている間だけ残す。履歴の表示や新規 thread の作成では起動しない。process が終了していれば次の turn で session file から開き直す。
+- チャットは turn の開始時に thread ごとに1 process を起動し、turn 後はチャット画面が thread を開いている間だけ残す。履歴の表示や新規 thread の作成では起動しない。process が終了していれば次の turn で session file から開き直す。スラッシュ候補の取得は既存 process を使い、なければ同じチャット用 resource を読む `--no-session` の一時 process を取得完了・失敗・取消で閉じる。
 - アカウント切替は全 process を閉じ、切替先の agent directory の `models.json` を書き換える。実行中の要約は取消になり、次の操作で新しいアカウントの process を起動する。
 - OpenAI / Anthropic のサインイン・サインアウトは Local Account の process だけを閉じる。Databricks アカウントのサインアウトでは、そのワークスペースが Local Account に戻り、agent directory（チャット履歴を含む）は残して、そのアカウントの `auth.json` と環境変数の秘密値は消す。Dahlia account を削除すると、agent directory ごと消し、環境変数の秘密値も消す。
 - stdout の1行は 4 MiB（送った最大行の分を加える）までとし、超えた行は改行まで捨てて読み続ける。Pi の `turn_end`・`agent_end` は run のメッセージを画像ごと繰り返すが、Dahlia は読まない。
@@ -271,6 +271,8 @@ control process の `/databricks-connection-login <workspace URL> <service>` が
 
 履歴の正本は Pi の session file（実行アカウントの agent directory の `sessions/<Workspace ID>`）。モデルと同じくアカウントに属し、Workspace を別のアカウントへ移しても移さない。移動先では、そのアカウントでの履歴だけを表示する。Codex の rollout は表示せず、
 ファイルは削除しない。
+
+チャット入力の先頭で `/` を入力すると、Pi の `get_commands` が返す拡張コマンド・プロンプトテンプレート・スキルを名前と説明で絞り込む。候補は最大50件、幅は最大320ptとし、入力欄の上を優先して表示する。上に収まらないときは画面内に収まる側へ配置し、縦はスクロール可能とする。クリックまたは ↑↓ と Tab／Enter で補完し、Esc・外側クリック・引数の入力で閉じる。補完だけでは送信しない。応答の生成中に送信したスラッシュコマンドは追加指示用の `steer` に流さず、現在の turn の終了処理後に `prompt` で実行する。待機中のコマンドは入力欄の上に表示し、キャンセルできる。後続の入力もキューの順序を保つ。`/mcp` などが RPC の通知で返す結果はチャット内に通知の種類に応じたアイコン付きのオレンジの1行見出しと、展開・折りたたみ可能な等幅テキストの詳細として表示する。見出しは改行を空白に置き換え、利用できる横幅まで表示する。詳細は初期状態で折りたたみ、展開すると改行と全文を表示する。通知は表示中の会話に残すが、Pi の履歴に保存されないため会話を開き直したときには復元しない。agent run を起こさないコマンドも結果通知の後で完了する。TUI 専用の `/settings` などは候補に含めない。コマンドは Pi が先頭で解釈できるよう閲覧中の会議・Project の自動 context を付けず、明示的に添付した会議参照はコマンドの後ろに付ける。この入力補完は macOS の Local／Server Account 共通で、Private Web・Electron の Server AI や MCP の操作は対象外。
 
 ## 検証
 

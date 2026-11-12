@@ -1879,3 +1879,13 @@
 "settings.agents.packageFailed" = "Could not change the package.";
 "settings.agents.packageNoVersions" = "The configured npm registry has no available versions of this package. Check the package name, publication status, and registry restrictions.";
 "settings.agents.packageErrorDetails" = "Error details";
+
+// AI chat slash completion
+"Commands and skills" = "Commands and skills";
+"No matching commands or skills." = "No matching commands or skills.";
+"Could not load commands. Type / again to retry." = "Could not load commands. Type / again to retry.";
+
+"Chat notice expanded" = "Expanded";
+"Chat notice collapsed" = "Collapsed";
+
+"Queued until the response finishes: %@" = "Queued until the response finishes: %@";

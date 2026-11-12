@@ -138,6 +138,21 @@ struct CodexChatView: View {
 
     @ViewBuilder
     private var conversationControls: some View {
+        if let command = session.pendingCommand {
+            HStack {
+                Label(L10n.chatCommandQueued(command.text), systemImage: "clock")
+                    .lineLimit(1)
+                    .help(command.text)
+                Spacer(minLength: 8)
+                Button(L10n.cancel) { session.cancelPendingCommand(command) }
+                    .buttonStyle(.borderless)
+            }
+            .font(.dahliaBody)
+            .foregroundStyle(DahliaDesign.secondaryTextColor)
+            .padding(.horizontal, CodexChatDesign.contentHorizontalPadding)
+            .padding(.vertical, 6)
+        }
+
         if let activity = session.toolActivity {
             Label(activity.text, systemImage: activity.symbol)
                 .font(.dahliaSecondary)

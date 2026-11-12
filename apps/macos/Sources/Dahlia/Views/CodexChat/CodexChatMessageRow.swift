@@ -34,6 +34,8 @@ struct CodexChatMessageRow: View {
                         CodexChatCopyButton(text: displayText)
                     }
                 }
+            } else if case let .notice(level) = message.role {
+                CodexChatNoticeView(text: message.text, level: level)
             } else {
                 VStack(alignment: .leading, spacing: 10) {
                     if !displayReasoning.isEmpty {

@@ -89,6 +89,32 @@ import SwiftUI
         }
 
         @Test
+        func tabCompletesACommandWithoutSubmittingOrInsertingATab() throws {
+            let harness = ComposerTextEditorHarness(text: "/skill:", completesOnTab: true)
+            try harness.sendKeyDown(characters: "\t", keyCode: 48)
+            #expect(harness.state.completionCount == 1)
+            #expect(harness.state.submissionCount == 0)
+            #expect(harness.state.text == "/skill:")
+        }
+
+        @Test
+        func shiftTabKeepsItsFocusNavigationBehavior() throws {
+            let harness = ComposerTextEditorHarness(text: "/skill:", completesOnTab: true)
+            try harness.sendKeyDown(characters: "\t", modifierFlags: .shift, keyCode: 48)
+            #expect(harness.state.completionCount == 0)
+            #expect(harness.state.text == "/skill:")
+        }
+
+        @Test(arguments: [false, true], [NSEvent.ModifierFlags(), [.function, .numericPad], [.capsLock, .function, .numericPad]])
+        func arrowKeysNavigateCandidatesOnlyWhileThePickerIsOpen(isPresented: Bool, modifiers: NSEvent.ModifierFlags) throws {
+            let harness = ComposerTextEditorHarness(text: "/", handlesVerticalKeys: isPresented)
+            try harness.sendKeyDown(characters: "\u{F701}", modifierFlags: modifiers, keyCode: 125)
+            try harness.sendKeyDown(characters: "\u{F700}", modifierFlags: modifiers, keyCode: 126)
+            #expect(harness.state.moves == (isPresented ? [.down, .up] : []))
+            #expect(harness.state.text == "/")
+        }
+
+        @Test
         func returnSubmitsWithoutChangingTheDraft() throws {
             let harness = ComposerTextEditorHarness(text: "Draft")
             try harness.sendKeyDown(characters: "\r", keyCode: 36)
@@ -119,7 +145,7 @@ import SwiftUI
         let hostingView: NSHostingView<ComposerTextEditorFixture>
         let textView: NSTextView
 
-        init(text: String) {
+        init(text: String, completesOnTab: Bool = false, handlesVerticalKeys: Bool = false) {
             let state = ComposerTextEditorState(text: text)
             self.state = state
             let fixture = ComposerTextEditorFixture(
@@ -127,7 +153,14 @@ import SwiftUI
                     get: { state.text },
                     set: { state.text = $0 }
                 ),
-                onSubmit: { state.submissionCount += 1 }
+                onSubmit: { state.submissionCount += 1 },
+                onComplete: {
+                    guard completesOnTab else { return false }
+                    state.completionCount += 1
+                    return true
+                },
+                handlesVerticalKeys: handlesVerticalKeys,
+                onMoveCommand: { state.moves.append($0) }
             )
             hostingView = NSHostingView(rootView: fixture)
             window = NSWindow(
@@ -170,6 +203,8 @@ import SwiftUI
     private final class ComposerTextEditorState {
         var text: String
         var submissionCount = 0
+        var completionCount = 0
+        var moves: [MoveCommandDirection] = []
 
         init(text: String) {
             self.text = text
@@ -179,6 +214,9 @@ import SwiftUI
     private struct ComposerTextEditorFixture: View {
         @Binding var text: String
         let onSubmit: () -> Void
+        let onComplete: () -> Bool
+        let handlesVerticalKeys: Bool
+        let onMoveCommand: (MoveCommandDirection) -> Void
 
         @FocusState private var isFocused: Bool
 
@@ -187,10 +225,12 @@ import SwiftUI
                 text: $text,
                 isFocused: $isFocused,
                 onSubmit: onSubmit,
-                onMoveCommand: { _ in },
+                onMoveCommand: onMoveCommand,
                 onExitCommand: {},
                 onPasteImages: { false },
-                onHover: { _ in }
+                onHover: { _ in },
+                onComplete: onComplete,
+                handlesVerticalKeys: handlesVerticalKeys
             )
             .frame(width: 300)
             .padding()

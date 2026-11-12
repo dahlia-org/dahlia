@@ -2926,6 +2926,15 @@ enum L10n { // swiftlint:disable:this type_body_length
 
     // MARK: - Codex Chat
 
+    static var chatNoticeExpanded: String { String(localized: "Chat notice expanded", bundle: bundle) }
+    static var chatNoticeCollapsed: String { String(localized: "Chat notice collapsed", bundle: bundle) }
+    static var chatSlashCommands: String { String(localized: "Commands and skills", bundle: bundle) }
+    static var chatNoMatchingCommands: String { String(localized: "No matching commands or skills.", bundle: bundle) }
+    static var chatCommandsLoadFailed: String { String(localized: "Could not load commands. Type / again to retry.", bundle: bundle) }
+    static func chatCommandQueued(_ command: String) -> String {
+        String(format: String(localized: "Queued until the response finishes: %@", bundle: bundle), command)
+    }
+
     static var chat: String { String(localized: "Chat", bundle: bundle) }
     static var dahliaAI: String { String(localized: "Dahlia AI", bundle: bundle) }
     static var newChat: String { String(localized: "New chat", bundle: bundle) }

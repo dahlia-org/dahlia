@@ -14,6 +14,7 @@ enum CodexChatTurnEvent: Equatable {
     case failed(message: String?)
     /// MCP servers whose tools are unavailable until the user signs in to them in Settings.
     case mcpSignInRequired(servers: [String])
+    case notice(message: String, level: CodexChatNoticeLevel = .info)
 
     var terminalCompletion: Bool? {
         switch self {

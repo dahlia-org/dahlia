@@ -22,6 +22,7 @@ suites=(
     CodexChatStreamingUpdateLimiterTests  # coalesced streaming updates
     CodexChatMarkdownProjectionModelTests # latest-wins Markdown projection
     CodexChatMarkdownCacheTests           # completed-cache count and byte limits
+    CodexChatSlashCommandTests            # bounded slash command candidate projection
     ScreenshotImageLoaderTests            # interactive decode never waits behind cacheable decode
 )
 filter="$(IFS='|'; echo "${suites[*]}")"

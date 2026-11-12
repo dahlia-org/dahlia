@@ -2,6 +2,7 @@ import Foundation
 
 protocol CodexChatServicing: Sendable {
     func models(forceRefresh: Bool) async throws -> [CodexModel]
+    func commands(threadID: String?, workspaceID: UUID) async throws -> [CodexChatSlashCommand]
     func listThreads(cursor: String?, workspaceID: UUID) async throws -> CodexChatThreadPage
     func loadThread(id: String) async throws -> CodexChatThread
     func resumeThread(id: String, workspaceID: UUID) async throws -> CodexChatThread
@@ -38,6 +39,8 @@ protocol CodexChatServicing: Sendable {
 }
 
 extension CodexChatServicing {
+    func commands(threadID _: String?, workspaceID _: UUID) async throws -> [CodexChatSlashCommand] { [] }
+
     func beginTurn(
         threadID: String,
         inputs: [CodexAppServerInput],

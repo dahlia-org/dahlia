@@ -14,10 +14,21 @@ import Synchronization
         }
 
         /// The chat process answers every command and runs `onPrompt` for user prompts.
-        private static func fixture(onPrompt: @escaping @Sendable (TestPiTransport) async -> Void) -> Fixture {
+        private static func fixture(
+            commands: JSONValue? = nil,
+            delaysCommands: Bool = false,
+            promptNotifications: [JSONValue] = [],
+            promptDisposition: String = "started",
+            onPrompt: @escaping @Sendable (TestPiTransport) async -> Void
+        ) -> Fixture {
             let chatTransport = TestPiTransport { command in
                 guard let id = command["id"] else { return [] }
-                return [TestPiTransport.response(id: id, data: .object(["disposition": .string("started")]))]
+                if command["type"]?.stringValue == "get_commands", delaysCommands { return [] }
+                if command["type"]?.stringValue == "get_commands", let commands {
+                    return [TestPiTransport.response(id: id, data: .object(["commands": commands]))]
+                }
+                let notifications = command["type"]?.stringValue == "prompt" ? promptNotifications : []
+                return notifications + [TestPiTransport.response(id: id, data: .object(["disposition": .string(promptDisposition)]))]
             }
             let pi = TestPiRuntime { options in
                 switch options.mode {
@@ -46,6 +57,85 @@ import Synchronization
             return Fixture(pi: pi, chat: chat, chatTransport: chatTransport)
         }
 
+        @Test(arguments: ["info", "warning", "error", "unknown"])
+        func handledMCPCommandPreservesNotificationsBeforeFinishingWithoutAnAgentRun(notifyType: String) async throws {
+            let fixture = Self.fixture(promptNotifications: [
+                .object([
+                    "type": .string("extension_ui_request"),
+                    "id": .string("status"),
+                    "method": .string("notify"),
+                    "notifyType": .string(notifyType),
+                    "message": .string("dahlia: connected\n12 tools"),
+                ]),
+            ], promptDisposition: "handled") { _ in }
+            let thread = try await fixture.chat.startThread(model: nil, effort: "medium", workspaceID: .v7())
+            let turn = try await fixture.chat.beginTurn(
+                threadID: thread.id, inputs: [.text("/mcp")], model: nil, effort: "medium", approvalMethod: .ask, expectedProvider: nil
+            )
+            var events: [CodexChatTurnEvent] = []
+            for try await event in turn.events {
+                events.append(event)
+            }
+            #expect(events.count == 3)
+            #expect(events.contains(.notice(message: "dahlia: connected\n12 tools", level: CodexChatNoticeLevel(rawValue: notifyType) ?? .info)))
+            #expect(events.last == .completed(itemID: nil, text: nil))
+        }
+
+        @Test
+        func commandDiscoveryUsesChatResourcesWithoutCreatingAThreadOrPrompt() async throws {
+            let fixture = Self.fixture(commands: .array([
+                .object(["name": .string("skill:summary"), "source": .string("skill"), "description": .string("Summarize")]),
+                .object(["name": .string("mcp"), "source": .string("extension")]),
+            ])) { _ in }
+            let commands = try await fixture.chat.commands(threadID: nil, workspaceID: .v7())
+            #expect(commands.map(\.name) == ["mcp", "skill:summary"])
+            let launch = try #require(fixture.pi.launches.all.first { $0.mode == .chat })
+            #expect(launch.arguments.contains("--no-session"))
+            #expect(launch.arguments.contains("--skill"))
+            #expect(launch.arguments.contains("builtin:mcp"))
+            #expect(await fixture.chatTransport.isClosed)
+            #expect(await fixture.chatTransport.commands.allSatisfy { $0["type"]?.stringValue == "get_commands" })
+        }
+
+        @Test
+        func malformedCommandDiscoveryStillClosesItsTemporaryProcess() async throws {
+            let fixture = Self.fixture(commands: .array([.object(["name": .string("missing-source")])])) { _ in }
+            await #expect(throws: (any Error).self) {
+                try await fixture.chat.commands(threadID: nil, workspaceID: .v7())
+            }
+            #expect(await fixture.chatTransport.isClosed)
+        }
+
+        @Test
+        func cancellingCommandDiscoveryClosesItsTemporaryProcess() async throws {
+            let fixture = Self.fixture(delaysCommands: true) { _ in }
+            let task = Task { try await fixture.chat.commands(threadID: nil, workspaceID: .v7()) }
+            _ = await fixture.chatTransport.command("get_commands")
+            task.cancel()
+            await #expect(throws: CancellationError.self) { try await task.value }
+            #expect(await fixture.chatTransport.isClosed)
+        }
+
+        @Test
+        func commandDiscoveryReusesTheOpenThreadWithoutClosingIt() async throws {
+            let fixture = Self.fixture(commands: .array([])) { transport in
+                await transport.emit(TestPiTransport.assistantEnd("Done"))
+                await transport.emit(TestPiTransport.settled())
+            }
+            let workspaceID = UUID.v7()
+            let thread = try await fixture.chat.startThread(model: nil, effort: "medium", workspaceID: workspaceID)
+            let lease = await fixture.chat.acquireThreadLease(threadID: thread.id)
+            let turn = try await fixture.chat.beginTurn(
+                threadID: thread.id, inputs: [.text("Hello")], model: nil, effort: "medium",
+                approvalMethod: .ask, expectedProvider: nil
+            )
+            for try await _ in turn.events {}
+            #expect(try await fixture.chat.commands(threadID: thread.id, workspaceID: workspaceID).isEmpty)
+            #expect(fixture.pi.launches.all.filter { $0.mode == .chat }.count == 1)
+            #expect(await !fixture.chatTransport.isClosed)
+            await fixture.chat.releaseThreadLease(threadID: thread.id, leaseID: lease)
+        }
+
         @Test
         func deniedToolReportsActivityAndTheTurnStillCompletes() async throws {
             let fixture = Self.fixture { transport in
@@ -67,7 +157,9 @@ import Synchronization
                 approvalMethod: .ask, expectedProvider: nil
             )
             var events: [CodexChatTurnEvent] = []
-            for try await event in handle.events { events.append(event) }
+            for try await event in handle.events {
+                events.append(event)
+            }
             #expect(events.contains(.toolActivity(.init(name: "bash", status: .running))))
             #expect(events.contains(.toolActivity(.init(name: "bash", status: .inaccessible))))
             #expect(events.contains { if case .completed(itemID: .some, text: "Access was denied.") = $0 { true } else { false } })

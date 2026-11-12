@@ -50,6 +50,11 @@ actor PiRPCConnection {
         }
     }
 
+    func finishHandledPrompt(turnID: String) {
+        // The marker follows all notifications read before the prompt acknowledgement.
+        eventContinuation.yield(.object(["type": .string("dahlia_prompt_handled"), "turnID": .string(turnID)]))
+    }
+
     /// False once the process has exited or been closed.
     var isOpen: Bool {
         failure == nil

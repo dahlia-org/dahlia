@@ -28,7 +28,8 @@ struct CodexChatMeetingReference: Identifiable, Equatable {
 
     static func serializedText(referenceIDs: [UUID], draft: String) -> String {
         let references = referenceIDs.map { "meeting:\(TypeID.encode($0, as: .meeting))" }
-        let components = references + [draft.nilIfBlank].compactMap(\.self)
+        let text = [draft.nilIfBlank].compactMap(\.self)
+        let components = draft.hasPrefix("/") ? text + references : references + text
         return components.joined(separator: " ")
     }
 
