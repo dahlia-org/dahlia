@@ -376,7 +376,7 @@ def run(pi, mode, script, arguments, environment, approval="accept", approval_mo
             if record.get("type") == "extension_ui_request" and record.get("title", "").startswith("dahlia:"):
                 method = record["title"].removeprefix("dahlia:")
                 bridge.append((method, json.loads(record["placeholder"])))
-                answers = {"token": "synthetic-token", "approvalMode": approval_mode, "reviewModel": "", "approval": approval}
+                answers = {"token": "synthetic-token", "approvalMode": approval_mode, "reviewModel": "", "reviewTriage": None, "approval": approval}
                 send({"type": "extension_ui_response", "id": record["id"], "value": json.dumps(answers[method])})
             elif record.get("type") == "tool_execution_end":
                 tool_results.append("".join(part.get("text", "") for part in record["result"]["content"]))

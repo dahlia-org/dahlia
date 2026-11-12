@@ -3053,7 +3053,11 @@ enum L10n { // swiftlint:disable:this type_body_length
     static var chatCustomInstructionsInfo: String { String(localized: "settings.agents.customInstructions.info", bundle: bundle) }
     static var autoReviewSettings: String { String(localized: "Auto review", bundle: bundle) }
     static var autoReviewModel: String { String(localized: "Reviewer model", bundle: bundle) }
+    static var autoReviewModelHelp: String { String(localized: "settings.agents.autoReview.model.help", bundle: bundle) }
     static var autoReviewUseChatModel: String { String(localized: "Same as chat", bundle: bundle) }
+    static var autoReviewTriage: String { String(localized: "settings.agents.autoReview.triage", bundle: bundle) }
+    static var autoReviewTriageHelp: String { String(localized: "settings.agents.autoReview.triage.help", bundle: bundle) }
+    static var autoReviewTriageUnavailable: String { String(localized: "settings.agents.autoReview.triage.unavailable", bundle: bundle) }
     static var autoReviewSettingsDescription: String { String(
         localized: "Used when AI reviews MCP actions. Reviews send chat history and the planned action to this model and incur additional usage. Changes apply to the next review.",
         bundle: bundle

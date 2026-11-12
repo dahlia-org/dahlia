@@ -8,6 +8,44 @@ import os
 
     struct PiRuntimeServiceTests {
         @Test
+        func triageDiscoveryDoesNotUseStaleServicesWhenRefreshFails() async throws {
+            let gateway = try AgentMCPProvider(workspaceURL: #require(URL(string: "https://example.cloud.databricks.com")))
+            let failListing = OSAllocatedUnfairLock(initialState: false)
+            let pi = TestPiRuntime(gatewayWorkspaces: { _ in [gateway] }) { _ in
+                TestPiTransport { command in
+                    guard let id = command["id"] else { return [] }
+                    guard command["message"]?.stringValue?.hasPrefix("/databricks-model-services") == true else {
+                        return [TestPiTransport.response(id: id)]
+                    }
+                    let notification = failListing.withLock { $0 }
+                        ? "databricks:model_services_sign_in_required"
+                        : #"databricks:model_services [{"name":"model-services/system.ai.openjev-qwen35-4b","#
+                        + #""supported_api_types":["typesafe/v1/systemone"],"capabilities":{"function_calling":false}}]"#
+                    return [TestPiTransport.response(id: id), TestPiTransport.notify(notification)]
+                }
+            }
+            defer { try? FileManager.default.removeItem(at: pi.rootURL) }
+            #expect(try await pi.service.autoReviewTriage(for: .local) == nil)
+            #expect(pi.launches.all.isEmpty)
+            #expect(try await pi.service.autoReviewTriage(for: .local, forceRefresh: true) != nil)
+            let launches = pi.launches.all.count
+            #expect(try await pi.service.autoReviewTriage(for: .local) != nil)
+            #expect(pi.launches.all.count == launches)
+            failListing.withLock { $0 = true }
+            #expect(try await pi.service.autoReviewTriage(for: .local, forceRefresh: true) == nil)
+            failListing.withLock { $0 = false }
+            #expect(try await pi.service.autoReviewTriage(for: .local, forceRefresh: true) != nil)
+        }
+
+        @Test
+        func triageIsUnavailableWithoutAConnectedGateway() async throws {
+            let pi = TestPiRuntime { _ in TestPiTransport() }
+            defer { try? FileManager.default.removeItem(at: pi.rootURL) }
+            #expect(try await pi.service.autoReviewTriage(for: .local, forceRefresh: true) == nil)
+            #expect(pi.launches.all.isEmpty)
+        }
+
+        @Test
         func skillListingUsesPisRecognizedResourcesAndClosesItsProcess() async throws {
             let transport = TestPiTransport { command in
                 guard let id = command["id"] else { return [] }

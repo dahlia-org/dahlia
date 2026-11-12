@@ -109,6 +109,9 @@ actor PiRuntimeService {
                     // Callers defer work and skip error reporting for this case, as they did for Codex's auth command.
                     throw CodexAppServerError.providerAuthenticationFailed(error.localizedDescription)
                 }
+            case "reviewTriage":
+                guard let chatBridge else { return .null }
+                return try await chatBridge(method, payload)
             case "approval", "approvalMode", "reviewModel":
                 guard let chatBridge else { return .string(method == "approval" ? "decline" : method == "reviewModel" ? "" : "ask") }
                 return try await chatBridge(method, payload)
@@ -233,6 +236,37 @@ actor PiRuntimeService {
     }
 
     // MARK: Unity AI Gateway models
+
+    /// Classifiers are not chat models. Discover OpenJev through the account's gateway services instead.
+    func autoReviewTriage(for account: CodexRuntimeProvider, forceRefresh: Bool = false) async throws -> JSONValue? {
+        guard contextStore.provider == account else { throw CancellationError() }
+        let agentURL = try agentLocator.agentURL(for: account)
+        let cacheURL = agentURL.appending(path: "auto-review-triage.json")
+        let gateways = gateways(of: account, agentURL: agentURL)
+        if !forceRefresh {
+            guard let data = FileManager.default.contents(atPath: cacheURL.path),
+                  let configuration = try? JSONDecoder().decode(JSONValue.self, from: data),
+                  gateways.contains(where: { $0.id == configuration.objectValue?["provider"]?.stringValue })
+            else { return nil }
+            return configuration
+        }
+        for gateway in gateways {
+            let services: [JSONValue]
+            do {
+                services = try await modelServices(gateway, account: account)
+            } catch is CancellationError {
+                throw CancellationError()
+            } catch {
+                continue
+            }
+            guard !Task.isCancelled, contextStore.provider == account else { throw CancellationError() }
+            if let configuration = AgentAutoReviewSettings.triageConfiguration(services: services, gateway: gateway) {
+                try JSONEncoder().encode(configuration).write(to: cacheURL, options: .atomic)
+                return configuration
+            }
+        }
+        return nil
+    }
 
     /// The account's gateways: a Databricks account's own, then the workspaces added in Agents settings.
     private func gateways(of account: CodexRuntimeProvider, agentURL: URL) -> [AgentMCPProvider] {

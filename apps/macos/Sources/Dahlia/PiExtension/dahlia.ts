@@ -233,7 +233,8 @@ export default function (pi: any) {
         let reason: string | undefined;
         if (approvalMode === "autoReview") {
           const model = await bridge(ctx, "reviewModel", {});
-          const verdict = await reviewMCP(ctx, name, event.input, model);
+          const triage = await bridge(ctx, "reviewTriage", {});
+          const verdict = await reviewMCP(ctx, name, event.input, model, triage);
           if (ctx.signal?.aborted) return { block: true, reason: "MCP AI review was cancelled." };
           if (verdict.outcome === "allow" && verdict.risk !== "unknown") return;
           if (verdict.risk === "critical") {

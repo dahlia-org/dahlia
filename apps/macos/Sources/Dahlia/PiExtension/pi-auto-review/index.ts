@@ -857,14 +857,14 @@ function likeliestRoutine(answers: Answers): string {
 }
 
 /** Reviews one call. `triage: false` leaves it to the reviewer even when a triage model is on. */
-export async function review(ctx: ExtensionContext, toolName: string, input: unknown, { triage: useTriage = true } = {}): Promise<Verdict> {
+export async function review(ctx: ExtensionContext, toolName: string, input: unknown, { triage: useTriage = true, settings: overrideSettings }: { triage?: boolean; settings?: Settings } = {}): Promise<Verdict> {
 	let own: Settings;
 	let picked;
 	let triage;
 	let skipped: string | undefined;
 	try {
 		// One read of settings.json, so the reviewer and the triage model come from the same version of it.
-		own = settings();
+		own = { ...settings(), ...overrideSettings };
 		picked = reviewer(ctx, own);
 		if (!useTriage) skipped = "skipped after a block";
 		else if (plannedCall(toolName, input).length > TRIAGE_MAX_CALL_CHARS) skipped = "skipped for a large call";

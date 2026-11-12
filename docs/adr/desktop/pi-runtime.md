@@ -207,10 +207,18 @@ MCP の tool は Dahlia がその chat に登録した server（Dahlia MCP と�
 MCP の読み取り結果も untrusted data として扱う。
 
 `pi-auto-review` はコミット `b7822c1a1cdc52513a0d1f5bd342288a005fbdd2` のソース・package metadata・MIT license を
-`PiExtension/pi-auto-review` にそのまま同梱する。既定 extension は登録せず、Dahlia の MCP gate が公開された `review` 関数を使う。
+`PiExtension/pi-auto-review` に同梱する。既定 extension は登録せず、Dahlia の MCP gate が公開された `review` 関数を使う。
 審査モデルは「Dahlia AI」>「モデル」>「AI による代理承認 (pi-auto-review)」で実行アカウントごとに指定し、`autoReviewModel.<local またはアカウント ID>` に保存する。
 空の選択（既定）は審査時点のチャットモデルを使う。変更は起動済みのチャットでも次の審査から効き、`PI_AUTO_REVIEW_MODEL` や Pi 側のモデル指定より優先する。
-既定の reasoning effort は high。審査は追加のモデル呼び出しになり、その provider に履歴と予定操作を渡す。任意の triage classifier は使わない。
+reasoning effort は審査モデルの価格情報から自動設定する。Pi の100万トークン当たりの入力価格が2 USD以上、または出力価格が10 USD以上なら low、それ未満なら high。
+価格情報がない・ゼロの場合はモデル名に関係なく high にする。「チャットと同じモデル」でも審査の推論強度はこの規則で選ぶ。
+審査は追加のモデル呼び出しになり、その provider に履歴と予定操作を渡す。
+同じ設定画面のトリアージは既定で無効。アカウントごとに `autoReviewTriage.<local またはアカウント ID>` に保存し、次の審査から反映する。
+接続済み Unity AI Gateway のモデルサービス一覧から System One API を提供する `system.ai.openjev-qwen35-4b` を取得できた場合だけ有効化できる。
+トグルのオン操作時に接続先へ確認し、成功した場合だけオンを保存する。確認に失敗しても再びオン操作で再確認でき、古い取得状態でトグルを操作不能にはしない。
+確認済みのモデル・接続先情報は保持して審査時に再利用し、設定画面の表示や審査ごとには再取得しない。
+OpenJev にユーザーのメッセージと予定する MCP 操作を渡し、固定閾値0.85で日常的と判定した操作は審査モデルを省略する。それ以外や取得・判定の失敗は通常の審査へ戻す。
+設定の i マークで送信範囲と挙動を説明し、トリアージの無効化はモデル取得に失敗していても行える。
 会議 context と live transcript は審査履歴でも user の承認として扱わない。予定操作が128,000文字を超えた場合も審査せずユーザーに確認し、
 既存の承認表示上限を超える操作は許可しない。審査の期限・再試行・取消は upstream に従う。否認・失敗の理由を承認画面で表示する。
 
