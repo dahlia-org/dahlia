@@ -94,6 +94,29 @@ actor PiChatService: CodexChatServicing {
 
     // MARK: Threads
 
+    func commands(threadID: String?, workspaceID: UUID) async throws -> [CodexChatSlashCommand] {
+        let temporaryID = UUID.v7().uuidString
+        let connection: PiRPCConnection
+        let ownsConnection: Bool
+        if let threadID, let session = sessions[threadID], await session.connection.isOpen {
+            connection = session.connection
+            ownsConnection = false
+        } else {
+            connection = try await open(threadID: temporaryID, workspaceID: workspaceID, sessionArguments: ["--no-session"])
+            ownsConnection = true
+        }
+        let result = await Result {
+            let response = try await connection.request("get_commands", timeout: .seconds(30))
+            guard let commands = response.objectValue?["commands"] else {
+                throw CodexAppServerError.invalidProtocolResponse
+            }
+            return try JSONDecoder().decode([CodexChatSlashCommand].self, from: JSONEncoder().encode(commands))
+                .sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
+        }
+        if ownsConnection { await closeSession(temporaryID) }
+        return try result.get()
+    }
+
     func listThreads(cursor: String?, workspaceID: UUID) async throws -> CodexChatThreadPage {
         let directory = try await agentLocator.sessionsURL(for: runtime.currentProvider(), workspaceID: workspaceID)
         return try await Task.detached(priority: .userInitiated) {
@@ -259,14 +282,16 @@ actor PiChatService: CodexChatServicing {
         let (events, continuation) = AsyncThrowingStream<CodexChatTurnEvent, any Error>.makeStream()
         let turn = Turn(id: UUID.v7(), wireID: UUID.v7().uuidString, continuation: continuation)
         sessions[threadID]?.turn = turn
+        continuation.yield(.started(turnID: turn.wireID))
+        // The chat clears this report at `.started`; publish it before Pi can stream any output.
+        if let servers = sessions[threadID]?.mcpServersNeedingSignIn, !servers.isEmpty {
+            continuation.yield(.mcpSignInRequired(servers: servers))
+        }
         do {
             let accepted = try await connection.request("prompt", PiRuntimeService.prompt(Self.textJoined(inputs)))
             // Pi handled the text itself (for example a `/skill:` expansion error) and starts no run.
             if accepted.objectValue?["disposition"]?.stringValue == "handled", sessions[threadID]?.turn?.id == turn.id {
-                sessions[threadID]?.turn = nil
-                continuation.yield(.started(turnID: turn.wireID))
-                continuation.yield(.completed(itemID: nil, text: nil))
-                continuation.finish()
+                await connection.finishHandledPrompt(turnID: turn.wireID)
                 return CodexChatTurnHandle(id: turn.id, events: events, approvalMethod: approvalMethod)
             }
         } catch {
@@ -276,11 +301,6 @@ actor PiChatService: CodexChatServicing {
             // Closing ends that run; the next turn reopens the thread from its session file.
             if error is CancellationError { await runtime.close(connection) }
             throw error
-        }
-        continuation.yield(.started(turnID: turn.wireID))
-        // The process keeps a server that needed sign-in disconnected until it closes, so each turn repeats the report.
-        if let servers = sessions[threadID]?.mcpServersNeedingSignIn, !servers.isEmpty {
-            continuation.yield(.mcpSignInRequired(servers: servers))
         }
         return CodexChatTurnHandle(id: turn.id, events: events, approvalMethod: approvalMethod)
     }
@@ -542,9 +562,14 @@ actor PiChatService: CodexChatServicing {
             let servers = Array(Set(known + needingSignIn)).sorted()
             sessions[threadID]?.mcpServersNeedingSignIn = servers
             sessions[threadID]?.turn?.continuation.yield(.mcpSignInRequired(servers: servers))
-            return
         }
         guard var turn = sessions[threadID]?.turn else { return }
+        if let message = PiRuntimeService.notification(event) {
+            let level = CodexChatNoticeLevel(rawValue: object["notifyType"]?.stringValue ?? "") ?? .info
+            turn.continuation.yield(.notice(message: message, level: level))
+            return
+        }
+        if object["type"]?.stringValue == "dahlia_prompt_handled", object["turnID"]?.stringValue != turn.wireID { return }
         let itemID = "\(turn.wireID)-\(turn.messageIndex)"
         switch object["type"]?.stringValue {
         case "message_update":
@@ -565,7 +590,7 @@ actor PiChatService: CodexChatServicing {
             turn.lastError = message["stopReason"]?.stringValue == "error"
                 ? message["errorMessage"]?.stringValue ?? "" : nil
             turn.messageIndex += 1
-        case "agent_settled":
+        case "agent_settled", "dahlia_prompt_handled":
             sessions[threadID]?.turn = nil
             if object["aborted"]?.boolValue == true {
                 turn.continuation.yield(.interrupted)

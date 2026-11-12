@@ -13,6 +13,8 @@ struct CodexChatComposerInputRow: View {
     let onMoveCommand: (MoveCommandDirection) -> Void
     let onExitCommand: () -> Void
     let onHover: (HoverPhase) -> Void
+    var onComplete: () -> Bool = { false }
+    var handlesVerticalKeys = false
 
     @State private var isAddButtonHovered = false
     @State private var windowBounds: CGRect = .zero
@@ -27,7 +29,9 @@ struct CodexChatComposerInputRow: View {
                 onMoveCommand: onMoveCommand,
                 onExitCommand: onExitCommand,
                 onPasteImages: onPasteImages,
-                onHover: onHover
+                onHover: onHover,
+                onComplete: onComplete,
+                handlesVerticalKeys: handlesVerticalKeys
             )
 
             controlBar
@@ -111,6 +115,8 @@ struct CodexChatComposerTextEditor: View {
     let onExitCommand: () -> Void
     let onPasteImages: () -> Bool
     let onHover: (HoverPhase) -> Void
+    var onComplete: () -> Bool = { false }
+    var handlesVerticalKeys = false
 
     private static let maximumLineCount = 13
 
@@ -140,6 +146,8 @@ struct CodexChatComposerTextEditor: View {
                     .onExitCommand(perform: onExitCommand)
                     .onKeyPress(.return, phases: .down, action: handleReturnKey)
                     .onKeyPress(.tab, phases: .down, action: handleTabKey)
+                    .onKeyPress(.upArrow, phases: [.down, .repeat]) { handleVerticalKey($0, direction: .up) }
+                    .onKeyPress(.downArrow, phases: [.down, .repeat]) { handleVerticalKey($0, direction: .down) }
                     .onKeyPress("v", phases: .down) { keyPress in
                         guard keyPress.modifiers.contains(.command), onPasteImages() else { return .ignored }
                         return .handled
@@ -164,6 +172,14 @@ struct CodexChatComposerTextEditor: View {
         text.isEmpty && !isFocused
     }
 
+    private func handleVerticalKey(_ keyPress: KeyPress, direction: MoveCommandDirection) -> KeyPress.Result {
+        guard handlesVerticalKeys,
+              keyPress.modifiers.isDisjoint(with: [.shift, .control, .option, .command]),
+              activeTextView?.hasMarkedText() != true else { return .ignored }
+        onMoveCommand(direction)
+        return .handled
+    }
+
     private func handleReturnKey(_ keyPress: KeyPress) -> KeyPress.Result {
         if keyPress.modifiers.contains(.shift) {
             return .ignored
@@ -186,6 +202,9 @@ struct CodexChatComposerTextEditor: View {
         let textView = activeTextView
         if textView?.hasMarkedText() == true {
             return .ignored
+        }
+        if !keyPress.modifiers.contains(.shift), onComplete() {
+            return .handled
         }
         if let textView, let window = textView.window {
             if keyPress.modifiers.contains(.shift) {

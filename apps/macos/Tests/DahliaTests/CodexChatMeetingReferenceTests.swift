@@ -7,6 +7,14 @@ import Foundation
 
     struct CodexChatMeetingReferenceTests {
         @Test
+        func slashCommandsStayAtTheStartWhenMeetingsAreAttached() {
+            let id = UUID.v7()
+            let text = CodexChatMeetingReference.serializedText(referenceIDs: [id], draft: "/skill:summary compare")
+            #expect(text.hasPrefix("/skill:summary compare meeting:"))
+            #expect(CodexChatMeetingReference.meetingIDs(in: text) == [id])
+        }
+
+        @Test
         func serializesReferencesAndDraftAsSpaceSeparatedWords() throws {
             let firstID = try #require(UUID(uuidString: "019b6f79-18c5-7000-8000-000000000001"))
             let secondID = try #require(UUID(uuidString: "019b6f79-18c5-7000-8000-000000000002"))

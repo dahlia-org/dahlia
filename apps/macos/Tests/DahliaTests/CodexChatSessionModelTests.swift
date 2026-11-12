@@ -8,6 +8,58 @@ import Foundation
     @MainActor
     struct CodexChatSessionModelTests {
         @Test
+        func commandNotificationsRemainVisibleAfterTheTurnCompletes() async {
+            let service = TestCodexChatService(mode: .blockBeforeOutput)
+            let settings = AppSettings()
+            settings.currentWorkspace = Self.testWorkspace()
+            let session = CodexChatSessionModel(service: service, settings: settings)
+            session.draft = "/mcp"
+            session.sendDraft()
+            await waitUntil { session.activeTurnID != nil }
+            await service.yieldBlockedEvent(.notice(message: "dahlia: connected\n12 tools"))
+            await waitUntil { session.messages.contains { $0.role == .notice(.info) } }
+            await service.yieldBlockedEvent(.notice(message: "glean: needs sign-in", level: .warning))
+            await service.completeBlockedTurn()
+            await waitUntil { !session.hasPendingGenerationWork }
+            #expect(session.noticeMessage == nil)
+            #expect(session.messages.map(\.role) == [.user, .notice(.info), .notice(.warning)])
+            #expect(session.messages.map(\.text) == ["/mcp", "dahlia: connected\n12 tools", "glean: needs sign-in"])
+
+            session.draft = "Next question"
+            session.sendDraft()
+            await waitUntil { session.activeTurnID != nil }
+            await service.completeBlockedTurn()
+            await waitUntil { !session.hasPendingGenerationWork }
+            #expect(session.messages.filter { $0.role == .notice(.info) }.map(\.text) == ["dahlia: connected\n12 tools"])
+            #expect(session.messages.filter { $0.role == .notice(.warning) }.map(\.text) == ["glean: needs sign-in"])
+        }
+
+        @Test
+        func slashCommandsReachPiBeforeAutomaticContextAndExplicitMeetingReferences() async {
+            let service = TestCodexChatService(mode: .complete)
+            let settings = AppSettings()
+            let workspace = Self.testWorkspace()
+            settings.currentWorkspace = workspace
+            let context = CodexChatContext.meeting(id: .v7(), name: "Current meeting", calendarEvent: nil)
+            let session = CodexChatSessionModel(
+                modelID: "default-model", service: service, settings: settings,
+                contextProvider: TestCodexChatContextProvider(context: context)
+            )
+            let reference = Self.meetingReference(name: "Selected", offset: 0)
+            session.updateAvailableMeetings([reference], catalogWorkspaceID: workspace.id)
+            session.addMeetingReference(reference)
+            session.draft = "/skill:summary compare"
+            session.sendDraft()
+            await waitUntil { !session.isGenerating }
+            let expected = "/skill:summary compare meeting:\(TypeID.encode(reference.id, as: .meeting))"
+            #expect(await service.sentTextBlocks == [[expected]])
+            #expect(session.draft.isEmpty)
+            session.retry()
+            await waitUntil { !session.isGenerating }
+            #expect(await service.sentTextBlocks == [[expected], [expected]])
+        }
+
+        @Test
         func toolActivityUpdatesDuringAWaitAndClearsAfterCompletionAndStop() async {
             let service = TestCodexChatService(mode: .blockBeforeOutput)
             let settings = AppSettings()
@@ -1241,6 +1293,7 @@ import Foundation
         }
 
         let mode: Mode
+        private let availableCommands: [CodexChatSlashCommand]
         private let delaysLoad: Bool
         private let restoredApprovalMethod: CodexChatApprovalMethod?
         private let approvalMethodUpdateError: CodexAppServerError?
@@ -1286,6 +1339,7 @@ import Foundation
 
         init(
             mode: Mode,
+            commands: [CodexChatSlashCommand] = [],
             steerErrors: [CodexAppServerError] = [],
             delaysLoad: Bool = false,
             restoredApprovalMethod: CodexChatApprovalMethod? = nil,
@@ -1294,6 +1348,7 @@ import Foundation
             resumeErrors: [CodexAppServerError] = []
         ) {
             self.mode = mode
+            self.availableCommands = commands
             self.steerErrors = steerErrors
             self.delaysLoad = delaysLoad
             self.restoredApprovalMethod = restoredApprovalMethod
@@ -1303,6 +1358,8 @@ import Foundation
         }
 
         private(set) var modelListings = 0
+
+        func commands(threadID _: String?, workspaceID _: UUID) async throws -> [CodexChatSlashCommand] { availableCommands }
 
         func models(forceRefresh _: Bool) async throws -> [CodexModel] {
             modelListings += 1

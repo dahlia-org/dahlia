@@ -147,6 +147,15 @@ final class CodexChatSessionModel: Identifiable {
     /// Registration shortcuts follow the active account, as Agent settings does.
     var runtimeProvider: CodexRuntimeProvider { runtimeProviderResolver() }
 
+    func slashCommands() async throws -> [CodexChatSlashCommand] {
+        guard let workspaceID, !isReleased else { return [] }
+        let provider = runtimeProvider
+        let commands = try await service.commands(threadID: backendThreadID, workspaceID: workspaceID)
+        try Task.checkCancellation()
+        guard !isReleased, provider == runtimeProvider else { throw CancellationError() }
+        return commands
+    }
+
     func prepare(forceRefresh: Bool = false) async {
         let runtimeProvider = runtimeProviderResolver()
         if let preparedRuntimeProvider, preparedRuntimeProvider != runtimeProvider {
@@ -269,7 +278,9 @@ final class CodexChatSessionModel: Identifiable {
         let submission = CodexChatManualSubmission(
             text: text,
             images: imagesSnapshot,
-            composerSnapshot: composerSnapshot
+            composerSnapshot: composerSnapshot,
+            // Pi dispatches commands only at the start of the message, before any Dahlia context.
+            includesCurrentContext: !draftSnapshot.hasPrefix("/")
         )
         sendManualSubmission(submission)
     }
@@ -620,6 +631,7 @@ extension CodexChatSessionModel {
         switch event {
         case let .started(turnID):
             activeTurnID = turnID
+            noticeMessage = nil
             mcpServersNeedingSignIn = []
             if isStopRequested, let backendThreadID {
                 Task { await service.interrupt(threadID: backendThreadID, turnID: turnID) }
@@ -672,6 +684,15 @@ extension CodexChatSessionModel {
             activeTurnID = nil
         case let .mcpSignInRequired(servers):
             mcpServersNeedingSignIn = servers
+        case let .notice(message, level):
+            let notice = CodexChatMessage(role: .notice(level), text: message)
+            if let index = messages.firstIndex(where: {
+                $0.id == activeResponseID && $0.text.isEmpty && $0.reasoning.isEmpty
+            }) {
+                messages.insert(notice, at: index)
+            } else {
+                messages.append(notice)
+            }
         }
     }
 
@@ -745,7 +766,9 @@ extension CodexChatSessionModel {
             model: thread.model,
             reasoningEffort: thread.reasoningEffort
         )
-        apply(reconciledThread, preservingPendingMessages: thread.messages.count < messages.count)
+        // Pi does not write handled commands or their notifications into its rollout.
+        let hasNotices = messages.contains { if case .notice = $0.role { true } else { false } }
+        apply(reconciledThread, preservingPendingMessages: hasNotices || thread.messages.count < messages.count)
     }
 
     func finishGeneration(
