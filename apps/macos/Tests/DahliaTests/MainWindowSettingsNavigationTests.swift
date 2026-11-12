@@ -112,7 +112,7 @@
             #expect(navigation.meetingSettingsTab == .meetingLinks)
         }
 
-        @Test(arguments: [SettingsCategory.agents, .modelProvider, .macInference, .dahliaAccounts])
+        @Test(arguments: [SettingsCategory.agents, .macInference, .dahliaAccounts])
         func setupLinksOpenGeneralFromEveryAITab(category: SettingsCategory) {
             let navigation = MainWindowNavigation(openMainWindow: {}, initialSettingsCategory: .general)
             for previousTab in AgentSettingsView.Tab.allCases {
@@ -121,6 +121,18 @@
                 #expect(navigation.settingsCategory == .agents)
                 #expect(navigation.agentSettingsTab == .general)
             }
+        }
+
+        @Test
+        func providerSetupOpensModelsFromEveryAITab() {
+            let navigation = MainWindowNavigation(openMainWindow: {}, initialSettingsCategory: .general)
+            for previousTab in AgentSettingsView.Tab.allCases {
+                navigation.agentSettingsTab = previousTab
+                navigation.openSettings(category: .modelProvider)
+                #expect(navigation.settingsCategory == .agents)
+                #expect(navigation.agentSettingsTab == .models)
+            }
+            #expect(AgentSettingsView.Tab.allCases == [.general, .models, .summary, .imageAnalysis, .packages, .mcps])
         }
 
         @Test

@@ -2282,7 +2282,7 @@ enum L10n { // swiftlint:disable:this type_body_length
     ) }
     static var codexNotLoggedIn: String { String(
         localized: """
-        Pi is not signed in. Sign in under Settings > Agents > General > Providers (a Databricks or Dahlia account signs in \
+        Pi is not signed in. Sign in under Settings > Agents > Models > Providers (a Databricks or Dahlia account signs in \
         from the account menu at the bottom of the sidebar), then try again.
         """,
         bundle: bundle
@@ -3021,6 +3021,8 @@ enum L10n { // swiftlint:disable:this type_body_length
     static var chatApprovalDeny: String { String(localized: "Deny", bundle: bundle) }
     static var chatUserInputOther: String { String(localized: "Other", bundle: bundle) }
     static var chatUserInputSubmit: String { String(localized: "Submit", bundle: bundle) }
+    static var chatCustomInstructions: String { String(localized: "settings.agents.customInstructions", bundle: bundle) }
+    static var chatCustomInstructionsHelp: String { String(localized: "settings.agents.customInstructions.help", bundle: bundle) }
     static var autoReviewSettings: String { String(localized: "Auto review", bundle: bundle) }
     static var autoReviewModel: String { String(localized: "Reviewer model", bundle: bundle) }
     static var autoReviewUseChatModel: String { String(localized: "Same as chat", bundle: bundle) }
