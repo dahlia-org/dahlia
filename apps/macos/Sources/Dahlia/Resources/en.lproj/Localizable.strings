@@ -796,7 +796,7 @@
 "Share" = "Share";
 "Share Summary" = "Share Summary";
 "share.exportToGoogleDrive" = "Export to Google Drive";
-"share.exportToGoogleDrivePrompt" = "Export this meeting's summary to Google Drive as a Google Doc. Keep its headings, bullet lists, and action items, and give me the link to the document you create. If no Google Drive tool is available, tell me to add a Databricks workspace that offers the Google Drive MCP under Settings > Dahlia AI > General > Providers, then turn on Google Drive on the MCP tab.";
+"share.exportToGoogleDrivePrompt" = "Export this meeting's summary to Google Drive as a Google Doc. Keep its headings, bullet lists, and action items, and give me the link to the document you create. If no Google Drive tool is available, tell me to add a Databricks workspace that offers the Google Drive MCP under Settings > Dahlia AI > Models > Providers, then turn on Google Drive on the MCP tab.";
 "Copy for Google Docs" = "Copy for Google Docs";
 "Copy for Slack" = "Copy for Slack";
 "Summary Prompt" = "Summary Prompt";
@@ -1090,7 +1090,7 @@
 "Stopped" = "Stopped";
 "Dahlia's helper files are unavailable. Run Dahlia with scripts/run-dev.sh or install a signed app build." = "Dahlia's helper files are unavailable. Run Dahlia with scripts/run-dev.sh or install a signed app build.";
 "Could not start Pi: %@" = "Could not start Pi: %@";
-"Pi is not signed in. Sign in under Settings > Agents > General > Providers (a Databricks or Dahlia account signs in from the account menu at the bottom of the sidebar), then try again." = "Pi is not signed in. Sign in under Settings > Dahlia AI > General > Providers (a Databricks or Dahlia account signs in from the account menu at the bottom of the sidebar), then try again.";
+"Pi is not signed in. Sign in under Settings > Agents > Models > Providers (a Databricks or Dahlia account signs in from the account menu at the bottom of the sidebar), then try again." = "Pi is not signed in. Sign in under Settings > Dahlia AI > Models > Providers (a Databricks or Dahlia account signs in from the account menu at the bottom of the sidebar), then try again.";
 "Pi sign-in failed: %@" = "Pi sign-in failed: %@";
 "Pi sign-in failed." = "Pi sign-in failed.";
 "Could not open the Pi sign-in page." = "Could not open the Pi sign-in page.";
@@ -1796,8 +1796,8 @@
 "settings.agents.providerAdded %@" = "%@ (added)";
 "settings.agents.mcpSettingsDescription" = "Chats opened from now on can use the tools of each MCP turned on. If a service such as GitHub or Slack needs its own sign-in, choose Sign In on its card.";
 "settings.agents.mcpSearchPrompt" = "Search MCPs";
-"settings.agents.mcpNoProviders" = "Add a Databricks workspace under Providers on the General tab to turn on its Unity AI Gateway MCPs here.";
-"settings.agents.mcpProviderSignInRequired" = "Sign-in required. Sign in again under Providers on the General tab.";
+"settings.agents.mcpNoProviders" = "Add a Databricks workspace under Providers on the Models tab to turn on its Unity AI Gateway MCPs here.";
+"settings.agents.mcpProviderSignInRequired" = "Sign-in required. Sign in again under Providers on the Models tab.";
 "settings.agents.mcpWorkspaceIsAccount" = "This is the account's own workspace. Its MCPs are already available.";
 "settings.agents.enabledCount %lld" = "%lld on";
 "settings.agents.mcpServiceWithServerName %@ %@" = "%1$@ (%2$@)";
@@ -1811,7 +1811,7 @@
 "settings.agents.mcpRemoveWorkspace %@" = "Delete “%@”?";
 "settings.agents.mcpServerNameInvalid" = "Use up to 40 lowercase letters, digits, and _ in the server name.";
 "settings.agents.mcpServerNameTaken" = "Another server already has this name.";
-"chat.mcpSignInRequired %@" = "%@ needs sign-in. Sign in again under Settings > Dahlia AI > General > Providers (for the account's own workspace, from the account menu at the bottom of the sidebar).";
+"chat.mcpSignInRequired %@" = "%@ needs sign-in. Sign in again under Settings > Dahlia AI > Models > Providers (for the account's own workspace, from the account menu at the bottom of the sidebar).";
 "settings.agents.piCommandInUse" = "Command in use";
 "settings.agents.workingDirectory" = "Working folder";
 "settings.agents.workingDirectory.notAllowed" = "Set the working folder to a full path, or one that starts with ~. It cannot be the home folder, a folder that contains it, inside Library, or a folder that holds commands (a PATH folder).";
@@ -1902,3 +1902,6 @@
 "settings.agents.fileAccess.help" = "Additions, changes, and removals apply from the next message. Running responses and commands retain their previous permissions; cancel the response to stop them now. Folder permissions include all descendants. Dahlia credentials and Pi itself remain protected. Readable content can be sent over the network. Use absolute paths for added files because ~ refers to a temporary home.";
 "settings.agents.fileAccess.changed" = "File access changed during this update. Please try again.";
 "settings.agents.fileAccess.notAllowed" = "Write access cannot be granted to the entire home folder, Library, or command locations. Select a more specific file or folder.";
+
+"settings.agents.customInstructions" = "Custom instructions";
+"settings.agents.customInstructions.help" = "Instructions for AI chat, saved per account on this Mac. Applies to new chats and chats you close and reopen. Clear to disable. Not used for summary generation or image analysis.";

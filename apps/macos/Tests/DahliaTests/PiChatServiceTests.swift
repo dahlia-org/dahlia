@@ -15,6 +15,7 @@ import Synchronization
 
         /// The chat process answers every command and runs `onPrompt` for user prompts.
         private static func fixture(
+            customInstructions: @escaping @Sendable (CodexRuntimeProvider) -> String = { _ in "" },
             commands: JSONValue? = nil,
             delaysCommands: Bool = false,
             promptNotifications: [JSONValue] = [],
@@ -42,6 +43,7 @@ import Synchronization
                 agentLocator: PiAgentDirectoryLocator(applicationSupportURL: pi.rootURL),
                 mcpExecutableURL: URL(filePath: "/usr/bin/true"),
                 reviewModel: { _ in "reviewer/test-model" },
+                customInstructions: customInstructions,
                 mcpSettings: { _ in AgentMCPSettings() },
                 fileAccessSettings: { _ in PiFileAccessSettings() }
             )
@@ -54,6 +56,34 @@ import Synchronization
                 await onPrompt(chatTransport)
             }
             return Fixture(pi: pi, chat: chat, chatTransport: chatTransport)
+        }
+
+        @Test(arguments: ["", " \n\t", "日本語で簡潔に回答してください。\nUse bullet points when helpful."])
+        func customInstructionsAreAppendedToTheSystemPromptWithoutChangingTheUserMessage(instructions: String) async throws {
+            let fixture = Self.fixture(customInstructions: { account in
+                #expect(account == .local)
+                return instructions
+            }) { transport in
+                await transport.emit(TestPiTransport.assistantEnd("Done"))
+                await transport.emit(TestPiTransport.settled())
+            }
+            let thread = try await fixture.chat.startThread(model: nil, effort: "medium", workspaceID: .v7())
+            let turn = try await fixture.chat.beginTurn(
+                threadID: thread.id, inputs: [.text("Hello")], model: nil, effort: "medium",
+                approvalMethod: .ask, expectedProvider: .local
+            )
+            for try await _ in turn.events {}
+            let launch = try #require(fixture.pi.launches.all.first { $0.mode == .chat })
+            let promptIndex = try #require(launch.arguments.firstIndex(of: "--system-prompt"))
+            let prompt = launch.arguments[promptIndex + 1]
+            #expect(prompt.hasPrefix(PiChatService.systemPrompt))
+            if instructions.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                #expect(!prompt.contains("# User's custom instructions for AI chat"))
+            } else {
+                #expect(prompt.hasSuffix("# User's custom instructions for AI chat\n" + instructions))
+            }
+            let command = await fixture.chatTransport.command("prompt")
+            #expect(command["message"]?.stringValue == "Hello")
         }
 
         @Test(arguments: ["info", "warning", "error", "unknown"])

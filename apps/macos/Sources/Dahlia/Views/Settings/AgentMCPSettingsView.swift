@@ -212,7 +212,7 @@ struct AgentMCPSettingsView: View {
 
     private func listingMessage(_ error: any Error, provider: AgentMCPProvider) -> String {
         guard case .notLoggedIn = error as? CodexAppServerError else { return error.localizedDescription }
-        // The account signs in from the account menu; other providers sign in under General.
+        // The account signs in from the account menu; other providers sign in under Models.
         return provider.isAccount ? L10n.mcpAccountSignInRequired : L10n.mcpProviderSignInRequired
     }
 

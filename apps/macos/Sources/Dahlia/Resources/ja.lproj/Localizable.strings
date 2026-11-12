@@ -796,7 +796,7 @@
 "Share" = "共有";
 "Share Summary" = "要約を共有";
 "share.exportToGoogleDrive" = "Google Drive へ書き出す";
-"share.exportToGoogleDrivePrompt" = "この会議の要約を Google ドキュメントとして Google Drive に書き出してください。見出し、箇条書き、アクションアイテムの構成を保ち、作成したドキュメントのリンクを教えてください。Google Drive のツールが使えない場合は、設定の「Dahlia AI」>「一般」の「プロバイダー」で Google Drive の MCP がある Databricks ワークスペースを追加し、「MCP」タブで Google Drive をオンにするよう案内してください。";
+"share.exportToGoogleDrivePrompt" = "この会議の要約を Google ドキュメントとして Google Drive に書き出してください。見出し、箇条書き、アクションアイテムの構成を保ち、作成したドキュメントのリンクを教えてください。Google Drive のツールが使えない場合は、設定の「Dahlia AI」>「モデル」の「プロバイダー」で Google Drive の MCP がある Databricks ワークスペースを追加し、「MCP」タブで Google Drive をオンにするよう案内してください。";
 "Copy for Google Docs" = "Google Docs 用にコピー";
 "Copy for Slack" = "Slack 用にコピー";
 "Summary Prompt" = "要約プロンプト";
@@ -1090,7 +1090,7 @@
 "Stopped" = "停止中";
 "Dahlia's helper files are unavailable. Run Dahlia with scripts/run-dev.sh or install a signed app build." = "Dahlia のヘルパーファイルを利用できません。scripts/run-dev.sh で起動するか、署名済みアプリをインストールしてください。";
 "Could not start Pi: %@" = "Pi を起動できませんでした: %@";
-"Pi is not signed in. Sign in under Settings > Agents > General > Providers (a Databricks or Dahlia account signs in from the account menu at the bottom of the sidebar), then try again." = "Pi にサインインしていません。設定の「Dahlia AI」>「一般」の「プロバイダー」でサインインして（Databricks アカウントと Dahlia account はサイドバー下部のアカウントメニューから）、再試行してください。";
+"Pi is not signed in. Sign in under Settings > Agents > Models > Providers (a Databricks or Dahlia account signs in from the account menu at the bottom of the sidebar), then try again." = "Pi にサインインしていません。設定の「Dahlia AI」>「モデル」の「プロバイダー」でサインインして（Databricks アカウントと Dahlia account はサイドバー下部のアカウントメニューから）、再試行してください。";
 "Pi sign-in failed: %@" = "Pi へのサインインに失敗しました: %@";
 "Pi sign-in failed." = "Pi へのサインインに失敗しました。";
 "Could not open the Pi sign-in page." = "Pi のサインインページを開けませんでした。";
@@ -1796,8 +1796,8 @@
 "settings.agents.providerAdded %@" = "%@（追加済み）";
 "settings.agents.mcpSettingsDescription" = "オンにした MCP のツールを、次に開くチャットから使えます。GitHub や Slack などサービス側のサインインが必要なときは、各カードの「サインイン」を押します。";
 "settings.agents.mcpSearchPrompt" = "MCP を検索";
-"settings.agents.mcpNoProviders" = "「一般」の「プロバイダー」で Databricks ワークスペースを追加すると、その Unity AI Gateway の MCP をここでオンにできます。";
-"settings.agents.mcpProviderSignInRequired" = "サインインが必要です。「一般」の「プロバイダー」でサインインし直してください。";
+"settings.agents.mcpNoProviders" = "「モデル」の「プロバイダー」で Databricks ワークスペースを追加すると、その Unity AI Gateway の MCP をここでオンにできます。";
+"settings.agents.mcpProviderSignInRequired" = "サインインが必要です。「モデル」の「プロバイダー」でサインインし直してください。";
 "settings.agents.mcpWorkspaceIsAccount" = "このワークスペースはアカウント自身のもので、MCP にもそのまま使えます。";
 "settings.agents.enabledCount %lld" = "%lld 件オン";
 "settings.agents.mcpServiceWithServerName %@ %@" = "%1$@ (%2$@)";
@@ -1811,7 +1811,7 @@
 "settings.agents.mcpRemoveWorkspace %@" = "「%@」を削除しますか？";
 "settings.agents.mcpServerNameInvalid" = "サーバー名には英小文字・数字・_ を40文字まで使えます。";
 "settings.agents.mcpServerNameTaken" = "このサーバー名はすでに使われています。";
-"chat.mcpSignInRequired %@" = "%@ を使うにはサインインが必要です。設定の「Dahlia AI」>「一般」の「プロバイダー」でサインインし直してください（アカウント自身のワークスペースは、サイドバー下部のアカウントメニューから）。";
+"chat.mcpSignInRequired %@" = "%@ を使うにはサインインが必要です。設定の「Dahlia AI」>「モデル」の「プロバイダー」でサインインし直してください（アカウント自身のワークスペースは、サイドバー下部のアカウントメニューから）。";
 "settings.agents.piCommandInUse" = "使用するコマンド";
 "settings.agents.workingDirectory" = "作業フォルダ";
 "settings.agents.workingDirectory.notAllowed" = "作業フォルダには、フルパスか ~ で始まるパスを指定してください。ホームフォルダ自身、それを含むフォルダ、ライブラリの中、コマンドの置き場所（PATH のフォルダ）を含むフォルダは指定できません。";
@@ -1902,3 +1902,6 @@
 "settings.agents.fileAccess.help" = "追加・変更・削除は次のメッセージから反映されます。実行中の応答とコマンドは以前の許可で続行するため、すぐに停止する場合は応答をキャンセルしてください。フォルダの許可は配下すべてに適用します。Dahlia の認証情報や Pi 自体への制限は維持されます。読み取り可能な内容はネットワーク経由で送信できます。~ は一時ホームを指すため、追加したファイルは絶対パスで指定してください。";
 "settings.agents.fileAccess.changed" = "更新中にファイルアクセスの設定が変更されました。もう一度操作してください。";
 "settings.agents.fileAccess.notAllowed" = "ホーム全体、Library、コマンドの保存先には書き込みを許可できません。対象を絞ったファイルまたはフォルダを選んでください。";
+
+"settings.agents.customInstructions" = "カスタム指示";
+"settings.agents.customInstructions.help" = "AI チャットへの指示を設定します。この Mac 内にアカウント別で保存され、新しいチャットや閉じて開き直したチャットに適用されます。空にすると解除できます。要約生成と画像解析には使いません。";

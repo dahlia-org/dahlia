@@ -61,6 +61,7 @@ actor PiChatService: CodexChatServicing {
     private let agentLocator: PiAgentDirectoryLocator
     private let mcpExecutableURL: URL?
     private let reviewModel: @Sendable (CodexRuntimeProvider) -> String
+    private let customInstructions: @Sendable (CodexRuntimeProvider) -> String
     private let mcpSettings: @Sendable (CodexRuntimeProvider) -> AgentMCPSettings
     private let fileAccessSettings: @Sendable (CodexRuntimeProvider) -> PiFileAccessSettings
     private var sessions: [String: Session] = [:]
@@ -79,6 +80,7 @@ actor PiChatService: CodexChatServicing {
         agentLocator: PiAgentDirectoryLocator = PiAgentDirectoryLocator(),
         mcpExecutableURL: URL? = nil,
         reviewModel: @escaping @Sendable (CodexRuntimeProvider) -> String = { AgentAutoReviewSettings.model(for: $0) },
+        customInstructions: @escaping @Sendable (CodexRuntimeProvider) -> String = { AgentChatInstructions.load(for: $0) },
         mcpSettings: @escaping @Sendable (CodexRuntimeProvider) -> AgentMCPSettings = { AgentMCPSettings.load(for: $0) },
         fileAccessSettings: @escaping @Sendable (CodexRuntimeProvider) -> PiFileAccessSettings = { PiFileAccessSettings.load(for: $0) }
     ) {
@@ -89,6 +91,7 @@ actor PiChatService: CodexChatServicing {
         self.mcpSettings = mcpSettings
         self.fileAccessSettings = fileAccessSettings
         self.reviewModel = reviewModel
+        self.customInstructions = customInstructions
     }
 
     func models(forceRefresh: Bool) async throws -> [CodexModel] {
@@ -489,10 +492,10 @@ actor PiChatService: CodexChatServicing {
         // `--no-extensions` also drops Pi's MCP extension; explicitly enable it and the tools chat may call.
         let tools = ["read", "ls", "write", "edit", "bash"] + serverNames.map { "mcp__\($0)__*" }
         // Only chat calls MCP servers; Dahlia's extension registers the sign-ins mcp.json names.
-        var arguments = try sessionArguments + [
+        var arguments = sessionArguments + [
             "-e", "builtin:mcp",
             "--tools", tools.joined(separator: ","),
-            "--system-prompt", Self.systemPrompt + dataPaths,
+            "--system-prompt", Self.systemPrompt + dataPaths + Self.customInstructionsPrompt(customInstructions(provider)),
         ]
         for skill in PiBundle.presetSkillURLs() {
             arguments += ["--skill", skill.path]
@@ -672,6 +675,11 @@ actor PiChatService: CodexChatServicing {
     }
 
     // MARK: Mapping
+
+    nonisolated static func customInstructionsPrompt(_ instructions: String) -> String {
+        guard let instructions = instructions.nilIfBlank else { return "" }
+        return "\n\n# User's custom instructions for AI chat\n" + instructions
+    }
 
     /// Pi prompts are one text message; blocks are rejoined the way `CodexChatPromptCodec` decodes a single string.
     nonisolated static func textJoined(_ inputs: [CodexAppServerInput]) -> [CodexAppServerInput] {
