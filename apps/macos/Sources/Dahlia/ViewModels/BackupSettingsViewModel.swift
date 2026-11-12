@@ -81,6 +81,13 @@ final class BackupSettingsViewModel {
         }
     }
 
+    func importDriveBackup(_ file: GoogleDriveBackupFile, drive: GoogleDriveBackupModel) async {
+        await perform {
+            _ = try await drive.importBackup(file, using: requireService())
+            statusMessage = L10n.backupImported
+        }
+    }
+
     func exportBackup(_ generation: BackupGeneration, to url: URL) async {
         await perform(refreshAfterward: false) {
             try await requireService().exportGeneration(generation, to: url)

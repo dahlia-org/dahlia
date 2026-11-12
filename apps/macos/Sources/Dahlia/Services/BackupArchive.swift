@@ -1,7 +1,5 @@
-import AppleArchive
 import CryptoKit
 import Foundation
-import System
 
 struct BackupArchiveManifest: Codable, Equatable, Sendable {
     struct Entry: Codable, Equatable, Sendable {
@@ -14,17 +12,23 @@ struct BackupArchiveManifest: Codable, Equatable, Sendable {
     let entries: [Entry]
 }
 
-/// A standard Apple Archive container. Extraction accepts only the manifest's regular files.
+/// A standard tar.gz container. Extraction accepts only the manifest's regular files.
 enum BackupArchive {
-    static let pathExtension = "dahliabackup"
-    private static var dataKey: ArchiveHeader.FieldKey { ArchiveHeader.FieldKey("DAT") }
+    static let pathExtension = "gz"
+    static let filenameExtension = "tar.gz"
+    static func isBackupFile(_ url: URL) -> Bool {
+        url.lastPathComponent.lowercased().hasSuffix(".tar.gz")
+    }
+
     private static let manifestLimit: Int64 = 64 * 1024 * 1024
 
-    static func isArchive(_ url: URL) throws -> Bool {
-        let file = try FileHandle(forReadingFrom: url)
-        defer { try? file.close() }
-        return try file.read(upToCount: 16) != Data("SQLite format 3\0".utf8)
+    static func isTarGzip(_ url: URL) throws -> Bool {
+        let handle = try FileHandle(forReadingFrom: url)
+        defer { try? handle.close() }
+        return try handle.read(upToCount: 2) == Data([0x1F, 0x8B])
     }
+
+    static func isArchive(_ url: URL) throws -> Bool { try isTarGzip(url) }
 
     @discardableResult
     static func create(directory: URL, metadata: BackupMetadata, paths: [String], at destination: URL) throws -> BackupArchiveManifest {
@@ -38,35 +42,18 @@ enum BackupArchive {
         }
         let manifest = BackupArchiveManifest(metadata: metadata, entries: entries)
         try JSONEncoder().encode(manifest).write(to: directory.appending(path: "manifest.json"), options: .atomic)
-        guard let bytes = ArchiveByteStream.fileStream(
-            path: FilePath(destination.path),
-            mode: .writeOnly,
-            options: [.create, .exclusiveCreate],
-            permissions: [.ownerRead, .ownerWrite]
-        ),
-            let compressed = ArchiveByteStream.compressionStream(using: .lzfse, writingTo: bytes),
-            let archive = ArchiveStream.encodeStream(writingTo: compressed) else { throw BackupServiceError.invalidBackup }
-        defer { try? archive.close()
-            try? compressed.close()
-            try? bytes.close()
-        }
+        let archive = try BackupTarArchive(url: destination, writing: true)
         for path in ["manifest.json"] + paths {
             let url = directory.appending(path: path)
             let size = try url.resourceValues(forKeys: [.fileSizeKey]).fileSize ?? 0
-            let header = ArchiveHeader()
-            header.append(.uint(key: ArchiveHeader.FieldKey("TYP"), value: UInt64(ArchiveHeader.EntryType.regularFile.rawValue)))
-            header.append(.string(key: ArchiveHeader.FieldKey("PAT"), value: path))
-            header.append(.blob(key: dataKey, size: UInt64(size)))
-            try archive.writeHeader(header)
+            try archive.writeHeader(path: path, size: Int64(size))
             let input = try FileHandle(forReadingFrom: url)
             defer { try? input.close() }
             while let chunk = try input.read(upToCount: 1_048_576), !chunk.isEmpty {
-                try chunk.withUnsafeBytes { try archive.writeBlob(key: dataKey, from: $0) }
+                try archive.writeBlob(chunk)
             }
         }
         try archive.close()
-        try compressed.close()
-        try bytes.close()
         let handle = try FileHandle(forWritingTo: destination)
         defer { try? handle.close() }
         try handle.synchronize()
@@ -98,10 +85,10 @@ enum BackupArchive {
         return try body(directory, manifest)
     }
 
-    private static func readEntries(from stream: ArchiveStream, manifest: BackupArchiveManifest, into directory: URL?) throws {
+    private static func readEntries(from stream: BackupTarArchive, manifest: BackupArchiveManifest, into directory: URL?) throws {
         var remaining = Dictionary(uniqueKeysWithValues: manifest.entries.map { ($0.path, $0) })
         while let header = try stream.readHeader() {
-            let (path, size) = try regularFile(header)
+            let (path, size) = header
             guard let entry = remaining.removeValue(forKey: path), size == entry.size else { throw BackupServiceError.invalidBackup }
             var handle: FileHandle?
             if let directory {
@@ -116,8 +103,7 @@ enum BackupArchive {
             var digest = SHA256()
             var unread = size
             while unread > 0 {
-                var chunk = Data(count: Int(min(unread, 1_048_576)))
-                try chunk.withUnsafeMutableBytes { try stream.readBlob(key: dataKey, into: $0) }
+                let chunk = try stream.readBlob(count: Int(min(unread, 1_048_576)))
                 digest.update(data: chunk)
                 try handle?.write(contentsOf: chunk)
                 unread -= Int64(chunk.count)
@@ -129,12 +115,11 @@ enum BackupArchive {
         guard remaining.isEmpty else { throw BackupServiceError.invalidBackup }
     }
 
-    private static func readManifest(from stream: ArchiveStream) throws -> BackupArchiveManifest {
+    private static func readManifest(from stream: BackupTarArchive) throws -> BackupArchiveManifest {
         guard let header = try stream.readHeader() else { throw BackupServiceError.invalidBackup }
-        let (path, size) = try regularFile(header)
+        let (path, size) = header
         guard path == "manifest.json", size > 0, size <= manifestLimit else { throw BackupServiceError.invalidBackup }
-        var data = Data(count: Int(size))
-        try data.withUnsafeMutableBytes { try stream.readBlob(key: dataKey, into: $0) }
+        let data = try stream.readBlob(count: Int(size))
         let manifest = try JSONDecoder().decode(BackupArchiveManifest.self, from: data)
         guard manifest.metadata.formatVersion == BackupMetadata.currentFormatVersion, !manifest.entries.isEmpty,
               Set(manifest.entries.map(\.path)).count == manifest.entries.count,
@@ -151,21 +136,8 @@ enum BackupArchive {
         return manifest
     }
 
-    private static func regularFile(_ header: ArchiveHeader) throws -> (String, Int64) {
-        guard header.entryType == .regularFile, let path = header.entryPath?.string,
-              header.count == 3, case let .blob(_, size, offset) = header.field(forKey: dataKey), offset == 0,
-              size <= Int64.max else { throw BackupServiceError.invalidBackup }
-        return (path, Int64(size))
-    }
-
-    private static func withReader<T>(_ url: URL, _ body: (ArchiveStream) throws -> T) throws -> T {
-        guard let bytes = ArchiveByteStream.fileStream(path: FilePath(url.path), mode: .readOnly, options: [], permissions: []),
-              let decompressed = ArchiveByteStream.decompressionStream(readingFrom: bytes),
-              let archive = ArchiveStream.decodeStream(readingFrom: decompressed) else { throw BackupServiceError.invalidBackup }
-        defer { try? archive.close()
-            try? decompressed.close()
-            try? bytes.close()
-        }
-        return try body(archive)
+    private static func withReader<T>(_ url: URL, _ body: (BackupTarArchive) throws -> T) throws -> T {
+        guard try isTarGzip(url) else { throw BackupServiceError.invalidBackup }
+        return try body(BackupTarArchive(url: url))
     }
 }

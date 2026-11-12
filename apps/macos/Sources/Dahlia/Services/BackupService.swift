@@ -84,7 +84,7 @@ actor BackupService {
             includingPropertiesForKeys: [.fileSizeKey, .creationDateKey, .isRegularFileKey, .isSymbolicLinkKey],
             options: [.skipsHiddenFiles]
         )
-        .filter { $0.pathExtension.lowercased() == BackupArchive.pathExtension }
+        .filter { BackupArchive.isBackupFile($0) }
         .compactMap { url in
             let values = try? url.resourceValues(forKeys: [.fileSizeKey, .isRegularFileKey, .isSymbolicLinkKey])
             guard values?.isRegularFile == true, values?.isSymbolicLink != true else { return nil }
@@ -341,14 +341,14 @@ actor BackupService {
         try destination.close()
         let databaseURL = archiveDirectory.appending(path: "database.sqlite")
         try manager.moveItem(at: temporaryURL, to: databaseURL)
-        let temporaryArchive = directoryURL.appending(path: ".\(generationID).tmp.\(BackupArchive.pathExtension)")
+        let temporaryArchive = directoryURL.appending(path: ".\(generationID).tmp.\(BackupArchive.filenameExtension)")
         defer { try? manager.removeItem(at: temporaryArchive) }
         let validatedMetadata = try readAndValidateMetadata(at: databaseURL)
         let manifest = try BackupArchive.create(directory: archiveDirectory, metadata: validatedMetadata, paths: paths, at: temporaryArchive)
         try validateArchiveFiles(databaseURL: databaseURL, manifest: manifest)
         // The database above was already validated; re-read only the written bytes instead of extracting the archive.
         try BackupArchive.verify(at: temporaryArchive, matches: manifest)
-        let url = directoryURL.appending(path: "Dahlia-\(metadata.generationId).\(BackupArchive.pathExtension)")
+        let url = directoryURL.appending(path: "Dahlia-\(metadata.generationId).\(BackupArchive.filenameExtension)")
         try manager.moveItem(at: temporaryArchive, to: url)
         return BackupGeneration(fileURL: url, metadata: validatedMetadata, fileSize: fileSize(at: url), validationError: nil)
     }
@@ -577,7 +577,7 @@ actor BackupService {
         formatter.timeZone = .current
         formatter.dateFormat = "yyyyMMdd-HHmmss"
         let suffix = uniqueSuffix ?? metadata.generationId.uuidString
-        return "Dahlia-Backup-\(formatter.string(from: metadata.createdAt))-schema-v\(metadata.schemaVersion)-\(suffix).\(BackupArchive.pathExtension)"
+        return "Dahlia-Backup-\(formatter.string(from: metadata.createdAt))-schema-v\(metadata.schemaVersion)-\(suffix).\(BackupArchive.filenameExtension)"
     }
 
     private func ensureDirectory(_ url: URL) throws {

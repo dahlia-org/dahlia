@@ -3,7 +3,7 @@ import CryptoKit
 import Foundation
 import Network
 
-struct GoogleSession: Equatable {
+struct GoogleSession: Equatable, Sendable {
     let account: GoogleCalendarAccount
     let accessToken: String
     let grantedScopes: Set<String>
@@ -26,6 +26,8 @@ enum GoogleOAuthScope {
         "https://www.googleapis.com/auth/calendar.events.readonly",
     ]
 
+    static let drive: Set = ["https://www.googleapis.com/auth/drive.readonly"]
+
     static func authorizationScopes(for requestedScopes: Set<String>) -> Set<String> {
         base.union(requestedScopes)
     }
@@ -33,17 +35,33 @@ enum GoogleOAuthScope {
 
 enum GoogleAuthSessionKind: Hashable, Sendable {
     case calendar
+    case drive
 
-    var keychainKey: String { "googleCalendarOAuthSession" }
+    var keychainKey: String {
+        switch self {
+        case .calendar: "googleCalendarOAuthSession"
+        case .drive: "googleDriveBackupReadSession"
+        }
+    }
 
-    var serviceScopes: Set<String> { GoogleOAuthScope.calendar }
+    var serviceScopes: Set<String> {
+        switch self {
+        case .calendar: GoogleOAuthScope.calendar
+        case .drive: GoogleOAuthScope.drive
+        }
+    }
 
-    var sessionDidChangeNotification: Notification.Name { .googleCalendarSessionDidChange }
+    var sessionDidChangeNotification: Notification.Name {
+        switch self {
+        case .calendar: .googleCalendarSessionDidChange
+        case .drive: .googleDriveSessionDidChange
+        }
+    }
 
     fileprivate func canAdoptLegacySession(_ session: StoredGoogleSession) -> Bool {
         // 旧実装は複数サービスのスコープを 1 つのセッションに union して保存していたため、
         // 完全一致ではなく「Calendar のスコープを含むか」で採用可否を判定する。
-        serviceScopes.isSubset(of: session.grantedScopes)
+        self == .calendar && serviceScopes.isSubset(of: session.grantedScopes)
     }
 }
 
@@ -959,6 +977,7 @@ final class OAuthLoopbackRedirectServer: @unchecked Sendable {
 }
 
 extension Notification.Name {
+    static let googleDriveSessionDidChange = Notification.Name("GoogleDriveSessionDidChangeNotification")
     static let googleCalendarSessionDidChange = Notification.Name("GoogleCalendarSessionDidChangeNotification")
 }
 

@@ -23,6 +23,34 @@ import Synchronization
         }
 
         @Test
+        func driveReadsUseTheirOwnConnectionAndDisconnectFlag() async throws {
+            let configuration = URLSessionConfiguration.ephemeral
+            configuration.protocolClasses = [DriveIdentityURLProtocol.self]
+            let transport = URLSession(configuration: configuration)
+            defer { transport.invalidateAndCancel() }
+            let direct = FakeDirectProvider()
+            let defaults = makeDefaults()
+            let memory = DatabricksTestStorage(connection: connection)
+            memory.state.withLock { $0.credentials[connection.id] = Self.credential }
+            let provider = DatabricksProxyGoogleSignInProvider(
+                sessionKind: .drive, direct: direct,
+                oauth: DatabricksOAuthService(storage: memory.storage) { _ in throw CancellationError() },
+                storage: memory.storage, driveClient: GoogleDriveBackupClient(urlSession: transport),
+                userDefaults: defaults, openAccount: { .databricks(connectionID: connection.id) }
+            )
+            let session = try await provider.restorePreviousSignIn()
+            #expect(session.grantedScopes == GoogleOAuthScope.drive)
+            #expect(session.account.email == "drive@example.com")
+            #expect(session.apiBaseURL.absoluteString.hasSuffix("/connections/system_ai_agent_google_drive/proxy/"))
+            #expect(direct.restoreCallCount == 0)
+            try await provider.disconnect()
+            #expect(defaults.bool(forKey: DatabricksProxyGoogleSignInProvider.disconnectedKey(for: connection, sessionKind: .drive)))
+            #expect(!defaults.bool(forKey: DatabricksProxyGoogleSignInProvider.disconnectedKey(for: connection)))
+            #expect(await provider.hasPreviousSignIn == false)
+            #expect(direct.disconnectCallCount == 0)
+        }
+
+        @Test
         func onlyUCMissingCredentialMeansNoGoogleAuthorization() {
             #expect(DatabricksProxyGoogleSignInProvider.isNotAuthorized(Self.noGrant))
             // Observed on 2026-11-05: a bad Databricks token on a workspace host and on a vanity alias, and an alias that
@@ -81,7 +109,11 @@ import Synchronization
 
         @Test
         func restoreWithoutGoogleGrantStaysSignedOutWithoutError() async throws {
-            let provider = makeProvider(connection: connection, direct: FakeDirectProvider(), apiClient: FakeAPIClient(result: .failure(Self.noGrant)))
+            let provider = makeProvider(
+                connection: connection,
+                direct: FakeDirectProvider(),
+                apiClient: FakeAPIClient(result: .failure(Self.noGrant))
+            )
 
             let error = await #expect(throws: GoogleSignInError.self) { try await provider.restorePreviousSignIn() }
             #expect(error?.errorDescription == L10n.googleAccountNoPreviousSession)
@@ -237,7 +269,7 @@ import Synchronization
         }
 
         @Test
-        func disconnectIsScopedToTheConnection() async throws {
+        func disconnectIsScopedToTheConnection() async {
             let defaults = makeDefaults()
             defaults.set(true, forKey: DatabricksProxyGoogleSignInProvider.disconnectedKey(for: connection))
             let readded = DatabricksConnection(id: UUID(), host: connection.host)
@@ -300,6 +332,26 @@ import Synchronization
         }
     }
 
+    private final class DriveIdentityURLProtocol: URLProtocol, @unchecked Sendable {
+        override static func canInit(with _: URLRequest) -> Bool { true }
+        override static func canonicalRequest(for request: URLRequest) -> URLRequest { request }
+        override func startLoading() {
+            let url = request.url!
+            #expect(url.path == "/api/2.0/unity-catalog/connections/system_ai_agent_google_drive/proxy/drive/v3/about")
+            #expect(request.value(forHTTPHeaderField: "Authorization") == "Bearer databricks-token")
+            let body = #"{"user":{"displayName":"Drive","emailAddress":"drive@example.com","permissionId":"drive-user"}}"#
+            client?.urlProtocol(
+                self,
+                didReceive: HTTPURLResponse(url: url, statusCode: 200, httpVersion: nil, headerFields: nil)!,
+                cacheStoragePolicy: .notAllowed
+            )
+            client?.urlProtocol(self, didLoad: Data(body.utf8))
+            client?.urlProtocolDidFinishLoading(self)
+        }
+
+        override func stopLoading() {}
+    }
+
     @MainActor
     private final class FakeAPIClient: GoogleCalendarAPIClientProviding {
         var result: Result<[CalendarListItem], Error>
@@ -312,7 +364,12 @@ import Synchronization
             return try result.get()
         }
 
-        func fetchUpcomingEvents(session _: GoogleSession, calendars _: [CalendarListItem], now _: Date, daysAhead _: Int) async throws -> [CalendarEvent] { [] }
+        func fetchUpcomingEvents(
+            session _: GoogleSession,
+            calendars _: [CalendarListItem],
+            now _: Date,
+            daysAhead _: Int
+        ) async throws -> [CalendarEvent] { [] }
     }
 
     @MainActor

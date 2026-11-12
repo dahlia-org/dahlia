@@ -9,9 +9,9 @@ import Foundation
     @MainActor
     struct PiInfrastructureTests {
         @Test
-        func presetSkillsAreBundledInAgentSkills() throws {
+        func presetSkillsAreBundledInAgentSkills() {
             let urls = PiBundle.presetSkillURLs()
-            #expect(urls.map(\.lastPathComponent).sorted() == ["meeting-reviewer", "projects-optimizer"])
+            #expect(urls.map(\.lastPathComponent).sorted() == ["meeting-reviewer", "projects-optimizer", "workspace-backup"])
             for url in urls {
                 #expect(url.deletingLastPathComponent().lastPathComponent == "AgentSkills")
                 #expect(FileManager.default.fileExists(atPath: url.appending(path: "SKILL.md").path))

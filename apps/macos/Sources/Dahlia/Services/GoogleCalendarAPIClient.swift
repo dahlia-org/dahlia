@@ -293,7 +293,7 @@ final class GoogleCalendarAPIClient: GoogleCalendarAPIClientProviding {
         try await Self.authorizedGet(url: url, accessToken: accessToken, session: session)
     }
 
-    private static func authorizedGet(url: URL, accessToken: String, session: URLSession) async throws -> Data {
+    nonisolated static func authorizedGet(url: URL, accessToken: String, session: URLSession) async throws -> Data {
         var request = URLRequest(url: url)
         request.httpMethod = "GET"
         request.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")

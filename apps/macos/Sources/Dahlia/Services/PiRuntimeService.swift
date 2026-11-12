@@ -109,7 +109,7 @@ actor PiRuntimeService {
                     // Callers defer work and skip error reporting for this case, as they did for Codex's auth command.
                     throw CodexAppServerError.providerAuthenticationFailed(error.localizedDescription)
                 }
-            case "reviewTriage":
+            case "reviewTriage", "createBackup":
                 guard let chatBridge else { return .null }
                 return try await chatBridge(method, payload)
             case "approval", "approvalMode", "reviewModel":

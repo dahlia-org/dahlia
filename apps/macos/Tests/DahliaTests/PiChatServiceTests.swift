@@ -1,5 +1,6 @@
 import DahliaRuntimeSupport
 import Foundation
+import GRDB
 import Synchronization
 @testable import Dahlia
 
@@ -56,6 +57,42 @@ import Synchronization
                 await onPrompt(chatTransport)
             }
             return Fixture(pi: pi, chat: chat, chatTransport: chatTransport)
+        }
+
+        @Test
+        func backupBridgeUsesTheGuiServiceAndOnlyTheChatWorkspace() async throws {
+            let database = try AppDatabaseManager(path: ":memory:")
+            defer { try? database.close() }
+            let workspace = WorkspaceRecord(id: .v7(), path: nil, name: "Chat", createdAt: .now, lastOpenedAt: .now)
+            let other = WorkspaceRecord(id: .v7(), path: nil, name: "Other", createdAt: .now, lastOpenedAt: .now)
+            try await database.dbQueue.write { db in
+                try workspace.insert(db)
+                try other.insert(db)
+            }
+            let result = Mutex<String?>(nil)
+            let fixture = Self.fixture { transport in
+                await transport.emit(TestPiTransport.bridgeRequest(id: "backup", method: "createBackup", payload: .object([:])))
+                let response = await transport.command { $0["id"]?.stringValue == "backup" }
+                result.withLock { $0 = response["value"]?.stringValue }
+                await transport.emit(TestPiTransport.assistantEnd("Created"))
+                await transport.emit(TestPiTransport.settled())
+            }
+            defer { try? FileManager.default.removeItem(at: fixture.pi.rootURL) }
+            await fixture.chat.configureBackup(dbQueue: database.dbQueue, applicationSupportURL: fixture.pi.rootURL)
+            let thread = try await fixture.chat.startThread(model: nil, effort: "medium", workspaceID: workspace.id)
+            let handle = try await fixture.chat.beginTurn(
+                threadID: thread.id, inputs: [.text("Back up this workspace")], model: nil, effort: "medium",
+                approvalMethod: .ask, expectedProvider: nil
+            )
+            for try await _ in handle.events {}
+            let response = try #require(result.withLock { $0 })
+            let value = try JSONDecoder().decode(JSONValue.self, from: Data(response.utf8))
+            let path = try #require(value.objectValue?["path"]?.stringValue)
+            #expect(path.hasSuffix(".tar.gz"))
+            #expect(URL(fileURLWithPath: path).deletingLastPathComponent().path == fixture.pi.rootURL.appending(path: "work").path)
+            let manifest = try BackupArchive.readManifest(at: URL(fileURLWithPath: path))
+            #expect(manifest.metadata.workspaces.map(\.id) == [workspace.id])
+            #expect(try await BackupService(dbQueue: database.dbQueue, applicationSupportURL: fixture.pi.rootURL).listGenerations().count == 1)
         }
 
         @Test(arguments: ["", " \n\t", "日本語で簡潔に回答してください。\nUse bullet points when helpful.", "existing-file"])
@@ -266,7 +303,7 @@ import Synchronization
             #expect(thinking["level"]?.stringValue == "high")
             let launch = try #require(fixture.pi.launches.all.first { $0.mode == .chat })
             #expect(launch.arguments.contains("--session-id"))
-            #expect(launch.arguments.contains("read,ls,write,edit,bash,mcp__dahlia__*"))
+            #expect(launch.arguments.contains("read,ls,write,edit,bash,dahlia_create_backup,mcp__dahlia__*"))
             let work = fixture.pi.rootURL.appending(path: "work")
             #expect(launch.cwd == work)
             #expect(launch.arguments.contains("builtin:mcp"))
@@ -624,7 +661,7 @@ import Synchronization
             try await turn("gmail on, new process")
             #expect(log.all.count == 3)
             let withGmail = try #require(pi.launches.all.last { $0.mode == .chat })
-            #expect(withGmail.arguments.contains("read,ls,write,edit,bash,mcp__dahlia__*,mcp__gmail__*,mcp__notion__*"))
+            #expect(withGmail.arguments.contains("read,ls,write,edit,bash,dahlia_create_backup,mcp__dahlia__*,mcp__gmail__*,mcp__notion__*"))
             // Dahlia's extension registers the sign-ins mcp.json names in every process; none loads the provider file on its own.
             #expect(pi.launches.all.allSatisfy { !$0.arguments.contains { $0.hasSuffix("databricks-provider.ts") } })
             #expect(withGmail.environment["DAHLIA_PI_MCP_SERVERS"] == #"["dahlia","gmail","notion"]"#)

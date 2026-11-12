@@ -38,9 +38,29 @@ import Foundation
             case "unexpected": paths.append("unexpected")
             default: break
             }
-            let archive = root.appending(path: "test.dahliabackup")
+            let archive = root.appending(path: "test.tar.gz")
             let created = try BackupArchive.create(directory: directory, metadata: metadata, paths: paths, at: archive)
             if kind == "valid" {
+                let tar = Process()
+                tar.executableURL = URL(fileURLWithPath: "/usr/bin/tar")
+                tar.arguments = ["-tzf", archive.path]
+                let output = Pipe()
+                tar.standardOutput = output
+                try tar.run()
+                let listing = output.fileHandleForReading.readDataToEndOfFile()
+                tar.waitUntilExit()
+                #expect(tar.terminationStatus == 0)
+                #expect(String(decoding: listing, as: UTF8.self).split(separator: "\n").map(String.init) == ["manifest.json"] + paths)
+                let extractedByTar = root.appending(path: "system-tar")
+                try FileManager.default.createDirectory(at: extractedByTar, withIntermediateDirectories: false)
+                let extraction = Process()
+                extraction.executableURL = URL(fileURLWithPath: "/usr/bin/tar")
+                extraction.arguments = ["-xzf", archive.path, "-C", extractedByTar.path]
+                try extraction.run()
+                extraction.waitUntilExit()
+                #expect(extraction.terminationStatus == 0)
+                #expect(try Data(contentsOf: extractedByTar.appending(path: filePath)) == bytes)
+                #expect(try Data(contentsOf: extractedByTar.appending(path: "database.sqlite")) == Data("database fixture".utf8))
                 try BackupArchive.verify(at: archive, matches: created)
                 let otherManifest = BackupArchiveManifest(metadata: created.metadata, entries: Array(created.entries.prefix(1)))
                 #expect(throws: BackupServiceError.invalidBackup) { try BackupArchive.verify(at: archive, matches: otherManifest) }
@@ -48,6 +68,12 @@ import Foundation
                     #expect(manifest.metadata == metadata)
                     #expect(manifest.entries.count == 2)
                     #expect(try Data(contentsOf: extracted.appending(path: filePath)) == bytes)
+                }
+                let complete = try Data(contentsOf: archive)
+                for removedBytes in 1 ... 8 {
+                    let incomplete = root.appending(path: "truncated-\(removedBytes).tar.gz")
+                    try complete.dropLast(removedBytes).write(to: incomplete)
+                    #expect(throws: (any Error).self) { try BackupArchive.verify(at: incomplete, matches: created) }
                 }
                 var truncated = try Data(contentsOf: archive)
                 truncated.removeLast(min(128, truncated.count / 2))
@@ -59,5 +85,6 @@ import Foundation
                 #expect(try Data(contentsOf: root.appending(path: "outside")) == Data([1]))
             }
         }
+
     }
 #endif
