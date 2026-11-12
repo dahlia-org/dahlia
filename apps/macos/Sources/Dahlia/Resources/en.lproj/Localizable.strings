@@ -1911,6 +1911,7 @@
 
 "settings.agents.skills" = "Skills";
 "settings.agents.skills.empty" = "No skills recognized.";
+"settings.agents.skills.pathConflict" = "The skills folder and its descendants cannot be on PATH. Remove them from Environment Variables under Dahlia AI > General.";
 "settings.agents.skills.help" = "Skills recognized by a new chat process, including preset, account-created, and package skills. Refresh after changes. Running chats pick up changes when their process restarts.";
 "settings.agents.fileAccess.builtIn" = "Default folder and file access";
 "settings.agents.fileAccess.builtInHelp" = "Folder access includes descendants. Default permissions cannot be changed. Protected Pi runtime code, Dahlia data, and shell startup restrictions take precedence over system permissions. The var and etc directories under /opt/homebrew and /usr/local are unreadable. Individual device files are omitted.";

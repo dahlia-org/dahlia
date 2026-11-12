@@ -6,6 +6,47 @@ import Foundation
 
     @MainActor
     struct PiFileAccessSettingsTests {
+        @Test(arguments: [PiRuntimeService.LaunchOptions.Mode.chat, .control, .summary, .skills], ["", "/bin"])
+        func everyPiModeRejectsCommandSearchInsideWritableSkills(_ mode: PiRuntimeService.LaunchOptions.Mode, _ suffix: String) throws {
+            let root = FileManager.default.temporaryDirectory.appending(path: "PiSkillsPath-\(UUID())")
+            let agent = root.appending(path: "agent")
+            let path = agent.appending(path: "skills").path + suffix
+            let launch = PiLaunchSettings(variables: [.init(id: UUID(), name: "PATH", value: path + ":/usr/bin:/bin")])
+            #expect(throws: CodexAppServerError.launchFailed(L10n.agentSkillsPathConflict)) {
+                try PiRuntimeService.launchEnvironment(
+                    .init(mode: mode, cwd: root.appending(path: "work")),
+                    provider: .local, agentURL: agent,
+                    executableURL: URL(fileURLWithPath: "/usr/bin/true"), launch: launch, secret: { _ in nil }
+                )
+            }
+        }
+
+        @Test
+        func skillsPathValidationUsesResolvedSecretPathAndFinalOverrides() throws {
+            let root = FileManager.default.temporaryDirectory.appending(path: "PiSkillsPath-\(UUID())")
+            let agent = root.appending(path: "agent")
+            let skills = agent.appending(path: "skills")
+            try FileManager.default.createDirectory(at: skills, withIntermediateDirectories: true)
+            defer { try? FileManager.default.removeItem(at: root) }
+            let alias = root.appending(path: "alias")
+            try FileManager.default.createSymbolicLink(at: alias, withDestinationURL: skills)
+            let launch = PiLaunchSettings(variables: [.init(id: UUID(), name: "PATH", isSecret: true)])
+            var options = PiRuntimeService.LaunchOptions(mode: .control, cwd: agent)
+            #expect(throws: CodexAppServerError.launchFailed(L10n.agentSkillsPathConflict)) {
+                try PiRuntimeService.launchEnvironment(
+                    options, provider: .local, agentURL: agent, executableURL: URL(fileURLWithPath: "/usr/bin/true"),
+                    launch: launch, secret: { _ in alias.appending(path: "missing/bin").path }
+                )
+            }
+            options.environment["PATH"] = "skills/bin"
+            #expect(throws: CodexAppServerError.launchFailed(L10n.agentSkillsPathConflict)) {
+                try PiRuntimeService.launchEnvironment(
+                    options, provider: .local, agentURL: agent, executableURL: URL(fileURLWithPath: "/usr/bin/true"),
+                    launch: launch, secret: { _ in "/usr/bin:/bin" }
+                )
+            }
+        }
+
         @Test
         func settingsAreLocalToEachAccountAndRemovalPersists() throws {
             let defaults = try #require(UserDefaults(suiteName: "PiFileAccessSettingsTests.\(UUID())"))

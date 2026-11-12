@@ -2455,6 +2455,7 @@ enum L10n { // swiftlint:disable:this type_body_length
     static var agentSkills: String { String(localized: "settings.agents.skills", bundle: bundle) }
     static var agentSkillsEmpty: String { String(localized: "settings.agents.skills.empty", bundle: bundle) }
     static var agentSkillsHelp: String { String(localized: "settings.agents.skills.help", bundle: bundle) }
+    static var agentSkillsPathConflict: String { String(localized: "settings.agents.skills.pathConflict", bundle: bundle) }
     static var agentFileAccessBuiltIn: String { String(localized: "settings.agents.fileAccess.builtIn", bundle: bundle) }
     static var agentFileAccessBuiltInHelp: String { String(localized: "settings.agents.fileAccess.builtInHelp", bundle: bundle) }
     static var agentSecurity: String { String(localized: "settings.agents.security", bundle: bundle) }

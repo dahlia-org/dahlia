@@ -6,6 +6,13 @@ import Foundation
 /// (`PiExtension/pi.sb`): the working folder and explicit per-account grants are accessible, while runtime code
 /// and account data remain protected. Network access is allowed.
 enum PiSandbox {
+    /// Skills stay writable across chat processes, so no Pi launch may search them for executable commands.
+    nonisolated static func validateSkillsSearchPath(agentURL: URL, searchPath: String, cwd: URL) throws {
+        guard !PiWorkingDirectory.holdsCommands(agentURL.appending(path: "skills"), searchPath: searchPath, cwd: cwd) else {
+            throw CodexAppServerError.launchFailed(L10n.agentSkillsPathConflict)
+        }
+    }
+
     /// User-visible defaults. System exceptions and protected runtime/data rules still take precedence.
     nonisolated static func defaultFileAccess(cwd: URL, agentURL: URL) -> [PiFileAccessSettings.Grant] {
         let writable = [cwd, temporaryDirectory, agentURL.appending(path: "skills")]
@@ -54,6 +61,7 @@ enum PiSandbox {
         environment: [String: String] = ProcessInfo.processInfo.environment,
         home: String = NSHomeDirectory()
     ) throws -> [String] {
+        try validateSkillsSearchPath(agentURL: agentURL, searchPath: searchPath, cwd: cwd)
         try PiAgentDirectoryLocator.createPrivateDirectory(temporaryDirectory)
         try PiAgentDirectoryLocator.createPrivateDirectory(piTemporaryDirectory)
         let skills = PiBundle.presetSkillURLs().first?.deletingLastPathComponent()

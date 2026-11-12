@@ -1911,6 +1911,7 @@
 
 "settings.agents.skills" = "スキル";
 "settings.agents.skills.empty" = "認識しているスキルはありません。";
+"settings.agents.skills.pathConflict" = "スキル保存先とその配下は PATH に指定できません。「Dahlia AI」>「一般」の環境変数から外してください。";
 "settings.agents.skills.help" = "新しいチャットプロセスが認識するスキルです。標準スキル、このアカウントが保存したスキル、パッケージのスキルを表示します。追加・変更後は更新してください。実行中のチャットには次のプロセス起動時に反映されます。";
 "settings.agents.fileAccess.builtIn" = "既定で許可されているフォルダ・ファイル";
 "settings.agents.fileAccess.builtInHelp" = "フォルダは配下を含みます。既定の許可は変更できません。システムの許可よりも、Pi の実行コード・Dahlia の保護データ・シェル起動ファイルの制限を優先します。/opt/homebrew と /usr/local の var・etc は読み取り不可です。表示には個別のデバイスファイルを含みません。";

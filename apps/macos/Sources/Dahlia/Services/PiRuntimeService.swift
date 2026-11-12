@@ -829,6 +829,7 @@ actor PiRuntimeService {
         environment["DAHLIA_PI_MODE"] = options.mode.rawValue
         environment["DAHLIA_PI_BRIDGED_PROVIDERS"] = provider.piBridgedProviderIDs.joined(separator: ",")
         environment.merge(options.environment) { $1 }
+        try PiSandbox.validateSkillsSearchPath(agentURL: agentURL, searchPath: environment["PATH"] ?? "", cwd: options.cwd)
         if options.mode == .chat {
             let searchPath = environment["PATH"] ?? ""
             guard !PiWorkingDirectory.holdsCommands(options.cwd, searchPath: searchPath, cwd: options.cwd),

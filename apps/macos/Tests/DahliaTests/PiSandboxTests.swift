@@ -6,6 +6,17 @@ import Foundation
     import Testing
 
     struct PiSandboxTests {
+        @Test(arguments: ["skills", "skills/bin", "skills/missing/bin"])
+        func sandboxConstructionRejectsSkillsCommandSearchPaths(_ entry: String) {
+            let root = FileManager.default.temporaryDirectory.appending(path: "PiSandboxSkillsPath-\(UUID())")
+            let agent = root.appending(path: "agent")
+            #expect(throws: CodexAppServerError.launchFailed(L10n.agentSkillsPathConflict)) {
+                try PiSandbox.command(
+                    cwd: agent, agentURL: agent, piExecutableURL: URL(fileURLWithPath: "/usr/bin/true"), searchPath: entry
+                )
+            }
+        }
+
         @Test
         func accountSkillsAreWritableWithoutExposingCredentialsOrOtherAccounts() throws {
             let root = FileManager.default.temporaryDirectory.appending(path: "PiSandboxSkills-\(UUID())")
