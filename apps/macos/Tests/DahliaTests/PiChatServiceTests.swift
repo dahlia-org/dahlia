@@ -59,8 +59,17 @@ import Synchronization
             return Fixture(pi: pi, chat: chat, chatTransport: chatTransport)
         }
 
-        @Test(arguments: ["", " \n\t", "日本語で簡潔に回答してください。\nUse bullet points when helpful."])
-        func customInstructionsAreAppendedToTheSystemPromptWithoutChangingTheUserMessage(instructions: String) async throws {
+        @Test(arguments: ["", " \n\t", "日本語で簡潔に回答してください。\nUse bullet points when helpful.", "existing-file"])
+        func customInstructionsUseAppendSystemPromptWithoutChangingTheUserMessage(input: String) async throws {
+            let fileURL = URL.temporaryDirectory.appending(path: "dahlia-instructions-\(UUID.v7()).txt")
+            defer { try? FileManager.default.removeItem(at: fileURL) }
+            let instructions: String
+            if input == "existing-file" {
+                try "File contents must not become instructions".write(to: fileURL, atomically: true, encoding: .utf8)
+                instructions = fileURL.path
+            } else {
+                instructions = input
+            }
             let fixture = Self.fixture(customInstructions: { account in
                 #expect(account == .local)
                 return instructions
@@ -78,10 +87,17 @@ import Synchronization
             let promptIndex = try #require(launch.arguments.firstIndex(of: "--system-prompt"))
             let prompt = launch.arguments[promptIndex + 1]
             #expect(prompt.hasPrefix(PiChatService.systemPrompt))
+            #expect(prompt.contains("Dahlia's database:"))
+            #expect(prompt.contains("Dahlia's screenshots:"))
+            #expect(!prompt.contains("# User's custom instructions for AI chat"))
             if instructions.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                #expect(!prompt.contains("# User's custom instructions for AI chat"))
+                #expect(!launch.arguments.contains("--append-system-prompt"))
             } else {
-                #expect(prompt.hasSuffix("# User's custom instructions for AI chat\n" + instructions))
+                #expect(launch.arguments.filter { $0 == "--append-system-prompt" }.count == 1)
+                let appendIndex = try #require(launch.arguments.firstIndex(of: "--append-system-prompt"))
+                let appended = launch.arguments[appendIndex + 1]
+                #expect(appended == "\n\n# User's custom instructions for AI chat\n" + instructions)
+                #expect(!FileManager.default.fileExists(atPath: appended))
             }
             let command = await fixture.chatTransport.command("prompt")
             #expect(command["message"]?.stringValue == "Hello")

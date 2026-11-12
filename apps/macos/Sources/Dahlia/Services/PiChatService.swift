@@ -488,8 +488,12 @@ actor PiChatService: CodexChatServicing {
         var arguments = sessionArguments + [
             "-e", "builtin:mcp",
             "--tools", tools.joined(separator: ","),
-            "--system-prompt", Self.systemPrompt + dataPaths + Self.customInstructionsPrompt(customInstructions(provider)),
+            "--system-prompt", Self.systemPrompt + dataPaths,
         ]
+        let instructions = Self.customInstructionsPrompt(customInstructions(provider))
+        if !instructions.isEmpty {
+            arguments += ["--append-system-prompt", instructions]
+        }
         for skill in PiBundle.presetSkillURLs() {
             arguments += ["--skill", skill.path]
         }
@@ -678,6 +682,7 @@ actor PiChatService: CodexChatServicing {
 
     nonisolated static func customInstructionsPrompt(_ instructions: String) -> String {
         guard let instructions = instructions.nilIfBlank else { return "" }
+        // Pi treats an existing path as a file; keep the heading so a user's path stays literal text.
         return "\n\n# User's custom instructions for AI chat\n" + instructions
     }
 

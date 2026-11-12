@@ -3023,6 +3023,8 @@ enum L10n { // swiftlint:disable:this type_body_length
     static var chatUserInputSubmit: String { String(localized: "Submit", bundle: bundle) }
     static var chatCustomInstructions: String { String(localized: "settings.agents.customInstructions", bundle: bundle) }
     static var chatCustomInstructionsHelp: String { String(localized: "settings.agents.customInstructions.help", bundle: bundle) }
+    static var chatCustomInstructionsDetails: String { String(localized: "settings.agents.customInstructions.details", bundle: bundle) }
+    static var chatCustomInstructionsInfo: String { String(localized: "settings.agents.customInstructions.info", bundle: bundle) }
     static var autoReviewSettings: String { String(localized: "Auto review", bundle: bundle) }
     static var autoReviewModel: String { String(localized: "Reviewer model", bundle: bundle) }
     static var autoReviewUseChatModel: String { String(localized: "Same as chat", bundle: bundle) }

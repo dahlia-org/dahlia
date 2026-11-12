@@ -1891,4 +1891,6 @@
 "Queued until the response finishes: %@" = "応答完了後に実行: %@";
 
 "settings.agents.customInstructions" = "カスタム指示";
+"settings.agents.customInstructions.details" = "カスタム指示について";
+"settings.agents.customInstructions.info" = "入力内容は、AI チャットの追加システムプロンプトとして、選択中の AI モデルへ送信されます。Dahlia の標準指示と結合して使われます。";
 "settings.agents.customInstructions.help" = "AI チャットへの指示を設定します。この Mac 内にアカウント別で保存され、新しいチャットや閉じて開き直したチャットに適用されます。空にすると解除できます。要約生成と画像解析には使いません。";
