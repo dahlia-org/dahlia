@@ -41,6 +41,8 @@
 ; long output for chat, is only read: Pi loads code from it outside the sandbox.
 (allow file-read* file-write* (subpath (param "WORK")) (subpath (param "TMP")))
 (allow file-read* (subpath (param "PI_TMP")))
+; Account-specific grants go before the protected runtime and account-data rules below.
+; ADDITIONAL_FILE_ACCESS
 ; What runs outside the sandbox is never written, even when the working folder contains it: Pi's own temporary
 ; folder, the installed Pi (with its node, for an npm package), and Dahlia's extension and skills.
 (deny file-write* (subpath (param "PI_TMP")) (subpath (param "PI")) (subpath (param "RESOURCES")))

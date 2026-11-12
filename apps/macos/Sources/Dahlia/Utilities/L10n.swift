@@ -2452,6 +2452,17 @@ enum L10n { // swiftlint:disable:this type_body_length
 
     static var agentMCPs: String { String(localized: "settings.agents.mcps", bundle: bundle) }
     static var piCommandInUse: String { String(localized: "settings.agents.piCommandInUse", bundle: bundle) }
+    static var agentSecurity: String { String(localized: "settings.agents.security", bundle: bundle) }
+    static var agentFileAccess: String { String(localized: "settings.agents.fileAccess", bundle: bundle) }
+    static var agentFileAccessPermission: String { String(localized: "settings.agents.fileAccess.permission", bundle: bundle) }
+    static var agentFileAccessReadOnly: String { String(localized: "settings.agents.fileAccess.readOnly", bundle: bundle) }
+    static var agentFileAccessReadWrite: String { String(localized: "settings.agents.fileAccess.readWrite", bundle: bundle) }
+    static var agentFileAccessAdd: String { String(localized: "settings.agents.fileAccess.add", bundle: bundle) }
+    static var agentFileAccessRemove: String { String(localized: "settings.agents.fileAccess.remove", bundle: bundle) }
+    static var agentFileAccessDefaults: String { String(localized: "settings.agents.fileAccess.defaults", bundle: bundle) }
+    static var agentFileAccessHelp: String { String(localized: "settings.agents.fileAccess.help", bundle: bundle) }
+    static var agentFileAccessChanged: String { String(localized: "settings.agents.fileAccess.changed", bundle: bundle) }
+    static var agentFileAccessNotAllowed: String { String(localized: "settings.agents.fileAccess.notAllowed", bundle: bundle) }
     static var agentWorkingDirectory: String { String(localized: "settings.agents.workingDirectory", bundle: bundle) }
     static var agentWorkingDirectoryHelp: String { String(localized: "settings.agents.workingDirectory.help", bundle: bundle) }
     static var agentWorkingDirectoryNotAllowed: String { String(localized: "settings.agents.workingDirectory.notAllowed", bundle: bundle) }

@@ -27,6 +27,7 @@ actor PiRuntimeService {
         var cwd: URL
         var arguments: [String] = []
         var environment: [String: String] = [:]
+        var fileAccess = PiFileAccessSettings()
     }
 
     struct AccountStatus: Equatable {
@@ -771,22 +772,11 @@ actor PiRuntimeService {
         provider: CodexRuntimeProvider,
         agentURL: URL
     ) throws -> any CodexAppServerTransport {
-        // Provider keys in Dahlia's own environment must not override the account's sign-in or reach model-run commands.
-        var environment = ProcessInfo.processInfo.environment.filter { key, _ in
-            !key.hasSuffix("_API_KEY") && !key.hasSuffix("_AUTH_TOKEN") && !key.hasSuffix("_OAUTH_TOKEN") && !key.hasPrefix("PI_")
-        }
-        // The user's variables for this account come before what Dahlia sets, which overrides them.
-        let launch = PiLaunchSettings.load(for: provider)
-        environment.merge(launch.environment { KeychainService.load(key: PiLaunchSettings.secretKey(for: provider, id: $0)) }) { $1 }
         let executableURL = try PiBundle.executableURL(for: provider)
-        environment["PATH"] = CommandLineToolLocator.searchPath(for: executableURL, environment: environment)
-        environment["PI_CODING_AGENT_DIR"] = agentURL.path
-        environment["PI_OFFLINE"] = "1"
-        environment["PI_SKIP_VERSION_CHECK"] = "1"
-        environment["PI_TELEMETRY"] = "0"
-        environment["DAHLIA_PI_MODE"] = options.mode.rawValue
-        environment["DAHLIA_PI_BRIDGED_PROVIDERS"] = provider.piBridgedProviderIDs.joined(separator: ",")
-        environment.merge(options.environment) { $1 }
+        let environment = try launchEnvironment(
+            options, provider: provider, agentURL: agentURL, executableURL: executableURL,
+            launch: PiLaunchSettings.load(for: provider)
+        )
         let arguments = try [
             "--mode", "rpc",
             "--no-extensions", "-e", PiBundle.resourceURL("dahlia.ts").path,
@@ -798,6 +788,50 @@ actor PiRuntimeService {
             environment: environment,
             currentDirectoryURL: options.cwd
         )
+    }
+
+    /// Assemble and validate one environment snapshot immediately before starting the process.
+    nonisolated static func launchEnvironment(
+        _ options: LaunchOptions,
+        provider: CodexRuntimeProvider,
+        agentURL: URL,
+        executableURL: URL,
+        launch: PiLaunchSettings,
+        secret: (String) -> String? = { KeychainService.load(key: $0) }
+    ) throws -> [String: String] {
+        // Provider keys in Dahlia's own environment must not override the account's sign-in or reach model-run commands.
+        var environment = ProcessInfo.processInfo.environment.filter { key, _ in
+            !key.hasSuffix("_API_KEY") && !key.hasSuffix("_AUTH_TOKEN") && !key.hasSuffix("_OAUTH_TOKEN") && !key.hasPrefix("PI_")
+        }
+        // The user's variables for this account come before what Dahlia sets, which overrides them.
+        environment.merge(launch.resolvedEnvironment(for: provider, secret: secret)) { $1 }
+        environment["PATH"] = CommandLineToolLocator.searchPath(for: executableURL, environment: environment)
+        environment["PI_CODING_AGENT_DIR"] = agentURL.path
+        environment["PI_OFFLINE"] = "1"
+        environment["PI_SKIP_VERSION_CHECK"] = "1"
+        environment["PI_TELEMETRY"] = "0"
+        environment["DAHLIA_PI_MODE"] = options.mode.rawValue
+        environment["DAHLIA_PI_BRIDGED_PROVIDERS"] = provider.piBridgedProviderIDs.joined(separator: ",")
+        environment.merge(options.environment) { $1 }
+        if options.mode == .chat {
+            let searchPath = environment["PATH"] ?? ""
+            guard !PiWorkingDirectory.holdsCommands(options.cwd, searchPath: searchPath, cwd: options.cwd) else {
+                throw CodexAppServerError.launchFailed(L10n.agentWorkingDirectoryNotAllowed)
+            }
+            environment["DAHLIA_PI_SANDBOX"] = try String(decoding: JSONEncoder().encode(
+                PiSandbox.command(
+                    cwd: options.cwd, agentURL: agentURL, piExecutableURL: executableURL,
+                    fileAccess: options.fileAccess, searchPath: searchPath
+                )
+            ), as: UTF8.self)
+            environment["DAHLIA_PI_SANDBOX_HIDDEN_ENV"] = try String(
+                decoding: JSONEncoder().encode(launch.variables.filter(\.isSecret).map(\.name)),
+                as: UTF8.self
+            )
+            environment["DAHLIA_PI_SANDBOX_TMPDIR"] = PiSandbox.temporaryDirectory.path
+            environment["TMPDIR"] = PiSandbox.piTemporaryDirectory.path
+        }
+        return environment
     }
 
     nonisolated static func resolveToken(_ provider: CodexRuntimeProvider) async throws -> String {

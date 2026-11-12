@@ -39,12 +39,11 @@ import Synchronization
             let chat = PiChatService(
                 runtime: pi.service,
                 workingDirectory: PiWorkingDirectory(override: pi.rootURL.appending(path: "work")),
-                // The test machine may have no pi; the launcher is a stand-in anyway.
-                piExecutableURL: { _ in URL(fileURLWithPath: "/bin/sh") },
                 agentLocator: PiAgentDirectoryLocator(applicationSupportURL: pi.rootURL),
                 mcpExecutableURL: URL(filePath: "/usr/bin/true"),
                 reviewModel: { _ in "reviewer/test-model" },
-                mcpSettings: { _ in AgentMCPSettings() }
+                mcpSettings: { _ in AgentMCPSettings() },
+                fileAccessSettings: { _ in PiFileAccessSettings() }
             )
             Task {
                 // A user prompt starts the scripted turn; extension commands start with "/".
@@ -227,12 +226,68 @@ import Synchronization
             #expect(launch.arguments.contains("builtin:mcp"))
             #expect(launch.environment["DAHLIA_PI_MCP_COMMAND"]?.contains("--workspace-id") == true)
             // Commands and file tools run under Seatbelt, confined to the working folder.
-            #expect(launch.environment["DAHLIA_PI_SANDBOX"]?.contains("WORK=") == true)
+            #expect(launch.fileAccess.grants.isEmpty)
             #expect(launch.environment["DAHLIA_PI_MCP_SERVERS"] == #"["dahlia"]"#)
             // The Local Account has no gateway MCPs; its mcp.json lists none.
             let mcpJSON = try PiAgentDirectoryLocator(applicationSupportURL: fixture.pi.rootURL)
                 .agentURL(for: .local).appending(path: "mcp.json")
             #expect(FileManager.default.contents(atPath: mcpJSON.path) == Data(#"{"mcpServers":{}}"#.utf8))
+        }
+
+        @Test
+        func fileAccessChangesReopenExistingThreadsBeforeTheNextTurn() async throws {
+            let permissions = Mutex(PiFileAccessSettings())
+            let transports = TestPiTransportLog()
+            let pi = TestPiRuntime { options in
+                guard options.mode == .chat else {
+                    return TestPiTransport(reply: TestPiRuntime.modelsReply([TestPiTransport.model(provider: "openai", id: "gpt-test")]))
+                }
+                let transport = TestPiTransport { command in
+                    guard let id = command["id"] else { return [] }
+                    if command["type"]?.stringValue == "get_commands" {
+                        return [TestPiTransport.response(id: id, data: .object(["commands": .array([])]))]
+                    }
+                    return [TestPiTransport.response(id: id, data: .object(["disposition": .string("started")]))]
+                }
+                transports.append(transport)
+                return transport
+            }
+            let chat = PiChatService(
+                runtime: pi.service,
+                workingDirectory: PiWorkingDirectory(override: pi.rootURL.appending(path: "work")),
+                agentLocator: PiAgentDirectoryLocator(applicationSupportURL: pi.rootURL),
+                mcpExecutableURL: URL(filePath: "/usr/bin/true"),
+                mcpSettings: { _ in AgentMCPSettings() },
+                fileAccessSettings: { _ in permissions.withLock { $0 } }
+            )
+            let workspaceID = UUID.v7()
+            let thread = try await chat.startThread(model: "openai/gpt-test", effort: "medium", workspaceID: workspaceID)
+            let lease = await chat.acquireThreadLease(threadID: thread.id)
+            let readOnly = PiFileAccessSettings(grants: [.init(path: "/private/tmp/desk-config.toml", isDirectory: false)])
+            var readWrite = readOnly
+            readWrite.grants[0].access = .readWrite
+            for (index, configuration) in [PiFileAccessSettings(), readOnly, readWrite, PiFileAccessSettings()].enumerated() {
+                permissions.withLock { $0 = configuration }
+                let handle = try await chat.beginTurn(
+                    threadID: thread.id, inputs: [.text("Hi")], model: nil, effort: "medium", approvalMethod: .ask, expectedProvider: .local
+                )
+                let process = await transports.transport(at: index)
+                let launch = try #require(pi.launches.all.last { $0.mode == .chat })
+                #expect(launch.fileAccess == configuration)
+                #expect(launch.arguments.contains { $0.contains("desk-config.toml") } == !configuration.grants.isEmpty)
+                if index == 0 {
+                    // Saving a grant does not interrupt a running turn or its command discovery.
+                    permissions.withLock { $0 = readOnly }
+                    #expect(try await chat.commands(threadID: thread.id, workspaceID: workspaceID).isEmpty)
+                    #expect(await !process.isClosed)
+                }
+                await process.emit(TestPiTransport.assistantEnd("ok"))
+                await process.emit(TestPiTransport.settled())
+                for try await _ in handle.events {}
+                #expect(pi.launches.all.count(where: { $0.mode == .chat }) == index + 1)
+                if index > 0 { #expect(await transports.all[index - 1].isClosed) }
+            }
+            await chat.releaseThreadLease(threadID: thread.id, leaseID: lease)
         }
 
         @Test
@@ -267,11 +322,10 @@ import Synchronization
             let chat = PiChatService(
                 runtime: pi.service,
                 workingDirectory: PiWorkingDirectory(override: pi.rootURL.appending(path: "work")),
-                // The test machine may have no pi; the launcher is a stand-in anyway.
-                piExecutableURL: { _ in URL(fileURLWithPath: "/bin/sh") },
                 agentLocator: PiAgentDirectoryLocator(applicationSupportURL: pi.rootURL),
                 mcpExecutableURL: URL(filePath: "/usr/bin/true"),
-                mcpSettings: { _ in AgentMCPSettings() }
+                mcpSettings: { _ in AgentMCPSettings() },
+                fileAccessSettings: { _ in PiFileAccessSettings() }
             )
             let thread = try await chat.startThread(model: "openai/gpt-test", effort: "medium", workspaceID: .v7())
             _ = await chat.acquireThreadLease(threadID: thread.id)
@@ -420,8 +474,6 @@ import Synchronization
             let chat = PiChatService(
                 runtime: pi.service,
                 workingDirectory: PiWorkingDirectory(override: pi.rootURL.appending(path: "work")),
-                // The test machine may have no pi; the launcher is a stand-in anyway.
-                piExecutableURL: { _ in URL(fileURLWithPath: "/bin/sh") },
                 agentLocator: PiAgentDirectoryLocator(applicationSupportURL: pi.rootURL),
                 mcpExecutableURL: URL(filePath: "/usr/bin/true")
             )
@@ -470,8 +522,6 @@ import Synchronization
             let chat = PiChatService(
                 runtime: pi.service,
                 workingDirectory: PiWorkingDirectory(override: pi.rootURL.appending(path: "work")),
-                // The test machine may have no pi; the launcher is a stand-in anyway.
-                piExecutableURL: { _ in URL(fileURLWithPath: "/bin/sh") },
                 agentLocator: PiAgentDirectoryLocator(applicationSupportURL: pi.rootURL),
                 mcpExecutableURL: URL(filePath: "/usr/bin/true"),
                 mcpSettings: { _ in registered.withLock { $0 } }
@@ -583,8 +633,6 @@ import Synchronization
             let chat = PiChatService(
                 runtime: pi.service,
                 workingDirectory: PiWorkingDirectory(override: pi.rootURL.appending(path: "work")),
-                // The test machine may have no pi; the launcher is a stand-in anyway.
-                piExecutableURL: { _ in URL(fileURLWithPath: "/bin/sh") },
                 agentLocator: PiAgentDirectoryLocator(applicationSupportURL: pi.rootURL),
                 mcpExecutableURL: URL(filePath: "/usr/bin/true")
             )
@@ -712,8 +760,6 @@ import Synchronization
             let chat = PiChatService(
                 runtime: pi.service,
                 workingDirectory: PiWorkingDirectory(override: pi.rootURL.appending(path: "work")),
-                // The test machine may have no pi; the launcher is a stand-in anyway.
-                piExecutableURL: { _ in URL(fileURLWithPath: "/bin/sh") },
                 agentLocator: PiAgentDirectoryLocator(applicationSupportURL: pi.rootURL),
                 mcpExecutableURL: URL(filePath: "/usr/bin/true"),
                 mcpSettings: { _ in

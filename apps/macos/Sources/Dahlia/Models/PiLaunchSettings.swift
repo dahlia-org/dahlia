@@ -53,4 +53,12 @@ struct PiLaunchSettings: Codable, Equatable, Sendable {
             environment[variable.name] = value
         }
     }
+
+    /// Resolves secrets off MainActor; use the same values for launch and its access checks.
+    func resolvedEnvironment(
+        for account: CodexRuntimeProvider,
+        secret: (String) -> String? = { KeychainService.load(key: $0) }
+    ) -> [String: String] {
+        environment { secret(Self.secretKey(for: account, id: $0)) }
+    }
 }

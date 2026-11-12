@@ -63,7 +63,8 @@ Pi 本体は sandbox の外で動かす。Seatbelt は入れ子にできず、Pi
 | Dahlia の preset skill、アカウントの Pi directory の `npm`・`git` 配下（インストール済みパッケージ）、画像の保存先（`FileStore`）、app の SQLite（`dahlia.sqlite` と `-wal`・`-shm`） | 読み取りだけ（画像と SQLite はデバッグ用） |
 | Dahlia の Application Support のそれ以外（全アカウントの agent directory、録音、backup。development build からは production のものも） | 読み書き不可（作業フォルダがこれを含んでいても） |
 | システムと全ユーザー向けの tool（`/System`・`/usr`・`/bin`・`/sbin`・`/Library/Developer`・`/Applications`・`/opt`・`/private/etc` など、`pi.sb` に名前で列挙） | 読み取りだけ。ただし local service の data と設定（`/opt/homebrew`・`/usr/local` の `var` と `etc`）は不可 |
-| それ以外すべて（ホーム、`/Volumes`、利用者の一時フォルダと cache など） | 読み書き不可（metadata は読める） |
+| セキュリティ設定で追加したファイル・フォルダ | アカウントごと・この Mac のチャットだけに、読み取りのみ／読み書きを追加。ファイルはその実体だけ、フォルダは配下を含む。既存の保護対象への例外にはならない |
+| それ以外すべて（ホーム、`/Volumes`、利用者の一時フォルダと cache など） | 追加の許可がなければ読み書き不可（metadata は読める） |
 | IP の network | すべて許可（当面）。この Mac 自身の service（ブラウザの debug port、ローカルの DB）にも届く。Seatbelt の address の条件は IPv4-mapped IPv6（`::ffff:127.0.0.1`）を localhost として扱わないので、localhost だけを確実に閉じることはできない |
 | Unix socket | DNS（mDNSResponder）だけ。ssh-agent、Docker、Dahlia の broker には届かない |
 
@@ -73,7 +74,7 @@ network は開いているので、読める内容は外部に送信できる。
 extension は `read`・`ls`・`write`・`edit`・`bash` を Pi の `create*Tool` で登録し直す。file 操作（読み取り・一覧・書き込み・folder の作成・画像の判定）は `sandbox-exec` の中の `cat`・`ls`・`mkdir`・`head` で行い、
 `bash` は `spawnHook` でコマンドを包む。path は開くときに kernel が判定するので、コマンドが作った symlink や検査後の差し替えで範囲の外に出ることはない。extension は path を検査しない。
 sandbox の引数は Dahlia が `DAHLIA_PI_SANDBOX` で渡す。引数がないとき、または呼ばれる tool が Pi の built-in のまま（extension の登録が置き換えていない）のときは、5つの tool を拒否する。
-本当のホームは読めないので、`git` などの設定は一時フォルダに置かれ、ホームの下に入れた tool（uv・nvm・pyenv など）は sandbox の中では動かない。sandbox の中の環境からは、利用者が「環境変数」で秘密にした変数（`DAHLIA_PI_SANDBOX_HIDDEN_ENV`）を除く。
+`HOME` と `TMPDIR` は追加の許可にかかわらず専用の一時フォルダを指す。`~/.desk.toml` などを追加した場合は絶対パス（必要なら `DESK_CONFIG` などの環境変数）で参照する。追加していないホーム内の設定・tool（uv・nvm・pyenv など）は読めない。sandbox の中の環境からは、利用者が「環境変数」で秘密にした変数（`DAHLIA_PI_SANDBOX_HIDDEN_ENV`）を除く。
 作業フォルダはチャットが書けるので、Pi がそこから設定を読まないことが前提になる。Pi は `--no-approve` で project の設定（`.pi/mcp.json` など）を無視する。
 Dahlia MCP は Pi の子のままで、コマンドは SQLite に書けず MCP にも届かないので、Dahlia のデータの変更は上記の承認方式に従う MCP の tool だけが行う。
 Pi の codemode（未有効）の script は Pi の process 内の QuickJS で動き、file system も network も持たない。script が呼ぶ tool には同じ制限（Seatbelt と MCP の承認）が掛かる。
@@ -175,13 +176,19 @@ schema だけで生成する。外した制約は Dahlia 側で守る（要約�
 
 ## チャットの実行と承認
 
-チャットは作業フォルダで動く（2026-11-11 ユーザー承認）。作業フォルダは「エージェント」>「一般」でアカウントごとに設定し（`piWorkingDirectory.<local またはアカウント ID>`）、
+チャットは作業フォルダで動く（2026-11-11 ユーザー承認）。作業フォルダは「Dahlia AI」>「セキュリティ」でアカウントごとに設定し（`piWorkingDirectory.<local またはアカウント ID>`）、
 既定は `~/Dahlia`（development profile は `~/Dahlia-Development`）。チャットが自由に書けるので、sandbox の外で実行されるもの（shell の設定、ホームの下に入れた tool と Pi、app の設定）を含むフォルダは指定できない:
 ホームフォルダ自身、それを含むフォルダ、`~/Library` とその中、相対 path、Pi を探して起動するときの PATH の folder を含むフォルダ（`pi` を置き換えたり、`node` より先に見つかるコマンドを置いたりできる）は、チャットの起動時に拒否する。`~/Documents` は macOS がアクセス許可を求め、iCloud に同期されうるので使わない。フォルダはなければ作る。
 Pi は thread を session file の header の `cwd` で動かすので、Dahlia は thread を開き直す前に header の `cwd` を今の作業フォルダに書き換える。設定の変更は次に起動する chat process から効く。
 以前の `Application Support/<profile>/CodexChatWorkspace/<Workspace ID>` は使わず、削除もしない。
 
 Pi に渡す tool は `read`・`ls`・`write`・`edit`・`bash`・`mcp__dahlia__*` と、アカウントに登録した MCP server の tool（2026-11-11 ユーザー承認）。`grep`・`find` は渡さない。
+2026-11-12: 「セキュリティ」で追加のファイルアクセスを設定できる。初期値は追加なし。選択時は読み取りのみで、読み書きへの変更と許可の削除ができる。保存先はこの Mac のアカウント別設定で、Server に同期せず、AI/MCP から許可を編集する入口は設けない。macOS チャットだけの機能であり、Private Web・Electron・Server の処理権限を変更しない。
+
+追加の許可でも Pi の実行コード・extension・skill・Pi 用一時フォルダは書き換えられず、Dahlia の認証情報・録音などの保護対象にも到達できない。ホーム全体や Library、PATH のコマンドを含む／その配下の場所への書き込みは拒否する。設定から選んだ path は実体に解決し、起動時にも検証する。許可は既存の範囲に加算するもので、読み取りのみの追加や削除によって作業フォルダの書き込みを禁止することはできない。ファイル単位の許可は隣接ファイルの作成や置き換え用の一時ファイルを許可しないため、それを必要とするツールには親フォルダの許可が必要になる。
+
+追加・変更・削除は次のメッセージから反映する。Seatbelt は process 起動時に固定されるので、権限設定が変わった既存の idle thread は次の turn 前に開き直す。実行中の turn と子コマンドの権限は変更しない。すぐに停止する必要があれば応答をキャンセルする。ネットワークの許可は変えず、追加した読み取り対象も外部へ送信可能である。
+
 5つの tool の範囲は上の Seatbelt の表のとおりで、範囲内は確認なしで動く。system prompt には SQLite と画像の保存先の path を含め、`sqlite3 -readonly` で参照できる。
 実行中のターンでは、直近の tool 名と実行中・完了・失敗・アクセス不可の状態を入力欄の上に表示し、終了結果の受信後はモデルの応答待ちと明示する。引数と出力本文はこの状態表示に含めず、回答本文の受信またはターン終了時に消す。アクセス制限を受けた同じ path の再試行や sandbox の回避をせず、制約を説明して参照可能な情報から続けるよう system prompt で指示する。
 

@@ -1815,7 +1815,7 @@
 "settings.agents.piCommandInUse" = "使用するコマンド";
 "settings.agents.workingDirectory" = "作業フォルダ";
 "settings.agents.workingDirectory.notAllowed" = "作業フォルダには、フルパスか ~ で始まるパスを指定してください。ホームフォルダ自身、それを含むフォルダ、ライブラリの中、コマンドの置き場所（PATH のフォルダ）を含むフォルダは指定できません。";
-"settings.agents.workingDirectory.help" = "Dahlia AI がチャットでファイルを作成・変更できる、この Mac 上のただ一つのフォルダです。変更は次に始めるチャットの処理から反映されます。";
+"settings.agents.workingDirectory.help" = "チャットの作業場所です。このフォルダは追加の許可なしに読み書きできます。変更はチャットを開き直したときに反映されます。";
 "No executable Pi at %@. Install Pi in Settings > Dahlia AI." = "%@ に実行可能な Pi がありません。設定の「Dahlia AI」で Pi をインストールしてください。";
 "Pi was not found on PATH. Enable Dahlia-managed Pi in Settings > Dahlia AI to install it." = "PATH 上に Pi が見つかりません。設定の「Dahlia AI」で「アプリ管理下の Pi を使う」をオンにするとインストールできます。";
 "settings.agents.piNotInstalled" = "Pi がインストールされていません";
@@ -1889,3 +1889,16 @@
 "Chat notice collapsed" = "折りたたみ中";
 
 "Queued until the response finishes: %@" = "応答完了後に実行: %@";
+
+/* Additional chat file access */
+"settings.agents.security" = "セキュリティ";
+"settings.agents.fileAccess" = "追加のファイルアクセス";
+"settings.agents.fileAccess.permission" = "アクセス権";
+"settings.agents.fileAccess.readOnly" = "読み取りのみ";
+"settings.agents.fileAccess.readWrite" = "読み書き";
+"settings.agents.fileAccess.add" = "ファイル・フォルダを追加…";
+"settings.agents.fileAccess.remove" = "アクセス許可を削除";
+"settings.agents.fileAccess.defaults" = "この Mac の現在のアカウントのチャットに適用します。作業フォルダは読み書き可能です。Dahlia の画像・データベース・スキルは読み取り専用です。";
+"settings.agents.fileAccess.help" = "追加・変更・削除は次のメッセージから反映されます。実行中の応答とコマンドは以前の許可で続行するため、すぐに停止する場合は応答をキャンセルしてください。フォルダの許可は配下すべてに適用します。Dahlia の認証情報や Pi 自体への制限は維持されます。読み取り可能な内容はネットワーク経由で送信できます。~ は一時ホームを指すため、追加したファイルは絶対パスで指定してください。";
+"settings.agents.fileAccess.changed" = "更新中にファイルアクセスの設定が変更されました。もう一度操作してください。";
+"settings.agents.fileAccess.notAllowed" = "ホーム全体、Library、コマンドの保存先には書き込みを許可できません。対象を絞ったファイルまたはフォルダを選んでください。";
