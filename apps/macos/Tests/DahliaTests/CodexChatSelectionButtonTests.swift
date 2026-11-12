@@ -10,6 +10,7 @@
         func paddingOpensTheSelectionPanel(isApproval: Bool, edge: String) async throws {
             let session = CodexChatSessionModel(service: TestCodexChatService(mode: .complete), runtimeProviderResolver: { .local })
             var modelPanelPresented = false
+            var buttonSize = CGSize.zero
             let button = Group {
                 if isApproval {
                     CodexChatApprovalMethodButton(session: session)
@@ -20,9 +21,10 @@
                     ))
                 }
             }
-            let measurement = NSHostingView(rootView: button)
-            let size = measurement.fittingSize
             let host = NSHostingView(rootView: button
+                .onGeometryChange(for: CGSize.self) { $0.size } action: { actual in
+                    buttonSize = actual
+                }
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomLeading)
                 .padding(40)
                 .background(Color.black))
@@ -33,6 +35,8 @@
             defer { window.close() }
             window.makeKeyAndOrderFront(nil)
             host.layoutSubtreeIfNeeded()
+            try #require(await pollUntil { buttonSize.width > 0 })
+            let size = buttonSize
 
             let panelRegion = host.convert(CGRect(x: 60, y: 100, width: 20, height: 20), from: nil)
             let before = try snapshot(host, in: panelRegion)
