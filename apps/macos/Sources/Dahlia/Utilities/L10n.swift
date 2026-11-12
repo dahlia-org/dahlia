@@ -2431,7 +2431,6 @@ enum L10n { // swiftlint:disable:this type_body_length
         String(localized: "settings.agents.providerAdded \(name)", bundle: bundle)
     }
 
-    static var mcpSettingsDescription: String { String(localized: "settings.agents.mcpSettingsDescription", bundle: bundle) }
     static var mcpSearchPrompt: String { String(localized: "settings.agents.mcpSearchPrompt", bundle: bundle) }
     static var mcpNoProviders: String { String(localized: "settings.agents.mcpNoProviders", bundle: bundle) }
     static var mcpProviderSignInRequired: String { String(localized: "settings.agents.mcpProviderSignInRequired", bundle: bundle) }
@@ -2455,8 +2454,15 @@ enum L10n { // swiftlint:disable:this type_body_length
     static var agentSkills: String { String(localized: "settings.agents.skills", bundle: bundle) }
     static var agentSkillsEmpty: String { String(localized: "settings.agents.skills.empty", bundle: bundle) }
     static var agentSkillsHelp: String { String(localized: "settings.agents.skills.help", bundle: bundle) }
+    static var agentSkillOpenFolder: String { String(localized: "settings.agents.skills.openFolder", bundle: bundle) }
+    static var agentSkillDetails: String { String(localized: "settings.agents.skills.details", bundle: bundle) }
+    static var agentSkillOpenFolderFailed: String { String(localized: "settings.agents.skills.openFolderFailed", bundle: bundle) }
+    static var agentSkillContentUnavailable: String { String(localized: "settings.agents.skills.contentUnavailable", bundle: bundle) }
     static var agentSkillsPathConflict: String { String(localized: "settings.agents.skills.pathConflict", bundle: bundle) }
     static var agentFileAccessBuiltIn: String { String(localized: "settings.agents.fileAccess.builtIn", bundle: bundle) }
+    static var agentFileAccessDahliaData: String { String(localized: "settings.agents.fileAccess.dahliaData", bundle: bundle) }
+    static var agentFileAccessDahliaDataHelp: String { String(localized: "settings.agents.fileAccess.dahliaDataHelp", bundle: bundle) }
+    static var agentFileAccessSystemFolders: String { String(localized: "settings.agents.fileAccess.systemFolders", bundle: bundle) }
     static var agentFileAccessBuiltInHelp: String { String(localized: "settings.agents.fileAccess.builtInHelp", bundle: bundle) }
     static var agentSecurity: String { String(localized: "settings.agents.security", bundle: bundle) }
     static var agentFileAccess: String { String(localized: "settings.agents.fileAccess", bundle: bundle) }

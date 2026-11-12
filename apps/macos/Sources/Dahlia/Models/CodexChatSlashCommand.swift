@@ -12,6 +12,15 @@ struct CodexChatSlashCommand: Decodable, Identifiable, Equatable, Sendable {
 
     var id: String { name }
 
+    var displayName: String {
+        source == "skill" && name.hasPrefix("skill:") ? String(name.dropFirst("skill:".count)) : name
+    }
+
+    var skillFileURL: URL? {
+        guard source == "skill", let path = sourceInfo?.path, path.hasPrefix("/") else { return nil }
+        return URL(fileURLWithPath: path)
+    }
+
     static func query(in draft: String) -> String? {
         guard draft.hasPrefix("/"), !draft.contains(where: \.isWhitespace) else { return nil }
         return String(draft.dropFirst())

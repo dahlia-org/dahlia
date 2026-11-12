@@ -49,7 +49,7 @@ enum PiBundle {
 
     nonisolated static func presetSkillURLs() -> [URL] {
         ["projects-optimizer", "meeting-reviewer"].compactMap {
-            Bundle.appModule.url(forResource: $0, withExtension: nil, subdirectory: "CodexSkills")
+            Bundle.appModule.url(forResource: $0, withExtension: nil, subdirectory: "AgentSkills")
         }
     }
 }

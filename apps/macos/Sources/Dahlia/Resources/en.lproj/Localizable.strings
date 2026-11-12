@@ -1794,8 +1794,7 @@
 "settings.agents.providersEmpty" = "No providers yet.";
 "settings.agents.signInAgain" = "Sign In Again";
 "settings.agents.providerAdded %@" = "%@ (added)";
-"settings.agents.mcpSettingsDescription" = "Chats opened from now on can use the tools of each MCP turned on. If a service such as GitHub or Slack needs its own sign-in, choose Sign In on its card.";
-"settings.agents.mcpSearchPrompt" = "Search MCPs";
+"settings.agents.mcpSearchPrompt" = "Search connectors";
 "settings.agents.mcpNoProviders" = "Add a Databricks workspace under Providers on the Models tab to turn on its Unity AI Gateway MCPs here.";
 "settings.agents.mcpProviderSignInRequired" = "Sign-in required. Sign in again under Providers on the Models tab.";
 "settings.agents.mcpWorkspaceIsAccount" = "This is the account's own workspace. Its MCPs are already available.";
@@ -1851,7 +1850,7 @@
 "File operations run in a sandbox and cannot access files outside the allowed scope." = "File operations run in a sandbox and cannot access files outside the allowed scope.";
 "Approval method" = "How should MCP actions be approved?";
 
-"Auto review" = "Auto review";
+"Auto review" = "AI approval (pi-auto-review)";
 "Reviewer model" = "Reviewer model";
 "Same as chat" = "Same as chat";
 "Used when AI reviews MCP actions. Reviews send chat history and the planned action to this model and incur additional usage. Changes apply to the next review." = "Used when AI reviews MCP actions. Reviews send chat history and the planned action to this model and incur additional usage. Changes apply to the next review.";
@@ -1915,3 +1914,10 @@
 "settings.agents.skills.help" = "Skills recognized by a new chat process, including preset, account-created, and plugin skills. Refresh after changes. Running chats pick up changes when their process restarts.";
 "settings.agents.fileAccess.builtIn" = "Default folder and file access";
 "settings.agents.fileAccess.builtInHelp" = "Folder access includes descendants. Default permissions cannot be changed. Protected Pi runtime code, Dahlia data, and shell startup restrictions take precedence over system permissions. The var and etc directories under /opt/homebrew and /usr/local are unreadable. Individual device files are omitted.";
+"settings.agents.fileAccess.dahliaData" = "Dahlia data";
+"settings.agents.fileAccess.dahliaDataHelp" = "Only the image folder and database files below are readable. Their parent folder also contains credentials and settings, so access to the entire folder is not granted.";
+"settings.agents.fileAccess.systemFolders" = "System folders (read only)";
+"settings.agents.skills.openFolder" = "Open folder";
+"settings.agents.skills.details" = "Details";
+"settings.agents.skills.openFolderFailed" = "Could not open the skill folder. Reload to check its location.";
+"settings.agents.skills.contentUnavailable" = "The skill's location is unavailable, so its contents cannot be displayed.";

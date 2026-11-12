@@ -1,7 +1,9 @@
+import AppKit
 import SwiftUI
 
 struct AgentSkillSettingsView: View {
     let account: CodexRuntimeProvider
+    @Environment(MainWindowNavigation.self) private var navigation
     @State private var skills: [CodexChatSlashCommand] = []
     @State private var isLoading = false
     @State private var errorMessage: String?
@@ -19,14 +21,24 @@ struct AgentSkillSettingsView: View {
                 }
                 ForEach(skills) { skill in
                     VStack(alignment: .leading, spacing: 4) {
-                        Text(skill.name).font(.dahliaHeadline)
+                        HStack {
+                            Text(skill.displayName).font(.dahliaHeadline)
+                            Spacer()
+                            Button(L10n.agentSkillOpenFolder, systemImage: "folder") { openFolder(for: skill) }
+                                .disabled(skill.skillFileURL == nil)
+                                .help(L10n.agentSkillOpenFolder)
+                                .accessibilityLabel(Text("\(L10n.agentSkillOpenFolder): \(skill.displayName)"))
+                            Button(L10n.agentSkillDetails, systemImage: "info.circle") {
+                                navigation.presentSettingsModal(AgentSkillDetailView(skill: skill, onClose: navigation.dismissSettingsModal))
+                            }
+                            .help(L10n.agentSkillDetails)
+                            .accessibilityLabel(Text("\(L10n.agentSkillDetails): \(skill.displayName)"))
+                        }
+                        .buttonStyle(.dahlia())
                         if let description = skill.description {
                             Text(description)
-                        }
-                        if let path = skill.sourceInfo?.path {
-                            Text(path)
-                                .font(.dahliaSecondary)
-                                .foregroundStyle(.secondary)
+                                .lineLimit(2)
+                                .truncationMode(.tail)
                         }
                     }
                     .textSelection(.enabled)
@@ -43,6 +55,13 @@ struct AgentSkillSettingsView: View {
         .formStyle(.grouped)
         .font(.dahliaBody)
         .task(id: refreshID) { await refresh() }
+    }
+
+    private func openFolder(for skill: CodexChatSlashCommand) {
+        guard let file = skill.skillFileURL else { return }
+        if !NSWorkspace.shared.open(file.deletingLastPathComponent()) {
+            errorMessage = L10n.agentSkillOpenFolderFailed
+        }
     }
 
     private func refresh() async {

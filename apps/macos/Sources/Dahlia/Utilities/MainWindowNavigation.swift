@@ -227,7 +227,7 @@ final class MainWindowNavigation {
             case .modelProvider:
                 agentSettingsTab = .models
             case .aiSummary, .accountPreferences, .accountsAndWorkspaces:
-                agentSettingsTab = .summary
+                agentSettingsTab = .models
             case .mcp:
                 agentSettingsTab = .mcps
             default:

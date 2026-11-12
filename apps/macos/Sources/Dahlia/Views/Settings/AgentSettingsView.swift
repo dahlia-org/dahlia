@@ -6,8 +6,6 @@ struct AgentSettingsView: View {
     enum Tab: String, CaseIterable, Identifiable {
         case general
         case models
-        case summary
-        case imageAnalysis
         case mcps
         case skills
         case packages
@@ -18,8 +16,6 @@ struct AgentSettingsView: View {
         var label: String {
             switch self {
             case .general: L10n.general
-            case .summary: L10n.settingsSummaryOutput
-            case .imageAnalysis: L10n.imageAnalysis
             case .models: L10n.agentModels
             case .mcps: L10n.agentMCPs
             case .skills: L10n.agentSkills
@@ -86,12 +82,6 @@ private struct AgentSettingsTabs: View {
                     AgentRuntimeSection(provider: account, searchPath: launch.settings.environment { _ in nil }["PATH"])
                     AgentEnvironmentSection(model: launch)
                     AgentChatInstructionsSection(account: account)
-                }
-                .formStyle(.grouped)
-                .font(.dahliaBody)
-            case .summary, .imageAnalysis:
-                Form {
-                    AccountProcessingSettingsView(target: navigation.agentSettingsTab == .summary ? .summary : .imageAnalysis)
                 }
                 .formStyle(.grouped)
                 .font(.dahliaBody)
@@ -369,6 +359,7 @@ private struct AgentProviderSection<Models: View>: View {
     @State private var signInTask: Task<Void, Never>?
     @State private var pendingRemoval: AgentMCPProvider?
     @State private var expandedProviderIDs: Set<String> = []
+    @State private var hoveredProviderID: String?
 
     private var signedInSubscriptions: [CodexAccountController] {
         subscriptions.filter { $0.accountStatus?.isAuthenticated == true }
@@ -468,11 +459,7 @@ private struct AgentProviderSection<Models: View>: View {
     }
 
     private func gatewayRow(_ provider: AgentMCPProvider) -> some View {
-        DisclosureGroup(isExpanded: Binding {
-            expandedProviderIDs.contains(provider.id)
-        } set: { expanded in
-            if expanded { expandedProviderIDs.insert(provider.id) } else { expandedProviderIDs.remove(provider.id) }
-        }) {
+        DisclosureGroup(isExpanded: expansion(of: provider)) {
             modelsContent(provider)
         } label: {
             AgentProviderRow(title: L10n.unityGatewayHost(provider.host), icon: .databricksLogo, uses: [L10n.agentProviderModels, L10n.mcp]) {
@@ -498,6 +485,19 @@ private struct AgentProviderSection<Models: View>: View {
                     .disabled(model.isBusy)
                 }
             }
+            .contentShape(.rect)
+            .background(Color.primary.opacity(hoveredProviderID == provider.id ? 0.06 : 0))
+            .onHover { hoveredProviderID = $0 ? provider.id : nil }
+            .onTapGesture { expansion(of: provider).wrappedValue.toggle() }
+            .accessibilityAddTraits(.isButton)
+        }
+    }
+
+    private func expansion(of provider: AgentMCPProvider) -> Binding<Bool> {
+        Binding {
+            expandedProviderIDs.contains(provider.id)
+        } set: { expanded in
+            if expanded { expandedProviderIDs.insert(provider.id) } else { expandedProviderIDs.remove(provider.id) }
         }
     }
 
@@ -621,6 +621,7 @@ private struct AgentModelSettingsView: View {
                 modelsContent: modelRows
             )
             AgentAutoReviewSettingsSection(account: account)
+            AccountProcessingSettingsView()
         }
         .formStyle(.grouped)
         .font(.dahliaBody)

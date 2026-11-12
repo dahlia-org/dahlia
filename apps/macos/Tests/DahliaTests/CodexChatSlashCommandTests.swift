@@ -5,6 +5,22 @@ import Foundation
     import Testing
 
     struct CodexChatSlashCommandTests {
+        @Test
+        func skillPresentationKeepsTheCommandAndFileIdentity() {
+            let skill = CodexChatSlashCommand(
+                name: "skill:meeting-reviewer", description: "Review a meeting", source: "skill",
+                sourceInfo: .init(path: "/skills/meeting-reviewer/SKILL.md")
+            )
+            #expect(skill.displayName == "meeting-reviewer")
+            #expect(skill.name == "skill:meeting-reviewer")
+            #expect(skill.skillFileURL?.deletingLastPathComponent().path == "/skills/meeting-reviewer")
+            #expect(CodexChatSlashCommand(name: "mcp", description: nil, source: "extension").displayName == "mcp")
+            #expect(CodexChatSlashCommand(name: "skill:missing", description: nil, source: "skill").skillFileURL == nil)
+            #expect(CodexChatSlashCommand(
+                name: "skill:relative", description: nil, source: "skill", sourceInfo: .init(path: "relative/SKILL.md")
+            ).skillFileURL == nil)
+        }
+
         @Test(arguments: [CGRect(x: 0, y: -400, width: 1000, height: 500), CGRect(x: 0, y: -80, width: 280, height: 400)])
         func panelFitsTheViewportAndUsesACompactWidth(bounds: CGRect) {
             let height = CodexChatSlashCommandLayout.maximumHeight(in: bounds, composerHeight: 80)

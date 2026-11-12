@@ -7,7 +7,7 @@ final class PiFileAccessSettingsModel {
     let account: CodexRuntimeProvider
     private(set) var settings: PiFileAccessSettings
     private(set) var isUpdating = false
-    private(set) var defaultAccess: [PiFileAccessSettings.Grant] = []
+    private(set) var defaultAccess = PiSandbox.DefaultFileAccess()
     var errorMessage: String?
     private let defaults: UserDefaults
     private let secret: @Sendable (String) -> String?

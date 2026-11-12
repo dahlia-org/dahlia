@@ -1,3 +1,4 @@
+import DahliaMeetingAccess
 import DahliaRuntimeSupport
 import Foundation
 @testable import Dahlia
@@ -6,6 +7,24 @@ import Foundation
     import Testing
 
     struct PiSandboxTests {
+        @Test
+        func defaultAccessGroupsKeepDahliaDataLimitedToImagesAndDatabaseFiles() throws {
+            let work = URL(fileURLWithPath: "/example/work")
+            let agent = URL(fileURLWithPath: "/example/accounts/local/pi")
+            let access = PiSandbox.defaultFileAccess(cwd: work, agentURL: agent)
+            #expect(access.resources.contains { $0.path == work.path && $0.access == .readWrite })
+            #expect(access.resources.contains { $0.path == agent.appending(path: "skills").path && $0.access == .readWrite })
+            let directories = access.data.filter(\.isDirectory)
+            #expect(directories.count == 1)
+            #expect(directories.first?.path == PiSandbox.realPath(ScreenshotFileStore.defaultDirectory))
+            #expect(access.data.filter { !$0.isDirectory }.map { URL(fileURLWithPath: $0.path).lastPathComponent }.sorted() == [
+                "dahlia.sqlite", "dahlia.sqlite-shm", "dahlia.sqlite-wal",
+            ])
+            #expect(access.data.allSatisfy { $0.access == .readOnly })
+            #expect(access.system.contains { $0.path == "/System" })
+            #expect(access.system.allSatisfy { $0.isDirectory && $0.access == .readOnly })
+        }
+
         @Test(arguments: ["skills", "skills/bin", "skills/missing/bin"])
         func sandboxConstructionRejectsSkillsCommandSearchPaths(_ entry: String) {
             let root = FileManager.default.temporaryDirectory.appending(path: "PiSandboxSkillsPath-\(UUID())")

@@ -75,23 +75,23 @@
             #expect(navigation.appearanceTab == .eventDisplay)
         }
 
-        @Test
-        func inferenceAndMCPLinksOpenDahliaAITabs() {
+        @Test(arguments: [SettingsCategory.accountsAndWorkspaces, .accountPreferences, .aiSummary])
+        func inferenceAndMCPLinksOpenDahliaAITabs(category: SettingsCategory) {
             let navigation = MainWindowNavigation(openMainWindow: {}, initialSettingsCategory: .general)
-            navigation.openSettings(category: .accountsAndWorkspaces)
+            navigation.openSettings(category: category)
             #expect(navigation.settingsCategory == .agents)
-            #expect(navigation.agentSettingsTab == .summary)
+            #expect(navigation.agentSettingsTab == .models)
 
             navigation.openSettings(category: .mcp)
             #expect(navigation.settingsCategory == .agents)
             #expect(navigation.agentSettingsTab == .mcps)
 
             navigation.openSettings(category: .aiSummary)
-            #expect(navigation.agentSettingsTab == .summary)
+            #expect(navigation.agentSettingsTab == .models)
 
-            navigation.agentSettingsTab = .imageAnalysis
+            navigation.agentSettingsTab = .skills
             navigation.openSettings()
-            #expect(navigation.agentSettingsTab == .imageAnalysis)
+            #expect(navigation.agentSettingsTab == .skills)
         }
 
         @Test
@@ -132,7 +132,7 @@
                 #expect(navigation.settingsCategory == .agents)
                 #expect(navigation.agentSettingsTab == .models)
             }
-            #expect(AgentSettingsView.Tab.allCases == [.general, .models, .summary, .imageAnalysis, .mcps, .skills, .packages, .security])
+            #expect(AgentSettingsView.Tab.allCases == [.general, .models, .mcps, .skills, .packages, .security])
         }
 
         @Test

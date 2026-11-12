@@ -1794,8 +1794,7 @@
 "settings.agents.providersEmpty" = "プロバイダーはまだありません。";
 "settings.agents.signInAgain" = "サインインし直す";
 "settings.agents.providerAdded %@" = "%@（追加済み）";
-"settings.agents.mcpSettingsDescription" = "オンにした MCP のツールを、次に開くチャットから使えます。GitHub や Slack などサービス側のサインインが必要なときは、各カードの「サインイン」を押します。";
-"settings.agents.mcpSearchPrompt" = "MCP を検索";
+"settings.agents.mcpSearchPrompt" = "コネクタを検索";
 "settings.agents.mcpNoProviders" = "「モデル」の「プロバイダー」で Databricks ワークスペースを追加すると、その Unity AI Gateway の MCP をここでオンにできます。";
 "settings.agents.mcpProviderSignInRequired" = "サインインが必要です。「モデル」の「プロバイダー」でサインインし直してください。";
 "settings.agents.mcpWorkspaceIsAccount" = "このワークスペースはアカウント自身のもので、MCP にもそのまま使えます。";
@@ -1803,7 +1802,7 @@
 "settings.agents.mcpServiceWithServerName %@ %@" = "%1$@ (%2$@)";
 "settings.agents.unityGatewayHost %@" = "Unity Gateway (%@)";
 "settings.agents.workspaceURL" = "ワークスペース URL";
-"settings.agents.mcps" = "コネクター";
+"settings.agents.mcps" = "コネクタ";
 "settings.agents.databricksUnityGateway" = "Databricks (Unity Gateway)";
 "settings.agents.mcpLoadingServices" = "Unity AI Gateway の MCP を読み込んでいます…";
 "settings.agents.mcpNoServices" = "このワークスペースの Unity AI Gateway（system.ai）に、使える MCP はありません。";
@@ -1851,13 +1850,13 @@
 "File operations run in a sandbox and cannot access files outside the allowed scope." = "ファイル操作はサンドボックス内に制限され、許可範囲外のファイルにはアクセスできません。";
 "Approval method" = "MCP の操作をどのように承認しますか？";
 
-"Auto review" = "Auto review";
+"Auto review" = "AI による代理承認 (pi-auto-review)";
 "Reviewer model" = "審査モデル";
 "Same as chat" = "チャットと同じモデル";
 "Used when AI reviews MCP actions. Reviews send chat history and the planned action to this model and incur additional usage. Changes apply to the next review." = "MCP の操作を AI が確認するときに使います。審査にはチャット履歴と予定操作を送信し、追加のモデル利用が発生します。変更は次の審査から適用されます。";
 
-"No connectors registered." = "コネクターが登録されていません。";
-"Connector settings" = "コネクターの設定";
+"No connectors registered." = "コネクタが登録されていません。";
+"Connector settings" = "コネクタの設定";
 
 "chat.toolRunning %@" = "%@ を実行中…";
 "chat.toolSucceeded %@" = "%@ が完了しました。応答を待っています…";
@@ -1915,3 +1914,10 @@
 "settings.agents.skills.help" = "新しいチャットプロセスが認識するスキルです。標準スキル、このアカウントが保存したスキル、プラグインのスキルを表示します。追加・変更後は更新してください。実行中のチャットには次のプロセス起動時に反映されます。";
 "settings.agents.fileAccess.builtIn" = "既定で許可されているフォルダ・ファイル";
 "settings.agents.fileAccess.builtInHelp" = "フォルダは配下を含みます。既定の許可は変更できません。システムの許可よりも、Pi の実行コード・Dahlia の保護データ・シェル起動ファイルの制限を優先します。/opt/homebrew と /usr/local の var・etc は読み取り不可です。表示には個別のデバイスファイルを含みません。";
+"settings.agents.fileAccess.dahliaData" = "Dahlia データ";
+"settings.agents.fileAccess.dahliaDataHelp" = "下記の画像フォルダと DB 関連ファイルだけを読み取れます。親フォルダには認証情報や設定もあるため、フォルダ全体は許可しません。";
+"settings.agents.fileAccess.systemFolders" = "システムフォルダ（読み取りのみ）";
+"settings.agents.skills.openFolder" = "フォルダを開く";
+"settings.agents.skills.details" = "詳細";
+"settings.agents.skills.openFolderFailed" = "スキルのフォルダを開けませんでした。再読み込みして保存先を確認してください。";
+"settings.agents.skills.contentUnavailable" = "このスキルの保存先を取得できないため、内容を表示できません。";
