@@ -198,6 +198,8 @@ enum SettingsCategory: String, CaseIterable, Identifiable {
         case .appearance:
             [
                 L10n.display,
+                L10n.lightMode,
+                L10n.darkMode,
                 L10n.appLanguage,
                 L10n.textSize,
                 L10n.sidebarDisplayStyle,

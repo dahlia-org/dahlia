@@ -26,6 +26,7 @@ final class MainSidebarAccountMenuCoordinator: NSObject {
     private var unprocessedRecordingCount: Int
     private var onShowUnprocessedRecordings: () -> Void
     var openURL: (URL) -> Bool = { NSWorkspace.shared.open($0) }
+    private let settings: AppSettings
     private let navigation = MainSidebarAccountMenuNavigationState()
     private var mainPanel: NSPanel?
     private var submenuPanel: NSPanel?
@@ -42,8 +43,10 @@ final class MainSidebarAccountMenuCoordinator: NSObject {
         onSelectDatabricksAccount: @escaping (UUID) -> Void = { _ in },
         onAccountAction: @escaping () -> Void,
         unprocessedRecordingCount: Int = 0,
-        onShowUnprocessedRecordings: @escaping () -> Void
+        onShowUnprocessedRecordings: @escaping () -> Void,
+        settings: AppSettings = .shared
     ) {
+        self.settings = settings
         self.connections = connections
         currentConnectionID = accountSelection.connectionID
         isLocalAccount = accountSelection.isLocal
@@ -112,6 +115,7 @@ final class MainSidebarAccountMenuCoordinator: NSObject {
                 isLocalAccount: isLocalAccount,
                 databricksAccounts: databricksAccounts,
                 currentDatabricksID: currentDatabricksID,
+                onShowAppearance: { [weak self] in self?.presentAppearanceMenu(anchorMinY: $0) },
                 onShowLanguages: { [weak self] in self?.presentLanguageMenu(anchorMinY: $0) },
                 onShowAccountDetails: { [weak self] connection, minY in
                     self?.presentAccountDetails(connection, anchorMinY: minY)
@@ -149,6 +153,17 @@ final class MainSidebarAccountMenuCoordinator: NSObject {
         presentSubmenu(content, menu: .languages, anchorMinY: anchorMinY)
     }
 
+    private func presentAppearanceMenu(anchorMinY: CGFloat? = nil) {
+        let content = MainSidebarAccountMenuPanel(width: MainSidebarAccountMenuLayout.menuWidth) {
+            MainSidebarAccountAppearanceMenuView(
+                navigation: navigation,
+                onSelectAppearance: { [weak self] in self?.dismissMenu() },
+                settings: settings
+            )
+        }
+        presentSubmenu(content, menu: .appearance, anchorMinY: anchorMinY)
+    }
+
     private func presentSubmenu(
         _ content: some View,
         menu: MainSidebarAccountMenuNavigationState.ActiveMenu,
@@ -163,7 +178,7 @@ final class MainSidebarAccountMenuCoordinator: NSObject {
         positionSubmenu(panel, relativeTo: mainPanel, anchorMinY: anchorMinY)
         attach(panel, to: button?.window)
         submenuPanel = panel
-        announce(menu == .accountDetails ? L10n.syncProgress : L10n.language)
+        announce(menu == .accountDetails ? L10n.syncProgress : menu == .appearance ? L10n.appearance : L10n.language)
     }
 
     private func makePanel(content: some View) -> NSPanel {
@@ -442,6 +457,10 @@ extension MainSidebarAccountMenuCoordinator {
         switch navigation.activeMenu {
         case .root, .accountDetails:
             return false
+        case .appearance:
+            let appearances = AppAppearance.allCases
+            titles = appearances.map(\.displayName)
+            isEnabled = { index in appearances[index] != self.settings.appAppearance }
         case .languages:
             let languages = AppLanguage.allCases
             titles = languages.map(\.displayName)
@@ -479,11 +498,19 @@ extension MainSidebarAccountMenuCoordinator {
             navigation.rootSelection = MainSidebarAccountMenuNavigationState.nextEnabledIndex(
                 from: navigation.rootSelection,
                 direction: direction,
-                count: menuOffset + 4,
+                count: menuOffset + 5,
                 isEnabled: isRootIndexEnabled
             )
         case .accountDetails:
             return
+        case .appearance:
+            let appearances = AppAppearance.allCases
+            navigation.submenuSelection = MainSidebarAccountMenuNavigationState.nextEnabledIndex(
+                from: navigation.submenuSelection,
+                direction: direction,
+                count: appearances.count,
+                isEnabled: { appearances[$0] != settings.appAppearance }
+            )
         case .languages:
             let languages = AppLanguage.allCases
             let currentLanguage = AppSettings.shared.appLanguage
@@ -501,12 +528,14 @@ extension MainSidebarAccountMenuCoordinator {
         guard navigation.activeMenu == .root, let selection = navigation.rootSelection else { return }
         if connections.indices.contains(selection) { presentAccountDetails(connections[selection]) }
         if selection == menuOffset { presentLanguageMenu() }
+        if selection == menuOffset + 1 { presentAppearanceMenu() }
     }
 
     func activateSelection() {
         switch navigation.activeMenu {
         case .root: activateRootSelection()
         case .languages: activateLanguageSelection()
+        case .appearance: activateAppearanceSelection()
         case .accountDetails: break
         }
     }
@@ -529,9 +558,10 @@ extension MainSidebarAccountMenuCoordinator {
         }
         switch selection - menuOffset {
         case 0: presentLanguageMenu()
-        case 1: openSettings(category: nil)
-        case 2: showUnprocessedRecordings()
-        case 3: performAccountAction()
+        case 1: presentAppearanceMenu()
+        case 2: openSettings(category: nil)
+        case 3: showUnprocessedRecordings()
+        case 4: performAccountAction()
         default: break
         }
     }
@@ -545,6 +575,15 @@ extension MainSidebarAccountMenuCoordinator {
         dismissMenu()
     }
 
+    func activateAppearanceSelection() {
+        guard let selection = navigation.submenuSelection,
+              AppAppearance.allCases.indices.contains(selection) else { return }
+        let appearance = AppAppearance.allCases[selection]
+        guard appearance != settings.appAppearance else { return }
+        settings.appAppearance = appearance
+        dismissMenu()
+    }
+
     func announceCurrentSelection() {
         let title: String?
         switch navigation.activeMenu {
@@ -552,11 +591,16 @@ extension MainSidebarAccountMenuCoordinator {
             let titles = connections.map(\.displayName) + [L10n.localAccount]
                 + databricksAccounts.map { L10n.unityGatewayHost($0.hostName) } + [
                     L10n.language,
+                    L10n.appearance,
                     L10n.settings,
                     L10n.unprocessedRecordings,
                     hasCurrentConnection || currentDatabricksID != nil ? L10n.signOut : L10n.dahliaSignIn,
                 ]
             title = navigation.rootSelection.flatMap { titles.indices.contains($0) ? titles[$0] : nil }
+        case .appearance:
+            title = navigation.submenuSelection.flatMap {
+                AppAppearance.allCases.indices.contains($0) ? AppAppearance.allCases[$0].displayName : nil
+            }
         case .accountDetails:
             title = L10n.syncProgress
         case .languages:

@@ -8,6 +8,7 @@ struct MainSidebarAccountRootMenuView: View {
     let isLocalAccount: Bool
     let databricksAccounts: [DatabricksConnection]
     let currentDatabricksID: UUID?
+    let onShowAppearance: (CGFloat?) -> Void
     let onShowLanguages: (CGFloat?) -> Void
     let onShowAccountDetails: (DahliaAccountConnection, CGFloat?) -> Void
     let onDismissSubmenu: () -> Void
@@ -97,24 +98,37 @@ struct MainSidebarAccountRootMenuView: View {
             )
 
             MainSidebarAccountMenuRow(
-                title: L10n.settings,
-                image: Image(systemName: "gearshape"),
+                title: L10n.appearance,
+                image: Image(systemName: "circle.lefthalf.filled"),
+                showsDisclosure: true,
                 isKeyboardHighlighted: navigation.activeMenu == .root && navigation.rootSelection == menuOffset + 1,
                 showsHelp: false,
-                onHoverStart: { hover(index: menuOffset + 1, opensSubmenu: false, action: onDismissSubmenu) },
+                onHoverStartAtY: { minY in
+                    hover(index: menuOffset + 1, opensSubmenu: true, action: { onShowAppearance(minY) })
+                },
                 onHoverEnd: cancelPendingHover,
-                action: { activate(index: menuOffset + 1, action: { onOpenSettings(nil) }) }
+                action: { activate(index: menuOffset + 1, action: { onShowAppearance(nil) }) }
+            )
+
+            MainSidebarAccountMenuRow(
+                title: L10n.settings,
+                image: Image(systemName: "gearshape"),
+                isKeyboardHighlighted: navigation.activeMenu == .root && navigation.rootSelection == menuOffset + 2,
+                showsHelp: false,
+                onHoverStart: { hover(index: menuOffset + 2, opensSubmenu: false, action: onDismissSubmenu) },
+                onHoverEnd: cancelPendingHover,
+                action: { activate(index: menuOffset + 2, action: { onOpenSettings(nil) }) }
             )
 
             MainSidebarAccountMenuRow(
                 title: L10n.unprocessedRecordings,
                 subtitle: unprocessedRecordingCount > 0 ? unprocessedRecordingCount.formatted() : nil,
                 image: Image(systemName: "waveform.badge.exclamationmark"),
-                isKeyboardHighlighted: navigation.activeMenu == .root && navigation.rootSelection == menuOffset + 2,
+                isKeyboardHighlighted: navigation.activeMenu == .root && navigation.rootSelection == menuOffset + 3,
                 showsHelp: false,
-                onHoverStart: { hover(index: menuOffset + 2, opensSubmenu: false, action: onDismissSubmenu) },
+                onHoverStart: { hover(index: menuOffset + 3, opensSubmenu: false, action: onDismissSubmenu) },
                 onHoverEnd: cancelPendingHover,
-                action: { activate(index: menuOffset + 2, action: onShowUnprocessedRecordings) }
+                action: { activate(index: menuOffset + 3, action: onShowUnprocessedRecordings) }
             )
 
             Divider()
@@ -123,11 +137,11 @@ struct MainSidebarAccountRootMenuView: View {
             MainSidebarAccountMenuRow(
                 title: signsOut ? L10n.signOut : L10n.dahliaSignIn,
                 image: Image(systemName: signsOut ? "rectangle.portrait.and.arrow.right" : "person"),
-                isKeyboardHighlighted: navigation.activeMenu == .root && navigation.rootSelection == menuOffset + 3,
+                isKeyboardHighlighted: navigation.activeMenu == .root && navigation.rootSelection == menuOffset + 4,
                 showsHelp: false,
-                onHoverStart: { hover(index: menuOffset + 3, opensSubmenu: false, action: onDismissSubmenu) },
+                onHoverStart: { hover(index: menuOffset + 4, opensSubmenu: false, action: onDismissSubmenu) },
                 onHoverEnd: cancelPendingHover,
-                action: { activate(index: menuOffset + 3, action: onAccountAction) }
+                action: { activate(index: menuOffset + 4, action: onAccountAction) }
             )
         }
         .onDisappear(perform: cancelPendingHover)

@@ -1823,6 +1823,8 @@ enum L10n { // swiftlint:disable:this type_body_length
         String(localized: "\(count) server meeting deletions are waiting. Continue deleting them?", bundle: bundle)
     }
 
+    static var lightMode: String { String(localized: "appearance.light", bundle: bundle) }
+    static var darkMode: String { String(localized: "appearance.dark", bundle: bundle) }
     static var appearance: String { String(localized: "Appearance", bundle: bundle) }
     static var appearanceMenuBar: String { String(localized: "settings.appearance.menuBar", bundle: bundle) }
     static var appearanceEventDisplay: String { String(localized: "settings.appearance.eventDisplay", bundle: bundle) }

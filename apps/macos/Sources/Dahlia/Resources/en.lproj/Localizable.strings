@@ -1921,3 +1921,6 @@
 "settings.agents.skills.details" = "Details";
 "settings.agents.skills.openFolderFailed" = "Could not open the skill folder. Reload to check its location.";
 "settings.agents.skills.contentUnavailable" = "The skill's location is unavailable, so its contents cannot be displayed.";
+
+"appearance.light" = "Light Mode";
+"appearance.dark" = "Dark Mode";
