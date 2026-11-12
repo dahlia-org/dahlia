@@ -21,7 +21,9 @@ enum PiSandbox {
         piExecutableURL: URL,
         applicationSupportURL: URL = DahliaApplicationSupport.currentDirectoryURL,
         fileAccess: PiFileAccessSettings = .init(),
-        searchPath: String = ""
+        searchPath: String = "",
+        environment: [String: String] = ProcessInfo.processInfo.environment,
+        home: String = NSHomeDirectory()
     ) throws -> [String] {
         try PiAgentDirectoryLocator.createPrivateDirectory(temporaryDirectory)
         try PiAgentDirectoryLocator.createPrivateDirectory(piTemporaryDirectory)
@@ -43,16 +45,66 @@ enum PiSandbox {
         var arguments = parameters.flatMap { ["-D", "\($0)=\($1)"] }
         var rules: [String] = []
         for (index, grant) in fileAccess.grants.enumerated() {
-            let grant = try PiFileAccessSettings.resolved(grant, searchPath: searchPath, cwd: cwd)
+            let grant = try PiFileAccessSettings.resolved(grant, searchPath: searchPath, home: home, cwd: cwd, environment: environment)
             let parameter = "EXTRA_\(index)"
             arguments += ["-D", "\(parameter)=\(grant.path)"]
             let operations = grant.access == .readWrite ? "file-read* file-write*" : "file-read*"
             let filter = grant.isDirectory ? "subpath" : "literal"
             rules.append("(allow \(operations) (\(filter) (param \"\(parameter)\")))")
         }
+        // WORK/TMP and additional grants must not make shell startup code writable.
+        for (index, path) in try shellStartupPaths(home: home, environment: environment, cwd: cwd).enumerated() {
+            let parameter = "SHELL_STARTUP_\(index)"
+            arguments += ["-D", "\(parameter)=\(path)"]
+            rules.append("(deny file-write* (subpath (param \"\(parameter)\")))")
+        }
         let profile = try String(contentsOf: PiBundle.resourceURL("pi.sb"), encoding: .utf8)
             .replacingOccurrences(of: "; ADDITIONAL_FILE_ACCESS", with: rules.joined(separator: "\n"))
         return ["/usr/bin/sandbox-exec", "-p", profile] + arguments
+    }
+
+    /// Standard startup inputs plus explicit startup locations from the actual launch environment.
+    /// Keep both spellings so a symlink's target and replacement of the link itself stay protected.
+    nonisolated static func shellStartupPaths(
+        home: String = NSHomeDirectory(), environment: [String: String], cwd: URL? = nil
+    ) throws -> [String] {
+        let base = cwd.map { URL(fileURLWithPath: $0.path, isDirectory: true) }
+        func url(_ value: String) -> URL {
+            let path = value == "~" ? home : value.hasPrefix("~/") ? home + value.dropFirst() : value
+            return URL(fileURLWithPath: path, relativeTo: base)
+        }
+        let zsh = [".zshenv", ".zprofile", ".zshrc", ".zlogin", ".zlogout"]
+        let names = zsh + [".bashrc", ".bash_profile", ".bash_login", ".bash_logout", ".profile", ".cshrc", ".tcshrc", ".login", ".logout"]
+        var paths: [URL] = []
+        let homes = [url(home)] + (environment["HOME"].flatMap(\.nilIfBlank).map { [url($0)] } ?? [])
+        for folder in homes {
+            paths += names.map { folder.appending(path: $0) }
+            paths.append(folder.appending(path: ".config/fish"))
+        }
+        if let folder = environment["ZDOTDIR"]?.nilIfBlank { paths += zsh.map { url(folder).appending(path: $0) } }
+        if let folder = environment["XDG_CONFIG_HOME"]?.nilIfBlank { paths.append(url(folder).appending(path: "fish")) }
+        for name in ["BASH_ENV", "ENV"] {
+            if let file = environment[name]?.nilIfBlank {
+                // Bourne shells expand these values. Accept paths, never evaluate shell expressions outside Seatbelt.
+                guard !file.contains("$"), !file.contains("`"), !file.hasPrefix("~") || file == "~" || file.hasPrefix("~/") else {
+                    throw CodexAppServerError.launchFailed(L10n.agentShellStartupPathRequired)
+                }
+                paths.append(url(file))
+            }
+        }
+        return Set(paths.flatMap { [$0.path, realPath($0)] }).sorted()
+    }
+
+    nonisolated static func overlapsShellStartupFiles(
+        _ path: String,
+        isDirectory: Bool,
+        home: String = NSHomeDirectory(),
+        environment: [String: String],
+        cwd: URL? = nil
+    ) throws -> Bool {
+        try shellStartupPaths(home: home, environment: environment, cwd: cwd).contains {
+            path == $0 || path.hasPrefix($0 + "/") || (isDirectory && $0.hasPrefix(path + "/"))
+        }
     }
 
     /// What an installed Pi runs from: its folder, or for an npm package the prefix that holds it, its dependencies,
@@ -68,10 +120,22 @@ enum PiSandbox {
         return (home + "/").hasPrefix(root + "/") ? prefix + "/node_modules" : root
     }
 
-    /// Seatbelt matches resolved paths, and Foundation's resolution drops `/private`. A missing path stays as written.
+    /// Seatbelt matches resolved paths. Resolve existing ancestors and dangling links too, so future files are protected.
     nonisolated static func realPath(_ url: URL) -> String {
-        guard let resolved = realpath(url.path, nil) else { return url.path }
-        defer { free(resolved) }
-        return String(cString: resolved)
+        var visited: Set<String> = []
+        func resolve(_ url: URL) -> String {
+            if let resolved = realpath(url.path, nil) {
+                defer { free(resolved) }
+                return String(cString: resolved)
+            }
+            guard visited.insert(url.path).inserted else { return url.path }
+            let parent = url.deletingLastPathComponent()
+            if let target = try? FileManager.default.destinationOfSymbolicLink(atPath: url.path) {
+                return resolve(URL(fileURLWithPath: target, relativeTo: URL(fileURLWithPath: parent.path, isDirectory: true)))
+            }
+            guard parent.path != url.path else { return url.path }
+            return URL(fileURLWithPath: resolve(parent), isDirectory: true).appending(path: url.lastPathComponent).path
+        }
+        return resolve(url)
     }
 }

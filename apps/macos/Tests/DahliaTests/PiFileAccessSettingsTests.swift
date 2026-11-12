@@ -42,6 +42,86 @@ import Foundation
         }
 
         @Test
+        func shellStartupFilesCannotBeGrantedWriteAccess() throws {
+            let home = "/Users/test"
+            for name in [
+                ".zshenv",
+                ".zprofile",
+                ".zshrc",
+                ".zlogin",
+                ".zlogout",
+                ".bashrc",
+                ".bash_profile",
+                ".bash_login",
+                ".bash_logout",
+                ".profile",
+            ] {
+                let grant = PiFileAccessSettings.Grant(path: home + "/" + name, isDirectory: false, access: .readWrite)
+                #expect(throws: (any Error).self) {
+                    _ = try PiFileAccessSettings.resolved(grant, searchPath: "/usr/bin", home: home)
+                }
+            }
+        }
+
+        @Test
+        func configuredStartupLocationsAndSymlinkTargetsStayReadOnly() throws {
+            let root = FileManager.default.temporaryDirectory.appending(path: "PiFileAccessSettingsTests-\(UUID())")
+            let home = root.appending(path: "home"), work = root.appending(path: "work"), dotfiles = root.appending(path: "dotfiles")
+            for folder in [home, work, dotfiles] {
+                try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+            }
+            defer { try? FileManager.default.removeItem(at: root) }
+            let target = dotfiles.appending(path: "shell-init")
+            try Data("fixture".utf8).write(to: target)
+            try FileManager.default.createSymbolicLink(at: home.appending(path: ".zshrc"), withDestinationURL: target)
+            let future = dotfiles.appending(path: "future-startup")
+            try FileManager.default.createSymbolicLink(at: home.appending(path: ".bashrc"), withDestinationURL: future)
+            let environment = [
+                "ZDOTDIR": "../zsh",
+                "BASH_ENV": "../bash-init",
+                "ENV": root.appending(path: "ksh-init").path,
+                "XDG_CONFIG_HOME": root.appending(path: "config").path,
+            ]
+            for (path, directory) in [
+                (home.appending(path: ".zshrc").path, false), (target.path, false), (future.path, false), (dotfiles.path, true),
+                (root.appending(path: "zsh").path, true), (root.appending(path: "bash-init").path, false),
+                (root.appending(path: "ksh-init").path, false), (root.appending(path: "config").path, true),
+            ] {
+                let readOnly = PiFileAccessSettings.Grant(path: path, isDirectory: directory)
+                _ = try PiFileAccessSettings.resolved(readOnly, searchPath: "/usr/bin", home: home.path, cwd: work, environment: environment)
+                var writable = readOnly
+                writable.access = .readWrite
+                #expect(throws: (any Error).self) {
+                    _ = try PiFileAccessSettings.resolved(writable, searchPath: "/usr/bin", home: home.path, cwd: work, environment: environment)
+                }
+            }
+            _ = try PiFileAccessSettings.resolved(
+                .init(path: home.appending(path: ".desk.toml").path, isDirectory: false, access: .readWrite),
+                searchPath: "/usr/bin",
+                home: home.path,
+                cwd: work,
+                environment: environment
+            )
+        }
+
+        @Test
+        func secretStartupDirectoryIsCheckedBeforeSavingWriteAccess() async throws {
+            let defaults = try #require(UserDefaults(suiteName: "PiFileAccessSettingsTests.\(UUID())"))
+            let folder = FileManager.default.temporaryDirectory.appending(path: "PiFileAccessSettingsTests-\(UUID())")
+            try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+            defer { try? FileManager.default.removeItem(at: folder) }
+            let variable = PiLaunchSettings.Variable(id: .v7(), name: "ZDOTDIR", isSecret: true)
+            PiLaunchSettings(variables: [variable]).save(for: .local, defaults: defaults)
+            let key = PiLaunchSettings.secretKey(for: .local, id: variable.id)
+            let model = PiFileAccessSettingsModel(account: .local, defaults: defaults, secret: { $0 == key ? folder.path : nil })
+            await model.add([folder])
+            let grant = try #require(model.settings.grants.first)
+            await model.setAccess(.readWrite, for: grant.id)
+            #expect(model.errorMessage != nil)
+            #expect(PiFileAccessSettings.load(for: .local, defaults: defaults).grants.first?.access == .readOnly)
+        }
+
+        @Test
         func secretPathIsCheckedBeforeSavingWriteAccess() async throws {
             let defaults = try #require(UserDefaults(suiteName: "PiFileAccessSettingsTests.\(UUID())"))
             let folder = FileManager.default.temporaryDirectory.appending(path: "PiFileAccessSettingsTests-\(UUID())")
@@ -127,6 +207,13 @@ import Foundation
             #expect(throws: (any Error).self) { _ = try environment(options) }
             // The same final PATH also protects the working directory, independently of additional grants.
             options = .init(mode: .chat, cwd: commands)
+            #expect(throws: (any Error).self) { _ = try environment(options) }
+            options = .init(mode: .chat, cwd: work, environment: ["BASH_ENV": "$HOME/startup"])
+            #expect(throws: CodexAppServerError.launchFailed(L10n.agentShellStartupPathRequired)) { _ = try environment(options) }
+            options = .init(mode: .chat, cwd: work, environment: ["ZDOTDIR": work.path])
+            #expect(throws: (any Error).self) { _ = try environment(options) }
+            options = .init(mode: .chat, cwd: work, environment: ["BASH_ENV": otherCommands.appending(path: "startup").path])
+            options.fileAccess = .init(grants: [.init(path: otherCommands.path, isDirectory: true, access: .readWrite)])
             #expect(throws: (any Error).self) { _ = try environment(options) }
             for mode in [PiRuntimeService.LaunchOptions.Mode.summary, .control] {
                 options.mode = mode

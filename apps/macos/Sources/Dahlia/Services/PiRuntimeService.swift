@@ -815,13 +815,20 @@ actor PiRuntimeService {
         environment.merge(options.environment) { $1 }
         if options.mode == .chat {
             let searchPath = environment["PATH"] ?? ""
-            guard !PiWorkingDirectory.holdsCommands(options.cwd, searchPath: searchPath, cwd: options.cwd) else {
+            guard !PiWorkingDirectory.holdsCommands(options.cwd, searchPath: searchPath, cwd: options.cwd),
+                  try !(PiSandbox.overlapsShellStartupFiles(
+                      PiSandbox.realPath(options.cwd),
+                      isDirectory: true,
+                      environment: environment,
+                      cwd: options.cwd
+                  ))
+            else {
                 throw CodexAppServerError.launchFailed(L10n.agentWorkingDirectoryNotAllowed)
             }
             environment["DAHLIA_PI_SANDBOX"] = try String(decoding: JSONEncoder().encode(
                 PiSandbox.command(
                     cwd: options.cwd, agentURL: agentURL, piExecutableURL: executableURL,
-                    fileAccess: options.fileAccess, searchPath: searchPath
+                    fileAccess: options.fileAccess, searchPath: searchPath, environment: environment
                 )
             ), as: UTF8.self)
             environment["DAHLIA_PI_SANDBOX_HIDDEN_ENV"] = try String(

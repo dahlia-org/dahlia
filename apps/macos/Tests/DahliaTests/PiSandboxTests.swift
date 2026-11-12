@@ -34,11 +34,21 @@ import Foundation
             agent: URL,
             support: URL? = nil,
             pi: URL = URL(fileURLWithPath: "/bin/sh"),
-            fileAccess: PiFileAccessSettings = .init()
+            fileAccess: PiFileAccessSettings = .init(),
+            environment: [String: String] = [:],
+            home: String = NSHomeDirectory()
         ) throws -> Int32 {
             let sandbox = try support.map {
-                try PiSandbox.command(cwd: cwd, agentURL: agent, piExecutableURL: pi, applicationSupportURL: $0, fileAccess: fileAccess)
-            } ?? PiSandbox.command(cwd: cwd, agentURL: agent, piExecutableURL: pi, fileAccess: fileAccess)
+                try PiSandbox.command(
+                    cwd: cwd,
+                    agentURL: agent,
+                    piExecutableURL: pi,
+                    applicationSupportURL: $0,
+                    fileAccess: fileAccess,
+                    environment: environment,
+                    home: home
+                )
+            } ?? PiSandbox.command(cwd: cwd, agentURL: agent, piExecutableURL: pi, fileAccess: fileAccess, environment: environment, home: home)
             let command = sandbox + ["/bin/sh", "-c", script]
             let process = Process()
             process.executableURL = URL(fileURLWithPath: command[0])
@@ -84,6 +94,29 @@ import Foundation
             #expect(try run("cat '\(extra.path)/link'", cwd: work, agent: agent, fileAccess: access) != 0)
             #expect(try run("echo no > '\(extra.path)/link'", cwd: work, agent: agent, fileAccess: access) != 0)
             #expect(try run("cat \(quote(config.path))", cwd: work, agent: agent) != 0)
+        }
+
+        @Test
+        func shellStartupFilesStayReadOnlyEvenInsideTheWorkingFolder() throws {
+            let root = FileManager.default.temporaryDirectory.appending(path: "PiSandboxTests-\(UUID())")
+            let home = root.appending(path: "home"), work = root.appending(path: "work"), agent = root.appending(path: "agent")
+            for folder in [home, work] {
+                try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+            }
+            defer { try? FileManager.default.removeItem(at: root) }
+            let target = work.appending(path: "linked-startup")
+            let startup = work.appending(path: ".zshrc")
+            for file in [target, startup] {
+                try Data("fixture".utf8).write(to: file)
+            }
+            try FileManager.default.createSymbolicLink(at: home.appending(path: ".profile"), withDestinationURL: target)
+            let environment = ["ZDOTDIR": work.path]
+            for file in [target, startup] {
+                #expect(try run("cat '\(file.path)'", cwd: work, agent: agent, environment: environment, home: home.path) == 0)
+                #expect(try run("echo changed > '\(file.path)'", cwd: work, agent: agent, environment: environment, home: home.path) != 0)
+                #expect(try run("rm '\(file.path)'", cwd: work, agent: agent, environment: environment, home: home.path) != 0)
+            }
+            #expect(try run("echo setting > .desk.toml", cwd: work, agent: agent, environment: environment, home: home.path) == 0)
         }
 
         @Test

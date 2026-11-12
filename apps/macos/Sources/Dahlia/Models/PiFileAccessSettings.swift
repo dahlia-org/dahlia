@@ -33,7 +33,8 @@ struct PiFileAccessSettings: Codable, Equatable, Sendable {
         _ grant: Grant,
         searchPath: String,
         home: String = NSHomeDirectory(),
-        cwd: URL? = nil
+        cwd: URL? = nil,
+        environment: [String: String] = [:]
     ) throws -> Grant {
         guard grant.path.hasPrefix("/") else { throw CodexAppServerError.launchFailed(L10n.agentFileAccessNotAllowed) }
         let path = PiSandbox.realPath(URL(fileURLWithPath: grant.path))
@@ -46,7 +47,9 @@ struct PiFileAccessSettings: Codable, Equatable, Sendable {
                 return path == commandFolder || path.hasPrefix(commandFolder + "/")
                     || (grant.isDirectory && commandFolder.hasPrefix(path + "/"))
             }
-            guard PiWorkingDirectory.isAllowed(path, home: PiSandbox.realPath(URL(fileURLWithPath: home))), !containsCommands else {
+            guard PiWorkingDirectory.isAllowed(path, home: PiSandbox.realPath(URL(fileURLWithPath: home))), !containsCommands,
+                  try !(PiSandbox.overlapsShellStartupFiles(path, isDirectory: grant.isDirectory, home: home, environment: environment, cwd: cwd))
+            else {
                 throw CodexAppServerError.launchFailed(L10n.agentFileAccessNotAllowed)
             }
         }

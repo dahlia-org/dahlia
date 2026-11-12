@@ -2461,6 +2461,7 @@ enum L10n { // swiftlint:disable:this type_body_length
     static var agentFileAccessRemove: String { String(localized: "settings.agents.fileAccess.remove", bundle: bundle) }
     static var agentFileAccessDefaults: String { String(localized: "settings.agents.fileAccess.defaults", bundle: bundle) }
     static var agentFileAccessHelp: String { String(localized: "settings.agents.fileAccess.help", bundle: bundle) }
+    static var agentShellStartupPathRequired: String { String(localized: "settings.agents.shellStartupPathRequired", bundle: bundle) }
     static var agentFileAccessChanged: String { String(localized: "settings.agents.fileAccess.changed", bundle: bundle) }
     static var agentFileAccessNotAllowed: String { String(localized: "settings.agents.fileAccess.notAllowed", bundle: bundle) }
     static var agentWorkingDirectory: String { String(localized: "settings.agents.workingDirectory", bundle: bundle) }
