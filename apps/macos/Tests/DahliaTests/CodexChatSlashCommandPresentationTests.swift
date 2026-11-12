@@ -45,7 +45,7 @@
                 let png = try #require(bitmap.representation(using: .png, properties: [:]))
                 try png.write(to: URL(fileURLWithPath: directory).appending(path: isBottom ? "bottom.png" : "center.png"))
             }
-            let panel = try #require(panel(in: host))
+            let panel = try #require(self.panel(in: host))
             let panelFrame = window.convertToScreen(panel.convert(panel.bounds, to: nil))
             #expect(window.convertToScreen(window.contentLayoutRect).contains(panelFrame))
             #expect(panelFrame.width <= 320)
