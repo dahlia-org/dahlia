@@ -1921,3 +1921,6 @@
 "settings.agents.skills.details" = "詳細";
 "settings.agents.skills.openFolderFailed" = "スキルのフォルダを開けませんでした。再読み込みして保存先を確認してください。";
 "settings.agents.skills.contentUnavailable" = "このスキルの保存先を取得できないため、内容を表示できません。";
+
+"appearance.light" = "ライトモード";
+"appearance.dark" = "ダークモード";

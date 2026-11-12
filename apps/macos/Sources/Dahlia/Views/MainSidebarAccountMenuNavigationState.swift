@@ -7,6 +7,7 @@ final class MainSidebarAccountMenuNavigationState {
     enum ActiveMenu: Equatable {
         case root
         case languages
+        case appearance
         case accountDetails
     }
 

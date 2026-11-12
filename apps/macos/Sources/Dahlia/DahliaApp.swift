@@ -39,6 +39,7 @@ struct DahliaApp: App {
 
     @MainActor
     init() {
+        AppSettings.shared.applyAppearance()
         let startup = AppStartupModel()
         _startup = State(initialValue: startup)
         let updateController = AppUpdateController()

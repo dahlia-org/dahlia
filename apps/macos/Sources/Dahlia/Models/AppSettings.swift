@@ -135,7 +135,8 @@ final class AppSettings: ObservableObject {
     fileprivate nonisolated static let defaultAutomaticScreenshotIntervalSeconds = 20
     fileprivate nonisolated static let defaultAutomaticScreenshotChangeThresholdPercent = 5
 
-    init(meetingSettingsDefaults: UserDefaults = .standard) {
+    init(meetingSettingsDefaults: UserDefaults = .standard, appearanceDefaults: UserDefaults = .standard) {
+        _appAppearanceRawValue = AppStorage(wrappedValue: AppAppearance.system.rawValue, AppAppearance.userDefaultsKey, store: appearanceDefaults)
         self.meetingSettingsDefaults = meetingSettingsDefaults
         Self.migrateCalendarEventFilterSettings(in: .standard)
         Self.migrateLiveSubtitleLocaleSetting(in: .standard)
@@ -172,6 +173,22 @@ final class AppSettings: ObservableObject {
 
     @AppStorage(AppSettings.conversationAnalyticsBetaEnabledUserDefaultsKey)
     var isConversationAnalyticsBetaEnabled = AppSettings.defaultConversationAnalyticsBetaEnabled
+
+    // MARK: - 外観
+
+    @AppStorage(AppAppearance.userDefaultsKey) private var appAppearanceRawValue = AppAppearance.system.rawValue
+
+    var appAppearance: AppAppearance {
+        get { AppAppearance(rawValue: appAppearanceRawValue) ?? .system }
+        set {
+            appAppearanceRawValue = newValue.rawValue
+            applyAppearance()
+        }
+    }
+
+    func applyAppearance() {
+        NSApplication.shared.appearance = appAppearance.appearance
+    }
 
     // MARK: - 表示言語
 

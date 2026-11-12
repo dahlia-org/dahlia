@@ -507,7 +507,7 @@
             let databricks = coordinator(current: first.id)
             activate(databricks, row: 0)
             activate(databricks, row: 1)
-            activate(databricks, row: 4)
+            activate(databricks, row: 5)
 
             // Choosing the current account does nothing; the rows after the Databricks accounts keep their actions.
             #expect(selections == ["first", "second", "local", "settings"])
@@ -554,7 +554,7 @@
             coordinator.activateSelection()
             #expect(!selectedAccount)
 
-            for _ in 0 ..< 3 {
+            for _ in 0 ..< 4 {
                 coordinator.moveSelection(1)
             }
             coordinator.activateSelection()
@@ -604,13 +604,85 @@
             coordinator.toggleMenu()
             #expect(window.childWindows?.isEmpty == false)
 
-            for _ in 0 ... coordinator.menuOffset + 2 {
+            for _ in 0 ... coordinator.menuOffset + 3 {
                 coordinator.moveSelection(1)
             }
             coordinator.activateSelection()
 
             #expect(openedRecordings == 1)
             #expect(menuWasDismissed)
+        }
+
+        @Test(arguments: ["local", "server", "databricks"])
+        func appearanceMenuSupportsKeyboardSelectionAndRestoresTheSavedChoice(account: String) throws {
+            let suiteName = "MainSidebarAccountMenuTests-\(UUID().uuidString)"
+            let defaults = try #require(UserDefaults(suiteName: suiteName))
+            let application = NSApplication.shared
+            let originalAppearance = application.appearance
+            defer {
+                application.appearance = originalAppearance
+                defaults.removePersistentDomain(forName: suiteName)
+            }
+            let settings = AppSettings(appearanceDefaults: defaults)
+            #expect(settings.appAppearance == .system)
+            settings.applyAppearance()
+            #expect(application.appearance == nil)
+
+            let window = NSWindow(
+                contentRect: NSRect(x: 0, y: 0, width: 500, height: 500),
+                styleMask: [.titled], backing: .buffered, defer: false
+            )
+            window.isReleasedWhenClosed = false
+            let button = NSButton(frame: NSRect(x: 0, y: 0, width: 100, height: 30))
+            window.contentView?.addSubview(button)
+            let connections = account == "server" ? [makeConnection(origin: "https://server.example.com", isCloud: false)] : []
+            let databricksAccounts = account == "databricks" ? [DatabricksConnection(id: .v7(), host: "https://dbc.example.com")] : []
+            let coordinator = MainSidebarAccountMenuCoordinator(
+                connections: connections,
+                accountSelection: .init(
+                    connectionID: connections.first?.id, isLocal: connections.isEmpty,
+                    databricksAccounts: databricksAccounts, currentDatabricksID: databricksAccounts.first?.id
+                ),
+                onOpenSettings: { _ in Issue.record("Opened Settings") },
+                onSelectAccount: { _ in Issue.record("Switched accounts") },
+                onAccountAction: { Issue.record("Performed account action") },
+                onShowUnprocessedRecordings: {},
+                settings: settings
+            )
+            coordinator.button = button
+            defer {
+                coordinator.dismissMenu()
+                window.close()
+            }
+
+            for choice in [AppAppearance.dark, .light, .system] {
+                coordinator.toggleMenu()
+                for _ in 0 ... coordinator.menuOffset + 1 {
+                    coordinator.moveSelection(1)
+                }
+                coordinator.openSelectedSubmenu()
+                #expect(window.childWindows?.count == 2)
+                #expect(!coordinator.selectTypeAheadMatch(for: settings.appAppearance.displayName))
+                coordinator.moveSelection(1)
+                if choice == .dark {
+                    coordinator.moveSelection(1)
+                } else {
+                    #expect(coordinator.selectTypeAheadMatch(for: choice.displayName))
+                }
+                coordinator.activateSelection()
+                #expect(settings.appAppearance == choice)
+                #expect(application.appearance?.name == choice.appearance?.name)
+                #expect(window.effectiveAppearance.bestMatch(from: [.aqua, .darkAqua])
+                    == application.effectiveAppearance.bestMatch(from: [.aqua, .darkAqua]))
+                #expect(window.childWindows?.isEmpty == true)
+                let restored = AppSettings(appearanceDefaults: defaults)
+                #expect(restored.appAppearance == choice)
+                restored.applyAppearance()
+                #expect(application.appearance?.name == choice.appearance?.name)
+            }
+
+            defaults.set("unknown", forKey: AppAppearance.userDefaultsKey)
+            #expect(AppSettings(appearanceDefaults: defaults).appAppearance == .system)
         }
 
         private func makeConnection(origin: String, isCloud: Bool, workspaceCount: Int = 1) -> DahliaAccountConnection {
