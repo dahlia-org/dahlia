@@ -1,4 +1,5 @@
 #if canImport(Testing)
+    import Combine
     import Testing
     @testable import Dahlia
 
@@ -17,6 +18,20 @@
 
             #expect(store.level(for: .microphone) == 0)
             #expect(store.level(for: .system) == 0)
+        }
+
+        @Test
+        func equalLevelDoesNotRepublish() {
+            let store = RecordingAudioLevelStore()
+            var publicationCount = 0
+            let cancellable = store.objectWillChange.sink { publicationCount += 1 }
+            defer { cancellable.cancel() }
+
+            store.update(source: .microphone, level: 0)
+            store.update(source: .microphone, level: 0)
+            store.update(source: .microphone, level: 0.5)
+
+            #expect(publicationCount == 2)
         }
 
         @Test

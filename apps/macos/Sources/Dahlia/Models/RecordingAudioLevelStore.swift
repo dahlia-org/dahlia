@@ -9,7 +9,8 @@ final class RecordingAudioLevelStore: ObservableObject {
     }
 
     func update(source: RecordingAudioSource, level: Double) {
-        levels[source] = min(1, max(0, level))
+        let level = min(1, max(0, level))
+        if levels[source] != level { levels[source] = level }
     }
 
     func reset(source: RecordingAudioSource) {

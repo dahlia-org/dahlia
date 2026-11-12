@@ -3,7 +3,7 @@ import Foundation
 
 /// 現在の録音セッションに限った、一時的なライブ字幕の表示状態。
 @MainActor
-final class LiveCaptionStore: ObservableObject {
+final class LiveCaptionStore {
     enum OverlayChange {
         case reload
         case preview(TranscriptSegment)
@@ -12,9 +12,9 @@ final class LiveCaptionStore: ObservableObject {
         case update(TranscriptSegment)
     }
 
-    @Published private(set) var segments: [TranscriptSegment] = []
-    @Published private(set) var activeSessionId: UUID?
-    @Published private(set) var failureMessage: String?
+    private(set) var segments: [TranscriptSegment] = []
+    private(set) var activeSessionId: UUID?
+    private(set) var failureMessage: String?
     let overlayChanges = PassthroughSubject<OverlayChange, Never>()
     private var segmentIndices: [UUID: Int] = [:]
 
