@@ -22,6 +22,8 @@ import Foundation
             #expect(SettingsCategory.meetings.matches(L10n.meetingLinkApplications))
             #expect(!SettingsCategory.appearance.matches(L10n.meetingLinkApplications))
             #expect(SettingsCategory.agents.matches("Gmail"))
+            #expect(SettingsCategory.agents.matches(L10n.agentPackages))
+            #expect(SettingsCategory.agents.matches("npm"))
             #expect(SettingsNavigation.visibleSelection(.accountPreferences) == .agents)
             #expect(SettingsNavigation.visibleSelection(.macInference) == .agents)
             #expect(!SettingsGroup.app.categories.contains(.macInference))

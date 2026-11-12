@@ -148,6 +148,8 @@ enum SettingsCategory: String, CaseIterable, Identifiable {
                 "Pi",
                 L10n.agentProviders,
                 L10n.agentEnvironment,
+                L10n.agentPackages,
+                "npm",
                 "ChatGPT",
                 "OpenAI",
                 "Anthropic",

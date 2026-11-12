@@ -53,6 +53,8 @@
   (subpath (param "RELEASED_APP_SUPPORT"))
   (subpath (param "AGENT")))
 (allow file-read*
+  (subpath (string-append (param "AGENT") "/npm"))
+  (subpath (string-append (param "AGENT") "/git"))
   (subpath (param "SKILLS"))
   (subpath (param "FILE_STORE"))
   (literal (param "DATABASE"))

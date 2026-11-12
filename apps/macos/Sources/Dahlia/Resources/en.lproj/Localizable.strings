@@ -1854,3 +1854,19 @@
 "chat.toolSucceeded %@" = "%@ completed. Waiting for a response…";
 "chat.toolFailed %@" = "%@ failed. Waiting for a response…";
 "chat.toolInaccessible %@" = "%@ could not access the requested resource. Waiting for a response…";
+
+// Pi packages
+"settings.agents.packages" = "Packages";
+"settings.agents.packageCatalog" = "Browse Pi packages";
+"settings.agents.packageSource" = "Package name or Git URL";
+"settings.agents.packageInstall" = "Install";
+"settings.agents.packageRemove" = "Uninstall";
+"settings.agents.packageHelp" = "Install into this account’s Pi. Enter an npm: source from the catalog or a Git URL such as https://github.com/mats16/ai-desktools. Only install packages you trust. Chat can use skills and prompts. Extension code and themes are not loaded.";
+"settings.agents.packageChanged" = "Changes apply to the next chat you start.";
+"settings.agents.packagesEmpty" = "No packages installed.";
+"settings.agents.packagesInstalled" = "Installed packages";
+"settings.agents.packageInvalidSource" = "Enter an npm: package source or a Git URL.";
+"settings.agents.packageBusy" = "Packages for this account are being changed. Try again when the operation finishes.";
+"settings.agents.packageFailed" = "Could not change the package.";
+"settings.agents.packageNoVersions" = "The configured npm registry has no available versions of this package. Check the package name, publication status, and registry restrictions.";
+"settings.agents.packageErrorDetails" = "Error details";

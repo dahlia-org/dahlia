@@ -1,6 +1,6 @@
 // Dahlia's Pi extension. Dahlia owns every policy decision; this file only forwards them to Pi.
 // Requests to Dahlia travel over the RPC extension-UI channel: `ctx.ui.input("dahlia:<method>", <JSON>)`.
-import { createBashTool, createEditTool, createLsTool, createReadTool, createWriteTool } from "@earendil-works/pi-coding-agent";
+import { createBashTool, createEditTool, createLsTool, createReadTool, createWriteTool, DefaultPackageManager, SettingsManager } from "@earendil-works/pi-coding-agent";
 import { anthropicMessagesApi, createProvider, googleGenerativeAIApi, openAIResponsesApi } from "@earendil-works/pi-ai";
 import { execFile } from "node:child_process";
 import { readFileSync } from "node:fs";
@@ -108,6 +108,17 @@ export default function (pi: any) {
   });
 
   if (mode === "chat") {
+    // Keep automatic discovery disabled (it includes ~/.agents/skills); contribute only this account's packages.
+    pi.on("resources_discover", async (event: any) => {
+      const agentDir = env.PI_CODING_AGENT_DIR!;
+      const settingsManager = SettingsManager.create(event.cwd, agentDir, { projectTrusted: false });
+      const resources = await new DefaultPackageManager({ cwd: event.cwd, agentDir, settingsManager }).resolve(async () => "skip");
+      const paths = (entries: typeof resources.skills) => entries
+        .filter((entry) => entry.enabled && entry.metadata.origin === "package" && entry.metadata.scope === "user")
+        .map((entry) => entry.path);
+      return { skillPaths: paths(resources.skills), promptPaths: paths(resources.prompts) };
+    });
+
     if (env.DAHLIA_PI_MCP_COMMAND) {
       const [command, ...args] = JSON.parse(env.DAHLIA_PI_MCP_COMMAND);
       pi.registerMcpServer("dahlia", { command, args, exposure: "direct", description: "Dahlia meetings, projects, and workspaces" });
