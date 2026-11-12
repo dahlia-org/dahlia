@@ -29,11 +29,26 @@ import Foundation
 
         /// Runs a shell command under the real profile and returns its exit status.
         private func run(
-            _ script: String, cwd: URL, agent: URL, support: URL? = nil, pi: URL = URL(fileURLWithPath: "/bin/sh")
+            _ script: String,
+            cwd: URL,
+            agent: URL,
+            support: URL? = nil,
+            pi: URL = URL(fileURLWithPath: "/bin/sh"),
+            fileAccess: PiFileAccessSettings = .init(),
+            environment: [String: String] = [:],
+            home: String = NSHomeDirectory()
         ) throws -> Int32 {
             let sandbox = try support.map {
-                try PiSandbox.command(cwd: cwd, agentURL: agent, piExecutableURL: pi, applicationSupportURL: $0)
-            } ?? PiSandbox.command(cwd: cwd, agentURL: agent, piExecutableURL: pi)
+                try PiSandbox.command(
+                    cwd: cwd,
+                    agentURL: agent,
+                    piExecutableURL: pi,
+                    applicationSupportURL: $0,
+                    fileAccess: fileAccess,
+                    environment: environment,
+                    home: home
+                )
+            } ?? PiSandbox.command(cwd: cwd, agentURL: agent, piExecutableURL: pi, fileAccess: fileAccess, environment: environment, home: home)
             let command = sandbox + ["/bin/sh", "-c", script]
             let process = Process()
             process.executableURL = URL(fileURLWithPath: command[0])
@@ -44,6 +59,89 @@ import Foundation
             try process.run()
             process.waitUntilExit()
             return process.terminationStatus
+        }
+
+        @Test
+        func additionalFilesAndDirectoriesKeepTheirExactAccessAndCanBeRevoked() throws {
+            let root = FileManager.default.temporaryDirectory.appending(path: "PiSandboxTests-\(UUID())")
+            let work = root.appending(path: "work"), extra = root.appending(path: "extra")
+            let agent = root.appending(path: "agent")
+            for folder in [work, extra] {
+                try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+            }
+            defer { try? FileManager.default.removeItem(at: root) }
+            // Quotes and parentheses stay data, never Seatbelt source.
+            let config = extra.appending(path: ".desk \"(config).toml")
+            try Data("setting".utf8).write(to: config)
+            try Data("private".utf8).write(to: extra.appending(path: "sibling"))
+            let quote = { (path: String) in "'" + path.replacingOccurrences(of: "'", with: "'\\''") + "'" }
+            var access = PiFileAccessSettings(grants: [.init(path: config.path, isDirectory: false)])
+            #expect(try run("cat \(quote(config.path))", cwd: work, agent: agent, fileAccess: access) == 0)
+            #expect(try run("echo changed > \(quote(config.path))", cwd: work, agent: agent, fileAccess: access) != 0)
+            #expect(try run("cat '\(extra.path)/sibling'", cwd: work, agent: agent, fileAccess: access) != 0)
+            access.grants[0].access = .readWrite
+            #expect(try run("echo changed > \(quote(config.path))", cwd: work, agent: agent, fileAccess: access) == 0)
+            #expect(try run("echo no > '\(extra.path)/sibling'", cwd: work, agent: agent, fileAccess: access) != 0)
+            access.grants = [.init(path: extra.path, isDirectory: true)]
+            #expect(try run("cat '\(extra.path)/sibling'", cwd: work, agent: agent, fileAccess: access) == 0)
+            #expect(try run("mkdir '\(extra.path)/child'", cwd: work, agent: agent, fileAccess: access) != 0)
+            access.grants[0].access = .readWrite
+            #expect(try run("mkdir '\(extra.path)/child' && echo x > '\(extra.path)/child/file'", cwd: work, agent: agent, fileAccess: access) == 0)
+            // A symlink in an allowed folder does not extend the grant to its destination.
+            let outside = root.appending(path: "outside")
+            try Data("private".utf8).write(to: outside)
+            try FileManager.default.createSymbolicLink(at: extra.appending(path: "link"), withDestinationURL: outside)
+            #expect(try run("cat '\(extra.path)/link'", cwd: work, agent: agent, fileAccess: access) != 0)
+            #expect(try run("echo no > '\(extra.path)/link'", cwd: work, agent: agent, fileAccess: access) != 0)
+            #expect(try run("cat \(quote(config.path))", cwd: work, agent: agent) != 0)
+        }
+
+        @Test
+        func shellStartupFilesStayReadOnlyEvenInsideTheWorkingFolder() throws {
+            let root = FileManager.default.temporaryDirectory.appending(path: "PiSandboxTests-\(UUID())")
+            let home = root.appending(path: "home"), work = root.appending(path: "work"), agent = root.appending(path: "agent")
+            for folder in [home, work] {
+                try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+            }
+            defer { try? FileManager.default.removeItem(at: root) }
+            let target = work.appending(path: "linked-startup")
+            let startup = work.appending(path: ".zshrc")
+            for file in [target, startup] {
+                try Data("fixture".utf8).write(to: file)
+            }
+            try FileManager.default.createSymbolicLink(at: home.appending(path: ".profile"), withDestinationURL: target)
+            let environment = ["ZDOTDIR": work.path]
+            for file in [target, startup] {
+                #expect(try run("cat '\(file.path)'", cwd: work, agent: agent, environment: environment, home: home.path) == 0)
+                #expect(try run("echo changed > '\(file.path)'", cwd: work, agent: agent, environment: environment, home: home.path) != 0)
+                #expect(try run("rm '\(file.path)'", cwd: work, agent: agent, environment: environment, home: home.path) != 0)
+            }
+            #expect(try run("echo setting > .desk.toml", cwd: work, agent: agent, environment: environment, home: home.path) == 0)
+        }
+
+        @Test
+        func additionalGrantsCannotOverrideProtectedDataOrRuntimeCode() throws {
+            let root = FileManager.default.temporaryDirectory.appending(path: "PiSandboxTests-\(UUID())")
+            let work = root.appending(path: "work"), support = root.appending(path: "support")
+            let agent = support.appending(path: "agent"), bin = root.appending(path: "bin")
+            for folder in [work, agent, bin] {
+                try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+            }
+            defer { try? FileManager.default.removeItem(at: root) }
+            let pi = bin.appending(path: "pi")
+            try Data("runtime".utf8).write(to: pi)
+            try Data("secret".utf8).write(to: agent.appending(path: "auth.json"))
+            let access = PiFileAccessSettings(grants: [.init(path: root.path, isDirectory: true, access: .readWrite)])
+            #expect(try run("cat '\(agent.path)/auth.json'", cwd: work, agent: agent, support: support, pi: pi, fileAccess: access) != 0)
+            #expect(try run("echo no > '\(agent.path)/auth.json'", cwd: work, agent: agent, support: support, pi: pi, fileAccess: access) != 0)
+            #expect(try run("echo no > '\(pi.path)'", cwd: work, agent: agent, support: support, pi: pi, fileAccess: access) != 0)
+            #expect(try run(
+                "echo no > '\(PiSandbox.piTemporaryDirectory.path)/planted'",
+                cwd: work,
+                agent: agent,
+                fileAccess: .init(grants: [.init(path: PiSandbox.piTemporaryDirectory.path, isDirectory: true, access: .readWrite)])
+            ) !=
+                0)
         }
 
         @Test

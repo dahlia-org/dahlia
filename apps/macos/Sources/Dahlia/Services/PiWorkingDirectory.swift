@@ -1,8 +1,8 @@
 import DahliaRuntimeSupport
 import Foundation
 
-/// The folder Dahlia AI's chat works in, set per account in Agents settings. It is the only place on this Mac
-/// chat may change, so it is a folder the user can see rather than one inside Application Support.
+/// The folder Dahlia AI's chat works in, set per account under Security. It is writable without additional grants,
+/// so it is a folder the user can see rather than one inside Application Support.
 struct PiWorkingDirectory: Sendable {
     nonisolated static func defaultsKey(for provider: CodexRuntimeProvider) -> String {
         "piWorkingDirectory.\(provider.accountKey)"
@@ -24,10 +24,13 @@ struct PiWorkingDirectory: Sendable {
 
     /// Whether the folder is, or contains, a folder on the search path Pi is found and started with. Chat could
     /// replace `pi` there, or put a command in front of the one Pi means to run, and it would run outside the sandbox.
-    nonisolated static func holdsCommands(_ folder: URL, searchPath: String) -> Bool {
+    nonisolated static func holdsCommands(_ folder: URL, searchPath: String, cwd: URL? = nil) -> Bool {
         let folder = PiSandbox.realPath(folder)
         return searchPath.split(separator: ":").contains { entry in
-            let entry = PiSandbox.realPath(URL(fileURLWithPath: String(entry)))
+            let entry = PiSandbox.realPath(URL(
+                fileURLWithPath: String(entry),
+                relativeTo: cwd.map { URL(fileURLWithPath: $0.path, isDirectory: true) }
+            ))
             return entry == folder || entry.hasPrefix(folder + "/")
         }
     }

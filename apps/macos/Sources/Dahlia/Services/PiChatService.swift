@@ -23,8 +23,10 @@ actor PiChatService: CodexChatServicing {
     Then use get_meeting for a selected meeting's summary.
     Call get_meeting_transcript only when the original wording or detail is needed.
     Use Dahlia's preset skills when the user's request matches their descriptions; read a selected skill's SKILL.md with the read tool.
-    The read, ls, write, edit, and bash tools run under Apple Seatbelt. Only the current folder is writable; Dahlia's
-    screenshots, database, and skills are read-only. Other user files are inaccessible. Network access is allowed.
+    The read, ls, write, edit, and bash tools run under Apple Seatbelt. The current folder is writable; Dahlia's
+    screenshots, database, and skills are read-only. Additional user-selected paths and their permissions are listed below.
+    Other user files are inaccessible. HOME is a scratch folder; use absolute paths for user-selected files.
+    Network access is allowed.
     If a tool reports an access restriction, do not retry the same inaccessible path or try to bypass the sandbox.
     Promptly explain the restriction and continue with accessible sources, distinguishing verified facts from inference.
     Use sqlite3 -readonly to inspect Dahlia's database for debugging.
@@ -35,6 +37,7 @@ actor PiChatService: CodexChatServicing {
         let processID: UUID
         let provider: CodexRuntimeProvider
         let connection: PiRPCConnection
+        let fileAccess: PiFileAccessSettings
         var approvalMethod: CodexChatApprovalMethod?
         var model: String?
         var effort: String?
@@ -55,12 +58,12 @@ actor PiChatService: CodexChatServicing {
 
     private let runtime: PiRuntimeService
     private let workingDirectory: PiWorkingDirectory
-    private let piExecutableURL: @Sendable (CodexRuntimeProvider) throws -> URL
     private let agentLocator: PiAgentDirectoryLocator
     private let mcpExecutableURL: URL?
     private let reviewModel: @Sendable (CodexRuntimeProvider) -> String
     private let customInstructions: @Sendable (CodexRuntimeProvider) -> String
     private let mcpSettings: @Sendable (CodexRuntimeProvider) -> AgentMCPSettings
+    private let fileAccessSettings: @Sendable (CodexRuntimeProvider) -> PiFileAccessSettings
     private var sessions: [String: Session] = [:]
     private var opening: [String: Task<PiRPCConnection, any Error>] = [:]
     private var leases: [String: Set<UUID>] = [:]
@@ -74,19 +77,19 @@ actor PiChatService: CodexChatServicing {
     init(
         runtime: PiRuntimeService = .shared,
         workingDirectory: PiWorkingDirectory = PiWorkingDirectory(),
-        piExecutableURL: @escaping @Sendable (CodexRuntimeProvider) throws -> URL = { try PiBundle.executableURL(for: $0) },
         agentLocator: PiAgentDirectoryLocator = PiAgentDirectoryLocator(),
         mcpExecutableURL: URL? = nil,
         reviewModel: @escaping @Sendable (CodexRuntimeProvider) -> String = { AgentAutoReviewSettings.model(for: $0) },
         customInstructions: @escaping @Sendable (CodexRuntimeProvider) -> String = { AgentChatInstructions.load(for: $0) },
-        mcpSettings: @escaping @Sendable (CodexRuntimeProvider) -> AgentMCPSettings = { AgentMCPSettings.load(for: $0) }
+        mcpSettings: @escaping @Sendable (CodexRuntimeProvider) -> AgentMCPSettings = { AgentMCPSettings.load(for: $0) },
+        fileAccessSettings: @escaping @Sendable (CodexRuntimeProvider) -> PiFileAccessSettings = { PiFileAccessSettings.load(for: $0) }
     ) {
         self.runtime = runtime
         self.workingDirectory = workingDirectory
-        self.piExecutableURL = piExecutableURL
         self.agentLocator = agentLocator
         self.mcpExecutableURL = mcpExecutableURL
         self.mcpSettings = mcpSettings
+        self.fileAccessSettings = fileAccessSettings
         self.reviewModel = reviewModel
         self.customInstructions = customInstructions
     }
@@ -411,7 +414,13 @@ actor PiChatService: CodexChatServicing {
     /// The thread's live process, reopening its session file when the process has exited. Concurrent callers share one open.
     private func connection(threadID: String) async throws -> PiRPCConnection {
         if let session = sessions[threadID] {
-            if await session.connection.isOpen { return session.connection }
+            if await session.connection.isOpen {
+                guard sessions[threadID]?.connection === session.connection else { return try await connection(threadID: threadID) }
+                if sessions[threadID]?.turn != nil || session.fileAccess == fileAccessSettings(session.provider) { return session.connection }
+                // Seatbelt is fixed at process start. Reopen idle threads before the next turn, including revocations.
+                await closeSession(threadID)
+                return try await connection(threadID: threadID)
+            }
             if sessions[threadID]?.connection === session.connection {
                 sessions[threadID] = nil
                 finish(session.turn, error: CodexAppServerError.backendResetForSafety)
@@ -457,24 +466,22 @@ actor PiChatService: CodexChatServicing {
         let processID = UUID.v7()
         let provider = try await runtime.currentProvider()
         let workURL = try workingDirectory.url(for: provider)
-        let piURL = try piExecutableURL(provider)
-        let environment = ProcessInfo.processInfo.environment
-            .merging(PiLaunchSettings.load(for: provider).environment { _ in nil }) { $1 }
-        guard !PiWorkingDirectory.holdsCommands(
-            workURL, searchPath: CommandLineToolLocator.searchPath(for: piURL, environment: environment)
-        ) else { throw CodexAppServerError.launchFailed(L10n.agentWorkingDirectoryNotAllowed) }
         // Pi runs a thread in the folder its session file names, so an older thread moves to the folder set now.
         if let sessionFile { try PiChatSessionFiles.setWorkingDirectory(workURL, in: sessionFile) }
         let mcpCommand = try Self.mcpCommand(
             executableURL: mcpExecutableURL ?? DahliaMCPBundle.executableURL(),
             workspaceID: workspaceID
         )
-        // Sandboxed commands get Pi's environment without the values the user marked secret.
-        let secretNames = PiLaunchSettings.load(for: provider).variables.filter(\.isSecret).map(\.name)
+        let fileAccess = fileAccessSettings(provider)
+        let accessDescription = fileAccess.grants.map {
+            "\($0.access.rawValue) (\($0.isDirectory ? "directory and descendants" : "file only")): \($0.path)"
+        }.joined(separator: "\n")
         let dataPaths = """
 
         Dahlia's database: \(MeetingAccessStore.defaultDatabaseURL.path)
         Dahlia's screenshots: \(ScreenshotFileStore.defaultDirectory.path)
+        Additional file access (protected Dahlia data and runtime code remain restricted):
+        \(accessDescription.isEmpty ? "None" : accessDescription)
         """
         // Pi reads mcp.json only when it starts, so settings changes reach the next process the account starts. `--tools`
         // and the allowlist come from this same snapshot: a process that reads another thread's newer file stays limited to it.
@@ -504,18 +511,10 @@ actor PiChatService: CodexChatServicing {
                 arguments: arguments,
                 environment: [
                     "DAHLIA_PI_MCP_COMMAND": String(decoding: JSONEncoder().encode(mcpCommand), as: UTF8.self),
-                    "DAHLIA_PI_SANDBOX": String(decoding: JSONEncoder().encode(
-                        PiSandbox.command(
-                            cwd: workURL, agentURL: agentLocator.agentURL(for: provider),
-                            piExecutableURL: piURL
-                        )
-                    ), as: UTF8.self),
-                    "DAHLIA_PI_SANDBOX_HIDDEN_ENV": String(decoding: JSONEncoder().encode(secretNames), as: UTF8.self),
-                    "DAHLIA_PI_SANDBOX_TMPDIR": PiSandbox.temporaryDirectory.path,
-                    "TMPDIR": PiSandbox.piTemporaryDirectory.path,
                     // The only MCP servers whose tools chat may call; the extension blocks every other server.
                     "DAHLIA_PI_MCP_SERVERS": String(decoding: JSONEncoder().encode(serverNames), as: UTF8.self),
-                ]
+                ],
+                fileAccess: fileAccess
             ),
             provider: provider,
             chatBridge: { [weak self] method, payload in
@@ -524,7 +523,8 @@ actor PiChatService: CodexChatServicing {
             }
         )
         sessions[threadID] = Session(
-            processID: processID, provider: provider, connection: connection, approvalMethod: .ask, mcpServers: Set(serverNames)
+            processID: processID, provider: provider, connection: connection, fileAccess: fileAccess,
+            approvalMethod: .ask, mcpServers: Set(serverNames)
         )
         Task { await self.pump(threadID: threadID, processID: processID, connection: connection) }
         if let name = pendingNames.removeValue(forKey: threadID) {

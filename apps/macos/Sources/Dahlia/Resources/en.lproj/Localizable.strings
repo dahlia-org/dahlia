@@ -1814,8 +1814,8 @@
 "chat.mcpSignInRequired %@" = "%@ needs sign-in. Sign in again under Settings > Dahlia AI > Models > Providers (for the account's own workspace, from the account menu at the bottom of the sidebar).";
 "settings.agents.piCommandInUse" = "Command in use";
 "settings.agents.workingDirectory" = "Working folder";
-"settings.agents.workingDirectory.notAllowed" = "Set the working folder to a full path, or one that starts with ~. It cannot be the home folder, a folder that contains it, inside Library, or a folder that holds commands (a PATH folder).";
-"settings.agents.workingDirectory.help" = "The only folder on this Mac where Dahlia AI can create and change files in chat. A change applies to chat processes started afterward.";
+"settings.agents.workingDirectory.notAllowed" = "Set the working folder to a full path, or one that starts with ~. It cannot be the home folder, a folder that contains it, inside Library, a folder that holds commands (a PATH folder), or a folder containing shell startup files.";
+"settings.agents.workingDirectory.help" = "The folder chat works in. It is readable and writable without an additional grant. Changes apply when you reopen the chat.";
 "No executable Pi at %@. Install Pi in Settings > Dahlia AI." = "No executable Pi at %@. Install Pi in Settings > Dahlia AI.";
 "Pi was not found on PATH. Enable Dahlia-managed Pi in Settings > Dahlia AI to install it." = "Pi was not found on PATH. Enable Dahlia-managed Pi in Settings > Dahlia AI to install it.";
 "settings.agents.piNotInstalled" = "Pi is not installed";
@@ -1889,6 +1889,20 @@
 "Chat notice collapsed" = "Collapsed";
 
 "Queued until the response finishes: %@" = "Queued until the response finishes: %@";
+
+/* Additional chat file access */
+"settings.agents.security" = "Security";
+"settings.agents.fileAccess" = "Additional file access";
+"settings.agents.fileAccess.permission" = "Permission";
+"settings.agents.fileAccess.readOnly" = "Read only";
+"settings.agents.fileAccess.readWrite" = "Read and write";
+"settings.agents.fileAccess.add" = "Add Files or Folders…";
+"settings.agents.fileAccess.remove" = "Remove access permission";
+"settings.agents.fileAccess.defaults" = "Applies to chat for the current account on this Mac. The working folder is readable and writable. Dahlia’s screenshots, database, and skills are read only.";
+"settings.agents.fileAccess.help" = "Additions, changes, and removals apply from the next message. Running responses and commands retain their previous permissions; cancel the response to stop them now. Folder permissions include all descendants. Dahlia credentials, Pi itself, and shell startup files remain protected. Readable content can be sent over the network. Use absolute paths for added files because ~ refers to a temporary home.";
+"settings.agents.shellStartupPathRequired" = "Set BASH_ENV and ENV to literal file paths in Environment Variables. Shell expressions and ~user paths cannot be protected.";
+"settings.agents.fileAccess.changed" = "File access changed during this update. Please try again.";
+"settings.agents.fileAccess.notAllowed" = "Write access cannot be granted to the entire home folder, Library, command locations, or shell startup files (including folders containing them). Select a more specific file or folder.";
 
 "settings.agents.customInstructions" = "Custom instructions";
 "settings.agents.customInstructions.details" = "About custom instructions";

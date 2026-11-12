@@ -10,6 +10,7 @@ struct AgentSettingsView: View {
         case imageAnalysis
         case packages
         case mcps
+        case security
 
         var id: Self { self }
 
@@ -21,6 +22,7 @@ struct AgentSettingsView: View {
             case .models: L10n.agentModels
             case .packages: L10n.agentPackages
             case .mcps: L10n.agentMCPs
+            case .security: L10n.agentSecurity
             }
         }
     }
@@ -97,6 +99,8 @@ private struct AgentSettingsTabs: View {
                 AgentPackageSettingsView(model: packages)
             case .mcps:
                 AgentMCPSettingsView(model: mcp, onAdd: presentMCPRegistration)
+            case .security:
+                AgentSecuritySettingsView(account: account)
             }
         }
         .task {
@@ -123,7 +127,6 @@ private struct AgentRuntimeSection: View {
     let provider: CodexRuntimeProvider
     let searchPath: String?
     @AppStorage private var useManagedPi: Bool
-    @AppStorage private var workingDirectory: String
     @State private var resolvedCommand: Result<String, CodexAppServerError>?
     /// The version of the Pi that Dahlia installed.
     @State private var installedVersion: String?
@@ -134,7 +137,6 @@ private struct AgentRuntimeSection: View {
         self.provider = provider
         self.searchPath = searchPath
         _useManagedPi = AppStorage(wrappedValue: PiBundle.usesManagedPi(for: provider), PiBundle.useManagedPiDefaultsKey(for: provider))
-        _workingDirectory = AppStorage(wrappedValue: "", PiWorkingDirectory.defaultsKey(for: provider))
     }
 
     var body: some View {
@@ -188,8 +190,6 @@ private struct AgentRuntimeSection: View {
             case nil:
                 EmptyView()
             }
-            TextField(L10n.agentWorkingDirectory, text: $workingDirectory, prompt: Text(PiWorkingDirectory.defaultPath))
-                .help(L10n.agentWorkingDirectoryHelp)
         } header: {
             Text(L10n.agentRuntime)
                 .font(.dahliaSectionHeader)
