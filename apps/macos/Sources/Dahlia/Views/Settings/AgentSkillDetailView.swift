@@ -57,7 +57,7 @@ struct AgentSkillDetailView: View {
         guard let file = skill.skillFileURL else { return }
         do {
             let text = try await Task.detached(priority: .userInitiated) {
-                try String(contentsOf: file, encoding: .utf8)
+                try Self.markdownBody(from: String(contentsOf: file, encoding: .utf8))
             }.value
             guard !Task.isCancelled else { return }
             content = text
@@ -65,5 +65,12 @@ struct AgentSkillDetailView: View {
             guard !Task.isCancelled else { return }
             errorMessage = error.localizedDescription
         }
+    }
+
+    nonisolated static func markdownBody(from text: String) -> String {
+        guard let frontmatter = text.range(of: #"\A---\h*\R(?:[^\r\n]*\R)*?---\h*(?:\R|\z)"#, options: .regularExpression) else {
+            return text
+        }
+        return String(text[frontmatter.upperBound...])
     }
 }
