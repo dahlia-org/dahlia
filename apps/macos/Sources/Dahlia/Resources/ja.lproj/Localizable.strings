@@ -1865,19 +1865,19 @@
 "chat.toolInaccessible %@" = "%@ でアクセスできませんでした。応答を待っています…";
 
 // Pi packages
-"settings.agents.packages" = "パッケージ";
-"settings.agents.packageCatalog" = "Pi のパッケージを探す";
-"settings.agents.packageSource" = "パッケージ名または Git URL";
+"settings.agents.packages" = "プラグイン";
+"settings.agents.packageCatalog" = "Pi のプラグインを探す";
+"settings.agents.packageSource" = "プラグイン名または Git URL";
 "settings.agents.packageInstall" = "インストール";
 "settings.agents.packageRemove" = "アンインストール";
-"settings.agents.packageHelp" = "このアカウントの Pi に追加します。カタログの npm: 名、または https://github.com/mats16/ai-desktools などの Git URL を入力してください。信頼できるパッケージだけをインストールしてください。 チャットでスキルとプロンプトを利用できます。拡張コードとテーマは読み込みません。";
+"settings.agents.packageHelp" = "このアカウントの Pi に追加します。カタログの npm: 名、または https://github.com/mats16/ai-desktools などの Git URL を入力してください。信頼できるプラグインだけをインストールしてください。 チャットでスキルとプロンプトを利用できます。拡張コードとテーマは読み込みません。";
 "settings.agents.packageChanged" = "変更は次に開始するチャットから適用されます。";
-"settings.agents.packagesEmpty" = "インストール済みのパッケージはありません。";
+"settings.agents.packagesEmpty" = "インストール済みのプラグインはありません。";
 "settings.agents.packagesInstalled" = "インストール済み";
 "settings.agents.packageInvalidSource" = "npm: で始まるパッケージ名、または Git URL を入力してください。";
-"settings.agents.packageBusy" = "このアカウントのパッケージを変更中です。完了後にもう一度お試しください。";
-"settings.agents.packageFailed" = "パッケージの変更に失敗しました。";
-"settings.agents.packageNoVersions" = "設定中の npm レジストリには、このパッケージの利用可能なバージョンがありません。パッケージ名、公開状況、レジストリの制限を確認してください。";
+"settings.agents.packageBusy" = "このアカウントのプラグインを変更中です。完了後にもう一度お試しください。";
+"settings.agents.packageFailed" = "プラグインの変更に失敗しました。";
+"settings.agents.packageNoVersions" = "設定中の npm レジストリには、このプラグインの利用可能なバージョンがありません。npm パッケージ名、公開状況、レジストリの制限を確認してください。";
 "settings.agents.packageErrorDetails" = "エラーの詳細";
 
 // AI chat slash completion
@@ -1912,6 +1912,6 @@
 "settings.agents.skills" = "スキル";
 "settings.agents.skills.empty" = "認識しているスキルはありません。";
 "settings.agents.skills.pathConflict" = "スキル保存先とその配下は PATH に指定できません。「Dahlia AI」>「一般」の環境変数から外してください。";
-"settings.agents.skills.help" = "新しいチャットプロセスが認識するスキルです。標準スキル、このアカウントが保存したスキル、パッケージのスキルを表示します。追加・変更後は更新してください。実行中のチャットには次のプロセス起動時に反映されます。";
+"settings.agents.skills.help" = "新しいチャットプロセスが認識するスキルです。標準スキル、このアカウントが保存したスキル、プラグインのスキルを表示します。追加・変更後は更新してください。実行中のチャットには次のプロセス起動時に反映されます。";
 "settings.agents.fileAccess.builtIn" = "既定で許可されているフォルダ・ファイル";
 "settings.agents.fileAccess.builtInHelp" = "フォルダは配下を含みます。既定の許可は変更できません。システムの許可よりも、Pi の実行コード・Dahlia の保護データ・シェル起動ファイルの制限を優先します。/opt/homebrew と /usr/local の var・etc は読み取り不可です。表示には個別のデバイスファイルを含みません。";

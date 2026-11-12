@@ -45,7 +45,7 @@ Pi の更新時に `test-pi-extension.py` で確かめる。ユーザーの `~/.
 Pi の agent directory はアカウントごとに `Application Support/Dahlia/accounts/<local または accounts.id>/pi`（0700）。
 Local Account は `local`、Databricks アカウントと Dahlia account は `accounts` テーブルの ID を使う。`PI_OFFLINE`・`PI_SKIP_VERSION_CHECK`・`PI_TELEMETRY=0` と、
 extension・context file・theme・project trust の自動読込を無効化して起動する。チャットでは標準 skill、アカウントの `pi/skills` に保存した skill、追加したパッケージの skill・prompt template を読み込む（2026-11-12 ユーザー承認）。要約・画像解析・通常の control は skill・prompt template も無効にする。「スキル」タブ専用の一覧プロセスは同じ resource loader で読み込み、モデル・MCP・tool を実行せず `get_commands` の認識結果（名前・説明・保存先）を表示する。追加・変更は新しいチャットプロセスから反映する。
-「Dahlia AI」>「パッケージ」から npm source または Git URL を Pi の `install`・`remove` で管理し、同じアカウントの `settings.json` を一覧の正本にする。変更は次に開始するチャット process から適用する。
+「Dahlia AI」>「プラグイン」から npm source または Git URL を Pi の `install`・`remove` で管理し、同じアカウントの `settings.json` を一覧の正本にする。変更は次に開始するチャット process から適用する。
 パッケージ操作はアカウントの Pi 選択と環境変数を使い、`PI_CODING_AGENT_DIR` は Dahlia のアカウント directory に固定する。`~/.pi` や project の設定には追加しない。拡張コードは無効のままとし、インストール元は利用者が信頼できるものを指定する。
 
 Dahlia の extension（`PiExtension/dahlia.ts`）を `-e` で読み込む。チャットは Dahlia MCP と登録した MCP server のために Pi の `builtin:mcp` も

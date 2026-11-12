@@ -8,9 +8,9 @@ struct AgentSettingsView: View {
         case models
         case summary
         case imageAnalysis
-        case packages
-        case skills
         case mcps
+        case skills
+        case packages
         case security
 
         var id: Self { self }
@@ -21,9 +21,9 @@ struct AgentSettingsView: View {
             case .summary: L10n.settingsSummaryOutput
             case .imageAnalysis: L10n.imageAnalysis
             case .models: L10n.agentModels
-            case .packages: L10n.agentPackages
-            case .skills: L10n.agentSkills
             case .mcps: L10n.agentMCPs
+            case .skills: L10n.agentSkills
+            case .packages: L10n.agentPackages
             case .security: L10n.agentSecurity
             }
         }

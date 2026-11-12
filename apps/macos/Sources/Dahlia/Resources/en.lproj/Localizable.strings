@@ -1865,19 +1865,19 @@
 "chat.toolInaccessible %@" = "%@ could not access the requested resource. Waiting for a response…";
 
 // Pi packages
-"settings.agents.packages" = "Packages";
-"settings.agents.packageCatalog" = "Browse Pi packages";
-"settings.agents.packageSource" = "Package name or Git URL";
+"settings.agents.packages" = "Plugins";
+"settings.agents.packageCatalog" = "Browse Pi plugins";
+"settings.agents.packageSource" = "Plugin name or Git URL";
 "settings.agents.packageInstall" = "Install";
 "settings.agents.packageRemove" = "Uninstall";
-"settings.agents.packageHelp" = "Install into this account’s Pi. Enter an npm: source from the catalog or a Git URL such as https://github.com/mats16/ai-desktools. Only install packages you trust. Chat can use skills and prompts. Extension code and themes are not loaded.";
+"settings.agents.packageHelp" = "Install into this account’s Pi. Enter an npm: source from the catalog or a Git URL such as https://github.com/mats16/ai-desktools. Only install plugins you trust. Chat can use skills and prompts. Extension code and themes are not loaded.";
 "settings.agents.packageChanged" = "Changes apply to the next chat you start.";
-"settings.agents.packagesEmpty" = "No packages installed.";
-"settings.agents.packagesInstalled" = "Installed packages";
+"settings.agents.packagesEmpty" = "No plugins installed.";
+"settings.agents.packagesInstalled" = "Installed plugins";
 "settings.agents.packageInvalidSource" = "Enter an npm: package source or a Git URL.";
-"settings.agents.packageBusy" = "Packages for this account are being changed. Try again when the operation finishes.";
-"settings.agents.packageFailed" = "Could not change the package.";
-"settings.agents.packageNoVersions" = "The configured npm registry has no available versions of this package. Check the package name, publication status, and registry restrictions.";
+"settings.agents.packageBusy" = "Plugins for this account are being changed. Try again when the operation finishes.";
+"settings.agents.packageFailed" = "Could not change the plugin.";
+"settings.agents.packageNoVersions" = "The configured npm registry has no available versions of this plugin. Check the package name, publication status, and registry restrictions.";
 "settings.agents.packageErrorDetails" = "Error details";
 
 // AI chat slash completion
@@ -1912,6 +1912,6 @@
 "settings.agents.skills" = "Skills";
 "settings.agents.skills.empty" = "No skills recognized.";
 "settings.agents.skills.pathConflict" = "The skills folder and its descendants cannot be on PATH. Remove them from Environment Variables under Dahlia AI > General.";
-"settings.agents.skills.help" = "Skills recognized by a new chat process, including preset, account-created, and package skills. Refresh after changes. Running chats pick up changes when their process restarts.";
+"settings.agents.skills.help" = "Skills recognized by a new chat process, including preset, account-created, and plugin skills. Refresh after changes. Running chats pick up changes when their process restarts.";
 "settings.agents.fileAccess.builtIn" = "Default folder and file access";
 "settings.agents.fileAccess.builtInHelp" = "Folder access includes descendants. Default permissions cannot be changed. Protected Pi runtime code, Dahlia data, and shell startup restrictions take precedence over system permissions. The var and etc directories under /opt/homebrew and /usr/local are unreadable. Individual device files are omitted.";
