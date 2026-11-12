@@ -275,7 +275,7 @@ def mcp_login(pi, arguments):
     return auth
 
 
-def gateway(script, requests):
+def gateway(script, requests, triage=False):
     """Answers each request with the next scripted text or tool call."""
     class Handler(BaseHTTPRequestHandler):
         def log_message(self, *_):
@@ -285,7 +285,20 @@ def gateway(script, requests):
             body = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
             requests.append({"auth": self.headers.get("Authorization"),
                              "tags": self.headers.get("Databricks-Ai-Gateway-Request-Tags"), "body": body})
-            step = script[min(len(requests) - 1, len(script) - 1)]
+            if triage and self.path == "/systemone":
+                # The first action needs review; later classifier answers would approve a retry.
+                first = sum("questions" in request["body"] for request in requests) <= 2
+                answers = ({"kind": {"probabilities": {"destroy" if first else "connected": 1}},
+                            "has_secret": {"noul": 0.01}} if "kind" in body["questions"] else {"loosens": {"noul": 0.01}})
+                payload = json.dumps({"answers": answers}).encode()
+                self.send_response(200)
+                self.send_header("Content-Type", "application/json")
+                self.send_header("Content-Length", str(len(payload)))
+                self.end_headers()
+                self.wfile.write(payload)
+                return
+            index = sum("questions" not in request["body"] for request in requests) - 1
+            step = script[min(index, len(script) - 1)]
             if "error" in step:
                 body = json.dumps({"error": {"message": step["error"]}}).encode()
                 self.send_response(401)
@@ -324,10 +337,10 @@ def gateway(script, requests):
 
 
 def run(pi, mode, script, arguments, environment, approval="accept", approval_mode="ask", api="openai-responses", mcp_servers=None,
-        compat=None, auth=None):
-    """Runs one prompt; returns the gateway requests, tool results, bridge calls, and whether ../outside.txt exists."""
+        compat=None, auth=None, triage=False, prompts=1):
+    """Runs prompts; returns gateway requests, tool results, bridge calls, and whether ../outside.txt exists."""
     requests, tool_results, bridge = [], [], []
-    server = gateway(script, requests)
+    server = gateway(script, requests, triage=triage)
     with tempfile.TemporaryDirectory() as temporary:
         root = Path(temporary).resolve()
         (root / "agent").mkdir()
@@ -376,12 +389,17 @@ def run(pi, mode, script, arguments, environment, approval="accept", approval_mo
             if record.get("type") == "extension_ui_request" and record.get("title", "").startswith("dahlia:"):
                 method = record["title"].removeprefix("dahlia:")
                 bridge.append((method, json.loads(record["placeholder"])))
-                answers = {"token": "synthetic-token", "approvalMode": approval_mode, "reviewModel": "", "approval": approval}
+                classifier = {"model": "system.ai.openjev-qwen35-4b", "provider": "databricks",
+                              "endpoint": f"http://127.0.0.1:{server.server_port}/systemone"} if triage else None
+                answers = {"token": "synthetic-token", "approvalMode": approval_mode, "reviewModel": "", "reviewTriage": classifier, "approval": approval}
                 send({"type": "extension_ui_response", "id": record["id"], "value": json.dumps(answers[method])})
             elif record.get("type") == "tool_execution_end":
                 tool_results.append("".join(part.get("text", "") for part in record["result"]["content"]))
             elif record.get("type") == "agent_settled":
-                break
+                prompts -= 1
+                if prompts == 0:
+                    break
+                send({"id": f"p{prompts}", "type": "prompt", "message": "go again"})
         process.stdin.close()
         process.wait(timeout=20)
         server.shutdown()
@@ -441,10 +459,34 @@ def package_resources(pi):
         assert not json.loads((agent / "settings.json").read_text()).get("packages")
 
 
+def triage_denial_regression(pi):
+    """A real tool gate keeps denials in force until the next agent run, including human refusals."""
+    with tempfile.NamedTemporaryFile("w", suffix=".py") as mcp:
+        mcp.write(MCP_SERVER)
+        mcp.flush()
+        environment = {"DAHLIA_PI_MCP_COMMAND": json.dumps(["/usr/bin/python3", mcp.name]),
+                       "DAHLIA_PI_MCP_SERVERS": json.dumps(["dahlia"])}
+        for risk in ("critical", "high"):
+            call = {"tool": "mcp__dahlia__update_meeting", "args": {"title": "reviewed"}}
+            verdict = {"text": json.dumps({"risk_level": risk, "user_authorization": "low", "outcome": "deny", "rationale": "DENIED_MARKER"})}
+            script = [call, verdict, call, verdict, {"text": "done"}, call, {"text": "done"}]
+            requests, results, bridge, _ = run(pi, "chat", script, CHAT_ARGUMENTS, environment,
+                                               approval_mode="autoReview", approval="decline", triage=True, prompts=2)
+            reviews = [request for request in requests if "planned tool call" in json.dumps(request["body"])]
+            classifications = [request for request in requests if "questions" in request["body"]]
+            assert len(reviews) == 2, (risk, reviews, results)
+            assert len(classifications) == 4, (risk, classifications)
+            assert len(results) == 3 and "MCP_OK" not in results[0] and "MCP_OK" not in results[1] and results[2] == "MCP_OK", (risk, results)
+            approvals = [payload for method, payload in bridge if method == "approval"]
+            assert len(approvals) == (0 if risk == "critical" else 2), (risk, approvals)
+    print("Pi triage denial regressions passed (critical and user decline, retries and next-run reset)")
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--pi", default="pi")
     pi = parser.parse_args().pi
+    triage_denial_regression(pi)
     package_resources(pi)
 
     # Keywords Claude or Gemini cannot take, and a property named like one, which must stay.

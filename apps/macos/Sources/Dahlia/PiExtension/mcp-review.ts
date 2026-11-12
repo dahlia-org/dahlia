@@ -17,7 +17,18 @@ export function reviewBranch(branch: any[]): any[] {
   });
 }
 
-export async function reviewMCP(ctx: any, toolName: string, input: unknown, model = "") {
+type TriageConfiguration = { model: string; endpoint: string; provider: string };
+
+export function reviewerEffort(model: any): "low" | "high" {
+  const { input, output } = model?.cost ?? {};
+  // Pi prices are USD per million tokens. Zero often means unknown (for example, subscriptions).
+  if ([input, output].every((price) => Number.isFinite(price) && price > 0)) {
+    return input >= 2 || output >= 10 ? "low" : "high";
+  }
+  return "high";
+}
+
+export async function reviewMCP(ctx: any, toolName: string, input: unknown, model = "", configuration?: TriageConfiguration | null) {
   // Upstream's extension caps calls before `review`; importing that function requires the same whole-call bound.
   if (JSON.stringify({ tool: toolName, input }, null, 2).length > 128_000) {
     return { outcome: "deny", risk: "unknown", reason: "This MCP call is too large for AI review." };
@@ -27,19 +38,36 @@ export async function reviewMCP(ctx: any, toolName: string, input: unknown, mode
     sessionManager: { getBranch: () => reviewBranch(ctx.sessionManager.getBranch()) },
   };
   try {
+    let triage: Record<string, unknown> | undefined;
+    if (configuration?.model === "system.ai.openjev-qwen35-4b") {
+      try {
+        const apiKey = await ctx.modelRegistry.getApiKeyForProvider(configuration.provider);
+        if (apiKey) triage = {
+          enabled: true, model: configuration.model, endpoint: configuration.endpoint,
+          apiKey, confidence: 0.85, tools: [toolName],
+        };
+      } catch {
+        // Missing or expired classifier credentials leave this action to the reviewer.
+      }
+    }
     // A model enabled in Settings after this chat started is not in Pi's in-memory catalogue yet.
+    let selected = ctx.model;
     if (model) {
       const slash = model.indexOf("/");
-      if (!ctx.modelRegistry.find(model.slice(0, slash), model.slice(slash + 1))) await ctx.modelRegistry.refresh();
+      selected = ctx.modelRegistry.find(model.slice(0, slash), model.slice(slash + 1));
+      if (!selected) {
+        await ctx.modelRegistry.refresh();
+        selected = ctx.modelRegistry.find(model.slice(0, slash), model.slice(slash + 1));
+      }
     }
-    // MCP mutations always use the reviewer, without the optional triage classifier.
+    // Dahlia owns triage settings; inherited Pi settings must not enable a different classifier or threshold.
     // Upstream chooses the model synchronously before its first await. Restore the environment immediately so
     // overlapping reviews and other tools never inherit this call's model selection.
     const previous = process.env.PI_AUTO_REVIEW_MODEL;
     let pending;
     try {
       process.env.PI_AUTO_REVIEW_MODEL = model || `${ctx.model.provider}/${ctx.model.id}`;
-      pending = review(context, toolName, input, { triage: false });
+      pending = review(context, toolName, input, { settings: { triage, effort: reviewerEffort(selected) } });
     } finally {
       if (previous === undefined) delete process.env.PI_AUTO_REVIEW_MODEL;
       else process.env.PI_AUTO_REVIEW_MODEL = previous;

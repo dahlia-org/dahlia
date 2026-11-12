@@ -1852,7 +1852,11 @@
 
 "Auto review" = "AI による代理承認 (pi-auto-review)";
 "Reviewer model" = "審査モデル";
+"settings.agents.autoReview.model.help" = "現在の推奨モデルは GLM 5.3 Flash（high）です。推論強度はモデルの価格情報から自動設定し、GPT Sol などの重量モデルは low、GLM Flash などの軽量モデルは high を使います。価格情報が不明・ゼロの場合は high を使います。";
 "Same as chat" = "チャットと同じモデル";
+"settings.agents.autoReview.triage" = "トリアージを有効にする";
+"settings.agents.autoReview.triage.help" = "Jev のような判定専用の decide model（OpenJev）で、通常の審査モデルに渡す前に操作をトリアージします。閾値は85%固定です。日常的な操作と判定した場合は審査を省略し、それ以外や判定に失敗した場合は審査モデルに引き継ぎます。ユーザーのメッセージと予定操作を OpenJev に送信します。変更は次の審査から適用されます。";
+"settings.agents.autoReview.triage.unavailable" = "OpenJev を取得できなかったため、有効にできませんでした。もう一度オンにすると再確認します。";
 "Used when AI reviews MCP actions. Reviews send chat history and the planned action to this model and incur additional usage. Changes apply to the next review." = "MCP の操作を AI が確認するときに使います。審査にはチャット履歴と予定操作を送信し、追加のモデル利用が発生します。変更は次の審査から適用されます。";
 
 "No connectors registered." = "コネクタが登録されていません。";

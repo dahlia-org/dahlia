@@ -1852,7 +1852,11 @@
 
 "Auto review" = "AI approval (pi-auto-review)";
 "Reviewer model" = "Reviewer model";
+"settings.agents.autoReview.model.help" = "The current recommendation is GLM 5.3 Flash (high). Reasoning effort is selected automatically from model pricing: low for heavy models such as GPT Sol, and high for lightweight models such as GLM Flash. Missing or zero prices use high.";
 "Same as chat" = "Same as chat";
+"settings.agents.autoReview.triage" = "Enable triage";
+"settings.agents.autoReview.triage.help" = "Triage actions with a specialized decide model (OpenJev), like Jev, before calling the reviewer. The threshold is fixed at 85%. Actions classified as routine skip the reviewer; other actions and classification failures go to the reviewer. Your messages and the planned action are sent to OpenJev. Changes apply to the next review.";
+"settings.agents.autoReview.triage.unavailable" = "OpenJev could not be retrieved, so triage was not enabled. Try switching it on again to recheck.";
 "Used when AI reviews MCP actions. Reviews send chat history and the planned action to this model and incur additional usage. Changes apply to the next review." = "Used when AI reviews MCP actions. Reviews send chat history and the planned action to this model and incur additional usage. Changes apply to the next review.";
 
 "No connectors registered." = "No connectors registered.";

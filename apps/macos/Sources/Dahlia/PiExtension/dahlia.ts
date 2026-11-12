@@ -141,6 +141,12 @@ export default function (pi: any) {
   }
 
   if (mode === "chat") {
+    let blockedThisRun = false;
+    pi.on("agent_start", () => { blockedThisRun = false; });
+    const block = (reason: string) => {
+      blockedThisRun = true;
+      return { block: true, reason };
+    };
     if (env.DAHLIA_PI_MCP_COMMAND) {
       const [command, ...args] = JSON.parse(env.DAHLIA_PI_MCP_COMMAND);
       pi.registerMcpServer("dahlia", { command, args, exposure: "direct", description: "Dahlia meetings, projects, and workspaces" });
@@ -219,7 +225,7 @@ export default function (pi: any) {
       // These run under Seatbelt through the tools registered above, never as Pi's own tool of the same name.
       if (["read", "ls", "write", "edit", "bash"].includes(name)) {
         const isSandboxed = sandbox.length > 0 && tool?.sourceInfo?.source !== "builtin";
-        return isSandboxed ? undefined : { block: true, reason: "This tool is not available in Dahlia's chat." };
+        return isSandboxed ? undefined : block("This tool is not available in Dahlia's chat.");
       }
 
       // Pi lists an MCP tool under its server's namespace; the alias is the server name.
@@ -233,11 +239,13 @@ export default function (pi: any) {
         let reason: string | undefined;
         if (approvalMode === "autoReview") {
           const model = await bridge(ctx, "reviewModel", {});
-          const verdict = await reviewMCP(ctx, name, event.input, model);
-          if (ctx.signal?.aborted) return { block: true, reason: "MCP AI review was cancelled." };
+          // Only the reviewer sees earlier denials; a classifier cannot approve a workaround in this run.
+          const triage = blockedThisRun ? null : await bridge(ctx, "reviewTriage", {});
+          const verdict = await reviewMCP(ctx, name, event.input, model, triage);
+          if (ctx.signal?.aborted) return block("MCP AI review was cancelled.");
           if (verdict.outcome === "allow" && verdict.risk !== "unknown") return;
           if (verdict.risk === "critical") {
-            return { block: true, reason: `MCP AI review blocked a critical action: ${verdict.reason}` };
+            return block(`MCP AI review blocked a critical action: ${verdict.reason}`);
           }
           reason = `MCP AI review ${verdict.risk === "unknown" ? "failed" : "requires your approval"}: ${verdict.reason}`;
         }
@@ -248,11 +256,11 @@ export default function (pi: any) {
           arguments: event.input,
           reason,
         });
-        if (decision !== "accept") return { block: true, reason: "The user declined this tool call." };
+        if (decision !== "accept") return block("The user declined this tool call.");
         return;
       }
 
-      return { block: true, reason: "This tool is not available in Dahlia's chat." };
+      return block("This tool is not available in Dahlia's chat.");
     });
   }
 

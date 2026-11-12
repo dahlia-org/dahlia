@@ -63,6 +63,7 @@ actor PiChatService: CodexChatServicing {
     private let agentLocator: PiAgentDirectoryLocator
     private let mcpExecutableURL: URL?
     private let reviewModel: @Sendable (CodexRuntimeProvider) -> String
+    private let reviewTriageEnabled: @Sendable (CodexRuntimeProvider) -> Bool
     private let customInstructions: @Sendable (CodexRuntimeProvider) -> String
     private let mcpSettings: @Sendable (CodexRuntimeProvider) -> AgentMCPSettings
     private let fileAccessSettings: @Sendable (CodexRuntimeProvider) -> PiFileAccessSettings
@@ -82,6 +83,7 @@ actor PiChatService: CodexChatServicing {
         agentLocator: PiAgentDirectoryLocator = PiAgentDirectoryLocator(),
         mcpExecutableURL: URL? = nil,
         reviewModel: @escaping @Sendable (CodexRuntimeProvider) -> String = { AgentAutoReviewSettings.model(for: $0) },
+        reviewTriageEnabled: @escaping @Sendable (CodexRuntimeProvider) -> Bool = { AgentAutoReviewSettings.triageEnabled(for: $0) },
         customInstructions: @escaping @Sendable (CodexRuntimeProvider) -> String = { AgentChatInstructions.load(for: $0) },
         mcpSettings: @escaping @Sendable (CodexRuntimeProvider) -> AgentMCPSettings = { AgentMCPSettings.load(for: $0) },
         fileAccessSettings: @escaping @Sendable (CodexRuntimeProvider) -> PiFileAccessSettings = { PiFileAccessSettings.load(for: $0) }
@@ -93,6 +95,7 @@ actor PiChatService: CodexChatServicing {
         self.mcpSettings = mcpSettings
         self.fileAccessSettings = fileAccessSettings
         self.reviewModel = reviewModel
+        self.reviewTriageEnabled = reviewTriageEnabled
         self.customInstructions = customInstructions
     }
 
@@ -631,6 +634,12 @@ actor PiChatService: CodexChatServicing {
 
     private func answer(_ method: String, payload: JSONValue, threadID: String, processID: UUID) async -> JSONValue {
         let isLive = sessions[threadID]?.processID == processID
+        if method == "reviewTriage" {
+            guard isLive, let provider = sessions[threadID]?.provider, reviewTriageEnabled(provider) else { return .null }
+            let configuration = try? await runtime.autoReviewTriage(for: provider)
+            guard sessions[threadID]?.processID == processID, reviewTriageEnabled(provider) else { return .null }
+            return configuration ?? .null
+        }
         if method == "reviewModel" {
             guard isLive, let provider = sessions[threadID]?.provider else { return .string("") }
             return .string(reviewModel(provider))
