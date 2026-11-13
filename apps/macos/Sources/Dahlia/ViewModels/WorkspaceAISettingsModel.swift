@@ -26,6 +26,7 @@ final class WorkspaceAISettingsModel {
 
     /// Connected Databricks workspaces, oldest first. Each one is a Databricks account with its own workspaces.
     private(set) var databricksConnections: [DatabricksConnection] = []
+    private(set) var pendingDatabricksSignOut: DatabricksConnection?
 
     /// The Databricks account of the open workspace. It lists only its workspace's AI Gateway models; the Local Account
     /// lists only the subscriptions'.
@@ -152,9 +153,19 @@ final class WorkspaceAISettingsModel {
         }
     }
 
-    /// Removes the open Databricks account's workspace connection. Its workspaces return to the Local Account.
-    func signOutOfDatabricksAccount() async {
-        guard let connectionID = databricksAccountConnectionID else { return }
+    func requestDatabricksSignOut() {
+        guard isDatabricksAccount else { return }
+        pendingDatabricksSignOut = databricksConnections.first { $0.id == databricksAccountConnectionID }
+    }
+
+    func cancelDatabricksSignOut() {
+        pendingDatabricksSignOut = nil
+    }
+
+    /// Removes only the confirmed connection. Its workspaces return to the Local Account.
+    func confirmDatabricksSignOut() async {
+        guard let connectionID = pendingDatabricksSignOut?.id else { return }
+        pendingDatabricksSignOut = nil
         do {
             // Its workspaces are the Local Account's now. Its folder, with its chats, stays.
             try await databricksService.remove(connectionID: connectionID)

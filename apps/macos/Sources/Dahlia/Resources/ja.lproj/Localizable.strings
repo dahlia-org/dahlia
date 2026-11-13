@@ -1114,6 +1114,7 @@
 "Waiting for browser sign-in…" = "ブラウザでのサインインを待っています…";
 "Cancel Sign-In" = "サインインをキャンセル";
 "Sign Out" = "サインアウト";
+"Your Workspaces will move to the Local Account and remain on this Mac. You will need to sign in again to use this account's AI models." = "Workspace はローカルアカウントへ移り、この Mac に保持されます。このアカウントの AI モデルを使うには、再度サインインが必要です。";
 "Refresh Profiles" = "プロファイルを再読み込み";
 "No Databricks workspaces are connected yet." = "接続済みの Databricks ワークスペースはまだありません。";
 "Homebrew Command" = "Homebrew コマンド";

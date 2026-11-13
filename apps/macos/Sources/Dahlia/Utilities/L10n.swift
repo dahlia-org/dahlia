@@ -1803,6 +1803,11 @@ enum L10n { // swiftlint:disable:this type_body_length
         String(format: String(localized: "Sign out of %@?", bundle: bundle), name)
     }
 
+    static var databricksSignOutDescription: String { String(
+        localized: "Your Workspaces will move to the Local Account and remain on this Mac. You will need to sign in again to use this account's AI models.",
+        bundle: bundle
+    ) }
+
     static var moveWorkspacesToLocalAndSignOut: String { String(
         localized: "Move Workspaces to Local Account and Sign Out",
         bundle: bundle
