@@ -53,6 +53,7 @@ struct CodexChatView: View {
                             meetingNamesByID: session.meetingNamesByID,
                             hasMore: coordinator.historyCursor != nil,
                             isLoading: coordinator.isLoadingHistory,
+                            contentMaxWidth: contentMaxWidth,
                             activityForThread: coordinator.activity(for:),
                             onNewChat: startNewChat,
                             onOpenThread: openHistoryThread,
@@ -74,7 +75,8 @@ struct CodexChatView: View {
                             messages: session.messages,
                             showsStandaloneThinking: session.showsStandaloneThinking,
                             meetingNamesByID: session.meetingNamesByID,
-                            meetingReferencesByID: session.meetingReferencesByID
+                            meetingReferencesByID: session.meetingReferencesByID,
+                            contentMaxWidth: contentMaxWidth
                         )
                     }
 
@@ -83,16 +85,19 @@ struct CodexChatView: View {
                             message: errorMessage,
                             onRetry: session.hasRetryableSubmission ? session.retry : retryConnection
                         )
+                        .frame(maxWidth: contentMaxWidth ?? .infinity)
                     } else if let historyError = coordinator.historyError, showsHistory || showsEmptyState {
                         CodexChatErrorView(
                             message: historyError,
                             onRetry: retryHistory
                         )
+                        .frame(maxWidth: contentMaxWidth ?? .infinity)
                     }
 
                     if !showsHistory {
                         // Keep one composer in the view tree, preserving focus and attachments when the first message is sent.
                         conversationControls
+                            .frame(maxWidth: contentMaxWidth ?? .infinity)
                     }
 
                     if showsWelcome {
@@ -111,7 +116,7 @@ struct CodexChatView: View {
                         Spacer(minLength: 12)
                     }
                 }
-                .frame(maxWidth: showsWelcome ? 720 : (contentMaxWidth ?? .infinity))
+                .frame(maxWidth: showsWelcome ? 720 : .infinity)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
             .coordinateSpace(name: CodexChatAddPanelLayout.coordinateSpaceName)

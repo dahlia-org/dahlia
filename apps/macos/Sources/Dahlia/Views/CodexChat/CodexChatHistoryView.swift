@@ -5,6 +5,7 @@ struct CodexChatHistoryView: View {
     let meetingNamesByID: [UUID: String]
     let hasMore: Bool
     let isLoading: Bool
+    let contentMaxWidth: CGFloat?
     let activityForThread: (String) -> CodexChatThreadActivity?
     let onNewChat: () -> Void
     let onOpenThread: (CodexChatThreadSummary) -> Void
@@ -54,6 +55,8 @@ struct CodexChatHistoryView: View {
                 }
             }
             .padding(.horizontal, CodexChatDesign.contentHorizontalPadding)
+            .frame(maxWidth: contentMaxWidth ?? .infinity)
+            .frame(maxWidth: .infinity)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
