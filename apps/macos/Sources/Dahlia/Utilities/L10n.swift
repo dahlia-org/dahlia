@@ -1088,6 +1088,11 @@ enum L10n { // swiftlint:disable:this type_body_length
         localized: "Ignore changes outside detected slides or shared screens.",
         bundle: bundle
     ) }
+    static var selectMeetingWindowForScreenshots: String { String(localized: "Select Meeting Window Automatically", bundle: bundle) }
+    static var selectMeetingWindowForScreenshotsDescription: String { String(
+        localized: "When you join a meeting and start recording together, capture the window that opened the meeting link.",
+        bundle: bundle
+    ) }
     static var saveSharedContentOnly: String { String(localized: "Save Shared Content Only", bundle: bundle) }
     static var saveSharedContentOnlyDescription: String { String(
         localized: "Crop screenshots to detected slides or shared screens.",

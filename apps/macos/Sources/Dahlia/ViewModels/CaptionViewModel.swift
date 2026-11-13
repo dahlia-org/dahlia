@@ -388,10 +388,17 @@ final class CaptionViewModel: ObservableObject {
     /// キャプチャ対象として選択可能なウィンドウ一覧。
     @Published var availableWindows: [ScreenshotWindowOption] = []
     private var availableWindowsRefreshTask: Task<Void, Never>?
+    private(set) var meetingWindowSelectionTask: Task<Void, Never>?
+    /// 会議リンクから自動で選んだ取得対象。ユーザーが選び直していなければ、録音の停止時に未設定へ戻す。
+    private var automaticallySelectedScreenshotSource: ScreenshotCaptureSource?
     /// スクリーンショット取得対象。未設定の場合はキャプチャしない。
-    @Published var screenshotCaptureSource: ScreenshotCaptureSource = .none {
+    @Published private(set) var screenshotCaptureSource: ScreenshotCaptureSource = .none {
         didSet {
             guard screenshotCaptureSource != oldValue else { return }
+            // ユーザーが選び直した対象は、録音の停止時に未設定へ戻さない。
+            if screenshotCaptureSource != automaticallySelectedScreenshotSource {
+                automaticallySelectedScreenshotSource = nil
+            }
             syncAutomaticScreenshotCaptureState()
         }
     }
@@ -3707,6 +3714,9 @@ final class CaptionViewModel: ObservableObject {
 
     private func releaseRecordingStart(_ reservation: RecordingStartReservation) {
         guard activeRecordingStartReservation == reservation else { return }
+        if !isListening {
+            meetingWindowSelectionTask?.cancel()
+        }
         activeRecordingStartReservation = nil
         isRecordingStartPending = false
     }
@@ -3725,6 +3735,10 @@ final class CaptionViewModel: ObservableObject {
         configurationTasks.forEach { $0.cancel() }
         recordingConfigurationTasks.removeAll()
         isListening = false
+        meetingWindowSelectionTask?.cancel()
+        if automaticallySelectedScreenshotSource != nil {
+            screenshotCaptureSource = .none
+        }
 
         // ナビゲーション済みの場合、録音コンテキストからデータを取得
         let ctx = recordingContext
@@ -5222,6 +5236,12 @@ final class CaptionViewModel: ObservableObject {
 
     // MARK: - Screenshot
 
+    func selectScreenshotSource(_ source: ScreenshotCaptureSource) {
+        meetingWindowSelectionTask?.cancel()
+        automaticallySelectedScreenshotSource = nil
+        screenshotCaptureSource = source
+    }
+
     /// キャプチャ対象のウィンドウ一覧を更新する。
     func refreshAvailableWindows() {
         guard availableWindowsRefreshTask == nil else { return }
@@ -5246,6 +5266,70 @@ final class CaptionViewModel: ObservableObject {
                 self.availableWindows = []
             }
         }
+    }
+
+    /// 会議ウィンドウの自動選択が有効なら、会議リンクを開く直前のウィンドウを控える。無効なら nil。
+    func windowTitlesBeforeOpeningMeetingLink(
+        snapshot: @escaping @Sendable () -> [CGWindowID: String] = { ScreenshotWindowOption.Snapshot.titlesOnScreen() }
+    ) -> Task<[CGWindowID: String], Never>? {
+        guard AppSettings.shared.automaticScreenshotSelectsMeetingWindow else { return nil }
+        return Task.detached(priority: .userInitiated) {
+            snapshot()
+        }
+    }
+
+    /// 会議リンクを開いたアプリのウィンドウのうち、開いた後に現れたかタイトルが変わったものを、未設定のスクリーンショット取得対象に選ぶ。
+    /// リンクを開く操作で録音の開始が受け付けられた直後に呼ぶ。選んだ対象はその録音だけのもので、停止時に未設定へ戻す。
+    func selectScreenshotWindow(
+        openedBy opening: Task<String?, Never>,
+        titlesBeforeOpening: Task<[CGWindowID: String], Never>
+    ) {
+        meetingWindowSelectionTask?.cancel()
+        meetingWindowSelectionTask = Task {
+            let titlesBeforeOpening = await titlesBeforeOpening.value
+            guard let bundleIdentifier = await opening.value, !bundleIdentifier.isEmpty else { return }
+            // 会議のウィンドウは遅れて開くことが多いので、間隔を広げながら待つ（合計 31 秒）。
+            // 参加前の案内画面のように途中で閉じるウィンドウを選ぶこともあるため、選んだ後も最後まで見直す。
+            let waits: [Duration] = [1, 2, 4, 8, 16].map { .seconds($0) }
+            var selectedWindowID: CGWindowID?
+            for (index, wait) in waits.enumerated() {
+                try? await Task.sleep(for: wait)
+                // 開始待ちでも録音中でもなければ、この選択の持ち主の録音は始まらなかったか終わっている。
+                guard canSelectMeetingWindow(replacing: selectedWindowID),
+                      isRecordingStartPending || isListening else { return }
+                guard isListening else { continue }
+                let (windows, selectedWindowExists) = await Self.windowsOnScreen(checking: selectedWindowID)
+                // ウィンドウの取得を待つ間に、停止や手動の選択が入っていないか確かめ直す。
+                guard canSelectMeetingWindow(replacing: selectedWindowID), isListening else { return }
+                if selectedWindowExists {
+                    continue
+                }
+                // 最後まで見つからなければ、タイトルが変わらないタブ表示などとみなして最前面のウィンドウを選ぶ。
+                selectedWindowID = ScreenshotWindowOption.meetingWindowID(
+                    from: windows,
+                    bundleIdentifier: bundleIdentifier,
+                    titlesBeforeOpening: titlesBeforeOpening
+                ) ?? (index == waits.indices.last
+                    ? ScreenshotWindowOption.frontmostWindowID(from: windows, bundleIdentifier: bundleIdentifier)
+                    : nil)
+                // 選んだウィンドウが閉じていて次の候補がまだなければ、未設定に戻して待つ。
+                automaticallySelectedScreenshotSource = selectedWindowID.map { .window($0) }
+                screenshotCaptureSource = automaticallySelectedScreenshotSource ?? .none
+                refreshAvailableWindows()
+            }
+        }
+    }
+
+    /// 未設定か、自動で選んだ `windowID` のままなら、自動選択を続けてよい。それ以外はユーザーが選んでいる。
+    private func canSelectMeetingWindow(replacing windowID: CGWindowID?) -> Bool {
+        !Task.isCancelled
+            && (screenshotCaptureSource == .none || screenshotCaptureSource == windowID.map { .window($0) })
+    }
+
+    @concurrent private nonisolated static func windowsOnScreen(
+        checking windowID: CGWindowID?
+    ) async -> (windows: [ScreenshotWindowOption.Snapshot], windowExists: Bool) {
+        (ScreenshotWindowOption.Snapshot.onScreen(), windowID.map(ScreenshotWindowOption.Snapshot.exists) ?? false)
     }
 
     private func updateAutomaticScreenshotProcessingSettings() {

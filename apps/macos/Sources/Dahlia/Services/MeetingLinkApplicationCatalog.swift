@@ -49,12 +49,9 @@ extension MeetingLinkApplicationCatalog {
             let globalApplications = webBrowsersThatCanOpen(
                 URL(string: "https://example.com")!
             )
+            let chromeApplications = chromeApplications()
             let applicationsByService = Dictionary(uniqueKeysWithValues: MeetingLinkService.allCases.map { service in
-                var applications = knownApplications(for: service)
-                if service == .googleMeet {
-                    applications.append(contentsOf: googleMeetChromeApplications())
-                }
-                return (service, applications)
+                (service, knownApplications(for: service) + (chromeApplications[service].map { [$0] } ?? []))
             })
             return Self(
                 globalApplications: globalApplications,
@@ -106,7 +103,8 @@ extension MeetingLinkApplicationCatalog {
         }
     }
 
-    private static func googleMeetChromeApplications() -> [MeetingLinkApplication] {
+    /// Chrome にインストールした、会議サービスの PWA。「Google Meet (PWA)」のように表示する。
+    private static func chromeApplications() -> [MeetingLinkService: MeetingLinkApplication] {
         let chromeAppsDirectory = URL.homeDirectory
             .appending(path: "Applications")
             .appending(path: "Chrome Apps.localized")
@@ -114,23 +112,36 @@ extension MeetingLinkApplicationCatalog {
             at: chromeAppsDirectory,
             includingPropertiesForKeys: nil,
             options: .skipsHiddenFiles
-        ) else { return [] }
+        ) else { return [:] }
 
-        return applicationURLs.compactMap { applicationURL in
-            guard applicationURL.pathExtension == "app",
-                  let bundle = Bundle(url: applicationURL),
+        var applications: [MeetingLinkService: [(bundleIdentifier: String, host: String)]] = [:]
+        for applicationURL in applicationURLs where applicationURL.pathExtension == "app" {
+            guard let bundle = Bundle(url: applicationURL),
+                  let bundleIdentifier = bundle.bundleIdentifier,
                   let infoDictionary = bundle.infoDictionary,
-                  isGoogleMeetChromeApplication(infoDictionary: infoDictionary)
-            else { return nil }
-            return application(at: applicationURL)
+                  // インストール先のユーザーデータが消えた shim は開けない。
+                  SystemMeetingLinkWorkspace.chromeAppInstallation(infoDictionary: infoDictionary) != nil,
+                  let shortcutURL = chromeApplicationShortcutURL(infoDictionary: infoDictionary),
+                  let service = MeetingLinkService(conferenceURL: shortcutURL),
+                  // 会議リンクが PWA で開くことを確かめたサービスだけを出す。Teams の PWA は会議ではなくチャットを開く。
+                  service == .googleMeet,
+                  let host = shortcutURL.host()
+            else { continue }
+            applications[service, default: []].append((bundleIdentifier, host))
+        }
+        return applications.reduce(into: [:]) { result, entry in
+            // 一覧の順序は不定なので、選ぶ PWA が読み込みごとに変わらないよう並べ替える。
+            let candidates = entry.value.sorted { ($0.bundleIdentifier, $0.host) < ($1.bundleIdentifier, $1.host) }
+            guard let application = candidates.first else { return }
+            result[entry.key] = MeetingLinkApplication(
+                bundleIdentifier: application.bundleIdentifier,
+                displayName: "\(entry.key.displayName) (PWA)"
+            )
         }
     }
 
-    static func isGoogleMeetChromeApplication(infoDictionary: [String: Any]) -> Bool {
-        guard let shortcutURLString = infoDictionary["CrAppModeShortcutURL"] as? String,
-              let shortcutURL = URL(string: shortcutURLString)
-        else { return false }
-        return MeetingLinkService(conferenceURL: shortcutURL) == .googleMeet
+    static func chromeApplicationShortcutURL(infoDictionary: [String: Any]) -> URL? {
+        (infoDictionary["CrAppModeShortcutURL"] as? String).flatMap(URL.init(string:))
     }
 
     private static func application(at url: URL) -> MeetingLinkApplication? {

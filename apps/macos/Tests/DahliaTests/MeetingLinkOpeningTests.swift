@@ -1,4 +1,5 @@
 import Foundation
+import os
 @testable import Dahlia
 
 #if canImport(Testing)
@@ -7,6 +8,27 @@ import Foundation
     @MainActor
     @Suite(.serialized)
     struct MeetingLinkOpeningTests {
+        @Test
+        func preOpeningWindowSnapshotRunsOffMainThread() async throws {
+            let settings = AppSettings.shared
+            let previousValue = settings.automaticScreenshotSelectsMeetingWindow
+            defer { settings.automaticScreenshotSelectsMeetingWindow = previousValue }
+            settings.automaticScreenshotSelectsMeetingWindow = true
+            let viewModel = CaptionViewModel(
+                availableInputDevicesProvider: { [] },
+                defaultInputDeviceIDProvider: { nil }
+            )
+            let ranOnMainThread = OSAllocatedUnfairLock(initialState: true)
+
+            let snapshot = try #require(viewModel.windowTitlesBeforeOpeningMeetingLink {
+                ranOnMainThread.withLock { $0 = Thread.isMainThread }
+                return [42: "Meeting"]
+            })
+
+            #expect(await snapshot.value == [42: "Meeting"])
+            #expect(!ranOnMainThread.withLock { $0 })
+        }
+
         @Test
         func servicesResolveFromConferenceHosts() throws {
             #expect(try MeetingLinkService(conferenceURL: url("https://meet.google.com/abc")) == .googleMeet)
@@ -115,14 +137,49 @@ import Foundation
         }
 
         @Test
-        func googleMeetChromeApplicationDetectionUsesShortcutURL() {
-            #expect(MeetingLinkApplicationCatalog.isGoogleMeetChromeApplication(infoDictionary: [
-                "CrAppModeShortcutURL": "https://meet.google.com/",
-            ]))
-            #expect(!MeetingLinkApplicationCatalog.isGoogleMeetChromeApplication(infoDictionary: [
-                "CrAppModeShortcutURL": "https://calendar.google.com/",
-            ]))
-            #expect(!MeetingLinkApplicationCatalog.isGoogleMeetChromeApplication(infoDictionary: [:]))
+        func chromeApplicationsResolveServiceFromShortcutURL() throws {
+            func service(_ shortcutURL: String) -> MeetingLinkService? {
+                MeetingLinkApplicationCatalog.chromeApplicationShortcutURL(
+                    infoDictionary: ["CrAppModeShortcutURL": shortcutURL]
+                ).flatMap(MeetingLinkService.init(conferenceURL:))
+            }
+
+            #expect(service("https://meet.google.com/landing?lfhs=2") == .googleMeet)
+            #expect(service("https://teams.microsoft.com/v2/?clientType=pwa") == .teams)
+            #expect(service("https://calendar.google.com/") == nil)
+            #expect(MeetingLinkApplicationCatalog.chromeApplicationShortcutURL(infoDictionary: [:]) == nil)
+        }
+
+        @Test
+        func chromeAppLaunchesThroughItsBrowserWithTheMeetingURL() throws {
+            let meetingURL = try url("https://meet.google.com/abc-defg-hij")
+            let userData = FileManager.default.temporaryDirectory.appending(path: "dahlia-chrome-\(UUID().uuidString)")
+            defer { try? FileManager.default.removeItem(at: userData) }
+            try FileManager.default.createDirectory(
+                at: userData.appending(path: "Profile 2/Web Applications/Manifest Resources/meetapp"),
+                withIntermediateDirectories: true
+            )
+            try FileManager.default.createDirectory(at: userData.appending(path: "Default"), withIntermediateDirectories: true)
+            let info: [String: Any] = [
+                "CrAppModeShortcutID": "meetapp",
+                "CrAppModeUserDataDir": userData.path + "/-/Web Applications/_crx_meetapp",
+            ]
+
+            #expect(SystemMeetingLinkWorkspace.chromeAppLaunchArguments(infoDictionary: info, url: meetingURL) == [
+                "--user-data-dir=\(userData.path)",
+                "--profile-directory=Profile 2",
+                "--app-id=meetapp",
+                "--app-launch-url-for-shortcuts-menu-item=https://meet.google.com/abc-defg-hij",
+            ])
+            // インストール先が見つからない shim は、ブラウザーの既定に任せる。
+            #expect(SystemMeetingLinkWorkspace.chromeAppInstallation(
+                infoDictionary: ["CrAppModeShortcutID": "other", "CrAppModeUserDataDir": userData.path + "/-/x"]
+            ) == nil)
+            #expect(SystemMeetingLinkWorkspace.chromeAppLaunchArguments(
+                infoDictionary: ["CrAppModeShortcutID": "other"],
+                url: meetingURL
+            ) == ["--app-id=other", "--app-launch-url-for-shortcuts-menu-item=https://meet.google.com/abc-defg-hij"])
+            #expect(SystemMeetingLinkWorkspace.chromeAppLaunchArguments(infoDictionary: [:], url: meetingURL) == nil)
         }
 
         @Test(arguments: [false, true])
@@ -187,7 +244,7 @@ import Foundation
                 try opener.open(url("https://meet.google.com/abc"))
             }
 
-            #expect(await opening.value)
+            #expect(await opening.value != nil)
             #expect(await workspace.attemptedApplications() == [nil])
             #expect(await workspace.observedMainActorCallerValues() == [false])
         }
@@ -207,7 +264,7 @@ import Foundation
             let opener = MeetingLinkOpener(settings: settings, workspace: workspace)
             let meetingURL = try url("https://zoom.us/j/123")
 
-            #expect(await opener.open(meetingURL).value)
+            #expect(await opener.open(meetingURL).value != nil)
             #expect(await workspace.attemptedApplications() == [URL(filePath: "/Applications/zoom.us.app")])
         }
 
@@ -225,7 +282,7 @@ import Foundation
             let opener = MeetingLinkOpener(settings: settings, workspace: workspace)
             let meetingURL = try url("https://zoom.us/j/123")
 
-            #expect(await opener.open(meetingURL).value)
+            #expect(await opener.open(meetingURL).value != nil)
             #expect(await workspace.resolvedBundleIdentifiers() == ["us.zoom.xos", "com.google.Chrome"])
             #expect(await workspace.attemptedApplications() == [chromeURL, nil])
         }
@@ -247,7 +304,7 @@ import Foundation
             )
             let opener = MeetingLinkOpener(settings: settings, workspace: workspace)
 
-            #expect(try await opener.open(url("https://zoom.us/j/123")).value)
+            #expect(try await opener.open(url("https://zoom.us/j/123")).value != nil)
             #expect(await workspace.attemptedApplications() == [zoomURL, chromeURL])
         }
 
@@ -262,7 +319,7 @@ import Foundation
                 workspace: workspace
             )
 
-            #expect(try await opener.open(url("https://example.com/meeting")).value)
+            #expect(try await opener.open(url("https://example.com/meeting")).value != nil)
             #expect(await workspace.attemptedApplications() == [chromeURL])
         }
 
@@ -277,7 +334,7 @@ import Foundation
             )
             let opener = MeetingLinkOpener(settings: settings, workspace: workspace)
 
-            #expect(try await opener.open(url("https://teams.microsoft.com/l/meetup-join/abc")).value)
+            #expect(try await opener.open(url("https://teams.microsoft.com/l/meetup-join/abc")).value != nil)
             #expect(await workspace.attemptedApplications() == [nil])
         }
 
@@ -323,11 +380,11 @@ import Foundation
                 return applicationURLs[bundleIdentifier]
             }
 
-            func open(_: URL, withApplicationAt applicationURL: URL?) async -> Bool {
+            func open(_: URL, withApplicationAt applicationURL: URL?) async -> String? {
                 attempts.append(applicationURL)
                 inheritedMainActorCallerValues.append(MeetingLinkOpeningTaskContext.isMainActorCaller)
-                guard let applicationURL else { return true }
-                return !failedApplicationURLs.contains(applicationURL)
+                guard let applicationURL else { return "default.browser" }
+                return failedApplicationURLs.contains(applicationURL) ? nil : applicationURL.lastPathComponent
             }
 
             func attemptedApplications() -> [URL?] {

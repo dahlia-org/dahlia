@@ -449,6 +449,8 @@
 "Shared Content" = "共有コンテンツ";
 "Detect Changes in Shared Content Only" = "共有領域のみで画面差分を判定";
 "Ignore changes outside detected slides or shared screens." = "検出したスライドや画面共有以外の変化を無視します。";
+"Select Meeting Window Automatically" = "会議ウィンドウを自動で選択";
+"When you join a meeting and start recording together, capture the window that opened the meeting link." = "会議への参加と録音を同時に開始したとき、会議リンクを開いたウィンドウをスクリーンショットの取得対象にします。";
 "Save Shared Content Only" = "共有領域のみを保存";
 "Crop screenshots to detected slides or shared screens." = "検出したスライドや画面共有部分だけを切り出して保存します。";
 "When shared content cannot be detected reliably, Dahlia uses the entire selected screen or window." = "共有領域を確実に判定できない場合は、選択した画面またはウィンドウ全体を使用します。";
