@@ -1815,7 +1815,7 @@
 "settings.agents.workingDirectory.notAllowed" = "Set the working folder to a full path, or one that starts with ~. It cannot be the home folder, a folder that contains it, inside Library, a folder that holds commands (a PATH folder), or a folder containing shell startup files.";
 "settings.agents.workingDirectory.help" = "The folder chat works in. It is readable and writable without an additional grant. Changes apply when you reopen the chat.";
 "No executable Pi at %@. Install Pi in Settings > Dahlia AI." = "No executable Pi at %@. Install Pi in Settings > Dahlia AI.";
-"Pi was not found on PATH. Enable Dahlia-managed Pi in Settings > Dahlia AI to install it." = "Pi was not found on PATH. Enable Dahlia-managed Pi in Settings > Dahlia AI to install it.";
+"Pi was not found on PATH. You can install Dahlia-managed Pi from Settings." = "Pi was not found on PATH. You can install Dahlia-managed Pi from Settings.";
 "settings.agents.piNotInstalled" = "Pi is not installed";
 "settings.agents.installPi" = "Install Pi";
 "settings.agents.updatePi" = "Check for Updates";

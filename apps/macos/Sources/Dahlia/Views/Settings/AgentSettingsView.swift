@@ -79,7 +79,7 @@ private struct AgentSettingsTabs: View {
             switch navigation.agentSettingsTab {
             case .general:
                 Form {
-                    AgentRuntimeSection(provider: account, searchPath: launch.settings.environment { _ in nil }["PATH"])
+                    AgentRuntimeSection(provider: account, launch: launch)
                     AgentEnvironmentSection(model: launch)
                     AgentChatInstructionsSection(account: account)
                 }
@@ -119,7 +119,7 @@ private struct AgentSettingsTabs: View {
 /// Each account chooses PATH discovery or the Pi installation shared by all accounts on this Mac.
 private struct AgentRuntimeSection: View {
     let provider: CodexRuntimeProvider
-    let searchPath: String?
+    let launch: PiLaunchSettingsModel
     @AppStorage private var useManagedPi: Bool
     @State private var resolvedCommand: Result<String, CodexAppServerError>?
     /// The version of the Pi that Dahlia installed.
@@ -127,9 +127,9 @@ private struct AgentRuntimeSection: View {
     @State private var isInstalling = false
     @State private var installResult: Result<String, Error>?
 
-    init(provider: CodexRuntimeProvider, searchPath: String?) {
+    init(provider: CodexRuntimeProvider, launch: PiLaunchSettingsModel) {
         self.provider = provider
-        self.searchPath = searchPath
+        self.launch = launch
         _useManagedPi = AppStorage(wrappedValue: PiBundle.usesManagedPi(for: provider), PiBundle.useManagedPiDefaultsKey(for: provider))
     }
 
@@ -188,7 +188,7 @@ private struct AgentRuntimeSection: View {
             Text(L10n.agentRuntime)
                 .font(.dahliaSectionHeader)
         }
-        .task(id: [String(useManagedPi), searchPath ?? ""]) {
+        .task(id: [String(useManagedPi), String(launch.commandDiscoveryRevision)]) {
             await resolveCommand()
         }
     }
@@ -196,14 +196,14 @@ private struct AgentRuntimeSection: View {
     /// Resolving checks the disk off MainActor; each new Pi process reads the saved selection.
     private func resolveCommand() async {
         let selection = useManagedPi
-        let path = searchPath
+        let revision = launch.commandDiscoveryRevision
         resolvedCommand = nil
         let (resolved, version) = await Task.detached { [provider] in
             let url = Result { try PiBundle.executableURL(for: provider) }
                 .mapError { $0 as? CodexAppServerError ?? .piCommandNotFound(nil) }
             return (url.map(\.path), PiInstaller.installedVersion())
         }.value
-        guard !Task.isCancelled, useManagedPi == selection, searchPath == path else { return }
+        guard !Task.isCancelled, useManagedPi == selection, launch.commandDiscoveryRevision == revision else { return }
         resolvedCommand = resolved
         installedVersion = version
     }

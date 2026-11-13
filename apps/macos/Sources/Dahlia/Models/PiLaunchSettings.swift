@@ -15,6 +15,10 @@ struct PiLaunchSettings: Codable, Equatable, Sendable {
 
     var variables: [Variable] = []
 
+    var commandDiscovery: Self {
+        Self(variables: variables.filter { CommandLineToolLocator.discoveryEnvironmentNames.contains($0.name) })
+    }
+
     static func defaultsKey(for account: CodexRuntimeProvider) -> String {
         "piLaunch.\(account.accountKey)"
     }

@@ -1815,7 +1815,7 @@
 "settings.agents.workingDirectory.notAllowed" = "作業フォルダには、フルパスか ~ で始まるパスを指定してください。ホームフォルダ自身、それを含むフォルダ、ライブラリの中、コマンドの置き場所（PATH のフォルダ）やシェルの起動ファイルを含むフォルダは指定できません。";
 "settings.agents.workingDirectory.help" = "チャットの作業場所です。このフォルダは追加の許可なしに読み書きできます。変更はチャットを開き直したときに反映されます。";
 "No executable Pi at %@. Install Pi in Settings > Dahlia AI." = "%@ に実行可能な Pi がありません。設定の「Dahlia AI」で Pi をインストールしてください。";
-"Pi was not found on PATH. Enable Dahlia-managed Pi in Settings > Dahlia AI to install it." = "PATH 上に Pi が見つかりません。設定の「Dahlia AI」で「アプリ管理下の Pi を使う」をオンにするとインストールできます。";
+"Pi was not found on PATH. You can install Dahlia-managed Pi from Settings." = "PATH 上に Pi が見つかりません。設定からアプリ管理下の Pi をインストールできます。";
 "settings.agents.piNotInstalled" = "Pi がインストールされていません";
 "settings.agents.installPi" = "Pi をインストール";
 "settings.agents.updatePi" = "アップデートを確認";

@@ -61,6 +61,37 @@ import Foundation
         }
 
         @Test
+        func piDiscoveryResolvesPathAndNvmSecretsWithoutReadingProviderSecrets() async throws {
+            try await Task.detached {
+                let suite = "PiInfrastructureTests.\(UUID())"
+                let defaults = try #require(UserDefaults(suiteName: suite))
+                defer { defaults.removePersistentDomain(forName: suite) }
+                let root = FileManager.default.temporaryDirectory.appending(path: suite)
+                let nvm = root.appending(path: "custom-nvm")
+                let bin = nvm.appending(path: "versions/node/v24.22.1/bin")
+                try FileManager.default.createDirectory(at: bin, withIntermediateDirectories: true)
+                defer { try? FileManager.default.removeItem(at: root) }
+                let pi = bin.appending(path: "pi")
+                try Data("#!/bin/sh\n".utf8).write(to: pi)
+                try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: pi.path)
+                let account = CodexRuntimeProvider.dahlia(connectionID: UUID())
+                let variables = ["PATH", "NVM_DIR", "OPENAI_API_KEY"].map {
+                    PiLaunchSettings.Variable(id: UUID(), name: $0, isSecret: true)
+                }
+                PiLaunchSettings(variables: variables).save(for: account, defaults: defaults)
+                let pathKey = PiLaunchSettings.secretKey(for: account, id: variables[0].id)
+                let nvmKey = PiLaunchSettings.secretKey(for: account, id: variables[1].id)
+                var requested: [String] = []
+                let resolved = try PiBundle.executableURL(for: account, defaults: defaults, secret: { key in
+                    requested.append(key)
+                    return key == pathKey ? bin.path : key == nvmKey ? nvm.path : nil
+                })
+                #expect(resolved == pi)
+                #expect(requested == [pathKey, nvmKey])
+            }.value
+        }
+
+        @Test
         func legacyPiSelectionPreservesOnlyManagedPathAndExplicitToggleWins() throws {
             let suite = "PiInfrastructureTests.\(UUID())"
             let defaults = try #require(UserDefaults(suiteName: suite))
