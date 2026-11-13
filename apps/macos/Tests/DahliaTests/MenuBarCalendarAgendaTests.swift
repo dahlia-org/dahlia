@@ -39,7 +39,7 @@ import Foundation
 
             let agenda = MenuBarCalendarAgenda(
                 events: [googleEvent, declined],
-                filter: CalendarEventFilter(includesDeclinedEvents: false),
+                filter: CalendarEventFilter(includesUnconfirmedEvents: true, includesDeclinedEvents: false),
                 now: now,
                 calendar: calendar
             )
@@ -53,7 +53,7 @@ import Foundation
 
             let filteredAgenda = MenuBarCalendarAgenda(
                 events: [declined],
-                filter: CalendarEventFilter(includesDeclinedEvents: false),
+                filter: CalendarEventFilter(includesUnconfirmedEvents: true, includesDeclinedEvents: false),
                 now: now,
                 calendar: calendar
             )
@@ -122,7 +122,7 @@ import Foundation
             let declined = event(id: "declined", start: 3600, end: 7200, isDeclined: true)
             let filteredAgenda = MenuBarCalendarAgenda(
                 events: [declined],
-                filter: CalendarEventFilter(includesDeclinedEvents: false),
+                filter: CalendarEventFilter(includesUnconfirmedEvents: true, includesDeclinedEvents: false),
                 now: now,
                 calendar: calendar
             )
@@ -175,7 +175,7 @@ import Foundation
         private func agenda(events: [CalendarEvent]) -> MenuBarCalendarAgenda {
             MenuBarCalendarAgenda(
                 events: events,
-                filter: CalendarEventFilter(includesAllDayEvents: true),
+                filter: CalendarEventFilter(includesAllDayEvents: true, includesUnconfirmedEvents: true),
                 now: now,
                 calendar: calendar
             )

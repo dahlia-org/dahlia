@@ -2026,6 +2026,11 @@ enum L10n { // swiftlint:disable:this type_body_length
         localized: "Include events that do not have a supported meeting URL.",
         bundle: bundle
     ) }
+    static var calendarFilterUnconfirmedEvents: String { String(localized: "Unconfirmed events", bundle: bundle) }
+    static var calendarIncludeUnconfirmedEventsDescription: String { String(
+        localized: "Include events you have not accepted, except declined events.",
+        bundle: bundle
+    ) }
     static var calendarFilterDeclinedEvents: String { String(localized: "Declined events", bundle: bundle) }
     static var calendarIncludeDeclinedEventsDescription: String { String(
         localized: "Include events you declined.",

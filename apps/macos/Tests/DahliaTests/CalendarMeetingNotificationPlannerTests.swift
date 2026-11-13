@@ -91,6 +91,7 @@ private func calendarEvent(
         endDate: startDate.addingTimeInterval(3600),
         isAllDay: isAllDay,
         hasOtherAttendees: true,
+        isAttending: true,
         conferenceURI: URL(string: "https://meet.example.com/planning")
     )
 }

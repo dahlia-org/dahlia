@@ -40,14 +40,13 @@ struct MenuBarCalendarEventRow: View {
     private func menuLabel() -> some View {
         Label {
             HStack {
-                Text(menuTitle)
+                Text(CalendarEventTitle.attributed(menuTitle, for: event))
 
                 if isAutoRecordingEnabled {
                     Image(systemName: "timer")
                         .accessibilityHidden(true)
                 }
             }
-            .foregroundStyle(event.isAttending ? DahliaDesign.primaryTextColor : DahliaDesign.secondaryTextColor)
         } icon: {
             MenuBarCalendarParticipationIndicator(isAttending: event.isAttending)
         }

@@ -649,6 +649,8 @@
 "Include events with no attendees other than you." = "Include events with no attendees other than you.";
 "Events without a meeting URL" = "Events without a meeting URL";
 "Include events that do not have a supported meeting URL." = "Include events that do not have a supported meeting URL.";
+"Unconfirmed events" = "Unconfirmed events";
+"Include events you have not accepted, except declined events." = "Include events you have not accepted, except declined events.";
 "Declined events" = "Declined events";
 "Include events you declined." = "Include events you declined.";
 "OOO / OOTO events" = "OOO / OOTO events";

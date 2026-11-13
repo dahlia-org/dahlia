@@ -23,6 +23,12 @@ struct CalendarEventFilterSettingsView: View {
             }
             .toggleStyle(.checkbox)
 
+            Toggle(isOn: $settings.includesUnconfirmedCalendarEvents) {
+                Text(L10n.calendarFilterUnconfirmedEvents)
+                Text(L10n.calendarIncludeUnconfirmedEventsDescription)
+            }
+            .toggleStyle(.checkbox)
+
             Toggle(isOn: $settings.includesDeclinedCalendarEvents) {
                 Text(L10n.calendarFilterDeclinedEvents)
                 Text(L10n.calendarIncludeDeclinedEventsDescription)

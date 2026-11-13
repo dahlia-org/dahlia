@@ -2,6 +2,7 @@ struct CalendarEventFilter: Equatable {
     let includesAllDayEvents: Bool
     let includesEventsWithoutOtherAttendees: Bool
     let includesEventsWithoutConferenceURI: Bool
+    let includesUnconfirmedEvents: Bool
     let includesDeclinedEvents: Bool
     let includesOutOfOfficeEvents: Bool
 
@@ -9,12 +10,14 @@ struct CalendarEventFilter: Equatable {
         includesAllDayEvents: Bool = false,
         includesEventsWithoutOtherAttendees: Bool = true,
         includesEventsWithoutConferenceURI: Bool = true,
+        includesUnconfirmedEvents: Bool = false,
         includesDeclinedEvents: Bool = false,
         includesOutOfOfficeEvents: Bool = false
     ) {
         self.includesAllDayEvents = includesAllDayEvents
         self.includesEventsWithoutOtherAttendees = includesEventsWithoutOtherAttendees
         self.includesEventsWithoutConferenceURI = includesEventsWithoutConferenceURI
+        self.includesUnconfirmedEvents = includesUnconfirmedEvents
         self.includesDeclinedEvents = includesDeclinedEvents
         self.includesOutOfOfficeEvents = includesOutOfOfficeEvents
     }
@@ -27,6 +30,9 @@ struct CalendarEventFilter: Equatable {
             return false
         }
         if !includesEventsWithoutConferenceURI, event.conferenceURI == nil {
+            return false
+        }
+        if !includesUnconfirmedEvents, !event.isAttending, !event.isDeclined {
             return false
         }
         if !includesDeclinedEvents, event.isDeclined {
