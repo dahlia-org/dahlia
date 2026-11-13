@@ -5275,9 +5275,9 @@ final class CaptionViewModel: ObservableObject {
         meetingWindowSelectionTask?.cancel()
         meetingWindowSelectionTask = Task {
             guard let bundleIdentifier = await opening.value, !bundleIdentifier.isEmpty else { return }
-            // 会議のウィンドウは遅れて開くことが多いので、間隔を広げながら待つ（合計 31 秒）。
+            // 会議のウィンドウは遅れて開くことが多いので、間隔を広げながら待つ（合計 15 秒）。
             // 参加前の案内画面のように途中で閉じるウィンドウを選ぶこともあるため、選んだ後も最後まで見直す。
-            let waits: [Duration] = [1, 2, 4, 8, 16].map { .seconds($0) }
+            let waits: [Duration] = [1, 2, 4, 8].map { .seconds($0) }
             var selectedWindowID: CGWindowID?
             for (index, wait) in waits.enumerated() {
                 try? await Task.sleep(for: wait)
