@@ -6,7 +6,6 @@ struct WorkspaceSettingsView: View {
     let currentWorkspace: WorkspaceRecord?
     let accountConnections: [DahliaAccountConnection]
     let canSwitchWorkspace: Bool
-    let onSelectWorkspace: (WorkspaceRecord) -> Void
     let onUpdateWorkspace: (WorkspaceRecord) -> Void
 
     @State private var isShowingFolderPicker = false
@@ -104,32 +103,22 @@ struct WorkspaceSettingsView: View {
 
                 Spacer()
 
-                // A new workspace is local or Databricks; one created under a Server Account would leave this list.
-                if accountWorkspace?.accountConnectionId == nil {
-                    Button(L10n.addWorkspace, systemImage: "plus", action: showCreateAlert)
-                        .buttonStyle(.dahlia(.primary))
-                        .controlSize(.small)
-                        .help(L10n.workspaceNameDescription)
-                }
+                Button(L10n.addWorkspace, systemImage: "plus", action: showCreateAlert)
+                    .buttonStyle(.dahlia(.primary))
+                    .controlSize(.small)
+                    .help(L10n.workspaceNameDescription)
             }
         } footer: {
             if workspacesInCreationOrder.isEmpty, !model.isLoading {
                 Text(L10n.noWorkspacesDescription)
+            } else {
+                Text(L10n.settingsOutputLanguageDescription)
             }
         }
     }
 
-    /// The open workspace as the model last loaded it, so a move to another account changes the listed account.
-    private var accountWorkspace: WorkspaceRecord? {
-        currentWorkspace.map { current in model.workspaces.first { $0.id == current.id } ?? current }
-    }
-
-    /// Only the selected account's workspaces. `model.workspaces` is ordered by last opened, which would reorder the list
-    /// whenever the selection changes.
     private var workspacesInCreationOrder: [WorkspaceRecord] {
-        model.workspaces
-            .filter { workspace in accountWorkspace.map(workspace.belongsToSameAccount) ?? true }
-            .sorted { ($0.createdAt, $0.id.uuidString) < ($1.createdAt, $1.id.uuidString) }
+        model.workspaces.sorted { ($0.createdAt, $0.id.uuidString) < ($1.createdAt, $1.id.uuidString) }
     }
 
     private func workspaceRow(_ workspace: WorkspaceRecord) -> some View {
@@ -142,24 +131,17 @@ struct WorkspaceSettingsView: View {
             }
             .padding(.leading, 2)
 
-            selectionButton(for: workspace) {
-                VStack(alignment: .leading, spacing: 2) {
-                    HStack {
-                        Text(workspace.name)
-                        if workspace.id == currentWorkspace?.id {
-                            Image(systemName: "checkmark")
-                                .foregroundStyle(.tint)
-                                .accessibilityLabel(L10n.selectedWorkspace)
-                        }
-                    }
-                    Text(workspace.path ?? L10n.noLocalExportFolder)
-                        .font(.dahliaSecondary)
-                        .foregroundStyle(DahliaDesign.secondaryTextColor)
-                        .lineLimit(1)
-                        .truncationMode(.middle)
-                }
+            VStack(alignment: .leading, spacing: 2) {
+                Text(workspace.name)
+                Text(workspace.path ?? L10n.noLocalExportFolder)
+                    .font(.dahliaSecondary)
+                    .foregroundStyle(DahliaDesign.secondaryTextColor)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
             }
-            .modifier(SettingsSelectableRowHoverModifier(isEnabled: canSelect(workspace)))
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.horizontal, 8)
+            .padding(.vertical, 6)
             .help(workspace.path ?? L10n.noLocalExportFolder)
 
             HStack {
@@ -186,6 +168,10 @@ struct WorkspaceSettingsView: View {
                     )
                     .font(.dahliaSecondary).foregroundStyle(.secondary)
                 }
+                Picker(L10n.summaryOutputLanguage, selection: outputLanguageBinding(for: workspace)) {
+                    ForEach(SummaryLanguage.allCases) { Text($0.displayName).font(.dahliaBody).tag($0) }
+                }
+                .disabled(!workspace.allowsWorkspaceManagement || model.isUpdatingOutputLanguage)
                 workspaceActions(for: workspace)
             }
             .padding(.trailing, 8)
@@ -193,30 +179,17 @@ struct WorkspaceSettingsView: View {
         }
     }
 
-    private func selectionButton(
-        for workspace: WorkspaceRecord,
-        @ViewBuilder label: () -> some View
-    ) -> some View {
-        let isSelected = workspace.id == currentWorkspace?.id
-        return Button {
-            if canSelect(workspace) { onSelectWorkspace(workspace) }
-        } label: {
-            label()
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.horizontal, 8)
-                .padding(.vertical, 6)
-                .contentShape(.rect(cornerRadius: DahliaDesign.Highlight.compactCornerRadius))
-        }
-        .buttonStyle(.plain)
-        .disabled(!canSelect(workspace) && !isSelected)
-        .accessibilityLabel(workspace.name)
-        .accessibilityValue(workspace.path ?? L10n.noLocalExportFolder)
-        .accessibilityHint(isSelected ? "" : L10n.switchWorkspace)
-        .accessibilityAddTraits(isSelected ? .isSelected : [])
-    }
-
-    private func canSelect(_ workspace: WorkspaceRecord) -> Bool {
-        canSwitchWorkspace && workspace.id != currentWorkspace?.id
+    private func outputLanguageBinding(for workspace: WorkspaceRecord) -> Binding<SummaryLanguage> {
+        Binding(
+            get: { workspace.generationSettings.outputLanguage },
+            set: { language in
+                Task {
+                    if let updated = await model.setOutputLanguage(for: workspace, to: language) {
+                        onUpdateWorkspace(updated)
+                    }
+                }
+            }
+        )
     }
 
     private func showCreateAlert() {
@@ -280,9 +253,7 @@ struct WorkspaceSettingsView: View {
     private func createWorkspace() {
         let name = proposedName
         clearCreateRequest()
-        // A workspace added while using the Databricks account belongs to it, so it stays in the listed account.
-        let databricksConnectionID = accountWorkspace?.databricksConnectionId
-        Task { _ = await model.createWorkspace(named: name, databricksConnectionID: databricksConnectionID) }
+        Task { _ = await model.createWorkspace(named: name) }
     }
 
     private func clearCreateRequest() {

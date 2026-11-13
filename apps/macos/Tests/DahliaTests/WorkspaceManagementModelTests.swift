@@ -7,6 +7,58 @@
 
     @MainActor
     struct WorkspaceManagementModelTests {
+        @Test(arguments: ["local", "databricks", "admin", "editor", "viewer"])
+        func outputLanguageUpdatesOnlyTheTargetAndKeepsLatestSettings(account: String) async throws {
+            let database = try AppDatabaseManager(path: ":memory:")
+            let model = WorkspaceManagementModel()
+            await model.configure(appDatabase: database)
+            let connection = DahliaAccountConnectionRecord(
+                id: .v7(), origin: "https://language.example.com", clientID: "desktop", createdAt: .now
+            )
+            var target = makeWorkspace(name: "Target", lastOpenedAt: .distantPast)
+            if account == "databricks" {
+                target.databricksConnectionId = connection.id
+            } else if account != "local" {
+                target.accountConnectionId = connection.id
+                target.syncConfirmedConnectionId = connection.id
+                target.syncRole = account
+                target.organizationId = .v7()
+            }
+            let original = target
+            let other = makeWorkspace(name: "Open workspace", lastOpenedAt: .now)
+            try await database.dbQueue.write { db in
+                try connection.insert(db)
+                try original.insert(db)
+                try other.insert(db)
+            }
+            await model.loadWorkspaces()
+            let untouched = try #require(try await database.dbQueue.read { try WorkspaceRecord.fetchOne($0, key: other.id) })
+            // The row passed from the UI may predate another edit or a sync pull.
+            var latest = target
+            latest.name = "Latest name"
+            latest.generationSettings.local.model = "latest-model"
+            let saved = latest
+            try await database.dbQueue.write { try saved.update($0) }
+
+            let updated = await model.setOutputLanguage(for: original, to: .en)
+            let canManage = ["local", "databricks", "admin"].contains(account)
+            #expect((updated != nil) == canManage)
+            let persisted = try #require(try await database.dbQueue.read { try WorkspaceRecord.fetchOne($0, key: original.id) })
+            #expect(persisted.generationSettings.outputLanguage == (canManage ? .en : .ja))
+            #expect(persisted.name == "Latest name")
+            #expect(persisted.generationSettings.local.model == "latest-model")
+            #expect(persisted.lastOpenedAt == .distantPast)
+            #expect(try await database.dbQueue.read { try WorkspaceRecord.fetchOne($0, key: other.id) } == untouched)
+            #expect(try await database.dbQueue.read { try Int.fetchOne($0, sql: "SELECT COUNT(*) FROM sync_transactions") } == (account == "admin" ? 1 : 0))
+            #expect(model.isShowingError == !canManage)
+            #expect(!model.isUpdatingOutputLanguage)
+            if canManage {
+                #expect(model.workspaces.first { $0.id == original.id }?.generationSettings.outputLanguage == .en)
+                _ = await model.setOutputLanguage(for: original, to: .en)
+                #expect(try await database.dbQueue.read { try Int.fetchOne($0, sql: "SELECT COUNT(*) FROM sync_transactions") } == (account == "admin" ? 1 : 0))
+            }
+        }
+
         @Test(arguments: ["admin", "editor"])
         func initialServerSetupSkipsRetainedUnconfirmedWorkspaces(role: String) async throws {
             let database = try AppDatabaseManager(path: ":memory:")
