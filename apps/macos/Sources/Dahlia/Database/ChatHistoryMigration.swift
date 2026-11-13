@@ -44,65 +44,42 @@ enum ChatHistoryMigration {
         CREATE INDEX chat_items_messages ON chat_items(threadID, seq)
             WHERE \(messagePredicate("data"));
         """)
-        // Rebuild only the registry's CHECK constraint, retaining row IDs and FTS postings.
-        let triggers = try Row.fetchAll(db, sql: "SELECT name, sql FROM sqlite_master WHERE type = 'trigger'")
-        for trigger in triggers {
-            let name: String = trigger["name"]
-            try db.execute(sql: "DROP TRIGGER \(name.quotedDatabaseIdentifier)")
-        }
+        // Chat has its own full-text table: sharing one with meetings would shift their BM25 ranks on every message.
         try db.execute(sql: """
-        CREATE TABLE search_documents_chat (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            kind TEXT NOT NULL CHECK(kind IN ('meeting', 'project', 'screenshot', 'chat')),
-            sourceId BLOB NOT NULL,
-            workspace_id BLOB NOT NULL,
-            meetingId BLOB,
-            projectId BLOB,
-            sourceContentHash TEXT NOT NULL,
-            indexGeneration INTEGER NOT NULL,
-            updatedAt DATETIME NOT NULL,
-            chatThreadID TEXT,
-            UNIQUE(kind, sourceId)
+        CREATE TABLE chat_search_documents (
+            id INTEGER PRIMARY KEY,
+            threadID TEXT NOT NULL REFERENCES chat_threads(id) ON DELETE CASCADE,
+            itemID BLOB UNIQUE REFERENCES chat_items(id) ON DELETE CASCADE
         );
-        INSERT INTO search_documents_chat
-            (id, kind, sourceId, workspace_id, meetingId, projectId, sourceContentHash, indexGeneration, updatedAt)
-            SELECT * FROM search_documents;
-        DROP TABLE search_documents;
-        ALTER TABLE search_documents_chat RENAME TO search_documents;
-        CREATE INDEX search_documents_meeting ON search_documents(meetingId, kind, indexGeneration);
-        CREATE INDEX search_documents_project ON search_documents(projectId, kind, indexGeneration);
-        CREATE INDEX search_documents_chat_thread ON search_documents(chatThreadID) WHERE kind = 'chat';
+        CREATE UNIQUE INDEX chat_search_documents_title ON chat_search_documents(threadID) WHERE itemID IS NULL;
+        CREATE INDEX chat_search_documents_thread ON chat_search_documents(threadID);
+        CREATE VIRTUAL TABLE chat_search_fts USING fts5(
+            title, description, content='', contentless_delete=1, detail=full, prefix='2 3',
+            tokenize='dahlia_lindera_ipadic_v1'
+        );
+        CREATE VIRTUAL TABLE chat_search_fts_vocab USING fts5vocab(chat_search_fts, row);
+        CREATE TRIGGER chat_search_documents_delete AFTER DELETE ON chat_search_documents BEGIN
+            DELETE FROM chat_search_fts WHERE rowid = old.id;
+        END;
         """)
-        for trigger in triggers {
-            if let sql: String = trigger["sql"] { try db.execute(sql: sql) }
-        }
-        // The revision invalidates meeting search cursors. Chat is indexed on every message, so it stays out of it.
+        // The revision invalidates meeting search cursors. Chat is indexed on every message, so its jobs stay out of it.
         let bump = "UPDATE search_index_state SET indexRevision = indexRevision + 1, updatedAt = unixepoch('subsec') WHERE indexKind = 'fts'"
-        for (name, event, condition) in [
-            ("jobs_insert", "INSERT ON jobs_background", "new.indexKind = 'fts' AND new.targetKind NOT IN ('chat', 'chatItem')"),
-            (
-                "jobs_generation",
-                "UPDATE OF generation ON jobs_background",
-                "new.indexKind = 'fts' AND new.targetKind NOT IN ('chat', 'chatItem')"
-            ),
-            ("documents_insert", "INSERT ON search_documents", "new.kind <> 'chat'"),
-            ("documents_update", "UPDATE ON search_documents", "new.kind <> 'chat'"),
-            ("documents_delete", "DELETE ON search_documents", "old.kind <> 'chat'"),
-        ] {
+        for (name, event) in [("jobs_insert", "INSERT ON jobs_background"), ("jobs_generation", "UPDATE OF generation ON jobs_background")] {
             try db.execute(sql: """
             DROP TRIGGER IF EXISTS search_revision_\(name);
-            CREATE TRIGGER search_revision_\(name) AFTER \(event) WHEN \(condition) BEGIN \(bump); END;
+            CREATE TRIGGER search_revision_\(name) AFTER \(event)
+            WHEN new.indexKind = 'fts' AND new.targetKind NOT IN ('chat', 'chatItem') BEGIN \(bump); END;
             """)
         }
         for (name, timing, table, key, kind, condition) in [
             ("thread_insert", "AFTER INSERT", "chat_threads", "unhex(replace(new.id, '-', ''))", "chat", ""),
             (
                 "thread_update",
-                "AFTER UPDATE OF title, projectID",
+                "AFTER UPDATE OF title",
                 "chat_threads",
                 "unhex(replace(new.id, '-', ''))",
                 "chat",
-                "WHEN new.title IS NOT old.title OR new.projectID IS NOT old.projectID"
+                "WHEN new.title IS NOT old.title"
             ),
             (
                 "item_insert",
@@ -125,15 +102,9 @@ enum ChatHistoryMigration {
         }
         try db.execute(sql: """
         CREATE TRIGGER chat_item_search_delete AFTER DELETE ON chat_items BEGIN
-            DELETE FROM search_documents_fts WHERE rowid IN
-                (SELECT id FROM search_documents WHERE kind = 'chat' AND sourceId = old.id);
-            DELETE FROM search_documents WHERE kind = 'chat' AND sourceId = old.id;
             DELETE FROM jobs_background WHERE indexKind = 'fts' AND targetKind = 'chatItem' AND targetKey = old.id;
         END;
         CREATE TRIGGER chat_search_delete AFTER DELETE ON chat_threads BEGIN
-            DELETE FROM search_documents_fts WHERE rowid IN
-                (SELECT id FROM search_documents WHERE kind = 'chat' AND chatThreadID = old.id);
-            DELETE FROM search_documents WHERE kind = 'chat' AND chatThreadID = old.id;
             DELETE FROM jobs_background WHERE indexKind = 'fts' AND targetKind = 'chat' AND targetKey = unhex(replace(old.id, '-', ''));
         END;
         """)

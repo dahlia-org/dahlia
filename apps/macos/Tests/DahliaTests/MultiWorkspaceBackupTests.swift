@@ -114,7 +114,7 @@ import GRDB
             }
             #expect(indexed > 0)
             let indexedChats = try await result.dbQueue.read { db in
-                try Int.fetchOne(db, sql: "SELECT COUNT(*) FROM search_documents WHERE kind = 'chat'") ?? 0
+                try Int.fetchOne(db, sql: "SELECT COUNT(*) FROM chat_search_documents") ?? 0
             }
             #expect(indexedChats == 2)
             try result.close()

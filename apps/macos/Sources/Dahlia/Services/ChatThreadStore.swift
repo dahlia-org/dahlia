@@ -79,6 +79,7 @@ struct ChatThreadStore: ChatItemStore, Sendable {
     }
 
     func appendItems(threadID: String, items: [JSONValue]) throws {
+        guard !items.isEmpty else { return }
         try dbQueue.write { db in
             try Self.append(items, threadID: threadID, in: db)
             try db.execute(sql: "UPDATE chat_threads SET updatedAt = ? WHERE id = ?", arguments: [Date(), threadID])

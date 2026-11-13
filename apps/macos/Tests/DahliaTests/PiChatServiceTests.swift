@@ -233,6 +233,30 @@ import Synchronization
         }
 
         @Test
+        func acceptedSteerSurvivesAProcessLossBeforeDelivery() async throws {
+            let fixture = try Self.fixture { transport in
+                _ = await transport.command("steer")
+                await transport.close()
+            }
+            defer { try? FileManager.default.removeItem(at: fixture.pi.rootURL) }
+            let thread = try await fixture.chat.startThread(model: nil, effort: "medium", workspaceID: .v7())
+            let handle = try await fixture.chat.beginTurn(
+                threadID: thread.id,
+                inputs: [.text("Question")],
+                model: nil,
+                effort: "medium",
+                approvalMethod: .ask,
+                expectedProvider: .local
+            )
+            try await fixture.chat.steer(threadID: thread.id, turnID: "x", inputs: [.text("Steer")])
+            await #expect(throws: (any Error).self) {
+                for try await _ in handle.events {}
+            }
+            #expect(try fixture.store.messagePage(threadID: thread.id).messages.map(\.text) == ["Question", "Steer"])
+            #expect(try fixture.store.thread(id: thread.id, accountID: "local").status == "failed")
+        }
+
+        @Test
         func stoppedTurnKeepsTheUserMessageAndRecordsAnInterruption() async throws {
             let fixture = try Self.fixture { transport in
                 _ = await transport.command("abort")

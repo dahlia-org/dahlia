@@ -82,10 +82,9 @@
                 WITH RECURSIVE numbers(n) AS (VALUES(1) UNION ALL SELECT n+1 FROM numbers WHERE n<2000)
                 INSERT INTO chat_threads(id, accountID, workspaceID, title, createdAt, updatedAt)
                 SELECT '00000000-0000-0000-0000-' || printf('%012d', n), 'local', ?, 'History', datetime('now'), datetime('now') FROM numbers;
-                INSERT INTO search_documents(kind, sourceId, workspace_id, sourceContentHash, indexGeneration, updatedAt, chatThreadID)
-                SELECT 'chat', unhex(replace(id, '-', '')), workspaceID, 'fixture', 1, updatedAt, id FROM chat_threads;
-                INSERT INTO search_documents_fts(rowid, description)
-                SELECT id, CASE WHEN chatThreadID = ? THEN 'common rareword' ELSE 'common' END FROM search_documents WHERE kind = 'chat';
+                INSERT INTO chat_search_documents(threadID) SELECT id FROM chat_threads;
+                INSERT INTO chat_search_fts(rowid, description)
+                SELECT id, CASE WHEN threadID = ? THEN 'common rareword' ELSE 'common' END FROM chat_search_documents;
                 UPDATE search_index_state SET phase = 'ready' WHERE indexKind = 'fts';
                 """, arguments: [workspaceID, expected])
             }
@@ -131,21 +130,14 @@
             )
             try store.createThread(thread, items: [ChatHistoryCodec.user([.text("alpha")]), ChatHistoryCodec.user([.text("beta alpha")])])
             await database.searchIndexer.drain()
-            let original = try await queue.read { db in
-                try Row.fetchAll(db, sql: "SELECT id, updatedAt FROM search_documents WHERE kind = 'chat'")
-                    .reduce(into: [Int64: String]()) { $0[$1["id"]] = $1["updatedAt"] }
-            }
+            let original = try await queue.read { try Set(Int64.fetchAll($0, sql: "SELECT id FROM chat_search_documents")) }
             #expect(original.count == 3)
             try store.appendItems(threadID: thread.id, items: [ChatHistoryCodec.user([.text("gamma")])])
             await database.searchIndexer.drain()
-            try await queue.read { db in
-                let rows = try Row.fetchAll(db, sql: "SELECT id, updatedAt FROM search_documents WHERE kind = 'chat'")
-                #expect(rows.count == 4)
-                for row in rows {
-                    let id: Int64 = row["id"]
-                    if let oldTime = original[id] { #expect(row["updatedAt"] as String == oldTime) }
-                }
-            }
+            // A new message adds one document and leaves the indexed ones in place.
+            let updated = try await queue.read { try Set(Int64.fetchAll($0, sql: "SELECT id FROM chat_search_documents")) }
+            #expect(updated.count == 4)
+            #expect(updated.isSuperset(of: original))
             try store.appendItems(threadID: thread.id, items: [.object(["type": .string("tool_result"), "result": .string("secret")])])
             #expect(try await queue
                 .read { try Int.fetchOne($0, sql: "SELECT count(*) FROM jobs_background WHERE targetKind IN ('chat', 'chatItem')") } == 0)
@@ -174,7 +166,7 @@
                 dbQueue: queue
             ).threads.isEmpty)
             try await database.searchIndexer.requestRebuild()
-            #expect(try await queue.read { try Int.fetchOne($0, sql: "SELECT count(*) FROM search_documents WHERE kind = 'chat'") } == 4)
+            #expect(try await queue.read { try Int.fetchOne($0, sql: "SELECT count(*) FROM chat_search_documents") } == 4)
             let betaItem = try #require(store.listItems(threadID: thread.id).first { $0.seq == 1 })
             _ = try await queue.write { try ChatItemRecord.deleteOne($0, key: betaItem.id) }
             #expect(try await MeetingRepository.searchChatPage(
@@ -184,7 +176,7 @@
                 dbQueue: queue
             ).threads.isEmpty)
             try store.deleteThread(id: thread.id)
-            #expect(try await queue.read { try Int.fetchOne($0, sql: "SELECT count(*) FROM search_documents WHERE kind = 'chat'") } == 0)
+            #expect(try await queue.read { try Int.fetchOne($0, sql: "SELECT count(*) FROM chat_search_documents") } == 0)
             #expect(try await queue
                 .read { try Int.fetchOne($0, sql: "SELECT count(*) FROM jobs_background WHERE targetKind IN ('chat', 'chatItem')") } == 0)
         }

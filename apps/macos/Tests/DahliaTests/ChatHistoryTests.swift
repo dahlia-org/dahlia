@@ -88,12 +88,18 @@
             }
             let revisionSQL = "SELECT indexRevision FROM search_index_state WHERE indexKind = 'fts'"
             let before = try await count(revisionSQL)
+            let meetingDocuments = try await count("SELECT COUNT(*) FROM search_documents")
             let record = thread()
             try store.createThread(record, items: [ChatHistoryCodec.user([.text("hello")])])
             try store.updateThread(id: record.id, title: "Renamed")
             await database.searchIndexer.drain()
-            #expect(try await count("SELECT COUNT(*) FROM search_documents WHERE kind = 'chat'") == 2)
+            #expect(try await count("SELECT COUNT(*) FROM chat_search_documents") == 2)
+            #expect(try await count("SELECT COUNT(*) FROM chat_search_fts WHERE chat_search_fts MATCH 'hello'") == 1)
+            // Meeting ranks depend on the whole table's statistics, so chat postings never enter it.
+            #expect(try await count("SELECT COUNT(*) FROM search_documents") == meetingDocuments)
+            #expect(try await count("SELECT COUNT(*) FROM search_documents_fts_vocab WHERE term = 'hello'") == 0)
             try store.deleteThread(id: record.id)
+            #expect(try await count("SELECT COUNT(*) FROM chat_search_fts WHERE chat_search_fts MATCH 'hello'") == 0)
             #expect(try await count(revisionSQL) == before)
         }
 
@@ -210,9 +216,8 @@
             try await queue.read { db throws in
                 #expect(try ChatThreadRecord.fetchCount(db) == 0)
                 #expect(try ChatItemRecord.fetchCount(db) == 0)
-                #expect(try Int.fetchOne(db, sql: "SELECT count(*) FROM search_documents WHERE kind = 'chat'") == 0)
-                #expect(try Int
-                    .fetchOne(db, sql: "SELECT count(*) FROM search_documents_fts WHERE search_documents_fts MATCH 'privatechatsecret'") == 0)
+                #expect(try Int.fetchOne(db, sql: "SELECT count(*) FROM chat_search_documents") == 0)
+                #expect(try Int.fetchOne(db, sql: "SELECT count(*) FROM chat_search_fts WHERE chat_search_fts MATCH 'privatechatsecret'") == 0)
             }
         }
 

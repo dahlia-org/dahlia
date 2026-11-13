@@ -48,8 +48,10 @@ actor PiChatService: CodexChatServicing {
     }
 
     /// A turn that has already ended keeps its outcome even when the status cannot be saved.
-    private func recordStatus(_ status: String, threadID: String, source: String) {
+    /// Steers Pi accepted but never delivered stay in history as the last messages.
+    private func recordStatus(_ status: String, threadID: String, source: String, undelivered steers: [JSONValue] = []) {
         do {
+            try history().appendItems(threadID: threadID, items: steers)
             try history().updateThread(id: threadID, status: status)
         } catch {
             ErrorReportingService.capture(error, context: ["source": source])
@@ -571,7 +573,9 @@ actor PiChatService: CodexChatServicing {
             }
             if sessions[threadID]?.connection === session.connection {
                 sessions[threadID] = nil
-                if session.turn != nil { recordStatus("failed", threadID: threadID, source: "chatHistoryFailure") }
+                if let turn = session.turn {
+                    recordStatus("failed", threadID: threadID, source: "chatHistoryFailure", undelivered: turn.pendingSteers)
+                }
                 finish(session.turn, error: PiRuntimeError.backendResetForSafety)
                 await runtime.close(session.connection)
             }
@@ -703,7 +707,9 @@ actor PiChatService: CodexChatServicing {
 
     private func closeSession(_ threadID: String) async {
         guard let session = sessions.removeValue(forKey: threadID) else { return }
-        if session.turn != nil { recordStatus("interrupted", threadID: threadID, source: "chatHistoryInterrupt") }
+        if let turn = session.turn {
+            recordStatus("interrupted", threadID: threadID, source: "chatHistoryInterrupt", undelivered: turn.pendingSteers)
+        }
         finish(session.turn, error: CancellationError())
         await runtime.close(session.connection)
     }
@@ -720,7 +726,9 @@ actor PiChatService: CodexChatServicing {
         } catch {
             guard sessions[threadID]?.connection === connection else { return }
             let session = sessions.removeValue(forKey: threadID)
-            if session?.turn != nil { recordStatus("failed", threadID: threadID, source: "chatHistoryFailure") }
+            if let turn = session?.turn {
+                recordStatus("failed", threadID: threadID, source: "chatHistoryFailure", undelivered: turn.pendingSteers)
+            }
             finish(session?.turn, error: error is CancellationError ? PiRuntimeError.backendResetForSafety : error)
             await runtime.close(connection)
         }

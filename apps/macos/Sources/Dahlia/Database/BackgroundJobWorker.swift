@@ -484,7 +484,7 @@ actor BackgroundJobWorker {
         for threadID in chatIDs {
             try checkCanContinue()
             if let id = UUID(uuidString: threadID) {
-                try await dbQueue.write { try indexChatDocument(id: id, generation: generation, in: $0) }
+                try await dbQueue.write { try indexChatDocument(id: id, in: $0) }
             }
             try await incrementRebuildProgress()
         }
@@ -501,7 +501,7 @@ actor BackgroundJobWorker {
             for item in items {
                 try checkCanContinue()
                 let id = item.id
-                try await dbQueue.write { try indexChatItemDocument(id: id, generation: generation, in: $0) }
+                try await dbQueue.write { try indexChatItemDocument(id: id, in: $0) }
                 try await incrementRebuildProgress()
             }
             lastChatItemRowID = items.last?.rowID ?? lastChatItemRowID
@@ -665,12 +665,11 @@ actor BackgroundJobWorker {
         guard let job = jobs.first else { return }
         switch job.targetKind {
         case "workspaceCleanup":
-            // An overwrite restore replaces the Workspace row but keeps its chats, which are not re-queued.
-            try await deleteDocuments(where: "workspace_id = ? AND kind <> 'chat'", arguments: [job.targetID])
+            try await deleteDocuments(where: "workspace_id = ?", arguments: [job.targetID])
         case "chat":
-            try await dbQueue.write { try indexChatDocument(id: job.targetID, generation: generation, in: $0) }
+            try await dbQueue.write { try indexChatDocument(id: job.targetID, in: $0) }
         case "chatItem":
-            try await dbQueue.write { try indexChatItemDocument(id: job.targetID, generation: generation, in: $0) }
+            try await dbQueue.write { try indexChatItemDocument(id: job.targetID, in: $0) }
         case "meeting":
             try await indexMeeting(id: job.targetID, generation: generation)
         case "meetingCleanup":
