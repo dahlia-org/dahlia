@@ -4,7 +4,7 @@
 
 ## Workspace 境界
 
-署名済み stdio helper `dahlia-mcp` は `--workspace <ws_TypeID>`（互換名 `--workspace-id`）指定時に参照範囲を固定する。未指定時はアプリに追加済みの全 Workspace を対象にし、選択中のアカウントとは連動しない。`list_workspaces` は名前・アカウント種別・保持状態を返す。query は任意の `workspace_id` で絞り込み、省略時は Workspace ごとの結果・cursor・取得失敗を返す。詳細 ID の実所属と cursor の Workspace、meeting、ordering identity を検証し、明示 scope を広げない。
+署名済み stdio helper `dahlia-mcp` は `--workspace <ws_TypeID>`（互換名 `--workspace-id`）指定時に参照範囲を固定する。`--account <UUID|local>` はその Mac のアカウント所属で範囲を制限し、Workspace 指定とは排他にする。Local は Server / Databricks のどちらにも属さない Workspace、UUID は `accounts.id` に対応する Server または Databricks アカウントの Workspace を対象にする。所属は操作時に検査し、追加・移動を反映する。不明・削除済みのアカウントでは失敗し、全件へ戻さない。未指定時はアプリに追加済みの全 Workspace を対象にし、選択中のアカウントとは連動しない。`list_workspaces` は名前・アカウント種別・登録に使う `account_id`・保持状態を返す。query は任意の `workspace_id` で絞り込み、省略時は Workspace ごとの結果・cursor・取得失敗を返す。詳細 ID の実所属と cursor の Workspace、meeting、ordering identity を検証し、明示 scope を広げない。
 
 既定は SQLite read-only、明示 `--write` が公開 write tool を有効にする。helper は migration や permission 変更をせず、初期化時の schema 検証でアプリ更新後の初回起動を必要とする。
 

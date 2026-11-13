@@ -53,6 +53,7 @@ public extension MeetingAccessStore {
 
                 let id = workspaceUUIDv7()
                 try database.write { db in
+                    if accountScope != nil { _ = try fetchWorkspace(in: db) }
                     try db.execute(
                         sql: """
                         INSERT INTO projects (
@@ -269,6 +270,7 @@ private extension MeetingAccessStore {
     }
 
     func workspaceWorkspace(in db: Database) throws -> WorkspaceWorkspace {
+        if accountScope != nil { _ = try fetchWorkspace(in: db) }
         let columns = try Set(String.fetchAll(db, sql: "SELECT name FROM pragma_table_info('projects')"))
         guard columns.isSuperset(of: ["parentProjectId", "name", "nameKey", "projectType", "revision"]) else {
             throw MeetingAccessError.databaseUpgradeRequired
@@ -444,6 +446,7 @@ private extension MeetingAccessStore {
         summaryUpdates: [SummaryExportUpdate]
     ) throws {
         try database.write { db in
+            if accountScope != nil { _ = try fetchWorkspace(in: db) }
             guard try Int.fetchOne(
                 db,
                 sql: "SELECT revision FROM projects WHERE id = ? AND workspace_id = ?",
@@ -636,6 +639,7 @@ private extension MeetingAccessStore {
         summaryUpdates: [SummaryExportUpdate]
     ) throws {
         try database.write { db in
+            if accountScope != nil { _ = try fetchWorkspace(in: db) }
             _ = try changedMeetingIDs(
                 expectations: expectations,
                 destinationProjectID: projectID,

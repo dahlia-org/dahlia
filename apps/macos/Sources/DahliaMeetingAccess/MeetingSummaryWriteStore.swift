@@ -358,6 +358,7 @@ extension MeetingAccessStore {
     func applySummaryUpdate(_ update: SummaryUpdate) throws -> SummaryMutationResult {
         try writingWorkspaceFile(update) {
             try database.write { db in
+                if accountScope != nil { _ = try fetchWorkspace(in: db) }
                 let staleExports = try commitSummaryUpdate(update, in: db)
                 return update.result(staleExports: staleExports)
             }
