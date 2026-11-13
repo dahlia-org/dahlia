@@ -8,7 +8,7 @@
 
     @MainActor
     struct ReleaseSchemaMigrationTests {
-        /// Migration identifiers shipped through v1.0.0, in registration order.
+        /// Migration identifiers shipped through v1.1.1, in registration order.
         /// Release preparation appends newly shipped identifiers. Never edit existing entries to make this pass:
         /// a mismatch means a shipped migration was renamed, reordered, or removed.
         private static let shippedMigrationIdentifiers = [
@@ -27,6 +27,7 @@
             "v55_serverContentRetention",
             "v56_screenshotTextControlCharacters",
             "v57_accountsTable",
+            "v58_searchDictionaries",
         ]
 
         @Test
