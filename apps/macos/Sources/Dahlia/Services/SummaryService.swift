@@ -17,13 +17,14 @@ enum SummaryService {
         noteText: String? = nil,
         screenshots: [MeetingScreenshotRecord] = [],
         recordingSessions: [RecordingSessionTimeline] = [],
-        generationSettings: SummaryGenerationSettings? = nil
+        generationSettings: SummaryGenerationSettings? = nil,
+        appServer: PiRuntimeService = .shared
     ) async throws -> GeneratedSummary {
         let generationSettings = generationSettings ?? .current()
         // Jobs persisted without captured preferences keep the input they had: every candidate.
         let screenshots = if let preferences = generationSettings.workspacePreferences {
             try await SummaryScreenshotSelection.select(
-                screenshots, settings: preferences, runtimeProvider: generationSettings.runtimeProvider
+                screenshots, settings: preferences, runtimeProvider: generationSettings.runtimeProvider, appServer: appServer
             )
         } else {
             screenshots
@@ -38,40 +39,53 @@ enum SummaryService {
             recordingSessions: recordingSessions
         ))
 
-        let service = PiRuntimeService.shared
         guard CodexRuntimeContextStore.shared.provider == generationSettings.runtimeProvider else {
             throw AIConfigurationError.providerChanged(generationSettings.runtimeProvider.displayName)
         }
-        let models = try await service.models()
+        let models = try await appServer.models()
+        let fallbackModel = generationSettings.workspacePreferences?.local.fallbackModel?.nilIfBlank.map {
+            PiRuntimeService.matchingModel($0, in: models)?.model ?? $0
+        }
         let selected = try? PiRuntimeService.resolvedModel(
-            for: .init(model: generationSettings.modelID, developerInstructions: "", inputs: [], outputSchema: Data()),
+            for: .init(
+                model: generationSettings.modelID,
+                requiresExactModel: fallbackModel != nil,
+                developerInstructions: "",
+                inputs: [],
+                outputSchema: Data()
+            ),
             in: models
         )
-        let effort = selected?.supportedReasoningEfforts.contains { $0.reasoningEffort == generationSettings.reasoningEffort } == true
-            ? generationSettings.reasoningEffort : selected?.defaultReasoningEffort ?? generationSettings.reasoningEffort
-        let responseText = try await service.generate(.init(
-            model: selected?.model ?? generationSettings.modelID,
-            requiresExactModel: true,
-            reasoningEffort: effort,
-            developerInstructions: systemPrompt,
-            inputs: inputs,
-            outputSchema: SummaryDocumentResponse.outputSchema
-        ), expectedProvider: generationSettings.runtimeProvider)
-
         let context = SummaryRenderContext(
             meetingId: promptContext.meetingId,
             createdAt: promptContext.recordedAt,
             screenshots: screenshots
         )
-        var document = try generatedDocument(from: responseText, context: context)
+        var document = try await GenerationModelFallback.run(
+            model: selected?.model ?? generationSettings.modelID, fallbackModel: fallbackModel
+        ) { model in
+            let selected = model.flatMap { PiRuntimeService.matchingModel($0, in: models) }
+            let effort = selected?.supportedReasoningEfforts.contains { $0.reasoningEffort == generationSettings.reasoningEffort } == true
+                ? generationSettings.reasoningEffort : selected?.defaultReasoningEffort ?? generationSettings.reasoningEffort
+            let responseText = try await appServer.generate(.init(
+                model: selected?.model ?? model,
+                requiresExactModel: true,
+                reasoningEffort: effort,
+                developerInstructions: systemPrompt,
+                inputs: inputs,
+                outputSchema: SummaryDocumentResponse.outputSchema
+            ), expectedProvider: generationSettings.runtimeProvider)
+            var document = try generatedDocument(from: responseText, context: context)
+            document.metadata = SummaryMetadata(
+                generatedBy: "local_codex",
+                inputTypes: ["context", "transcript"] + (screenshots.isEmpty ? [] : ["image"]) + (noteText?.isEmpty == false ? ["note"] : []),
+                detailLevel: SummaryDetailLevel.allCases.first { $0.instruction == generationSettings.detailLevelInstruction }?.rawValue,
+                outputLanguage: SummaryLanguage.allCases.first { $0.displayName == generationSettings.languageDisplayName }?.rawValue,
+                request: .init(model: selected?.model ?? model, reasoning: .init(effort: effort))
+            )
+            return document
+        }
         document.tags = resolvedTags(document.tags)
-        document.metadata = SummaryMetadata(
-            generatedBy: "local_codex",
-            inputTypes: ["context", "transcript"] + (screenshots.isEmpty ? [] : ["image"]) + (noteText?.isEmpty == false ? ["note"] : []),
-            detailLevel: SummaryDetailLevel.allCases.first { $0.instruction == generationSettings.detailLevelInstruction }?.rawValue,
-            outputLanguage: SummaryLanguage.allCases.first { $0.displayName == generationSettings.languageDisplayName }?.rawValue,
-            request: .init(model: selected?.model ?? generationSettings.modelID, reasoning: .init(effort: effort))
-        )
         let rendered = ObsidianMarkdownSummaryRenderer.render(document: document, context: context)
 
         return GeneratedSummary(
@@ -130,11 +144,36 @@ enum SummaryService {
             throw PiRuntimeError.invalidProtocolResponse
         }
         let document = document(from: response, context: context)
-        // A reply without a title or any section content would replace the saved summary with an empty one.
-        guard !document.title.isEmpty, document.sections.contains(where: { !$0.blocks.isEmpty }) else {
+        // Headings, references and Markdown placeholders alone must not replace the saved summary.
+        guard !document.title.isEmpty, response.sections.contains(where: { section in
+            section.blocks.contains(where: hasBodyText)
+        }) else {
             throw PiRuntimeError.emptyResponse
         }
         return document
+    }
+
+    private static func hasBodyText(_ block: SummaryDocumentResponse.BlockDTO) -> Bool {
+        let texts: [String]
+        switch block.type {
+        case "code": return block.content.text.rangeOfCharacter(from: .alphanumerics) != nil
+        case "paragraph", "quote": texts = [block.content.text]
+        case "bulleted_list", "numbered_list", "checklist": texts = block.items.map(\.text)
+        default: return false
+        }
+        return texts.contains { text in
+            let body = LegacyMarkdownSummaryParser.removingObsidianLinks(from: text)
+            guard let parsed = try? AttributedString(markdown: body) else { return false }
+            return parsed.runs.contains { run in
+                let isHeading = run.presentationIntent?.components.contains { component in
+                    if case .header = component.kind { return true }
+                    return false
+                } ?? false
+                return run.link == nil && run.imageURL == nil
+                    && !isHeading
+                    && String(parsed[run.range].characters).rangeOfCharacter(from: .alphanumerics) != nil
+            }
+        }
     }
 
     private static func document(from response: SummaryDocumentResponse, context: SummaryRenderContext) -> SummaryDocument {

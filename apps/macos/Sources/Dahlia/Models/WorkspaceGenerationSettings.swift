@@ -41,6 +41,7 @@ struct WorkspaceGenerationSettings: Codable, Equatable, Sendable {
         var enabled = true
         var model: String?
         var reasoningEffort: String?
+        var fallbackModel: String?
     }
 
     /// Retained only to decode older settings with a separate screenshot selection model.
@@ -52,6 +53,7 @@ struct WorkspaceGenerationSettings: Codable, Equatable, Sendable {
     struct LocalProcessing: Codable, Equatable, Sendable {
         var model = "gpt-5.6-luna"
         var reasoningEffort = "high"
+        var fallbackModel: String?
     }
 
     struct LegacyTranscription: Codable, Equatable, Sendable {

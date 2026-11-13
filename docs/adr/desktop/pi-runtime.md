@@ -99,7 +99,7 @@ sandbox の引数は Dahlia が `DAHLIA_PI_SANDBOX` で渡す。引数がない�
 Dahlia MCP は Pi の子のままで、コマンドは SQLite に書けず MCP にも届かないので、Dahlia のデータの変更は上記の承認方式に従う MCP の tool だけが行う。
 Pi の codemode（未有効）の script は Pi の process 内の QuickJS で動き、file system も network も持たない。script が呼ぶ tool には同じ制限（Seatbelt と MCP の承認）が掛かる。
 
-- 要約・画像解析・画像選別・モデル一覧・サインインは操作ごとに `pi --mode rpc --no-session --no-tools` を起動し、終了・取消・610秒期限で閉じる。自動再送はしない。
+- 要約・画像解析・画像選別・モデル一覧・サインインは操作ごとに `pi --mode rpc --no-session --no-tools` を起動し、終了・取消・610秒期限で閉じる。同じモデルへの自動再送はしない。要約・画像解析・画像選別は、利用者がフォールバックモデルを設定した場合だけ、生成失敗時にそのモデルを1回試す。
 - チャットは turn の開始時に thread ごとに1 process を起動し、turn 後はチャット画面が thread を開いている間だけ残す。履歴の表示や新規 thread の作成では起動しない。process が終了していれば次の turn で session file から開き直す。スラッシュ候補の取得は既存 process を使い、なければ同じチャット用 resource を読む `--no-session` の一時 process を取得完了・失敗・取消で閉じる。
 - アカウント切替は全 process を閉じ、切替先の agent directory の `models.json` を書き換える。実行中の要約は取消になり、次の操作で新しいアカウントの process を起動する。
 - OpenAI / Anthropic のサインイン・サインアウトは Local Account の process だけを閉じる。Databricks アカウントのサインアウトでは、そのワークスペースが Local Account に戻り、agent directory（チャット履歴を含む）は残して、そのアカウントの `auth.json` と環境変数の秘密値は消す。Dahlia account を削除すると、agent directory ごと消し、環境変数の秘密値も消す。
@@ -170,8 +170,7 @@ Unity Gateway があるアカウント（Databricks アカウントか、Databri
 （`databricks/system.ai.claude-haiku-5-5`）にする。画像解析はモデルを保存せず、一覧にある Haiku を最優先で選び、Haiku をオフにすると次の候補（Luna、なければ画像を受け付ける最初のモデル）を使う。切り替えると保存した一覧から
 `models.json` を書き直してキャッシュを捨て、`DahliaPiModelsDidChange` を通知する。チャットにはモデルが要るので、Databricks アカウントは自身の Gateway で最後の1つをオフにできない（追加した workspace は外せるので
 数えない。Local・Dahlia account はほかのモデルを持つので制限しない）。
-すべてオフにした Gateway は、モデルのない provider として `models.json` に残す（workspace と sign-in のため）。オフにしたモデルが保存されていた要約・チャットは先頭の利用可能モデルを使い、画像解析は保存したモデルが
-見つからないとして失敗する。
+すべてオフにした Gateway は、モデルのない provider として `models.json` に残す（workspace と sign-in のため）。オフにしたモデルが保存されていた要約は、フォールバックが設定されていればそのモデルを試し、未設定なら先頭の利用可能モデルを使う。チャットは先頭の利用可能モデルを使う。画像解析は保存したモデルが見つからない場合も設定したフォールバックを試し、未設定なら失敗する。
 
 サインインは extension の `/dahlia-login` が Pi の login を呼ぶ。Pi の extension API に login がないため
 非公開の `modelRegistry.runtime` を使い、Pi 更新時に回帰確認する。subscription の利用条件（OpenAI の
@@ -192,7 +191,14 @@ Dahlia・Databricks の GPT・Claude・Gemini）、extension が `ctx.model.api`
 Databricks の MLflow 経路（GLM・Kimi）は OpenAI Responses 形式でも strict schema を受け付けないので、prompt の
 schema だけで生成する。外した制約は Dahlia 側で守る（要約のタイトルと説明の長さ、タグの正規化、画像解析の件数と
 文字数）。Dahlia は返答を JSON object として検証し、型で decode できない返答・拒否・空・`stopReason` が `stop`
-以外は生成失敗にする。要約の Markdown fallback には流さない。
+以外は生成失敗にする。要約は非空の section・block を要求し、Action Items とは別に議論・決定・背景を本文へ書く。
+タイトルや見出し、画像、参照だけの返答や、本文が `_` などの記号だけの返答は不完全と判定する。
+不完全な返答は生成失敗とし、フォールバックがなければ既存の要約を保つ。
+要約の Markdown fallback には流さない。
+
+要約生成と画像解析には、それぞれモデルの直下に任意のフォールバックモデルを設定できる。既定は「なし」で、アカウントごと・この Mac の設定として保存し、要約ジョブの開始時に固定する。通常モデルの生成失敗・不正な JSON・本文欠落などを検知した場合、指定した別モデルを同じ入力・schema で1回だけ試す。要約の推論レベルは切り替え先が対応する値へ解決し、要約の metadata には実際に成功したモデルと推論レベルを記録する。取消・アカウント切替・Pi 未起動などの共通実行基盤の失敗では切り替えない。フォールバックも失敗すれば既存の要約を保ち、生成エラーを表示する。
+
+画像解析のフォールバックは検索用 OCR・caption と要約前の画像選別に共通で使用する。画像選別は全体90秒の期限内で実行し、両モデルの失敗・期限切れでは候補画像をすべて保持する既存の挙動を維持する。要約前の画像選別は推論レベル `medium`、OCR・caption は `low` 固定で実行する。画像解析モデルの用途はモデル行の i マークから表示する。
 
 ## チャットの実行と承認
 
