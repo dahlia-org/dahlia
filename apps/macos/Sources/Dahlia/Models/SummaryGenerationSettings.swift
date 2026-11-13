@@ -10,6 +10,7 @@ struct SummaryGenerationSettings: Codable, Equatable, Sendable {
     var accountConnectionID: UUID?
     var workspaceID: UUID?
     var workspacePreferences: WorkspaceGenerationSettings?
+    var customInstructions: String?
 
     var sourceAccountConnectionID: UUID? { accountConnectionID }
 
@@ -18,7 +19,8 @@ struct SummaryGenerationSettings: Codable, Equatable, Sendable {
         _: AppSettings = .shared,
         workspaceAISettings: WorkspaceAISettingsModel = .shared,
         detailLevel: SummaryDetailLevel? = nil,
-        workspace: WorkspaceRecord? = nil
+        workspace: WorkspaceRecord? = nil,
+        defaults: UserDefaults = .standard
     ) -> Self {
         let preferences = workspace.map { workspaceAISettings.generationSettings(for: $0) }
             ?? WorkspaceGenerationSettings()
@@ -30,7 +32,8 @@ struct SummaryGenerationSettings: Codable, Equatable, Sendable {
             runtimeProvider: CodexRuntimeProvider(workspace: workspace),
             accountConnectionID: workspace?.accountConnectionId,
             workspaceID: workspace?.id,
-            workspacePreferences: preferences
+            workspacePreferences: preferences,
+            customInstructions: AgentChatInstructions.loadForSummary(for: CodexRuntimeProvider(workspace: workspace), defaults: defaults)
         )
     }
 
@@ -40,7 +43,7 @@ struct SummaryGenerationSettings: Codable, Equatable, Sendable {
             modelID: modelID, reasoningEffort: reasoningEffort,
             detailLevelInstruction: detailLevel.instruction, languageDisplayName: languageDisplayName,
             runtimeProvider: runtimeProvider, accountConnectionID: accountConnectionID,
-            workspaceID: workspaceID, workspacePreferences: workspacePreferences
+            workspaceID: workspaceID, workspacePreferences: workspacePreferences, customInstructions: customInstructions
         )
     }
 
@@ -57,7 +60,7 @@ struct SummaryGenerationSettings: Codable, Equatable, Sendable {
             detailLevelInstruction: preferences.summary.detailLevel.instruction,
             languageDisplayName: preferences.outputLanguage.displayName,
             runtimeProvider: runtimeProvider, accountConnectionID: connectionID,
-            workspaceID: workspace?.id ?? workspaceID, workspacePreferences: preferences
+            workspaceID: workspace?.id ?? workspaceID, workspacePreferences: preferences, customInstructions: customInstructions
         )
     }
 }

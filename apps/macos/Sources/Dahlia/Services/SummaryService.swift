@@ -323,11 +323,14 @@ enum SummaryService {
     static func summaryGenerationInstructions(
         generationSettings: SummaryGenerationSettings
     ) -> String {
-        // カスタム instruction は一時的に無効化し、保存済みの選択にかかわらず既定値を使う。
+        // 旧テンプレートの選択にかかわらず既定値を使う。
         var sections = [
             AppSettings.defaultSummaryPrompt,
             codexInputTrustInstruction,
         ]
+        if let instructions = generationSettings.customInstructions?.nilIfBlank {
+            sections.append("# User's custom instructions for summary generation\n" + instructions)
+        }
         sections.append("# Detail Level\n\(generationSettings.detailLevelInstruction)")
         sections.append("# Language\nWrite the summary in \(generationSettings.languageDisplayName).")
         return sections.joined(separator: "\n\n") + codexStructuredInstruction
