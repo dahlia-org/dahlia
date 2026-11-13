@@ -26,23 +26,23 @@ extension MeetingRepository {
                     }
                     let tokens = try SearchFTS5Tokenizer.queryTokens(for: criteria.text, in: db)
                     guard !tokens.isEmpty else { return ([], false) }
-                    let ordered = try orderedQueryTokens(tokens, vocabulary: "chat_search_fts_vocab", in: db)
+                    let ordered = try orderedQueryTokens(tokens, vocabulary: "search_chat_documents_fts_vocab", in: db)
                     guard let seed = ordered.first, seed.estimatedDocuments > 0 else { return ([], false) }
                     let terms = ordered.map { "{title description} : " + $0.query }
                     let requirements = terms.dropFirst().map { _ in
                         """
-                        EXISTS (SELECT 1 FROM chat_search_documents d CROSS JOIN chat_search_fts
+                        EXISTS (SELECT 1 FROM search_chat_documents d CROSS JOIN search_chat_documents_fts
                             WHERE d.threadID = seeds.chatThreadID
-                                AND chat_search_fts.rowid = d.id AND chat_search_fts MATCH ?)
+                                AND search_chat_documents_fts.rowid = d.id AND search_chat_documents_fts MATCH ?)
                         """
                     }.joined(separator: " AND ")
                     // Start with the rarest token; check other words only in candidate Threads.
                     // CROSS JOIN keeps these rowid FTS probes from scanning global postings.
                     prefix = """
                     WITH seeds AS MATERIALIZED (
-                        SELECT d.threadID AS chatThreadID FROM chat_search_fts
-                        CROSS JOIN chat_search_documents d CROSS JOIN chat_threads scope
-                        WHERE chat_search_fts MATCH ? AND d.id = chat_search_fts.rowid
+                        SELECT d.threadID AS chatThreadID FROM search_chat_documents_fts
+                        CROSS JOIN search_chat_documents d CROSS JOIN chat_threads scope
+                        WHERE search_chat_documents_fts MATCH ? AND d.id = search_chat_documents_fts.rowid
                             AND scope.id = d.threadID
                             AND scope.workspaceID = ? AND scope.accountID = ?
                         GROUP BY d.threadID
@@ -50,10 +50,10 @@ extension MeetingRepository {
                         SELECT seeds.chatThreadID FROM seeds
                         \(requirements.isEmpty ? "" : "WHERE " + requirements)
                     ), hits AS MATERIALIZED (
-                        SELECT d.threadID AS chatThreadID, bm25(chat_search_fts) AS score
-                        FROM candidates CROSS JOIN chat_search_documents d CROSS JOIN chat_search_fts
+                        SELECT d.threadID AS chatThreadID, bm25(search_chat_documents_fts) AS score
+                        FROM candidates CROSS JOIN search_chat_documents d CROSS JOIN search_chat_documents_fts
                         WHERE d.threadID = candidates.chatThreadID
-                            AND chat_search_fts.rowid = d.id AND chat_search_fts MATCH ?
+                            AND search_chat_documents_fts.rowid = d.id AND search_chat_documents_fts MATCH ?
                     ), matches AS (
                         SELECT chatThreadID, MIN(score) AS score FROM hits GROUP BY chatThreadID
                     )
@@ -111,14 +111,14 @@ func indexChatItemDocument(id: UUID, in db: Database) throws {
 private func upsertChatDocument(threadID: String, itemID: UUID?, title: String, body: String, in db: Database) throws {
     var id = try Int64.fetchOne(
         db,
-        sql: "SELECT id FROM chat_search_documents WHERE threadID = ? AND itemID IS ?",
+        sql: "SELECT id FROM search_chat_documents WHERE threadID = ? AND itemID IS ?",
         arguments: [threadID, itemID]
     )
     if let id {
-        try db.execute(sql: "DELETE FROM chat_search_fts WHERE rowid = ?", arguments: [id])
+        try db.execute(sql: "DELETE FROM search_chat_documents_fts WHERE rowid = ?", arguments: [id])
     } else {
-        try db.execute(sql: "INSERT INTO chat_search_documents(threadID, itemID) VALUES (?, ?)", arguments: [threadID, itemID])
+        try db.execute(sql: "INSERT INTO search_chat_documents(threadID, itemID) VALUES (?, ?)", arguments: [threadID, itemID])
         id = db.lastInsertedRowID
     }
-    try db.execute(sql: "INSERT INTO chat_search_fts(rowid, title, description) VALUES (?, ?, ?)", arguments: [id, title, body])
+    try db.execute(sql: "INSERT INTO search_chat_documents_fts(rowid, title, description) VALUES (?, ?, ?)", arguments: [id, title, body])
 }

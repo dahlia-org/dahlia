@@ -46,20 +46,20 @@ enum ChatHistoryMigration {
         """)
         // Chat has its own full-text table: sharing one with meetings would shift their BM25 ranks on every message.
         try db.execute(sql: """
-        CREATE TABLE chat_search_documents (
+        CREATE TABLE search_chat_documents (
             id INTEGER PRIMARY KEY,
             threadID TEXT NOT NULL REFERENCES chat_threads(id) ON DELETE CASCADE,
             itemID BLOB UNIQUE REFERENCES chat_items(id) ON DELETE CASCADE
         );
-        CREATE UNIQUE INDEX chat_search_documents_title ON chat_search_documents(threadID) WHERE itemID IS NULL;
-        CREATE INDEX chat_search_documents_thread ON chat_search_documents(threadID);
-        CREATE VIRTUAL TABLE chat_search_fts USING fts5(
+        CREATE UNIQUE INDEX search_chat_documents_title ON search_chat_documents(threadID) WHERE itemID IS NULL;
+        CREATE INDEX search_chat_documents_thread ON search_chat_documents(threadID);
+        CREATE VIRTUAL TABLE search_chat_documents_fts USING fts5(
             title, description, content='', contentless_delete=1, detail=full, prefix='2 3',
             tokenize='dahlia_lindera_ipadic_v1'
         );
-        CREATE VIRTUAL TABLE chat_search_fts_vocab USING fts5vocab(chat_search_fts, row);
-        CREATE TRIGGER chat_search_documents_delete AFTER DELETE ON chat_search_documents BEGIN
-            DELETE FROM chat_search_fts WHERE rowid = old.id;
+        CREATE VIRTUAL TABLE search_chat_documents_fts_vocab USING fts5vocab(search_chat_documents_fts, row);
+        CREATE TRIGGER search_chat_documents_delete AFTER DELETE ON search_chat_documents BEGIN
+            DELETE FROM search_chat_documents_fts WHERE rowid = old.id;
         END;
         """)
         // The revision invalidates meeting search cursors. Chat is indexed on every message, so its jobs stay out of it.
@@ -72,9 +72,9 @@ enum ChatHistoryMigration {
             """)
         }
         for (name, timing, table, key, kind, condition) in [
-            ("thread_insert", "AFTER INSERT", "chat_threads", "unhex(replace(new.id, '-', ''))", "chat", ""),
+            ("threads_insert", "AFTER INSERT", "chat_threads", "unhex(replace(new.id, '-', ''))", "chat", ""),
             (
-                "thread_update",
+                "threads_update",
                 "AFTER UPDATE OF title",
                 "chat_threads",
                 "unhex(replace(new.id, '-', ''))",
@@ -82,7 +82,7 @@ enum ChatHistoryMigration {
                 "WHEN new.title IS NOT old.title"
             ),
             (
-                "item_insert",
+                "items_insert",
                 "AFTER INSERT",
                 "chat_items",
                 "new.id",
@@ -91,7 +91,7 @@ enum ChatHistoryMigration {
             ),
         ] {
             try db.execute(sql: """
-            CREATE TRIGGER chat_search_\(name) \(timing) ON \(table) \(condition) BEGIN
+            CREATE TRIGGER search_queue_chat_\(name) \(timing) ON \(table) \(condition) BEGIN
                 INSERT INTO jobs_background(indexKind, targetKind, targetKey, availableAt, updatedAt)
                 VALUES('fts', '\(kind)', \(key), unixepoch('subsec'), unixepoch('subsec'))
                 ON CONFLICT(indexKind, targetKind, targetKey) DO UPDATE SET
@@ -101,10 +101,10 @@ enum ChatHistoryMigration {
             """)
         }
         try db.execute(sql: """
-        CREATE TRIGGER chat_item_search_delete AFTER DELETE ON chat_items BEGIN
+        CREATE TRIGGER search_queue_chat_items_delete AFTER DELETE ON chat_items BEGIN
             DELETE FROM jobs_background WHERE indexKind = 'fts' AND targetKind = 'chatItem' AND targetKey = old.id;
         END;
-        CREATE TRIGGER chat_search_delete AFTER DELETE ON chat_threads BEGIN
+        CREATE TRIGGER search_queue_chat_threads_delete AFTER DELETE ON chat_threads BEGIN
             DELETE FROM jobs_background WHERE indexKind = 'fts' AND targetKind = 'chat' AND targetKey = unhex(replace(old.id, '-', ''));
         END;
         """)
