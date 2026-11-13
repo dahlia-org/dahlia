@@ -42,7 +42,7 @@ struct SearchSettingsView: View {
                         }
                     }
                     .buttonStyle(.dahlia())
-                    .disabled(model.isRequestingRebuild || dictionaries.isBusy || !dictionaries.isLoaded || !dictionaries.isUserDictionaryValid)
+                    .disabled(model.isRequestingRebuild || !dictionaries.canRequestRebuild)
                 }
 
                 if let error = model.lastErrorCode {

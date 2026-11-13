@@ -62,11 +62,13 @@ import GRDB
             } == generation + 1)
         }
 
-        @Test
-        func explicitRebuildRereadsTheFixedSourceAndRejectsInvalidEdits() async throws {
+        @Test(arguments: [false, true], [false, true])
+        func explicitRebuildRereadsTheFixedSourceAndRejectsInvalidEdits(invalidOnRefresh: Bool, repairWithEmptyCSV: Bool) async throws {
             let database = try AppDatabaseManager(path: ":memory:")
             let model = SearchDictionarySettingsModel(database: database)
+            #expect(!model.canRequestRebuild)
             await model.refresh()
+            #expect(model.canRequestRebuild)
             #expect(model.isLoaded)
             #expect(model.isUserDictionaryValid)
             let source = URL(filePath: model.userDictionaryPath)
@@ -85,14 +87,40 @@ import GRDB
             } == state)
 
             try Data("invalid".utf8).write(to: source)
-            await #expect(throws: SearchDictionaryError.invalidUserDictionary) { try await model.rebuildConfiguration() }
+            if invalidOnRefresh {
+                await model.refresh()
+            } else {
+                await #expect(throws: SearchDictionaryError.invalidUserDictionary) { try await model.rebuildConfiguration() }
+            }
             #expect(!model.isUserDictionaryValid)
             #expect(model.errorMessage != nil)
             #expect(!model.isBusy)
-            try Data().write(to: source)
-            await model.refresh()
+            #expect(model.canRequestRebuild)
+            #expect(try await database.dbQueue.read { db in
+                try Int.fetchOne(db, sql: "SELECT indexGeneration FROM search_index_state WHERE indexKind = 'fts'")
+            } == state)
+            let repaired = repairWithEmptyCSV ? Data() : Data("修正語,カスタム名詞,シュウセイゴ\n".utf8)
+            try repaired.write(to: source)
+            // Retry through the same enabled action, without refreshing or reopening Settings.
+            let retry = try await model.rebuildConfiguration()
             #expect(model.isUserDictionaryValid)
             #expect(model.errorMessage == nil)
+            #expect(model.canRequestRebuild)
+            if repairWithEmptyCSV {
+                #expect(retry == nil)
+            } else {
+                let selected = try #require(retry)
+                #expect(try Data(contentsOf: URL(filePath: #require(selected.userDictionaryPath))) == repaired)
+            }
+            #expect(try await database.dbQueue.read { db in
+                try Int.fetchOne(db, sql: "SELECT indexGeneration FROM search_index_state WHERE indexKind = 'fts'")
+            } == state)
+            let index = SearchSettingsModel(database: database, failureReporter: { _ in })
+            await index.rebuildFullTextIndex(dictionaryConfiguration: retry)
+            #expect(index.lastErrorCode == nil)
+            #expect(try await database.dbQueue.read { db in
+                try Int.fetchOne(db, sql: "SELECT indexGeneration FROM search_index_state WHERE indexKind = 'fts'")
+            } == state.map { $0 + 1 })
         }
     }
 #endif

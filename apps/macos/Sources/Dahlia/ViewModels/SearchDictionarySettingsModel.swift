@@ -27,6 +27,7 @@ final class SearchDictionarySettingsModel {
 
     var isAvailable: Bool { service != nil }
     var needsRebuild: Bool { configuration != activeConfiguration }
+    var canRequestRebuild: Bool { isLoaded && !isBusy }
 
     func refresh() async {
         guard let service else { return }
