@@ -30,9 +30,11 @@
             window.contentView = host
             defer { window.close() }
             window.makeKeyAndOrderFront(nil)
+            // Keep the real pointer from revealing actions over the reserved time area.
+            window.setFrameOrigin(NSPoint(x: -10000, y: -10000))
             host.layoutSubtreeIfNeeded()
 
-            // The time's reserved space must select the event, including when actions replace it on hover.
+            // The reserved time area selects the event while the hover actions are hidden.
             try click(x: 250, in: window)
             #expect(await pollUntil(timeout: .seconds(2)) { selections == 1 })
             #expect(joins == 0)
