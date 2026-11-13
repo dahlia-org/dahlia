@@ -90,6 +90,7 @@ struct CodexChatConversationView: View {
     let showsStandaloneThinking: Bool
     let meetingNamesByID: [UUID: String]
     let meetingReferencesByID: [UUID: CodexChatMeetingReference]
+    let contentMaxWidth: CGFloat?
 
     @Environment(\.isChatSidebarResizing) private var isChatSidebarResizing
     @State private var isFollowingLatest = true
@@ -155,6 +156,8 @@ struct CodexChatConversationView: View {
             }
             .padding(.horizontal, CodexChatDesign.contentHorizontalPadding)
             .padding(.vertical, 12)
+            .frame(maxWidth: contentMaxWidth ?? .infinity)
+            .frame(maxWidth: .infinity)
         }
         .defaultScrollAnchor(.bottom, for: .initialOffset)
         .defaultScrollAnchor(isFollowingLatest ? .bottom : nil, for: .sizeChanges)
