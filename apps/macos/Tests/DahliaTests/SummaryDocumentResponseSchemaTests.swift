@@ -32,6 +32,8 @@ import Foundation
             let items = try #require(actionItems["items"] as? [String: Any])
 
             #expect(required.contains("sections"))
+            #expect(sections["minItems"] as? Int == 1)
+            #expect(blocks["minItems"] as? Int == 1)
             #expect(title["minLength"] as? Int == 1)
             #expect(title["maxLength"] as? Int == 120)
             #expect(required.contains("description"))
@@ -93,11 +95,103 @@ import Foundation
         }
 
         @Test
+        func actionItemsWithAPlaceholderBodyDoNotCountAsASummary() {
+            let context = SummaryRenderContext(meetingId: .v7(), createdAt: .now)
+            for text in ["_", "---", "…", "** **"] {
+                let reply = #"{"title":"Weekly sync","sections":[{"heading":"Summary","blocks":[{"type":"paragraph","content":{"text":"\#(text)","transcript_ref":"00:04:05"}}]}],"action_items":[{"title":"Send notes","assignee":"Team"}]}"#
+                #expect(throws: PiRuntimeError.emptyResponse) {
+                    try SummaryService.generatedDocument(from: reply, context: context)
+                }
+            }
+        }
+
+        @Test
+        func headingsAndTranscriptReferencesDoNotSubstituteForBodyText() {
+            let context = SummaryRenderContext(meetingId: .v7(), createdAt: .now)
+            for block in [
+                #"{"type":"heading","content":{"text":"Decisions"}}"#,
+                #"{"type":"unsupported","content":{"text":"A chart"}}"#,
+                #"{"type":"paragraph","content":{"text":"[[meeting#00:04:05|00:04:05]]"}}"#,
+                #"{"type":"bulleted_list","items":[{"text":"_","transcript_ref":"00:04:05"}]}"#,
+            ] {
+                #expect(throws: PiRuntimeError.emptyResponse) {
+                    try SummaryService.generatedDocument(
+                        from: #"{"title":"T","sections":[{"heading":"Summary","blocks":[\#(block)]}]}"#,
+                        context: context
+                    )
+                }
+            }
+        }
+
+        @Test
+        func shortMultilingualBodyAndListsRemainValid() throws {
+            let context = SummaryRenderContext(meetingId: .v7(), createdAt: .now)
+            for block in [
+                #"{"type":"paragraph","content":{"text":"承認済み"}}"#,
+                #"{"type":"bulleted_list","items":[{"text":"Ship it"}]}"#,
+                #"{"type":"numbered_list","items":[{"text":"123"}]}"#,
+                #"{"type":"checklist","items":[{"text":"مرحبا"}]}"#,
+                #"{"type":"paragraph","content":{"text":"Shipped [release notes](https://example.com/notes)."}}"#,
+                #"{"type":"paragraph","content":{"text":"Approved [[meeting-note|Decision]]."}}"#,
+                #"{"type":"paragraph","content":{"text":"Shipped ![chart](https://example.com/chart.png)."}}"#,
+                #"{"type":"code","language":"markdown","content":{"text":"[label](https://example.com)"}}"#,
+            ] {
+                let document = try SummaryService.generatedDocument(
+                    from: #"{"title":"T","sections":[{"heading":"","blocks":[\#(block)]}]}"#,
+                    context: context
+                )
+                #expect(document.sections.first?.blocks.count == 1)
+            }
+        }
+
+        @Test(arguments: ["paragraph", "quote", "bulleted_list", "numbered_list", "checklist"], [
+            "[00:04:05](https://example.com/recording)",
+            "<https://example.com/recording>",
+            "https://example.com/recording",
+            "![Slide](https://example.com/slide.png)",
+            "[00:04:05][recording]\n\n[recording]: https://example.com/video",
+            "![[missing-slide.png|A chart]]",
+            "[[meeting-note|Recording]]",
+            "# Heading",
+        ])
+        func markdownReferencesAndImagesAloneAreNotBodyText(type: String, text: String) throws {
+            let encoded = try String(decoding: JSONEncoder().encode(text), as: UTF8.self)
+            let block = ["bulleted_list", "numbered_list", "checklist"].contains(type)
+                ? #"{"type":"\#(type)","items":[{"text":\#(encoded)}]}"#
+                : #"{"type":"\#(type)","content":{"text":\#(encoded)}}"#
+            #expect(throws: PiRuntimeError.emptyResponse) {
+                try SummaryService.generatedDocument(
+                    from: #"{"title":"T","sections":[{"heading":"Summary","blocks":[\#(block)]}]}"#,
+                    context: .init(meetingId: .v7(), createdAt: .now)
+                )
+            }
+        }
+
+        @Test(arguments: ["known", "unknown", "invalid"])
+        func imageOnlyRepliesFailWithoutChangingLegacyCaptionDecoding(kind: String) throws {
+            let screenshot = MeetingScreenshotRecord(id: .v7(), meetingId: .v7(), capturedAt: .now, imageData: Data(), mimeType: "image/png")
+            let context = SummaryRenderContext(meetingId: screenshot.meetingId, createdAt: .now, screenshots: [screenshot])
+            let imageID = switch kind {
+            case "known": screenshot.id.uuidString
+            case "unknown": UUID.v7().uuidString
+            default: "unknown"
+            }
+            let response = #"{"title":"T","sections":[{"heading":"","blocks":[{"type":"image","image_id":"\#(imageID)","content":{"text":"A chart"}}]}]}"#
+            #expect(throws: PiRuntimeError.emptyResponse) { try SummaryService.generatedDocument(from: response, context: context) }
+            if kind != "known" {
+                let legacy = SummaryService.decodeSummaryDocument(from: response, context: context)
+                #expect(legacy.sections.first?.blocks == [.paragraph("A chart")])
+            }
+        }
+
+        @Test
         func aReplyWithoutTitleOrContentFailsInsteadOfReplacingTheSummary() throws {
             let context = SummaryRenderContext(meetingId: .v7(), createdAt: .now, screenshots: [])
             for reply in [
                 #"{"title":"","sections":[]}"#,
                 #"{"title":"T","sections":[]}"#,
+                #"{"title":"T","description":"Tasks to follow up","sections":[],"action_items":[{"title":"Send notes"}]}"#,
+                #"{"title":"T","sections":[{"heading":"Summary","blocks":[{"type":"bulleted_list","items":[]}]}],"action_items":[{"title":"Send notes"}]}"#,
                 #"{"title":"","sections":[{"heading":"H","blocks":[{"type":"paragraph","content":{"text":"Body"}}]}]}"#,
                 #"{"title":"T","sections":[{"heading":"H","blocks":[{"type":"paragraph","content":{"text":"  "}}]}]}"#,
             ] {

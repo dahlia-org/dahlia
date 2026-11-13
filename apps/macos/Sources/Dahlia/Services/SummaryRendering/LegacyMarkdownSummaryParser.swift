@@ -243,6 +243,13 @@ enum LegacyMarkdownSummaryParser {
         )
     }
 
+    /// Generation validation needs the text outside references, before compatibility rendering can turn captions into prose.
+    static func removingObsidianLinks(from text: String) -> String {
+        [obsidianImageEmbedRegex, obsidianLinkRegex].reduce(text) { text, expression in
+            expression.stringByReplacingMatches(in: text, range: NSRange(text.startIndex..., in: text), withTemplate: "")
+        }
+    }
+
     private static func replaceObsidianLinks(in text: String) -> (text: String, refs: [TranscriptReference]) {
         let matches = obsidianLinkRegex.matches(in: text, range: NSRange(text.startIndex..., in: text))
         guard !matches.isEmpty else { return (text, []) }

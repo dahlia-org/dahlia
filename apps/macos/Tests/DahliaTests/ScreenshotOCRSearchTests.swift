@@ -19,7 +19,7 @@ import Synchronization
             let database = try makeDatabase(screenshotAnalyzer: analyzer)
             let workspace = makeWorkspace()
             var account = AccountInferenceSettings(workspace: workspace, defaults: defaults)
-            account.imageAnalysis = .init(enabled: enabled, model: "selected-vision-model")
+            account.imageAnalysis = .init(enabled: enabled, model: "selected-vision-model", fallbackModel: "fallback-vision-model")
             let captured = account
             let worker = BackgroundJobWorker(
                 dbQueue: database.dbQueue,
@@ -44,6 +44,7 @@ import Synchronization
             }
             await worker.drain()
             #expect(await analyzer.models == (enabled ? ["selected-vision-model"] : []))
+            #expect(await analyzer.fallbackModels == (enabled ? ["fallback-vision-model"] : []))
             #expect(try await database.dbQueue.read { db in
                 try Int.fetchOne(db, sql: "SELECT COUNT(*) FROM jobs_background WHERE targetKind = 'screenshotAnalysis'")
             } == 0)
@@ -1458,6 +1459,7 @@ import Synchronization
         let text: String
         private(set) var runtimeProviders: [UUID: CodexRuntimeProvider] = [:]
         private(set) var models: [String] = []
+        private(set) var fallbackModels: [String?] = []
 
         init(text: String) {
             self.text = text
@@ -1467,6 +1469,7 @@ import Synchronization
             for screenshot in screenshots {
                 runtimeProviders[screenshot.id] = screenshot.runtimeProvider
                 models.append(screenshot.model ?? CodexScreenshotAnalysisService.defaultModels[0])
+                fallbackModels.append(screenshot.fallbackModel)
             }
             return screenshots.map {
                 ScreenshotAnalysis(screenshotID: $0.id, ocrText: text, caption: "画像の説明")

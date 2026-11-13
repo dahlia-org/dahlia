@@ -1136,7 +1136,6 @@
 "The selected AI account is not ready. Open Accounts and Workspaces in Settings and finish its configuration." = "選択した AI アカウントの準備が完了していません。設定の「アカウントとワークスペース」を開き、設定を完了してください。";
 "This chat uses %@. Start a new chat to use the current account." = "このチャットは %@ を使用しています。現在のアカウントを使用するには新しいチャットを開始してください。";
 "Pi returned no available models. Try again." = "Pi から利用可能なモデルが返されませんでした。再試行してください。";
-"Models are loaded from Pi." = "モデルは Pi から取得します。";
 "The saved model is used when available; otherwise the first available model is selected." = "保存済みモデルが利用可能なら使用し、それ以外は一覧の先頭のモデルを選択します。";
 
 /* Codex Chat */
@@ -1995,3 +1994,6 @@
 
 "Move to Account" = "アカウントを移動";
 "Local Export Folder" = "ローカル書き出しフォルダ";
+
+"Fallback Model" = "フォールバックモデル";
+"Try this model once if generation fails or returns an invalid response. None disables fallback." = "生成に失敗した場合や不正な応答が返った場合に、このモデルを1回試します。「なし」で無効になります。";

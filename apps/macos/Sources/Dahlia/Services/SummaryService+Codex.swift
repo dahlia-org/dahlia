@@ -22,7 +22,9 @@ extension SummaryService {
     Your response MUST be a JSON object with exactly five keys:
     - "title": a concise title for this meeting/transcript (one line, no quotes, maximum 120 characters)
     - "description": a concise one-line description that helps identify the meeting (maximum 240 characters)
-    - "sections": an array of summary body sections that exclude action items. Each section has:
+    - "sections": a non-empty array of summary body sections covering the discussion, decisions, rationale, and unresolved questions.
+      Always write a substantive summary body, even when the meeting has many action items. Never use empty sections or placeholders such as "_".
+      Keep task assignments in action_items; this does not exclude the topics and decisions behind those tasks from the summary body. Each section has:
       - "heading": the section heading, or an empty string for an intro section
       - "blocks": an array of content blocks in reading order
     - "tags": an array of relevant short English tags for categorization (empty array if none)

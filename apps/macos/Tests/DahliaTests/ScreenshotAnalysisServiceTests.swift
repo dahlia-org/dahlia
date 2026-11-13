@@ -9,6 +9,38 @@ import Foundation
     @MainActor
     struct ScreenshotAnalysisServiceTests {
         @Test
+        func invalidCaptionUsesTheConfiguredFallbackWithTheSameImage() async throws {
+            let screenshotID = UUID.v7()
+            let log = TestPiTransportLog()
+            let pi = TestPiRuntime.generating(
+                models: ["primary", "fallback"].map { TestPiTransport.model(provider: "openai", id: $0) },
+                replyForModel: { model in
+                    let caption = model == "openai/primary" ? "   " : "A chart"
+                    return #"{"screenshots":[{"screenshot_id":"\#(screenshotID)","ocr_text":"Revenue","caption":"\#(caption)"}]}"#
+                }, log: log
+            )
+            let result = try await CodexScreenshotAnalysisService(appServer: pi.service).analyze([
+                .init(
+                    id: screenshotID,
+                    imageData: Data([1]),
+                    mimeType: "image/png",
+                    runtimeProvider: .local,
+                    model: "openai/primary",
+                    fallbackModel: "openai/fallback"
+                ),
+            ])
+
+            #expect(result.first?.caption == "A chart")
+            #expect(pi.argument(after: "--model") == "openai/fallback")
+            #expect(pi.argument(after: "--thinking") == "low")
+            let transports = log.all
+            try #require(transports.count == 3)
+            let primary = await transports[1].command("prompt")
+            let fallback = await transports[2].command("prompt")
+            #expect(primary["images"] == fallback["images"])
+        }
+
+        @Test
         func analysisAndSummarySendStoredImageBytes() async throws {
             let context = try #require(CGContext(
                 data: nil, width: 2560, height: 1280, bitsPerComponent: 8, bytesPerRow: 0,
