@@ -7,6 +7,46 @@
     @MainActor
     struct SetupTourTests {
         @Test
+        func pendingAccountSetupBlocksTourNavigationAndDismissal() async {
+            let workspace = WorkspaceRecord(
+                id: .v7(), path: nil, name: "Existing", createdAt: .now, lastOpenedAt: .now
+            )
+            let model = SetupTourModel(mode: .manual, currentWorkspace: workspace)
+            #expect(model.canContinue)
+            #expect(model.canDismiss)
+
+            model.isAccountSetupInProgress = true
+            #expect(!model.canContinue)
+            #expect(!model.canDismiss)
+            model.advance()
+            await model.advanceFromAccount { _ in
+                Issue.record("Pending workspace choice must not advance the original account")
+                return true
+            }
+            #expect(model.currentStep == .account)
+            #expect(model.selectedDatabricksConnectionID == nil)
+
+            // Explicit cancellation releases the original account without changing it.
+            model.isAccountSetupInProgress = false
+            #expect(model.canContinue)
+            #expect(model.canDismiss)
+            #expect(model.selectedDatabricksConnectionID == nil)
+
+            // Explicit completion releases the lock before advancing with the chosen account.
+            model.isAccountSetupInProgress = true
+            let connectionID = UUID.v7()
+            model.selectAccountConnection(nil, databricks: connectionID)
+            #expect(!model.canContinue)
+            model.isAccountSetupInProgress = false
+            await model.advanceFromAccount { account in
+                #expect(account == .databricks(connectionID: connectionID))
+                return true
+            }
+            #expect(model.currentStep == .workingLanguages)
+            #expect(model.selectedDatabricksConnectionID == connectionID)
+        }
+
+        @Test
         func missingPiIsOfferedBeforeProvidersForEveryAccount() async {
             for account in [CodexRuntimeProvider.local, .databricks(connectionID: .v7()), .dahlia(connectionID: .v7())] {
                 let model = SetupTourModel(mode: .initial, currentWorkspace: nil)

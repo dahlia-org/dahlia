@@ -134,6 +134,8 @@ struct DahliaApp: App {
                         showsLocalAccount: !workspaceManagementModel.workspaces.contains {
                             $0.accountConnectionId == nil && $0.databricksConnectionId == nil
                         },
+                        workspaceManagementModel: workspaceManagementModel,
+                        canTransferWorkspace: viewModel.canSwitchWorkspace,
                         onCancel: cancelDahliaSignIn,
                         onContinueWithDatabricks: { continueFromSignIn(databricks: $0) },
                         onContinueLocally: { continueFromSignIn(databricks: nil) }
@@ -481,12 +483,11 @@ struct DahliaApp: App {
     /// `databricks` is the signed-in workspace's account to open; nil opens the Local Account.
     private func continueFromSignIn(databricks: UUID?) {
         mainWindowNavigation.dismissDahliaSignIn()
-        MainSidebarFooterView.selectLocalAccount(
-            databricks: databricks,
-            workspaces: workspaceManagementModel.workspaces,
-            currentWorkspace: AppSettings.shared.currentWorkspace,
-            onSelectWorkspace: { _ = openWorkspace($0) }
-        )
+        Task {
+            if let workspace = await WorkspaceAISettingsModel.shared.accountWorkspace(databricksConnectionID: databricks) {
+                _ = openWorkspace(workspace)
+            }
+        }
     }
 
     private func cancelDahliaSignIn() {

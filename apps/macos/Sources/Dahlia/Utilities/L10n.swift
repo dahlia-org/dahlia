@@ -1673,6 +1673,19 @@ enum L10n { // swiftlint:disable:this type_body_length
     static var calendar: String { String(localized: "Calendar", bundle: bundle) }
     static var meetingLinks: String { String(localized: "Meeting Links", bundle: bundle) }
     static var cloudStorage: String { String(localized: "Cloud Storage", bundle: bundle) }
+    static var accountWorkspaceSetupTitle: String { String(localized: "Choose a workspace", bundle: bundle) }
+    static var accountWorkspaceSetupDescription: String { String(
+        localized: "Move an existing workspace to the account you just signed in to. Its meetings and files stay on this Mac. Chat history stays with the original account.",
+        bundle: bundle
+    ) }
+    static var accountWorkspaceSetupPrompt: String { String(localized: "Choose the workspace to use with this account.", bundle: bundle) }
+    static var accountWorkspaceCreateOption: String { String(localized: "New workspace (Default)", bundle: bundle) }
+    static var accountWorkspaceTransfer: String { String(localized: "Move existing workspace", bundle: bundle) }
+    static var accountWorkspaceTransferUnavailable: String { String(localized: "Stop recording before transferring a workspace.", bundle: bundle) }
+    static var accountWorkspaceCreateDescription: String { String(localized: "To start fresh, create a new workspace named Default.", bundle: bundle)
+    }
+
+    static var accountWorkspaceCreate: String { String(localized: "Create new workspace", bundle: bundle) }
     static var workspace: String { String(localized: "Workspace", bundle: bundle) }
     static var currentWorkspace: String { String(localized: "Current Workspace", bundle: bundle) }
     static var mcp: String { String(localized: "MCP", bundle: bundle) }

@@ -1957,3 +1957,13 @@
 
 "setup.piDescription" = "Pi is needed for AI features such as chat and summaries. Pi was not found. Install it under Dahlia’s management to continue setting up AI.";
 "setup.piSkipDescription" = "Choose Continue to set this up later. You can install Pi or change which Pi to use in Settings → Dahlia AI.";
+
+/* Workspace selection after signing in to a new account */
+"Choose a workspace" = "Choose a workspace";
+"Move an existing workspace to the account you just signed in to. Its meetings and files stay on this Mac. Chat history stays with the original account." = "Move an existing workspace to the account you just signed in to. Its meetings and files stay on this Mac. Chat history stays with the original account.";
+"Move existing workspace" = "Move existing workspace";
+"Stop recording before transferring a workspace." = "Stop recording before transferring a workspace.";
+"To start fresh, create a new workspace named Default." = "To start fresh, create a new workspace named Default.";
+"Create new workspace" = "Create new workspace";
+"Choose the workspace to use with this account." = "Choose the workspace to use with this account.";
+"New workspace (Default)" = "New workspace (Default)";

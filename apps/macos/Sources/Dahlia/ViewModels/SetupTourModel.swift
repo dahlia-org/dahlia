@@ -9,6 +9,7 @@ final class SetupTourModel {
 
     private(set) var currentStep: SetupTourStep
     private(set) var isCompleting = false
+    var isAccountSetupInProgress = false
     private(set) var isCheckingPi = false
     private(set) var needsPiSetup = false
     private(set) var errorMessage: String?
@@ -68,11 +69,15 @@ final class SetupTourModel {
     }
 
     var canGoBack: Bool {
-        currentStep != .account && !isCompleting && !isCheckingPi
+        currentStep != .account && !isCompleting && !isCheckingPi && !isAccountSetupInProgress
     }
 
     var canContinue: Bool {
-        !isCompleting && !isCheckingPi && (currentStep != .account || isAccountSelectionConfirmed)
+        !isCompleting && !isCheckingPi && !isAccountSetupInProgress && (currentStep != .account || isAccountSelectionConfirmed)
+    }
+
+    var canDismiss: Bool {
+        mode == .manual && !isCompleting && !isAccountSetupInProgress
     }
 
     var visibleSteps: [SetupTourStep] {

@@ -107,7 +107,7 @@ struct SetupTourView: View {
                         }
                         .buttonStyle(.plain)
                         .menuIndicator(.hidden)
-                        .disabled(isInstallingPi)
+                        .disabled(isInstallingPi || model.isAccountSetupInProgress)
                         .fixedSize()
                         .onHover { isLanguageMenuHovered = $0 }
                         .accessibilityLabel(L10n.appLanguage)
@@ -131,7 +131,7 @@ struct SetupTourView: View {
                             )
                             .onHover { isCloseHovered = $0 }
                             .accessibilityLabel(L10n.close)
-                            .disabled(model.isCompleting || isInstallingPi)
+                            .disabled(!model.canDismiss || isInstallingPi)
                         }
                     }
                     .padding(.top, 8)
@@ -165,7 +165,7 @@ struct SetupTourView: View {
         .background(Color(nsColor: .windowBackgroundColor))
         .accessibilityElement(children: .contain)
         .windowDismissBehavior(
-            model.mode == .initial || model.isCompleting || accountController.isBusy || isInstallingPi ? .disabled : .automatic
+            !model.canDismiss || accountController.isBusy || isInstallingPi ? .disabled : .automatic
         )
     }
 
@@ -176,9 +176,12 @@ struct SetupTourView: View {
             // Dahlia Cloud and Server sign-in are hidden for now; existing connections stay usable from Settings.
             DatabricksSignInView(
                 isEmbedded: true,
+                workspaceManagementModel: workspaceManagementModel,
+                canTransferWorkspace: canComplete(),
                 onCancel: {},
                 onContinueWithDatabricks: continueWithDatabricks,
-                onContinueLocally: continueWithLocalAccount
+                onContinueLocally: continueWithLocalAccount,
+                onInteractionStateChange: { model.isAccountSetupInProgress = $0 }
             )
             .disabled(model.isCheckingPi)
             .overlay {
@@ -249,6 +252,7 @@ struct SetupTourView: View {
     }
 
     private func dismissTour() {
+        guard model.canDismiss, !isInstallingPi else { return }
         accountController.cancelAccountTask()
         mainWindowNavigation.dismissSetupTour()
     }

@@ -85,6 +85,32 @@
             #expect(try await service.connections() == [saved])
         }
 
+        @Test(arguments: [false, true]) @MainActor
+        func signInDistinguishesNewAccountsFromReauthentication(alreadyConnected: Bool) async throws {
+            let existing = DatabricksConnection(id: UUID(), host: Self.host)
+            let memory = DatabricksTestStorage(connection: alreadyConnected ? existing : nil)
+            let session = makeSession { request in
+                request.url!.path.contains(".well-known") ? (404, "") : (200, Self.token)
+            }
+            defer { session.invalidateAndCancel() }
+            let service = DatabricksOAuthService(session: session, storage: memory.storage, authorize: browser { url in
+                URL(string: "http://127.0.0.1/?code=code&state=\(query(url)["state"]!)")!
+            })
+            let controller = DatabricksAccountController(service: service)
+
+            let id = try #require(await controller.signIn(workspaceURL: Self.host))
+
+            #expect(controller.isNewAccount == !alreadyConnected)
+            if alreadyConnected { #expect(id == existing.id) }
+            #expect(!controller.isBusy)
+            #expect(controller.errorMessage == nil)
+            #expect(try await service.connections().count == 1)
+
+            // A failed later attempt must not retain the new-account state.
+            #expect(await controller.signIn(workspaceURL: "http://example.com") == nil)
+            #expect(!controller.isNewAccount)
+        }
+
         @Test(arguments: [true, false])
         func pkceAndDiscoveryFallback(discovery: Bool) async throws {
             let memory = DatabricksTestStorage()
