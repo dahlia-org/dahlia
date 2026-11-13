@@ -1976,3 +1976,13 @@
 "A secure connection could not be established. Check your network and certificate settings." = "A secure connection could not be established. Check your network and certificate settings.";
 "A network connection failed. Check your network or proxy settings and try again." = "A network connection failed. Check your network or proxy settings and try again.";
 "A file could not be read or saved. Check disk space and installation-folder permissions." = "A file could not be read or saved. Check disk space and installation-folder permissions.";
+
+/* Workspace selection after signing in to a new account */
+"Choose a workspace" = "Choose a workspace";
+"Move an existing workspace to the account you just signed in to. Its meetings and files stay on this Mac. Chat history stays with the original account." = "Move an existing workspace to the account you just signed in to. Its meetings and files stay on this Mac. Chat history stays with the original account.";
+"Move existing workspace" = "Move existing workspace";
+"Stop recording before transferring a workspace." = "Stop recording before transferring a workspace.";
+"To start fresh, create a new workspace named Default." = "To start fresh, create a new workspace named Default.";
+"Create new workspace" = "Create new workspace";
+"Choose the workspace to use with this account." = "Choose the workspace to use with this account.";
+"New workspace (Default)" = "New workspace (Default)";

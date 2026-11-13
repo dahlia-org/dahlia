@@ -39,6 +39,7 @@
             }
             #expect(selected?.id == available.workspaceId)
             #expect(model.workspaces.count == 2)
+            #expect(model.workspaceTransferCandidates(toDatabricks: .v7()).isEmpty)
         }
 
         @Test
@@ -91,6 +92,78 @@
             // Removing the account returns its workspaces to the Local Account through the foreign key.
             try await database.dbQueue.write { _ = try DahliaAccountConnectionRecord.deleteOne($0, key: connectionID) }
             #expect(try await connections() == [nil, nil])
+        }
+
+        @Test(arguments: [false, true])
+        func transferredWorkspaceIsReadyBeforeOpeningTheNewAccount(fromDatabricks: Bool) async throws {
+            let database = try AppDatabaseManager(path: ":memory:")
+            let model = WorkspaceManagementModel()
+            await model.configure(appDatabase: database)
+            let repository = MeetingRepository(dbQueue: database.dbQueue)
+            let sourceAccount = DahliaAccountConnectionRecord(
+                DatabricksConnection(id: .v7(), host: "https://source.example.com"), createdAt: .now
+            )
+            let destination = DahliaAccountConnectionRecord(
+                DatabricksConnection(id: .v7(), host: "https://destination.example.com"), createdAt: .now
+            )
+            try await database.dbQueue.write { db in
+                try sourceAccount.insert(db)
+                try destination.insert(db)
+            }
+            let source = try #require(await model.createWorkspace(
+                named: "Existing meetings", databricksConnectionID: fromDatabricks ? sourceAccount.id : nil
+            ))
+            let meeting = MeetingRecord(
+                id: .v7(), workspaceId: source.id, projectId: nil, name: "Meeting", createdAt: .now, updatedAt: .now
+            )
+            try await database.dbQueue.write { try meeting.insert($0) }
+            #expect(model.workspaceTransferCandidates(toDatabricks: destination.id).map(\.id) == [source.id])
+
+            #expect(await model.moveWorkspace(source, toDatabricks: destination.id))
+
+            // The sign-in callback must see the new account immediately, before the database observer delivers.
+            let moved = try #require(model.workspaces.first(where: { $0.id == source.id }))
+            #expect(moved.databricksConnectionId == destination.id)
+            #expect(model.workspaceTransferCandidates(toDatabricks: destination.id).isEmpty)
+            let placeholder = WorkspaceRecord(
+                id: .v7(), path: nil, name: "Default", createdAt: .now, lastOpenedAt: .distantPast,
+                databricksConnectionId: destination.id
+            )
+            let opened = try await repository.accountWorkspace(databricksConnectionID: destination.id, creating: placeholder)
+            #expect(opened.id == source.id)
+            #expect(opened.name == source.name)
+            #expect(try await repository.fetchAllWorkspacesAsync().count == 1)
+            #expect(try await database.dbQueue.read { try MeetingRecord.fetchOne($0, key: meeting.id)?.workspaceId } == source.id)
+            #expect(await model.moveWorkspace(moved, toDatabricks: fromDatabricks ? sourceAccount.id : nil))
+        }
+
+        @Test
+        func newAccountWithoutTransferCreatesDefaultAndKeepsExistingWorkspace() async throws {
+            let database = try AppDatabaseManager(path: ":memory:")
+            let model = WorkspaceManagementModel()
+            await model.configure(appDatabase: database)
+            let source = try #require(await model.createWorkspace(named: "Keep local"))
+            let account = DahliaAccountConnectionRecord(
+                DatabricksConnection(id: .v7(), host: "https://new.example.com"), createdAt: .now
+            )
+            try await database.dbQueue.write { try account.insert($0) }
+            let suite = "DatabricksWorkspaceSetupTests.\(UUID())"
+            let defaults = try #require(UserDefaults(suiteName: suite))
+            defer { defaults.removePersistentDomain(forName: suite) }
+            let settings = WorkspaceAISettingsModel(
+                setupDefaults: defaults, activateRuntime: { _ in },
+                databricksService: DatabricksOAuthService(storage: DatabricksTestStorage().storage)
+            )
+            settings.configure(dbQueue: database.dbQueue)
+
+            let created = try #require(await settings.accountWorkspace(databricksConnectionID: account.id))
+            #expect(created.name == "Default")
+            #expect(created.id != source.id)
+            #expect(created.databricksConnectionId == account.id)
+            #expect(await settings.accountWorkspace(databricksConnectionID: account.id)?.id == created.id)
+            let saved = try await MeetingRepository(dbQueue: database.dbQueue).fetchAllWorkspacesAsync()
+            #expect(saved.count == 2)
+            #expect(saved.first(where: { $0.id == source.id })?.databricksConnectionId == nil)
         }
 
         @Test

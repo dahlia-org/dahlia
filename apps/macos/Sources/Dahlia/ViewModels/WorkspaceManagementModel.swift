@@ -330,12 +330,19 @@ final class WorkspaceManagementModel {
         }
     }
 
+    func workspaceTransferCandidates(toDatabricks connectionID: UUID) -> [WorkspaceRecord] {
+        workspaces.filter { $0.accountConnectionId == nil && $0.databricksConnectionId != connectionID }
+    }
+
     /// Moves a local workspace between the Local and Databricks accounts. Its data stays on this Mac either way.
     func moveWorkspace(_ workspace: WorkspaceRecord, toDatabricks connectionID: UUID?) async -> Bool {
         guard workspace.accountConnectionId == nil, let repository else { return false }
         guard workspace.databricksConnectionId != connectionID else { return true }
         do {
             guard try await repository.updateWorkspaceDatabricksConnection(id: workspace.id, connectionID: connectionID) else { return false }
+            if let index = workspaces.firstIndex(where: { $0.id == workspace.id }) {
+                workspaces[index].databricksConnectionId = connectionID
+            }
         } catch {
             presentError(L10n.workspaceOperationFailed, error: error, source: "moveWorkspaceToDatabricks")
             return false

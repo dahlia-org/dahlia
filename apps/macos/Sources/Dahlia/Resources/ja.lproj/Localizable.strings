@@ -1976,3 +1976,13 @@
 "A secure connection could not be established. Check your network and certificate settings." = "安全な接続を確立できませんでした。ネットワークと証明書の設定を確認してください。";
 "A network connection failed. Check your network or proxy settings and try again." = "通信に失敗しました。ネットワークやプロキシの設定を確認して再試行してください。";
 "A file could not be read or saved. Check disk space and installation-folder permissions." = "ファイルを読み書きできませんでした。ディスクの空き容量とインストール先のアクセス権を確認してください。";
+
+/* Workspace selection after signing in to a new account */
+"Choose a workspace" = "ワークスペースを選択";
+"Move an existing workspace to the account you just signed in to. Its meetings and files stay on this Mac. Chat history stays with the original account." = "既存のワークスペースをサインインしたアカウントへ移動できます。ミーティングやファイルはこの Mac に保持されます。チャット履歴は元のアカウントに残ります。";
+"Move existing workspace" = "既存ワークスペースを移動";
+"Stop recording before transferring a workspace." = "録音を停止してからワークスペースを移管してください。";
+"To start fresh, create a new workspace named Default." = "新しく始める場合は、Default ワークスペースを作成します。";
+"Create new workspace" = "新規作成";
+"Choose the workspace to use with this account." = "このアカウントで使用するワークスペースを選択してください。";
+"New workspace (Default)" = "新規作成（Default）";

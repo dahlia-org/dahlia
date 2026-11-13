@@ -6,6 +6,7 @@ import Observation
 @Observable
 final class DatabricksAccountController {
     private(set) var isBusy = false
+    private(set) var isNewAccount = false
     private(set) var errorMessage: String?
     private let service: DatabricksOAuthService
 
@@ -15,10 +16,13 @@ final class DatabricksAccountController {
         guard !isBusy else { return nil }
         isBusy = true
         errorMessage = nil
+        isNewAccount = false
         defer { isBusy = false }
         do {
+            let existingIDs = try await Set(service.connections().map(\.id))
             let connection = try await service.signIn(workspaceURL: workspaceURL)
             try Task.checkCancellation()
+            isNewAccount = !existingIDs.contains(connection.id)
             return connection.id
         } catch is CancellationError {
             return nil
