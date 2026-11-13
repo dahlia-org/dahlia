@@ -1828,7 +1828,6 @@
 "Pi %@ installed by Dahlia" = "Dahlia がインストールした Pi %@";
 "Installed Pi %@." = "Pi %@ をインストールしました。";
 "Pi %@ is the latest version." = "Pi %@ は最新です。";
-"Could not download Pi. Check your network connection and try again." = "Pi をダウンロードできませんでした。ネットワーク接続を確認して、もう一度お試しください。";
 
 
 "settings.dataProtection" = "データ保護";
@@ -1962,3 +1961,23 @@
 
 "setup.piDescription" = "Pi はチャットや要約などの AI 機能に必要です。Pi が見つからないため、Dahlia の管理下にインストールしてください。";
 "setup.piSkipDescription" = "「続ける」で後回しにできます。後から「設定 → Dahlia AI」でインストールや切り替えができます。";
+
+"Pi installation failed — %@: %@" = "Pi のインストールに失敗しました — %@：%@";
+"Release information" = "リリース情報の取得";
+"Verification" = "ファイルの検証";
+"Extraction" = "ファイルの展開";
+"Installation activation" = "インストール先への保存・切替";
+"GitHub returned an error. Try again later." = "GitHub がエラーを返しました。時間を置いて再試行してください。";
+"GitHub has limited requests from this network. Wait before trying again, or use another network." = "GitHub がこのネットワークからのアクセスを制限しています。時間を置くか、別のネットワークで再試行してください。";
+"The server returned an unexpected response. Try again later." = "サーバーから予期しない応答が返されました。時間を置いて再試行してください。";
+"The Pi release information is invalid. Try again later." = "Pi のリリース情報が不正です。時間を置いて再試行してください。";
+"This Pi release has no macOS Apple Silicon download. Try again later." = "この Pi リリースには macOS Apple Silicon 用のファイルがありません。時間を置いて再試行してください。";
+"This Pi release has no SHA-256 checksum. Try again later." = "この Pi リリースには SHA-256 検証情報がありません。時間を置いて再試行してください。";
+"The downloaded file failed SHA-256 verification. Download it again; if this continues, check your network." = "ダウンロードしたファイルの SHA-256 が一致しません。再試行し、繰り返す場合はネットワークを確認してください。";
+"The downloaded archive could not be extracted. Check available disk space and try again." = "ダウンロードしたアーカイブを展開できませんでした。ディスクの空き容量を確認して再試行してください。";
+"The extracted archive has no executable Pi. Try downloading it again." = "展開したアーカイブに実行可能な Pi がありません。再ダウンロードしてください。";
+"The request timed out. Check your network connection and try again." = "通信がタイムアウトしました。ネットワーク接続を確認して再試行してください。";
+"There is no internet connection. Connect to the internet and try again." = "インターネットに接続されていません。接続してから再試行してください。";
+"A secure connection could not be established. Check your network and certificate settings." = "安全な接続を確立できませんでした。ネットワークと証明書の設定を確認してください。";
+"A network connection failed. Check your network or proxy settings and try again." = "通信に失敗しました。ネットワークやプロキシの設定を確認して再試行してください。";
+"A file could not be read or saved. Check disk space and installation-folder permissions." = "ファイルを読み書きできませんでした。ディスクの空き容量とインストール先のアクセス権を確認してください。";

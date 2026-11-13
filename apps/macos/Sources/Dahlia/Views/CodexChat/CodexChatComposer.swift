@@ -55,6 +55,7 @@ struct CodexChatComposer: View {
                         CodexChatAddPanel(
                             windowBounds: bounds,
                             showsMeetingPicker: showsMeetingPicker,
+                            showsConnectors: session.backendThreadID == nil && session.messages.isEmpty,
                             meetingReferences: suggestions,
                             highlightedMeetingID: highlightedMeetingID,
                             mcpSettings: mcpSettings,

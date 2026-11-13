@@ -1828,7 +1828,6 @@
 "Pi %@ installed by Dahlia" = "Pi %@ installed by Dahlia";
 "Installed Pi %@." = "Installed Pi %@.";
 "Pi %@ is the latest version." = "Pi %@ is the latest version.";
-"Could not download Pi. Check your network connection and try again." = "Could not download Pi. Check your network connection and try again.";
 
 
 "settings.dataProtection" = "Data Protection";
@@ -1962,3 +1961,23 @@
 
 "setup.piDescription" = "Pi is needed for AI features such as chat and summaries. Pi was not found. Install it under Dahlia’s management to continue setting up AI.";
 "setup.piSkipDescription" = "Choose Continue to set this up later. You can install Pi or change which Pi to use in Settings → Dahlia AI.";
+
+"Pi installation failed — %@: %@" = "Pi installation failed — %@: %@";
+"Release information" = "Release information";
+"Verification" = "Verification";
+"Extraction" = "Extraction";
+"Installation activation" = "Installation activation";
+"GitHub returned an error. Try again later." = "GitHub returned an error. Try again later.";
+"GitHub has limited requests from this network. Wait before trying again, or use another network." = "GitHub has limited requests from this network. Wait before trying again, or use another network.";
+"The server returned an unexpected response. Try again later." = "The server returned an unexpected response. Try again later.";
+"The Pi release information is invalid. Try again later." = "The Pi release information is invalid. Try again later.";
+"This Pi release has no macOS Apple Silicon download. Try again later." = "This Pi release has no macOS Apple Silicon download. Try again later.";
+"This Pi release has no SHA-256 checksum. Try again later." = "This Pi release has no SHA-256 checksum. Try again later.";
+"The downloaded file failed SHA-256 verification. Download it again; if this continues, check your network." = "The downloaded file failed SHA-256 verification. Download it again; if this continues, check your network.";
+"The downloaded archive could not be extracted. Check available disk space and try again." = "The downloaded archive could not be extracted. Check available disk space and try again.";
+"The extracted archive has no executable Pi. Try downloading it again." = "The extracted archive has no executable Pi. Try downloading it again.";
+"The request timed out. Check your network connection and try again." = "The request timed out. Check your network connection and try again.";
+"There is no internet connection. Connect to the internet and try again." = "There is no internet connection. Connect to the internet and try again.";
+"A secure connection could not be established. Check your network and certificate settings." = "A secure connection could not be established. Check your network and certificate settings.";
+"A network connection failed. Check your network or proxy settings and try again." = "A network connection failed. Check your network or proxy settings and try again.";
+"A file could not be read or saved. Check disk space and installation-folder permissions." = "A file could not be read or saved. Check disk space and installation-folder permissions.";
