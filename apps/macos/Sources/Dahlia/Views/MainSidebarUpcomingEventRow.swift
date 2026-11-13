@@ -52,9 +52,10 @@ struct MainSidebarUpcomingEventRow: View {
                     }
                     .foregroundStyle(event.calendarColorHex.map(Color.init(hex:)) ?? Color.accentColor)
                     .frame(width: 12)
+                    .opacity(event.isAttending ? 1 : 0.45)
                     .accessibilityHidden(true)
 
-                    Text(event.title)
+                    Text(CalendarEventTitle.attributed(event.title, for: event))
                         .lineLimit(1)
 
                     Spacer(minLength: 0)

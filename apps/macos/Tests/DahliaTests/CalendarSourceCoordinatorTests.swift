@@ -43,6 +43,7 @@ import GRDB
                 includesAllDayEvents: true,
                 includesEventsWithoutOtherAttendees: true,
                 includesEventsWithoutConferenceURI: true,
+                includesUnconfirmedEvents: true,
                 includesDeclinedEvents: true,
                 includesOutOfOfficeEvents: true
             )

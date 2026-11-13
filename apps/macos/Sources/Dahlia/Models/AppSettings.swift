@@ -554,6 +554,7 @@ final class AppSettings: ObservableObject {
     @AppStorage("includesAllDayCalendarEvents") var includesAllDayCalendarEvents = false
     @AppStorage("includesCalendarEventsWithoutOtherAttendees") var includesCalendarEventsWithoutOtherAttendees = true
     @AppStorage("includesCalendarEventsWithoutConferenceURI") var includesCalendarEventsWithoutConferenceURI = true
+    @AppStorage("includesUnconfirmedCalendarEvents") var includesUnconfirmedCalendarEvents = false
     @AppStorage("includesDeclinedCalendarEvents") var includesDeclinedCalendarEvents = false
     @AppStorage("includesOutOfOfficeCalendarEvents") var includesOutOfOfficeCalendarEvents = false
     @AppStorage("menuBarCalendarEnabled") var menuBarCalendarEnabled = true
@@ -575,6 +576,7 @@ final class AppSettings: ObservableObject {
             includesAllDayEvents: includesAllDayCalendarEvents,
             includesEventsWithoutOtherAttendees: includesCalendarEventsWithoutOtherAttendees,
             includesEventsWithoutConferenceURI: includesCalendarEventsWithoutConferenceURI,
+            includesUnconfirmedEvents: includesUnconfirmedCalendarEvents,
             includesDeclinedEvents: includesDeclinedCalendarEvents,
             includesOutOfOfficeEvents: includesOutOfOfficeCalendarEvents
         )

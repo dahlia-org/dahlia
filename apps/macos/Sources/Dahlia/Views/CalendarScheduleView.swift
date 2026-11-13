@@ -364,9 +364,10 @@ private struct CalendarScheduleEventRow: View {
                     Circle()
                         .fill(event.calendarColorHex.map(Color.init(hex:)) ?? Color.accentColor)
                         .frame(width: 9, height: 9)
+                        .opacity(event.isAttending ? 1 : 0.45)
 
                     VStack(alignment: .leading, spacing: 4) {
-                        Text(event.title)
+                        Text(CalendarEventTitle.attributed(event.title, for: event))
                             .font(.dahliaHeadline)
                             .foregroundStyle(DahliaDesign.primaryTextColor)
                             .lineLimit(1)

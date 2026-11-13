@@ -17,6 +17,7 @@ import Foundation
             #expect(!filter.includes(makeEvent(isAllDay: true)))
             #expect(filter.includes(makeEvent(hasOtherAttendees: false)))
             #expect(filter.includes(makeEvent(conferenceURI: nil)))
+            #expect(!filter.includes(makeEvent(isAttending: false)))
             #expect(!filter.includes(makeEvent(isDeclined: true)))
             #expect(!filter.includes(makeEvent(isOutOfOffice: true)))
         }
@@ -64,8 +65,25 @@ import Foundation
                 .includes(makeEvent(hasOtherAttendees: false)))
             #expect(CalendarEventFilter(includesEventsWithoutConferenceURI: true)
                 .includes(makeEvent(conferenceURI: nil)))
+            #expect(CalendarEventFilter(includesUnconfirmedEvents: true).includes(makeEvent(isAttending: false)))
             #expect(CalendarEventFilter(includesDeclinedEvents: true).includes(makeEvent(isDeclined: true)))
             #expect(CalendarEventFilter(includesOutOfOfficeEvents: true).includes(makeEvent(isOutOfOffice: true)))
+        }
+
+        @Test(arguments: [false, true], [false, true])
+        func filtersUnconfirmedAndDeclinedEventsIndependently(
+            includesUnconfirmed: Bool,
+            includesDeclined: Bool
+        ) {
+            let filter = CalendarEventFilter(
+                includesUnconfirmedEvents: includesUnconfirmed,
+                includesDeclinedEvents: includesDeclined
+            )
+
+            #expect(filter.includes(makeEvent(isAttending: true)))
+            #expect(filter.includes(makeEvent(isAttending: false)) == includesUnconfirmed)
+            #expect(filter.includes(makeEvent(isDeclined: true)) == includesDeclined)
+            #expect(!filter.includes(makeEvent(isAllDay: true, isAttending: true)))
         }
 
         @Test(arguments: [
@@ -86,6 +104,7 @@ import Foundation
             isAllDay: Bool = false,
             hasOtherAttendees: Bool = true,
             isDeclined: Bool = false,
+            isAttending: Bool = true,
             isOutOfOffice: Bool = false,
             conferenceURI: URL? = URL(string: "https://meet.example.com/room")
         ) -> CalendarEvent {
@@ -103,6 +122,7 @@ import Foundation
                 isAllDay: isAllDay,
                 hasOtherAttendees: hasOtherAttendees,
                 isDeclined: isDeclined,
+                isAttending: isAttending,
                 isOutOfOffice: isOutOfOffice,
                 conferenceURI: conferenceURI
             )

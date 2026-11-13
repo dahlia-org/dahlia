@@ -28,7 +28,11 @@ struct MenuBarLabel: View {
             if settings.menuBarCalendarEnabled,
                let calendarText {
                 Label {
-                    Text(calendarText)
+                    if let event = agenda.featuredEvent {
+                        Text(CalendarEventTitle.attributed(calendarText, for: event))
+                    } else {
+                        Text(calendarText)
+                    }
                 } icon: {
                     if isListening {
                         Image(systemName: "record.circle.fill")

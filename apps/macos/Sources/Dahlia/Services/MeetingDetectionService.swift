@@ -152,6 +152,7 @@ final class MeetingDetectionService: ObservableObject {
             settings.includesAllDayCalendarEvents.description,
             settings.includesCalendarEventsWithoutOtherAttendees.description,
             settings.includesCalendarEventsWithoutConferenceURI.description,
+            settings.includesUnconfirmedCalendarEvents.description,
             settings.includesDeclinedCalendarEvents.description,
             settings.includesOutOfOfficeCalendarEvents.description,
             settings.appLanguageRawValue,

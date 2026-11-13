@@ -649,6 +649,8 @@
 "Include events with no attendees other than you." = "自分以外の参加者がいないイベントを含めます。";
 "Events without a meeting URL" = "会議 URL がないイベント";
 "Include events that do not have a supported meeting URL." = "対応している会議 URL がないイベントを含めます。";
+"Unconfirmed events" = "参加表明していないイベント";
+"Include events you have not accepted, except declined events." = "参加を表明していないイベントを含めます。辞退済みのイベントは含みません。";
 "Declined events" = "辞退済みのイベント";
 "Include events you declined." = "自分が辞退したイベントを含めます。";
 "OOO / OOTO events" = "OOO / OOTO のイベント";
