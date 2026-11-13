@@ -11,7 +11,7 @@ import Foundation
         @Test
         func presetSkillsAreBundledInAgentSkills() {
             let urls = PiBundle.presetSkillURLs()
-            #expect(urls.map(\.lastPathComponent).sorted() == ["meeting-reviewer", "projects-optimizer", "workspace-backup"])
+            #expect(urls.map(\.lastPathComponent).sorted() == ["meeting-reviewer", "projects-optimizer", "skill-creator", "workspace-backup"])
             for url in urls {
                 #expect(url.deletingLastPathComponent().lastPathComponent == "AgentSkills")
                 #expect(FileManager.default.fileExists(atPath: url.appending(path: "SKILL.md").path))

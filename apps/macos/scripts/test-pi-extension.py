@@ -434,9 +434,10 @@ def package_resources(pi):
                        capture_output=True, check=True, timeout=20)
 
         def commands(mode):
+            bundled = ["--skill", str(ROOT / "apps/macos/Sources/Dahlia/AgentSkills/skill-creator")] if mode in ("chat", "skills") else []
             result = subprocess.run(
                 [pi, "--mode", "rpc", "--no-extensions", "-e", str(EXTENSION), "--no-skills",
-                 "--no-context-files", "--no-prompt-templates", "--no-themes", "--no-approve", "--no-session", "--no-tools"],
+                 "--no-context-files", "--no-prompt-templates", "--no-themes", "--no-approve", "--no-session", "--no-tools", *bundled],
                 input='{"id":"commands","type":"get_commands"}\n', text=True, capture_output=True,
                 cwd=root, env=dict(env, DAHLIA_PI_MODE=mode), check=True, timeout=20)
             records = [json.loads(line) for line in result.stdout.splitlines()]
@@ -446,11 +447,11 @@ def package_resources(pi):
 
         for mode in ("chat", "skills"):
             names = commands(mode)
-            assert {"skill:learned", "skill:packaged", "package-prompt"} <= names, names
+            assert {"skill:learned", "skill:packaged", "skill:skill-creator", "package-prompt"} <= names, names
             assert "skill:unrelated" not in names and not marker.exists(), names
         for mode in ("control", "summary"):
             names = commands(mode)
-            assert not {"skill:learned", "skill:packaged", "package-prompt"} & names and not marker.exists(), names
+            assert not {"skill:learned", "skill:packaged", "skill:skill-creator", "package-prompt"} & names and not marker.exists(), names
         (agent / "settings.json").write_text(json.dumps({"packages": [{"source": str(package), "skills": [], "prompts": []}]}))
         names = commands("chat")
         assert "skill:learned" in names and "skill:packaged" not in names and "package-prompt" not in names, names

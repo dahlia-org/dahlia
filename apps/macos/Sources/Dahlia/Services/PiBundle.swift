@@ -48,7 +48,7 @@ enum PiBundle {
     }
 
     nonisolated static func presetSkillURLs() -> [URL] {
-        ["projects-optimizer", "meeting-reviewer", "workspace-backup"].compactMap {
+        ["projects-optimizer", "meeting-reviewer", "workspace-backup", "skill-creator"].compactMap {
             Bundle.appModule.url(forResource: $0, withExtension: nil, subdirectory: "AgentSkills")
         }
     }
