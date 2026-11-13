@@ -289,7 +289,7 @@
             defer { defaults.removePersistentDomain(forName: suiteName) }
             let model = WorkspaceAISettingsModel(setupDefaults: defaults) { snapshot in
                 if snapshot.localProvider == .databricks, snapshot.databricksProfile.isEmpty {
-                    throw CodexConfigurationError.databricksProfileRequired
+                    throw AIConfigurationError.databricksProfileRequired
                 }
             }
             model.activate(workspace: makeWorkspace(openedAt: .now))

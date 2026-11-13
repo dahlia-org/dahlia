@@ -82,7 +82,7 @@ extension CodexChatServicing {
     }
 
     func respondToUserInput(turnID _: UUID, id _: String, answer _: String) async throws {
-        throw CodexAppServerError.invalidProtocolResponse
+        throw PiRuntimeError.invalidProtocolResponse
     }
 
     func stopTurn(_: UUID) async {}

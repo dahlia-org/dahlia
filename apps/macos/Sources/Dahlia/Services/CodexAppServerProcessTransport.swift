@@ -58,21 +58,21 @@ actor CodexAppServerProcessTransport: CodexAppServerTransport {
             try process.run()
             onLaunch?(process.processIdentifier)
         } catch {
-            throw CodexAppServerError.launchFailed(error.localizedDescription)
+            throw PiRuntimeError.launchFailed(error.localizedDescription)
         }
 
         let inputHandle = standardInput.fileHandleForWriting
         let duplicatedInput = Darwin.dup(inputHandle.fileDescriptor)
         guard duplicatedInput >= 0 else {
             process.terminate()
-            throw CodexAppServerError.launchFailed(String(cString: strerror(errno)))
+            throw PiRuntimeError.launchFailed(String(cString: strerror(errno)))
         }
         let outputHandle = standardOutput.fileHandleForReading
         let duplicatedOutput = Darwin.dup(outputHandle.fileDescriptor)
         guard duplicatedOutput >= 0 else {
             Darwin.close(duplicatedInput)
             process.terminate()
-            throw CodexAppServerError.launchFailed(String(cString: strerror(errno)))
+            throw PiRuntimeError.launchFailed(String(cString: strerror(errno)))
         }
         let errorHandle = standardError.fileHandleForReading
         let duplicatedError = Darwin.dup(errorHandle.fileDescriptor)
@@ -80,7 +80,7 @@ actor CodexAppServerProcessTransport: CodexAppServerTransport {
             Darwin.close(duplicatedOutput)
             Darwin.close(duplicatedInput)
             process.terminate()
-            throw CodexAppServerError.launchFailed(String(cString: strerror(errno)))
+            throw PiRuntimeError.launchFailed(String(cString: strerror(errno)))
         }
         try? inputHandle.close()
         try? outputHandle.close()
@@ -105,7 +105,7 @@ actor CodexAppServerProcessTransport: CodexAppServerTransport {
     }
 
     func sendLine(_ data: Data) async throws {
-        guard !isClosed else { throw CodexAppServerError.processExited(stderrDescription) }
+        guard !isClosed else { throw PiRuntimeError.processExited(stderrDescription) }
         startErrorDrainIfNeeded()
         // app-server echoes user input in item lifecycle notifications. Allow one response line to
         // wrap the largest request we have sent while retaining a fixed allowance for its envelope.
@@ -154,7 +154,7 @@ actor CodexAppServerProcessTransport: CodexAppServerTransport {
                 if Task.isCancelled {
                     continuation.resume(throwing: CancellationError())
                 } else if outputWaiter != nil {
-                    continuation.resume(throwing: CodexAppServerError.invalidProtocolResponse)
+                    continuation.resume(throwing: PiRuntimeError.invalidProtocolResponse)
                 } else {
                     outputWaiter = (waiterID, continuation)
                     startOutputReadIfNeeded()
@@ -359,7 +359,7 @@ actor CodexAppServerProcessTransport: CodexAppServerTransport {
         }
         didReachOutputEOF = true
         if !isClosed, outputError == nil {
-            outputError = CodexAppServerError.processExited(
+            outputError = PiRuntimeError.processExited(
                 stderrDescription ?? error?.localizedDescription
             )
         }
@@ -384,7 +384,7 @@ actor CodexAppServerProcessTransport: CodexAppServerTransport {
         if errorCode == 0, !hasRemainingData, !isClosed {
             continuation.resume()
         } else {
-            continuation.resume(throwing: CodexAppServerError.processExited(stderrDescription))
+            continuation.resume(throwing: PiRuntimeError.processExited(stderrDescription))
         }
     }
 

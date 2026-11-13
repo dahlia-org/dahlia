@@ -708,7 +708,10 @@ import Synchronization
         @Test
         func recordingPauseCancelsAllInFlightOCRAndRequeuesIt() async throws {
             let analyzer = CancellableScreenshotAnalyzer()
-            let database = try makeDatabase(screenshotAnalyzer: analyzer)
+            let diagnostics = Mutex<[SearchFailureDiagnostic]>([])
+            let database = try makeDatabase(screenshotAnalyzer: analyzer, failureReporter: { diagnostic in
+                diagnostics.withLock { $0.append(diagnostic) }
+            })
             let workspace = makeWorkspace()
             let meeting = makeMeeting(workspaceID: workspace.id)
             try await database.dbQueue.write { db in
@@ -754,6 +757,113 @@ import Synchronization
             #expect(state.0 == 0)
             #expect(state.1 == 8)
             #expect(await analyzer.cancelledCount == 2)
+            #expect(diagnostics.withLock { $0.isEmpty })
+        }
+
+        @Test(.timeLimit(.minutes(1)))
+        func screenshotFailurePreservesTheProviderReason() async throws {
+            let diagnostics = Mutex<[SearchFailureDiagnostic]>([])
+            let database = try makeDatabase(screenshotAnalyzer: ProviderFailureScreenshotAnalyzer(), failureReporter: { diagnostic in
+                diagnostics.withLock { $0.append(diagnostic) }
+            })
+            let workspace = makeWorkspace()
+            let meeting = makeMeeting(workspaceID: workspace.id)
+            try await database.dbQueue.write { db in
+                try workspace.insert(db)
+                try meeting.insert(db)
+                try MeetingScreenshotRecord(
+                    id: .v7(), meetingId: meeting.id, sessionId: nil, capturedAt: .now,
+                    imageData: Data([1]), mimeType: "image/png"
+                ).insertLegacyForTesting(db)
+            }
+            await database.searchIndexer.drain()
+            let model = SearchSettingsModel(database: database)
+            await model.refresh()
+            #expect(model.phase == "ready")
+            #expect(model.lastErrorCode == nil)
+            #expect(model.lastImageAnalysisError == PiRuntimeError.turnFailed("Provider rejected the image request").localizedDescription)
+            #expect(model.pendingJobCount == 1)
+            try await database.dbQueue.write { db in
+                try db.execute(sql: "UPDATE jobs_background SET availableAt = ?", arguments: [Date.distantPast])
+            }
+            await database.searchIndexer.drain()
+            let reported = diagnostics.withLock { $0 }
+            #expect(reported.count == 1)
+            #expect(reported.first?.operation == .imageAnalysis)
+            #expect(reported.first?.reason == .providerFailed)
+        }
+
+        @Test(.timeLimit(.minutes(1)))
+        func pendingRebuildPreventsClaimsAfterAnEarlierReadySnapshot() async throws {
+            let database = try makeDatabase(screenshotAnalyzer: StubScreenshotAnalyzer(text: "rebuilt image"))
+            let workspace = makeWorkspace()
+            let meeting = makeMeeting(workspaceID: workspace.id)
+            try await database.dbQueue.write { db in
+                try workspace.insert(db)
+                try meeting.insert(db)
+            }
+            await database.searchIndexer.drain()
+            let earlierPhase = try await database.dbQueue.read { db in
+                try String.fetchOne(db, sql: "SELECT phase FROM search_index_state WHERE indexKind = 'fts'")
+            }
+            try await database.dbQueue.write { db in
+                try MeetingScreenshotRecord(
+                    id: .v7(), meetingId: meeting.id, sessionId: nil, capturedAt: .now,
+                    imageData: Data([1]), mimeType: "image/png"
+                ).insertLegacyForTesting(db)
+                try db.execute(sql: """
+                UPDATE search_index_state SET phase = 'pending', indexGeneration = indexGeneration + 1
+                WHERE indexKind = 'fts'
+                """)
+            }
+            let claimed = try await database.searchIndexer.claimNextJobs()
+            #expect(earlierPhase == "ready")
+            #expect(claimed == nil)
+            #expect(try await database.dbQueue.read { db in
+                try Int.fetchOne(db, sql: "SELECT COUNT(*) FROM jobs_background WHERE status = 'processing' OR attempts > 0")
+            } == 0)
+            await database.searchIndexer.drain()
+            #expect(try await database.dbQueue.read { db in
+                try String.fetchOne(db, sql: "SELECT phase FROM search_index_state WHERE indexKind = 'fts'")
+            } == "ready")
+        }
+
+        @Test(.timeLimit(.minutes(1)))
+        func requestedRebuildRunsBeforeTheRemainingScreenshotQueue() async throws {
+            let analyzer = ConcurrentScreenshotAnalyzer()
+            let database = try makeDatabase(screenshotAnalyzer: analyzer)
+            await analyzer.observeIndexPhases(in: database.dbQueue)
+            let workspace = makeWorkspace()
+            let meeting = makeMeeting(workspaceID: workspace.id)
+            try await database.dbQueue.write { db in
+                try workspace.insert(db)
+                try meeting.insert(db)
+                for index in 0 ..< 8 {
+                    try MeetingScreenshotRecord(
+                        id: .v7(), meetingId: meeting.id, sessionId: nil,
+                        capturedAt: .now, imageData: Data([UInt8(index)]), mimeType: "image/png"
+                    ).insertLegacyForTesting(db)
+                }
+            }
+            let drainTask = Task { await database.searchIndexer.drain() }
+            let started = await pollUntil { await analyzer.callSizes.count == 2 }
+            let rebuildTask = Task { try await database.searchIndexer.requestRebuild() }
+            let requested = await pollUntil {
+                await (try? database.dbQueue.read { db in
+                    try String.fetchOne(db, sql: "SELECT phase FROM search_index_state WHERE indexKind = 'fts'")
+                }) == "pending"
+            }
+            await analyzer.releaseFirstWave()
+            await drainTask.value
+            try await rebuildTask.value
+            await database.searchIndexer.drain()
+
+            #expect(started)
+            #expect(requested)
+            #expect(await analyzer.indexPhases == Array(repeating: "ready", count: 8))
+            #expect(try await database.dbQueue.read { db in
+                try String.fetchOne(db, sql: "SELECT phase FROM search_index_state WHERE indexKind = 'fts'")
+            } == "ready")
         }
 
         @Test(.timeLimit(.minutes(1)))
@@ -997,7 +1107,10 @@ import Synchronization
         func unavailableRequiredModelBacksOffTheEntireScreenshotQueue() async throws {
             let failingID = try #require(UUID(uuidString: "00000000-0000-7000-8000-000000000000"))
             let analyzer = PrerequisiteRetryAnalyzer(failingID: failingID)
-            let database = try makeDatabase(screenshotAnalyzer: analyzer)
+            let diagnostics = Mutex<[SearchFailureDiagnostic]>([])
+            let database = try makeDatabase(screenshotAnalyzer: analyzer, failureReporter: { diagnostic in
+                diagnostics.withLock { $0.append(diagnostic) }
+            })
             let workspace = makeWorkspace()
             let meeting = makeMeeting(workspaceID: workspace.id)
             let screenshots = ([failingID] + (0 ..< 8).map { _ in UUID.v7() }).enumerated().map { index, id in
@@ -1046,6 +1159,13 @@ import Synchronization
             #expect((deferred.2 ?? .distantPast) > .now)
             #expect(await analyzer.firstWaveStartedCount == 2)
             #expect(await analyzer.firstWaveCancelledCount == 1)
+            let reported = diagnostics.withLock { $0 }
+            #expect(reported.count == 1)
+            #expect(reported.first?.operation == .imageAnalysis)
+            #expect(reported.first?.reason == .modelUnavailable)
+            #expect(try await database.dbQueue.read { db in
+                try String.fetchOne(db, sql: "SELECT lastErrorCode FROM jobs_background WHERE targetKind = 'screenshotAnalysis' LIMIT 1")
+            } == PiRuntimeError.requestedModelUnavailable(CodexScreenshotAnalysisService.defaultModels[0]).localizedDescription)
 
             try await database.dbQueue.write { db in
                 try db.execute(
@@ -1298,12 +1418,16 @@ import Synchronization
             #expect(state.2.contains("caption"))
         }
 
-        private func makeDatabase(screenshotAnalyzer: any ScreenshotAnalyzing) throws -> AppDatabaseManager {
+        private func makeDatabase(
+            screenshotAnalyzer: any ScreenshotAnalyzing,
+            failureReporter: @escaping BackgroundJobWorker.FailureReporter = { _ in }
+        ) throws -> AppDatabaseManager {
             try AppDatabaseManager(
                 path: ":memory:",
                 screenshotAnalyzer: screenshotAnalyzer,
                 screenshotRuntimeProviderResolver: { .local },
-                localAccountSettingsResolver: { .init(provider: .chatGPTSubscription, databricksProfile: "") }
+                localAccountSettingsResolver: { .init(provider: .chatGPTSubscription, databricksProfile: "") },
+                searchFailureReporter: failureReporter
             )
         }
 
@@ -1384,15 +1508,33 @@ import Synchronization
         private struct Failure: Error {}
     }
 
+    private struct ProviderFailureScreenshotAnalyzer: ScreenshotAnalyzing {
+        func analyze(_: [ScreenshotAnalysisInput]) async throws -> [ScreenshotAnalysis] {
+            throw PiRuntimeError.turnFailed("Provider rejected the image request")
+        }
+    }
+
     private actor ConcurrentScreenshotAnalyzer: ScreenshotAnalyzing {
         private(set) var callSizes: [Int] = []
+        private(set) var indexPhases: [String] = []
         private(set) var activeCountsAtStart: [Int] = []
         private(set) var maximumActiveCount = 0
         private var activeCount = 0
         private var isFirstWaveBlocked = true
         private var firstWaveWaiters: [CheckedContinuation<Void, Never>] = []
+        private var dbQueue: DatabaseQueue?
+
+        func observeIndexPhases(in dbQueue: DatabaseQueue) {
+            self.dbQueue = dbQueue
+        }
 
         func analyze(_ screenshots: [ScreenshotAnalysisInput]) async throws -> [ScreenshotAnalysis] {
+            if let dbQueue {
+                let phase = try await dbQueue.read { db in
+                    try String.fetchOne(db, sql: "SELECT phase FROM search_index_state WHERE indexKind = 'fts'") ?? "missing"
+                }
+                indexPhases.append(phase)
+            }
             callSizes.append(screenshots.count)
             activeCount += 1
             activeCountsAtStart.append(activeCount)
@@ -1454,7 +1596,7 @@ import Synchronization
                 if screenshots[0].id == failingID {
                     await withCheckedContinuation { failureWaiter = $0 }
                     isFirstWave = false
-                    throw CodexAppServerError.requestedModelUnavailable(CodexScreenshotAnalysisService.defaultModels[0])
+                    throw PiRuntimeError.requestedModelUnavailable(CodexScreenshotAnalysisService.defaultModels[0])
                 }
                 do {
                     try await Task.sleep(for: .seconds(60))

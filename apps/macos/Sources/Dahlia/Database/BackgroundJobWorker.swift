@@ -7,6 +7,7 @@ import GRDB
 actor BackgroundJobWorker {
     typealias RuntimeProviderResolver = @Sendable () -> CodexRuntimeProvider
     typealias LocalAccountSettingsResolver = @MainActor @Sendable () -> LocalAccountAISettings
+    typealias FailureReporter = @Sendable (SearchFailureDiagnostic) -> Void
 
     private let archiveService: RecordingArchiveService
     private let apiClient: SyncAPIClient
@@ -15,6 +16,8 @@ actor BackgroundJobWorker {
     private let inferenceSettingsResolver: @Sendable (WorkspaceRecord) -> AccountInferenceSettings
     private let runtimeProviderResolver: RuntimeProviderResolver
     private let localAccountSettingsResolver: LocalAccountSettingsResolver
+    private let failureReporter: FailureReporter
+    private var reportedFailures: Set<SearchFailureDiagnostic> = []
     private let observationQueue = DispatchQueue(label: "app.dahlia.search-indexer", qos: .utility)
     private var workerTask: Task<Void, Never>?
     private var observationDrainTask: Task<Void, Never>?
@@ -41,7 +44,8 @@ actor BackgroundJobWorker {
         runtimeProviderResolver: @escaping RuntimeProviderResolver = { CodexRuntimeContextStore.shared.provider },
         localAccountSettingsResolver: @escaping LocalAccountSettingsResolver = {
             WorkspaceAISettingsModel.shared.localAccountSettings
-        }
+        },
+        failureReporter: @escaping FailureReporter = { ErrorReportingService.captureSearchFailure($0) }
     ) {
         archiveService = RecordingArchiveService(dbQueue: dbQueue, api: apiClient)
         self.apiClient = apiClient
@@ -50,6 +54,7 @@ actor BackgroundJobWorker {
         self.inferenceSettingsResolver = inferenceSettingsResolver
         self.runtimeProviderResolver = runtimeProviderResolver
         self.localAccountSettingsResolver = localAccountSettingsResolver
+        self.failureReporter = failureReporter
     }
 
     func start() async {
@@ -208,7 +213,12 @@ actor BackgroundJobWorker {
             try await withThrowingTaskGroup(of: (String, Int, Bool).self) { group in
                 var active: [String: Int] = [:]
                 while !isPaused, !Task.isCancelled {
-                    while active.values.reduce(0, +) < 2 {
+                    // Finish the claimed jobs, then rebuild before taking more image work.
+                    let rebuildRequested = try await indexPhase() == "pending"
+                    if rebuildRequested, active.values.allSatisfy({ $0 == 0 }) {
+                        try await rebuild()
+                    }
+                    while !rebuildRequested, active.values.reduce(0, +) < 2 {
                         let capacity = 2 - active.values.reduce(0, +)
                         guard let jobs = try await claimNextJobs(
                             maximumCount: capacity,
@@ -222,7 +232,10 @@ actor BackgroundJobWorker {
                             return (kind, jobs.count, deferred)
                         }
                     }
-                    guard let (kind, count, deferred) = try await group.next() else { break }
+                    guard let (kind, count, deferred) = try await group.next() else {
+                        if try await indexPhase() == "pending" { continue }
+                        break
+                    }
                     active[kind, default: 0] -= count
                     if deferred { group.cancelAll()
                         break
@@ -242,6 +255,7 @@ actor BackgroundJobWorker {
         } catch is CancellationError {
         } catch {
             guard !isPaused, !Task.isCancelled else { return }
+            reportFailure(error, operation: .indexing)
             let transient = Self.isTransientDatabaseError(error)
             if transient { scheduledRetryAt = Date().addingTimeInterval(30) }
             try? await recordFailure(error, transient: transient)
@@ -263,6 +277,9 @@ actor BackgroundJobWorker {
         } catch is CancellationError {
             try? await release(jobs)
         } catch {
+            if jobs.first?.targetKind != "recordingArchive" {
+                reportFailure(error, operation: jobs.first?.targetKind == "screenshotAnalysis" ? .imageAnalysis : .indexing)
+            }
             if Self.isTransientDatabaseError(error) {
                 try await release(jobs, retryAt: Date().addingTimeInterval(30), errorCode: Self.errorCode(error))
             } else {
@@ -456,7 +473,7 @@ actor BackgroundJobWorker {
         }
     }
 
-    private func claimNextJobs(
+    func claimNextJobs(
         cleanupOnly: Bool = false,
         archivesOnly: Bool = false,
         maximumCount: Int = 2,
@@ -464,6 +481,10 @@ actor BackgroundJobWorker {
         allowsArchives: Bool = true
     ) async throws -> [SearchIndexJob]? {
         try await dbQueue.write { db in
+            if !cleanupOnly, !archivesOnly,
+               try String.fetchOne(db, sql: "SELECT phase FROM search_index_state WHERE indexKind = 'fts'") == "pending" {
+                return nil
+            }
             let now = Date()
             let searchFilter = allowsSearch ? "" : "AND targetKind IN ('screenshotAnalysis', 'recordingArchive')"
             let archiveFilter = allowsArchives ? "" : "AND targetKind <> 'recordingArchive'"
@@ -969,6 +990,7 @@ private extension BackgroundJobWorker {
     }
 
     private func deferScreenshotQueueForPrerequisite(_ error: Error) async throws {
+        reportFailure(error, operation: .imageAnalysis)
         let retryAt = Date().addingTimeInterval(60)
         try await dbQueue.write { db in
             try db.execute(
@@ -981,7 +1003,7 @@ private extension BackgroundJobWorker {
                 WHERE indexKind = 'fts' AND targetKind = 'screenshotAnalysis'
                   AND (status = 'processing' OR attempts < 5)
                 """,
-                arguments: [retryAt, String(describing: type(of: error)), Date()]
+                arguments: [retryAt, Self.errorCode(error), Date()]
             )
         }
     }
@@ -1011,6 +1033,9 @@ private extension BackgroundJobWorker {
         if isPaused || Task.isCancelled {
             try await release([job])
             return
+        }
+        if job.targetKind != "recordingArchive" {
+            reportFailure(error, operation: job.targetKind == "screenshotAnalysis" ? .imageAnalysis : .indexing)
         }
         if Self.isTransientDatabaseError(error) {
             try await release([job], retryAt: Date().addingTimeInterval(30), errorCode: Self.errorCode(error))
@@ -1070,8 +1095,8 @@ private extension BackgroundJobWorker {
     }
 
     nonisolated static func isDeferredScreenshotAnalysisError(_ error: Error) -> Bool {
-        if error is CodexConfigurationError { return true }
-        guard let error = error as? CodexAppServerError else { return false }
+        if error is AIConfigurationError { return true }
+        guard let error = error as? PiRuntimeError else { return false }
         return switch error {
         case .helperNotBundled, .piCommandNotFound, .notLoggedIn, .providerAuthenticationFailed, .requestedModelUnavailable:
             true
@@ -1085,9 +1110,21 @@ private extension BackgroundJobWorker {
         return error.resultCode == .SQLITE_BUSY || error.resultCode == .SQLITE_LOCKED
     }
 
+    private func reportFailure(_ error: any Error, operation: SearchFailureDiagnostic.Operation) {
+        guard !isPaused, !Task.isCancelled,
+              let diagnostic = SearchFailureDiagnostic(error: error, operation: operation),
+              reportedFailures.insert(diagnostic).inserted else { return }
+        failureReporter(diagnostic)
+    }
+
     private nonisolated static func errorCode(_ error: Error) -> String {
-        guard let error = error as? DatabaseError else { return String(describing: type(of: error)) }
-        return "sqlite:\(error.resultCode.rawValue):\(error.extendedResultCode.rawValue)"
+        if let error = error as? DatabaseError {
+            return "sqlite:\(error.resultCode.rawValue):\(error.extendedResultCode.rawValue)"
+        }
+        if let error = error as? any LocalizedError, let description = error.errorDescription {
+            return description
+        }
+        return String(describing: type(of: error))
     }
 
     private func recordFailure(_ error: Error, transient: Bool) async throws {
@@ -1110,7 +1147,7 @@ private struct PendingJobRelease: Sendable {
     let errorCode: String?
 }
 
-private struct SearchIndexJob: Sendable {
+struct SearchIndexJob: Sendable {
     let targetKind: String
     let targetID: UUID
     let generation: Int

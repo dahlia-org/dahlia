@@ -139,7 +139,7 @@ import os
         @Test(arguments: ["I can't help with that.", "", "# Summary\nMarkdown"])
         func refusalsEmptyAndMarkdownRepliesFail(reply: String) async {
             let pi = Self.runtime(summary: [TestPiTransport.assistantEnd(reply), TestPiTransport.settled()])
-            await #expect(throws: CodexAppServerError.self) {
+            await #expect(throws: PiRuntimeError.self) {
                 _ = try await pi.service.generate(Self.request(inputs: [.text("x")]))
             }
         }
@@ -150,11 +150,11 @@ import os
                 TestPiTransport.assistantEnd("", stopReason: "error", errorMessage: "401 Unauthorized"),
                 TestPiTransport.settled(),
             ])
-            await #expect(throws: CodexAppServerError.notLoggedIn) {
+            await #expect(throws: PiRuntimeError.notLoggedIn) {
                 _ = try await unauthorized.service.generate(Self.request(inputs: [.text("x")]))
             }
             let truncated = Self.runtime(summary: [TestPiTransport.assistantEnd(#"{"a":"#, stopReason: "length"), TestPiTransport.settled()])
-            await #expect(throws: CodexAppServerError.turnFailed("length")) {
+            await #expect(throws: PiRuntimeError.turnFailed("length")) {
                 _ = try await truncated.service.generate(Self.request(inputs: [.text("x")]))
             }
         }
@@ -191,7 +191,7 @@ import os
             await summary.emit(TestPiTransport.assistantEnd("", stopReason: "error", errorMessage: "Dahlia did not answer token"))
             await summary.emit(TestPiTransport.settled())
 
-            await #expect(throws: CodexAppServerError.providerAuthenticationFailed(TokenFailure().localizedDescription)) {
+            await #expect(throws: PiRuntimeError.providerAuthenticationFailed(TokenFailure().localizedDescription)) {
                 _ = try await generation.value
             }
         }
@@ -371,7 +371,7 @@ import os
             let failedTab = Task { try await pi.service.gatewayModels(for: .local, provider: workspace, forceRefresh: false) }
             await failing.emit(TestPiTransport.response(id: failingID))
             await failing.emit(TestPiTransport.notify("databricks:model_services_sign_in_required"))
-            await #expect(throws: CodexAppServerError.notLoggedIn) { try await failedTab.value }
+            await #expect(throws: PiRuntimeError.notLoggedIn) { try await failedTab.value }
         }
 
         @Test
@@ -487,7 +487,7 @@ import os
             }
             defer { try? FileManager.default.removeItem(at: pi.rootURL) }
 
-            await #expect(throws: CodexAppServerError.notLoggedIn) {
+            await #expect(throws: PiRuntimeError.notLoggedIn) {
                 try await pi.service.gatewayModels(for: account, provider: own, forceRefresh: true)
             }
             #expect(listings.withLock { $0 } == ["/databricks-model-services https://own.cloud.databricks.com --provider databricks"])
@@ -654,7 +654,7 @@ import os
         @Test
         func signedOutSubscriptionHasNoModels() async {
             let pi = Self.runtime(models: [], summary: [])
-            await #expect(throws: CodexAppServerError.notLoggedIn) {
+            await #expect(throws: PiRuntimeError.notLoggedIn) {
                 _ = try await pi.service.models()
             }
             #expect(await (try? pi.service.accountStatus(for: .openai)) == .init(isAuthenticated: false))
@@ -690,7 +690,7 @@ import os
                 .model == "databricks/system.ai.gpt-6-luna")
             // Screenshot analysis requires its model: a missing one stays unavailable instead of using another model.
             for missing in ["openai/gone", "gpt-5.5"] {
-                #expect(throws: CodexAppServerError.requestedModelUnavailable(missing)) {
+                #expect(throws: PiRuntimeError.requestedModelUnavailable(missing)) {
                     try PiRuntimeService.resolvedModel(for: request(missing, exact: true), in: models)
                 }
             }
@@ -730,10 +730,10 @@ import os
             // The switch to Databricks has begun, so the Local Account's delayed work must not launch Pi now.
             pi.contextStore.beginActivation(databricks)
 
-            await #expect(throws: CodexConfigurationError.providerChanged(CodexRuntimeProvider.local.displayName)) {
+            await #expect(throws: AIConfigurationError.providerChanged(CodexRuntimeProvider.local.displayName)) {
                 try await pi.service.connect(.init(mode: .summary, cwd: cwd), provider: .local)
             }
-            await #expect(throws: CodexConfigurationError.self) {
+            await #expect(throws: AIConfigurationError.self) {
                 try await pi.service.connect(.init(mode: .control, cwd: cwd), provider: .dahlia(connectionID: .v7()))
             }
             let signIn = try await pi.service.connect(.init(mode: .control, cwd: cwd), provider: .local)
@@ -777,7 +777,7 @@ import os
                         command["type"]?.stringValue == "prompt" ? [TestPiTransport.notify(message)] : []
                     }
                 }
-                await #expect(throws: CodexAppServerError.self) {
+                await #expect(throws: PiRuntimeError.self) {
                     try await pi.service.signIn(.openai) { _ in true }
                 }
             }

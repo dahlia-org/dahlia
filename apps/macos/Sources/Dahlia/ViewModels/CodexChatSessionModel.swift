@@ -160,7 +160,7 @@ final class CodexChatSessionModel: Identifiable {
     func prepare(forceRefresh: Bool = false) async {
         let runtimeProvider = runtimeProviderResolver()
         if let preparedRuntimeProvider, preparedRuntimeProvider != runtimeProvider {
-            errorMessage = CodexConfigurationError.providerChanged(preparedRuntimeProvider.displayName).localizedDescription
+            errorMessage = AIConfigurationError.providerChanged(preparedRuntimeProvider.displayName).localizedDescription
             return
         }
         // A chat that was hidden when the models changed (it missed `modelsDidChange`) lists the new ones when it shows.
@@ -214,7 +214,7 @@ final class CodexChatSessionModel: Identifiable {
         }
         do {
             async let availableModels = service.models(forceRefresh: false)
-            guard let workspaceID else { throw CodexAppServerError.invalidProtocolResponse }
+            guard let workspaceID else { throw PiRuntimeError.invalidProtocolResponse }
             async let restoredThread = service.resumeThread(id: backendThreadID, workspaceID: workspaceID)
             let (models, thread) = try await (availableModels, restoredThread)
             try await ensureThreadLease(thread.id)
@@ -333,7 +333,7 @@ final class CodexChatSessionModel: Identifiable {
                     id: id,
                     decision: decision
                 )
-            } catch CodexAppServerError.approvalNoLongerPending {
+            } catch PiRuntimeError.approvalNoLongerPending {
                 resolvePendingApproval(id)
             } catch {
                 errorMessage = error.localizedDescription
@@ -357,7 +357,7 @@ final class CodexChatSessionModel: Identifiable {
                     id: id,
                     answer: answer
                 )
-            } catch CodexAppServerError.approvalNoLongerPending {
+            } catch PiRuntimeError.approvalNoLongerPending {
                 resolvePendingUserInput(id)
             } catch {
                 errorMessage = error.localizedDescription
@@ -679,7 +679,7 @@ extension CodexChatSessionModel {
             isAwaitingTurnOutput = false
             activeTurnID = nil
         case let .failed(message):
-            errorMessage = CodexAppServerError.turnFailed(message).localizedDescription
+            errorMessage = PiRuntimeError.turnFailed(message).localizedDescription
             updateLimiter.submit(force: true)
             activeOutputItemIDs.removeAll()
             isAwaitingTurnOutput = false
@@ -869,7 +869,7 @@ extension CodexChatSessionModel {
                 submissionID: submissionID
 
             )
-        } catch let error as CodexAppServerError where error.isThreadNotFound {
+        } catch let error as PiRuntimeError where error.isThreadNotFound {
             guard let workspaceID else { throw error }
             let thread = try await service.resumeThread(id: retry.threadID, workspaceID: workspaceID)
             try ensureSubmissionCanContinue(submissionID)
@@ -990,7 +990,7 @@ extension CodexChatSessionModel {
             return backendThreadID
         }
         guard isBoundToCurrentWorkspace, let workspaceID else {
-            throw CodexAppServerError.invalidProtocolResponse
+            throw PiRuntimeError.invalidProtocolResponse
         }
         let thread = try await service.startThread(
             model: selectedModelID.nilIfBlank,
@@ -1024,7 +1024,7 @@ extension CodexChatSessionModel {
         }
         if let preparedRuntimeProvider,
            preparedRuntimeProvider != runtimeProviderResolver() {
-            throw CodexConfigurationError.providerChanged(preparedRuntimeProvider.displayName)
+            throw AIConfigurationError.providerChanged(preparedRuntimeProvider.displayName)
         }
     }
 
@@ -1225,7 +1225,7 @@ extension CodexChatSessionModel {
         turnID: String
 
     ) async {
-        if let serverError = error as? CodexAppServerError,
+        if let serverError = error as? PiRuntimeError,
            serverError.isNoActiveTurnToSteer,
            isGenerating,
            activeTurnID == turnID {

@@ -199,7 +199,7 @@ struct SummaryGenerationConfirmationView: View {
     private func loadModels(forceRefresh: Bool = false) async {
         guard sourceAvailability != nil else { return }
         await catalog.load(forceRefresh: forceRefresh) {
-            guard await WorkspaceAISettingsModel.shared.waitForRuntimeContext() else { throw CodexConfigurationError.accountNotReady }
+            guard await WorkspaceAISettingsModel.shared.waitForRuntimeContext() else { throw AIConfigurationError.accountNotReady }
         }
     }
 

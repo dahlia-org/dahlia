@@ -1,6 +1,6 @@
 import Foundation
 
-enum CodexConfigurationError: LocalizedError, Equatable {
+enum AIConfigurationError: LocalizedError, Equatable {
     case databricksProfileRequired
     case invalidDatabricksWorkspaceURL
     case accountNotReady

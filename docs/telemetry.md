@@ -60,12 +60,14 @@ Sentry はクラッシュスタック、Dahlia のリリース・ビルド、実
 | `candidateScope` | `all` / `selected` |
 | `candidateLanguageCount`, `fallbackCount`, `inferenceFailedCount` | 0〜999 の匿名な言語候補・fallback 件数 |
 | `failureKind` | `recordingStorage` / `recordingRecovery` / `recordingAudioPermanent` / `transcription` / `transcriptionStalled` / `transcriptionInterrupted` |
-| `errorCode` | `BatchSpeechTranscriberError` が定義する固定 diagnostic code |
+| `errorCode` | `BatchSpeechTranscriberError` が定義する固定 diagnostic code。検索の `searchIndexing` / `screenshotAnalysis` source では `configuration` / `authentication` / `modelUnavailable` / `helperUnavailable` / `launchFailed` / `processExited` / `timedOut` / `invalidResponse` / `providerFailed` / `databaseBusy` / `databaseFailed` / `unknown` |
 | `piInstallStage` | `release` / `download` / `verification` / `extraction` / `activation` |
 | `piInstallReason` | `http` / `rateLimited` / `invalidResponse` / `invalidRelease` / `missingAsset` / `missingDigest` / `checksumMismatch` / `extractionFailed` / `executableMissing` / `networkTimeout` / `networkOffline` / `networkTLS` / `networkOther` / `fileSystem` |
 | `httpStatus` | `source=piInstallation` のみ、100〜599 の HTTP status code |
 
 Pi のインストール・更新失敗は `source=piInstallation` と上記の固定段階・理由で記録する。キャンセルは記録せず、URL、保存先、release version、response body、元の Error の説明文は送らない。
+
+検索索引・画像解析・検索設定の取得と再構築の失敗は、`source` と上記の固定 `errorCode` だけを送る。同じ処理 owner の存続中は同一 source・code の組を一度だけ記録し、録音による停止を含むキャンセルは送らない。モデル名、provider の応答、SQLite の SQL、生のエラー詳細は送らない。
 
 Sentry の PII、request、user、extra、自動 breadcrumb、network breadcrumb、失敗 HTTP request、performance trace は無効にする。`beforeBreadcrumb` でも許可カテゴリ以外を破棄する。スクリーンショット自体は送らず、既存のスクリーンショット表示診断では固定 bucket のみ許可する。
 

@@ -1418,6 +1418,11 @@
 "Search index ready" = "準備完了";
 "Search index failed" = "利用できません";
 "Search index error format" = "インデックス処理エラー: %@";
+"Requested Pi model is unavailable: %@" = "指定されたPiモデルを利用できません: %@";
+"Last image analysis error format" = "前回の画像解析エラー: %@";
+"Image analysis failed. This older error has no recorded details. Check the AI settings for the account." = "画像解析に失敗しました。以前のエラーのため詳細は記録されていません。アカウントのAI設定を確認してください。";
+"The image analysis response did not match the requested format." = "画像解析の応答が要求した形式と一致しませんでした。";
+"Image analysis requires exactly one screenshot per request." = "画像解析では1回のリクエストにつき1枚のスクリーンショットが必要です。";
 "Change permissions" = "権限を変更";
 "Could not update the approval method: %@" = "承認方法を更新できませんでした: %@";
 "Set Up Dahlia" = "Dahliaをセットアップ";

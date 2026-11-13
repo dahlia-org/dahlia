@@ -29,7 +29,7 @@ enum PiBundle {
     ) throws -> URL {
         if usesManagedPi(for: provider, defaults: defaults, managedExecutableURL: managedExecutableURL) {
             guard CommandLineToolLocator.isExecutableFile(atPath: managedExecutableURL.path) else {
-                throw CodexAppServerError.piCommandNotFound(managedExecutableURL.path)
+                throw PiRuntimeError.piCommandNotFound(managedExecutableURL.path)
             }
             return managedExecutableURL
         }
@@ -37,14 +37,14 @@ enum PiBundle {
             .merging(PiLaunchSettings.load(for: provider, defaults: defaults).commandDiscovery
                 .resolvedEnvironment(for: provider, secret: secret)) { $1 }
         guard let url = CommandLineToolLocator.executableURL(named: "pi", environment: environment) else {
-            throw CodexAppServerError.piCommandNotFound(nil)
+            throw PiRuntimeError.piCommandNotFound(nil)
         }
         return url
     }
 
     nonisolated static func resourceURL(_ name: String) throws -> URL {
         guard let url = Bundle.appModule.url(forResource: name, withExtension: nil, subdirectory: "PiExtension") else {
-            throw CodexAppServerError.helperNotBundled
+            throw PiRuntimeError.helperNotBundled
         }
         return url
     }
@@ -64,7 +64,7 @@ enum DahliaMCPBundle {
     nonisolated static func executableURL(in bundle: Bundle = .main) throws -> URL {
         let url = expectedExecutableURL(in: bundle)
         guard FileManager.default.isExecutableFile(atPath: url.path) else {
-            throw CodexAppServerError.helperNotBundled
+            throw PiRuntimeError.helperNotBundled
         }
         return url
     }
@@ -135,7 +135,7 @@ struct PiAgentDirectoryLocator: Sendable {
             )
             try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: url.path)
         } catch {
-            throw CodexAppServerError.launchFailed(error.localizedDescription)
+            throw PiRuntimeError.launchFailed(error.localizedDescription)
         }
     }
 }

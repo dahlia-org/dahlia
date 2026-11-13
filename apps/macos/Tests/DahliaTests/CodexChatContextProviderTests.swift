@@ -103,7 +103,7 @@ import GRDB
 
             try await database.dbQueue.write { db in
                 guard var meeting = try MeetingRecord.fetchOne(db, key: meetingID) else {
-                    throw CodexAppServerError.invalidProtocolResponse
+                    throw PiRuntimeError.invalidProtocolResponse
                 }
                 meeting.name = "Latest name"
                 meeting.updatedAt = now.addingTimeInterval(60)

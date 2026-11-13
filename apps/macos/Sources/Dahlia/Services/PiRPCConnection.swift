@@ -80,11 +80,11 @@ actor PiRPCConnection {
         do {
             while let line = try await transport.receiveLine() {
                 guard let object = try JSONDecoder().decode(JSONValue.self, from: line).objectValue else {
-                    throw CodexAppServerError.invalidProtocolResponse
+                    throw PiRuntimeError.invalidProtocolResponse
                 }
                 handle(object)
             }
-            fail(CodexAppServerError.processExited(nil))
+            fail(PiRuntimeError.processExited(nil))
         } catch {
             fail(error)
         }
@@ -97,7 +97,7 @@ actor PiRPCConnection {
             if record["success"]?.boolValue == true {
                 continuation.yield(record["data"] ?? .null)
             } else {
-                continuation.finish(throwing: CodexAppServerError.rpcError(
+                continuation.finish(throwing: PiRuntimeError.rpcError(
                     code: nil,
                     message: record["error"]?.stringValue ?? ""
                 ))
@@ -169,7 +169,7 @@ actor PiRPCConnection {
             group.addTask { try await operation() }
             group.addTask {
                 try await Task.sleep(for: timeout)
-                throw CodexAppServerError.requestTimedOut("Pi")
+                throw PiRuntimeError.requestTimedOut("Pi")
             }
             defer { group.cancelAll() }
             return try await group.next()!

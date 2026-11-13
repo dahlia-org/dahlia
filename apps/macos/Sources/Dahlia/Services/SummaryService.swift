@@ -40,7 +40,7 @@ enum SummaryService {
 
         let service = PiRuntimeService.shared
         guard CodexRuntimeContextStore.shared.provider == generationSettings.runtimeProvider else {
-            throw CodexConfigurationError.providerChanged(generationSettings.runtimeProvider.displayName)
+            throw AIConfigurationError.providerChanged(generationSettings.runtimeProvider.displayName)
         }
         let models = try await service.models()
         let selected = try? PiRuntimeService.resolvedModel(
@@ -127,12 +127,12 @@ enum SummaryService {
     static func generatedDocument(from responseText: String, context: SummaryRenderContext) throws -> SummaryDocument {
         // Not every provider enforces the schema, so a non-conforming reply fails instead of becoming Markdown.
         guard let response = try? JSONDecoder().decode(SummaryDocumentResponse.self, from: Data(responseText.utf8)) else {
-            throw CodexAppServerError.invalidProtocolResponse
+            throw PiRuntimeError.invalidProtocolResponse
         }
         let document = document(from: response, context: context)
         // A reply without a title or any section content would replace the saved summary with an empty one.
         guard !document.title.isEmpty, document.sections.contains(where: { !$0.blocks.isEmpty }) else {
-            throw CodexAppServerError.emptyResponse
+            throw PiRuntimeError.emptyResponse
         }
         return document
     }

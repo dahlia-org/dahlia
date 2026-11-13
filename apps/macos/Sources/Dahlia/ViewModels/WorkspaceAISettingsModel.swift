@@ -371,7 +371,7 @@ final class WorkspaceAISettingsModel {
                       self.workspaceID == snapshot.workspaceID
                 else { return false }
                 self.isSwitchingRuntime = false
-                self.errorMessage = CodexConfigurationError.accountNotReady.localizedDescription
+                self.errorMessage = AIConfigurationError.accountNotReady.localizedDescription
                 return false
             } catch {
                 guard let self,

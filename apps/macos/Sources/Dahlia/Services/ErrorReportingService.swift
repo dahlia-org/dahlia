@@ -45,6 +45,8 @@ enum ErrorReportingService {
         "registerWorkspace",
         "removeWorkspace",
         "selectedMeetingObservation",
+        "searchIndexing",
+        "screenshotAnalysis",
         "startListening",
         "startTranscriptionPersistence",
         "stopRecordingSession",
@@ -142,6 +144,14 @@ enum ErrorReportingService {
         capture(context: ["source": category.rawValue])
     }
 
+    static func captureSearchFailure(_ diagnostic: SearchFailureDiagnostic) {
+        capture(context: searchFailureContext(diagnostic))
+    }
+
+    static func searchFailureContext(_ diagnostic: SearchFailureDiagnostic) -> [String: String] {
+        ["source": diagnostic.operation.rawValue, "errorCode": diagnostic.reason.rawValue]
+    }
+
     static func capturePiInstallation(_ failure: PiInstallError) {
         capture(context: failure.diagnosticContext)
     }
@@ -198,7 +208,7 @@ enum ErrorReportingService {
         case "failureKind":
             allowedFailureKinds.contains(value)
         case "errorCode":
-            allowedErrorCodes.contains(value)
+            allowedErrorCodes.contains(value) || SearchFailureDiagnostic.Reason(rawValue: value) != nil
         case "piInstallStage":
             PiInstallError.Stage(rawValue: value) != nil
         case "piInstallReason":

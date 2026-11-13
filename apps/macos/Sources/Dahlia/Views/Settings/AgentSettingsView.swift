@@ -121,7 +121,7 @@ private struct AgentRuntimeSection: View {
     let provider: CodexRuntimeProvider
     let launch: PiLaunchSettingsModel
     @AppStorage private var useManagedPi: Bool
-    @State private var resolvedCommand: Result<String, CodexAppServerError>?
+    @State private var resolvedCommand: Result<String, PiRuntimeError>?
     /// The version of the Pi that Dahlia installed.
     @State private var installedVersion: String?
     @State private var isInstalling = false
@@ -200,7 +200,7 @@ private struct AgentRuntimeSection: View {
         resolvedCommand = nil
         let (resolved, version) = await Task.detached { [provider] in
             let url = Result { try PiBundle.executableURL(for: provider) }
-                .mapError { $0 as? CodexAppServerError ?? .piCommandNotFound(nil) }
+                .mapError { $0 as? PiRuntimeError ?? .piCommandNotFound(nil) }
             return (url.map(\.path), PiInstaller.installedVersion())
         }.value
         guard !Task.isCancelled, useManagedPi == selection, launch.commandDiscoveryRevision == revision else { return }
@@ -699,7 +699,7 @@ private struct AgentModelSettingsView: View {
     }
 
     private func message(_ error: any Error, provider: AgentMCPProvider) -> String {
-        guard case .notLoggedIn = error as? CodexAppServerError else { return error.localizedDescription }
+        guard case .notLoggedIn = error as? PiRuntimeError else { return error.localizedDescription }
         // The account signs in from the account menu; other providers sign in under Models.
         return provider.isAccount ? L10n.mcpAccountSignInRequired : L10n.mcpProviderSignInRequired
     }

@@ -394,6 +394,19 @@ enum L10n { // swiftlint:disable:this type_body_length
     static var searchIndexReady: String { String(localized: "Search index ready", bundle: bundle) }
     static var searchIndexFailed: String { String(localized: "Search index failed", bundle: bundle) }
     static var searchIndexErrorFormat: String { String(localized: "Search index error format", bundle: bundle) }
+    static var searchImageAnalysisErrorFormat: String { String(localized: "Last image analysis error format", bundle: bundle) }
+    static var searchLegacyImageAnalysisError: String { String(
+        localized: "Image analysis failed. This older error has no recorded details. Check the AI settings for the account.",
+        bundle: bundle
+    ) }
+    static var searchInvalidImageAnalysisResponse: String { String(
+        localized: "The image analysis response did not match the requested format.",
+        bundle: bundle
+    ) }
+    static var searchInvalidImageAnalysisBatch: String { String(
+        localized: "Image analysis requires exactly one screenshot per request.",
+        bundle: bundle
+    ) }
     static var actions: String { String(localized: "Actions", bundle: bundle) }
     static var status: String { String(localized: "Status", bundle: bundle) }
 
@@ -2333,6 +2346,10 @@ enum L10n { // swiftlint:disable:this type_body_length
     // MARK: - Settings (LLM)
 
     static var model: String { String(localized: "Model", bundle: bundle) }
+    static func piRequestedModelUnavailable(_ model: String) -> String { String(
+        localized: "Requested Pi model is unavailable: \(model)",
+        bundle: bundle
+    ) }
     static var codexHelperNotBundled: String { String(
         localized: "Dahlia's helper files are unavailable. Run Dahlia with scripts/run-dev.sh or install a signed app build.",
         bundle: bundle

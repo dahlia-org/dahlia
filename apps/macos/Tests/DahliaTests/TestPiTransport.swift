@@ -19,9 +19,9 @@ actor TestPiTransport: CodexAppServerTransport {
     }
 
     func sendLine(_ data: Data) async throws {
-        guard !isClosed else { throw CodexAppServerError.processExited(nil) }
+        guard !isClosed else { throw PiRuntimeError.processExited(nil) }
         guard let command = try JSONDecoder().decode(JSONValue.self, from: data).objectValue else {
-            throw CodexAppServerError.invalidProtocolResponse
+            throw PiRuntimeError.invalidProtocolResponse
         }
         commands.append(command)
         var waiting: [(Match, CheckedContinuation<[String: JSONValue], Never>)] = []

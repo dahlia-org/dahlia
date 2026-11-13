@@ -74,10 +74,10 @@ final class CodexRuntimeContextStore: Sendable {
 
     private func isActive(_ expected: CodexRuntimeProvider) throws -> Bool {
         let current = state.withLock { $0 }
-        if current.removedProviders.contains(expected) { throw CodexConfigurationError.providerChanged(expected.displayName) }
+        if current.removedProviders.contains(expected) { throw AIConfigurationError.providerChanged(expected.displayName) }
         guard current.requestedProvider == expected else { return false }
         guard !current.isActivating else { return false }
-        guard current.isConfigured, current.provider == expected else { throw CodexConfigurationError.accountNotReady }
+        guard current.isConfigured, current.provider == expected else { throw AIConfigurationError.accountNotReady }
         return true
     }
 }

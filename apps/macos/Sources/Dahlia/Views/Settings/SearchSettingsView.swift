@@ -42,6 +42,13 @@ struct SearchSettingsView: View {
                         tint: .orange
                     )
                 }
+                if let error = model.lastImageAnalysisError {
+                    SettingsStatusMessage(
+                        text: String(format: L10n.searchImageAnalysisErrorFormat, error),
+                        systemImage: "exclamationmark.triangle",
+                        tint: .orange
+                    )
+                }
             } header: {
                 Text(L10n.fullTextSearch)
                     .font(.dahliaSectionHeader)

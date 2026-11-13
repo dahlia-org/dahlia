@@ -44,17 +44,17 @@ struct PiWorkingDirectory: Sendable {
             .trimmingCharacters(in: .whitespaces).nilIfBlank ?? Self.defaultPath
         let path = (configured as NSString).expandingTildeInPath
         guard override != nil || Self.isAllowed(path) else {
-            throw CodexAppServerError.launchFailed(L10n.agentWorkingDirectoryNotAllowed)
+            throw PiRuntimeError.launchFailed(L10n.agentWorkingDirectoryNotAllowed)
         }
         let url = override ?? URL(fileURLWithPath: path, isDirectory: true)
         do {
             try FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
         } catch {
-            throw CodexAppServerError.launchFailed(error.localizedDescription)
+            throw PiRuntimeError.launchFailed(error.localizedDescription)
         }
         // The folder Seatbelt will see: another spelling, letter case, or a link must not reach a refused folder.
         guard override != nil || Self.isAllowed(PiSandbox.realPath(url), home: PiSandbox.realPath(URL(fileURLWithPath: NSHomeDirectory()))) else {
-            throw CodexAppServerError.launchFailed(L10n.agentWorkingDirectoryNotAllowed)
+            throw PiRuntimeError.launchFailed(L10n.agentWorkingDirectoryNotAllowed)
         }
         return url
     }

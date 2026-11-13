@@ -62,7 +62,7 @@ import Foundation
             do {
                 _ = try await transport.receiveLine()
                 Issue.record("Expected process exit")
-            } catch let error as CodexAppServerError {
+            } catch let error as PiRuntimeError {
                 guard case let .processExited(detail) = error else {
                     Issue.record("Unexpected error: \(error)")
                     await transport.close()

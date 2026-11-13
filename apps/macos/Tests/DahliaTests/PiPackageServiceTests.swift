@@ -84,7 +84,7 @@ import Foundation
             let directory = FileManager.default.temporaryDirectory.appending(path: "PiPackageSkillsPath-\(UUID())")
             let path = directory.appending(path: "skills").path + suffix
             let launch = PiLaunchSettings(variables: [.init(id: UUID(), name: "PATH", value: path + ":/usr/bin:/bin")])
-            #expect(throws: CodexAppServerError.launchFailed(L10n.agentSkillsPathConflict)) {
+            #expect(throws: PiRuntimeError.launchFailed(L10n.agentSkillsPathConflict)) {
                 try PiPackageService.environment(
                     account: .local, directory: directory,
                     executable: URL(fileURLWithPath: "/usr/bin/true"), launch: launch

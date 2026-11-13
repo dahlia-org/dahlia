@@ -15,7 +15,7 @@ enum PiSandbox {
     /// Skills stay writable across chat processes, so no Pi launch may search them for executable commands.
     nonisolated static func validateSkillsSearchPath(agentURL: URL, searchPath: String, cwd: URL) throws {
         guard !PiWorkingDirectory.holdsCommands(agentURL.appending(path: "skills"), searchPath: searchPath, cwd: cwd) else {
-            throw CodexAppServerError.launchFailed(L10n.agentSkillsPathConflict)
+            throw PiRuntimeError.launchFailed(L10n.agentSkillsPathConflict)
         }
     }
 
@@ -134,7 +134,7 @@ enum PiSandbox {
             if let file = environment[name]?.nilIfBlank {
                 // Bourne shells expand these values. Accept paths, never evaluate shell expressions outside Seatbelt.
                 guard !file.contains("$"), !file.contains("`"), !file.hasPrefix("~") || file == "~" || file.hasPrefix("~/") else {
-                    throw CodexAppServerError.launchFailed(L10n.agentShellStartupPathRequired)
+                    throw PiRuntimeError.launchFailed(L10n.agentShellStartupPathRequired)
                 }
                 paths.append(url(file))
             }

@@ -80,6 +80,8 @@
             such as the operation category, audio-source category, locale, diagnostic code, and small language-processing
             counts, as well as fixed Pi installation failure stages, reasons, and HTTP status codes, to Sentry.
             Pi download URLs, installation paths, response bodies, and raw error messages are not sent.
+            Search indexing and image-analysis failures use fixed operation and error categories,
+            without model names, provider responses, SQL, or raw error details.
             Automatic network and lifecycle breadcrumb capture and default personal information are
             disabled, and request, user, and extra fields are removed.
           </p>

@@ -11,12 +11,19 @@ final class SearchSettingsModel {
     private(set) var pendingJobCount = 0
     private(set) var processingJobCount = 0
     private(set) var lastErrorCode: String?
+    private(set) var lastImageAnalysisError: String?
     private(set) var isRequestingRebuild = false
 
     @ObservationIgnored private let database: AppDatabaseManager?
+    @ObservationIgnored private let failureReporter: BackgroundJobWorker.FailureReporter
+    @ObservationIgnored private var reportedFailures: Set<SearchFailureDiagnostic> = []
 
-    init(database: AppDatabaseManager?) {
+    init(
+        database: AppDatabaseManager?,
+        failureReporter: @escaping BackgroundJobWorker.FailureReporter = { ErrorReportingService.captureSearchFailure($0) }
+    ) {
         self.database = database
+        self.failureReporter = failureReporter
     }
 
     var progress: Double {
@@ -48,10 +55,18 @@ final class SearchSettingsModel {
                         db,
                         sql: """
                         SELECT lastErrorCode FROM jobs_background
-                        WHERE indexKind = 'fts' AND lastErrorCode IS NOT NULL
+                        WHERE indexKind = 'fts' AND targetKind != 'screenshotAnalysis' AND lastErrorCode IS NOT NULL
                         ORDER BY updatedAt DESC LIMIT 1
                         """
-                    ))
+                    )),
+                    lastImageAnalysisError: String.fetchOne(
+                        db,
+                        sql: """
+                        SELECT lastErrorCode FROM jobs_background
+                        WHERE indexKind = 'fts' AND targetKind = 'screenshotAnalysis' AND lastErrorCode IS NOT NULL
+                        ORDER BY updatedAt DESC LIMIT 1
+                        """
+                    )
                 )
             }
             phase = snapshot.phase
@@ -60,8 +75,16 @@ final class SearchSettingsModel {
             pendingJobCount = snapshot.pendingJobCount
             processingJobCount = snapshot.processingJobCount
             lastErrorCode = snapshot.lastErrorCode
+            switch snapshot.lastImageAnalysisError {
+            case "CodexAppServerError": lastImageAnalysisError = L10n.searchLegacyImageAnalysisError
+            case "CodexConfigurationError": lastImageAnalysisError = L10n.codexAccountConfigurationNotReady
+            case "ScreenshotAnalysisError": lastImageAnalysisError = L10n.searchInvalidImageAnalysisResponse
+            case let message? where message.hasPrefix("Requested Codex model is unavailable: "):
+                lastImageAnalysisError = L10n.piRequestedModelUnavailable(String(message.dropFirst("Requested Codex model is unavailable: ".count)))
+            default: lastImageAnalysisError = snapshot.lastImageAnalysisError
+            }
         } catch {
-            lastErrorCode = String(describing: type(of: error))
+            recordFailure(error)
         }
     }
 
@@ -73,7 +96,15 @@ final class SearchSettingsModel {
             try await database.searchIndexer.requestRebuild()
             await refresh()
         } catch {
-            lastErrorCode = String(describing: type(of: error))
+            recordFailure(error)
+        }
+    }
+
+    private func recordFailure(_ error: any Error) {
+        guard !Task.isCancelled, let diagnostic = SearchFailureDiagnostic(error: error, operation: .indexing) else { return }
+        lastErrorCode = error.localizedDescription
+        if reportedFailures.insert(diagnostic).inserted {
+            failureReporter(diagnostic)
         }
     }
 
@@ -86,4 +117,5 @@ private struct SearchIndexSettingsSnapshot: Sendable {
     let pendingJobCount: Int
     let processingJobCount: Int
     let lastErrorCode: String?
+    let lastImageAnalysisError: String?
 }

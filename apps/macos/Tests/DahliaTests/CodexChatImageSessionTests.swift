@@ -346,7 +346,7 @@ import Foundation
         ) async throws -> AsyncThrowingStream<CodexChatTurnEvent, any Error> {
             sentInputs.append(inputs)
             if sendBehavior == .failFirst, sentInputs.count == 1 {
-                throw CodexAppServerError.invalidProtocolResponse
+                throw PiRuntimeError.invalidProtocolResponse
             }
             if sendBehavior == .delayFirst || sendBehavior == .delayFirstWithoutTurn, sentInputs.count == 1 {
                 await withCheckedContinuation { continuation in

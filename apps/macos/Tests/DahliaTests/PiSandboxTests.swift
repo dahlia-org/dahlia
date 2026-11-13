@@ -29,7 +29,7 @@ import Foundation
         func sandboxConstructionRejectsSkillsCommandSearchPaths(_ entry: String) {
             let root = FileManager.default.temporaryDirectory.appending(path: "PiSandboxSkillsPath-\(UUID())")
             let agent = root.appending(path: "agent")
-            #expect(throws: CodexAppServerError.launchFailed(L10n.agentSkillsPathConflict)) {
+            #expect(throws: PiRuntimeError.launchFailed(L10n.agentSkillsPathConflict)) {
                 try PiSandbox.command(
                     cwd: agent, agentURL: agent, piExecutableURL: URL(fileURLWithPath: "/usr/bin/true"), searchPath: entry
                 )
@@ -330,7 +330,7 @@ import Foundation
             try FileManager.default.createSymbolicLink(at: link, withDestinationURL: URL(fileURLWithPath: NSHomeDirectory()))
             defer { try? FileManager.default.removeItem(at: link) }
             defaults.set(link.path, forKey: PiWorkingDirectory.defaultsKey(for: .local))
-            #expect(throws: CodexAppServerError.launchFailed(L10n.agentWorkingDirectoryNotAllowed)) {
+            #expect(throws: PiRuntimeError.launchFailed(L10n.agentWorkingDirectoryNotAllowed)) {
                 try PiWorkingDirectory().url(for: .local, defaults: defaults)
             }
         }

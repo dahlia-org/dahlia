@@ -82,7 +82,7 @@ actor DatabricksOAuthService {
               components.user == nil,
               components.password == nil
         else {
-            throw CodexConfigurationError.invalidDatabricksWorkspaceURL
+            throw AIConfigurationError.invalidDatabricksWorkspaceURL
         }
         components.scheme = "https"
         components.host = components.host?.lowercased()
@@ -93,7 +93,7 @@ actor DatabricksOAuthService {
         components.query = nil
         components.fragment = nil
         guard let url = components.url else {
-            throw CodexConfigurationError.invalidDatabricksWorkspaceURL
+            throw AIConfigurationError.invalidDatabricksWorkspaceURL
         }
         return url
     }
