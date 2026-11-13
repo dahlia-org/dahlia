@@ -7,6 +7,7 @@ struct CodexChatThread: Equatable {
     let model: String?
     let reasoningEffort: String?
     let approvalMethod: CodexChatApprovalMethod?
+    let earlierMessagesCursor: String?
 
     init(
         id: String,
@@ -14,7 +15,8 @@ struct CodexChatThread: Equatable {
         messages: [CodexChatMessage],
         model: String?,
         reasoningEffort: String?,
-        approvalMethod: CodexChatApprovalMethod? = nil
+        approvalMethod: CodexChatApprovalMethod? = nil,
+        earlierMessagesCursor: String? = nil
     ) {
         self.id = id
         self.title = title
@@ -22,5 +24,6 @@ struct CodexChatThread: Equatable {
         self.model = model
         self.reasoningEffort = reasoningEffort
         self.approvalMethod = approvalMethod
+        self.earlierMessagesCursor = earlierMessagesCursor
     }
 }

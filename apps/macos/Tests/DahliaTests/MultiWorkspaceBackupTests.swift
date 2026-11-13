@@ -39,6 +39,24 @@ import GRDB
                     arguments: [UUID.v7(), other.workspace.id, connection.id, fixture.now, fixture.now]
                 )
             }
+            // Chats are not in backups; an overwritten Workspace's Threads keep their Project.
+            let chatProjectID = UUID.v7()
+            try await fixture.database.dbQueue.write { db in
+                try db.execute(
+                    sql: "INSERT INTO projects(id, workspace_id, name, nameKey, createdAt, projectType) VALUES (?, ?, 'Chat', 'chat', ?, 'internal')",
+                    arguments: [chatProjectID, fixture.meeting.workspaceId, fixture.now]
+                )
+                try db.execute(
+                    sql: """
+                    INSERT INTO chat_threads(id, accountID, workspaceID, projectID, title, createdAt, updatedAt)
+                    VALUES ('00000000-0000-7000-8000-000000000001', 'local', ?, ?, 'Linked', ?, ?)
+                    """,
+                    arguments: [fixture.meeting.workspaceId, chatProjectID, fixture.now, fixture.now]
+                )
+            }
+            try ChatThreadStore(dbQueue: fixture.database.dbQueue)
+                .appendItems(threadID: "00000000-0000-7000-8000-000000000001", items: [ChatHistoryCodec.user([.text("searchable")])])
+            await fixture.database.searchIndexer.drain()
             let service = BackupService(dbQueue: fixture.database.dbQueue, applicationSupportURL: fixture.testRootURL)
             let selected: Set<UUID> = [fixture.meeting.workspaceId, second.workspace.id, skipped.workspace.id]
             let generation = try await service.createGeneration(workspaceIds: selected)
@@ -80,6 +98,7 @@ import GRDB
                 #expect(try WorkspaceRecord.fetchCount(db) == 5)
                 #expect(try MeetingRecord.fetchOne(db, key: fixture.meeting.id)?.name == fixture.meeting.name)
                 #expect(try WorkspaceRecord.fetchOne(db, key: fixture.meeting.workspaceId)?.databricksConnectionId == databricks.id)
+                #expect(try UUID.fetchOne(db, sql: "SELECT projectID FROM chat_threads WHERE title = 'Linked'") == chatProjectID)
                 for meeting in [second.meeting, skipped.meeting, other.meeting] {
                     #expect(try MeetingRecord.fetchOne(db, key: meeting.id)?.name == "Changed")
                 }
@@ -94,6 +113,10 @@ import GRDB
                 try Int.fetchOne(db, sql: "SELECT COUNT(*) FROM search_documents WHERE workspace_id = ?", arguments: [freshID]) ?? 0
             }
             #expect(indexed > 0)
+            let indexedChats = try await result.dbQueue.read { db in
+                try Int.fetchOne(db, sql: "SELECT COUNT(*) FROM search_documents WHERE kind = 'chat'") ?? 0
+            }
+            #expect(indexedChats == 2)
             try result.close()
             let safety = try #require(try await service.listGenerations().first { $0.metadata?.reason == .beforeRestore })
             #expect(safety.metadata?.workspaces.map(\.id) == [fixture.meeting.workspaceId])

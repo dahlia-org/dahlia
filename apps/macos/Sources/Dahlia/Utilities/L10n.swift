@@ -5,6 +5,7 @@ import Foundation
 
 /// ローカライズ文字列への型安全なアクセスを提供する。
 enum L10n { // swiftlint:disable:this type_body_length
+    static var chatResumeStateMissing: String { String(localized: "Chat resume state missing", bundle: bundle) }
     static var agentPackages: String { String(localized: "settings.agents.packages", bundle: bundle) }
     static var agentPackageCatalog: String { String(localized: "settings.agents.packageCatalog", bundle: bundle) }
     static var agentPackageSource: String { String(localized: "settings.agents.packageSource", bundle: bundle) }
@@ -696,7 +697,7 @@ enum L10n { // swiftlint:disable:this type_body_length
     static var inProgress: String { String(localized: "In Progress", bundle: bundle) }
     static var noMeetingsYet: String { String(localized: "No meetings yet", bundle: bundle) }
     static var searchMeetings: String { String(localized: "Search meetings...", bundle: bundle) }
-    static var searchMeetingsAndProjects: String { String(localized: "Search meetings, screenshots, and projects", bundle: bundle) }
+    static var searchMeetingsAndProjects: String { String(localized: "Search meetings, screenshots, projects, and chats", bundle: bundle) }
     static var screenshotSearchResults: String { String(localized: "Screenshots", bundle: bundle) }
     static var detectedText: String { String(localized: "Detected Text", bundle: bundle) }
     static var imageDescription: String { String(localized: "Image Description", bundle: bundle) }

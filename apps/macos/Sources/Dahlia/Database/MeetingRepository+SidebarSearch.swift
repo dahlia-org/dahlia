@@ -105,7 +105,7 @@ extension MeetingRepository {
         )
     }
 
-    private nonisolated static func withSearchDeadline<Result: Sendable>(
+    nonisolated static func withSearchDeadline<Result: Sendable>(
         _ operation: @escaping @Sendable () async throws -> Result
     ) async throws -> Result {
         try await withThrowingTaskGroup(of: Result.self) { group in
@@ -309,7 +309,7 @@ extension MeetingRepository {
             .joined(separator: " AND ")
     }
 
-    private nonisolated static func orderedQueryTokens(_ tokens: [String], in db: Database) throws -> [FTSQueryToken] {
+    nonisolated static func orderedQueryTokens(_ tokens: [String], in db: Database) throws -> [FTSQueryToken] {
         try tokens.enumerated().map { ordinal, token in
             let isPrefix = ordinal == tokens.count - 1
             let estimatedDocuments: Int = if isPrefix {
@@ -649,7 +649,7 @@ extension MeetingRepository {
     }
 }
 
-private struct FTSQueryToken {
+struct FTSQueryToken {
     let ordinal: Int
     let token: String
     let query: String

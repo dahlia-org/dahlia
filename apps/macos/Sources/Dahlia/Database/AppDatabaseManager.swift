@@ -230,6 +230,23 @@ final class AppDatabaseManager: Sendable {
             """)
         }
 
+        migrator.registerMigration("v59_chatHistory") { db in
+            try ChatHistoryMigration.migrate(in: db)
+        }
+
+        migrator.registerMigration("v60_meetingDisplayIndexes") { db in
+            // A project's page seeks its own meetings in display order, and text availability is looked up by entity alone.
+            if try db.tableExists("meetings"), try db.columns(in: "meetings").contains(where: { $0.name == "workspace_id" }) {
+                try db.execute(sql: """
+                CREATE INDEX IF NOT EXISTS meetings_on_workspace_id_projectId_recordingStartedAt_createdAt_id
+                ON meetings(workspace_id, projectId, COALESCE(recordingStartedAt, createdAt), id)
+                """)
+            }
+            if try db.tableExists("sync_content_state") {
+                try db.execute(sql: "CREATE INDEX IF NOT EXISTS sync_content_state_on_entity_entityId ON sync_content_state(entity, entityId)")
+            }
+        }
+
         return migrator
     }()
 

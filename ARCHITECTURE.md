@@ -308,6 +308,11 @@ Databricks DAB の既存受付済み画像解析とWeb要約内の画像選別�
 
 全文検索は `search_documents` registry と contentless `search_documents_fts` を再構築可能な projection として扱う。meeting metadata、構造化 summary の本文、project、全 screenshot の検出文字と画像説明を索引し、summary の metadata・内部識別子と文字起こし・翻訳文は対象にしない。ミーティング自由文検索はアプリと MCP のどちらも title、description、summary、calendar、tags を対象とし、project path は Project 専用検索と明示的な Project 絞り込みだけに使う。画像解析の正本は `file_text_bodies.ocrText` と `file_text_bodies.caption` に保存し、meeting_attachments insert trigger は coalesce 可能な `screenshotAnalysis` job の upsert だけを行う。utility-priority の `BackgroundJobWorker` actor は内蔵 Pi にアカウント設定の画像解析モデル（既定 `gpt-6-luna`、Claude Subscription は `claude-haiku-5-5`。Codex 時代の ID は Pi のモデル ID の末尾一致で解決する）、推論強度は固定の `low` を使い1枚ずつ最大2並行で送り、正本保存、Lindera tokenization、FTS 更新を一つの複合 job として処理する。画像検索を無効にしたアカウントでは新たな OCR・caption の生成を実行せず、既存の本文を保持する。値の欠如だけでは解析中と表示しない。設定したフォールバックモデルがあれば生成・応答検証の失敗時にそのモデルを1回だけ試す。Pi の未設定、未認証、両モデルの利用不可では並行処理を停止し、試行回数を消費せず job を queue に残す。画像解析と索引更新を含むバックグラウンド処理は録音中も継続し、録音開始・停止は worker の完了を待たない。screenshot は meeting 検索結果へ統合せず、同じ検索画面と MCP の独立した結果として返す。要約生成には従来どおり画像を渡し、抽出結果を代替入力にしない。画像検索の有効・無効にかかわらず、要約前に OCR・caption と共通の画像解析モデル（アカウント設定、既定 `gpt-6-luna`）と固定の推論強度 `medium` で候補の縮小画像を解析し、共有資料の重複しない最大24枚に絞る。読み込みと判定は合わせて90秒で打ち切り、失敗・時間切れでは全候補を渡す。明示再構築は実行中の job の完了後、未着手の画像解析より先に処理する。設定では索引エラーと前回の画像解析エラーを分け、画像解析には利用可能なエラー詳細を端末内に保持する。初期構築・再構築中は不完全な結果を返さず検索 unavailable とし、索引の遅延や failure は録音、確定文字起こし、正本 metadata と summary の commit を待たせない。
 
+Desktop の AI チャットは GRDB の `chat_threads`／追記専用 `chat_items` を正本にし、Pi ファイルは実行再開状態だけを持つ。
+履歴表示は直近40メッセージを初期取得し、過去分を操作時に追加取得する。タイトルと各メッセージを別々の全文検索文書にし、
+追記では新しいメッセージだけを索引化して結果を Thread ごとにまとめる。推論文・ツール引数／結果・画像は索引化せず、
+アカウントと Workspace で検索結果を絞る。辞書の再構築時はチャットも再構築する。チャットとその索引はバックアップ・Server 同期の対象外。
+
 Desktop 検索は旧 Advanced 相当の全文検索に統一し、Simple／Neural とモード切替を廃止した。Gemma 推論、モデル取得、vector worker は実行しない。追加 migration で vector 検索を無効化し、専用 trigger を撤去する。互換性のため旧 schema、既存 vector と job は保持する。起動時に現在のアプリプロファイルの `Models/EmbeddingGemma` だけをバックグラウンド削除し、失敗時は次回起動で再試行する。Server Account の主検索は capabilities の `search: { version: 1 }` により `POST /api/v1/search` の共通順位へ切り替え、未同期の端末内結果を別枠で表示する。オフライン・旧 Server・metadata 同期待ち・タグ指定・複数 Project 指定は端末内検索と明示する。Web と Server MCP は同じ service を使う。上位100件は全件完了としない。旧 GET FTS ページングは local content broker と既存クライアントの全件探索用に維持する。
 
 ミーティングサイドバーは SQLite を正本とし、最新 50 件から keyset pagination で段階表示する。表示用 projection は

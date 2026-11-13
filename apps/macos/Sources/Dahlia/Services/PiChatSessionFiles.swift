@@ -3,6 +3,29 @@ import Foundation
 
 /// Reads Pi session files (`<timestamp>_<id>.jsonl`) without starting Pi.
 enum PiChatSessionFiles {
+    static func headerID(at url: URL) throws -> String {
+        let handle = try FileHandle(forReadingFrom: url)
+        defer { try? handle.close() }
+        let bytes = try handle.read(upToCount: 65536) ?? Data()
+        let header = bytes.prefix { $0 != UInt8(ascii: "\n") }
+        guard let object = try JSONDecoder().decode(JSONValue.self, from: header).objectValue,
+              object["type"]?.stringValue == "session", let id = object["id"]?.stringValue,
+              UUID(uuidString: id) != nil else { throw PiRuntimeError.invalidProtocolResponse }
+        return id
+    }
+
+    static func historyItems(at url: URL) throws -> [JSONValue] {
+        try records(at: url).flatMap { record -> [JSONValue] in
+            guard record["type"]?.stringValue == "message", let message = record["message"]?.objectValue else { return [] }
+            switch message["role"]?.stringValue {
+            case "user": return [ChatHistoryCodec.message(message)]
+            case "assistant": return try ChatHistoryCodec.assistantItems(message)
+            case "toolResult": return try [ChatHistoryCodec.toolResult(message)]
+            default: return []
+            }
+        }
+    }
+
     static func file(id: String, in directory: URL) -> URL? {
         let files = (try? FileManager.default.contentsOfDirectory(at: directory, includingPropertiesForKeys: nil)) ?? []
         return files.first { $0.lastPathComponent.hasSuffix("_\(id).jsonl") }
@@ -16,32 +39,6 @@ enum PiChatSessionFiles {
               header["cwd"]?.stringValue != directory.path else { return }
         header["cwd"] = .string(directory.path)
         try (JSONEncoder().encode(JSONValue.object(header)) + data[headerEnd...]).write(to: url, options: .atomic)
-    }
-
-    /// Newest first. The cursor is the last listed thread's modification time and file name, so a thread that
-    /// becomes newer between pages is not listed twice and does not push another one out.
-    static func page(in directory: URL, cursor: String?, limit: Int) throws -> CodexChatThreadPage {
-        let files = try FileManager.default.contentsOfDirectory(
-            at: directory,
-            includingPropertiesForKeys: [.contentModificationDateKey]
-        ).filter { $0.pathExtension == "jsonl" }
-        let dated = files.map { url in
-            let date = (try? url.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate) ?? .distantPast
-            return (url: url, key: (date.timeIntervalSince1970, url.lastPathComponent))
-        }.sorted { $0.key > $1.key }
-        let remaining = cursorKey(cursor).map { after in dated.filter { $0.key < after } } ?? dated
-        let slice = remaining.prefix(limit)
-        let threads = slice.compactMap { entry -> CodexChatThreadSummary? in
-            guard let records = try? summaryRecords(at: entry.url), let id = sessionID(records) else { return nil }
-            return CodexChatThreadSummary(id: id, title: title(records), updatedAt: Date(timeIntervalSince1970: entry.key.0))
-        }
-        let next = remaining.count > limit ? slice.last.map { "\($0.key.0)|\($0.key.1)" } : nil
-        return CodexChatThreadPage(threads: threads, nextCursor: next)
-    }
-
-    private static func cursorKey(_ cursor: String?) -> (Double, String)? {
-        guard let cursor, let separator = cursor.firstIndex(of: "|"), let time = Double(cursor[..<separator]) else { return nil }
-        return (time, String(cursor[cursor.index(after: separator)...]))
     }
 
     static func thread(at url: URL) throws -> CodexChatThread {
@@ -108,21 +105,6 @@ enum PiChatSessionFiles {
     private static func contentBlocks(_ content: JSONValue?) -> [[String: JSONValue]] {
         if let text = content?.stringValue { return [["type": .string("text"), "text": .string(text)]] }
         return content?.arrayValue?.compactMap(\.objectValue) ?? []
-    }
-
-    /// The header, session names, and the first user message: enough for a title without decoding image and tool output.
-    private static func summaryRecords(at url: URL) throws -> [[String: JSONValue]] {
-        var records: [[String: JSONValue]] = []
-        var foundUserMessage = false
-        for (index, line) in try Data(contentsOf: url).split(separator: UInt8(ascii: "\n")).enumerated() {
-            let isSessionName = line.firstRange(of: Data(#""type":"session_info""#.utf8)) != nil
-            let isUserMessage = !foundUserMessage && line.firstRange(of: Data(#""role":"user""#.utf8)) != nil
-            guard index == 0 || isSessionName || isUserMessage,
-                  let record = try? JSONDecoder().decode(JSONValue.self, from: Data(line)).objectValue else { continue }
-            foundUserMessage = foundUserMessage || isUserMessage
-            records.append(record)
-        }
-        return records
     }
 
     private static func records(at url: URL) throws -> [[String: JSONValue]] {
