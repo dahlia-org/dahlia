@@ -54,7 +54,7 @@ struct ScreenshotTabContentView: View {
                 recordingSessions: recordingSessions,
                 fallbackTimeBase: fallbackTimeBase,
                 minimumItemWidth: minimumItemWidth,
-                isSelecting: isSelecting,
+                isSelecting: $isSelecting,
                 referencedScreenshotIDs: referencedScreenshotIDs,
                 isDeletionDisabled: isDeletionDisabled,
                 selectedScreenshotIDs: $selectedScreenshotIDs,
