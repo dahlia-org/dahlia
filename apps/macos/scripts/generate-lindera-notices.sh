@@ -78,7 +78,7 @@ cargo tree \
                     exit 1
                 fi
                 printf '%s\n' "--- $(basename "$notice_path") ---"
-                sed -e '$a\' "$notice_path"
+                tr -d '\r' < "$notice_path" | sed -e '$a\'
             done
         fi
         printf '\n'

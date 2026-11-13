@@ -2,8 +2,8 @@
 
 use lindera::LinderaResult;
 use lindera::token::Token;
-use lindera::token_filter::TokenFilter;
-use lindera::tokenizer::{Tokenizer, TokenizerBuilder};
+use lindera_analysis::token_filter::TokenFilter;
+use lindera_analysis::tokenizer::{Tokenizer, TokenizerBuilder};
 use std::collections::HashMap;
 use std::ffi::{CStr, c_char, c_void};
 use std::panic::{AssertUnwindSafe, catch_unwind};
@@ -44,7 +44,7 @@ impl TokenFilter for UserDictionaryBaseFormFilter {
     fn apply(&self, tokens: &mut Vec<Token<'_>>) -> LinderaResult<()> {
         // The 3-column CSV loader fills base_form with `*`; preserve its surface before base-form normalization.
         for token in tokens {
-            if !token.word_id.is_system && token.get("base_form") == Some("*") {
+            if !token.word_id.is_system() && token.get("base_form") == Some("*") {
                 token.set_detail(6, token.surface.clone());
             }
         }
@@ -82,7 +82,7 @@ fn build_analyzer_with_dictionaries(
     let mut tokenizer = builder.build().map_err(|_| ())?;
     if let Some(user) = &tokenizer.segmenter.user_dictionary {
         let matrix = &tokenizer.segmenter.dictionary.connection_cost_matrix;
-        // Lindera-dictionary 2.3.4 stores 10-byte WordEntry records; its CSV loader does not bound context IDs.
+        // Lindera-dictionary 6.2.0 stores 10-byte WordEntry records; its CSV loader does not bound context IDs.
         for entry in user.dict.vals_data.chunks_exact(10) {
             let left = u16::from_le_bytes([entry[6], entry[7]]) as u32;
             let right = u16::from_le_bytes([entry[8], entry[9]]) as u32;

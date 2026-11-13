@@ -2005,17 +2005,29 @@
 "Search dictionary" = "System dictionary";
 "Search dictionary IPADIC" = "IPADIC (built-in)";
 "Search active dictionary" = "Active search dictionary";
-"Search NEologd download description" = "NEologd 2.3.4 (about 289 MiB), with additional neologisms and proper nouns.";
-"Search download NEologd" = "Download NEologd";
+"Search NEologd download description" = "Lists the latest three supported releases and downloaded dictionaries. Selecting a new release downloads it. Rebuild full-text search to apply it.";
 "Search user dictionary" = "User dictionary";
 "Search user dictionary none" = "None";
-"Search user dictionary import" = "Choose CSV…";
-"Search user dictionary remove" = "Remove selection";
-"Search user dictionary description" = "UTF-8 CSV without a header (up to 10 MiB). Use surface,part of speech,reading (for example: ダリア会議,カスタム名詞,ダリアカイギ), or the full 13-column IPADIC format. Choose the edited CSV again to update it.";
+"Search user dictionary import" = "Import CSV…";
+"Search user dictionary remove" = "Remove user dictionary";
+"Search user dictionary description" = "UTF-8 CSV without a header (up to 10 MiB). Use three columns (surface, part of speech, reading) or the 13-column IPADIC format. Importing a CSV replaces the entire dictionary file.";
 "Search dictionary rebuild required" = "Dictionary changes are saved. Click Rebuild full-text search to apply them. Search continues using the current dictionary until then.";
 "Search dictionary scope" = "Applies to local search and Local MCP on this Mac. Selecting a dictionary does not rebuild the index or change Server search. Returning to built-in IPADIC or removing a user dictionary also takes effect after an explicit rebuild.";
 "Search NEologd license" = "NEologd license";
 "Search dictionary download failed" = "Could not download the dictionary. Check your connection and try again.";
 "Search dictionary checksum mismatch" = "The dictionary checksum did not match. Download it again.";
 "Search dictionary invalid" = "Could not load the dictionary. The current dictionary settings are preserved.";
-"Search user dictionary invalid" = "Choose a non-empty UTF-8 CSV file (up to 10 MiB).";
+"Search user dictionary invalid" = "The user dictionary could not be loaded. Use UTF-8 CSV (up to 10 MiB) and check each entry’s surface, part of speech, and reading.";
+
+"Search dictionary file" = "Dictionary file";
+"Search dictionary replace" = "Replace the user dictionary?";
+"Search dictionary replace description" = "This replaces all current entries with the imported CSV.";
+"Search dictionary clear description" = "This empties the dictionary file. Rebuild full-text search to stop using the user dictionary.";
+
+"Search NEologd downloaded" = "Downloaded";
+"Search NEologd download on selection" = "Download on selection";
+"Search NEologd downloading" = "Downloading and validating dictionary…";
+"Search NEologd refresh" = "Refresh versions";
+"Search NEologd catalog unavailable" = "Could not refresh versions. Showing saved releases and downloaded dictionaries. Try again.";
+"Search NEologd unsupported" = "Unsupported, downloaded";
+"Search NEologd upgrade required" = "The active older dictionary is incompatible with this version. Select built-in IPADIC or a supported release, then rebuild full-text search.";

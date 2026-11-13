@@ -32,12 +32,17 @@ struct SearchSettingsView: View {
                     Spacer()
                     Button(L10n.rebuildFullTextSearch) {
                         Task {
-                            await model.rebuildFullTextIndex(dictionaryConfiguration: dictionaries.needsRebuild ? dictionaries.configuration : nil)
-                            await dictionaries.refresh()
+                            do {
+                                let configuration = try await dictionaries.rebuildConfiguration()
+                                await model.rebuildFullTextIndex(dictionaryConfiguration: configuration)
+                                await dictionaries.refresh()
+                            } catch {
+                                dictionaries.reportError(error)
+                            }
                         }
                     }
                     .buttonStyle(.dahlia())
-                    .disabled(model.isRequestingRebuild || dictionaries.isBusy || !dictionaries.isLoaded)
+                    .disabled(model.isRequestingRebuild || dictionaries.isBusy || !dictionaries.isLoaded || !dictionaries.isUserDictionaryValid)
                 }
 
                 if let error = model.lastErrorCode {

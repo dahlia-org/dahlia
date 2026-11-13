@@ -2005,17 +2005,29 @@
 "Search dictionary" = "システム辞書";
 "Search dictionary IPADIC" = "IPADIC（内蔵）";
 "Search active dictionary" = "検索に適用中の辞書";
-"Search NEologd download description" = "NEologd 2.3.4（約289 MiB）。新語・固有名詞を追加した辞書です。";
-"Search download NEologd" = "NEologd を取得";
+"Search NEologd download description" = "対応する直近3バージョンと取得済みの辞書を表示します。未取得の版を選ぶとダウンロードします。適用には全文検索の再構築が必要です。";
 "Search user dictionary" = "ユーザー辞書";
 "Search user dictionary none" = "未設定";
-"Search user dictionary import" = "CSV を選択…";
-"Search user dictionary remove" = "設定を解除";
-"Search user dictionary description" = "UTF-8・ヘッダーなしの CSV（最大10 MiB）。各行は「表層形,品詞,読み」（例：ダリア会議,カスタム名詞,ダリアカイギ）、または IPADIC 形式の13列で指定します。変更する場合は編集した CSV を再度選択してください。";
+"Search user dictionary import" = "CSV を取り込む…";
+"Search user dictionary remove" = "ユーザー辞書を解除";
+"Search user dictionary description" = "UTF-8・ヘッダーなしの CSV（最大10 MiB）。各行は「表層形,品詞,読み」、または IPADIC 形式の13列で指定します。CSV の取り込みは辞書ファイル全体を置き換えます。";
 "Search dictionary rebuild required" = "辞書の変更を保存しました。「全文検索を再構築」を押すと適用されます。それまでは現在の辞書で検索できます。";
 "Search dictionary scope" = "この Mac の端末内検索と Local MCP に適用します。辞書の選択だけでは再構築しません。Server 側の検索には適用しません。内蔵 IPADIC への復帰やユーザー辞書の解除も、再構築後に反映されます。";
 "Search NEologd license" = "NEologd のライセンス";
 "Search dictionary download failed" = "辞書を取得できませんでした。通信状況を確認して再試行してください。";
 "Search dictionary checksum mismatch" = "辞書のチェックサムが一致しません。取得をやり直してください。";
 "Search dictionary invalid" = "辞書を読み込めませんでした。現在の辞書設定は保持されています。";
-"Search user dictionary invalid" = "UTF-8 の空でない CSV（最大10 MiB）を選択してください。";
+"Search user dictionary invalid" = "ユーザー辞書を読み込めません。UTF-8 の CSV（最大10 MiB）で、各行の単語・品詞・読みを確認してください。";
+
+"Search dictionary file" = "辞書ファイル";
+"Search dictionary replace" = "ユーザー辞書を置き換えますか？";
+"Search dictionary replace description" = "現在の全単語を、取り込む CSV の内容で置き換えます。";
+"Search dictionary clear description" = "辞書ファイルの内容を空にします。全文検索の再構築後にユーザー辞書を使わなくなります。";
+
+"Search NEologd downloaded" = "取得済み";
+"Search NEologd download on selection" = "選択すると取得";
+"Search NEologd downloading" = "辞書を取得・検証中…";
+"Search NEologd refresh" = "バージョン一覧を更新";
+"Search NEologd catalog unavailable" = "バージョン一覧を更新できません。保存済みの候補と取得済み辞書を表示しています。再試行してください。";
+"Search NEologd unsupported" = "非対応・取得済み";
+"Search NEologd upgrade required" = "適用中の旧版辞書は、このバージョンでは利用できません。内蔵 IPADIC または対応版を選び、全文検索を再構築してください。";
