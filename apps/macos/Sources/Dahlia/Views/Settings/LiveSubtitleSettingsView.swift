@@ -14,23 +14,14 @@ struct LiveSubtitleSettingsView: View {
                     Text(L10n.liveSubtitleOverlayToggleDescription)
                 }
                 .toggleStyle(.switch)
+
+                LiveTranscriptionLanguagePicker(supportedLocales: supportedLocales)
+                    .disabled(isLoadingLocales)
             } footer: {
                 Text(L10n.liveSubtitleOverlayDescription)
             }
 
             Section {
-                DahliaMenuPicker(
-                    title: L10n.liveSubtitleLanguage,
-                    selection: $settings.liveSubtitleLocale,
-                    options: SettingsLanguageOptions.locales(
-                        from: supportedLocales.filter { settings.isLanguageEnabled($0.identifier) },
-                        including: settings.liveSubtitleLocale
-                    ).map(\.identifier)
-                ) { identifier in
-                    Locale(identifier: identifier).localizedString(forIdentifier: identifier) ?? identifier
-                }
-                .disabled(isLoadingLocales)
-
                 Toggle(isOn: $settings.includesMicrophoneInLiveSubtitles) {
                     Text(L10n.includeMicrophone)
                     Text(L10n.liveSubtitleMicrophoneDescription)
@@ -80,7 +71,7 @@ struct LiveSubtitleSettingsView: View {
                 if !settings.liveSubtitleTranslationEnabled {
                     Text(L10n.enableLiveSubtitleTranslationToChooseLanguage)
                 } else if !settings.isLiveSubtitleTranslationEffectivelyEnabled {
-                    Text(L10n.liveSubtitleTranslationDisabledForMatchingLiveSubtitleLanguage)
+                    Text(L10n.liveSubtitleTranslationDisabledForMatchingLiveTranscriptionLanguage)
                 }
             }
         }

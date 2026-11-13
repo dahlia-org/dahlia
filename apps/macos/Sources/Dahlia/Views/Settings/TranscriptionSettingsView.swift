@@ -35,15 +35,17 @@ struct TranscriptionSettingsView: View {
                 Section { SettingsStatusMessage(text: error, systemImage: "exclamationmark.triangle", tint: .orange) }
             }
 
-            // Saved with the account's AI settings, which need an open workspace.
-            if settings.currentWorkspace != nil {
-                Section {
+            Section {
+                // Saved with the account's AI settings, which need an open workspace.
+                if settings.currentWorkspace != nil {
                     Toggle(L10n.liveTranscriptDraft, isOn: $workspaceSettings.generationSettings.liveTranscriptDraft)
                         .toggleStyle(.switch)
-                } header: {
-                    Text(L10n.settingsDuringRecording)
-                        .font(.dahliaSectionHeader)
                 }
+                LiveTranscriptionLanguagePicker(supportedLocales: supportedLocales)
+                    .disabled(isLoadingLocales)
+            } header: {
+                Text(L10n.settingsDuringRecording)
+                    .font(.dahliaSectionHeader)
             }
 
             Section {
