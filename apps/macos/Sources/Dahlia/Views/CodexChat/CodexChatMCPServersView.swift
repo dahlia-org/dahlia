@@ -23,22 +23,24 @@ struct CodexChatMCPServersView: View {
                 ScrollView {
                     LazyVStack(alignment: .leading, spacing: 0) {
                         ForEach(settings.servers) { server in
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text(server.name)
+                            HStack(spacing: 8) {
+                                AgentMCPServiceLogo.image(for: server.service)
+                                    .resizable()
+                                    .scaledToFit()
+                                    .frame(width: 16, height: 16)
+                                    .accessibilityHidden(true)
+                                Text(AgentMCPServer.displayName(for: server.service))
                                     .font(.dahliaBody)
                                     .foregroundStyle(DahliaDesign.primaryTextColor)
-                                Text(server.service)
-                                    .font(.dahliaSecondary)
-                                    .foregroundStyle(DahliaDesign.secondaryTextColor)
                             }
                             .lineLimit(1)
-                            .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+                            .frame(maxWidth: .infinity, minHeight: CodexChatDesign.configurationRowHeight, alignment: .leading)
                             .padding(.horizontal, 10)
                             .accessibilityElement(children: .combine)
                         }
                     }
                 }
-                .frame(idealHeight: min(CGFloat(settings.servers.count) * 44, 220), maxHeight: 220)
+                .frame(idealHeight: min(CGFloat(settings.servers.count) * CodexChatDesign.configurationRowHeight, 220), maxHeight: 220)
                 .scrollBounceBehavior(.basedOnSize)
             }
 
