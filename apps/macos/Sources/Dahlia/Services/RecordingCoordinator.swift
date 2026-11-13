@@ -190,11 +190,13 @@ final class RecordingCoordinator {
     /// 会議リンクを開いて `startRecording` を実行する。
     /// その呼び出しで録音が始まった場合だけ、開いたウィンドウをスクリーンショット取得対象に選ぶ。
     func openMeetingLink(for event: CalendarEvent, andStartRecording startRecording: () -> Void) {
+        let titlesBeforeOpening = viewModel.windowTitlesBeforeOpeningMeetingLink()
         let opening = event.conferenceURI.map(meetingLinkOpener.open)
         let couldBeginRecording = viewModel.canBeginRecording
         startRecording()
-        if let opening, couldBeginRecording, viewModel.isRecordingStartPending || viewModel.isListening {
-            viewModel.selectScreenshotWindow(openedBy: opening)
+        if let opening, let titlesBeforeOpening, couldBeginRecording,
+           viewModel.isRecordingStartPending || viewModel.isListening {
+            viewModel.selectScreenshotWindow(openedBy: opening, titlesBeforeOpening: titlesBeforeOpening)
         }
     }
 
