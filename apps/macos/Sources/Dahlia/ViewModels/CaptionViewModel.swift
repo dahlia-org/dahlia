@@ -660,7 +660,6 @@ final class CaptionViewModel: ObservableObject {
     private var summaryPersistenceRecoveryTask: Task<String?, Never>?
     private var transcriptionEventPipeline: TranscriptionEventPipeline?
     private var liveCaptionEventRelay: LiveCaptionEventRelay?
-    private var searchIndexer: BackgroundJobWorker?
     private var batchTranscriptionCoordinator: BatchTranscriptionCoordinator?
     private var batchTranscriptionRecoveryTask: Task<Void, Never>?
     private var activeBatchTelemetrySessionIDs: Set<UUID> = []
@@ -1057,10 +1056,6 @@ final class CaptionViewModel: ObservableObject {
                 }
             }
         }
-    }
-
-    func configureBackgroundJobWorker(_ searchIndexer: BackgroundJobWorker) {
-        self.searchIndexer = searchIndexer
     }
 
     private func enqueueAudioRetentionOperation(
@@ -3554,7 +3549,6 @@ final class CaptionViewModel: ObservableObject {
               !isFinalizingRecording,
               !isTerminationRequested,
               canStartRecording() else { return }
-        await searchIndexer?.pauseForRecording()
         let previousBatchTranscriptionState = batchTranscriptionState
         let activeDraftMeeting = usesDraftMeeting ? draftMeeting : nil
         let preservedDraftContext: PreservedDraftContext? = if !usesDraftMeeting, let draftMeeting {
@@ -3696,7 +3690,6 @@ final class CaptionViewModel: ObservableObject {
                 meetingScope: meetingScope,
                 previousBatchTranscriptionState: previousBatchTranscriptionState
             )
-            await searchIndexer?.start()
         }
     }
 
@@ -3849,9 +3842,6 @@ final class CaptionViewModel: ObservableObject {
         startingLiveSubtitleLocaleIdentifier = nil
         liveCaptionStore.clear()
         recordingLifecycle = .idle
-        if !isTerminationRequested {
-            await searchIndexer?.start()
-        }
         isFinalizingRecording = false
         finalizingMeetingId = nil
 
