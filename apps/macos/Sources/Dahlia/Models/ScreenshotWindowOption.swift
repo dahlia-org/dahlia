@@ -141,6 +141,12 @@ extension ScreenshotWindowOption.Snapshot {
         }
     }
 
+    /// ウィンドウがまだあるか。別のデスクトップにあるものや最小化したものも「ある」とみなす。
+    static func exists(_ windowID: CGWindowID) -> Bool {
+        (CGWindowListCopyWindowInfo([.optionAll], kCGNullWindowID) as? [[CFString: Any]] ?? [])
+            .contains { $0[kCGWindowNumber] as? CGWindowID == windowID }
+    }
+
     private static func windowInfoOnScreen() -> [[CFString: Any]] {
         CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID)
             as? [[CFString: Any]] ?? []

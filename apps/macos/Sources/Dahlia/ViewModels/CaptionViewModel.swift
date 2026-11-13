@@ -5276,38 +5276,49 @@ final class CaptionViewModel: ObservableObject {
         meetingWindowSelectionTask = Task {
             guard let bundleIdentifier = await opening.value, !bundleIdentifier.isEmpty else { return }
             // 会議のウィンドウは遅れて開くことが多いので、間隔を広げながら待つ（合計 31 秒）。
+            // 参加前の案内画面のように途中で閉じるウィンドウを選ぶこともあるため、選んだ後も最後まで見直す。
             let waits: [Duration] = [1, 2, 4, 8, 16].map { .seconds($0) }
+            var selectedWindowID: CGWindowID?
             for (index, wait) in waits.enumerated() {
                 try? await Task.sleep(for: wait)
                 // 開始待ちでも録音中でもなければ、この選択の持ち主の録音は始まらなかったか終わっている。
-                guard canSelectMeetingWindow, isRecordingStartPending || isListening else { return }
+                guard canSelectMeetingWindow(replacing: selectedWindowID),
+                      isRecordingStartPending || isListening else { return }
                 guard isListening else { continue }
-                let windows = await Self.windowsOnScreen()
+                let (windows, selectedWindowExists) = await Self.windowsOnScreen(checking: selectedWindowID)
                 // ウィンドウの取得を待つ間に、停止や手動の選択が入っていないか確かめ直す。
-                guard canSelectMeetingWindow, isListening else { return }
+                guard canSelectMeetingWindow(replacing: selectedWindowID), isListening else { return }
+                if selectedWindowExists {
+                    // 選んだウィンドウが残っているのに未設定なら、ユーザーが外している。
+                    guard screenshotCaptureSource != .none else { return }
+                    continue
+                }
                 // 最後まで見つからなければ、タイトルが変わらないタブ表示などとみなして最前面のウィンドウを選ぶ。
-                guard let windowID = ScreenshotWindowOption.meetingWindowID(
+                selectedWindowID = ScreenshotWindowOption.meetingWindowID(
                     from: windows,
                     bundleIdentifier: bundleIdentifier,
                     titlesBeforeOpening: titlesBeforeOpening
                 ) ?? (index == waits.indices.last
                     ? ScreenshotWindowOption.frontmostWindowID(from: windows, bundleIdentifier: bundleIdentifier)
                     : nil)
-                else { continue }
-                automaticallySelectedScreenshotSource = .window(windowID)
-                screenshotCaptureSource = .window(windowID)
+                // 選んだウィンドウが閉じていて次の候補がまだなければ、未設定に戻して待つ。
+                automaticallySelectedScreenshotSource = selectedWindowID.map { .window($0) }
+                screenshotCaptureSource = automaticallySelectedScreenshotSource ?? .none
                 refreshAvailableWindows()
-                return
             }
         }
     }
 
-    private var canSelectMeetingWindow: Bool {
-        !Task.isCancelled && screenshotCaptureSource == .none
+    /// 未設定か、自動で選んだ `windowID` のままなら、自動選択を続けてよい。それ以外はユーザーが選んでいる。
+    private func canSelectMeetingWindow(replacing windowID: CGWindowID?) -> Bool {
+        !Task.isCancelled
+            && (screenshotCaptureSource == .none || screenshotCaptureSource == windowID.map { .window($0) })
     }
 
-    @concurrent private nonisolated static func windowsOnScreen() async -> [ScreenshotWindowOption.Snapshot] {
-        ScreenshotWindowOption.Snapshot.onScreen()
+    @concurrent private nonisolated static func windowsOnScreen(
+        checking windowID: CGWindowID?
+    ) async -> (windows: [ScreenshotWindowOption.Snapshot], windowExists: Bool) {
+        (ScreenshotWindowOption.Snapshot.onScreen(), windowID.map(ScreenshotWindowOption.Snapshot.exists) ?? false)
     }
 
     private func updateAutomaticScreenshotProcessingSettings() {
