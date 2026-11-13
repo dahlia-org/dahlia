@@ -6,6 +6,13 @@ struct TranscriptRowView: View, Equatable {
     let timestamp: String
     let showsTranslatedText: Bool
     let allowsTextSelection: Bool
+    var selection: TextSelectionGroup?
+
+    nonisolated static func == (lhs: Self, rhs: Self) -> Bool {
+        lhs.segment == rhs.segment && lhs.timestamp == rhs.timestamp
+            && lhs.showsTranslatedText == rhs.showsTranslatedText
+            && lhs.allowsTextSelection == rhs.allowsTextSelection && lhs.selection === rhs.selection
+    }
 
     var body: some View {
         HStack(alignment: .top, spacing: 10) {
@@ -30,7 +37,10 @@ struct TranscriptRowView: View, Equatable {
             // テキスト
             // 録音中は AppKit の選択範囲管理を作らず、連続更新・スクロール時の
             // MainActor 負荷を録音停止後へ先送りする。
-            if allowsTextSelection {
+            if allowsTextSelection, let selection {
+                TranscriptRowTextView(segment: segment, showsTranslatedText: showsTranslatedText, selection: selection)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            } else if allowsTextSelection {
                 transcriptText.textSelection(.enabled)
             } else {
                 transcriptText

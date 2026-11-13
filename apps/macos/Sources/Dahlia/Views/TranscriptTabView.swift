@@ -13,6 +13,7 @@ struct TranscriptTabView<Header: View, Footer: View>: View {
     @State private var scrollPosition = ScrollPosition(idType: TranscriptSegment.ID.self)
     @State private var isFollowingLatest = false
     @State private var pageLoadTask: Task<Void, Never>?
+    @State private var textSelection = TextSelectionGroup()
 
     private var showsTranscriptContent: Bool {
         !store.isLoadingInitialPage && !(store.segments.isEmpty && store.pageLoadError == nil)
@@ -49,7 +50,8 @@ struct TranscriptTabView<Header: View, Footer: View>: View {
                                 fallbackTimeBase: timeBase
                             ),
                             showsTranslatedText: showsTranslatedText,
-                            allowsTextSelection: allowsTextSelection
+                            allowsTextSelection: allowsTextSelection,
+                            selection: textSelection
                         )
                         .equatable()
                         .padding(.horizontal, DahliaDesign.tabContentInset)
@@ -65,6 +67,21 @@ struct TranscriptTabView<Header: View, Footer: View>: View {
             .frame(maxWidth: .infinity)
         }
         .scrollPosition($scrollPosition)
+        .onChange(of: store.segments, initial: true) { _, segments in
+            guard allowsTextSelection else { return }
+            textSelection.update(segments: segments, showsTranslatedText: showsTranslatedText)
+        }
+        .onChange(of: showsTranslatedText) { _, _ in
+            guard allowsTextSelection else { return }
+            textSelection.update(segments: store.segments, showsTranslatedText: showsTranslatedText)
+        }
+        .onChange(of: allowsTextSelection) { _, _ in
+            if allowsTextSelection {
+                textSelection.update(segments: store.segments, showsTranslatedText: showsTranslatedText)
+            } else {
+                textSelection.clear()
+            }
+        }
         .onScrollTargetVisibilityChange(idType: TranscriptSegment.ID.self, threshold: 0.1) { ids in
             updateVisibleSegments(ids)
         }

@@ -10,6 +10,7 @@ A macOS native real-time transcription app. Captures microphone and system audio
 - **On-Device Transcription** — Real-time speech-to-text using Apple Speech framework
 - **Automatic Batch Language Detection** — Detect each recording file's language with WhisperKit, then transcribe it with Apple Speech
 - **AI Summaries** — Generate structured summaries through the Pi agent you install (optional; Pi is not bundled)
+- **Text Selection (macOS)** — Drag across summary paragraphs, lists, and tables, or across displayed transcript utterances after recording stops, then copy with Command+C.
 - **Optional Dahlia Server** — Self-host an authenticated Responses gateway for Dahlia's Pi agent without distributing provider credentials to each user. The official managed offering is Dahlia Cloud.
 - **AI Meeting Access** — Explore meeting evidence and optionally reorganize Projects or correct summaries through a workspace-scoped local MCP server
 - **Upcoming Events** — The sidebar shows up to five ongoing and upcoming events for today, like the menu bar; **Show All** opens the full schedule including later days. Hover over a sidebar event to join its meeting link and start recording, or open its options menu to join the service, schedule automatic recording, or open the event in Calendar. A timer icon marks events with automatic recording enabled. Joining from the main schedule also starts recording.
