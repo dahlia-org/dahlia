@@ -392,7 +392,7 @@ final class CaptionViewModel: ObservableObject {
     /// 会議リンクから自動で選んだ取得対象。ユーザーが選び直していなければ、録音の停止時に未設定へ戻す。
     private var automaticallySelectedScreenshotSource: ScreenshotCaptureSource?
     /// スクリーンショット取得対象。未設定の場合はキャプチャしない。
-    @Published var screenshotCaptureSource: ScreenshotCaptureSource = .none {
+    @Published private(set) var screenshotCaptureSource: ScreenshotCaptureSource = .none {
         didSet {
             guard screenshotCaptureSource != oldValue else { return }
             // ユーザーが選び直した対象は、録音の停止時に未設定へ戻さない。
@@ -5236,6 +5236,12 @@ final class CaptionViewModel: ObservableObject {
 
     // MARK: - Screenshot
 
+    func selectScreenshotSource(_ source: ScreenshotCaptureSource) {
+        meetingWindowSelectionTask?.cancel()
+        automaticallySelectedScreenshotSource = nil
+        screenshotCaptureSource = source
+    }
+
     /// キャプチャ対象のウィンドウ一覧を更新する。
     func refreshAvailableWindows() {
         guard availableWindowsRefreshTask == nil else { return }
@@ -5263,20 +5269,24 @@ final class CaptionViewModel: ObservableObject {
     }
 
     /// 会議ウィンドウの自動選択が有効なら、会議リンクを開く直前のウィンドウを控える。無効なら nil。
-    /// 開く前の状態を確実に控えるため同期で取得する（数ミリ秒）。
-    func windowTitlesBeforeOpeningMeetingLink() -> [CGWindowID: String]? {
+    func windowTitlesBeforeOpeningMeetingLink(
+        snapshot: @escaping @Sendable () -> [CGWindowID: String] = { ScreenshotWindowOption.Snapshot.titlesOnScreen() }
+    ) -> Task<[CGWindowID: String], Never>? {
         guard AppSettings.shared.automaticScreenshotSelectsMeetingWindow else { return nil }
-        return ScreenshotWindowOption.Snapshot.titlesOnScreen()
+        return Task.detached(priority: .userInitiated) {
+            snapshot()
+        }
     }
 
     /// 会議リンクを開いたアプリのウィンドウのうち、開いた後に現れたかタイトルが変わったものを、未設定のスクリーンショット取得対象に選ぶ。
     /// リンクを開く操作で録音の開始が受け付けられた直後に呼ぶ。選んだ対象はその録音だけのもので、停止時に未設定へ戻す。
     func selectScreenshotWindow(
         openedBy opening: Task<String?, Never>,
-        titlesBeforeOpening: [CGWindowID: String]
+        titlesBeforeOpening: Task<[CGWindowID: String], Never>
     ) {
         meetingWindowSelectionTask?.cancel()
         meetingWindowSelectionTask = Task {
+            let titlesBeforeOpening = await titlesBeforeOpening.value
             guard let bundleIdentifier = await opening.value, !bundleIdentifier.isEmpty else { return }
             // 会議のウィンドウは遅れて開くことが多いので、間隔を広げながら待つ（合計 31 秒）。
             // 参加前の案内画面のように途中で閉じるウィンドウを選ぶこともあるため、選んだ後も最後まで見直す。
@@ -5292,8 +5302,6 @@ final class CaptionViewModel: ObservableObject {
                 // ウィンドウの取得を待つ間に、停止や手動の選択が入っていないか確かめ直す。
                 guard canSelectMeetingWindow(replacing: selectedWindowID), isListening else { return }
                 if selectedWindowExists {
-                    // 選んだウィンドウが残っているのに未設定なら、ユーザーが外している。
-                    guard screenshotCaptureSource != .none else { return }
                     continue
                 }
                 // 最後まで見つからなければ、タイトルが変わらないタブ表示などとみなして最前面のウィンドウを選ぶ。

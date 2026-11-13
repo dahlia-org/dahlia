@@ -191,7 +191,12 @@ final class RecordingCoordinator {
     /// その呼び出しで録音が始まった場合だけ、開いたウィンドウをスクリーンショット取得対象に選ぶ。
     func openMeetingLink(for event: CalendarEvent, andStartRecording startRecording: () -> Void) {
         let titlesBeforeOpening = viewModel.windowTitlesBeforeOpeningMeetingLink()
-        let opening = event.conferenceURI.map(meetingLinkOpener.open)
+        let opening = event.conferenceURI.map { conferenceURI in
+            Task {
+                _ = await titlesBeforeOpening?.value
+                return await meetingLinkOpener.open(conferenceURI).value
+            }
+        }
         let couldBeginRecording = viewModel.canBeginRecording
         startRecording()
         if let opening, let titlesBeforeOpening, couldBeginRecording,

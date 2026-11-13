@@ -69,8 +69,7 @@ final class MenuBarRecordingState {
     }
 
     func selectScreenshotSource(_ source: ScreenshotCaptureSource) {
-        guard source != viewModel.screenshotCaptureSource else { return }
-        viewModel.screenshotCaptureSource = source
+        viewModel.selectScreenshotSource(source)
     }
 
     private func observeMenuState() {

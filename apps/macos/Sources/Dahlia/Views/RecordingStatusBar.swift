@@ -227,7 +227,10 @@ struct RecordingStatusBar: View {
             title: L10n.screen,
             displayValue: selectedScreenSourceDisplayName,
             systemImage: "rectangle.on.rectangle",
-            selection: $viewModel.screenshotCaptureSource,
+            selection: Binding(
+                get: { viewModel.screenshotCaptureSource },
+                set: { viewModel.selectScreenshotSource($0) }
+            ),
             items: screenSourceMenuItems
         )
         .help(L10n.source)
@@ -435,8 +438,8 @@ private struct RecordingSourcePopupButton<Value: Hashable>: NSViewRepresentable 
 
             let newValue = parent.options[selectedItem.tag].value
             let oldValue = parent.selection
-            guard oldValue != newValue else { return }
             parent.selection = newValue
+            guard oldValue != newValue else { return }
             parent.onSelectionChange(oldValue, newValue)
         }
     }

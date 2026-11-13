@@ -1,4 +1,5 @@
 import Foundation
+import os
 @testable import Dahlia
 
 #if canImport(Testing)
@@ -7,6 +8,27 @@ import Foundation
     @MainActor
     @Suite(.serialized)
     struct MeetingLinkOpeningTests {
+        @Test
+        func preOpeningWindowSnapshotRunsOffMainThread() async throws {
+            let settings = AppSettings.shared
+            let previousValue = settings.automaticScreenshotSelectsMeetingWindow
+            defer { settings.automaticScreenshotSelectsMeetingWindow = previousValue }
+            settings.automaticScreenshotSelectsMeetingWindow = true
+            let viewModel = CaptionViewModel(
+                availableInputDevicesProvider: { [] },
+                defaultInputDeviceIDProvider: { nil }
+            )
+            let ranOnMainThread = OSAllocatedUnfairLock(initialState: true)
+
+            let snapshot = try #require(viewModel.windowTitlesBeforeOpeningMeetingLink {
+                ranOnMainThread.withLock { $0 = Thread.isMainThread }
+                return [42: "Meeting"]
+            })
+
+            #expect(await snapshot.value == [42: "Meeting"])
+            #expect(!ranOnMainThread.withLock { $0 })
+        }
+
         @Test
         func servicesResolveFromConferenceHosts() throws {
             #expect(try MeetingLinkService(conferenceURL: url("https://meet.google.com/abc")) == .googleMeet)
