@@ -2679,8 +2679,9 @@ enum L10n { // swiftlint:disable:this type_body_length
         bundle: bundle
     ) }
     static var codexNoModels: String { String(localized: "Pi returned no available models. Try again.", bundle: bundle) }
-    static var codexModelDescription: String { String(
-        localized: "Models are loaded from Pi.",
+    static var fallbackModel: String { String(localized: "Fallback Model", bundle: bundle) }
+    static var fallbackModelDescription: String { String(
+        localized: "Try this model once if generation fails or returns an invalid response. None disables fallback.",
         bundle: bundle
     ) }
     static var reasoningEffort: String { String(localized: "Reasoning Effort", bundle: bundle) }

@@ -12,6 +12,7 @@ struct LocalSummarySettingsRows: View {
     @Bindable private var workspaceSettings = WorkspaceAISettingsModel.shared
     @State private var catalog = CodexModelCatalog(service: .shared)
     @State private var retryTask: Task<Void, Never>?
+    @State private var isImageModelInfoPresented = false
 
     var body: some View {
         Group {
@@ -28,10 +29,27 @@ struct LocalSummarySettingsRows: View {
                         Text(model.displayName).font(.dahliaBody).tag(model.model)
                     }
                 } label: {
-                    Text(L10n.model)
-                    Text(target == .imageAnalysis ? L10n.imageAnalysisModelDescription : L10n.codexModelDescription)
+                    HStack {
+                        Text(L10n.model)
+                        if target == .imageAnalysis { imageModelInfo }
+                    }
                 }
                 .pickerStyle(.menu)
+                .disabled(!canEdit)
+
+                Picker(L10n.fallbackModel, selection: fallbackModelSelection(target)) {
+                    Text(L10n.none).font(.dahliaBody).tag("")
+                    let saved = selectedFallbackModelID(target) ?? ""
+                    let choices = catalog.models.filter { (target == .summary || $0.supportsImages) && $0.model != selectedModelID(target) }
+                    if !saved.isEmpty, !choices.contains(where: { $0.model == saved }) {
+                        Text(saved).font(.dahliaBody).tag(saved)
+                    }
+                    ForEach(choices) { model in
+                        Text(model.displayName).font(.dahliaBody).tag(model.model)
+                    }
+                }
+                .pickerStyle(.menu)
+                .help(L10n.fallbackModelDescription)
                 .disabled(!canEdit)
 
                 // Image analysis always uses `CodexScreenshotAnalysisService.reasoningEffort`.
@@ -67,6 +85,24 @@ struct LocalSummarySettingsRows: View {
         .onDisappear { retryTask?.cancel() }
     }
 
+    private var imageModelInfo: some View {
+        Button { isImageModelInfoPresented.toggle() } label: {
+            Label(L10n.imageAnalysisModelDescription, systemImage: "info.circle")
+                .labelStyle(.iconOnly)
+                .imageScale(.small)
+                .foregroundStyle(DahliaDesign.secondaryTextColor)
+        }
+        .buttonStyle(.borderless)
+        .onHover { isImageModelInfoPresented = $0 }
+        .popover(isPresented: $isImageModelInfoPresented, arrowEdge: .bottom) {
+            Text(L10n.imageAnalysisModelDescription)
+                .font(.dahliaBody)
+                .padding(12)
+                .frame(idealWidth: 320)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+
     private func reload(forceRefresh: Bool = true) {
         retryTask?.cancel()
         let context = modelCatalogContext
@@ -91,10 +127,33 @@ struct LocalSummarySettingsRows: View {
     }
 
     private func setModelID(_ modelID: String, for target: Target) {
+        if selectedFallbackModelID(target) == modelID { setFallbackModelID(nil, for: target) }
         switch target {
         case .summary: workspaceSettings.summaryModelID = modelID
         case .imageAnalysis: workspaceSettings.generationSettings.imageAnalysis.model = modelID
         }
+    }
+
+    private func selectedFallbackModelID(_ target: Target) -> String? {
+        let saved = switch target {
+        case .summary: workspaceSettings.generationSettings.local.fallbackModel
+        case .imageAnalysis: workspaceSettings.generationSettings.imageAnalysis.fallbackModel
+        }
+        return saved.map { PiRuntimeService.matchingModel($0, in: catalog.models)?.model ?? $0 }
+    }
+
+    private func setFallbackModelID(_ modelID: String?, for target: Target) {
+        switch target {
+        case .summary: workspaceSettings.generationSettings.local.fallbackModel = modelID
+        case .imageAnalysis: workspaceSettings.generationSettings.imageAnalysis.fallbackModel = modelID
+        }
+    }
+
+    private func fallbackModelSelection(_ target: Target) -> Binding<String> {
+        Binding(
+            get: { selectedFallbackModelID(target) ?? "" },
+            set: { setFallbackModelID($0.isEmpty ? nil : $0, for: target) }
+        )
     }
 
     private func modelSelection(_ target: Target) -> Binding<String> {

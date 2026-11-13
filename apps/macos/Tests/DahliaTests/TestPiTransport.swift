@@ -233,14 +233,24 @@ extension TestPiRuntime {
         reply: String,
         log: TestPiTransportLog = TestPiTransportLog()
     ) -> TestPiRuntime {
+        generating(provider: provider, models: models, replyForModel: { _ in reply }, log: log)
+    }
+
+    static func generating(
+        provider: CodexRuntimeProvider = .local,
+        models: [JSONValue],
+        replyForModel: @escaping @Sendable (String?) -> String,
+        log: TestPiTransportLog = TestPiTransportLog()
+    ) -> TestPiRuntime {
         TestPiRuntime(provider: provider) { options in
+            let model = options.arguments.firstIndex(of: "--model").map { options.arguments[$0 + 1] }
             let transport = if options.mode == .control {
                 TestPiTransport(reply: modelsReply(models))
             } else {
                 TestPiTransport { command in
                     guard let id = command["id"] else { return [] }
                     guard command["type"]?.stringValue == "prompt" else { return [TestPiTransport.response(id: id)] }
-                    return [TestPiTransport.response(id: id), TestPiTransport.assistantEnd(reply), TestPiTransport.settled()]
+                    return [TestPiTransport.response(id: id), TestPiTransport.assistantEnd(replyForModel(model)), TestPiTransport.settled()]
                 }
             }
             log.append(transport)

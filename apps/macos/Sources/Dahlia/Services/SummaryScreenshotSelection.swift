@@ -72,23 +72,26 @@ enum SummaryScreenshotSelection {
         } else {
             try await CodexScreenshotAnalysisService.defaultModel(in: appServer.models())
         }
-        let response = try await appServer.generate(.init(
-            model: model,
-            requiresExactModel: true,
-            requiresImageInput: true,
-            reasoningEffort: CodexScreenshotAnalysisService.reasoningEffort,
-            developerInstructions: instructions,
-            inputs: inputs,
-            outputSchema: outputSchema
-        ), expectedProvider: runtimeProvider)
-        return try selectedIndices(response, count: pool.count).map { pool[$0] }
+        let selectionInputs = inputs
+        return try await GenerationModelFallback.run(model: model, fallbackModel: settings.imageAnalysis.fallbackModel) { model in
+            let response = try await appServer.generate(.init(
+                model: model,
+                requiresExactModel: true,
+                requiresImageInput: true,
+                reasoningEffort: "medium",
+                developerInstructions: instructions,
+                inputs: selectionInputs,
+                outputSchema: outputSchema
+            ), expectedProvider: runtimeProvider)
+            return try selectedIndices(response, count: pool.count).map { pool[$0] }
+        }
     }
 
     /// Zero-based indices in capture order. Rejects out-of-range indices and more than `limit` selections.
     static func selectedIndices(_ response: String, count: Int) throws -> [Int] {
         guard let indices = try? JSONDecoder().decode(Response.self, from: Data(response.utf8)).indices,
               indices.count <= limit, indices.allSatisfy({ (1 ... count).contains($0) })
-        else { throw SelectionError.invalidResponse }
+        else { throw PiRuntimeError.invalidProtocolResponse }
         return Set(indices).sorted().map { $0 - 1 }
     }
 
@@ -100,7 +103,6 @@ enum SummaryScreenshotSelection {
 
     private enum SelectionError: Error {
         case imageUnavailable
-        case invalidResponse
         case timedOut
     }
 

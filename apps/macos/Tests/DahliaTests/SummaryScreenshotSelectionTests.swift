@@ -7,6 +7,26 @@ import Foundation
     import Testing
 
     struct SummaryScreenshotSelectionTests {
+        @Test
+        func invalidSelectionTriesTheImageFallbackBeforeKeepingAllCandidates() async throws {
+            let candidates = try Self.screenshots(2)
+            var settings = Self.settings()
+            settings.imageAnalysis.fallbackModel = "openai/fallback"
+            let pi = TestPiRuntime.generating(
+                models: Self.models + [TestPiTransport.model(provider: "openai", id: "fallback")],
+                replyForModel: { $0 == "openai/selection-model" ? #"{"indices":[999]}"# : #"{"indices":[2]}"# }
+            )
+
+            let selected = try await SummaryScreenshotSelection.select(
+                candidates, settings: settings, runtimeProvider: .local, appServer: pi.service
+            )
+
+            #expect(selected.map(\.id) == [candidates[1].id])
+            #expect(pi.launches.all.count(where: { $0.mode == .summary }) == 2)
+            #expect(pi.argument(after: "--model") == "openai/fallback")
+            #expect(pi.argument(after: "--thinking") == "medium")
+        }
+
         private static func screenshots(_ count: Int) throws -> [MeetingScreenshotRecord] {
             let context = try #require(CGContext(
                 data: nil, width: 1568, height: 980, bitsPerComponent: 8, bytesPerRow: 0,
@@ -15,7 +35,7 @@ import Foundation
             let image = try #require(context.makeImage())
             let data = try #require(ImageEncoder.encode(image))
             let meetingID = UUID.v7()
-            let start = Date(timeIntervalSince1970: 1_000)
+            let start = Date(timeIntervalSince1970: 1000)
             return (0 ..< count).map {
                 .init(id: .v7(), meetingId: meetingID, capturedAt: start.addingTimeInterval(Double($0) * 30), imageData: data, mimeType: "image/webp")
             }
@@ -29,7 +49,10 @@ import Foundation
             return settings
         }
 
-        private static let models = [TestPiTransport.model(provider: "openai", id: "other"), TestPiTransport.model(provider: "openai", id: "selection-model")]
+        private static let models = [
+            TestPiTransport.model(provider: "openai", id: "other"),
+            TestPiTransport.model(provider: "openai", id: "selection-model"),
+        ]
 
         /// Lists models, then accepts the prompt without ever finishing the run.
         private static func stalled(log: TestPiTransportLog) -> TestPiRuntime {
@@ -53,7 +76,7 @@ import Foundation
             #expect(selected.map(\.id) == [candidates[0].id, candidates[2].id])
             #expect(pi.argument(after: "--model") == "openai/selection-model")
             // A saved effort from an earlier release is ignored.
-            #expect(pi.argument(after: "--thinking") == "low")
+            #expect(pi.argument(after: "--thinking") == "medium")
             let prompt = try #require(await log.all.last?.command("prompt"))
             #expect(prompt["message"]?.stringValue?.hasSuffix(#"[Attached image 3] <image index="3" elapsed_seconds="60"/>"#) == true)
             let images = try #require(prompt["images"]?.arrayValue)

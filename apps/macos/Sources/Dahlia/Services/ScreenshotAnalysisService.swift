@@ -8,6 +8,7 @@ struct ScreenshotAnalysisInput: Sendable {
     let runtimeProvider: CodexRuntimeProvider
     var outputLanguage: SummaryLanguage = .ja
     var model: String?
+    var fallbackModel: String?
 }
 
 struct ScreenshotAnalysis: Equatable, Sendable {
@@ -82,17 +83,23 @@ actor CodexScreenshotAnalysisService: ScreenshotAnalyzing {
         try Task.checkCancellation()
         let inputs = try await Self.codexInputs(for: screenshots)
         let model = if let model = screenshots[0].model { model } else { try await Self.defaultModel(in: appServer.models()) }
-        let response = try await appServer.generate(.init(
-            model: model,
-            requiresExactModel: true,
-            requiresImageInput: true,
-            reasoningEffort: Self.reasoningEffort,
-            developerInstructions: Self.instructions(
-                captionLanguage: screenshots[0].outputLanguage.displayName
-            ),
-            inputs: inputs,
-            outputSchema: ScreenshotAnalysisResponse.outputSchema
-        ), expectedProvider: screenshots[0].runtimeProvider)
+        return try await GenerationModelFallback.run(model: model, fallbackModel: screenshots[0].fallbackModel) { model in
+            let response = try await self.appServer.generate(.init(
+                model: model,
+                requiresExactModel: true,
+                requiresImageInput: true,
+                reasoningEffort: Self.reasoningEffort,
+                developerInstructions: Self.instructions(
+                    captionLanguage: screenshots[0].outputLanguage.displayName
+                ),
+                inputs: inputs,
+                outputSchema: ScreenshotAnalysisResponse.outputSchema
+            ), expectedProvider: screenshots[0].runtimeProvider)
+            return try Self.analysis(from: response, screenshots: screenshots)
+        }
+    }
+
+    private nonisolated static func analysis(from response: String, screenshots: [ScreenshotAnalysisInput]) throws -> [ScreenshotAnalysis] {
         guard let data = response.data(using: .utf8),
               let decoded = try? JSONDecoder().decode(ScreenshotAnalysisResponse.self, from: data)
         else { throw ScreenshotAnalysisError.invalidResponse }

@@ -171,13 +171,15 @@ struct SummaryDocumentResponse: Decodable {
                 ],
                 "sections": [
                     "type": "array",
-                    "description": "Summary body sections only. Do not include an Action Items section or repeat action items here.",
+                    "minItems": 1,
+                    "description": "Summary body with discussion, decisions and rationale; never placeholders. Do not include an Action Items section or repeat action items here.",
                     "items": [
                         "type": "object",
                         "properties": [
                             "heading": ["type": "string"],
                             "blocks": [
                                 "type": "array",
+                                "minItems": 1,
                                 "items": blockSchema,
                             ],
                         ],
