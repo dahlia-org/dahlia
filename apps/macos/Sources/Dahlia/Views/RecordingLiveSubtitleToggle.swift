@@ -51,9 +51,9 @@ struct RecordingLiveSubtitleToggle: View {
             .menuIndicator(.hidden)
             .controlSize(.small)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .accessibilityLabel(L10n.liveSubtitleLanguage)
+            .accessibilityLabel(L10n.liveTranscriptionLanguage)
             .accessibilityValue(selectedLanguageName)
-            .help(L10n.liveSubtitleLanguage)
+            .help(L10n.liveTranscriptionLanguage)
 
             Toggle(L10n.liveSubtitles, isOn: $isEnabled)
                 .labelsHidden()

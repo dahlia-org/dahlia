@@ -41,7 +41,7 @@
 "settings.preferences.transcribeThenSummarizeDescription" = "For automatic processing after recording, Gemini transcribes the audio first, then creates the summary from that transcript.";
 "settings.preferences.combinedTranscriptionSummaryDescription" = "For automatic processing after recording, Gemini creates the summary directly from the audio and produces a transcript in the same process.";
 "settings.preferences.serverTranscriptionLanguageDescription" = "Gemini detects the spoken language while transcribing. No language setting is required.";
-"settings.preferences.appleSpeechSettingsScopeDescription" = "The language Apple Speech transcribes. Applies to every workspace in the selected account.";
+"settings.preferences.appleSpeechSettingsScopeDescription" = "The language Apple Speech uses for the final transcript created after recording stops. Applies to every workspace in the selected account.";
 "settings.preferences.summaryModel" = "Summary model";
 "settings.preferences.audioProcessingModel" = "Audio processing model";
 "settings.preferences.audioProcessingReasoningEffort" = "Audio processing reasoning effort";
@@ -633,8 +633,7 @@
 "Translate live subtitles for display. This does not change the language of the saved transcript." = "Translate live subtitles for display. This does not change the language of the saved transcript.";
 "Target Language" = "Target Language";
 "Choose which language translated live subtitles should use." = "Choose which language translated live subtitles should use.";
-"Translation is automatically disabled when the target language matches the transcription language." = "Translation is automatically disabled when the target language matches the transcription language.";
-"Translation is automatically disabled when the target language matches the live subtitle language." = "Translation is automatically disabled when the target language matches the live subtitle language.";
+"liveSubtitleTranslationDisabledForMatchingLiveTranscriptionLanguage" = "Translation is automatically disabled when the target language matches the live transcription language.";
 "Google Calendar" = "Google Calendar";
 "macOS Calendar" = "macOS Calendar";
 "Calendar Source" = "Calendar Source";
@@ -773,9 +772,8 @@
 "Open Language Settings" = "Open Language Settings";
 "Recorded Languages" = "Languages used while recording";
 "Transcription Language" = "Transcription Language";
-"This language is used for the final transcript. Changing the language in the recording panel does not change it." = "This language is used for the final transcript. Changing the language in the recording panel does not change it.";
-"Live Subtitle Language" = "Live Subtitle Language";
-"Real-time transcription also uses this language. You can also change it from the recording panel." = "Real-time transcription also uses this language. You can also change it from the recording panel.";
+"liveTranscriptionLanguage" = "Live Transcription Language";
+"liveTranscriptionLanguageDescription" = "Used during recording for both live subtitles and the first draft created with live transcription. You can also change it from the recording panel.";
 "Language Range" = "Language Range";
 "All Supported Languages" = "All Supported Languages";
 "Selected Languages" = "Selected Languages";

@@ -1979,12 +1979,8 @@ enum L10n { // swiftlint:disable:this type_body_length
         localized: "Choose which language translated live subtitles should use.",
         bundle: bundle
     ) }
-    static var liveSubtitleTranslationDisabledForMatchingTranscriptionLanguage: String { String(
-        localized: "Translation is automatically disabled when the target language matches the transcription language.",
-        bundle: bundle
-    ) }
-    static var liveSubtitleTranslationDisabledForMatchingLiveSubtitleLanguage: String { String(
-        localized: "Translation is automatically disabled when the target language matches the live subtitle language.",
+    static var liveSubtitleTranslationDisabledForMatchingLiveTranscriptionLanguage: String { String(
+        localized: "liveSubtitleTranslationDisabledForMatchingLiveTranscriptionLanguage",
         bundle: bundle
     ) }
     static var enableLiveSubtitleTranslationToChooseLanguage: String { String(
@@ -2322,13 +2318,9 @@ enum L10n { // swiftlint:disable:this type_body_length
     static var openLanguageSettings: String { String(localized: "Open Language Settings", bundle: bundle) }
     static var recordedLanguages: String { String(localized: "Recorded Languages", bundle: bundle) }
     static var transcriptionLanguage: String { String(localized: "Transcription Language", bundle: bundle) }
-    static var transcriptionLanguageDescription: String { String(
-        localized: "This language is used for the final transcript. Changing the language in the recording panel does not change it.",
-        bundle: bundle
-    ) }
-    static var liveSubtitleLanguage: String { String(localized: "Live Subtitle Language", bundle: bundle) }
-    static var liveSubtitleLanguageUsedForRealtimeTranscription: String { String(
-        localized: "Real-time transcription also uses this language. You can also change it from the recording panel.",
+    static var liveTranscriptionLanguage: String { String(localized: "liveTranscriptionLanguage", bundle: bundle) }
+    static var liveTranscriptionLanguageDescription: String { String(
+        localized: "liveTranscriptionLanguageDescription",
         bundle: bundle
     ) }
     static var languageRange: String { String(localized: "Language Range", bundle: bundle) }

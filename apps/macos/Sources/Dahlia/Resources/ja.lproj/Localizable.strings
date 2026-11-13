@@ -41,7 +41,7 @@
 "settings.preferences.transcribeThenSummarizeDescription" = "録音後の自動処理では、Geminiが先に音声を文字起こしし、その文字起こしから要約を作成します。";
 "settings.preferences.combinedTranscriptionSummaryDescription" = "録音後の自動処理では、Geminiが音声から直接要約し、同じ処理内で文字起こしも作成します。";
 "settings.preferences.serverTranscriptionLanguageDescription" = "Geminiが文字起こしの処理中に発話言語を判定するため、言語設定は不要です。";
-"settings.preferences.appleSpeechSettingsScopeDescription" = "Apple Speech で文字起こしする言語です。選択中のアカウントのワークスペースすべてに適用されます。";
+"settings.preferences.appleSpeechSettingsScopeDescription" = "録音停止後に Apple Speech で作成する最終的な文字起こしの言語です。選択中のアカウントのワークスペースすべてに適用されます。";
 "settings.preferences.summaryModel" = "要約モデル";
 "settings.preferences.audioProcessingModel" = "音声処理モデル";
 "settings.preferences.audioProcessingReasoningEffort" = "音声処理の推論強度";
@@ -633,8 +633,7 @@
 "Translate live subtitles for display. This does not change the language of the saved transcript." = "表示する字幕を翻訳します。保存する文字起こしの言語は変更しません。";
 "Target Language" = "翻訳先の言語";
 "Choose which language translated live subtitles should use." = "翻訳したライブ字幕に使う言語を選びます。";
-"Translation is automatically disabled when the target language matches the transcription language." = "翻訳先の言語が文字起こし言語と同じ場合、翻訳は自動的に無効になります。";
-"Translation is automatically disabled when the target language matches the live subtitle language." = "翻訳先の言語がライブ字幕の言語と同じ場合、翻訳は自動的に無効になります。";
+"liveSubtitleTranslationDisabledForMatchingLiveTranscriptionLanguage" = "翻訳先の言語がライブ文字起こし言語と同じ場合、翻訳は自動的に無効になります。";
 "Google Calendar" = "Google カレンダー";
 "macOS Calendar" = "macOS カレンダー";
 "Calendar Source" = "カレンダーソース";
@@ -773,9 +772,8 @@
 "Open Language Settings" = "言語設定を開く";
 "Recorded Languages" = "録音時に使用した言語";
 "Transcription Language" = "文字起こし言語";
-"This language is used for the final transcript. Changing the language in the recording panel does not change it." = "最終的な文字起こしにはこの言語を使用します。録音パネルでライブ字幕言語を変更しても、この設定は変わりません。";
-"Live Subtitle Language" = "ライブ字幕言語";
-"Real-time transcription also uses this language. You can also change it from the recording panel." = "リアルタイム文字起こしにもこの言語を使用します。録音パネルからも変更できます。";
+"liveTranscriptionLanguage" = "ライブ文字起こし言語";
+"liveTranscriptionLanguageDescription" = "録音中のライブ字幕と、ライブ文字起こしで作成する初版に共通で使う言語です。録音パネルからも変更できます。";
 "Language Range" = "言語の範囲";
 "All Supported Languages" = "対応するすべての言語";
 "Selected Languages" = "選択した言語";

@@ -174,7 +174,7 @@ enum SettingsCategory: String, CaseIterable, Identifiable {
                 L10n.automaticMeetingEndRecordingStop,
                 L10n.automaticRecordingProcessing,
                 L10n.liveSubtitles,
-                L10n.liveSubtitleLanguage,
+                L10n.liveTranscriptionLanguage,
                 L10n.liveSubtitleTranslation,
                 L10n.translationTargetLanguage,
                 L10n.includeMicrophone,

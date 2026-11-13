@@ -106,7 +106,7 @@ struct MenuBarRecordingControls: View {
                 }
             }
         } label: {
-            Label(L10n.liveSubtitleLanguage, systemImage: "globe")
+            Label(L10n.liveTranscriptionLanguage, systemImage: "globe")
         }
 
         Menu {
