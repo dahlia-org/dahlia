@@ -49,13 +49,15 @@
             #expect(persisted.generationSettings.local.model == "latest-model")
             #expect(persisted.lastOpenedAt == .distantPast)
             #expect(try await database.dbQueue.read { try WorkspaceRecord.fetchOne($0, key: other.id) } == untouched)
-            #expect(try await database.dbQueue.read { try Int.fetchOne($0, sql: "SELECT COUNT(*) FROM sync_transactions") } == (account == "admin" ? 1 : 0))
+            #expect(try await database.dbQueue
+                .read { try Int.fetchOne($0, sql: "SELECT COUNT(*) FROM sync_transactions") } == (account == "admin" ? 1 : 0))
             #expect(model.isShowingError == !canManage)
             #expect(!model.isUpdatingOutputLanguage)
             if canManage {
                 #expect(model.workspaces.first { $0.id == original.id }?.generationSettings.outputLanguage == .en)
                 _ = await model.setOutputLanguage(for: original, to: .en)
-                #expect(try await database.dbQueue.read { try Int.fetchOne($0, sql: "SELECT COUNT(*) FROM sync_transactions") } == (account == "admin" ? 1 : 0))
+                #expect(try await database.dbQueue
+                    .read { try Int.fetchOne($0, sql: "SELECT COUNT(*) FROM sync_transactions") } == (account == "admin" ? 1 : 0))
             }
         }
 
@@ -138,7 +140,10 @@
             #expect(await !model.moveWorkspace(local, toDatabricks: connectionID))
             #expect(try await connections() == [connectionID, nil])
             try await database.dbQueue.write { db in
-                try db.execute(sql: "UPDATE workspaces SET accountConnectionId = NULL, organizationId = NULL, databricksConnectionId = ? WHERE id = ?", arguments: [connectionID, local.id])
+                try db.execute(
+                    sql: "UPDATE workspaces SET accountConnectionId = NULL, organizationId = NULL, databricksConnectionId = ? WHERE id = ?",
+                    arguments: [connectionID, local.id]
+                )
             }
 
             // Removing the account returns its workspaces to the Local Account through the foreign key.
@@ -707,6 +712,49 @@
             model.cancelServerAdoption()
             #expect(model.pendingServerAdoption == nil)
             #expect(try repository.fetchAllWorkspaces().first?.accountConnectionId == nil)
+        }
+
+        @Test(arguments: ["workspaces", "organizations", "failure"], [false, true])
+        func cancelledServerDiscoveryDoesNotPublishAModalOrError(stage: String, hasRepository: Bool) async throws {
+            let database = try AppDatabaseManager(path: ":memory:")
+            let connection = DahliaAccountConnectionRecord(
+                id: .v7(), origin: "https://cancel.example.com", clientID: "desktop", createdAt: .now
+            )
+            let workspace = makeWorkspace(name: "Local", lastOpenedAt: .distantPast)
+            try await database.dbQueue.write { db in
+                try connection.insert(db)
+                try workspace.insert(db)
+            }
+            var shouldCancel = true
+            let model = WorkspaceManagementModel(
+                cloudWorkspaceFetcher: { _ in
+                    if shouldCancel, stage != "organizations" {
+                        withUnsafeCurrentTask { $0?.cancel() }
+                        if stage == "failure" { throw URLError(.cancelled) }
+                    }
+                    return []
+                },
+                organizationFetcher: { _ in
+                    if shouldCancel, stage == "organizations" {
+                        withUnsafeCurrentTask { $0?.cancel() }
+                    }
+                    return []
+                }
+            )
+            await model.configure(appDatabase: hasRepository ? database : nil)
+            let account = DahliaAccountConnection(
+                record: connection, account: DahliaCloudAccount(id: "user", name: "User", email: nil),
+                isCloud: false, grantedScopes: ["all-apis"]
+            )
+
+            await Task { await model.requestServerAdoption(for: workspace, connection: account) }.value
+
+            #expect(model.pendingServerAdoption == nil)
+            #expect(!model.isShowingError)
+            #expect(model.updatingWorkspaceAccountID == nil)
+            shouldCancel = false
+            await model.requestServerAdoption(for: workspace, connection: account)
+            #expect(model.pendingServerAdoption?.workspace.id == workspace.id)
         }
 
         @Test(arguments: [false, true])

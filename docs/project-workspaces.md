@@ -53,6 +53,14 @@ Read models expose the explicit value, effective value, type-owning root Project
 - Moving a root under another Project clears its previous explicit value.
 - Directly setting a subproject type is an error.
 
+## Workspace settings
+
+The macOS Workspace settings list groups workspaces by account. Each row shows the workspace name and output language;
+clicking the name opens details, including the local export folder. Local and Unity Gateway account headings have an
+add button that creates a workspace under that account, including when the account has no workspaces. Server workspace
+creation remains on the Server. The row's options menu contains account moves and
+export-folder actions. Account moves retain the existing recording and Server migration restrictions.
+
 ## Derived Summary output directories
 
 The local export folder is optional and device-local. Without one, Project and Summary changes remain database-only.

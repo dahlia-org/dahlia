@@ -1992,3 +1992,6 @@
 "Create new workspace" = "新規作成";
 "Choose the workspace to use with this account." = "このアカウントで使用するワークスペースを選択してください。";
 "New workspace (Default)" = "新規作成（Default）";
+
+"Move to Account" = "アカウントを移動";
+"Local Export Folder" = "ローカル書き出しフォルダ";

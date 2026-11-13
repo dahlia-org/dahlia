@@ -10,6 +10,8 @@ struct SettingsDetailView: View {
     let onShowUnprocessedRecordings: (UUID) -> Void
 
     @ObservedObject private var appSettings = AppSettings.shared
+    @State private var workspaceDetailsID: UUID?
+    @State private var publishingDocuments = WorkspaceDocumentPublicationPresentation()
     @State private var dahliaAccountController = DahliaCloudAccountController.shared
 
     var body: some View {
@@ -46,9 +48,32 @@ struct SettingsDetailView: View {
             selectedSettings
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
+        .overlay {
+            if let workspace = workspaceManagementModel.workspaces.first(where: { $0.id == workspaceDetailsID }) {
+                WorkspaceSettingsDetailsView(
+                    workspace: workspace,
+                    accountName: WorkspaceAccountChoice(workspace).displayName(
+                        connections: dahliaAccountController.connections,
+                        databricksAccounts: WorkspaceAISettingsModel.shared.databricksConnections
+                    ),
+                    onClose: { workspaceDetailsID = nil }
+                )
+            }
+        }
+        .overlay {
+            if let workspace = publishingDocuments.workspace, let appDatabase {
+                let requestID = publishingDocuments.id
+                DocumentPublicationView(workspace: workspace, dbQueue: appDatabase.dbQueue) {
+                    publishingDocuments.dismiss(id: requestID)
+                }
+                .id(requestID)
+            }
+        }
         .scrollContentBackground(.hidden)
         .scrollEdgeEffectHidden()
         .onChange(of: selection) { _, selection in
+            workspaceDetailsID = nil
+            publishingDocuments.dismiss()
             if selection != .agents { mainWindowNavigation.dismissDahliaSignIn() }
         }
     }
@@ -66,18 +91,16 @@ struct SettingsDetailView: View {
                     Task { await workspaceManagementModel.loadWorkspaces() }
                 }
         case .workspace, .workspacePreferences:
-            Form {
-                WorkspaceSettingsView(
-                    appDatabase: appDatabase,
-                    model: workspaceManagementModel,
-                    currentWorkspace: appSettings.currentWorkspace,
-                    accountConnections: dahliaAccountController.connections,
-                    canSwitchWorkspace: canSwitchWorkspace,
-                    onUpdateWorkspace: updateCurrentWorkspaceIfNeeded
-                )
-            }
-            .formStyle(.grouped)
-            .font(.dahliaBody)
+            WorkspaceSettingsView(
+                appDatabase: appDatabase,
+                model: workspaceManagementModel,
+                currentWorkspace: appSettings.currentWorkspace,
+                accountConnections: dahliaAccountController.connections,
+                canSwitchWorkspace: canSwitchWorkspace,
+                onShowDetails: { workspaceDetailsID = $0 },
+                onShowDocumentPublication: { publishingDocuments.show($0) },
+                onUpdateWorkspace: updateCurrentWorkspaceIfNeeded
+            )
             .onChange(of: workspaceManagementModel.workspaces.map { "\($0.id):\($0.accountConnectionId?.uuidString ?? "local")" }) {
                 Task { await dahliaAccountController.reload() }
             }

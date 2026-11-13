@@ -377,7 +377,9 @@ final class WorkspaceManagementModel {
         defer { updatingWorkspaceAccountID = nil }
         do {
             let serverWorkspaces = try await fetchCloudWorkspaces(from: connection.record)
+            try Task.checkCancellation()
             let organizations = try await fetchOrganizations(connection.record)
+            try Task.checkCancellation()
             if let repository {
                 _ = try await MeetingRepository.registerDiscoveredCloudWorkspaces(
                     serverWorkspaces,
@@ -386,6 +388,7 @@ final class WorkspaceManagementModel {
                 )
                 await loadWorkspaces()
             }
+            try Task.checkCancellation()
             pendingServerAdoption = PendingWorkspaceServerAdoption(
                 workspace: workspace,
                 connection: connection,
@@ -395,6 +398,7 @@ final class WorkspaceManagementModel {
         } catch is CancellationError {
             return
         } catch {
+            guard !Task.isCancelled else { return }
             presentError(L10n.workspaceOperationFailed, error: error, source: "requestServerAdoption")
         }
     }

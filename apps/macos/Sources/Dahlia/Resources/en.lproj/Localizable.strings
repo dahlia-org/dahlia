@@ -1992,3 +1992,6 @@
 "Create new workspace" = "Create new workspace";
 "Choose the workspace to use with this account." = "Choose the workspace to use with this account.";
 "New workspace (Default)" = "New workspace (Default)";
+
+"Move to Account" = "Move to Account";
+"Local Export Folder" = "Local Export Folder";
