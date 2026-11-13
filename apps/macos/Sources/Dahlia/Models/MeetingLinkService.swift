@@ -24,7 +24,7 @@ enum MeetingLinkService: String, CaseIterable, Identifiable, Sendable {
             self = .googleMeet
         } else if Self.host(host, matches: "zoom.us") {
             self = .zoom
-        } else if Self.host(host, matches: "teams.microsoft.com") {
+        } else if Self.host(host, matches: "teams.microsoft.com") || Self.host(host, matches: "teams.cloud.microsoft") {
             self = .teams
         } else if Self.host(host, matches: "slack.com") {
             self = .slack

@@ -47,6 +47,23 @@ struct ScreenshotWindowOption: Identifiable, Equatable {
             .sorted(by: sort)
     }
 
+    /// 指定アプリの、画面上で最も前面にあるウィンドウ。`windowIDs` は前面から順に並べる。
+    static func frontmostWindowID(
+        from snapshots: [Snapshot],
+        bundleIdentifier: String,
+        frontToBack windowIDs: [CGWindowID]
+    ) -> CGWindowID? {
+        // 翻訳の吹き出しや Picture in Picture など、同じアプリの小さな補助ウィンドウは会議画面ではない。
+        let candidates = Set(build(
+            from: snapshots.filter {
+                $0.bundleIdentifier?.lowercased() == bundleIdentifier.lowercased()
+                    && $0.frame.width >= 400 && $0.frame.height >= 300
+            },
+            excludingBundleID: nil
+        ).map(\.id))
+        return windowIDs.first(where: candidates.contains)
+    }
+
     private static func sort(lhs: Self, rhs: Self) -> Bool {
         let appOrder = lhs.appName.localizedCaseInsensitiveCompare(rhs.appName)
         if appOrder != .orderedSame {

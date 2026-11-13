@@ -36,6 +36,12 @@ struct ScreenshotSettingsView: View {
                         : L10n.fixedScreenshotChangeThresholdDescription)
                 }
                 .pickerStyle(.menu)
+
+                Toggle(isOn: $settings.automaticScreenshotSelectsMeetingWindow) {
+                    Text(L10n.selectMeetingWindowForScreenshots)
+                    Text(L10n.selectMeetingWindowForScreenshotsDescription)
+                }
+                .toggleStyle(.switch)
             } header: {
                 Text(L10n.automaticScreenshots)
                     .font(.dahliaSectionHeader)

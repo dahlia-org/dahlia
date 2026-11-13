@@ -604,9 +604,12 @@ struct DahliaApp: App {
     }
 
     private func joinAndStartRecording(_ meeting: DetectedMeeting, in db: AppDatabaseManager) {
-        handleDetectedMeeting(meeting, in: db, startTranscription: true)
-        if let event = meeting.calendarEvent {
-            recordingCoordinator.openMeetingLink(for: event)
+        guard let event = meeting.calendarEvent else {
+            handleDetectedMeeting(meeting, in: db, startTranscription: true)
+            return
+        }
+        recordingCoordinator.openMeetingLink(for: event) {
+            handleDetectedMeeting(meeting, in: db, startTranscription: true)
         }
     }
 

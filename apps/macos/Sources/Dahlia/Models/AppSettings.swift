@@ -106,6 +106,8 @@ final class AppSettings: ObservableObject {
         "automaticScreenshotDetectChangesInSharedRegionOnly"
     nonisolated static let automaticScreenshotSharedRegionCropKey =
         "automaticScreenshotCropToSharedRegion"
+    nonisolated static let automaticScreenshotMeetingWindowSelectionKey =
+        "automaticScreenshotSelectsMeetingWindow"
     nonisolated static let generateSummaryAfterBatchTranscriptionUserDefaultsKey = "generateSummaryAfterBatchTranscription"
     nonisolated static let exportBatchSummaryToWorkspaceUserDefaultsKey = "exportBatchSummaryToWorkspace"
     nonisolated static let transcriptionLanguageScopeUserDefaultsKey = "transcriptionLanguageScope"
@@ -237,6 +239,8 @@ final class AppSettings: ObservableObject {
     var automaticScreenshotDetectChangesInSharedRegionOnly = false
     @AppStorage(AppSettings.automaticScreenshotSharedRegionCropKey)
     var automaticScreenshotCropToSharedRegion = false
+    @AppStorage(AppSettings.automaticScreenshotMeetingWindowSelectionKey)
+    var automaticScreenshotSelectsMeetingWindow = false
 
     var batchTranscriptionStallTimeout: BatchTranscriptionStallTimeout {
         get { BatchTranscriptionStallTimeout.resolved(rawValue: batchTranscriptionStallTimeoutRawValue) }
@@ -330,6 +334,7 @@ final class AppSettings: ObservableObject {
         automaticScreenshotChangeThresholdPercentUserDefaultsKey,
         automaticScreenshotSharedRegionDetectionKey,
         automaticScreenshotSharedRegionCropKey,
+        automaticScreenshotMeetingWindowSelectionKey,
         defaultMeetingLinkOpenTargetUserDefaultsKey,
         googleMeetMeetingLinkOpenTargetUserDefaultsKey,
         zoomMeetingLinkOpenTargetUserDefaultsKey,

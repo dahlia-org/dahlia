@@ -13,8 +13,9 @@ final class MeetingLinkOpener {
         self.workspace = workspace
     }
 
+    /// リンクを開いたアプリの bundle identifier を返す。開けなかった場合は nil、開けたがアプリが分からない場合は空文字列。
     @discardableResult
-    func open(_ url: URL) -> Task<Bool, Never> {
+    func open(_ url: URL) -> Task<String?, Never> {
         let targets = targets(for: url)
         let workspace = workspace
         return Task.detached(priority: .userInitiated) {
@@ -53,24 +54,24 @@ final class MeetingLinkOpener {
         _ url: URL,
         using targets: [MeetingLinkOpenTarget],
         workspace: any MeetingLinkWorkspaceOpening
-    ) async -> Bool {
+    ) async -> String? {
         for target in targets {
-            let didOpen: Bool
+            let openedApplication: String?
             switch target {
             case .inheritGlobal:
                 continue
             case .systemDefault:
-                didOpen = await workspace.open(url, withApplicationAt: nil)
+                openedApplication = await workspace.open(url, withApplicationAt: nil)
             case let .application(bundleIdentifier):
                 guard let applicationURL = await workspace.applicationURL(forBundleIdentifier: bundleIdentifier) else {
                     continue
                 }
-                didOpen = await workspace.open(url, withApplicationAt: applicationURL)
+                openedApplication = await workspace.open(url, withApplicationAt: applicationURL)
             }
-            if didOpen {
-                return true
+            if let openedApplication {
+                return openedApplication
             }
         }
-        return false
+        return nil
     }
 }

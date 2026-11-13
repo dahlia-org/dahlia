@@ -29,6 +29,38 @@ import CoreGraphics
         }
 
         @Test
+        func frontmostWindowSkipsOtherAppsAndSmallAuxiliaryWindows() {
+            func snapshot(_ id: CGWindowID, _ bundleIdentifier: String, width: CGFloat = 1200) -> ScreenshotWindowOption.Snapshot {
+                .init(
+                    windowID: id,
+                    appName: "App",
+                    bundleIdentifier: bundleIdentifier,
+                    title: "Window",
+                    frame: CGRect(x: 0, y: 0, width: width, height: 800),
+                    windowLayer: 0,
+                    isOnScreen: true
+                )
+            }
+            let snapshots = [
+                snapshot(1, "com.google.Chrome"),
+                snapshot(2, "com.google.Chrome.app.meet", width: 320),
+                snapshot(3, "com.google.Chrome.app.meet"),
+                snapshot(4, "com.google.Chrome.app.meet"),
+            ]
+
+            #expect(ScreenshotWindowOption.frontmostWindowID(
+                from: snapshots,
+                bundleIdentifier: "com.google.chrome.app.meet",
+                frontToBack: [1, 2, 4, 3]
+            ) == 4)
+            #expect(ScreenshotWindowOption.frontmostWindowID(
+                from: snapshots,
+                bundleIdentifier: "us.zoom.xos",
+                frontToBack: [1, 2, 4, 3]
+            ) == nil)
+        }
+
+        @Test
         func buildExcludesOwnAppUntitledAndZeroSizedWindows() {
             let options = ScreenshotWindowOption.build(
                 from: [

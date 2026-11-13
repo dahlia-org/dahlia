@@ -179,13 +179,23 @@ final class RecordingCoordinator {
     }
 
     func joinCalendarEventAndStartRecording(_ event: CalendarEvent) {
-        openMeetingLink(for: event)
-        _ = startRecording(forCalendarEvent: event)
+        openMeetingLink(for: event) { _ = startRecording(forCalendarEvent: event) }
     }
 
     func openMeetingLink(for event: CalendarEvent) {
         guard let conferenceURI = event.conferenceURI else { return }
         meetingLinkOpener.open(conferenceURI)
+    }
+
+    /// 会議リンクを開いて `startRecording` を実行する。
+    /// その呼び出しで録音が始まった場合だけ、開いたウィンドウをスクリーンショット取得対象に選ぶ。
+    func openMeetingLink(for event: CalendarEvent, andStartRecording startRecording: () -> Void) {
+        let opening = event.conferenceURI.map(meetingLinkOpener.open)
+        let couldBeginRecording = viewModel.canBeginRecording
+        startRecording()
+        if let opening, couldBeginRecording, viewModel.isRecordingStartPending || viewModel.isListening {
+            viewModel.selectScreenshotWindow(openedBy: opening)
+        }
     }
 
     func startAutomaticRecording(forCalendarEvent event: CalendarEvent) {
