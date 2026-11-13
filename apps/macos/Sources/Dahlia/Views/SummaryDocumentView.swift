@@ -3,6 +3,9 @@ import DahliaRuntimeSupport
 import SwiftUI
 
 struct SummaryDocumentView: View {
+    @State private var textSelection = TextSelectionGroup()
+    @Environment(\.locale) private var locale
+
     let document: SummaryDocument
     let screenshotProvider: (UUID) -> MeetingScreenshotRecord?
     let onOpenImage: (UUID, CGImage) -> Void
@@ -26,15 +29,23 @@ struct SummaryDocumentView: View {
                 sectionView(section)
             }
 
-            SummaryActionItemsView(actionItems: document.actionItems)
+            SummaryActionItemsView(actionItems: document.actionItems, selection: textSelection)
         }
-        .textSelection(.enabled)
+        .onChange(of: document, initial: true) { _, document in
+            textSelection.update(rows: SummaryTextSelectionRows.rows(for: document))
+        }
+        .onChange(of: document.sections.flatMap { $0.blocks.map(\.id) }) { _, _ in
+            textSelection.update(rows: SummaryTextSelectionRows.rows(for: document))
+        }
+        .onChange(of: locale) { _, _ in
+            textSelection.update(rows: SummaryTextSelectionRows.rows(for: document))
+        }
     }
 
     @ViewBuilder
     private func sectionView(_ section: SummarySection) -> some View {
         if !section.heading.isEmpty {
-            inlineMarkdownText(section.heading)
+            selectableText(section.heading, id: section.id.uuidString, font: .boldSystemFont(ofSize: DahliaTypography.size(offset: 3)))
                 .font(.dahliaTitle2)
                 .bold()
                 .fixedSize(horizontal: false, vertical: true)
@@ -50,18 +61,18 @@ struct SummaryDocumentView: View {
         VStack(alignment: .leading, spacing: 4) {
             switch block.content {
             case let .paragraph(text):
-                summaryTextView(text)
+                summaryTextView(text, id: block.id.uuidString)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .fixedSize(horizontal: false, vertical: true)
                     .font(.dahliaBody)
                     .lineSpacing(DahliaDesign.paragraphLineSpacing)
             case let .bulletedList(items):
                 VStack(alignment: .leading, spacing: DahliaDesign.listItemSpacing) {
-                    ForEach(items.enumerated(), id: \.offset) { _, item in
+                    ForEach(items.enumerated(), id: \.offset) { index, item in
                         HStack(alignment: .firstTextBaseline, spacing: 6) {
                             Text("•")
                                 .foregroundStyle(DahliaDesign.secondaryTextColor)
-                            summaryTextView(item)
+                            summaryTextView(item, id: "\(block.id)-\(index)")
                                 .frame(maxWidth: .infinity, alignment: .leading)
                                 .fixedSize(horizontal: false, vertical: true)
                                 .lineSpacing(DahliaDesign.paragraphLineSpacing)
@@ -76,7 +87,7 @@ struct SummaryDocumentView: View {
                         HStack(alignment: .firstTextBaseline, spacing: 6) {
                             Text("\(index + 1).")
                                 .monospacedDigit()
-                            summaryTextView(item)
+                            summaryTextView(item, id: "\(block.id)-\(index)")
                                 .frame(maxWidth: .infinity, alignment: .leading)
                                 .fixedSize(horizontal: false, vertical: true)
                                 .lineSpacing(DahliaDesign.paragraphLineSpacing)
@@ -87,12 +98,12 @@ struct SummaryDocumentView: View {
                 .padding(.leading, 8)
             case let .checklist(items):
                 VStack(alignment: .leading, spacing: DahliaDesign.listItemSpacing) {
-                    ForEach(items.enumerated(), id: \.offset) { _, item in
+                    ForEach(items.enumerated(), id: \.offset) { index, item in
                         HStack(alignment: .firstTextBaseline, spacing: 6) {
                             Image(systemName: item.checked ? "checkmark.square" : "square")
                                 .dahliaFixedSymbol()
                                 .foregroundStyle(item.checked ? DahliaDesign.secondaryTextColor : DahliaDesign.optionalTextColor)
-                            summaryTextView(item.text)
+                            summaryTextView(item.text, id: "\(block.id)-\(index)")
                                 .frame(maxWidth: .infinity, alignment: .leading)
                                 .fixedSize(horizontal: false, vertical: true)
                                 .lineSpacing(DahliaDesign.paragraphLineSpacing)
@@ -106,7 +117,7 @@ struct SummaryDocumentView: View {
                     RoundedRectangle(cornerRadius: 1)
                         .fill(Color.secondary.opacity(0.4))
                         .frame(width: 3)
-                    summaryTextView(text)
+                    summaryTextView(text, id: block.id.uuidString, color: DahliaDesign.secondaryTextNSColor)
                         .font(.dahliaBody)
                         .foregroundStyle(DahliaDesign.secondaryTextColor)
                         .frame(maxWidth: .infinity, alignment: .leading)
@@ -117,43 +128,48 @@ struct SummaryDocumentView: View {
                 .padding(.vertical, 2)
             case let .code(_, content):
                 VStack(alignment: .leading, spacing: 4) {
-                    Text(content.text)
-                        .font(.dahliaBody.monospaced())
-                        .padding(8)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .background(Color.primary.opacity(0.05), in: RoundedRectangle(cornerRadius: 6))
+                    selectableText(
+                        content.text,
+                        id: block.id.uuidString,
+                        font: .monospacedSystemFont(ofSize: NSFont.dahliaBody.pointSize, weight: .regular),
+                        isCode: true
+                    )
+                    .font(.dahliaBody.monospaced())
+                    .padding(8)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(Color.primary.opacity(0.05), in: RoundedRectangle(cornerRadius: 6))
                     transcriptReferenceView(content.transcriptRef)
                 }
             case let .image(screenshotId, caption):
-                imageView(screenshotId: screenshotId, caption: caption)
+                imageView(screenshotId: screenshotId, caption: caption, id: block.id.uuidString)
             case let .heading(level, content):
-                headingView(level: level, content: content)
+                headingView(level: level, content: content, id: block.id.uuidString)
             case let .table(headers, rows):
-                tableView(headers: headers, rows: rows)
+                tableView(headers: headers, rows: rows, id: block.id.uuidString)
             }
         }
     }
 
     @ViewBuilder
-    private func headingView(level: Int, content: SummaryText) -> some View {
+    private func headingView(level: Int, content: SummaryText, id: String) -> some View {
         switch level {
         case 1:
-            summaryTextView(content)
+            summaryTextView(content, id: id, font: .boldSystemFont(ofSize: DahliaTypography.size(offset: 3)))
                 .font(.dahliaTitle2)
                 .bold()
                 .padding(.top, DahliaDesign.sectionHeadingTopPadding)
         case 2:
-            summaryTextView(content)
+            summaryTextView(content, id: id, font: .dahliaTitle3)
                 .font(.dahliaTitle3)
                 .padding(.top, DahliaDesign.sectionHeadingTopPadding)
         default:
-            summaryTextView(content)
+            summaryTextView(content, id: id, font: .dahliaTitle3)
                 .font(.dahliaTitle3)
                 .padding(.top, 2)
         }
     }
 
-    private func imageView(screenshotId: UUID, caption: SummaryText) -> some View {
+    private func imageView(screenshotId: UUID, caption: SummaryText, id: String) -> some View {
         VStack(alignment: .leading, spacing: 6) {
             if let screenshot = screenshotProvider(screenshotId) {
                 SummaryScreenshotImageView(
@@ -171,7 +187,7 @@ struct SummaryDocumentView: View {
             }
 
             if !caption.text.isEmpty {
-                summaryTextView(caption)
+                summaryTextView(caption, id: id, font: .dahliaSecondary, color: DahliaDesign.secondaryTextNSColor)
                     .font(.dahliaSecondary)
                     .foregroundStyle(DahliaDesign.secondaryTextColor)
                     .frame(maxWidth: .infinity, alignment: .leading)
@@ -182,11 +198,11 @@ struct SummaryDocumentView: View {
         }
     }
 
-    private func tableView(headers: [SummaryText], rows: [[SummaryText]]) -> some View {
+    private func tableView(headers: [SummaryText], rows: [[SummaryText]], id: String) -> some View {
         Grid(alignment: .leading, horizontalSpacing: 0, verticalSpacing: 0) {
             GridRow {
-                ForEach(headers.enumerated(), id: \.offset) { _, header in
-                    tableCellView(header)
+                ForEach(headers.enumerated(), id: \.offset) { column, header in
+                    tableCellView(header, id: "\(id)-header-\(column)", font: .boldSystemFont(ofSize: NSFont.dahliaBody.pointSize))
                         .font(.dahliaBody.bold())
                         .padding(.horizontal, 8)
                         .padding(.vertical, 4)
@@ -195,10 +211,10 @@ struct SummaryDocumentView: View {
                 }
             }
             Divider()
-            ForEach(rows.enumerated(), id: \.offset) { _, row in
+            ForEach(rows.enumerated(), id: \.offset) { index, row in
                 GridRow {
-                    ForEach(row.enumerated(), id: \.offset) { _, cell in
-                        tableCellView(cell)
+                    ForEach(row.enumerated(), id: \.offset) { column, cell in
+                        tableCellView(cell, id: "\(id)-\(index)-\(column)")
                             .font(.dahliaBody)
                             .padding(.horizontal, 8)
                             .padding(.vertical, 3)
@@ -212,20 +228,25 @@ struct SummaryDocumentView: View {
         .clipShape(RoundedRectangle(cornerRadius: 4))
     }
 
-    private func summaryTextView(_ summaryText: SummaryText) -> some View {
+    private func summaryTextView(
+        _ summaryText: SummaryText,
+        id: String,
+        font: NSFont = .dahliaBody,
+        color: NSColor = DahliaDesign.primaryTextNSColor
+    ) -> some View {
         HStack(alignment: .firstTextBaseline, spacing: 6) {
             if !summaryText.text.isEmpty {
-                inlineMarkdownText(summaryText.text)
+                selectableText(summaryText.text, id: id, font: font, color: color)
             }
             transcriptReferenceView(summaryText.transcriptRef)
         }
         .fixedSize(horizontal: false, vertical: true)
     }
 
-    private func tableCellView(_ summaryText: SummaryText) -> some View {
+    private func tableCellView(_ summaryText: SummaryText, id: String, font: NSFont = .dahliaBody) -> some View {
         VStack(alignment: .leading, spacing: 2) {
             if !summaryText.text.isEmpty {
-                inlineMarkdownText(summaryText.text)
+                selectableText(summaryText.text, id: id, font: font)
             }
             transcriptReferenceView(summaryText.transcriptRef)
         }
@@ -242,16 +263,14 @@ struct SummaryDocumentView: View {
         }
     }
 
-    @ViewBuilder
-    private func inlineMarkdownText(_ text: String) -> some View {
-        if let attributed = try? AttributedString(
-            markdown: text,
-            options: .init(interpretedSyntax: .inlineOnlyPreservingWhitespace)
-        ) {
-            Text(attributed)
-        } else {
-            Text(text)
-        }
+    private func selectableText(
+        _ text: String,
+        id: String,
+        font: NSFont = .dahliaBody,
+        color: NSColor = DahliaDesign.primaryTextNSColor,
+        isCode: Bool = false
+    ) -> some View {
+        SelectableSummaryText(text: text, id: id, selection: textSelection, font: font, color: color, isCode: isCode)
     }
 
 }
