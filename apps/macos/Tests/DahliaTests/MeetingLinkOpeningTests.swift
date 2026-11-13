@@ -125,24 +125,27 @@ import Foundation
             #expect(!MeetingLinkApplicationCatalog.isGoogleMeetChromeApplication(infoDictionary: [:]))
         }
 
-        @Test
-        func joinAndRecordOpensMeetingWhenRecordingCannotStart() async throws {
+        @Test(arguments: [false, true])
+        func joinAndRecordOpensMeetingWhenRecordingCannotStart(isListening: Bool) async throws {
             let workspace = TestMeetingLinkWorkspace()
             let opener = MeetingLinkOpener(
                 settings: TestSettings(globalTarget: .systemDefault),
                 workspace: workspace
             )
+            let viewModel = CaptionViewModel(
+                availableInputDevicesProvider: { [] },
+                defaultInputDeviceIDProvider: { nil }
+            )
+            viewModel.isListening = isListening
+            var recordingStarts = 0
             let coordinator = RecordingCoordinator(
-                viewModel: CaptionViewModel(
-                    availableInputDevicesProvider: { [] },
-                    defaultInputDeviceIDProvider: { nil }
-                ),
+                viewModel: viewModel,
                 sidebarViewModel: SidebarViewModel(settings: AppSettings()),
                 mainWindowNavigation: MainWindowNavigation(
                     openMainWindow: {},
                     openMainWindowWithoutActivation: {}
                 ),
-                onRecordingDidStart: {},
+                onRecordingDidStart: { recordingStarts += 1 },
                 onRecordingDidStop: {},
                 meetingLinkOpener: opener
             )
@@ -168,6 +171,8 @@ import Foundation
             #expect(await pollUntil {
                 await workspace.attemptedApplications() == [nil]
             })
+            #expect(viewModel.isListening == isListening)
+            #expect(recordingStarts == 0)
         }
 
         @Test

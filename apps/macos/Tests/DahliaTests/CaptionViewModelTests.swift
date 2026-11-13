@@ -428,14 +428,14 @@ import os
         }
 
         @Test
-        func canGenerateSummaryIsDisabledWhileListening() {
+        func canGenerateSummaryRemainsEnabledWhileListening() {
             let viewModel = summaryReadyViewModel()
 
             #expect(viewModel.canGenerateSummary)
 
             viewModel.isListening = true
 
-            #expect(!viewModel.canGenerateSummary)
+            #expect(viewModel.canGenerateSummary)
         }
 
         @Test
