@@ -179,6 +179,55 @@ import Foundation
             #expect(PiFileAccessSettings.load(for: .local, defaults: defaults).grants.first?.access == .readOnly)
         }
 
+        @Test(arguments: [false, true])
+        func customNvmDirectoryIsCheckedBeforeSavingWriteAccess(isSecret: Bool) async throws {
+            let suite = "PiFileAccessSettingsTests.\(UUID())"
+            let defaults = try #require(UserDefaults(suiteName: suite))
+            defer { defaults.removePersistentDomain(forName: suite) }
+            let account = CodexRuntimeProvider.dahlia(connectionID: UUID())
+            let root = FileManager.default.temporaryDirectory.appending(path: suite)
+            let nvm = root.appending(path: "custom-nvm")
+            let bins = ["v22.16.0", "v24.22.1"].map { nvm.appending(path: "versions/node/\($0)/bin") }
+            let work = root.appending(path: "work")
+            try await Task.detached {
+                for folder in bins + [work] {
+                    try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+                }
+            }.value
+            defer { try? FileManager.default.removeItem(at: root) }
+            let variable = PiLaunchSettings.Variable(id: .v7(), name: "NVM_DIR", isSecret: isSecret, value: isSecret ? nil : nvm.path)
+            let launch = PiLaunchSettings(variables: [variable])
+            launch.save(for: account, defaults: defaults)
+            let key = PiLaunchSettings.secretKey(for: account, id: variable.id)
+            let model = PiFileAccessSettingsModel(account: account, defaults: defaults, secret: { $0 == key ? nvm.path : nil })
+            await model.add(bins)
+            #expect(model.errorMessage == nil)
+            #expect(model.settings.grants.count == bins.count)
+            for grant in model.settings.grants {
+                await model.setAccess(.readWrite, for: grant.id)
+                #expect(model.errorMessage != nil)
+                #expect(PiFileAccessSettings.load(for: account, defaults: defaults).grants.first { $0.id == grant.id }?.access == .readOnly)
+            }
+
+            var options = PiRuntimeService.LaunchOptions(mode: .chat, cwd: work)
+            options.fileAccess = model.settings
+            let environment = try PiRuntimeService.launchEnvironment(
+                options, provider: account, agentURL: root.appending(path: "agent"), executableURL: URL(fileURLWithPath: "/bin/sh"),
+                launch: launch, secret: { $0 == key ? nvm.path : nil }
+            )
+            for bin in bins {
+                #expect(environment["PATH"]?.contains(bin.path) == true)
+            }
+            let grant = try #require(options.fileAccess.grants.first)
+            options.fileAccess.grants = [.init(id: grant.id, path: grant.path, isDirectory: true, access: .readWrite)]
+            #expect(throws: (any Error).self) {
+                try PiRuntimeService.launchEnvironment(
+                    options, provider: account, agentURL: root.appending(path: "agent"), executableURL: URL(fileURLWithPath: "/bin/sh"),
+                    launch: launch, secret: { $0 == key ? nvm.path : nil }
+                )
+            }
+        }
+
         @Test
         func anUpdateCannotRestoreAccessRevokedWhileItValidated() async throws {
             let suite = "PiFileAccessSettingsTests.\(UUID())"

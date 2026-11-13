@@ -83,7 +83,7 @@ final class PiFileAccessSettingsModel {
         let snapshot = PiFileAccessSettings.load(for: account, defaults: defaults)
         let account = account
         let secret = secret
-        let securityVariables = ["PATH", "HOME", "ZDOTDIR", "XDG_CONFIG_HOME", "BASH_ENV", "ENV"]
+        let securityVariables = CommandLineToolLocator.discoveryEnvironmentNames + ["HOME", "ZDOTDIR", "XDG_CONFIG_HOME", "BASH_ENV", "ENV"]
         let launch = PiLaunchSettings(variables: PiLaunchSettings.load(for: account, defaults: defaults).variables.filter {
             securityVariables.contains($0.name)
         })

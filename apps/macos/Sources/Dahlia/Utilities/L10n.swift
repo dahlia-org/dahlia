@@ -2528,7 +2528,7 @@ enum L10n { // swiftlint:disable:this type_body_length
     static var agentWorkingDirectoryHelp: String { String(localized: "settings.agents.workingDirectory.help", bundle: bundle) }
     static var agentWorkingDirectoryNotAllowed: String { String(localized: "settings.agents.workingDirectory.notAllowed", bundle: bundle) }
     static var piCommandNotFound: String { String(
-        localized: "Pi was not found on PATH. Enable Dahlia-managed Pi in Settings > Dahlia AI to install it.",
+        localized: "Pi was not found on PATH. You can install Dahlia-managed Pi from Settings.",
         bundle: bundle
     ) }
     static var piNotInstalled: String { String(localized: "settings.agents.piNotInstalled", bundle: bundle) }

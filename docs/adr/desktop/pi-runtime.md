@@ -12,8 +12,9 @@ Dahlia は Pi を同梱せず、利用者がインストールした `pi` を使
 実行ファイルのパスやコマンド名は手入力させない。選択は実行アカウントごとに保存し（agent directory と同じ `local` またはアカウント ID で区別）、
 Dahlia がインストールする Pi はアプリプロファイルごとに全アカウントで共有する。以前のパス設定がその `bin/pi` を指していたアカウントはオンを引き継ぎ、
 それ以外の旧設定は PATH 探索に切り替える。明示的に切り替えたトグルは旧設定より優先する。
-Finder から開いたアプリは launchd の最小 PATH しか受け取らないため、PATH に `/opt/homebrew/bin`・`/usr/local/bin`・`~/.local/bin`・`~/bin` を加えて探す。
-アカウントが「環境変数」で PATH を設定していれば、起動する Pi と同じく、その PATH で探す。
+Finder／アプリランチャーから開いた場合は、起動時の PATH に Homebrew（`/opt/homebrew/bin`・`/opt/homebrew/sbin`・`/usr/local/bin`・`/usr/local/sbin`）、`~/.local/bin`・`~/.bun/bin`・`~/bin`・`~/Library/pnpm`・`~/.volta/bin`・`~/.npm-global/bin`・`/opt/homebrew/opt/libpq/bin` を補助探索先として加える。シェルや `.zshrc` などの起動スクリプトは実行しない。
+nvm は `~/.nvm/versions/node/v*/bin`（`NVM_DIR` が設定されていればその配下）を、インストール済みのバージョン番号の降順で探索する。既存の PATH を優先し、nvm の default alias は評価しない。Pi の実行時は、見つけた Pi 自身のディレクトリを PATH の先頭に置き、同じバージョンの Node.js を利用する。探索・実行・パッケージ操作とファイルアクセス制限の検証は共通の探索先を使う。
+アカウントが「環境変数」で PATH や NVM_DIR を設定していれば、シークレットを含め、起動する Pi と同じ値で探索する。設定画面の「使用するコマンド」はこれらの設定変更後に更新する。
 選択した Pi が見つからないときは `piCommandNotFound` で失敗し、別の Pi にはフォールバックせず、要約・画像解析は未サインインと同じく保留にする。
 切り替えは以後起動する Pi process に適用する。
 

@@ -24,7 +24,8 @@ enum PiBundle {
     nonisolated static func executableURL(
         for provider: CodexRuntimeProvider,
         defaults: UserDefaults = .standard,
-        managedExecutableURL: URL = PiInstaller.executableURL
+        managedExecutableURL: URL = PiInstaller.executableURL,
+        secret: (String) -> String? = { KeychainService.load(key: $0) }
     ) throws -> URL {
         if usesManagedPi(for: provider, defaults: defaults, managedExecutableURL: managedExecutableURL) {
             guard CommandLineToolLocator.isExecutableFile(atPath: managedExecutableURL.path) else {
@@ -33,7 +34,8 @@ enum PiBundle {
             return managedExecutableURL
         }
         let environment = ProcessInfo.processInfo.environment
-            .merging(PiLaunchSettings.load(for: provider, defaults: defaults).environment { _ in nil }) { $1 }
+            .merging(PiLaunchSettings.load(for: provider, defaults: defaults).commandDiscovery
+                .resolvedEnvironment(for: provider, secret: secret)) { $1 }
         guard let url = CommandLineToolLocator.executableURL(named: "pi", environment: environment) else {
             throw CodexAppServerError.piCommandNotFound(nil)
         }

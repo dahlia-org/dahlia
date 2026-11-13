@@ -7,7 +7,13 @@ import Observation
 @Observable
 final class PiLaunchSettingsModel {
     let account: CodexRuntimeProvider
-    private(set) var settings: PiLaunchSettings
+    private(set) var settings: PiLaunchSettings {
+        didSet {
+            if oldValue.commandDiscovery != settings.commandDiscovery { commandDiscoveryRevision += 1 }
+        }
+    }
+
+    private(set) var commandDiscoveryRevision = 0
     /// Secrets with a stored value, so the field can show that one is saved without reading it.
     private(set) var storedSecretIDs: Set<UUID> = []
 
@@ -61,6 +67,7 @@ final class PiLaunchSettingsModel {
         guard !value.isEmpty, settings.variables.contains(where: { $0.id == id && $0.isSecret }) else { return }
         try await saveSecret(value, id)
         storedSecretIDs.insert(id)
+        if settings.commandDiscovery.variables.contains(where: { $0.id == id }) { commandDiscoveryRevision += 1 }
     }
 
     /// Making a value secret moves it to the Keychain; making it plain again clears it, since a secret is never read back.

@@ -81,5 +81,36 @@ import Synchronization
             #expect(memory.values.withLock { $0 }.isEmpty)
             #expect(PiLaunchSettings.load(for: Self.account, defaults: defaults) == PiLaunchSettings())
         }
+
+        @Test(arguments: ["PATH", "NVM_DIR"])
+        func discoveryRevisionTracksRelevantEditsAndSecretReplacements(name: String) async throws {
+            let suite = "PiLaunchSettingsTests.\(UUID())"
+            let defaults = try #require(UserDefaults(suiteName: suite))
+            defer { defaults.removePersistentDomain(forName: suite) }
+            let memory = MemorySecrets()
+            let model = PiLaunchSettingsModel(account: Self.account, defaults: defaults, secrets: memory.secrets)
+            model.addVariable()
+            let id = try #require(model.settings.variables.first?.id)
+            model.setName("OTHER_VARIABLE", of: id)
+            model.setValue("unrelated", of: id)
+            #expect(model.commandDiscoveryRevision == 0)
+            model.setName(name, of: id)
+            #expect(model.commandDiscoveryRevision == 1)
+            model.setValue("/first", of: id)
+            #expect(model.commandDiscoveryRevision == 2)
+            try await model.setSecret(true, of: id)
+            #expect(model.commandDiscoveryRevision == 3)
+            try await model.setSecretValue("/replacement", of: id)
+            #expect(model.commandDiscoveryRevision == 4)
+            #expect(model.settings.variables.first?.value == nil)
+            model.setName("OTHER_VARIABLE", of: id)
+            #expect(model.commandDiscoveryRevision == 5)
+            try await model.setSecretValue("unrelated replacement", of: id)
+            #expect(model.commandDiscoveryRevision == 5)
+            model.setName(name, of: id)
+            #expect(model.commandDiscoveryRevision == 6)
+            await model.removeVariable(id)
+            #expect(model.commandDiscoveryRevision == 7)
+        }
     }
 #endif
