@@ -12,6 +12,57 @@ import Synchronization
     @MainActor
     // swiftlint:disable:next type_body_length
     struct CaptionViewModelSummaryGenerationTests {
+        @Test(arguments: [false, true], [false, true])
+        func manualSummaryWhileRecordingUsesSavedTranscript(bulk: Bool, batch: Bool) async throws {
+            let fixture = try SummaryGenerationFixture()
+            defer { fixture.removeFiles() }
+            let runner = BlockingSummaryRunner()
+            let viewModel = CaptionViewModel(summaryGenerationRunner: runner.run)
+            await fixture.select(fixture.first, in: viewModel, note: "note")
+            viewModel.isListening = true
+            if batch {
+                await viewModel.handleBatchTranscriptionUpdate(.init(
+                    meetingId: fixture.first.id, state: .recording(sessionId: .v7())
+                ))
+            }
+            let options = SummaryGenerationOptions(exportOptions: SummaryExportOptions(exportsToWorkspace: false))
+
+            #expect(viewModel.canGenerateSummary)
+            if bulk {
+                #expect(viewModel.canRegenerateSummaries(meetingIds: [fixture.first.id, fixture.second.id]))
+                viewModel.triggerManualSummaries(
+                    meetingIds: [fixture.first.id, fixture.second.id],
+                    dbQueue: fixture.database.dbQueue, workspaceURL: nil, options: options
+                )
+            } else {
+                #expect(viewModel.triggerManualSummary(options: options))
+            }
+            try await runner.waitForCallCount(bulk ? 2 : 1)
+            let call = try #require(runner.calls.first { $0.meetingID == fixture.first.id })
+            #expect(call.transcriptText.contains("first transcript"))
+            #expect(!viewModel.canGenerateSummary)
+
+            let appended = TranscriptSegment(startTime: .now, text: "later speech", isConfirmed: true, audioSource: "mic")
+            try await fixture.database.dbQueue.write { db in
+                try TranscriptContent(from: appended, meetingId: fixture.first.id).insert(db)
+            }
+            #expect(!call.transcriptText.contains("later speech"))
+            runner.complete(meetingID: fixture.first.id, title: "During recording")
+            if bulk { runner.complete(meetingID: fixture.second.id, title: "Other meeting") }
+            #expect(await waitUntil { viewModel.summaryGeneratingMeetingIDs.isEmpty })
+            #expect(viewModel.isListening)
+            #expect(try fixture.summary(for: fixture.first.id)?.loadDocument().title == "During recording")
+            let dbQueue = fixture.database.dbQueue
+            let meetingID = fixture.first.id
+            let text = try await Task.detached {
+                try FullTranscriptLoader.summaryInput(
+                    meetingId: meetingID, dbQueue: dbQueue, recordingSessions: [], timeBase: .now
+                ).text
+            }.value
+            #expect(text.contains("later speech"))
+            #expect(viewModel.canGenerateSummary)
+        }
+
         @Test
         func corruptRecordingDoesNotBlockLocalRecoveryAndLegacyRemoteFailsForMacRetry() async throws {
             let fixture = try SummaryGenerationFixture()
@@ -1487,6 +1538,7 @@ import Synchronization
     final class BlockingSummaryRunner {
         struct Call {
             let meetingID: UUID
+            let transcriptText: String
             let recordedAt: Date
             let noteText: String?
             let projectName: String?
@@ -1505,6 +1557,7 @@ import Synchronization
         func run(_ input: SummaryGenerationRunnerInput) async throws -> SummaryService.GeneratedSummary {
             calls.append(Call(
                 meetingID: input.promptContext.meetingId,
+                transcriptText: input.transcriptText,
                 recordedAt: input.promptContext.recordedAt,
                 noteText: input.noteText,
                 projectName: input.promptContext.projectName,

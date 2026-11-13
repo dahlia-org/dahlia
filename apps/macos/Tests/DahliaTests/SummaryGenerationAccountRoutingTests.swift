@@ -6,8 +6,8 @@
 
     @MainActor
     struct SummaryGenerationAccountRoutingTests {
-        @Test(arguments: [false, true])
-        func serverRequestsUseMacInferenceThroughTheirOwnGateway(bulk: Bool) async throws {
+        @Test(arguments: [false, true], [false, true])
+        func serverRequestsUseMacInferenceThroughTheirOwnGateway(bulk: Bool, isListening: Bool) async throws {
             let fixture = try SummaryGenerationFixture()
             defer { fixture.removeFiles() }
             let connectionID = try attachServerAccount(to: fixture)
@@ -32,6 +32,7 @@
                 throw CancellationError()
             })
             await fixture.select(fixture.first, in: viewModel, note: "note")
+            viewModel.isListening = isListening
             if bulk {
                 viewModel.triggerManualSummaries(
                     meetingIds: [fixture.first.id, fixture.second.id], dbQueue: fixture.database.dbQueue, workspaceURL: nil

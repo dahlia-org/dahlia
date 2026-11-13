@@ -77,25 +77,24 @@ struct MainSidebarUpcomingEventRow: View {
 
                     HStack(spacing: 4) {
                         if event.conferenceURI != nil {
-                            Button(action: onJoin) {
+                            Button(action: canStartRecording ? onJoin : onOpenMeetingLink) {
                                 Text(L10n.join)
                                     .padding(.horizontal, 6)
                                     .frame(height: 24)
-                                    .foregroundStyle(isJoinHovered && canStartRecording
+                                    .foregroundStyle(isJoinHovered
                                         ? DahliaDesign.sidebarPrimaryTextColor
                                         : DahliaDesign.sidebarSecondaryTextColor)
                                     .background(
-                                        isJoinHovered && canStartRecording ? DahliaDesign.sidebarHighlightColor : .clear,
+                                        isJoinHovered ? DahliaDesign.sidebarHighlightColor : .clear,
                                         in: .rect(cornerRadius: DahliaDesign.Highlight.compactCornerRadius)
                                     )
                                     .contentShape(.rect(cornerRadius: DahliaDesign.Highlight.compactCornerRadius))
                             }
                             .buttonStyle(.plain)
                             .focused($focusedControl, equals: .join)
-                            .disabled(!canStartRecording)
                             .onHover { isJoinHovered = $0 }
-                            .help(L10n.joinAndStartRecording)
-                            .accessibilityLabel(L10n.joinAndStartRecording)
+                            .help(canStartRecording ? L10n.joinAndStartRecording : L10n.join)
+                            .accessibilityLabel(canStartRecording ? L10n.joinAndStartRecording : L10n.join)
                         }
 
                         Menu {

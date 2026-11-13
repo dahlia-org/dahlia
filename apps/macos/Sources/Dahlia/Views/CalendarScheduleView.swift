@@ -398,9 +398,8 @@ private struct CalendarScheduleEventRow: View {
                             .contentShape(Capsule())
                     }
                     .buttonStyle(.plain)
-                    .disabled(!canStartRecording)
-                    .help(L10n.joinAndStartRecording)
-                    .accessibilityLabel(L10n.joinAndStartRecording)
+                    .help(canStartRecording ? L10n.joinAndStartRecording : L10n.join)
+                    .accessibilityLabel(canStartRecording ? L10n.joinAndStartRecording : L10n.join)
                     .animation(.easeOut(duration: 0.12), value: isJoinHovered)
                     .onHover { isJoinHovered = $0 }
                 }

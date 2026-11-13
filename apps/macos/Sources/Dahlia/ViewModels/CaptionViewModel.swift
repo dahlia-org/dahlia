@@ -4306,16 +4306,16 @@ final class CaptionViewModel: ObservableObject {
     // MARK: - Summary Generation
 
     private var canStartManualSummaryGeneration: Bool {
-        !isListening && !isFinalizingRecording && !isDeletingScreenshots
+        !isFinalizingRecording && !isDeletingScreenshots
     }
 
     /// 手動で要約を実行できるかどうか。
     var canGenerateSummary: Bool {
         guard canStartManualSummaryGeneration,
               let currentMeetingId,
-              !isSummaryGenerating(meetingId: currentMeetingId),
-              batchTranscriptionState?.blocksSummaryGeneration != true else { return false }
-        return true
+              !isSummaryGenerating(meetingId: currentMeetingId) else { return false }
+        if case .recording? = batchTranscriptionState { return true }
+        return batchTranscriptionState?.blocksSummaryGeneration != true
     }
 
     func summaryGenerationSourceAvailability(
