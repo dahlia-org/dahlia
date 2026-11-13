@@ -2,10 +2,12 @@ import SwiftUI
 
 struct AgentChatInstructionsSection: View {
     @AppStorage private var instructions: String
+    @AppStorage private var useForSummary: Bool
     @State private var isInfoPresented = false
 
     init(account: CodexRuntimeProvider, defaults: UserDefaults = .standard) {
         _instructions = AppStorage(wrappedValue: "", AgentChatInstructions.defaultsKey(for: account), store: defaults)
+        _useForSummary = AppStorage(wrappedValue: false, AgentChatInstructions.summaryEnabledKey(for: account), store: defaults)
     }
 
     var body: some View {
@@ -15,6 +17,8 @@ struct AgentChatInstructionsSection: View {
                 .scrollContentBackground(.hidden)
                 .frame(minHeight: 100)
                 .accessibilityLabel(L10n.chatCustomInstructions)
+            Toggle(L10n.chatCustomInstructionsUseForSummary, isOn: $useForSummary)
+                .toggleStyle(.switch)
         } header: {
             HStack {
                 Text(L10n.chatCustomInstructions).font(.dahliaSectionHeader)

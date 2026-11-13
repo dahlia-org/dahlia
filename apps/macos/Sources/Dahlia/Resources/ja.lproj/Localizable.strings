@@ -1908,8 +1908,9 @@
 
 "settings.agents.customInstructions" = "カスタム指示";
 "settings.agents.customInstructions.details" = "カスタム指示について";
-"settings.agents.customInstructions.info" = "入力内容は、AI チャットの追加システムプロンプトとして、選択中の AI モデルへ送信されます。Dahlia の標準指示と結合して使われます。";
-"settings.agents.customInstructions.help" = "AI チャットへの指示を設定します。この Mac 内にアカウント別で保存され、新しいチャットや閉じて開き直したチャットに適用されます。空にすると解除できます。要約生成と画像解析には使いません。";
+"settings.agents.customInstructions.info" = "入力内容は、AI チャットの追加システムプロンプトとして、選択中の AI モデルへ送信されます。Dahlia の標準指示と結合して使われます。「要約生成にも適用する」がオンの場合、この Mac で実行する要約生成にも送信されます。";
+"settings.agents.customInstructions.help" = "AI チャットへの指示を設定します。この Mac 内にアカウント別で保存され、新しいチャットや閉じて開き直したチャットに適用されます。空にすると解除できます。「要約生成にも適用する」をオンにすると、以降に開始するこの Mac での要約生成にも使います。画像解析には使いません。";
+"settings.agents.customInstructions.useForSummary" = "要約生成にも適用する";
 
 "settings.agents.skills" = "スキル";
 "settings.agents.skills.empty" = "認識しているスキルはありません。";

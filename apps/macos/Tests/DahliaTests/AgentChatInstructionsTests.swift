@@ -36,6 +36,67 @@ import SwiftUI
         }
 
         @Test
+        func summaryOptInIsAccountLocalAndIgnoresBlankInstructions() throws {
+            let suite = "AgentChatInstructionsTests.\(UUID.v7())"
+            let defaults = try #require(UserDefaults(suiteName: suite))
+            defer { defaults.removePersistentDomain(forName: suite) }
+            let accounts: [CodexRuntimeProvider] = [.local, .dahlia(connectionID: .v7()), .databricks(connectionID: .v7())]
+            for account in accounts {
+                defaults.set("Focus on decisions", forKey: AgentChatInstructions.defaultsKey(for: account))
+                #expect(AgentChatInstructions.loadForSummary(for: account, defaults: defaults) == nil)
+            }
+            for account in accounts {
+                defaults.set(true, forKey: AgentChatInstructions.summaryEnabledKey(for: account))
+                #expect(AgentChatInstructions.loadForSummary(for: account, defaults: defaults) == "Focus on decisions")
+                for other in accounts where other != account {
+                    #expect(AgentChatInstructions.loadForSummary(for: other, defaults: defaults) == nil)
+                }
+                defaults.set(false, forKey: AgentChatInstructions.summaryEnabledKey(for: account))
+                #expect(AgentChatInstructions.loadForSummary(for: account, defaults: defaults) == nil)
+                #expect(AgentChatInstructions.load(for: account, defaults: defaults) == "Focus on decisions")
+                defaults.set(true, forKey: AgentChatInstructions.summaryEnabledKey(for: account))
+                for blank in ["", " \n\t"] {
+                    defaults.set(blank, forKey: AgentChatInstructions.defaultsKey(for: account))
+                    #expect(AgentChatInstructions.loadForSummary(for: account, defaults: defaults) == nil)
+                }
+                defaults.set(false, forKey: AgentChatInstructions.summaryEnabledKey(for: account))
+            }
+        }
+
+        @Test
+        func summaryCapturesInstructionsAndPreservesThemAcrossOptionsAndPersistence() throws {
+            let suite = "AgentChatInstructionsTests.\(UUID.v7())"
+            let defaults = try #require(UserDefaults(suiteName: suite))
+            defer { defaults.removePersistentDomain(forName: suite) }
+            var workspace = WorkspaceRecord(id: .v7(), path: nil, name: "Test", createdAt: .now, lastOpenedAt: .now)
+            workspace.accountConnectionId = .v7()
+            let account = CodexRuntimeProvider(workspace: workspace)
+            defaults.set("Focus on decisions", forKey: AgentChatInstructions.defaultsKey(for: account))
+            let disabled = SummaryGenerationSettings.current(workspace: workspace, defaults: defaults)
+            #expect(disabled.customInstructions == nil)
+            #expect(!SummaryService.summaryGenerationInstructions(generationSettings: disabled).contains("Focus on decisions"))
+            defaults.set(true, forKey: AgentChatInstructions.summaryEnabledKey(for: account))
+            let captured = SummaryGenerationSettings.current(workspace: workspace, defaults: defaults)
+            defaults.set("Changed after capture", forKey: AgentChatInstructions.defaultsKey(for: account))
+            defaults.set(false, forKey: AgentChatInstructions.summaryEnabledKey(for: account))
+            let adjusted = captured.applying(detailLevel: .concise).applying(options: .manual)
+            let restored = try JSONDecoder().decode(SummaryGenerationSettings.self, from: JSONEncoder().encode(adjusted))
+            #expect(restored.customInstructions == "Focus on decisions")
+            let prompt = SummaryService.summaryGenerationInstructions(generationSettings: restored)
+            #expect(prompt.contains("# User's custom instructions for summary generation\nFocus on decisions"))
+            #expect(prompt.hasPrefix(AppSettings.defaultSummaryPrompt))
+            #expect(prompt.contains(SummaryService.codexInputTrustInstruction))
+            #expect(prompt.hasSuffix(SummaryService.codexStructuredInstruction))
+            #expect(!prompt.contains("Changed after capture"))
+            let next = SummaryGenerationSettings.current(workspace: workspace, defaults: defaults)
+            #expect(next.customInstructions == nil)
+            var legacyJSON = try #require(JSONSerialization.jsonObject(with: JSONEncoder().encode(captured)) as? [String: Any])
+            legacyJSON.removeValue(forKey: "customInstructions")
+            let legacy = try JSONDecoder().decode(SummaryGenerationSettings.self, from: JSONSerialization.data(withJSONObject: legacyJSON))
+            #expect(legacy.customInstructions == nil)
+        }
+
+        @Test
         func instructionsPersistPerAccountAndCanBeCleared() throws {
             let suite = "AgentChatInstructionsTests.\(UUID.v7())"
             let defaults = try #require(UserDefaults(suiteName: suite))
