@@ -249,7 +249,7 @@ public final class DahliaMCPServer {
         switch name {
         case "query_meetings":
             try validate(arguments, allowedKeys: [
-                "query", "project", "project_id", "ical_uid", "created_from", "created_before",
+                "query", "project", "project_id", "ical_uid", "attendee", "created_from", "created_before",
                 "simple", "limit", "cursor", "server_cursor",
             ])
             return try toolResult(queryMeetings(arguments))
@@ -371,6 +371,7 @@ public final class DahliaMCPServer {
             project: string(arguments, key: "project"),
             projectID: optionalUUID(arguments, key: "project_id"),
             icalUID: nonblankString(arguments, key: "ical_uid"),
+            attendee: string(arguments, key: "attendee"),
             createdFrom: date(arguments, key: "created_from"),
             createdBefore: date(arguments, key: "created_before"),
             limit: limit,
@@ -1297,8 +1298,8 @@ extension DahliaMCPServer {
             "title": "Query meetings",
             "description": "Find recent meetings in the configured workspace by meeting name, AI description, summary body, "
                 + "calendar title, or tag. Project names and paths are not searched by query; use project or project_id "
-                + "to filter by Project. Use ical_uid to find past meetings for the same calendar event. Transcript bodies are "
-                + "not searched. All parameters are optional filters. Omit unused properties entirely; do not "
+                + "to filter by Project. Use ical_uid to find past meetings for the same calendar event. Use attendee to find "
+                + "meetings with a person. Transcript bodies are not searched. All parameters are optional filters. Omit unused properties entirely; do not "
                 + "send empty strings. Full-text search is used by default; set simple to true for literal substring matching.",
             "inputSchema": [
                 "type": "object",
@@ -1324,6 +1325,12 @@ extension DahliaMCPServer {
                         "type": "string",
                         "minLength": 1,
                         "description": "iCalendar UID for past meetings associated with the same calendar event; surrounding whitespace is ignored.",
+                    ],
+                    "attendee": [
+                        "type": "string",
+                        "description": "Part of an invited attendee's name or email address on the linked calendar event, "
+                            + "matched case-insensitively. Meetings without a calendar event never match, and the "
+                            + "calendar owner is not listed as an attendee.",
                     ],
                     "created_from": ["type": "string", "format": "date-time"],
                     "created_before": ["type": "string", "format": "date-time"],

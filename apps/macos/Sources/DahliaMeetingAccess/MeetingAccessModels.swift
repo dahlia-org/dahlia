@@ -7,6 +7,7 @@ public struct MeetingQuery: Sendable, Equatable {
     public var project: String?
     public var projectID: UUID?
     public var icalUID: String?
+    public var attendee: String?
     public var createdFrom: Date?
     public var createdBefore: Date?
     public var limit: Int
@@ -19,6 +20,7 @@ public struct MeetingQuery: Sendable, Equatable {
         project: String? = nil,
         projectID: UUID? = nil,
         icalUID: String? = nil,
+        attendee: String? = nil,
         createdFrom: Date? = nil,
         createdBefore: Date? = nil,
         limit: Int = 25,
@@ -30,6 +32,7 @@ public struct MeetingQuery: Sendable, Equatable {
         self.project = project
         self.projectID = projectID
         self.icalUID = icalUID
+        self.attendee = attendee
         self.createdFrom = createdFrom
         self.createdBefore = createdBefore
         self.limit = limit

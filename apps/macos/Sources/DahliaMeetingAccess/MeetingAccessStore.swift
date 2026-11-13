@@ -362,6 +362,26 @@ public final class MeetingAccessStore: Sendable {
             components.predicates.append("meetings.calendar_event_ical_uid = ?")
             components.arguments += [trimmedIcalUID]
         }
+        let trimmedAttendee = query.attendee?.trimmingCharacters(in: .whitespacesAndNewlines)
+        if let trimmedAttendee, !trimmedAttendee.isEmpty {
+            db.add(function: DatabaseFunction("dahlia_attendee_contains", argumentCount: 2, pure: true) { values in
+                guard let text = String.fromDatabaseValue(values[0]),
+                      let query = String.fromDatabaseValue(values[1]) else { return false }
+                return text.range(of: query, options: .caseInsensitive) != nil
+            })
+            components.predicates.append("""
+            EXISTS (
+                SELECT 1 FROM json_each(
+                    CASE WHEN meetings.calendarSyncMetadata IS NOT NULL
+                         THEN json_extract(CAST(meetings.calendarSyncMetadata AS TEXT), '$.calendarEvent.attendees')
+                         ELSE calendar_events.attendees_json END
+                ) AS attendee
+                WHERE dahlia_attendee_contains(attendee.value ->> 'email', ?)
+                   OR dahlia_attendee_contains(attendee.value ->> 'display_name', ?)
+            )
+            """)
+            components.arguments += [trimmedAttendee, trimmedAttendee]
+        }
         if let createdFrom = query.createdFrom {
             components.predicates.append("meetings.createdAt >= ?")
             components.arguments += [createdFrom]
@@ -384,6 +404,7 @@ public final class MeetingAccessStore: Sendable {
             project: query.project?.trimmingCharacters(in: .whitespacesAndNewlines),
             projectID: query.projectID,
             icalUID: query.icalUID?.trimmingCharacters(in: .whitespacesAndNewlines),
+            attendee: query.attendee?.trimmingCharacters(in: .whitespacesAndNewlines),
             createdFrom: query.createdFrom,
             createdBefore: query.createdBefore
         )
@@ -735,6 +756,7 @@ private struct MeetingCursorFilterScope: Codable {
     let project: String?
     let projectID: UUID?
     let icalUID: String?
+    let attendee: String?
     let createdFrom: Date?
     let createdBefore: Date?
 }
