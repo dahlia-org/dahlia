@@ -70,6 +70,9 @@ import os
             #expect(launch.arguments.contains("--no-tools"))
             #expect(launch.arguments.contains("--no-session"))
             #expect(launch.arguments.contains("--skill"))
+            let creator = try #require(PiBundle.presetSkillURLs().first { $0.lastPathComponent == "skill-creator" })
+            #expect(launch.arguments.contains(creator.path))
+            #expect(FileManager.default.fileExists(atPath: creator.appending(path: "SKILL.md").path))
             #expect(await transport.isClosed)
         }
 

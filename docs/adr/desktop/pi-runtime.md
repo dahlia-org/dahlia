@@ -49,6 +49,14 @@ Pi の更新時に `test-pi-extension.py` で確かめる。ユーザーの `~/.
 Pi の agent directory はアカウントごとに `Application Support/Dahlia/accounts/<local または accounts.id>/pi`（0700）。
 Local Account は `local`、Databricks アカウントと Dahlia account は `accounts` テーブルの ID を使う。`PI_OFFLINE`・`PI_SKIP_VERSION_CHECK`・`PI_TELEMETRY=0` と、
 extension・context file・theme・project trust の自動読込を無効化して起動する。チャットでは標準 skill、アカウントの `pi/skills` に保存した skill、追加したパッケージの skill・prompt template を読み込む（2026-11-12 ユーザー承認）。要約・画像解析・通常の control は skill・prompt template も無効にする。「スキル」タブ専用の一覧プロセスは同じ resource loader で読み込み、モデル・MCP・tool を実行せず `get_commands` の認識結果を一覧にする。スキル名と最大2行の説明を表示し、保存先はフォルダを開く操作に使う。詳細はアプリ内モーダルで説明と SKILL.md を表示し、ファイル読込と Markdown 解析は MainActor 外で行う。追加・変更は新しいチャットプロセスから反映する。
+内蔵 `skill-creator` はチャットから Pi 向け skill の作成・更新・検証を支援する。`/skill:skill-creator <依頼>` でも呼び出せる。
+保存先は system prompt に渡した現在のアカウントの `pi/skills/<skill-name>/SKILL.md` とし、アカウント内の Workspace 間で共有する。
+組み込み・パッケージの skill は直接変更せず、カスタマイズは別名の account skill として保存する。保存後は新しいチャット process で利用でき、
+設定の「スキル」の再読込で認識を確認できる。account skill の編集・削除も次の process から反映する。
+作成方針は [Codex Skill Creator](https://github.com/openai/skills/tree/main/skills/.system/skill-creator) の段階的な情報開示と
+[Claude Code Skill Creator](https://github.com/anthropics/skills/tree/main/skills/skill-creator) の試行・評価・改善を参考にし、
+保存先・呼出形式・利用可能な tool・承認は Dahlia の Pi runtime に合わせる。
+
 「Dahlia AI」>「プラグイン」から npm source または Git URL を Pi の `install`・`remove` で管理し、同じアカウントの `settings.json` を一覧の正本にする。変更は次に開始するチャット process から適用する。
 パッケージ操作はアカウントの Pi 選択と環境変数を使い、`PI_CODING_AGENT_DIR` は Dahlia のアカウント directory に固定する。`~/.pi` や project の設定には追加しない。拡張コードは無効のままとし、インストール元は利用者が信頼できるものを指定する。
 

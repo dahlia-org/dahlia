@@ -174,6 +174,8 @@ import Synchronization
             let launch = try #require(fixture.pi.launches.all.first { $0.mode == .chat })
             #expect(launch.arguments.contains("--no-session"))
             #expect(launch.arguments.contains("--skill"))
+            let creator = try #require(PiBundle.presetSkillURLs().first { $0.lastPathComponent == "skill-creator" })
+            #expect(launch.arguments.contains(creator.path))
             #expect(launch.arguments.contains("builtin:mcp"))
             #expect(await fixture.chatTransport.isClosed)
             #expect(await fixture.chatTransport.commands.allSatisfy { $0["type"]?.stringValue == "get_commands" })
