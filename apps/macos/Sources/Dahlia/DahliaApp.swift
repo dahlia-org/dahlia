@@ -142,6 +142,7 @@ struct DahliaApp: App {
                     )
                 }
             }
+            .modifier(DatabricksSignOutPresentation())
             .dahliaAppearance()
             .frame(
                 minWidth: MainWindowMetrics.minimumWidth,

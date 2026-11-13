@@ -1114,6 +1114,7 @@
 "Waiting for browser sign-in…" = "Waiting for browser sign-in…";
 "Cancel Sign-In" = "Cancel Sign-In";
 "Sign Out" = "Sign Out";
+"Your Workspaces will move to the Local Account and remain on this Mac. You will need to sign in again to use this account's AI models." = "Your Workspaces will move to the Local Account and remain on this Mac. You will need to sign in again to use this account's AI models.";
 "Refresh Profiles" = "Refresh Profiles";
 "No Databricks workspaces are connected yet." = "No Databricks workspaces are connected yet.";
 "Homebrew Command" = "Homebrew Command";

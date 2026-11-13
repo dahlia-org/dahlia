@@ -101,8 +101,7 @@ struct MainSidebarFooterView: View {
                 dahliaAccountController.startReauthentication(connectionID: connection.id)
             }
         } else if workspaceAISettings.isDatabricksAccount {
-            // Its workspaces return to the Local Account, which then opens.
-            Task { await workspaceAISettings.signOutOfDatabricksAccount() }
+            workspaceAISettings.requestDatabricksSignOut()
         } else {
             mainWindowNavigation.openDahliaSignIn()
         }
