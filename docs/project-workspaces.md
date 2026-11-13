@@ -123,7 +123,7 @@ For multi-workspace read access and live transcripts, see [Live MCP](live-mcp.md
 
 Transcript provenance uses `rec_` for recording-session IDs. Desktop storage retains UUIDs; provider metadata and domain names keep their original values.
 
-`dahlia-mcp --workspace-id <ws_TypeID>` is read-only. Adding the sole capability flag, `--write`, publishes update tools.
+`dahlia-mcp --workspace-id <ws_TypeID>` is read-only. Alternatively, `--account <UUID|local>` scopes access to one account’s added Workspaces; it cannot be combined with a Workspace flag. Omitting both scopes includes every added Workspace. Adding the sole capability flag, `--write`, publishes update tools within the selected scope.
 Full-Workspace in-app chat starts the helper with `--write`; summary-generation threads disable MCP tools.
 The in-app chat loads its preset skills from the app bundle into each Pi chat process.
 Skill details show the name and description separately and omit YAML frontmatter from the rendered Markdown body.

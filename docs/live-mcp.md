@@ -2,18 +2,22 @@
 
 ## ローカル MCP の登録
 
-設定の MCP 画面で「すべての追加済みワークスペース」または個別のワークスペースを選び、表示された Claude Code / Codex の登録コマンドを使用する。どちらの範囲でも書き込みを有効にできる。`--workspace` と別名の `--workspace-id` は `ws_...` 形式の TypeID を受け取る。
+設定の MCP 画面で「すべての追加済みワークスペース」または個別のワークスペースを選び、表示された Claude Code / Codex の登録コマンドを使用する。どちらの範囲でも書き込みを有効にできる。アカウント単位で登録する場合は、コマンドの Workspace 指定を `--account <UUID|local>` に置き換える。`--workspace` と別名の `--workspace-id` は `ws_...` 形式の TypeID を受け取る。
 
 ```sh
 dahlia-mcp                                   # この Mac に追加済みの全ワークスペース、読み取りのみ
 dahlia-mcp --write                           # 全ワークスペースへの読み書き
+dahlia-mcp --account local                   # Local Account のワークスペースだけ読み取り
+dahlia-mcp --account <account_UUID> --write   # 指定アカウントのワークスペースだけ読み書き
 dahlia-mcp --workspace <ws_TypeID>            # 指定したワークスペースだけ読み取り
 dahlia-mcp --workspace-id <ws_TypeID> --write  # 指定したワークスペースだけ読み書き
 ```
 
-`list_workspaces` はワークスペース ID・名前・`account_type`・`access_state`・`freshness` を返す。Server の `last_synced` は端末に保持した同期済みデータであり、最新の共有権限や接続を保証しない。`query_meetings` の `is_recording`（Server: `isRecording`）で録音状態を確認する。Server の状態は開始・終了イベントの同期に従う。
+`--account` は `--workspace` / `--workspace-id` と排他で、併用・重複・不正な値は起動時に拒否する。`--account` の UUID はこの Mac の `accounts.id` であり、Server の user / organization ID ではない。Local Account は ID を持たないため `local` と指定する。Server アカウントは `accountConnectionId`、Databricks アカウントは `databricksConnectionId` の所属で絞り、Local Account はどちらも未設定の Workspace に限定する。起動後の追加・移動も操作時に反映する。不明・削除済みアカウントでは失敗し、全件にフォールバックしない。
 
-全ワークスペースの query は `workspaces` 配列に各ワークスペースの結果をまとめる。各結果の cursor と `workspace_id` を一緒に渡して続きを取得する。`get_*` は対象 ID からワークスペースを解決する。個別ワークスペースの指定で起動した場合、ツールの `workspace_id` で範囲を広げることはできない。
+`list_workspaces` はワークスペース ID・名前・`account_type`・`account_id`・`access_state`・`freshness` を返す。`account_id` は登録にそのまま使える UUID または `local`。`account_type` は従来どおりデータ保持方式の `local` / `server` を表し、Databricks アカウントの Workspace も `local` になる。Server の `last_synced` は端末に保持した同期済みデータであり、最新の共有権限や接続を保証しない。`query_meetings` の `is_recording`（Server: `isRecording`）で録音状態を確認する。Server の状態は開始・終了イベントの同期に従う。
+
+全ワークスペースの query は `workspaces` 配列に各ワークスペースの結果をまとめる。各結果の cursor と `workspace_id` を一緒に渡して続きを取得する。`get_*` は対象 ID からワークスペースを解決する。アカウントまたは個別ワークスペースの指定で起動した場合、ツールの `workspace_id` で範囲を広げることはできない。
 
 書き込みは既存レコードの ID から対象ワークスペースを解決する。新規作成には `workspace_id` または一意な親 ID が必要で、現在表示中のワークスペースを暗黙には選ばない。異なるワークスペースの ID を組み合わせた参照は拒否する。既存の revision による競合検出を引き続き使う。
 
@@ -44,7 +48,7 @@ MCP は録音や認識を開始しない。未確定文、ライブ専用ツー�
 
 Public tool IDs use TypeID prefixes: `mtg_`, `proj_`, `ws_`, `att_`, `transcript_`, and `seg_`. Reuse returned IDs unchanged; raw database UUIDs are not accepted as tool arguments. Desktop Dahlia AI sends the same IDs, including `meeting:mtg_...` mentions, while preserving display of historical UUID contexts and mentions. Generated screenshot references use `att_`; user-authored text is unchanged. Treat cursors and `next_after` as opaque values.
 
-Local MCP defaults to all workspaces added to this Mac. `--write` enables writes across that scope; optional `--workspace` / `--workspace-id` restrict both reads and writes. Existing IDs identify the destination Workspace. Creates require an explicit `workspace_id` or an unambiguous parent ID. Cross-Workspace references are rejected. Query results are grouped by Workspace; continue each group with its own Workspace ID and cursor.
+Local MCP defaults to all workspaces added to this Mac. `--write` enables writes across that scope; optional `--workspace` / `--workspace-id` restrict both reads and writes. Alternatively, `--account <UUID|local>` restricts access to one account’s added Workspaces and is mutually exclusive with Workspace flags. Use the `account_id` returned by `list_workspaces`: a Mac-local account UUID or `local`. Server and Databricks memberships are checked at operation time; Local excludes both. Unknown or removed accounts fail without broadening access. Existing IDs identify the destination Workspace. Creates require an explicit `workspace_id` or an unambiguous parent ID. Cross-Workspace references are rejected. Query results are grouped by Workspace; continue each group with its own Workspace ID and cursor.
 
 `get_meeting_transcript` returns confirmed speech for the whole meeting. Pass `next_after` as `after` to read additions. `wait: true` waits up to 25 seconds only when empty. Empty responses still include `next_after`. Existing `cursor` pagination cannot be combined with `after`. Keep the same meeting and time range. On `transcript_changed_refetch_without_after`, omit `after` and rebuild your accumulated transcript. Missing bodies and authorization failures are errors, never empty successes.
 

@@ -29,15 +29,19 @@ public final class DahliaMCPServer {
     public init(
         databaseURL: URL = MeetingAccessStore.defaultDatabaseURL,
         workspaceID: UUID? = nil,
+        accountScope: MCPAccountScope? = nil,
         allowsWrites: Bool = false,
         textResolver: (@Sendable (UUID, TextBrokerRequest) throws -> Data)? = nil
     ) throws {
+        guard accountScope == nil || workspaceID == nil else { throw MCPAccountScope.Failure.conflictingScopes }
         store = try MeetingAccessStore(
             databaseURL: databaseURL,
             workspaceID: workspaceID ?? UUID(),
             allowsWrites: allowsWrites,
+            accountScope: accountScope,
             textResolver: textResolver
         )
+        try store.database.read { db in try accountScope?.validate(in: db) }
         workspaceScope = workspaceID
         telemetryOrigin = nil
         usageTelemetryReporter = { _ in }
@@ -88,14 +92,15 @@ public final class DahliaMCPServer {
     }
 
     private var initializationResult: [String: Any] {
+        let multiWorkspaceScope = store.accountScope == nil ? "all workspaces added to this Mac" : "workspaces in the configured account on this Mac"
         let accessInstructions = store.allowsWrites
             ?
             (workspaceScope == nil ?
-                "Read and write access to all workspaces added to this Mac. For new records specify workspace_id or a parent ID. " :
+                "Read and write access to \(multiWorkspaceScope). For new records specify workspace_id or a parent ID. " :
                 "Read and write access to one configured Dahlia workspace. ")
             :
             (workspaceScope == nil ?
-                "Read-only access to all workspaces on this Mac. Discover them with list_workspaces. Query pages are grouped by workspace; continue with workspace_id and its cursor. " :
+                "Read-only access to \(multiWorkspaceScope). Discover them with list_workspaces. Query pages are grouped by workspace; continue with workspace_id and its cursor. " :
                 "Read-only access to one configured Dahlia workspace. ")
         let writeInstructions = store.allowsWrites
             ? "Query or get each record before updating it. Record updates require revision. "

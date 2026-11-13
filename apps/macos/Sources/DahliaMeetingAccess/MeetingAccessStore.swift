@@ -15,6 +15,7 @@ public final class MeetingAccessStore: Sendable {
     let database: DatabaseQueue
     public let workspaceID: UUID
     public let allowsWrites: Bool
+    let accountScope: MCPAccountScope?
     private let screenshotCache: ScreenshotFileStore?
     private let imageResolver: @Sendable (UUID, UUID, UUID) throws -> Data
     let textResolver: (@Sendable (UUID, TextBrokerRequest) throws -> Data)?
@@ -23,6 +24,7 @@ public final class MeetingAccessStore: Sendable {
         databaseURL: URL = MeetingAccessStore.defaultDatabaseURL,
         workspaceID: UUID,
         allowsWrites: Bool = false,
+        accountScope: MCPAccountScope? = nil,
         screenshotCache: ScreenshotFileStore? = nil,
         imageResolver: (@Sendable (UUID, UUID, UUID) throws -> Data)? = nil,
         textResolver: (@Sendable (UUID, TextBrokerRequest) throws -> Data)? = nil
@@ -36,6 +38,7 @@ public final class MeetingAccessStore: Sendable {
         database = try DatabaseQueue(path: databaseURL.path, configuration: configuration)
         self.workspaceID = workspaceID
         self.allowsWrites = allowsWrites
+        self.accountScope = accountScope
         let usesAppDatabase = databaseURL.standardizedFileURL == Self.defaultDatabaseURL.standardizedFileURL
         self.textResolver = textResolver ?? (usesAppDatabase ? { @Sendable workspaceId, request in
             try DahliaImageBrokerProtocol.requestImage(.init(workspaceId: workspaceId, text: request))
@@ -54,6 +57,7 @@ public final class MeetingAccessStore: Sendable {
         self.database = database
         self.workspaceID = workspaceID
         allowsWrites = false
+        accountScope = nil
         screenshotCache = nil
         imageResolver = { _, _, _ in throw MeetingAccessError.screenshotUnavailable }
         textResolver = nil
@@ -67,6 +71,7 @@ public final class MeetingAccessStore: Sendable {
         database = store.database
         self.workspaceID = workspaceID
         allowsWrites = store.allowsWrites
+        accountScope = store.accountScope
         screenshotCache = store.screenshotCache
         imageResolver = store.imageResolver
         textResolver = store.textResolver
@@ -1090,11 +1095,13 @@ extension MeetingAccessStore {
         try validateSchema(in: db)
         guard let row = try Row.fetchOne(
             db,
-            sql: "SELECT id, name FROM workspaces WHERE id = ?",
+            sql: "SELECT id, name, accountConnectionId, databricksConnectionId FROM workspaces WHERE id = ?",
             arguments: [workspaceID]
         ) else {
             throw MeetingAccessError.workspaceNotFound
         }
+        try accountScope?.validate(in: db)
+        guard accountScope?.contains(row) != false else { throw MeetingAccessError.workspaceNotFound }
         return ScopedWorkspace(id: row["id"], name: row["name"])
     }
 
