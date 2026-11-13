@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// The next few calendar events for a sidebar `List`, with a row that opens the full schedule.
+/// Today's next few calendar events for a sidebar `List`, with a row that opens the full schedule.
 struct MainSidebarUpcomingEventsSection: View {
     static let maximumVisibleEvents = 5
     private static let refreshInterval: TimeInterval = 300
@@ -19,7 +19,7 @@ struct MainSidebarUpcomingEventsSection: View {
     @ObservedObject private var calendarAutoRecordingStore = CalendarAutoRecordingStore.shared
 
     @State private var isExpanded = true
-    /// Ticks on each minute so ended events leave the list and the day labels stay current while the sidebar stays open.
+    /// Ticks on each minute so ended events leave the list and the day boundary stays current while the sidebar stays open.
     @State private var now = Date.now
 
     var body: some View {
@@ -82,14 +82,23 @@ struct MainSidebarUpcomingEventsSection: View {
             .accessibilityAddTraits(isShowingSchedule ? .isSelected : [])
         }
     }
+
+    static func visibleEvents(
+        from upcomingEvents: [CalendarEvent],
+        now: Date,
+        calendar: Calendar = .autoupdatingCurrent
+    ) -> [CalendarEvent] {
+        let tomorrow = calendar.date(byAdding: .day, value: 1, to: calendar.startOfDay(for: now)) ?? now
+        return Array(upcomingEvents.filter { $0.startDate < tomorrow }.prefix(maximumVisibleEvents))
+    }
 }
 
 private extension MainSidebarUpcomingEventsSection {
     var visibleEvents: [CalendarEvent] {
-        Array(calendarSourceCoordinator.visibleUpcomingEvents(
+        Self.visibleEvents(from: calendarSourceCoordinator.visibleUpcomingEvents(
             for: settings.enabledCalendarSources,
             filter: settings.calendarEventFilter,
             now: now
-        ).prefix(Self.maximumVisibleEvents))
+        ), now: now)
     }
 }
