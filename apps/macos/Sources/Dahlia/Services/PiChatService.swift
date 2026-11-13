@@ -126,7 +126,7 @@ actor PiChatService: CodexChatServicing {
         do {
             let response = try await connection.request("get_commands", timeout: .seconds(30))
             guard let commands = response.objectValue?["commands"] else {
-                throw CodexAppServerError.invalidProtocolResponse
+                throw PiRuntimeError.invalidProtocolResponse
             }
             let decoded = try JSONDecoder().decode([CodexChatSlashCommand].self, from: JSONEncoder().encode(commands))
                 .sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
@@ -171,7 +171,7 @@ actor PiChatService: CodexChatServicing {
     func startThread(model: String?, effort: String, workspaceID: UUID) async throws -> CodexChatThread {
         let directory = try await agentLocator.sessionsURL(for: runtime.currentProvider(), workspaceID: workspaceID)
         let available = try await runtime.models()
-        guard !available.isEmpty else { throw CodexAppServerError.notLoggedIn }
+        guard !available.isEmpty else { throw PiRuntimeError.notLoggedIn }
         let selected = try PiRuntimeService.resolvedModel(
             for: CodexAppServerRequest(model: model, developerInstructions: "", inputs: [], outputSchema: Data()),
             in: available
@@ -260,9 +260,9 @@ actor PiChatService: CodexChatServicing {
         var connection = try await connection(threadID: threadID)
         let session = try live(threadID, connection)
         if let expectedProvider, expectedProvider != session.provider {
-            throw CodexConfigurationError.providerChanged(expectedProvider.displayName)
+            throw AIConfigurationError.providerChanged(expectedProvider.displayName)
         }
-        guard session.turn == nil else { throw CodexAppServerError.rpcError(code: nil, message: "turn already active") }
+        guard session.turn == nil else { throw PiRuntimeError.rpcError(code: nil, message: "turn already active") }
         sessions[threadID]?.approvalMethod = approvalMethod
         var requestedModel: String?
         if let model = model?.nilIfBlank {
@@ -276,14 +276,14 @@ actor PiChatService: CodexChatServicing {
             ]
             do {
                 _ = try await connection.request("set_model", parameters)
-            } catch CodexAppServerError.rpcError {
+            } catch PiRuntimeError.rpcError {
                 // Pi read models.json when this process started, before the model was turned on in Agents settings or
                 // a gateway listed it. No turn runs yet, so the thread reopens from its session file with the current list.
                 await closeSession(threadID)
                 connection = try await self.connection(threadID: threadID)
                 // The reopened session starts from defaults: this turn's account and approval method apply to it too.
                 if let expectedProvider, try expectedProvider != live(threadID, connection).provider {
-                    throw CodexConfigurationError.providerChanged(expectedProvider.displayName)
+                    throw AIConfigurationError.providerChanged(expectedProvider.displayName)
                 }
                 sessions[threadID]?.approvalMethod = approvalMethod
                 _ = try await connection.request("set_model", parameters)
@@ -297,7 +297,7 @@ actor PiChatService: CodexChatServicing {
             sessions[threadID]?.effort = effort
         }
         guard try live(threadID, connection).turn == nil else {
-            throw CodexAppServerError.rpcError(code: nil, message: "turn already active")
+            throw PiRuntimeError.rpcError(code: nil, message: "turn already active")
         }
 
         let (events, continuation) = AsyncThrowingStream<CodexChatTurnEvent, any Error>.makeStream()
@@ -379,7 +379,7 @@ actor PiChatService: CodexChatServicing {
     func decideApproval(turnID: UUID, id: String, decision: CodexChatApprovalDecision) async throws {
         guard let threadID = threadID(turnID: turnID),
               let waiter = sessions[threadID]?.turn?.pendingApprovals.removeValue(forKey: id)
-        else { throw CodexAppServerError.approvalNoLongerPending }
+        else { throw PiRuntimeError.approvalNoLongerPending }
         waiter.resume(returning: decision)
         sessions[threadID]?.turn?.continuation.yield(.approvalResolved(id: id))
     }
@@ -398,7 +398,7 @@ actor PiChatService: CodexChatServicing {
         guard let session = sessions[threadID], session.turn != nil, await session.connection.isOpen,
               (try? live(threadID, session.connection)) != nil
         else {
-            throw CodexAppServerError.rpcError(code: nil, message: "no active turn to steer")
+            throw PiRuntimeError.rpcError(code: nil, message: "no active turn to steer")
         }
         _ = try await session.connection.request("steer", PiRuntimeService.prompt(Self.textJoined(inputs)))
     }
@@ -435,7 +435,7 @@ actor PiChatService: CodexChatServicing {
             }
             if sessions[threadID]?.connection === session.connection {
                 sessions[threadID] = nil
-                finish(session.turn, error: CodexAppServerError.backendResetForSafety)
+                finish(session.turn, error: PiRuntimeError.backendResetForSafety)
                 await runtime.close(session.connection)
             }
             return try await connection(threadID: threadID)
@@ -454,7 +454,7 @@ actor PiChatService: CodexChatServicing {
             self.newThreads[threadID] = nil
             let url = try await self.sessionFile(id: threadID)
             guard let workspaceID = UUID(uuidString: url.deletingLastPathComponent().lastPathComponent) else {
-                throw CodexAppServerError.rpcError(code: nil, message: "thread not found")
+                throw PiRuntimeError.rpcError(code: nil, message: "thread not found")
             }
             return try await self.open(threadID: threadID, workspaceID: workspaceID, sessionFile: url, sessionArguments: ["--session", url.path])
         }
@@ -467,7 +467,7 @@ actor PiChatService: CodexChatServicing {
     @discardableResult
     private func live(_ threadID: String, _ connection: PiRPCConnection) throws -> Session {
         guard let session = sessions[threadID], session.connection === connection else {
-            throw CodexAppServerError.backendResetForSafety
+            throw PiRuntimeError.backendResetForSafety
         }
         return session
     }
@@ -571,7 +571,7 @@ actor PiChatService: CodexChatServicing {
         } catch {
             guard sessions[threadID]?.connection === connection else { return }
             let session = sessions.removeValue(forKey: threadID)
-            finish(session?.turn, error: error is CancellationError ? CodexAppServerError.backendResetForSafety : error)
+            finish(session?.turn, error: error is CancellationError ? PiRuntimeError.backendResetForSafety : error)
             await runtime.close(connection)
         }
     }
@@ -625,7 +625,7 @@ actor PiChatService: CodexChatServicing {
                 if let bridgeError {
                     turn.continuation.finish(throwing: bridgeError)
                 } else if PiRuntimeService.isAuthenticationFailure(error) {
-                    turn.continuation.finish(throwing: CodexAppServerError.notLoggedIn)
+                    turn.continuation.finish(throwing: PiRuntimeError.notLoggedIn)
                 } else {
                     turn.continuation.yield(.failed(message: error.nilIfBlank))
                     turn.continuation.finish()
@@ -706,7 +706,7 @@ actor PiChatService: CodexChatServicing {
         for directory in directories {
             if let url = PiChatSessionFiles.file(id: id, in: directory) { return url }
         }
-        throw CodexAppServerError.rpcError(code: nil, message: "thread not found")
+        throw PiRuntimeError.rpcError(code: nil, message: "thread not found")
     }
 
     // MARK: Mapping

@@ -48,11 +48,11 @@ import Foundation
 
                 // Managed mode must fail when missing or a directory, even with a working pi on PATH.
                 try FileManager.default.removeItem(at: managedPi)
-                #expect(throws: CodexAppServerError.piCommandNotFound(managedPi.path)) {
+                #expect(throws: PiRuntimeError.piCommandNotFound(managedPi.path)) {
                     try PiBundle.executableURL(for: accounts[1], defaults: defaults, managedExecutableURL: managedPi)
                 }
                 try FileManager.default.createDirectory(at: managedPi, withIntermediateDirectories: true)
-                #expect(throws: CodexAppServerError.piCommandNotFound(managedPi.path)) {
+                #expect(throws: PiRuntimeError.piCommandNotFound(managedPi.path)) {
                     try PiBundle.executableURL(for: accounts[1], defaults: defaults, managedExecutableURL: managedPi)
                 }
                 defaults.set(false, forKey: key)

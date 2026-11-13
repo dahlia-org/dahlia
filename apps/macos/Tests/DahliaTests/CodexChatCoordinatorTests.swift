@@ -808,7 +808,7 @@ import Foundation
         func listThreads(cursor _: String?, workspaceID _: UUID) async throws -> CodexChatThreadPage {
             historyRequestCount += 1
             if failFirstHistoryRequest, historyRequestCount == 1 {
-                throw CodexAppServerError.processExited(nil)
+                throw PiRuntimeError.processExited(nil)
             }
             let threadID = listsStartedThread && didStartThread ? "new-thread" : "history-thread"
             let title = threadID == "new-thread" ? startedThreadName ?? "" : "History"
@@ -831,7 +831,7 @@ import Foundation
                 await withCheckedContinuation { delayedThreadStartContinuation = $0 }
             }
             if delaysAndFailsThreadStart {
-                throw CodexAppServerError.invalidProtocolResponse
+                throw PiRuntimeError.invalidProtocolResponse
             }
             didStartThread = true
             return CodexChatThread(id: "new-thread", title: "", messages: [], model: "default-model", reasoningEffort: effort)

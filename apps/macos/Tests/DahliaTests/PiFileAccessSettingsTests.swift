@@ -12,7 +12,7 @@ import Foundation
             let agent = root.appending(path: "agent")
             let path = agent.appending(path: "skills").path + suffix
             let launch = PiLaunchSettings(variables: [.init(id: UUID(), name: "PATH", value: path + ":/usr/bin:/bin")])
-            #expect(throws: CodexAppServerError.launchFailed(L10n.agentSkillsPathConflict)) {
+            #expect(throws: PiRuntimeError.launchFailed(L10n.agentSkillsPathConflict)) {
                 try PiRuntimeService.launchEnvironment(
                     .init(mode: mode, cwd: root.appending(path: "work")),
                     provider: .local, agentURL: agent,
@@ -32,14 +32,14 @@ import Foundation
             try FileManager.default.createSymbolicLink(at: alias, withDestinationURL: skills)
             let launch = PiLaunchSettings(variables: [.init(id: UUID(), name: "PATH", isSecret: true)])
             var options = PiRuntimeService.LaunchOptions(mode: .control, cwd: agent)
-            #expect(throws: CodexAppServerError.launchFailed(L10n.agentSkillsPathConflict)) {
+            #expect(throws: PiRuntimeError.launchFailed(L10n.agentSkillsPathConflict)) {
                 try PiRuntimeService.launchEnvironment(
                     options, provider: .local, agentURL: agent, executableURL: URL(fileURLWithPath: "/usr/bin/true"),
                     launch: launch, secret: { _ in alias.appending(path: "missing/bin").path }
                 )
             }
             options.environment["PATH"] = "skills/bin"
-            #expect(throws: CodexAppServerError.launchFailed(L10n.agentSkillsPathConflict)) {
+            #expect(throws: PiRuntimeError.launchFailed(L10n.agentSkillsPathConflict)) {
                 try PiRuntimeService.launchEnvironment(
                     options, provider: .local, agentURL: agent, executableURL: URL(fileURLWithPath: "/usr/bin/true"),
                     launch: launch, secret: { _ in "/usr/bin:/bin" }
@@ -299,7 +299,7 @@ import Foundation
             options = .init(mode: .chat, cwd: commands)
             #expect(throws: (any Error).self) { _ = try environment(options) }
             options = .init(mode: .chat, cwd: work, environment: ["BASH_ENV": "$HOME/startup"])
-            #expect(throws: CodexAppServerError.launchFailed(L10n.agentShellStartupPathRequired)) { _ = try environment(options) }
+            #expect(throws: PiRuntimeError.launchFailed(L10n.agentShellStartupPathRequired)) { _ = try environment(options) }
             options = .init(mode: .chat, cwd: work, environment: ["ZDOTDIR": work.path])
             #expect(throws: (any Error).self) { _ = try environment(options) }
             options = .init(mode: .chat, cwd: work, environment: ["BASH_ENV": otherCommands.appending(path: "startup").path])

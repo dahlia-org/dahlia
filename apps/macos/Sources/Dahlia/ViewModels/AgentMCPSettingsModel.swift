@@ -79,7 +79,7 @@ final class AgentMCPSettingsModel {
     func addWorkspace(workspaceURL: String) async throws -> AgentMCPProvider {
         let url = try DatabricksOAuthService.shared.normalizedWorkspaceURL(workspaceURL)
         // Chat tells a workspace's provider from Pi's own (`openai`, `databricks`) by the dot in its host.
-        guard url.host()?.contains(".") == true else { throw CodexConfigurationError.invalidDatabricksWorkspaceURL }
+        guard url.host()?.contains(".") == true else { throw AIConfigurationError.invalidDatabricksWorkspaceURL }
         // Read the account's workspace here, not from the tab's copy, which may not be loaded or may have failed.
         if case let .databricks(connectionID) = account,
            try await AgentMCPProvider.account(workspaceURL: accountWorkspaceURL(connectionID)).host == url.host() {

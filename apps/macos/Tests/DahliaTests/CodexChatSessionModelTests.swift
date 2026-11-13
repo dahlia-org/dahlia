@@ -1145,7 +1145,7 @@ import Foundation
             let settings = AppSettings()
             settings.currentWorkspace = Self.testWorkspace()
             let contextProvider = TestCodexChatContextProvider(
-                error: CodexAppServerError.invalidProtocolResponse
+                error: PiRuntimeError.invalidProtocolResponse
             )
             let session = CodexChatSessionModel(
                 modelID: "default-model",
@@ -1184,7 +1184,7 @@ import Foundation
             session.sendDraft()
             await waitUntil { !session.isGenerating }
 
-            contextProvider.error = CodexAppServerError.invalidProtocolResponse
+            contextProvider.error = PiRuntimeError.invalidProtocolResponse
             session.draft = "Current question"
             session.sendDraft()
             await waitUntil { !session.isGenerating }
@@ -1295,10 +1295,10 @@ import Foundation
         private let availableCommands: [CodexChatSlashCommand]
         private let delaysLoad: Bool
         private let restoredApprovalMethod: CodexChatApprovalMethod?
-        private let approvalMethodUpdateError: CodexAppServerError?
+        private let approvalMethodUpdateError: PiRuntimeError?
         private let delaysApprovalMethodUpdate: Bool
-        private var resumeErrors: [CodexAppServerError]
-        private var steerErrors: [CodexAppServerError]
+        private var resumeErrors: [PiRuntimeError]
+        private var steerErrors: [PiRuntimeError]
         private(set) var sentTextBlocks: [[String]] = []
         private(set) var steeredTextBlocks: [[String]] = []
         private(set) var threadNames: [String] = []
@@ -1312,7 +1312,7 @@ import Foundation
         private(set) var completedApprovalMethodUpdates: [CodexChatApprovalMethod] = []
         private(set) var turnApprovalMethods: [CodexChatApprovalMethod] = []
         private(set) var returnedSendCount = 0
-        private var turnErrors: [CodexAppServerError] = []
+        private var turnErrors: [PiRuntimeError] = []
         private var blockedContinuation: AsyncThrowingStream<CodexChatTurnEvent, any Error>.Continuation?
         private var delayedSendContinuation: CheckedContinuation<Void, Never>?
         private var delayedLoadContinuation: CheckedContinuation<Void, Never>?
@@ -1339,12 +1339,12 @@ import Foundation
         init(
             mode: Mode,
             commands: [CodexChatSlashCommand] = [],
-            steerErrors: [CodexAppServerError] = [],
+            steerErrors: [PiRuntimeError] = [],
             delaysLoad: Bool = false,
             restoredApprovalMethod: CodexChatApprovalMethod? = nil,
-            approvalMethodUpdateError: CodexAppServerError? = nil,
+            approvalMethodUpdateError: PiRuntimeError? = nil,
             delaysApprovalMethodUpdate: Bool = false,
-            resumeErrors: [CodexAppServerError] = []
+            resumeErrors: [PiRuntimeError] = []
         ) {
             self.mode = mode
             self.availableCommands = commands
@@ -1459,10 +1459,10 @@ import Foundation
                 }
             }
             if mode == .failThenComplete, sentTextBlocks.count == 1 {
-                throw CodexAppServerError.invalidProtocolResponse
+                throw PiRuntimeError.invalidProtocolResponse
             }
             if mode == .alwaysFail {
-                throw CodexAppServerError.invalidProtocolResponse
+                throw PiRuntimeError.invalidProtocolResponse
             }
             let (stream, continuation) = AsyncThrowingStream<CodexChatTurnEvent, any Error>.makeStream()
             continuation.yield(.started(turnID: "turn-1"))
@@ -1561,13 +1561,13 @@ import Foundation
             return approvalMethod
         }
 
-        func failNextTurn(with error: CodexAppServerError) {
+        func failNextTurn(with error: PiRuntimeError) {
             turnErrors.append(error)
         }
 
         func decideApproval(turnID: UUID, id: String, decision: CodexChatApprovalDecision) async throws {
             guard turnID == activeLocalTurnID, pendingApprovalIDs.contains(id) else {
-                throw CodexAppServerError.approvalNoLongerPending
+                throw PiRuntimeError.approvalNoLongerPending
             }
             pendingApprovalIDs.removeAll { $0 == id }
             await respondToApproval(id: id, decision: decision)
@@ -1668,14 +1668,14 @@ import Foundation
     @MainActor
     final class TestCodexChatContextProvider: CodexChatContextProviding {
         var context: CodexChatContext?
-        var error: CodexAppServerError?
+        var error: PiRuntimeError?
         var requestCount = 0
         private var shouldBlock: Bool
         private var continuation: CheckedContinuation<Void, Never>?
 
         init(
             context: CodexChatContext? = nil,
-            error: CodexAppServerError? = nil,
+            error: PiRuntimeError? = nil,
             shouldBlock: Bool = false
         ) {
             self.context = context

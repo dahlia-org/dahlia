@@ -408,7 +408,7 @@ import os
             let (model, _) = try Self.model(pi)
             let provider = try AgentMCPProvider(workspaceURL: #require(URL(string: "https://example.cloud.databricks.com")))
 
-            await #expect(throws: CodexAppServerError.notLoggedIn) { try await model.services(of: provider) }
+            await #expect(throws: PiRuntimeError.notLoggedIn) { try await model.services(of: provider) }
         }
 
         @Test
@@ -474,7 +474,7 @@ import os
             _ = await transport.command { $0["message"]?.stringValue?.hasPrefix("/databricks-mcp-services") == true }
             await transport.close()
             await listing
-            #expect(model.listingErrors[provider.id] as? CodexAppServerError == .processExited(nil))
+            #expect(model.listingErrors[provider.id] as? PiRuntimeError == .processExited(nil))
         }
 
         @Test
@@ -492,11 +492,11 @@ import os
             let pi = Self.runtime(succeeds: false, commands: OSAllocatedUnfairLock(initialState: []))
             let (model, defaults) = try Self.model(pi)
 
-            await #expect(throws: CodexAppServerError.self) {
+            await #expect(throws: PiRuntimeError.self) {
                 _ = try await model.addWorkspace(workspaceURL: "https://example.cloud.databricks.com")
             }
             // A host without a dot could not be told from Pi's own providers in chat, so it is refused before sign-in.
-            await #expect(throws: CodexConfigurationError.invalidDatabricksWorkspaceURL) {
+            await #expect(throws: AIConfigurationError.invalidDatabricksWorkspaceURL) {
                 _ = try await model.addWorkspace(workspaceURL: "https://gateway")
             }
             #expect(model.settings == AgentMCPSettings())

@@ -559,7 +559,7 @@ final class DahliaCloudAccountController {
             if WorkspaceAISettingsModel.shared.accountConnectionID == connectionID {
                 WorkspaceAISettingsModel.shared.accountConnectionID = nil
                 guard await WorkspaceAISettingsModel.shared.waitForRuntimeContext() else {
-                    throw CodexConfigurationError.accountNotReady
+                    throw AIConfigurationError.accountNotReady
                 }
             }
             try await service(for: connection.record).deleteLocalCredential()

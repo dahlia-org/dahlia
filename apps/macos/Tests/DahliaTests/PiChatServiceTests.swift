@@ -535,7 +535,7 @@ import Synchronization
         func steeringWithoutActiveTurnReportsNoActiveTurn() async throws {
             let fixture = Self.fixture { _ in }
             let thread = try await fixture.chat.startThread(model: nil, effort: "medium", workspaceID: .v7())
-            await #expect(throws: CodexAppServerError.rpcError(code: nil, message: "no active turn to steer")) {
+            await #expect(throws: PiRuntimeError.rpcError(code: nil, message: "no active turn to steer")) {
                 try await fixture.chat.steer(threadID: thread.id, turnID: "x", inputs: [.text("more")])
             }
         }
@@ -690,7 +690,7 @@ import Synchronization
             #expect(restored.title == "Named early")
             #expect(!fixture.pi.launches.all.contains { $0.mode == .chat })
 
-            await #expect(throws: CodexConfigurationError.providerChanged(L10n.dahliaAccount)) {
+            await #expect(throws: AIConfigurationError.providerChanged(L10n.dahliaAccount)) {
                 _ = try await fixture.chat.beginTurn(
                     threadID: thread.id, inputs: [.text("x")], model: nil, effort: "medium",
                     approvalMethod: .ask, expectedProvider: .dahlia(connectionID: .v7())

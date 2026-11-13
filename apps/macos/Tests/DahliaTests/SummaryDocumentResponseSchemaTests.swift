@@ -101,7 +101,7 @@ import Foundation
                 #"{"title":"","sections":[{"heading":"H","blocks":[{"type":"paragraph","content":{"text":"Body"}}]}]}"#,
                 #"{"title":"T","sections":[{"heading":"H","blocks":[{"type":"paragraph","content":{"text":"  "}}]}]}"#,
             ] {
-                #expect(throws: CodexAppServerError.emptyResponse) {
+                #expect(throws: PiRuntimeError.emptyResponse) {
                     try SummaryService.generatedDocument(from: reply, context: context)
                 }
             }

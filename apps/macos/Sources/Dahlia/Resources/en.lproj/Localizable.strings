@@ -1418,6 +1418,11 @@
 "Search index ready" = "Ready";
 "Search index failed" = "Unavailable";
 "Search index error format" = "Indexing error: %@";
+"Requested Pi model is unavailable: %@" = "Requested Pi model is unavailable: %@";
+"Last image analysis error format" = "Last image analysis error: %@";
+"Image analysis failed. This older error has no recorded details. Check the AI settings for the account." = "Image analysis failed. This older error has no recorded details. Check the AI settings for the account.";
+"The image analysis response did not match the requested format." = "The image analysis response did not match the requested format.";
+"Image analysis requires exactly one screenshot per request." = "Image analysis requires exactly one screenshot per request.";
 "Change permissions" = "Change permissions";
 "Could not update the approval method: %@" = "Could not update the approval method: %@";
 "Set Up Dahlia" = "Set Up Dahlia";

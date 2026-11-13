@@ -4748,7 +4748,7 @@ final class CaptionViewModel: ObservableObject {
             request.generationSettings = SummaryGenerationSettings.current(workspace: workspace).applying(options: request.options)
         }
         guard request.generationSettings.runtimeProvider == CodexRuntimeProvider(workspace: workspace) else {
-            throw CodexConfigurationError.accountNotReady
+            throw AIConfigurationError.accountNotReady
         }
         return request
     }
@@ -5189,8 +5189,8 @@ final class CaptionViewModel: ObservableObject {
 
     nonisolated static func shouldCaptureSummaryGenerationError(_ error: any Error) -> Bool {
         if error is CancellationError { return false }
-        if let configurationError = error as? CodexConfigurationError, case .accountNotReady = configurationError { return false }
-        guard let error = error as? CodexAppServerError else { return true }
+        if let configurationError = error as? AIConfigurationError, case .accountNotReady = configurationError { return false }
+        guard let error = error as? PiRuntimeError else { return true }
         return switch error {
         case .helperNotBundled, .piCommandNotFound, .notLoggedIn, .providerAuthenticationFailed, .requestTimedOut, .turnInterrupted:
             false

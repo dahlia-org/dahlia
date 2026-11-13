@@ -116,7 +116,7 @@ enum PiProviderConfiguration {
         guard let catalog = try JSONDecoder().decode(JSONValue.self, from: data).objectValue,
               let templates = catalog["templates"]?.arrayValue?.compactMap(\.objectValue),
               let entries = catalog["models"]?.arrayValue?.compactMap(\.objectValue)
-        else { throw CodexAppServerError.invalidProtocolResponse }
+        else { throw PiRuntimeError.invalidProtocolResponse }
         let listed = entries.compactMap { $0["id"]?.stringValue }
         let overrides = Dictionary(zip(listed, entries), uniquingKeysWith: { first, _ in first })
         let order = Dictionary(zip(listed, listed.indices), uniquingKeysWith: { first, _ in first })
@@ -262,7 +262,7 @@ enum PiProviderConfiguration {
         request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
         let (data, response) = try await URLSession.shared.data(for: request)
         guard (response as? HTTPURLResponse)?.statusCode == 200 else {
-            throw CodexConfigurationError.updateFailed(L10n.dahliaServerNotConfigured)
+            throw AIConfigurationError.updateFailed(L10n.dahliaServerNotConfigured)
         }
         return try JSONDecoder().decode(JSONValue.self, from: data)
     }
@@ -270,7 +270,7 @@ enum PiProviderConfiguration {
     /// Converts the Dahlia Server's Codex-style model catalog into one Pi provider.
     static func dahliaProvider(baseURL: URL, catalog: JSONValue) throws -> [String: JSONValue] {
         guard let entries = catalog.objectValue?["data"]?.arrayValue else {
-            throw CodexAppServerError.invalidProtocolResponse
+            throw PiRuntimeError.invalidProtocolResponse
         }
         let definitions = Dictionary(
             (catalog.objectValue?["models"]?.arrayValue ?? []).compactMap { value -> (String, [String: JSONValue])? in

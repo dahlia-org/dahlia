@@ -69,7 +69,7 @@ actor CodexRuntimeContextCoordinator {
         case let .dahlia(connectionID):
             guard let record = try await repository?.fetchDahliaAccountConnection(id: connectionID),
                   let baseURL = URL(string: record.origin)?.appending(path: "api/v1")
-            else { throw CodexConfigurationError.accountNotReady }
+            else { throw AIConfigurationError.accountNotReady }
             // Activation needs no network: the catalog is fetched when models are listed (PiRuntimeService.models).
             providers = PiProviderConfiguration.dahliaBaseURL(agentURL: agentURL) == baseURL
                 ? nil

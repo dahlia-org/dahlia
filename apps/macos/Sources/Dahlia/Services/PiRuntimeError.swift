@@ -1,6 +1,6 @@
 import Foundation
 
-enum CodexAppServerError: LocalizedError, Equatable {
+enum PiRuntimeError: LocalizedError, Equatable {
     case helperNotBundled
     /// No `pi` at the path set in Settings, or none found on the search path when it is `nil`.
     case piCommandNotFound(String?)
@@ -40,7 +40,7 @@ enum CodexAppServerError: LocalizedError, Equatable {
         case .backendResetForSafety: L10n.codexBackendResetForSafety
         case .approvalNoLongerPending: L10n.codexApprovalNoLongerPending
         case .emptyResponse: L10n.llmErrorEmptyResponse
-        case let .requestedModelUnavailable(model): "Requested Codex model is unavailable: \(model)"
+        case let .requestedModelUnavailable(model): L10n.piRequestedModelUnavailable(model)
         }
     }
 

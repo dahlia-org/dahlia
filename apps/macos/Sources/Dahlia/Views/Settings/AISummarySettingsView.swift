@@ -76,7 +76,7 @@ struct LocalSummarySettingsRows: View {
     private func loadModels(forceRefresh: Bool, context: CodexRuntimeProvider) async {
         await catalog.load(forceRefresh: forceRefresh) {
             guard await workspaceSettings.waitForRuntimeContext(),
-                  CodexRuntimeContextStore.shared.provider == context else { throw CodexConfigurationError.accountNotReady }
+                  CodexRuntimeContextStore.shared.provider == context else { throw AIConfigurationError.accountNotReady }
         }
     }
 

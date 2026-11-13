@@ -36,7 +36,7 @@ struct CodexRuntimeAccountIsolationTests {
         await waiter.value
         #expect(completed)
         if fails {
-            #expect(failure as? CodexConfigurationError == .accountNotReady)
+            #expect(failure as? AIConfigurationError == .accountNotReady)
         } else {
             #expect(failure == nil)
         }
@@ -78,7 +78,7 @@ struct CodexRuntimeAccountIsolationTests {
         #expect(completed)
         switch action {
         case "activate": #expect(failure == nil)
-        case "remove": #expect(failure as? CodexConfigurationError == .providerChanged(expected.displayName))
+        case "remove": #expect(failure as? AIConfigurationError == .providerChanged(expected.displayName))
         default: #expect(failure is CancellationError)
         }
     }
@@ -197,7 +197,7 @@ struct CodexRuntimeAccountIsolationTests {
         #expect(localModels == #"{"providers":{}}"#)
         #expect(pi.contextStore.provider == .local)
         let unavailable = CodexRuntimeProvider.dahlia(connectionID: .v7())
-        await #expect(throws: CodexConfigurationError.accountNotReady) {
+        await #expect(throws: AIConfigurationError.accountNotReady) {
             try await coordinator.activate(provider: unavailable)
         }
         #expect(!pi.contextStore.isConfigured)

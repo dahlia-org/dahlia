@@ -46,7 +46,7 @@ enum PiChatSessionFiles {
 
     static func thread(at url: URL) throws -> CodexChatThread {
         let records = try records(at: url)
-        guard let id = sessionID(records) else { throw CodexAppServerError.invalidProtocolResponse }
+        guard let id = sessionID(records) else { throw PiRuntimeError.invalidProtocolResponse }
         var model: String?
         var effort: String?
         for record in records {

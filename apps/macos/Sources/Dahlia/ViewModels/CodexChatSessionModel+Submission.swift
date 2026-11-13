@@ -157,7 +157,7 @@ extension CodexChatSessionModel {
 
     func resolveContext(if isRequired: Bool) async throws -> CodexChatContext? {
         guard isRequired else { return nil }
-        guard let workspaceID else { throw CodexAppServerError.invalidProtocolResponse }
+        guard let workspaceID else { throw PiRuntimeError.invalidProtocolResponse }
         return try await contextProvider.currentContext(workspaceID: workspaceID)
     }
 

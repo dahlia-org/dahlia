@@ -37,7 +37,8 @@ final class AppDatabaseManager: Sendable {
         },
         localAccountSettingsResolver: @escaping BackgroundJobWorker.LocalAccountSettingsResolver = {
             WorkspaceAISettingsModel.shared.localAccountSettings
-        }
+        },
+        searchFailureReporter: @escaping BackgroundJobWorker.FailureReporter = { ErrorReportingService.captureSearchFailure($0) }
     ) throws {
         if path != ":memory:" {
             let dbURL = URL(fileURLWithPath: path)
@@ -84,7 +85,8 @@ final class AppDatabaseManager: Sendable {
             dbQueue: dbQueue,
             screenshotAnalyzer: screenshotAnalyzer,
             runtimeProviderResolver: screenshotRuntimeProviderResolver,
-            localAccountSettingsResolver: localAccountSettingsResolver
+            localAccountSettingsResolver: localAccountSettingsResolver,
+            failureReporter: searchFailureReporter
         )
         if path != ":memory:" {
             try FileManager.default.setAttributes(

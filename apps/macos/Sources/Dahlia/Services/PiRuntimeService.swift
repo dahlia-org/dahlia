@@ -93,7 +93,7 @@ actor PiRuntimeService {
         // Work of an account being left must not start Pi after the switch drained its processes. The Local
         // Account's control processes (subscription sign-in and status) run whichever account is open.
         if let requested = contextStore.requestedProvider, requested != provider, options.mode != .control || provider != .local {
-            throw CodexConfigurationError.providerChanged(provider.displayName)
+            throw AIConfigurationError.providerChanged(provider.displayName)
         }
         let agentURL = try agentLocator.agentURL(for: provider)
         let transport = try launcher(options, provider, agentURL)
@@ -106,8 +106,8 @@ actor PiRuntimeService {
                 } catch is CancellationError {
                     throw CancellationError()
                 } catch {
-                    // Callers defer work and skip error reporting for this case, as they did for Codex's auth command.
-                    throw CodexAppServerError.providerAuthenticationFailed(error.localizedDescription)
+                    // Keep authentication failures distinct so callers can defer work and report a sanitized category.
+                    throw PiRuntimeError.providerAuthenticationFailed(error.localizedDescription)
                 }
             case "reviewTriage", "createBackup":
                 guard let chatBridge else { return .null }
@@ -116,7 +116,7 @@ actor PiRuntimeService {
                 guard let chatBridge else { return .string(method == "approval" ? "decline" : method == "reviewModel" ? "" : "ask") }
                 return try await chatBridge(method, payload)
             default:
-                throw CodexAppServerError.invalidProtocolResponse
+                throw PiRuntimeError.invalidProtocolResponse
             }
         }
         connections[ObjectIdentifier(connection)] = (connection, provider, options.mode)
@@ -158,9 +158,9 @@ actor PiRuntimeService {
     }
 
     func currentProvider(expected: CodexRuntimeProvider? = nil) async throws -> CodexRuntimeProvider {
-        guard await configurationReadiness() else { throw CodexConfigurationError.accountNotReady }
+        guard await configurationReadiness() else { throw AIConfigurationError.accountNotReady }
         let provider = contextStore.provider
-        if let expected, expected != provider { throw CodexConfigurationError.accountNotReady }
+        if let expected, expected != provider { throw AIConfigurationError.accountNotReady }
         return provider
     }
 
@@ -172,8 +172,8 @@ actor PiRuntimeService {
 
     func models(for provider: CodexRuntimeProvider, forceRefresh: Bool) async throws -> [CodexModel] {
         let models = try await listedModels(provider, forceRefresh: forceRefresh)
-        if models.isEmpty, provider.accountConnectionID == nil { throw CodexAppServerError.notLoggedIn }
-        guard contextStore.provider == provider else { throw CodexConfigurationError.providerChanged(provider.displayName) }
+        if models.isEmpty, provider.accountConnectionID == nil { throw PiRuntimeError.notLoggedIn }
+        guard contextStore.provider == provider else { throw AIConfigurationError.providerChanged(provider.displayName) }
         return models
     }
 
@@ -392,7 +392,7 @@ actor PiRuntimeService {
         let result = await Result { try await connection.request("get_commands", timeout: Self.controlTimeout) }
         await close(connection)
         guard let commands = try result.get().objectValue?["commands"] else {
-            throw CodexAppServerError.invalidProtocolResponse
+            throw PiRuntimeError.invalidProtocolResponse
         }
         return try JSONDecoder().decode([CodexChatSlashCommand].self, from: JSONEncoder().encode(commands))
             .filter { $0.source == "skill" }
@@ -534,9 +534,9 @@ actor PiRuntimeService {
                     if message.hasPrefix("\(name) ") {
                         return try JSONDecoder().decode(Value.self, from: Data(message.dropFirst(name.count + 1).utf8))
                     } else if message == "\(name)_sign_in_required" {
-                        throw CodexAppServerError.notLoggedIn
+                        throw PiRuntimeError.notLoggedIn
                     } else if message.hasPrefix("\(name)_failed") {
-                        throw CodexAppServerError.rpcError(
+                        throw PiRuntimeError.rpcError(
                             code: nil,
                             message: String(message.dropFirst("\(name)_failed".count)).trimmingCharacters(in: .whitespaces)
                         )
@@ -544,7 +544,7 @@ actor PiRuntimeService {
                 }
                 // The stream ends without an answer when Pi exits; only a cancelled caller stops quietly.
                 try Task.checkCancellation()
-                throw CodexAppServerError.processExited(nil)
+                throw PiRuntimeError.processExited(nil)
             }
         }
         await close(connection)
@@ -581,17 +581,17 @@ actor PiRuntimeService {
                     if message.hasPrefix("\(prefix)auth_url ") {
                         guard let url = URL(string: String(message.dropFirst("\(prefix)auth_url ".count))),
                               url.scheme?.lowercased() == "https", url.host != nil
-                        else { throw CodexAppServerError.invalidProtocolResponse }
-                        guard await openURL(url) else { throw CodexAppServerError.loginPageCouldNotOpen }
+                        else { throw PiRuntimeError.invalidProtocolResponse }
+                        guard await openURL(url) else { throw PiRuntimeError.loginPageCouldNotOpen }
                     } else if message == "\(prefix)login_succeeded" {
                         return
                     } else if message.hasPrefix("\(prefix)login_failed") {
-                        throw CodexAppServerError.loginFailed(String(message.dropFirst("\(prefix)login_failed".count)).nilIfBlank)
+                        throw PiRuntimeError.loginFailed(String(message.dropFirst("\(prefix)login_failed".count)).nilIfBlank)
                     }
                 }
                 // The stream ends without an answer when Pi exits; only a cancelled caller stops quietly.
                 try Task.checkCancellation()
-                throw CodexAppServerError.processExited(nil)
+                throw PiRuntimeError.processExited(nil)
             }
         }
         await close(connection)
@@ -633,7 +633,7 @@ actor PiRuntimeService {
         let model: CodexModel
         do {
             model = try await Self.resolvedModel(for: request, in: models(for: provider, forceRefresh: false))
-        } catch CodexAppServerError.requestedModelUnavailable {
+        } catch PiRuntimeError.requestedModelUnavailable {
             // The account may have gained the model since the catalog was cached.
             model = try await Self.resolvedModel(for: request, in: models(for: provider, forceRefresh: true))
         }
@@ -690,10 +690,10 @@ actor PiRuntimeService {
         let suitable = request.requiresImageInput ? models.filter(\.supportsImages) : models
         if let requested = request.model?.nilIfBlank {
             if let match = matchingModel(requested, in: suitable) { return match }
-            if request.requiresExactModel { throw CodexAppServerError.requestedModelUnavailable(requested) }
+            if request.requiresExactModel { throw PiRuntimeError.requestedModelUnavailable(requested) }
         }
         guard let fallback = ownProvidersFirst(suitable, \.first) else {
-            throw CodexAppServerError.requestedModelUnavailable(request.model ?? "")
+            throw PiRuntimeError.requestedModelUnavailable(request.model ?? "")
         }
         return fallback
     }
@@ -770,11 +770,11 @@ actor PiRuntimeService {
                 continue
             }
         }
-        throw CodexAppServerError.processExited(nil)
+        throw PiRuntimeError.processExited(nil)
     }
 
     nonisolated static func assistantText(_ message: [String: JSONValue]?) throws -> String {
-        guard let message else { throw CodexAppServerError.emptyResponse }
+        guard let message else { throw PiRuntimeError.emptyResponse }
         switch message["stopReason"]?.stringValue {
         case "stop", "toolUse":
             break
@@ -782,16 +782,16 @@ actor PiRuntimeService {
             throw CancellationError()
         case "error":
             let detail = message["errorMessage"]?.stringValue
-            if isAuthenticationFailure(detail) { throw CodexAppServerError.notLoggedIn }
-            throw CodexAppServerError.turnFailed(detail)
+            if isAuthenticationFailure(detail) { throw PiRuntimeError.notLoggedIn }
+            throw PiRuntimeError.turnFailed(detail)
         default:
-            throw CodexAppServerError.turnFailed(message["stopReason"]?.stringValue)
+            throw PiRuntimeError.turnFailed(message["stopReason"]?.stringValue)
         }
         let text = (message["content"]?.arrayValue ?? []).compactMap { block -> String? in
             guard block.objectValue?["type"]?.stringValue == "text" else { return nil }
             return block.objectValue?["text"]?.stringValue
         }.joined()
-        guard text.nilIfBlank != nil else { throw CodexAppServerError.emptyResponse }
+        guard text.nilIfBlank != nil else { throw PiRuntimeError.emptyResponse }
         return text
     }
 
@@ -810,7 +810,7 @@ actor PiRuntimeService {
                 .trimmingCharacters(in: .whitespacesAndNewlines)
         }
         guard (try? JSONDecoder().decode(JSONValue.self, from: Data(candidate.utf8)))?.objectValue != nil else {
-            throw CodexAppServerError.invalidProtocolResponse
+            throw PiRuntimeError.invalidProtocolResponse
         }
         return candidate
     }
@@ -874,7 +874,7 @@ actor PiRuntimeService {
                       cwd: options.cwd
                   ))
             else {
-                throw CodexAppServerError.launchFailed(L10n.agentWorkingDirectoryNotAllowed)
+                throw PiRuntimeError.launchFailed(L10n.agentWorkingDirectoryNotAllowed)
             }
             environment["DAHLIA_PI_SANDBOX"] = try String(decoding: JSONEncoder().encode(
                 PiSandbox.command(
@@ -900,7 +900,7 @@ actor PiRuntimeService {
             return try await DatabricksOAuthService.shared.accessToken(connectionID: connectionID)
         case .local:
             // The subscriptions keep their own sign-ins; nothing is bridged.
-            throw CodexConfigurationError.databricksProfileRequired
+            throw AIConfigurationError.databricksProfileRequired
         }
     }
 }

@@ -196,7 +196,14 @@ private struct ScreenshotAnalysisResponse: Decodable {
     }()
 }
 
-enum ScreenshotAnalysisError: Error {
+enum ScreenshotAnalysisError: LocalizedError {
     case invalidBatchSize
     case invalidResponse
+
+    var errorDescription: String? {
+        switch self {
+        case .invalidBatchSize: L10n.searchInvalidImageAnalysisBatch
+        case .invalidResponse: L10n.searchInvalidImageAnalysisResponse
+        }
+    }
 }
