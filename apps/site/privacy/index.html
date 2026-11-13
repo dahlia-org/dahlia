@@ -78,7 +78,9 @@
           <p>
             Dahlia may send crash reports, sanitized technical-error categories, and allowlisted short technical context
             such as the operation category, audio-source category, locale, diagnostic code, and small language-processing
-            counts to Sentry. Automatic network and lifecycle breadcrumb capture and default personal information are
+            counts, as well as fixed Pi installation failure stages, reasons, and HTTP status codes, to Sentry.
+            Pi download URLs, installation paths, response bodies, and raw error messages are not sent.
+            Automatic network and lifecycle breadcrumb capture and default personal information are
             disabled, and request, user, and extra fields are removed.
           </p>
           <h3>Anonymous usage analytics</h3>
