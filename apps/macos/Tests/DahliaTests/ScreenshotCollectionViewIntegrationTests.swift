@@ -9,6 +9,108 @@ import SwiftUI
     @MainActor
     extension ScreenshotCollectionViewTests {
         @Test
+        func commandClickStartsSelectionAndTogglesIndividualScreenshots() {
+            let meetingID = UUID.v7()
+            let screenshots = makeScreenshots(count: 4, meetingID: meetingID)
+            let selection = SelectionBox([])
+            let actions = CollectionActionRecorder()
+            let input = makeCollectionInput(
+                meetingID: meetingID, screenshots: screenshots,
+                actionRecorder: actions, selectionBox: selection
+            )
+            let harness = ScreenshotCollectionHarness(parent: input)
+
+            harness.coordinator.activate(id: screenshots[0].id, previewImage: nil, modifiers: .command)
+            #expect(selection.isSelecting)
+            #expect(selection.value == [screenshots[0].id])
+            #expect(actions.openedScreenshot == nil)
+            harness.coordinator.activate(id: screenshots[3].id, previewImage: nil, modifiers: .command)
+            #expect(selection.value == [screenshots[0].id, screenshots[3].id])
+            harness.coordinator.activate(id: screenshots[0].id, previewImage: nil, modifiers: .command)
+            #expect(selection.value == [screenshots[3].id])
+            // Existing selection-mode clicks keep toggling without modifier keys.
+            harness.coordinator.activate(id: screenshots[2].id, previewImage: nil, modifiers: [])
+            #expect(selection.value == [screenshots[2].id, screenshots[3].id])
+        }
+
+        @Test
+        func shiftClickSelectsRangesInBothDirectionsAndSkipsReferencedImages() {
+            let meetingID = UUID.v7()
+            let screenshots = makeScreenshots(count: 6, meetingID: meetingID)
+            let selection = SelectionBox([])
+            let input = makeCollectionInput(
+                meetingID: meetingID, screenshots: screenshots, selectionBox: selection,
+                referencedScreenshotIDs: [screenshots[2].id]
+            )
+            let harness = ScreenshotCollectionHarness(parent: input)
+
+            harness.coordinator.activate(id: screenshots[1].id, previewImage: nil, modifiers: .command)
+            harness.coordinator.activate(id: screenshots[4].id, previewImage: nil, modifiers: .shift)
+            #expect(selection.value == Set([1, 3, 4].map { screenshots[$0].id }))
+            harness.coordinator.activate(id: screenshots[3].id, previewImage: nil, modifiers: .shift)
+            #expect(selection.value == Set([1, 3].map { screenshots[$0].id }))
+            harness.coordinator.activate(id: screenshots[5].id, previewImage: nil, modifiers: .command)
+            harness.coordinator.activate(id: screenshots[3].id, previewImage: nil, modifiers: [.command, .shift])
+            #expect(selection.value == Set([1, 3, 4, 5].map { screenshots[$0].id }))
+            harness.coordinator.activate(id: screenshots[2].id, previewImage: nil, modifiers: .command)
+            #expect(!selection.value.contains(screenshots[2].id))
+        }
+
+        @Test
+        func selectionAnchorResetsOnExitAndMeetingChangeAndSurvivesRemoval() {
+            let meetingID = UUID.v7()
+            let screenshots = makeScreenshots(count: 5, meetingID: meetingID)
+            let selection = SelectionBox([])
+            var input = makeCollectionInput(
+                meetingID: meetingID, screenshots: screenshots, selectionBox: selection
+            )
+            let harness = ScreenshotCollectionHarness(parent: input)
+            harness.coordinator.activate(id: screenshots[0].id, previewImage: nil, modifiers: .shift)
+            #expect(selection.value == [screenshots[0].id])
+            harness.update(parent: input)
+            selection.isSelecting = false
+            selection.value = []
+            harness.update(parent: input)
+            harness.coordinator.activate(id: screenshots[3].id, previewImage: nil, modifiers: .shift)
+            #expect(selection.value == [screenshots[3].id])
+
+            input = makeCollectionInput(
+                meetingID: meetingID, screenshots: screenshots.filter { $0.id != screenshots[3].id },
+                selectionBox: selection
+            )
+            harness.update(parent: input)
+            harness.coordinator.activate(id: screenshots[1].id, previewImage: nil, modifiers: .shift)
+            #expect(selection.value == [screenshots[1].id])
+            input = makeCollectionInput(
+                meetingID: UUID.v7(), screenshots: screenshots, selectionBox: selection
+            )
+            harness.update(parent: input)
+            harness.coordinator.activate(id: screenshots[4].id, previewImage: nil, modifiers: .shift)
+            #expect(selection.value == [screenshots[4].id])
+        }
+
+        @Test
+        func disabledDeletionPreventsModifierSelectionButAllowsOpening() {
+            let meetingID = UUID.v7()
+            let screenshots = makeScreenshots(count: 1, meetingID: meetingID)
+            let selection = SelectionBox([])
+            let actions = CollectionActionRecorder()
+            let input = makeCollectionInput(
+                meetingID: meetingID, screenshots: screenshots,
+                actionRecorder: actions, selectionBox: selection, isDeletionDisabled: true
+            )
+            let harness = ScreenshotCollectionHarness(parent: input)
+            for modifiers: NSEvent.ModifierFlags in [.command, .shift] {
+                harness.coordinator.activate(id: screenshots[0].id, previewImage: nil, modifiers: modifiers)
+            }
+            #expect(selection.value.isEmpty)
+            #expect(!selection.isSelecting)
+            #expect(actions.openedScreenshot == nil)
+            harness.coordinator.activate(id: screenshots[0].id, previewImage: nil, modifiers: [])
+            #expect(actions.openedScreenshot?.id == screenshots[0].id)
+        }
+
+        @Test
         func wideViewportCentersGridWithoutNarrowingScrollView() {
             let layout = ScreenshotCollectionLayout()
             let collection = NSCollectionView(frame: NSRect(x: 0, y: 0, width: 1400, height: 360))
@@ -237,9 +339,12 @@ import SwiftUI
             contentRevision: UInt64? = nil,
             recordingSessions: [RecordingSessionTimeline] = [],
             selectedScreenshotIDs: Set<UUID> = [],
-            actionRecorder: CollectionActionRecorder? = nil
+            actionRecorder: CollectionActionRecorder? = nil,
+            selectionBox: SelectionBox? = nil,
+            referencedScreenshotIDs: Set<UUID> = [],
+            isDeletionDisabled: Bool = false
         ) -> ScreenshotCollectionView {
-            let selection = SelectionBox(selectedScreenshotIDs)
+            let selection = selectionBox ?? SelectionBox(selectedScreenshotIDs)
             return ScreenshotCollectionView(
                 meetingID: meetingID,
                 screenshots: screenshots,
@@ -247,9 +352,9 @@ import SwiftUI
                 recordingSessions: recordingSessions,
                 fallbackTimeBase: Date(timeIntervalSince1970: 0),
                 minimumItemWidth: ScreenshotGridSizing.defaultMinimumWidth,
-                isSelecting: !selectedScreenshotIDs.isEmpty,
-                referencedScreenshotIDs: [],
-                isDeletionDisabled: false,
+                isSelecting: Binding(get: { selection.isSelecting }, set: { selection.isSelecting = $0 }),
+                referencedScreenshotIDs: referencedScreenshotIDs,
+                isDeletionDisabled: isDeletionDisabled,
                 selectedScreenshotIDs: Binding(
                     get: { selection.value },
                     set: { selection.value = $0 }
@@ -340,9 +445,11 @@ import SwiftUI
     @MainActor
     private final class SelectionBox {
         var value: Set<UUID>
+        var isSelecting: Bool
 
         init(_ value: Set<UUID>) {
             self.value = value
+            isSelecting = !value.isEmpty
         }
     }
 

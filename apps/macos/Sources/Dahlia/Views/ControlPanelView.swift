@@ -43,7 +43,7 @@ struct ControlPanelView: View {
     @Environment(CodexChatCoordinator.self) private var chatCoordinator
     @Environment(\.locale) private var locale
     @ObservedObject private var appSettings = AppSettings.shared
-    @State private var screenshotMinimumWidth = ScreenshotGridSizing.defaultMinimumWidth
+    @AppStorage("screenshotMinimumWidth") private var screenshotMinimumWidth = ScreenshotGridSizing.defaultMinimumWidth
     @State private var isSelectingScreenshots = false
     @State private var selectedScreenshotIds: Set<UUID> = []
     @State private var isConfirmingScreenshotDeletion = false

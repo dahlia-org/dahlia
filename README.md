@@ -20,6 +20,7 @@ A macOS native real-time transcription app. Captures microphone and system audio
 - **Meeting Link Apps** — Choose a default app for meeting links and override it for Google Meet, Zoom, Microsoft Teams, or Slack, including an installed Google Meet Chrome app
 - **Automatic Meeting-End Stop** — Optionally stop and save after supported meeting audio activity ends; browsers require meeting-window evidence
 - **Screenshot Capture** — Attach screenshots to transcripts for multimodal summaries, optionally detecting and saving only shared slides or screens
+- **Screenshot Management (macOS)** — The meeting screenshot grid remembers its size on this Mac across meetings and restarts. Command-click adds or removes individual images; Shift-click selects a range (Command-Shift-click adds the range). Delete selected images together after confirmation; images used in the summary remain protected.
 - **Automatic Updates** — Securely check, download, and install new releases with Sparkle 2
 - **Bilingual UI** — Japanese (primary) and English
 

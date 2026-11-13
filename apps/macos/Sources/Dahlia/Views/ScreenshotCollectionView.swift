@@ -13,7 +13,7 @@ struct ScreenshotCollectionView: NSViewRepresentable {
     let recordingSessions: [RecordingSessionTimeline]
     let fallbackTimeBase: Date
     let minimumItemWidth: Double
-    let isSelecting: Bool
+    @Binding var isSelecting: Bool
     let referencedScreenshotIDs: Set<UUID>
     let isDeletionDisabled: Bool
     @Binding var selectedScreenshotIDs: Set<UUID>
@@ -81,6 +81,7 @@ extension ScreenshotCollectionView {
         private var timestampContext: TimestampContext?
         private var lastPresentationState: PresentationState?
         private var currentMeetingID: UUID?
+        private var selectionAnchorID: UUID?
         private var lastBreadcrumbState: BreadcrumbState?
         private var snapshotGeneration: UInt64 = 0
         private(set) var timestampCacheGeneration: UInt64 = 0
@@ -147,6 +148,9 @@ extension ScreenshotCollectionView {
             let screenshots = parent.screenshots
             let ids = screenshots.map(\.id)
             let meetingChanged = currentMeetingID != parent.meetingID
+            if meetingChanged || (lastPresentationState?.isSelecting == true && !parent.isSelecting) {
+                selectionAnchorID = nil
+            }
             let identifierUpdate = Self.identifierUpdate(
                 currentIDs: currentScreenshotIDs,
                 newIDs: ids
@@ -297,16 +301,29 @@ extension ScreenshotCollectionView {
             )
         }
 
-        private func activate(id: UUID, previewImage: CGImage?) {
-            guard let screenshot = screenshot(for: id) else { return }
-            if parent.isSelecting {
+        func activate(id: UUID, previewImage: CGImage?, modifiers: NSEvent.ModifierFlags = NSEvent.modifierFlags) {
+            guard let screenshot = screenshot(for: id), let end = screenshotIndexByID[id] else { return }
+            if parent.isSelecting || modifiers.contains(.command) || modifiers.contains(.shift) {
+                guard !parent.isDeletionDisabled else { return }
                 guard !parent.referencedScreenshotIDs.contains(id) else { return }
-                if parent.selectedScreenshotIDs.contains(id) {
+                parent.isSelecting = true
+                if modifiers.contains(.shift) {
+                    let anchorIndex = selectionAnchorID.flatMap { screenshotIndexByID[$0] }
+                    let anchor = anchorIndex ?? end
+                    let range = Set(currentScreenshotIDs[min(anchor, end) ... max(anchor, end)])
+                        .subtracting(parent.referencedScreenshotIDs)
+                    parent.selectedScreenshotIDs = modifiers.contains(.command)
+                        ? parent.selectedScreenshotIDs.union(range) : range
+                    if anchorIndex == nil { selectionAnchorID = id }
+                } else if parent.selectedScreenshotIDs.contains(id) {
                     parent.selectedScreenshotIDs.remove(id)
+                    selectionAnchorID = id
                 } else {
                     parent.selectedScreenshotIDs.insert(id)
+                    selectionAnchorID = id
                 }
             } else {
+                selectionAnchorID = id
                 parent.open(screenshot, previewImage)
             }
         }
