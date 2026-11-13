@@ -16,6 +16,36 @@ import os
         private let testWorkspaceURL = URL(fileURLWithPath: NSTemporaryDirectory(), isDirectory: true)
 
         @Test
+        func failedRecordingStartCancelsMeetingWindowSelectionBeforePlainRetry() async throws {
+            let viewModel = CaptionViewModel(
+                availableInputDevicesProvider: { [] },
+                defaultInputDeviceIDProvider: { nil }
+            )
+            viewModel.microphoneSelection = .none
+            viewModel.isSystemAudioEnabled = false
+            let database = try AppDatabaseManager(path: ":memory:")
+            let reservation = try #require(viewModel.reserveRecordingStart())
+            viewModel.selectScreenshotWindow(openedBy: Task { nil }, titlesBeforeOpening: [:])
+            let selectionTask = try #require(viewModel.meetingWindowSelectionTask)
+
+            await viewModel.startListening(
+                dbQueue: database.dbQueue,
+                projectURL: nil,
+                workspaceId: .v7(),
+                projectId: nil,
+                workspaceURL: nil,
+                reservation: reservation
+            )
+
+            #expect(!viewModel.isListening)
+            #expect(!viewModel.isRecordingStartPending)
+            #expect(selectionTask.isCancelled)
+            _ = try #require(viewModel.reserveRecordingStart())
+            #expect(selectionTask.isCancelled)
+            #expect(viewModel.screenshotCaptureSource == .none)
+        }
+
+        @Test
         func recordingStartReservationRejectsMeetingCreationAndDraftMaterialization() throws {
             let viewModel = CaptionViewModel()
             let database = try AppDatabaseManager(path: ":memory:")

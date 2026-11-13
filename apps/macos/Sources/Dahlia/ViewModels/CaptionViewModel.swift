@@ -388,7 +388,7 @@ final class CaptionViewModel: ObservableObject {
     /// キャプチャ対象として選択可能なウィンドウ一覧。
     @Published var availableWindows: [ScreenshotWindowOption] = []
     private var availableWindowsRefreshTask: Task<Void, Never>?
-    private var meetingWindowSelectionTask: Task<Void, Never>?
+    private(set) var meetingWindowSelectionTask: Task<Void, Never>?
     /// 会議リンクから自動で選んだ取得対象。ユーザーが選び直していなければ、録音の停止時に未設定へ戻す。
     private var automaticallySelectedScreenshotSource: ScreenshotCaptureSource?
     /// スクリーンショット取得対象。未設定の場合はキャプチャしない。
@@ -3714,6 +3714,9 @@ final class CaptionViewModel: ObservableObject {
 
     private func releaseRecordingStart(_ reservation: RecordingStartReservation) {
         guard activeRecordingStartReservation == reservation else { return }
+        if !isListening {
+            meetingWindowSelectionTask?.cancel()
+        }
         activeRecordingStartReservation = nil
         isRecordingStartPending = false
     }
@@ -5275,9 +5278,9 @@ final class CaptionViewModel: ObservableObject {
         meetingWindowSelectionTask?.cancel()
         meetingWindowSelectionTask = Task {
             guard let bundleIdentifier = await opening.value, !bundleIdentifier.isEmpty else { return }
-            // 会議のウィンドウは遅れて開くことが多いので、間隔を広げながら待つ（合計 15 秒）。
+            // 会議のウィンドウは遅れて開くことが多いので、間隔を広げながら待つ（合計 31 秒）。
             // 参加前の案内画面のように途中で閉じるウィンドウを選ぶこともあるため、選んだ後も最後まで見直す。
-            let waits: [Duration] = [1, 2, 4, 8].map { .seconds($0) }
+            let waits: [Duration] = [1, 2, 4, 8, 16].map { .seconds($0) }
             var selectedWindowID: CGWindowID?
             for (index, wait) in waits.enumerated() {
                 try? await Task.sleep(for: wait)
