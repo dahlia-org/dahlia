@@ -1884,6 +1884,8 @@ enum L10n { // swiftlint:disable:this type_body_length
     static var useServerVersion: String { String(localized: "Use Server Version", bundle: bundle) }
     static var reapplyLocalVersion: String { String(localized: "Reapply Local Version", bundle: bundle) }
     static var chooseLocalFolder: String { String(localized: "Choose Local Folder", bundle: bundle) }
+    static var moveWorkspaceToAccount: String { String(localized: "Move to Account", bundle: bundle) }
+    static var localExportFolder: String { String(localized: "Local Export Folder", bundle: bundle) }
     static var noLocalExportFolder: String { String(localized: "No local export folder", bundle: bundle) }
     static var setLocalExportFolder: String { String(localized: "Set Local Export Folder", bundle: bundle) }
     static var changeLocalExportFolder: String { String(localized: "Change Local Export Folder", bundle: bundle) }
