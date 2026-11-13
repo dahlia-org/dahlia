@@ -1,3 +1,4 @@
+import DahliaMeetingAccess
 import DahliaRuntimeSupport
 import Foundation
 import GRDB
@@ -1224,8 +1225,8 @@ import Synchronization
             } == 9)
         }
 
-        @Test
-        func exhaustedOCRJobIsTerminalUntilExplicitRebuild() async throws {
+        @Test(arguments: [false, true])
+        func exhaustedOCRJobIsTerminalUntilExplicitRebuild(changesDictionary: Bool) async throws {
             let database = try makeDatabase(screenshotAnalyzer: FailingScreenshotAnalyzer())
             let workspace = makeWorkspace()
             let meeting = makeMeeting(workspaceID: workspace.id)
@@ -1268,7 +1269,16 @@ import Synchronization
             })
 
             await database.searchIndexer.stop()
-            try await database.searchIndexer.requestRebuild()
+            let csv = FileManager.default.temporaryDirectory.appending(path: "dahlia-rebuild-\(UUID.v7()).csv")
+            defer { try? FileManager.default.removeItem(at: csv) }
+            if changesDictionary {
+                try Data("ダリア会議,カスタム名詞,ダリアカイギ\n".utf8).write(to: csv)
+                let configuration = SearchDictionaryConfiguration(userDictionaryPath: csv.path)
+                try await database.searchIndexer.changeSearchDictionaries(configuration)
+                #expect(try await database.dbQueue.read { try SearchDictionaryConfiguration.read(in: $0) } == configuration)
+            } else {
+                try await database.searchIndexer.requestRebuild()
+            }
             let reset = try await database.dbQueue.read { db in
                 let row = try Row.fetchOne(
                     db,

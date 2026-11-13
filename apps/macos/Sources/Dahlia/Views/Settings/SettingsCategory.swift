@@ -227,7 +227,17 @@ enum SettingsCategory: String, CaseIterable, Identifiable {
                 L10n.batchTranscriptionStallTimeout,
             ]
         case .search:
-            [L10n.fullTextSearch, L10n.searchRanking, L10n.rebuildFullTextSearch]
+            [
+                L10n.fullTextSearch,
+                L10n.searchRanking,
+                L10n.rebuildFullTextSearch,
+                L10n.searchDictionary,
+                L10n.searchUserDictionary,
+                "Lindera",
+                "IPADIC",
+                "NEologd",
+                "CSV",
+            ]
         default: []
         }
     }

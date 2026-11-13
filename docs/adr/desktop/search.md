@@ -18,7 +18,15 @@ Project は専用結果と明示 filter で探す。Project name / path を meet
 
 ## FTS と順位
 
-固定 Lindera / IPADIC の arm64 XCFramework を使い、NFKC、原形、数値、katakana stem を正規化する。Rust panic は C ABI で隔離し、version / hash / license / Cargo.lock を配布時に管理する。
+Lindera / lindera-analysis 6.2.0 の arm64 XCFramework と内蔵 IPADIC を既定とし、NFKC、原形、数値、katakana stem を正規化する。Rust panic は C ABI で隔離し、version / hash / license / Cargo.lock を配布時に管理する。
+
+macOS の設定「検索」で、内蔵ランタイムと同じ6系の公式 IPADIC NEologd をバージョン別に取得・選択できる。公式 GitHub Releases の安定版から、辞書アーカイブと SHA-256 が公開されている直近3版を取得し、ローカルの取得済み版と重複なく統合する。一覧は設定画面の表示時と更新ボタンで更新し、通信失敗時は保存済みの一覧（初回は同梱の候補情報）を使う。辞書本体は未取得の版を選んだ場合にだけダウンロードし、取得中はキャンセルできる。アーカイブは公式リリースの SHA-256 で検証し、展開・実際の読み込みに成功した後にのみ選択を保存する。失敗・キャンセルでは以前の選択と索引を維持する。取得済みの古い版も一覧に残すが、旧メジャーの辞書は非対応と表示して選択を無効にする。旧メジャーが適用中の場合は検索を継続できないため、対応版または内蔵 IPADIC を選んで手動再構築するよう案内する。同じメジャーでも実際に読み込めないファイルは選択を保存せずエラーにする。検索関連ファイルは本番では `~/Library/Application Support/Dahlia/Search/`、開発版では専用プロファイル内の `Search/` に保存する。NEologd は同配下のバージョン・hash 付きディレクトリへ配置する。ユーザー辞書の編集用正本は固定の `Search/user-dict.csv` とし、初回作成時には `Databricks,カスタム名詞,データブリックス` を登録する。既存 CSV と解除後の空ファイルは上書きしない。CSV 取り込みは検証後にこのファイル全体を原子的に置き換える。UTF-8・ヘッダーなし（最大10 MiB）、3列の `表層形,品詞,読み` または IPADIC 形式の13列に対応する。設定画面では CSV の取り込みとユーザー辞書の解除を提供し、取り込んだ内容は列を含めてそのまま保存する。解除と既存 CSV の置き換えは確認を挟む。取り込み元の別ファイルの編集は反映せず、再取り込みで更新する。
+
+固定 CSV は設定画面の読み込み時と明示的な再構築の直前に読み直し、検証済みの内容を `Search/Snapshots/` 配下の hash 付き不変ファイルへ写して未適用の設定とする。空の正本はユーザー辞書なしを表す。不正な CSV はエラーを表示し、適用を停止する。適用中の検索は固定 CSV を直接参照しないため、編集後も以前の辞書と索引を保持できる。旧 `SearchDictionaries/` の正本・NEologd は設定画面の読み込み時に新しい配置へコピーし、適用中の旧パスは明示的な再構築まで維持する。
+
+選択した辞書は未適用の設定として保存し、再構築が必要な旨を表示する。取得、選択、アプリ再起動では辞書を適用せず、自動再索引もしない。明示的な「全文検索を再構築」でのみ適用中の設定と index generation を同 transaction で切り替え、その後に索引を再構築する。それまでは以前の辞書と索引で検索を継続できる。内蔵 IPADIC への復帰とユーザー辞書の解除にも同じ操作を使う。取得・検証失敗では既存の辞書と索引を保持する。
+
+この設定は Local Account と Server Account の端末内検索、および Local MCP に共通とする。接続ごとの SQLite snapshot から適用中の設定を読み、同一 snapshot の索引と query を異なる辞書で処理しない。Private Web、Electron alpha、Server 検索と Server MCP の辞書は変更しない。
 
 query は2文字以上、最大16 token、最後だけ prefix。field を跨いでも全 token が揃えば一致とし、最も document frequency の小さい token から候補を作り、残りを交差させてから pagination する。候補を推測で打ち切らず、SQLite read の30秒期限を超えれば絞り込みを求める。
 

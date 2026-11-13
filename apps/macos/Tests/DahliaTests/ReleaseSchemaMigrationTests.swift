@@ -440,6 +440,7 @@
                 "v55_serverContentRetention",
                 "v56_screenshotTextControlCharacters",
                 "v57_accountsTable",
+                "v58_searchDictionaries",
             ])
             try database.dbQueue.read { db throws in
                 #expect(try Row.fetchAll(db, sql: "PRAGMA foreign_key_check").isEmpty)

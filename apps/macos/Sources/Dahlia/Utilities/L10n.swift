@@ -357,6 +357,36 @@ enum L10n { // swiftlint:disable:this type_body_length
     static var searchIndexProgress: String { String(localized: "Indexing progress", bundle: bundle) }
     static var searchIndexDescription: String { String(localized: "Search index description", bundle: bundle) }
 
+    static var searchDictionarySettings: String { String(localized: "Search dictionary settings", bundle: bundle) }
+    static var searchDictionary: String { String(localized: "Search dictionary", bundle: bundle) }
+    static var searchDictionaryIPADIC: String { String(localized: "Search dictionary IPADIC", bundle: bundle) }
+    static var searchActiveDictionary: String { String(localized: "Search active dictionary", bundle: bundle) }
+    static var searchNeologdDownloadDescription: String { String(localized: "Search NEologd download description", bundle: bundle) }
+    static var searchNeologdUpgradeRequired: String { String(localized: "Search NEologd upgrade required", bundle: bundle) }
+    static var searchNeologdUnsupported: String { String(localized: "Search NEologd unsupported", bundle: bundle) }
+    static var searchNeologdDownloaded: String { String(localized: "Search NEologd downloaded", bundle: bundle) }
+    static var searchNeologdDownloadOnSelection: String { String(localized: "Search NEologd download on selection", bundle: bundle) }
+    static var searchNeologdDownloading: String { String(localized: "Search NEologd downloading", bundle: bundle) }
+    static var searchNeologdRefresh: String { String(localized: "Search NEologd refresh", bundle: bundle) }
+    static var searchNeologdCatalogUnavailable: String { String(localized: "Search NEologd catalog unavailable", bundle: bundle) }
+    static var searchUserDictionary: String { String(localized: "Search user dictionary", bundle: bundle) }
+    static var searchUserDictionaryNone: String { String(localized: "Search user dictionary none", bundle: bundle) }
+    static var searchUserDictionaryImport: String { String(localized: "Search user dictionary import", bundle: bundle) }
+    static var searchUserDictionaryRemove: String { String(localized: "Search user dictionary remove", bundle: bundle) }
+    static var searchUserDictionaryDescription: String { String(localized: "Search user dictionary description", bundle: bundle) }
+    static var searchDictionaryRebuildRequired: String { String(localized: "Search dictionary rebuild required", bundle: bundle) }
+    static var searchDictionaryScope: String { String(localized: "Search dictionary scope", bundle: bundle) }
+    static var searchNeologdLicense: String { String(localized: "Search NEologd license", bundle: bundle) }
+    static var searchDictionaryDownloadFailed: String { String(localized: "Search dictionary download failed", bundle: bundle) }
+    static var searchDictionaryChecksumMismatch: String { String(localized: "Search dictionary checksum mismatch", bundle: bundle) }
+    static var searchDictionaryInvalid: String { String(localized: "Search dictionary invalid", bundle: bundle) }
+    static var searchUserDictionaryInvalid: String { String(localized: "Search user dictionary invalid", bundle: bundle) }
+
+    static var searchDictionaryFile: String { String(localized: "Search dictionary file", bundle: bundle) }
+    static var searchDictionaryReplace: String { String(localized: "Search dictionary replace", bundle: bundle) }
+    static var searchDictionaryReplaceDescription: String { String(localized: "Search dictionary replace description", bundle: bundle) }
+    static var searchDictionaryClearDescription: String { String(localized: "Search dictionary clear description", bundle: bundle) }
+
     static var searchRanking: String { String(localized: "Search ranking", bundle: bundle) }
     static var advancedSearchSettings: String { String(localized: "Advanced search settings", bundle: bundle) }
     static var searchRankingDescription: String { String(localized: "Search ranking description", bundle: bundle) }

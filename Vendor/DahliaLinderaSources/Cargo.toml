@@ -9,8 +9,9 @@ name = "DahliaLindera"
 crate-type = ["staticlib"]
 
 [dependencies]
-lindera = { version = "=2.0.1", default-features = false, features = ["compress", "embed-ipadic"] }
-serde_json = "=1.0.149"
+lindera = { version = "=6.2.0", default-features = false, features = ["embed-ipadic"] }
+lindera-analysis = { version = "=6.2.0", default-features = false }
+serde_json = "=1.0.154"
 serde_yaml_ng = "=0.10.0"
 
 [profile.release]

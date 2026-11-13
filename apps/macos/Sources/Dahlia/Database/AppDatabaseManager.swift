@@ -218,6 +218,18 @@ final class AppDatabaseManager: Sendable {
             }
         }
 
+        migrator.registerMigration("v58_searchDictionaries") { db in
+            try db.execute(sql: """
+            CREATE TABLE search_dictionary_configuration (
+                id INTEGER PRIMARY KEY CHECK(id IN (1, 2)),
+                dictionaryPath TEXT,
+                userDictionaryPath TEXT,
+                userDictionaryName TEXT
+            );
+            INSERT INTO search_dictionary_configuration(id) VALUES(1), (2);
+            """)
+        }
+
         return migrator
     }()
 

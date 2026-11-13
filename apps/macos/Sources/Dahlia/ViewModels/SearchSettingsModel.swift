@@ -1,3 +1,4 @@
+import DahliaMeetingAccess
 import Foundation
 import GRDB
 import Observation
@@ -88,12 +89,16 @@ final class SearchSettingsModel {
         }
     }
 
-    func rebuildFullTextIndex() async {
+    func rebuildFullTextIndex(dictionaryConfiguration: SearchDictionaryConfiguration? = nil) async {
         guard let database, !isRequestingRebuild else { return }
         isRequestingRebuild = true
         defer { isRequestingRebuild = false }
         do {
-            try await database.searchIndexer.requestRebuild()
+            if let dictionaryConfiguration {
+                try await database.searchIndexer.changeSearchDictionaries(dictionaryConfiguration)
+            } else {
+                try await database.searchIndexer.requestRebuild()
+            }
             await refresh()
         } catch {
             recordFailure(error)
