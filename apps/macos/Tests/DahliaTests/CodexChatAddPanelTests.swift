@@ -73,6 +73,64 @@
             #expect(navigation.agentSettingsTab == .mcps)
         }
 
+        @Test
+        func openingConnectorsKeepsTheOriginalMenuBottomAligned() throws {
+            var attachments = 0
+            let panel = CodexChatAddPanel(
+                windowBounds: CGRect(x: 0, y: -500, width: 700, height: 600),
+                showsMeetingPicker: false,
+                showsConnectors: true,
+                meetingReferences: [],
+                highlightedMeetingID: nil,
+                mcpSettings: AgentMCPSettings(servers: (0 ..< 5).map {
+                    AgentMCPServer(id: .v7(), name: "github_\($0)", providerID: nil, service: "system.ai.github")
+                }),
+                onAttachImages: { attachments += 1 },
+                onAddMeetingReference: {},
+                onSelectMeeting: { _ in },
+                onOpenMCPSettings: {}
+            )
+            let host = NSHostingView(rootView: panel
+                .fixedSize(horizontal: false, vertical: true)
+                .frame(width: 700, height: 400, alignment: .bottomLeading))
+            host.frame = NSRect(x: 0, y: 0, width: 700, height: 400)
+            let window = NSWindow(contentRect: host.frame, styleMask: .titled, backing: .buffered, defer: false)
+            window.isReleasedWhenClosed = false
+            window.contentView = host
+            defer { window.close() }
+            window.makeKeyAndOrderFront(nil)
+            host.layoutSubtreeIfNeeded()
+            window.displayIfNeeded()
+
+            try click(CGPoint(x: 100, y: 25), in: window)
+            host.layoutSubtreeIfNeeded()
+            window.displayIfNeeded()
+            try snapshot(host, name: "bottom-aligned-connectors")
+            // Opening a taller submenu must leave the original attachment row reachable in place.
+            try click(CGPoint(x: 100, y: 89), in: window)
+            #expect(attachments == 1)
+        }
+
+        @Test(arguments: [false, true])
+        func onlyNewChatsIncludeTheConnectorRow(isNewChat: Bool) {
+            let panel = CodexChatAddPanel(
+                windowBounds: CGRect(x: 0, y: -500, width: 700, height: 600),
+                showsMeetingPicker: false,
+                showsConnectors: isNewChat,
+                meetingReferences: [],
+                highlightedMeetingID: nil,
+                mcpSettings: AgentMCPSettings(),
+                onAttachImages: {},
+                onAddMeetingReference: {},
+                onSelectMeeting: { _ in },
+                onOpenMCPSettings: {}
+            )
+            let host = NSHostingView(rootView: panel)
+            host.frame.size.width = 280
+            // Existing chats keep the attachment/reference rows and omit the connector row and its spacing.
+            #expect(host.fittingSize.height == (isNewChat ? 114 : 82))
+        }
+
         private func textEditor(in view: NSView) -> NSTextView? {
             (view as? NSTextView) ?? view.subviews.lazy.compactMap(textEditor(in:)).first
         }
