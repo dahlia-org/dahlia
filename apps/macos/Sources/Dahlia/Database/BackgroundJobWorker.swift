@@ -112,27 +112,31 @@ actor BackgroundJobWorker {
     func requestRebuild() async throws {
         scheduledRetryAt = nil
         try await dbQueue.write { db in
-            try db.execute(
-                sql: """
-                UPDATE jobs_background
-                SET status = 'pending', attempts = 0, availableAt = ?, claimedAt = NULL,
-                    leaseExpiresAt = NULL, lastErrorCode = NULL, updatedAt = ?
-                WHERE indexKind = 'fts' AND targetKind = 'screenshotAnalysis' AND attempts >= 5
-                """,
-                arguments: [Date(), Date()]
-            )
-            try db.execute(
-                sql: """
-                UPDATE search_index_state
-                SET indexGeneration = indexGeneration + 1,
-                    phase = 'pending', completedCount = 0, totalCount = 0,
-                    lastErrorCode = NULL, updatedAt = ?
-                WHERE indexKind = 'fts'
-                """,
-                arguments: [Date()]
-            )
+            try Self.enqueueRebuild(in: db)
         }
         await drain()
+    }
+
+    private nonisolated static func enqueueRebuild(in db: Database) throws {
+        try db.execute(
+            sql: """
+            UPDATE jobs_background
+            SET status = 'pending', attempts = 0, availableAt = ?, claimedAt = NULL,
+                leaseExpiresAt = NULL, lastErrorCode = NULL, updatedAt = ?
+            WHERE indexKind = 'fts' AND targetKind = 'screenshotAnalysis' AND attempts >= 5
+            """,
+            arguments: [Date(), Date()]
+        )
+        try db.execute(
+            sql: """
+            UPDATE search_index_state
+            SET indexGeneration = indexGeneration + 1,
+                phase = 'pending', completedCount = 0, totalCount = 0,
+                lastErrorCode = NULL, updatedAt = ?
+            WHERE indexKind = 'fts'
+            """,
+            arguments: [Date()]
+        )
     }
 
     func changeSearchDictionaries(_ configuration: SearchDictionaryConfiguration) async throws {
@@ -143,6 +147,7 @@ actor BackgroundJobWorker {
         if let activeDrainTask { await activeDrainTask.value }
         activeDrainTask = nil
         activeDrainID = nil
+        scheduledRetryAt = nil
         do {
             try await dbQueue.write { db in
                 try db.execute(sql: """
@@ -151,10 +156,9 @@ actor BackgroundJobWorker {
                 """, arguments: [configuration.dictionaryPath, configuration.userDictionaryPath, configuration.userDictionaryName])
                 try db.execute(sql: """
                 UPDATE search_index_state
-                SET analyzerConfigurationHash = ?, indexGeneration = indexGeneration + 1,
-                    indexRevision = indexRevision + 1, phase = 'pending', completedCount = 0,
-                    totalCount = 0, lastErrorCode = NULL, updatedAt = ? WHERE indexKind = 'fts'
-                """, arguments: [configuration.configurationHash, Date()])
+                SET analyzerConfigurationHash = ?, indexRevision = indexRevision + 1 WHERE indexKind = 'fts'
+                """, arguments: [configuration.configurationHash])
+                try Self.enqueueRebuild(in: db)
             }
             preparedDictionary = prepared
             didValidateAnalyzer = false
