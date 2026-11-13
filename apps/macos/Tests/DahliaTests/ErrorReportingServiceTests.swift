@@ -96,5 +96,29 @@ import Foundation
             #expect(!ErrorReportingService.isAllowedBreadcrumbCategory("app.lifecycle"))
             #expect(!ErrorReportingService.isAllowedBreadcrumbCategory("http"))
         }
+
+        @Test
+        func piInstallationDiagnosticsAllowOnlyFixedValues() {
+            let context = PiInstallError(stage: .download, reason: .rateLimited, httpStatus: 429).diagnosticContext
+            #expect(ErrorReportingService.sanitizedContext(context) == context)
+            #expect(context == [
+                "source": "piInstallation", "piInstallStage": "download",
+                "piInstallReason": "rateLimited", "httpStatus": "429",
+            ])
+            for stage in PiInstallError.Stage.allCases {
+                for reason in PiInstallError.Reason.allCases {
+                    let context = PiInstallError(stage: stage, reason: reason).diagnosticContext
+                    #expect(ErrorReportingService.sanitizedContext(context) == context)
+                }
+            }
+            #expect(ErrorReportingService.sanitizedContext([
+                "source": "piInstallation", "piInstallStage": "/Users/private",
+                "piInstallReason": "privateMessage", "httpStatus": "999",
+                "url": "https://private.example", "message": "secret", "version": "private",
+            ]) == ["source": "piInstallation"])
+            #expect(ErrorReportingService.sanitizedContext([
+                "source": "summaryGeneration", "httpStatus": "403",
+            ]) == ["source": "summaryGeneration"])
+        }
     }
 #endif

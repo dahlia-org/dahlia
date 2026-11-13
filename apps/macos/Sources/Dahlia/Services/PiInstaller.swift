@@ -55,64 +55,116 @@ enum PiInstaller {
 
     /// The latest release, or the one tagged `v<version>`; a leading `v` in `version` is optional.
     @concurrent
-    static func release(version: String? = nil) async throws -> Release {
-        let tag = version.map { $0.hasPrefix("v") ? $0 : "v\($0)" }
-        let url = releasesAPIURL.appending(path: tag.map { "tags/\($0)" } ?? "latest")
-        let (data, response) = try await URLSession.shared.data(from: url)
-        guard (response as? HTTPURLResponse)?.statusCode == 200 else { throw PiInstallError.downloadFailed }
-        return try JSONDecoder().decode(Release.self, from: data)
+    static func release(
+        version: String? = nil,
+        session: URLSession = .shared,
+        reportFailure: @Sendable (PiInstallError) -> Void = ErrorReportingService.capturePiInstallation
+    ) async throws -> Release {
+        do {
+            let tag = version.map { $0.hasPrefix("v") ? $0 : "v\($0)" }
+            let url = releasesAPIURL.appending(path: tag.map { "tags/\($0)" } ?? "latest")
+            let (data, response) = try await session.data(from: url)
+            try validateResponse(response, stage: .release)
+            do {
+                return try JSONDecoder().decode(Release.self, from: data)
+            } catch {
+                throw PiInstallError(stage: .release, reason: .invalidRelease)
+            }
+        } catch {
+            throw reportedFailure(error, stage: .release, reporter: reportFailure)
+        }
     }
 
     /// Downloads the release's macOS arm64 archive unless it is already extracted, then points the entrypoint at it.
     @concurrent
-    static func install(_ release: Release, into directory: URL = directoryURL) async throws {
-        guard isValidVersion(release.version) else { throw PiInstallError.downloadFailed }
-        if try withInstallLock(in: directory, { try activateIfExtracted(release.version, in: directory) }) { return }
-        guard let asset = release.assets.first(where: { $0.name == assetName }),
-              let digest = asset.digest, digest.hasPrefix("sha256:") else {
-            throw PiInstallError.downloadFailed
+    static func install(
+        _ release: Release,
+        into directory: URL = directoryURL,
+        session: URLSession = .shared,
+        reportFailure: @Sendable (PiInstallError) -> Void = ErrorReportingService.capturePiInstallation
+    ) async throws {
+        var stage = PiInstallError.Stage.activation
+        do {
+            guard isValidVersion(release.version) else { throw PiInstallError(stage: .release, reason: .invalidRelease) }
+            if try withInstallLock(in: directory, { try activateIfExtracted(release.version, in: directory) }) { return }
+            guard let asset = release.assets.first(where: { $0.name == assetName }) else {
+                throw PiInstallError(stage: .release, reason: .missingAsset)
+            }
+            guard let digest = asset.digest, digest.hasPrefix("sha256:") else {
+                throw PiInstallError(stage: .release, reason: .missingDigest)
+            }
+            stage = .download
+            var request = URLRequest(url: asset.url)
+            request.setValue("application/octet-stream", forHTTPHeaderField: "Accept")
+            let (archive, response) = try await session.download(for: request)
+            defer { try? FileManager.default.removeItem(at: archive) }
+            try validateResponse(response, stage: .download)
+            try install(archive: archive, sha256: String(digest.dropFirst("sha256:".count)), version: release.version, into: directory)
+        } catch {
+            throw reportedFailure(error, stage: stage, reporter: reportFailure)
         }
-        var request = URLRequest(url: asset.url)
-        request.setValue("application/octet-stream", forHTTPHeaderField: "Accept")
-        let (archive, response) = try await URLSession.shared.download(for: request)
-        defer { try? FileManager.default.removeItem(at: archive) }
-        guard (response as? HTTPURLResponse)?.statusCode == 200 else { throw PiInstallError.downloadFailed }
-        try install(archive: archive, sha256: String(digest.dropFirst("sha256:".count)), version: release.version, into: directory)
     }
 
     /// Checks the archive's SHA-256, extracts it to `releases/<version>`, and activates it; a failure keeps the current Pi.
     static func install(archive: URL, sha256: String, version: String, into directory: URL) throws {
-        guard isValidVersion(version) else { throw PiInstallError.downloadFailed }
-        let data = try Data(contentsOf: archive, options: .mappedIfSafe)
-        guard SHA256.hash(data: data).map({ String(format: "%02x", $0) }).joined() == sha256.lowercased() else {
-            throw PiInstallError.downloadFailed
-        }
-        let fileManager = FileManager.default
-        try fileManager.createDirectory(at: directory, withIntermediateDirectories: true)
-        let staging = directory.appending(path: ".staging-\(UUID().uuidString)", directoryHint: .isDirectory)
-        try fileManager.createDirectory(at: staging, withIntermediateDirectories: false)
-        defer { try? fileManager.removeItem(at: staging) }
-
-        // bsdtar strips leading `/` and refuses entries containing `..`.
-        let tar = Process()
-        tar.executableURL = URL(fileURLWithPath: "/usr/bin/tar")
-        tar.arguments = ["-xzf", archive.path, "-C", staging.path]
-        try tar.run()
-        tar.waitUntilExit()
-        let extracted = staging.appending(path: "pi", directoryHint: .isDirectory)
-        guard tar.terminationStatus == 0,
-              CommandLineToolLocator.isExecutableFile(atPath: extracted.appending(path: "pi").path) else {
-            throw PiInstallError.downloadFailed
-        }
-        try withInstallLock(in: directory) {
-            // Release folders appear only by this move, so an existing one is complete; the entrypoint may point at it.
-            if try !activateIfExtracted(version, in: directory) {
-                let release = releaseURL(version, in: directory)
-                try fileManager.createDirectory(at: release.deletingLastPathComponent(), withIntermediateDirectories: true)
-                try fileManager.moveItem(at: extracted, to: release)
-                try activate(version, in: directory)
+        var stage = PiInstallError.Stage.verification
+        do {
+            guard isValidVersion(version) else { throw PiInstallError(stage: .release, reason: .invalidRelease) }
+            let data = try Data(contentsOf: archive, options: .mappedIfSafe)
+            guard SHA256.hash(data: data).map({ String(format: "%02x", $0) }).joined() == sha256.lowercased() else {
+                throw PiInstallError(stage: .verification, reason: .checksumMismatch)
             }
+            stage = .extraction
+            let fileManager = FileManager.default
+            try fileManager.createDirectory(at: directory, withIntermediateDirectories: true)
+            let staging = directory.appending(path: ".staging-\(UUID().uuidString)", directoryHint: .isDirectory)
+            try fileManager.createDirectory(at: staging, withIntermediateDirectories: false)
+            defer { try? fileManager.removeItem(at: staging) }
+
+            // bsdtar strips leading `/` and refuses entries containing `..`.
+            let tar = Process()
+            tar.executableURL = URL(fileURLWithPath: "/usr/bin/tar")
+            tar.arguments = ["-xzf", archive.path, "-C", staging.path]
+            try tar.run()
+            tar.waitUntilExit()
+            let extracted = staging.appending(path: "pi", directoryHint: .isDirectory)
+            guard tar.terminationStatus == 0 else {
+                throw PiInstallError(stage: .extraction, reason: .extractionFailed)
+            }
+            guard CommandLineToolLocator.isExecutableFile(atPath: extracted.appending(path: "pi").path) else {
+                throw PiInstallError(stage: .extraction, reason: .executableMissing)
+            }
+            stage = .activation
+            try withInstallLock(in: directory) {
+                // Release folders appear only by this move, so an existing one is complete; the entrypoint may point at it.
+                if try !activateIfExtracted(version, in: directory) {
+                    let release = releaseURL(version, in: directory)
+                    try fileManager.createDirectory(at: release.deletingLastPathComponent(), withIntermediateDirectories: true)
+                    try fileManager.moveItem(at: extracted, to: release)
+                    try activate(version, in: directory)
+                }
+            }
+        } catch {
+            throw PiInstallError.wrapping(error, stage: stage)
         }
+    }
+
+    static func validateResponse(_ response: URLResponse, stage: PiInstallError.Stage) throws {
+        guard let http = response as? HTTPURLResponse else { throw PiInstallError(stage: stage, reason: .invalidResponse) }
+        guard http.statusCode != 200 else { return }
+        let rateLimited = http.statusCode == 429 || (http.statusCode == 403
+            && (http.value(forHTTPHeaderField: "X-RateLimit-Remaining") == "0" || http.value(forHTTPHeaderField: "Retry-After") != nil))
+        throw PiInstallError(stage: stage, reason: rateLimited ? .rateLimited : .http, httpStatus: http.statusCode)
+    }
+
+    /// Report once at each public network operation; cancellation is not an installation failure.
+    static func reportedFailure(
+        _ error: Error, stage: PiInstallError.Stage, reporter: (PiInstallError) -> Void
+    ) -> Error {
+        if error is CancellationError || (error as? URLError)?.code == .cancelled { return error }
+        let failure = PiInstallError.wrapping(error, stage: stage)
+        reporter(failure)
+        return failure
     }
 
     /// Under the install lock, activates `version` when it is already extracted.
@@ -209,6 +261,7 @@ enum PiInstaller {
 
     /// Runs `Dahlia --install-pi [version]` and exits; installs the latest release without a version.
     static func runCommandLine(_ arguments: [String]) -> Never {
+        ErrorReportingService.start()
         Task.detached {
             do {
                 let release = try await release(version: arguments.first)
@@ -222,10 +275,4 @@ enum PiInstaller {
         }
         dispatchMain()
     }
-}
-
-enum PiInstallError: LocalizedError {
-    case downloadFailed
-
-    var errorDescription: String? { L10n.piDownloadFailed }
 }
