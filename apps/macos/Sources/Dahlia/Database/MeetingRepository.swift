@@ -237,6 +237,22 @@ final class MeetingRepository {
         }
     }
 
+    nonisolated func updateWorkspaceOutputLanguage(id: UUID, language: SummaryLanguage) async throws -> WorkspaceRecord? {
+        try await dbQueue.write { db in
+            guard var workspace = try WorkspaceRecord.fetchOne(db, key: id) else { return nil }
+            guard workspace.allowsWorkspaceManagement else { throw SyncTransactionQueueError.readOnlyWorkspace }
+            guard workspace.generationSettings.outputLanguage != language else { return workspace }
+            workspace.generationSettings.outputLanguage = language
+            try workspace.update(db)
+            try SyncTransactionRecorder.record(
+                workspaceId: id,
+                operations: [SyncInitialSnapshotBuilder.workspaceOperation(workspace, action: .update)],
+                in: db
+            )
+            return workspace
+        }
+    }
+
     nonisolated func updateWorkspaceAISettings(_ settings: WorkspaceAISettingsSnapshot) async throws -> WorkspaceRecord? {
         try await dbQueue.write { db in
             guard var workspace = try WorkspaceRecord.fetchOne(db, key: settings.workspaceID) else { return nil }

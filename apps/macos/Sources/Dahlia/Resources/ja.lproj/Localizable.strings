@@ -3,7 +3,7 @@
 "settings.organization.workspaceSettings" = "ワークスペースの設定";
 "settings.organization.searchSettings" = "設定を検索";
 "settings.organization.settingsAccountIntro" = "選択中のアカウントのAI設定です。このMacでのみ適用され、同じアカウントのすべてのワークスペースで共通です。別のMacやWebには同期されません。";
-"settings.organization.settingsWorkspaceManagementIntro" = "選択中のアカウントのワークスペースを切り替え、名前、所属アカウント、共有、書き出し先と、選択中のワークスペースの出力言語を管理します。";
+"settings.organization.settingsWorkspaceManagementIntro" = "すべてのアカウントのワークスペースを表示し、それぞれの名前、所属アカウント、共有、書き出し先と出力言語を管理します。";
 "settings.organization.settingsAccountsIntro" = "選択中のアカウントのモデルプロバイダーとAI設定を管理します。アカウントはサイドバー下部のアカウントメニューで切り替えます。";
 "settings.organization.settingsAccountSelectionDescription" = "編集対象を選んでも、開いているワークスペースは変わりません。";
 "settings.organization.settingsLoading" = "設定を読み込み中…";

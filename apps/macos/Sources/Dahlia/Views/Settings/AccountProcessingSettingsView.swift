@@ -35,26 +35,3 @@ struct AccountProcessingSettingsView: View {
         .toggleStyle(.switch)
     }
 }
-
-struct WorkspaceProcessingSettingsView: View {
-    @ObservedObject private var settings = AppSettings.shared
-    @Bindable private var workspaceSettings = WorkspaceAISettingsModel.shared
-
-    var body: some View {
-        if let error = workspaceSettings.errorMessage {
-            Section { SettingsStatusMessage(text: error, systemImage: "exclamationmark.triangle", tint: .orange) }
-        }
-        if let workspace = settings.currentWorkspace {
-            Section {
-                Picker(L10n.summaryOutputLanguage, selection: $workspaceSettings.generationSettings.outputLanguage) {
-                    ForEach(SummaryLanguage.allCases) { Text($0.displayName).font(.dahliaBody).tag($0) }
-                }
-                Text(L10n.settingsOutputLanguageDescription).foregroundStyle(.secondary)
-            } header: {
-                Text(L10n.generatedContentLanguage)
-                    .font(.dahliaSectionHeader)
-            }
-            .disabled(!workspace.allowsWorkspaceManagement)
-        }
-    }
-}

@@ -120,7 +120,6 @@ struct ContentView: View {
                             sidebarViewModel: sidebarViewModel,
                             appDatabase: appDatabase,
                             workspaceManagementModel: workspaceManagementModel,
-                            onSelectWorkspace: onSelectWorkspace,
                             onShowUnprocessedRecordings: openUnprocessedRecordingsFromSettings
                         )
                     }

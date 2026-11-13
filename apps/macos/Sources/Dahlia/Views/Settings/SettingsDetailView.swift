@@ -7,7 +7,6 @@ struct SettingsDetailView: View {
     var sidebarViewModel: SidebarViewModel
     let appDatabase: AppDatabaseManager?
     var workspaceManagementModel: WorkspaceManagementModel
-    let onSelectWorkspace: (WorkspaceRecord) -> Void
     let onShowUnprocessedRecordings: (UUID) -> Void
 
     @ObservedObject private var appSettings = AppSettings.shared
@@ -74,10 +73,8 @@ struct SettingsDetailView: View {
                     currentWorkspace: appSettings.currentWorkspace,
                     accountConnections: dahliaAccountController.connections,
                     canSwitchWorkspace: canSwitchWorkspace,
-                    onSelectWorkspace: onSelectWorkspace,
                     onUpdateWorkspace: updateCurrentWorkspaceIfNeeded
                 )
-                WorkspaceProcessingSettingsView()
             }
             .formStyle(.grouped)
             .font(.dahliaBody)

@@ -32,6 +32,7 @@ final class WorkspaceManagementModel {
     private(set) var errorMessage = ""
     private(set) var isLoading = false
     private(set) var isRemovingWorkspace = false
+    private(set) var isUpdatingOutputLanguage = false
     private(set) var isRenamingWorkspace = false
     private(set) var updatingWorkspaceAccountID: UUID?
     private(set) var serverAdoptionStep: LocalWorkspaceImport.Step?
@@ -277,6 +278,22 @@ final class WorkspaceManagementModel {
             return updated
         } catch {
             presentError(L10n.workspaceFolderSelectionFailed, error: error, source: "setExportFolder")
+            return nil
+        }
+    }
+
+    func setOutputLanguage(for workspace: WorkspaceRecord, to language: SummaryLanguage) async -> WorkspaceRecord? {
+        guard !isUpdatingOutputLanguage, let repository else { return nil }
+        isUpdatingOutputLanguage = true
+        defer { isUpdatingOutputLanguage = false }
+        do {
+            guard let updated = try await repository.updateWorkspaceOutputLanguage(id: workspace.id, language: language) else { return nil }
+            if let index = workspaces.firstIndex(where: { $0.id == updated.id }) {
+                workspaces[index] = updated
+            }
+            return updated
+        } catch {
+            presentError(L10n.workspaceOperationFailed, error: error, source: "setOutputLanguage")
             return nil
         }
     }

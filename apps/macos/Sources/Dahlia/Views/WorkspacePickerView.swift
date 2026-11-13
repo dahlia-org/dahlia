@@ -98,7 +98,6 @@ struct WorkspacePickerView: View {
                     sidebarViewModel: sidebarViewModel,
                     appDatabase: appDatabase,
                     workspaceManagementModel: model,
-                    onSelectWorkspace: onWorkspaceSelected,
                     onShowUnprocessedRecordings: openUnprocessedRecordingsFromSettings
                 )
             }
