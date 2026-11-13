@@ -38,6 +38,7 @@ enum ErrorReportingService {
         "meetingSidebarPage",
         "meetingSidebarSearch",
         "microphoneMeetingNotification",
+        "piInstallation",
         "prepareAnalyzer",
         "projectCatalogObservation",
         "recordingAppendTarget",
@@ -141,6 +142,10 @@ enum ErrorReportingService {
         capture(context: ["source": category.rawValue])
     }
 
+    static func capturePiInstallation(_ failure: PiInstallError) {
+        capture(context: failure.diagnosticContext)
+    }
+
     private static func capture(context: [String: String], logFields: [String: String] = [:]) {
         let sanitizedContext = sanitizedContext(context)
         // source はコード中の定数なので、許可リスト外でもローカルログには残す。
@@ -170,7 +175,10 @@ enum ErrorReportingService {
 
     static func sanitizedContext(_ context: [String: String]) -> [String: String] {
         context.filter { key, value in
-            isAllowedContextValue(value, for: key)
+            if key == "httpStatus" {
+                return context["source"] == "piInstallation" && Int(value).map { (100 ... 599).contains($0) && String($0) == value } == true
+            }
+            return isAllowedContextValue(value, for: key)
         }
     }
 
@@ -191,6 +199,10 @@ enum ErrorReportingService {
             allowedFailureKinds.contains(value)
         case "errorCode":
             allowedErrorCodes.contains(value)
+        case "piInstallStage":
+            PiInstallError.Stage(rawValue: value) != nil
+        case "piInstallReason":
+            PiInstallError.Reason(rawValue: value) != nil
         default:
             false
         }

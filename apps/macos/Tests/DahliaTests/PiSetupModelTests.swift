@@ -49,9 +49,10 @@
             defaults.set(false, forKey: key)
             let model = PiSetupModel(account: .local, defaults: defaults)
 
-            await model.install { throw PiInstallError.downloadFailed }
+            let failure = PiInstallError(stage: .download, reason: .http, httpStatus: 403)
+            await model.install { throw failure }
 
-            #expect(model.errorMessage != nil)
+            #expect(model.errorMessage == failure.localizedDescription)
             #expect(!model.isReady)
             #expect(!defaults.bool(forKey: key))
             await model.install {}

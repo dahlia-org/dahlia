@@ -2557,8 +2557,57 @@ enum L10n { // swiftlint:disable:this type_body_length
         localized: "Pi \(version) is the latest version.",
         bundle: bundle
     ) }
-    static var piDownloadFailed: String { String(
-        localized: "Could not download Pi. Check your network connection and try again.",
+    static func piInstallFailed(_ stage: String, _ reason: String) -> String { String(
+        localized: "Pi installation failed — \(stage): \(reason)",
+        bundle: bundle
+    ) }
+    static var piInstallReleaseStage: String { String(localized: "Release information", bundle: bundle) }
+    static var piInstallDownloadStage: String { String(localized: "Download", bundle: bundle) }
+    static var piInstallVerificationStage: String { String(localized: "Verification", bundle: bundle) }
+    static var piInstallExtractionStage: String { String(localized: "Extraction", bundle: bundle) }
+    static var piInstallActivationStage: String { String(localized: "Installation activation", bundle: bundle) }
+    static var piInstallHTTPFailed: String { String(localized: "GitHub returned an error. Try again later.", bundle: bundle) }
+    static var piInstallRateLimited: String { String(
+        localized: "GitHub has limited requests from this network. Wait before trying again, or use another network.",
+        bundle: bundle
+    ) }
+    static var piInstallInvalidResponse: String { String(localized: "The server returned an unexpected response. Try again later.", bundle: bundle) }
+    static var piInstallInvalidRelease: String { String(localized: "The Pi release information is invalid. Try again later.", bundle: bundle) }
+    static var piInstallMissingAsset: String { String(
+        localized: "This Pi release has no macOS Apple Silicon download. Try again later.",
+        bundle: bundle
+    ) }
+    static var piInstallMissingDigest: String { String(localized: "This Pi release has no SHA-256 checksum. Try again later.", bundle: bundle) }
+    static var piInstallChecksumMismatch: String { String(
+        localized: "The downloaded file failed SHA-256 verification. Download it again; if this continues, check your network.",
+        bundle: bundle
+    ) }
+    static var piInstallExtractionFailed: String { String(
+        localized: "The downloaded archive could not be extracted. Check available disk space and try again.",
+        bundle: bundle
+    ) }
+    static var piInstallExecutableMissing: String { String(
+        localized: "The extracted archive has no executable Pi. Try downloading it again.",
+        bundle: bundle
+    ) }
+    static var piInstallNetworkTimeout: String { String(
+        localized: "The request timed out. Check your network connection and try again.",
+        bundle: bundle
+    ) }
+    static var piInstallNetworkOffline: String { String(
+        localized: "There is no internet connection. Connect to the internet and try again.",
+        bundle: bundle
+    ) }
+    static var piInstallNetworkTLS: String { String(
+        localized: "A secure connection could not be established. Check your network and certificate settings.",
+        bundle: bundle
+    ) }
+    static var piInstallNetworkFailed: String { String(
+        localized: "A network connection failed. Check your network or proxy settings and try again.",
+        bundle: bundle
+    ) }
+    static var piInstallFileSystemFailed: String { String(
+        localized: "A file could not be read or saved. Check disk space and installation-folder permissions.",
         bundle: bundle
     ) }
     static func piExecutableNotFound(_ path: String) -> String { String(

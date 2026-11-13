@@ -3,6 +3,7 @@ import SwiftUI
 struct CodexChatAddPanel: View {
     let windowBounds: CGRect
     let showsMeetingPicker: Bool
+    let showsConnectors: Bool
     let meetingReferences: [CodexChatMeetingReference]
     let highlightedMeetingID: UUID?
     let mcpSettings: AgentMCPSettings
@@ -14,7 +15,7 @@ struct CodexChatAddPanel: View {
     @State private var showsMCPServers = false
 
     var body: some View {
-        HStack(alignment: .top, spacing: CodexChatAddPanelLayout.submenuSpacing) {
+        HStack(alignment: .bottom, spacing: CodexChatAddPanelLayout.submenuSpacing) {
             Group {
                 if showsMeetingPicker {
                     CodexChatMeetingPicker(
@@ -36,13 +37,15 @@ struct CodexChatAddPanel: View {
                             leadingSystemImage: "text.document",
                             action: onAddMeetingReference
                         )
-                        CodexChatConfigurationRow(
-                            title: L10n.agentMCPs,
-                            isSelected: showsMCPServers,
-                            leadingSystemImage: "point.3.connected.trianglepath.dotted",
-                            trailingSystemImage: "chevron.right",
-                            action: { showsMCPServers.toggle() }
-                        )
+                        if showsConnectors {
+                            CodexChatConfigurationRow(
+                                title: L10n.agentMCPs,
+                                isSelected: showsMCPServers,
+                                leadingSystemImage: "point.3.connected.trianglepath.dotted",
+                                trailingSystemImage: "chevron.right",
+                                action: { showsMCPServers.toggle() }
+                            )
+                        }
                     }
                     .padding(10)
                 }
@@ -52,7 +55,7 @@ struct CodexChatAddPanel: View {
             .fixedSize(horizontal: false, vertical: true)
             .codexChatPanelStyle()
 
-            if showsMCPServers, !showsMeetingPicker {
+            if showsConnectors, showsMCPServers, !showsMeetingPicker {
                 CodexChatMCPServersView(settings: mcpSettings, onOpenSettings: onOpenMCPSettings)
                     .frame(width: panelWidth)
                     .frame(maxHeight: CodexChatAddPanelLayout.maximumHeight(windowBounds: windowBounds))
@@ -63,6 +66,6 @@ struct CodexChatAddPanel: View {
     }
 
     private var panelWidth: CGFloat {
-        CodexChatAddPanelLayout.width(windowBounds: windowBounds, showsSubmenu: showsMCPServers && !showsMeetingPicker)
+        CodexChatAddPanelLayout.width(windowBounds: windowBounds, showsSubmenu: showsConnectors && showsMCPServers && !showsMeetingPicker)
     }
 }

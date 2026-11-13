@@ -61,6 +61,11 @@ Sentry はクラッシュスタック、Dahlia のリリース・ビルド、実
 | `candidateLanguageCount`, `fallbackCount`, `inferenceFailedCount` | 0〜999 の匿名な言語候補・fallback 件数 |
 | `failureKind` | `recordingStorage` / `recordingRecovery` / `recordingAudioPermanent` / `transcription` / `transcriptionStalled` / `transcriptionInterrupted` |
 | `errorCode` | `BatchSpeechTranscriberError` が定義する固定 diagnostic code |
+| `piInstallStage` | `release` / `download` / `verification` / `extraction` / `activation` |
+| `piInstallReason` | `http` / `rateLimited` / `invalidResponse` / `invalidRelease` / `missingAsset` / `missingDigest` / `checksumMismatch` / `extractionFailed` / `executableMissing` / `networkTimeout` / `networkOffline` / `networkTLS` / `networkOther` / `fileSystem` |
+| `httpStatus` | `source=piInstallation` のみ、100〜599 の HTTP status code |
+
+Pi のインストール・更新失敗は `source=piInstallation` と上記の固定段階・理由で記録する。キャンセルは記録せず、URL、保存先、release version、response body、元の Error の説明文は送らない。
 
 Sentry の PII、request、user、extra、自動 breadcrumb、network breadcrumb、失敗 HTTP request、performance trace は無効にする。`beforeBreadcrumb` でも許可カテゴリ以外を破棄する。スクリーンショット自体は送らず、既存のスクリーンショット表示診断では固定 bucket のみ許可する。
 

@@ -33,6 +33,10 @@ process をまたいで1つずつ行う。展開済みの版はダウンロー�
 失敗しても入口は前の版を指したまま。release の `pi` は ad-hoc 署名のまま実行でき、Dahlia は署名し直さない。
 PATH 上の `pi`（npm・Homebrew など）は利用者のものとして更新しない。
 
+インストール失敗は release 取得、download、検証、展開、保存・切替の段階と理由を日英で表示し、HTTP エラーには status code を添える。
+GitHub の 429、または rate limit header を持つ 403 はアクセス制限として案内する。Settings・セットアップ・CLI は同じ installer で
+失敗を一度だけ匿名診断へ渡す。Sentry へ渡す固定カテゴリと tag は [Telemetry policy](../../telemetry.md) に従い、キャンセルは記録しない。
+
 `Dahlia --install-pi [version]` は app を開かずに同じ手順で版を入れる（版を省くと latest）。`bin/pi-update` は
 これを呼ぶ shell script で、版を入れるたびに書き直すので app の場所に追従する。GitHub の release の `pi` は自分では
 更新できないため、`bin` を PATH に入れてターミナルで使う人は、Pi 1.5.0 以降の `PI_SELF_UPDATE_COMMAND` に
@@ -241,7 +245,8 @@ Pi の session file に承認方式を保存しない。全アカウントで、
 承認の表示は既存の上限（20 KB など）で切り詰め、取消・停止は未応答の承認を cancel してから abort する。
 Codex の web search、`request_user_input` は Pi にないため提供しない。
 
-チャットの追加メニューも「コネクタ」と表示し、選択時は元のメニューを残して右側に一覧と設定への入口を開く。
+新規チャットの追加メニューに「コネクタ」を表示し、選択時は元のメニューを残して右側に一覧と設定への入口を開く。
+両パネルは下端を揃え、一覧はアイコンとコネクタ名だけを表示する。内部 ID は表示しない。既存チャットにはこの項目を表示しない。
 狭い画面では両パネルの幅を調整し、外側クリックまたは Esc で閉じる。
 
 ### Unity AI Gateway の MCP
