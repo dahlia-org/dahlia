@@ -72,7 +72,7 @@ import Synchronization
             }
             await database.searchIndexer.start()
             await database.searchIndexer.drain()
-            await database.searchIndexer.pauseForRecording()
+            await database.searchIndexer.stop()
             try await database.dbQueue.read { db in
                 #expect(try String.fetchOne(db, sql: "SELECT phase FROM search_index_state WHERE indexKind = 'fts'") == "ready")
                 let recovered = try #require(try MeetingScreenshotRecord.fetchOne(db, key: screenshot.id))
@@ -662,8 +662,48 @@ import Synchronization
         }
 
         @Test
-        func recordingPauseLeavesOCRQueuedUntilRestart() async throws {
-            let database = try makeDatabase(screenshotAnalyzer: StubScreenshotAnalyzer(text: "録音終了後"))
+        func workerAnalyzesNewScreenshotsDuringActiveRecording() async throws {
+            let database = try makeDatabase(screenshotAnalyzer: StubScreenshotAnalyzer(text: "録音中の資料"))
+            let workspace = makeWorkspace()
+            let meeting = makeMeeting(workspaceID: workspace.id)
+            let session = RecordingSessionRecord(
+                id: .v7(), meetingId: meeting.id, startedAt: .now,
+                offsetSeconds: 0, createdAt: .now, updatedAt: .now
+            )
+            try await database.dbQueue.write { db in
+                try workspace.insert(db)
+                try meeting.insert(db)
+                try session.insert(db)
+            }
+            await database.searchIndexer.drain()
+            await database.searchIndexer.start()
+            let screenshot = MeetingScreenshotRecord(
+                id: .v7(), meetingId: meeting.id, sessionId: session.id,
+                capturedAt: .now, imageData: Data([1]), mimeType: "image/png"
+            )
+            try await database.dbQueue.write { db in try screenshot.insertLegacyForTesting(db) }
+            #expect(await pollUntil {
+                await (try? database.dbQueue.read { db in
+                    try String.fetchOne(
+                        db, sql: "SELECT ocrText FROM meeting_images WHERE id = ?",
+                        arguments: [screenshot.id]
+                    ) == "録音中の資料"
+                }) ?? false
+            })
+            await database.searchIndexer.stop()
+            let state = try await database.dbQueue.read { db in
+                try (
+                    RecordingSessionRecord.hasActiveRecording(workspaceId: workspace.id, in: db),
+                    Int.fetchOne(db, sql: "SELECT COUNT(*) FROM search_documents WHERE kind = 'screenshot' AND sourceId = ?", arguments: [screenshot.id])
+                )
+            }
+            #expect(state.0)
+            #expect(state.1 == 1)
+        }
+
+        @Test
+        func workerStopLeavesOCRQueuedUntilRestart() async throws {
+            let database = try makeDatabase(screenshotAnalyzer: StubScreenshotAnalyzer(text: "再起動後"))
             let workspace = makeWorkspace()
             let meeting = makeMeeting(workspaceID: workspace.id)
             try await database.dbQueue.write { db in
@@ -672,7 +712,7 @@ import Synchronization
             }
             await database.searchIndexer.drain()
             await database.searchIndexer.start()
-            await database.searchIndexer.pauseForRecording()
+            await database.searchIndexer.stop()
             let screenshot = MeetingScreenshotRecord(
                 id: .v7(),
                 meetingId: meeting.id,
@@ -699,14 +739,14 @@ import Synchronization
                         db,
                         sql: "SELECT ocrText FROM meeting_images WHERE id = ?",
                         arguments: [screenshot.id]
-                    ) == "録音終了後"
+                    ) == "再起動後"
                 }) ?? false
             })
             await database.searchIndexer.stop()
         }
 
         @Test
-        func recordingPauseCancelsAllInFlightOCRAndRequeuesIt() async throws {
+        func workerStopCancelsAllInFlightOCRAndRequeuesIt() async throws {
             let analyzer = CancellableScreenshotAnalyzer()
             let diagnostics = Mutex<[SearchFailureDiagnostic]>([])
             let database = try makeDatabase(screenshotAnalyzer: analyzer, failureReporter: { diagnostic in
@@ -737,7 +777,7 @@ import Synchronization
             }
             #expect(await pollUntil { await analyzer.startedCount == 2 })
 
-            await database.searchIndexer.pauseForRecording()
+            await database.searchIndexer.stop()
 
             let state = try await database.dbQueue.read { db in
                 try (
@@ -867,7 +907,7 @@ import Synchronization
         }
 
         @Test(.timeLimit(.minutes(1)))
-        func recordingPauseCancelsExplicitRebuildOCRAndRequeuesIt() async throws {
+        func workerStopCancelsExplicitRebuildOCRAndRequeuesIt() async throws {
             let analyzer = CancellableScreenshotAnalyzer()
             let database = try makeDatabase(screenshotAnalyzer: analyzer)
             let workspace = makeWorkspace()
@@ -889,7 +929,7 @@ import Synchronization
             let rebuildTask = Task { try await database.searchIndexer.requestRebuild() }
             #expect(await pollUntil { await analyzer.startedCount == 2 })
 
-            await database.searchIndexer.pauseForRecording()
+            await database.searchIndexer.stop()
             try await rebuildTask.value
 
             let state = try await database.dbQueue.read { db in
@@ -1226,7 +1266,7 @@ import Synchronization
                 }) ?? false
             })
 
-            await database.searchIndexer.pauseForRecording()
+            await database.searchIndexer.stop()
             try await database.searchIndexer.requestRebuild()
             let reset = try await database.dbQueue.read { db in
                 let row = try Row.fetchOne(

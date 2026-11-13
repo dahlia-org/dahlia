@@ -90,14 +90,6 @@ actor BackgroundJobWorker {
     }
 
     func stop() async {
-        await stopOwnWorker()
-    }
-
-    func pauseForRecording() async {
-        await stopOwnWorker()
-    }
-
-    private func stopOwnWorker() async {
         isPaused = true
         let tasks = [workerTask, observationDrainTask, activeDrainTask].compactMap(\.self)
         tasks.forEach { $0.cancel() }
