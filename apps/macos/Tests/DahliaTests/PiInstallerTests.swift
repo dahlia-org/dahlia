@@ -115,6 +115,28 @@ import Synchronization
         }
 
         @Test
+        func downloadFileErrorsUseStorageGuidanceAndSanitizedReporting() {
+            let codes: [URLError.Code] = [
+                .cannotCreateFile, .cannotOpenFile, .cannotCloseFile, .cannotWriteToFile,
+                .cannotRemoveFile, .cannotMoveFile,
+            ]
+            for code in codes {
+                var reports: [PiInstallError] = []
+                let error = URLError(code, userInfo: [NSLocalizedDescriptionKey: "private archive path"])
+                let failure = PiInstaller.reportedFailure(error, stage: .download) { reports.append($0) } as? PiInstallError
+                let expected = PiInstallError(stage: .download, reason: .fileSystem)
+                #expect(failure == expected)
+                #expect(failure?.localizedDescription == L10n.piInstallFailed(
+                    L10n.piInstallDownloadStage, L10n.piInstallFileSystemFailed
+                ))
+                #expect(reports == [expected])
+                #expect(reports.map(\.diagnosticContext) == [[
+                    "source": "piInstallation", "piInstallStage": "download", "piInstallReason": "fileSystem",
+                ]])
+            }
+        }
+
+        @Test
         func fileSystemFailuresAreReportedAtActivation() async throws {
             let root = FileManager.default.temporaryDirectory.appending(path: "PiBlockedFolder-\(UUID())")
             try Data().write(to: root)

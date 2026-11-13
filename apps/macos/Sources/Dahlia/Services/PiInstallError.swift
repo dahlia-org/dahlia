@@ -60,6 +60,8 @@ struct PiInstallError: LocalizedError, Equatable {
         if let failure = error as? Self { return failure }
         guard let network = error as? URLError else { return Self(stage: stage, reason: .fileSystem) }
         let reason: Reason = switch network.code {
+        case .cannotCreateFile, .cannotOpenFile, .cannotCloseFile, .cannotWriteToFile,
+             .cannotRemoveFile, .cannotMoveFile: .fileSystem
         case .timedOut: .networkTimeout
         case .notConnectedToInternet: .networkOffline
         case .secureConnectionFailed, .serverCertificateHasBadDate, .serverCertificateUntrusted,
