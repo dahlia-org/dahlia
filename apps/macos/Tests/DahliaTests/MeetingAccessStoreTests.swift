@@ -712,6 +712,11 @@ import ImageIO
                 projectID: fixture.primaryProjectID,
                 icalUID: "missing@example.com"
             )).meetings.isEmpty)
+            for attendee in [" 花子 ", "HANAKO@example", "élodie", "STRASSE"] {
+                #expect(try store.queryMeetings(MeetingQuery(attendee: attendee)).meetings.map(\.id) == [fixture.recurringMeetingID])
+            }
+            #expect(try store.queryMeetings(MeetingQuery(attendee: "%")).meetings.isEmpty)
+            #expect(try store.queryMeetings(MeetingQuery(attendee: "email")).meetings.isEmpty)
             #expect(try store.queryMeetings(MeetingQuery(projectID: fixture.otherWorkspaceProjectID)).meetings.isEmpty)
             #expect(try store.queryMeetings(MeetingQuery(query: "secret body")).meetings.map(\.id) == [fixture.firstMeetingID])
             #expect(try store.queryMeetings(MeetingQuery(query: "cret bo", simple: true)).meetings.isEmpty)
@@ -722,6 +727,42 @@ import ImageIO
             #expect(throws: MeetingAccessError.invalidCursor) {
                 try otherStore.queryMeetings(MeetingQuery(cursor: cursor))
             }
+        }
+
+        @Test
+        func attendeeSearchUsesCanonicalSnapshotsAndUnicodeCaseFolding() async throws {
+            let fixture = try Fixture()
+            try await fixture.manager.dbQueue.write { db in
+                let event = try #require(try CalendarEventRecord.fetch(
+                    key: CalendarEventKey(icalUid: "roadmap@example.com", recurrenceId: "20300115T000000Z"), in: db
+                ))
+                var snapshot = MeetingCalendarSync.Event(event)
+                snapshot.attendees = [CalendarAttendeeSnapshot(email: "elodie@example.com", displayName: "Élodie Straße")]
+                for meetingID in [fixture.firstMeetingID, fixture.otherWorkspaceMeetingID] {
+                    try MeetingCalendarSync(icalUid: event.icalUid, recurrenceId: event.recurrenceId, calendarEvent: snapshot)
+                        .save(meetingId: meetingID, in: db)
+                }
+                try db.execute(sql: "UPDATE meetings SET calendar_event_ical_uid = NULL, calendar_event_recurrence_id = NULL WHERE id = ?",
+                               arguments: [fixture.firstMeetingID])
+            }
+            let store = try fixture.store(workspaceID: fixture.primaryWorkspaceID)
+            for attendee in ["élodie", "STRASSE"] {
+                #expect(try store.queryMeetings(MeetingQuery(attendee: attendee)).meetings.map(\.id) == [fixture.firstMeetingID, fixture.recurringMeetingID])
+            }
+            #expect(try store.queryMeetings(MeetingQuery(attendee: "ELODIE@example")).meetings.map(\.id) == [fixture.firstMeetingID])
+            let page = try store.queryMeetings(MeetingQuery(limit: 1))
+            let cursor = try #require(page.nextCursor)
+            #expect(throws: MeetingAccessError.invalidCursor) {
+                try store.queryMeetings(MeetingQuery(attendee: "élodie", limit: 1, cursor: cursor))
+            }
+            #expect(try store.queryMeetings(MeetingQuery(attendee: "%")).meetings.isEmpty)
+            #expect(try store.queryMeetings(MeetingQuery(projectID: fixture.primaryProjectID, attendee: "élodie")).meetings.map(\.id)
+                == [fixture.firstMeetingID])
+            try await fixture.manager.dbQueue.write { db in
+                try MeetingCalendarSync(icalUid: nil, recurrenceId: nil, calendarEvent: nil)
+                    .save(meetingId: fixture.recurringMeetingID, in: db)
+            }
+            #expect(try store.queryMeetings(MeetingQuery(attendee: "花子")).meetings.isEmpty)
         }
 
         @Test
@@ -1630,6 +1671,7 @@ import ImageIO
             let queryProperty = try #require(inputProperties["query"] as? [String: Any])
             #expect((queryProperty["description"] as? String)?.contains("use project or project_id instead") == true)
             #expect(inputProperties["ical_uid"] != nil)
+            #expect(inputProperties["attendee"] != nil)
             #expect(inputProperties["project_id"] != nil)
             #expect(inputProperties["simple"] != nil)
             #expect(!definitions.contains { $0["name"] as? String == "query_customer_intelligence_proposals" })
@@ -1694,7 +1736,7 @@ import ImageIO
 
             let blankFilters = try Self.json(server.handleLine(#"""
             {"jsonrpc":"2.0","id":7,"method":"tools/call","params":{"name":"query_meetings","arguments":{
-                "created_before":"","created_from":" ","cursor":"","ical_uid":"   ",
+                "attendee":" ","created_before":"","created_from":" ","cursor":"","ical_uid":"   ",
                 "limit":50,"project":"","project_id":"","query":""
             }}}
             """#))
@@ -1811,7 +1853,10 @@ import ImageIO
                 icalUID: "roadmap@example.com",
                 recurrenceID: "20300115T000000Z",
                 title: "Series follow-up",
-                startOffset: 7200
+                startOffset: 7200,
+                participants: [
+                    CalendarParticipant(email: "Hanako@Example.com", displayName: "山田 花子 Élodie Straße", kind: .person, isCurrentUser: false),
+                ]
             )
             try insertCalendarEvent(
                 in: db,
@@ -1829,7 +1874,8 @@ import ImageIO
             icalUID: String,
             recurrenceID: String,
             title: String,
-            startOffset: TimeInterval
+            startOffset: TimeInterval,
+            participants: [CalendarParticipant] = []
         ) throws {
             let startDate = createdAt.addingTimeInterval(startOffset)
             try CalendarEventRecord(
@@ -1847,6 +1893,7 @@ import ImageIO
                     startDate: startDate,
                     endDate: startDate.addingTimeInterval(3600),
                     isAllDay: false,
+                    participants: participants,
                     conferenceURI: nil
                 ),
                 key: CalendarEventKey(icalUid: icalUID, recurrenceId: recurrenceID)

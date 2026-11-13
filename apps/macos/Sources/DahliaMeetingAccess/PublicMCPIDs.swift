@@ -5,7 +5,7 @@ import Foundation
 enum PublicMCPIDs {
     static func arguments(_ value: [String: Any], tool: String) throws -> [String: Any] {
         let optionalStringKeys: Set = [
-            "query", "project", "project_id", "ical_uid",
+            "query", "project", "project_id", "ical_uid", "attendee",
             "created_from", "created_before", "cursor", "server_cursor",
         ]
         let arguments = value.filter { key, value in
