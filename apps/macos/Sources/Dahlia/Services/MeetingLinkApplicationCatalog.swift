@@ -123,8 +123,8 @@ extension MeetingLinkApplicationCatalog {
                   SystemMeetingLinkWorkspace.chromeAppInstallation(infoDictionary: infoDictionary) != nil,
                   let shortcutURL = chromeApplicationShortcutURL(infoDictionary: infoDictionary),
                   let service = MeetingLinkService(conferenceURL: shortcutURL),
-                  // 会議リンクが PWA で開くことを確かめたサービスだけを出す。
-                  [.googleMeet, .teams].contains(service),
+                  // 会議リンクが PWA で開くことを確かめたサービスだけを出す。Teams の PWA は会議ではなくチャットを開く。
+                  service == .googleMeet,
                   let host = shortcutURL.host()
             else { continue }
             applications[service, default: []].append((bundleIdentifier, host))
@@ -132,9 +132,9 @@ extension MeetingLinkApplicationCatalog {
         return applications.reduce(into: [:]) { result, entry in
             // 一覧の順序は不定なので、選ぶ PWA が読み込みごとに変わらないよう並べ替える。
             let candidates = entry.value.sorted { ($0.bundleIdentifier, $0.host) < ($1.bundleIdentifier, $1.host) }
-            guard let index = preferredChromeApplicationIndex(hosts: candidates.map(\.host)) else { return }
+            guard let application = candidates.first else { return }
             result[entry.key] = MeetingLinkApplication(
-                bundleIdentifier: candidates[index].bundleIdentifier,
+                bundleIdentifier: application.bundleIdentifier,
                 displayName: "\(entry.key.displayName) (PWA)"
             )
         }
@@ -142,11 +142,6 @@ extension MeetingLinkApplicationCatalog {
 
     static func chromeApplicationShortcutURL(infoDictionary: [String: Any]) -> URL? {
         (infoDictionary["CrAppModeShortcutURL"] as? String).flatMap(URL.init(string:))
-    }
-
-    /// サービスごとに PWA を 1 つだけ選ぶ。Teams は移行先の teams.cloud.microsoft を優先する。
-    static func preferredChromeApplicationIndex(hosts: [String]) -> Int? {
-        hosts.firstIndex(of: "teams.cloud.microsoft") ?? hosts.indices.first
     }
 
     private static func application(at url: URL) -> MeetingLinkApplication? {

@@ -115,7 +115,7 @@ import Foundation
         }
 
         @Test
-        func chromeApplicationsResolveServiceFromShortcutURLAndPreferTeamsCloudHost() throws {
+        func chromeApplicationsResolveServiceFromShortcutURL() throws {
             func service(_ shortcutURL: String) -> MeetingLinkService? {
                 MeetingLinkApplicationCatalog.chromeApplicationShortcutURL(
                     infoDictionary: ["CrAppModeShortcutURL": shortcutURL]
@@ -124,15 +124,8 @@ import Foundation
 
             #expect(service("https://meet.google.com/landing?lfhs=2") == .googleMeet)
             #expect(service("https://teams.microsoft.com/v2/?clientType=pwa") == .teams)
-            #expect(service("https://teams.cloud.microsoft/?clientType=pwa") == .teams)
             #expect(service("https://calendar.google.com/") == nil)
             #expect(MeetingLinkApplicationCatalog.chromeApplicationShortcutURL(infoDictionary: [:]) == nil)
-
-            #expect(MeetingLinkApplicationCatalog.preferredChromeApplicationIndex(
-                hosts: ["teams.microsoft.com", "teams.cloud.microsoft"]
-            ) == 1)
-            #expect(MeetingLinkApplicationCatalog.preferredChromeApplicationIndex(hosts: ["meet.google.com"]) == 0)
-            #expect(MeetingLinkApplicationCatalog.preferredChromeApplicationIndex(hosts: []) == nil)
         }
 
         @Test
