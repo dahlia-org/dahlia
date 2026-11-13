@@ -2,12 +2,14 @@ import SwiftUI
 
 struct SearchSettingsView: View {
     @State private var model: SearchSettingsModel
+    @State private var dictionaries: SearchDictionarySettingsModel
     @State private var benchmark: SearchRankingBenchmarkModel
     @State private var isAdvancedSettingsExpanded = false
     @ObservedObject private var settings = AppSettings.shared
 
     init(database: AppDatabaseManager?) {
         _model = State(initialValue: SearchSettingsModel(database: database))
+        _dictionaries = State(initialValue: SearchDictionarySettingsModel(database: database))
         _benchmark = State(initialValue: SearchRankingBenchmarkModel(database: database))
     }
 
@@ -29,10 +31,13 @@ struct SearchSettingsView: View {
                 HStack {
                     Spacer()
                     Button(L10n.rebuildFullTextSearch) {
-                        Task { await model.rebuildFullTextIndex() }
+                        Task {
+                            await model.rebuildFullTextIndex(dictionaryConfiguration: dictionaries.needsRebuild ? dictionaries.configuration : nil)
+                            await dictionaries.refresh()
+                        }
                     }
                     .buttonStyle(.dahlia())
-                    .disabled(model.isRequestingRebuild)
+                    .disabled(model.isRequestingRebuild || dictionaries.isBusy || !dictionaries.isLoaded)
                 }
 
                 if let error = model.lastErrorCode {
@@ -55,6 +60,9 @@ struct SearchSettingsView: View {
             } footer: {
                 Text(L10n.searchIndexDescription)
             }
+
+            SearchDictionarySettingsSection(model: dictionaries)
+                .disabled(model.isRequestingRebuild)
 
             Section {
                 Button {
@@ -126,6 +134,7 @@ struct SearchSettingsView: View {
             benchmark.loadStoredJudgments(workspaceID: settings.currentWorkspace?.id)
         }
         .task {
+            await dictionaries.refresh()
             while !Task.isCancelled {
                 await model.refresh()
                 try? await Task.sleep(for: .seconds(2))

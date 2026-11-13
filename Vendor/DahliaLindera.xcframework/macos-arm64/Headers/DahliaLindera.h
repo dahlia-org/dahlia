@@ -25,6 +25,9 @@ enum DahliaLinderaStatus {
 };
 
 int32_t dahlia_lindera_create(void **handle);
+int32_t dahlia_lindera_create_with_dictionaries(
+    const char *dictionary, const char *user_dictionary, void **handle
+);
 void dahlia_lindera_delete(void *handle);
 int32_t dahlia_lindera_tokenize(
     void *handle,

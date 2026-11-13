@@ -1999,3 +1999,23 @@
 
 "Fallback Model" = "フォールバックモデル";
 "Try this model once if generation fails or returns an invalid response. None disables fallback." = "生成に失敗した場合や不正な応答が返った場合に、このモデルを1回試します。「なし」で無効になります。";
+
+// Search dictionaries
+"Search dictionary settings" = "検索辞書";
+"Search dictionary" = "システム辞書";
+"Search dictionary IPADIC" = "IPADIC（内蔵）";
+"Search active dictionary" = "検索に適用中の辞書";
+"Search NEologd download description" = "NEologd 2.3.4（約289 MiB）。新語・固有名詞を追加した辞書です。";
+"Search download NEologd" = "NEologd を取得";
+"Search user dictionary" = "ユーザー辞書";
+"Search user dictionary none" = "未設定";
+"Search user dictionary import" = "CSV を選択…";
+"Search user dictionary remove" = "設定を解除";
+"Search user dictionary description" = "UTF-8・ヘッダーなしの CSV（最大10 MiB）。各行は「表層形,品詞,読み」（例：ダリア会議,カスタム名詞,ダリアカイギ）、または IPADIC 形式の13列で指定します。変更する場合は編集した CSV を再度選択してください。";
+"Search dictionary rebuild required" = "辞書の変更を保存しました。「全文検索を再構築」を押すと適用されます。それまでは現在の辞書で検索できます。";
+"Search dictionary scope" = "この Mac の端末内検索と Local MCP に適用します。辞書の選択だけでは再構築しません。Server 側の検索には適用しません。内蔵 IPADIC への復帰やユーザー辞書の解除も、再構築後に反映されます。";
+"Search NEologd license" = "NEologd のライセンス";
+"Search dictionary download failed" = "辞書を取得できませんでした。通信状況を確認して再試行してください。";
+"Search dictionary checksum mismatch" = "辞書のチェックサムが一致しません。取得をやり直してください。";
+"Search dictionary invalid" = "辞書を読み込めませんでした。現在の辞書設定は保持されています。";
+"Search user dictionary invalid" = "UTF-8 の空でない CSV（最大10 MiB）を選択してください。";

@@ -1,9 +1,14 @@
 #![allow(non_snake_case)]
 
+use lindera::LinderaResult;
+use lindera::token::Token;
+use lindera::token_filter::TokenFilter;
 use lindera::tokenizer::{Tokenizer, TokenizerBuilder};
-use std::ffi::{c_char, c_void};
+use std::collections::HashMap;
+use std::ffi::{CStr, c_char, c_void};
 use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::slice;
+use std::sync::{Arc, Mutex, OnceLock, Weak};
 
 const CONFIG: &str = include_str!("../analyzer.yml");
 const ANALYZER_VERSION: &[u8] = b"dahlia_lindera_ipadic_v1\0";
@@ -25,15 +30,131 @@ type TokenCallback = unsafe extern "C" fn(
 ) -> i32;
 
 struct Analyzer {
-    tokenizer: Tokenizer,
+    tokenizer: Arc<Tokenizer>,
+}
+
+#[derive(Clone)]
+struct UserDictionaryBaseFormFilter;
+
+impl TokenFilter for UserDictionaryBaseFormFilter {
+    fn name(&self) -> &'static str {
+        "dahlia_user_dictionary_base_form"
+    }
+
+    fn apply(&self, tokens: &mut Vec<Token<'_>>) -> LinderaResult<()> {
+        // The 3-column CSV loader fills base_form with `*`; preserve its surface before base-form normalization.
+        for token in tokens {
+            if !token.word_id.is_system && token.get("base_form") == Some("*") {
+                token.set_detail(6, token.surface.clone());
+            }
+        }
+        Ok(())
+    }
+}
+
+fn build_analyzer_with_dictionaries(
+    dictionary: Option<&str>,
+    user_dictionary: Option<&str>,
+) -> Result<Analyzer, ()> {
+    type Key = (Option<String>, Option<String>);
+    static CACHE: OnceLock<Mutex<HashMap<Key, Weak<Tokenizer>>>> = OnceLock::new();
+    let cache = CACHE.get_or_init(|| Mutex::new(HashMap::new()));
+    let key = (
+        dictionary.map(str::to_owned),
+        user_dictionary.map(str::to_owned),
+    );
+    {
+        let mut entries = cache.lock().map_err(|_| ())?;
+        entries.retain(|_, value| value.strong_count() > 0);
+        if let Some(tokenizer) = entries.get(&key).and_then(Weak::upgrade) {
+            return Ok(Analyzer { tokenizer });
+        }
+    }
+    let yaml: serde_yaml_ng::Value = serde_yaml_ng::from_str(CONFIG).map_err(|_| ())?;
+    let config: serde_json::Value = serde_json::to_value(yaml).map_err(|_| ())?;
+    let mut builder = TokenizerBuilder::from_config(config).map_err(|_| ())?;
+    if let Some(uri) = dictionary {
+        builder.set_segmenter_dictionary(uri);
+    }
+    if let Some(uri) = user_dictionary {
+        builder.set_segmenter_user_dictionary(uri);
+    }
+    let mut tokenizer = builder.build().map_err(|_| ())?;
+    if let Some(user) = &tokenizer.segmenter.user_dictionary {
+        let matrix = &tokenizer.segmenter.dictionary.connection_cost_matrix;
+        // Lindera-dictionary 2.3.4 stores 10-byte WordEntry records; its CSV loader does not bound context IDs.
+        for entry in user.dict.vals_data.chunks_exact(10) {
+            let left = u16::from_le_bytes([entry[6], entry[7]]) as u32;
+            let right = u16::from_le_bytes([entry[8], entry[9]]) as u32;
+            if left >= matrix.backward_size || right >= matrix.forward_size {
+                return Err(());
+            }
+        }
+    }
+    if user_dictionary.is_some() {
+        tokenizer
+            .token_filters
+            .insert(0, UserDictionaryBaseFormFilter.into());
+    }
+    // Tokenizers are immutable; reuse their large dictionaries without serializing tokenization.
+    let tokenizer = Arc::new(tokenizer);
+    let mut entries = cache.lock().map_err(|_| ())?;
+    let tokenizer = entries
+        .get(&key)
+        .and_then(Weak::upgrade)
+        .unwrap_or(tokenizer);
+    entries.insert(key, Arc::downgrade(&tokenizer));
+    Ok(Analyzer { tokenizer })
 }
 
 fn build_analyzer() -> Result<Analyzer, ()> {
-    let yaml: serde_yaml_ng::Value = serde_yaml_ng::from_str(CONFIG).map_err(|_| ())?;
-    let config: serde_json::Value = serde_json::to_value(yaml).map_err(|_| ())?;
-    let builder = TokenizerBuilder::from_config(config).map_err(|_| ())?;
-    let tokenizer = builder.build().map_err(|_| ())?;
-    Ok(Analyzer { tokenizer })
+    build_analyzer_with_dictionaries(None, None)
+}
+
+/// Paths are UTF-8 C strings owned by the caller for this call only.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn dahlia_lindera_create_with_dictionaries(
+    dictionary: *const c_char,
+    user_dictionary: *const c_char,
+    handle: *mut *mut c_void,
+) -> i32 {
+    if handle.is_null() {
+        return INVALID_ARGUMENT;
+    }
+    unsafe {
+        *handle = std::ptr::null_mut();
+    }
+    let result = catch_unwind(AssertUnwindSafe(|| {
+        let dictionary = if dictionary.is_null() {
+            None
+        } else {
+            Some(
+                unsafe { CStr::from_ptr(dictionary) }
+                    .to_str()
+                    .map_err(|_| ())?,
+            )
+        };
+        let user_dictionary = if user_dictionary.is_null() {
+            None
+        } else {
+            Some(
+                unsafe { CStr::from_ptr(user_dictionary) }
+                    .to_str()
+                    .map_err(|_| ())?,
+            )
+        };
+        build_analyzer_with_dictionaries(dictionary, user_dictionary)
+    }));
+    match result {
+        Ok(Ok(analyzer)) => {
+            unsafe {
+                *handle = Box::into_raw(Box::new(analyzer)).cast::<c_void>();
+            }
+            OK
+        }
+        Ok(Err(())) => CONFIGURATION_ERROR,
+        Err(_) => PANIC,
+    }
 }
 
 #[unsafe(no_mangle)]
@@ -136,5 +257,34 @@ mod tests {
         let surfaces: Vec<&str> = tokens.iter().map(|token| token.surface.as_ref()).collect();
         assert!(surfaces.contains(&"lindera"));
         assert!(surfaces.contains(&"話す"));
+    }
+
+    #[test]
+    fn analyzers_share_immutable_tokenizers() {
+        let first = build_analyzer().unwrap();
+        let second = build_analyzer().unwrap();
+        assert!(Arc::ptr_eq(&first.tokenizer, &second.tokenizer));
+    }
+
+    #[test]
+    fn user_csv_extends_tokens_and_rejects_out_of_range_context_ids() {
+        let path = std::env::temp_dir().join(format!(
+            "dahlia-user-dictionary-{}-{}.csv",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        std::fs::write(&path, "ダリア会議,カスタム名詞,ダリアカイギ\n").unwrap();
+        let analyzer = build_analyzer_with_dictionaries(None, path.to_str()).unwrap();
+        let tokens = analyzer.tokenizer.tokenize("ダリア会議").unwrap();
+        assert_eq!(tokens.len(), 1);
+        assert_eq!(tokens[0].surface, "ダリア会議");
+        drop(tokens);
+        drop(analyzer);
+        std::fs::write(&path, "ダリア会議,65535,65535,-10000,名詞,固有名詞,一般,*,*,*,ダリア会議,ダリアカイギ,ダリアカイギ\n").unwrap();
+        assert!(build_analyzer_with_dictionaries(None, path.to_str()).is_err());
+        std::fs::remove_file(path).unwrap();
     }
 }

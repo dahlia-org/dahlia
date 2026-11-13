@@ -18,7 +18,13 @@ Project は専用結果と明示 filter で探す。Project name / path を meet
 
 ## FTS と順位
 
-固定 Lindera / IPADIC の arm64 XCFramework を使い、NFKC、原形、数値、katakana stem を正規化する。Rust panic は C ABI で隔離し、version / hash / license / Cargo.lock を配布時に管理する。
+Lindera 2.0.1 の arm64 XCFramework と内蔵 IPADIC を既定とし、NFKC、原形、数値、katakana stem を正規化する。Rust panic は C ABI で隔離し、version / hash / license / Cargo.lock を配布時に管理する。
+
+macOS の設定「検索」で、辞書ランタイムと互換性のある公式 IPADIC NEologd 2.3.4 を取得・選択できる。アーカイブは固定 SHA-256 で検証し、展開・読み込みの成功後にのみ選択を保存する。ユーザー辞書は UTF-8・ヘッダーなしの CSV（最大10 MiB）、3列の `表層形,品詞,読み` または IPADIC 形式の13列を取り込み、内容の hash を含む不変のパスへコピーする。元ファイルの編集は自動反映せず、再選択で更新する。
+
+選択した辞書は未適用の設定として保存し、再構築が必要な旨を表示する。取得、選択、アプリ再起動では辞書を適用せず、自動再索引もしない。明示的な「全文検索を再構築」でのみ適用中の設定と index generation を同 transaction で切り替え、その後に索引を再構築する。それまでは以前の辞書と索引で検索を継続できる。内蔵 IPADIC への復帰とユーザー辞書の解除にも同じ操作を使う。取得・検証失敗では既存の辞書と索引を保持する。
+
+この設定は Local Account と Server Account の端末内検索、および Local MCP に共通とする。接続ごとの SQLite snapshot から適用中の設定を読み、同一 snapshot の索引と query を異なる辞書で処理しない。Private Web、Electron alpha、Server 検索と Server MCP の辞書は変更しない。
 
 query は2文字以上、最大16 token、最後だけ prefix。field を跨いでも全 token が揃えば一致とし、最も document frequency の小さい token から候補を作り、残りを交差させてから pagination する。候補を推測で打ち切らず、SQLite read の30秒期限を超えれば絞り込みを求める。
 

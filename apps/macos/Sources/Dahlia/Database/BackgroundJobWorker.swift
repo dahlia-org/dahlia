@@ -22,11 +22,14 @@ actor BackgroundJobWorker {
     private var workerTask: Task<Void, Never>?
     private var observationDrainTask: Task<Void, Never>?
     private var activeDrainTask: Task<Void, Never>?
+    private var activeDrainID: UUID?
     private var jobObservation: AnyDatabaseCancellable?
     private var isDraining = false
     private var isPaused = false
     private var drainWaiters: [CheckedContinuation<Void, Never>] = []
     private var didValidateAnalyzer = false
+    private var preparedDictionary: PreparedSearchDictionary?
+    private var isChangingDictionary = false
     private var lastDivergenceCheckAt: Date?
     private var hasStarted = false
     private var shouldRecoverLegacyFailure = false
@@ -132,6 +135,37 @@ actor BackgroundJobWorker {
         await drain()
     }
 
+    func changeSearchDictionaries(_ configuration: SearchDictionaryConfiguration) async throws {
+        guard !isChangingDictionary else { throw SearchIndexError.analyzerMismatch }
+        // Validate before touching the active settings or index. This runs off MainActor.
+        let prepared = try configuration.prepare()
+        isChangingDictionary = true
+        if let activeDrainTask { await activeDrainTask.value }
+        activeDrainTask = nil
+        activeDrainID = nil
+        do {
+            try await dbQueue.write { db in
+                try db.execute(sql: """
+                UPDATE search_dictionary_configuration
+                SET dictionaryPath = ?, userDictionaryPath = ?, userDictionaryName = ? WHERE id = 1;
+                """, arguments: [configuration.dictionaryPath, configuration.userDictionaryPath, configuration.userDictionaryName])
+                try db.execute(sql: """
+                UPDATE search_index_state
+                SET analyzerConfigurationHash = ?, indexGeneration = indexGeneration + 1,
+                    indexRevision = indexRevision + 1, phase = 'pending', completedCount = 0,
+                    totalCount = 0, lastErrorCode = NULL, updatedAt = ? WHERE indexKind = 'fts'
+                """, arguments: [configuration.configurationHash, Date()])
+            }
+            preparedDictionary = prepared
+            didValidateAnalyzer = false
+        } catch {
+            isChangingDictionary = false
+            throw error
+        }
+        isChangingDictionary = false
+        await drain()
+    }
+
     func drain() async {
         await runDrain(checksDivergence: true)
     }
@@ -147,6 +181,7 @@ actor BackgroundJobWorker {
     }
 
     private func runDrain(checksDivergence: Bool) async {
+        guard !isChangingDictionary else { return }
         if let activeDrainTask {
             await activeDrainTask.value
             return
@@ -155,13 +190,18 @@ actor BackgroundJobWorker {
             guard let self else { return }
             await self.performDrain(checksDivergence: checksDivergence)
         }
+        let drainID = UUID.v7()
+        activeDrainID = drainID
         activeDrainTask = task
         await withTaskCancellationHandler {
             await task.value
         } onCancel: {
             task.cancel()
         }
-        activeDrainTask = nil
+        if activeDrainID == drainID {
+            activeDrainTask = nil
+            activeDrainID = nil
+        }
     }
 
     private func performDrain(checksDivergence: Bool) async {
@@ -204,7 +244,7 @@ actor BackgroundJobWorker {
             }
             try await withThrowingTaskGroup(of: (String, Int, Bool).self) { group in
                 var active: [String: Int] = [:]
-                while !isPaused, !Task.isCancelled {
+                while !isPaused, !Task.isCancelled, !isChangingDictionary {
                     // Finish the claimed jobs, then rebuild before taking more image work.
                     let rebuildRequested = try await indexPhase() == "pending"
                     if rebuildRequested, active.values.allSatisfy({ $0 == 0 }) {
@@ -319,18 +359,21 @@ actor BackgroundJobWorker {
 
     private func validateAnalyzer() async throws {
         guard !didValidateAnalyzer else { return }
-        try await dbQueue.read { db in
+        let configuration = try await dbQueue.read { db in
             _ = try db.makeTokenizer(SearchFTS5Tokenizer.tokenizerDescriptor())
+            let configuration = try SearchDictionaryConfiguration.read(in: db)
             guard let row = try Row.fetchOne(
                 db,
                 sql: "SELECT analyzerVersion, analyzerConfigurationHash FROM search_index_state WHERE indexKind = 'fts'"
             ),
                 row["analyzerVersion"] == SearchDocumentsMigration.analyzerVersion,
-                row["analyzerConfigurationHash"] == SearchDocumentsMigration.analyzerConfigurationHash
+                row["analyzerConfigurationHash"] == configuration.configurationHash
             else {
                 throw SearchIndexError.analyzerMismatch
             }
+            return configuration
         }
+        preparedDictionary = try configuration.prepare()
         didValidateAnalyzer = true
     }
 

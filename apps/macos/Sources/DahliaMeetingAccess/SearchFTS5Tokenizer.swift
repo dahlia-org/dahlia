@@ -7,8 +7,11 @@ public final class SearchFTS5Tokenizer: FTS5CustomTokenizer {
     public static let configurationHash = "e4e5d5c88f88895432fe3ec7e98b00ee2f05ca9ff6d78b47dda780ba6f5f308c"
 
     private var analyzer: UnsafeMutableRawPointer?
+    private var loadedConfiguration: SearchDictionaryConfiguration?
+    private unowned let database: Database
 
-    public init(db _: Database, arguments: [String]) throws {
+    public init(db: Database, arguments: [String]) throws {
+        database = db
         guard arguments.isEmpty else {
             throw DatabaseError(resultCode: .SQLITE_ERROR, message: "Search tokenizer accepts no arguments")
         }
@@ -31,7 +34,16 @@ public final class SearchFTS5Tokenizer: FTS5CustomTokenizer {
         tokenCallback: @escaping FTS5TokenCallback
     ) -> Int32 {
         guard nText >= 0, let context else { return 1 }
-        if analyzer == nil, dahlia_lindera_create(&analyzer) != DahliaLinderaStatusOK.rawValue {
+        do {
+            // Read on this connection so WAL snapshots use the same dictionary for query and index.
+            let configuration = try SearchDictionaryConfiguration.read(in: database)
+            if analyzer == nil || loadedConfiguration != configuration {
+                let replacement = try configuration.makeAnalyzer()
+                dahlia_lindera_delete(analyzer)
+                analyzer = replacement
+                loadedConfiguration = configuration
+            }
+        } catch {
             return 1
         }
 
