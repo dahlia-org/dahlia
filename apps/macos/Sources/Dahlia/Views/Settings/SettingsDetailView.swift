@@ -117,7 +117,12 @@ struct SettingsDetailView: View {
         case .meetings, .transcription, .recordingStopDetection, .liveSubtitles, .screenshots, .meetingLinks:
             MeetingSettingsView()
         case .dahliaMCP:
-            MCPSettingsView(workspaces: workspaceManagementModel.workspaces, currentWorkspace: appSettings.currentWorkspace)
+            MCPSettingsView(
+                workspaces: workspaceManagementModel.workspaces,
+                currentWorkspace: appSettings.currentWorkspace,
+                accountConnections: dahliaAccountController.connections,
+                databricksAccounts: WorkspaceAISettingsModel.shared.databricksConnections
+            )
         case .calendar:
             CalendarSettingsView()
         case .instructions:

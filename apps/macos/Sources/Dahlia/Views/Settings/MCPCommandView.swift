@@ -11,11 +11,13 @@ struct MCPCommandView: View {
 
     var body: some View {
         VStack(alignment: .leading) {
-            Text(command)
-                .font(.dahliaBody.monospaced())
-                .textSelection(.enabled)
-                .multilineTextAlignment(.leading)
-                .accessibilityLabel(L10n.registrationCommand(title))
+            DisclosureGroup(L10n.mcpShowCommand) {
+                Text(command)
+                    .font(.dahliaBody.monospaced())
+                    .textSelection(.enabled)
+                    .multilineTextAlignment(.leading)
+                    .accessibilityLabel(L10n.registrationCommand(title))
+            }
 
             HStack {
                 Spacer()
@@ -25,8 +27,6 @@ struct MCPCommandView: View {
                     systemImage: "info.circle",
                     action: showReRegistrationHelp
                 )
-                .labelStyle(.iconOnly)
-                .dahliaFixedSymbol()
                 .buttonStyle(.borderless)
                 .help(L10n.mcpReRegistrationHelp)
                 .popover(isPresented: $isReRegistrationHelpPresented, arrowEdge: .bottom) {
@@ -42,6 +42,7 @@ struct MCPCommandView: View {
                     systemImage: copiedCommand == command ? "checkmark" : "doc.on.doc",
                     action: copyRegistrationCommand
                 )
+                .buttonStyle(.borderedProminent)
             }
         }
     }

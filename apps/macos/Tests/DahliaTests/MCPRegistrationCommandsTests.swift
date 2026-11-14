@@ -1,3 +1,5 @@
+import DahliaMeetingAccess
+import DahliaRuntimeSupport
 import Foundation
 @testable import Dahlia
 
@@ -9,7 +11,7 @@ import Foundation
         func unscopedRegistrationIsReadOnlyAndHasNoWorkspaceArgument() throws {
             let commands = MCPRegistrationCommands(
                 helperURL: URL(filePath: "/Applications/Dahlia.app/Contents/Helpers/dahlia-mcp"),
-                workspaceID: nil,
+                scope: .all,
                 runtimeProfile: .production
             )
             #expect(commands.registrationCommand(for: .codex, writeEnabled: false)?.contains("--workspace") == false)
@@ -24,7 +26,7 @@ import Foundation
             let workspaceID = try #require(UUID(uuidString: "019F6651-CCBE-7CF2-83B0-6EF955A9FD41"))
             let commands = MCPRegistrationCommands(
                 helperURL: URL(filePath: "/Applications/Dahlia's App.app/Contents/Helpers/dahlia-mcp"),
-                workspaceID: workspaceID,
+                scope: .workspace(workspaceID),
                 runtimeProfile: .production
             )
 
@@ -46,7 +48,7 @@ import Foundation
             let workspaceID = try #require(UUID(uuidString: "019F6651-CCBE-7CF2-83B0-6EF955A9FD41"))
             let commands = MCPRegistrationCommands(
                 helperURL: URL(filePath: "/Applications/Dahlia.app/Contents/Helpers/dahlia-mcp"),
-                workspaceID: workspaceID,
+                scope: .workspace(workspaceID),
                 runtimeProfile: .production
             )
 
@@ -60,7 +62,7 @@ import Foundation
             let workspaceID = try #require(UUID(uuidString: "019F6651-CCBE-7CF2-83B0-6EF955A9FD41"))
             let commands = MCPRegistrationCommands(
                 helperURL: URL(filePath: "/Applications/Dahlia.app/Contents/Helpers/dahlia-mcp"),
-                workspaceID: workspaceID,
+                scope: .workspace(workspaceID),
                 runtimeProfile: .production
             )
 
@@ -84,7 +86,7 @@ import Foundation
             let workspaceID = try #require(UUID(uuidString: "019F6651-CCBE-7CF2-83B0-6EF955A9FD41"))
             let commands = MCPRegistrationCommands(
                 helperURL: URL(filePath: "/Applications/Dahlia Dev.app/Contents/Helpers/dahlia-mcp"),
-                workspaceID: workspaceID,
+                scope: .workspace(workspaceID),
                 runtimeProfile: .development
             )
 
@@ -111,6 +113,39 @@ import Foundation
                 "--workspace-id",
                 "ws_01kxk53k5yfks87c3ez5atkza1",
             ])
+        }
+
+        @Test
+        func accountScopeMatchesCLIAndJSONForEveryClientAndRuntime() throws {
+            let id = UUID.v7()
+            for account in [WorkspaceAccountChoice.local, .dahlia(id), .databricks(id)] {
+                for profile in [DahliaRuntimeProfile.production, .development] {
+                    for writeEnabled in [false, true] {
+                        let commands = MCPRegistrationCommands(
+                            helperURL: URL(filePath: "/Applications/Dahlia.app/Contents/Helpers/dahlia-mcp"),
+                            scope: .account(account),
+                            runtimeProfile: profile
+                        )
+                        let value = account == .local ? "local" : id.uuidString
+                        for client in [MCPClient.codex, .claude] {
+                            let command = try #require(commands.registrationCommand(for: client, writeEnabled: writeEnabled))
+                            #expect(command.contains(" --account '\(value)'"))
+                            #expect(!command.contains("--workspace"))
+                            #expect(command.hasSuffix(" --write") == writeEnabled)
+                        }
+                        let sample = try JSONDecoder().decode(
+                            MCPJSONSample.self,
+                            from: Data(#require(commands.mcpJSONSample(writeEnabled: writeEnabled)).utf8)
+                        )
+                        let server = try #require(sample.mcpServers["dahlia"])
+                        let helperArgs = profile == .development ? Array(server.args.dropFirst(2)) : server.args
+                        let parsed = try MCPCommandLineOptions(arguments: helperArgs)
+                        #expect(parsed.accountScope == (account == .local ? .local : .account(id)))
+                        #expect(parsed.workspaceID == nil)
+                        #expect(parsed.allowsWrites == writeEnabled)
+                    }
+                }
+            }
         }
 
         private struct MCPJSONSample: Decodable {

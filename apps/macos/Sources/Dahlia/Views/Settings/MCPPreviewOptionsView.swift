@@ -1,57 +1,37 @@
 import SwiftUI
 
 struct MCPPreviewOptionsView: View {
-    @Binding var selectedClient: MCPClient
+    @Binding var selectedAccount: WorkspaceAccountChoice?
     @Binding var selectedWorkspaceID: UUID?
-    @Binding var isWriteEnabled: Bool
-
+    let accounts: [WorkspaceAccountChoice]
     let availableWorkspaces: [WorkspaceRecord]
+    let accountName: (WorkspaceAccountChoice) -> String
 
     var body: some View {
-        HStack(alignment: .top) {
-            VStack(alignment: .leading) {
-                Text(L10n.mcpClient)
-                    .font(.dahliaBody)
-                    .foregroundStyle(DahliaDesign.secondaryTextColor)
+        Picker(L10n.account, selection: $selectedAccount) {
+            Text(L10n.mcpAllAccounts).font(.dahliaBody).tag(nil as WorkspaceAccountChoice?)
+            ForEach(accounts, id: \.self) { account in
+                Text(accountName(account)).font(.dahliaBody).tag(Optional(account))
+            }
+        }
+        .pickerStyle(.menu)
+        .onChange(of: selectedAccount) {
+            selectedWorkspaceID = nil
+        }
 
-                Picker(L10n.mcpClient, selection: $selectedClient) {
-                    ForEach(MCPClient.allCases) { client in
-                        Text(client.displayName).font(.dahliaBody).tag(client)
-                    }
+        if let selectedAccount {
+            Picker(L10n.workspace, selection: $selectedWorkspaceID) {
+                Text(L10n.mcpAccountWorkspaces).font(.dahliaBody).tag(nil as UUID?)
+                ForEach(availableWorkspaces) { workspace in
+                    Text(MCPWorkspaceDisplayName.resolve(
+                        for: workspace, among: availableWorkspaces, accountName: accountName(selectedAccount)
+                    ))
+                    .font(.dahliaBody)
+                    .tag(Optional(workspace.id))
                 }
-                .labelsHidden()
-                .pickerStyle(.menu)
             }
-            .frame(maxWidth: .infinity, alignment: .leading)
-
-            VStack(alignment: .leading) {
-                Text(L10n.workspace)
-                    .font(.dahliaBody)
-                    .foregroundStyle(DahliaDesign.secondaryTextColor)
-
-                Picker(L10n.workspace, selection: $selectedWorkspaceID) {
-                    Text(L10n.mcpAllWorkspaces).font(.dahliaBody).tag(nil as UUID?)
-                    ForEach(availableWorkspaces) { workspace in
-                        Text(MCPWorkspaceDisplayName.resolve(for: workspace, among: availableWorkspaces))
-                            .font(.dahliaBody)
-                            .tag(Optional(workspace.id))
-                    }
-                }
-                .labelsHidden()
-                .pickerStyle(.menu)
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
-
-            VStack(alignment: .leading) {
-                Text(L10n.mcpAllowWriteAccess)
-                    .font(.dahliaBody)
-                    .foregroundStyle(DahliaDesign.secondaryTextColor)
-
-                Toggle(L10n.mcpAllowWriteAccess, isOn: $isWriteEnabled)
-                    .labelsHidden()
-                    .toggleStyle(.switch)
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
+            .pickerStyle(.menu)
+            .id(selectedAccount)
         }
     }
 }

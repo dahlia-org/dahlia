@@ -1,6 +1,6 @@
 enum MCPClient: String, CaseIterable, Identifiable {
-    case codex
     case claude
+    case codex
     case mcpJSON
 
     var id: String { rawValue }
@@ -12,7 +12,7 @@ enum MCPClient: String, CaseIterable, Identifiable {
         case .claude:
             L10n.claudeCode
         case .mcpJSON:
-            L10n.mcpJSON
+            L10n.mcpOtherApps
         }
     }
 

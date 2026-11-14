@@ -1747,6 +1747,25 @@ enum L10n { // swiftlint:disable:this type_body_length
     static var codexCLI: String { String(localized: "Codex CLI", bundle: bundle) }
     static var claudeCode: String { String(localized: "Claude Code", bundle: bundle) }
     static var mcpPreview: String { String(localized: "Command Preview", bundle: bundle) }
+    static var mcpShowCommand: String { String(localized: "mcp.showCommand", bundle: bundle) }
+    static var mcpShowJSON: String { String(localized: "mcp.showJSON", bundle: bundle) }
+    static var mcpOtherApps: String { String(localized: "mcp.otherApps", bundle: bundle) }
+    static var mcpAllAccounts: String { String(localized: "mcp.allAccounts", bundle: bundle) }
+    static var mcpAccountWorkspaces: String { String(localized: "mcp.accountWorkspaces", bundle: bundle) }
+    static var mcpChooseApp: String { String(localized: "mcp.chooseApp", bundle: bundle) }
+    static var mcpChooseScope: String { String(localized: "mcp.chooseScope", bundle: bundle) }
+    static var mcpPermissions: String { String(localized: "mcp.permissions", bundle: bundle) }
+    static var mcpReadOnly: String { String(localized: "mcp.readOnly", bundle: bundle) }
+    static var mcpReadWrite: String { String(localized: "mcp.readWrite", bundle: bundle) }
+    static var mcpWriteExplanation: String { String(localized: "mcp.writeExplanation", bundle: bundle) }
+    static var mcpCommandInstructions: String { String(localized: "mcp.commandInstructions", bundle: bundle) }
+    static var mcpJSONInstructions: String { String(localized: "mcp.jsonInstructions", bundle: bundle) }
+    static var mcpNoWorkspaces: String { String(localized: "mcp.noWorkspaces", bundle: bundle) }
+    static var mcpScopeUnavailable: String { String(localized: "mcp.scopeUnavailable", bundle: bundle) }
+    static func mcpIncludedWorkspaces(_ count: Int) -> String {
+        String(format: String(localized: "mcp.includedWorkspaces", bundle: bundle), count)
+    }
+
     static var mcpAllWorkspaces: String { String(localized: "mcp.allWorkspaces", bundle: bundle) }
     static var mcpClient: String { String(localized: "Client", bundle: bundle) }
     static var mcpAllowWriteAccess: String { String(localized: "Allow Write Access", bundle: bundle) }

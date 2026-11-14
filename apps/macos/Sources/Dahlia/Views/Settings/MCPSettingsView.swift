@@ -4,37 +4,91 @@ import SwiftUI
 struct MCPSettingsView: View {
     let workspaces: [WorkspaceRecord]
     let currentWorkspace: WorkspaceRecord?
+    let accountConnections: [DahliaAccountConnection]
+    let databricksAccounts: [DatabricksConnection]
+    private let helperURL: URL?
 
     @State private var selectedClient = MCPClient.codex
+    @State private var selectedAccount: WorkspaceAccountChoice?
     @State private var selectedWorkspaceID: UUID?
     @State private var isWriteEnabled = false
     @State private var copiedContent: String?
     @State private var copyFeedbackTask: Task<Void, Never>?
 
-    init(workspaces: [WorkspaceRecord], currentWorkspace: WorkspaceRecord?) {
+    init(
+        workspaces: [WorkspaceRecord],
+        currentWorkspace: WorkspaceRecord?,
+        accountConnections: [DahliaAccountConnection],
+        databricksAccounts: [DatabricksConnection],
+        helperURL: URL? = try? DahliaMCPBundle.executableURL()
+    ) {
         self.workspaces = workspaces
         self.currentWorkspace = currentWorkspace
-        _selectedWorkspaceID = State(initialValue: nil)
+        self.accountConnections = accountConnections
+        self.databricksAccounts = databricksAccounts
+        self.helperURL = helperURL
     }
 
     var body: some View {
         Form {
             Section {
-                MCPPreviewOptionsView(
-                    selectedClient: $selectedClient,
-                    selectedWorkspaceID: $selectedWorkspaceID,
-                    isWriteEnabled: $isWriteEnabled,
-                    availableWorkspaces: availableWorkspaces
-                )
+                Picker(L10n.mcpClient, selection: $selectedClient) {
+                    ForEach(MCPClient.allCases) { client in
+                        Text(client.displayName).font(.dahliaBody).tag(client)
+                    }
+                }
+                .pickerStyle(.menu)
             } header: {
-                Text(L10n.mcpPreview)
-                    .font(.dahliaSectionHeader)
+                Text(L10n.mcpChooseApp).font(.dahliaSectionHeader)
+            }
+
+            Section {
+                MCPPreviewOptionsView(
+                    selectedAccount: $selectedAccount,
+                    selectedWorkspaceID: $selectedWorkspaceID,
+                    accounts: accounts,
+                    availableWorkspaces: accountWorkspaces,
+                    accountName: accountName
+                )
+                DisclosureGroup(L10n.mcpIncludedWorkspaces(visibleWorkspaces.count)) {
+                    ForEach(accounts, id: \.self) { account in
+                        let included = visibleWorkspaces.filter { WorkspaceAccountChoice($0) == account }
+                        ForEach(included) { workspace in
+                            Text(MCPWorkspaceDisplayName.resolve(
+                                for: workspace, among: included, accountName: accountName(account)
+                            ))
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .textSelection(.enabled)
+                        }
+                    }
+                    if visibleWorkspaces.isEmpty {
+                        Text(L10n.mcpNoWorkspaces).foregroundStyle(.secondary)
+                    }
+                }
+            } header: {
+                Text(L10n.mcpChooseScope).font(.dahliaSectionHeader)
             } footer: {
                 Text(L10n.mcpFooter)
             }
 
-            if let commands = commands(for: selectedWorkspace) {
+            Section {
+                Toggle(L10n.mcpAllowWriteAccess, isOn: $isWriteEnabled)
+                    .toggleStyle(.switch)
+                Label(
+                    isWriteEnabled ? L10n.mcpReadWrite : L10n.mcpReadOnly,
+                    systemImage: isWriteEnabled ? "pencil" : "eye"
+                )
+                .foregroundStyle(.secondary)
+            } header: {
+                Text(L10n.mcpPermissions).font(.dahliaSectionHeader)
+            } footer: {
+                Text(L10n.mcpWriteExplanation)
+            }
+
+            if let commands {
                 Section {
+                    Text(selectedClient == .mcpJSON ? L10n.mcpJSONInstructions : L10n.mcpCommandInstructions)
+                        .foregroundStyle(.secondary)
                     switch selectedClient {
                     case .codex, .claude:
                         if let command = commands.registrationCommand(for: selectedClient, writeEnabled: isWriteEnabled),
@@ -62,7 +116,7 @@ struct MCPSettingsView: View {
                 }
             } else {
                 Section {
-                    Text(L10n.mcpHelperUnavailable)
+                    Text(scopeIsUnavailable ? L10n.mcpScopeUnavailable : L10n.mcpHelperUnavailable)
                         .foregroundStyle(DahliaDesign.secondaryTextColor)
                 } header: {
                     Text(L10n.mcpConfigurationOutput)
@@ -72,14 +126,8 @@ struct MCPSettingsView: View {
 
         }
         .formStyle(.grouped)
+        .disclosureGroupStyle(MCPDisclosureGroupStyle())
         .font(.dahliaBody)
-        .onAppear(perform: reconcileSelectedWorkspace)
-        .onChange(of: workspaces) {
-            reconcileSelectedWorkspace()
-        }
-        .onChange(of: currentWorkspace?.id) {
-            reconcileSelectedWorkspace()
-        }
         .onDisappear {
             copyFeedbackTask?.cancel()
         }
@@ -93,20 +141,41 @@ struct MCPSettingsView: View {
         return [currentWorkspace] + workspaces
     }
 
-    private var selectedWorkspace: WorkspaceRecord? {
-        availableWorkspaces.first { $0.id == selectedWorkspaceID }
+    private var accounts: [WorkspaceAccountChoice] {
+        var result: [WorkspaceAccountChoice] = [.local]
+        result += databricksAccounts.map { .databricks($0.id) }
+        result += accountConnections.map { .dahlia($0.id) }
+        for workspace in availableWorkspaces {
+            let account = WorkspaceAccountChoice(workspace)
+            if !result.contains(account) { result.append(account) }
+        }
+        return result
     }
 
-    private func commands(for workspace: WorkspaceRecord?) -> MCPRegistrationCommands? {
-        guard let helperURL = try? DahliaMCPBundle.executableURL() else { return nil }
-        return MCPRegistrationCommands(
-            helperURL: helperURL,
-            workspaceID: workspace?.id
-        )
+    private func accountName(_ account: WorkspaceAccountChoice) -> String {
+        account.displayName(connections: accountConnections, databricksAccounts: databricksAccounts)
     }
 
-    private func reconcileSelectedWorkspace() {
-        if selectedWorkspaceID != nil, selectedWorkspace == nil { selectedWorkspaceID = nil }
+    private var accountWorkspaces: [WorkspaceRecord] {
+        availableWorkspaces.filter { WorkspaceAccountChoice($0) == selectedAccount }
+            .sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
+    }
+
+    private var visibleWorkspaces: [WorkspaceRecord] {
+        let workspaces = selectedAccount == nil ? availableWorkspaces : accountWorkspaces
+        return selectedWorkspaceID.map { id in workspaces.filter { $0.id == id } } ?? workspaces
+    }
+
+    private var scopeIsUnavailable: Bool {
+        !(selectedAccount.map { accounts.contains($0) } ?? true)
+            || MCPAccessScope.resolve(account: selectedAccount, workspaceID: selectedWorkspaceID, workspaces: availableWorkspaces) == nil
+    }
+
+    private var commands: MCPRegistrationCommands? {
+        guard selectedAccount.map({ accounts.contains($0) }) ?? true,
+              let scope = MCPAccessScope.resolve(account: selectedAccount, workspaceID: selectedWorkspaceID, workspaces: availableWorkspaces),
+              let helperURL else { return nil }
+        return MCPRegistrationCommands(helperURL: helperURL, scope: scope)
     }
 
     private func copy(_ command: String) {

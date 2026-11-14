@@ -7,10 +7,12 @@ struct MCPJSONSampleView: View {
 
     var body: some View {
         VStack(alignment: .leading) {
-            Text(sample)
-                .font(.dahliaBody.monospaced())
-                .textSelection(.enabled)
-                .multilineTextAlignment(.leading)
+            DisclosureGroup(L10n.mcpShowJSON) {
+                Text(sample)
+                    .font(.dahliaBody.monospaced())
+                    .textSelection(.enabled)
+                    .multilineTextAlignment(.leading)
+            }
 
             HStack {
                 Spacer()
@@ -19,6 +21,7 @@ struct MCPJSONSampleView: View {
                     systemImage: isCopied ? "checkmark" : "doc.on.doc",
                     action: copy
                 )
+                .buttonStyle(.borderedProminent)
             }
         }
     }
