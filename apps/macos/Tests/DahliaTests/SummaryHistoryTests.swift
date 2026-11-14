@@ -286,9 +286,15 @@ import GRDB
             let history = SummaryHistoryModel()
             await history.load(meetingID: meetingID, dbQueue: queue)
             #expect(history.error == nil)
+            #expect(history.isUnavailable)
             #expect(!history.isLoading)
             await history.load(meetingID: meetingID, dbQueue: queue, more: true)
             #expect(history.error != nil)
+            // Retrying the first page after the source recovers clears the unavailable state.
+            try await queue.write { try $0.execute(sql: "ALTER TABLE unavailable_versions RENAME TO summary_versions") }
+            await history.load(meetingID: meetingID, dbQueue: queue)
+            #expect(!history.isUnavailable)
+            #expect(history.error == nil)
         }
 
         @Test

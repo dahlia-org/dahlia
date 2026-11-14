@@ -66,6 +66,13 @@ struct SummaryTabContentView: View {
                             .dahliaHoverHelp(label: L10n.summaryPromoteVersion)
                         }
                     }
+                    if history.isUnavailable {
+                        Button(L10n.retry, systemImage: "arrow.clockwise") { reload += 1 }
+                            .labelStyle(.iconOnly)
+                            .buttonStyle(.borderless)
+                            .disabled(history.isLoading)
+                            .dahliaHoverHelp(label: L10n.retry)
+                    }
                     if history.nextCursor != nil {
                         Button(L10n.loadMore) { loadMore += 1 }
                             .disabled(history.isLoading || history.isPromoting)
@@ -106,7 +113,11 @@ struct SummaryTabContentView: View {
         .task(id: document) {
             if hasSummary, showsHistory, let meetingID, let dbQueue { await history.load(meetingID: meetingID, dbQueue: dbQueue) }
         }
-        .onChange(of: showsHistory) { history.selectedVersion = nil }
+        .onChange(of: showsHistory) {
+            history.selectedVersion = nil
+            // Removing the folder changes neither the document nor the meeting, so the load task would not rerun.
+            if showsHistory { reload += 1 }
+        }
         .task(id: history.selectedVersion) {
             if let meetingID, let dbQueue { await history.select(meetingID: meetingID, dbQueue: dbQueue) }
         }

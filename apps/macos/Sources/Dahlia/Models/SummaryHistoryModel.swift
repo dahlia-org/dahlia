@@ -8,6 +8,8 @@ final class SummaryHistoryModel {
     private(set) var versions: [SummaryVersion] = []
     private(set) var nextCursor: String?
     private(set) var currentVersion: Int?
+    /// The unrequested first page failed. The view offers a retry without reporting an error over the summary.
+    private(set) var isUnavailable = false
     private var loadedDocument: SummaryDocument?
     private var loadedVersion: Int?
     var document: SummaryDocument? { loadedVersion == selectedVersion ? loadedDocument : nil }
@@ -26,6 +28,7 @@ final class SummaryHistoryModel {
         let generation = loadGeneration
         isLoading = true
         pageError = nil
+        if !more { isUnavailable = false }
         defer { if generation == loadGeneration { isLoading = false } }
         do {
             let page = try await service.page(meetingID: meetingID, dbQueue: dbQueue, before: more ? nextCursor : nil)
@@ -36,8 +39,9 @@ final class SummaryHistoryModel {
             if !more { currentVersion = page.currentVersion ?? page.items.first?.version }
         } catch is CancellationError {
         } catch {
+            guard !Task.isCancelled, generation == loadGeneration else { return }
             // The first page loads unasked; its failure (an offline Server Account) must not sit above a readable summary.
-            if more, !Task.isCancelled, generation == loadGeneration { self.pageError = error.localizedDescription }
+            if more { self.pageError = error.localizedDescription } else { isUnavailable = true }
         }
     }
 
