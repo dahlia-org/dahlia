@@ -379,6 +379,9 @@ final class GoogleCalendarStore: ObservableObject {
     }
 
     private func handle(_ error: Error) {
+        if case GoogleCalendarAPIError.proxyGoogleAuthenticationRequired = error {
+            clearRuntimeState(clearSelection: false)
+        }
         // A Google credential revoked on the Databricks connection page surfaces on whichever proxy request runs next;
         // it ends the session rather than failing it, so Connect starts the Databricks sign-in again.
         if let error = error as? GoogleCalendarAPIError, DatabricksProxyGoogleSignInProvider.isNotAuthorized(error) {
