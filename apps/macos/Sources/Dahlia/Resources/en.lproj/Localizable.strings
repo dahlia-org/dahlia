@@ -1232,7 +1232,7 @@
 "A Project cannot be moved inside itself or one of its descendants." = "A Project cannot be moved inside itself or one of its descendants.";
 "Projects support one level of subprojects. Choose a root Project as the parent." = "Projects support one level of subprojects. Choose a root Project as the parent.";
 "Another Project operation is already running for this Workspace." = "Another Project operation is already running for this Workspace.";
-"mcp.scopeFooter" = "Agents can read meeting content and confirmed transcripts from the chosen workspace scope. All added workspaces includes local and Server workspaces on this Mac. Write access allows edits to Projects, meeting assignments, and stored summaries.";
+"mcp.scopeFooter" = "AI can read meeting content and finalized transcripts in the selected scope. Only workspaces added to this Mac are included. Selecting an entire account also includes workspaces added to that account later.";
 "Copy Command" = "Copy Command";
 "Copy meeting_id" = "Copy meeting_id";
 "Copies meeting_id to the clipboard" = "Copies meeting_id to the clipboard";
@@ -1241,13 +1241,13 @@
 "Codex CLI" = "Codex CLI";
 "Claude Code" = "Claude Code";
 "Command Preview" = "Command Preview";
-"Client" = "Client";
-"Allow Write Access" = "Allow Write Access";
-"Configuration" = "Configuration";
+"Client" = "App";
+"Allow Write Access" = "Allow AI to edit";
+"Configuration" = "4. Connect the app";
 "mcp.json" = "mcp.json";
 "Copy mcp.json" = "Copy mcp.json";
-"Re-register Dahlia" = "Re-register Dahlia";
-"If Dahlia is already registered, run this remove command before the registration command." = "If Dahlia is already registered, run this remove command before the registration command.";
+"Re-register Dahlia" = "Change or remove connection";
+"If Dahlia is already registered, run this remove command before the registration command." = "To disconnect, run this command in Terminal and restart the connected app. To change access or permissions, remove the connection first, then run the new registration command.";
 "The MCP helper is not available in this app build." = "The MCP helper is not available in this app build.";
 "%@ registration command" = "%@ registration command";
 "Turn on meeting notifications to choose notification conditions." = "Turn on meeting notifications to choose notification conditions.";
@@ -1766,7 +1766,7 @@
 "settings.group.features" = "Features";
 "Dahlia MCP" = "Dahlia MCP";
 "settings.meetings.intro" = "Configure transcription, live subtitles, screenshots, and meeting links for the selected account on this Mac.";
-"settings.dahliaMCP.intro" = "Set up the MCP server that lets AI agents such as Claude Code and Codex read your Dahlia meetings.";
+"settings.dahliaMCP.intro" = "Use Dahlia meetings from an external AI app. Choose what it can access and do, then copy the connection settings.";
 "settings.agents.unityGatewayMCPs" = "Unity AI Gateway MCPs";
 "settings.agents.models" = "Models";
 "settings.agents.modelDetails" = "Model Details";
@@ -2031,3 +2031,20 @@
 "Search NEologd catalog unavailable" = "Could not refresh versions. Showing saved releases and downloaded dictionaries. Try again.";
 "Search NEologd unsupported" = "Unsupported, downloaded";
 "Search NEologd upgrade required" = "The active older dictionary is incompatible with this version. Select built-in IPADIC or a supported release, then rebuild full-text search.";
+
+"mcp.allAccounts" = "All accounts";
+"mcp.accountWorkspaces" = "All in this account";
+"mcp.chooseApp" = "1. Choose an app";
+"mcp.chooseScope" = "2. Choose what AI can access";
+"mcp.permissions" = "3. Choose permissions";
+"mcp.readOnly" = "Read only";
+"mcp.readWrite" = "Read and edit";
+"mcp.writeExplanation" = "Editing lets AI change projects, meeting assignments, and saved summaries.";
+"mcp.commandInstructions" = "Copy the command, paste it into Terminal, and run it. Then restart the app you are connecting. Register again after changing access or permissions.";
+"mcp.jsonInstructions" = "Add this configuration to the app’s MCP settings file. Replace any existing Dahlia entry, then restart the app.";
+"mcp.includedWorkspaces" = "Included workspaces (%lld)";
+"mcp.noWorkspaces" = "No workspaces have been added to this Mac for this selection.";
+"mcp.scopeUnavailable" = "The selected account or workspace is no longer available. Choose the access scope again.";
+"mcp.otherApps" = "Other apps (JSON)";
+"mcp.showCommand" = "Show connection command";
+"mcp.showJSON" = "Show configuration";

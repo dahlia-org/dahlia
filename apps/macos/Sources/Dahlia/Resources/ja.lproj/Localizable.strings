@@ -1232,7 +1232,7 @@
 "A Project cannot be moved inside itself or one of its descendants." = "Project を自分自身または子孫の配下へ移動できません。";
 "Projects support one level of subprojects. Choose a root Project as the parent." = "サブプロジェクトは1階層までです。親にはルート Project を選択してください。";
 "Another Project operation is already running for this Workspace." = "この Workspace では別の Project 操作を実行中です。";
-"mcp.scopeFooter" = "Agent は指定した範囲のミーティング本文と確定した文字起こしを読み取れます。「すべての追加済みワークスペース」は、この Mac のローカル／Server ワークスペースが対象です。書き込みを許可すると、Project、ミーティング所属、保存済み要約を編集できます。";
+"mcp.scopeFooter" = "選んだ範囲のミーティング本文と確定した文字起こしを AI が読み取れます。対象はこの Mac に追加済みのワークスペースです。アカウント全体を選ぶと、今後そのアカウントに追加するワークスペースも含まれます。";
 "Copy Command" = "コマンドをコピー";
 "Copy meeting_id" = "meeting_idをコピー";
 "Copies meeting_id to the clipboard" = "meeting_idをクリップボードにコピーします";
@@ -1241,13 +1241,13 @@
 "Codex CLI" = "Codex CLI";
 "Claude Code" = "Claude Code";
 "Command Preview" = "コマンドの表示条件";
-"Client" = "クライアント";
-"Allow Write Access" = "書き込みを許可";
-"Configuration" = "設定内容";
+"Client" = "利用するアプリ";
+"Allow Write Access" = "AI に編集を許可";
+"Configuration" = "4. アプリに接続する";
 "mcp.json" = "mcp.json";
 "Copy mcp.json" = "mcp.json をコピー";
-"Re-register Dahlia" = "Dahlia を再登録";
-"If Dahlia is already registered, run this remove command before the registration command." = "Dahlia がすでに登録されている場合は、登録コマンドの前にこの削除コマンドを実行してください。";
+"Re-register Dahlia" = "接続の変更・解除";
+"If Dahlia is already registered, run this remove command before the registration command." = "接続を解除するには、ターミナルで次のコマンドを実行し、接続先のアプリを再起動してください。範囲や権限を変更する場合は、解除した後に新しい登録コマンドを実行してください。";
 "The MCP helper is not available in this app build." = "このアプリビルドではMCPヘルパーを利用できません。";
 "%@ registration command" = "%@ 登録コマンド";
 "Turn on meeting notifications to choose notification conditions." = "通知条件を選ぶには、ミーティング通知をオンにしてください。";
@@ -1766,7 +1766,7 @@
 "settings.group.features" = "機能";
 "Dahlia MCP" = "Dahlia MCP";
 "settings.meetings.intro" = "文字起こし・ライブ字幕・スクリーンショット・会議リンクの設定です。選択中のアカウントごとに、このMacに保存します。";
-"settings.dahliaMCP.intro" = "Claude Code や Codex などの AI エージェントに Dahlia のミーティングを読み取らせる MCP サーバーの設定方法です。";
+"settings.dahliaMCP.intro" = "外部の AI アプリから Dahlia のミーティングを利用できます。公開する範囲と権限を選び、接続用の設定をコピーしてください。";
 "settings.agents.unityGatewayMCPs" = "Unity AI Gateway の MCP";
 "settings.agents.models" = "モデル";
 "settings.agents.modelDetails" = "モデルの詳細";
@@ -2031,3 +2031,20 @@
 "Search NEologd catalog unavailable" = "バージョン一覧を更新できません。保存済みの候補と取得済み辞書を表示しています。再試行してください。";
 "Search NEologd unsupported" = "非対応・取得済み";
 "Search NEologd upgrade required" = "適用中の旧版辞書は、このバージョンでは利用できません。内蔵 IPADIC または対応版を選び、全文検索を再構築してください。";
+
+"mcp.allAccounts" = "すべてのアカウント";
+"mcp.accountWorkspaces" = "このアカウントのすべて";
+"mcp.chooseApp" = "1. 接続するアプリ";
+"mcp.chooseScope" = "2. AI に公開する範囲";
+"mcp.permissions" = "3. 操作の権限";
+"mcp.readOnly" = "読み取りのみ";
+"mcp.readWrite" = "読み取りと編集";
+"mcp.writeExplanation" = "編集を許可すると、AI はプロジェクト、ミーティングの所属、保存済みの要約を変更できます。";
+"mcp.commandInstructions" = "「コマンドをコピー」を押し、ターミナルに貼り付けて実行してください。その後、接続先のアプリを再起動してください。範囲や権限を変更した場合も再登録が必要です。";
+"mcp.jsonInstructions" = "接続先のアプリの MCP 設定ファイルに、この内容を追加してください。既存の Dahlia 設定がある場合は置き換え、アプリを再起動してください。";
+"mcp.includedWorkspaces" = "対象のワークスペース（%lld 件）";
+"mcp.noWorkspaces" = "この Mac に追加済みのワークスペースはありません。";
+"mcp.scopeUnavailable" = "選択したアカウントまたはワークスペースが見つかりません。公開する範囲を選び直してください。";
+"mcp.otherApps" = "その他のアプリ（JSON）";
+"mcp.showCommand" = "接続コマンドを表示";
+"mcp.showJSON" = "設定内容を表示";

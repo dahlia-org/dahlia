@@ -23,6 +23,17 @@ import Foundation
             #expect(MCPWorkspaceDisplayName.resolve(for: workspace, among: [workspace]) == "Customers")
         }
 
+        @Test
+        func workspaceAndAccountNamesAppearOnOneLine() {
+            let workspace = makeWorkspace(id: .v7(), path: "/Users/example/Default")
+            #expect(MCPWorkspaceDisplayName.resolve(for: workspace, among: [workspace], accountName: "Local Account") == "Default - Local Account")
+        }
+
+        @Test
+        func clientsAreOrderedClaudeCodexThenJSON() {
+            #expect(MCPClient.allCases == [.claude, .codex, .mcpJSON])
+        }
+
         private func makeWorkspace(id: UUID, path: String) -> WorkspaceRecord {
             WorkspaceRecord(
                 id: id,

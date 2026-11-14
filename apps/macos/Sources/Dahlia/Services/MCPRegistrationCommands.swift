@@ -5,19 +5,17 @@ struct MCPRegistrationCommands: Equatable {
     private let helper: String
     private let helperPath: String
     private let runtimeProfile: DahliaRuntimeProfile
-    private let workspace: String?
-    private let workspaceID: String?
+    private let scope: MCPAccessScope
 
     init(
         helperURL: URL,
-        workspaceID: UUID?,
+        scope: MCPAccessScope,
         runtimeProfile: DahliaRuntimeProfile = DahliaApplicationSupport.profile()
     ) {
         helperPath = helperURL.path
         helper = Self.shellQuote(helperURL.path)
         self.runtimeProfile = runtimeProfile
-        self.workspaceID = workspaceID.map { TypeID.encode($0, as: .workspace) }
-        workspace = workspaceID.map { Self.shellQuote(TypeID.encode($0, as: .workspace)) }
+        self.scope = scope
     }
 
     func registrationCommand(for client: MCPClient, writeEnabled: Bool) -> String? {
@@ -26,7 +24,8 @@ struct MCPRegistrationCommands: Equatable {
         let command = runtimeProfile == .development
             ? "/usr/bin/env \(DahliaApplicationSupport.profileEnvironmentKey)=development \(helper)"
             : helper
-        return "\(prefix) \(command)\(workspace.map { " --workspace-id \($0)" } ?? "")\(writeArgument)"
+        let scopeArguments = scope.arguments.map { $0.hasPrefix("--") ? $0 : Self.shellQuote($0) }.joined(separator: " ")
+        return "\(prefix) \(command)\(scopeArguments.isEmpty ? "" : " " + scopeArguments)\(writeArgument)"
     }
 
     func removalCommand(for client: MCPClient) -> String? {
@@ -34,7 +33,7 @@ struct MCPRegistrationCommands: Equatable {
     }
 
     func mcpJSONSample(writeEnabled: Bool) -> String? {
-        var args = workspaceID.map { ["--workspace-id", $0] } ?? []
+        var args = scope.arguments
         if writeEnabled {
             args.append("--write")
         }
