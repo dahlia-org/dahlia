@@ -1,4 +1,5 @@
 #if canImport(Testing)
+    import DahliaRuntimeSupport
     import Foundation
     import GRDB
     import Testing
@@ -78,6 +79,59 @@
             }
             #expect(anotherAccount.projects.isEmpty)
             #expect(anotherAccount.projectID == nil)
+        }
+
+        @Test(arguments: [false, true])
+        func duplicateProjectPathsIdentifyTheirWorkspaceInDraftAndSavedLabels(duplicateWorkspaceNames: Bool) async throws {
+            let database = try AppDatabaseManager(path: ":memory:")
+            let first = WorkspaceRecord(id: .v7(), name: "First", createdAt: .now, lastOpenedAt: .now)
+            let second = WorkspaceRecord(id: .v7(), name: duplicateWorkspaceNames ? "First" : "Second", createdAt: .now, lastOpenedAt: .now)
+            let firstRoot = project(workspaceID: first.id, name: "Work")
+            let secondRoot = project(workspaceID: second.id, name: "Work")
+            var firstChild = project(workspaceID: first.id, name: "Notes")
+            firstChild.parentProjectId = firstRoot.id
+            firstChild.projectType = nil
+            var secondChild = project(workspaceID: second.id, name: "Notes")
+            secondChild.parentProjectId = secondRoot.id
+            secondChild.projectType = nil
+            let unique = project(workspaceID: first.id, name: "Only")
+            let projects = [firstRoot, secondRoot, firstChild, secondChild, unique]
+            try await database.dbQueue.write { db in
+                try first.insert(db)
+                try second.insert(db)
+                for project in projects {
+                    try project.insert(db)
+                }
+            }
+            let snapshot = try await database.dbQueue.read { db in
+                try CodexChatScopeSnapshot.fetch(accountID: "local", threadID: nil, context: nil, in: db)
+            }
+            let names = snapshot.projects.map { snapshot.displayName(for: $0) }
+            #expect(Set(names).count == projects.count)
+            #expect(snapshot.displayName(for: unique) == "Only")
+            let qualifier = duplicateWorkspaceNames
+                ? "First · \(TypeID.encode(second.id, as: .workspace))"
+                : "Second"
+            let selected = try #require(snapshot.projects.first { $0.id == secondChild.id })
+            #expect(snapshot.displayName(for: selected) == "Work/Notes (\(qualifier))")
+
+            let record = thread()
+            try ChatThreadStore(dbQueue: database.dbQueue).createThread(
+                record, initialContext: .project(id: selected.id, name: selected.name, description: "")
+            )
+            let saved = try await database.dbQueue.read { db in
+                try CodexChatScopeSnapshot.fetch(accountID: "local", threadID: record.id, context: nil, in: db)
+            }
+            #expect(saved.projectID == selected.id)
+            #expect(saved.displayName(for: selected) == snapshot.displayName(for: selected))
+            try await database.dbQueue.write { db in
+                try db.execute(sql: "UPDATE workspaces SET name = 'Renamed' WHERE id = ?", arguments: [second.id])
+            }
+            let renamed = try await database.dbQueue.read { db in
+                try CodexChatScopeSnapshot.fetch(accountID: "local", threadID: record.id, context: nil, in: db)
+            }
+            #expect(renamed != saved)
+            #expect(renamed.displayName(for: selected) == "Work/Notes (Renamed)")
         }
 
         @Test(arguments: [false, true])

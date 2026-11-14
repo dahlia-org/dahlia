@@ -1,9 +1,15 @@
+import DahliaRuntimeSupport
 import Foundation
 import GRDB
 
 struct CodexChatScopeSnapshot: Equatable, Sendable {
     let projects: [ProjectRecord]
     let projectID: UUID?
+    var projectDisplayNames: [UUID: String] = [:]
+
+    func displayName(for project: ProjectRecord) -> String {
+        projectDisplayNames[project.id] ?? project.path
+    }
 
     static func fetch(
         accountID: String,
@@ -25,6 +31,21 @@ struct CodexChatScopeSnapshot: Equatable, Sendable {
         }
         let workspaces = try WorkspaceRecord.fetchAll(db).filter { CodexRuntimeProvider(workspace: $0).accountKey == accountID }
         let projects = try workspaces.flatMap { try ProjectRecord.fetchResolvedAll(workspaceId: $0.id, in: db) }
-        return Self(projects: projects, projectID: projects.contains { $0.id == projectID } ? projectID : nil)
+        let projectsByPath = Dictionary(grouping: projects, by: \.path)
+        let workspacesByName = Dictionary(grouping: workspaces, by: \.name)
+        let workspaceNames = Dictionary(uniqueKeysWithValues: workspaces.map { ($0.id, $0.name) })
+        let displayNames = Dictionary(uniqueKeysWithValues: projects.map { project in
+            guard projectsByPath[project.path, default: []].count > 1,
+                  let workspaceName = workspaceNames[project.workspaceId] else { return (project.id, project.path) }
+            let qualifier = workspacesByName[workspaceName, default: []].count > 1
+                ? "\(workspaceName) · \(TypeID.encode(project.workspaceId, as: .workspace))"
+                : workspaceName
+            return (project.id, "\(project.path) (\(qualifier))")
+        })
+        return Self(
+            projects: projects,
+            projectID: projects.contains { $0.id == projectID } ? projectID : nil,
+            projectDisplayNames: displayNames
+        )
     }
 }

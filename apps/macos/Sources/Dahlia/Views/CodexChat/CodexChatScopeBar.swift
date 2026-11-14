@@ -6,8 +6,9 @@ struct CodexChatScopeBar: View {
     @State private var isHovering = false
 
     private var projectName: String {
-        guard session.scopeSnapshot != nil else { return L10n.loadingProjects }
-        return session.scopeSnapshot?.projects.first { $0.id == session.scopeProjectID }?.path ?? L10n.noProject
+        guard let snapshot = session.scopeSnapshot else { return L10n.loadingProjects }
+        guard let project = snapshot.projects.first(where: { $0.id == session.scopeProjectID }) else { return L10n.noProject }
+        return snapshot.displayName(for: project)
     }
 
     var body: some View {
@@ -17,7 +18,7 @@ struct CodexChatScopeBar: View {
                     Button(L10n.noProject) { session.selectScopeProject(nil) }
                     Divider()
                     ForEach(session.scopeSnapshot?.projects ?? []) { project in
-                        Button(project.path) { session.selectScopeProject(project.id) }
+                        Button(session.scopeSnapshot?.displayName(for: project) ?? project.path) { session.selectScopeProject(project.id) }
                     }
                 } label: {
                     HStack(spacing: 6) {
@@ -36,7 +37,7 @@ struct CodexChatScopeBar: View {
                 .menuIndicator(.hidden)
                 .onHover { isHovering = $0 }
                 .disabled(session.scopeSnapshot == nil)
-                .help(L10n.chatSelectProject)
+                .help("\(L10n.chatSelectProject)\n\(projectName)")
             } else {
                 Label(projectName, systemImage: "folder")
                     .lineLimit(1)

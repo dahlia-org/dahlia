@@ -317,6 +317,7 @@ control process の `/databricks-connection-login <workspace URL> <service>` が
 将来の Databricks managed memory session store への切り替えは `ChatItemStore` の裏のアイテムログだけを対象とする。
 Thread は実行アカウントに属し、Workspace とは直接関連付けない。Project は議事録と同じ `projects.id` を任意で参照する。
 チャット入力欄の枠のすぐ上に Project だけを表示する。新規 Thread では同じアカウント内の Project または「プロジェクトなし」を選べる。
+Project のパスが重複する場合は選択肢と保存済みの表示に Workspace 名を補い、Workspace 名も同じ場合はその識別子を添えて区別する。
 未選択なら最初の入力の Project／Meeting context を初期値に使い、Thread 作成時に「プロジェクトなし」も含めて関連を確定する。
 最初の送信以降は表示のみとし、初回実行前の失敗・再試行でも関連を変更しない。
 Project がない Thread はアカウント共通であり、同じアカウント内の Workspace 切替では履歴・実行中の会話を維持する。
