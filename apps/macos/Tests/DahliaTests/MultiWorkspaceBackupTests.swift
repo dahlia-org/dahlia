@@ -48,10 +48,10 @@ import GRDB
                 )
                 try db.execute(
                     sql: """
-                    INSERT INTO chat_threads(id, accountID, workspaceID, projectID, title, createdAt, updatedAt)
-                    VALUES ('00000000-0000-7000-8000-000000000001', 'local', ?, ?, 'Linked', ?, ?)
+                    INSERT INTO chat_threads(id, accountID, projectID, title, createdAt, updatedAt)
+                    VALUES ('00000000-0000-7000-8000-000000000001', 'local', ?, 'Linked', ?, ?)
                     """,
-                    arguments: [fixture.meeting.workspaceId, chatProjectID, fixture.now, fixture.now]
+                    arguments: [chatProjectID, fixture.now, fixture.now]
                 )
             }
             try ChatThreadStore(dbQueue: fixture.database.dbQueue)

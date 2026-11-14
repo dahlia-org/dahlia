@@ -12,16 +12,15 @@
         func deepPagesUseBoundedIndexSeeks() throws {
             let database = try AppDatabaseManager(path: ":memory:")
             let queue = database.dbQueue
-            let workspaceID = UUID.v7()
             let threadID = "00000000-0000-0000-0000-000000004000"
             try queue.write { db in
                 try db.execute(sql: """
                 WITH RECURSIVE numbers(n) AS (VALUES(1) UNION ALL SELECT n+1 FROM numbers WHERE n<5000)
-                INSERT INTO chat_threads(id, accountID, workspaceID, title, createdAt, updatedAt)
-                SELECT '00000000-0000-0000-0000-' || printf('%012d', n), 'local', ?, 'History',
+                INSERT INTO chat_threads(id, accountID, title, createdAt, updatedAt)
+                SELECT '00000000-0000-0000-0000-' || printf('%012d', n), 'local', 'History',
                     strftime('%Y-%m-%d %H:%M:%f', '2026-01-01', '+' || n || ' seconds'),
                     strftime('%Y-%m-%d %H:%M:%f', '2026-01-01', '+' || n || ' seconds') FROM numbers
-                """, arguments: [workspaceID])
+                """)
                 try db.execute(sql: """
                 WITH RECURSIVE numbers(n) AS (VALUES(0) UNION ALL SELECT n+1 FROM numbers WHERE n<9999)
                 INSERT INTO chat_items(id, threadID, seq, data, createdAt)
@@ -39,7 +38,7 @@
                 db.trace { event in queries.withLock { $0.append(event.expandedDescription) } }
             }
             defer { try? queue.writeWithoutTransaction { $0.trace(nil) } }
-            let threads = try store.listThreads(accountID: "local", workspaceID: workspaceID, cursor: cursor)
+            let threads = try store.listThreads(accountID: "local", cursor: cursor)
             #expect(threads.threads.count == 25)
             #expect(threads.threads.first?.id == "00000000-0000-0000-0000-000000003999")
             let messages = try store.messagePage(threadID: threadID)
@@ -75,18 +74,17 @@
         func rareAndFrequentSearchWordsOnlyProbeCandidateThreads() async throws {
             let database = try AppDatabaseManager(path: ":memory:")
             let queue = database.dbQueue
-            let workspaceID = UUID.v7()
             let expected = "00000000-0000-0000-0000-000000000001"
             try await queue.write { db in
                 try db.execute(sql: """
                 WITH RECURSIVE numbers(n) AS (VALUES(1) UNION ALL SELECT n+1 FROM numbers WHERE n<2000)
-                INSERT INTO chat_threads(id, accountID, workspaceID, title, createdAt, updatedAt)
-                SELECT '00000000-0000-0000-0000-' || printf('%012d', n), 'local', ?, 'History', datetime('now'), datetime('now') FROM numbers;
+                INSERT INTO chat_threads(id, accountID, title, createdAt, updatedAt)
+                SELECT '00000000-0000-0000-0000-' || printf('%012d', n), 'local', 'History', datetime('now'), datetime('now') FROM numbers;
                 INSERT INTO search_chat_documents(threadID) SELECT id FROM chat_threads;
                 INSERT INTO search_chat_documents_fts(rowid, description)
                 SELECT id, CASE WHEN threadID = ? THEN 'common rareword' ELSE 'common' END FROM search_chat_documents;
                 UPDATE search_index_state SET phase = 'ready' WHERE indexKind = 'fts';
-                """, arguments: [workspaceID, expected])
+                """, arguments: [expected])
             }
             let queries = Mutex<[String]>([])
             try await queue.writeWithoutTransaction { db in
@@ -94,7 +92,6 @@
             }
             defer { try? queue.writeWithoutTransaction { $0.trace(nil) } }
             let page = try await MeetingRepository.searchChatPage(
-                workspaceID: workspaceID,
                 accountID: "local",
                 criteria: .init(text: "common rareword"),
                 dbQueue: queue
@@ -123,7 +120,6 @@
             let thread = ChatThreadRecord(
                 id: UUID.v7().uuidString.lowercased(),
                 accountID: "local",
-                workspaceID: workspace.id,
                 title: "titletoken",
                 createdAt: .now,
                 updatedAt: .now
@@ -143,7 +139,6 @@
                 .read { try Int.fetchOne($0, sql: "SELECT count(*) FROM jobs_background WHERE targetKind IN ('chat', 'chatItem')") } == 0)
             for text in ["alpha", "alpha beta", "titletoken gamma beta", "beta gamma"] {
                 let page = try await MeetingRepository.searchChatPage(
-                    workspaceID: workspace.id,
                     accountID: "local",
                     criteria: .init(text: text),
                     dbQueue: queue
@@ -154,13 +149,11 @@
             try store.updateThread(id: thread.id, title: "newtitle")
             await database.searchIndexer.drain()
             #expect(try await MeetingRepository.searchChatPage(
-                workspaceID: workspace.id,
                 accountID: "local",
                 criteria: .init(text: "newtitle beta"),
                 dbQueue: queue
             ).threads.count == 1)
             #expect(try await MeetingRepository.searchChatPage(
-                workspaceID: workspace.id,
                 accountID: "local",
                 criteria: .init(text: "titletoken"),
                 dbQueue: queue
@@ -170,7 +163,6 @@
             let betaItem = try #require(store.listItems(threadID: thread.id).first { $0.seq == 1 })
             _ = try await queue.write { try ChatItemRecord.deleteOne($0, key: betaItem.id) }
             #expect(try await MeetingRepository.searchChatPage(
-                workspaceID: workspace.id,
                 accountID: "local",
                 criteria: .init(text: "beta"),
                 dbQueue: queue

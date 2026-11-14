@@ -5,7 +5,6 @@ import GRDB
 
 extension MeetingRepository {
     nonisolated static func searchChatPage(
-        workspaceID: UUID,
         accountID: String,
         criteria: MeetingSearchCriteria,
         offset: Int = 0,
@@ -15,8 +14,8 @@ extension MeetingRepository {
         try await withSearchDeadline {
             try await dbQueue.read { db in
                 guard criteria.tagIDs.isEmpty, !criteria.pendingOnly else { return ([], false) }
-                var conditions = ["t.workspaceID = ?", "t.accountID = ?"]
-                var arguments: StatementArguments = [workspaceID, accountID]
+                var conditions = ["t.accountID = ?"]
+                var arguments: StatementArguments = [accountID]
                 var source = "chat_threads t"
                 var prefix = ""
                 var prefixArguments = StatementArguments()
@@ -44,7 +43,7 @@ extension MeetingRepository {
                         CROSS JOIN search_chat_documents d CROSS JOIN chat_threads scope
                         WHERE search_chat_documents_fts MATCH ? AND d.id = search_chat_documents_fts.rowid
                             AND scope.id = d.threadID
-                            AND scope.workspaceID = ? AND scope.accountID = ?
+                            AND scope.accountID = ?
                         GROUP BY d.threadID
                     ), candidates AS MATERIALIZED (
                         SELECT seeds.chatThreadID FROM seeds
@@ -58,17 +57,18 @@ extension MeetingRepository {
                         SELECT chatThreadID, MIN(score) AS score FROM hits GROUP BY chatThreadID
                     )
                     """
-                    prefixArguments += [terms[0], workspaceID, accountID]
+                    prefixArguments += [terms[0], accountID]
                     prefixArguments += StatementArguments(terms.dropFirst())
                     prefixArguments += [terms.joined(separator: " OR ")]
                     source = "matches CROSS JOIN chat_threads t"
                     conditions.append("t.id = matches.chatThreadID")
                 }
                 if !criteria.projectIDs.isEmpty {
-                    let projects = try ProjectRecord.fetchResolvedAll(workspaceId: workspaceID, in: db)
-                    let ids = Set(criteria.projectIDs.flatMap { ProjectRecord.hierarchy(projectId: $0, records: projects).map(\.id) })
-                    guard !ids.isEmpty else { return ([], false) }
-                    conditions.append("t.projectID IN (\(Array(repeating: "?", count: ids.count).joined(separator: ",")))")
+                    let ids = criteria.projectIDs
+                    let placeholders = Array(repeating: "?", count: ids.count).joined(separator: ",")
+                    conditions
+                        .append("t.projectID IN (SELECT id FROM projects WHERE id IN (\(placeholders)) OR parentProjectId IN (\(placeholders)))")
+                    arguments += StatementArguments(ids)
                     arguments += StatementArguments(ids)
                 }
                 if let date = criteria.startDate { conditions.append("t.updatedAt >= ?")

@@ -8,6 +8,7 @@ actor PiChatService: CodexChatServicing {
     static let shared = PiChatService()
 
     private var backupService: BackupService?
+    private var backupDBQueue: DatabaseQueue?
     private var historyStore: ChatThreadStore?
 
     func configureHistory(dbQueue: DatabaseQueue) async throws {
@@ -34,6 +35,7 @@ actor PiChatService: CodexChatServicing {
 
     func configureBackup(dbQueue: DatabaseQueue, applicationSupportURL: URL = DahliaApplicationSupport.currentDirectoryURL) {
         backupService = BackupService(dbQueue: dbQueue, applicationSupportURL: applicationSupportURL)
+        backupDBQueue = dbQueue
     }
 
     nonisolated static let systemPrompt = """
@@ -141,7 +143,7 @@ actor PiChatService: CodexChatServicing {
 
     // MARK: Threads
 
-    func commands(threadID: String?, workspaceID: UUID) async throws -> [CodexChatSlashCommand] {
+    func commands(threadID: String?) async throws -> [CodexChatSlashCommand] {
         let temporaryID = UUID.v7().uuidString
         let connection: PiRPCConnection
         let ownsConnection: Bool
@@ -149,7 +151,7 @@ actor PiChatService: CodexChatServicing {
             connection = session.connection
             ownsConnection = false
         } else {
-            connection = try await open(threadID: temporaryID, workspaceID: workspaceID, sessionArguments: ["--no-session"])
+            connection = try await open(threadID: temporaryID, sessionArguments: ["--no-session"])
             ownsConnection = true
         }
         do {
@@ -167,9 +169,9 @@ actor PiChatService: CodexChatServicing {
         }
     }
 
-    func listThreads(cursor: String?, workspaceID: UUID) async throws -> CodexChatThreadPage {
+    func listThreads(cursor: String?) async throws -> CodexChatThreadPage {
         let provider = try await runtime.currentProvider()
-        return try history().listThreads(accountID: provider.accountKey, workspaceID: workspaceID, cursor: cursor)
+        return try history().listThreads(accountID: provider.accountKey, cursor: cursor)
     }
 
     func loadThread(id: String) async throws -> CodexChatThread {
@@ -200,15 +202,15 @@ actor PiChatService: CodexChatServicing {
     }
 
     /// Restoring history never starts a Pi process.
-    func resumeThread(id: String, workspaceID: UUID) async throws -> CodexChatThread {
+    func resumeThread(id: String) async throws -> CodexChatThread {
         let provider = try await runtime.currentProvider()
-        _ = try history().thread(id: id, accountID: provider.accountKey, workspaceID: workspaceID)
+        _ = try history().thread(id: id, accountID: provider.accountKey)
         return try await loadThread(id: id)
     }
 
-    func startThread(model: String?, effort: String, workspaceID: UUID) async throws -> CodexChatThread {
+    func startThread(model: String?, effort: String, context: CodexChatContext?) async throws -> CodexChatThread {
         let provider = try await runtime.currentProvider()
-        let directory = try agentLocator.sessionsURL(for: provider, workspaceID: workspaceID)
+        let directory = try agentLocator.sessionsURL(for: provider)
         let available = try await runtime.models()
         guard !available.isEmpty else { throw PiRuntimeError.notLoggedIn }
         let selected = try PiRuntimeService.resolvedModel(
@@ -219,13 +221,12 @@ actor PiChatService: CodexChatServicing {
         try history().createThread(ChatThreadRecord(
             id: threadID,
             accountID: provider.accountKey,
-            workspaceID: workspaceID,
             title: "",
             model: selected.model,
             reasoningEffort: effort,
             createdAt: .now,
             updatedAt: .now
-        ))
+        ), initialContext: context)
         newThreads[threadID] = (directory, selected.model)
         return CodexChatThread(id: threadID, title: "", messages: [], model: selected.model, reasoningEffort: effort)
     }
@@ -521,31 +522,24 @@ actor PiChatService: CodexChatServicing {
             return try await connection(threadID: threadID)
         }
         if let task = opening[threadID] { return try await task.value }
-        let directory = try agentLocator.sessionsURL(for: provider, workspaceID: record.workspaceID)
-        if PiChatSessionFiles.file(id: threadID, in: directory) == nil {
-            // Pi writes its file with the first reply, so a Thread without one starts Pi anew.
+        let existingFile = try? await sessionFile(id: threadID)
+        if existingFile == nil {
             guard try !history().hasAssistantReply(threadID: threadID) else {
-                // History alone cannot reconstruct Pi's compaction/branch state.
                 throw PiRuntimeError.rpcError(code: nil, message: L10n.chatResumeStateMissing)
             }
-            newThreads[threadID] = (directory, record.model ?? "")
+            newThreads[threadID] = try (agentLocator.sessionsURL(for: provider), record.model ?? "")
         }
         let task = Task {
-            if let thread = self.newThreads[threadID],
-               PiChatSessionFiles.file(id: threadID, in: thread.directory) == nil,
-               let workspaceID = UUID(uuidString: thread.directory.lastPathComponent) {
-                let connection = try await self.open(threadID: threadID, workspaceID: workspaceID, sessionArguments: [
-                    "--session-dir", thread.directory.path, "--session-id", threadID, "--model", thread.model,
-                ])
-                self.sessions[threadID]?.model = thread.model
-                return connection
+            if let url = existingFile {
+                self.newThreads[threadID] = nil
+                return try await self.open(threadID: threadID, sessionFile: url, sessionArguments: ["--session", url.path])
             }
-            self.newThreads[threadID] = nil
-            let url = try await self.sessionFile(id: threadID)
-            guard let workspaceID = UUID(uuidString: url.deletingLastPathComponent().lastPathComponent) else {
-                throw PiRuntimeError.rpcError(code: nil, message: "thread not found")
-            }
-            return try await self.open(threadID: threadID, workspaceID: workspaceID, sessionFile: url, sessionArguments: ["--session", url.path])
+            guard let thread = self.newThreads[threadID] else { throw PiRuntimeError.invalidProtocolResponse }
+            let connection = try await self.open(threadID: threadID, sessionArguments: [
+                "--session-dir", thread.directory.path, "--session-id", threadID, "--model", thread.model,
+            ])
+            self.sessions[threadID]?.model = thread.model
+            return connection
         }
         opening[threadID] = task
         defer { opening[threadID] = nil }
@@ -562,7 +556,7 @@ actor PiChatService: CodexChatServicing {
     }
 
     private func open(
-        threadID: String, workspaceID: UUID, sessionFile: URL? = nil, sessionArguments: [String]
+        threadID: String, sessionFile: URL? = nil, sessionArguments: [String]
     ) async throws -> PiRPCConnection {
         let processID = UUID.v7()
         let provider = try await runtime.currentProvider()
@@ -571,7 +565,7 @@ actor PiChatService: CodexChatServicing {
         if let sessionFile { try PiChatSessionFiles.setWorkingDirectory(workURL, in: sessionFile) }
         let mcpCommand = try Self.mcpCommand(
             executableURL: mcpExecutableURL ?? DahliaMCPBundle.executableURL(),
-            workspaceID: workspaceID
+            accountID: provider.accountKey
         )
         let fileAccess = fileAccessSettings(provider)
         let accessDescription = fileAccess.grants.map {
@@ -622,7 +616,7 @@ actor PiChatService: CodexChatServicing {
             chatBridge: { [weak self] method, payload in
                 guard let self else { return .string(method == "approval" ? "cancel" : "ask") }
                 if method == "createBackup" {
-                    return try await self.createBackup(threadID: threadID, processID: processID, workspaceID: workspaceID, directory: workURL)
+                    return try await self.createBackup(threadID: threadID, processID: processID, payload: payload, directory: workURL)
                 }
                 return await self.answer(method, payload: payload, threadID: threadID, processID: processID)
             }
@@ -769,8 +763,16 @@ actor PiChatService: CodexChatServicing {
         }
     }
 
-    private func createBackup(threadID: String, processID: UUID, workspaceID: UUID, directory: URL) async throws -> JSONValue {
-        guard sessions[threadID]?.processID == processID, let backupService else { throw BackupServiceError.invalidBackup }
+    private func createBackup(threadID: String, processID: UUID, payload: JSONValue, directory: URL) async throws -> JSONValue {
+        guard sessions[threadID]?.processID == processID, let backupService, let backupDBQueue,
+              let provider = sessions[threadID]?.provider,
+              let rawID = payload.objectValue?["workspace_id"]?.stringValue else { throw BackupServiceError.invalidBackup }
+        let workspaceID = try TypeID.decode(rawID, as: .workspace)
+        let belongsToAccount = try await backupDBQueue.read { db in
+            guard let workspace = try WorkspaceRecord.fetchOne(db, key: workspaceID) else { return false }
+            return CodexRuntimeProvider(workspace: workspace) == provider
+        }
+        guard belongsToAccount else { throw BackupServiceError.invalidBackup }
         let generation = try await backupService.createGeneration(workspaceIds: [workspaceID])
         guard sessions[threadID]?.processID == processID else { throw CancellationError() }
         let destination = directory.appending(path: generation.fileURL.lastPathComponent)
@@ -828,14 +830,11 @@ actor PiChatService: CodexChatServicing {
         sessions.first { $0.value.turn?.id == turnID }?.key
     }
 
-    private func sessionFile(id: String, workspaceID: UUID? = nil) async throws -> URL {
+    private func sessionFile(id: String) async throws -> URL {
         let provider = try await runtime.currentProvider()
         let root = try agentLocator.agentURL(for: provider).appending(path: "sessions")
-        let directories = if let workspaceID {
-            try [agentLocator.sessionsURL(for: provider, workspaceID: workspaceID)]
-        } else {
-            (try? FileManager.default.contentsOfDirectory(at: root, includingPropertiesForKeys: nil)) ?? []
-        }
+        // Keep reopening files written by releases that used one subdirectory per Workspace.
+        let directories = (try? FileManager.default.contentsOfDirectory(at: root, includingPropertiesForKeys: nil)) ?? []
         for directory in directories {
             if let url = PiChatSessionFiles.file(id: id, in: directory) { return url }
         }
@@ -859,13 +858,13 @@ actor PiChatService: CodexChatServicing {
         return [.text(text)] + inputs.filter(\.isImageRelated)
     }
 
-    nonisolated static func mcpCommand(executableURL: URL, workspaceID: UUID) -> [String] {
+    nonisolated static func mcpCommand(executableURL: URL, accountID: String) -> [String] {
         let launch = switch DahliaApplicationSupport.profile() {
         case .production: [executableURL.path]
         case .development: ["/usr/bin/env", "\(DahliaApplicationSupport.profileEnvironmentKey)=development", executableURL.path]
         }
         return launch + [
-            "--workspace-id", TypeID.encode(workspaceID, as: .workspace),
+            "--account", accountID,
             "--write",
             "--telemetry-origin", "codexChat",
         ]

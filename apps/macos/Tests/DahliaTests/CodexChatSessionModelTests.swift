@@ -285,7 +285,6 @@ import Foundation
             let workspace = Self.testWorkspace()
             settings.currentWorkspace = workspace
             let session = CodexChatSessionModel(
-                workspaceID: workspace.id,
                 backendThreadID: "thread-1",
                 approvalMethod: .ask,
                 service: service,
@@ -308,7 +307,6 @@ import Foundation
             let workspace = Self.testWorkspace()
             settings.currentWorkspace = workspace
             let session = CodexChatSessionModel(
-                workspaceID: workspace.id,
                 backendThreadID: "thread-1",
                 approvalMethod: .ask,
                 service: service,
@@ -342,7 +340,6 @@ import Foundation
             let workspace = Self.testWorkspace()
             settings.currentWorkspace = workspace
             let session = CodexChatSessionModel(
-                workspaceID: workspace.id,
                 backendThreadID: "thread-1",
                 service: service,
                 settings: settings
@@ -370,7 +367,6 @@ import Foundation
             let workspace = Self.testWorkspace()
             settings.currentWorkspace = workspace
             let session = CodexChatSessionModel(
-                workspaceID: workspace.id,
                 backendThreadID: "thread-1",
                 service: service,
                 settings: settings
@@ -399,7 +395,6 @@ import Foundation
             let workspace = Self.testWorkspace()
             settings.currentWorkspace = workspace
             let session = CodexChatSessionModel(
-                workspaceID: workspace.id,
                 backendThreadID: "thread-1",
                 service: service,
                 settings: settings
@@ -430,7 +425,6 @@ import Foundation
             let workspace = Self.testWorkspace()
             settings.currentWorkspace = workspace
             let session = CodexChatSessionModel(
-                workspaceID: workspace.id,
                 backendThreadID: "thread-1",
                 service: service,
                 settings: settings
@@ -698,7 +692,6 @@ import Foundation
             let workspace = Self.testWorkspace()
             settings.currentWorkspace = workspace
             let session = CodexChatSessionModel(
-                workspaceID: workspace.id,
                 service: TestCodexChatService(mode: .complete),
                 settings: settings
             )
@@ -722,7 +715,6 @@ import Foundation
             let workspace = Self.testWorkspace()
             settings.currentWorkspace = workspace
             let session = CodexChatSessionModel(
-                workspaceID: workspace.id,
                 service: TestCodexChatService(mode: .complete),
                 settings: settings
             )
@@ -765,7 +757,6 @@ import Foundation
             let meeting = Self.meetingReference(name: "Weekly Sync", offset: 0)
             let token = "meeting:\(legacy ? meeting.id.uuidString : TypeID.encode(meeting.id, as: .meeting))"
             let session = CodexChatSessionModel(
-                workspaceID: workspace.id,
                 title: "\(token) Review",
                 messages: [CodexChatMessage(role: .user, text: "Use (\(token)).")],
                 service: TestCodexChatService(mode: .complete),
@@ -1076,16 +1067,17 @@ import Foundation
         }
 
         @Test
-        func sessionCannotSendWhileAnotherWorkspaceIsSelected() {
+        func sessionCannotSendWhileAnotherAccountIsSelected() {
             let settings = AppSettings()
             let boundWorkspace = Self.testWorkspace()
             settings.currentWorkspace = boundWorkspace
             let session = CodexChatSessionModel(
-                workspaceID: boundWorkspace.id,
                 service: TestCodexChatService(mode: .complete),
                 settings: settings
             )
-            settings.currentWorkspace = Self.testWorkspace()
+            var otherAccountWorkspace = Self.testWorkspace()
+            otherAccountWorkspace.databricksConnectionId = .v7()
+            settings.currentWorkspace = otherAccountWorkspace
 
             session.draft = "Do not send"
             #expect(!session.canSend)
@@ -1269,6 +1261,7 @@ import Foundation
     extension CodexChatSessionModelTests {}
 
     actor TestCodexChatService: CodexChatServicing {
+        private(set) var initialContexts: [CodexChatContext?] = []
         struct ApprovalDecision: Equatable {
             let id: String
             let decision: CodexChatApprovalDecision
@@ -1386,14 +1379,14 @@ import Foundation
 
         private(set) var modelListings = 0
 
-        func commands(threadID _: String?, workspaceID _: UUID) async throws -> [CodexChatSlashCommand] { availableCommands }
+        func commands(threadID _: String?) async throws -> [CodexChatSlashCommand] { availableCommands }
 
         func models(forceRefresh _: Bool) async throws -> [CodexModel] {
             modelListings += 1
             return [Self.model]
         }
 
-        func listThreads(cursor _: String?, workspaceID _: UUID) async throws -> CodexChatThreadPage {
+        func listThreads(cursor _: String?) async throws -> CodexChatThreadPage {
             CodexChatThreadPage(threads: [], nextCursor: nil)
         }
 
@@ -1431,7 +1424,7 @@ import Foundation
             )
         }
 
-        func resumeThread(id: String, workspaceID _: UUID) async throws -> CodexChatThread {
+        func resumeThread(id: String) async throws -> CodexChatThread {
             resumedThreadIDs.append(id)
             if !resumeErrors.isEmpty {
                 throw resumeErrors.removeFirst()
@@ -1448,8 +1441,9 @@ import Foundation
             )
         }
 
-        func startThread(model _: String?, effort: String, workspaceID _: UUID) async throws -> CodexChatThread {
-            CodexChatThread(
+        func startThread(model _: String?, effort: String, context: CodexChatContext?) async throws -> CodexChatThread {
+            initialContexts.append(context)
+            return CodexChatThread(
                 id: "thread-1",
                 title: "",
                 messages: [],

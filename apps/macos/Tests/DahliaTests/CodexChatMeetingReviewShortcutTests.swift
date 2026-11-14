@@ -94,14 +94,13 @@ import Foundation
         }
 
         @Test
-        func requiresCurrentWorkspaceAndIdleSession() async {
+        func requiresCurrentAccountAndIdleSession() async {
             let service = TestCodexChatService(mode: .block)
             let settings = AppSettings()
             let boundWorkspace = Self.testWorkspace()
             settings.currentWorkspace = boundWorkspace
             var telemetryEvents: [UsageTelemetryEvent] = []
             let session = CodexChatSessionModel(
-                workspaceID: boundWorkspace.id,
                 modelID: "default-model",
                 effort: "medium",
                 service: service,
@@ -115,7 +114,9 @@ import Foundation
             #expect(await service.sentTextBlocks.isEmpty)
             session.isTurnCleanupPending = false
 
-            settings.currentWorkspace = Self.testWorkspace()
+            var otherAccountWorkspace = Self.testWorkspace()
+            otherAccountWorkspace.accountConnectionId = .v7()
+            settings.currentWorkspace = otherAccountWorkspace
             session.sendMeetingReviewShortcut()
             #expect(!session.isGenerating)
             #expect(await service.sentTextBlocks.isEmpty)
@@ -138,7 +139,6 @@ import Foundation
             let workspace = Self.testWorkspace()
             settings.currentWorkspace = workspace
             let session = CodexChatSessionModel(
-                workspaceID: workspace.id,
                 backendThreadID: "history-thread",
                 modelID: "default-model",
                 effort: "medium",

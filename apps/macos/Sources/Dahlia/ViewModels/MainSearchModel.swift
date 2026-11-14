@@ -353,7 +353,6 @@ final class MainSearchModel {
             do {
                 if let delay { try await Task.sleep(for: delay) }
                 let page = try await MeetingRepository.searchChatPage(
-                    workspaceID: workspace.id,
                     accountID: provider.accountKey,
                     criteria: criteria,
                     offset: offset,

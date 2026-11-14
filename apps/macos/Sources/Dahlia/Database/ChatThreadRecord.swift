@@ -6,7 +6,6 @@ struct ChatThreadRecord: Codable, FetchableRecord, PersistableRecord, Sendable {
     static let databaseTableName = "chat_threads"
     var id: String
     var accountID: String
-    var workspaceID: UUID
     var projectID: UUID?
     var parentThreadID: String?
     var title: String

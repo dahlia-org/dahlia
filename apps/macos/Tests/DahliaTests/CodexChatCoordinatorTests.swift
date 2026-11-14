@@ -7,6 +7,28 @@ import Foundation
     @MainActor
     struct CodexChatCoordinatorTests {
         @Test
+        func workspaceSwitchWithinAccountKeepsTheSameChatAndGeneration() async {
+            let service = TestCodexChatService(mode: .blockBeforeOutput)
+            let settings = AppSettings()
+            settings.currentWorkspace = Self.workspace(name: "First")
+            let coordinator = CodexChatCoordinator(service: service, settings: settings)
+            let original = coordinator.dockedSession
+            original.draft = "Continue across workspaces"
+            original.sendDraft()
+            await waitUntil { await MainActor.run { original.activeTurnID != nil } }
+            let workspace = Self.workspace(name: "Second")
+            settings.currentWorkspace = workspace
+            coordinator.activateWorkspace(workspace)
+            #expect(coordinator.dockedSession === original)
+            #expect(original.isGenerating)
+            #expect(original.canSelectScope == false)
+            #expect(await service.interruptCount == 0)
+            await service.completeBlockedTurn()
+            await waitUntil { await MainActor.run { !original.hasPendingGenerationWork } }
+            #expect(original.isBoundToCurrentAccount)
+        }
+
+        @Test
         func replacingDockedChatRemovesPreviousSession() {
             let service = CoordinatorTestCodexChatService()
             let coordinator = CodexChatCoordinator(service: service)
@@ -212,7 +234,7 @@ import Foundation
         }
 
         @Test
-        func workspaceSwitchStopsGeneratingSession() async {
+        func accountSwitchStopsGeneratingSession() async {
             let service = TestCodexChatService(mode: .block)
             let settings = AppSettings()
             settings.currentWorkspace = Self.workspace(name: "Old Background")
@@ -227,7 +249,8 @@ import Foundation
                 }
             }
 
-            let newWorkspace = Self.workspace(name: "New Background")
+            var newWorkspace = Self.workspace(name: "New Background")
+            newWorkspace.databricksConnectionId = .v7()
             settings.currentWorkspace = newWorkspace
             coordinator.activateWorkspace(newWorkspace)
 
@@ -520,11 +543,12 @@ import Foundation
         }
 
         @Test
-        func workspaceSwitchDiscardsDelayedHistoryFromPreviousWorkspace() async {
+        func accountSwitchDiscardsDelayedHistoryFromPreviousAccount() async {
             let service = DelayedHistoryCodexChatService()
             let settings = AppSettings()
             let oldWorkspace = Self.workspace(name: "Old")
-            let newWorkspace = Self.workspace(name: "New")
+            var newWorkspace = Self.workspace(name: "New")
+            newWorkspace.databricksConnectionId = .v7()
             settings.currentWorkspace = oldWorkspace
             let coordinator = CodexChatCoordinator(service: service, settings: settings)
 
@@ -536,7 +560,7 @@ import Foundation
             await service.releaseBlockedRequest()
             await oldRefresh.value
 
-            #expect(coordinator.history.map(\.id) == ["history-\(newWorkspace.id.uuidString)"])
+            #expect(coordinator.history.map(\.id) == ["history"])
         }
 
         @Test
@@ -556,7 +580,7 @@ import Foundation
             settings.currentWorkspace = workspace
             coordinator.activateWorkspace(workspace)
             #expect(coordinator.dockedSession.id != localSession)
-            #expect(coordinator.dockedSession.workspaceID == workspace.id)
+            #expect(coordinator.dockedSession.accountID == workspace.databricksConnectionId?.uuidString.lowercased())
             #expect(coordinator.history.isEmpty)
         }
 
@@ -713,24 +737,27 @@ import Foundation
 
         func models(forceRefresh _: Bool) async throws -> [CodexModel] { [] }
 
-        func listThreads(cursor _: String?, workspaceID: UUID) async throws -> CodexChatThreadPage {
+        func listThreads(cursor _: String?) async throws -> CodexChatThreadPage {
             if !didBlock {
                 didBlock = true
                 return await withCheckedContinuation { continuation in
                     blockedContinuation = continuation
                 }
             }
-            return Self.page(workspaceID: workspaceID)
+            return Self.page()
         }
 
         func releaseBlockedRequest() {
-            blockedContinuation?.resume(returning: Self.page(workspaceID: .v7()))
+            blockedContinuation?.resume(returning: CodexChatThreadPage(
+                threads: [.init(id: "old-history", title: "Old account", updatedAt: .now)],
+                nextCursor: nil
+            ))
             blockedContinuation = nil
         }
 
         func loadThread(id: String) async throws -> CodexChatThread { Self.thread(id: id) }
-        func resumeThread(id: String, workspaceID _: UUID) async throws -> CodexChatThread { Self.thread(id: id) }
-        func startThread(model _: String?, effort _: String, workspaceID _: UUID) async throws -> CodexChatThread {
+        func resumeThread(id: String) async throws -> CodexChatThread { Self.thread(id: id) }
+        func startThread(model _: String?, effort _: String, context _: CodexChatContext?) async throws -> CodexChatThread {
             Self.thread(id: "new")
         }
 
@@ -750,9 +777,9 @@ import Foundation
         func interrupt(threadID _: String, turnID _: String) async {}
         func unsubscribe(threadID _: String) async {}
 
-        private static func page(workspaceID: UUID) -> CodexChatThreadPage {
+        private static func page() -> CodexChatThreadPage {
             let thread = CodexChatThreadSummary(
-                id: "history-\(workspaceID.uuidString)",
+                id: "history",
                 title: "History",
                 updatedAt: .now
             )
@@ -805,7 +832,7 @@ import Foundation
             [Self.model]
         }
 
-        func listThreads(cursor _: String?, workspaceID _: UUID) async throws -> CodexChatThreadPage {
+        func listThreads(cursor _: String?) async throws -> CodexChatThreadPage {
             historyRequestCount += 1
             if failFirstHistoryRequest, historyRequestCount == 1 {
                 throw PiRuntimeError.processExited(nil)
@@ -822,11 +849,11 @@ import Foundation
             Self.thread(id: id)
         }
 
-        func resumeThread(id: String, workspaceID _: UUID) async throws -> CodexChatThread {
+        func resumeThread(id: String) async throws -> CodexChatThread {
             Self.thread(id: id)
         }
 
-        func startThread(model _: String?, effort: String, workspaceID _: UUID) async throws -> CodexChatThread {
+        func startThread(model _: String?, effort: String, context _: CodexChatContext?) async throws -> CodexChatThread {
             if delaysThreadStart || delaysAndFailsThreadStart {
                 await withCheckedContinuation { delayedThreadStartContinuation = $0 }
             }

@@ -312,7 +312,7 @@ import Foundation
             ]
         }
 
-        func listThreads(cursor _: String?, workspaceID _: UUID) async throws -> CodexChatThreadPage {
+        func listThreads(cursor _: String?) async throws -> CodexChatThreadPage {
             CodexChatThreadPage(threads: [], nextCursor: nil)
         }
 
@@ -320,11 +320,11 @@ import Foundation
             CodexChatThread(id: id, title: L10n.chatImage, messages: [], model: nil, reasoningEffort: nil)
         }
 
-        func resumeThread(id: String, workspaceID _: UUID) async throws -> CodexChatThread {
+        func resumeThread(id: String) async throws -> CodexChatThread {
             try await loadThread(id: id)
         }
 
-        func startThread(model _: String?, effort: String, workspaceID _: UUID) async throws -> CodexChatThread {
+        func startThread(model _: String?, effort: String, context _: CodexChatContext?) async throws -> CodexChatThread {
             CodexChatThread(
                 id: "thread-image",
                 title: "",

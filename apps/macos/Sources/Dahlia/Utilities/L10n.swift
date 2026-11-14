@@ -3174,6 +3174,7 @@ enum L10n { // swiftlint:disable:this type_body_length
     static var chat: String { String(localized: "Chat", bundle: bundle) }
     static var dahliaAI: String { String(localized: "Dahlia AI", bundle: bundle) }
     static var newChat: String { String(localized: "New chat", bundle: bundle) }
+    static var chatSelectProject: String { String(localized: "Select chat project", bundle: bundle) }
     static var chatHistory: String { String(localized: "Chat history", bundle: bundle) }
     static var chatWelcomeTitle: String { String(localized: "How can I help?", bundle: bundle) }
     static var chatConnectorSettings: String { String(localized: "Connector settings", bundle: bundle) }

@@ -24,7 +24,8 @@ final class CodexChatCoordinator {
     @ObservationIgnored private let settings: AppSettings
     @ObservationIgnored private let contextProvider: CodexChatContextProvider
     @ObservationIgnored private var historyGeneration = 0
-    @ObservationIgnored private var dockedAccount: WorkspaceAccountChoice?
+    @ObservationIgnored private var dockedAccount: WorkspaceAccountChoice
+    @ObservationIgnored private var contextWorkspaceID: UUID?
 
     init(
         service: any CodexChatServicing = PiChatService.shared,
@@ -32,6 +33,8 @@ final class CodexChatCoordinator {
     ) {
         self.service = service
         self.settings = settings
+        dockedAccount = settings.currentWorkspace.map(WorkspaceAccountChoice.init) ?? .local
+        contextWorkspaceID = settings.currentWorkspace?.id
         let contextProvider = CodexChatContextProvider()
         self.contextProvider = contextProvider
         let session = CodexChatSessionModel(
@@ -57,7 +60,7 @@ final class CodexChatCoordinator {
 
     func activity(for threadID: String) -> CodexChatThreadActivity? {
         guard let session = sessions.values.first(where: {
-            $0.backendThreadID == threadID && $0.workspaceID == dockedSession.workspaceID
+            $0.backendThreadID == threadID && $0.accountID == dockedSession.accountID
         }) else { return nil }
         if session.pendingUserInput != nil || session.pendingApproval != nil {
             return .waitingForUser
@@ -78,22 +81,21 @@ final class CodexChatCoordinator {
         Task { await refreshHistory() }
     }
 
-    /// Opens the workspace's chat, and opens it again when the workspace moves to another account: history and models
-    /// belong to the account, so the old account's thread and model must not stay on screen.
+    /// Keeps the chat across Workspaces in one account; a different account gets its own history and models.
     func activateWorkspace(_ workspace: WorkspaceRecord) {
-        let workspaceID = workspace.id
         let account = WorkspaceAccountChoice(workspace)
-        let changesAccount = dockedAccount.map { $0 != account } ?? false
+        let changesAccount = dockedAccount != account
         dockedAccount = account
-        guard dockedSession.workspaceID != workspaceID || changesAccount else { return }
-        for session in sessions.values where (session.workspaceID != workspaceID || changesAccount) && session.hasPendingGenerationWork {
+        if contextWorkspaceID != workspace.id {
+            contextProvider.update(workspaceID: workspace.id, meetingID: nil, projectID: nil, draftMeeting: nil, dbQueue: nil)
+            contextWorkspaceID = workspace.id
+        }
+        guard changesAccount else { return }
+        for session in sessions.values
+            where session.accountID != CodexRuntimeProvider(workspace: workspace).accountKey && session.hasPendingGenerationWork {
             session.release()
         }
-        // The selected meeting or project stays on screen when only the account changes, so the chat keeps it.
-        if dockedSession.workspaceID != workspaceID {
-            contextProvider.update(workspaceID: workspaceID, meetingID: nil, projectID: nil, draftMeeting: nil, dbQueue: nil)
-        }
-        let session = makeSession(workspaceID: workspaceID)
+        let session = makeSession()
         replaceDockedSession(
             with: session,
             isVisible: isDockedVisible,
@@ -170,9 +172,9 @@ final class CodexChatCoordinator {
 
     /// The detached window's session already showing `threadID`, if any; opening that thread brings its window forward.
     func detachedSessionID(showingThread threadID: String) -> CodexChatSessionID? {
-        let workspaceID = dockedSession.workspaceID
+        let accountID = dockedSession.accountID
         return sessions.values.first {
-            $0.backendThreadID == threadID && $0.workspaceID == workspaceID && detachedSessionIDs.contains($0.id)
+            $0.backendThreadID == threadID && $0.accountID == accountID && detachedSessionIDs.contains($0.id)
         }?.id
     }
 
@@ -180,9 +182,9 @@ final class CodexChatCoordinator {
         _ thread: CodexChatThreadSummary,
         showDockedSidebar: Bool = true
     ) async -> CodexChatSessionID {
-        let workspaceID = dockedSession.workspaceID
+        let accountID = dockedSession.accountID
         if let existing = sessions.values.first(where: {
-            $0.backendThreadID == thread.id && $0.workspaceID == workspaceID
+            $0.backendThreadID == thread.id && $0.accountID == accountID
         }) {
             if !detachedSessionIDs.contains(existing.id) {
                 replaceDockedSession(with: existing, isVisible: showDockedSidebar)
@@ -191,7 +193,6 @@ final class CodexChatCoordinator {
         }
 
         let session = makeSession(
-            workspaceID: workspaceID,
             backendThreadID: thread.id,
             title: thread.title
         )
@@ -201,9 +202,9 @@ final class CodexChatCoordinator {
     }
 
     func openHistoryThreadInDetachedWindow(_ thread: CodexChatThreadSummary) async -> CodexChatSessionID {
-        let workspaceID = dockedSession.workspaceID
+        let accountID = dockedSession.accountID
         if let existing = sessions.values.first(where: {
-            $0.backendThreadID == thread.id && $0.workspaceID == workspaceID
+            $0.backendThreadID == thread.id && $0.accountID == accountID
         }) {
             if existing.id == dockedSessionID {
                 detachedSessionIDs.insert(existing.id)
@@ -216,7 +217,6 @@ final class CodexChatCoordinator {
         }
 
         let session = makeSession(
-            workspaceID: workspaceID,
             backendThreadID: thread.id,
             title: thread.title
         )
@@ -266,12 +266,12 @@ final class CodexChatCoordinator {
             }
         }
         do {
-            guard dockedSession.isBoundToCurrentWorkspace,
-                  let workspaceID = dockedSession.workspaceID else { return }
-            let page = try await service.listThreads(cursor: historyCursor, workspaceID: workspaceID)
+            guard dockedSession.isBoundToCurrentAccount else { return }
+            let accountID = dockedSession.accountID
+            let page = try await service.listThreads(cursor: historyCursor)
             guard generation == historyGeneration,
-                  dockedSession.isBoundToCurrentWorkspace,
-                  dockedSession.workspaceID == workspaceID else { return }
+                  dockedSession.isBoundToCurrentAccount,
+                  dockedSession.accountID == accountID else { return }
             history.append(contentsOf: page.threads.filter { item in
                 !history.contains(where: { $0.id == item.id })
             })
@@ -316,13 +316,11 @@ final class CodexChatCoordinator {
 
     private func makeSession(
         id: CodexChatSessionID = CodexChatSessionID(),
-        workspaceID: UUID? = nil,
         backendThreadID: String? = nil,
         title: String = ""
     ) -> CodexChatSessionModel {
         let session = CodexChatSessionModel(
             id: id,
-            workspaceID: workspaceID,
             backendThreadID: backendThreadID,
             title: title,
             service: service,

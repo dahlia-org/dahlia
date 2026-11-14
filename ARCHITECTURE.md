@@ -311,7 +311,7 @@ Databricks DAB の既存受付済み画像解析とWeb要約内の画像選別�
 Desktop の AI チャットは GRDB の `chat_threads`／追記専用 `chat_items` を正本にし、Pi ファイルは実行再開状態だけを持つ。
 履歴表示は直近40メッセージを初期取得し、過去分を操作時に追加取得する。タイトルと各メッセージを別々の全文検索文書にし、
 追記では新しいメッセージだけを索引化して結果を Thread ごとにまとめる。推論文・ツール引数／結果・画像は索引化せず、
-アカウントと Workspace で検索結果を絞る。辞書の再構築時はチャットも再構築する。チャットとその索引はバックアップ・Server 同期の対象外。
+実行アカウントで検索結果を絞り、任意の Project で関連付け・絞り込みを行う。Thread は Workspace を直接参照せず、同じアカウント内の Workspace 切替で会話を維持する。辞書の再構築時はチャットも再構築する。チャットとその索引はバックアップ・Server 同期の対象外。
 
 Desktop 検索は旧 Advanced 相当の全文検索に統一し、Simple／Neural とモード切替を廃止した。Gemma 推論、モデル取得、vector worker は実行しない。追加 migration で vector 検索を無効化し、専用 trigger を撤去する。互換性のため旧 schema、既存 vector と job は保持する。起動時に現在のアプリプロファイルの `Models/EmbeddingGemma` だけをバックグラウンド削除し、失敗時は次回起動で再試行する。Server Account の主検索は capabilities の `search: { version: 1 }` により `POST /api/v1/search` の共通順位へ切り替え、未同期の端末内結果を別枠で表示する。オフライン・旧 Server・metadata 同期待ち・タグ指定・複数 Project 指定は端末内検索と明示する。Web と Server MCP は同じ service を使う。上位100件は全件完了としない。旧 GET FTS ページングは local content broker と既存クライアントの全件探索用に維持する。
 

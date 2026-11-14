@@ -10,7 +10,10 @@
 
 発見は compact metadata と [summary 本文の検索](search.md)、詳細は保存済み summary、原文 transcript のページング、保存済み screenshot（長辺1568px以下）を返す。保存済み取得では音声、note、翻訳、未確定 transcript と transcript 全文検索は対象外。未確定文を MCP へ公開しない。summary schema v3 の description と meeting metadata の更新は [サマリー](summary.md) に従う。
 
-chat の workspace / 履歴は Workspace UUID で隔離する。Workspace 切替は新しい floating session とし、別 Workspace に紐づく detached session はその Workspace が active になるまで送信不可。start / resume とも user MCP を無効にして Dahlia helper を使い、要約は全 MCP を無効にする。設定画面は登録 command の表示・copy だけで外部 client 設定を書き換えない。外部 client の同名登録を別 Workspace へ変えるには明示的な再登録が必要。
+chat の履歴と実行範囲はアカウントで隔離し、Thread は任意の Project だけに関連付ける。Project から Workspace を解決しない。
+同じアカウント内の Workspace 切替では会話を維持し、別アカウントへの切替では以前の会話から送信しない。
+chat の Dahlia helper は `--account` で実行アカウントに固定し、Project の有無にかかわらずそのアカウント内を参照する。
+start / resume とも Dahlia helper を使い、要約は全 MCP を無効にする。外部 client の登録範囲は chat の選択と独立する。
 
 ## Project の正本
 

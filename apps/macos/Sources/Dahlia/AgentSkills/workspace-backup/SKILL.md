@@ -3,7 +3,7 @@ name: workspace-backup
 description: Create a Dahlia Local Workspace backup and save it to My Drive's Dahlia/Backup folder using Google Drive MCP. Use when asked to back up Dahlia or save a backup to Google Drive.
 ---
 
-Use `dahlia_create_backup` to create the current chat's Workspace backup. It calls the same service as Settings → Data Protection and returns a verified `.tar.gz` file path. Never copy the live SQLite database or build an archive yourself. Server Workspaces and unprocessed batch audio are rejected; explain the returned error without discarding recordings or changing account ownership.
+Use `dahlia_create_backup` with an explicit `workspace_id` to back up a Local Workspace in the chat's account. Discover Workspaces through Dahlia MCP; when the user has not identified the target and multiple Local Workspaces are available, ask which one to back up. Chats have no fixed Workspace, and a linked Project does not select the backup target. It calls the same service as Settings → Data Protection and returns a verified `.tar.gz` file path. Never copy the live SQLite database or build an archive yourself. Server Workspaces and unprocessed batch audio are rejected; explain the returned error without discarding recordings or changing account ownership.
 
 Use the configured Google Drive MCP server for all Drive writes, following chat's approval policy:
 

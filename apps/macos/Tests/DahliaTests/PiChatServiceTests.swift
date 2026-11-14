@@ -70,7 +70,7 @@ import Synchronization
         func historyLoadsTheLatestMessagesAndPagesBackWithoutReadingToolLogs() async throws {
             let fixture = try Self.fixture { _ in }
             defer { try? FileManager.default.removeItem(at: fixture.pi.rootURL) }
-            let thread = try await fixture.chat.startThread(model: nil, effort: "medium", workspaceID: .v7())
+            let thread = try await fixture.chat.startThread(model: nil, effort: "medium")
             try fixture.store.appendItems(threadID: thread.id, items: (0 ..< 95).map { ChatHistoryCodec.user([.text("message \($0)")]) })
             try fixture.store.appendItems(threadID: thread.id, items: (0 ..< 200).map { _ in
                 .object(["type": .string("tool_result"), "result": .string("tool output")])
@@ -104,8 +104,7 @@ import Synchronization
                 await transport.emit(TestPiTransport.settled())
             }
             defer { try? FileManager.default.removeItem(at: fixture.pi.rootURL) }
-            let workspaceID = UUID.v7()
-            let thread = try await fixture.chat.startThread(model: nil, effort: "medium", workspaceID: workspaceID)
+            let thread = try await fixture.chat.startThread(model: nil, effort: "medium")
             await fixture.chat.setThreadName(threadID: thread.id, name: "Saved title")
             let handle = try await fixture.chat.beginTurn(
                 threadID: thread.id,
@@ -124,7 +123,7 @@ import Synchronization
             let restored = try await fixture.chat.loadThread(id: thread.id)
             #expect(restored.title == "Saved title")
             #expect(restored.messages.map(\.text) == ["Question", "Saved answer"])
-            #expect(try await fixture.chat.listThreads(cursor: nil, workspaceID: workspaceID).threads.map(\.id) == [thread.id])
+            #expect(try await fixture.chat.listThreads(cursor: nil).threads.map(\.id) == [thread.id])
         }
 
         @Test
@@ -134,7 +133,7 @@ import Synchronization
                 await transport.emit(TestPiTransport.settled())
             }
             defer { try? FileManager.default.removeItem(at: fixture.pi.rootURL) }
-            let thread = try await fixture.chat.startThread(model: nil, effort: "medium", workspaceID: .v7())
+            let thread = try await fixture.chat.startThread(model: nil, effort: "medium")
             try await fixture.store.dbQueue.write { db in
                 try db.execute(sql: """
                 CREATE TRIGGER fail_chat_assistant BEFORE INSERT ON chat_items
@@ -169,8 +168,7 @@ import Synchronization
                 }
             }
             defer { try? FileManager.default.removeItem(at: fixture.pi.rootURL) }
-            let workspaceID = UUID.v7()
-            let thread = try await fixture.chat.startThread(model: nil, effort: "medium", workspaceID: workspaceID)
+            let thread = try await fixture.chat.startThread(model: nil, effort: "medium")
             let handle = try await fixture.chat.beginTurn(
                 threadID: thread.id,
                 inputs: [.text("Question")],
@@ -187,7 +185,7 @@ import Synchronization
                 for try await _ in handle.events {}
                 await fixture.chat.unsubscribe(threadID: thread.id)
             }
-            let directory = try PiAgentDirectoryLocator(applicationSupportURL: fixture.pi.rootURL).sessionsURL(for: .local, workspaceID: workspaceID)
+            let directory = try PiAgentDirectoryLocator(applicationSupportURL: fixture.pi.rootURL).sessionsURL(for: .local)
             let file = try #require(PiChatSessionFiles.file(id: thread.id, in: directory))
             try FileManager.default.removeItem(at: file)
             await #expect(throws: (any Error).self) {
@@ -218,7 +216,7 @@ import Synchronization
                 await transport.emit(TestPiTransport.settled())
             }
             defer { try? FileManager.default.removeItem(at: fixture.pi.rootURL) }
-            let thread = try await fixture.chat.startThread(model: nil, effort: "medium", workspaceID: .v7())
+            let thread = try await fixture.chat.startThread(model: nil, effort: "medium")
             let handle = try await fixture.chat.beginTurn(
                 threadID: thread.id,
                 inputs: [.text("Question")],
@@ -239,7 +237,7 @@ import Synchronization
                 await transport.close()
             }
             defer { try? FileManager.default.removeItem(at: fixture.pi.rootURL) }
-            let thread = try await fixture.chat.startThread(model: nil, effort: "medium", workspaceID: .v7())
+            let thread = try await fixture.chat.startThread(model: nil, effort: "medium")
             let handle = try await fixture.chat.beginTurn(
                 threadID: thread.id,
                 inputs: [.text("Question")],
@@ -263,7 +261,7 @@ import Synchronization
                 await transport.emit(TestPiTransport.settled(aborted: true))
             }
             defer { try? FileManager.default.removeItem(at: fixture.pi.rootURL) }
-            let thread = try await fixture.chat.startThread(model: nil, effort: "medium", workspaceID: .v7())
+            let thread = try await fixture.chat.startThread(model: nil, effort: "medium")
             let handle = try await fixture.chat.beginTurn(
                 threadID: thread.id,
                 inputs: [.text("Question")],
@@ -281,7 +279,7 @@ import Synchronization
             await fixture.chat.unsubscribe(threadID: thread.id)
             let record = try fixture.store.thread(id: thread.id, accountID: "local")
             let directory = try PiAgentDirectoryLocator(applicationSupportURL: fixture.pi.rootURL)
-                .sessionsURL(for: .local, workspaceID: record.workspaceID)
+                .sessionsURL(for: .local)
             if let file = PiChatSessionFiles.file(id: thread.id, in: directory) { try FileManager.default.removeItem(at: file) }
             // The test transport serves one process, so only the relaunch itself is observable here.
             _ = try? await fixture.chat.beginTurn(
@@ -299,11 +297,10 @@ import Synchronization
         func piFilesDoNotOverwriteDatabaseHistoryAndMissingFilesPreventExecution() async throws {
             let fixture = try Self.fixture { _ in }
             defer { try? FileManager.default.removeItem(at: fixture.pi.rootURL) }
-            let workspaceID = UUID.v7()
-            let directory = try PiAgentDirectoryLocator(applicationSupportURL: fixture.pi.rootURL).sessionsURL(for: .local, workspaceID: workspaceID)
+            let directory = try PiAgentDirectoryLocator(applicationSupportURL: fixture.pi.rootURL).sessionsURL(for: .local, workspaceID: .v7())
             let id = UUID.v7().uuidString.lowercased()
             try fixture.store.createThread(ChatThreadRecord(
-                id: id, accountID: "local", workspaceID: workspaceID,
+                id: id, accountID: "local",
                 title: "Database title", createdAt: .now, updatedAt: .now
             ), items: [
                 ChatHistoryCodec.user([.text("Original question")]),
@@ -317,13 +314,13 @@ import Synchronization
                 #"{"type":"session_info","name":"Original name"}"#,
             ].joined(separator: "\n")
             try Data(lines.utf8).write(to: file)
-            let first = try await fixture.chat.listThreads(cursor: nil, workspaceID: workspaceID)
+            let first = try await fixture.chat.listThreads(cursor: nil)
             #expect(first.threads.map(\.id) == [id])
             #expect(first.threads.first?.title == "Database title")
             await fixture.chat.setThreadName(threadID: id, name: "Catalog title")
-            _ = try await fixture.chat.listThreads(cursor: nil, workspaceID: workspaceID)
+            _ = try await fixture.chat.listThreads(cursor: nil)
             #expect(try fixture.store.listItems(threadID: id).count == 2)
-            #expect(try await fixture.chat.resumeThread(id: id, workspaceID: workspaceID).title == "Catalog title")
+            #expect(try await fixture.chat.resumeThread(id: id).title == "Catalog title")
             try FileManager.default.removeItem(at: file)
             #expect(try await fixture.chat.loadThread(id: id).messages.map(\.text) == ["Original question", "Original answer"])
             await #expect(throws: (any Error).self) {
@@ -340,7 +337,7 @@ import Synchronization
         }
 
         @Test
-        func backupBridgeUsesTheGuiServiceAndOnlyTheChatWorkspace() async throws {
+        func backupBridgeUsesAnExplicitWorkspaceFromTheChatAccount() async throws {
             let database = try AppDatabaseManager(path: ":memory:")
             defer { try? database.close() }
             let workspace = WorkspaceRecord(id: .v7(), path: nil, name: "Chat", createdAt: .now, lastOpenedAt: .now)
@@ -351,7 +348,11 @@ import Synchronization
             }
             let result = Mutex<String?>(nil)
             let fixture = try Self.fixture { transport in
-                await transport.emit(TestPiTransport.bridgeRequest(id: "backup", method: "createBackup", payload: .object([:])))
+                await transport.emit(TestPiTransport.bridgeRequest(
+                    id: "backup",
+                    method: "createBackup",
+                    payload: .object(["workspace_id": .string(TypeID.encode(workspace.id, as: .workspace))])
+                ))
                 let response = await transport.command { $0["id"]?.stringValue == "backup" }
                 result.withLock { $0 = response["value"]?.stringValue }
                 await transport.emit(TestPiTransport.assistantEnd("Created"))
@@ -359,7 +360,7 @@ import Synchronization
             }
             defer { try? FileManager.default.removeItem(at: fixture.pi.rootURL) }
             await fixture.chat.configureBackup(dbQueue: database.dbQueue, applicationSupportURL: fixture.pi.rootURL)
-            let thread = try await fixture.chat.startThread(model: nil, effort: "medium", workspaceID: workspace.id)
+            let thread = try await fixture.chat.startThread(model: nil, effort: "medium")
             let handle = try await fixture.chat.beginTurn(
                 threadID: thread.id, inputs: [.text("Back up this workspace")], model: nil, effort: "medium",
                 approvalMethod: .ask, expectedProvider: nil
@@ -393,7 +394,7 @@ import Synchronization
                 await transport.emit(TestPiTransport.assistantEnd("Done"))
                 await transport.emit(TestPiTransport.settled())
             }
-            let thread = try await fixture.chat.startThread(model: nil, effort: "medium", workspaceID: .v7())
+            let thread = try await fixture.chat.startThread(model: nil, effort: "medium")
             let turn = try await fixture.chat.beginTurn(
                 threadID: thread.id, inputs: [.text("Hello")], model: nil, effort: "medium",
                 approvalMethod: .ask, expectedProvider: .local
@@ -430,7 +431,7 @@ import Synchronization
                     "message": .string("dahlia: connected\n12 tools"),
                 ]),
             ], promptDisposition: "handled") { _ in }
-            let thread = try await fixture.chat.startThread(model: nil, effort: "medium", workspaceID: .v7())
+            let thread = try await fixture.chat.startThread(model: nil, effort: "medium")
             let turn = try await fixture.chat.beginTurn(
                 threadID: thread.id, inputs: [.text("/mcp")], model: nil, effort: "medium", approvalMethod: .ask, expectedProvider: nil
             )
@@ -449,7 +450,7 @@ import Synchronization
                 .object(["name": .string("skill:summary"), "source": .string("skill"), "description": .string("Summarize")]),
                 .object(["name": .string("mcp"), "source": .string("extension")]),
             ])) { _ in }
-            let commands = try await fixture.chat.commands(threadID: nil, workspaceID: .v7())
+            let commands = try await fixture.chat.commands(threadID: nil)
             #expect(commands.map(\.name) == ["mcp", "skill:summary"])
             let launch = try #require(fixture.pi.launches.all.first { $0.mode == .chat })
             #expect(launch.arguments.contains("--no-session"))
@@ -465,7 +466,7 @@ import Synchronization
         func malformedCommandDiscoveryStillClosesItsTemporaryProcess() async throws {
             let fixture = try Self.fixture(commands: .array([.object(["name": .string("missing-source")])])) { _ in }
             await #expect(throws: (any Error).self) {
-                try await fixture.chat.commands(threadID: nil, workspaceID: .v7())
+                try await fixture.chat.commands(threadID: nil)
             }
             #expect(await fixture.chatTransport.isClosed)
         }
@@ -473,7 +474,7 @@ import Synchronization
         @Test
         func cancellingCommandDiscoveryClosesItsTemporaryProcess() async throws {
             let fixture = try Self.fixture(delaysCommands: true) { _ in }
-            let task = Task { try await fixture.chat.commands(threadID: nil, workspaceID: .v7()) }
+            let task = Task { try await fixture.chat.commands(threadID: nil) }
             _ = await fixture.chatTransport.command("get_commands")
             task.cancel()
             await #expect(throws: CancellationError.self) { try await task.value }
@@ -486,15 +487,14 @@ import Synchronization
                 await transport.emit(TestPiTransport.assistantEnd("Done"))
                 await transport.emit(TestPiTransport.settled())
             }
-            let workspaceID = UUID.v7()
-            let thread = try await fixture.chat.startThread(model: nil, effort: "medium", workspaceID: workspaceID)
+            let thread = try await fixture.chat.startThread(model: nil, effort: "medium")
             let lease = await fixture.chat.acquireThreadLease(threadID: thread.id)
             let turn = try await fixture.chat.beginTurn(
                 threadID: thread.id, inputs: [.text("Hello")], model: nil, effort: "medium",
                 approvalMethod: .ask, expectedProvider: nil
             )
             for try await _ in turn.events {}
-            #expect(try await fixture.chat.commands(threadID: thread.id, workspaceID: workspaceID).isEmpty)
+            #expect(try await fixture.chat.commands(threadID: thread.id).isEmpty)
             #expect(fixture.pi.launches.all.filter { $0.mode == .chat }.count == 1)
             #expect(await !fixture.chatTransport.isClosed)
             await fixture.chat.releaseThreadLease(threadID: thread.id, leaseID: lease)
@@ -515,7 +515,7 @@ import Synchronization
                 await transport.emit(TestPiTransport.assistantEnd("Access was denied."))
                 await transport.emit(TestPiTransport.settled())
             }
-            let thread = try await fixture.chat.startThread(model: nil, effort: "medium", workspaceID: .v7())
+            let thread = try await fixture.chat.startThread(model: nil, effort: "medium")
             let handle = try await fixture.chat.beginTurn(
                 threadID: thread.id, inputs: [.text("inspect agent")], model: nil, effort: "medium",
                 approvalMethod: .ask, expectedProvider: nil
@@ -557,7 +557,7 @@ import Synchronization
                 await transport.emit(TestPiTransport.assistantEnd("Hello"))
                 await transport.emit(TestPiTransport.settled())
             }
-            let thread = try await fixture.chat.startThread(model: "openai/gpt-test", effort: "medium", workspaceID: .v7())
+            let thread = try await fixture.chat.startThread(model: "openai/gpt-test", effort: "medium")
             _ = await fixture.chat.acquireThreadLease(threadID: thread.id)
 
             let handle = try await fixture.chat.beginTurn(
@@ -589,7 +589,7 @@ import Synchronization
             let work = fixture.pi.rootURL.appending(path: "work")
             #expect(launch.cwd == work)
             #expect(launch.arguments.contains("builtin:mcp"))
-            #expect(launch.environment["DAHLIA_PI_MCP_COMMAND"]?.contains("--workspace-id") == true)
+            #expect(launch.environment["DAHLIA_PI_MCP_COMMAND"]?.contains("--account") == true)
             // Commands and file tools run under Seatbelt, confined to the working folder.
             #expect(launch.fileAccess.grants.isEmpty)
             #expect(launch.environment["DAHLIA_PI_MCP_SERVERS"] == #"["dahlia"]"#)
@@ -626,8 +626,7 @@ import Synchronization
                 mcpSettings: { _ in AgentMCPSettings() },
                 fileAccessSettings: { _ in permissions.withLock { $0 } }
             )
-            let workspaceID = UUID.v7()
-            let thread = try await chat.startThread(model: "openai/gpt-test", effort: "medium", workspaceID: workspaceID)
+            let thread = try await chat.startThread(model: "openai/gpt-test", effort: "medium")
             let lease = await chat.acquireThreadLease(threadID: thread.id)
             let readOnly = PiFileAccessSettings(grants: [.init(path: "/private/tmp/desk-config.toml", isDirectory: false)])
             var readWrite = readOnly
@@ -644,7 +643,7 @@ import Synchronization
                 if index == 0 {
                     // Saving a grant does not interrupt a running turn or its command discovery.
                     permissions.withLock { $0 = readOnly }
-                    #expect(try await chat.commands(threadID: thread.id, workspaceID: workspaceID).isEmpty)
+                    #expect(try await chat.commands(threadID: thread.id).isEmpty)
                     #expect(await !process.isClosed)
                 }
                 await process.emit(TestPiTransport.assistantEnd("ok"))
@@ -694,7 +693,7 @@ import Synchronization
                 mcpSettings: { _ in AgentMCPSettings() },
                 fileAccessSettings: { _ in PiFileAccessSettings() }
             )
-            let thread = try await chat.startThread(model: "openai/gpt-test", effort: "medium", workspaceID: .v7())
+            let thread = try await chat.startThread(model: "openai/gpt-test", effort: "medium")
             _ = await chat.acquireThreadLease(threadID: thread.id)
 
             let handle = try await chat.beginTurn(
@@ -730,7 +729,7 @@ import Synchronization
                 await transport.emit(TestPiTransport.assistantEnd("done"))
                 await transport.emit(TestPiTransport.settled())
             }
-            let thread = try await fixture.chat.startThread(model: nil, effort: "medium", workspaceID: .v7())
+            let thread = try await fixture.chat.startThread(model: nil, effort: "medium")
 
             let handle = try await fixture.chat.beginTurn(
                 threadID: thread.id, inputs: [.text("run ls")], model: nil, effort: "medium",
@@ -757,7 +756,7 @@ import Synchronization
         @Test
         func approvalModeChangedDuringATurnAppliesToTheNextToolCall() async throws {
             let fixture = try Self.fixture { _ in }
-            let thread = try await fixture.chat.startThread(model: nil, effort: "medium", workspaceID: .v7())
+            let thread = try await fixture.chat.startThread(model: nil, effort: "medium")
             let handle = try await fixture.chat.beginTurn(
                 threadID: thread.id, inputs: [.text("/dahlia-approval autoReview")], model: nil, effort: "medium",
                 approvalMethod: .ask, expectedProvider: nil
@@ -792,7 +791,7 @@ import Synchronization
                 _ = await transport.command("abort")
                 await transport.emit(TestPiTransport.settled(aborted: true))
             }
-            let thread = try await fixture.chat.startThread(model: nil, effort: "medium", workspaceID: .v7())
+            let thread = try await fixture.chat.startThread(model: nil, effort: "medium")
 
             let handle = try await fixture.chat.beginTurn(
                 threadID: thread.id, inputs: [.text("write")], model: nil, effort: "medium",
@@ -816,7 +815,7 @@ import Synchronization
         @Test
         func steeringWithoutActiveTurnReportsNoActiveTurn() async throws {
             let fixture = try Self.fixture { _ in }
-            let thread = try await fixture.chat.startThread(model: nil, effort: "medium", workspaceID: .v7())
+            let thread = try await fixture.chat.startThread(model: nil, effort: "medium")
             await #expect(throws: PiRuntimeError.rpcError(code: nil, message: "no active turn to steer")) {
                 try await fixture.chat.steer(threadID: thread.id, turnID: "x", inputs: [.text("more")])
             }
@@ -845,7 +844,7 @@ import Synchronization
                 agentLocator: PiAgentDirectoryLocator(applicationSupportURL: pi.rootURL),
                 mcpExecutableURL: URL(filePath: "/usr/bin/true")
             )
-            let thread = try await chat.startThread(model: nil, effort: "medium", workspaceID: .v7())
+            let thread = try await chat.startThread(model: nil, effort: "medium")
             _ = await chat.acquireThreadLease(threadID: thread.id)
 
             let stopped = Task {
@@ -868,8 +867,8 @@ import Synchronization
             #expect(log.all.count == 2)
         }
 
-        @Test
-        func turnReopensTheThreadAfterItsPiProcessExits() async throws {
+        @Test(arguments: [false, true])
+        func turnReopensTheThreadAfterItsPiProcessExits(legacyDirectory: Bool) async throws {
             let log = TestPiTransportLog()
             let account = CodexRuntimeProvider.databricks(connectionID: UUID())
             let pi = TestPiRuntime(provider: account) { options in
@@ -885,7 +884,6 @@ import Synchronization
                 if options.mode == .chat { log.append(transport) }
                 return transport
             }
-            let workspaceID = UUID.v7()
             let registered = Mutex(AgentMCPSettings())
             let chat = try PiChatService(
                 runtime: pi.service,
@@ -895,16 +893,22 @@ import Synchronization
                 mcpExecutableURL: URL(filePath: "/usr/bin/true"),
                 mcpSettings: { _ in registered.withLock { $0 } }
             )
-            let thread = try await chat.startThread(model: nil, effort: "medium", workspaceID: workspaceID)
+            let thread = try await chat.startThread(model: nil, effort: "medium")
             _ = await chat.acquireThreadLease(threadID: thread.id)
             let sessions = try PiAgentDirectoryLocator(applicationSupportURL: pi.rootURL)
-                .sessionsURL(for: account, workspaceID: workspaceID)
+                .sessionsURL(for: account)
             let first = try await chat.beginTurn(
                 threadID: thread.id, inputs: [.text("hi")], model: nil, effort: "medium",
                 approvalMethod: .autoReview, expectedProvider: nil
             )
             for try await _ in first.events {}
-            let file = try #require(PiChatSessionFiles.file(id: thread.id, in: sessions))
+            var file = try #require(PiChatSessionFiles.file(id: thread.id, in: sessions))
+            if legacyDirectory {
+                let legacy = try PiAgentDirectoryLocator(applicationSupportURL: pi.rootURL).sessionsURL(for: account, workspaceID: .v7())
+                    .appending(path: file.lastPathComponent)
+                try FileManager.default.moveItem(at: file, to: legacy)
+                file = legacy
+            }
             #expect(pi.launches.all.last { $0.mode == .chat }?.arguments.contains("--session-id") == true)
 
             try await pi.service.reloadConfiguration(interruptActiveOperations: true)
@@ -920,7 +924,13 @@ import Synchronization
             #expect(last == .completed(itemID: nil, text: nil))
             #expect(log.all.count == 2)
             let reopened = try #require(pi.launches.all.last { $0.mode == .chat })
-            #expect(reopened.arguments.contains { $0.hasSuffix("/" + file.lastPathComponent) })
+            let sessionArgument = try #require(reopened.arguments.firstIndex(of: "--session"))
+            let reopenedFile = URL(filePath: reopened.arguments[sessionArgument + 1])
+            #expect(reopenedFile.resolvingSymlinksInPath().path == file.resolvingSymlinksInPath().path)
+            let helperCommand = try #require(reopened.environment["DAHLIA_PI_MCP_COMMAND"])
+            #expect(helperCommand.contains("--account"))
+            #expect(helperCommand.contains(account.accountKey))
+            #expect(!helperCommand.contains("--workspace-id"))
 
             /// A settings change leaves the open process alone; the next process the thread starts uses the new MCPs.
             func turn(_ text: String) async throws {
@@ -964,10 +974,9 @@ import Synchronization
         @Test
         func restoringHistoryStartsNoProcessAndAFailedTurnSetupClosesIt() async throws {
             let fixture = try Self.fixture { _ in }
-            let workspaceID = UUID.v7()
-            let thread = try await fixture.chat.startThread(model: nil, effort: "medium", workspaceID: workspaceID)
+            let thread = try await fixture.chat.startThread(model: nil, effort: "medium")
             await fixture.chat.setThreadName(threadID: thread.id, name: "Named early")
-            let restored = try await fixture.chat.resumeThread(id: thread.id, workspaceID: workspaceID)
+            let restored = try await fixture.chat.resumeThread(id: thread.id)
             #expect(restored.title == "Named early")
             #expect(!fixture.pi.launches.all.contains { $0.mode == .chat })
 
@@ -1003,7 +1012,7 @@ import Synchronization
                 agentLocator: PiAgentDirectoryLocator(applicationSupportURL: pi.rootURL),
                 mcpExecutableURL: URL(filePath: "/usr/bin/true")
             )
-            let thread = try await chat.startThread(model: nil, effort: "medium", workspaceID: .v7())
+            let thread = try await chat.startThread(model: nil, effort: "medium")
             let lease = await chat.acquireThreadLease(threadID: thread.id)
             let turn = Task {
                 try await chat.beginTurn(
@@ -1086,7 +1095,7 @@ import Synchronization
                     ])
                 }
             )
-            let thread = try await chat.startThread(model: "openai/gpt-test", effort: "medium", workspaceID: .v7())
+            let thread = try await chat.startThread(model: "openai/gpt-test", effort: "medium")
             _ = await chat.acquireThreadLease(threadID: thread.id)
 
             func turn() async throws -> [CodexChatTurnEvent] {

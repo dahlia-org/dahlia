@@ -6,11 +6,10 @@
     @testable import Dahlia
 
     struct ChatHistoryTests {
-        private func thread(workspaceID: UUID = .v7(), accountID: String = "local", parentID: String? = nil) -> ChatThreadRecord {
+        private func thread(accountID: String = "local", parentID: String? = nil) -> ChatThreadRecord {
             ChatThreadRecord(
                 id: UUID.v7().uuidString.lowercased(),
                 accountID: accountID,
-                workspaceID: workspaceID,
                 parentThreadID: parentID,
                 title: "Conversation",
                 model: "test/model",
@@ -61,18 +60,18 @@
             let database = try AppDatabaseManager(path: ":memory:")
             let store = ChatThreadStore(dbQueue: database.dbQueue)
             let parent = thread()
-            let child = thread(workspaceID: parent.workspaceID, parentID: parent.id)
+            let child = thread(parentID: parent.id)
             try store.createThread(parent)
             try store.createThread(child)
             #expect(throws: (any Error).self) {
-                try store.createThread(thread(workspaceID: parent.workspaceID, accountID: "another", parentID: parent.id))
+                try store.createThread(thread(accountID: "another", parentID: parent.id))
             }
             try store.appendItems(threadID: child.id, items: (0 ..< 105).map { .object(["number": .number(Double($0))]) })
             let first = try store.listItems(threadID: child.id, limit: 1000)
             #expect(first.map(\.seq) == Array(0 ..< 100).map(Int64.init))
             #expect(try store.listItems(threadID: child.id, after: first.last?.seq).map(\.seq) == [100, 101, 102, 103, 104])
             #expect(throws: (any Error).self) { try store.thread(id: parent.id, accountID: "another") }
-            #expect(throws: (any Error).self) { try store.thread(id: parent.id, accountID: "local", workspaceID: .v7()) }
+            #expect(try store.thread(id: parent.id, accountID: "local").id == parent.id)
             try store.deleteThread(id: parent.id)
             #expect(try store.listItems(threadID: child.id).isEmpty)
             #expect(try database.dbQueue.read { try ChatThreadRecord.fetchCount($0) } == 0)
@@ -155,14 +154,14 @@
             let store = ChatThreadStore(dbQueue: database.dbQueue)
             var one = thread()
             one.status = "running"
-            var two = thread(workspaceID: one.workspaceID)
+            var two = thread()
             two.updatedAt = one.updatedAt.addingTimeInterval(-1)
             try store.createThread(one, items: [ChatHistoryCodec.user([.text("kept")])])
             try store.createThread(two)
-            let first = try store.listThreads(accountID: "local", workspaceID: one.workspaceID, cursor: nil, limit: 1)
+            let first = try store.listThreads(accountID: "local", cursor: nil, limit: 1)
             #expect(first.threads.map(\.id) == [one.id])
             try store.updateThread(id: one.id, title: "New title")
-            let second = try store.listThreads(accountID: "local", workspaceID: one.workspaceID, cursor: first.nextCursor, limit: 1)
+            let second = try store.listThreads(accountID: "local", cursor: first.nextCursor, limit: 1)
             #expect(second.threads.map(\.id) == [two.id])
             try store.recoverInterruptedThreads()
             #expect(try store.thread(id: one.id, accountID: "local").status == "interrupted")
@@ -188,9 +187,10 @@
                 try meeting.insert(db)
             }
             let store = ChatThreadStore(dbQueue: database.dbQueue)
-            let record = thread(workspaceID: workspace.id)
-            try store.createThread(record)
-            let prompt = CodexChatPromptCodec.encode(text: "hello", context: .meeting(id: meeting.id, name: meeting.name, calendarEvent: nil))
+            let record = thread()
+            let context = CodexChatContext.meeting(id: meeting.id, name: meeting.name, calendarEvent: nil)
+            try store.createThread(record, initialContext: context)
+            let prompt = CodexChatPromptCodec.encode(text: "hello", context: context)
             try store.beginTurn(threadID: record.id, message: ChatHistoryCodec.user([.text(prompt)]), model: nil, effort: "high")
             #expect(try store.thread(id: record.id, accountID: "local").projectID == project.id)
             _ = try database.dbQueue.write { try ProjectRecord.deleteOne($0, key: project.id) }
@@ -204,7 +204,7 @@
             let workspace = WorkspaceRecord(id: .v7(), path: nil, name: "Backup", createdAt: .now, lastOpenedAt: .now)
             try await database.dbQueue.write { try workspace.insert($0) }
             let store = ChatThreadStore(dbQueue: database.dbQueue)
-            let record = thread(workspaceID: workspace.id)
+            let record = thread()
             try store.createThread(record, items: [ChatHistoryCodec.user([.text("privatechatsecret")])])
             await database.searchIndexer.drain()
             let root = URL.temporaryDirectory.appending(path: "chat-backup-\(UUID.v7())")
@@ -217,7 +217,10 @@
                 #expect(try ChatThreadRecord.fetchCount(db) == 0)
                 #expect(try ChatItemRecord.fetchCount(db) == 0)
                 #expect(try Int.fetchOne(db, sql: "SELECT count(*) FROM search_chat_documents") == 0)
-                #expect(try Int.fetchOne(db, sql: "SELECT count(*) FROM search_chat_documents_fts WHERE search_chat_documents_fts MATCH 'privatechatsecret'") == 0)
+                #expect(try Int.fetchOne(
+                    db,
+                    sql: "SELECT count(*) FROM search_chat_documents_fts WHERE search_chat_documents_fts MATCH 'privatechatsecret'"
+                ) == 0)
             }
         }
 
@@ -230,9 +233,9 @@
                 try otherWorkspace.insert(db)
             }
             let store = ChatThreadStore(dbQueue: database.dbQueue)
-            let one = thread(workspaceID: workspace.id)
-            let otherAccount = thread(workspaceID: workspace.id, accountID: UUID.v7().uuidString.lowercased())
-            let other = thread(workspaceID: otherWorkspace.id)
+            let one = thread()
+            let otherAccount = thread(accountID: UUID.v7().uuidString.lowercased())
+            let other = thread()
             for record in [one, otherAccount, other] {
                 try store.createThread(record, items: [
                     ChatHistoryCodec.user([.text("日本語の検索と会議の記録 uniquemessage")]),
@@ -248,22 +251,19 @@
             await database.searchIndexer.drain()
             let queue = database.dbQueue
             let page = try await MeetingRepository.searchChatPage(
-                workspaceID: workspace.id,
                 accountID: "local",
                 criteria: .init(text: "uniquemessage"),
                 dbQueue: queue
             )
-            #expect(page.threads.map(\.id) == [one.id])
+            #expect(Set(page.threads.map(\.id)) == [one.id, other.id])
             let japanese = try await MeetingRepository.searchChatPage(
-                workspaceID: workspace.id,
                 accountID: "local",
                 criteria: .init(text: "日本語"),
                 dbQueue: queue
             )
-            #expect(japanese.threads.map(\.id) == [one.id])
+            #expect(Set(japanese.threads.map(\.id)) == [one.id, other.id])
             for text in ["hiddenreasoning", "hiddentooloutput"] {
                 #expect(try await MeetingRepository.searchChatPage(
-                    workspaceID: workspace.id,
                     accountID: "local",
                     criteria: .init(text: text),
                     dbQueue: queue
@@ -271,18 +271,16 @@
             }
             try await database.searchIndexer.requestRebuild()
             #expect(try await MeetingRepository.searchChatPage(
-                workspaceID: workspace.id,
                 accountID: "local",
                 criteria: .init(text: "assistantresponse"),
                 dbQueue: queue
-            ).threads.map(\.id) == [one.id])
+            ).threads.map(\.id).sorted() == [one.id, other.id].sorted())
             try store.deleteThread(id: one.id)
             #expect(try await MeetingRepository.searchChatPage(
-                workspaceID: workspace.id,
                 accountID: "local",
                 criteria: .init(text: "uniquemessage"),
                 dbQueue: queue
-            ).threads.isEmpty)
+            ).threads.map(\.id) == [other.id])
         }
 
         @Test
@@ -304,36 +302,32 @@
                 try child.insert(db)
             }
             let store = ChatThreadStore(dbQueue: database.dbQueue)
-            var attached = thread(workspaceID: workspace.id)
+            var attached = thread()
             attached.projectID = child.id
-            let other = thread(workspaceID: workspace.id)
+            let other = thread()
             try store.createThread(attached, items: [ChatHistoryCodec.user([.text("filterword")])])
             try store.createThread(other, items: [ChatHistoryCodec.user([.text("filterword")])])
             await database.searchIndexer.drain()
             let queue = database.dbQueue
             let filtered = try await MeetingRepository.searchChatPage(
-                workspaceID: workspace.id,
                 accountID: "local",
                 criteria: .init(text: "filterword", projectIDs: [parent.id]),
                 dbQueue: queue
             )
             #expect(filtered.threads.map(\.id) == [attached.id])
             let tagged = try await MeetingRepository.searchChatPage(
-                workspaceID: workspace.id,
                 accountID: "local",
                 criteria: .init(text: "filterword", tagIDs: [1]),
                 dbQueue: queue
             )
             #expect(tagged.threads.isEmpty)
             let future = try await MeetingRepository.searchChatPage(
-                workspaceID: workspace.id,
                 accountID: "local",
                 criteria: .init(text: "filterword", startDate: Date().addingTimeInterval(86400)),
                 dbQueue: queue
             )
             #expect(future.threads.isEmpty)
             let first = try await MeetingRepository.searchChatPage(
-                workspaceID: workspace.id,
                 accountID: "local",
                 criteria: .init(text: "filterword"),
                 limit: 1,
@@ -341,7 +335,6 @@
             )
             #expect(first.hasMore)
             let second = try await MeetingRepository.searchChatPage(
-                workspaceID: workspace.id,
                 accountID: "local",
                 criteria: .init(text: "filterword"),
                 offset: 1,

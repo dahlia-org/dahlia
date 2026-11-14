@@ -3,6 +3,7 @@ import SwiftUI
 struct CodexChatView: View {
     @Bindable var session: CodexChatSessionModel
     @Bindable var coordinator: CodexChatCoordinator
+    let sidebarViewModel: SidebarViewModel
     let meetingReferences: [CodexChatMeetingReference]
     let meetingCatalogWorkspaceID: UUID?
     let isMeetingCatalogLoaded: Bool
@@ -194,6 +195,11 @@ struct CodexChatView: View {
                 .padding(.horizontal, CodexChatDesign.contentHorizontalPadding)
                 .padding(.vertical, 6)
         }
+
+        CodexChatScopeBar(
+            session: session,
+            sidebarViewModel: sidebarViewModel
+        )
 
         if let request = session.pendingUserInput {
             CodexChatUserInputView(
