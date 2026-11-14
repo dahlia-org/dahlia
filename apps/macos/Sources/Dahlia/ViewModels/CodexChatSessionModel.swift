@@ -10,6 +10,9 @@ final class CodexChatSessionModel: Identifiable {
     private(set) var didStartBackendThread = false
     private(set) var title: String
     private(set) var messages: [CodexChatMessage]
+    private(set) var earlierMessagesCursor: String?
+    private(set) var isLoadingEarlierMessages = false
+    private(set) var earlierMessagesError: String?
     var draft = ""
 
     var selectedModelID: String
@@ -230,6 +233,28 @@ final class CodexChatSessionModel: Identifiable {
             didRestoreThread = true
         } catch {
             errorMessage = error.localizedDescription
+        }
+    }
+
+    func loadEarlierMessages() async {
+        guard !isReleased, !isGenerating, !isRestoring, !isLoadingEarlierMessages,
+              let threadID = backendThreadID, let cursor = earlierMessagesCursor else { return }
+        let provider = runtimeProvider
+        isLoadingEarlierMessages = true
+        earlierMessagesError = nil
+        defer { isLoadingEarlierMessages = false }
+        do {
+            let page = try await service.loadEarlierMessages(threadID: threadID, cursor: cursor)
+            try Task.checkCancellation()
+            guard !isReleased, !isGenerating, backendThreadID == threadID, earlierMessagesCursor == cursor,
+                  runtimeProvider == provider else { return }
+            messages.insert(contentsOf: page.messages, at: 0)
+            earlierMessagesCursor = page.earlierCursor
+        } catch is CancellationError {
+            // Closing or switching a conversation cancels only its display projection.
+        } catch {
+            guard !isReleased, backendThreadID == threadID, runtimeProvider == provider else { return }
+            earlierMessagesError = error.localizedDescription
         }
     }
 
@@ -703,6 +728,8 @@ extension CodexChatSessionModel {
         title = thread.title
         if !preservingPendingMessages {
             messages = thread.messages
+            earlierMessagesCursor = thread.earlierMessagesCursor
+            earlierMessagesError = nil
         }
         if let model = thread.model?.nilIfBlank {
             selectedModelID = model
@@ -766,7 +793,8 @@ extension CodexChatSessionModel {
             title: thread.title,
             messages: reconciledMessages,
             model: thread.model,
-            reasoningEffort: thread.reasoningEffort
+            reasoningEffort: thread.reasoningEffort,
+            earlierMessagesCursor: thread.earlierMessagesCursor
         )
         // Pi does not write handled commands or their notifications into its rollout.
         let hasNotices = messages.contains { if case .notice = $0.role { true } else { false } }

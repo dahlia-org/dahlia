@@ -5,6 +5,7 @@ enum GoogleCalendarAPIError: LocalizedError {
     case httpError(statusCode: Int, detail: String)
     /// A Unity Catalog failure that the Databricks connection proxy returns as an HTTP 200 JSON-RPC error.
     case proxyError(errorCode: String, message: String)
+    case proxyGoogleAuthenticationRequired
     case invalidCalendarDate(String)
 
     var errorDescription: String? {
@@ -15,6 +16,8 @@ enum GoogleCalendarAPIError: LocalizedError {
             L10n.googleCalendarHTTPError(statusCode, detail)
         case let .proxyError(_, message):
             L10n.googleCalendarDatabricksProxyError(message)
+        case .proxyGoogleAuthenticationRequired:
+            L10n.googleDatabricksReauthenticationRequired
         case let .invalidCalendarDate(value):
             L10n.googleCalendarInvalidDate(value)
         }
@@ -299,23 +302,37 @@ final class GoogleCalendarAPIClient: GoogleCalendarAPIClientProviding {
         request.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
         request.setValue("application/json", forHTTPHeaderField: "Accept")
 
-        let (data, response) = try await session.data(for: request)
-        guard let httpResponse = response as? HTTPURLResponse else {
-            throw GoogleCalendarAPIError.invalidResponse
+        var retriedGoogleAuthentication = false
+        while true {
+            try Task.checkCancellation()
+            let (data, response) = try await session.data(for: request)
+            guard let httpResponse = response as? HTTPURLResponse else {
+                throw GoogleCalendarAPIError.invalidResponse
+            }
+            // Check proxy failures before lenient list decoding can interpret them as an empty result.
+            do {
+                try checkProxyError(in: data, url: url, statusCode: httpResponse.statusCode)
+            } catch GoogleCalendarAPIError.proxyGoogleAuthenticationRequired where !retriedGoogleAuthentication {
+                // UC can transiently forward a Google 401; retry this read once before requesting reauthentication.
+                retriedGoogleAuthentication = true
+                continue
+            }
+            guard (200 ... 299).contains(httpResponse.statusCode) else {
+                let detail = String(data: data, encoding: .utf8) ?? ""
+                throw GoogleCalendarAPIError.httpError(statusCode: httpResponse.statusCode, detail: detail)
+            }
+            return data
         }
-        // The Databricks proxy reports Unity Catalog failures as JSON-RPC errors (seen with HTTP 200), and responses
-        // decode leniently (a missing `items` is an empty list), so catch them before the status check and decoding.
-        try checkProxyError(in: data, url: url)
-        guard (200 ... 299).contains(httpResponse.statusCode) else {
-            let detail = String(data: data, encoding: .utf8) ?? ""
-            throw GoogleCalendarAPIError.httpError(statusCode: httpResponse.statusCode, detail: detail)
-        }
-        return data
     }
 
-    nonisolated static func checkProxyError(in data: Data, url: URL) throws {
-        if url.host() != googleAPIBaseURL.host(), let envelope = try? JSONDecoder().decode(ProxyErrorEnvelope.self, from: data) {
+    nonisolated static func checkProxyError(in data: Data, url: URL, statusCode: Int) throws {
+        guard url.host() != googleAPIBaseURL.host() else { return }
+        if let envelope = try? JSONDecoder().decode(ProxyErrorEnvelope.self, from: data) {
             throw envelope.apiError
+        }
+        // A Google 401 means the proxy's downstream credential failed, not the Databricks bearer token.
+        if statusCode == 401, (try? JSONDecoder().decode(GoogleErrorBody.self, from: data))?.error.code == 401 {
+            throw GoogleCalendarAPIError.proxyGoogleAuthenticationRequired
         }
     }
 

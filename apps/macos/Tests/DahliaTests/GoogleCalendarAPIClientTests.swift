@@ -1,4 +1,5 @@
 import Foundation
+import Synchronization
 @testable import Dahlia
 
 #if canImport(Testing)
@@ -49,7 +50,10 @@ import Foundation
                     apiBaseURL: apiBaseURL
                 )
             }
-            let proxy = URL(string: "https://example.cloud.databricks.com/api/2.0/unity-catalog/connections/system_ai_agent_google_calendar/proxy/")!
+            let proxy =
+                try #require(
+                    URL(string: "https://example.cloud.databricks.com/api/2.0/unity-catalog/connections/system_ai_agent_google_calendar/proxy/")
+                )
 
             let error = await #expect(throws: GoogleCalendarAPIError.self) {
                 try await client.fetchCalendarList(session: session(proxy))
@@ -66,6 +70,73 @@ import Foundation
             }
             #expect(rejected.map(DatabricksProxyGoogleSignInProvider.isNotAuthorized) == true)
             #expect(try await client.fetchCalendarList(session: session(GoogleCalendarAPIClient.googleAPIBaseURL)).isEmpty)
+        }
+
+        @Test
+        func proxyGoogle401RequiresReauthenticationWithoutChangingOtherErrors() throws {
+            let proxy = try #require(URL(string: "https://workspace.example/api/2.0/unity-catalog/connections/calendar/proxy/"))
+            let google401 = Data(#"{"error":{"code":401,"message":"Invalid Credentials","status":"UNAUTHENTICATED"}}"#.utf8)
+            let error = try #require(#expect(throws: GoogleCalendarAPIError.self) {
+                try GoogleCalendarAPIClient.checkProxyError(in: google401, url: proxy, statusCode: 401)
+            })
+            guard case .proxyGoogleAuthenticationRequired = error else {
+                Issue.record("Expected an actionable downstream authentication error")
+                return
+            }
+            #expect(error.errorDescription == L10n.googleDatabricksReauthenticationRequired)
+            #expect(!DatabricksProxyGoogleSignInProvider.isUnusableRoute(error))
+            #expect(!DatabricksProxyGoogleSignInProvider.isNotAuthorized(error))
+            try GoogleCalendarAPIClient.checkProxyError(in: google401, url: GoogleCalendarAPIClient.googleAPIBaseURL, statusCode: 401)
+            try GoogleCalendarAPIClient.checkProxyError(in: google401, url: proxy, statusCode: 403)
+            try GoogleCalendarAPIClient.checkProxyError(
+                in: Data(#"{"error_code":"UNAUTHENTICATED","message":"Invalid Databricks token"}"#.utf8), url: proxy, statusCode: 401
+            )
+            try GoogleCalendarAPIClient.checkProxyError(in: Data("Unauthorized".utf8), url: proxy, statusCode: 401)
+        }
+
+        @Test
+        func transientProxyGoogle401RetriesOnceAndLoadsCalendars() async throws {
+            let configuration = URLSessionConfiguration.ephemeral
+            configuration.protocolClasses = [GoogleInvalidCredentialURLProtocol.self]
+            let transport = URLSession(configuration: configuration)
+            defer { transport.invalidateAndCancel() }
+            let url = try #require(URL(string: "https://\(UUID().uuidString).example/transient/proxy/calendar/v3/users/me/calendarList"))
+            defer { GoogleInvalidCredentialURLProtocol.requestCounts.withLock { $0[url] = nil } }
+
+            let data = try await GoogleCalendarAPIClient.authorizedGet(url: url, accessToken: "test-token", session: transport)
+
+            let response = try JSONDecoder().decode(GoogleCalendarAPIClient.CalendarListResponse.self, from: data)
+            #expect(response.items.map(\.id) == ["primary"])
+            #expect(GoogleInvalidCredentialURLProtocol.requestCounts.withLock { $0[url] } == 2)
+        }
+
+        @Test
+        func calendarProxy401ShowsReauthenticationWhileDirect401StaysAnHTTPError() async throws {
+            let configuration = URLSessionConfiguration.ephemeral
+            configuration.protocolClasses = [GoogleInvalidCredentialURLProtocol.self]
+            let transport = URLSession(configuration: configuration)
+            defer { transport.invalidateAndCancel() }
+            let client = GoogleCalendarAPIClient(session: transport)
+            for proxy in [false, true] {
+                let session = GoogleSession(
+                    account: GoogleCalendarAccount(id: "1", displayName: "Test", email: ""),
+                    accessToken: "test-token", grantedScopes: GoogleOAuthScope.calendar,
+                    apiBaseURL: URL(string: proxy ? "https://workspace.example/api/2.0/unity-catalog/connections/calendar/proxy/" :
+                        "https://www.googleapis.com/")!
+                )
+                let error = try #require(await #expect(throws: GoogleCalendarAPIError.self) {
+                    try await client.fetchCalendarList(session: session)
+                })
+                switch error {
+                case .proxyGoogleAuthenticationRequired: #expect(proxy)
+                case .httpError(statusCode: 401, _): #expect(!proxy)
+                default: Issue.record("Unexpected error: \(error)")
+                }
+                let count = GoogleInvalidCredentialURLProtocol.requestCounts.withLock { counts in
+                    counts.filter { $0.key.host() == session.apiBaseURL.host() }.values.reduce(0, +)
+                }
+                #expect(count == (proxy ? 2 : 1))
+            }
         }
 
         @Test
@@ -491,6 +562,31 @@ private class ProxyNoGrantURLProtocol: URLProtocol, @unchecked Sendable {
 /// Observed as 200; another status must still read as a proxy error rather than a forwarded Google error.
 private final class ProxyNoGrantForbiddenURLProtocol: ProxyNoGrantURLProtocol, @unchecked Sendable {
     override static var statusCode: Int { 403 }
+}
+
+private final class GoogleInvalidCredentialURLProtocol: URLProtocol, @unchecked Sendable {
+    static let requestCounts = Mutex<[URL: Int]>([:])
+    override static func canInit(with _: URLRequest) -> Bool { true }
+    override static func canonicalRequest(for request: URLRequest) -> URLRequest { request }
+    override func startLoading() {
+        #if canImport(Testing)
+            #expect(request.value(forHTTPHeaderField: "Authorization") == "Bearer test-token")
+        #endif
+        let url = request.url!
+        let count = Self.requestCounts.withLock { counts in
+            counts[url, default: 0] += 1
+            return counts[url]!
+        }
+        let recovered = url.path.contains("/transient/proxy/") && count > 1
+        let response = HTTPURLResponse(url: url, statusCode: recovered ? 200 : 401, httpVersion: nil, headerFields: nil)!
+        let body = recovered ? #"{"items":[{"id":"primary"}]}"# :
+            #"{"error":{"code":401,"message":"Invalid Credentials","status":"UNAUTHENTICATED"}}"#
+        client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
+        client?.urlProtocol(self, didLoad: Data(body.utf8))
+        client?.urlProtocolDidFinishLoading(self)
+    }
+
+    override func stopLoading() {}
 }
 
 private final class RecordingURLProtocol: URLProtocol, @unchecked Sendable {

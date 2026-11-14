@@ -7,6 +7,7 @@ struct MainSearchOverlay: View {
     let onOpenMeeting: (UUID) -> Void
     let onOpenScreenshot: (ScreenshotSearchResult) -> Void
     let onOpenProject: (UUID) -> Void
+    let onOpenChat: (CodexChatThreadSummary) -> Void
 
     var body: some View {
         GeometryReader { geometry in
@@ -36,6 +37,10 @@ struct MainSearchOverlay: View {
                     onOpenProject: { id in
                         model.dismiss()
                         onOpenProject(id)
+                    },
+                    onOpenChat: { thread in
+                        model.dismiss()
+                        onOpenChat(thread)
                     }
                 )
             }

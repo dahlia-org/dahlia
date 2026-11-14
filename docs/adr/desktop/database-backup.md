@@ -17,6 +17,7 @@ Server Account の保管庫を一つでも含む作成要求は世代を公開�
 明示した対象テーブルから新しい DB へコピーするため、他保管庫の内容は含まれない。原文・要約・OCR / caption の専用本文テーブルもコピーし、親 metadata に対応する本文の欠損があれば世代の公開・復元を拒否する。本文の保持状態や同期 state はコピーしない。
 音声本体・参照、Vault Markdown / 添付、端末の出力先、UserDefaults、アカウント接続、Keychain / token、同期キュー・カーソル、
 検索索引は含めない。対象保管庫に未文字起こし segmented audio があれば、文字起こしか明示破棄まで作成を拒否する。
+チャットの Thread 台帳・Item 履歴とチャットの検索索引、Pi の実行再開用 session file は含めない。上書き復元は対象保管庫の Thread を保持し、復元後も存在する Project との紐づけを残す。
 
 ## Google Drive と内蔵 Pi
 

@@ -137,6 +137,24 @@ import Synchronization
         }
 
         @Test
+        func rejectedGoogleCredentialSurfacesRecoveryOnRestoreAndConnect() async throws {
+            let apiClient = FakeAPIClient(result: .failure(GoogleCalendarAPIError.proxyGoogleAuthenticationRequired))
+            let provider = makeProvider(connection: connection, direct: FakeDirectProvider(), apiClient: apiClient)
+
+            for restore in [true, false] {
+                let error = await #expect(throws: GoogleCalendarAPIError.self) {
+                    if restore {
+                        try await provider.restorePreviousSignIn()
+                    } else {
+                        try await provider.signIn(withPresentingWindow: NSWindow(), requestedScopes: GoogleOAuthScope.calendar)
+                    }
+                }
+                #expect(error?.errorDescription == L10n.googleDatabricksReauthenticationRequired)
+            }
+            #expect(apiClient.sessions.count == 2)
+        }
+
+        @Test
         func signInSurfacesGoogleErrorsWithoutOpeningTheBrowser() async throws {
             let apiClient = FakeAPIClient(result: .failure(Self.googleRateLimit))
             let provider = makeProvider(connection: connection, direct: FakeDirectProvider(), apiClient: apiClient)

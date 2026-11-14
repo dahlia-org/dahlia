@@ -59,11 +59,15 @@ struct GoogleDriveBackupClient: Sendable {
         request.setValue("Bearer \(session.accessToken)", forHTTPHeaderField: "Authorization")
         let (download, response) = try await urlSession.download(for: request)
         do {
+            guard let http = response as? HTTPURLResponse else { throw GoogleDriveBackupError.downloadFailed }
             // Inspect only a bounded prefix: successful archives can be much larger than memory.
             let handle = try FileHandle(forReadingFrom: download)
             defer { try? handle.close() }
-            try GoogleCalendarAPIClient.checkProxyError(in: handle.read(upToCount: 64 * 1024) ?? Data(), url: url)
-            guard let http = response as? HTTPURLResponse, http.statusCode == 200 else {
+            try GoogleCalendarAPIClient.checkProxyError(
+                in: handle.read(upToCount: 64 * 1024) ?? Data(), url: url,
+                statusCode: http.statusCode
+            )
+            guard http.statusCode == 200 else {
                 throw GoogleDriveBackupError.downloadFailed
             }
             return download

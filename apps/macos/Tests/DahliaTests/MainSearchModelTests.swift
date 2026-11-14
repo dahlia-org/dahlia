@@ -9,6 +9,83 @@ import GRDB
     @Suite(.serialized)
     struct MainSearchModelTests {
         @Test(.timeLimit(.minutes(1)))
+        func chatOnlyResultsAreSelectableAndClearWhenTheQueryChanges() async throws {
+            let fixture = try MainSearchModelFixture()
+            defer { fixture.stop() }
+            let queue = fixture.manager.dbQueue
+            let workspaceID = fixture.workspace.id
+            let id = UUID.v7().uuidString.lowercased()
+            try await Task.detached {
+                let store = ChatThreadStore(dbQueue: queue)
+                try store.createThread(
+                    ChatThreadRecord(
+                        id: id,
+                        accountID: "local",
+                        workspaceID: workspaceID,
+                        title: "Chat title",
+                        createdAt: .now,
+                        updatedAt: .now
+                    ),
+                    items: [ChatHistoryCodec.user([.text("chatuniqueword")])]
+                )
+            }.value
+            await fixture.manager.searchIndexer.drain()
+            let sidebar = fixture.makeSidebarViewModel()
+            defer { sidebar.setAppDatabase(nil) }
+            let model = MainSearchModel()
+            model.present(using: sidebar)
+            model.inputText = "chatuniqueword"
+            model.queryDidChange(using: sidebar)
+            #expect(await pollUntil { !model.isLoading && !model.isLoadingChats })
+            #expect(model.chats.map(\.id) == [id])
+            #expect(model.hasResults)
+            #expect(model.resultIDs.contains(.chat(id)))
+            model.resultKind = "chat"
+            model.moveSelection(by: 1)
+            #expect(model.selectedResultID == .chat(id))
+            model.inputText = "unmatchedword"
+            model.queryDidChange(using: sidebar)
+            #expect(model.chats.isEmpty)
+            #expect(await pollUntil { !model.isLoading && !model.isLoadingChats })
+            #expect(model.chats.isEmpty)
+            model.dismiss()
+            #expect(model.resultIDs.isEmpty)
+        }
+
+        @Test(.timeLimit(.minutes(1)))
+        func loadingMoreChatsListsAThreadOnceWhenAnotherMovesBetweenPages() async throws {
+            let fixture = try MainSearchModelFixture()
+            defer { fixture.stop() }
+            let queue = fixture.manager.dbQueue
+            let workspaceID = fixture.workspace.id
+            let start = Date(timeIntervalSince1970: 1_700_000_000)
+            let oldest = try await Task.detached {
+                let store = ChatThreadStore(dbQueue: queue)
+                var ids: [String] = []
+                for index in 0 ..< 27 {
+                    let date = start.addingTimeInterval(TimeInterval(index))
+                    let id = UUID.v7().uuidString.lowercased()
+                    try store.createThread(ChatThreadRecord(
+                        id: id, accountID: "local", workspaceID: workspaceID, title: "Chat \(index)", createdAt: date, updatedAt: date
+                    ))
+                    ids.append(id)
+                }
+                return ids[0]
+            }.value
+            let sidebar = fixture.makeSidebarViewModel()
+            defer { sidebar.setAppDatabase(nil) }
+            let model = MainSearchModel()
+            model.present(using: sidebar)
+            #expect(await pollUntil { !model.isLoadingChats && model.chats.count == 25 })
+            // A turn in a Thread of the next page moves it to the top and shifts every offset by one.
+            try await Task.detached { try ChatThreadStore(dbQueue: queue).updateThread(id: oldest, title: "Moved") }.value
+            model.loadMoreChats(using: sidebar)
+            #expect(await pollUntil { !model.isLoadingChats && !model.hasMoreChats })
+            #expect(model.chats.count == 26)
+            #expect(Set(model.chats.map(\.id)).count == 26)
+        }
+
+        @Test(.timeLimit(.minutes(1)))
         func presentsSixRecentMeetingsAndProjectsInNewestOrder() async throws {
             let fixture = try MainSearchModelFixture()
             defer { fixture.stop() }

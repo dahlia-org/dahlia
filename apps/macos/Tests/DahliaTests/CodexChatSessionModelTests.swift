@@ -1294,6 +1294,28 @@ import Foundation
         let mode: Mode
         private let availableCommands: [CodexChatSlashCommand]
         private let delaysLoad: Bool
+        private let earlierPages: [String: CodexChatMessagePage]
+        private let initialEarlierCursor: String?
+        private let delaysEarlierMessages: Bool
+        private var delayedEarlierContinuation: CheckedContinuation<Void, Never>?
+        private(set) var earlierRequests: [String] = []
+
+        var isEarlierWaiting: Bool { delayedEarlierContinuation != nil }
+
+        func completeEarlierLoad() {
+            delayedEarlierContinuation?.resume()
+            delayedEarlierContinuation = nil
+        }
+
+        func loadEarlierMessages(threadID _: String, cursor: String) async throws -> CodexChatMessagePage {
+            earlierRequests.append(cursor)
+            if delaysEarlierMessages {
+                await withCheckedContinuation { delayedEarlierContinuation = $0 }
+            }
+            guard let page = earlierPages[cursor] else { throw PiRuntimeError.invalidProtocolResponse }
+            return page
+        }
+
         private let restoredApprovalMethod: CodexChatApprovalMethod?
         private let approvalMethodUpdateError: PiRuntimeError?
         private let delaysApprovalMethodUpdate: Bool
@@ -1344,7 +1366,10 @@ import Foundation
             restoredApprovalMethod: CodexChatApprovalMethod? = nil,
             approvalMethodUpdateError: PiRuntimeError? = nil,
             delaysApprovalMethodUpdate: Bool = false,
-            resumeErrors: [PiRuntimeError] = []
+            resumeErrors: [PiRuntimeError] = [],
+            earlierPages: [String: CodexChatMessagePage] = [:],
+            initialEarlierCursor: String? = nil,
+            delaysEarlierMessages: Bool = false
         ) {
             self.mode = mode
             self.availableCommands = commands
@@ -1354,6 +1379,9 @@ import Foundation
             self.approvalMethodUpdateError = approvalMethodUpdateError
             self.delaysApprovalMethodUpdate = delaysApprovalMethodUpdate
             self.resumeErrors = resumeErrors
+            self.earlierPages = earlierPages
+            self.initialEarlierCursor = initialEarlierCursor
+            self.delaysEarlierMessages = delaysEarlierMessages
         }
 
         private(set) var modelListings = 0
@@ -1415,7 +1443,8 @@ import Foundation
                 messages: thread.messages,
                 model: thread.model,
                 reasoningEffort: thread.reasoningEffort,
-                approvalMethod: restoredApprovalMethod
+                approvalMethod: restoredApprovalMethod,
+                earlierMessagesCursor: initialEarlierCursor
             )
         }
 

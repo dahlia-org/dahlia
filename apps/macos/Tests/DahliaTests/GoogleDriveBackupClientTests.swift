@@ -42,16 +42,35 @@ import Foundation
             }
         }
 
+        @Test
+        func googleCredentialFailureRequiresReauthenticationAcrossDriveReads() async throws {
+            let configuration = URLSessionConfiguration.ephemeral
+            configuration.protocolClasses = [DriveBackupURLProtocol.self]
+            let transport = URLSession(configuration: configuration)
+            defer { transport.invalidateAndCancel() }
+            let session = try GoogleSession(
+                account: GoogleCalendarAccount(id: "test", displayName: "Test", email: ""),
+                accessToken: "google401", grantedScopes: GoogleOAuthScope.drive,
+                apiBaseURL: #require(URL(string: "https://workspace.example/proxy/"))
+            )
+            let client = GoogleDriveBackupClient(urlSession: transport)
+            let listError = await #expect(throws: GoogleCalendarAPIError.self) { try await client.listBackups(session: session) }
+            #expect(listError?.errorDescription == L10n.googleDatabricksReauthenticationRequired)
+            let file = GoogleDriveBackupFile(id: "backup", name: "backup.tar.gz", size: nil, modifiedTime: nil)
+            let downloadError = await #expect(throws: GoogleCalendarAPIError.self) { try await client.download(file, session: session) }
+            #expect(downloadError?.errorDescription == L10n.googleDatabricksReauthenticationRequired)
+        }
+
         @Test(arguments: [200, 403])
         func downloadPreservesProxyAuthenticationErrors(status: Int) async throws {
             let configuration = URLSessionConfiguration.ephemeral
             configuration.protocolClasses = [DriveBackupURLProtocol.self]
             let transport = URLSession(configuration: configuration)
             defer { transport.invalidateAndCancel() }
-            let session = GoogleSession(
+            let session = try GoogleSession(
                 account: GoogleCalendarAccount(id: "test", displayName: "Test", email: ""),
                 accessToken: "download-proxy-error-\(status)", grantedScopes: GoogleOAuthScope.drive,
-                apiBaseURL: URL(string: "https://workspace.example/proxy/")!
+                apiBaseURL: #require(URL(string: "https://workspace.example/proxy/"))
             )
             let file = GoogleDriveBackupFile(id: "backup", name: "backup.tar.gz", size: nil, modifiedTime: nil)
             let error = await #expect(throws: GoogleCalendarAPIError.self) {
@@ -103,6 +122,16 @@ import Foundation
             let query = items.first { $0.name == "q" }?.value ?? ""
             #expect(request.httpMethod == "GET")
             let authorization = request.value(forHTTPHeaderField: "Authorization")
+            if authorization == "Bearer google401" {
+                let body = #"{"error":{"code":401,"message":"Invalid Credentials","status":"UNAUTHENTICATED"}}"#
+                client?.urlProtocol(
+                    self, didReceive: HTTPURLResponse(url: url, statusCode: 401, httpVersion: nil, headerFields: nil)!,
+                    cacheStoragePolicy: .notAllowed
+                )
+                client?.urlProtocol(self, didLoad: Data(body.utf8))
+                client?.urlProtocolDidFinishLoading(self)
+                return
+            }
             if items.first(where: { $0.name == "alt" })?.value == "media" {
                 #expect(url.path.hasSuffix("/drive/v3/files/backup"))
                 let isError = authorization?.hasPrefix("Bearer download-proxy-error-") == true

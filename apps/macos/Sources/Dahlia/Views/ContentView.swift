@@ -219,7 +219,8 @@ struct ContentView: View {
                     appearanceForProject: projectAppearance,
                     onOpenMeeting: openSearchMeeting,
                     onOpenScreenshot: openSearchScreenshot,
-                    onOpenProject: openSearchProject
+                    onOpenProject: openSearchProject,
+                    onOpenChat: openFullScreenChatThread
                 )
                 .opacity(isShowingSettings ? 0 : 1)
                 .allowsHitTesting(!isShowingSettings)

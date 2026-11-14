@@ -185,6 +185,12 @@ enum BackupRestoreStartupProcessor {
                         restoredWorkspace.lastOpenedAt = .now
                     }
                     let retainedAudio = target == nil ? [] : try WorkspaceBackupTransfer.retainedAudio(workspaceId: request.targetWorkspaceId, in: db)
+                    // Chats stay out of backups, and replacing the Projects would clear their Project links.
+                    let chatProjects = try Row.fetchAll(
+                        db,
+                        sql: "SELECT id, projectID FROM chat_threads WHERE workspaceID = ? AND projectID IS NOT NULL",
+                        arguments: [request.targetWorkspaceId]
+                    )
                     if target != nil { try WorkspaceBackupTransfer.removeWorkspaceContent(id: request.targetWorkspaceId, in: db) }
                     try WorkspaceBackupTransfer.copy(
                         workspaceId: request.sourceWorkspaceId,
@@ -225,6 +231,12 @@ enum BackupRestoreStartupProcessor {
                             return try source.jsonString()
                         }
                     )
+                    for row in chatProjects {
+                        try db.execute(
+                            sql: "UPDATE chat_threads SET projectID = ?1 WHERE id = ?2 AND EXISTS(SELECT 1 FROM projects WHERE id = ?1)",
+                            arguments: [row["projectID"] as UUID, row["id"] as String]
+                        )
+                    }
                     try WorkspaceBackupTransfer.restoreRetainedAudio(retainedAudio, in: db)
                     try WorkspaceBackupTransfer.validateIntegrity(in: db)
                 }

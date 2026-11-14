@@ -105,7 +105,7 @@ extension MeetingRepository {
         )
     }
 
-    private nonisolated static func withSearchDeadline<Result: Sendable>(
+    nonisolated static func withSearchDeadline<Result: Sendable>(
         _ operation: @escaping @Sendable () async throws -> Result
     ) async throws -> Result {
         try await withThrowingTaskGroup(of: Result.self) { group in
@@ -309,14 +309,18 @@ extension MeetingRepository {
             .joined(separator: " AND ")
     }
 
-    private nonisolated static func orderedQueryTokens(_ tokens: [String], in db: Database) throws -> [FTSQueryToken] {
+    nonisolated static func orderedQueryTokens(
+        _ tokens: [String],
+        vocabulary: String = "search_documents_fts_vocab",
+        in db: Database
+    ) throws -> [FTSQueryToken] {
         try tokens.enumerated().map { ordinal, token in
             let isPrefix = ordinal == tokens.count - 1
             let estimatedDocuments: Int = if isPrefix {
                 try Int.fetchOne(
                     db,
                     sql: """
-                    SELECT COALESCE(SUM(doc), 0) FROM search_documents_fts_vocab
+                    SELECT COALESCE(SUM(doc), 0) FROM \(vocabulary)
                     WHERE term >= ? AND term < ?
                     """,
                     arguments: [token, token + "\u{10FFFF}"]
@@ -324,7 +328,7 @@ extension MeetingRepository {
             } else {
                 try Int.fetchOne(
                     db,
-                    sql: "SELECT doc FROM search_documents_fts_vocab WHERE term = ?",
+                    sql: "SELECT doc FROM \(vocabulary) WHERE term = ?",
                     arguments: [token]
                 ) ?? 0
             }
@@ -649,7 +653,7 @@ extension MeetingRepository {
     }
 }
 
-private struct FTSQueryToken {
+struct FTSQueryToken {
     let ordinal: Int
     let token: String
     let query: String

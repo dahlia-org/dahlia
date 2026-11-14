@@ -74,7 +74,12 @@ struct CodexChatConversationWindow: Equatable {
         upperBound = nil
     }
 
+    mutating func showEarliestMessages() {
+        upperBound = 0
+    }
+
     private func selectedPageIndex(in ranges: [Range<Int>]) -> Int {
+        if upperBound == 0 { return 0 }
         guard let upperBound,
               let index = ranges.firstIndex(where: { $0.upperBound == upperBound })
         else {
@@ -91,12 +96,17 @@ struct CodexChatConversationView: View {
     let meetingNamesByID: [UUID: String]
     let meetingReferencesByID: [UUID: CodexChatMeetingReference]
     let contentMaxWidth: CGFloat?
+    let hasStoredEarlierMessages: Bool
+    let isLoadingEarlierMessages: Bool
+    let canLoadEarlierMessages: Bool
+    let onLoadEarlierMessages: () async -> Void
 
     @Environment(\.isChatSidebarResizing) private var isChatSidebarResizing
     @State private var isFollowingLatest = true
     @State private var conversationWindow = CodexChatConversationWindow()
     @State private var cachedStructure: CodexChatConversationStructure?
     @State private var cachedPageRanges: [Range<Int>] = []
+    @State private var earlierMessagesTask: Task<Void, Never>?
 
     var body: some View {
         let structure = CodexChatConversationStructure(
@@ -120,12 +130,22 @@ struct CodexChatConversationView: View {
         )
         ScrollView {
             VStack(alignment: .leading, spacing: 22) {
-                if hasEarlierMessages || hasLaterMessages {
+                if hasEarlierMessages || hasLaterMessages || hasStoredEarlierMessages {
                     HStack {
                         if hasEarlierMessages {
                             Button(L10n.chatEarlierMessages, systemImage: "chevron.up") {
                                 conversationWindow.showEarlierMessages(in: pageRanges)
                             }
+                        } else if hasStoredEarlierMessages {
+                            Button(L10n.chatEarlierMessages, systemImage: "chevron.up") {
+                                earlierMessagesTask = Task {
+                                    await onLoadEarlierMessages()
+                                    guard !Task.isCancelled else { return }
+                                    conversationWindow.showEarliestMessages()
+                                }
+                            }
+                            .disabled(isLoadingEarlierMessages || !canLoadEarlierMessages)
+                            if isLoadingEarlierMessages { ProgressView().controlSize(.small) }
                         }
                         Spacer()
                         if hasLaterMessages {
@@ -173,9 +193,11 @@ struct CodexChatConversationView: View {
             )
         }
         .onChange(of: conversationID) {
+            earlierMessagesTask?.cancel()
             conversationWindow.showLatestMessages()
             isFollowingLatest = true
         }
+        .onDisappear { earlierMessagesTask?.cancel() }
         .onChange(of: structure, initial: true) { _, current in
             cachedPageRanges = pageRanges
             cachedStructure = current

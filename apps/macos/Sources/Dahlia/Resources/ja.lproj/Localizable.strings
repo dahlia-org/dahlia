@@ -734,6 +734,7 @@
 "Google Calendar HTTP %lld: %@" = "Google カレンダー HTTP %lld: %@";
 "Databricks connection: %@" = "Databricks 接続: %@";
 "Open Connection Page in Databricks" = "Databricks で接続ページを開く";
+"Google rejected the credentials stored in Databricks. Open the connection page in Settings, revoke the credentials, sign in with Google again, then reconnect in Dahlia." = "Databricks に保存された認証情報が Google に拒否されました。設定から Databricks の接続ページを開き、既存の認証情報を取り消してから Google に再ログインし、Dahlia で再接続してください。";
 "Could not parse Google Calendar date: %@" = "Google カレンダーの日付を解析できませんでした: %@";
 
 /* Workspace Picker */
@@ -1264,7 +1265,6 @@
 "Reload" = "再読み込み";
 "Recent Projects" = "最近動いたProjects";
 "Search meetings and projects" = "ミーティングとプロジェクトを検索";
-"Search meetings, screenshots, and projects" = "ミーティング、スクリーンショット、プロジェクトを検索";
 "Detected Text" = "検出したテキスト";
 "Image Description" = "画像の説明";
 "Image analysis failed." = "画像の解析に失敗しました。";
@@ -2048,3 +2048,5 @@
 "mcp.otherApps" = "その他のアプリ（JSON）";
 "mcp.showCommand" = "接続コマンドを表示";
 "mcp.showJSON" = "設定内容を表示";
+"Chat resume state missing" = "このチャットの実行用ファイルがありません。履歴は表示できますが、続けるには新しいチャットを開始してください。";
+"Search meetings, screenshots, projects, and chats" = "ミーティング・スクリーンショット・プロジェクト・チャットを検索";

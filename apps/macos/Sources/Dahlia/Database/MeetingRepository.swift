@@ -1095,7 +1095,10 @@ final class MeetingRepository {
             try MeetingScreenshotRecord
                 .select(sql: MeetingScreenshotRecord.metadataSelection)
                 .filter(Column("meetingId") == meetingId)
-                .filter(sql: "fileId NOT IN (SELECT id FROM files WHERE json_extract(metadata, '$.informativeReason') IS NOT NULL)")
+                .filter(sql: """
+                NOT EXISTS (SELECT 1 FROM files WHERE files.id = meeting_images.fileId
+                    AND json_extract(files.metadata, '$.informativeReason') IS NOT NULL)
+                """)
                 .order(Column("capturedAt").asc)
                 .fetchAll(db)
         }

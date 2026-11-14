@@ -442,6 +442,8 @@
                 "v56_screenshotTextControlCharacters",
                 "v57_accountsTable",
                 "v58_searchDictionaries",
+                "v59_chatHistory",
+                "v60_meetingDisplayIndexes",
             ])
             try database.dbQueue.read { db throws in
                 #expect(try Row.fetchAll(db, sql: "PRAGMA foreign_key_check").isEmpty)
@@ -509,7 +511,8 @@
                 PRAGMA foreign_keys = ON;
                 INSERT INTO grdb_migrations (identifier) VALUES ('v57_accounts');
                 """)
-                #expect(try String.fetchAll(db, sql: "SELECT name FROM sqlite_master WHERE sql LIKE '%dahlia_account_connections%'").contains("workspaces"))
+                #expect(try String.fetchAll(db, sql: "SELECT name FROM sqlite_master WHERE sql LIKE '%dahlia_account_connections%'")
+                    .contains("workspaces"))
             }
 
             try AppDatabaseManager.migrator.migrate(queue)
@@ -572,7 +575,9 @@
             try AppDatabaseManager.migrator.migrate(queue)
 
             try queue.read { db throws in
-                let text = { (id: UUID) in try Row.fetchOne(db, sql: "SELECT ocrText, caption FROM file_text_bodies WHERE fileId = ?", arguments: [id]) }
+                let text = { (id: UUID) in
+                    try Row.fetchOne(db, sql: "SELECT ocrText, caption FROM file_text_bodies WHERE fileId = ?", arguments: [id])
+                }
                 let cleaned = try #require(try text(localShot.id))
                 #expect(cleaned["ocrText"] as String? == "Maps")
                 #expect(cleaned["caption"] as String? == "A browser")

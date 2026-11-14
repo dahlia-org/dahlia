@@ -166,6 +166,14 @@ struct TestPiRuntime {
             configurationReadiness: { true },
             launcher: { options, _, _ in
                 launches.append(options)
+                // Fake Pi creates the resume header that a later process needs, without touching user history.
+                if let sessionIndex = options.arguments.firstIndex(of: "--session-id"),
+                   let directoryIndex = options.arguments.firstIndex(of: "--session-dir") {
+                    let id = options.arguments[sessionIndex + 1]
+                    let directory = URL(filePath: options.arguments[directoryIndex + 1])
+                    let header: JSONValue = .object(["type": .string("session"), "id": .string(id), "cwd": .string(options.cwd.path)])
+                    try JSONEncoder().encode(header).write(to: directory.appending(path: "test_\(id).jsonl"))
+                }
                 return transport(options)
             },
             tokenResolver: tokenResolver,
