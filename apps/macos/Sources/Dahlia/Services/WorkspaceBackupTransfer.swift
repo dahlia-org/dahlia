@@ -10,7 +10,7 @@ enum WorkspaceBackupTransfer {
     static let meetingTables = [
         "recording_sessions", "transcript_segments", "notes", "meeting_attachments", "summaries", "action_items",
         "summary_exports", "meeting_conversation_metrics", "meeting_conversation_source_metrics", "meeting_tags",
-        "summary_bodies", "document_legacy_imports",
+        "summary_versions", "summary_bodies", "document_legacy_imports",
     ]
     static let documentTables = ["documents", "document_private_copies", "document_updates", "document_recoveries"]
     static let referenceTables = [
@@ -87,8 +87,8 @@ enum WorkspaceBackupTransfer {
                     }
                     let value: DatabaseValue = row[column]
                     if value.isNull { return value }
-                    if remapIDs, table == "summary_bodies", column == "document" {
-                        return try remapSummary(row["document"], screenshots: mappings["meeting_attachments"] ?? [:]).databaseValue
+                    if remapIDs, ["summary_bodies", "summary_versions"].contains(table), column == "document" {
+                        return try remapStoredSummary(row, table: table, mappings: mappings, in: db).databaseValue
                     }
                     let referencedTable: String? = if column == "id" {
                         table
@@ -143,7 +143,31 @@ enum WorkspaceBackupTransfer {
         }
     }
 
-    private static func remapSummary(_ json: String, screenshots: [DatabaseValue: DatabaseValue]) throws -> String {
+    private static func remapStoredSummary(
+        _ row: Row, table: String, mappings: [String: [DatabaseValue: DatabaseValue]], in db: Database
+    ) throws -> String {
+        // Reuse remapped AST IDs so installing the current body does not create a duplicate version.
+        if table == "summary_bodies" {
+            let sourceID: DatabaseValue = row["meetingId"]
+            let destinationID = mappings["meetings"]?[sourceID] ?? sourceID
+            let current = try Row.fetchOne(db, sql: """
+            SELECT source.document AS original, restored.document AS remapped
+            FROM backup_source.summary_versions source JOIN summary_versions restored ON restored.version = source.version
+            WHERE source.meetingId = ? AND restored.meetingId = ? AND source.isCurrent
+            """, arguments: [sourceID, destinationID])
+            if let current, current["original"] as String == row["document"] as String {
+                return current["remapped"] as String
+            }
+        }
+        return try remapSummary(
+            row["document"], screenshots: mappings["meeting_attachments"] ?? [:],
+            allowsMissingScreenshots: table == "summary_versions"
+        )
+    }
+
+    private static func remapSummary(
+        _ json: String, screenshots: [DatabaseValue: DatabaseValue], allowsMissingScreenshots: Bool
+    ) throws -> String {
         var document = try SummaryDocument.decode(databaseJSON: json)
         for sectionIndex in document.sections.indices {
             document.sections[sectionIndex].id = .v7()
@@ -152,6 +176,7 @@ enum WorkspaceBackupTransfer {
                 block.id = .v7()
                 if case let .image(id, caption) = block.content {
                     guard let value = screenshots[id.databaseValue], let mapped = UUID.fromDatabaseValue(value) else {
+                        if allowsMissingScreenshots { continue }
                         throw BackupServiceError.invalidBackup
                     }
                     block.content = .image(screenshotId: mapped, caption: caption)

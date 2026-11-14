@@ -1209,6 +1209,32 @@ final class MeetingRepository {
         }
     }
 
+    /// Makes a retained version the current summary by moving the current marker; no version is added.
+    /// A Workspace with a folder keeps one exported file per meeting and only overwrites it, so it has no promotion.
+    nonisolated func promoteSummary(meetingID: UUID, version: Int) throws {
+        try dbQueue.write { db in
+            guard let meeting = try MeetingRecord.fetchOne(db, key: meetingID),
+                  let workspace = try WorkspaceRecord.fetchOne(db, key: meeting.workspaceId),
+                  workspace.accountConnectionId == nil, workspace.url == nil,
+                  var summary = try TextContentAccess.summary(meetingId: meetingID, in: db),
+                  let promoted = try SummaryVersionRecord.fetchOne(
+                      db, key: ["meetingId": meetingID.databaseValue, "version": version.databaseValue]
+                  )
+            else { throw TextContentError.changed }
+            guard !promoted.isCurrent else { return }
+            try WorkspaceTransferFence.recordLocalMutation(workspaceID: workspace.id, in: db)
+            // The marker moves first so the body triggers see the promoted version as current and add nothing.
+            try db.execute(sql: "UPDATE summary_versions SET isCurrent = 0 WHERE meetingId = ? AND isCurrent", arguments: [meetingID])
+            try db.execute(
+                sql: "UPDATE summary_versions SET isCurrent = 1 WHERE meetingId = ? AND version = ?", arguments: [meetingID, version]
+            )
+            summary.title = promoted.title
+            summary.document = promoted.document
+            try summary.save(db)
+            _ = try SummaryExportRecord.filter(Column("meetingId") == meetingID).deleteAll(db)
+        }
+    }
+
     // MARK: - Composite
 
     /// ミーティング詳細をまとめて取得する（単一トランザクション）。

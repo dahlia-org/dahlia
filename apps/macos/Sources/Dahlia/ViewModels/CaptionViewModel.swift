@@ -2625,6 +2625,16 @@ final class CaptionViewModel: ObservableObject {
         }
     }
 
+    func applyPromotedSummary(_ document: SummaryDocument, meetingID: UUID) {
+        guard currentMeetingId == meetingID else { return }
+        summaryReloadTask?.cancel()
+        summaryReloadTask = nil
+        summaryProjectionGeneration &+= 1
+        currentSummaryDocument = document
+        currentSummaryGoogleFileId = nil
+        lastSummaryURL = nil
+    }
+
     /// サマリーだけを DB から読み込み直す。
     /// MCP ヘルパーのような別プロセスの書き込みは GRDB の `ValueObservation` では検知できないため、
     /// Workspace の変更通知を受けた側から呼ぶ。編集中のノートを上書きしないよう `reloadMeetingDetail` は使わない。

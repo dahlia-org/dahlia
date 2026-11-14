@@ -290,11 +290,20 @@ struct ControlPanelView: View {
     private var summaryTabContent: some View {
         SummaryTabContentView(
             screenshotStore: viewModel.screenshotStore,
+            meetingID: viewModel.currentMeetingId,
+            dbQueue: viewModel.documentDatabaseQueue,
             document: viewModel.currentSummaryDocument,
             hasSummary: viewModel.hasCurrentMeetingSummary,
+            showsHistory: sidebarViewModel.currentWorkspace.map { $0.url == nil } == true,
+            canPromote: sidebarViewModel.currentWorkspace.map { $0.accountConnectionId == nil } == true,
+            onPromoted: { [meetingID = viewModel.currentMeetingId] document in
+                guard let meetingID else { return }
+                viewModel.applyPromotedSummary(document, meetingID: meetingID)
+            },
             openScreenshot: openSummaryScreenshot,
             transcriptText: summaryTranscriptText
         )
+        .id(viewModel.currentMeetingId)
     }
 
     private var notesTabContent: some View {
