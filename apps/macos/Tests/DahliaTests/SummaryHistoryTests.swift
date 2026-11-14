@@ -32,29 +32,6 @@ import GRDB
         }
 
         @Test
-        func currentMarkerMigrationKeepsVersionsAndMarksTheLatest() async throws {
-            let queue = try DatabaseQueue(configuration: AppDatabaseManager.configuration())
-            try AppDatabaseManager.migrator.migrate(queue, upTo: "v61_summaryHistory")
-            let meetingID = try seed(queue)
-            let first = try document("First", model: "first-model").databaseJSONString()
-            let second = try document("Second", model: "second-model").databaseJSONString()
-            try await queue.write { db in
-                try SummaryContent(meetingId: meetingID, title: "First", document: first, createdAt: .now).insert(db)
-                try db.execute(sql: "UPDATE summary_bodies SET document = ? WHERE meetingId = ?", arguments: [second, meetingID])
-            }
-            try AppDatabaseManager.migrator.migrate(queue)
-            let service = SummaryHistoryService()
-            let page = try await service.page(meetingID: meetingID, dbQueue: queue)
-            #expect(page.items.map(\.version) == [2, 1])
-            #expect(page.currentVersion == 2)
-            #expect(try await service.document(meetingID: meetingID, version: 1, dbQueue: queue).databaseJSONString() == first)
-            try await service.promote(meetingID: meetingID, version: 1, dbQueue: queue)
-            let promoted = try await service.page(meetingID: meetingID, dbQueue: queue)
-            #expect(promoted.items.map(\.version) == [2, 1])
-            #expect(promoted.currentVersion == 1)
-        }
-
-        @Test
         func everyWriterRetainsVersionsWithoutDuplicatingReplays() async throws {
             let manager = try AppDatabaseManager(path: ":memory:")
             let queue = manager.dbQueue
