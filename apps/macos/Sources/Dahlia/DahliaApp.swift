@@ -131,7 +131,7 @@ struct DahliaApp: App {
                 if mainWindowNavigation.isShowingDahliaSignIn {
                     // Dahlia Cloud and Server sign-in (`DahliaServerSignInView`) is hidden for now.
                     DatabricksSignInView(
-                        showsLocalAccount: !workspaceManagementModel.workspaces.contains {
+                        showsLocalAccount: !AppSettings.shared.hideLocalAccount && !workspaceManagementModel.workspaces.contains {
                             $0.accountConnectionId == nil && $0.databricksConnectionId == nil
                         },
                         workspaceManagementModel: workspaceManagementModel,

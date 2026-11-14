@@ -1807,6 +1807,12 @@ enum L10n { // swiftlint:disable:this type_body_length
     static var noWorkspaceSelected: String { String(localized: "No workspace selected", bundle: bundle) }
     static var accountsAndWorkspaces: String { String(localized: "Accounts and Workspaces", bundle: bundle) }
     static var dahliaAccount: String { String(localized: "Dahlia Account", bundle: bundle) }
+    static var addAccount: String { String(localized: "Add Account", bundle: bundle) }
+    static var hideLocalAccount: String { String(localized: "Hide Local Account", bundle: bundle) }
+    static var hideLocalAccountDescription: String {
+        String(localized: "Hide the Local Account from account lists. Its workspaces and data stay on this Mac.", bundle: bundle)
+    }
+
     static var localAccount: String { String(localized: "Local Account", bundle: bundle) }
     static var continueWithLocalAccount: String { String(localized: "Continue with Local Account", bundle: bundle) }
     static var accountSetupDescription: String { String(

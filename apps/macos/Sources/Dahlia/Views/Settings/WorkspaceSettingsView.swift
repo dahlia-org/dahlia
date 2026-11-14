@@ -10,6 +10,8 @@ struct WorkspaceSettingsView: View {
     let onShowDocumentPublication: (WorkspaceRecord) -> Void
     let onUpdateWorkspace: (WorkspaceRecord) -> Void
 
+    @ObservedObject private var settings = AppSettings.shared
+
     @State private var isShowingFolderPicker = false
     @State private var isShowingCreateAlert = false
     @State private var isShowingRenameAlert = false
@@ -95,7 +97,8 @@ struct WorkspaceSettingsView: View {
 
         ForEach(WorkspaceSettingsAccountGroup.grouped(
             model.workspaces,
-            including: [.local] + WorkspaceAISettingsModel.shared.databricksConnections.map { .databricks($0.id) }
+            including: [.local] + WorkspaceAISettingsModel.shared.databricksConnections.map { .databricks($0.id) },
+            hideLocalAccount: settings.hideLocalAccount
         )) { group in
             Section {
                 ForEach(group.workspaces) { workspace in

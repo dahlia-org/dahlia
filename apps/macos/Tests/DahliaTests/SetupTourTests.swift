@@ -6,6 +6,32 @@
 
     @MainActor
     struct SetupTourTests {
+        @Test(arguments: [false, true])
+        func initialAccountVisibilityIsPersistedAndManualToursPreserveIt(databricks: Bool) throws {
+            let suite = "LocalAccountVisibility-\(UUID())"
+            let defaults = try #require(UserDefaults(suiteName: suite))
+            defer { defaults.removePersistentDomain(forName: suite) }
+            let settings = AppSettings(generalDefaults: defaults)
+            #expect(!settings.hideLocalAccount)
+
+            let initial = SetupTourModel(mode: .initial, currentWorkspace: nil)
+            initial.selectAccountConnection(nil, databricks: databricks ? .v7() : nil)
+            initial.initializeLocalAccountVisibility(in: defaults)
+            #expect(settings.hideLocalAccount == databricks)
+            #expect(AppSettings(generalDefaults: defaults).hideLocalAccount == databricks)
+
+            settings.hideLocalAccount = !databricks
+            initial.initializeLocalAccountVisibility(in: defaults)
+            let manual = SetupTourModel(mode: .manual, currentWorkspace: nil)
+            manual.selectAccountConnection(nil, databricks: databricks ? .v7() : nil)
+            manual.initializeLocalAccountVisibility(in: defaults)
+            #expect(settings.hideLocalAccount == !databricks)
+
+            defaults.removeObject(forKey: AppSettings.hideLocalAccountUserDefaultsKey)
+            manual.initializeLocalAccountVisibility(in: defaults)
+            #expect(defaults.object(forKey: AppSettings.hideLocalAccountUserDefaultsKey) == nil)
+        }
+
         @Test
         func pendingAccountSetupBlocksTourNavigationAndDismissal() async {
             let workspace = WorkspaceRecord(
