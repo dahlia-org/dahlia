@@ -22,6 +22,7 @@ final class MainSidebarAccountMenuCoordinator: NSObject {
     private var onOpenSettings: (SettingsCategory?) -> Void
     private var onSelectAccount: (DahliaAccountConnection?) -> Void
     private var onSelectDatabricksAccount: (UUID) -> Void
+    private var onAddAccount: () -> Void
     private var onAccountAction: () -> Void
     private var unprocessedRecordingCount: Int
     private var onShowUnprocessedRecordings: () -> Void
@@ -41,6 +42,7 @@ final class MainSidebarAccountMenuCoordinator: NSObject {
         onOpenSettings: @escaping (SettingsCategory?) -> Void,
         onSelectAccount: @escaping (DahliaAccountConnection?) -> Void,
         onSelectDatabricksAccount: @escaping (UUID) -> Void = { _ in },
+        onAddAccount: @escaping () -> Void = {},
         onAccountAction: @escaping () -> Void,
         unprocessedRecordingCount: Int = 0,
         onShowUnprocessedRecordings: @escaping () -> Void,
@@ -55,6 +57,7 @@ final class MainSidebarAccountMenuCoordinator: NSObject {
         self.onOpenSettings = onOpenSettings
         self.onSelectAccount = onSelectAccount
         self.onSelectDatabricksAccount = onSelectDatabricksAccount
+        self.onAddAccount = onAddAccount
         self.onAccountAction = onAccountAction
         self.unprocessedRecordingCount = unprocessedRecordingCount
         self.onShowUnprocessedRecordings = onShowUnprocessedRecordings
@@ -70,6 +73,7 @@ final class MainSidebarAccountMenuCoordinator: NSObject {
         onOpenSettings: @escaping (SettingsCategory?) -> Void,
         onSelectAccount: @escaping (DahliaAccountConnection?) -> Void,
         onSelectDatabricksAccount: @escaping (UUID) -> Void = { _ in },
+        onAddAccount: @escaping () -> Void = {},
         onAccountAction: @escaping () -> Void,
         unprocessedRecordingCount: Int = 0,
         onShowUnprocessedRecordings: @escaping () -> Void
@@ -82,6 +86,7 @@ final class MainSidebarAccountMenuCoordinator: NSObject {
         self.onOpenSettings = onOpenSettings
         self.onSelectAccount = onSelectAccount
         self.onSelectDatabricksAccount = onSelectDatabricksAccount
+        self.onAddAccount = onAddAccount
         self.onAccountAction = onAccountAction
         self.unprocessedRecordingCount = unprocessedRecordingCount
         self.onShowUnprocessedRecordings = onShowUnprocessedRecordings
@@ -113,6 +118,9 @@ final class MainSidebarAccountMenuCoordinator: NSObject {
                 connections: connections,
                 currentConnectionID: currentConnectionID,
                 isLocalAccount: isLocalAccount,
+                showsLocalAccount: !settings.hideLocalAccount,
+                showsAddAccount: showsAddAccount,
+                showsAccountAction: showsAccountAction,
                 databricksAccounts: databricksAccounts,
                 currentDatabricksID: currentDatabricksID,
                 onShowAppearance: { [weak self] in self?.presentAppearanceMenu(anchorMinY: $0) },
@@ -124,6 +132,7 @@ final class MainSidebarAccountMenuCoordinator: NSObject {
                 onOpenSettings: { [weak self] in self?.openSettings(category: $0) },
                 onSelectAccount: { [weak self] in self?.selectAccount($0) },
                 onSelectDatabricksAccount: { [weak self] in self?.selectDatabricksAccount($0) },
+                onAddAccount: { [weak self] in self?.addAccount() },
                 onAccountAction: { [weak self] in self?.performAccountAction() },
                 unprocessedRecordingCount: unprocessedRecordingCount,
                 onShowUnprocessedRecordings: { [weak self] in self?.showUnprocessedRecordings() }
@@ -257,6 +266,11 @@ final class MainSidebarAccountMenuCoordinator: NSObject {
     private func showUnprocessedRecordings() {
         dismissMenu()
         onShowUnprocessedRecordings()
+    }
+
+    private func addAccount() {
+        dismissMenu()
+        onAddAccount()
     }
 
     private func performAccountAction() {
@@ -498,7 +512,7 @@ extension MainSidebarAccountMenuCoordinator {
             navigation.rootSelection = MainSidebarAccountMenuNavigationState.nextEnabledIndex(
                 from: navigation.rootSelection,
                 direction: direction,
-                count: menuOffset + 5,
+                count: menuOffset + (showsAccountAction ? 5 : 4),
                 isEnabled: isRootIndexEnabled
             )
         case .accountDetails:
@@ -551,9 +565,13 @@ extension MainSidebarAccountMenuCoordinator {
             selectDatabricksAccount(databricksAccounts[selection - databricksIndices.lowerBound].id)
             return
         }
-        if selection == connections.count {
+        if !settings.hideLocalAccount, selection == connections.count {
             // Choosing the Local Account opens its `Default` workspace when it has none.
             selectAccount(nil)
+            return
+        }
+        if showsAddAccount, selection == menuOffset - 1 {
+            addAccount()
             return
         }
         switch selection - menuOffset {
@@ -561,7 +579,7 @@ extension MainSidebarAccountMenuCoordinator {
         case 1: presentAppearanceMenu()
         case 2: openSettings(category: nil)
         case 3: showUnprocessedRecordings()
-        case 4: performAccountAction()
+        case 4 where showsAccountAction: performAccountAction()
         default: break
         }
     }
@@ -588,14 +606,14 @@ extension MainSidebarAccountMenuCoordinator {
         let title: String?
         switch navigation.activeMenu {
         case .root:
-            let titles = connections.map(\.displayName) + [L10n.localAccount]
-                + databricksAccounts.map { L10n.unityGatewayHost($0.hostName) } + [
-                    L10n.language,
-                    L10n.appearance,
-                    L10n.settings,
-                    L10n.unprocessedRecordings,
-                    hasCurrentConnection || currentDatabricksID != nil ? L10n.signOut : L10n.dahliaSignIn,
-                ]
+            var titles = connections.map(\.displayName)
+            if !settings.hideLocalAccount { titles.append(L10n.localAccount) }
+            titles += databricksAccounts.map { L10n.unityGatewayHost($0.hostName) }
+            if showsAddAccount { titles.append(L10n.addAccount) }
+            titles += [L10n.language, L10n.appearance, L10n.settings, L10n.unprocessedRecordings]
+            if showsAccountAction {
+                titles.append(hasCurrentConnection || currentDatabricksID != nil ? L10n.signOut : L10n.dahliaSignIn)
+            }
             title = navigation.rootSelection.flatMap { titles.indices.contains($0) ? titles[$0] : nil }
         case .appearance:
             title = navigation.submenuSelection.flatMap {
@@ -628,9 +646,12 @@ extension MainSidebarAccountMenuCoordinator {
         connections.contains { $0.id == currentConnectionID }
     }
 
-    var menuOffset: Int { connections.count + 1 + databricksAccounts.count }
+    var showsAddAccount: Bool { !connections.isEmpty || !databricksAccounts.isEmpty }
+    var showsAccountAction: Bool { hasCurrentConnection || currentDatabricksID != nil || !showsAddAccount }
+    var menuOffset: Int { databricksStartIndex + databricksAccounts.count + (showsAddAccount ? 1 : 0) }
+    private var databricksStartIndex: Int { connections.count + (settings.hideLocalAccount ? 0 : 1) }
     /// Databricks accounts follow the Local Account and create their first workspace when chosen.
-    private var databricksIndices: Range<Int> { connections.count + 1 ..< menuOffset }
+    private var databricksIndices: Range<Int> { databricksStartIndex ..< databricksStartIndex + databricksAccounts.count }
 
     private func isRootIndexEnabled(_ index: Int) -> Bool {
         if connections.indices.contains(index) { return connections[index].workspaceCount > 0 }

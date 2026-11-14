@@ -176,6 +176,7 @@ struct SetupTourView: View {
             // Dahlia Cloud and Server sign-in are hidden for now; existing connections stay usable from Settings.
             DatabricksSignInView(
                 isEmbedded: true,
+                showsLocalAccount: model.mode == .initial || !settings.hideLocalAccount,
                 workspaceManagementModel: workspaceManagementModel,
                 canTransferWorkspace: canComplete(),
                 onCancel: {},
@@ -306,6 +307,7 @@ struct SetupTourView: View {
                 model.finishCompletion(errorMessage: L10n.workspaceOperationFailed)
                 return
             }
+            model.initializeLocalAccountVisibility()
             model.finishCompletion(errorMessage: nil)
         }
     }

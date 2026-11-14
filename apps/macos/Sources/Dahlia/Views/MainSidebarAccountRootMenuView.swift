@@ -6,6 +6,9 @@ struct MainSidebarAccountRootMenuView: View {
     let connections: [DahliaAccountConnection]
     let currentConnectionID: UUID?
     let isLocalAccount: Bool
+    let showsLocalAccount: Bool
+    let showsAddAccount: Bool
+    let showsAccountAction: Bool
     let databricksAccounts: [DatabricksConnection]
     let currentDatabricksID: UUID?
     let onShowAppearance: (CGFloat?) -> Void
@@ -15,6 +18,7 @@ struct MainSidebarAccountRootMenuView: View {
     let onOpenSettings: (SettingsCategory?) -> Void
     let onSelectAccount: (DahliaAccountConnection?) -> Void
     let onSelectDatabricksAccount: (UUID) -> Void
+    let onAddAccount: () -> Void
     let onAccountAction: () -> Void
     var unprocessedRecordingCount = 0
     let onShowUnprocessedRecordings: () -> Void
@@ -56,19 +60,21 @@ struct MainSidebarAccountRootMenuView: View {
                 )
             }
 
-            MainSidebarAccountMenuRow(
-                title: L10n.localAccount,
-                image: Image(systemName: "person.2"),
-                selectionState: isLocalAccount && currentDatabricksID == nil,
-                isKeyboardHighlighted: navigation.activeMenu == .root && navigation.rootSelection == connections.count,
-                showsHelp: false,
-                onHoverStart: { hover(index: connections.count, opensSubmenu: false, action: onDismissSubmenu) },
-                onHoverEnd: cancelPendingHover,
-                action: { activate(index: connections.count, action: { onSelectAccount(nil) }) }
-            )
+            if showsLocalAccount {
+                MainSidebarAccountMenuRow(
+                    title: L10n.localAccount,
+                    image: Image(systemName: "person.2"),
+                    selectionState: isLocalAccount && currentDatabricksID == nil,
+                    isKeyboardHighlighted: navigation.activeMenu == .root && navigation.rootSelection == connections.count,
+                    showsHelp: false,
+                    onHoverStart: { hover(index: connections.count, opensSubmenu: false, action: onDismissSubmenu) },
+                    onHoverEnd: cancelPendingHover,
+                    action: { activate(index: connections.count, action: { onSelectAccount(nil) }) }
+                )
+            }
 
             ForEach(databricksAccounts.enumerated(), id: \.element.id) { offset, account in
-                let index = connections.count + 1 + offset
+                let index = connections.count + (showsLocalAccount ? 1 : 0) + offset
                 MainSidebarAccountMenuRow(
                     title: L10n.unityGatewayHost(account.hostName),
                     image: .databricksLogo,
@@ -78,6 +84,18 @@ struct MainSidebarAccountRootMenuView: View {
                     onHoverStart: { hover(index: index, opensSubmenu: false, action: onDismissSubmenu) },
                     onHoverEnd: cancelPendingHover,
                     action: { activate(index: index, action: { onSelectDatabricksAccount(account.id) }) }
+                )
+            }
+
+            if showsAddAccount {
+                MainSidebarAccountMenuRow(
+                    title: L10n.addAccount,
+                    image: Image(systemName: "person.badge.plus"),
+                    isKeyboardHighlighted: navigation.activeMenu == .root && navigation.rootSelection == menuOffset - 1,
+                    showsHelp: false,
+                    onHoverStart: { hover(index: menuOffset - 1, opensSubmenu: false, action: onDismissSubmenu) },
+                    onHoverEnd: cancelPendingHover,
+                    action: { activate(index: menuOffset - 1, action: onAddAccount) }
                 )
             }
 
@@ -131,23 +149,25 @@ struct MainSidebarAccountRootMenuView: View {
                 action: { activate(index: menuOffset + 3, action: onShowUnprocessedRecordings) }
             )
 
-            Divider()
-                .padding(.vertical, 4)
+            if showsAccountAction {
+                Divider()
+                    .padding(.vertical, 4)
 
-            MainSidebarAccountMenuRow(
-                title: signsOut ? L10n.signOut : L10n.dahliaSignIn,
-                image: Image(systemName: signsOut ? "rectangle.portrait.and.arrow.right" : "person"),
-                isKeyboardHighlighted: navigation.activeMenu == .root && navigation.rootSelection == menuOffset + 4,
-                showsHelp: false,
-                onHoverStart: { hover(index: menuOffset + 4, opensSubmenu: false, action: onDismissSubmenu) },
-                onHoverEnd: cancelPendingHover,
-                action: { activate(index: menuOffset + 4, action: onAccountAction) }
-            )
+                MainSidebarAccountMenuRow(
+                    title: signsOut ? L10n.signOut : L10n.dahliaSignIn,
+                    image: Image(systemName: signsOut ? "rectangle.portrait.and.arrow.right" : "person"),
+                    isKeyboardHighlighted: navigation.activeMenu == .root && navigation.rootSelection == menuOffset + 4,
+                    showsHelp: false,
+                    onHoverStart: { hover(index: menuOffset + 4, opensSubmenu: false, action: onDismissSubmenu) },
+                    onHoverEnd: cancelPendingHover,
+                    action: { activate(index: menuOffset + 4, action: onAccountAction) }
+                )
+            }
         }
         .onDisappear(perform: cancelPendingHover)
     }
 
-    private var menuOffset: Int { connections.count + 1 + databricksAccounts.count }
+    private var menuOffset: Int { connections.count + (showsLocalAccount ? 1 : 0) + databricksAccounts.count + (showsAddAccount ? 1 : 0) }
     /// A Dahlia or Databricks account signs out; the Local Account signs in to add one.
     private var signsOut: Bool { currentConnection != nil || currentDatabricksID != nil }
     private var currentConnection: DahliaAccountConnection? {

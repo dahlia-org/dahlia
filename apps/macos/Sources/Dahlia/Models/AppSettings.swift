@@ -137,7 +137,15 @@ final class AppSettings: ObservableObject {
     fileprivate nonisolated static let defaultAutomaticScreenshotIntervalSeconds = 20
     fileprivate nonisolated static let defaultAutomaticScreenshotChangeThresholdPercent = 5
 
-    init(meetingSettingsDefaults: UserDefaults = .standard, appearanceDefaults: UserDefaults = .standard) {
+    nonisolated static let hideLocalAccountUserDefaultsKey = "hideLocalAccount"
+    @AppStorage(AppSettings.hideLocalAccountUserDefaultsKey) var hideLocalAccount = false
+
+    init(
+        meetingSettingsDefaults: UserDefaults = .standard,
+        appearanceDefaults: UserDefaults = .standard,
+        generalDefaults: UserDefaults = .standard
+    ) {
+        _hideLocalAccount = AppStorage(wrappedValue: false, Self.hideLocalAccountUserDefaultsKey, store: generalDefaults)
         _appAppearanceRawValue = AppStorage(wrappedValue: AppAppearance.system.rawValue, AppAppearance.userDefaultsKey, store: appearanceDefaults)
         self.meetingSettingsDefaults = meetingSettingsDefaults
         Self.migrateCalendarEventFilterSettings(in: .standard)

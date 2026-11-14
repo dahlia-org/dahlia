@@ -77,6 +77,17 @@ struct GeneralSettingsView: View {
                     .font(.dahliaSectionHeader)
             }
 
+            Section {
+                Toggle(isOn: $settings.hideLocalAccount) {
+                    Text(L10n.hideLocalAccount)
+                    Text(L10n.hideLocalAccountDescription)
+                }
+                .toggleStyle(.switch)
+            } header: {
+                Text(L10n.account)
+                    .font(.dahliaSectionHeader)
+            }
+
         }
         .formStyle(.grouped)
         .font(.dahliaBody)
