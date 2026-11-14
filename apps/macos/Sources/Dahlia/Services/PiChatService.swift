@@ -14,32 +14,6 @@ actor PiChatService: CodexChatServicing {
         let store = ChatThreadStore(dbQueue: dbQueue)
         historyStore = store
         try store.recoverInterruptedThreads()
-        // Launch does not wait for old Pi files; opening a history list imports its own Workspace first.
-        Task {
-            do {
-                try await importAllHistory(dbQueue: dbQueue)
-            } catch {
-                ErrorReportingService.capture(error, context: ["source": "chatHistoryImport"])
-            }
-        }
-    }
-
-    private func importAllHistory(dbQueue: DatabaseQueue) async throws {
-        let providers = try await dbQueue.read { db in
-            try DahliaAccountConnectionRecord.fetchAll(db).map {
-                $0.kind == DahliaAccountConnectionRecord.databricksKind ? CodexRuntimeProvider
-                    .databricks(connectionID: $0.id) : .dahlia(connectionID: $0.id)
-            }
-        }
-        for provider in [.local] + providers {
-            let root = try agentLocator.agentURL(for: provider).appending(path: "sessions")
-            guard FileManager.default.fileExists(atPath: root.path) else { continue }
-            for directory in try FileManager.default.contentsOfDirectory(at: root, includingPropertiesForKeys: nil) {
-                if let workspaceID = UUID(uuidString: directory.lastPathComponent) {
-                    try await importHistory(provider: provider, workspaceID: workspaceID)
-                }
-            }
-        }
     }
 
     private func history() throws -> ChatThreadStore {
@@ -195,7 +169,6 @@ actor PiChatService: CodexChatServicing {
 
     func listThreads(cursor: String?, workspaceID: UUID) async throws -> CodexChatThreadPage {
         let provider = try await runtime.currentProvider()
-        try await importHistory(provider: provider, workspaceID: workspaceID)
         return try history().listThreads(accountID: provider.accountKey, workspaceID: workspaceID, cursor: cursor)
     }
 
@@ -229,7 +202,6 @@ actor PiChatService: CodexChatServicing {
     /// Restoring history never starts a Pi process.
     func resumeThread(id: String, workspaceID: UUID) async throws -> CodexChatThread {
         let provider = try await runtime.currentProvider()
-        try await importHistory(provider: provider, workspaceID: workspaceID)
         _ = try history().thread(id: id, accountID: provider.accountKey, workspaceID: workspaceID)
         return try await loadThread(id: id)
     }
@@ -256,39 +228,6 @@ actor PiChatService: CodexChatServicing {
         ))
         newThreads[threadID] = (directory, selected.model)
         return CodexChatThread(id: threadID, title: "", messages: [], model: selected.model, reasoningEffort: effort)
-    }
-
-    private func importHistory(provider: CodexRuntimeProvider, workspaceID: UUID) async throws {
-        let directory = try agentLocator.sessionsURL(for: provider, workspaceID: workspaceID)
-        let store = try history()
-        try await Task.detached(priority: .userInitiated) {
-            let files = try FileManager.default.contentsOfDirectory(at: directory, includingPropertiesForKeys: [.contentModificationDateKey])
-            let registered = try store.dbQueue.read { db in
-                try Set(String.fetchAll(db, sql: "SELECT id FROM chat_threads"))
-            }
-            for file in files where file.pathExtension == "jsonl" {
-                if let suffix = file.deletingPathExtension().lastPathComponent.split(separator: "_").last,
-                   registered.contains(String(suffix)) { continue }
-                // Existing threads are never re-imported or overwritten from Pi's runtime state.
-                guard let id = try? PiChatSessionFiles.headerID(at: file) else { continue }
-                let imported = try PiChatSessionFiles.thread(at: file)
-                let date = try file.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate ?? .now
-                try store.createThread(
-                    ChatThreadRecord(
-                        id: id,
-                        accountID: provider.accountKey,
-                        workspaceID: workspaceID,
-                        title: imported.title,
-                        model: imported.model,
-                        reasoningEffort: imported.reasoningEffort,
-                        createdAt: date,
-                        updatedAt: date
-                    ),
-                    items: PiChatSessionFiles.historyItems(at: file),
-                    importIfMissing: true
-                )
-            }
-        }.value
     }
 
     func acquireThreadLease(threadID: String) async -> UUID {

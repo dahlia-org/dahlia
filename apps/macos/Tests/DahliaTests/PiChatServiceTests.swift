@@ -296,22 +296,30 @@ import Synchronization
         }
 
         @Test
-        func legacyImportIsIdempotentAndDoesNotOverwriteTheCatalog() async throws {
+        func piFilesDoNotOverwriteDatabaseHistoryAndMissingFilesPreventExecution() async throws {
             let fixture = try Self.fixture { _ in }
             defer { try? FileManager.default.removeItem(at: fixture.pi.rootURL) }
             let workspaceID = UUID.v7()
             let directory = try PiAgentDirectoryLocator(applicationSupportURL: fixture.pi.rootURL).sessionsURL(for: .local, workspaceID: workspaceID)
             let id = UUID.v7().uuidString.lowercased()
+            try fixture.store.createThread(ChatThreadRecord(
+                id: id, accountID: "local", workspaceID: workspaceID,
+                title: "Database title", createdAt: .now, updatedAt: .now
+            ), items: [
+                ChatHistoryCodec.user([.text("Original question")]),
+                ChatHistoryCodec.message(["role": .string("assistant"), "content": .string("Original answer")]),
+            ])
             let file = directory.appending(path: "2026-01-01_\(id).jsonl")
             let lines = [
                 "{\"type\":\"session\",\"id\":\"\(id)\"}",
-                #"{"type":"message","id":"u1","message":{"role":"user","content":"Original question"}}"#,
-                #"{"type":"message","id":"a1","message":{"role":"assistant","content":[{"type":"text","text":"Original answer"}]}}"#,
+                #"{"type":"message","id":"u1","message":{"role":"user","content":"Pi question"}}"#,
+                #"{"type":"message","id":"a1","message":{"role":"assistant","content":[{"type":"text","text":"Pi answer"}]}}"#,
                 #"{"type":"session_info","name":"Original name"}"#,
             ].joined(separator: "\n")
             try Data(lines.utf8).write(to: file)
             let first = try await fixture.chat.listThreads(cursor: nil, workspaceID: workspaceID)
             #expect(first.threads.map(\.id) == [id])
+            #expect(first.threads.first?.title == "Database title")
             await fixture.chat.setThreadName(threadID: id, name: "Catalog title")
             _ = try await fixture.chat.listThreads(cursor: nil, workspaceID: workspaceID)
             #expect(try fixture.store.listItems(threadID: id).count == 2)
@@ -1017,18 +1025,6 @@ import Synchronization
         }
 
         @Test
-        func restoredThreadsKeepNoReasoningAsNone() throws {
-            let url = FileManager.default.temporaryDirectory.appending(path: "dahlia-pi-off-\(UUID().uuidString)_thread-off.jsonl")
-            defer { try? FileManager.default.removeItem(at: url) }
-            try Data([
-                #"{"type":"session","id":"thread-off"}"#,
-                #"{"type":"thinking_level_change","id":"b","thinkingLevel":"off"}"#,
-            ].joined(separator: "\n").utf8).write(to: url)
-
-            #expect(try PiChatSessionFiles.thread(at: url).reasoningEffort == "none")
-        }
-
-        @Test
         func restoredMessagesKeepEveryAllowedImage() {
             let png = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=="
             let image: JSONValue = .object(["type": .string("image"), "data": .string(png), "mimeType": .string("image/png")])
@@ -1040,36 +1036,6 @@ import Synchronization
                 "message": .object(["role": .string("user"), "content": .array(content)]),
             ]])
             #expect(messages.first?.images.count == CodexChatImageAttachment.maximumAttachmentCount)
-        }
-
-        @Test
-        func sessionFileRestoresMessages() throws {
-            let directory = FileManager.default.temporaryDirectory
-                .appending(path: "dahlia-pi-sessions-\(UUID().uuidString)", directoryHint: .isDirectory)
-            try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-            defer { try? FileManager.default.removeItem(at: directory) }
-            let png = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=="
-            let records: [String] = [
-                #"{"type":"session","version":3,"id":"thread-1","cwd":"/w"}"#,
-                #"{"type":"model_change","id":"a","provider":"openai","modelId":"gpt-test"}"#,
-                #"{"type":"thinking_level_change","id":"b","thinkingLevel":"high"}"#,
-                #"{"type":"message","id":"u1","message":{"role":"user","content":[{"type":"text","text":"最初の質問\n詳細"},{"type":"image","data":"\#(png)","mimeType":"image/png"}]}}"#,
-                #"{"type":"message","id":"a1","message":{"role":"assistant","content":[{"type":"thinking","thinking":"考え中"},{"type":"toolCall","id":"t"}]}}"#,
-                #"{"type":"message","id":"a2","message":{"role":"assistant","content":[{"type":"text","text":"答え"}]}}"#,
-            ]
-            let url = directory.appending(path: "2026-01-02T00-00-00-000Z_thread-1.jsonl")
-            try Data(records.joined(separator: "\n").utf8).write(to: url)
-
-            #expect(PiChatSessionFiles.file(id: "thread-1", in: directory)?.lastPathComponent == url.lastPathComponent)
-
-            let thread = try PiChatSessionFiles.thread(at: url)
-            #expect(thread.title == "最初の質問")
-            #expect(thread.model == "openai/gpt-test")
-            #expect(thread.reasoningEffort == "high")
-            #expect(thread.messages.map(\.role) == [.user, .assistant])
-            #expect(thread.messages.first?.images.count == 1)
-            #expect(thread.messages.last?.text == "答え")
-            #expect(thread.messages.last?.reasoning == "考え中")
         }
 
         @Test
