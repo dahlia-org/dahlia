@@ -238,6 +238,49 @@ import GRDB
         }
 
         @Test
+        func promotionCannotInvalidateAnExportWhileItIsBeingPublished() async throws {
+            let queue = try AppDatabaseManager(path: ":memory:").dbQueue
+            let meetingID = try seed(queue)
+            let root = FileManager.default.temporaryDirectory.appending(path: UUID.v7().uuidString)
+            try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+            defer { try? FileManager.default.removeItem(at: root) }
+            let original = document("Original", model: "original-model")
+            let current = document("Current", model: "current-model")
+            let workspaceID = try await queue.write { db in
+                let meeting = try #require(try MeetingRecord.fetchOne(db, key: meetingID))
+                try db.execute(sql: "UPDATE workspaces SET path = ? WHERE id = ?", arguments: [root.path, meeting.workspaceId])
+                try SummaryContent(meetingId: meetingID, title: original.title, document: original.databaseJSONString(), createdAt: .now).save(db)
+                try SummaryContent(meetingId: meetingID, title: current.title, document: current.databaseJSONString(), createdAt: .now).save(db)
+                return meeting.workspaceId
+            }
+            let request = WorkspaceSummaryExportService.LockedSummaryExportRequest(
+                workspaceURL: root, workspaceID: workspaceID, meetingID: meetingID, dbQueue: queue,
+                document: current, summaryFileName: "Current.md", summaryMarkdown: "Current body", isAlreadyPersisted: true
+            )
+            let exported = try #require(try await WorkspaceSummaryExportService.exportSummary(request) { url, markdown in
+                // This callback runs after the persisted-body check while export still owns the Workspace lock.
+                #expect(!Thread.isMainThread)
+                #expect(throws: ProjectWorkspaceError.workspaceBusy) {
+                    try MeetingRepository(dbQueue: queue).promoteSummary(meetingID: meetingID, document: original)
+                }
+                #expect(try queue.read { try SummaryContent.fetchOne($0, key: meetingID)?.loadDocument() } == current)
+                return try WorkspaceSummaryExportService.writeSummaryFile(fileURL: url, markdown: markdown)
+            })
+            #expect(try await queue.read { try SummaryExportRecord.fetchOne(meetingId: meetingID, type: .workspace, in: $0) } != nil)
+            _ = try await SummaryHistoryService().promote(meetingID: meetingID, document: original, dbQueue: queue)
+            try await queue.read { db throws in
+                #expect(try SummaryContent.fetchOne(db, key: meetingID)?.loadDocument() == original)
+                #expect(try SummaryExportRecord.filter(Column("meetingId") == meetingID).fetchCount(db) == 0)
+                #expect(try SummaryVersionRecord.filter(Column("meetingId") == meetingID).fetchCount(db) == 3)
+            }
+            #expect(try String(contentsOf: exported.fileURL, encoding: .utf8) == "Current body")
+            await #expect(throws: TextContentError.changed) {
+                try await WorkspaceSummaryExportService.exportSummary(request)
+            }
+            #expect(try await queue.read { try SummaryExportRecord.filter(Column("meetingId") == meetingID).fetchCount($0) } == 0)
+        }
+
+        @Test
         func promotionRejectsMissingCurrentAndKeepsFailedSelection() async throws {
             let queue = try AppDatabaseManager(path: ":memory:").dbQueue
             let meetingID = try seed(queue)

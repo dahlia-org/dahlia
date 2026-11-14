@@ -1211,17 +1211,30 @@ final class MeetingRepository {
 
     nonisolated func promoteSummary(meetingID: UUID, document: SummaryDocument) throws {
         let json = try document.databaseJSONString()
-        try dbQueue.write { db in
-            guard let meeting = try MeetingRecord.fetchOne(db, key: meetingID),
-                  let workspace = try WorkspaceRecord.fetchOne(db, key: meeting.workspaceId), workspace.accountConnectionId == nil,
-                  var summary = try TextContentAccess.summary(meetingId: meetingID, in: db)
-            else { throw TextContentError.changed }
-            guard summary.document != json else { return }
-            try WorkspaceTransferFence.recordLocalMutation(workspaceID: workspace.id, in: db)
-            summary.title = document.title
-            summary.document = json
-            try summary.save(db)
-            _ = try SummaryExportRecord.filter(Column("meetingId") == meetingID).deleteAll(db)
+        guard let workspace = try dbQueue.read({ db -> WorkspaceRecord? in
+            guard let meeting = try MeetingRecord.fetchOne(db, key: meetingID) else { return nil }
+            return try WorkspaceRecord.fetchOne(db, key: meeting.workspaceId)
+        }), workspace.accountConnectionId == nil else { throw TextContentError.changed }
+        let promote = {
+            try self.dbQueue.write { db in
+                guard let meeting = try MeetingRecord.fetchOne(db, key: meetingID), meeting.workspaceId == workspace.id,
+                      let currentWorkspace = try WorkspaceRecord.fetchOne(db, key: workspace.id),
+                      currentWorkspace.accountConnectionId == nil, currentWorkspace.path == workspace.path,
+                      var summary = try TextContentAccess.summary(meetingId: meetingID, in: db)
+                else { throw TextContentError.changed }
+                guard summary.document != json else { return }
+                try WorkspaceTransferFence.recordLocalMutation(workspaceID: workspace.id, in: db)
+                summary.title = document.title
+                summary.document = json
+                try summary.save(db)
+                _ = try SummaryExportRecord.filter(Column("meetingId") == meetingID).deleteAll(db)
+            }
+        }
+        guard let workspaceURL = workspace.url else { return try promote() }
+        do {
+            try DahliaWorkspaceMutationLock.withLock(workspaceURL: workspaceURL, workspaceID: workspace.id, operation: promote)
+        } catch is DahliaWorkspaceMutationLockError {
+            throw ProjectWorkspaceError.workspaceBusy
         }
     }
 
