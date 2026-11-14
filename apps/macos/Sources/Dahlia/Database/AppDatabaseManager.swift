@@ -247,6 +247,10 @@ final class AppDatabaseManager: Sendable {
             }
         }
 
+        migrator.registerMigration("v61_summaryHistory") { db in
+            try SummaryHistoryMigration.migrate(in: db)
+        }
+
         return migrator
     }()
 

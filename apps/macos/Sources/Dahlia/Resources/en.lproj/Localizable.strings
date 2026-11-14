@@ -2050,3 +2050,18 @@
 "mcp.showJSON" = "Show configuration";
 "Chat resume state missing" = "The runtime file for this chat is missing. You can view its history; start a new chat to continue.";
 "Search meetings, screenshots, projects, and chats" = "Search meetings, screenshots, projects, and chats";
+
+"Version" = "Version";
+"Make this version current" = "Make this version current";
+
+"Current" = "Current";
+
+"Previous version (read-only)" = "Previous version (read-only)";
+
+"Generation details" = "Generation details";
+
+"Generation details are unavailable for this version." = "Generation details are unavailable for this version.";
+
+"Requested model" = "Requested model";
+
+"Response model" = "Response model";

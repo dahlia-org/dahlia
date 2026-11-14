@@ -1173,6 +1173,17 @@ enum L10n { // swiftlint:disable:this type_body_length
 
     // MARK: - Detail Tabs
 
+    static var summaryVersion: String { String(localized: "Version", bundle: bundle) }
+    static var summaryPromoteVersion: String { String(localized: "Make this version current", bundle: bundle) }
+    static var summaryCurrentVersion: String { String(localized: "Current", bundle: bundle) }
+    static var summaryReadOnlyVersion: String { String(localized: "Previous version (read-only)", bundle: bundle) }
+    static var summaryGenerationDetails: String { String(localized: "Generation details", bundle: bundle) }
+    static var summaryGenerationDetailsUnavailable: String {
+        String(localized: "Generation details are unavailable for this version.", bundle: bundle)
+    }
+
+    static var summaryRequestedModel: String { String(localized: "Requested model", bundle: bundle) }
+    static var summaryResponseModel: String { String(localized: "Response model", bundle: bundle) }
     static var summary: String { String(localized: "Summary", bundle: bundle) }
     static var notes: String { String(localized: "Notes", bundle: bundle) }
     static var documentSavedLocally: String { String(localized: "documentSavedLocally", bundle: bundle) }

@@ -2050,3 +2050,18 @@
 "mcp.showJSON" = "設定内容を表示";
 "Chat resume state missing" = "このチャットの実行用ファイルがありません。履歴は表示できますが、続けるには新しいチャットを開始してください。";
 "Search meetings, screenshots, projects, and chats" = "ミーティング・スクリーンショット・プロジェクト・チャットを検索";
+
+"Version" = "バージョン";
+"Make this version current" = "このバージョンを正本にする";
+
+"Current" = "現在";
+
+"Previous version (read-only)" = "過去のバージョン（閲覧のみ）";
+
+"Generation details" = "生成情報";
+
+"Generation details are unavailable for this version." = "このバージョンの生成情報は保存されていません。";
+
+"Requested model" = "指定モデル";
+
+"Response model" = "応答モデル";

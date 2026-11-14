@@ -1209,6 +1209,22 @@ final class MeetingRepository {
         }
     }
 
+    nonisolated func promoteSummary(meetingID: UUID, document: SummaryDocument) throws {
+        let json = try document.databaseJSONString()
+        try dbQueue.write { db in
+            guard let meeting = try MeetingRecord.fetchOne(db, key: meetingID),
+                  let workspace = try WorkspaceRecord.fetchOne(db, key: meeting.workspaceId), workspace.accountConnectionId == nil,
+                  var summary = try TextContentAccess.summary(meetingId: meetingID, in: db)
+            else { throw TextContentError.changed }
+            guard summary.document != json else { return }
+            try WorkspaceTransferFence.recordLocalMutation(workspaceID: workspace.id, in: db)
+            summary.title = document.title
+            summary.document = json
+            try summary.save(db)
+            _ = try SummaryExportRecord.filter(Column("meetingId") == meetingID).deleteAll(db)
+        }
+    }
+
     // MARK: - Composite
 
     /// ミーティング詳細をまとめて取得する（単一トランザクション）。

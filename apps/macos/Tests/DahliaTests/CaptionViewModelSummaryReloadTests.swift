@@ -40,6 +40,29 @@ import GRDB
         }
 
         @Test
+        func promotionUpdatesOnlyTheMatchingMeetingAndPreservesTheNoteDraft() async throws {
+            let context = try Self.makeContext()
+            defer { try? FileManager.default.removeItem(at: context.workspaceURL) }
+            let viewModel = CaptionViewModel()
+            defer { viewModel.clearCurrentMeeting() }
+            viewModel.loadMeeting(
+                context.meetingID, dbQueue: context.manager.dbQueue, projectURL: nil, projectId: nil, workspaceURL: context.workspaceURL
+            )
+            #expect(await pollUntil { viewModel.currentSummaryDocument?.title == "Original title" })
+            viewModel.noteText = "Keep this draft"
+            viewModel.currentSummaryGoogleFileId = "stale-export"
+            viewModel.lastSummaryURL = context.workspaceURL.appending(path: "old.md")
+            let promoted = SummaryDocument(title: "Promoted", sections: [])
+            viewModel.applyPromotedSummary(promoted, meetingID: .v7())
+            #expect(viewModel.currentSummaryDocument?.title == "Original title")
+            viewModel.applyPromotedSummary(promoted, meetingID: context.meetingID)
+            #expect(viewModel.currentSummaryDocument == promoted)
+            #expect(viewModel.currentSummaryGoogleFileId == nil)
+            #expect(viewModel.lastSummaryURL == nil)
+            #expect(viewModel.noteText == "Keep this draft")
+        }
+
+        @Test
         func canonicalRevisionRefreshesTheOpenMeetingAndPendingStatusWithoutTouchingItsNote() async throws {
             let context = try Self.makeContext()
             defer { try? FileManager.default.removeItem(at: context.workspaceURL) }

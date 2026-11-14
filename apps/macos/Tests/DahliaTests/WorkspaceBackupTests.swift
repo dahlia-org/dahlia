@@ -140,6 +140,17 @@ import GRDB
                 try #require(analysisJobCount == 0)
                 let summary = try #require(try SummaryContent.fetchOne(db, key: meeting.id))
                 #expect(try summary.loadDocument().referencedScreenshotIds == [screenshot.id])
+                let historical = try String.fetchAll(
+                    db,
+                    sql: "SELECT document FROM summary_versions WHERE meetingId = ? ORDER BY version",
+                    arguments: [meeting.id]
+                )
+                #expect(historical.count == 2)
+                let firstVersion = try #require(historical.first)
+                #expect(try SummaryDocument.decode(databaseJSON: firstVersion).referencedScreenshotIds.count == 2)
+                for json in historical {
+                    #expect(try SummaryDocument.decode(databaseJSON: json).referencedScreenshotIds.contains(screenshot.id))
+                }
                 #expect(try SummaryExportRecord.filter(Column("meetingId") == meeting.id).fetchCount(db) == (mode == .overwrite ? 1 : 0))
                 #expect(screenshot.imageData == nil)
                 let source = try #require(screenshot.localSource)
@@ -370,8 +381,23 @@ import GRDB
                 try child.insert(db)
                 try db.execute(sql: "UPDATE meetings SET projectId = ? WHERE id = ?", arguments: [child.id, fixture.meeting.id])
                 try screenshot.insertLegacyForTesting(db)
-                try SummaryContent(meetingId: fixture.meeting.id, title: "Summary", document: document.databaseJSONString(), createdAt: fixture.now)
-                    .insert(db)
+                var priorDocument = document
+                priorDocument.sections[0].blocks.append(.image(screenshotId: .v7(), caption: "Deleted historical image"))
+                try SummaryContent(
+                    meetingId: fixture.meeting.id,
+                    title: "Summary",
+                    document: priorDocument.databaseJSONString(),
+                    createdAt: fixture.now
+                )
+                .insert(db)
+                var revised = document
+                revised.title = "Revised"
+                try SummaryContent(
+                    meetingId: fixture.meeting.id,
+                    title: revised.title,
+                    document: revised.databaseJSONString(),
+                    createdAt: fixture.now
+                ).save(db)
                 try SummaryExportRecord(
                     meetingId: fixture.meeting.id,
                     type: .googleDocs,
