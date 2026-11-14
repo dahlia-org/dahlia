@@ -18,6 +18,7 @@ suites=(
     LiveCaptionStoreTests                 # stale sessions cannot reach the caption projection
     LiveSubtitleOverlayCoordinatorTests   # bounded overlay publish cadence
     TranscriptPagingTests                 # bounded TranscriptStore window over SQLite
+    MeetingSidebarRepositoryTests         # indexed per-project candidates stay bounded as history grows
     MeetingSidebarProjectionBudgetTests   # sidebar projection limit
     CodexChatHistoryPagingTests           # bounded initial chat history and stale page cancellation
     CodexChatStreamingUpdateLimiterTests  # coalesced streaming updates
