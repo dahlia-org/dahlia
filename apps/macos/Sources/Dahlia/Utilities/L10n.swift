@@ -5,6 +5,11 @@ import Foundation
 
 /// ローカライズ文字列への型安全なアクセスを提供する。
 enum L10n { // swiftlint:disable:this type_body_length
+    static var oauthCallbackLanguage: String { String(localized: "oauth.callback.language", bundle: bundle) }
+    static var oauthCallbackReceived: String { String(localized: "oauth.callback.received", bundle: bundle) }
+    static var oauthCallbackContinue: String { String(localized: "oauth.callback.continue", bundle: bundle) }
+    static var oauthCallbackFailed: String { String(localized: "oauth.callback.failed", bundle: bundle) }
+    static var oauthCallbackRetry: String { String(localized: "oauth.callback.retry", bundle: bundle) }
     static var chatResumeStateMissing: String { String(localized: "Chat resume state missing", bundle: bundle) }
     static var agentPackages: String { String(localized: "settings.agents.packages", bundle: bundle) }
     static var agentPackageCatalog: String { String(localized: "settings.agents.packageCatalog", bundle: bundle) }

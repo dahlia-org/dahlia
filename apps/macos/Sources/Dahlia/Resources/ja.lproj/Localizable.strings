@@ -2065,3 +2065,9 @@
 "Requested model" = "指定モデル";
 
 "Response model" = "応答モデル";
+
+"oauth.callback.language" = "ja";
+"oauth.callback.received" = "認証情報を受け取りました";
+"oauth.callback.continue" = "Dahlia に戻って続けてください。このタブは閉じてもかまいません。";
+"oauth.callback.failed" = "認証できませんでした";
+"oauth.callback.retry" = "Dahlia で詳細を確認し、もう一度お試しください。このタブは閉じてもかまいません。";

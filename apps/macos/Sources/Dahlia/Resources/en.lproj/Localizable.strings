@@ -2065,3 +2065,9 @@
 "Requested model" = "Requested model";
 
 "Response model" = "Response model";
+
+"oauth.callback.language" = "en";
+"oauth.callback.received" = "Authorization received";
+"oauth.callback.continue" = "Return to Dahlia to continue. You can close this tab.";
+"oauth.callback.failed" = "Authorization unsuccessful";
+"oauth.callback.retry" = "Return to Dahlia for details and try again. You can close this tab.";

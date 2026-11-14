@@ -5,6 +5,7 @@
 // provider ID is the workspace host, and the credential also carries the workspace origin and OAuth client, so any
 // process can refresh it by ID alone. Pi never starts a sign-in by itself: a server or model whose credential cannot be
 // refreshed needs `/databricks-login` again.
+import { oauthCallbackPage } from "./oauth-callback.ts";
 import { anthropicMessagesApi, createProvider, googleGenerativeAIApi, openAIResponsesApi } from "@earendil-works/pi-ai";
 import { createHash, randomBytes } from "node:crypto";
 import { readFileSync } from "node:fs";
@@ -318,8 +319,11 @@ async function authorize(origin: string, client: Client, interaction: any, resou
     const url = new URL(request.url ?? "/", "http://localhost");
     if (url.pathname !== callbackPath) return void response.writeHead(404).end();
     const code = url.searchParams.get("state") === state ? url.searchParams.get("code") : null;
-    response.writeHead(code ? 200 : 400, { "content-type": "text/plain; charset=utf-8" })
-      .end(code ? "Signed in. You can close this page." : "Sign-in failed.");
+    response.writeHead(code ? 200 : 400, {
+      "content-type": "text/html; charset=utf-8",
+      "cache-control": "no-store",
+      "referrer-policy": "no-referrer",
+    }).end(oauthCallbackPage(Boolean(code), request.headers["accept-language"]));
     if (code) callback.resolve(code);
     else callback.reject(new Error(url.searchParams.get("error_description") ?? url.searchParams.get("error") ?? "Invalid authorization response"));
   });

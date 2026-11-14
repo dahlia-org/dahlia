@@ -247,7 +247,11 @@ def control(pi, command, auth=None, browser=False, environment=None, bridge_toke
             if prefix.endswith("auth_url"):
                 if browser:
                     # The browser: the authorize endpoint redirects to the extension's loopback callback.
-                    urllib.request.urlopen(url, timeout=10).read()
+                    with urllib.request.urlopen(url, timeout=10) as response:
+                        assert response.headers.get_content_type() == "text/html", response.headers
+                        assert response.headers["Cache-Control"] == "no-store", response.headers
+                        html = response.read().decode("utf-8")
+                        assert 'data-state="success"' in html and "{{" not in html, html[:200]
             else:
                 break
         process.stdin.close()
