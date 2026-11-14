@@ -122,26 +122,48 @@ extension MeetingRepository {
     ) throws -> MeetingProjectProjection {
         let projects = try ProjectRecord.fetchResolvedAll(workspaceId: workspaceId, in: db)
         let projectPaths = Dictionary(uniqueKeysWithValues: projects.map { ($0.id, $0.path) })
-        var rowLimitClauses: [String] = []
-        var arguments: StatementArguments = []
+        let expandedProjectIds = expandedLimits.keys.compactMap(\.projectId)
+        let excludedProjects = expandedProjectIds.isEmpty
+            ? ""
+            : "AND id NOT IN (\(Array(repeating: "?", count: expandedProjectIds.count).joined(separator: ", ")))"
+        let unassignedKey = expandedLimits[.unassigned] == nil ? "UNION ALL SELECT NULL" : ""
+        var arguments: StatementArguments = [recentLimit, workspaceId]
+        arguments += StatementArguments(expandedProjectIds)
+        arguments += [workspaceId, recentLimit + 1]
+        // Materialize limit + 1 IDs per group before joining metadata; the extra row preserves hasMore.
+        var candidateQueries = ["""
+        SELECT candidate.id AS meetingId, ? AS projectRowLimit
+        FROM (
+            SELECT id AS projectId FROM projects WHERE workspace_id = ? \(excludedProjects)
+            \(unassignedKey)
+        ) AS keys
+        CROSS JOIN meetings AS candidate
+        WHERE candidate.id IN (
+             SELECT meetings.id FROM meetings
+             WHERE meetings.workspace_id = ? AND meetings.projectId IS keys.projectId
+             ORDER BY \(sidebarRecordingStartedAtSQL) DESC, meetings.id DESC
+             LIMIT ?
+         )
+        """]
         for (key, limit) in expandedLimits.sorted(by: { String(describing: $0.key) < String(describing: $1.key) }) {
-            if let projectId = key.projectId {
-                rowLimitClauses.append("WHEN meetings.projectId = ? THEN ?")
-                arguments += [projectId, limit]
-            } else {
-                rowLimitClauses.append("WHEN meetings.projectId IS NULL THEN ?")
-                arguments += [limit]
-            }
+            candidateQueries.append("""
+            SELECT meetingId, ? AS projectRowLimit FROM (
+                SELECT meetings.id AS meetingId FROM meetings
+                WHERE meetings.workspace_id = ? AND meetings.projectId IS ?
+                ORDER BY \(sidebarRecordingStartedAtSQL) DESC, meetings.id DESC
+                LIMIT ?
+            )
+            """)
+            arguments += [limit, workspaceId, key.projectId, limit + 1]
         }
-        let rowLimitSQL = rowLimitClauses.isEmpty
-            ? "?"
-            : "CASE \(rowLimitClauses.joined(separator: " ")) ELSE ? END"
-        arguments += [recentLimit, workspaceId, totalLimit + 1]
+        arguments += [totalLimit + 1]
 
         var rows = try Row.fetchAll(
             db,
             sql: """
-            WITH ranked AS (
+            WITH candidates AS MATERIALIZED (
+                \(candidateQueries.joined(separator: "\nUNION ALL\n"))
+            ), ranked AS (
                 SELECT
                     meetings.id AS meetingId,
                     meetings.workspace_id AS workspace_id,
@@ -158,12 +180,12 @@ extension MeetingRepository {
                         ORDER BY \(sidebarRecordingStartedAtSQL) DESC, meetings.id DESC
                     ) AS projectRowNumber,
                     COUNT(*) OVER (PARTITION BY meetings.projectId) AS projectRowCount,
-                    \(rowLimitSQL) AS projectRowLimit
-                FROM meetings
+                    candidates.projectRowLimit AS projectRowLimit
+                FROM candidates
+                JOIN meetings ON meetings.id = candidates.meetingId
                 LEFT JOIN calendar_events
                   ON calendar_events.ical_uid = meetings.calendar_event_ical_uid
                  AND calendar_events.recurrence_id = meetings.calendar_event_recurrence_id
-                WHERE meetings.workspace_id = ?
             )
             SELECT *
             FROM ranked

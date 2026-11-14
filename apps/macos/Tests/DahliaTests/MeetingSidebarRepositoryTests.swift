@@ -1,6 +1,7 @@
 import DahliaMeetingAccess
 import Foundation
 import GRDB
+import SQLite3
 import Synchronization
 @testable import Dahlia
 
@@ -363,6 +364,110 @@ import Synchronization
             ])
             #expect(projection.hasMoreKeys.contains(.project(projectID)))
             #expect(projection.itemsByKey[.unassigned]?.map(\.meetingName) == ["Unassigned 1", "Unassigned 0"])
+        }
+
+        @Test(arguments: [false, true], [10, 100])
+        func preservesExpandedProjectLimitsAndGlobalTruncation(expandUnassigned: Bool, totalLimit: Int) throws {
+            let fixture = try MeetingSidebarRepositoryFixture()
+            let start = Date(timeIntervalSince1970: 1_800_000_000)
+            let (expandedID, defaultID) = try fixture.manager.dbQueue.write { db in
+                let expandedID = try fixture.insertProject(name: "Expanded", in: db)
+                let defaultID = try fixture.insertProject(name: "Default", in: db)
+                _ = try fixture.insertProject(name: "Empty", in: db)
+                for index in 0 ..< 8 {
+                    _ = try fixture.insertMeeting(
+                        name: "Expanded \(index)", projectId: expandedID,
+                        createdAt: start.addingTimeInterval(TimeInterval(index)),
+                        recordingStartedAt: start.addingTimeInterval(TimeInterval(207 - index)), in: db
+                    )
+                }
+                for index in 0 ..< 5 {
+                    _ = try fixture.insertMeeting(
+                        name: "Default \(index)", projectId: defaultID,
+                        createdAt: start.addingTimeInterval(TimeInterval(100 + index)), in: db
+                    )
+                }
+                for index in 0 ..< 7 {
+                    _ = try fixture.insertMeeting(
+                        name: "Unassigned \(index)", createdAt: start.addingTimeInterval(TimeInterval(index)), in: db
+                    )
+                }
+                let otherWorkspace = WorkspaceRecord(id: .v7(), path: nil, name: "Other", createdAt: start, lastOpenedAt: start)
+                try otherWorkspace.insert(db)
+                try MeetingRecord(
+                    id: .v7(), workspaceId: otherWorkspace.id, name: "Other workspace",
+                    createdAt: start.addingTimeInterval(1000), updatedAt: start
+                ).insert(db)
+                return (expandedID, defaultID)
+            }
+            var expandedLimits: [MeetingProjectKey: Int] = [.project(expandedID): 7]
+            if expandUnassigned { expandedLimits[.unassigned] = 7 }
+            let projection = try fixture.manager.dbQueue.read { db in
+                try MeetingRepository.fetchMeetingProjectProjection(
+                    workspaceId: fixture.workspace.id, recentLimit: 5, expandedLimits: expandedLimits,
+                    totalLimit: totalLimit, in: db
+                )
+            }
+
+            #expect(projection.itemsByKey[.project(expandedID)]?.map(\.meetingName) == (0 ..< 7).map { "Expanded \($0)" })
+            let expectedDefaultNames = (0 ..< 5).reversed().prefix(totalLimit == 10 ? 3 : 5).map { "Default \($0)" }
+            #expect(projection.itemsByKey[.project(defaultID)]?.map(\.meetingName) == expectedDefaultNames)
+            #expect(projection.unassignedMeetingCount == 7)
+            if totalLimit == 10 {
+                #expect(projection.itemsByKey.count == 2)
+                #expect(projection.hasMoreKeys == [.project(expandedID)])
+                #expect(projection.truncatedKeys == [.project(defaultID)])
+                #expect(projection.isLimited)
+            } else {
+                #expect(projection.itemsByKey.count == 3)
+                let unassignedNames = (0 ..< 7).reversed().prefix(expandUnassigned ? 7 : 5).map { "Unassigned \($0)" }
+                #expect(projection.itemsByKey[.unassigned]?.map(\.meetingName) == unassignedNames)
+                #expect(projection.hasMoreKeys == (expandUnassigned ? [.project(expandedID)] : [.project(expandedID), .unassigned]))
+                #expect(projection.truncatedKeys.isEmpty)
+                #expect(!projection.isLimited)
+            }
+        }
+
+        @Test(arguments: [false, true])
+        func seeksProjectProjectionCandidatesByIndex(expanded: Bool) throws {
+            let fixture = try MeetingSidebarRepositoryFixture()
+            let projectID = try fixture.manager.dbQueue.write { db in
+                let projectID = try fixture.insertProject(name: "Project", in: db)
+                for key in [projectID, nil] {
+                    try db.execute(sql: """
+                    WITH RECURSIVE numbers(n) AS (VALUES(1) UNION ALL SELECT n + 1 FROM numbers WHERE n < 1000)
+                    INSERT INTO meetings(id, workspace_id, projectId, name, createdAt, updatedAt)
+                    SELECT randomblob(16), ?, ?, 'Meeting', datetime('2026-01-01', '+' || n || ' seconds'), '2026-01-01'
+                    FROM numbers
+                    """, arguments: [fixture.workspace.id, key])
+                }
+                return projectID
+            }
+            let queries = Mutex<[String]>([])
+            fixture.manager.dbQueue.writeWithoutTransaction { db in
+                db.trace { event in queries.withLock { $0.append(event.expandedDescription) } }
+            }
+            _ = try fixture.manager.dbQueue.read { db in
+                try MeetingRepository.fetchMeetingProjectProjection(
+                    workspaceId: fixture.workspace.id, recentLimit: 5,
+                    expandedLimits: expanded ? [.project(projectID): 15, .unassigned: 10] : [:],
+                    totalLimit: 500, in: db
+                )
+            }
+            fixture.manager.dbQueue.writeWithoutTransaction { $0.trace(nil) }
+            let sql = try #require(queries.withLock { $0.first { $0.contains("ROW_NUMBER()") } })
+            let (plan, steps) = try fixture.manager.dbQueue.read { db in
+                let plan = try Row.fetchAll(db, sql: "EXPLAIN QUERY PLAN " + sql).map { $0["detail"] as String }
+                let statement = try db.makeStatement(sql: sql)
+                _ = try Row.fetchAll(statement)
+                return (plan, sqlite3_stmt_status(statement.sqliteStatement, SQLITE_STMTSTATUS_VM_STEP, 0))
+            }
+            print("Project projection expanded=\(expanded): \(steps) VM steps for 2000 meetings")
+            #expect(steps < 10000, "Project candidates must not walk the full meeting history: \(steps)")
+            let index = "meetings_on_workspace_id_projectId_recordingStartedAt_createdAt_id"
+            let seeks = plan.filter { $0.contains("SEARCH meetings USING COVERING INDEX " + index) && $0.contains("workspace_id=? AND projectId=?") }
+            #expect(seeks.count == (expanded ? 3 : 1), Comment(rawValue: plan.joined(separator: " | ")))
+            #expect(!plan.contains { $0.hasPrefix("SCAN meetings") || $0.hasPrefix("SCAN candidate ") }, Comment(rawValue: plan.joined(separator: " | ")))
         }
 
         @Test
