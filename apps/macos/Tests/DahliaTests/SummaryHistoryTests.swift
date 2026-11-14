@@ -23,11 +23,35 @@ import GRDB
             try AppDatabaseManager.migrator.migrate(queue)
             let page = try await SummaryHistoryService().page(meetingID: meetingID, dbQueue: queue)
             #expect(page.items.map(\.version) == [1])
+            #expect(page.currentVersion == 1)
             #expect(page.items.first?.savedAt == date)
             #expect(page.items.first?.metadata?.request.model == "old-model")
             let loaded = try await SummaryHistoryService().document(meetingID: meetingID, version: 1, dbQueue: queue)
             #expect(try loaded.databaseJSONString() == original)
             #expect(try await queue.read { try SummaryContent.fetchOne($0, key: meetingID)?.document } == original)
+        }
+
+        @Test
+        func currentMarkerMigrationKeepsVersionsAndMarksTheLatest() async throws {
+            let queue = try DatabaseQueue(configuration: AppDatabaseManager.configuration())
+            try AppDatabaseManager.migrator.migrate(queue, upTo: "v61_summaryHistory")
+            let meetingID = try seed(queue)
+            let first = try document("First", model: "first-model").databaseJSONString()
+            let second = try document("Second", model: "second-model").databaseJSONString()
+            try await queue.write { db in
+                try SummaryContent(meetingId: meetingID, title: "First", document: first, createdAt: .now).insert(db)
+                try db.execute(sql: "UPDATE summary_bodies SET document = ? WHERE meetingId = ?", arguments: [second, meetingID])
+            }
+            try AppDatabaseManager.migrator.migrate(queue)
+            let service = SummaryHistoryService()
+            let page = try await service.page(meetingID: meetingID, dbQueue: queue)
+            #expect(page.items.map(\.version) == [2, 1])
+            #expect(page.currentVersion == 2)
+            #expect(try await service.document(meetingID: meetingID, version: 1, dbQueue: queue).databaseJSONString() == first)
+            try await service.promote(meetingID: meetingID, version: 1, dbQueue: queue)
+            let promoted = try await service.page(meetingID: meetingID, dbQueue: queue)
+            #expect(promoted.items.map(\.version) == [2, 1])
+            #expect(promoted.currentVersion == 1)
         }
 
         @Test
@@ -220,7 +244,13 @@ import GRDB
             #expect(!history.isPromoting)
             #expect(history.error == nil)
             let service = SummaryHistoryService()
-            #expect(try await service.page(meetingID: meetingID, dbQueue: queue).items.map(\.version) == [3, 2, 1])
+            // Promotion moves the current marker instead of recording the same body again.
+            let page = try await service.page(meetingID: meetingID, dbQueue: queue)
+            #expect(page.items.map(\.version) == [2, 1])
+            #expect(page.currentVersion == 1)
+            #expect(history.currentVersion == 1)
+            await history.load(meetingID: meetingID, dbQueue: queue)
+            #expect(history.currentVersion == 1)
             #expect(try await service.document(meetingID: meetingID, version: 2, dbQueue: queue) == current)
             try await queue.read { db in
                 let summary = try #require(try SummaryContent.fetchOne(db, key: meetingID))
@@ -231,53 +261,59 @@ import GRDB
                 #expect(try SummaryExportRecord.filter(Column("meetingId") == meetingID).fetchCount(db) == 0)
                 #expect(try Int.fetchOne(db, sql: "SELECT count(*) FROM sync_operations") == 0)
             }
-            _ = try await service.promote(meetingID: meetingID, document: current, dbQueue: queue)
-            #expect(try await service.page(meetingID: meetingID, dbQueue: queue).items.map(\.version) == [4, 3, 2, 1])
-            _ = try await service.promote(meetingID: meetingID, document: current, dbQueue: queue)
-            #expect(try await service.page(meetingID: meetingID, dbQueue: queue).items.map(\.version) == [4, 3, 2, 1])
+            try await service.promote(meetingID: meetingID, version: 2, dbQueue: queue)
+            #expect(try await queue.read { try SummaryContent.fetchOne($0, key: meetingID)?.loadDocument() } == current)
+            // A later edit becomes a new version even when promotion left an older version current.
+            try await service.promote(meetingID: meetingID, version: 1, dbQueue: queue)
+            let edited = try document("Edited", model: nil).databaseJSONString()
+            try await queue.write { db in
+                try db.execute(sql: "UPDATE summary_bodies SET document = ? WHERE meetingId = ?", arguments: [edited, meetingID])
+            }
+            let afterEdit = try await service.page(meetingID: meetingID, dbQueue: queue)
+            #expect(afterEdit.items.map(\.version) == [3, 2, 1])
+            #expect(afterEdit.currentVersion == 3)
+            try await service.promote(meetingID: meetingID, version: 2, dbQueue: queue)
+            let reversed = try await service.page(meetingID: meetingID, dbQueue: queue)
+            #expect(reversed.items.map(\.version) == [3, 2, 1])
+            #expect(reversed.currentVersion == 2)
         }
 
         @Test
-        func promotionCannotInvalidateAnExportWhileItIsBeingPublished() async throws {
+        func onlyARequestedHistoryPageReportsItsFailure() async throws {
             let queue = try AppDatabaseManager(path: ":memory:").dbQueue
             let meetingID = try seed(queue)
-            let root = FileManager.default.temporaryDirectory.appending(path: UUID.v7().uuidString)
-            try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
-            defer { try? FileManager.default.removeItem(at: root) }
-            let original = document("Original", model: "original-model")
-            let current = document("Current", model: "current-model")
-            let workspaceID = try await queue.write { db in
-                let meeting = try #require(try MeetingRecord.fetchOne(db, key: meetingID))
-                try db.execute(sql: "UPDATE workspaces SET path = ? WHERE id = ?", arguments: [root.path, meeting.workspaceId])
-                try SummaryContent(meetingId: meetingID, title: original.title, document: original.databaseJSONString(), createdAt: .now).save(db)
-                try SummaryContent(meetingId: meetingID, title: current.title, document: current.databaseJSONString(), createdAt: .now).save(db)
-                return meeting.workspaceId
+            try await queue.write { try $0.execute(sql: "ALTER TABLE summary_versions RENAME TO unavailable_versions") }
+            let history = SummaryHistoryModel()
+            await history.load(meetingID: meetingID, dbQueue: queue)
+            #expect(history.error == nil)
+            #expect(!history.isLoading)
+            await history.load(meetingID: meetingID, dbQueue: queue, more: true)
+            #expect(history.error != nil)
+        }
+
+        @Test
+        func promotionIsRejectedWhenTheWorkspaceHasAFolder() async throws {
+            let queue = try AppDatabaseManager(path: ":memory:").dbQueue
+            let meetingID = try seed(queue)
+            let current = try document("Current", model: "current-model").databaseJSONString()
+            try await queue.write { db in
+                try SummaryContent(
+                    meetingId: meetingID, title: "Original", document: document("Original", model: nil).databaseJSONString(), createdAt: .now
+                ).save(db)
+                try SummaryContent(meetingId: meetingID, title: "Current", document: current, createdAt: .now).save(db)
+                try db.execute(sql: "UPDATE workspaces SET path = ?", arguments: [FileManager.default.temporaryDirectory.path])
+                try SummaryExportRecord.setURL("vault://Current.md", meetingId: meetingID, type: .workspace, in: db)
             }
-            let request = WorkspaceSummaryExportService.LockedSummaryExportRequest(
-                workspaceURL: root, workspaceID: workspaceID, meetingID: meetingID, dbQueue: queue,
-                document: current, summaryFileName: "Current.md", summaryMarkdown: "Current body", isAlreadyPersisted: true
-            )
-            let exported = try #require(try await WorkspaceSummaryExportService.exportSummary(request) { url, markdown in
-                // This callback runs after the persisted-body check while export still owns the Workspace lock.
-                #expect(!Thread.isMainThread)
-                #expect(throws: ProjectWorkspaceError.workspaceBusy) {
-                    try MeetingRepository(dbQueue: queue).promoteSummary(meetingID: meetingID, document: original)
-                }
-                #expect(try queue.read { try SummaryContent.fetchOne($0, key: meetingID)?.loadDocument() } == current)
-                return try WorkspaceSummaryExportService.writeSummaryFile(fileURL: url, markdown: markdown)
-            })
-            #expect(try await queue.read { try SummaryExportRecord.fetchOne(meetingId: meetingID, type: .workspace, in: $0) } != nil)
-            _ = try await SummaryHistoryService().promote(meetingID: meetingID, document: original, dbQueue: queue)
-            try await queue.read { db throws in
-                #expect(try SummaryContent.fetchOne(db, key: meetingID)?.loadDocument() == original)
-                #expect(try SummaryExportRecord.filter(Column("meetingId") == meetingID).fetchCount(db) == 0)
-                #expect(try SummaryVersionRecord.filter(Column("meetingId") == meetingID).fetchCount(db) == 3)
-            }
-            #expect(try String(contentsOf: exported.fileURL, encoding: .utf8) == "Current body")
             await #expect(throws: TextContentError.changed) {
-                try await WorkspaceSummaryExportService.exportSummary(request)
+                try await SummaryHistoryService().promote(meetingID: meetingID, version: 1, dbQueue: queue)
             }
-            #expect(try await queue.read { try SummaryExportRecord.filter(Column("meetingId") == meetingID).fetchCount($0) } == 0)
+            let page = try await SummaryHistoryService().page(meetingID: meetingID, dbQueue: queue)
+            #expect(page.items.map(\.version) == [2, 1])
+            #expect(page.currentVersion == 2)
+            try await queue.read { db throws in
+                #expect(try SummaryContent.fetchOne(db, key: meetingID)?.document == current)
+                #expect(try SummaryExportRecord.fetchOne(meetingId: meetingID, type: .workspace, in: db) != nil)
+            }
         }
 
         @Test
@@ -311,14 +347,13 @@ import GRDB
             let origin = "https://\(UUID.v7().uuidString).example.test"
             let connectionID = UUID.v7()
             let meetingID = try seed(queue, connection: .init(id: connectionID, origin: origin, clientID: "test", createdAt: .now))
-            let saved = document("Server old", model: "recorded-model")
             let latestJSON = try document("Latest", model: "latest").databaseJSONString()
             try await queue.write { db in
                 try SummaryContent(meetingId: meetingID, title: "Latest", document: latestJSON, createdAt: .now).save(db)
             }
             let service = SummaryHistoryService()
             await #expect(throws: TextContentError.changed) {
-                try await service.promote(meetingID: meetingID, document: saved, dbQueue: queue)
+                try await service.promote(meetingID: meetingID, version: 1, dbQueue: queue)
             }
             try await queue.read { db throws in
                 #expect(try SummaryContent.fetchOne(db, key: meetingID)?.document == latestJSON)

@@ -7,6 +7,7 @@ import Observation
 final class SummaryHistoryModel {
     private(set) var versions: [SummaryVersion] = []
     private(set) var nextCursor: String?
+    private(set) var currentVersion: Int?
     private var loadedDocument: SummaryDocument?
     private var loadedVersion: Int?
     var document: SummaryDocument? { loadedVersion == selectedVersion ? loadedDocument : nil }
@@ -32,9 +33,11 @@ final class SummaryHistoryModel {
             guard generation == loadGeneration else { return }
             versions = more ? versions + page.items : page.items
             nextCursor = page.nextCursor
+            if !more { currentVersion = page.currentVersion ?? page.items.first?.version }
         } catch is CancellationError {
         } catch {
-            if !Task.isCancelled, generation == loadGeneration { self.pageError = error.localizedDescription }
+            // The first page loads unasked; its failure (an offline Server Account) must not sit above a readable summary.
+            if more, !Task.isCancelled, generation == loadGeneration { self.pageError = error.localizedDescription }
         }
     }
 
@@ -52,19 +55,20 @@ final class SummaryHistoryModel {
             loadedVersion = version
         } catch is CancellationError {
         } catch {
-            if !Task.isCancelled { self.selectionError = error.localizedDescription }
+            if !Task.isCancelled, selectedVersion == version { self.selectionError = error.localizedDescription }
         }
     }
 
     func promote(meetingID: UUID, dbQueue: DatabaseQueue) async -> SummaryDocument? {
-        guard !isPromoting, selectedVersion != nil, let document else { return nil }
+        guard !isPromoting, let version = selectedVersion, let document else { return nil }
         isPromoting = true
         promotionError = nil
         defer { isPromoting = false }
         do {
-            let promoted = try await service.promote(meetingID: meetingID, document: document, dbQueue: dbQueue)
+            try await service.promote(meetingID: meetingID, version: version, dbQueue: dbQueue)
             selectedVersion = nil
-            return promoted
+            currentVersion = version
+            return document
         } catch {
             promotionError = error.localizedDescription
             return nil

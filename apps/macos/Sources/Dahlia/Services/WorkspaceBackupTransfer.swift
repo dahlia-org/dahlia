@@ -146,17 +146,17 @@ enum WorkspaceBackupTransfer {
     private static func remapStoredSummary(
         _ row: Row, table: String, mappings: [String: [DatabaseValue: DatabaseValue]], in db: Database
     ) throws -> String {
-        // Reuse remapped AST IDs so installing the latest body does not create a duplicate version.
+        // Reuse remapped AST IDs so installing the current body does not create a duplicate version.
         if table == "summary_bodies" {
             let sourceID: DatabaseValue = row["meetingId"]
             let destinationID = mappings["meetings"]?[sourceID] ?? sourceID
-            let latest = try Row.fetchOne(db, sql: """
+            let current = try Row.fetchOne(db, sql: """
             SELECT source.document AS original, restored.document AS remapped
             FROM backup_source.summary_versions source JOIN summary_versions restored ON restored.version = source.version
-            WHERE source.meetingId = ? AND restored.meetingId = ? ORDER BY source.version DESC LIMIT 1
+            WHERE source.meetingId = ? AND restored.meetingId = ? AND source.isCurrent
             """, arguments: [sourceID, destinationID])
-            if let latest, latest["original"] as String == row["document"] as String {
-                return latest["remapped"] as String
+            if let current, current["original"] as String == row["document"] as String {
+                return current["remapped"] as String
             }
         }
         return try remapSummary(

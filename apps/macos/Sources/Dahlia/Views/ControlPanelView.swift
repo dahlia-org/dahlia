@@ -294,6 +294,7 @@ struct ControlPanelView: View {
             dbQueue: viewModel.documentDatabaseQueue,
             document: viewModel.currentSummaryDocument,
             hasSummary: viewModel.hasCurrentMeetingSummary,
+            showsHistory: sidebarViewModel.currentWorkspace.map { $0.url == nil } == true,
             canPromote: sidebarViewModel.currentWorkspace.map { $0.accountConnectionId == nil } == true,
             onPromoted: { [meetingID = viewModel.currentMeetingId] document in
                 guard let meetingID else { return }

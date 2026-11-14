@@ -9,4 +9,5 @@ struct SummaryVersionRecord: Codable, FetchableRecord, PersistableRecord {
     var title: String
     var document: String
     var savedAt: Date
+    var isCurrent: Bool
 }

@@ -11,6 +11,8 @@ struct SummaryTabContentView: View {
     @State private var loadMore = 0
     let document: SummaryDocument?
     let hasSummary: Bool
+    /// False for a Workspace with a folder: its exported file follows only the latest summary.
+    let showsHistory: Bool
     let canPromote: Bool
     let onPromoted: (SummaryDocument) -> Void
     let openScreenshot: (UUID, CGImage) -> Void
@@ -22,7 +24,7 @@ struct SummaryTabContentView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: DahliaDesign.blockSpacing) {
-            if hasSummary {
+            if hasSummary, showsHistory {
                 HStack {
                     Picker(L10n.summaryVersion, selection: $history.selectedVersion) {
                         Text(L10n.summaryCurrentVersion).font(.dahliaBody).tag(nil as Int?)
@@ -30,16 +32,20 @@ struct SummaryTabContentView: View {
                             Text("v\(selected)").font(.dahliaBody).tag(Optional(selected))
                         }
                         ForEach(history.versions) { version in
-                            Text("v\(version.version) · \(version.savedAt.formatted(date: .abbreviated, time: .shortened))")
-                                .font(.dahliaBody)
-                                .tag(Optional(version.version))
+                            Text(
+                                "v\(version.version) · \(version.savedAt.formatted(date: .abbreviated, time: .shortened))"
+                                    + (version.version == history.currentVersion ? " · \(L10n.summaryCurrentVersion)" : "")
+                            )
+                            .font(.dahliaBody)
+                            .tag(Optional(version.version))
                         }
                     }
+                    .font(.dahliaBody)
                     .fixedSize()
                     .disabled(history.isPromoting)
                     SummaryGenerationDetailsView(metadata: displayedDocument?.metadata)
                         .id(history.selectedVersion)
-                    if history.selectedVersion != nil {
+                    if history.selectedVersion != nil, history.selectedVersion != history.currentVersion {
                         Image(systemName: "lock")
                             .font(.dahliaSecondary)
                             .foregroundStyle(.secondary)
@@ -73,7 +79,7 @@ struct SummaryTabContentView: View {
                     Button(L10n.retry) { reload += 1 }
                 }
             }
-            if let displayedDocument {
+            if let displayedDocument, hasSummary || history.selectedVersion != nil {
                 if history.selectedVersion != nil {
                     Text(displayedDocument.title).font(.dahliaTitle2)
                 }
@@ -98,8 +104,9 @@ struct SummaryTabContentView: View {
         .padding(.vertical, DahliaDesign.tabContentInset)
         .frame(maxWidth: .infinity, alignment: .leading)
         .task(id: document) {
-            if hasSummary, let meetingID, let dbQueue { await history.load(meetingID: meetingID, dbQueue: dbQueue) }
+            if hasSummary, showsHistory, let meetingID, let dbQueue { await history.load(meetingID: meetingID, dbQueue: dbQueue) }
         }
+        .onChange(of: showsHistory) { history.selectedVersion = nil }
         .task(id: history.selectedVersion) {
             if let meetingID, let dbQueue { await history.select(meetingID: meetingID, dbQueue: dbQueue) }
         }

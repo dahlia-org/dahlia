@@ -157,8 +157,7 @@ enum WorkspaceSummaryExportService {
     }
 
     static func exportSummary(
-        _ request: LockedSummaryExportRequest,
-        writeSummary: @escaping SummaryWriter = writeSummaryFile
+        _ request: LockedSummaryExportRequest
     ) async throws -> LockedSummaryExportResult? {
         try await withWorkspaceMutationLock(
             workspaceURL: request.workspaceURL,
@@ -204,7 +203,10 @@ enum WorkspaceSummaryExportService {
                 meetingId: request.meetingID,
                 summaryFileName: request.summaryFileName
             )
-            _ = try writeSummary(fileURL, request.summaryMarkdown)
+            _ = try writeSummaryFile(
+                fileURL: fileURL,
+                markdown: request.summaryMarkdown
+            )
             if let relativePath = WorkspaceSummaryFileLocator.relativePath(
                 for: fileURL,
                 workspaceURL: request.workspaceURL

@@ -251,6 +251,10 @@ final class AppDatabaseManager: Sendable {
             try SummaryHistoryMigration.migrate(in: db)
         }
 
+        migrator.registerMigration("v62_summaryCurrentVersion") { db in
+            try SummaryHistoryMigration.migrateCurrentMarker(in: db)
+        }
+
         return migrator
     }()
 

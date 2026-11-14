@@ -447,6 +447,7 @@
                 "v59_chatHistory",
                 "v60_meetingDisplayIndexes",
                 "v61_summaryHistory",
+                "v62_summaryCurrentVersion",
             ])
             try database.dbQueue.read { db throws in
                 #expect(try Row.fetchAll(db, sql: "PRAGMA foreign_key_check").isEmpty)

@@ -9,6 +9,8 @@ struct SummaryHistoryService: Sendable {
     struct Page: Decodable, Sendable {
         let items: [SummaryVersion]
         let nextCursor: String?
+        /// The version marked as the current summary. A Server page omits it; its newest version is current.
+        var currentVersion: Int?
     }
 
     func page(meetingID: UUID, dbQueue: DatabaseQueue, before: String? = nil) async throws -> Page {
@@ -33,7 +35,12 @@ struct SummaryHistoryService: Sendable {
                     metadata: metadata.map { try JSONDecoder().decode(SummaryMetadata.self, from: Data($0.utf8)) }
                 )
             }
-            return Page(items: items, nextCursor: rows.count > 20 ? items.last.map { String($0.version) } : nil)
+            let currentVersion = try Int.fetchOne(
+                db, sql: "SELECT version FROM summary_versions WHERE meetingId = ? AND isCurrent", arguments: [meetingID]
+            )
+            return Page(
+                items: items, nextCursor: rows.count > 20 ? items.last.map { String($0.version) } : nil, currentVersion: currentVersion
+            )
         }
     }
 
@@ -60,11 +67,10 @@ struct SummaryHistoryService: Sendable {
         return try await Task.detached(priority: .userInitiated) { try SummaryDocument.decode(databaseJSON: json) }.value
     }
 
-    func promote(meetingID: UUID, document: SummaryDocument, dbQueue: DatabaseQueue) async throws -> SummaryDocument {
+    func promote(meetingID: UUID, version: Int, dbQueue: DatabaseQueue) async throws {
         try Task.checkCancellation()
         try await Task.detached(priority: .userInitiated) {
-            try MeetingRepository(dbQueue: dbQueue).promoteSummary(meetingID: meetingID, document: document)
+            try MeetingRepository(dbQueue: dbQueue).promoteSummary(meetingID: meetingID, version: version)
         }.value
-        return document
     }
 }
