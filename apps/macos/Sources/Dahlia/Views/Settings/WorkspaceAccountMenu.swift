@@ -6,9 +6,13 @@ struct WorkspaceAccountMenu: View {
     let databricksAccounts: [DatabricksConnection]
     let onSelect: (WorkspaceAccountChoice) -> Void
 
+    @ObservedObject private var settings = AppSettings.shared
+
     var body: some View {
         Menu(L10n.moveWorkspaceToAccount, systemImage: "arrow.right.arrow.left") {
-            accountButton(.local)
+            if !settings.hideLocalAccount {
+                accountButton(.local)
+            }
             ForEach(databricksAccounts) { account in
                 accountButton(.databricks(account.id))
             }

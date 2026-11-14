@@ -6,6 +6,87 @@
 
     @MainActor
     struct MainSidebarAccountMenuTests {
+        @Test(arguments: ["localOnly", "localWithDatabricks", "localWithServer", "databricks", "server"], [false, true])
+        func addingAccountsAndBottomActionsFollowTheSelectedAccount(account: String, hidden: Bool) throws {
+            let suite = "AccountMenuActions-\(UUID())"
+            let defaults = try #require(UserDefaults(suiteName: suite))
+            defer { defaults.removePersistentDomain(forName: suite) }
+            let settings = AppSettings(generalDefaults: defaults)
+            settings.hideLocalAccount = hidden
+            let server = makeConnection(origin: "https://server.example.com", isCloud: false)
+            let gateway = DatabricksConnection(id: .v7(), host: "https://one.example.com")
+            let hasServer = account == "server" || account == "localWithServer"
+            let hasDatabricks = account == "databricks" || account == "localWithDatabricks"
+            var actions: [String] = []
+            let coordinator = MainSidebarAccountMenuCoordinator(
+                connections: hasServer ? [server] : [],
+                accountSelection: .init(
+                    connectionID: account == "server" ? server.id : nil,
+                    isLocal: account != "server",
+                    databricksAccounts: hasDatabricks ? [gateway] : [],
+                    currentDatabricksID: account == "databricks" ? gateway.id : nil
+                ),
+                onOpenSettings: { _ in Issue.record("Unexpected settings action") },
+                onSelectAccount: { _ in Issue.record("Unexpected account switch") },
+                onAddAccount: { actions.append("add") },
+                onAccountAction: { actions.append("account") },
+                onShowUnprocessedRecordings: { actions.append("recordings") },
+                settings: settings
+            )
+            #expect(coordinator.showsAddAccount == (hasServer || hasDatabricks))
+            let showsBottom = account == "localOnly" || account == "server" || account == "databricks"
+            #expect(coordinator.showsAccountAction == showsBottom)
+            if coordinator.showsAddAccount {
+                for _ in 0 ..< coordinator.menuOffset {
+                    coordinator.moveSelection(1)
+                }
+                coordinator.activateSelection()
+                #expect(actions == ["add"])
+                actions.removeAll()
+            }
+            // Up from the start selects the last visible row; hidden Sign In must not remain reachable.
+            coordinator.moveSelection(-1)
+            coordinator.activateSelection()
+            #expect(actions == [showsBottom ? "account" : "recordings"])
+        }
+
+        @Test(arguments: [false, true])
+        func hiddenLocalAccountKeepsKeyboardAccountAndSettingsActionsAligned(hidden: Bool) throws {
+            let suite = "AccountMenuVisibility-\(UUID())"
+            let defaults = try #require(UserDefaults(suiteName: suite))
+            defer { defaults.removePersistentDomain(forName: suite) }
+            let settings = AppSettings(generalDefaults: defaults)
+            settings.hideLocalAccount = hidden
+            let gateway = DatabricksConnection(id: .v7(), host: "https://one.example.com")
+            let current = DatabricksConnection(id: .v7(), host: "https://current.example.com")
+            var selections: [String] = []
+            let coordinator = MainSidebarAccountMenuCoordinator(
+                connections: [],
+                accountSelection: MainSidebarAccountSelection(
+                    connectionID: nil, isLocal: true, databricksAccounts: [gateway, current], currentDatabricksID: current.id
+                ),
+                onOpenSettings: { _ in selections.append("settings") },
+                onSelectAccount: { _ in selections.append("local") },
+                onSelectDatabricksAccount: { id in
+                    #expect(id == gateway.id)
+                    selections.append("databricks")
+                },
+                onAccountAction: {},
+                onShowUnprocessedRecordings: {},
+                settings: settings
+            )
+            #expect(coordinator.menuOffset == (hidden ? 3 : 4))
+            func activate(row: Int) {
+                for _ in 0 ... row {
+                    coordinator.moveSelection(1)
+                }
+                coordinator.activateSelection()
+            }
+            activate(row: 0)
+            activate(row: coordinator.menuOffset + 2)
+            #expect(selections == [hidden ? "databricks" : "local", "settings"])
+        }
+
         @Test(arguments: [false, true])
         func menuButtonFollowsTheFootersDisabledState(disabled: Bool) throws {
             // The footer is disabled while recording; the AppKit button must not open the account menu then.
@@ -507,7 +588,7 @@
             let databricks = coordinator(current: first.id)
             activate(databricks, row: 0)
             activate(databricks, row: 1)
-            activate(databricks, row: 5)
+            activate(databricks, row: databricks.menuOffset + 2)
 
             // Choosing the current account does nothing; the rows after the Databricks accounts keep their actions.
             #expect(selections == ["first", "second", "local", "settings"])

@@ -5,6 +5,27 @@
 
     struct WorkspaceSettingsAccountGroupTests {
         @Test
+        func hidingLocalAccountPreservesOtherAccountsAndRestoresItsWorkspaces() {
+            let local = workspace(createdAt: 0)
+            var gateway = workspace(createdAt: 1)
+            let gatewayID = UUID.v7()
+            gateway.databricksConnectionId = gatewayID
+            var server = workspace(createdAt: 2)
+            let serverID = UUID.v7()
+            server.accountConnectionId = serverID
+            let workspaces = [local, gateway, server]
+            let hidden = WorkspaceSettingsAccountGroup.grouped(
+                workspaces, including: [.local, .databricks(gatewayID)], hideLocalAccount: true
+            )
+            #expect(hidden.map(\.id) == [.databricks(gatewayID), .dahlia(serverID)])
+            #expect(hidden.flatMap(\.workspaces) == [gateway, server])
+            #expect(WorkspaceSettingsAccountGroup.grouped([], including: [.local], hideLocalAccount: true).isEmpty)
+            let restored = WorkspaceSettingsAccountGroup.grouped(workspaces, hideLocalAccount: false)
+            #expect(restored.first?.id == .local)
+            #expect(restored.first?.workspaces == [local])
+        }
+
+        @Test
         func groupsByAccountIdentityAndKeepsCreationOrder() {
             let accountID = UUID.v7()
             var gateway = workspace(createdAt: 1)

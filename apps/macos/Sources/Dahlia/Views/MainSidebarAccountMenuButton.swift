@@ -13,6 +13,7 @@ struct MainSidebarAccountMenuButton: NSViewRepresentable {
     let onOpenSettings: (SettingsCategory?) -> Void
     let onSelectAccount: (DahliaAccountConnection?) -> Void
     var onSelectDatabricksAccount: (UUID) -> Void = { _ in }
+    var onAddAccount: () -> Void = {}
     let onAccountAction: () -> Void
     var unprocessedRecordingCount = 0
     let onShowUnprocessedRecordings: () -> Void
@@ -24,6 +25,7 @@ struct MainSidebarAccountMenuButton: NSViewRepresentable {
             onOpenSettings: onOpenSettings,
             onSelectAccount: onSelectAccount,
             onSelectDatabricksAccount: onSelectDatabricksAccount,
+            onAddAccount: onAddAccount,
             onAccountAction: onAccountAction,
             unprocessedRecordingCount: unprocessedRecordingCount,
             onShowUnprocessedRecordings: onShowUnprocessedRecordings
@@ -57,6 +59,7 @@ struct MainSidebarAccountMenuButton: NSViewRepresentable {
             onOpenSettings: onOpenSettings,
             onSelectAccount: onSelectAccount,
             onSelectDatabricksAccount: onSelectDatabricksAccount,
+            onAddAccount: onAddAccount,
             onAccountAction: onAccountAction,
             unprocessedRecordingCount: unprocessedRecordingCount,
             onShowUnprocessedRecordings: onShowUnprocessedRecordings

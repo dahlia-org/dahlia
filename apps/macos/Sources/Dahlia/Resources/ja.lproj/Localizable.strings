@@ -2065,3 +2065,7 @@
 "Requested model" = "指定モデル";
 
 "Response model" = "応答モデル";
+
+"Hide Local Account" = "ローカルアカウントを非表示にする";
+"Hide the Local Account from account lists. Its workspaces and data stay on this Mac." = "アカウント一覧でローカルアカウントを非表示にします。ワークスペースやデータはこの Mac に残ります。";
+"Add Account" = "アカウントを追加する";

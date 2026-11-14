@@ -32,6 +32,7 @@ struct MainSidebarFooterView: View {
                 onOpenSettings: showSettings,
                 onSelectAccount: selectAccount,
                 onSelectDatabricksAccount: { selectLocalAccount(databricks: $0) },
+                onAddAccount: { mainWindowNavigation.openDahliaSignIn() },
                 onAccountAction: accountAction,
                 unprocessedRecordingCount: unprocessedRecordingCount,
                 onShowUnprocessedRecordings: onShowUnprocessedRecordings
