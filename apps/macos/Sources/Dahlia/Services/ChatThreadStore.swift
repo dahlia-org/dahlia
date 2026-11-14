@@ -5,9 +5,8 @@ import GRDB
 struct ChatThreadStore: ChatItemStore, Sendable {
     let dbQueue: DatabaseQueue
 
-    func createThread(_ thread: ChatThreadRecord, items: [JSONValue] = [], importIfMissing: Bool = false) throws {
+    func createThread(_ thread: ChatThreadRecord, items: [JSONValue] = []) throws {
         try dbQueue.write { db in
-            if importIfMissing, try ChatThreadRecord.exists(db, key: thread.id) { return }
             if let parentID = thread.parentThreadID {
                 guard let parent = try ChatThreadRecord.fetchOne(db, key: parentID),
                       parent.accountID == thread.accountID, parent.workspaceID == thread.workspaceID else {
