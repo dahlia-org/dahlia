@@ -734,6 +734,7 @@
 "Google Calendar HTTP %lld: %@" = "Google Calendar HTTP %lld: %@";
 "Databricks connection: %@" = "Databricks connection: %@";
 "Open Connection Page in Databricks" = "Open Connection Page in Databricks";
+"Google rejected the credentials stored in Databricks. Open the connection page in Settings, revoke the credentials, sign in with Google again, then reconnect in Dahlia." = "Google rejected the credentials stored in Databricks. Open the connection page in Settings, revoke the credentials, sign in with Google again, then reconnect in Dahlia.";
 "Could not parse Google Calendar date: %@" = "Could not parse Google Calendar date: %@";
 
 /* Workspace Picker */

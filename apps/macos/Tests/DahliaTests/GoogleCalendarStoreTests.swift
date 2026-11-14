@@ -242,6 +242,38 @@ import Foundation
         }
 
         @Test
+        func rejectedProxyGoogleCredentialClearsSessionAndPreservesSelectionUntilReconnect() async {
+            let defaults = isolatedUserDefaults()
+            seedSelectedCalendars(["primary"], defaults: defaults)
+            let apiClient = ControllableGoogleCalendarAPIClient(initialEvents: [fixtureEvent])
+            let store = GoogleCalendarStore(
+                signInProvider: MockGoogleCalendarSignInProvider(hasPreviousSignIn: true),
+                apiClient: apiClient, userDefaults: defaults, openAccount: { .local }, now: { fixtureNow },
+                presentingWindowProvider: { NSWindow() }
+            )
+            await store.restoreSessionIfNeeded()
+
+            let refresh = Task { await store.refreshIfNeeded(force: true) }
+            await apiClient.waitForFetchEventsCallCount(2)
+            apiClient.failPendingRequest(at: 0, with: GoogleCalendarAPIError.proxyGoogleAuthenticationRequired)
+            await refresh.value
+
+            #expect(store.state == .failed)
+            #expect(!store.isAuthorized)
+            #expect(store.upcomingEvents.isEmpty)
+            #expect(store.lastErrorMessage == L10n.googleDatabricksReauthenticationRequired)
+            #expect(store.selectedCalendarIDs == ["primary"])
+
+            let reconnect = Task { await store.signIn() }
+            await apiClient.waitForFetchEventsCallCount(3)
+            apiClient.resumePendingRequest(at: 0, with: [fixtureEvent])
+            await reconnect.value
+            #expect(store.isAuthorized)
+            #expect(store.state == .loaded)
+            #expect(store.lastErrorMessage == nil)
+        }
+
+        @Test
         func retryAfterCachedRefreshFailureShowsLoading() async {
             let defaults = isolatedUserDefaults()
             seedSelectedCalendars(["primary"], defaults: defaults)

@@ -2299,6 +2299,10 @@ enum L10n { // swiftlint:disable:this type_body_length
         localized: "Open Connection Page in Databricks",
         bundle: bundle
     ) }
+    static var googleDatabricksReauthenticationRequired: String { String(
+        localized: "Google rejected the credentials stored in Databricks. Open the connection page in Settings, revoke the credentials, sign in with Google again, then reconnect in Dahlia.",
+        bundle: bundle
+    ) }
     static func googleCalendarDatabricksProxyError(_ message: String) -> String { String(
         localized: "Databricks connection: \(message)",
         bundle: bundle
