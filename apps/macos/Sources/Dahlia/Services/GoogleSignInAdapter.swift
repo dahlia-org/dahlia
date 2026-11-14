@@ -908,7 +908,7 @@ final class OAuthLoopbackRedirectServer: @unchecked Sendable {
             var requestData = accumulatedData
             if let data { requestData.append(data) }
             guard requestData.count <= Self.maximumRequestLength else {
-                reply(to: connection, status: "413 Payload Too Large", body: "OAuth redirect request is too large.")
+                reply(to: connection, status: "413 Payload Too Large")
                 completeCallback(with: .failure(GoogleSignInError.invalidAuthorizationResponse))
                 return
             }
@@ -917,7 +917,7 @@ final class OAuthLoopbackRedirectServer: @unchecked Sendable {
                 return
             }
             guard let request = String(data: requestData, encoding: .utf8) else {
-                reply(to: connection, status: "400 Bad Request", body: "Invalid OAuth redirect.")
+                reply(to: connection, status: "400 Bad Request")
                 completeCallback(with: .failure(GoogleSignInError.invalidAuthorizationResponse))
                 return
             }
@@ -927,9 +927,9 @@ final class OAuthLoopbackRedirectServer: @unchecked Sendable {
                 reply(to: connection, status: "200 OK", body: Self.callbackResponseBody(for: url))
                 completeCallback(with: .success(url))
             case .unrelated:
-                reply(to: connection, status: "404 Not Found", body: "Not found.")
+                reply(to: connection, status: "404 Not Found")
             case .invalid:
-                reply(to: connection, status: "400 Bad Request", body: "Invalid OAuth redirect.")
+                reply(to: connection, status: "400 Bad Request")
                 completeCallback(with: .failure(GoogleSignInError.invalidAuthorizationResponse))
             }
         }
@@ -938,9 +938,7 @@ final class OAuthLoopbackRedirectServer: @unchecked Sendable {
     static func callbackResponseBody(for url: URL) -> String {
         let failed = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems?
             .contains(where: { $0.name == "error" }) == true
-        return failed
-            ? "Dahlia authorization failed. Return to the app for details."
-            : "Dahlia authorization completed. You can close this window."
+        return OAuthCallbackPage.html(succeeded: !failed)
     }
 
     private func completeCallback(with result: Result<URL, Error>) {
@@ -957,10 +955,12 @@ final class OAuthLoopbackRedirectServer: @unchecked Sendable {
         shutdown()
     }
 
-    private func reply(to connection: NWConnection, status: String, body: String) {
+    private func reply(to connection: NWConnection, status: String, body: String = OAuthCallbackPage.html(succeeded: false)) {
         let response = """
         HTTP/1.1 \(status)
-        Content-Type: text/plain; charset=utf-8
+        Content-Type: text/html; charset=utf-8
+        Cache-Control: no-store
+        Referrer-Policy: no-referrer
         Content-Length: \(body.utf8.count)
         Connection: close
 

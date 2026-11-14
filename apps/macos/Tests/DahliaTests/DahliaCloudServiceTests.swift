@@ -305,9 +305,39 @@
             let success = try #require(URL(string: "http://127.0.0.1:8020/?code=code&state=state"))
             let failure = try #require(URL(string: "http://127.0.0.1:8020/?error=access_denied&state=state"))
 
-            #expect(OAuthLoopbackRedirectServer.callbackResponseBody(for: success).contains("completed"))
-            #expect(OAuthLoopbackRedirectServer.callbackResponseBody(for: failure).contains("failed"))
-            #expect(!OAuthLoopbackRedirectServer.callbackResponseBody(for: failure).contains("access_denied"))
+            let successHTML = OAuthLoopbackRedirectServer.callbackResponseBody(for: success)
+            let failureHTML = OAuthLoopbackRedirectServer.callbackResponseBody(for: failure)
+            #expect(successHTML.contains("data-state=\"success\""))
+            #expect(successHTML.contains(L10n.oauthCallbackReceived))
+            #expect(successHTML.contains(L10n.oauthCallbackContinue))
+            #expect(failureHTML.contains("data-state=\"failure\""))
+            #expect(failureHTML.contains(L10n.oauthCallbackFailed))
+            #expect(failureHTML.contains(L10n.oauthCallbackRetry))
+            for html in [successHTML, failureHTML] {
+                #expect(html.hasPrefix("<!doctype html>"))
+                #expect(html.contains("data:image/png;base64,"))
+                #expect(!html.contains("{{"))
+                #expect(!html.contains("access_denied"))
+                #expect(!html.contains("state=state"))
+            }
+        }
+
+        @Test
+        func loopbackServesHTMLWithoutChangingCallbackDelivery() async throws {
+            let session = URLSession(configuration: .ephemeral)
+            defer { session.invalidateAndCancel() }
+            for query in ["code=synthetic-code&state=synthetic-state", "error=access_denied"] {
+                let server = try await OAuthLoopbackRedirectServer()
+                let url = try #require(URL(string: "\(server.redirectURL.absoluteString)?\(query)"))
+                let (data, response) = try await session.data(from: url)
+                let http = try #require(response as? HTTPURLResponse)
+                #expect(http.statusCode == 200)
+                #expect(http.value(forHTTPHeaderField: "Content-Type") == "text/html; charset=utf-8")
+                #expect(http.value(forHTTPHeaderField: "Cache-Control") == "no-store")
+                #expect(http.value(forHTTPHeaderField: "Content-Length") == String(data.count))
+                #expect(String(decoding: data, as: UTF8.self) == OAuthLoopbackRedirectServer.callbackResponseBody(for: url))
+                #expect(try await server.waitForCallback().query == query)
+            }
         }
 
         @Test
