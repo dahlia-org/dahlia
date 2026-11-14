@@ -11,6 +11,20 @@ final class MainSearchModel {
     private(set) var tokens: [MeetingSearchToken] = []
     private(set) var localMeetings: [MeetingSidebarItem] = []
     private(set) var localScreenshots: [ScreenshotSearchResult] = []
+    private(set) var localChats: [CodexChatThreadSummary] = []
+    private(set) var hasMoreChats = false
+    private var isFetchingChats = false
+    private var lastChatSearchError: String?
+    @ObservationIgnored private var chatSearchTask: Task<Void, Never>?
+    @ObservationIgnored private var chatGeneration = 0
+    private var chatOffset = 0
+
+    private var showsChats: Bool { resultKind.isEmpty || resultKind == "chat" }
+    var isLoadingChats: Bool { showsChats && isFetchingChats }
+    var chatSearchError: String? { showsChats ? lastChatSearchError : nil }
+
+    var chats: [CodexChatThreadSummary] { showsChats ? localChats : [] }
+
     private(set) var localProjects: [ProjectOverviewItem] = []
     private(set) var isLoading = false
     private(set) var errorMessage: String?
@@ -84,6 +98,7 @@ final class MainSearchModel {
         meetings.map { .meeting($0.id) }
             + presentedScreenshots.map { .screenshot($0.id) }
             + projects.map { .project($0.id) }
+            + chats.map { .chat($0.id) }
             + pendingProjects.map { .project($0.id) }
             + pendingMeetings.map { .meeting($0.id) }
             + pendingScreenshots.map { .screenshot($0.id) }
@@ -94,7 +109,7 @@ final class MainSearchModel {
     }
 
     var hasResults: Bool {
-        !meetings.isEmpty || !presentedScreenshots.isEmpty || !projects.isEmpty || !pendingMeetings.isEmpty || !pendingScreenshots
+        !chats.isEmpty || !meetings.isEmpty || !presentedScreenshots.isEmpty || !projects.isEmpty || !pendingMeetings.isEmpty || !pendingScreenshots
             .isEmpty || !pendingProjects.isEmpty
     }
 
@@ -205,6 +220,13 @@ final class MainSearchModel {
     private func resetSearch() {
         resetRemoteSearch()
         searchTask?.cancel()
+        chatSearchTask?.cancel()
+        chatGeneration &+= 1
+        localChats = []
+        hasMoreChats = false
+        isFetchingChats = false
+        lastChatSearchError = nil
+        chatOffset = 0
         projectSearchTask?.cancel()
         screenshotSearchTask?.cancel()
         generation &+= 1
@@ -259,6 +281,7 @@ final class MainSearchModel {
             serverSearchLoading = usesServerSearch
             serverMeetingVisible = criteria.isEmpty ? MainSearchDesign.recentResultLimit : MainSearchDesign.meetingPageSize
             startProjectSearch(criteria: criteria, using: sidebarViewModel)
+            startChatSearch(criteria: criteria, using: sidebarViewModel, appending: false, delay: delay)
             startScreenshotSearch(
                 criteria: criteria,
                 using: sidebarViewModel,
@@ -302,6 +325,57 @@ final class MainSearchModel {
                 self.isLoading = false
                 if !self.serverSearchReady { self.errorMessage = error.localizedDescription }
                 if self.usesServerSearch { self.hasCompletedInitialMeetingSearch = true }
+            }
+        }
+    }
+
+    func loadMoreChats(using sidebarViewModel: SidebarViewModel) {
+        guard hasMoreChats, !isLoadingChats else { return }
+        startChatSearch(criteria: activeMeetingCriteria, using: sidebarViewModel, appending: true)
+    }
+
+    private func startChatSearch(criteria: MeetingSearchCriteria, using sidebarViewModel: SidebarViewModel, appending: Bool, delay: Duration? = nil) {
+        chatSearchTask?.cancel()
+        isFetchingChats = false
+        chatGeneration &+= 1
+        let requestGeneration = chatGeneration
+        if !appending {
+            localChats = []
+            chatOffset = 0
+            hasMoreChats = false
+        }
+        lastChatSearchError = nil
+        guard let workspace = sidebarViewModel.currentWorkspace, let dbQueue = sidebarViewModel.searchDBQueue else { return }
+        let provider = CodexRuntimeProvider(workspace: workspace)
+        let offset = chatOffset
+        isFetchingChats = true
+        chatSearchTask = Task { [weak self] in
+            do {
+                if let delay { try await Task.sleep(for: delay) }
+                let page = try await MeetingRepository.searchChatPage(
+                    workspaceID: workspace.id,
+                    accountID: provider.accountKey,
+                    criteria: criteria,
+                    offset: offset,
+                    dbQueue: dbQueue
+                )
+                try Task.checkCancellation()
+                guard let self, self.chatGeneration == requestGeneration,
+                      sidebarViewModel.currentWorkspace?.id == workspace.id,
+                      CodexRuntimeProvider(workspace: sidebarViewModel.currentWorkspace) == provider else { return }
+                // A Thread that moved between pages comes back in a later offset page; list it once.
+                let listed = Set(appending ? self.localChats.map(\.id) : [])
+                let added = page.threads.filter { !listed.contains($0.id) }
+                self.localChats = appending ? self.localChats + added : added
+                self.chatOffset = offset + page.threads.count
+                self.hasMoreChats = page.hasMore
+                self.isFetchingChats = false
+                self.clearInvalidSelection()
+            } catch is CancellationError {
+            } catch {
+                guard let self, self.chatGeneration == requestGeneration else { return }
+                self.isFetchingChats = false
+                self.lastChatSearchError = error.localizedDescription
             }
         }
     }

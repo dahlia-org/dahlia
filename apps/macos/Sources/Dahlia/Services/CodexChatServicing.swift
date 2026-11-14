@@ -5,6 +5,7 @@ protocol CodexChatServicing: Sendable {
     func commands(threadID: String?, workspaceID: UUID) async throws -> [CodexChatSlashCommand]
     func listThreads(cursor: String?, workspaceID: UUID) async throws -> CodexChatThreadPage
     func loadThread(id: String) async throws -> CodexChatThread
+    func loadEarlierMessages(threadID: String, cursor: String) async throws -> CodexChatMessagePage
     func resumeThread(id: String, workspaceID: UUID) async throws -> CodexChatThread
     func startThread(model: String?, effort: String, workspaceID: UUID) async throws -> CodexChatThread
     func acquireThreadLease(threadID: String) async -> UUID
@@ -39,6 +40,10 @@ protocol CodexChatServicing: Sendable {
 }
 
 extension CodexChatServicing {
+    func loadEarlierMessages(threadID _: String, cursor _: String) async throws -> CodexChatMessagePage {
+        CodexChatMessagePage(messages: [], earlierCursor: nil)
+    }
+
     func commands(threadID _: String?, workspaceID _: UUID) async throws -> [CodexChatSlashCommand] { [] }
 
     func beginTurn(

@@ -1264,7 +1264,6 @@
 "Reload" = "再読み込み";
 "Recent Projects" = "最近動いたProjects";
 "Search meetings and projects" = "ミーティングとプロジェクトを検索";
-"Search meetings, screenshots, and projects" = "ミーティング、スクリーンショット、プロジェクトを検索";
 "Detected Text" = "検出したテキスト";
 "Image Description" = "画像の説明";
 "Image analysis failed." = "画像の解析に失敗しました。";
@@ -2031,3 +2030,6 @@
 "Search NEologd catalog unavailable" = "バージョン一覧を更新できません。保存済みの候補と取得済み辞書を表示しています。再試行してください。";
 "Search NEologd unsupported" = "非対応・取得済み";
 "Search NEologd upgrade required" = "適用中の旧版辞書は、このバージョンでは利用できません。内蔵 IPADIC または対応版を選び、全文検索を再構築してください。";
+
+"Chat resume state missing" = "このチャットの実行用ファイルがありません。履歴は表示できますが、続けるには新しいチャットを開始してください。";
+"Search meetings, screenshots, projects, and chats" = "ミーティング・スクリーンショット・プロジェクト・チャットを検索";

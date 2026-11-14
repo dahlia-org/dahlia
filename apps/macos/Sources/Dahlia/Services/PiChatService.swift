@@ -3,11 +3,60 @@ import DahliaRuntimeSupport
 import Foundation
 import GRDB
 
-/// Chat on Pi. Each open thread owns one `pi --mode rpc` process; Pi's session file is the history source.
+/// Chat on Pi. Each open thread owns one `pi --mode rpc` process; GRDB owns history; Pi files hold runtime resume state.
 actor PiChatService: CodexChatServicing {
     static let shared = PiChatService()
 
     private var backupService: BackupService?
+    private var historyStore: ChatThreadStore?
+
+    func configureHistory(dbQueue: DatabaseQueue) async throws {
+        let store = ChatThreadStore(dbQueue: dbQueue)
+        historyStore = store
+        try store.recoverInterruptedThreads()
+        // Launch does not wait for old Pi files; opening a history list imports its own Workspace first.
+        Task {
+            do {
+                try await importAllHistory(dbQueue: dbQueue)
+            } catch {
+                ErrorReportingService.capture(error, context: ["source": "chatHistoryImport"])
+            }
+        }
+    }
+
+    private func importAllHistory(dbQueue: DatabaseQueue) async throws {
+        let providers = try await dbQueue.read { db in
+            try DahliaAccountConnectionRecord.fetchAll(db).map {
+                $0.kind == DahliaAccountConnectionRecord.databricksKind ? CodexRuntimeProvider
+                    .databricks(connectionID: $0.id) : .dahlia(connectionID: $0.id)
+            }
+        }
+        for provider in [.local] + providers {
+            let root = try agentLocator.agentURL(for: provider).appending(path: "sessions")
+            guard FileManager.default.fileExists(atPath: root.path) else { continue }
+            for directory in try FileManager.default.contentsOfDirectory(at: root, includingPropertiesForKeys: nil) {
+                if let workspaceID = UUID(uuidString: directory.lastPathComponent) {
+                    try await importHistory(provider: provider, workspaceID: workspaceID)
+                }
+            }
+        }
+    }
+
+    private func history() throws -> ChatThreadStore {
+        guard let historyStore else { throw PiRuntimeError.invalidProtocolResponse }
+        return historyStore
+    }
+
+    /// A turn that has already ended keeps its outcome even when the status cannot be saved.
+    /// Steers Pi accepted but never delivered stay in history as the last messages.
+    private func recordStatus(_ status: String, threadID: String, source: String, undelivered steers: [JSONValue] = []) {
+        do {
+            try history().appendItems(threadID: threadID, items: steers)
+            try history().updateThread(id: threadID, status: status)
+        } catch {
+            ErrorReportingService.capture(error, context: ["source": source])
+        }
+    }
 
     func configureBackup(dbQueue: DatabaseQueue, applicationSupportURL: URL = DahliaApplicationSupport.currentDirectoryURL) {
         backupService = BackupService(dbQueue: dbQueue, applicationSupportURL: applicationSupportURL)
@@ -41,7 +90,7 @@ actor PiChatService: CodexChatServicing {
     Use sqlite3 -readonly to inspect Dahlia's database for debugging.
     """
 
-    /// One live Pi process for a thread. The thread itself lives in its session file and outlives the process.
+    /// One live Pi process for a thread. Its GRDB history outlives the process.
     private struct Session {
         let processID: UUID
         let provider: CodexRuntimeProvider
@@ -63,6 +112,10 @@ actor PiChatService: CodexChatServicing {
         var messageIndex = 0
         var lastError: String?
         var pendingApprovals: [String: CheckedContinuation<CodexChatApprovalDecision, Never>] = [:]
+        /// Steers Pi has queued. Each is stored when Pi delivers it, so history keeps it after the reply it interrupted.
+        var pendingSteers: [JSONValue] = []
+        /// Pi reports the turn's own prompt first; it is already stored when the turn begins.
+        var sawPrompt = false
     }
 
     private let runtime: PiRuntimeService
@@ -86,6 +139,7 @@ actor PiChatService: CodexChatServicing {
 
     init(
         runtime: PiRuntimeService = .shared,
+        historyStore: ChatThreadStore? = nil,
         workingDirectory: PiWorkingDirectory = PiWorkingDirectory(),
         agentLocator: PiAgentDirectoryLocator = PiAgentDirectoryLocator(),
         mcpExecutableURL: URL? = nil,
@@ -96,6 +150,7 @@ actor PiChatService: CodexChatServicing {
         fileAccessSettings: @escaping @Sendable (CodexRuntimeProvider) -> PiFileAccessSettings = { PiFileAccessSettings.load(for: $0) }
     ) {
         self.runtime = runtime
+        self.historyStore = historyStore
         self.workingDirectory = workingDirectory
         self.agentLocator = agentLocator
         self.mcpExecutableURL = mcpExecutableURL
@@ -139,46 +194,101 @@ actor PiChatService: CodexChatServicing {
     }
 
     func listThreads(cursor: String?, workspaceID: UUID) async throws -> CodexChatThreadPage {
-        let directory = try await agentLocator.sessionsURL(for: runtime.currentProvider(), workspaceID: workspaceID)
-        return try await Task.detached(priority: .userInitiated) {
-            try PiChatSessionFiles.page(in: directory, cursor: cursor, limit: 25)
-        }.value
+        let provider = try await runtime.currentProvider()
+        try await importHistory(provider: provider, workspaceID: workspaceID)
+        return try history().listThreads(accountID: provider.accountKey, workspaceID: workspaceID, cursor: cursor)
     }
 
     func loadThread(id: String) async throws -> CodexChatThread {
-        let url = try await sessionFile(id: id)
+        let provider = try await runtime.currentProvider()
+        let store = try history()
         return try await Task.detached(priority: .userInitiated) {
-            try PiChatSessionFiles.thread(at: url)
+            let record = try store.thread(id: id, accountID: provider.accountKey)
+            let page = try store.messagePage(threadID: id)
+            return CodexChatThread(
+                id: record.id,
+                title: record.title,
+                messages: page.messages,
+                model: record.model,
+                reasoningEffort: record.reasoningEffort,
+                earlierMessagesCursor: page.earlierCursor
+            )
         }.value
     }
 
-    /// Reads the thread only. Its Pi process starts with the next turn, so restoring history never leaves a process behind.
-    func resumeThread(id: String, workspaceID: UUID) async throws -> CodexChatThread {
-        // Pi writes the session file only after the first reply, so a new thread stays pending until then.
-        if let thread = newThreads[id] {
-            if let url = PiChatSessionFiles.file(id: id, in: thread.directory) {
-                newThreads[id] = nil
-                return try await Task.detached(priority: .userInitiated) { try PiChatSessionFiles.thread(at: url) }.value
-            }
-            return CodexChatThread(id: id, title: pendingNames[id] ?? "", messages: [], model: thread.model, reasoningEffort: nil)
-        }
-        let url = try await sessionFile(id: id, workspaceID: workspaceID)
+    func loadEarlierMessages(threadID: String, cursor: String) async throws -> CodexChatMessagePage {
+        let provider = try await runtime.currentProvider()
+        let store = try history()
+        guard let before = Int64(cursor) else { throw PiRuntimeError.invalidProtocolResponse }
         return try await Task.detached(priority: .userInitiated) {
-            try PiChatSessionFiles.thread(at: url)
+            _ = try store.thread(id: threadID, accountID: provider.accountKey)
+            return try store.messagePage(threadID: threadID, before: before)
         }.value
+    }
+
+    /// Restoring history never starts a Pi process.
+    func resumeThread(id: String, workspaceID: UUID) async throws -> CodexChatThread {
+        let provider = try await runtime.currentProvider()
+        try await importHistory(provider: provider, workspaceID: workspaceID)
+        _ = try history().thread(id: id, accountID: provider.accountKey, workspaceID: workspaceID)
+        return try await loadThread(id: id)
     }
 
     func startThread(model: String?, effort: String, workspaceID: UUID) async throws -> CodexChatThread {
-        let directory = try await agentLocator.sessionsURL(for: runtime.currentProvider(), workspaceID: workspaceID)
+        let provider = try await runtime.currentProvider()
+        let directory = try agentLocator.sessionsURL(for: provider, workspaceID: workspaceID)
         let available = try await runtime.models()
         guard !available.isEmpty else { throw PiRuntimeError.notLoggedIn }
         let selected = try PiRuntimeService.resolvedModel(
-            for: CodexAppServerRequest(model: model, developerInstructions: "", inputs: [], outputSchema: Data()),
-            in: available
+            for: CodexAppServerRequest(model: model, developerInstructions: "", inputs: [], outputSchema: Data()), in: available
         )
+        guard try await runtime.currentProvider() == provider else { throw AIConfigurationError.providerChanged(provider.displayName) }
         let threadID = UUID.v7().uuidString.lowercased()
+        try history().createThread(ChatThreadRecord(
+            id: threadID,
+            accountID: provider.accountKey,
+            workspaceID: workspaceID,
+            title: "",
+            model: selected.model,
+            reasoningEffort: effort,
+            createdAt: .now,
+            updatedAt: .now
+        ))
         newThreads[threadID] = (directory, selected.model)
         return CodexChatThread(id: threadID, title: "", messages: [], model: selected.model, reasoningEffort: effort)
+    }
+
+    private func importHistory(provider: CodexRuntimeProvider, workspaceID: UUID) async throws {
+        let directory = try agentLocator.sessionsURL(for: provider, workspaceID: workspaceID)
+        let store = try history()
+        try await Task.detached(priority: .userInitiated) {
+            let files = try FileManager.default.contentsOfDirectory(at: directory, includingPropertiesForKeys: [.contentModificationDateKey])
+            let registered = try store.dbQueue.read { db in
+                try Set(String.fetchAll(db, sql: "SELECT id FROM chat_threads"))
+            }
+            for file in files where file.pathExtension == "jsonl" {
+                if let suffix = file.deletingPathExtension().lastPathComponent.split(separator: "_").last,
+                   registered.contains(String(suffix)) { continue }
+                // Existing threads are never re-imported or overwritten from Pi's runtime state.
+                guard let id = try? PiChatSessionFiles.headerID(at: file) else { continue }
+                let imported = try PiChatSessionFiles.thread(at: file)
+                let date = try file.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate ?? .now
+                try store.createThread(
+                    ChatThreadRecord(
+                        id: id,
+                        accountID: provider.accountKey,
+                        workspaceID: workspaceID,
+                        title: imported.title,
+                        model: imported.model,
+                        reasoningEffort: imported.reasoningEffort,
+                        createdAt: date,
+                        updatedAt: date
+                    ),
+                    items: PiChatSessionFiles.historyItems(at: file),
+                    importIfMissing: true
+                )
+            }
+        }.value
     }
 
     func acquireThreadLease(threadID: String) async -> UUID {
@@ -194,6 +304,14 @@ actor PiChatService: CodexChatServicing {
     }
 
     func setThreadName(threadID: String, name: String) async {
+        do {
+            let provider = try await runtime.currentProvider()
+            _ = try history().thread(id: threadID, accountID: provider.accountKey)
+            try history().updateThread(id: threadID, title: name)
+        } catch {
+            ErrorReportingService.capture(error, context: ["source": "chatHistoryTitle"])
+            return
+        }
         guard let connection = sessions[threadID]?.connection else {
             pendingNames[threadID] = name
             return
@@ -302,6 +420,7 @@ actor PiChatService: CodexChatServicing {
 
         let (events, continuation) = AsyncThrowingStream<CodexChatTurnEvent, any Error>.makeStream()
         let turn = Turn(id: UUID.v7(), wireID: UUID.v7().uuidString, continuation: continuation)
+        try history().beginTurn(threadID: threadID, message: ChatHistoryCodec.user(inputs), model: requestedModel, effort: effort)
         sessions[threadID]?.turn = turn
         continuation.yield(.started(turnID: turn.wireID))
         // The chat clears this report at `.started`; publish it before Pi can stream any output.
@@ -318,6 +437,7 @@ actor PiChatService: CodexChatServicing {
         } catch {
             if sessions[threadID]?.turn?.id == turn.id { sessions[threadID]?.turn = nil }
             continuation.finish(throwing: error)
+            recordStatus("failed", threadID: threadID, source: "chatHistoryFailure")
             // Stopped before Pi acknowledged the prompt, which it may already be running with no turn left to stop it.
             // Closing ends that run; the next turn reopens the thread from its session file.
             if error is CancellationError { await runtime.close(connection) }
@@ -380,6 +500,12 @@ actor PiChatService: CodexChatServicing {
         guard let threadID = threadID(turnID: turnID),
               let waiter = sessions[threadID]?.turn?.pendingApprovals.removeValue(forKey: id)
         else { throw PiRuntimeError.approvalNoLongerPending }
+        do {
+            try history().updateThread(id: threadID, status: "running")
+        } catch {
+            waiter.resume(returning: .cancel)
+            throw error
+        }
         waiter.resume(returning: decision)
         sessions[threadID]?.turn?.continuation.yield(.approvalResolved(id: id))
     }
@@ -400,7 +526,17 @@ actor PiChatService: CodexChatServicing {
         else {
             throw PiRuntimeError.rpcError(code: nil, message: "no active turn to steer")
         }
-        _ = try await session.connection.request("steer", PiRuntimeService.prompt(Self.textJoined(inputs)))
+        let item = ChatHistoryCodec.user(inputs)
+        // Queued before the request, since Pi can deliver the steer before its response is handled here.
+        sessions[threadID]?.turn?.pendingSteers.append(item)
+        do {
+            _ = try await session.connection.request("steer", PiRuntimeService.prompt(Self.textJoined(inputs)))
+        } catch {
+            if let index = sessions[threadID]?.turn?.pendingSteers.firstIndex(of: item) {
+                sessions[threadID]?.turn?.pendingSteers.remove(at: index)
+            }
+            throw error
+        }
     }
 
     func interrupt(threadID: String, turnID _: String) async {
@@ -425,6 +561,8 @@ actor PiChatService: CodexChatServicing {
 
     /// The thread's live process, reopening its session file when the process has exited. Concurrent callers share one open.
     private func connection(threadID: String) async throws -> PiRPCConnection {
+        let provider = try await runtime.currentProvider()
+        let record = try history().thread(id: threadID, accountID: provider.accountKey)
         if let session = sessions[threadID] {
             if await session.connection.isOpen {
                 guard sessions[threadID]?.connection === session.connection else { return try await connection(threadID: threadID) }
@@ -435,12 +573,24 @@ actor PiChatService: CodexChatServicing {
             }
             if sessions[threadID]?.connection === session.connection {
                 sessions[threadID] = nil
+                if let turn = session.turn {
+                    recordStatus("failed", threadID: threadID, source: "chatHistoryFailure", undelivered: turn.pendingSteers)
+                }
                 finish(session.turn, error: PiRuntimeError.backendResetForSafety)
                 await runtime.close(session.connection)
             }
             return try await connection(threadID: threadID)
         }
         if let task = opening[threadID] { return try await task.value }
+        let directory = try agentLocator.sessionsURL(for: provider, workspaceID: record.workspaceID)
+        if PiChatSessionFiles.file(id: threadID, in: directory) == nil {
+            // Pi writes its file with the first reply, so a Thread without one starts Pi anew.
+            guard try !history().hasAssistantReply(threadID: threadID) else {
+                // History alone cannot reconstruct Pi's compaction/branch state.
+                throw PiRuntimeError.rpcError(code: nil, message: L10n.chatResumeStateMissing)
+            }
+            newThreads[threadID] = (directory, record.model ?? "")
+        }
         let task = Task {
             if let thread = self.newThreads[threadID],
                PiChatSessionFiles.file(id: threadID, in: thread.directory) == nil,
@@ -557,6 +707,9 @@ actor PiChatService: CodexChatServicing {
 
     private func closeSession(_ threadID: String) async {
         guard let session = sessions.removeValue(forKey: threadID) else { return }
+        if let turn = session.turn {
+            recordStatus("interrupted", threadID: threadID, source: "chatHistoryInterrupt", undelivered: turn.pendingSteers)
+        }
         finish(session.turn, error: CancellationError())
         await runtime.close(session.connection)
     }
@@ -566,22 +719,25 @@ actor PiChatService: CodexChatServicing {
         do {
             for try await event in connection.events {
                 let settled = event.objectValue?["type"]?.stringValue == "agent_settled"
-                await handle(event, threadID: threadID, processID: processID, bridgeError: settled ? connection.takeBridgeError() : nil)
+                let bridgeError = settled ? await connection.takeBridgeError() : nil
+                try handle(event, threadID: threadID, processID: processID, bridgeError: bridgeError)
             }
+            throw PiRuntimeError.backendResetForSafety
         } catch {
             guard sessions[threadID]?.connection === connection else { return }
             let session = sessions.removeValue(forKey: threadID)
+            if let turn = session?.turn {
+                recordStatus("failed", threadID: threadID, source: "chatHistoryFailure", undelivered: turn.pendingSteers)
+            }
             finish(session?.turn, error: error is CancellationError ? PiRuntimeError.backendResetForSafety : error)
             await runtime.close(connection)
         }
     }
 
     /// Events from a process that is no longer the thread's live process are dropped.
-    private func handle(_ event: JSONValue, threadID: String, processID: UUID, bridgeError: (any Error)?) {
+    private func handle(_ event: JSONValue, threadID: String, processID: UUID, bridgeError: (any Error)?) throws {
         guard sessions[threadID]?.processID == processID, let object = event.objectValue else { return }
-        if let activity = Self.toolActivity(object) {
-            sessions[threadID]?.turn?.continuation.yield(.toolActivity(activity))
-        }
+        try handleToolActivity(object, threadID: threadID)
         // A tool's own error text could name any server; only the chat's registered servers are reported.
         let needingSignIn = Self.mcpServersNeedingSignIn(object).filter { sessions[threadID]?.mcpServers.contains($0) == true }
         if !needingSignIn.isEmpty, let known = sessions[threadID]?.mcpServersNeedingSignIn {
@@ -607,7 +763,12 @@ actor PiChatService: CodexChatServicing {
             default: return
             }
         case "message_end":
-            guard let message = object["message"]?.objectValue, message["role"]?.stringValue == "assistant" else { return }
+            guard let message = object["message"]?.objectValue else { return }
+            guard message["role"]?.stringValue == "assistant" else {
+                try storeDeliveredSteer(message, in: &turn, threadID: threadID)
+                break
+            }
+            try history().appendItems(threadID: threadID, items: ChatHistoryCodec.assistantItems(message))
             let blocks = message["content"]?.arrayValue?.compactMap(\.objectValue) ?? []
             let thinking = PiChatSessionFiles.text(blocks, type: "thinking", key: "thinking")
             let text = PiChatSessionFiles.text(blocks, type: "text", key: "text")
@@ -617,7 +778,12 @@ actor PiChatService: CodexChatServicing {
                 ? message["errorMessage"]?.stringValue ?? "" : nil
             turn.messageIndex += 1
         case "agent_settled", "dahlia_prompt_handled":
+            let status = object["aborted"]?.boolValue == true ? "interrupted" : turn.lastError != nil || bridgeError != nil ? "failed" : "idle"
+            // A steer the turn ended without delivering stays in history as the last message.
+            try history().appendItems(threadID: threadID, items: turn.pendingSteers)
+            try history().updateThread(id: threadID, status: status)
             sessions[threadID]?.turn = nil
+            newThreads[threadID] = nil
             if object["aborted"]?.boolValue == true {
                 turn.continuation.yield(.interrupted)
                 turn.continuation.finish()
@@ -640,6 +806,28 @@ actor PiChatService: CodexChatServicing {
             return
         }
         sessions[threadID]?.turn = turn
+    }
+
+    private func storeDeliveredSteer(_ message: [String: JSONValue], in turn: inout Turn, threadID: String) throws {
+        guard message["role"]?.stringValue == "user" else { return }
+        if !turn.sawPrompt {
+            turn.sawPrompt = true
+        } else if !turn.pendingSteers.isEmpty {
+            try history().appendItems(threadID: threadID, items: [turn.pendingSteers.removeFirst()])
+        }
+    }
+
+    private func handleToolActivity(_ object: [String: JSONValue], threadID: String) throws {
+        if let activity = Self.toolActivity(object) {
+            if object["type"]?.stringValue == "tool_execution_end", sessions[threadID]?.turn != nil {
+                try history().appendItems(threadID: threadID, items: [ChatHistoryCodec.toolResult([
+                    "toolCallId": object["toolCallId"] ?? .null, "toolName": object["toolName"] ?? .null,
+                    "isError": object["isError"] ?? .bool(false),
+                    "content": object["result"]?.objectValue?["content"] ?? object["result"] ?? .null,
+                ])])
+            }
+            sessions[threadID]?.turn?.continuation.yield(.toolActivity(activity))
+        }
     }
 
     private func createBackup(threadID: String, processID: UUID, workspaceID: UUID, directory: URL) async throws -> JSONValue {
@@ -677,6 +865,12 @@ actor PiChatService: CodexChatServicing {
               request.canApprove,
               let continuation = sessions[threadID]?.turn?.continuation
         else { return .decline }
+        do {
+            try history().updateThread(id: threadID, status: "waitingForUser")
+        } catch {
+            continuation.finish(throwing: error)
+            return .cancel
+        }
         return await withCheckedContinuation { waiter in
             sessions[threadID]?.turn?.pendingApprovals[request.id] = waiter
             continuation.yield(.approvalRequested(request))

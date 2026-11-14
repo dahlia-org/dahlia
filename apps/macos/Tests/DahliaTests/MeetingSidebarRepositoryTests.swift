@@ -1,6 +1,7 @@
 import DahliaMeetingAccess
 import Foundation
 import GRDB
+import Synchronization
 @testable import Dahlia
 
 #if canImport(Testing)
@@ -104,6 +105,55 @@ import GRDB
             }
 
             #expect(plan.contains { $0.contains("meetings_on_workspace_id_recordingStartedAt_createdAt_id") })
+        }
+
+        @Test
+        func upgradedDatabaseSeeksMeetingDisplayQueriesByIndex() throws {
+            let queue = try DatabaseQueue(configuration: AppDatabaseManager.configuration())
+            try AppDatabaseManager.migrator.migrate(queue, upTo: "v59_chatHistory")
+            let workspace = WorkspaceRecord(id: .v7(), path: nil, name: "Preserved", createdAt: .now, lastOpenedAt: .now)
+            let meetingID = UUID.v7()
+            try queue.write { db in
+                try workspace.insert(db)
+                try db.execute(
+                    sql: "INSERT INTO meetings(id, workspace_id, name, createdAt, updatedAt) VALUES (?, ?, 'Kept', ?, ?)",
+                    arguments: [meetingID, workspace.id, Date.now, Date.now]
+                )
+            }
+            try AppDatabaseManager.migrator.migrate(queue)
+
+            let queries = Mutex<[String]>([])
+            try queue.writeWithoutTransaction { db in
+                db.trace { event in queries.withLock { $0.append(event.expandedDescription) } }
+            }
+            let page = try queue.read { db in
+                _ = try TextContentAccess.availability(entity: .transcript, id: meetingID, in: db)
+                return try MeetingRepository.fetchMeetingProjectPage(
+                    key: .project(.v7()), workspaceId: workspace.id, after: nil, limit: 50, in: db
+                )
+            }
+            let unassigned = try queue.read { db in
+                try MeetingRepository.fetchMeetingProjectPage(key: .unassigned, workspaceId: workspace.id, after: nil, limit: 50, in: db)
+            }
+            _ = try MeetingRepository(dbQueue: queue).fetchSummaryScreenshots(forMeetingId: meetingID)
+            try queue.writeWithoutTransaction { $0.trace(nil) }
+            #expect(page.items.isEmpty)
+            #expect(unassigned.items.map(\.meetingId) == [meetingID])
+
+            let captured = queries.withLock { $0 }
+            try queue.read { db in
+                for (marker, index) in [
+                    ("meetings.projectId = ", "meetings_on_workspace_id_projectId_recordingStartedAt_createdAt_id"),
+                    ("meetings.projectId IS NULL", "meetings_on_workspace_id_projectId_recordingStartedAt_createdAt_id"),
+                    ("FROM sync_content_state", "sync_content_state_on_entity_entityId"),
+                    ("informativeReason", "sqlite_autoindex_files_1"),
+                ] {
+                    let sql = try #require(captured.first { $0.contains(marker) && !$0.hasPrefix("EXPLAIN") })
+                    let plan = try Row.fetchAll(db, sql: "EXPLAIN QUERY PLAN " + sql).map { $0["detail"] as String }
+                    #expect(plan.contains { $0.contains(index) }, Comment(rawValue: plan.joined(separator: " | ")))
+                    #expect(!plan.contains { $0.hasPrefix("SCAN") }, Comment(rawValue: plan.joined(separator: " | ")))
+                }
+            }
         }
 
         @Test

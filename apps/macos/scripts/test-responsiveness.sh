@@ -19,6 +19,7 @@ suites=(
     LiveSubtitleOverlayCoordinatorTests   # bounded overlay publish cadence
     TranscriptPagingTests                 # bounded TranscriptStore window over SQLite
     MeetingSidebarProjectionBudgetTests   # sidebar projection limit
+    CodexChatHistoryPagingTests           # bounded initial chat history and stale page cancellation
     CodexChatStreamingUpdateLimiterTests  # coalesced streaming updates
     CodexChatMarkdownProjectionModelTests # latest-wins Markdown projection
     CodexChatMarkdownCacheTests           # completed-cache count and byte limits

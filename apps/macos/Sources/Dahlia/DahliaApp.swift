@@ -388,6 +388,11 @@ struct DahliaApp: App {
         appDatabase = db
         let workspaceAISettings = WorkspaceAISettingsModel.shared
         workspaceAISettings.configure(dbQueue: db.dbQueue)
+        do {
+            try await PiChatService.shared.configureHistory(dbQueue: db.dbQueue)
+        } catch {
+            ErrorReportingService.capture(error, context: ["source": "chatHistoryStartup"])
+        }
         await PiChatService.shared.configureBackup(dbQueue: db.dbQueue)
         await ScreenshotContentProvider.shared.configure(dbQueue: db.dbQueue)
         await CodexRuntimeContextCoordinator.shared.configure(dbQueue: db.dbQueue)

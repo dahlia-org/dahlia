@@ -1264,7 +1264,6 @@
 "Reload" = "Reload";
 "Recent Projects" = "Recent Projects";
 "Search meetings and projects" = "Search meetings and projects";
-"Search meetings, screenshots, and projects" = "Search meetings, screenshots, and projects";
 "Detected Text" = "Detected Text";
 "Image Description" = "Image Description";
 "Image analysis failed." = "Image analysis failed.";
@@ -2031,3 +2030,6 @@
 "Search NEologd catalog unavailable" = "Could not refresh versions. Showing saved releases and downloaded dictionaries. Try again.";
 "Search NEologd unsupported" = "Unsupported, downloaded";
 "Search NEologd upgrade required" = "The active older dictionary is incompatible with this version. Select built-in IPADIC or a supported release, then rebuild full-text search.";
+
+"Chat resume state missing" = "The runtime file for this chat is missing. You can view its history; start a new chat to continue.";
+"Search meetings, screenshots, projects, and chats" = "Search meetings, screenshots, projects, and chats";

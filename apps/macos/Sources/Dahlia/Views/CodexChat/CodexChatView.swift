@@ -76,7 +76,11 @@ struct CodexChatView: View {
                             showsStandaloneThinking: session.showsStandaloneThinking,
                             meetingNamesByID: session.meetingNamesByID,
                             meetingReferencesByID: session.meetingReferencesByID,
-                            contentMaxWidth: contentMaxWidth
+                            contentMaxWidth: contentMaxWidth,
+                            hasStoredEarlierMessages: session.earlierMessagesCursor != nil,
+                            isLoadingEarlierMessages: session.isLoadingEarlierMessages,
+                            canLoadEarlierMessages: !session.isGenerating && !session.isRestoring,
+                            onLoadEarlierMessages: { await session.loadEarlierMessages() }
                         )
                     }
 
@@ -85,6 +89,11 @@ struct CodexChatView: View {
                             message: errorMessage,
                             onRetry: session.hasRetryableSubmission ? session.retry : retryConnection
                         )
+                        .frame(maxWidth: contentMaxWidth ?? .infinity)
+                    } else if let earlierMessagesError = session.earlierMessagesError {
+                        CodexChatErrorView(message: earlierMessagesError, onRetry: {
+                            Task { await session.loadEarlierMessages() }
+                        })
                         .frame(maxWidth: contentMaxWidth ?? .infinity)
                     } else if let historyError = coordinator.historyError, showsHistory || showsEmptyState {
                         CodexChatErrorView(
@@ -217,7 +226,7 @@ struct CodexChatView: View {
     }
 
     private var showsEmptyState: Bool {
-        session.messages.isEmpty && !session.showsStandaloneThinking
+        session.messages.isEmpty && session.earlierMessagesCursor == nil && !session.showsStandaloneThinking
     }
 
     private var emptyState: some View {

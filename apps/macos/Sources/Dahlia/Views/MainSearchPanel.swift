@@ -9,6 +9,7 @@ struct MainSearchPanel: View {
     let onOpenMeeting: (UUID) -> Void
     let onOpenScreenshot: (ScreenshotSearchResult) -> Void
     let onOpenProject: (UUID) -> Void
+    let onOpenChat: (CodexChatThreadSummary) -> Void
 
     @FocusState private var isSearchFocused: Bool
     @State private var suggestionMode: MainSearchSuggestions.Mode = .overview
@@ -50,6 +51,7 @@ struct MainSearchPanel: View {
                             Text(L10n.meetings).font(.dahliaBody).tag("meeting")
                             Text(L10n.screenshots).font(.dahliaBody).tag("screenshot")
                             Text(L10n.projects).font(.dahliaBody).tag("project")
+                            Text(L10n.chatHistory).font(.dahliaBody).tag("chat")
                         }
                         .labelsHidden()
                         .fixedSize()
@@ -152,6 +154,9 @@ struct MainSearchPanel: View {
         .onChange(of: sidebarViewModel.currentWorkspace?.accountConnectionId) {
             model.resetForWorkspaceChange(using: sidebarViewModel)
         }
+        .onChange(of: sidebarViewModel.currentWorkspace?.databricksConnectionId) {
+            model.resetForWorkspaceChange(using: sidebarViewModel)
+        }
         .onChange(of: model.inputText) {
             model.queryDidChange(using: sidebarViewModel)
         }
@@ -191,17 +196,17 @@ struct MainSearchPanel: View {
                 }
             }.padding(.horizontal, 12).padding(.vertical, 6)
         }
-        if let errorMessage = model.errorMessage, !model.hasResults {
+        if let errorMessage = model.errorMessage, !model.hasResults, !model.isLoadingChats {
             ContentUnavailableView(
                 L10n.searchUnavailable,
                 systemImage: "exclamationmark.magnifyingglass",
                 description: Text(errorMessage)
             )
             .frame(maxWidth: .infinity, minHeight: 240)
-        } else if model.isLoading, !model.hasResults, !model.isProjectCatalogLoading {
+        } else if model.isLoading || model.isLoadingChats, !model.hasResults, !model.isProjectCatalogLoading {
             ProgressView(L10n.searchingMeetings)
                 .frame(maxWidth: .infinity, minHeight: 240)
-        } else if !model.hasResults,
+        } else if !model.hasResults, model.chatSearchError == nil,
                   !model.isProjectCatalogLoading,
                   !model.projectCatalogLoadFailed {
             ContentUnavailableView.search
@@ -264,6 +269,27 @@ struct MainSearchPanel: View {
                         action: { onOpenProject(project.id) }
                     )
                     .id(MainSearchResultID.project(project.id))
+                }
+            }
+
+            if !model.chats.isEmpty || model.isLoadingChats || model.chatSearchError != nil {
+                sectionHeader(L10n.chatHistory)
+                if model.isLoadingChats {
+                    ProgressView().frame(maxWidth: .infinity)
+                } else if let error = model.chatSearchError {
+                    Text(error).font(.dahliaSecondary).foregroundStyle(.secondary)
+                }
+                ForEach(model.chats) { thread in
+                    MainSearchResultRow(
+                        title: thread.title.isEmpty ? L10n.newChat : thread.title,
+                        dateText: thread.updatedAt.formatted(date: .numeric, time: .omitted),
+                        isSelected: model.selectedResultID == .chat(thread.id),
+                        action: { onOpenChat(thread) }
+                    ).id(MainSearchResultID.chat(thread.id))
+                }
+                if model.hasMoreChats {
+                    Button(L10n.loadMore) { model.loadMoreChats(using: sidebarViewModel) }
+                        .buttonStyle(.borderless).disabled(model.isLoadingChats)
                 }
             }
 
@@ -344,6 +370,8 @@ struct MainSearchPanel: View {
                 onOpenScreenshot(screenshot)
             }
         case let .project(id): onOpenProject(id)
+        case let .chat(id):
+            if let thread = model.chats.first(where: { $0.id == id }) { onOpenChat(thread) }
         case nil: break
         }
     }

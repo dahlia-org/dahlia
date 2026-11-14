@@ -432,6 +432,8 @@ actor BackgroundJobWorker {
                 sql: """
                 SELECT (SELECT COUNT(*) FROM meetings)
                      + (SELECT COUNT(*) FROM projects)
+                     + (SELECT COUNT(*) FROM chat_threads)
+                     + (SELECT COUNT(*) FROM chat_items WHERE \(ChatItemRecord.messagePredicate()))
                      + (SELECT COUNT(*) FROM meeting_images WHERE ocrText IS NOT NULL AND caption IS NOT NULL)
                 """
             ) ?? 0
@@ -474,6 +476,35 @@ actor BackgroundJobWorker {
             try checkCanContinue()
             try await indexScreenshot(id: id, generation: generation)
             try await incrementRebuildProgress()
+        }
+
+        let chatIDs = try await dbQueue.read { db in
+            try String.fetchAll(db, sql: "SELECT id FROM chat_threads ORDER BY id")
+        }
+        for threadID in chatIDs {
+            try checkCanContinue()
+            if let id = UUID(uuidString: threadID) {
+                try await dbQueue.write { try indexChatDocument(id: id, in: $0) }
+            }
+            try await incrementRebuildProgress()
+        }
+
+        var lastChatItemRowID: Int64 = 0
+        while true {
+            try checkCanContinue()
+            let items = try await dbQueue.read { [lastChatItemRowID] db in
+                try Row.fetchAll(db, sql: """
+                SELECT rowid, id FROM chat_items WHERE rowid > ? AND \(ChatItemRecord.messagePredicate()) ORDER BY rowid LIMIT 100
+                """, arguments: [lastChatItemRowID]).map { (rowID: $0["rowid"] as Int64, id: $0["id"] as UUID) }
+            }
+            guard !items.isEmpty else { break }
+            for item in items {
+                try checkCanContinue()
+                let id = item.id
+                try await dbQueue.write { try indexChatItemDocument(id: id, in: $0) }
+                try await incrementRebuildProgress()
+            }
+            lastChatItemRowID = items.last?.rowID ?? lastChatItemRowID
         }
 
         try await removeDocumentsOlderThan(generation: generation)
@@ -635,6 +666,10 @@ actor BackgroundJobWorker {
         switch job.targetKind {
         case "workspaceCleanup":
             try await deleteDocuments(where: "workspace_id = ?", arguments: [job.targetID])
+        case "chat":
+            try await dbQueue.write { try indexChatDocument(id: job.targetID, in: $0) }
+        case "chatItem":
+            try await dbQueue.write { try indexChatItemDocument(id: job.targetID, in: $0) }
         case "meeting":
             try await indexMeeting(id: job.targetID, generation: generation)
         case "meetingCleanup":

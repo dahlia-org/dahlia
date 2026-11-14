@@ -102,7 +102,7 @@ Pi の codemode（未有効）の script は Pi の process 内の QuickJS で�
 - 要約・画像解析・画像選別・モデル一覧・サインインは操作ごとに `pi --mode rpc --no-session --no-tools` を起動し、終了・取消・610秒期限で閉じる。同じモデルへの自動再送はしない。要約・画像解析・画像選別は、利用者がフォールバックモデルを設定した場合だけ、生成失敗時にそのモデルを1回試す。
 - チャットは turn の開始時に thread ごとに1 process を起動し、turn 後はチャット画面が thread を開いている間だけ残す。履歴の表示や新規 thread の作成では起動しない。process が終了していれば次の turn で session file から開き直す。スラッシュ候補の取得は既存 process を使い、なければ同じチャット用 resource を読む `--no-session` の一時 process を取得完了・失敗・取消で閉じる。
 - アカウント切替は全 process を閉じ、切替先の agent directory の `models.json` を書き換える。実行中の要約は取消になり、次の操作で新しいアカウントの process を起動する。
-- OpenAI / Anthropic のサインイン・サインアウトは Local Account の process だけを閉じる。Databricks アカウントのサインアウトでは、そのワークスペースが Local Account に戻り、agent directory（チャット履歴を含む）は残して、そのアカウントの `auth.json` と環境変数の秘密値は消す。Dahlia account を削除すると、agent directory ごと消し、環境変数の秘密値も消す。
+- OpenAI / Anthropic のサインイン・サインアウトは Local Account の process だけを閉じる。Databricks アカウントのサインアウトでは、そのワークスペースが Local Account に戻り、agent directory（チャットの再開状態を含む）は残して、そのアカウントの `auth.json` と環境変数の秘密値は消す。Dahlia account を削除すると、agent directory ごと消し、環境変数の秘密値も消す。
 - stdout の1行は 4 MiB（送った最大行の分を加える）までとし、超えた行は改行まで捨てて読み続ける。Pi の `turn_end`・`agent_end` は run のメッセージを画像ごと繰り返すが、Dahlia は読まない。
 - Dahlia は RPC の extension UI（`ctx.ui.input("dahlia:<method>")`）でだけ extension と通信する。token は要求ごとに stdin で渡し、config・環境変数・log に残さない。
 - Databricks アカウントと Dahlia account の provider（`DAHLIA_PI_BRIDGED_PROVIDERS`）は、extension が pi-ai の `createProvider` で認証だけを持つ provider として登録し、使うたびに bridge の `token` で credential を解決する（モデルは `models.json` を重ねる。session 開始前の利用可否の確認には要求に使わない仮の値を返す）。`models.json` に key は書かない。
@@ -312,8 +312,35 @@ control process の `/databricks-connection-login <workspace URL> <service>` が
 ユーザーが許容。2026-11-07）。`--tools`・`DAHLIA_PI_MCP_SERVERS` は process ごとに同じ時点の設定から作るので、
 別の thread が先に書いた新しい `mcp.json` を読んでも、その process で使える MCP は起動時の設定の範囲に留まる。
 
-履歴の正本は Pi の session file（実行アカウントの agent directory の `sessions/<Workspace ID>`）。モデルと同じくアカウントに属し、Workspace を別のアカウントへ移しても移さない。移動先では、そのアカウントでの履歴だけを表示する。Codex の rollout は表示せず、
-ファイルは削除しない。
+履歴の正本は app の GRDB の `chat_threads` と追記専用 `chat_items`。Dahlia では永続的な会話を Thread、
+その時系列ログを Item と呼ぶ。session は Pi／Databricks のアダプタ内と録音の用語に留める。台帳は常に GRDB に置き、
+将来の Databricks managed memory session store への切り替えは `ChatItemStore` の裏のアイテムログだけを対象とする。
+Thread は実行アカウントに属し、Workspace を別アカウントへ移しても移さない。Project は議事録と同じ `projects.id` を参照し、
+最初の入力の Project／Meeting context から設定する。Project を削除しても Thread は保持して紐づけだけを外す。
+親 Thread は作成時だけ指定でき、同じアカウント・Workspace の子を持つ。親を削除すると子とその Item も削除する。
+子の起動・結果配送と Project 画面の一覧は別途実装する。
+
+ユーザー入力は送信前、アシスタント応答は `message_end`、ツール結果は実行完了で保存し、途中の文字デルタは保存しない。
+入力の引き受けは実行成功を意味せず、送信エラーも Thread の失敗状態に残す。ツール名・引数・結果・成功／失敗／アクセス不可を保存し、
+引数と結果は各64 KiBを超えた場合に明示的な切り詰め印と preview を残す。ツール詳細の履歴表示は対象外。
+応答中に送った追加指示は Pi が配信した時点で保存し、割り込んだ応答の後に並べる。配信されずにターンが終わった追加指示は、プロセス切断や終了による場合も含めて最後に保存する。
+起動時に実行中・承認待ちだった Thread は中断扱いにする。サインアウトでは残し、アカウントを削除したときだけその履歴を削除する。
+Pi の session file（実行アカウントの `sessions/<Workspace ID>`）は実行再開用に残し、一覧・再開時にその Workspace の、起動後のバックグラウンドで全アカウントの未登録の既存ファイルを一度だけ取り込む。起動は取り込みを待たない。
+取り込み後は Pi ファイルから表示履歴やタイトルを上書きしない。Pi の応答を保存済みの Thread に Pi ファイルがなければ閲覧だけ可能とし、
+文脈なしで実行を再開しない。Pi は最初の応答でファイルを書くので、応答のない Thread は Pi を新規に開始する。Codex の rollout は取り込まない。
+
+履歴を開くと直近40件のメッセージだけを読み込み、過去分はユーザー操作で40件ずつ追加取得する。
+ツールログはこの表示用ページングの件数に含めない。履歴一覧とメッセージ取得は複合キーの範囲探索でページングする。
+
+Mac の検索は Thread のタイトルとユーザー／アシスタントの表示本文を共通の全文検索索引に含める。
+タイトルと各メッセージを別々の検索文書にし、追加時は新しいメッセージだけを索引化する。ツールログの追記では索引を更新しない。
+検索結果は Thread ごとにまとめ、複数語の AND 条件はタイトルと複数メッセージをまたいで満たせる。
+会議 context、live transcript の隠しブロック、推論文、ツール引数・結果、画像データは索引に含めない。
+アカウント・Workspace・Project（子Projectを含む）・更新日時の期間で絞り込み、タグ付き検索ではチャットを返さない。
+辞書を変更して全文検索を再構築するとチャットも再構築する。チャットは会議と別の全文検索表（`search_chat_documents`／`search_chat_documents_fts`）に索引する。メッセージごとに索引するので、同じ表に入れると会議検索の関連度順位（表全体の統計に依存する）が変わり、ページ送りがずれるため。チャットの索引 job は会議検索のカーソルを無効にする索引リビジョンも進めない。Server Account の Mac チャットもローカル保存・ローカル検索であり、
+Private Web／Electron の Mastra チャットや Server MCP の検索対象は変わらない。
+チャットは DB デバッグ読み取りの既存の全アカウント例外に含まれ、通常の検索・履歴 UI のアカウント境界とは異なる。
+Thread／Item とその検索索引は Workspace バックアップと Server 同期には含めない。
 
 チャット入力の先頭で `/` を入力すると、Pi の `get_commands` が返す拡張コマンド・プロンプトテンプレート・スキルを名前と説明で絞り込む。候補は最大50件、幅は最大320ptとし、入力欄の上を優先して表示する。上に収まらないときは画面内に収まる側へ配置し、縦はスクロール可能とする。クリックまたは ↑↓ と Tab／Enter で補完し、Esc・外側クリック・引数の入力で閉じる。補完だけでは送信しない。応答の生成中に送信したスラッシュコマンドは追加指示用の `steer` に流さず、現在の turn の終了処理後に `prompt` で実行する。待機中のコマンドは入力欄の上に表示し、キャンセルできる。後続の入力もキューの順序を保つ。`/mcp` などが RPC の通知で返す結果はチャット内に通知の種類に応じたアイコン付きのオレンジの1行見出しと、展開・折りたたみ可能な等幅テキストの詳細として表示する。見出しは改行を空白に置き換え、利用できる横幅まで表示する。詳細は初期状態で折りたたみ、展開すると改行と全文を表示する。通知は表示中の会話に残すが、Pi の履歴に保存されないため会話を開き直したときには復元しない。agent run を起こさないコマンドも結果通知の後で完了する。TUI 専用の `/settings` などは候補に含めない。コマンドは Pi が先頭で解釈できるよう閲覧中の会議・Project の自動 context を付けず、明示的に添付した会議参照はコマンドの後ろに付ける。この入力補完は macOS の Local／Server Account 共通で、Private Web・Electron の Server AI や MCP の操作は対象外。
 
