@@ -5,7 +5,8 @@ import Observation
 @Observable
 final class CodexChatSessionModel: Identifiable {
     let id: CodexChatSessionID
-    let workspaceID: UUID?
+    let accountID: String
+    var contextWorkspaceID: UUID? { settings.currentWorkspace?.id }
     private(set) var backendThreadID: String?
     private(set) var didStartBackendThread = false
     private(set) var title: String
@@ -14,6 +15,9 @@ final class CodexChatSessionModel: Identifiable {
     private(set) var isLoadingEarlierMessages = false
     private(set) var earlierMessagesError: String?
     var draft = ""
+    var scopeSnapshot: CodexChatScopeSnapshot?
+    private(set) var hasSelectedProject = false
+    private(set) var selectedScopeProjectID: UUID?
 
     var selectedModelID: String
     var selectedEffort: String
@@ -77,6 +81,7 @@ final class CodexChatSessionModel: Identifiable {
     @ObservationIgnored var preparingManualComposerSnapshot: CodexChatComposerSnapshot?
     @ObservationIgnored var lastManualSubmission: CodexChatManualSubmission?
     var activeSteeringManualSubmission: CodexChatManualSubmission?
+    @ObservationIgnored private var referenceWorkspaceIDs: [UUID: UUID] = [:]
     @ObservationIgnored private var activeTurnSupportsImages: Bool?
     @ObservationIgnored private var activeTurnIsCommand = false
     @ObservationIgnored var activeSubmissionID: UUID?
@@ -109,7 +114,7 @@ final class CodexChatSessionModel: Identifiable {
 
     init(
         id: CodexChatSessionID = CodexChatSessionID(),
-        workspaceID: UUID? = nil,
+        accountID: String? = nil,
         backendThreadID: String? = nil,
         title: String = "",
         messages: [CodexChatMessage] = [],
@@ -129,9 +134,9 @@ final class CodexChatSessionModel: Identifiable {
         }
     ) {
         self.id = id
-        let resolvedWorkspaceID = workspaceID ?? settings.currentWorkspace?.id
+        let resolvedWorkspaceID = settings.currentWorkspace?.id
         let usesWorkspaceSettings = workspaceSettings.workspaceID == resolvedWorkspaceID
-        self.workspaceID = resolvedWorkspaceID
+        self.accountID = accountID ?? CodexRuntimeProvider(workspace: settings.currentWorkspace).accountKey
         self.backendThreadID = backendThreadID
         self.title = title
         self.messages = messages
@@ -148,13 +153,19 @@ final class CodexChatSessionModel: Identifiable {
         self.usageTelemetryReporter = usageTelemetryReporter
     }
 
+    func selectScopeProject(_ projectID: UUID?) {
+        guard canSelectScope, projectID == nil || scopeSnapshot?.projects.contains(where: { $0.id == projectID }) == true else { return }
+        selectedScopeProjectID = projectID
+        hasSelectedProject = true
+    }
+
     /// Registration shortcuts follow the active account, as Agent settings does.
     var runtimeProvider: CodexRuntimeProvider { runtimeProviderResolver() }
 
     func slashCommands() async throws -> [CodexChatSlashCommand] {
-        guard let workspaceID, !isReleased else { return [] }
+        guard isBoundToCurrentAccount, !isReleased else { return [] }
         let provider = runtimeProvider
-        let commands = try await service.commands(threadID: backendThreadID, workspaceID: workspaceID)
+        let commands = try await service.commands(threadID: backendThreadID)
         try Task.checkCancellation()
         guard !isReleased, provider == runtimeProvider else { throw CancellationError() }
         return commands
@@ -217,8 +228,7 @@ final class CodexChatSessionModel: Identifiable {
         }
         do {
             async let availableModels = service.models(forceRefresh: false)
-            guard let workspaceID else { throw PiRuntimeError.invalidProtocolResponse }
-            async let restoredThread = service.resumeThread(id: backendThreadID, workspaceID: workspaceID)
+            async let restoredThread = service.resumeThread(id: backendThreadID)
             let (models, thread) = try await (availableModels, restoredThread)
             try await ensureThreadLease(thread.id)
             self.models = models
@@ -518,6 +528,7 @@ extension CodexChatSessionModel {
             let backendThreadID = try await ensureBackendThread(
                 text: text,
                 images: images,
+                context: context,
                 submissionID: submissionID
             )
             try await ensureThreadLease(backendThreadID)
@@ -898,8 +909,7 @@ extension CodexChatSessionModel {
 
             )
         } catch let error as PiRuntimeError where error.isThreadNotFound {
-            guard let workspaceID else { throw error }
-            let thread = try await service.resumeThread(id: retry.threadID, workspaceID: workspaceID)
+            let thread = try await service.resumeThread(id: retry.threadID)
             try ensureSubmissionCanContinue(submissionID)
             apply(thread, preservingPendingMessages: true)
             syncedApprovalMethod = thread.approvalMethod
@@ -1012,18 +1022,19 @@ extension CodexChatSessionModel {
     func ensureBackendThread(
         text: String?,
         images: [CodexChatImageAttachment],
+        context: CodexChatContext?,
         submissionID: UUID
     ) async throws -> String {
         if let backendThreadID {
             return backendThreadID
         }
-        guard isBoundToCurrentWorkspace, let workspaceID else {
+        guard isBoundToCurrentAccount else {
             throw PiRuntimeError.invalidProtocolResponse
         }
         let thread = try await service.startThread(
             model: selectedModelID.nilIfBlank,
             effort: selectedEffort,
-            workspaceID: workspaceID
+            context: hasSelectedProject ? selectedScopeContext() : context ?? scopeProjectContext
         )
         try ensureSubmissionCanContinue(submissionID)
         apply(thread, preservingPendingMessages: true)
@@ -1135,7 +1146,7 @@ extension CodexChatSessionModel {
     }
 
     private var usesWorkspaceSettings: Bool {
-        workspaceSettings.workspaceID == workspaceID
+        workspaceSettings.workspaceID == contextWorkspaceID
     }
 }
 
@@ -1143,7 +1154,7 @@ extension CodexChatSessionModel {
 
     func processPendingInputIfPossible() {
         guard !isReleased,
-              isBoundToCurrentWorkspace,
+              isBoundToCurrentAccount,
               !isTurnCleanupPending,
               steerTask == nil,
               errorMessage == nil else { return }
@@ -1298,20 +1309,22 @@ extension CodexChatSessionModel {
         catalogWorkspaceID: UUID?,
         isCatalogLoaded: Bool = true
     ) {
-        guard let workspaceID, catalogWorkspaceID == workspaceID else { return }
+        guard isBoundToCurrentAccount, let workspaceID = contextWorkspaceID, catalogWorkspaceID == workspaceID else { return }
         availableMeetingReferences = references
         for reference in references {
+            referenceWorkspaceIDs[reference.id] = workspaceID
             meetingNamesByID[reference.id] = reference.name
             meetingReferencesByID[reference.id] = reference
         }
         guard isCatalogLoaded else { return }
         let availableIDs = Set(references.map(\.id))
-        selectedMeetingReferenceIDs.removeAll { !availableIDs.contains($0) }
+        selectedMeetingReferenceIDs.removeAll { referenceWorkspaceIDs[$0] == workspaceID && !availableIDs.contains($0) }
     }
 
     func addMeetingReference(_ reference: CodexChatMeetingReference) {
         guard !selectedMeetingReferenceIDs.contains(reference.id) else { return }
         selectedMeetingReferenceIDs.append(reference.id)
+        referenceWorkspaceIDs[reference.id] = contextWorkspaceID
         meetingNamesByID[reference.id] = reference.name
         meetingReferencesByID[reference.id] = reference
     }

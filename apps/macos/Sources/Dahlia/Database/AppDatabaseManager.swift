@@ -251,6 +251,24 @@ final class AppDatabaseManager: Sendable {
             try SummaryHistoryMigration.migrate(in: db)
         }
 
+        migrator.registerMigration("v62_accountChatThreads") { db in
+            // ALTER validates unrelated triggers too; preserve them unchanged, as in the account-table migration.
+            let triggers = try Row.fetchAll(db, sql: "SELECT name, sql FROM sqlite_master WHERE type = 'trigger'")
+            for trigger in triggers {
+                let name: String = trigger["name"]
+                try db.execute(sql: "DROP TRIGGER \(name.quotedDatabaseIdentifier)")
+            }
+            try db.execute(sql: """
+            DROP INDEX chat_threads_listing;
+            ALTER TABLE chat_threads DROP COLUMN workspaceID;
+            CREATE INDEX chat_threads_listing ON chat_threads(accountID, updatedAt DESC, id DESC);
+            """)
+            for trigger in triggers {
+                let sql: String = trigger["sql"]
+                try db.execute(sql: sql)
+            }
+        }
+
         return migrator
     }()
 

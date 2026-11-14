@@ -86,7 +86,7 @@ Pi 本体は sandbox の外で動かす。Seatbelt は入れ子にできず、Pi
 | IP の network | すべて許可（当面）。この Mac 自身の service（ブラウザの debug port、ローカルの DB）にも届く。Seatbelt の address の条件は IPv4-mapped IPv6（`::ffff:127.0.0.1`）を localhost として扱わないので、localhost だけを確実に閉じることはできない |
 | Unix socket | DNS（mDNSResponder）だけ。ssh-agent、Docker、Dahlia の broker には届かない |
 
-画像の保存先と SQLite は全 Workspace・全アカウントの内容を含む。Dahlia MCP の Workspace 境界（PRODUCT.md の T4）の外にある、デバッグ用の読み取りとしてユーザーが承認した例外である。
+画像の保存先と SQLite は全 Workspace・全アカウントの内容を含む。Dahlia MCP のアカウント境界（PRODUCT.md の T4）の外にある、デバッグ用の読み取りとしてユーザーが承認した例外である。
 network は開いているので、読める内容は外部に送信できる。
 
 extension は `read`・`ls`・`write`・`edit`・`bash` を Pi の `create*Tool` で登録し直す。file 操作（読み取り・一覧・書き込み・folder の作成・画像の判定）は `sandbox-exec` の中の `cat`・`ls`・`mkdir`・`head` で行い、
@@ -315,9 +315,14 @@ control process の `/databricks-connection-login <workspace URL> <service>` が
 履歴の正本は app の GRDB の `chat_threads` と追記専用 `chat_items`。Dahlia では永続的な会話を Thread、
 その時系列ログを Item と呼ぶ。session は Pi／Databricks のアダプタ内と録音の用語に留める。台帳は常に GRDB に置き、
 将来の Databricks managed memory session store への切り替えは `ChatItemStore` の裏のアイテムログだけを対象とする。
-Thread は実行アカウントに属し、Workspace を別アカウントへ移しても移さない。Project は議事録と同じ `projects.id` を参照し、
-最初の入力の Project／Meeting context から設定する。Project を削除しても Thread は保持して紐づけだけを外す。
-親 Thread は作成時だけ指定でき、同じアカウント・Workspace の子を持つ。親を削除すると子とその Item も削除する。
+Thread は実行アカウントに属し、Workspace とは直接関連付けない。Project は議事録と同じ `projects.id` を任意で参照する。
+チャット入力欄の枠のすぐ上に Project だけを表示する。新規 Thread では同じアカウント内の Project または「プロジェクトなし」を選べる。
+未選択なら最初の入力の Project／Meeting context を初期値に使い、Thread 作成時に「プロジェクトなし」も含めて関連を確定する。
+最初の送信以降は表示のみとし、初回実行前の失敗・再試行でも関連を変更しない。
+Project がない Thread はアカウント共通であり、同じアカウント内の Workspace 切替では履歴・実行中の会話を維持する。
+Project から実行先 Workspace を解決しない。Dahlia MCP は Thread のアカウントで範囲を固定し、Project はその範囲を狭めない。
+Project を削除しても Thread は保持して紐づけだけを外す。Workspace を別アカウントへ移しても Thread の実行アカウントは移さない。
+親 Thread は作成時だけ指定でき、同じアカウントの子を持つ。親を削除すると子とその Item も削除する。
 子の起動・結果配送と Project 画面の一覧は別途実装する。
 
 ユーザー入力は送信前、アシスタント応答は `message_end`、ツール結果は実行完了で保存し、途中の文字デルタは保存しない。
@@ -325,7 +330,7 @@ Thread は実行アカウントに属し、Workspace を別アカウントへ移
 引数と結果は各64 KiBを超えた場合に明示的な切り詰め印と preview を残す。ツール詳細の履歴表示は対象外。
 応答中に送った追加指示は Pi が配信した時点で保存し、割り込んだ応答の後に並べる。配信されずにターンが終わった追加指示は、プロセス切断や終了による場合も含めて最後に保存する。
 起動時に実行中・承認待ちだった Thread は中断扱いにする。サインアウトでは残し、アカウントを削除したときだけその履歴を削除する。
-Pi の session file（実行アカウントの `sessions/<Workspace ID>`）は実行再開用に残す。
+Pi の session file は実行アカウントの `sessions/shared` に作る。既存の `sessions/<Workspace ID>` のファイルも移動・削除せず実行再開に使う。
 既存の Pi ファイルから履歴を自動取り込みせず、表示履歴とタイトルは GRDB だけから取得する。
 Pi の応答を保存済みの Thread に Pi ファイルがなければ閲覧だけ可能とし、
 文脈なしで実行を再開しない。Pi は最初の応答でファイルを書くので、応答のない Thread は Pi を新規に開始する。Codex の rollout は取り込まない。
@@ -337,11 +342,11 @@ Mac の検索は Thread のタイトルとユーザー／アシスタントの�
 タイトルと各メッセージを別々の検索文書にし、追加時は新しいメッセージだけを索引化する。ツールログの追記では索引を更新しない。
 検索結果は Thread ごとにまとめ、複数語の AND 条件はタイトルと複数メッセージをまたいで満たせる。
 会議 context、live transcript の隠しブロック、推論文、ツール引数・結果、画像データは索引に含めない。
-アカウント・Workspace・Project（子Projectを含む）・更新日時の期間で絞り込み、タグ付き検索ではチャットを返さない。
+アカウント・Project（子Projectを含む）・更新日時の期間で絞り込み、タグ付き検索ではチャットを返さない。
 辞書を変更して全文検索を再構築するとチャットも再構築する。チャットは会議と別の全文検索表（`search_chat_documents`／`search_chat_documents_fts`）に索引する。メッセージごとに索引するので、同じ表に入れると会議検索の関連度順位（表全体の統計に依存する）が変わり、ページ送りがずれるため。チャットの索引 job は会議検索のカーソルを無効にする索引リビジョンも進めない。Server Account の Mac チャットもローカル保存・ローカル検索であり、
 Private Web／Electron の Mastra チャットや Server MCP の検索対象は変わらない。
 チャットは DB デバッグ読み取りの既存の全アカウント例外に含まれ、通常の検索・履歴 UI のアカウント境界とは異なる。
-Thread／Item とその検索索引は Workspace バックアップと Server 同期には含めない。
+Thread／Item とその検索索引は Workspace バックアップと Server 同期には含めない。チャットのバックアップツールは対象の `workspace_id` を必須引数とし、実行アカウントへの所属を検証する。
 
 チャット入力の先頭で `/` を入力すると、Pi の `get_commands` が返す拡張コマンド・プロンプトテンプレート・スキルを名前と説明で絞り込む。候補は最大50件、幅は最大320ptとし、入力欄の上を優先して表示する。上に収まらないときは画面内に収まる側へ配置し、縦はスクロール可能とする。クリックまたは ↑↓ と Tab／Enter で補完し、Esc・外側クリック・引数の入力で閉じる。補完だけでは送信しない。応答の生成中に送信したスラッシュコマンドは追加指示用の `steer` に流さず、現在の turn の終了処理後に `prompt` で実行する。待機中のコマンドは入力欄の上に表示し、キャンセルできる。後続の入力もキューの順序を保つ。`/mcp` などが RPC の通知で返す結果はチャット内に通知の種類に応じたアイコン付きのオレンジの1行見出しと、展開・折りたたみ可能な等幅テキストの詳細として表示する。見出しは改行を空白に置き換え、利用できる横幅まで表示する。詳細は初期状態で折りたたみ、展開すると改行と全文を表示する。通知は表示中の会話に残すが、Pi の履歴に保存されないため会話を開き直したときには復元しない。agent run を起こさないコマンドも結果通知の後で完了する。TUI 専用の `/settings` などは候補に含めない。コマンドは Pi が先頭で解釈できるよう閲覧中の会議・Project の自動 context を付けず、明示的に添付した会議参照はコマンドの後ろに付ける。この入力補完は macOS の Local／Server Account 共通で、Private Web・Electron の Server AI や MCP の操作は対象外。
 

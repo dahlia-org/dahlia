@@ -5,34 +5,34 @@ import GRDB
 struct ChatThreadStore: ChatItemStore, Sendable {
     let dbQueue: DatabaseQueue
 
-    func createThread(_ thread: ChatThreadRecord, items: [JSONValue] = []) throws {
+    func createThread(_ thread: ChatThreadRecord, items: [JSONValue] = [], initialContext: CodexChatContext? = nil) throws {
         try dbQueue.write { db in
             if let parentID = thread.parentThreadID {
                 guard let parent = try ChatThreadRecord.fetchOne(db, key: parentID),
-                      parent.accountID == thread.accountID, parent.workspaceID == thread.workspaceID else {
+                      parent.accountID == thread.accountID else {
                     throw PiRuntimeError.invalidProtocolResponse
                 }
             }
             try thread.insert(db)
             try Self.append(items, threadID: thread.id, in: db)
+            if let initialContext { try Self.attachInitialProject(context: initialContext, threadID: thread.id, in: db) }
             if let message = items.first { try Self.attachInitialProject(message: message, threadID: thread.id, in: db) }
         }
     }
 
-    func thread(id: String, accountID: String, workspaceID: UUID? = nil) throws -> ChatThreadRecord {
+    func thread(id: String, accountID: String) throws -> ChatThreadRecord {
         try dbQueue.read { db in
-            guard let thread = try ChatThreadRecord.fetchOne(db, key: id), thread.accountID == accountID,
-                  workspaceID == nil || workspaceID == thread.workspaceID else {
+            guard let thread = try ChatThreadRecord.fetchOne(db, key: id), thread.accountID == accountID else {
                 throw PiRuntimeError.rpcError(code: nil, message: "thread not found")
             }
             return thread
         }
     }
 
-    func listThreads(accountID: String, workspaceID: UUID, cursor: String?, limit: Int = 25) throws -> CodexChatThreadPage {
+    func listThreads(accountID: String, cursor: String?, limit: Int = 25) throws -> CodexChatThreadPage {
         try dbQueue.read { db in
             var condition = ""
-            var arguments: StatementArguments = [accountID, workspaceID]
+            var arguments: StatementArguments = [accountID]
             if let cursor, let data = Data(base64Encoded: cursor),
                let values = try? JSONDecoder().decode([String].self, from: data), values.count == 2,
                let time = Double(values[0]) {
@@ -42,7 +42,7 @@ struct ChatThreadStore: ChatItemStore, Sendable {
             }
             arguments += [limit + 1]
             let rows = try ChatThreadRecord.fetchAll(db, sql: """
-            SELECT * FROM chat_threads WHERE accountID = ? AND workspaceID = ? \(condition)
+            SELECT * FROM chat_threads WHERE accountID = ? \(condition)
             ORDER BY updatedAt DESC, id DESC LIMIT ?
             """, arguments: arguments)
             let visible = Array(rows.prefix(limit))
@@ -66,14 +66,10 @@ struct ChatThreadStore: ChatItemStore, Sendable {
 
     func beginTurn(threadID: String, message: JSONValue, model: String?, effort: String) throws {
         try dbQueue.write { db in
-            let firstSequence = try Self.append([message], threadID: threadID, in: db)
+            try Self.append([message], threadID: threadID, in: db)
             try db.execute(sql: """
             UPDATE chat_threads SET status = 'running', model = COALESCE(?, model), reasoningEffort = ?, updatedAt = ? WHERE id = ?
             """, arguments: [model, effort, Date(), threadID])
-            // The initial context decides the Project; later turns may discuss other Projects.
-            if firstSequence == 0 {
-                try Self.attachInitialProject(message: message, threadID: threadID, in: db)
-            }
         }
     }
 
@@ -140,21 +136,25 @@ struct ChatThreadStore: ChatItemStore, Sendable {
     private static func attachInitialProject(message: JSONValue, threadID: String, in db: Database) throws {
         let content = message.objectValue?["content"]?.stringValue ?? ""
         let context = CodexChatPromptCodec.decodeTextBlocks([content]).context
-        let workspaceID = try UUID.fetchOne(db, sql: "SELECT workspaceID FROM chat_threads WHERE id = ?", arguments: [threadID])
+        try attachInitialProject(context: context, threadID: threadID, in: db)
+    }
+
+    private static func attachInitialProject(context: CodexChatContext?, threadID: String, in db: Database) throws {
+        let accountID = try String.fetchOne(db, sql: "SELECT accountID FROM chat_threads WHERE id = ?", arguments: [threadID])
         let projectID: UUID? = switch context {
         case let .project(id, _, _): id
         case let .meeting(id, _, _): try MeetingRecord.fetchOne(db, key: id)?.projectId
         default: nil
         }
-        if let projectID, let project = try ProjectRecord.fetchOne(db, key: projectID), project.workspaceId == workspaceID {
-            try db.execute(sql: "UPDATE chat_threads SET projectID = ? WHERE id = ?", arguments: [projectID, threadID])
+        if let projectID, let project = try ProjectRecord.fetchOne(db, key: projectID),
+           let workspace = try WorkspaceRecord.fetchOne(db, key: project.workspaceId),
+           CodexRuntimeProvider(workspace: workspace).accountKey == accountID {
+            try db.execute(sql: "UPDATE chat_threads SET projectID = ? WHERE id = ? AND projectID IS NULL", arguments: [projectID, threadID])
         }
     }
 
-    @discardableResult
-    private static func append(_ items: [JSONValue], threadID: String, in db: Database) throws -> Int64 {
+    private static func append(_ items: [JSONValue], threadID: String, in db: Database) throws {
         var seq = try Int64.fetchOne(db, sql: "SELECT MAX(seq) FROM chat_items WHERE threadID = ?", arguments: [threadID]) ?? -1
-        let firstSequence = seq + 1
         for item in items {
             seq += 1
             try ChatItemRecord(
@@ -165,6 +165,5 @@ struct ChatThreadStore: ChatItemStore, Sendable {
                 createdAt: .now
             ).insert(db)
         }
-        return firstSequence
     }
 }

@@ -1,8 +1,11 @@
 import Foundation
 import GRDB
+import Observation
 
 @MainActor
+@Observable
 final class CodexChatContextProvider: CodexChatContextProviding {
+    private(set) var revision = 0
     private var workspaceID: UUID?
     private var meetingID: UUID?
     private var projectID: UUID?
@@ -16,6 +19,10 @@ final class CodexChatContextProvider: CodexChatContextProviding {
         draftMeeting: DraftMeeting?,
         dbQueue: DatabaseQueue?
     ) {
+        if self.workspaceID != workspaceID || self.meetingID != meetingID || self.projectID != projectID
+            || self.draftMeeting?.id != draftMeeting?.id {
+            revision += 1
+        }
         self.workspaceID = workspaceID
         self.meetingID = meetingID
         self.projectID = projectID

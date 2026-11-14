@@ -2071,3 +2071,5 @@
 "oauth.callback.continue" = "Dahlia に戻って続けてください。このタブは閉じてもかまいません。";
 "oauth.callback.failed" = "認証できませんでした";
 "oauth.callback.retry" = "Dahlia で詳細を確認し、もう一度お試しください。このタブは閉じてもかまいません。";
+
+"Select chat project" = "チャットのプロジェクトを選択";

@@ -188,7 +188,7 @@ enum BackupRestoreStartupProcessor {
                     // Chats stay out of backups, and replacing the Projects would clear their Project links.
                     let chatProjects = try Row.fetchAll(
                         db,
-                        sql: "SELECT id, projectID FROM chat_threads WHERE workspaceID = ? AND projectID IS NOT NULL",
+                        sql: "SELECT id, projectID FROM chat_threads WHERE projectID IN (SELECT id FROM projects WHERE workspace_id = ?)",
                         arguments: [request.targetWorkspaceId]
                     )
                     if target != nil { try WorkspaceBackupTransfer.removeWorkspaceContent(id: request.targetWorkspaceId, in: db) }

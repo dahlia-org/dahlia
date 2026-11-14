@@ -494,9 +494,9 @@ def main():
     triage_denial_regression(pi)
     package_resources(pi)
     _, results, bridge, _ = run(
-        pi, "chat", [{"tool": "dahlia_create_backup"}, {"text": "done"}],
+        pi, "chat", [{"tool": "dahlia_create_backup", "args": {"workspace_id": "ws_test"}}, {"text": "done"}],
         ["--no-session", "--tools", "dahlia_create_backup"], {})
-    assert ("createBackup", {}) in bridge, bridge
+    assert ("createBackup", {"workspace_id": "ws_test"}) in bridge, bridge
     assert json.loads(results[0])["path"] == "/tmp/Dahlia-Backup-test.tar.gz", results
 
     # Keywords Claude or Gemini cannot take, and a property named like one, which must stay.

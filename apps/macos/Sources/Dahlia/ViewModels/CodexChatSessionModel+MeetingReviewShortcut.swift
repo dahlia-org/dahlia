@@ -5,7 +5,7 @@ extension CodexChatSessionModel {
 
     var canSendMeetingReviewShortcut: Bool {
         showsMeetingReviewShortcut
-            && isBoundToCurrentWorkspace
+            && isBoundToCurrentAccount
             && !isGenerating
             && !isTurnCleanupPending
     }

@@ -12,6 +12,7 @@
             let view = CodexChatView(
                 session: coordinator.dockedSession,
                 coordinator: coordinator,
+                sidebarViewModel: SidebarViewModel(settings: AppSettings()),
                 meetingReferences: [],
                 meetingCatalogWorkspaceID: nil,
                 isMeetingCatalogLoaded: true,
@@ -48,6 +49,7 @@
             let view = CodexChatView(
                 session: coordinator.dockedSession,
                 coordinator: coordinator,
+                sidebarViewModel: SidebarViewModel(settings: AppSettings()),
                 meetingReferences: [],
                 meetingCatalogWorkspaceID: nil,
                 isMeetingCatalogLoaded: true,

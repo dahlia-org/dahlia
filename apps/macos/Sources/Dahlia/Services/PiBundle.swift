@@ -97,6 +97,12 @@ struct PiAgentDirectoryLocator: Sendable {
         return url
     }
 
+    func sessionsURL(for provider: CodexRuntimeProvider) throws -> URL {
+        let url = try agentURL(for: provider).appending(path: "sessions/shared", directoryHint: .isDirectory)
+        try Self.createPrivateDirectory(url)
+        return url
+    }
+
     /// Chats belong to the account that ran them, like its models; a workspace moved to another account leaves them.
     func sessionsURL(for provider: CodexRuntimeProvider, workspaceID: UUID) throws -> URL {
         let url = try agentURL(for: provider)

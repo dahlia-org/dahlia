@@ -28,7 +28,7 @@ extension CodexChatSessionModel {
         composerSnapshot: CodexChatComposerSnapshot? = nil,
         includesCurrentContext: Bool = true
     ) {
-        guard isBoundToCurrentWorkspace,
+        guard isBoundToCurrentAccount,
               !isRestoring,
               !needsRestore,
               !isGenerating,
@@ -97,7 +97,7 @@ extension CodexChatSessionModel {
             errorMessage = error.localizedDescription
             return
         }
-        guard !isReleased, isBoundToCurrentWorkspace else { return }
+        guard !isReleased, isBoundToCurrentAccount else { return }
         let responseID = "pending-\(UUID.v7().uuidString)"
 
         _ = await runTurn(
@@ -157,7 +157,8 @@ extension CodexChatSessionModel {
 
     func resolveContext(if isRequired: Bool) async throws -> CodexChatContext? {
         guard isRequired else { return nil }
-        guard let workspaceID else { throw PiRuntimeError.invalidProtocolResponse }
+        if backendThreadID == nil, hasSelectedProject { return try selectedScopeContext() }
+        guard let workspaceID = contextWorkspaceID else { return nil }
         return try await contextProvider.currentContext(workspaceID: workspaceID)
     }
 

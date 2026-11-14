@@ -13,7 +13,6 @@ import GRDB
             let fixture = try MainSearchModelFixture()
             defer { fixture.stop() }
             let queue = fixture.manager.dbQueue
-            let workspaceID = fixture.workspace.id
             let id = UUID.v7().uuidString.lowercased()
             try await Task.detached {
                 let store = ChatThreadStore(dbQueue: queue)
@@ -21,7 +20,6 @@ import GRDB
                     ChatThreadRecord(
                         id: id,
                         accountID: "local",
-                        workspaceID: workspaceID,
                         title: "Chat title",
                         createdAt: .now,
                         updatedAt: .now
@@ -57,7 +55,6 @@ import GRDB
             let fixture = try MainSearchModelFixture()
             defer { fixture.stop() }
             let queue = fixture.manager.dbQueue
-            let workspaceID = fixture.workspace.id
             let start = Date(timeIntervalSince1970: 1_700_000_000)
             let oldest = try await Task.detached {
                 let store = ChatThreadStore(dbQueue: queue)
@@ -66,7 +63,7 @@ import GRDB
                     let date = start.addingTimeInterval(TimeInterval(index))
                     let id = UUID.v7().uuidString.lowercased()
                     try store.createThread(ChatThreadRecord(
-                        id: id, accountID: "local", workspaceID: workspaceID, title: "Chat \(index)", createdAt: date, updatedAt: date
+                        id: id, accountID: "local", title: "Chat \(index)", createdAt: date, updatedAt: date
                     ))
                     ids.append(id)
                 }

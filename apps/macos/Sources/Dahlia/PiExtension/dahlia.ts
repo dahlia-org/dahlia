@@ -144,10 +144,10 @@ export default function (pi: any) {
     pi.registerTool({
       name: "dahlia_create_backup",
       label: "Create Dahlia backup",
-      description: "Create a verified tar.gz backup of this chat's Local Workspace using Dahlia's GUI backup service. Returns a local file path for MCP upload. Excludes audio and Server Workspaces.",
-      parameters: { type: "object", properties: {}, additionalProperties: false },
-      execute: async (_id: string, _params: unknown, _signal: AbortSignal, _update: unknown, ctx: any) => ({
-        content: [{ type: "text", text: JSON.stringify(await bridge(ctx, "createBackup", {})) }],
+      description: "Create a verified tar.gz backup of the specified Local Workspace in this chat's account using Dahlia's GUI backup service. Returns a local file path for MCP upload. Excludes audio and Server Workspaces.",
+      parameters: { type: "object", properties: { workspace_id: { type: "string", description: "Workspace TypeID (ws_...) to back up." } }, required: ["workspace_id"], additionalProperties: false },
+      execute: async (_id: string, params: unknown, _signal: AbortSignal, _update: unknown, ctx: any) => ({
+        content: [{ type: "text", text: JSON.stringify(await bridge(ctx, "createBackup", params)) }],
       }),
     });
     let blockedThisRun = false;

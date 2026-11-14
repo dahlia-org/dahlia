@@ -27,7 +27,7 @@ import Foundation
         }
 
         @Test
-        func workspaceSwitchDuringContextResolutionCancelsBeforeSending() async {
+        func accountSwitchDuringContextResolutionCancelsBeforeSending() async {
             let service = TestCodexChatService(mode: .complete)
             let settings = AppSettings()
             settings.currentWorkspace = Self.testWorkspace()
@@ -42,7 +42,9 @@ import Foundation
 
             session.sendDraft()
             await waitUntil { contextProvider.isWaiting }
-            settings.currentWorkspace = Self.testWorkspace()
+            var otherAccountWorkspace = Self.testWorkspace()
+            otherAccountWorkspace.accountConnectionId = .v7()
+            settings.currentWorkspace = otherAccountWorkspace
             contextProvider.resume()
             await waitUntil { !session.isGenerating }
 

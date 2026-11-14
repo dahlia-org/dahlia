@@ -15,6 +15,7 @@ struct CodexChatSidebarView: View {
         CodexChatView(
             session: coordinator.dockedSession,
             coordinator: coordinator,
+            sidebarViewModel: sidebarViewModel,
             meetingReferences: sidebarViewModel.meetingReferences,
             meetingCatalogWorkspaceID: sidebarViewModel.currentWorkspace?.id,
             isMeetingCatalogLoaded: sidebarViewModel.isMeetingCatalogLoaded,
