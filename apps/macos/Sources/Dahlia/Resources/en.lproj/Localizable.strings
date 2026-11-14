@@ -2069,3 +2069,9 @@
 "Hide Local Account" = "Hide Local Account";
 "Hide the Local Account from account lists. Its workspaces and data stay on this Mac." = "Hide the Local Account from account lists. Its workspaces and data stay on this Mac.";
 "Add Account" = "Add Account";
+
+"oauth.callback.language" = "en";
+"oauth.callback.received" = "Authorization received";
+"oauth.callback.continue" = "Return to Dahlia to continue. You can close this tab.";
+"oauth.callback.failed" = "Authorization unsuccessful";
+"oauth.callback.retry" = "Return to Dahlia for details and try again. You can close this tab.";
