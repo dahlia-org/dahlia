@@ -635,7 +635,7 @@
 "Translate live subtitles for display. This does not change the language of the saved transcript." = "Translate live subtitles for display. This does not change the language of the saved transcript.";
 "Target Language" = "Target Language";
 "Choose which language translated live subtitles should use." = "Choose which language translated live subtitles should use.";
-"liveSubtitleTranslationDisabledForMatchingLiveTranscriptionLanguage" = "Translation is automatically disabled when the target language matches the live transcription language.";
+"liveSubtitleTranslationDisabledForMatchingLiveTranscriptionLanguage" = "Translation is automatically disabled when the target language matches the live subtitle language.";
 "Google Calendar" = "Google Calendar";
 "macOS Calendar" = "macOS Calendar";
 "Calendar Source" = "Calendar Source";
@@ -777,7 +777,7 @@
 "Open Language Settings" = "Open Language Settings";
 "Recorded Languages" = "Languages used while recording";
 "Transcription Language" = "Transcription Language";
-"liveTranscriptionLanguage" = "Live Transcription Language";
+"liveTranscriptionLanguage" = "Live Subtitle Language";
 "liveTranscriptionLanguageDescription" = "Used during recording for both live subtitles and the first draft created with live transcription. You can also change it from the recording panel.";
 "Language Range" = "Language Range";
 "All Supported Languages" = "All Supported Languages";
@@ -1253,7 +1253,6 @@
 "%@ registration command" = "%@ registration command";
 "Turn on meeting notifications to choose notification conditions." = "Turn on meeting notifications to choose notification conditions.";
 "Turn on live subtitle translation to choose a target language." = "Turn on live subtitle translation to choose a target language.";
-"Turn on live subtitles to choose their source and line count." = "Turn on live subtitles to choose their source and line count.";
 "Zoom In" = "Zoom In";
 "Zoom Out" = "Zoom Out";
 "Add" = "Add";
@@ -1578,6 +1577,7 @@
 
 "meetingSync.relocationPaused" = "Sync is paused while destination access or unsynced changes need attention. Local data is retained.";
 "liveTranscriptDraft" = "Create a first draft with live transcription";
+"liveTranscriptDraftSectionTitle" = "Transcript First Draft";
 "automaticRecordingProcessing" = "Process automatically after recording";
 "processingLocalTranscription" = "Local transcription → summary";
 "processingCloudTranscription" = "Cloud transcription → summary";
@@ -2091,7 +2091,7 @@
 "meetingProcessingFlowTitle" = "Meeting data processing";
 "meetingProcessingFlowHint" = "Select a step or the workspace region to show its settings below. To change the workspace output language, use the button in those settings.";
 "meetingProcessingAudio" = "Audio";
-"meetingProcessingLiveTranscription" = "Live transcription (subtitles)";
+"meetingProcessingLiveTranscription" = "Live Subtitles";
 "meetingProcessingImageRecognition" = "Image recognition (search)";
 "meetingProcessingSummaryGeneration" = "Summary generation";
 "meetingProcessingOpenWorkspaceSettings" = "Change output language in Workspace settings…";
