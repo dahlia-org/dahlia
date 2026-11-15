@@ -13,6 +13,8 @@ enum L10n { // swiftlint:disable:this type_body_length
     static var agentLearningDefaultHelp: String { String(localized: "settings.agents.learning.agentLearningDefaultHelp", bundle: bundle) }
     static var agentMemoryUser: String { String(localized: "settings.agents.learning.agentMemoryUser", bundle: bundle) }
     static var agentMemoryEnvironment: String { String(localized: "settings.agents.learning.agentMemoryEnvironment", bundle: bundle) }
+    static var agentMemoryUserExample: String { String(localized: "settings.agents.learning.agentMemoryUserExample", bundle: bundle) }
+    static var agentMemoryEnvironmentExample: String { String(localized: "settings.agents.learning.agentMemoryEnvironmentExample", bundle: bundle) }
     static var agentMemoryByUser: String { String(localized: "settings.agents.learning.agentMemoryByUser", bundle: bundle) }
     static var agentMemoryByAgent: String { String(localized: "settings.agents.learning.agentMemoryByAgent", bundle: bundle) }
     static var agentMemoryClear: String { String(localized: "settings.agents.learning.agentMemoryClear", bundle: bundle) }

@@ -2117,6 +2117,8 @@
 "settings.agents.learning.agentLearningDefaultHelp" = "Automatic learning is on by default. In Settings → Dahlia AI → Memory, review or undo changes and turn learning off. Memory stays on this Mac, separately for each account.";
 "settings.agents.learning.agentMemoryUser" = "User profile";
 "settings.agents.learning.agentMemoryEnvironment" = "Environment facts";
+"settings.agents.learning.agentMemoryUserExample" = "Example: I prefer concise answers in Japanese, starting with the conclusion.";
+"settings.agents.learning.agentMemoryEnvironmentExample" = "Example: My development environment is macOS. I use pnpm for package management.";
 "settings.agents.learning.agentMemoryByUser" = "You";
 "settings.agents.learning.agentMemoryByAgent" = "Agent";
 "settings.agents.learning.agentMemoryClear" = "Delete all memory entries";

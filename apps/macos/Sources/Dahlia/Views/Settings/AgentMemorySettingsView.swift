@@ -60,6 +60,7 @@ struct AgentMemorySettingsView: View {
         navigation
             .presentSettingsModal(AgentMemoryEditor(
                 model: model,
+                target: target,
                 content: entry?.content ?? "",
                 onClose: navigation.dismissSettingsModal
             ) { content in
@@ -68,29 +69,5 @@ struct AgentMemorySettingsView: View {
                     if model.error == nil { navigation.dismissSettingsModal() }
                 }
             })
-    }
-}
-
-private struct AgentMemoryEditor: View {
-    let model: AgentLearningSettingsModel
-    @State var content: String
-    let onClose: () -> Void
-    let onSave: (String) -> Void
-    var body: some View {
-        ZStack {
-            Color.black.opacity(0.25).ignoresSafeArea().onTapGesture(perform: onClose)
-            VStack(alignment: .leading, spacing: 16) {
-                Text(L10n.agentMemory).font(.dahliaHeadline)
-                TextEditor(text: $content).frame(minHeight: 120)
-                if let error = model.error { Text(error).foregroundStyle(.red).textSelection(.enabled) }
-                HStack {
-                    Spacer()
-                    Button(L10n.cancel, action: onClose).keyboardShortcut(.cancelAction)
-                    Button(L10n.save) { onSave(content) }.keyboardShortcut(.defaultAction)
-                        .disabled(model.isBusy || content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-                }
-            }
-            .padding(24).frame(width: 540).background(.regularMaterial, in: RoundedRectangle(cornerRadius: 16))
-        }
     }
 }

@@ -2117,6 +2117,8 @@
 "settings.agents.learning.agentLearningDefaultHelp" = "自動学習の初期値は入です。設定 → Dahlia AI → メモリーで、変更の確認・取り消しや自動学習の停止ができます。メモリーはアカウント別に、この Mac だけに保存されます。";
 "settings.agents.learning.agentMemoryUser" = "利用者のプロフィール";
 "settings.agents.learning.agentMemoryEnvironment" = "環境の事実";
+"settings.agents.learning.agentMemoryUserExample" = "例：回答は日本語で、結論から簡潔に伝えてほしい。";
+"settings.agents.learning.agentMemoryEnvironmentExample" = "例：開発環境は macOS。パッケージ管理には pnpm を使う。";
 "settings.agents.learning.agentMemoryByUser" = "利用者";
 "settings.agents.learning.agentMemoryByAgent" = "エージェント";
 "settings.agents.learning.agentMemoryClear" = "メモリーを全削除";
