@@ -148,7 +148,15 @@ struct TestPiRuntime {
     init(
         provider: CodexRuntimeProvider = .local,
         tokenResolver: @escaping PiRuntimeService.TokenResolver = { _ in "test-token" },
-        modelChoices: @escaping @Sendable (CodexRuntimeProvider) -> [String: Bool] = { _ in [:] },
+        modelChoices: @escaping @Sendable (CodexRuntimeProvider) -> [String: Bool] = { _ in
+            // Runtime fixtures explicitly enable their synthetic and legacy models, like a user's saved choices.
+            Dictionary(uniqueKeysWithValues: [
+                "openai/gpt-test", "openai/gpt-new", "openai/gpt", "openai/new", "openai/old",
+                "openai/default-model", "openai/primary", "openai/fallback", "openai/unrelated",
+                "openai/other", "openai/selection-model", "anthropic/claude-test",
+                "openai/gpt-5.6-luna",
+            ].map { ($0, true) })
+        },
         gatewayWorkspaces: @escaping @Sendable (CodexRuntimeProvider) -> [AgentMCPProvider] = { _ in [] },
         transport: @escaping @Sendable (PiRuntimeService.LaunchOptions) -> TestPiTransport
     ) {
