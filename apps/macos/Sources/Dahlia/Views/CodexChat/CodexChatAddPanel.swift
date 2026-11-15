@@ -11,13 +11,17 @@ struct CodexChatAddPanel: View {
     let onAddMeetingReference: () -> Void
     let onSelectMeeting: (CodexChatMeetingReference) -> Void
     let onOpenMCPSettings: () -> Void
+    var threadPicker: (() -> CodexChatThreadPicker)?
+    var onAddThreadReference: (() -> Void)?
 
     @State private var showsMCPServers = false
 
     var body: some View {
         HStack(alignment: .bottom, spacing: CodexChatAddPanelLayout.submenuSpacing) {
             Group {
-                if showsMeetingPicker {
+                if let threadPicker {
+                    threadPicker()
+                } else if showsMeetingPicker {
                     CodexChatMeetingPicker(
                         references: meetingReferences,
                         highlightedID: highlightedMeetingID,
@@ -37,6 +41,14 @@ struct CodexChatAddPanel: View {
                             leadingSystemImage: "text.document",
                             action: onAddMeetingReference
                         )
+                        if let onAddThreadReference {
+                            CodexChatConfigurationRow(
+                                title: L10n.chatAddThreadReference,
+                                isSelected: false,
+                                leadingSystemImage: "bubble.left.and.bubble.right",
+                                action: onAddThreadReference
+                            )
+                        }
                         if showsConnectors {
                             CodexChatConfigurationRow(
                                 title: L10n.agentMCPs,
@@ -55,7 +67,7 @@ struct CodexChatAddPanel: View {
             .fixedSize(horizontal: false, vertical: true)
             .codexChatPanelStyle()
 
-            if showsConnectors, showsMCPServers, !showsMeetingPicker {
+            if showsConnectors, showsMCPServers, !showsMeetingPicker, threadPicker == nil {
                 CodexChatMCPServersView(settings: mcpSettings, onOpenSettings: onOpenMCPSettings)
                     .frame(width: panelWidth)
                     .frame(maxHeight: CodexChatAddPanelLayout.maximumHeight(windowBounds: windowBounds))
@@ -66,6 +78,9 @@ struct CodexChatAddPanel: View {
     }
 
     private var panelWidth: CGFloat {
-        CodexChatAddPanelLayout.width(windowBounds: windowBounds, showsSubmenu: showsConnectors && showsMCPServers && !showsMeetingPicker)
+        CodexChatAddPanelLayout.width(
+            windowBounds: windowBounds,
+            showsSubmenu: showsConnectors && showsMCPServers && !showsMeetingPicker && threadPicker == nil
+        )
     }
 }

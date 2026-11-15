@@ -21,6 +21,8 @@ suites=(
     MeetingSidebarRepositoryTests         # indexed per-project candidates stay bounded as history grows
     MeetingSidebarProjectionBudgetTests   # sidebar projection limit
     SummaryHistoryTests                   # paged summary history and stale version selection
+    ChatRunTests                         # bounded run subscriptions and history projections
+    CodexChatSubscriptionTests           # dropped readers reattach or reload completed history
     CodexChatHistoryPagingTests           # bounded initial chat history and stale page cancellation
     CodexChatStreamingUpdateLimiterTests  # coalesced streaming updates
     CodexChatMarkdownProjectionModelTests # latest-wins Markdown projection

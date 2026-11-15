@@ -119,6 +119,13 @@ extension CodexChatSessionModel {
         processPendingInputIfPossible()
     }
 
+    var serializedComposerText: String {
+        let text = CodexChatMeetingReference.serializedText(referenceIDs: selectedMeetingReferenceIDs, draft: draft)
+        let references = selectedThreadReferences.map { "thread:" + $0.id }.joined(separator: " ")
+        guard !references.isEmpty else { return text }
+        return draft.hasPrefix("/") ? [text, references].joined(separator: " ") : [references, text].filter { !$0.isEmpty }.joined(separator: " ")
+    }
+
     func clearComposer(ifMatching snapshot: CodexChatComposerSnapshot?) {
         guard let snapshot else { return }
         if draft == snapshot.draft {
@@ -127,22 +134,23 @@ extension CodexChatSessionModel {
         if selectedMeetingReferenceIDs == snapshot.referenceIDs {
             selectedMeetingReferenceIDs = []
         }
+        if selectedThreadReferences.map(\.id) == snapshot.threadReferenceIDs {
+            selectedThreadReferences = []
+        }
         if attachedImages == snapshot.images {
             attachedImages = []
         }
     }
 
     func retryManualSubmission(_ submission: CodexChatManualSubmission) {
-        let currentText = CodexChatMeetingReference.serializedText(
-            referenceIDs: selectedMeetingReferenceIDs,
-            draft: draft
-        )
+        let currentText = serializedComposerText
         let composerSnapshot: CodexChatComposerSnapshot? = if currentText == submission.text,
                                                               attachedImages == submission.images {
             CodexChatComposerSnapshot(
                 draft: draft,
                 referenceIDs: selectedMeetingReferenceIDs,
-                images: attachedImages
+                images: attachedImages,
+                threadReferenceIDs: selectedThreadReferences.map(\.id)
             )
         } else {
             nil

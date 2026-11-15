@@ -1044,7 +1044,7 @@ import Foundation
         }
 
         @Test
-        func releasedGeneratingSessionInterruptsAndUnsubscribes() async {
+        func explicitlyStoppedReleasedSessionInterruptsAndUnsubscribes() async {
             let service = TestCodexChatService(mode: .block)
             let settings = AppSettings()
             settings.currentWorkspace = Self.testWorkspace()
@@ -1058,12 +1058,62 @@ import Foundation
             session.sendDraft()
             await waitUntil { session.activeTurnID != nil }
 
-            session.release()
+            session.release(stoppingRun: true)
             await waitUntil { !session.isGenerating }
             await waitUntilAsync { await service.interruptCount == 1 }
             await waitUntilAsync { await service.unsubscribeCount == 1 }
 
             #expect(await service.unsubscribedThreadIDs == ["thread-1"])
+        }
+
+        @Test(arguments: [false, true])
+        func releasingViewKeepsAcceptedRunAlive(delaysHandle: Bool) async {
+            let service = TestCodexChatService(mode: delaysHandle ? .delayTurnHandleIgnoringCancellation : .block)
+            let settings = AppSettings()
+            settings.currentWorkspace = Self.testWorkspace()
+            let session = CodexChatSessionModel(service: service, settings: settings)
+            session.draft = "Question"
+            session.sendDraft()
+            if delaysHandle {
+                await waitUntilAsync { await service.isSendWaiting }
+            } else {
+                await waitUntil { session.activeTurnID != nil }
+            }
+
+            session.release()
+            if delaysHandle { await service.resumeDelayedSend() }
+            await waitUntil { !session.isGenerating }
+            await waitUntilAsync { await service.unsubscribeCount == 1 }
+
+            #expect(await service.interruptCount == 0)
+            await service.completeBlockedTurn()
+        }
+
+        @Test
+        func threadReferenceCanBeSentAloneAndRemovedWithoutLosingNewSelections() async {
+            let service = TestCodexChatService(mode: .complete)
+            let settings = AppSettings()
+            settings.currentWorkspace = Self.testWorkspace()
+            let session = CodexChatSessionModel(service: service, settings: settings)
+            let target = CodexChatThreadSummary(id: "selected-thread", title: "Research", updatedAt: .now)
+            session.addThreadReference(target)
+            session.addThreadReference(target)
+            #expect(session.selectedThreadReferences.count == 1)
+            #expect(session.canSend)
+            session.sendDraft()
+            await waitUntil { !session.isGenerating }
+            #expect(await service.sentTextBlocks == [["thread:selected-thread"]])
+            #expect(session.selectedThreadReferences.isEmpty)
+
+            session.addThreadReference(target)
+            session.draft = "/help"
+            #expect(session.serializedComposerText == "/help thread:selected-thread")
+            let snapshot = CodexChatComposerSnapshot(draft: "/help", referenceIDs: [], images: [], threadReferenceIDs: [target.id])
+            session.addThreadReference(CodexChatThreadSummary(id: "new-selection", title: "New", updatedAt: .now))
+            session.clearComposer(ifMatching: snapshot)
+            #expect(session.selectedThreadReferences.count == 2)
+            session.selectedThreadReferences = []
+            #expect(!session.hasComposerContent)
         }
 
         @Test
@@ -1269,6 +1319,7 @@ import Foundation
 
         enum Mode {
             case complete
+            case readerOverflow
             case block
             case blockBeforeOutput
             case burstThenBlock
@@ -1377,6 +1428,30 @@ import Foundation
             self.delaysEarlierMessages = delaysEarlierMessages
         }
 
+        private var attachments: [CodexChatTurnHandle] = []
+
+        func setAttachment(_ handle: CodexChatTurnHandle) { attachments.append(handle) }
+
+        func addLiveAttachment() {
+            let (stream, reader) = AsyncThrowingStream<CodexChatTurnEvent, any Error>.makeStream()
+            blockedContinuation = reader
+            reader.yield(.started(turnID: "live"))
+            attachments.append(CodexChatTurnHandle(
+                id: .v7(), events: stream,
+                snapshot: CodexChatThread(
+                    id: "thread-1",
+                    title: "Question",
+                    messages: [CodexChatMessage(role: .assistant, text: "Saved partial")],
+                    model: nil,
+                    reasoningEffort: nil
+                )
+            ))
+        }
+
+        func attach(threadID _: String) async throws -> CodexChatTurnHandle? {
+            attachments.isEmpty ? nil : attachments.removeFirst()
+        }
+
         private(set) var modelListings = 0
 
         func commands(threadID _: String?) async throws -> [CodexChatSlashCommand] { availableCommands }
@@ -1397,23 +1472,20 @@ import Foundation
                 }
             }
             let assistantMessages: [CodexChatMessage] = switch mode {
-            case .complete, .block, .blockBeforeOutput, .burstThenBlock, .bufferedBurstThenInterrupt,
+            case .complete, .readerOverflow, .block, .blockBeforeOutput, .burstThenBlock, .bufferedBurstThenInterrupt,
                  .finishesWithoutTerminal, .interruptedThenBlock, .failThenComplete, .alwaysFail,
                  .delayFirstSendIgnoringCancellation, .delayTurnHandleIgnoringCancellation:
-                [CodexChatMessage(role: .assistant, text: "Final answer", reasoning: "Considered the question")]
+                [CodexChatMessage(
+                    id: "history-assistant-\(sentTextBlocks.count)", role: .assistant, text: "Final answer", reasoning: "Considered the question"
+                )]
             case .rolloutWithoutReasoning:
-                [CodexChatMessage(role: .assistant, text: "Final answer")]
+                [CodexChatMessage(id: "history-assistant-\(sentTextBlocks.count)", role: .assistant, text: "Final answer")]
             case .staleRollout, .multipleMessages:
                 []
             }
             let decoded = CodexChatPromptCodec.decodeTextBlocks(sentTextBlocks.last ?? ["Question"])
             let userMessages: [CodexChatMessage] = decoded.text.nilIfBlank.map { text in
-                let message = CodexChatMessage(
-                    role: .user,
-                    text: text,
-                    context: decoded.context
-                )
-                return [message]
+                [CodexChatMessage(id: "history-user-\(sentTextBlocks.count)", role: .user, text: text, context: decoded.context)]
             } ?? []
             return CodexChatThread(
                 id: id,
@@ -1490,6 +1562,8 @@ import Foundation
             let (stream, continuation) = AsyncThrowingStream<CodexChatTurnEvent, any Error>.makeStream()
             continuation.yield(.started(turnID: "turn-1"))
             switch mode {
+            case .readerOverflow:
+                return Self.overflowStream()
             case .complete, .staleRollout, .rolloutWithoutReasoning, .failThenComplete, .alwaysFail,
                  .delayFirstSendIgnoringCancellation:
                 continuation.yield(.reasoningDelta(

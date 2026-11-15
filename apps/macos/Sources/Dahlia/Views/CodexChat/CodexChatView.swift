@@ -154,6 +154,11 @@ struct CodexChatView: View {
 
     @ViewBuilder
     private var conversationControls: some View {
+        if let parentID = session.backendThreadID {
+            CodexChatRelatedThreadsView(parentID: parentID, coordinator: coordinator, onOpen: openHistoryThread)
+                .padding(.horizontal, CodexChatDesign.contentHorizontalPadding)
+        }
+
         if let command = session.pendingCommand {
             HStack {
                 Label(L10n.chatCommandQueued(command.text), systemImage: "clock")

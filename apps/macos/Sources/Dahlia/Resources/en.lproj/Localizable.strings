@@ -2099,3 +2099,12 @@
 "meetingProcessingVideo" = "Video";
 "meetingProcessingScreenshotCapture" = "Screenshot capture";
 "settings.meetingLinks.intro" = "Choose which apps open meeting links. Settings are saved for the selected account on this Mac.";
+
+"chat.thread.child" = "Child thread";
+"chat.thread.addReference" = "Reference a thread";
+"chat.run.queued" = "Queued";
+"chat.run.completed" = "Completed";
+"chat.run.interrupted" = "Interrupted";
+"chat.run.failed" = "Failed";
+
+"chat.thread.removeReference" = "Remove thread reference";

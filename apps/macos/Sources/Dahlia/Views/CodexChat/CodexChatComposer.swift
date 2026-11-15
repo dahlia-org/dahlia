@@ -9,6 +9,7 @@ struct CodexChatComposer: View {
     @Environment(MainWindowNavigation.self) private var navigation
     @State private var mcpSettings = AgentMCPSettings()
     @State private var showsMeetingPicker = false
+    @State private var showsThreadPicker = false
     @State private var meetingQuery = ""
     @State private var highlightedMeetingID: UUID?
     @State private var suggestions: [CodexChatMeetingReference] = []
@@ -44,6 +45,26 @@ struct CodexChatComposer: View {
                     )
                 }
 
+                if !session.selectedThreadReferences.isEmpty {
+                    FlowLayout(spacing: 6, rowSpacing: 6) {
+                        ForEach(session.selectedThreadReferences) { thread in
+                            HStack(spacing: 4) {
+                                Label(thread.title.nilIfBlank ?? L10n.newChat, systemImage: "bubble.left.and.bubble.right")
+                                    .lineLimit(1)
+                                Button(L10n.chatRemoveThreadReference, systemImage: "xmark.circle.fill") {
+                                    session.selectedThreadReferences.removeAll { $0.id == thread.id }
+                                }
+                                .labelStyle(.iconOnly)
+                                .buttonStyle(.plain)
+                            }
+                            .font(.dahliaSecondary)
+                            .padding(6)
+                            .background(DahliaDesign.contentHighlightColor, in: .capsule)
+                        }
+                    }
+                    .padding(.horizontal, 8)
+                }
+
                 if let validationMessage = session.attachmentValidationMessage {
                     CodexChatAttachmentValidationView(message: validationMessage)
                 }
@@ -62,7 +83,17 @@ struct CodexChatComposer: View {
                             onAttachImages: showImageImporter,
                             onAddMeetingReference: showMeetingPicker,
                             onSelectMeeting: selectMeeting,
-                            onOpenMCPSettings: openMCPSettings
+                            onOpenMCPSettings: openMCPSettings,
+                            threadPicker: showsThreadPicker ? {
+                                CodexChatThreadPicker(session: session) { thread in
+                                    session.addThreadReference(thread)
+                                    showsThreadPicker = false
+                                    dismissAddPanel()
+                                }
+                            } : nil,
+                            onAddThreadReference: { showsThreadPicker = true
+                                showsMeetingPicker = false
+                            }
                         )
                     } : nil,
                     onDismissAddPanel: dismissAddPanel,
@@ -273,6 +304,7 @@ struct CodexChatComposer: View {
     }
 
     private func dismissAddPanel() {
+        showsThreadPicker = false
         showsAddPanel = false
         showsMeetingPicker = false
         meetingQuery = ""

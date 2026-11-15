@@ -1,6 +1,10 @@
 import Foundation
 
 protocol CodexChatServicing: Sendable {
+    func relatedThreads(parentThreadID: String) async throws -> [CodexChatThreadSummary]
+    func attach(threadID: String) async throws -> CodexChatTurnHandle?
+    func observeThreads() async -> AsyncStream<[CodexChatRuntimeState]>
+    func stopAccountRuns(except accountID: String) async
     func models(forceRefresh: Bool) async throws -> [CodexModel]
     func commands(threadID: String?) async throws -> [CodexChatSlashCommand]
     func listThreads(cursor: String?) async throws -> CodexChatThreadPage
@@ -40,6 +44,11 @@ protocol CodexChatServicing: Sendable {
 }
 
 extension CodexChatServicing {
+    func relatedThreads(parentThreadID _: String) async throws -> [CodexChatThreadSummary] { [] }
+    func attach(threadID _: String) async throws -> CodexChatTurnHandle? { nil }
+    func observeThreads() async -> AsyncStream<[CodexChatRuntimeState]> { AsyncStream { $0.finish() } }
+    func stopAccountRuns(except _: String) async {}
+
     func startThread(model: String?, effort: String) async throws -> CodexChatThread {
         try await startThread(model: model, effort: effort, context: nil)
     }

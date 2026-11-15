@@ -48,8 +48,10 @@
             #expect(host.convert(editor.bounds, from: editor) == editorFrame)
             try snapshot(host, name: "menu-\(Int(size.width))")
 
-            // Three 30-point rows, 2-point gaps, and 10-point panel padding.
-            try click(CGPoint(x: 100, y: plusCenterY - 112), in: window)
+            // Four rows can flip the menu above the button in a compact window.
+            let menuBounds = CGRect(x: -6, y: -(size.height - plusCenterY - 15), width: size.width, height: size.height)
+            let menuOffset = CodexChatAddPanelLayout.offset(panelSize: CGSize(width: 280, height: 146), windowBounds: menuBounds)
+            try click(CGPoint(x: 100, y: plusCenterY + 15 - menuOffset.height - 146 + 25), in: window)
             host.layoutSubtreeIfNeeded()
             window.displayIfNeeded()
             #expect(host.convert(editor.bounds, from: editor) == editorFrame)
@@ -62,7 +64,7 @@
                 .frame(width: panelWidth)
                 .frame(maxHeight: CodexChatAddPanelLayout.maximumHeight(windowBounds: bounds))
                 .fixedSize(horizontal: false, vertical: true))
-            let panelHeight = max(114, connectors.fittingSize.height)
+            let panelHeight = max(146, connectors.fittingSize.height)
             let combinedWidth = panelWidth * 2 + CodexChatAddPanelLayout.submenuSpacing
             let offset = CodexChatAddPanelLayout.offset(panelSize: CGSize(width: combinedWidth, height: panelHeight), windowBounds: bounds)
             let settingsX = 6 + offset.width + panelWidth + CodexChatAddPanelLayout.submenuSpacing + panelWidth / 2

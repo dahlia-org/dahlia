@@ -109,7 +109,8 @@ actor PiRuntimeService {
                     // Keep authentication failures distinct so callers can defer work and report a sanitized category.
                     throw PiRuntimeError.providerAuthenticationFailed(error.localizedDescription)
                 }
-            case "reviewTriage", "createBackup":
+            case "reviewTriage", "createBackup", "thread_list", "thread_search", "thread_read",
+                 "thread_start", "thread_send", "thread_wait", "thread_interrupt", "thread_update":
                 guard let chatBridge else { return .null }
                 return try await chatBridge(method, payload)
             case "approval", "approvalMode", "reviewModel":
