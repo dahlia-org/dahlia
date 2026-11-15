@@ -6,15 +6,14 @@ struct MCPJSONSampleView: View {
     let onCopy: (String) -> Void
 
     var body: some View {
-        VStack(alignment: .leading) {
-            DisclosureGroup(L10n.mcpShowJSON) {
-                Text(sample)
-                    .font(.dahliaBody.monospaced())
-                    .textSelection(.enabled)
-                    .multilineTextAlignment(.leading)
-            }
+        VStack(alignment: .leading, spacing: 16) {
+            Text(sample)
+                .font(.dahliaBody.monospaced())
+                .textSelection(.enabled)
+                .multilineTextAlignment(.leading)
+                .frame(maxWidth: .infinity, alignment: .leading)
 
-            HStack {
+            HStack(spacing: 16) {
                 Spacer()
                 Button(
                     isCopied ? L10n.copied : L10n.copyMCPJSON,
@@ -22,6 +21,9 @@ struct MCPJSONSampleView: View {
                     action: copy
                 )
                 .buttonStyle(.borderedProminent)
+                .buttonBorderShape(.capsule)
+                .controlSize(.large)
+                .font(.dahliaBody.weight(.semibold))
             }
         }
     }

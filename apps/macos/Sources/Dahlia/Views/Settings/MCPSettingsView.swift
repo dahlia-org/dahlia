@@ -8,8 +8,9 @@ struct MCPSettingsView: View {
     let databricksAccounts: [DatabricksConnection]
     private let helperURL: URL?
 
-    @State private var selectedClient = MCPClient.codex
+    @State private var selectedClient = MCPClient.claude
     @State private var selectedAccount: WorkspaceAccountChoice?
+    @State private var isWorkspacesExpanded = false
     @State private var selectedWorkspaceID: UUID?
     @State private var isWriteEnabled = false
     @State private var copiedContent: String?
@@ -50,7 +51,7 @@ struct MCPSettingsView: View {
                     availableWorkspaces: accountWorkspaces,
                     accountName: accountName
                 )
-                DisclosureGroup(L10n.mcpIncludedWorkspaces(visibleWorkspaces.count)) {
+                DisclosureGroup(L10n.mcpIncludedWorkspaces(visibleWorkspaces.count), isExpanded: $isWorkspacesExpanded) {
                     ForEach(accounts, id: \.self) { account in
                         let included = visibleWorkspaces.filter { WorkspaceAccountChoice($0) == account }
                         ForEach(included) { workspace in
@@ -128,6 +129,9 @@ struct MCPSettingsView: View {
         .formStyle(.grouped)
         .disclosureGroupStyle(MCPDisclosureGroupStyle())
         .font(.dahliaBody)
+        .onChange(of: selectedAccount) {
+            isWorkspacesExpanded = selectedAccount != nil
+        }
         .onDisappear {
             copyFeedbackTask?.cancel()
         }
