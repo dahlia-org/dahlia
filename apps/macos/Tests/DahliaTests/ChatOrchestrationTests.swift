@@ -372,6 +372,8 @@
             _ = await fixture.transports.transport(at: 1).command("prompt")
             // A retry returns the same run; the same key for another thread is rejected instead of dropping the input.
             #expect(try await send(to: target.id).objectValue?["run_id"] == first.objectValue?["run_id"])
+            // The run has started, so a retry must not reach it again as a steer.
+            #expect(await fixture.transports.transport(at: 1).commands.allSatisfy { $0["type"]?.stringValue != "steer" })
             await #expect(throws: PiRuntimeError.self) { _ = try await send(to: other.id) }
             // The target is a top-level thread, but this run was requested by another thread.
             let targetSession = try #require(await fixture.service.sessions[target.id])
@@ -382,6 +384,18 @@
                     "input": .string("Nested"), "client_request_id": .string("nested"),
                 ]), threadID: target.id, processID: targetSession.processID)
             }
+            /// An explicit steer is one delivery too, and the requester's ceiling follows a change made after the run began.
+            func steer() async throws -> JSONValue {
+                try await fixture.service.threadTool("thread_send", payload: .object([
+                    "thread_id": .string(target.id), "input": .string("More"), "mode": .string("steer"), "client_request_id": .string("more"),
+                ]), threadID: caller.id, processID: process)
+            }
+            #expect(try await steer().objectValue?["delivery"]?.stringValue == "steered")
+            #expect(try await steer().objectValue?["delivery"]?.stringValue == "duplicate")
+            #expect(await fixture.transports.transport(at: 1).commands.count(where: { $0["type"]?.stringValue == "steer" }) == 1)
+            #expect(await fixture.service.effectiveApprovalMethod(target.id) == .autoReview)
+            _ = try await fixture.service.updateApprovalMethod(threadID: caller.id, approvalMethod: .ask)
+            #expect(await fixture.service.effectiveApprovalMethod(target.id) == .ask)
             await fixture.service.stopAccountRuns(except: "other")
         }
 

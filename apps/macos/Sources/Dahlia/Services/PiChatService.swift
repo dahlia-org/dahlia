@@ -155,6 +155,8 @@ actor PiChatService: CodexChatServicing {
     /// The method the user chose in each thread during this app session. It outlives the thread's process, so a run that
     /// starts with no user present never has to guess it. After a restart every thread is back at Auto review.
     var chosenApprovalMethods: [String: CodexChatApprovalMethod] = [:]
+    /// Inputs already delivered as a steer, by requester, user request, and retry key, so a retry is not delivered twice.
+    var steeredRequests: [String: ChatRunRecord] = [:]
     /// The last run each thread ended in this app session. Views compare it with the run they displayed.
     var settledRuns: [String: (accountID: String, runID: UUID)] = [:]
     var scheduledRuns: [String: ChatRunRecord] = [:]
@@ -383,8 +385,11 @@ actor PiChatService: CodexChatServicing {
         if let scheduled = scheduledRuns[threadID] {
             let parentID = try history().thread(id: threadID, accountID: session.provider.accountKey).parentThreadID
             let isRequestersChild = parentID != nil && parentID == scheduled.requestedByThreadID
-            let own = chosenApprovalMethod(threadID) ?? (isRequestersChild ? approvalMethod : .autoReview)
-            inheritedMethod = Self.stricterApproval(approvalMethod, own)
+            // The requester may have tightened its method while this run waited in the queue.
+            let ceiling = scheduled.requestedByThreadID.flatMap(chosenApprovalMethod).map { Self.stricterApproval(approvalMethod, $0) }
+                ?? approvalMethod
+            let own = chosenApprovalMethod(threadID) ?? (isRequestersChild ? ceiling : .autoReview)
+            inheritedMethod = Self.stricterApproval(ceiling, own)
         } else {
             chosenApprovalMethods[threadID] = approvalMethod
         }
@@ -913,7 +918,7 @@ actor PiChatService: CodexChatServicing {
         }
         if method == "approvalMode" {
             // Fail closed when the process no longer owns the thread.
-            return .string(isLive ? sessions[threadID]?.approvalMethod?.rawValue ?? "ask" : "ask")
+            return .string(isLive ? effectiveApprovalMethod(threadID).rawValue : "ask")
         }
         guard isLive else { return .string("cancel") }
         return await .string(Self.wireDecision(requestApproval(threadID: threadID, payload: payload)))

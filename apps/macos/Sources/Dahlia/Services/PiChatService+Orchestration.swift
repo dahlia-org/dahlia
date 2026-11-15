@@ -219,16 +219,27 @@ extension PiChatService {
         guard let input = args["input"]?.stringValue?.nilIfBlank,
               let requestID = args["client_request_id"]?.stringValue?.nilIfBlank else { throw PiRuntimeError.invalidProtocolResponse }
         let mode = args["mode"]?.stringValue ?? "auto"
+        // A retry key names one delivery, queued or steered, so it is checked before anything reaches a thread.
+        let steerKey = "\(caller.id)|\(callerTurn.run.rootRunID)|\(requestID)"
+        let delivered = try history().requestedRun(requesterID: caller.id, rootRunID: callerTurn.run.rootRunID, clientRequestID: requestID)
+        if let earlier = delivered ?? steeredRequests[steerKey] {
+            guard earlier.threadID == targetID else {
+                throw PiRuntimeError.rpcError(code: nil, message: "client_request_id was already used for another thread in this request")
+            }
+            return runJSON(earlier, delivery: "duplicate")
+        }
         // Only the requester may add input to a run: a turn the user or another thread started is never redirected.
         let ownedTurn = sessions[targetID]?.turn.flatMap { $0.run.requestedByThreadID == caller.id ? $0 : nil }
         if mode == "steer" || (mode == "auto" && ownedTurn != nil) {
             guard let turn = ownedTurn else {
                 throw PiRuntimeError.rpcError(code: nil, message: "Only a running run you requested can be steered; use queue")
             }
+            steeredRequests[steerKey] = turn.run
             do {
                 try await steer(threadID: targetID, turnID: turn.wireID, inputs: [.text(agentRequestText(input, callerID: caller.id))])
                 return runJSON(turn.run, delivery: "steered")
             } catch {
+                steeredRequests[steerKey] = nil
                 // The run settled first; auto queues the input as the next run instead.
                 guard mode == "auto", sessions[targetID]?.turn?.id != turn.id else { throw error }
             }

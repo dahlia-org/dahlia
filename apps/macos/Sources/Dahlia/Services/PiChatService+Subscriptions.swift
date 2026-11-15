@@ -138,6 +138,17 @@ extension PiChatService {
         sessions[threadID]?.approvalMethod ?? chosenApprovalMethods[threadID]
     }
 
+    /// What a tool call is judged by. The thread's method is never looser than the current choice of the thread that
+    /// requested the running work, or of its parent, even when that choice changed after the run began.
+    func effectiveApprovalMethod(_ threadID: String) -> CodexChatApprovalMethod {
+        guard let session = sessions[threadID], var method = session.approvalMethod else { return .ask }
+        let parent = (try? history().thread(id: threadID, accountID: session.provider.accountKey))?.parentThreadID
+        for ceiling in [session.turn?.run.requestedByThreadID, parent].compactMap(\.self) {
+            if let chosen = chosenApprovalMethod(ceiling) { method = Self.stricterApproval(method, chosen) }
+        }
+        return method
+    }
+
     func inheritedApprovalMethod(threadID: String, requested: CodexChatApprovalMethod) throws -> CodexChatApprovalMethod {
         guard let provider = sessions[threadID]?.provider else { return requested }
         let record = try history().thread(id: threadID, accountID: provider.accountKey)
