@@ -7,6 +7,7 @@ import Observation
 final class CodexAccountController {
     let subscription: PiSubscription
     private(set) var accountStatus: PiRuntimeService.AccountStatus?
+    private(set) var models: [CodexModel] = []
     private(set) var isCheckingStatus = false
     private(set) var isSigningIn = false
     private(set) var isSigningOut = false
@@ -36,12 +37,14 @@ final class CodexAccountController {
 
         do {
             try Task.checkCancellation()
-            accountStatus = try await service.accountStatus(for: subscription)
+            models = try await service.subscriptionModels(for: subscription)
+            accountStatus = .init(isAuthenticated: !models.isEmpty)
             try Task.checkCancellation()
         } catch is CancellationError {
             // SwiftUI cancels this operation when the settings screen disappears.
         } catch {
             accountStatus = nil
+            models = []
             errorMessage = error.localizedDescription
         }
     }
@@ -78,7 +81,7 @@ final class CodexAccountController {
 
         do {
             try await service.signOut(subscription)
-            accountStatus = try await service.accountStatus(for: subscription)
+            await activate()
         } catch is CancellationError {
             // SwiftUI cancels this operation when the settings screen disappears.
         } catch {

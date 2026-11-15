@@ -1,9 +1,14 @@
 import Foundation
 
-/// The Unity AI Gateway models an account turned on or off in Agents settings, by Pi reference (`provider/id`), kept in
-/// app defaults. A model without a choice takes its default (`PiProviderConfiguration.DatabricksModel.isOnByDefault`): off,
-/// except the one model a Databricks account's own gateway starts with.
+/// Model visibility choices in Dahlia, by Pi reference (`provider/id`), kept in account-local app defaults.
 enum AgentModelSettings {
+    static func isSubscriptionModelOn(_ reference: String, choices: [String: Bool]) -> Bool {
+        choices[reference] ?? [
+            "anthropic/claude-opus-5-5", "anthropic/claude-sonnet-5-5", "anthropic/claude-haiku-5-5",
+            "openai/gpt-6.1-sol", "openai/gpt-6.1-terra", "openai/gpt-6-luna",
+        ].contains(reference)
+    }
+
     static func defaultsKey(for account: CodexRuntimeProvider) -> String {
         "agentGatewayModels.\(account.accountKey)"
     }

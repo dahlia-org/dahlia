@@ -175,7 +175,21 @@ actor PiRuntimeService {
         let models = try await listedModels(provider, forceRefresh: forceRefresh)
         if models.isEmpty, provider.accountConnectionID == nil { throw PiRuntimeError.notLoggedIn }
         guard contextStore.provider == provider else { throw AIConfigurationError.providerChanged(provider.displayName) }
-        return models
+        guard provider == .local else { return models }
+        let choices = modelChoices(provider)
+        return models.filter {
+            let providerID = String($0.model.prefix { $0 != "/" })
+            return PiSubscription(rawValue: providerID) == nil || AgentModelSettings.isSubscriptionModelOn($0.model, choices: choices)
+        }
+    }
+
+    /// Visibility is app-only: Pi's complete listing still supplies settings and sign-in status.
+    func subscriptionModels(for subscription: PiSubscription) async throws -> [CodexModel] {
+        try await listedModels(.local, forceRefresh: false).filter { $0.model.hasPrefix("\(subscription.rawValue)/") }
+    }
+
+    func subscriptionModelChoicesDidChange() {
+        notifyModelsDidChange()
     }
 
     /// One Pi listing per account at a time, joined by every caller and cancelled when every caller is. A listing
@@ -221,6 +235,10 @@ actor PiRuntimeService {
         cachedModels.removeAll()
         modelLoads.removeAll()
         modelGeneration += 1
+        notifyModelsDidChange()
+    }
+
+    private func notifyModelsDidChange() {
         Self.modelsGeneration.withLock { $0 += 1 }
         NotificationCenter.default.post(name: Self.modelsDidChange, object: nil)
     }
@@ -402,8 +420,7 @@ actor PiRuntimeService {
 
     /// Signed in when Pi lists a model of that subscription; shares the cached or in-flight listing.
     func accountStatus(for subscription: PiSubscription) async throws -> AccountStatus {
-        let models = try await listedModels(.local, forceRefresh: false)
-        return AccountStatus(isAuthenticated: models.contains { $0.model.hasPrefix("\(subscription.rawValue)/") })
+        try await AccountStatus(isAuthenticated: !subscriptionModels(for: subscription).isEmpty)
     }
 
     /// Runs Pi's own OAuth flow. Cancelling the task closes Pi and its localhost callback server.

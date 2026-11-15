@@ -390,6 +390,22 @@ import Foundation
         }
 
         @Test
+        func subscriptionModelChoicesPersistWithoutChangingOtherAccounts() throws {
+            let suite = "dahlia-subscription-models-test-\(UUID().uuidString)"
+            let defaults = try #require(UserDefaults(suiteName: suite))
+            defer { defaults.removePersistentDomain(forName: suite) }
+            AgentModelSettings.setModel("openai/gpt-6.1-sol", on: false, for: .local, defaults: defaults)
+            AgentModelSettings.setModel("anthropic/claude-sonnet-4-6", on: true, for: .local, defaults: defaults)
+
+            let saved = AgentModelSettings.choices(for: .local, defaults: defaults)
+            #expect(!AgentModelSettings.isSubscriptionModelOn("openai/gpt-6.1-sol", choices: saved))
+            #expect(AgentModelSettings.isSubscriptionModelOn("anthropic/claude-sonnet-4-6", choices: saved))
+            #expect(AgentModelSettings.isSubscriptionModelOn("anthropic/claude-haiku-5-5", choices: saved))
+            #expect(!AgentModelSettings.isSubscriptionModelOn("openai/future-model", choices: saved))
+            #expect(AgentModelSettings.choices(for: .databricks(connectionID: .v7()), defaults: defaults).isEmpty)
+        }
+
+        @Test
         func gatewayModelChoicesAreKeptPerAccount() throws {
             let suite = "dahlia-agent-models-test-\(UUID().uuidString)"
             let defaults = try #require(UserDefaults(suiteName: suite))
