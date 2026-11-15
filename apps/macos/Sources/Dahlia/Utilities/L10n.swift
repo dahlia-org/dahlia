@@ -3201,6 +3201,17 @@ enum L10n { // swiftlint:disable:this type_body_length
 
     // MARK: - Codex Chat
 
+    static var chatSteer: String { String(localized: "Steer", bundle: bundle) }
+    static var chatQueue: String { String(localized: "Queue", bundle: bundle) }
+    static var chatSendNow: String { String(localized: "Send now", bundle: bundle) }
+    static var chatFollowUpBehavior: String { String(localized: "Follow-up behavior", bundle: bundle) }
+    static var chatFollowUpHelp: String { String(
+        localized: "While responding, send using the default behavior. Hold Command or press Command-Return to use the other action.",
+        bundle: bundle
+    ) }
+    static var chatQueuePaused: String { String(localized: "Queue paused", bundle: bundle) }
+    static var chatResumeQueue: String { String(localized: "Resume queue", bundle: bundle) }
+
     static var chatNoticeExpanded: String { String(localized: "Chat notice expanded", bundle: bundle) }
     static var chatNoticeCollapsed: String { String(localized: "Chat notice collapsed", bundle: bundle) }
     static var chatSlashCommands: String { String(localized: "Commands and skills", bundle: bundle) }

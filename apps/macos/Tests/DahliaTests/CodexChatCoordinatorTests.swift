@@ -175,6 +175,20 @@ import Foundation
         }
 
         @Test
+        func replacingDockedChatKeepsAPausedQueueUntilItIsRemoved() {
+            let coordinator = CodexChatCoordinator(service: TestCodexChatService(mode: .block), settings: AppSettings())
+            let session = coordinator.dockedSession
+            let queued = CodexChatManualSubmission(deliveryMode: .queue, text: "Held", images: [])
+            session.isQueuePaused = true
+            session.pendingManualInputs = [queued]
+            coordinator.newDockedChat()
+            #expect(coordinator.session(for: session.id) === session)
+            #expect(session.pendingManualInputs == [queued])
+            session.removePendingInput(id: queued.id)
+            #expect(coordinator.session(for: session.id) == nil)
+        }
+
+        @Test
         func replacingDockedChatKeepsGeneratingSessionAndReusesItFromHistory() async {
             let service = TestCodexChatService(mode: .block)
             let settings = AppSettings()
@@ -230,10 +244,11 @@ import Foundation
         @Test
         func hiddenSessionKeepsFollowUpWhenOriginalTurnFinishesDuringSteer() async {
             let service = CoordinatorTestCodexChatService(blocksTurn: true, delaysSteer: true)
-            let settings = AppSettings()
+            let settings = TestCodexChatFixtures.appSettings()
             settings.currentWorkspace = Self.workspace(name: "Background Follow-up")
             let coordinator = CodexChatCoordinator(service: service, settings: settings)
             let backgroundSession = coordinator.dockedSession
+            backgroundSession.deliveryMode = .steer
 
             backgroundSession.draft = "Original question"
             backgroundSession.sendDraft()

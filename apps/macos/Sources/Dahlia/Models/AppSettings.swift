@@ -137,6 +137,9 @@ final class AppSettings: ObservableObject {
     fileprivate nonisolated static let defaultAutomaticScreenshotIntervalSeconds = 20
     fileprivate nonisolated static let defaultAutomaticScreenshotChangeThresholdPercent = 5
 
+    nonisolated static let chatDeliveryModeUserDefaultsKey = "chatDeliveryMode"
+    @AppStorage(AppSettings.chatDeliveryModeUserDefaultsKey) var chatDeliveryMode: CodexChatDeliveryMode = .queue
+
     nonisolated static let hideLocalAccountUserDefaultsKey = "hideLocalAccount"
     @AppStorage(AppSettings.hideLocalAccountUserDefaultsKey) var hideLocalAccount = false
 
@@ -145,6 +148,7 @@ final class AppSettings: ObservableObject {
         appearanceDefaults: UserDefaults = .standard,
         generalDefaults: UserDefaults = .standard
     ) {
+        _chatDeliveryMode = AppStorage(wrappedValue: .queue, Self.chatDeliveryModeUserDefaultsKey, store: generalDefaults)
         _hideLocalAccount = AppStorage(wrappedValue: false, Self.hideLocalAccountUserDefaultsKey, store: generalDefaults)
         _appAppearanceRawValue = AppStorage(wrappedValue: AppAppearance.system.rawValue, AppAppearance.userDefaultsKey, store: appearanceDefaults)
         self.meetingSettingsDefaults = meetingSettingsDefaults

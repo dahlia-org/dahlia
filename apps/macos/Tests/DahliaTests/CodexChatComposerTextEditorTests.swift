@@ -124,6 +124,15 @@ import SwiftUI
         }
 
         @Test
+        func commandReturnUsesTheAlternateSubmissionWithoutChangingTheDraft() throws {
+            let harness = ComposerTextEditorHarness(text: "Draft")
+            try harness.sendKeyDown(characters: "\r", modifierFlags: .command, keyCode: 36)
+            #expect(harness.state.submissionCount == 0)
+            #expect(harness.state.alternateSubmissionCount == 1)
+            #expect(harness.state.text == "Draft")
+        }
+
+        @Test
         func shiftReturnInsertsNewlineWithoutSubmitting() throws {
             let harness = ComposerTextEditorHarness(text: "Draft")
             harness.textView.setSelectedRange(NSRange(location: harness.textView.string.utf16.count, length: 0))
@@ -154,6 +163,7 @@ import SwiftUI
                     set: { state.text = $0 }
                 ),
                 onSubmit: { state.submissionCount += 1 },
+                onAlternateSubmit: { state.alternateSubmissionCount += 1 },
                 onComplete: {
                     guard completesOnTab else { return false }
                     state.completionCount += 1
@@ -203,6 +213,7 @@ import SwiftUI
     private final class ComposerTextEditorState {
         var text: String
         var submissionCount = 0
+        var alternateSubmissionCount = 0
         var completionCount = 0
         var moves: [MoveCommandDirection] = []
 
@@ -214,6 +225,7 @@ import SwiftUI
     private struct ComposerTextEditorFixture: View {
         @Binding var text: String
         let onSubmit: () -> Void
+        let onAlternateSubmit: () -> Void
         let onComplete: () -> Bool
         let handlesVerticalKeys: Bool
         let onMoveCommand: (MoveCommandDirection) -> Void
@@ -230,7 +242,8 @@ import SwiftUI
                 onPasteImages: { false },
                 onHover: { _ in },
                 onComplete: onComplete,
-                handlesVerticalKeys: handlesVerticalKeys
+                handlesVerticalKeys: handlesVerticalKeys,
+                onAlternateSubmit: onAlternateSubmit
             )
             .frame(width: 300)
             .padding()

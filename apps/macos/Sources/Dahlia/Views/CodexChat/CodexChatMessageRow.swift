@@ -17,6 +17,12 @@ struct CodexChatMessageRow: View {
             if message.role == .user {
                 Spacer(minLength: 72)
                 VStack(alignment: .trailing, spacing: 4) {
+                    if message.isSteer {
+                        Label(L10n.chatSteer, systemImage: "arrow.turn.up.right")
+                            .font(.dahliaSecondary)
+                            .foregroundStyle(DahliaDesign.secondaryTextColor)
+                            .padding(.trailing, 8)
+                    }
                     CodexChatUserMessageContent(
                         rawText: visibleText,
                         images: message.images,

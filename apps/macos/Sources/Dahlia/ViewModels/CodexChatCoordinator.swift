@@ -343,7 +343,7 @@ final class CodexChatCoordinator {
         guard id != dockedSessionID,
               !detachedSessionIDs.contains(id),
               let session = sessions[id],
-              !preservesGeneratingSession || !session.hasPendingGenerationWork
+              !preservesGeneratingSession || (!session.hasPendingGenerationWork && !session.hasRecoverablePendingInputs)
         else { return false }
         sessions.removeValue(forKey: id)
         session.release()

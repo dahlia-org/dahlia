@@ -159,19 +159,27 @@ struct CodexChatView: View {
                 .padding(.horizontal, CodexChatDesign.contentHorizontalPadding)
         }
 
-        if let command = session.pendingCommand {
-            HStack {
-                Label(L10n.chatCommandQueued(command.text), systemImage: "clock")
-                    .lineLimit(1)
-                    .help(command.text)
-                Spacer(minLength: 8)
-                Button(L10n.cancel) { session.cancelPendingCommand(command) }
-                    .buttonStyle(.borderless)
+        if !session.pendingManualInputs.isEmpty {
+            VStack(alignment: .trailing, spacing: 0) {
+                HStack {
+                    Spacer()
+                    Label(session.isQueuePaused ? L10n.chatQueuePaused : L10n.chatQueue, systemImage: "clock")
+                    if session.isQueuePaused {
+                        Button(L10n.chatResumeQueue, action: session.resumeQueue)
+                            .buttonStyle(.borderless)
+                    }
+                }
+                .font(.dahliaSecondary)
+                .padding(.horizontal, CodexChatDesign.contentHorizontalPadding)
+                ScrollView {
+                    LazyVStack(spacing: 0) {
+                        ForEach(session.pendingManualInputs) { input in
+                            CodexChatQueuedInputRow(session: session, input: input)
+                        }
+                    }
+                }
+                .frame(maxHeight: 200)
             }
-            .font(.dahliaBody)
-            .foregroundStyle(DahliaDesign.secondaryTextColor)
-            .padding(.horizontal, CodexChatDesign.contentHorizontalPadding)
-            .padding(.vertical, 6)
         }
 
         if let activity = session.toolActivity {

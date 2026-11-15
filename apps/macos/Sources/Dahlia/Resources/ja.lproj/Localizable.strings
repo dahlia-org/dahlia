@@ -2108,3 +2108,12 @@
 "chat.run.failed" = "失敗";
 
 "chat.thread.removeReference" = "スレッドの参照を削除";
+
+/* Chat follow-up queue */
+"Steer" = "Steer";
+"Queue" = "Queue";
+"Send now" = "今すぐ送信";
+"Follow-up behavior" = "実行中の追加送信";
+"While responding, send using the default behavior. Hold Command or press Command-Return to use the other action." = "応答中は既定の方式で送信します。Command キーを押しながらクリックするか、⌘Return でもう一方の方式を使います。";
+"Queue paused" = "キューは一時停止中";
+"Resume queue" = "キューを再開";

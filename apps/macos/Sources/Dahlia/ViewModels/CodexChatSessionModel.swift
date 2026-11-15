@@ -88,6 +88,13 @@ final class CodexChatSessionModel: Identifiable {
     @ObservationIgnored private var threadLeaseID: UUID?
     @ObservationIgnored private var approvalDecisionReadyID: String?
     @ObservationIgnored private var approvalRearmTask: Task<Void, Never>?
+    var deliveryMode: CodexChatDeliveryMode {
+        get { settings.chatDeliveryMode }
+        set { settings.chatDeliveryMode = newValue }
+    }
+
+    var isQueuePaused = false
+    var editingPendingInputID: UUID?
     var pendingManualInputs: [CodexChatManualSubmission] = []
     @ObservationIgnored var preparingManualComposerSnapshot: CodexChatComposerSnapshot?
     @ObservationIgnored var lastManualSubmission: CodexChatManualSubmission?
@@ -114,9 +121,12 @@ final class CodexChatSessionModel: Identifiable {
     @ObservationIgnored private var preparedRuntimeProvider: CodexRuntimeProvider?
     @ObservationIgnored private var preparedModelsGeneration: Int?
 
+    var hasRecoverablePendingInputs: Bool {
+        !pendingManualInputs.isEmpty && (errorMessage == nil || backendThreadID != nil)
+    }
+
     var hasPendingGenerationWork: Bool {
-        let hasReachablePendingInput = !pendingManualInputs.isEmpty
-            && (errorMessage == nil || backendThreadID != nil)
+        let hasReachablePendingInput = !isQueuePaused && editingPendingInputID == nil && hasRecoverablePendingInputs
         return isGenerating
             || isTurnCleanupPending
             || steerTask != nil
@@ -310,6 +320,14 @@ final class CodexChatSessionModel: Identifiable {
     }
 
     func sendDraft() {
+        sendDraft(mode: deliveryMode)
+    }
+
+    func sendDraft(commandPressed: Bool) {
+        sendDraft(mode: isGenerating ? deliveryMode.resolved(commandPressed: commandPressed) : deliveryMode)
+    }
+
+    func sendDraft(mode: CodexChatDeliveryMode) {
         guard canSend else { return }
         let draftSnapshot = draft
         let referenceIDsSnapshot = selectedMeetingReferenceIDs
@@ -322,6 +340,7 @@ final class CodexChatSessionModel: Identifiable {
         )
         let text = serializedComposerText
         let submission = CodexChatManualSubmission(
+            deliveryMode: mode,
             text: text,
             images: imagesSnapshot,
             composerSnapshot: composerSnapshot,
@@ -335,16 +354,18 @@ final class CodexChatSessionModel: Identifiable {
         _ submission: CodexChatManualSubmission,
         reportsUsage: Bool = true
     ) {
-        let shouldEnqueue = isGenerating || isTurnCleanupPending
+        let shouldEnqueue = isGenerating || isTurnCleanupPending || (errorMessage == nil && !pendingManualInputs.isEmpty)
         if shouldEnqueue, let composerSnapshot = submission.composerSnapshot {
             let isDuplicate = preparingManualComposerSnapshot == composerSnapshot
-                || activeSteeringManualSubmission?.composerSnapshot == composerSnapshot
-                || pendingManualInputs.contains(where: { $0.composerSnapshot == composerSnapshot })
+                || (activeSteeringManualSubmission?.clearsComposerOnDelivery == true
+                    && activeSteeringManualSubmission?.composerSnapshot == composerSnapshot)
+                || pendingManualInputs.contains(where: { $0.clearsComposerOnDelivery && $0.composerSnapshot == composerSnapshot })
             guard !isDuplicate else { return }
         }
         if reportsUsage {
             usageTelemetryReporter(.aiChatPromptSubmitted)
         }
+        isQueuePaused = false
         if shouldEnqueue {
             enqueueManualInput(submission)
             return
@@ -416,6 +437,7 @@ final class CodexChatSessionModel: Identifiable {
     func stop() {
         guard isGenerating, !isStopRequested else { return }
         isStopRequested = true
+        isQueuePaused = true
         let approvals = pendingApprovals
         let activeTask = turnTask
         let localTurnID = activeTurnHandleID
@@ -956,7 +978,7 @@ extension CodexChatSessionModel {
         Task { await self.synchronizeThread() }
     }
 
-    private func notifyGenerationCompletionIfIdle() {
+    func notifyGenerationCompletionIfIdle() {
         guard !hasPendingGenerationWork else { return }
         generationCompletionHandler?()
     }
@@ -1273,7 +1295,8 @@ extension CodexChatSessionModel {
               errorMessage == nil else { return }
         if isGenerating {
             startSteeringPendingInputIfPossible()
-        } else if !pendingManualInputs.isEmpty {
+        } else if !isQueuePaused, !pendingManualInputs.isEmpty {
+            guard pendingManualInputs[0].id != editingPendingInputID else { return }
             guard pendingManualInputs[0].images.isEmpty || selectedModelSupportsImages else {
                 noticeMessage = L10n.chatModelDoesNotSupportImages
                 return
@@ -1300,10 +1323,13 @@ extension CodexChatSessionModel {
 
     func nextPendingSteerInput() -> CodexChatManualSubmission? {
         guard !activeTurnIsCommand,
-              let submission = pendingManualInputs.first,
-              !submission.text.hasPrefix("/"),
+              let index = pendingManualInputs.firstIndex(where: { $0.deliveryMode == .steer }),
+              pendingManualInputs[index].id != editingPendingInputID,
+              !isQueuePaused else { return nil }
+        let submission = pendingManualInputs[index]
+        guard !submission.text.hasPrefix("/"),
               submission.images.isEmpty || activeTurnSupportsImages == true else { return nil }
-        return pendingManualInputs.removeFirst()
+        return pendingManualInputs.remove(at: index)
     }
 
     var pendingCommand: CodexChatManualSubmission? {
@@ -1311,10 +1337,7 @@ extension CodexChatSessionModel {
     }
 
     func cancelPendingCommand(_ command: CodexChatManualSubmission) {
-        guard let index = pendingManualInputs.firstIndex(of: command) else { return }
-        pendingManualInputs.remove(at: index)
-        processPendingInputIfPossible()
-        notifyGenerationCompletionIfIdle()
+        removePendingInput(id: command.id)
     }
 
     func steer(
@@ -1334,6 +1357,7 @@ extension CodexChatSessionModel {
             let images = input.images
             let context = try await resolveContext(if: input.includesCurrentContext)
             guard !Task.isCancelled,
+                  !isQueuePaused,
                   isGenerating,
                   let submissionID = activeSubmissionID,
                   activeTurnID == turnID,
@@ -1404,8 +1428,8 @@ extension CodexChatSessionModel {
     }
 
     func applySuccessfulSteer(_ submission: CodexChatManualSubmission, context: CodexChatContext?, awaitsOutput: Bool) async {
-        clearComposer(ifMatching: submission.composerSnapshot)
-        messages.append(CodexChatMessage(role: .user, text: submission.text, context: context, images: submission.images))
+        if submission.clearsComposerOnDelivery { clearComposer(ifMatching: submission.composerSnapshot) }
+        messages.append(CodexChatMessage(role: .user, text: submission.text, context: context, images: submission.images, isSteer: true))
         if awaitsOutput { isAwaitingTurnOutput = true }
     }
 

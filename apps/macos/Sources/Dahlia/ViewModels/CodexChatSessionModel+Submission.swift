@@ -64,7 +64,7 @@ extension CodexChatSessionModel {
         submit(
             submission.text,
             images: submission.images,
-            composerSnapshot: submission.composerSnapshot,
+            composerSnapshot: submission.clearsComposerOnDelivery ? submission.composerSnapshot : nil,
             includesCurrentContext: submission.includesCurrentContext
         )
 
@@ -115,7 +115,12 @@ extension CodexChatSessionModel {
     func enqueueManualInput(_ submission: CodexChatManualSubmission) {
         lastSubmittedText = submission.text
         lastManualSubmission = submission
-        pendingManualInputs.append(submission)
+        var queued = submission
+        if submission.deliveryMode == .queue || submission.text.hasPrefix("/") {
+            clearComposer(ifMatching: submission.composerSnapshot)
+            queued.clearsComposerOnDelivery = false
+        }
+        pendingManualInputs.append(queued)
         processPendingInputIfPossible()
     }
 

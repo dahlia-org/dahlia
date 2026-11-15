@@ -81,6 +81,7 @@ private struct AgentSettingsTabs: View {
                 Form {
                     AgentRuntimeSection(provider: account, launch: launch)
                     AgentEnvironmentSection(model: launch)
+                    AgentChatSettingsSection()
                     AgentChatInstructionsSection(account: account)
                 }
                 .formStyle(.grouped)
