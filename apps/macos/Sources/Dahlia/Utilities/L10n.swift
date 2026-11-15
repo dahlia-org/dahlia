@@ -2425,6 +2425,17 @@ enum L10n { // swiftlint:disable:this type_body_length
     static var openLanguageSettings: String { String(localized: "Open Language Settings", bundle: bundle) }
     static var recordedLanguages: String { String(localized: "Recorded Languages", bundle: bundle) }
     static var transcriptionLanguage: String { String(localized: "Transcription Language", bundle: bundle) }
+    static var settingsMeetingLinksIntro: String { String(localized: "settings.meetingLinks.intro", bundle: bundle) }
+    static var meetingDataProcessing: String { String(localized: "meetingDataProcessing", bundle: bundle) }
+    static var meetingProcessingVideo: String { String(localized: "meetingProcessingVideo", bundle: bundle) }
+    static var meetingProcessingScreenshotCapture: String { String(localized: "meetingProcessingScreenshotCapture", bundle: bundle) }
+    static var meetingProcessingFlowTitle: String { String(localized: "meetingProcessingFlowTitle", bundle: bundle) }
+    static var meetingProcessingFlowHint: String { String(localized: "meetingProcessingFlowHint", bundle: bundle) }
+    static var meetingProcessingAudio: String { String(localized: "meetingProcessingAudio", bundle: bundle) }
+    static var meetingProcessingLiveTranscription: String { String(localized: "meetingProcessingLiveTranscription", bundle: bundle) }
+    static var meetingProcessingSummaryGeneration: String { String(localized: "meetingProcessingSummaryGeneration", bundle: bundle) }
+    static var meetingProcessingOpenWorkspaceSettings: String { String(localized: "meetingProcessingOpenWorkspaceSettings", bundle: bundle) }
+    static var meetingProcessingImageRecognition: String { String(localized: "meetingProcessingImageRecognition", bundle: bundle) }
     static var liveTranscriptionLanguage: String { String(localized: "liveTranscriptionLanguage", bundle: bundle) }
     static var liveTranscriptionLanguageDescription: String { String(
         localized: "liveTranscriptionLanguageDescription",

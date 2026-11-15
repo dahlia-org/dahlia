@@ -18,16 +18,15 @@ enum SettingsCategory: String, CaseIterable, Identifiable {
     case backups
     case search
     case meetings
-    /// Opens Meetings on its tab.
+    /// Opens the corresponding step in the meeting processing flow.
     case transcription
-    /// Opens Meetings on its tab.
+    /// Opens the corresponding step in the meeting processing flow.
     case recordingStopDetection
-    /// Opens Meetings on its tab.
+    /// Opens the corresponding step in the meeting processing flow.
     case liveSubtitles
-    /// Opens Meetings on its tab.
+    /// Opens the corresponding step in the meeting processing flow.
     case screenshots
     case calendar
-    /// Opens Meetings on its tab.
     case meetingLinks
     case modelProvider = "accounts"
     case aiSummary
@@ -163,6 +162,14 @@ enum SettingsCategory: String, CaseIterable, Identifiable {
             [L10n.modelProvider, L10n.model, L10n.reasoningEffort, "AI", "ChatGPT", "OpenAI", "Anthropic", "Claude", "Databricks", L10n.unityGateway]
         case .meetings:
             [
+                L10n.language,
+                L10n.meetingDataProcessing,
+                L10n.meetingProcessingFlowTitle,
+                L10n.meetingProcessingScreenshotCapture,
+                L10n.meetingProcessingLiveTranscription,
+                L10n.meetingProcessingImageRecognition,
+                L10n.imageAnalysis,
+                L10n.generatedContentLanguage,
                 L10n.transcription,
                 L10n.transcriptionLanguage,
                 L10n.automaticDetectionLanguagesTitle,
@@ -183,6 +190,9 @@ enum SettingsCategory: String, CaseIterable, Identifiable {
                 L10n.adaptiveScreenshotInterval,
                 L10n.screenshotInterval,
                 L10n.sharedContent,
+            ]
+        case .meetingLinks:
+            [
                 L10n.meetingLinks,
                 L10n.meetingLinkApplications,
                 L10n.meetingLinkServiceOverrides,

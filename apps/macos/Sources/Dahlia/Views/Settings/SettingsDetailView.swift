@@ -131,8 +131,10 @@ struct SettingsDetailView: View {
             )
         case .search:
             SearchSettingsView(database: appDatabase)
-        case .meetings, .transcription, .recordingStopDetection, .liveSubtitles, .screenshots, .meetingLinks:
-            MeetingSettingsView()
+        case .meetings, .transcription, .recordingStopDetection, .liveSubtitles, .screenshots:
+            MeetingProcessingSettingsView()
+        case .meetingLinks:
+            MeetingLinkSettingsView()
         case .dahliaMCP:
             MCPSettingsView(
                 workspaces: workspaceManagementModel.workspaces,
@@ -156,6 +158,7 @@ struct SettingsDetailView: View {
         case .accountsAndWorkspaces: L10n.settingsAccountsIntro
         case .agents: L10n.settingsAgentsIntro
         case .meetings: L10n.settingsMeetingsIntro
+        case .meetingLinks: L10n.settingsMeetingLinksIntro
         case .dahliaMCP: L10n.settingsDahliaMCPIntro
         case .workspace: L10n.settingsWorkspaceManagementIntro
         case .backups: L10n.settingsDataProtectionIntro
