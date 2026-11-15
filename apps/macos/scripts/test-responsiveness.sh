@@ -25,6 +25,7 @@ suites=(
     ChatRunTests                         # bounded run subscriptions and history projections
     CodexChatSubscriptionTests           # dropped readers reattach or reload completed history
     CodexChatHistoryPagingTests           # bounded initial chat history and stale page cancellation
+    CodexChatThinkingPresentationTests    # immediate submission acknowledgement before Pi startup
     CodexChatStreamingUpdateLimiterTests  # coalesced streaming updates
     CodexChatMarkdownProjectionModelTests # latest-wins Markdown projection
     CodexChatMarkdownCacheTests           # completed-cache count and byte limits
