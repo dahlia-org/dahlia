@@ -1763,8 +1763,6 @@ enum L10n { // swiftlint:disable:this type_body_length
     static var codexCLI: String { String(localized: "Codex CLI", bundle: bundle) }
     static var claudeCode: String { String(localized: "Claude Code", bundle: bundle) }
     static var mcpPreview: String { String(localized: "Command Preview", bundle: bundle) }
-    static var mcpShowCommand: String { String(localized: "mcp.showCommand", bundle: bundle) }
-    static var mcpShowJSON: String { String(localized: "mcp.showJSON", bundle: bundle) }
     static var mcpOtherApps: String { String(localized: "mcp.otherApps", bundle: bundle) }
     static var mcpAllAccounts: String { String(localized: "mcp.allAccounts", bundle: bundle) }
     static var mcpAccountWorkspaces: String { String(localized: "mcp.accountWorkspaces", bundle: bundle) }

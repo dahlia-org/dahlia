@@ -2046,8 +2046,6 @@
 "mcp.noWorkspaces" = "この Mac に追加済みのワークスペースはありません。";
 "mcp.scopeUnavailable" = "選択したアカウントまたはワークスペースが見つかりません。公開する範囲を選び直してください。";
 "mcp.otherApps" = "その他のアプリ（JSON）";
-"mcp.showCommand" = "接続コマンドを表示";
-"mcp.showJSON" = "設定内容を表示";
 "Chat resume state missing" = "このチャットの実行用ファイルがありません。履歴は表示できますが、続けるには新しいチャットを開始してください。";
 "Search meetings, screenshots, projects, and chats" = "ミーティング・スクリーンショット・プロジェクト・チャットを検索";
 

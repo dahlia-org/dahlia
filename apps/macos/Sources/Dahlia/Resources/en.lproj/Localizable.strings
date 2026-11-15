@@ -2046,8 +2046,6 @@
 "mcp.noWorkspaces" = "No workspaces have been added to this Mac for this selection.";
 "mcp.scopeUnavailable" = "The selected account or workspace is no longer available. Choose the access scope again.";
 "mcp.otherApps" = "Other apps (JSON)";
-"mcp.showCommand" = "Show connection command";
-"mcp.showJSON" = "Show configuration";
 "Chat resume state missing" = "The runtime file for this chat is missing. You can view its history; start a new chat to continue.";
 "Search meetings, screenshots, projects, and chats" = "Search meetings, screenshots, projects, and chats";
 

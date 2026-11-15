@@ -10,16 +10,15 @@ struct MCPCommandView: View {
     @State private var isReRegistrationHelpPresented = false
 
     var body: some View {
-        VStack(alignment: .leading) {
-            DisclosureGroup(L10n.mcpShowCommand) {
-                Text(command)
-                    .font(.dahliaBody.monospaced())
-                    .textSelection(.enabled)
-                    .multilineTextAlignment(.leading)
-                    .accessibilityLabel(L10n.registrationCommand(title))
-            }
+        VStack(alignment: .leading, spacing: 16) {
+            Text(command)
+                .font(.dahliaBody.monospaced())
+                .textSelection(.enabled)
+                .multilineTextAlignment(.leading)
+                .accessibilityLabel(L10n.registrationCommand(title))
+                .frame(maxWidth: .infinity, alignment: .leading)
 
-            HStack {
+            HStack(spacing: 16) {
                 Spacer()
 
                 Button(
@@ -43,6 +42,9 @@ struct MCPCommandView: View {
                     action: copyRegistrationCommand
                 )
                 .buttonStyle(.borderedProminent)
+                .buttonBorderShape(.capsule)
+                .controlSize(.large)
+                .font(.dahliaBody.weight(.semibold))
             }
         }
     }
