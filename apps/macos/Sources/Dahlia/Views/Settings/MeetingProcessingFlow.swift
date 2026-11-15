@@ -40,11 +40,18 @@ struct MeetingProcessingFlow: View {
     ]
 
     var body: some View {
+        ScrollView(.horizontal) {
+            diagram
+        }
+        .fixedSize(horizontal: false, vertical: true)
+    }
+
+    private var diagram: some View {
         Grid(horizontalSpacing: 40, verticalSpacing: 20) {
             GridRow {
                 Color.clear.gridCellUnsizedAxes([.horizontal, .vertical])
                 stage(.liveTranscription, detail: L10n.settingsDuringRecording)
-                Color.clear.gridCellUnsizedAxes([.horizontal, .vertical])
+                workspaceHeading.hidden()
                     .allowsHitTesting(false)
             }
             GridRow {
@@ -58,8 +65,8 @@ struct MeetingProcessingFlow: View {
                 workspaceCard(.imageAnalysis)
             }
         }
-        .padding(.horizontal, 18)
-        .padding(.vertical, 12)
+        .padding(.horizontal, 24)
+        .padding(.vertical, 18)
         .backgroundPreferenceValue(MeetingProcessingFlowBounds.self) { bounds in
             GeometryReader { geometry in
                 if let summary = bounds[.summary], let imageAnalysis = bounds[.imageAnalysis] {
@@ -102,9 +109,7 @@ struct MeetingProcessingFlow: View {
             selection = .workspace
         } label: {
             VStack(alignment: .leading, spacing: 20) {
-                Label(L10n.workspaceSettings, systemImage: Node.workspace.symbol)
-                    .font(.dahliaHeadline)
-                    .foregroundStyle(DahliaDesign.primaryTextColor)
+                workspaceHeading
                 Spacer(minLength: 0)
             }
             .frame(width: cards.width, height: cards.height + 40, alignment: .topLeading)
@@ -122,6 +127,13 @@ struct MeetingProcessingFlow: View {
         }
         .accessibilityAddTraits(selection == .workspace ? [.isSelected] : [])
         .accessibilityHint(L10n.meetingProcessingFlowHint)
+    }
+
+    private var workspaceHeading: some View {
+        Label(L10n.workspaceSettings, systemImage: Node.workspace.symbol)
+            .font(.dahliaHeadline)
+            .foregroundStyle(DahliaDesign.primaryTextColor)
+            .fixedSize()
     }
 
     private func workspaceCard(_ node: Node) -> some View {
