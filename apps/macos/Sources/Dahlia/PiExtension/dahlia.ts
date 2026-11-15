@@ -158,7 +158,7 @@ export default function (pi: any) {
 
   if (mode === "chat") {
     pi.registerTool({
-      name: "dahlia_create_backup",
+      name: "dah_create_backup",
       label: "Create Dahlia backup",
       description: "Create a verified tar.gz backup of the specified Local Workspace in this chat's account using Dahlia's GUI backup service. Returns a local file path for MCP upload. Excludes audio and Server Workspaces.",
       parameters: { type: "object", properties: { workspace_id: { type: "string", description: "Workspace TypeID (ws_...) to back up." } }, required: ["workspace_id"], additionalProperties: false },
@@ -264,7 +264,7 @@ export default function (pi: any) {
         return isSandboxed ? undefined : block("This tool is not available in Dahlia's chat.");
       }
 
-      if (name === "dahlia_create_backup" || threadTools.some((tool) => tool.name === name)) return;
+      if (name === "dah_create_backup" || threadTools.some((tool) => tool.name === name)) return;
 
       // Pi lists an MCP tool under its server's namespace; the alias is the server name.
       const server: string | undefined = tool?.sourceInfo?.path === "builtin:mcp" ? tool.namespace?.aliases?.[0] : undefined;

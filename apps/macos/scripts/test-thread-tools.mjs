@@ -7,11 +7,12 @@ test("thread tools forward only their registered method and original parameters"
   const calls = [];
   registerThreadTools({ registerTool: (tool) => registered.push(tool) }, async (...args) => { calls.push(args); return { ok: true }; });
   assert.equal(registered.length, 8);
+  assert.ok(registered.every((tool) => tool.name.startsWith("dah_thread_")));
   for (const tool of registered) {
     const params = { input: "hello", thread_id: "other" };
     const context = {};
     const result = await tool.execute("call", params, undefined, undefined, context);
-    assert.deepEqual(calls.at(-1), [context, tool.name.replace("dahlia_", ""), params]);
+    assert.deepEqual(calls.at(-1), [context, tool.name.replace("dah_", ""), params]);
     assert.deepEqual(JSON.parse(result.content[0].text), { ok: true });
     assert.equal(tool.parameters.additionalProperties, false);
   }

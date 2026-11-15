@@ -694,8 +694,8 @@ import Synchronization
             #expect(launch.arguments.contains("--session-id"))
             #expect(launch.arguments
                 .contains(
-                    "read,ls,write,edit,bash,skills_list,skill_view,skill_manage,cronjob,memory,dahlia_create_backup,dahlia_thread_list,dahlia_thread_search,dahlia_thread_read,"
-                        + "dahlia_thread_start,dahlia_thread_send,dahlia_thread_wait,dahlia_thread_interrupt,dahlia_thread_update,mcp__dahlia__*"
+                    "read,ls,write,edit,bash,skills_list,skill_view,skill_manage,cronjob,memory,dah_create_backup,dah_thread_list,dah_thread_search,dah_thread_read,"
+                        + "dah_thread_start,dah_thread_send,dah_thread_wait,dah_thread_interrupt,dah_thread_update,mcp__dahlia__*"
                 ))
             let work = fixture.pi.rootURL.appending(path: "work")
             #expect(launch.cwd == work)
@@ -1108,8 +1108,8 @@ import Synchronization
             let withGmail = try #require(pi.launches.all.last { $0.mode == .chat })
             #expect(withGmail.arguments
                 .contains(
-                    "read,ls,write,edit,bash,skills_list,skill_view,skill_manage,cronjob,memory,dahlia_create_backup,dahlia_thread_list,dahlia_thread_search,dahlia_thread_read,"
-                        + "dahlia_thread_start,dahlia_thread_send,dahlia_thread_wait,dahlia_thread_interrupt,dahlia_thread_update,mcp__dahlia__*,mcp__gmail__*,mcp__notion__*"
+                    "read,ls,write,edit,bash,skills_list,skill_view,skill_manage,cronjob,memory,dah_create_backup,dah_thread_list,dah_thread_search,dah_thread_read,"
+                        + "dah_thread_start,dah_thread_send,dah_thread_wait,dah_thread_interrupt,dah_thread_update,mcp__dahlia__*,mcp__gmail__*,mcp__notion__*"
                 ))
             // Dahlia's extension registers the sign-ins mcp.json names in every process; none loads the provider file on its own.
             #expect(pi.launches.all.allSatisfy { !$0.arguments.contains { $0.hasSuffix("databricks-provider.ts") } })

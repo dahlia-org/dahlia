@@ -55,7 +55,7 @@ Dahlia のパスは `apps/macos/Sources/Dahlia/` からの相対である。
 | 再起動の時 | `queued` `running` `waitingForUser` を全部 `interrupted` にする | [レビュー] `Services/ChatThreadStore.swift:130` |
 | アカウント | 動かすのは選択中のアカウントだけ | [レビュー] `Services/PiChatService+Orchestration.swift:40-45` |
 | スキル | 同梱 4 件と、アカウントの `pi/skills/`。反映は次のプロセスから | [確認] `PiExtension/dahlia.ts:133-141` |
-| 過去の会話の検索 | `dahlia_thread_search`（FTS5）と `dahlia_thread_read` | [確認] `PiExtension/thread-tools.ts` |
+| 過去の会話の検索 | `dah_thread_search`（FTS5）と `dah_thread_read` | [確認] `PiExtension/thread-tools.ts` |
 | 背景ジョブ | `jobs_background`。`(indexKind, targetKind, targetKey)` で 1 件にまとまる | [確認] `Database/BackgroundJobsMigration.swift:24-26` |
 | 通知と未読 | 会議の通知はある。スレッドに未読の考え方はない | [確認] |
 | メモリー | Desktop にはない | [確認] |

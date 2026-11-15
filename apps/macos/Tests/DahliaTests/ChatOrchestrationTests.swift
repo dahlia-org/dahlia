@@ -573,8 +573,8 @@
             }
             let childLaunch = try #require(fixture.runtime.launches.all.first { $0.arguments.contains(childID) })
             let toolIndex = try #require(childLaunch.arguments.firstIndex(of: "--tools"))
-            #expect(!childLaunch.arguments[toolIndex + 1].contains("dahlia_thread_start"))
-            #expect(childLaunch.arguments[toolIndex + 1].contains("dahlia_thread_read"))
+            #expect(!childLaunch.arguments[toolIndex + 1].contains("dah_thread_start"))
+            #expect(childLaunch.arguments[toolIndex + 1].contains("dah_thread_read"))
             await fixture.service.interruptActiveTurn(threadID: childID, turnID: nil)
             #expect(try fixture.store.latestRun(threadID: parent.id)?.status == "running")
             await fixture.service.stopAccountRuns(except: "other")
