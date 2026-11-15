@@ -29,6 +29,7 @@ actor PiRuntimeService {
         var arguments: [String] = []
         var environment: [String: String] = [:]
         var fileAccess = PiFileAccessSettings()
+        var profile: PiExecutionProfile = .interactive
     }
 
     struct AccountStatus: Equatable {
@@ -95,6 +96,11 @@ actor PiRuntimeService {
         if let requested = contextStore.requestedProvider, requested != provider, options.mode != .control || provider != .local {
             throw AIConfigurationError.providerChanged(provider.displayName)
         }
+        if options.profile == .review {
+            guard AgentLearningSettings.reviewEnabled(provider.accountKey), !AgentBackgroundActivity.isRecording,
+                  options.environment["DAHLIA_PI_MEMORY_ENABLED"] != "1" || AgentLearningSettings.memoryEnabled(provider.accountKey)
+            else { throw CancellationError() }
+        }
         let agentURL = try agentLocator.agentURL(for: provider)
         let transport = try launcher(options, provider, agentURL)
         let tokenResolver = tokenResolver
@@ -109,7 +115,8 @@ actor PiRuntimeService {
                     // Keep authentication failures distinct so callers can defer work and report a sanitized category.
                     throw PiRuntimeError.providerAuthenticationFailed(error.localizedDescription)
                 }
-            case "reviewTriage", "createBackup", "thread_list", "thread_search", "thread_read",
+            case "memory", "skills_list", "skill_view", "skill_manage", "cronjob", "scheduledTool",
+                 "reviewTriage", "createBackup", "thread_list", "thread_search", "thread_read",
                  "thread_start", "thread_send", "thread_wait", "thread_interrupt", "thread_update":
                 guard let chatBridge else { return .null }
                 return try await chatBridge(method, payload)
@@ -165,6 +172,10 @@ actor PiRuntimeService {
         return provider
     }
 
+    nonisolated func isSelectedProvider(_ provider: CodexRuntimeProvider) -> Bool {
+        contextStore.provider == provider && contextStore.requestedProvider == provider && contextStore.isConfigured
+    }
+
     // MARK: Models
 
     func models(forceRefresh: Bool = false) async throws -> [CodexModel] {
@@ -175,7 +186,21 @@ actor PiRuntimeService {
         let models = try await listedModels(provider, forceRefresh: forceRefresh)
         if models.isEmpty, provider.accountConnectionID == nil { throw PiRuntimeError.notLoggedIn }
         guard contextStore.provider == provider else { throw AIConfigurationError.providerChanged(provider.displayName) }
-        return models
+        guard provider == .local else { return models }
+        let choices = modelChoices(provider)
+        return models.filter {
+            let providerID = String($0.model.prefix { $0 != "/" })
+            return PiSubscription(rawValue: providerID) == nil || AgentModelSettings.isSubscriptionModelOn($0.model, choices: choices)
+        }
+    }
+
+    /// Visibility is app-only: Pi's complete listing still supplies settings and sign-in status.
+    func subscriptionModels(for subscription: PiSubscription) async throws -> [CodexModel] {
+        try await listedModels(.local, forceRefresh: false).filter { $0.model.hasPrefix("\(subscription.rawValue)/") }
+    }
+
+    func subscriptionModelChoicesDidChange() {
+        notifyModelsDidChange()
     }
 
     /// One Pi listing per account at a time, joined by every caller and cancelled when every caller is. A listing
@@ -195,7 +220,9 @@ actor PiRuntimeService {
         }
         modelLoads[provider] = (load, (modelLoads[provider]?.waiters ?? 0) + 1)
         let result = await withTaskCancellationHandler {
-            await Result { try await load.value }
+            await Result {
+                try await load.value
+            }
         } onCancel: {
             Task { await self.leaveModelLoad(load, provider: provider) }
         }
@@ -221,6 +248,10 @@ actor PiRuntimeService {
         cachedModels.removeAll()
         modelLoads.removeAll()
         modelGeneration += 1
+        notifyModelsDidChange()
+    }
+
+    private func notifyModelsDidChange() {
         Self.modelsGeneration.withLock { $0 += 1 }
         NotificationCenter.default.post(name: Self.modelsDidChange, object: nil)
     }
@@ -292,9 +323,13 @@ actor PiRuntimeService {
 
     /// Lists a gateway's models and saves the answer, joining a listing of the same gateway that is already running.
     private func listGateway(_ gateway: AgentMCPProvider, account: CodexRuntimeProvider, agentURL: URL) async throws {
-        let listing = gatewayListings[account]?[gateway.id] ?? Task { try await self.modelServices(gateway, account: account) }
+        let listing = gatewayListings[account]?[gateway.id] ?? Task {
+            try await self.modelServices(gateway, account: account)
+        }
         gatewayListings[account, default: [:]][gateway.id] = listing
-        let result = await Result { try await listing.value }
+        let result = await Result {
+            try await listing.value
+        }
         let isCurrent = gatewayListings[account]?[gateway.id] == listing
         if isCurrent { gatewayListings[account]?[gateway.id] = nil }
         // Every caller that joined sees the listing's failure, such as a sign-in the Models tab must report.
@@ -369,7 +404,9 @@ actor PiRuntimeService {
     private func availableModels(provider: CodexRuntimeProvider) async throws -> [CodexModel] {
         let cwd = try agentLocator.agentURL(for: provider)
         let connection = try await connect(.init(mode: .control, cwd: cwd, arguments: ["--no-session", "--no-tools"]), provider: provider)
-        let result = await Result { try await connection.request("get_available_models", timeout: Self.controlTimeout) }
+        let result = await Result {
+            try await connection.request("get_available_models", timeout: Self.controlTimeout)
+        }
         await close(connection)
         let providerIDs = Set(provider.piProviderIDs)
         let models = try (result.get().objectValue?["models"]?.arrayValue ?? [])
@@ -390,7 +427,9 @@ actor PiRuntimeService {
         let cwd = try agentLocator.agentURL(for: provider)
         let arguments = ["--no-session", "--no-tools"] + PiBundle.presetSkillURLs().flatMap { ["--skill", $0.path] }
         let connection = try await connect(.init(mode: .skills, cwd: cwd, arguments: arguments), provider: provider)
-        let result = await Result { try await connection.request("get_commands", timeout: Self.controlTimeout) }
+        let result = await Result {
+            try await connection.request("get_commands", timeout: Self.controlTimeout)
+        }
         await close(connection)
         guard let commands = try result.get().objectValue?["commands"] else {
             throw PiRuntimeError.invalidProtocolResponse
@@ -402,8 +441,7 @@ actor PiRuntimeService {
 
     /// Signed in when Pi lists a model of that subscription; shares the cached or in-flight listing.
     func accountStatus(for subscription: PiSubscription) async throws -> AccountStatus {
-        let models = try await listedModels(.local, forceRefresh: false)
-        return AccountStatus(isAuthenticated: models.contains { $0.model.hasPrefix("\(subscription.rawValue)/") })
+        try await AccountStatus(isAuthenticated: !subscriptionModels(for: subscription).isEmpty)
     }
 
     /// Runs Pi's own OAuth flow. Cancelling the task closes Pi and its localhost callback server.
@@ -864,6 +902,7 @@ actor PiRuntimeService {
         environment["DAHLIA_PI_MODE"] = options.mode.rawValue
         environment["DAHLIA_PI_BRIDGED_PROVIDERS"] = provider.piBridgedProviderIDs.joined(separator: ",")
         environment.merge(options.environment) { $1 }
+        environment["DAHLIA_PI_PROFILE"] = options.profile.rawValue
         try PiSandbox.validateSkillsSearchPath(agentURL: agentURL, searchPath: environment["PATH"] ?? "", cwd: options.cwd)
         if options.mode == .chat {
             let searchPath = environment["PATH"] ?? ""
@@ -880,7 +919,7 @@ actor PiRuntimeService {
             environment["DAHLIA_PI_SANDBOX"] = try String(decoding: JSONEncoder().encode(
                 PiSandbox.command(
                     cwd: options.cwd, agentURL: agentURL, piExecutableURL: executableURL,
-                    fileAccess: options.fileAccess, searchPath: searchPath, environment: environment
+                    fileAccess: options.fileAccess, profile: options.profile, searchPath: searchPath, environment: environment
                 )
             ), as: UTF8.self)
             environment["DAHLIA_PI_SANDBOX_HIDDEN_ENV"] = try String(

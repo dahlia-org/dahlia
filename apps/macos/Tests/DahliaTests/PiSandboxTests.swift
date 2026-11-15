@@ -8,12 +8,12 @@ import Foundation
 
     struct PiSandboxTests {
         @Test
-        func defaultAccessGroupsKeepDahliaDataLimitedToImagesAndDatabaseFiles() throws {
+        func defaultAccessGroupsKeepDahliaDataLimitedToImagesAndDatabaseFiles() {
             let work = URL(fileURLWithPath: "/example/work")
             let agent = URL(fileURLWithPath: "/example/accounts/local/pi")
             let access = PiSandbox.defaultFileAccess(cwd: work, agentURL: agent)
             #expect(access.resources.contains { $0.path == work.path && $0.access == .readWrite })
-            #expect(access.resources.contains { $0.path == agent.appending(path: "skills").path && $0.access == .readWrite })
+            #expect(access.resources.contains { $0.path == agent.appending(path: "skills").path && $0.access == .readOnly })
             let directories = access.data.filter(\.isDirectory)
             #expect(directories.count == 1)
             #expect(directories.first?.path == PiSandbox.realPath(ScreenshotFileStore.defaultDirectory))
@@ -37,7 +37,7 @@ import Foundation
         }
 
         @Test
-        func accountSkillsAreWritableWithoutExposingCredentialsOrOtherAccounts() throws {
+        func accountSkillsAreReadOnlyWithoutExposingCredentialsOrOtherAccounts() throws {
             let root = FileManager.default.temporaryDirectory.appending(path: "PiSandboxSkills-\(UUID())")
             defer { try? FileManager.default.removeItem(at: root) }
             let support = root.appending(path: "support")
@@ -47,12 +47,14 @@ import Foundation
             let work = root.appending(path: "work")
             try FileManager.default.createDirectory(at: work, withIntermediateDirectories: true)
             let skills = agent.appending(path: "skills")
+            try FileManager.default.createDirectory(at: skills.appending(path: "learned"), withIntermediateDirectories: true)
+            try Data("instructions".utf8).write(to: skills.appending(path: "learned/SKILL.md"))
             #expect(try run(
                 "mkdir '\(skills.path)/learned' && echo instructions > '\(skills.path)/learned/SKILL.md'",
                 cwd: work,
                 agent: agent,
                 support: support
-            ) == 0)
+            ) != 0)
             #expect(try run("cat '\(skills.path)/learned/SKILL.md'", cwd: work, agent: agent, support: support) == 0)
             let startup = skills.appending(path: "startup.sh")
             try Data("true".utf8).write(to: startup)
@@ -83,7 +85,7 @@ import Foundation
             ) != 0)
             #expect(try run("ln '\(agent.path)/auth.json' '\(skills.path)/hard-link'", cwd: work, agent: agent, support: support) != 0)
             #expect(try run("echo changed > '\(other.path)/skills/SKILL.md'", cwd: work, agent: agent, support: support) != 0)
-            #expect(try run("rm -r '\(skills.path)/learned'", cwd: work, agent: agent, support: support) == 0)
+            #expect(try run("rm -r '\(skills.path)/learned'", cwd: work, agent: agent, support: support) != 0)
         }
 
         @Test

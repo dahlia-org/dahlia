@@ -34,12 +34,19 @@ extension ChatThreadStore {
     }
 
     func enqueueNotification(_ run: ChatRunRecord, deliveredRuns: [ChatRunRecord]) throws {
+        var run = run
+        run.origin = "thread"
         try dbQueue.write { db in
             let count = try Int.fetchOne(db, sql: "SELECT COUNT(*) FROM chat_runs WHERE rootRunID = ?", arguments: [run.rootRunID]) ?? 0
             // Reaching the budget leaves the results available for a later explicit read; no automatic calls follow.
             if count < 12 {
                 try run.insert(db)
-                try Self.append([.object(["type": .string("thread_notification"), "content": .string(run.input)])], threadID: run.threadID, in: db)
+                try Self.append(
+                    [.object(["type": .string("thread_notification"), "content": .string(run.input)])],
+                    threadID: run.threadID,
+                    runID: run.id,
+                    in: db
+                )
             }
             for delivered in deliveredRuns {
                 try db.execute(sql: "UPDATE chat_runs SET resultDeliveredAt = ? WHERE id = ?", arguments: [Date(), delivered.id])
@@ -83,7 +90,9 @@ extension ChatThreadStore {
             )
             let visible = Array(rows.prefix(limit))
             let cursor = try rows.count > limit ? visible.last
-                .map { try JSONEncoder().encode([String($0.updatedAt.timeIntervalSince1970), $0.id]).base64EncodedString() } : nil
+                .map {
+                    try JSONEncoder().encode([String($0.updatedAt.timeIntervalSince1970), $0.id]).base64EncodedString()
+                } : nil
             let threads = try visible.map { row -> JSONValue in
                 let status = try String.fetchOne(db, sql: "SELECT \(activeStatus) FROM chat_threads WHERE id = ?", arguments: [row.id]) ?? row.status
                 return .object([

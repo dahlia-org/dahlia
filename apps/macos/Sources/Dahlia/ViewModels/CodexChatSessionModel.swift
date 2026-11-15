@@ -7,6 +7,7 @@ final class CodexChatSessionModel: Identifiable {
     let id: CodexChatSessionID
     let accountID: String
     var contextWorkspaceID: UUID? { settings.currentWorkspace?.id }
+    private(set) var isReadOnly = false
     private(set) var backendThreadID: String?
     private(set) var didStartBackendThread = false
     private(set) var title: String
@@ -863,6 +864,7 @@ extension CodexChatSessionModel {
     private func apply(_ thread: CodexChatThread, preservingPendingMessages: Bool = false, keepingSelection: Bool = false) {
         historySynchronizationGeneration += 1
         backendThreadID = thread.id
+        isReadOnly = thread.isReadOnly
         title = thread.title
         if !preservingPendingMessages {
             messages = thread.messages
@@ -933,7 +935,7 @@ extension CodexChatSessionModel {
             messages: reconciledMessages,
             model: thread.model,
             reasoningEffort: thread.reasoningEffort,
-            earlierMessagesCursor: thread.earlierMessagesCursor
+            earlierMessagesCursor: thread.earlierMessagesCursor, isReadOnly: thread.isReadOnly
         )
         // Pi does not write handled commands or their notifications into its rollout.
         let hasNotices = messages.contains { if case .notice = $0.role { true } else { false } }

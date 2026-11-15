@@ -8,6 +8,8 @@ struct AgentSettingsView: View {
         case models
         case mcps
         case skills
+        case memory
+        case schedules
         case packages
         case security
 
@@ -18,6 +20,8 @@ struct AgentSettingsView: View {
             case .general: L10n.general
             case .models: L10n.agentModels
             case .mcps: L10n.agentMCPs
+            case .memory: L10n.agentMemory
+            case .schedules: L10n.agentSchedules
             case .skills: L10n.agentSkills
             case .packages: L10n.agentPackages
             case .security: L10n.agentSecurity
@@ -90,6 +94,10 @@ private struct AgentSettingsTabs: View {
                 AgentModelSettingsView(account: account, mcp: mcp, subscriptions: subscriptions, onAdd: presentProviderRegistration)
             case .packages:
                 AgentPackageSettingsView(model: packages)
+            case .memory:
+                AgentMemorySettingsView(account: account)
+            case .schedules:
+                AgentScheduleSettingsView(account: account)
             case .skills:
                 AgentSkillSettingsView(account: account)
             case .mcps:
@@ -200,8 +208,10 @@ private struct AgentRuntimeSection: View {
         let revision = launch.commandDiscoveryRevision
         resolvedCommand = nil
         let (resolved, version) = await Task.detached { [provider] in
-            let url = Result { try PiBundle.executableURL(for: provider) }
-                .mapError { $0 as? PiRuntimeError ?? .piCommandNotFound(nil) }
+            let url = Result {
+                try PiBundle.executableURL(for: provider)
+            }
+            .mapError { $0 as? PiRuntimeError ?? .piCommandNotFound(nil) }
             return (url.map(\.path), PiInstaller.installedVersion())
         }.value
         guard !Task.isCancelled, useManagedPi == selection, launch.commandDiscoveryRevision == revision else { return }
@@ -350,13 +360,15 @@ private struct AgentEnvironmentVariableRow: View {
 
 /// The providers the open account's agent can use, each with a badge for what it serves: the account's own sign-in,
 /// the subscriptions signed in to (Local Account), and the Databricks workspaces signed in to for MCP servers.
-private struct AgentProviderSection<Models: View>: View {
+private struct AgentProviderSection<Models: View, SubscriptionModels: View>: View {
     let account: CodexRuntimeProvider
     let model: AgentMCPSettingsModel
     let subscriptions: [CodexAccountController]
     let onAdd: () -> Void
     let enabledCount: (AgentMCPProvider) -> Int?
     @ViewBuilder let modelsContent: (AgentMCPProvider) -> Models
+    let subscriptionEnabledCount: (CodexAccountController) -> Int
+    @ViewBuilder let subscriptionModelsContent: (CodexAccountController) -> SubscriptionModels
     @State private var signInTask: Task<Void, Never>?
     @State private var pendingRemoval: AgentMCPProvider?
     @State private var expandedProviderIDs: Set<String> = []
@@ -397,20 +409,30 @@ private struct AgentProviderSection<Models: View>: View {
                 .help(L10n.agentProviderAccountSignIn)
             }
             ForEach(signedInSubscriptions, id: \.subscription) { controller in
-                AgentProviderRow(
-                    title: controller.subscription.displayName,
-                    icon: controller.subscription.logo,
-                    uses: [L10n.agentProviderModels]
-                ) {
-                    if controller.isSigningOut {
-                        ProgressView().controlSize(.small)
-                    } else {
-                        Text(L10n.codexSignedIn).foregroundStyle(.secondary)
+                DisclosureGroup(isExpanded: expansion(of: controller.subscription.rawValue)) {
+                    subscriptionModelsContent(controller)
+                } label: {
+                    AgentProviderRow(
+                        title: controller.subscription.displayName,
+                        icon: controller.subscription.logo,
+                        uses: [L10n.agentProviderModels]
+                    ) {
+                        Text(L10n.agentEnabledCount(subscriptionEnabledCount(controller))).foregroundStyle(.secondary)
+                        if controller.isSigningOut {
+                            ProgressView().controlSize(.small)
+                        } else {
+                            Text(L10n.codexSignedIn).foregroundStyle(.secondary)
+                        }
+                        AgentProviderActions {
+                            Button(L10n.signOut) { Task { await controller.signOut() } }
+                        }
+                        .disabled(controller.isBusy)
                     }
-                    AgentProviderActions {
-                        Button(L10n.signOut) { Task { await controller.signOut() } }
-                    }
-                    .disabled(controller.isBusy)
+                    .contentShape(.rect)
+                    .background(Color.primary.opacity(hoveredProviderID == controller.subscription.rawValue ? 0.06 : 0))
+                    .onHover { hoveredProviderID = $0 ? controller.subscription.rawValue : nil }
+                    .onTapGesture { expansion(of: controller.subscription.rawValue).wrappedValue.toggle() }
+                    .accessibilityAddTraits(.isButton)
                 }
             }
             ForEach(workspaces) { provider in
@@ -460,7 +482,7 @@ private struct AgentProviderSection<Models: View>: View {
     }
 
     private func gatewayRow(_ provider: AgentMCPProvider) -> some View {
-        DisclosureGroup(isExpanded: expansion(of: provider)) {
+        DisclosureGroup(isExpanded: expansion(of: provider.id)) {
             modelsContent(provider)
         } label: {
             AgentProviderRow(title: L10n.unityGatewayHost(provider.host), icon: .databricksLogo, uses: [L10n.agentProviderModels, L10n.mcp]) {
@@ -489,16 +511,16 @@ private struct AgentProviderSection<Models: View>: View {
             .contentShape(.rect)
             .background(Color.primary.opacity(hoveredProviderID == provider.id ? 0.06 : 0))
             .onHover { hoveredProviderID = $0 ? provider.id : nil }
-            .onTapGesture { expansion(of: provider).wrappedValue.toggle() }
+            .onTapGesture { expansion(of: provider.id).wrappedValue.toggle() }
             .accessibilityAddTraits(.isButton)
         }
     }
 
-    private func expansion(of provider: AgentMCPProvider) -> Binding<Bool> {
+    private func expansion(of providerID: String) -> Binding<Bool> {
         Binding {
-            expandedProviderIDs.contains(provider.id)
+            expandedProviderIDs.contains(providerID)
         } set: { expanded in
-            if expanded { expandedProviderIDs.insert(provider.id) } else { expandedProviderIDs.remove(provider.id) }
+            if expanded { expandedProviderIDs.insert(providerID) } else { expandedProviderIDs.remove(providerID) }
         }
     }
 
@@ -619,7 +641,11 @@ private struct AgentModelSettingsView: View {
                 enabledCount: { provider in
                     models[provider.id].map { $0.count(where: { $0.isOn(shownChoices(provider.id)) }) }
                 },
-                modelsContent: modelRows
+                modelsContent: modelRows,
+                subscriptionEnabledCount: { controller in
+                    controller.models.count { AgentModelSettings.isSubscriptionModelOn($0.model, choices: choices) }
+                },
+                subscriptionModelsContent: subscriptionModelRows
             )
             AgentAutoReviewSettingsSection(account: account)
             AccountProcessingSettingsView()
@@ -642,6 +668,20 @@ private struct AgentModelSettingsView: View {
                     await load(provider, forceRefresh: false)
                 }
             }
+        }
+    }
+
+    private func subscriptionModelRows(_ controller: CodexAccountController) -> some View {
+        ForEach(controller.models) { model in
+            Toggle(model.displayName, isOn: Binding {
+                AgentModelSettings.isSubscriptionModelOn(model.model, choices: choices)
+            } set: { isOn in
+                choices[model.model] = isOn
+                AgentModelSettings.setModel(model.model, on: isOn, for: .local)
+                Task { await service.subscriptionModelChoicesDidChange() }
+            })
+            .toggleStyle(.switch)
+            .foregroundStyle(AgentModelSettings.isSubscriptionModelOn(model.model, choices: choices) ? .primary : .secondary)
         }
     }
 

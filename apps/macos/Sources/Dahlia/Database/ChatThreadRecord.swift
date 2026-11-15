@@ -14,4 +14,8 @@ struct ChatThreadRecord: Codable, FetchableRecord, PersistableRecord, Sendable {
     var status = "idle"
     var createdAt: Date
     var updatedAt: Date
+    var memoryTurns = 0
+    var skillIterations = 0
+    var lastSeenSeq: Int64 = -1
+    var scheduleID: String?
 }

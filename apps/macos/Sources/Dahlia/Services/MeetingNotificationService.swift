@@ -96,6 +96,16 @@ final class MeetingNotificationService: NSObject, UNUserNotificationCenterDelega
         return isAuthorized
     }
 
+    func deliverAgentSchedule(name: String, threadID: String) async {
+        guard await requestAuthorizationIfNeeded() else { return }
+        let content = UNMutableNotificationContent()
+        content.title = name
+        content.body = L10n.agentScheduleResultReady
+        content.threadIdentifier = "dahlia.agent.schedule"
+        content.userInfo = ["dahliaAgentThread": threadID]
+        try? await notificationCenter.add(UNNotificationRequest(identifier: "dahlia.agent.\(UUID().uuidString)", content: content, trigger: nil))
+    }
+
     func deliverMicrophoneDetection(_ meeting: DetectedMeeting) async -> Bool {
         let settings = AppSettings.shared
         guard settings.meetingDetectionEnabled,
@@ -322,6 +332,10 @@ final class MeetingNotificationService: NSObject, UNUserNotificationCenterDelega
         _: UNUserNotificationCenter,
         didReceive response: UNNotificationResponse
     ) async {
+        if let threadID = response.notification.request.content.userInfo["dahliaAgentThread"] as? String {
+            await MainActor.run { NotificationCenter.default.post(name: AgentLearningSettings.openThread, object: threadID) }
+            return
+        }
         let actionIdentifier = response.actionIdentifier
         let payload = response.notification.request.content.userInfo[meetingNotificationPayloadKey] as? String
         await handleResponse(actionIdentifier: actionIdentifier, payload: payload)

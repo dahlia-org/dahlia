@@ -128,9 +128,11 @@ import os
 
             await controller.activate()
             #expect(controller.accountStatus?.isAuthenticated == true)
+            #expect(controller.models.map(\.model) == ["openai/model"])
             await controller.signOut()
 
             #expect(controller.accountStatus?.isAuthenticated == false)
+            #expect(controller.models.isEmpty)
             #expect(controller.errorMessage == nil)
         }
 
@@ -145,6 +147,8 @@ import os
 
             #expect(openAI.accountStatus?.isAuthenticated == false)
             #expect(anthropic.accountStatus?.isAuthenticated == true)
+            #expect(openAI.models.isEmpty)
+            #expect(anthropic.models.map(\.model) == ["anthropic/model"])
         }
     }
 #endif

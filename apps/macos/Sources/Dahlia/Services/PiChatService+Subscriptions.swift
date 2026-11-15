@@ -45,7 +45,8 @@ extension PiChatService {
                 threadID: id,
                 accountID: session.provider.accountKey,
                 turnID: turn.id,
-                approvals: Array(turn.broadcast.approvals.values).sorted { $0.id < $1.id }
+                approvals: Array(turn.broadcast.approvals.values).sorted { $0.id < $1.id },
+                isScheduled: turn.run.origin == "schedule"
             )
         }
         let active = Set(states.map(\.threadID))
@@ -54,20 +55,22 @@ extension PiChatService {
         }) ?? []
         var included = active
         for run in queued where !included.contains(run.threadID) {
-            if let record = try? history().dbQueue.read({ try ChatThreadRecord.fetchOne($0, key: run.threadID) }) {
+            if let record = try? history().dbQueue.read({
+                try ChatThreadRecord.fetchOne($0, key: run.threadID) }) {
                 states.append(CodexChatRuntimeState(
                     threadID: run.threadID,
                     accountID: record.accountID,
                     turnID: run.id,
                     approvals: [],
-                    status: "queued"
+                    status: "queued", isScheduled: run.origin == "schedule"
                 ))
                 included.insert(run.threadID)
             }
         }
         for (threadID, settled) in settledRuns where !included.contains(threadID) {
             states.append(CodexChatRuntimeState(
-                threadID: threadID, accountID: settled.accountID, turnID: settled.runID, approvals: [], status: "settled"
+                threadID: threadID, accountID: settled.accountID, turnID: settled.runID, approvals: [], status: "settled",
+                isScheduled: settled.isScheduled
             ))
         }
         return states
@@ -99,7 +102,7 @@ extension PiChatService {
             model: record.model,
             reasoningEffort: record.reasoningEffort,
             approvalMethod: sessions[threadID]?.approvalMethod,
-            earlierMessagesCursor: page.earlierCursor
+            earlierMessagesCursor: page.earlierCursor, isReadOnly: record.scheduleID != nil
         )
         let id = UUID.v7()
         let (stream, reader) = AsyncThrowingStream<CodexChatTurnEvent, any Error>.makeStream(bufferingPolicy: .bufferingOldest(256))
@@ -120,12 +123,13 @@ extension PiChatService {
     }
 
     func stopAccountRuns(except accountID: String) async {
+        if let activeReview, activeReview.account != accountID { await runtime.close(activeReview.connection) }
         let persisted = (try? history().activeRunAccounts()) ?? []
         let accounts = Set(sessions.values.map(\.provider.accountKey) + persisted).subtracting([accountID])
         stoppingAccounts.formUnion(accounts)
         for account in accounts {
             try? history().suppressRunNotifications(accountID: account)
-            try? history().interruptQueuedRuns(accountID: account)
+            try? history().interruptQueuedRuns(accountID: account, preservingSchedules: true)
         }
         publishStates()
         for (id, session) in sessions where session.provider.accountKey != accountID {

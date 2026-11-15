@@ -19,4 +19,6 @@ struct ChatRunRecord: Codable, FetchableRecord, PersistableRecord, Sendable {
     var suppressAutomaticNotification = false
     /// The user stopped this run; results of work it started never restart its thread.
     var stoppedByUser = false
+    var origin = "user"
+    var profile = "interactive"
 }

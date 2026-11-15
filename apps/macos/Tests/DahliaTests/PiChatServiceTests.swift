@@ -512,12 +512,14 @@ import Synchronization
             #expect(prompt.contains("Dahlia's database:"))
             #expect(prompt.contains("Dahlia's screenshots:"))
             #expect(!prompt.contains("# User's custom instructions for AI chat"))
+            let appendedPrompts = launch.arguments.indices.filter { launch.arguments[$0] == "--append-system-prompt" }
+                .map { launch.arguments[$0 + 1] }
+            let customPrompts = appendedPrompts.filter { $0.hasPrefix("\n\n# User's custom instructions for AI chat\n") }
             if instructions.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                #expect(!launch.arguments.contains("--append-system-prompt"))
+                #expect(customPrompts.isEmpty)
             } else {
-                #expect(launch.arguments.filter { $0 == "--append-system-prompt" }.count == 1)
-                let appendIndex = try #require(launch.arguments.firstIndex(of: "--append-system-prompt"))
-                let appended = launch.arguments[appendIndex + 1]
+                #expect(customPrompts.count == 1)
+                let appended = try #require(customPrompts.first)
                 #expect(appended == "\n\n# User's custom instructions for AI chat\n" + instructions)
                 #expect(!FileManager.default.fileExists(atPath: appended))
             }
@@ -692,7 +694,7 @@ import Synchronization
             #expect(launch.arguments.contains("--session-id"))
             #expect(launch.arguments
                 .contains(
-                    "read,ls,write,edit,bash,dahlia_create_backup,dahlia_thread_list,dahlia_thread_search,dahlia_thread_read,"
+                    "read,ls,write,edit,bash,skills_list,skill_view,skill_manage,cronjob,memory,dahlia_create_backup,dahlia_thread_list,dahlia_thread_search,dahlia_thread_read,"
                         + "dahlia_thread_start,dahlia_thread_send,dahlia_thread_wait,dahlia_thread_interrupt,dahlia_thread_update,mcp__dahlia__*"
                 ))
             let work = fixture.pi.rootURL.appending(path: "work")
@@ -1106,7 +1108,7 @@ import Synchronization
             let withGmail = try #require(pi.launches.all.last { $0.mode == .chat })
             #expect(withGmail.arguments
                 .contains(
-                    "read,ls,write,edit,bash,dahlia_create_backup,dahlia_thread_list,dahlia_thread_search,dahlia_thread_read,"
+                    "read,ls,write,edit,bash,skills_list,skill_view,skill_manage,cronjob,memory,dahlia_create_backup,dahlia_thread_list,dahlia_thread_search,dahlia_thread_read,"
                         + "dahlia_thread_start,dahlia_thread_send,dahlia_thread_wait,dahlia_thread_interrupt,dahlia_thread_update,mcp__dahlia__*,mcp__gmail__*,mcp__notion__*"
                 ))
             // Dahlia's extension registers the sign-ins mcp.json names in every process; none loads the provider file on its own.

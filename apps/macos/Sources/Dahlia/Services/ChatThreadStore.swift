@@ -15,8 +15,12 @@ struct ChatThreadStore: ChatItemStore, Sendable {
             }
             try thread.insert(db)
             try Self.append(items, threadID: thread.id, in: db)
-            if let initialContext { try Self.attachInitialProject(context: initialContext, threadID: thread.id, in: db) }
-            if let message = items.first { try Self.attachInitialProject(message: message, threadID: thread.id, in: db) }
+            if let initialContext {
+                try Self.attachInitialProject(context: initialContext, threadID: thread.id, in: db)
+            }
+            if let message = items.first {
+                try Self.attachInitialProject(message: message, threadID: thread.id, in: db)
+            }
         }
     }
 
@@ -49,8 +53,19 @@ struct ChatThreadStore: ChatItemStore, Sendable {
             let next = try rows.count > limit ? visible.last.map {
                 try JSONEncoder().encode([String($0.updatedAt.timeIntervalSince1970), $0.id]).base64EncodedString()
             } : nil
-            return CodexChatThreadPage(threads: visible.map {
-                CodexChatThreadSummary(id: $0.id, title: $0.title, updatedAt: $0.updatedAt, parentThreadID: $0.parentThreadID, status: $0.status)
+            return try CodexChatThreadPage(threads: visible.map {
+                try CodexChatThreadSummary(
+                    id: $0.id,
+                    title: $0.title,
+                    updatedAt: $0.updatedAt,
+                    parentThreadID: $0.parentThreadID,
+                    status: $0.status,
+                    isUnread: Bool.fetchOne(
+                        db,
+                        sql: "SELECT EXISTS(SELECT 1 FROM chat_schedule_fires WHERE scheduleID=? AND status='delivered' AND resultSeq>?)",
+                        arguments: [$0.scheduleID, $0.lastSeenSeq]
+                    ) ?? false
+                )
             }, nextCursor: next)
         }
     }
@@ -64,9 +79,9 @@ struct ChatThreadStore: ChatItemStore, Sendable {
         }
     }
 
-    func beginTurn(threadID: String, message: JSONValue, model: String?, effort: String) throws {
+    func beginTurn(threadID: String, message: JSONValue, model: String?, effort: String, runID: UUID? = nil) throws {
         try dbQueue.write { db in
-            try Self.append([message], threadID: threadID, in: db)
+            try Self.append([message], threadID: threadID, runID: runID, in: db)
             try db.execute(sql: """
             UPDATE chat_threads SET status = 'running', model = COALESCE(?, model), reasoningEffort = ?, updatedAt = ? WHERE id = ?
             """, arguments: [model, effort, Date(), threadID])
@@ -74,9 +89,13 @@ struct ChatThreadStore: ChatItemStore, Sendable {
     }
 
     func appendItems(threadID: String, items: [JSONValue]) throws {
+        try appendItems(threadID: threadID, items: items, runID: nil)
+    }
+
+    func appendItems(threadID: String, items: [JSONValue], runID: UUID?) throws {
         guard !items.isEmpty else { return }
         try dbQueue.write { db in
-            try Self.append(items, threadID: threadID, in: db)
+            try Self.append(items, threadID: threadID, runID: runID, in: db)
             try db.execute(sql: "UPDATE chat_threads SET updatedAt = ? WHERE id = ?", arguments: [Date(), threadID])
         }
     }
@@ -124,14 +143,16 @@ struct ChatThreadStore: ChatItemStore, Sendable {
     }
 
     func deleteThread(id: String) throws {
-        _ = try dbQueue.write { try ChatThreadRecord.deleteOne($0, key: id) }
+        _ = try dbQueue.write {
+            try ChatThreadRecord.deleteOne($0, key: id)
+        }
     }
 
     func recoverInterruptedThreads() throws {
         try dbQueue.write { db in
             try db.execute(sql: "UPDATE chat_threads SET status = 'interrupted' WHERE status IN ('running', 'waitingForUser')")
             try db.execute(
-                sql: "UPDATE chat_runs SET status = 'interrupted', resultDeliveredAt = ? WHERE status IN ('queued', 'running', 'waitingForUser')",
+                sql: "UPDATE chat_runs SET status = 'interrupted', resultDeliveredAt = ? WHERE status IN ('queued', 'running', 'waitingForUser') AND NOT (origin='schedule' AND status='queued')",
                 arguments: [Date()]
             )
         }
@@ -157,7 +178,12 @@ struct ChatThreadStore: ChatItemStore, Sendable {
         }
     }
 
-    static func append(_ items: [JSONValue], threadID: String, in db: Database) throws {
+    static func append(_ items: [JSONValue], threadID: String, runID: UUID? = nil, inferRunID: Bool = true, in db: Database) throws {
+        let owner = try runID ?? (inferRunID ? ChatRunRecord.fetchOne(
+            db,
+            sql: "SELECT * FROM chat_runs WHERE threadID=? AND status IN ('running','waitingForUser') ORDER BY createdAt DESC LIMIT 1",
+            arguments: [threadID]
+        )?.id : nil)
         var seq = try Int64.fetchOne(db, sql: "SELECT MAX(seq) FROM chat_items WHERE threadID = ?", arguments: [threadID]) ?? -1
         for item in items {
             seq += 1
@@ -166,7 +192,7 @@ struct ChatThreadStore: ChatItemStore, Sendable {
                 threadID: threadID,
                 seq: seq,
                 data: String(decoding: JSONEncoder().encode(item), as: UTF8.self),
-                createdAt: .now
+                createdAt: .now, runID: owner
             ).insert(db)
         }
     }

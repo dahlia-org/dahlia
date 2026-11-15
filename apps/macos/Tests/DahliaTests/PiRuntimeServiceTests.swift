@@ -7,6 +7,52 @@ import os
     import Testing
 
     struct PiRuntimeServiceTests {
+        @Test(arguments: [false, true])
+        func subscriptionVisibilityDefaultsAndChoicesPreservePisCatalogAndSignIn(hasGateway: Bool) async throws {
+            let gatewayReferences = hasGateway ? ["extra.cloud.databricks.com/system.ai.gpt-6-luna"] : []
+            let references = [
+                "anthropic/claude-opus-5-5", "anthropic/claude-sonnet-5-5", "anthropic/claude-haiku-5-5",
+                "openai/gpt-6.1-sol", "openai/gpt-6.1-terra", "openai/gpt-6-luna",
+                "anthropic/claude-sonnet-4-6", "openai/gpt-6-sol",
+            ] + gatewayReferences
+            let choices = OSAllocatedUnfairLock(initialState: [String: Bool]())
+            let pi = TestPiRuntime(modelChoices: { _ in choices.withLock { $0 } }) { _ in
+                TestPiTransport(reply: TestPiRuntime.modelsReply(references.map {
+                    let parts = $0.split(separator: "/", maxSplits: 1).map(String.init)
+                    return TestPiTransport.model(provider: parts[0], id: parts[1])
+                }))
+            }
+            defer { try? FileManager.default.removeItem(at: pi.rootURL) }
+            let agentURL = try PiAgentDirectoryLocator(applicationSupportURL: pi.rootURL).agentURL(for: .local)
+            let providers: [String: JSONValue] = ["preserved": .object(["models": .array([])])]
+            try PiProviderConfiguration.write(providers, agentURL: agentURL)
+            // Finish the initial gateway refresh before counting Pi listings.
+            _ = try await pi.service.models()
+            await pi.service.gatewayRefresh(for: .local)?.value
+
+            #expect(try await pi.service.models().map(\.model) == Array(references.prefix(6)) + gatewayReferences)
+            let listingCount = pi.launches.all.count
+            choices.withLock {
+                $0["openai/gpt-6.1-sol"] = false
+                $0["openai/gpt-6-sol"] = true
+            }
+            await pi.service.subscriptionModelChoicesDidChange()
+            let customized = try await pi.service.models().map(\.model)
+            #expect(!customized.contains("openai/gpt-6.1-sol"))
+            #expect(customized.contains("openai/gpt-6-sol"))
+
+            choices.withLock { $0 = Dictionary(uniqueKeysWithValues: references.map { ($0, false) }) }
+            await pi.service.subscriptionModelChoicesDidChange()
+            #expect(try await pi.service.models().map(\.model) == gatewayReferences)
+            #expect(try await pi.service.accountStatus(for: .openai).isAuthenticated)
+            #expect(try await pi.service.accountStatus(for: .anthropic).isAuthenticated)
+            #expect(try await pi.service.subscriptionModels(for: .openai).count == 4)
+            #expect(try await pi.service.subscriptionModels(for: .anthropic).count == 4)
+            #expect(pi.launches.all.count == listingCount)
+            let configuration = try JSONDecoder().decode(JSONValue.self, from: Data(contentsOf: agentURL.appending(path: "models.json")))
+            #expect(configuration.objectValue?["providers"]?.objectValue == providers)
+        }
+
         @Test
         func triageDiscoveryDoesNotUseStaleServicesWhenRefreshFails() async throws {
             let gateway = try AgentMCPProvider(workspaceURL: #require(URL(string: "https://example.cloud.databricks.com")))

@@ -7,6 +7,10 @@ import GRDB
 actor PiChatService: CodexChatServicing {
     static let shared = PiChatService()
 
+    var learningSkills: AgentSkillService?
+    var learningWorker: Task<Void, Never>?
+    var reviewTask: Task<Void, Never>?
+    var activeReview: (id: String, account: String, connection: PiRPCConnection, includesMemory: Bool)?
     private var backupService: BackupService?
     private var backupDBQueue: DatabaseQueue?
     private var historyStore: ChatThreadStore?
@@ -14,7 +18,25 @@ actor PiChatService: CodexChatServicing {
     func configureHistory(dbQueue: DatabaseQueue) async throws {
         let store = ChatThreadStore(dbQueue: dbQueue)
         historyStore = store
+        learningSkills = AgentSkillService(dbQueue: dbQueue)
         try store.recoverInterruptedThreads()
+        try await dbQueue.write { db in
+            try db.execute(sql: "UPDATE chat_schedule_fires SET status='interrupted' WHERE status='running'")
+            try db.execute(sql: "UPDATE agent_reviews SET status='interrupted' WHERE status='running'")
+            try db
+                .execute(
+                    sql: "DELETE FROM jobs_background WHERE indexKind='review' AND targetKey IN (SELECT id FROM agent_reviews WHERE status='interrupted')"
+                )
+        }
+        let interrupted = try await dbQueue.read {
+            try AgentReviewRecord.fetchAll(
+                $0,
+                sql: "SELECT * FROM agent_reviews WHERE status='interrupted' AND notified=0 AND snapshot<>''"
+            )
+        }
+        for review in interrupted {
+            try finishReview(review, status: "interrupted")
+        }
     }
 
     func history() throws -> ChatThreadStore {
@@ -47,7 +69,20 @@ actor PiChatService: CodexChatServicing {
             recordStatus(status == "completed" ? "idle" : status, threadID: threadID, source: "chatHistoryRunEnd", undelivered: steers)
         }
         try? history().setRunStatus(runID, status: status)
-        settledRuns[threadID] = (accountID, runID)
+        if let run = try? history().run(id: runID) {
+            if run.origin == "schedule" {
+                let outcome = try? scheduleService().settled(run, status: status)
+                if outcome == "delivered" { Task { await self.notifySchedule(run) } }
+                let processID = sessions[threadID]?.processID
+                Task {
+                    guard self.sessions[threadID]?.processID == processID, self.sessions[threadID]?.turn == nil else { return }
+                    await self.closeSession(threadID)
+                }
+            } else if run.origin == "user" {
+                enqueueLearningReview(run, account: accountID)
+            }
+        }
+        settledRuns[threadID] = (accountID, runID, (try? history().run(id: runID)?.origin) == "schedule")
         publishStates()
         runDidSettle(threadID, accountID: accountID)
     }
@@ -93,7 +128,7 @@ actor PiChatService: CodexChatServicing {
     Use Dahlia's preset skills when the user's request matches their descriptions; read a selected skill's SKILL.md with the read tool.
     The read, ls, write, edit, and bash tools run under Apple Seatbelt. The current folder is writable; Dahlia's
     screenshots, database, preset skills, and installed packages are read-only. Your account's own skills folder is
-    readable and writable: save reusable skills there as <skill-name>/SKILL.md. Newly saved skills load in a new chat process.
+    read-only to file tools: use skill_manage for every skill change. Newly saved skills load in a new chat process.
     Additional user-selected paths and their permissions are listed below.
     Other user files are inaccessible. HOME is a scratch folder; use absolute paths for user-selected files.
     Network access is allowed.
@@ -113,6 +148,12 @@ actor PiChatService: CodexChatServicing {
         var effort: String?
         var turn: Turn?
         /// The MCP servers chat may call, and those Pi reported as needing sign-in during this process.
+        var reviewArguments: [String] = []
+        var reviewMemoryPrompt: String?
+        var reviewEnvironment: [String: String] = [:]
+        var profile: PiExecutionProfile = .interactive
+        var memoryEnabled = true
+        var allowedTools: Set<String> = []
         var mcpServers: Set<String> = []
         var mcpServersNeedingSignIn: [String] = []
     }
@@ -135,7 +176,7 @@ actor PiChatService: CodexChatServicing {
 
     let runtime: PiRuntimeService
     private let workingDirectory: PiWorkingDirectory
-    private let agentLocator: PiAgentDirectoryLocator
+    let agentLocator: PiAgentDirectoryLocator
     private let mcpExecutableURL: URL?
     private let reviewModel: @Sendable (CodexRuntimeProvider) -> String
     private let reviewTriageEnabled: @Sendable (CodexRuntimeProvider) -> Bool
@@ -158,7 +199,7 @@ actor PiChatService: CodexChatServicing {
     /// Inputs already delivered as a steer, by requester, user request, and retry key, so a retry is not delivered twice.
     var steeredRequests: [String: ChatRunRecord] = [:]
     /// The last run each thread ended in this app session. Views compare it with the run they displayed.
-    var settledRuns: [String: (accountID: String, runID: UUID)] = [:]
+    var settledRuns: [String: (accountID: String, runID: UUID, isScheduled: Bool)] = [:]
     var scheduledRuns: [String: ChatRunRecord] = [:]
     var schedulingAccounts: Set<String> = []
     var waitingParents: Set<String> = []
@@ -178,6 +219,7 @@ actor PiChatService: CodexChatServicing {
     ) {
         self.runtime = runtime
         self.historyStore = historyStore
+        self.learningSkills = historyStore.map { AgentSkillService(dbQueue: $0.dbQueue) }
         self.workingDirectory = workingDirectory
         self.agentLocator = agentLocator
         self.mcpExecutableURL = mcpExecutableURL
@@ -240,7 +282,7 @@ actor PiChatService: CodexChatServicing {
                 model: record.model,
                 reasoningEffort: record.reasoningEffort,
                 approvalMethod: approvalMethod,
-                earlierMessagesCursor: page.earlierCursor
+                earlierMessagesCursor: page.earlierCursor, isReadOnly: record.scheduleID != nil
             )
         }.value
     }
@@ -373,6 +415,11 @@ actor PiChatService: CodexChatServicing {
         approvalMethod: CodexChatApprovalMethod,
         expectedProvider: CodexRuntimeProvider?
     ) async throws -> CodexChatTurnHandle {
+        let currentProvider = try await runtime.currentProvider()
+        let record = try history().thread(id: threadID, accountID: currentProvider.accountKey)
+        guard record.scheduleID == nil || scheduledRuns[threadID]?.origin == "schedule" else {
+            throw HermesLearning.failure(L10n.agentScheduleReadOnly)
+        }
         var connection = try await connection(threadID: threadID)
         let session = try live(threadID, connection)
         if let expectedProvider, expectedProvider != session.provider {
@@ -431,6 +478,7 @@ actor PiChatService: CodexChatServicing {
             throw PiRuntimeError.rpcError(code: nil, message: "turn already active")
         }
 
+        try validateScheduledStart(threadID: threadID, account: session.provider.accountKey)
         let (events, continuation) = AsyncThrowingStream<CodexChatTurnEvent, any Error>.makeStream(bufferingPolicy: .bufferingOldest(256))
         let runID = UUID.v7()
         let run = try scheduledRuns.removeValue(forKey: threadID) ?? history().enqueueRun(ChatRunRecord(
@@ -446,7 +494,19 @@ actor PiChatService: CodexChatServicing {
             if run.requestedByThreadID == nil, run.rootRunID != run.id {
                 try history().updateThread(id: threadID, status: "running", model: requestedModel, effort: effort)
             } else {
-                try history().beginTurn(threadID: threadID, message: ChatHistoryCodec.user(inputs), model: requestedModel, effort: effort)
+                try history().beginTurn(
+                    threadID: threadID,
+                    message: ChatHistoryCodec.user(inputs),
+                    model: requestedModel,
+                    effort: effort,
+                    runID: run.id
+                )
+                if run.origin == "user" {
+                    try learningCount(thread: threadID, column: "memoryTurns")
+                }
+            }
+            if run.origin == "schedule" {
+                try scheduleService().started(run)
             }
             try history().setRunStatus(run.id, status: "running")
         } catch {
@@ -622,7 +682,11 @@ actor PiChatService: CodexChatServicing {
         if let session = sessions[threadID] {
             if await session.connection.isOpen {
                 guard sessions[threadID]?.connection === session.connection else { return try await connection(threadID: threadID) }
-                if sessions[threadID]?.turn != nil || session.fileAccess == fileAccessSettings(session.provider) { return session.connection }
+                if sessions[threadID]?
+                    .turn != nil ||
+                    (session.profile != .scheduled && session.fileAccess == fileAccessSettings(session.provider) && session.profile
+                        .rawValue == (scheduledRuns[threadID]?.profile ?? "interactive") && session.memoryEnabled == AgentLearningSettings
+                        .memoryEnabled(provider.accountKey)) { return session.connection }
                 // Seatbelt is fixed at process start. Reopen idle threads before the next turn, including revocations.
                 await closeSession(threadID)
                 return try await connection(threadID: threadID)
@@ -636,6 +700,9 @@ actor PiChatService: CodexChatServicing {
             return try await connection(threadID: threadID)
         }
         if let task = opening[threadID] { return try await task.value }
+        if scheduledRuns[threadID]?.origin == "schedule" {
+            return try await open(threadID: threadID, sessionArguments: ["--no-session"])
+        }
         let existingFile = try? await sessionFile(id: threadID)
         if existingFile == nil {
             guard try !history().hasAssistantReply(threadID: threadID) else {
@@ -676,7 +743,9 @@ actor PiChatService: CodexChatServicing {
         let provider = try await runtime.currentProvider()
         let workURL = try workingDirectory.url(for: provider)
         // Pi runs a thread in the folder its session file names, so an older thread moves to the folder set now.
-        if let sessionFile { try PiChatSessionFiles.setWorkingDirectory(workURL, in: sessionFile) }
+        if let sessionFile {
+            try PiChatSessionFiles.setWorkingDirectory(workURL, in: sessionFile)
+        }
         let mcpCommand = try Self.mcpCommand(
             executableURL: mcpExecutableURL ?? DahliaMCPBundle.executableURL(),
             accountID: provider.accountKey
@@ -689,7 +758,7 @@ actor PiChatService: CodexChatServicing {
 
         Dahlia's database: \(MeetingAccessStore.defaultDatabaseURL.path)
         Dahlia's screenshots: \(ScreenshotFileStore.defaultDirectory.path)
-        Your writable skills folder: \(agentLocator.agentURL(for: provider).appending(path: "skills").path)
+        Your account skills folder (managed through skill_manage): \(agentLocator.agentURL(for: provider).appending(path: "skills").path)
         Additional file access (protected Dahlia data and runtime code remain restricted):
         \(accessDescription.isEmpty ? "None" : accessDescription)
         """
@@ -702,7 +771,15 @@ actor PiChatService: CodexChatServicing {
         // `--no-extensions` also drops Pi's MCP extension; explicitly enable it and the tools chat may call.
         let isChild = (try? history().thread(id: threadID, accountID: provider.accountKey).parentThreadID) != nil
         let threadTools = Self.readThreadTools + (isChild ? [] : Self.manageThreadTools)
-        let tools = ["read", "ls", "write", "edit", "bash", "dahlia_create_backup"] + threadTools + serverNames.map { "mcp__\($0)__*" }
+        let profile = PiExecutionProfile(rawValue: scheduledRuns[threadID]?.profile ?? "interactive") ?? .interactive
+        let memoryEnabled = AgentLearningSettings.memoryEnabled(provider.accountKey)
+        let learningTools = ["skills_list", "skill_view"] +
+            (profile == .interactive ? ["skill_manage", "cronjob"] + (memoryEnabled ? ["memory"] : []) : [])
+        let tools = profile.fileTools + learningTools + (profile == .interactive ? ["dahlia_create_backup"] + threadTools : []) + serverNames
+            .map { "mcp__\($0)__*" }
+        let allowedTools = try scheduledRuns[threadID].map {
+            try scheduleService().allowedTools(runID: $0.id, account: provider.accountKey)
+        } ?? []
         // Only chat calls MCP servers; Dahlia's extension registers the sign-ins mcp.json names.
         var arguments = sessionArguments + [
             "-e", "builtin:mcp",
@@ -713,24 +790,34 @@ actor PiChatService: CodexChatServicing {
         if !instructions.isEmpty {
             arguments += ["--append-system-prompt", instructions]
         }
+        arguments += ["--append-system-prompt", HermesLearning.prompts["skills_guidance"] ?? ""]
+        let memoryPrompt = try memoryEnabled ? (HermesLearning.prompts["memory_guidance"] ?? "") + "\n\n" +
+            memoryService().snapshot(account: provider.accountKey) : nil
         for skill in PiBundle.presetSkillURLs() {
             arguments += ["--skill", skill.path]
         }
+        let reviewArguments = Array(arguments.dropFirst(sessionArguments.count))
+        if let memoryPrompt { arguments += ["--append-system-prompt", memoryPrompt] }
         let connection = try await runtime.connect(
             .init(
                 mode: .chat,
                 cwd: workURL,
                 arguments: arguments,
                 environment: [
+                    "DAHLIA_PI_MEMORY_ENABLED": memoryEnabled ? "1" : "0",
+                    "DAHLIA_PI_ALLOWED_TOOLS": HermesLearning.json(allowedTools),
                     "DAHLIA_PI_MCP_COMMAND": String(decoding: JSONEncoder().encode(mcpCommand), as: UTF8.self),
                     // The only MCP servers whose tools chat may call; the extension blocks every other server.
                     "DAHLIA_PI_MCP_SERVERS": String(decoding: JSONEncoder().encode(serverNames), as: UTF8.self),
                 ],
-                fileAccess: fileAccess
+                fileAccess: fileAccess, profile: profile
             ),
             provider: provider,
             chatBridge: { [weak self] method, payload in
                 guard let self else { return .string(method == "approval" ? "cancel" : "ask") }
+                if ["memory", "skills_list", "skill_view", "skill_manage", "cronjob", "scheduledTool"].contains(method) {
+                    return await self.learningToolResult(method, payload: payload, threadID: threadID, processID: processID)
+                }
                 if method.hasPrefix("thread_") {
                     do {
                         return try await self.threadTool(method, payload: payload, threadID: threadID, processID: processID)
@@ -739,14 +826,19 @@ actor PiChatService: CodexChatServicing {
                     } catch { return .object(["error": .string(error.localizedDescription)]) }
                 }
                 if method == "createBackup" {
+                    guard await self.sessions[threadID]?.profile == .interactive else { throw CancellationError() }
                     return try await self.createBackup(threadID: threadID, processID: processID, payload: payload, directory: workURL)
                 }
                 return await self.answer(method, payload: payload, threadID: threadID, processID: processID)
             }
         )
-        sessions[threadID] = Session(
+        sessions[threadID] = try Session(
             processID: processID, provider: provider, connection: connection, fileAccess: fileAccess,
-            mcpServers: Set(serverNames)
+            reviewArguments: reviewArguments, reviewMemoryPrompt: memoryPrompt, reviewEnvironment: [
+                "DAHLIA_PI_MCP_COMMAND": HermesLearning.json(mcpCommand),
+                "DAHLIA_PI_MCP_SERVERS": HermesLearning.json(serverNames),
+            ],
+            profile: profile, memoryEnabled: memoryEnabled, allowedTools: Set(allowedTools), mcpServers: Set(serverNames)
         )
         Task { await self.pump(threadID: threadID, processID: processID, connection: connection) }
         if let name = pendingNames.removeValue(forKey: threadID) {
@@ -823,6 +915,7 @@ actor PiChatService: CodexChatServicing {
             let blocks = message["content"]?.arrayValue?.compactMap(\.objectValue) ?? []
             let thinking = PiChatSessionFiles.text(blocks, type: "thinking", key: "thinking")
             let text = PiChatSessionFiles.text(blocks, type: "text", key: "text")
+            try countLearningIteration(turn.run, blocks: blocks)
             try history().appendRunResponse(turn.run, items: ChatHistoryCodec.assistantItems(message), text: text)
             if !thinking.isEmpty { turn.broadcast.yield(.reasoningCompleted(itemID: itemID, text: thinking)) }
             if !text.isEmpty { turn.broadcast.yield(.completed(itemID: itemID, text: text)) }
@@ -836,7 +929,7 @@ actor PiChatService: CodexChatServicing {
         case "agent_settled", "dahlia_prompt_handled":
             let status = object["aborted"]?.boolValue == true ? "interrupted" : turn.lastError != nil || bridgeError != nil ? "failed" : "idle"
             // A steer the turn ended without delivering stays in history as the last message.
-            try history().appendItems(threadID: threadID, items: turn.pendingSteers)
+            try history().appendItems(threadID: threadID, items: turn.pendingSteers, runID: turn.id)
             try history().updateThread(id: threadID, status: status)
             sessions[threadID]?.turn = nil
             newThreads[threadID] = nil
@@ -865,12 +958,21 @@ actor PiChatService: CodexChatServicing {
         sessions[threadID]?.turn = turn
     }
 
+    private func countLearningIteration(_ run: ChatRunRecord, blocks: [[String: JSONValue]]) throws {
+        if run.origin == "user", blocks.contains(where: { $0["type"]?.stringValue == "toolCall" }) {
+            try learningCount(thread: run.threadID, column: "skillIterations")
+        }
+    }
+
     private func storeDeliveredSteer(_ message: [String: JSONValue], in turn: inout Turn, threadID: String) throws {
         guard message["role"]?.stringValue == "user" else { return }
         if !turn.sawPrompt {
             turn.sawPrompt = true
         } else if !turn.pendingSteers.isEmpty {
-            try history().appendItems(threadID: threadID, items: [turn.pendingSteers.removeFirst()])
+            try history().appendItems(threadID: threadID, items: [turn.pendingSteers.removeFirst()], runID: turn.id)
+            if turn.run.origin == "user" {
+                try learningCount(thread: threadID, column: "memoryTurns")
+            }
         }
     }
 
@@ -916,6 +1018,7 @@ actor PiChatService: CodexChatServicing {
             guard isLive, let provider = sessions[threadID]?.provider else { return .string("") }
             return .string(reviewModel(provider))
         }
+        if sessions[threadID]?.profile != .interactive { return .string("decline") }
         if method == "approvalMode" {
             // Fail closed when the process no longer owns the thread.
             return .string(isLive ? effectiveApprovalMethod(threadID).rawValue : "ask")
@@ -924,7 +1027,7 @@ actor PiChatService: CodexChatServicing {
         return await .string(Self.wireDecision(requestApproval(threadID: threadID, payload: payload)))
     }
 
-    private func requestApproval(threadID: String, payload: JSONValue) async -> CodexChatApprovalDecision {
+    func requestApproval(threadID: String, payload: JSONValue) async -> CodexChatApprovalDecision {
         let mcpServers = sessions[threadID]?.mcpServers ?? []
         guard let request = Self.approvalRequest(id: UUID.v7().uuidString, payload: payload, mcpServers: mcpServers),
               request.canApprove,
@@ -932,7 +1035,9 @@ actor PiChatService: CodexChatServicing {
         else { return .decline }
         do {
             try history().updateThread(id: threadID, status: "waitingForUser")
-            if let turn = sessions[threadID]?.turn { try history().setRunStatus(turn.id, status: "waitingForUser") }
+            if let turn = sessions[threadID]?.turn {
+                try history().setRunStatus(turn.id, status: "waitingForUser")
+            }
         } catch {
             sessions[threadID]?.turn?.broadcast.finish(throwing: error)
             return .cancel
@@ -957,7 +1062,7 @@ actor PiChatService: CodexChatServicing {
         sessions.first { $0.value.turn?.id == turnID }?.key
     }
 
-    private func sessionFile(id: String) async throws -> URL {
+    func sessionFile(id: String) async throws -> URL {
         let provider = try await runtime.currentProvider()
         let root = try agentLocator.agentURL(for: provider).appending(path: "sessions")
         // Keep reopening files written by releases that used one subdirectory per Workspace.

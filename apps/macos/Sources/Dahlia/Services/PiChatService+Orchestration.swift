@@ -29,8 +29,9 @@ extension PiChatService {
             schedulingAccounts.remove(accountID)
             let canStart = ((try? history().queuedRuns(accountID: accountID)) ?? []).contains {
                 sessions[$0.threadID]?.turn == nil && startingTurns[$0.threadID] == nil
+                    && ($0.origin != "schedule" || !AgentBackgroundActivity.isRecording)
             }
-            let active = sessions.values.filter { $0.provider.accountKey == accountID && $0.turn != nil && $0.turn?.run.rootRunID != $0.turn?.run.id }
+            let active = sessions.values.filter { $0.provider.accountKey == accountID && $0.turn != nil && $0.turn?.run.origin != "user" }
                 .count
             if canReschedule, canStart, active < 3, !stoppingAccounts.contains(accountID) {
                 Task { await self.scheduleRuns(accountID: accountID) }
@@ -39,15 +40,24 @@ extension PiChatService {
         do {
             let provider = try await runtime.currentProvider()
             guard provider.accountKey == accountID else {
-                try history().interruptQueuedRuns(accountID: accountID)
+                try await history().dbQueue.write {
+                    try $0.execute(
+                        sql: "UPDATE chat_runs SET status='interrupted' WHERE status='queued' AND origin<>'schedule' AND threadID IN (SELECT id FROM chat_threads WHERE accountID=?)",
+                        arguments: [accountID]
+                    )
+                }
                 publishStates()
                 return
             }
             canReschedule = true
             let queued = try history().queuedRuns(accountID: accountID)
             for run in queued {
+                if run.origin == "schedule" {
+                    guard !AgentBackgroundActivity.isRecording else { continue }
+                    guard try scheduleService().validateStart(run, account: accountID) else { continue }
+                }
                 let active = sessions.filter { _, session in
-                    session.provider.accountKey == accountID && session.turn?.run.rootRunID != session.turn?.run.id
+                    session.provider.accountKey == accountID && session.turn?.run.origin != "user"
                         && session.turn != nil
                 }.count
                 guard active < 3 else { break }
@@ -66,6 +76,7 @@ extension PiChatService {
                 } catch {
                     scheduledRuns[run.threadID] = nil
                     // A run that failed after its turn began has already ended; one that never started ends here.
+                    if run.origin == "schedule", AgentBackgroundActivity.isRecording { continue }
                     if try history().run(id: run.id)?.status == "queued" {
                         endRun(run.id, threadID: run.threadID, accountID: accountID, status: "failed", savingThread: false)
                     }
@@ -143,7 +154,7 @@ extension PiChatService {
 
     func threadTool(_ method: String, payload: JSONValue, threadID: String, processID: UUID) async throws -> JSONValue {
         guard let callerSession = sessions[threadID], callerSession.processID == processID,
-              let callerTurn = callerSession.turn else { throw CancellationError() }
+              let callerTurn = callerSession.turn, callerSession.profile == .interactive else { throw CancellationError() }
         let store = try history()
         let account = callerSession.provider.accountKey
         let caller = try store.thread(id: threadID, accountID: account)
@@ -257,7 +268,9 @@ extension PiChatService {
         let store = try history()
         if let raw = args["run_id"]?.stringValue {
             guard let id = UUID(uuidString: raw), try store.run(id: id)?.threadID == targetID else { throw PiRuntimeError.invalidProtocolResponse }
-            if sessions[targetID]?.turn?.run.id == id { await abort(threadID: targetID) } else { try store.interruptQueuedRun(id) }
+            if sessions[targetID]?.turn?.run.id == id { await abort(threadID: targetID) } else {
+                try store.interruptQueuedRun(id)
+            }
             publishStates()
             return .object(["thread_id": .string(targetID), "run_id": .string(raw), "stop_requested": .bool(true)])
         }
@@ -293,7 +306,9 @@ extension PiChatService {
             }
             guard sessions[threadID]?.turn?.id == callerTurn.id else { throw CancellationError() }
             try store.setParent(child.id, parentID: threadID, accountID: account)
-            if let title = args["title"]?.stringValue?.nilIfBlank { try store.updateThread(id: child.id, title: String(title.prefix(256))) }
+            if let title = args["title"]?.stringValue?.nilIfBlank {
+                try store.updateThread(id: child.id, title: String(title.prefix(256)))
+            }
             let run = try queueAgentRun(
                 targetID: child.id,
                 caller: caller,
@@ -335,7 +350,9 @@ extension PiChatService {
             // A stop or a turn that is gone ends the wait with a result, not an error the next turn would inherit.
             guard let turn = sessions[threadID]?.turn, turn.id == callerTurn.id, sessions[threadID]?.processID == processID,
                   !turn.stopRequested else { return .object(["error": .string("The wait was stopped")]) }
-            let runs = try ids.compactMap { try store.latestRun(threadID: $0) }
+            let runs = try ids.compactMap {
+                try store.latestRun(threadID: $0)
+            }
             let delivered = try store.undeliveredRuns(requesterID: threadID).filter { ids.contains($0.threadID) }
             // Results already received do not end a wait; only a new one, or nothing left to wait for, does.
             let pending = runs.contains { ["queued", "running", "waitingForUser"].contains($0.status) }
@@ -363,6 +380,9 @@ extension PiChatService {
         arguments: [String: JSONValue],
         context: CodexChatContext? = nil
     ) throws -> ChatRunRecord {
+        guard try history().thread(id: targetID, accountID: caller.accountID).scheduleID == nil else {
+            throw HermesLearning.failure(L10n.agentScheduleReadOnly)
+        }
         let text = context.map { CodexChatPromptCodec.encode(text: input, context: $0) } ?? input
         let run = try history().enqueueRun(ChatRunRecord(
             id: .v7(),

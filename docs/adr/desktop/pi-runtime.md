@@ -57,7 +57,7 @@ extension・context file・theme・project trust の自動読込を無効化し�
 内蔵 `skill-creator` はチャットから Pi 向け skill の作成・更新・検証を支援する。`/skill:skill-creator <依頼>` でも呼び出せる。
 保存先は system prompt に渡した現在のアカウントの `pi/skills/<skill-name>/SKILL.md` とし、アカウント内の Workspace 間で共有する。
 組み込み・パッケージの skill は直接変更せず、カスタマイズは別名の account skill として保存する。保存後は新しいチャット process で利用でき、
-設定の「スキル」の再読込で認識を確認できる。account skill の編集・削除も次の process から反映する。
+設定の「スキル」の再読込で認識を確認できる。account skill の編集・削除も次の process から反映する。すべての変更は `skill_manage` に集約し、ファイル道具からの直接変更は許可しない。
 作成方針は [Codex Skill Creator](https://github.com/openai/skills/tree/main/skills/.system/skill-creator) の段階的な情報開示と
 [Claude Code Skill Creator](https://github.com/anthropics/skills/tree/main/skills/skill-creator) の試行・評価・改善を参考にし、
 保存先・呼出形式・利用可能な tool・承認は Dahlia の Pi runtime に合わせる。
@@ -77,7 +77,7 @@ Pi 本体は sandbox の外で動かす。Seatbelt は入れ子にできず、Pi
 | 作業フォルダ、sandbox 用の一時フォルダ（`<一時フォルダ>/dahlia-chat`。sandbox の中の `TMPDIR` と `HOME`） | 読み書き |
 | チャットの Pi の一時フォルダ（`<一時フォルダ>/dahlia-pi`。Pi の `TMPDIR`） | 読み取りだけ。Pi が長い出力の全文をここに保存する。Pi は変換した extension もここから読み込むので、書き込みは許さない |
 | sandbox の外で実行されるもの: インストールされた Pi（実行ファイルの実体の folder。npm package なら `node` を含む prefix）、Dahlia の extension と skill、上の Pi の一時フォルダ | 書き込み不可（作業フォルダがこれを含んでいても） |
-| 現在のアカウントの `pi/skills` | 読み書き可能。Pi が再利用する skill の保存先。認証・設定・他アカウントへのリンク先は許可しない。保存先への symlink 作成・移動を拒否し、skill 探索でも symlink を除外する。保存先またはその配下が実効 PATH に含まれる設定は、全 Pi モードとパッケージ操作の起動前に拒否する |
+| 現在のアカウントの `pi/skills` | ファイル道具には読み取り専用。変更は `skill_manage` からアプリのサービスを通す（[自己学習 ADR](pi-self-learning.md)）。Pi が再利用する skill の保存先。認証・設定・他アカウントへのリンク先は許可しない。保存先への symlink 作成・移動を拒否し、skill 探索でも symlink を除外する。保存先またはその配下が実効 PATH に含まれる設定は、全 Pi モードとパッケージ操作の起動前に拒否する |
 | Dahlia の preset skill、アカウントの Pi directory の `npm`・`git` 配下（インストール済みパッケージ）、画像の保存先（`FileStore`）、app の SQLite（`dahlia.sqlite` と `-wal`・`-shm`） | 読み取りだけ（画像と SQLite はデバッグ用） |
 | Dahlia の Application Support のそれ以外（全アカウントの agent directory、録音、backup。development build からは production のものも） | 読み書き不可（作業フォルダがこれを含んでいても） |
 | システムと全ユーザー向けの tool（`/System`・`/usr`・`/bin`・`/sbin`・`/Library/Developer`・`/Applications`・`/opt`・`/private/etc` など、`pi.sb` に名前で列挙） | 読み取りだけ。ただし local service の data と設定（`/opt/homebrew`・`/usr/local` の `var` と `etc`）は不可 |
@@ -145,7 +145,7 @@ Pi は起動時にしか `models.json` を読まないので、開いている�
 Dahlia account は切替時に Server の URL だけを記録し（network 不要）、
 モデル一覧の取得時に `/api/v1/models` を `models.json` に変換する。取得に失敗したら直前の一覧を保ち、空の一覧はキャッシュしない。
 一覧は account ごとに1つの Pi 起動を同時の呼び出し元すべてで共有し、全員が取り消したときだけ止める。サインイン・サインアウト・
-アカウント切替・「モデル」タブの切り替えはキャッシュを捨て、`DahliaPiModelsDidChange` を通知する。それ以前に始まった取得の結果は
+アカウント切替・Gateway モデルの有効・無効の切り替えはキャッシュを捨て、`DahliaPiModelsDidChange` を通知する。それ以前に始まった取得の結果は
 保存も返却もせず、その呼び出し元は取得し直す（遅れて終わった古い一覧が新しい一覧を上書きしない）。設定・要約の確認・チャットのモデル選択は
 その通知で読み直し、通知の時に表示されていなかったチャットは次に表示されたときに読み直す。画面を開くだけではキャッシュを使い、再試行だけが取得し直す。
 チャットのモデル選択はモデルをプロバイダーごとにまとめ、プロバイダー名の下に並べる（workspace のモデル名に付けたホスト名は省く）。
@@ -160,10 +160,15 @@ Dahlia account は切替時に Server の URL だけを記録し（network 不�
 
 「Dahlia AI」>「モデル」タブは全アカウントに表示し、プロバイダー、AI による代理承認 (pi-auto-review)、要約生成、画像解析を同じタブで設定する。要約生成・画像解析の設定リンクも「モデル」を開く。
 Unity Gateway があるアカウント（Databricks アカウントか、Databricks を追加したアカウント）では、Gateway ごとのモデルも「コネクタ」タブと同じくプロバイダーの行の下に折りたたんで並べ、モデルごとのスイッチでオン・オフする。
-サブスクリプションと Dahlia account のモデルは対象外。Pi の `models.json` には
+Local Account の ChatGPT・Claude も同じくプロバイダー行の下でモデルごとに表示を切り替える。
+選択のないモデルは Claude Opus 5.5・Sonnet 5.5・Haiku 5.5、GPT 6.1 Sol・GPT 6.1 Terra・GPT 6 Luna だけをオンにし、保存した選択は再サインイン後も保つ。
+サブスクリプションは Pi の認証・カタログを変更せず、Dahlia がチャット・要約・画像解析などへ返す一覧を絞る。
+表示切替は Pi の一覧キャッシュを保ったまま `DahliaPiModelsDidChange` を通知する。
+全モデルをオフにしてもサインイン状態と設定の全モデル一覧を保ち、再びオンにできる。Dahlia account 自身のモデルは対象外。
+Pi の `models.json` には
 モデルごとの有効・無効の項目がなく（`settings.json` の `enabledModels` は起動時の選択と切替の範囲だけで、`get_available_models` からは外さない）、
-この有効・無効の設定は `models.json` を編集する。オンのモデルだけを `models.json` に書くので、Pi が知るのもチャット・要約・画像解析が選べるのもそれだけになる。
-選択は `provider/id` ごとに app defaults（`agentGatewayModels.<account>`）に記録し、選択のないモデルは既定に従う。既定はオフで、Databricks アカウント
+Gateway の有効・無効の設定は `models.json` を編集する。オンのモデルだけを `models.json` に書くので、Pi が知るのもチャット・要約・画像解析が選べるのもそれだけになる。
+選択はサブスクリプションも Gateway も `provider/id` ごとに app defaults（`agentGatewayModels.<account>`）に記録し、選択のないモデルは既定に従う。Gateway の既定はオフで、Databricks アカウント
 自身の Gateway の、`models` で `onByDefault` を付けたモデル（Claude Haiku 5.5）だけがオン（その Gateway が Haiku を出さないときは先頭のモデル）。オンにしていたモデルを Gateway が出さなくなって自身の Gateway で
 オンが1つもなくなるときは、この既定のモデルをオンとして扱い、設定の表示と `models.json` は同じ結果を使う。「プロバイダー」に追加した workspace は
 すべてオフで始まる。Databricks アカウントの要約の既定モデルも、保存した設定がなければ同じ Haiku

@@ -317,7 +317,7 @@ def gateway(script, requests, triage=False):
                 self.send_header("Content-Length", "0")
                 self.end_headers()
                 return
-            usage = {"input_tokens": 1, "output_tokens": 1, "total_tokens": 2,
+            usage = {"input_tokens": step.get("input_tokens", 1), "output_tokens": 1, "total_tokens": step.get("input_tokens", 1) + 1,
                      "input_tokens_details": {"cached_tokens": 0}, "output_tokens_details": {"reasoning_tokens": 0}}
             response = {"id": "r", "object": "response", "status": "completed", "model": body.get("model"), "output": [], "usage": usage}
             if "tool" in step:
@@ -577,7 +577,35 @@ def main():
                        "DAHLIA_PI_MCP_SERVERS": json.dumps(["dahlia"])}
 
         def chat(*steps, **options):
-            return run(pi, "chat", [*steps, {"text": "done"}], CHAT_ARGUMENTS, environment, **options)
+            profile = options.pop("profile", "interactive")
+            names = options.pop("tool_names", CHAT_ARGUMENTS[-1])
+            isolated = dict(environment, DAHLIA_PI_PROFILE=profile, DAHLIA_PI_MEMORY_ENABLED="1",
+                            DAHLIA_PI_ALLOWED_TOOLS=json.dumps(["mcp__dahlia__get_meeting"]))
+            return run(pi, "chat", [*steps, {"text": "done"}], [*CHAT_ARGUMENTS[:-1], names], isolated, **options)
+
+        # Immutable execution profiles remain ceilings even under fullAccess and when a forbidden schema is advertised.
+        for profile in ("scheduled", "review"):
+            _, results, bridge_calls, _ = chat({"tool": "bash", "args": {"command": "echo FORBIDDEN"}},
+                                              profile=profile, approval_mode="fullAccess")
+            assert "FORBIDDEN" not in results[0] and ("unavailable" in results[0] or "only read" in results[0]), results
+            assert not any(method == "approval" for method, _ in bridge_calls), bridge_calls
+        _, results, bridge_calls, _ = chat({"tool": "memory", "args": {"target": "user", "operations": [{"action": "add", "content": "User prefers Japanese"}]}},
+                                          profile="scheduled", tool_names="memory", approval_mode="fullAccess")
+        assert "only read" in results[0] and not any(method == "memory" for method, _ in bridge_calls), (results, bridge_calls)
+        _, results, bridge_calls, _ = chat({"tool": "memory", "args": {"target": "user", "operations": [{"action": "add", "content": "User prefers Japanese"}]}},
+                                          tool_names="memory", bridge_answers={"memory": {"success": True}})
+        assert any(method == "memory" for method, _ in bridge_calls), (results, bridge_calls)
+        _, results, bridge_calls, _ = chat({"tool": "mcp__dahlia__update_meeting"}, profile="scheduled", approval_mode="fullAccess")
+        assert "not approved" in results[0] and "MCP_OK" not in results[0], results
+        _, results, bridge_calls, _ = chat({"tool": "mcp__dahlia__get_meeting"}, profile="scheduled", bridge_answers={"scheduledTool": True})
+        assert "MCP_OK" in results[0] and any(method == "scheduledTool" for method, _ in bridge_calls), (results, bridge_calls)
+
+        # Budget exhaustion must abort Pi; throwing from a hook alone is logged and ignored by Pi.
+        memory_call = {"tool": "memory", "args": {"target": "user", "operations": [{"action": "add", "content": "Synthetic fact"}]}}
+        requests, _, _, _ = chat(*([memory_call] * 18), profile="review", tool_names="memory", bridge_answers={"memory": {"success": True}})
+        assert len(requests) == 16, len(requests)
+        requests, _, _, _ = chat(dict(memory_call, input_tokens=75000), profile="review", tool_names="memory", bridge_answers={"memory": {"success": True}})
+        assert len(requests) == 1, len(requests)
 
         requests, results, _, _ = chat({"tool": "read", "args": {"path": "inside.txt"}})
         names = [tool.get("name") for tool in requests[0]["body"].get("tools", [])]

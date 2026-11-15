@@ -8,6 +8,7 @@ struct CodexChatThread: Equatable {
     let reasoningEffort: String?
     let approvalMethod: CodexChatApprovalMethod?
     let earlierMessagesCursor: String?
+    var isReadOnly = false
 
     init(
         id: String,
@@ -16,8 +17,10 @@ struct CodexChatThread: Equatable {
         model: String?,
         reasoningEffort: String?,
         approvalMethod: CodexChatApprovalMethod? = nil,
-        earlierMessagesCursor: String? = nil
+        earlierMessagesCursor: String? = nil,
+        isReadOnly: Bool = false
     ) {
+        self.isReadOnly = isReadOnly
         self.id = id
         self.title = title
         self.messages = messages
