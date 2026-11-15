@@ -26,7 +26,7 @@ Google Drive は Calendar と別の Keychain セッションで `drive.readonly`
 Unity Gateway connection proxy を使い、接続名は `system_ai_agent_google_drive` とする。接続解除は Dahlia の読み取り利用を止め、Drive のファイルや別の MCP 接続は削除しない。
 
 アップロード・フォルダ作成・Drive 上の削除をアプリの Drive client に持たせない。内蔵 Pi の `workspace-backup` skill は現在のチャットの Local Workspace に限定した
-`dahlia_create_backup` tool を呼び、GUI と同じ `BackupService` の snapshot・原本収集・検証で作成する。Pi の作業フォルダに書き出したファイルを
+`dah_create_backup` tool を呼び、GUI と同じ `BackupService` の snapshot・原本収集・検証で作成する。Pi の作業フォルダに書き出したファイルを
 設定済み Google Drive MCP のローカルファイルアップロード機能で `My Drive/Dahlia/Backup` に配置する。外部書き込みは既存のチャット承認方針に従う。
 必要な MCP 機能がなければローカル作成とアップロード失敗を区別して報告する。Unity Gateway connection で書き込まない。
 

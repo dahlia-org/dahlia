@@ -500,8 +500,8 @@ def thread_tools(pi):
         ("wait", {"thread_ids": ["other"]}), ("interrupt", {"thread_id": "other"}),
         ("update", {"thread_id": "other", "title": "Updated"}),
     ]
-    names = ["dahlia_thread_" + name for name, _ in calls]
-    script = [{"tool": "dahlia_thread_" + name, "args": args} for name, args in calls] + [{"text": "done"}]
+    names = ["dah_thread_" + name for name, _ in calls]
+    script = [{"tool": "dah_thread_" + name, "args": args} for name, args in calls] + [{"text": "done"}]
     requests, results, bridge, _ = run(pi, "chat", script,
         ["--no-session", "--tools", ",".join(names)], {},
         bridge_answers={"thread_" + name: {"ok": True} for name, _ in calls},
@@ -520,8 +520,8 @@ def main():
     triage_denial_regression(pi)
     package_resources(pi)
     _, results, bridge, _ = run(
-        pi, "chat", [{"tool": "dahlia_create_backup", "args": {"workspace_id": "ws_test"}}, {"text": "done"}],
-        ["--no-session", "--tools", "dahlia_create_backup"], {})
+        pi, "chat", [{"tool": "dah_create_backup", "args": {"workspace_id": "ws_test"}}, {"text": "done"}],
+        ["--no-session", "--tools", "dah_create_backup"], {})
     assert ("createBackup", {"workspace_id": "ws_test"}) in bridge, bridge
     assert json.loads(results[0])["path"] == "/tmp/Dahlia-Backup-test.tar.gz", results
 

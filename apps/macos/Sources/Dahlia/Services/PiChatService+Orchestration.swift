@@ -3,13 +3,13 @@ import Foundation
 import GRDB
 
 extension PiChatService {
-    nonisolated static let readThreadTools = ["dahlia_thread_list", "dahlia_thread_search", "dahlia_thread_read"]
+    nonisolated static let readThreadTools = ["dah_thread_list", "dah_thread_search", "dah_thread_read"]
     nonisolated static let manageThreadTools = [
-        "dahlia_thread_start",
-        "dahlia_thread_send",
-        "dahlia_thread_wait",
-        "dahlia_thread_interrupt",
-        "dahlia_thread_update",
+        "dah_thread_start",
+        "dah_thread_send",
+        "dah_thread_wait",
+        "dah_thread_interrupt",
+        "dah_thread_update",
     ]
 
     func runDidSettle(_ threadID: String, accountID: String? = nil) {
@@ -144,7 +144,7 @@ extension PiChatService {
                 "title": .string(String(record.title.prefix(256))),
                 "status": .string(run.status),
                 "excerpt": .string(run.resultExcerpt),
-                // The excerpt is a prefix; the full reply stays in the thread for `dahlia_thread_read`.
+                // The excerpt is a prefix; the full reply stays in the thread for `dah_thread_read`.
                 "truncated": .bool(run.resultExcerpt.count >= ChatThreadStore.resultExcerptLimit),
             ])
         }
