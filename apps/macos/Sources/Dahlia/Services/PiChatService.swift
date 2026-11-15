@@ -667,7 +667,7 @@ actor PiChatService: CodexChatServicing {
         else {
             throw PiRuntimeError.rpcError(code: nil, message: "no active turn to steer")
         }
-        let item = ChatHistoryCodec.user(inputs)
+        let item = ChatHistoryCodec.user(inputs, isSteer: true)
         // Queued before the request, since Pi can deliver the steer before its response is handled here.
         sessions[threadID]?.turn?.pendingSteers.append(item)
         do {

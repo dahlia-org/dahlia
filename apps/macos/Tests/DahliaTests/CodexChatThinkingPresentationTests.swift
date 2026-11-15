@@ -119,10 +119,10 @@ import Foundation
             #expect(!session.showsStandaloneThinking)
         }
 
-        @Test
-        func repeatedManualSubmitWhilePreparingIsIgnored() async {
+        @Test(arguments: [CodexChatDeliveryMode.steer, .queue])
+        func repeatedManualSubmitWhilePreparingIsIgnored(mode: CodexChatDeliveryMode) async {
             let service = TestCodexChatService(mode: .complete)
-            let settings = AppSettings()
+            let settings = TestCodexChatFixtures.appSettings()
             settings.currentWorkspace = Self.testWorkspace()
             let contextProvider = TestCodexChatContextProvider(shouldBlock: true)
             let session = CodexChatSessionModel(
@@ -133,6 +133,7 @@ import Foundation
                 contextProvider: contextProvider
             )
             session.draft = "Question"
+            session.deliveryMode = mode
 
             session.sendDraft()
             await waitUntil { contextProvider.requestCount == 1 }
@@ -179,7 +180,7 @@ import Foundation
 
             #expect(session.isPreparingTurn)
             #expect(session.showsStandaloneThinking)
-            #expect(session.draft == "New question")
+            #expect(session.draft.isEmpty)
             #expect(session.messages.isEmpty)
 
             session.sendDraft()

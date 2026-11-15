@@ -328,7 +328,9 @@ import Synchronization
             )
             try await fixture.chat.steer(threadID: thread.id, turnID: "x", inputs: [.text("Steer")])
             for try await _ in handle.events {}
-            #expect(try fixture.store.messagePage(threadID: thread.id).messages.map(\.text) == ["Question", "Before", "Steer", "After"])
+            let messages = try fixture.store.messagePage(threadID: thread.id).messages
+            #expect(messages.map(\.text) == ["Question", "Before", "Steer", "After"])
+            #expect(messages.map(\.isSteer) == [false, false, true, false])
         }
 
         @Test
@@ -351,7 +353,9 @@ import Synchronization
             await #expect(throws: (any Error).self) {
                 for try await _ in handle.events {}
             }
-            #expect(try fixture.store.messagePage(threadID: thread.id).messages.map(\.text) == ["Question", "Steer"])
+            let messages = try fixture.store.messagePage(threadID: thread.id).messages
+            #expect(messages.map(\.text) == ["Question", "Steer"])
+            #expect(messages.map(\.isSteer) == [false, true])
             #expect(try fixture.store.thread(id: thread.id, accountID: "local").status == "failed")
         }
 

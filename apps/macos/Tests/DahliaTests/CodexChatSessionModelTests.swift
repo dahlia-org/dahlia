@@ -1709,8 +1709,8 @@ import Foundation
             }
         }
 
-        func completeBlockedTurn() {
-            blockedContinuation?.yield(.completed(itemID: nil, text: nil))
+        func completeBlockedTurn(with event: CodexChatTurnEvent = .completed(itemID: nil, text: nil)) {
+            blockedContinuation?.yield(event)
             blockedContinuation?.finish()
             blockedContinuation = nil
         }

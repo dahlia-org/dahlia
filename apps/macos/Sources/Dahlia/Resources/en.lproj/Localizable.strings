@@ -2147,3 +2147,12 @@
 "settings.agents.learning.silent" = "No notification";
 
 "settings.agents.learning.previewLimit" = "Preview limited to 12,000 characters. Full contents remain saved.";
+
+/* Chat follow-up queue */
+"Steer" = "Steer";
+"Queue" = "Queue";
+"Send now" = "Send now";
+"Follow-up behavior" = "Follow-up behavior";
+"While responding, send using the default behavior. Hold Command or press Command-Return to use the other action." = "While responding, send using the default behavior. Hold Command or press Command-Return to use the other action.";
+"Queue paused" = "Queue paused";
+"Resume queue" = "Resume queue";

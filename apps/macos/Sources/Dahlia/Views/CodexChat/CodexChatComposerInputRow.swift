@@ -16,6 +16,7 @@ struct CodexChatComposerInputRow: View {
     var onComplete: () -> Bool = { false }
     var handlesVerticalKeys = false
 
+    @State private var isCommandPressed = false
     @State private var isAddButtonHovered = false
     @State private var windowBounds: CGRect = .zero
     @State private var addPanelSize: CGSize = .zero
@@ -31,10 +32,14 @@ struct CodexChatComposerInputRow: View {
                 onPasteImages: onPasteImages,
                 onHover: onHover,
                 onComplete: onComplete,
-                handlesVerticalKeys: handlesVerticalKeys
+                handlesVerticalKeys: handlesVerticalKeys,
+                onAlternateSubmit: { session.sendDraft(commandPressed: true) }
             )
 
             controlBar
+        }
+        .onModifierKeysChanged(mask: .command) { _, modifiers in
+            isCommandPressed = modifiers.contains(.command)
         }
     }
 
@@ -88,21 +93,7 @@ struct CodexChatComposerInputRow: View {
                 )
             }
 
-            if session.isGenerating, session.isPreparingTurn || !session.canSend {
-                CodexChatActionButton(
-                    label: L10n.stopGenerating,
-                    systemImage: "stop.fill",
-                    isEnabled: true,
-                    action: session.stop
-                )
-            } else {
-                CodexChatActionButton(
-                    label: L10n.sendMessage,
-                    systemImage: "arrow.up",
-                    isEnabled: session.canSend,
-                    action: session.sendDraft
-                )
-            }
+            CodexChatSendButton(session: session, isCommandPressed: isCommandPressed)
         }
     }
 }
@@ -117,6 +108,7 @@ struct CodexChatComposerTextEditor: View {
     let onHover: (HoverPhase) -> Void
     var onComplete: () -> Bool = { false }
     var handlesVerticalKeys = false
+    var onAlternateSubmit: (() -> Void)?
 
     private static let maximumLineCount = 13
 
@@ -187,7 +179,11 @@ struct CodexChatComposerTextEditor: View {
         if activeTextView?.hasMarkedText() == true {
             return .ignored
         }
-        onSubmit()
+        if keyPress.modifiers.contains(.command), let onAlternateSubmit {
+            onAlternateSubmit()
+        } else {
+            onSubmit()
+        }
         return .handled
     }
 

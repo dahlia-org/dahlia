@@ -95,7 +95,16 @@ final class CodexChatCoordinator {
     }
 
     func stopThread(_ threadID: String) async {
-        await service.interruptActiveTurn(threadID: threadID, turnID: nil)
+        let matchingSessions = sessions.values.filter {
+            $0.backendThreadID == threadID && $0.accountID == dockedSession.accountID
+        }
+        let hasActiveSession = matchingSessions.contains { $0.isGenerating }
+        for session in matchingSessions {
+            session.stop()
+        }
+        if !hasActiveSession {
+            await service.interruptActiveTurn(threadID: threadID, turnID: nil)
+        }
     }
 
     func decideRelatedApproval(_ state: CodexChatRuntimeState, id: String, decision: CodexChatApprovalDecision) async throws {
@@ -347,7 +356,7 @@ final class CodexChatCoordinator {
         guard id != dockedSessionID,
               !detachedSessionIDs.contains(id),
               let session = sessions[id],
-              !preservesGeneratingSession || !session.hasPendingGenerationWork
+              !preservesGeneratingSession || (!session.hasPendingGenerationWork && !session.hasRecoverablePendingInputs)
         else { return false }
         sessions.removeValue(forKey: id)
         session.release()

@@ -3,22 +3,24 @@ import Foundation
 
 /// The memory-compatible envelope stays independent of Pi's resume-file format.
 enum ChatHistoryCodec {
-    static func message(_ message: [String: JSONValue]) -> JSONValue {
+    static func message(_ message: [String: JSONValue], isSteer: Bool = false) -> JSONValue {
         let blocks = message["content"]?.arrayValue?.compactMap(\.objectValue) ?? []
         let text = message["content"]?.stringValue ?? PiChatSessionFiles.text(blocks, type: "text", key: "text")
-        return .object([
+        var record: [String: JSONValue] = [
             "type": .string("message"), "role": message["role"] ?? .string("assistant"),
             "content": .string(text),
             "reasoning": .string(PiChatSessionFiles.text(blocks, type: "thinking", key: "thinking")),
             "images": .array(blocks.filter { $0["type"]?.stringValue == "image" }.map(JSONValue.object)),
-        ])
+        ]
+        if isSteer { record["deliveryMode"] = .string("steer") }
+        return .object(record)
     }
 
-    static func user(_ inputs: [CodexAppServerInput]) -> JSONValue {
+    static func user(_ inputs: [CodexAppServerInput], isSteer: Bool = false) -> JSONValue {
         let prompt = PiRuntimeService.prompt(PiChatService.textJoined(inputs))
         var blocks: [JSONValue] = [.object(["type": .string("text"), "text": prompt["message"] ?? .string("")])]
         blocks += prompt["images"]?.arrayValue ?? []
-        return message(["role": .string("user"), "content": .array(blocks)])
+        return message(["role": .string("user"), "content": .array(blocks)], isSteer: isSteer)
     }
 
     static func messages(_ items: [ChatItemRecord]) throws -> [CodexChatMessage] {
@@ -28,9 +30,14 @@ enum ChatHistoryCodec {
     static func messages(_ items: [ChatItem]) -> [CodexChatMessage] {
         var messages: [CodexChatMessage] = []
         var records: [[String: JSONValue]] = []
+        var steeredIDs: Set<String> = []
         /// A notification starts a run without a user message, so it also ends the reply before it.
         func flush() {
-            messages += PiChatSessionFiles.messages(records)
+            messages += PiChatSessionFiles.messages(records).map { message in
+                var restored = message
+                restored.isSteer = message.role == .user && steeredIDs.contains(message.id)
+                return restored
+            }
             records = []
         }
         for item in items {
@@ -42,6 +49,7 @@ enum ChatHistoryCodec {
                     id: item.id, role: .notice(.info), text: notificationDisplayText(data["content"]?.stringValue ?? "")
                 ))
             case "message":
+                if data["deliveryMode"]?.stringValue == "steer" { steeredIDs.insert(item.id) }
                 var blocks: [JSONValue] = [.object(["type": .string("text"), "text": data["content"] ?? .string("")])]
                 blocks.append(.object(["type": .string("thinking"), "thinking": data["reasoning"] ?? .string("")]))
                 blocks += data["images"]?.arrayValue ?? []

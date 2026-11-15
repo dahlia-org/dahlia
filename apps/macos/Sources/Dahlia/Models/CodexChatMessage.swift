@@ -14,6 +14,7 @@ struct CodexChatMessage: Identifiable, Equatable {
     var isStreaming: Bool
     var context: CodexChatContext?
     var images: [CodexChatImageAttachment]
+    var isSteer: Bool
 
     init(
         id: String = UUID.v7().uuidString,
@@ -22,7 +23,8 @@ struct CodexChatMessage: Identifiable, Equatable {
         reasoning: String = "",
         isStreaming: Bool = false,
         context: CodexChatContext? = nil,
-        images: [CodexChatImageAttachment] = []
+        images: [CodexChatImageAttachment] = [],
+        isSteer: Bool = false
     ) {
         self.id = id
         self.role = role
@@ -31,5 +33,6 @@ struct CodexChatMessage: Identifiable, Equatable {
         self.isStreaming = isStreaming
         self.context = context
         self.images = images
+        self.isSteer = isSteer
     }
 }

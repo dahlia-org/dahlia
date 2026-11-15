@@ -1,6 +1,13 @@
+import Foundation
 @testable import Dahlia
 
 enum TestCodexChatFixtures {
+    @MainActor
+    static func appSettings() -> AppSettings {
+        let defaults = UserDefaults(suiteName: "TestCodexChatFixtures.\(UUID().uuidString)")!
+        return AppSettings(generalDefaults: defaults)
+    }
+
     static let liveTranscriptContext = """
     <context>
       Live mode is enabled. You are receiving finalized live transcription from Dahlia.

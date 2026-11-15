@@ -7,18 +7,25 @@ struct CodexChatComposerSnapshot: Equatable, Sendable {
     var threadReferenceIDs: [String] = []
 }
 
-struct CodexChatManualSubmission: Equatable, Sendable {
+struct CodexChatManualSubmission: Identifiable, Equatable, Sendable {
+    let id: UUID
+    var clearsComposerOnDelivery = true
+    var deliveryMode: CodexChatDeliveryMode
     let text: String
     let images: [CodexChatImageAttachment]
     let composerSnapshot: CodexChatComposerSnapshot?
     let includesCurrentContext: Bool
 
     init(
+        id: UUID = .v7(),
+        deliveryMode: CodexChatDeliveryMode = .steer,
         text: String,
         images: [CodexChatImageAttachment],
         composerSnapshot: CodexChatComposerSnapshot? = nil,
         includesCurrentContext: Bool = true
     ) {
+        self.id = id
+        self.deliveryMode = deliveryMode
         self.text = text
         self.images = images
         self.composerSnapshot = composerSnapshot

@@ -26,7 +26,8 @@ extension CodexChatSessionModel {
         _ text: String,
         images: [CodexChatImageAttachment] = [],
         composerSnapshot: CodexChatComposerSnapshot? = nil,
-        includesCurrentContext: Bool = true
+        includesCurrentContext: Bool = true,
+        queuedSubmission: CodexChatManualSubmission? = nil
     ) {
         guard isBoundToCurrentAccount,
               !isRestoring,
@@ -39,6 +40,7 @@ extension CodexChatSessionModel {
             return
         }
         prepareFailureStateForSubmission()
+        preparingQueuedManualSubmission = queuedSubmission
         isGenerating = true
         isPreparingTurn = true
         isAwaitingTurnOutput = false
@@ -60,12 +62,13 @@ extension CodexChatSessionModel {
         }
     }
 
-    func submitManualSubmission(_ submission: CodexChatManualSubmission) {
+    func submitManualSubmission(_ submission: CodexChatManualSubmission, fromQueue: Bool = false) {
         submit(
             submission.text,
             images: submission.images,
-            composerSnapshot: submission.composerSnapshot,
-            includesCurrentContext: submission.includesCurrentContext
+            composerSnapshot: submission.clearsComposerOnDelivery ? submission.composerSnapshot : nil,
+            includesCurrentContext: submission.includesCurrentContext,
+            queuedSubmission: fromQueue ? submission : nil
         )
 
     }
@@ -115,7 +118,12 @@ extension CodexChatSessionModel {
     func enqueueManualInput(_ submission: CodexChatManualSubmission) {
         lastSubmittedText = submission.text
         lastManualSubmission = submission
-        pendingManualInputs.append(submission)
+        var queued = submission
+        if submission.deliveryMode == .queue || submission.text.hasPrefix("/") {
+            clearComposer(ifMatching: submission.composerSnapshot)
+            queued.clearsComposerOnDelivery = false
+        }
+        pendingManualInputs.append(queued)
         processPendingInputIfPossible()
     }
 

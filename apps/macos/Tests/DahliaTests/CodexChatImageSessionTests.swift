@@ -223,7 +223,7 @@ import Foundation
         }
 
         private func makeSession(service: ImageChatService) -> CodexChatSessionModel {
-            let settings = AppSettings()
+            let settings = TestCodexChatFixtures.appSettings()
             settings.currentWorkspace = WorkspaceRecord(
                 id: .v7(),
                 path: "/tmp/chat-image-test-workspace",
@@ -231,12 +231,14 @@ import Foundation
                 createdAt: .now,
                 lastOpenedAt: .now
             )
-            return CodexChatSessionModel(
+            let session = CodexChatSessionModel(
                 modelID: "default-model",
                 effort: "medium",
                 service: service,
                 settings: settings
             )
+            session.deliveryMode = .steer
+            return session
         }
 
         private func testPNGData() throws -> Data {
@@ -256,7 +258,7 @@ import Foundation
         }
     }
 
-    private actor ImageChatService: CodexChatServicing {
+    actor ImageChatService: CodexChatServicing {
         enum SendBehavior {
             case complete
             case failFirst
