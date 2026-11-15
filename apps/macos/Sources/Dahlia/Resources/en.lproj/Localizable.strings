@@ -2086,3 +2086,12 @@
 "No other workspace in this account. Create one before moving content." = "No other workspace in this account. Create one before moving content.";
 "Move projects, meetings, recordings, documents and instructions within this account. Duplicate names receive a number. Account chats and workspace settings are not moved." = "Move projects, meetings, recordings, documents and instructions within this account. Duplicate names receive a number. Account chats and workspace settings are not moved.";
 "Existing files in the export folder stay in place." = "Existing files in the export folder stay in place.";
+
+"chat.thread.child" = "Child thread";
+"chat.thread.addReference" = "Reference a thread";
+"chat.run.queued" = "Queued";
+"chat.run.completed" = "Completed";
+"chat.run.interrupted" = "Interrupted";
+"chat.run.failed" = "Failed";
+
+"chat.thread.removeReference" = "Remove thread reference";

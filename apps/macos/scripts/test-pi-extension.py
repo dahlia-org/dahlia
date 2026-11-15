@@ -341,7 +341,7 @@ def gateway(script, requests, triage=False):
 
 
 def run(pi, mode, script, arguments, environment, approval="accept", approval_mode="ask", api="openai-responses", mcp_servers=None,
-        compat=None, auth=None, triage=False, prompts=1):
+        compat=None, auth=None, triage=False, prompts=1, bridge_answers=None, steer_message=None):
     """Runs prompts; returns gateway requests, tool results, bridge calls, and whether ../outside.txt exists."""
     requests, tool_results, bridge = [], [], []
     server = gateway(script, requests, triage=triage)
@@ -388,14 +388,19 @@ def run(pi, mode, script, arguments, environment, approval="accept", approval_mo
             process.stdin.flush()
 
         send({"id": "p", "type": "prompt", "message": "go"})
+        steered = False
         for line in process.stdout:
             record = json.loads(line)
+            if steer_message and not steered and record.get("type") == "tool_execution_start":
+                send({"id": "steer", "type": "steer", "message": steer_message})
+                steered = True
             if record.get("type") == "extension_ui_request" and record.get("title", "").startswith("dahlia:"):
                 method = record["title"].removeprefix("dahlia:")
                 bridge.append((method, json.loads(record["placeholder"])))
                 classifier = {"model": "system.ai.openjev-qwen35-4b", "provider": "databricks",
                               "endpoint": f"http://127.0.0.1:{server.server_port}/systemone"} if triage else None
                 answers = {"token": "synthetic-token", "approvalMode": approval_mode, "reviewModel": "", "reviewTriage": classifier, "approval": approval, "createBackup": {"path": "/tmp/Dahlia-Backup-test.tar.gz"}}
+                answers.update(bridge_answers or {})
                 send({"type": "extension_ui_response", "id": record["id"], "value": json.dumps(answers[method])})
             elif record.get("type") == "tool_execution_end":
                 tool_results.append("".join(part.get("text", "") for part in record["result"]["content"]))
@@ -487,10 +492,31 @@ def triage_denial_regression(pi):
     print("Pi triage denial regressions passed (critical and user decline, retries and next-run reset)")
 
 
+def thread_tools(pi):
+    calls = [
+        ("list", {}), ("search", {"query": "research"}), ("read", {"thread_id": "other"}),
+        ("start", {"input": "research", "client_request_id": "start"}),
+        ("send", {"thread_id": "other", "input": "continue", "client_request_id": "send"}),
+        ("wait", {"thread_ids": ["other"]}), ("interrupt", {"thread_id": "other"}),
+        ("update", {"thread_id": "other", "title": "Updated"}),
+    ]
+    names = ["dahlia_thread_" + name for name, _ in calls]
+    script = [{"tool": "dahlia_thread_" + name, "args": args} for name, args in calls] + [{"text": "done"}]
+    requests, results, bridge, _ = run(pi, "chat", script,
+        ["--no-session", "--tools", ",".join(names)], {},
+        bridge_answers={"thread_" + name: {"ok": True} for name, _ in calls},
+        steer_message="HEADLESS_STEER_MARKER")
+    assert len(results) == 8 and all(json.loads(result)["ok"] for result in results), results
+    assert all(("thread_" + name, args) in bridge for name, args in calls), bridge
+    assert any("HEADLESS_STEER_MARKER" in json.dumps(request["body"]) for request in requests), requests
+    print("Pi thread tools and headless steer passed (8 tools, isolated loopback gateway)")
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--pi", default="pi")
     pi = parser.parse_args().pi
+    thread_tools(pi)
     triage_denial_regression(pi)
     package_resources(pi)
     _, results, bridge, _ = run(

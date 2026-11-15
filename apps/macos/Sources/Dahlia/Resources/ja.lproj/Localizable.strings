@@ -2086,3 +2086,12 @@
 "No other workspace in this account. Create one before moving content." = "同じアカウントに移管先がありません。移管するには先にワークスペースを作成してください。";
 "Move projects, meetings, recordings, documents and instructions within this account. Duplicate names receive a number. Account chats and workspace settings are not moved." = "同じアカウント内でプロジェクト、ミーティング、録音、ドキュメント、カスタム指示を移管します。同名の項目には番号が付きます。アカウントのチャットとワークスペース設定は移管しません。";
 "Existing files in the export folder stay in place." = "書き出し先フォルダ内の既存ファイルはそのまま残ります。";
+
+"chat.thread.child" = "子スレッド";
+"chat.thread.addReference" = "スレッドを参照";
+"chat.run.queued" = "待機中";
+"chat.run.completed" = "完了";
+"chat.run.interrupted" = "中断";
+"chat.run.failed" = "失敗";
+
+"chat.thread.removeReference" = "スレッドの参照を削除";

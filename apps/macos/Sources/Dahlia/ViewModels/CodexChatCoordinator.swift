@@ -6,6 +6,9 @@ import Observation
 @Observable
 final class CodexChatCoordinator {
     private(set) var sessions: [CodexChatSessionID: CodexChatSessionModel] = [:]
+    private(set) var runtimeStates: [CodexChatRuntimeState] = []
+    @ObservationIgnored private var threadStates: [String: CodexChatRuntimeState] = [:]
+    @ObservationIgnored private var runtimeTask: Task<Void, Never>?
     private(set) var history: [CodexChatThreadSummary] = []
     private(set) var historyCursor: String?
     private(set) var isLoadingHistory = false
@@ -45,7 +48,35 @@ final class CodexChatCoordinator {
         dockedSessionID = session.id
         sessions[session.id] = session
         configureSessionHandlers(for: session)
+        runtimeTask = Task { [weak self, service] in
+            let stream = await service.observeThreads()
+            for await states in stream {
+                guard let self else { return }
+                await follow(states)
+            }
+        }
     }
+
+    /// Only the thread whose run changed follows it; other views and their loaded history stay as they are.
+    private func follow(_ states: [CodexChatRuntimeState]) async {
+        let account = states.filter { $0.accountID == dockedSession.accountID }
+        runtimeStates = account.filter { $0.status != "settled" }
+        let previous = threadStates
+        let current = Dictionary(account.map { ($0.threadID, $0) }, uniquingKeysWith: { first, _ in first })
+        threadStates = current
+        let changed = Set(previous.keys).union(current.keys).filter {
+            previous[$0]?.turnID != current[$0]?.turnID || previous[$0]?.status != current[$0]?.status
+        }
+        for session in sessions.values {
+            guard let threadID = session.backendThreadID, changed.contains(threadID) else { continue }
+            session.runtimeState = current[threadID]
+            await session.synchronizeThread()
+        }
+        let isNewThread = changed.contains { id in current[id] != nil && !history.contains { $0.id == id } }
+        if isNewThread, showsHistory || isDockedVisible { await refreshHistory() }
+    }
+
+    deinit { runtimeTask?.cancel() }
 
     var dockedSession: CodexChatSessionModel {
         guard let session = sessions[dockedSessionID] else {
@@ -58,7 +89,24 @@ final class CodexChatCoordinator {
         sessions[id]
     }
 
+    func relatedThreads(parentID: String) async throws -> [CodexChatThreadSummary] {
+        try await service.relatedThreads(parentThreadID: parentID)
+    }
+
+    func stopThread(_ threadID: String) async {
+        await service.interruptActiveTurn(threadID: threadID, turnID: nil)
+    }
+
+    func decideRelatedApproval(_ state: CodexChatRuntimeState, id: String, decision: CodexChatApprovalDecision) async throws {
+        guard state.accountID == dockedSession.accountID else { return }
+        try await service.decideApproval(turnID: state.turnID, id: id, decision: decision)
+    }
+
     func activity(for threadID: String) -> CodexChatThreadActivity? {
+        if let state = runtimeStates.first(where: { $0.threadID == threadID }) {
+            if state.status == "queued" { return .queued }
+            return state.approvals.isEmpty ? .running : .waitingForUser
+        }
         guard let session = sessions.values.first(where: {
             $0.backendThreadID == threadID && $0.accountID == dockedSession.accountID
         }) else { return nil }
@@ -91,9 +139,11 @@ final class CodexChatCoordinator {
             contextWorkspaceID = workspace.id
         }
         guard changesAccount else { return }
+        runtimeStates = []
+        Task { await service.stopAccountRuns(except: CodexRuntimeProvider(workspace: workspace).accountKey) }
         for session in sessions.values
             where session.accountID != CodexRuntimeProvider(workspace: workspace).accountKey && session.hasPendingGenerationWork {
-            session.release()
+            session.release(stoppingRun: true)
         }
         let session = makeSession()
         replaceDockedSession(
@@ -189,6 +239,7 @@ final class CodexChatCoordinator {
             if !detachedSessionIDs.contains(existing.id) {
                 replaceDockedSession(with: existing, isVisible: showDockedSidebar)
             }
+            await existing.synchronizeThread()
             return existing.id
         }
 
@@ -213,6 +264,7 @@ final class CodexChatCoordinator {
             } else {
                 detachedSessionIDs.insert(existing.id)
             }
+            await existing.synchronizeThread()
             return existing.id
         }
 
@@ -275,6 +327,7 @@ final class CodexChatCoordinator {
             history.append(contentsOf: page.threads.filter { item in
                 !history.contains(where: { $0.id == item.id })
             })
+            history = CodexChatThreadSummary.treeOrder(history)
             historyCursor = page.nextCursor
         } catch {
             guard generation == historyGeneration else { return }
@@ -327,6 +380,7 @@ final class CodexChatCoordinator {
             settings: settings,
             contextProvider: contextProvider
         )
+        session.runtimeState = backendThreadID.flatMap { threadStates[$0] }
         configureSessionHandlers(for: session)
         return session
     }
