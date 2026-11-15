@@ -1432,18 +1432,21 @@ import Foundation
 
         func setAttachment(_ handle: CodexChatTurnHandle) { attachments.append(handle) }
 
-        func addLiveAttachment() {
+        func addLiveAttachment(isReadOnly: Bool = false) {
+            let id = UUID.v7()
+            if isReadOnly { activeLocalTurnID = id }
             let (stream, reader) = AsyncThrowingStream<CodexChatTurnEvent, any Error>.makeStream()
             blockedContinuation = reader
             reader.yield(.started(turnID: "live"))
             attachments.append(CodexChatTurnHandle(
-                id: .v7(), events: stream,
+                id: id, events: stream,
                 snapshot: CodexChatThread(
                     id: "thread-1",
                     title: "Question",
                     messages: [CodexChatMessage(role: .assistant, text: "Saved partial")],
                     model: nil,
-                    reasoningEffort: nil
+                    reasoningEffort: nil,
+                    isReadOnly: isReadOnly
                 )
             ))
         }

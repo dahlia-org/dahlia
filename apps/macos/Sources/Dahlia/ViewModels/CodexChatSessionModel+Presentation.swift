@@ -4,7 +4,8 @@ extension CodexChatSessionModel {
     }
 
     var canSend: Bool {
-        !isRestoring
+        !isReadOnly
+            && !isRestoring
             && !needsRestore
             && isBoundToCurrentAccount
             && pendingImagePreparationCount == 0

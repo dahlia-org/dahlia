@@ -5,9 +5,48 @@ import Foundation
 
 /// ローカライズ文字列への型安全なアクセスを提供する。
 enum L10n { // swiftlint:disable:this type_body_length
+    static var agentLearningPreviewLimit: String { String(localized: "settings.agents.learning.previewLimit", bundle: bundle) }
+    static var agentMemory: String { String(localized: "settings.agents.learning.agentMemory", bundle: bundle) }
+    static var agentSchedules: String { String(localized: "settings.agents.learning.agentSchedules", bundle: bundle) }
+    static var agentMemoryEnabled: String { String(localized: "settings.agents.learning.agentMemoryEnabled", bundle: bundle) }
+    static var agentLearningEnabled: String { String(localized: "settings.agents.learning.agentLearningEnabled", bundle: bundle) }
+    static var agentLearningDefaultHelp: String { String(localized: "settings.agents.learning.agentLearningDefaultHelp", bundle: bundle) }
+    static var agentMemoryUser: String { String(localized: "settings.agents.learning.agentMemoryUser", bundle: bundle) }
+    static var agentMemoryEnvironment: String { String(localized: "settings.agents.learning.agentMemoryEnvironment", bundle: bundle) }
+    static var agentMemoryByUser: String { String(localized: "settings.agents.learning.agentMemoryByUser", bundle: bundle) }
+    static var agentMemoryByAgent: String { String(localized: "settings.agents.learning.agentMemoryByAgent", bundle: bundle) }
+    static var agentMemoryClear: String { String(localized: "settings.agents.learning.agentMemoryClear", bundle: bundle) }
+    static var agentLearningApprove: String { String(localized: "settings.agents.learning.agentLearningApprove", bundle: bundle) }
+    static var agentLearningDiscard: String { String(localized: "settings.agents.learning.agentLearningDiscard", bundle: bundle) }
+    static var agentLearningUndo: String { String(localized: "settings.agents.learning.agentLearningUndo", bundle: bundle) }
+    static var agentLearningPending: String { String(localized: "settings.agents.learning.agentLearningPending", bundle: bundle) }
+    static var agentLearningApplied: String { String(localized: "settings.agents.learning.agentLearningApplied", bundle: bundle) }
+    static var agentLearningClosed: String { String(localized: "settings.agents.learning.agentLearningClosed", bundle: bundle) }
+    static var agentLearningUpdated: String { String(localized: "settings.agents.learning.agentLearningUpdated", bundle: bundle) }
+    static var agentScheduleApproval: String { String(localized: "settings.agents.learning.agentScheduleApproval", bundle: bundle) }
+    static var agentScheduleReadOnly: String { String(localized: "settings.agents.learning.agentScheduleReadOnly", bundle: bundle) }
+    static var agentScheduleResultReady: String { String(localized: "settings.agents.learning.agentScheduleResultReady", bundle: bundle) }
+    static var agentScheduleUnread: String { String(localized: "settings.agents.learning.agentScheduleUnread", bundle: bundle) }
+    static var agentScheduleHelp: String { String(localized: "settings.agents.learning.agentScheduleHelp", bundle: bundle) }
+    static var agentSchedulesEmpty: String { String(localized: "settings.agents.learning.agentSchedulesEmpty", bundle: bundle) }
+    static var agentSchedulePause: String { String(localized: "settings.agents.learning.agentSchedulePause", bundle: bundle) }
+    static var agentScheduleResume: String { String(localized: "settings.agents.learning.agentScheduleResume", bundle: bundle) }
+    static var agentScheduleRun: String { String(localized: "settings.agents.learning.agentScheduleRun", bundle: bundle) }
+    static var agentScheduleOpen: String { String(localized: "settings.agents.learning.agentScheduleOpen", bundle: bundle) }
+    static var agentScheduleNotify: String { String(localized: "settings.agents.learning.agentScheduleNotify", bundle: bundle) }
+    static var agentScheduleWaitingRecording: String { String(localized: "settings.agents.learning.agentScheduleWaitingRecording", bundle: bundle) }
+    static var agentSkillLock: String { String(localized: "settings.agents.learning.agentSkillLock", bundle: bundle) }
     static var chatChildThread: String { String(localized: "chat.thread.child", bundle: bundle) }
     static var chatRemoveThreadReference: String { String(localized: "chat.thread.removeReference", bundle: bundle) }
     static var chatAddThreadReference: String { String(localized: "chat.thread.addReference", bundle: bundle) }
+    static func agentScheduleStatus(_ status: String) -> String {
+        switch status {
+        case "delivered": String(localized: "settings.agents.learning.delivered", bundle: bundle)
+        case "silent": String(localized: "settings.agents.learning.silent", bundle: bundle)
+        default: chatRunStatus(status)
+        }
+    }
+
     static func chatRunStatus(_ status: String) -> String {
         switch status {
         case "queued": String(localized: "chat.run.queued", bundle: bundle)

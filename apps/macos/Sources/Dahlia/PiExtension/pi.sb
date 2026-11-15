@@ -52,7 +52,8 @@
   (subpath (param "RELEASED_APP_SUPPORT"))
   (subpath (param "AGENT")))
 ; Only this account's own skills are writable; credentials, settings, and installed code remain protected.
-(allow file-read* file-write* (subpath (string-append (param "AGENT") "/skills")))
+(allow file-read* (subpath (string-append (param "AGENT") "/skills")))
+(deny file-write* (subpath (string-append (param "AGENT") "/skills")))
 ; Pi loads skill Markdown outside Seatbelt. Do not let chat redirect that loader to a protected file.
 (deny file-write-create
   (require-all (vnode-type SYMLINK) (subpath (string-append (param "AGENT") "/skills"))))

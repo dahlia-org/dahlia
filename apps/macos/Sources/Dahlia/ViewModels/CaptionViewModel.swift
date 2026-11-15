@@ -680,6 +680,14 @@ final class CaptionViewModel: ObservableObject {
 
     private var activeRecordingStartReservation: RecordingStartReservation?
 
+    /// Includes preparation and finalization so background work never starts between recording phases.
+    var recordingActivityPublisher: AnyPublisher<Bool, Never> {
+        Publishers.CombineLatest3($isRecordingStartPending, $isListening, $isFinalizingRecording)
+            .map { $0 || $1 || $2 }
+            .removeDuplicates()
+            .eraseToAnyPublisher()
+    }
+
     var isRecordingLifecycleBusy: Bool {
         recordingLifecycle != .idle || isRecordingStartPending || isFinalizingRecording
     }

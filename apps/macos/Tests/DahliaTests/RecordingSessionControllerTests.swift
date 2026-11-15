@@ -1,5 +1,6 @@
 #if canImport(Testing)
     @preconcurrency import AVFoundation
+    import Combine
     import DahliaMeetingAccess
     import Foundation
     import GRDB
@@ -635,7 +636,7 @@
                         .init(source: .microphone, forcesEchoCancellationForExternalMicrophone: forcesExternalMicrophoneEchoCancellation),
                         .init(source: .system),
                     ],
-                    dbQueue: mode == .batch ? DatabaseQueue() : nil,
+                    dbQueue: mode == .batch ? try DatabaseQueue() : nil,
                     meetingId: mode == .batch ? .v7() : nil,
                     batchSampleRate: mode == .batch ? 16000 : nil,
                     batchScheduler: mode == .batch ? scheduler : nil
@@ -808,6 +809,64 @@
 
     @MainActor
     struct RecordingStartWarningTests {
+        @Test(arguments: ["manual", "fatal", "start-failure"])
+        func backgroundActivityFollowsActualRecordingLifecycle(stop: String) async throws {
+            let database = try AppDatabaseManager(path: ":memory:")
+            let workspace = WorkspaceRecord(id: .v7(), path: nil, name: "Test", createdAt: .now, lastOpenedAt: .now)
+            try await database.dbQueue.write { try workspace.insert($0) }
+            let probe = RecordingRuntimeProbe()
+            let callbacks = FakeCaptureWarningStore()
+            let controller = RecordingSessionController(
+                captureFactory: FakeAudioCaptureFactory(
+                    probe: probe,
+                    failingSource: stop == "start-failure" ? .system : nil,
+                    warningStore: callbacks
+                ),
+                recognitionFactory: FakeRecognitionFactory(probe: probe),
+                batchRecordingFactory: FakeBatchFactory(probe: probe)
+            )
+            let viewModel = CaptionViewModel(
+                recordingSessionController: controller,
+                audioHardwareQueryService: AudioHardwareQueryService(
+                    availableInputDevicesProvider: { [] }, defaultInputDeviceIDProvider: { nil },
+                    inputVolumeStateProvider: { _ in nil }, inputVolumeSetter: { _, _ in false }
+                ),
+                usageTelemetryReporter: { _ in }
+            )
+            viewModel.microphoneSelection = .none
+            viewModel.isSystemAudioEnabled = true
+            var activity: [Bool] = []
+            let observation = viewModel.recordingActivityPublisher.sink { activity.append($0) }
+            defer { observation.cancel() }
+            #expect(activity == [false])
+            let reservation = try #require(viewModel.reserveRecordingStart())
+            #expect(activity == [false, true])
+            await viewModel.startListening(
+                dbQueue: database.dbQueue,
+                projectURL: nil,
+                workspaceId: workspace.id,
+                projectId: nil,
+                workspaceURL: nil,
+                reservation: reservation
+            )
+            if stop != "start-failure" {
+                #expect(viewModel.isListening)
+                #expect(activity == [false, true])
+                if stop == "fatal" {
+                    let fail = try #require(callbacks.unexpectedStops(for: .system).last)
+                    fail(FakeRuntimeError.captureStop)
+                } else {
+                    viewModel.stopListening()
+                    #expect(viewModel.isFinalizingRecording)
+                    #expect(activity == [false, true])
+                }
+                #expect(await pollUntil { !viewModel.isRecordingLifecycleBusy })
+            }
+            #expect(!viewModel.isListening)
+            #expect(activity == [false, true, false])
+            #expect(await controller.snapshot() == nil)
+        }
+
         @Test
         func recordingStartShowsEveryWarningRaisedWhileStarting() async throws {
             let database = try AppDatabaseManager(path: ":memory:")
@@ -931,12 +990,21 @@
     final class FakeCaptureWarningStore: @unchecked Sendable {
         private struct State {
             var handlers: [RecordingAudioSource: [AudioCaptureWarningHandler]] = [:]
+            var unexpectedStops: [RecordingAudioSource: [AudioCaptureUnexpectedStopHandler]] = [:]
         }
 
         private let state = OSAllocatedUnfairLock(initialState: State())
 
         func append(_ handler: @escaping AudioCaptureWarningHandler, for source: RecordingAudioSource) {
             state.withLock { $0.handlers[source, default: []].append(handler) }
+        }
+
+        func appendUnexpectedStop(_ handler: @escaping AudioCaptureUnexpectedStopHandler, for source: RecordingAudioSource) {
+            state.withLock { $0.unexpectedStops[source, default: []].append(handler) }
+        }
+
+        func unexpectedStops(for source: RecordingAudioSource) -> [AudioCaptureUnexpectedStopHandler] {
+            state.withLock { $0.unexpectedStops[source] ?? [] }
         }
 
         func handlers(for source: RecordingAudioSource) -> [AudioCaptureWarningHandler] {
@@ -985,9 +1053,10 @@
         func makeSession(
             for pipeline: AudioSourcePipeline,
             onWarning: @escaping AudioCaptureWarningHandler,
-            onUnexpectedStop _: @escaping AudioCaptureUnexpectedStopHandler
+            onUnexpectedStop: @escaping AudioCaptureUnexpectedStopHandler
         ) -> any AudioCaptureSession {
             warningStore?.append(onWarning, for: pipeline.source)
+            warningStore?.appendUnexpectedStop(onUnexpectedStop, for: pipeline.source)
             let deviceShouldFail = failingDeviceID.map { pipeline.captureDeviceID == $0 } ?? false
             return FakeAudioCaptureSession(
                 source: pipeline.source,

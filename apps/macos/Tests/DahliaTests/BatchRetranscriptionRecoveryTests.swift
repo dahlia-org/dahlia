@@ -129,7 +129,9 @@ import GRDB
                 onConfirmed: { await confirmationProbe.record($0) }
             )
             #expect(await pollUntil {
-                await coordinator.runningState(sessionId: fixture.session.id) == nil
+                await (try? fixture.database.dbQueue.read { db in
+                    try RecordingSessionRecord.fetchOne(db, key: fixture.session.id)?.isBatchRetranscriptionPending
+                }) == false
             })
 
             let persisted = try await fixture.database.dbQueue.read { db in

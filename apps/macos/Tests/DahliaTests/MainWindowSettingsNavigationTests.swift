@@ -151,7 +151,7 @@
                 #expect(navigation.settingsCategory == .agents)
                 #expect(navigation.agentSettingsTab == .models)
             }
-            #expect(AgentSettingsView.Tab.allCases == [.general, .models, .mcps, .skills, .packages, .security])
+            #expect(AgentSettingsView.Tab.allCases == [.general, .models, .mcps, .skills, .memory, .schedules, .packages, .security])
         }
 
         @Test

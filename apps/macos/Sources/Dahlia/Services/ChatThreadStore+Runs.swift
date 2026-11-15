@@ -7,15 +7,21 @@ extension ChatThreadStore {
 
     /// Kept apart from the status, which the run's own end overwrites.
     func markStoppedByUser(_ id: UUID) throws {
-        try dbQueue.write { try $0.execute(sql: "UPDATE chat_runs SET stoppedByUser = 1 WHERE id = ?", arguments: [id]) }
+        try dbQueue.write {
+            try $0.execute(sql: "UPDATE chat_runs SET stoppedByUser = 1 WHERE id = ?", arguments: [id])
+        }
     }
 
     func interruptQueuedRun(_ id: UUID) throws {
-        try dbQueue.write { try $0.execute(sql: "UPDATE chat_runs SET status = 'interrupted' WHERE id = ? AND status = 'queued'", arguments: [id]) }
+        try dbQueue.write {
+            try $0.execute(sql: "UPDATE chat_runs SET status = 'interrupted' WHERE id = ? AND status = 'queued'", arguments: [id])
+        }
     }
 
     func enqueueRun(_ run: ChatRunRecord, budget: Int = 12) throws -> ChatRunRecord {
-        try dbQueue.write { db in
+        var run = run
+        if run.rootRunID != run.id { run.origin = "thread" }
+        return try dbQueue.write { db in
             guard let target = try ChatThreadRecord.fetchOne(db, key: run.threadID) else {
                 throw PiRuntimeError.invalidProtocolResponse
             }
@@ -49,12 +55,15 @@ extension ChatThreadStore {
 
     func appendRunResponse(_ run: ChatRunRecord, items: [JSONValue], text: String) throws {
         try dbQueue.write { db in
-            try Self.append(items, threadID: run.threadID, in: db)
+            try Self.append(items, threadID: run.threadID, runID: run.id, in: db)
             if !text.isEmpty {
                 try db.execute(
                     sql: "UPDATE chat_runs SET resultExcerpt = ? WHERE id = ?",
-                    arguments: [String(text.prefix(Self.resultExcerptLimit)), run.id]
+                    arguments: [String(text.prefix(run.origin == "schedule" ? 8000 : Self.resultExcerptLimit)), run.id]
                 )
+            }
+            if run.origin == "schedule", !text.isEmpty {
+                try db.execute(sql: "UPDATE chat_schedule_fires SET resultKind=? WHERE runID=?", arguments: [AgentSchedule.result(text), run.id])
             }
             try db.execute(sql: "UPDATE chat_threads SET updatedAt = ? WHERE id = ?", arguments: [Date(), run.threadID])
         }
@@ -95,16 +104,18 @@ extension ChatThreadStore {
     }
 
     func run(id: UUID) throws -> ChatRunRecord? {
-        try dbQueue.read { try ChatRunRecord.fetchOne($0, key: id) }
+        try dbQueue.read {
+            try ChatRunRecord.fetchOne($0, key: id)
+        }
     }
 
-    func interruptQueuedRuns(accountID: String, threadID: String? = nil) throws {
+    func interruptQueuedRuns(accountID: String, threadID: String? = nil, preservingSchedules: Bool = false) throws {
         try dbQueue.write { db in
             try db.execute(sql: """
             UPDATE chat_runs SET status = 'interrupted' WHERE status = 'queued'
                 AND threadID IN (SELECT id FROM chat_threads WHERE accountID = ?)
-                AND (? IS NULL OR threadID = ?)
-            """, arguments: [accountID, threadID, threadID])
+                AND (? IS NULL OR threadID = ?) AND (?=0 OR origin<>'schedule')
+            """, arguments: [accountID, threadID, threadID, preservingSchedules])
         }
     }
 

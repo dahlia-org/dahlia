@@ -4,10 +4,17 @@ import SwiftUI
 struct AgentSkillSettingsView: View {
     let account: CodexRuntimeProvider
     @Environment(MainWindowNavigation.self) private var navigation
+    @State private var learning: AgentLearningSettingsModel
+    @State private var locked: Set<String> = []
     @State private var skills: [CodexChatSlashCommand] = []
     @State private var isLoading = false
     @State private var errorMessage: String?
     @State private var refreshID = 0
+
+    init(account: CodexRuntimeProvider) {
+        self.account = account
+        _learning = State(initialValue: AgentLearningSettingsModel(account: account))
+    }
 
     var body: some View {
         Form {
@@ -24,6 +31,20 @@ struct AgentSkillSettingsView: View {
                         HStack {
                             Text(skill.displayName).font(.dahliaHeadline)
                             Spacer()
+                            Button(locked.contains(skill.displayName) ? L10n.agentSkillLock + " ✓" : L10n.agentSkillLock) {
+                                Task {
+                                    do {
+                                        let service = try await PiChatService.shared.skillService()
+                                        try await service.setLocked(
+                                            name: skill.displayName,
+                                            account: account.accountKey,
+                                            locked: !locked.contains(skill.displayName)
+                                        )
+                                        await refresh()
+                                    } catch { errorMessage = error.localizedDescription }
+                                }
+                            }
+
                             Button(L10n.agentSkillOpenFolder, systemImage: "folder") { openFolder(for: skill) }
                                 .disabled(skill.skillFileURL == nil)
                                 .help(L10n.agentSkillOpenFolder)
@@ -51,6 +72,10 @@ struct AgentSkillSettingsView: View {
             } footer: {
                 Text(L10n.agentSkillsHelp)
             }
+            Section {
+                AgentLearningChangesView(model: learning, kind: "skill")
+                if let error = learning.error { Text(error).foregroundStyle(.red) }
+            }
         }
         .formStyle(.grouped)
         .font(.dahliaBody)
@@ -72,6 +97,14 @@ struct AgentSkillSettingsView: View {
             let result = try await PiRuntimeService.shared.skills(for: account)
             guard !Task.isCancelled else { return }
             skills = result
+            let service = try await PiChatService.shared.skillService()
+            var locks: Set<String> = []
+            for skill in result
+                where try await service.locked(name: skill.displayName, account: account.accountKey) {
+                locks.insert(skill.displayName)
+            }
+            locked = locks
+            await learning.refresh()
         } catch {
             guard !Task.isCancelled else { return }
             skills = []

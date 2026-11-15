@@ -206,7 +206,22 @@ struct CodexChatView: View {
             sidebarViewModel: sidebarViewModel
         )
 
-        if let request = session.pendingUserInput {
+        if session.isReadOnly {
+            HStack {
+                Text(L10n.agentScheduleReadOnly).foregroundStyle(.secondary)
+                Spacer()
+                if session.isGenerating {
+                    CodexChatActionButton(
+                        label: L10n.stopGenerating,
+                        systemImage: "stop.fill",
+                        isEnabled: !session.isTurnCleanupPending,
+                        action: session.stop
+                    )
+                }
+            }
+            .font(.dahliaBody)
+            .padding()
+        } else if let request = session.pendingUserInput {
             CodexChatUserInputView(
                 request: request,
                 isEnabled: session.respondingUserInputID == nil,

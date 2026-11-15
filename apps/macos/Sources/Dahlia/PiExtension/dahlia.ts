@@ -14,6 +14,7 @@ import {
 } from "./databricks-provider.ts";
 
 import { registerThreadTools, threadTools } from "./thread-tools.ts";
+import { registerLearningTools, learningTools } from "./learning-tools.ts";
 import { reviewMCP } from "./mcp-review.ts";
 
 const env = process.env;
@@ -122,7 +123,21 @@ export default function (pi: any) {
   // Unity AI Gateway sign-ins serve chat's MCP servers and every process's models.
   registerDatabricksProviders(pi);
 
+  let reviewIterations = 0;
+  let reviewInputTokens = 0;
+  const reviewBudget = (ctx: any) => ctx.model?.contextWindow > 0 ? Math.min(600_000, ctx.model.contextWindow * 0.75) : 120_000;
+  pi.on("message_end", (event: any, ctx: any) => {
+    if (env.DAHLIA_PI_PROFILE !== "review" || event.message?.role !== "assistant") return;
+    reviewIterations += 1;
+    const usage = event.message.usage ?? {};
+    reviewInputTokens += (usage.input ?? 0) + (usage.cacheRead ?? 0) + (usage.cacheWrite ?? 0);
+    if (reviewIterations >= 16 || reviewInputTokens >= reviewBudget(ctx)) ctx.abort();
+  });
   pi.on("before_provider_request", (event: any, ctx: any) => {
+    if (env.DAHLIA_PI_PROFILE === "review") {
+      // Pi logs hook errors and continues; abort the run explicitly before another request.
+      if (reviewIterations >= 16 || reviewInputTokens >= reviewBudget(ctx)) ctx.abort();
+    }
     const enforce = strictSchemaPayload[ctx.model?.api];
     if (!outputSchema || env.PI_OUTPUT_STRICT_SCHEMA !== "1" || !enforce) return;
     return enforce(event.payload);
@@ -152,6 +167,7 @@ export default function (pi: any) {
       }),
     });
     registerThreadTools(pi, bridge);
+    registerLearningTools(pi, bridge);
     let blockedThisRun = false;
     pi.on("agent_start", () => { blockedThisRun = false; });
     const block = (reason: string) => {
@@ -232,6 +248,15 @@ export default function (pi: any) {
 
     pi.on("tool_call", async (event: any, ctx: any) => {
       const name = event.toolName;
+      const profile = env.DAHLIA_PI_PROFILE ?? "interactive";
+      if (profile === "review" && !["memory", "skills_list", "skill_view", "skill_manage"].includes(name)) {
+        return block("This tool is unavailable during background review.");
+      }
+      if (profile === "scheduled" && !["read", "ls", "skills_list", "skill_view"].includes(name) && !name.startsWith("mcp__")) {
+        return block("Scheduled tasks can only read approved sources.");
+      }
+      if (name === "memory" && env.DAHLIA_PI_MEMORY_ENABLED !== "1") return block("Memory is disabled.");
+      if (learningTools.includes(name)) return;
       const tool = pi.getAllTools().find((tool: any) => tool.name === name);
       // These run under Seatbelt through the tools registered above, never as Pi's own tool of the same name.
       if (["read", "ls", "write", "edit", "bash"].includes(name)) {
@@ -245,6 +270,13 @@ export default function (pi: any) {
       const server: string | undefined = tool?.sourceInfo?.path === "builtin:mcp" ? tool.namespace?.aliases?.[0] : undefined;
       if (server && chatMcpServers.has(server)) {
         const readOnly = server === "dahlia" ? readOnlyDahliaTool.test(name) : tool.annotations?.readOnlyHint === true;
+        if (profile === "scheduled") {
+          const allowed = new Set<string>(JSON.parse(env.DAHLIA_PI_ALLOWED_TOOLS ?? "[]"));
+          if (!readOnly || !allowed.has(name)) return block("This tool was not approved for this schedule.");
+          // Native validation binds each call to the still-running immutable profile and approval revision.
+          const permitted = await bridge(ctx, "scheduledTool", { name, readOnly });
+          return permitted === true ? undefined : block("This scheduled tool is no longer available.");
+        }
         if (readOnly) return;
         // Dahlia owns the approval mode; asking per call applies a change made during the turn to the next tool.
         const approvalMode = await bridge(ctx, "approvalMode", {});

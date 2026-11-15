@@ -19,4 +19,5 @@ struct ChatItemRecord: Codable, FetchableRecord, PersistableRecord, Sendable {
     var seq: Int64
     var data: String
     var createdAt: Date
+    var runID: UUID?
 }

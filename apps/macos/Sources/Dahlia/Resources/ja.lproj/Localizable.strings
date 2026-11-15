@@ -2108,3 +2108,40 @@
 "chat.run.failed" = "失敗";
 
 "chat.thread.removeReference" = "スレッドの参照を削除";
+
+// Pi learning and scheduled tasks
+"settings.agents.learning.agentMemory" = "メモリー";
+"settings.agents.learning.agentSchedules" = "定期実行";
+"settings.agents.learning.agentMemoryEnabled" = "メモリーを使う";
+"settings.agents.learning.agentLearningEnabled" = "会話の後に自動で学習する";
+"settings.agents.learning.agentLearningDefaultHelp" = "自動学習の初期値は入です。設定 → Dahlia AI → メモリーで、変更の確認・取り消しや自動学習の停止ができます。メモリーはアカウント別に、この Mac だけに保存されます。";
+"settings.agents.learning.agentMemoryUser" = "利用者のプロフィール";
+"settings.agents.learning.agentMemoryEnvironment" = "環境の事実";
+"settings.agents.learning.agentMemoryByUser" = "利用者";
+"settings.agents.learning.agentMemoryByAgent" = "エージェント";
+"settings.agents.learning.agentMemoryClear" = "メモリーを全削除";
+"settings.agents.learning.agentLearningApprove" = "承認";
+"settings.agents.learning.agentLearningDiscard" = "捨てる";
+"settings.agents.learning.agentLearningUndo" = "変更を取り消す";
+"settings.agents.learning.agentLearningPending" = "承認待ち";
+"settings.agents.learning.agentLearningApplied" = "反映済み";
+"settings.agents.learning.agentLearningClosed" = "取り消し・破棄済み";
+"settings.agents.learning.agentLearningUpdated" = "自動学習でメモリーまたはスキルの変更がありました。設定 → Dahlia AI で確認できます。";
+"settings.agents.learning.agentScheduleApproval" = "無人で読み取る予定の内容を確認";
+"settings.agents.learning.agentScheduleReadOnly" = "定期実行の結果を表示する閲覧専用スレッドです。結果について話すときは、新しいチャットでこのスレッドを参照してください。";
+"settings.agents.learning.agentScheduleResultReady" = "定期実行の結果が届きました。";
+"settings.agents.learning.agentScheduleUnread" = "定期実行の未読結果";
+"settings.agents.learning.agentScheduleHelp" = "予定の作成はチャットで依頼してください。アプリが開き、このアカウントを選択し、録音していない間だけ、読み取り専用で動きます。実行できなかった分は1回にまとめます。";
+"settings.agents.learning.agentSchedulesEmpty" = "予定はありません";
+"settings.agents.learning.agentSchedulePause" = "停止";
+"settings.agents.learning.agentScheduleResume" = "再開";
+"settings.agents.learning.agentScheduleRun" = "今すぐ実行";
+"settings.agents.learning.agentScheduleOpen" = "結果を開く";
+"settings.agents.learning.agentScheduleNotify" = "結果が届いたら通知";
+"settings.agents.learning.agentScheduleWaitingRecording" = "録音の終了を待っています";
+"settings.agents.learning.agentSkillLock" = "スキルをロック";
+
+"settings.agents.learning.delivered" = "結果あり";
+"settings.agents.learning.silent" = "通知なし";
+
+"settings.agents.learning.previewLimit" = "表示は12,000文字までです。変更内容は全文を保存しています。";

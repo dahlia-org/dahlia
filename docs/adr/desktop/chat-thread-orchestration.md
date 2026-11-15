@@ -63,6 +63,14 @@ caller の自己申告 ID で認可しない。新しい子は1段だけとす�
 履歴とサイドバーは親子関係と実行状態を表示する。親の会話では依頼先の状態・開く・停止と承認操作を提供し、
 入力欄の追加メニューから他スレッドを参照チップとして追加・削除できる。
 
+## 実行の由来と定期実行
+
+`chat_runs.origin` は user / thread / schedule、`profile` は interactive / scheduled を保存する。
+`chat_items.runID` が所属を示し、旧 Item は由来不明とする。人の role や文面から由来を推定しない。
+無人の3本の枠には thread と schedule を含め、対話は数えない。ふり返りは別に1本とする。
+定期実行の結果 Thread は閲覧専用。発火は毎回新規 Pi session とし、再起動時は未着手の schedule だけ待ちに残す。
+詳細は [定期実行](scheduled-agent-scope.md) と [自己学習](pi-self-learning.md) に従う。
+
 ## 操作境界
 
 呼び出し元と同じ実行アカウント内の Thread を対象とし、Workspace をまたぐ一覧・参照・実行を許可する。
