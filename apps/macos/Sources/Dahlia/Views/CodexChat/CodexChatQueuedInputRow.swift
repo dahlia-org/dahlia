@@ -3,14 +3,12 @@ import SwiftUI
 struct CodexChatQueuedInputRow: View {
     @Bindable var session: CodexChatSessionModel
     let input: CodexChatManualSubmission
-    @State private var editedText = ""
-    @State private var editedImages: [CodexChatImageAttachment] = []
     @State private var isSendNowHovered = false
 
     private var isEditing: Bool { session.editingPendingInputID == input.id }
 
     private var canSave: Bool {
-        editedText.nilIfBlank != nil || !editedImages.isEmpty
+        session.pendingInputEditDraft.nilIfBlank != nil || !session.pendingInputEditImages.isEmpty
             || input.composerSnapshot?.referenceIDs.isEmpty == false
             || input.composerSnapshot?.threadReferenceIDs.isEmpty == false
     }
@@ -21,12 +19,12 @@ struct CodexChatQueuedInputRow: View {
             VStack(alignment: .trailing, spacing: 6) {
                 VStack(alignment: .leading, spacing: 6) {
                     if isEditing {
-                        TextField(L10n.messageDahliaAI, text: $editedText, axis: .vertical)
+                        TextField(L10n.messageDahliaAI, text: $session.pendingInputEditDraft, axis: .vertical)
                             .textFieldStyle(.plain)
                             .lineLimit(2 ... 8)
-                        if !editedImages.isEmpty {
-                            CodexChatAttachmentStrip(attachments: editedImages) { id in
-                                editedImages.removeAll { $0.id == id }
+                        if !session.pendingInputEditImages.isEmpty {
+                            CodexChatAttachmentStrip(attachments: session.pendingInputEditImages) { id in
+                                session.pendingInputEditImages.removeAll { $0.id == id }
                             }
                         }
                     } else {
@@ -51,7 +49,7 @@ struct CodexChatQueuedInputRow: View {
                     if isEditing {
                         Button(L10n.cancel, action: session.cancelEditingPendingInput)
                         Button(L10n.save) {
-                            session.savePendingInput(id: input.id, draft: editedText, images: editedImages)
+                            session.savePendingInput(id: input.id, draft: session.pendingInputEditDraft, images: session.pendingInputEditImages)
                         }
                         .disabled(!canSave)
                     } else {
@@ -71,8 +69,6 @@ struct CodexChatQueuedInputRow: View {
                         .onHover { isSendNowHovered = $0 }
                         .disabled(!session.canSendPendingInput(input))
                         CodexChatIconButton(label: L10n.edit, systemImage: "pencil") {
-                            editedText = input.composerSnapshot?.draft ?? input.text
-                            editedImages = input.images
                             session.beginEditingPendingInput(id: input.id)
                         }
                         .disabled(session.editingPendingInputID != nil)

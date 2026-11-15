@@ -258,7 +258,7 @@ import Foundation
         }
     }
 
-    private actor ImageChatService: CodexChatServicing {
+    actor ImageChatService: CodexChatServicing {
         enum SendBehavior {
             case complete
             case failFirst

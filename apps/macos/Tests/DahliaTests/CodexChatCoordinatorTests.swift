@@ -175,6 +175,49 @@ import Foundation
         }
 
         @Test
+        func relatedThreadStopPausesTheDetachedSessionsQueue() async throws {
+            let service = TestCodexChatService(mode: .blockBeforeOutput)
+            let settings = TestCodexChatFixtures.appSettings()
+            settings.currentWorkspace = Self.workspace(name: "Related Stop")
+            let coordinator = CodexChatCoordinator(service: service, settings: settings)
+            let child = coordinator.dockedSession
+            child.draft = "Start"
+            child.sendDraft()
+            try #require(await pollUntil { child.activeTurnID != nil })
+            let threadID = try #require(child.backendThreadID)
+            child.draft = "Next"
+            child.sendDraft(mode: .queue)
+            _ = coordinator.popOutDocked()
+            await coordinator.stopThread(threadID)
+            let queueWasPaused = child.isQueuePaused
+            if !queueWasPaused { child.stop() }
+            #expect(queueWasPaused)
+            try #require(await pollUntil { !child.isGenerating && !child.isTurnCleanupPending })
+            #expect(child.pendingManualInputs.map(\.text) == ["Next"])
+            #expect(await service.sentTextBlocks.count == 1)
+            child.resumeQueue()
+            try #require(await pollUntil { await service.sentTextBlocks.count == 2 })
+            try #require(await pollUntil { child.activeTurnID != nil })
+            await service.completeBlockedTurn()
+            try #require(await pollUntil { !child.hasPendingGenerationWork })
+        }
+
+        @Test
+        func relatedThreadStopKeepsTheServiceFallbackAndPausesAnyIdleQueue() async throws {
+            let service = CoordinatorTestCodexChatService()
+            let coordinator = CodexChatCoordinator(service: service, settings: TestCodexChatFixtures.appSettings())
+            await coordinator.stopThread("not-open")
+            #expect(await service.interruptedThreadIDs == ["not-open"])
+            let id = await coordinator.openHistoryThread(Self.threadSummary(id: "history"))
+            let session = try #require(coordinator.session(for: id))
+            session.pendingManualInputs = [CodexChatManualSubmission(deliveryMode: .queue, text: "Held", images: [])]
+            await coordinator.stopThread("history")
+            #expect(session.isQueuePaused)
+            #expect(session.pendingManualInputs.map(\.text) == ["Held"])
+            #expect(await service.interruptedThreadIDs == ["not-open", "history"])
+        }
+
+        @Test
         func replacingDockedChatKeepsAPausedQueueUntilItIsRemoved() {
             let coordinator = CodexChatCoordinator(service: TestCodexChatService(mode: .block), settings: AppSettings())
             let session = coordinator.dockedSession
@@ -883,6 +926,12 @@ import Foundation
     }
 
     private actor CoordinatorTestCodexChatService: CodexChatServicing {
+        private(set) var interruptedThreadIDs: [String] = []
+
+        func interruptActiveTurn(threadID: String, turnID _: String?) async {
+            interruptedThreadIDs.append(threadID)
+        }
+
         private let failFirstHistoryRequest: Bool
         private let blocksTurn: Bool
         private let delaysSteer: Bool

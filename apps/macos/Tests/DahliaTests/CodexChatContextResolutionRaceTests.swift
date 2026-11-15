@@ -6,6 +6,79 @@ import Foundation
 
     @MainActor
     struct CodexChatContextResolutionRaceTests {
+        @Test(arguments: [false, true])
+        func stoppingDequeuedInputBeforeAcceptancePreservesQueueAndDraft(hasImage: Bool) async throws {
+            let service = ImageChatService(supportsImages: true, sendBehavior: .block)
+            let settings = TestCodexChatFixtures.appSettings()
+            settings.currentWorkspace = Self.testWorkspace()
+            let contextProvider = DelayedCodexChatContextProvider()
+            let session = Self.session(service: service, settings: settings, contextProvider: contextProvider)
+            session.draft = "Start"
+            session.sendDraft()
+            try #require(await pollUntil { contextProvider.isWaiting })
+            contextProvider.resume()
+            try #require(await pollUntil { session.activeTurnID != nil })
+            let image = CodexChatImageAttachment(data: Data([1]), mimeType: "image/png")
+            session.draft = "Next"
+            session.selectedMeetingReferenceIDs = [.v7()]
+            session.attachedImages = hasImage ? [image] : []
+            session.sendDraft(mode: .queue)
+            let next = try #require(session.pendingManualInputs.first)
+            session.draft = "Last"
+            session.sendDraft(mode: .queue)
+            let last = try #require(session.pendingManualInputs.last)
+            await service.completeBlockedTurn()
+            try #require(await pollUntil { contextProvider.isWaiting })
+            session.draft = "Independent draft"
+            session.stop()
+            try #require(await pollUntil { !session.isGenerating && !session.isTurnCleanupPending })
+            contextProvider.resume()
+            #expect(session.isQueuePaused)
+            #expect(session.pendingManualInputs == [next, last])
+            #expect(session.draft == "Independent draft")
+            #expect(await service.sentInputs.count == 1)
+            session.resumeQueue()
+            try #require(await pollUntil { contextProvider.isWaiting })
+            contextProvider.resume()
+            try #require(await pollUntil { await service.sentInputs.count == 2 })
+            try #require(await pollUntil { session.activeTurnID != nil })
+            #expect(await service.sentInputs.last?.compactMap(\.textValue) == [next.text])
+            #expect(session.messages.last(where: { $0.role == .user })?.images == next.images)
+            #expect(session.pendingManualInputs == [last])
+            #expect(session.draft == "Independent draft")
+            await service.completeBlockedTurn()
+            try #require(await pollUntil { contextProvider.isWaiting })
+            contextProvider.resume()
+            try #require(await pollUntil { await service.sentInputs.count == 3 })
+            try #require(await pollUntil { session.activeTurnID != nil })
+            await service.completeBlockedTurn()
+            try #require(await pollUntil { !session.hasPendingGenerationWork })
+        }
+
+        @Test
+        func stoppingAnUnacceptedPendingSteerPreservesItAfterTheComposerChanges() async throws {
+            let service = TestCodexChatService(mode: .blockBeforeOutput)
+            let settings = TestCodexChatFixtures.appSettings()
+            settings.currentWorkspace = Self.testWorkspace()
+            let contextProvider = DelayedCodexChatContextProvider()
+            let session = Self.session(service: service, settings: settings, contextProvider: contextProvider)
+            session.draft = "/mcp"
+            session.sendDraft()
+            try #require(await pollUntil { session.activeTurnID != nil })
+            session.draft = "Next"
+            session.sendDraft(mode: .steer)
+            let next = try #require(session.pendingManualInputs.first)
+            session.draft = "Independent draft"
+            await service.completeBlockedTurn()
+            try #require(await pollUntil { contextProvider.isWaiting })
+            session.stop()
+            try #require(await pollUntil { !session.isGenerating && !session.isTurnCleanupPending })
+            contextProvider.resume()
+            #expect(session.pendingManualInputs == [next])
+            #expect(session.draft == "Independent draft")
+            #expect(session.isQueuePaused)
+        }
+
         @Test
         func stopDuringContextResolutionCancelsBeforeSending() async {
             let service = TestCodexChatService(mode: .complete)
@@ -79,7 +152,7 @@ import Foundation
 
         private static func session(
             backendThreadID: String? = nil,
-            service: TestCodexChatService,
+            service: any CodexChatServicing,
             settings: AppSettings,
             contextProvider: DelayedCodexChatContextProvider
         ) -> CodexChatSessionModel {

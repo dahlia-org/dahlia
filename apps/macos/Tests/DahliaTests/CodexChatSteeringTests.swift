@@ -241,6 +241,57 @@ import Foundation
         }
 
         @Test
+        func pendingEditStateLivesWithTheSessionAndClearsOnCompletion() {
+            let session = makeSession(service: TestCodexChatService(mode: .block))
+            session.isQueuePaused = true
+            session.draft = "Independent draft"
+            let image = CodexChatImageAttachment(data: Data([1]), mimeType: "image/png")
+            let input = CodexChatManualSubmission(deliveryMode: .queue, text: "Original", images: [image])
+            session.pendingManualInputs = [input]
+            session.beginEditingPendingInput(id: input.id)
+            #expect(session.pendingInputEditDraft == "Original")
+            #expect(session.pendingInputEditImages == [image])
+            session.pendingInputEditDraft = "Unsaved edit"
+            session.beginEditingPendingInput(id: input.id)
+            #expect(session.pendingInputEditDraft == "Unsaved edit")
+            #expect(session.pendingInputEditImages == [image])
+            session.savePendingInput(id: input.id, draft: session.pendingInputEditDraft, images: session.pendingInputEditImages)
+            #expect(session.pendingManualInputs.first?.text == "Unsaved edit")
+            #expect(session.pendingManualInputs.first?.images == [image])
+            #expect(session.pendingInputEditDraft.isEmpty)
+            #expect(session.pendingInputEditImages.isEmpty)
+            session.beginEditingPendingInput(id: input.id)
+            session.pendingInputEditDraft = "Cancelled edit"
+            session.cancelEditingPendingInput()
+            #expect(session.pendingInputEditDraft.isEmpty)
+            #expect(session.pendingInputEditImages.isEmpty)
+            session.beginEditingPendingInput(id: input.id)
+            #expect(session.pendingInputEditDraft == "Unsaved edit")
+            session.removePendingInput(id: input.id)
+            #expect(session.editingPendingInputID == nil)
+            #expect(session.pendingInputEditDraft.isEmpty)
+            #expect(session.pendingInputEditImages.isEmpty)
+            #expect(session.draft == "Independent draft")
+        }
+
+        @Test
+        func stoppingAnAcceptedQueuedTurnDoesNotRequeueIt() async throws {
+            let service = TestCodexChatService(mode: .blockBeforeOutput)
+            let session = makeSession(service: service)
+            session.draft = "Start"
+            session.sendDraft()
+            try #require(await pollUntil { session.activeTurnID != nil })
+            session.draft = "Next"
+            session.sendDraft(mode: .queue)
+            await service.completeBlockedTurn()
+            try #require(await pollUntil { await service.sentTextBlocks.count == 2 })
+            try #require(await pollUntil { session.activeTurnID != nil })
+            session.stop()
+            try #require(await pollUntil { !session.isGenerating && !session.isTurnCleanupPending })
+            #expect(session.pendingManualInputs.isEmpty)
+        }
+
+        @Test
         func cancelledEditLeavesQueueUnchangedAndStaleActionsCannotResurrectIt() {
             let session = makeSession(service: TestCodexChatService(mode: .block))
             session.isQueuePaused = true

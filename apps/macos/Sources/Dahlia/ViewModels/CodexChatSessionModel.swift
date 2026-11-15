@@ -96,7 +96,10 @@ final class CodexChatSessionModel: Identifiable {
 
     var isQueuePaused = false
     var editingPendingInputID: UUID?
+    var pendingInputEditDraft = ""
+    var pendingInputEditImages: [CodexChatImageAttachment] = []
     var pendingManualInputs: [CodexChatManualSubmission] = []
+    @ObservationIgnored var preparingQueuedManualSubmission: CodexChatManualSubmission?
     @ObservationIgnored var preparingManualComposerSnapshot: CodexChatComposerSnapshot?
     @ObservationIgnored var lastManualSubmission: CodexChatManualSubmission?
     var activeSteeringManualSubmission: CodexChatManualSubmission?
@@ -436,9 +439,9 @@ final class CodexChatSessionModel: Identifiable {
     }
 
     func stop() {
+        isQueuePaused = true
         guard isGenerating, !isStopRequested else { return }
         isStopRequested = true
-        isQueuePaused = true
         let approvals = pendingApprovals
         let activeTask = turnTask
         let localTurnID = activeTurnHandleID
@@ -675,6 +678,7 @@ extension CodexChatSessionModel {
                 effort: selectedEffort,
                 approvalMethod: approvalMethod
             )
+            preparingQueuedManualSubmission = nil
             applyEffectiveApprovalMethod(turn.approvalMethod ?? approvalMethod, requested: approvalMethod)
             do {
                 try ensureSubmissionCanContinue(submissionID)
@@ -948,6 +952,10 @@ extension CodexChatSessionModel {
         submissionID: UUID?
     ) {
         guard activeSubmissionID == submissionID else { return }
+        if isStopRequested, let preparingQueuedManualSubmission {
+            requeue(preparingQueuedManualSubmission)
+        }
+        preparingQueuedManualSubmission = nil
         historySynchronizationGeneration += 1
         // What this view showed to the end needs no reload; it also holds what history does not, such as command notices.
         if !lostRunEvents, let runID = activeTurnHandleID { displayedRunID = runID }
@@ -1304,7 +1312,7 @@ extension CodexChatSessionModel {
                 return
             }
             let submission = pendingManualInputs.removeFirst()
-            submitManualSubmission(submission)
+            submitManualSubmission(submission, fromQueue: true)
         }
     }
 

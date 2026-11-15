@@ -25,19 +25,28 @@ extension CodexChatSessionModel {
 
     func removePendingInput(id: UUID) {
         pendingManualInputs.removeAll { $0.id == id }
-        if editingPendingInputID == id { editingPendingInputID = nil }
+        if editingPendingInputID == id { clearPendingInputEdit() }
         processPendingInputIfPossible()
         notifyGenerationCompletionIfIdle()
     }
 
     func beginEditingPendingInput(id: UUID) {
-        guard editingPendingInputID == nil, pendingManualInputs.contains(where: { $0.id == id }) else { return }
+        guard editingPendingInputID == nil,
+              let input = pendingManualInputs.first(where: { $0.id == id }) else { return }
+        pendingInputEditDraft = input.composerSnapshot?.draft ?? input.text
+        pendingInputEditImages = input.images
         editingPendingInputID = id
     }
 
     func cancelEditingPendingInput() {
-        editingPendingInputID = nil
+        clearPendingInputEdit()
         processPendingInputIfPossible()
+    }
+
+    private func clearPendingInputEdit() {
+        editingPendingInputID = nil
+        pendingInputEditDraft = ""
+        pendingInputEditImages = []
     }
 
     func savePendingInput(id: UUID, draft: String, images: [CodexChatImageAttachment]) {
