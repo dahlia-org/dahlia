@@ -73,7 +73,7 @@ final class CodexChatSessionModel: Identifiable {
     }
 
     var showsStandaloneThinking: Bool {
-        isGenerating && (isAwaitingTurnOutput || isFinalizingTurn)
+        isGenerating && (isPreparingTurn || isAwaitingTurnOutput || isFinalizingTurn)
     }
 
     @ObservationIgnored private let service: any CodexChatServicing
