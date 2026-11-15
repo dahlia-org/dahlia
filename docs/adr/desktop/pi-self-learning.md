@@ -7,6 +7,7 @@ Private Web、Electron、Local MCP、Server MCP、要約と画像解析には追
 Hermes Agent の固定コミット、英文プロンプト、ツールスキーマ、検査パターンと差分は
 [UPSTREAM.md](../../../apps/macos/Sources/Dahlia/PiExtension/hermes/UPSTREAM.md) を正本とする。
 メモリーは user 1375字、memory 2200字（区切りを含む Unicode scalar 数）。一括操作は全部成功か全部失敗とし、成功時は本文を再提示しない。
+設定の追加・編集画面は対象の種類と入力例を示す。長文は入力欄内でスクロールでき、保存・キャンセルの操作を同じ画面内に保つ。
 無人の patch/remove は作者にかかわらず行と内容を固定した承認待ちにし、現在値が一致する場合だけ承認・取り消しを反映する。
 メモリーと学習の初期値は入。無効化しても記録・承認待ち・反映済みの変更を消さない。
 バックアップと Server 同期の対象外とし、Server の Dahlia Memory とは共有しない。
