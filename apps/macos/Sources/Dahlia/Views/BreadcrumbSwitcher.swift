@@ -3,6 +3,7 @@ import SwiftUI
 struct BreadcrumbSwitcher<Options: View>: View {
     let title: String
     let systemImage: String
+    var hasExportFolder = false
     var sectionTitle: String?
     var arrowEdge: Edge = .bottom
     let action: () -> Void
@@ -23,6 +24,7 @@ struct BreadcrumbSwitcher<Options: View>: View {
         } label: {
             HStack(spacing: 6) {
                 Image(systemName: systemImage)
+                    .workspaceExportFolderBadge(isVisible: hasExportFolder)
                 Text(title)
                     .lineLimit(1)
                     .truncationMode(.tail)

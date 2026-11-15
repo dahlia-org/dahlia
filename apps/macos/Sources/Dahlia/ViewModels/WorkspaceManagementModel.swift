@@ -298,7 +298,13 @@ final class WorkspaceManagementModel {
         }
     }
 
-    func removeWorkspace(_ workspace: WorkspaceRecord, currentWorkspaceId: UUID?) async -> Bool {
+    func deletionTransferCandidates(for workspace: WorkspaceRecord) -> [WorkspaceRecord] {
+        workspaces.filter {
+            $0.id != workspace.id && $0.accountConnectionId == nil && workspace.belongsToSameAccount(as: $0)
+        }
+    }
+
+    func removeWorkspace(_ workspace: WorkspaceRecord, currentWorkspaceId: UUID?, transferringTo destinationID: UUID? = nil) async -> Bool {
         guard workspace.id != currentWorkspaceId else { return false }
         guard workspace.accountConnectionId == nil else { return false }
         guard !isRemovingWorkspace else { return false }
@@ -310,7 +316,11 @@ final class WorkspaceManagementModel {
         isRemovingWorkspace = true
         defer { isRemovingWorkspace = false }
         do {
-            try await repository.deleteWorkspaceSafely(id: workspace.id)
+            if let destinationID {
+                try await repository.transferAndDeleteWorkspace(id: workspace.id, destinationID: destinationID)
+            } else {
+                try await repository.deleteWorkspaceSafely(id: workspace.id)
+            }
             workspaces.removeAll(where: { $0.id == workspace.id })
             return true
         } catch {

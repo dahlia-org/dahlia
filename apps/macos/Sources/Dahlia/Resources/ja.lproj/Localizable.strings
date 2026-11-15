@@ -603,7 +603,7 @@
 "Dahlia request failed (HTTP %lld)." = "Dahlia へのリクエストに失敗しました（HTTP %lld）。";
 "Coming Soon" = "準備中";
 "Loading Workspaces…" = "ワークスペースを読み込み中…";
-"Removing Workspace…" = "ワークスペースを登録解除中…";
+"Deleting Workspace…" = "ワークスペースを削除中…";
 "Confirm Meeting Deletions" = "ミーティング削除を確認";
 "Continue Deleting" = "削除を続行";
 "%lld server meeting deletions are waiting. Continue deleting them?" = "Server 上の %lld 件のミーティング削除が保留中です。削除を続行しますか？";
@@ -742,9 +742,9 @@
 "Add Workspace" = "ワークスペースを追加";
 "Registered Workspaces" = "登録済みのワークスペース";
 "Open Folder as Workspace" = "ワークスペースとしてフォルダを開く";
-"Remove Workspace" = "ワークスペースを登録解除";
-"Open a different workspace before removing this one." = "登録を解除するには、先に別のワークスペースを開いてください。";
-"Remove %@?" = "「%@」の登録を解除しますか？";
+"Delete Workspace" = "ワークスペースを削除";
+"Open a different workspace before deleting this one." = "削除するには、先に別のワークスペースを開いてください。";
+"Delete workspace %@?" = "「%@」を削除しますか？";
 "Dahlia will remove this workspace and its meeting history from the app. Audio files managed outside the workspace folder will also be deleted. Files inside the workspace folder are not changed." = "このワークスペースとミーティング履歴が Dahlia から削除され、ワークスペースの外で Dahlia が管理する音声ファイルも削除されます。ワークスペースフォルダ内のファイルは変更されません。";
 "Workspace Details" = "ワークスペースの詳細";
 "Workspace Name" = "ワークスペース名";
@@ -760,7 +760,7 @@
 "Could not load workspaces." = "ワークスペースを読み込めませんでした。";
 "Could not add the workspace." = "ワークスペースを追加できませんでした。";
 "Could not rename the workspace." = "ワークスペースの名前を変更できませんでした。";
-"Could not remove the workspace." = "ワークスペースの登録を解除できませんでした。";
+"Could not delete the workspace." = "ワークスペースを削除できませんでした。";
 "Open" = "開く";
 "Enlarge screenshot" = "スクリーンショットを拡大表示";
 "Enlarge screenshot: %@" = "スクリーンショット「%@」を拡大表示";
@@ -1994,7 +1994,7 @@
 "Choose the workspace to use with this account." = "このアカウントで使用するワークスペースを選択してください。";
 "New workspace (Default)" = "新規作成（Default）";
 
-"Move to Account" = "アカウントを移動";
+"Move to Account" = "別のアカウントへ移動";
 "Local Export Folder" = "ローカル書き出しフォルダ";
 
 "Fallback Model" = "フォールバックモデル";
@@ -2075,3 +2075,14 @@
 "oauth.callback.retry" = "Dahlia で詳細を確認し、もう一度お試しください。このタブは閉じてもかまいません。";
 
 "Select chat project" = "チャットのプロジェクトを選択";
+
+"Review Private Notes…" = "未公開の旧ノートを確認…";
+"Workspace Content" = "ワークスペース内のデータ";
+"Move content to another workspace" = "別のワークスペースへ移管する";
+"Delete content permanently" = "データも完全に削除する";
+"Destination Workspace" = "移管先のワークスペース";
+"Select a workspace" = "ワークスペースを選択";
+"Move Content and Delete Workspace" = "移管してワークスペースを削除";
+"No other workspace in this account. Create one before moving content." = "同じアカウントに移管先がありません。移管するには先にワークスペースを作成してください。";
+"Move projects, meetings, recordings, documents and instructions within this account. Duplicate names receive a number. Account chats and workspace settings are not moved." = "同じアカウント内でプロジェクト、ミーティング、録音、ドキュメント、カスタム指示を移管します。同名の項目には番号が付きます。アカウントのチャットとワークスペース設定は移管しません。";
+"Existing files in the export folder stay in place." = "書き出し先フォルダ内の既存ファイルはそのまま残ります。";

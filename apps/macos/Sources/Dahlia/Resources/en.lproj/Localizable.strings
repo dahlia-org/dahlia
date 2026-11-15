@@ -603,7 +603,7 @@
 "Dahlia request failed (HTTP %lld)." = "Dahlia request failed (HTTP %lld).";
 "Coming Soon" = "Coming Soon";
 "Loading Workspaces…" = "Loading Workspaces…";
-"Removing Workspace…" = "Removing Workspace…";
+"Deleting Workspace…" = "Deleting Workspace…";
 "Confirm Meeting Deletions" = "Confirm Meeting Deletions";
 "Continue Deleting" = "Continue Deleting";
 "%lld server meeting deletions are waiting. Continue deleting them?" = "%lld server meeting deletions are waiting. Continue deleting them?";
@@ -742,9 +742,9 @@
 "Add Workspace" = "Add Workspace";
 "Registered Workspaces" = "Registered Workspaces";
 "Open Folder as Workspace" = "Open Folder as Workspace";
-"Remove Workspace" = "Remove Workspace";
-"Open a different workspace before removing this one." = "Open a different workspace before removing this one.";
-"Remove %@?" = "Remove %@?";
+"Delete Workspace" = "Delete Workspace";
+"Open a different workspace before deleting this one." = "Open a different workspace before deleting this one.";
+"Delete workspace %@?" = "Delete workspace %@?";
 "Dahlia will remove this workspace and its meeting history from the app. Audio files managed outside the workspace folder will also be deleted. Files inside the workspace folder are not changed." = "Dahlia will remove this workspace and its meeting history from the app. Audio files managed outside the workspace folder will also be deleted. Files inside the workspace folder are not changed.";
 "Workspace Details" = "Workspace Details";
 "Workspace Name" = "Workspace Name";
@@ -760,7 +760,7 @@
 "Could not load workspaces." = "Could not load workspaces.";
 "Could not add the workspace." = "Could not add the workspace.";
 "Could not rename the workspace." = "Could not rename the workspace.";
-"Could not remove the workspace." = "Could not remove the workspace.";
+"Could not delete the workspace." = "Could not delete the workspace.";
 "Open" = "Open";
 "Enlarge screenshot" = "Enlarge screenshot";
 "Enlarge screenshot: %@" = "Enlarge screenshot: %@";
@@ -1994,7 +1994,7 @@
 "Choose the workspace to use with this account." = "Choose the workspace to use with this account.";
 "New workspace (Default)" = "New workspace (Default)";
 
-"Move to Account" = "Move to Account";
+"Move to Account" = "Move to Another Account";
 "Local Export Folder" = "Local Export Folder";
 
 "Fallback Model" = "Fallback Model";
@@ -2075,3 +2075,14 @@
 "oauth.callback.retry" = "Return to Dahlia for details and try again. You can close this tab.";
 
 "Select chat project" = "Select chat project";
+
+"Review Private Notes…" = "Review Private Notes…";
+"Workspace Content" = "Workspace Content";
+"Move content to another workspace" = "Move content to another workspace";
+"Delete content permanently" = "Delete content permanently";
+"Destination Workspace" = "Destination Workspace";
+"Select a workspace" = "Select a workspace";
+"Move Content and Delete Workspace" = "Move Content and Delete Workspace";
+"No other workspace in this account. Create one before moving content." = "No other workspace in this account. Create one before moving content.";
+"Move projects, meetings, recordings, documents and instructions within this account. Duplicate names receive a number. Account chats and workspace settings are not moved." = "Move projects, meetings, recordings, documents and instructions within this account. Duplicate names receive a number. Account chats and workspace settings are not moved.";
+"Existing files in the export folder stay in place." = "Existing files in the export folder stay in place.";

@@ -9,7 +9,6 @@ struct WorkspaceSidebarView: View {
     let onRemove: (WorkspaceRecord) -> Void
 
     @Environment(MainWindowNavigation.self) private var mainWindowNavigation
-    @State private var isShowingRemovalConfirmation = false
 
     private var selectedWorkspace: WorkspaceRecord? {
         guard let selectedWorkspaceId else { return nil }
@@ -42,7 +41,7 @@ struct WorkspaceSidebarView: View {
 
                 DahliaWindowHeaderIconButton(
                     label: removeButtonLabel,
-                    systemImage: "minus",
+                    systemImage: "trash",
                     action: requestRemoval
                 )
                 .disabled(
@@ -51,16 +50,6 @@ struct WorkspaceSidebarView: View {
                         || isCurrentWorkspaceSelected
                         || selectedWorkspace?.accountConnectionId != nil
                 )
-                .confirmationDialog(
-                    L10n.removeWorkspaceConfirmation(selectedWorkspace?.name ?? ""),
-                    isPresented: $isShowingRemovalConfirmation,
-                    titleVisibility: .visible
-                ) {
-                    Button(L10n.removeWorkspace, role: .destructive, action: confirmRemoval)
-                    Button(L10n.cancel, role: .cancel) {}
-                } message: {
-                    Text(L10n.removeWorkspaceConfirmationDescription)
-                }
             }
 
             List(selection: $selectedWorkspaceId) {
@@ -76,7 +65,7 @@ struct WorkspaceSidebarView: View {
                                     .truncationMode(.middle)
                             }
                         } icon: {
-                            ProjectAppearanceIcon(appearance: workspace.appearance ?? .workspaceDefault)
+                            WorkspaceIcon(workspace: workspace)
                         }
 
                         Spacer()
@@ -114,11 +103,6 @@ struct WorkspaceSidebarView: View {
 
     private func requestRemoval() {
         guard let selectedWorkspace, !isCurrentWorkspaceSelected, selectedWorkspace.accountConnectionId == nil else { return }
-        isShowingRemovalConfirmation = true
-    }
-
-    private func confirmRemoval() {
-        guard let selectedWorkspace else { return }
         onRemove(selectedWorkspace)
     }
 }

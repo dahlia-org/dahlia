@@ -1950,7 +1950,7 @@ enum L10n { // swiftlint:disable:this type_body_length
     static var startupQuit: String { String(localized: "Quit Dahlia", bundle: bundle) }
 
     static var loadingWorkspaces: String { String(localized: "Loading Workspaces…", bundle: bundle) }
-    static var removingWorkspace: String { String(localized: "Removing Workspace…", bundle: bundle) }
+    static var removingWorkspace: String { String(localized: "Deleting Workspace…", bundle: bundle) }
     static var workspaceSyncConflict: String { String(localized: "Sync conflict", bundle: bundle) }
     static var workspaceSyncRecovering: String { String(localized: "Retrieving latest data…", bundle: bundle) }
     static var workspaceSyncRecoveryPending: String { String(localized: "Waiting to retrieve latest data", bundle: bundle) }
@@ -2357,12 +2357,12 @@ enum L10n { // swiftlint:disable:this type_body_length
     static var addWorkspace: String { String(localized: "Add Workspace", bundle: bundle) }
     static var registeredWorkspaces: String { String(localized: "Registered Workspaces", bundle: bundle) }
     static var openFolderAsWorkspace: String { String(localized: "Open Folder as Workspace", bundle: bundle) }
-    static var removeWorkspace: String { String(localized: "Remove Workspace", bundle: bundle) }
+    static var removeWorkspace: String { String(localized: "Delete Workspace", bundle: bundle) }
     static var currentWorkspaceRemoveDescription: String { String(
-        localized: "Open a different workspace before removing this one.",
+        localized: "Open a different workspace before deleting this one.",
         bundle: bundle
     ) }
-    static func removeWorkspaceConfirmation(_ name: String) -> String { String(localized: "Remove \(name)?", bundle: bundle) }
+    static func removeWorkspaceConfirmation(_ name: String) -> String { String(localized: "Delete workspace \(name)?", bundle: bundle) }
     static var removeWorkspaceConfirmationDescription: String { String(
         localized: """
         Dahlia will remove this workspace and its meeting history from the app. \
@@ -2371,6 +2371,22 @@ enum L10n { // swiftlint:disable:this type_body_length
         """,
         bundle: bundle
     ) }
+    static var reviewPrivateDocuments: String { String(localized: "Review Private Notes…", bundle: bundle) }
+    static var workspaceContentHandling: String { String(localized: "Workspace Content", bundle: bundle) }
+    static var transferWorkspaceContent: String { String(localized: "Move content to another workspace", bundle: bundle) }
+    static var deleteWorkspaceContent: String { String(localized: "Delete content permanently", bundle: bundle) }
+    static var workspaceTransferDestination: String { String(localized: "Destination Workspace", bundle: bundle) }
+    static var selectWorkspaceTransferDestination: String { String(localized: "Select a workspace", bundle: bundle) }
+    static var transferAndDeleteWorkspace: String { String(localized: "Move Content and Delete Workspace", bundle: bundle) }
+    static var noWorkspaceTransferDestination: String { String(
+        localized: "No other workspace in this account. Create one before moving content.",
+        bundle: bundle
+    ) }
+    static var workspaceTransferDescription: String { String(
+        localized: "Move projects, meetings, recordings, documents and instructions within this account. Duplicate names receive a number. Account chats and workspace settings are not moved.",
+        bundle: bundle
+    ) }
+    static var workspaceExportFilesAreKept: String { String(localized: "Existing files in the export folder stay in place.", bundle: bundle) }
     static var workspaceDetails: String { String(localized: "Workspace Details", bundle: bundle) }
     static var workspaceName: String { String(localized: "Workspace Name", bundle: bundle) }
     static var workspaceNameDescription: String { String(localized: "Enter a name for the new workspace.", bundle: bundle) }
@@ -2388,7 +2404,7 @@ enum L10n { // swiftlint:disable:this type_body_length
     static var workspaceLoadFailed: String { String(localized: "Could not load workspaces.", bundle: bundle) }
     static var workspaceAddFailed: String { String(localized: "Could not add the workspace.", bundle: bundle) }
     static var workspaceRenameFailed: String { String(localized: "Could not rename the workspace.", bundle: bundle) }
-    static var workspaceRemoveFailed: String { String(localized: "Could not remove the workspace.", bundle: bundle) }
+    static var workspaceRemoveFailed: String { String(localized: "Could not delete the workspace.", bundle: bundle) }
     static var open: String { String(localized: "Open", bundle: bundle) }
     static var loadingLanguages: String { String(localized: "Loading supported languages...", bundle: bundle) }
     static var searchLanguages: String { String(localized: "Search languages...", bundle: bundle) }

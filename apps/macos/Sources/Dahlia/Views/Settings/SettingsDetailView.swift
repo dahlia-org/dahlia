@@ -11,6 +11,7 @@ struct SettingsDetailView: View {
 
     @ObservedObject private var appSettings = AppSettings.shared
     @State private var workspaceDetailsID: UUID?
+    @State private var deletingWorkspace: WorkspaceRecord?
     @State private var publishingDocuments = WorkspaceDocumentPublicationPresentation()
     @State private var dahliaAccountController = DahliaCloudAccountController.shared
 
@@ -61,6 +62,21 @@ struct SettingsDetailView: View {
             }
         }
         .overlay {
+            if let workspace = deletingWorkspace {
+                WorkspaceDeletionDialog(
+                    workspace: workspace,
+                    destinations: workspaceManagementModel.deletionTransferCandidates(for: workspace),
+                    onCancel: { deletingWorkspace = nil },
+                    onConfirm: { destinationID in
+                        await workspaceManagementModel.removeWorkspace(
+                            workspace, currentWorkspaceId: appSettings.currentWorkspace?.id, transferringTo: destinationID
+                        )
+                    }
+                )
+                .id(workspace.id)
+            }
+        }
+        .overlay {
             if let workspace = publishingDocuments.workspace, let appDatabase {
                 let requestID = publishingDocuments.id
                 DocumentPublicationView(workspace: workspace, dbQueue: appDatabase.dbQueue) {
@@ -98,6 +114,7 @@ struct SettingsDetailView: View {
                 accountConnections: dahliaAccountController.connections,
                 canSwitchWorkspace: canSwitchWorkspace,
                 onShowDetails: { workspaceDetailsID = $0 },
+                onRequestDeletion: { deletingWorkspace = $0 },
                 onShowDocumentPublication: { publishingDocuments.show($0) },
                 onUpdateWorkspace: updateCurrentWorkspaceIfNeeded
             )

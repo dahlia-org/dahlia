@@ -5067,8 +5067,11 @@ final class CaptionViewModel: ObservableObject {
             }
         }
         job.showStage("saving")
-        let previousWorkspaceRelativePath = try await request.dbQueue.read { db in
-            try SummaryExportRecord.fetchOne(meetingId: meetingId, type: .workspace, in: db)?.workspaceRelativePath
+        let previousWorkspaceExport = try await request.dbQueue.read { db in
+            try (
+                workspaceID: MeetingRecord.fetchOne(db, key: meetingId)?.workspaceId,
+                relativePath: SummaryExportRecord.fetchOne(meetingId: meetingId, type: .workspace, in: db)?.workspaceRelativePath
+            )
         }
         try await Task.detached(priority: .userInitiated) {
             try repo.applyGeneratedSummary(
@@ -5113,7 +5116,8 @@ final class CaptionViewModel: ObservableObject {
                         summaryFileName: generatedSummary.fileName,
                         summaryMarkdown: generatedSummary.markdown,
                         isAlreadyPersisted: true,
-                        previousWorkspaceRelativePath: previousWorkspaceRelativePath
+                        previousWorkspaceRelativePath: previousWorkspaceExport.relativePath,
+                        previousWorkspaceID: previousWorkspaceExport.workspaceID
                     )
                 ) else {
                     throw SummaryGenerationPreparationError.meetingUnavailable

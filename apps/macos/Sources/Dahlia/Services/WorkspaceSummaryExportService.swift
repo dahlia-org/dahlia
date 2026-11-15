@@ -14,6 +14,7 @@ enum WorkspaceSummaryExportService {
         let summaryMarkdown: String
         var isAlreadyPersisted = false
         var previousWorkspaceRelativePath: String?
+        var previousWorkspaceID: UUID?
     }
 
     struct LockedSummaryExportResult: Sendable {
@@ -199,7 +200,8 @@ enum WorkspaceSummaryExportService {
             let fileURL = try resolveSummaryFileURL(
                 projectURL: projectURL,
                 workspaceURL: request.workspaceURL,
-                storedSummaryRelativePath: latest.2 ?? request.previousWorkspaceRelativePath,
+                storedSummaryRelativePath: latest
+                    .2 ?? (request.previousWorkspaceID == request.workspaceID ? request.previousWorkspaceRelativePath : nil),
                 meetingId: request.meetingID,
                 summaryFileName: request.summaryFileName
             )
@@ -213,7 +215,8 @@ enum WorkspaceSummaryExportService {
             ) {
                 try repository.updateSummaryWorkspaceRelativePath(
                     forMeetingId: request.meetingID,
-                    relativePath: relativePath
+                    relativePath: relativePath,
+                    expectedWorkspaceID: request.workspaceID
                 )
             }
             return LockedSummaryExportResult(fileURL: fileURL, projectName: projectName)
