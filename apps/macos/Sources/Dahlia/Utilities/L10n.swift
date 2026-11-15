@@ -1170,11 +1170,6 @@ enum L10n { // swiftlint:disable:this type_body_length
         bundle: bundle
     ) }
 
-    static var enableLiveSubtitlesToConfigure: String { String(
-        localized: "Turn on live subtitles to choose their source and line count.",
-        bundle: bundle
-    ) }
-
     static var includeMicrophone: String { String(localized: "Include Microphone", bundle: bundle) }
     static var liveSubtitleMicrophoneDescription: String { String(
         localized: "Include microphone input in live subtitles. This does not change recorded audio or the final transcript.",
@@ -3627,6 +3622,7 @@ enum L10n { // swiftlint:disable:this type_body_length
         bundle: bundle
     ) }
     static var liveTranscriptDraft: String { String(localized: "liveTranscriptDraft", bundle: bundle) }
+    static var liveTranscriptDraftSectionTitle: String { String(localized: "liveTranscriptDraftSectionTitle", bundle: bundle) }
     static var automaticRecordingProcessing: String { String(localized: "automaticRecordingProcessing", bundle: bundle) }
     static var processingConfirmationTitle: String { String(localized: "録音を処理", bundle: bundle) }
     static var processingConfirmationDescription: String { String(localized: "保存した録音から文字起こしと要約を作成します。", bundle: bundle) }

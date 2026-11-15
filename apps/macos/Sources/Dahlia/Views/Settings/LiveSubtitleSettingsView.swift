@@ -10,6 +10,16 @@ struct LiveSubtitleSettingsView: View {
         if let error = workspaceSettings.errorMessage {
             Section { SettingsStatusMessage(text: error, systemImage: "exclamationmark.triangle", tint: .orange) }
         }
+        if settings.currentWorkspace != nil {
+            Section {
+                Toggle(L10n.liveTranscriptDraft, isOn: $workspaceSettings.generationSettings.liveTranscriptDraft)
+                    .toggleStyle(.switch)
+            } header: {
+                Text(L10n.liveTranscriptDraftSectionTitle)
+                    .font(.dahliaSectionHeader)
+            }
+        }
+
         Section {
             Toggle(isOn: $settings.liveSubtitleOverlayEnabled) {
                 Text(L10n.liveSubtitles)
@@ -17,24 +27,14 @@ struct LiveSubtitleSettingsView: View {
             }
             .toggleStyle(.switch)
 
-            if settings.currentWorkspace != nil {
-                Toggle(L10n.liveTranscriptDraft, isOn: $workspaceSettings.generationSettings.liveTranscriptDraft)
-                    .toggleStyle(.switch)
-            }
-
             LiveTranscriptionLanguagePicker(supportedLocales: supportedLocales)
                 .disabled(isLoadingLocales)
-        } footer: {
-            Text(L10n.liveSubtitleOverlayDescription)
-        }
 
-        Section {
             Toggle(isOn: $settings.includesMicrophoneInLiveSubtitles) {
                 Text(L10n.includeMicrophone)
                 Text(L10n.liveSubtitleMicrophoneDescription)
             }
             .toggleStyle(.switch)
-            .disabled(!settings.liveSubtitleOverlayEnabled)
 
             Picker(selection: $settings.liveSubtitleOverlaySegmentCount) {
                 ForEach(1 ..< 6, id: \.self) { count in
@@ -45,14 +45,11 @@ struct LiveSubtitleSettingsView: View {
                 Text(L10n.liveSubtitleOverlaySegmentCountDescription)
             }
             .pickerStyle(.menu)
-            .disabled(!settings.liveSubtitleOverlayEnabled)
         } header: {
-            Text(L10n.liveSubtitleOverlay)
+            Text(L10n.liveSubtitles)
                 .font(.dahliaSectionHeader)
         } footer: {
-            if !settings.liveSubtitleOverlayEnabled {
-                Text(L10n.enableLiveSubtitlesToConfigure)
-            }
+            Text(L10n.liveSubtitleOverlayDescription)
         }
 
         Section {

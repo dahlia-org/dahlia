@@ -635,7 +635,7 @@
 "Translate live subtitles for display. This does not change the language of the saved transcript." = "表示する字幕を翻訳します。保存する文字起こしの言語は変更しません。";
 "Target Language" = "翻訳先の言語";
 "Choose which language translated live subtitles should use." = "翻訳したライブ字幕に使う言語を選びます。";
-"liveSubtitleTranslationDisabledForMatchingLiveTranscriptionLanguage" = "翻訳先の言語がライブ文字起こし言語と同じ場合、翻訳は自動的に無効になります。";
+"liveSubtitleTranslationDisabledForMatchingLiveTranscriptionLanguage" = "翻訳先の言語がライブ字幕言語と同じ場合、翻訳は自動的に無効になります。";
 "Google Calendar" = "Google カレンダー";
 "macOS Calendar" = "macOS カレンダー";
 "Calendar Source" = "カレンダーソース";
@@ -777,7 +777,7 @@
 "Open Language Settings" = "言語設定を開く";
 "Recorded Languages" = "録音時に使用した言語";
 "Transcription Language" = "文字起こし言語";
-"liveTranscriptionLanguage" = "ライブ文字起こし言語";
+"liveTranscriptionLanguage" = "ライブ字幕言語";
 "liveTranscriptionLanguageDescription" = "録音中のライブ字幕と、ライブ文字起こしで作成する初版に共通で使う言語です。録音パネルからも変更できます。";
 "Language Range" = "言語の範囲";
 "All Supported Languages" = "対応するすべての言語";
@@ -1253,7 +1253,6 @@
 "%@ registration command" = "%@ 登録コマンド";
 "Turn on meeting notifications to choose notification conditions." = "通知条件を選ぶには、ミーティング通知をオンにしてください。";
 "Turn on live subtitle translation to choose a target language." = "翻訳先の言語を選ぶには、ライブ字幕翻訳をオンにしてください。";
-"Turn on live subtitles to choose their source and line count." = "音声ソースと表示行数を選ぶには、ライブ字幕をオンにしてください。";
 "Zoom In" = "拡大";
 "Zoom Out" = "縮小";
 "Add" = "追加";
@@ -1578,6 +1577,7 @@
 
 "meetingSync.relocationPaused" = "移管先の権限または未同期の変更を確認するため同期を停止しています。ローカルデータは保持されています。";
 "liveTranscriptDraft" = "ライブ文字起こしで初版を作成";
+"liveTranscriptDraftSectionTitle" = "文字起こしの初版";
 "automaticRecordingProcessing" = "録音終了後に自動処理";
 "processingLocalTranscription" = "ローカルで文字起こし → 要約";
 "processingCloudTranscription" = "クラウドで文字起こし → 要約";
@@ -2091,7 +2091,7 @@
 "meetingProcessingFlowTitle" = "ミーティングのデータ処理";
 "meetingProcessingFlowHint" = "図の項目をクリックすると、下に設定が表示されます。ワークスペースの出力言語を変更する場合は、表示されたボタンからワークスペース設定を開きます。";
 "meetingProcessingAudio" = "音声";
-"meetingProcessingLiveTranscription" = "ライブ文字起こし（字幕）";
+"meetingProcessingLiveTranscription" = "ライブ字幕";
 "meetingProcessingImageRecognition" = "画像認識（検索用）";
 "meetingProcessingSummaryGeneration" = "要約生成";
 "meetingProcessingOpenWorkspaceSettings" = "ワークスペース設定で出力言語を変更…";
