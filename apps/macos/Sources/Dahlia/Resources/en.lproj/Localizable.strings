@@ -1765,7 +1765,7 @@
 "settings.agents.intro" = "Configure summaries, image analysis, and chat for the selected account on this Mac.";
 "settings.group.features" = "Features";
 "Dahlia MCP" = "Dahlia MCP";
-"settings.meetings.intro" = "Configure transcription, live subtitles, screenshots, and meeting links for the selected account on this Mac.";
+"settings.meetings.intro" = "Configure audio and visual data processing. Transcription, subtitle, and screenshot capture settings are saved for the selected account on this Mac.";
 "settings.dahliaMCP.intro" = "Use Dahlia meetings from an external AI app. Choose what it can access and do, then copy the connection settings.";
 "settings.agents.unityGatewayMCPs" = "Unity AI Gateway MCPs";
 "settings.agents.models" = "Models";
@@ -2086,6 +2086,19 @@
 "No other workspace in this account. Create one before moving content." = "No other workspace in this account. Create one before moving content.";
 "Move projects, meetings, recordings, documents and instructions within this account. Duplicate names receive a number. Account chats and workspace settings are not moved." = "Move projects, meetings, recordings, documents and instructions within this account. Duplicate names receive a number. Account chats and workspace settings are not moved.";
 "Existing files in the export folder stay in place." = "Existing files in the export folder stay in place.";
+
+// Meeting data processing flow
+"meetingProcessingFlowTitle" = "Meeting data processing";
+"meetingProcessingFlowHint" = "Select a step or the workspace region to show its settings below. To change the workspace output language, use the button in those settings.";
+"meetingProcessingAudio" = "Audio";
+"meetingProcessingLiveTranscription" = "Live transcription (subtitles)";
+"meetingProcessingImageRecognition" = "Image recognition (search)";
+"meetingProcessingSummaryGeneration" = "Summary generation";
+"meetingProcessingOpenWorkspaceSettings" = "Change output language in Workspace settings…";
+"meetingDataProcessing" = "Data processing";
+"meetingProcessingVideo" = "Video";
+"meetingProcessingScreenshotCapture" = "Screenshot capture";
+"settings.meetingLinks.intro" = "Choose which apps open meeting links. Settings are saved for the selected account on this Mac.";
 
 "chat.thread.child" = "Child thread";
 "chat.thread.addReference" = "Reference a thread";

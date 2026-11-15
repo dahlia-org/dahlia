@@ -1,7 +1,7 @@
 import SwiftUI
 
 /// The language of the recognizer that runs during recording. Live subtitles and the live transcript draft share that
-/// recognizer, so both settings tabs show this one control.
+/// recognizer, so every settings entry point uses this one control.
 struct LiveTranscriptionLanguagePicker: View {
     @ObservedObject private var settings = AppSettings.shared
     let supportedLocales: [Locale]

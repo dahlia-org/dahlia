@@ -6,6 +6,22 @@
     @MainActor
     struct MainWindowSettingsNavigationTests {
         @Test
+        func meetingsStartWithProcessingFlowAndKeepItWhenReturningFromWorkspaceSettings() throws {
+            let suite = "MainWindowSettingsNavigationTests.\(UUID())"
+            let defaults = try #require(UserDefaults(suiteName: suite))
+            defer { defaults.removePersistentDomain(forName: suite) }
+            let navigation = MainWindowNavigation(openMainWindow: {}, initialSettingsCategory: .general, settingsDefaults: defaults)
+            navigation.openSettings(category: .meetings)
+            navigation.meetingProcessingSelection = .workspace
+
+            navigation.openSettings(category: .workspace)
+            #expect(navigation.settingsCategory == .workspace)
+            navigation.openSettings(category: .meetings)
+            #expect(navigation.settingsCategory == .meetings)
+            #expect(navigation.meetingProcessingSelection == .workspace)
+        }
+
+        @Test
         func settingsPresentationPreservesCurrentAppLocation() {
             let navigation = MainWindowNavigation(
                 openMainWindow: {},
@@ -95,21 +111,24 @@
         }
 
         @Test
-        func formerRecordingPagesOpenTheirMeetingsTab() {
+        func formerRecordingPagesSelectTheirProcessingStep() {
             let navigation = MainWindowNavigation(openMainWindow: {}, initialSettingsCategory: .general)
             navigation.openSettings(category: .screenshots)
             #expect(navigation.settingsCategory == .meetings)
-            #expect(navigation.meetingSettingsTab == .screenshots)
+            #expect(navigation.meetingProcessingSelection == .screenshots)
 
             navigation.openSettings(category: .liveSubtitles)
-            #expect(navigation.meetingSettingsTab == .liveSubtitles)
+            #expect(navigation.meetingProcessingSelection == .liveTranscription)
 
             navigation.openSettings(category: .recordingStopDetection)
-            #expect(navigation.meetingSettingsTab == .transcription)
+            #expect(navigation.meetingProcessingSelection == .transcription)
 
             navigation.openSettings(category: .meetingLinks)
-            #expect(navigation.settingsCategory == .meetings)
-            #expect(navigation.meetingSettingsTab == .meetingLinks)
+            navigation.openSettings(category: .transcription)
+            #expect(navigation.meetingProcessingSelection == .transcription)
+
+            navigation.openSettings(category: .meetingLinks)
+            #expect(navigation.settingsCategory == .meetingLinks)
         }
 
         @Test(arguments: [SettingsCategory.agents, .macInference, .dahliaAccounts])

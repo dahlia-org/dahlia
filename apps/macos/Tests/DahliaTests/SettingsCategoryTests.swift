@@ -9,17 +9,17 @@ import Foundation
     struct SettingsCategoryTests {
         @Test
         func accountAndWorkspacePreferencesHaveSeparateDestinations() {
-            #expect(SettingsGroup.features.categories == [.workspace, .meetings, .agents, .dahliaMCP, .calendar])
+            #expect(SettingsGroup.features.categories == [.workspace, .meetings, .agents, .dahliaMCP, .calendar, .meetingLinks])
             // Calendar sources and meeting links are per account; how events are shown applies to the whole app.
             #expect(SettingsGroup.app.categories.contains(.appearance))
-            #expect(SettingsNavigation.visibleSelection(.meetingLinks) == .meetings)
+            #expect(SettingsNavigation.visibleSelection(.meetingLinks) == .meetingLinks)
             #expect(SettingsCategory.calendar.matches(L10n.calendarSources))
             #expect(!SettingsCategory.calendar.matches(L10n.menuBarCalendar))
             #expect(SettingsCategory.appearance.matches(L10n.menuBarCalendar))
             #expect(SettingsCategory.appearance.matches(L10n.calendarEventsToInclude))
             #expect(SettingsCategory.appearance.matches(L10n.appearanceEventDisplay))
             #expect(SettingsCategory.appearance.matches(L10n.appearanceMenuBar))
-            #expect(SettingsCategory.meetings.matches(L10n.meetingLinkApplications))
+            #expect(SettingsCategory.meetingLinks.matches(L10n.meetingLinkApplications))
             #expect(!SettingsCategory.appearance.matches(L10n.meetingLinkApplications))
             #expect(SettingsCategory.agents.matches("Gmail"))
             #expect(SettingsCategory.agents.matches(L10n.agentPackages))
@@ -56,7 +56,6 @@ import Foundation
                 .transcription,
                 .liveSubtitles,
                 .screenshots,
-                .meetingLinks,
             ]
             let expectedCategories = SettingsCategory.allCases.filter { !hiddenCategories.contains($0) }
 
@@ -194,9 +193,12 @@ import Foundation
             let defaults = try #require(UserDefaults(suiteName: suiteName))
             defer { defaults.removePersistentDomain(forName: suiteName) }
 
-            SettingsNavigation.saveSelection(.meetingLinks, in: defaults)
-
+            SettingsNavigation.saveSelection(.screenshots, in: defaults)
             #expect(defaults.string(forKey: SettingsNavigation.selectedCategoryDefaultsKey) == SettingsCategory.meetings.rawValue)
+
+            SettingsNavigation.saveSelection(.meetingLinks, in: defaults)
+            #expect(defaults.string(forKey: SettingsNavigation.selectedCategoryDefaultsKey) == SettingsCategory.meetingLinks.rawValue)
+            #expect(SettingsNavigation.savedSelection(in: defaults) == .meetingLinks)
         }
 
         @Test

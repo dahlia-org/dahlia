@@ -1765,7 +1765,7 @@
 "settings.agents.intro" = "要約・画像解析・チャットの設定です。選択中のアカウントごとに、このMacに保存します。";
 "settings.group.features" = "機能";
 "Dahlia MCP" = "Dahlia MCP";
-"settings.meetings.intro" = "文字起こし・ライブ字幕・スクリーンショット・会議リンクの設定です。選択中のアカウントごとに、このMacに保存します。";
+"settings.meetings.intro" = "音声・映像のデータ処理を設定します。文字起こし・字幕・画像取得の設定は、選択中のアカウントごとにこのMacに保存します。";
 "settings.dahliaMCP.intro" = "外部の AI アプリから Dahlia のミーティングを利用できます。公開する範囲と権限を選び、接続用の設定をコピーしてください。";
 "settings.agents.unityGatewayMCPs" = "Unity AI Gateway の MCP";
 "settings.agents.models" = "モデル";
@@ -2086,6 +2086,19 @@
 "No other workspace in this account. Create one before moving content." = "同じアカウントに移管先がありません。移管するには先にワークスペースを作成してください。";
 "Move projects, meetings, recordings, documents and instructions within this account. Duplicate names receive a number. Account chats and workspace settings are not moved." = "同じアカウント内でプロジェクト、ミーティング、録音、ドキュメント、カスタム指示を移管します。同名の項目には番号が付きます。アカウントのチャットとワークスペース設定は移管しません。";
 "Existing files in the export folder stay in place." = "書き出し先フォルダ内の既存ファイルはそのまま残ります。";
+
+// Meeting data processing flow
+"meetingProcessingFlowTitle" = "ミーティングのデータ処理";
+"meetingProcessingFlowHint" = "図の項目をクリックすると、下に設定が表示されます。ワークスペースの出力言語を変更する場合は、表示されたボタンからワークスペース設定を開きます。";
+"meetingProcessingAudio" = "音声";
+"meetingProcessingLiveTranscription" = "ライブ文字起こし（字幕）";
+"meetingProcessingImageRecognition" = "画像認識（検索用）";
+"meetingProcessingSummaryGeneration" = "要約生成";
+"meetingProcessingOpenWorkspaceSettings" = "ワークスペース設定で出力言語を変更…";
+"meetingDataProcessing" = "データ処理";
+"meetingProcessingVideo" = "映像";
+"meetingProcessingScreenshotCapture" = "スクリーンショット取得";
+"settings.meetingLinks.intro" = "会議リンクを開くアプリを設定します。選択中のアカウントごとに、このMacに保存します。";
 
 "chat.thread.child" = "子スレッド";
 "chat.thread.addReference" = "スレッドを参照";

@@ -23,7 +23,7 @@ enum SettingsNavigation {
             .workspace
         case .eventDisplay:
             .appearance
-        case .transcription, .recordingStopDetection, .liveSubtitles, .screenshots, .meetingLinks:
+        case .transcription, .recordingStopDetection, .liveSubtitles, .screenshots:
             .meetings
         default:
             selection
