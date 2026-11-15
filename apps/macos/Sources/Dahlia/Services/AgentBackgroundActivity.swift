@@ -1,7 +1,7 @@
 import Foundation
 import os
 
-/// Recording callbacks set this synchronously before any background launch can be considered.
+/// The app observes recording preparation, capture and finalization synchronously.
 enum AgentBackgroundActivity {
     private static let recording = OSAllocatedUnfairLock(initialState: false)
     static var isRecording: Bool { recording.withLock { $0 } }

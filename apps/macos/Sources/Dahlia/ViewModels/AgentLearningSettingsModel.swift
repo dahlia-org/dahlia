@@ -59,7 +59,9 @@ final class AgentLearningSettingsModel {
         if kind == "memory", let entry = try? JSONDecoder().decode(AgentMemoryRecord.self, from: Data(value.utf8)) {
             text = entry.content
         } else if kind == "skill", let snapshot = try? JSONDecoder().decode(AgentSkillSnapshot.self, from: Data(value.utf8)) {
-            let files = snapshot.files
+            let files = snapshot.files.mapValues { data in
+                String(data: data, encoding: .utf8) ?? "(\(ByteCountFormatter.string(fromByteCount: Int64(data.count), countStyle: .file)))"
+            }
             truncated = files.reduce(max(0, files.count - 1) * 2) { $0 + $1.key.count + 1 + $1.value.count } > 12000
             var parts: [String] = []
             var remaining = 12001

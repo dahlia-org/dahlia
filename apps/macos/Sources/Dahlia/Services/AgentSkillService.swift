@@ -101,7 +101,7 @@ actor AgentSkillService {
             throw HermesLearning.failure("delete must be the sole operation.")
         }
         var before: [String: AgentSkillSnapshot?] = [:]
-        var working: [String: [String: String]] = [:]
+        var working: [String: [String: Data]] = [:]
         for operation in operations {
             guard let op = operation.objectValue, let name = op["name"]?.stringValue, Self.validName(name),
                   let action = op["action"]?.stringValue
@@ -126,7 +126,7 @@ actor AgentSkillService {
             if let review, action != "create" {
                 let originalFile = (before[name].flatMap(\.self))?.files[path]
                 if let originalFile {
-                    guard freshReads[review]?[name + "/" + path] == originalFile
+                    guard freshReads[review]?[name + "/" + path].map({ Data($0.utf8) }) == originalFile
                     else { throw HermesLearning.failure("Read the current target file with skill_view during this review before changing it.") }
                 }
                 if action == "delete" {
@@ -186,30 +186,30 @@ actor AgentSkillService {
         return .object(["success": .bool(true), "message": .string("Skill operations saved atomically.")])
     }
 
-    private static func apply(_ op: [String: JSONValue], action: String, path: String, files: inout [String: String]) throws {
+    private static func apply(_ op: [String: JSONValue], action: String, path: String, files: inout [String: Data]) throws {
         switch action {
         case "create":
             guard files.isEmpty,
                   let content = op["content"]?.stringValue
             else { throw HermesLearning.failure("Skill already exists or create content missing.") }
-            files["SKILL.md"] = content
+            files["SKILL.md"] = Data(content.utf8)
         case "patch":
             if let content = op["content"]?.stringValue {
                 guard path == "SKILL.md" else { throw HermesLearning.failure("Full rewrite applies only to SKILL.md.") }
-                files[path] = content
+                files[path] = Data(content.utf8)
             } else {
                 guard let old = op["old_string"]?.stringValue, !old.isEmpty, let new = op["new_string"]?.stringValue,
-                      let content = files[path],
+                      let data = files[path], let content = String(data: data, encoding: .utf8),
                       content.contains(old) else { throw HermesLearning.failure("old_string must match the current file.") }
                 let all = op["replace_all"] == .bool(true)
                 guard all || content.components(separatedBy: old).count == 2 else { throw HermesLearning.failure("old_string is ambiguous.") }
-                files[path] = content.replacingOccurrences(of: old, with: new)
+                files[path] = Data(content.replacingOccurrences(of: old, with: new).utf8)
             }
         case "write_file":
             guard path != "SKILL.md",
                   let text = op["file_content"]?.stringValue
             else { throw HermesLearning.failure("Use patch for SKILL.md; write_file requires file_content.") }
-            files[path] = text
+            files[path] = Data(text.utf8)
         case "remove_file":
             guard path != "SKILL.md",
                   files.removeValue(forKey: path) != nil else { throw HermesLearning.failure("Supporting file not found.") }
@@ -302,7 +302,9 @@ actor AgentSkillService {
             guard values.isSymbolicLink != true else { throw HermesLearning.failure("Symbolic links are unsupported in managed skills.") }
             if values.isRegularFile == true {
                 let path = String(url.path.dropFirst(directory.path.count + 1))
-                result.files[path] = try read(url, root: directory)
+                let size = try url.resourceValues(forKeys: [.fileSizeKey]).fileSize ?? 0
+                guard size <= 1_048_576 else { throw HermesLearning.failure("Supporting files are limited to 1 MiB.") }
+                result.files[path] = try Data(contentsOf: url)
                 result.modes[path] = try (FileManager.default.attributesOfItem(atPath: url.path)[.posixPermissions] as? NSNumber)?.intValue ?? 0o644
             }
         }
@@ -325,9 +327,10 @@ actor AgentSkillService {
         return value.trimmingCharacters(in: CharacterSet(charactersIn: "\"'"))
     }
 
-    private static func validate(_ files: [String: String], name: String) throws {
+    private static func validate(_ files: [String: Data], name: String) throws {
         guard !files.isEmpty else { return }
-        guard let text = files["SKILL.md"], text.hasPrefix("---\n"), text.dropFirst(4).contains("\n---"),
+        guard let data = files["SKILL.md"], let text = String(data: data, encoding: .utf8), text.hasPrefix("---\n"),
+              text.dropFirst(4).contains("\n---"),
               HermesLearning.count(text) <= 100_000, let description = description(text), !description.isEmpty,
               HermesLearning.count(description) <= 1024,
               frontmatter(text)?
@@ -337,8 +340,8 @@ actor AgentSkillService {
                 .failure("SKILL.md requires matching name and description YAML frontmatter (description ≤1024, content ≤100000 characters).")
         }
         for (path, content) in files {
-            if path != "SKILL.md", content.utf8.count > 1_048_576 { throw HermesLearning.failure("Supporting file exceeds 1 MiB.") }
-            try HermesLearning.validate(content)
+            if path != "SKILL.md", content.count > 1_048_576 { throw HermesLearning.failure("Supporting file exceeds 1 MiB.") }
+            if let text = String(data: content, encoding: .utf8) { try HermesLearning.validate(text) }
         }
     }
 
@@ -362,7 +365,7 @@ actor AgentSkillService {
         for (path, content) in files {
             let url = staging.appending(path: path)
             try manager.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
-            try Data(content.utf8).write(to: url, options: .atomic)
+            try content.write(to: url, options: .atomic)
             try manager.setAttributes([.posixPermissions: snapshot.modes[path] ?? 0o644], ofItemAtPath: url.path)
         }
         if manager.fileExists(atPath: directory.path) {

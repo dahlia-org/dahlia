@@ -149,12 +149,17 @@
         }
 
         @Test func skillChangePreviewIsBoundedAndKeepsItsSavedSource() throws {
-            let files = ["SKILL.md": String(repeating: "a", count: 50000), "references/last.md": "More content"]
+            let files = ["SKILL.md": String(repeating: "a", count: 50000), "references/last.md": "More content"].mapValues { Data($0.utf8) }
             let saved = try HermesLearning.json(AgentSkillSnapshot(files: files, modes: [:]))
             let preview = AgentLearningSettingsModel.preview(saved, kind: "skill")
             #expect(preview.count < 13000)
             #expect(preview.contains(L10n.agentLearningPreviewLimit))
             #expect(try JSONDecoder().decode(AgentSkillSnapshot.self, from: Data(saved.utf8)).files == files)
+            let asset = Data([0x89, 0x50, 0xFF])
+            let binary = try HermesLearning.json(AgentSkillSnapshot(files: ["assets/image.png": asset]))
+            let binaryPreview = AgentLearningSettingsModel.preview(binary, kind: "skill")
+            #expect(binaryPreview.contains("assets/image.png"))
+            #expect(!binaryPreview.contains(asset.base64EncodedString()))
         }
 
         @Test func pendingChangesSurviveRecentHistoryLimitAndRemainResolvable() throws {
@@ -197,6 +202,38 @@
             try service.resolve(id: pending.id, account: "a", action: "approve")
             #expect(try service.entries(account: "a").first?.content == "Updated preference")
             #expect(try service.changes(account: "a").count == 100)
+        }
+
+        @Test(arguments: [false, true])
+        func oneShotRemovalDoesNotRevalidateItsFireDate(fired: Bool) throws {
+            let db = try database()
+            let service = AgentScheduleService(dbQueue: db)
+            let now = Date(timeIntervalSince1970: 1_800_000_000)
+            let fire = now.addingTimeInterval(60)
+            _ = try service.execute(.object([
+                "action": .string("create"), "schedule": .string(ISO8601DateFormatter().string(from: fire)),
+                "prompt": .string("Read items"),
+            ]), account: "a", approved: true, tools: [], now: now)
+            let saved = try #require(try service.list(account: "a").first)
+            let removalTime = fired ? fire.addingTimeInterval(1) : now
+            if fired {
+                try service.tick(account: "a", now: removalTime)
+                #expect(try service.record(id: saved.id, account: "a").nextFireAt == nil)
+            }
+            let removal: JSONValue = .object(["action": .string("remove"), "job_id": .string(saved.id)])
+            #expect(throws: (any Error).self) {
+                try service.execute(removal, account: "b", approved: false, tools: [], now: removalTime)
+            }
+            _ = try service.execute(removal, account: "a", approved: false, tools: [], now: removalTime)
+            #expect(try service.list(account: "a").isEmpty)
+            try db.read { db throws in
+                #expect(try Int.fetchOne(db, sql: "SELECT COUNT(*) FROM chat_schedule_fires") == 0)
+                #expect(try ChatThreadRecord.fetchOne(db, key: saved.threadID) != nil)
+                if fired {
+                    #expect(try ChatRunRecord.fetchOne(db, sql: "SELECT * FROM chat_runs WHERE threadID=?", arguments: [saved.threadID])?
+                        .status == "interrupted")
+                }
+            }
         }
 
         @Test func scheduleActivationRejectsAnUnseenRevision() throws {

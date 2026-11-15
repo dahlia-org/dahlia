@@ -88,7 +88,7 @@ struct AgentScheduleService: Sendable {
             if action == "pause" || action == "resume" { row.enabled = action == "resume" }
             row.revision += 1
             row.updatedAt = now
-            if row.enabled { row.nextFireAt = try AgentSchedule.parse(row.schedule, now: now).next(after: now) }
+            if row.enabled, action != "remove" { row.nextFireAt = try AgentSchedule.parse(row.schedule, now: now).next(after: now) }
             try dbQueue.write { db in
                 guard let current = try ChatScheduleRecord.fetchOne(db, key: row.id), current.revision == row.revision - 1 else {
                     throw HermesLearning.failure("Schedule changed while editing. Reload and retry.")

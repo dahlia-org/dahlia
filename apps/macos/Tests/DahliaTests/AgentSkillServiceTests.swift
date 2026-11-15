@@ -95,7 +95,7 @@
             #expect(try String(contentsOf: root.appending(path: "sample/SKILL.md"), encoding: .utf8) == content)
         }
 
-        @Test func packageEditsUndoAndRollbackPreserveExecutableModes() async throws {
+        @Test func packageEditsUndoAndRollbackPreserveBinaryAssetsAndExecutableModes() async throws {
             let (service, db, root) = try setup()
             defer { try? FileManager.default.removeItem(at: root) }
             _ = try await service.execute("skill_manage", payload: operations([
@@ -107,15 +107,29 @@
                     "file_content": .string("#!/bin/sh\nexit 0\n"),
                 ],
             ]), account: "a", root: root, thread: nil)
+            let asset = root.appending(path: "sample/assets/image.png")
+            let binary = Data([0x89, 0x50, 0x4E, 0x47, 0, 0xFF, 0x80])
+            try FileManager.default.createDirectory(at: asset.deletingLastPathComponent(), withIntermediateDirectories: true)
+            try binary.write(to: asset)
             let script = root.appending(path: "sample/scripts/tool.sh")
             try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: script.path)
             let patch = operations([["action": .string("patch"), "name": .string("sample"), "content": .string(content + "\nMore guidance.")]])
-            _ = try await service.execute("skill_manage", payload: patch, account: "a", root: root, thread: nil)
+            _ = try await service.execute(
+                "skill_view",
+                payload: .object(["name": .string("sample")]),
+                account: "a",
+                root: root,
+                thread: nil,
+                review: "binary-review"
+            )
+            _ = try await service.execute("skill_manage", payload: patch, account: "a", root: root, thread: nil, review: "binary-review")
             #expect(FileManager.default.isExecutableFile(atPath: script.path))
+            #expect(try Data(contentsOf: asset) == binary)
             let changes = AgentMemoryService(dbQueue: db)
             let edit = try #require(try changes.changes(account: "a").first)
             try await service.undo(id: edit.id, account: "a", root: root)
             #expect(FileManager.default.isExecutableFile(atPath: script.path))
+            #expect(try Data(contentsOf: asset) == binary)
             _ = try await service.execute(
                 "skill_manage",
                 payload: operations([["action": .string("delete"), "name": .string("sample")]]),
@@ -125,10 +139,16 @@
             )
             let deletion = try #require(try changes.changes(account: "a").first)
             #expect(!FileManager.default.fileExists(atPath: script.path))
+            #expect(!FileManager.default.fileExists(atPath: asset.path))
             try await service.undo(id: deletion.id, account: "a", root: root)
             #expect(FileManager.default.isExecutableFile(atPath: script.path))
+            #expect(try Data(contentsOf: asset) == binary)
             _ = try await service.execute("skill_manage", payload: patch, account: "a", root: root, thread: nil)
             let latest = try #require(try changes.changes(account: "a").first)
+            try Data([0xFF, 1]).write(to: asset)
+            await #expect(throws: (any Error).self) { try await service.undo(id: latest.id, account: "a", root: root) }
+            #expect(try Data(contentsOf: asset) == Data([0xFF, 1]))
+            try binary.write(to: asset)
             try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: script.path)
             await #expect(throws: (any Error).self) { try await service.undo(id: latest.id, account: "a", root: root) }
             #expect(try (FileManager.default.attributesOfItem(atPath: script.path)[.posixPermissions] as? NSNumber)?.intValue == 0o700)
@@ -153,6 +173,7 @@
             }
             #expect(try String(contentsOf: main, encoding: .utf8) == before)
             #expect(FileManager.default.isExecutableFile(atPath: script.path))
+            #expect(try Data(contentsOf: asset) == binary)
         }
 
         @Test func externalSkillDeletionRequiresAgentOwnership() async throws {

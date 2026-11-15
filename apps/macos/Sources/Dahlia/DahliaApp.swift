@@ -1,4 +1,5 @@
 import AppKit
+import Combine
 import SwiftUI
 
 enum WindowID {
@@ -30,6 +31,7 @@ struct DahliaApp: App {
     @State private var workspaceManagementModel: WorkspaceManagementModel
     @State private var dahliaAccountController = DahliaCloudAccountController.shared
     @State private var imageBroker: DahliaImageBrokerServer?
+    private let recordingActivityObservation: AnyCancellable
     private let mainWindowNavigation: MainWindowNavigation
     @State private var appDatabase: AppDatabaseManager?
     @State private var meetingSyncWorker: SyncWorker?
@@ -53,17 +55,17 @@ struct DahliaApp: App {
             sidebarViewModel: sidebarViewModel,
             mainWindowNavigation: mainWindowNavigation,
             onRecordingDidStart: {
-                AgentBackgroundActivity.setRecording(true)
                 meetingDetectionService.recordingDidStart()
-                Task { await PiChatService.shared.drainLearningWork() }
             },
             onRecordingDidStop: {
-                AgentBackgroundActivity.setRecording(false)
                 meetingDetectionService.recordingDidStop()
-                Task { await PiChatService.shared.drainLearningWork() }
             },
             isAppReady: { startup.isReady && !startup.isTerminating }
         )
+        recordingActivityObservation = viewModel.recordingActivityPublisher.sink { active in
+            AgentBackgroundActivity.setRecording(active)
+            Task { await PiChatService.shared.drainLearningWork() }
+        }
         let menuBarCalendarViewModel = MenuBarCalendarViewModel()
         let liveSubtitleOverlayCoordinator = LiveSubtitleOverlayCoordinator(
             viewModel: viewModel,
