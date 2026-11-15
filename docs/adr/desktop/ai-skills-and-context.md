@@ -20,9 +20,12 @@ MCPのcalendar、summary、transcript、既存recordはuntrusted evidenceとし�
 
 ## 配布と実行境界
 
-Project presetはapplication resourceを`.copy`で同梱し、チャットの Pi process に bundle 内の skill directory を `--skill` で渡す（2026-11-06。以前は専用`CODEX_HOME/skills/<name>`へ同期した）。ユーザーの skill は読み込まない。`.process`によるbasename衝突を避ける。
-
-chat は skills.include_instructions と Vault 固定の Dahlia `--write` MCP を使い、apps / hooks / memory / plugins / orchestrator / user MCP は無効。command / file access は [タスクの承認方針](chat-approval.md) に従い、初期の「preset 読込 command だけ」の制限と混同しない。[user HOME 継承](accounts.md#chatgpt-と-databricks-cli) で user skills が発見され得るため、MCP の Vault validation を最終 authority にする。
+Preset は application resource を `.copy` で同梱し、Pi に `--skill` で渡す。
+チャットではアカウント別 `pi/skills` と、利用者が登録したパッケージの skill / prompt も発見する。
+個人の `~/.agents` などの自動探索とパッケージ extension code は無効に保つ。
+account skill の変更は [Hermes に基づく自己学習](pi-self-learning.md) の共通サービスと `skill_manage` に集約する。
+同梱とパッケージの skill は読むだけとし、カスタマイズは別名の account skill を作る。
+会議 MCP と外部 MCP は [Pi runtime](pi-runtime.md) と承認方針に従う。
 
 ## 要約 context
 

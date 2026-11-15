@@ -52,8 +52,16 @@ struct DahliaApp: App {
             viewModel: viewModel,
             sidebarViewModel: sidebarViewModel,
             mainWindowNavigation: mainWindowNavigation,
-            onRecordingDidStart: meetingDetectionService.recordingDidStart,
-            onRecordingDidStop: meetingDetectionService.recordingDidStop,
+            onRecordingDidStart: {
+                AgentBackgroundActivity.setRecording(true)
+                meetingDetectionService.recordingDidStart()
+                Task { await PiChatService.shared.drainLearningWork() }
+            },
+            onRecordingDidStop: {
+                AgentBackgroundActivity.setRecording(false)
+                meetingDetectionService.recordingDidStop()
+                Task { await PiChatService.shared.drainLearningWork() }
+            },
             isAppReady: { startup.isReady && !startup.isTerminating }
         )
         let menuBarCalendarViewModel = MenuBarCalendarViewModel()
@@ -119,6 +127,20 @@ struct DahliaApp: App {
                             onSelectWorkspace: { workspace in openWorkspace(workspace) }
                         )
                         .environment(chatCoordinator)
+                        .onReceive(NotificationCenter.default.publisher(for: AgentLearningSettings.openThread)) { notification in
+                            guard let id = notification.object as? String else { return }
+                            Task {
+                                guard let thread = try? await PiChatService.shared.loadThread(id: id) else { return }
+                                mainWindowNavigation.dismissSettingsModal()
+                                mainWindowNavigation.dismissSettings()
+                                mainWindowNavigation.resetNavigationHistory(to: .chat)
+                                _ = await chatCoordinator.openHistoryThread(CodexChatThreadSummary(
+                                    id: thread.id,
+                                    title: thread.title,
+                                    updatedAt: .now
+                                ))
+                            }
+                        }
                     }
                 }
                 .disabled(mainWindowNavigation.isShowingDahliaSignIn || mainWindowNavigation.settingsModal != nil)
@@ -238,7 +260,9 @@ struct DahliaApp: App {
                 _ = liveSubtitleOverlayCoordinator
                 guard !appDelegate.isTerminating else { return }
                 appDelegate.startup = startup
-                await startup.start(onReady: finishLaunching) { try await initializeApp() }
+                await startup.start(onReady: finishLaunching) {
+                    try await initializeApp()
+                }
             }
             .onChange(of: scenePhase) { _, phase in
                 guard phase == .active, let meetingSyncWorker else { return }
@@ -393,6 +417,7 @@ struct DahliaApp: App {
         } catch {
             ErrorReportingService.capture(error, context: ["source": "chatHistoryStartup"])
         }
+        await PiChatService.shared.startLearningWorker()
         await PiChatService.shared.configureBackup(dbQueue: db.dbQueue)
         await ScreenshotContentProvider.shared.configure(dbQueue: db.dbQueue)
         await CodexRuntimeContextCoordinator.shared.configure(dbQueue: db.dbQueue)
@@ -722,7 +747,9 @@ struct DahliaApp: App {
         guard let meeting = try repository.fetchMeeting(id: meetingId) else {
             return (nil, nil, nil)
         }
-        let project = try meeting.projectId.flatMap { try repository.fetchProject(id: $0) }
+        let project = try meeting.projectId.flatMap {
+            try repository.fetchProject(id: $0)
+        }
         let projectURL = project.flatMap { project in
             workspace.url?.appending(path: project.path, directoryHint: .isDirectory)
         }

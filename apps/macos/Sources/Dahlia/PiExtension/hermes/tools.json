@@ -1,0 +1,319 @@
+[
+  {
+    "name": "memory",
+    "description": "Save durable facts to persistent memory that survive across sessions. Memory is injected into every future turn, so keep entries compact and high-signal.\n\nHOW: make ALL your changes to one target in ONE call via an 'operations' array (each item: {action, content?, old_text?}). The batch applies atomically and the char limit is checked only on the FINAL result — so a single call can remove/patch stale entries to free room AND add new ones, even when an add alone would overflow. The response reports current/limit chars and confirms completion; one batch call finishes the update, so don't repeat it.\n\nWHEN: only for facts that apply to EVERY session regardless of task: who the user is, stable environment facts, standing conventions with no task home. Anything learned while doing a task (procedures, pitfalls, and the user's preferences and corrections for that kind of work) belongs in the task's skill via skill_manage, where it loads only when relevant; memory is injected into every turn and must stay small.\n\nIF FULL: an add is rejected with the current entries shown. Reissue as ONE batch that removes or shortens enough stale entries and adds the new one together.\n\nTARGETS: 'user' = who the user is (name, role, preferences, style). 'memory' = your notes (environment, conventions, tool quirks, lessons).\n\nSKIP: trivial/obvious info, easily re-discovered facts, raw data dumps, task progress, completed-work logs, temporary TODO state (use session_search for those). Reusable procedures belong in a skill, not memory.",
+    "parameters": {
+      "type": "object",
+      "properties": {
+        "target": {
+          "type": "string",
+          "enum": [
+            "memory",
+            "user"
+          ],
+          "description": "Which memory store: 'memory' for personal notes, 'user' for user profile."
+        },
+        "operations": {
+          "type": "array",
+          "description": "Changes applied atomically in one call against the final char budget; a single change is a one-item list.",
+          "items": {
+            "type": "object",
+            "properties": {
+              "action": {
+                "type": "string",
+                "enum": [
+                  "add",
+                  "patch",
+                  "remove"
+                ]
+              },
+              "content": {
+                "type": "string",
+                "description": "Required for 'add' and 'patch'. For 'add', the new entry. For 'patch', the text that replaces old_text; the rest of the entry is kept."
+              },
+              "old_text": {
+                "type": "string",
+                "description": "REQUIRED for 'patch' and 'remove': text from one entry. 'patch' replaces exactly this span (it must occur once in the entry); 'remove' deletes the whole entry. Omit for 'add'."
+              }
+            },
+            "required": [
+              "action"
+            ],
+            "additionalProperties": false
+          }
+        }
+      },
+      "required": [
+        "target",
+        "operations"
+      ]
+    }
+  },
+  {
+    "name": "skills_list",
+    "description": "List available skills (name + description). Use skill_view(name) to load full content.",
+    "parameters": {
+      "type": "object",
+      "properties": {
+        "category": {
+          "type": "string",
+          "description": "Optional category filter to narrow results"
+        }
+      },
+      "required": []
+    }
+  },
+  {
+    "name": "skill_view",
+    "description": "Load a skill's SKILL.md, or one of its linked references, templates or scripts. The first call returns SKILL.md plus a 'linked_files' dict; call again with file_path to read one.",
+    "parameters": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string",
+          "description": "The skill name (use skills_list to see available skills). For plugin-provided skills, use the qualified form 'plugin:skill'."
+        },
+        "file_path": {
+          "type": "string",
+          "description": "OPTIONAL: Path to a linked file within the skill (e.g., 'references/api.md', 'templates/config.yaml', 'scripts/validate.py'). Omit to get the main SKILL.md content."
+        }
+      },
+      "required": [
+        "name"
+      ]
+    }
+  },
+  {
+    "name": "skill_manage",
+    "description": "Create, update or delete skills: your procedural memory for recurring tasks. The operations apply atomically — any failure rolls every touched skill back. Ops: create (lands in the profile's skills directory or configured skills.create_dir; must precede that skill's other ops), patch (targeted old_string/new_string fix — preferred), write_file/remove_file (supporting files), delete (sole op only). Existing skills are modified wherever they live. Description: max 1024 chars, 'Use when <trigger>. <behavior>.', never the category name (the index shows it). Write lessons, not logs: imperative rule + why, no PR numbers/dates/incident narration, one rule per lesson, references/ named by topic (extend before adding). skill_view() shows format conventions.",
+    "parameters": {
+      "type": "object",
+      "properties": {
+        "operations": {
+          "type": "array",
+          "description": "Ordered ops (a single edit is a list of one); each names its target skill (lowercase, hyphens/underscores, max 64 chars). Each action is its own shape; another action's text slot is invalid.",
+          "items": {
+            "anyOf": [
+              {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "name": {
+                    "type": "string"
+                  },
+                  "action": {
+                    "type": "string",
+                    "enum": [
+                      "create"
+                    ]
+                  },
+                  "content": {
+                    "type": "string",
+                    "description": "Full SKILL.md text (YAML frontmatter + markdown body)."
+                  },
+                  "category": {
+                    "type": "string",
+                    "description": "Optional category subdir (e.g. 'devops')."
+                  }
+                },
+                "required": [
+                  "name",
+                  "action",
+                  "content"
+                ]
+              },
+              {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "name": {
+                    "type": "string"
+                  },
+                  "action": {
+                    "type": "string",
+                    "enum": [
+                      "patch"
+                    ]
+                  },
+                  "old_string": {
+                    "type": "string",
+                    "description": "Text to find (same matching semantics as the patch tool)."
+                  },
+                  "new_string": {
+                    "type": "string",
+                    "description": "Replacement; empty string deletes the match."
+                  },
+                  "replace_all": {
+                    "type": "boolean",
+                    "description": "Replace all occurrences (default false)."
+                  },
+                  "file_path": {
+                    "type": "string",
+                    "description": "Optional supporting file (write_file's shape); default SKILL.md."
+                  }
+                },
+                "required": [
+                  "name",
+                  "action",
+                  "old_string",
+                  "new_string"
+                ]
+              },
+              {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "name": {
+                    "type": "string"
+                  },
+                  "action": {
+                    "type": "string",
+                    "enum": [
+                      "patch"
+                    ]
+                  },
+                  "content": {
+                    "type": "string",
+                    "description": "Full SKILL.md rewrite (REPLACES the whole file; last resort — read it via skill_view() first)."
+                  }
+                },
+                "required": [
+                  "name",
+                  "action",
+                  "content"
+                ]
+              },
+              {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "name": {
+                    "type": "string"
+                  },
+                  "action": {
+                    "type": "string",
+                    "enum": [
+                      "write_file"
+                    ]
+                  },
+                  "file_path": {
+                    "type": "string",
+                    "description": "Path RELATIVE to the skill's own directory, e.g. 'references/api.md' — no leading slash, never absolute; first segment references/, templates/, scripts/, or assets/."
+                  },
+                  "file_content": {
+                    "type": "string",
+                    "description": "Full text of the supporting file."
+                  }
+                },
+                "required": [
+                  "name",
+                  "action",
+                  "file_path",
+                  "file_content"
+                ]
+              },
+              {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "name": {
+                    "type": "string"
+                  },
+                  "action": {
+                    "type": "string",
+                    "enum": [
+                      "remove_file"
+                    ]
+                  },
+                  "file_path": {
+                    "type": "string",
+                    "description": "Supporting file (write_file's shape)."
+                  }
+                },
+                "required": [
+                  "name",
+                  "action",
+                  "file_path"
+                ]
+              },
+              {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "name": {
+                    "type": "string"
+                  },
+                  "action": {
+                    "type": "string",
+                    "enum": [
+                      "delete"
+                    ]
+                  },
+                  "absorbed_into": {
+                    "type": "string",
+                    "description": "Curator consolidation only: umbrella skill that absorbed this one (must exist)."
+                  }
+                },
+                "required": [
+                  "name",
+                  "action"
+                ]
+              }
+            ]
+          }
+        }
+      },
+      "required": [
+        "operations"
+      ]
+    }
+  },
+  {
+    "name": "cronjob",
+    "description": "Schedule recurring or one-off agent tasks: create, list, update, pause, resume, remove, run. Create requires a self-contained prompt and schedule. Always list first to obtain job_id; never guess job IDs. Prefer updating an existing job over creating near-duplicates. Run queues the enabled job immediately using its saved prompt and returns the schedule record; its result appears in the schedule's read-only result Thread. Jobs run in a fresh session without current-chat context, cannot ask questions, and may read only approved MCP tools and skills. The final response is saved in the result Thread unless a Hermes silence marker suppresses delivery. Dahlia runs jobs only for the selected account while the app is open and recording is stopped. Create, resume and updates to enabled schedules require confirmation. Minimum recurring interval: 15 minutes. Relative one-shot durations, five-field cron syntax, per-run prompt overrides, model pinning, delivery destinations and cancel are unavailable. Stop an active run from its result Thread; pause/remove affect queued work.",
+    "parameters": {
+      "type": "object",
+      "properties": {
+        "action": {
+          "type": "string",
+          "description": "One of: create, list, update, pause, resume, remove, run. Create requires schedule and prompt. Run requires an enabled job.",
+          "enum": [
+            "create",
+            "list",
+            "update",
+            "pause",
+            "resume",
+            "remove",
+            "run"
+          ]
+        },
+        "job_id": {
+          "type": "string",
+          "description": "Required for update/pause/resume/remove/run; obtain it with list."
+        },
+        "prompt": {
+          "type": "string",
+          "description": "For create/update only: the full self-contained task prompt. Put execution timing in schedule and data windows such as since yesterday here. Run always uses the saved prompt."
+        },
+        "schedule": {
+          "type": "string",
+          "description": "Required for create. Supported forms: recurring intervals '30m', 'every 2h', 'every hour'; recurring local calendar times 'every monday 9am', 'weekdays at 9am', 'every day at 9am'; absolute future one-shot ISO datetime '2099-06-01T09:00:00'. Intervals must be between 15 minutes and one year. Relative one-shot durations and five-field cron syntax are unavailable."
+        },
+        "name": {
+          "type": "string",
+          "description": "Optional human-friendly name"
+        },
+        "skills": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "Optional ordered skill names the job is instructed to read with skill_view before working. On update, [] clears."
+        }
+      },
+      "required": [
+        "action"
+      ]
+    }
+  }
+]

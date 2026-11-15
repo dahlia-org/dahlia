@@ -21,8 +21,7 @@ knowledge while adapting harness-specific mechanics to the tools actually availa
 
 ## Save in Dahlia's account
 
-- Use the absolute path labeled `Your writable skills folder` in the system prompt. Save a new skill as
-  `<that folder>/<skill-name>/SKILL.md`. If the path is unavailable, ask for the intended destination rather than guessing.
+- Use `skills_list` and `skill_view` to inspect skills, then `skill_manage` to create or update them. The system prompt labels the account skills folder; the app owns writes to that folder. If the path is unavailable, ask for the intended destination rather than guessing.
 - This folder belongs to the current Dahlia AI account and is reused across its chats and Workspaces on this Mac.
   Other accounts have separate skills. Do not describe the skill as Workspace-only or synced to the Server.
 - `HOME` is a scratch folder in Dahlia's sandbox. Do not use `~/.pi`, `~/.agents`, `~/.codex`, or `~/.claude` as the
@@ -30,8 +29,7 @@ knowledge while adapting harness-specific mechanics to the tools actually availa
 - Check for an existing destination and known skill-name collisions before writing. Do not replace an unrelated skill.
   Bundled skills and installed packages are read-only; to customize one, create an account-owned variant with a distinct
   name and explain that the original remains available. Do not attempt to edit this bundled creator in place.
-- Use ordinary files and directories, not symlinks. Quote absolute paths in shell commands. Use the existing `write`,
-  `edit`, `read`, `ls`, and `bash` tools within their granted access; explain access failures without bypassing them.
+- Use `skill_manage` for every installed skill change (including supporting files). File tools and bash cannot write the skills folder. Use `skill_view(name, file_path?)` before patching; explain validation failures without bypassing them.
 
 ## Write the skill
 

@@ -21,8 +21,8 @@ enum PiSandbox {
 
     /// User-visible defaults. System exceptions and protected runtime/data rules still take precedence.
     nonisolated static func defaultFileAccess(cwd: URL, agentURL: URL) -> DefaultFileAccess {
-        let writable = [cwd, temporaryDirectory, agentURL.appending(path: "skills")]
-        let readOnly = [piTemporaryDirectory, agentURL.appending(path: "npm"), agentURL.appending(path: "git")]
+        let writable = [cwd, temporaryDirectory]
+        let readOnly = [agentURL.appending(path: "skills"), piTemporaryDirectory, agentURL.appending(path: "npm"), agentURL.appending(path: "git")]
             + PiBundle.presetSkillURLs()
         let database = MeetingAccessStore.defaultDatabaseURL.path
         let files = [database, database + "-wal", database + "-shm"]
@@ -65,6 +65,7 @@ enum PiSandbox {
         piExecutableURL: URL,
         applicationSupportURL: URL = DahliaApplicationSupport.currentDirectoryURL,
         fileAccess: PiFileAccessSettings = .init(),
+        profile executionProfile: PiExecutionProfile = .interactive,
         searchPath: String = "",
         environment: [String: String] = ProcessInfo.processInfo.environment,
         home: String = NSHomeDirectory()
@@ -104,9 +105,10 @@ enum PiSandbox {
             arguments += ["-D", "\(parameter)=\(path)"]
             shellRules.append("(deny file-write* (subpath (param \"\(parameter)\")))")
         }
-        let profile = try String(contentsOf: PiBundle.resourceURL("pi.sb"), encoding: .utf8)
+        var profile = try String(contentsOf: PiBundle.resourceURL("pi.sb"), encoding: .utf8)
             .replacingOccurrences(of: "; ADDITIONAL_FILE_ACCESS", with: rules.joined(separator: "\n"))
             .replacingOccurrences(of: "; SHELL_STARTUP_PROTECTION", with: shellRules.joined(separator: "\n"))
+        if executionProfile != .interactive { profile += "\n(deny file-write*)\n" }
         return ["/usr/bin/sandbox-exec", "-p", profile] + arguments
     }
 

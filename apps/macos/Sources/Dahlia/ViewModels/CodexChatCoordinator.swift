@@ -73,7 +73,8 @@ final class CodexChatCoordinator {
             await session.synchronizeThread()
         }
         let isNewThread = changed.contains { id in current[id] != nil && !history.contains { $0.id == id } }
-        if isNewThread, showsHistory || isDockedVisible { await refreshHistory() }
+        let settledThread = changed.contains { current[$0]?.status == "settled" && current[$0]?.isScheduled == true }
+        if isNewThread || settledThread, showsHistory || isDockedVisible { await refreshHistory() }
     }
 
     deinit { runtimeTask?.cancel() }
@@ -233,6 +234,9 @@ final class CodexChatCoordinator {
         showDockedSidebar: Bool = true
     ) async -> CodexChatSessionID {
         let accountID = dockedSession.accountID
+        if let schedules = try? await PiChatService.shared.scheduleService() {
+            try? await Task.detached { try schedules.markSeen(thread: thread.id, account: accountID) }.value
+        }
         if let existing = sessions.values.first(where: {
             $0.backendThreadID == thread.id && $0.accountID == accountID
         }) {

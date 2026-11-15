@@ -46,8 +46,27 @@
             let store = ChatThreadStore(dbQueue: queue)
             let parent = thread()
             let child = thread(parent: parent.id)
-            try store.createThread(parent, items: [ChatHistoryCodec.user([.text("Keep me")])])
-            try store.createThread(child)
+            // Seed the released schema directly; current records include columns added by later migrations.
+            try queue.write { db in
+                for record in [parent, child] {
+                    try db.execute(sql: """
+                    INSERT INTO chat_threads(id,accountID,parentThreadID,title,status,createdAt,updatedAt) VALUES(?,?,?,?,?,?,?)
+                    """, arguments: [
+                        record.id,
+                        record.accountID,
+                        record.parentThreadID,
+                        record.title,
+                        record.status,
+                        record.createdAt,
+                        record.updatedAt,
+                    ])
+                }
+                let data = try String(decoding: JSONEncoder().encode(ChatHistoryCodec.user([.text("Keep me")])), as: UTF8.self)
+                try db.execute(
+                    sql: "INSERT INTO chat_items(id,threadID,seq,data,createdAt) VALUES(?,?,0,?,?)",
+                    arguments: [UUID.v7(), parent.id, data, Date()]
+                )
+            }
             try AppDatabaseManager.migrator.migrate(queue)
             #expect(try store.thread(id: child.id, accountID: "local").parentThreadID == parent.id)
             #expect(try store.messagePage(threadID: parent.id).messages.map(\.text) == ["Keep me"])

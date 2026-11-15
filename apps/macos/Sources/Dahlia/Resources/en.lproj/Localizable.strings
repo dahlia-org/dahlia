@@ -2108,3 +2108,40 @@
 "chat.run.failed" = "Failed";
 
 "chat.thread.removeReference" = "Remove thread reference";
+
+// Pi learning and scheduled tasks
+"settings.agents.learning.agentMemory" = "Memory";
+"settings.agents.learning.agentSchedules" = "Schedules";
+"settings.agents.learning.agentMemoryEnabled" = "Use memory";
+"settings.agents.learning.agentLearningEnabled" = "Learn automatically after conversations";
+"settings.agents.learning.agentLearningDefaultHelp" = "Automatic learning is on by default. In Settings → Dahlia AI → Memory, review or undo changes and turn learning off. Memory stays on this Mac, separately for each account.";
+"settings.agents.learning.agentMemoryUser" = "User profile";
+"settings.agents.learning.agentMemoryEnvironment" = "Environment facts";
+"settings.agents.learning.agentMemoryByUser" = "You";
+"settings.agents.learning.agentMemoryByAgent" = "Agent";
+"settings.agents.learning.agentMemoryClear" = "Delete all memory entries";
+"settings.agents.learning.agentLearningApprove" = "Approve";
+"settings.agents.learning.agentLearningDiscard" = "Discard";
+"settings.agents.learning.agentLearningUndo" = "Undo change";
+"settings.agents.learning.agentLearningPending" = "Pending approval";
+"settings.agents.learning.agentLearningApplied" = "Applied";
+"settings.agents.learning.agentLearningClosed" = "Closed";
+"settings.agents.learning.agentLearningUpdated" = "Automatic learning updated memory or skills. Review the changes in Settings → Dahlia AI.";
+"settings.agents.learning.agentScheduleApproval" = "Confirm this autonomous read-only schedule";
+"settings.agents.learning.agentScheduleReadOnly" = "This thread contains scheduled results and is read-only. Start a new chat and reference this thread to discuss a result.";
+"settings.agents.learning.agentScheduleResultReady" = "A scheduled result is ready.";
+"settings.agents.learning.agentScheduleUnread" = "Unread scheduled result";
+"settings.agents.learning.agentScheduleHelp" = "Ask the chat to create a schedule. Tasks run read-only while this app is open, this account is selected, and recording is stopped. Missed executions are combined into one.";
+"settings.agents.learning.agentSchedulesEmpty" = "No schedules";
+"settings.agents.learning.agentSchedulePause" = "Pause";
+"settings.agents.learning.agentScheduleResume" = "Resume";
+"settings.agents.learning.agentScheduleRun" = "Run now";
+"settings.agents.learning.agentScheduleOpen" = "Open results";
+"settings.agents.learning.agentScheduleNotify" = "Notify when a result arrives";
+"settings.agents.learning.agentScheduleWaitingRecording" = "Waiting for recording to finish";
+"settings.agents.learning.agentSkillLock" = "Lock skill";
+
+"settings.agents.learning.delivered" = "Result ready";
+"settings.agents.learning.silent" = "No notification";
+
+"settings.agents.learning.previewLimit" = "Preview limited to 12,000 characters. Full contents remain saved.";

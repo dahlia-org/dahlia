@@ -6,6 +6,7 @@ struct CodexChatThreadSummary: Identifiable, Equatable {
     let updatedAt: Date
     var parentThreadID: String?
     var status = "idle"
+    var isUnread = false
     static func treeOrder(_ threads: [Self]) -> [Self] {
         let ids = Set(threads.map(\.id))
         let children = Dictionary(grouping: threads, by: \.parentThreadID)

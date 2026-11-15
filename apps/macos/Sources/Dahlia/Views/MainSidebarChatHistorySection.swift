@@ -47,6 +47,7 @@ struct MainSidebarChatHistorySection: View {
                             namesByID: coordinator.dockedSession.meetingNamesByID
                         ),
                         isChild: thread.parentThreadID != nil,
+                        isUnread: thread.isUnread,
                         activity: coordinator.activity(for: thread.id),
                         isSelected: isShowingChat && thread.id == coordinator.dockedSession.backendThreadID
                     )
@@ -98,12 +99,14 @@ struct MainSidebarChatHistorySection: View {
 private struct MainSidebarChatThreadRow: View {
     let title: String
     let isChild: Bool
+    let isUnread: Bool
     let activity: CodexChatThreadActivity?
     let isSelected: Bool
 
     var body: some View {
         HStack(spacing: 8) {
             if isChild { Image(systemName: "arrow.turn.down.right").accessibilityLabel(L10n.chatChildThread) }
+            if isUnread { Circle().fill(.tint).frame(width: 6, height: 6).accessibilityLabel(L10n.agentScheduleUnread) }
             Text(title)
                 .lineLimit(1)
 

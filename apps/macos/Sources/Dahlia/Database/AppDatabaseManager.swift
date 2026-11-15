@@ -63,16 +63,23 @@ final class AppDatabaseManager: Sendable {
             try Self.migratedInMemoryDatabase.get().backup(to: dbQueue)
         } else {
             if let onMigration,
-               try dbQueue.read({ try !Self.migrator.hasCompletedMigrations($0) }) {
+               try dbQueue.read({
+                   try !Self.migrator.hasCompletedMigrations($0) }) {
                 onMigration()
             }
             let recoveryPath = URL(fileURLWithPath: path).appendingPathExtension("recovered-recordings").path
-            if try dbQueue.read({ try OrphanedRecordingRecovery.isNeeded(in: $0) }) {
-                try dbQueue.write { try OrphanedRecordingRecovery.prepare(in: $0, recoveryPath: recoveryPath) }
+            if try dbQueue.read({
+                try OrphanedRecordingRecovery.isNeeded(in: $0) }) {
+                try dbQueue.write {
+                    try OrphanedRecordingRecovery.prepare(in: $0, recoveryPath: recoveryPath)
+                }
             }
             try Self.migrator.migrate(dbQueue)
-            if try dbQueue.read({ try OrphanedRecordingRecovery.needsFinalization(in: $0) }) {
-                try dbQueue.write { try OrphanedRecordingRecovery.finish(in: $0) }
+            if try dbQueue.read({
+                try OrphanedRecordingRecovery.needsFinalization(in: $0) }) {
+                try dbQueue.write {
+                    try OrphanedRecordingRecovery.finish(in: $0)
+                }
             }
         }
         if !usesConcurrentSearch {
@@ -214,7 +221,9 @@ final class AppDatabaseManager: Sendable {
                 }
             }
             for trigger in triggers {
-                if let sql: String = trigger["sql"] { try db.execute(sql: sql) }
+                if let sql: String = trigger["sql"] {
+                    try db.execute(sql: sql)
+                }
             }
         }
 
@@ -271,6 +280,10 @@ final class AppDatabaseManager: Sendable {
 
         migrator.registerMigration("v63_chatRuns") { db in
             try ChatRunMigration.migrate(in: db)
+        }
+
+        migrator.registerMigration("v64_agentLearning") { db in
+            try AgentLearningMigration.migrate(in: db)
         }
 
         return migrator

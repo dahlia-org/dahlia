@@ -20,6 +20,8 @@ macOS、ローカル SQLite、録音、UI、内蔵 Pi / local MCP。
 - [顧客情報の正準モデルと更新（廃止済み）](desktop/customer-intelligence.md)
 - [内蔵 AI skill と context](desktop/ai-skills-and-context.md)
 - [内蔵 Pi runtime](desktop/pi-runtime.md)
+- [Desktop Pi のメモリーと自己学習](desktop/pi-self-learning.md)
+- [アプリが開いている間の定期エージェント](desktop/scheduled-agent-scope.md)
 - [チャットのスレッド管理](desktop/chat-thread-orchestration.md)
 - [Codex runtime と stdio（Pi へ置換済み）](desktop/codex-runtime.md)
 - [Desktop の認証と account 分離](desktop/accounts.md)
