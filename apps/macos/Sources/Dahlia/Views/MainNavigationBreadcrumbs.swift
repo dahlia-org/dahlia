@@ -22,11 +22,16 @@ struct MainNavigationBreadcrumbs: View {
             BreadcrumbSwitcher(
                 title: workspace.name,
                 systemImage: (workspace.appearance ?? .workspaceDefault).icon.systemImageName,
+                hasExportFolder: workspace.path != nil,
                 sectionTitle: L10n.workspace,
                 action: onShowProjects
             ) {
                 ForEach(workspaces) { item in
-                    BreadcrumbNavigationButton(title: item.name, systemImage: (item.appearance ?? .workspaceDefault).icon.systemImageName) {
+                    BreadcrumbNavigationButton(
+                        title: item.name,
+                        systemImage: (item.appearance ?? .workspaceDefault).icon.systemImageName,
+                        hasExportFolder: item.path != nil
+                    ) {
                         onSelectWorkspace(item)
                     }
                 }

@@ -13,11 +13,11 @@ struct WorkspaceAppearanceButton: View {
             draft = workspace.appearance ?? .workspaceDefault
             isPresented = true
         } label: {
-            ProjectAppearanceIcon(appearance: workspace.appearance ?? .workspaceDefault)
+            WorkspaceIcon(workspace: workspace)
                 .padding(6)
                 .contentShape(.rect)
         }
-        .buttonStyle(.borderless)
+        .buttonStyle(WorkspaceSettingsButtonStyle())
         .disabled(!workspace.allowsWorkspaceManagement)
         .help(L10n.appearance)
         .accessibilityLabel(L10n.appearance)

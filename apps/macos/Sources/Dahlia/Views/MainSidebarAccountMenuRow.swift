@@ -4,6 +4,7 @@ struct MainSidebarAccountMenuRow: View {
     let title: String
     var subtitle: String?
     var image: Image?
+    var hasExportFolder = false
     var imageColor: Color?
     var syncState: MeetingSyncState?
     var isSyncing = false
@@ -34,6 +35,7 @@ struct MainSidebarAccountMenuRow: View {
                         .scaledToFit()
                         .frame(width: 16, height: 16)
                         .frame(width: 18)
+                        .workspaceExportFolderBadge(isVisible: hasExportFolder)
                 }
 
                 if syncState != nil {

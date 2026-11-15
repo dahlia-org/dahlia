@@ -354,7 +354,7 @@ final class MeetingRepository {
         }
     }
 
-    /// ワークスペースを登録解除する（関連プロジェクト・ミーティングもカスケード削除）。
+    /// ワークスペースを削除する（関連プロジェクト・ミーティングもカスケード削除）。
     nonisolated func deleteWorkspace(id: UUID) throws {
         try ensureWorkspaceCanBeRemoved(id: id)
         let meetingIds = try meetingIds(workspaceId: id)
@@ -1147,8 +1147,15 @@ final class MeetingRepository {
         }
     }
 
-    nonisolated func updateSummaryWorkspaceRelativePath(forMeetingId meetingId: UUID, relativePath: String?) throws {
+    nonisolated func updateSummaryWorkspaceRelativePath(
+        forMeetingId meetingId: UUID, relativePath: String?, expectedWorkspaceID: UUID? = nil
+    ) throws {
         try dbQueue.write { db in
+            if let expectedWorkspaceID {
+                guard try MeetingRecord.fetchOne(db, key: meetingId)?.workspaceId == expectedWorkspaceID else {
+                    throw ProjectWorkspaceError.invalidMoveDestination
+                }
+            }
             guard try SummaryRecord.filter(Column("meetingId") == meetingId).fetchCount(db) > 0 else { return }
             try SummaryExportRecord.setURL(
                 relativePath?.nilIfBlank.flatMap(SummaryExportRecord.workspaceURL(relativePath:)),

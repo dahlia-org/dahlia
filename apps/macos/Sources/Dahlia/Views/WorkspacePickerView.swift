@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// ワークスペースの登録・選択・登録解除を行う画面。
+/// ワークスペースの作成・選択・削除を行う画面。
 struct WorkspacePickerView: View {
     private enum SidebarMetrics {
         static let minimumWidth: CGFloat = 220
@@ -19,6 +19,7 @@ struct WorkspacePickerView: View {
 
     @ObservedObject private var settings = AppSettings.shared
     @State private var selectedWorkspaceId: UUID?
+    @State private var deletingWorkspace: WorkspaceRecord?
     @State private var isShowingFolderPicker = false
     @State private var workspaceSidebarWidth = SidebarMetrics.defaultWidth
 
@@ -44,7 +45,7 @@ struct WorkspacePickerView: View {
                     currentWorkspaceId: settings.currentWorkspace?.id,
                     updateController: updateController,
                     onAdd: showFolderPicker,
-                    onRemove: removeWorkspace
+                    onRemove: { deletingWorkspace = $0 }
                 )
                 .disabled(model.isRemovingWorkspace)
             } settingsContent: {
@@ -111,6 +112,21 @@ struct WorkspacePickerView: View {
                 }
             }
         }
+        .overlay {
+            if let workspace = deletingWorkspace {
+                WorkspaceDeletionDialog(
+                    workspace: workspace,
+                    destinations: model.deletionTransferCandidates(for: workspace),
+                    onCancel: { deletingWorkspace = nil },
+                    onConfirm: { destinationID in
+                        await model.removeWorkspace(
+                            workspace, currentWorkspaceId: settings.currentWorkspace?.id, transferringTo: destinationID
+                        )
+                    }
+                )
+                .id(workspace.id)
+            }
+        }
         .frame(minWidth: 720, minHeight: 460)
         .task(id: appDatabase != nil) {
             await model.configure(appDatabase: appDatabase)
@@ -172,14 +188,6 @@ struct WorkspacePickerView: View {
         selectedWorkspaceId = preferredIds.first(where: { id in
             model.workspaces.contains(where: { $0.id == id })
         }) ?? model.workspaces.first?.id
-    }
-
-    private func removeWorkspace(_ workspace: WorkspaceRecord) {
-        Task {
-            if await model.removeWorkspace(workspace, currentWorkspaceId: settings.currentWorkspace?.id), selectedWorkspaceId == workspace.id {
-                selectedWorkspaceId = model.workspaces.first?.id
-            }
-        }
     }
 
     private func openSelectedWorkspace() {

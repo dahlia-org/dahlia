@@ -7,6 +7,7 @@ struct WorkspaceSettingsView: View {
     let accountConnections: [DahliaAccountConnection]
     let canSwitchWorkspace: Bool
     let onShowDetails: (UUID) -> Void
+    let onRequestDeletion: (WorkspaceRecord) -> Void
     let onShowDocumentPublication: (WorkspaceRecord) -> Void
     let onUpdateWorkspace: (WorkspaceRecord) -> Void
 
@@ -17,7 +18,6 @@ struct WorkspaceSettingsView: View {
     @State private var isShowingRenameAlert = false
     @State private var accountUpdateTask: Task<Void, Never>?
     @State private var creationDatabricksConnectionID: UUID?
-    @State private var pendingRemoval: WorkspaceRecord?
     @State private var pendingRename: WorkspaceRecord?
     @State private var pendingExportFolderWorkspace: WorkspaceRecord?
     @State private var proposedName = ""
@@ -35,11 +35,6 @@ struct WorkspaceSettingsView: View {
         .overlay {
             if model.isRemovingWorkspace {
                 ProgressView(L10n.removingWorkspace)
-            }
-        }
-        .onChange(of: currentWorkspace?.id) {
-            if pendingRemoval?.id == currentWorkspace?.id {
-                pendingRemoval = nil
             }
         }
         .onDisappear { accountUpdateTask?.cancel() }
@@ -69,23 +64,6 @@ struct WorkspaceSettingsView: View {
             Button(L10n.cancel, role: .cancel, action: clearCreateRequest)
         } message: {
             Text(L10n.workspaceNameDescription)
-        }
-        .confirmationDialog(
-            pendingRemoval.map { L10n.removeWorkspaceConfirmation($0.name) } ?? "",
-            isPresented: Binding(
-                get: { pendingRemoval != nil },
-                set: { if !$0 { pendingRemoval = nil } }
-            ),
-            titleVisibility: .visible
-        ) {
-            if let workspace = pendingRemoval {
-                Button(L10n.removeWorkspace, role: .destructive) {
-                    removeWorkspace(workspace)
-                }
-            }
-            Button(L10n.cancel, role: .cancel) {}
-        } message: {
-            Text(L10n.removeWorkspaceConfirmationDescription)
         }
     }
 
@@ -176,7 +154,6 @@ struct WorkspaceSettingsView: View {
             } label: {
                 Text(workspace.name)
                     .lineLimit(1)
-                    .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(.horizontal, 8)
                     .padding(.vertical, 6)
                     .contentShape(.rect)
@@ -184,6 +161,8 @@ struct WorkspaceSettingsView: View {
             .buttonStyle(WorkspaceSettingsButtonStyle())
             .foregroundStyle(.primary)
             .help(L10n.workspaceDetails)
+
+            Spacer(minLength: 12)
 
             HStack {
                 if workspace.syncRecoveryState == "updateRequired" {
@@ -242,6 +221,8 @@ struct WorkspaceSettingsView: View {
                 Button(L10n.rename, systemImage: "pencil", action: { requestRename(workspace) })
             }
 
+            Divider()
+
             WorkspaceAccountMenu(
                 workspace: workspace,
                 connections: accountConnections,
@@ -251,25 +232,30 @@ struct WorkspaceSettingsView: View {
             // A recording keeps the account it started with until it is processed.
             .disabled(workspace.accountConnectionId != nil || !canSwitchWorkspace)
 
-            Button(workspace.path == nil ? L10n.setLocalExportFolder : L10n.changeLocalExportFolder, systemImage: "folder") {
-                pendingExportFolderWorkspace = workspace
-                isShowingFolderPicker = true
-            }
-            if workspace.path != nil {
-                Button(L10n.removeLocalExportFolder, systemImage: "folder.badge.minus") {
-                    Task {
-                        if let updated = await model.setExportFolder(for: workspace, to: nil) {
-                            onUpdateWorkspace(updated)
+            Menu(L10n.localExportFolder, systemImage: "folder") {
+                Button(workspace.path == nil ? L10n.setLocalExportFolder : L10n.changeLocalExportFolder, systemImage: "folder") {
+                    pendingExportFolderWorkspace = workspace
+                    isShowingFolderPicker = true
+                }
+                if workspace.path != nil {
+                    Button(L10n.removeLocalExportFolder, systemImage: "folder.badge.minus") {
+                        Task {
+                            if let updated = await model.setExportFolder(for: workspace, to: nil) {
+                                onUpdateWorkspace(updated)
+                            }
                         }
                     }
                 }
             }
 
-            Button(L10n.documentPrivateLegacy) { onShowDocumentPublication(workspace) }
+            Button(L10n.reviewPrivateDocuments, systemImage: "doc.text") { onShowDocumentPublication(workspace) }
+
+            Divider()
+            Button(L10n.workspaceDetails, systemImage: "info.circle") { onShowDetails(workspace.id) }
 
             if workspace.id != currentWorkspace?.id, workspace.accountConnectionId == nil {
-                Button(L10n.removeWorkspace, systemImage: "minus", role: .destructive) {
-                    pendingRemoval = workspace
+                Button(L10n.removeWorkspace, systemImage: "trash", role: .destructive) {
+                    onRequestDeletion(workspace)
                 }
             }
         }
@@ -331,13 +317,6 @@ struct WorkspaceSettingsView: View {
     private func clearRenameRequest() {
         pendingRename = nil
         proposedName = ""
-    }
-
-    private func removeWorkspace(_ workspace: WorkspaceRecord) {
-        Task {
-            _ = await model.removeWorkspace(workspace, currentWorkspaceId: currentWorkspace?.id)
-            pendingRemoval = nil
-        }
     }
 
     private func requestAccountChange(of workspace: WorkspaceRecord, to choice: WorkspaceAccountChoice) {
