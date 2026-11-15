@@ -269,6 +269,10 @@ final class AppDatabaseManager: Sendable {
             }
         }
 
+        migrator.registerMigration("v63_chatRuns") { db in
+            try ChatRunMigration.migrate(in: db)
+        }
+
         return migrator
     }()
 

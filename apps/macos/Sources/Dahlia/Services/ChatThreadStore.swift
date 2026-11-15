@@ -50,7 +50,7 @@ struct ChatThreadStore: ChatItemStore, Sendable {
                 try JSONEncoder().encode([String($0.updatedAt.timeIntervalSince1970), $0.id]).base64EncodedString()
             } : nil
             return CodexChatThreadPage(threads: visible.map {
-                CodexChatThreadSummary(id: $0.id, title: $0.title, updatedAt: $0.updatedAt)
+                CodexChatThreadSummary(id: $0.id, title: $0.title, updatedAt: $0.updatedAt, parentThreadID: $0.parentThreadID, status: $0.status)
             }, nextCursor: next)
         }
     }
@@ -130,6 +130,10 @@ struct ChatThreadStore: ChatItemStore, Sendable {
     func recoverInterruptedThreads() throws {
         try dbQueue.write { db in
             try db.execute(sql: "UPDATE chat_threads SET status = 'interrupted' WHERE status IN ('running', 'waitingForUser')")
+            try db.execute(
+                sql: "UPDATE chat_runs SET status = 'interrupted', resultDeliveredAt = ? WHERE status IN ('queued', 'running', 'waitingForUser')",
+                arguments: [Date()]
+            )
         }
     }
 
@@ -153,7 +157,7 @@ struct ChatThreadStore: ChatItemStore, Sendable {
         }
     }
 
-    private static func append(_ items: [JSONValue], threadID: String, in db: Database) throws {
+    static func append(_ items: [JSONValue], threadID: String, in db: Database) throws {
         var seq = try Int64.fetchOne(db, sql: "SELECT MAX(seq) FROM chat_items WHERE threadID = ?", arguments: [threadID]) ?? -1
         for item in items {
             seq += 1

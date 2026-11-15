@@ -13,6 +13,7 @@ import {
   registerDatabricksProviders,
 } from "./databricks-provider.ts";
 
+import { registerThreadTools, threadTools } from "./thread-tools.ts";
 import { reviewMCP } from "./mcp-review.ts";
 
 const env = process.env;
@@ -150,6 +151,7 @@ export default function (pi: any) {
         content: [{ type: "text", text: JSON.stringify(await bridge(ctx, "createBackup", params)) }],
       }),
     });
+    registerThreadTools(pi, bridge);
     let blockedThisRun = false;
     pi.on("agent_start", () => { blockedThisRun = false; });
     const block = (reason: string) => {
@@ -237,7 +239,7 @@ export default function (pi: any) {
         return isSandboxed ? undefined : block("This tool is not available in Dahlia's chat.");
       }
 
-      if (name === "dahlia_create_backup") return;
+      if (name === "dahlia_create_backup" || threadTools.some((tool) => tool.name === name)) return;
 
       // Pi lists an MCP tool under its server's namespace; the alias is the server name.
       const server: string | undefined = tool?.sourceInfo?.path === "builtin:mcp" ? tool.namespace?.aliases?.[0] : undefined;

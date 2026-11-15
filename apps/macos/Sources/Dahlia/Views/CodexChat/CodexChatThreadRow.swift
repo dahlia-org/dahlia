@@ -9,6 +9,10 @@ struct CodexChatThreadRow: View {
 
     var body: some View {
         HStack(spacing: 12) {
+            if thread.parentThreadID != nil {
+                Image(systemName: "arrow.turn.down.right")
+                    .accessibilityLabel(L10n.chatChildThread)
+            }
             Text(CodexChatMeetingReference.displayText(
                 for: thread.title.nilIfBlank ?? L10n.newChat,
                 namesByID: meetingNamesByID
@@ -20,6 +24,8 @@ struct CodexChatThreadRow: View {
                 .lineLimit(1)
             if let activity {
                 switch activity {
+                case .queued:
+                    Image(systemName: "clock").accessibilityHidden(true)
                 case .running:
                     ProgressView()
                         .controlSize(.small)
@@ -49,6 +55,8 @@ struct CodexChatThreadRow: View {
 
     private var accessibilityValue: String {
         switch activity {
+        case .queued:
+            L10n.chatRunStatus("queued")
         case .running:
             L10n.chatThreadRunning
         case .waitingForUser:

@@ -13,7 +13,7 @@ extension CodexChatSessionModel {
     }
 
     var hasComposerContent: Bool {
-        draft.nilIfBlank != nil || !selectedMeetingReferenceIDs.isEmpty || !attachedImages.isEmpty
+        draft.nilIfBlank != nil || !selectedMeetingReferenceIDs.isEmpty || !selectedThreadReferences.isEmpty || !attachedImages.isEmpty
     }
 
     var selectedModelSupportsImages: Bool {

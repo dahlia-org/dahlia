@@ -1,6 +1,6 @@
 import { review } from "./pi-auto-review/index.ts";
 
-// Dahlia adds meeting metadata and live transcripts to user messages; they cannot authorize MCP mutations.
+// Ambient context and other agents' requests cannot confer direct user authorization for MCP mutations.
 export function reviewBranch(branch: any[]): any[] {
   return branch.flatMap((entry) => {
     if (entry.type !== "message" || entry.message.role !== "user") return [entry];
@@ -8,6 +8,8 @@ export function reviewBranch(branch: any[]): any[] {
     let text = typeof content === "string" ? content : content.filter((part: any) => part.type === "text").map((part: any) => part.text).join("\n");
     const ambient: string[] = [];
     text = text.replace(/^<context>\n[\s\S]*?<\/context>\s*/, (block: string) => { ambient.push(block); return ""; });
+    text = text.replace(/<thread_request source="dahlia" untrusted="true">[\s\S]*?<\/thread_request>/g, (block: string) => { ambient.push(block); return ""; });
+    text = text.replace(/<thread_results source="dahlia" untrusted="true">[\s\S]*?<\/thread_results>/g, (block: string) => { ambient.push(block); return ""; });
     text = text.replace(/<live_transcript(?: source="dahlia")?>[\s\S]*?<\/live_transcript>/g, (block: string) => { ambient.push(block); return ""; });
     const entries = ambient.length === 0 ? [] : [{
       ...entry,

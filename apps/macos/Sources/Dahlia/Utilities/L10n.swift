@@ -5,6 +5,20 @@ import Foundation
 
 /// ローカライズ文字列への型安全なアクセスを提供する。
 enum L10n { // swiftlint:disable:this type_body_length
+    static var chatChildThread: String { String(localized: "chat.thread.child", bundle: bundle) }
+    static var chatRemoveThreadReference: String { String(localized: "chat.thread.removeReference", bundle: bundle) }
+    static var chatAddThreadReference: String { String(localized: "chat.thread.addReference", bundle: bundle) }
+    static func chatRunStatus(_ status: String) -> String {
+        switch status {
+        case "queued": String(localized: "chat.run.queued", bundle: bundle)
+        case "running": chatThreadRunning
+        case "waitingForUser": chatThreadWaitingForUser
+        case "completed", "idle": String(localized: "chat.run.completed", bundle: bundle)
+        case "interrupted": String(localized: "chat.run.interrupted", bundle: bundle)
+        default: String(localized: "chat.run.failed", bundle: bundle)
+        }
+    }
+
     static var oauthCallbackLanguage: String { String(localized: "oauth.callback.language", bundle: bundle) }
     static var oauthCallbackReceived: String { String(localized: "oauth.callback.received", bundle: bundle) }
     static var oauthCallbackContinue: String { String(localized: "oauth.callback.continue", bundle: bundle) }

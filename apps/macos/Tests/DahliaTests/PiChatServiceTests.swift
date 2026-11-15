@@ -67,6 +67,107 @@ import Synchronization
         }
 
         @Test
+        func lateSubscriberGetsSavedHistoryPartialTextAndFutureEvents() async throws {
+            let fixture = try Self.fixture { transport in
+                await transport.emit(.object(["type": .string("message_update"), "assistantMessageEvent": .object([
+                    "type": .string("text_delta"), "delta": .string("partial"),
+                ])]))
+            }
+            defer { try? FileManager.default.removeItem(at: fixture.pi.rootURL) }
+            let thread = try await fixture.chat.startThread(model: nil, effort: "medium")
+            let lease = await fixture.chat.acquireThreadLease(threadID: thread.id)
+            let handle = try await fixture.chat.beginTurn(
+                threadID: thread.id,
+                inputs: [.text("Question")],
+                model: nil,
+                effort: "medium",
+                approvalMethod: .ask,
+                expectedProvider: .local
+            )
+            var first = handle.events.makeAsyncIterator()
+            while let event = try await first.next() {
+                if case .delta = event { break }
+            }
+            let attached = try #require(await fixture.chat.attach(threadID: thread.id))
+            #expect(attached.id == handle.id)
+            #expect(attached.snapshot?.messages.map(\.text) == ["Question"])
+            await fixture.chat.releaseThreadLease(threadID: thread.id, leaseID: lease)
+            await fixture.chatTransport.emit(TestPiTransport.assistantEnd("Saved answer"))
+            await fixture.chatTransport.emit(TestPiTransport.settled())
+            var events: [CodexChatTurnEvent] = []
+            for try await event in attached.events {
+                events.append(event)
+            }
+            #expect(events.contains { if case .delta(_, "partial") = $0 { true } else { false } })
+            #expect(events.last?.terminalCompletion == true)
+            #expect(try fixture.store.latestRun(threadID: thread.id)?.status == "completed")
+            #expect(try fixture.store.messagePage(threadID: thread.id).messages.last?.text == "Saved answer")
+        }
+
+        @Test
+        func serviceRetainsApprovalForLaterAttachmentAndResolvesItOnce() async throws {
+            let fixture = try Self.fixture { _ in }
+            defer { try? FileManager.default.removeItem(at: fixture.pi.rootURL) }
+            let thread = try await fixture.chat.startThread(model: nil, effort: "medium")
+            let handle = try await fixture.chat.beginTurn(
+                threadID: thread.id,
+                inputs: [.text("Question")],
+                model: nil,
+                effort: "medium",
+                approvalMethod: .ask,
+                expectedProvider: .local
+            )
+            await fixture.chatTransport.emit(TestPiTransport.bridgeRequest(id: "approval-card", method: "approval", payload: .object([
+                "kind": .string("mcpToolCall"), "server": .string("dahlia"), "tool": .string("update_meeting"), "arguments": .object([:]),
+            ])))
+            var first = handle.events.makeAsyncIterator()
+            var request: CodexChatApprovalRequest?
+            while let event = try await first.next() {
+                if case let .approvalRequested(value) = event { request = value
+                    break
+                }
+            }
+            let approval = try #require(request)
+            let attached = try #require(await fixture.chat.attach(threadID: thread.id))
+            var late = attached.events.makeAsyncIterator()
+            var restored: CodexChatApprovalRequest?
+            while let event = try await late.next() {
+                if case let .approvalRequested(value) = event { restored = value
+                    break
+                }
+            }
+            #expect(restored?.id == approval.id)
+            try await fixture.chat.decideApproval(turnID: attached.id, id: approval.id, decision: .accept)
+            await #expect(throws: PiRuntimeError.approvalNoLongerPending) {
+                try await fixture.chat.decideApproval(turnID: attached.id, id: approval.id, decision: .accept)
+            }
+            await fixture.chatTransport.emit(TestPiTransport.settled())
+            while try await late.next() != nil {}
+        }
+
+        @Test
+        func hiddenRunCanBeSteeredWithoutASubscriber() async throws {
+            let fixture = try Self.fixture { _ in }
+            defer { try? FileManager.default.removeItem(at: fixture.pi.rootURL) }
+            let thread = try await fixture.chat.startThread(model: nil, effort: "medium")
+            let handle = try await fixture.chat.beginTurn(
+                threadID: thread.id,
+                inputs: [.text("First")],
+                model: nil,
+                effort: "medium",
+                approvalMethod: .ask,
+                expectedProvider: .local
+            )
+            try await fixture.chat.steer(threadID: thread.id, turnID: "unused", inputs: [.text("Follow-up")])
+            let command = await fixture.chatTransport.command("steer")
+            #expect(command["message"] == .string("Follow-up"))
+            await fixture.chatTransport.emit(TestPiTransport.assistantEnd("Result"))
+            await fixture.chatTransport.emit(TestPiTransport.settled())
+            for try await _ in handle.events {}
+            #expect(try fixture.store.messagePage(threadID: thread.id).messages.last?.text == "Follow-up")
+        }
+
+        @Test
         func historyLoadsTheLatestMessagesAndPagesBackWithoutReadingToolLogs() async throws {
             let fixture = try Self.fixture { _ in }
             defer { try? FileManager.default.removeItem(at: fixture.pi.rootURL) }
@@ -585,7 +686,11 @@ import Synchronization
             #expect(thinking["level"]?.stringValue == "high")
             let launch = try #require(fixture.pi.launches.all.first { $0.mode == .chat })
             #expect(launch.arguments.contains("--session-id"))
-            #expect(launch.arguments.contains("read,ls,write,edit,bash,dahlia_create_backup,mcp__dahlia__*"))
+            #expect(launch.arguments
+                .contains(
+                    "read,ls,write,edit,bash,dahlia_create_backup,dahlia_thread_list,dahlia_thread_search,dahlia_thread_read,"
+                        + "dahlia_thread_start,dahlia_thread_send,dahlia_thread_wait,dahlia_thread_interrupt,dahlia_thread_update,mcp__dahlia__*"
+                ))
             let work = fixture.pi.rootURL.appending(path: "work")
             #expect(launch.cwd == work)
             #expect(launch.arguments.contains("builtin:mcp"))
@@ -751,6 +856,47 @@ import Synchronization
             let response = await fixture.chatTransport.command("extension_ui_response")
             #expect(response["id"]?.stringValue == "ui-7")
             #expect(response["value"]?.stringValue == #""accept""#)
+        }
+
+        @Test
+        func failedRunStatusSaveCancelsTheRemovedApprovalWaiter() async throws {
+            let fixture = try Self.fixture { _ in }
+            defer { try? FileManager.default.removeItem(at: fixture.pi.rootURL) }
+            let thread = try await fixture.chat.startThread(model: nil, effort: "medium")
+            let handle = try await fixture.chat.beginTurn(
+                threadID: thread.id, inputs: [.text("Change data")], model: nil,
+                effort: "medium", approvalMethod: .ask, expectedProvider: .local
+            )
+            await fixture.chatTransport.emit(TestPiTransport.bridgeRequest(id: "failing-approval", method: "approval", payload: .object([
+                "kind": .string("mcpToolCall"), "server": .string("dahlia"), "tool": .string("update_meeting"), "arguments": .object([:]),
+            ])))
+            var reader = handle.events.makeAsyncIterator()
+            var request: CodexChatApprovalRequest?
+            while let event = try await reader.next() {
+                if case let .approvalRequested(value) = event { request = value
+                    break
+                }
+            }
+            let approval = try #require(request)
+            try await fixture.store.dbQueue.write { db in
+                try db.execute(sql: """
+                CREATE TRIGGER fail_run_approval BEFORE UPDATE OF status ON chat_runs WHEN NEW.status = 'running'
+                BEGIN SELECT RAISE(ABORT, 'simulated disk failure'); END;
+                """)
+            }
+            await #expect(throws: (any Error).self) {
+                try await fixture.chat.decideApproval(turnID: handle.id, id: approval.id, decision: .accept)
+            }
+            #expect(await pollUntil {
+                await fixture.chatTransport.commands
+                    .contains { $0["type"]?.stringValue == "extension_ui_response" && $0["id"]?.stringValue == "failing-approval" }
+            })
+            let response = await fixture.chatTransport.commands
+                .first { $0["id"]?.stringValue == "failing-approval" && $0["type"]?.stringValue == "extension_ui_response" }
+            #expect(response?["value"]?.stringValue == #""cancel""#)
+            #expect(await fixture.chat.sessions[thread.id]?.turn?.pendingApprovals.isEmpty == true)
+            #expect(await fixture.chat.sessions[thread.id]?.turn?.broadcast.approvals.isEmpty == true)
+            await fixture.chat.stopAccountRuns(except: "other")
         }
 
         @Test
@@ -954,7 +1100,11 @@ import Synchronization
             try await turn("gmail on, new process")
             #expect(log.all.count == 3)
             let withGmail = try #require(pi.launches.all.last { $0.mode == .chat })
-            #expect(withGmail.arguments.contains("read,ls,write,edit,bash,dahlia_create_backup,mcp__dahlia__*,mcp__gmail__*,mcp__notion__*"))
+            #expect(withGmail.arguments
+                .contains(
+                    "read,ls,write,edit,bash,dahlia_create_backup,dahlia_thread_list,dahlia_thread_search,dahlia_thread_read,"
+                        + "dahlia_thread_start,dahlia_thread_send,dahlia_thread_wait,dahlia_thread_interrupt,dahlia_thread_update,mcp__dahlia__*,mcp__gmail__*,mcp__notion__*"
+                ))
             // Dahlia's extension registers the sign-ins mcp.json names in every process; none loads the provider file on its own.
             #expect(pi.launches.all.allSatisfy { !$0.arguments.contains { $0.hasSuffix("databricks-provider.ts") } })
             #expect(withGmail.environment["DAHLIA_PI_MCP_SERVERS"] == #"["dahlia","gmail","notion"]"#)

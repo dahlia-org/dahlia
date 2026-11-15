@@ -25,6 +25,16 @@ final class CodexChatSessionModel: Identifiable {
     private(set) var models: [CodexModel] = []
     private(set) var isLoading = false
     private(set) var isRestoring = false
+    @ObservationIgnored private var historySynchronizationGeneration = 0
+    /// The service's latest state of this thread, set by the coordinator.
+    @ObservationIgnored var runtimeState: CodexChatRuntimeState?
+    /// The last run this view showed to its end, and the last settled run it reloaded history for.
+    @ObservationIgnored private var displayedRunID: UUID?
+    @ObservationIgnored private var synchronizedRunID: UUID?
+    /// True while this view follows a run it did not start; such a run never changes the user's model or effort.
+    @ObservationIgnored private var isFollowingRun = false
+    /// Set when this view lost events of a run; cleared once it has the run's snapshot or its saved history.
+    @ObservationIgnored private var lostRunEvents = false
     private(set) var needsRestore: Bool
     var isGenerating = false
     var errorMessage: String?
@@ -46,6 +56,7 @@ final class CodexChatSessionModel: Identifiable {
     private(set) var pendingImagePreparationCount = 0
     private(set) var availableMeetingReferences: [CodexChatMeetingReference] = []
     var selectedMeetingReferenceIDs: [UUID] = []
+    var selectedThreadReferences: [CodexChatThreadSummary] = []
     private(set) var meetingNamesByID: [UUID: String] = [:]
     private(set) var meetingReferencesByID: [UUID: CodexChatMeetingReference] = [:]
 
@@ -241,6 +252,7 @@ final class CodexChatSessionModel: Identifiable {
             needsRestore = false
             restoreSelectionGeneration = nil
             didRestoreThread = true
+            Task { await self.synchronizeThread() }
         } catch {
             errorMessage = error.localizedDescription
         }
@@ -305,12 +317,10 @@ final class CodexChatSessionModel: Identifiable {
         let composerSnapshot = CodexChatComposerSnapshot(
             draft: draftSnapshot,
             referenceIDs: referenceIDsSnapshot,
-            images: imagesSnapshot
+            images: imagesSnapshot,
+            threadReferenceIDs: selectedThreadReferences.map(\.id)
         )
-        let text = CodexChatMeetingReference.serializedText(
-            referenceIDs: referenceIDsSnapshot,
-            draft: draftSnapshot
-        )
+        let text = serializedComposerText
         let submission = CodexChatManualSubmission(
             text: text,
             images: imagesSnapshot,
@@ -444,14 +454,99 @@ final class CodexChatSessionModel: Identifiable {
         generationCompletionHandler = handler
     }
 
-    func release() {
+    /// Add a removable reference to another conversation.
+    func addThreadReference(_ thread: CodexChatThreadSummary) {
+        guard !selectedThreadReferences.contains(where: { $0.id == thread.id }) else { return }
+        selectedThreadReferences.append(thread)
+    }
+
+    func referenceThreads(cursor: String?) async throws -> CodexChatThreadPage {
+        guard isBoundToCurrentAccount else { throw PiRuntimeError.backendResetForSafety }
+        return try await service.listThreads(cursor: cursor)
+    }
+
+    /// Follows the service's state of this thread: reloads history when a run this view did not show has settled, and
+    /// attaches to a run that is active. Nothing else changes this view, so another thread's activity never does.
+    func synchronizeThread() async {
+        guard isBoundToCurrentAccount, !isReleased, !isGenerating, !isRestoring, let threadID = backendThreadID else { return }
+        historySynchronizationGeneration += 1
+        let generation = historySynchronizationGeneration
+        let state = runtimeState
+        do {
+            var attachment: CodexChatTurnHandle?
+            if state?.status != "settled", state?.status != "queued" { attachment = try await service.attach(threadID: threadID) }
+            // A run this view already showed to its end, such as one it just stopped, is not followed again while it winds down.
+            if let id = attachment?.id, id == displayedRunID { return }
+            guard let handle = attachment else {
+                let settledUnseen = state.map { $0.status == "settled" && $0.turnID != displayedRunID && $0.turnID != synchronizedRunID } ?? false
+                guard settledUnseen || lostRunEvents else { return }
+                let thread = try await service.loadThread(id: threadID)
+                guard generation == historySynchronizationGeneration,
+                      isBoundToCurrentAccount, !isReleased, !isGenerating, !isRestoring else { return }
+                if let state, state.status == "settled" { synchronizedRunID = state.turnID }
+                lostRunEvents = false
+                apply(thread, keepingSelection: true)
+                return
+            }
+            guard generation == historySynchronizationGeneration,
+                  isBoundToCurrentAccount, !isReleased, !isGenerating else { return }
+            try await ensureThreadLease(threadID)
+            guard generation == historySynchronizationGeneration,
+                  isBoundToCurrentAccount, !isReleased, !isGenerating else { return }
+            if let snapshot = handle.snapshot { apply(snapshot, keepingSelection: true) }
+            lostRunEvents = false
+            isFollowingRun = true
+            let submissionID = UUID.v7()
+            let responseID = UUID.v7().uuidString
+            activeSubmissionID = submissionID
+            activeTurnHandleID = handle.id
+            isGenerating = true
+            isAwaitingTurnOutput = true
+            isStopRequested = false
+            if let method = handle.approvalMethod { selectedApprovalMethod = method
+                syncedApprovalMethod = method
+            }
+            messages.append(CodexChatMessage(id: responseID, role: .assistant, text: "", isStreaming: true))
+            activeResponseID = responseID
+            turnTask = Task { [weak self] in
+                guard let self else { return }
+                let accumulator = CodexChatTurnAccumulator()
+                let limiter = CodexChatStreamingUpdateLimiter(minimumInterval: streamingUpdateInterval) { [weak self, accumulator] in
+                    self?.updateTurnResponse(id: responseID, from: accumulator)
+                }
+                do {
+                    _ = try await consumeTurnEvents(handle.events, accumulator: accumulator, updateLimiter: limiter, submissionID: submissionID)
+                    limiter.submit(force: true)
+                    completeTurnResponse(responseID: responseID)
+                    if !isReleased { await reconcileFromRollout(preservingReasoningFrom: responseID, submissionID: submissionID) }
+                } catch is CancellationError {
+                    limiter.submit(force: true)
+                    completeTurnResponse(responseID: responseID)
+                } catch {
+                    limiter.submit(force: true)
+                    completeTurnResponse(responseID: responseID)
+                    errorMessage = error.localizedDescription
+                }
+                finishGeneration(submissionID: submissionID)
+            }
+        } catch {
+            if generation == historySynchronizationGeneration, !isReleased { errorMessage = error.localizedDescription }
+        }
+    }
+
+    func release(stoppingRun: Bool = false) {
         guard !isReleased else { return }
         isReleased = true
         steerTask?.cancel()
         steerTask = nil
         pendingManualInputs.removeAll()
         if isGenerating {
-            stop()
+            if stoppingRun {
+                stop()
+            } else if !isRequestingTurnHandle {
+                turnTask?.cancel()
+                finishGeneration(submissionID: activeSubmissionID)
+            }
         }
         unsubscribeIfPossible()
     }
@@ -561,7 +656,9 @@ extension CodexChatSessionModel {
             do {
                 try ensureSubmissionCanContinue(submissionID)
             } catch {
-                await service.stopTurn(turn.id)
+                if !isReleased || isStopRequested {
+                    await service.stopTurn(turn.id)
+                }
                 throw error
             }
             activeTurnHandleID = turn.id
@@ -645,17 +742,23 @@ extension CodexChatSessionModel {
 
     ) async throws -> Bool {
         var eventsSinceYield = 0
-        for try await event in stream {
+        do {
+            for try await event in stream {
+                try ensureSubmissionCanContinue(submissionID)
+                apply(event, accumulator: accumulator, updateLimiter: updateLimiter)
+                if let completedSuccessfully = event.terminalCompletion {
+                    return completedSuccessfully
+                }
+                eventsSinceYield += 1
+                if eventsSinceYield == Self.maximumEventsBetweenYields {
+                    eventsSinceYield = 0
+                    await Task.yield()
+                }
+            }
+        } catch is ChatTurnBroadcast.ReaderOverflow {
             try ensureSubmissionCanContinue(submissionID)
-            apply(event, accumulator: accumulator, updateLimiter: updateLimiter)
-            if let completedSuccessfully = event.terminalCompletion {
-                return completedSuccessfully
-            }
-            eventsSinceYield += 1
-            if eventsSinceYield == Self.maximumEventsBetweenYields {
-                eventsSinceYield = 0
-                await Task.yield()
-            }
+            lostRunEvents = true
+            // The service still owns the run. Recover its projection without offering to resend the input.
         }
         return false
     }
@@ -734,7 +837,9 @@ extension CodexChatSessionModel {
         }
     }
 
-    private func apply(_ thread: CodexChatThread, preservingPendingMessages: Bool = false) {
+    /// `keepingSelection` is for following a run this view did not start: the model and effort stay as the user left them.
+    private func apply(_ thread: CodexChatThread, preservingPendingMessages: Bool = false, keepingSelection: Bool = false) {
+        historySynchronizationGeneration += 1
         backendThreadID = thread.id
         title = thread.title
         if !preservingPendingMessages {
@@ -742,6 +847,7 @@ extension CodexChatSessionModel {
             earlierMessagesCursor = thread.earlierMessagesCursor
             earlierMessagesError = nil
         }
+        guard !keepingSelection else { return }
         if let model = thread.model?.nilIfBlank {
             selectedModelID = model
         }
@@ -788,7 +894,7 @@ extension CodexChatSessionModel {
         guard let backendThreadID,
               let thread = try? await service.loadThread(id: backendThreadID)
         else { return }
-        guard activeSubmissionID == submissionID, !Task.isCancelled else { return }
+        guard activeSubmissionID == submissionID, !Task.isCancelled, !isReleased else { return }
         let streamedReasoning = messages
             .first(where: { $0.id == responseID })?
             .reasoning
@@ -809,13 +915,19 @@ extension CodexChatSessionModel {
         )
         // Pi does not write handled commands or their notifications into its rollout.
         let hasNotices = messages.contains { if case .notice = $0.role { true } else { false } }
-        apply(reconciledThread, preservingPendingMessages: hasNotices || thread.messages.count < messages.count)
+        apply(
+            reconciledThread, preservingPendingMessages: hasNotices || thread.messages.count < messages.count, keepingSelection: isFollowingRun
+        )
     }
 
     func finishGeneration(
         submissionID: UUID?
     ) {
         guard activeSubmissionID == submissionID else { return }
+        historySynchronizationGeneration += 1
+        // What this view showed to the end needs no reload; it also holds what history does not, such as command notices.
+        if !lostRunEvents, let runID = activeTurnHandleID { displayedRunID = runID }
+        isFollowingRun = false
         isGenerating = false
         toolActivity = nil
         isPreparingTurn = false
@@ -841,6 +953,7 @@ extension CodexChatSessionModel {
         unsubscribeIfPossible()
         processPendingInputIfPossible()
         notifyGenerationCompletionIfIdle()
+        Task { await self.synchronizeThread() }
     }
 
     private func notifyGenerationCompletionIfIdle() {
@@ -1054,7 +1167,7 @@ extension CodexChatSessionModel {
     }
 
     func ensureSubmissionCanContinue(_ submissionID: UUID) throws {
-        guard activeSubmissionID == submissionID, !Task.isCancelled else {
+        guard activeSubmissionID == submissionID, !Task.isCancelled, !isReleased else {
             throw CancellationError()
         }
 

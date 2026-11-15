@@ -26,19 +26,48 @@ enum ChatHistoryCodec {
     }
 
     static func messages(_ items: [ChatItem]) -> [CodexChatMessage] {
-        let records = items.compactMap { item -> [String: JSONValue]? in
-            guard let data = item.data.objectValue,
-                  data["type"]?.stringValue == "message" else { return nil }
-            var blocks: [JSONValue] = [.object(["type": .string("text"), "text": data["content"] ?? .string("")])]
-            blocks.append(.object(["type": .string("thinking"), "thinking": data["reasoning"] ?? .string("")]))
-            blocks += data["images"]?.arrayValue ?? []
-            return [
-                "type": .string("message"),
-                "id": .string(item.id),
-                "message": .object(["role": data["role"] ?? .null, "content": .array(blocks)]),
-            ]
+        var messages: [CodexChatMessage] = []
+        var records: [[String: JSONValue]] = []
+        /// A notification starts a run without a user message, so it also ends the reply before it.
+        func flush() {
+            messages += PiChatSessionFiles.messages(records)
+            records = []
         }
-        return PiChatSessionFiles.messages(records)
+        for item in items {
+            guard let data = item.data.objectValue else { continue }
+            switch data["type"]?.stringValue {
+            case "thread_notification":
+                flush()
+                messages.append(CodexChatMessage(
+                    id: item.id, role: .notice(.info), text: notificationDisplayText(data["content"]?.stringValue ?? "")
+                ))
+            case "message":
+                var blocks: [JSONValue] = [.object(["type": .string("text"), "text": data["content"] ?? .string("")])]
+                blocks.append(.object(["type": .string("thinking"), "thinking": data["reasoning"] ?? .string("")]))
+                blocks += data["images"]?.arrayValue ?? []
+                records.append([
+                    "type": .string("message"),
+                    "id": .string(item.id),
+                    "message": .object(["role": data["role"] ?? .null, "content": .array(blocks)]),
+                ])
+            default:
+                continue
+            }
+        }
+        flush()
+        return messages
+    }
+
+    private static func notificationDisplayText(_ content: String) -> String {
+        guard let start = content.firstIndex(of: "\n"), let end = content.range(of: "</thread_results>")?.lowerBound,
+              start < end,
+              let rows = try? JSONDecoder().decode(JSONValue.self, from: Data(content[start ..< end].utf8)).arrayValue else { return content }
+        return rows.compactMap { row -> String? in
+            guard let fields = row.objectValue, let title = fields["title"]?.stringValue,
+                  let status = fields["status"]?.stringValue else { return nil }
+            return [title + " · " + L10n.chatRunStatus(status), fields["excerpt"]?.stringValue ?? ""]
+                .filter { !$0.isEmpty }.joined(separator: "\n")
+        }.joined(separator: "\n\n")
     }
 
     /// Bound tool payloads independently; keep valid JSON and an explicit truncation marker.

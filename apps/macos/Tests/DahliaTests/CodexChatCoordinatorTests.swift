@@ -7,6 +7,82 @@ import Foundation
     @MainActor
     struct CodexChatCoordinatorTests {
         @Test
+        func reloadingAfterABackgroundRunKeepsTheModelPickedForTheNextMessage() async {
+            let service = CoordinatorTestCodexChatService()
+            await service.saveInitialHistory()
+            let session = CodexChatSessionModel(backendThreadID: "history-thread", service: service, settings: AppSettings())
+            session.selectModel("picked-model")
+            await service.finishBackgroundRun(notify: false)
+            session.runtimeState = Self.settled()
+            await session.synchronizeThread()
+            #expect(session.messages.last?.text == "Saved result")
+            #expect(session.selectedModelID == "picked-model")
+        }
+
+        @Test
+        func anotherThreadsActivityNeverReloadsThisView() async {
+            let service = CoordinatorTestCodexChatService()
+            await service.saveInitialHistory()
+            let session = CodexChatSessionModel(backendThreadID: "history-thread", service: service, settings: AppSettings())
+            let settled = Self.settled()
+            session.runtimeState = settled
+            await session.synchronizeThread()
+            #expect(session.messages.map(\.text) == ["Original"])
+            // History moved on, but this thread's settled run is the one already shown: nothing reloads.
+            await service.finishBackgroundRun(notify: false)
+            await session.synchronizeThread()
+            #expect(session.messages.map(\.text) == ["Original"])
+        }
+
+        @Test
+        func staleHistoryReadCannotReplaceANewerBackgroundResult() async {
+            let service = CoordinatorTestCodexChatService()
+            await service.saveInitialHistory()
+            let session = CodexChatSessionModel(backendThreadID: "history-thread", service: service, settings: AppSettings())
+            session.runtimeState = Self.settled()
+            await service.blockNextHistoryRead()
+            let stale = Task { await session.synchronizeThread() }
+            await waitUntil { await service.isHistoryReadWaiting }
+            await service.finishBackgroundRun(notify: false)
+            session.runtimeState = Self.settled()
+            await session.synchronizeThread()
+            #expect(session.messages.last?.text == "Saved result")
+            await service.releaseHistoryRead()
+            await stale.value
+            #expect(session.messages.map(\.text) == ["Original", "Delegated request", "Saved result"])
+        }
+
+        private static func settled() -> CodexChatRuntimeState {
+            CodexChatRuntimeState(threadID: "history-thread", accountID: "local", turnID: .v7(), approvals: [], status: "settled")
+        }
+
+        @Test(arguments: ["runtime", "docked", "detached"])
+        func completedBackgroundRunRefreshesAnAlreadyLoadedSession(surface: String) async {
+            let service = CoordinatorTestCodexChatService()
+            await service.saveInitialHistory()
+            let coordinator = CodexChatCoordinator(service: service, settings: AppSettings())
+            let thread = Self.threadSummary(id: "history-thread")
+            let id = await coordinator.openHistoryThread(thread)
+            guard let session = coordinator.session(for: id) else {
+                Issue.record("Missing loaded session")
+                return
+            }
+            #expect(session.messages.map(\.text) == ["Original"])
+            await waitUntil { await service.isObservingThreads }
+            // The running snapshot has coalesced away; only the settled state arrives.
+            await service.finishBackgroundRun(notify: true, accountID: session.accountID ?? "local")
+            if surface == "docked" {
+                #expect(await coordinator.openHistoryThread(thread) == id)
+            } else if surface == "detached" {
+                #expect(await coordinator.openHistoryThreadInDetachedWindow(thread) == id)
+            }
+            await waitUntil { await MainActor.run { session.messages.count == 3 } }
+            #expect(session.messages.map(\.text) == ["Original", "Delegated request", "Saved result"])
+            #expect(!session.isGenerating)
+            #expect(session.errorMessage == nil)
+        }
+
+        @Test
         func workspaceSwitchWithinAccountKeepsTheSameChatAndGeneration() async {
             let service = TestCodexChatService(mode: .blockBeforeOutput)
             let settings = AppSettings()
@@ -798,6 +874,36 @@ import Foundation
         private let delaysThreadStart: Bool
         private let delaysAndFailsThreadStart: Bool
         private let listsStartedThread: Bool
+        private var savedMessages: [CodexChatMessage]?
+        private var blocksNextHistoryRead = false
+        private var historyReadWaiter: CheckedContinuation<Void, Never>?
+        var isHistoryReadWaiting: Bool { historyReadWaiter != nil }
+        func blockNextHistoryRead() { blocksNextHistoryRead = true }
+        func releaseHistoryRead() {
+            historyReadWaiter?.resume()
+            historyReadWaiter = nil
+        }
+
+        private var runtimeReader: AsyncStream<[CodexChatRuntimeState]>.Continuation?
+
+        var isObservingThreads: Bool { runtimeReader != nil }
+
+        func observeThreads() async -> AsyncStream<[CodexChatRuntimeState]> {
+            let (stream, reader) = AsyncStream<[CodexChatRuntimeState]>.makeStream(bufferingPolicy: .bufferingNewest(1))
+            runtimeReader = reader
+            reader.yield([])
+            return stream
+        }
+
+        func saveInitialHistory() { savedMessages = [CodexChatMessage(role: .user, text: "Original")] }
+
+        func finishBackgroundRun(notify: Bool, accountID: String = "local") {
+            savedMessages?.append(CodexChatMessage(role: .user, text: "Delegated request"))
+            savedMessages?.append(CodexChatMessage(role: .assistant, text: "Saved result"))
+            let state = CodexChatRuntimeState(threadID: "history-thread", accountID: accountID, turnID: .v7(), approvals: [], status: "settled")
+            if notify { runtimeReader?.yield([state]) }
+        }
+
         private var historyRequestCount = 0
         private var didStartThread = false
         private var startedThreadName: String?
@@ -846,11 +952,16 @@ import Foundation
         }
 
         func loadThread(id: String) async throws -> CodexChatThread {
-            Self.thread(id: id)
+            guard let savedMessages else { return Self.thread(id: id) }
+            if blocksNextHistoryRead {
+                blocksNextHistoryRead = false
+                await withCheckedContinuation { historyReadWaiter = $0 }
+            }
+            return CodexChatThread(id: id, title: "History", messages: savedMessages, model: "default-model", reasoningEffort: "medium")
         }
 
         func resumeThread(id: String) async throws -> CodexChatThread {
-            Self.thread(id: id)
+            try await loadThread(id: id)
         }
 
         func startThread(model _: String?, effort: String, context _: CodexChatContext?) async throws -> CodexChatThread {
