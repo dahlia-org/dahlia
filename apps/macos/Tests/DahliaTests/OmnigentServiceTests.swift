@@ -17,16 +17,55 @@ struct OmnigentServiceTests {
     }
 
     @Test
-    func startRunsTheInputInAManagedSandbox() throws {
-        let body = try OmnigentService.startBody([
+    func startSeparatesManagedCreationFromTaskInput() throws {
+        let requests = try OmnigentService.startRequests([
             "agent_id": .string("ag_1"), "input": .string("fix it"), "repository": .string("https://github.com/o/r#main"),
-        ]).objectValue
+        ])
+        let body = requests.session.objectValue
         #expect(body?["host_type"] == .string("managed"))
         #expect(body?["workspace"] == .string("https://github.com/o/r#main"))
-        let message = body?["initial_items"]?.arrayValue?.first?.objectValue
+        #expect(body?["initial_items"] == .array([]))
+        let message = requests.input.objectValue
         #expect(message?["type"] == .string("message"))
         #expect(message?["data"]?.objectValue?["content"]?.arrayValue?.first?.objectValue?["text"] == .string("fix it"))
-        #expect(throws: (any Error).self) { try OmnigentService.startBody(["agent_id": .string("ag_1")]) }
+        #expect(throws: (any Error).self) { try OmnigentService.startRequests(["agent_id": .string("ag_1")]) }
+    }
+
+    @Test
+    func anUnboundManagedSessionReceivesTheTaskOnceAfterCreation() async throws {
+        var paths: [String] = []
+        let session = try await OmnigentService.startSession(["agent_id": .string("ag_1"), "input": .string("fix it")]) { path, body in
+            paths.append(path)
+            if path == "v1/sessions" {
+                #expect(body.objectValue?["initial_items"] == .array([]))
+                return .object(["id": .string("s1"), "runner_id": .null, "host_id": .null, "status": .string("launching")])
+            }
+            #expect(path == "v1/sessions/s1/events")
+            #expect(body.objectValue?["type"] == .string("message"))
+            #expect(body.objectValue?["data"]?.objectValue?["role"] == .string("user"))
+            #expect(body.objectValue?["data"]?.objectValue?["content"]?.arrayValue?.first?.objectValue?["text"] == .string("fix it"))
+            return .object(["queued": .bool(true), "item_id": .string("m1")])
+        }
+        #expect(paths == ["v1/sessions", "v1/sessions/s1/events"])
+        #expect(session.objectValue?["id"] == .string("s1"))
+    }
+
+    @Test(arguments: ["timeout", "denied", "not_queued"])
+    func failedTaskSubmissionKeepsTheSessionIdentityAndNeverRetries(failure: String) async throws {
+        var paths: [String] = []
+        do {
+            _ = try await OmnigentService.startSession(["agent_id": .string("ag_1"), "input": .string("fix it")]) { path, _ in
+                paths.append(path)
+                if path == "v1/sessions" { return .object(["id": .string("s1")]) }
+                if failure == "timeout" { throw URLError(.timedOut) }
+                return .object(["queued": .bool(failure == "denied"), "denied": .bool(failure == "denied")])
+            }
+            Issue.record("An unconfirmed task submission must fail")
+        } catch {
+            #expect(error.localizedDescription.contains("session s1 was created"))
+            #expect(error.localizedDescription.contains("do not automatically create another session"))
+        }
+        #expect(paths == ["v1/sessions", "v1/sessions/s1/events"])
     }
 
     @Test

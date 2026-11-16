@@ -55,7 +55,7 @@ enum OmnigentService {
         (1 ... 128).contains(id.count) && id.allSatisfy { $0.isASCII && ($0.isLetter || $0.isNumber || $0 == "_" || $0 == "-") }
     }
 
-    nonisolated static func startBody(_ args: [String: JSONValue]) throws -> JSONValue {
+    nonisolated static func startRequests(_ args: [String: JSONValue]) throws -> (session: JSONValue, input: JSONValue) {
         guard let agentID = args["agent_id"]?.stringValue?.nilIfBlank, let input = args["input"]?.stringValue?.nilIfBlank else {
             throw PiRuntimeError.rpcError(code: nil, message: "agent_id and input are required")
         }
@@ -63,17 +63,42 @@ enum OmnigentService {
             "agent_id": .string(agentID),
             // The server provisions a sandbox for the session.
             "host_type": .string("managed"),
-            "initial_items": .array([.object([
-                "type": .string("message"),
-                "data": .object([
-                    "role": .string("user"),
-                    "content": .array([.object(["type": .string("input_text"), "text": .string(input)])]),
-                ]),
-            ])]),
+            // Initial items are history-only until a runner is bound. Dispatch through /events after creation.
+            "initial_items": .array([]),
         ]
         if let title = args["title"]?.stringValue?.nilIfBlank { body["title"] = .string(String(title.prefix(256))) }
         if let repository = args["repository"]?.stringValue?.nilIfBlank { body["workspace"] = .string(repository) }
-        return .object(body)
+        return (.object(body), .object([
+            "type": .string("message"),
+            "data": .object([
+                "role": .string("user"),
+                "content": .array([.object(["type": .string("input_text"), "text": .string(input)])]),
+            ]),
+        ]))
+    }
+
+    static func startSession(
+        _ args: [String: JSONValue],
+        post: (String, JSONValue) async throws -> JSONValue
+    ) async throws -> JSONValue {
+        let requests = try startRequests(args)
+        let session = try await post("v1/sessions", requests.session)
+        guard let id = session.objectValue?["id"]?.stringValue, isValidSessionID(id) else {
+            throw PiRuntimeError.invalidProtocolResponse
+        }
+        do {
+            let result = try await post("v1/sessions/\(id)/events", requests.input)
+            guard result.objectValue?["queued"]?.boolValue == true, result.objectValue?["denied"]?.boolValue != true else {
+                throw PiRuntimeError.rpcError(code: nil, message: "Omnigent did not accept the task input")
+            }
+        } catch {
+            // The server may have accepted a timed-out POST. Never resend or create another billed sandbox automatically.
+            throw PiRuntimeError.rpcError(
+                code: nil,
+                message: "Omnigent session \(id) was created, but task submission could not be confirmed: \(error.localizedDescription). Inspect this session before retrying; do not automatically create another session."
+            )
+        }
+        return session
     }
 
     /// A message item's text; tool calls and resource events are not messages.
@@ -145,9 +170,17 @@ enum OmnigentService {
                 "next_cursor": hasMore ? page.objectValue?["last_id"] ?? .null : .null,
             ])
         case "omni_create_session":
-            let session = try await json(connectionID, method: "POST", path: "v1/sessions", body: startBody(args))
+            let session = try await startSession(args) { path, body in
+                // The input POST waits for managed provisioning (up to 240 s on the server).
+                try await json(connectionID, method: "POST", path: path, body: body, timeout: 300)
+            }
             guard let id = session.objectValue?["id"]?.stringValue else { throw PiRuntimeError.invalidProtocolResponse }
-            return .object(["session_id": .string(id), "status": session.objectValue?["status"] ?? .null, "url": url(id)])
+            return .object([
+                "session_id": .string(id),
+                "status": session.objectValue?["status"] ?? .null,
+                "input_queued": .bool(true),
+                "url": url(id),
+            ])
         case "omni_get_session":
             guard let id = args["session_id"]?.stringValue, isValidSessionID(id) else {
                 throw PiRuntimeError.rpcError(code: nil, message: "Invalid session_id")
@@ -179,15 +212,18 @@ enum OmnigentService {
     }
 
     private static func json(
-        _ connectionID: UUID, method: String = "GET", path: String, query: [String: String] = [:], body: JSONValue? = nil
+        _ connectionID: UUID, method: String = "GET", path: String, query: [String: String] = [:], body: JSONValue? = nil, timeout: TimeInterval = 30
     ) async throws -> JSONValue {
-        try await JSONDecoder().decode(JSONValue.self, from: request(connectionID, method: method, path: path, query: query, body: body))
+        try await JSONDecoder().decode(
+            JSONValue.self,
+            from: request(connectionID, method: method, path: path, query: query, body: body, timeout: timeout)
+        )
     }
 
     private static func request(
-        _ connectionID: UUID, method: String = "GET", path: String, query: [String: String] = [:], body: JSONValue? = nil
+        _ connectionID: UUID, method: String = "GET", path: String, query: [String: String] = [:], body: JSONValue? = nil, timeout: TimeInterval = 30
     ) async throws -> Data {
-        let request = try await urlRequest(connectionID, method: method, path: path, query: query, body: body)
+        let request = try await urlRequest(connectionID, method: method, path: path, query: query, body: body, timeout: timeout)
         let (data, response) = try await URLSession.shared.data(for: request)
         guard let status = (response as? HTTPURLResponse)?.statusCode else { throw URLError(.badServerResponse) }
         guard (200 ..< 300).contains(status) else { throw RequestError(status: status, body: String(decoding: data.prefix(500), as: UTF8.self)) }
