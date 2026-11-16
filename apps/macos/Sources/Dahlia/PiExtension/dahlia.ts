@@ -167,13 +167,36 @@ export default function (pi: any) {
       }),
     });
     registerThreadTools(pi, bridge);
-    registerLearningTools(pi, bridge);
     let blockedThisRun = false;
     pi.on("agent_start", () => { blockedThisRun = false; });
     const block = (reason: string) => {
       blockedThisRun = true;
       return { block: true, reason };
     };
+    const approve = async (ctx: any, name: string, payload: any, confirmFullAccess = false) => {
+      // Use the same native bounds and registered-server checks for AI, manual and Full access decisions.
+      if (await bridge(ctx, "approvalCheck", payload) !== true) return block("This tool call cannot be approved.");
+      // Dahlia owns the approval mode; asking per call applies a change made during the turn to the next tool.
+      const approvalMode = await bridge(ctx, "approvalMode", {});
+      if (approvalMode === "fullAccess" && !confirmFullAccess) return;
+      let reason: string | undefined = payload.reason;
+      if (approvalMode === "autoReview") {
+        const model = await bridge(ctx, "reviewModel", {});
+        // Only the reviewer sees earlier denials; a classifier cannot approve a workaround in this run.
+        const triage = blockedThisRun ? null : await bridge(ctx, "reviewTriage", {});
+        const verdict = await reviewMCP(ctx, name, payload.arguments, model, triage);
+        if (ctx.signal?.aborted) return block("MCP AI review was cancelled.");
+        if (verdict.outcome === "allow" && verdict.risk !== "unknown") return;
+        if (verdict.risk === "critical") {
+          return block(`MCP AI review blocked a critical action: ${verdict.reason}`);
+        }
+        reason = `MCP AI review ${verdict.risk === "unknown" ? "failed" : "requires your approval"}: ${verdict.reason}`;
+      }
+      const decision = await bridge(ctx, "approval", { ...payload, reason });
+      if (decision !== "accept") return block("The user declined this tool call.");
+      return;
+    };
+    registerLearningTools(pi, bridge, approve);
     if (env.DAHLIA_PI_MCP_COMMAND) {
       const [command, ...args] = JSON.parse(env.DAHLIA_PI_MCP_COMMAND);
       pi.registerMcpServer("dahlia", { command, args, exposure: "direct", description: "Dahlia meetings, projects, and workspaces" });
@@ -278,31 +301,9 @@ export default function (pi: any) {
           return permitted === true ? undefined : block("This scheduled tool is no longer available.");
         }
         if (readOnly) return;
-        // Dahlia owns the approval mode; asking per call applies a change made during the turn to the next tool.
-        const approvalMode = await bridge(ctx, "approvalMode", {});
-        if (approvalMode === "fullAccess") return;
-        let reason: string | undefined;
-        if (approvalMode === "autoReview") {
-          const model = await bridge(ctx, "reviewModel", {});
-          // Only the reviewer sees earlier denials; a classifier cannot approve a workaround in this run.
-          const triage = blockedThisRun ? null : await bridge(ctx, "reviewTriage", {});
-          const verdict = await reviewMCP(ctx, name, event.input, model, triage);
-          if (ctx.signal?.aborted) return block("MCP AI review was cancelled.");
-          if (verdict.outcome === "allow" && verdict.risk !== "unknown") return;
-          if (verdict.risk === "critical") {
-            return block(`MCP AI review blocked a critical action: ${verdict.reason}`);
-          }
-          reason = `MCP AI review ${verdict.risk === "unknown" ? "failed" : "requires your approval"}: ${verdict.reason}`;
-        }
-        const decision = await bridge(ctx, "approval", {
-          kind: "mcpToolCall",
-          server,
-          tool: name.slice(`mcp__${server}__`.length),
-          arguments: event.input,
-          reason,
+        return approve(ctx, name, {
+          kind: "mcpToolCall", server, tool: name.slice(`mcp__${server}__`.length), arguments: event.input,
         });
-        if (decision !== "accept") return block("The user declined this tool call.");
-        return;
       }
 
       return block("This tool is not available in Dahlia's chat.");

@@ -202,6 +202,7 @@ actor PiChatService: CodexChatServicing {
         var messageIndex = 0
         var lastError: String?
         var pendingApprovals: [String: CheckedContinuation<CodexChatApprovalDecision, Never>] = [:]
+        var pendingSchedules: [String: ScheduleApproval] = [:]
         /// Set by a stop, so a tool of this turn that is waiting on other threads returns at once.
         var stopRequested = false
         /// Steers Pi has queued. Each is stored when Pi delivers it, so history keeps it after the reply it interrupted.
@@ -857,7 +858,7 @@ actor PiChatService: CodexChatServicing {
             provider: provider,
             chatBridge: { [weak self] method, payload in
                 guard let self else { return .string(method == "approval" ? "cancel" : "ask") }
-                if ["memory", "skills_list", "skill_view", "skill_manage", "cronjob", "scheduledTool"].contains(method) {
+                if ["memory", "skills_list", "skill_view", "skill_manage", "cronjob", "cronjobCommit", "scheduledTool"].contains(method) {
                     return await self.learningToolResult(method, payload: payload, threadID: threadID, processID: processID)
                 }
                 if method.hasPrefix("thread_") {
@@ -1050,6 +1051,11 @@ actor PiChatService: CodexChatServicing {
 
     private func answer(_ method: String, payload: JSONValue, threadID: String, processID: UUID) async -> JSONValue {
         let isLive = sessions[threadID]?.processID == processID
+        if method == "approvalCheck" {
+            guard isLive, let session = sessions[threadID], session.profile == .interactive,
+                  session.turn?.stopRequested == false else { return .bool(false) }
+            return .bool(Self.approvalRequest(id: UUID.v7().uuidString, payload: payload, mcpServers: session.mcpServers)?.canApprove == true)
+        }
         if method == "reviewTriage" {
             guard isLive, let provider = sessions[threadID]?.provider, reviewTriageEnabled(provider) else { return .null }
             let configuration = try? await runtime.autoReviewTriage(for: provider)

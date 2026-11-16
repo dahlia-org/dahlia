@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 
 // The schema descriptions and shapes are vendored from the pinned Hermes commit.
-export function registerLearningTools(pi: any, bridge: any) {
+export function registerLearningTools(pi: any, bridge: any, approve: any) {
   const schemas = JSON.parse(readFileSync(new URL("./hermes/tools.json", import.meta.url), "utf8"));
   for (const schema of schemas) {
     pi.registerTool({
@@ -16,7 +16,14 @@ export function registerLearningTools(pi: any, bridge: any) {
           }).map((tool: any) => tool.name);
           args = { ...args, _readOnlyTools: tools };
         }
-        return { content: [{ type: "text", text: JSON.stringify(await bridge(ctx, schema.name, args)) }] };
+        let result = await bridge(ctx, schema.name, args);
+        if (schema.name === "cronjob" && result?.approval && result?.request_id) {
+          // Dahlia freezes the effective revision before review and commits that exact request once.
+          const blocked = await approve(ctx, "cronjob", result.approval, true);
+          result = await bridge(ctx, "cronjobCommit", { request_id: result.request_id, approved: !blocked && !ctx.signal?.aborted });
+          if (blocked) return { isError: true, content: [{ type: "text", text: blocked.reason }] };
+        }
+        return { content: [{ type: "text", text: JSON.stringify(result) }] };
       },
     });
   }

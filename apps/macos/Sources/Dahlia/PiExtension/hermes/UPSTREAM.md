@@ -38,8 +38,9 @@ skills. Bundled/package skills require an account copy under a distinct name.
 Reviews use a separate Pi process and a complete GRDB snapshot annotated with saved
 run provenance; Pi RPC has no supported mixed-origin clone API. Parent prompt/tool
 arguments are preserved, but runtime dispatch allows only memory/skill tools.
-Scheduled runs have immutable read-only tools approved by name, require confirmation,
-and deliver into a per-schedule read-only thread. The app supplies the clock and account /
+Scheduled runs have immutable read-only tools approved by name and deliver into a
+per-schedule read-only thread. Activation follows Auto review, with user confirmation
+on denial/failure and critical actions blocked; Supervised and Full access ask the user. The app supplies the clock and account /
 recording gates. Five-field cron expressions are rejected without adding a dependency.
 
 The review suffix preserves upstream's "You can only call memory and skill management

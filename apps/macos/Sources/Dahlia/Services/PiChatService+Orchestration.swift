@@ -157,13 +157,14 @@ extension PiChatService {
 
     func threadTool(_ method: String, payload: JSONValue, threadID: String, processID: UUID) async throws -> JSONValue {
         guard let callerSession = sessions[threadID], callerSession.processID == processID,
-              let callerTurn = callerSession.turn, callerSession.profile == .interactive else { throw CancellationError() }
+              let callerTurn = callerSession.turn, !callerTurn.stopRequested, callerSession.profile == .interactive else { throw CancellationError() }
         let store = try history()
         let account = callerSession.provider.accountKey
         let caller = try store.thread(id: threadID, accountID: account)
         guard try await runtime.currentProvider() == callerSession.provider,
               sessions[threadID]?.processID == processID,
-              sessions[threadID]?.turn?.id == callerTurn.id else { throw CancellationError() }
+              sessions[threadID]?.turn?.id == callerTurn.id,
+              sessions[threadID]?.turn?.stopRequested == false else { throw CancellationError() }
         let args = payload.objectValue ?? [:]
         if let input = args["input"]?.stringValue, input.count > 32000 { throw PiRuntimeError.rpcError(
             code: nil,
@@ -307,7 +308,8 @@ extension PiChatService {
                 try store.deleteThread(id: child.id)
                 return runJSON(existing)
             }
-            guard sessions[threadID]?.turn?.id == callerTurn.id else { throw CancellationError() }
+            guard sessions[threadID]?.turn?.id == callerTurn.id,
+                  sessions[threadID]?.turn?.stopRequested == false else { throw CancellationError() }
             try store.setParent(child.id, parentID: threadID, accountID: account)
             if let title = args["title"]?.stringValue?.nilIfBlank {
                 try store.updateThread(id: child.id, title: String(title.prefix(256)))
@@ -383,6 +385,8 @@ extension PiChatService {
         arguments: [String: JSONValue],
         context: CodexChatContext? = nil
     ) throws -> ChatRunRecord {
+        guard sessions[caller.id]?.turn?.id == turn.id,
+              sessions[caller.id]?.turn?.stopRequested == false else { throw CancellationError() }
         guard try history().thread(id: targetID, accountID: caller.accountID).scheduleID == nil else {
             throw HermesLearning.failure(L10n.agentScheduleReadOnly)
         }

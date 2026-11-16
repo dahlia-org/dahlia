@@ -399,7 +399,7 @@ def run(pi, mode, script, arguments, environment, approval="accept", approval_mo
                 bridge.append((method, json.loads(record["placeholder"])))
                 classifier = {"model": "system.ai.openjev-qwen35-4b", "provider": "databricks",
                               "endpoint": f"http://127.0.0.1:{server.server_port}/systemone"} if triage else None
-                answers = {"token": "synthetic-token", "approvalMode": approval_mode, "reviewModel": "", "reviewTriage": classifier, "approval": approval, "createBackup": {"path": "/tmp/Dahlia-Backup-test.tar.gz"}}
+                answers = {"token": "synthetic-token", "approvalMode": approval_mode, "reviewModel": "", "reviewTriage": classifier, "approvalCheck": True, "approval": approval, "createBackup": {"path": "/tmp/Dahlia-Backup-test.tar.gz"}}
                 answers.update(bridge_answers or {})
                 send({"type": "extension_ui_response", "id": record["id"], "value": json.dumps(answers[method])})
             elif record.get("type") == "tool_execution_end":
@@ -512,10 +512,59 @@ def thread_tools(pi):
     print("Pi thread tools and headless steer passed (8 tools, isolated loopback gateway)")
 
 
+def schedule_approval_regression(pi):
+    """Real Pi must review Dahlia's effective schedule before committing it."""
+    effective = {"action": "create", "prompt": "Read saved meetings", "schedule": "30m",
+                 "skills": ["meeting-reviewer"], "approved_read_only_tools": ["mcp__dahlia__get_meeting"], "revision": 2}
+    challenge = {"request_id": "frozen-schedule", "approval": {
+        "kind": "mcpToolCall", "server": "dahlia", "tool": "cronjob", "arguments": effective}}
+    for mode, risk, outcome, decision, allowed, asks in [
+        ("autoReview", "low", "allow", "decline", True, False),
+        ("autoReview", "high", "deny", "accept", True, True),
+        ("autoReview", "high", "deny", "decline", False, True),
+        ("autoReview", "critical", "deny", "accept", False, False),
+        ("autoReview", "unknown", "deny", "decline", False, True),
+        ("ask", None, None, "accept", True, True),
+        ("fullAccess", None, None, "decline", False, True),
+    ]:
+        steps = [{"tool": "cronjob", "args": {"action": "update", "job_id": "saved"}}]
+        if risk:
+            steps.append({"text": json.dumps({"risk_level": risk, "user_authorization": "high",
+                                             "outcome": outcome, "rationale": "SCHEDULE_REVIEW"})})
+            if risk == "unknown":
+                steps[-1] = {"error": "invalid API key"}
+        steps.append({"text": "done"})
+        requests, results, bridge, _ = run(
+            pi, "chat", steps, ["--no-session", "--tools", "cronjob"], {},
+            approval_mode=mode, approval=decision,
+            bridge_answers={"cronjob": challenge, "cronjobCommit": {"success": allowed}})
+        commits = [payload for method, payload in bridge if method == "cronjobCommit"]
+        assert commits == [{"request_id": "frozen-schedule", "approved": allowed}], (mode, risk, results, bridge)
+        approvals = [payload for method, payload in bridge if method == "approval"]
+        assert bool(approvals) == asks, (mode, risk, bridge)
+        if approvals:
+            assert approvals[0]["arguments"] == effective, approvals
+        if risk:
+            assert "Read saved meetings" in json.dumps(requests[1]["body"]), requests
+            assert "approved_read_only_tools" in json.dumps(requests[1]["body"]), requests
+        else:
+            assert not any(method == "reviewModel" for method, _ in bridge), bridge
+    # Listing never enters the gate.
+    _, _, bridge, _ = run(pi, "chat", [{"tool": "cronjob", "args": {"action": "list"}}, {"text": "done"}],
+                          ["--no-session", "--tools", "cronjob"], {}, bridge_answers={"cronjob": []})
+    assert not any(method in {"approvalMode", "approval", "cronjobCommit"} for method, _ in bridge), bridge
+    print("PASS: schedule approval modes, review fallback, critical denial, frozen revision and read-only listing")
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--pi", default="pi")
-    pi = parser.parse_args().pi
+    parser.add_argument("--only-schedules", action="store_true")
+    args = parser.parse_args()
+    pi = args.pi
+    schedule_approval_regression(pi)
+    if args.only_schedules:
+        return
     thread_tools(pi)
     triage_denial_regression(pi)
     package_resources(pi)
@@ -677,6 +726,15 @@ def main():
         assert "declined" in results[0], results
         _, results, bridge, _ = chat({"tool": "mcp__dahlia__update_meeting"}, approval_mode="fullAccess")
         assert results == ["MCP_OK"] and not any(method == "approval" for method, _ in bridge), (results, bridge)
+
+        # Native preflight rejection stops every approval mode before review or execution.
+        for mode in ("ask", "autoReview", "fullAccess"):
+            requests, results, bridge, _ = chat(
+                {"tool": "mcp__dahlia__update_meeting", "args": {"title": "bounded"}},
+                approval_mode=mode, bridge_answers={"approvalCheck": False})
+            assert "cannot be approved" in results[0] and "MCP_OK" not in results, (mode, results)
+            assert len(requests) == 2, (mode, requests)
+            assert not any(method in {"reviewModel", "reviewTriage", "approval"} for method, _ in bridge), (mode, bridge)
 
         # Auto review uses the account's provider and a real review request before any MCP mutation.
         for risk, outcome in [("low", "allow"), ("high", "deny"), ("critical", "deny"), ("unknown", "deny")]:

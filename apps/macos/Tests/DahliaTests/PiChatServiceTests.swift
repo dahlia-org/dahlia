@@ -66,6 +66,125 @@ import Synchronization
             return Fixture(pi: pi, chat: chat, chatTransport: chatTransport, store: store)
         }
 
+        @Test(arguments: [CodexChatApprovalMethod.ask, .autoReview, .fullAccess])
+        func scheduleApprovalCommitsOnlyTheFrozenRequestOnce(method: CodexChatApprovalMethod) async throws {
+            let fixture = try Self.fixture { _ in }
+            defer { try? FileManager.default.removeItem(at: fixture.pi.rootURL) }
+            let thread = try await fixture.chat.startThread(model: nil, effort: "medium")
+            _ = try await fixture.chat.beginTurn(
+                threadID: thread.id, inputs: [.text("Create a reminder")], model: nil, effort: "medium",
+                approvalMethod: method, expectedProvider: .local
+            )
+            let process = try #require(await fixture.chat.sessions[thread.id]?.processID)
+            let schedules = AgentScheduleService(dbQueue: fixture.store.dbQueue)
+            let prepared = try await fixture.chat.learningTool("cronjob", payload: .object([
+                "action": .string("create"), "prompt": .string("Read the meeting"), "schedule": .string("30m"),
+                "_readOnlyTools": .array([.string("mcp__dahlia__get_meeting")]),
+            ]), threadID: thread.id, processID: process)
+            let id = try #require(prepared.objectValue?["request_id"]?.stringValue)
+            let arguments = prepared.objectValue?["approval"]?.objectValue?["arguments"]?.objectValue
+            #expect(arguments?["prompt"] == .string("Read the meeting"))
+            #expect(arguments?["approved_read_only_tools"] == .array([.string("mcp__dahlia__get_meeting")]))
+            #expect(arguments?["_readOnlyTools"] == nil)
+            #expect(try schedules.list(account: "local").isEmpty)
+            #expect(await fixture.chat.sessions[thread.id]?.turn?.pendingApprovals.isEmpty == true)
+            let commit: JSONValue = .object([
+                "request_id": .string(id), "approved": .bool(true), "prompt": .string("Do something else"),
+                "_readOnlyTools": .array([.string("mcp__dahlia__update_meeting")]),
+            ])
+            _ = try await fixture.chat.learningTool("cronjobCommit", payload: commit, threadID: thread.id, processID: process)
+            let saved = try #require(try schedules.list(account: "local").first)
+            #expect(saved.prompt == "Read the meeting")
+            #expect(saved.allowedTools == "[\"mcp__dahlia__get_meeting\"]")
+            await #expect(throws: (any Error).self) {
+                try await fixture.chat.learningTool("cronjobCommit", payload: commit, threadID: thread.id, processID: process)
+            }
+            await fixture.chat.closeSession(thread.id)
+            await fixture.pi.service.shutdown()
+        }
+
+        @Test(arguments: ["update", "resume"], [false, true])
+        func scheduleReviewIncludesOmittedFieldsAndChecksRevisions(action: String, changed: Bool) async throws {
+            let fixture = try Self.fixture { _ in }
+            defer { try? FileManager.default.removeItem(at: fixture.pi.rootURL) }
+            let thread = try await fixture.chat.startThread(model: nil, effort: "medium")
+            _ = try await fixture.chat.beginTurn(
+                threadID: thread.id, inputs: [.text("Change the reminder")], model: nil, effort: "medium",
+                approvalMethod: .autoReview, expectedProvider: .local
+            )
+            let process = try #require(await fixture.chat.sessions[thread.id]?.processID)
+            let schedules = AgentScheduleService(dbQueue: fixture.store.dbQueue)
+            _ = try schedules.execute(.object([
+                "action": .string("create"), "prompt": .string("Original prompt"), "schedule": .string("30m"),
+                "skills": .array([.string("meeting-reviewer")]),
+            ]), account: "local", approved: true, tools: [])
+            let saved = try #require(try schedules.list(account: "local").first)
+            if action == "resume" {
+                _ = try schedules.execute(.object(["action": .string("pause"), "job_id": .string(saved.id)]), account: "local", approved: false, tools: [])
+            }
+            var payload: [String: JSONValue] = ["action": .string(action), "job_id": .string(saved.id)]
+            if action == "resume" {
+                // Resume ignores update-only fields: review the saved task that will actually run.
+                payload["prompt"] = .string("Ignored prompt")
+                payload["schedule"] = .string("every day at 9am")
+                payload["skills"] = .array([])
+                payload["name"] = .string("Ignored name")
+            }
+            let prepared = try await fixture.chat.learningTool("cronjob", payload: .object(payload), threadID: thread.id, processID: process)
+            let arguments = prepared.objectValue?["approval"]?.objectValue?["arguments"]?.objectValue
+            #expect(arguments?["prompt"] == .string(saved.prompt))
+            #expect(arguments?["schedule"] == .string(saved.schedule))
+            #expect(arguments?["skills"] == .array([.string("meeting-reviewer")]))
+            if action == "resume" { #expect(arguments?["name"] == .string(saved.name)) }
+            let id = try #require(prepared.objectValue?["request_id"]?.stringValue)
+            let commit: JSONValue = .object(["request_id": .string(id), "approved": .bool(true)])
+            if changed {
+                _ = try schedules.execute(.object(["action": .string("pause"), "job_id": .string(saved.id)]), account: "local", approved: false, tools: [])
+                await #expect(throws: (any Error).self) {
+                    try await fixture.chat.learningTool("cronjobCommit", payload: commit, threadID: thread.id, processID: process)
+                }
+                #expect(try schedules.record(id: saved.id, account: "local").enabled == false)
+            } else {
+                _ = try await fixture.chat.learningTool("cronjobCommit", payload: commit, threadID: thread.id, processID: process)
+                let activated = try schedules.record(id: saved.id, account: "local")
+                #expect(activated.enabled == true)
+                #expect(activated.prompt == saved.prompt)
+                #expect(activated.schedule == saved.schedule)
+                #expect(activated.skills == saved.skills)
+                #expect(activated.name == saved.name)
+            }
+            await fixture.chat.closeSession(thread.id)
+            await fixture.pi.service.shutdown()
+        }
+
+        @Test(arguments: ["declined", "stopped", "accountChanged", "wrongProcess"])
+        func scheduleCommitRejectsDeclinedOrObsoleteApprovals(state: String) async throws {
+            let fixture = try Self.fixture { _ in }
+            defer { try? FileManager.default.removeItem(at: fixture.pi.rootURL) }
+            let thread = try await fixture.chat.startThread(model: nil, effort: "medium")
+            _ = try await fixture.chat.beginTurn(
+                threadID: thread.id, inputs: [.text("Set a reminder")], model: nil, effort: "medium",
+                approvalMethod: .autoReview, expectedProvider: .local
+            )
+            let process = try #require(await fixture.chat.sessions[thread.id]?.processID)
+            let prepared = try await fixture.chat.learningTool("cronjob", payload: .object([
+                "action": .string("create"), "prompt": .string("Read only"), "schedule": .string("30m"),
+            ]), threadID: thread.id, processID: process)
+            let id = try #require(prepared.objectValue?["request_id"]?.stringValue)
+            if state == "stopped" { await fixture.chat.abort(threadID: thread.id) }
+            if state == "accountChanged" { fixture.pi.contextStore.beginActivation(.databricks(connectionID: .v7())) }
+            for approved in [false, true] {
+                await #expect(throws: (any Error).self) {
+                    try await fixture.chat.learningTool("cronjobCommit", payload: .object([
+                        "request_id": .string(id), "approved": .bool(approved),
+                    ]), threadID: thread.id, processID: state == "wrongProcess" ? .v7() : process)
+                }
+            }
+            #expect(try AgentScheduleService(dbQueue: fixture.store.dbQueue).list(account: "local").isEmpty)
+            await fixture.chat.closeSession(thread.id)
+            await fixture.pi.service.shutdown()
+        }
+
         @Test
         func lateSubscriberGetsSavedHistoryPartialTextAndFutureEvents() async throws {
             let fixture = try Self.fixture { transport in
@@ -1274,6 +1393,35 @@ import Synchronization
             // The chat clears the report at `.started`, so it must follow that event.
             let started = try #require(second.firstIndex { if case .started = $0 { true } else { false } })
             #expect(second.dropFirst(started + 1).first == .mcpSignInRequired(servers: ["gmail", "slack"]))
+        }
+
+        @Test
+        func approvalPreflightUsesNativeBoundsAndRejectsStoppedTurns() async throws {
+            let fixture = try Self.fixture { _ in }
+            defer { try? FileManager.default.removeItem(at: fixture.pi.rootURL) }
+            let thread = try await fixture.chat.startThread(model: nil, effort: "medium")
+            _ = try await fixture.chat.beginTurn(
+                threadID: thread.id, inputs: [.text("Update the meeting")], model: nil, effort: "medium",
+                approvalMethod: .autoReview, expectedProvider: .local
+            )
+            func check(_ id: String, text: String, server: String = "dahlia") async throws -> Bool {
+                await fixture.chatTransport.emit(TestPiTransport.bridgeRequest(id: id, method: "approvalCheck", payload: .object([
+                    "kind": .string("mcpToolCall"), "server": .string(server), "tool": .string("update_meeting"),
+                    "arguments": .object(["note": .string(text)]),
+                ])))
+                let response = await fixture.chatTransport.command { $0["id"]?.stringValue == id }
+                let value = try #require(response["value"]?.stringValue)
+                return try JSONDecoder().decode(Bool.self, from: Data(value.utf8))
+            }
+            #expect(try await check("small", text: "New note"))
+            #expect(try await !check("large", text: String(repeating: "a", count: CodexChatApprovalNormalizer.byteLimit)))
+            #expect(try await !check("multibyte", text: String(repeating: "あ", count: CodexChatApprovalNormalizer.byteLimit / 2)))
+            #expect(try await !check("unregistered", text: "New note", server: "unregistered"))
+            #expect(await fixture.chat.sessions[thread.id]?.turn?.pendingApprovals.isEmpty == true)
+            await fixture.chat.abort(threadID: thread.id)
+            #expect(try await !check("stopped", text: "New note"))
+            await fixture.chat.closeSession(thread.id)
+            await fixture.pi.service.shutdown()
         }
 
         @Test
