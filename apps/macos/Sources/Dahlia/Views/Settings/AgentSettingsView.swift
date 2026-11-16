@@ -87,6 +87,7 @@ private struct AgentSettingsTabs: View {
                     AgentEnvironmentSection(model: launch)
                     AgentChatSettingsSection()
                     AgentChatInstructionsSection(account: account)
+                    if case .databricks = account { AgentOmnigentSection(account: account) }
                 }
                 .formStyle(.grouped)
                 .font(.dahliaBody)
@@ -824,5 +825,25 @@ private struct AgentModelDetailsButton: View {
     private func price(_ cost: [String: JSONValue]) -> String {
         let value = { (key: String) in cost[key].flatMap { if case let .number(number) = $0 { number.formatted() } else { nil } } ?? "-" }
         return L10n.agentModelPriceValue(value("input"), value("output"), value("cacheRead"), value("cacheWrite"))
+    }
+}
+
+/// A Databricks account can let chat use its workspace's Omnigent and list the sessions in the Chat sidebar.
+private struct AgentOmnigentSection: View {
+    @AppStorage private var isEnabled: Bool
+
+    init(account: CodexRuntimeProvider) {
+        _isEnabled = AppStorage(wrappedValue: false, OmnigentService.enabledKey(account.accountKey))
+    }
+
+    var body: some View {
+        Section {
+            Toggle(L10n.omnigentEnabled, isOn: $isEnabled)
+                .toggleStyle(.switch)
+        } header: {
+            Text(L10n.omnigent).font(.dahliaSectionHeader)
+        } footer: {
+            Text(L10n.omnigentEnabledHelp)
+        }
     }
 }

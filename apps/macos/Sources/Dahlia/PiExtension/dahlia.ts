@@ -13,7 +13,7 @@ import {
   registerDatabricksProviders,
 } from "./databricks-provider.ts";
 
-import { registerThreadTools, threadTools } from "./thread-tools.ts";
+import { omnigentTools, registerThreadTools, threadTools } from "./thread-tools.ts";
 import { registerLearningTools, learningTools } from "./learning-tools.ts";
 import { reviewMCP } from "./mcp-review.ts";
 
@@ -167,6 +167,7 @@ export default function (pi: any) {
       }),
     });
     registerThreadTools(pi, bridge);
+    registerThreadTools(pi, bridge, omnigentTools);
     let blockedThisRun = false;
     pi.on("agent_start", () => { blockedThisRun = false; });
     const block = (reason: string) => {
@@ -288,6 +289,12 @@ export default function (pi: any) {
       }
 
       if (name === "dah_create_backup" || threadTools.some((tool) => tool.name === name)) return;
+      // Starting a session runs work outside this Mac, so it is approved like an MCP tool that writes.
+      if (omnigentTools.some((tool) => tool.name === name)) {
+        return name === "omni_create_session"
+          ? approve(ctx, name, { kind: "mcpToolCall", server: "omnigent", tool: name, arguments: event.input })
+          : undefined;
+      }
 
       // Pi lists an MCP tool under its server's namespace; the alias is the server name.
       const server: string | undefined = tool?.sourceInfo?.path === "builtin:mcp" ? tool.namespace?.aliases?.[0] : undefined;

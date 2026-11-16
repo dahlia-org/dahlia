@@ -13,6 +13,8 @@ enum MainWindowLocation: Equatable {
     case project(UUID)
     case chat
     case chatThread(accountID: String, threadID: String)
+    /// A Databricks workspace's Omnigent session, shown read-only in the chat section.
+    case omnigentSession(connectionID: UUID, sessionID: String)
 
     var section: MainWindowSection {
         switch self {
@@ -20,9 +22,15 @@ enum MainWindowLocation: Equatable {
             .meetings
         case .projects, .project:
             .projects
-        case .chat, .chatThread:
+        case .chat, .chatThread, .omnigentSession:
             .chat
         }
+    }
+
+    /// The Omnigent session to show, only while its Databricks connection is the open account's.
+    func omnigentSessionID(for connectionID: UUID?) -> String? {
+        guard case let .omnigentSession(sessionConnectionID, sessionID) = self, sessionConnectionID == connectionID else { return nil }
+        return sessionID
     }
 }
 
@@ -122,6 +130,12 @@ final class MainWindowNavigation {
 
     func showMeetings() {
         section = .meetings
+    }
+
+    /// The Omnigent session the main area shows: the current location, while the chat section presents it and its
+    /// Databricks connection is the open account's. `showMeetings()` changes the section without leaving the location.
+    func shownOmnigentSessionID(for connectionID: UUID?) -> String? {
+        section == .chat ? currentLocation.omnigentSessionID(for: connectionID) : nil
     }
 
     func showProjects() {

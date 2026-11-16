@@ -117,7 +117,8 @@ actor PiRuntimeService {
                 }
             case "memory", "skills_list", "skill_view", "skill_manage", "cronjob", "cronjobCommit", "scheduledTool",
                  "reviewTriage", "approvalCheck", "createBackup", "thread_list", "thread_search", "thread_read",
-                 "thread_start", "thread_send", "thread_wait", "thread_interrupt", "thread_update":
+                 "thread_start", "thread_send", "thread_wait", "thread_interrupt", "thread_update",
+                 "omni_list_agents", "omni_list_sessions", "omni_create_session", "omni_get_session":
                 guard let chatBridge else { return .null }
                 return try await chatBridge(method, payload)
             case "approval", "approvalMode", "reviewModel":

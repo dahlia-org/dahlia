@@ -4,6 +4,8 @@ struct MeetingSidebarHeader: View {
     let title: String
     let isExpanded: Bool
     let onToggleExpansion: () -> Void
+    /// A brand mark before the title, such as Omnigent's.
+    var icon: Image?
     /// Shows a hover-revealed button that adds an item to the section, such as a project or a chat.
     var addButtonTitle: String?
     var addButtonSystemImage = "plus"
@@ -17,6 +19,13 @@ struct MeetingSidebarHeader: View {
         HStack {
             Button(action: onToggleExpansion) {
                 HStack(spacing: 5) {
+                    if let icon {
+                        icon
+                            .resizable()
+                            .scaledToFit()
+                            .frame(width: DahliaTypography.size(offset: -2), height: DahliaTypography.size(offset: -2))
+                            .accessibilityHidden(true)
+                    }
                     Text(title)
                     Image(systemName: isExpanded ? "chevron.down" : "chevron.right")
                         .font(.dahliaSecondary)

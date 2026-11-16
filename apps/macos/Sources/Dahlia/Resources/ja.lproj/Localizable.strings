@@ -2160,3 +2160,10 @@
 "Resume queue" = "キューを再開";
 
 "chat.toolUseCount" = "%lld 件のツール操作";
+"Omnigent" = "Omnigent";
+"settings.agents.omnigent.enabled" = "Omnigent との統合を有効化（ベータ機能）";
+"settings.agents.omnigent.enabledHelp" = "チャットからこのワークスペースの Omnigent セッションを一覧・開始でき、チャットのサイドバーにも表示します。開始はチャットの承認方式に従います。";
+"sidebar.omnigent.refresh" = "Omnigent セッションを更新";
+"sidebar.omnigent.noSessions" = "Omnigent セッションはありません";
+"omnigent.session.noMessages" = "まだメッセージはありません";
+"omnigent.session.openInBrowser" = "Omnigent で開く";

@@ -3262,6 +3262,13 @@ enum L10n { // swiftlint:disable:this type_body_length
 
     static var chatNoticeExpanded: String { String(localized: "Chat notice expanded", bundle: bundle) }
     static var chatNoticeCollapsed: String { String(localized: "Chat notice collapsed", bundle: bundle) }
+    static var omnigent: String { String(localized: "Omnigent", bundle: bundle) }
+    static var omnigentEnabled: String { String(localized: "settings.agents.omnigent.enabled", bundle: bundle) }
+    static var omnigentEnabledHelp: String { String(localized: "settings.agents.omnigent.enabledHelp", bundle: bundle) }
+    static var omnigentRefresh: String { String(localized: "sidebar.omnigent.refresh", bundle: bundle) }
+    static var omnigentNoSessions: String { String(localized: "sidebar.omnigent.noSessions", bundle: bundle) }
+    static var omnigentNoMessages: String { String(localized: "omnigent.session.noMessages", bundle: bundle) }
+    static var omnigentOpenInBrowser: String { String(localized: "omnigent.session.openInBrowser", bundle: bundle) }
     static var chatSlashCommands: String { String(localized: "Commands and skills", bundle: bundle) }
     static var chatNoMatchingCommands: String { String(localized: "No matching commands or skills.", bundle: bundle) }
     static var chatCommandsLoadFailed: String { String(localized: "Could not load commands. Type / again to retry.", bundle: bundle) }
