@@ -49,6 +49,8 @@ import Foundation
             session.draft = "Original"
             await session.addImageData([png])
             session.sendDraft()
+            #expect(session.draft.isEmpty)
+            #expect(session.attachedImages.isEmpty)
             await waitUntilAsync { await service.isSendWaiting }
 
             session.draft = "New draft"
@@ -57,7 +59,7 @@ import Foundation
             await waitUntil { !session.isGenerating }
 
             #expect(session.draft == "New draft")
-            #expect(session.attachedImages.count == 2)
+            #expect(session.attachedImages.count == 1)
         }
 
         @Test

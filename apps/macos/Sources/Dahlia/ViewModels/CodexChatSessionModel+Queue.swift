@@ -57,7 +57,7 @@ extension CodexChatSessionModel {
             draft: draft,
             referenceIDs: previous.composerSnapshot?.referenceIDs ?? [],
             images: images,
-            threadReferenceIDs: previous.composerSnapshot?.threadReferenceIDs ?? []
+            threadReferences: previous.composerSnapshot?.threadReferences ?? []
         )
         let text = CodexChatMeetingReference.serializedText(referenceIDs: snapshot.referenceIDs, draft: draft)
         let references = snapshot.threadReferenceIDs.map { "thread:" + $0 }.joined(separator: " ")
