@@ -6,23 +6,31 @@ import Foundation
 
     @MainActor
     struct CodexChatThinkingPresentationTests {
-        @Test(arguments: [false, true])
-        func thinkingStartsSynchronouslyAndRemainsVisibleDuringPreparation(stop: Bool) async {
+        @Test(arguments: [false, true], [false, true])
+        func thinkingStartsSynchronouslyAndRemainsVisibleDuringPreparation(stop: Bool, existingThread: Bool) async throws {
             let service = TestCodexChatService(mode: .delayTurnHandleIgnoringCancellation)
             let settings = AppSettings()
             settings.currentWorkspace = Self.testWorkspace()
-            let session = CodexChatSessionModel(service: service, settings: settings)
+            let session = CodexChatSessionModel(
+                backendThreadID: existingThread ? "existing-thread" : nil,
+                messages: existingThread ? [CodexChatMessage(role: .assistant, text: "Previous response")] : [],
+                service: service,
+                settings: settings
+            )
             session.draft = "Question"
 
             #expect(!session.showsStandaloneThinking)
             session.sendDraft()
             // The welcome screen must disappear before context lookup or Pi startup can suspend.
-            #expect(session.messages.isEmpty)
+            let submittedMessage = try #require(session.conversationMessages.last)
+            #expect(submittedMessage.role == .user)
+            #expect(submittedMessage.text == "Question")
             #expect(session.showsStandaloneThinking)
 
             await waitUntilAsync { await service.isSendWaiting }
             #expect(session.isPreparingTurn)
             #expect(session.showsStandaloneThinking)
+            #expect(session.conversationMessages.last == submittedMessage)
 
             if stop { session.stop() }
             await service.resumeDelayedSend()
@@ -30,11 +38,43 @@ import Foundation
                 await waitUntil { session.activeTurnID != nil }
                 #expect(!session.isPreparingTurn)
                 #expect(session.showsStandaloneThinking)
+                #expect(session.conversationMessages.filter { $0.role == .user }.map(\.id) == [submittedMessage.id])
                 await service.completeBlockedTurn()
             }
             await waitUntil { !session.hasPendingGenerationWork }
             #expect(!session.showsStandaloneThinking)
             #expect(session.draft == (stop ? "Question" : ""))
+            #expect(session.preparingUserMessage == nil)
+            #expect(session.conversationMessages == session.messages)
+            if stop {
+                #expect(!session.conversationMessages.contains { $0.role == .user })
+            }
+        }
+
+        @Test
+        func failedPreparationRemovesPreviewAndRetryShowsOneMessage() async throws {
+            let service = TestCodexChatService(mode: .complete)
+            let settings = TestCodexChatFixtures.appSettings()
+            settings.currentWorkspace = Self.testWorkspace()
+            let contextProvider = TestCodexChatContextProvider(error: .invalidProtocolResponse, shouldBlock: true)
+            let session = CodexChatSessionModel(service: service, settings: settings, contextProvider: contextProvider)
+            session.draft = "Question"
+
+            session.sendDraft()
+            #expect(session.conversationMessages.map(\.text) == ["Question"])
+            try #require(await pollUntil { contextProvider.requestCount == 1 })
+            contextProvider.resume()
+            try #require(await pollUntil { !session.isGenerating })
+            #expect(session.errorMessage != nil)
+            #expect(session.conversationMessages.isEmpty)
+            #expect(session.draft == "Question")
+
+            contextProvider.error = nil
+            session.retry()
+            #expect(session.conversationMessages.map(\.text) == ["Question"])
+            try #require(await pollUntil { !session.hasPendingGenerationWork })
+            #expect(session.conversationMessages.filter { $0.role == .user }.map(\.text) == ["Question"])
+            #expect(session.draft.isEmpty)
         }
 
         @Test
@@ -59,9 +99,10 @@ import Foundation
             #expect(session.messages.isEmpty)
             #expect(session.showsStandaloneThinking)
             #expect(CodexChatConversationItem.build(
-                from: session.messages,
+                from: session.conversationMessages,
                 showsStandaloneThinking: session.showsStandaloneThinking
-            ) == [.thinking])
+            ).count == 2)
+            #expect(session.conversationMessages.last?.text == "Question")
 
             contextProvider.resume()
             await waitUntil { session.activeTurnID != nil }
