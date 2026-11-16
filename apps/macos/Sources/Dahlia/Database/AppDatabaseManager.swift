@@ -286,6 +286,17 @@ final class AppDatabaseManager: Sendable {
             try AgentLearningMigration.migrate(in: db)
         }
 
+        migrator.registerMigration("v65_chatRunPresentation") { db in
+            try addColumnIfNeeded(in: db, table: "chat_runs", column: "startedAt", type: .datetime)
+            try addColumnIfNeeded(in: db, table: "chat_runs", column: "completedAt", type: .datetime)
+            try addColumnIfNeeded(in: db, table: "chat_runs", column: "requestedByRunID", type: .blob)
+            try db.execute(sql: "CREATE INDEX IF NOT EXISTS chat_items_run ON chat_items(threadID, runID, seq)")
+            try db
+                .execute(
+                    sql: "CREATE INDEX IF NOT EXISTS chat_items_conversation ON chat_items(threadID, seq) WHERE \(ChatItemRecord.conversationPredicate())"
+                )
+        }
+
         return migrator
     }()
 

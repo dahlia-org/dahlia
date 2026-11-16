@@ -48,7 +48,10 @@ extension ChatThreadStore {
     /// Claim only a still-queued run after all asynchronous process preparation has finished.
     func claimQueuedRun(_ id: UUID) throws -> Bool {
         try dbQueue.write { db in
-            try db.execute(sql: "UPDATE chat_runs SET status = 'running' WHERE id = ? AND status = 'queued'", arguments: [id])
+            try db.execute(
+                sql: "UPDATE chat_runs SET status = 'running', startedAt = COALESCE(startedAt, ?) WHERE id = ? AND status = 'queued'",
+                arguments: [Date(), id]
+            )
             return db.changesCount == 1
         }
     }
@@ -95,10 +98,12 @@ extension ChatThreadStore {
             try db.execute(
                 sql: """
                 UPDATE chat_runs SET input = CASE WHEN ? = 'running' THEN '' ELSE input END, status = ?,
+                    startedAt = CASE WHEN ? = 'running' THEN COALESCE(startedAt, ?) ELSE startedAt END,
+                    completedAt = CASE WHEN ? IN ('completed', 'failed', 'interrupted') THEN COALESCE(completedAt, ?) ELSE completedAt END,
                     resultDeliveredAt = CASE WHEN ? IN ('completed', 'failed', 'interrupted') THEN NULL ELSE resultDeliveredAt END
                 WHERE id = ?
                 """,
-                arguments: [status, status, status, id]
+                arguments: [status, status, status, Date(), status, Date(), status, id]
             )
         }
     }

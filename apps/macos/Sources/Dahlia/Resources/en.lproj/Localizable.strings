@@ -2101,6 +2101,8 @@
 "settings.meetingLinks.intro" = "Choose which apps open meeting links. Settings are saved for the selected account on this Mac.";
 
 "chat.thread.child" = "Child thread";
+"chat.thread.relatedCount" = "%lld threads";
+"chat.thread.activeCount" = "%lld active";
 "chat.thread.addReference" = "Reference a thread";
 "chat.run.queued" = "Queued";
 "chat.run.completed" = "Completed";
@@ -2156,3 +2158,5 @@
 "While responding, send using the default behavior. Hold Command or press Command-Return to use the other action." = "While responding, send using the default behavior. Hold Command or press Command-Return to use the other action.";
 "Queue paused" = "Queue paused";
 "Resume queue" = "Resume queue";
+
+"chat.toolUseCount" = "%lld tool uses";

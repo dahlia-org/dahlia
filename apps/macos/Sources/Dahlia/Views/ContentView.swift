@@ -27,10 +27,10 @@ struct ContentView: View {
     @State private var isSummaryGenerationConfirmationPresented = false
     @State private var isNotesHistoryPresented = false
 
-    var body: some View {
+    private var mainContent: some View {
         let isShowingSettings = mainWindowNavigation.isShowingSettings
 
-        MainChatSplitView(
+        return MainChatSplitView(
             width: mainWindowNavigation.chatSidebarWidth,
             contentMinimumWidth: isSidebarVisible || isShowingSettings
                 ? MainSidebarLayout.minimumSplitWidth
@@ -211,152 +211,169 @@ struct ContentView: View {
                 .accessibilityHidden(isShowingSettings)
             }
         }
-        .overlay {
-            if searchModel.isPresented {
-                MainSearchOverlay(
-                    model: searchModel,
-                    sidebarViewModel: sidebarViewModel,
-                    appearanceForProject: projectAppearance,
-                    onOpenMeeting: openSearchMeeting,
-                    onOpenScreenshot: openSearchScreenshot,
-                    onOpenProject: openSearchProject,
-                    onOpenChat: openFullScreenChatThread
-                )
-                .opacity(isShowingSettings ? 0 : 1)
-                .allowsHitTesting(!isShowingSettings)
-                .disabled(isShowingSettings)
-                .accessibilityHidden(isShowingSettings)
-            }
-        }
-        .screenshotOverlayPresentation(
-            presentation: $expandedScreenshot,
-            screenshots: { viewModel.screenshotStore.records },
-            summaryScreenshotIDs: { viewModel.currentSummaryDocument?.orderedScreenshotIds ?? [] },
-            onDownload: viewModel.downloadScreenshot,
-            ocrStateProvider: { id, refresh in await viewModel.screenshotOCRState(id: id, refresh: refresh) }
-        )
-        .projectModalPresentation(
-            editorRequest: $projectEditorRequest,
-            deletionProject: $projectPendingDeletion,
-            projects: sidebarViewModel.allProjectItems,
-            appearanceForProject: projectAppearance,
-            onCancelEditor: dismissProjectEditor,
-            onDeleteFromEditor: requestProjectDeletionFromEditor,
-            onSave: saveProjectEditor,
-            onCancelDeletion: dismissProjectDeletion,
-            onConfirmDeletion: deleteProject
-        )
-        .summaryGenerationConfirmationPresentation(
-            isPresented: $isSummaryGenerationConfirmationPresented,
-            viewModel: viewModel,
-            sidebarViewModel: sidebarViewModel
-        )
-        .documentRecoveryHistoryPresentation(
-            isPresented: $isNotesHistoryPresented,
-            model: headerNotesEditorModel,
-            editable: sidebarViewModel.canEditCurrentWorkspace
-        )
-        .task(id: sidebarViewModel.currentWorkspace?.id) {
-            await sidebarViewModel.refreshUnprocessedRecordings()
-        }
-        .onChange(of: currentWorkspaceAccount, reopenChatForAccountChange)
-        .onChange(of: sidebarViewModel.currentWorkspace?.id) {
-            chatCoordinator.showsHistory = false
-            dismissChatConfiguration()
-            searchModel.resetForWorkspaceChange(using: sidebarViewModel)
-            syncChatContext()
-        }
-        .onChange(of: viewModel.batchTranscriptionState) { _, state in
-            guard state?.changesUnprocessedRecordingsProjection != false else { return }
-            Task { await sidebarViewModel.refreshUnprocessedRecordings() }
-        }
-        .onChange(of: viewModel.offscreenBatchTranscriptionChangeToken) { _, _ in
-            Task { await sidebarViewModel.refreshUnprocessedRecordings() }
-        }
-        .alert(item: $viewModel.batchTranscriptionRecoveryAlert) { alert in
-            Alert(
-                title: Text(L10n.batchTranscriptionRecoveryFailedTitle),
-                message: Text(alert.message),
-                primaryButton: .default(Text(L10n.retry), action: viewModel.retryBatchTranscriptionRecovery),
-                secondaryButton: .cancel()
-            )
-        }
-        .onChange(of: sidebarViewModel.selectedMeetingIds) { oldValue, newValue in
-            guard oldValue != newValue else { return }
-            if !newValue.isEmpty {
-                mainWindowNavigation.showMeetings()
-                isShowingUnprocessedRecordings = false
-            }
-            if newValue.count == 1,
-               let meetingID = newValue.first,
-               Self.shouldRecordMeetingNavigation(
-                   isRecordingStartPending: viewModel.isRecordingStartPending,
-                   hasDraftMeeting: viewModel.hasDraftMeeting
-               ) {
-                mainWindowNavigation.recordNavigation(to: .meeting(meetingID))
-            }
-            if newValue.count != 1 {
-                if !newValue.isEmpty || !viewModel.hasDraftMeeting {
-                    viewModel.clearCurrentMeeting()
+    }
+
+    private var presentedContent: some View {
+        let isShowingSettings = mainWindowNavigation.isShowingSettings
+        return mainContent
+            .overlay {
+                if searchModel.isPresented {
+                    MainSearchOverlay(
+                        model: searchModel,
+                        sidebarViewModel: sidebarViewModel,
+                        appearanceForProject: projectAppearance,
+                        onOpenMeeting: openSearchMeeting,
+                        onOpenScreenshot: openSearchScreenshot,
+                        onOpenProject: openSearchProject,
+                        onOpenChat: openFullScreenChatThread
+                    )
+                    .opacity(isShowingSettings ? 0 : 1)
+                    .allowsHitTesting(!isShowingSettings)
+                    .disabled(isShowingSettings)
+                    .accessibilityHidden(isShowingSettings)
                 }
             }
-            if newValue.isEmpty {
-                mainWindowNavigation.recordUpcomingScheduleIfVisible(isShowingUpcomingSchedule)
+            .screenshotOverlayPresentation(
+                presentation: $expandedScreenshot,
+                screenshots: { viewModel.screenshotStore.records },
+                summaryScreenshotIDs: { viewModel.currentSummaryDocument?.orderedScreenshotIds ?? [] },
+                onDownload: viewModel.downloadScreenshot,
+                ocrStateProvider: { id, refresh in await viewModel.screenshotOCRState(id: id, refresh: refresh) }
+            )
+            .projectModalPresentation(
+                editorRequest: $projectEditorRequest,
+                deletionProject: $projectPendingDeletion,
+                projects: sidebarViewModel.allProjectItems,
+                appearanceForProject: projectAppearance,
+                onCancelEditor: dismissProjectEditor,
+                onDeleteFromEditor: requestProjectDeletionFromEditor,
+                onSave: saveProjectEditor,
+                onCancelDeletion: dismissProjectDeletion,
+                onConfirmDeletion: deleteProject
+            )
+            .summaryGenerationConfirmationPresentation(
+                isPresented: $isSummaryGenerationConfirmationPresented,
+                viewModel: viewModel,
+                sidebarViewModel: sidebarViewModel
+            )
+            .documentRecoveryHistoryPresentation(
+                isPresented: $isNotesHistoryPresented,
+                model: headerNotesEditorModel,
+                editable: sidebarViewModel.canEditCurrentWorkspace
+            )
+    }
+
+    var body: some View {
+        presentedContent
+            .background { chatNavigationObservation }
+            .task(id: sidebarViewModel.currentWorkspace?.id) {
+                await sidebarViewModel.refreshUnprocessedRecordings()
             }
-            syncChatContext()
-        }
-        .onChange(of: sidebarViewModel.selectedMeetingDetail) { _, _ in
-            loadSelectedMeetingIfPossible()
-        }
-        .onChange(of: canLoadSelectedMeeting) { _, canLoad in
-            guard canLoad else { return }
-            loadSelectedMeetingIfPossible()
-        }
-        .onChange(of: viewModel.currentMeetingId) { oldId, newId in
-            guard oldId != newId else { return }
-            if let newId,
-               sidebarViewModel.selectedMeetingId != newId,
-               Self.shouldSelectCurrentMeeting(newId, at: mainWindowNavigation.currentLocation) {
-                sidebarViewModel.selectMeeting(newId)
+            .onChange(of: currentWorkspaceAccount, reopenChatForAccountChange)
+            .onChange(of: sidebarViewModel.currentWorkspace?.id) {
+                chatCoordinator.showsHistory = false
+                dismissChatConfiguration()
+                searchModel.resetForWorkspaceChange(using: sidebarViewModel)
+                syncChatContext()
             }
-            syncChatContext()
-        }
-        .onChange(of: viewModel.draftMeeting) { _, newDraft in
-            if newDraft != nil {
-                syncDraftNavigation()
+            .onChange(of: viewModel.batchTranscriptionState) { _, state in
+                guard state?.changesUnprocessedRecordingsProjection != false else { return }
+                Task { await sidebarViewModel.refreshUnprocessedRecordings() }
             }
-            syncChatContext()
-        }
-        .onChange(of: viewModel.pendingDraftMaterializations, initial: true) { _, _ in
-            for materialization in viewModel.consumeDraftMaterializations() {
-                mainWindowNavigation.replaceDraftNavigation(
-                    draftID: materialization.draftID,
-                    with: materialization.meetingID
+            .onChange(of: viewModel.offscreenBatchTranscriptionChangeToken) { _, _ in
+                Task { await sidebarViewModel.refreshUnprocessedRecordings() }
+            }
+            .alert(item: $viewModel.batchTranscriptionRecoveryAlert) { alert in
+                Alert(
+                    title: Text(L10n.batchTranscriptionRecoveryFailedTitle),
+                    message: Text(alert.message),
+                    primaryButton: .default(Text(L10n.retry), action: viewModel.retryBatchTranscriptionRecovery),
+                    secondaryButton: .cancel()
                 )
             }
-        }
-        .onChange(of: viewModel.noteText) { _, _ in
-            syncDraftNavigation()
-        }
-        .onChange(of: mainWindowNavigation.section) { _, section in
-            switch section {
-            case .projects:
-                prepareSectionWithoutMeeting()
-            case .meetings:
+            .onChange(of: sidebarViewModel.selectedMeetingIds) { oldValue, newValue in
+                guard oldValue != newValue else { return }
+                if !newValue.isEmpty {
+                    mainWindowNavigation.showMeetings()
+                    isShowingUnprocessedRecordings = false
+                }
+                if newValue.count == 1,
+                   let meetingID = newValue.first,
+                   Self.shouldRecordMeetingNavigation(
+                       isRecordingStartPending: viewModel.isRecordingStartPending,
+                       hasDraftMeeting: viewModel.hasDraftMeeting
+                   ) {
+                    mainWindowNavigation.recordNavigation(to: .meeting(meetingID))
+                }
+                if newValue.count != 1 {
+                    if !newValue.isEmpty || !viewModel.hasDraftMeeting {
+                        viewModel.clearCurrentMeeting()
+                    }
+                }
+                if newValue.isEmpty {
+                    mainWindowNavigation.recordUpcomingScheduleIfVisible(isShowingUpcomingSchedule)
+                }
                 syncChatContext()
-            case .chat:
-                break
             }
-        }
-        .onChange(of: sidebarViewModel.workspaceChangeToken) { _, _ in
-            // MCP ヘルパーなど別プロセスが要約を書き換えた場合に Summary タブを追従させる。
-            viewModel.reloadSummaryDocument()
-        }
-        .onAppear {
-            prepareInitialPresentation()
-        }
-        .task { syncChatContext() }
+            .onChange(of: sidebarViewModel.selectedMeetingDetail) { _, _ in
+                loadSelectedMeetingIfPossible()
+            }
+            .onChange(of: canLoadSelectedMeeting) { _, canLoad in
+                guard canLoad else { return }
+                loadSelectedMeetingIfPossible()
+            }
+            .onChange(of: viewModel.currentMeetingId) { oldId, newId in
+                guard oldId != newId else { return }
+                if let newId,
+                   sidebarViewModel.selectedMeetingId != newId,
+                   Self.shouldSelectCurrentMeeting(newId, at: mainWindowNavigation.currentLocation) {
+                    sidebarViewModel.selectMeeting(newId)
+                }
+                syncChatContext()
+            }
+            .onChange(of: viewModel.draftMeeting) { _, newDraft in
+                if newDraft != nil {
+                    syncDraftNavigation()
+                }
+                syncChatContext()
+            }
+            .onChange(of: viewModel.pendingDraftMaterializations, initial: true) { _, _ in
+                for materialization in viewModel.consumeDraftMaterializations() {
+                    mainWindowNavigation.replaceDraftNavigation(
+                        draftID: materialization.draftID,
+                        with: materialization.meetingID
+                    )
+                }
+            }
+            .onChange(of: viewModel.noteText) { _, _ in
+                syncDraftNavigation()
+            }
+            .onChange(of: mainWindowNavigation.section) { _, section in
+                switch section {
+                case .projects:
+                    prepareSectionWithoutMeeting()
+                case .meetings:
+                    syncChatContext()
+                case .chat:
+                    break
+                }
+            }
+            .onChange(of: sidebarViewModel.workspaceChangeToken) { _, _ in
+                // MCP ヘルパーなど別プロセスが要約を書き換えた場合に Summary タブを追従させる。
+                viewModel.reloadSummaryDocument()
+            }
+            .onAppear {
+                prepareInitialPresentation()
+            }
+            .task { syncChatContext() }
     }
+
+    private var chatNavigationObservation: some View {
+        Color.clear
+            .onChange(of: chatCoordinator.dockedSessionID) { recordVisibleChatSession() }
+            .onChange(of: chatCoordinator.dockedSession.backendThreadID) { bindVisibleChatThread() }
+    }
+
 }
 
 private extension ContentView {
@@ -383,8 +400,25 @@ private extension ContentView {
         }
     }
 
+    private func recordVisibleChatSession() {
+        guard mainWindowNavigation.section == .chat else { return }
+        mainWindowNavigation.recordNavigation(to: currentChatLocation)
+    }
+
+    private func bindVisibleChatThread() {
+        guard let threadID = chatCoordinator.dockedSession.backendThreadID else { return }
+        mainWindowNavigation.bindCurrentChatThread(accountID: chatCoordinator.dockedSession.accountID, threadID: threadID)
+    }
+
+    private var currentChatLocation: MainWindowLocation {
+        if let threadID = chatCoordinator.dockedSession.backendThreadID {
+            return .chatThread(accountID: chatCoordinator.dockedSession.accountID, threadID: threadID)
+        }
+        return .chat
+    }
+
     private func showFullScreenChat() {
-        mainWindowNavigation.recordNavigation(to: .chat)
+        mainWindowNavigation.recordNavigation(to: currentChatLocation)
         restoreFullScreenChatPresentation()
     }
 
@@ -397,7 +431,8 @@ private extension ContentView {
     }
 
     private func startNewFullScreenChat() {
-        showFullScreenChat()
+        mainWindowNavigation.recordNavigation(to: .chat)
+        restoreFullScreenChatPresentation()
         chatCoordinator.showsHistory = false
         dismissChatConfiguration()
         chatCoordinator.newDockedChat(showDockedSidebar: false)
@@ -409,9 +444,12 @@ private extension ContentView {
             openDetachedChat(detachedID)
             return
         }
-        showFullScreenChat()
+        mainWindowNavigation.recordNavigation(to: .chatThread(accountID: chatCoordinator.dockedSession.accountID, threadID: thread.id))
+        restoreFullScreenChatPresentation()
         chatCoordinator.showsHistory = false
-        Task { _ = await chatCoordinator.openHistoryThread(thread, showDockedSidebar: false) }
+        Task {
+            _ = await chatCoordinator.openHistoryThread(thread, showDockedSidebar: false)
+        }
     }
 
     private func popOutDockedChat() {
@@ -901,6 +939,8 @@ private extension ContentView {
         switch location {
         case .upcomingSchedule, .unprocessedRecordings, .chat:
             return true
+        case let .chatThread(accountID, threadID):
+            return await chatCoordinator.canRestoreThread(id: threadID, accountID: accountID)
         case let .meeting(meetingID):
             let selectedMeetingIds = sidebarViewModel.selectedMeetingIds
             let draftMeeting = viewModel.draftMeeting
@@ -956,6 +996,17 @@ private extension ContentView {
             mainWindowNavigation.showProjects()
         case .chat:
             restoreFullScreenChatPresentation()
+            if chatCoordinator.dockedSession.backendThreadID != nil {
+                chatCoordinator.newDockedChat(showDockedSidebar: false)
+            }
+        case let .chatThread(accountID, threadID):
+            restoreFullScreenChatPresentation()
+            Task {
+                guard mainWindowNavigation.currentLocation == location,
+                      chatCoordinator.dockedSession.accountID == accountID else { return }
+                let thread = CodexChatThreadSummary(id: threadID, title: "", updatedAt: .now)
+                _ = await chatCoordinator.openHistoryThread(thread, showDockedSidebar: false)
+            }
         }
         syncChatContext()
     }

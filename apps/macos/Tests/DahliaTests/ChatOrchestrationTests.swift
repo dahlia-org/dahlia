@@ -36,6 +36,56 @@
             return Fixture(runtime: runtime, service: service, store: store, transports: transports)
         }
 
+        @Test
+        func relatedThreadPreviewUsesFirstUserMessageAndRestoresParent() async throws {
+            let fixture = try fixture()
+            defer { try? FileManager.default.removeItem(at: fixture.runtime.rootURL) }
+            let parent = try await fixture.service.startThread(model: nil, effort: "medium")
+            let child = ChatThreadRecord(
+                id: UUID.v7().uuidString.lowercased(), accountID: "local", parentThreadID: parent.id,
+                title: "Child title", model: "test/model", createdAt: .now, updatedAt: .now
+            )
+            try fixture.store.createThread(child)
+            let delegatedInput = try await fixture.service.agentRequestText(
+                CodexChatPromptCodec.encode(text: "First request", context: .project(id: .v7(), name: "Project", description: "Hidden context")),
+                callerID: parent.id
+            )
+            try fixture.store.appendItems(threadID: child.id, items: [
+                ChatHistoryCodec.message(["role": .string("assistant"), "content": .string("Before request")]),
+                ChatHistoryCodec.user([.text(delegatedInput)]),
+                ChatHistoryCodec.user([.text("Later request")]),
+            ])
+            let related = try #require(try await fixture.service.relatedThreads(parentThreadID: parent.id).first)
+            #expect(related.title == "Child title")
+            #expect(related.firstMessage == "First request")
+            #expect(related.model == "test/model")
+            let restored = try await fixture.service.loadThread(id: child.id)
+            #expect(restored.parentThread?.id == parent.id)
+            #expect(restored.parentThread?.title == parent.title)
+            #expect(try await fixture.service.loadThread(id: parent.id).parentThread == nil)
+        }
+
+        @Test
+        func relatedThreadPreviewIsBoundedAndAllowsEmptyThreads() async throws {
+            let fixture = try fixture()
+            defer { try? FileManager.default.removeItem(at: fixture.runtime.rootURL) }
+            let parent = try await fixture.service.startThread(model: nil, effort: "medium")
+            let child = ChatThreadRecord(
+                id: UUID.v7().uuidString.lowercased(), accountID: "local", parentThreadID: parent.id,
+                title: "Child", createdAt: .now, updatedAt: .now
+            )
+            try fixture.store.createThread(child)
+            #expect(try await fixture.service.relatedThreads(parentThreadID: parent.id).first?.firstMessage == nil)
+            _ = try fixture.store.enqueueRun(ChatRunRecord(
+                id: .v7(), threadID: child.id, requestedByThreadID: parent.id, rootRunID: .v7(), status: "queued", input: "Queued request",
+                effort: "medium", approvalMethod: "ask", createdAt: .now
+            ))
+            #expect(try await fixture.service.relatedThreads(parentThreadID: parent.id).first?.firstMessage == "Queued request")
+            try fixture.store.appendItems(threadID: child.id, items: [ChatHistoryCodec.user([.text(String(repeating: "あ", count: 1100))])])
+            let related = try #require(try await fixture.service.relatedThreads(parentThreadID: parent.id).first)
+            #expect(related.firstMessage == String(repeating: "あ", count: 1000))
+        }
+
         @Test(.timeLimit(.minutes(1)), arguments: ["queue", "steer"])
         func delegatedRequestsKeepTheirProvenance(mode: String) async throws {
             let fixture = try fixture()
@@ -102,6 +152,8 @@
                 await transport.emit(TestPiTransport.settled())
                 for try await _ in handle.events {}
                 let record = try #require(try fixture.store.run(id: handle.id))
+                #expect(record.startedAt != nil)
+                #expect(record.completedAt != nil)
                 runs.append(record)
             }
             let failedID = UUID.v7()
@@ -111,6 +163,7 @@
             ))
             runs.append(failed)
             let report = try await fixture.service.notificationText(runs, accountID: "local")
+            #expect(report.contains("completed_at"))
             let json = report.split(separator: "\n")[1]
             let results = try #require(JSONDecoder().decode(JSONValue.self, from: Data(json.utf8)).arrayValue)
             #expect(results.map { $0.objectValue?["excerpt"]?.stringValue } == ["Answer A", "Answer B", ""])
@@ -220,8 +273,13 @@
             let result = try JSONDecoder().decode(JSONValue.self, from: Data(#require(response["value"]?.stringValue).utf8))
             let childID = try #require(result.objectValue?["thread_id"]?.stringValue)
             #expect(try fixture.store.thread(id: childID, accountID: "local").parentThreadID == parent.id)
+            let related = try #require(try await fixture.service.relatedThreads(parentThreadID: parent.id).first)
+            let parentHistory = try await fixture.service.loadThread(id: parent.id)
+            #expect(related.requestMessageID == parentHistory.messages.first?.id)
+            #expect(related.requestRunID == parentHandle.id)
             let childTransport = await fixture.transports.transport(at: 1)
             _ = await childTransport.command("prompt")
+            #expect(try await fixture.service.attach(threadID: childID)?.snapshot?.parentThread?.id == parent.id)
             await transport.emit(TestPiTransport.bridgeRequest(id: "start-again", method: "thread_start", payload: arguments))
             let duplicate = await transport.command { $0["type"]?.stringValue == "extension_ui_response" && $0["id"] == .string("start-again") }
             let repeated = try JSONDecoder().decode(JSONValue.self, from: Data(#require(duplicate["value"]?.stringValue).utf8))
@@ -241,6 +299,11 @@
                 break
             }
             #expect(found)
+            let afterNotification = try #require(try await fixture.service.relatedThreads(parentThreadID: parent.id).first)
+            #expect(afterNotification.requestMessageID == related.requestMessageID)
+            #expect(afterNotification.requestRunID == parentHandle.id)
+            #expect(afterNotification.startedAt != nil)
+            #expect(afterNotification.completedAt != nil)
             // The parent's process had closed; its continuation keeps the method of the request it belongs to.
             #expect(await fixture.service.sessions[parent.id]?.approvalMethod == .ask)
             let items = try fixture.store.listItems(threadID: parent.id)

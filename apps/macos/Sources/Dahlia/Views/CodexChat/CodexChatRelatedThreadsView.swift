@@ -1,69 +1,81 @@
 import SwiftUI
 
 struct CodexChatRelatedThreadsView: View {
-    let parentID: String
+    let threads: [CodexChatThreadSummary]
     @Bindable var coordinator: CodexChatCoordinator
     let onOpen: (CodexChatThreadSummary) -> Void
-    @State private var threads: [CodexChatThreadSummary] = []
     @State private var error: String?
     @State private var deciding: Set<String> = []
-
-    private var revision: String {
-        coordinator.runtimeStates.map { "\($0.threadID):\($0.turnID):\($0.status):\($0.approvals.map(\.id).joined())" }.sorted()
-            .joined(separator: ",")
-    }
+    @State private var isExpanded = true
+    @State private var isHeaderHovered = false
 
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 8) {
-                ForEach(threads) { thread in
-                    HStack {
-                        Button { onOpen(thread) } label: {
-                            Label(thread.title.nilIfBlank ?? L10n.newChat, systemImage: "bubble.left.and.bubble.right")
-                                .lineLimit(1)
-                        }
-                        .buttonStyle(.borderless)
-                        Spacer(minLength: 4)
-                        Text(L10n.chatRunStatus(thread.status))
-                            .foregroundStyle(.secondary)
-                        if ["queued", "running", "waitingForUser"].contains(thread.status) {
-                            Button(L10n.stopGenerating, systemImage: "stop.fill") {
-                                Task { await coordinator.stopThread(thread.id) }
+        VStack(spacing: 4) {
+            if threads.count > 1 {
+                Button { isExpanded.toggle() } label: {
+                    HStack(spacing: 10) {
+                        Image.piLogo
+                            .resizable()
+                            .scaledToFit()
+                            .frame(width: 22, height: 22)
+                            .accessibilityHidden(true)
+                        VStack(alignment: .leading, spacing: 3) {
+                            Text(L10n.chatRelatedThreadCount(threads.count))
+                                .font(.dahliaBody)
+                            let activeCount = threads.filter { ["queued", "running", "waitingForUser"].contains($0.status) }.count
+                            if activeCount > 0 {
+                                Text(L10n.chatActiveThreadCount(activeCount))
+                                    .font(.dahliaSecondary)
+                                    .foregroundStyle(DahliaDesign.secondaryTextColor)
                             }
-                            .labelStyle(.iconOnly)
-                            .buttonStyle(.borderless)
                         }
+                        Spacer(minLength: 4)
+                        Image(systemName: isExpanded ? "chevron.up" : "chevron.down")
+                            .accessibilityHidden(true)
                     }
-                    .font(.dahliaSecondary)
-                    if let state = coordinator.runtimeStates.first(where: { $0.threadID == thread.id }) {
-                        ForEach(state.approvals) { request in
-                            CodexChatApprovalView(request: request, isDecisionEnabled: !deciding.contains(request.id)) { id, decision in
-                                deciding.insert(id)
-                                Task {
-                                    defer { deciding.remove(id) }
-                                    do {
-                                        try await coordinator.decideRelatedApproval(state, id: id, decision: decision)
-                                    } catch { self.error = error.localizedDescription }
-                                }
+                    .padding(10)
+                    .contentShape(.rect)
+                    .background(isHeaderHovered ? DahliaDesign.contentHighlightColor : .clear, in: .rect(cornerRadius: 8))
+                }
+                .buttonStyle(.plain)
+                .onHover { isHeaderHovered = $0 }
+                .accessibilityValue(isExpanded ? L10n.collapse : L10n.expand)
+            }
+            if threads.count <= 1 || isExpanded {
+                threadList
+            }
+        }
+        .padding(.vertical, threads.isEmpty ? 0 : 2)
+    }
+
+    private var threadList: some View {
+        VStack(alignment: .leading, spacing: 2) {
+            ForEach(threads) { thread in
+                CodexChatRelatedThreadRow(thread: thread, meetingNamesByID: coordinator.dockedSession.meetingNamesByID) {
+                    onOpen(thread)
+                } onStop: {
+                    Task { await coordinator.stopThread(thread.id) }
+                }
+                if let state = coordinator.runtimeStates.first(where: { $0.threadID == thread.id }) {
+                    ForEach(state.approvals) { request in
+                        CodexChatApprovalView(request: request, isDecisionEnabled: !deciding.contains(request.id)) { id, decision in
+                            deciding.insert(id)
+                            Task {
+                                defer { deciding.remove(id) }
+                                do {
+                                    try await coordinator.decideRelatedApproval(state, id: id, decision: decision)
+                                } catch { self.error = error.localizedDescription }
                             }
                         }
                     }
                 }
-                if let error { Text(error).font(.dahliaSecondary).foregroundStyle(.red) }
             }
-            .padding(.vertical, threads.isEmpty ? 0 : 6)
+            if let error { Text(error).font(.dahliaSecondary).foregroundStyle(.red) }
         }
-        .scrollBounceBehavior(.basedOnSize)
-        .frame(maxHeight: threads.isEmpty ? 0 : 240)
-        .task(id: parentID + revision) {
-            do {
-                let loaded = try await coordinator.relatedThreads(parentID: parentID)
-                try Task.checkCancellation()
-                threads = loaded
-                error = nil
-            } catch is CancellationError {
-                // Closing the view discards only this projection.
-            } catch { self.error = error.localizedDescription }
+        .overlay {
+            RoundedRectangle(cornerRadius: 8)
+                .strokeBorder(threads.isEmpty ? .clear : DahliaDesign.secondaryTextColor.opacity(0.3), lineWidth: 1)
+                .allowsHitTesting(false)
         }
     }
 }

@@ -39,6 +39,18 @@ enum L10n { // swiftlint:disable:this type_body_length
     static var agentScheduleWaitingRecording: String { String(localized: "settings.agents.learning.agentScheduleWaitingRecording", bundle: bundle) }
     static var agentSkillLock: String { String(localized: "settings.agents.learning.agentSkillLock", bundle: bundle) }
     static var chatChildThread: String { String(localized: "chat.thread.child", bundle: bundle) }
+    static func chatToolUseCount(_ count: Int) -> String {
+        String(format: String(localized: "chat.toolUseCount", bundle: bundle), locale: .current, count)
+    }
+
+    static func chatRelatedThreadCount(_ count: Int) -> String {
+        String(format: String(localized: "chat.thread.relatedCount", bundle: bundle), locale: .current, count)
+    }
+
+    static func chatActiveThreadCount(_ count: Int) -> String {
+        String(format: String(localized: "chat.thread.activeCount", bundle: bundle), locale: .current, count)
+    }
+
     static var chatRemoveThreadReference: String { String(localized: "chat.thread.removeReference", bundle: bundle) }
     static var chatAddThreadReference: String { String(localized: "chat.thread.addReference", bundle: bundle) }
     static func agentScheduleStatus(_ status: String) -> String {

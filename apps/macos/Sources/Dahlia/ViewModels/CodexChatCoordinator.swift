@@ -238,13 +238,26 @@ final class CodexChatCoordinator {
         }?.id
     }
 
+    func canRestoreThread(id: String, accountID: String) async -> Bool {
+        guard dockedSession.accountID == accountID, detachedSessionID(showingThread: id) == nil else { return false }
+        do {
+            _ = try await service.loadThread(id: id)
+            return dockedSession.accountID == accountID
+        } catch {
+            return false
+        }
+    }
+
     func openHistoryThread(
         _ thread: CodexChatThreadSummary,
         showDockedSidebar: Bool = true
     ) async -> CodexChatSessionID {
         let accountID = dockedSession.accountID
-        if let schedules = try? await PiChatService.shared.scheduleService() {
-            try? await Task.detached { try schedules.markSeen(thread: thread.id, account: accountID) }.value
+        // Select synchronously before awaiting I/O so an older open cannot replace a newer selection.
+        Task {
+            if let schedules = try? await PiChatService.shared.scheduleService() {
+                try? await Task.detached { try schedules.markSeen(thread: thread.id, account: accountID) }.value
+            }
         }
         if let existing = sessions.values.first(where: {
             $0.backendThreadID == thread.id && $0.accountID == accountID

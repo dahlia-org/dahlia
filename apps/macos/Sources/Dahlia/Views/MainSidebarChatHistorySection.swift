@@ -39,14 +39,13 @@ struct MainSidebarChatHistorySection: View {
         }
 
         if isExpanded {
-            ForEach(coordinator.history) { thread in
+            ForEach(CodexChatThreadSummary.sidebarThreads(coordinator.history)) { thread in
                 Button { onOpenThread(thread) } label: {
                     MainSidebarChatThreadRow(
                         title: CodexChatMeetingReference.displayText(
                             for: thread.title.nilIfBlank ?? L10n.newChat,
                             namesByID: coordinator.dockedSession.meetingNamesByID
                         ),
-                        isChild: thread.parentThreadID != nil,
                         isUnread: thread.isUnread,
                         activity: coordinator.activity(for: thread.id),
                         isSelected: isShowingChat && thread.id == coordinator.dockedSession.backendThreadID
@@ -81,7 +80,7 @@ struct MainSidebarChatHistorySection: View {
                     .foregroundStyle(DahliaDesign.sidebarSecondaryTextColor)
                 Button(L10n.retry) { Task { await coordinator.refreshHistory() } }
             }
-        } else if coordinator.history.isEmpty {
+        } else if CodexChatThreadSummary.sidebarThreads(coordinator.history).isEmpty, coordinator.historyCursor == nil {
             Text(L10n.noRecentChats)
                 .foregroundStyle(DahliaDesign.sidebarSecondaryTextColor)
         } else if coordinator.historyCursor != nil {
@@ -98,14 +97,12 @@ struct MainSidebarChatHistorySection: View {
 
 private struct MainSidebarChatThreadRow: View {
     let title: String
-    let isChild: Bool
     let isUnread: Bool
     let activity: CodexChatThreadActivity?
     let isSelected: Bool
 
     var body: some View {
         HStack(spacing: 8) {
-            if isChild { Image(systemName: "arrow.turn.down.right").accessibilityLabel(L10n.chatChildThread) }
             if isUnread { Circle().fill(.tint).frame(width: 6, height: 6).accessibilityLabel(L10n.agentScheduleUnread) }
             Text(title)
                 .lineLimit(1)

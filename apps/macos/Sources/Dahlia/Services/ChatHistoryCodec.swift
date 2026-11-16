@@ -31,11 +31,13 @@ enum ChatHistoryCodec {
         var messages: [CodexChatMessage] = []
         var records: [[String: JSONValue]] = []
         var steeredIDs: Set<String> = []
+        var runIDs: [String: UUID] = [:]
         /// A notification starts a run without a user message, so it also ends the reply before it.
         func flush() {
             messages += PiChatSessionFiles.messages(records).map { message in
                 var restored = message
                 restored.isSteer = message.role == .user && steeredIDs.contains(message.id)
+                restored.runID = runIDs[message.id]
                 return restored
             }
             records = []
@@ -43,12 +45,33 @@ enum ChatHistoryCodec {
         for item in items {
             guard let data = item.data.objectValue else { continue }
             switch data["type"]?.stringValue {
+            case "tool_call", "tool_result":
+                flush()
+                let status: CodexChatToolActivity.Status = switch data["status"]?.stringValue {
+                case "failed": .failed
+                case "inaccessible": .inaccessible
+                default: data["type"]?.stringValue == "tool_result" ? .succeeded : .running
+                }
+                let activity = CodexChatToolActivity(
+                    name: String((data["name"]?.stringValue ?? "tool").prefix(128)), status: status,
+                    callID: data["callID"]?.stringValue,
+                    detail: CodexChatToolActivity.displayDetail(data["arguments"])
+                )
+                if let index = messages.indices.last, messages[index].role == .assistant, messages[index].runID == item.runID {
+                    messages[index].recordToolActivity(activity)
+                } else {
+                    messages.append(CodexChatMessage(id: item.id, role: .assistant, text: "", toolActivities: [activity], runID: item.runID))
+                }
             case "thread_notification":
                 flush()
+                let content = data["content"]?.stringValue ?? ""
+                let notification = notification(content, notifiedAt: item.createdAt)
                 messages.append(CodexChatMessage(
-                    id: item.id, role: .notice(.info), text: notificationDisplayText(data["content"]?.stringValue ?? "")
+                    id: item.id, role: .notice(.info), text: notification.text, threadResults: notification.results, runID: item.runID
                 ))
             case "message":
+                if let previousID = records.last?["id"]?.stringValue, runIDs[previousID] != item.runID { flush() }
+                runIDs[item.id] = item.runID
                 if data["deliveryMode"]?.stringValue == "steer" { steeredIDs.insert(item.id) }
                 var blocks: [JSONValue] = [.object(["type": .string("text"), "text": data["content"] ?? .string("")])]
                 blocks.append(.object(["type": .string("thinking"), "thinking": data["reasoning"] ?? .string("")]))
@@ -66,16 +89,36 @@ enum ChatHistoryCodec {
         return messages
     }
 
-    private static func notificationDisplayText(_ content: String) -> String {
+    private static func notification(_ content: String, notifiedAt: Date) -> (text: String, results: [CodexChatThreadResult]) {
         guard let start = content.firstIndex(of: "\n"), let end = content.range(of: "</thread_results>")?.lowerBound,
               start < end,
-              let rows = try? JSONDecoder().decode(JSONValue.self, from: Data(content[start ..< end].utf8)).arrayValue else { return content }
-        return rows.compactMap { row -> String? in
+              let rows = try? JSONDecoder().decode(JSONValue.self, from: Data(content[start ..< end].utf8)).arrayValue else { return (content, []) }
+        var text: [String] = []
+        var results: [CodexChatThreadResult] = []
+        for row in rows {
             guard let fields = row.objectValue, let title = fields["title"]?.stringValue,
-                  let status = fields["status"]?.stringValue else { return nil }
-            return [title + " · " + L10n.chatRunStatus(status), fields["excerpt"]?.stringValue ?? ""]
-                .filter { !$0.isEmpty }.joined(separator: "\n")
-        }.joined(separator: "\n\n")
+                  let status = fields["status"]?.stringValue else { continue }
+            text.append([title + " · " + L10n.chatRunStatus(status), fields["excerpt"]?.stringValue ?? ""]
+                .filter { !$0.isEmpty }.joined(separator: "\n"))
+            guard let threadID = fields["thread_id"]?.stringValue,
+                  let runID = fields["run_id"]?.stringValue else { continue }
+            let completedAt: Date? = if case let .number(seconds)? = fields["completed_at"] {
+                Date(timeIntervalSince1970: seconds)
+            } else {
+                nil
+            }
+            let startedAt: Date? = if case let .number(seconds)? = fields["started_at"] {
+                Date(timeIntervalSince1970: seconds)
+            } else {
+                nil
+            }
+            results.append(CodexChatThreadResult(id: runID, thread: CodexChatThreadSummary(
+                id: threadID, title: title, updatedAt: completedAt ?? notifiedAt, status: status,
+                firstMessage: fields["excerpt"]?.stringValue, model: fields["model"]?.stringValue,
+                startedAt: startedAt, completedAt: completedAt
+            )))
+        }
+        return (text.joined(separator: "\n\n"), results)
     }
 
     /// Bound tool payloads independently; keep valid JSON and an explicit truncation marker.

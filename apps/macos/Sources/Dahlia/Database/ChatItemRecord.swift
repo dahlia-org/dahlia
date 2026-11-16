@@ -4,6 +4,13 @@ import GRDB
 
 struct ChatItemRecord: Codable, FetchableRecord, PersistableRecord, Sendable {
     static let databaseTableName = "chat_items"
+    static func conversationPredicate() -> String {
+        """
+        (\(messagePredicate()) OR (json_extract(data, '$.type') IN ('tool_call', 'tool_result')
+            AND json_extract(data, '$.name') IS NOT NULL))
+        """
+    }
+
     static func messagePredicate(dataColumn: String = "data") -> String {
         """
         (json_extract(\(dataColumn), '$.type') = 'thread_notification' OR (json_extract(\(dataColumn), '$.type') = 'message'

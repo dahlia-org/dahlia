@@ -100,6 +100,10 @@ struct CodexChatConversationView: View {
     let isLoadingEarlierMessages: Bool
     let canLoadEarlierMessages: Bool
     let onLoadEarlierMessages: () async -> Void
+    let parentThreadID: String?
+    let currentRunID: UUID?
+    @Bindable var coordinator: CodexChatCoordinator
+    let onOpenThread: (CodexChatThreadSummary) -> Void
 
     @Environment(\.isChatSidebarResizing) private var isChatSidebarResizing
     @State private var isFollowingLatest = true
@@ -107,6 +111,15 @@ struct CodexChatConversationView: View {
     @State private var cachedStructure: CodexChatConversationStructure?
     @State private var cachedPageRanges: [Range<Int>] = []
     @State private var earlierMessagesTask: Task<Void, Never>?
+    @State private var relatedThreads: [CodexChatThreadSummary] = []
+    @State private var relatedThreadsError: String?
+    @State private var relatedThreadAnchors: [String: [CodexChatThreadSummary]] = [:]
+
+    private var relatedThreadsRevision: String {
+        (parentThreadID ?? "") + coordinator.runtimeStates.map {
+            "\($0.threadID):\($0.turnID):\($0.status):\($0.approvals.map(\.id).joined())"
+        }.sorted().joined(separator: ",")
+    }
 
     var body: some View {
         let structure = CodexChatConversationStructure(
@@ -126,10 +139,11 @@ struct CodexChatConversationView: View {
             from: Array(messages[visibleRange]),
             showsStandaloneThinking: showsStandaloneThinking && !hasLaterMessages,
             previousUserContext: previousUserMessage?.context,
-            hasPreviousUserMessage: previousUserMessage != nil
+            hasPreviousUserMessage: previousUserMessage != nil,
+            relatedThreadsByMessageID: relatedThreadAnchors
         )
         ScrollView {
-            VStack(alignment: .leading, spacing: 22) {
+            VStack(alignment: .leading, spacing: 12) {
                 if hasEarlierMessages || hasLaterMessages || hasStoredEarlierMessages {
                     HStack {
                         if hasEarlierMessages {
@@ -163,15 +177,31 @@ struct CodexChatConversationView: View {
                     case let .contextDivider(_, context):
                         CodexChatContextDivider(context: context)
                     case let .message(message, showsInlineActivity):
-                        CodexChatMessageRow(
-                            message: message,
-                            showsInlineActivity: showsInlineActivity,
-                            meetingNamesByID: meetingNamesByID,
-                            meetingReferencesByID: meetingReferencesByID
-                        )
+                        if message.threadResults.isEmpty {
+                            CodexChatMessageRow(
+                                message: message,
+                                showsInlineActivity: showsInlineActivity,
+                                meetingNamesByID: meetingNamesByID,
+                                meetingReferencesByID: meetingReferencesByID
+                            )
+                        } else {
+                            VStack(spacing: 4) {
+                                ForEach(message.threadResults) { result in
+                                    CodexChatRelatedThreadRow(
+                                        thread: result.thread, meetingNamesByID: meetingNamesByID,
+                                        onOpen: { onOpenThread(result.thread) }, isNotification: true
+                                    )
+                                }
+                            }
+                        }
                     case .thinking:
                         CodexChatThinkingIndicator()
+                    case let .relatedThreads(_, threads):
+                        CodexChatRelatedThreadsView(threads: threads, coordinator: coordinator, onOpen: onOpenThread)
                     }
+                }
+                if let relatedThreadsError {
+                    Text(relatedThreadsError).font(.dahliaSecondary).foregroundStyle(.red)
                 }
             }
             .padding(.horizontal, CodexChatDesign.contentHorizontalPadding)
@@ -196,12 +226,40 @@ struct CodexChatConversationView: View {
             earlierMessagesTask?.cancel()
             conversationWindow.showLatestMessages()
             isFollowingLatest = true
+            relatedThreads = []
+            relatedThreadsError = nil
+            relatedThreadAnchors = [:]
+        }
+        .task(id: relatedThreadsRevision) {
+            guard let parentThreadID else {
+                relatedThreads = []
+                relatedThreadsError = nil
+                return
+            }
+            do {
+                let loaded = try await coordinator.relatedThreads(parentID: parentThreadID)
+                try Task.checkCancellation()
+                relatedThreads = loaded
+                relatedThreadsError = nil
+            } catch is CancellationError {
+                // Discard stale reads when changing conversations.
+            } catch { relatedThreadsError = error.localizedDescription }
         }
         .onDisappear { earlierMessagesTask?.cancel() }
         .onChange(of: structure, initial: true) { _, current in
             cachedPageRanges = pageRanges
             cachedStructure = current
+            updateRelatedThreadAnchors()
         }
+        .onChange(of: relatedThreads) { updateRelatedThreadAnchors() }
+        .onChange(of: currentRunID) { updateRelatedThreadAnchors() }
+        .onChange(of: messages.last?.hasResponseContent) { updateRelatedThreadAnchors() }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+
+    private func updateRelatedThreadAnchors() {
+        relatedThreadAnchors = CodexChatConversationItem.relatedThreadAnchors(
+            threads: relatedThreads, messages: messages, currentRunID: currentRunID
+        )
     }
 }

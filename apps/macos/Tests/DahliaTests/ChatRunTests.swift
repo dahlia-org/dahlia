@@ -6,6 +6,180 @@
     @testable import Dahlia
 
     struct ChatRunTests {
+        @Test func toolCallsRestoreWithIconsAndSettledStatusWithoutExposingOutput() throws {
+            func item(_ id: String, _ data: [String: JSONValue]) -> ChatItem {
+                ChatItem(id: id, data: .object(data), createdAt: .now)
+            }
+            let messages = ChatHistoryCodec.messages([
+                item("u", ["type": .string("message"), "role": .string("user"), "content": .string("Inspect")]),
+                item("c", [
+                    "type": .string("tool_call"),
+                    "callID": .string("call"),
+                    "name": .string("read"),
+                    "arguments": .object(["path": .string("README.md"), "secret": .string("hidden argument")]),
+                ]),
+                item("r", [
+                    "type": .string("tool_result"),
+                    "callID": .string("call"),
+                    "name": .string("read"),
+                    "status": .string("succeeded"),
+                    "result": .string("hidden output"),
+                ]),
+            ])
+            #expect(messages.count == 2)
+            let toolMessage = try #require(messages.last)
+            #expect(toolMessage.role == .assistant)
+            #expect(toolMessage.text.isEmpty)
+            #expect(toolMessage.toolActivities == [.init(name: "read", status: .succeeded, callID: "call", detail: "README.md")])
+            #expect(toolMessage.toolActivities.first?.toolSymbol == "eye")
+        }
+
+        @Test func toolMetadataIsBoundedAndDoesNotAttachToAnEarlierTurn() {
+            let detail = CodexChatToolActivity.displayDetail(.object(["command": .string(String(repeating: "x", count: 1000))]))
+            #expect(detail?.count == 240)
+            var message = CodexChatMessage(role: .assistant, text: "")
+            for index in 0 ..< 150 {
+                message.recordToolActivity(.init(name: "bash", status: .running, callID: "call-\(index)"))
+            }
+            #expect(message.toolActivities.count == 100)
+            let items = [
+                ChatItem(
+                    id: "a",
+                    data: .object(["type": .string("message"), "role": .string("assistant"), "content": .string("Earlier")]),
+                    createdAt: .now
+                ),
+                ChatItem(
+                    id: "u",
+                    data: .object(["type": .string("message"), "role": .string("user"), "content": .string("New turn")]),
+                    createdAt: .now
+                ),
+                ChatItem(id: "tool", data: .object(["type": .string("tool_call"), "name": .string("bash")]), createdAt: .now),
+            ]
+            let restored = ChatHistoryCodec.messages(items)
+            #expect(restored.first?.toolActivities.isEmpty == true)
+            #expect(restored.last?.toolActivities.first?.name == "bash")
+        }
+
+        @Test func toolCallAndResultAcrossPagesMergeAtTheCallPosition() {
+            let call = CodexChatMessage(role: .assistant, text: "Inspecting", toolActivities: [
+                .init(name: "read", status: .running, callID: "call", detail: "README.md"),
+            ])
+            let result = CodexChatMessage(role: .assistant, text: "", toolActivities: [
+                .init(name: "read", status: .succeeded, callID: "call"),
+            ])
+            let reply = CodexChatMessage(role: .assistant, text: "Done")
+            let merged = CodexChatMessage.prependingHistory([call], to: [result, reply])
+            #expect(merged.count == 2)
+            #expect(merged.first?.id == call.id)
+            #expect(merged.first?.toolActivities == [.init(name: "read", status: .succeeded, callID: "call", detail: "README.md")])
+            #expect(merged.last == reply)
+        }
+
+        @Test func conversationPagesRestoreToolMetadata() throws {
+            let store = try ChatThreadStore(dbQueue: AppDatabaseManager(path: ":memory:").dbQueue)
+            let target = thread()
+            try store.createThread(target)
+            try store.appendItems(threadID: target.id, items: [
+                .object([
+                    "type": .string("tool_call"),
+                    "callID": .string("call"),
+                    "name": .string("read"),
+                    "arguments": .object(["path": .string("README.md")]),
+                ]),
+                .object(["type": .string("tool_result"), "callID": .string("call"), "name": .string("read"), "status": .string("succeeded")]),
+            ])
+            let page = try store.messagePage(threadID: target.id)
+            #expect(page.messages.first?.toolActivities == [.init(name: "read", status: .succeeded, callID: "call", detail: "README.md")])
+        }
+
+        @Test func toolPagingDoesNotMergeCallIDsAcrossRuns() {
+            let first = CodexChatMessage(role: .assistant, text: "First", toolActivities: [
+                .init(name: "read", status: .running, callID: "shared"),
+            ], runID: .v7())
+            let second = CodexChatMessage(role: .assistant, text: "Second", toolActivities: [
+                .init(name: "read", status: .succeeded, callID: "shared"),
+            ], runID: .v7())
+            #expect(CodexChatMessage.prependingHistory([first], to: [second]) == [first, second])
+        }
+
+        @Test func decodedMessagesAndToolsRetainTheirStoredRunIdentity() {
+            let runID = UUID.v7()
+            let items = [
+                ChatItem(id: "user", data: .object([
+                    "type": .string("message"), "role": .string("user"), "content": .string("Inspect"),
+                ]), createdAt: .now, runID: runID),
+                ChatItem(id: "call", data: .object([
+                    "type": .string("tool_call"), "name": .string("read"), "callID": .string("call"),
+                ]), createdAt: .now, runID: runID),
+            ]
+            #expect(ChatHistoryCodec.messages(items).allSatisfy { $0.runID == runID })
+        }
+
+        @Test func timestampMigrationPreservesExistingRuns() throws {
+            let queue = try DatabaseQueue(configuration: AppDatabaseManager.configuration())
+            try AppDatabaseManager.migrator.migrate(queue, upTo: "v64_agentLearning")
+            let store = ChatThreadStore(dbQueue: queue)
+            let target = thread()
+            try store.createThread(target)
+            let existing = run(target: target.id)
+            try queue.write { db in
+                try db.execute(sql: """
+                INSERT INTO chat_runs(id, threadID, rootRunID, status, input, effort, approvalMethod, createdAt, resultExcerpt)
+                VALUES (?, ?, ?, 'completed', 'Preserved request', 'medium', 'ask', ?, 'Preserved result')
+                """, arguments: [existing.id, target.id, existing.rootRunID, existing.createdAt])
+            }
+            let createdAt = try queue.read { try Date.fetchOne($0, sql: "SELECT createdAt FROM chat_runs WHERE id = ?", arguments: [existing.id]) }
+            try AppDatabaseManager.migrator.migrate(queue)
+            let restored = try #require(try store.run(id: existing.id))
+            #expect(restored.threadID == target.id)
+            #expect(restored.status == "completed")
+            #expect(restored.input == "Preserved request")
+            #expect(restored.resultExcerpt == "Preserved result")
+            #expect(restored.createdAt == createdAt)
+            #expect(restored.startedAt == nil)
+            #expect(restored.completedAt == nil)
+            #expect(restored.requestedByRunID == nil)
+            try AppDatabaseManager.migrator.migrate(queue)
+            #expect(try store.thread(id: target.id, accountID: "local").title == target.title)
+        }
+
+        @Test func runTimesStartAtClaimAndStayFixedAfterCompletion() throws {
+            let store = try ChatThreadStore(dbQueue: AppDatabaseManager(path: ":memory:").dbQueue)
+            let target = thread()
+            try store.createThread(target)
+            let queued = try store.enqueueRun(run(target: target.id))
+            #expect(queued.startedAt == nil)
+            #expect(try store.claimQueuedRun(queued.id))
+            let startedAt = try #require(try store.run(id: queued.id)?.startedAt)
+            #expect(try !store.claimQueuedRun(queued.id))
+            try store.setRunStatus(queued.id, status: "running")
+            #expect(try store.run(id: queued.id)?.startedAt == startedAt)
+            #expect(try store.run(id: queued.id)?.completedAt == nil)
+            try store.setRunStatus(queued.id, status: "completed")
+            let completedAt = try #require(try store.run(id: queued.id)?.completedAt)
+            #expect(completedAt >= startedAt)
+            try store.setRunStatus(queued.id, status: "completed")
+            #expect(try store.run(id: queued.id)?.completedAt == completedAt)
+        }
+
+        @Test func resultNotificationKeepsCompletionTimeAndSeparateRunsForOneThread() {
+            let content = """
+            <thread_results source="dahlia" untrusted="true">
+            [{"run_id":"one","thread_id":"child","title":"Child","status":"completed","excerpt":"First result","model":"test-model","started_at":1200,"completed_at":1234.5},
+             {"run_id":"two","thread_id":"child","title":"Child","status":"completed","excerpt":"Second result"}]
+            </thread_results>
+            """
+            let message = ChatHistoryCodec.messages([ChatItem(id: "notice", data: .object([
+                "type": .string("thread_notification"), "content": .string(content),
+            ]), createdAt: Date(timeIntervalSince1970: 9000))]).first
+            #expect(message?.threadResults.map(\.id) == ["one", "two"])
+            #expect(message?.threadResults.first?.thread.completedAt == Date(timeIntervalSince1970: 1234.5))
+            #expect(message?.threadResults.first?.thread.firstMessage == "First result")
+            #expect(message?.threadResults.first?.thread.model == "test-model")
+            #expect(message?.threadResults.first?.thread.startedAt == Date(timeIntervalSince1970: 1200))
+            #expect(message?.threadResults.last?.thread.completedAt == nil)
+        }
+
         private func thread(account: String = "local", parent: String? = nil) -> ChatThreadRecord {
             ChatThreadRecord(
                 id: UUID.v7().uuidString.lowercased(),
@@ -38,6 +212,14 @@
             let child = CodexChatThreadSummary(id: "child", title: "Child", updatedAt: .now, parentThreadID: parent.id)
             let orphan = CodexChatThreadSummary(id: "orphan", title: "Orphan", updatedAt: .now, parentThreadID: "not-loaded")
             #expect(CodexChatThreadSummary.treeOrder([child, orphan, parent]).map(\.id) == ["orphan", "parent", "child"])
+        }
+
+        @Test func sidebarHidesChildrenEvenWhenTheirParentIsNotLoaded() {
+            let parent = CodexChatThreadSummary(id: "parent", title: "Parent", updatedAt: .now)
+            let child = CodexChatThreadSummary(id: "child", title: "Child", updatedAt: .now, parentThreadID: parent.id)
+            let orphan = CodexChatThreadSummary(id: "orphan", title: "Orphan", updatedAt: .now, parentThreadID: "not-loaded")
+            #expect(CodexChatThreadSummary.sidebarThreads([child, orphan, parent]).map(\.id) == [parent.id])
+            #expect(CodexChatThreadSummary.sidebarThreads([child, orphan]).isEmpty)
         }
 
         @Test func migrationPreservesExistingHistoryAndAddsAnEmptyRunLedger() throws {

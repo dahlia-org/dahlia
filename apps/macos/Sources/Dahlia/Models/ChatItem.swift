@@ -6,6 +6,7 @@ struct ChatItem: Sendable {
     let id: String
     let data: JSONValue
     let createdAt: Date
+    var runID: UUID?
 }
 
 extension ChatItem {
@@ -13,7 +14,8 @@ extension ChatItem {
         try self.init(
             id: record.id.uuidString.lowercased(),
             data: JSONDecoder().decode(JSONValue.self, from: Data(record.data.utf8)),
-            createdAt: record.createdAt
+            createdAt: record.createdAt,
+            runID: record.runID
         )
     }
 }

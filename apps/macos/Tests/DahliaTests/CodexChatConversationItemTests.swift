@@ -6,6 +6,73 @@ import Foundation
 
     struct CodexChatConversationItemTests {
         @Test
+        func relatedCardsStayWithTheirRequestBeforeNotificationsAndLaterTurns() {
+            let question = CodexChatMessage(id: "question", role: .user, text: "Delegate")
+            let reply = CodexChatMessage(id: "reply", role: .assistant, text: "Started")
+            let notice = CodexChatMessage(id: "notice", role: .notice(.info), text: "Finished")
+            let report = CodexChatMessage(id: "report", role: .assistant, text: "Result")
+            let followUp = CodexChatMessage(id: "follow-up", role: .user, text: "Next task")
+            let messages = [question, reply, notice, report, followUp]
+            let threads = ["one", "two"].map {
+                CodexChatThreadSummary(id: $0, title: $0, updatedAt: .now, requestMessageID: question.id)
+            }
+            let anchors = CodexChatConversationItem.relatedThreadAnchors(threads: threads, messages: messages, currentRunID: nil)
+            #expect(CodexChatConversationItem.build(from: messages, relatedThreadsByMessageID: anchors) == [
+                .message(question), .message(reply), .relatedThreads(messageID: reply.id, threads: threads),
+                .message(notice), .message(report), .message(followUp),
+            ])
+            // Viewing another page must not pull an older card to the bottom of that page.
+            #expect(CodexChatConversationItem.build(from: [followUp], relatedThreadsByMessageID: anchors) == [.message(followUp)])
+        }
+
+        @Test
+        func runningCardsAppearBeforeThinkingWhileMessageIDsAreStillLocal() {
+            let runID = UUID.v7()
+            let question = CodexChatMessage(id: "local-question", role: .user, text: "Delegate")
+            let pending = CodexChatMessage(id: "local-reply", role: .assistant, text: "", isStreaming: true)
+            let thread = CodexChatThreadSummary(
+                id: "child", title: "Child", updatedAt: .now, requestMessageID: "saved-question", requestRunID: runID
+            )
+            let anchors = CodexChatConversationItem.relatedThreadAnchors(threads: [thread], messages: [question, pending], currentRunID: runID)
+            #expect(CodexChatConversationItem.build(
+                from: [question, pending], showsStandaloneThinking: true, relatedThreadsByMessageID: anchors
+            ) == [.message(question), .relatedThreads(messageID: question.id, threads: [thread]), .thinking])
+            #expect(CodexChatConversationItem.relatedThreadAnchors(
+                threads: [thread], messages: [question, pending], currentRunID: .v7()
+            ).isEmpty)
+        }
+
+        @Test(arguments: [nil, UUID.v7()] as [UUID?])
+        func localMessageAnchorsKeepTheRequestingRunAfterNotificationsAndLaterTurns(_ currentRunID: UUID?) {
+            let runID = UUID.v7()
+            let question = CodexChatMessage(id: "local-question", role: .user, text: "Delegate", runID: runID)
+            let reply = CodexChatMessage(id: "local-reply", role: .assistant, text: "Started", runID: runID)
+            let notice = CodexChatMessage(role: .notice(.info), text: "A result")
+            let next = CodexChatMessage(role: .user, text: "Next task", runID: .v7())
+            let thread = CodexChatThreadSummary(
+                id: "child", title: "Child", updatedAt: .now, requestMessageID: "persisted-question", requestRunID: runID
+            )
+            let anchors = CodexChatConversationItem.relatedThreadAnchors(
+                threads: [thread], messages: [question, reply, notice, next], currentRunID: currentRunID
+            )
+            #expect(anchors == [reply.id: [thread]])
+        }
+
+        @Test
+        func separateRequestsKeepSeparateCards() {
+            let messages = [
+                CodexChatMessage(id: "first", role: .user, text: "First task"),
+                CodexChatMessage(id: "first-reply", role: .assistant, text: "Started first"),
+                CodexChatMessage(id: "second", role: .user, text: "Second task"),
+                CodexChatMessage(id: "second-reply", role: .assistant, text: "Started second"),
+            ]
+            let first = CodexChatThreadSummary(id: "one", title: "One", updatedAt: .now, requestMessageID: "first")
+            let second = CodexChatThreadSummary(id: "two", title: "Two", updatedAt: .now, requestMessageID: "second")
+            let anchors = CodexChatConversationItem.relatedThreadAnchors(threads: [first, second], messages: messages, currentRunID: nil)
+            #expect(anchors == ["first-reply": [first], "second-reply": [second]])
+        }
+
+        @Test
         func addsThinkingWhileWaitingForStreamingResponse() {
             let emptyConversation = CodexChatConversationItem.build(
                 from: [],

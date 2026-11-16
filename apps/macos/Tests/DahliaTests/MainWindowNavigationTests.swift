@@ -357,6 +357,42 @@
         }
 
         @Test
+        func chatHistoryRestoresDistinctThreadsAndKeepsForwardHistory() async {
+            let navigation = MainWindowNavigation(openMainWindow: {})
+            let parent = MainWindowLocation.chatThread(accountID: "local", threadID: "parent")
+            let child = MainWindowLocation.chatThread(accountID: "local", threadID: "child")
+            navigation.resetNavigationHistory(to: parent)
+            navigation.recordNavigation(to: child)
+            var restored: [MainWindowLocation] = []
+            await navigation.goBack(validatingWith: { _ in true }, restoringWith: { location in
+                restored.append(location)
+                navigation.recordNavigation(to: location)
+            })
+            #expect(navigation.currentLocation == parent)
+            #expect(navigation.canGoForward)
+            await navigation.goForward(validatingWith: { _ in true }, restoringWith: { restored.append($0) })
+            #expect(restored == [parent, child])
+            #expect(navigation.currentLocation == child)
+            #expect(navigation.section == .chat)
+        }
+
+        @Test
+        func firstChatThreadBindingDoesNotCreateAnEmptyHistoryStep() async {
+            let navigation = MainWindowNavigation(openMainWindow: {})
+            navigation.resetNavigationHistory(to: .projects)
+            navigation.recordNavigation(to: .chat)
+            navigation.bindCurrentChatThread(accountID: "local", threadID: "new")
+            #expect(navigation.currentLocation == .chatThread(accountID: "local", threadID: "new"))
+            await navigation.goBack(validatingWith: { _ in true }, restoringWith: { _ in })
+            #expect(navigation.currentLocation == .projects)
+            #expect(navigation.canGoForward)
+            // A side panel gaining a thread ID must not change the main area's location.
+            navigation.bindCurrentChatThread(accountID: "local", threadID: "side-panel")
+            #expect(navigation.currentLocation == .projects)
+            #expect(navigation.canGoForward)
+        }
+
+        @Test
         func unavailableHistoryEntriesAreDiscarded() async {
             let navigation = MainWindowNavigation(openMainWindow: {})
             let availableMeetingId = UUID.v7()
