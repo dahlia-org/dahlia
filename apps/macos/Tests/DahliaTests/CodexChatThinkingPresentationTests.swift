@@ -289,6 +289,40 @@ import Foundation
             #expect(session.messages.filter { $0.role == .user }.map(\.text) == ["Question"])
         }
 
+        @Test(arguments: [CodexChatDeliveryMode.steer, .queue], [false, true])
+        func freshlyRetypedIdenticalDraftIsQueuedDuringPreparation(mode: CodexChatDeliveryMode, blocksContext: Bool) async throws {
+            let service = TestCodexChatService(mode: .delayTurnHandleIgnoringCancellation)
+            let settings = TestCodexChatFixtures.appSettings()
+            settings.currentWorkspace = Self.testWorkspace()
+            let contextProvider = TestCodexChatContextProvider(shouldBlock: blocksContext)
+            let session = CodexChatSessionModel(
+                modelID: "default-model",
+                effort: "medium",
+                service: service,
+                settings: settings,
+                contextProvider: contextProvider
+            )
+            session.draft = "Question"
+            session.sendDraft()
+            if blocksContext {
+                try #require(await pollUntil { contextProvider.requestCount == 1 })
+            } else {
+                try #require(await pollUntil { await service.isSendWaiting })
+            }
+            #expect(session.draft.isEmpty)
+
+            session.draft = "Question"
+            session.sendDraft(mode: mode)
+            #expect(session.pendingManualInputs.map(\.text) == ["Question"])
+            session.sendDraft(mode: mode)
+            #expect(session.pendingManualInputs.count == 1)
+
+            session.stop()
+            contextProvider.resume()
+            await service.resumeDelayedSend()
+            try #require(await pollUntil { !session.isGenerating && !session.isTurnCleanupPending })
+        }
+
         @Test
         func replacementWaitsForCancelledSendCleanup() async {
             let service = TestCodexChatService(mode: .delayFirstSendIgnoringCancellation)

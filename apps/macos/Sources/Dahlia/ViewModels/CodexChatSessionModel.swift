@@ -368,9 +368,8 @@ final class CodexChatSessionModel: Identifiable {
     ) {
         let shouldEnqueue = isGenerating || isTurnCleanupPending || (errorMessage == nil && !pendingManualInputs.isEmpty)
         if shouldEnqueue, let composerSnapshot = submission.composerSnapshot {
-            let isDuplicate = preparingManualComposerSnapshot == composerSnapshot
-                || (activeSteeringManualSubmission?.clearsComposerOnDelivery == true
-                    && activeSteeringManualSubmission?.composerSnapshot == composerSnapshot)
+            let isDuplicate = (activeSteeringManualSubmission?.clearsComposerOnDelivery == true
+                && activeSteeringManualSubmission?.composerSnapshot == composerSnapshot)
                 || pendingManualInputs.contains(where: { $0.clearsComposerOnDelivery && $0.composerSnapshot == composerSnapshot })
             guard !isDuplicate else { return }
         }
