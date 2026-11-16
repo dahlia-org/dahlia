@@ -45,6 +45,7 @@ extension CodexChatSessionModel {
         isPreparingTurn = true
         isAwaitingTurnOutput = false
         preparingManualComposerSnapshot = composerSnapshot
+        preparingUserMessage = CodexChatMessage(role: .user, text: text, images: images)
         errorMessage = nil
         let submissionID = UUID.v7()
         activeSubmissionID = submissionID
@@ -101,6 +102,7 @@ extension CodexChatSessionModel {
             return
         }
         guard !isReleased, isBoundToCurrentAccount else { return }
+        preparingUserMessage?.context = context
         let responseID = "pending-\(UUID.v7().uuidString)"
 
         _ = await runTurn(

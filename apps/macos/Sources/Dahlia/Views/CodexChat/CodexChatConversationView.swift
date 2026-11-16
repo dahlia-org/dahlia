@@ -176,7 +176,7 @@ struct CodexChatConversationView: View {
             }
             .padding(.horizontal, CodexChatDesign.contentHorizontalPadding)
             .padding(.vertical, 12)
-            .frame(maxWidth: contentMaxWidth ?? .infinity)
+            .frame(maxWidth: contentMaxWidth ?? .infinity, alignment: .leading)
             .frame(maxWidth: .infinity)
         }
         .defaultScrollAnchor(.bottom, for: .initialOffset)

@@ -12,6 +12,13 @@ final class CodexChatSessionModel: Identifiable {
     private(set) var didStartBackendThread = false
     private(set) var title: String
     private(set) var messages: [CodexChatMessage]
+    var preparingUserMessage: CodexChatMessage?
+
+    var conversationMessages: [CodexChatMessage] {
+        guard let preparingUserMessage else { return messages }
+        return messages + [preparingUserMessage]
+    }
+
     private(set) var earlierMessagesCursor: String?
     private(set) var isLoadingEarlierMessages = false
     private(set) var earlierMessagesError: String?
@@ -699,11 +706,13 @@ extension CodexChatSessionModel {
             lastSubmittedText = submission.text
             lastManualSubmission = submission
             messages.append(CodexChatMessage(
+                id: preparingUserMessage?.id ?? UUID.v7().uuidString,
                 role: .user,
                 text: submission.text,
                 context: context,
                 images: images
             ))
+            preparingUserMessage = nil
 
             messages.append(CodexChatMessage(id: responseID, role: .assistant, text: "", isStreaming: true))
             activeResponseID = responseID
@@ -956,6 +965,7 @@ extension CodexChatSessionModel {
             requeue(preparingQueuedManualSubmission)
         }
         preparingQueuedManualSubmission = nil
+        preparingUserMessage = nil
         historySynchronizationGeneration += 1
         // What this view showed to the end needs no reload; it also holds what history does not, such as command notices.
         if !lostRunEvents, let runID = activeTurnHandleID { displayedRunID = runID }
