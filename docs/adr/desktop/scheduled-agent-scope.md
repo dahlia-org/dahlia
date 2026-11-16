@@ -7,7 +7,8 @@
 録音中、非選択アカウント、アプリ終了中は開始しない。常駐サービス、起動時 daemon、クラウドの時計は作らない。
 閉じていた間や睡眠中の未実行は予定ごとに1回にまとめる。
 
-create/resume/有効な予定のupdateは fullAccess でも確認する。確認した prompt・schedule・skills・読み取りツール名の組に revision を振る。
+create/resume/有効な予定のupdateは Auto review で pi-auto-review が審査し、許可できない操作・審査失敗はユーザーに確認、critical は拒否する。
+Supervised と fullAccess はユーザーに確認する。審査・確認した prompt・schedule・skills・読み取りツール名の組に revision を振り、保存時に同じ改訂であることを検証する。
 後から追加したツールは使えない。readOnlyHint は提供側の申告であり、情報の持ち出しを防ぐ保証ではない。
 予定の権限は実行開始後に緩められず、bash、ファイル書き込み、memory、skill_manage、スレッド操作、再帰的な予定作成は禁止する。
 thread と schedule を合わせて3本まで、対話は待たせず、ふり返りは別に1本とする。

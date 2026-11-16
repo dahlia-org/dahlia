@@ -253,6 +253,44 @@
             await fixture.service.stopAccountRuns(except: "other")
         }
 
+        @Test(.timeLimit(.minutes(1)), arguments: ["bridge", "preparedChild", "queue"])
+        func stoppedTurnsCannotManageOrQueueThreads(entryPoint: String) async throws {
+            let fixture = try fixture()
+            defer { try? FileManager.default.removeItem(at: fixture.runtime.rootURL) }
+            let parent = try await fixture.service.startThread(model: nil, effort: "medium")
+            let target = try await fixture.service.startThread(model: nil, effort: "medium")
+            _ = try await fixture.service.beginTurn(
+                threadID: parent.id, inputs: [.text("Delegate")], model: nil, effort: "medium",
+                approvalMethod: .autoReview, expectedProvider: .local
+            )
+            let session = try #require(await fixture.service.sessions[parent.id])
+            let turn = try #require(session.turn)
+            let caller = try fixture.store.thread(id: parent.id, accountID: "local")
+            let arguments: [String: JSONValue] = ["input": .string("Read the meeting"), "client_request_id": .string("child")]
+            await fixture.service.abort(threadID: parent.id)
+            await #expect(throws: CancellationError.self) {
+                switch entryPoint {
+                case "bridge":
+                    _ = try await fixture.service.threadTool(
+                        "thread_start", payload: .object(arguments), threadID: parent.id, processID: session.processID
+                    )
+                case "preparedChild":
+                    // The call already captured its turn before an asynchronous child preparation completed.
+                    _ = try await fixture.service.startChildThread(arguments: arguments, caller: caller, callerSession: session, callerTurn: turn)
+                default:
+                    _ = try await fixture.service.queueAgentRun(
+                        targetID: target.id, caller: caller, turn: turn, input: "Read the meeting", requestID: "child", arguments: arguments
+                    )
+                }
+            }
+            #expect(try fixture.store.latestRun(threadID: target.id) == nil)
+            #expect(try await fixture.service.relatedThreads(parentThreadID: parent.id).isEmpty)
+            let threadCount = try await fixture.store.dbQueue.read { try Int.fetchOne($0, sql: "SELECT COUNT(*) FROM chat_threads") }
+            #expect(threadCount == 2)
+            await fixture.service.stopAccountRuns(except: "other")
+            await fixture.runtime.service.shutdown()
+        }
+
         @Test(.timeLimit(.minutes(1)))
         func bridgeStartsChildDedupeAndAutomaticResultRun() async throws {
             let fixture = try fixture()

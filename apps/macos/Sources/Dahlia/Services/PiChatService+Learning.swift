@@ -3,6 +3,12 @@ import Foundation
 import GRDB
 
 extension PiChatService {
+    struct ScheduleApproval {
+        let payload: JSONValue
+        let tools: [String]
+        let existing: ChatScheduleRecord?
+    }
+
     func validateScheduledStart(threadID: String, account: String) throws {
         guard let run = scheduledRuns[threadID], run.origin == "schedule" else { return }
         guard !AgentBackgroundActivity.isRecording else { throw CancellationError() }
@@ -45,9 +51,10 @@ extension PiChatService {
     }
 
     func learningTool(_ method: String, payload: JSONValue, threadID: String, processID: UUID) async throws -> JSONValue {
-        guard let session = sessions[threadID], session.processID == processID, let turn = session.turn,
+        guard let session = sessions[threadID], session.processID == processID, let turn = session.turn, !turn.stopRequested,
               try await runtime.currentProvider() == session.provider,
-              sessions[threadID]?.processID == processID, sessions[threadID]?.turn?.id == turn.id else { throw CancellationError() }
+              sessions[threadID]?.processID == processID, sessions[threadID]?.turn?.id == turn.id,
+              sessions[threadID]?.turn?.stopRequested == false else { throw CancellationError() }
         let account = session.provider.accountKey
         if method == "scheduledTool" {
             let name = payload.objectValue?["name"]?.stringValue ?? ""
@@ -70,20 +77,38 @@ extension PiChatService {
                 try learningReset(thread: threadID, column: "skillIterations")
             }
             return try await service.execute(method, payload: payload, account: account, root: skillsRoot(session.provider), thread: threadID)
-        case "cronjob":
+        case "cronjob", "cronjobCommit":
             let record = try history().thread(id: threadID, accountID: account)
             guard record.parentThreadID == nil,
                   turn.run.origin == "user" else { throw HermesLearning.failure("Only a user conversation can manage schedules.") }
+            if method == "cronjobCommit" {
+                guard let id = payload.objectValue?["request_id"]?.stringValue,
+                      let approval = sessions[threadID]?.turn?.pendingSchedules.removeValue(forKey: id)
+                else { throw HermesLearning.failure("Schedule approval is no longer pending.") }
+                guard payload.objectValue?["approved"] == .bool(true) else { throw HermesLearning.failure("The schedule was not approved.") }
+                if let existing = approval.existing {
+                    guard try scheduleService().record(id: existing.id, account: account).revision == existing.revision
+                    else { throw HermesLearning.failure("Schedule changed during approval. Review the new revision.") }
+                }
+                let result = try scheduleService().execute(
+                    approval.payload, account: account, approved: true, tools: approval.tools, expectedRevision: approval.existing?.revision
+                )
+                Task { await self.drainLearningWork() }
+                return result
+            }
             let action = payload.objectValue?["action"]?.stringValue ?? ""
             let existing = try payload.objectValue?["job_id"]?.stringValue.map {
                 try scheduleService().record(id: $0, account: account)
             }
             let needsApproval = action == "create" || action == "resume" || (action == "update" && existing?.enabled == true)
             let tools = payload.objectValue?["_readOnlyTools"]?.arrayValue?.compactMap(\.stringValue) ?? []
-            var approved = false
             if needsApproval {
                 // The card displays the effective revision, including fields omitted from an update.
                 var effective = payload.objectValue ?? [:]
+                if action == "resume", let existing {
+                    // Resume activates the saved task; it does not apply create/update fields.
+                    effective = ["action": .string(action), "job_id": .string(existing.id), "name": .string(existing.name)]
+                }
                 effective.removeValue(forKey: "_readOnlyTools")
                 effective["approved_read_only_tools"] = .array(tools.sorted().map(JSONValue.string))
                 effective["prompt"] = effective["prompt"] ?? existing.map { .string($0.prompt) }
@@ -91,23 +116,20 @@ extension PiChatService {
                 effective["skills"] = effective["skills"] ?? existing
                     .flatMap { try? JSONDecoder().decode(JSONValue.self, from: Data($0.skills.utf8)) }
                 effective["revision"] = .number(Double((existing?.revision ?? 0) + 1))
-                let decision = await requestApproval(threadID: threadID, payload: .object([
+                let approval: JSONValue = .object([
                     "kind": .string("mcpToolCall"), "server": .string("dahlia"), "tool": .string("cronjob"),
                     "arguments": .object(effective), "reason": .string(L10n.agentScheduleApproval),
-                ]))
-                guard decision == .accept else { throw HermesLearning.failure("The user declined the schedule.") }
-                approved = true
-                guard sessions[threadID]?.turn?.id == turn.id,
-                      try await runtime.currentProvider() == session.provider else { throw CancellationError() }
-                if let existing {
-                    guard try scheduleService().record(id: existing.id, account: account).revision == existing.revision
-                    else { throw HermesLearning.failure("Schedule changed during approval. Review the new revision.") }
-                }
+                ])
+                let id = UUID.v7().uuidString
+                guard Self.approvalRequest(id: id, payload: approval, mcpServers: session.mcpServers)?.canApprove == true
+                else { throw HermesLearning.failure("The schedule is too large to approve.") }
+                sessions[threadID]?.turn?.pendingSchedules[id] = ScheduleApproval(payload: payload, tools: tools, existing: existing)
+                return .object(["request_id": .string(id), "approval": approval])
             }
             let result = try scheduleService().execute(
                 payload,
                 account: account,
-                approved: approved,
+                approved: false,
                 tools: tools,
                 expectedRevision: existing?.revision
             )
