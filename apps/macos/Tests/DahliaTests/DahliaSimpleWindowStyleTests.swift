@@ -6,6 +6,16 @@
 
     @MainActor
     struct DahliaSimpleWindowStyleTests {
+        private var nativeTitlebarHeight: CGFloat {
+            let window = NSWindow(
+                contentRect: NSRect(x: 0, y: 0, width: 800, height: 600),
+                styleMask: [.titled, .closable, .miniaturizable, .resizable],
+                backing: .buffered,
+                defer: false
+            )
+            return window.frame.height - window.contentLayoutRect.height
+        }
+
         private final class ProbeCapture {
             weak var view: NSView?
         }
@@ -52,8 +62,9 @@
 
         private func verticalCenterDistancesFromWindowTop(
             for content: some View,
-            capture: ProbeCapture
-        ) throws -> (header: CGFloat, windowControls: CGFloat) {
+            capture: ProbeCapture,
+            resizesWindow: Bool
+        ) async throws -> (header: CGFloat, windowControls: CGFloat) {
             let hostingView = NSHostingView(rootView: content)
             let window = NSWindow(
                 contentRect: NSRect(x: 0, y: 0, width: 800, height: 600),
@@ -69,9 +80,33 @@
             window.contentView?.layoutSubtreeIfNeeded()
             hostingView.layoutSubtreeIfNeeded()
 
+            if resizesWindow {
+                window.setContentSize(NSSize(width: 1000, height: 700))
+                window.layoutIfNeeded()
+                hostingView.layoutSubtreeIfNeeded()
+            }
+            window.displayIfNeeded()
+
             let contentView = try #require(window.contentView)
             let headerView = try #require(capture.view)
             let closeButton = try #require(window.standardWindowButton(.closeButton))
+            let deadline = ContinuousClock.now.advanced(by: .seconds(1))
+            while ContinuousClock.now < deadline {
+                let headerCenter = verticalCenterDistanceFromWindowTop(of: headerView, in: contentView)
+                let allAligned = [NSWindow.ButtonType.closeButton, .miniaturizeButton, .zoomButton].allSatisfy { type in
+                    guard let button = window.standardWindowButton(type) else { return false }
+                    return abs(verticalCenterDistanceFromWindowTop(of: button, in: contentView) - headerCenter) < 0.5
+                }
+                if allAligned { break }
+                try await Task.sleep(for: .milliseconds(10))
+            }
+            for type in [NSWindow.ButtonType.miniaturizeButton, .zoomButton] {
+                let button = try #require(window.standardWindowButton(type))
+                #expect(abs(
+                    verticalCenterDistanceFromWindowTop(of: button, in: contentView)
+                        - verticalCenterDistanceFromWindowTop(of: closeButton, in: contentView)
+                ) < 0.5)
+            }
             return (
                 verticalCenterDistanceFromWindowTop(of: headerView, in: contentView),
                 verticalCenterDistanceFromWindowTop(of: closeButton, in: contentView)
@@ -99,10 +134,12 @@
             window.contentViewController = hostingController
             hostingController.view.addSubview(attachmentView)
             window.toolbar = NSToolbar(identifier: "test-toolbar")
+            let toolbarStyle = window.toolbarStyle
 
             attachmentView.configureWindow()
 
             #expect(window.toolbar == nil)
+            #expect(window.toolbarStyle == toolbarStyle)
             #expect(window.styleMask.contains(.fullSizeContentView))
             #expect(window.titleVisibility == .hidden)
             #expect(window.titlebarAppearsTransparent)
@@ -113,6 +150,7 @@
 
             attachmentView.configureWindow()
 
+            #expect(window.toolbar == nil)
             #expect(window.titleVisibility == .hidden)
         }
 
@@ -138,13 +176,13 @@
                 capture: styledCapture
             )
 
-            #expect(abs((unstyledDistance - styledDistance) - DahliaDesign.windowHeaderHeight) < 0.5)
+            #expect(abs((unstyledDistance - styledDistance) - nativeTitlebarHeight) < 0.5)
         }
 
-        @Test
-        func splitViewHeaderAlignsWithWindowControls() throws {
+        @Test(arguments: [false, true])
+        func splitViewHeaderAlignsWithWindowControls(resizesWindow: Bool) async throws {
             let capture = ProbeCapture()
-            let distances = try verticalCenterDistancesFromWindowTop(
+            let distances = try await verticalCenterDistancesFromWindowTop(
                 for: HSplitView {
                     Color.clear
                         .overlay(alignment: .top) {
@@ -157,14 +195,15 @@
                     Color.clear
                 }
                 .dahliaSimpleWindowStyle(),
-                capture: capture
+                capture: capture,
+                resizesWindow: resizesWindow
             )
 
             #expect(abs(distances.header - distances.windowControls) < 0.5)
         }
 
         @Test
-        func splitViewContentStartsBelowWindowHeader() throws {
+        func splitViewContentKeepsNativeTitlebarInset() throws {
             let capture = ProbeCapture()
             let distance = try distanceFromWindowTop(
                 for: HSplitView {
@@ -179,11 +218,11 @@
                 capture: capture
             )
 
-            #expect(abs(distance - DahliaDesign.windowHeaderHeight) < 0.5)
+            #expect(abs(distance - nativeTitlebarHeight) < 0.5)
         }
 
         @Test
-        func projectSplitViewPanesStartBelowWindowHeader() throws {
+        func nestedSplitViewPanesKeepNativeTitlebarInset() throws {
             for probesDetailPane in [false, true] {
                 let capture = ProbeCapture()
                 let distance = try distanceFromWindowTop(
@@ -210,7 +249,7 @@
                     capture: capture
                 )
 
-                #expect(abs(distance - DahliaDesign.windowHeaderHeight) < 0.5)
+                #expect(abs(distance - nativeTitlebarHeight) < 0.5)
             }
         }
     }

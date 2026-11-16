@@ -113,8 +113,8 @@ enum DahliaDesign {
         rowStyle == .compact ? 4 : 3
     }
 
-    static let windowHeaderHeight: CGFloat = 32
-    static let windowHeaderHorizontalPadding: CGFloat = 12
+    static let windowHeaderHeight: CGFloat = 52
+    static let windowHeaderHorizontalPadding: CGFloat = 20
     static let windowControlsLeadingInset: CGFloat = 68
     static let windowHeaderControlSize: CGFloat = 28
     static let windowHeaderGroupSpacing: CGFloat = 4
