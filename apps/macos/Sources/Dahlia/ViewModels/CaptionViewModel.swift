@@ -957,10 +957,11 @@ final class CaptionViewModel: ObservableObject {
                 let captured = processing
                 try await dbQueue.write { db in try captured.save(sessionID: session.id, in: db) }
             }
-            guard !(processing.stage == .failed && processing.failureDismissed == true) || session.id == includingDismissedSessionID,
-                  processing.stage != .succeeded,
-                  processing.automatic || processing.stage != .recorded,
-                  !summaryGenerationJobs.contains(where: { $0.id == processing.id }) else { continue }
+            guard !((processing.stage == .failed || processing.stage == .cancelled) && processing.failureDismissed == true)
+                || session.id == includingDismissedSessionID,
+                processing.stage != .succeeded,
+                processing.automatic || processing.stage != .recorded,
+                !summaryGenerationJobs.contains(where: { $0.id == processing.id }) else { continue }
             let workspaceURL = try await dbQueue.read { db in
                 try MeetingRecord.fetchOne(db, key: session.meetingId).flatMap { try WorkspaceRecord.fetchOne(db, key: $0.workspaceId)?.url }
             }
@@ -4485,7 +4486,7 @@ final class CaptionViewModel: ObservableObject {
 
     func dismissSummaryGenerationJob(_ jobID: UUID) {
         guard let job = summaryGenerationJobs.first(where: { $0.id == jobID }),
-              job.hasFailure,
+              job.hasFailure || job.isCancelled,
               job.isFinished else { return }
         if let persistFailureDismissal = job.persistFailureDismissal {
             Task {
@@ -4884,7 +4885,7 @@ final class CaptionViewModel: ObservableObject {
                 // The notification can outlive its saved processing state, including
                 // when deleting the meeting cascades its recording sessions.
                 guard var processing = try RecordingProcessing.load(sessionID: sessionID, in: db) else { return }
-                guard processing.id == jobID, processing.stage == .failed else { throw CancellationError() }
+                guard processing.id == jobID, processing.stage == .failed || processing.stage == .cancelled else { throw CancellationError() }
                 processing.failureDismissed = true
                 try processing.save(sessionID: sessionID, in: db)
             }

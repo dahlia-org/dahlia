@@ -252,15 +252,15 @@ import Synchronization
             #expect(restarted.summaryGenerationJobs.isEmpty)
         }
 
-        @Test(arguments: ["active", "replaced", "writeFailure"])
-        func rejectedDismissalKeepsFailureVisible(reason: String) async throws {
+        @Test(arguments: ["active", "replaced", "writeFailure"], [RecordingProcessing.Stage.failed, .cancelled])
+        func rejectedDismissalKeepsNotificationVisible(reason: String, stage: RecordingProcessing.Stage) async throws {
             let fixture = try SummaryGenerationFixture()
             defer { fixture.removeFiles() }
             let sessionID = try fixture.insertRecordingSession(for: fixture.first, offset: 0)
             let processing = RecordingProcessing(
                 id: .v7(), automatic: true, liveDraft: false, localeIdentifier: "en_US", method: .transcript,
                 options: .manual, generationSettings: .current(), workspaceSettings: nil,
-                sessionIDs: [sessionID], stage: .failed, error: "Original failure"
+                sessionIDs: [sessionID], stage: stage, error: "Original failure"
             )
             let dbQueue = fixture.database.dbQueue
             try await dbQueue.write { db in try processing.save(sessionID: sessionID, in: db) }
@@ -286,7 +286,8 @@ import Synchronization
             try #require(await waitUntil { viewModel.errorMessage != nil })
             #expect(viewModel.errorMessage == L10n.processingFailureDismissalFailed)
             #expect(viewModel.summaryGenerationJobs.count == 1)
-            #expect(viewModel.summaryGenerationJobs.first?.hasFailure == true)
+            #expect(viewModel.summaryGenerationJobs.first?.hasFailure == (stage == .failed))
+            #expect(viewModel.summaryGenerationJobs.first?.isCancelled == (stage == .cancelled))
             #expect(try await dbQueue.read { db in
                 try RecordingProcessing.load(sessionID: sessionID, in: db)?.failureDismissed
             } != true)
