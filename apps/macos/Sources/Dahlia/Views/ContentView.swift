@@ -60,9 +60,11 @@ struct ContentView: View {
                             chatCoordinator: chatCoordinator,
                             isShowingUpcomingSchedule: isShowingUpcomingSchedule,
                             onShowUpcomingSchedule: returnToCalendarSchedule,
-                            isShowingChat: isShowingFullScreenChat,
+                            isShowingChat: isShowingDahliaChat,
                             onNewChat: startNewFullScreenChat,
                             onOpenChatThread: openFullScreenChatThread,
+                            omnigentSessionID: omnigentSessionID,
+                            onOpenOmnigentSession: openOmnigentSession,
                             onShowUnprocessedRecordings: showUnprocessedRecordings,
                             onCreateProject: presentProjectCreation,
                             onOpenProject: handleMeetingSidebarProjectAction,
@@ -98,6 +100,14 @@ struct ContentView: View {
                                 onEditProject: presentProjectEditor,
                                 onRequestProjectDeletion: { projectPendingDeletion = $0 }
                             )
+                        } else if let omnigentSessionID,
+                                  let connectionID = WorkspaceAISettingsModel.shared.databricksAccountConnectionID {
+                            OmnigentSessionView(
+                                connectionID: connectionID,
+                                sessionID: omnigentSessionID,
+                                headerLeadingInset: isSidebarVisible ? 0 : mainWindowNavigation.sidebarWidth
+                            )
+                            .id("\(connectionID)/\(omnigentSessionID)")
                         } else if isShowingFullScreenChat {
                             CodexChatSidebarView(
                                 coordinator: chatCoordinator,
@@ -381,6 +391,28 @@ private extension ContentView {
         mainWindowNavigation.section == .chat
     }
 
+    /// The chat section shows Dahlia's own chat, not an Omnigent session; only then does the docked chat follow it.
+    private var isShowingDahliaChat: Bool {
+        isShowingFullScreenChat && omnigentSessionID == nil
+    }
+
+    private var omnigentSessionID: String? {
+        mainWindowNavigation.shownOmnigentSessionID(for: WorkspaceAISettingsModel.shared.databricksAccountConnectionID)
+    }
+
+    private func openOmnigentSession(_ id: String) {
+        guard let connectionID = WorkspaceAISettingsModel.shared.databricksAccountConnectionID else { return }
+        mainWindowNavigation.recordNavigation(to: .omnigentSession(connectionID: connectionID, sessionID: id))
+        restoreOmnigentPresentation()
+    }
+
+    /// Like the full-screen chat, without moving the docked chat into the main area.
+    private func restoreOmnigentPresentation() {
+        dismissChatConfiguration()
+        isSidebarVisible = true
+        sidebarViewModel.clearMeetingSelection()
+    }
+
     private func syncDraftNavigation() {
         guard let draftMeeting = viewModel.draftMeeting else { return }
         mainWindowNavigation.updateDraftNavigation(draftMeeting, noteText: viewModel.noteText)
@@ -400,13 +432,14 @@ private extension ContentView {
         }
     }
 
+    /// An Omnigent session in the main area stays there while the hidden docked chat changes.
     private func recordVisibleChatSession() {
-        guard mainWindowNavigation.section == .chat else { return }
+        guard isShowingDahliaChat else { return }
         mainWindowNavigation.recordNavigation(to: currentChatLocation)
     }
 
     private func bindVisibleChatThread() {
-        guard let threadID = chatCoordinator.dockedSession.backendThreadID else { return }
+        guard isShowingDahliaChat, let threadID = chatCoordinator.dockedSession.backendThreadID else { return }
         mainWindowNavigation.bindCurrentChatThread(accountID: chatCoordinator.dockedSession.accountID, threadID: threadID)
     }
 
@@ -512,7 +545,8 @@ private extension ContentView {
 
     private func syncChatContext() {
         if isShowingFullScreenChat {
-            chatCoordinator.enterFullScreen(workspaceID: sidebarViewModel.currentWorkspace?.id)
+            // An Omnigent session leaves the docked chat and its context as they were.
+            if isShowingDahliaChat { chatCoordinator.enterFullScreen(workspaceID: sidebarViewModel.currentWorkspace?.id) }
             return
         }
         if mainWindowNavigation.section == .projects {
@@ -939,6 +973,9 @@ private extension ContentView {
         switch location {
         case .upcomingSchedule, .unprocessedRecordings, .chat:
             return true
+        case .omnigentSession:
+            // A session of another account's workspace cannot be shown after the account changed.
+            return location.omnigentSessionID(for: WorkspaceAISettingsModel.shared.databricksAccountConnectionID) != nil
         case let .chatThread(accountID, threadID):
             return await chatCoordinator.canRestoreThread(id: threadID, accountID: accountID)
         case let .meeting(meetingID):
@@ -1007,6 +1044,8 @@ private extension ContentView {
                 let thread = CodexChatThreadSummary(id: threadID, title: "", updatedAt: .now)
                 _ = await chatCoordinator.openHistoryThread(thread, showDockedSidebar: false)
             }
+        case .omnigentSession:
+            restoreOmnigentPresentation()
         }
         syncChatContext()
     }

@@ -2160,3 +2160,10 @@
 "Resume queue" = "Resume queue";
 
 "chat.toolUseCount" = "%lld tool uses";
+"Omnigent" = "Omnigent";
+"settings.agents.omnigent.enabled" = "Enable Omnigent integration (Beta)";
+"settings.agents.omnigent.enabledHelp" = "Chat can list and start this workspace's Omnigent sessions, and the Chat sidebar lists them. Starting one follows chat's approval mode.";
+"sidebar.omnigent.refresh" = "Refresh Omnigent sessions";
+"sidebar.omnigent.noSessions" = "No Omnigent sessions";
+"omnigent.session.noMessages" = "No messages yet";
+"omnigent.session.openInBrowser" = "Open in Omnigent";

@@ -219,6 +219,8 @@ actor PiChatService: CodexChatServicing {
     private let reviewTriageEnabled: @Sendable (CodexRuntimeProvider) -> Bool
     private let customInstructions: @Sendable (CodexRuntimeProvider) -> String
     private let mcpSettings: @Sendable (CodexRuntimeProvider) -> AgentMCPSettings
+    /// The Databricks workspace whose Omnigent chat may call, or nil while the account has it off.
+    let omnigentConnection: @Sendable (CodexRuntimeProvider) -> UUID?
     private let fileAccessSettings: @Sendable (CodexRuntimeProvider) -> PiFileAccessSettings
     var sessions: [String: Session] = [:]
     private var opening: [String: Task<PiRPCConnection, any Error>] = [:]
@@ -252,7 +254,8 @@ actor PiChatService: CodexChatServicing {
         reviewTriageEnabled: @escaping @Sendable (CodexRuntimeProvider) -> Bool = { AgentAutoReviewSettings.triageEnabled(for: $0) },
         customInstructions: @escaping @Sendable (CodexRuntimeProvider) -> String = { AgentChatInstructions.load(for: $0) },
         mcpSettings: @escaping @Sendable (CodexRuntimeProvider) -> AgentMCPSettings = { AgentMCPSettings.load(for: $0) },
-        fileAccessSettings: @escaping @Sendable (CodexRuntimeProvider) -> PiFileAccessSettings = { PiFileAccessSettings.load(for: $0) }
+        fileAccessSettings: @escaping @Sendable (CodexRuntimeProvider) -> PiFileAccessSettings = { PiFileAccessSettings.load(for: $0) },
+        omnigentConnection: @escaping @Sendable (CodexRuntimeProvider) -> UUID? = { OmnigentService.connectionID(for: $0) }
     ) {
         self.runtime = runtime
         self.historyStore = historyStore
@@ -265,6 +268,7 @@ actor PiChatService: CodexChatServicing {
         self.reviewModel = reviewModel
         self.reviewTriageEnabled = reviewTriageEnabled
         self.customInstructions = customInstructions
+        self.omnigentConnection = omnigentConnection
     }
 
     func models(forceRefresh: Bool) async throws -> [CodexModel] {
@@ -814,6 +818,7 @@ actor PiChatService: CodexChatServicing {
         // `--no-extensions` also drops Pi's MCP extension; explicitly enable it and the tools chat may call.
         let isChild = (try? history().thread(id: threadID, accountID: provider.accountKey).parentThreadID) != nil
         let threadTools = Self.readThreadTools + (isChild ? [] : Self.manageThreadTools)
+            + (omnigentConnection(provider) == nil ? [] : Self.readOmnigentTools + (isChild ? [] : ["omni_create_session"]))
         let profile = PiExecutionProfile(rawValue: scheduledRuns[threadID]?.profile ?? "interactive") ?? .interactive
         let memoryEnabled = AgentLearningSettings.memoryEnabled(provider.accountKey)
         let learningTools = ["skills_list", "skill_view"] +
@@ -868,6 +873,13 @@ actor PiChatService: CodexChatServicing {
                         throw CancellationError()
                     } catch { return .object(["error": .string(error.localizedDescription)]) }
                 }
+                if method.hasPrefix("omni_") {
+                    do {
+                        return try await self.omnigentTool(method, payload: payload, threadID: threadID, processID: processID)
+                    } catch is CancellationError {
+                        throw CancellationError()
+                    } catch { return .object(["error": .string(error.localizedDescription)]) }
+                }
                 if method == "createBackup" {
                     guard await self.sessions[threadID]?.profile == .interactive else { throw CancellationError() }
                     return try await self.createBackup(threadID: threadID, processID: processID, payload: payload, directory: workURL)
@@ -881,7 +893,9 @@ actor PiChatService: CodexChatServicing {
                 "DAHLIA_PI_MCP_COMMAND": HermesLearning.json(mcpCommand),
                 "DAHLIA_PI_MCP_SERVERS": HermesLearning.json(serverNames),
             ],
-            profile: profile, memoryEnabled: memoryEnabled, allowedTools: Set(allowedTools), mcpServers: Set(serverNames)
+            profile: profile, memoryEnabled: memoryEnabled, allowedTools: Set(allowedTools),
+            // `omnigent` names the approvals of `omni_create_session`.
+            mcpServers: Set(serverNames + (threadTools.contains("omni_create_session") ? ["omnigent"] : []))
         )
         Task { await self.pump(threadID: threadID, processID: processID, connection: connection) }
         if let name = pendingNames.removeValue(forKey: threadID) {

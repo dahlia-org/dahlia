@@ -1156,13 +1156,15 @@ import Synchronization
                 return transport
             }
             let registered = Mutex(AgentMCPSettings())
+            let omnigentEnabled = Mutex(false)
             let chat = try PiChatService(
                 runtime: pi.service,
                 historyStore: Self.history(),
                 workingDirectory: PiWorkingDirectory(override: pi.rootURL.appending(path: "work")),
                 agentLocator: PiAgentDirectoryLocator(applicationSupportURL: pi.rootURL),
                 mcpExecutableURL: URL(filePath: "/usr/bin/true"),
-                mcpSettings: { _ in registered.withLock { $0 } }
+                mcpSettings: { _ in registered.withLock { $0 } },
+                omnigentConnection: { _ in omnigentEnabled.withLock { $0 } ? UUID() : nil }
             )
             let thread = try await chat.startThread(model: nil, effort: "medium")
             _ = await chat.acquireThreadLease(threadID: thread.id)
@@ -1244,6 +1246,15 @@ import Synchronization
                 .objectValue?["url"] == .string("https://example.cloud.databricks.com/ai-gateway/mcp-services/main.default.notion"))
             #expect(entries?["notion"]?.objectValue?["auth"]?.objectValue?["provider"] == .string(provider.id))
             #expect(written.contains(#""provider":"example.cloud.databricks.com""#))
+
+            // Turning Omnigent on reaches the next process.
+            omnigentEnabled.withLock { $0 = true }
+            try await pi.service.reloadConfiguration(interruptActiveOperations: true)
+            try await turn("omnigent on, new process")
+            let withOmnigent = try #require(pi.launches.all.last { $0.mode == .chat })
+            #expect(withOmnigent.arguments.contains {
+                $0.contains("dah_thread_update,omni_list_agents,omni_list_sessions,omni_get_session,omni_create_session,mcp__dahlia__*")
+            })
         }
 
         @Test

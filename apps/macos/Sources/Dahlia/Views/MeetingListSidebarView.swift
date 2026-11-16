@@ -12,6 +12,8 @@ struct MeetingListSidebarView: View {
     let isShowingChat: Bool
     let onNewChat: () -> Void
     let onOpenChatThread: (CodexChatThreadSummary) -> Void
+    let omnigentSessionID: String?
+    let onOpenOmnigentSession: (String) -> Void
     let onShowUnprocessedRecordings: () -> Void
     let onCreateProject: () -> Void
     let onOpenProject: (UUID, ProjectNavigationIntent) -> Void
@@ -64,6 +66,15 @@ struct MeetingListSidebarView: View {
                         onNewChat: onNewChat,
                         onOpenThread: onOpenChatThread
                     )
+                    let aiSettings = WorkspaceAISettingsModel.shared
+                    if aiSettings.isDatabricksAccount, let connectionID = aiSettings.databricksAccountConnectionID {
+                        MainSidebarOmnigentSection(
+                            connectionID: connectionID,
+                            selectedSessionID: omnigentSessionID,
+                            onOpen: onOpenOmnigentSession
+                        )
+                        .id(connectionID)
+                    }
                 }
                 .listStyle(.sidebar)
                 .contentMargins(.trailing, 12, for: .scrollContent)

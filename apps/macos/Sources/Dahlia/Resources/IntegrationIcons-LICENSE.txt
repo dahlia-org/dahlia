@@ -9,6 +9,8 @@ The other integration icons are not from simple-icons:
 - IntegrationGenie.svg (GenieCodeIcon) and IntegrationDBSQL.svg (DatabaseIcon): @databricks/design-system 2.0.16
   (ISC), dist/assets/icons. Changes: Databricks red fills added.
 - IntegrationMicrosoft365.svg: draws the four-square Microsoft mark in its brand colors.
+- IntegrationOmnigent.svg: the Omnigent logo, unchanged, from
+  https://github.com/omnigent-ai/omnigent/blob/b3fb64710c75ae5ea02ec01bf1196a1a56f37498/docs/images/omnigent-logo.svg (Apache License 2.0).
 
 # CC0 1.0 Universal
 
