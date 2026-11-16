@@ -26,10 +26,12 @@ import Foundation
             #expect(submittedMessage.role == .user)
             #expect(submittedMessage.text == "Question")
             #expect(session.showsStandaloneThinking)
+            #expect(session.draft.isEmpty)
 
             await waitUntilAsync { await service.isSendWaiting }
             #expect(session.isPreparingTurn)
             #expect(session.showsStandaloneThinking)
+            #expect(session.draft.isEmpty)
             #expect(session.conversationMessages.last == submittedMessage)
 
             if stop { session.stop() }
@@ -62,6 +64,7 @@ import Foundation
 
             session.sendDraft()
             #expect(session.conversationMessages.map(\.text) == ["Question"])
+            #expect(session.draft.isEmpty)
             try #require(await pollUntil { contextProvider.requestCount == 1 })
             contextProvider.resume()
             try #require(await pollUntil { !session.isGenerating })
@@ -75,6 +78,103 @@ import Foundation
             try #require(await pollUntil { !session.hasPendingGenerationWork })
             #expect(session.conversationMessages.filter { $0.role == .user }.map(\.text) == ["Question"])
             #expect(session.draft.isEmpty)
+        }
+
+        @Test(arguments: [false, true], ["", "Question", "Next question"])
+        func preparationPreservesComposerRecoveryAndNewDrafts(fails: Bool, nextDraft: String) async throws {
+            let service = TestCodexChatService(mode: .complete)
+            let settings = TestCodexChatFixtures.appSettings()
+            settings.currentWorkspace = Self.testWorkspace()
+            let contextProvider = TestCodexChatContextProvider(
+                error: fails ? .invalidProtocolResponse : nil,
+                shouldBlock: true
+            )
+            let session = CodexChatSessionModel(service: service, settings: settings, contextProvider: contextProvider)
+            let reference = CodexChatThreadSummary(id: "reference", title: "Reference", updatedAt: .now)
+            let meetingID = UUID.v7()
+            session.draft = "Question"
+            session.selectedMeetingReferenceIDs = [meetingID]
+            session.selectedThreadReferences = [reference]
+
+            session.sendDraft()
+            #expect(session.draft.isEmpty)
+            #expect(session.selectedMeetingReferenceIDs.isEmpty)
+            #expect(session.selectedThreadReferences.isEmpty)
+            try #require(await pollUntil { contextProvider.requestCount == 1 })
+            session.draft = nextDraft
+            contextProvider.resume()
+            try #require(await pollUntil { !session.hasPendingGenerationWork })
+
+            let restoresComposer = fails && nextDraft.isEmpty
+            #expect(session.draft == (restoresComposer ? "Question" : nextDraft))
+            #expect(session.selectedMeetingReferenceIDs == (restoresComposer ? [meetingID] : []))
+            #expect(session.selectedThreadReferences == (restoresComposer ? [reference] : []))
+        }
+
+        @Test
+        func failedDeferredSteerRestoresItsOriginalThreadReference() async throws {
+            let service = TestCodexChatService(mode: .blockBeforeOutput)
+            let settings = TestCodexChatFixtures.appSettings()
+            settings.currentWorkspace = Self.testWorkspace()
+            let contextProvider = TestCodexChatContextProvider(error: .invalidProtocolResponse, shouldBlock: true)
+            let session = CodexChatSessionModel(service: service, settings: settings, contextProvider: contextProvider)
+            session.draft = "/mcp"
+            session.sendDraft()
+            try #require(await pollUntil { session.activeTurnID != nil })
+
+            let reference = CodexChatThreadSummary(id: "reference", title: "Reference", updatedAt: .now)
+            session.draft = "Question"
+            session.selectedThreadReferences = [reference]
+            session.sendDraft(mode: .steer)
+            let queued = try #require(session.pendingManualInputs.first)
+            session.draft = ""
+            session.selectedThreadReferences = []
+
+            await service.completeBlockedTurn()
+            try #require(await pollUntil { contextProvider.requestCount == 1 })
+            contextProvider.resume()
+            try #require(await pollUntil { !session.hasPendingGenerationWork })
+
+            #expect(session.errorMessage != nil)
+            #expect(session.draft == "Question")
+            #expect(session.selectedThreadReferences == [reference])
+            #expect(session.serializedComposerText == queued.text)
+        }
+
+        @Test(arguments: [false, true])
+        func pendingImagePreparationPreventsRestoringThePreviousComposer(stop: Bool) async throws {
+            let service = ImageChatService(supportsImages: true)
+            let settings = TestCodexChatFixtures.appSettings()
+            settings.currentWorkspace = Self.testWorkspace()
+            let contextProvider = TestCodexChatContextProvider(error: .invalidProtocolResponse, shouldBlock: true)
+            let session = CodexChatSessionModel(
+                modelID: "default-model",
+                effort: "medium",
+                service: service,
+                settings: settings,
+                contextProvider: contextProvider
+            )
+            await session.prepare()
+            session.draft = "Previous question"
+            session.attachedImages = (0 ..< CodexChatSessionModel.maximumAttachedImages).map { _ in
+                CodexChatImageAttachment(data: Data([1]), mimeType: "image/png")
+            }
+            try #require(session.canSend)
+            session.sendDraft()
+            try #require(await pollUntil { contextProvider.requestCount == 1 })
+
+            // Model the interval after image import accepts the next image and before decoding completes.
+            session.pendingImagePreparationCount = 1
+            if stop { session.stop() }
+            contextProvider.resume()
+            try #require(await pollUntil { !session.hasPendingGenerationWork })
+            #expect(session.draft.isEmpty)
+            #expect(session.attachedImages.isEmpty)
+
+            session.attachedImages.append(CodexChatImageAttachment(data: Data([2]), mimeType: "image/png"))
+            session.pendingImagePreparationCount = 0
+            #expect(session.attachedImages.count == 1)
+            #expect(session.canSend)
         }
 
         @Test

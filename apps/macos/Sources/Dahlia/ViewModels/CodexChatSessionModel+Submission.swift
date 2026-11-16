@@ -46,6 +46,7 @@ extension CodexChatSessionModel {
         isAwaitingTurnOutput = false
         preparingManualComposerSnapshot = composerSnapshot
         preparingUserMessage = CodexChatMessage(role: .user, text: text, images: images)
+        clearComposer(ifMatching: composerSnapshot)
         errorMessage = nil
         let submissionID = UUID.v7()
         activeSubmissionID = submissionID
@@ -55,7 +56,6 @@ extension CodexChatSessionModel {
             await self?.resolveContextAndRunTurn(
                 text: text,
                 images: images,
-                composerSnapshot: composerSnapshot,
                 includesCurrentContext: includesCurrentContext,
                 approvalMethod: approvalMethod,
                 submissionID: submissionID
@@ -77,7 +77,6 @@ extension CodexChatSessionModel {
     func resolveContextAndRunTurn(
         text: String,
         images: [CodexChatImageAttachment],
-        composerSnapshot: CodexChatComposerSnapshot?,
         includesCurrentContext: Bool,
         approvalMethod: CodexChatApprovalMethod,
         submissionID: UUID
@@ -108,7 +107,6 @@ extension CodexChatSessionModel {
         _ = await runTurn(
             text: text,
             images: images,
-            composerSnapshot: composerSnapshot,
             context: context,
             includesCurrentContext: includesCurrentContext,
             responseID: responseID,
@@ -160,7 +158,7 @@ extension CodexChatSessionModel {
                 draft: draft,
                 referenceIDs: selectedMeetingReferenceIDs,
                 images: attachedImages,
-                threadReferenceIDs: selectedThreadReferences.map(\.id)
+                threadReferences: selectedThreadReferences
             )
         } else {
             nil

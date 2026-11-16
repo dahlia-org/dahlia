@@ -4,7 +4,9 @@ struct CodexChatComposerSnapshot: Equatable, Sendable {
     let draft: String
     let referenceIDs: [UUID]
     let images: [CodexChatImageAttachment]
-    var threadReferenceIDs: [String] = []
+    var threadReferences: [CodexChatThreadSummary] = []
+
+    var threadReferenceIDs: [String] { threadReferences.map(\.id) }
 }
 
 struct CodexChatManualSubmission: Identifiable, Equatable, Sendable {

@@ -62,7 +62,7 @@ final class CodexChatSessionModel: Identifiable {
     var isFinalizingTurn = false
     var lastSubmittedText: String?
     var attachedImages: [CodexChatImageAttachment] = []
-    private(set) var pendingImagePreparationCount = 0
+    var pendingImagePreparationCount = 0
     private(set) var availableMeetingReferences: [CodexChatMeetingReference] = []
     var selectedMeetingReferenceIDs: [UUID] = []
     var selectedThreadReferences: [CodexChatThreadSummary] = []
@@ -348,7 +348,7 @@ final class CodexChatSessionModel: Identifiable {
             draft: draftSnapshot,
             referenceIDs: referenceIDsSnapshot,
             images: imagesSnapshot,
-            threadReferenceIDs: selectedThreadReferences.map(\.id)
+            threadReferences: selectedThreadReferences
         )
         let text = serializedComposerText
         let submission = CodexChatManualSubmission(
@@ -638,7 +638,6 @@ extension CodexChatSessionModel {
     func runTurn(
         text: String?,
         images: [CodexChatImageAttachment] = [],
-        composerSnapshot: CodexChatComposerSnapshot?,
         context: CodexChatContext?,
         includesCurrentContext: Bool,
         responseID: String,
@@ -703,7 +702,6 @@ extension CodexChatSessionModel {
                 images: images,
                 includesCurrentContext: includesCurrentContext
             )
-            clearComposer(ifMatching: composerSnapshot)
             lastSubmittedText = submission.text
             lastManualSubmission = submission
             messages.append(CodexChatMessage(
@@ -976,6 +974,13 @@ extension CodexChatSessionModel {
             requeue(preparingQueuedManualSubmission)
         }
         preparingQueuedManualSubmission = nil
+        if !hasComposerContent, pendingImagePreparationCount == 0, pendingManualInputs.isEmpty,
+           let snapshot = preparingManualComposerSnapshot {
+            draft = snapshot.draft
+            selectedMeetingReferenceIDs = snapshot.referenceIDs
+            selectedThreadReferences = snapshot.threadReferences
+            attachedImages = snapshot.images
+        }
         preparingUserMessage = nil
         historySynchronizationGeneration += 1
         // What this view showed to the end needs no reload; it also holds what history does not, such as command notices.

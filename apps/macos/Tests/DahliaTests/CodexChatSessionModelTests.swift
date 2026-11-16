@@ -1108,7 +1108,7 @@ import Foundation
             session.addThreadReference(target)
             session.draft = "/help"
             #expect(session.serializedComposerText == "/help thread:selected-thread")
-            let snapshot = CodexChatComposerSnapshot(draft: "/help", referenceIDs: [], images: [], threadReferenceIDs: [target.id])
+            let snapshot = CodexChatComposerSnapshot(draft: "/help", referenceIDs: [], images: [], threadReferences: [target])
             session.addThreadReference(CodexChatThreadSummary(id: "new-selection", title: "New", updatedAt: .now))
             session.clearComposer(ifMatching: snapshot)
             #expect(session.selectedThreadReferences.count == 2)

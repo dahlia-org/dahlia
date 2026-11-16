@@ -313,7 +313,12 @@ import Foundation
             let session = makeSession(service: TestCodexChatService(mode: .block))
             session.isQueuePaused = true
             let image = CodexChatImageAttachment(data: Data([1]), mimeType: "image/png")
-            let snapshot = CodexChatComposerSnapshot(draft: "Original", referenceIDs: [], images: [image], threadReferenceIDs: ["other-thread"])
+            let snapshot = CodexChatComposerSnapshot(
+                draft: "Original",
+                referenceIDs: [],
+                images: [image],
+                threadReferences: [CodexChatThreadSummary(id: "other-thread", title: "Other", updatedAt: .now)]
+            )
             let original = CodexChatManualSubmission(
                 deliveryMode: .queue,
                 text: "thread:other-thread Original",
