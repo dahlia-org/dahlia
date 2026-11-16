@@ -79,8 +79,15 @@ final class OmnigentSessionModel {
                 return
             }
             streamingText += object["delta"]?.stringValue ?? ""
-        case "response.output_item.done":
-            guard let message = object["item"].flatMap(OmnigentService.message) else { return }
+        case "response.output_item.done", "session.input.consumed":
+            var item = object["item"]
+            if object["type"]?.stringValue == "session.input.consumed" {
+                guard let input = object["data"]?.objectValue, var data = input["data"]?.objectValue else { return }
+                data["id"] = input["item_id"]
+                data["type"] = input["type"]
+                item = .object(data)
+            }
+            guard let message = item.flatMap(OmnigentService.message) else { return }
             if let index = messages.firstIndex(where: { $0.id == message.id }) {
                 messages[index] = message
             } else {

@@ -62,6 +62,38 @@ struct OmnigentServiceTests {
     }
 
     @Test @MainActor
+    func consumedInputIsShownOnceAlongsideAssistantOutput() throws {
+        let model = OmnigentSessionModel(connectionID: UUID(), sessionID: "s1")
+        // The snapshot may already contain an input when its queued consumed event arrives.
+        let input = Self.item("user1", role: "user", text: "continue")
+        model.apply(.object(["type": .string("response.output_item.done"), "item": input]))
+        var payload = try #require(input.objectValue)
+        payload.removeValue(forKey: "id")
+        payload.removeValue(forKey: "type")
+        let consumed = JSONValue.object([
+            "type": .string("session.input.consumed"),
+            "data": .object(["item_id": .string("user1"), "type": .string("message"), "data": .object(payload)]),
+        ])
+        model.apply(consumed)
+        model.apply(consumed)
+        #expect(model.messages.map(\.id) == ["user1"])
+
+        payload["content"] = .array([.object(["type": .string("input_text"), "text": .string("next")])])
+        let next = JSONValue.object([
+            "type": .string("session.input.consumed"),
+            "data": .object(["item_id": .string("user2"), "type": .string("message"), "data": .object(payload)]),
+        ])
+        model.apply(.object(["type": .string("response.output_text.delta"), "delta": .string("working")]))
+        model.apply(next)
+        model.apply(next)
+        #expect(model.streamingText == "working")
+        model.apply(.object(["type": .string("response.output_item.done"), "item": Self.item("reply", role: "assistant", text: "done")]))
+        #expect(model.messages.map(\.id) == ["user1", "user2", "reply"])
+        #expect(model.messages.map(\.text) == ["continue", "next", "done"])
+        #expect(model.streamingText.isEmpty)
+    }
+
+    @Test @MainActor
     func aResentChunkIsShownOnce() {
         let model = OmnigentSessionModel(connectionID: UUID(), sessionID: "s1")
         for (index, delta) in [(0, "Hel"), (1, "lo"), (1, "lo"), (0, "Hel")] {
