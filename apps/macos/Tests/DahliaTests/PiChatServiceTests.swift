@@ -168,7 +168,7 @@ import Synchronization
         }
 
         @Test
-        func historyLoadsTheLatestMessagesAndPagesBackWithoutReadingToolLogs() async throws {
+        func historyPagesMessagesPastUnrenderableToolLogs() async throws {
             let fixture = try Self.fixture { _ in }
             defer { try? FileManager.default.removeItem(at: fixture.pi.rootURL) }
             let thread = try await fixture.chat.startThread(model: nil, effort: "medium")
@@ -631,8 +631,8 @@ import Synchronization
             for try await event in handle.events {
                 events.append(event)
             }
-            #expect(events.contains(.toolActivity(.init(name: "bash", status: .running))))
-            #expect(events.contains(.toolActivity(.init(name: "bash", status: .inaccessible))))
+            #expect(events.contains(.toolActivity(.init(name: "bash", status: .running, callID: "c"))))
+            #expect(events.contains(.toolActivity(.init(name: "bash", status: .inaccessible, callID: "c"))))
             #expect(events.contains { if case .completed(itemID: .some, text: "Access was denied.") = $0 { true } else { false } })
             #expect(events.last == .completed(itemID: nil, text: nil))
         }

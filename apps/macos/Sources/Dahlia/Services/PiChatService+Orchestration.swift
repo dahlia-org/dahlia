@@ -143,6 +143,9 @@ extension PiChatService {
                 "thread_id": .string(run.threadID),
                 "title": .string(String(record.title.prefix(256))),
                 "status": .string(run.status),
+                "model": (run.model ?? record.model).map { .string($0) } ?? .null,
+                "started_at": run.startedAt.map { .number($0.timeIntervalSince1970) } ?? .null,
+                "completed_at": run.completedAt.map { .number($0.timeIntervalSince1970) } ?? .null,
                 "excerpt": .string(run.resultExcerpt),
                 // The excerpt is a prefix; the full reply stays in the thread for `dah_thread_read`.
                 "truncated": .bool(run.resultExcerpt.count >= ChatThreadStore.resultExcerptLimit),
@@ -395,7 +398,8 @@ extension PiChatService {
             effort: arguments["effort"]?.stringValue ?? caller.reasoningEffort ?? "medium",
             approvalMethod: sessions[caller.id]?.approvalMethod?.rawValue ?? "ask",
             clientRequestID: requestID,
-            createdAt: .now
+            createdAt: .now,
+            requestedByRunID: turn.id
         ))
         publishStates()
         return run

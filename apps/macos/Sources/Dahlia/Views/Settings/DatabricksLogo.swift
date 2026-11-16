@@ -18,6 +18,9 @@ extension Image {
     /// The bundled Claude mark (Font Awesome Free, CC BY 4.0; see `ProviderAnthropic-LICENSE.txt`).
     static var anthropicLogo: Image { monochromeLogo("ProviderAnthropic") }
 
+    /// The Pi mark, rendered in the current text color; see `ProviderPi-LICENSE.txt`.
+    @MainActor static let piLogo: Image = monochromeLogo("ProviderPi")
+
     private static func monochromeLogo(_ name: String) -> Image {
         guard let image = Bundle.appModule.url(forResource: name, withExtension: "svg").flatMap(NSImage.init(contentsOf:)) else {
             return Image(systemName: "circle.hexagongrid")

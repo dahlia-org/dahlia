@@ -43,7 +43,7 @@ struct CodexChatMessageRow: View {
             } else if case let .notice(level) = message.role {
                 CodexChatNoticeView(text: message.text, level: level)
             } else {
-                VStack(alignment: .leading, spacing: 10) {
+                VStack(alignment: .leading, spacing: 6) {
                     if !displayReasoning.isEmpty {
                         CodexChatReasoningView(
                             reasoning: displayReasoning,
@@ -57,6 +57,10 @@ struct CodexChatMessageRow: View {
                             markdown: displayText,
                             isStreaming: message.isStreaming
                         )
+                    }
+
+                    if !message.toolActivities.isEmpty {
+                        CodexChatToolUsesView(activities: message.toolActivities)
                     }
 
                     if !displayText.isEmpty, !message.isStreaming {

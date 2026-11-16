@@ -12,6 +12,7 @@ enum MainWindowLocation: Equatable {
     case projects
     case project(UUID)
     case chat
+    case chatThread(accountID: String, threadID: String)
 
     var section: MainWindowSection {
         switch self {
@@ -19,7 +20,7 @@ enum MainWindowLocation: Equatable {
             .meetings
         case .projects, .project:
             .projects
-        case .chat:
+        case .chat, .chatThread:
             .chat
         }
     }
@@ -354,6 +355,17 @@ final class MainWindowNavigation {
         currentLocation = location
         forwardHistory = []
         section = location.section
+    }
+
+    /// A newly started conversation gains its durable ID without adding an empty-chat history entry.
+    func bindCurrentChatThread(accountID: String, threadID: String) {
+        guard section == .chat else { return }
+        let location = MainWindowLocation.chatThread(accountID: accountID, threadID: threadID)
+        if currentLocation == .chat {
+            currentLocation = location
+        } else {
+            recordNavigation(to: location)
+        }
     }
 
     func recordMeetingActivationFromChat(_ meetingID: UUID, isShowingChat: Bool) {

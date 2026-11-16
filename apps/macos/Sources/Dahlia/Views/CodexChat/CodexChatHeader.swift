@@ -13,6 +13,9 @@ struct CodexChatHeader: View {
     let reservesWindowControls: Bool
     let leadingInset: CGFloat
     var showsTitle = true
+    var parentTitle: String?
+    var onOpenParent: (() -> Void)?
+    @State private var isParentHovered = false
 
     var body: some View {
         DahliaWindowHeader(reservesWindowControls: reservesWindowControls) {
@@ -41,7 +44,24 @@ struct CodexChatHeader: View {
                 .font(.dahliaBody)
                 .foregroundStyle(DahliaDesign.primaryTextColor)
 
-                if showsHistory || hasConversation {
+                if showsHistory || hasConversation || parentTitle != nil {
+                    if !showsHistory, let parentTitle, let onOpenParent {
+                        Text("/")
+                            .foregroundStyle(DahliaDesign.secondaryTextColor)
+                            .accessibilityHidden(true)
+                        Button(action: onOpenParent) {
+                            Text(parentTitle)
+                                .font(.dahliaBody)
+                                .lineLimit(1)
+                                .padding(.horizontal, 4)
+                                .padding(.vertical, 3)
+                                .contentShape(.rect)
+                                .background(isParentHovered ? DahliaDesign.contentHighlightColor : .clear, in: .rect(cornerRadius: 4))
+                        }
+                        .buttonStyle(.plain)
+                        .onHover { isParentHovered = $0 }
+                        .layoutPriority(-1)
+                    }
                     Text("/")
                         .foregroundStyle(DahliaDesign.secondaryTextColor)
                         .accessibilityHidden(true)

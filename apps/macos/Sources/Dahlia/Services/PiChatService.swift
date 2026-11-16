@@ -311,6 +311,7 @@ actor PiChatService: CodexChatServicing {
         return try await Task.detached(priority: .userInitiated) {
             let record = try store.thread(id: id, accountID: provider.accountKey)
             let page = try store.messagePage(threadID: id)
+            let parent = try store.parentSummary(for: record)
             return CodexChatThread(
                 id: record.id,
                 title: record.title,
@@ -318,7 +319,8 @@ actor PiChatService: CodexChatServicing {
                 model: record.model,
                 reasoningEffort: record.reasoningEffort,
                 approvalMethod: approvalMethod,
-                earlierMessagesCursor: page.earlierCursor, isReadOnly: record.scheduleID != nil
+                earlierMessagesCursor: page.earlierCursor, isReadOnly: record.scheduleID != nil,
+                parentThread: parent
             )
         }.value
     }
@@ -621,7 +623,11 @@ actor PiChatService: CodexChatServicing {
         default:
             return nil
         }
-        return CodexChatToolActivity(name: String(name.prefix(128)), status: status)
+        return CodexChatToolActivity(
+            name: String(name.prefix(128)), status: status,
+            callID: event["toolCallId"]?.stringValue,
+            detail: CodexChatToolActivity.displayDetail(event["args"])
+        )
     }
 
     /// Takes effect at the next tool call, including during a running turn, because the extension asks for the mode each time.

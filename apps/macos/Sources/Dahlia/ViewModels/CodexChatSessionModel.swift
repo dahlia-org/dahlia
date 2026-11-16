@@ -9,6 +9,7 @@ final class CodexChatSessionModel: Identifiable {
     var contextWorkspaceID: UUID? { settings.currentWorkspace?.id }
     private(set) var isReadOnly = false
     private(set) var backendThreadID: String?
+    private(set) var parentThread: CodexChatThreadSummary?
     private(set) var didStartBackendThread = false
     private(set) var title: String
     private(set) var messages: [CodexChatMessage]
@@ -291,7 +292,7 @@ final class CodexChatSessionModel: Identifiable {
             try Task.checkCancellation()
             guard !isReleased, !isGenerating, backendThreadID == threadID, earlierMessagesCursor == cursor,
                   runtimeProvider == provider else { return }
-            messages.insert(contentsOf: page.messages, at: 0)
+            messages = CodexChatMessage.prependingHistory(page.messages, to: messages)
             earlierMessagesCursor = page.earlierCursor
         } catch is CancellationError {
             // Closing or switching a conversation cancels only its display projection.
@@ -539,7 +540,7 @@ final class CodexChatSessionModel: Identifiable {
             if let method = handle.approvalMethod { selectedApprovalMethod = method
                 syncedApprovalMethod = method
             }
-            messages.append(CodexChatMessage(id: responseID, role: .assistant, text: "", isStreaming: true))
+            messages.append(CodexChatMessage(id: responseID, role: .assistant, text: "", isStreaming: true, runID: activeTurnHandleID))
             activeResponseID = responseID
             turnTask = Task { [weak self] in
                 guard let self else { return }
@@ -710,11 +711,12 @@ extension CodexChatSessionModel {
                 role: .user,
                 text: submission.text,
                 context: context,
-                images: images
+                images: images,
+                runID: turn.id
             ))
             preparingUserMessage = nil
 
-            messages.append(CodexChatMessage(id: responseID, role: .assistant, text: "", isStreaming: true))
+            messages.append(CodexChatMessage(id: responseID, role: .assistant, text: "", isStreaming: true, runID: activeTurnHandleID))
             activeResponseID = responseID
             isAwaitingTurnOutput = true
             isPreparingTurn = false
@@ -835,6 +837,7 @@ extension CodexChatSessionModel {
             completeStreamingOutput(itemID: itemID, using: updateLimiter)
         case let .toolActivity(activity):
             toolActivity = activity
+            recordToolActivity(activity)
         case let .approvalRequested(request):
             updateLimiter.submit(force: true)
             if !pendingApprovals.contains(where: { $0.id == request.id }) {
@@ -877,6 +880,7 @@ extension CodexChatSessionModel {
     private func apply(_ thread: CodexChatThread, preservingPendingMessages: Bool = false, keepingSelection: Bool = false) {
         historySynchronizationGeneration += 1
         backendThreadID = thread.id
+        parentThread = thread.parentThread
         isReadOnly = thread.isReadOnly
         title = thread.title
         if !preservingPendingMessages {
@@ -896,7 +900,7 @@ extension CodexChatSessionModel {
     private func completeTurnResponse(responseID: String) {
         guard let index = messages.firstIndex(where: { $0.id == responseID }) else { return }
         messages[index].isStreaming = false
-        if messages[index].text.isEmpty, messages[index].reasoning.isEmpty {
+        if !messages[index].hasResponseContent {
             messages.remove(at: index)
         }
     }
@@ -905,9 +909,7 @@ extension CodexChatSessionModel {
         guard let activeResponseID,
               let index = messages.firstIndex(where: { $0.id == activeResponseID }) else { return }
         messages[index].isStreaming = false
-        if activeTurnID == nil,
-           messages[index].text.isEmpty,
-           messages[index].reasoning.isEmpty {
+        if activeTurnID == nil, !messages[index].hasResponseContent {
             messages.remove(at: index)
         }
     }
@@ -922,6 +924,14 @@ extension CodexChatSessionModel {
         if messages[index].reasoning != reasoningText {
             messages[index].reasoning = reasoningText
         }
+    }
+
+    private func recordToolActivity(_ activity: CodexChatToolActivity) {
+        let existing = activity.callID.flatMap { callID in
+            messages.lastIndex { $0.runID == activeTurnHandleID && $0.toolActivities.contains { $0.callID == callID } }
+        }
+        guard let index = existing ?? messages.lastIndex(where: { $0.role == .assistant && $0.runID == activeTurnHandleID }) else { return }
+        messages[index].recordToolActivity(activity)
     }
 
     private func reconcileFromRollout(
@@ -948,7 +958,8 @@ extension CodexChatSessionModel {
             messages: reconciledMessages,
             model: thread.model,
             reasoningEffort: thread.reasoningEffort,
-            earlierMessagesCursor: thread.earlierMessagesCursor, isReadOnly: thread.isReadOnly
+            earlierMessagesCursor: thread.earlierMessagesCursor, isReadOnly: thread.isReadOnly,
+            parentThread: thread.parentThread
         )
         // Pi does not write handled commands or their notifications into its rollout.
         let hasNotices = messages.contains { if case .notice = $0.role { true } else { false } }
@@ -1080,7 +1091,11 @@ extension CodexChatSessionModel {
                 requested: retry.approvalMethod
             )
             try ensureSubmissionCanContinue(submissionID)
+            let previousRunID = activeTurnHandleID
             activeTurnHandleID = retryTurn.id
+            for index in messages.indices where previousRunID != nil && messages[index].runID == previousRunID {
+                messages[index].runID = retryTurn.id
+            }
             return try await consumeTurnEvents(
                 retryTurn.events,
                 accumulator: accumulator,
@@ -1449,7 +1464,14 @@ extension CodexChatSessionModel {
 
     func applySuccessfulSteer(_ submission: CodexChatManualSubmission, context: CodexChatContext?, awaitsOutput: Bool) async {
         if submission.clearsComposerOnDelivery { clearComposer(ifMatching: submission.composerSnapshot) }
-        messages.append(CodexChatMessage(role: .user, text: submission.text, context: context, images: submission.images, isSteer: true))
+        messages.append(CodexChatMessage(
+            role: .user,
+            text: submission.text,
+            context: context,
+            images: submission.images,
+            isSteer: true,
+            runID: activeTurnHandleID
+        ))
         if awaitsOutput { isAwaitingTurnOutput = true }
     }
 

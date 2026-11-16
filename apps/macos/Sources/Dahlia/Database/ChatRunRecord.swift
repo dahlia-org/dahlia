@@ -21,4 +21,7 @@ struct ChatRunRecord: Codable, FetchableRecord, PersistableRecord, Sendable {
     var stoppedByUser = false
     var origin = "user"
     var profile = "interactive"
+    var startedAt: Date?
+    var completedAt: Date?
+    var requestedByRunID: UUID?
 }

@@ -73,12 +73,12 @@ import Foundation
                 let running = CodexChatToolActivity(name: "ls", status: .running)
                 await service.yieldBlockedEvent(.toolActivity(running))
                 await waitUntil { session.toolActivity == running }
-                #expect(session.isGenerating)
+                #expect(session.isGenerating && session.messages.last?.toolActivities.last == running)
 
                 let denied = CodexChatToolActivity(name: "ls", status: .inaccessible)
                 await service.yieldBlockedEvent(.toolActivity(denied))
                 await waitUntil { session.toolActivity == denied }
-                #expect(session.isGenerating)
+                #expect(session.isGenerating && session.messages.last?.toolActivities == [denied])
                 #expect(session.errorMessage == nil)
 
                 if stop {

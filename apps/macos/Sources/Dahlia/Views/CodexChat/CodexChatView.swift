@@ -38,7 +38,11 @@ struct CodexChatView: View {
                 reservesSidebarToggle: reservesSidebarToggle,
                 reservesWindowControls: reservesWindowControls,
                 leadingInset: headerLeadingInset,
-                showsTitle: !isSidePanel
+                showsTitle: !isSidePanel || session.parentThread != nil,
+                parentTitle: session.parentThread.map {
+                    CodexChatMeetingReference.displayText(for: $0.title.nilIfBlank ?? L10n.newChat, namesByID: session.meetingNamesByID)
+                },
+                onOpenParent: session.parentThread.map { parent in { openHistoryThread(parent) } }
             )
             .zIndex(1)
 
@@ -81,7 +85,11 @@ struct CodexChatView: View {
                             hasStoredEarlierMessages: session.earlierMessagesCursor != nil,
                             isLoadingEarlierMessages: session.isLoadingEarlierMessages,
                             canLoadEarlierMessages: !session.isGenerating && !session.isRestoring,
-                            onLoadEarlierMessages: { await session.loadEarlierMessages() }
+                            onLoadEarlierMessages: { await session.loadEarlierMessages() },
+                            parentThreadID: session.backendThreadID,
+                            currentRunID: session.runtimeState?.turnID,
+                            coordinator: coordinator,
+                            onOpenThread: openHistoryThread
                         )
                     }
 
@@ -154,11 +162,6 @@ struct CodexChatView: View {
 
     @ViewBuilder
     private var conversationControls: some View {
-        if let parentID = session.backendThreadID {
-            CodexChatRelatedThreadsView(parentID: parentID, coordinator: coordinator, onOpen: openHistoryThread)
-                .padding(.horizontal, CodexChatDesign.contentHorizontalPadding)
-        }
-
         if !session.pendingManualInputs.isEmpty {
             VStack(alignment: .trailing, spacing: 0) {
                 HStack {
@@ -180,15 +183,6 @@ struct CodexChatView: View {
                 }
                 .frame(maxHeight: 200)
             }
-        }
-
-        if let activity = session.toolActivity {
-            Label(activity.text, systemImage: activity.symbol)
-                .font(.dahliaSecondary)
-                .foregroundStyle(DahliaDesign.secondaryTextColor)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.horizontal, CodexChatDesign.contentHorizontalPadding)
-                .padding(.vertical, 6)
         }
 
         if !session.mcpServersNeedingSignIn.isEmpty {

@@ -70,6 +70,13 @@ struct ChatThreadStore: ChatItemStore, Sendable {
         }
     }
 
+    func parentSummary(for record: ChatThreadRecord) throws -> CodexChatThreadSummary? {
+        try record.parentThreadID.map { parentID in
+            let parent = try thread(id: parentID, accountID: record.accountID)
+            return CodexChatThreadSummary(id: parent.id, title: parent.title, updatedAt: parent.updatedAt)
+        }
+    }
+
     func updateThread(id: String, title: String? = nil, status: String? = nil, model: String? = nil, effort: String? = nil) throws {
         try dbQueue.write { db in
             try db.execute(sql: """
@@ -123,7 +130,7 @@ struct ChatThreadStore: ChatItemStore, Sendable {
         let rows = try dbQueue.read { db in
             try ChatItemRecord.fetchAll(db, sql: """
             SELECT * FROM chat_items WHERE threadID = ? AND seq < ?
-                AND \(ChatItemRecord.messagePredicate())
+                AND \(ChatItemRecord.conversationPredicate())
             ORDER BY seq DESC LIMIT ?
             """, arguments: [threadID, before ?? Int64.max, pageSize + 1])
         }
@@ -140,6 +147,25 @@ struct ChatThreadStore: ChatItemStore, Sendable {
             SELECT EXISTS(SELECT 1 FROM chat_items WHERE threadID = ? AND json_extract(data, '$.role') = 'assistant')
             """, arguments: [threadID]) ?? false
         }
+    }
+
+    static func firstMessagePreview(threadID: String, in db: Database) throws -> String? {
+        guard let content = try String.fetchOne(db, sql: """
+        SELECT COALESCE(
+            (SELECT json_extract(data, '$.content') FROM chat_items
+             WHERE threadID = ? AND json_extract(data, '$.role') = 'user' ORDER BY seq LIMIT 1),
+            (SELECT input FROM chat_runs WHERE threadID = ? ORDER BY createdAt, id LIMIT 1)
+        )
+        """, arguments: [threadID, threadID]) else { return nil }
+        var text = CodexChatPromptCodec.visibleUserText(from: content)
+        let start = "<thread_request source=\"dahlia\" untrusted=\"true\">\n"
+        let end = "\n</thread_request>"
+        if text.hasPrefix(start), text.hasSuffix(end),
+           let payload = try? JSONDecoder().decode(JSONValue.self, from: Data(text.dropFirst(start.count).dropLast(end.count).utf8)),
+           let input = payload.objectValue?["input"]?.stringValue {
+            text = CodexChatPromptCodec.visibleUserText(from: input)
+        }
+        return String(text.prefix(1000))
     }
 
     func deleteThread(id: String) throws {

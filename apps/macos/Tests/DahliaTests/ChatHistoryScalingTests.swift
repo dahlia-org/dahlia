@@ -50,7 +50,7 @@
             let listing = try #require(captured.first { $0.contains("ORDER BY updatedAt DESC") })
             let paging = try #require(captured.first { $0.contains("ORDER BY seq DESC") })
             try queue.read { db in
-                for (sql, index, range) in [(listing, "chat_threads_listing", "(updatedAt,id)<"), (paging, "chat_items_messages", "seq<?")] {
+                for (sql, index, range) in [(listing, "chat_threads_listing", "(updatedAt,id)<"), (paging, "chat_items_conversation", "seq<?")] {
                     let plan = try Row.fetchAll(db, sql: "EXPLAIN QUERY PLAN " + sql).map { $0["detail"] as String }.joined(separator: " ")
                     #expect(plan.contains(index), Comment(rawValue: plan))
                     #expect(plan.contains(range), Comment(rawValue: plan))

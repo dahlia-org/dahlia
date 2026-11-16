@@ -11,17 +11,39 @@ extension PiChatService {
             SELECT * FROM chat_threads WHERE accountID = ? AND (parentThreadID = ? OR id IN (
                 SELECT threadID FROM chat_runs WHERE requestedByThreadID = ?))
             ORDER BY updatedAt DESC LIMIT 100
-            """, arguments: [provider.accountKey, parentThreadID, parentThreadID]).map {
-                try CodexChatThreadSummary(
-                    id: $0.id,
-                    title: $0.title,
-                    updatedAt: $0.updatedAt,
-                    parentThreadID: $0.parentThreadID,
-                    status: (ChatRunRecord.fetchOne(
-                        db,
-                        sql: "SELECT * FROM chat_runs WHERE threadID = ? ORDER BY createdAt DESC, id DESC LIMIT 1",
-                        arguments: [$0.id]
-                    ))?.status ?? $0.status
+            """, arguments: [provider.accountKey, parentThreadID, parentThreadID]).map { thread in
+                let request = try ChatRunRecord.fetchOne(db, sql: """
+                SELECT * FROM chat_runs WHERE threadID = ? AND requestedByThreadID = ?
+                ORDER BY createdAt, id LIMIT 1
+                """, arguments: [thread.id, parentThreadID])
+                let source: Row? = if request?.requestedByRunID == nil {
+                    try Row.fetchOne(db, sql: """
+                    SELECT id, runID FROM chat_items WHERE threadID = ? AND createdAt <= ?
+                    AND \(ChatItemRecord.messagePredicate()) ORDER BY seq DESC LIMIT 1
+                    """, arguments: [parentThreadID, request?.createdAt ?? thread.createdAt])
+                } else {
+                    nil
+                }
+                let sourceRunID: UUID? = request?.requestedByRunID ?? source?["runID"]
+                let requestMessageID = try UUID.fetchOne(db, sql: """
+                SELECT id FROM chat_items WHERE threadID = ? AND runID = ?
+                AND \(ChatItemRecord.messagePredicate()) ORDER BY seq LIMIT 1
+                """, arguments: [parentThreadID, sourceRunID]) ?? source?["id"]
+                let latestRun = try ChatRunRecord.fetchOne(
+                    db, sql: "SELECT * FROM chat_runs WHERE threadID = ? ORDER BY createdAt DESC, id DESC LIMIT 1", arguments: [thread.id]
+                )
+                return try CodexChatThreadSummary(
+                    id: thread.id,
+                    title: thread.title,
+                    updatedAt: thread.updatedAt,
+                    parentThreadID: thread.parentThreadID,
+                    status: latestRun?.status ?? thread.status,
+                    firstMessage: ChatThreadStore.firstMessagePreview(threadID: thread.id, in: db),
+                    model: thread.model,
+                    requestMessageID: requestMessageID?.uuidString.lowercased(),
+                    requestRunID: sourceRunID,
+                    startedAt: latestRun?.startedAt,
+                    completedAt: latestRun?.completedAt
                 )
             }
         }
@@ -95,6 +117,7 @@ extension PiChatService {
         let record = try store.thread(id: threadID, accountID: provider.accountKey)
         guard var turn = sessions[threadID]?.turn else { return nil }
         let page = try store.messagePage(threadID: threadID)
+        let parent = try store.parentSummary(for: record)
         let snapshot = CodexChatThread(
             id: record.id,
             title: record.title,
@@ -102,7 +125,8 @@ extension PiChatService {
             model: record.model,
             reasoningEffort: record.reasoningEffort,
             approvalMethod: sessions[threadID]?.approvalMethod,
-            earlierMessagesCursor: page.earlierCursor, isReadOnly: record.scheduleID != nil
+            earlierMessagesCursor: page.earlierCursor, isReadOnly: record.scheduleID != nil,
+            parentThread: parent
         )
         let id = UUID.v7()
         let (stream, reader) = AsyncThrowingStream<CodexChatTurnEvent, any Error>.makeStream(bufferingPolicy: .bufferingOldest(256))
