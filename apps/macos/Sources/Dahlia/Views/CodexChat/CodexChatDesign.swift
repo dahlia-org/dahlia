@@ -4,7 +4,7 @@ enum CodexChatDesign {
     static let panelCornerRadius: CGFloat = 18
     static let contentHorizontalPadding: CGFloat = 16
     static let composerHorizontalPadding: CGFloat = 8
-    static let composerBottomPadding: CGFloat = 8
+    static let composerBottomPadding: CGFloat = 20
     static let composerContentPadding: CGFloat = 6
     static let composerCornerRadius: CGFloat = 22
     static let messageCornerRadius: CGFloat = 14
