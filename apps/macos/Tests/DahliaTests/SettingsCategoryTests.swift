@@ -10,14 +10,16 @@ import Foundation
         @Test
         func accountAndWorkspacePreferencesHaveSeparateDestinations() {
             #expect(SettingsGroup.features.categories == [.workspace, .meetings, .agents, .dahliaMCP, .calendar, .meetingLinks])
-            // Calendar sources and meeting links are per account; how events are shown applies to the whole app.
+            // Calendar groups account sources and Mac-wide filters; menu bar presentation stays in Appearance.
             #expect(SettingsGroup.app.categories.contains(.appearance))
             #expect(SettingsNavigation.visibleSelection(.meetingLinks) == .meetingLinks)
             #expect(SettingsCategory.calendar.matches(L10n.calendarSources))
             #expect(!SettingsCategory.calendar.matches(L10n.menuBarCalendar))
             #expect(SettingsCategory.appearance.matches(L10n.menuBarCalendar))
-            #expect(SettingsCategory.appearance.matches(L10n.calendarEventsToInclude))
-            #expect(SettingsCategory.appearance.matches(L10n.appearanceEventDisplay))
+            #expect(SettingsCategory.calendar.matches(L10n.calendarEventsToInclude))
+            #expect(SettingsCategory.calendar.matches(L10n.appearanceEventDisplay))
+            #expect(!SettingsCategory.appearance.matches(L10n.calendarEventsToInclude))
+            #expect(!SettingsCategory.appearance.matches(L10n.appearanceEventDisplay))
             #expect(SettingsCategory.appearance.matches(L10n.appearanceMenuBar))
             #expect(SettingsCategory.meetingLinks.matches(L10n.meetingLinkApplications))
             #expect(!SettingsCategory.appearance.matches(L10n.meetingLinkApplications))
@@ -90,7 +92,7 @@ import Foundation
         func everySelectionResolvesToAnAccessibleDestination() {
             #expect(SettingsNavigation.visibleSelection(.language) == .general)
             #expect(SettingsNavigation.visibleSelection(.appearance) == .appearance)
-            #expect(SettingsNavigation.visibleSelection(.eventDisplay) == .appearance)
+            #expect(SettingsNavigation.visibleSelection(.eventDisplay) == .calendar)
             #expect(SettingsNavigation.visibleSelection(.recordingStopDetection) == .meetings)
             #expect(SettingsNavigation.visibleSelection(.instructions) == .agents)
             #expect(SettingsNavigation.visibleSelection(.mcp) == .agents)

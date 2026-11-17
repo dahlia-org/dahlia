@@ -862,7 +862,7 @@
 "Settings..." = "設定...";
 "Quit Dahlia" = "Dahlia を終了";
 "Menu Bar Calendar" = "メニューバーのカレンダー";
-"Choose which event details appear in the menu bar. It shows events from the calendars chosen under Account > Calendar, filtered on the Event Display tab." = "メニューバーに表示する予定の詳細を選びます。表示する予定は、「機能」の「カレンダー」で選んだカレンダーと「予定の表示」タブのフィルタに従います。";
+"Choose which event details appear in the menu bar. It shows events from the calendars chosen under Account > Calendar, filtered on the Event Display tab." = "メニューバーに表示する予定の詳細を選びます。表示する予定は、「機能」の「カレンダー」で選んだカレンダーと、同じページの「予定の表示」タブのフィルタに従います。";
 "Show today's events" = "今日の予定を表示";
 "Show ongoing and upcoming events in the menu bar menu." = "進行中と今後の予定をメニューバーのメニューに表示します。";
 "Event title" = "予定のタイトル";

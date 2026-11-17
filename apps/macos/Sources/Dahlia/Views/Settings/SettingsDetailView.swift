@@ -99,7 +99,7 @@ struct SettingsDetailView: View {
         switch selection {
         case .general, .language:
             GeneralSettingsView()
-        case .appearance, .eventDisplay:
+        case .appearance:
             AppearanceSettingsView()
         case .accountsAndWorkspaces, .dahliaAccounts, .accountPreferences, .macInference, .modelProvider, .aiSummary, .mcp, .agents:
             AgentSettingsView()
@@ -142,7 +142,7 @@ struct SettingsDetailView: View {
                 accountConnections: dahliaAccountController.connections,
                 databricksAccounts: WorkspaceAISettingsModel.shared.databricksConnections
             )
-        case .calendar:
+        case .calendar, .eventDisplay:
             CalendarSettingsView()
         case .instructions:
             InstructionsSettingsView(sidebarViewModel: sidebarViewModel)

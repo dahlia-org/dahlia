@@ -1,13 +1,10 @@
 import SwiftUI
 
-/// How the whole app looks: the display language and sidebar (General), the menu bar calendar (Menu Bar), and which
-/// events appear (Event Display). Each account's calendar sources are in `CalendarSettingsView`. The tabs look like the
-/// Agents page's.
+/// App appearance, language, sidebar, and menu bar presentation. Calendar sources and event filters are in `CalendarSettingsView`.
 struct AppearanceSettingsView: View {
     enum Tab: String, CaseIterable, Identifiable {
         case general
         case menuBar
-        case eventDisplay
 
         var id: Self { self }
 
@@ -15,7 +12,6 @@ struct AppearanceSettingsView: View {
             switch self {
             case .general: L10n.general
             case .menuBar: L10n.appearanceMenuBar
-            case .eventDisplay: L10n.appearanceEventDisplay
             }
         }
     }
@@ -45,7 +41,6 @@ struct AppearanceSettingsView: View {
                 switch navigation.appearanceTab {
                 case .general: generalSection
                 case .menuBar: menuBarCalendarSection
-                case .eventDisplay: CalendarEventFilterSettingsView(settings: settings)
                 }
             }
             .formStyle(.grouped)

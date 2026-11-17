@@ -862,7 +862,7 @@
 "Settings..." = "Settings...";
 "Quit Dahlia" = "Quit Dahlia";
 "Menu Bar Calendar" = "Menu Bar Calendar";
-"Choose which event details appear in the menu bar. It shows events from the calendars chosen under Account > Calendar, filtered on the Event Display tab." = "Choose which event details appear in the menu bar. It shows events from the calendars chosen under Features > Calendar, filtered on the Event Display tab.";
+"Choose which event details appear in the menu bar. It shows events from the calendars chosen under Account > Calendar, filtered on the Event Display tab." = "Choose which event details appear in the menu bar. It shows events from the calendars chosen under Features > Calendar, filtered on that page’s Event Display tab.";
 "Show today's events" = "Show today's events";
 "Show ongoing and upcoming events in the menu bar menu." = "Show ongoing and upcoming events in the menu bar menu.";
 "Event title" = "Event title";
