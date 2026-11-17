@@ -140,6 +140,7 @@ actor AudioProcessActivityMonitor {
             case let .success(isRunning):
                 snapshots[objectID]?.isRunningInput = isRunning
             case let .failure(failure):
+                if discardInvalidProcess(after: failure) { continue }
                 await monitoringFailed(failure)
                 return
             }
@@ -218,6 +219,7 @@ private extension AudioProcessActivityMonitor {
                         log("\(eventName) \(snapshot.rendered)")
                     }
                 } catch let failure {
+                    if discardInvalidProcess(after: failure) { continue }
                     await monitoringFailed(failure)
                     return
                 }
@@ -241,6 +243,7 @@ private extension AudioProcessActivityMonitor {
                 try addProcessListener(for: objectID, selector: kAudioProcessPropertyIsRunningOutput).get()
                 log("process_initial \(snapshot.rendered)")
             } catch let failure {
+                if discardInvalidProcess(after: failure) { continue }
                 await monitoringFailed(failure)
                 return
             }
@@ -351,7 +354,20 @@ private extension AudioProcessActivityMonitor {
         }
     }
 
+    private func discardInvalidProcess(after failure: AudioProcessObjectQueries.QueryFailure) -> Bool {
+        guard failure.status == kAudioHardwareBadObjectError,
+              failure.objectID != AudioObjectID(kAudioObjectSystemObject) else { return false }
+        // A process can disappear between enumeration and a property query without invalidating the monitor.
+        snapshots.removeValue(forKey: failure.objectID)
+        removeProcessListeners(for: failure.objectID)
+        return true
+    }
+
     private func monitoringFailed(_ failure: AudioProcessObjectQueries.QueryFailure) async {
+        if discardInvalidProcess(after: failure) {
+            await publishRunningInputBundleIDs()
+            return
+        }
         let shouldNotify = currentFailure == nil
         removeAllListeners()
         snapshots.removeAll()
