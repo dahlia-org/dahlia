@@ -63,6 +63,99 @@ import os
         }
 
         @Test
+        func disappearingInputProcessDoesNotInvalidateMeetingObservation() async throws {
+            let harness = AudioProcessActivityMonitorHarness()
+            harness.configureProcess(bundleID: "com.google.Chrome.helper", isRunningInput: true)
+            let monitor = AudioProcessActivityMonitor(dependencies: harness.dependencies, excludedPID: 999)
+            let events = OSAllocatedUnfairLock(
+                initialState: [AudioProcessActivityMonitor.RunningInputBundleIDsResult]()
+            )
+            let observerID = await monitor.addRunningInputObserver { result in
+                events.withLock { $0.append(result) }
+            }
+
+            // The input query can race CoreAudio's process-list notification when Meet exits.
+            harness.removeProcess()
+            await monitor.refreshRunningInputState()
+
+            let values = events.withLock { $0 }
+            #expect(values.count == 2)
+            let ended = try #require(values.last)
+            #expect((try? ended.get()) == Set<String>())
+            #expect(harness.activeSelectors == [kAudioHardwarePropertyProcessObjectList])
+            await monitor.removeRunningInputObserver(observerID)
+        }
+
+        @Test
+        func disappearingUnrelatedProcessPreservesActiveMeeting() async throws {
+            let harness = AudioProcessActivityMonitorHarness()
+            harness.configureProcess(bundleID: "com.google.Chrome.helper", isRunningInput: true)
+            harness.configureProcess(bundleID: "com.example.screenshot", isRunningInput: false, objectID: 43)
+            let monitor = AudioProcessActivityMonitor(dependencies: harness.dependencies, excludedPID: 999)
+            let events = OSAllocatedUnfairLock(
+                initialState: [AudioProcessActivityMonitor.RunningInputBundleIDsResult]()
+            )
+            let observerID = await monitor.addRunningInputObserver { result in
+                events.withLock { $0.append(result) }
+            }
+
+            harness.removeProcess(objectID: 43)
+            await monitor.refreshRunningInputState()
+
+            let values = events.withLock { $0 }
+            #expect(values.count == 1)
+            let latest = try #require(values.last)
+            #expect((try? latest.get()) == Set(["com.google.Chrome.helper"]))
+            #expect(harness.activeSelectors == [kAudioHardwarePropertyProcessObjectList, kAudioProcessPropertyIsRunningInput])
+            await monitor.removeRunningInputObserver(observerID)
+        }
+
+        @Test
+        func refreshQueriesRemainingInputsAfterProcessDisappears() async throws {
+            let harness = AudioProcessActivityMonitorHarness()
+            harness.configureProcess(bundleID: "com.example.screenshot", isRunningInput: false)
+            harness.configureProcess(bundleID: "com.google.Chrome.helper", isRunningInput: false, objectID: 43)
+            let monitor = AudioProcessActivityMonitor(dependencies: harness.dependencies, excludedPID: 999)
+            let events = OSAllocatedUnfairLock(
+                initialState: [AudioProcessActivityMonitor.RunningInputBundleIDsResult]()
+            )
+            let observerID = await monitor.addRunningInputObserver { result in
+                events.withLock { $0.append(result) }
+            }
+
+            harness.removeProcess()
+            harness.setRunningInput(true, objectID: 43)
+            await monitor.refreshRunningInputState()
+
+            let values = events.withLock { $0 }
+            #expect(values.count == 2)
+            let latest = try #require(values.last)
+            #expect((try? latest.get()) == Set(["com.google.Chrome.helper"]))
+            await monitor.removeRunningInputObserver(observerID)
+        }
+
+        @Test
+        func disappearingProcessDuringRegistrationDoesNotHideOtherProcesses() async throws {
+            let harness = AudioProcessActivityMonitorHarness()
+            harness.configureProcess(bundleID: "com.example.screenshot", isRunningInput: false)
+            harness.configureProcess(bundleID: "com.google.Chrome.helper", isRunningInput: true, objectID: 43)
+            harness.failNextAdd(selector: kAudioProcessPropertyIsRunningInput, status: kAudioHardwareBadObjectError)
+            let monitor = AudioProcessActivityMonitor(dependencies: harness.dependencies, excludedPID: 999)
+            let events = OSAllocatedUnfairLock(
+                initialState: [AudioProcessActivityMonitor.RunningInputBundleIDsResult]()
+            )
+            let observerID = await monitor.addRunningInputObserver { result in
+                events.withLock { $0.append(result) }
+            }
+
+            let values = events.withLock { $0 }
+            #expect(values.count == 1)
+            let initial = try #require(values.first)
+            #expect((try? initial.get()) == Set(["com.google.Chrome.helper"]))
+            await monitor.removeRunningInputObserver(observerID)
+        }
+
+        @Test
         func keepsSharedListenersUntilDebugAndMeetingConsumersStop() async {
             let harness = AudioProcessActivityMonitorHarness()
             harness.configureProcess(bundleID: "com.microsoft.teams2.audio", isRunningInput: true)
@@ -128,6 +221,56 @@ import os
     }
 
     struct MeetingAudioActivityMonitorEventTests {
+        @Test(arguments: [false, true])
+        func meetPWAStopsAfterAudioProcessDisappears(usesListener: Bool) async throws {
+            let harness = AudioProcessActivityMonitorHarness()
+            harness.configureProcess(bundleID: "com.google.Chrome.helper", isRunningInput: true)
+            let activityMonitor = AudioProcessActivityMonitor(dependencies: harness.dependencies, excludedPID: 999)
+            let now = ContinuousClock.now
+            let currentInstant = OSAllocatedUnfairLock(initialState: now)
+            let observations = OSAllocatedUnfairLock(initialState: [MeetingAudioActivityMonitor.Snapshot]())
+            let queryFailed = OSAllocatedUnfairLock(initialState: false)
+            let monitor = MeetingAudioActivityMonitor(
+                pollInterval: .seconds(3600),
+                activityMonitor: activityMonitor,
+                now: { currentInstant.withLock { $0 } },
+                sleepUntil: { deadline in currentInstant.withLock { $0 = deadline } }
+            )
+            await monitor.start(
+                onChange: { snapshot in observations.withLock { $0.append(snapshot) } },
+                onQueryFailure: { queryFailed.withLock { $0 = true } }
+            )
+            let initial = try #require(observations.withLock { $0.first })
+            var tracker = MeetingRecordingActivityTracker()
+            tracker.recordingDidStart(at: now, currentSnapshot: initial)
+            for elapsed in [0, 30] {
+                tracker.observeBrowserCorroboration(
+                    browserContexts: [.chrome],
+                    observedAudioContexts: initial.observedContexts,
+                    at: now.advanced(by: .seconds(elapsed))
+                )
+            }
+
+            currentInstant.withLock { $0 = now.advanced(by: .seconds(31)) }
+            harness.removeProcess()
+            if usesListener {
+                harness.fireInputListener()
+            } else {
+                await activityMonitor.refreshRunningInputState()
+            }
+            #expect(await pollUntil {
+                observations.withLock { $0.count >= 3 } || queryFailed.withLock { $0 }
+            })
+            await monitor.stop()
+
+            #expect(!queryFailed.withLock { $0 })
+            let ended = try #require(observations.withLock { $0.last })
+            #expect(ended.endedContexts == [.chrome])
+            #expect(ended.observedAt == now.advanced(by: .seconds(35)))
+            let shouldStop = tracker.shouldStop(after: ended)
+            #expect(shouldStop)
+        }
+
         @Test
         func pollsCachedInputStateWithoutReenumeratingProcesses() async {
             let harness = AudioProcessActivityMonitorHarness()
@@ -222,7 +365,7 @@ import os
             var runningInputs = [AudioObjectID: Bool]()
             var runningOutputs = [AudioObjectID: Bool]()
             var listeners = [ListenerKey: StoredListener]()
-            var failedAddSelectors = Set<AudioObjectPropertySelector>()
+            var failedAddSelectors = [AudioObjectPropertySelector: OSStatus]()
             var inputReadCount = 0
             var processListReadCount = 0
         }
@@ -254,7 +397,15 @@ import os
                 isRunningInput: { [self] objectID in
                     state.withLock { state in
                         state.inputReadCount += 1
-                        return .success(state.runningInputs[objectID] ?? false)
+                        guard let isRunning = state.runningInputs[objectID] else {
+                            return .failure(AudioProcessObjectQueries.QueryFailure(
+                                objectID: objectID,
+                                selector: kAudioProcessPropertyIsRunningInput,
+                                operation: .readData,
+                                status: kAudioHardwareBadObjectError
+                            ))
+                        }
+                        return .success(isRunning)
                     }
                 },
                 isRunningOutput: { [self] objectID in
@@ -263,8 +414,8 @@ import os
                 addListener: { [self] listener, _ in
                     listenerAddContinuation?.yield(listener.selector)
                     return state.withLock { state in
-                        if state.failedAddSelectors.remove(listener.selector) != nil {
-                            return kAudioHardwareUnspecifiedError
+                        if let status = state.failedAddSelectors.removeValue(forKey: listener.selector) {
+                            return status
                         }
                         state.listeners[ListenerKey(objectID: listener.objectID, selector: listener.selector)] = StoredListener(value: listener)
                         return noErr
@@ -291,22 +442,29 @@ import os
             state.withLock(\.inputReadCount)
         }
 
-        func configureProcess(bundleID: String, isRunningInput: Bool) {
+        func configureProcess(bundleID: String, isRunningInput: Bool, objectID: AudioObjectID = 42) {
             state.withLock { state in
-                state.objectIDs = [processObjectID]
-                state.pids[processObjectID] = 100
-                state.bundleIDs[processObjectID] = bundleID
-                state.runningInputs[processObjectID] = isRunningInput
-                state.runningOutputs[processObjectID] = false
+                if !state.objectIDs.contains(objectID) { state.objectIDs.append(objectID) }
+                state.pids[objectID] = 100
+                state.bundleIDs[objectID] = bundleID
+                state.runningInputs[objectID] = isRunningInput
+                state.runningOutputs[objectID] = false
             }
         }
 
-        func setRunningInput(_ isRunning: Bool) {
-            state.withLock { $0.runningInputs[processObjectID] = isRunning }
+        func setRunningInput(_ isRunning: Bool, objectID: AudioObjectID = 42) {
+            state.withLock { $0.runningInputs[objectID] = isRunning }
         }
 
-        func failNextAdd(selector: AudioObjectPropertySelector) {
-            _ = state.withLock { $0.failedAddSelectors.insert(selector) }
+        func removeProcess(objectID: AudioObjectID = 42) {
+            state.withLock { state in
+                state.objectIDs.removeAll { $0 == objectID }
+                state.runningInputs[objectID] = nil
+            }
+        }
+
+        func failNextAdd(selector: AudioObjectPropertySelector, status: OSStatus = kAudioHardwareUnspecifiedError) {
+            state.withLock { $0.failedAddSelectors[selector] = status }
         }
 
         func fireInputListener() {
