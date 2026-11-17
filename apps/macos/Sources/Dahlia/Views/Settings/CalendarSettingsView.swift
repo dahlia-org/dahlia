@@ -1,8 +1,22 @@
 import SwiftUI
 
-/// The calendar sources of the open account, or of the account the setup tour is setting up. Settings that apply to
-/// the whole app are in `AppearanceSettingsView` and `MeetingLinkSettingsView`.
+/// Account calendar sources and Mac-wide event filters. The setup tour shows only source setup.
 struct CalendarSettingsView: View {
+    enum Tab: String, CaseIterable, Identifiable {
+        case sources
+        case eventDisplay
+
+        var id: Self { self }
+
+        var label: String {
+            switch self {
+            case .sources: L10n.calendarSources
+            case .eventDisplay: L10n.appearanceEventDisplay
+            }
+        }
+    }
+
+    @Environment(MainWindowNavigation.self) private var navigation
     @ObservedObject private var settings = AppSettings.shared
     @ObservedObject private var googleCalendarStore = GoogleCalendarStore.shared
     @ObservedObject private var macCalendarStore = MacCalendarStore.shared
@@ -17,6 +31,49 @@ struct CalendarSettingsView: View {
     }
 
     var body: some View {
+        @Bindable var navigation = navigation
+        VStack(spacing: 0) {
+            if !showsOnlySourceSetup {
+                Form {
+                    Section {
+                        EmptyView()
+                    } header: {
+                        UnderlineTabBar(tabs: Tab.allCases, selection: $navigation.calendarTab, label: \.label, accessibilityLabel: L10n.calendar)
+                    }
+                }
+                .formStyle(.grouped)
+                .fixedSize(horizontal: false, vertical: true)
+            }
+
+            if !showsOnlySourceSetup, navigation.calendarTab == .eventDisplay {
+                Form {
+                    CalendarEventFilterSettingsView(settings: settings)
+                }
+                .formStyle(.grouped)
+            } else {
+                sourceSettings
+            }
+        }
+        .task {
+            if showsOnlySourceSetup {
+                settings.enabledCalendarSources = [Self.exclusiveSetupSource(from: settings.enabledCalendarSources)]
+            }
+            await refreshEnabledSources()
+        }
+        .onChange(of: settings.enabledCalendarSources) { _, _ in
+            Task {
+                await refreshEnabledSources(force: true)
+            }
+        }
+        .sheet(item: $googleOAuthConsent.pendingDisclosure, onDismiss: startGoogleOAuthIfConsented) { disclosure in
+            GoogleOAuthConsentSheet(disclosure: disclosure) {
+                googleOAuthConsent.grantConsent()
+            }
+        }
+        .font(.dahliaBody)
+    }
+
+    private var sourceSettings: some View {
         Form {
             if showsOnlySourceSetup {
                 Section {
@@ -92,24 +149,7 @@ struct CalendarSettingsView: View {
                 }
             }
         }
-        .task {
-            if showsOnlySourceSetup {
-                settings.enabledCalendarSources = [Self.exclusiveSetupSource(from: settings.enabledCalendarSources)]
-            }
-            await refreshEnabledSources()
-        }
-        .onChange(of: settings.enabledCalendarSources) { _, _ in
-            Task {
-                await refreshEnabledSources(force: true)
-            }
-        }
-        .sheet(item: $googleOAuthConsent.pendingDisclosure, onDismiss: startGoogleOAuthIfConsented) { disclosure in
-            GoogleOAuthConsentSheet(disclosure: disclosure) {
-                googleOAuthConsent.grantConsent()
-            }
-        }
         .formStyle(.grouped)
-        .font(.dahliaBody)
     }
 
     private var showsCalendarSelection: Bool {

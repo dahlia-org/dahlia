@@ -65,6 +65,7 @@ final class MainWindowNavigation {
     /// Settings tabs kept here so links can open the tab they name.
     var agentSettingsTab = AgentSettingsView.Tab.general
     var appearanceTab = AppearanceSettingsView.Tab.general
+    var calendarTab = CalendarSettingsView.Tab.sources
     var meetingProcessingSelection = MeetingProcessingFlow.Node.transcription
     var settingsCategory: SettingsCategory {
         didSet {
@@ -228,7 +229,9 @@ final class MainWindowNavigation {
         if let category {
             switch category {
             case .eventDisplay:
-                appearanceTab = .eventDisplay
+                calendarTab = .eventDisplay
+            case .calendar:
+                calendarTab = .sources
             case .transcription, .recordingStopDetection:
                 meetingProcessingSelection = .transcription
             case .liveSubtitles:

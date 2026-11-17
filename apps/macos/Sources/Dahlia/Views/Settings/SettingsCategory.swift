@@ -11,7 +11,7 @@ enum SettingsCategory: String, CaseIterable, Identifiable {
     case dahliaAccounts
     case language
     case appearance
-    /// Opens Appearance on its Event Display tab.
+    /// Opens Calendar on its Event Display tab.
     case eventDisplay
     case workspace
     case permissions
@@ -204,7 +204,7 @@ enum SettingsCategory: String, CaseIterable, Identifiable {
         case .dahliaMCP:
             [L10n.mcp, L10n.mcpPreview, L10n.mcpConfigurationOutput, "Claude", "Codex"]
         case .calendar:
-            ["Google", L10n.googleCalendar, L10n.macOSCalendar, L10n.calendarSources]
+            ["Google", L10n.googleCalendar, L10n.macOSCalendar, L10n.calendarSources, L10n.appearanceEventDisplay, L10n.calendarEventsToInclude]
         case .appearance:
             [
                 L10n.display,
@@ -215,9 +215,6 @@ enum SettingsCategory: String, CaseIterable, Identifiable {
                 L10n.sidebarDisplayStyle,
                 L10n.appearanceMenuBar,
                 L10n.menuBarCalendar,
-                L10n.appearanceEventDisplay,
-                L10n.calendar,
-                L10n.calendarEventsToInclude,
             ]
         case .accountsAndWorkspaces:
             [L10n.accountPreferences, L10n.macInferencePreferences]

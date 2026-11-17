@@ -77,18 +77,22 @@
         }
 
         @Test
-        func eventDisplayLinkOpensAppearanceOnItsTab() {
+        func eventDisplayLinkOpensCalendarOnItsTab() {
             let navigation = MainWindowNavigation(openMainWindow: {}, initialSettingsCategory: .general)
-            #expect(navigation.appearanceTab == .general)
+            #expect(navigation.calendarTab == .sources)
 
             navigation.openSettings(category: .eventDisplay)
 
-            #expect(navigation.settingsCategory == .appearance)
-            #expect(navigation.appearanceTab == .eventDisplay)
+            #expect(navigation.settingsCategory == .calendar)
+            #expect(navigation.calendarTab == .eventDisplay)
+            #expect(navigation.appearanceTab == .general)
 
-            navigation.openSettings(category: .appearance)
+            navigation.openSettings()
+            #expect(navigation.calendarTab == .eventDisplay)
 
-            #expect(navigation.appearanceTab == .eventDisplay)
+            navigation.openSettings(category: .calendar)
+            #expect(navigation.settingsCategory == .calendar)
+            #expect(navigation.calendarTab == .sources)
         }
 
         @Test(arguments: [SettingsCategory.accountsAndWorkspaces, .accountPreferences, .aiSummary])
