@@ -144,7 +144,9 @@ struct AgentSkillSettingsView: View {
             root = try await PiChatService.shared.skillsRoot(account)
             await learning.refresh()
             guard !Task.isCancelled, let root else { return }
-            entries = AgentSkillSettingsEntry.grouped(skills: result, changes: learning.changes, root: root)
+            let grouped = try await AgentSkillSettingsEntry.grouped(skills: result, changes: learning.changes, root: root)
+            guard !Task.isCancelled else { return }
+            entries = grouped
                 .filter { $0.isReadOnly == readOnly }
         } catch {
             guard !Task.isCancelled else { return }

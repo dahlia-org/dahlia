@@ -13,6 +13,7 @@ fi
 
 suites=(
     AgentLearningTests                  # bounded settings previews preserve the complete learning ledger
+    AgentSkillSettingsTests             # skill path resolution never blocks MainActor
     TranscriptionEventPipelineTests       # the UI lane never gates audio acceptance or durable persistence
     TranscriptionEventRouterTests         # realtime, batch, and live-caption projections stay separate
     LiveCaptionEventRelayTests            # bounded latest-wins relay for batch live captions
