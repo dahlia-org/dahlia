@@ -569,6 +569,48 @@ import GRDB
             #expect(try fixture.storedDocument(meetingID: fixture.firstMeetingID) == original)
         }
 
+        @Test(arguments: [false, true])
+        func publicSummaryUpdatePreservesScreenshots(edited: Bool) throws {
+            let fixture = try Fixture()
+            let screenshotIDs = try [
+                #require(UUID(uuidString: "019AF123-ABCD-7ABC-8DEF-012345ABCDEF")),
+                #require(UUID(uuidString: "019AF123-ABCD-7ABC-8DEF-FEDCBA543210")),
+            ]
+            try fixture.manager.dbQueue.write { db in
+                for (old, new) in zip([fixture.firstScreenshotID, fixture.secondScreenshotID], screenshotIDs) {
+                    try db.execute(sql: "UPDATE meeting_attachments SET id = ? WHERE id = ?", arguments: [new, old])
+                }
+            }
+            var original = Self.richDocument(screenshotID: screenshotIDs[0])
+            original.sections[0].blocks.append(.image(screenshotId: screenshotIDs[1], caption: "Second shot"))
+            try fixture.replaceSummaryDocument(meetingID: fixture.firstMeetingID, document: original)
+            let server = try Self.initializedServer(
+                store: fixture.store(workspaceID: fixture.primaryWorkspaceID, allowsWrites: true)
+            )
+            let meetingID = TypeID.encode(fixture.firstMeetingID, as: .meeting)
+            let detail = try Self.json(server.handleLine("""
+            {"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"get_meeting","arguments":{"meeting_id":"\(meetingID)"}}}
+            """))
+            let body = try #require((detail["result"] as? [String: Any])?["structuredContent"] as? [String: Any])
+            var document = try #require(body["summary_document"] as? [String: Any])
+            if edited { document["title"] = "Edited with screenshots" }
+            let request: [String: Any] = try [
+                "jsonrpc": "2.0", "id": 3, "method": "tools/call",
+                "params": ["name": "update_meeting_summary", "arguments": [
+                    "meeting_id": meetingID,
+                    "expected_document_version": #require(body["summary_document_version"] as? String),
+                    "summary_document": document,
+                ]],
+            ]
+            let response = try Self.json(server.handleLine(String(decoding: JSONSerialization.data(withJSONObject: request), as: UTF8.self)))
+            #expect(response["error"] == nil)
+            let result = try #require((response["result"] as? [String: Any])?["structuredContent"] as? [String: Any])
+            #expect(result["changed"] as? Bool == edited)
+            var expected = original
+            if edited { expected.title = "Edited with screenshots" }
+            #expect(try SummaryDocument.decode(databaseJSON: fixture.storedDocument(meetingID: fixture.firstMeetingID)) == expected)
+        }
+
         /// `get_meeting` が返した `summary_document` をそのまま返送すると、保存内容がバイト単位で一致する。
         @Test(arguments: [false, true])
         func summaryDocumentRoundTripsThroughTheToolSurface(withMetadata: Bool) throws {

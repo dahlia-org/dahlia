@@ -45,7 +45,7 @@ enum StoredSummaryDocumentMarkdownRenderer {
     static func decode(toolJSON: JSONValue) throws -> SummaryDocument {
         let databaseShaped = try rewritingKeys(toolJSON, using: databaseKeyByToolKey)
         let document = try JSONDecoder().decode(SummaryDocument.self, from: JSONEncoder().encode(databaseShaped))
-        guard try addingLegacyDefaults(to: toolJSON) == toolJSONValue(document) else {
+        guard try addingLegacyDefaults(to: canonicalizingScreenshotIDs(toolJSON)) == toolJSONValue(document) else {
             throw DecodingError.dataCorrupted(.init(
                 codingPath: [],
                 debugDescription: "summary_document contains unknown, missing, or invalid fields"
@@ -58,6 +58,22 @@ enum StoredSummaryDocumentMarkdownRenderer {
             ))
         }
         return document
+    }
+
+    /// Public TypeIDs decode to lowercase UUIDs; Foundation encodes UUIDs in uppercase.
+    private static func canonicalizingScreenshotIDs(_ value: JSONValue) -> JSONValue {
+        switch value {
+        case let .object(fields):
+            var object = fields.mapValues(canonicalizingScreenshotIDs)
+            if case let .string(raw)? = object["screenshot_id"], let id = UUID(uuidString: raw) {
+                object["screenshot_id"] = .string(id.uuidString)
+            }
+            return .object(object)
+        case let .array(elements):
+            return .array(elements.map(canonicalizingScreenshotIDs))
+        default:
+            return value
+        }
     }
 
     static func hasValidTranscriptReferences(_ document: SummaryDocument) -> Bool {
