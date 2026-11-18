@@ -2162,6 +2162,8 @@
 "Queue paused" = "キューは一時停止中";
 "Resume queue" = "キューを再開";
 
+"chat.worked" = "作業の経過";
+"chat.workedFor" = "作業時間 %@";
 "chat.toolUseCount" = "%lld 件のツール操作";
 "Omnigent" = "Omnigent";
 "settings.agents.omnigent.enabled" = "Omnigent との統合を有効化（ベータ機能）";

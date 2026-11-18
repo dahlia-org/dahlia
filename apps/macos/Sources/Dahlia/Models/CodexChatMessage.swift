@@ -19,6 +19,7 @@ struct CodexChatMessage: Identifiable, Equatable {
     var toolActivities: [CodexChatToolActivity]
     var runID: UUID?
     var timestamp: Date?
+    var endsWithToolActivity = false
 
     init(
         id: String = UUID.v7().uuidString,
@@ -44,6 +45,7 @@ struct CodexChatMessage: Identifiable, Equatable {
         self.isSteer = isSteer
         self.threadResults = threadResults
         self.toolActivities = toolActivities
+        endsWithToolActivity = !toolActivities.isEmpty
         self.runID = runID
         self.timestamp = timestamp
     }
@@ -69,9 +71,8 @@ struct CodexChatMessage: Identifiable, Equatable {
             let runID = message.runID
             message.toolActivities.removeAll { activity in
                 guard let id = activity.callID, let (row, tool) = positions[runID]?[id] else { return false }
-                var updated = activity
-                updated.detail = activity.detail ?? earlier[row].toolActivities[tool].detail
-                earlier[row].toolActivities[tool] = updated
+                earlier[row].toolActivities[tool] = activity.merging(earlier[row].toolActivities[tool])
+                earlier[row].endsWithToolActivity = true
                 return true
             }
             if hadTools, message.toolActivities.isEmpty, message.text.isEmpty, message.reasoning.isEmpty { return nil }
@@ -81,13 +82,12 @@ struct CodexChatMessage: Identifiable, Equatable {
     }
 
     mutating func recordToolActivity(_ activity: CodexChatToolActivity) {
+        endsWithToolActivity = true
         if let index = toolActivities.lastIndex(where: {
             if let id = activity.callID { return $0.callID == id }
             return $0.name == activity.name && $0.status == .running
         }) {
-            var updated = activity
-            updated.detail = activity.detail ?? toolActivities[index].detail
-            toolActivities[index] = updated
+            toolActivities[index] = activity.merging(toolActivities[index])
         } else {
             toolActivities.append(activity)
             // Older operations remain available through stored history pages.

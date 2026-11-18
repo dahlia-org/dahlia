@@ -764,7 +764,10 @@ import Synchronization
                 events.append(event)
             }
             #expect(events.contains(.toolActivity(.init(name: "bash", status: .running, callID: "c"))))
-            #expect(events.contains(.toolActivity(.init(name: "bash", status: .inaccessible, callID: "c"))))
+            #expect(events.contains(.toolActivity(.init(
+                name: "bash", status: .inaccessible, callID: "c",
+                output: "ls: agent: Operation not permitted\nCommand exited with code 1"
+            ))))
             #expect(events.contains { if case .completed(itemID: .some, text: "Access was denied.") = $0 { true } else { false } })
             #expect(events.last == .completed(itemID: nil, text: nil))
         }
@@ -780,7 +783,7 @@ import Synchronization
                 "type": .string("tool_execution_end"), "toolName": .string("read"), "isError": .bool(isError),
                 "result": .object(["content": .array([.object(["type": .string("text"), "text": .string(text)])])]),
             ]
-            #expect(PiChatService.toolActivity(event) == .init(name: "read", status: expected))
+            #expect(PiChatService.toolActivity(event) == .init(name: "read", status: expected, output: text))
             #expect(PiChatService.toolActivity(["type": .string("message_end"), "toolName": .string("read")]) == nil)
         }
 

@@ -640,7 +640,9 @@ actor PiChatService: CodexChatServicing {
         return CodexChatToolActivity(
             name: String(name.prefix(128)), status: status,
             callID: event["toolCallId"]?.stringValue,
-            detail: CodexChatToolActivity.displayDetail(event["args"])
+            detail: CodexChatToolActivity.displayDetail(event["args"]),
+            input: CodexChatToolActivity.displayInput(event["args"]),
+            output: CodexChatToolActivity.displayOutput(event["result"]?.objectValue?["content"] ?? event["result"])
         )
     }
 

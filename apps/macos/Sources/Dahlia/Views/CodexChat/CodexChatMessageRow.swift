@@ -3,6 +3,7 @@ import SwiftUI
 struct CodexChatMessageRow: View {
     let message: CodexChatMessage
     let showsInlineActivity: Bool
+    var showsFooter = true
     let meetingNamesByID: [UUID: String]
     let meetingReferencesByID: [UUID: CodexChatMeetingReference]
 
@@ -38,7 +39,9 @@ struct CodexChatMessageRow: View {
                         in: RoundedRectangle(cornerRadius: CodexChatDesign.messageCornerRadius)
                     )
 
-                    CodexChatMessageFooter(message: message, text: displayText, isHovered: isHovered)
+                    if showsFooter {
+                        CodexChatMessageFooter(message: message, text: displayText, isHovered: isHovered)
+                    }
                 }
             } else if case let .notice(level) = message.role {
                 CodexChatNoticeView(text: message.text, level: level)
@@ -63,7 +66,7 @@ struct CodexChatMessageRow: View {
                         CodexChatToolUsesView(activities: message.toolActivities)
                     }
 
-                    if message.hasResponseContent, !message.isStreaming {
+                    if showsFooter, message.hasResponseContent, !message.isStreaming {
                         CodexChatMessageFooter(message: message, text: displayText, isHovered: isHovered)
                     }
                 }

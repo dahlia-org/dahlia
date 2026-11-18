@@ -7,8 +7,12 @@ final class CodexChatTurnAccumulator {
     private var reasoningItemIDs: [String] = []
     private var reasoningSections: [String: [Int: String]] = [:]
 
+    var responseParts: [String] {
+        responseItemIDs.compactMap { responseTexts[$0]?.nilIfBlank }
+    }
+
     var responseText: String {
-        responseItemIDs.compactMap { responseTexts[$0]?.nilIfBlank }.joined(separator: "\n\n")
+        responseParts.joined(separator: "\n\n")
     }
 
     var reasoningText: String {

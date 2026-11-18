@@ -56,7 +56,7 @@
         }
 
         @Test
-        func restoredMessagesKeepStoredTimestampsWhenAssistantItemsAreCombined() throws {
+        func restoredMessagesKeepEachAssistantItemAndItsStoredTimestamp() throws {
             let sentAt = Date(timeIntervalSince1970: 1_700_000_000)
             let receivedAt = sentAt.addingTimeInterval(60)
             let items = [
@@ -71,11 +71,13 @@
                 ]), createdAt: receivedAt.addingTimeInterval(30)),
             ]
             let messages = ChatHistoryCodec.messages(items)
-            #expect(messages.count == 2)
+            #expect(messages.count == 3)
             #expect(messages.first?.timestamp == sentAt)
             let response = try #require(messages.last)
-            #expect(response.text == "First\n\nSecond")
-            #expect(response.timestamp == receivedAt)
+            #expect(messages[1].text == "First")
+            #expect(messages[1].timestamp == receivedAt)
+            #expect(response.text == "Second")
+            #expect(response.timestamp == receivedAt.addingTimeInterval(30))
             #expect(ChatHistoryCodec.messages(items) == messages)
 
             let tools = ChatHistoryCodec.messages([ChatItem(

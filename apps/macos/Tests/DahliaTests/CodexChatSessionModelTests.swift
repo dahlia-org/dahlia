@@ -1024,7 +1024,7 @@ import Foundation
         }
 
         @Test
-        func multipleAgentMessageItemsAreCombinedIntoOneResponse() async {
+        func multipleAgentMessageItemsSeparateTheFinalAnswerFromEarlierSteps() async {
             let service = TestCodexChatService(mode: .multipleMessages)
             let settings = AppSettings()
             settings.currentWorkspace = Self.testWorkspace()
@@ -1039,7 +1039,7 @@ import Foundation
             session.sendDraft()
             await waitUntil { !session.isGenerating }
 
-            #expect(session.messages.map(\.text) == ["Question", "First answer\n\nSecond answer"])
+            #expect(session.messages.map(\.text) == ["Question", "First answer", "Second answer"])
             #expect(session.messages.allSatisfy { !$0.isStreaming })
         }
 

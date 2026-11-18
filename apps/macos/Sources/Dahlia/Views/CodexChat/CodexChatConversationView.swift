@@ -27,12 +27,17 @@ struct CodexChatConversationWindow: Equatable {
         var index = 0
 
         while index < messages.count {
-            let unitSize = if messages[index].role == .user,
-                              index + 1 < messages.count,
-                              messages[index + 1].role == .assistant {
-                2
-            } else {
-                1
+            var unitSize = 1
+            if let runID = messages[index].runID {
+                while index + unitSize < messages.count,
+                      messages[index + unitSize].runID == runID,
+                      !(messages[index + unitSize].role == .user && !messages[index + unitSize].isSteer) {
+                    unitSize += 1
+                }
+            } else if messages[index].role == .user,
+                      index + 1 < messages.count,
+                      messages[index + 1].role == .assistant {
+                unitSize = 2
             }
             if index > pageStart, index - pageStart + unitSize > pageSize {
                 ranges.append(pageStart ..< index)
@@ -196,6 +201,13 @@ struct CodexChatConversationView: View {
                         }
                     case .thinking:
                         CodexChatThinkingIndicator()
+                    case let .work(_, steps, duration):
+                        CodexChatWorkLogView(
+                            steps: steps,
+                            duration: duration,
+                            meetingNamesByID: meetingNamesByID,
+                            meetingReferencesByID: meetingReferencesByID
+                        )
                     case let .relatedThreads(_, threads):
                         CodexChatRelatedThreadsView(threads: threads, coordinator: coordinator, onOpen: onOpenThread)
                     }

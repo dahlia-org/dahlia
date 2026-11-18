@@ -558,14 +558,14 @@ final class CodexChatSessionModel: Identifiable {
                 do {
                     _ = try await consumeTurnEvents(handle.events, accumulator: accumulator, updateLimiter: limiter, submissionID: submissionID)
                     limiter.submit(force: true)
-                    completeTurnResponse(responseID: responseID)
+                    completeTurnResponse(responseID: responseID, accumulator: accumulator)
                     if !isReleased { await reconcileFromRollout(preservingReasoningFrom: responseID, submissionID: submissionID) }
                 } catch is CancellationError {
                     limiter.submit(force: true)
-                    completeTurnResponse(responseID: responseID)
+                    completeTurnResponse(responseID: responseID, accumulator: accumulator)
                 } catch {
                     limiter.submit(force: true)
-                    completeTurnResponse(responseID: responseID)
+                    completeTurnResponse(responseID: responseID, accumulator: accumulator)
                     errorMessage = error.localizedDescription
                 }
                 finishGeneration(submissionID: submissionID)
@@ -750,7 +750,7 @@ extension CodexChatSessionModel {
 
             )
             updateLimiter.submit(force: true)
-            completeTurnResponse(responseID: responseID)
+            completeTurnResponse(responseID: responseID, accumulator: accumulator)
             if turnCompleted {
                 isFinalizingTurn = true
                 await reconcileFromRollout(
@@ -769,7 +769,7 @@ extension CodexChatSessionModel {
             return turnCompleted
         } catch is CancellationError {
             updateLimiter.submit(force: true)
-            completeTurnResponse(responseID: responseID)
+            completeTurnResponse(responseID: responseID, accumulator: accumulator)
             return false
         } catch {
             guard activeSubmissionID == submissionID else { return false }
@@ -780,7 +780,7 @@ extension CodexChatSessionModel {
                 includesCurrentContext: includesCurrentContext
             )
             updateLimiter.submit(force: true)
-            completeTurnResponse(responseID: responseID)
+            completeTurnResponse(responseID: responseID, accumulator: accumulator)
             return false
         }
     }
@@ -830,10 +830,12 @@ extension CodexChatSessionModel {
             }
             processPendingInputIfPossible()
         case let .delta(itemID, text):
+            markResponseAfterTools()
             if toolActivity != nil { toolActivity = nil }
             accumulator.appendResponseDelta(itemID: itemID, text: text)
             publishStreamingOutput(itemID: itemID, using: updateLimiter)
         case let .completed(itemID?, text):
+            markResponseAfterTools()
             if toolActivity != nil { toolActivity = nil }
             accumulator.completeResponse(itemID: itemID, text: text)
             completeStreamingOutput(itemID: itemID, using: updateLimiter)
@@ -911,11 +913,26 @@ extension CodexChatSessionModel {
         }
     }
 
-    private func completeTurnResponse(responseID: String) {
+    private func markResponseAfterTools() {
+        guard let index = messages.firstIndex(where: { $0.id == activeResponseID }) else { return }
+        messages[index].endsWithToolActivity = false
+    }
+
+    private func completeTurnResponse(responseID: String, accumulator: CodexChatTurnAccumulator) {
         guard let index = messages.firstIndex(where: { $0.id == responseID }) else { return }
         messages[index].isStreaming = false
+        // Saved responses are stamped when they end; the collapsed steps measure up to this.
+        messages[index].timestamp = .now
         if !messages[index].hasResponseContent {
             messages.remove(at: index)
+        } else if !messages[index].endsWithToolActivity, accumulator.responseParts.count > 1 {
+            let steps = CodexChatMessage(
+                id: responseID + "-steps", role: .assistant,
+                text: accumulator.responseParts.dropLast().joined(separator: "\n\n"),
+                runID: messages[index].runID
+            )
+            messages[index].text = accumulator.responseParts.last ?? ""
+            messages.insert(steps, at: index)
         }
     }
 

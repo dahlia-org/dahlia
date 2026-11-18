@@ -1,6 +1,8 @@
 import SwiftUI
 
 enum CodexChatDesign {
+    /// Leading inset that aligns expanded step content with the label after its symbol.
+    static let stepContentInset: CGFloat = 24
     static let panelCornerRadius: CGFloat = 18
     static let contentHorizontalPadding: CGFloat = 16
     static let composerHorizontalPadding: CGFloat = 8

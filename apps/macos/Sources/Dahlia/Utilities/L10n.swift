@@ -43,6 +43,13 @@ enum L10n { // swiftlint:disable:this type_body_length
         String(format: String(localized: "chat.toolUseCount", bundle: bundle), locale: .current, count)
     }
 
+    static func chatWorkedFor(_ duration: TimeInterval?) -> String {
+        guard let duration else { return String(localized: "chat.worked", bundle: bundle) }
+        let elapsed = Duration.seconds(max(0, duration.rounded()))
+            .formatted(.units(allowed: [.hours, .minutes, .seconds], width: .narrow, maximumUnitCount: 2))
+        return String(format: String(localized: "chat.workedFor", bundle: bundle), locale: .current, elapsed)
+    }
+
     static func chatRelatedThreadCount(_ count: Int) -> String {
         String(format: String(localized: "chat.thread.relatedCount", bundle: bundle), locale: .current, count)
     }
