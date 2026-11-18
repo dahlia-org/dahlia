@@ -21,6 +21,7 @@ final class CodexChatSessionModel: Identifiable {
     }
 
     private(set) var earlierMessagesCursor: String?
+    private(set) var lastLoadedItemSeq: Int64?
     private(set) var isLoadingEarlierMessages = false
     private(set) var earlierMessagesError: String?
     var draft = ""
@@ -539,7 +540,14 @@ final class CodexChatSessionModel: Identifiable {
             if let method = handle.approvalMethod { selectedApprovalMethod = method
                 syncedApprovalMethod = method
             }
-            messages.append(CodexChatMessage(id: responseID, role: .assistant, text: "", isStreaming: true, runID: activeTurnHandleID))
+            messages.append(CodexChatMessage(
+                id: responseID,
+                role: .assistant,
+                text: "",
+                isStreaming: true,
+                runID: activeTurnHandleID,
+                timestamp: .now
+            ))
             activeResponseID = responseID
             turnTask = Task { [weak self] in
                 guard let self else { return }
@@ -709,11 +717,19 @@ extension CodexChatSessionModel {
                 text: submission.text,
                 context: context,
                 images: images,
-                runID: turn.id
+                runID: turn.id,
+                timestamp: preparingUserMessage?.timestamp ?? .now
             ))
             preparingUserMessage = nil
 
-            messages.append(CodexChatMessage(id: responseID, role: .assistant, text: "", isStreaming: true, runID: activeTurnHandleID))
+            messages.append(CodexChatMessage(
+                id: responseID,
+                role: .assistant,
+                text: "",
+                isStreaming: true,
+                runID: activeTurnHandleID,
+                timestamp: .now
+            ))
             activeResponseID = responseID
             isAwaitingTurnOutput = true
             isPreparingTurn = false
@@ -882,6 +898,7 @@ extension CodexChatSessionModel {
         title = thread.title
         if !preservingPendingMessages {
             messages = thread.messages
+            lastLoadedItemSeq = thread.lastItemSeq
             earlierMessagesCursor = thread.earlierMessagesCursor
             earlierMessagesError = nil
         }
@@ -949,20 +966,15 @@ extension CodexChatSessionModel {
            reconciledMessages[index].reasoning.nilIfBlank == nil {
             reconciledMessages[index].reasoning = streamedReasoning
         }
-        let reconciledThread = CodexChatThread(
-            id: thread.id,
-            title: thread.title,
-            messages: reconciledMessages,
-            model: thread.model,
-            reasoningEffort: thread.reasoningEffort,
-            earlierMessagesCursor: thread.earlierMessagesCursor, isReadOnly: thread.isReadOnly,
-            parentThread: thread.parentThread
-        )
+        var reconciledThread = thread
+        reconciledThread.messages = reconciledMessages
         // Pi does not write handled commands or their notifications into its rollout.
         let hasNotices = messages.contains { if case .notice = $0.role { true } else { false } }
         apply(
             reconciledThread, preservingPendingMessages: hasNotices || thread.messages.count < messages.count, keepingSelection: isFollowingRun
         )
+        // Reconciliation observed this saved boundary even when notices or older messages keep the streamed projection.
+        lastLoadedItemSeq = thread.lastItemSeq
     }
 
     func finishGeneration(
@@ -1474,7 +1486,8 @@ extension CodexChatSessionModel {
             context: context,
             images: submission.images,
             isSteer: true,
-            runID: activeTurnHandleID
+            runID: activeTurnHandleID,
+            timestamp: .now
         ))
         if awaitsOutput { isAwaitingTurnOutput = true }
     }

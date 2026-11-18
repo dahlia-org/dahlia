@@ -32,12 +32,14 @@ enum ChatHistoryCodec {
         var records: [[String: JSONValue]] = []
         var steeredIDs: Set<String> = []
         var runIDs: [String: UUID] = [:]
+        let timestamps = Dictionary(uniqueKeysWithValues: items.map { ($0.id, $0.createdAt) })
         /// A notification starts a run without a user message, so it also ends the reply before it.
         func flush() {
             messages += PiChatSessionFiles.messages(records).map { message in
                 var restored = message
                 restored.isSteer = message.role == .user && steeredIDs.contains(message.id)
                 restored.runID = runIDs[message.id]
+                restored.timestamp = timestamps[message.id]
                 return restored
             }
             records = []
@@ -60,7 +62,9 @@ enum ChatHistoryCodec {
                 if let index = messages.indices.last, messages[index].role == .assistant, messages[index].runID == item.runID {
                     messages[index].recordToolActivity(activity)
                 } else {
-                    messages.append(CodexChatMessage(id: item.id, role: .assistant, text: "", toolActivities: [activity], runID: item.runID))
+                    messages.append(CodexChatMessage(
+                        id: item.id, role: .assistant, text: "", toolActivities: [activity], runID: item.runID, timestamp: item.createdAt
+                    ))
                 }
             case "thread_notification":
                 flush()

@@ -475,11 +475,11 @@ private extension ContentView {
         // A thread already open in its own window comes forward there; the main area stays as it is.
         if let detachedID = chatCoordinator.detachedSessionID(showingThread: thread.id) {
             openDetachedChat(detachedID)
-            return
+        } else {
+            mainWindowNavigation.recordNavigation(to: .chatThread(accountID: chatCoordinator.dockedSession.accountID, threadID: thread.id))
+            restoreFullScreenChatPresentation()
+            chatCoordinator.showsHistory = false
         }
-        mainWindowNavigation.recordNavigation(to: .chatThread(accountID: chatCoordinator.dockedSession.accountID, threadID: thread.id))
-        restoreFullScreenChatPresentation()
-        chatCoordinator.showsHistory = false
         Task {
             _ = await chatCoordinator.openHistoryThread(thread, showDockedSidebar: false)
         }

@@ -120,7 +120,12 @@ import Synchronization
             ]), account: "local", approved: true, tools: [])
             let saved = try #require(try schedules.list(account: "local").first)
             if action == "resume" {
-                _ = try schedules.execute(.object(["action": .string("pause"), "job_id": .string(saved.id)]), account: "local", approved: false, tools: [])
+                _ = try schedules.execute(
+                    .object(["action": .string("pause"), "job_id": .string(saved.id)]),
+                    account: "local",
+                    approved: false,
+                    tools: []
+                )
             }
             var payload: [String: JSONValue] = ["action": .string(action), "job_id": .string(saved.id)]
             if action == "resume" {
@@ -139,7 +144,12 @@ import Synchronization
             let id = try #require(prepared.objectValue?["request_id"]?.stringValue)
             let commit: JSONValue = .object(["request_id": .string(id), "approved": .bool(true)])
             if changed {
-                _ = try schedules.execute(.object(["action": .string("pause"), "job_id": .string(saved.id)]), account: "local", approved: false, tools: [])
+                _ = try schedules.execute(
+                    .object(["action": .string("pause"), "job_id": .string(saved.id)]),
+                    account: "local",
+                    approved: false,
+                    tools: []
+                )
                 await #expect(throws: (any Error).self) {
                     try await fixture.chat.learningTool("cronjobCommit", payload: commit, threadID: thread.id, processID: process)
                 }
@@ -210,6 +220,9 @@ import Synchronization
             let attached = try #require(await fixture.chat.attach(threadID: thread.id))
             #expect(attached.id == handle.id)
             #expect(attached.snapshot?.messages.map(\.text) == ["Question"])
+            let savedPage = try fixture.store.messagePage(threadID: thread.id)
+            #expect(savedPage.lastItemSeq != nil)
+            #expect(attached.snapshot?.lastItemSeq == savedPage.lastItemSeq)
             await fixture.chat.releaseThreadLease(threadID: thread.id, leaseID: lease)
             await fixture.chatTransport.emit(TestPiTransport.assistantEnd("Saved answer"))
             await fixture.chatTransport.emit(TestPiTransport.settled())

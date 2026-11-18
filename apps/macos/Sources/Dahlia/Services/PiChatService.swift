@@ -308,6 +308,14 @@ actor PiChatService: CodexChatServicing {
         return try history().listThreads(accountID: provider.accountKey, cursor: cursor)
     }
 
+    func markThreadSeen(id: String, through seq: Int64) async throws {
+        let provider = try await runtime.currentProvider()
+        let store = try history()
+        try await Task.detached(priority: .userInitiated) {
+            try store.markThreadSeen(id: id, accountID: provider.accountKey, through: seq)
+        }.value
+    }
+
     func loadThread(id: String) async throws -> CodexChatThread {
         let provider = try await runtime.currentProvider()
         let store = try history()
@@ -325,7 +333,8 @@ actor PiChatService: CodexChatServicing {
                 reasoningEffort: record.reasoningEffort,
                 approvalMethod: approvalMethod,
                 earlierMessagesCursor: page.earlierCursor, isReadOnly: record.scheduleID != nil,
-                parentThread: parent
+                parentThread: parent,
+                lastItemSeq: page.lastItemSeq
             )
         }.value
     }

@@ -5,6 +5,35 @@
 
     @MainActor
     struct CodexChatHistoryPagingTests {
+        @Test(arguments: [false, true])
+        func reconciliationAdvancesReadPositionWhileKeepingNoticesOrEarlierHistory(keepsNotice: Bool) async {
+            let older = CodexChatMessage(id: "older", role: .user, text: "Older question")
+            let service = TestCodexChatService(
+                mode: .blockBeforeOutput,
+                earlierPages: ["older": .init(messages: [older], earlierCursor: nil)],
+                initialEarlierCursor: "older"
+            )
+            let session = session(service: service)
+            await session.restore()
+            #expect(session.lastLoadedItemSeq == 1)
+            if !keepsNotice { await session.loadEarlierMessages() }
+            session.draft = "Next question"
+            session.sendDraft()
+            #expect(await pollUntil { session.activeTurnID != nil })
+            if keepsNotice { await service.yieldBlockedEvent(.notice(message: "Connected")) }
+            await service.yieldBlockedEvent(.completed(itemID: "answer", text: "Final answer"))
+            await service.completeBlockedTurn()
+            #expect(await pollUntil { !session.hasPendingGenerationWork })
+            #expect(session.lastLoadedItemSeq == 3)
+            #expect(session.messages.last?.text == "Final answer")
+            if keepsNotice {
+                #expect(session.messages.contains { $0.role == .notice(.info) })
+            } else {
+                #expect(session.messages.first == older)
+            }
+            session.release()
+        }
+
         @Test
         func earlierHistoryIsLoadedOnlyOnRequestAndErrorsKeepTheCursorForRetry() async {
             let older = CodexChatMessage(id: "older", role: .user, text: "Older question")

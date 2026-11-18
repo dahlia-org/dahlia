@@ -205,15 +205,6 @@ struct AgentScheduleService: Sendable {
         }
     }
 
-    func markSeen(thread: String, account: String) throws {
-        try dbQueue.write {
-            try $0.execute(
-                sql: "UPDATE chat_threads SET lastSeenSeq=COALESCE((SELECT MAX(seq) FROM chat_items WHERE threadID=?),-1) WHERE id=? AND accountID=?",
-                arguments: [thread, thread, account]
-            )
-        }
-    }
-
     func unread(thread: String, account: String) throws -> Bool {
         try dbQueue.read {
             try Bool.fetchOne(

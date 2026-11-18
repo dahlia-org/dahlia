@@ -506,7 +506,7 @@ import Foundation
             #expect(session.backendThreadID == "thread-1")
             #expect(session.messages.map(\.text) == ["Question", "Final answer"])
             #expect(session.messages.last?.reasoning == "Considered the question")
-            #expect(session.title == "Question")
+            #expect(session.title == "Question" && session.lastLoadedItemSeq == 3)
             #expect(await service.sentTextBlocks == [["Question"]])
             #expect(await service.turnApprovalMethods == [.autoReview])
             #expect(await service.threadNames == ["Question"])
@@ -1495,7 +1495,7 @@ import Foundation
                 title: "Question",
                 messages: userMessages + assistantMessages,
                 model: nil,
-                reasoningEffort: nil
+                reasoningEffort: nil, lastItemSeq: Int64(1 + sentTextBlocks.count * 2)
             )
         }
 
@@ -1512,7 +1512,7 @@ import Foundation
                 model: thread.model,
                 reasoningEffort: thread.reasoningEffort,
                 approvalMethod: restoredApprovalMethod,
-                earlierMessagesCursor: initialEarlierCursor
+                earlierMessagesCursor: initialEarlierCursor, lastItemSeq: thread.lastItemSeq
             )
         }
 

@@ -73,8 +73,8 @@ final class CodexChatCoordinator {
             await session.synchronizeThread()
         }
         let isNewThread = changed.contains { id in current[id] != nil && !history.contains { $0.id == id } }
-        let settledThread = changed.contains { current[$0]?.status == "settled" && current[$0]?.isScheduled == true }
-        if isNewThread || settledThread, showsHistory || isDockedVisible { await refreshHistory() }
+        let settledThread = changed.contains { current[$0]?.status == "settled" }
+        if settledThread || (isNewThread && (showsHistory || isDockedVisible)) { await refreshHistory() }
     }
 
     deinit { runtimeTask?.cancel() }
@@ -254,11 +254,6 @@ final class CodexChatCoordinator {
     ) async -> CodexChatSessionID {
         let accountID = dockedSession.accountID
         // Select synchronously before awaiting I/O so an older open cannot replace a newer selection.
-        Task {
-            if let schedules = try? await PiChatService.shared.scheduleService() {
-                try? await Task.detached { try schedules.markSeen(thread: thread.id, account: accountID) }.value
-            }
-        }
         if let existing = sessions.values.first(where: {
             $0.backendThreadID == thread.id && $0.accountID == accountID
         }) {
@@ -266,6 +261,7 @@ final class CodexChatCoordinator {
                 replaceDockedSession(with: existing, isVisible: showDockedSidebar)
             }
             await existing.synchronizeThread()
+            await markThreadSeen(in: existing)
             return existing.id
         }
 
@@ -274,7 +270,7 @@ final class CodexChatCoordinator {
             title: thread.title
         )
         replaceDockedSession(with: session, isVisible: showDockedSidebar)
-        await session.restore()
+        await restoreSession(session)
         return session.id
     }
 
@@ -291,6 +287,7 @@ final class CodexChatCoordinator {
                 detachedSessionIDs.insert(existing.id)
             }
             await existing.synchronizeThread()
+            await markThreadSeen(in: existing)
             return existing.id
         }
 
@@ -300,8 +297,29 @@ final class CodexChatCoordinator {
         )
         sessions[session.id] = session
         detachedSessionIDs.insert(session.id)
-        await session.restore()
+        await restoreSession(session)
         return session.id
+    }
+
+    func restoreSession(_ session: CodexChatSessionModel) async {
+        await session.restore()
+        await markThreadSeen(in: session)
+    }
+
+    private func markThreadSeen(in session: CodexChatSessionModel) async {
+        guard let threadID = session.backendThreadID, let seq = session.lastLoadedItemSeq, session.isBoundToCurrentAccount,
+              !session.needsRestore, !session.isRestoring, session.errorMessage == nil,
+              session.accountID == dockedSession.accountID else { return }
+        let accountID = session.accountID
+        do {
+            try await service.markThreadSeen(id: threadID, through: seq)
+            guard dockedSession.accountID == accountID,
+                  let index = history.firstIndex(where: { $0.id == threadID }),
+                  let latestSeq = history[index].lastItemSeq, latestSeq <= seq else { return }
+            history[index].isUnread = false
+        } catch {
+            if dockedSession.accountID == accountID { historyError = error.localizedDescription }
+        }
     }
 
     func updateCurrentContext(

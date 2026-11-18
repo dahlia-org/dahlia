@@ -6,6 +6,137 @@ import Foundation
 
     @MainActor
     struct CodexChatCoordinatorTests {
+        @Test(arguments: ["docked", "detached"], [false, true])
+        func openingACompletedThreadAcknowledgesItsResult(surface: String, fromLink: Bool) async {
+            let service = CoordinatorTestCodexChatService()
+            var thread = Self.threadSummary(id: "history-thread")
+            thread.isUnread = true
+            thread.lastResponseAt = Date(timeIntervalSince1970: 1_700_000_000)
+            thread.lastItemSeq = 3
+            await service.setListedSummary(thread)
+            let settings = AppSettings()
+            settings.currentWorkspace = Self.workspace(name: "Unread Completion")
+            let coordinator = CodexChatCoordinator(service: service, settings: settings)
+            await coordinator.refreshHistory()
+            await coordinator.refreshHistory()
+            #expect(coordinator.history.first?.hasUnseenCompletion == true)
+            #expect(await service.acknowledgedSequences.isEmpty)
+
+            let selectedThread = fromLink ? Self.threadSummary(id: thread.id) : thread
+            if surface == "detached" {
+                _ = await coordinator.openHistoryThreadInDetachedWindow(selectedThread)
+            } else {
+                _ = await coordinator.openHistoryThread(selectedThread)
+            }
+            #expect(await service.acknowledgedSequences == [3])
+            #expect(coordinator.history.first?.hasUnseenCompletion == false)
+            await coordinator.refreshHistory()
+            #expect(coordinator.history.first?.hasUnseenCompletion == false)
+            #expect(coordinator.history.first?.lastResponseAt == thread.lastResponseAt)
+        }
+
+        @Test
+        func openingAnAlreadyDetachedCompletionAcknowledgesWithoutMovingIt() async {
+            let service = CoordinatorTestCodexChatService()
+            var thread = Self.threadSummary(id: "history-thread")
+            thread.isUnread = true
+            thread.lastItemSeq = 3
+            await service.setListedSummary(thread)
+            let settings = AppSettings()
+            settings.currentWorkspace = Self.workspace(name: "Detached Completion")
+            let coordinator = CodexChatCoordinator(service: service, settings: settings)
+            let dockedID = coordinator.dockedSessionID
+            let detachedID = await coordinator.openHistoryThreadInDetachedWindow(thread)
+            #expect(await service.acknowledgedSequences == [3])
+            thread.isUnread = true
+            await service.setListedSummary(thread)
+            await coordinator.refreshHistory()
+            #expect(coordinator.history.first?.hasUnseenCompletion == true)
+
+            #expect(await coordinator.openHistoryThread(thread, showDockedSidebar: false) == detachedID)
+            #expect(await service.acknowledgedSequences == [3, 3])
+            #expect(coordinator.history.first?.hasUnseenCompletion == false)
+            #expect(coordinator.dockedSessionID == dockedID)
+            #expect(!coordinator.isDockedVisible)
+        }
+
+        @Test(arguments: [false, true])
+        func failedRestorationOnlyAcknowledgesACompletionAfterSuccessfulRetry(detached: Bool) async {
+            let service = CoordinatorTestCodexChatService()
+            var thread = Self.threadSummary(id: "history-thread")
+            thread.isUnread = true
+            thread.lastItemSeq = 3
+            await service.setListedSummary(thread)
+            await service.failRestoration()
+            let settings = AppSettings()
+            settings.currentWorkspace = Self.workspace(name: "Failed Open")
+            let coordinator = CodexChatCoordinator(service: service, settings: settings)
+            await coordinator.refreshHistory()
+            let sessionID = if detached {
+                await coordinator.openHistoryThreadInDetachedWindow(thread)
+            } else {
+                await coordinator.openHistoryThread(thread)
+            }
+            #expect(await service.acknowledgedSequences.isEmpty)
+            #expect(coordinator.history.first?.hasUnseenCompletion == true)
+            guard let session = coordinator.session(for: sessionID) else {
+                Issue.record("Missing failed session")
+                return
+            }
+            await service.failRestoration(false)
+            await coordinator.restoreSession(session)
+            #expect(await service.acknowledgedSequences == [3])
+            #expect(coordinator.history.first?.hasUnseenCompletion == false)
+        }
+
+        @Test
+        func aSettledRunRefreshesCompletionEvenWhileTheHistoryViewIsHidden() async {
+            let service = CoordinatorTestCodexChatService()
+            var thread = Self.threadSummary(id: "history-thread")
+            thread.lastItemSeq = 1
+            await service.setListedSummary(thread)
+            let settings = AppSettings()
+            settings.currentWorkspace = Self.workspace(name: "Background Completion")
+            let coordinator = CodexChatCoordinator(service: service, settings: settings)
+            await coordinator.refreshHistory()
+            await waitUntil { await service.isObservingThreads }
+
+            thread.isUnread = true
+            thread.lastItemSeq = 3
+            thread.lastResponseAt = .now
+            await service.setListedSummary(thread)
+            await service.finishBackgroundRun(notify: true)
+            await waitUntil { await MainActor.run { coordinator.history.first?.hasUnseenCompletion == true } }
+            #expect(coordinator.history.first?.lastResponseAt == thread.lastResponseAt)
+            #expect(await service.acknowledgedSequences.isEmpty)
+        }
+
+        @Test
+        func aLateOpenAcknowledgementDoesNotHideANewerCompletion() async {
+            let service = CoordinatorTestCodexChatService()
+            var thread = Self.threadSummary(id: "history-thread")
+            thread.isUnread = true
+            thread.lastItemSeq = 1
+            await service.setListedSummary(thread)
+            await service.blockReadAcknowledgement()
+            let settings = AppSettings()
+            settings.currentWorkspace = Self.workspace(name: "Newer Completion")
+            let coordinator = CodexChatCoordinator(service: service, settings: settings)
+            await coordinator.refreshHistory()
+            await waitUntil { await service.isObservingThreads }
+            let opened = Task { await coordinator.openHistoryThread(thread) }
+            await waitUntil { await service.isReadAcknowledgementWaiting }
+
+            thread.lastItemSeq = 3
+            await service.setListedSummary(thread)
+            await service.finishBackgroundRun(notify: true)
+            await waitUntil { await MainActor.run { coordinator.history.first?.lastItemSeq == 3 } }
+            await service.releaseReadAcknowledgement()
+            _ = await opened.value
+            #expect(coordinator.history.first?.hasUnseenCompletion == true)
+            #expect(await service.acknowledgedSequences == [1])
+        }
+
         @Test
         func reloadingAfterABackgroundRunKeepsTheModelPickedForTheNextMessage() async {
             let service = CoordinatorTestCodexChatService()
@@ -969,6 +1100,29 @@ import Foundation
         }
 
         private var historyRequestCount = 0
+        private var listedSummary: CodexChatThreadSummary?
+        private var failsRestoration = false
+        private var blocksReadAcknowledgement = false
+        private var readAcknowledgementWaiter: CheckedContinuation<Void, Never>?
+        private(set) var acknowledgedSequences: [Int64] = []
+
+        func setListedSummary(_ summary: CodexChatThreadSummary) { listedSummary = summary }
+        func failRestoration(_ fails: Bool = true) { failsRestoration = fails }
+        func blockReadAcknowledgement() { blocksReadAcknowledgement = true }
+        var isReadAcknowledgementWaiting: Bool { readAcknowledgementWaiter != nil }
+        func releaseReadAcknowledgement() {
+            readAcknowledgementWaiter?.resume()
+            readAcknowledgementWaiter = nil
+        }
+
+        func markThreadSeen(id: String, through seq: Int64) async throws {
+            acknowledgedSequences.append(seq)
+            if blocksReadAcknowledgement { await withCheckedContinuation { readAcknowledgementWaiter = $0 } }
+            if listedSummary?.id == id, let latestSeq = listedSummary?.lastItemSeq, latestSeq <= seq {
+                listedSummary?.isUnread = false
+            }
+        }
+
         private var didStartThread = false
         private var startedThreadName: String?
         private(set) var unsubscribedThreadIDs: [String] = []
@@ -1007,6 +1161,7 @@ import Foundation
             if failFirstHistoryRequest, historyRequestCount == 1 {
                 throw PiRuntimeError.processExited(nil)
             }
+            if let listedSummary { return CodexChatThreadPage(threads: [listedSummary], nextCursor: nil) }
             let threadID = listsStartedThread && didStartThread ? "new-thread" : "history-thread"
             let title = threadID == "new-thread" ? startedThreadName ?? "" : "History"
             return CodexChatThreadPage(
@@ -1025,7 +1180,10 @@ import Foundation
         }
 
         func resumeThread(id: String) async throws -> CodexChatThread {
-            try await loadThread(id: id)
+            if failsRestoration { throw PiRuntimeError.processExited(nil) }
+            var thread = try await loadThread(id: id)
+            thread.lastItemSeq = listedSummary?.lastItemSeq
+            return thread
         }
 
         func startThread(model _: String?, effort: String, context _: CodexChatContext?) async throws -> CodexChatThread {
