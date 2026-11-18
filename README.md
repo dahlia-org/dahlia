@@ -57,7 +57,7 @@ The chat header shows **Dahlia AI**, followed by the conversation title when a c
 
 Hover over a chat message to show its copy button and recorded time, when available. Copying shows a checkmark and a brief confirmation. Assistant message footers also show a disabled fork icon; branching from a response is not available yet.
 
-The macOS chat sidebar and history list show running and waiting states with both an icon and text. A completed response stays marked **Completed** until you open its thread, including in a separate window. Once viewed, the row shows the time since the last saved assistant response; renaming a thread does not change that time.
+The macOS chat sidebar and history list show running and waiting states with both an icon and text. A completed response stays marked **Completed** until you open its thread, including in a separate window. Once viewed, the row shows the time since the last saved assistant response; renaming a thread does not change that time. Scheduled threads mark only delivered reports: silent results remain unmarked and preserve any earlier unread report.
 
 ### SwiftUI previews and Xcode MCP
 

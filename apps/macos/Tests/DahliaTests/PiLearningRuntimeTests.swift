@@ -180,7 +180,8 @@
             await #expect(throws: (any Error).self) { try await cancelled.value }
         }
 
-        @Test func scheduledRunsUseFreshSessionsAndSilentRunPreservesEarlierUnread() async throws {
+        @Test(arguments: ["silentOnly", "unreadDelivery", "seenDelivery"])
+        func scheduledRunsUseFreshSessionsAndSilentRunPreservesEarlierUnread(scenario: String) async throws {
             let transports = [TestPiTransport(), TestPiTransport()]
             let next = OSAllocatedUnfairLock(initialState: 0)
             let pi = TestPiRuntime { options in
@@ -219,26 +220,34 @@
             )
             await chat.scheduleRuns(accountID: "local")
             let attached = try #require(try await chat.attach(threadID: row.threadID))
-            await transport.emit(TestPiTransport.assistantEnd("First useful result"))
+            await transport.emit(TestPiTransport.assistantEnd(scenario == "silentOnly" ? "[SILENT]" : "First useful result"))
             await transport.emit(TestPiTransport.settled())
             for try await _ in attached.events {}
             #expect(try await chat.loadThread(id: row.threadID).isReadOnly)
             let launch = try #require(pi.launches.all.first { $0.mode == .chat })
             #expect(launch.profile == .scheduled && launch.arguments.contains("--no-session"))
             #expect(!launch.arguments.contains("--session") && !launch.arguments.contains("--session-id"))
-            #expect(try schedules.unread(thread: row.threadID, account: "local"))
+            #expect(try schedules.unread(thread: row.threadID, account: "local") == (scenario != "silentOnly"))
+            let firstSummary = try #require(store.listThreads(accountID: "local", cursor: nil).threads.first { $0.id == row.threadID })
+            #expect(firstSummary.hasUnseenCompletion == (scenario != "silentOnly"))
+            if scenario == "seenDelivery" {
+                try await chat.markThreadSeen(id: row.threadID, through: #require(firstSummary.lastItemSeq))
+            }
             _ = try schedules.execute(.object(["action": .string("run"), "job_id": .string(row.id)]), account: "local", approved: false, tools: [])
             await chat.scheduleRuns(accountID: "local")
             let second = try #require(try await chat.attach(threadID: row.threadID))
             #expect(second.snapshot?.isReadOnly == true)
             let prompt = await transports[1].command("prompt")
-            #expect(prompt["message"]?.stringValue?.contains("First useful result") == true)
+            #expect(prompt["message"]?.stringValue?.contains("First useful result") == (scenario != "silentOnly"))
             await transports[1].emit(TestPiTransport.assistantEnd(String(repeating: "x", count: 9000) + "\n[SILENT]"))
             await transports[1].emit(TestPiTransport.settled())
             for try await _ in second.events {}
             #expect(pi.launches.all.filter { $0.mode == .chat }.count == 2)
-            #expect(try schedules.unread(thread: row.threadID, account: "local"))
-            let summary = try #require(store.listThreads(accountID: "local", cursor: nil).threads.first { $0.id == row.threadID })
+            let expectsUnread = scenario == "unreadDelivery"
+            #expect(try schedules.unread(thread: row.threadID, account: "local") == expectsUnread)
+            let reloadedStore = ChatThreadStore(dbQueue: store.dbQueue)
+            let summary = try #require(reloadedStore.listThreads(accountID: "local", cursor: nil).threads.first { $0.id == row.threadID })
+            #expect(summary.hasUnseenCompletion == expectsUnread)
             try await chat.markThreadSeen(id: row.threadID, through: #require(summary.lastItemSeq))
             #expect(try !schedules.unread(thread: row.threadID, account: "local"))
             let status = try await store.dbQueue.read {

@@ -70,7 +70,7 @@ struct ChatThreadStore: ChatItemStore, Sendable {
                     updatedAt: thread.updatedAt,
                     parentThreadID: thread.parentThreadID,
                     status: thread.status,
-                    isUnread: responseSeq > thread.lastSeenSeq || scheduledUnread,
+                    isUnread: thread.scheduleID == nil ? responseSeq > thread.lastSeenSeq : scheduledUnread,
                     lastResponseAt: response?["createdAt"],
                     lastItemSeq: Int64.fetchOne(db, sql: "SELECT MAX(seq) FROM chat_items WHERE threadID = ?", arguments: [thread.id])
                 )
