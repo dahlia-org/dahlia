@@ -4,27 +4,37 @@ struct CodexChatThreadStatusView: View {
     let thread: CodexChatThreadSummary
     let activity: CodexChatThreadActivity?
 
+    @Environment(\.accessibilityReduceMotion) private var accessibilityReduceMotion
+
     var body: some View {
         Group {
             switch activity {
             case .queued:
-                Label(L10n.chatRunStatus("queued"), systemImage: "clock")
+                HStack(spacing: 2) {
+                    Image(systemName: "clock")
+                    Text(L10n.chatRunStatus("queued"))
+                }
             case .running:
-                HStack(spacing: 4) {
-                    ProgressView()
-                        .controlSize(.small)
-                        .frame(width: 16, height: 16)
+                HStack(spacing: 2) {
+                    Image(systemName: "circle.dotted")
+                        .symbolEffect(.rotate, isActive: !accessibilityReduceMotion)
                         .accessibilityHidden(true)
                     Text(L10n.chatThreadRunningShort)
                 }
                 .foregroundStyle(Color.accentColor)
             case .waitingForUser:
-                Label(L10n.chatThreadWaitingShort, systemImage: "exclamationmark.circle")
-                    .foregroundStyle(.orange)
+                HStack(spacing: 2) {
+                    Image(systemName: "exclamationmark.circle")
+                    Text(L10n.chatThreadWaitingShort)
+                }
+                .foregroundStyle(.orange)
             case nil:
                 if thread.hasUnseenCompletion {
-                    Label(L10n.chatRunStatus("completed"), systemImage: "checkmark.circle")
-                        .foregroundStyle(.green)
+                    HStack(spacing: 2) {
+                        Image(systemName: "checkmark.circle")
+                        Text(L10n.done)
+                    }
+                    .foregroundStyle(.green)
                 } else if let lastResponseAt = thread.lastResponseAt {
                     Text(lastResponseAt, format: .relative(presentation: .numeric, unitsStyle: .abbreviated))
                         .foregroundStyle(DahliaDesign.optionalTextColor)
