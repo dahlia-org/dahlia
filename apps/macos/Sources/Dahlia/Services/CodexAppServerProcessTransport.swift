@@ -5,7 +5,7 @@ import Foundation
 /// Process stdio adapter. All potentially blocking pipe operations stay outside Swift's cooperative executor.
 actor CodexAppServerProcessTransport: CodexAppServerTransport {
     private static let maximumOutputReadBytes = 64 * 1024
-    private static let defaultMaximumOutputLineBytes = 4 * 1024 * 1024
+    static let defaultMaximumOutputLineBytes = 4 * 1024 * 1024
 
     private let process: Process
     private let inputChannel: DispatchIO

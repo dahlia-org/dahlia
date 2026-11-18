@@ -1,7 +1,8 @@
 import Foundation
 
 enum CodexChatApprovalNormalizer {
-    static let byteLimit = 20000
+    // Match the process transport's safety bound; AI review has its own model input budget.
+    static let byteLimit = CodexAppServerProcessTransport.defaultMaximumOutputLineBytes
     static let fileLimit = 50
     private static let decisionLimit = 16
     private static let amendmentItemLimit = 50

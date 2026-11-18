@@ -1419,25 +1419,26 @@ import Synchronization
             #expect(second.dropFirst(started + 1).first == .mcpSignInRequired(servers: ["gmail", "slack"]))
         }
 
-        @Test
-        func approvalPreflightUsesNativeBoundsAndRejectsStoppedTurns() async throws {
+        @Test(arguments: [CodexChatApprovalMethod.ask, .autoReview, .fullAccess])
+        func approvalPreflightUsesNativeBoundsAndRejectsStoppedTurns(method: CodexChatApprovalMethod) async throws {
             let fixture = try Self.fixture { _ in }
             defer { try? FileManager.default.removeItem(at: fixture.pi.rootURL) }
             let thread = try await fixture.chat.startThread(model: nil, effort: "medium")
             _ = try await fixture.chat.beginTurn(
                 threadID: thread.id, inputs: [.text("Update the meeting")], model: nil, effort: "medium",
-                approvalMethod: .autoReview, expectedProvider: .local
+                approvalMethod: method, expectedProvider: .local
             )
             func check(_ id: String, text: String, server: String = "dahlia") async throws -> Bool {
                 await fixture.chatTransport.emit(TestPiTransport.bridgeRequest(id: id, method: "approvalCheck", payload: .object([
-                    "kind": .string("mcpToolCall"), "server": .string(server), "tool": .string("update_meeting"),
-                    "arguments": .object(["note": .string(text)]),
+                    "kind": .string("mcpToolCall"), "server": .string(server), "tool": .string("update_meeting_summary"),
+                    "arguments": .object(["summary": .string(text)]),
                 ])))
                 let response = await fixture.chatTransport.command { $0["id"]?.stringValue == id }
                 let value = try #require(response["value"]?.stringValue)
                 return try JSONDecoder().decode(Bool.self, from: Data(value.utf8))
             }
             #expect(try await check("small", text: "New note"))
+            #expect(try await check("summary", text: String(repeating: "会議の要約\n", count: 2000)))
             #expect(try await !check("large", text: String(repeating: "a", count: CodexChatApprovalNormalizer.byteLimit)))
             #expect(try await !check("multibyte", text: String(repeating: "あ", count: CodexChatApprovalNormalizer.byteLimit / 2)))
             #expect(try await !check("unregistered", text: "New note", server: "unregistered"))

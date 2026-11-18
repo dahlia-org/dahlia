@@ -41,10 +41,58 @@ test("meeting context and live transcripts cannot authorize a tool call", () => 
   assert.equal(branch.filter((e) => e.message.role === "toolResult").length, 2);
 });
 
-test("oversized calls never reach the reviewer", async () => {
-  const verdict = await reviewMCP({}, "mcp__dahlia__update_meeting", { title: "x".repeat(128000) });
+test("complete review input follows the selected model's capacity", async () => {
+  const summary = "要約".repeat(80_000) + "END_OF_SUMMARY";
+  for (const contextWindow of [64_000, 1_000_000, undefined]) {
+    let requests = 0;
+    const verdict = await reviewMCP({
+      cwd: agent, model: { provider: "chat", id: "large", contextWindow: 1_000_000 },
+      sessionManager: { getBranch: () => [user("Update the complete summary")] },
+      modelRegistry: {
+        find: (provider, id) => ({ provider, id, contextWindow, maxTokens: 8192 }),
+        streamSimple(model, prompt) {
+          requests++;
+          assert.equal(model.id, "selected");
+          assert.ok(prompt.systemPrompt.length > 0);
+          assert.ok(prompt.messages[0].content[0].text.includes(JSON.stringify(summary)));
+          return { result: async () => ({ stopReason: "stop", content: [{ type: "text", text: JSON.stringify({
+            outcome: "allow", risk_level: "low", user_authorization: "high", rationale: "Requested",
+          }) }] }) };
+        },
+      },
+    }, "mcp__dahlia__update_meeting_summary", { summary }, "reviewer/selected");
+    assert.equal(requests, contextWindow === 1_000_000 ? 1 : 0);
+    assert.equal(verdict.outcome, requests ? "allow" : "deny");
+    if (!requests) {
+      assert.equal(verdict.risk, "unknown");
+      assert.match(verdict.reason, /context window budget/);
+    }
+  }
+});
+
+test("policy, history and output reservation count against the review budget", async () => {
+  let fullInputBytes;
+  const model = { provider: "test", id: "reviewer", contextWindow: 1_000_000, maxTokens: 8192 };
+  const ctx = {
+    cwd: agent, model,
+    sessionManager: { getBranch: () => [user("Update the title")] },
+    modelRegistry: {
+      find: () => model,
+      streamSimple(_model, prompt) {
+        fullInputBytes = Buffer.byteLength(JSON.stringify(prompt), "utf8");
+        return { result: async () => ({ stopReason: "stop", content: [{ type: "text", text: JSON.stringify({
+          outcome: "allow", risk_level: "low", user_authorization: "high", rationale: "Requested",
+        }) }] }) };
+      },
+    },
+  };
+  assert.equal((await reviewMCP(ctx, "mcp__dahlia__update_meeting", { title: "New title" })).outcome, "allow");
+  assert.ok(fullInputBytes > 0);
+  model.contextWindow = Math.floor((fullInputBytes + model.maxTokens - 1) / 0.95);
+  ctx.modelRegistry.streamSimple = () => assert.fail("an incomplete review must go to manual approval");
+  const verdict = await reviewMCP(ctx, "mcp__dahlia__update_meeting", { title: "New title" });
   assert.equal(verdict.risk, "unknown");
-  assert.equal(verdict.outcome, "deny");
+  assert.match(verdict.reason, /context window budget/);
 });
 
 test("review cancellation reaches the model and fails closed", { timeout: 1000 }, async () => {

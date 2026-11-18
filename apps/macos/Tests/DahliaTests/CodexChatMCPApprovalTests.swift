@@ -19,7 +19,7 @@ import Foundation
 
         @Test
         func largeSummaryUpdateArgumentsRemainCompleteAndReviewable() throws {
-            let summary = String(repeating: "summary line\n", count: 400)
+            let summary = String(repeating: "会議の要約と次のアクション\n", count: 1000)
             let request = try normalizedRequest(
                 tool: "update_meeting_summary",
                 arguments: .object(["summary": .string(summary)])
@@ -28,7 +28,7 @@ import Foundation
             let encodedArguments = try #require(request.mcpArguments)
             #expect(request.reviewability == .ready)
             #expect(request.canApprove)
-            #expect(encodedArguments.utf8.count > 4096)
+            #expect(encodedArguments.utf8.count > 20_000)
             let decodedArguments = try JSONDecoder().decode(JSONValue.self, from: Data(encodedArguments.utf8))
             #expect(decodedArguments.objectValue?["summary"]?.stringValue == summary)
         }
@@ -74,7 +74,7 @@ import Foundation
         func oversizedArgumentsAreBoundedAndFailClosed() throws {
             let request = try normalizedRequest(arguments: .object([
                 "description": .string(
-                    String(repeating: "a", count: CodexChatApprovalNormalizer.byteLimit * 2)
+                    String(repeating: "あ", count: CodexChatApprovalNormalizer.byteLimit / 3 + 1)
                 ),
             ]))
             let displayedBytes = [request.mcpServer, request.mcpTool, request.mcpArguments]
@@ -85,6 +85,27 @@ import Foundation
             #expect(request.reviewability == .tooLarge)
             #expect(!request.canApprove)
             #expect(request.actions == [.deny])
+        }
+
+        @Test
+        func mcpApprovalBudgetIncludesReasonAndMetadata() throws {
+            let server = "dahlia"
+            let tool = "update_meeting_summary"
+            let reason = "Review the complete summary"
+            let arguments = CodexChatApprovalNormalizer.boundedMCPToolCall(
+                server: server, tool: tool, arguments: .object(["summary": .string("")])
+            )
+            let overhead = try #require(arguments.arguments).utf8.count + server.utf8.count + tool.utf8.count + reason.utf8.count
+            let summary = String(repeating: "a", count: CodexChatApprovalNormalizer.byteLimit - overhead)
+            for extraBytes in [0, 1] {
+                let request = try normalizedRequest(
+                    params: ["reason": .string(reason)],
+                    server: server, tool: tool,
+                    arguments: .object(["summary": .string(summary + String(repeating: "b", count: extraBytes))])
+                )
+                #expect(request.reviewability == (extraBytes == 0 ? .ready : .tooLarge))
+                #expect(request.canApprove == (extraBytes == 0))
+            }
         }
 
         @Test

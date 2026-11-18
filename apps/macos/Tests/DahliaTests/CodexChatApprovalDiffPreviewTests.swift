@@ -29,6 +29,23 @@
         }
 
         @Test
+        func commandsAndFileChangesCanExceedTheFormerTwentyKilobyteLimit() throws {
+            let text = String(repeating: "長い本文\n", count: 3000) + "末尾"
+            #expect(text.utf8.count > 20_000)
+            let command = try CodexChatApprovalNormalizer.request(
+                id: "command", params: ["command": .string(text)], kind: .commandExecution, fileChanges: []
+            )
+            let file = try CodexChatApprovalNormalizer.request(
+                id: "file", params: [:], kind: .fileChange,
+                fileChanges: [.init(path: "summary.md", diff: text)]
+            )
+            #expect(command.canApprove)
+            #expect(command.command == text)
+            #expect(file.canApprove)
+            #expect(file.fileChanges.first?.diff == text)
+        }
+
+        @Test
         func oversizedCommandIsBoundedAndFailClosed() throws {
             let text = String(repeating: "a", count: CodexChatApprovalNormalizer.byteLimit * 2)
             let request = try CodexChatApprovalNormalizer.request(
@@ -48,7 +65,7 @@
 
         @Test
         func blankNormalizationOnlyExaminesBoundedApprovalText() throws {
-            let text = String(repeating: " ", count: CodexChatApprovalNormalizer.byteLimit * 100)
+            let text = String(repeating: " ", count: CodexChatApprovalNormalizer.byteLimit * 2)
                 + "command"
             let request = try CodexChatApprovalNormalizer.request(
                 id: "s:approval",
