@@ -5,6 +5,7 @@ enum SettingsCategory: String, CaseIterable, Identifiable {
     case accountsAndWorkspaces
     case accountPreferences
     case agents
+    case skills
     case workspacePreferences
     case macInference
     case general
@@ -43,6 +44,7 @@ enum SettingsCategory: String, CaseIterable, Identifiable {
         case .accountsAndWorkspaces: L10n.serverConnections
         case .accountPreferences: L10n.accountPreferences
         case .agents: L10n.agents
+        case .skills: L10n.agentSkills
         case .workspacePreferences: L10n.workspaceSettings
         case .macInference: L10n.macInferencePreferences
         case .general: L10n.general
@@ -76,6 +78,7 @@ enum SettingsCategory: String, CaseIterable, Identifiable {
         case .accountsAndWorkspaces: "brain"
         case .accountPreferences: "text.badge.star"
         case .agents: "sparkles"
+        case .skills: "book.closed"
         case .workspacePreferences: "globe"
         case .macInference: "sparkles"
         case .general: "gearshape"
@@ -156,6 +159,13 @@ enum SettingsCategory: String, CaseIterable, Identifiable {
             ]
                 + Self.accountPreferences.searchTerms + Self.macInference.searchTerms
                 + ["Gmail", "Google Calendar", "Google Drive", "Slack", "GitHub", "Atlassian", "Jira", "Confluence", "Microsoft 365"]
+        case .skills:
+            [
+                L10n.skillsTabManage, L10n.skillsTabReadOnly, L10n.agentSkillHistory, L10n.skillsTabCuration, L10n.agentSkillCurator,
+                L10n.agentCuratorInterval,
+                L10n.agentCuratorArchiveAfter, L10n.agentCuratorConsolidate, L10n.agentSkillReviewEnabled, L10n.agentArchivedSkills,
+                L10n.agentSkillLock, L10n.agentSkillPin, "Curator",
+            ]
         case .workspace:
             [L10n.workspace, L10n.generatedContentLanguage, L10n.summaryOutputLanguage]
         case .macInference:

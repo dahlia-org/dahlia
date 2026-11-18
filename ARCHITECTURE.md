@@ -236,8 +236,10 @@ DB初期化失敗は起動を止める。復元の失敗・一部失敗は利用
 
 Desktop Pi は、会話の run に起点と権限を保存し、Item を run に関連付ける。
 メモリーとスキルの変更記録はアカウント別の Mac 内 GRDB に置き、Server 同期・Workspace バックアップへ含めない。
-Hermes のふり返りは utility の独立した1本で動かし、録音中・非選択アカウントでは開始しない。
-時計はアプリが持ち、予定の実行は thread 起点と合わせて3本までの既存 queue を通す。
+Hermes のふり返りと Curator の統合パスは utility の独立した1本を共有し、録音中・非選択アカウントでは開始しない。
+時計はアプリの `Housekeeping`（1分刻み）が持ち、予定・ふり返り・Curator は各自の回数間隔で判定する。
+予定の実行は thread 起点と合わせて3本までの既存 queue を通す。
+無人実行の履歴は `agent_system_runs` に置き、chat_threads・検索索引・バックアップに入れず、30日で消す。
 予定ごとの結果 Thread は閲覧専用で、発火ごとに新規 Pi process を使う。
 [自己学習](docs/adr/desktop/pi-self-learning.md)・[定期実行](docs/adr/desktop/scheduled-agent-scope.md)を参照。
 

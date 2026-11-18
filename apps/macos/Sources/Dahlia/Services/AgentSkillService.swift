@@ -5,7 +5,7 @@ import GRDB
 /// The only app writer of account skills. One actor owns validation, ledger capture and replacement together.
 actor AgentSkillService {
     let dbQueue: DatabaseQueue
-    private var catalogs: [String: [String: URL]] = [:]
+    private(set) var catalogs: [String: [String: URL]] = [:]
     private var freshReads: [String: [String: String]] = [:]
     init(dbQueue: DatabaseQueue) { self.dbQueue = dbQueue }
 
@@ -17,13 +17,11 @@ actor AgentSkillService {
     }
 
     func locked(name: String, account: String) throws -> Bool {
-        try dbQueue.read {
-            try Bool.fetchOne(
-                $0,
-                sql: "SELECT locked FROM agent_skill_states WHERE accountID=? AND name=?",
-                arguments: [account, name]
-            ) ?? false
-        }
+        try dbQueue.read { try Self.locked($0, name: name, account: account) }
+    }
+
+    static func locked(_ db: Database, name: String, account: String) throws -> Bool {
+        try Bool.fetchOne(db, sql: "SELECT locked FROM agent_skill_states WHERE accountID=? AND name=?", arguments: [account, name]) ?? false
     }
 
     func setLocked(name: String, account: String, locked: Bool) throws {
@@ -42,6 +40,7 @@ actor AgentSkillService {
         root: URL,
         thread: String?,
         review: String? = nil,
+        curator: Bool = false,
         authorize: @Sendable (Database) throws -> Void = { _ in }
     ) throws -> JSONValue {
         let args = payload.objectValue ?? [:]
@@ -70,6 +69,9 @@ actor AgentSkillService {
             let url = try path == "SKILL.md" ? file : Self.file(path, root: file.deletingLastPathComponent())
             let text = try Self.read(url, root: file.deletingLastPathComponent())
             if let review { freshReads[review, default: [:]][name + "/" + path] = text }
+            // Upstream counts a view as use too. The Curator's own reads are not evidence of use: they would
+            // restart the clock of every skill its consolidation pass inspects.
+            if !curator { try recordUsage(name: name, account: account, columns: ["viewCount", "useCount"]) }
             return try .object([
                 "success": .bool(true), "name": .string(name), "description": .string(Self.description(text) ?? ""),
                 "content": .string(text), "path": .string(url.path), "skill_dir": .string(file.deletingLastPathComponent().path),
@@ -79,7 +81,9 @@ actor AgentSkillService {
                 ),
             ])
         case "skill_manage":
-            return try mutate(args, catalog: catalog, account: account, root: root, thread: thread, review: review, authorize: authorize)
+            return try mutate(
+                args, catalog: catalog, account: account, root: root, thread: thread, review: review, curator: curator, authorize: authorize
+            )
         default: throw HermesLearning.failure("Unknown skill tool.")
         }
     }
@@ -91,6 +95,7 @@ actor AgentSkillService {
         root: URL,
         thread: String?,
         review: String?,
+        curator: Bool,
         authorize: @Sendable (Database) throws -> Void
     ) throws -> JSONValue {
         guard let operations = args["operations"]?.arrayValue,
@@ -130,15 +135,13 @@ actor AgentSkillService {
                     else { throw HermesLearning.failure("Read the current target file with skill_view during this review before changing it.") }
                 }
                 if action == "delete" {
-                    let owner = try dbQueue.read {
-                        try String.fetchOne(
-                            $0,
-                            sql: "SELECT createdBy FROM agent_skill_states WHERE accountID=? AND name=?",
-                            arguments: [account, name]
-                        )
-                    }
-                    guard owner == "agent" else { throw HermesLearning.failure("Autonomous deletion is limited to agent-created skills.") }
+                    try backgroundDeleteGuard(name: name, absorbedInto: op["absorbed_into"]?.stringValue, account: account, catalog: catalog)
                 }
+            }
+            if action == "delete", try isPinned(name: name, account: account) {
+                throw HermesLearning.failure(
+                    "Skill '\(name)' is pinned and cannot be deleted by skill_manage. Ask the user to unpin it in Settings if they want to delete it. Patches and edits are allowed on pinned skills; only deletion is blocked."
+                )
             }
             try Self.apply(op, action: action, path: path, files: &files)
             try Self.validate(files, name: name)
@@ -150,6 +153,28 @@ actor AgentSkillService {
             let current = FileManager.default.fileExists(atPath: directory.path) ? try Self.package(directory) : nil
             guard current == original else { throw HermesLearning.failure("Skill changed while editing. Read it again and retry.") }
         }
+        // Autonomous deletes stay recoverable: upstream archives them instead of removing the package.
+        if review != nil, let name = working.first(where: { $0.value.isEmpty })?.key {
+            try archive(
+                name: name, account: account, root: root, source: curator ? "curator" : "review", thread: thread, review: review,
+                authorize: authorize
+            )
+            let target = operations.first?.objectValue?["absorbed_into"]?.stringValue ?? ""
+            return .object(["success": .bool(true), "message": .string("Skill '\(name)' archived. Content absorbed into '\(target)'.")])
+        }
+        return try save(working, before: before, account: account, root: root, thread: thread, review: review, curator: curator, authorize: authorize)
+    }
+
+    private func save(
+        _ working: [String: [String: Data]],
+        before: [String: AgentSkillSnapshot?],
+        account: String,
+        root: URL,
+        thread: String?,
+        review: String?,
+        curator: Bool,
+        authorize: @Sendable (Database) throws -> Void
+    ) throws -> JSONValue {
         var replaced: [String] = []
         do {
             try dbQueue.write { db in
@@ -157,6 +182,7 @@ actor AgentSkillService {
                 for name in working.keys.sorted() {
                     let files = working[name]!
                     let original = before[name].flatMap(\.self)
+                    if curator { try Self.authorizeCuration(db, name: name, account: account, creating: original == nil) }
                     let updated = AgentSkillSnapshot(
                         files: files,
                         modes: Dictionary(uniqueKeysWithValues: files.keys.map { ($0, original?.modes[$0] ?? 0o644) })
@@ -166,14 +192,22 @@ actor AgentSkillService {
                     let change = try AgentLearningChangeRecord(
                         id: .v7(), accountID: account, kind: "skill", target: name,
                         before: original.map(HermesLearning.json), after: files.isEmpty ? nil : HermesLearning.json(updated), status: "applied",
-                        source: review == nil ? "interactive" : "review", threadID: thread, reviewID: review, createdAt: .now
+                        source: curator ? "curator" : review == nil ? "interactive" : "review", threadID: thread, reviewID: review,
+                        createdAt: .now
                     )
                     try change.insert(db)
                     if original == nil {
-                        try db.execute(
-                            sql: "INSERT OR IGNORE INTO agent_skill_states(accountID,name,createdBy,locked) VALUES(?,?,'agent',0)",
-                            arguments: [account, name]
-                        )
+                        // A create starts a new record. Only background passes hand a skill to the Curator.
+                        try db.execute(sql: """
+                        INSERT INTO agent_skill_states(accountID,name,createdBy,locked,createdAt) VALUES(?,?,?,0,?)
+                        ON CONFLICT(accountID,name) DO UPDATE SET createdBy=excluded.createdBy,createdAt=excluded.createdAt,
+                        useCount=0,viewCount=0,patchCount=0,lastUsedAt=NULL,lastViewedAt=NULL,lastPatchedAt=NULL,
+                        state='active',pinned=0,archivedAt=NULL
+                        """, arguments: [account, name, review == nil ? "learn" : "agent", Date()])
+                    } else if files.isEmpty {
+                        try db.execute(sql: "DELETE FROM agent_skill_states WHERE accountID=? AND name=?", arguments: [account, name])
+                    } else {
+                        try Self.recordUsage(db, name: name, account: account, columns: ["patchCount"])
                     }
                 }
             }
@@ -219,14 +253,11 @@ actor AgentSkillService {
     }
 
     func undo(id: UUID, account: String, root: URL) throws {
-        let changeName = try dbQueue.read {
-            try AgentLearningChangeRecord.fetchOne($0, key: id)?.target
-        }
-        if let changeName, try locked(name: changeName, account: account) { throw HermesLearning.failure("Skill is locked.") }
         try dbQueue.write { db in
             guard var change = try AgentLearningChangeRecord.fetchOne(db, key: id), change.accountID == account,
                   change.kind == "skill", change.status == "applied",
                   Self.validName(change.target) else { throw HermesLearning.failure("Change not found.") }
+            guard try !Self.locked(db, name: change.target, account: account) else { throw HermesLearning.failure("Skill is locked.") }
             let directory = root.appending(path: change.target)
             let current = FileManager.default.fileExists(atPath: directory.path) ? try Self.package(directory) : AgentSkillSnapshot()
             let expected = try change.after.map {
@@ -239,6 +270,12 @@ actor AgentSkillService {
             try Self.validate(original.files, name: change.target)
             do {
                 try Self.replace(original, at: directory)
+                if change.after == nil, !original.files.isEmpty {
+                    try db.execute(
+                        sql: "UPDATE agent_skill_states SET state='active',archivedAt=NULL WHERE accountID=? AND name=?",
+                        arguments: [account, change.target]
+                    )
+                }
                 change.status = "reverted"
                 try change.update(db)
             } catch {
@@ -249,7 +286,7 @@ actor AgentSkillService {
     }
 
     func finishReview(_ id: String) { freshReads[id] = nil }
-    private static func validName(_ value: String) -> Bool {
+    static func validName(_ value: String) -> Bool {
         value.count <= 64 && value.range(of: "^[a-z0-9][a-z0-9._-]*$", options: .regularExpression) != nil && value != "." && value != ".."
     }
 
@@ -293,7 +330,7 @@ actor AgentSkillService {
         return groups
     }
 
-    private static func package(_ directory: URL) throws -> AgentSkillSnapshot {
+    static func package(_ directory: URL) throws -> AgentSkillSnapshot {
         guard PiSandbox.realPath(directory) == directory.path else { throw HermesLearning.failure("Symbolic skill directories are unsupported.") }
         let urls = FileManager.default.enumerator(at: directory, includingPropertiesForKeys: [.isSymbolicLinkKey, .isRegularFileKey])
         var result = AgentSkillSnapshot()

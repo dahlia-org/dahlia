@@ -9,7 +9,7 @@ import Foundation
     struct SettingsCategoryTests {
         @Test
         func accountAndWorkspacePreferencesHaveSeparateDestinations() {
-            #expect(SettingsGroup.features.categories == [.workspace, .meetings, .agents, .dahliaMCP, .calendar, .meetingLinks])
+            #expect(SettingsGroup.features.categories == [.workspace, .meetings, .agents, .skills, .dahliaMCP, .calendar, .meetingLinks])
             // Calendar groups account sources and Mac-wide filters; menu bar presentation stays in Appearance.
             #expect(SettingsGroup.app.categories.contains(.appearance))
             #expect(SettingsNavigation.visibleSelection(.meetingLinks) == .meetingLinks)

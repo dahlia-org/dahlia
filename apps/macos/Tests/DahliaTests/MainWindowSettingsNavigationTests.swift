@@ -109,9 +109,9 @@
             navigation.openSettings(category: .aiSummary)
             #expect(navigation.agentSettingsTab == .models)
 
-            navigation.agentSettingsTab = .skills
+            navigation.agentSettingsTab = .memory
             navigation.openSettings()
-            #expect(navigation.agentSettingsTab == .skills)
+            #expect(navigation.agentSettingsTab == .memory)
         }
 
         @Test
@@ -155,7 +155,7 @@
                 #expect(navigation.settingsCategory == .agents)
                 #expect(navigation.agentSettingsTab == .models)
             }
-            #expect(AgentSettingsView.Tab.allCases == [.general, .models, .mcps, .skills, .memory, .schedules, .packages, .security])
+            #expect(AgentSettingsView.Tab.allCases == [.general, .models, .mcps, .memory, .optimization, .schedules, .packages, .security])
         }
 
         @Test

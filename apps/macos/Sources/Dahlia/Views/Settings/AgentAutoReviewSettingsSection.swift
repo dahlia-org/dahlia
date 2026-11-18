@@ -6,8 +6,6 @@ struct AgentAutoReviewSettingsSection: View {
     @AppStorage private var triageEnabled: Bool
     @State private var isTriageUnavailable = false
     @State private var isCheckingTriage = false
-    @State private var isTriageInfoPresented = false
-    @State private var isReviewerInfoPresented = false
     @State private var models: [CodexModel] = []
     @State private var isLoading = false
     @State private var errorMessage: String?
@@ -34,7 +32,7 @@ struct AgentAutoReviewSettingsSection: View {
             } label: {
                 HStack {
                     Text(L10n.autoReviewModel)
-                    infoButton(L10n.autoReviewModelHelp, isPresented: $isReviewerInfoPresented)
+                    SettingsInfoButton(help: L10n.autoReviewModelHelp)
                 }
             }
             LabeledContent {
@@ -45,7 +43,7 @@ struct AgentAutoReviewSettingsSection: View {
             } label: {
                 HStack {
                     Text(L10n.autoReviewTriage)
-                    infoButton(L10n.autoReviewTriageHelp, isPresented: $isTriageInfoPresented)
+                    SettingsInfoButton(help: L10n.autoReviewTriageHelp)
                 }
             }
             if isTriageUnavailable {
@@ -68,24 +66,6 @@ struct AgentAutoReviewSettingsSection: View {
         .task { await loadModels() }
         .onReceive(NotificationCenter.default.publisher(for: PiRuntimeService.modelsDidChange)) { _ in
             Task { await loadModels() }
-        }
-    }
-
-    private func infoButton(_ help: String, isPresented: Binding<Bool>) -> some View {
-        Button { isPresented.wrappedValue.toggle() } label: {
-            Image(systemName: "info.circle")
-                .dahliaFixedSymbol()
-                .foregroundStyle(DahliaDesign.secondaryTextColor)
-        }
-        .buttonStyle(.borderless)
-        .help(help)
-        .accessibilityLabel(help)
-        .popover(isPresented: isPresented) {
-            Text(help)
-                .font(.dahliaBody)
-                .padding(12)
-                .frame(idealWidth: 320)
-                .fixedSize(horizontal: false, vertical: true)
         }
     }
 

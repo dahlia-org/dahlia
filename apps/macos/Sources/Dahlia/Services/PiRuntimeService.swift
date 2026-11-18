@@ -97,9 +97,12 @@ actor PiRuntimeService {
             throw AIConfigurationError.providerChanged(provider.displayName)
         }
         if options.profile == .review {
-            guard AgentLearningSettings.reviewEnabled(provider.accountKey), !AgentBackgroundActivity.isRecording,
-                  options.environment["DAHLIA_PI_MEMORY_ENABLED"] != "1" || AgentLearningSettings.memoryEnabled(provider.accountKey)
-            else { throw CancellationError() }
+            let account = provider.accountKey
+            let allowed = options.environment["DAHLIA_PI_CURATOR"] == "1"
+                ? SkillCuratorSettings.enabled(account) && SkillCuratorSettings.consolidate(account)
+                : AgentLearningSettings.reviewEnabled(account)
+                && (options.environment["DAHLIA_PI_MEMORY_ENABLED"] != "1" || AgentLearningSettings.memoryReviewEnabled(account))
+            guard allowed, !AgentBackgroundActivity.isRecording else { throw CancellationError() }
         }
         let agentURL = try agentLocator.agentURL(for: provider)
         let transport = try launcher(options, provider, agentURL)

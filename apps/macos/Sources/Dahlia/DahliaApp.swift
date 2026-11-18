@@ -419,7 +419,11 @@ struct DahliaApp: App {
         } catch {
             ErrorReportingService.capture(error, context: ["source": "chatHistoryStartup"])
         }
-        await PiChatService.shared.startLearningWorker()
+        await Housekeeping.shared.start([
+            .init(name: "agentLearning", everyTicks: 1) { await PiChatService.shared.drainLearningWork() },
+            .init(name: "skillCurator", everyTicks: 60, firstTick: 2) { await PiChatService.shared.maybeRunCurator() },
+            .init(name: "systemRunRetention", everyTicks: 24 * 60, firstTick: 2) { await PiChatService.shared.pruneSystemRuns() },
+        ])
         await PiChatService.shared.configureBackup(dbQueue: db.dbQueue)
         await ScreenshotContentProvider.shared.configure(dbQueue: db.dbQueue)
         await CodexRuntimeContextCoordinator.shared.configure(dbQueue: db.dbQueue)

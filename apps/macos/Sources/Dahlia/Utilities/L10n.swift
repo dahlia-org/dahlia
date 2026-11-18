@@ -9,7 +9,85 @@ enum L10n { // swiftlint:disable:this type_body_length
     static var agentMemory: String { String(localized: "settings.agents.learning.agentMemory", bundle: bundle) }
     static var agentSchedules: String { String(localized: "settings.agents.learning.agentSchedules", bundle: bundle) }
     static var agentMemoryEnabled: String { String(localized: "settings.agents.learning.agentMemoryEnabled", bundle: bundle) }
-    static var agentLearningEnabled: String { String(localized: "settings.agents.learning.agentLearningEnabled", bundle: bundle) }
+    static var skillsTabReadOnly: String { String(localized: "settings.skills.skillsTabReadOnly", bundle: bundle) }
+    static var agentSkillHistory: String { String(localized: "settings.skills.agentSkillHistory", bundle: bundle) }
+    static var agentSkillArchived: String { String(localized: "settings.skills.agentSkillArchived", bundle: bundle) }
+    static var agentSkillUnavailable: String { String(localized: "settings.skills.agentSkillUnavailable", bundle: bundle) }
+    static var skillsTabManage: String { String(localized: "settings.skills.skillsTabManage", bundle: bundle) }
+    static var skillsTabCuration: String { String(localized: "settings.skills.skillsTabCuration", bundle: bundle) }
+    static var settingsSkillsIntro: String { String(localized: "settings.skills.settingsSkillsIntro", bundle: bundle) }
+    static var agentAutoOptimization: String { String(localized: "settings.agents.optimization.agentAutoOptimization", bundle: bundle) }
+    static var agentSkillCurator: String { String(localized: "settings.agents.optimization.agentSkillCurator", bundle: bundle) }
+    static var agentSkillCuratorHelp: String { String(localized: "settings.agents.optimization.agentSkillCuratorHelp", bundle: bundle) }
+    static var agentCuratorInterval: String { String(localized: "settings.agents.optimization.agentCuratorInterval", bundle: bundle) }
+    static var agentCuratorArchiveAfter: String { String(localized: "settings.agents.optimization.agentCuratorArchiveAfter", bundle: bundle) }
+    static var agentCuratorModel: String { String(localized: "settings.agents.optimization.agentCuratorModel", bundle: bundle) }
+    static var agentCuratorModelAuto: String { String(localized: "settings.agents.optimization.agentCuratorModelAuto", bundle: bundle) }
+    static var agentCuratorModelHelp: String { String(localized: "settings.agents.optimization.agentCuratorModelHelp", bundle: bundle) }
+    static var agentCuratorEffort: String { String(localized: "settings.agents.optimization.agentCuratorEffort", bundle: bundle) }
+    static var agentCuratorEffortDefault: String { String(localized: "settings.agents.optimization.agentCuratorEffortDefault", bundle: bundle) }
+    static var agentCuratorEffortHelp: String { String(localized: "settings.agents.optimization.agentCuratorEffortHelp", bundle: bundle) }
+    static var agentCuratorConsolidate: String { String(localized: "settings.agents.optimization.agentCuratorConsolidate", bundle: bundle) }
+    static var agentCuratorConsolidateHelp: String { String(localized: "settings.agents.optimization.agentCuratorConsolidateHelp", bundle: bundle) }
+    static var agentSkillReviewEnabled: String { String(localized: "settings.agents.optimization.agentSkillReviewEnabled", bundle: bundle) }
+    static var agentMemoryReviewEnabled: String { String(localized: "settings.agents.optimization.agentMemoryReviewEnabled", bundle: bundle) }
+    static var agentMemoryReviewHelp: String { String(localized: "settings.agents.optimization.agentMemoryReviewHelp", bundle: bundle) }
+    static var agentArchivedSkills: String { String(localized: "settings.agents.optimization.agentArchivedSkills", bundle: bundle) }
+    static var agentSkillRestore: String { String(localized: "settings.agents.optimization.agentSkillRestore", bundle: bundle) }
+    static var agentSystemRuns: String { String(localized: "settings.agents.optimization.agentSystemRuns", bundle: bundle) }
+    static var agentSystemRunsEmpty: String { String(localized: "settings.agents.optimization.agentSystemRunsEmpty", bundle: bundle) }
+    static var agentSystemRunsMore: String { String(localized: "settings.agents.optimization.agentSystemRunsMore", bundle: bundle) }
+    static var agentSystemRunsReport: String { String(localized: "settings.agents.optimization.agentSystemRunsReport", bundle: bundle) }
+    static var agentSystemTaskCurator: String { String(localized: "settings.agents.optimization.agentSystemTaskCurator", bundle: bundle) }
+    static var agentSystemTaskReview: String { String(localized: "settings.agents.optimization.agentSystemTaskReview", bundle: bundle) }
+    static var agentSystemRunCompleted: String { String(localized: "settings.agents.optimization.agentSystemRunCompleted", bundle: bundle) }
+    static var agentSystemRunFailed: String { String(localized: "settings.agents.optimization.agentSystemRunFailed", bundle: bundle) }
+    static var agentSystemRunInterrupted: String { String(localized: "settings.agents.optimization.agentSystemRunInterrupted", bundle: bundle) }
+    static var agentSystemRunCancelled: String { String(localized: "settings.agents.optimization.agentSystemRunCancelled", bundle: bundle) }
+    static var agentSystemRunSeeded: String { String(localized: "settings.agents.optimization.agentSystemRunSeeded", bundle: bundle) }
+    static var agentSystemRunRunning: String { String(localized: "settings.agents.optimization.agentSystemRunRunning", bundle: bundle) }
+    static var agentCuratorSeeded: String { String(localized: "settings.agents.optimization.agentCuratorSeeded", bundle: bundle) }
+    static var agentCuratorConsolidationOff: String { String(localized: "settings.agents.optimization.agentCuratorConsolidationOff", bundle: bundle) }
+    static var agentCuratorNoCandidates: String { String(localized: "settings.agents.optimization.agentCuratorNoCandidates", bundle: bundle) }
+    static var agentCuratorNoChange: String { String(localized: "settings.agents.optimization.agentCuratorNoChange", bundle: bundle) }
+    static var agentSkillPin: String { String(localized: "settings.agents.optimization.agentSkillPin", bundle: bundle) }
+    static var agentSkillPinHelp: String { String(localized: "settings.agents.optimization.agentSkillPinHelp", bundle: bundle) }
+    static var agentSkillProvenanceBundled: String { String(localized: "settings.agents.optimization.agentSkillProvenanceBundled", bundle: bundle) }
+    static var agentSkillProvenancePackage: String { String(localized: "settings.agents.optimization.agentSkillProvenancePackage", bundle: bundle) }
+    static var agentSkillProvenanceUser: String { String(localized: "settings.agents.optimization.agentSkillProvenanceUser", bundle: bundle) }
+    static var agentSkillProvenanceCurated: String { String(localized: "settings.agents.optimization.agentSkillProvenanceCurated", bundle: bundle) }
+    static var agentSkillProvenanceStale: String { String(localized: "settings.agents.optimization.agentSkillProvenanceStale", bundle: bundle) }
+    static var agentReviewKindMemory: String { String(localized: "settings.agents.optimization.agentReviewKindMemory", bundle: bundle) }
+    static var agentReviewKindSkill: String { String(localized: "settings.agents.optimization.agentReviewKindSkill", bundle: bundle) }
+    static var agentReviewKindCombined: String { String(localized: "settings.agents.optimization.agentReviewKindCombined", bundle: bundle) }
+    static func agentCuratorIntervalDays(_ days: Int) -> String {
+        String(format: String(localized: "settings.agents.optimization.agentCuratorIntervalDays", bundle: bundle), locale: .current, days)
+    }
+
+    static func agentCuratorDays(_ days: Int) -> String {
+        String(format: String(localized: "settings.agents.optimization.agentCuratorDays", bundle: bundle), locale: .current, days)
+    }
+
+    static func agentCuratorAutoSummary(archived: Int, stale: Int, reactivated: Int) -> String {
+        String(
+            format: String(localized: "settings.agents.optimization.agentCuratorAutoSummary", bundle: bundle),
+            locale: .current,
+            archived,
+            stale,
+            reactivated
+        )
+    }
+
+    static func agentSystemRunReviewSummary(kind: String, changes: Int) -> String {
+        let label = kind == "memory" ? agentReviewKindMemory : kind == "skill" ? agentReviewKindSkill : agentReviewKindCombined
+        return String(
+            format: String(localized: "settings.agents.optimization.agentSystemRunReviewSummary", bundle: bundle),
+            locale: .current,
+            label,
+            changes
+        )
+    }
+
     static var agentLearningDefaultHelp: String { String(localized: "settings.agents.learning.agentLearningDefaultHelp", bundle: bundle) }
     static var agentMemoryUser: String { String(localized: "settings.agents.learning.agentMemoryUser", bundle: bundle) }
     static var agentMemoryEnvironment: String { String(localized: "settings.agents.learning.agentMemoryEnvironment", bundle: bundle) }

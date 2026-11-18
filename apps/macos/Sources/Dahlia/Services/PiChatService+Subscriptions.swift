@@ -149,6 +149,7 @@ extension PiChatService {
 
     func stopAccountRuns(except accountID: String) async {
         if let activeReview, activeReview.account != accountID { await runtime.close(activeReview.connection) }
+        if let activeCurator, activeCurator.account != accountID { await runtime.close(activeCurator.connection) }
         let persisted = (try? history().activeRunAccounts()) ?? []
         let accounts = Set(sessions.values.map(\.provider.accountKey) + persisted).subtracting([accountID])
         stoppingAccounts.formUnion(accounts)

@@ -18,6 +18,7 @@ extension PiChatService {
     func enqueueLearningReview(_ run: ChatRunRecord, account: String) {
         do {
             try enqueueReview(run, account: account)
+            Task { await self.drainLearningWork() }
         } catch {
             ErrorReportingService.capture(error, context: ["source": "agentReviewEnqueue"])
         }
@@ -168,8 +169,8 @@ extension PiChatService {
         guard AgentLearningSettings.reviewEnabled(account), run.origin == "user" else { return }
         let store = try history()
         let thread = try store.thread(id: run.threadID, accountID: account)
-        let memory = AgentLearningSettings.memoryEnabled(account) && thread.memoryTurns >= 10
-        let skills = thread.skillIterations >= 10
+        let memory = AgentLearningSettings.memoryReviewEnabled(account) && thread.memoryTurns >= 10
+        let skills = AgentLearningSettings.skillReviewEnabled(account) && thread.skillIterations >= 10
         guard memory || skills else { return }
         let kind = memory && skills ? "combined" : memory ? "memory" : "skill"
         let session = sessions[run.threadID]
@@ -226,24 +227,24 @@ extension PiChatService {
         }
     }
 
-    func startLearningWorker() {
-        guard learningWorker == nil else { return }
-        learningWorker = Task(priority: .utility) { [weak self] in
-            while !Task.isCancelled {
-                await self?.drainLearningWork()
-                try? await Task.sleep(for: .seconds(30))
-            }
-        }
+    /// The kind a queued review still has after the account's switches, or nil when nothing of it remains.
+    nonisolated static func effectiveReviewKind(_ kind: String, account: String) -> String? {
+        let memory = kind != "skill" && AgentLearningSettings.memoryReviewEnabled(account)
+        let skills = kind != "memory" && AgentLearningSettings.skillReviewEnabled(account)
+        return memory && skills ? "combined" : memory ? "memory" : skills ? "skill" : nil
     }
 
     func drainLearningWork() async {
         do {
             let provider = try await runtime.currentProvider()
             let account = provider.accountKey
-            if let activeReview,
-               activeReview.account != account || !AgentLearningSettings.reviewEnabled(activeReview.account) || AgentBackgroundActivity.isRecording ||
-               (activeReview.includesMemory && !AgentLearningSettings.memoryEnabled(activeReview.account)) {
+            if let activeReview, activeReview.account != account || AgentBackgroundActivity.isRecording ||
+                Self.effectiveReviewKind(activeReview.kind, account: activeReview.account) != activeReview.kind {
                 await runtime.close(activeReview.connection)
+            }
+            if let activeCurator, activeCurator.account != account || AgentBackgroundActivity.isRecording ||
+                !SkillCuratorSettings.enabled(account) || !SkillCuratorSettings.consolidate(account) {
+                await runtime.close(activeCurator.connection)
             }
             try await history().dbQueue.write { db in
                 try db.execute(
@@ -258,7 +259,8 @@ extension PiChatService {
             guard !AgentBackgroundActivity.isRecording else { return }
             try scheduleService().tick(account: account)
             await scheduleRuns(accountID: account)
-            guard reviewTask == nil, AgentLearningSettings.reviewEnabled(account) else { return }
+            // Reviews and the Curator's consolidation share one background lane.
+            guard reviewTask == nil, curatorTask == nil, AgentLearningSettings.reviewEnabled(account) else { return }
             if let job = try await history().dbQueue.read({
                 try AgentReviewRecord.fetchOne(
                     $0,
@@ -279,12 +281,11 @@ extension PiChatService {
         do {
             guard !AgentBackgroundActivity.isRecording, AgentLearningSettings.reviewEnabled(job.accountID),
                   try await runtime.currentProvider() == provider else { return }
-            let memoryEnabled = AgentLearningSettings.memoryEnabled(job.accountID)
-            if job.kind == "memory", !memoryEnabled {
+            guard let kind = Self.effectiveReviewKind(job.kind, account: job.accountID) else {
                 try finishReview(job, status: "cancelled")
                 return
             }
-            let kind = !memoryEnabled && job.kind == "combined" ? "skill" : job.kind
+            let memoryEnabled = kind != "skill"
             let snapshot = try JSONDecoder().decode(ReviewSnapshot.self, from: Data(job.snapshot.utf8))
             let work = try agentLocator.agentURL(for: provider)
             var environment = snapshot.environment
@@ -304,7 +305,7 @@ extension PiChatService {
                 guard let self else { throw CancellationError() }
                 return try await self.reviewTool(method, payload: payload, job: job, provider: provider)
             }
-            activeReview = (job.id, job.accountID, connection, kind != "skill")
+            activeReview = (job.id, job.accountID, connection, kind)
             let timeout = Task { try? await Task.sleep(for: .seconds(600))
                 if !Task.isCancelled { await self.runtime.close(connection) }
             }
@@ -323,15 +324,14 @@ extension PiChatService {
                     "\n\nYou can only call " + (kind == "skill" ? "skill " : "memory and skill ") +
                     "management tools. Other tools will be denied at runtime — do not attempt them.\n\n<conversation_snapshot>\n" +
                     snapshot.conversation + "\n</conversation_snapshot>"
-                guard activeReview?.id == job.id, AgentLearningSettings.reviewEnabled(job.accountID),
+                guard activeReview?.id == job.id, Self.effectiveReviewKind(kind, account: job.accountID) == kind,
                       !AgentBackgroundActivity.isRecording,
-                      kind == "skill" || AgentLearningSettings.memoryEnabled(job.accountID),
                       try await runtime.currentProvider() == provider else { throw CancellationError() }
                 _ = try await connection.request("prompt", PiRuntimeService.prompt([.text(prompt)]))
                 var iterations = 0
                 var inputTokens = 0.0
                 for try await event in connection.events {
-                    guard AgentLearningSettings.reviewEnabled(job.accountID), !AgentBackgroundActivity.isRecording,
+                    guard Self.effectiveReviewKind(kind, account: job.accountID) == kind, !AgentBackgroundActivity.isRecording,
                           try await runtime.currentProvider() == provider else { throw CancellationError() }
                     if event.objectValue?["type"]?.stringValue == "message_end", let message = event.objectValue?["message"]?.objectValue,
                        message["role"]?.stringValue == "assistant" {
@@ -357,11 +357,12 @@ extension PiChatService {
     }
 
     private func reviewTool(_ method: String, payload: JSONValue, job: AgentReviewRecord, provider: CodexRuntimeProvider) async throws -> JSONValue {
-        guard activeReview?.id == job.id, AgentLearningSettings.reviewEnabled(job.accountID), !AgentBackgroundActivity.isRecording,
+        guard let active = activeReview, active.id == job.id, !AgentBackgroundActivity.isRecording,
               try await runtime.currentProvider() == provider, PiExecutionProfile.review.allows(method) else { throw CancellationError() }
         if method == "memory" {
-            guard job.kind != "skill",
-                  AgentLearningSettings.memoryEnabled(job.accountID) else { throw HermesLearning.failure("Memory is unavailable for this review.") }
+            guard active.kind != "skill",
+                  AgentLearningSettings.memoryReviewEnabled(job.accountID)
+            else { throw HermesLearning.failure("Memory is unavailable for this review.") }
             return try memoryService().execute(
                 payload,
                 account: job.accountID,
@@ -370,6 +371,8 @@ extension PiChatService {
                 authorize: Self.reviewAuthorization(job, provider: provider, runtime: runtime, requiresMemory: true)
             )
         }
+        guard active.kind != "memory",
+              AgentLearningSettings.skillReviewEnabled(job.accountID) else { throw HermesLearning.failure("Skills are unavailable for this review.") }
         let service = try skillService()
         try await service.setCatalog(runtime.skills(for: provider), account: job.accountID)
         return try await service.execute(
@@ -388,10 +391,9 @@ extension PiChatService {
     ) -> @Sendable (Database) throws -> Void {
         { db in
             try Task.checkCancellation()
-            guard runtime.isSelectedProvider(provider), AgentLearningSettings.reviewEnabled(job.accountID),
-                  !AgentBackgroundActivity.isRecording,
+            guard runtime.isSelectedProvider(provider), !AgentBackgroundActivity.isRecording,
+                  requiresMemory ? AgentLearningSettings.memoryReviewEnabled(job.accountID) : AgentLearningSettings.skillReviewEnabled(job.accountID),
                   try AgentReviewRecord.fetchOne(db, key: job.id)?.status == "running" else { throw CancellationError() }
-            if requiresMemory, !AgentLearningSettings.memoryEnabled(job.accountID) { throw CancellationError() }
         }
     }
 
@@ -416,6 +418,12 @@ extension PiChatService {
                 try db.execute(sql: "UPDATE agent_reviews SET notified=1 WHERE id=?", arguments: [job.id])
             }
             try db.execute(sql: "UPDATE agent_reviews SET status=?,snapshot='' WHERE id=?", arguments: [status, job.id])
+            let changes = try Int.fetchOne(db, sql: "SELECT COUNT(*) FROM agent_learning_changes WHERE reviewID=?", arguments: [job.id]) ?? 0
+            try AgentSystemRunRecord(
+                id: UUID.v7().uuidString, accountID: job.accountID, task: "review", status: status,
+                summary: L10n.agentSystemRunReviewSummary(kind: job.kind, changes: changes), report: "",
+                startedAt: job.createdAt, finishedAt: .now
+            ).insert(db)
             try db.execute(sql: "DELETE FROM jobs_background WHERE indexKind='review' AND targetKey=?", arguments: [job.id])
             return hasChanges && !notified
         }

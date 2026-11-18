@@ -49,8 +49,11 @@ enum PiBundle {
         return url
     }
 
+    /// Dahlia's bundled skills. Like upstream's `.bundled_manifest`, the Curator never archives or consolidates them.
+    nonisolated static let presetSkillNames = ["projects-optimizer", "meeting-reviewer", "workspace-backup", "skill-creator"]
+
     nonisolated static func presetSkillURLs() -> [URL] {
-        ["projects-optimizer", "meeting-reviewer", "workspace-backup", "skill-creator"].compactMap {
+        presetSkillNames.compactMap {
             Bundle.appModule.url(forResource: $0, withExtension: nil, subdirectory: "AgentSkills")
         }
     }
