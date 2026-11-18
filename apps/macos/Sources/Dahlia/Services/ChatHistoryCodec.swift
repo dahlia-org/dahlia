@@ -57,7 +57,9 @@ enum ChatHistoryCodec {
                 let activity = CodexChatToolActivity(
                     name: String((data["name"]?.stringValue ?? "tool").prefix(128)), status: status,
                     callID: data["callID"]?.stringValue,
-                    detail: CodexChatToolActivity.displayDetail(data["arguments"])
+                    detail: CodexChatToolActivity.displayDetail(data["arguments"]),
+                    input: CodexChatToolActivity.displayInput(data["arguments"]),
+                    output: CodexChatToolActivity.displayOutput(data["result"])
                 )
                 if let index = messages.indices.last, messages[index].role == .assistant, messages[index].runID == item.runID {
                     messages[index].recordToolActivity(activity)
@@ -74,7 +76,8 @@ enum ChatHistoryCodec {
                     id: item.id, role: .notice(.info), text: notification.text, threadResults: notification.results, runID: item.runID
                 ))
             case "message":
-                if let previousID = records.last?["id"]?.stringValue, runIDs[previousID] != item.runID { flush() }
+                // Canonical items retain their response boundaries, IDs, and completion timestamps.
+                flush()
                 runIDs[item.id] = item.runID
                 if data["deliveryMode"]?.stringValue == "steer" { steeredIDs.insert(item.id) }
                 var blocks: [JSONValue] = [.object(["type": .string("text"), "text": data["content"] ?? .string("")])]

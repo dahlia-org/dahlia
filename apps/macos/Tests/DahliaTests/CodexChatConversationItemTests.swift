@@ -359,5 +359,89 @@ import Foundation
 
             #expect(items.count { if case .contextDivider = $0 { true } else { false } } == 1)
         }
+
+        @Test
+        func finishedRunCollapsesStepsAndSteerBeforeTheFinalAnswer() {
+            let runID = UUID.v7()
+            let start = Date(timeIntervalSince1970: 1000)
+            let tool = CodexChatToolActivity(name: "read", status: .succeeded, callID: "call")
+            let question = CodexChatMessage(id: "question", role: .user, text: "Fix it", runID: runID, timestamp: start)
+            let step = CodexChatMessage(
+                id: "step", role: .assistant, text: "Looking", reasoning: "Plan", toolActivities: [tool], runID: runID
+            )
+            let steer = CodexChatMessage(id: "steer", role: .user, text: "Also docs", isSteer: true, runID: runID)
+            let answer = CodexChatMessage(
+                id: "answer", role: .assistant, text: "Done", reasoning: "Check", runID: runID,
+                timestamp: start.addingTimeInterval(36)
+            )
+            var answerSteps = answer
+            answerSteps.text = ""
+            var finalAnswer = answer
+            finalAnswer.reasoning = ""
+
+            #expect(CodexChatConversationItem.build(from: [question, step, steer, answer]) == [
+                .message(question),
+                .work(id: answer.id, messages: [step, steer, answerSteps], duration: 36),
+                .message(finalAnswer),
+            ])
+            // Before history reloads, a live response is one row and its steer follows it.
+            #expect(CodexChatConversationItem.build(from: [question, answer, steer]) == [
+                .message(question),
+                .work(id: answer.id, messages: [answerSteps, steer], duration: 36),
+                .message(finalAnswer),
+            ])
+        }
+
+        @Test
+        func toolEndingRunsRemainExpandedIncludingRestoredToolsAndTrailingSteers() {
+            let runID = UUID.v7()
+            let question = CodexChatMessage(role: .user, text: "Fix it", runID: runID)
+            var progress = CodexChatMessage(role: .assistant, text: "Investigating", runID: runID)
+            progress.recordToolActivity(.init(name: "read", status: .succeeded))
+            let steer = CodexChatMessage(role: .user, text: "Also docs", isSteer: true, runID: runID)
+            #expect(CodexChatConversationItem.build(from: [question, progress, steer]) == [
+                .message(question), .message(progress), .message(steer),
+            ])
+            let tool = CodexChatMessage(role: .assistant, text: "", toolActivities: [.init(name: "read", status: .failed)], runID: runID)
+            progress.toolActivities = []
+            progress.endsWithToolActivity = false
+            #expect(CodexChatConversationItem.build(from: [question, progress, tool]) == [
+                .message(question), .message(progress), .message(tool),
+            ])
+        }
+
+        @Test
+        func loadedRunStaysOnOnePageAndMissingOpeningMessageOmitsDuration() throws {
+            let runID = UUID.v7()
+            let start = Date(timeIntervalSince1970: 1000)
+            let question = CodexChatMessage(role: .user, text: "Fix it", runID: runID, timestamp: start)
+            let steps = (0 ..< 60).map { CodexChatMessage(id: "step-\($0)", role: .assistant, text: "Progress", runID: runID, timestamp: start) }
+            let answer = CodexChatMessage(role: .assistant, text: "Done", runID: runID, timestamp: start.addingTimeInterval(60))
+            let next = CodexChatMessage(role: .user, text: "Next", runID: UUID.v7())
+            let messages = [question] + steps + [answer, next]
+            #expect(CodexChatConversationWindow.pageRanges(in: messages) == [0 ..< 62, 62 ..< 63])
+            let items = CodexChatConversationItem.build(from: steps + [answer])
+            guard case let .work(_, _, duration) = try #require(items.first) else {
+                Issue.record("Expected one work log")
+                return
+            }
+            #expect(duration == nil)
+        }
+
+        @Test
+        func runningOrUnansweredRunsStayExpanded() {
+            let runID = UUID.v7()
+            let question = CodexChatMessage(role: .user, text: "Fix it", runID: runID)
+            let tool = CodexChatToolActivity(name: "read", status: .succeeded)
+            let streaming = CodexChatMessage(
+                role: .assistant, text: "Partial", isStreaming: true, toolActivities: [tool], runID: runID
+            )
+            let stopped = CodexChatMessage(role: .assistant, text: "", toolActivities: [tool], runID: runID)
+            let plain = CodexChatMessage(role: .assistant, text: "Hello", runID: runID)
+
+            #expect(CodexChatConversationItem.build(from: [question, streaming]) == [.message(question), .message(streaming)])
+            #expect(CodexChatConversationItem.build(from: [question, stopped]) == [.message(question), .message(stopped)])
+            #expect(CodexChatConversationItem.build(from: [question, plain]) == [.message(question), .message(plain)])
+        }
     }
 #endif

@@ -5,6 +5,8 @@ enum CodexChatConversationItem: Identifiable, Equatable {
     case message(CodexChatMessage, showsInlineActivity: Bool = false)
     case relatedThreads(messageID: String, threads: [CodexChatThreadSummary])
     case thinking
+    /// The steps of a finished run before its final answer, shown collapsed.
+    case work(id: String, messages: [CodexChatMessage], duration: TimeInterval?)
 
     var id: String {
         switch self {
@@ -16,6 +18,8 @@ enum CodexChatConversationItem: Identifiable, Equatable {
             "related-\(messageID)"
         case .thinking:
             "thinking"
+        case let .work(id, _, _):
+            "work-\(id)"
         }
     }
 
@@ -30,7 +34,15 @@ enum CodexChatConversationItem: Identifiable, Equatable {
         var previousUserContext = initialPreviousUserContext
         var hasPreviousUserMessage = initialHasPreviousUserMessage
 
-        for message in messages {
+        for segment in collapsingFinishedRuns(messages) {
+            guard case let .message(message, _) = segment else {
+                if case let .work(_, steps, _) = segment,
+                   let steer = steps.last(where: { $0.role == .user }) {
+                    previousUserContext = steer.context
+                }
+                items.append(segment)
+                continue
+            }
             if message.role == .user {
                 if shouldInsertDivider(
                     before: message.context,
@@ -62,10 +74,74 @@ enum CodexChatConversationItem: Identifiable, Equatable {
             items.append(.thinking)
         }
         return items.flatMap { item -> [Self] in
-            guard case let .message(message, _) = item,
-                  let threads = relatedThreadsByMessageID[message.id] else { return [item] }
-            return [item, .relatedThreads(messageID: message.id, threads: threads)]
+            let messageIDs: [String] = switch item {
+            case let .message(message, _): [message.id]
+            // The answer row carries its own threads; its steps copy shares its ID.
+            case let .work(answerID, steps, _): steps.map(\.id).filter { $0 != answerID }
+            default: []
+            }
+            let threads = messageIDs.flatMap { relatedThreadsByMessageID[$0] ?? [] }
+            guard let messageID = messageIDs.last, !threads.isEmpty else { return [item] }
+            return [item, .relatedThreads(messageID: messageID, threads: threads)]
         }
+    }
+
+    /// Splits each finished run into its opening message, collapsed steps, and final answer.
+    /// A run still streaming, or one that ended without an answer, stays expanded.
+    private static func collapsingFinishedRuns(_ messages: [CodexChatMessage]) -> [Self] {
+        var segments: [Self] = []
+        var start = messages.startIndex
+        while start < messages.endIndex {
+            let head = messages[start]
+            var end = start + 1
+            if let runID = head.runID {
+                while end < messages.endIndex, messages[end].runID == runID, !isRequest(messages[end]) {
+                    end += 1
+                }
+            }
+            let run = messages[start ..< end]
+            start = end
+            // A request or notification opens the run and stays outside its steps.
+            let bodyStart = run.startIndex + (head.role != .assistant && !head.isSteer ? 1 : 0)
+            guard head.runID != nil,
+                  !run.contains(where: \.isStreaming),
+                  let finalIndex = run[bodyStart...].lastIndex(where: { !$0.isSteer }),
+                  messages[finalIndex].role == .assistant,
+                  !messages[finalIndex].text.isEmpty,
+                  !messages[finalIndex].endsWithToolActivity
+            else {
+                segments += run.map { .message($0) }
+                continue
+            }
+            let answer = messages[finalIndex]
+            var steps = Array(messages[bodyStart ..< finalIndex])
+            if !answer.reasoning.isEmpty || !answer.toolActivities.isEmpty {
+                var answerSteps = answer
+                answerSteps.text = ""
+                steps.append(answerSteps)
+            }
+            // A live response holds the whole run, so steers delivered during it follow it until history reloads.
+            let trailing = messages[(finalIndex + 1) ..< run.endIndex]
+            steps += trailing.filter(\.isSteer)
+            segments += messages[run.startIndex ..< bodyStart].map { .message($0) }
+            if steps.isEmpty {
+                segments.append(.message(answer))
+            } else {
+                let duration = (bodyStart > run.startIndex ? head.timestamp : nil).flatMap { startedAt in
+                    answer.timestamp.map { $0.timeIntervalSince(startedAt) }
+                }
+                var finalAnswer = answer
+                finalAnswer.reasoning = ""
+                finalAnswer.toolActivities = []
+                segments += [.work(id: answer.id, messages: steps, duration: duration), .message(finalAnswer)]
+            }
+            segments += trailing.filter { !$0.isSteer }.map { .message($0) }
+        }
+        return segments
+    }
+
+    private static func isRequest(_ message: CodexChatMessage) -> Bool {
+        message.role == .user && !message.isSteer
     }
 
     static func relatedThreadAnchors(

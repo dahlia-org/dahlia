@@ -34,6 +34,45 @@
             session.release()
         }
 
+        @Test(arguments: ["history", "notice", "steer"])
+        func completedResponseSeparatesIntermediateTextWhenReconciliationKeepsLiveHistory(retained: String) async throws {
+            let older = CodexChatMessage(id: "older", role: .user, text: "Older question")
+            let service = TestCodexChatService(
+                mode: .blockBeforeOutput,
+                earlierPages: ["older": .init(messages: [older], earlierCursor: nil)],
+                initialEarlierCursor: "older"
+            )
+            let session = session(service: service)
+            await session.restore()
+            if retained == "history" { await session.loadEarlierMessages() }
+            session.draft = "Next question"
+            session.sendDraft()
+            #expect(await pollUntil { session.activeTurnID != nil })
+            if retained == "notice" { await service.yieldBlockedEvent(.notice(message: "Connected")) }
+            if retained == "steer" {
+                session.draft = "Also docs"
+                session.sendDraft(mode: .steer)
+                #expect(await pollUntil { await service.steeredTextBlocks.count == 1 })
+            }
+            await service.yieldBlockedEvent(.completed(itemID: "progress", text: "Investigating"))
+            await service.yieldBlockedEvent(.toolActivity(.init(name: "read", status: .succeeded)))
+            await service.yieldBlockedEvent(.completed(itemID: "answer", text: "Final answer"))
+            await service.completeBlockedTurn()
+            #expect(await pollUntil { !session.hasPendingGenerationWork })
+            let items = CodexChatConversationItem.build(from: session.messages)
+            let final = try #require(session.messages.last { $0.role == .assistant })
+            #expect(final.text == "Final answer")
+            #expect(items.contains { item in
+                if case let .work(_, steps, _) = item { return steps.contains { $0.text == "Investigating" } }
+                return false
+            })
+            #expect(!items.contains { item in
+                if case let .message(message, _) = item { return message.text.contains("Investigating") }
+                return false
+            })
+            session.release()
+        }
+
         @Test
         func earlierHistoryIsLoadedOnlyOnRequestAndErrorsKeepTheCursorForRetry() async {
             let older = CodexChatMessage(id: "older", role: .user, text: "Older question")

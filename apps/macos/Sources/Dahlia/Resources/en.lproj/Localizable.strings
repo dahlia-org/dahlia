@@ -2162,6 +2162,8 @@
 "Queue paused" = "Queue paused";
 "Resume queue" = "Resume queue";
 
+"chat.worked" = "Worked";
+"chat.workedFor" = "Worked for %@";
 "chat.toolUseCount" = "%lld tool uses";
 "Omnigent" = "Omnigent";
 "settings.agents.omnigent.enabled" = "Enable Omnigent integration (Beta)";

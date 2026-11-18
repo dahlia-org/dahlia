@@ -6,7 +6,7 @@
     @testable import Dahlia
 
     struct ChatRunTests {
-        @Test func toolCallsRestoreWithIconsAndSettledStatusWithoutExposingOutput() throws {
+        @Test func toolCallsRestoreWithIconsSettledStatusInputAndOutput() throws {
             func item(_ id: String, _ data: [String: JSONValue]) -> ChatItem {
                 ChatItem(id: id, data: .object(data), createdAt: .now)
             }
@@ -16,22 +16,66 @@
                     "type": .string("tool_call"),
                     "callID": .string("call"),
                     "name": .string("read"),
-                    "arguments": .object(["path": .string("README.md"), "secret": .string("hidden argument")]),
+                    "arguments": .object(["path": .string("README.md"), "limit": .string("all")]),
                 ]),
                 item("r", [
                     "type": .string("tool_result"),
                     "callID": .string("call"),
                     "name": .string("read"),
                     "status": .string("succeeded"),
-                    "result": .string("hidden output"),
+                    "result": .string("file contents"),
                 ]),
             ])
             #expect(messages.count == 2)
             let toolMessage = try #require(messages.last)
             #expect(toolMessage.role == .assistant)
             #expect(toolMessage.text.isEmpty)
-            #expect(toolMessage.toolActivities == [.init(name: "read", status: .succeeded, callID: "call", detail: "README.md")])
+            #expect(toolMessage.toolActivities == [.init(
+                name: "read", status: .succeeded, callID: "call", detail: "README.md",
+                input: "{\n  \"limit\" : \"all\",\n  \"path\" : \"README.md\"\n}", output: "file contents"
+            )])
             #expect(toolMessage.toolActivities.first?.toolSymbol == "eye")
+        }
+
+        @Test(arguments: [false, true])
+        func restoredAssistantItemsKeepTheirFinalAnswerAndCompletionTime(includesOpeningRequest: Bool) throws {
+            let runID = UUID.v7()
+            func item(_ id: String, _ role: String, _ text: String, at seconds: TimeInterval) -> ChatItem {
+                ChatItem(
+                    id: id, data: .object(["type": .string("message"), "role": .string(role), "content": .string(text)]),
+                    createdAt: Date(timeIntervalSince1970: seconds), runID: runID
+                )
+            }
+            var records = includesOpeningRequest ? [item("question", "user", "Inspect", at: 1000)] : []
+            records += [item("progress", "assistant", "Investigating", at: 1010), item("answer", "assistant", "Done", at: 1060)]
+            let messages = ChatHistoryCodec.messages(records)
+            #expect(messages.map(\.id) == records.map(\.id))
+            #expect(messages.map(\.timestamp) == records.map(\.createdAt))
+            let items = CodexChatConversationItem.build(from: messages)
+            let workIndex = includesOpeningRequest ? 1 : 0
+            guard case let .work(_, steps, duration) = items[workIndex] else {
+                Issue.record("Expected intermediate text in the work log")
+                return
+            }
+            #expect(steps.map(\.text) == ["Investigating"])
+            #expect(duration == (includesOpeningRequest ? 60 : nil))
+            #expect(try items.last == .message(#require(messages.last)))
+            #expect(messages.last?.text == "Done")
+        }
+
+        @Test func restoredTextFollowedByToolsDoesNotBecomeAFinalAnswer() {
+            let runID = UUID.v7()
+            func item(_ id: String, _ data: [String: JSONValue]) -> ChatItem {
+                ChatItem(id: id, data: .object(data), createdAt: .now, runID: runID)
+            }
+            let messages = ChatHistoryCodec.messages([
+                item("u", ["type": .string("message"), "role": .string("user"), "content": .string("Inspect")]),
+                item("a", ["type": .string("message"), "role": .string("assistant"), "content": .string("Investigating")]),
+                item("c", ["type": .string("tool_call"), "callID": .string("call"), "name": .string("read")]),
+                item("r", ["type": .string("tool_result"), "callID": .string("call"), "name": .string("read")]),
+            ])
+            #expect(messages.last?.endsWithToolActivity == true)
+            #expect(CodexChatConversationItem.build(from: messages) == messages.map { .message($0) })
         }
 
         @Test func toolMetadataIsBoundedAndDoesNotAttachToAnEarlierTurn() {
@@ -89,7 +133,9 @@
                 .object(["type": .string("tool_result"), "callID": .string("call"), "name": .string("read"), "status": .string("succeeded")]),
             ])
             let page = try store.messagePage(threadID: target.id)
-            #expect(page.messages.first?.toolActivities == [.init(name: "read", status: .succeeded, callID: "call", detail: "README.md")])
+            #expect(page.messages.first?.toolActivities == [.init(
+                name: "read", status: .succeeded, callID: "call", detail: "README.md", input: "{\n  \"path\" : \"README.md\"\n}"
+            )])
         }
 
         @Test func toolPagingDoesNotMergeCallIDsAcrossRuns() {
