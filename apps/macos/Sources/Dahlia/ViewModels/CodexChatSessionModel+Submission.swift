@@ -45,7 +45,7 @@ extension CodexChatSessionModel {
         isPreparingTurn = true
         isAwaitingTurnOutput = false
         preparingManualComposerSnapshot = composerSnapshot
-        preparingUserMessage = CodexChatMessage(role: .user, text: text, images: images)
+        preparingUserMessage = CodexChatMessage(role: .user, text: text, images: images, timestamp: .now)
         clearComposer(ifMatching: composerSnapshot)
         errorMessage = nil
         let submissionID = UUID.v7()

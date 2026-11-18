@@ -55,6 +55,10 @@ The macOS interface defines font sizes as offsets from a default 14 pt base: bod
 
 The chat header shows **Dahlia AI**, followed by the conversation title when a chat is open. New chats center the greeting and composer. **App integrations** below the composer shows representative app icons and opens **Settings → Agents → MCP** when clicked. The × button hides it for that chat; a new chat shows it again. The composer’s + menu provides image attachments, meeting references, the registered MCP server list, and a link to MCP settings. It overlays the content without moving the composer, opening below when there is room and above near the bottom of the window.
 
+Hover over a chat message to show its copy button and recorded time, when available. Copying shows a checkmark and a brief confirmation. Assistant message footers also show a disabled fork icon; branching from a response is not available yet.
+
+The macOS chat sidebar and history list show running and waiting states with both an icon and text. A completed response stays marked **Completed** until you open its thread, including in a separate window. Once viewed, the row shows the time since the last saved assistant response; renaming a thread does not change that time.
+
 ### SwiftUI previews and Xcode MCP
 
 For component work, open `apps/macos/Previews/Package.swift` in Xcode, select the **DahliaPreviews** scheme and **My Mac**, then open `Sources/DahliaPreviews/SettingsStatusMessage.swift` with **Editor → Canvas**. The previews cover a success message and an error message with interactive detail visibility.

@@ -46,7 +46,7 @@ struct MainSidebarChatHistorySection: View {
                             for: thread.title.nilIfBlank ?? L10n.newChat,
                             namesByID: coordinator.dockedSession.meetingNamesByID
                         ),
-                        isUnread: thread.isUnread,
+                        thread: thread,
                         activity: coordinator.activity(for: thread.id),
                         isSelected: isShowingChat && thread.id == coordinator.dockedSession.backendThreadID
                     )
@@ -97,32 +97,18 @@ struct MainSidebarChatHistorySection: View {
 
 private struct MainSidebarChatThreadRow: View {
     let title: String
-    let isUnread: Bool
+    let thread: CodexChatThreadSummary
     let activity: CodexChatThreadActivity?
     let isSelected: Bool
 
     var body: some View {
         HStack(spacing: 8) {
-            if isUnread { Circle().fill(.tint).frame(width: 6, height: 6).accessibilityLabel(L10n.agentScheduleUnread) }
             Text(title)
                 .lineLimit(1)
 
             Spacer(minLength: 8)
 
-            switch activity {
-            case .queued:
-                Image(systemName: "clock").accessibilityLabel(L10n.chatRunStatus("queued"))
-            case .running:
-                ProgressView()
-                    .controlSize(.small)
-                    .accessibilityLabel(L10n.chatThreadRunning)
-            case .waitingForUser:
-                Image(systemName: "exclamationmark.circle")
-                    .foregroundStyle(.orange)
-                    .accessibilityLabel(L10n.chatThreadWaitingForUser)
-            case nil:
-                EmptyView()
-            }
+            CodexChatThreadStatusView(thread: thread, activity: activity)
         }
         .frame(maxWidth: .infinity, minHeight: 28, alignment: .leading)
         .contentShape(.rect)

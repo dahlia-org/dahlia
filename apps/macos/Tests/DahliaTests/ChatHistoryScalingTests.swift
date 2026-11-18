@@ -48,7 +48,7 @@
             try queue.writeWithoutTransaction { $0.trace(nil) }
             #expect(!captured.contains { $0.lowercased().contains("count(*)") })
             let listing = try #require(captured.first { $0.contains("ORDER BY updatedAt DESC") })
-            let paging = try #require(captured.first { $0.contains("ORDER BY seq DESC") })
+            let paging = try #require(captured.first { $0.contains("seq <") && $0.contains("ORDER BY seq DESC") })
             try queue.read { db in
                 for (sql, index, range) in [(listing, "chat_threads_listing", "(updatedAt,id)<"), (paging, "chat_items_conversation", "seq<?")] {
                     let plan = try Row.fetchAll(db, sql: "EXPLAIN QUERY PLAN " + sql).map { $0["detail"] as String }.joined(separator: " ")

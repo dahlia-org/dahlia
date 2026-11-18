@@ -6,6 +6,84 @@
     @testable import Dahlia
 
     struct ChatHistoryTests {
+        @Test
+        func completedThreadsKeepTheirLastResponseTimeAndUnreadPosition() throws {
+            let database = try AppDatabaseManager(path: ":memory:")
+            let store = ChatThreadStore(dbQueue: database.dbQueue)
+            let record = thread()
+            try store.createThread(record, items: [ChatHistoryCodec.user([.text("Question")])])
+            let empty = try #require(store.listThreads(accountID: "local", cursor: nil).threads.first)
+            #expect(empty.lastResponseAt == nil)
+            #expect(!empty.hasUnseenCompletion)
+
+            try store.appendItems(threadID: record.id, items: [ChatHistoryCodec.message([
+                "role": .string("assistant"), "content": .string("Answer"),
+            ])])
+            let responseTime = Date(timeIntervalSince1970: 1_700_000_000)
+            try database.dbQueue.write { db in
+                try db.execute(sql: "UPDATE chat_items SET createdAt = ? WHERE threadID = ? AND seq = 1", arguments: [responseTime, record.id])
+            }
+            try store.updateThread(id: record.id, title: "Renamed later")
+            let completed = try #require(store.listThreads(accountID: "local", cursor: nil).threads.first)
+            let seenThrough = try #require(completed.lastItemSeq)
+            #expect(try store.messagePage(threadID: record.id).lastItemSeq == seenThrough)
+            #expect(completed.hasUnseenCompletion)
+            #expect(completed.lastResponseAt == responseTime)
+            #expect(completed.updatedAt > responseTime)
+
+            try store.markThreadSeen(id: record.id, accountID: "another-account", through: seenThrough)
+            #expect(try store.listThreads(accountID: "local", cursor: nil).threads.first?.hasUnseenCompletion == true)
+            try store.markThreadSeen(id: record.id, accountID: "local", through: seenThrough)
+            let reopenedStore = ChatThreadStore(dbQueue: database.dbQueue)
+            let seen = try #require(reopenedStore.listThreads(accountID: "local", cursor: nil).threads.first)
+            #expect(!seen.hasUnseenCompletion)
+            #expect(seen.lastResponseAt == responseTime)
+            #expect(seen.updatedAt == completed.updatedAt)
+
+            try store.appendItems(threadID: record.id, items: [ChatHistoryCodec.message([
+                "role": .string("assistant"), "content": .string("A newer answer"),
+            ])])
+            try store.updateThread(id: record.id, status: "running")
+            #expect(try store.listThreads(accountID: "local", cursor: nil).threads.first?.hasUnseenCompletion == false)
+            try store.updateThread(id: record.id, status: "idle")
+            // A late acknowledgement of the older result cannot hide a newer completion.
+            try store.markThreadSeen(id: record.id, accountID: "local", through: seenThrough)
+            let newer = try #require(store.listThreads(accountID: "local", cursor: nil).threads.first)
+            #expect(newer.hasUnseenCompletion)
+            try store.markThreadSeen(id: record.id, accountID: "local", through: #require(newer.lastItemSeq))
+            try store.markThreadSeen(id: record.id, accountID: "local", through: seenThrough)
+            #expect(try store.listThreads(accountID: "local", cursor: nil).threads.first?.hasUnseenCompletion == false)
+        }
+
+        @Test
+        func restoredMessagesKeepStoredTimestampsWhenAssistantItemsAreCombined() throws {
+            let sentAt = Date(timeIntervalSince1970: 1_700_000_000)
+            let receivedAt = sentAt.addingTimeInterval(60)
+            let items = [
+                ChatItem(id: "user", data: ChatHistoryCodec.message([
+                    "role": .string("user"), "content": .string("Question"),
+                ]), createdAt: sentAt),
+                ChatItem(id: "assistant", data: ChatHistoryCodec.message([
+                    "role": .string("assistant"), "content": .string("First"),
+                ]), createdAt: receivedAt),
+                ChatItem(id: "continuation", data: ChatHistoryCodec.message([
+                    "role": .string("assistant"), "content": .string("Second"),
+                ]), createdAt: receivedAt.addingTimeInterval(30)),
+            ]
+            let messages = ChatHistoryCodec.messages(items)
+            #expect(messages.count == 2)
+            #expect(messages.first?.timestamp == sentAt)
+            let response = try #require(messages.last)
+            #expect(response.text == "First\n\nSecond")
+            #expect(response.timestamp == receivedAt)
+            #expect(ChatHistoryCodec.messages(items) == messages)
+
+            let tools = ChatHistoryCodec.messages([ChatItem(
+                id: "tool", data: .object(["type": .string("tool_call"), "name": .string("read")]), createdAt: receivedAt
+            )])
+            #expect(tools.first?.timestamp == receivedAt)
+        }
+
         private func thread(accountID: String = "local", parentID: String? = nil) -> ChatThreadRecord {
             ChatThreadRecord(
                 id: UUID.v7().uuidString.lowercased(),

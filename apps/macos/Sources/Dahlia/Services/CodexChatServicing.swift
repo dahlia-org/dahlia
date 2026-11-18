@@ -8,6 +8,7 @@ protocol CodexChatServicing: Sendable {
     func models(forceRefresh: Bool) async throws -> [CodexModel]
     func commands(threadID: String?) async throws -> [CodexChatSlashCommand]
     func listThreads(cursor: String?) async throws -> CodexChatThreadPage
+    func markThreadSeen(id: String, through seq: Int64) async throws
     func loadThread(id: String) async throws -> CodexChatThread
     func loadEarlierMessages(threadID: String, cursor: String) async throws -> CodexChatMessagePage
     func resumeThread(id: String) async throws -> CodexChatThread
@@ -44,6 +45,7 @@ protocol CodexChatServicing: Sendable {
 }
 
 extension CodexChatServicing {
+    func markThreadSeen(id _: String, through _: Int64) async throws {}
     func relatedThreads(parentThreadID _: String) async throws -> [CodexChatThreadSummary] { [] }
     func attach(threadID _: String) async throws -> CodexChatTurnHandle? { nil }
     func observeThreads() async -> AsyncStream<[CodexChatRuntimeState]> { AsyncStream { $0.finish() } }

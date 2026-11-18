@@ -6,6 +6,8 @@ struct CodexChatMessageRow: View {
     let meetingNamesByID: [UUID: String]
     let meetingReferencesByID: [UUID: CodexChatMeetingReference]
 
+    @State private var isHovered = false
+
     var body: some View {
         let visibleText = message.role == .user ? userVisibleText : message.text
         let displayText = CodexChatMeetingReference.displayText(for: visibleText, namesByID: meetingNamesByID)
@@ -36,9 +38,7 @@ struct CodexChatMessageRow: View {
                         in: RoundedRectangle(cornerRadius: CodexChatDesign.messageCornerRadius)
                     )
 
-                    if !displayText.isEmpty {
-                        CodexChatCopyButton(text: displayText)
-                    }
+                    CodexChatMessageFooter(message: message, text: displayText, isHovered: isHovered)
                 }
             } else if case let .notice(level) = message.role {
                 CodexChatNoticeView(text: message.text, level: level)
@@ -63,14 +63,16 @@ struct CodexChatMessageRow: View {
                         CodexChatToolUsesView(activities: message.toolActivities)
                     }
 
-                    if !displayText.isEmpty, !message.isStreaming {
-                        CodexChatCopyButton(text: displayText)
+                    if message.hasResponseContent, !message.isStreaming {
+                        CodexChatMessageFooter(message: message, text: displayText, isHovered: isHovered)
                     }
                 }
                 Spacer(minLength: 40)
             }
         }
         .frame(maxWidth: .infinity, alignment: message.role == .user ? .trailing : .leading)
+        .contentShape(.rect)
+        .onHover { isHovered = $0 }
     }
 
     private var userVisibleText: String {

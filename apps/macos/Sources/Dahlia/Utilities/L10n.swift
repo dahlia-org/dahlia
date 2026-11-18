@@ -3419,6 +3419,8 @@ enum L10n { // swiftlint:disable:this type_body_length
     static var openAgentSettings: String { String(localized: "chat.openAgentSettings", bundle: bundle) }
     static var chatModelLoading: String { String(localized: "Loading models…", bundle: bundle) }
     static var chatThreadRunning: String { String(localized: "Chat is running", bundle: bundle) }
+    static var chatThreadRunningShort: String { String(localized: "chat.thread.runningShort", bundle: bundle) }
+    static var chatThreadWaitingShort: String { String(localized: "chat.thread.waitingShort", bundle: bundle) }
     static var chatThreadWaitingForUser: String {
         String(localized: "Waiting for your response or approval", bundle: bundle)
     }
@@ -3450,6 +3452,7 @@ enum L10n { // swiftlint:disable:this type_body_length
     }
 
     static var copyChatMessage: String { String(localized: "Copy message", bundle: bundle) }
+    static var chatForkFromResponse: String { String(localized: "Fork from this response (coming soon)", bundle: bundle) }
     static var copyCodeBlock: String { String(localized: "Copy code", bundle: bundle) }
     static var chatReasoning: String { String(localized: "Thought process", bundle: bundle) }
     static var selected: String { String(localized: "Selected", bundle: bundle) }

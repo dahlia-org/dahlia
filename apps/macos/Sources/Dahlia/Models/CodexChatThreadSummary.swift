@@ -13,6 +13,12 @@ struct CodexChatThreadSummary: Identifiable, Equatable {
     var requestRunID: UUID?
     var startedAt: Date?
     var completedAt: Date?
+    var lastResponseAt: Date?
+    var lastItemSeq: Int64?
+
+    var hasUnseenCompletion: Bool {
+        isUnread && (status == "idle" || status == "completed")
+    }
 
     var modelDisplayName: String? {
         guard let model = model?.nilIfBlank else { return nil }

@@ -18,6 +18,7 @@ struct CodexChatMessage: Identifiable, Equatable {
     var threadResults: [CodexChatThreadResult]
     var toolActivities: [CodexChatToolActivity]
     var runID: UUID?
+    var timestamp: Date?
 
     init(
         id: String = UUID.v7().uuidString,
@@ -30,7 +31,8 @@ struct CodexChatMessage: Identifiable, Equatable {
         isSteer: Bool = false,
         threadResults: [CodexChatThreadResult] = [],
         toolActivities: [CodexChatToolActivity] = [],
-        runID: UUID? = nil
+        runID: UUID? = nil,
+        timestamp: Date? = nil
     ) {
         self.id = id
         self.role = role
@@ -43,6 +45,7 @@ struct CodexChatMessage: Identifiable, Equatable {
         self.threadResults = threadResults
         self.toolActivities = toolActivities
         self.runID = runID
+        self.timestamp = timestamp
     }
 
     var hasResponseContent: Bool {

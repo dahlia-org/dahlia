@@ -19,27 +19,7 @@ struct CodexChatThreadRow: View {
             ))
             .lineLimit(1)
             Spacer(minLength: 12)
-            Text(thread.updatedAt, format: .relative(presentation: .named))
-                .foregroundStyle(DahliaDesign.optionalTextColor)
-                .lineLimit(1)
-            if let activity {
-                switch activity {
-                case .queued:
-                    Image(systemName: "clock").accessibilityHidden(true)
-                case .running:
-                    ProgressView()
-                        .controlSize(.small)
-                        .frame(width: 16, height: 16)
-                        .fixedSize()
-                        .accessibilityHidden(true)
-                case .waitingForUser:
-                    Image(systemName: "exclamationmark.circle")
-                        .foregroundStyle(.orange)
-                        .frame(width: 16, height: 16)
-                        .fixedSize()
-                        .accessibilityHidden(true)
-                }
-            }
+            CodexChatThreadStatusView(thread: thread, activity: activity)
         }
         .padding(.vertical, 9)
         .contentShape(Rectangle())
@@ -50,19 +30,5 @@ struct CodexChatThreadRow: View {
         .onHover { isHovering = $0 }
         .padding(.bottom, 1)
         .accessibilityElement(children: .combine)
-        .accessibilityValue(accessibilityValue)
-    }
-
-    private var accessibilityValue: String {
-        switch activity {
-        case .queued:
-            L10n.chatRunStatus("queued")
-        case .running:
-            L10n.chatThreadRunning
-        case .waitingForUser:
-            L10n.chatThreadWaitingForUser
-        case nil:
-            ""
-        }
     }
 }

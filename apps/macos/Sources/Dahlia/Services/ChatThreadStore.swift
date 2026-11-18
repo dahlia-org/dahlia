@@ -53,20 +53,37 @@ struct ChatThreadStore: ChatItemStore, Sendable {
             let next = try rows.count > limit ? visible.last.map {
                 try JSONEncoder().encode([String($0.updatedAt.timeIntervalSince1970), $0.id]).base64EncodedString()
             } : nil
-            return try CodexChatThreadPage(threads: visible.map {
-                try CodexChatThreadSummary(
-                    id: $0.id,
-                    title: $0.title,
-                    updatedAt: $0.updatedAt,
-                    parentThreadID: $0.parentThreadID,
-                    status: $0.status,
-                    isUnread: Bool.fetchOne(
-                        db,
-                        sql: "SELECT EXISTS(SELECT 1 FROM chat_schedule_fires WHERE scheduleID=? AND status='delivered' AND resultSeq>?)",
-                        arguments: [$0.scheduleID, $0.lastSeenSeq]
-                    ) ?? false
+            return try CodexChatThreadPage(threads: visible.map { thread in
+                let response = try Row.fetchOne(db, sql: """
+                SELECT seq, createdAt FROM chat_items WHERE threadID = ? AND \(ChatItemRecord.messagePredicate())
+                    AND json_extract(data, '$.role') = 'assistant' ORDER BY seq DESC LIMIT 1
+                """, arguments: [thread.id])
+                let responseSeq: Int64 = response?["seq"] ?? -1
+                let scheduledUnread = try Bool.fetchOne(
+                    db,
+                    sql: "SELECT EXISTS(SELECT 1 FROM chat_schedule_fires WHERE scheduleID=? AND status='delivered' AND resultSeq>?)",
+                    arguments: [thread.scheduleID, thread.lastSeenSeq]
+                ) ?? false
+                return try CodexChatThreadSummary(
+                    id: thread.id,
+                    title: thread.title,
+                    updatedAt: thread.updatedAt,
+                    parentThreadID: thread.parentThreadID,
+                    status: thread.status,
+                    isUnread: responseSeq > thread.lastSeenSeq || scheduledUnread,
+                    lastResponseAt: response?["createdAt"],
+                    lastItemSeq: Int64.fetchOne(db, sql: "SELECT MAX(seq) FROM chat_items WHERE threadID = ?", arguments: [thread.id])
                 )
             }, nextCursor: next)
+        }
+    }
+
+    func markThreadSeen(id: String, accountID: String, through seq: Int64) throws {
+        try dbQueue.write { db in
+            try db.execute(
+                sql: "UPDATE chat_threads SET lastSeenSeq = MAX(lastSeenSeq, ?) WHERE id = ? AND accountID = ?",
+                arguments: [seq, id, accountID]
+            )
         }
     }
 
@@ -137,7 +154,8 @@ struct ChatThreadStore: ChatItemStore, Sendable {
         let visible = Array(rows.prefix(pageSize).reversed())
         return try CodexChatMessagePage(
             messages: ChatHistoryCodec.messages(visible),
-            earlierCursor: rows.count > pageSize ? visible.first.map { String($0.seq) } : nil
+            earlierCursor: rows.count > pageSize ? visible.first.map { String($0.seq) } : nil,
+            lastItemSeq: visible.last?.seq
         )
     }
 

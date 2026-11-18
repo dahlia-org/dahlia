@@ -238,6 +238,9 @@
             for try await _ in second.events {}
             #expect(pi.launches.all.filter { $0.mode == .chat }.count == 2)
             #expect(try schedules.unread(thread: row.threadID, account: "local"))
+            let summary = try #require(store.listThreads(accountID: "local", cursor: nil).threads.first { $0.id == row.threadID })
+            try await chat.markThreadSeen(id: row.threadID, through: #require(summary.lastItemSeq))
+            #expect(try !schedules.unread(thread: row.threadID, account: "local"))
             let status = try await store.dbQueue.read {
                 try String.fetchOne(
                     $0,

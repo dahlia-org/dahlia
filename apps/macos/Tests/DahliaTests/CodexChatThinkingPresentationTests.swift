@@ -25,6 +25,7 @@ import Foundation
             let submittedMessage = try #require(session.conversationMessages.last)
             #expect(submittedMessage.role == .user)
             #expect(submittedMessage.text == "Question")
+            #expect(submittedMessage.timestamp != nil)
             #expect(session.showsStandaloneThinking)
             #expect(session.draft.isEmpty)
 
@@ -41,6 +42,8 @@ import Foundation
                 #expect(!session.isPreparingTurn)
                 #expect(session.showsStandaloneThinking)
                 #expect(session.conversationMessages.filter { $0.role == .user }.map(\.id) == [submittedMessage.id])
+                #expect(session.messages.first { $0.id == submittedMessage.id }?.timestamp == submittedMessage.timestamp)
+                #expect(session.messages.last?.timestamp != nil)
                 await service.completeBlockedTurn()
             }
             await waitUntil { !session.hasPendingGenerationWork }

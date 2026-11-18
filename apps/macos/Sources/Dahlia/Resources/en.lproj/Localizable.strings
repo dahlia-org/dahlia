@@ -1193,6 +1193,8 @@
 "chat.openAgentSettings" = "Open Dahlia AI Settings";
 "Loading models…" = "Loading models…";
 "Chat is running" = "Chat is running";
+"chat.thread.runningShort" = "Running";
+"chat.thread.waitingShort" = "Waiting";
 "Waiting for your response or approval" = "Waiting for your response or approval";
 "This chat is no longer available." = "This chat is no longer available.";
 "Resize" = "Resize";
@@ -1202,6 +1204,7 @@
 "Project organization chat shortcut prompt" = "Use $projects-optimizer to organize Dahlia Meetings and Projects from the last %1$lld days.\ncreated_from: %2$@\ncreated_before: %3$@\n\nReview the Meetings in this period together with the existing Project hierarchy, improve Project descriptions when supported by evidence, and update Meeting assignments.";
 "Review meeting speech" = "Review meeting speech";
 "Copy message" = "Copy message";
+"Fork from this response (coming soon)" = "Fork from this response (coming soon)";
 "Copy code" = "Copy code";
 "Thought process" = "Thought process";
 "Selected" = "Selected";

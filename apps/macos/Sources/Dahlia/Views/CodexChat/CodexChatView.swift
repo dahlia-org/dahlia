@@ -278,7 +278,7 @@ struct CodexChatView: View {
 
     private func prepare() async {
         updateMeetingCatalog()
-        await session.restore()
+        await coordinator.restoreSession(session)
         if coordinator.history.isEmpty {
             await coordinator.refreshHistory()
         }
@@ -316,7 +316,7 @@ struct CodexChatView: View {
     }
 
     private func retryConnection() {
-        Task { await session.restore() }
+        Task { await coordinator.restoreSession(session) }
     }
 
     private func retryHistory() {
