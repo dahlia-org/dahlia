@@ -16,7 +16,7 @@ AST / renderer / file locator は `DahliaRuntimeSupport` で app と helper が�
 
 `--write` の `update_meeting_summary` は既存の1 meeting の document 全体を置き換える。人名等の訂正が複数 block にまたがっても1回で整合させるため、block patch や単純文字列置換は採用しない。
 
-- 入力と `get_meeting.summary_document` は同じ schema 定数を共有し、未知 key、ID 省略、重複 ID、schema version、screenshot 所属、サイズを検証する。
+- 入力と `get_meeting.summary_document` は同じ schema 定数を共有し、未知 key、ID 省略、重複 ID、schema version、screenshot 所属、サイズを検証する。画像の公開 ID を内部 UUID に戻した際の大小文字の差は正規化し、画像を含む document も欠落なく往復できる。
 - 保存済み document 文字列の SHA-256 を `summary_document_version` とし、更新時に expected version を要求する。別 writer の採番漏れを避け、再生成との衝突も検出する。Server transaction revision とは別の local MCP CAS 契約。
 - Vault lock / prevalidation の後、既存 `summary_exports` の Vault path だけを更新する。未 export のファイルは作らず、title が変わっても rename しない。
 - file を先に書き、DB transaction 失敗時は元内容へ補償する。補償失敗は `workspaceRollbackFailed` として表面化する。
