@@ -43,7 +43,7 @@ extension PiChatService {
         }
     }
 
-    private func runCurator(provider: CodexRuntimeProvider) async {
+    func runCurator(provider: CodexRuntimeProvider) async {
         defer {
             curatorTask = nil
             activeCurator = nil
@@ -141,7 +141,7 @@ extension PiChatService {
             let prompt = (HermesLearning.prompts["curator_review_prompt"] ?? "") + "\n\n" + candidates
             _ = try await connection.request("prompt", PiRuntimeService.prompt([.text(prompt)]))
             var responses = 0
-            var final = ""
+            var lastMessage: [String: JSONValue]?
             for try await event in connection.events {
                 try authorize()
                 guard curatorAllowed(runID: runID, provider: provider) else { throw CancellationError() }
@@ -149,14 +149,19 @@ extension PiChatService {
                 if object["type"]?.stringValue == "message_end", let message = object["message"]?.objectValue,
                    message["role"]?.stringValue == "assistant" {
                     responses += 1
-                    let text = (message["content"]?.arrayValue ?? []).compactMap { $0.objectValue?["text"]?.stringValue }.joined()
-                    if !text.isEmpty { final = text }
-                    if responses >= 100 { break }
+                    lastMessage = message
+                    // A successful empty report is valid; an error/abort must never reuse intermediate text.
+                    _ = try PiRuntimeService.assistantText(message, allowEmpty: true)
+                    guard responses <= 100 else { throw PiRuntimeError.turnFailed("Curator response limit exceeded.") }
                 }
-                if object["type"]?.stringValue == "agent_settled" { break }
+                if object["type"]?.stringValue == "agent_settled" {
+                    guard object["aborted"] != .bool(true) else { throw CancellationError() }
+                    let final = try PiRuntimeService.assistantText(lastMessage, allowEmpty: true)
+                    await runtime.close(connection)
+                    return final.trimmingCharacters(in: .whitespacesAndNewlines)
+                }
             }
-            await runtime.close(connection)
-            return final.trimmingCharacters(in: .whitespacesAndNewlines)
+            throw PiRuntimeError.processExited(nil)
         } catch {
             await runtime.close(connection)
             throw error

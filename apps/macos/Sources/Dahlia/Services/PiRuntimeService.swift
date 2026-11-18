@@ -816,7 +816,7 @@ actor PiRuntimeService {
         throw PiRuntimeError.processExited(nil)
     }
 
-    nonisolated static func assistantText(_ message: [String: JSONValue]?) throws -> String {
+    nonisolated static func assistantText(_ message: [String: JSONValue]?, allowEmpty: Bool = false) throws -> String {
         guard let message else { throw PiRuntimeError.emptyResponse }
         switch message["stopReason"]?.stringValue {
         case "stop", "toolUse":
@@ -834,7 +834,7 @@ actor PiRuntimeService {
             guard block.objectValue?["type"]?.stringValue == "text" else { return nil }
             return block.objectValue?["text"]?.stringValue
         }.joined()
-        guard text.nilIfBlank != nil else { throw PiRuntimeError.emptyResponse }
+        guard allowEmpty || text.nilIfBlank != nil else { throw PiRuntimeError.emptyResponse }
         return text
     }
 
