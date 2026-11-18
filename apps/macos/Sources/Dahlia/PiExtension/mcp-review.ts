@@ -31,13 +31,23 @@ export function reviewerEffort(model: any): "low" | "high" {
 }
 
 export async function reviewMCP(ctx: any, toolName: string, input: unknown, model = "", configuration?: TriageConfiguration | null) {
-  // Upstream's extension caps calls before `review`; importing that function requires the same whole-call bound.
-  if (JSON.stringify({ tool: toolName, input }, null, 2).length > 128_000) {
-    return { outcome: "deny", risk: "unknown", reason: "This MCP call is too large for AI review." };
-  }
   const context = {
     ...ctx,
     sessionManager: { getBranch: () => reviewBranch(ctx.sessionManager.getBranch()) },
+    modelRegistry: {
+      find: (provider: string, id: string) => ctx.modelRegistry.find(provider, id),
+      streamSimple: (selected: any, prompt: any, options: any) => {
+        // Count the complete request, including policy and history. UTF-8 bytes conservatively bound text tokens.
+        // Codex also budgets by the selected model's window, using 128k tokens when it is unknown.
+        const window = selected.contextWindow > 0 ? selected.contextWindow : 128_000;
+        const output = selected.maxTokens > 0 ? selected.maxTokens : 16_384;
+        const inputBudget = Math.max(0, Math.floor(window * 0.95) - output);
+        if (Buffer.byteLength(JSON.stringify(prompt), "utf8") > inputBudget) {
+          throw new Error("This request exceeds the reviewer model's context window budget; manual approval is required.");
+        }
+        return ctx.modelRegistry.streamSimple(selected, prompt, options);
+      },
+    },
   };
   try {
     let triage: Record<string, unknown> | undefined;
