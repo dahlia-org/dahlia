@@ -30,6 +30,7 @@ extension MeetingRepository {
             _ = try DahliaAccountConnectionRecord.deleteOne(db, key: id)
             // Deleting the account removes its chats with its agent directory; sign-out keeps both.
             try db.execute(sql: "DELETE FROM chat_threads WHERE accountID = ?", arguments: [id.uuidString.lowercased()])
+            try db.execute(sql: "DELETE FROM agent_system_runs WHERE accountID = ?", arguments: [id.uuidString.lowercased()])
         }
     }
 

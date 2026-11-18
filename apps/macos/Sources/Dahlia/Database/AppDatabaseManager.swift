@@ -297,6 +297,10 @@ final class AppDatabaseManager: Sendable {
                 )
         }
 
+        migrator.registerMigration("v66_skillCurator") { db in
+            try SkillCuratorMigration.migrate(in: db)
+        }
+
         return migrator
     }()
 

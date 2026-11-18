@@ -121,6 +121,8 @@ struct SettingsDetailView: View {
             .onChange(of: workspaceManagementModel.workspaces.map { "\($0.id):\($0.accountConnectionId?.uuidString ?? "local")" }) {
                 Task { await dahliaAccountController.reload() }
             }
+        case .skills:
+            SkillSettingsView()
         case .permissions:
             PermissionSettingsView()
         case .backups:
@@ -157,6 +159,7 @@ struct SettingsDetailView: View {
         switch SettingsNavigation.visibleSelection(selection) {
         case .accountsAndWorkspaces: L10n.settingsAccountsIntro
         case .agents: L10n.settingsAgentsIntro
+        case .skills: L10n.settingsSkillsIntro
         case .meetings: L10n.settingsMeetingsIntro
         case .meetingLinks: L10n.settingsMeetingLinksIntro
         case .dahliaMCP: L10n.settingsDahliaMCPIntro

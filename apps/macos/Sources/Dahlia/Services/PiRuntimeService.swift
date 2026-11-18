@@ -97,9 +97,12 @@ actor PiRuntimeService {
             throw AIConfigurationError.providerChanged(provider.displayName)
         }
         if options.profile == .review {
-            guard AgentLearningSettings.reviewEnabled(provider.accountKey), !AgentBackgroundActivity.isRecording,
-                  options.environment["DAHLIA_PI_MEMORY_ENABLED"] != "1" || AgentLearningSettings.memoryEnabled(provider.accountKey)
-            else { throw CancellationError() }
+            let account = provider.accountKey
+            let allowed = options.environment["DAHLIA_PI_CURATOR"] == "1"
+                ? SkillCuratorSettings.enabled(account) && SkillCuratorSettings.consolidate(account)
+                : AgentLearningSettings.reviewEnabled(account)
+                && (options.environment["DAHLIA_PI_MEMORY_ENABLED"] != "1" || AgentLearningSettings.memoryReviewEnabled(account))
+            guard allowed, !AgentBackgroundActivity.isRecording else { throw CancellationError() }
         }
         let agentURL = try agentLocator.agentURL(for: provider)
         let transport = try launcher(options, provider, agentURL)
@@ -813,7 +816,7 @@ actor PiRuntimeService {
         throw PiRuntimeError.processExited(nil)
     }
 
-    nonisolated static func assistantText(_ message: [String: JSONValue]?) throws -> String {
+    nonisolated static func assistantText(_ message: [String: JSONValue]?, allowEmpty: Bool = false) throws -> String {
         guard let message else { throw PiRuntimeError.emptyResponse }
         switch message["stopReason"]?.stringValue {
         case "stop", "toolUse":
@@ -831,7 +834,7 @@ actor PiRuntimeService {
             guard block.objectValue?["type"]?.stringValue == "text" else { return nil }
             return block.objectValue?["text"]?.stringValue
         }.joined()
-        guard text.nilIfBlank != nil else { throw PiRuntimeError.emptyResponse }
+        guard allowEmpty || text.nilIfBlank != nil else { throw PiRuntimeError.emptyResponse }
         return text
     }
 

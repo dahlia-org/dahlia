@@ -125,18 +125,22 @@ export default function (pi: any) {
 
   let reviewIterations = 0;
   let reviewInputTokens = 0;
-  const reviewBudget = (ctx: any) => ctx.model?.contextWindow > 0 ? Math.min(600_000, ctx.model.contextWindow * 0.75) : 120_000;
+  // The Curator's consolidation sweep takes 50-100 calls upstream; it has a response ceiling and no aggregate input budget.
+  const curator = env.DAHLIA_PI_CURATOR === "1";
+  const reviewLimit = curator ? 100 : 16;
+  const reviewBudget = (ctx: any) =>
+    curator ? Infinity : ctx.model?.contextWindow > 0 ? Math.min(600_000, ctx.model.contextWindow * 0.75) : 120_000;
   pi.on("message_end", (event: any, ctx: any) => {
     if (env.DAHLIA_PI_PROFILE !== "review" || event.message?.role !== "assistant") return;
     reviewIterations += 1;
     const usage = event.message.usage ?? {};
     reviewInputTokens += (usage.input ?? 0) + (usage.cacheRead ?? 0) + (usage.cacheWrite ?? 0);
-    if (reviewIterations >= 16 || reviewInputTokens >= reviewBudget(ctx)) ctx.abort();
+    if (reviewIterations >= reviewLimit || reviewInputTokens >= reviewBudget(ctx)) ctx.abort();
   });
   pi.on("before_provider_request", (event: any, ctx: any) => {
     if (env.DAHLIA_PI_PROFILE === "review") {
       // Pi logs hook errors and continues; abort the run explicitly before another request.
-      if (reviewIterations >= 16 || reviewInputTokens >= reviewBudget(ctx)) ctx.abort();
+      if (reviewIterations >= reviewLimit || reviewInputTokens >= reviewBudget(ctx)) ctx.abort();
     }
     const enforce = strictSchemaPayload[ctx.model?.api];
     if (!outputSchema || env.PI_OUTPUT_STRICT_SCHEMA !== "1" || !enforce) return;

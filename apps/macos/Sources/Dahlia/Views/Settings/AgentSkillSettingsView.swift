@@ -3,16 +3,19 @@ import SwiftUI
 
 struct AgentSkillSettingsView: View {
     let account: CodexRuntimeProvider
+    let readOnly: Bool
     @Environment(MainWindowNavigation.self) private var navigation
     @State private var learning: AgentLearningSettingsModel
-    @State private var locked: Set<String> = []
-    @State private var skills: [CodexChatSlashCommand] = []
+    @State private var curation: [String: SkillCurationState] = [:]
+    @State private var root: URL?
+    @State private var entries: [AgentSkillSettingsEntry] = []
     @State private var isLoading = false
     @State private var errorMessage: String?
     @State private var refreshID = 0
 
-    init(account: CodexRuntimeProvider) {
+    init(account: CodexRuntimeProvider, readOnly: Bool = false) {
         self.account = account
+        self.readOnly = readOnly
         _learning = State(initialValue: AgentLearningSettingsModel(account: account))
     }
 
@@ -23,43 +26,70 @@ struct AgentSkillSettingsView: View {
                     ProgressView().controlSize(.small)
                 } else if let errorMessage {
                     Text(errorMessage).foregroundStyle(.red).textSelection(.enabled)
-                } else if skills.isEmpty {
+                } else if entries.isEmpty {
                     Text(L10n.agentSkillsEmpty).foregroundStyle(.secondary)
                 }
-                ForEach(skills) { skill in
+                ForEach(entries) { entry in
                     VStack(alignment: .leading, spacing: 4) {
                         HStack {
-                            Text(skill.displayName).font(.dahliaHeadline)
+                            Text(entry.name).font(.dahliaHeadline)
+                            Text(provenanceLabel(entry)).font(.dahliaSecondary).foregroundStyle(.secondary)
                             Spacer()
-                            Button(locked.contains(skill.displayName) ? L10n.agentSkillLock + " ✓" : L10n.agentSkillLock) {
-                                Task {
-                                    do {
-                                        let service = try await PiChatService.shared.skillService()
-                                        try await service.setLocked(
-                                            name: skill.displayName,
-                                            account: account.accountKey,
-                                            locked: !locked.contains(skill.displayName)
-                                        )
-                                        await refresh()
-                                    } catch { errorMessage = error.localizedDescription }
+                            if !entry.isReadOnly, curation[entry.name]?.isCuratorManaged == true {
+                                let pinned = curation[entry.name]?.pinned == true
+                                Button(pinned ? L10n.agentSkillPin + " ✓" : L10n.agentSkillPin) {
+                                    Task {
+                                        do {
+                                            let service = try await PiChatService.shared.skillService()
+                                            try await service.setPinned(name: entry.name, account: account.accountKey, pinned: !pinned)
+                                            await refresh()
+                                        } catch { errorMessage = error.localizedDescription }
+                                    }
                                 }
+                                .help(L10n.agentSkillPinHelp)
                             }
+                            if !entry.isReadOnly {
+                                Button(curation[entry.name]?.locked == true ? L10n.agentSkillLock + " ✓" : L10n.agentSkillLock) {
+                                    Task {
+                                        do {
+                                            let service = try await PiChatService.shared.skillService()
+                                            try await service.setLocked(
+                                                name: entry.name,
+                                                account: account.accountKey,
+                                                locked: curation[entry.name]?.locked != true
+                                            )
+                                            await refresh()
+                                        } catch { errorMessage = error.localizedDescription }
+                                    }
+                                }
 
-                            Button(L10n.agentSkillOpenFolder, systemImage: "folder") { openFolder(for: skill) }
-                                .disabled(skill.skillFileURL == nil)
-                                .help(L10n.agentSkillOpenFolder)
-                                .accessibilityLabel(Text("\(L10n.agentSkillOpenFolder): \(skill.displayName)"))
-                            Button(L10n.agentSkillDetails, systemImage: "info.circle") {
-                                navigation.presentSettingsModal(AgentSkillDetailView(skill: skill, onClose: navigation.dismissSettingsModal))
                             }
-                            .help(L10n.agentSkillDetails)
-                            .accessibilityLabel(Text("\(L10n.agentSkillDetails): \(skill.displayName)"))
+                            if let skill = entry.skill {
+                                Button(L10n.agentSkillOpenFolder, systemImage: "folder") { openFolder(for: skill) }
+                                    .disabled(skill.skillFileURL == nil)
+                                    .help(L10n.agentSkillOpenFolder)
+                                    .accessibilityLabel(Text("\(L10n.agentSkillOpenFolder): \(entry.name)"))
+                                Button(L10n.agentSkillDetails, systemImage: "info.circle") {
+                                    navigation.presentSettingsModal(AgentSkillDetailView(skill: skill, onClose: navigation.dismissSettingsModal))
+                                }
+                                .help(L10n.agentSkillDetails)
+                                .accessibilityLabel(Text("\(L10n.agentSkillDetails): \(entry.name)"))
+                            }
                         }
                         .buttonStyle(.dahlia())
-                        if let description = skill.description {
+                        if let description = entry.skill?.description {
                             Text(description)
                                 .lineLimit(2)
                                 .truncationMode(.tail)
+                        } else if entry.skill == nil {
+                            Text(curation[entry.name]?.state == "archived" ? L10n.agentSkillArchived : L10n.agentSkillUnavailable)
+                                .foregroundStyle(.secondary)
+                        }
+                        if learning.changes.contains(where: { $0.kind == "skill" && $0.target == entry.name }) {
+                            DisclosureGroup(L10n.agentSkillHistory) {
+                                AgentLearningChangesView(model: learning, kind: "skill", target: entry.name, allowsChanges: !entry.isReadOnly)
+                            }
+                            .disclosureGroupStyle(MCPDisclosureGroupStyle())
                         }
                     }
                     .textSelection(.enabled)
@@ -72,14 +102,25 @@ struct AgentSkillSettingsView: View {
             } footer: {
                 Text(L10n.agentSkillsHelp)
             }
-            Section {
-                AgentLearningChangesView(model: learning, kind: "skill")
-                if let error = learning.error { Text(error).foregroundStyle(.red) }
-            }
+            if let error = learning.error { Text(error).foregroundStyle(.red) }
         }
         .formStyle(.grouped)
         .font(.dahliaBody)
         .task(id: refreshID) { await refresh() }
+        .onChange(of: learning.isBusy) { wasBusy, isBusy in
+            if wasBusy, !isBusy { refreshID += 1 }
+        }
+    }
+
+    /// The group that decides whether the Curator may touch the skill.
+    private func provenanceLabel(_ entry: AgentSkillSettingsEntry) -> String {
+        switch entry.provenance {
+        case .bundled: return L10n.agentSkillProvenanceBundled
+        case .package: return L10n.agentSkillProvenancePackage
+        case .account:
+            guard let state = curation[entry.name], state.isCuratorManaged else { return L10n.agentSkillProvenanceUser }
+            return state.state == "stale" ? L10n.agentSkillProvenanceStale : L10n.agentSkillProvenanceCurated
+        }
     }
 
     private func openFolder(for skill: CodexChatSlashCommand) {
@@ -96,18 +137,20 @@ struct AgentSkillSettingsView: View {
         do {
             let result = try await PiRuntimeService.shared.skills(for: account)
             guard !Task.isCancelled else { return }
-            skills = result
             let service = try await PiChatService.shared.skillService()
-            var locks: Set<String> = []
-            for skill in result
-                where try await service.locked(name: skill.displayName, account: account.accountKey) {
-                locks.insert(skill.displayName)
-            }
-            locked = locks
+            curation = try await Dictionary(
+                service.curationStates(account: account.accountKey).map { ($0.name, $0) }, uniquingKeysWith: { first, _ in first }
+            )
+            root = try await PiChatService.shared.skillsRoot(account)
             await learning.refresh()
+            guard !Task.isCancelled, let root else { return }
+            let grouped = try await AgentSkillSettingsEntry.grouped(skills: result, changes: learning.changes, root: root)
+            guard !Task.isCancelled else { return }
+            entries = grouped
+                .filter { $0.isReadOnly == readOnly }
         } catch {
             guard !Task.isCancelled else { return }
-            skills = []
+            entries = []
             errorMessage = error.localizedDescription
         }
     }

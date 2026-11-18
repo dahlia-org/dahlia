@@ -2,15 +2,21 @@ import DahliaMeetingAccess
 import DahliaRuntimeSupport
 import Foundation
 import GRDB
+import os
 
 /// Chat on Pi. Each open thread owns one `pi --mode rpc` process; GRDB owns history; Pi files hold runtime resume state.
 actor PiChatService: CodexChatServicing {
     static let shared = PiChatService()
 
     var learningSkills: AgentSkillService?
-    var learningWorker: Task<Void, Never>?
     var reviewTask: Task<Void, Never>?
-    var activeReview: (id: String, account: String, connection: PiRPCConnection, includesMemory: Bool)?
+    /// `kind` is the review's effective kind after the account's switches: memory, skill or combined.
+    var activeReview: (id: String, account: String, connection: PiRPCConnection, kind: String)?
+    var curatorTask: Task<Void, Never>?
+    nonisolated let curatorActivityGeneration = OSAllocatedUnfairLock(initialState: 0)
+    var activeCurator: (id: String, account: String, connection: PiRPCConnection)?
+    /// Upstream measures Curator idleness from process start as well as from the latest chat activity.
+    let launchedAt = Date()
     private var backupService: BackupService?
     private var backupDBQueue: DatabaseQueue?
     private var historyStore: ChatThreadStore?
@@ -23,6 +29,7 @@ actor PiChatService: CodexChatServicing {
         try await dbQueue.write { db in
             try db.execute(sql: "UPDATE chat_schedule_fires SET status='interrupted' WHERE status='running'")
             try db.execute(sql: "UPDATE agent_reviews SET status='interrupted' WHERE status='running'")
+            try db.execute(sql: "UPDATE agent_system_runs SET status='interrupted',finishedAt=? WHERE status='running'", arguments: [Date()])
             try db
                 .execute(
                     sql: "DELETE FROM jobs_background WHERE indexKind='review' AND targetKey IN (SELECT id FROM agent_reviews WHERE status='interrupted')"
@@ -438,6 +445,7 @@ actor PiChatService: CodexChatServicing {
     ) async throws -> CodexChatTurnHandle {
         guard startingTurns[threadID] == nil else { throw PiRuntimeError.rpcError(code: nil, message: "turn already starting") }
         startingTurns[threadID] = 1
+        curatorActivityGeneration.withLock { $0 += 1 }
         do {
             let handle = try await startTurn(
                 threadID: threadID, inputs: inputs, model: model, effort: effort,
@@ -572,6 +580,8 @@ actor PiChatService: CodexChatServicing {
         if let servers = sessions[threadID]?.mcpServersNeedingSignIn, !servers.isEmpty {
             sessions[threadID]?.turn?.broadcast.yield(.mcpSignInRequired(servers: servers))
         }
+        let provider = session.provider
+        Task { await self.recordSkillCommand(Self.textJoined(inputs), provider: provider) }
         do {
             let accepted = try await connection.request("prompt", PiRuntimeService.prompt(Self.textJoined(inputs)))
             // Pi handled the text itself (for example a `/skill:` expansion error) and starts no run.
@@ -1045,6 +1055,10 @@ actor PiChatService: CodexChatServicing {
     }
 
     private func handleToolActivity(_ object: [String: JSONValue], threadID: String) throws {
+        if object["type"]?.stringValue == "tool_execution_start", object["toolName"]?.stringValue == "read",
+           let path = object["args"]?.objectValue?["path"]?.stringValue, let provider = sessions[threadID]?.provider {
+            Task { await self.recordSkillRead(path: path, provider: provider) }
+        }
         if let activity = Self.toolActivity(object) {
             if object["type"]?.stringValue == "tool_execution_end", sessions[threadID]?.turn != nil {
                 try history().appendItems(threadID: threadID, items: [ChatHistoryCodec.toolResult([
