@@ -129,6 +129,13 @@ struct DahliaApp: App {
                             onSelectWorkspace: { workspace in openWorkspace(workspace) }
                         )
                         .environment(chatCoordinator)
+                        .onReceive(NotificationCenter.default.publisher(for: AgentLearningSettings.sendChat)) { notification in
+                            guard let prompt = notification.object as? String else { return }
+                            mainWindowNavigation.dismissSettingsModal()
+                            mainWindowNavigation.dismissSettings()
+                            mainWindowNavigation.resetNavigationHistory(to: .chat)
+                            chatCoordinator.sendInNewDockedChat(prompt)
+                        }
                         .onReceive(NotificationCenter.default.publisher(for: AgentLearningSettings.openThread)) { notification in
                             guard let id = notification.object as? String else { return }
                             Task {

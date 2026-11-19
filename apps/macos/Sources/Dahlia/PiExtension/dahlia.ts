@@ -16,6 +16,8 @@ import {
 import { omnigentTools, registerThreadTools, threadTools } from "./thread-tools.ts";
 import { registerLearningTools, learningTools } from "./learning-tools.ts";
 import { reviewMCP } from "./mcp-review.ts";
+import { registerSkillOptimizer } from "./skill-evolution.ts";
+import { learnTemplatePath, registerLearn } from "./learn.ts";
 
 const env = process.env;
 const mode = env.DAHLIA_PI_MODE ?? "control";
@@ -156,7 +158,10 @@ export default function (pi: any) {
       const paths = (entries: typeof resources.skills) => entries
         .filter((entry) => entry.enabled && entry.metadata.origin === "package" && entry.metadata.scope === "user")
         .map((entry) => entry.path);
-      return { skillPaths: [...accountSkillPaths(join(agentDir, "skills")), ...paths(resources.skills)], promptPaths: paths(resources.prompts) };
+      return {
+        skillPaths: [...accountSkillPaths(join(agentDir, "skills")), ...paths(resources.skills)],
+        promptPaths: [learnTemplatePath, ...paths(resources.prompts)],
+      };
     });
   }
 
@@ -203,6 +208,8 @@ export default function (pi: any) {
       return;
     };
     registerLearningTools(pi, bridge, approve);
+    registerLearn(pi);
+    registerSkillOptimizer(pi, bridge);
     if (env.DAHLIA_PI_MCP_COMMAND) {
       const [command, ...args] = JSON.parse(env.DAHLIA_PI_MCP_COMMAND);
       pi.registerMcpServer("dahlia", { command, args, exposure: "direct", description: "Dahlia meetings, projects, and workspaces" });

@@ -66,6 +66,49 @@ import Synchronization
             return Fixture(pi: pi, chat: chat, chatTransport: chatTransport, store: store)
         }
 
+        @Test(arguments: ["edited", "deleted", "locked", "interrupted"])
+        func rejectedOptimizerProposalFinishesItsRun(change: String) async throws {
+            let fixture = try Self.fixture { _ in }
+            defer { try? FileManager.default.removeItem(at: fixture.pi.rootURL) }
+            let root = URL(filePath: PiSandbox.realPath(fixture.pi.rootURL)).appending(path: "skills")
+            let service = try await fixture.chat.skillService()
+            let raw = "---\nname: sample\ndescription: Review sample input.\n---\nReview the input."
+            _ = try await service.execute("skill_manage", payload: .object(["operations": .array([.object([
+                "action": .string("create"), "name": .string("sample"), "content": .string(raw),
+            ])])]), account: "local", root: root, thread: nil)
+            let thread = try await fixture.chat.startThread(model: nil, effort: "medium")
+            _ = try await fixture.chat.beginTurn(
+                threadID: thread.id, inputs: [.text("Optimize sample")], model: nil, effort: "medium",
+                approvalMethod: .ask, expectedProvider: .local
+            )
+            let turn = try #require(await fixture.chat.sessions[thread.id]?.turn?.run)
+            let input = try await fixture.chat.optimizerInput(.object(["name": .string("sample")]), run: turn, account: "local", root: root)
+            let id = try #require(input.objectValue?["run_id"]?.stringValue)
+            #expect(input.objectValue?["raw"] == .string(raw))
+            switch change {
+            case "edited": try (raw + "\nNew instructions.").write(to: root.appending(path: "sample/SKILL.md"), atomically: true, encoding: .utf8)
+            case "deleted": try FileManager.default.removeItem(at: root.appending(path: "sample"))
+            case "locked": try await service.setLocked(name: "sample", account: "local", locked: true)
+            default: await fixture.chat.closeSession(thread.id)
+            }
+            let payload: JSONValue = .object([
+                "run_id": .string(id), "name": .string("sample"), "changed": .bool(true),
+                "constraints": .array([.object(["passed": .bool(true)])]), "improvement": .number(0.2), "skill": .string(raw + "\nValidate."),
+            ])
+            let result = try await fixture.chat.optimizerResult(payload, account: "local", root: root)
+            #expect(change == "interrupted" ? result == .bool(false) : result.objectValue?["success"] == .bool(false))
+            let run = try await fixture.store.dbQueue.read { try #require(try AgentSystemRunRecord.fetchOne($0, key: id)) }
+            #expect(run.status == (change == "interrupted" ? "interrupted" : "failed"))
+            #expect(run.finishedAt != nil)
+            #expect(run.report.isEmpty)
+            #expect(try await fixture.store.dbQueue.read {
+                try Int.fetchOne($0, sql: "SELECT COUNT(*) FROM agent_learning_changes WHERE reviewID=?", arguments: [id])
+            } == 0)
+            #expect(try await fixture.chat.optimizerResult(payload, account: "local", root: root) == .bool(false))
+            await fixture.chat.closeSession(thread.id)
+            await fixture.pi.service.shutdown()
+        }
+
         @Test(arguments: [CodexChatApprovalMethod.ask, .autoReview, .fullAccess])
         func scheduleApprovalCommitsOnlyTheFrozenRequestOnce(method: CodexChatApprovalMethod) async throws {
             let fixture = try Self.fixture { _ in }
@@ -829,7 +872,7 @@ import Synchronization
             #expect(launch.arguments.contains("--session-id"))
             #expect(launch.arguments
                 .contains(
-                    "read,ls,write,edit,bash,skills_list,skill_view,skill_manage,cronjob,memory,dah_create_backup,dah_thread_list,dah_thread_search,dah_thread_read,"
+                    "read,ls,write,edit,bash,skills_list,skill_view,skill_manage,cronjob,skill_optimize,memory,dah_create_backup,dah_thread_list,dah_thread_search,dah_thread_read,"
                         + "dah_thread_start,dah_thread_send,dah_thread_wait,dah_thread_interrupt,dah_thread_update,mcp__dahlia__*"
                 ))
             let work = fixture.pi.rootURL.appending(path: "work")
@@ -1245,7 +1288,7 @@ import Synchronization
             let withGmail = try #require(pi.launches.all.last { $0.mode == .chat })
             #expect(withGmail.arguments
                 .contains(
-                    "read,ls,write,edit,bash,skills_list,skill_view,skill_manage,cronjob,memory,dah_create_backup,dah_thread_list,dah_thread_search,dah_thread_read,"
+                    "read,ls,write,edit,bash,skills_list,skill_view,skill_manage,cronjob,skill_optimize,memory,dah_create_backup,dah_thread_list,dah_thread_search,dah_thread_read,"
                         + "dah_thread_start,dah_thread_send,dah_thread_wait,dah_thread_interrupt,dah_thread_update,mcp__dahlia__*,mcp__gmail__*,mcp__notion__*"
                 ))
             // Dahlia's extension registers the sign-ins mcp.json names in every process; none loads the provider file on its own.

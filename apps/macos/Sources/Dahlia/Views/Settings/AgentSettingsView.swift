@@ -7,8 +7,6 @@ struct AgentSettingsView: View {
         case general
         case models
         case mcps
-        case memory
-        case optimization
         case schedules
         case packages
         case security
@@ -20,8 +18,6 @@ struct AgentSettingsView: View {
             case .general: L10n.general
             case .models: L10n.agentModels
             case .mcps: L10n.agentMCPs
-            case .memory: L10n.agentMemory
-            case .optimization: L10n.agentAutoOptimization
             case .schedules: L10n.agentSchedules
             case .packages: L10n.agentPackages
             case .security: L10n.agentSecurity
@@ -95,10 +91,6 @@ private struct AgentSettingsTabs: View {
                 AgentModelSettingsView(account: account, mcp: mcp, subscriptions: subscriptions, onAdd: presentProviderRegistration)
             case .packages:
                 AgentPackageSettingsView(model: packages)
-            case .memory:
-                AgentMemorySettingsView(account: account)
-            case .optimization:
-                AgentOptimizationSettingsView(account: account)
             case .schedules:
                 AgentScheduleSettingsView(account: account)
             case .mcps:

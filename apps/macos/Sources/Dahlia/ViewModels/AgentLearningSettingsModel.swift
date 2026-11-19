@@ -131,7 +131,11 @@ final class AgentLearningSettingsModel {
             if change.kind == "skill" {
                 let service = try await PiChatService.shared.skillService()
                 let root = try await PiChatService.shared.skillsRoot(self.account)
-                try await service.undo(id: change.id, account: self.account.accountKey, root: root)
+                if action == "undo" {
+                    try await service.undo(id: change.id, account: self.account.accountKey, root: root)
+                } else {
+                    try await service.resolveProposal(id: change.id, account: self.account.accountKey, root: root, approve: action == "approve")
+                }
             } else {
                 let service = try await PiChatService.shared.memoryService()
                 let account = self.account.accountKey

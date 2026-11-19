@@ -91,6 +91,113 @@
             #expect(saved?.snapshot.isEmpty == true && saved?.notified == true)
         }
 
+        @Test(arguments: ["memory", "skill", "combined"], ["completed", "failed", "interrupted"])
+        func reviewOutcomePreservesKind(kind: String, status: String) async throws {
+            let store = try store()
+            let thread = UUID.v7().uuidString
+            try store.createThread(ChatThreadRecord(id: thread, accountID: "synthetic", title: "test", createdAt: .now, updatedAt: .now))
+            let job = AgentReviewRecord(
+                id: UUID.v7().uuidString, accountID: "synthetic", threadID: thread, kind: kind,
+                snapshot: "saved", model: nil, effort: "medium", status: "running", createdAt: .now
+            )
+            try await store.dbQueue.write { try job.insert($0) }
+            let chat = PiChatService(historyStore: store)
+            try await chat.finishReview(job, status: status)
+            let run = try await store.dbQueue.read { db in
+                try #require(try AgentSystemRunRecord.fetchOne(db))
+            }
+            #expect(run.task == (kind == "memory" ? "memoryReview" : kind == "skill" ? "skillReview" : "review"))
+            #expect(run.status == status)
+        }
+
+        @Test func memoryAndSkillReviewsKeepIndependentModelsAndEffort() {
+            let account = "review-model-\(UUID())"
+            let defaults = UserDefaults.standard
+            let legacyModel = "agentReviewModel.\(account)"
+            let legacyEffort = "agentReviewEffort.\(account)"
+            let keys = AgentLearningSettings.ReviewKind.allCases.flatMap {
+                [AgentLearningSettings.reviewModelKey(account, kind: $0), AgentLearningSettings.reviewEffortKey(account, kind: $0)]
+            } + [legacyModel, legacyEffort]
+            defer { keys.forEach { defaults.removeObject(forKey: $0) } }
+            let model = { (reference: String) in
+                CodexModel(
+                    id: reference,
+                    model: reference,
+                    displayName: reference,
+                    description: "",
+                    hidden: false,
+                    isDefault: false,
+                    supportedReasoningEfforts: [],
+                    defaultReasoningEffort: "medium",
+                    inputModalities: nil
+                )
+            }
+            let models = [model("openai/gpt-6.1-sol"), model("openai/gpt-6-luna")]
+            #expect(AgentLearningSettings.prepareReviewModel(account, kind: .memory, models: models) == "openai/gpt-6-luna")
+            #expect(AgentLearningSettings.reviewEffort(account, kind: .memory) == "medium")
+            // A changed catalog/chat default does not replace the saved review selection.
+            #expect(AgentLearningSettings.prepareReviewModel(account, kind: .memory, models: [models[0]]) == "openai/gpt-6-luna")
+            defaults.set("anthropic/claude-haiku-5-5", forKey: legacyModel)
+            defaults.set("low", forKey: legacyEffort)
+            #expect(AgentLearningSettings.reviewModel(account, kind: .skill) == "anthropic/claude-haiku-5-5")
+            defaults.set("high", forKey: AgentLearningSettings.reviewEffortKey(account, kind: .memory))
+            #expect(AgentLearningSettings.reviewEffort(account, kind: .skill) == "low")
+            #expect(AgentLearningSettings.reviewEffort(account, kind: .memory) == "high")
+            #expect(AgentLearningSettings.reviewModel(account, kind: .memory) == "openai/gpt-6-luna")
+        }
+
+        @Test func simultaneousReviewsQueueSeparatelyAndPreserveLegacySnapshots() async throws {
+            let store = try store()
+            let account = "review-queue-\(UUID())"
+            let thread = UUID.v7().uuidString
+            var record = ChatThreadRecord(id: thread, accountID: account, title: "test", createdAt: .now, updatedAt: .now)
+            record.memoryTurns = 10
+            record.skillIterations = 10
+            try store.createThread(record)
+            let id = UUID.v7()
+            let run = ChatRunRecord(
+                id: id,
+                threadID: thread,
+                rootRunID: id,
+                status: "completed",
+                input: "",
+                model: "chat/changing-model",
+                effort: "high",
+                approvalMethod: "ask",
+                createdAt: .now
+            )
+            let chat = PiChatService(historyStore: store)
+            try await chat.enqueueReview(run, account: account)
+            try await chat.enqueueReview(run, account: account)
+            let jobs = try await store.dbQueue.read { try AgentReviewRecord.fetchAll($0) }
+            #expect(Set(jobs.map(\.kind)) == ["memory", "skill"])
+            #expect(jobs.count == 2)
+            #expect(jobs.allSatisfy { $0.model == nil && $0.effort == "medium" })
+            #expect(try store.thread(id: thread, accountID: account).memoryTurns == 0)
+            #expect(try store.thread(id: thread, accountID: account).skillIterations == 0)
+            let legacy = AgentReviewRecord(
+                id: UUID.v7().uuidString,
+                accountID: account,
+                threadID: thread,
+                kind: "combined",
+                snapshot: "complete original snapshot",
+                model: "chat/old-model",
+                effort: "high",
+                status: "pending",
+                createdAt: .now
+            )
+            try await store.dbQueue.write { db in
+                try db.execute(sql: "DELETE FROM agent_reviews")
+                try legacy.insert(db)
+            }
+            try await chat.splitCombinedReview(legacy)
+            let split = try await store.dbQueue.read { try AgentReviewRecord.fetchAll($0) }
+            #expect(split.count == 2)
+            #expect(Set(split.map(\.kind)) == ["memory", "skill"])
+            #expect(split.allSatisfy { $0.snapshot == legacy.snapshot && $0.model == nil && $0.effort == "medium" })
+            #expect(try await store.dbQueue.read { try Int.fetchOne($0, sql: "SELECT COUNT(*) FROM jobs_background WHERE indexKind='review'") } == 2)
+        }
+
         @Test func disabledReviewLaunchOmitsOnlyFrozenMemoryInjection() {
             let snapshot = PiChatService.ReviewSnapshot(
                 conversation: "history",

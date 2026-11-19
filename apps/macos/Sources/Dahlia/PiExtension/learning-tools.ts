@@ -28,4 +28,4 @@ export function registerLearningTools(pi: any, bridge: any, approve: any) {
     });
   }
 }
-export const learningTools = ["memory", "skills_list", "skill_view", "skill_manage", "cronjob"];
+export const learningTools = ["memory", "skills_list", "skill_view", "skill_manage", "cronjob", "skill_optimize"];
