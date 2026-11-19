@@ -109,6 +109,53 @@ import GRDB
         }
 
         @Test
+        func unloadedEventsStayDisplayOnlyUntilFreshLoadingCompletes() async throws {
+            let database = try AppDatabaseManager(path: ":memory:")
+            let workspace = WorkspaceRecord(id: .v7(), path: nil, name: "Local", createdAt: .now, lastOpenedAt: .now)
+            let original = event(id: "saved", platform: CalendarEventPlatform.googleCalendar, icalUid: "linked")
+            let cached = event(id: "stale", platform: CalendarEventPlatform.googleCalendar, icalUid: "linked")
+            let fresh = event(id: "fresh", platform: CalendarEventPlatform.googleCalendar, icalUid: "linked")
+            try await database.dbQueue.write { db in
+                try workspace.insert(db)
+                try CalendarEventRecord.upsert(event: original, now: .now, in: db)
+                try MeetingRecord(
+                    id: .v7(), workspaceId: workspace.id, name: "Meeting", createdAt: .now, updatedAt: .now,
+                    calendarEventIcalUid: "linked", calendarEventRecurrenceId: ""
+                ).insert(db)
+            }
+            let store = FakeCalendarEventSourceStore(source: .google, events: [cached], isLoaded: false)
+            let coordinator = CalendarSourceCoordinator(stores: [store], dbQueue: database.dbQueue)
+            await coordinator.refreshEnabledSources([.google])
+            await coordinator.waitForPersistence()
+
+            #expect(coordinator.events(for: [.google]) == [cached])
+            try await database.dbQueue.read { db in
+                let linked = try CalendarEventRecord.fetch(key: CalendarEventKey(icalUid: "linked", recurrenceId: ""), in: db)
+                #expect(linked?.title == "saved")
+            }
+            store.replaceEvents([fresh])
+            await coordinator.waitForPersistence()
+            try await database.dbQueue.read { db in
+                let linked = try CalendarEventRecord.fetch(key: CalendarEventKey(icalUid: "linked", recurrenceId: ""), in: db)
+                #expect(linked?.title == "saved")
+            }
+
+            store.setLoaded(true)
+            await coordinator.waitForPersistence()
+            try await database.dbQueue.read { db in
+                let linked = try CalendarEventRecord.fetch(key: CalendarEventKey(icalUid: "linked", recurrenceId: ""), in: db)
+                #expect(linked?.title == "fresh")
+            }
+            store.setLoaded(false)
+            store.replaceEvents([cached])
+            await coordinator.waitForPersistence()
+            try await database.dbQueue.read { db in
+                let linked = try CalendarEventRecord.fetch(key: CalendarEventKey(icalUid: "linked", recurrenceId: ""), in: db)
+                #expect(linked?.title == "fresh")
+            }
+        }
+
+        @Test
         func publishedRefreshUsesAuthoritativeSourceAndQueuesOnlyLinkedOwners() async throws {
             let database = try AppDatabaseManager(path: ":memory:")
             let connection = DahliaAccountConnectionRecord(

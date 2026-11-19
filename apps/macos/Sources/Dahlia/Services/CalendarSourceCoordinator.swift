@@ -119,7 +119,7 @@ final class CalendarSourceCoordinator: ObservableObject {
     private func schedulePersistence() {
         guard let dbQueue, !persistedSources.isEmpty else { return }
         let snapshot = CalendarSource.allCases
-            .filter { persistedSources.contains($0) }
+            .filter { persistedSources.contains($0) && loadedSources.contains($0) }
             .flatMap { eventsBySource[$0] ?? [] }
             .deduplicatedAcrossSources(mergingMissingMetadata: false)
         let previousTask = persistenceTask
@@ -151,6 +151,7 @@ final class CalendarSourceCoordinator: ObservableObject {
             return
         }
         loadedSources = updatedSources
+        if isLoaded { schedulePersistence() }
     }
 }
 

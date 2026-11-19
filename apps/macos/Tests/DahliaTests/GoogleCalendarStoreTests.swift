@@ -52,6 +52,226 @@ import Foundation
         }
 
         @Test
+        func restoreShowsLastFetchedEventsUntilTheFreshFetchFinishes() async {
+            let defaults = isolatedUserDefaults()
+            seedSelectedCalendars(["primary", secondaryCalendar.id], defaults: defaults)
+            let cacheDirectory = temporaryCacheDirectory()
+            defer { try? FileManager.default.removeItem(at: cacheDirectory) }
+            let endedEvent = CalendarEvent(
+                id: "primary::ended",
+                calendarID: "primary",
+                calendarName: "Primary",
+                calendarColorHex: "#4285F4",
+                platformId: "ended",
+                title: "Ended",
+                description: "",
+                icalUid: "ended@google.com",
+                startDate: fixtureNow.addingTimeInterval(-7200),
+                endDate: fixtureNow.addingTimeInterval(-3600),
+                isAllDay: false,
+                conferenceURI: nil
+            )
+            let firstLaunch = GoogleCalendarStore(
+                signInProvider: MockGoogleCalendarSignInProvider(hasPreviousSignIn: true),
+                apiClient: MockGoogleCalendarAPIClient(
+                    calendars: [primaryCalendar, secondaryCalendar],
+                    events: [endedEvent, fixtureEvent, calendarEvent(id: "hidden", calendarID: secondaryCalendar.id)]
+                ),
+                userDefaults: defaults,
+                openAccount: { .local },
+                now: { fixtureNow },
+                eventsCacheDirectory: cacheDirectory
+            )
+            await firstLaunch.restoreSessionIfNeeded()
+            await firstLaunch.waitForEventsCacheWrite()
+            // Selection persists before its network refresh, so the saved snapshot can still contain a hidden calendar.
+            seedSelectedCalendars(["primary"], defaults: defaults)
+
+            let signInProvider = MockGoogleCalendarSignInProvider(hasPreviousSignIn: true, suspendsRestore: true)
+            let freshEvent = calendarEvent(id: "fresh")
+            let nextLaunch = GoogleCalendarStore(
+                signInProvider: signInProvider,
+                apiClient: MockGoogleCalendarAPIClient(calendars: [primaryCalendar], events: [freshEvent]),
+                userDefaults: defaults,
+                openAccount: { .local },
+                now: { fixtureNow },
+                eventsCacheDirectory: cacheDirectory
+            )
+            let restore = Task { await nextLaunch.restoreSessionIfNeeded() }
+            #expect(await pollUntil { signInProvider.restoreCallCount == 1 })
+
+            #expect(nextLaunch.state == .loading)
+            #expect(nextLaunch.upcomingEvents == [fixtureEvent])
+            #expect(!nextLaunch.isLoaded)
+
+            signInProvider.finishRestore()
+            await restore.value
+            #expect(nextLaunch.upcomingEvents == [freshEvent])
+            #expect(nextLaunch.state == .loaded)
+        }
+
+        @Test(arguments: CacheReadInterruption.allCases)
+        func obsoleteCacheReadCannotReplaceNewerSession(_ interruption: CacheReadInterruption) async {
+            let defaults = isolatedUserDefaults()
+            seedSelectedCalendars(["primary"], defaults: defaults)
+            var account = CodexRuntimeProvider.local
+            let readStarted = AsyncStream<Void>.makeStream()
+            let cachedEvents = AsyncStream<[CalendarEvent]>.makeStream()
+            defer {
+                readStarted.continuation.finish()
+                cachedEvents.continuation.finish()
+            }
+            let signInProvider = MockGoogleCalendarSignInProvider(hasPreviousSignIn: true)
+            let store = GoogleCalendarStore(
+                signInProvider: signInProvider,
+                apiClient: MockGoogleCalendarAPIClient(calendars: [primaryCalendar], events: []),
+                userDefaults: defaults,
+                openAccount: { account },
+                now: { fixtureNow },
+                presentingWindowProvider: { NSWindow() },
+                eventsCacheDirectory: temporaryCacheDirectory(),
+                cachedEventsLoader: { _ in
+                    readStarted.continuation.yield(())
+                    for await events in cachedEvents.stream { return events }
+                    return []
+                }
+            )
+            let restore = Task { await store.restoreSessionIfNeeded() }
+            var starts = readStarted.stream.makeAsyncIterator()
+            _ = await starts.next()
+
+            switch interruption {
+            case .disconnect:
+                await store.disconnect()
+            case .signIn:
+                await store.signIn()
+            case .accountSwitch:
+                account = .databricks(connectionID: UUID())
+                defaults.set("[]", forKey: GoogleCalendarStore.selectedCalendarIDsKey(for: account))
+                NotificationCenter.default.post(name: .calendarAccountDidChange, object: nil)
+                #expect(await pollUntil { store.state == .needsCalendarSelection })
+            }
+            let expectedState = store.state
+            let expectedAccount = store.account
+            let expectedRestoreCount = signInProvider.restoreCallCount
+            cachedEvents.continuation.yield([fixtureEvent])
+            await restore.value
+
+            #expect(store.state == expectedState)
+            #expect(store.account == expectedAccount)
+            #expect(store.upcomingEvents.isEmpty)
+            #expect(signInProvider.restoreCallCount == expectedRestoreCount)
+        }
+
+        @Test
+        func selectionChangeDuringCacheReadDoesNotBlockLaterRefreshes() async {
+            let defaults = isolatedUserDefaults()
+            seedSelectedCalendars(["primary"], defaults: defaults)
+            let cacheDirectory = temporaryCacheDirectory()
+            defer { try? FileManager.default.removeItem(at: cacheDirectory) }
+            let readStarted = AsyncStream<Void>.makeStream()
+            let cachedEvents = AsyncStream<[CalendarEvent]>.makeStream()
+            defer {
+                readStarted.continuation.finish()
+                cachedEvents.continuation.finish()
+            }
+            let apiClient = MockGoogleCalendarAPIClient(calendars: [primaryCalendar, secondaryCalendar], events: [])
+            let store = GoogleCalendarStore(
+                signInProvider: MockGoogleCalendarSignInProvider(hasPreviousSignIn: true),
+                apiClient: apiClient,
+                userDefaults: defaults,
+                openAccount: { .local },
+                now: { fixtureNow },
+                presentingWindowProvider: { NSWindow() },
+                eventsCacheDirectory: cacheDirectory,
+                cachedEventsLoader: { _ in
+                    readStarted.continuation.yield(())
+                    for await events in cachedEvents.stream { return events }
+                    return []
+                }
+            )
+            await store.signIn()
+            let restore = Task { await store.restoreSessionIfNeeded() }
+            var starts = readStarted.stream.makeAsyncIterator()
+            _ = await starts.next()
+            store.setCalendarSelection([secondaryCalendar.id])
+            cachedEvents.continuation.yield([])
+            await restore.value
+            await store.refreshIfNeeded(force: true)
+            await store.waitForEventsCacheWrite()
+
+            #expect(apiClient.fetchEventsCallCount >= 2)
+            #expect(store.state == .loaded)
+        }
+
+        @Test
+        func emptyFetchReplacesSnapshotAfterClearingSelection() async {
+            let defaults = isolatedUserDefaults()
+            seedSelectedCalendars(["primary"], defaults: defaults)
+            let cacheDirectory = temporaryCacheDirectory()
+            defer { try? FileManager.default.removeItem(at: cacheDirectory) }
+            let apiClient = ControllableGoogleCalendarAPIClient(initialEvents: [fixtureEvent])
+            let store = GoogleCalendarStore(
+                signInProvider: MockGoogleCalendarSignInProvider(hasPreviousSignIn: true),
+                apiClient: apiClient,
+                userDefaults: defaults,
+                openAccount: { .local },
+                now: { fixtureNow },
+                eventsCacheDirectory: cacheDirectory
+            )
+            await store.restoreSessionIfNeeded()
+            await store.waitForEventsCacheWrite()
+            store.setCalendarSelection([])
+            #expect(await pollUntil { store.state == .needsCalendarSelection })
+
+            store.setCalendarSelection(["primary"])
+            await apiClient.waitForFetchEventsCallCount(2)
+            apiClient.resumePendingRequest(at: 0, with: [])
+            #expect(await pollUntil { store.state == .loaded })
+            await store.waitForEventsCacheWrite()
+
+            let signInProvider = MockGoogleCalendarSignInProvider(hasPreviousSignIn: true, suspendsRestore: true)
+            let nextLaunch = GoogleCalendarStore(
+                signInProvider: signInProvider,
+                apiClient: MockGoogleCalendarAPIClient(calendars: [primaryCalendar], events: []),
+                userDefaults: defaults,
+                openAccount: { .local },
+                now: { fixtureNow },
+                eventsCacheDirectory: cacheDirectory
+            )
+            let restore = Task { await nextLaunch.restoreSessionIfNeeded() }
+            #expect(await pollUntil { signInProvider.restoreCallCount == 1 })
+            #expect(nextLaunch.upcomingEvents.isEmpty)
+            signInProvider.finishRestore()
+            await restore.value
+        }
+
+        @Test
+        func disconnectDropsTheCachedEvents() async {
+            let defaults = isolatedUserDefaults()
+            seedSelectedCalendars(["primary"], defaults: defaults)
+            let cacheDirectory = temporaryCacheDirectory()
+            defer { try? FileManager.default.removeItem(at: cacheDirectory) }
+            let cacheFile = cacheDirectory.appending(path: "local.json")
+            let store = GoogleCalendarStore(
+                signInProvider: MockGoogleCalendarSignInProvider(hasPreviousSignIn: true),
+                apiClient: MockGoogleCalendarAPIClient(calendars: [primaryCalendar], events: [fixtureEvent]),
+                userDefaults: defaults,
+                openAccount: { .local },
+                now: { fixtureNow },
+                eventsCacheDirectory: cacheDirectory
+            )
+            await store.restoreSessionIfNeeded()
+            await store.waitForEventsCacheWrite()
+            #expect(FileManager.default.fileExists(atPath: cacheFile.path))
+
+            await store.disconnect()
+            await store.waitForEventsCacheWrite()
+
+            #expect(!FileManager.default.fileExists(atPath: cacheFile.path))
+        }
+
+        @Test
         func refreshTriggeredRestoreDoesNotCancelItsOwnerTask() async {
             let defaults = isolatedUserDefaults()
             seedSelectedCalendars(["primary"], defaults: defaults)
@@ -746,6 +966,12 @@ import Foundation
 
 private let fixtureNow = Date(timeIntervalSince1970: 1_776_384_000)
 
+enum CacheReadInterruption: CaseIterable {
+    case disconnect
+    case signIn
+    case accountSwitch
+}
+
 private let fixtureSession = GoogleSession(
     account: GoogleCalendarAccount(
         id: "user-1",
@@ -785,10 +1011,10 @@ private let fixtureEvent = CalendarEvent(
     conferenceURI: URL(string: "https://meet.google.com/test-link")
 )
 
-private func calendarEvent(id: String) -> CalendarEvent {
+private func calendarEvent(id: String, calendarID: String = "primary") -> CalendarEvent {
     CalendarEvent(
-        id: "primary::\(id)",
-        calendarID: "primary",
+        id: "\(calendarID)::\(id)",
+        calendarID: calendarID,
         calendarName: "Primary",
         calendarColorHex: "#4285F4",
         platformId: id,
@@ -977,6 +1203,10 @@ private final class ControllableGoogleCalendarAPIClient: GoogleCalendarAPIClient
     func failPendingRequest(at index: Int, with error: any Error = CalendarRefreshTestError.requestFailed) {
         pendingRequests.remove(at: index).resume(throwing: error)
     }
+}
+
+private func temporaryCacheDirectory() -> URL {
+    FileManager.default.temporaryDirectory.appending(path: "GoogleCalendarStoreTests.\(UUID().uuidString)", directoryHint: .isDirectory)
 }
 
 private func isolatedUserDefaults() -> UserDefaults {
