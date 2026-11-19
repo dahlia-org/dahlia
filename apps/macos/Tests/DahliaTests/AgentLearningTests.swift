@@ -16,6 +16,37 @@
 
         private func add(_ content: String) -> [String: JSONValue] { ["action": .string("add"), "content": .string(content)] }
 
+        @Test func reviewHistoryFiltersBeforePaginationAndPreservesLegacyRuns() throws {
+            let db = try database()
+            try db.write { db in
+                for task in ["memoryReview", "skillReview", "review"] {
+                    for index in 0 ..< 25 {
+                        try AgentSystemRunRecord(
+                            id: "\(task)-\(index)", accountID: "a", task: task, status: "completed",
+                            summary: "", report: "", startedAt: Date(timeIntervalSince1970: Double(index)), finishedAt: nil
+                        ).insert(db)
+                    }
+                }
+                for index in 0 ..< 30 {
+                    try AgentSystemRunRecord(
+                        id: "other-\(index)", accountID: "b", task: "memoryReview", status: "failed",
+                        summary: "", report: "", startedAt: .now, finishedAt: nil
+                    ).insert(db)
+                }
+            }
+            try db.read { db in
+                for task in ["memoryReview", "skillReview", "review"] {
+                    let first = try AgentOptimizationSettingsModel.fetchRuns(db, account: "a", task: task, limit: 21)
+                    #expect(first.count == 21)
+                    #expect(first.allSatisfy { $0.accountID == "a" && $0.task == task })
+                    #expect(first.first?.id == "\(task)-24")
+                    let expanded = try AgentOptimizationSettingsModel.fetchRuns(db, account: "a", task: task, limit: 41)
+                    #expect(expanded.count == 25)
+                    #expect(Array(expanded.prefix(21)).map(\.id) == first.map(\.id))
+                }
+            }
+        }
+
         @Test func migrationPreservesRunsItemsAndBackgroundJobs() throws {
             let db = try DatabaseQueue(configuration: AppDatabaseManager.configuration())
             try AppDatabaseManager.migrator.migrate(db, upTo: "v63_chatRuns")

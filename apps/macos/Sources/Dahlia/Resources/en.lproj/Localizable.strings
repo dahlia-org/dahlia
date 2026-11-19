@@ -2249,3 +2249,5 @@
 "sidebar.omnigent.noSessions" = "No Omnigent sessions";
 "omnigent.session.noMessages" = "No messages yet";
 "omnigent.session.openInBrowser" = "Open in Omnigent";
+
+"settings.agents.optimization.agentLegacyReviewRuns" = "Earlier shared review history";

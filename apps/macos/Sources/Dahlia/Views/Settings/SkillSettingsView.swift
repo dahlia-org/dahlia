@@ -92,7 +92,7 @@ private struct SkillCurationSettingsView: View {
                     AgentReviewModelRows(account: account, kind: .skill, models: models)
                 }
                 .disabled(!skillReview)
-                AgentSystemRunRows(model: model, task: "review", title: L10n.agentReviewRuns)
+                AgentSystemRunRows(model: model, task: "skillReview", title: L10n.agentReviewRuns)
             } header: {
                 AgentSectionHeader(title: L10n.agentSkillReviewSection) { EmptyView() }
             }
@@ -159,6 +159,11 @@ private struct SkillCurationSettingsView: View {
                 AgentSectionHeader(title: L10n.agentSkillCurator) { EmptyView() }
             }
             SkillOptimizerSection(model: model)
+            if model.runs["review"]?.isEmpty == false {
+                Section {
+                    AgentSystemRunRows(model: model, task: "review", title: L10n.agentLegacyReviewRuns)
+                }
+            }
             if let error = model.error { Text(error).foregroundStyle(.red).textSelection(.enabled) }
         }
         .formStyle(.grouped).toggleStyle(.switch)

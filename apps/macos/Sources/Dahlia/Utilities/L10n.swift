@@ -20,6 +20,7 @@ enum L10n { // swiftlint:disable:this type_body_length
     static var agentSkillOptimizer: String { String(localized: "settings.agents.optimization.agentSkillOptimizer", bundle: bundle) }
     static var agentSkillReviewSection: String { String(localized: "settings.agents.optimization.agentSkillReviewSection", bundle: bundle) }
     static var agentCuratorEnabled: String { String(localized: "settings.agents.optimization.agentCuratorEnabled", bundle: bundle) }
+    static var agentLegacyReviewRuns: String { String(localized: "settings.agents.optimization.agentLegacyReviewRuns", bundle: bundle) }
     static var agentReviewRuns: String { String(localized: "settings.agents.optimization.agentReviewRuns", bundle: bundle) }
     static var agentCuratorRuns: String { String(localized: "settings.agents.optimization.agentCuratorRuns", bundle: bundle) }
     static var agentOptimizerRuns: String { String(localized: "settings.agents.optimization.agentOptimizerRuns", bundle: bundle) }

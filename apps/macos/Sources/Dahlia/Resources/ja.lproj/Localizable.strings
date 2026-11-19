@@ -2249,3 +2249,5 @@
 "sidebar.omnigent.noSessions" = "Omnigent セッションはありません";
 "omnigent.session.noMessages" = "まだメッセージはありません";
 "omnigent.session.openInBrowser" = "Omnigent で開く";
+
+"settings.agents.optimization.agentLegacyReviewRuns" = "以前の共通履歴";

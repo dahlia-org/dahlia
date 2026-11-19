@@ -91,6 +91,25 @@
             #expect(saved?.snapshot.isEmpty == true && saved?.notified == true)
         }
 
+        @Test(arguments: ["memory", "skill", "combined"], ["completed", "failed", "interrupted"])
+        func reviewOutcomePreservesKind(kind: String, status: String) async throws {
+            let store = try store()
+            let thread = UUID.v7().uuidString
+            try store.createThread(ChatThreadRecord(id: thread, accountID: "synthetic", title: "test", createdAt: .now, updatedAt: .now))
+            let job = AgentReviewRecord(
+                id: UUID.v7().uuidString, accountID: "synthetic", threadID: thread, kind: kind,
+                snapshot: "saved", model: nil, effort: "medium", status: "running", createdAt: .now
+            )
+            try await store.dbQueue.write { try job.insert($0) }
+            let chat = PiChatService(historyStore: store)
+            try await chat.finishReview(job, status: status)
+            let run = try await store.dbQueue.read { db in
+                try #require(try AgentSystemRunRecord.fetchOne(db))
+            }
+            #expect(run.task == (kind == "memory" ? "memoryReview" : kind == "skill" ? "skillReview" : "review"))
+            #expect(run.status == status)
+        }
+
         @Test func memoryAndSkillReviewsKeepIndependentModelsAndEffort() {
             let account = "review-model-\(UUID())"
             let defaults = UserDefaults.standard

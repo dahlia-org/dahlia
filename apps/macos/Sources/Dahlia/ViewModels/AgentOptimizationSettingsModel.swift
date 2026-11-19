@@ -2,14 +2,14 @@ import Foundation
 import GRDB
 import Observation
 
-/// Settings → Skills → Auto optimization: archived skills, optimizable skills, and a bounded page of each system task's runs.
+/// Account settings: bounded system-task history, plus skill curation data on the Skills page.
 @MainActor
 @Observable
 final class AgentOptimizationSettingsModel {
     static let pageSize = 20
     let account: CodexRuntimeProvider
-    static let tasks = ["review", "curator", "optimizer"]
-    /// The newest runs of each task (`review`, `curator`, `optimizer`).
+    let tasks: [String]
+    /// The newest runs of each requested task.
     var runs: [String: [AgentSystemRunRecord]] = [:]
     var hasMoreRuns: Set<String> = []
     var archived: [String] = []
@@ -19,28 +19,36 @@ final class AgentOptimizationSettingsModel {
     var isBusy = false
     private var limits: [String: Int] = [:]
 
-    init(account: CodexRuntimeProvider) { self.account = account }
+    init(account: CodexRuntimeProvider, tasks: [String] = ["skillReview", "curator", "optimizer", "review"]) {
+        self.account = account
+        self.tasks = tasks
+    }
+
+    nonisolated static func fetchRuns(_ db: Database, account: String, task: String, limit: Int) throws -> [AgentSystemRunRecord] {
+        try AgentSystemRunRecord.fetchAll(
+            db,
+            sql: "SELECT * FROM agent_system_runs WHERE accountID=? AND task=? ORDER BY startedAt DESC, id DESC LIMIT ?",
+            arguments: [account, task, limit]
+        )
+    }
 
     func refresh() async {
         do {
             let skills = try await PiChatService.shared.skillService()
             let dbQueue = skills.dbQueue
             let key = account.accountKey
-            let limits = Dictionary(uniqueKeysWithValues: Self.tasks.map { ($0, self.limits[$0] ?? Self.pageSize) })
+            let limits = Dictionary(uniqueKeysWithValues: tasks.map { ($0, self.limits[$0] ?? Self.pageSize) })
             // One extra row tells whether another page exists; the task index keeps this independent of history size.
             let rows = try await dbQueue.read { db in
                 var rows: [String: [AgentSystemRunRecord]] = [:]
                 for (task, limit) in limits {
-                    rows[task] = try AgentSystemRunRecord.fetchAll(
-                        db,
-                        sql: "SELECT * FROM agent_system_runs WHERE accountID=? AND task=? ORDER BY startedAt DESC, id DESC LIMIT ?",
-                        arguments: [key, task, limit + 1]
-                    )
+                    rows[task] = try Self.fetchRuns(db, account: key, task: task, limit: limit + 1)
                 }
                 return rows
             }
             runs = Dictionary(uniqueKeysWithValues: rows.map { task, rows in (task, Array(rows.prefix(limits[task] ?? Self.pageSize))) })
             hasMoreRuns = Set(rows.compactMap { task, rows in rows.count > (limits[task] ?? Self.pageSize) ? task : nil })
+            guard tasks.contains("curator") || tasks.contains("optimizer") else { return }
             let states = try await skills.curationStates(account: key)
             archived = states.filter { $0.state == "archived" }.map(\.name)
             let locked = Set(states.filter(\.locked).map(\.name))

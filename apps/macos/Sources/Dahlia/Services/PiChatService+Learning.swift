@@ -442,8 +442,13 @@ extension PiChatService {
             }
             try db.execute(sql: "UPDATE agent_reviews SET status=?,snapshot='' WHERE id=?", arguments: [status, job.id])
             let changes = try Int.fetchOne(db, sql: "SELECT COUNT(*) FROM agent_learning_changes WHERE reviewID=?", arguments: [job.id]) ?? 0
+            let task = switch job.kind {
+            case "memory": "memoryReview"
+            case "skill": "skillReview"
+            default: "review"
+            }
             try AgentSystemRunRecord(
-                id: UUID.v7().uuidString, accountID: job.accountID, task: "review", status: status,
+                id: UUID.v7().uuidString, accountID: job.accountID, task: task, status: status,
                 summary: L10n.agentSystemRunReviewSummary(kind: job.kind, changes: changes), report: "",
                 startedAt: job.createdAt, finishedAt: .now
             ).insert(db)

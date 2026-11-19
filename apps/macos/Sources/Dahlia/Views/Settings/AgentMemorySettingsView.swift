@@ -17,6 +17,7 @@ struct AgentMemorySettingsView: View {
     let account: CodexRuntimeProvider
     @Environment(MainWindowNavigation.self) private var navigation
     @State private var model: AgentLearningSettingsModel
+    @State private var history: AgentOptimizationSettingsModel
     @AppStorage private var memoryEnabled: Bool
     @AppStorage private var memoryReview: Bool
     @AppStorage private var memoryInterval: Int
@@ -26,6 +27,7 @@ struct AgentMemorySettingsView: View {
     init(account: CodexRuntimeProvider) {
         self.account = account
         _model = State(initialValue: AgentLearningSettingsModel(account: account))
+        _history = State(initialValue: AgentOptimizationSettingsModel(account: account, tasks: ["memoryReview", "review"]))
         let key = account.accountKey
         _memoryEnabled = AppStorage(wrappedValue: true, AgentLearningSettings.memoryKey(key))
         // Starts from the single review switch that skill and memory organization replaced.
@@ -48,6 +50,7 @@ struct AgentMemorySettingsView: View {
                     AgentReviewModelRows(account: account, kind: .memory, models: models)
                 }
                 .disabled(!memoryEnabled || !memoryReview)
+                AgentSystemRunRows(model: history, task: "memoryReview", title: L10n.agentReviewRuns)
             }
             ForEach(["user", "memory"], id: \.self) { target in
                 Section {
@@ -70,6 +73,12 @@ struct AgentMemorySettingsView: View {
                 AgentLearningChangesView(model: model, kind: "memory")
                 Button(L10n.agentMemoryClear, role: .destructive) { confirmClear = true }.disabled(model.memories.isEmpty)
             }
+            if history.runs["review"]?.isEmpty == false {
+                Section {
+                    AgentSystemRunRows(model: history, task: "review", title: L10n.agentLegacyReviewRuns)
+                }
+            }
+            if let error = history.error { Text(error).foregroundStyle(.red).textSelection(.enabled) }
             if let error = model.error { Text(error).foregroundStyle(.red).textSelection(.enabled) }
         }
         .formStyle(.grouped).toggleStyle(.switch)
@@ -77,6 +86,7 @@ struct AgentMemorySettingsView: View {
         .disabled(model.isBusy)
         .task {
             await model.refresh()
+            await history.refresh()
             models = await (try? PiRuntimeService.shared.models(for: account, forceRefresh: false))?.filter { !$0.hidden } ?? []
         }
         .onChange(of: memoryEnabled) { Task { await PiChatService.shared.drainLearningWork() } }
