@@ -1,5 +1,6 @@
 import AppKit
 import Combine
+import DahliaRuntimeSupport
 import Foundation
 
 @MainActor
@@ -21,7 +22,9 @@ final class GoogleCalendarStore: ObservableObject {
         case failed
     }
 
-    static let shared = GoogleCalendarStore()
+    static let shared = GoogleCalendarStore(
+        eventsCacheDirectory: DahliaApplicationSupport.currentDirectoryURL.appending(path: "Caches/GoogleCalendar", directoryHint: .isDirectory)
+    )
 
     @Published private(set) var state: State
     @Published private(set) var account: GoogleCalendarAccount?
@@ -75,6 +78,12 @@ final class GoogleCalendarStore: ObservableObject {
     private var refreshGeneration: UInt64 = 0
     private var refreshTask: Task<Void, Never>?
     private var refreshTaskID: UUID?
+    /// Holds the last fetched events per account, shown while a launch or account switch restores the session.
+    /// One small file replaced whole: the events are a disposable snapshot, so they stay out of SQLite and UserDefaults.
+    private let eventsCacheDirectory: URL?
+    private let cachedEventsLoader: @Sendable (URL) async -> [CalendarEvent]
+    private var cachedEventsSnapshot: [CalendarEvent]?
+    private var eventsCacheWriteTask: Task<Void, Never>?
 
     init(
         signInProvider: any GoogleSignInProviding = DatabricksProxyGoogleSignInProvider(),
@@ -84,8 +93,12 @@ final class GoogleCalendarStore: ObservableObject {
         now: @escaping () -> Date = Date.init,
         refreshInterval: TimeInterval = 300,
         daysAhead: Int = 7,
-        presentingWindowProvider: @escaping @MainActor () -> NSWindow? = { NSApp.keyWindow ?? NSApp.mainWindow }
+        presentingWindowProvider: @escaping @MainActor () -> NSWindow? = { NSApp.keyWindow ?? NSApp.mainWindow },
+        eventsCacheDirectory: URL? = nil,
+        cachedEventsLoader: @escaping @Sendable (URL) async -> [CalendarEvent] = GoogleCalendarStore.readCachedEvents
     ) {
+        self.eventsCacheDirectory = eventsCacheDirectory
+        self.cachedEventsLoader = cachedEventsLoader
         self.signInProvider = signInProvider
         self.apiClient = apiClient
         self.userDefaults = userDefaults
@@ -125,7 +138,16 @@ final class GoogleCalendarStore: ObservableObject {
         }
 
         let generation = beginAccountDataLoad(cancelRefreshTask: !startedByRefreshTask)
-        defer { isLoadingAccountData = false }
+        defer {
+            if isCurrentRefresh(generation) { isLoadingAccountData = false }
+        }
+        if upcomingEvents.isEmpty, !selectedCalendarIDs.isEmpty, let url = eventsCacheURL() {
+            let cached = await cachedEventsLoader(url)
+            guard isCurrentRefresh(generation) else { return }
+            cachedEventsSnapshot = cached
+            let currentDate = now()
+            upcomingEvents = cached.filter { $0.endDate > currentDate && selectedCalendarIDs.contains($0.calendarID) }
+        }
         do {
             let session = try await signInProvider.restorePreviousSignIn()
             guard isCurrentRefresh(generation) else { return }
@@ -285,6 +307,7 @@ final class GoogleCalendarStore: ObservableObject {
             )
             guard isCurrentRefresh(generation) else { return }
             if upcomingEvents != events { upcomingEvents = events }
+            writeEventsCache(events)
             lastRefreshAt = now()
             if lastErrorMessage != nil { lastErrorMessage = nil }
             recomputeState()
@@ -432,6 +455,7 @@ final class GoogleCalendarStore: ObservableObject {
 
         if clearSelection {
             updateSelectedCalendarIDs([])
+            writeEventsCache(nil)
         }
     }
 
@@ -442,6 +466,7 @@ final class GoogleCalendarStore: ObservableObject {
         guard currentAccount != selectionAccount else { return }
         clearRuntimeState(clearSelection: false)
         selectionAccount = currentAccount
+        cachedEventsSnapshot = nil
         selectedCalendarIDs = Self.loadSelectedCalendarIDs(from: userDefaults, account: selectionAccount)
         didAttemptRestore = false
         recomputeState()
@@ -477,6 +502,7 @@ final class GoogleCalendarStore: ObservableObject {
 
     private func invalidateCurrentRefresh(cancelTask: Bool = true) {
         refreshGeneration &+= 1
+        isLoadingAccountData = false
         guard cancelTask else { return }
         refreshTask?.cancel()
         refreshTask = nil
@@ -485,6 +511,40 @@ final class GoogleCalendarStore: ObservableObject {
 
     private func isCurrentRefresh(_ generation: UInt64) -> Bool {
         generation == refreshGeneration
+    }
+
+    func waitForEventsCacheWrite() async {
+        await eventsCacheWriteTask?.value
+    }
+
+    private func eventsCacheURL() -> URL? {
+        eventsCacheDirectory?.appending(path: "\(selectionAccount.accountKey).json")
+    }
+
+    /// Writes run in order off MainActor; `nil` removes the file. A lost write only costs the spinner on the next launch.
+    private func writeEventsCache(_ events: [CalendarEvent]?) {
+        guard let url = eventsCacheURL() else { return }
+        if let events, cachedEventsSnapshot == events { return }
+        cachedEventsSnapshot = events
+        let previousTask = eventsCacheWriteTask
+        eventsCacheWriteTask = Task.detached {
+            await previousTask?.value
+            guard let events else {
+                try? FileManager.default.removeItem(at: url)
+                return
+            }
+            try? FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+            try? JSONEncoder().encode(events).write(to: url, options: .atomic)
+        }
+    }
+
+    private nonisolated static func readCachedEvents(at url: URL) async -> [CalendarEvent] {
+        await Task.detached {
+            guard let data = try? Data(contentsOf: url),
+                  let events = try? JSONDecoder().decode([CalendarEvent].self, from: data)
+            else { return [] }
+            return events
+        }.value
     }
 
     private static func loadSelectedCalendarIDs(from userDefaults: UserDefaults, account: CodexRuntimeProvider) -> Set<String> {
