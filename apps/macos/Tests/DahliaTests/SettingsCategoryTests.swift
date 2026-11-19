@@ -9,7 +9,12 @@ import Foundation
     struct SettingsCategoryTests {
         @Test
         func accountAndWorkspacePreferencesHaveSeparateDestinations() {
-            #expect(SettingsGroup.features.categories == [.workspace, .meetings, .agents, .skills, .dahliaMCP, .calendar, .meetingLinks])
+            #expect(SettingsGroup.features.categories == [.workspace, .meetings, .agents, .skills, .memory, .dahliaMCP, .calendar, .meetingLinks])
+            // Memory has its own page; its review switch moved there from Dahlia AI.
+            #expect(SettingsCategory.memory.matches(L10n.agentMemoryReviewEnabled))
+            // Skill optimization and the unattended-run history are a tab of Skills.
+            #expect(SettingsCategory.skills.matches(L10n.agentSkillOptimizer))
+            #expect(!SettingsCategory.agents.matches(L10n.agentSkillOptimizer))
             // Calendar groups account sources and Mac-wide filters; menu bar presentation stays in Appearance.
             #expect(SettingsGroup.app.categories.contains(.appearance))
             #expect(SettingsNavigation.visibleSelection(.meetingLinks) == .meetingLinks)

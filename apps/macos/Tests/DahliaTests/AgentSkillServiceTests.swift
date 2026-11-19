@@ -60,6 +60,140 @@
             }
         }
 
+        @Test func optimizationWaitsForApprovalAndAppliesOnlyToTheProposedVersion() async throws {
+            let (service, db, root) = try setup()
+            defer { try? FileManager.default.removeItem(at: root) }
+            _ = try await service.execute("skill_manage", payload: operations([create(content)]), account: "a", root: root, thread: nil)
+            try "binary".write(to: root.appending(path: "sample/assets.bin"), atomically: true, encoding: .utf8)
+            let file = root.appending(path: "sample/SKILL.md")
+            let before = try await service.editableSnapshot(name: "sample", account: "a", root: root)
+            #expect(before.files["SKILL.md"] == Data(content.utf8))
+            let evolved = "---\nname: sample\ndescription: Use when testing a reusable workflow.\n---\n\nValidate the input first.\n"
+            let pending = { (run: String) in
+                try await db.read {
+                    try #require(try AgentLearningChangeRecord.fetchOne(
+                        $0, sql: "SELECT * FROM agent_learning_changes WHERE reviewID=?", arguments: [run]
+                    ))
+                }
+            }
+            // A proposal never breaks the frontmatter and changes nothing until approved.
+            await #expect(throws: (any Error).self) {
+                try await service.proposeOptimization(
+                    name: "sample",
+                    content: "no frontmatter",
+                    before: before,
+                    account: "a",
+                    root: root,
+                    runID: "bad"
+                )
+            }
+            try await service.proposeOptimization(name: "sample", content: evolved, before: before, account: "a", root: root, runID: "r1")
+            #expect(try String(contentsOf: file, encoding: .utf8) == content)
+            try await service.resolveProposal(id: pending("r1").id, account: "a", root: root, approve: false)
+            #expect(try await pending("r1").status == "discarded")
+
+            // An edit after the proposal makes it stale.
+            try await service.proposeOptimization(name: "sample", content: evolved, before: before, account: "a", root: root, runID: "r2")
+            try (content + "\nEdited.").write(to: file, atomically: true, encoding: .utf8)
+            await #expect(throws: (any Error).self) {
+                try await service.resolveProposal(id: pending("r2").id, account: "a", root: root, approve: true)
+            }
+            try content.write(to: file, atomically: true, encoding: .utf8)
+
+            try await service.resolveProposal(id: pending("r2").id, account: "a", root: root, approve: true)
+            #expect(try String(contentsOf: file, encoding: .utf8) == evolved)
+            #expect(try String(contentsOf: root.appending(path: "sample/assets.bin"), encoding: .utf8) == "binary")
+            try await service.undo(id: pending("r2").id, account: "a", root: root)
+            #expect(try String(contentsOf: file, encoding: .utf8) == content)
+
+            try await service.setLocked(name: "sample", account: "a", locked: true)
+            await #expect(throws: (any Error).self) { try await service.editableSnapshot(name: "sample", account: "a", root: root) }
+        }
+
+        @Test(arguments: ["body", "support", "permissions"])
+        func optimizationRejectsEditsMadeWhileTheModelWasRunning(change: String) async throws {
+            let (service, db, root) = try setup()
+            defer { try? FileManager.default.removeItem(at: root) }
+            _ = try await service.execute("skill_manage", payload: operations([create(content)]), account: "a", root: root, thread: nil)
+            let file = root.appending(path: "sample/SKILL.md")
+            let before = try await service.editableSnapshot(name: "sample", account: "a", root: root)
+            switch change {
+            case "body": try (content + "\nNew user instructions.").write(to: file, atomically: true, encoding: .utf8)
+            case "support": try Data([0, 255]).write(to: root.appending(path: "sample/asset.bin"))
+            default: try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: file.path)
+            }
+            await #expect(throws: (any Error).self) {
+                try await service.proposeOptimization(name: "sample", content: content, before: before, account: "a", root: root, runID: "stale")
+            }
+            #expect(try await db.read { try Int.fetchOne($0, sql: "SELECT COUNT(*) FROM agent_learning_changes WHERE reviewID='stale'") } == 0)
+        }
+
+        @Test(arguments: ["body", "support", "permissions"])
+        func editorSaveRejectsChangesAfterOpening(change: String) async throws {
+            let (service, _, root) = try setup()
+            defer { try? FileManager.default.removeItem(at: root) }
+            _ = try await service.execute("skill_manage", payload: operations([create(content)]), account: "a", root: root, thread: nil)
+            let file = root.appending(path: "sample/SKILL.md")
+            let opened = try await service.editableSnapshot(name: "sample", account: "a", root: root)
+            switch change {
+            case "body": try (content + "\nNew instructions.").write(to: file, atomically: true, encoding: .utf8)
+            case "support": try Data([0, 255]).write(to: root.appending(path: "sample/asset.bin"))
+            default: try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: file.path)
+            }
+            let latest = try await service.editableSnapshot(name: "sample", account: "a", root: root)
+            let patch = operations([["action": .string("patch"), "name": .string("sample"), "content": .string(content + "\nMy edits.")]])
+            await #expect(throws: (any Error).self) {
+                try await service.execute(
+                    "skill_manage",
+                    payload: patch,
+                    account: "a",
+                    root: root,
+                    thread: nil,
+                    expectedSnapshots: ["sample": opened]
+                )
+            }
+            #expect(try await service.editableSnapshot(name: "sample", account: "a", root: root) == latest)
+            // Reloading the latest version allows an intentional save, keeping supporting bytes and permissions.
+            _ = try await service.execute(
+                "skill_manage",
+                payload: patch,
+                account: "a",
+                root: root,
+                thread: nil,
+                expectedSnapshots: ["sample": latest]
+            )
+            let saved = try await service.editableSnapshot(name: "sample", account: "a", root: root)
+            #expect(saved.files["SKILL.md"] == Data((content + "\nMy edits.").utf8))
+            #expect(saved.files["asset.bin"] == latest.files["asset.bin"])
+            #expect(saved.modes == latest.modes)
+        }
+
+        @Test func curatorAdoptionAndSettingsDeleteAreReversible() async throws {
+            let (service, db, root) = try setup()
+            defer { try? FileManager.default.removeItem(at: root) }
+            _ = try await service.execute("skill_manage", payload: operations([create(content)]), account: "a", root: root, thread: nil)
+            let state = { try await #require(service.curationStates(account: "a").first { $0.name == "sample" }) }
+            #expect(try await state().createdBy == "learn")
+            try await service.setCuratorManaged(name: "sample", account: "a", managed: true)
+            try await service.setPinned(name: "sample", account: "a", pinned: true)
+            #expect(try await state().isCuratorManaged)
+            #expect(try await state().pinned)
+            // Taking it back clears the pin, which only managed skills may carry.
+            try await service.setCuratorManaged(name: "sample", account: "a", managed: false)
+            #expect(try await state().createdBy == "user")
+            #expect(try await !state().pinned)
+
+            _ = try await service.execute(
+                "skill_manage", payload: operations([["action": .string("delete"), "name": .string("sample")]]), account: "a", root: root, thread: nil
+            )
+            #expect(!FileManager.default.fileExists(atPath: root.appending(path: "sample").path))
+            let deletion = try await db.read {
+                try #require(try AgentLearningChangeRecord.fetchOne($0, sql: "SELECT * FROM agent_learning_changes WHERE after IS NULL"))
+            }
+            try await service.undo(id: deletion.id, account: "a", root: root)
+            #expect(try String(contentsOf: root.appending(path: "sample/SKILL.md"), encoding: .utf8) == content)
+        }
+
         @Test func invalidBatchRollsBackAllSkillsAndRejectsTraversal() async throws {
             let (service, _, root) = try setup()
             defer { try? FileManager.default.removeItem(at: root) }

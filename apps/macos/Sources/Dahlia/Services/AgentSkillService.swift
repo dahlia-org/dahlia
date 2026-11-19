@@ -41,6 +41,7 @@ actor AgentSkillService {
         thread: String?,
         review: String? = nil,
         curator: Bool = false,
+        expectedSnapshots: [String: AgentSkillSnapshot] = [:],
         authorize: @Sendable (Database) throws -> Void = { _ in }
     ) throws -> JSONValue {
         let args = payload.objectValue ?? [:]
@@ -82,7 +83,8 @@ actor AgentSkillService {
             ])
         case "skill_manage":
             return try mutate(
-                args, catalog: catalog, account: account, root: root, thread: thread, review: review, curator: curator, authorize: authorize
+                args, catalog: catalog, account: account, root: root, thread: thread, review: review, curator: curator,
+                expectedSnapshots: expectedSnapshots, authorize: authorize
             )
         default: throw HermesLearning.failure("Unknown skill tool.")
         }
@@ -96,6 +98,7 @@ actor AgentSkillService {
         thread: String?,
         review: String?,
         curator: Bool,
+        expectedSnapshots: [String: AgentSkillSnapshot],
         authorize: @Sendable (Database) throws -> Void
     ) throws -> JSONValue {
         guard let operations = args["operations"]?.arrayValue,
@@ -121,6 +124,10 @@ actor AgentSkillService {
             if !before.keys.contains(name) {
                 let exists = FileManager.default.fileExists(atPath: directory.path)
                 let files = exists ? try Self.package(directory) : nil
+                if let expected = expectedSnapshots[name], files != expected {
+                    throw HermesLearning
+                        .failure("Skill changed while editing. Your edits are preserved; reopen the editor to load the latest version.")
+                }
                 before[name] = .some(files)
                 working[name] = files?.files ?? [:]
             }
@@ -277,6 +284,70 @@ actor AgentSkillService {
                     )
                 }
                 change.status = "reverted"
+                try change.update(db)
+            } catch {
+                try Self.replace(current, at: directory)
+                throw error
+            }
+        }
+    }
+
+    /// Captures the unlocked account skill before optimization, including supporting files and permissions.
+    func editableSnapshot(name: String, account: String, root: URL) throws -> AgentSkillSnapshot {
+        let directory = root.appending(path: name)
+        guard Self.validName(name), FileManager.default.fileExists(atPath: directory.appending(path: "SKILL.md").path)
+        else { throw HermesLearning.failure("Only account skills can be optimized.") }
+        guard try !locked(name: name, account: account) else { throw HermesLearning.failure("Skill is locked.") }
+        return try Self.package(directory)
+    }
+
+    /// Stages an optimized SKILL.md as a pending change. Upstream sends every evolved skill to human review, never a direct commit.
+    func proposeOptimization(
+        name: String,
+        content: String,
+        before: AgentSkillSnapshot,
+        account: String,
+        root: URL,
+        runID: String,
+        authorize: @Sendable (Database) throws -> Void = { _ in }
+    ) throws {
+        let current = try editableSnapshot(name: name, account: account, root: root)
+        guard current == before else { throw HermesLearning.failure("Skill changed during optimization; optimize it again.") }
+        var files = before.files
+        files["SKILL.md"] = Data(content.utf8)
+        try Self.validate(files, name: name)
+        let after = AgentSkillSnapshot(files: files, modes: before.modes)
+        try dbQueue.write { db in
+            try authorize(db)
+            try AgentLearningChangeRecord(
+                id: .v7(), accountID: account, kind: "skill", target: name,
+                before: HermesLearning.json(before), after: HermesLearning.json(after), status: "pending",
+                source: "optimizer", threadID: nil, reviewID: runID, createdAt: .now
+            ).insert(db)
+        }
+    }
+
+    /// Applies or discards a pending change. It applies only while the skill is still what the proposal started from.
+    func resolveProposal(id: UUID, account: String, root: URL, approve: Bool) throws {
+        try dbQueue.write { db in
+            guard var change = try AgentLearningChangeRecord.fetchOne(db, key: id), change.accountID == account,
+                  change.kind == "skill", change.status == "pending", Self.validName(change.target),
+                  let before = change.before, let after = change.after else { throw HermesLearning.failure("Change not found.") }
+            guard approve else {
+                change.status = "discarded"
+                return try change.update(db)
+            }
+            guard try !Self.locked(db, name: change.target, account: account) else { throw HermesLearning.failure("Skill is locked.") }
+            let directory = root.appending(path: change.target)
+            let current = FileManager.default.fileExists(atPath: directory.path) ? try Self.package(directory) : AgentSkillSnapshot()
+            guard try current == JSONDecoder().decode(AgentSkillSnapshot.self, from: Data(before.utf8))
+            else { throw HermesLearning.failure("Skill changed since this proposal; optimize it again.") }
+            let updated = try JSONDecoder().decode(AgentSkillSnapshot.self, from: Data(after.utf8))
+            try Self.validate(updated.files, name: change.target)
+            try Self.replace(updated, at: directory)
+            do {
+                try Self.recordUsage(db, name: change.target, account: account, columns: ["patchCount"])
+                change.status = "applied"
                 try change.update(db)
             } catch {
                 try Self.replace(current, at: directory)

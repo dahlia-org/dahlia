@@ -6,6 +6,7 @@ enum SettingsCategory: String, CaseIterable, Identifiable {
     case accountPreferences
     case agents
     case skills
+    case memory
     case workspacePreferences
     case macInference
     case general
@@ -45,6 +46,7 @@ enum SettingsCategory: String, CaseIterable, Identifiable {
         case .accountPreferences: L10n.accountPreferences
         case .agents: L10n.agents
         case .skills: L10n.agentSkills
+        case .memory: L10n.agentMemory
         case .workspacePreferences: L10n.workspaceSettings
         case .macInference: L10n.macInferencePreferences
         case .general: L10n.general
@@ -79,6 +81,7 @@ enum SettingsCategory: String, CaseIterable, Identifiable {
         case .accountPreferences: "text.badge.star"
         case .agents: "sparkles"
         case .skills: "book.closed"
+        case .memory: "brain.head.profile"
         case .workspacePreferences: "globe"
         case .macInference: "sparkles"
         case .general: "gearshape"
@@ -164,8 +167,12 @@ enum SettingsCategory: String, CaseIterable, Identifiable {
                 L10n.skillsTabManage, L10n.skillsTabReadOnly, L10n.agentSkillHistory, L10n.skillsTabCuration, L10n.agentSkillCurator,
                 L10n.agentCuratorInterval,
                 L10n.agentCuratorArchiveAfter, L10n.agentCuratorConsolidate, L10n.agentSkillReviewEnabled, L10n.agentArchivedSkills,
-                L10n.agentSkillLock, L10n.agentSkillPin, "Curator",
+                L10n.agentSkillLock, L10n.agentSkillPin, "Curator", L10n.agentSkillOptimizer, L10n.agentSkillReviewSection,
+                L10n.agentCuratorRuns, L10n.agentOptimizerRuns,
+                "GEPA",
             ]
+        case .memory:
+            [L10n.agentMemoryEnabled, L10n.agentMemoryUser, L10n.agentMemoryEnvironment, L10n.agentMemoryReviewEnabled, L10n.agentMemoryClear]
         case .workspace:
             [L10n.workspace, L10n.generatedContentLanguage, L10n.summaryOutputLanguage]
         case .macInference:

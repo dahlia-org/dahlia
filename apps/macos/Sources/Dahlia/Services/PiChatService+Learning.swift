@@ -78,6 +78,8 @@ extension PiChatService {
                 try learningReset(thread: threadID, column: "skillIterations")
             }
             return try await service.execute(method, payload: payload, account: account, root: skillsRoot(session.provider), thread: threadID)
+        case "optimizerInput":
+            return try await optimizerInput(payload, run: turn.run, account: account, root: skillsRoot(session.provider))
         case "cronjob", "cronjobCommit":
             let record = try history().thread(id: threadID, accountID: account)
             guard record.parentThreadID == nil,
@@ -169,10 +171,10 @@ extension PiChatService {
         guard AgentLearningSettings.reviewEnabled(account), run.origin == "user" else { return }
         let store = try history()
         let thread = try store.thread(id: run.threadID, accountID: account)
-        let memory = AgentLearningSettings.memoryReviewEnabled(account) && thread.memoryTurns >= 10
-        let skills = AgentLearningSettings.skillReviewEnabled(account) && thread.skillIterations >= 10
+        let memory = AgentLearningSettings.memoryReviewEnabled(account) && thread.memoryTurns >= AgentLearningSettings.memoryInterval(account)
+        let skills = AgentLearningSettings.skillReviewEnabled(account) && thread.skillIterations >= AgentLearningSettings.skillInterval(account)
         guard memory || skills else { return }
-        let kind = memory && skills ? "combined" : memory ? "memory" : "skill"
+        let kinds: [AgentLearningSettings.ReviewKind] = (memory ? [.memory] : []) + (skills ? [.skill] : [])
         let session = sessions[run.threadID]
         // Pi RPC has no supported clone/fork command that can annotate individual mixed-origin messages.
         // Use the planned GRDB fallback; the complete transcript retains sequence and immutable run provenance.
@@ -193,37 +195,49 @@ extension PiChatService {
                 memoryPrompt: session?.reviewMemoryPrompt
             )
         }
-        let id = UUID.v7().uuidString
-        let review = try AgentReviewRecord(
-            id: id,
-            accountID: account,
-            threadID: run.threadID,
-            kind: kind,
-            snapshot: HermesLearning.json(snapshot),
-            model: run.model ?? session?.model ?? thread.model,
-            effort: run.effort,
-            status: "pending",
-            createdAt: .now
-        )
+        let savedSnapshot = try HermesLearning.json(snapshot)
         try store.dbQueue.write { db in
-            // At most one queued snapshot per thread. Do not replace a running review.
-            let pending = try Bool.fetchOne(
-                db,
-                sql: "SELECT EXISTS(SELECT 1 FROM agent_reviews WHERE threadID=? AND status='pending')",
-                arguments: [run.threadID]
-            ) ?? false
-            guard !pending else { return }
-            try review.insert(db)
-            try db.execute(
-                sql: "INSERT INTO jobs_background(indexKind,targetKind,targetKey,availableAt,updatedAt) VALUES('review','agentReview',?,?,?)",
-                arguments: [id, Date(), Date()]
-            )
-            if memory {
-                try db.execute(sql: "UPDATE chat_threads SET memoryTurns=0 WHERE id=?", arguments: [run.threadID])
+            for kind in kinds {
+                let review = AgentReviewRecord(
+                    id: UUID.v7().uuidString, accountID: account, threadID: run.threadID, kind: kind.rawValue,
+                    snapshot: savedSnapshot, effort: AgentLearningSettings.reviewEffort(account, kind: kind), status: "pending", createdAt: .now
+                )
+                if try Self.queueReview(review, db: db) {
+                    let counter = kind == .memory ? "memoryTurns" : "skillIterations"
+                    try db.execute(sql: "UPDATE chat_threads SET \(counter)=0 WHERE id=?", arguments: [run.threadID])
+                }
             }
-            if skills {
-                try db.execute(sql: "UPDATE chat_threads SET skillIterations=0 WHERE id=?", arguments: [run.threadID])
+        }
+    }
+
+    /// At most one pending snapshot of each kind per thread; never replace a running review.
+    private static func queueReview(_ review: AgentReviewRecord, db: Database) throws -> Bool {
+        let pending = try Bool.fetchOne(
+            db, sql: "SELECT EXISTS(SELECT 1 FROM agent_reviews WHERE threadID=? AND kind=? AND status='pending')",
+            arguments: [review.threadID, review.kind]
+        ) ?? false
+        guard !pending else { return false }
+        try review.insert(db)
+        try db.execute(
+            sql: "INSERT INTO jobs_background(indexKind,targetKind,targetKey,availableAt,updatedAt) VALUES('review','agentReview',?,?,?)",
+            arguments: [review.id, Date(), Date()]
+        )
+        return true
+    }
+
+    /// Older queued combined reviews retain their snapshot, with one job for each independent model setting.
+    func splitCombinedReview(_ job: AgentReviewRecord) throws {
+        try history().dbQueue.write { db in
+            guard try String.fetchOne(db, sql: "SELECT status FROM agent_reviews WHERE id=?", arguments: [job.id]) == "pending" else { return }
+            for kind in AgentLearningSettings.ReviewKind.allCases {
+                var split = job
+                split.id = UUID.v7().uuidString
+                split.kind = kind.rawValue
+                split.model = nil
+                split.effort = AgentLearningSettings.reviewEffort(job.accountID, kind: kind)
+                _ = try Self.queueReview(split, db: db)
             }
+            try AgentReviewRecord.deleteOne(db, key: job.id)
         }
     }
 
@@ -285,6 +299,15 @@ extension PiChatService {
                 try finishReview(job, status: "cancelled")
                 return
             }
+            if kind == "combined" {
+                try splitCombinedReview(job)
+                return
+            }
+            let reviewKind: AgentLearningSettings.ReviewKind = kind == "memory" ? .memory : .skill
+            let models = try await runtime.models(for: provider, forceRefresh: false)
+            guard let model = AgentLearningSettings.prepareReviewModel(job.accountID, kind: reviewKind, models: models)
+            else { throw PiRuntimeError.requestedModelUnavailable("") }
+            let effort = AgentLearningSettings.reviewEffort(job.accountID, kind: reviewKind)
             let memoryEnabled = kind != "skill"
             let snapshot = try JSONDecoder().decode(ReviewSnapshot.self, from: Data(job.snapshot.utf8))
             let work = try agentLocator.agentURL(for: provider)
@@ -310,13 +333,13 @@ extension PiChatService {
                 if !Task.isCancelled { await self.runtime.close(connection) }
             }
             do {
-                if let model = job.model, let slash = model.firstIndex(of: "/") {
+                if let slash = model.firstIndex(of: "/") {
                     _ = try await connection.request(
                         "set_model",
                         ["provider": .string(String(model[..<slash])), "modelId": .string(String(model[model.index(after: slash)...]))]
                     )
                 }
-                _ = try await connection.request("set_thinking_level", ["level": .string(PiRuntimeService.thinkingLevel(job.effort))])
+                _ = try await connection.request("set_thinking_level", ["level": .string(PiRuntimeService.thinkingLevel(effort))])
                 let state = try await connection.request("get_state")
                 let window = state.objectValue?["model"]?.objectValue?["contextWindow"]?.intValue
                 let tokenBudget = window.map { min(600_000.0, Double($0) * 0.75) } ?? 120_000
@@ -419,8 +442,13 @@ extension PiChatService {
             }
             try db.execute(sql: "UPDATE agent_reviews SET status=?,snapshot='' WHERE id=?", arguments: [status, job.id])
             let changes = try Int.fetchOne(db, sql: "SELECT COUNT(*) FROM agent_learning_changes WHERE reviewID=?", arguments: [job.id]) ?? 0
+            let task = switch job.kind {
+            case "memory": "memoryReview"
+            case "skill": "skillReview"
+            default: "review"
+            }
             try AgentSystemRunRecord(
-                id: UUID.v7().uuidString, accountID: job.accountID, task: "review", status: status,
+                id: UUID.v7().uuidString, accountID: job.accountID, task: task, status: status,
                 summary: L10n.agentSystemRunReviewSummary(kind: job.kind, changes: changes), report: "",
                 startedAt: job.createdAt, finishedAt: .now
             ).insert(db)

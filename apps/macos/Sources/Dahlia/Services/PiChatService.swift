@@ -9,6 +9,8 @@ actor PiChatService: CodexChatServicing {
     static let shared = PiChatService()
 
     var learningSkills: AgentSkillService?
+    /// Optimizer runs belong to the turn that launched them, even if Pi exits before reporting a result.
+    var optimizerTurns: [String: UUID] = [:]
     var reviewTask: Task<Void, Never>?
     /// `kind` is the review's effective kind after the account's switches: memory, skill or combined.
     var activeReview: (id: String, account: String, connection: PiRPCConnection, kind: String)?
@@ -72,6 +74,7 @@ actor PiChatService: CodexChatServicing {
         undelivered steers: [JSONValue] = [],
         savingThread: Bool = true
     ) {
+        finishOptimizers(turnID: runID)
         if savingThread {
             recordStatus(status == "completed" ? "idle" : status, threadID: threadID, source: "chatHistoryRunEnd", undelivered: steers)
         }
@@ -843,7 +846,7 @@ actor PiChatService: CodexChatServicing {
         let profile = PiExecutionProfile(rawValue: scheduledRuns[threadID]?.profile ?? "interactive") ?? .interactive
         let memoryEnabled = AgentLearningSettings.memoryEnabled(provider.accountKey)
         let learningTools = ["skills_list", "skill_view"] +
-            (profile == .interactive ? ["skill_manage", "cronjob"] + (memoryEnabled ? ["memory"] : []) : [])
+            (profile == .interactive ? ["skill_manage", "cronjob", "skill_optimize"] + (memoryEnabled ? ["memory"] : []) : [])
         let tools = profile.fileTools + learningTools + (profile == .interactive ? ["dah_create_backup"] + threadTools : []) + serverNames
             .map { "mcp__\($0)__*" }
         let allowedTools = try scheduledRuns[threadID].map {
@@ -884,8 +887,15 @@ actor PiChatService: CodexChatServicing {
             provider: provider,
             chatBridge: { [weak self] method, payload in
                 guard let self else { return .string(method == "approval" ? "cancel" : "ask") }
-                if ["memory", "skills_list", "skill_view", "skill_manage", "cronjob", "cronjobCommit", "scheduledTool"].contains(method) {
+                if ["memory", "skills_list", "skill_view", "skill_manage", "cronjob", "cronjobCommit", "scheduledTool", "optimizerInput"]
+                    .contains(method) {
                     return await self.learningToolResult(method, payload: payload, threadID: threadID, processID: processID)
+                }
+                // Recorded even after the turn stopped, so the run does not stay running.
+                if method == "optimizerResult" {
+                    do {
+                        return try await self.optimizerResult(payload, account: provider.accountKey, root: self.skillsRoot(provider))
+                    } catch { return .object(["success": .bool(false), "error": .string(error.localizedDescription)]) }
                 }
                 if method.hasPrefix("thread_") {
                     do {

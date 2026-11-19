@@ -1,4 +1,5 @@
 import AppKit
+import DahliaRuntimeSupport
 import SwiftUI
 
 struct AgentSkillSettingsView: View {
@@ -12,6 +13,7 @@ struct AgentSkillSettingsView: View {
     @State private var isLoading = false
     @State private var errorMessage: String?
     @State private var refreshID = 0
+    @State private var deleting: String?
 
     init(account: CodexRuntimeProvider, readOnly: Bool = false) {
         self.account = account
@@ -64,6 +66,15 @@ struct AgentSkillSettingsView: View {
                                 }
 
                             }
+                            if !entry.isReadOnly {
+                                AgentSkillActionsMenu(
+                                    managed: curation[entry.name]?.isCuratorManaged == true,
+                                    onEdit: entry.skill?.skillFileURL.map { _ in { edit(entry.name) } },
+                                    onToggleCuration: { setCuratorManaged(entry.name, managed: curation[entry.name]?.isCuratorManaged != true) },
+                                    onDelete: { deleting = entry.name }
+                                )
+                                .accessibilityLabel(Text("\(L10n.agentSkillActions): \(entry.name)"))
+                            }
                             if let skill = entry.skill {
                                 Button(L10n.agentSkillOpenFolder, systemImage: "folder") { openFolder(for: skill) }
                                     .disabled(skill.skillFileURL == nil)
@@ -107,6 +118,14 @@ struct AgentSkillSettingsView: View {
         .formStyle(.grouped)
         .font(.dahliaBody)
         .task(id: refreshID) { await refresh() }
+        .confirmationDialog(
+            L10n.agentSkillDeleteConfirm(deleting ?? ""),
+            isPresented: Binding(get: { deleting != nil }, set: { if !$0 { deleting = nil } })
+        ) {
+            Button(L10n.delete, role: .destructive) { if let name = deleting { delete(name) } }
+        } message: {
+            Text(L10n.agentSkillDeleteHelp)
+        }
         .onChange(of: learning.isBusy) { wasBusy, isBusy in
             if wasBusy, !isBusy { refreshID += 1 }
         }
@@ -120,6 +139,38 @@ struct AgentSkillSettingsView: View {
         case .account:
             guard let state = curation[entry.name], state.isCuratorManaged else { return L10n.agentSkillProvenanceUser }
             return state.state == "stale" ? L10n.agentSkillProvenanceStale : L10n.agentSkillProvenanceCurated
+        }
+    }
+
+    private func edit(_ name: String) {
+        navigation.presentSettingsModal(AgentSkillEditor(account: account, name: name, onClose: navigation.dismissSettingsModal) {
+            navigation.dismissSettingsModal()
+            refreshID += 1
+        })
+    }
+
+    /// An interactive delete through `skill_manage`, so the skill's history can restore it.
+    private func delete(_ name: String) {
+        Task {
+            do {
+                let service = try await PiChatService.shared.skillService()
+                let root = try await PiChatService.shared.skillsRoot(account)
+                let operation: JSONValue = .object(["action": .string("delete"), "name": .string(name)])
+                _ = try await service.execute(
+                    "skill_manage", payload: .object(["operations": .array([operation])]), account: account.accountKey, root: root, thread: nil
+                )
+                refreshID += 1
+            } catch { errorMessage = error.localizedDescription }
+        }
+    }
+
+    private func setCuratorManaged(_ name: String, managed: Bool) {
+        Task {
+            do {
+                let service = try await PiChatService.shared.skillService()
+                try await service.setCuratorManaged(name: name, account: account.accountKey, managed: managed)
+                await refresh()
+            } catch { errorMessage = error.localizedDescription }
         }
     }
 
@@ -153,5 +204,35 @@ struct AgentSkillSettingsView: View {
             entries = []
             errorMessage = error.localizedDescription
         }
+    }
+}
+
+/// Edit, hand to or take back from the Curator, and delete one account skill.
+private struct AgentSkillActionsMenu: View {
+    let managed: Bool
+    let onEdit: (() -> Void)?
+    let onToggleCuration: () -> Void
+    let onDelete: () -> Void
+    @State private var isHovered = false
+
+    var body: some View {
+        Menu {
+            if let onEdit { Button(L10n.edit, systemImage: "pencil", action: onEdit) }
+            Button(managed ? L10n.agentSkillStopCuration : L10n.agentSkillStartCuration, systemImage: "wand.and.sparkles", action: onToggleCuration)
+            Divider()
+            Button(L10n.delete, systemImage: "trash", role: .destructive, action: onDelete)
+        } label: {
+            Label(L10n.agentSkillActions, systemImage: "ellipsis")
+                .labelStyle(.iconOnly)
+                .padding(6)
+                .contentShape(.rect)
+        }
+        .menuStyle(.borderlessButton)
+        .menuIndicator(.hidden)
+        .fixedSize()
+        .foregroundStyle(isHovered ? .primary : .secondary)
+        .background(isHovered ? Color.primary.opacity(0.08) : .clear, in: .rect(cornerRadius: 6))
+        .onHover { isHovered = $0 }
+        .help(L10n.agentSkillActions)
     }
 }
