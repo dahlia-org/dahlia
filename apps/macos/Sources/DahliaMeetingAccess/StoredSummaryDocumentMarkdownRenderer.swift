@@ -45,7 +45,7 @@ enum StoredSummaryDocumentMarkdownRenderer {
     static func decode(toolJSON: JSONValue) throws -> SummaryDocument {
         let databaseShaped = try rewritingKeys(toolJSON, using: databaseKeyByToolKey)
         let document = try JSONDecoder().decode(SummaryDocument.self, from: JSONEncoder().encode(databaseShaped))
-        guard try addingLegacyDefaults(to: canonicalizingScreenshotIDs(toolJSON)) == toolJSONValue(document) else {
+        guard try addingLegacyDefaults(to: canonicalizingUUIDs(toolJSON)) == toolJSONValue(document) else {
             throw DecodingError.dataCorrupted(.init(
                 codingPath: [],
                 debugDescription: "summary_document contains unknown, missing, or invalid fields"
@@ -60,17 +60,23 @@ enum StoredSummaryDocumentMarkdownRenderer {
         return document
     }
 
-    /// Public TypeIDs decode to lowercase UUIDs; Foundation encodes UUIDs in uppercase.
-    private static func canonicalizingScreenshotIDs(_ value: JSONValue) -> JSONValue {
+    /// Foundation encodes UUIDs in uppercase; normalize only identity fields, not text or metadata strings.
+    private static func canonicalizingUUIDs(_ value: JSONValue, collectionKey: String? = nil) -> JSONValue {
         switch value {
         case let .object(fields):
-            var object = fields.mapValues(canonicalizingScreenshotIDs)
-            if case let .string(raw)? = object["screenshot_id"], let id = UUID(uuidString: raw) {
-                object["screenshot_id"] = .string(id.uuidString)
+            var object: [String: JSONValue] = [:]
+            for (key, element) in fields {
+                object[key] = canonicalizingUUIDs(element, collectionKey: key)
+            }
+            let keys = collectionKey == "sections" || collectionKey == "blocks" ? ["id", "screenshot_id"] : ["screenshot_id"]
+            for key in keys {
+                if case let .string(raw)? = object[key], let id = UUID(uuidString: raw) {
+                    object[key] = .string(id.uuidString)
+                }
             }
             return .object(object)
         case let .array(elements):
-            return .array(elements.map(canonicalizingScreenshotIDs))
+            return .array(elements.map { canonicalizingUUIDs($0, collectionKey: collectionKey) })
         default:
             return value
         }
