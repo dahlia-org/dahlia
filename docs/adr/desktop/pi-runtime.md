@@ -63,9 +63,14 @@ extension・context file・theme・project trust の自動読込を無効化し�
 保存先・呼出形式・利用可能な tool・承認は Dahlia の Pi runtime に合わせる。
 
 「Dahlia AI」>「プラグイン」から npm source または Git URL を Pi の `install`・`remove` で管理し、同じアカウントの `settings.json` を一覧の正本にする。変更は次に開始するチャット process から適用する。
-パッケージ操作はアカウントの Pi 選択と環境変数を使い、`PI_CODING_AGENT_DIR` は Dahlia のアカウント directory に固定する。`~/.pi` や project の設定には追加しない。拡張コードは無効のままとし、インストール元は利用者が信頼できるものを指定する。
+パッケージ操作はアカウントの Pi 選択と環境変数を使い、`PI_CODING_AGENT_DIR` は Dahlia のアカウント directory に固定する。`~/.pi` や project の設定には追加しない。拡張コードは無効のままとし（例外は下記の `pi-web-access`）、インストール元は利用者が信頼できるものを指定する。
 プラグインは「コネクタ」と同じカードで一覧し、カードのスイッチでインストール・アンインストールする。おすすめの `pi-auto-review` は未インストールでもオフのカードとして一覧に表示し、ユーザーの操作でインストールする（2026-11-19 ユーザー承認）。インストール元は審査済みコミットに固定した Git URL（`AgentAutoReviewSettings.packageSource`）で、npm レジストリには依存しない。Pi の Git パッケージと同じく `npm` が PATH に必要。
 インストール後はそのカードの設定ボタンから、審査モデルとトリアージの設定をアプリ内モーダルで開く。
+おすすめの `pi-web-access` も同じくオフのカードとして表示する（2026-11-19 ユーザー依頼）。インストール元はバージョンを固定した npm source（`AgentWebAccessSettings.packageSource`）で、依存パッケージを npm レジストリから取得する。
+インストール済みなら、Dahlia は対話チャットの process にだけその extension（`<アカウントの pi>/npm/node_modules/pi-web-access/dist/index.js`）を `-e` で読み込み、`--tools` に既定名の `web_enable`・`web_search`・`source_check`・`fetch_content`・`get_search_content` を加える。予定実行は読み込まない。
+extension は Pi と同じく sandbox の外で動くので、Dahlia の extension はそのファイルが登録した tool だけを承認なしで通し（Pi の `sourceInfo.path` と `DAHLIA_PI_WEB_ACCESS` を比較）、`fetch_content` は http・https 以外の URL（この Mac のファイル）とブラウザの Cookie を使う `auth` を拒否する。ネットワークはチャットのコマンドと同じく到達できる。
+設定は upstream の `web-search.json`（アカウントの agent directory。チャットのコマンドからは読めない）を正本にし、カードの設定ボタンのモーダルで Web 検索の有効化と主要な検索プロバイダーの API キーを編集する。保存時は `tools.webSearch.enabled`・`tools.sourceCheck.enabled` の個別指定を解除して両方を Web 検索のスイッチに揃え、それ以外の項目は保持する。
+upstream は `webSearch.enabled` がないと Web 検索をオンにするが Dahlia の既定はオフで、読み込む前に未設定なら `false` を書く。変更は新しいチャットから効く。
 
 Dahlia の extension（`PiExtension/dahlia.ts`）を `-e` で読み込む。チャットは Dahlia MCP と登録した MCP server のために Pi の `builtin:mcp` も
 読み込み、`--tools` に `mcp__dahlia__*` と登録した server の `mcp__<name>__*` を含める。

@@ -7,6 +7,7 @@ final class PiPackageSettingsModel {
     var source = ""
     private(set) var packages: [String] = []
     private(set) var isAutoReviewInstalled = false
+    private(set) var isWebAccessInstalled = false
     private(set) var isBusy = false
     /// The plugin an install or removal is running for.
     private(set) var changingSource: String?
@@ -26,6 +27,7 @@ final class PiPackageSettingsModel {
     func refresh() async {
         do {
             isAutoReviewInstalled = await service.isAutoReviewInstalled(for: account)
+            isWebAccessInstalled = await service.isWebAccessInstalled(for: account)
             packages = try await service.packages(for: account)
         } catch {
             errorMessage = error.localizedDescription
@@ -38,6 +40,10 @@ final class PiPackageSettingsModel {
 
     func installAutoReview() {
         change(AgentAutoReviewSettings.packageSource, installing: true)
+    }
+
+    func installWebAccess() {
+        change(AgentWebAccessSettings.packageSource, installing: true)
     }
 
     func remove(_ source: String) {

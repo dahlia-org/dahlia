@@ -27,6 +27,19 @@ actor PiPackageService {
         FileManager.default.fileExists(atPath: AgentAutoReviewSettings.entryURL(agentURL: agentURL).path)
     }
 
+    func isWebAccessInstalled(for account: CodexRuntimeProvider) -> Bool {
+        guard let agentURL = try? locator.agentURL(for: account) else { return false }
+        return FileManager.default.fileExists(atPath: AgentWebAccessSettings.entryURL(agentURL: agentURL).path)
+    }
+
+    func webAccessConfiguration(for account: CodexRuntimeProvider) throws -> AgentWebAccessSettings.Configuration {
+        try AgentWebAccessSettings.load(agentURL: locator.agentURL(for: account))
+    }
+
+    func saveWebAccessConfiguration(_ configuration: AgentWebAccessSettings.Configuration, for account: CodexRuntimeProvider) throws {
+        try AgentWebAccessSettings.save(configuration, agentURL: locator.agentURL(for: account))
+    }
+
     nonisolated static func packageSources(in url: URL) throws -> [String] {
         guard FileManager.default.fileExists(atPath: url.path) else { return [] }
         let settings = try JSONDecoder().decode(JSONValue.self, from: Data(contentsOf: url))

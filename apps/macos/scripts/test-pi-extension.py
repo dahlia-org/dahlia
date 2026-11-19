@@ -27,6 +27,15 @@ EXTENSION = ROOT / "apps/macos/Sources/Dahlia/PiExtension/dahlia.ts"
 CHAT_EXTENSIONS = ["-e", "builtin:mcp"]
 CHAT_ARGUMENTS = ["--no-session", *CHAT_EXTENSIONS, "--tools", "read,ls,write,edit,bash,mcp__dahlia__*"]
 SANDBOX = EXTENSION.with_name("pi.sb")
+# Stands in for pi-web-access's fetch_content; the gate decides by the file a tool comes from.
+WEB_ACCESS_STUB = """export default function (pi: any) {
+  pi.registerTool({
+    name: "fetch_content", label: "Fetch", description: "Fetch URLs.",
+    parameters: { type: "object", properties: { url: { type: "string" }, urls: { type: "array", items: { type: "string" } }, auth: {} } },
+    execute: async () => ({ content: [{ type: "text", text: "FETCHED" }] }),
+  });
+}
+"""
 
 
 def sandbox(root):
@@ -634,7 +643,11 @@ def main():
                             DAHLIA_PI_ALLOWED_TOOLS=json.dumps(["mcp__dahlia__get_meeting"]))
             if options.pop("missing_reviewer", False):
                 isolated["DAHLIA_PI_AUTO_REVIEW"] = "/nonexistent/pi-auto-review/index.ts"
-            return run(pi, "chat", [*steps, {"text": "done"}], [*CHAT_ARGUMENTS[:-1], names], isolated, **options)
+            # Dahlia loads pi-web-access after Pi's MCP extension and names its file to the extension.
+            web_access = options.pop("web_access", None)
+            extensions = ["-e", web_access] if web_access else []
+            isolated["DAHLIA_PI_WEB_ACCESS"] = options.pop("web_access_env", web_access or "")
+            return run(pi, "chat", [*steps, {"text": "done"}], [*CHAT_ARGUMENTS[:-2], *extensions, "--tools", names], isolated, **options)
 
         # Immutable execution profiles remain ceilings even under fullAccess and when a forbidden schema is advertised.
         for profile in ("scheduled", "review"):
@@ -690,6 +703,19 @@ def main():
                            ("edit", {"path": "../agent/auth.json", "edits": [{"oldText": "SECRET_MARKER", "newText": "CHANGED"}]})]:
             _, results, _, outside = chat({"tool": tool, "args": args})
             assert not outside and ("not permitted" in results[0] or "Cannot read" in results[0]), (tool, args, results)
+        # pi-web-access runs outside Seatbelt, so it fetches only web URLs and never with browser sign-ins; a tool of
+        # the same name from another file stays unavailable.
+        with tempfile.NamedTemporaryFile("w", suffix=".ts") as web:
+            web.write(WEB_ACCESS_STUB)
+            web.flush()
+            fetch = lambda **args: {"tool": "fetch_content", "args": args}
+            _, results, _, _ = chat(fetch(url="https://example.com"), fetch(url="../agent/auth.json"),
+                                    fetch(urls=["https://example.com", "file:///etc/hosts"]), fetch(url="https://example.com", auth=True),
+                                    tool_names="fetch_content", web_access=web.name)
+            assert results[0] == "FETCHED" and all("only fetches" in result for result in results[1:]), results
+            _, results, _, _ = chat(fetch(url="https://example.com"), tool_names="fetch_content", web_access=web.name,
+                                    web_access_env="/nonexistent/pi-web-access/dist/index.js")
+            assert "not available" in results[0], results
         # A link a command makes to a file that does not exist yet cannot carry a write out of the working folder.
         _, results, _, outside = chat({"tool": "bash", "args": {"command": "ln -s ../outside.txt dangling"}},
                                       {"tool": "write", "args": {"path": "dangling", "content": "CHANGED"}})

@@ -301,6 +301,17 @@ export default function (pi: any) {
           : undefined;
       }
 
+      // pi-web-access reaches the web as chat's commands can, but it runs outside Seatbelt: it may not open this
+      // Mac's files or the browser's sign-ins.
+      if (env.DAHLIA_PI_WEB_ACCESS && tool?.sourceInfo?.path === env.DAHLIA_PI_WEB_ACCESS) {
+        const input = event.input ?? {};
+        const urls = [input.url, ...(Array.isArray(input.urls) ? input.urls : [])].filter((url) => url !== undefined);
+        if (input.auth !== undefined || urls.some((url) => !/^https?:\/\//i.test(String(url)))) {
+          return block("Web access only fetches http and https URLs, without browser sign-ins.");
+        }
+        return;
+      }
+
       // Pi lists an MCP tool under its server's namespace; the alias is the server name.
       const server: string | undefined = tool?.sourceInfo?.path === "builtin:mcp" ? tool.namespace?.aliases?.[0] : undefined;
       if (server && chatMcpServers.has(server)) {

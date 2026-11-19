@@ -844,14 +844,20 @@ actor PiChatService: CodexChatServicing {
         let memoryEnabled = AgentLearningSettings.memoryEnabled(provider.accountKey)
         let learningTools = ["skills_list", "skill_view"] +
             (profile == .interactive ? ["skill_manage", "cronjob"] + (memoryEnabled ? ["memory"] : []) : [])
-        let tools = profile.fileTools + learningTools + (profile == .interactive ? ["dah_create_backup"] + threadTools : []) + serverNames
-            .map { "mcp__\($0)__*" }
+        let agentURL = try agentLocator.agentURL(for: provider)
+        // A scheduled run only reads approved sources. Pi reads a missing web search setting as on, Dahlia as off.
+        let webAccessURL = AgentWebAccessSettings.entryURL(agentURL: agentURL)
+        let webAccess = profile == .interactive && FileManager.default.fileExists(atPath: webAccessURL.path)
+            && (try? AgentWebAccessSettings.writeDefault(agentURL: agentURL)) != nil
+        let tools = profile.fileTools + learningTools + (profile == .interactive ? ["dah_create_backup"] + threadTools : [])
+            + (webAccess ? AgentWebAccessSettings.toolNames : []) + serverNames.map { "mcp__\($0)__*" }
         let allowedTools = try scheduledRuns[threadID].map {
             try scheduleService().allowedTools(runID: $0.id, account: provider.accountKey)
         } ?? []
         // Only chat calls MCP servers; Dahlia's extension registers the sign-ins mcp.json names.
         var arguments = sessionArguments + [
             "-e", "builtin:mcp",
+        ] + (webAccess ? ["-e", webAccessURL.path] : []) + [
             "--tools", tools.joined(separator: ","),
             "--system-prompt", Self.systemPrompt + dataPaths,
         ]
@@ -878,6 +884,8 @@ actor PiChatService: CodexChatServicing {
                     "DAHLIA_PI_MCP_COMMAND": String(decoding: JSONEncoder().encode(mcpCommand), as: UTF8.self),
                     // The only MCP servers whose tools chat may call; the extension blocks every other server.
                     "DAHLIA_PI_MCP_SERVERS": String(decoding: JSONEncoder().encode(serverNames), as: UTF8.self),
+                    // The extension permits only the tools this file registers.
+                    "DAHLIA_PI_WEB_ACCESS": webAccess ? webAccessURL.path : "",
                 ],
                 fileAccess: fileAccess, profile: profile
             ),
