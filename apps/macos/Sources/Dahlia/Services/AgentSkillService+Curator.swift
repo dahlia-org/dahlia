@@ -85,6 +85,19 @@ extension AgentSkillService {
         }
     }
 
+    /// Hands an account skill to the Curator (upstream `hermes curator adopt`) or takes it back. A skill taken back is
+    /// treated like one the user made, and its pin is cleared because only managed skills can be pinned.
+    func setCuratorManaged(name: String, account: String, managed: Bool, now: Date = .now) throws {
+        try dbQueue.write {
+            try $0.execute(sql: """
+            INSERT INTO agent_skill_states(accountID,name,createdBy,locked,createdAt) VALUES(?,?,?,0,?)
+            ON CONFLICT(accountID,name) DO UPDATE SET createdBy=excluded.createdBy,
+                createdAt=COALESCE(agent_skill_states.createdAt,excluded.createdAt),
+                pinned=CASE WHEN excluded.createdBy='agent' THEN agent_skill_states.pinned ELSE 0 END
+            """, arguments: [account, name, managed ? "agent" : "user", now])
+        }
+    }
+
     func curationStates(account: String) throws -> [SkillCurationState] {
         try dbQueue.read { db in
             try Row.fetchAll(

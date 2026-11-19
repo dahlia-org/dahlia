@@ -1,6 +1,7 @@
 import SwiftUI
 
-/// Settings → Skills for the open account: the skill library and its automatic organization (Hermes Curator).
+/// Settings → Skills for the open account: the skill library, and its automatic organization (Hermes Curator) and
+/// optimization (hermes-agent-self-evolution) with the history of unattended runs.
 struct SkillSettingsView: View {
     enum Tab: String, CaseIterable, Identifiable {
         case manage
@@ -49,7 +50,7 @@ struct SkillSettingsView: View {
     }
 }
 
-/// Hermes Curator settings, skill reviews, and the archived skills.
+/// Skill updates from conversations, the Hermes Curator with its archived skills, and skill optimization, each with its runs.
 private struct SkillCurationSettingsView: View {
     let account: CodexRuntimeProvider
     @State private var model: AgentOptimizationSettingsModel
@@ -61,6 +62,7 @@ private struct SkillCurationSettingsView: View {
     @AppStorage private var archiveAfter: Int
     @AppStorage private var consolidate: Bool
     @AppStorage private var skillReview: Bool
+    @AppStorage private var skillInterval: Int
 
     init(account: CodexRuntimeProvider) {
         self.account = account
@@ -74,12 +76,28 @@ private struct SkillCurationSettingsView: View {
         _consolidate = AppStorage(wrappedValue: false, SkillCuratorSettings.consolidateKey(key))
         // Starts from the single review switch that skill and memory organization replaced.
         _skillReview = AppStorage(wrappedValue: AgentLearningSettings.legacyReviewEnabled(key), AgentLearningSettings.skillReviewKey(key))
+        _skillInterval = AppStorage(wrappedValue: AgentLearningSettings.skillInterval(key), AgentLearningSettings.skillIntervalKey(key))
     }
 
     var body: some View {
         Form {
             Section {
-                Toggle(L10n.agentSkillCurator, isOn: $curatorEnabled)
+                Toggle(L10n.agentSkillReviewEnabled, isOn: $skillReview)
+                Group {
+                    Picker(L10n.agentReviewInterval, selection: $skillInterval) {
+                        ForEach(AgentLearningSettings.reviewIntervalChoices, id: \.self) { count in
+                            Text(L10n.agentSkillReviewEvery(count)).font(.dahliaBody).tag(count)
+                        }
+                    }
+                    AgentReviewModelRows(account: account, kind: .skill, models: models)
+                }
+                .disabled(!skillReview)
+                AgentSystemRunRows(model: model, task: "review", title: L10n.agentReviewRuns)
+            } header: {
+                AgentSectionHeader(title: L10n.agentSkillReviewSection) { EmptyView() }
+            }
+            Section {
+                SettingsInfoToggle(title: L10n.agentCuratorEnabled, help: L10n.agentSkillCuratorHelp, isOn: $curatorEnabled)
                 Picker(L10n.agentCuratorInterval, selection: $interval) {
                     ForEach(SkillCuratorSettings.intervalChoices, id: \.self) { hours in
                         Text(L10n.agentCuratorIntervalDays(hours / 24)).font(.dahliaBody).tag(hours)
@@ -92,9 +110,8 @@ private struct SkillCurationSettingsView: View {
                     }
                 }
                 .disabled(!curatorEnabled)
-                Text(L10n.agentSkillCuratorHelp).foregroundStyle(.secondary)
-                Toggle(L10n.agentCuratorConsolidate, isOn: $consolidate).disabled(!curatorEnabled)
-                Text(L10n.agentCuratorConsolidateHelp).foregroundStyle(.secondary)
+                SettingsInfoToggle(title: L10n.agentCuratorConsolidate, help: L10n.agentCuratorConsolidateHelp, isOn: $consolidate)
+                    .disabled(!curatorEnabled)
                 LabeledContent {
                     Picker(L10n.agentCuratorModel, selection: $consolidationModel) {
                         Text(L10n.agentCuratorModelAuto).font(.dahliaBody).tag("")
@@ -116,7 +133,7 @@ private struct SkillCurationSettingsView: View {
                 LabeledContent {
                     Picker(L10n.agentCuratorEffort, selection: $consolidationEffort) {
                         Text(L10n.agentCuratorEffortDefault).font(.dahliaBody).tag("")
-                        ForEach(efforts) { option in
+                        ForEach(models.reasoningEfforts(for: consolidationModel, keeping: consolidationEffort)) { option in
                             Text(option.displayName).font(.dahliaBody).tag(option.reasoningEffort)
                         }
                     }
@@ -128,12 +145,8 @@ private struct SkillCurationSettingsView: View {
                     }
                 }
                 .disabled(!curatorEnabled || !consolidate)
-            }
-            Section {
-                Toggle(L10n.agentSkillReviewEnabled, isOn: $skillReview)
-            }
-            if !model.archived.isEmpty {
-                Section {
+                AgentSystemRunRows(model: model, task: "curator", title: L10n.agentCuratorRuns)
+                if !model.archived.isEmpty {
                     LabeledContent(L10n.agentArchivedSkills) { EmptyView() }
                     ForEach(model.archived, id: \.self) { name in
                         LabeledContent(name) {
@@ -142,7 +155,10 @@ private struct SkillCurationSettingsView: View {
                         }
                     }
                 }
+            } header: {
+                AgentSectionHeader(title: L10n.agentSkillCurator) { EmptyView() }
             }
+            SkillOptimizerSection(model: model)
             if let error = model.error { Text(error).foregroundStyle(.red).textSelection(.enabled) }
         }
         .formStyle(.grouped).toggleStyle(.switch)
@@ -155,15 +171,5 @@ private struct SkillCurationSettingsView: View {
         .onChange(of: skillReview) { Task { await PiChatService.shared.drainLearningWork() } }
         .onChange(of: curatorEnabled) { Task { await PiChatService.shared.drainLearningWork() } }
         .onChange(of: consolidate) { Task { await PiChatService.shared.drainLearningWork() } }
-    }
-
-    /// The selected model's levels; with the automatic model, every level a listed model offers.
-    private var efforts: [CodexReasoningEffortOption] {
-        let options = models.first(where: { $0.model == consolidationModel })?.supportedReasoningEfforts
-            ?? models.flatMap(\.supportedReasoningEfforts)
-        var seen: Set<String> = []
-        let unique = options.filter { seen.insert($0.reasoningEffort).inserted }
-        return unique.contains(where: { $0.reasoningEffort == consolidationEffort }) || consolidationEffort.isEmpty
-            ? unique : unique + [CodexReasoningEffortOption(reasoningEffort: consolidationEffort, description: "")]
     }
 }

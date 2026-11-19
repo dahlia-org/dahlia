@@ -123,6 +123,8 @@ struct SettingsDetailView: View {
             }
         case .skills:
             SkillSettingsView()
+        case .memory:
+            MemorySettingsView()
         case .permissions:
             PermissionSettingsView()
         case .backups:
@@ -160,6 +162,7 @@ struct SettingsDetailView: View {
         case .accountsAndWorkspaces: L10n.settingsAccountsIntro
         case .agents: L10n.settingsAgentsIntro
         case .skills: L10n.settingsSkillsIntro
+        case .memory: L10n.settingsMemoryIntro
         case .meetings: L10n.settingsMeetingsIntro
         case .meetingLinks: L10n.settingsMeetingLinksIntro
         case .dahliaMCP: L10n.settingsDahliaMCPIntro

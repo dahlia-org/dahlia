@@ -69,7 +69,50 @@ seeding, never-used grace, `absorbed_into` requirement, pin semantics, archive l
 upstream's. Adapters: `bundled` is Dahlia's preset skills, `hub` becomes `package` (Pi
 packages) and provenance `agent` becomes `account`; the candidate list keeps upstream's
 `provenance=agent` text. Records from before the migration become `createdBy='user'` and are
-not curated; `user` also stands for upstream's unset `created_by`. `prune_builtins`, `adopt`, whole-tree backups/rollback, reports on disk and cron
+not curated; `user` also stands for upstream's unset `created_by`. Settings → Skills adopts an account skill
+(upstream `adopt`, `createdBy='agent'`) or takes it back (`user`, clearing its pin). `prune_builtins`, whole-tree backups/rollback, reports on disk and cron
 reference rewriting are not ported, so schedule-referenced skills are never archived by any
 background path. The consolidation pass's own `skill_view` calls do not bump usage. Its
 fork has a 100-response ceiling and a 30-minute timeout instead of `max_iterations=9999`.
+
+## Skill optimization (hermes-agent-self-evolution)
+
+Source: https://github.com/NousResearch/hermes-agent-self-evolution/tree/0a929e3aa20e15cf04dc7c28492a7d41a5139125
+(MIT, © 2026 Nous Research, as stated in its README and pyproject; the repository has no LICENSE file) and
+https://github.com/gepa-ai/gepa/tree/ce5b0d6e3d6af6c6dbec6de2c54536bbb961d309 (MIT; see GEPA-LICENSE).
+
+`evolution.json` holds, unchanged, the docstrings and field descriptions of the DSPy signatures `SkillModule.TaskWithSkill`
+(`evolution/skills/skill_module.py`), `LLMJudge.JudgeSignature` (`evolution/core/fitness.py`),
+`SyntheticDatasetBuilder.GenerateTestCases` (`evolution/core/dataset_builder.py`) and `RelevanceFilter.ScoreRelevance`
+(`evolution/core/external_importers.py`), their non-string field types, and GEPA's
+`InstructionProposalSignature.default_prompt_template` (`src/gepa/strategies/instruction_proposal.py`).
+`skill-evolution.ts` ports `evolve_skill.evolve`, the config defaults, `SECRET_PATTERNS`, `_is_relevant_to_skill`,
+`_validate_eval_example`, `_parse_scoring_json`, `_parse_score`, `FitnessScore.composite` with its length penalty, the
+size/growth/non-empty constraints, and GEPA's Pareto candidate selection, reflective dataset, proposal parsing, minibatch of 3,
+perfect-score skip and strict-improvement acceptance.
+
+Adapters: the run is the chat tool `skill_optimize` instead of a CLI, so it uses the chat's model for both upstream
+models, reports progress as tool updates, and stops with the turn; its optional `focus` (the user's requirements) is
+appended to each GEPA reflection prompt. Signatures are rendered in DSPy ChatAdapter's `[[ ## field ## ]]` layout, with `ChainOfThought`'s leading
+`reasoning`, and sent through Pi's model registry. Upstream's `dspy.GEPA` optimizes the predictor's instructions and then
+reads `SkillModule.skill_text`, which it never changes; Dahlia makes the skill body itself GEPA's single component, which is
+what upstream describes. Its metric is `LLMJudge` (upstream's metric is a keyword-overlap stand-in that gives GEPA no
+feedback). Proposals that break a constraint are dropped before evaluation instead of only at the end. The dataset mixes the
+two upstream sources: mined Dahlia conversations (in place of Claude Code, Copilot and Hermes session files), topped up with
+synthetic cases below 10 examples. When the holdout split is empty the validation split is scored. The MIPROv2 fallback,
+pytest/TBLite gates, golden datasets, saved datasets and output files, and PR creation are not ported; the result becomes
+a pending skill change that the user approves.
+
+## `/learn`
+
+Source: `agent/learn_prompt.py` at https://github.com/NousResearch/hermes-agent/tree/3371c03df62106a4c93a545787a471e328883d08.
+`prompts/learn.md` is `build_learn_prompt` evaluated with the request replaced by Pi's `${@:-<upstream default>}`; its
+description is the `learn` CommandDef's. Adapters: the tool names (`read`/`ls`/`bash`, a connected MCP tool for URLs,
+the Dahlia-tool framing list, `bash` for scripts), `skill_manage` patch with `content` for a full rewrite (Dahlia has no
+`edit` action), no skill categories, and `Dahlia` as the author. `learn.ts` inserts the request verbatim, as upstream
+does, because Pi's argument substitution rejoins words with spaces. `/journey` is not ported.
+
+Background-review model adaptation: Dahlia stores independent account-local model and reasoning settings for memory and
+skill reviews instead of inheriting the conversation or sharing Hermes's auxiliary slot. It selects and saves an available
+own-provider model initially (Haiku, then Luna, then another available model), with medium reasoning. Existing explicit
+shared settings seed both; previously queued combined reviews are split without discarding their conversation snapshot.
