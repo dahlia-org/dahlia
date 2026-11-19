@@ -108,10 +108,11 @@ struct AgentMCPSettings: Codable, Equatable, Sendable {
         providers.first { $0.id == id }
     }
 
-    /// Why `name` cannot name a new server, or nil. Tool names allow these characters; `dahlia` is Dahlia's own server.
+    /// Why `name` cannot name a new server, or nil. Internal server names cannot be overridden by gateway services.
     func nameError(_ name: String) -> String? {
         guard name.count <= 40, name.wholeMatch(of: /[a-z0-9_]+/) != nil else { return L10n.mcpServerNameInvalid }
-        guard name != "dahlia", !servers.contains(where: { $0.name == name }) else { return L10n.mcpServerNameTaken }
+        guard name != "dahlia", name != AgentWebAccessSettings.serverName,
+              !servers.contains(where: { $0.name == name }) else { return L10n.mcpServerNameTaken }
         return nil
     }
 
@@ -132,6 +133,7 @@ struct AgentMCPSettings: Codable, Equatable, Sendable {
     /// `mcp.json` entries keyed by server name. Gateway servers use `auth.provider`.
     var piServers: [String: JSONValue] {
         servers.reduce(into: [:]) { entries, server in
+            guard server.name != AgentWebAccessSettings.serverName else { return }
             guard let providerID = server.providerID, let provider = provider(id: providerID) else { return }
             entries[server.name] = .object([
                 "url": .string(server.url(workspaceURL: provider.workspaceURL).absoluteString),

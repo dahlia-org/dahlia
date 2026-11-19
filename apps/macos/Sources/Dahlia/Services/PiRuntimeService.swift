@@ -934,6 +934,15 @@ actor PiRuntimeService {
             )
             environment["DAHLIA_PI_SANDBOX_TMPDIR"] = PiSandbox.temporaryDirectory.path
             environment["TMPDIR"] = PiSandbox.piTemporaryDirectory.path
+            if options.profile == .interactive, !(environment["DAHLIA_PI_WEB_ACCESS"] ?? "").isEmpty {
+                guard let node = CommandLineToolLocator.executableURL(named: "node", environment: environment) else {
+                    throw PiRuntimeError.launchFailed(L10n.webAccessNodeRequired)
+                }
+                environment["DAHLIA_PI_WEB_NODE"] = PiSandbox.realPath(node)
+                environment["DAHLIA_PI_WEB_SANDBOX"] = try String(decoding: JSONEncoder().encode(
+                    PiSandbox.webCommand(agentURL: agentURL, nodeExecutableURL: node)
+                ), as: UTF8.self)
+            }
         }
         return environment
     }

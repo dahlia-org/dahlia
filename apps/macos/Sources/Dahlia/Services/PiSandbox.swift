@@ -58,6 +58,20 @@ enum PiSandbox {
     nonisolated static let piTemporaryDirectory = FileManager.default.temporaryDirectory
         .appending(path: "dahlia-pi", directoryHint: .isDirectory)
 
+    /// Web extraction never needs the chat's files, host home, sign-ins, or user-selected file grants.
+    nonisolated static func webCommand(agentURL: URL, nodeExecutableURL: URL) throws -> [String] {
+        let scratch = agentURL.appending(path: "web-access-runtime", directoryHint: .isDirectory)
+        try PiAgentDirectoryLocator.createPrivateDirectory(scratch)
+        let parameters = [
+            "AGENT": realPath(agentURL),
+            "TMP": realPath(scratch),
+            "NODE": realPath(nodeExecutableURL),
+            "NODE_RUNTIME": installRoot(of: nodeExecutableURL),
+        ]
+        return try ["/usr/bin/sandbox-exec", "-f", PiBundle.resourceURL("web-access.sb").path]
+            + parameters.sorted { $0.key < $1.key }.flatMap { ["-D", "\($0.key)=\($0.value)"] }
+    }
+
     /// The command prefix that runs a command under the profile.
     nonisolated static func command(
         cwd: URL,

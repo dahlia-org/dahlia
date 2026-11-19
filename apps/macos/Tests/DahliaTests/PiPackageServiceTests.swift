@@ -23,6 +23,64 @@ import Foundation
             #expect(!PiPackageService.isAutoReviewInstalled(agentURL: agent))
         }
 
+        @Test
+        func webAccessSettingsDefaultWebSearchOffAndKeepOtherSettings() throws {
+            let agent = FileManager.default.temporaryDirectory.appending(path: "PiWebAccess-\(UUID())")
+            try FileManager.default.createDirectory(at: agent, withIntermediateDirectories: true)
+            defer { try? FileManager.default.removeItem(at: agent) }
+            let url = AgentWebAccessSettings.configURL(agentURL: agent)
+            let json = { try JSONSerialization.jsonObject(with: Data(contentsOf: url)) as? [String: Any] ?? [:] }
+            try JSONSerialization.data(withJSONObject: [
+                "provider": "exa", "braveApiKey": "OLD", "webSearch": ["allowedProviders": ["exa"]],
+            ]).write(to: url)
+
+            try AgentWebAccessSettings.writeDefault(agentURL: agent)
+            var configuration = try AgentWebAccessSettings.load(agentURL: agent)
+            #expect(configuration == .init(webSearchEnabled: false, apiKeys: ["braveApiKey": "OLD"]))
+            #expect((try json()["webSearch"] as? [String: Any])?["enabled"] as? Bool == false)
+
+            configuration.webSearchEnabled = true
+            configuration.apiKeys = ["braveApiKey": " ", "exaApiKey": " exa-key\n"]
+            try AgentWebAccessSettings.save(configuration, agentURL: agent)
+            try AgentWebAccessSettings.writeDefault(agentURL: agent)
+            let saved = try json()
+            #expect(saved["braveApiKey"] == nil && saved["exaApiKey"] as? String == "exa-key" && saved["provider"] as? String == "exa")
+            #expect(saved["webSearch"] as? [String: AnyHashable] == ["enabled": true, "allowedProviders": ["exa"]])
+            #expect(try FileManager.default.attributesOfItem(atPath: url.path)[.posixPermissions] as? Int == 0o600)
+            #expect(AgentWebAccessSettings.isPackage(AgentWebAccessSettings.packageSource) && !AgentWebAccessSettings.isPackage("npm:pi-web-access-extra"))
+        }
+
+        @Test(arguments: [true, false], ["webSearch", "sourceCheck"])
+        func webAccessToggleReconcilesToolOverrides(_ enabled: Bool, tool: String) throws {
+            let agent = FileManager.default.temporaryDirectory.appending(path: "PiWebAccess-\(UUID())")
+            try FileManager.default.createDirectory(at: agent, withIntermediateDirectories: true)
+            defer { try? FileManager.default.removeItem(at: agent) }
+            let url = AgentWebAccessSettings.configURL(agentURL: agent)
+            var overrides: [String: [String: Any]] = [
+                "webSearch": ["enabled": false], "sourceCheck": ["enabled": false], "fetchContent": ["enabled": false],
+            ]
+            overrides[tool] = ["enabled": enabled, "other": "preserved"]
+            try JSONSerialization.data(withJSONObject: [
+                "webSearch": ["enabled": !enabled],
+                "tools": overrides,
+            ]).write(to: url)
+            #expect(try AgentWebAccessSettings.load(agentURL: agent).webSearchEnabled == enabled)
+
+            try AgentWebAccessSettings.save(.init(webSearchEnabled: !enabled), agentURL: agent)
+            #expect(try AgentWebAccessSettings.load(agentURL: agent).webSearchEnabled == !enabled)
+            let saved = try JSONSerialization.jsonObject(with: Data(contentsOf: url)) as? [String: Any]
+            let tools = saved?["tools"] as? [String: [String: Any]]
+            #expect(tools?["webSearch"]?["enabled"] == nil && tools?["sourceCheck"]?["enabled"] == nil)
+            #expect(tools?[tool]?["other"] as? String == "preserved")
+            #expect(tools?["fetchContent"]?["enabled"] as? Bool == false)
+
+            try JSONSerialization.data(withJSONObject: ["tools": [tool: ["enabled": true]]]).write(to: url)
+            try AgentWebAccessSettings.writeDefault(agentURL: agent)
+            #expect(try AgentWebAccessSettings.load(agentURL: agent).webSearchEnabled == false)
+            try AgentWebAccessSettings.writeDefault(agentURL: agent)
+            #expect(try AgentWebAccessSettings.load(agentURL: agent).webSearchEnabled == false)
+        }
+
         @Test(arguments: ["npm error code ENOVERSIONS", "npm ERR! code ENOVERSIONS"])
         func explainsUnavailableVersionsWithoutDumpingTheCommandLog(_ detail: String) {
             let error = PiPackageService.PackageError.commandFailed(detail + "\nNo versions available for pi-workbuddy-hub")

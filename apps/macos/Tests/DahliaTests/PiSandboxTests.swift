@@ -8,6 +8,55 @@ import Foundation
 
     struct PiSandboxTests {
         @Test
+        func webWorkerContainsRepositoryReadsAndHostSignIns() throws {
+            let root = FileManager.default.temporaryDirectory.appending(path: "PiWebSandbox-\(UUID())")
+            defer { try? FileManager.default.removeItem(at: root) }
+            let agent = root.appending(path: "agent")
+            try FileManager.default.createDirectory(at: agent, withIntermediateDirectories: true)
+            _ = try PiSandbox.webCommand(agentURL: agent, nodeExecutableURL: URL(fileURLWithPath: "/bin/sh"))
+            let scratch = agent.appending(path: "web-access-runtime")
+            let clone = scratch.appending(path: "repository")
+            try FileManager.default.createDirectory(at: clone, withIntermediateDirectories: true)
+            let host = root.appending(path: "host")
+            try FileManager.default.createDirectory(at: host.appending(path: ".config/gh"), withIntermediateDirectories: true)
+            try FileManager.default.createDirectory(at: host.appending(path: "Library/Application Support/Chrome"), withIntermediateDirectories: true)
+            for path in [".config/gh/hosts.yml", "Library/Application Support/Chrome/Cookies", "outside-sentinel"] {
+                try Data("synthetic-host-secret".utf8).write(to: host.appending(path: path))
+            }
+            try Data(#"{"allowBrowserCookies":true}"#.utf8).write(to: agent.appending(path: "web-search.json"))
+            try Data("synthetic-pi-secret".utf8).write(to: agent.appending(path: "auth.json"))
+            try FileManager.default.createSymbolicLink(at: clone.appending(path: "README.md"), withDestinationURL: host.appending(path: "outside-sentinel"))
+            try Data("public-readme".utf8).write(to: clone.appending(path: "README.txt"))
+
+            func run(_ arguments: [String]) throws -> Int32 {
+                let command = try PiSandbox.webCommand(agentURL: agent, nodeExecutableURL: URL(fileURLWithPath: arguments[0]))
+                let process = Process()
+                process.executableURL = URL(fileURLWithPath: command[0])
+                process.arguments = Array(command.dropFirst()) + arguments
+                process.standardOutput = FileHandle.nullDevice
+                process.standardError = FileHandle.nullDevice
+                try process.run()
+                process.waitUntilExit()
+                return process.terminationStatus
+            }
+            #expect(try run(["/bin/cat", clone.appending(path: "README.txt").path]) == 0)
+            #expect(try run(["/bin/cat", clone.appending(path: "README.md").path]) != 0)
+            #expect(try run(["/bin/cat", agent.appending(path: "web-search.json").path]) == 0)
+            for path in [".config/gh/hosts.yml", "Library/Application Support/Chrome/Cookies", "outside-sentinel"] {
+                #expect(try run(["/bin/cat", host.appending(path: path).path]) != 0)
+            }
+            #expect(try run(["/bin/cat", agent.appending(path: "auth.json").path]) != 0)
+            #expect(try run(["/usr/bin/touch", agent.appending(path: "web-search.json").path]) != 0)
+            #expect(try run(["/usr/bin/touch", scratch.appending(path: "cache").path]) == 0)
+            // A helper that could use implicit host sign-ins cannot start, even from an allowed initial runtime.
+            #expect(try run(["/bin/sh", "-c", "/bin/cat /dev/null & wait $!"]) != 0)
+            // The ordinary chat/file sandbox cannot read the web worker's API keys or private runtime files.
+            for file in [agent.appending(path: "web-search.json"), scratch.appending(path: "cache")] {
+                #expect(try self.run("cat '\(file.path)'", cwd: root, agent: agent) != 0)
+            }
+        }
+
+        @Test
         func defaultAccessGroupsKeepDahliaDataLimitedToImagesAndDatabaseFiles() {
             let work = URL(fileURLWithPath: "/example/work")
             let agent = URL(fileURLWithPath: "/example/accounts/local/pi")

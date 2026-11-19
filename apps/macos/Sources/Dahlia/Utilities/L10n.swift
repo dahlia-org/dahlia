@@ -221,6 +221,14 @@ enum L10n { // swiftlint:disable:this type_body_length
     static var agentPackageNoVersions: String { String(localized: "settings.agents.packageNoVersions", bundle: bundle) }
     static var agentPackageErrorDetails: String { String(localized: "settings.agents.packageErrorDetails", bundle: bundle) }
     static var autoReviewPackageDescription: String { String(localized: "settings.agents.autoReview.package", bundle: bundle) }
+    static var webAccessPackageDescription: String { String(localized: "settings.agents.webAccess.package", bundle: bundle) }
+    static var webAccessSettings: String { String(localized: "settings.agents.webAccess.settings", bundle: bundle) }
+    static var webAccessWebSearch: String { String(localized: "settings.agents.webAccess.webSearch", bundle: bundle) }
+    static var webAccessWebSearchHelp: String { String(localized: "settings.agents.webAccess.webSearch.help", bundle: bundle) }
+    static var webAccessAPIKeys: String { String(localized: "settings.agents.webAccess.apiKeys", bundle: bundle) }
+    static var webAccessAPIKeysHelp: String { String(localized: "settings.agents.webAccess.apiKeys.help", bundle: bundle) }
+    static var webAccessAPIKeyPrompt: String { String(localized: "settings.agents.webAccess.apiKey.prompt", bundle: bundle) }
+    static var webAccessNodeRequired: String { String(localized: "settings.agents.webAccess.nodeRequired", bundle: bundle) }
     static var downloadingRecordingArchive: String { String(localized: "processing.downloadingArchive", bundle: bundle) }
     static var processingDataUnreadable: String { String(localized: "processing.dataUnreadable", bundle: bundle) }
     static var legacyProcessingRetryOnMac: String { String(localized: "processing.retryOnMac", bundle: bundle) }

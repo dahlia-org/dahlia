@@ -38,6 +38,7 @@ struct AgentPackageSettingsView: View {
                 }
                 LazyVGrid(columns: columns, alignment: .leading, spacing: 12) {
                     autoReviewCard
+                    webAccessCard
                     ForEach(otherPackages, id: \.self) { source in
                         AgentMCPServiceCard(
                             name: PiPackageService.displayName(source),
@@ -66,41 +67,79 @@ struct AgentPackageSettingsView: View {
     }
 
     private var otherPackages: [String] {
-        model.packages.filter { !AgentAutoReviewSettings.isPackage($0) }
+        model.packages.filter { !AgentAutoReviewSettings.isPackage($0) && !AgentWebAccessSettings.isPackage($0) }
     }
 
-    /// Recommended, so it shows switched off until installed.
     private var autoReviewCard: some View {
-        let installedSource = model.packages.first(where: AgentAutoReviewSettings.isPackage)
-        let source = installedSource ?? AgentAutoReviewSettings.packageSource
+        recommendedCard(
+            name: "pi-auto-review", comment: L10n.autoReviewPackageDescription, systemImage: "checkmark.shield",
+            packageSource: AgentAutoReviewSettings.packageSource, isPackage: AgentAutoReviewSettings.isPackage,
+            isInstalled: model.isAutoReviewInstalled, install: model.installAutoReview, settingsTitle: L10n.autoReviewSettings
+        ) {
+            AgentPluginSettingsModal(height: 360, onClose: navigation.dismissSettingsModal) {
+                Form { AgentAutoReviewSettingsSection(account: model.account) }
+                    .formStyle(.grouped)
+            } actions: {
+                Button(L10n.close, action: navigation.dismissSettingsModal)
+                    .buttonStyle(.dahlia())
+                    .keyboardShortcut(.cancelAction)
+            }
+        }
+    }
+
+    private var webAccessCard: some View {
+        recommendedCard(
+            name: "pi-web-access", comment: L10n.webAccessPackageDescription, systemImage: "globe",
+            packageSource: AgentWebAccessSettings.packageSource, isPackage: AgentWebAccessSettings.isPackage,
+            isInstalled: model.isWebAccessInstalled, install: model.installWebAccess, settingsTitle: L10n.webAccessSettings
+        ) {
+            AgentWebAccessSettingsModal(account: model.account, onClose: navigation.dismissSettingsModal)
+        }
+    }
+
+    /// Recommended, so it shows switched off until installed; its settings open once its files are in place.
+    private func recommendedCard(
+        name: String,
+        comment: String,
+        systemImage: String,
+        packageSource: String,
+        isPackage: (String) -> Bool,
+        isInstalled: Bool,
+        install: @escaping () -> Void,
+        settingsTitle: String,
+        settings: @escaping () -> some View
+    ) -> some View {
+        let installedSource = model.packages.first(where: isPackage)
+        let source = installedSource ?? packageSource
         return AgentMCPServiceCard(
-            name: "pi-auto-review",
-            comment: L10n.autoReviewPackageDescription,
-            icon: Image(systemName: "checkmark.shield"),
+            name: name,
+            comment: comment,
+            icon: Image(systemName: systemImage),
             isEnabled: Binding { installedSource != nil } set: { installing in
-                installing ? model.installAutoReview() : model.remove(source)
+                installing ? install() : model.remove(source)
             }
         ) {
             if model.changingSource == source {
                 ProgressView().controlSize(.small)
-            } else if model.isAutoReviewInstalled {
-                Button(L10n.autoReviewSettings, systemImage: "gearshape") {
-                    navigation.presentSettingsModal(
-                        AgentAutoReviewSettingsModal(account: model.account, onClose: navigation.dismissSettingsModal)
-                    )
+            } else if isInstalled {
+                Button(settingsTitle, systemImage: "gearshape") {
+                    navigation.presentSettingsModal(settings())
                 }
                 .labelStyle(.iconOnly)
-                .help(L10n.autoReviewSettings)
+                .help(settingsTitle)
                 .buttonStyle(AgentMCPIconButtonStyle())
             }
         }
     }
 }
 
-/// The reviewer settings belong to the plugin, so its card opens them.
-private struct AgentAutoReviewSettingsModal: View {
-    let account: CodexRuntimeProvider
+/// A plugin's settings belong to it, so its card opens them; the backdrop does what the first action cancels.
+private struct AgentPluginSettingsModal<Content: View, Actions: View>: View {
+    let height: CGFloat
+    var isSaving = false
     let onClose: () -> Void
+    @ViewBuilder let content: Content
+    @ViewBuilder let actions: Actions
 
     var body: some View {
         ZStack {
@@ -110,22 +149,105 @@ private struct AgentAutoReviewSettingsModal: View {
             .buttonStyle(.plain)
             .focusable(false)
             .accessibilityHidden(true)
+            .disabled(isSaving)
 
             VStack(alignment: .leading, spacing: 0) {
-                Form { AgentAutoReviewSettingsSection(account: account) }
-                    .formStyle(.grouped)
+                content
                 HStack {
                     Spacer()
-                    Button(L10n.close, action: onClose)
-                        .buttonStyle(.dahlia())
-                        .keyboardShortcut(.cancelAction)
+                    actions
                 }
                 .padding([.horizontal, .bottom], 20)
             }
-            .frame(width: 560, height: 360)
+            .frame(width: 560, height: height)
             .dahliaModalSurface()
         }
         .font(.dahliaBody)
         .transition(.identity)
+    }
+}
+
+/// Edits the plugin's `web-search.json`; Save writes it, and the next chat reads it.
+private struct AgentWebAccessSettingsModal: View {
+    let account: CodexRuntimeProvider
+    let onClose: () -> Void
+    @State private var configuration: AgentWebAccessSettings.Configuration?
+    @State private var errorMessage: String?
+    @State private var isSaving = false
+
+    var body: some View {
+        AgentPluginSettingsModal(height: 560, isSaving: isSaving, onClose: onClose) {
+            Form {
+                Section {
+                    LabeledContent {
+                        Toggle(
+                            L10n.webAccessWebSearch,
+                            isOn: Binding { configuration?.webSearchEnabled ?? false } set: { configuration?.webSearchEnabled = $0 }
+                        )
+                        .labelsHidden()
+                        .toggleStyle(.switch)
+                    } label: {
+                        HStack {
+                            Text(L10n.webAccessWebSearch)
+                            SettingsInfoButton(help: L10n.webAccessWebSearchHelp)
+                        }
+                    }
+                } header: {
+                    Text(L10n.webAccessSettings).font(.dahliaSectionHeader)
+                }
+                Section {
+                    ForEach(AgentWebAccessSettings.apiKeys, id: \.key) { entry in
+                        LabeledContent(entry.provider) {
+                            SecureField(
+                                entry.provider,
+                                text: Binding { configuration?.apiKeys[entry.key] ?? "" } set: { configuration?.apiKeys[entry.key] = $0 },
+                                prompt: Text(L10n.webAccessAPIKeyPrompt)
+                            )
+                            .labelsHidden()
+                            .textFieldStyle(.roundedBorder)
+                        }
+                    }
+                } header: {
+                    Text(L10n.webAccessAPIKeys).font(.dahliaSectionHeader)
+                } footer: {
+                    Text(L10n.webAccessAPIKeysHelp).font(.dahliaSecondary).foregroundStyle(.secondary)
+                }
+                if let errorMessage {
+                    SettingsStatusMessage(text: errorMessage, systemImage: "exclamationmark.triangle", tint: .orange)
+                }
+            }
+            .formStyle(.grouped)
+            .disabled(configuration == nil || isSaving)
+        } actions: {
+            Button(L10n.cancel, action: onClose)
+                .keyboardShortcut(.cancelAction)
+                .disabled(isSaving)
+            Button(L10n.save, action: save)
+                .buttonStyle(.dahlia())
+                .keyboardShortcut(.defaultAction)
+                .disabled(configuration == nil || isSaving)
+        }
+        .task {
+            do {
+                configuration = try await PiPackageService.shared.webAccessConfiguration(for: account)
+            } catch {
+                errorMessage = error.localizedDescription
+            }
+        }
+    }
+
+    private func save() {
+        guard let configuration else { return }
+        isSaving = true
+        errorMessage = nil
+        Task {
+            defer { isSaving = false }
+            do {
+                try await PiPackageService.shared.saveWebAccessConfiguration(configuration, for: account)
+                onClose()
+            } catch {
+                errorMessage = error.localizedDescription
+            }
+        }
     }
 }

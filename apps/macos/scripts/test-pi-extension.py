@@ -4,11 +4,14 @@
 Usage: DAHLIA_PI_AUTO_REVIEW=/path/to/pi-auto-review/index.ts python3 apps/macos/scripts/test-pi-extension.py [--pi /path/to/pi]
 (default: pi on PATH; use a checkout of the commit pinned in AgentAutoReviewSettings.packageSource)
 Uses an isolated agent directory and synthetic tokens; nothing leaves 127.0.0.1.
+Optional: --web-access-package /path/to/npm/node_modules/pi-web-access also checks the real MCP worker.
 """
 import argparse
 import base64
 import hashlib
 import socket
+import shutil
+import shlex
 import sqlite3
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import json
@@ -27,6 +30,31 @@ EXTENSION = ROOT / "apps/macos/Sources/Dahlia/PiExtension/dahlia.ts"
 CHAT_EXTENSIONS = ["-e", "builtin:mcp"]
 CHAT_ARGUMENTS = ["--no-session", *CHAT_EXTENSIONS, "--tools", "read,ls,write,edit,bash,mcp__dahlia__*"]
 SANDBOX = EXTENSION.with_name("pi.sb")
+# Standalone MCP fixture: verifies transport, the worker environment, and the direct URL/auth gate.
+WEB_ACCESS_STUB = """import { createInterface } from 'node:readline';
+import { readFileSync } from 'node:fs';
+for await (const line of createInterface({ input: process.stdin })) {
+  const message = JSON.parse(line);
+  if (!("id" in message)) continue;
+  let result = {};
+  if (message.method === 'initialize') result = {
+    protocolVersion: message.params.protocolVersion, capabilities: { tools: {} }, serverInfo: { name: 'web', version: '1' }
+  };
+  if (message.method === 'tools/list') result = { tools: [{
+    name: 'fetch_content', description: 'Fetch a web page.', inputSchema: {
+      type: 'object', properties: { url: { type: 'string' }, urls: { type: 'array', items: { type: 'string' } }, auth: {} }
+    }
+  }] };
+  if (message.method === 'tools/call') {
+    let protectedRead = false;
+    try { readFileSync(process.env.PI_CODING_AGENT_DIR + '/auth.json'); protectedRead = true; } catch {}
+    const isolated = !protectedRead && !process.env.GH_TOKEN && !process.env.PI_ALLOW_BROWSER_COOKIES && !process.env.FEYNMAN_ALLOW_BROWSER_COOKIES
+      && process.env.HOME.endsWith('/web-access-runtime') && process.env.TMPDIR === process.env.HOME;
+    result = { content: [{ type: 'text', text: isolated ? 'FETCHED' : 'ENVIRONMENT_LEAK' }] };
+  }
+  process.stdout.write(JSON.stringify({ jsonrpc: '2.0', id: message.id, result }) + String.fromCharCode(10));
+}
+"""
 
 
 def sandbox(root):
@@ -342,7 +370,7 @@ def gateway(script, requests, triage=False):
 
 
 def run(pi, mode, script, arguments, environment, approval="accept", approval_mode="ask", api="openai-responses", mcp_servers=None,
-        compat=None, auth=None, triage=False, prompts=1, bridge_answers=None, steer_message=None):
+        compat=None, auth=None, triage=False, prompts=1, bridge_answers=None, steer_message=None, web_access=None):
     """Runs prompts; returns gateway requests, tool results, bridge calls, and whether ../outside.txt exists."""
     requests, tool_results, bridge = [], [], []
     server = gateway(script, requests, triage=triage)
@@ -379,6 +407,28 @@ def run(pi, mode, script, arguments, environment, approval="accept", approval_mo
                    DAHLIA_PI_SANDBOX=json.dumps(sandbox(root)), DAHLIA_PI_SANDBOX_HIDDEN_ENV=json.dumps(["USER_SECRET"]),
                    DAHLIA_PI_SANDBOX_TMPDIR=str(root / "tmp"), TMPDIR=str(root / "pi-tmp"),
                    USER_SECRET="ENV_SECRET_MARKER", **environment)
+        if web_access:
+            package = Path(web_access)
+            if package.is_dir():
+                assert json.loads((package / "package.json").read_text())["version"] == "0.47.0"
+                shutil.copytree(package.parent, root / "agent/npm/node_modules", symlinks=True)
+                entry = root / "agent/npm/node_modules/pi-web-access/dist/mcp-cli.js"
+            else:
+                entry = root / "agent/npm/node_modules/pi-web-access/dist/mcp-cli.mjs"
+                entry.parent.mkdir(parents=True)
+                shutil.copyfile(package, entry)
+            scratch = root / "agent/web-access-runtime"
+            scratch.mkdir()
+            (root / "agent/web-search.json").write_text(json.dumps({"webSearch": {"enabled": False}, "allowBrowserCookies": True, "ssrf": {"allowRanges": ["127.0.0.0/8"]}}))
+            node = Path(shutil.which("node")).resolve()
+            # A version-manager shim is not the interpreter the worker sandbox should execute or grant.
+            shim = root / "node-shim"
+            shim.write_text("#!/bin/sh\nexec " + shlex.quote(str(node)) + ' "$@"\n')
+            shim.chmod(0o700)
+            command = ["/usr/bin/sandbox-exec", "-f", str(EXTENSION.with_name("web-access.sb")),
+                       "-D", f"AGENT={root / 'agent'}", "-D", f"TMP={scratch}", "-D", f"NODE={shim}", "-D", f"NODE_RUNTIME={shim.parent}"]
+            env.update(DAHLIA_PI_WEB_ACCESS=str(entry), DAHLIA_PI_WEB_NODE=str(shim), DAHLIA_PI_WEB_SANDBOX=json.dumps(command),
+                       GH_TOKEN="SYNTHETIC_HOST_TOKEN", PI_ALLOW_BROWSER_COOKIES="1", FEYNMAN_ALLOW_BROWSER_COOKIES="1")
         process = subprocess.Popen(
             [pi, "--mode", "rpc", "--no-extensions", "-e", str(EXTENSION), "--no-skills", "--no-context-files",
              "--no-prompt-templates", "--no-themes", "--no-approve", "--model", "databricks/mock", *arguments],
@@ -415,6 +465,52 @@ def run(pi, mode, script, arguments, environment, approval="accept", approval_mo
         server.shutdown()
         outside_written = (root / "outside.txt").exists() or "CHANGED" in (root / "agent/auth.json").read_text()
     return requests, tool_results, bridge, outside_written
+
+
+def web_access_regression(pi, package=None):
+    def chat(*steps, profile="interactive", tool_names="mcp__dahlia_web_access__*", web_access=None):
+        return run(pi, "chat", [*steps, {"text": "done"}], [*CHAT_ARGUMENTS[:-2], "--tools", tool_names],
+                   {"DAHLIA_PI_PROFILE": profile}, web_access=web_access)
+
+    web_access_package = package
+    # The standalone web MCP runs inside its own Seatbelt profile, with an empty host credential environment.
+    with tempfile.NamedTemporaryFile("w", suffix=".mjs") as web:
+        web.write(WEB_ACCESS_STUB)
+        web.flush()
+        fetch = lambda **args: {"tool": "mcp__dahlia_web_access__fetch_content", "args": args}
+        _, results, _, _ = chat(fetch(url="https://example.com"), fetch(url="../agent/auth.json"),
+                                fetch(urls=["https://example.com", "file:///etc/hosts"]), fetch(url="https://example.com", auth=True),
+                                tool_names="mcp__dahlia_web_access__*", web_access=web.name)
+        assert results[0] == "FETCHED" and all("only fetches" in result for result in results[1:]), results
+        for profile in ("scheduled", "review"):
+            _, results, _, _ = chat(fetch(url="https://example.com"), profile=profile,
+                                    tool_names="mcp__dahlia_web_access__*", web_access=web.name)
+            assert "FETCHED" not in results[0], results
+    if web_access_package:
+        class PublicPage(BaseHTTPRequestHandler):
+            def log_message(self, *_):
+                pass
+
+            def do_GET(self):
+                body = b"<html><head><title>Offline web test</title></head><body>LOOPBACK_WEB_MARKER</body></html>"
+                self.send_response(200)
+                self.send_header("Content-Type", "text/html")
+                self.send_header("Content-Length", str(len(body)))
+                self.end_headers()
+                self.wfile.write(body)
+
+        page = ThreadingHTTPServer(("127.0.0.1", 0), PublicPage)
+        threading.Thread(target=page.serve_forever, daemon=True).start()
+        try:
+            _, results, _, _ = chat(
+                {"tool": "mcp__dahlia_web_access__fetch_content",
+                 "args": {"url": f"http://127.0.0.1:{page.server_port}/", "mode": "raw"}},
+                tool_names="mcp__dahlia_web_access__*", web_access=web_access_package)
+            assert "LOOPBACK_WEB_MARKER" in results[0], results
+            print("Real pi-web-access 0.47.0 MCP worker fetched a loopback page under Seatbelt")
+        finally:
+            page.shutdown()
+
 
 
 def package_resources(pi):
@@ -561,9 +657,15 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--pi", default="pi")
     parser.add_argument("--only-schedules", action="store_true")
+    parser.add_argument("--only-web-access", action="store_true")
+    parser.add_argument("--web-access-package", help="Installed pi-web-access 0.47.0 package directory; also test the real MCP worker offline")
     args = parser.parse_args()
     pi = args.pi
+    web_access_package = args.web_access_package
     assert Path(os.environ.get("DAHLIA_PI_AUTO_REVIEW", "")).is_file(), "Set DAHLIA_PI_AUTO_REVIEW to pi-auto-review's index.ts"
+    if args.only_web_access:
+        web_access_regression(pi, web_access_package)
+        return
     schedule_approval_regression(pi)
     if args.only_schedules:
         return
@@ -634,7 +736,9 @@ def main():
                             DAHLIA_PI_ALLOWED_TOOLS=json.dumps(["mcp__dahlia__get_meeting"]))
             if options.pop("missing_reviewer", False):
                 isolated["DAHLIA_PI_AUTO_REVIEW"] = "/nonexistent/pi-auto-review/index.ts"
-            return run(pi, "chat", [*steps, {"text": "done"}], [*CHAT_ARGUMENTS[:-1], names], isolated, **options)
+            web_access = options.pop("web_access", None)
+            return run(pi, "chat", [*steps, {"text": "done"}], [*CHAT_ARGUMENTS[:-2], "--tools", names], isolated,
+                       web_access=web_access, **options)
 
         # Immutable execution profiles remain ceilings even under fullAccess and when a forbidden schema is advertised.
         for profile in ("scheduled", "review"):
@@ -690,6 +794,7 @@ def main():
                            ("edit", {"path": "../agent/auth.json", "edits": [{"oldText": "SECRET_MARKER", "newText": "CHANGED"}]})]:
             _, results, _, outside = chat({"tool": tool, "args": args})
             assert not outside and ("not permitted" in results[0] or "Cannot read" in results[0]), (tool, args, results)
+        web_access_regression(pi, web_access_package)
         # A link a command makes to a file that does not exist yet cannot carry a write out of the working folder.
         _, results, _, outside = chat({"tool": "bash", "args": {"command": "ln -s ../outside.txt dangling"}},
                                       {"tool": "write", "args": {"path": "dangling", "content": "CHANGED"}})

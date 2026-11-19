@@ -364,6 +364,17 @@ import os
         }
 
         @Test
+        func webWorkerNamespaceCannotBeOverriddenByConfiguredServices() throws {
+            let provider = try AgentMCPProvider(workspaceURL: #require(URL(string: "https://example.cloud.databricks.com")))
+            var settings = AgentMCPSettings()
+            settings.providers = [provider]
+            #expect(settings.nameError(AgentWebAccessSettings.serverName) != nil)
+            settings.servers = [.init(id: .v7(), name: AgentWebAccessSettings.serverName, providerID: provider.id, service: "system.ai.github")]
+            #expect(settings.piServers.isEmpty)
+            #expect(settings.servers.count == 1)
+        }
+
+        @Test
         func oldSettingsDecodeWithoutLosingRegisteredServers() throws {
             let id = UUID()
             let data = Data("""

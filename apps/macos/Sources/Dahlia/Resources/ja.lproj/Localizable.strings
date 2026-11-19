@@ -1889,6 +1889,14 @@
 "settings.agents.packageNoVersions" = "設定中の npm レジストリには、このプラグインの利用可能なバージョンがありません。npm パッケージ名、公開状況、レジストリの制限を確認してください。";
 "settings.agents.packageErrorDetails" = "エラーの詳細";
 "settings.agents.autoReview.package" = "MCP の変更操作を AI が審査し、安全でない可能性のある操作だけを確認します。チャットの「AIにより確認する」に必要です。";
+"settings.agents.webAccess.package" = "チャットが Web ページや PDF、GitHub を読み込めるようにします。Web 検索は設定で有効にします。";
+"settings.agents.webAccess.settings" = "Web アクセス";
+"settings.agents.webAccess.webSearch" = "Web 検索を有効にする";
+"settings.agents.webAccess.webSearch.help" = "チャットが web_search と source_check で Web を検索できるようにします。検索語は検索プロバイダーに送信されます。API キーがなくても、Exa のキー不要の検索を使えます。変更は新しいチャットから適用されます。";
+"settings.agents.webAccess.apiKeys" = "API キー";
+"settings.agents.webAccess.apiKeys.help" = "キーを設定したプロバイダーを検索に使えます。キーはこのアカウントの web-search.json に保存され、チャットのコマンドからは読み取れません。空欄にすると削除します。";
+"settings.agents.webAccess.apiKey.prompt" = "未設定";
+"settings.agents.webAccess.nodeRequired" = "pi-web-access を使うには Node.js をインストールしてください。";
 
 // AI chat slash completion
 "Commands and skills" = "コマンドとスキル";

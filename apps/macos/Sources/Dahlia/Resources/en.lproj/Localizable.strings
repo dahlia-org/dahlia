@@ -1889,6 +1889,14 @@
 "settings.agents.packageNoVersions" = "The configured npm registry has no available versions of this plugin. Check the package name, publication status, and registry restrictions.";
 "settings.agents.packageErrorDetails" = "Error details";
 "settings.agents.autoReview.package" = "AI reviews MCP actions that change data and asks only about potentially unsafe ones. Required for Ask with AI in chat.";
+"settings.agents.webAccess.package" = "Lets chat read web pages, PDFs, and GitHub. Turn on web search in its settings.";
+"settings.agents.webAccess.settings" = "Web access";
+"settings.agents.webAccess.webSearch" = "Enable web search";
+"settings.agents.webAccess.webSearch.help" = "Lets chat search the web with web_search and source_check. Search queries are sent to the search provider. Without an API key, Exa's keyless search is used. Changes apply to new chats.";
+"settings.agents.webAccess.apiKeys" = "API keys";
+"settings.agents.webAccess.apiKeys.help" = "Search can use each provider that has a key. Keys are saved in this account's web-search.json, which chat's commands cannot read. Clear a field to remove its key.";
+"settings.agents.webAccess.apiKey.prompt" = "Not set";
+"settings.agents.webAccess.nodeRequired" = "Install Node.js to use pi-web-access.";
 
 // AI chat slash completion
 "Commands and skills" = "Commands and skills";
