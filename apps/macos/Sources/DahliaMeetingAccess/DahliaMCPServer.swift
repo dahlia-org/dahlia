@@ -1143,7 +1143,8 @@ extension DahliaMCPServer {
             "Replace the stored summary document of one meeting. Call get_meeting first and send its summary_document "
                 + "back with only the intended corrections applied, together with the returned summary_document_version. "
                 + "The whole document is replaced, so preserve every section id, block id, screenshot_id, and "
-                + "transcript_ref you do not intend to change. The meeting name and description follow the document "
+                + "transcript_ref you do not intend to change. Assign a unique UUID to each new section or block; "
+                + "UUIDv4 and UUIDv7 are accepted in either letter case. The meeting name and description follow the document "
                 + "title and description, and tags in the document are added without removing existing tags. A summary "
                 + "already exported to the workspace is rewritten in place under its current file name; a Google Docs export "
                 + "is not updated and is reported in stale_exports.",

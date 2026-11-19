@@ -541,6 +541,12 @@ import GRDB
             let missingBlockContent = try Self.updatingFirstBlock(in: current.document) { block in
                 block.removeValue(forKey: "content")
             }
+            let missingBlockID = try Self.updatingFirstBlock(in: current.document) { block in
+                block.removeValue(forKey: "id")
+            }
+            let invalidBlockID = try Self.updatingFirstBlock(in: current.document) { block in
+                block["id"] = "not-a-uuid"
+            }
             let invalidTranscriptReference = try Self.updatingFirstBlock(in: current.document) { block in
                 guard var content = block["content"] as? [String: Any] else { return }
                 content["transcript_ref"] = "not-a-time"
@@ -552,6 +558,8 @@ import GRDB
                 collidingAlias,
                 unknownBlockType,
                 missingBlockContent,
+                missingBlockID,
+                invalidBlockID,
                 invalidTranscriptReference,
             ]
             for (index, document) in malformedDocuments.enumerated() {
@@ -620,7 +628,7 @@ import GRDB
                 rich.metadata = try JSONDecoder().decode(SummaryMetadata.self, from: Data(#"""
                 {"generatedBy":"server","inputTypes":["context","transcript"],"detailLevel":"detailed","outputLanguage":"ja",
                  "request":{"model":"requested","reasoning":{"effort":"medium","summary":"auto"}},
-                 "response":{"id":"resp-test","model":"returned","created_at":123.5,
+                 "response":{"id":"6143f645-e7e5-49ea-8c13-afbf2ab99aa8","model":"returned","created_at":123.5,
                    "reasoning":{"effort":"medium","summary":"auto"},
                    "usage":{"input_tokens":10,"output_tokens":5,"total_tokens":15,
                      "input_tokens_details":{"cached_tokens":2},"output_tokens_details":{"reasoning_tokens":3}}}}
@@ -755,6 +763,41 @@ import GRDB
             try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: fileURL.path)
             #expect(try Data(contentsOf: fileURL) == originalContents)
             #expect(try fixture.storedDocument(meetingID: fixture.firstMeetingID) == corrected.databaseJSONString())
+        }
+
+        @Test(arguments: [
+            "6143f645-e7e5-49ea-8c13-afbf2ab99aa8",
+            "6143F645-E7E5-49EA-8C13-AFBF2AB99AA8",
+            "019a9bcd-1234-7abc-8def-123456789abc",
+            "019A9BCD-1234-7ABC-8DEF-123456789ABC",
+        ])
+        func acceptsNewSectionAndBlockUUIDsRegardlessOfCaseOrVersion(id: String) throws {
+            let fixture = try Fixture()
+            let server = try Self.initializedServer(
+                store: fixture.store(workspaceID: fixture.primaryWorkspaceID, allowsWrites: true)
+            )
+            var current = try Self.summaryDocumentFromMeeting(server: server, meetingID: fixture.firstMeetingID)
+            var sections = try #require(current.document["sections"] as? [[String: Any]])
+            sections.append([
+                "id": id,
+                "heading": "Added section",
+                "blocks": [["id": id, "type": "paragraph", "content": ["text": "Added body"]]],
+            ])
+            current.document["sections"] = sections
+            let request = try Self.summaryUpdateRequest(
+                id: 2, meetingID: fixture.firstMeetingID, version: current.version, document: current.document
+            )
+            let response = try Self.json(server.handleInternalTestLine(request))
+            let result = try #require((response["result"] as? [String: Any])?["structuredContent"] as? [String: Any])
+            #expect(result["changed"] as? Bool == true)
+            let stored = try SummaryDocument.decode(databaseJSON: fixture.storedDocument(meetingID: fixture.firstMeetingID))
+            #expect(stored.sections.count == sections.count)
+            let section = try #require(stored.sections.last)
+            #expect(section.id == UUID(uuidString: id))
+            #expect(section.heading == "Added section")
+            let block = try #require(section.blocks.first)
+            #expect(block.id == UUID(uuidString: id))
+            #expect(block.content == .paragraph(SummaryText("Added body")))
         }
 
         // MARK: - Helpers
