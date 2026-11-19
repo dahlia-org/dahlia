@@ -6,6 +6,41 @@ import Foundation
 
     @MainActor
     struct PiFileAccessSettingsTests {
+        @Test
+        func webWorkerResolvesNodeIndependentlyOfCompiledPi() throws {
+            let root = FileManager.default.temporaryDirectory.appending(path: "PiWebNode-\(UUID())")
+            defer { try? FileManager.default.removeItem(at: root) }
+            let bins = root.appending(path: "node/bin")
+            let work = root.appending(path: "work")
+            for directory in [bins, work] {
+                try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+            }
+            let node = bins.appending(path: "node")
+            try Data("test interpreter, never executed".utf8).write(to: node)
+            try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: node.path)
+            let agent = root.appending(path: "agent")
+            let launch = PiLaunchSettings(variables: [.init(id: .v7(), name: "PATH", value: bins.path + ":/usr/bin:/bin")])
+            let pi = root.appending(path: "managed/compiled-pi")
+            var options = PiRuntimeService.LaunchOptions(mode: .chat, cwd: work)
+            options.environment["DAHLIA_PI_WEB_ACCESS"] = AgentWebAccessSettings.entryURL(agentURL: agent).path
+            let environment = try PiRuntimeService.launchEnvironment(
+                options, provider: .local, agentURL: agent, executableURL: pi, launch: launch, secret: { _ in nil }
+            )
+            #expect(environment["DAHLIA_PI_WEB_NODE"] == PiSandbox.realPath(node))
+            let sandbox = try JSONDecoder().decode([String].self, from: Data(#require(environment["DAHLIA_PI_WEB_SANDBOX"]).utf8))
+            #expect(sandbox.contains("NODE=\(PiSandbox.realPath(node))"))
+            #expect(sandbox.contains("NODE_RUNTIME=\(PiSandbox.installRoot(of: node))"))
+            #expect(!sandbox.contains("NODE=\(pi.path)"))
+            for profile in [PiExecutionProfile.scheduled, .review] {
+                options.profile = profile
+                let background = try PiRuntimeService.launchEnvironment(
+                    options, provider: .local, agentURL: agent, executableURL: pi, launch: launch, secret: { _ in nil }
+                )
+                #expect(background["DAHLIA_PI_WEB_SANDBOX"] == nil)
+                #expect(background["DAHLIA_PI_WEB_NODE"] == nil)
+            }
+        }
+
         @Test(arguments: [PiRuntimeService.LaunchOptions.Mode.chat, .control, .summary, .skills], ["", "/bin"])
         func everyPiModeRejectsCommandSearchInsideWritableSkills(_ mode: PiRuntimeService.LaunchOptions.Mode, _ suffix: String) throws {
             let root = FileManager.default.temporaryDirectory.appending(path: "PiSkillsPath-\(UUID())")

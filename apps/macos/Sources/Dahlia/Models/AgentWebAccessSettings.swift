@@ -5,8 +5,8 @@ import Foundation
 enum AgentWebAccessSettings {
     /// Installed from the Plugins tab. npm versions are immutable, so this pins the reviewed release.
     static let packageSource = "npm:pi-web-access@0.47.0"
-    /// The tools the plugin registers under its default names; Dahlia permits only tools from its extension file.
-    static let toolNames = ["web_enable", "web_search", "source_check", "fetch_content", "get_search_content"]
+    static let serverName = "dahlia_web_access"
+    static let toolNames = ["web_search", "source_check", "fetch_content", "get_search_content"].map { "mcp__\(serverName)__\($0)" }
     /// The search providers whose keys the settings edit, under their `web-search.json` names.
     static let apiKeys: [(provider: String, key: String)] = [
         ("Exa", "exaApiKey"), ("Brave Search", "braveApiKey"), ("Tavily", "tavilyApiKey"),
@@ -24,9 +24,9 @@ enum AgentWebAccessSettings {
         source == "npm:pi-web-access" || source.hasPrefix("npm:pi-web-access@")
     }
 
-    /// The extension Dahlia loads into an interactive chat; Pi itself loads no package extension.
+    /// The standalone MCP worker runs inside Seatbelt; no plugin code loads into Pi itself.
     static func entryURL(agentURL: URL) -> URL {
-        agentURL.appending(path: "npm/node_modules/pi-web-access/dist/index.js")
+        agentURL.appending(path: "npm/node_modules/pi-web-access/dist/mcp-cli.js")
     }
 
     static func configURL(agentURL: URL) -> URL {

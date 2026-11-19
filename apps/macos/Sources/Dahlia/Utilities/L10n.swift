@@ -228,6 +228,7 @@ enum L10n { // swiftlint:disable:this type_body_length
     static var webAccessAPIKeys: String { String(localized: "settings.agents.webAccess.apiKeys", bundle: bundle) }
     static var webAccessAPIKeysHelp: String { String(localized: "settings.agents.webAccess.apiKeys.help", bundle: bundle) }
     static var webAccessAPIKeyPrompt: String { String(localized: "settings.agents.webAccess.apiKey.prompt", bundle: bundle) }
+    static var webAccessNodeRequired: String { String(localized: "settings.agents.webAccess.nodeRequired", bundle: bundle) }
     static var downloadingRecordingArchive: String { String(localized: "processing.downloadingArchive", bundle: bundle) }
     static var processingDataUnreadable: String { String(localized: "processing.dataUnreadable", bundle: bundle) }
     static var legacyProcessingRetryOnMac: String { String(localized: "processing.retryOnMac", bundle: bundle) }

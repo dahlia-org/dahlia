@@ -1,0 +1,34 @@
+(version 1)
+; A standalone pi-web-access MCP worker and all of its children. Only its package code, account web configuration,
+; and private scratch are accessible. No chat file grants, host sign-ins, browser stores, or Keychain services.
+(deny default)
+; Only the initial env -> Node exec chain is allowed. Extractors cannot start gh/git, browser helpers, gcloud,
+; ffmpeg, or other commands, even when upstream configuration enables them.
+(allow process-exec (literal "/usr/bin/env") (literal (param "NODE")))
+(allow signal process-info* (target same-sandbox))
+(allow sysctl-read)
+(allow system-socket network*)
+(deny network-outbound (remote unix-socket))
+(allow network-outbound (literal "/private/var/run/mDNSResponder"))
+(allow mach-lookup
+  (global-name "com.apple.system.opendirectoryd.libinfo")
+  (global-name "com.apple.SystemConfiguration.configd")
+  (global-name "com.apple.SystemConfiguration.DNSConfiguration")
+  (global-name "com.apple.trustd.agent")
+  (global-name "com.apple.TrustEvaluationAgent"))
+(allow file-read-metadata)
+(allow file-read*
+  (literal "/")
+  (subpath "/System") (subpath "/usr") (subpath "/bin") (subpath "/sbin")
+  (literal "/dev") (literal "/dev/null") (literal "/dev/zero") (literal "/dev/random") (literal "/dev/urandom") (subpath "/dev/fd")
+  (subpath "/Library/Developer") (subpath "/Library/Apple") (subpath "/Library/Frameworks")
+  (subpath "/Applications") (subpath "/opt")
+  (subpath "/private/etc") (subpath "/private/var/db/timezone") (subpath "/private/var/select")
+  (literal "/private/var/run/resolv.conf")
+  (subpath (param "NODE_RUNTIME"))
+  (subpath (string-append (param "AGENT") "/npm"))
+  (literal (string-append (param "AGENT") "/web-search.json")))
+(deny file-read*
+  (subpath "/opt/homebrew/var") (subpath "/opt/homebrew/etc") (subpath "/usr/local/var") (subpath "/usr/local/etc"))
+(allow file-read* file-write* (subpath (param "TMP")))
+(allow file-write-data (literal "/dev/null") (literal "/dev/stdout") (literal "/dev/stderr") (regex #"^/dev/fd/"))

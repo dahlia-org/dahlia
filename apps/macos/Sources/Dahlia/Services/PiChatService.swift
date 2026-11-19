@@ -860,7 +860,6 @@ actor PiChatService: CodexChatServicing {
         // Only chat calls MCP servers; Dahlia's extension registers the sign-ins mcp.json names.
         var arguments = sessionArguments + [
             "-e", "builtin:mcp",
-        ] + (webAccess ? ["-e", webAccessURL.path] : []) + [
             "--tools", tools.joined(separator: ","),
             "--system-prompt", Self.systemPrompt + dataPaths,
         ]
@@ -887,7 +886,7 @@ actor PiChatService: CodexChatServicing {
                     "DAHLIA_PI_MCP_COMMAND": String(decoding: JSONEncoder().encode(mcpCommand), as: UTF8.self),
                     // The only MCP servers whose tools chat may call; the extension blocks every other server.
                     "DAHLIA_PI_MCP_SERVERS": String(decoding: JSONEncoder().encode(serverNames), as: UTF8.self),
-                    // The extension permits only the tools this file registers.
+                    // Dahlia starts this standalone MCP worker under its dedicated Seatbelt profile.
                     "DAHLIA_PI_WEB_ACCESS": webAccess ? webAccessURL.path : "",
                 ],
                 fileAccess: fileAccess, profile: profile

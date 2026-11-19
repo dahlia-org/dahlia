@@ -4,7 +4,7 @@ import { createBashTool, createEditTool, createLsTool, createReadTool, createWri
 import { anthropicMessagesApi, createProvider, googleGenerativeAIApi, openAIResponsesApi } from "@earendil-works/pi-ai";
 import { execFile } from "node:child_process";
 import { existsSync, lstatSync, readdirSync, readFileSync } from "node:fs";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import {
   registerDatabricksConnectionLoginCommand,
   registerDatabricksLoginCommand,
@@ -100,7 +100,7 @@ function accountSkillPaths(directory: string, root = true): string[] {
   }
 }
 
-export default function (pi: any) {
+export default async function (pi: any) {
   // A bridged provider's credential is Dahlia's token, resolved for each use: every model request, and every request
   // of an MCP whose mcp.json entry names the provider in `auth.provider`. Its models come from models.json.
   let bridgeContext: any;
@@ -214,6 +214,30 @@ export default function (pi: any) {
       const [command, ...args] = JSON.parse(env.DAHLIA_PI_MCP_COMMAND);
       pi.registerMcpServer("dahlia", { command, args, exposure: "direct", description: "Dahlia meetings, projects, and workspaces" });
     }
+    const webServer = "dahlia_web_access";
+    const webSandbox: string[] = JSON.parse(env.DAHLIA_PI_WEB_SANDBOX ?? "[]");
+    const webEnabled = (env.DAHLIA_PI_PROFILE ?? "interactive") === "interactive"
+      && !!env.DAHLIA_PI_WEB_ACCESS && !!env.DAHLIA_PI_WEB_NODE && webSandbox.length > 0;
+    if (webEnabled) {
+      const scratch = join(env.PI_CODING_AGENT_DIR!, "web-access-runtime");
+      // A PATH entry can be a version-manager shim. Ask Node for its actual interpreter before applying the
+      // worker sandbox; compiled Pi executables (including managed Pi) are never used as JS interpreters.
+      const node = await new Promise<string>((resolve, reject) => {
+        execFile(env.DAHLIA_PI_WEB_NODE!, ["--print", "process.execPath"], { timeout: 5000, encoding: "utf8" },
+          (error, stdout) => error ? reject(error) : resolve(stdout.trim()));
+      });
+      const command = webSandbox.map((arg) => arg.startsWith("NODE=") ? `NODE=${node}`
+        : arg.startsWith("NODE_RUNTIME=") ? `NODE_RUNTIME=${dirname(node)}` : arg);
+      // The worker and every extractor child inherit Seatbelt. Start with an empty environment: host CLI tokens,
+      // browser-cookie opt-ins, cloud sign-ins and Node preload hooks must not leak into this account's web tools.
+      pi.registerMcpServer(webServer, {
+        command: command[0],
+        args: [...command.slice(1), "/usr/bin/env", "-i", `HOME=${scratch}`, `TMPDIR=${scratch}`,
+          `PI_CODING_AGENT_DIR=${env.PI_CODING_AGENT_DIR}`, `PATH=${env.PATH ?? "/usr/bin:/bin"}`,
+          node, env.DAHLIA_PI_WEB_ACCESS],
+        exposure: "direct", description: "Web search and public page fetching",
+      });
+    }
 
     // Everything chat does on this Mac's disk runs under Seatbelt (pi.sb): bash commands, and the file operations of
     // `read`, `ls`, `write`, and `edit`, so the kernel decides each path as it is opened and a symlink cannot lead outside.
@@ -308,9 +332,9 @@ export default function (pi: any) {
           : undefined;
       }
 
-      // pi-web-access reaches the web as chat's commands can, but it runs outside Seatbelt: it may not open this
-      // Mac's files or the browser's sign-ins.
-      if (env.DAHLIA_PI_WEB_ACCESS && tool?.sourceInfo?.path === env.DAHLIA_PI_WEB_ACCESS) {
+      const server: string | undefined = tool?.sourceInfo?.path === "builtin:mcp" ? tool.namespace?.aliases?.[0] : undefined;
+      // This reserved server runs under its own filesystem/credential boundary, independently of URL validation.
+      if (webEnabled && server === webServer) {
         const input = event.input ?? {};
         const urls = [input.url, ...(Array.isArray(input.urls) ? input.urls : [])].filter((url) => url !== undefined);
         if (input.auth !== undefined || urls.some((url) => !/^https?:\/\//i.test(String(url)))) {
@@ -320,7 +344,6 @@ export default function (pi: any) {
       }
 
       // Pi lists an MCP tool under its server's namespace; the alias is the server name.
-      const server: string | undefined = tool?.sourceInfo?.path === "builtin:mcp" ? tool.namespace?.aliases?.[0] : undefined;
       if (server && chatMcpServers.has(server)) {
         const readOnly = server === "dahlia" ? readOnlyDahliaTool.test(name) : tool.annotations?.readOnlyHint === true;
         if (profile === "scheduled") {

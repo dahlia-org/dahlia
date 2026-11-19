@@ -1896,6 +1896,7 @@
 "settings.agents.webAccess.apiKeys" = "API キー";
 "settings.agents.webAccess.apiKeys.help" = "キーを設定したプロバイダーを検索に使えます。キーはこのアカウントの web-search.json に保存され、チャットのコマンドからは読み取れません。空欄にすると削除します。";
 "settings.agents.webAccess.apiKey.prompt" = "未設定";
+"settings.agents.webAccess.nodeRequired" = "pi-web-access を使うには Node.js をインストールしてください。";
 
 // AI chat slash completion
 "Commands and skills" = "コマンドとスキル";

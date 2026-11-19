@@ -1896,6 +1896,7 @@
 "settings.agents.webAccess.apiKeys" = "API keys";
 "settings.agents.webAccess.apiKeys.help" = "Search can use each provider that has a key. Keys are saved in this account's web-search.json, which chat's commands cannot read. Clear a field to remove its key.";
 "settings.agents.webAccess.apiKey.prompt" = "Not set";
+"settings.agents.webAccess.nodeRequired" = "Install Node.js to use pi-web-access.";
 
 // AI chat slash completion
 "Commands and skills" = "Commands and skills";
