@@ -167,16 +167,14 @@ enum L10n { // swiftlint:disable:this type_body_length
     static var agentPackageCatalog: String { String(localized: "settings.agents.packageCatalog", bundle: bundle) }
     static var agentPackageSource: String { String(localized: "settings.agents.packageSource", bundle: bundle) }
     static var agentPackageInstall: String { String(localized: "settings.agents.packageInstall", bundle: bundle) }
-    static var agentPackageRemove: String { String(localized: "settings.agents.packageRemove", bundle: bundle) }
     static var agentPackageHelp: String { String(localized: "settings.agents.packageHelp", bundle: bundle) }
     static var agentPackageChanged: String { String(localized: "settings.agents.packageChanged", bundle: bundle) }
-    static var agentPackagesEmpty: String { String(localized: "settings.agents.packagesEmpty", bundle: bundle) }
-    static var agentPackagesInstalled: String { String(localized: "settings.agents.packagesInstalled", bundle: bundle) }
     static var agentPackageInvalidSource: String { String(localized: "settings.agents.packageInvalidSource", bundle: bundle) }
     static var agentPackageBusy: String { String(localized: "settings.agents.packageBusy", bundle: bundle) }
     static var agentPackageFailed: String { String(localized: "settings.agents.packageFailed", bundle: bundle) }
     static var agentPackageNoVersions: String { String(localized: "settings.agents.packageNoVersions", bundle: bundle) }
     static var agentPackageErrorDetails: String { String(localized: "settings.agents.packageErrorDetails", bundle: bundle) }
+    static var autoReviewPackageDescription: String { String(localized: "settings.agents.autoReview.package", bundle: bundle) }
     static var downloadingRecordingArchive: String { String(localized: "processing.downloadingArchive", bundle: bundle) }
     static var processingDataUnreadable: String { String(localized: "processing.dataUnreadable", bundle: bundle) }
     static var legacyProcessingRetryOnMac: String { String(localized: "processing.retryOnMac", bundle: bundle) }
@@ -3475,6 +3473,10 @@ enum L10n { // swiftlint:disable:this type_body_length
     static var chatApprovalAutoReview: String { String(localized: "Ask with AI", bundle: bundle) }
     static var chatApprovalAutoReviewDescription: String { String(
         localized: "Ask only about potentially unsafe actions.",
+        bundle: bundle
+    ) }
+    static var chatApprovalAutoReviewUnavailable: String { String(
+        localized: "chat.approval.autoReview.unavailable",
         bundle: bundle
     ) }
 

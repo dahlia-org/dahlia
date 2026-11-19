@@ -2,7 +2,9 @@ import SwiftUI
 
 struct CodexChatApprovalMethodRow: View {
     let method: CodexChatApprovalMethod
+    let description: String
     let isSelected: Bool
+    let isEnabled: Bool
     let action: () -> Void
 
     @State private var isHovering = false
@@ -18,9 +20,10 @@ struct CodexChatApprovalMethodRow: View {
                 VStack(alignment: .leading, spacing: 2) {
                     Text(method.title)
                         .font(.dahliaBody)
-                    Text(method.description)
+                    Text(description)
                         .font(.dahliaBody)
                         .foregroundStyle(DahliaDesign.optionalTextColor)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
 
                 Spacer(minLength: 8)
@@ -31,20 +34,21 @@ struct CodexChatApprovalMethodRow: View {
                         .accessibilityHidden(true)
                 }
             }
-            .foregroundStyle(DahliaDesign.primaryTextColor)
+            .foregroundStyle(isEnabled ? DahliaDesign.primaryTextColor : DahliaDesign.optionalTextColor)
             .padding(.horizontal, 10)
             .padding(.vertical, 8)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+        .disabled(!isEnabled)
         .background(
-            isHovering || isSelected ? DahliaDesign.contentHighlightColor : .clear,
+            (isHovering && isEnabled) || isSelected ? DahliaDesign.contentHighlightColor : .clear,
             in: .rect(corners: .concentric(
                 minimum: .fixed(DahliaDesign.Highlight.regularCornerRadius)
             ))
         )
         .onHover { isHovering = $0 }
         .accessibilityValue(isSelected ? L10n.selected : "")
-        .accessibilityHint(method.description)
+        .accessibilityHint(description)
     }
 }

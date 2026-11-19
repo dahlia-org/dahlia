@@ -648,7 +648,6 @@ private struct AgentModelSettingsView: View {
                 },
                 subscriptionModelsContent: subscriptionModelRows
             )
-            AgentAutoReviewSettingsSection(account: account)
             AccountProcessingSettingsView()
         }
         .formStyle(.grouped)

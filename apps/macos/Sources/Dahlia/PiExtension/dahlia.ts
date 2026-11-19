@@ -3,7 +3,7 @@
 import { createBashTool, createEditTool, createLsTool, createReadTool, createWriteTool, DefaultPackageManager, SettingsManager } from "@earendil-works/pi-coding-agent";
 import { anthropicMessagesApi, createProvider, googleGenerativeAIApi, openAIResponsesApi } from "@earendil-works/pi-ai";
 import { execFile } from "node:child_process";
-import { lstatSync, readdirSync, readFileSync } from "node:fs";
+import { existsSync, lstatSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import {
   registerDatabricksConnectionLoginCommand,
@@ -185,7 +185,8 @@ export default function (pi: any) {
       const approvalMode = await bridge(ctx, "approvalMode", {});
       if (approvalMode === "fullAccess" && !confirmFullAccess) return;
       let reason: string | undefined = payload.reason;
-      if (approvalMode === "autoReview") {
+      // Without the pi-auto-review plugin, Auto review asks as Supervised does.
+      if (approvalMode === "autoReview" && existsSync(env.DAHLIA_PI_AUTO_REVIEW ?? "")) {
         const model = await bridge(ctx, "reviewModel", {});
         // Only the reviewer sees earlier denials; a classifier cannot approve a workaround in this run.
         const triage = blockedThisRun ? null : await bridge(ctx, "reviewTriage", {});

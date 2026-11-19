@@ -64,6 +64,8 @@ extension・context file・theme・project trust の自動読込を無効化し�
 
 「Dahlia AI」>「プラグイン」から npm source または Git URL を Pi の `install`・`remove` で管理し、同じアカウントの `settings.json` を一覧の正本にする。変更は次に開始するチャット process から適用する。
 パッケージ操作はアカウントの Pi 選択と環境変数を使い、`PI_CODING_AGENT_DIR` は Dahlia のアカウント directory に固定する。`~/.pi` や project の設定には追加しない。拡張コードは無効のままとし、インストール元は利用者が信頼できるものを指定する。
+プラグインは「コネクタ」と同じカードで一覧し、カードのスイッチでインストール・アンインストールする。おすすめの `pi-auto-review` は未インストールでもオフのカードとして一覧に表示し、ユーザーの操作でインストールする（2026-11-19 ユーザー承認）。インストール元は審査済みコミットに固定した Git URL（`AgentAutoReviewSettings.packageSource`）で、npm レジストリには依存しない。Pi の Git パッケージと同じく `npm` が PATH に必要。
+インストール後はそのカードの設定ボタンから、審査モデルとトリアージの設定をアプリ内モーダルで開く。
 
 Dahlia の extension（`PiExtension/dahlia.ts`）を `-e` で読み込む。チャットは Dahlia MCP と登録した MCP server のために Pi の `builtin:mcp` も
 読み込み、`--tools` に `mcp__dahlia__*` と登録した server の `mcp__<name>__*` を含める。
@@ -158,7 +160,7 @@ Dahlia account は切替時に Server の URL だけを記録し（network 不�
 `models.json` に書く（一覧を取るのはサインイン済みの workspace だけ）。`models.json` を書くたびに Gateway の項目をまとめて作り直し、
 「プロバイダー」から外したときも書き直すので、外した workspace の項目は（サインアウトに失敗しても）すぐに消え、Gateway 以外の項目（Dahlia account の `dahlia`）は残る。
 
-「Dahlia AI」>「モデル」タブは全アカウントに表示し、プロバイダー、AI による代理承認 (pi-auto-review)、要約生成、画像解析を同じタブで設定する。要約生成・画像解析の設定リンクも「モデル」を開く。
+「Dahlia AI」>「モデル」タブは全アカウントに表示し、プロバイダー、要約生成、画像解析を同じタブで設定する。AI による代理承認 (pi-auto-review) は「プラグイン」タブで設定する。要約生成・画像解析の設定リンクも「モデル」を開く。
 Unity Gateway があるアカウント（Databricks アカウントか、Databricks を追加したアカウント）では、Gateway ごとのモデルも「コネクタ」タブと同じくプロバイダーの行の下に折りたたんで並べ、モデルごとのスイッチでオン・オフする。
 Local Account の ChatGPT・Claude も同じくプロバイダー行の下でモデルごとに表示を切り替える。
 選択のないモデルは Claude Opus 5.5・Sonnet 5.5・Haiku 5.5、GPT 6.1 Sol・GPT 6.1 Terra・GPT 6 Luna だけをオンにし、保存した選択は再サインイン後も保つ。
@@ -255,10 +257,14 @@ MCP の tool は Dahlia がその chat に登録した server（Dahlia MCP と�
 それ以外はどの選択でも拒否する。Dahlia MCP の `get`・`query`・`list`・`search` と、gateway MCP の `readOnlyHint` が true の tool は確認・審査なし。
 MCP の読み取り結果も untrusted data として扱う。
 
-`pi-auto-review` はコミット `b7822c1a1cdc52513a0d1f5bd342288a005fbdd2` のソース・package metadata・MIT license を
-`PiExtension/pi-auto-review` に同梱する。既定 extension は登録せず、Dahlia の MCP gate が公開された `review` 関数を使う。
-審査モデルは「Dahlia AI」>「モデル」>「AI による代理承認 (pi-auto-review)」で実行アカウントごとに指定し、`autoReviewModel.<local またはアカウント ID>` に保存する。
-空の選択（既定）は審査時点のチャットモデルを使う。変更は起動済みのチャットでも次の審査から効き、`PI_AUTO_REVIEW_MODEL` や Pi 側のモデル指定より優先する。
+`pi-auto-review` は同梱せず、利用者が「プラグイン」からアカウントにインストールする（2026-11-19 ユーザー承認）。Pi は `--no-extensions` で起動するため
+その既定 extension は読み込まれず、Dahlia の MCP gate が Pi の clone 先（`<アカウントの pi>/git/github.com/mats16/pi-auto-review/index.ts`、`DAHLIA_PI_AUTO_REVIEW`）から
+公開された `review` 関数だけを import し、審査モデル・推論強度・トリアージを呼び出しごとの設定で渡す。clone 先はチャットのファイル道具から読み取り専用で、審査コードは書き換えられない。
+Auto review の利用可否は import 先のファイルの存在で判定する。旧版の API は設定を無視するため審査せず、手動確認へ戻す。カードのスイッチはインストール登録の有無を示し、ファイルが欠けた登録も削除できる。
+未インストールのアカウントでは、チャットの「AIにより確認する」を選べず（選択済みの thread は「常に確認する」と表示）、MCP gate も Auto review を「常に確認する」と同じ確認に置き換える。
+インストール・アンインストールは起動済みのチャットでも次の MCP 変更操作から効く。既に読み込んだ旧版を置き換えた場合は、新しいチャットで固定版を読み直す。
+審査モデルは「Dahlia AI」>「プラグイン」> pi-auto-review のカードの設定で実行アカウントごとに指定し、`autoReviewModel.<local またはアカウント ID>` に保存する。
+空の選択（既定）は審査時点のチャットモデルを使う。変更は起動済みのチャットでも次の審査から効き、`PI_AUTO_REVIEW_MODEL` や Pi 側の `autoReview` 設定より優先する。
 reasoning effort は審査モデルの価格情報から自動設定する。Pi の100万トークン当たりの入力価格が2 USD以上、または出力価格が10 USD以上なら low、それ未満なら high。
 価格情報がない・ゼロの場合はモデル名に関係なく high にする。「チャットと同じモデル」でも審査の推論強度はこの規則で選ぶ。
 審査は追加のモデル呼び出しになり、その provider に履歴と予定操作を渡す。
@@ -266,18 +272,17 @@ reasoning effort は審査モデルの価格情報から自動設定する。Pi 
 接続済み Unity AI Gateway のモデルサービス一覧から System One API を提供する `system.ai.openjev-qwen35-4b` を取得できた場合だけ有効化できる。
 トグルのオン操作時に接続先へ確認し、成功した場合だけオンを保存する。確認に失敗しても再びオン操作で再確認でき、古い取得状態でトグルを操作不能にはしない。
 確認済みのモデル・接続先情報は保持して審査時に再利用し、設定画面の表示や審査ごとには再取得しない。
-OpenJev にユーザーのメッセージと予定する MCP 操作を渡し、固定閾値0.85で日常的と判定した操作は審査モデルを省略する。それ以外や取得・判定の失敗は通常の審査へ戻す。
+OpenJev にユーザーのメッセージと予定する MCP 操作を渡し、upstream の OpenJev 既定閾値0.85で日常的と判定した操作は審査モデルを省略する。Pi 側の `autoReview.triage` は使わない。それ以外や取得・判定の失敗は通常の審査へ戻す。
 審査の critical 判定・ユーザーの拒否などで操作をブロックした後は、その実行の残りでトリアージを使わず、次の MCP 変更操作を審査モデルへ渡す。次の `agent_start` でトリアージの利用を再開する。
 設定の i マークで送信範囲と挙動を説明し、トリアージの無効化はモデル取得に失敗していても行える。
 会議 context と live transcript は審査履歴でも user の承認として扱わない。審査には予定操作の全文・審査指示・履歴を渡す。
-固定の128,000文字制限は設けず、選択した審査モデルの context window の95%から最大出力トークン数を予約した残りを入力予算とする。
-モデル情報がない場合は context window を128,000トークン、出力予約を16,384トークンとして扱う。
-入力全体の JSON の UTF-8 バイト数をテキストトークン数の保守的な見積もりとして比較し、予算超過やモデル側の入力エラーは全文を表示する手動確認へ回す。
+審査できる大きさは upstream の `review` が判定する。予定操作が128,000文字を超えるか、審査指示・履歴と出力用の16,000トークンを含めて審査モデルの context window に収まらない場合は
+審査せず、全文を表示する手動確認へ回す（context window はUTF-8の2バイトを1トークンとして見積もる）。完全な要約の更新も128,000文字を超えると手動確認になる。
 Jev は upstream の32,000文字上限を維持し、それを超える予定操作は通常の審査モデルへ渡す。
 審査の期限・再試行・取消は upstream に従う。否認・失敗の理由を承認画面で表示する。
 
 承認方式は Dahlia が保持し、extension は MCP の変更操作ごとに bridge で問い合わせる（turn 中の変更も次の呼び出しから効く。不明なら「常に確認する」）。
-Pi の session file に承認方式を保存しない。全アカウントで、新しい thread も開き直した thread も「AIにより確認する（Auto review）」を初期選択する。開いているチャットで明示的に選んだ承認方式は保持する。
+Pi の session file に承認方式を保存しない。全アカウントで、新しい thread も開き直した thread も「AIにより確認する（Auto review）」を初期選択する（pi-auto-review が未インストールなら「常に確認する」として扱う）。開いているチャットで明示的に選んだ承認方式は保持する。
 承認対象の UTF-8 合計は command／file change／MCP 共通で、既存の process transport の受信保護上限と同じ4MiBまで保持する。
 MCP は server・tool・整形済み引数全文・reason を含めて検査する。4MiBを超えて表示を切り詰めた呼び出しは、承認方式によらず許可しない。
 Codex の[承認プロトコル](https://developers.openai.com/codex/app-server#approvals)には20KBの承認入力制限はない。

@@ -5,6 +5,10 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { reviewBranch, reviewMCP, reviewerEffort } from "../Sources/Dahlia/PiExtension/mcp-review.ts";
 
+// Usage: DAHLIA_PI_AUTO_REVIEW=/path/to/pi-auto-review/index.ts node --test apps/macos/scripts/test-mcp-review.mjs
+// Use a checkout of the commit pinned in AgentAutoReviewSettings.packageSource.
+const reviewer = process.env.DAHLIA_PI_AUTO_REVIEW;
+assert.ok(reviewer, "Set DAHLIA_PI_AUTO_REVIEW to pi-auto-review's index.ts");
 const agent = mkdtempSync(join(tmpdir(), "dahlia-review-test-"));
 process.env.PI_CODING_AGENT_DIR = agent;
 delete process.env.PI_AUTO_REVIEW_MODEL;
@@ -41,9 +45,42 @@ test("meeting context and live transcripts cannot authorize a tool call", () => 
   assert.equal(branch.filter((e) => e.message.role === "toolResult").length, 2);
 });
 
+test("without the plugin, a review fails closed to manual approval", async () => {
+  process.env.DAHLIA_PI_AUTO_REVIEW = join(agent, "missing/index.ts");
+  try {
+    const verdict = await reviewMCP({
+      cwd: agent, model: { provider: "chat", id: "model" }, sessionManager: { getBranch: () => [] },
+      modelRegistry: { find: () => assert.fail("must not review"), streamSimple: () => assert.fail("must not review") },
+    }, "mcp__dahlia__update_meeting", {});
+    assert.deepEqual([verdict.outcome, verdict.risk], ["deny", "unknown"]);
+  } finally {
+    process.env.DAHLIA_PI_AUTO_REVIEW = reviewer;
+  }
+});
+
+test("legacy plugin APIs cannot ignore the host's review settings", async () => {
+  const legacy = join(agent, "legacy-review.mjs");
+  writeFileSync(legacy, 'export function review() { throw new Error("legacy reviewer must not run"); }');
+  process.env.DAHLIA_PI_AUTO_REVIEW = legacy;
+  try {
+    let modelLookups = 0;
+    const verdict = await reviewMCP({
+      modelRegistry: { find: () => { modelLookups++; } },
+    }, "mcp__dahlia__update_meeting", {}, "chosen/reviewer");
+    assert.equal(modelLookups, 0, "reject the unsupported API before selecting or calling a model");
+    assert.deepEqual([verdict.outcome, verdict.risk], ["deny", "unknown"]);
+  } finally {
+    process.env.DAHLIA_PI_AUTO_REVIEW = reviewer;
+  }
+});
+
 test("complete review input follows the selected model's capacity", async () => {
-  const summary = "要約".repeat(80_000) + "END_OF_SUMMARY";
-  for (const contextWindow of [64_000, 1_000_000, undefined]) {
+  // Upstream estimates a token per two UTF-8 bytes and caps a call at 128,000 characters whatever the window.
+  const fits = "要約".repeat(20_000) + "END_OF_SUMMARY";
+  const overCap = "要約".repeat(80_000);
+  for (const [contextWindow, summary, reviewed] of [
+    [64_000, fits, false], [1_000_000, fits, true], [undefined, fits, true], [1_000_000, overCap, false],
+  ]) {
     let requests = 0;
     const verdict = await reviewMCP({
       cwd: agent, model: { provider: "chat", id: "large", contextWindow: 1_000_000 },
@@ -61,38 +98,11 @@ test("complete review input follows the selected model's capacity", async () => 
         },
       },
     }, "mcp__dahlia__update_meeting_summary", { summary }, "reviewer/selected");
-    assert.equal(requests, contextWindow === 1_000_000 ? 1 : 0);
-    assert.equal(verdict.outcome, requests ? "allow" : "deny");
-    if (!requests) {
-      assert.equal(verdict.risk, "unknown");
-      assert.match(verdict.reason, /context window budget/);
-    }
+    assert.equal(requests, reviewed ? 1 : 0, String(contextWindow));
+    assert.equal(verdict.outcome, reviewed ? "allow" : "deny");
+    // Upstream refuses a request its reviewer cannot hold; Dahlia then asks with the full call.
+    if (!reviewed) assert.equal(verdict.tooLarge, true);
   }
-});
-
-test("policy, history and output reservation count against the review budget", async () => {
-  let fullInputBytes;
-  const model = { provider: "test", id: "reviewer", contextWindow: 1_000_000, maxTokens: 8192 };
-  const ctx = {
-    cwd: agent, model,
-    sessionManager: { getBranch: () => [user("Update the title")] },
-    modelRegistry: {
-      find: () => model,
-      streamSimple(_model, prompt) {
-        fullInputBytes = Buffer.byteLength(JSON.stringify(prompt), "utf8");
-        return { result: async () => ({ stopReason: "stop", content: [{ type: "text", text: JSON.stringify({
-          outcome: "allow", risk_level: "low", user_authorization: "high", rationale: "Requested",
-        }) }] }) };
-      },
-    },
-  };
-  assert.equal((await reviewMCP(ctx, "mcp__dahlia__update_meeting", { title: "New title" })).outcome, "allow");
-  assert.ok(fullInputBytes > 0);
-  model.contextWindow = Math.floor((fullInputBytes + model.maxTokens - 1) / 0.95);
-  ctx.modelRegistry.streamSimple = () => assert.fail("an incomplete review must go to manual approval");
-  const verdict = await reviewMCP(ctx, "mcp__dahlia__update_meeting", { title: "New title" });
-  assert.equal(verdict.risk, "unknown");
-  assert.match(verdict.reason, /context window budget/);
 });
 
 test("review cancellation reaches the model and fails closed", { timeout: 1000 }, async () => {

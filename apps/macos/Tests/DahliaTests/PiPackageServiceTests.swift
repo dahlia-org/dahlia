@@ -5,6 +5,24 @@ import Foundation
     import Testing
 
     struct PiPackageServiceTests {
+        @Test
+        func autoReviewAvailabilityFollowsInstalledFilesForAnyPackageRef() throws {
+            let agent = FileManager.default.temporaryDirectory.appending(path: "PiAutoReview-\(UUID())")
+            defer { try? FileManager.default.removeItem(at: agent) }
+            let entry = AgentAutoReviewSettings.entryURL(agentURL: agent)
+            try FileManager.default.createDirectory(at: entry.deletingLastPathComponent(), withIntermediateDirectories: true)
+            let settings = agent.appending(path: "settings.json")
+            try JSONSerialization.data(withJSONObject: ["packages": [AgentAutoReviewSettings.packageSource]]).write(to: settings)
+            #expect(!PiPackageService.isAutoReviewInstalled(agentURL: agent))
+            try Data().write(to: entry)
+            for source in ["https://github.com/mats16/pi-auto-review@b7822c1", AgentAutoReviewSettings.packageSource] {
+                try JSONSerialization.data(withJSONObject: ["packages": [source]]).write(to: settings)
+                #expect(PiPackageService.isAutoReviewInstalled(agentURL: agent))
+            }
+            try FileManager.default.removeItem(at: entry)
+            #expect(!PiPackageService.isAutoReviewInstalled(agentURL: agent))
+        }
+
         @Test(arguments: ["npm error code ENOVERSIONS", "npm ERR! code ENOVERSIONS"])
         func explainsUnavailableVersionsWithoutDumpingTheCommandLog(_ detail: String) {
             let error = PiPackageService.PackageError.commandFailed(detail + "\nNo versions available for pi-workbuddy-hub")
@@ -25,6 +43,15 @@ import Foundation
         ])
         func acceptsPiPackageSources(_ source: String) throws {
             #expect(try PiPackageService.source(" \(source)\n") == source)
+        }
+
+        @Test(arguments: [
+            ("npm:pi-mcp-adapter", "pi-mcp-adapter"), ("npm:@example/tools@1.0.0", "@example/tools"),
+            ("https://github.com/mats16/pi-auto-review@3a12a7d", "pi-auto-review"), ("git:github.com/mats16/ai-desktools@main", "ai-desktools"),
+            ("ssh://git@example.com/team/tools.git", "tools"), ("git@example.com:tools.git", "tools"),
+        ])
+        func namesCardsByPackageOrRepository(_ source: String, _ name: String) {
+            #expect(PiPackageService.displayName(source) == name)
         }
 
         @Test(arguments: ["", "--local", "-l", "pi install npm:tools", "npm:tools\n--local"])
