@@ -1851,6 +1851,7 @@
 "settings.agents.mcpServiceNameInvalid" = "Enter three names separated by dots (catalog.schema.service), using letters, digits, _ or -.";
 "Always ask" = "Always ask";
 "Ask with AI" = "Ask with AI";
+"chat.approval.autoReview.unavailable" = "Install the recommended pi-auto-review plugin under Plugins in Dahlia AI settings to use this.";
 "Skip all approvals" = "Skip all approvals";
 "Confirm before making changes or sending content." = "Confirm before making changes or sending content.";
 "Ask only about potentially unsafe actions." = "Ask only about potentially unsafe actions.";
@@ -1880,16 +1881,14 @@
 "settings.agents.packageCatalog" = "Browse Pi plugins";
 "settings.agents.packageSource" = "Plugin name or Git URL";
 "settings.agents.packageInstall" = "Install";
-"settings.agents.packageRemove" = "Uninstall";
 "settings.agents.packageHelp" = "Install into this account’s Pi. Enter an npm: source from the catalog or a Git URL such as https://github.com/mats16/ai-desktools. Only install plugins you trust. Chat can use skills and prompts. Extension code and themes are not loaded.";
 "settings.agents.packageChanged" = "Changes apply to the next chat you start.";
-"settings.agents.packagesEmpty" = "No plugins installed.";
-"settings.agents.packagesInstalled" = "Installed plugins";
 "settings.agents.packageInvalidSource" = "Enter an npm: package source or a Git URL.";
 "settings.agents.packageBusy" = "Plugins for this account are being changed. Try again when the operation finishes.";
 "settings.agents.packageFailed" = "Could not change the plugin.";
 "settings.agents.packageNoVersions" = "The configured npm registry has no available versions of this plugin. Check the package name, publication status, and registry restrictions.";
 "settings.agents.packageErrorDetails" = "Error details";
+"settings.agents.autoReview.package" = "AI reviews MCP actions that change data and asks only about potentially unsafe ones. Required for Ask with AI in chat.";
 
 // AI chat slash completion
 "Commands and skills" = "Commands and skills";

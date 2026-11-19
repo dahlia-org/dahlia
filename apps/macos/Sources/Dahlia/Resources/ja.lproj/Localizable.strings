@@ -1851,6 +1851,7 @@
 "settings.agents.mcpServiceNameInvalid" = "catalog.schema.service の3つの名前を指定してください。各名前には英数字・_・- を使えます。";
 "Always ask" = "常に確認する";
 "Ask with AI" = "AIにより確認する";
+"chat.approval.autoReview.unavailable" = "Dahlia AI 設定の「プラグイン」で、おすすめの pi-auto-review をインストールすると選べます。";
 "Skip all approvals" = "すべての承認をスキップ";
 "Confirm before making changes or sending content." = "変更やコンテンツの送信を行う前に確認する";
 "Ask only about potentially unsafe actions." = "安全でない可能性のある操作のみ確認する";
@@ -1880,16 +1881,14 @@
 "settings.agents.packageCatalog" = "Pi のプラグインを探す";
 "settings.agents.packageSource" = "プラグイン名または Git URL";
 "settings.agents.packageInstall" = "インストール";
-"settings.agents.packageRemove" = "アンインストール";
 "settings.agents.packageHelp" = "このアカウントの Pi に追加します。カタログの npm: 名、または https://github.com/mats16/ai-desktools などの Git URL を入力してください。信頼できるプラグインだけをインストールしてください。 チャットでスキルとプロンプトを利用できます。拡張コードとテーマは読み込みません。";
 "settings.agents.packageChanged" = "変更は次に開始するチャットから適用されます。";
-"settings.agents.packagesEmpty" = "インストール済みのプラグインはありません。";
-"settings.agents.packagesInstalled" = "インストール済み";
 "settings.agents.packageInvalidSource" = "npm: で始まるパッケージ名、または Git URL を入力してください。";
 "settings.agents.packageBusy" = "このアカウントのプラグインを変更中です。完了後にもう一度お試しください。";
 "settings.agents.packageFailed" = "プラグインの変更に失敗しました。";
 "settings.agents.packageNoVersions" = "設定中の npm レジストリには、このプラグインの利用可能なバージョンがありません。npm パッケージ名、公開状況、レジストリの制限を確認してください。";
 "settings.agents.packageErrorDetails" = "エラーの詳細";
+"settings.agents.autoReview.package" = "MCP の変更操作を AI が審査し、安全でない可能性のある操作だけを確認します。チャットの「AIにより確認する」に必要です。";
 
 // AI chat slash completion
 "Commands and skills" = "コマンドとスキル";

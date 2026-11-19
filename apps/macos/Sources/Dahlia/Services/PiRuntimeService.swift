@@ -904,6 +904,7 @@ actor PiRuntimeService {
         environment["PI_SKIP_VERSION_CHECK"] = "1"
         environment["PI_TELEMETRY"] = "0"
         environment["DAHLIA_PI_MODE"] = options.mode.rawValue
+        environment["DAHLIA_PI_AUTO_REVIEW"] = AgentAutoReviewSettings.entryURL(agentURL: agentURL).path
         environment["DAHLIA_PI_BRIDGED_PROVIDERS"] = provider.piBridgedProviderIDs.joined(separator: ",")
         environment.merge(options.environment) { $1 }
         environment["DAHLIA_PI_PROFILE"] = options.profile.rawValue

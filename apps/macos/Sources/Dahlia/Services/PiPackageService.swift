@@ -4,6 +4,8 @@ import Foundation
 /// Package declarations and installations belong to the same account directory as Pi's sessions and credentials.
 actor PiPackageService {
     static let shared = PiPackageService()
+    /// Posted on the main actor after an install or removal finishes.
+    static let packagesDidChange = Notification.Name("DahliaPiPackagesDidChange")
     private var busyAccounts: Set<CodexRuntimeProvider> = []
     private let locator: PiAgentDirectoryLocator
 
@@ -15,12 +17,30 @@ actor PiPackageService {
         try Self.packageSources(in: locator.agentURL(for: account).appending(path: "settings.json"))
     }
 
+    /// The chat's Auto review needs this plugin; its files are what the extension imports.
+    func isAutoReviewInstalled(for account: CodexRuntimeProvider) -> Bool {
+        guard let agentURL = try? locator.agentURL(for: account) else { return false }
+        return Self.isAutoReviewInstalled(agentURL: agentURL)
+    }
+
+    nonisolated static func isAutoReviewInstalled(agentURL: URL) -> Bool {
+        FileManager.default.fileExists(atPath: AgentAutoReviewSettings.entryURL(agentURL: agentURL).path)
+    }
+
     nonisolated static func packageSources(in url: URL) throws -> [String] {
         guard FileManager.default.fileExists(atPath: url.path) else { return [] }
         let settings = try JSONDecoder().decode(JSONValue.self, from: Data(contentsOf: url))
         return Array(Set((settings.objectValue?["packages"]?.arrayValue ?? []).compactMap {
             $0.stringValue ?? $0.objectValue?["source"]?.stringValue
         })).sorted()
+    }
+
+    /// A card's name: the package or repository, without its scope's source prefix, version, or ref.
+    nonisolated static func displayName(_ source: String) -> String {
+        var name = source.hasPrefix("npm:") ? String(source.dropFirst(4)) : String(source.split { $0 == "/" || $0 == ":" }.last ?? Substring(source))
+        // A leading `@` is an npm scope, not a version.
+        if let at = name.dropFirst().lastIndex(of: "@") { name = String(name[..<at]) }
+        return name.hasSuffix(".git") ? String(name.dropLast(4)) : name
     }
 
     nonisolated static func source(_ input: String) throws -> String {
