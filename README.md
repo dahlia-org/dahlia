@@ -203,8 +203,8 @@ everything else, integrations are delegated to external agents over MCP, and the
 For documentation by runtime and purpose, start at the [Documentation index](docs/README.md).
 
 See [ARCHITECTURE.md](ARCHITECTURE.md) for the current runtime data flow, target architecture, conformance status,
-remediation plan, and UI responsiveness policy. Historical decisions and their supersession relationships are indexed in
-[Architecture Decision Records](docs/adr/README.md).
+remediation plan, and UI responsiveness policy. The current contract of each theme is indexed in
+[Specs](docs/spec/README.md).
 
 See [Calendar event persistence schema](docs/calendar-event-schema.md) for the UID/RECURRENCE-ID key, source mapping,
 and Meeting cardinality contract.

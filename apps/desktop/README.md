@@ -1,6 +1,6 @@
 # Dahlia Desktop (Electron alpha)
 
-`@dahlia-ai/desktop` is an online-only development alpha for macOS. It renders the shared Web UI from `@dahlia-ai/ui` in Electron and connects to a Dahlia Server with the existing account session. It does not record, transcribe, run AI on the device, store data offline, or replace Dahlia for macOS (`apps/macos`). Design decisions: [Electron アルファ版](../../docs/adr/desktop/electron-alpha.md).
+`@dahlia-ai/desktop` is an online-only development alpha for macOS. It renders the shared Web UI from `@dahlia-ai/ui` in Electron and connects to a Dahlia Server with the existing account session. It does not record, transcribe, run AI on the device, store data offline, or replace Dahlia for macOS (`apps/macos`). Design decisions: [Electron アルファ版](../../docs/spec/desktop/electron-alpha.md).
 
 ## Run
 

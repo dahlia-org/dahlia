@@ -1,5 +1,5 @@
 // Databricks workspace OAuth: the authorization code flow with PKCE and a loopback callback, as Dahlia for macOS signs in
-// (docs/adr/desktop/accounts.md#chatgpt-と-databricks-workspace-oauth). Tokens, codes and callback queries never reach logs
+// (docs/spec/desktop/accounts.md#chatgpt-と-databricks-workspace-oauth). Tokens, codes and callback queries never reach logs
 // or error messages.
 import { createHash, randomBytes } from "node:crypto";
 import { createServer, type Server } from "node:http";

@@ -45,7 +45,8 @@ Edit と Write はリンク経由で書き込めず、`core.symlinks` が無効�
 - finding の採用基準、出力に必要な根拠、レビュー専用チェックリスト: `docs/code-review.md`
 - 機能の採否、scope の境界、AI と人の役割分担: `PRODUCT.md`
 - 現在の ownership、workload、failure mode、UI responsiveness の契約: `ARCHITECTURE.md`
-- 判断の経緯または既存決定の変更: 関連する ADR
+- テーマごとの現在の契約と既存決定の変更: `docs/spec/` の関連する仕様
+- 判断の経緯と変更理由: commit と pull request
 - format、lint、型検査など決定的に判定できる規則: test、lint、CI
 - 一つの PR だけで必要な観点: PR コメントまたはそのレビュー依頼
 
