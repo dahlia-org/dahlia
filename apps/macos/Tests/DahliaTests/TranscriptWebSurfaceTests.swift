@@ -23,6 +23,7 @@
         @Test
         func renderedRowsFollowTheStoreAndRecoverWhenThePageStopsResponding() async throws {
             let harness = Harness()
+            defer { harness.stop() }
             let segments = (0 ..< 300).map { index in
                 TranscriptSegment(startTime: Date(timeIntervalSince1970: Double(index)), text: "row \(index)", isConfirmed: true)
             }
@@ -36,6 +37,7 @@
             #expect(await harness.waitForText("translated"))
 
             // A page that never reports a frame is reloaded, and the reload receives the whole window again.
+            harness.enableResponseTimeout()
             _ = try await harness.webView.evaluateJavaScript("window.dahliaTranscript.apply = () => {}; true")
             harness.show(Array(updated.prefix(10)), showsTranslatedText: true)
             #expect(await harness.waitForRows(10, firstText: "row 0"))
@@ -44,6 +46,7 @@
         @Test
         func shortInitialPageStartsFollowingLiveSegments() async {
             let harness = Harness()
+            defer { harness.stop() }
             let store = TranscriptStore()
             store.loadSegments([TranscriptSegment(startTime: .now, text: "initial", isConfirmed: true)])
             store.setFollowingLatest(false)
@@ -61,6 +64,7 @@
         @Test
         func pagingPreservesTheVisibleRowWhenPrependingAndTrimming() async throws {
             let harness = Harness()
+            defer { harness.stop() }
             let segments = (0 ..< 400).map { index in
                 TranscriptSegment(
                     startTime: Date(timeIntervalSince1970: Double(index)),
@@ -88,10 +92,12 @@
         @Test
         func responseTimeoutRecoversAfterHiddenWindowBecomesVisible() async throws {
             let harness = Harness()
+            defer { harness.stop() }
             harness.show([TranscriptSegment(startTime: .now, text: "initial", isConfirmed: true)])
             #expect(await harness.waitForRows(1, firstText: "initial"))
             _ = try await harness.webView.evaluateJavaScript("window.dahliaTranscript.apply = () => {}; true")
             let visibility = Visibility()
+            harness.enableResponseTimeout()
             harness.coordinator.isDisplayed = {
                 visibility.checks += 1
                 return visibility.visible
@@ -105,6 +111,7 @@
         @Test(arguments: [false, true])
         func recoveryPreservesCurrentReadingOrLiveFollowing(following: Bool) async throws {
             let harness = Harness()
+            defer { harness.stop() }
             let store = TranscriptStore()
             store.loadSegments((0 ..< 200).map { index in
                 TranscriptSegment(startTime: Date(timeIntervalSince1970: Double(index)), text: "row \(index)", isConfirmed: true)
@@ -129,6 +136,7 @@
             // A JS round trip also ensures the scroll report has crossed the script-message boundary.
             _ = try await harness.webView.evaluateJavaScript("window.beforeRecovery = true")
             if following {
+                harness.enableResponseTimeout()
                 _ = try await harness.webView.evaluateJavaScript("window.dahliaTranscript.apply = () => {}; true")
                 var updated = store.segments
                 updated[199].translatedText = "recovered"
@@ -171,6 +179,7 @@
         @Test
         func existingPageAppliesChangedTextSizeWithoutReloading() async {
             let harness = Harness()
+            defer { harness.stop() }
             let segments = [TranscriptSegment(startTime: .now, text: "font", isConfirmed: true)]
             harness.show(segments)
             #expect(await harness.waitForRows(1, firstText: "font"))
@@ -188,6 +197,7 @@
             deliversScrollBeforeUpdate: Bool
         ) async throws {
             let harness = Harness()
+            defer { harness.stop() }
             let requests = PageRequests()
             let request: @MainActor (TranscriptWebSurface.Edge) -> Void = { requests.values.append($0) }
             var segments = (0 ..< 200).map { index in
@@ -287,14 +297,28 @@
             init() {
                 let surface = Self.surface([], showsTranslatedText: false)
                 coordinator = surface.makeCoordinator()
-                coordinator.responseTimeout = .milliseconds(300)
-                coordinator.isDisplayed = { true }
+                // Frame-controlled tests must not trigger the visible-page watchdog.
+                coordinator.isDisplayed = { false }
+                window.isReleasedWhenClosed = false
                 let configuration = WKWebViewConfiguration()
                 configuration.userContentController.add(coordinator, name: "transcript")
                 webView = WKWebView(frame: window.contentLayoutRect, configuration: configuration)
                 window.contentView = webView
                 coordinator.view = webView
                 coordinator.load()
+            }
+
+            func enableResponseTimeout() {
+                coordinator.responseTimeout = .milliseconds(300)
+                coordinator.isDisplayed = { true }
+            }
+
+            func stop() {
+                coordinator.stop()
+                webView.configuration.userContentController.removeScriptMessageHandler(forName: "transcript")
+                webView.stopLoading()
+                window.contentView = nil
+                window.close()
             }
 
             func show(
