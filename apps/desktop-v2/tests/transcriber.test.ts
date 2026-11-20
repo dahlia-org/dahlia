@@ -47,6 +47,11 @@ describe("runHelper", () => {
 });
 
 describe("transcribeRecording", () => {
+  it("rejects missing sources before running the helper", async () => {
+    const directory = mkdtempSync(join(tmpdir(), "dahlia-v2-rec-"));
+    writeFileSync(audioFile(directory, "mic"), new Uint8Array(64));
+    await expect(transcribeRecording("/missing/helper", directory, "ja-JP", () => {}, never)).rejects.toMatchObject({ code: "invalid_audio" });
+  });
   it("transcribes each source that has audio, passing the locale, and merges in time order", async () => {
     const helper = fakeHelper(`
       const file = args.at(-1);

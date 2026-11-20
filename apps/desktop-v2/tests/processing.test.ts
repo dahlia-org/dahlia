@@ -1,4 +1,4 @@
-import { mkdtempSync, writeFileSync, mkdirSync } from "node:fs";
+import { chmodSync, mkdtempSync, writeFileSync, mkdirSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it, vi } from "vitest";
@@ -6,7 +6,7 @@ import { Database } from "../src/main/db.js";
 import { SignInError } from "../src/main/oauth.js";
 import { Processor, type ProcessorDependencies } from "../src/main/processing.js";
 import { audioFile, recordingDirectory, recoveredDurationMs } from "../src/main/recorder.js";
-import { TranscriptionError } from "../src/main/transcriber.js";
+import { transcribeRecording, TranscriptionError } from "../src/main/transcriber.js";
 import type { SummaryDocument } from "../src/shared/types.js";
 
 const document: SummaryDocument = { title: "T", description: "D", sections: [{ heading: "", blocks: [{ type: "paragraph", text: "x", transcript_ref: null }] }], action_items: [] };
@@ -29,6 +29,32 @@ function setup(overrides: Partial<ProcessorDependencies> = {}) {
 }
 
 describe("Processor", () => {
+  it.each(["both", "mic", "system"] as const)("preserves saved transcripts when %s audio disappears before retranscription", async (missing) => {
+    const helper = join(mkdtempSync(join(tmpdir(), "dahlia-v2-helper-")), "helper");
+    writeFileSync(helper, '#!/usr/bin/env node\nprocess.stdout.write(JSON.stringify({ type: "segment", text: "replacement", start_ms: 0, end_ms: 1000 }) + "\\n" + JSON.stringify({ type: "done" }) + "\\n");\n');
+    chmodSync(helper, 0o755);
+    const { db, processor, recordingsRoot, summarize } = setup({ transcribe: transcribeRecording, helper });
+    const meeting = db.createMeeting("M");
+    const recording = db.startRecording(meeting, "ja-JP");
+    db.finishRecording(recording.id, 1000);
+    db.replaceTranscript(recording.id, [
+      { source: "mic", startMs: 0, endMs: 1000, text: "saved mic" },
+      { source: "system", startMs: 0, endMs: 1000, text: "saved system" },
+    ]);
+    db.saveSummary(meeting, document, "model");
+    const directory = recordingDirectory(recordingsRoot, meeting, recording.id);
+    mkdirSync(directory, { recursive: true });
+    for (const source of ["mic", "system"] as const) {
+      writeFileSync(audioFile(directory, source), new Uint8Array(32_000));
+      if (missing === "both" || missing === source) rmSync(audioFile(directory, source));
+    }
+    processor.retranscribe(meeting);
+    await processor.idle();
+    expect(db.getMeeting(meeting)?.segments.map((segment) => segment.text)).toEqual(["saved mic", "saved system"]);
+    expect(db.recording(recording.id)).toMatchObject({ status: "failed", error: "invalid_audio" });
+    expect(db.getMeeting(meeting)?.summary?.document).toEqual(document);
+    expect(summarize).not.toHaveBeenCalled();
+  });
   it("transcribes a finished recording, then summarizes the meeting", async () => {
     const { db, processor, transcribe, summarize } = setup();
     const meeting = db.createMeeting("M");

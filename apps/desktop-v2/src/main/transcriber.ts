@@ -99,10 +99,21 @@ export async function transcribeRecording(
   onProgress: (progress: HelperProgress & { source: AudioSource }) => void,
   signal: AbortSignal,
 ): Promise<TranscribedSegment[]> {
-  const merged: TranscribedSegment[] = [];
-  for (const source of audioSources) {
+  // The writer creates both files, including an empty system file when loopback is unavailable.
+  // A missing source is an incomplete run, never a successful empty replacement of saved text.
+  const inputs = audioSources.map((source) => {
     const file = audioFile(directory, source);
-    if (!existsSync(file) || statSync(file).size < 2) continue;
+    try {
+      const stat = statSync(file);
+      if (!stat.isFile()) throw new TranscriptionError("invalid_audio");
+      return { source, file, bytes: stat.size };
+    } catch {
+      throw new TranscriptionError("invalid_audio");
+    }
+  });
+  const merged: TranscribedSegment[] = [];
+  for (const { source, file, bytes } of inputs) {
+    if (bytes < 2) continue;
     const segments = await transcribeFile(executable, file, locale, (progress) => onProgress({ ...progress, source }), signal);
     merged.push(...segments.map((segment) => ({ ...segment, source })));
   }
