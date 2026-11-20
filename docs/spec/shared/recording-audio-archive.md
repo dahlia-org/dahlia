@@ -33,11 +33,11 @@ CAF の削除失敗は保存済み M4A の利用可能状態を変更しない�
 
 ## API と同期
 
-`POST /api/v1/meetings/{meetingId}/recordings?sessionId={uuidv7}&source=mic|system` に `Content-Type: audio/mp4`、`Content-Length` と raw bytes を送る。1音源1ファイル、上限1 GiB。サーバーがサイズ・SHA-256を計算し、同一再送は200、新規保存は201、異なる内容は409を返す。
+[OpenAPI 契約](../server/openapi.md) の `PUT /api/v1/meetings/{meetingId}/recording-uploads/{sessionId}/audio/{source}`（`sessionId` は UUIDv7、`source` は `mic | system`）に `Content-Type: audio/mp4`、`Content-Length` と raw bytes を送る。1音源1ファイル、上限1 GiB。サーバーがサイズ・SHA-256を計算し、同一再送は200、新規保存は201、異なる内容は409を返す。
 
 sessionId は内部識別子として保持する。公開録音番号は meeting 内でアップロード採番順の正整数とし、同じ session の両音源が同じ番号を使う。番号は再利用せず、録音開始・終了時刻を別に保持する。保存キーは `meetings/{meetingId}/recordings/audio_mic_01.m4a` などの平坦なパスとする。
 
-POST 後は owner だけが読める staging とし、クライアントの照合後に `recording:upsert` transaction で checksum・音源・manifest を確定する。sync snapshot / delta は内部 session と公開番号の対応を配信する。公開一覧 `GET /api/v1/meetings/{meetingId}/recordings` は確定音源だけを番号別に返し、sessionId を公開しない。`GET/HEAD /api/v1/meetings/{meetingId}/recordings/{number}/audio/{source}` は Range に対応する。物理キーや認証情報は公開しない。Files API の既存64 MiB制限は維持する。
+アップロード後は owner だけが読める staging とし、クライアントの照合後に `recording:upsert` transaction で checksum・音源・manifest を確定する。sync snapshot / delta は内部 session と公開番号の対応を配信する。公開一覧 `GET /api/v1/meetings/{meetingId}/recordings` は確定音源だけを番号別に返し、sessionId を公開しない。`GET /api/v1/meetings/{meetingId}/recordings/{recordingId}/audio/{source}` は公開録音番号を `recordingId` に使い、Range に対応する。同じパスの HEAD は Range を無視して全体のヘッダーを返し、本文は送らない。物理キーや認証情報は公開しない。Files API の既存64 MiB制限は維持する。
 
 Server は新しい sync entity を旧 Desktop が誤読しないよう、`recordingArchive: { version: 1 }` を広告する。音声の送信は recordingArchive.version 1 の Server に限る。更新順序は Server / Web、Desktop とする。
 

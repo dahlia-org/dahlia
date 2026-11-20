@@ -76,7 +76,7 @@ Better Auth runtime の `generateId` は UUIDv7 callback を使う。schema 生�
 
 Web から開始する Server の処理設定は [文字起こし・要約の処理場所](../shared/transcription-summary-processing.md) に従い、Workspace の `generationSettings` と既存の revision / 管理者更新経路を使う。Desktop の生成設定の保存先と共有範囲は [アカウント別 Desktop 推論](../shared/account-scoped-desktop-inference.md) に従う。文字起こし言語とライブ文字起こしは Mac の端末設定に置き、DB の汎用 key/value、組織ポリシー、秘密情報には置かない。
 
-PATCH は指定された末端項目だけを DB の現在行に適用し、同じ項目は後勝ちとする。内部の変更検知用 revision は値が実際に変わったときだけ増やし、SSE の変更検知専用とする。競合制御には使わず、API に公開しない。
+Workspace 設定の更新は [同期の transaction と競合](../shared/sync.md#transaction-と競合) に従う。
 
 コンテンツの世代は `version`、同期・更新検出は `revision` とする。処理世代の generation、録音 UUID、解析方式・通信形式のバージョンは別概念として扱う。
 

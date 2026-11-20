@@ -50,7 +50,7 @@ Server transcript には Desktop の session ID / 累積 offset がないため�
 
 Web のモデル候補は `/api/v1/models` の一覧を使う。Databricks の要約SP呼び出しは `system.ai.*` の完全修飾モデル名を設定と Gateway から受け取り、そのまま上流へ渡す。失敗はworkerで内容・認証情報を含めず記録し、`summary_input_changed` は画面で入力更新による失敗として示す。
 
-機能検出は `GET /api/v1/capabilities` の `meetingSummaryGeneration: { version, sources }` に統合する。生成capabilityはversion 2とし、登録済み方式から sources を導出する。未対応はキーを省略し、capabilities 自体が空の場合も未対応とする。PATCHは指定した葉だけ更新し、remoteのsummaryModel・reasoningEffortはnullで自動へ戻す。Server文字起こしモデルは保存せずGeminiを自動選択し、二段階処理の要約モデルは文字起こし要約への対応を独立に検証して自動選択する。開始済みジョブの設定スナップショットは変更しない。`outputLanguage` はアカウント設定直下に維持する。
+機能検出は `GET /api/v1/capabilities` の `meetingSummaryGeneration: { version, sources }` に統合する。生成capabilityはversion 2とし、登録済み方式から sources を導出する。未対応はキーを省略し、capabilities 自体が空の場合も未対応とする。Server文字起こしモデルは保存せずGeminiを自動選択し、二段階処理の要約モデルは文字起こし要約への対応を独立に検証して自動選択する。開始済みジョブの設定スナップショットは変更しない。設定の構造と更新は [処理場所と設定](../shared/transcription-summary-processing.md#設定と移行) に従う。
 
 canonical 要約の新しい版を受け取ったら古いエクスポート参照を無効化するが、同じ版の再取得・キャッシュ解放では保持する。出力先のファイル自体は削除しない。
 
@@ -122,8 +122,6 @@ OCR / caption は実験的な派生データのため、前処理にも要約に
 要約設定の所有・保存形式は [処理場所と設定](../shared/transcription-summary-processing.md#設定と移行) に従い、追加・更新の境界は一つにまとめる。
 
 既存ジョブ・履歴は変更せず、新規ジョブの開始時だけ共通詳細度を取り込む。要求ごとの明示的な詳細度 override は優先する。
-PATCH は現在行の指定葉だけを更新し、異なる葉の並行更新を保持する。同じ葉はDBで後勝ちとする。
-内部 `revision` は実際に値が変わったときだけ増やし、SSEの変更検知専用とする。
 
 旧API形式の互換アダプターは設けない。Desktop / Server / Web は同時に更新する。
 列の削除後はアプリだけを旧版へ戻せないため、復旧は修正の前進適用、または移行前バックアップと対応バージョンの組み合わせで行う。

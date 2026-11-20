@@ -50,7 +50,7 @@ Desktop の旧 `projectAppearances` UserDefaults は Workspace を開いたと�
 
 ### 生成設定と言語設定
 
-認識対象の `analysisLanguages` は個人設定として Server DB を正本とし、Desktop は接続・認証 user ID に束縛したメモリで保持する。初回 GET が未作成なら端末の現在値で conditional INSERT し、他端末の初期化を上書きしない。`account_settings` SSE invalidation と再接続で再取得する。
+文字起こし言語とライブ文字起こしの保存先は [設定の保存先](../server/database-and-identity.md#設定の保存先) に従い、Server との同期対象に含めない。
 
 Desktop のモデル・推論強度・スタイル・録音後の処理・ライブ下書きの保存先と引き継ぎは [アカウント別 Desktop 推論](account-scoped-desktop-inference.md) に従う。Web の Server 処理設定は [処理場所と設定](transcription-summary-processing.md) に従い、Workspace の `generationSettings` は既存の管理者による update transaction・baseRevision・receipt / delta / snapshot / SSE を通す。Desktop と Web で共有する Workspace の既定値は出力言語のみとする。
 
