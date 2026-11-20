@@ -1,5 +1,5 @@
 // The window: the sidebar over the window's vibrancy (275 px, 240–520 resizable) and the meeting on the content
-// background, as in Dahlia for macOS's ContentView. Signing in is required before anything else.
+// background, as in Dahlia for macOS's ContentView. Only summaries need Databricks sign-in.
 import { useEffect, useState } from "react";
 import { api, useLive, useRecorder } from "./capture.js";
 import { t } from "./i18n.js";
@@ -15,8 +15,13 @@ export function App() {
   const recorder = useRecorder();
   const [selected, setSelected] = useState<string>();
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [signInOpen, setSignInOpen] = useState(false);
   const [width, setWidth] = useState(() => Number(localStorage.getItem("sidebarWidth")) || sidebar.initial);
   const signedIn = auth?.status === "signedIn" ? auth : undefined;
+
+  useEffect(() => {
+    if (signedIn) setSignInOpen(false);
+  }, [signedIn]);
 
   useEffect(() => {
     if (meetings && !meetings.some((meeting) => meeting.id === selected)) setSelected(meetings[0]?.id);
@@ -25,16 +30,20 @@ export function App() {
   // ⌘⇧R starts or stops recording the open meeting, as in Dahlia for macOS.
   useEffect(() => {
     const listener = (event: KeyboardEvent) => {
-      if (!(event.metaKey && event.shiftKey && event.key.toLowerCase() === "r") || !signedIn) return;
+      if (!(event.metaKey && event.shiftKey && event.key.toLowerCase() === "r")) return;
       event.preventDefault();
       if (recorder.active) void recorder.stop();
       else if (selected) void recorder.start(selected);
     };
     window.addEventListener("keydown", listener);
     return () => window.removeEventListener("keydown", listener);
-  }, [recorder, selected, signedIn]);
+  }, [recorder, selected]);
 
   const create = async () => setSelected(await api.meetings.create());
+  const summarize = () => {
+    if (!signedIn) setSignInOpen(true);
+    else if (selected) void api.processing.summarize(selected);
+  };
 
   const resize = (event: React.PointerEvent) => {
     const startX = event.clientX;
@@ -55,30 +64,31 @@ export function App() {
   return (
     <div className="flex h-full" style={{ "--sidebar-width": `${width}px` } as React.CSSProperties}>
       <Sidebar
-        meetings={signedIn ? meetings : []}
+        meetings={meetings}
         selected={selected}
         onSelect={setSelected}
         onCreate={() => void create()}
         recorder={recorder}
         auth={signedIn}
         onSettings={() => setSettingsOpen(true)}
+        onSignIn={() => setSignInOpen(true)}
         onSignOut={() => void api.auth.signOut()}
       />
       <div className="no-drag relative w-px shrink-0 bg-separator">
         <div role="separator" aria-orientation="vertical" onPointerDown={resize} className="absolute inset-y-0 -left-1 z-10 w-2 cursor-col-resize" />
       </div>
       <main className="flex min-w-0 flex-1 bg-content">
-        {signedIn && selected
-          ? <MeetingView key={selected} meetingId={selected} recorder={recorder} onDeleted={() => setSelected(undefined)} />
+        {selected
+          ? <MeetingView key={selected} meetingId={selected} recorder={recorder} onDeleted={() => setSelected(undefined)} onSummarize={summarize} />
           : (
             <div className="flex flex-1 flex-col">
               <div className="drag h-8" />
-              <p className="m-auto text-secondary">{signedIn ? t("noMeetingSelected") : ""}</p>
+              <p className="m-auto text-secondary">{t("noMeetingSelected")}</p>
             </div>
           )}
       </main>
-      {auth && !signedIn && <SignIn auth={auth} />}
-      {settingsOpen && signedIn && <SettingsModal auth={signedIn} onClose={() => setSettingsOpen(false)} />}
+      {signInOpen && auth && !signedIn && <SignIn auth={auth} onClose={() => { void api.auth.cancelSignIn(); setSignInOpen(false); }} />}
+      {settingsOpen && <SettingsModal auth={signedIn} onClose={() => setSettingsOpen(false)} />}
     </div>
   );
 }

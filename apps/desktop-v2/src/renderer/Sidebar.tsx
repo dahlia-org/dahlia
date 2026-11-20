@@ -7,7 +7,7 @@ import type { Recorder } from "./capture.js";
 import { dateTime, errorMessage, t } from "./i18n.js";
 import { GearIcon, PersonIcon, PlusIcon } from "./icons.js";
 
-export function Sidebar({ meetings, selected, onSelect, onCreate, recorder, auth, onSettings, onSignOut }: {
+export function Sidebar({ meetings, selected, onSelect, onCreate, recorder, auth, onSettings, onSignIn, onSignOut }: {
   meetings: MeetingSummary[] | undefined;
   selected: string | undefined;
   onSelect: (id: string) => void;
@@ -15,6 +15,7 @@ export function Sidebar({ meetings, selected, onSelect, onCreate, recorder, auth
   recorder: Recorder;
   auth: Extract<AuthState, { status: "signedIn" }> | undefined;
   onSettings: () => void;
+  onSignIn: () => void;
   onSignOut: () => void;
 }) {
   return (
@@ -49,7 +50,7 @@ export function Sidebar({ meetings, selected, onSelect, onCreate, recorder, auth
       {recorder.active && <RecordingStatusBar recorder={recorder} />}
       {!recorder.active && recorder.error && <p className="mx-3 mb-2 rounded-field bg-surface p-2 text-small text-danger">{errorMessage(recorder.error)}</p>}
       <div className="flex h-[58px] shrink-0 items-center border-t border-separator px-2.5">
-        <AccountButton auth={auth} recording={Boolean(recorder.active)} onSettings={onSettings} onSignOut={onSignOut} />
+        <AccountButton auth={auth} onSettings={onSettings} onSignIn={onSignIn} onSignOut={onSignOut} />
       </div>
     </aside>
   );
@@ -86,10 +87,10 @@ function LevelMeter({ label, level }: { label: string; level: number }) {
   );
 }
 
-function AccountButton({ auth, recording, onSettings, onSignOut }: {
+function AccountButton({ auth, onSettings, onSignIn, onSignOut }: {
   auth: Extract<AuthState, { status: "signedIn" }> | undefined;
-  recording: boolean;
   onSettings: () => void;
+  onSignIn: () => void;
   onSignOut: () => void;
 }) {
   const [open, setOpen] = useState(false);
@@ -105,21 +106,20 @@ function AccountButton({ auth, recording, onSettings, onSignOut }: {
       window.removeEventListener("keydown", escape);
     };
   }, [open]);
-  const host = auth ? new URL(auth.workspace).host.split(".")[0] : "";
+  const host = auth ? new URL(auth.workspace).host.split(".")[0] : t("thisMac");
   return (
     <div ref={container} className="relative w-full">
       <button type="button" onClick={() => setOpen(!open)} className="flex h-10 w-full items-center gap-2.5 rounded-field px-2 text-left hover:bg-hover" aria-expanded={open}>
         <span className="flex size-7 shrink-0 items-center justify-center rounded-full bg-highlight text-primary"><PersonIcon /></span>
         <span className="flex min-w-0 flex-col leading-tight">
           <span className="truncate">{host}</span>
-          <span className="truncate text-small text-secondary">{auth?.email}</span>
+          <span className="truncate text-small text-secondary">{auth?.email ?? t("notSignedIn")}</span>
         </span>
       </button>
       {open && (
         <div role="menu" className="absolute bottom-12 left-0 z-40 w-56 rounded-card bg-content p-1 shadow-xl ring-1 ring-separator">
           <MenuItem onClick={() => { setOpen(false); onSettings(); }}><GearIcon />{t("settings")}</MenuItem>
-          {/* The sign-in card would cover the stop button. */}
-          <MenuItem disabled={recording} onClick={() => { setOpen(false); onSignOut(); }}>{t("signOut")}</MenuItem>
+          <MenuItem onClick={() => { setOpen(false); if (auth) onSignOut(); else onSignIn(); }}>{t(auth ? "signOut" : "signIn")}</MenuItem>
         </div>
       )}
     </div>

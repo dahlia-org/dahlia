@@ -47,12 +47,11 @@ export function Modal({ title, onCancel, children, width = "w-[420px]" }: { titl
   );
 }
 
-export function SignIn({ auth }: { auth: AuthState }) {
+export function SignIn({ auth, onClose }: { auth: AuthState; onClose: () => void }) {
   const [workspace, setWorkspace] = useState(auth.status === "signingIn" ? auth.workspace : "");
   const waiting = auth.status === "signingIn";
-  const cancel = waiting ? () => void api.auth.cancelSignIn() : undefined;
   return (
-    <Modal title={t("appName")} onCancel={cancel}>
+    <Modal title={t("appName")} onCancel={onClose}>
       <form
         className="flex flex-col gap-4"
         onSubmit={(event) => {
@@ -76,7 +75,7 @@ export function SignIn({ auth }: { auth: AuthState }) {
         {waiting ? (
           <div className="flex items-center justify-between gap-3">
             <span className="text-small text-secondary">{t("waitingForBrowser")}</span>
-            <Button onClick={cancel}>{t("cancelSignIn")}</Button>
+            <Button onClick={onClose}>{t("cancelSignIn")}</Button>
           </div>
         ) : (
           <Button variant="primary" type="submit" className="h-8" disabled={!workspace.trim()}>{t("signInTitle")}</Button>
@@ -107,7 +106,7 @@ const summaryLanguageOptions = [
   ["ja", "日本語"], ["en", "English"], ["zh", "中文"], ["ko", "한국어"], ["fr", "Français"], ["de", "Deutsch"], ["es", "Español"],
 ].map(([value, label]) => ({ value: value!, label: label! }));
 
-export function SettingsModal({ auth, onClose }: { auth: Extract<AuthState, { status: "signedIn" }>; onClose: () => void }) {
+export function SettingsModal({ auth, onClose }: { auth: Extract<AuthState, { status: "signedIn" }> | undefined; onClose: () => void }) {
   const settings = useLive(() => api.settings.get(), []);
   const [models, setModels] = useState<string[]>([]);
   const [locales, setLocales] = useState<string[]>([]);
@@ -121,8 +120,8 @@ export function SettingsModal({ auth, onClose }: { auth: Extract<AuthState, { st
       {settings && (
         <div className="flex flex-col gap-5">
           <section className="rounded-card bg-surface px-4">
-            <Row label={t("account")}><span className="selectable">{auth.email}</span></Row>
-            <Row label={t("workspace")}><span className="selectable block truncate">{new URL(auth.workspace).host}</span></Row>
+            <Row label={t("account")}><span className="selectable">{auth?.email ?? t("notSignedIn")}</span></Row>
+            {auth && <Row label={t("workspace")}><span className="selectable block truncate">{new URL(auth.workspace).host}</span></Row>}
           </section>
           <section className="rounded-card bg-surface px-4">
             <Row label={t("transcriptionLanguage")}>

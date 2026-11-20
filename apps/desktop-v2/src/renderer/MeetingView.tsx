@@ -11,7 +11,7 @@ import { MenuItem } from "./Sidebar.js";
 
 type Tab = "summary" | "transcript";
 
-export function MeetingView({ meetingId, recorder, onDeleted }: { meetingId: string; recorder: Recorder; onDeleted: () => void }) {
+export function MeetingView({ meetingId, recorder, onDeleted, onSummarize }: { meetingId: string; recorder: Recorder; onDeleted: () => void; onSummarize: () => void }) {
   const meeting = useLive(() => api.meetings.get(meetingId), [meetingId]);
   const progress = useLive(() => api.processing.progress(), []);
   const [tab, setTab] = useState<Tab>("summary");
@@ -40,7 +40,7 @@ export function MeetingView({ meetingId, recorder, onDeleted }: { meetingId: str
               <RecordIcon />{t("record")}
             </Button>
           )}
-          <Button disabled={busy || meeting.segments.length === 0} onClick={() => void api.processing.summarize(meeting.id)}>
+          <Button disabled={busy || meeting.segments.length === 0} onClick={onSummarize}>
             <SparklesIcon />{t("generateSummary")}
           </Button>
           <MoreMenu
@@ -52,7 +52,7 @@ export function MeetingView({ meetingId, recorder, onDeleted }: { meetingId: str
         </div>
       </div>
       <div className="mx-auto w-full max-w-[1000px] px-6">
-        <StatusBanners meeting={meeting} progress={current} recording={recordingHere} />
+        <StatusBanners meeting={meeting} progress={current} recording={recordingHere} onSummarize={onSummarize} />
         <nav className="flex gap-1 border-b border-separator" role="tablist">
           {(["summary", "transcript"] as const).map((item) => (
             <button key={item} type="button" role="tab" aria-selected={tab === item} onClick={() => setTab(item)}
@@ -136,7 +136,7 @@ function MoreMenu({ disabled, canRetranscribe, onRetranscribe, onDelete }: { dis
   );
 }
 
-function StatusBanners({ meeting, progress, recording }: { meeting: Meeting; progress: Progress | undefined; recording: boolean }) {
+function StatusBanners({ meeting, progress, recording, onSummarize }: { meeting: Meeting; progress: Progress | undefined; recording: boolean; onSummarize: () => void }) {
   const banners: { key: string; tone: "info" | "error"; text: string; action?: { label: string; run: () => void } }[] = [];
   const failed = meeting.recordings.find((item) => item.status === "failed");
   const waiting = meeting.recordings.some((item) => item.status === "recorded" || item.status === "transcribing");
@@ -151,7 +151,7 @@ function StatusBanners({ meeting, progress, recording }: { meeting: Meeting; pro
   }
   if (meeting.summary?.status === "generating" && !waiting) banners.push({ key: "summarizing", tone: "info", text: t("summarizing") });
   if (meeting.summary?.status === "failed") {
-    banners.push({ key: "summaryFailed", tone: "error", text: `${t("summaryFailed")}: ${errorMessage(meeting.summary.error)}`, action: { label: t("retry"), run: () => void api.processing.summarize(meeting.id) } });
+    banners.push({ key: "summaryFailed", tone: "error", text: `${t("summaryFailed")}: ${errorMessage(meeting.summary.error)}`, action: { label: t(meeting.summary.error === "auth_signedOut" ? "signIn" : "retry"), run: onSummarize } });
   }
   if (banners.length === 0) return null;
   return (
