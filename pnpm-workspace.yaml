@@ -1,5 +1,6 @@
 packages:
   - apps/desktop
+  - apps/desktop-v2
   - apps/server
   - packages/ui
 allowBuilds:

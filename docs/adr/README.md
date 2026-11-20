@@ -30,6 +30,7 @@ macOS、ローカル SQLite、録音、UI、内蔵 Pi / local MCP。
 - [匿名 telemetry](desktop/telemetry.md)
 - [ローカル全文検索と旧 Hybrid 検索](desktop/search.md)
 - [Electron アルファ版](desktop/electron-alpha.md)
+- [Desktop v2（Electron、独立実装）](desktop/electron-v2.md)
 
 ## Server / Cloud
 

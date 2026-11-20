@@ -27,6 +27,7 @@ source of truth、再生成可能性、実測値に基づいて target state を
 | Runtime Data Flow のローカル処理 | Desktop / local MCP / 内蔵 Pi |
 | Runtime Data Flow の Server・同期・認証境界 | Desktop と Server。API・運用の詳細は [Server README](apps/server/README.md) |
 | Electron alpha（`apps/desktop`） | Server オンライン専用の開発用クライアント。録音・ローカル保存を持たず、Reliability Scope の保証対象外。構成は [Electron README](apps/desktop/README.md) |
+| Desktop v2（`apps/desktop-v2`） | Server・共通 UI と共有しない独立の Electron 開発版。録音・Mac での文字起こし・要約だけを持ち、録音保全は Reliability Scope より弱い（[Desktop v2 ADR](docs/adr/desktop/electron-v2.md)） |
 | 設計判断の履歴 | [対象別 ADR](docs/adr/README.md)。Accepted と実装・検証完了は別 |
 
 以下の確認日・適合状況は元の観測時点を示し、文書整理によって再検証済みにはしない。
