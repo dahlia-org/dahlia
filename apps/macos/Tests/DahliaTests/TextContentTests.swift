@@ -1665,7 +1665,7 @@
         }
 
         struct TextFixture: Sendable {
-            let queue: DatabaseQueue
+            let queue: any DatabaseWriter
             let workspaceId: UUID
             let meetingId: UUID
             let segmentId: UUID
@@ -1768,7 +1768,7 @@
             ))
         }
 
-        private func database(path: String = ":memory:") throws -> (DatabaseQueue, UUID, UUID) {
+        private func database(path: String = ":memory:") throws -> (any DatabaseWriter, UUID, UUID) {
             let queue = try AppDatabaseManager(path: path).dbQueue
             let connection = DahliaAccountConnectionRecord(
                 id: .v7(),

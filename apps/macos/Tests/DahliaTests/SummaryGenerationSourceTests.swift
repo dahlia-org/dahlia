@@ -426,7 +426,7 @@ import DahliaRuntimeSupport
             _ request: ServerSummaryService.Request,
             service: ServerSummaryService,
             target: ServerSummaryService.Target,
-            queue: DatabaseQueue,
+            queue: any DatabaseWriter,
             settings: WorkspaceGenerationSettings,
             source: SummaryGenerationSource,
             jobID: UUID,
@@ -443,7 +443,7 @@ import DahliaRuntimeSupport
 
         private func assertPendingAudioFailsBeforeStarting(
             target: ServerSummaryService.Target,
-            queue: DatabaseQueue,
+            queue: any DatabaseWriter,
             settings: WorkspaceGenerationSettings,
             postRequests: borrowing Mutex<[Data]>
         ) async throws {
@@ -481,7 +481,7 @@ import DahliaRuntimeSupport
         private func assertUnavailableManualModelPreserved(
             service: ServerSummaryService,
             target: ServerSummaryService.Target,
-            queue: DatabaseQueue,
+            queue: any DatabaseWriter,
             settings: WorkspaceGenerationSettings,
             source: SummaryGenerationSource,
             jobID: UUID

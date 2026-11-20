@@ -67,7 +67,7 @@ import GRDB
             #expect(result.1.filter { $0 == "batchAutomaticLanguageCandidatesJSON" }.count == 1)
         }
 
-        private func insertExistingSession(into queue: DatabaseQueue) throws -> RecordingSessionRecord {
+        private func insertExistingSession(into queue: any DatabaseWriter) throws -> RecordingSessionRecord {
             let now = Date(timeIntervalSince1970: 1_776_384_000)
             let workspace = WorkspaceRecord(id: .v7(), path: "/tmp/workspace", name: "Workspace", createdAt: now, lastOpenedAt: now)
             let meeting = MeetingRecord(

@@ -264,7 +264,7 @@ final class MainSearchModel {
         generation &+= 1
         let requestGeneration = generation
         let workspaceID = sidebarViewModel.currentWorkspace?.id
-        let dbQueue = sidebarViewModel.searchDBQueue
+        let dbQueue = sidebarViewModel.dbQueue
         let criteria = searchCriteria(using: sidebarViewModel)
         let rankingPolicy = AppSettings.shared.meetingSearchRankingPolicy
         let appendsCurrentRanking = appending && activeRankingPolicy == rankingPolicy
@@ -345,7 +345,7 @@ final class MainSearchModel {
             hasMoreChats = false
         }
         lastChatSearchError = nil
-        guard let workspace = sidebarViewModel.currentWorkspace, let dbQueue = sidebarViewModel.searchDBQueue else { return }
+        guard let workspace = sidebarViewModel.currentWorkspace, let dbQueue = sidebarViewModel.dbQueue else { return }
         let provider = CodexRuntimeProvider(workspace: workspace)
         let offset = chatOffset
         isFetchingChats = true
@@ -404,7 +404,7 @@ final class MainSearchModel {
 
     private func startRemoteSearch(using sidebarViewModel: SidebarViewModel) {
         guard usesServerSearch, remoteTask == nil,
-              let workspaceId = sidebarViewModel.currentWorkspace?.id, let queue = sidebarViewModel.searchDBQueue else { return }
+              let workspaceId = sidebarViewModel.currentWorkspace?.id, let queue = sidebarViewModel.dbQueue else { return }
         let expectedGeneration = remoteGeneration
         let connectionId = sidebarViewModel.currentWorkspace?.accountConnectionId
         let criteria = activeMeetingCriteria
@@ -493,7 +493,7 @@ final class MainSearchModel {
         let requestGeneration = screenshotGeneration
         guard !criteria.text.isEmpty,
               let workspaceID = sidebarViewModel.currentWorkspace?.id,
-              let dbQueue = sidebarViewModel.searchDBQueue else {
+              let dbQueue = sidebarViewModel.dbQueue else {
             if !appending { localScreenshots = [] }
             hasMoreLocalScreenshots = false
             isLoadingScreenshots = false
@@ -534,9 +534,17 @@ final class MainSearchModel {
         }
     }
 
+    func screenshotIsAvailable(id: UUID, contentHash: String, using sidebarViewModel: SidebarViewModel) async -> Bool {
+        guard let workspaceID = sidebarViewModel.currentWorkspace?.id,
+              let dbQueue = sidebarViewModel.dbQueue else { return false }
+        return await (try? ScreenshotContentProvider.shared.isAvailable(
+            id: id, workspaceID: workspaceID, contentHash: contentHash, dbQueue: dbQueue
+        )) == true
+    }
+
     func screenshotImageData(id: UUID, using sidebarViewModel: SidebarViewModel) async -> Data? {
         guard let workspaceID = sidebarViewModel.currentWorkspace?.id,
-              let dbQueue = sidebarViewModel.searchDBQueue else { return nil }
+              let dbQueue = sidebarViewModel.dbQueue else { return nil }
         return try? await MeetingRepository.screenshotImageData(id: id, workspaceID: workspaceID, dbQueue: dbQueue)
     }
 
@@ -553,7 +561,7 @@ final class MainSearchModel {
         isProjectCatalogLoading = false
         projectCatalogLoadFailed = sidebarViewModel.projectCatalogLoadFailed
         guard let workspaceID = sidebarViewModel.currentWorkspace?.id,
-              let dbQueue = sidebarViewModel.searchDBQueue else { return }
+              let dbQueue = sidebarViewModel.dbQueue else { return }
         guard !projectCatalogLoadFailed else { return }
         guard sidebarViewModel.isProjectCatalogLoaded else {
             isProjectCatalogLoading = true

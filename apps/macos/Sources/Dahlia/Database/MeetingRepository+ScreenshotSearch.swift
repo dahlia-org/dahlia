@@ -9,7 +9,7 @@ extension MeetingRepository {
         criteria: MeetingSearchCriteria,
         after cursor: ScreenshotSearchCursor? = nil,
         limit: Int,
-        dbQueue: DatabaseQueue
+        dbQueue: any DatabaseWriter
     ) async throws -> ScreenshotSearchPage {
         try await dbQueue.read { db in
             guard !criteria.text.isEmpty || criteria.pendingOnly else {
@@ -45,7 +45,7 @@ extension MeetingRepository {
                 db,
                 sql: """
                 SELECT meeting_images.id, meeting_images.meetingId, meeting_images.capturedAt,
-                       meeting_images.mimeType, meeting_images.ocrText, meeting_images.caption,
+                       meeting_images.mimeType, meeting_images.contentHash, meeting_images.ocrText, meeting_images.caption,
                        meetings.name AS meetingTitle, meetings.description AS meetingDescription
                 FROM meeting_images
                 JOIN meetings ON meetings.id = meeting_images.meetingId
@@ -74,7 +74,11 @@ extension MeetingRepository {
     }
 
     nonisolated static func remoteScreenshotPage(
-        workspaceId: UUID, criteria: MeetingSearchCriteria, cursor: String?, dbQueue: DatabaseQueue, contentProvider: MeetingContentProvider = .shared
+        workspaceId: UUID,
+        criteria: MeetingSearchCriteria,
+        cursor: String?,
+        dbQueue: any DatabaseWriter,
+        contentProvider: MeetingContentProvider = .shared
     ) async throws -> (items: [ScreenshotSearchResult], cursor: String?) {
         var position = cursor
         repeat {
@@ -90,7 +94,7 @@ extension MeetingRepository {
                 return try page.items.compactMap { hit -> ScreenshotSearchResult? in
                     guard allowed.contains(hit.meetingId) else { return nil }
                     guard let row = try Row.fetchOne(db, sql: """
-                    SELECT s.id, s.meetingId, s.capturedAt, s.mimeType, m.name, m.description
+                    SELECT s.id, s.meetingId, s.capturedAt, s.mimeType, s.contentHash, m.name, m.description
                     FROM meeting_images s JOIN meetings m ON m.id = s.meetingId
                     WHERE s.id = ? AND m.id = ? AND m.workspace_id = ?
                     """, arguments: [hit.id, hit.meetingId, workspaceId]) else { throw TextContentError.changed }
@@ -101,6 +105,7 @@ extension MeetingRepository {
                         meetingDescription: row["description"],
                         capturedAt: row["capturedAt"],
                         mimeType: row["mimeType"],
+                        contentHash: row["contentHash"],
                         snippet: hit.snippet
                     )
                 }
@@ -114,7 +119,7 @@ extension MeetingRepository {
     nonisolated static func screenshotImageData(
         id: UUID,
         workspaceID: UUID,
-        dbQueue: DatabaseQueue
+        dbQueue: any DatabaseWriter
     ) async throws -> Data? {
         let exists = try await dbQueue.read { db in
             try Bool.fetchOne(
@@ -140,6 +145,7 @@ extension MeetingRepository {
             meetingDescription: row["meetingDescription"],
             capturedAt: row["capturedAt"],
             mimeType: row["mimeType"],
+            contentHash: row["contentHash"],
             snippet: String(
                 [row["caption"] as String? ?? "", row["ocrText"] as String? ?? ""]
                     .filter { !$0.isEmpty }

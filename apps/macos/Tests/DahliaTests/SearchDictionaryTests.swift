@@ -101,7 +101,7 @@ import GRDB
         func existingReadConnectionObservesDictionarySwitch() async throws {
             let directory = Self.temporaryDirectory()
             defer { try? FileManager.default.removeItem(at: directory) }
-            let database = try AppDatabaseManager(path: directory.appending(path: "test.sqlite").path, enablesConcurrentSearch: true)
+            let database = try AppDatabaseManager(path: directory.appending(path: "test.sqlite").path, usesDatabasePool: true)
             defer { try? database.close() }
             _ = try Self.insertMeeting(in: database.dbQueue)
             await database.searchIndexer.drain()
@@ -291,11 +291,11 @@ import GRDB
             #expect(try SearchUserDictionaryCSV.validate(Data()) == false)
         }
 
-        private static func tokens(in queue: DatabaseQueue) throws -> [String] {
+        private static func tokens(in queue: any DatabaseWriter) throws -> [String] {
             try queue.read { try SearchFTS5Tokenizer.queryTokens(for: "ダリア会議", in: $0) }
         }
 
-        private static func indexState(in queue: DatabaseQueue) throws -> [String] {
+        private static func indexState(in queue: any DatabaseWriter) throws -> [String] {
             try queue.read { db in
                 let row = try Row.fetchOne(db, sql: "SELECT * FROM search_index_state WHERE indexKind = 'fts'")!
                 return [row["phase"], String(row["indexGeneration"] as Int), String(row["indexRevision"] as Int), row["analyzerConfigurationHash"]]
@@ -306,7 +306,7 @@ import GRDB
             FileManager.default.temporaryDirectory.appending(path: "dahlia-dictionary-test-\(UUID.v7())")
         }
 
-        private static func insertMeeting(in queue: DatabaseQueue) throws -> MeetingRecord {
+        private static func insertMeeting(in queue: any DatabaseWriter) throws -> MeetingRecord {
             let date = Date(timeIntervalSince1970: 1_700_000_000)
             let workspace = WorkspaceRecord(id: .v7(), path: nil, name: "Test", createdAt: date, lastOpenedAt: date)
             let meeting = MeetingRecord(id: .v7(), workspaceId: workspace.id, name: "ダリア会議", createdAt: date, updatedAt: date)

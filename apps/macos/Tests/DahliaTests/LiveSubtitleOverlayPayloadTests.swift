@@ -8,7 +8,7 @@ import Foundation
     struct LiveSubtitleOverlayPayloadTests {
         @Test
         func latestDefaultsToSystemAudioOnly() {
-            let payload = LiveSubtitleOverlayPayload.history(
+            let payload = LiveSubtitleOverlayPayload.latest(
                 from: [
                     TranscriptSegment(
                         startTime: Date(timeIntervalSince1970: 1_776_384_000),
@@ -34,7 +34,7 @@ import Foundation
 
         @Test
         func latestReturnsNilForEmptySegments() {
-            let payload = LiveSubtitleOverlayPayload.history(
+            let payload = LiveSubtitleOverlayPayload.latest(
                 from: [],
                 sourceMode: .includeMicrophone,
                 transcriptionLocaleIdentifier: "en_US",
@@ -47,10 +47,10 @@ import Foundation
         }
 
         @Test
-        func historyPreservesSegmentIdentityAndLimitsOnlyTheVisibleWindow() throws {
+        func latestKeepsSegmentIdentityAndOnlyTheVisibleWindow() throws {
             let firstID = UUID.v7()
             let secondID = UUID.v7()
-            let payload = LiveSubtitleOverlayPayload.history(
+            let payload = LiveSubtitleOverlayPayload.latest(
                 from: [
                     TranscriptSegment(
                         id: firstID,
@@ -70,13 +70,12 @@ import Foundation
             )
 
             let requiredPayload = try #require(payload)
-            #expect(requiredPayload.entries.map(\.id) == [firstID, secondID])
-            #expect(requiredPayload.visibleEntries.map(\.id) == [secondID])
+            #expect(requiredPayload.entries.map(\.id) == [secondID])
         }
 
         @Test
         func latestUsesOriginalTextForUnconfirmedSegment() {
-            let payload = LiveSubtitleOverlayPayload.history(
+            let payload = LiveSubtitleOverlayPayload.latest(
                 from: [
                     TranscriptSegment(
                         startTime: Date(timeIntervalSince1970: 1_776_384_000),
@@ -98,7 +97,7 @@ import Foundation
 
         @Test
         func latestIncludesTranslatedTextWhenTranslationIsEffective() {
-            let payload = LiveSubtitleOverlayPayload.history(
+            let payload = LiveSubtitleOverlayPayload.latest(
                 from: [
                     TranscriptSegment(
                         startTime: Date(timeIntervalSince1970: 1_776_384_000),
@@ -121,7 +120,7 @@ import Foundation
 
         @Test
         func latestSkipsTranslatedTextWhenTargetMatchesSourceLanguage() {
-            let payload = LiveSubtitleOverlayPayload.history(
+            let payload = LiveSubtitleOverlayPayload.latest(
                 from: [
                     TranscriptSegment(
                         startTime: Date(timeIntervalSince1970: 1_776_384_000),
@@ -144,7 +143,7 @@ import Foundation
 
         @Test
         func latestIgnoresWhitespaceOnlyTextAndTranslation() {
-            let payload = LiveSubtitleOverlayPayload.history(
+            let payload = LiveSubtitleOverlayPayload.latest(
                 from: [
                     TranscriptSegment(
                         startTime: Date(timeIntervalSince1970: 1_776_384_000),
@@ -172,7 +171,7 @@ import Foundation
 
         @Test
         func latestUsesTwoMostRecentlyUpdatedSegmentsAcrossSources() {
-            let payload = LiveSubtitleOverlayPayload.history(
+            let payload = LiveSubtitleOverlayPayload.latest(
                 from: [
                     TranscriptSegment(
                         startTime: Date(timeIntervalSince1970: 1_776_384_000),
@@ -203,13 +202,12 @@ import Foundation
                 visibleEntryCount: 2
             )
 
-            #expect(payload?.entries.map(\.primaryText) == ["Earlier line", "Mic first", "System latest"])
-            #expect(payload?.visibleEntries.map(\.primaryText) == ["Mic first", "System latest"])
+            #expect(payload?.entries.map(\.primaryText) == ["Mic first", "System latest"])
         }
 
         @Test
         func latestIncludesUnconfirmedMessagesInRecentTwoSegments() {
-            let payload = LiveSubtitleOverlayPayload.history(
+            let payload = LiveSubtitleOverlayPayload.latest(
                 from: [
                     TranscriptSegment(
                         startTime: Date(timeIntervalSince1970: 1_776_384_000),
@@ -239,7 +237,7 @@ import Foundation
 
         @Test
         func latestIncludesTranslatedTextForUnconfirmedSegmentWhenAvailable() {
-            let payload = LiveSubtitleOverlayPayload.history(
+            let payload = LiveSubtitleOverlayPayload.latest(
                 from: [
                     TranscriptSegment(
                         startTime: Date(timeIntervalSince1970: 1_776_384_001),
@@ -262,7 +260,7 @@ import Foundation
 
         @Test
         func latestRespectsConfiguredSegmentCount() {
-            let payload = LiveSubtitleOverlayPayload.history(
+            let payload = LiveSubtitleOverlayPayload.latest(
                 from: [
                     TranscriptSegment(startTime: Date(timeIntervalSince1970: 1_776_384_000), text: "One", isConfirmed: true),
                     TranscriptSegment(startTime: Date(timeIntervalSince1970: 1_776_384_001), text: "Two", isConfirmed: true),
@@ -275,13 +273,12 @@ import Foundation
                 visibleEntryCount: 1
             )
 
-            #expect(payload?.entries.map(\.primaryText) == ["One", "Two", "Three"])
-            #expect(payload?.visibleEntries.map(\.primaryText) == ["Three"])
+            #expect(payload?.entries.map(\.primaryText) == ["Three"])
         }
 
         @Test
         func latestCanRestrictSubtitlesToSystemAudioOnly() {
-            let payload = LiveSubtitleOverlayPayload.history(
+            let payload = LiveSubtitleOverlayPayload.latest(
                 from: [
                     TranscriptSegment(
                         startTime: Date(timeIntervalSince1970: 1_776_384_000),
@@ -311,7 +308,7 @@ import Foundation
 
         @Test
         func latestReturnsNilWhenNoSystemAudioExistsInSystemOnlyMode() {
-            let payload = LiveSubtitleOverlayPayload.history(
+            let payload = LiveSubtitleOverlayPayload.latest(
                 from: [
                     TranscriptSegment(
                         startTime: Date(timeIntervalSince1970: 1_776_384_000),
@@ -331,50 +328,4 @@ import Foundation
         }
     }
 
-    extension LiveSubtitleOverlayPayloadTests {
-        @Test
-        func projectorAppliesIncrementalCaptionChangesWithoutDroppingHistory() throws {
-            let configuration = LiveSubtitleOverlayPayload.Configuration(
-                sourceMode: .includeMicrophone,
-                transcriptionLocaleIdentifier: "en_US",
-                translationEnabled: true,
-                targetLanguageIdentifier: "ja"
-            )
-            let history = (0 ..< 25).map {
-                TranscriptSegment(
-                    startTime: Date(timeIntervalSince1970: 1_776_384_000 + Double($0)),
-                    text: "Segment \($0)",
-                    isConfirmed: true,
-                    audioSource: "system"
-                )
-            }
-            let preview = TranscriptSegment(startTime: .now, text: "Preview", audioSource: "system")
-            let finalized = TranscriptSegment(id: preview.id, startTime: .now, text: "Final", isConfirmed: true, audioSource: "system")
-            var translated = finalized
-            translated.translatedText = "確定"
-            let projector = LiveSubtitleOverlayPayloadProjector()
-
-            projector.apply(.reload)
-            let initialPayload = try #require(projector.payload(
-                from: history,
-                configuration: configuration,
-                visibleEntryCount: 5
-            ))
-            projector.apply(.preview(preview))
-            projector.apply(.finalized(finalized))
-            projector.apply(.update(translated))
-
-            let payload = try #require(projector.payload(
-                from: [],
-                configuration: configuration,
-                visibleEntryCount: 5
-            ))
-            #expect(initialPayload.entries === payload.entries)
-            #expect(payload.entries.count == 26)
-            #expect(payload.entries.first?.primaryText == "Segment 0")
-            #expect(payload.entries.last?.id == finalized.id)
-            #expect(payload.entries.last?.primaryText == "Final")
-            #expect(payload.entries.last?.secondaryText == "確定")
-        }
-    }
 #endif

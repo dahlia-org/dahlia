@@ -32,7 +32,7 @@ struct AutomaticScreenshotCaptureRequest: Sendable {
     var cropsToSharedContent: Bool
     let meetingID: UUID
     let sessionID: UUID?
-    let dbQueue: DatabaseQueue
+    let dbQueue: any DatabaseWriter
     let onPersisted: @MainActor @Sendable (MeetingScreenshotRecord) -> Void
     let onFailure: @MainActor @Sendable (Error) -> Void
 }

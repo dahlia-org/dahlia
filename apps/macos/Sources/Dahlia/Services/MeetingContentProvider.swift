@@ -10,7 +10,7 @@ actor MeetingContentProvider {
     static let capacityBytes = 128 * 1024 * 1024
 
     /// Independent foreground reads share the existing two-slot limiter, not a serial UI task.
-    func ensureMeeting(id: UUID, dbQueue: DatabaseQueue, refresh: Bool = false) async {
+    func ensureMeeting(id: UUID, dbQueue: any DatabaseWriter, refresh: Bool = false) async {
         await withTaskGroup(of: Void.self) { group in
             for entity in [TextContentEntity.summary, .transcript] {
                 group.addTask { try? await self.ensure(entity: entity, id: id, dbQueue: dbQueue, refresh: refresh) }
@@ -66,21 +66,21 @@ actor MeetingContentProvider {
         self.client = client ?? SyncAPIClient(session: URLSession(configuration: configuration))
     }
 
-    func retain(entity: TextContentEntity, id: UUID, dbQueue: DatabaseQueue) {
+    func retain(entity: TextContentEntity, id: UUID, dbQueue: any DatabaseWriter) {
         leases[Key(database: ObjectIdentifier(dbQueue), entity: entity, id: id), default: 0] += 1
     }
 
-    func release(entity: TextContentEntity, id: UUID, dbQueue: DatabaseQueue) {
+    func release(entity: TextContentEntity, id: UUID, dbQueue: any DatabaseWriter) {
         let key = Key(database: ObjectIdentifier(dbQueue), entity: entity, id: id)
         let count = leases[key, default: 0]
         leases[key] = count > 1 ? count - 1 : nil
     }
 
-    func retainWorkspace(_ workspaceId: UUID, dbQueue: DatabaseQueue) {
+    func retainWorkspace(_ workspaceId: UUID, dbQueue: any DatabaseWriter) {
         retainedWorkspaces[ObjectIdentifier(dbQueue), default: [:]][workspaceId, default: 0] += 1
     }
 
-    func releaseWorkspace(_ workspaceId: UUID, dbQueue: DatabaseQueue) {
+    func releaseWorkspace(_ workspaceId: UUID, dbQueue: any DatabaseWriter) {
         let database = ObjectIdentifier(dbQueue)
         let count = retainedWorkspaces[database]?[workspaceId] ?? 0
         retainedWorkspaces[database]?[workspaceId] = count > 1 ? count - 1 : nil
@@ -89,7 +89,7 @@ actor MeetingContentProvider {
     func withContent<T: Sendable>(
         meetingId: UUID,
         entities: Set<TextContentEntity> = [.summary, .transcript],
-        dbQueue: DatabaseQueue,
+        dbQueue: any DatabaseWriter,
         operation: @Sendable () async throws -> T
     ) async throws -> T {
         for entity in entities {
@@ -106,7 +106,7 @@ actor MeetingContentProvider {
 
     func withFileContent<T: Sendable>(
         id: UUID,
-        dbQueue: DatabaseQueue,
+        dbQueue: any DatabaseWriter,
         refresh: Bool = false,
         operation: @Sendable () async throws -> T
     ) async throws -> T {
@@ -119,7 +119,7 @@ actor MeetingContentProvider {
     func ensure(
         entity: TextContentEntity,
         id: UUID,
-        dbQueue: DatabaseQueue,
+        dbQueue: any DatabaseWriter,
         refresh: Bool = false,
         refreshIfStale: Bool = false,
         prefetchBudget: Int? = nil
@@ -173,7 +173,7 @@ actor MeetingContentProvider {
         if request.users.isEmpty { request.task.cancel() }
     }
 
-    private func fetchReporting(entity: TextContentEntity, id: UUID, dbQueue: DatabaseQueue, prefetchBudget: Int?) async throws {
+    private func fetchReporting(entity: TextContentEntity, id: UUID, dbQueue: any DatabaseWriter, prefetchBudget: Int?) async throws {
         let expected = try await dbQueue.read { try TextContentStore.source(entity: entity, id: id, in: $0) }
         try await dbQueue.write { db in
             guard let expected, try TextContentStore.source(entity: entity, id: id, in: db) == expected else { return }
@@ -214,7 +214,7 @@ actor MeetingContentProvider {
         }
     }
 
-    func touch(entity: TextContentEntity, id: UUID, dbQueue: DatabaseQueue) async throws {
+    func touch(entity: TextContentEntity, id: UUID, dbQueue: any DatabaseWriter) async throws {
         try await dbQueue.write { db in
             try db.execute(
                 sql: "UPDATE sync_content_state SET lastAccessedAt = ? WHERE entity = ? AND entityId = ?",
@@ -223,7 +223,7 @@ actor MeetingContentProvider {
         }
     }
 
-    private func fetch(entity: TextContentEntity, id: UUID, dbQueue: DatabaseQueue, prefetchBudget: Int?) async throws {
+    private func fetch(entity: TextContentEntity, id: UUID, dbQueue: any DatabaseWriter, prefetchBudget: Int?) async throws {
         guard let source = try await dbQueue.read({ try TextContentStore.source(entity: entity, id: id, in: $0) }) else {
             throw TextContentError.unavailable
         }
@@ -316,7 +316,7 @@ actor MeetingContentProvider {
         }
     }
 
-    private func fetchFile(source: TextContentStore.Source, id: UUID, dbQueue: DatabaseQueue, prefetchBudget: Int?) async throws {
+    private func fetchFile(source: TextContentStore.Source, id: UUID, dbQueue: any DatabaseWriter, prefetchBudget: Int?) async throws {
         struct FileContent: Decodable {
             let id: UUID
             let workspaceId: UUID
@@ -376,7 +376,7 @@ actor MeetingContentProvider {
         entity: TextContentEntity,
         id: UUID,
         manifest: TextContentManifest,
-        dbQueue: DatabaseQueue
+        dbQueue: any DatabaseWriter
     ) async throws -> Page.Record? {
         var cursor: String?
         var digest = TextContentDigest()

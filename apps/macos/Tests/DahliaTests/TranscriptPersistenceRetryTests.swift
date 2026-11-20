@@ -223,7 +223,7 @@
         return PersistenceFixture(database: database, workspace: workspace)
     }
 
-    private func installFailingInsertTrigger(in dbQueue: DatabaseQueue) throws {
+    private func installFailingInsertTrigger(in dbQueue: any DatabaseWriter) throws {
         try dbQueue.write { db in
             try db.execute(
                 sql: """

@@ -6,7 +6,7 @@
     @testable import Dahlia
 
     struct AgentSkillServiceTests {
-        private func setup() throws -> (AgentSkillService, DatabaseQueue, URL) {
+        private func setup() throws -> (AgentSkillService, any DatabaseWriter, URL) {
             let db = try AppDatabaseManager(path: ":memory:").dbQueue
             let root = URL(fileURLWithPath: PiSandbox.realPath(FileManager.default.temporaryDirectory)).appending(path: "agent-skills-\(UUID())")
             try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)

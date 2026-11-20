@@ -1575,9 +1575,9 @@ import Synchronization
         private var activeCount = 0
         private var isFirstWaveBlocked = true
         private var firstWaveWaiters: [CheckedContinuation<Void, Never>] = []
-        private var dbQueue: DatabaseQueue?
+        private var dbQueue: (any DatabaseWriter)?
 
-        func observeIndexPhases(in dbQueue: DatabaseQueue) {
+        func observeIndexPhases(in dbQueue: any DatabaseWriter) {
             self.dbQueue = dbQueue
         }
 

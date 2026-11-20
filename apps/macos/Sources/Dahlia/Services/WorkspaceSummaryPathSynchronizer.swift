@@ -2,7 +2,7 @@ import Foundation
 import GRDB
 
 struct WorkspaceSummaryPathSynchronizer {
-    let dbQueue: DatabaseQueue
+    let dbQueue: any DatabaseWriter
     let workspaceId: UUID
 
     func renamePath(from oldPath: String, to newPath: String) throws {

@@ -58,7 +58,8 @@ public final class ScreenshotFileStore: Sendable {
             throw ScreenshotContentError.integrityFailure
         }
         let content = ScreenshotContent(data: bytes, mimeType: row["mimeType"], variant: variant)
-        if !readOnly, recordAccess { try? touch(source, variant: variant) }
+        // The access time only orders Server copies for eviction; local files are never evicted, so skip the index write.
+        if !readOnly, recordAccess, source.accountConnectionId != nil { try? touch(source, variant: variant) }
         return content
     }
 

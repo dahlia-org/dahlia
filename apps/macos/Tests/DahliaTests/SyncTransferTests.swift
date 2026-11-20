@@ -747,7 +747,7 @@
 
     @MainActor
     private struct SyncTransferFixture {
-        let queue: DatabaseQueue
+        let queue: any DatabaseWriter
         let workspaceId = UUID.v7()
         let connectionId = UUID.v7()
         let origin = URL(string: "https://sync-\(UUID().uuidString.lowercased()).invalid")!

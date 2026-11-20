@@ -19,7 +19,7 @@ enum BatchTranscriptionConfirmationService {
         processing: RecordingProcessing? = nil,
         languageSelection: BatchTranscriptionLanguageSelection,
         automaticLanguageCandidates: BatchLanguageDetectionCandidateSnapshot?,
-        dbQueue: DatabaseQueue
+        dbQueue: any DatabaseWriter
     ) async throws -> Result {
         let persistenceOptions = try persistenceOptions(
             languageSelection: languageSelection,
@@ -74,7 +74,7 @@ extension BatchTranscriptionConfirmationService {
         processingSessionID: UUID? = nil,
         languageSelection: BatchTranscriptionLanguageSelection,
         automaticLanguageCandidates: BatchLanguageDetectionCandidateSnapshot?,
-        dbQueue: DatabaseQueue
+        dbQueue: any DatabaseWriter
     ) async throws -> Result {
         let options = try persistenceOptions(
             languageSelection: languageSelection,
@@ -139,7 +139,7 @@ extension BatchTranscriptionConfirmationService {
     }
 
     /// Stops a failed retranscription and restores the last successful transcript as the active result.
-    static func cancelRetranscription(sessionIds: [UUID], dbQueue: DatabaseQueue) async throws -> UUID {
+    static func cancelRetranscription(sessionIds: [UUID], dbQueue: any DatabaseWriter) async throws -> UUID {
         try await dbQueue.write { db in
             var uniqueSessionIds = Array(Set(sessionIds))
             guard !uniqueSessionIds.isEmpty else { throw CocoaError(.fileNoSuchFile) }

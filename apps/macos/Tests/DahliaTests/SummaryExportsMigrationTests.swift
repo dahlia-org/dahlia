@@ -121,7 +121,7 @@ import GRDB
         }
 
         private func createV20SummaryDatabase(
-            in dbQueue: DatabaseQueue,
+            in dbQueue: any DatabaseWriter,
             validMeetingId: UUID,
             legacyGoogleMeetingId: UUID,
             nilDocumentMeetingId: UUID,

@@ -74,7 +74,7 @@ import Foundation
             let screenshot = makeScreenshot()
             let image = try #require(makeImage(width: 32, height: 18))
 
-            configure(item, screenshot: screenshot, provider: { _, _, _ in image })
+            configure(item, screenshot: screenshot, provider: { _, _, _, _ in image })
             await waitUntil { item.loadedThumbnailSize != nil }
             #expect(item.loadedThumbnailSize == NSSize(width: 32, height: 18))
 
@@ -87,7 +87,7 @@ import Foundation
         @Test
         func timestampUsesPreferredCaptionFont() throws {
             let item = ScreenshotCollectionViewItem()
-            configure(item, screenshot: makeScreenshot(), provider: { _, _, _ in nil })
+            configure(item, screenshot: makeScreenshot(), provider: { _, _, _, _ in nil })
 
             let timestampLabel = try #require(
                 descendantViews(of: item.view)
@@ -103,7 +103,7 @@ import Foundation
             let screenshot = makeScreenshot()
             let image = try #require(makeImage(width: 32, height: 18))
 
-            configure(item, screenshot: screenshot, provider: { _, _, _ in image })
+            configure(item, screenshot: screenshot, provider: { _, _, _, _ in image })
             await waitUntil { item.loadedThumbnailSize != nil }
 
             item.didEndDisplaying()
@@ -118,7 +118,7 @@ import Foundation
             let item = ScreenshotCollectionViewItem()
             let first = makeScreenshot()
             let second = makeScreenshot()
-            let provider: ScreenshotCollectionViewItem.ThumbnailProvider = { _, _, _ in nil }
+            let provider: ScreenshotCollectionViewItem.ThumbnailProvider = { _, _, _, _ in nil }
 
             configure(
                 item,
@@ -185,7 +185,7 @@ import Foundation
                     isReferencedBySummary: false,
                     isDeletionDisabled: false
                 ),
-                thumbnailProvider: { _, _, _ in preview },
+                thumbnailProvider: { _, _, _, _ in preview },
                 actions: .init(
                     activate: { image in
                         activatedPreviewSize = image.map { CGSize(width: $0.width, height: $0.height) }
@@ -244,8 +244,8 @@ import Foundation
             let screenshot = makeScreenshot()
             let image = try #require(makeImage(width: 30, height: 15))
             let provider = SequencedThumbnailProvider(successfulImage: image)
-            let provideThumbnail: ScreenshotCollectionViewItem.ThumbnailProvider = { id, data, maxPixelSize in
-                await provider.image(id: id, data: data, maxPixelSize: maxPixelSize)
+            let provideThumbnail: ScreenshotCollectionViewItem.ThumbnailProvider = { id, _, data, maxPixelSize in
+                await provider.image(id: id, contentHash: nil, data: data, maxPixelSize: maxPixelSize)
             }
 
             configure(item, screenshot: screenshot, provider: provideThumbnail)
@@ -278,7 +278,7 @@ import Foundation
             let originalImage = try #require(makeImage(width: 32, height: 18))
             let updatedImage = try #require(makeImage(width: 40, height: 20))
             let originalData = original.imageData
-            let provider: ScreenshotCollectionViewItem.ThumbnailProvider = { _, data, _ in
+            let provider: ScreenshotCollectionViewItem.ThumbnailProvider = { _, _, data, _ in
                 data == originalData ? originalImage : updatedImage
             }
 
@@ -366,7 +366,7 @@ import Foundation
             let second = makeScreenshot()
             var copiedIDs: [UUID] = []
 
-            let provider: ScreenshotCollectionViewItem.ThumbnailProvider = { _, _, _ in nil }
+            let provider: ScreenshotCollectionViewItem.ThumbnailProvider = { _, _, _, _ in nil }
             configure(
                 item,
                 screenshot: first,
@@ -426,7 +426,7 @@ import Foundation
     private actor ControlledThumbnailProvider {
         private var continuations: [UUID: CheckedContinuation<CGImage?, Never>] = [:]
 
-        func image(id: UUID, data _: Data?, maxPixelSize _: Int) async -> CGImage? {
+        func image(id: UUID, contentHash _: String?, data _: Data?, maxPixelSize _: Int) async -> CGImage? {
             await withCheckedContinuation { continuation in
                 continuations[id] = continuation
             }
@@ -449,7 +449,7 @@ import Foundation
             self.successfulImage = successfulImage
         }
 
-        func image(id _: UUID, data _: Data?, maxPixelSize _: Int) -> CGImage? {
+        func image(id _: UUID, contentHash _: String?, data _: Data?, maxPixelSize _: Int) -> CGImage? {
             callCount += 1
             return callCount == 1 ? nil : successfulImage
         }

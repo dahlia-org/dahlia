@@ -10,7 +10,7 @@ private enum DocumentSyncServices {
 }
 
 extension DocumentSyncService {
-    nonisolated static func shared(dbQueue: DatabaseQueue, api: SyncAPIClient = SyncAPIClient(session: .shared)) -> DocumentSyncService {
+    nonisolated static func shared(dbQueue: any DatabaseWriter, api: SyncAPIClient = SyncAPIClient(session: .shared)) -> DocumentSyncService {
         DocumentSyncServices.entries.withLock { entries in
             entries = entries.filter { $0.value.service != nil }
             let key = ObjectIdentifier(dbQueue)

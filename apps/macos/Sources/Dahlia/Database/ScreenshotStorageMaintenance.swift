@@ -4,10 +4,11 @@ import GRDB
 enum ScreenshotStorageMaintenance {
     /// Run before starting recording, search and sync workers. VACUUM is SQLite's atomic rebuild.
     static func compactAtStartup(
-        dbQueue: DatabaseQueue,
+        dbQueue: any DatabaseWriter,
         minimumFreeBytes: Int = 128 * 1024 * 1024
     ) async throws {
-        try await dbQueue.writeWithoutTransaction { db in
+        // A barrier waits for pool readers to finish, so VACUUM never meets another connection's read transaction.
+        try await dbQueue.barrierWriteWithoutTransaction { db in
             guard try Bool.fetchOne(db, sql: "SELECT EXISTS(SELECT 1 FROM recording_sessions WHERE endedAt IS NULL)") != true else { return }
             let pageSize = try Int.fetchOne(db, sql: "PRAGMA page_size") ?? 4096
             let freePages = try Int.fetchOne(db, sql: "PRAGMA freelist_count") ?? 0
@@ -24,7 +25,7 @@ enum ScreenshotStorageMaintenance {
         }
     }
 
-    static func reclaimIncrementally(dbQueue: DatabaseQueue) async throws {
+    static func reclaimIncrementally(dbQueue: any DatabaseWriter) async throws {
         try await dbQueue.writeWithoutTransaction { db in
             guard try Int.fetchOne(db, sql: "PRAGMA auto_vacuum") == 2,
                   try Bool.fetchOne(db, sql: "SELECT EXISTS(SELECT 1 FROM recording_sessions WHERE endedAt IS NULL)") != true else { return }

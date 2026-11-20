@@ -217,7 +217,7 @@ import Synchronization
 
             let list = try await MeetingSearchJudgmentService.generateJudgments(
                 workspaceID: workspace.id,
-                dbQueue: database.searchDBQueue
+                dbQueue: database.dbQueue
             )
             let queries = Set(list.judgments.map(\.query))
 

@@ -12,7 +12,7 @@ enum MeetingSearchJudgmentService {
 
     static func generateJudgments(
         workspaceID: UUID,
-        dbQueue: DatabaseQueue
+        dbQueue: any DatabaseWriter
     ) async throws -> MeetingSearchJudgmentList {
         let samples = try await sampledMeetings(workspaceID: workspaceID, dbQueue: dbQueue)
         guard !samples.isEmpty else {
@@ -57,7 +57,7 @@ enum MeetingSearchJudgmentService {
 
     private static func sampledMeetings(
         workspaceID: UUID,
-        dbQueue: DatabaseQueue
+        dbQueue: any DatabaseWriter
     ) async throws -> [SampledMeeting] {
         try await dbQueue.read { db in
             let rows = try Row.fetchAll(

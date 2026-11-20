@@ -4,7 +4,7 @@ import Foundation
 import GRDB
 
 extension ScreenshotContentProvider {
-    func persistCapture(_ record: MeetingScreenshotRecord, dbQueue: DatabaseQueue) async throws {
+    func persistCapture(_ record: MeetingScreenshotRecord, dbQueue: any DatabaseWriter) async throws {
         activeFileWork += 1
         defer { activeFileWork -= 1 }
         let target = try await dbQueue.read { db in try Self.target(meetingId: record.meetingId, in: db) }
@@ -30,7 +30,7 @@ extension ScreenshotContentProvider {
     func stage(
         _ record: MeetingScreenshotRecord,
         connectionId: UUID?,
-        dbQueue: DatabaseQueue
+        dbQueue: any DatabaseWriter
     ) async throws -> MeetingScreenshotRecord {
         let origin = try await origin(connectionId: connectionId, dbQueue: dbQueue)
         let original: ScreenshotContent = if let bytes = record.imageData {
@@ -50,7 +50,7 @@ extension ScreenshotContentProvider {
         return stored
     }
 
-    private func origin(connectionId: UUID?, dbQueue: DatabaseQueue) async throws -> String {
+    private func origin(connectionId: UUID?, dbQueue: any DatabaseWriter) async throws -> String {
         guard let connectionId else { return "" }
         guard let origin = try await dbQueue.read({ try DahliaAccountConnectionRecord.fetchOne($0, key: connectionId)?.origin }) else {
             throw ScreenshotContentError.authorizationRequired
@@ -58,7 +58,7 @@ extension ScreenshotContentProvider {
         return origin
     }
 
-    func prepareAccountTransfer(workspaceId: UUID, connectionId: UUID?, dbQueue: DatabaseQueue) async throws -> [FileTransfer] {
+    func prepareAccountTransfer(workspaceId: UUID, connectionId: UUID?, dbQueue: any DatabaseWriter) async throws -> [FileTransfer] {
         activeFileWork += 1
         defer { activeFileWork -= 1 }
         let origin = try await origin(connectionId: connectionId, dbQueue: dbQueue)
@@ -93,7 +93,7 @@ extension ScreenshotContentProvider {
         }
     }
 
-    func prepareOriginals(workspaceId: UUID, dbQueue: DatabaseQueue, screenshotIds: [UUID]? = nil) async throws {
+    func prepareOriginals(workspaceId: UUID, dbQueue: any DatabaseWriter, screenshotIds: [UUID]? = nil) async throws {
         activeFileWork += 1
         defer { activeFileWork -= 1 }
         try await migrateLegacyAttachments(workspaceId: workspaceId, dbQueue: dbQueue)
@@ -122,7 +122,7 @@ extension ScreenshotContentProvider {
         }
     }
 
-    func migrateLegacyImages(workspaceId: UUID, dbQueue: DatabaseQueue) async throws {
+    func migrateLegacyImages(workspaceId: UUID, dbQueue: any DatabaseWriter) async throws {
         let ids = try await dbQueue.read { db in
             try UUID.fetchAll(db, sql: """
             SELECT f.id FROM files f JOIN file_migration_content b ON b.fileId = f.id WHERE f.workspace_id = ?
@@ -131,7 +131,7 @@ extension ScreenshotContentProvider {
         try await prepareOriginals(workspaceId: workspaceId, dbQueue: dbQueue, screenshotIds: ids)
     }
 
-    private func migrateLegacyAttachments(workspaceId: UUID, dbQueue: DatabaseQueue) async throws {
+    private func migrateLegacyAttachments(workspaceId: UUID, dbQueue: any DatabaseWriter) async throws {
         while true {
             try Task.checkCancellation()
             let attachment = try await dbQueue.read { db -> (id: UUID, source: ScreenshotRemoteReference, content: ScreenshotContent)? in
@@ -173,7 +173,7 @@ extension ScreenshotContentProvider {
         }
     }
 
-    func attachment(operationId: UUID, dbQueue: DatabaseQueue) async throws -> SyncScreenshotAttachment? {
+    func attachment(operationId: UUID, dbQueue: any DatabaseWriter) async throws -> SyncScreenshotAttachment? {
         activeFileWork += 1
         defer { activeFileWork -= 1 }
         let workspaceId = try await dbQueue.read { db in
@@ -202,7 +202,7 @@ extension ScreenshotContentProvider {
         return SyncScreenshotAttachment(mimeType: mimeType, bytes: content.data)
     }
 
-    func trimFiles(dbQueue: DatabaseQueue, budget: Int? = nil, now: Date = .now, retentionDays: Int? = nil) throws {
+    func trimFiles(dbQueue: any DatabaseWriter, budget: Int? = nil, now: Date = .now, retentionDays: Int? = nil) throws {
         guard (retentionDays ?? ServerContentRetention.days()) > 0 else { return }
         // ponytail: pause eviction during publication or account moves; use per-file leases if contention becomes material.
         guard activeFileWork == 0, retainedWorkspaces.withLock({ $0.values.allSatisfy(\.isEmpty) }) else { return }

@@ -20,7 +20,7 @@ actor BatchAudioRecordingSession {
     private var hasSessionLease = false
 
     init(
-        dbQueue: DatabaseQueue,
+        dbQueue: any DatabaseWriter,
         managedRootURL: URL = BatchAudioStorage.managedRootURL,
         meetingId: UUID,
         recordingSessionId: UUID,

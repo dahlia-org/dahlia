@@ -5,7 +5,7 @@ import SwiftUI
 struct SummaryTabContentView: View {
     @ObservedObject var screenshotStore: ScreenshotStore
     let meetingID: UUID?
-    let dbQueue: DatabaseQueue?
+    let dbQueue: (any DatabaseWriter)?
     @State private var history = SummaryHistoryModel()
     @State private var reload = 0
     @State private var loadMore = 0

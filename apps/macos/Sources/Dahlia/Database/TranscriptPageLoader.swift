@@ -4,7 +4,7 @@ import GRDB
 actor TranscriptPageLoader {
     private let repository: MeetingRepository
 
-    init(dbQueue: DatabaseQueue) {
+    init(dbQueue: any DatabaseWriter) {
         self.repository = MeetingRepository(dbQueue: dbQueue)
     }
 

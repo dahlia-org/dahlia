@@ -83,7 +83,7 @@ final class SearchRankingBenchmarkModel {
         let reusable = reusingJudgments && judgmentList?.workspaceID == workspaceID ? judgmentList : nil
         let currentPolicy = rankingPolicy()
         // 探索は数百回の検索を発行するため、書き込みキューを塞がない読み取り専用キューを使う。
-        let dbQueue = database.searchDBQueue
+        let dbQueue = database.dbQueue
         phase = reusable == nil ? .generatingJudgments : .evaluating
         runGeneration &+= 1
         let generation = runGeneration

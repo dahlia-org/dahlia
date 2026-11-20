@@ -40,6 +40,9 @@ final class TranscriptStore: ObservableObject { // swiftlint:disable:this type_b
         recordingStartTime ?? recordingSessions.first?.startedAt ?? segments.first?.startTime ?? Date()
     }
 
+    /// 表示範囲の持ち主。変わったら描画側は全行を送り直す。
+    var contentID: UUID? { meetingId }
+
     var latestConfirmedID: TranscriptSegment.ID? {
         segments.last(where: \.isConfirmed)?.id
     }

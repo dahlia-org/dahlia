@@ -15,10 +15,6 @@ final class TextSelectionGroup {
     private var indexes: [String: Int] = [:]
     private var displayedEmphasis = false
 
-    func update(segments: [TranscriptSegment], showsTranslatedText: Bool) {
-        update(rows: segments.map { ($0.id.uuidString, Self.text(for: $0, showsTranslatedText: showsTranslatedText)) })
-    }
-
     func update(rows updated: [(id: String, text: String)]) {
         guard !rows.elementsEqual(updated, by: { $0.id == $1.0 && $0.text == $1.1 }) else { return }
         let protectedIDs = protectedRowIDs()
@@ -56,13 +52,6 @@ final class TextSelectionGroup {
         for view in views.allObjects {
             view.needsDisplay = true
         }
-    }
-
-    static func text(for segment: TranscriptSegment, showsTranslatedText: Bool) -> String {
-        if let translation = segment.visibleTranslatedText(isEnabled: showsTranslatedText) {
-            return segment.displayText + "\n" + translation
-        }
-        return segment.displayText
     }
 
     func register(_ view: SelectableTextView) {

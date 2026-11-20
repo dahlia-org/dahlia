@@ -3,9 +3,10 @@ import DahliaRuntimeSupport
 import Foundation
 import os
 
-/// A single decode lane. Cacheable background work and interactive display work use
-/// different instances so a thumbnail backlog cannot delay a user-initiated decode.
-actor ScreenshotImageDecodeWorker {
+/// A decode lane. Cacheable background work and interactive display work use different instances, and decodes run
+/// concurrently on the global executor: decoding holds no state, so a serial lane only made each thumbnail wait for
+/// the ones before it.
+struct ScreenshotImageDecodeWorker: Sendable {
     enum Lane: String, Sendable {
         case cacheable
         case interactive
@@ -18,11 +19,12 @@ actor ScreenshotImageDecodeWorker {
         self.lane = lane
     }
 
+    @concurrent
     func decode(
         _ data: Data,
         maxPixelSize: Int,
         requestedAt: ContinuousClock.Instant
-    ) -> CGImage? {
+    ) async -> CGImage? {
         guard !Task.isCancelled else { return nil }
         let decodeStartedAt = ContinuousClock.now
         let queueWait = requestedAt.duration(to: decodeStartedAt)

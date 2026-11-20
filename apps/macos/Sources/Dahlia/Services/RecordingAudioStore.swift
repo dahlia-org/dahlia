@@ -138,7 +138,7 @@ actor RecordingAudioStore {
 
     let configuration: Configuration
 
-    private let dbQueue: DatabaseQueue
+    private let dbQueue: any DatabaseWriter
     private let managedRootURL: URL
     private let beforeFinalizationVerification: BeforeFinalizationVerification?
     private var sessionLeases: [UUID: AdvisoryFileLock] = [:]
@@ -146,7 +146,7 @@ actor RecordingAudioStore {
     private var lastCapacityChecks: [String: ContinuousClock.Instant] = [:]
 
     init(
-        dbQueue: DatabaseQueue,
+        dbQueue: any DatabaseWriter,
         managedRootURL: URL = BatchAudioStorage.managedRootURL,
         configuration: Configuration = .production,
         beforeFinalizationVerification: BeforeFinalizationVerification? = nil

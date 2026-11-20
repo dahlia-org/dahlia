@@ -4,10 +4,10 @@ import GRDB
 
 /// The only app writer of account skills. One actor owns validation, ledger capture and replacement together.
 actor AgentSkillService {
-    let dbQueue: DatabaseQueue
+    let dbQueue: any DatabaseWriter
     private(set) var catalogs: [String: [String: URL]] = [:]
     private var freshReads: [String: [String: String]] = [:]
-    init(dbQueue: DatabaseQueue) { self.dbQueue = dbQueue }
+    init(dbQueue: any DatabaseWriter) { self.dbQueue = dbQueue }
 
     func setCatalog(_ skills: [CodexChatSlashCommand], account: String) {
         catalogs[account] = Dictionary(

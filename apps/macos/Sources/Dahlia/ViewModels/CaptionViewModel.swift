@@ -26,7 +26,7 @@ struct SummaryGenerationRunnerInput {
 
 typealias SummaryGenerationRunner = @MainActor (SummaryGenerationRunnerInput) async throws -> SummaryService.GeneratedSummary
 typealias SummaryJobSleeper = @Sendable (Duration) async throws -> Void
-typealias SummaryDocumentLoader = @MainActor (UUID, DatabaseQueue) async throws -> SummaryDocument?
+typealias SummaryDocumentLoader = @MainActor (UUID, any DatabaseWriter) async throws -> SummaryDocument?
 
 /// 録音中のナビゲーション時に保持する録音コンテキスト。
 private struct RecordingContext {
@@ -36,12 +36,12 @@ private struct RecordingContext {
     let projectId: UUID?
     let projectName: String?
     var workspaceURL: URL?
-    let dbQueue: DatabaseQueue?
+    let dbQueue: (any DatabaseWriter)?
     let batchTranscriptionState: BatchTranscriptionState?
 }
 
 private struct PersistenceStartRequest {
-    let dbQueue: DatabaseQueue
+    let dbQueue: any DatabaseWriter
     let workspaceId: UUID
     let projectId: UUID?
     let existingMeetingId: UUID?
@@ -63,7 +63,7 @@ private struct RecordingStartRollbackState {
 private struct PreservedDraftContext {
     let meeting: DraftMeeting
     let workspaceURL: URL?
-    let dbQueue: DatabaseQueue?
+    let dbQueue: (any DatabaseWriter)?
 }
 
 private struct RecordingStopContext {
@@ -73,7 +73,7 @@ private struct RecordingStopContext {
     let meetingId: UUID?
     let projectName: String?
     let workspaceURL: URL?
-    let dbQueue: DatabaseQueue?
+    let dbQueue: (any DatabaseWriter)?
     let recordingStart: Date
     let transcriptionMode: TranscriptionMode
     let telemetry: RecordingTelemetryContext?
@@ -112,7 +112,7 @@ struct RecordingTelemetryContext {
 }
 
 private struct RecordingControllerStartRequest {
-    let dbQueue: DatabaseQueue
+    let dbQueue: any DatabaseWriter
     let meetingId: UUID?
     let sessionId: UUID
     let startedAt: Date
@@ -150,7 +150,10 @@ final class CaptionViewModel: ObservableObject {
 
     let liveCaptionStore = LiveCaptionStore()
 
-    @Published var isListening = false
+    @Published var isListening = false {
+        didSet { MainActorHangMonitor.shared.setRecording(isListening) }
+    }
+
     @Published var isFinalizingRecording = false {
         didSet {
             updateCanBeginRecording()
@@ -221,7 +224,7 @@ final class CaptionViewModel: ObservableObject {
 
     @Published private(set) var summaryGenerationJobs: [SummaryGenerationJob] = []
     @Published var summaryGeneratingMeetingIDs: Set<UUID> = []
-    private var recordingProcessingDatabaseQueue: DatabaseQueue?
+    private var recordingProcessingDatabaseQueue: (any DatabaseWriter)?
     private var pendingBatchSummaryRequestsBySessionId: [UUID: PendingBatchSummaryRequest] = [:]
     private var batchSummaryContextsBySessionId: [UUID: BatchSummaryContext] = [:]
     @Published private var summaryErrorsByMeetingId: [UUID: String] = [:]
@@ -652,8 +655,8 @@ final class CaptionViewModel: ObservableObject {
 
     // MARK: - Private
 
-    var documentDatabaseQueue: DatabaseQueue? { currentDbQueue }
-    private var currentDbQueue: DatabaseQueue?
+    var documentDatabaseQueue: (any DatabaseWriter)? { currentDbQueue }
+    private var currentDbQueue: (any DatabaseWriter)?
     private var persistenceService: MeetingPersistenceService?
     private var failedPersistenceService: MeetingPersistenceService?
     private var failedTranscriptionEventPipeline: TranscriptionEventPipeline?
@@ -718,7 +721,7 @@ final class CaptionViewModel: ObservableObject {
     @Published private(set) var meetingSyncState: MeetingSyncState?
     @Published private(set) var textContentState: TextContentAvailability.State?
     private var textContentTask: Task<Void, Never>?
-    private var textContentLease: (UUID, DatabaseQueue, Task<Void, Never>)?
+    private var textContentLease: (UUID, any DatabaseWriter, Task<Void, Never>)?
     private var meetingSyncObservation: AnyDatabaseCancellable?
     @Published private(set) var recordingArchiveState: String?
     private var meetingSyncSnapshot: MeetingSyncSnapshot?
@@ -746,7 +749,7 @@ final class CaptionViewModel: ObservableObject {
         canBeginRecording = updatedValue
     }
 
-    private var activeDbQueueForSessionControls: DatabaseQueue? {
+    private var activeDbQueueForSessionControls: (any DatabaseWriter)? {
         recordingContext?.dbQueue ?? currentDbQueue
     }
 
@@ -919,7 +922,7 @@ final class CaptionViewModel: ObservableObject {
     }
 
     func configureBatchTranscription(
-        dbQueue: DatabaseQueue,
+        dbQueue: any DatabaseWriter,
         managedRootURL: URL = BatchAudioStorage.managedRootURL,
         recoverExistingSessions: Bool = true,
         onRecoveryCompleted: (@MainActor @Sendable () async -> Void)? = nil
@@ -939,7 +942,7 @@ final class CaptionViewModel: ObservableObject {
         retryBatchTranscriptionRecovery()
     }
 
-    private func restoreRecordingProcessing(dbQueue: DatabaseQueue, includingDismissedSessionID: UUID? = nil) async throws {
+    private func restoreRecordingProcessing(dbQueue: any DatabaseWriter, includingDismissedSessionID: UUID? = nil) async throws {
         let sessions = try await dbQueue.read { db in
             try RecordingSessionRecord.filter(sql: "processingJSON IS NOT NULL AND endedAt IS NOT NULL AND batchDiscardedAt IS NULL")
                 .order(Column("startedAt").asc).fetchAll(db)
@@ -1199,7 +1202,7 @@ final class CaptionViewModel: ObservableObject {
         sessionId: UUID,
         sessionIds: [UUID],
         meetingId: UUID,
-        dbQueue suppliedDbQueue: DatabaseQueue? = nil,
+        dbQueue suppliedDbQueue: (any DatabaseWriter)? = nil,
         workspaceURL suppliedWorkspaceURL: URL? = nil
     ) {
         let dbQueue = suppliedDbQueue ?? currentDbQueue
@@ -1271,7 +1274,7 @@ final class CaptionViewModel: ObservableObject {
 
     private func makeBatchTranscriptionConfirmationDetails(
         meetingId: UUID,
-        dbQueue: DatabaseQueue?
+        dbQueue: (any DatabaseWriter)?
     ) -> BatchTranscriptionConfirmationDetails {
         guard let dbQueue else {
             return BatchTranscriptionConfirmationDetails(
@@ -1390,7 +1393,7 @@ final class CaptionViewModel: ObservableObject {
     func presentBatchTranscriptionConfirmation(
         sessionId: UUID,
         meetingId: UUID,
-        dbQueue: DatabaseQueue
+        dbQueue: any DatabaseWriter
     ) async {
         await presentManualBatchTranscription(sessionId: sessionId, meetingId: meetingId, dbQueue: dbQueue)
     }
@@ -1398,7 +1401,7 @@ final class CaptionViewModel: ObservableObject {
     func presentManualBatchTranscription(
         sessionId: UUID,
         meetingId: UUID,
-        dbQueue: DatabaseQueue
+        dbQueue: any DatabaseWriter
     ) async {
         guard !isListening else { return }
         do {
@@ -1714,7 +1717,7 @@ final class CaptionViewModel: ObservableObject {
         return job
     }
 
-    private func failBatchTranscription(in job: SummaryGenerationJob, message: String, dbQueue: DatabaseQueue) async {
+    private func failBatchTranscription(in job: SummaryGenerationJob, message: String, dbQueue: any DatabaseWriter) async {
         try? await updateRecordingProcessing(job: job, dbQueue: dbQueue, stage: .failed, error: message)
         job.progress.transcription = .failed(message)
         job.progress.transcriptionProgress = nil
@@ -1771,7 +1774,7 @@ final class CaptionViewModel: ObservableObject {
         }
     }
 
-    private func refreshBatchTranscriptionState(meetingId: UUID, dbQueue: DatabaseQueue) throws {
+    private func refreshBatchTranscriptionState(meetingId: UUID, dbQueue: any DatabaseWriter) throws {
         let (state, retryableSessionIds) = try dbQueue.read { db in
             let sessions = try RecordingSessionRecord
                 .filter(Column("meetingId") == meetingId)
@@ -2027,7 +2030,7 @@ final class CaptionViewModel: ObservableObject {
 
     private nonisolated static func fetchLoadedMeetingData(
         meetingId: UUID,
-        dbQueue: DatabaseQueue,
+        dbQueue: any DatabaseWriter,
         workspaceURL: URL?
     ) throws -> LoadedMeetingData {
         let repo = MeetingRepository(dbQueue: dbQueue)
@@ -2077,7 +2080,7 @@ final class CaptionViewModel: ObservableObject {
 
     private nonisolated static func fetchEligibleBatchAudioSessionIds(
         meetingId: UUID,
-        dbQueue: DatabaseQueue
+        dbQueue: any DatabaseWriter
     ) throws -> [UUID] {
         try dbQueue.read { db in
             try fetchEligibleBatchAudioSessionIds(meetingId: meetingId, db: db)
@@ -2087,7 +2090,7 @@ final class CaptionViewModel: ObservableObject {
     private nonisolated static func fetchRetryableBatchSessionIds(
         meetingId: UUID,
         state: BatchTranscriptionState?,
-        dbQueue: DatabaseQueue?
+        dbQueue: (any DatabaseWriter)?
     ) async throws -> [UUID] {
         guard let dbQueue else { return [] }
         return try await dbQueue.read { db in
@@ -2215,7 +2218,7 @@ final class CaptionViewModel: ObservableObject {
     /// 録音中でも呼び出し可能。録音パイプラインはバックグラウンドで継続する。
     func loadMeeting(
         _ meetingId: UUID,
-        dbQueue: DatabaseQueue,
+        dbQueue: any DatabaseWriter,
         projectURL: URL?,
         projectId: UUID?,
         projectName: String? = nil,
@@ -2293,7 +2296,7 @@ final class CaptionViewModel: ObservableObject {
 
     private func startMeetingLoad(
         meetingId: UUID,
-        dbQueue: DatabaseQueue,
+        dbQueue: any DatabaseWriter,
         workspaceURL: URL?,
         transcriptPageLoader: TranscriptPageLoader
     ) {
@@ -2350,7 +2353,7 @@ final class CaptionViewModel: ObservableObject {
     /// 文字起こしを開始せずに空の MeetingRecord を作成し、表示対象としてセットする。
     @discardableResult
     func createEmptyMeeting(
-        dbQueue: DatabaseQueue,
+        dbQueue: any DatabaseWriter,
         projectURL: URL?,
         workspaceId: UUID,
         projectId: UUID?,
@@ -2399,7 +2402,7 @@ final class CaptionViewModel: ObservableObject {
 
     func beginDraftMeeting(
         from event: CalendarEvent? = nil,
-        dbQueue: DatabaseQueue,
+        dbQueue: any DatabaseWriter,
         projectURL: URL? = nil,
         projectId: UUID? = nil,
         projectName: String? = nil,
@@ -2429,7 +2432,7 @@ final class CaptionViewModel: ObservableObject {
     func restoreDraftMeeting(
         _ draftMeeting: DraftMeeting,
         noteText: String,
-        dbQueue: DatabaseQueue,
+        dbQueue: any DatabaseWriter,
         workspaceURL: URL?
     ) {
         beginDraftMeeting(
@@ -2766,7 +2769,7 @@ final class CaptionViewModel: ObservableObject {
     /// 現在の文字起こしコンテキスト（ID・プロジェクト情報）をセットする。
     private func setMeetingContext(
         id: UUID,
-        dbQueue: DatabaseQueue,
+        dbQueue: any DatabaseWriter,
         projectURL: URL?,
         projectId: UUID?,
         projectName: String?,
@@ -2830,7 +2833,7 @@ final class CaptionViewModel: ObservableObject {
         }
     }
 
-    private func startMeetingSyncObservation(meetingId: UUID, dbQueue: DatabaseQueue) {
+    private func startMeetingSyncObservation(meetingId: UUID, dbQueue: any DatabaseWriter) {
         stopMeetingSyncObservation()
         let generation = meetingSyncGeneration
         let acquisition = Task {
@@ -2953,7 +2956,7 @@ final class CaptionViewModel: ObservableObject {
 
     private nonisolated static func projectContext(
         projectId: UUID?,
-        dbQueue: DatabaseQueue,
+        dbQueue: any DatabaseWriter,
         workspaceURL: URL?
     ) -> (url: URL?, name: String)? {
         guard let projectId,
@@ -3541,7 +3544,7 @@ final class CaptionViewModel: ObservableObject {
 
     /// 新規文字起こしで録音を開始する。
     func startListening(
-        dbQueue: DatabaseQueue,
+        dbQueue: any DatabaseWriter,
         projectURL: URL?,
         workspaceId: UUID,
         projectId: UUID?,
@@ -3977,7 +3980,7 @@ final class CaptionViewModel: ObservableObject {
         persistenceResult: MeetingPersistenceStopResult,
         meetingId: UUID?,
         workspaceURL: URL?,
-        dbQueue: DatabaseQueue?
+        dbQueue: (any DatabaseWriter)?
     ) async {
         if let failureMessage = Self.stoppedBatchRecordingFailureMessage(
             stopResult: stopResult,
@@ -4034,7 +4037,7 @@ final class CaptionViewModel: ObservableObject {
         sessionId: UUID,
         meetingId: UUID,
         suggestedLocaleIdentifier: String,
-        dbQueue: DatabaseQueue?,
+        dbQueue: (any DatabaseWriter)?,
         workspaceURL: URL?,
         processing: RecordingProcessing? = nil
     ) {
@@ -4073,7 +4076,7 @@ final class CaptionViewModel: ObservableObject {
     private func batchConfirmationPreferences(
         sessionId: UUID,
         suggestedLocaleIdentifier: String,
-        dbQueue: DatabaseQueue?,
+        dbQueue: (any DatabaseWriter)?,
         confirmationSessionIds: [UUID]? = nil
     ) -> (
         localeIdentifier: String,
@@ -4192,7 +4195,7 @@ final class CaptionViewModel: ObservableObject {
 
     private nonisolated static func pendingBatchRetranscriptionSessionIds(
         meetingId: UUID,
-        dbQueue: DatabaseQueue
+        dbQueue: any DatabaseWriter
     ) async -> [UUID]? {
         try? await dbQueue.read { db in
             try RecordingSessionRecord
@@ -4207,7 +4210,7 @@ final class CaptionViewModel: ObservableObject {
 
     private func mergedSegmentsForExport(
         meetingId: UUID,
-        dbQueue: DatabaseQueue,
+        dbQueue: any DatabaseWriter,
         activeSegments: [TranscriptSegment]
     ) async throws -> [TranscriptSegment] {
         let persistedSegments = try await MeetingContentProvider.shared.withContent(meetingId: meetingId, entities: [.transcript], dbQueue: dbQueue) {
@@ -4235,7 +4238,7 @@ final class CaptionViewModel: ObservableObject {
     private struct SummaryGenerationRequest {
         let meetingId: UUID
         let meetingName: String
-        let dbQueue: DatabaseQueue
+        let dbQueue: any DatabaseWriter
         let projectURL: URL?
         let projectName: String
         let projectDescription: String?
@@ -4250,7 +4253,7 @@ final class CaptionViewModel: ObservableObject {
 
     private struct BatchSummaryContext {
         let workspace: WorkspaceRecord?
-        let dbQueue: DatabaseQueue
+        let dbQueue: any DatabaseWriter
         let workspaceURL: URL?
         let meetingName: String
     }
@@ -4258,7 +4261,7 @@ final class CaptionViewModel: ObservableObject {
     private final class PendingBatchSummaryRequest {
         let meetingId: UUID
         private(set) var options: SummaryGenerationOptions
-        let dbQueue: DatabaseQueue
+        let dbQueue: any DatabaseWriter
         let workspaceURL: URL?
         let job: SummaryGenerationJob
         let generationSettings: SummaryGenerationSettings
@@ -4271,7 +4274,7 @@ final class CaptionViewModel: ObservableObject {
             sessionID: UUID,
             meetingId: UUID,
             options: SummaryGenerationOptions,
-            dbQueue: DatabaseQueue,
+            dbQueue: any DatabaseWriter,
             workspaceURL: URL?,
             job: SummaryGenerationJob,
             generationSettings: SummaryGenerationSettings
@@ -4343,7 +4346,7 @@ final class CaptionViewModel: ObservableObject {
 
     func summaryGenerationSourceAvailability(
         meetingIDs: Set<UUID>,
-        dbQueue: DatabaseQueue? = nil
+        dbQueue: (any DatabaseWriter)? = nil
     ) async throws -> SummaryGenerationSourceAvailability {
         guard !meetingIDs.isEmpty, let dbQueue = dbQueue ?? currentDbQueue else {
             throw SummaryGenerationPreparationError.meetingUnavailable
@@ -4405,7 +4408,7 @@ final class CaptionViewModel: ObservableObject {
     }
 
     #if DEBUG
-        func restoreRecordingProcessingForTesting(dbQueue: DatabaseQueue) async throws {
+        func restoreRecordingProcessingForTesting(dbQueue: any DatabaseWriter) async throws {
             try await restoreRecordingProcessing(dbQueue: dbQueue)
         }
 
@@ -4413,7 +4416,7 @@ final class CaptionViewModel: ObservableObject {
             sessionID: UUID,
             meetingID: UUID,
             options: SummaryGenerationOptions,
-            dbQueue: DatabaseQueue,
+            dbQueue: any DatabaseWriter,
             workspaceURL: URL,
             generationSettings: SummaryGenerationSettings? = nil,
             processing: RecordingProcessing? = nil
@@ -4519,7 +4522,7 @@ final class CaptionViewModel: ObservableObject {
     /// DB に保存済みの複数ミーティングを、現在の画面選択を変更せず個別ジョブとして再生成する。
     func triggerManualSummaries(
         meetingIds: Set<UUID>,
-        dbQueue: DatabaseQueue?,
+        dbQueue: (any DatabaseWriter)?,
         workspaceURL: URL?,
         options: SummaryGenerationOptions = .manual
     ) {
@@ -4665,7 +4668,7 @@ final class CaptionViewModel: ObservableObject {
 
     private func makePersistedSummaryRequest(
         meetingId: UUID,
-        dbQueue: DatabaseQueue,
+        dbQueue: any DatabaseWriter,
         workspaceURL: URL?,
         options: SummaryGenerationOptions,
         generationSettings: SummaryGenerationSettings? = nil,
@@ -4704,7 +4707,7 @@ final class CaptionViewModel: ObservableObject {
     private func recordSummaryPreparationFailure(
         _ message: String,
         meetingId: UUID,
-        dbQueue: DatabaseQueue
+        dbQueue: any DatabaseWriter
     ) {
         let meetingName = (try? MeetingRepository(dbQueue: dbQueue).fetchMeeting(id: meetingId)?.name.nilIfBlank)
             ?? L10n.newMeeting
@@ -4877,7 +4880,7 @@ final class CaptionViewModel: ObservableObject {
         }
     }
 
-    private func configureRecordingProcessingActions(job: SummaryGenerationJob, dbQueue: DatabaseQueue, workspaceURL _: URL?) {
+    private func configureRecordingProcessingActions(job: SummaryGenerationJob, dbQueue: any DatabaseWriter, workspaceURL _: URL?) {
         guard let sessionID = job.recordingSessionID else { return }
         let jobID = job.id
         job.persistFailureDismissal = {
@@ -4983,7 +4986,7 @@ final class CaptionViewModel: ObservableObject {
     }
 
     private func updateRecordingProcessing(
-        job: SummaryGenerationJob, dbQueue: DatabaseQueue, stage: RecordingProcessing.Stage, error: String? = nil
+        job: SummaryGenerationJob, dbQueue: any DatabaseWriter, stage: RecordingProcessing.Stage, error: String? = nil
     ) async throws {
         guard let sessionID = job.recordingSessionID else { return }
         let id = job.id
@@ -5156,7 +5159,7 @@ final class CaptionViewModel: ObservableObject {
 
     private func failSummaryGeneration(
         _ message: String,
-        dbQueue: DatabaseQueue,
+        dbQueue: any DatabaseWriter,
         job: SummaryGenerationJob,
         stage: RecordingProcessing.Stage = .failed
     ) async {
@@ -5576,20 +5579,24 @@ final class CaptionViewModel: ObservableObject {
 
     private func handleTranscriptProjectionEvent(_ event: TranscriptionEvent) {
         guard let plan = activeTranscriptionPlan else { return }
-        TranscriptionEventRouter.routeTranscriptProjection(
-            event,
-            plan: plan,
-            transcriptStore: activeTranscriptStore
-        )
+        MainActorHangMonitor.shared.measure(.transcript) {
+            TranscriptionEventRouter.routeTranscriptProjection(
+                event,
+                plan: plan,
+                transcriptStore: activeTranscriptStore
+            )
+        }
     }
 
     private func handleObservedTranscriptionEvent(_ event: TranscriptionEvent) {
         guard let plan = activeTranscriptionPlan else { return }
-        TranscriptionEventRouter.routeLiveCaption(
-            event,
-            plan: plan,
-            liveCaptionStore: liveCaptionStore
-        )
+        MainActorHangMonitor.shared.measure(.liveSubtitle) {
+            TranscriptionEventRouter.routeLiveCaption(
+                event,
+                plan: plan,
+                liveCaptionStore: liveCaptionStore
+            )
+        }
         guard case let .failure(_, _, sourceLabel, message) = event else { return }
 
         let source = RecordingAudioSource(audioSource: sourceLabel)

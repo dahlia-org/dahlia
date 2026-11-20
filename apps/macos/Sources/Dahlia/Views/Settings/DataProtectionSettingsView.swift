@@ -16,7 +16,7 @@ struct DataProtectionSettingsView: View {
         }
     }
 
-    let dbQueue: DatabaseQueue?
+    let dbQueue: (any DatabaseWriter)?
     @ObservedObject var captionViewModel: CaptionViewModel
     let onShowUnprocessedRecordings: (UUID) -> Void
     @State private var selection = Tab.protection

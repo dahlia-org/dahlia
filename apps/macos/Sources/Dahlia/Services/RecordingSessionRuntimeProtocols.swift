@@ -90,7 +90,7 @@ extension BatchRecordingSession {
 /// バッチ録音の実装を、DBや保存先を含めて生成する境界。
 protocol BatchRecordingSessionFactory: Sendable {
     func makeSession(
-        dbQueue: DatabaseQueue,
+        dbQueue: any DatabaseWriter,
         managedRootURL: URL,
         meetingId: UUID,
         recordingSessionId: UUID,

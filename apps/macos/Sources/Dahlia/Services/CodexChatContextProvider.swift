@@ -10,14 +10,14 @@ final class CodexChatContextProvider: CodexChatContextProviding {
     private var meetingID: UUID?
     private var projectID: UUID?
     private var draftMeeting: DraftMeeting?
-    private var dbQueue: DatabaseQueue?
+    private var dbQueue: (any DatabaseWriter)?
 
     func update(
         workspaceID: UUID?,
         meetingID: UUID?,
         projectID: UUID? = nil,
         draftMeeting: DraftMeeting?,
-        dbQueue: DatabaseQueue?
+        dbQueue: (any DatabaseWriter)?
     ) {
         if self.workspaceID != workspaceID || self.meetingID != meetingID || self.projectID != projectID
             || self.draftMeeting?.id != draftMeeting?.id {

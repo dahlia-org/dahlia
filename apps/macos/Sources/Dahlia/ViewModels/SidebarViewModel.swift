@@ -9,7 +9,7 @@ let sidebarViewModelLogger = AppLogger(category: "SidebarViewModel")
 @Observable
 @MainActor
 final class SidebarViewModel {
-    typealias UnprocessedRecordingDiscarder = @MainActor @Sendable (DatabaseQueue, UUID, UUID) async throws -> Bool
+    typealias UnprocessedRecordingDiscarder = @MainActor @Sendable (any DatabaseWriter, UUID, UUID) async throws -> Bool
 
     nonisolated static let meetingPageSize = 50
     nonisolated static let maximumVisibleMeetings = 500
@@ -96,8 +96,7 @@ final class SidebarViewModel {
     @ObservationIgnored private let unprocessedRecordingDiscarder: UnprocessedRecordingDiscarder
     @ObservationIgnored private(set) var appDatabase: AppDatabaseManager?
     var currentWorkspace: WorkspaceRecord? { settings.currentWorkspace }
-    var dbQueue: DatabaseQueue? { appDatabase?.dbQueue }
-    var searchDBQueue: DatabaseQueue? { appDatabase?.searchDBQueue }
+    var dbQueue: (any DatabaseWriter)? { appDatabase?.dbQueue }
 
     @ObservationIgnored var meetingRepository: MeetingRepository?
     @ObservationIgnored var projectWorkspaceService: ProjectWorkspaceService?
@@ -336,7 +335,7 @@ final class SidebarViewModel {
         }
     }
 
-    private func startSearchIndexObservation(dbQueue: DatabaseQueue) {
+    private func startSearchIndexObservation(dbQueue: any DatabaseWriter) {
         searchIndexObservation?.cancel()
         searchIndexRefreshTask?.cancel()
         let observation = ValueObservation.tracking { db in
@@ -415,7 +414,7 @@ final class SidebarViewModel {
         generation == unprocessedRecordingsContextGeneration && currentWorkspace?.id == workspaceId
     }
 
-    private func startWorkspaceObservation(dbQueue: DatabaseQueue) {
+    private func startWorkspaceObservation(dbQueue: any DatabaseWriter) {
         let observation = ValueObservation.tracking { db in
             try WorkspaceRecord.order(Column("lastOpenedAt").desc).fetchAll(db)
         }
@@ -431,7 +430,7 @@ final class SidebarViewModel {
         )
     }
 
-    private func startProjectObservation(dbQueue: DatabaseQueue, workspaceId: UUID) {
+    private func startProjectObservation(dbQueue: any DatabaseWriter, workspaceId: UUID) {
         projectObservation?.cancel()
         projectObservationGeneration &+= 1
         let generation = projectObservationGeneration
@@ -464,7 +463,7 @@ final class SidebarViewModel {
         )
     }
 
-    private func startTagsObservation(dbQueue: DatabaseQueue) {
+    private func startTagsObservation(dbQueue: any DatabaseWriter) {
         allTagsObservation?.cancel()
         tagObservationGeneration &+= 1
         let generation = tagObservationGeneration
@@ -493,7 +492,7 @@ final class SidebarViewModel {
         )
     }
 
-    private func startProjectOverviewObservation(dbQueue: DatabaseQueue, workspaceId: UUID) {
+    private func startProjectOverviewObservation(dbQueue: any DatabaseWriter, workspaceId: UUID) {
         allProjectsObservation?.cancel()
         let observationGeneration = projectCatalogObservationTracker.beginObservation()
         isProjectCatalogLoaded = false
@@ -572,7 +571,7 @@ final class SidebarViewModel {
         )
     }
 
-    private func startInstructionsObservation(dbQueue: DatabaseQueue, workspaceId: UUID) {
+    private func startInstructionsObservation(dbQueue: any DatabaseWriter, workspaceId: UUID) {
         let observation = ValueObservation.tracking { db in
             try InstructionRecord
                 .filter(Column("workspace_id") == workspaceId)

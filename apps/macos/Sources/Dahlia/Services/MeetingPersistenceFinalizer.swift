@@ -13,7 +13,7 @@ enum MeetingPersistenceFinalizer {
 
     static func finish(
         _ request: Request,
-        dbQueue: DatabaseQueue
+        dbQueue: any DatabaseWriter
     ) async throws -> RecordingSessionRecord {
         try await dbQueue.write { db in
             try RecordingSessionCompletionWriter.finish(

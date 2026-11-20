@@ -8,7 +8,7 @@
     @testable import Dahlia
 
     struct SyncPriorityTests {
-        private func seed(path: String = ":memory:") throws -> (DatabaseQueue, UUID) {
+        private func seed(path: String = ":memory:") throws -> (any DatabaseWriter, UUID) {
             let queue = try AppDatabaseManager(path: path).dbQueue
             let workspace = UUID.v7()
             try queue.write { db in

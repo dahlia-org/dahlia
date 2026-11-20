@@ -46,7 +46,7 @@ actor BatchTranscriptionCoordinator {
         let projectName: String
     }
 
-    private let dbQueue: DatabaseQueue
+    private let dbQueue: any DatabaseWriter
     private let recordingArchiveService: RecordingArchiveService
     private let recordingAudioStore: RecordingAudioStore?
     private let languageDetector: any BatchLanguageDetecting
@@ -69,7 +69,7 @@ actor BatchTranscriptionCoordinator {
     private var confirmationDrainWaiters: [CheckedContinuation<Void, Never>] = []
 
     init(
-        dbQueue: DatabaseQueue,
+        dbQueue: any DatabaseWriter,
         managedRootURL: URL = BatchAudioStorage.managedRootURL,
         languageDetector: any BatchLanguageDetecting = WhisperKitBatchLanguageDetector(),
         speechRecognizer: any BatchSpeechRecognizing = AppleBatchSpeechRecognizer(),

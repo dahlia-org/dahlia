@@ -600,7 +600,7 @@ enum SyncTransactionQueue {
     }
 
     static func claim(
-        dbQueue: DatabaseQueue,
+        dbQueue: any DatabaseWriter,
         recordingsOnly: Bool? = nil,
         excluding: Set<UUID> = [],
         allowTransfers: Bool = true,
@@ -728,7 +728,7 @@ enum SyncTransactionQueue {
         """, arguments: [transaction.id, transaction.workspaceId, transaction.sequence, transaction.id]) == true
     }
 
-    static func releaseClaim(_ transaction: SyncQueuedTransaction, knownAbsent: Bool = false, dbQueue: DatabaseQueue) async throws {
+    static func releaseClaim(_ transaction: SyncQueuedTransaction, knownAbsent: Bool = false, dbQueue: any DatabaseWriter) async throws {
         try await dbQueue.write { db in
             try db.execute(
                 sql: """
@@ -741,7 +741,7 @@ enum SyncTransactionQueue {
         }
     }
 
-    static func retry(_ transaction: SyncQueuedTransaction, code: String, dbQueue: DatabaseQueue) async throws {
+    static func retry(_ transaction: SyncQueuedTransaction, code: String, dbQueue: any DatabaseWriter) async throws {
         let delay = min(pow(2, Double(min(transaction.attempts, 8))), 300)
         let response = problemData(code: code)
         try await dbQueue.write { db in
@@ -761,7 +761,7 @@ enum SyncTransactionQueue {
         response: Data,
         status: Int? = nil,
         code: String? = nil,
-        dbQueue: DatabaseQueue
+        dbQueue: any DatabaseWriter
     ) async throws {
         let response = normalizedProblemData(response, status: status, code: code)
         try await dbQueue.write { db in
@@ -790,7 +790,7 @@ enum SyncTransactionQueue {
     static func complete(
         _ transaction: SyncQueuedTransaction,
         response: SyncTransactionResponse,
-        dbQueue: DatabaseQueue
+        dbQueue: any DatabaseWriter
     ) async throws {
         guard response.id == transaction.id, response.status == "committed" else {
             throw SyncTransactionQueueError.invalidReceipt
@@ -1066,7 +1066,7 @@ enum SyncTransactionQueue {
         ) ?? false
     }
 
-    static func hasPending(workspaceId: UUID, dbQueue: DatabaseQueue) async throws -> Bool {
+    static func hasPending(workspaceId: UUID, dbQueue: any DatabaseWriter) async throws -> Bool {
         try await dbQueue.read { db in
             try hasPending(workspaceId: workspaceId, in: db)
         }
@@ -1076,7 +1076,7 @@ enum SyncTransactionQueue {
         _ changes: [SyncChangePage.Change],
         workspaceId: UUID,
         connectionId: UUID,
-        dbQueue: DatabaseQueue
+        dbQueue: any DatabaseWriter
     ) async throws {
         try await dbQueue.write { db in
             guard try matchesExpectedConnection(workspaceId: workspaceId, connectionId: connectionId, in: db),
@@ -1180,7 +1180,7 @@ enum SyncTransactionQueue {
         entity: SyncEntity,
         entityId: UUID,
         revision: Int?,
-        dbQueue: DatabaseQueue
+        dbQueue: any DatabaseWriter
     ) async throws -> Bool {
         try await dbQueue.read { db in
             try Bool.fetchOne(
@@ -1198,7 +1198,7 @@ enum SyncTransactionQueue {
     }
 
     static func transcriptPatch(
-        operationId: UUID, fromPosition: Int = 0, limit: Int? = nil, dbQueue: DatabaseQueue
+        operationId: UUID, fromPosition: Int = 0, limit: Int? = nil, dbQueue: any DatabaseWriter
     ) async throws -> SyncTranscriptPatchSnapshot {
         try await dbQueue.read { db in
             try loadPatch(operationId: operationId, fromPosition: fromPosition, limit: limit, in: db)
@@ -1207,7 +1207,7 @@ enum SyncTransactionQueue {
 
     static func screenshotAttachment(
         operationId: UUID,
-        dbQueue: DatabaseQueue,
+        dbQueue: any DatabaseWriter,
         screenshotContent: ScreenshotContentProvider = .shared
     ) async throws -> SyncScreenshotAttachment? {
         try await screenshotContent.attachment(operationId: operationId, dbQueue: dbQueue)
@@ -1251,7 +1251,7 @@ enum SyncTransactionQueue {
         workspaceId: UUID,
         expectedLastTransactionId: UUID? = nil,
         expectedHasConfirmedWorkspace: Bool? = nil,
-        dbQueue: DatabaseQueue
+        dbQueue: any DatabaseWriter
     ) async throws {
         _ = try await discardBlocked(
             workspaceId: workspaceId,
@@ -1266,7 +1266,7 @@ enum SyncTransactionQueue {
         workspaceId: UUID,
         expectedLastTransactionId: UUID? = nil,
         expectedHasConfirmedWorkspace: Bool? = nil,
-        dbQueue: DatabaseQueue
+        dbQueue: any DatabaseWriter
     ) async throws {
         if try await discardBlocked(
             workspaceId: workspaceId,
@@ -1279,7 +1279,7 @@ enum SyncTransactionQueue {
         }
     }
 
-    static func retryInvalidTransaction(workspaceId: UUID, dbQueue: DatabaseQueue) async throws {
+    static func retryInvalidTransaction(workspaceId: UUID, dbQueue: any DatabaseWriter) async throws {
         try await dbQueue.write { db in
             try repairRejectedFileUploads(workspaceId: workspaceId, in: db)
             try db.execute(
@@ -1294,7 +1294,7 @@ enum SyncTransactionQueue {
     }
 
     /// Server-side failures keep their backoff; only transport failures are retried as soon as the Server is reachable.
-    static func retryNetworkFailuresNow(connectionId: UUID, dbQueue: DatabaseQueue) async throws {
+    static func retryNetworkFailuresNow(connectionId: UUID, dbQueue: any DatabaseWriter) async throws {
         try await dbQueue.write { db in
             let now = Date()
             try db.execute(
@@ -1308,7 +1308,7 @@ enum SyncTransactionQueue {
         }
     }
 
-    static func retryAuthorizationBlocks(connectionId: UUID, dbQueue: DatabaseQueue) async throws {
+    static func retryAuthorizationBlocks(connectionId: UUID, dbQueue: any DatabaseWriter) async throws {
         try await dbQueue.write { db in
             try db.execute(
                 sql: """
@@ -1326,7 +1326,7 @@ enum SyncTransactionQueue {
         reason: SyncBlockedReason,
         expectedLastTransactionId: UUID?,
         expectedHasConfirmedWorkspace: Bool?,
-        dbQueue: DatabaseQueue
+        dbQueue: any DatabaseWriter
     ) async throws -> Bool {
         try await dbQueue.write { db in
             guard let blocked = try Row.fetchOne(
@@ -1424,7 +1424,7 @@ enum SyncTransactionQueue {
 
     static func reapplyLocalVersion(
         workspaceId: UUID,
-        dbQueue: DatabaseQueue,
+        dbQueue: any DatabaseWriter,
         screenshotContent: ScreenshotContentProvider = .shared
     ) async throws {
         let screenshotIds = try await dbQueue.read { db in

@@ -1,9 +1,25 @@
 import SwiftUI
 
 struct MeetingTitleMarquee: View {
+    let isHovered: Bool
+    let title: Text
+
+    /// Only the hovered row measures and animates; every other row in a scrolling list stays a plain truncated line.
+    var body: some View {
+        if isHovered {
+            HoveredTitleMarquee(title: title)
+        } else {
+            title
+                .lineLimit(1)
+                .truncationMode(.tail)
+                .frame(maxWidth: .infinity, alignment: .leading)
+        }
+    }
+}
+
+private struct HoveredTitleMarquee: View {
     private static var pointsPerSecond: CGFloat { 32 }
 
-    let isHovered: Bool
     let title: Text
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -45,9 +61,6 @@ struct MeetingTitleMarquee: View {
                     updateScrollStart()
                 }
         }
-        .onChange(of: isHovered) { _, _ in
-            updateScrollStart()
-        }
         .onChange(of: reduceMotion) { _, _ in
             updateScrollStart()
         }
@@ -59,7 +72,7 @@ struct MeetingTitleMarquee: View {
     }
 
     private var isScrolling: Bool {
-        isHovered && titleOverflowsViewport && !reduceMotion
+        titleOverflowsViewport && !reduceMotion
     }
 
     private func updateScrollStart() {

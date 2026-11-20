@@ -6,7 +6,6 @@ import Foundation
 final class LiveSubtitleOverlayCoordinator {
     private let viewModel: CaptionViewModel
     private let liveSubtitleOverlayService: any LiveSubtitlePresenting
-    private let payloadProjector = LiveSubtitleOverlayPayloadProjector()
 
     private var viewModelCancellables: [AnyCancellable] = []
     private var storeCancellable: AnyCancellable?
@@ -47,7 +46,7 @@ final class LiveSubtitleOverlayCoordinator {
     }
 
     private func applyStoreChange(_ change: LiveCaptionStore.OverlayChange) {
-        payloadProjector.apply(change)
+        // A cleared preview is usually followed by its finalized text; waiting one interval avoids a blank flash.
         if case .clearPreview = change {
             scheduleStoreSync(allowsImmediateSync: false)
         } else {
@@ -83,15 +82,14 @@ final class LiveSubtitleOverlayCoordinator {
     private func sync() {
         guard viewModel.isListening,
               AppSettings.shared.liveSubtitleOverlayEnabled else {
-            payloadProjector.apply(.reload)
             liveSubtitleOverlayService.hide()
             return
         }
 
-        let payload = payloadProjector.payload(
+        let payload = LiveSubtitleOverlayPayload.latest(
             from: viewModel.liveCaptionStore.segments,
             configuration: payloadConfiguration,
-            visibleEntryCount: AppSettings.shared.liveSubtitleOverlaySegmentCount
+            count: AppSettings.shared.liveSubtitleOverlaySegmentCount
         )
 
         liveSubtitleOverlayService.update(payload: payload)

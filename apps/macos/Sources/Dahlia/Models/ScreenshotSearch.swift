@@ -7,6 +7,8 @@ struct ScreenshotSearchResult: Identifiable, Equatable, Sendable {
     let meetingDescription: String
     let capturedAt: Date
     let mimeType: String
+    /// Lets the tile reuse the image cache before fetching. nil for rows without a stored file.
+    var contentHash: String?
     let snippet: String
 }
 

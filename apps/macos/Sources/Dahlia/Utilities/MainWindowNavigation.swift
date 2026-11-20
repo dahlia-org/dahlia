@@ -193,7 +193,7 @@ final class MainWindowNavigation {
         })
     }
 
-    func migrateProjectAppearances(workspaceId: UUID, dbQueue: DatabaseQueue) async throws {
+    func migrateProjectAppearances(workspaceId: UUID, dbQueue: any DatabaseWriter) async throws {
         guard let saved = projectAppearancesByWorkspace[workspaceId.uuidString], !saved.isEmpty else { return }
         let completed = try await ProjectAppearanceMigration.migrate(saved, workspaceId: workspaceId, dbQueue: dbQueue)
         for id in completed where projectAppearancesByWorkspace[workspaceId.uuidString]?[id] == saved[id] {

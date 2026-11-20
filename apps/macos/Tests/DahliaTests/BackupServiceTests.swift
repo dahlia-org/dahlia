@@ -15,7 +15,7 @@ import GRDB
             defer { try? FileManager.default.removeItem(at: rootURL) }
             let live = try AppDatabaseManager(
                 path: rootURL.appending(path: "live.sqlite").path,
-                enablesConcurrentSearch: true
+                usesDatabasePool: true
             )
             defer { try? live.close() }
             let service = BackupService(dbQueue: live.dbQueue, applicationSupportURL: rootURL)
@@ -37,7 +37,7 @@ import GRDB
                 .appending(path: "dahlia-wal-locked-backup-\(UUID.v7().uuidString)", directoryHint: .isDirectory)
             defer { try? FileManager.default.removeItem(at: rootURL) }
             let databaseURL = rootURL.appending(path: "live.sqlite")
-            let live = try AppDatabaseManager(path: databaseURL.path, enablesConcurrentSearch: true)
+            let live = try AppDatabaseManager(path: databaseURL.path, usesDatabasePool: true)
             defer { try? live.close() }
             let workspace = makeWorkspace(name: "Committed", path: rootURL.appending(path: "Workspace").path)
             try await live.dbQueue.write { try workspace.insert($0) }
@@ -46,13 +46,15 @@ import GRDB
             // A backup that write-locks the source or waits on that queue cannot finish.
             let generation = try await Task.detached {
                 var generation: BackupGeneration?
-                try dbQueue.inTransaction(.immediate) { db in
-                    try db.execute(sql: "UPDATE workspaces SET name = 'Uncommitted' WHERE id = ?", arguments: [workspace.id])
-                    generation = try BackupService.createGeneration(
-                        workspaceIds: [workspace.id], dbQueue: dbQueue, directoryURL: rootURL.appending(path: "Backups"),
-                        reason: .manual, appVersion: "test", appBuild: "0"
-                    )
-                    return .rollback
+                try dbQueue.writeWithoutTransaction { db in
+                    try db.inTransaction(.immediate) {
+                        try db.execute(sql: "UPDATE workspaces SET name = 'Uncommitted' WHERE id = ?", arguments: [workspace.id])
+                        generation = try BackupService.createGeneration(
+                            workspaceIds: [workspace.id], dbQueue: dbQueue, directoryURL: rootURL.appending(path: "Backups"),
+                            reason: .manual, appVersion: "test", appBuild: "0"
+                        )
+                        return .rollback
+                    }
                 }
                 return generation
             }.value

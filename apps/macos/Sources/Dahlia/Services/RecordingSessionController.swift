@@ -40,7 +40,7 @@ actor RecordingSessionController {
         let transcriptionLocale: Locale
         let liveRecognitionLocale: Locale
         let sources: [SourceConfiguration]
-        let dbQueue: DatabaseQueue?
+        let dbQueue: (any DatabaseWriter)?
         let meetingId: UUID?
         let batchSampleRate: Double?
         let managedAudioRootURL: URL
@@ -54,7 +54,7 @@ actor RecordingSessionController {
             locale: Locale,
             liveRecognitionLocale: Locale? = nil,
             sources: [SourceConfiguration],
-            dbQueue: DatabaseQueue? = nil,
+            dbQueue: (any DatabaseWriter)? = nil,
             meetingId: UUID? = nil,
             batchSampleRate: Double? = nil,
             managedAudioRootURL: URL = BatchAudioStorage.managedRootURL,

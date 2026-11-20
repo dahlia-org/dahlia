@@ -29,7 +29,9 @@ public struct ScreenshotRemoteReference: Codable, Equatable, Sendable {
 
     public func cacheKey(variant: ScreenshotVariant) -> String {
         let scope = accountConnectionId.map { "server/\($0.uuidString.lowercased())" } ?? "local"
-        let representation = variant == .original ? "original" : "variants/v1/\(variant.rawValue).webp"
+        // Server variants are WebP; a Local Account's own list copy is JPEG (docs/spec/shared/sync.md).
+        let format = accountConnectionId == nil ? "jpg" : "webp"
+        let representation = variant == .original ? "original" : "variants/v1/\(variant.rawValue).\(format)"
         return "\(scope)/files/\(fileId.uuidString.lowercased())/\(representation)"
     }
 

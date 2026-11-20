@@ -328,8 +328,8 @@ Desktop 検索は旧 Advanced 相当の全文検索に統一し、Simple／Neura
 cursor、filter-only 検索は時系列 keyset cursor を使い、新しい検索語で古い処理をキャンセルする。選択詳細とチャット候補は一覧とは別の projection とし、チャット候補は
 チャット UI が必要とするまで読み込まない。
 複数語の全文検索は FTS vocabulary の文書頻度が最小の token から候補 meeting を作り、残りの token を候補文書内で
-検証する。SQLite read は 30 秒でキャンセルし、広すぎる query には絞り込みを求める。検索は WAL 上の専用 read connection を使い、
-高頻度語の検索が確定文字起こしの durable write を待たせない。起動時に別プロセスとの競合で WAL へ切り替えられない場合はアプリ起動を優先して primary connection へ縮退し、次回起動で再試行する。
+検証する。SQLite read は 30 秒でキャンセルし、広すぎる query には絞り込みを求める。主 DB は WAL の `DatabasePool` で、
+検索、画面の読み取り、`ValueObservation` は読み取り接続で動き、確定文字起こしや索引の書き込みを待たない。起動時に別プロセスとの競合で WAL へ切り替えられない場合はアプリ起動を優先して 1 本の `DatabaseQueue` へ縮退し、次回起動で再試行する。接続ごとの一時テーブル（`workspace_transfer_fences`）は書き込み接続にしかないので、それを確認する処理は書き込みトランザクションで行う。
 
 ここでいう上限は、必ずしもユーザーが閲覧する一つの完全な文書を切り詰めることではない。チャット本文のように raw content
 自体を完全に残す必要がある場合は、同時に保持する解析世代、待機要求、cache cost、実際に materialize する layout を有界にし、
@@ -395,16 +395,16 @@ process-wide hang、crash、OOM の注入は現在の受け入れ条件には含
 | Capture hot path | Conforms | `AudioSourcePipeline.capture` と `AudioFrameRouter.route` は小さな lock と同期処理で構成され、per-frame task を作らない |
 | Immutable audio ingestion | Conforms | `SegmentedAudioSourceWriter.appendBuffer` は bounded queue を使い、overflow を明示的な recording error にする |
 | UI／persistence separation | Conforms | `enqueue` は suspension より前に durable ingress を確定する。逐次 recognition producer は MainActor を直接待たず、ライブ字幕は bounded relay への短い actor enqueue 後に独立して配送する |
-| Bounded UI projection | Conforms | preview と文字起こしは集約／window 化する。batch mode の一時的なライブ字幕は DB reload で復元できないため、100 event 上限で preview／translation を latest-wins にする専用 relay から `LiveCaptionStore` へ分離する。`LiveCaptionStore` は録音セッション中の履歴を保持する一方、overlay は差分更新を最大 5 Hz で公開し、最新 1〜5 件だけを高さ計測して全履歴の layout を `LazyVStack` で遅延生成する。reloadable な `TranscriptStore` projection だけを bounded UI lane に置く。streaming Markdown は完全な raw 本文を残しつつ、実行中 1 件と置換可能な最新 1 件へ解析要求を集約し、MainActor 外で parse する。会話の scroll 文脈では block layout を lazy 化し、固有サイズが必要な reasoning の開閉領域では eager layout を使う。完了済み cache は件数と byte cost で制限する |
+| Bounded UI projection | Conforms | preview と文字起こしは集約／window 化する。batch mode の一時的なライブ字幕は DB reload で復元できないため、100 event 上限で preview／translation を latest-wins にする専用 relay から `LiveCaptionStore` へ分離する。`LiveCaptionStore` は録音セッション中の履歴を保持する一方、overlay は最大 5 Hz で最新 1〜5 件だけを表示し、1 回の layout でパネルの高さを決める。reloadable な `TranscriptStore` projection だけを bounded UI lane に置く。文字起こしの行は WebContent プロセスで描画する（[送信と回復の契約](docs/spec/desktop/concurrency-and-projection.md#transcript-projection)）。streaming Markdown は完全な raw 本文を残しつつ、実行中 1 件と置換可能な最新 1 件へ解析要求を集約し、MainActor 外で parse する。会話の scroll 文脈では block layout を lazy 化し、固有サイズが必要な reasoning の開閉領域では eager layout を使う。完了済み cache は件数と byte cost で制限する |
 | Realtime recognition backlog | Conforms (documented unbounded) | batch 音声がない realtime mode は再生成不能な入力を落とさない lossless queue、batch mode は bounded latest-wins を使う。長時間の Speech stall による process-wide memory exhaustion は保証対象外 |
 | Persistence overload | Gap (measurement-ready) | ingress／retry backlog の event count、text bytes、oldest age、queue／SQLite duration、retry backoff、single-flight write state と high-water を OSLog と test snapshot で取得できるが、queue policy と bounded implementation は未決定 |
 | Recording-start MainActor I/O | Conforms | `createNew`／`createAppending` が DB transaction を非同期実行し、MainActor は完了後の store／context 反映だけを行う |
 | System-audio runtime isolation | Conforms (app-owned boundary) | manager actor が generation ごとの single-flight stop と callback drain を所有する。delegate adapter の lock は sample admission だけに限定し、停止前に受理済みの callback は routing まで完了させる。concrete `SCStream` の動作は OS integration validation として別に扱う |
 | Normal stop drain and failure | Conforms | capture の新規受付を閉じて in-flight callback、recognition、batch writer を drain する。realtime stop が失敗した場合は controller が runtime 参照を保持し、呼び出し側が `abort()` で capture／recognition／batch resource を解放してから state を reset する。capture の最初の失敗は realtime では throw し、batch では有効な録音結果と併せて返して batch 専用の failure state で明示する |
 | Async surface | Conforms | `preparedCaptureFormat` は同期化し、未使用の非同期 no-op `endActiveRanges` は削除した |
-| Screenshot interactive scheduling | Conforms | overlay shell と既存 thumbnail を先に表示し、cacheable decode と非 cache の interactive decode を別 worker lane に分離する。同一 thumbnail miss は集約し、内容変更／削除は stale cache と in-flight completion を無効化し、cancel 済み waiter は直ちに外す |
+| Screenshot interactive scheduling | Conforms | overlay shell と既存 thumbnail を先に表示し、cacheable decode と非 cache の interactive decode を別 lane にする。decode は状態を持たないので並列に動き、一覧の decode が拡大表示の decode を待たせない。一覧と検索結果の thumbnail は content hash を鍵に符号化済みのバイト列を cache し（32 MB、約 1,500 枚）、内容が変わると鍵が変わる。検索結果で cache を再利用する場合も、現在の Workspace・画像の存在・接続先をメタデータで確認する。鍵を持たない呼び出しは decode 済み画像の cache と同一 miss の集約を使う。削除は両方の cache を無効化し、スクロールで外れたセルの要求は読み込み前に取り消す |
 | UI-lane isolation proof | Conforms | 停止した UI sink の解放前に audio acceptance と finalized persistence が進み、解放後に UI が追いつくことを回帰テストで検証する |
-| Process-wide isolation | Out of scope | helper process は導入せず、process-wide hang の証拠が得られた場合に、保証範囲の変更として判断する |
+| Process-wide isolation | Partial (rendering only) | 文字起こしの描画は WebContent プロセスで動き、その停止はアプリの MainActor を止めない（[回復の契約](docs/spec/desktop/concurrency-and-projection.md#transcript-projection)）。録音の helper process は導入せず、process-wide hang の証拠が得られた場合に、保証範囲の変更として判断する |
 
 ## Remediation Plan
 

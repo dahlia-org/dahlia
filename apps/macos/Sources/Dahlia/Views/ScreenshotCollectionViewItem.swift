@@ -56,7 +56,7 @@ private final class ScreenshotThumbnailButton: NSButton {
 
 @MainActor
 final class ScreenshotCollectionViewItem: NSCollectionViewItem {
-    typealias ThumbnailProvider = @Sendable (UUID, Data?, Int) async -> CGImage?
+    typealias ThumbnailProvider = @Sendable (UUID, String?, Data?, Int) async -> CGImage?
 
     private enum ThumbnailLoadState {
         case idle
@@ -323,9 +323,11 @@ final class ScreenshotCollectionViewItem: NSCollectionViewItem {
         thumbnailLoadState = .loading
         let generation = loadGeneration
         let screenshotID = screenshot.id
+        let requestedAt = SuspendingClock.now
         thumbnailTask = Task { [weak self] in
             let image = await provider(
                 screenshotID,
+                screenshot.contentHash,
                 screenshot.imageData,
                 ScreenshotGridSizing.maximumThumbnailPixelSize
             )
@@ -344,12 +346,14 @@ final class ScreenshotCollectionViewItem: NSCollectionViewItem {
                 cgImage: image,
                 size: NSSize(width: image.width, height: image.height)
             )
+            MainActorHangMonitor.shared.recordLatency(.screenshots, since: requestedAt)
         }
     }
 
-    private static let defaultThumbnailProvider: ThumbnailProvider = { screenshotID, data, maxPixelSize in
+    private static let defaultThumbnailProvider: ThumbnailProvider = { screenshotID, contentHash, data, maxPixelSize in
         await ScreenshotImageLoader.shared.image(
             screenshotID: screenshotID,
+            contentHash: contentHash,
             data: data,
             maxPixelSize: maxPixelSize
         )

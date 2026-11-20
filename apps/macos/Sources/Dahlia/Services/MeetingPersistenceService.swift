@@ -24,7 +24,7 @@ enum MeetingPersistenceStopResult {
 @MainActor
 final class MeetingPersistenceService {
     private let store: TranscriptStore
-    private let dbQueue: DatabaseQueue
+    private let dbQueue: any DatabaseWriter
     nonisolated let meetingId: UUID
     nonisolated let recordingSessionId: UUID
     nonisolated let isFirstRecordingSession: Bool
@@ -39,7 +39,7 @@ final class MeetingPersistenceService {
 
     private init(
         store: TranscriptStore,
-        dbQueue: DatabaseQueue,
+        dbQueue: any DatabaseWriter,
         meetingId: UUID,
         projectId: UUID?,
         projectName: String?,
@@ -75,7 +75,7 @@ final class MeetingPersistenceService {
     /// DB transaction を MainActor 外で完了してから、新規ミーティングの UI-facing service を生成する。
     static func createNew(
         store: TranscriptStore,
-        dbQueue: DatabaseQueue,
+        dbQueue: any DatabaseWriter,
         workspaceId: UUID,
         projectId: UUID?,
         initialName: String,
@@ -121,7 +121,7 @@ final class MeetingPersistenceService {
     /// 既存 meeting の読込・時刻補正・session insert を一つの非同期 transaction で行う。
     static func createAppending(
         store: TranscriptStore,
-        dbQueue: DatabaseQueue,
+        dbQueue: any DatabaseWriter,
         existingMeetingId: UUID,
         recordingStartDate: Date = .now,
         recordingSessionId: UUID = .v7(),
@@ -314,7 +314,7 @@ private enum MeetingPersistenceStarter {
 
     static func createNew(
         _ request: NewRequest,
-        dbQueue: DatabaseQueue
+        dbQueue: any DatabaseWriter
     ) async throws -> NewResult {
         try await dbQueue.write { db in
             if let calendarEvent = request.calendarEvent {
@@ -369,7 +369,7 @@ private enum MeetingPersistenceStarter {
 
     static func createAppending(
         _ request: AppendRequest,
-        dbQueue: DatabaseQueue
+        dbQueue: any DatabaseWriter
     ) async throws -> AppendResult {
         try await dbQueue.write { db in
             let meeting = try MeetingRecord.fetchOne(db, key: request.meetingId)

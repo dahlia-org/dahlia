@@ -26,7 +26,7 @@ actor CodexRuntimeContextCoordinator {
         self.contextStore = contextStore
     }
 
-    func configure(dbQueue: DatabaseQueue) {
+    func configure(dbQueue: any DatabaseWriter) {
         repository = MeetingRepository(dbQueue: dbQueue)
     }
 

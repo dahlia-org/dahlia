@@ -9,7 +9,7 @@ extension MeetingRepository {
         criteria: MeetingSearchCriteria,
         offset: Int = 0,
         limit: Int = 25,
-        dbQueue: DatabaseQueue
+        dbQueue: any DatabaseWriter
     ) async throws -> (threads: [CodexChatThreadSummary], hasMore: Bool) {
         try await withSearchDeadline {
             try await dbQueue.read { db in

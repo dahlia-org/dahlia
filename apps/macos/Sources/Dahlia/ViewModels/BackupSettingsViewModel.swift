@@ -30,10 +30,10 @@ final class BackupSettingsViewModel {
     var statusMessage: String?
     var errorMessage: String?
 
-    private let dbQueue: DatabaseQueue?
+    private let dbQueue: (any DatabaseWriter)?
     private let service: BackupService?
 
-    init(dbQueue: DatabaseQueue?, applicationSupportURL: URL = DahliaApplicationSupport.currentDirectoryURL) {
+    init(dbQueue: (any DatabaseWriter)?, applicationSupportURL: URL = DahliaApplicationSupport.currentDirectoryURL) {
         self.dbQueue = dbQueue
         service = dbQueue.map { BackupService(dbQueue: $0, applicationSupportURL: applicationSupportURL) }
     }

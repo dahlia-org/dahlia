@@ -60,7 +60,7 @@ final class WorkspaceAISettingsModel {
     private(set) var isSwitchingRuntime = false
     private(set) var errorMessage: String?
 
-    @ObservationIgnored private var dbQueue: DatabaseQueue?
+    @ObservationIgnored private var dbQueue: (any DatabaseWriter)?
     @ObservationIgnored private var workspaceObservation: AnyDatabaseCancellable?
     @ObservationIgnored private var isApplying = false
     @ObservationIgnored private var activationGeneration = 0
@@ -134,7 +134,7 @@ final class WorkspaceAISettingsModel {
         LocalAccountAISettings(provider: localProvider, databricksProfile: databricksProfile)
     }
 
-    func configure(dbQueue: DatabaseQueue) {
+    func configure(dbQueue: any DatabaseWriter) {
         self.dbQueue = dbQueue
         observeWorkspace()
         Task { await reloadDatabricksConnections() }
@@ -194,7 +194,7 @@ final class WorkspaceAISettingsModel {
         }
     }
 
-    func inheritLocalAccountSettings(from dbQueue: DatabaseQueue) async throws {
+    func inheritLocalAccountSettings(from dbQueue: any DatabaseWriter) async throws {
         guard !setupDefaults.bool(forKey: LocalAccountAISettings.migrationKey) else { return }
         let previousWorkspace = try await MeetingRepository(dbQueue: dbQueue).fetchLatestLocalAccountWorkspace()
         isApplying = true
@@ -206,7 +206,7 @@ final class WorkspaceAISettingsModel {
         localAccountSettings.save(to: setupDefaults)
     }
 
-    func inheritAccountInferenceSettings(from dbQueue: DatabaseQueue) async throws {
+    func inheritAccountInferenceSettings(from dbQueue: any DatabaseWriter) async throws {
         let workspaces = try await dbQueue.read { db in
             try WorkspaceRecord.order(Column("lastOpenedAt").desc, Column("createdAt").desc).fetchAll(db)
         }

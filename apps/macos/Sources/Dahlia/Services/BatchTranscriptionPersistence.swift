@@ -36,7 +36,7 @@ enum BatchTranscriptionPersistence {
         meetingId: UUID,
         records: [TranscriptContent],
         completedAt: Date,
-        dbQueue: DatabaseQueue,
+        dbQueue: any DatabaseWriter,
         replacingMeeting: Bool = false,
         expectedTranscriptId: UUID? = nil,
         expectedSessions: [RecordingSessionRecord]? = nil,

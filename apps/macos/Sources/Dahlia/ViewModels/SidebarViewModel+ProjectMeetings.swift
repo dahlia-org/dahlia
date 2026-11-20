@@ -38,7 +38,7 @@ extension SidebarViewModel {
         startProjectMeetingObservation(dbQueue: dbQueue, workspaceId: workspaceId)
     }
 
-    func startProjectMeetingObservation(dbQueue: DatabaseQueue, workspaceId: UUID) {
+    func startProjectMeetingObservation(dbQueue: any DatabaseWriter, workspaceId: UUID) {
         projectMeetingObservation?.cancel()
         projectMeetingObservationGeneration &+= 1
         let generation = projectMeetingObservationGeneration
@@ -108,21 +108,15 @@ extension SidebarViewModel {
         projectMeetingLoadErrors[key] = nil
         projectMeetingLoadTasks[key] = Task { [weak self] in
             do {
-                let fetchTask = Task.detached(priority: .userInitiated) {
-                    try dbQueue.read { db in
-                        try MeetingRepository.fetchMeetingProjectPage(
-                            key: key,
-                            workspaceId: workspaceId,
-                            after: cursor,
-                            limit: Self.projectMeetingPageSize,
-                            in: db
-                        )
-                    }
-                }
-                let page = try await withTaskCancellationHandler {
-                    try await fetchTask.value
-                } onCancel: {
-                    fetchTask.cancel()
+                // The pool reads off MainActor without waiting for writes, and cancelling interrupts the statement.
+                let page = try await dbQueue.read { db in
+                    try MeetingRepository.fetchMeetingProjectPage(
+                        key: key,
+                        workspaceId: workspaceId,
+                        after: cursor,
+                        limit: Self.projectMeetingPageSize,
+                        in: db
+                    )
                 }
                 try Task.checkCancellation()
                 guard let self,

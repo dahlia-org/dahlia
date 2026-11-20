@@ -4,7 +4,7 @@ import GRDB
 
 /// Database transactions serialize every writer, including Settings and review approvals.
 struct AgentMemoryService: Sendable {
-    let dbQueue: DatabaseQueue
+    let dbQueue: any DatabaseWriter
     static let delimiter = "\n§\n"
     static func limit(_ target: String) -> Int { target == "user" ? 1375 : 2200 }
 

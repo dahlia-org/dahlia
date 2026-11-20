@@ -7,7 +7,7 @@ import GRDB
 /// Project identity and hierarchy are never inferred from filesystem state.
 final class WorkspaceSyncService: @unchecked Sendable {
     private let workspaceURL: URL
-    private let dbQueue: DatabaseQueue
+    private let dbQueue: any DatabaseWriter
     private let workspaceId: UUID
     private let summaryPathSynchronizer: WorkspaceSummaryPathSynchronizer
     private let maximumEventRetryAttempts: Int
@@ -25,7 +25,7 @@ final class WorkspaceSyncService: @unchecked Sendable {
 
     init(
         workspaceURL: URL,
-        dbQueue: DatabaseQueue,
+        dbQueue: any DatabaseWriter,
         workspaceId: UUID,
         maximumEventRetryAttempts: Int = 5
     ) {

@@ -18,7 +18,7 @@ extension MeetingContentProvider {
     func prepareAccountTransfer(
         workspaceIds: [UUID],
         connectionId: UUID,
-        dbQueue: DatabaseQueue,
+        dbQueue: any DatabaseWriter,
         screenshotContent: ScreenshotContentProvider = .shared
     ) async throws -> [UUID: TransferSource] {
         for workspaceId in workspaceIds {
@@ -71,7 +71,7 @@ extension MeetingContentProvider {
         }
     }
 
-    func validateAccountTransfer(_ sources: [UUID: TransferSource], dbQueue: DatabaseQueue) async throws {
+    func validateAccountTransfer(_ sources: [UUID: TransferSource], dbQueue: any DatabaseWriter) async throws {
         let worker = SyncWorker(dbQueue: dbQueue, session: client.session, apiClient: client, meetingContent: self)
         for (workspaceId, source) in sources {
             try await worker.validateTransferCursor(workspaceId: workspaceId, connectionId: source.source.connectionId, cursor: source.cursor)
@@ -79,7 +79,7 @@ extension MeetingContentProvider {
         try Task.checkCancellation()
     }
 
-    func releaseAccountTransfer(workspaceIds: [UUID], dbQueue: DatabaseQueue) {
+    func releaseAccountTransfer(workspaceIds: [UUID], dbQueue: any DatabaseWriter) {
         for workspaceId in workspaceIds {
             releaseWorkspace(workspaceId, dbQueue: dbQueue)
         }

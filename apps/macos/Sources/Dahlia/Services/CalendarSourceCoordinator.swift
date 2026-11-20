@@ -22,11 +22,11 @@ final class CalendarSourceCoordinator: ObservableObject {
 
     private let storesBySource: [CalendarSource: any CalendarEventSourceStore]
     private var cancellables: Set<AnyCancellable> = []
-    private var dbQueue: DatabaseQueue?
+    private var dbQueue: (any DatabaseWriter)?
     private var persistedSources: Set<CalendarSource> = []
     private var persistenceTask: Task<Void, Never>?
 
-    init(stores: [any CalendarEventSourceStore], dbQueue: DatabaseQueue? = nil) {
+    init(stores: [any CalendarEventSourceStore], dbQueue: (any DatabaseWriter)? = nil) {
         storesBySource = Dictionary(uniqueKeysWithValues: stores.map { ($0.source, $0) })
         eventsBySource = Dictionary(uniqueKeysWithValues: stores.map { ($0.source, $0.upcomingEvents) })
         loadedSources = Set(stores.filter(\.isLoaded).map(\.source))
@@ -47,7 +47,7 @@ final class CalendarSourceCoordinator: ObservableObject {
         }
     }
 
-    func configure(dbQueue: DatabaseQueue) {
+    func configure(dbQueue: any DatabaseWriter) {
         self.dbQueue = dbQueue
     }
 

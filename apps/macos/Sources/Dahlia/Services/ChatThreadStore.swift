@@ -3,7 +3,7 @@ import Foundation
 import GRDB
 
 struct ChatThreadStore: ChatItemStore, Sendable {
-    let dbQueue: DatabaseQueue
+    let dbQueue: any DatabaseWriter
 
     func createThread(_ thread: ChatThreadRecord, items: [JSONValue] = [], initialContext: CodexChatContext? = nil) throws {
         try dbQueue.write { db in

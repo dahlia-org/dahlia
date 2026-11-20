@@ -30,6 +30,7 @@ enum ErrorReportingService {
         "loadMeeting",
         "loadWorkspaces",
         "macCalendar",
+        "mainActorHang",
         "materializeDraftMeeting",
         "meetingContext",
         "meetingNotificationAuthorization",
@@ -77,6 +78,7 @@ enum ErrorReportingService {
         "unsupportedDetectedLanguage",
     ]
     private static let allowedLocaleIdentifiers = Set(Locale.availableIdentifiers)
+    private static let allowedHangDurations: Set = ["250ms", "500ms", "1s", "2s", "5sPlus"]
 
     enum SanitizedCategory: String {
         case googleCalendar = "google_calendar_error"
@@ -118,6 +120,10 @@ enum ErrorReportingService {
                 event.extra = nil
                 event.request = nil
                 event.user = nil
+                // SDK 既定の app hang 検出（2 秒）は全スレッドのスタックを付けて送る。画面と録音状態の固定タグだけを足す。
+                if event.exceptions?.first?.mechanism?.type == "AppHang" {
+                    event.tags = (event.tags ?? [:]).merging(sanitizedContext(MainActorHangMonitor.shared.hangContext())) { $1 }
+                }
                 return event
             }
             options.beforeBreadcrumb = { breadcrumb in
@@ -150,6 +156,11 @@ enum ErrorReportingService {
 
     static func searchFailureContext(_ diagnostic: SearchFailureDiagnostic) -> [String: String] {
         ["source": diagnostic.operation.rawValue, "errorCode": diagnostic.reason.rawValue]
+    }
+
+    /// `MainActorHangMonitor` の専用スレッドから呼ぶ。送信の完了は待たない。
+    static func captureMainActorHang(context: [String: String]) {
+        capture(context: context)
     }
 
     static func capturePiInstallation(_ failure: PiInstallError) {
@@ -209,6 +220,14 @@ enum ErrorReportingService {
             allowedFailureKinds.contains(value)
         case "errorCode":
             allowedErrorCodes.contains(value) || SearchFailureDiagnostic.Reason(rawValue: value) != nil
+        case "hangSurface":
+            MainActorHangMonitor.Surface(rawValue: value) != nil
+        case "hangDuration":
+            allowedHangDurations.contains(value)
+        case "recording":
+            value == "active" || value == "idle"
+        case "hangProcess":
+            value == "app" || value == "web"
         case "piInstallStage":
             PiInstallError.Stage(rawValue: value) != nil
         case "piInstallReason":

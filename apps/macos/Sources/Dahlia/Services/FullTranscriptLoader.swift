@@ -10,7 +10,7 @@ struct FullTranscriptSummaryInput {
 enum FullTranscriptLoader {
     nonisolated static func summaryInput(
         meetingId: UUID,
-        dbQueue: DatabaseQueue,
+        dbQueue: any DatabaseWriter,
         recordingSessions: [RecordingSessionTimeline],
         timeBase: Date
     ) throws -> FullTranscriptSummaryInput {
@@ -27,7 +27,7 @@ enum FullTranscriptLoader {
 
     nonisolated static func plainText(
         meetingId: UUID,
-        dbQueue: DatabaseQueue,
+        dbQueue: any DatabaseWriter,
         recordingSessions: [RecordingSessionTimeline],
         timeBase: Date
     ) throws -> String {
@@ -41,7 +41,7 @@ enum FullTranscriptLoader {
 
     private nonisolated static func loadSegments(
         meetingId: UUID,
-        dbQueue: DatabaseQueue
+        dbQueue: any DatabaseWriter
     ) throws -> [TranscriptSegment] {
         try MeetingRepository(dbQueue: dbQueue)
             .fetchSegments(forMeetingId: meetingId)

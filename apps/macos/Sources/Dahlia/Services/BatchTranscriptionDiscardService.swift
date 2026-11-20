@@ -6,7 +6,7 @@ enum BatchTranscriptionDiscardService {
     static func discardUnprocessedSessionSafely(
         id: UUID,
         expectedWorkspaceId: UUID,
-        dbQueue: DatabaseQueue,
+        dbQueue: any DatabaseWriter,
         managedRootURL: URL = BatchAudioStorage.managedRootURL
     ) async throws -> Bool {
         let store = try RecordingAudioStore(dbQueue: dbQueue, managedRootURL: managedRootURL)
@@ -36,7 +36,7 @@ enum BatchTranscriptionDiscardService {
 
     static func discardFailedSessionSafely(
         id: UUID,
-        dbQueue: DatabaseQueue,
+        dbQueue: any DatabaseWriter,
         managedRootURL: URL = BatchAudioStorage.managedRootURL
     ) async throws -> Bool {
         let hasSegmentedAudio = try await dbQueue.read { db in

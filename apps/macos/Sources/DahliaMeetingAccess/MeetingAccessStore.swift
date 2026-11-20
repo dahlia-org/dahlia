@@ -12,7 +12,7 @@ public final class MeetingAccessStore: Sendable {
             .appending(path: "dahlia.sqlite")
     }
 
-    let database: DatabaseQueue
+    let database: any DatabaseWriter
     public let workspaceID: UUID
     public let allowsWrites: Bool
     let accountScope: MCPAccountScope?
@@ -53,7 +53,7 @@ public final class MeetingAccessStore: Sendable {
     }
 
     /// App-side broker reads use the same scoped SQL without recursively entering IPC.
-    public init(database: DatabaseQueue, workspaceID: UUID) {
+    public init(database: any DatabaseWriter, workspaceID: UUID) {
         self.database = database
         self.workspaceID = workspaceID
         allowsWrites = false

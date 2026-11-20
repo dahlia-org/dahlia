@@ -91,19 +91,36 @@ import os
         }
 
         @Test
-        func fileDatabaseUsesWALAndDedicatedSearchConnection() throws {
+        func fileDatabaseUsesAWALConnectionPool() throws {
             let databaseURL = FileManager.default.temporaryDirectory
                 .appending(path: "dahlia-database-search-reader-\(UUID.v7().uuidString)")
                 .appendingPathExtension("sqlite")
             defer { try? FileManager.default.removeItem(at: databaseURL) }
 
-            let manager = try AppDatabaseManager(path: databaseURL.path, enablesConcurrentSearch: true)
-            let writerMode = try manager.dbQueue.read { try String.fetchOne($0, sql: "PRAGMA journal_mode") }
-            let readerMode = try manager.searchDBQueue.read { try String.fetchOne($0, sql: "PRAGMA journal_mode") }
+            let manager = try AppDatabaseManager(path: databaseURL.path, usesDatabasePool: true)
+            let writerMode = try manager.dbQueue.write { try String.fetchOne($0, sql: "PRAGMA journal_mode") }
+            let readerMode = try manager.dbQueue.read { try String.fetchOne($0, sql: "PRAGMA journal_mode") }
 
-            #expect(manager.dbQueue !== manager.searchDBQueue)
+            #expect(manager.dbQueue is DatabasePool)
             #expect(writerMode?.lowercased() == "wal")
             #expect(readerMode?.lowercased() == "wal")
+        }
+
+        @Test
+        func transferFencesAreVisibleOnlyOnTheWriterConnection() async throws {
+            let databaseDirectory = FileManager.default.temporaryDirectory
+                .appending(path: "dahlia-database-fence-\(UUID.v7().uuidString)")
+            defer { try? FileManager.default.removeItem(at: databaseDirectory) }
+            let manager = try AppDatabaseManager(path: databaseDirectory.appending(path: "dahlia.sqlite").path, usesDatabasePool: true)
+            let workspace = WorkspaceRecord(id: .v7(), path: nil, name: "Fence", createdAt: .now, lastOpenedAt: .now)
+            try await manager.dbQueue.write { db in
+                try workspace.insert(db)
+                _ = try WorkspaceTransferFence.create(workspaceIDs: [workspace.id], blockingRemoteChangesIn: [workspace.id], in: db)
+            }
+
+            // Fences live in each connection's temp table, so checks that must see them run in a write transaction.
+            #expect(try await manager.dbQueue.write { try WorkspaceTransferFence.blocksRemoteChanges(workspaceID: workspace.id, in: $0) })
+            #expect(try await !manager.dbQueue.read { try WorkspaceTransferFence.blocksRemoteChanges(workspaceID: workspace.id, in: $0) })
         }
 
         @Test
@@ -120,9 +137,9 @@ import os
                     _ = try Int.fetchOne(db, sql: "SELECT COUNT(*) FROM meetings")
                     let fallbackManager = try AppDatabaseManager(
                         path: databaseURL.path,
-                        enablesConcurrentSearch: true
+                        usesDatabasePool: true
                     )
-                    #expect(fallbackManager.searchDBQueue === fallbackManager.dbQueue)
+                    #expect(fallbackManager.dbQueue is DatabaseQueue)
                 }
             }.value
         }
@@ -134,12 +151,12 @@ import os
             let databaseURL = databaseDirectory.appending(path: "dahlia.sqlite")
             defer { try? FileManager.default.removeItem(at: databaseDirectory) }
 
-            let manager = try AppDatabaseManager(path: databaseURL.path, enablesConcurrentSearch: true)
+            let manager = try AppDatabaseManager(path: databaseURL.path, usesDatabasePool: true)
             let readStarted = OSAllocatedUnfairLock(initialState: false)
             let releaseRead = DispatchSemaphore(value: 0)
             let writeFinished = OSAllocatedUnfairLock(initialState: false)
             let readTask = Task.detached {
-                try manager.searchDBQueue.read { db in
+                try manager.dbQueue.read { db in
                     _ = try Int.fetchOne(db, sql: "SELECT COUNT(*) FROM meetings")
                     readStarted.withLock { $0 = true }
                     releaseRead.wait()

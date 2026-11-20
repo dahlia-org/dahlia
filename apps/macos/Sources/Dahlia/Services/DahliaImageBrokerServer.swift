@@ -31,7 +31,7 @@ final class DahliaImageBrokerServer: Sendable {
         self.resolver = resolver
     }
 
-    convenience init(dbQueue: DatabaseQueue, helperURL: URL = DahliaMCPBundle.expectedExecutableURL()) {
+    convenience init(dbQueue: any DatabaseWriter, helperURL: URL = DahliaMCPBundle.expectedExecutableURL()) {
         self.init(helperURL: helperURL) { request in
             if let text = request.text {
                 return try await MeetingContentProvider.shared.resolve(text, workspaceId: request.workspaceId, dbQueue: dbQueue)

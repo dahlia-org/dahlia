@@ -357,7 +357,7 @@ import GRDB
             })
         }
 
-        private func seed(_ queue: DatabaseQueue, connection: DahliaAccountConnectionRecord? = nil) throws -> UUID {
+        private func seed(_ queue: any DatabaseWriter, connection: DahliaAccountConnectionRecord? = nil) throws -> UUID {
             try queue.write { db in
                 if let connection { try connection.insert(db) }
                 var workspace = WorkspaceRecord(id: .v7(), path: nil, name: "History", createdAt: .now, lastOpenedAt: .now)

@@ -150,7 +150,7 @@ extension SyncTransactionQueue {
         workspaceId: UUID,
         fileId: UUID,
         expectedLastTransactionId: UUID,
-        dbQueue: DatabaseQueue
+        dbQueue: any DatabaseWriter
     ) async throws {
         try await dbQueue.write { db in
             guard try UUID.fetchOne(db, sql: """

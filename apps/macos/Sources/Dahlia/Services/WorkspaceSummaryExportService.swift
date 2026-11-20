@@ -8,7 +8,7 @@ enum WorkspaceSummaryExportService {
         let workspaceURL: URL
         let workspaceID: UUID
         let meetingID: UUID
-        let dbQueue: DatabaseQueue
+        let dbQueue: any DatabaseWriter
         let document: SummaryDocument
         let summaryFileName: String
         let summaryMarkdown: String

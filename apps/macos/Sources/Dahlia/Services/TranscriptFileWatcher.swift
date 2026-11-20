@@ -4,12 +4,12 @@ import GRDB
 
 /// `_dahlia/transcripts/` ディレクトリを FSEvents で監視する。
 final class TranscriptFileWatcher: Sendable {
-    let dbQueue: DatabaseQueue
+    let dbQueue: any DatabaseWriter
     private let workspaceURL: URL
     private nonisolated(unsafe) var streamRef: FSEventStreamRef?
     private let callbackQueue = DispatchQueue(label: "com.dahlia.transcript-file-watcher", qos: .utility)
 
-    init(dbQueue: DatabaseQueue, workspaceURL: URL) {
+    init(dbQueue: any DatabaseWriter, workspaceURL: URL) {
         self.dbQueue = dbQueue
         self.workspaceURL = workspaceURL
     }

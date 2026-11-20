@@ -9,7 +9,7 @@ private enum DocumentPersistences {
 }
 
 actor DocumentPersistence {
-    nonisolated static func shared(dbQueue: DatabaseQueue) -> DocumentPersistence {
+    nonisolated static func shared(dbQueue: any DatabaseWriter) -> DocumentPersistence {
         DocumentPersistences.entries.withLock { entries in
             entries = entries.filter { $0.value.value != nil }
             let key = ObjectIdentifier(dbQueue)
@@ -109,10 +109,10 @@ actor DocumentPersistence {
         var connectionID: UUID?
     }
 
-    let dbQueue: DatabaseQueue
+    let dbQueue: any DatabaseWriter
     private let core = DocumentCoreWorker()
 
-    init(dbQueue: DatabaseQueue) { self.dbQueue = dbQueue }
+    init(dbQueue: any DatabaseWriter) { self.dbQueue = dbQueue }
     deinit { core.stop() }
 
     func prepare(meetingID: UUID) async throws -> DocumentCoreResult {

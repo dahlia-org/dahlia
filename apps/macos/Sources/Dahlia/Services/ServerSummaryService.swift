@@ -6,7 +6,7 @@ import GRDB
 actor ServerSummaryService {
     static let shared = ServerSummaryService()
     private let client: SyncAPIClient
-    private let synchronize: @Sendable (Target, DatabaseQueue) async throws -> Void
+    private let synchronize: @Sendable (Target, any DatabaseWriter) async throws -> Void
 
     struct Target: Equatable, Sendable {
         let workspaceID: UUID
@@ -114,7 +114,7 @@ actor ServerSummaryService {
 
     init(
         client: SyncAPIClient = SyncAPIClient(session: .shared),
-        synchronize: (@Sendable (Target, DatabaseQueue) async throws -> Void)? = nil
+        synchronize: (@Sendable (Target, any DatabaseWriter) async throws -> Void)? = nil
     ) {
         self.client = client
         self.synchronize = synchronize ?? { target, queue in
@@ -123,7 +123,7 @@ actor ServerSummaryService {
         }
     }
 
-    func target(meetingID: UUID, dbQueue: DatabaseQueue) async throws -> Target? {
+    func target(meetingID: UUID, dbQueue: any DatabaseWriter) async throws -> Target? {
         try await dbQueue.read { db in
             guard let meeting = try MeetingRecord.fetchOne(db, key: meetingID),
                   let workspace = try WorkspaceRecord.fetchOne(db, key: meeting.workspaceId) else { throw Failure.unavailable }
@@ -170,7 +170,7 @@ actor ServerSummaryService {
             .compactMap { entry in list.models.first { $0.id == entry.id } }
     }
 
-    func availableTranscriptVersion(_ target: Target, dbQueue: DatabaseQueue) async throws -> Int? {
+    func availableTranscriptVersion(_ target: Target, dbQueue: any DatabaseWriter) async throws -> Int? {
         let hasPendingMutation = try await dbQueue.read { db in
             try Bool.fetchOne(
                 db,
@@ -280,7 +280,7 @@ actor ServerSummaryService {
         return try JSONDecoder().decode(Response.self, from: data).job
     }
 
-    func retry(_ target: Target, previousID: String, id: UUID, dbQueue: DatabaseQueue) async throws -> Job? {
+    func retry(_ target: Target, previousID: String, id: UUID, dbQueue: any DatabaseWriter) async throws -> Job? {
         try await awaitSynchronization(target, dbQueue: dbQueue)
         return try await retrySynchronized(target, previousID: previousID, id: id)
     }
@@ -300,7 +300,7 @@ actor ServerSummaryService {
         _ target: Target,
         id: UUID,
         detail: String?,
-        dbQueue: DatabaseQueue,
+        dbQueue: any DatabaseWriter,
         source: SummaryGenerationSource? = nil,
         preparedRequest: Request? = nil,
         processing: RecordingProcessing? = nil,
@@ -471,7 +471,7 @@ actor ServerSummaryService {
     private func awaitRecordingUploads(
         _ target: Target,
         sessionIDs: [UUID],
-        dbQueue: DatabaseQueue,
+        dbQueue: any DatabaseWriter,
         wait: Bool
     ) async throws {
         guard !sessionIDs.isEmpty else { throw Failure.unavailable }
@@ -524,7 +524,7 @@ actor ServerSummaryService {
         }
     }
 
-    private func awaitSynchronization(_ target: Target, dbQueue: DatabaseQueue) async throws {
+    private func awaitSynchronization(_ target: Target, dbQueue: any DatabaseWriter) async throws {
         try await dbQueue.write { try SyncDependencies.prioritizeMeeting(meetingId: target.meetingID, workspaceId: target.workspaceID, in: $0) }
         let deadline = ContinuousClock.now.advanced(by: .seconds(60))
         while ContinuousClock.now < deadline {
